@@ -393,12 +393,16 @@ def install_coin():
 # the source
 # ==========================================================================
 
-def build_source():
+def build_source(path=None):
     """The shipped file, minus its `script "..."` line, with the ENGINE's own
     compile-time refusal applied first. NO REWRITES: unlike riptide, this
     stack was written inside the modelled subset, and an empty rewrite list
-    is the honest state rather than a list nobody has noticed going stale."""
-    with open(DEMO, "r", encoding="utf-8") as fh:
+    is the honest state rather than a list nobody has noticed going stale.
+
+    `path` names a file other than the shipped one - which only
+    tools/test-wallet-boot.py passes, so the fixtures can boot a mutated
+    copy and require this gate to fail on it."""
+    with open(path or DEMO, "r", encoding="utf-8") as fh:
         src = fh.read()
     src = re.sub(r'^script\s+"[^"]*"[^\n]*\n', '', src, count=1)
     DB._refuse_nonliteral_constants(src, _die)
@@ -461,11 +465,11 @@ def click(ip, world, name):
         world.target = None
 
 
-def run(c):
+def run(c, path=None):
     sandbox = tempfile.mkdtemp(prefix="wallet-boot-")
     world = DB.World(sandbox)
     try:
-        src = build_source()
+        src = build_source(path)
         try:
             ip = WalletInterp(src, world)
         except Exception as exc:                        # noqa: BLE001
@@ -820,9 +824,12 @@ def main(argv):
     except (AttributeError, ValueError):
         pass
     terse = "--terse" in argv or "--check" in argv
+    path = None
+    if "--file" in argv:
+        path = argv[argv.index("--file") + 1]
     c = Checker(terse)
-    c.note("booting %s" % os.path.relpath(DEMO, SUITE))
-    run(c)
+    c.note("booting %s" % os.path.relpath(path or DEMO, SUITE))
+    run(c, path)
     if c.failed:
         print("check-wallet-boot: FAILED (%d of %d checks)" % (c.failed, c.n))
         return 1
