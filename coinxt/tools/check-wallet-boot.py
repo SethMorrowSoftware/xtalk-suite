@@ -928,6 +928,111 @@ def drive(c, ip, world, sandbox):
     for k, v in saved.items():
         ip.globals[k] = v
 
+    # ---- the script types, per INPUT rather than per wallet --------------
+    # Three defects lived here, all invisible to the vector gate because that
+    # gate drives the CALCULATOR (cw*) and every one of these is in how the
+    # APP chooses what to hand it.
+    saved2 = {k: ip.globals.get(k) for k in
+              ("swanetwork", "swascripttype", "swakind", "swaimportedwif",
+               "swaaddresses", "swautxos")}
+    cr2 = WV.REF.cr
+
+    # (1) An UNCOMPRESSED key has no SegWit address - BIP-143 forbids one - so
+    # the import falls back to legacy. It used to record that legacy address
+    # with the type the SCREEN was set to, and waSignSpend signs by type: a
+    # P2PKH output got the BIP-143 sighash and a witness with an empty
+    # scriptSig, which no node accepts.
+    wif_u = cr2.wif_encode(bytes.fromhex("01" * 32), "testnet", False)
+    ip.globals["swanetwork"] = "testnet"
+    ip.globals["swascripttype"] = "p2wpkh"
+    ip.globals["swakind"] = "key"
+    ip.globals["swaimportedwif"] = wif_u
+    recs = ip.call("waImportedRecords", [])
+    rec1 = recs.get("1", {})
+    addr_u = str(rec1.get("address", ""))
+    c.ck("an uncompressed key falls back to a LEGACY address",
+         addr_u[:1] in "mn", addr_u)
+    c.eq("and the record says the type it really is, not the screen's",
+         str(rec1.get("scripttype", "")), "p2pkh")
+    c.eq("waRecordType agrees with the record", 
+         str(ip.call("waRecordType", [rec1])), "p2pkh")
+    c.eq("while the WALLET's own type is still what a new address would be",
+         str(ip.call("waInputType", [])), "p2wpkh")
+
+    # (2) waSignSpend asked waAccountNode() before the check that excuses an
+    # imported key, so a WIF wallet could not sign ANYTHING - refused with
+    # "no account key yet" about a wallet holding the only key it needs.
+    ip.globals["swaaddresses"] = recs
+    coin = {"address": addr_u, "txid": "aa" * 32, "vout": 0, "value": 100000,
+            "height": 100, "frozen": False, "selected": True}
+    ins = ip.call("cwListAdd", [ip.call("waEmptyList", []),
+                                ip.call("cwTxInput", ["aa" * 32, 0, 4294967293])])
+    spk = ip.call("cwScriptForAddress", ["testnet", addr_u])
+    outs = ip.call("cwListAdd", [ip.call("waEmptyList", []),
+                                 ip.call("cwTxOutput", [90000, spk])])
+    sel = ip.call("cwListAdd", [ip.call("waEmptyList", []), coin])
+    raw = ""
+    try:
+        raw = str(ip.call("waSignSpend", [ins, outs, sel, 0]))
+        c.ck("an imported key can sign at all", True)
+    except LCS.Thrown as exc:
+        c.ck("an imported key can sign at all", False, str(exc.msg)[:140])
+    if raw:
+        # (3) and it signs it as the LEGACY input it is: no segwit marker,
+        # a real scriptSig. The two together are what a node checks.
+        c.ck("and signs it as a legacy spend, not a segwit one",
+             raw[8:12] != "0001", raw[:24])
+        dec = ip.call("cwTxDecode", [raw])
+        ssig = str(dec["inputs"]["1"]["scriptsig"])
+        c.ck("with a real scriptSig on the input", len(ssig) > 100,
+             "%d hex chars" % len(ssig))
+
+    # A COMPRESSED key at p2sh-p2wpkh keeps its own type - the fallback must
+    # not fire where a SegWit address genuinely exists.
+    wif_c = cr2.wif_encode(bytes.fromhex("01" * 32), "testnet", True)
+    ip.globals["swaimportedwif"] = wif_c
+    ip.globals["swascripttype"] = "p2sh-p2wpkh"
+    rec2 = ip.call("waImportedRecords", []).get("1", {})
+    c.eq("a compressed key at p2sh-p2wpkh keeps that type",
+         str(rec2.get("scripttype", "")), "p2sh-p2wpkh")
+    c.ck("and gets a P2SH address", str(rec2.get("address", ""))[:1] == "2",
+         str(rec2.get("address", "")))
+
+    # waRecordType's fallback: a record from an older saved file has no
+    # scripttype, and for those the wallet's type really was the answer.
+    c.eq("a record with no type falls back to the wallet's",
+         str(ip.call("waRecordType", [{"scripttype": ""}])), "p2sh-p2wpkh")
+    for k, v in saved2.items():
+        ip.globals[k] = v
+
+    # ---- mainnet is ALLOWED, and the public seed is called out -----------
+    # The published test mnemonic is what this stack pre-fills. Mainnet is not
+    # refused - that is a deliberate product decision - so what the wallet
+    # owes instead is a warning that cannot be missed or dismissed.
+    saved3 = {k: ip.globals.get(k) for k in ("swanetwork", "swamnemonic")}
+    ip.globals["swamnemonic"] = str(ip.constants.get("kWaTestMnemonic", ""))
+    ip.globals["swanetwork"] = "testnet"
+    c.ck("the pre-filled seed is recognised as the published one",
+         ip.call("waIsPublicTestSeed", []) is True)
+    warn_t = str(ip.call("waPublicSeedWarning", []))
+    c.ck("and is warned about even on testnet", "PUBLISHED" in warn_t, warn_t[:80])
+    ip.globals["swanetwork"] = "mainnet"
+    warn_m = str(ip.call("waPublicSeedWarning", []))
+    c.ck("with a DANGER warning on mainnet", warn_m.startswith("DANGER"), warn_m[:80])
+    c.ck("that says the keys are derivable by anyone",
+         "ANYONE" in warn_m, warn_m[:120])
+    c.ck("the Wallet screen carries it",
+         warn_m[:40] in str(ip.call("waWalletAdvice", [])))
+    # A REAL seed on mainnet gets the ordinary mainnet line, not the danger one.
+    ip.globals["swamnemonic"] = ("legal winner thank year wave sausage worth "
+                                 "useful legal winner thank yellow")
+    c.ck("a real seed is not called public",
+         ip.call("waIsPublicTestSeed", []) is not True)
+    c.eq("and gets no public-seed warning",
+         str(ip.call("waPublicSeedWarning", [])), "")
+    for k, v in saved3.items():
+        ip.globals[k] = v
+
     # ---- the log recorded all of it --------------------------------------
     click(ip, world, "nv_lg")
     c.ck("the log is not empty", len(_fld(world, "lg_text")) > 0)

@@ -11970,22 +11970,32 @@ command waDeriveAddresses
 end waDeriveAddresses
 
 private function waImportedRecords
-   local tInfo, tList, tRec, tAddr
+   local tInfo, tList, tRec, tAddr, tType
    put waEmptyList() into tList
    if sWaImportedWif is empty then
       return tList
    end if
    put cwWifInfo(sWaImportedWif, sWaNetwork) into tInfo
-   put tInfo[sWaScriptType] into tAddr
+   put sWaScriptType into tType
+   put tInfo[tType] into tAddr
    if tAddr is "" then
+      -- AN UNCOMPRESSED KEY HAS NO SEGWIT ADDRESS - BIP-143 forbids one, so
+      -- cwWifInfo leaves both SegWit slots empty and the only address this
+      -- key has is legacy. Falling back is right; recording the fallback as
+      -- the type the SCREEN says was not. The record said p2wpkh over a
+      -- P2PKH scriptPubKey, and waSignSpend signs by type - so this key's
+      -- coins were signed with the BIP-143 sighash and given a witness with
+      -- an empty scriptSig, which every node rejects. The wallet could not
+      -- spend from an address it was showing as its own.
       put tInfo["p2pkh"] into tAddr
+      put "p2pkh" into tType
    end if
    put tAddr into tRec["address"]
    put tInfo["pubkey"] into tRec["pubkey"]
    put tInfo["seckey"] into tRec["seckey"]
    put 0 into tRec["change"]
    put 0 into tRec["index"]
-   put sWaScriptType into tRec["scripttype"]
+   put tType into tRec["scripttype"]
    put cwScriptForAddress(sWaNetwork, tAddr) into tRec["script"]
    put "(imported)" into tRec["suffix"]
    return cwListAdd(tList, tRec)
@@ -12251,13 +12261,13 @@ private function waWalletAdvice
       return tOut
    end if
    if sWaNetwork is "mainnet" then
+      if waIsPublicTestSeed() then
+         return waPublicSeedWarning()
+      end if
       return "This is MAINNET. Everything on the Send screen spends real coins."
    end if
    if waIsPublicTestSeed() then
-      return "This is " & sWaNetwork & ", so nothing here is worth anything - " & \
-            "and this is BIP-39's PUBLISHED test seed, so every address it " & \
-            "makes is public. Fund it with test coins only. Mainnet is " & \
-            "refused until you generate or restore a seed of your own."
+      return waPublicSeedWarning()
    end if
    return "This is " & sWaNetwork & ", so nothing here is worth anything. That " & \
          "is the right place to learn what the buttons do."
@@ -12436,17 +12446,14 @@ command waWalletClick pRole
 end waWalletClick
 
 command waSetNetwork pNetwork
-   -- REFUSED, not warned about: the published test seed must not reach
-   -- mainnet. A warning is a thing people click past, and the cost here is
-   -- somebody else's coins arriving at an address the whole world can spend
-   -- from. Generating or restoring a seed clears it, and then this opens.
-   if pNetwork is "mainnet" and waIsPublicTestSeed() then
-      uiStatus "Refused: this wallet still holds BIP-39's PUBLISHED test " & \
-            "seed. It is printed in the specification, so on mainnet anyone " & \
-            "could spend what you receive. Generate or restore a seed first.", \
-            "bad"
-      exit waSetNetwork
-   end if
+   -- MAINNET IS ALLOWED, INCLUDING WITH THE PUBLISHED TEST SEED, and the
+   -- warning is carried instead of the refusal. That is a deliberate choice
+   -- and worth stating plainly, because the risk is real: those twelve words
+   -- are printed in BIP-39, so anyone can sweep an address derived from them.
+   -- What the wallet owes in return is that the warning cannot be missed and
+   -- cannot be dismissed - it is on the Wallet screen, on Receive next to the
+   -- address somebody is about to be paid at, and on Send. It reappears on
+   -- every repaint because it is computed, not acknowledged once.
    -- Changing network changes every address in the wallet, so it re-derives
    -- and drops the chain state rather than showing addresses from one network
    -- beside balances from another.
@@ -12571,16 +12578,6 @@ command waOpenWallet
       exit waOpenWallet
    end if
    put cwTrim(field "wl_mnemonic") into sWaMnemonic
-   -- The same refusal from the other side. waSetNetwork guards the switch TO
-   -- mainnet; this guards typing the public seed while already there. Both
-   -- exist because either one alone leaves a two-step path to the same place.
-   if sWaNetwork is "mainnet" and waIsPublicTestSeed() then
-      put empty into sWaMnemonic
-      uiStatus "Refused: that is BIP-39's PUBLISHED test seed, printed in " & \
-            "the specification. On mainnet anyone could spend what you " & \
-            "receive. Nothing was derived.", "bad"
-      exit waOpenWallet
-   end if
    put field "wl_pass" into sWaPassphrase
    waDeriveAccount
    uiStatus "Open: " & sWaLabel & ", " & sWaScriptType & " on " & sWaNetwork & \
@@ -12711,7 +12708,14 @@ command waPaintReceive
       put cwUriBuild(tAddr, "", field "rc_label", field "rc_message") into tUri
    end if
    put tUri into field "rc_uri"
-   put "derivation   " & cwAccountPath(sWaScriptType, sWaNetwork, sWaAccount) & \
+   -- THE WARNING GOES FIRST, above the derivation and the scriptPubKey. This
+   -- is the screen where somebody copies an address to be paid at, so it is
+   -- the last moment the wallet can say that anyone can spend what arrives.
+   put "" into tOut
+   if waPublicSeedWarning() is not "" then
+      put waPublicSeedWarning() & return & return into tOut
+   end if
+   put tOut & "derivation   " & cwAccountPath(sWaScriptType, sWaNetwork, sWaAccount) & \
          tRec["suffix"] & return into tOut
    put "script type  " & tRec["scripttype"] & return after tOut
    put "scriptPubKey " & tRec["script"] & return after tOut
@@ -12973,6 +12977,13 @@ command waDeriveMore
    -- wallet restored from the same seed elsewhere will NOT find, and that is
    -- a decision a person should make on purpose.
    local tNode, tI, tCount, tRec, tList, tStart, tJ
+   if sWaKind is "key" then
+      -- One key is one address per script type. There is no chain to extend,
+      -- and waAccountNode would throw about a missing account key, which is
+      -- true and says nothing about why the button did not work.
+      throw "an imported key has a single address, so there is no chain to " & \
+            "extend. Open a seed wallet to derive more."
+   end if
    put sWaAddresses into tList
    put cwListCount(tList) into tCount
    put waAccountNode() into tNode
@@ -13089,7 +13100,28 @@ private function waDefaultRate
    return "5"
 end waDefaultRate
 
+function waPublicSeedWarning
+   -- The one place the public-seed sentence is written. Every screen that can
+   -- cost somebody money asks for it, so the wording cannot drift between
+   -- them and no screen can quietly stop showing it.
+   if not waIsPublicTestSeed() then
+      return ""
+   end if
+   if sWaNetwork is "mainnet" then
+      return "DANGER: this is BIP-39's PUBLISHED test seed on MAINNET. Those " & \
+            "twelve words are printed in the specification, so ANYONE can " & \
+            "derive these private keys and spend anything sent here. Do not " & \
+            "receive real coins at this wallet. Generate or restore a seed " & \
+            "of your own first."
+   end if
+   return "This is BIP-39's PUBLISHED test seed, so every address it makes " & \
+         "is public. Fine for testnet; never fund it on mainnet."
+end waPublicSeedWarning
+
 private function waSendWarning
+   if waPublicSeedWarning() is not "" and sWaNetwork is "mainnet" then
+      return waPublicSeedWarning()
+   end if
    if sWaKind is "watch" then
       return "This is a WATCH-ONLY wallet. It can build a transaction and " & \
             "export it as a PSBT for something that holds the keys, but it " & \
@@ -13417,11 +13449,57 @@ function waSequenceNumber
 end waSequenceNumber
 
 function waInputType
+   -- The wallet's OWN type: what a NEW address gets, and what change goes to.
+   -- It is not necessarily the type of a coin being spent - see
+   -- waRecordType, and read its note before using this one in a signing path.
    if sWaKind is "multisig" then
       return "p2wsh"
    end if
    return sWaScriptType
 end waInputType
+
+function waRecordType pAddrRec
+   -- THE TYPE OF ONE ADDRESS, which is not the same question as the type of
+   -- the wallet, and the difference is what a signing path must ask.
+   -- Every record carries its own "scripttype" (cwAddressAt writes it, the
+   -- multisig builder writes p2wsh, and the imported-key path writes the type
+   -- of the address it actually chose - which for an uncompressed key is
+   -- legacy however the Wallet screen is set). Signing by the WALLET's type
+   -- signed a P2PKH output with the BIP-143 sighash and gave it a witness,
+   -- which no node accepts.
+   --
+   -- The fallback is the wallet's type rather than a throw because a record
+   -- from an older saved file predates the field, and for those every address
+   -- really was the wallet's type - that is exactly the case this replaces.
+   if pAddrRec["scripttype"] is not "" then
+      return pAddrRec["scripttype"]
+   end if
+   return waInputType()
+end waRecordType
+
+function waSelectedInputSpecs pSel
+   -- The cwEstimateVsize input list built from the ACTUAL coins, so a mixed
+   -- selection is priced by what it really costs rather than by the wallet's
+   -- nominal type. cwSimpleInputs (count x one type) is still right wherever
+   -- the caller genuinely has one type, and wrong here.
+   local tI, tCount, tRec, tAddrRec, tSpec, tOut
+   put waEmptyList() into tOut
+   put cwListCount(pSel) into tCount
+   repeat with tI = 1 to tCount
+      put pSel[tI] into tRec
+      put waRecordFor(tRec["address"]) into tAddrRec
+      put "" into tSpec
+      if tAddrRec is "" then
+         put waInputType() into tSpec["type"]
+      else
+         put waRecordType(tAddrRec) into tSpec["type"]
+      end if
+      put sWaM into tSpec["m"]
+      put cwListCount(sWaCosigners) into tSpec["cosigners"]
+      put cwListAdd(tOut, tSpec) into tOut
+   end repeat
+   return tOut
+end waSelectedInputSpecs
 
 function waChangeType
    -- Change goes to the same script type as the wallet, which is what keeps
@@ -13455,8 +13533,7 @@ private function waMaxSpend pCoins, pOutTypes, pRate, pFixedSat
       put cwListAdd(tSel, tRec) into tSel
       add tRec["value"] to tTotal
    end repeat
-   put cwSimpleInputs(waInputType(), cwListCount(tSel), sWaM, \
-         cwListCount(sWaCosigners)) into tIns
+   put waSelectedInputSpecs(tSel) into tIns
    put cwEstimateVsize(tIns, pOutTypes) into tVsize
    put cwFeeFor(tVsize, pRate) into tFee
    put "" into tOut
@@ -13570,7 +13647,7 @@ function waSignSpend pInputs, pOutputs, pSel, pLock
    -- node at the moment it is needed and dropped immediately after, so no
    -- private key outlives the loop iteration that used it.
    local tNode, tI, tCount, tRec, tAddrRec, tDigest, tSig, tSigs, tWits
-   local tScripts, tAmounts, tType, tRaw, tVersion, tWs, tKeys
+   local tScripts, tAmounts, tType, tRaw, tVersion, tWs, tKeys, tInType
    put 2 into tVersion
    put waEmptyList() into tSigs
    put waEmptyList() into tWits
@@ -13578,9 +13655,17 @@ function waSignSpend pInputs, pOutputs, pSel, pLock
    if tType is "p2pkh" then
       put 1 into tVersion
    end if
-   put waAccountNode() into tNode
-   if tNode["kind"] is not "private" and sWaKind is not "key" then
-      throw "this wallet has no private key loaded, so it cannot sign."
+   -- AN IMPORTED KEY HAS NO ACCOUNT NODE, and asking for one threw before the
+   -- check below could excuse it - so a WIF wallet could not sign anything at
+   -- all, refused with "this wallet has no account key yet. Open one on the
+   -- Wallet screen", about a wallet that was open and holding the only key it
+   -- needs. The condition already named this case; the call ordering defeated
+   -- it. The key path gets its key from waSeckeyFor, which reads the WIF.
+   if sWaKind is not "key" then
+      put waAccountNode() into tNode
+      if tNode["kind"] is not "private" then
+         throw "this wallet has no private key loaded, so it cannot sign."
+      end if
    end if
    -- taproot commits to every input's scriptPubKey and amount, so those are
    -- gathered before the loop rather than per input
@@ -13619,15 +13704,17 @@ function waSignSpend pInputs, pOutputs, pSel, pLock
                   "send it to your cosigners, and combine what comes back " & \
                   "on the Tools screen."
          end if
-      else if tType is "p2tr" then
+      else if waRecordType(tAddrRec) is "p2tr" then
          put cwSighash("p2tr", tVersion, pInputs, pOutputs, tI, pLock, "", 0, "", \
                tScripts, tAmounts) into tDigest
          put cwSignTaproot(waSeckeyFor(tAddrRec), tDigest, "") into tSig
       else
-         put cwSighash(tType, tVersion, pInputs, pOutputs, tI, pLock, \
+         -- PER INPUT, not per wallet. See waRecordType.
+         put waRecordType(tAddrRec) into tInType
+         put cwSighash(tInType, tVersion, pInputs, pOutputs, tI, pLock, \
                tAddrRec["pubkey"], tRec["value"], "", waEmptyList(), \
                waEmptyList()) into tDigest
-         put cwSignInput(tType, waSeckeyFor(tAddrRec), tDigest, \
+         put cwSignInput(tInType, waSeckeyFor(tAddrRec), tDigest, \
                tAddrRec["pubkey"]) into tSig
       end if
       put cwListAdd(tSigs, tSig["scriptsig"]) into tSigs

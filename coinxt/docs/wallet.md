@@ -59,6 +59,14 @@ a restored seed with an optional BIP-39 passphrase, watch-only from an account
 `xpub`/`ypub`/`zpub`/`tpub`/`upub`/`vpub`, a single imported WIF key, or an
 m-of-n P2WSH multisig from cosigner account keys.
 
+**The seed this wallet starts with is PUBLIC.** It opens holding BIP-39's
+published test mnemonic so every screen has something true to show without you
+inventing a seed first. Those twelve words are printed in the specification, so
+anyone can derive the same private keys and spend anything sent to them. Mainnet
+is not blocked - that is deliberate - but the wallet says so on the Wallet
+screen, at the top of Receive above the address itself, and on Send. Generate or
+restore a seed of your own before you accept a single real coin.
+
 **Networks.** mainnet, testnet, signet and regtest, each with its own base58
 version bytes, bech32 HRP and extended-key versions. A network change drops the
 address and balance state rather than showing addresses from one chain beside
