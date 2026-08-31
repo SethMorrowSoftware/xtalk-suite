@@ -1020,6 +1020,16 @@ function cwParsePath pPath
       throw "wallet-core: cwParsePath: " & quote & pPath & quote & \
             " ends with a separator and names no level."
    end if
+   -- REFUSE A TRAILING SEPARATOR HERE, WHILE IT IS STILL VISIBLE. The engine
+   -- ignores ONE trailing delimiter when it counts chunks, so a loop that
+   -- splits and then checks each level never sees the empty last one: "m/84'/"
+   -- would parse as a perfectly good one-level path. CoinXT's own
+   -- cxHdDerivePath carries the same explicit refusal for the same reason,
+   -- and this one was found by the vector gate rather than by an engine.
+   if char -1 of tText is "/" then
+      throw "wallet-core: cwParsePath: " & quote & pPath & quote & \
+            " ends with a separator, which names a level that is not there."
+   end if
    repeat while true
       put offset("/", tText) into tPos
       if tPos is 0 then
