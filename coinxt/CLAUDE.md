@@ -1712,6 +1712,20 @@ Both fixed in riptide's runner, whose own fixture suite still catches its four
 seeded defects; this wallet is simply the first body in the tree to write
 either form.
 
+**AND THE SAME DEFECT CLASS LANDED ONE FILE LATER, WHICH IS THE ONLY REASON TO
+WRITE IT DOWN AGAIN.** The gate review above found a mutation check that
+compared a Python bool against a description string, so it could never pass.
+Hours later, `check-wallet-boot.py` was found with ELEVEN checks written the
+other way round: riptide's `Checker.ck` is `(label, ok, detail)` - a boolean and
+a message - and the vector gate's `Checker` sitting beside it is
+`(label, got, want)`. Eleven comparisons written in the second shape against the
+first passed for any value at all. The two APIs are one import apart and the
+mistake is invisible at the call site, which is the whole point: **a checker
+whose second argument means different things in two files will be got wrong, and
+neither shape errors.** The boot gate has `ck()` for booleans and `eq()` for
+values now, and a scan asserts no value-shaped `ck()` remains. If a third
+Checker ever appears in this member, give it the same two names.
+
 **WHAT IS STILL OPEN.** Neither gate is an OXT pass: they settle that the code RUNS and what it
 computes, not parser behaviour and not that a window appeared. Everything in
 `docs/OXT-ENGINE-NOTES.md` the interpreter models differently is invisible to both, the case rule
