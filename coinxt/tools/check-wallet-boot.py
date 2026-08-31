@@ -695,7 +695,13 @@ def drive(c, ip, world, sandbox):
         put_field("tl_msgAddr", addr)
 
     # ---- Settings: the wallet file, sealed and re-opened ------------------
+    # THE SAVED WALLET IS MADE DISTINGUISHABLE FIRST. Forget resets to the
+    # demonstration wallet, which derives the SAME account key the boot did -
+    # so "the key changed" and "the key came back" would both hold with no
+    # file involved at all, and neither check would mean anything. A label
+    # the default does not carry is what makes the round trip observable.
     click(ip, world, "nv_st")
+    ip.globals["swalabel"] = "Boot gate wallet"
     path = os.path.join(sandbox, "boot.dat")
     put_field("st_path", path)
     put_field("st_password", "boot-gate-passphrase")
@@ -709,15 +715,21 @@ def drive(c, ip, world, sandbox):
         c.ck("and the seed is NOT in it",
              str(ip.constants.get("kWaTestMnemonic", "")).encode("latin-1")
              not in open(path, "rb").read(), "the mnemonic is in the file")
+        c.ck("and the password does not stay on the Settings screen",
+             _fld(world, "st_password"), "")
         click(ip, world, "st_forget")
-        c.ck("Forget clears the account key",
-             str(ip.globals.get("swaaccountxpub", "")) != xpub,
-             "the key survived Forget")
+        c.ck("Forget returns to the demonstration wallet",
+             str(ip.globals.get("swalabel", "")), "Demonstration wallet")
+        c.ck("and leaves no seed, passphrase or pasted key on screen",
+             (_fld(world, "wl_mnemonic"), _fld(world, "wl_pass"),
+              _fld(world, "wl_xkey")), ("", "", ""))
         put_field("st_path", path)
         put_field("st_password", "boot-gate-passphrase")
         click(ip, world, "st_load")
-        c.ck("loading it back restores the same account key",
-             str(ip.globals.get("swaaccountxpub", "")), xpub)
+        c.ck("loading it back restores the saved wallet",
+             str(ip.globals.get("swalabel", "")), "Boot gate wallet")
+        c.ck("with the same account key", str(ip.globals.get(
+            "swaaccountxpub", "")), xpub)
         # tampering is CAUGHT, which is the whole point of the associated data
         blob = bytearray(open(path, "rb").read())
         blob[-1] ^= 0x01
@@ -735,7 +747,9 @@ def drive(c, ip, world, sandbox):
 
 
 def main(argv):
-    terse = "--terse" in argv
+    # `--check` too, because that is the spelling this member's other gates
+    # take and the one a maintainer will reach for first.
+    terse = "--terse" in argv or "--check" in argv
     c = DB.Checker(terse)
     c.note("booting %s" % os.path.relpath(DEMO, SUITE))
     run(c)

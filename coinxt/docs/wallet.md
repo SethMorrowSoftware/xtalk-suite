@@ -217,19 +217,30 @@ its names disjoint from every other library in the suite). The groups are:
 | Amounts | `cwSatToBtc`, `cwBtcToSat`, `cwFormatAmount`, `cwParseAmount` |
 | Size and fees | `cwVarIntLen`, `cwInputBaseBytes`, `cwInputWitnessBytes`, `cwOutputBytes`, `cwEstimateVsize`, `cwSimpleInputs`, `cwFeeFor`, `cwDustThreshold`, `cwRbfMinFee`, `cwFeeRateLabel` |
 | Coin selection | `cwSelectCoins` |
-| Transactions | `cwTxInput`, `cwTxOutput`, `cwOutpointsHex`, `cwSequencesList`, `cwOutputsHex`, `cwSighash`, `cwSignInput`, `cwSignTaproot`, `cwSignMultisig`, `cwMultisigKeys`, `cwTxSerialize`, `cwTxid`, `cwTxDecode` |
+| Transactions | `cwTxInput`, `cwTxOutput`, `cwOutpointsHex`, `cwSequencesList`, `cwOutputsHex`, `cwSighash`, `cwSignInput`, `cwSignTaproot`, `cwSignMultisig`, `cwMultisigKeys`, `cwWitnessBytes`, `cwCompressPubkey`, `cwTxSerialize`, `cwTxid`, `cwTxDecode` |
 | PSBT | `cwPsbtCreate`, `cwPsbtParse`, `cwPsbtEmit`, `cwPsbtSign`, `cwPsbtFinalize`, `cwPsbtCombine`, `cwPsbtSummary`, `cwPsbtFind`, `cwPsbtFindAll`, `cwPsbtInputAmount`, `cwPsbtInputScript`, `cwPsbtInputType`, `cwPathBytes`, `cwPathFromBytes`, `cwPsbtUnsignedTx` |
 | Messages | `cwMsgDigest`, `cwMsgSign`, `cwMsgVerify` |
 | URIs | `cwUriParse`, `cwUriBuild`, `cwPercentEncode`, `cwPercentDecode` |
 | Descriptors | `cwDescriptorChecksum`, `cwDescriptor`, `cwDescriptorMultisig` |
 | JSON | `cwJsonParse`, `cwJsonType`, `cwJsonCount`, `cwJsonAt`, `cwJsonMember`, `cwJsonKeys`, `cwJsonText`, `cwJsonPath`, `cwJsonGet`, `cwJsonEscape`, `cwJsonString2` |
 | QR | `cwQrVersionFor`, `cwQrCodewords`, `cwQrMatrix`, `cwQrText`, `cwQrBmp` |
-| Lists and bytes | `cwListNew`, `cwListAdd`, `cwListCount`, `cwLeBytes`, `cwBeBytes`, `cwLeRead`, `cwBeRead`, `cwReverseBytes`, `cwHexIsClean`, `cwHexCompare`, `cwSortHexList`, `cwLower`, `cwUpper`, `cwTrim`, `cwB64Encode`, `cwB64Decode`, `cwStripWhitespace`, `cwVarIntHex`, `cwHexListHas`, `cwSigsList`, `cwWifInfo`, `cwMnemonicStrength`, `cwMnemonicWordCount`, `cwVersion` |
+| Lists and bytes | `cwCharIndex`, `cwSameBytes`, `cwListNew`, `cwListAdd`, `cwListCount`, `cwLeBytes`, `cwBeBytes`, `cwLeRead`, `cwBeRead`, `cwReverseBytes`, `cwHexIsClean`, `cwHexCompare`, `cwSortHexList`, `cwLower`, `cwUpper`, `cwTrim`, `cwB64Encode`, `cwB64Decode`, `cwStripWhitespace`, `cwVarIntHex`, `cwHexListHas`, `cwSigsList`, `cwWifInfo`, `cwMnemonicStrength`, `cwMnemonicWordCount`, `cwVersion` |
 
 Errors are thrown strings beginning `wallet-core: `, matching CoinXT's own
 convention. Two handlers answer a question instead of throwing, for the same
 reason `cxMnemonicValidate` does: `cwAddressIsValid` and `cwHexIsClean` are
 asked on every keystroke of a form, and a validator that raises cannot say no.
+
+**`cwCharIndex` and `cwSameBytes` exist for one reason and it is worth knowing
+before you reach for `offset()` or `is`.** Both of those honour `the
+caseSensitive`, which defaults to FALSE, so both fold case - and Base58,
+Bitcoin Core's descriptor alphabet and WIF are all case-SIGNIFICANT. Anywhere
+this layer looks a character up in an alphabet whose two cases sit at different
+positions, or binds a signature to a particular address string, it uses these
+instead. CoinXT's own header calls that the single most dangerous line in its
+file; this layer had to learn it a second time, and
+`tools/check-wallet-vectors.py` now re-runs every vector under the engine's
+rule so it cannot be forgotten a third.
 
 ## Running it
 
