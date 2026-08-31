@@ -1158,6 +1158,70 @@ def drive(c, ip, world, sandbox):
     for k, v in saved5.items():
         ip.globals[k] = v
 
+    # ---- the Electrum wire shapes, as a real server sends them -----------
+    # THE BYTES IN THE TIP CASE ARE A REAL SERVER'S. waNetApply chose its
+    # parser by backend NAME ("electrum-tor"), so the clearnet Electrum
+    # transport - same protocol, different carrier - had every reply parsed as
+    # ESPLORA. The tip is the first request a sync makes, so it was the first
+    # to fail, and it failed by measuring a perfectly good JSON object against
+    # "is this a bare integer" and blaming the server.
+    #
+    # All five shapes are pinned, not just the one that broke: the other four
+    # go through the same dispatch and had never seen a real reply either.
+    saved6 = {k: ip.globals.get(k) for k in
+              ("swabackend", "swainflight", "swatipheight", "swafeerates",
+               "swautxos", "swahistory")}
+    ip.globals["swabackend"] = "electrum-clear"
+
+    def wire(kind, arg, body):
+        ip.globals["swainflight"] = {"kind": kind, "arg": arg}
+        ip.call("waNetApply", [kind, arg, body])
+
+    wire("tip", "", '{"id":1,"jsonrpc":"2.0","result":{"height":5127803,'
+                    '"hex":"00e008208dbd5e3fc1750a0000000000000000000000"}}')
+    c.eq("a real server's chain tip is read", str(ip.globals.get("swatipheight")),
+         "5127803")
+    # estimatefee answers in BTC per KILOBYTE - a different unit from every
+    # other number on that screen, so a missed conversion is a fee 100000x out.
+    wire("fees", "", '{"id":2,"jsonrpc":"2.0","result":0.00001}')
+    c.eq("BTC/kB is converted to sat/vB",
+         str((ip.globals.get("swafeerates") or {}).get("6")), "1")
+    # -1 is Electrum for "no estimate", and must not become a negative rate.
+    wire("fees", "", '{"id":3,"jsonrpc":"2.0","result":-1}')
+    c.eq("a -1 no-estimate leaves the rate alone",
+         str((ip.globals.get("swafeerates") or {}).get("6")), "1")
+    addr0 = str((ip.globals.get("swaaddresses") or {}).get("1", {})
+                .get("address", ""))
+    wire("utxos", addr0,
+         '{"id":4,"jsonrpc":"2.0","result":[{"tx_hash":"%s","tx_pos":0,'
+         '"height":5127000,"value":123456}]}' % ("bb" * 32))
+    u = ip.globals.get("swautxos") or {}
+    c.eq("listunspent lands as one coin", int(LCS._n(u.get("n", 0))), 1)
+    c.eq("at the right address", str(u.get("1", {}).get("address", "")), addr0)
+    c.eq("with the right value", int(LCS._n(u.get("1", {}).get("value", 0))),
+         123456)
+    wire("history", addr0,
+         '{"id":5,"jsonrpc":"2.0","result":[{"tx_hash":"%s","height":5127000}]}'
+         % ("cc" * 32))
+    c.eq("get_history lands as one row",
+         int(LCS._n((ip.globals.get("swahistory") or {}).get("n", 0))), 1)
+    # A JSON-RPC error must be REPORTED, never parsed as data.
+    try:
+        wire("tip", "", '{"id":6,"jsonrpc":"2.0","error":{"code":-32601,'
+                        '"message":"unknown method"}}')
+        c.ck("a JSON-RPC error reply is refused", False, "it was accepted")
+    except LCS.Thrown as exc:
+        c.ck("a JSON-RPC error reply is refused",
+             "refused" in str(exc.msg), str(exc.msg)[:80])
+    # And the protocol predicate itself, over every backend.
+    for backend, want in (("electrum-tor", True), ("electrum-clear", True),
+                          ("esplora-tor", False), ("esplora-clear", False),
+                          ("offline", False)):
+        c.eq("waIsElectrum(%s)" % backend,
+             ip.call("waIsElectrum", [backend]) is True, want)
+    for k, v in saved6.items():
+        ip.globals[k] = v
+
     # ---- the log recorded all of it --------------------------------------
     click(ip, world, "nv_lg")
     c.ck("the log is not empty", len(_fld(world, "lg_text")) > 0)

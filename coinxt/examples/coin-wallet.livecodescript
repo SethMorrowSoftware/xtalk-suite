@@ -15197,9 +15197,23 @@ command waNetStart pRec
       -- "host:port" string in this engine, so it doubles as the correlation
       -- token the way the Tor stream handle does.
       put sWaHost & ":" & sWaPort into tSock
-      put tSock into sWaSock
       put tSock into pRec["sock"]
       put pRec into sWaInFlight
+      -- ONE CONNECTION, MANY REQUESTS. Electrum is designed for exactly that
+      -- - the id field on every request exists to correlate answers over a
+      -- persistent link - and this transport originally opened a fresh socket
+      -- per request, which broke twice over. In this engine a socket IS its
+      -- "host:port" string, so request 2 asked to open a socket whose id was
+      -- the one request 1 had just closed; and a sync is 2 + 2 x the address
+      -- count requests, so a full scan would have hammered a public server
+      -- with eighty-odd connections in a few seconds. The tip answered and
+      -- nothing after it did, which reads as an empty wallet.
+      if sWaSock is not empty then
+         put "busy" into sWaNetState
+         waSockSend
+         exit waNetStart
+      end if
+      put tSock into sWaSock
       put "dialing" into sWaNetState
       waLog "open " & tSock
       open socket to tSock with message "waSockOpened"
@@ -15413,21 +15427,38 @@ on waSockOpened pSocket
          exit waSockOpened
       end if
       put "busy" into sWaNetState
-      put waElectrumRequest(sWaInFlight) into tLine
-      waLog "-> " & tLine
-      write tLine & numToChar(10) to socket pSocket
-      if the result is not empty then
-         waNetFail "writing to " & pSocket & " - " & the result
-         exit waSockOpened
-      end if
-      -- ONE LINE IS ONE ANSWER. Electrum frames its JSON-RPC by newline, so
-      -- reading until one is the whole framing problem solved - no buffer to
-      -- accumulate and no completeness heuristic to get wrong.
-      read from socket pSocket until numToChar(10) with message "waSockLine"
+      waSockSend
    catch tError
       waNetFail "the clearnet Electrum socket raised: " & tError
    end try
 end waSockOpened
+
+private command waSockSend
+   -- Write the in-flight request and arm the read. Shared by the first
+   -- request on a new connection and every one that reuses it, so the two
+   -- cannot drift.
+   local tLine
+   if sWaSock is empty or sWaInFlight is empty then
+      exit waSockSend
+   end if
+   put waElectrumRequest(sWaInFlight) into tLine
+   waLog "-> " & tLine
+   write tLine & numToChar(10) to socket sWaSock
+   if the result is not empty then
+      -- A WRITE THAT FAILS ON A REUSED CONNECTION is the ordinary way a
+      -- server drops an idle client, so the socket is forgotten and the next
+      -- tick dials again rather than the sync dying here.
+      waLog "write failed on " & sWaSock & ": " & the result & " - reconnecting"
+      put empty into sWaSock
+      put empty into sWaInFlight
+      put "idle" into sWaNetState
+      exit waSockSend
+   end if
+   -- ONE LINE IS ONE ANSWER. Electrum frames its JSON-RPC by newline, so
+   -- reading until one is the whole framing problem solved - no buffer to
+   -- accumulate and no completeness heuristic to get wrong.
+   read from socket sWaSock until numToChar(10) with message "waSockLine"
+end waSockSend
 
 on waSockLine pSocket, pData
    set the defaultStack to the short name of this stack
@@ -15441,7 +15472,7 @@ on waSockLine pSocket, pData
                " before answering."
          exit waSockLine
       end if
-      waSockClose
+      -- The connection is NOT closed here: the next request reuses it.
       waNetDeliver pData
    catch tError
       waNetFail "reading from " & pSocket & " - " & tError
