@@ -1223,10 +1223,9 @@ def check_json_and_qr(c, ip):
     # short-block half. A BIP-21 URI carrying an address, an amount and a
     # message is the realistic payload at that size, which is what the wallet
     # actually puts in a QR.
-    v7 = REF.uri_build(ADDRESSES["mainnet"][2], 123456, "Invoice 41",
-                       "thank you for the coffee and the conversation")
-    v8 = v7 + " and the second cup as well, which was also good"
-    samples = ("a", "HELLO WORLD", ADDRESSES["mainnet"][2], v7, v8)
+    big = REF.uri_build(ADDRESSES["mainnet"][2], 123456, "Invoice 41",
+                        "thank you for the coffee and the conversation")
+    samples = ("a", "HELLO WORLD", ADDRESSES["mainnet"][2], big)
     seen = set()
     for text in samples:
         version = REF.qr_version_for(len(text))
@@ -1235,9 +1234,15 @@ def check_json_and_qr(c, ip):
         want = ["".join(str(x) for x in row) for row in REF.qr_matrix(text)]
         c.ck("the QR matrix for %r (version %d)"
              % (text[:20], version), got, want)
-    c.ck("the QR vectors reach the version-information block (>= 7) and a "
-         "second codeword group (>= 8)",
-         (max(seen) >= 8, sorted(seen)), (True, sorted(seen)))
+    # ASSERTED AS PROPERTIES, not as version numbers. What has to be reached
+    # is the version-information block (any version >= 7) and a symbol with a
+    # SECOND codeword group, and one large payload happens to give both - so
+    # the check asks the capacity table which versions those are rather than
+    # naming two that were true the day this was written.
+    c.ck("the QR vectors reach the version-information block and a second "
+         "codeword group (versions %s)" % ",".join(str(v) for v in sorted(seen)),
+         (any(v >= 7 for v in seen), any(REF.QR_M[v][4] > 0 for v in seen)),
+         (True, True))
     c.ck("a QR version is chosen by capacity", call("cwQrVersionFor", [412]), 15)
     c.refuses("a payload too big for version 15 is refused",
               lambda: call("cwQrVersionFor", [413]))

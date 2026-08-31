@@ -226,7 +226,15 @@ qualified `there is`, because a real engine run of riptide's five-card boot
 reported all 63 off-card controls missing from a stack where every one
 existed - unqualified `there is a field X` answers for the CURRENT card
 only (engine notes 5.6; the first engine record ever sent back from the
-carried block, and it found the block's own defect).
+carried block, and it found the block's own defect). And since 2026-08-31 it
+asks about IMAGES as well as fields, buttons and graphics, because a demo may
+build a control the KIT does not - coinxt's wallet paints its QR into one, and
+`rc_qr` reported as missing on a stack that had just built it. That is the
+SECOND widening of the same list (graphics were the first, after every `uiPill`
+reported missing), so the general form is worth stating once: **the types a
+demo can build are not the types the kit builds.** This one cost no engine
+time - `coinxt/tools/check-wallet-boot.py` found it headlessly - which is the
+argument for those runners in one line.
 
 Two things about it generalise. **The control list is DERIVED from each source,
 not hand-picked** - and getting that derivation right took three passes, each
