@@ -1033,6 +1033,36 @@ def drive(c, ip, world, sandbox):
     for k, v in saved3.items():
         ip.globals[k] = v
 
+    # ---- the screen unlocks even when the build throws -------------------
+    # A Windows tester saw the window build and then OXT and the IDE both
+    # freeze. The mechanism is `lock screen` with an unguarded body: a throw
+    # skips the unlock, nothing repaints, and the engine looks hung with no
+    # error anybody can read - so the freeze HID whatever really threw.
+    # waDefaults is the other half: waBuild runs from preOpenStack, before
+    # any wallet state exists, and cwTypeIndex refuses an empty script type
+    # (correctly - it is a closed set) with "unknown script type """.
+    c.eq("the boot leaves the screen unlocked", world.locked, 0)
+    c.ck("waDefaults fills the state a painter can reach",
+         all(str(ip.globals.get(k, "")) != ""
+             for k in ("swanetwork", "swascripttype", "swakind")),
+         {k: ip.globals.get(k) for k in
+          ("swanetwork", "swascripttype", "swakind")})
+    # And it is IDEMPOTENT: waBoot calls waResetWallet after it, so running
+    # both must not fight. Re-running defaults must change nothing.
+    before = {k: ip.globals.get(k) for k in
+              ("swanetwork", "swascripttype", "swakind", "swaunit")}
+    ip.call("waDefaults", [])
+    c.eq("waDefaults is idempotent over an opened wallet",
+         {k: ip.globals.get(k) for k in before}, before)
+    # The empty type really does throw, so the guard above is not decoration.
+    try:
+        ip.call("cwAccountPath", ["", "testnet", 0])
+        c.ck("an empty script type is refused by wallet-core", False,
+             "it was accepted")
+    except LCS.Thrown as exc:
+        c.ck("an empty script type is refused by wallet-core",
+             "unknown script type" in str(exc.msg), str(exc.msg)[:90])
+
     # ---- the log recorded all of it --------------------------------------
     click(ip, world, "nv_lg")
     c.ck("the log is not empty", len(_fld(world, "lg_text")) > 0)

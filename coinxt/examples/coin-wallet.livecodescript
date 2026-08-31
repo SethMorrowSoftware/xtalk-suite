@@ -10686,6 +10686,13 @@ constant kWaMaxBody = 4194304
 -- costs written on the Network screen.
 constant kWaEsploraOnion = "explorerzydxu5ecjrkwceayqybizmpjjznk5izmitf2modhcusuqlid.onion"
 constant kWaEsploraClear = "blockstream.info"
+-- A SECOND public Esplora, same API and same per-chain roots, for when the
+-- first is unreachable. Both are HTTPS only, which matters: this engine's TLS
+-- behaviour has never been measured here (docs/OXT-ENGINE-NOTES.md 6.8), so if
+-- `load URL` cannot do HTTPS on your build then NEITHER clearnet host will
+-- work and the answer is a Tor backend (plain HTTP inside the circuit) or your
+-- own local Esplora typed into the host field.
+constant kWaEsploraClearAlt = "mempool.space"
 constant kWaElectrumOnion = "explorernuoc63nb.onion"
 constant kWaElectrumPort = 110
 
@@ -11332,10 +11339,80 @@ end waTick
 -- ==============================================================================
 
 command waBuild
+   -- THE SCREEN MUST ALWAYS UNLOCK. `lock screen` with an unguarded body is
+   -- how a script error becomes a frozen ENGINE: the throw skips the unlock,
+   -- the compositor never repaints, and OXT and the IDE both appear hung with
+   -- no error anybody can read. That is not a hypothetical - it is what a
+   -- Windows tester saw, and the freeze hid whatever really threw. An error
+   -- here is now an error message on a window that redraws.
+   --
+   -- waDefaults runs FIRST because waBuild is called from preOpenStack, which
+   -- is BEFORE waBoot sets any wallet state, and several things a screen can
+   -- reach ask wallet-core for the script type. cwTypeIndex refuses an empty
+   -- one - correctly, it is a closed set - with "unknown script type """,
+   -- which is a true statement about a variable nobody had assigned yet.
+   local tError
    if the uUiVersion of this stack is kWaUiVersion then
       exit waBuild
    end if
+   waDefaults
    lock screen
+   try
+      waBuildAll
+   catch tError
+      unlock screen
+      waLog "BUILD FAILED: " & tError
+      answer "The wallet could not build its window:" & return & return & \
+            tError & return & return & "Nothing else has run. Please report " & \
+            "this with the text above."
+      exit waBuild
+   end try
+   unlock screen
+   set the uUiVersion of this stack to kWaUiVersion
+   put "true" into sWaBuilt
+end waBuild
+
+command waDefaults
+   -- The state every screen may read, set before the window is built. These
+   -- are the same values waResetWallet uses; it is called later, from waBoot,
+   -- and re-setting them there is harmless. What is NOT harmless is a painter
+   -- reaching wallet-core with an empty script type.
+   if sWaNetwork is "" then
+      put "testnet" into sWaNetwork
+   end if
+   if sWaScriptType is "" then
+      put "p2wpkh" into sWaScriptType
+   end if
+   if sWaKind is "" then
+      put "seed" into sWaKind
+   end if
+   if sWaAccount is "" then
+      put 0 into sWaAccount
+   end if
+   if sWaM is "" then
+      put 2 into sWaM
+   end if
+   if sWaUnit is "" then
+      put "BTC" into sWaUnit
+   end if
+   if sWaBackend is "" then
+      put "offline" into sWaBackend
+   end if
+   if sWaCosigners is "" then
+      put waEmptyList() into sWaCosigners
+   end if
+   if sWaAddresses is "" then
+      put waEmptyList() into sWaAddresses
+   end if
+   if sWaUtxos is "" then
+      put waEmptyList() into sWaUtxos
+   end if
+   if sWaHistory is "" then
+      put waEmptyList() into sWaHistory
+   end if
+end waDefaults
+
+private command waBuildAll
    uiChrome "CoinXT Wallet", kWaWidth, kWaHeight, kWaBandH
    waBuildNav
    waBuildWallet
@@ -11354,10 +11431,7 @@ command waBuild
          "Verified statically and by tools/check-wallet-vectors.py against an " & \
          "independent implementation; needs an OXT pass (Tor: + a live-Tor pass).", \
          "16,598,1184,636"
-   set the uUiVersion of this stack to kWaUiVersion
-   put "true" into sWaBuilt
-   unlock screen
-end waBuild
+end waBuildAll
 
 command waBuildNav
    -- THE TEN RAIL BUTTONS ARE NAMED LITERALLY, like every other control this
@@ -11439,13 +11513,28 @@ command waShow pScreen
    -- The sweep. Every control whose name is "<code>_..." belongs to a screen;
    -- everything else (the chrome, the rail, the footer) belongs to all of
    -- them and is never touched.
-   local tCode, tI, tCount, tName, tPrefix
+   local tCode, tError
    put waCodeForScreen(pScreen) into tCode
    if tCode is "" then
       exit waShow
    end if
    put pScreen into sWaScreen
+   -- Guarded for the same reason waBuild is: a throw inside the sweep would
+   -- leave the screen locked and the engine looking hung.
    lock screen
+   try
+      waShowSweep tCode
+   catch tError
+      unlock screen
+      waLog "screen sweep failed: " & tError
+      exit waShow
+   end try
+   unlock screen
+   waRefreshScreen
+end waShow
+
+private command waShowSweep pCode
+   local tI, tCount, tName, tPrefix
    put the number of controls of this card into tCount
    repeat with tI = 1 to tCount
       put the short name of control tI of this card into tName
@@ -11454,15 +11543,13 @@ command waShow pScreen
          if tPrefix is "nv" or tPrefix is "ui" then
             next repeat
          end if
-         set the visible of control tI of this card to (tPrefix is tCode)
+         set the visible of control tI of this card to (tPrefix is pCode)
       end if
    end repeat
    repeat with tI = 1 to 10
-      waNavPaint waScreenCode(tI), (waScreenName(tI) is pScreen)
+      waNavPaint waScreenCode(tI), (waScreenName(tI) is sWaScreen)
    end repeat
-   unlock screen
-   waRefreshScreen
-end waShow
+end waShowSweep
 
 private command waNavPaint pCode, pActive
    local tName
@@ -15163,7 +15250,13 @@ on waUrlDone pUrl, pStatus
          unload URL pUrl
       catch tError
       end try
-      waNetFail "the URL library said " & pStatus & " for " & pUrl
+      -- NAME THE REMEDY. "the URL library said error" over a URL is where a
+      -- person stops, and the two things worth trying are a different public
+      -- mirror and a transport that does not need TLS at all.
+      waNetFail "the URL library said " & pStatus & " for " & pUrl & \
+            " - if that repeats, try host " & kWaEsploraClearAlt & \
+            " (same API), or a Tor backend, which runs plain HTTP inside " & \
+            "the circuit and so does not depend on this engine's TLS."
       exit waUrlDone
    end if
    put empty into tBody
