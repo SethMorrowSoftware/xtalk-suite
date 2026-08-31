@@ -810,6 +810,15 @@ def drive(c, ip, world, sandbox):
 def main(argv):
     # `--check` too, because that is the spelling this member's other gates
     # take and the one a maintainer will reach for first.
+    # LINE-BUFFERED. This gate runs for minutes and writes to a pipe or a
+    # file in every context that matters, where Python block-buffers - so a
+    # run that is deriving forty addresses looks identical to a run that has
+    # hung, which is the same "it looks finished / it looks stuck" confusion
+    # the suite harness's own completeness trailer exists to end.
+    try:
+        sys.stdout.reconfigure(line_buffering=True)
+    except (AttributeError, ValueError):
+        pass
     terse = "--terse" in argv or "--check" in argv
     c = Checker(terse)
     c.note("booting %s" % os.path.relpath(DEMO, SUITE))
