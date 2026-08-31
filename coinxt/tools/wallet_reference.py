@@ -634,9 +634,23 @@ def select_coins(utxos, target_sat, fee_rate, input_type, output_types,
     else:
         raise ValueError("unknown strategy %r" % strategy)
 
+    # MANUAL SPENDS THE WHOLE TICKED SET. The loop below adds one coin at a
+    # time and returns on the first prefix that pays, which is right for the
+    # automatic strategies and wrong for this one - the ticked set IS the
+    # answer the person gave, and consolidating twenty small coins into one
+    # payment is the main reason to tick a set at all. This file had the same
+    # prefix behaviour as the script, which is why the gate could not see it:
+    # two implementations agreeing is not the same as either being right.
+    candidates = [pool] if strategy == "manual" else None
+
     sel = []
-    for u in pool:
-        sel.append(u)
+    for step, u in enumerate(pool):
+        if candidates is not None:
+            if step:
+                break
+            sel = list(pool)
+        else:
+            sel.append(u)
         r = _result(sel, True)
         if r["change"] >= dust:
             r.update({"ok": True, "why": "with change", "strategy": strategy})

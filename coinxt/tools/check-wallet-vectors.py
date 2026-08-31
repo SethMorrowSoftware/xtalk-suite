@@ -729,6 +729,42 @@ def check_selection(c, ip):
              got["fee"], 100000 - target)
         c.ck(lbl + ": and the oracle agrees", got["fee"], want["fee"])
 
+    # THE TICKED SET IS THE ANSWER, not a prefix of it. Both the script and
+    # this gate's oracle used to add ticked coins one at a time and stop at
+    # the first prefix that paid - the same rule as the automatic strategies -
+    # so ticking three coins to consolidate them spent one. Two
+    # implementations agreeing is not the same as either being right, and the
+    # existing manual vector could not see it because both its ticked coins
+    # were needed to reach the target. This one ticks far more than it needs.
+    surplus_ticked = [dict(x) for x in COINS[:3]]
+    for coin in surplus_ticked:
+        coin["selected"] = True
+    got = call("cwSelectCoins", [lst(surplus_ticked), 10000, 5, "p2wpkh",
+                                 lst(["p2wpkh"]), "p2wpkh", "manual", 0, 0])
+    want = REF.select_coins(surplus_ticked, 10000, 5, "p2wpkh", ["p2wpkh"],
+                            "p2wpkh", strategy="manual")
+    c.ck("manual spends EVERY ticked coin, not the first that covers it",
+         [int(x["value"]) for x in unlst(got["selected"])],
+         [x["value"] for x in surplus_ticked])
+    c.ck("and the oracle agrees about the fee", got["fee"], want["fee"])
+    c.ck("and about the change", got["change"], want["change"])
+
+    # THE BnB ACCEPTANCE WINDOW, at a coin that lands inside it only under the
+    # long-term-rate reading. Cost of change is the change output priced NOW
+    # plus its future spend priced at kCwLongTermFeeRate; pricing that second
+    # half at the current rate instead moved the upper bound 345 satoshi at
+    # 5 sat/vB, and every existing vector sat outside the band. This one does
+    # not, so the two rules can no longer read as agreement.
+    band = [{"value": 101100, "txid": "f" * 64, "vout": 0, "confirmations": 4}]
+    got = call("cwSelectCoins", [lst(band), 100000, 5, "p2wpkh",
+                                 lst(["p2wpkh"]), "p2wpkh", "bnb", 0, 0])
+    want = REF.select_coins(band, 100000, 5, "p2wpkh", ["p2wpkh"], "p2wpkh",
+                            strategy="bnb")
+    c.ck("a coin inside the cost-of-change band is spent WITHOUT change",
+         got["change"], 0)
+    c.ck("and the oracle takes the same branch", got["why"], want["why"])
+    c.ck("and computes the same fee", got["fee"], want["fee"])
+
     manual = [dict(x) for x in COINS]
     manual[1]["selected"] = True
     manual[3]["selected"] = True

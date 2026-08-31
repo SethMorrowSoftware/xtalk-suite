@@ -134,6 +134,13 @@ constant kCwStems = "x,y,z,x,Z"
 -- idea why. A DER-encoded low-S ECDSA signature is 71 or 72 bytes and the
 -- difference is one leading zero, so 72 is budgeted; BIP-340's is exactly 64.
 
+-- THE LONG-TERM FEE RATE, in sat/vB: what spending a change output is
+-- assumed to cost LATER, when nobody knows what the rate will be. Bitcoin
+-- Core's own default, and the only rate in this file that is not the
+-- transaction's own - which is the point, because the two halves of "cost of
+-- change" happen at different times.
+constant kCwLongTermFeeRate = 10
+
 constant kCwSigBytes = 72
 constant kCwPubkeyBytes = 33
 constant kCwSchnorrSigBytes = 64
@@ -1713,8 +1720,23 @@ function cwSelectCoins pUtxos, pTargetSat, pFeeRate, pInputType, pOutputTypes, p
    put cwSortCoins(tPool, tStrategy) into tPool
    put cwListNew() into tSel
    put cwListCount(tPool) into tCount
+   -- MANUAL SPENDS THE WHOLE TICKED SET, NOT A PREFIX OF IT. The loop below
+   -- adds one coin at a time and returns on the FIRST prefix that pays, which
+   -- is right for the automatic strategies and wrong for this one: the
+   -- contract at the top of this handler says "exactly the coins the user
+   -- ticked", the Coins screen says the same thing to the person ticking
+   -- them, and neither was true. Ticking twenty small coins to sweep them
+   -- into one payment - which is the main reason anybody ticks a coin set at
+   -- all - spent the first one or two and left the rest, silently.
+   if tStrategy is "manual" then
+      put 1 into tCount
+   end if
    repeat with tI = 1 to tCount
-      put cwListAdd(tSel, tPool[tI]) into tSel
+      if tStrategy is "manual" then
+         put tPool into tSel
+      else
+         put cwListAdd(tSel, tPool[tI]) into tSel
+      end if
       put cwSelectionResult(tSel, pTargetSat, pFeeRate, pInputType, pOutputTypes, \
             pChangeType, true, pM, pCosigners) into tResult
       if tResult["change"] >= tDust then
@@ -1868,6 +1890,7 @@ private function cwBranchAndBound pPool, pTargetSat, pFeeRate, pInputType, pOutp
    local tSorted, tCount, tI, tCoin, tEff, tValues, tCoins, tRemain, tSum
    local tCost, tBaseFee, tLo, tHi, tCostOfChange, tState, tDepth, tValue
    local tTries, tBack, tOut, tSel, tResult, tChangeCost, tEmpty
+   local tLongTermCost
    put cwSortCoins(pPool, "largest") into tSorted
    put cwListCount(tSorted) into tCount
    put cwInputCost(pInputType, pFeeRate, pM, pCosigners) into tCost
@@ -1886,8 +1909,18 @@ private function cwBranchAndBound pPool, pTargetSat, pFeeRate, pInputType, pOutp
    put cwEstimateVsize(cwListNew(), pOutputTypes) into tBaseFee
    put cwFeeFor(tBaseFee, pFeeRate) into tBaseFee
    put pTargetSat + tBaseFee into tLo
+   -- COST OF CHANGE HAS TWO HALVES AND THEY ARE PRICED AT DIFFERENT RATES.
+   -- Making the change output happens NOW, at this transaction's fee rate.
+   -- SPENDING it happens later, at whatever the rate is then - which nobody
+   -- knows, so Core uses a long-term estimate and so does this. Pricing the
+   -- future spend at today's rate, which this line used to do, makes the
+   -- acceptance window swing with the current rate: at 5 sat/vB it was 345
+   -- satoshi narrower than the same wallet's own oracle computed, and no
+   -- vector sat inside the band, so two different rules read as agreement.
    put cwFeeFor(cwOutputBytes(pChangeType), pFeeRate) into tChangeCost
-   put tCost + tChangeCost into tCostOfChange
+   put cwInputCost(pInputType, kCwLongTermFeeRate, pM, pCosigners) \
+         into tLongTermCost
+   put tLongTermCost + tChangeCost into tCostOfChange
    put tLo + tCostOfChange into tHi
    -- the suffix sums: what is still reachable from each position on
    put 0 into tRemain[tCount + 1]
