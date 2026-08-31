@@ -56,9 +56,16 @@ DEMO = os.path.join(MEMBER, "examples", "coin-wallet.livecodescript")
 PREFILL = ("constant kWaPrefill = 20", "constant kWaPrefill = 2")
 
 
-def run_gate(path):
-    r = subprocess.run([sys.executable, GATE, "--check", "--file", path],
-                       capture_output=True, text=True)
+def run_gate(path, first_failure=False):
+    # --first-failure: a fixture's verdict is settled the moment its seeded
+    # defect is caught, and this gate's remaining work per run is a QR build
+    # and a Forget-then-reload - minutes each, re-proving what it has already
+    # said. The CLEAN run below does NOT pass it, so the pass that makes the
+    # failures mean anything is still a complete one.
+    args = [sys.executable, GATE, "--check", "--file", path]
+    if first_failure:
+        args.append("--first-failure")
+    r = subprocess.run(args, capture_output=True, text=True)
     return r.returncode, r.stdout + r.stderr
 
 
@@ -103,7 +110,7 @@ def main():
             path = os.path.join(tmp, "mutated.livecodescript")
             with open(path, "w", encoding="utf-8") as fh:
                 fh.write(src)
-            rc, out = run_gate(path)
+            rc, out = run_gate(path, first_failure=True)
             if rc == 0:
                 failed += 1
                 print("FAIL  %s - the gate passed a stack carrying it" % label)

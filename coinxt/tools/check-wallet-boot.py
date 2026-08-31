@@ -179,6 +179,24 @@ class Checker(DB.Checker):
     later by the person who had just fixed it. Two names now, so the shapes
     cannot be confused: ck() takes a boolean, eq() takes two values."""
 
+    #: set by --first-failure, which ONLY tools/test-wallet-boot.py passes.
+    #: A fixture's verdict is settled the moment its seeded defect is caught,
+    #: and everything after that point is the gate re-proving what it has
+    #: already said - which for this gate means a QR build and a
+    #: Forget-then-reload, minutes of work per fixture for no extra
+    #: information. A normal run never sets it and always reports in full,
+    #: because there the checks AFTER a failure are exactly the ones a person
+    #: needs to see.
+    stop_early = False
+
+    class Enough(Exception):
+        pass
+
+    def ck(self, label, ok, detail=""):
+        super().ck(label, ok, detail)
+        if not ok and self.stop_early:
+            raise Checker.Enough()
+
     def eq(self, label, got, want):
         self.ck(label, got == want,
                 "got:  %r\n       want: %r" % (got, want))
@@ -855,8 +873,12 @@ def main(argv):
     if "--file" in argv:
         path = argv[argv.index("--file") + 1]
     c = Checker(terse)
+    c.stop_early = "--first-failure" in argv
     c.note("booting %s" % os.path.relpath(path or DEMO, SUITE))
-    run(c, path)
+    try:
+        run(c, path)
+    except Checker.Enough:
+        print("  (stopped at the first failure, as --first-failure asked)")
     if c.failed:
         print("check-wallet-boot: FAILED (%d of %d checks)" % (c.failed, c.n))
         return 1
