@@ -1088,6 +1088,37 @@ def drive(c, ip, world, sandbox):
     c.ck("the two ports differ, or one chain would answer for the other",
          int(LCS._n(ip.constants.get("kWaElectrumClearPort", 0)))
          != int(LCS._n(ip.constants.get("kWaElectrumClearTestPort", 0))))
+    # AND IT MUST NOT REPORT ITSELF BROKEN. The checks above verified the host
+    # and the port and not the resulting STATE, so they passed over a
+    # transport that told every user "OnionXT did not answer" - about a
+    # transport whose whole purpose is needing neither Tor nor TLS. The Tor
+    # requirement was written as a deny-list ("not offline and not
+    # esplora-clear") and the new transport was simply not in it.
+    saved_onion = ip.globals.get("swahaveonion")
+    ip.globals["swahaveonion"] = "false"          # no Tor on this machine
+    ip.call("waSetBackend", ["electrum-clear"])
+    c.ck("clearnet Electrum works with NO OnionXT",
+         str(ip.globals.get("swanetstate")) != "failed",
+         "%s / %s" % (ip.globals.get("swanetstate"), ip.globals.get("swanetwhy")))
+    c.eq("and says nothing about Tor", str(ip.globals.get("swanetwhy")), "")
+    ip.call("waSetBackend", ["esplora-clear"])
+    c.ck("clearnet Esplora works with no OnionXT too",
+         str(ip.globals.get("swanetstate")) != "failed",
+         str(ip.globals.get("swanetwhy")))
+    ip.call("waSetBackend", ["electrum-tor"])
+    c.ck("but a TOR transport does report it",
+         "OnionXT" in str(ip.globals.get("swanetwhy")),
+         str(ip.globals.get("swanetwhy")))
+    # The predicate itself, over every backend, so a new one cannot inherit
+    # the wrong default the way this one did.
+    for backend, want in (("offline", False), ("esplora-clear", False),
+                          ("electrum-clear", False), ("esplora-tor", True),
+                          ("electrum-tor", True)):
+        c.eq("waNeedsTor(%s)" % backend,
+             ip.call("waNeedsTor", [backend]) is True, want)
+    ip.globals["swahaveonion"] = saved_onion
+    ip.call("waSetBackend", ["electrum-clear"])
+
     # It must be ALLOWED on the chains it serves and refused on the others.
     c.eq("allowed on testnet", str(ip.call("waBackendChainWhy", [])), "")
     ip.globals["swanetwork"] = "mainnet"
@@ -1103,6 +1134,28 @@ def drive(c, ip, world, sandbox):
     c.ck("the privacy text covers it", "ELECTRUM OVER CLEARNET" in priv)
     c.ck("and says it needs no TLS", "no TLS" in priv, priv[-400:][:120])
     for k, v in saved4.items():
+        ip.globals[k] = v
+
+    # ---- the wallet boots even when openStack never fired ----------------
+    # Pasting this script into a stack that is ALREADY OPEN means openStack
+    # has already fired, so waBoot never runs: no probe, no wallet state. Both
+    # engine-reported defects above are that one cause wearing two disguises.
+    c.eq("the boot marked itself booted", str(ip.globals.get("swabooted")),
+         "true")
+    saved5 = {k: ip.globals.get(k) for k in
+              ("swabooted", "swahavecoin", "swascripttype")}
+    ip.globals["swabooted"] = ""
+    ip.globals["swahavecoin"] = ""
+    ip.call("waEnsureBooted", [])
+    c.eq("waEnsureBooted boots a wallet that never got openStack",
+         str(ip.globals.get("swabooted")), "true")
+    c.eq("and the probe really ran", str(ip.globals.get("swahavecoin")), "true")
+    # Idempotent: a second call must not re-probe and re-reset a live wallet.
+    ip.globals["swalabel"] = "sentinel"
+    ip.call("waEnsureBooted", [])
+    c.eq("and a second call changes nothing",
+         str(ip.globals.get("swalabel")), "sentinel")
+    for k, v in saved5.items():
         ip.globals[k] = v
 
     # ---- the log recorded all of it --------------------------------------

@@ -11144,6 +11144,7 @@ local sWaHost             -- the backend host
 local sWaPort             -- the backend port
 local sWaSocksPort        -- the Tor SOCKS port
 local sWaSock             -- the clearnet Electrum socket ("host:port"), empty when none
+local sWaBooted           -- "true" once waBoot has run, however it was reached
 local sWaNetState         -- idle | dialing | busy | ok | failed
 local sWaNetWhy           -- the last network message
 local sWaTipHeight        -- the chain tip, when a backend has told us
@@ -11222,6 +11223,7 @@ command waBoot
    -- The order matters. Probe first, because every screen's advice depends on
    -- which extensions answered; then load or start a wallet; then arm the
    -- pump; then run the boot self-check, which reports what all of that found.
+   put "true" into sWaBooted
    waProbe
    waResetWallet
    waShow "wallet"
@@ -11888,8 +11890,32 @@ end waBuildSettings
 -- being clickable and then complaining.
 -- ==============================================================================
 
+command waEnsureBooted
+   -- WHY THIS EXISTS: waBoot runs from openStack, and openStack fires when a
+   -- stack is OPENED. Paste this script into a stack that is already open -
+   -- which is how somebody tries it the first time - and openStack has
+   -- already fired, so waBoot never runs at all: no capability probe, no
+   -- wallet, no state. Every symptom of that is misleading rather than
+   -- absent. sWaHaveOnion is empty, so `is not "true"`, so a transport
+   -- reports that OnionXT did not answer when OnionXT is embedded three
+   -- thousand lines above and fine. sWaScriptType is empty, so wallet-core
+   -- refuses "unknown script type """ about a variable nobody assigned.
+   -- Both were reported from a real engine as two separate defects; they are
+   -- one, and neither is what it looks like.
+   --
+   -- So the wallet boots itself the first time anybody touches it. Reopening
+   -- the stack is still the documented way and still the better one - this is
+   -- the safety net, not the mechanism.
+   if sWaBooted is "true" then
+      exit waEnsureBooted
+   end if
+   put "true" into sWaBooted
+   waBoot
+end waEnsureBooted
+
 on mouseUp
    local tName, tPrefix, tRole, tError, tI
+   waEnsureBooted
    -- BUTTONS ONLY. Fields carry the same "<screen>_<role>" names, and routing
    -- a click on one would run that screen's repaint - which writes the stored
    -- value back over whatever the person had just typed into the field they
@@ -14949,6 +14975,19 @@ command waSetBackend pBackend
    waLog "backend: " & pBackend & " (" & sWaHost & ":" & sWaPort & ")"
 end waSetBackend
 
+function waNeedsTor pBackend
+   -- WHICH TRANSPORTS NEED TOR, named positively. This was written the other
+   -- way round - "not offline and not esplora-clear" - and the clearnet
+   -- Electrum transport was added without anybody remembering to add it to
+   -- that list, so a transport whose entire purpose is needing neither TLS
+   -- nor Tor reported that OnionXT had not answered.
+   --
+   -- A deny-list of the things a rule does NOT apply to is wrong by default
+   -- for anything new; an allow-list of the things it DOES apply to is right
+   -- by default. The next transport added here needs no edit to be correct.
+   return pBackend is "esplora-tor" or pBackend is "electrum-tor"
+end waNeedsTor
+
 command waRefreshNetState
    -- The two reasons a transport cannot run that are knowable WITHOUT talking
    -- to anything: OnionXT is absent, or the backend does not carry the chain
@@ -14962,8 +15001,7 @@ command waRefreshNetState
    -- chain state that failure was about.
    local tWhy
    put empty into tWhy
-   if sWaBackend is not "offline" and sWaHaveOnion is not "true" \
-         and sWaBackend is not "esplora-clear" then
+   if waNeedsTor(sWaBackend) and sWaHaveOnion is not "true" then
       -- FIRST, because when both are true this is the one to fix first.
       put "OnionXT did not answer, so this transport cannot run here." into tWhy
    end if
