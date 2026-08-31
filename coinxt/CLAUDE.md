@@ -1667,6 +1667,34 @@ version-8 symbols are built so the version-information block and the second
 codeword group are reached. The honest split now also has to ADD UP - two names
 sat in both the re-derived set and the excused set, so it printed 35 + 45 for 78.
 
+**AND ON ITS FIRST FULL RUN THE BOOT GATE FOUND TWO THINGS NEITHER FILE OWNS.**
+Both are worth carrying because both were latent in code the whole family shares.
+
+The carried self-check block's `scMissing` asked about fields, buttons and
+graphics - the three types the KIT builds - and this wallet paints its QR into
+an IMAGE, which is the only way a BMP this layer builds becomes something a
+phone can read. Registered and built, `rc_qr` reported as missing. The block had
+already been widened once for exactly this reason (graphics, after every `uiPill`
+reported missing), and the lesson it did not draw the first time is the general
+one: **the list of types a demo can build is not the list of types the kit
+builds.** Fixed in `tools/demo-selfcheck.livecodescript` and re-carried into all
+fifteen adopters; riptide's boot runner learned the type in the same change,
+because the block it executes now asks about it.
+
+And `tools/lcs-interp.py` split `put X into Y` with a NON-GREEDY REGEX, so a
+statement whose value is a string containing the word `into` -
+`put "... A seed typed into this" & return after tOut`, in this wallet's own
+custody note - split inside its own message and handed the parser an
+unterminated string literal. It surfaced as a `ValueError` out of the string
+scanner, about as far from the cause as an error can land. The engine has a real
+tokenizer and never had this; the model has a string-aware `split_outside_strings`
+now, in both copies and in riptide's runner. **This is the second time a member's
+executable gate has found a latent defect in that shared interpreter** (riptide's
+negative chunk range was the first), and both were found the same way: by
+executing a form no other member happened to write. Note WHERE it was: a paint
+handler for a screen that is not the one the boot opens, so every gate in the
+tree had been green over code that had never run.
+
 **WHAT IS STILL OPEN.** Neither gate is an OXT pass: they settle that the code RUNS and what it
 computes, not parser behaviour and not that a window appeared. Everything in
 `docs/OXT-ENGINE-NOTES.md` the interpreter models differently is invisible to both, the case rule

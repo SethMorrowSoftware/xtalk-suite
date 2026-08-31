@@ -370,8 +370,13 @@ class DemoExpr(LCS._Expr):
         rest = self.s[self.i:]
 
         # `there is a|an|no <thing> <expr>` - never throws, answers a boolean
+        # IMAGE joined the list on 2026-08-31, with the carried self-check
+        # block: scMissing asks about it now, because a demo may build a
+        # control the KIT does not (coinxt's wallet paints a QR into one).
+        # Without it here every adopter's scMissing walk would die on an
+        # unmodelled expression rather than answer.
         m = re.match(r'there\s+is\s+(a|an|no)\s+'
-                     r'(field|button|graphic|card|file|folder)\s+', rest,
+                     r'(field|button|graphic|image|card|file|folder)\s+', rest,
                      re.I)
         if m:
             self.i += m.end()
@@ -381,7 +386,7 @@ class DemoExpr(LCS._Expr):
             name = LCS._disp(self.p_concat())
             cardspec = None
             m2 = re.match(r'\s*of\s+card\s+', self.s[self.i:], re.I)
-            if m2 and kind in ("field", "button", "graphic"):
+            if m2 and kind in ("field", "button", "graphic", "image"):
                 self.i += m2.end()
                 cardspec = LCS._disp(self.p_concat())
             if kind == "card":
@@ -746,11 +751,17 @@ class DemoInterp(LCS.Interp):
             return i + 1
 
         # ---- put into engine containers (fields, url, msg)
-        m = re.match(r'put\s+(.+?)\s+(into|after|before)\s+'
-                     r'(field\s+.+?|url\s*\(.+\)|url\s+.+|msg)$', line, re.I)
-        if m:
-            value = self.eval_expr(m.group(1), env)
-            prep, tgt = m.group(2).lower(), m.group(3).strip()
+        # STRING-AWARE (2026-08-31), through the interpreter's own helper:
+        # a non-greedy regex splits inside a literal that happens to contain
+        # the word `into`, which leaves an unterminated string as the value
+        # expression. See LCS.split_outside_strings for the case that found it.
+        parts = (LCS.split_outside_strings(line[4:],
+                                           ("into", "after", "before"))
+                 if re.match(r'put\s', line, re.I) else None)
+        if parts and re.match(r'(field\s+.+|url\s*\(.+\)|url\s+.+|msg)$',
+                              parts[2].strip(), re.I):
+            value = self.eval_expr(parts[0], env)
+            prep, tgt = parts[1], parts[2].strip()
             if tgt.lower() == "msg":
                 world.log.append("msg: " + str(LCS._disp(value)))
                 return i + 1

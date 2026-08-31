@@ -6166,6 +6166,26 @@ function cwPsbtEmit pParsed
    return cwB64Encode(tOut)
 end cwPsbtEmit
 
+private function cwPsbtDropTypes pEntries, pTypes
+   -- Every entry whose key TYPE is in pTypes, removed. BIP-174 gives the
+   -- Input Finalizer this job in as many words: once the final scriptSig and
+   -- witness are in place, the partial signatures, the sighash type, the
+   -- redeem and witness scripts and the BIP-32 derivations are no longer
+   -- required and must be cleared. Keeping them is not merely untidy - a
+   -- finalized PSBT is what gets forwarded to a broadcaster, and every
+   -- derivation left in it says which wallet and which chain position paid.
+   local tOut, tI, tCount, tEntry
+   put cwListNew() into tOut
+   put cwListCount(pEntries) into tCount
+   repeat with tI = 1 to tCount
+      put pEntries[tI] into tEntry
+      if cwHexListHas(pTypes, tEntry["type"]) is not true then
+         put cwListAdd(tOut, tEntry) into tOut
+      end if
+   end repeat
+   return tOut
+end cwPsbtDropTypes
+
 private function cwPsbtSetEntry pEntries, pType, pKeyHex, pValueHex
    -- Replace an entry of this (type, key) or append it. BIP-174 requires keys
    -- to be unique within a map, so this is the only correct way to add one.
@@ -6257,8 +6277,11 @@ function cwPsbtSign pB64, pKeys, pNetwork
                -- it is about to unlock (cwScriptForPubkey ... is not tSpk);
                -- this is the one where the check needed a tweak first, and
                -- so was the one where it was missing.
+               -- cxTaprootTweak takes and returns the X-ONLY key, and
+               -- tInternal is already x-only (that is what
+               -- PSBT_IN_TAP_INTERNAL_KEY holds), so nothing is sliced here.
                put cxTaprootTweak(cxHexDecode(tInternal), "") into tTweak
-               if cwScriptP2tr(cxHexEncode(byte 2 to 33 of tTweak["outputKey"])) \
+               if cwScriptP2tr(cxHexEncode(tTweak["outputKey"])) \
                      is not tSpk then
                   put tWhy & "input " & tI & ": its internal key is one of " & \
                         "ours, but the output does not pay to the key-path " & \
@@ -6392,6 +6415,7 @@ function cwPsbtFinalize pB64
    local tP, tTx, tIns, tCount, tI, tMap, tType, tSigs, tKeys, tWitScript
    local tOut, tScriptSigs, tWitnesses, tItems, tComplete, tWhy, tPub, tSig
    local tJ, tM, tKeyCount, tTapSig, tTxIns, tTxOuts, tHave, tRedeem, tError
+   local tSuperseded
    put cwPsbtParse(pB64) into tP
    put tP["tx"] into tTx
    put tP["inputs"] into tIns
@@ -6529,6 +6553,15 @@ function cwPsbtFinalize pB64
    -- PSBT, not a transaction, and PSBT_IN_FINAL_SCRIPTSIG and
    -- PSBT_IN_FINAL_SCRIPTWITNESS are the two fields that carry the result.
    -- They were emitted by cwPsbtInputEntries and populated by nothing.
+   put cwListNew() into tSuperseded
+   put cwListAdd(tSuperseded, kCwPsbtInPartialSig) into tSuperseded
+   put cwListAdd(tSuperseded, kCwPsbtInSighashType) into tSuperseded
+   put cwListAdd(tSuperseded, kCwPsbtInRedeemScript) into tSuperseded
+   put cwListAdd(tSuperseded, kCwPsbtInWitnessScript) into tSuperseded
+   put cwListAdd(tSuperseded, kCwPsbtInBip32) into tSuperseded
+   put cwListAdd(tSuperseded, kCwPsbtInTapKeySig) into tSuperseded
+   put cwListAdd(tSuperseded, kCwPsbtInTapBip32) into tSuperseded
+   put cwListAdd(tSuperseded, kCwPsbtInTapInternalKey) into tSuperseded
    repeat with tI = 1 to tCount
       put tIns[tI] into tMap
       if tScriptSigs[tI] is not "" then
@@ -6539,6 +6572,13 @@ function cwPsbtFinalize pB64
       if cwListCount(tItems) > 0 then
          put cwPsbtSetEntry(tMap, kCwPsbtInFinalScriptWitness, "", \
                cwWitnessBytes(tItems)) into tMap
+      end if
+      -- and DROP what the final fields supersede, but only on an input that
+      -- actually got them: an input this run could not finalize keeps
+      -- everything it had, so a partly finalized PSBT can still go back to
+      -- the cosigner who has the missing key.
+      if tScriptSigs[tI] is not "" or cwListCount(tItems) > 0 then
+         put cwPsbtDropTypes(tMap, tSuperseded) into tMap
       end if
       put tMap into tIns[tI]
    end repeat
@@ -15677,12 +15717,21 @@ function scMissing pList
    local tName, tMissing, tC, tFound
    set the defaultStack to the short name of this stack
    repeat for each item tName in pList
-      -- ALL THREE CONTROL TYPES. The kit builds fields (uiLabel/uiWrap/uiCap/
+      -- ALL FOUR CONTROL TYPES. The kit builds fields (uiLabel/uiWrap/uiCap/
       -- uiSection/uiInput/uiArea/uiTable), buttons (uiButton/uiCheckbox) AND
       -- GRAPHICS (uiGfx/uiPanel/uiPill). The first version of this asked only
       -- about fields and buttons, so every uiPill a demo builds - the Tor
       -- pills in both Quick Shares, for one - reported as a missing control on
       -- a stack where it exists.
+      --
+      -- AND IMAGES (2026-08-31), for the same reason one step further out. A
+      -- demo may build a control the KIT does not: coinxt's wallet paints a
+      -- QR into an image, which is the only way a BMP this family builds
+      -- becomes something a phone can read. Registered and built, it reported
+      -- as missing - found by coinxt/tools/check-wallet-boot.py, which boots
+      -- the stack headlessly, so this one cost no engine time. The lesson is
+      -- the one this block already carries twice: the list of types a demo
+      -- can build is not the list of types the KIT builds.
       --
       -- AND EVERY CARD (2026-08-29). Unqualified `there is a field X` answers
       -- for the CURRENT card only (engine notes 5.6) - OBSERVED when
@@ -15693,7 +15742,8 @@ function scMissing pList
       repeat with tC = 1 to the number of cards of this stack
          if there is a field tName of card tC \
                or there is a button tName of card tC \
-               or there is a graphic tName of card tC then
+               or there is a graphic tName of card tC \
+               or there is an image tName of card tC then
             put true into tFound
             exit repeat
          end if

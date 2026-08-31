@@ -108,6 +108,45 @@ class Bytes(str):
     0..255, which is what byteToNum/numToByte imply."""
 
 
+def split_outside_strings(line, words):
+    """Split `line` at the first of `words` that appears OUTSIDE a string
+    literal, as a whole word. Returns (before, word, after) or None.
+
+    A non-greedy regex cannot do this, and getting it wrong is silent. The
+    statement
+
+        put "OXT script variables are not locked memory. A seed typed into
+             this" & return after tOut
+
+    splits at the `into` INSIDE its own message, leaving an unterminated
+    string as the value expression - which surfaces far from the cause, as a
+    ValueError out of the string scanner. Found 2026-08-31 by coinxt's boot
+    gate on a paint handler no other gate had ever executed. The engine has
+    a real tokenizer and never had this problem; this is the model catching
+    up with it."""
+    low = line.lower()
+    i, instr = 0, False
+    while i < len(line):
+        c = line[i]
+        if c == '"':
+            instr = not instr
+            i += 1
+            continue
+        if not instr:
+            for w in words:
+                n = len(w)
+                if low[i:i + n] == w:
+                    before_ok = i == 0 or not (line[i - 1].isalnum()
+                                               or line[i - 1] == "_")
+                    j = i + n
+                    after_ok = j >= len(line) or not (line[j].isalnum()
+                                                      or line[j] == "_")
+                    if before_ok and after_ok:
+                        return line[:i].rstrip(), w, line[j:].lstrip()
+        i += 1
+    return None
+
+
 def _copy(v):
     """xTalk ARRAYS ARE VALUES, not references: `put tA into tB` copies, and a
     later write through tB leaves tA alone. Python dicts are references, so
@@ -464,9 +503,11 @@ class Interp:
             s = str(self.eval_expr(tgt, env))
             self.assign(tgt, s[:a - 1] + s[b:], env)
             return i + 1
-        m = re.match(r'put\s+(.+?)\s+(into|after|before)\s+(.+)$', line, re.I)
-        if m:
-            val, prep, tgt = m.group(1), m.group(2).lower(), m.group(3).strip()
+        # STRING-AWARE, not a non-greedy regex: see split_outside_strings.
+        parts = (split_outside_strings(line[4:], ("into", "after", "before"))
+                 if re.match(r'put\s', line, re.I) else None)
+        if parts:
+            val, prep, tgt = parts[0], parts[1], parts[2].strip()
             v = self.eval_expr(val, env)
             if prep == "into":
                 self.assign(tgt, v, env)

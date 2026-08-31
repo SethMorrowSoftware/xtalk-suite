@@ -983,9 +983,13 @@ def check_psbt(c, ip):
     _ss, _wit = REF.sign_input("p2wpkh", node["seckey"], dgst, node["pubkey"])
     # an EMPTY final scriptSig is not emitted at all (the script guards on
     # `is not ""`), which is what a v0 witness input should look like
+    # BIP-174's Finalizer must CLEAR what the final fields supersede - the
+    # partial signatures, the sighash type, the redeem and witness scripts
+    # and the derivations - so the only entries left are the UTXO and the
+    # final ones. This vector is what found that the layer kept them: a
+    # forwarded PSBT was carrying a derivation path saying which wallet and
+    # which chain position paid.
     final_meta = {"witness_utxo": (50000, bytes.fromhex(spk)),
-                  "bip32": {node["pubkey"]: (bytes.fromhex(fp),
-                                             "m/84'/0'/0'/0/0")},
                   "final_scriptwitness": REF.witness_bytes(_wit)}
     if _ss:
         final_meta["final_scriptsig"] = _ss

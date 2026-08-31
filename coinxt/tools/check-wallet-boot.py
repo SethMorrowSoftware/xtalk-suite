@@ -32,6 +32,9 @@ Three engine constructs the wallet uses and riptide's model does not:
      and the family's other multi-screen stacks do the same.
   2. the IMAGE control. The Receive screen paints a QR into one, which is the
      only way a BMP this layer builds becomes something a phone can read.
+     (`there is a|no image` is riptide's own now: the carried self-check block
+     gained an image arm on the same day, for the same reason, so its model
+     had to learn the type or every adopter's scMissing walk would die on it.)
   3. `the last image` as an object reference, which is how a just-created
      control is named.
 
@@ -211,13 +214,6 @@ class WalletExpr(DB.DemoExpr):
         if m:
             self.i += m.end()
             return os.path.join(self.ip.world.sandbox, "coinXTWallet.livecode")
-
-        m = re.match(r'there\s+is\s+(a|an|no)\s+image\s+', rest, re.I)
-        if m:
-            self.i += m.end()
-            name = LCS._disp(self.p_concat())
-            exists = self.ip.world.resolve("image", name) is not None
-            return (not exists) if m.group(1).lower() == "no" else exists
 
         return super().p_atom()
 
@@ -473,12 +469,14 @@ def run(c):
         # and nothing was built that the registry does not name: an
         # unregistered control is one the boot self-check can never miss.
         # The kit's own derived names are excluded - uiSection builds a
-        # "<name>Line" divider of its own, which belongs to the kit's gate
-        # and not to this app's registry.
+        # "<name>Line" divider and uiPill a "<name>Bg" rounded rectangle,
+        # both of which belong to the kit's gate and not to this app's
+        # registry.
         named = set(n.lower() for n in reg)
         extra = sorted(ct.name for cd in world.cards for ct in cd.controls
                        if ct.name and "_" in ct.name
                        and not ct.name.endswith("Line")
+                       and not ct.name.endswith("Bg")
                        and ct.name.lower() not in named)
         c.ck("the registry names every control the boot builds", not extra,
              "unregistered (%d): %s" % (len(extra), ",".join(extra)))
