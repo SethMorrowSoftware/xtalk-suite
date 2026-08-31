@@ -1063,6 +1063,48 @@ def drive(c, ip, world, sandbox):
         c.ck("an empty script type is refused by wallet-core",
              "unknown script type" in str(exc.msg), str(exc.msg)[:90])
 
+    # ---- the transport that needs neither TLS nor Tor --------------------
+    # Every other public path needs something this engine may not have: the
+    # two Esplora mirrors are HTTPS-only and the engine's TLS is unmeasured
+    # here, and both Tor transports need a daemon. On a machine with neither,
+    # the wallet had NO public backend and the only answer left was "run your
+    # own node". Electrum's wire protocol is line-delimited JSON over a plain
+    # socket, which is what `open socket` speaks.
+    saved4 = {k: ip.globals.get(k) for k in
+              ("swabackend", "swahost", "swaport", "swanetwork")}
+    ip.globals["swanetwork"] = "mainnet"
+    ip.call("waSetBackend", ["electrum-clear"])
+    c.eq("clearnet Electrum picks the public server",
+         str(ip.globals.get("swahost")),
+         str(ip.constants.get("kWaElectrumClear", "")))
+    c.eq("and mainnet's PLAIN port, not the SSL one",
+         int(LCS._n(ip.globals.get("swaport"))),
+         int(LCS._n(ip.constants.get("kWaElectrumClearPort", 0))))
+    ip.globals["swanetwork"] = "testnet"
+    ip.call("waSetBackend", ["electrum-clear"])
+    c.eq("testnet gets its own port - the port IS the chain here",
+         int(LCS._n(ip.globals.get("swaport"))),
+         int(LCS._n(ip.constants.get("kWaElectrumClearTestPort", 0))))
+    c.ck("the two ports differ, or one chain would answer for the other",
+         int(LCS._n(ip.constants.get("kWaElectrumClearPort", 0)))
+         != int(LCS._n(ip.constants.get("kWaElectrumClearTestPort", 0))))
+    # It must be ALLOWED on the chains it serves and refused on the others.
+    c.eq("allowed on testnet", str(ip.call("waBackendChainWhy", [])), "")
+    ip.globals["swanetwork"] = "mainnet"
+    c.eq("allowed on mainnet", str(ip.call("waBackendChainWhy", [])), "")
+    ip.globals["swanetwork"] = "signet"
+    c.ck("refused on signet, which it does not carry",
+         str(ip.call("waBackendChainWhy", [])) != "")
+    ip.globals["swanetwork"] = "regtest"
+    c.ck("refused on regtest", str(ip.call("waBackendChainWhy", [])) != "")
+    # And the Network screen states what it costs, like the other three.
+    ip.globals["swanetwork"] = "testnet"
+    priv = str(ip.call("waPrivacyText", []))
+    c.ck("the privacy text covers it", "ELECTRUM OVER CLEARNET" in priv)
+    c.ck("and says it needs no TLS", "no TLS" in priv, priv[-400:][:120])
+    for k, v in saved4.items():
+        ip.globals[k] = v
+
     # ---- the log recorded all of it --------------------------------------
     click(ip, world, "nv_lg")
     c.ck("the log is not empty", len(_fld(world, "lg_text")) > 0)

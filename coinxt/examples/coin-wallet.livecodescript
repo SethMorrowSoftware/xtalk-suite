@@ -10696,6 +10696,25 @@ constant kWaEsploraClearAlt = "mempool.space"
 constant kWaElectrumOnion = "explorernuoc63nb.onion"
 constant kWaElectrumPort = 110
 
+-- ELECTRUM OVER PLAIN CLEARNET TCP, and the reason it exists is the shape of
+-- what the other three transports need. Esplora is HTTPS-only on every public
+-- mirror, and this engine's TLS behaviour has never been measured here
+-- (docs/OXT-ENGINE-NOTES.md 6.8); the two Tor transports need a running tor
+-- daemon. So on a machine with neither working TLS nor Tor, the wallet had NO
+-- public backend at all and the only remaining answer was "run your own node",
+-- which is not an answer for somebody who just wants to see their balance.
+--
+-- Electrum's wire protocol is line-delimited JSON over a socket, and public
+-- servers offer it UNENCRYPTED as well as over SSL - conventionally 50001
+-- plain / 50002 SSL on mainnet, and 60001 / 60002 on testnet. Plain TCP is
+-- exactly what the engine's own `open socket` speaks, with no TLS anywhere in
+-- the path. The privacy cost is real and stated on the Network screen: the
+-- server sees your IP, and everyone between you and it sees which server you
+-- talked to (though NOT your addresses - Electrum asks by script hash).
+constant kWaElectrumClear = "electrum.blockstream.info"
+constant kWaElectrumClearPort = 50001
+constant kWaElectrumClearTestPort = 60001
+
 -- The Tor SOCKS port. 9050 is a system tor daemon; 9150 is Tor Browser's.
 constant kWaSocksDefault = 9050
 
@@ -11124,6 +11143,7 @@ local sWaBackend          -- esplora-tor | electrum-tor | esplora-clear | offlin
 local sWaHost             -- the backend host
 local sWaPort             -- the backend port
 local sWaSocksPort        -- the Tor SOCKS port
+local sWaSock             -- the clearnet Electrum socket ("host:port"), empty when none
 local sWaNetState         -- idle | dialing | busy | ok | failed
 local sWaNetWhy           -- the last network message
 local sWaTipHeight        -- the chain tip, when a backend has told us
@@ -11785,6 +11805,7 @@ command waBuildNetwork
    uiButton "nw_bEsploraTor", "Esplora over Tor", "324,90,500,116"
    uiButton "nw_bElectrumTor", "Electrum over Tor", "504,90,688,116"
    uiButton "nw_bEsploraClear", "Esplora over clearnet", "196,120,420,146"
+   uiButton "nw_bElectrumClear", "Electrum over clearnet", "424,120,688,146"
    uiCap "nw_hostCap", "Host", "196,156,250,172"
    uiInput "nw_host", "254,154,560,176"
    uiCap "nw_portCap", "Port", "570,156,610,172"
@@ -14777,6 +14798,9 @@ private function waBackendChoice
    if sWaBackend is "esplora-clear" then
       return "EsploraClear"
    end if
+   if sWaBackend is "electrum-clear" then
+      return "ElectrumClear"
+   end if
    return "Offline"
 end waBackendChoice
 
@@ -14799,9 +14823,17 @@ private function waPrivacyText
          "and it. This suite has never measured what this engine does about " & \
          "TLS certificates (OXT-ENGINE-NOTES 6.8), so https:// here is " & \
          "offered without a claim about it rather than with one." & return & return after tOut
+   put "ELECTRUM OVER CLEARNET is a PLAIN TCP socket to a public Electrum " & \
+         "server - no TLS anywhere in the path and no daemon to be running, " & \
+         "which is why it works where the other three may not. The server " & \
+         "learns your IP and which script hashes you asked about (not your " & \
+         "addresses); anyone between you and it sees that you talked to an " & \
+         "Electrum server and how much, but not what about. The chain is " & \
+         "chosen by the PORT: 50001 mainnet, 60001 testnet." & return & return after tOut
    if sWaHaveOnion is not "true" then
       put "The OnionXT layer did not answer, so the two Tor options cannot " & \
-            "work in this stack." after tOut
+            "work in this stack. Electrum over clearnet needs neither Tor " & \
+            "nor TLS and is the fallback when nothing else connects." after tOut
    else
       put "The Tor options need a tor daemon on 127.0.0.1:" & sWaSocksPort & \
             ". Nothing else does." after tOut
@@ -14818,6 +14850,8 @@ command waNetworkClick pRole
       waSetBackend "electrum-tor"
    else if pRole is "bEsploraClear" then
       waSetBackend "esplora-clear"
+   else if pRole is "bElectrumClear" then
+      waSetBackend "electrum-clear"
    else if pRole is "test" then
       waApplyNetworkFields
       waNetQueue "tip", ""
@@ -14897,6 +14931,16 @@ command waSetBackend pBackend
    else if pBackend is "esplora-clear" then
       put kWaEsploraClear into sWaHost
       put 443 into sWaPort
+   else if pBackend is "electrum-clear" then
+      put kWaElectrumClear into sWaHost
+      -- THE PORT IS THE CHAIN SELECTOR here, where Esplora used a path root.
+      -- One Electrum connection serves exactly one chain and never says which,
+      -- so getting this wrong is the silent-empty-wallet failure again.
+      if sWaNetwork is "mainnet" then
+         put kWaElectrumClearPort into sWaPort
+      else
+         put kWaElectrumClearTestPort into sWaPort
+      end if
    end if
    set the defaultStack to the short name of this stack
    put sWaHost into field "nw_host"
@@ -14980,6 +15024,7 @@ end waNetQueue
 
 command waNetAbort
    local tError
+   waSockClose
    if sWaStream is not empty then
       try
          oxCloseStream sWaStream
@@ -15054,7 +15099,7 @@ end waNetFail
 
 command waNetStart pRec
    -- Dispatch one request to whichever transport is selected.
-   local tPath, tUrl, tError, tHandle, tBody, tMethod
+   local tPath, tUrl, tError, tHandle, tBody, tMethod, tSock
    put waEsploraPath(pRec) into tPath
    if sWaBackend is "esplora-clear" then
       -- THIS TRANSPORT CANNOT BROADCAST, and it says so instead of pretending.
@@ -15086,6 +15131,20 @@ command waNetStart pRec
       -- window; the with-message form hands the answer back through the
       -- message path instead.
       load URL tUrl with message "waUrlDone"
+      exit waNetStart
+   end if
+   if sWaBackend is "electrum-clear" then
+      -- A PLAIN TCP SOCKET, which is the whole point: no TLS for the engine
+      -- to get wrong and no daemon to be running. The socket id IS the
+      -- "host:port" string in this engine, so it doubles as the correlation
+      -- token the way the Tor stream handle does.
+      put sWaHost & ":" & sWaPort into tSock
+      put tSock into sWaSock
+      put tSock into pRec["sock"]
+      put pRec into sWaInFlight
+      put "dialing" into sWaNetState
+      waLog "open " & tSock
+      open socket to tSock with message "waSockOpened"
       exit waNetStart
    end if
    if sWaBackend is "esplora-tor" or sWaBackend is "electrum-tor" then
@@ -15170,8 +15229,17 @@ function waBackendChainWhy
             "so this would look like a synced, empty wallet. Put a " & \
             sWaNetwork & " server in the host field, or use an Esplora backend."
    end if
+   if sWaBackend is "electrum-clear" and sWaHost is kWaElectrumClear \
+         and sWaNetwork is not "mainnet" and sWaNetwork is not "testnet" then
+      -- The public server carries mainnet on 50001 and testnet on 60001 and
+      -- nothing else. Signet and regtest need a server that serves them.
+      return "the built-in clearnet Electrum server carries mainnet and " & \
+            "testnet only, and this wallet is on " & sWaNetwork & \
+            ". Put a " & sWaNetwork & " server in the host field."
+   end if
    if sWaNetwork is "regtest" and (sWaHost is kWaEsploraOnion \
-         or sWaHost is kWaEsploraClear or sWaHost is kWaElectrumOnion) then
+         or sWaHost is kWaEsploraClear or sWaHost is kWaElectrumOnion \
+         or sWaHost is kWaElectrumClear) then
       return "regtest is a chain you run yourself, so no public backend " & \
             "carries it. Put your own node's host in the field above."
    end if
@@ -15271,6 +15339,68 @@ on waUrlDone pUrl, pStatus
    end try
    waNetDeliver tBody
 end waUrlDone
+
+on waSockOpened pSocket
+   -- The engine's callback for `open socket`. Everything here is inside a try
+   -- for the reason the Tor path documents: a throw in a socket callback is
+   -- swallowed by the engine, so an unguarded bug here is a silent hang.
+   set the defaultStack to the short name of this stack
+   local tError, tLine
+   if pSocket is not sWaSock then
+      exit waSockOpened
+   end if
+   try
+      if the result is not empty then
+         waNetFail "could not connect to " & pSocket & " - " & the result
+         exit waSockOpened
+      end if
+      put "busy" into sWaNetState
+      put waElectrumRequest(sWaInFlight) into tLine
+      waLog "-> " & tLine
+      write tLine & numToChar(10) to socket pSocket
+      if the result is not empty then
+         waNetFail "writing to " & pSocket & " - " & the result
+         exit waSockOpened
+      end if
+      -- ONE LINE IS ONE ANSWER. Electrum frames its JSON-RPC by newline, so
+      -- reading until one is the whole framing problem solved - no buffer to
+      -- accumulate and no completeness heuristic to get wrong.
+      read from socket pSocket until numToChar(10) with message "waSockLine"
+   catch tError
+      waNetFail "the clearnet Electrum socket raised: " & tError
+   end try
+end waSockOpened
+
+on waSockLine pSocket, pData
+   set the defaultStack to the short name of this stack
+   local tError
+   if pSocket is not sWaSock then
+      exit waSockLine
+   end if
+   try
+      if pData is empty then
+         waNetFail "the Electrum server closed " & pSocket & \
+               " before answering."
+         exit waSockLine
+      end if
+      waSockClose
+      waNetDeliver pData
+   catch tError
+      waNetFail "reading from " & pSocket & " - " & tError
+   end try
+end waSockLine
+
+private command waSockClose
+   local tError
+   if sWaSock is empty then
+      exit waSockClose
+   end if
+   try
+      close socket sWaSock
+   catch tError
+   end try
+   put empty into sWaSock
+end waSockClose
 
 on waStreamEvent pStream, pEvent, pData
    -- OnionXT's per-stream callback: "open", "data", "closed", "error". The
@@ -15728,7 +15858,16 @@ end waBroadcast
 -- to something else is a silent HANG, not an error, and no gate can see it.
 
 on socketError pSocketID, pError
+   -- OURS FIRST, then OnionXT's, then pass. The wallet now owns a socket of
+   -- its own (the clearnet Electrum transport), and a socket nobody claims
+   -- must still reach whatever else is listening.
    local tError
+   if pSocketID is sWaSock then
+      set the defaultStack to the short name of this stack
+      put empty into sWaSock
+      waNetFail "the connection to " & pSocketID & " failed: " & pError
+      exit socketError
+   end if
    try
       if oxSocketError(pSocketID, pError) is true then
          exit socketError
@@ -15740,6 +15879,14 @@ end socketError
 
 on socketClosed pSocketID
    local tError
+   if pSocketID is sWaSock then
+      set the defaultStack to the short name of this stack
+      put empty into sWaSock
+      if sWaInFlight is not empty then
+         waNetFail "the Electrum server closed the connection before answering."
+      end if
+      exit socketClosed
+   end if
    try
       if oxSocketClosed(pSocketID) is true then
          exit socketClosed
@@ -15751,6 +15898,12 @@ end socketClosed
 
 on socketTimeout pSocketID
    local tError
+   if pSocketID is sWaSock then
+      set the defaultStack to the short name of this stack
+      put empty into sWaSock
+      waNetFail "the connection to " & pSocketID & " timed out."
+      exit socketTimeout
+   end if
    try
       if oxSocketTimeout(pSocketID) is true then
          exit socketTimeout
@@ -16422,7 +16575,7 @@ end scFinish
 -- clipboard. What they check is that this stack's own arithmetic agrees with
 -- the library it carries, on this engine, before anybody types anything.
 
-constant kWaScControls = "ad_change,ad_detail,ad_label,ad_labelCap,ad_more,ad_panel,ad_receive,ad_scan,ad_sec1,ad_setLabel,ad_table,cn_addManual,cn_detail,cn_freeze,cn_hint,cn_panel,cn_sec1,cn_table,cn_tick,cn_tickAll,cn_tickNone,hs_bump,hs_copyTxid,hs_detail,hs_inspect,hs_panel,hs_refresh,hs_sec1,hs_table,lg_boot,lg_clear,lg_copy,lg_hint,lg_panel,lg_sec1,lg_sec2,lg_text,nv_ad,nv_bal,nv_chain,nv_cn,nv_confirmed,nv_frozenamt,nv_hs,nv_lg,nv_net,nv_nw,nv_panel,nv_pending,nv_rc,nv_refresh,nv_sd,nv_st,nv_tip,nv_tl,nv_wallet,nv_wl,nw_bElectrumTor,nw_bEsploraClear,nw_bEsploraTor,nw_bOffline,nw_host,nw_hostCap,nw_out,nw_panelA,nw_panelB,nw_port,nw_portCap,nw_privacy,nw_sec1,nw_sec2,nw_sec3,nw_socks,nw_socksCap,nw_state,nw_stop,nw_syncNow,nw_test,nw_why,rc_address,rc_amount,rc_amountCap,rc_copy,rc_copyUri,rc_detail,rc_label,rc_labelCap,rc_message,rc_messageCap,rc_next,rc_panelA,rc_panelB,rc_qr,rc_qrframe,rc_qrhint,rc_sec1,rc_sec2,rc_sec3,rc_showQr,rc_uri,rc_verify,sd_addSelf,sd_broadcast,sd_clear,sd_copyRaw,sd_locktime,sd_locktimeCap,sd_out,sd_panelA,sd_panelB,sd_paste,sd_preview,sd_rate,sd_rateCap,sd_ratehint,sd_rbf,sd_sec1,sd_sec2,sd_sec3,sd_sec4,sd_sign,sd_stratBnb,sd_stratLargest,sd_stratManual,sd_stratOldest,sd_stratSmallest,sd_strategyCap,sd_to,sd_toCap,sd_toPsbt,sd_warn,st_about,st_browse,st_filenote,st_forget,st_forgetnote,st_gap,st_gapCap,st_load,st_panelA,st_panelB,st_password,st_passwordCap,st_path,st_pathCap,st_save,st_sec1,st_sec2,st_sec3,st_unitBtc,st_unitMbtc,st_unitSat,tl_copyOut,tl_entropy,tl_export,tl_hex,tl_hexCap,tl_hold,tl_inspect,tl_msg,tl_msgAddr,tl_msgAddrCap,tl_msgCap,tl_msgSig,tl_msgSigCap,tl_msgSign,tl_msgVerify,tl_note,tl_out,tl_panelA,tl_panelB,tl_psbtCombine,tl_psbtFinal,tl_psbtSign,tl_sec1,tl_sec2,tl_sec3,tl_sweep,uiFooter,uiStatus,uiTitle,wl_account,wl_accountCap,wl_addCosigner,wl_backup,wl_copyDesc,wl_copyXpub,wl_custody,wl_generate,wl_kindKey,wl_kindMulti,wl_kindRestore,wl_kindSeed,wl_kindWatch,wl_label,wl_labelCap,wl_m,wl_mCap,wl_mnemonic,wl_mnemonicCap,wl_netMain,wl_netReg,wl_netSignet,wl_netTest,wl_open,wl_out,wl_panelA,wl_panelB,wl_pass,wl_passCap,wl_sec1,wl_sec2,wl_sec3,wl_sec4,wl_typeLegacy,wl_typeMulti,wl_typeNative,wl_typeNested,wl_typeTaproot,wl_warn,wl_xkey,wl_xkeyCap"
+constant kWaScControls = "ad_change,ad_detail,ad_label,ad_labelCap,ad_more,ad_panel,ad_receive,ad_scan,ad_sec1,ad_setLabel,ad_table,cn_addManual,cn_detail,cn_freeze,cn_hint,cn_panel,cn_sec1,cn_table,cn_tick,cn_tickAll,cn_tickNone,hs_bump,hs_copyTxid,hs_detail,hs_inspect,hs_panel,hs_refresh,hs_sec1,hs_table,lg_boot,lg_clear,lg_copy,lg_hint,lg_panel,lg_sec1,lg_sec2,lg_text,nv_ad,nv_bal,nv_chain,nv_cn,nv_confirmed,nv_frozenamt,nv_hs,nv_lg,nv_net,nv_nw,nv_panel,nv_pending,nv_rc,nv_refresh,nv_sd,nv_st,nv_tip,nv_tl,nv_wallet,nv_wl,nw_bElectrumClear,nw_bElectrumTor,nw_bEsploraClear,nw_bEsploraTor,nw_bOffline,nw_host,nw_hostCap,nw_out,nw_panelA,nw_panelB,nw_port,nw_portCap,nw_privacy,nw_sec1,nw_sec2,nw_sec3,nw_socks,nw_socksCap,nw_state,nw_stop,nw_syncNow,nw_test,nw_why,rc_address,rc_amount,rc_amountCap,rc_copy,rc_copyUri,rc_detail,rc_label,rc_labelCap,rc_message,rc_messageCap,rc_next,rc_panelA,rc_panelB,rc_qr,rc_qrframe,rc_qrhint,rc_sec1,rc_sec2,rc_sec3,rc_showQr,rc_uri,rc_verify,sd_addSelf,sd_broadcast,sd_clear,sd_copyRaw,sd_locktime,sd_locktimeCap,sd_out,sd_panelA,sd_panelB,sd_paste,sd_preview,sd_rate,sd_rateCap,sd_ratehint,sd_rbf,sd_sec1,sd_sec2,sd_sec3,sd_sec4,sd_sign,sd_stratBnb,sd_stratLargest,sd_stratManual,sd_stratOldest,sd_stratSmallest,sd_strategyCap,sd_to,sd_toCap,sd_toPsbt,sd_warn,st_about,st_browse,st_filenote,st_forget,st_forgetnote,st_gap,st_gapCap,st_load,st_panelA,st_panelB,st_password,st_passwordCap,st_path,st_pathCap,st_save,st_sec1,st_sec2,st_sec3,st_unitBtc,st_unitMbtc,st_unitSat,tl_copyOut,tl_entropy,tl_export,tl_hex,tl_hexCap,tl_hold,tl_inspect,tl_msg,tl_msgAddr,tl_msgAddrCap,tl_msgCap,tl_msgSig,tl_msgSigCap,tl_msgSign,tl_msgVerify,tl_note,tl_out,tl_panelA,tl_panelB,tl_psbtCombine,tl_psbtFinal,tl_psbtSign,tl_sec1,tl_sec2,tl_sec3,tl_sweep,uiFooter,uiStatus,uiTitle,wl_account,wl_accountCap,wl_addCosigner,wl_backup,wl_copyDesc,wl_copyXpub,wl_custody,wl_generate,wl_kindKey,wl_kindMulti,wl_kindRestore,wl_kindSeed,wl_kindWatch,wl_label,wl_labelCap,wl_m,wl_mCap,wl_mnemonic,wl_mnemonicCap,wl_netMain,wl_netReg,wl_netSignet,wl_netTest,wl_open,wl_out,wl_panelA,wl_panelB,wl_pass,wl_passCap,wl_sec1,wl_sec2,wl_sec3,wl_sec4,wl_typeLegacy,wl_typeMulti,wl_typeNative,wl_typeNested,wl_typeTaproot,wl_warn,wl_xkey,wl_xkeyCap"
 
 command waScRun
    local tMissing, tRec, tError, tAddr
