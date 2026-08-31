@@ -209,6 +209,14 @@ run_gates() {
   # window, so until this landed the ten screens, the show/hide sweep, the
   # click router and the wallet file were verified only by reading them -
   # this member's own recorded failure shape, one layer up.
+  # THE FIXTURES FIRST, per the fixture-before-gate law: a boot runner that
+  # has gone blind reports OK, and the five seeded defects are what make the
+  # OK mean anything. They boot a cut-down copy, so they cost a fraction of
+  # the gate below them.
+  if [ -f "$m/tools/test-wallet-boot.py" ]; then
+    echo "== $m: tools/test-wallet-boot.py =="
+    ( cd "$m" && python3 tools/test-wallet-boot.py )
+  fi
   if [ -f "$m/tools/check-wallet-boot.py" ]; then
     echo "== $m: tools/check-wallet-boot.py =="
     ( cd "$m" && python3 tools/check-wallet-boot.py --terse )

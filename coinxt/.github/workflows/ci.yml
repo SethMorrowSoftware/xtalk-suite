@@ -98,6 +98,9 @@ jobs:
       - name: The wallet engine, against its oracle and under both case rules
         run: python3 tools/check-wallet-vectors.py --check
 
+      - name: The boot gate still catches its five seeded defects
+        run: python3 tools/test-wallet-boot.py
+
       - name: The wallet stack boots headlessly
         run: python3 tools/check-wallet-boot.py --check
 
