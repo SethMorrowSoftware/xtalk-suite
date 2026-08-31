@@ -14975,6 +14975,26 @@ command waSetBackend pBackend
    waLog "backend: " & pBackend & " (" & sWaHost & ":" & sWaPort & ")"
 end waSetBackend
 
+function waIsElectrum pBackend
+   -- WHICH PROTOCOL a backend speaks, as opposed to which transport carries
+   -- it. Two backends speak Electrum's JSON-RPC (over Tor, and over a plain
+   -- socket) and two speak Esplora's HTTP, and every parse below the
+   -- transport layer cares about the first question and not the second.
+   --
+   -- waNetApply asked `sWaBackend is "electrum-tor"`, which was the same
+   -- question and the wrong test, so the clearnet Electrum transport's
+   -- replies fell into the ESPLORA parser: a perfectly good
+   -- {"result":{"height":5127803,...}} was measured against "is this a bare
+   -- integer", and the wallet reported that a working server had answered
+   -- with something that is not a height. The connection was fine and the
+   -- error pointed at the server.
+   --
+   -- Same shape as waNeedsTor one commit earlier: a condition written against
+   -- the backends that existed when it was written. Both are predicates now,
+   -- so a new backend answers both questions by construction.
+   return pBackend is "electrum-tor" or pBackend is "electrum-clear"
+end waIsElectrum
+
 function waNeedsTor pBackend
    -- WHICH TRANSPORTS NEED TOR, named positively. This was written the other
    -- way round - "not offline and not esplora-clear" - and the clearnet
@@ -15461,7 +15481,7 @@ on waStreamEvent pStream, pEvent, pData
                   "asked for."
             exit waStreamEvent
          end if
-         if sWaBackend is "electrum-tor" then
+         if waIsElectrum(sWaBackend) then
             waElectrumMaybeComplete
          end if
       else if pEvent is "closed" then
@@ -15478,7 +15498,7 @@ private command waStreamOpened
    local tRec, tReq, tCrlf, tBody, tLine, tLen
    put sWaInFlight into tRec
    put numToChar(13) & numToChar(10) into tCrlf
-   if sWaBackend is "electrum-tor" then
+   if waIsElectrum(sWaBackend) then
       put waElectrumRequest(tRec) into tLine
       waLog "-> " & tLine
       oxWrite sWaStream, textEncode(tLine & numToChar(10), "UTF-8")
@@ -15523,7 +15543,7 @@ private command waStreamClosed
    if sWaInFlight is empty then
       exit waStreamClosed
    end if
-   if sWaBackend is "electrum-tor" then
+   if waIsElectrum(sWaBackend) then
       waNetFail "the Electrum server closed the connection before answering."
       exit waStreamClosed
    end if
@@ -15691,7 +15711,7 @@ private command waNetApply pKind, pArg, pBody
       put pBody into tText
    end try
    put cwTrim(tText) into tText
-   if sWaBackend is "electrum-tor" then
+   if waIsElectrum(sWaBackend) then
       put cwJsonParse(tText) into tNode
       put cwJsonPath(tNode, "error") into tResult
       if cwJsonType(tResult) is not "missing" and cwJsonType(tResult) is not "null" then
