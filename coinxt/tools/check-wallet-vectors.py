@@ -387,6 +387,8 @@ def check_constants(c, text):
     c.ck("the RBF sequence number", int(nums.get("kCwSeqRbf", -1)), 0xFFFFFFFD)
     c.ck("the final sequence number", int(nums.get("kCwSeqFinal", -1)), 0xFFFFFFFF)
     c.ck("the non-RBF sequence number", int(nums.get("kCwSeqNoRbf", -1)), 0xFFFFFFFE)
+    c.ck("the long-term fee rate is the one the oracle prices with",
+         int(nums.get("kCwLongTermFeeRate", -1)), REF.LONG_TERM_FEE_RATE)
 
     # THE HONEST SPLIT: everything parsed is either checked above or listed.
     derived = {
@@ -395,7 +397,7 @@ def check_constants(c, text):
         "kCwStems", "kCwDescInputHead", "kCwDescCharset", "kCwQrDataCw",
         "kCwQrEccPer", "kCwQrG1Blocks", "kCwQrG1Cw", "kCwQrG2Blocks",
         "kCwQrG2Cw", "kCwQrRemainder", "kCwQrAlign", "kCwSeqRbf",
-        "kCwSeqFinal", "kCwSeqNoRbf",
+        "kCwSeqFinal", "kCwSeqNoRbf", "kCwLongTermFeeRate",
     }
     for name in ("kCwXpubVersions", "kCwXprvVersions", "kCwYpubVersions",
                  "kCwYprvVersions", "kCwZpubVersions", "kCwZprvVersions",

@@ -452,6 +452,13 @@ DUST_SPEND_LEGACY = 148
 WITNESS_OUTPUTS = ("p2wpkh", "p2wsh", "p2tr")
 
 
+# What spending a change output is assumed to cost LATER, in sat/vB. Bitcoin
+# Core's own default, and the only rate in coin selection that is not the
+# transaction's own - because the two halves of "cost of change" (making the
+# output now, spending it later) happen at different times.
+LONG_TERM_FEE_RATE = 10
+
+
 def dust_threshold(script_type: str) -> int:
     spend = (DUST_SPEND_WITNESS if script_type in WITNESS_OUTPUTS
              else DUST_SPEND_LEGACY)
@@ -540,7 +547,7 @@ def select_coins(utxos, target_sat, fee_rate, input_type, output_types,
     at least the dust threshold. A selector that returns a change output below
     dust has built a transaction the network will not relay."""
     if long_term_fee_rate is None:
-        long_term_fee_rate = 10
+        long_term_fee_rate = LONG_TERM_FEE_RATE
     spendable = [u for u in utxos if not u.get("frozen")]
     if strategy == "manual":
         # FROZEN BEATS TICKED, and this line used to REPLACE the freeze filter
