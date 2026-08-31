@@ -191,6 +191,18 @@ run_gates() {
     echo "== $m: tools/check-script-vectors.py =="
     ( cd "$m" && python3 tools/check-script-vectors.py --check )
   fi
+  # The WALLET engine, same machinery one layer up: coinxt/examples/
+  # wallet-core.livecodescript is what coin-wallet is built out of, and every
+  # byte layout in it (scripts, addresses, extended keys, fees, coin
+  # selection, sighashes, witnesses, PSBT, signed messages, URIs, descriptors,
+  # QR) is compared against tools/wallet_reference.py, an independent
+  # implementation anchored to the published vectors, with the real shim
+  # signing. A wrong length prefix there produces a transaction that parses
+  # and pays somebody else. Slower still than the gate above, so it runs last.
+  if [ -f "$m/tools/check-wallet-vectors.py" ]; then
+    echo "== $m: tools/check-wallet-vectors.py =="
+    ( cd "$m" && python3 tools/check-wallet-vectors.py --check )
+  fi
   # The demo BOOT runner (riptide): executes the SHIPPED stack script's
   # whole openStack chain - card builders, kit, self-check, navigation, a
   # scripted identity session - through the family's interpreter over a

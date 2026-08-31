@@ -79,6 +79,7 @@ SCRIPT_LIBS = {
     "nostrxt/src/nostr-relay.livecodescript": ("nxr",),
     "enetxt/examples/enet-helpers.livecodescript": ("en",),
     "datachannelxt/examples/datachannel-helpers.livecodescript": ("dc",),
+    "coinxt/examples/wallet-core.livecodescript": ("cw",),
 }
 
 LCB_LIBS = {

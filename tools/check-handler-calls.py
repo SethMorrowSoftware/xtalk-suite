@@ -71,7 +71,7 @@ KNOWN_MISSING = {
 # nxr is the nostrxt relay layer and nx its core; nxr must precede nx (the
 # oxh/ox rule) or every nxr* call would be checked against the nx* surface.
 PREFIXES = ("oxh", "nxr", "sx", "bt", "en", "dc", "ox", "cx", "rs", "he",
-            "b2k", "nx")
+            "b2k", "nx", "cw")
 
 # A family-prefixed identifier: prefix + an uppercase letter + more word chars.
 # The uppercase letter is what keeps ordinary words (an "enough" in a comment,
