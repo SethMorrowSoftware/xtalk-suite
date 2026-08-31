@@ -184,6 +184,36 @@ constant kCwDescGen2 = 118834127661
 constant kCwDescGen3 = 236335490938
 constant kCwDescGen4 = 430795026429
 
+-- ---- QR codes ----------------------------------------------------------------
+-- ISO/IEC 18004 byte mode, error level M, versions 1 to 15. The scope is the
+-- narrowest that covers everything this wallet shows: an address, a BIP-21
+-- URI, an xpub, a descriptor and a small PSBT are all ASCII and all fit 412
+-- bytes. Kanji, numeric and alphanumeric modes and the structured append that
+-- would let a large PSBT span several codes are OUT of scope and refused.
+--
+-- The level-M rows of table 9, indexed by version: total data codewords, error
+-- correction codewords per block, and the two block groups.
+constant kCwQrDataCw = "16,28,44,64,86,108,124,154,182,216,254,290,334,365,415"
+constant kCwQrEccPer = "10,16,26,18,24,16,18,22,22,26,30,22,22,24,24"
+constant kCwQrG1Blocks = "1,1,1,2,2,4,4,2,3,4,1,6,8,4,5"
+constant kCwQrG1Cw = "16,28,44,32,43,27,31,38,36,43,50,36,37,40,41"
+constant kCwQrG2Blocks = "0,0,0,0,0,0,0,2,2,1,4,2,1,5,5"
+constant kCwQrG2Cw = "0,0,0,0,0,0,0,39,37,44,51,37,38,41,42"
+
+-- remainder bits after the interleaved codewords (table 1)
+constant kCwQrRemainder = "0,7,7,7,7,7,0,0,0,0,0,0,0,3,3"
+
+-- alignment pattern centre coordinates (table E.1), one version per
+-- semicolon-separated field; version 1 has none
+constant kCwQrAlign = ";6,18;6,22;6,26;6,30;6,34;6,22,38;6,24,42;6,26,46;6,28,50;6,30,54;6,32,58;6,34,62;6,26,46,66;6,26,48,70"
+
+-- the QR field's primitive polynomial, and the BCH generators for the format
+-- (15,5) and version (18,6) information
+constant kCwQrPrim = 285
+constant kCwQrFormatGen = 1335
+constant kCwQrFormatMask = 21522
+constant kCwQrVersionGen = 7973
+
 -- ---- hex ---------------------------------------------------------------------
 constant kCwHexDigits = "0123456789abcdef"
 
@@ -289,6 +319,10 @@ end cwBitAndN
 -- ONLY place in this file that takes a delimited string apart.
 
 private function cwListAt pList, pIndex
+   return cwSplitAt(pList, pIndex, ",")
+end cwListAt
+
+private function cwSplitAt pList, pIndex, pDelim
    -- The two-argument offset() only; the three-argument form that takes a
    -- start position is not modelled by the offline runner this file has to
    -- execute in, so the remainder is re-sliced each step instead.
@@ -296,19 +330,19 @@ private function cwListAt pList, pIndex
    put pList into tRest
    put 1 into tI
    repeat while tI < pIndex
-      put offset(",", tRest) into tPos
+      put offset(pDelim, tRest) into tPos
       if tPos is 0 then
          return ""
       end if
       put char (tPos + 1) to -1 of tRest into tRest
       add 1 to tI
    end repeat
-   put offset(",", tRest) into tPos
+   put offset(pDelim, tRest) into tPos
    if tPos is 0 then
       return tRest
    end if
    return char 1 to (tPos - 1) of tRest
-end cwListAt
+end cwSplitAt
 
 private function cwListIndex pList, pValue
    -- The 1-based position of pValue in pList, or 0. Compared exactly, because
@@ -3135,3 +3169,1702 @@ function cwPsbtSummary pB64, pNetwork
    end if
    return tOut
 end cwPsbtSummary
+
+-- ==============================================================================
+-- BITCOIN SIGNED MESSAGES
+--
+-- The format Bitcoin Core has used since 2011 and every wallet copies:
+--
+--   magic  = varstr("Bitcoin Signed Message:\n")   -- 24 bytes, so 0x18 first
+--   digest = SHA256(SHA256(magic || varstr(message as UTF-8)))
+--   sig    = base64( header || r(32) || s(32) )
+--
+-- The header carries the recovery id AND the address form the signer claims,
+-- which is what lets a verifier work without being given a public key:
+--
+--   27 + recid   uncompressed P2PKH
+--   31 + recid   compressed P2PKH
+--   35 + recid   P2SH-P2WPKH   (Electrum's convention)
+--   39 + recid   P2WPKH        (Electrum's convention)
+--
+-- The 35 and 39 ranges are ELECTRUM'S, not a BIP: BIP-137 proposed them and
+-- was never merged, and Bitcoin Core signs SegWit addresses with BIP-322
+-- instead. So a verifier that wants to interoperate accepts 27..42 and checks
+-- the recovered key against every address form, REPORTING which one matched
+-- and whether the header agreed. Refusing on a header disagreement would
+-- reject signatures from wallets that emit 31 for a bech32 address, which is
+-- common.
+-- ==============================================================================
+
+function cwMsgDigest pMessage
+   local tBody, tPrefix
+   put textEncode(kCwMsgMagic & numToChar(10), "UTF-8") into tPrefix
+   put textEncode(pMessage, "UTF-8") into tBody
+   return cxHexEncode(cxHash256(cxVarInt(the number of bytes of tPrefix) & tPrefix & \
+         cxVarInt(the number of bytes of tBody) & tBody))
+end cwMsgDigest
+
+function cwMsgSign pSeckeyHex, pMessage, pScriptType, pCompressed
+   local tRec, tRecId, tBase, tHeader
+   put cxSignRecoverable(cxHexDecode(pSeckeyHex), cxHexDecode(cwMsgDigest(pMessage))) into tRec
+   put byteToNum(byte 65 of tRec) into tRecId
+   if pScriptType is "p2pkh" then
+      if pCompressed is true then
+         put 31 into tBase
+      else
+         put 27 into tBase
+      end if
+   else if pScriptType is "p2sh-p2wpkh" then
+      put 35 into tBase
+   else if pScriptType is "p2wpkh" then
+      put 39 into tBase
+   else
+      throw "wallet-core: cwMsgSign: this message format has no header for " & \
+            pScriptType & ". Taproot uses BIP-322, which this wallet does not sign."
+   end if
+   put numToByte(tBase + tRecId) into tHeader
+   return cwStripWhitespace(base64Encode(tHeader & byte 1 to 64 of tRec))
+end cwMsgSign
+
+function cwMsgVerify pNetwork, pAddress, pMessage, pSigB64
+   -- Returns an array with "ok", "kind" (the address form that matched) and
+   -- "why". Never throws: a Verify button that raises on a mistyped signature
+   -- is a Verify button that cannot say "no".
+   local tRaw, tHeader, tRecId, tCompressed, tDigest, tPub, tOut, tError
+   local tAddr, tClaim, tCand
+   put false into tOut["ok"]
+   put "" into tOut["kind"]
+   put "" into tOut["why"]
+   put base64Decode(cwStripWhitespace(pSigB64)) into tRaw
+   if the number of bytes of tRaw is not 65 then
+      put "a signed message is 65 bytes: header, r, s" into tOut["why"]
+      return tOut
+   end if
+   put byteToNum(byte 1 of tRaw) into tHeader
+   if tHeader < 27 or tHeader > 42 then
+      put "the header byte " & tHeader & " is outside 27..42" into tOut["why"]
+      return tOut
+   end if
+   put cwIntMod(tHeader - 27, 4) into tRecId
+   put (tHeader >= 31) into tCompressed
+   put cwMsgDigest(pMessage) into tDigest
+   put "" into tPub
+   try
+      put cxHexEncode(cxRecover(byte 2 to 65 of tRaw & numToByte(tRecId), \
+            cxHexDecode(tDigest))) into tPub
+   catch tError
+      put "" into tPub
+   end try
+   if tPub is "" then
+      put "no public key recovers from this signature" into tOut["why"]
+      return tOut
+   end if
+   if tCompressed is true then
+      put cwCompressPubkey(tPub) into tPub
+      put cwMsgClaim(tHeader - tRecId) into tClaim
+      repeat with tCand = 1 to 3
+         put "" into tAddr
+         if tCand is 1 then
+            put cwAddressForScript(pNetwork, cwScriptP2pkh(tPub)) into tAddr
+            put "p2pkh" into tOut["kind"]
+         else if tCand is 2 then
+            put cwAddressForScript(pNetwork, cwScriptP2shP2wpkh(tPub)) into tAddr
+            put "p2sh-p2wpkh" into tOut["kind"]
+         else
+            put cwAddressForScript(pNetwork, cwScriptP2wpkh(tPub)) into tAddr
+            put "p2wpkh" into tOut["kind"]
+         end if
+         if tAddr is cwTrim(pAddress) then
+            put true into tOut["ok"]
+            if tClaim is not tOut["kind"] then
+               put "the signature is valid, but its header claims a " & tClaim & \
+                     " address and this one is " & tOut["kind"] & \
+                     ". That disagreement is common and is not an error: the " & \
+                     "segwit header range was never standardised." into tOut["why"]
+            end if
+            return tOut
+         end if
+      end repeat
+   else
+      put cwAddressForScript(pNetwork, cwScriptP2pkhUncompressed(tPub)) into tAddr
+      put "p2pkh-uncompressed" into tOut["kind"]
+      if tAddr is cwTrim(pAddress) then
+         put true into tOut["ok"]
+         return tOut
+      end if
+   end if
+   put "" into tOut["kind"]
+   put "the signature is valid but recovers a DIFFERENT address, so whoever " & \
+         "signed it does not hold the key to " & cwTrim(pAddress) & "." into tOut["why"]
+   return tOut
+end cwMsgVerify
+
+private function cwMsgClaim pBase
+   if pBase is 27 then
+      return "p2pkh-uncompressed"
+   end if
+   if pBase is 31 then
+      return "p2pkh"
+   end if
+   if pBase is 35 then
+      return "p2sh-p2wpkh"
+   end if
+   if pBase is 39 then
+      return "p2wpkh"
+   end if
+   return "unknown"
+end cwMsgClaim
+
+private function cwScriptP2pkhUncompressed pPubkeyHex
+   -- The uncompressed form hashes to a DIFFERENT address than the compressed
+   -- one, which is why the compressed flag is carried in WIF and in the
+   -- message header rather than inferred.
+   local tHash
+   put cxHexEncode(cxHash160(cxHexDecode(pPubkeyHex))) into tHash
+   return cwOpHex(kCwOpDup) & cwOpHex(kCwOpHash160) & cwPush(tHash) & \
+         cwOpHex(kCwOpEqualVerify) & cwOpHex(kCwOpCheckSig)
+end cwScriptP2pkhUncompressed
+
+function cwCompressPubkey pPubkeyHex
+   -- 65 uncompressed bytes to 33 compressed. The prefix is 02 for an even Y
+   -- and 03 for an odd one; the Y coordinate is the LAST 32 bytes, so its
+   -- parity is the last byte's.
+   local tRaw, tLast
+   if the number of chars of pPubkeyHex is 66 then
+      return cwLower(pPubkeyHex)
+   end if
+   if the number of chars of pPubkeyHex is not 130 then
+      throw "wallet-core: cwCompressPubkey: a public key is 33 or 65 bytes."
+   end if
+   put cxHexDecode(pPubkeyHex) into tRaw
+   put byteToNum(byte 65 of tRaw) into tLast
+   if cwIntMod(tLast, 2) is 0 then
+      return "02" & cwLower(char 3 to 66 of pPubkeyHex)
+   end if
+   return "03" & cwLower(char 3 to 66 of pPubkeyHex)
+end cwCompressPubkey
+
+-- ==============================================================================
+-- BIP-21 PAYMENT URIs
+--
+-- Two rules carry all the weight. `amount` is in BTC WITH A DECIMAL POINT,
+-- never satoshi - a wallet that reads it as satoshi underpays by a factor of
+-- a hundred million - and a parameter whose key begins with `req-` is
+-- REQUIRED: a wallet that does not understand it must refuse the URI rather
+-- than pay the address and quietly ignore the condition attached to it.
+-- ==============================================================================
+
+function cwUriParse pUri
+   local tText, tPos, tBody, tQuery, tOut, tPair, tKey, tValue, tReq, tCount
+   put cwTrim(pUri) into tText
+   if cwLower(char 1 to 8 of tText) is "bitcoin:" then
+      put char 9 to -1 of tText into tText
+   end if
+   put offset("?", tText) into tPos
+   if tPos is 0 then
+      put tText into tBody
+      put "" into tQuery
+   else
+      put char 1 to (tPos - 1) of tText into tBody
+      put char (tPos + 1) to -1 of tText into tQuery
+   end if
+   put cwPercentDecode(tBody) into tOut["address"]
+   put "" into tOut["label"]
+   put "" into tOut["message"]
+   put "" into tOut["amount"]
+   put -1 into tOut["amountsat"]
+   put cwListNew() into tReq
+   repeat while tQuery is not ""
+      put offset("&", tQuery) into tPos
+      if tPos is 0 then
+         put tQuery into tPair
+         put "" into tQuery
+      else
+         put char 1 to (tPos - 1) of tQuery into tPair
+         put char (tPos + 1) to -1 of tQuery into tQuery
+      end if
+      if tPair is "" then
+         next repeat
+      end if
+      put offset("=", tPair) into tPos
+      if tPos is 0 then
+         put tPair into tKey
+         put "" into tValue
+      else
+         put char 1 to (tPos - 1) of tPair into tKey
+         put char (tPos + 1) to -1 of tPair into tValue
+      end if
+      put cwPercentDecode(tKey) into tKey
+      replace "+" with " " in tValue
+      put cwPercentDecode(tValue) into tValue
+      if cwLower(tKey) is "amount" then
+         put tValue into tOut["amount"]
+         put cwBtcToSat(tValue) into tOut["amountsat"]
+      else if cwLower(tKey) is "label" then
+         put tValue into tOut["label"]
+      else if cwLower(tKey) is "message" then
+         put tValue into tOut["message"]
+      end if
+      if cwLower(char 1 to 4 of tKey) is "req-" then
+         put cwListAdd(tReq, tKey) into tReq
+      end if
+   end repeat
+   put tReq into tOut["required"]
+   return tOut
+end cwUriParse
+
+function cwUriBuild pAddress, pAmountSat, pLabel, pMessage
+   local tOut, tParts, tBtc, tI
+   put "" into tParts
+   if pAmountSat is not "" and pAmountSat > 0 then
+      put cwTrimZeros(cwSatToBtc(pAmountSat)) into tBtc
+      put "amount=" & tBtc into tParts
+   end if
+   if pLabel is not "" then
+      if tParts is not "" then
+         put "&" after tParts
+      end if
+      put "label=" & cwPercentEncode(pLabel) after tParts
+   end if
+   if pMessage is not "" then
+      if tParts is not "" then
+         put "&" after tParts
+      end if
+      put "message=" & cwPercentEncode(pMessage) after tParts
+   end if
+   put "bitcoin:" & pAddress into tOut
+   if tParts is not "" then
+      put "?" & tParts after tOut
+   end if
+   return tOut
+end cwUriBuild
+
+private function cwTrimZeros pBtc
+   -- "0.00100000" and "0.001" are the same payment; the short form is the one
+   -- a person can check at a glance, and BIP-21 allows either.
+   local tText, tCount
+   put pBtc into tText
+   if offset(".", tText) is 0 then
+      return tText
+   end if
+   put the number of chars of tText into tCount
+   repeat while tCount > 1 and char tCount of tText is "0"
+      subtract 1 from tCount
+   end repeat
+   if char tCount of tText is "." then
+      subtract 1 from tCount
+   end if
+   put char 1 to tCount of tText into tText
+   if tText is "" then
+      return "0"
+   end if
+   return tText
+end cwTrimZeros
+
+function cwPercentEncode pText
+   local tBytes, tI, tCount, tByte, tOut, tC
+   put textEncode(pText, "UTF-8") into tBytes
+   put the number of bytes of tBytes into tCount
+   put "" into tOut
+   repeat with tI = 1 to tCount
+      put byteToNum(byte tI of tBytes) into tByte
+      put numToChar(tByte) into tC
+      if offset(tC, "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_.~") is not 0 then
+         put tC after tOut
+      else
+         put "%" & cwUpper(cxHexEncode(numToByte(tByte))) after tOut
+      end if
+   end repeat
+   return tOut
+end cwPercentEncode
+
+function cwPercentDecode pText
+   local tI, tCount, tC, tOut, tHex
+   put the number of chars of pText into tCount
+   put "" into tOut
+   put 1 into tI
+   repeat while tI <= tCount
+      put char tI of pText into tC
+      if tC is "%" and (tI + 2) <= tCount then
+         put char (tI + 1) to (tI + 2) of pText into tHex
+         if cwHexIsClean(tHex) is true then
+            put numToByte(cwBeRead(cxHexDecode(tHex))) after tOut
+            add 3 to tI
+            next repeat
+         end if
+      end if
+      put textEncode(tC, "UTF-8") after tOut
+      add 1 to tI
+   end repeat
+   return textDecode(tOut, "UTF-8")
+end cwPercentDecode
+
+-- ==============================================================================
+-- OUTPUT DESCRIPTORS
+--
+-- The export a wallet hands to anything that wants to watch the same keys:
+-- Bitcoin Core, Sparrow, a coordinator. The CHECKSUM is the piece that needs
+-- an oracle - a bech32-style polymod over a 3-bit/5-bit split of the
+-- descriptor's characters, with its own generator and its own alphabet - and
+-- Core refuses a descriptor whose checksum is one character wrong, so getting
+-- it almost right is the same as getting it wrong.
+--
+-- The extended key in an exported descriptor is the BIP-32 xpub/tpub spelling,
+-- NOT the SLIP-132 ypub/zpub one, even for a wpkh() descriptor: the script
+-- type is already named by the wrapper, and Bitcoin Core rejects a zpub
+-- inside a descriptor outright. This is the sort of thing that looks like a
+-- bug in the receiving wallet for a long time before anybody checks.
+-- ==============================================================================
+
+private function cwDescCharPos pChar
+   -- The 0-based position of a character in Core's 95-character input
+   -- alphabet, or -1. The last three characters of that alphabet are a double
+   -- quote, a backslash and a space, none of which can go inside the constant.
+   local tPos
+   put offset(pChar, kCwDescInputHead) into tPos
+   if tPos > 0 then
+      return tPos - 1
+   end if
+   if pChar is quote then
+      return 92
+   end if
+   if pChar is numToChar(92) then
+      return 93
+   end if
+   if pChar is " " then
+      return 94
+   end if
+   return -1
+end cwDescCharPos
+
+private function cwDescPolymod pC, pValue
+   local tC0, tC, tI, tBit, tGen
+   put cwIntDiv(pC, 34359738368) into tC0
+   put cwBitXorN(cwIntMod(pC, 34359738368) * 32, pValue, 40) into tC
+   put 1 into tBit
+   repeat with tI = 0 to 4
+      if cwIntMod(cwIntDiv(tC0, tBit), 2) is 1 then
+         if tI is 0 then
+            put kCwDescGen0 into tGen
+         else if tI is 1 then
+            put kCwDescGen1 into tGen
+         else if tI is 2 then
+            put kCwDescGen2 into tGen
+         else if tI is 3 then
+            put kCwDescGen3 into tGen
+         else
+            put kCwDescGen4 into tGen
+         end if
+         put cwBitXorN(tC, tGen, 40) into tC
+      end if
+      multiply tBit by 2
+   end repeat
+   return tC
+end cwDescPolymod
+
+function cwDescriptorChecksum pDesc
+   local tC, tCls, tCount, tI, tLen, tPos, tOut, tShift, tJ
+   put 1 into tC
+   put 0 into tCls
+   put 0 into tCount
+   put the number of chars of pDesc into tLen
+   repeat with tI = 1 to tLen
+      put cwDescCharPos(char tI of pDesc) into tPos
+      if tPos < 0 then
+         throw "wallet-core: cwDescriptorChecksum: the character " & quote & \
+               char tI of pDesc & quote & " cannot appear in a descriptor."
+      end if
+      put cwDescPolymod(tC, cwIntMod(tPos, 32)) into tC
+      put tCls * 3 + cwIntDiv(tPos, 32) into tCls
+      add 1 to tCount
+      if tCount is 3 then
+         put cwDescPolymod(tC, tCls) into tC
+         put 0 into tCls
+         put 0 into tCount
+      end if
+   end repeat
+   if tCount > 0 then
+      put cwDescPolymod(tC, tCls) into tC
+   end if
+   repeat with tI = 1 to 8
+      put cwDescPolymod(tC, 0) into tC
+   end repeat
+   put cwBitXorN(tC, 1, 40) into tC
+   put "" into tOut
+   repeat with tI = 0 to 7
+      put cwPow2(5 * (7 - tI)) into tShift
+      put cwIntMod(cwIntDiv(tC, tShift), 32) into tJ
+      put char (tJ + 1) of kCwDescCharset after tOut
+   end repeat
+   return tOut
+end cwDescriptorChecksum
+
+function cwDescriptor pScriptType, pXpub, pFingerprintHex, pPath, pChange
+   -- A ranged single-key descriptor with its key origin, so the receiving
+   -- wallet knows both which key and where under the master it came from.
+   local tOrigin, tKey, tBody, tPath
+   put pPath into tPath
+   if char 1 of tPath is "m" then
+      put char 2 to -1 of tPath into tPath
+   end if
+   put "[" & cwLower(pFingerprintHex) & tPath & "]" into tOrigin
+   put tOrigin & pXpub & "/" & pChange & "/*" into tKey
+   if pScriptType is "p2pkh" then
+      put "pkh(" & tKey & ")" into tBody
+   else if pScriptType is "p2sh-p2wpkh" then
+      put "sh(wpkh(" & tKey & "))" into tBody
+   else if pScriptType is "p2wpkh" then
+      put "wpkh(" & tKey & ")" into tBody
+   else if pScriptType is "p2tr" then
+      put "tr(" & tKey & ")" into tBody
+   else
+      throw "wallet-core: cwDescriptor: " & pScriptType & " is a multisig type; " & \
+            "use cwDescriptorMultisig."
+   end if
+   return tBody & "#" & cwDescriptorChecksum(tBody)
+end cwDescriptor
+
+function cwDescriptorMultisig pM, pKeys, pChange, pSorted
+   local tInner, tI, tCount, tBody, tWord
+   put "" into tInner
+   put cwListCount(pKeys) into tCount
+   repeat with tI = 1 to tCount
+      if tI > 1 then
+         put "," after tInner
+      end if
+      put pKeys[tI] & "/" & pChange & "/*" after tInner
+   end repeat
+   if pSorted is false then
+      put "multi" into tWord
+   else
+      put "sortedmulti" into tWord
+   end if
+   put "wsh(" & tWord & "(" & pM & "," & tInner & "))" into tBody
+   return tBody & "#" & cwDescriptorChecksum(tBody)
+end cwDescriptorMultisig
+
+-- ==============================================================================
+-- JSON
+--
+-- A wallet that talks to any backend has to read JSON, and the only JSON
+-- reader in this tree belongs to NostrXT - a member this wallet has no other
+-- reason to carry. So it reads its own, and reading it here rather than
+-- borrowing has a second benefit: the parser is in the pure layer, so it is
+-- executed by the vector gate against real backend responses instead of first
+-- meeting them on a live connection.
+--
+-- A parsed value is an ARRAY with "type" ("object", "array", "string",
+-- "number", "boolean", "null") plus, by type, "members" and "keys", or
+-- "items", or "value". Verbose on purpose: a model that folds an empty
+-- object, an empty string and a JSON null onto the same empty value cannot
+-- tell "this address has no transactions" from "this field is missing", and
+-- a wallet that cannot tell those apart shows a zero balance for a network
+-- error.
+-- ==============================================================================
+
+function cwJsonParse pText
+   local tRec, tPos, tEnd
+   put cwJsonValue(pText, cwJsonSkip(pText, 1)) into tRec
+   put cwJsonSkip(pText, tRec["next"]) into tPos
+   put the number of chars of pText into tEnd
+   if tPos <= tEnd then
+      throw "wallet-core: cwJsonParse: trailing text after the JSON value at " & \
+            "character " & tPos & "."
+   end if
+   return tRec["node"]
+end cwJsonParse
+
+private function cwJsonSkip pText, pPos
+   local tI, tCount, tCode
+   put pPos into tI
+   put the number of chars of pText into tCount
+   repeat while tI <= tCount
+      put charToNum(char tI of pText) into tCode
+      if tCode is not 32 and tCode is not 9 and tCode is not 10 and tCode is not 13 then
+         return tI
+      end if
+      add 1 to tI
+   end repeat
+   return tI
+end cwJsonSkip
+
+private function cwJsonValue pText, pPos
+   local tC, tOut, tNode, tPos
+   put pPos into tPos
+   put char tPos of pText into tC
+   if tC is "{" then
+      return cwJsonObject(pText, tPos)
+   end if
+   if tC is "[" then
+      return cwJsonArray(pText, tPos)
+   end if
+   if tC is quote then
+      return cwJsonString(pText, tPos)
+   end if
+   if char tPos to (tPos + 3) of pText is "true" then
+      put "boolean" into tNode["type"]
+      put true into tNode["value"]
+      put tNode into tOut["node"]
+      put tPos + 4 into tOut["next"]
+      return tOut
+   end if
+   if char tPos to (tPos + 4) of pText is "false" then
+      put "boolean" into tNode["type"]
+      put false into tNode["value"]
+      put tNode into tOut["node"]
+      put tPos + 5 into tOut["next"]
+      return tOut
+   end if
+   if char tPos to (tPos + 3) of pText is "null" then
+      put "null" into tNode["type"]
+      put "" into tNode["value"]
+      put tNode into tOut["node"]
+      put tPos + 4 into tOut["next"]
+      return tOut
+   end if
+   return cwJsonNumber(pText, tPos)
+end cwJsonValue
+
+private function cwJsonObject pText, pPos
+   local tPos, tNode, tOut, tKeys, tRec, tName, tEnd
+   put pPos + 1 into tPos
+   put "object" into tNode["type"]
+   put cwListNew() into tKeys
+   put the number of chars of pText into tEnd
+   put cwJsonSkip(pText, tPos) into tPos
+   if char tPos of pText is "}" then
+      put tKeys into tNode["keys"]
+      put tNode into tOut["node"]
+      put tPos + 1 into tOut["next"]
+      return tOut
+   end if
+   repeat while true
+      put cwJsonSkip(pText, tPos) into tPos
+      if char tPos of pText is not quote then
+         throw "wallet-core: cwJsonParse: an object key must be a string, at " & tPos & "."
+      end if
+      put cwJsonString(pText, tPos) into tRec
+      put tRec["node"] into tName
+      put tName["value"] into tName
+      put cwJsonSkip(pText, tRec["next"]) into tPos
+      if char tPos of pText is not ":" then
+         throw "wallet-core: cwJsonParse: expected a colon at " & tPos & "."
+      end if
+      put cwJsonValue(pText, cwJsonSkip(pText, tPos + 1)) into tRec
+      put tRec["node"] into tNode["members"][tName]
+      put cwListAdd(tKeys, tName) into tKeys
+      put cwJsonSkip(pText, tRec["next"]) into tPos
+      if char tPos of pText is "," then
+         add 1 to tPos
+         next repeat
+      end if
+      if char tPos of pText is "}" then
+         put tKeys into tNode["keys"]
+         put tNode into tOut["node"]
+         put tPos + 1 into tOut["next"]
+         return tOut
+      end if
+      throw "wallet-core: cwJsonParse: expected a comma or a closing brace at " & tPos & "."
+   end repeat
+   return tOut
+end cwJsonObject
+
+private function cwJsonArray pText, pPos
+   local tPos, tNode, tOut, tItems, tRec
+   put pPos + 1 into tPos
+   put "array" into tNode["type"]
+   put cwListNew() into tItems
+   put cwJsonSkip(pText, tPos) into tPos
+   if char tPos of pText is "]" then
+      put tItems into tNode["items"]
+      put tNode into tOut["node"]
+      put tPos + 1 into tOut["next"]
+      return tOut
+   end if
+   repeat while true
+      put cwJsonValue(pText, cwJsonSkip(pText, tPos)) into tRec
+      put cwListAdd(tItems, tRec["node"]) into tItems
+      put cwJsonSkip(pText, tRec["next"]) into tPos
+      if char tPos of pText is "," then
+         add 1 to tPos
+         next repeat
+      end if
+      if char tPos of pText is "]" then
+         put tItems into tNode["items"]
+         put tNode into tOut["node"]
+         put tPos + 1 into tOut["next"]
+         return tOut
+      end if
+      throw "wallet-core: cwJsonParse: expected a comma or a closing bracket at " & tPos & "."
+   end repeat
+   return tOut
+end cwJsonArray
+
+private function cwJsonString pText, pPos
+   local tPos, tOut, tNode, tC, tValue, tEnd, tHex, tCode
+   put pPos + 1 into tPos
+   put "" into tValue
+   put the number of chars of pText into tEnd
+   repeat while tPos <= tEnd
+      put char tPos of pText into tC
+      if tC is quote then
+         put "string" into tNode["type"]
+         put tValue into tNode["value"]
+         put tNode into tOut["node"]
+         put tPos + 1 into tOut["next"]
+         return tOut
+      end if
+      if tC is numToChar(92) then
+         add 1 to tPos
+         put char tPos of pText into tC
+         if tC is "n" then
+            put numToChar(10) after tValue
+         else if tC is "t" then
+            put numToChar(9) after tValue
+         else if tC is "r" then
+            put numToChar(13) after tValue
+         else if tC is "b" then
+            put numToChar(8) after tValue
+         else if tC is "f" then
+            put numToChar(12) after tValue
+         else if tC is "u" then
+            -- \uXXXX: the code point is taken as written. A surrogate PAIR is
+            -- NOT recombined here, because nothing a Bitcoin backend returns
+            -- needs one and silently producing a lone surrogate would be
+            -- worse than not claiming to handle it.
+            put char (tPos + 1) to (tPos + 4) of pText into tHex
+            put cwBeRead(cxHexDecode(tHex)) into tCode
+            put numToChar(tCode) after tValue
+            add 4 to tPos
+         else
+            put tC after tValue
+         end if
+         add 1 to tPos
+         next repeat
+      end if
+      put tC after tValue
+      add 1 to tPos
+   end repeat
+   throw "wallet-core: cwJsonParse: an unterminated string."
+end cwJsonString
+
+private function cwJsonNumber pText, pPos
+   local tPos, tEnd, tC, tText, tNode, tOut
+   put pPos into tPos
+   put the number of chars of pText into tEnd
+   put "" into tText
+   repeat while tPos <= tEnd
+      put char tPos of pText into tC
+      if offset(tC, "0123456789+-.eE") is 0 then
+         exit repeat
+      end if
+      put tC after tText
+      add 1 to tPos
+   end repeat
+   if tText is "" then
+      throw "wallet-core: cwJsonParse: expected a value at character " & pPos & "."
+   end if
+   put "number" into tNode["type"]
+   put tText into tNode["value"]
+   put tNode into tOut["node"]
+   put tPos into tOut["next"]
+   return tOut
+end cwJsonNumber
+
+function cwJsonType pNode
+   if pNode["type"] is "" then
+      return "missing"
+   end if
+   return pNode["type"]
+end cwJsonType
+
+function cwJsonCount pNode
+   if pNode["type"] is "array" then
+      return cwListCount(pNode["items"])
+   end if
+   if pNode["type"] is "object" then
+      return cwListCount(pNode["keys"])
+   end if
+   return 0
+end cwJsonCount
+
+function cwJsonAt pNode, pIndex
+   local tItems
+   put pNode["items"] into tItems
+   return tItems[pIndex]
+end cwJsonAt
+
+function cwJsonMember pNode, pName
+   local tMembers
+   put pNode["members"] into tMembers
+   return tMembers[pName]
+end cwJsonMember
+
+function cwJsonKeys pNode
+   return pNode["keys"]
+end cwJsonKeys
+
+function cwJsonText pNode
+   -- The scalar as text. An object or an array answers empty rather than
+   -- something that looks like data, because a caller that asked a container
+   -- for its text asked the wrong question and should see nothing rather than
+   -- a plausible string.
+   if pNode["type"] is "string" or pNode["type"] is "number" then
+      return pNode["value"]
+   end if
+   if pNode["type"] is "boolean" then
+      if pNode["value"] is true then
+         return "true"
+      end if
+      return "false"
+   end if
+   return ""
+end cwJsonText
+
+function cwJsonPath pNode, pPath
+   -- A "/"-separated walk: object keys by name, array elements 1-based. A
+   -- missing step answers an EMPTY node, whose cwJsonType is "missing", so a
+   -- caller can tell absent from present-and-empty.
+   local tNode, tRest, tPos, tStep, tEmpty
+   put pNode into tNode
+   put pPath into tRest
+   repeat while tRest is not ""
+      put offset("/", tRest) into tPos
+      if tPos is 0 then
+         put tRest into tStep
+         put "" into tRest
+      else
+         put char 1 to (tPos - 1) of tRest into tStep
+         put char (tPos + 1) to -1 of tRest into tRest
+      end if
+      if tStep is "" then
+         next repeat
+      end if
+      if tNode["type"] is "array" then
+         if tStep is not an integer then
+            return tEmpty
+         end if
+         put cwJsonAt(tNode, tStep + 0) into tNode
+      else if tNode["type"] is "object" then
+         put cwJsonMember(tNode, tStep) into tNode
+      else
+         return tEmpty
+      end if
+      if tNode["type"] is "" then
+         return tEmpty
+      end if
+   end repeat
+   return tNode
+end cwJsonPath
+
+function cwJsonGet pNode, pPath
+   return cwJsonText(cwJsonPath(pNode, pPath))
+end cwJsonGet
+
+function cwJsonEscape pText
+   -- A JSON string body (without the surrounding quotes). Control characters
+   -- go out as \u00XX because a raw one inside a string is invalid JSON and
+   -- the receiving parser is entitled to reject the whole message.
+   local tOut, tI, tCount, tC, tCode
+   put "" into tOut
+   put the number of chars of pText into tCount
+   repeat with tI = 1 to tCount
+      put char tI of pText into tC
+      put charToNum(tC) into tCode
+      if tC is quote then
+         put numToChar(92) & quote after tOut
+      else if tCode is 92 then
+         put numToChar(92) & numToChar(92) after tOut
+      else if tCode is 10 then
+         put numToChar(92) & "n" after tOut
+      else if tCode is 13 then
+         put numToChar(92) & "r" after tOut
+      else if tCode is 9 then
+         put numToChar(92) & "t" after tOut
+      else if tCode < 32 then
+         put numToChar(92) & "u00" & cxHexEncode(numToByte(tCode)) after tOut
+      else
+         put tC after tOut
+      end if
+   end repeat
+   return tOut
+end cwJsonEscape
+
+function cwJsonString2 pText
+   return quote & cwJsonEscape(pText) & quote
+end cwJsonString2
+
+-- ==============================================================================
+-- QR CODES (ISO/IEC 18004, byte mode, level M, versions 1..15)
+--
+-- A receive address that has to be typed by hand is a receive address that
+-- gets typed wrong. This is the one part of the wallet whose value is
+-- entirely in not making the user do something.
+--
+-- Two decisions are written down because the standard leaves them open and
+-- getting either one differently from everybody else produces a symbol that
+-- still scans but that no other implementation reproduces - so no
+-- cross-check could ever agree:
+--
+--   * The 1:1:3:1:1 penalty pattern is matched as the two ELEVEN-module
+--     windows, not as a seven-module core with the light run clamped at the
+--     symbol edge.
+--   * The masks are scored with the format-information area still LIGHT; the
+--     real format bits (and the always-dark module, which is part of that
+--     area) go in only after a mask has won.
+--
+-- Both are the readings deployed encoders use, and this implementation was
+-- checked against one of them over 261 payloads spanning versions 1 to 15
+-- with zero differences.
+-- ==============================================================================
+
+private function cwQrGfTables
+   -- The exp/log tables of GF(256) under the QR primitive polynomial.
+   -- Returned as one array with "exp" and "log" so the two can never be
+   -- built from different polynomials.
+   local tExp, tLog, tX, tI, tOut
+   put 1 into tX
+   repeat with tI = 0 to 254
+      put tX into tExp[tI]
+      put tI into tLog[tX]
+      multiply tX by 2
+      if tX >= 256 then
+         put cwBitXorN(tX, kCwQrPrim, 9) into tX
+      end if
+   end repeat
+   repeat with tI = 255 to 511
+      put tExp[tI - 255] into tExp[tI]
+   end repeat
+   put tExp into tOut["exp"]
+   put tLog into tOut["log"]
+   return tOut
+end cwQrGfTables
+
+private function cwQrMul pA, pB, pTables
+   local tExp, tLog
+   if pA is 0 or pB is 0 then
+      return 0
+   end if
+   put pTables["exp"] into tExp
+   put pTables["log"] into tLog
+   return tExp[tLog[pA] + tLog[pB]]
+end cwQrMul
+
+private function cwQrGenerator pN, pTables
+   local tG, tG2, tI, tJ, tLen, tExp
+   put pTables["exp"] into tExp
+   put cwListNew() into tG
+   put cwListAdd(tG, 1) into tG
+   repeat with tI = 0 to (pN - 1)
+      put cwListCount(tG) into tLen
+      put cwListNew() into tG2
+      repeat with tJ = 1 to (tLen + 1)
+         put cwListAdd(tG2, 0) into tG2
+      end repeat
+      repeat with tJ = 1 to tLen
+         put cwBitXorN(tG2[tJ], tG[tJ], 8) into tG2[tJ]
+         put cwBitXorN(tG2[tJ + 1], cwQrMul(tG[tJ], tExp[tI], pTables), 8) into tG2[tJ + 1]
+      end repeat
+      put tG2 into tG
+   end repeat
+   return tG
+end cwQrGenerator
+
+private function cwQrEcc pData, pN, pTables
+   local tGen, tRem, tI, tJ, tCoef, tCount, tOut
+   put cwQrGenerator(pN, pTables) into tGen
+   put cwListCount(pData) into tCount
+   put pData into tRem
+   repeat with tI = 1 to pN
+      put cwListAdd(tRem, 0) into tRem
+   end repeat
+   repeat with tI = 1 to tCount
+      put tRem[tI] into tCoef
+      if tCoef is not 0 then
+         repeat with tJ = 1 to pN
+            put cwBitXorN(tRem[tI + tJ], cwQrMul(tGen[tJ + 1], tCoef, pTables), 8) \
+                  into tRem[tI + tJ]
+         end repeat
+      end if
+   end repeat
+   put cwListNew() into tOut
+   repeat with tI = 1 to pN
+      put cwListAdd(tOut, tRem[tCount + tI]) into tOut
+   end repeat
+   return tOut
+end cwQrEcc
+
+function cwQrVersionFor pByteCount
+   local tI, tTotal, tHeader
+   repeat with tI = 1 to 15
+      put cwListAt(kCwQrDataCw, tI) + 0 into tTotal
+      if tI <= 9 then
+         put 12 into tHeader
+      else
+         put 20 into tHeader
+      end if
+      if (pByteCount * 8 + tHeader) <= (tTotal * 8) then
+         return tI
+      end if
+   end repeat
+   throw "wallet-core: cwQrVersionFor: " & pByteCount & " bytes does not fit a " & \
+         "version-15 level-M QR code (the cap is 412 bytes). Show the text " & \
+         "instead, or shorten it."
+end cwQrVersionFor
+
+private function cwQrBits pData, pVersion
+   -- The data bit stream: mode indicator, character count, the bytes, a
+   -- terminator, padding to a byte boundary, then the alternating pad
+   -- codewords. Returned as a list of CODEWORDS, not bits.
+   local tBits, tTotal, tI, tCount, tHeaderLen, tPad, tK, tCw, tByte, tJ
+   put cwListAt(kCwQrDataCw, pVersion) + 0 into tTotal
+   put "" into tBits
+   put "0100" after tBits
+   if pVersion <= 9 then
+      put 8 into tHeaderLen
+   else
+      put 16 into tHeaderLen
+   end if
+   put tBits & cwQrBinary(the number of bytes of pData, tHeaderLen) into tBits
+   put the number of bytes of pData into tCount
+   repeat with tI = 1 to tCount
+      put cwQrBinary(byteToNum(byte tI of pData), 8) after tBits
+   end repeat
+   put cwMin(4, tTotal * 8 - the number of chars of tBits) into tK
+   repeat with tI = 1 to tK
+      put "0" after tBits
+   end repeat
+   repeat while cwIntMod(the number of chars of tBits, 8) is not 0
+      put "0" after tBits
+   end repeat
+   put 0 into tK
+   repeat while (the number of chars of tBits) < (tTotal * 8)
+      if cwIntMod(tK, 2) is 0 then
+         put "11101100" after tBits
+      else
+         put "00010001" after tBits
+      end if
+      add 1 to tK
+   end repeat
+   put cwListNew() into tCw
+   repeat with tI = 1 to tTotal
+      put 0 into tByte
+      repeat with tJ = 1 to 8
+         put tByte * 2 into tByte
+         if char ((tI - 1) * 8 + tJ) of tBits is "1" then
+            add 1 to tByte
+         end if
+      end repeat
+      put cwListAdd(tCw, tByte) into tCw
+   end repeat
+   return tCw
+end cwQrBits
+
+private function cwQrBinary pValue, pBits
+   local tOut, tI, tBit, tV
+   put "" into tOut
+   put pValue into tV
+   repeat with tI = (pBits - 1) down to 0
+      put cwPow2(tI) into tBit
+      if cwIntMod(cwIntDiv(tV, tBit), 2) is 1 then
+         put "1" after tOut
+      else
+         put "0" after tOut
+      end if
+   end repeat
+   return tOut
+end cwQrBinary
+
+function cwQrCodewords pData, pVersion
+   -- Split into blocks, add the error correction, then INTERLEAVE: block 1's
+   -- first codeword, block 2's first, and so on, then the same over the error
+   -- correction. The interleave is what makes a burst of damage hit one
+   -- codeword of many blocks rather than many codewords of one.
+   local tCw, tEccPer, tG1, tG1n, tG2, tG2n, tBlocks, tEccs, tI, tJ, tPos
+   local tBlock, tOut, tTables, tMax, tCount
+   put cwQrBits(pData, pVersion) into tCw
+   put cwListAt(kCwQrEccPer, pVersion) + 0 into tEccPer
+   put cwListAt(kCwQrG1Blocks, pVersion) + 0 into tG1
+   put cwListAt(kCwQrG1Cw, pVersion) + 0 into tG1n
+   put cwListAt(kCwQrG2Blocks, pVersion) + 0 into tG2
+   put cwListAt(kCwQrG2Cw, pVersion) + 0 into tG2n
+   put cwQrGfTables() into tTables
+   put cwListNew() into tBlocks
+   put cwListNew() into tEccs
+   put 1 into tPos
+   repeat with tI = 1 to (tG1 + tG2)
+      if tI <= tG1 then
+         put tG1n into tCount
+      else
+         put tG2n into tCount
+      end if
+      put cwListNew() into tBlock
+      repeat with tJ = 1 to tCount
+         put cwListAdd(tBlock, tCw[tPos]) into tBlock
+         add 1 to tPos
+      end repeat
+      put cwListAdd(tBlocks, tBlock) into tBlocks
+      put cwListAdd(tEccs, cwQrEcc(tBlock, tEccPer, tTables)) into tEccs
+   end repeat
+   put cwMax(tG1n, tG2n) into tMax
+   put cwListNew() into tOut
+   repeat with tJ = 1 to tMax
+      repeat with tI = 1 to (tG1 + tG2)
+         put tBlocks[tI] into tBlock
+         if tJ <= cwListCount(tBlock) then
+            put cwListAdd(tOut, tBlock[tJ]) into tOut
+         end if
+      end repeat
+   end repeat
+   repeat with tJ = 1 to tEccPer
+      repeat with tI = 1 to (tG1 + tG2)
+         put tEccs[tI] into tBlock
+         put cwListAdd(tOut, tBlock[tJ]) into tOut
+      end repeat
+   end repeat
+   return tOut
+end cwQrCodewords
+
+private function cwQrBlank pSize
+   local tMat, tR, tC, tRow
+   put "" into tRow
+   repeat with tC = 1 to pSize
+      put "" into tRow[tC]
+   end repeat
+   repeat with tR = 1 to pSize
+      put tRow into tMat[tR]
+   end repeat
+   return tMat
+end cwQrBlank
+
+private function cwQrFunctionPatterns pMat, pVersion, pSize
+   -- The finder patterns and their separators, the timing rows, the alignment
+   -- patterns, the reserved format area and (from version 7) the version
+   -- information. Every module this writes is a FUNCTION module: the data
+   -- placement skips them and the mask does not flip them.
+   local tMat, tI, tJ, tR, tC, tCentres, tCount, tA, tB, tOn, tDr, tDc
+   put pMat into tMat
+   put cwQrFinder(tMat, 1, 1, pSize) into tMat
+   put cwQrFinder(tMat, 1, pSize - 6, pSize) into tMat
+   put cwQrFinder(tMat, pSize - 6, 1, pSize) into tMat
+   repeat with tI = 9 to (pSize - 8)
+      if cwIntMod(tI, 2) is 1 then
+         put 1 into tMat[7][tI]
+         put 1 into tMat[tI][7]
+      else
+         put 0 into tMat[7][tI]
+         put 0 into tMat[tI][7]
+      end if
+   end repeat
+   put cwSplitAt(kCwQrAlign, pVersion, ";") into tCentres
+   if tCentres is not "" then
+      put 1 into tCount
+      repeat while cwListAt(tCentres, tCount) is not ""
+         add 1 to tCount
+      end repeat
+      subtract 1 from tCount
+      repeat with tI = 1 to tCount
+         repeat with tJ = 1 to tCount
+            put cwListAt(tCentres, tI) + 1 into tR
+            put cwListAt(tCentres, tJ) + 1 into tC
+            if (tR < 9 and tC < 9) or (tR < 9 and tC > pSize - 8) \
+                  or (tR > pSize - 8 and tC < 9) then
+               next repeat
+            end if
+            repeat with tDr = -2 to 2
+               repeat with tDc = -2 to 2
+                  put 0 into tOn
+                  if tDr is -2 or tDr is 2 or tDc is -2 or tDc is 2 then
+                     put 1 into tOn
+                  end if
+                  if tDr is 0 and tDc is 0 then
+                     put 1 into tOn
+                  end if
+                  put tOn into tMat[tR + tDr][tC + tDc]
+               end repeat
+            end repeat
+         end repeat
+      end repeat
+   end if
+   put 1 into tMat[pSize - 7][9]
+   repeat with tI = 1 to 9
+      if tMat[9][tI] is "" then
+         put 0 into tMat[9][tI]
+      end if
+      if tMat[tI][9] is "" then
+         put 0 into tMat[tI][9]
+      end if
+   end repeat
+   repeat with tI = 0 to 7
+      if tMat[9][pSize - tI] is "" then
+         put 0 into tMat[9][pSize - tI]
+      end if
+      if tMat[pSize - tI][9] is "" then
+         put 0 into tMat[pSize - tI][9]
+      end if
+   end repeat
+   if pVersion >= 7 then
+      repeat with tI = 1 to 6
+         repeat with tJ = 1 to 3
+            put 0 into tMat[pSize - 11 + tJ][tI]
+            put 0 into tMat[tI][pSize - 11 + tJ]
+         end repeat
+      end repeat
+   end if
+   return tMat
+end cwQrFunctionPatterns
+
+private function cwQrFinder pMat, pRow, pCol, pSize
+   local tMat, tDr, tDc, tR, tC, tOn
+   put pMat into tMat
+   repeat with tDr = -1 to 7
+      repeat with tDc = -1 to 7
+         put pRow + tDr into tR
+         put pCol + tDc into tC
+         if tR < 1 or tR > pSize or tC < 1 or tC > pSize then
+            next repeat
+         end if
+         put 0 into tOn
+         if tDr >= 0 and tDr <= 6 and tDc >= 0 and tDc <= 6 then
+            if tDr is 0 or tDr is 6 or tDc is 0 or tDc is 6 then
+               put 1 into tOn
+            else if tDr >= 2 and tDr <= 4 and tDc >= 2 and tDc <= 4 then
+               put 1 into tOn
+            end if
+         end if
+         put tOn into tMat[tR][tC]
+      end repeat
+   end repeat
+   return tMat
+end cwQrFinder
+
+private function cwQrReserved pVersion, pSize
+   local tMat, tRes, tR, tC, tRow
+   put cwQrFunctionPatterns(cwQrBlank(pSize), pVersion, pSize) into tMat
+   repeat with tR = 1 to pSize
+      put tMat[tR] into tRow
+      repeat with tC = 1 to pSize
+         if tRow[tC] is "" then
+            put false into tRes[tR][tC]
+         else
+            put true into tRes[tR][tC]
+         end if
+      end repeat
+   end repeat
+   return tRes
+end cwQrReserved
+
+private function cwQrPlaceData pMat, pReserved, pCodewords, pVersion, pSize
+   -- The zigzag: two columns at a time from the right edge, upward then
+   -- downward, right column of the pair before the left, skipping the
+   -- vertical timing column and every function module.
+   local tMat, tBits, tI, tCount, tIdx, tCol, tUp, tK, tR, tC, tPair, tRow
+   put pMat into tMat
+   put "" into tBits
+   put cwListCount(pCodewords) into tCount
+   repeat with tI = 1 to tCount
+      put cwQrBinary(pCodewords[tI], 8) after tBits
+   end repeat
+   put cwListAt(kCwQrRemainder, pVersion) + 0 into tI
+   repeat with tK = 1 to tI
+      put "0" after tBits
+   end repeat
+   put the number of chars of tBits into tCount
+   put 1 into tIdx
+   put pSize into tCol
+   put true into tUp
+   repeat while tCol > 1
+      if tCol is 7 then
+         subtract 1 from tCol
+      end if
+      repeat with tK = 1 to pSize
+         if tUp is true then
+            put pSize + 1 - tK into tR
+         else
+            put tK into tR
+         end if
+         repeat with tPair = 0 to 1
+            put tCol - tPair into tC
+            put pReserved[tR] into tRow
+            if tRow[tC] is true then
+               next repeat
+            end if
+            if tIdx <= tCount then
+               if char tIdx of tBits is "1" then
+                  put 1 into tMat[tR][tC]
+               else
+                  put 0 into tMat[tR][tC]
+               end if
+            else
+               put 0 into tMat[tR][tC]
+            end if
+            add 1 to tIdx
+         end repeat
+      end repeat
+      subtract 2 from tCol
+      if tUp is true then
+         put false into tUp
+      else
+         put true into tUp
+      end if
+   end repeat
+   return tMat
+end cwQrPlaceData
+
+private function cwQrMaskAt pMask, pRow, pCol
+   -- pRow and pCol are ZERO-based here, as the standard states the rules.
+   local tA, tB
+   if pMask is 0 then
+      return cwIntMod(pRow + pCol, 2) is 0
+   end if
+   if pMask is 1 then
+      return cwIntMod(pRow, 2) is 0
+   end if
+   if pMask is 2 then
+      return cwIntMod(pCol, 3) is 0
+   end if
+   if pMask is 3 then
+      return cwIntMod(pRow + pCol, 3) is 0
+   end if
+   if pMask is 4 then
+      return cwIntMod(cwIntDiv(pRow, 2) + cwIntDiv(pCol, 3), 2) is 0
+   end if
+   put pRow * pCol into tA
+   if pMask is 5 then
+      return (cwIntMod(tA, 2) + cwIntMod(tA, 3)) is 0
+   end if
+   if pMask is 6 then
+      return cwIntMod(cwIntMod(tA, 2) + cwIntMod(tA, 3), 2) is 0
+   end if
+   return cwIntMod(cwIntMod(pRow + pCol, 2) + cwIntMod(tA, 3), 2) is 0
+end cwQrMaskAt
+
+private function cwQrFormatBits pMask
+   local tData, tRem, tI, tShift
+   put pMask into tData
+   put tData * 1024 into tRem
+   repeat with tI = 4 down to 0
+      put cwPow2(tI + 10) into tShift
+      if cwIntMod(cwIntDiv(tRem, tShift), 2) is 1 then
+         put cwBitXorN(tRem, kCwQrFormatGen * cwPow2(tI), 16) into tRem
+      end if
+   end repeat
+   return cwBitXorN(tData * 1024 + tRem, kCwQrFormatMask, 16)
+end cwQrFormatBits
+
+private function cwQrVersionBits pVersion
+   local tRem, tI, tShift
+   put pVersion * 4096 into tRem
+   repeat with tI = 5 down to 0
+      put cwPow2(tI + 12) into tShift
+      if cwIntMod(cwIntDiv(tRem, tShift), 2) is 1 then
+         put cwBitXorN(tRem, kCwQrVersionGen * cwPow2(tI), 20) into tRem
+      end if
+   end repeat
+   return pVersion * 4096 + tRem
+end cwQrVersionBits
+
+private function cwQrPlaceFormat pMat, pMask, pSize
+   -- The format information, twice. MSB FIRST: module i carries bit 14-i.
+   -- The opposite reading is the natural spelling of the same integer and it
+   -- produces a symbol whose data is perfect and which no scanner can read,
+   -- because the format area is what tells a scanner which mask to undo.
+   local tMat, tBits, tI, tB, tShift
+   put pMat into tMat
+   put cwQrFormatBits(pMask) into tBits
+   repeat with tI = 0 to 14
+      put cwPow2(14 - tI) into tShift
+      put cwIntMod(cwIntDiv(tBits, tShift), 2) into tB
+      if tI < 6 then
+         put tB into tMat[9][tI + 1]
+      else if tI is 6 then
+         put tB into tMat[9][8]
+      else if tI is 7 then
+         put tB into tMat[9][9]
+      else if tI is 8 then
+         put tB into tMat[8][9]
+      else
+         put tB into tMat[15 - tI][9]
+      end if
+      if tI < 7 then
+         put tB into tMat[pSize - tI][9]
+      else
+         put tB into tMat[9][pSize - 14 + tI]
+      end if
+   end repeat
+   put 1 into tMat[pSize - 7][9]
+   return tMat
+end cwQrPlaceFormat
+
+private function cwQrPlaceVersion pMat, pVersion, pSize
+   local tMat, tBits, tI, tB, tShift, tR, tC
+   put pMat into tMat
+   if pVersion < 7 then
+      return tMat
+   end if
+   put cwQrVersionBits(pVersion) into tBits
+   repeat with tI = 0 to 17
+      put cwPow2(tI) into tShift
+      put cwIntMod(cwIntDiv(tBits, tShift), 2) into tB
+      put cwIntDiv(tI, 3) + 1 into tR
+      put cwIntMod(tI, 3) into tC
+      put tB into tMat[tR][pSize - 10 + tC]
+      put tB into tMat[pSize - 10 + tC][tR]
+   end repeat
+   return tMat
+end cwQrPlaceVersion
+
+private function cwQrRows pMat, pSize
+   local tRows, tR, tC, tRow, tLine
+   put cwListNew() into tRows
+   repeat with tR = 1 to pSize
+      put pMat[tR] into tRow
+      put "" into tLine
+      repeat with tC = 1 to pSize
+         if tRow[tC] is 1 then
+            put "1" after tLine
+         else
+            put "0" after tLine
+         end if
+      end repeat
+      put cwListAdd(tRows, tLine) into tRows
+   end repeat
+   return tRows
+end cwQrRows
+
+private function cwQrPenalty pRows, pSize
+   -- The four rules of 7.8.3, computed over the rows and the columns as
+   -- STRINGS: character comparison is what this dialect is fast at, and a
+   -- mask evaluation that walked a nested array eight times would make
+   -- drawing a receive address take seconds.
+   local tLines, tI, tJ, tScore, tRun, tPrev, tC, tLine, tCol, tDark, tK
+   local tW, tX, tRowA, tRowB
+   put cwListNew() into tLines
+   repeat with tI = 1 to pSize
+      put cwListAdd(tLines, pRows[tI]) into tLines
+   end repeat
+   repeat with tI = 1 to pSize
+      put "" into tCol
+      repeat with tJ = 1 to pSize
+         put char tI of pRows[tJ] after tCol
+      end repeat
+      put cwListAdd(tLines, tCol) into tLines
+   end repeat
+   put 0 into tScore
+   put pSize * 2 into tK
+   repeat with tI = 1 to tK
+      put tLines[tI] into tLine
+      put 1 into tRun
+      put char 1 of tLine into tPrev
+      repeat with tJ = 2 to pSize
+         put char tJ of tLine into tC
+         if tC is tPrev then
+            add 1 to tRun
+         else
+            if tRun >= 5 then
+               add 3 + tRun - 5 to tScore
+            end if
+            put 1 into tRun
+            put tC into tPrev
+         end if
+      end repeat
+      if tRun >= 5 then
+         add 3 + tRun - 5 to tScore
+      end if
+   end repeat
+   repeat with tI = 1 to (pSize - 1)
+      put pRows[tI] into tRowA
+      put pRows[tI + 1] into tRowB
+      repeat with tJ = 1 to (pSize - 1)
+         put char tJ of tRowA into tC
+         if char (tJ + 1) of tRowA is tC and char tJ of tRowB is tC \
+               and char (tJ + 1) of tRowB is tC then
+            add 3 to tScore
+         end if
+      end repeat
+   end repeat
+   repeat with tI = 1 to tK
+      put tLines[tI] into tLine
+      repeat with tJ = 1 to (pSize - 10)
+         put char tJ to (tJ + 10) of tLine into tW
+         if tW is "10111010000" or tW is "00001011101" then
+            add 40 to tScore
+         end if
+      end repeat
+   end repeat
+   put 0 into tDark
+   repeat with tI = 1 to pSize
+      put pRows[tI] into tLine
+      repeat with tJ = 1 to pSize
+         if char tJ of tLine is "1" then
+            add 1 to tDark
+         end if
+      end repeat
+   end repeat
+   put cwIntDiv(cwAbs(tDark * 100 - 50 * pSize * pSize), 5 * pSize * pSize) into tX
+   add 10 * tX to tScore
+   return tScore
+end cwQrPenalty
+
+function cwQrMatrix pText
+   -- The finished symbol as a list of row strings of "0" and "1". One row per
+   -- line, so a caller can render it as text, as a graphic, or as an image.
+   local tData, tVersion, tSize, tCw, tRes, tMask, tMat, tBest, tBestScore
+   local tScore, tRows, tBestMask, tR, tC, tRow, tZero
+   put textEncode(pText, "UTF-8") into tData
+   put cwQrVersionFor(the number of bytes of tData) into tVersion
+   put 17 + 4 * tVersion into tSize
+   put cwQrCodewords(tData, tVersion) into tCw
+   put cwQrReserved(tVersion, tSize) into tRes
+   put "" into tBestScore
+   repeat with tMask = 0 to 7
+      put cwQrFunctionPatterns(cwQrBlank(tSize), tVersion, tSize) into tMat
+      put cwQrPlaceData(tMat, tRes, tCw, tVersion, tSize) into tMat
+      -- the always-dark module belongs to the format area, so it is light
+      -- while the masks are scored; cwQrPlaceFormat puts it back
+      put 0 into tMat[tSize - 7][9]
+      repeat with tR = 1 to tSize
+         put tRes[tR] into tRow
+         repeat with tC = 1 to tSize
+            if tRow[tC] is not true then
+               if cwQrMaskAt(tMask, tR - 1, tC - 1) is true then
+                  put 1 - tMat[tR][tC] into tMat[tR][tC]
+               end if
+            end if
+         end repeat
+      end repeat
+      put cwQrRows(tMat, tSize) into tRows
+      put cwQrPenalty(tRows, tSize) into tScore
+      if tBestScore is "" or tScore < tBestScore then
+         put tScore into tBestScore
+         put tMask into tBestMask
+         put tMat into tBest
+      end if
+   end repeat
+   put cwQrPlaceFormat(tBest, tBestMask, tSize) into tBest
+   put cwQrPlaceVersion(tBest, tVersion, tSize) into tBest
+   return cwQrRows(tBest, tSize)
+end cwQrMatrix
+
+function cwQrText pText, pOn, pOff
+   -- The symbol as lines of two chosen characters, for a monospaced field or
+   -- a log. Not scannable at one character per module in most fonts; it is
+   -- for eyeballing that the thing was built at all.
+   local tRows, tI, tCount, tOut, tLine
+   put cwQrMatrix(pText) into tRows
+   put cwListCount(tRows) into tCount
+   put "" into tOut
+   repeat with tI = 1 to tCount
+      put tRows[tI] into tLine
+      replace "1" with pOn in tLine
+      replace "0" with pOff in tLine
+      if tI > 1 then
+         put return after tOut
+      end if
+      put tLine after tOut
+   end repeat
+   return tOut
+end cwQrText
+
+function cwQrBmp pText, pScale, pQuiet
+   -- The symbol as an uncompressed 24-bit BMP, so an image control can show
+   -- it: `set the text of image "x" to cwQrBmp(...)`.
+   --
+   -- BMP rather than PNG because PNG needs a CRC-32 and a deflate stream, and
+   -- a wallet does not need a compressor to draw 37 squares. Uncompressed BMP
+   -- is a header and a pixel array, which is a thing this layer can be sure
+   -- it got right.
+   --
+   -- The QUIET ZONE is not decoration: the standard requires four light
+   -- modules on every side, and a scanner will refuse a symbol drawn flush to
+   -- its own edge - which looks like a bad camera rather than a bad image.
+   local tRows, tCount, tScale, tQuiet, tSide, tWidth, tRowBytes, tPad
+   local tI, tJ, tK, tLine, tRowData, tOut, tImageSize, tFileSize, tBlack, tWhite
+   put cwQrMatrix(pText) into tRows
+   put cwListCount(tRows) into tCount
+   put pScale into tScale
+   if tScale is "" or tScale < 1 then
+      put 6 into tScale
+   end if
+   put pQuiet into tQuiet
+   if tQuiet is "" or tQuiet < 0 then
+      put 4 into tQuiet
+   end if
+   put tCount + tQuiet * 2 into tSide
+   put tSide * tScale into tWidth
+   put tWidth * 3 into tRowBytes
+   put cwIntMod(4 - cwIntMod(tRowBytes, 4), 4) into tPad
+   put (tRowBytes + tPad) * tWidth into tImageSize
+   put 54 + tImageSize into tFileSize
+   put numToByte(0) & numToByte(0) & numToByte(0) into tBlack
+   put numToByte(255) & numToByte(255) & numToByte(255) into tWhite
+   put "BM" into tOut
+   put cwLeBytes(tFileSize, 4) after tOut
+   put cwLeBytes(0, 4) after tOut
+   put cwLeBytes(54, 4) after tOut
+   put cwLeBytes(40, 4) after tOut
+   put cwLeBytes(tWidth, 4) after tOut
+   put cwLeBytes(tWidth, 4) after tOut
+   put cwLeBytes(1, 2) after tOut
+   put cwLeBytes(24, 2) after tOut
+   put cwLeBytes(0, 4) after tOut
+   put cwLeBytes(tImageSize, 4) after tOut
+   put cwLeBytes(2835, 4) after tOut
+   put cwLeBytes(2835, 4) after tOut
+   put cwLeBytes(0, 4) after tOut
+   put cwLeBytes(0, 4) after tOut
+   -- BMP rows run BOTTOM to TOP, so the last symbol row is emitted first
+   repeat with tI = tSide down to 1
+      put "" into tRowData
+      if tI <= tQuiet or tI > (tQuiet + tCount) then
+         repeat with tJ = 1 to tWidth
+            put tWhite after tRowData
+         end repeat
+      else
+         put tRows[tI - tQuiet] into tLine
+         repeat with tJ = 1 to tQuiet
+            repeat with tK = 1 to tScale
+               put tWhite after tRowData
+            end repeat
+         end repeat
+         repeat with tJ = 1 to tCount
+            repeat with tK = 1 to tScale
+               if char tJ of tLine is "1" then
+                  put tBlack after tRowData
+               else
+                  put tWhite after tRowData
+               end if
+            end repeat
+         end repeat
+         repeat with tJ = 1 to tQuiet
+            repeat with tK = 1 to tScale
+               put tWhite after tRowData
+            end repeat
+         end repeat
+      end if
+      repeat with tJ = 1 to tPad
+         put numToByte(0) after tRowData
+      end repeat
+      repeat with tK = 1 to tScale
+         put tRowData after tOut
+      end repeat
+   end repeat
+   return tOut
+end cwQrBmp
+
+-- ==============================================================================
+-- ODDS AND ENDS
+-- ==============================================================================
+
+function cwXKeyRespell pXKey, pNetwork, pScriptType, pPublic
+   -- Re-serialize an extended key under a different version prefix. The one
+   -- that matters: an exported DESCRIPTOR must carry the BIP-32 xpub/tpub
+   -- spelling even for a wpkh() descriptor, because the wrapper already names
+   -- the script type and Bitcoin Core rejects a SLIP-132 zpub inside one.
+   -- Nothing about the key changes; only the four version bytes do.
+   local tNode
+   put cwXKeyDecode(pXKey) into tNode
+   if pPublic is not true and tNode["kind"] is not "private" then
+      throw "wallet-core: cwXKeyRespell: that is a public key; it cannot be " & \
+            "re-spelled as a private one."
+   end if
+   return cwXKeyEncode(tNode, cwXKeyVersion(pNetwork, pScriptType, pPublic is true), \
+         pPublic is not true)
+end cwXKeyRespell
+
+function cwWifInfo pWif, pNetwork
+   -- What a pasted private key unlocks: the key, whether it is the compressed
+   -- form, and the address under each single-key script type. A sweep needs
+   -- all of them, because the person pasting the key usually does not know
+   -- which one their coins are sitting on.
+   local tRec, tOut, tPub
+   put cxWifDecode(cwTrim(pWif)) into tRec
+   put tRec["seckey"] into tOut["seckey"]
+   put tRec["network"] into tOut["network"]
+   put tRec["compressed"] into tOut["compressed"]
+   if tRec["network"] is "mainnet" and pNetwork is not "mainnet" then
+      put "this key is a MAINNET key and the wallet is on " & pNetwork into tOut["warning"]
+   else if tRec["network"] is "testnet" and pNetwork is "mainnet" then
+      put "this key is a TESTNET key and the wallet is on mainnet" into tOut["warning"]
+   else
+      put "" into tOut["warning"]
+   end if
+   put cxHexEncode(cxPublicKey(cxHexDecode(tRec["seckey"]), tRec["compressed"] is true)) into tPub
+   put tPub into tOut["pubkey"]
+   if tRec["compressed"] is true then
+      put cwAddressForScript(pNetwork, cwScriptP2pkh(tPub)) into tOut["p2pkh"]
+      put cwAddressForScript(pNetwork, cwScriptP2shP2wpkh(tPub)) into tOut["p2sh-p2wpkh"]
+      put cwAddressForScript(pNetwork, cwScriptP2wpkh(tPub)) into tOut["p2wpkh"]
+   else
+      -- an uncompressed key has no SegWit address at all: BIP-143 forbids
+      -- one, so a wallet that offered it would be offering an address nobody
+      -- can ever spend from
+      put cwAddressForScript(pNetwork, cwScriptP2pkhUncompressed(tPub)) into tOut["p2pkh"]
+      put "" into tOut["p2sh-p2wpkh"]
+      put "" into tOut["p2wpkh"]
+   end if
+   return tOut
+end cwWifInfo
+
+function cwMnemonicStrength pMnemonic
+   -- Words to entropy bits, by BIP-39's own table. Reported rather than
+   -- assumed because a 12-word backup and a 24-word backup are 128 and 256
+   -- bits, and a restore screen that does not say which one it read gives a
+   -- person no way to notice they typed eleven words.
+   local tWords, tCount, tText, tPos
+   put cwMnemonicWordCount(pMnemonic) into tCount
+   if tCount is 12 then
+      return 128
+   end if
+   if tCount is 15 then
+      return 160
+   end if
+   if tCount is 18 then
+      return 192
+   end if
+   if tCount is 21 then
+      return 224
+   end if
+   if tCount is 24 then
+      return 256
+   end if
+   return 0
+end cwMnemonicStrength
+
+function cwMnemonicWordCount pMnemonic
+   local tText, tCount, tI, tLen, tInWord, tC
+   put cxMnemonicNormalize(pMnemonic) into tText
+   put the number of chars of tText into tLen
+   put 0 into tCount
+   put false into tInWord
+   repeat with tI = 1 to tLen
+      put char tI of tText into tC
+      if tC is " " then
+         put false into tInWord
+      else
+         if tInWord is not true then
+            add 1 to tCount
+            put true into tInWord
+         end if
+      end if
+   end repeat
+   return tCount
+end cwMnemonicWordCount
+
+function cwFeeRateLabel pSatPerVb
+   -- What a fee rate means in words. A number alone tells a person nothing
+   -- about whether they are about to overpay by a factor of twenty.
+   if pSatPerVb <= 1 then
+      return "minimum relay: may take days, or never confirm if the mempool fills"
+   end if
+   if pSatPerVb <= 3 then
+      return "economy: hours to days"
+   end if
+   if pSatPerVb <= 10 then
+      return "normal: usually within an hour"
+   end if
+   if pSatPerVb <= 30 then
+      return "priority: usually the next block or two"
+   end if
+   return "very high: check this is what you meant"
+end cwFeeRateLabel
