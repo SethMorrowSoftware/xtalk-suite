@@ -5,8 +5,9 @@ WHY THIS EXISTS, AND WHAT IT IS NOT
 -----------------------------------
 tools/check-wallet-vectors.py proves the CALCULATOR: it drives
 examples/wallet-core.livecodescript against an independent oracle with the
-real secp256k1 underneath, twice, once under each comparison rule. It never opens a window, because wallet-core does
-not have one. Everything ABOVE that line - the ten screens, the show/hide
+real secp256k1 underneath, twice, once under each comparison rule. It never
+opens a window, because wallet-core does not have one. Everything ABOVE that
+line - the ten screens, the show/hide
 sweep, the click router, the paint handlers, the wallet file, the boot
 self-check - was, until this gate, verified only by reading it. That is the
 suite's own recorded failure shape, and this member's CLAUDE.md names it in
@@ -37,6 +38,10 @@ Three engine constructs the wallet uses and riptide's model does not:
      had to learn the type or every adopter's scMissing walk would die on it.)
   3. `the last image` as an object reference, which is how a just-created
      control is named.
+  4. `the effective filename of this stack`, which the Settings screen walks
+     back to a folder to propose a default wallet-file path. Answered with a
+     path inside the sandbox, so the derivation is really exercised and what
+     it derives is somewhere this gate may write.
 
 (1) and (3) are expression and statement forms added by the two subclasses
 below. (2) is a widening of riptide's shared object regex, done by rebinding
@@ -260,23 +265,30 @@ class WalletInterp(DB.DemoInterp):
 # natives
 # ==========================================================================
 
-SODIUM_MODELS = """\
-sxVersion            a fixed string; the wallet only needs it to ANSWER
-sxRandomBytes        DETERMINISTIC counter-seeded bytes - a boot that minted a
-                     fresh seed each run could not be compared to anything
-sxPwSaltBytes        16, argon2id's salt length
-sxPwMemSensitive     argon2id's 'sensitive' memlimit, as a number to pass on
-sxPwHash             blake2b(password || salt), the model the oracle already
-                     proves against sodiumxt's own C KAT - NOT argon2id
-sxAeadEncrypt/Decrypt  nonce-prefixed and authenticated (HMAC-SHA256 over
-                     nonce, ad and ciphertext, verified BEFORE anything is
-                     returned) so the wallet file's framing, its associated
-                     data and every refusal path around it are exercised
-                     honestly - but NOT XChaCha20-Poly1305
-sxHmacSha256         hashlib.hmac, which is what sodiumxt's is
-sxSha3_256           hashlib.sha3_256, likewise
-sxMemEqual           a constant-time-shaped byte compare
-"""
+# EVERY SodiumXT STAND-IN, DECLARED. Checked against what is actually wired
+# at boot (see run()), so this is a declaration the build compares rather than
+# a comment nobody has to keep true.
+SODIUM_MODELS = {
+    "sxversion": "a fixed string; the wallet only needs it to ANSWER",
+    "sxrandombytes": "DETERMINISTIC counter-seeded bytes - a boot that minted "
+                     "a fresh seed each run could not be compared to anything",
+    "sxpwsaltbytes": "16, argon2id's salt length",
+    "sxpwmemsensitive": "argon2id's 'sensitive' memlimit, as a number to pass "
+                        "on",
+    "sxpwhash": "blake2b(password || salt), the model the oracle already "
+                "proves against sodiumxt's own C KAT - NOT argon2id",
+    "sxaeadencrypt": "nonce-prefixed and authenticated (HMAC-SHA256 over "
+                     "nonce, ad and ciphertext) so the wallet file's framing, "
+                     "its associated data and every refusal path around it "
+                     "are exercised honestly - but NOT XChaCha20-Poly1305",
+    "sxaeaddecrypt": "its inverse, verifying the tag BEFORE returning "
+                     "anything, which is what makes the tamper check real",
+    "sxhmacsha256": "hashlib.hmac, which is what sodiumxt's is",
+    "sxsha3_256": "hashlib.sha3_256, likewise",
+    "sxmemequal": "a constant-time-shaped byte compare",
+    "sxbin2hex": "exact",
+    "sxhex2bin": "exact",
+}
 
 
 def _b(s):
@@ -445,6 +457,23 @@ def run(c):
         DB.install_common(world)
         install_sodium()
         install_coin()
+
+        # THE DECLARED MODELS ARE CHECKED AGAINST WHAT IS ACTUALLY WIRED. A
+        # list of stand-ins in a docstring is a comment; a list the build
+        # compares is a declaration. This file's first draft had
+        # SODIUM_MODELS read by nothing - the same shape as the dead
+        # constants its own subject matter was found carrying.
+        #
+        # ONE DIRECTION ONLY, and the reason is whose list it is. Every name
+        # SODIUM_MODELS declares must really be wired, or the declaration is
+        # describing a machine this gate is not running. The reverse - every
+        # wired sx* being declared here - is not asserted, because riptide's
+        # install_pure_natives wires several more (ed25519, kdf, secretbox)
+        # that the wallet never calls and that riptide's own header declares.
+        installed = set(k for k in LCS.HASHES if k.startswith("sx"))
+        c.ck("every declared SodiumXT stand-in is really wired (%d sx* "
+             "natives present)" % len(installed),
+             sorted(set(SODIUM_MODELS) - installed), [])
 
         # ---- THE BOOT -----------------------------------------------------
         try:
