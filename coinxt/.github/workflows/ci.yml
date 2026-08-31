@@ -86,5 +86,20 @@ jobs:
       - name: The script encoders reproduce the published vectors
         run: python3 tools/check-script-vectors.py --check
 
+      # The WALLET, one layer up, in two steps. The first drives the shipped
+      # engine (examples/wallet-core.livecodescript) against an independent
+      # oracle, twice - as written, and with `is` and `offset()` folded to the
+      # engine's own case-insensitive default, which is the rule the
+      # interpreter does not model and under which two real defects hid behind
+      # a green run. The second BOOTS the shipped stack headlessly over
+      # riptide's engine object model with the committed library underneath.
+      # Both are slower than everything above them and run last for that
+      # reason.
+      - name: The wallet engine, against its oracle and under both case rules
+        run: python3 tools/check-wallet-vectors.py --check
+
+      - name: The wallet stack boots headlessly
+        run: python3 tools/check-wallet-boot.py --check
+
       - name: ASan + UBSan native self-test
         run: sh native/build.sh asan

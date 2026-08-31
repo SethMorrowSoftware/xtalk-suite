@@ -181,11 +181,11 @@ sh native/build.sh asan                       # ASan + UBSan native self-test
 ( cd src/code && sha256sum -c MANIFEST.sha256 ) # committed-binary integrity
 ```
 
-The monorepo's `suite-gates.yml`, via `tools/build-all.sh --gates`, runs every one of them plus
-`python3 tools/check-doc-handlers.py --check` (the docs-vs-shipped-handler-set gate). The member's
-own `.github/workflows/ci.yml` carries a SUBSET - it predates the two wallet gates and does not run
-them - so this list going green locally is the thing to trust, and the member workflow going green
-is not by itself proof that the suite gates will. OXT cannot COMPILE or LOAD a
+All of them run in the member's own `.github/workflows/ci.yml`. The monorepo's `suite-gates.yml`,
+via `tools/build-all.sh --gates`, runs that set plus `python3 tools/check-doc-handlers.py --check`
+(the docs-vs-shipped-handler-set gate, which the member workflow does not carry), so the list above
+going green is not by itself proof that the suite gates will. Only the ROOT workflows fire in this
+monorepo - the member's own is kept for when this extension is worked on standalone. OXT cannot COMPILE or LOAD a
 `.livecodescript` or a `.lcb` headlessly, so a script change still needs an on-engine pass for parser
 behaviour - but the phase-3 encoders' LOGIC is executed headlessly by `check-script-vectors.py`,
 the wallet engine's by `check-wallet-vectors.py`, and the wallet STACK's whole openStack chain by

@@ -538,14 +538,30 @@ def run(c):
         c.ck("the boot self-check actually ran something",
              passed.isdigit() and int(passed) > 0, "passed=%r" % passed)
 
-        # ---- the screen sweep ---------------------------------------------
-        # This is what waShow is FOR, and it is the one piece of this stack
-        # that a reader cannot check by reading: it works by control index
-        # over a card of 250-odd controls, and it is right only if EVERY
-        # screen's controls hide and the chrome never does.
-        bad = []
-        for screen, code in zip(SCREENS, CODES):
-            ip.call("waShow", [screen])
+        # ---- every screen, reached the way a person reaches it ------------
+        # ONE loop, not two. The rail click and the sweep are checked together
+        # because clicking nv_<code> IS what runs waShow, and running the two
+        # separately paid for twenty full repaints to assert what twelve
+        # assert - each repaint re-derives and re-formats every table over the
+        # whole address window, which is the most expensive thing this gate
+        # does.
+        #
+        # The sweep is the one piece of this stack a reader cannot check by
+        # reading: it works by control INDEX over a card of 250-odd controls,
+        # and it is right only if every other screen's controls hide and the
+        # chrome never does.
+        bad, routed = [], True
+        for code, screen in zip(CODES, SCREENS):
+            try:
+                click(ip, world, "nv_" + code)
+            except Exception as exc:                    # noqa: BLE001
+                c.ck("clicking nv_%s routes and paints" % code, False,
+                     "%s: %s" % (type(exc).__name__, exc))
+                routed = False
+                break
+            if ip.globals.get("swascreen") != screen:
+                bad.append("nv_%s left the screen at %r"
+                           % (code, ip.globals.get("swascreen")))
             for ct in world.cards[0].controls:
                 if len(ct.name) < 3 or ct.name[2] != "_":
                     continue
@@ -558,21 +574,16 @@ def run(c):
                 if bool(ct.props.get("visible", True)) is not want:
                     bad.append("%s visible=%r on %s"
                                % (ct.name, ct.props.get("visible"), screen))
-        c.ck("the sweep shows exactly one screen and never touches the rail",
-             not bad, "; ".join(bad[:6]))
-
-        # ---- every navigation button, through the real click router -------
-        try:
-            for code, screen in zip(CODES, SCREENS):
-                click(ip, world, "nv_" + code)
-                if ip.globals.get("swascreen") != screen:
-                    raise AssertionError("nv_%s left the screen at %r"
-                                         % (code, ip.globals.get("swascreen")))
-            click(ip, world, "nv_refresh")
-            c.ck("every navigation button routes, paints and lands", True)
-        except Exception as exc:                        # noqa: BLE001
-            c.ck("every navigation button routes, paints and lands", False,
-                 "%s: %s" % (type(exc).__name__, exc))
+        if routed:
+            c.ck("every rail button routes, paints, and leaves exactly one "
+                 "screen visible with the rail untouched",
+                 not bad, "; ".join(bad[:6]))
+            try:
+                click(ip, world, "nv_refresh")
+                c.ck("and Refresh runs on top of all of it", True)
+            except Exception as exc:                    # noqa: BLE001
+                c.ck("and Refresh runs on top of all of it", False,
+                     "%s: %s" % (type(exc).__name__, exc))
         c.ck("the click router left the screen lock balanced",
              world.locked == 0, "depth %d" % world.locked)
 
