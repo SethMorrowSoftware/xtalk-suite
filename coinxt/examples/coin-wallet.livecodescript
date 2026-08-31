@@ -4782,7 +4782,12 @@ function cwSelectCoins pUtxos, pTargetSat, pFeeRate, pInputType, pOutputTypes, p
    repeat with tI = 1 to tCount
       put pUtxos[tI] into tCoin
       if tStrategy is "manual" then
-         if tCoin["selected"] is true then
+         -- FROZEN BEATS TICKED. Freezing a coin is the more deliberate of the
+         -- two signals and the one a person sets to mean "not this one, ever";
+         -- ticking is a working selection. A selector that spent a coin
+         -- because it was ticked and ignored that it was frozen would be
+         -- ignoring the stronger instruction.
+         if tCoin["selected"] is true and tCoin["frozen"] is not true then
             put cwListAdd(tPool, tCoin) into tPool
          end if
       else if tCoin["frozen"] is not true then
@@ -4852,7 +4857,12 @@ function cwSelectCoins pUtxos, pTargetSat, pFeeRate, pInputType, pOutputTypes, p
 end cwSelectCoins
 
 private function cwSelectionResult pSel, pTargetSat, pFeeRate, pInputType, pOutputTypes, pChangeType, pWithChange, pM, pCosigners
-   local tOuts, tIns, tI, tCount, tVsize, tFee, tTotal, tOut
+   -- tCoin and tOut are SEPARATE variables on purpose. Summing the coins into
+   -- the same array the result is built in leaves every key of the last coin
+   -- (its txid, its value, its address) in the returned record, where a later
+   -- reader would find a plausible wrong answer under a name this function
+   -- never meant to define.
+   local tOuts, tIns, tI, tCount, tVsize, tFee, tTotal, tOut, tCoin
    put pOutputTypes into tOuts
    if pWithChange is true then
       put cwListAdd(tOuts, pChangeType) into tOuts
@@ -4863,9 +4873,10 @@ private function cwSelectionResult pSel, pTargetSat, pFeeRate, pInputType, pOutp
    put cwFeeFor(tVsize, pFeeRate) into tFee
    put 0 into tTotal
    repeat with tI = 1 to tCount
-      put pSel[tI] into tOut
-      add tOut["value"] to tTotal
+      put pSel[tI] into tCoin
+      add tCoin["value"] to tTotal
    end repeat
+   put "" into tOut
    put pSel into tOut["selected"]
    put tFee into tOut["fee"]
    put tTotal into tOut["totalin"]
@@ -10945,6 +10956,22 @@ end waNavPaint
 
 -- ---- 1. Wallet ---------------------------------------------------------------
 
+command waEditArea pName, pRect
+   -- A MULTI-LINE EDITABLE field with the kit's look.
+   --
+   -- The kit has uiInput (editable, one line's worth, no scrollbar) and uiArea
+   -- (mono, scrolling, and lockText TRUE - a read-only output surface). A seed
+   -- phrase is twenty-four words, a cosigner list is one key per line, and a
+   -- PSBT is a paragraph of base64: all three need the AREA's shape and the
+   -- INPUT's behaviour. So this builds the area and then unlocks it. It edits
+   -- the CONTROL, never the kit block - the look is still the kit's, and
+   -- tools/check-ui-kit-drift.py holds that block byte-identical.
+   uiArea pName, pRect
+   set the lockText of field pName to false
+   set the traversalOn of field pName to true
+   set the borderColor of field pName to kUiFieldLine
+end waEditArea
+
 command waBuildWallet
    uiPanel "wl_panelA", "184,58,700,590"
    uiPanel "wl_panelB", "708,58,1184,590"
@@ -10971,13 +10998,13 @@ command waBuildWallet
    uiSection "wl_sec3", "3. The secret", "196,230,688,248"
    uiCap "wl_mnemonicCap", "Seed phrase (12, 15, 18, 21 or 24 words)", \
          "196,252,688,268"
-   uiArea "wl_mnemonic", "196,270,688,326"
+   waEditArea "wl_mnemonic", "196,270,688,326"
    uiCap "wl_passCap", "BIP-39 passphrase (the 25th word; blank is normal)", \
          "196,332,688,348"
    uiInput "wl_pass", "196,350,688,372"
-   uiCap "wl_xkeyCap", "Extended key, WIF, or one cosigner key per line", \
+   uiCap "wl_xkeyCap", "Extended key, WIF, or EVERY cosigner key (yours too), one per line", \
          "196,378,688,394"
-   uiArea "wl_xkey", "196,396,688,452"
+   waEditArea "wl_xkey", "196,396,688,452"
    uiCap "wl_mCap", "Multisig: signatures required", "196,458,400,474"
    uiInput "wl_m", "404,456,470,476"
    uiButton "wl_generate", "Generate a new seed", "196,484,380,510"
@@ -11053,7 +11080,7 @@ command waBuildSend
    uiSection "sd_sec1", "1. Pay to", "196,66,688,84"
    uiCap "sd_toCap", "One address per line: address, amount (or MAX)", \
          "196,88,688,104"
-   uiArea "sd_to", "196,106,688,186"
+   waEditArea "sd_to", "196,106,688,186"
    uiButton "sd_paste", "Read a BIP-21 URI", "196,192,360,218"
    uiButton "sd_addSelf", "Pay myself", "364,192,490,218"
    uiSection "sd_sec2", "2. Fee and options", "196,226,688,244"
@@ -11116,18 +11143,18 @@ command waBuildTools
    uiPanel "tl_panelB", "708,58,1184,590"
    uiSection "tl_sec1", "Sign or verify a message", "196,66,688,84"
    uiCap "tl_msgCap", "Message", "196,88,688,104"
-   uiArea "tl_msg", "196,106,688,160"
+   waEditArea "tl_msg", "196,106,688,160"
    uiCap "tl_msgAddrCap", "Address (blank signs with the first receive key)", \
          "196,166,688,182"
    uiInput "tl_msgAddr", "196,184,688,206"
    uiCap "tl_msgSigCap", "Signature", "196,212,688,228"
-   uiArea "tl_msgSig", "196,230,688,278"
+   waEditArea "tl_msgSig", "196,230,688,278"
    uiButton "tl_msgSign", "Sign", "196,284,300,310"
    uiButton "tl_msgVerify", "Verify", "304,284,410,310"
    uiSection "tl_sec2", "Inspect or sweep", "196,318,688,336"
    uiCap "tl_hexCap", "A raw transaction, a PSBT, a WIF, or an extended key", \
          "196,340,688,356"
-   uiArea "tl_hex", "196,358,688,438"
+   waEditArea "tl_hex", "196,358,688,438"
    uiButton "tl_inspect", "Inspect", "196,444,300,470"
    uiButton "tl_psbtSign", "Sign the PSBT", "304,444,440,470"
    uiButton "tl_psbtFinal", "Finalize", "444,444,554,470"
@@ -11221,6 +11248,14 @@ end waBuildSettings
 
 on mouseUp
    local tName, tPrefix, tRole, tError, tI
+   -- BUTTONS ONLY. Fields carry the same "<screen>_<role>" names, and routing
+   -- a click on one would run that screen's repaint - which writes the stored
+   -- value back over whatever the person had just typed into the field they
+   -- clicked. Table selections are read at the moment a button acts on them,
+   -- so nothing needs a field click to be routed.
+   if word 1 of the name of the target is not "button" then
+      pass mouseUp
+   end if
    put the short name of the target into tName
    if char 3 of tName is not "_" then
       pass mouseUp
@@ -11786,8 +11821,9 @@ command waWalletClick pRole
    else if pRole is "kindMulti" then
       put "multisig" into sWaKind
       put "p2wsh" into sWaScriptType
-      uiStatus "Paste one cosigner account key per line, then set how many " & \
-            "signatures are required.", ""
+      uiStatus "Paste EVERY cosigner's account key, one per line, INCLUDING " & \
+            "your own - the address is a function of the whole key set - then " & \
+            "set how many signatures are required.", ""
    else if pRole is "netMain" then
       waSetNetwork "mainnet"
    else if pRole is "netTest" then
@@ -12639,7 +12675,7 @@ command waBuildSpend pSign, pAsPsbt
    end repeat
    put waChangeType() into tChangeType
    if tMaxIndex > 0 then
-      put waMaxSpend(tCoins, tOutTypes, tRate) into tResult
+      put waMaxSpend(tCoins, tOutTypes, tRate, tTarget) into tResult
    else
       put cwSelectCoins(tCoins, tTarget, tRate, waInputType(), tOutTypes, \
             tChangeType, waStrategy(), sWaM, cwListCount(sWaCosigners)) into tResult
@@ -12705,7 +12741,6 @@ command waBuildSpend pSign, pAsPsbt
             "instead and sign it where the keys are."
    end if
    put waSignSpend(tInputs, tOutputs, tSel, tLock) into tRaw
-   put sWaLastRaw into tRaw
    put cwTxDecode(tRaw) into tRec
    put tOut & return & "SIGNED." & return & \
          "txid    " & tRec["txid"] & return & \
@@ -12742,9 +12777,16 @@ function waChangeType
    return waInputType()
 end waChangeType
 
-private function waMaxSpend pCoins, pOutTypes, pRate
-   -- MAX: spend every unfrozen coin, pay the fee, and hand the rest to the
-   -- one MAX output. There is no change, by construction.
+private function waMaxSpend pCoins, pOutTypes, pRate, pFixedSat
+   -- MAX: spend every unfrozen coin, pay the fee AND any fixed-amount outputs
+   -- on the same transaction, and hand the rest to the one MAX output. There
+   -- is no change, by construction.
+   --
+   -- pFixedSat is the sum of the OTHER outputs, and it is a parameter rather
+   -- than an assumption: without it the sufficiency test compares the total
+   -- against the fee alone, passes, and the MAX output comes out NEGATIVE -
+   -- refused a step later by the dust check, but with a message about dust
+   -- rather than about not having enough money.
    local tI, tCount, tRec, tSel, tTotal, tVsize, tFee, tOut, tIns
    put waEmptyList() into tSel
    put 0 into tTotal
@@ -12776,10 +12818,16 @@ private function waMaxSpend pCoins, pOutTypes, pRate
       put "no spendable coins" into tOut["why"]
       return tOut
    end if
-   if tTotal <= tFee then
+   if tTotal <= (tFee + pFixedSat) then
       put false into tOut["ok"]
-      put "the fee (" & tFee & " sat) is more than everything this wallet has" \
-            into tOut["why"]
+      if pFixedSat > 0 then
+         put "the fee (" & tFee & " sat) plus the fixed-amount outputs (" & \
+               pFixedSat & " sat) is more than everything this wallet has (" & \
+               tTotal & " sat)" into tOut["why"]
+      else
+         put "the fee (" & tFee & " sat) is more than everything this wallet " & \
+               "has (" & tTotal & " sat)" into tOut["why"]
+      end if
       return tOut
    end if
    put true into tOut["ok"]
@@ -12976,6 +13024,15 @@ function waMakePsbt pInputs, pOutputs, pSel, pLock
       put pSel[tI] into tRec
       put waRecordFor(tRec["address"]) into tAddrRec
       put "" into tMeta[tI]
+      -- A WITNESS UTXO for every input, including a legacy one. BIP-174
+      -- wants NON_WITNESS_UTXO (the whole previous transaction) for a legacy
+      -- input, and a strict external signer is entitled to refuse this PSBT
+      -- for that reason. It is not supplied because this wallet may be
+      -- OFFLINE and has no way to fetch a previous transaction it was never
+      -- given - and a witness UTXO is exactly what a legacy sighash needs
+      -- from it anyway. Own signer, own PSBTs: fine. Handing one to a
+      -- hardware wallet for a legacy input: expect a refusal, and use a
+      -- SegWit or taproot wallet for that.
       put tAddrRec["script"] into tMeta[tI]["witnessutxoscript"]
       put tRec["value"] into tMeta[tI]["witnessutxovalue"]
       if tAddrRec["redeem"] is not "" then

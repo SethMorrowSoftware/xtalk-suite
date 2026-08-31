@@ -1611,7 +1611,12 @@ function cwSelectCoins pUtxos, pTargetSat, pFeeRate, pInputType, pOutputTypes, p
    repeat with tI = 1 to tCount
       put pUtxos[tI] into tCoin
       if tStrategy is "manual" then
-         if tCoin["selected"] is true then
+         -- FROZEN BEATS TICKED. Freezing a coin is the more deliberate of the
+         -- two signals and the one a person sets to mean "not this one, ever";
+         -- ticking is a working selection. A selector that spent a coin
+         -- because it was ticked and ignored that it was frozen would be
+         -- ignoring the stronger instruction.
+         if tCoin["selected"] is true and tCoin["frozen"] is not true then
             put cwListAdd(tPool, tCoin) into tPool
          end if
       else if tCoin["frozen"] is not true then
@@ -1681,7 +1686,12 @@ function cwSelectCoins pUtxos, pTargetSat, pFeeRate, pInputType, pOutputTypes, p
 end cwSelectCoins
 
 private function cwSelectionResult pSel, pTargetSat, pFeeRate, pInputType, pOutputTypes, pChangeType, pWithChange, pM, pCosigners
-   local tOuts, tIns, tI, tCount, tVsize, tFee, tTotal, tOut
+   -- tCoin and tOut are SEPARATE variables on purpose. Summing the coins into
+   -- the same array the result is built in leaves every key of the last coin
+   -- (its txid, its value, its address) in the returned record, where a later
+   -- reader would find a plausible wrong answer under a name this function
+   -- never meant to define.
+   local tOuts, tIns, tI, tCount, tVsize, tFee, tTotal, tOut, tCoin
    put pOutputTypes into tOuts
    if pWithChange is true then
       put cwListAdd(tOuts, pChangeType) into tOuts
@@ -1692,9 +1702,10 @@ private function cwSelectionResult pSel, pTargetSat, pFeeRate, pInputType, pOutp
    put cwFeeFor(tVsize, pFeeRate) into tFee
    put 0 into tTotal
    repeat with tI = 1 to tCount
-      put pSel[tI] into tOut
-      add tOut["value"] to tTotal
+      put pSel[tI] into tCoin
+      add tCoin["value"] to tTotal
    end repeat
+   put "" into tOut
    put pSel into tOut["selected"]
    put tFee into tOut["fee"]
    put tTotal into tOut["totalin"]
