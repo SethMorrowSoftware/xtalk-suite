@@ -3305,6 +3305,13 @@ constant kCwStems = "x,y,z,x,Z"
 -- idea why. A DER-encoded low-S ECDSA signature is 71 or 72 bytes and the
 -- difference is one leading zero, so 72 is budgeted; BIP-340's is exactly 64.
 
+-- THE LONG-TERM FEE RATE, in sat/vB: what spending a change output is
+-- assumed to cost LATER, when nobody knows what the rate will be. Bitcoin
+-- Core's own default, and the only rate in this file that is not the
+-- transaction's own - which is the point, because the two halves of "cost of
+-- change" happen at different times.
+constant kCwLongTermFeeRate = 10
+
 constant kCwSigBytes = 72
 constant kCwPubkeyBytes = 33
 constant kCwSchnorrSigBytes = 64
@@ -4884,8 +4891,23 @@ function cwSelectCoins pUtxos, pTargetSat, pFeeRate, pInputType, pOutputTypes, p
    put cwSortCoins(tPool, tStrategy) into tPool
    put cwListNew() into tSel
    put cwListCount(tPool) into tCount
+   -- MANUAL SPENDS THE WHOLE TICKED SET, NOT A PREFIX OF IT. The loop below
+   -- adds one coin at a time and returns on the FIRST prefix that pays, which
+   -- is right for the automatic strategies and wrong for this one: the
+   -- contract at the top of this handler says "exactly the coins the user
+   -- ticked", the Coins screen says the same thing to the person ticking
+   -- them, and neither was true. Ticking twenty small coins to sweep them
+   -- into one payment - which is the main reason anybody ticks a coin set at
+   -- all - spent the first one or two and left the rest, silently.
+   if tStrategy is "manual" then
+      put 1 into tCount
+   end if
    repeat with tI = 1 to tCount
-      put cwListAdd(tSel, tPool[tI]) into tSel
+      if tStrategy is "manual" then
+         put tPool into tSel
+      else
+         put cwListAdd(tSel, tPool[tI]) into tSel
+      end if
       put cwSelectionResult(tSel, pTargetSat, pFeeRate, pInputType, pOutputTypes, \
             pChangeType, true, pM, pCosigners) into tResult
       if tResult["change"] >= tDust then
@@ -5039,6 +5061,7 @@ private function cwBranchAndBound pPool, pTargetSat, pFeeRate, pInputType, pOutp
    local tSorted, tCount, tI, tCoin, tEff, tValues, tCoins, tRemain, tSum
    local tCost, tBaseFee, tLo, tHi, tCostOfChange, tState, tDepth, tValue
    local tTries, tBack, tOut, tSel, tResult, tChangeCost, tEmpty
+   local tLongTermCost
    put cwSortCoins(pPool, "largest") into tSorted
    put cwListCount(tSorted) into tCount
    put cwInputCost(pInputType, pFeeRate, pM, pCosigners) into tCost
@@ -5057,8 +5080,18 @@ private function cwBranchAndBound pPool, pTargetSat, pFeeRate, pInputType, pOutp
    put cwEstimateVsize(cwListNew(), pOutputTypes) into tBaseFee
    put cwFeeFor(tBaseFee, pFeeRate) into tBaseFee
    put pTargetSat + tBaseFee into tLo
+   -- COST OF CHANGE HAS TWO HALVES AND THEY ARE PRICED AT DIFFERENT RATES.
+   -- Making the change output happens NOW, at this transaction's fee rate.
+   -- SPENDING it happens later, at whatever the rate is then - which nobody
+   -- knows, so Core uses a long-term estimate and so does this. Pricing the
+   -- future spend at today's rate, which this line used to do, makes the
+   -- acceptance window swing with the current rate: at 5 sat/vB it was 345
+   -- satoshi narrower than the same wallet's own oracle computed, and no
+   -- vector sat inside the band, so two different rules read as agreement.
    put cwFeeFor(cwOutputBytes(pChangeType), pFeeRate) into tChangeCost
-   put tCost + tChangeCost into tCostOfChange
+   put cwInputCost(pInputType, kCwLongTermFeeRate, pM, pCosigners) \
+         into tLongTermCost
+   put tLongTermCost + tChangeCost into tCostOfChange
    put tLo + tCostOfChange into tHi
    -- the suffix sums: what is still reachable from each position on
    put 0 into tRemain[tCount + 1]
@@ -11259,13 +11292,26 @@ command waBuild
 end waBuild
 
 command waBuildNav
-   local tI, tTop, tName, tCode
+   -- THE TEN RAIL BUTTONS ARE NAMED LITERALLY, like every other control this
+   -- file builds. They used to be built in a loop from `"nv_" & waScreenCode(tI)`,
+   -- which is tidier to read and wrong in one way that matters: a computed name
+   -- is a name no scanner can see, and this family DERIVES each demo's
+   -- self-check control list from the names its source spells out
+   -- (tools/check-demo-control-lists.py). So the rail was the one part of the
+   -- window the boot self-check could not be told about - and adding the names
+   -- to the registry by hand is exactly what that generator exists to refuse.
+   -- The geometry is still arithmetic; only the names are literal.
    uiPanel "nv_panel", "12,58,176,590"
-   repeat with tI = 1 to 10
-      put 66 + (tI - 1) * 30 into tTop
-      put "nv_" & waScreenCode(tI) into tName
-      uiButton tName, waScreenLabel(tI), "20," & tTop & ",168," & (tTop + 26)
-   end repeat
+   uiButton "nv_wl", waScreenLabel(1), "20,66,168,92"
+   uiButton "nv_rc", waScreenLabel(2), "20,96,168,122"
+   uiButton "nv_ad", waScreenLabel(3), "20,126,168,152"
+   uiButton "nv_sd", waScreenLabel(4), "20,156,168,182"
+   uiButton "nv_cn", waScreenLabel(5), "20,186,168,212"
+   uiButton "nv_hs", waScreenLabel(6), "20,216,168,242"
+   uiButton "nv_tl", waScreenLabel(7), "20,246,168,272"
+   uiButton "nv_nw", waScreenLabel(8), "20,276,168,302"
+   uiButton "nv_lg", waScreenLabel(9), "20,306,168,332"
+   uiButton "nv_st", waScreenLabel(10), "20,336,168,362"
    uiSection "nv_bal", "Balance", "20,372,168,390"
    uiLabel "nv_confirmed", "-", "20,394,168,412", 13
    uiLabel "nv_pending", "-", "20,414,168,430", 11
