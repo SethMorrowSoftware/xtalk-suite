@@ -367,6 +367,17 @@ class DemoExpr(LCS._Expr):
 
     def p_atom(self):
         world = self.ip.world
+        # SKIP LEADING WHITESPACE FIRST. Every branch below matches against
+        # `rest` with an anchored regex, so a single leading space makes all
+        # of them miss - and the base's own p_atom calls ws() before it looks,
+        # so the miss lands as "unsupported `the` expression" about a form
+        # this class models perfectly well. It bit on `word 1 of the name of
+        # the target`: the word branch's `self.kw("of")` leaves the cursor on
+        # the space, and the recursive p_atom then failed to see `the name
+        # of ...`. Found 2026-08-31 by coinxt's boot gate on the wallet's
+        # click router, which is the first body in this tree to write that
+        # combination.
+        self.ws()
         rest = self.s[self.i:]
 
         # `there is a|an|no <thing> <expr>` - never throws, answers a boolean
@@ -560,7 +571,23 @@ class DemoInterp(LCS.Interp):
             return ""
         # control
         if prop == "name":
-            return obj.name
+            # THE ADJECTIVE DECIDES. `the SHORT name` of a control is its bare
+            # name; `the name` (and `the long name`, and `the abbreviated
+            # name`) begin with the control's TYPE - `button "nv_wl"` - which
+            # is what lets a click router ask `word 1 of the name of the
+            # target` whether a button or a field was clicked. Modelled as the
+            # short name in every case, that router silently answered "not a
+            # button" for every click and passed the message on, so a gate
+            # driving clicks would have reported a green routing pass over a
+            # stack where nothing routed. coinxt's wallet is the first body in
+            # this tree to write the unqualified form.
+            if adjective == "short":
+                return obj.name
+            if adjective == "long":
+                return '%s "%s" of card "%s" of stack "%s"' % (
+                    obj.ctype, obj.name, world.current().name,
+                    world.stack_name)
+            return '%s "%s"' % (obj.ctype, obj.name)
         if prop == "id":
             return '%s "%s"' % (obj.ctype, obj.name)
         if prop == "formattedheight":

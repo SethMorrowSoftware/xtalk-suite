@@ -193,6 +193,10 @@ class WalletExpr(DB.DemoExpr):
         return card.controls[n - 1]
 
     def p_atom(self):
+        # ws() first, for the reason riptide's own p_atom now gives: these
+        # branches are anchored regexes and a leading space makes every one
+        # of them miss.
+        self.ws()
         rest = self.s[self.i:]
 
         m = re.match(r'the\s+number\s+of\s+controls\s+of\s+'
