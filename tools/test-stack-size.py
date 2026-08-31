@@ -67,8 +67,10 @@ def main():
     # 47 since 2026-08-24: enet-internet-chat landed with its own uiChrome.
     # 48 since 2026-08-29: riptide-social's fifth card (the phase-8 Nostr
     # rail, re-landed with the boot runner), and every card calls uiChrome.
-    if "48 stack window dimension" not in out:
-        print("test-stack-size: expected 48 measured dimensions, got:\n" + out)
+    # 49 since 2026-08-31: coinxt/examples/coin-wallet.livecodescript, the
+    # wallet app, whose single uiChrome call sizes its one card.
+    if "49 stack window dimension" not in out:
+        print("test-stack-size: expected 49 measured dimensions, got:\n" + out)
         return 1
 
     original = open(NOCLOUD, encoding="utf-8").read()

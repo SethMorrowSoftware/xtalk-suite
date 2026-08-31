@@ -622,6 +622,7 @@ function slRegistry
    local tR
    put "sodiumxt/examples/sodium-demo.livecodescript||the sodiumxt extension (org.openxtalk.library.sodium)||A tabbed tour of the crypto surface: authenticated boxes, signatures, hashing, file crypto, deterministic identities from a passphrase, and key rollover." & return into tR
    put "coinxt/examples/coinxt-demo.livecodescript||the coinxt extension (org.openxtalk.library.coin); sodiumxt only for Generate new|This is a demo, not a wallet - never type a mnemonic that guards real funds. Self-contained: carries coinxt.|From a mnemonic to addresses to a SIGNED Bitcoin and Ethereum transaction, every step decoded on screen." & return after tR
+   put "coinxt/examples/coin-wallet.livecodescript||the coinxt extension (org.openxtalk.library.coin); sodiumxt to generate a new seed and to encrypt the wallet file; a local tor daemon for either Tor transport|A DEMONSTRATION wallet: script memory is not locked, so use testnet, or an amount you would be relaxed about losing. Self-contained: carries coinxt, the wallet engine and onionxt.|A full Bitcoin wallet on ten screens - seeds, watch-only, imported keys, multisig and taproot; coin control, fee rates, RBF, PSBT cosigning, signed messages, descriptors, QR codes, and Esplora or Electrum over Tor." & return after tR
    put "enetxt/examples/enet-lan-chat.livecodescript||the enetxt extension (org.openxtalk.library.enet)|Two machines on a LAN (or two stacks on one machine). Allow the engine through the HOST machine's firewall - inbound UDP 27099. Self-contained: carries enet-helpers.|Reliable-UDP LAN chat: one machine Hosts, everyone else Joins its ip. One broadcast relays every line." & return after tR
    put "enetxt/examples/enet-internet-chat.livecodescript||the enetxt extension (org.openxtalk.library.enet); the HOST additionally wants torrentxt (org.openxtalk.library.torrent) for the automatic router door|Two machines on DIFFERENT networks (a phone hotspot is the easy second one). The host clicks Host, waits for the invite to fill in, and sends it; the joiner pastes it. Self-contained: carries enet-helpers + torrent-helpers.|ENet across the REAL internet, provably: UPnP opens the host's UDP port, the invite carries the public ip, and the pill goes green only when the peer's address is public." & return after tR
    put "datachannelxt/examples/datachannel-loopback.livecodescript||the datachannelxt extension (org.openxtalk.library.datachannel)|Self-contained: carries datachannel-helpers.|Two WebRTC peers in ONE stack, signaling shuttled in script: the whole pipeline (offer/answer, ICE, DTLS, SCTP) with zero infrastructure." & return after tR
@@ -1441,12 +1442,21 @@ function scMissing pList
    local tName, tMissing, tC, tFound
    set the defaultStack to the short name of this stack
    repeat for each item tName in pList
-      -- ALL THREE CONTROL TYPES. The kit builds fields (uiLabel/uiWrap/uiCap/
+      -- ALL FOUR CONTROL TYPES. The kit builds fields (uiLabel/uiWrap/uiCap/
       -- uiSection/uiInput/uiArea/uiTable), buttons (uiButton/uiCheckbox) AND
       -- GRAPHICS (uiGfx/uiPanel/uiPill). The first version of this asked only
       -- about fields and buttons, so every uiPill a demo builds - the Tor
       -- pills in both Quick Shares, for one - reported as a missing control on
       -- a stack where it exists.
+      --
+      -- AND IMAGES (2026-08-31), for the same reason one step further out. A
+      -- demo may build a control the KIT does not: coinxt's wallet paints a
+      -- QR into an image, which is the only way a BMP this family builds
+      -- becomes something a phone can read. Registered and built, it reported
+      -- as missing - found by coinxt/tools/check-wallet-boot.py, which boots
+      -- the stack headlessly, so this one cost no engine time. The lesson is
+      -- the one this block already carries twice: the list of types a demo
+      -- can build is not the list of types the KIT builds.
       --
       -- AND EVERY CARD (2026-08-29). Unqualified `there is a field X` answers
       -- for the CURRENT card only (engine notes 5.6) - OBSERVED when
@@ -1457,7 +1467,8 @@ function scMissing pList
       repeat with tC = 1 to the number of cards of this stack
          if there is a field tName of card tC \
                or there is a button tName of card tC \
-               or there is a graphic tName of card tC then
+               or there is a graphic tName of card tC \
+               or there is an image tName of card tC then
             put true into tFound
             exit repeat
          end if

@@ -367,11 +367,27 @@ class DemoExpr(LCS._Expr):
 
     def p_atom(self):
         world = self.ip.world
+        # SKIP LEADING WHITESPACE FIRST. Every branch below matches against
+        # `rest` with an anchored regex, so a single leading space makes all
+        # of them miss - and the base's own p_atom calls ws() before it looks,
+        # so the miss lands as "unsupported `the` expression" about a form
+        # this class models perfectly well. It bit on `word 1 of the name of
+        # the target`: the word branch's `self.kw("of")` leaves the cursor on
+        # the space, and the recursive p_atom then failed to see `the name
+        # of ...`. Found 2026-08-31 by coinxt's boot gate on the wallet's
+        # click router, which is the first body in this tree to write that
+        # combination.
+        self.ws()
         rest = self.s[self.i:]
 
         # `there is a|an|no <thing> <expr>` - never throws, answers a boolean
+        # IMAGE joined the list on 2026-08-31, with the carried self-check
+        # block: scMissing asks about it now, because a demo may build a
+        # control the KIT does not (coinxt's wallet paints a QR into one).
+        # Without it here every adopter's scMissing walk would die on an
+        # unmodelled expression rather than answer.
         m = re.match(r'there\s+is\s+(a|an|no)\s+'
-                     r'(field|button|graphic|card|file|folder)\s+', rest,
+                     r'(field|button|graphic|image|card|file|folder)\s+', rest,
                      re.I)
         if m:
             self.i += m.end()
@@ -381,7 +397,7 @@ class DemoExpr(LCS._Expr):
             name = LCS._disp(self.p_concat())
             cardspec = None
             m2 = re.match(r'\s*of\s+card\s+', self.s[self.i:], re.I)
-            if m2 and kind in ("field", "button", "graphic"):
+            if m2 and kind in ("field", "button", "graphic", "image"):
                 self.i += m2.end()
                 cardspec = LCS._disp(self.p_concat())
             if kind == "card":
@@ -555,7 +571,23 @@ class DemoInterp(LCS.Interp):
             return ""
         # control
         if prop == "name":
-            return obj.name
+            # THE ADJECTIVE DECIDES. `the SHORT name` of a control is its bare
+            # name; `the name` (and `the long name`, and `the abbreviated
+            # name`) begin with the control's TYPE - `button "nv_wl"` - which
+            # is what lets a click router ask `word 1 of the name of the
+            # target` whether a button or a field was clicked. Modelled as the
+            # short name in every case, that router silently answered "not a
+            # button" for every click and passed the message on, so a gate
+            # driving clicks would have reported a green routing pass over a
+            # stack where nothing routed. coinxt's wallet is the first body in
+            # this tree to write the unqualified form.
+            if adjective == "short":
+                return obj.name
+            if adjective == "long":
+                return '%s "%s" of card "%s" of stack "%s"' % (
+                    obj.ctype, obj.name, world.current().name,
+                    world.stack_name)
+            return '%s "%s"' % (obj.ctype, obj.name)
         if prop == "id":
             return '%s "%s"' % (obj.ctype, obj.name)
         if prop == "formattedheight":
@@ -746,11 +778,17 @@ class DemoInterp(LCS.Interp):
             return i + 1
 
         # ---- put into engine containers (fields, url, msg)
-        m = re.match(r'put\s+(.+?)\s+(into|after|before)\s+'
-                     r'(field\s+.+?|url\s*\(.+\)|url\s+.+|msg)$', line, re.I)
-        if m:
-            value = self.eval_expr(m.group(1), env)
-            prep, tgt = m.group(2).lower(), m.group(3).strip()
+        # STRING-AWARE (2026-08-31), through the interpreter's own helper:
+        # a non-greedy regex splits inside a literal that happens to contain
+        # the word `into`, which leaves an unterminated string as the value
+        # expression. See LCS.split_outside_strings for the case that found it.
+        parts = (LCS.split_outside_strings(line[4:],
+                                           ("into", "after", "before"))
+                 if re.match(r'put\s', line, re.I) else None)
+        if parts and re.match(r'(field\s+.+|url\s*\(.+\)|url\s+.+|msg)$',
+                              parts[2].strip(), re.I):
+            value = self.eval_expr(parts[0], env)
+            prep, tgt = parts[1], parts[2].strip()
             if tgt.lower() == "msg":
                 world.log.append("msg: " + str(LCS._disp(value)))
                 return i + 1

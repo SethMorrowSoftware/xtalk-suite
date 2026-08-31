@@ -191,6 +191,36 @@ run_gates() {
     echo "== $m: tools/check-script-vectors.py =="
     ( cd "$m" && python3 tools/check-script-vectors.py --check )
   fi
+  # The WALLET engine, same machinery one layer up: coinxt/examples/
+  # wallet-core.livecodescript is what coin-wallet is built out of, and every
+  # byte layout in it (scripts, addresses, extended keys, fees, coin
+  # selection, sighashes, witnesses, PSBT, signed messages, URIs, descriptors,
+  # QR) is compared against tools/wallet_reference.py, an independent
+  # implementation anchored to the published vectors, with the real shim
+  # signing. A wrong length prefix there produces a transaction that parses
+  # and pays somebody else. Slower still than the gate above, so it runs last.
+  if [ -f "$m/tools/check-wallet-vectors.py" ]; then
+    echo "== $m: tools/check-wallet-vectors.py =="
+    ( cd "$m" && python3 tools/check-wallet-vectors.py --check )
+  fi
+  # And the layer ABOVE that one: check-wallet-boot BOOTS the shipped wallet
+  # stack, headlessly, over riptide's engine object model (imported, not
+  # copied) with the COMMITTED CoinXT under it. The vector gate never opens a
+  # window, so until this landed the ten screens, the show/hide sweep, the
+  # click router and the wallet file were verified only by reading them -
+  # this member's own recorded failure shape, one layer up.
+  # THE FIXTURES FIRST, per the fixture-before-gate law: a boot runner that
+  # has gone blind reports OK, and the five seeded defects are what make the
+  # OK mean anything. They boot a cut-down copy, so they cost a fraction of
+  # the gate below them.
+  if [ -f "$m/tools/test-wallet-boot.py" ]; then
+    echo "== $m: tools/test-wallet-boot.py =="
+    ( cd "$m" && python3 tools/test-wallet-boot.py )
+  fi
+  if [ -f "$m/tools/check-wallet-boot.py" ]; then
+    echo "== $m: tools/check-wallet-boot.py =="
+    ( cd "$m" && python3 tools/check-wallet-boot.py --terse )
+  fi
   # The demo BOOT runner (riptide): executes the SHIPPED stack script's
   # whole openStack chain - card builders, kit, self-check, navigation, a
   # scripted identity session - through the family's interpreter over a

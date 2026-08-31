@@ -77,6 +77,14 @@ REGISTRY = {
         "onionxt/src/onionxt.livecodescript"],
     "coinxt/examples/coinxt-demo.livecodescript": [
         "coinxt/src/coinxt.livecodescript"],
+    # The wallet. coinxt first because the wallet engine composes cx*;
+    # onionxt last because nothing else here depends on it. The app defines
+    # the three engine socket messages itself and dispatches to OnionXT's
+    # named functions, so its wrappers are dropped - see DROP_HANDLERS.
+    "coinxt/examples/coin-wallet.livecodescript": [
+        "coinxt/src/coinxt.livecodescript",
+        "coinxt/examples/wallet-core.livecodescript",
+        "onionxt/src/onionxt.livecodescript"],
     "enetxt/examples/enet-lan-chat.livecodescript": [
         "enetxt/examples/enet-helpers.livecodescript"],
     # The internet chat carries BOTH poll dispatchers: enet-helpers pumps the
@@ -209,6 +217,12 @@ DROP_HANDLERS = {
         ("socketError", "socketClosed", "socketTimeout"),
     ("riptide/examples/riptide-social.livecodescript",
      "nostrxt/src/nostr-relay.livecodescript"):
+        ("socketError", "socketClosed", "socketTimeout"),
+    # coin-wallet runs its own request queue over OnionXT's SOCKS client and
+    # defines the three engine messages itself so it can pass anything that
+    # is not OnionXT's down the message path.
+    ("coinxt/examples/coin-wallet.livecodescript",
+     "onionxt/src/onionxt.livecodescript"):
         ("socketError", "socketClosed", "socketTimeout"),
 }
 

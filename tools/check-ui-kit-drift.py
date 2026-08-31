@@ -39,6 +39,7 @@ MASTER = os.path.join("tools", "ui-kit.livecodescript")
 ADOPTERS = [
     "start-here.livecodescript",
     os.path.join("coinxt", "examples", "coinxt-demo.livecodescript"),
+    os.path.join("coinxt", "examples", "coin-wallet.livecodescript"),
     os.path.join("datachannelxt", "examples", "datachannel-dht-chat.livecodescript"),
     os.path.join("datachannelxt", "examples", "datachannel-loopback.livecodescript"),
     os.path.join("enetxt", "examples", "enet-internet-chat.livecodescript"),

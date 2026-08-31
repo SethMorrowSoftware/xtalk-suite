@@ -72,6 +72,8 @@ ADOPTERS = {
                  "riptide-social.livecodescript"): "ra",
     os.path.join("nostrxt", "examples",
                  "nostrxt-demo.livecodescript"): "nd",
+    os.path.join("coinxt", "examples",
+                 "coin-wallet.livecodescript"): "wa",
 }
 
 BEGIN = ("-- ==== DEMO SELF-CHECK v1 BEGIN (verbatim copy; master: "

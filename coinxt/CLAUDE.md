@@ -1451,3 +1451,303 @@ control blocks, so the path cap is the script's alone). It also caught the gate
 comments calling the published two-leaf tree "scriptPubKey vector 6" when the file's own 0-based
 convention makes it vector 3 - a comment-only error, but the same one-number-two-conventions
 shape as the 245-vs-244 lesson above, so it is recorded rather than just fixed.
+
+### 2026-08-31 - the WALLET, and the third file this member can execute headlessly
+
+`examples/coin-wallet.livecodescript` is a full Electrum-class Bitcoin wallet in one
+paste-and-run stack, and `examples/wallet-core.livecodescript` is the pure calculator layer it
+is built out of. `docs/wallet.md` is the reader's document; this entry records the decisions a
+maintainer needs and would otherwise have to re-derive.
+
+**THE SPLIT IS WHAT MAKES IT CHECKABLE, and it is the same split this member already lives by.**
+CoinXT is a calculator and the app owns custody (rule 2); `wallet-core` is a calculator and
+`coin-wallet` owns custody, the window, the file and the network. The engine has NO
+script-level `local`, reads no `item` or `line` chunk, touches no control and opens nothing -
+so `tools/check-wallet-vectors.py` can drive the SHIPPED bytes of it through `lcs-interp.py`
+against `tools/wallet_reference.py` with the real shim signing - complete signed transactions on
+all five spend paths, compared byte for byte. (Run it for the count. A number written here would
+be true the day it was typed and quietly wrong afterwards, which is this tree's own recorded
+failure mode for hand-copied figures.) That is the third
+file in this member the shipped-is-not-run rule no longer applies to, after `src/coinxt.livecodescript`
+and `tests/coin-selftest.livecodescript`.
+
+**NOT READING `item`/`line` AT ALL IS STRONGER THAN GUARDING THEM.** This file records nine
+handlers that a hostile `itemDelimiter` turned into wrong ANSWERS - a valid seed phrase
+reported invalid, an address built from the wrong bytes - and the answer there was a
+save/set/use/restore wrapper around each. The wrapper is correct and was the only option for
+code that already existed. `wallet-core` was written afterwards, so it takes the other option:
+lists are ARRAYS keyed 1..n, and the two places that must read a delimited string
+(`cwSplitAt`, and the app's `waField`/`waField2`) scan for the separator by hand. There is no
+delimiter dependency to guard.
+
+**THE VECTOR GATE FOUND A REAL BUG ON ITS FIRST RUN, and it was this tree's own recorded trap.**
+`cwParsePath` ACCEPTED `"m/84'/"`. The engine ignores one trailing delimiter when it counts
+chunks, so a split-then-check loop never sees the empty last level: the path parsed as a
+perfectly good one-level path. `cxHdDerivePath` carries an explicit refusal for exactly this and
+the note explaining why; the wallet layer had to learn it again. It refuses before splitting now.
+
+**IT ALSO FOUND A BUG IN ITSELF, which is the more useful half.** `"Xpub".replace("Pub", "Prv")`
+is `"Xpub"` - the lowercase `p` - so three private-key version rows were compared against the
+public constants and reported a defect in the script that was a defect in the gate. Suspect the
+probe first; the names are spelled out now.
+
+**TWO IMPLEMENTATIONS DISAGREEING IS NOT THE SAME AS ONE BEING WRONG.** The dust thresholds
+differed between the script and the oracle, and BOTH were wrong: each had a hand-written
+per-type spend size. Core's `GetDustThreshold` branches on ONE question - is the scriptPubKey a
+witness program? - and the distinction it does NOT draw is the tempting one, because a
+P2SH-wrapped SegWit output has a P2SH scriptPubKey and therefore costs the legacy 148 even
+though spending it really does use a witness. Both now derive 546/540/330/294 from Core's own
+branch instead of listing them.
+
+**THE QR ENCODER IS THE ONE PIECE WITH NO PUBLISHED VECTOR TO PIN IT TO**, so it was checked
+module-for-module against an independent encoder over 261 payloads spanning versions 1 to 15.
+Three real defects came out of that, and all three produce a symbol whose DATA is perfect and
+which no scanner can read: the format bits placed LSB-first (the natural spelling of the same
+integer), one format module never written at all (an `i < 8` that should be `i < 7`), and the
+masks scored with the format area already filled in. The last one is a genuine ambiguity in the
+standard rather than a mistake - it says to evaluate the symbol and does not say whether the
+format information is in it yet - and the two readings pick different masks on small versions,
+so the choice is now written down in the code beside the reason.
+
+**THE NETWORK'S SHAPE IS FORCED, NOT CHOSEN.** HTTPS over Tor is impossible in this engine: an
+open socket cannot be upgraded to TLS, and `open secure socket` connects TLS directly to a host
+so it cannot do a SOCKS handshake first. So the private transports are a `.onion` Esplora mirror
+over plain HTTP and a `.onion` Electrum server over plain TCP, both through OnionXT's SOCKS
+client, where the circuit IS the encryption. The clearnet transport uses the engine's own
+`load URL` and says on screen what that costs, because this suite has never measured what the
+engine does about TLS certificates. The stack defines the three engine socket messages itself
+and dispatches to OnionXT's named functions, with `sync-demo-embeds.py`'s `DROP_HANDLERS` keyed
+by (app, provider) pair so both halves are asserted.
+
+**THE GATE WAS GREEN AND THE CODE WAS WRONG, IN A WAY THE GATE COULD NOT SEE.** An adversarial
+read-through, run against the shipped files rather than against the design, found two defects of
+one shape and they are the most important thing in this entry. `the caseSensitive` defaults to
+FALSE on OXT, so `is` and `offset()` are case-INSENSITIVE; `tools/lcs-interp.py` models both
+case-SENSITIVELY and names the first as its one declared divergence. Every one of the 414 checks
+was therefore running under a comparison rule the engine does not have. Under the engine's rule:
+`cwDescCharPos` looked a character up in Core's descriptor alphabet with `offset()`, and that
+alphabet carries `abcdefgh` at 0-based 18 and `ABCDEFGH` at 82, so the lookup returned the wrong
+twin and **every descriptor this wallet exported carried a bad checksum**; and `cwXKeyVersion`
+told the stems `"z"` (BIP-84 single-sig) and `"Z"` (BIP-48 multisig) apart with `is`, so **a
+multisig account key was serialized with the single-signature version** and a genuine `Zpub`
+pasted back could never be decoded. This member's own header calls the first of those "the single
+most dangerous line of this whole file" and ships `cxCharIndex` for it; the wallet layer had to
+learn it again, which is why `cwCharIndex` and `cwSameBytes` now exist here.
+
+**The fix that matters is not either patch - it is the tier.** `check-wallet-vectors.py` now runs
+the WHOLE vector set a second time with `is` and `offset()` folded to the engine's default and
+requires the same answers, and a mutation check proves the folded model still changes what it is
+supposed to change. That turns "did anybody remember to think about case?" into a question the
+build asks on every push. What it does NOT fold is `contains`, `begins with`, `ends with` and
+`sort`, which the engine also folds; those live inside the interpreter's expression parser rather
+than behind a module-level name, and this layer uses none of them on case-significant data. When
+one lands on an address, that is a fourth tier and not a quiet widening of this one.
+
+**THE SAME READ-THROUGH FOUND FOUR MORE THINGS, AND THEY GROUP.** None was
+visible to any gate, and each is a class worth carrying rather than a line worth
+patching.
+
+*Custody promised more than it delivered, in four places at once.* `cwAddressAt`
+puts the derived private key into every address record, so `sWaAddresses` is
+2 x kWaPrefill spendable keys - more key material than the three variables
+`closeStack` was carefully clearing, and its comment said the seed did not
+outlive the window. A wallet file never carries `sWaAccountXprv`, so loading
+somebody's watch-only file left the PREVIOUS wallet's private half in place and
+`waAccountNode` prefers the private half: the result showed their xpub, derived
+our addresses, and would sign. Choosing watch-only or an imported key never
+cleared the mnemonic, so the file a person made for a wallet the status line had
+just called unable to sign carried their real seed phrase. And the file password
+stayed rendered on the Settings screen beside the path it unlocks. The through
+line is that each was a place where the code's own comment or its own status
+line was a claim about state that nothing enforced; the fixes make the state
+match the claim, and `waSerializeWallet` now writes a secret only for the kind
+that owns one, so even a future leak cannot reach the file.
+
+*Two of the three transports agreed and the third quietly did nothing.* Esplora
+takes a transaction by POSTing it; `load URL` does a GET and carries no body.
+The clearnet branch built the URL, assigned the raw transaction to a local, and
+never read it again - and the reply, Esplora's own 405 page, came back through
+`waNetApply` as "Broadcast." That transport now refuses the operation by name.
+Beside it: `load URL` cannot be cancelled, so after a deadline or a Stop the
+abandoned request is still in flight, and `waUrlDone` correlated replies by
+"is anything in flight?" alone - so one address's coins were recorded against
+another's. The Tor transports got correlation free from the stream handle; this
+one now carries the URL it issued and checks it.
+
+*A checkbox nothing drives can never be ticked.* The kit builds `uiCheckbox`
+with `autoHilite` false on purpose - the comment says the adopter's state
+machine sets it - and `waSequenceNumber` read the control's hilite. So the RBF
+option the Send screen offered was unreachable and every transaction this wallet
+built was non-replaceable, while `waBumpAdvice` told the user to bump it. RBF is
+app state now, defaulting on, painted onto the box. In the same class: `uiTable`
+takes ABSOLUTE tab stops and all three tables passed column WIDTHS, so every
+data column after the first overprinted the ones before it.
+
+*And the boot self-check wrote its report into a field the app replaces
+wholesale.* `scBegin` was given `lg_text`, which `waLog` and `waPaintLog` both
+overwrite - and the report is written while the Log screen is hidden, so the only
+way to read it, clicking the rail button, ran the painter and wiped it first. It
+has its own field now. That one is worth carrying beyond this member: the carried
+block APPENDS and an app's own log usually REPLACES, so any adopter that points
+both at one field has the same defect.
+
+**AND THE STACK IS RUN NOW, TOO.** `tools/check-wallet-boot.py` boots the shipped
+`coin-wallet.livecodescript` headlessly and drives it. It is built by IMPORTING riptide's
+`tools/check-demo-boot.py` rather than copying it - this tree already knows what happens to
+copies of an engine model - and adds only the delta: `the number of controls of this card` and
+`control N of this card` (the show/hide sweep works by index, because a screen here is a name
+prefix and the engine has no reparenting), and the IMAGE control the Receive screen paints its QR
+into. The image is a widening of riptide's shared object regex, applied by rebinding its module
+global with the old text ASSERTED first; there are no source rewrites at all, because unlike
+riptide this stack was written inside the modelled subset and an unused rewrite list is one that
+goes stale unnoticed. Two things it establishes that no static gate could: the sweep really does
+show exactly one screen and never touches the rail, checked control by control across all ten;
+and the wallet file really does seal, re-open to the same account key, and refuse after one
+flipped bit. One trap it had to name out loud: riptide's runner loads nostrxt's copy of
+`lcs-interp.py` and this member loads its own, and two byte-identical files are still two module
+objects with two `HASHES` tables - so the gate asserts they are identical and then rebinds, which
+is the same trap riptide's own header records finding the hard way.
+
+**AND THE PSBT LAYER GOT ITS OWN PASS, which found the sharpest set of all.**
+Twelve findings, and the shape they share is that the PSBT code was written for
+the documents this wallet PRODUCES and met a conformant one from elsewhere with
+no defences. `cwPsbtFinalize` derived m from the first byte of a witness script
+it never checked was present: absent, that byte is nothing, `cwBeRead` of
+nothing is 0, and m came out as **-80** - so `tHave < tM` was `0 < -80`, false,
+and an input with no witness script and no signatures at all was reported
+COMPLETE. Below it, the type dispatch had no default: everything that was not
+p2tr, p2wsh or p2pkh fell through to a P2WPKH-shaped witness, and a LEGACY input
+from a conformant PSBT types as `unknown` (it carries NON_WITNESS_UTXO, from
+which `cwPsbtInputType` cannot read a script) - so it got a witness it must not
+have. `cwMultisigKeys` `exit repeat`-ed on anything that was not a direct push
+and returned the keys it had so far, and that list decides signature ORDER in
+`cwSignMultisig` and both the order and the count in `cwPsbtFinalize`: a
+truncated parse is a wallet quietly agreeing to a different multisig than the one
+on the chain. It parses strictly and throws now, with both call sites turning the
+throw into a why-line rather than letting one bad input take a whole operation.
+`cwPsbtSign` matched a taproot input's internal key and signed with a hard-coded
+empty merkle root, never checking that the output actually pays to the key-path
+tweak - the one branch missing the `is not tSpk` guard every other branch has,
+and exactly the branch where the guard needs a tweak first. It also ignored
+`PSBT_IN_SIGHASH_TYPE` entirely, which BIP-174 requires a Signer to honour or
+fail on. And `cwPsbtParseMap` accepted duplicate keys, which the BIP forbids -
+not merely lax, because `cwPsbtFind` answers with the first and `cwPsbtEmitMap`
+writes them all, so a duplicate survived a parse/sign/emit round trip.
+
+Two of the twelve are worth separating because they were **absences rather than
+errors**. `cwPsbtFinalize` returned only the raw transaction, never a finalized
+PSBT - so `PSBT_IN_FINAL_SCRIPTSIG` and `PSBT_IN_FINAL_SCRIPTWITNESS` were
+emitted by a function nothing called with that metadata, and the wallet skipped
+BIP-174's actual Finalizer output, which is the thing a coordinator collecting
+from several signers is handed. And `waSigningKeys` walked the address records
+looking for a `seckey` that a MULTISIG record never carries (it has
+`witnessscript`, `script` and `pubkeys`), so it answered with an empty list and
+`waPsbtSign` refused - **the one wallet kind PSBT exists for could not sign a
+PSBT at all.** Both closed. Beside them, `waSignSpend` presented a one-of-two
+witness as a signed transaction; `cwSignMultisig` reports its count now and the
+app refuses, naming the PSBT button as the remedy.
+
+**THE GATE ITSELF WAS THEN REVIEWED, and it was overstating its coverage in five
+places.** Worth recording because the shape is this member's own: a gate that
+answers the question nobody asks twice. The mutation check that proves the
+case-folding tier can still fail compared a Python bool against a description
+string, so it could not pass for any input. The compiler-free floor was 60 for a
+constants tier that had shrunk to 35, so that path could not pass either. The
+`boolean()` helper wiring `cxVerify` and `cxSchnorrVerify` had the .lcb's status
+map INVERTED - false where the engine throws, throw where it answers false - so
+the script's refusal paths were being driven by the wrong inputs. Twenty-one PSBT
+key types carried ONE blanket excuse, "checked by the PSBT round-trip vectors",
+when exactly three were ever byte-compared and four were read by no code path at
+all. And `kCwQrVersionGen`'s reason named "the version-7-and-up QR vectors" when
+the gate built nothing above version 3. All five are closed: the four dead
+constants are deleted, every survivor names the vector that puts it on the wire,
+three new byte-exact PSBT comparisons cover the output metadata, the legacy
+non-witness shape and the signed and finalized documents, and version-7 and
+version-8 symbols are built so the version-information block and the second
+codeword group are reached. The honest split now also has to ADD UP - two names
+sat in both the re-derived set and the excused set, so it printed 35 + 45 for 78.
+
+**AND ON ITS FIRST FULL RUN THE BOOT GATE FOUND TWO THINGS NEITHER FILE OWNS.**
+Both are worth carrying because both were latent in code the whole family shares.
+
+The carried self-check block's `scMissing` asked about fields, buttons and
+graphics - the three types the KIT builds - and this wallet paints its QR into
+an IMAGE, which is the only way a BMP this layer builds becomes something a
+phone can read. Registered and built, `rc_qr` reported as missing. The block had
+already been widened once for exactly this reason (graphics, after every `uiPill`
+reported missing), and the lesson it did not draw the first time is the general
+one: **the list of types a demo can build is not the list of types the kit
+builds.** Fixed in `tools/demo-selfcheck.livecodescript` and re-carried into all
+fifteen adopters; riptide's boot runner learned the type in the same change,
+because the block it executes now asks about it.
+
+And `tools/lcs-interp.py` split `put X into Y` with a NON-GREEDY REGEX, so a
+statement whose value is a string containing the word `into` -
+`put "... A seed typed into this" & return after tOut`, in this wallet's own
+custody note - split inside its own message and handed the parser an
+unterminated string literal. It surfaced as a `ValueError` out of the string
+scanner, about as far from the cause as an error can land. The engine has a real
+tokenizer and never had this; the model has a string-aware `split_outside_strings`
+now, in both copies and in riptide's runner. **This is the second time a member's
+executable gate has found a latent defect in that shared interpreter** (riptide's
+negative chunk range was the first), and both were found the same way: by
+executing a form no other member happened to write. Note WHERE it was: a paint
+handler for a screen that is not the one the boot opens, so every gate in the
+tree had been green over code that had never run.
+
+**THE CLICK DRIVE FOUND TWO MORE, in the same shared runner, and the second is
+the one worth remembering.** riptide's `DemoExpr.p_atom` matched every branch
+against an anchored regex without skipping leading whitespace, so
+`word 1 of the name of the target` died on the space its own `of` left behind -
+reported as an unsupported expression about a form that class models perfectly
+well. And `obj_prop_get` answered `the name` of a control with its BARE name
+whatever the adjective, where the engine gives the bare name only for
+`the SHORT name` and prefixes the TYPE otherwise: `button "nv_wl"`. That is
+exactly what this wallet's click router reads to tell a button click from a
+field click - so under the model it answered "not a button" for every click and
+passed the message on, and **a gate driving clicks would have gone green over a
+stack where nothing routed at all.** A model that is wrong in the direction of
+"nothing happened" is worse than one that throws, because throwing is visible.
+Both fixed in riptide's runner, whose own fixture suite still catches its four
+seeded defects; this wallet is simply the first body in the tree to write
+either form.
+
+**AND THE SAME DEFECT CLASS LANDED ONE FILE LATER, WHICH IS THE ONLY REASON TO
+WRITE IT DOWN AGAIN.** The gate review above found a mutation check that
+compared a Python bool against a description string, so it could never pass.
+Hours later, `check-wallet-boot.py` was found with ELEVEN checks written the
+other way round: riptide's `Checker.ck` is `(label, ok, detail)` - a boolean and
+a message - and the vector gate's `Checker` sitting beside it is
+`(label, got, want)`. Eleven comparisons written in the second shape against the
+first passed for any value at all. The two APIs are one import apart and the
+mistake is invisible at the call site, which is the whole point: **a checker
+whose second argument means different things in two files will be got wrong, and
+neither shape errors.** The boot gate has `ck()` for booleans and `eq()` for
+values now, and a scan asserts no value-shaped `ck()` remains. If a third
+Checker ever appears in this member, give it the same two names.
+
+**AND THE LAST TWO DEFECTS THE FULL PASS CONFIRMED WERE BOTH INVISIBLE FOR ONE
+REASON: the script and its ORACLE had the same rule.** 66 agents, 58 findings
+judged, 2 survived - and neither could ever have failed a vector, because the
+two implementations the gate compares agreed with each other and were both
+wrong. `cwSelectCoins`'s `manual` strategy narrowed the pool to the ticked coins
+and then used the same incremental loop as the automatic strategies, returning
+on the first PREFIX that paid: ticking 100000/40000/30000 to send 10000 spent
+the 100000 and left the rest, against a contract in this file's own header and a
+promise on the Coins screen, and with consolidation - the reason anybody ticks a
+set - impossible to express. And `cwBranchAndBound` priced the change output's
+FUTURE spend at today's fee rate, where the oracle used a long-term estimate:
+two acceptance windows 345 satoshi apart at 5 sat/vB, with no vector in the
+band. **An oracle-based gate cannot see a rule both sides get wrong**, which is
+the one structural hole in this whole approach and is worth knowing before
+trusting a green run. What closes it is not another gate but the thing that
+found these: reading the shipped code against the specification rather than
+against the other implementation.
+
+**WHAT IS STILL OPEN.** Neither gate is an OXT pass: they settle that the code RUNS and what it
+computes, not parser behaviour and not that a window appeared. Everything in
+`docs/OXT-ENGINE-NOTES.md` the interpreter models differently is invisible to both, the case rule
+above excepted. The three transports have never spoken to a real backend from here, and the two
+Tor ones additionally need a live-Tor pass. No transaction this wallet built has been broadcast to
+any network. The honesty labels in the file, in `docs/wallet.md` and on its own Settings screen all
+say so.
