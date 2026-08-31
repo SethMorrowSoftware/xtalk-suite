@@ -813,16 +813,25 @@ def drive(c, ip, world, sandbox):
              str(ip.globals.get("swalabel", "")), "Boot gate wallet")
         c.eq("with the same account key", str(ip.globals.get(
             "swaaccountxpub", "")), xpub)
-        # tampering is CAUGHT, which is the whole point of the associated data
+        # TAMPERING IS CAUGHT, which is the whole point of authenticating the
+        # header as associated data. THE PASSWORD IS RE-ENTERED FIRST: a
+        # successful load clears the field (waForgetPassword), so without this
+        # the wallet refuses for the right reason and the wrong one - "that
+        # file is sealed. Type its password." - and the tamper path is never
+        # reached at all. The gate found that itself, on the run after the
+        # clearing landed.
         blob = bytearray(open(path, "rb").read())
         blob[-1] ^= 0x01
         open(path, "wb").write(bytes(blob))
+        put_field("st_path", path)
+        put_field("st_password", "boot-gate-passphrase")
         click(ip, world, "st_load")
+        status = _fld(world, "uiStatus").lower()
         c.ck("a tampered file is REFUSED, not silently half-loaded",
-             "wrong" in _fld(world, "uiStatus").lower()
-             or "could not" in _fld(world, "uiStatus").lower()
-             or "tamper" in _fld(world, "uiStatus").lower(),
-             repr(_fld(world, "uiStatus")[:120]))
+             "does not open this file" in status or "altered" in status,
+             repr(_fld(world, "uiStatus")[:160]))
+        c.eq("and the wallet it had open is untouched",
+             str(ip.globals.get("swalabel", "")), "Boot gate wallet")
 
     # ---- the log recorded all of it --------------------------------------
     click(ip, world, "nv_lg")

@@ -762,8 +762,15 @@ def check_selection(c, ip):
                             strategy="bnb")
     c.ck("a coin inside the cost-of-change band is spent WITHOUT change",
          got["change"], 0)
-    c.ck("and the oracle takes the same branch", got["why"], want["why"])
+    # THE BRANCH, NOT THE PROSE. These are two independent implementations
+    # and their messages are deliberately not shared, so comparing the strings
+    # compares the wording rather than the decision - which is how this check
+    # first failed while both sides were taking exactly the same branch.
+    c.ck("and both reach it through branch and bound",
+         ("branch and bound" in got["why"], "branch and bound" in want["why"]),
+         (True, True))
     c.ck("and computes the same fee", got["fee"], want["fee"])
+    c.ck("and the oracle agrees there is no change", want["change"], 0)
 
     manual = [dict(x) for x in COINS]
     manual[1]["selected"] = True
