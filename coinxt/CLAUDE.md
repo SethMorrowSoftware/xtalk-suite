@@ -1744,6 +1744,54 @@ trusting a green run. What closes it is not another gate but the thing that
 found these: reading the shipped code against the specification rather than
 against the other implementation.
 
+**THE FIRST REAL-ENGINE, REAL-NETWORK RUN FOUND THE ONE CLASS NEITHER GATE
+COULD, AND IT IS WHERE THE WALLET ASKED (2026-08-31).** A person generated a
+wallet, funded the testnet address it gave them, and saw no coins. Everything
+this member checks was correct: the seed, the account key, the derivation path,
+the address. `waEsploraPath` emitted the MAINNET root `/api` for every network,
+and Esplora serves each chain under its own (`/testnet/api`, `/signet/api`) - so
+the wallet derived a correct testnet address and asked the mainnet index about
+it.
+
+**Why no gate saw it.** `check-wallet-vectors.py` drives the calculator and
+`check-wallet-boot.py` boots the stack; between them they settle what the wallet
+COMPUTES. Neither had an opinion about the URL it computes, because no backend
+has ever been reachable from here - the honesty label two paragraphs down said
+exactly that and it was read as a limitation on confidence rather than as the
+place a defect would hide. It is worth stating the general form: **the thing an
+offline gate is structurally blind to is not a hard case, it is everything on
+the far side of the boundary it cannot cross.** The oracle hole recorded above
+(two implementations agreeing and both wrong) is the same shape one layer in.
+
+**What made it silent rather than loud is the sharper half.** Esplora refuses a
+foreign address with a 400, and `waHttpCheckStatus` reads it - on the two Tor
+transports. The clearnet transport goes through the engine's `load URL`, which
+hands `waUrlDone` a body and no status code, so the refusal arrived as an empty
+result and the wallet reported a green, synced, empty wallet over a funded
+address. A wallet that says "you have nothing" is not a visibly broken wallet.
+
+**The guard is wider than the fix, because Electrum fails worse than Esplora.**
+An Electrum server asked for a script hash from another chain answers with an
+EMPTY LIST - a perfectly well-formed "this address has never been used" - so
+there is no status to read and no error to surface at any layer. The built-in
+Electrum onion is mainnet-only, and the wallet defaults to testnet, so that
+combination was one click away and would have reported the same empty wallet
+with nothing anywhere to contradict it. `waBackendChainWhy` now refuses any
+backend that does not carry the selected chain BEFORE a request is built, and
+`waRefreshNetState` recomputes it whenever either half moves - the backend or
+the network - so the answer cannot go stale in the direction of "fine". Regtest
+is refused against all three built-in hosts, because no public backend carries a
+chain you run yourself.
+
+**The regression checks assert both directions**, per this file's own standing
+rule that a positive vector cannot catch a check that is not being made: every
+request kind carries the network root (not just the two the defect was noticed
+on, so a seventh kind cannot forget it), the guard refuses the Electrum and
+regtest cases, AND it permits Esplora on testnet and signet and Electrum on
+mainnet - an over-refusing guard is the same defect with the sign flipped.
+`waSync` is driven to prove the guard is actually reached rather than merely
+present.
+
 **WHAT IS STILL OPEN.** Neither gate is an OXT pass: they settle that the code RUNS and what it
 computes, not parser behaviour and not that a window appeared. Everything in
 `docs/OXT-ENGINE-NOTES.md` the interpreter models differently is invisible to both, the case rule

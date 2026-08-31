@@ -94,6 +94,20 @@ FIXTURES = [
     ("the click router refusing to route any button",
      '   if word 1 of the name of the target is not "button" then',
      '   if word 1 of the name of the target is not "buttonn" then'),
+    # THE ORIGINAL DEFECT, reconstructed: the mainnet API root for every
+    # network. A person funded the testnet address this wallet gave them and
+    # saw nothing, because the request went to the mainnet index. It is a
+    # fixture and not a memory because the fix is one `return` away from being
+    # undone by anybody tidying this handler.
+    ("the mainnet Esplora root used for every network",
+     '   if sWaNetwork is "testnet" then\n      return "/testnet"\n   end if',
+     '   if sWaNetwork is "testnet" then\n      return empty\n   end if'),
+    # And the guard beside it. This one matters more than it looks: an
+    # Electrum server answers for the wrong chain with an EMPTY LIST, so
+    # without the refusal there is no error anywhere in the stack to notice.
+    ("the chain guard answering that every backend serves every chain",
+     "function waBackendChainWhy\n",
+     "function waBackendChainWhy\n   return empty\n"),
 ]
 
 
