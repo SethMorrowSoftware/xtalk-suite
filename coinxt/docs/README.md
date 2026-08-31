@@ -25,3 +25,11 @@ have to know that. Four gates read those paths by name
 maintainer memory: the as-built record, the gotchas, and why each decision went
 the way it did. Suite-wide documents that span more than one member live in
 [`../../docs/`](../../docs/README.md), indexed there by kind.
+
+**One open question about this member lives there rather than here, and it is
+there on purpose.** `D-22` in
+[`../../docs/OPEN-DECISIONS.md`](../../docs/OPEN-DECISIONS.md) asks whether
+Solana support belongs in CoinXT and where its ed25519 would come from. It is a
+suite brief because the honest options span three members (vendor into CoinXT,
+reuse SodiumXT's ed25519, or a ninth extension), not because CoinXT is not its
+subject. Nothing in it is built; nothing is blocked on it.

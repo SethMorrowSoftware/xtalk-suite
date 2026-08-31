@@ -923,6 +923,163 @@ stalls permanently, revisit; until then the complexity has no buyer.
 
 ---
 
+## D-22. coinxt Solana support: where does ed25519 come from, and does Solana belong in coinxt at all?
+
+**Why it is the owner's:** every option changes something the owner has already
+ruled on. Vendoring ed25519 into coinxt widens the audited native surface on the
+highest-stakes member and costs an ABI bump plus a five-platform binary refresh -
+the exact cost D-16 weighed and declined for SHA3-512. Taking ed25519 from
+sodiumxt instead would make coinxt the FIRST native member with a cross-member
+dependency, which changes what "self-contained extension" means suite-wide. A
+third member would add a ninth extension to a suite whose member count is itself
+a maintenance decision. And all three change coinxt's identity from "Bitcoin and
+Ethereum" (its README's first line) to a multi-curve chain library. None of that
+is a coding call.
+
+**Evidence (measured 2026-08-31 by driving the real shim through ctypes, the way
+`coinxt/tools/coin-kat.py` builds and loads it; the probe is scratch and is not
+in the tree, so re-derive rather than cite it):**
+
+- **Exactly ONE primitive is missing, and it is ed25519.** Measured leg by leg
+  against Solana's requirements:
+  - *SLIP-0010 ed25519 HD derivation* is `cnx_hmac_sha512` and nothing else.
+    Driven through the shim against SLIP-0010's own published vector 1, the
+    master node and `m/0'` reproduce the published private key and chain code
+    byte for byte, and `m/44'/501'/0'/0'` (Phantom's path) walks. **No new
+    native code.** Note it is hardened-only by construction, so there is no
+    ed25519 analogue of `cxHdNeuter` / xpub watch-only.
+  - *Addresses* are plain base58 of the 32-byte public key, no checksum -
+    Satoshi's alphabet, which `coinxt/src/coinxt.livecodescript` already carries
+    as `kCxBase58Alphabet`. `cxBase58Encode` / `cxBase58Decode` exist today but
+    are PRIVATE (Base58Check is the public wrapper). Cross-check: 32 zero bytes
+    encode to `11111111111111111111111111111111`, the System program id.
+    **No new native code; two handlers change visibility.**
+  - *PDA / `findProgramAddress`* is `cnx_sha256` over
+    `seeds || programId || bump || "ProgramDerivedAddress"`, rejecting a
+    candidate that lands ON the ed25519 curve. The hash half is the shim's
+    today. **The on-curve test is the gap**, and it is load-bearing rather than
+    exotic: the Associated Token Account address every SPL-token send needs is a
+    PDA.
+  - *Signing* is PureEdDSA over the whole serialized message, not over a digest.
+    Every curve entry point coinxt ships is digest-in, so this is a genuinely
+    new shape at the FFI seam - though a benign one, since the hash entry points
+    already take a variable-length buffer.
+  - *Transaction building* (compact-u16 shortvec, the legacy and v0 message
+    layouts, account-ordering and dedup rules, System / SPL-Token / ATA
+    instruction data) is byte-shuffling with no secret-dependent branch. By
+    coinxt's own C-vs-script rule that is **script**, and it is strictly
+    simpler than the base58 long division, bech32 and BIP-32 serialization
+    already in that file. One difference from every encoding coinxt ships
+    today is worth carrying: Solana's wire format is UNCHECKSUMMED, so a
+    transcription slip in an account index or a shortvec length produces a
+    well-formed transaction that moves the wrong lamports to the wrong
+    account, with nothing on the wire to catch it. That is the
+    valid-looking-wrong-address failure `check-script-vectors.py` was written
+    for, one step worse, and it argues for the vector gate BEFORE the
+    handlers, not after.
+- **sodiumxt has three of the four ed25519 legs and not the fourth.**
+  `sxSignKeypairFromSeed`, `sxSignDetached` and `sxSignVerifyDetached` are
+  libsodium's ed25519 and are exactly what signing needs. There is no ed25519
+  point-validity export: `sxRistrettoPointValid` is **ristretto255**, a
+  different encoding, and cannot answer the PDA question. Closing that gap is a
+  sodiumxt ABI bump and its own five-platform refresh, so "reuse sodiumxt" is
+  not free either - it moves the native cost to a second member.
+- **coinxt has ed25519-donna's HEADER vendored already and links none of its
+  code.** `native/vendor/VENDOR.md` records it as headers-only: `secp256k1.h`
+  needs `curve_info` from `bip32.h`, which includes the ed25519 typedefs. The
+  same file records the reason BIP-32 was not vendored - `bip32.c` "drags in
+  curves.c, nist256p1, ed25519-donna and the Cardano variants". Adding ed25519
+  is therefore MORE OF THE FIRST UPSTREAM, not a third one: same MIT tree, same
+  pin, same LICENSE row. That matters for the rule-1 argument, which D-01
+  already changed once and would not need to change again.
+- **The point-validity test looks reachable through donna's PUBLIC API.**
+  `ed25519_scalarmult` is declared `int` in the vendored header, and upstream
+  returns non-zero when the point fails to unpack, which is precisely the
+  `decompress().is_some()` test Solana's `is_on_curve` performs. If that holds
+  at the pin, no vendored internal header is needed and no new curve code is
+  written. **VERIFY against the pinned source before costing on it**, and pin
+  the equivalence with a differential KAT either way - a wrong answer here does
+  not crash, it derives a valid-looking wrong ATA, which is the same failure
+  class `check-script-vectors.py` exists for.
+- **The script half can be proven offline before an engine is ever booked.**
+  `coinxt/tools/lcs-interp.py` + `check-script-vectors.py` already drive the
+  real shipped `.livecodescript` against published vectors with the real native
+  library behind it. A Solana serializer is inside the subset that file already
+  uses. So the pure-script ~80% of this work is CI-verifiable, and only the
+  ed25519 seam needs engine time.
+- **The ABI-bump cost is materially lower than when D-16 declined it on
+  2026-08-17.** `release-binaries.yml` reached its commit stage for the first
+  time on 2026-08-27 (run 12), landing universal-mac for four members and
+  rebuilding every Linux/Windows binary. A five-platform refresh is now a
+  dispatch and a review, not an unproven path. That is a change in the cost, not
+  in the rule: rule 5 still wants a human decision behind every committed
+  binary, and pressing "Run workflow" is that decision.
+
+**Options:**
+
+- **A. Vendor ed25519-donna into coinxt (ABI 7).** Roughly four new `cnx_`
+  entry points plus their length accessors: pubkey-from-seed, sign, verify,
+  point-is-valid. ed25519-donna is shaped as one implementation unit under a
+  stack of headers, and `sha2.c` / `memzero.c` - the two things it needs from
+  the rest of the tree - are vendored already; that shape is INFERRED from
+  upstream's layout and the vendored header, not measured here, so treat the
+  file count as unknown until the closure is found. `src/coinxt.map` needs no edit
+  (`cnx_*` is a glob). Costs: the closure must be found the way phase 2's was
+  (compile, read the undefined symbols, add the file, repeat) rather than
+  guessed; the ABI bump in `CNX_ABI_VERSION` and `kABIVersion`; five committed
+  binaries refreshed in the same change under suite rule 5; a KAT leg against
+  RFC 8032; `tools/build-preflight.py` re-generated. Buys: coinxt stays a leaf
+  with no cross-member dependency, PDAs work, and the "one vendored tree per
+  curve family" story stays clean.
+- **B. Take ed25519 from sodiumxt, script-only in coinxt.** No coinxt ABI bump
+  and no binary refresh for the signing legs. Costs: coinxt becomes the first
+  native member that cannot run standalone, which contradicts "each member stays
+  a self-contained extension"; a `start using` / co-embed ordering constraint
+  appears in every carrier (the embed registry already orders providers by
+  dependency, so this is mechanism that exists, not new machinery); and PDAs
+  still need a sodiumxt ABI bump for an ed25519 point-validity export, so the
+  native cost is deferred rather than avoided. Realistically this is "A, but
+  paid by sodiumxt", plus a new coupling.
+- **C. A new member (`solanaxt`), pure script over coinxt + sodiumxt.** The
+  nostrxt shape exactly, and it keeps coinxt's Bitcoin+Ethereum identity intact.
+  Costs: a ninth extension with its own CLAUDE.md, gates, docs, demo, harness
+  and fold row; it inherits option B's PDA gap unchanged; and it splits the
+  base58 encoder from its only other user, or re-implements it.
+- **D. Decide never.** Record that coinxt is a secp256k1 library and that
+  ed25519 chains are out of scope, with a written trigger. Honest, and free.
+
+**Blocked until decided:** nothing. No suite member, app or recorded item needs
+Solana today; this brief exists because the question was asked, not because
+something is waiting.
+
+**RECOMMENDATION (the suite's, not a decision):** **option A, gated on a real
+consumer** - which is the same shape D-16 gave SHA3-512, with one difference
+worth stating plainly. SHA3-512 was one export nothing needed. This is four
+exports that unlock an entire chain, and the analysis above says the expensive
+half is smaller than it looks: the HD layer, the addresses and the whole
+transaction builder need no native code at all and are provable in CI today.
+
+So the recommendation is to keep it in coinxt rather than to split it out
+(option C buys nothing that coinxt's own prefix does not, and pays a member's
+overhead for it), to prefer A over B (B's saving is temporary, and it trades a
+one-time ABI bump for a permanent dependency edge on the member that most
+benefits from having none), and NOT to build it before a caller exists. If a
+caller does appear, the honest first slice is the script layer alone, driven
+through `check-script-vectors.py`, with `cxEd25519*` failing closed against an
+ABI-6 binary - the same fail-closed-on-an-older-library seam nostrxt already
+uses for NIP-44 over sodiumxt ABI 10.
+
+**Status of the measurements above: the SLIP-0010, base58 and PDA-hash legs
+were executed headlessly against the real native shim through ctypes on
+2026-08-31 and agree with the published vectors; every proposed handler is
+UNBUILT, so no `cxSol*` or `cxEd25519*` leg has been executed anywhere, on an
+engine or off one.** The ed25519 point-validity route through
+`ed25519_scalarmult` is the one claim here that is INFERRED from the vendored
+header and upstream's documented behaviour rather than measured, and it is
+marked VERIFY above for that reason.
+
+---
+
 ## Checked and found already decided (no briefs; verified 2026-08-16)
 
 These were listed in or adjacent to REMAINING-WORK section E but turned out
