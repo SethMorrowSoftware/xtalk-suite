@@ -4613,6 +4613,100 @@ function cwSatToBtc pSat
    return tSign & tWhole & "." & tText
 end cwSatToBtc
 
+function cwExpandExponent pText
+   -- JSON NUMBERS MAY CARRY AN EXPONENT, and the small ones usually do: a
+   -- Python serializer writes 0.00000422 as "4.22e-06", which is exactly the
+   -- magnitude a fee rate in BTC per kilobyte lands on. A real Electrum
+   -- server sent that and cwBtcToSat refused it - correctly, since it is not
+   -- a decimal amount - and the sync stopped on a well-formed reply.
+   --
+   -- This expands such a value to plain decimal TEXT by moving the point
+   -- through the digit string. No arithmetic on the value itself: the reason
+   -- cwBtcToSat is a string parser at all is that money must not go through a
+   -- float, and an expander that used one would hand that back.
+   --
+   -- It is DELIBERATELY NOT part of cwBtcToSat. That parser reads what a
+   -- person types into an amount field and what a BIP-21 URI carries, and
+   -- there "1e5" meaning a hundred thousand BTC is a catastrophe rather than
+   -- a convenience. Exponents are a JSON fact, so they are handled where JSON
+   -- is read.
+   local tText, tLow, tPos, tMant, tExpTxt, tExpSign, tExp, tSign
+   local tWhole, tFrac, tDigits, tPoint, tOut, tI, tCount
+   put cwTrim(pText) into tText
+   put cwLower(tText) into tLow
+   put offset("e", tLow) into tPos
+   if tPos is 0 then
+      return tText
+   end if
+   put char 1 to (tPos - 1) of tText into tMant
+   put char (tPos + 1) to -1 of tText into tExpTxt
+   if tMant is "" or tExpTxt is "" then
+      throw "wallet-core: cwExpandExponent: " & quote & pText & quote & \
+            " is not a number."
+   end if
+   put "" into tSign
+   if char 1 of tMant is "-" then
+      put "-" into tSign
+      put char 2 to -1 of tMant into tMant
+   else if char 1 of tMant is "+" then
+      put char 2 to -1 of tMant into tMant
+   end if
+   put 1 into tExpSign
+   if char 1 of tExpTxt is "-" then
+      put -1 into tExpSign
+      put char 2 to -1 of tExpTxt into tExpTxt
+   else if char 1 of tExpTxt is "+" then
+      put char 2 to -1 of tExpTxt into tExpTxt
+   end if
+   if tExpTxt is "" or tExpTxt is not an integer then
+      throw "wallet-core: cwExpandExponent: " & quote & pText & quote & \
+            " has no whole exponent."
+   end if
+   put tExpSign * (tExpTxt + 0) into tExp
+   put offset(".", tMant) into tPos
+   if tPos is 0 then
+      put tMant into tWhole
+      put "" into tFrac
+   else
+      put char 1 to (tPos - 1) of tMant into tWhole
+      put char (tPos + 1) to -1 of tMant into tFrac
+      if offset(".", tFrac) is not 0 then
+         throw "wallet-core: cwExpandExponent: more than one decimal point."
+      end if
+   end if
+   put tWhole & tFrac into tDigits
+   if tDigits is "" then
+      throw "wallet-core: cwExpandExponent: " & quote & pText & quote & \
+            " has no digits."
+   end if
+   put the number of chars of tDigits into tCount
+   repeat with tI = 1 to tCount
+      if offset(char tI of tDigits, "0123456789") is 0 then
+         throw "wallet-core: cwExpandExponent: " & quote & pText & quote & \
+               " is not a number."
+      end if
+   end repeat
+   -- The point sits AFTER this many digits; the exponent moves it.
+   put the number of chars of tWhole into tPoint
+   add tExp to tPoint
+   if tPoint < 1 then
+      put "0." into tOut
+      repeat with tI = 1 to -tPoint
+         put "0" after tOut
+      end repeat
+      put tDigits after tOut
+   else if tPoint >= tCount then
+      put tDigits into tOut
+      repeat with tI = 1 to (tPoint - tCount)
+         put "0" after tOut
+      end repeat
+   else
+      put char 1 to tPoint of tDigits & "." & \
+            char (tPoint + 1) to -1 of tDigits into tOut
+   end if
+   return tSign & tOut
+end cwExpandExponent
+
 function cwBtcToSat pText
    local tText, tSign, tWhole, tFrac, tPos, tI, tCount
    put cwTrim(pText) into tText
@@ -10686,8 +10780,34 @@ constant kWaMaxBody = 4194304
 -- costs written on the Network screen.
 constant kWaEsploraOnion = "explorerzydxu5ecjrkwceayqybizmpjjznk5izmitf2modhcusuqlid.onion"
 constant kWaEsploraClear = "blockstream.info"
+-- A SECOND public Esplora, same API and same per-chain roots, for when the
+-- first is unreachable. Both are HTTPS only, which matters: this engine's TLS
+-- behaviour has never been measured here (docs/OXT-ENGINE-NOTES.md 6.8), so if
+-- `load URL` cannot do HTTPS on your build then NEITHER clearnet host will
+-- work and the answer is a Tor backend (plain HTTP inside the circuit) or your
+-- own local Esplora typed into the host field.
+constant kWaEsploraClearAlt = "mempool.space"
 constant kWaElectrumOnion = "explorernuoc63nb.onion"
 constant kWaElectrumPort = 110
+
+-- ELECTRUM OVER PLAIN CLEARNET TCP, and the reason it exists is the shape of
+-- what the other three transports need. Esplora is HTTPS-only on every public
+-- mirror, and this engine's TLS behaviour has never been measured here
+-- (docs/OXT-ENGINE-NOTES.md 6.8); the two Tor transports need a running tor
+-- daemon. So on a machine with neither working TLS nor Tor, the wallet had NO
+-- public backend at all and the only remaining answer was "run your own node",
+-- which is not an answer for somebody who just wants to see their balance.
+--
+-- Electrum's wire protocol is line-delimited JSON over a socket, and public
+-- servers offer it UNENCRYPTED as well as over SSL - conventionally 50001
+-- plain / 50002 SSL on mainnet, and 60001 / 60002 on testnet. Plain TCP is
+-- exactly what the engine's own `open socket` speaks, with no TLS anywhere in
+-- the path. The privacy cost is real and stated on the Network screen: the
+-- server sees your IP, and everyone between you and it sees which server you
+-- talked to (though NOT your addresses - Electrum asks by script hash).
+constant kWaElectrumClear = "electrum.blockstream.info"
+constant kWaElectrumClearPort = 50001
+constant kWaElectrumClearTestPort = 60001
 
 -- The Tor SOCKS port. 9050 is a system tor daemon; 9150 is Tor Browser's.
 constant kWaSocksDefault = 9050
@@ -11117,6 +11237,8 @@ local sWaBackend          -- esplora-tor | electrum-tor | esplora-clear | offlin
 local sWaHost             -- the backend host
 local sWaPort             -- the backend port
 local sWaSocksPort        -- the Tor SOCKS port
+local sWaSock             -- the clearnet Electrum socket ("host:port"), empty when none
+local sWaBooted           -- "true" once waBoot has run, however it was reached
 local sWaNetState         -- idle | dialing | busy | ok | failed
 local sWaNetWhy           -- the last network message
 local sWaTipHeight        -- the chain tip, when a backend has told us
@@ -11195,6 +11317,7 @@ command waBoot
    -- The order matters. Probe first, because every screen's advice depends on
    -- which extensions answered; then load or start a wallet; then arm the
    -- pump; then run the boot self-check, which reports what all of that found.
+   put "true" into sWaBooted
    waProbe
    waResetWallet
    waShow "wallet"
@@ -11332,10 +11455,80 @@ end waTick
 -- ==============================================================================
 
 command waBuild
+   -- THE SCREEN MUST ALWAYS UNLOCK. `lock screen` with an unguarded body is
+   -- how a script error becomes a frozen ENGINE: the throw skips the unlock,
+   -- the compositor never repaints, and OXT and the IDE both appear hung with
+   -- no error anybody can read. That is not a hypothetical - it is what a
+   -- Windows tester saw, and the freeze hid whatever really threw. An error
+   -- here is now an error message on a window that redraws.
+   --
+   -- waDefaults runs FIRST because waBuild is called from preOpenStack, which
+   -- is BEFORE waBoot sets any wallet state, and several things a screen can
+   -- reach ask wallet-core for the script type. cwTypeIndex refuses an empty
+   -- one - correctly, it is a closed set - with "unknown script type """,
+   -- which is a true statement about a variable nobody had assigned yet.
+   local tError
    if the uUiVersion of this stack is kWaUiVersion then
       exit waBuild
    end if
+   waDefaults
    lock screen
+   try
+      waBuildAll
+   catch tError
+      unlock screen
+      waLog "BUILD FAILED: " & tError
+      answer "The wallet could not build its window:" & return & return & \
+            tError & return & return & "Nothing else has run. Please report " & \
+            "this with the text above."
+      exit waBuild
+   end try
+   unlock screen
+   set the uUiVersion of this stack to kWaUiVersion
+   put "true" into sWaBuilt
+end waBuild
+
+command waDefaults
+   -- The state every screen may read, set before the window is built. These
+   -- are the same values waResetWallet uses; it is called later, from waBoot,
+   -- and re-setting them there is harmless. What is NOT harmless is a painter
+   -- reaching wallet-core with an empty script type.
+   if sWaNetwork is "" then
+      put "testnet" into sWaNetwork
+   end if
+   if sWaScriptType is "" then
+      put "p2wpkh" into sWaScriptType
+   end if
+   if sWaKind is "" then
+      put "seed" into sWaKind
+   end if
+   if sWaAccount is "" then
+      put 0 into sWaAccount
+   end if
+   if sWaM is "" then
+      put 2 into sWaM
+   end if
+   if sWaUnit is "" then
+      put "BTC" into sWaUnit
+   end if
+   if sWaBackend is "" then
+      put "offline" into sWaBackend
+   end if
+   if sWaCosigners is "" then
+      put waEmptyList() into sWaCosigners
+   end if
+   if sWaAddresses is "" then
+      put waEmptyList() into sWaAddresses
+   end if
+   if sWaUtxos is "" then
+      put waEmptyList() into sWaUtxos
+   end if
+   if sWaHistory is "" then
+      put waEmptyList() into sWaHistory
+   end if
+end waDefaults
+
+private command waBuildAll
    uiChrome "CoinXT Wallet", kWaWidth, kWaHeight, kWaBandH
    waBuildNav
    waBuildWallet
@@ -11354,10 +11547,7 @@ command waBuild
          "Verified statically and by tools/check-wallet-vectors.py against an " & \
          "independent implementation; needs an OXT pass (Tor: + a live-Tor pass).", \
          "16,598,1184,636"
-   set the uUiVersion of this stack to kWaUiVersion
-   put "true" into sWaBuilt
-   unlock screen
-end waBuild
+end waBuildAll
 
 command waBuildNav
    -- THE TEN RAIL BUTTONS ARE NAMED LITERALLY, like every other control this
@@ -11439,13 +11629,28 @@ command waShow pScreen
    -- The sweep. Every control whose name is "<code>_..." belongs to a screen;
    -- everything else (the chrome, the rail, the footer) belongs to all of
    -- them and is never touched.
-   local tCode, tI, tCount, tName, tPrefix
+   local tCode, tError
    put waCodeForScreen(pScreen) into tCode
    if tCode is "" then
       exit waShow
    end if
    put pScreen into sWaScreen
+   -- Guarded for the same reason waBuild is: a throw inside the sweep would
+   -- leave the screen locked and the engine looking hung.
    lock screen
+   try
+      waShowSweep tCode
+   catch tError
+      unlock screen
+      waLog "screen sweep failed: " & tError
+      exit waShow
+   end try
+   unlock screen
+   waRefreshScreen
+end waShow
+
+private command waShowSweep pCode
+   local tI, tCount, tName, tPrefix
    put the number of controls of this card into tCount
    repeat with tI = 1 to tCount
       put the short name of control tI of this card into tName
@@ -11454,15 +11659,13 @@ command waShow pScreen
          if tPrefix is "nv" or tPrefix is "ui" then
             next repeat
          end if
-         set the visible of control tI of this card to (tPrefix is tCode)
+         set the visible of control tI of this card to (tPrefix is pCode)
       end if
    end repeat
    repeat with tI = 1 to 10
-      waNavPaint waScreenCode(tI), (waScreenName(tI) is pScreen)
+      waNavPaint waScreenCode(tI), (waScreenName(tI) is sWaScreen)
    end repeat
-   unlock screen
-   waRefreshScreen
-end waShow
+end waShowSweep
 
 private command waNavPaint pCode, pActive
    local tName
@@ -11698,6 +11901,7 @@ command waBuildNetwork
    uiButton "nw_bEsploraTor", "Esplora over Tor", "324,90,500,116"
    uiButton "nw_bElectrumTor", "Electrum over Tor", "504,90,688,116"
    uiButton "nw_bEsploraClear", "Esplora over clearnet", "196,120,420,146"
+   uiButton "nw_bElectrumClear", "Electrum over clearnet", "424,120,688,146"
    uiCap "nw_hostCap", "Host", "196,156,250,172"
    uiInput "nw_host", "254,154,560,176"
    uiCap "nw_portCap", "Port", "570,156,610,172"
@@ -11780,8 +11984,32 @@ end waBuildSettings
 -- being clickable and then complaining.
 -- ==============================================================================
 
+command waEnsureBooted
+   -- WHY THIS EXISTS: waBoot runs from openStack, and openStack fires when a
+   -- stack is OPENED. Paste this script into a stack that is already open -
+   -- which is how somebody tries it the first time - and openStack has
+   -- already fired, so waBoot never runs at all: no capability probe, no
+   -- wallet, no state. Every symptom of that is misleading rather than
+   -- absent. sWaHaveOnion is empty, so `is not "true"`, so a transport
+   -- reports that OnionXT did not answer when OnionXT is embedded three
+   -- thousand lines above and fine. sWaScriptType is empty, so wallet-core
+   -- refuses "unknown script type """ about a variable nobody assigned.
+   -- Both were reported from a real engine as two separate defects; they are
+   -- one, and neither is what it looks like.
+   --
+   -- So the wallet boots itself the first time anybody touches it. Reopening
+   -- the stack is still the documented way and still the better one - this is
+   -- the safety net, not the mechanism.
+   if sWaBooted is "true" then
+      exit waEnsureBooted
+   end if
+   put "true" into sWaBooted
+   waBoot
+end waEnsureBooted
+
 on mouseUp
    local tName, tPrefix, tRole, tError, tI
+   waEnsureBooted
    -- BUTTONS ONLY. Fields carry the same "<screen>_<role>" names, and routing
    -- a click on one would run that screen's repaint - which writes the stored
    -- value back over whatever the person had just typed into the field they
@@ -11970,22 +12198,32 @@ command waDeriveAddresses
 end waDeriveAddresses
 
 private function waImportedRecords
-   local tInfo, tList, tRec, tAddr
+   local tInfo, tList, tRec, tAddr, tType
    put waEmptyList() into tList
    if sWaImportedWif is empty then
       return tList
    end if
    put cwWifInfo(sWaImportedWif, sWaNetwork) into tInfo
-   put tInfo[sWaScriptType] into tAddr
+   put sWaScriptType into tType
+   put tInfo[tType] into tAddr
    if tAddr is "" then
+      -- AN UNCOMPRESSED KEY HAS NO SEGWIT ADDRESS - BIP-143 forbids one, so
+      -- cwWifInfo leaves both SegWit slots empty and the only address this
+      -- key has is legacy. Falling back is right; recording the fallback as
+      -- the type the SCREEN says was not. The record said p2wpkh over a
+      -- P2PKH scriptPubKey, and waSignSpend signs by type - so this key's
+      -- coins were signed with the BIP-143 sighash and given a witness with
+      -- an empty scriptSig, which every node rejects. The wallet could not
+      -- spend from an address it was showing as its own.
       put tInfo["p2pkh"] into tAddr
+      put "p2pkh" into tType
    end if
    put tAddr into tRec["address"]
    put tInfo["pubkey"] into tRec["pubkey"]
    put tInfo["seckey"] into tRec["seckey"]
    put 0 into tRec["change"]
    put 0 into tRec["index"]
-   put sWaScriptType into tRec["scripttype"]
+   put tType into tRec["scripttype"]
    put cwScriptForAddress(sWaNetwork, tAddr) into tRec["script"]
    put "(imported)" into tRec["suffix"]
    return cwListAdd(tList, tRec)
@@ -12251,13 +12489,13 @@ private function waWalletAdvice
       return tOut
    end if
    if sWaNetwork is "mainnet" then
+      if waIsPublicTestSeed() then
+         return waPublicSeedWarning()
+      end if
       return "This is MAINNET. Everything on the Send screen spends real coins."
    end if
    if waIsPublicTestSeed() then
-      return "This is " & sWaNetwork & ", so nothing here is worth anything - " & \
-            "and this is BIP-39's PUBLISHED test seed, so every address it " & \
-            "makes is public. Fund it with test coins only. Mainnet is " & \
-            "refused until you generate or restore a seed of your own."
+      return waPublicSeedWarning()
    end if
    return "This is " & sWaNetwork & ", so nothing here is worth anything. That " & \
          "is the right place to learn what the buttons do."
@@ -12436,17 +12674,14 @@ command waWalletClick pRole
 end waWalletClick
 
 command waSetNetwork pNetwork
-   -- REFUSED, not warned about: the published test seed must not reach
-   -- mainnet. A warning is a thing people click past, and the cost here is
-   -- somebody else's coins arriving at an address the whole world can spend
-   -- from. Generating or restoring a seed clears it, and then this opens.
-   if pNetwork is "mainnet" and waIsPublicTestSeed() then
-      uiStatus "Refused: this wallet still holds BIP-39's PUBLISHED test " & \
-            "seed. It is printed in the specification, so on mainnet anyone " & \
-            "could spend what you receive. Generate or restore a seed first.", \
-            "bad"
-      exit waSetNetwork
-   end if
+   -- MAINNET IS ALLOWED, INCLUDING WITH THE PUBLISHED TEST SEED, and the
+   -- warning is carried instead of the refusal. That is a deliberate choice
+   -- and worth stating plainly, because the risk is real: those twelve words
+   -- are printed in BIP-39, so anyone can sweep an address derived from them.
+   -- What the wallet owes in return is that the warning cannot be missed and
+   -- cannot be dismissed - it is on the Wallet screen, on Receive next to the
+   -- address somebody is about to be paid at, and on Send. It reappears on
+   -- every repaint because it is computed, not acknowledged once.
    -- Changing network changes every address in the wallet, so it re-derives
    -- and drops the chain state rather than showing addresses from one network
    -- beside balances from another.
@@ -12571,16 +12806,6 @@ command waOpenWallet
       exit waOpenWallet
    end if
    put cwTrim(field "wl_mnemonic") into sWaMnemonic
-   -- The same refusal from the other side. waSetNetwork guards the switch TO
-   -- mainnet; this guards typing the public seed while already there. Both
-   -- exist because either one alone leaves a two-step path to the same place.
-   if sWaNetwork is "mainnet" and waIsPublicTestSeed() then
-      put empty into sWaMnemonic
-      uiStatus "Refused: that is BIP-39's PUBLISHED test seed, printed in " & \
-            "the specification. On mainnet anyone could spend what you " & \
-            "receive. Nothing was derived.", "bad"
-      exit waOpenWallet
-   end if
    put field "wl_pass" into sWaPassphrase
    waDeriveAccount
    uiStatus "Open: " & sWaLabel & ", " & sWaScriptType & " on " & sWaNetwork & \
@@ -12711,7 +12936,14 @@ command waPaintReceive
       put cwUriBuild(tAddr, "", field "rc_label", field "rc_message") into tUri
    end if
    put tUri into field "rc_uri"
-   put "derivation   " & cwAccountPath(sWaScriptType, sWaNetwork, sWaAccount) & \
+   -- THE WARNING GOES FIRST, above the derivation and the scriptPubKey. This
+   -- is the screen where somebody copies an address to be paid at, so it is
+   -- the last moment the wallet can say that anyone can spend what arrives.
+   put "" into tOut
+   if waPublicSeedWarning() is not "" then
+      put waPublicSeedWarning() & return & return into tOut
+   end if
+   put tOut & "derivation   " & cwAccountPath(sWaScriptType, sWaNetwork, sWaAccount) & \
          tRec["suffix"] & return into tOut
    put "script type  " & tRec["scripttype"] & return after tOut
    put "scriptPubKey " & tRec["script"] & return after tOut
@@ -12973,6 +13205,13 @@ command waDeriveMore
    -- wallet restored from the same seed elsewhere will NOT find, and that is
    -- a decision a person should make on purpose.
    local tNode, tI, tCount, tRec, tList, tStart, tJ
+   if sWaKind is "key" then
+      -- One key is one address per script type. There is no chain to extend,
+      -- and waAccountNode would throw about a missing account key, which is
+      -- true and says nothing about why the button did not work.
+      throw "an imported key has a single address, so there is no chain to " & \
+            "extend. Open a seed wallet to derive more."
+   end if
    put sWaAddresses into tList
    put cwListCount(tList) into tCount
    put waAccountNode() into tNode
@@ -13089,7 +13328,28 @@ private function waDefaultRate
    return "5"
 end waDefaultRate
 
+function waPublicSeedWarning
+   -- The one place the public-seed sentence is written. Every screen that can
+   -- cost somebody money asks for it, so the wording cannot drift between
+   -- them and no screen can quietly stop showing it.
+   if not waIsPublicTestSeed() then
+      return ""
+   end if
+   if sWaNetwork is "mainnet" then
+      return "DANGER: this is BIP-39's PUBLISHED test seed on MAINNET. Those " & \
+            "twelve words are printed in the specification, so ANYONE can " & \
+            "derive these private keys and spend anything sent here. Do not " & \
+            "receive real coins at this wallet. Generate or restore a seed " & \
+            "of your own first."
+   end if
+   return "This is BIP-39's PUBLISHED test seed, so every address it makes " & \
+         "is public. Fine for testnet; never fund it on mainnet."
+end waPublicSeedWarning
+
 private function waSendWarning
+   if waPublicSeedWarning() is not "" and sWaNetwork is "mainnet" then
+      return waPublicSeedWarning()
+   end if
    if sWaKind is "watch" then
       return "This is a WATCH-ONLY wallet. It can build a transaction and " & \
             "export it as a PSBT for something that holds the keys, but it " & \
@@ -13417,11 +13677,57 @@ function waSequenceNumber
 end waSequenceNumber
 
 function waInputType
+   -- The wallet's OWN type: what a NEW address gets, and what change goes to.
+   -- It is not necessarily the type of a coin being spent - see
+   -- waRecordType, and read its note before using this one in a signing path.
    if sWaKind is "multisig" then
       return "p2wsh"
    end if
    return sWaScriptType
 end waInputType
+
+function waRecordType pAddrRec
+   -- THE TYPE OF ONE ADDRESS, which is not the same question as the type of
+   -- the wallet, and the difference is what a signing path must ask.
+   -- Every record carries its own "scripttype" (cwAddressAt writes it, the
+   -- multisig builder writes p2wsh, and the imported-key path writes the type
+   -- of the address it actually chose - which for an uncompressed key is
+   -- legacy however the Wallet screen is set). Signing by the WALLET's type
+   -- signed a P2PKH output with the BIP-143 sighash and gave it a witness,
+   -- which no node accepts.
+   --
+   -- The fallback is the wallet's type rather than a throw because a record
+   -- from an older saved file predates the field, and for those every address
+   -- really was the wallet's type - that is exactly the case this replaces.
+   if pAddrRec["scripttype"] is not "" then
+      return pAddrRec["scripttype"]
+   end if
+   return waInputType()
+end waRecordType
+
+function waSelectedInputSpecs pSel
+   -- The cwEstimateVsize input list built from the ACTUAL coins, so a mixed
+   -- selection is priced by what it really costs rather than by the wallet's
+   -- nominal type. cwSimpleInputs (count x one type) is still right wherever
+   -- the caller genuinely has one type, and wrong here.
+   local tI, tCount, tRec, tAddrRec, tSpec, tOut
+   put waEmptyList() into tOut
+   put cwListCount(pSel) into tCount
+   repeat with tI = 1 to tCount
+      put pSel[tI] into tRec
+      put waRecordFor(tRec["address"]) into tAddrRec
+      put "" into tSpec
+      if tAddrRec is "" then
+         put waInputType() into tSpec["type"]
+      else
+         put waRecordType(tAddrRec) into tSpec["type"]
+      end if
+      put sWaM into tSpec["m"]
+      put cwListCount(sWaCosigners) into tSpec["cosigners"]
+      put cwListAdd(tOut, tSpec) into tOut
+   end repeat
+   return tOut
+end waSelectedInputSpecs
 
 function waChangeType
    -- Change goes to the same script type as the wallet, which is what keeps
@@ -13455,8 +13761,7 @@ private function waMaxSpend pCoins, pOutTypes, pRate, pFixedSat
       put cwListAdd(tSel, tRec) into tSel
       add tRec["value"] to tTotal
    end repeat
-   put cwSimpleInputs(waInputType(), cwListCount(tSel), sWaM, \
-         cwListCount(sWaCosigners)) into tIns
+   put waSelectedInputSpecs(tSel) into tIns
    put cwEstimateVsize(tIns, pOutTypes) into tVsize
    put cwFeeFor(tVsize, pRate) into tFee
    put "" into tOut
@@ -13570,7 +13875,7 @@ function waSignSpend pInputs, pOutputs, pSel, pLock
    -- node at the moment it is needed and dropped immediately after, so no
    -- private key outlives the loop iteration that used it.
    local tNode, tI, tCount, tRec, tAddrRec, tDigest, tSig, tSigs, tWits
-   local tScripts, tAmounts, tType, tRaw, tVersion, tWs, tKeys
+   local tScripts, tAmounts, tType, tRaw, tVersion, tWs, tKeys, tInType
    put 2 into tVersion
    put waEmptyList() into tSigs
    put waEmptyList() into tWits
@@ -13578,9 +13883,17 @@ function waSignSpend pInputs, pOutputs, pSel, pLock
    if tType is "p2pkh" then
       put 1 into tVersion
    end if
-   put waAccountNode() into tNode
-   if tNode["kind"] is not "private" and sWaKind is not "key" then
-      throw "this wallet has no private key loaded, so it cannot sign."
+   -- AN IMPORTED KEY HAS NO ACCOUNT NODE, and asking for one threw before the
+   -- check below could excuse it - so a WIF wallet could not sign anything at
+   -- all, refused with "this wallet has no account key yet. Open one on the
+   -- Wallet screen", about a wallet that was open and holding the only key it
+   -- needs. The condition already named this case; the call ordering defeated
+   -- it. The key path gets its key from waSeckeyFor, which reads the WIF.
+   if sWaKind is not "key" then
+      put waAccountNode() into tNode
+      if tNode["kind"] is not "private" then
+         throw "this wallet has no private key loaded, so it cannot sign."
+      end if
    end if
    -- taproot commits to every input's scriptPubKey and amount, so those are
    -- gathered before the loop rather than per input
@@ -13619,15 +13932,17 @@ function waSignSpend pInputs, pOutputs, pSel, pLock
                   "send it to your cosigners, and combine what comes back " & \
                   "on the Tools screen."
          end if
-      else if tType is "p2tr" then
+      else if waRecordType(tAddrRec) is "p2tr" then
          put cwSighash("p2tr", tVersion, pInputs, pOutputs, tI, pLock, "", 0, "", \
                tScripts, tAmounts) into tDigest
          put cwSignTaproot(waSeckeyFor(tAddrRec), tDigest, "") into tSig
       else
-         put cwSighash(tType, tVersion, pInputs, pOutputs, tI, pLock, \
+         -- PER INPUT, not per wallet. See waRecordType.
+         put waRecordType(tAddrRec) into tInType
+         put cwSighash(tInType, tVersion, pInputs, pOutputs, tI, pLock, \
                tAddrRec["pubkey"], tRec["value"], "", waEmptyList(), \
                waEmptyList()) into tDigest
-         put cwSignInput(tType, waSeckeyFor(tAddrRec), tDigest, \
+         put cwSignInput(tInType, waSeckeyFor(tAddrRec), tDigest, \
                tAddrRec["pubkey"]) into tSig
       end if
       put cwListAdd(tSigs, tSig["scriptsig"]) into tSigs
@@ -14603,6 +14918,9 @@ private function waBackendChoice
    if sWaBackend is "esplora-clear" then
       return "EsploraClear"
    end if
+   if sWaBackend is "electrum-clear" then
+      return "ElectrumClear"
+   end if
    return "Offline"
 end waBackendChoice
 
@@ -14625,9 +14943,17 @@ private function waPrivacyText
          "and it. This suite has never measured what this engine does about " & \
          "TLS certificates (OXT-ENGINE-NOTES 6.8), so https:// here is " & \
          "offered without a claim about it rather than with one." & return & return after tOut
+   put "ELECTRUM OVER CLEARNET is a PLAIN TCP socket to a public Electrum " & \
+         "server - no TLS anywhere in the path and no daemon to be running, " & \
+         "which is why it works where the other three may not. The server " & \
+         "learns your IP and which script hashes you asked about (not your " & \
+         "addresses); anyone between you and it sees that you talked to an " & \
+         "Electrum server and how much, but not what about. The chain is " & \
+         "chosen by the PORT: 50001 mainnet, 60001 testnet." & return & return after tOut
    if sWaHaveOnion is not "true" then
       put "The OnionXT layer did not answer, so the two Tor options cannot " & \
-            "work in this stack." after tOut
+            "work in this stack. Electrum over clearnet needs neither Tor " & \
+            "nor TLS and is the fallback when nothing else connects." after tOut
    else
       put "The Tor options need a tor daemon on 127.0.0.1:" & sWaSocksPort & \
             ". Nothing else does." after tOut
@@ -14644,6 +14970,8 @@ command waNetworkClick pRole
       waSetBackend "electrum-tor"
    else if pRole is "bEsploraClear" then
       waSetBackend "esplora-clear"
+   else if pRole is "bElectrumClear" then
+      waSetBackend "electrum-clear"
    else if pRole is "test" then
       waApplyNetworkFields
       waNetQueue "tip", ""
@@ -14723,6 +15051,16 @@ command waSetBackend pBackend
    else if pBackend is "esplora-clear" then
       put kWaEsploraClear into sWaHost
       put 443 into sWaPort
+   else if pBackend is "electrum-clear" then
+      put kWaElectrumClear into sWaHost
+      -- THE PORT IS THE CHAIN SELECTOR here, where Esplora used a path root.
+      -- One Electrum connection serves exactly one chain and never says which,
+      -- so getting this wrong is the silent-empty-wallet failure again.
+      if sWaNetwork is "mainnet" then
+         put kWaElectrumClearPort into sWaPort
+      else
+         put kWaElectrumClearTestPort into sWaPort
+      end if
    end if
    set the defaultStack to the short name of this stack
    put sWaHost into field "nw_host"
@@ -14730,6 +15068,39 @@ command waSetBackend pBackend
    waRefreshNetState
    waLog "backend: " & pBackend & " (" & sWaHost & ":" & sWaPort & ")"
 end waSetBackend
+
+function waIsElectrum pBackend
+   -- WHICH PROTOCOL a backend speaks, as opposed to which transport carries
+   -- it. Two backends speak Electrum's JSON-RPC (over Tor, and over a plain
+   -- socket) and two speak Esplora's HTTP, and every parse below the
+   -- transport layer cares about the first question and not the second.
+   --
+   -- waNetApply asked `sWaBackend is "electrum-tor"`, which was the same
+   -- question and the wrong test, so the clearnet Electrum transport's
+   -- replies fell into the ESPLORA parser: a perfectly good
+   -- {"result":{"height":5127803,...}} was measured against "is this a bare
+   -- integer", and the wallet reported that a working server had answered
+   -- with something that is not a height. The connection was fine and the
+   -- error pointed at the server.
+   --
+   -- Same shape as waNeedsTor one commit earlier: a condition written against
+   -- the backends that existed when it was written. Both are predicates now,
+   -- so a new backend answers both questions by construction.
+   return pBackend is "electrum-tor" or pBackend is "electrum-clear"
+end waIsElectrum
+
+function waNeedsTor pBackend
+   -- WHICH TRANSPORTS NEED TOR, named positively. This was written the other
+   -- way round - "not offline and not esplora-clear" - and the clearnet
+   -- Electrum transport was added without anybody remembering to add it to
+   -- that list, so a transport whose entire purpose is needing neither TLS
+   -- nor Tor reported that OnionXT had not answered.
+   --
+   -- A deny-list of the things a rule does NOT apply to is wrong by default
+   -- for anything new; an allow-list of the things it DOES apply to is right
+   -- by default. The next transport added here needs no edit to be correct.
+   return pBackend is "esplora-tor" or pBackend is "electrum-tor"
+end waNeedsTor
 
 command waRefreshNetState
    -- The two reasons a transport cannot run that are knowable WITHOUT talking
@@ -14744,8 +15115,7 @@ command waRefreshNetState
    -- chain state that failure was about.
    local tWhy
    put empty into tWhy
-   if sWaBackend is not "offline" and sWaHaveOnion is not "true" \
-         and sWaBackend is not "esplora-clear" then
+   if waNeedsTor(sWaBackend) and sWaHaveOnion is not "true" then
       -- FIRST, because when both are true this is the one to fix first.
       put "OnionXT did not answer, so this transport cannot run here." into tWhy
    end if
@@ -14806,6 +15176,7 @@ end waNetQueue
 
 command waNetAbort
    local tError
+   waSockClose
    if sWaStream is not empty then
       try
          oxCloseStream sWaStream
@@ -14880,7 +15251,7 @@ end waNetFail
 
 command waNetStart pRec
    -- Dispatch one request to whichever transport is selected.
-   local tPath, tUrl, tError, tHandle, tBody, tMethod
+   local tPath, tUrl, tError, tHandle, tBody, tMethod, tSock
    put waEsploraPath(pRec) into tPath
    if sWaBackend is "esplora-clear" then
       -- THIS TRANSPORT CANNOT BROADCAST, and it says so instead of pretending.
@@ -14912,6 +15283,34 @@ command waNetStart pRec
       -- window; the with-message form hands the answer back through the
       -- message path instead.
       load URL tUrl with message "waUrlDone"
+      exit waNetStart
+   end if
+   if sWaBackend is "electrum-clear" then
+      -- A PLAIN TCP SOCKET, which is the whole point: no TLS for the engine
+      -- to get wrong and no daemon to be running. The socket id IS the
+      -- "host:port" string in this engine, so it doubles as the correlation
+      -- token the way the Tor stream handle does.
+      put sWaHost & ":" & sWaPort into tSock
+      put tSock into pRec["sock"]
+      put pRec into sWaInFlight
+      -- ONE CONNECTION, MANY REQUESTS. Electrum is designed for exactly that
+      -- - the id field on every request exists to correlate answers over a
+      -- persistent link - and this transport originally opened a fresh socket
+      -- per request, which broke twice over. In this engine a socket IS its
+      -- "host:port" string, so request 2 asked to open a socket whose id was
+      -- the one request 1 had just closed; and a sync is 2 + 2 x the address
+      -- count requests, so a full scan would have hammered a public server
+      -- with eighty-odd connections in a few seconds. The tip answered and
+      -- nothing after it did, which reads as an empty wallet.
+      if sWaSock is not empty then
+         put "busy" into sWaNetState
+         waSockSend
+         exit waNetStart
+      end if
+      put tSock into sWaSock
+      put "dialing" into sWaNetState
+      waLog "open " & tSock
+      open socket to tSock with message "waSockOpened"
       exit waNetStart
    end if
    if sWaBackend is "esplora-tor" or sWaBackend is "electrum-tor" then
@@ -14996,8 +15395,17 @@ function waBackendChainWhy
             "so this would look like a synced, empty wallet. Put a " & \
             sWaNetwork & " server in the host field, or use an Esplora backend."
    end if
+   if sWaBackend is "electrum-clear" and sWaHost is kWaElectrumClear \
+         and sWaNetwork is not "mainnet" and sWaNetwork is not "testnet" then
+      -- The public server carries mainnet on 50001 and testnet on 60001 and
+      -- nothing else. Signet and regtest need a server that serves them.
+      return "the built-in clearnet Electrum server carries mainnet and " & \
+            "testnet only, and this wallet is on " & sWaNetwork & \
+            ". Put a " & sWaNetwork & " server in the host field."
+   end if
    if sWaNetwork is "regtest" and (sWaHost is kWaEsploraOnion \
-         or sWaHost is kWaEsploraClear or sWaHost is kWaElectrumOnion) then
+         or sWaHost is kWaEsploraClear or sWaHost is kWaElectrumOnion \
+         or sWaHost is kWaElectrumClear) then
       return "regtest is a chain you run yourself, so no public backend " & \
             "carries it. Put your own node's host in the field above."
    end if
@@ -15076,7 +15484,13 @@ on waUrlDone pUrl, pStatus
          unload URL pUrl
       catch tError
       end try
-      waNetFail "the URL library said " & pStatus & " for " & pUrl
+      -- NAME THE REMEDY. "the URL library said error" over a URL is where a
+      -- person stops, and the two things worth trying are a different public
+      -- mirror and a transport that does not need TLS at all.
+      waNetFail "the URL library said " & pStatus & " for " & pUrl & \
+            " - if that repeats, try host " & kWaEsploraClearAlt & \
+            " (same API), or a Tor backend, which runs plain HTTP inside " & \
+            "the circuit and so does not depend on this engine's TLS."
       exit waUrlDone
    end if
    put empty into tBody
@@ -15091,6 +15505,85 @@ on waUrlDone pUrl, pStatus
    end try
    waNetDeliver tBody
 end waUrlDone
+
+on waSockOpened pSocket
+   -- The engine's callback for `open socket`. Everything here is inside a try
+   -- for the reason the Tor path documents: a throw in a socket callback is
+   -- swallowed by the engine, so an unguarded bug here is a silent hang.
+   set the defaultStack to the short name of this stack
+   local tError, tLine
+   if pSocket is not sWaSock then
+      exit waSockOpened
+   end if
+   try
+      if the result is not empty then
+         waNetFail "could not connect to " & pSocket & " - " & the result
+         exit waSockOpened
+      end if
+      put "busy" into sWaNetState
+      waSockSend
+   catch tError
+      waNetFail "the clearnet Electrum socket raised: " & tError
+   end try
+end waSockOpened
+
+private command waSockSend
+   -- Write the in-flight request and arm the read. Shared by the first
+   -- request on a new connection and every one that reuses it, so the two
+   -- cannot drift.
+   local tLine
+   if sWaSock is empty or sWaInFlight is empty then
+      exit waSockSend
+   end if
+   put waElectrumRequest(sWaInFlight) into tLine
+   waLog "-> " & tLine
+   write tLine & numToChar(10) to socket sWaSock
+   if the result is not empty then
+      -- A WRITE THAT FAILS ON A REUSED CONNECTION is the ordinary way a
+      -- server drops an idle client, so the socket is forgotten and the next
+      -- tick dials again rather than the sync dying here.
+      waLog "write failed on " & sWaSock & ": " & the result & " - reconnecting"
+      put empty into sWaSock
+      put empty into sWaInFlight
+      put "idle" into sWaNetState
+      exit waSockSend
+   end if
+   -- ONE LINE IS ONE ANSWER. Electrum frames its JSON-RPC by newline, so
+   -- reading until one is the whole framing problem solved - no buffer to
+   -- accumulate and no completeness heuristic to get wrong.
+   read from socket sWaSock until numToChar(10) with message "waSockLine"
+end waSockSend
+
+on waSockLine pSocket, pData
+   set the defaultStack to the short name of this stack
+   local tError
+   if pSocket is not sWaSock then
+      exit waSockLine
+   end if
+   try
+      if pData is empty then
+         waNetFail "the Electrum server closed " & pSocket & \
+               " before answering."
+         exit waSockLine
+      end if
+      -- The connection is NOT closed here: the next request reuses it.
+      waNetDeliver pData
+   catch tError
+      waNetFail "reading from " & pSocket & " - " & tError
+   end try
+end waSockLine
+
+private command waSockClose
+   local tError
+   if sWaSock is empty then
+      exit waSockClose
+   end if
+   try
+      close socket sWaSock
+   catch tError
+   end try
+   put empty into sWaSock
+end waSockClose
 
 on waStreamEvent pStream, pEvent, pData
    -- OnionXT's per-stream callback: "open", "data", "closed", "error". The
@@ -15113,7 +15606,7 @@ on waStreamEvent pStream, pEvent, pData
                   "asked for."
             exit waStreamEvent
          end if
-         if sWaBackend is "electrum-tor" then
+         if waIsElectrum(sWaBackend) then
             waElectrumMaybeComplete
          end if
       else if pEvent is "closed" then
@@ -15130,7 +15623,7 @@ private command waStreamOpened
    local tRec, tReq, tCrlf, tBody, tLine, tLen
    put sWaInFlight into tRec
    put numToChar(13) & numToChar(10) into tCrlf
-   if sWaBackend is "electrum-tor" then
+   if waIsElectrum(sWaBackend) then
       put waElectrumRequest(tRec) into tLine
       waLog "-> " & tLine
       oxWrite sWaStream, textEncode(tLine & numToChar(10), "UTF-8")
@@ -15175,7 +15668,7 @@ private command waStreamClosed
    if sWaInFlight is empty then
       exit waStreamClosed
    end if
-   if sWaBackend is "electrum-tor" then
+   if waIsElectrum(sWaBackend) then
       waNetFail "the Electrum server closed the connection before answering."
       exit waStreamClosed
    end if
@@ -15343,7 +15836,7 @@ private command waNetApply pKind, pArg, pBody
       put pBody into tText
    end try
    put cwTrim(tText) into tText
-   if sWaBackend is "electrum-tor" then
+   if waIsElectrum(sWaBackend) then
       put cwJsonParse(tText) into tNode
       put cwJsonPath(tNode, "error") into tResult
       if cwJsonType(tResult) is not "missing" and cwJsonType(tResult) is not "null" then
@@ -15358,7 +15851,12 @@ private command waNetApply pKind, pArg, pBody
          -- Electrum's estimatefee answers in BTC per kilobyte, which is a
          -- different unit from everything else on this screen; converting it
          -- here rather than at each use is what keeps sat/vB meaning sat/vB.
-         put cwJsonText(tNode) into tText
+         -- EXPANDED FIRST. estimatefee answers in BTC per kilobyte, which
+         -- for any realistic fee is small enough that a server's serializer
+         -- writes it with an exponent ("4.22e-06"), and the strict amount
+         -- parser refuses that - correctly, but the reply was good and the
+         -- sync stopped on it.
+         put cwExpandExponent(cwJsonText(tNode)) into tText
          if tText is not "" and tText is a number and tText > 0 then
             put cwCeilDiv(cwBtcToSat(tText), 1000) into sWaFeeRates["6"]
             put sWaFeeRates["6"] into sWaFeeRates["1"]
@@ -15548,7 +16046,16 @@ end waBroadcast
 -- to something else is a silent HANG, not an error, and no gate can see it.
 
 on socketError pSocketID, pError
+   -- OURS FIRST, then OnionXT's, then pass. The wallet now owns a socket of
+   -- its own (the clearnet Electrum transport), and a socket nobody claims
+   -- must still reach whatever else is listening.
    local tError
+   if pSocketID is sWaSock then
+      set the defaultStack to the short name of this stack
+      put empty into sWaSock
+      waNetFail "the connection to " & pSocketID & " failed: " & pError
+      exit socketError
+   end if
    try
       if oxSocketError(pSocketID, pError) is true then
          exit socketError
@@ -15560,6 +16067,14 @@ end socketError
 
 on socketClosed pSocketID
    local tError
+   if pSocketID is sWaSock then
+      set the defaultStack to the short name of this stack
+      put empty into sWaSock
+      if sWaInFlight is not empty then
+         waNetFail "the Electrum server closed the connection before answering."
+      end if
+      exit socketClosed
+   end if
    try
       if oxSocketClosed(pSocketID) is true then
          exit socketClosed
@@ -15571,6 +16086,12 @@ end socketClosed
 
 on socketTimeout pSocketID
    local tError
+   if pSocketID is sWaSock then
+      set the defaultStack to the short name of this stack
+      put empty into sWaSock
+      waNetFail "the connection to " & pSocketID & " timed out."
+      exit socketTimeout
+   end if
    try
       if oxSocketTimeout(pSocketID) is true then
          exit socketTimeout
@@ -16242,7 +16763,7 @@ end scFinish
 -- clipboard. What they check is that this stack's own arithmetic agrees with
 -- the library it carries, on this engine, before anybody types anything.
 
-constant kWaScControls = "ad_change,ad_detail,ad_label,ad_labelCap,ad_more,ad_panel,ad_receive,ad_scan,ad_sec1,ad_setLabel,ad_table,cn_addManual,cn_detail,cn_freeze,cn_hint,cn_panel,cn_sec1,cn_table,cn_tick,cn_tickAll,cn_tickNone,hs_bump,hs_copyTxid,hs_detail,hs_inspect,hs_panel,hs_refresh,hs_sec1,hs_table,lg_boot,lg_clear,lg_copy,lg_hint,lg_panel,lg_sec1,lg_sec2,lg_text,nv_ad,nv_bal,nv_chain,nv_cn,nv_confirmed,nv_frozenamt,nv_hs,nv_lg,nv_net,nv_nw,nv_panel,nv_pending,nv_rc,nv_refresh,nv_sd,nv_st,nv_tip,nv_tl,nv_wallet,nv_wl,nw_bElectrumTor,nw_bEsploraClear,nw_bEsploraTor,nw_bOffline,nw_host,nw_hostCap,nw_out,nw_panelA,nw_panelB,nw_port,nw_portCap,nw_privacy,nw_sec1,nw_sec2,nw_sec3,nw_socks,nw_socksCap,nw_state,nw_stop,nw_syncNow,nw_test,nw_why,rc_address,rc_amount,rc_amountCap,rc_copy,rc_copyUri,rc_detail,rc_label,rc_labelCap,rc_message,rc_messageCap,rc_next,rc_panelA,rc_panelB,rc_qr,rc_qrframe,rc_qrhint,rc_sec1,rc_sec2,rc_sec3,rc_showQr,rc_uri,rc_verify,sd_addSelf,sd_broadcast,sd_clear,sd_copyRaw,sd_locktime,sd_locktimeCap,sd_out,sd_panelA,sd_panelB,sd_paste,sd_preview,sd_rate,sd_rateCap,sd_ratehint,sd_rbf,sd_sec1,sd_sec2,sd_sec3,sd_sec4,sd_sign,sd_stratBnb,sd_stratLargest,sd_stratManual,sd_stratOldest,sd_stratSmallest,sd_strategyCap,sd_to,sd_toCap,sd_toPsbt,sd_warn,st_about,st_browse,st_filenote,st_forget,st_forgetnote,st_gap,st_gapCap,st_load,st_panelA,st_panelB,st_password,st_passwordCap,st_path,st_pathCap,st_save,st_sec1,st_sec2,st_sec3,st_unitBtc,st_unitMbtc,st_unitSat,tl_copyOut,tl_entropy,tl_export,tl_hex,tl_hexCap,tl_hold,tl_inspect,tl_msg,tl_msgAddr,tl_msgAddrCap,tl_msgCap,tl_msgSig,tl_msgSigCap,tl_msgSign,tl_msgVerify,tl_note,tl_out,tl_panelA,tl_panelB,tl_psbtCombine,tl_psbtFinal,tl_psbtSign,tl_sec1,tl_sec2,tl_sec3,tl_sweep,uiFooter,uiStatus,uiTitle,wl_account,wl_accountCap,wl_addCosigner,wl_backup,wl_copyDesc,wl_copyXpub,wl_custody,wl_generate,wl_kindKey,wl_kindMulti,wl_kindRestore,wl_kindSeed,wl_kindWatch,wl_label,wl_labelCap,wl_m,wl_mCap,wl_mnemonic,wl_mnemonicCap,wl_netMain,wl_netReg,wl_netSignet,wl_netTest,wl_open,wl_out,wl_panelA,wl_panelB,wl_pass,wl_passCap,wl_sec1,wl_sec2,wl_sec3,wl_sec4,wl_typeLegacy,wl_typeMulti,wl_typeNative,wl_typeNested,wl_typeTaproot,wl_warn,wl_xkey,wl_xkeyCap"
+constant kWaScControls = "ad_change,ad_detail,ad_label,ad_labelCap,ad_more,ad_panel,ad_receive,ad_scan,ad_sec1,ad_setLabel,ad_table,cn_addManual,cn_detail,cn_freeze,cn_hint,cn_panel,cn_sec1,cn_table,cn_tick,cn_tickAll,cn_tickNone,hs_bump,hs_copyTxid,hs_detail,hs_inspect,hs_panel,hs_refresh,hs_sec1,hs_table,lg_boot,lg_clear,lg_copy,lg_hint,lg_panel,lg_sec1,lg_sec2,lg_text,nv_ad,nv_bal,nv_chain,nv_cn,nv_confirmed,nv_frozenamt,nv_hs,nv_lg,nv_net,nv_nw,nv_panel,nv_pending,nv_rc,nv_refresh,nv_sd,nv_st,nv_tip,nv_tl,nv_wallet,nv_wl,nw_bElectrumClear,nw_bElectrumTor,nw_bEsploraClear,nw_bEsploraTor,nw_bOffline,nw_host,nw_hostCap,nw_out,nw_panelA,nw_panelB,nw_port,nw_portCap,nw_privacy,nw_sec1,nw_sec2,nw_sec3,nw_socks,nw_socksCap,nw_state,nw_stop,nw_syncNow,nw_test,nw_why,rc_address,rc_amount,rc_amountCap,rc_copy,rc_copyUri,rc_detail,rc_label,rc_labelCap,rc_message,rc_messageCap,rc_next,rc_panelA,rc_panelB,rc_qr,rc_qrframe,rc_qrhint,rc_sec1,rc_sec2,rc_sec3,rc_showQr,rc_uri,rc_verify,sd_addSelf,sd_broadcast,sd_clear,sd_copyRaw,sd_locktime,sd_locktimeCap,sd_out,sd_panelA,sd_panelB,sd_paste,sd_preview,sd_rate,sd_rateCap,sd_ratehint,sd_rbf,sd_sec1,sd_sec2,sd_sec3,sd_sec4,sd_sign,sd_stratBnb,sd_stratLargest,sd_stratManual,sd_stratOldest,sd_stratSmallest,sd_strategyCap,sd_to,sd_toCap,sd_toPsbt,sd_warn,st_about,st_browse,st_filenote,st_forget,st_forgetnote,st_gap,st_gapCap,st_load,st_panelA,st_panelB,st_password,st_passwordCap,st_path,st_pathCap,st_save,st_sec1,st_sec2,st_sec3,st_unitBtc,st_unitMbtc,st_unitSat,tl_copyOut,tl_entropy,tl_export,tl_hex,tl_hexCap,tl_hold,tl_inspect,tl_msg,tl_msgAddr,tl_msgAddrCap,tl_msgCap,tl_msgSig,tl_msgSigCap,tl_msgSign,tl_msgVerify,tl_note,tl_out,tl_panelA,tl_panelB,tl_psbtCombine,tl_psbtFinal,tl_psbtSign,tl_sec1,tl_sec2,tl_sec3,tl_sweep,uiFooter,uiStatus,uiTitle,wl_account,wl_accountCap,wl_addCosigner,wl_backup,wl_copyDesc,wl_copyXpub,wl_custody,wl_generate,wl_kindKey,wl_kindMulti,wl_kindRestore,wl_kindSeed,wl_kindWatch,wl_label,wl_labelCap,wl_m,wl_mCap,wl_mnemonic,wl_mnemonicCap,wl_netMain,wl_netReg,wl_netSignet,wl_netTest,wl_open,wl_out,wl_panelA,wl_panelB,wl_pass,wl_passCap,wl_sec1,wl_sec2,wl_sec3,wl_sec4,wl_typeLegacy,wl_typeMulti,wl_typeNative,wl_typeNested,wl_typeTaproot,wl_warn,wl_xkey,wl_xkeyCap"
 
 command waScRun
    local tMissing, tRec, tError, tAddr

@@ -928,6 +928,321 @@ def drive(c, ip, world, sandbox):
     for k, v in saved.items():
         ip.globals[k] = v
 
+    # ---- the script types, per INPUT rather than per wallet --------------
+    # Three defects lived here, all invisible to the vector gate because that
+    # gate drives the CALCULATOR (cw*) and every one of these is in how the
+    # APP chooses what to hand it.
+    saved2 = {k: ip.globals.get(k) for k in
+              ("swanetwork", "swascripttype", "swakind", "swaimportedwif",
+               "swaaddresses", "swautxos")}
+    cr2 = WV.REF.cr
+
+    # (1) An UNCOMPRESSED key has no SegWit address - BIP-143 forbids one - so
+    # the import falls back to legacy. It used to record that legacy address
+    # with the type the SCREEN was set to, and waSignSpend signs by type: a
+    # P2PKH output got the BIP-143 sighash and a witness with an empty
+    # scriptSig, which no node accepts.
+    wif_u = cr2.wif_encode(bytes.fromhex("01" * 32), "testnet", False)
+    ip.globals["swanetwork"] = "testnet"
+    ip.globals["swascripttype"] = "p2wpkh"
+    ip.globals["swakind"] = "key"
+    ip.globals["swaimportedwif"] = wif_u
+    recs = ip.call("waImportedRecords", [])
+    rec1 = recs.get("1", {})
+    addr_u = str(rec1.get("address", ""))
+    c.ck("an uncompressed key falls back to a LEGACY address",
+         addr_u[:1] in "mn", addr_u)
+    c.eq("and the record says the type it really is, not the screen's",
+         str(rec1.get("scripttype", "")), "p2pkh")
+    c.eq("waRecordType agrees with the record", 
+         str(ip.call("waRecordType", [rec1])), "p2pkh")
+    c.eq("while the WALLET's own type is still what a new address would be",
+         str(ip.call("waInputType", [])), "p2wpkh")
+
+    # (2) waSignSpend asked waAccountNode() before the check that excuses an
+    # imported key, so a WIF wallet could not sign ANYTHING - refused with
+    # "no account key yet" about a wallet holding the only key it needs.
+    ip.globals["swaaddresses"] = recs
+    coin = {"address": addr_u, "txid": "aa" * 32, "vout": 0, "value": 100000,
+            "height": 100, "frozen": False, "selected": True}
+    ins = ip.call("cwListAdd", [ip.call("waEmptyList", []),
+                                ip.call("cwTxInput", ["aa" * 32, 0, 4294967293])])
+    spk = ip.call("cwScriptForAddress", ["testnet", addr_u])
+    outs = ip.call("cwListAdd", [ip.call("waEmptyList", []),
+                                 ip.call("cwTxOutput", [90000, spk])])
+    sel = ip.call("cwListAdd", [ip.call("waEmptyList", []), coin])
+    raw = ""
+    try:
+        raw = str(ip.call("waSignSpend", [ins, outs, sel, 0]))
+        c.ck("an imported key can sign at all", True)
+    except LCS.Thrown as exc:
+        c.ck("an imported key can sign at all", False, str(exc.msg)[:140])
+    if raw:
+        # (3) and it signs it as the LEGACY input it is: no segwit marker,
+        # a real scriptSig. The two together are what a node checks.
+        c.ck("and signs it as a legacy spend, not a segwit one",
+             raw[8:12] != "0001", raw[:24])
+        dec = ip.call("cwTxDecode", [raw])
+        ssig = str(dec["inputs"]["1"]["scriptsig"])
+        c.ck("with a real scriptSig on the input", len(ssig) > 100,
+             "%d hex chars" % len(ssig))
+
+    # A COMPRESSED key at p2sh-p2wpkh keeps its own type - the fallback must
+    # not fire where a SegWit address genuinely exists.
+    wif_c = cr2.wif_encode(bytes.fromhex("01" * 32), "testnet", True)
+    ip.globals["swaimportedwif"] = wif_c
+    ip.globals["swascripttype"] = "p2sh-p2wpkh"
+    rec2 = ip.call("waImportedRecords", []).get("1", {})
+    c.eq("a compressed key at p2sh-p2wpkh keeps that type",
+         str(rec2.get("scripttype", "")), "p2sh-p2wpkh")
+    c.ck("and gets a P2SH address", str(rec2.get("address", ""))[:1] == "2",
+         str(rec2.get("address", "")))
+
+    # waRecordType's fallback: a record from an older saved file has no
+    # scripttype, and for those the wallet's type really was the answer.
+    c.eq("a record with no type falls back to the wallet's",
+         str(ip.call("waRecordType", [{"scripttype": ""}])), "p2sh-p2wpkh")
+    for k, v in saved2.items():
+        ip.globals[k] = v
+
+    # ---- mainnet is ALLOWED, and the public seed is called out -----------
+    # The published test mnemonic is what this stack pre-fills. Mainnet is not
+    # refused - that is a deliberate product decision - so what the wallet
+    # owes instead is a warning that cannot be missed or dismissed.
+    saved3 = {k: ip.globals.get(k) for k in ("swanetwork", "swamnemonic")}
+    ip.globals["swamnemonic"] = str(ip.constants.get("kWaTestMnemonic", ""))
+    ip.globals["swanetwork"] = "testnet"
+    c.ck("the pre-filled seed is recognised as the published one",
+         ip.call("waIsPublicTestSeed", []) is True)
+    warn_t = str(ip.call("waPublicSeedWarning", []))
+    c.ck("and is warned about even on testnet", "PUBLISHED" in warn_t, warn_t[:80])
+    ip.globals["swanetwork"] = "mainnet"
+    warn_m = str(ip.call("waPublicSeedWarning", []))
+    c.ck("with a DANGER warning on mainnet", warn_m.startswith("DANGER"), warn_m[:80])
+    c.ck("that says the keys are derivable by anyone",
+         "ANYONE" in warn_m, warn_m[:120])
+    c.ck("the Wallet screen carries it",
+         warn_m[:40] in str(ip.call("waWalletAdvice", [])))
+    # A REAL seed on mainnet gets the ordinary mainnet line, not the danger one.
+    ip.globals["swamnemonic"] = ("legal winner thank year wave sausage worth "
+                                 "useful legal winner thank yellow")
+    c.ck("a real seed is not called public",
+         ip.call("waIsPublicTestSeed", []) is not True)
+    c.eq("and gets no public-seed warning",
+         str(ip.call("waPublicSeedWarning", [])), "")
+    for k, v in saved3.items():
+        ip.globals[k] = v
+
+    # ---- the screen unlocks even when the build throws -------------------
+    # A Windows tester saw the window build and then OXT and the IDE both
+    # freeze. The mechanism is `lock screen` with an unguarded body: a throw
+    # skips the unlock, nothing repaints, and the engine looks hung with no
+    # error anybody can read - so the freeze HID whatever really threw.
+    # waDefaults is the other half: waBuild runs from preOpenStack, before
+    # any wallet state exists, and cwTypeIndex refuses an empty script type
+    # (correctly - it is a closed set) with "unknown script type """.
+    c.eq("the boot leaves the screen unlocked", world.locked, 0)
+    c.ck("waDefaults fills the state a painter can reach",
+         all(str(ip.globals.get(k, "")) != ""
+             for k in ("swanetwork", "swascripttype", "swakind")),
+         {k: ip.globals.get(k) for k in
+          ("swanetwork", "swascripttype", "swakind")})
+    # And it is IDEMPOTENT: waBoot calls waResetWallet after it, so running
+    # both must not fight. Re-running defaults must change nothing.
+    before = {k: ip.globals.get(k) for k in
+              ("swanetwork", "swascripttype", "swakind", "swaunit")}
+    ip.call("waDefaults", [])
+    c.eq("waDefaults is idempotent over an opened wallet",
+         {k: ip.globals.get(k) for k in before}, before)
+    # The empty type really does throw, so the guard above is not decoration.
+    try:
+        ip.call("cwAccountPath", ["", "testnet", 0])
+        c.ck("an empty script type is refused by wallet-core", False,
+             "it was accepted")
+    except LCS.Thrown as exc:
+        c.ck("an empty script type is refused by wallet-core",
+             "unknown script type" in str(exc.msg), str(exc.msg)[:90])
+
+    # ---- the transport that needs neither TLS nor Tor --------------------
+    # Every other public path needs something this engine may not have: the
+    # two Esplora mirrors are HTTPS-only and the engine's TLS is unmeasured
+    # here, and both Tor transports need a daemon. On a machine with neither,
+    # the wallet had NO public backend and the only answer left was "run your
+    # own node". Electrum's wire protocol is line-delimited JSON over a plain
+    # socket, which is what `open socket` speaks.
+    saved4 = {k: ip.globals.get(k) for k in
+              ("swabackend", "swahost", "swaport", "swanetwork")}
+    ip.globals["swanetwork"] = "mainnet"
+    ip.call("waSetBackend", ["electrum-clear"])
+    c.eq("clearnet Electrum picks the public server",
+         str(ip.globals.get("swahost")),
+         str(ip.constants.get("kWaElectrumClear", "")))
+    c.eq("and mainnet's PLAIN port, not the SSL one",
+         int(LCS._n(ip.globals.get("swaport"))),
+         int(LCS._n(ip.constants.get("kWaElectrumClearPort", 0))))
+    ip.globals["swanetwork"] = "testnet"
+    ip.call("waSetBackend", ["electrum-clear"])
+    c.eq("testnet gets its own port - the port IS the chain here",
+         int(LCS._n(ip.globals.get("swaport"))),
+         int(LCS._n(ip.constants.get("kWaElectrumClearTestPort", 0))))
+    c.ck("the two ports differ, or one chain would answer for the other",
+         int(LCS._n(ip.constants.get("kWaElectrumClearPort", 0)))
+         != int(LCS._n(ip.constants.get("kWaElectrumClearTestPort", 0))))
+    # AND IT MUST NOT REPORT ITSELF BROKEN. The checks above verified the host
+    # and the port and not the resulting STATE, so they passed over a
+    # transport that told every user "OnionXT did not answer" - about a
+    # transport whose whole purpose is needing neither Tor nor TLS. The Tor
+    # requirement was written as a deny-list ("not offline and not
+    # esplora-clear") and the new transport was simply not in it.
+    saved_onion = ip.globals.get("swahaveonion")
+    ip.globals["swahaveonion"] = "false"          # no Tor on this machine
+    ip.call("waSetBackend", ["electrum-clear"])
+    c.ck("clearnet Electrum works with NO OnionXT",
+         str(ip.globals.get("swanetstate")) != "failed",
+         "%s / %s" % (ip.globals.get("swanetstate"), ip.globals.get("swanetwhy")))
+    c.eq("and says nothing about Tor", str(ip.globals.get("swanetwhy")), "")
+    ip.call("waSetBackend", ["esplora-clear"])
+    c.ck("clearnet Esplora works with no OnionXT too",
+         str(ip.globals.get("swanetstate")) != "failed",
+         str(ip.globals.get("swanetwhy")))
+    ip.call("waSetBackend", ["electrum-tor"])
+    c.ck("but a TOR transport does report it",
+         "OnionXT" in str(ip.globals.get("swanetwhy")),
+         str(ip.globals.get("swanetwhy")))
+    # The predicate itself, over every backend, so a new one cannot inherit
+    # the wrong default the way this one did.
+    for backend, want in (("offline", False), ("esplora-clear", False),
+                          ("electrum-clear", False), ("esplora-tor", True),
+                          ("electrum-tor", True)):
+        c.eq("waNeedsTor(%s)" % backend,
+             ip.call("waNeedsTor", [backend]) is True, want)
+    ip.globals["swahaveonion"] = saved_onion
+    ip.call("waSetBackend", ["electrum-clear"])
+
+    # It must be ALLOWED on the chains it serves and refused on the others.
+    c.eq("allowed on testnet", str(ip.call("waBackendChainWhy", [])), "")
+    ip.globals["swanetwork"] = "mainnet"
+    c.eq("allowed on mainnet", str(ip.call("waBackendChainWhy", [])), "")
+    ip.globals["swanetwork"] = "signet"
+    c.ck("refused on signet, which it does not carry",
+         str(ip.call("waBackendChainWhy", [])) != "")
+    ip.globals["swanetwork"] = "regtest"
+    c.ck("refused on regtest", str(ip.call("waBackendChainWhy", [])) != "")
+    # And the Network screen states what it costs, like the other three.
+    ip.globals["swanetwork"] = "testnet"
+    priv = str(ip.call("waPrivacyText", []))
+    c.ck("the privacy text covers it", "ELECTRUM OVER CLEARNET" in priv)
+    c.ck("and says it needs no TLS", "no TLS" in priv, priv[-400:][:120])
+    for k, v in saved4.items():
+        ip.globals[k] = v
+
+    # ---- the wallet boots even when openStack never fired ----------------
+    # Pasting this script into a stack that is ALREADY OPEN means openStack
+    # has already fired, so waBoot never runs: no probe, no wallet state. Both
+    # engine-reported defects above are that one cause wearing two disguises.
+    c.eq("the boot marked itself booted", str(ip.globals.get("swabooted")),
+         "true")
+    saved5 = {k: ip.globals.get(k) for k in
+              ("swabooted", "swahavecoin", "swascripttype")}
+    ip.globals["swabooted"] = ""
+    ip.globals["swahavecoin"] = ""
+    ip.call("waEnsureBooted", [])
+    c.eq("waEnsureBooted boots a wallet that never got openStack",
+         str(ip.globals.get("swabooted")), "true")
+    c.eq("and the probe really ran", str(ip.globals.get("swahavecoin")), "true")
+    # Idempotent: a second call must not re-probe and re-reset a live wallet.
+    ip.globals["swalabel"] = "sentinel"
+    ip.call("waEnsureBooted", [])
+    c.eq("and a second call changes nothing",
+         str(ip.globals.get("swalabel")), "sentinel")
+    for k, v in saved5.items():
+        ip.globals[k] = v
+
+    # ---- the Electrum wire shapes, as a real server sends them -----------
+    # THE BYTES IN THE TIP CASE ARE A REAL SERVER'S. waNetApply chose its
+    # parser by backend NAME ("electrum-tor"), so the clearnet Electrum
+    # transport - same protocol, different carrier - had every reply parsed as
+    # ESPLORA. The tip is the first request a sync makes, so it was the first
+    # to fail, and it failed by measuring a perfectly good JSON object against
+    # "is this a bare integer" and blaming the server.
+    #
+    # All five shapes are pinned, not just the one that broke: the other four
+    # go through the same dispatch and had never seen a real reply either.
+    saved6 = {k: ip.globals.get(k) for k in
+              ("swabackend", "swainflight", "swatipheight", "swafeerates",
+               "swautxos", "swahistory")}
+    ip.globals["swabackend"] = "electrum-clear"
+
+    def wire(kind, arg, body):
+        ip.globals["swainflight"] = {"kind": kind, "arg": arg}
+        ip.call("waNetApply", [kind, arg, body])
+
+    wire("tip", "", '{"id":1,"jsonrpc":"2.0","result":{"height":5127803,'
+                    '"hex":"00e008208dbd5e3fc1750a0000000000000000000000"}}')
+    c.eq("a real server's chain tip is read", str(ip.globals.get("swatipheight")),
+         "5127803")
+    # estimatefee answers in BTC per KILOBYTE - a different unit from every
+    # other number on that screen, so a missed conversion is a fee 100000x out.
+    wire("fees", "", '{"id":2,"jsonrpc":"2.0","result":0.00001}')
+    c.eq("BTC/kB is converted to sat/vB",
+         str((ip.globals.get("swafeerates") or {}).get("6")), "1")
+    # -1 is Electrum for "no estimate", and must not become a negative rate.
+    wire("fees", "", '{"id":3,"jsonrpc":"2.0","result":-1}')
+    c.eq("a -1 no-estimate leaves the rate alone",
+         str((ip.globals.get("swafeerates") or {}).get("6")), "1")
+    addr0 = str((ip.globals.get("swaaddresses") or {}).get("1", {})
+                .get("address", ""))
+    wire("utxos", addr0,
+         '{"id":4,"jsonrpc":"2.0","result":[{"tx_hash":"%s","tx_pos":0,'
+         '"height":5127000,"value":123456}]}' % ("bb" * 32))
+    u = ip.globals.get("swautxos") or {}
+    c.eq("listunspent lands as one coin", int(LCS._n(u.get("n", 0))), 1)
+    c.eq("at the right address", str(u.get("1", {}).get("address", "")), addr0)
+    c.eq("with the right value", int(LCS._n(u.get("1", {}).get("value", 0))),
+         123456)
+    wire("history", addr0,
+         '{"id":5,"jsonrpc":"2.0","result":[{"tx_hash":"%s","height":5127000}]}'
+         % ("cc" * 32))
+    c.eq("get_history lands as one row",
+         int(LCS._n((ip.globals.get("swahistory") or {}).get("n", 0))), 1)
+    # A JSON-RPC error must be REPORTED, never parsed as data.
+    try:
+        wire("tip", "", '{"id":6,"jsonrpc":"2.0","error":{"code":-32601,'
+                        '"message":"unknown method"}}')
+        c.ck("a JSON-RPC error reply is refused", False, "it was accepted")
+    except LCS.Thrown as exc:
+        c.ck("a JSON-RPC error reply is refused",
+             "refused" in str(exc.msg), str(exc.msg)[:80])
+    # THE SCRIPT HASH, against an independent computation. Electrum asks by
+    # SHA-256 of the scriptPubKey BYTE-REVERSED, and getting the reversal
+    # wrong makes every address look unused - an empty wallet, not an error,
+    # and indistinguishable from the socket bug that sat on top of it.
+    import hashlib as _hl
+    spk = str(ip.call("cwScriptForAddress", ["testnet", addr0]))
+    c.eq("the Electrum script hash is sha256(spk) reversed",
+         str(ip.call("cwElectrumScripthash", [spk])).lower(),
+         _hl.sha256(bytes.fromhex(spk)).digest()[::-1].hex())
+    # ...and the reversal is really happening, or the check above would pass
+    # for an implementation that simply returned the digest.
+    c.ck("and the reversal is not a no-op",
+         str(ip.call("cwElectrumScripthash", [spk])).lower()
+         != _hl.sha256(bytes.fromhex(spk)).hexdigest())
+    req = str(ip.call("waElectrumRequest",
+                      [{"kind": "utxos", "arg": addr0, "id": 7}]))
+    c.ck("and listunspent asks for that hash",
+         "blockchain.scripthash.listunspent" in req
+         and str(ip.call("cwElectrumScripthash", [spk])).lower() in req.lower(),
+         req[:120])
+
+    # And the protocol predicate itself, over every backend.
+    for backend, want in (("electrum-tor", True), ("electrum-clear", True),
+                          ("esplora-tor", False), ("esplora-clear", False),
+                          ("offline", False)):
+        c.eq("waIsElectrum(%s)" % backend,
+             ip.call("waIsElectrum", [backend]) is True, want)
+    for k, v in saved6.items():
+        ip.globals[k] = v
+
     # ---- the log recorded all of it --------------------------------------
     click(ip, world, "nv_lg")
     c.ck("the log is not empty", len(_fld(world, "lg_text")) > 0)

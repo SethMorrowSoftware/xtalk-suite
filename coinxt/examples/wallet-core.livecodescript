@@ -1442,6 +1442,100 @@ function cwSatToBtc pSat
    return tSign & tWhole & "." & tText
 end cwSatToBtc
 
+function cwExpandExponent pText
+   -- JSON NUMBERS MAY CARRY AN EXPONENT, and the small ones usually do: a
+   -- Python serializer writes 0.00000422 as "4.22e-06", which is exactly the
+   -- magnitude a fee rate in BTC per kilobyte lands on. A real Electrum
+   -- server sent that and cwBtcToSat refused it - correctly, since it is not
+   -- a decimal amount - and the sync stopped on a well-formed reply.
+   --
+   -- This expands such a value to plain decimal TEXT by moving the point
+   -- through the digit string. No arithmetic on the value itself: the reason
+   -- cwBtcToSat is a string parser at all is that money must not go through a
+   -- float, and an expander that used one would hand that back.
+   --
+   -- It is DELIBERATELY NOT part of cwBtcToSat. That parser reads what a
+   -- person types into an amount field and what a BIP-21 URI carries, and
+   -- there "1e5" meaning a hundred thousand BTC is a catastrophe rather than
+   -- a convenience. Exponents are a JSON fact, so they are handled where JSON
+   -- is read.
+   local tText, tLow, tPos, tMant, tExpTxt, tExpSign, tExp, tSign
+   local tWhole, tFrac, tDigits, tPoint, tOut, tI, tCount
+   put cwTrim(pText) into tText
+   put cwLower(tText) into tLow
+   put offset("e", tLow) into tPos
+   if tPos is 0 then
+      return tText
+   end if
+   put char 1 to (tPos - 1) of tText into tMant
+   put char (tPos + 1) to -1 of tText into tExpTxt
+   if tMant is "" or tExpTxt is "" then
+      throw "wallet-core: cwExpandExponent: " & quote & pText & quote & \
+            " is not a number."
+   end if
+   put "" into tSign
+   if char 1 of tMant is "-" then
+      put "-" into tSign
+      put char 2 to -1 of tMant into tMant
+   else if char 1 of tMant is "+" then
+      put char 2 to -1 of tMant into tMant
+   end if
+   put 1 into tExpSign
+   if char 1 of tExpTxt is "-" then
+      put -1 into tExpSign
+      put char 2 to -1 of tExpTxt into tExpTxt
+   else if char 1 of tExpTxt is "+" then
+      put char 2 to -1 of tExpTxt into tExpTxt
+   end if
+   if tExpTxt is "" or tExpTxt is not an integer then
+      throw "wallet-core: cwExpandExponent: " & quote & pText & quote & \
+            " has no whole exponent."
+   end if
+   put tExpSign * (tExpTxt + 0) into tExp
+   put offset(".", tMant) into tPos
+   if tPos is 0 then
+      put tMant into tWhole
+      put "" into tFrac
+   else
+      put char 1 to (tPos - 1) of tMant into tWhole
+      put char (tPos + 1) to -1 of tMant into tFrac
+      if offset(".", tFrac) is not 0 then
+         throw "wallet-core: cwExpandExponent: more than one decimal point."
+      end if
+   end if
+   put tWhole & tFrac into tDigits
+   if tDigits is "" then
+      throw "wallet-core: cwExpandExponent: " & quote & pText & quote & \
+            " has no digits."
+   end if
+   put the number of chars of tDigits into tCount
+   repeat with tI = 1 to tCount
+      if offset(char tI of tDigits, "0123456789") is 0 then
+         throw "wallet-core: cwExpandExponent: " & quote & pText & quote & \
+               " is not a number."
+      end if
+   end repeat
+   -- The point sits AFTER this many digits; the exponent moves it.
+   put the number of chars of tWhole into tPoint
+   add tExp to tPoint
+   if tPoint < 1 then
+      put "0." into tOut
+      repeat with tI = 1 to -tPoint
+         put "0" after tOut
+      end repeat
+      put tDigits after tOut
+   else if tPoint >= tCount then
+      put tDigits into tOut
+      repeat with tI = 1 to (tPoint - tCount)
+         put "0" after tOut
+      end repeat
+   else
+      put char 1 to tPoint of tDigits & "." & \
+            char (tPoint + 1) to -1 of tDigits into tOut
+   end if
+   return tSign & tOut
+end cwExpandExponent
+
 function cwBtcToSat pText
    local tText, tSign, tWhole, tFrac, tPos, tI, tCount
    put cwTrim(pText) into tText

@@ -1792,6 +1792,69 @@ mainnet - an over-refusing guard is the same defect with the sign flipped.
 `waSync` is driven to prove the guard is actually reached rather than merely
 present.
 
+**THE SCRIPT-TYPE AUDIT (2026-08-31), AND WHY ITS THREE DEFECTS WERE ALL IN THE
+APP.** Asked to audit P2SH-P2WPKH and the other types, the engine layer came
+back clean and the app layer did not, which is itself the finding. Every
+per-type rule in `wallet-core` is right and pinned: BIP-49 purpose 49, the
+SLIP-132 ypub/yprv pair, redeem = the P2WPKH scriptPubKey, scriptPubKey =
+P2SH(hash160(redeem)), the BIP-143 sighash over the P2PKH scriptCode, a
+`[sig, pubkey]` witness with `push(redeem)` as the scriptSig, a 23-byte
+scriptSig in the size estimate, message header 35, `sh(wpkh(...))` as the
+descriptor. The vector gate drives all of that against the oracle. **What it
+cannot drive is the app deciding WHICH type to hand it**, and all three defects
+lived exactly there.
+
+*An address record that lied about its own type.* `cwWifInfo` leaves both
+SegWit slots empty for an UNCOMPRESSED key, because BIP-143 forbids a SegWit
+address for one, so `waImportedRecords` falls back to the legacy address. The
+fallback is right; recording it with the type the SCREEN was set to was not.
+The record said `p2wpkh` over a `76a914...88ac` scriptPubKey, and the signer
+signs by type - so the coins at that address got the BIP-143 sighash and a
+witness with an empty scriptSig, which no node accepts. Reproduced headlessly
+before it was fixed, and the fixed path now produces a real legacy spend (no
+segwit marker, a 138-byte scriptSig for the uncompressed pubkey).
+
+*A wallet kind that could not sign at all.* `waSignSpend` called
+`waAccountNode()` and only then asked whether the wallet was an imported key -
+and an imported key HAS no account node, so the call threw first. The refusal
+read "this wallet has no account key yet. Open one on the Wallet screen", about
+a wallet that was open and holding the only key it needs. The guard's own
+condition already named the case (`and sWaKind is not "key"`); the call
+ordering defeated it. **The shape to remember: a guard written correctly is
+still dead if something above it throws for the case it was written to
+allow.**
+
+*And the structural half, which is what keeps the first one from recurring.*
+`waSignSpend`, the PSBT builder and the size estimate all asked
+`waInputType()` - the WALLET's type - where the question is the type of the
+COIN. That is true for every seed wallet, which is why it survived, and false
+the moment any record differs. `waRecordType` answers per record (falling back
+to the wallet's type, which is exactly right for a record saved before the
+field existed), and `waSelectedInputSpecs` prices a selection from the coins
+actually in it. `waSignMessage` had been reading `tRec["scripttype"]` correctly
+all along, so the right pattern was already in the file, in one place out of
+five.
+
+**MAINNET IS ALLOWED WITH THE PUBLISHED TEST SEED, BY DECISION, AND THE WARNING
+IS THE PRICE.** The earlier entry refused that combination outright. The
+refusal was reversed on request, which is a product call and not a technical
+one, so it is recorded as a call: the seed this stack pre-fills is printed in
+BIP-39, anyone can derive its keys, and mainnet no longer stops you. What
+replaced the refusal is a warning that cannot be missed or dismissed -
+`waPublicSeedWarning` is ONE computed sentence (so the wording cannot drift and
+no screen can quietly stop showing it) rendered on the Wallet screen, at the
+top of Receive above the address somebody is about to be paid at, and on Send
+ahead of every other warning. It is recomputed on each repaint rather than
+acknowledged once, because an acknowledgement is a thing that gets clicked
+through and then never seen again by the person who inherits the wallet.
+
+**WHAT THE AUDIT DID NOT COVER, stated because a partial audit read as a whole
+one is worse than none.** It walked the five script types through derivation,
+scriptPubKey, sighash, signing, witness assembly, sizing, message signing,
+descriptors and PSBT metadata. It did not re-audit coin selection, the QR
+encoder, the file format or the network layer, all of which have their own
+records above. And it settles none of the open items below.
+
 **WHAT IS STILL OPEN.** Neither gate is an OXT pass: they settle that the code RUNS and what it
 computes, not parser behaviour and not that a window appeared. Everything in
 `docs/OXT-ENGINE-NOTES.md` the interpreter models differently is invisible to both, the case rule
