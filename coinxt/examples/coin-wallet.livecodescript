@@ -5957,6 +5957,81 @@ function cwScriptAsm pScriptHex
    return cwTrim(tOut)
 end cwScriptAsm
 
+function cwScriptCheck pScriptHex
+   -- DOES THIS SCRIPT FRAME? Empty when every push in it fits inside the
+   -- bytes that were handed over, otherwise the reason it does not.
+   --
+   -- cwScriptAsm deliberately does not ask. It renders what a TRANSACTION
+   -- carried, and a transaction's scripts are already framed by the varint
+   -- that introduced them, so a truncated push there is impossible. A bare
+   -- script pasted into a box has no such guarantee, and a chunk expression
+   -- that runs past the end of a string answers with what is there rather
+   -- than refusing - so an over-long PUSH renders as a SHORT push and the
+   -- reader is told a lie in a format that looks exactly like the truth.
+   --
+   -- Separate from the renderer rather than folded into it because the
+   -- renderer's output is pinned by tools/check-wallet-vectors.py and by
+   -- every transaction the inspector has ever printed. One walk that
+   -- answered two questions would have made this a change to both.
+   local tHex, tPos, tEnd, tByte, tLen, tNeed
+   put cwLower(cwTrim(pScriptHex)) into tHex
+   put the number of chars of tHex into tEnd
+   -- EMPTY IS ASKED FIRST, and the order is the answer's whole value.
+   -- cwHexIsClean refuses an empty string too, so with the tests the other way
+   -- round a blank box came back "that is not hex" - which is true and useless,
+   -- because the person has not typed anything yet.
+   if tEnd is 0 then
+      return "the script is empty."
+   end if
+   if cwHexIsClean(tHex) is not true then
+      return "that is not hex."
+   end if
+   put 1 into tPos
+   repeat while tPos <= tEnd
+      put cwBeRead(cxHexDecode(char tPos to (tPos + 1) of tHex)) into tByte
+      add 2 to tPos
+      put -1 into tLen
+      if tByte >= 1 and tByte <= 75 then
+         put tByte into tLen
+      else if tByte is 76 then
+         if tPos + 1 > tEnd then
+            return "OP_PUSHDATA1 at byte " & cwIntDiv(tPos - 1, 2) & \
+                  " has no length byte after it."
+         end if
+         put cwBeRead(cxHexDecode(char tPos to (tPos + 1) of tHex)) into tLen
+         add 2 to tPos
+      else if tByte is 77 then
+         if tPos + 3 > tEnd then
+            return "OP_PUSHDATA2 at byte " & cwIntDiv(tPos - 1, 2) & \
+                  " has no length after it."
+         end if
+         put cwLeRead(cxHexDecode(char tPos to (tPos + 3) of tHex)) into tLen
+         add 4 to tPos
+      else if tByte is 78 then
+         if tPos + 7 > tEnd then
+            return "OP_PUSHDATA4 at byte " & cwIntDiv(tPos - 1, 2) & \
+                  " has no length after it."
+         end if
+         put cwLeRead(cxHexDecode(char tPos to (tPos + 7) of tHex)) into tLen
+         add 8 to tPos
+      end if
+      if tLen >= 0 then
+         -- THE COMPARISON GOES THROUGH A LOCAL. `tEnd - tPos + 1` written
+         -- inside a chunk expression binds the arithmetic into the chunk,
+         -- which is this member's own recorded trap and cost a gate run to
+         -- find in cwNeedBytes.
+         put tEnd - tPos + 1 into tNeed
+         if tLen * 2 > tNeed then
+            return "a push of " & tLen & " byte(s) at byte " & \
+                  cwIntDiv(tPos - 1, 2) & " runs past the end of the script, " & \
+                  "which holds only " & cwIntDiv(tNeed, 2) & " more."
+         end if
+         add tLen * 2 to tPos
+      end if
+   end repeat
+   return ""
+end cwScriptCheck
+
 -- ==============================================================================
 -- PSBT (BIP-174 version 0, with BIP-371's taproot fields)
 --
@@ -11286,6 +11361,77 @@ command uiFooter pText, pRect
    set the textStyle of field "uiFooter" to "italic"
    set the foregroundColor of field "uiFooter" to kUiMuted
 end uiFooter
+-- ---- contextual menus -------------------------------------------------------
+--
+-- A RIGHT-CLICK MENU, as one hidden popup button per menu.
+--
+-- The engine's contextual menu is a BUTTON whose style is "menu" and whose
+-- menuMode is "popup": its text is the item list, one per line, `popup`
+-- shows it at a point, and choosing an item sends `menuPick` with the item's
+-- LABEL. The button needs no script - with no handler of its own the message
+-- walks the hierarchy and arrives at the card and then the stack, which is
+-- where an adopter's router already lives.
+--
+-- OPT-IN, AND THAT IS DELIBERATE. This block is carried byte-identical by
+-- every demo in the suite, so a kit that BUILT a menu would change eighteen
+-- stacks to serve one. Nothing here runs unless an adopter calls
+-- uiContextMenu, and a demo that never does is unchanged in behaviour.
+--
+-- NONE OF THIS HAS RUN ON AN ENGINE. `popup`, `menuMode` and `menuPick` are
+-- documented LiveCode and OpenXTalk is a fork of it, but this suite has never
+-- exercised a menu and the headless runners model no mouse button at all - so
+-- an adopter's right-click handler belongs in a `try`, and losing the menu
+-- must never cost the ordinary click. uiPopupMenu answers whether it worked
+-- rather than throwing, so the caller can decide.
+
+command uiContextMenu pName, pItems
+   -- One hidden popup button, created once and refilled on every call so a
+   -- menu can change with the screen it belongs to. The rect is small and
+   -- inside the window because a stack's controls are measured by
+   -- tools/check-stack-size.py whether they are visible or not.
+   if there is no button pName then
+      -- THE KIT'S OWN IDIOM, and not `create button pName`. Every other
+      -- builder in this block creates the control unnamed and then names the
+      -- last one, which is the spelling the family's headless runners model
+      -- and the one every adopter has already been through an engine with.
+      create button
+      set the name of the last button to pName
+   end if
+   set the style of button pName to "menu"
+   set the menuMode of button pName to "popup"
+   set the text of button pName to pItems
+   set the rect of button pName to "2,2,18,18"
+   set the visible of button pName to false
+end uiContextMenu
+
+function uiPopupMenu pName
+   -- WHICH menu, recorded before it opens. menuPick carries the item's label
+   -- and nothing else, so an adopter with two menus would otherwise have to
+   -- keep every label in the stack globally unique - a constraint that is
+   -- invisible until the day two screens both want "Copy".
+   --
+   -- Answers true or false rather than throwing: on an engine without popup
+   -- menus the right thing is for the click to do nothing, not for the
+   -- adopter's mouseDown to die.
+   local tError
+   if there is no button pName then
+      return false
+   end if
+   set the uUiMenu of this stack to pName
+   try
+      popup button pName at the clickLoc
+   catch tError
+      set the uUiMenu of this stack to empty
+      return false
+   end try
+   return true
+end uiPopupMenu
+
+function uiMenuSource
+   -- The name of the menu the last menuPick came from.
+   return the uUiMenu of this stack
+end uiMenuSource
+
 -- ==== SUITE UI KIT v2 END ====
 
 -- ---- state -------------------------------------------------------------------
@@ -11348,6 +11494,18 @@ local sWaPolling          -- "true" while the tick is armed
 local sWaLog              -- the request/response log text
 local sWaLastPsbt         -- the PSBT the Tools screen is holding
 local sWaLastRaw          -- the raw transaction the Send screen produced
+-- WHAT EACH SIGNED SPEND WAS MADE OF, keyed by txid. Recorded at the moment
+-- of signing because that is the only moment the wallet still holds it: a
+-- replacement must spend the SAME inputs, and BIP-143 commits to each input's
+-- VALUE, which is the one number the raw transaction does not carry. By the
+-- time a person wants to bump, the coins have left sWaUtxos - so without this
+-- the wallet can compute what a replacement must pay and cannot build one,
+-- which is exactly the state waBumpAdvice used to describe as a deliberate
+-- choice.
+--
+-- It holds no private key and nothing that is not already in the transaction
+-- it names, so it is saved with the wallet like the labels are.
+local sWaSpends
 local sWaQrCache          -- array: payload -> the BMP bytes already rendered
 local sWaCtrlByScreen     -- array: screen -> comma list of its control names
 local sWaBusyUntil        -- the milliseconds a long build is allowed to run to
@@ -11974,20 +12132,25 @@ command waBuildTools
    waEditArea "tl_msgSig", "196,230,688,278"
    uiButton "tl_msgSign", "Sign", "196,284,300,310"
    uiButton "tl_msgVerify", "Verify", "304,284,410,310"
-   uiSection "tl_sec2", "Inspect or sweep", "196,318,688,336"
-   uiCap "tl_hexCap", "A raw transaction, a PSBT, a WIF, or an extended key", \
-         "196,340,688,356"
-   waEditArea "tl_hex", "196,358,688,438"
-   uiButton "tl_inspect", "Inspect", "196,444,300,470"
-   uiButton "tl_psbtSign", "Sign the PSBT", "304,444,440,470"
-   uiButton "tl_psbtFinal", "Finalize", "444,444,554,470"
-   uiButton "tl_psbtCombine", "Combine with held", "558,444,688,470"
-   uiButton "tl_sweep", "Sweep this key", "196,476,340,502"
-   uiButton "tl_entropy", "Entropy to mnemonic", "344,476,530,502"
-   uiButton "tl_hold", "Hold as the current PSBT", "534,476,688,502"
-   uiButton "tl_newKey", "New single key", "196,508,340,534"
-   uiButton "tl_derive", "Derive at path", "344,508,490,534"
-   uiWrap "tl_note", "", "196,542,688,584", 11
+   uiSection "tl_sec2", "Inspect, decode, validate, sweep", "196,318,688,336"
+   uiCap "tl_hexCap", "Paste anything: a transaction, a bare script, a PSBT, " & \
+         "a key, an address, a URI or a mnemonic", "196,340,688,356"
+   waEditArea "tl_hex", "196,358,688,412"
+   uiCap "tl_passCap", "BIP-39 passphrase (the seed tools only)", "196,416,470,432"
+   uiInput "tl_pass", "474,414,688,436"
+   uiButton "tl_inspect", "Inspect", "196,442,286,468"
+   uiButton "tl_validate", "Validate", "290,442,384,468"
+   uiButton "tl_decode", "Decode script", "388,442,510,468"
+   uiButton "tl_sweep", "Sweep key", "514,442,604,468"
+   uiButton "tl_hold", "Hold PSBT", "608,442,688,468"
+   uiButton "tl_psbtSign", "Sign the PSBT", "196,474,320,500"
+   uiButton "tl_psbtFinal", "Finalize", "324,474,414,500"
+   uiButton "tl_psbtCombine", "Combine", "418,474,508,500"
+   uiButton "tl_newKey", "New single key", "512,474,648,500"
+   uiButton "tl_entropy", "Entropy to words", "196,506,346,532"
+   uiButton "tl_toEntropy", "Words to entropy", "350,506,500,532"
+   uiButton "tl_derive", "Derive at path", "504,506,640,532"
+   uiWrap "tl_note", "", "196,540,688,584", 11
    uiSection "tl_sec3", "Result", "720,66,1172,84"
    uiArea "tl_out", "720,90,1172,530"
    uiButton "tl_copyOut", "Copy this", "720,538,860,564"
@@ -12110,6 +12273,48 @@ command waEnsureBooted
    waBoot
 end waEnsureBooted
 
+on mouseDown pWhich
+   -- THE RIGHT-CLICK MENU, and it must never cost the ordinary click.
+   --
+   -- Button 3 is the contextual click. Everything else passes straight
+   -- through, so mouseUp's router below is untouched - and even for button 3
+   -- the popup goes through uiPopupMenu, which ANSWERS rather than throwing.
+   -- On an engine without popup menus the right-click does nothing and the
+   -- wallet is otherwise exactly as it was.
+   --
+   -- NONE OF THIS HAS RUN ON AN ENGINE. `popup`, `menuMode` and `menuPick`
+   -- are documented LiveCode and OpenXTalk is a fork of it, but this suite
+   -- has never opened a menu and the headless runners model no mouse button,
+   -- so what the gate can settle is the menu's CONTENT and its ROUTING - what
+   -- each screen offers, and that picking an item does the same thing the
+   -- button does. That the menu APPEARS needs an OXT pass.
+   local tError
+   if pWhich is not 3 then
+      pass mouseDown
+   end if
+   waEnsureBooted
+   try
+      if uiPopupMenu(waMenuFor(sWaScreen)) is false then
+         pass mouseDown
+      end if
+   catch tError
+      pass mouseDown
+   end try
+end mouseDown
+
+on menuPick pItem
+   -- The item's LABEL is all the engine sends, so the menu it came from is
+   -- read back from the kit rather than guessed from the label: two screens
+   -- may both offer "Copy" and mean different things by it.
+   local tError
+   set the defaultStack to the short name of this stack
+   try
+      waMenuPick uiMenuSource(), pItem
+   catch tError
+      uiStatus tError, "bad"
+   end try
+end menuPick
+
 on mouseUp
    local tName, tPrefix, tRole, tError, tI
    waEnsureBooted
@@ -12127,32 +12332,11 @@ on mouseUp
    end if
    put char 1 to 2 of tName into tPrefix
    put char 4 to -1 of tName into tRole
+   if waRouteKnows(tPrefix) is not true then
+      pass mouseUp
+   end if
    try
-      if tPrefix is "nv" then
-         waNavClick tRole
-      else if tPrefix is "wl" then
-         waWalletClick tRole
-      else if tPrefix is "rc" then
-         waReceiveClick tRole
-      else if tPrefix is "ad" then
-         waAddressesClick tRole
-      else if tPrefix is "sd" then
-         waSendClick tRole
-      else if tPrefix is "cn" then
-         waCoinsClick tRole
-      else if tPrefix is "hs" then
-         waHistoryClick tRole
-      else if tPrefix is "tl" then
-         waToolsClick tRole
-      else if tPrefix is "nw" then
-         waNetworkClick tRole
-      else if tPrefix is "lg" then
-         waLogClick tRole
-      else if tPrefix is "st" then
-         waSettingsClick tRole
-      else
-         pass mouseUp
-      end if
+      waRouteClick tPrefix, tRole
    catch tError
       -- EVERY failure reaches the person, on the status line and in the log.
       -- A wallet that swallows an error has decided on the user's behalf that
@@ -12161,6 +12345,213 @@ on mouseUp
       waLog "error: " & tError
    end try
 end mouseUp
+
+function waRouteKnows pPrefix
+   -- Is this two-letter prefix one of the eleven screens' routers? Asked
+   -- before dispatching so an unknown prefix can `pass mouseUp` from the
+   -- handler that owns the message, rather than from inside a helper that
+   -- cannot pass on its caller's behalf.
+   return "nv,wl,rc,ad,sd,cn,hs,tl,nw,lg,st" contains pPrefix
+end waRouteKnows
+
+command waRouteClick pPrefix, pRole
+   -- THE ONE DISPATCH, shared by the buttons and the context menu. It used to
+   -- live inside mouseUp, which is why a menu item had no way to mean "the
+   -- same thing that button means" except by copying the call - and a copy is
+   -- what drifts.
+   if pPrefix is "nv" then
+      waNavClick pRole
+   else if pPrefix is "wl" then
+      waWalletClick pRole
+   else if pPrefix is "rc" then
+      waReceiveClick pRole
+   else if pPrefix is "ad" then
+      waAddressesClick pRole
+   else if pPrefix is "sd" then
+      waSendClick pRole
+   else if pPrefix is "cn" then
+      waCoinsClick pRole
+   else if pPrefix is "hs" then
+      waHistoryClick pRole
+   else if pPrefix is "tl" then
+      waToolsClick pRole
+   else if pPrefix is "nw" then
+      waNetworkClick pRole
+   else if pPrefix is "lg" then
+      waLogClick pRole
+   else if pPrefix is "st" then
+      waSettingsClick pRole
+   else
+      throw "no screen owns the prefix " & quote & pPrefix & quote & "."
+   end if
+end waRouteClick
+
+function waMenuRoute pItem
+   -- THE CLICK THIS MENU ITEM STANDS FOR, as the same "<prefix> <role>" pair
+   -- mouseUp builds out of a button's name - so an item means exactly what
+   -- the button means, by construction rather than by agreement.
+   --
+   -- Items this router performs itself answer "self". Anything else answers
+   -- EMPTY, and waMenuPick throws on empty, so a menu that grows an item
+   -- nobody wired is a failed check rather than a click that quietly does
+   -- nothing. tools/check-wallet-boot.py walks every item of every screen's
+   -- menu through here for exactly that reason.
+   if pItem is "-" then
+      return "self"
+   end if
+   if pItem is "Refresh" or pItem is "About this wallet" \
+         or pItem is "Copy seed phrase" then
+      return "self"
+   end if
+   if pItem is "Copy account key" then
+      return "wl copyXpub"
+   end if
+   if pItem is "Copy descriptor" then
+      return "wl copyDesc"
+   end if
+   if pItem is "Copy address" then
+      return "rc copy"
+   end if
+   if pItem is "Copy payment URI" then
+      return "rc copyUri"
+   end if
+   if pItem is "Next unused address" then
+      return "rc next"
+   end if
+   if pItem is "Copy selected address" then
+      return "ad receive"
+   end if
+   if pItem is "Prove this address" then
+      return "ad scan"
+   end if
+   if pItem is "Derive twenty more" then
+      return "ad more"
+   end if
+   if pItem is "Paste a payment URI" then
+      return "sd paste"
+   end if
+   if pItem is "Pay myself" then
+      return "sd addSelf"
+   end if
+   if pItem is "Clear the form" then
+      return "sd clear"
+   end if
+   if pItem is "Copy selected outpoint" then
+      return "cn detail"
+   end if
+   if pItem is "Freeze or thaw" then
+      return "cn freeze"
+   end if
+   if pItem is "Tick all" then
+      return "cn tickAll"
+   end if
+   if pItem is "Tick none" then
+      return "cn tickNone"
+   end if
+   if pItem is "Copy txid" then
+      return "hs copyTxid"
+   end if
+   if pItem is "Inspect this transaction" then
+      return "hs inspect"
+   end if
+   if pItem is "Bump the fee" then
+      return "hs bump"
+   end if
+   if pItem is "Copy the result" then
+      return "tl copyOut"
+   end if
+   if pItem is "Inspect what is in the box" then
+      return "tl inspect"
+   end if
+   if pItem is "Validate it" then
+      return "tl validate"
+   end if
+   if pItem is "Decode it as a script" then
+      return "tl decode"
+   end if
+   if pItem is "Words to entropy" then
+      return "tl toEntropy"
+   end if
+   if pItem is "Copy the log" then
+      return "lg copy"
+   end if
+   if pItem is "Clear the log" then
+      return "lg clear"
+   end if
+   return ""
+end waMenuRoute
+
+function waMenuFor pScreen
+   -- ONE MENU PER SCREEN, built on demand so it describes the screen a person
+   -- is actually looking at. The items are the things they reach for and the
+   -- buttons make awkward: copying what is in front of them, and the actions
+   -- that belong to the row they just clicked.
+   --
+   -- Every screen's menu ends with the same two items, because a menu that
+   -- differs everywhere is a menu nobody learns.
+   local tItems, tName
+   put "menu_" & pScreen into tName
+   put "" into tItems
+   if pScreen is "wallet" then
+      put "Copy account key" & return & "Copy descriptor" & return & \
+            "Copy seed phrase" & return & "-" & return into tItems
+   else if pScreen is "receive" then
+      put "Copy address" & return & "Copy payment URI" & return & \
+            "Next unused address" & return & "-" & return into tItems
+   else if pScreen is "addresses" then
+      put "Copy selected address" & return & "Prove this address" & return & \
+            "Derive twenty more" & return & "-" & return into tItems
+   else if pScreen is "send" then
+      put "Paste a payment URI" & return & "Pay myself" & return & \
+            "Clear the form" & return & "-" & return into tItems
+   else if pScreen is "coins" then
+      put "Copy selected outpoint" & return & "Freeze or thaw" & return & \
+            "Tick all" & return & "Tick none" & return & "-" & return into tItems
+   else if pScreen is "history" then
+      put "Copy txid" & return & "Inspect this transaction" & return & \
+            "Bump the fee" & return & "-" & return into tItems
+   else if pScreen is "tools" then
+      put "Copy the result" & return & "Inspect what is in the box" & return & \
+            "Validate it" & return & "Decode it as a script" & return & \
+            "Words to entropy" & return & "-" & return into tItems
+   else if pScreen is "log" then
+      put "Copy the log" & return & "Clear the log" & return & "-" & return into tItems
+   end if
+   put tItems & "Refresh" & return & "About this wallet" into tItems
+   uiContextMenu tName, tItems
+   return tName
+end waMenuFor
+
+command waMenuPick pMenu, pItem
+   -- EVERY ITEM IS A ROUTE TO A HANDLER THAT ALREADY EXISTS. A menu that
+   -- grows its own copies of what the buttons do is a menu that drifts out of
+   -- agreement with them, which is this member's own recorded failure shape,
+   -- so this resolves the item to a (prefix, role) pair and hands it to the
+   -- SAME dispatcher the buttons use.
+   local tRoute
+   set the defaultStack to the short name of this stack
+   put waMenuRoute(pItem) into tRoute
+   if tRoute is "" then
+      throw "the menu offered " & quote & pItem & quote & \
+            " and nothing routes it."
+   end if
+   if tRoute is "self" then
+      if pItem is "Refresh" then
+         waRefreshAll
+      else if pItem is "About this wallet" then
+         waShow "settings"
+      else if pItem is "Copy seed phrase" then
+         if sWaMnemonic is empty then
+            throw "this wallet has no seed phrase to copy."
+         end if
+         set the clipboardData["text"] to sWaMnemonic
+         uiStatus "The seed phrase is on the clipboard. Clear it when you " & \
+               "are done - anything that reads the clipboard can spend it.", "warn"
+      end if
+      exit waMenuPick
+   end if
+   waRouteClick word 1 of tRoute, word 2 of tRoute
+end waMenuPick
 
 command waNavClick pRole
    local tI
@@ -13915,6 +14306,8 @@ command waBuildSpend pSign, pAsPsbt
    end if
    put waSignSpend(tInputs, tOutputs, tSel, tLock) into tRaw
    put cwTxDecode(tRaw) into tRec
+   waRecordSpend tRec["txid"], tSel, tPays, tChange, tChangeRec, tLock, tSeq, \
+         tFee, tVsize
    put tOut & return & "SIGNED." & return & \
          "txid    " & tRec["txid"] & return & \
          "size    " & tRec["size"] & " bytes, " & tRec["vsize"] & " vB" & return & \
@@ -13923,6 +14316,34 @@ command waBuildSpend pSign, pAsPsbt
          "raw transaction and push it from somewhere else." into field "sd_out"
    uiStatus "Signed " & tRec["txid"] & ".", "ok"
 end waBuildSpend
+
+command waRecordSpend pTxid, pSel, pPays, pChange, pChangeRec, pLock, pSeq, pFee, pVsize
+   -- KEPT SO IT CAN BE BUMPED. A replacement transaction spends the same
+   -- inputs, and signing an input under BIP-143 commits to that input's
+   -- VALUE - a number the raw transaction does not carry and which lives only
+   -- in the coin that funded it. The moment this spend is signed, those coins
+   -- leave sWaUtxos: the wallet is looking at a transaction it can price a
+   -- replacement for and cannot build one.
+   --
+   -- THIS IS MEMORY ONLY, deliberately, and waBumpFee says so on screen when
+   -- it is missing. The wallet file is one field per line with a tab between
+   -- name and value, and a per-transaction coin list is a nested structure
+   -- that format has no spelling for. Inventing one to keep bump records
+   -- across a reopen would be a change to the format every existing wallet
+   -- file is written in, for a case - bumping a transaction made in an
+   -- earlier session - that the advice text already covers.
+   local tRec
+   put pSel into tRec["selected"]
+   put pPays into tRec["pays"]
+   put pChange into tRec["change"]
+   put pChangeRec into tRec["changerec"]
+   put pLock into tRec["locktime"]
+   put pSeq into tRec["sequence"]
+   put pFee into tRec["fee"]
+   put pVsize into tRec["vsize"]
+   put tRec into sWaSpends[pTxid]
+   waLog "recorded the makeup of " & pTxid & " so its fee can be bumped"
+end waRecordSpend
 
 function waSequenceNumber
    -- BIP-125 opt-in replaceability is a SEQUENCE NUMBER, not a flag in the
@@ -14583,7 +15004,11 @@ command waHistoryClick pRole
       if tRec is "" then
          throw "select a transaction first."
       end if
-      put waBumpAdvice(tRec) into field "hs_detail"
+      -- waBumpFee BUILDS it when this window still holds what that spend was
+      -- made of, and prints the advice when it does not. The button is one
+      -- button either way: a person with a stuck transaction should not have
+      -- to know which case they are in before they press something.
+      waBumpFee tRec
       exit waHistoryClick
    else if pRole is "copyTxid" then
       put waSelectedHistory() into tRec
@@ -14634,6 +15059,175 @@ function waSelectedHistory
    return tRows[tI]
 end waSelectedHistory
 
+command waBumpFee pRec
+   -- BUILD THE REPLACEMENT, rather than describing one.
+   --
+   -- What stood here was advice: it computed the floor a replacement must
+   -- clear, told the person to go and re-tick the same coins on the Coins
+   -- screen and rebuild the payment by hand, and called that deliberate -
+   -- "building it where you can see every line is safer than a button that
+   -- rebuilds it out of sight". The safety argument is real and it is kept:
+   -- this prints every line of what it built and signs nothing until it has
+   -- checked its own arithmetic against the transaction it actually produced.
+   -- What was not defensible was the reason underneath it, which is that the
+   -- wallet could not do it. Reconstructing a spend by hand under time
+   -- pressure, from a fee estimate that has already proved wrong once, is the
+   -- moment a person pays the wrong address.
+   --
+   -- The replacement is the SAME transaction with a smaller change output:
+   -- same inputs, same sequence opt-in, same payments to the same people, and
+   -- the extra fee comes out of the coins that were coming back to you
+   -- anyway. Nothing is re-selected, so there is no path here that spends a
+   -- coin the original did not.
+   local tOld, tSel, tPays, tI, tCount, tRec, tInputs, tOutputs, tSeq
+   local tOldFee, tVsize, tFloor, tRate, tWant, tDelta, tNewChange, tChangeRec
+   local tTotalIn, tTotalOut, tRaw, tNew, tRealFee, tOut, tDust, tError
+   set the defaultStack to the short name of this stack
+   if pRec["confirmations"] + 0 > 0 then
+      throw "that transaction is confirmed. There is nothing left to bump, " & \
+            "and nothing on earth can replace it now."
+   end if
+   put sWaSpends[pRec["txid"]] into tOld
+   if tOld is "" then
+      -- The honest answer, and the advice is still the right thing to print.
+      put waBumpAdvice(pRec) & return & return & \
+            "THIS WALLET CANNOT BUILD THE REPLACEMENT FOR YOU HERE, because " & \
+            "it does not hold what that transaction was made of. Signing " & \
+            "commits to each input's VALUE, and those coins left this " & \
+            "wallet's coin list when the transaction was signed. A spend " & \
+            "made in THIS window can be bumped with one press; one made " & \
+            "before the wallet was last reopened has to be rebuilt by hand, " & \
+            "as above." into field "hs_detail"
+      uiStatus "No record of how that transaction was built.", "warn"
+      exit waBumpFee
+   end if
+   if tOld["sequence"] + 0 >= kCwSeqNoRbf then
+      throw "that transaction was built WITHOUT the BIP-125 opt-in, so no " & \
+            "replacement for it will relay. A node will simply drop the " & \
+            "second one. Tick 'replaceable' on the Send screen before " & \
+            "signing, and every spend after it can be bumped."
+   end if
+   put tOld["selected"] into tSel
+   put tOld["pays"] into tPays
+   put tOld["fee"] + 0 into tOldFee
+   put tOld["vsize"] + 0 into tVsize
+   put tOld["changerec"] into tChangeRec
+   if tOld["change"] + 0 <= 0 or tChangeRec is "" then
+      throw "that transaction paid out everything it spent and kept no " & \
+            "change, so there is no output here to take a bigger fee from. " & \
+            "A replacement would have to spend another coin, which is a " & \
+            "different transaction and not a bump - build it on the Send " & \
+            "screen."
+   end if
+   -- THE FLOOR IS BIP-125'S, AND THE RATE IS THE PERSON'S. cwRbfMinFee is the
+   -- minimum that will relay at all; whatever is in the Send screen's rate
+   -- box is what they actually want to pay, and the replacement pays the
+   -- HIGHER of the two, because a bump to the bare floor is a bump that gets
+   -- stuck again.
+   put cwRbfMinFee(tOldFee, tVsize) into tFloor
+   put field "sd_rate" into tRate
+   if tRate is not a number then
+      put 0 into tRate
+   end if
+   if tRate < 0 then
+      put 0 into tRate
+   end if
+   put waCeilSat(tRate * tVsize) into tWant
+   if tWant < tFloor then
+      put tFloor into tWant
+   end if
+   put tWant - tOldFee into tDelta
+   if tDelta <= 0 then
+      throw "a replacement has to pay MORE than the transaction it evicts. " & \
+            "That one already paid " & waAmount(tOldFee) & "."
+   end if
+   put tOld["change"] + 0 - tDelta into tNewChange
+   put cwDustThreshold(waChangeType()) into tDust
+   if tNewChange < tDust then
+      throw "taking another " & waAmount(tDelta) & " out of the change would " & \
+            "leave " & tNewChange & " sat, which is below the " & tDust & \
+            " sat dust threshold for " & waChangeType() & ". Either lower the " & \
+            "rate on the Send screen, or let this one confirm on its own."
+   end if
+   -- Rebuild it, input for input and output for output.
+   put kCwSeqRbf into tSeq
+   put waEmptyList() into tInputs
+   put 0 into tTotalIn
+   put cwListCount(tSel) into tCount
+   repeat with tI = 1 to tCount
+      put tSel[tI] into tRec
+      put cwListAdd(tInputs, cwTxInput(tRec["txid"], tRec["vout"], tSeq)) into tInputs
+      add tRec["value"] to tTotalIn
+   end repeat
+   put waEmptyList() into tOutputs
+   put 0 into tTotalOut
+   put cwListCount(tPays) into tCount
+   repeat with tI = 1 to tCount
+      put tPays[tI] into tRec
+      put cwListAdd(tOutputs, cwTxOutput(tRec["value"], tRec["script"])) into tOutputs
+      add tRec["value"] to tTotalOut
+   end repeat
+   put cwListAdd(tOutputs, cwTxOutput(tNewChange, tChangeRec["script"])) into tOutputs
+   add tNewChange to tTotalOut
+   put waSignSpend(tInputs, tOutputs, tSel, tOld["locktime"]) into tRaw
+   put cwTxDecode(tRaw) into tNew
+   -- CHECK THE ARITHMETIC AGAINST THE TRANSACTION, not against the estimate.
+   -- A signature is one or two bytes shorter about half the time, so the real
+   -- vsize is not quite the predicted one - and BIP-125's floor is computed
+   -- over the REPLACEMENT'S OWN size. A bump that misses the floor by a byte
+   -- is refused by every node, silently, and looks exactly like a bump that
+   -- was never sent.
+   put tTotalIn - tTotalOut into tRealFee
+   if tRealFee < cwRbfMinFee(tOldFee, tNew["vsize"] + 0) then
+      throw "the replacement came out at " & tNew["vsize"] & " vB, and " & \
+            waAmount(tRealFee) & " does not clear the BIP-125 floor for that " & \
+            "size. Nothing has been kept. Raise the rate on the Send screen " & \
+            "and try again."
+   end if
+   put tRaw into sWaLastRaw
+   -- The replacement can itself be replaced, so it is recorded like any other.
+   waRecordSpend tNew["txid"], tSel, tPays, tNewChange, tChangeRec, \
+         tOld["locktime"], tSeq, tRealFee, tNew["vsize"] + 0
+   put "REPLACEMENT BUILT AND SIGNED (BIP-125)" & return & return into tOut
+   put "  replaces  " & pRec["txid"] & return after tOut
+   put "  new txid  " & tNew["txid"] & return & return after tOut
+   put "  it paid       " & waAmount(tOldFee) & " over " & tVsize & " vB" & return after tOut
+   put "  this pays     " & waAmount(tRealFee) & " over " & tNew["vsize"] & \
+         " vB  (" & cwCeilDiv(tRealFee, tNew["vsize"] + 0) & " sat/vB)" & return after tOut
+   put "  the floor was " & waAmount(tFloor) & return & return after tOut
+   put "  the extra " & waAmount(tDelta) & " came out of the change:" & return after tOut
+   put "    " & waAmount(tOld["change"]) & "  ->  " & waAmount(tNewChange) & \
+         "  at " & tChangeRec["address"] & return & return after tOut
+   put "  every payment is unchanged:" & return after tOut
+   put cwListCount(tPays) into tCount
+   repeat with tI = 1 to tCount
+      put tPays[tI] into tRec
+      put "    " & waAmount(tRec["value"]) & "  ->  " & tRec["address"] & return after tOut
+   end repeat
+   put return & "  and it spends exactly the same " & cwListCount(tSel) & \
+         " coin(s), so nothing new is being" & return after tOut
+   put "  touched. It is replaceable in its turn." & return & return after tOut
+   put tRaw & return & return after tOut
+   put "NOTHING HAS BEEN BROADCAST. The Send screen's Broadcast button will" & return after tOut
+   put "push it, and until then both transactions exist only here. Whichever" & return after tOut
+   put "one a miner confirms, the other is gone." after tOut
+   put tOut into field "hs_detail"
+   uiStatus "Built a replacement paying " & waAmount(tRealFee) & \
+         ". Broadcast it on the Send screen.", "ok"
+end waBumpFee
+
+private function waCeilSat pValue
+   -- Round a fee UP to a whole satoshi. A rate is a decimal and a fee is not,
+   -- and rounding a fee DOWN is the one direction that can put a replacement
+   -- under the floor it was built to clear.
+   local tInt
+   put trunc(pValue) into tInt
+   if pValue > tInt then
+      add 1 to tInt
+   end if
+   return tInt
+end waCeilSat
+
 function waBumpAdvice pRec
    local tOut, tOld, tFloor
    put "BUMPING THE FEE (BIP-125)" & return & return into tOut
@@ -14650,13 +15244,12 @@ function waBumpAdvice pRec
    put "  it paid       " & waAmount(tOld) & return after tOut
    put "  its size      " & pRec["vsize"] & " vB" & return after tOut
    put "  a replacement must pay at least " & waAmount(tFloor) & return & return after tOut
-   put "To do it: tick the same coins on the Coins screen, choose 'Ticked" & return after tOut
-   put "coins' on Send, pay the same destination, and set a fee rate above" & return after tOut
-   put "  " & cwCeilDiv(tFloor, pRec["vsize"] + 0) & " sat/vB." & return & return after tOut
-   put "This wallet does not do it for you, deliberately: a replacement is a" & return after tOut
-   put "NEW transaction that must spend the same coins, and building it where" & return after tOut
-   put "you can see every line is safer than a button that rebuilds it out of" & return after tOut
-   put "sight." after tOut
+   put "To do it by hand: tick the same coins on the Coins screen, choose" & return after tOut
+   put "'Ticked coins' on Send, pay the same destination, and set a fee rate" & return after tOut
+   put "above " & cwCeilDiv(tFloor, pRec["vsize"] + 0) & " sat/vB." & return & return after tOut
+   put "A replacement is a NEW transaction that must spend the same coins, so" & return after tOut
+   put "every line of it is worth reading before it is signed - which is why" & return after tOut
+   put "the Bump button prints the whole thing rather than just doing it." after tOut
    return tOut
 end waBumpAdvice
 
@@ -14666,7 +15259,7 @@ end waBumpAdvice
 
 command waPaintTools
    set the defaultStack to the short name of this stack
-   uiWrap "tl_note", waToolsNote(), "196,510,688,584", 11
+   uiWrap "tl_note", waToolsNote(), "196,540,688,584", 11
 end waPaintTools
 
 private function waToolsNote
@@ -14674,14 +15267,15 @@ private function waToolsNote
    put "SIGN A MESSAGE to prove you hold the key to an address without " & \
          "spending anything. VERIFY to check somebody else's claim." & return & \
          return into tOut
-   put "INSPECT reads a raw transaction, a PSBT, a WIF or an extended key and " & \
-         "tells you what it is - paste anything and find out." & return & return after tOut
+   put "INSPECT says what the box holds. VALIDATE gives a verdict on an " & \
+         "address or an extended key, on EVERY chain and not just this one. " & \
+         "DECODE SCRIPT reads bare script hex." & return & return after tOut
    if sWaLastPsbt is not empty then
       put the number of chars of sWaLastPsbt into tLen
       put "Holding a PSBT (" & tLen & \
             " characters). Sign, Combine and Finalize act on it." after tOut
    else
-      put "No PSBT held. Paste one above and press 'Hold as the current PSBT'." after tOut
+      put "No PSBT held. Paste one above and press 'Hold PSBT'." after tOut
    end if
    return tOut
 end waToolsNote
@@ -14695,6 +15289,10 @@ command waToolsClick pRole
       waVerifyMessage
    else if pRole is "inspect" then
       put waInspectAnything(tText) into field "tl_out"
+   else if pRole is "validate" then
+      put waValidateAnything(tText) into field "tl_out"
+   else if pRole is "decode" then
+      put waDecodeScript(tText) into field "tl_out"
    else if pRole is "hold" then
       if tText is "" then
          throw "paste a PSBT first."
@@ -14717,6 +15315,8 @@ command waToolsClick pRole
       waSweep tText
    else if pRole is "entropy" then
       waEntropyToMnemonic tText
+   else if pRole is "toEntropy" then
+      waWordsToEntropy tText, field "tl_pass"
    else if pRole is "copyOut" then
       set the clipboardData["text"] to field "tl_out"
       uiCopyFlash "tl_copyOut"
@@ -15029,6 +15629,107 @@ command waEntropyToMnemonic pHex
    uiStatus "Converted " & tLen & " bytes of entropy.", "ok"
 end waEntropyToMnemonic
 
+command waWordsToEntropy pWords, pPassphrase
+   -- THE OTHER DIRECTION, and the round trip proved rather than asserted.
+   --
+   -- Entropy-to-words shipped alone, which made this screen a one-way street:
+   -- you could check what a dice roll would become, but not what a phrase you
+   -- already hold came FROM - and the entropy is the thing you write on
+   -- steel, the thing a different wallet's "advanced import" asks for, and
+   -- the only form in which two implementations can be compared without
+   -- trusting either one's wordlist.
+   --
+   -- It runs the trip BOTH WAYS and refuses to report a result the return
+   -- journey does not reproduce. That is not decoration: the entropy is
+   -- recovered by stripping checksum bits, and an off-by-one there yields a
+   -- perfectly plausible hex string that regenerates DIFFERENT WORDS. A
+   -- number that looks right and is wrong is the whole failure mode of this
+   -- conversion, and comparing the words back is the only cheap way to catch
+   -- it.
+   local tWords, tEntropy, tHex, tBack, tBits, tLen, tOut, tPass, tCount
+   put cxMnemonicNormalize(cwTrim(pWords)) into tWords
+   if tWords is "" then
+      throw "paste a BIP-39 seed phrase into the box."
+   end if
+   if cxMnemonicValidate(tWords) is not true then
+      throw "that is not a valid BIP-39 phrase: the checksum does not match, " & \
+            "so at least one word is wrong, missing or out of order. Nothing " & \
+            "has been derived from it."
+   end if
+   put cxMnemonicToEntropy(tWords) into tEntropy
+   put cxHexEncode(tEntropy) into tHex
+   put the number of bytes of tEntropy into tLen
+   put cxMnemonicFromEntropy(tEntropy) into tBack
+   put empty into tEntropy
+   if tBack is not tWords then
+      -- Both halves of the trip are in this wallet, so a mismatch is a defect
+      -- here and not a bad phrase - which is why it throws rather than
+      -- reporting a number with a warning beside it.
+      put empty into tBack
+      throw "the entropy did not round-trip back to the same words. That is a " & \
+            "defect in this wallet's BIP-39 code, not in your phrase. Nothing " & \
+            "is being reported, because the number would be wrong."
+   end if
+   put empty into tBack
+   put tLen * 8 into tBits
+   put "SEED PHRASE" & return & return into tOut
+   -- COUNTED FROM THE ENTROPY, not from the string. `the number of words of`
+   -- is not the plain answer it looks like - LiveCode's word chunk treats a
+   -- double-quoted run as ONE word - and CoinXT's own BIP-39 code does not use
+   -- it either, splitting with its own cxSplitWords and counting items. Here
+   -- there is a better source than either: BIP-39 fixes the relation, the
+   -- checksum has already passed, and the entropy above round-tripped back to
+   -- exactly these words, so (ENT + ENT/32) / 11 IS the word count.
+   put cwIntDiv(tBits + cwIntDiv(tBits, 32), 11) into tCount
+   put "  words       " & tCount & return after tOut
+   put "  entropy     " & tLen & " bytes, " & tBits & " bits" & return after tOut
+   put "  checksum    " & cwIntDiv(tBits, 32) & " bit(s), and it matches" & \
+         return & return after tOut
+   put "  " & tHex & return & return after tOut
+   put "That hex and those words are the same secret written two ways, and" & return after tOut
+   put "this wallet just proved it by converting back. Either one restores" & return after tOut
+   put "this wallet anywhere; both are worth exactly what the coins are." & return & \
+         return after tOut
+   -- THE PASSPHRASE IS PART OF THE SEED AND NOT PART OF THE PHRASE, which is
+   -- the single most misunderstood thing about BIP-39 and the reason both
+   -- seeds are printed side by side. There is no wrong passphrase: every one
+   -- of them opens a valid, empty, different wallet, and nothing anywhere
+   -- will tell you that you typed it wrong.
+   put "  master key WITHOUT a passphrase" & return after tOut
+   put "    " & waSeedFingerprint(tWords, "") & return after tOut
+   put cwTrim(pPassphrase) into tPass
+   if tPass is not "" then
+      put "  master key WITH the passphrase in the box" & return after tOut
+      put "    " & waSeedFingerprint(tWords, tPass) & return after tOut
+      put return & "Those two fingerprints are different wallets. The passphrase is" & return after tOut
+      put "not a password on this phrase - it is a thirteenth word, and there is" & return after tOut
+      put "no such thing as getting it wrong: every passphrase opens a real," & return after tOut
+      put "empty, different wallet, and nothing will ever tell you which one you" & return after tOut
+      put "meant." & return after tOut
+   else
+      put return & "No passphrase was given. Type one in the box beside these buttons" & return after tOut
+      put "and press this again to see the different wallet it opens." & return after tOut
+   end if
+   put tOut into field "tl_out"
+   put empty into tOut
+   put empty into tWords
+   uiStatus "That phrase is " & tBits & " bits of entropy, round-tripped.", "ok"
+end waWordsToEntropy
+
+private function waSeedFingerprint pWords, pPassphrase
+   -- The BIP-32 master fingerprint for a (phrase, passphrase) pair: four
+   -- bytes that name a wallet without revealing one. Printed rather than the
+   -- seed itself, because the point here is COMPARING two derivations and the
+   -- 64-byte seed is as spendable as the phrase.
+   local tSeed, tMaster, tFp
+   put cxMnemonicToSeed(pWords, pPassphrase) into tSeed
+   put cxHdFromSeed(tSeed) into tMaster
+   put empty into tSeed
+   put cwFingerprint(cxHexEncode(tMaster["pubkey"])) into tFp
+   put empty into tMaster
+   return tFp
+end waSeedFingerprint
+
 function waExportText
    local tOut, tError
    put "EXPORT" & return & return into tOut
@@ -15096,6 +15797,283 @@ function waInspectAnything pText
          "payment URI or an address that this wallet recognises on " & \
          sWaNetwork & "."
 end waInspectAnything
+
+function waValidateAnything pText
+   -- A VERDICT, not a description. Inspect answers "what is this?"; this
+   -- answers "is it safe to paste into a payment box, and on which chain?" -
+   -- and those are different jobs, which is why the reports read differently.
+   -- Inspect tells you the depth and the fingerprint. This tells you VALID or
+   -- NOT VALID on a line of its own, and then why.
+   --
+   -- IT CHECKS EVERY NETWORK, not the one this wallet happens to be set to.
+   -- The mistake that costs money here is not a mistyped address - a checksum
+   -- catches that - it is a WELL-FORMED address for the wrong chain, which
+   -- every validator that only asks about the current network reports as
+   -- simply invalid, with nothing to say that it is a perfectly good testnet
+   -- address you are about to try to pay from mainnet.
+   local tText
+   put cwTrim(pText) into tText
+   if tText is "" then
+      throw "paste an address or an extended key into the box."
+   end if
+   if waLooksExtended(tText) then
+      return waValidateXKey(tText)
+   end if
+   return waValidateAddress(tText)
+end waValidateAnything
+
+private function waLooksExtended pText
+   -- Base58 and 111 characters is an extended key and nothing else this
+   -- wallet takes. Asked by SHAPE rather than by trying the decoder, so a
+   -- mistyped xpub is reported as a broken extended key rather than falling
+   -- through to the address branch and reported as a broken address.
+   local tLen
+   put the number of chars of pText into tLen
+   if tLen < 100 or tLen > 120 then
+      return false
+   end if
+   return "xpub,xprv,ypub,yprv,zpub,zprv,tpub,tprv,upub,uprv,vpub,vprv" \
+         contains char 1 to 4 of pText
+end waLooksExtended
+
+private function waValidateAddress pText
+   local tOut, tI, tNet, tGood, tKind, tScript, tPayable, tCount, tFirst
+   local tSavedDelim
+   -- THE DELIMITER IS GLOBAL MUTABLE STATE. Save, set, use, restore is this
+   -- file's convention for every `item` read, and the reason is written out
+   -- above cxBech32EncodeValues: a handler somewhere else that set it to tab
+   -- and did not put it back turns this walk into one item, silently.
+   put the itemDelimiter into tSavedDelim
+   set the itemDelimiter to comma
+   put "" into tGood
+   put "" into tFirst
+   put 0 into tCount
+   repeat with tI = 1 to 4
+      put item tI of kCwNetworks into tNet
+      if cwAddressIsValid(tNet, pText) then
+         -- THE SEPARATOR GOES IN FRONT, never on the end to be stripped after.
+         -- A trailing separator is a value the reader has to remember to
+         -- remove, and `item 1 of` a list that ends in one is a different
+         -- question from `item 1 of` a list that does not.
+         if tFirst is "" then
+            put tNet into tFirst
+            put tNet into tGood
+         else
+            put "," & tNet after tGood
+         end if
+         add 1 to tCount
+      end if
+   end repeat
+   set the itemDelimiter to tSavedDelim
+   put (cwAddressIsValid(sWaNetwork, pText)) into tPayable
+   if tCount is 0 then
+      put "NOT VALID ANYWHERE" & return & return into tOut
+      put "  " & pText & return & return after tOut
+      put "This is not an address on any chain this wallet knows." & return & \
+            return after tOut
+      put "  why  " & cwAddressProblem(sWaNetwork, pText) & return & return after tOut
+      put "A single wrong character is enough to do this, and that is the" & return after tOut
+      put "checksum working: an address you cannot pay is very much better" & return after tOut
+      put "than an address that pays somebody else." after tOut
+      return tOut
+   end if
+   if tPayable then
+      put "VALID on " & sWaNetwork & return & return into tOut
+   else
+      put "VALID, BUT NOT ON THIS WALLET'S CHAIN" & return & return into tOut
+   end if
+   put "  " & pText & return & return after tOut
+   put cwScriptForAddress(tFirst, pText) into tScript
+   put cwScriptKind(tScript) into tKind
+   put "  shape        " & waScriptKindName(tKind) & return after tOut
+   put "  scriptPubKey " & tScript & return after tOut
+   put "  chains       " & tGood & return after tOut
+   if tCount > 1 then
+      put "               (testnet, signet and regtest share one prefix, so an" & return after tOut
+      put "               address good on one is good on all three)" & return after tOut
+   end if
+   put "  this wallet  " & sWaNetwork & return & return after tOut
+   if tPayable is not true then
+      put "THIS WALLET CANNOT PAY IT. The address is well formed - it is simply" & return after tOut
+      put "for another chain, which is the mistake a checksum cannot catch and" & return after tOut
+      put "the one that actually loses coins. Switch the wallet's network, or" & return after tOut
+      put "get an address for " & sWaNetwork & "." & return after tOut
+      return tOut
+   end if
+   if waIsMine(pText) then
+      put "THIS IS ONE OF YOUR OWN ADDRESSES. Paying it moves coins from this" & return after tOut
+      put "wallet back into it, less the fee." & return after tOut
+   else
+      put "Not an address this wallet derives, so paying it sends coins away." & return after tOut
+   end if
+   put return & "Dust threshold for this shape: " & \
+         waAmount(cwDustThreshold(tKind)) & ". An output below that is" & return after tOut
+   put "refused by the network as unspendable." after tOut
+   return tOut
+end waValidateAddress
+
+private function waValidateXKey pText
+   local tNode, tOut, tError, tChild, tAddr, tI
+   put "" into tNode
+   try
+      put cwXKeyDecode(pText, sWaNetwork, sWaScriptType) into tNode
+   catch tError
+      put "NOT A VALID EXTENDED KEY" & return & return into tOut
+      put "  " & char 1 to 20 of pText & "..." & return & return after tOut
+      put "  why  " & line 1 of tError & return & return after tOut
+      put "Base58Check carries a four-byte checksum, so one wrong character" & return after tOut
+      put "fails here rather than deriving somebody else's addresses." after tOut
+      return tOut
+   end try
+   put "VALID EXTENDED KEY" & return & return into tOut
+   put "  kind         " & tNode["kind"] & return after tOut
+   put "  network      " & tNode["network"] after tOut
+   if tNode["ambiguous"] is true then
+      put "   (shared version bytes; also " & tNode["candidates"] & ")" after tOut
+   end if
+   put return after tOut
+   put "  script type  " & tNode["scripttype"] & return after tOut
+   put "  depth        " & tNode["depth"] & return after tOut
+   put "  child index  " & tNode["index"] & return after tOut
+   put "  parent       " & cxHexEncode(tNode["parentfp"]) & return after tOut
+   put "  fingerprint  " & cwFingerprint(cxHexEncode(tNode["pubkey"])) & return & \
+         return after tOut
+   -- THE STRUCTURAL CHECK NO CHECKSUM MAKES. Base58Check proves the bytes
+   -- arrived intact; it says nothing about whether they are CONSISTENT. A
+   -- master key is depth 0, and BIP-32 fixes its parent fingerprint and its
+   -- child index at zero - so a key claiming depth 0 with either of them set
+   -- is a key somebody assembled by hand, and one claiming depth 3 with a
+   -- zero parent is a key whose header was edited. Neither is caught by the
+   -- checksum, and both derive perfectly valid addresses nobody else will
+   -- ever see.
+   if tNode["depth"] is 0 then
+      if cxHexEncode(tNode["parentfp"]) is not "00000000" or tNode["index"] is not 0 then
+         put "INCONSISTENT: this claims to be a master key (depth 0), but a" & return after tOut
+         put "master key has no parent and no child index. Something built" & return after tOut
+         put "these bytes by hand." & return & return after tOut
+      end if
+   else
+      if cxHexEncode(tNode["parentfp"]) is "00000000" then
+         put "SUSPECT: depth " & tNode["depth"] & " with an empty parent" & return after tOut
+         put "fingerprint. A derived key records the key it came from." & return & \
+               return after tOut
+      end if
+   end if
+   -- WHAT IT ACTUALLY PAYS. Two lines of derivation say more about whether
+   -- this is the key you meant than every field above it: a person checking
+   -- an xpub is nearly always checking it against addresses they have
+   -- already seen somewhere else.
+   put "The first two addresses on its receive chain (0/0 and 0/1), which is" & return after tOut
+   put "what to check against whatever you are comparing this key with:" & return after tOut
+   repeat with tI = 0 to 1
+      put "" into tAddr
+      try
+         -- Through the wallet's OWN address builder, not a second derivation
+         -- written here: a validator that agrees with a private reimplement-
+         -- ation and disagrees with the wallet is worse than no validator.
+         put cwAddressAt(tNode, tNode["scripttype"], tNode["network"], 0, tI) \
+               into tChild
+         put tChild["address"] into tAddr
+      catch tError
+         put "(not derivable: " & line 1 of tError & ")" into tAddr
+      end try
+      put "  0/" & tI & "  " & tAddr after tOut
+      if waIsMine(tAddr) then
+         put "   (THIS WALLET'S)" after tOut
+      end if
+      put return after tOut
+   end repeat
+   put return after tOut
+   if tNode["kind"] is "private" then
+      put "THIS IS A PRIVATE KEY. It is now in this window's memory. Anything" & return after tOut
+      put "that reads it can spend every coin under it, forever." after tOut
+   else
+      put "This is a public key. It cannot spend anything, and it reveals every" & return after tOut
+      put "address below it to anyone who holds it." after tOut
+   end if
+   return tOut
+end waValidateXKey
+
+function waDecodeScript pHex
+   -- A BARE SCRIPT, which is the one thing the Inspect button could never be
+   -- given. Everything it reads is a CONTAINER - a transaction, a PSBT, a
+   -- key, an address - and each of those carries its own frame, so a script
+   -- on its own (out of a scriptPubKey column, out of somebody else's
+   -- debugger, out of a witness this wallet printed) had nowhere to go.
+   --
+   -- The framing is checked BEFORE anything is rendered, because a chunk
+   -- expression past the end of a string answers rather than refusing: a
+   -- push claiming forty bytes with ten left prints as a ten-byte push and
+   -- reads exactly like a correct decode of a different script.
+   local tHex, tWhy, tKind, tOut, tAddr, tError, tLen
+   put cwLower(cwTrim(pHex)) into tHex
+   if tHex is "" then
+      throw "paste a script, as hex, into the box."
+   end if
+   put cwScriptCheck(tHex) into tWhy
+   if tWhy is not "" then
+      throw "that is not a well-framed script: " & tWhy
+   end if
+   put cwIntDiv(the number of chars of tHex, 2) into tLen
+   put cwScriptKind(tHex) into tKind
+   put "SCRIPT" & return & return into tOut
+   put "  size      " & tLen & " byte(s)" & return after tOut
+   put "  shape     " & waScriptKindName(tKind) & return after tOut
+   put "  opcodes   " & cwScriptAsm(tHex) & return & return after tOut
+   if tKind is not "unknown" and tKind is not "nulldata" then
+      put "unrecognised" into tAddr
+      try
+         put cwAddressForScript(sWaNetwork, tHex) into tAddr
+      catch tError
+         put "no address (" & line 1 of tError & ")" into tAddr
+      end try
+      put "  as an output on " & sWaNetwork & " this pays" & return after tOut
+      put "    " & tAddr & return after tOut
+      if waIsMine(tAddr) then
+         put "    which is an address THIS WALLET holds." & return after tOut
+      end if
+      put return after tOut
+   end if
+   -- A WITNESS SCRIPT AND A REDEEM SCRIPT ARE NOT scriptPubKeys, so their
+   -- COMMITMENTS are what a reader needs: the p2wsh and p2sh addresses that
+   -- would pay this script are how you check that a multisig quorum somebody
+   -- sent you is the one you are already watching.
+   put "If this is a witness script or a redeem script, then paying it means" & return after tOut
+   put "paying one of these, and matching one of them against an address you" & return after tOut
+   put "already trust is how you check that it is the script you think:" & return after tOut
+   try
+      put "  as P2WSH  " & cwAddressForScript(sWaNetwork, \
+            cwScriptP2wsh(tHex)) & return after tOut
+   catch tError
+      put "  as P2WSH  (not derivable: " & line 1 of tError & ")" & return after tOut
+   end try
+   try
+      put "  as P2SH   " & cwAddressForScript(sWaNetwork, \
+            cwScriptP2sh(cxHexEncode(cxHash160(cxHexDecode(tHex))))) & return after tOut
+   catch tError
+      put "  as P2SH   (not derivable: " & line 1 of tError & ")" & return after tOut
+   end try
+   put return & "Nothing here was executed. This reads the bytes; it does not" & return after tOut
+   put "run them, and a script that decodes cleanly can still be unspendable." after tOut
+   return tOut
+end waDecodeScript
+
+private function waScriptKindName pKind
+   if pKind is "p2pkh" then
+      return "p2pkh - pay to a legacy address (1..., m/n...)"
+   else if pKind is "p2sh" then
+      return "p2sh - pay to a script hash (3..., 2...)"
+   else if pKind is "p2wpkh" then
+      return "p2wpkh - pay to a SegWit v0 key (bc1q..., tb1q...)"
+   else if pKind is "p2wsh" then
+      return "p2wsh - pay to a SegWit v0 script (bc1q..., 32 bytes)"
+   else if pKind is "p2tr" then
+      return "p2tr - pay to Taproot (bc1p..., tb1p...)"
+   else if pKind is "nulldata" then
+      return "OP_RETURN - provably unspendable, carries data only"
+   end if
+   return "not one of the five standard output shapes"
+end waScriptKindName
 
 function waInspectRaw pHex
    local tTx, tOut, tI, tCount, tRec, tAddr, tError
@@ -17480,7 +18458,7 @@ end scFinish
 -- clipboard. What they check is that this stack's own arithmetic agrees with
 -- the library it carries, on this engine, before anybody types anything.
 
-constant kWaScControls = "ad_change,ad_detail,ad_label,ad_labelCap,ad_more,ad_panel,ad_receive,ad_scan,ad_sec1,ad_setLabel,ad_table,cn_addManual,cn_detail,cn_freeze,cn_hint,cn_panel,cn_sec1,cn_table,cn_tick,cn_tickAll,cn_tickNone,hs_bump,hs_copyTxid,hs_detail,hs_inspect,hs_panel,hs_refresh,hs_sec1,hs_table,lg_boot,lg_clear,lg_copy,lg_hint,lg_panel,lg_sec1,lg_sec2,lg_text,nv_ad,nv_bal,nv_chain,nv_cn,nv_confirmed,nv_frozenamt,nv_hs,nv_lg,nv_net,nv_nw,nv_panel,nv_pending,nv_rc,nv_refresh,nv_sd,nv_st,nv_tip,nv_tl,nv_wallet,nv_wl,nw_bElectrumClear,nw_bElectrumTor,nw_bEsploraClear,nw_bEsploraTor,nw_bOffline,nw_host,nw_hostCap,nw_out,nw_panelA,nw_panelB,nw_port,nw_portCap,nw_privacy,nw_sec1,nw_sec2,nw_sec3,nw_socks,nw_socksCap,nw_state,nw_stop,nw_syncNow,nw_test,nw_why,rc_address,rc_amount,rc_amountCap,rc_copy,rc_copyUri,rc_detail,rc_label,rc_labelCap,rc_message,rc_messageCap,rc_next,rc_panelA,rc_panelB,rc_qr,rc_qrframe,rc_qrhint,rc_sec1,rc_sec2,rc_sec3,rc_showQr,rc_uri,rc_verify,sd_addSelf,sd_broadcast,sd_clear,sd_copyRaw,sd_locktime,sd_locktimeCap,sd_out,sd_panelA,sd_panelB,sd_paste,sd_preview,sd_rate,sd_rateCap,sd_ratehint,sd_rbf,sd_sec1,sd_sec2,sd_sec3,sd_sec4,sd_sign,sd_stratBnb,sd_stratLargest,sd_stratManual,sd_stratOldest,sd_stratSmallest,sd_strategyCap,sd_to,sd_toCap,sd_toPsbt,sd_warn,st_about,st_browse,st_filenote,st_forget,st_forgetnote,st_gap,st_gapCap,st_load,st_panelA,st_panelB,st_password,st_passwordCap,st_path,st_pathCap,st_save,st_sec1,st_sec2,st_sec3,st_unitBtc,st_unitMbtc,st_unitSat,tl_copyOut,tl_derive,tl_entropy,tl_export,tl_hex,tl_hexCap,tl_hold,tl_inspect,tl_msg,tl_msgAddr,tl_msgAddrCap,tl_msgCap,tl_msgSig,tl_msgSigCap,tl_msgSign,tl_msgVerify,tl_newKey,tl_note,tl_out,tl_panelA,tl_panelB,tl_psbtCombine,tl_psbtFinal,tl_psbtSign,tl_sec1,tl_sec2,tl_sec3,tl_sweep,uiFooter,uiStatus,uiTitle,wl_account,wl_accountCap,wl_addCosigner,wl_backup,wl_copyDesc,wl_copyXpub,wl_custody,wl_generate,wl_kindKey,wl_kindMulti,wl_kindRestore,wl_kindSeed,wl_kindWatch,wl_label,wl_labelCap,wl_m,wl_mCap,wl_mnemonic,wl_mnemonicCap,wl_netMain,wl_netReg,wl_netSignet,wl_netTest,wl_open,wl_out,wl_panelA,wl_panelB,wl_pass,wl_passCap,wl_path,wl_pathCap,wl_sec1,wl_sec2,wl_sec3,wl_sec4,wl_typeLegacy,wl_typeMulti,wl_typeNative,wl_typeNested,wl_typeTaproot,wl_warn,wl_xkey,wl_xkeyCap"
+constant kWaScControls = "ad_change,ad_detail,ad_label,ad_labelCap,ad_more,ad_panel,ad_receive,ad_scan,ad_sec1,ad_setLabel,ad_table,cn_addManual,cn_detail,cn_freeze,cn_hint,cn_panel,cn_sec1,cn_table,cn_tick,cn_tickAll,cn_tickNone,hs_bump,hs_copyTxid,hs_detail,hs_inspect,hs_panel,hs_refresh,hs_sec1,hs_table,lg_boot,lg_clear,lg_copy,lg_hint,lg_panel,lg_sec1,lg_sec2,lg_text,nv_ad,nv_bal,nv_chain,nv_cn,nv_confirmed,nv_frozenamt,nv_hs,nv_lg,nv_net,nv_nw,nv_panel,nv_pending,nv_rc,nv_refresh,nv_sd,nv_st,nv_tip,nv_tl,nv_wallet,nv_wl,nw_bElectrumClear,nw_bElectrumTor,nw_bEsploraClear,nw_bEsploraTor,nw_bOffline,nw_host,nw_hostCap,nw_out,nw_panelA,nw_panelB,nw_port,nw_portCap,nw_privacy,nw_sec1,nw_sec2,nw_sec3,nw_socks,nw_socksCap,nw_state,nw_stop,nw_syncNow,nw_test,nw_why,rc_address,rc_amount,rc_amountCap,rc_copy,rc_copyUri,rc_detail,rc_label,rc_labelCap,rc_message,rc_messageCap,rc_next,rc_panelA,rc_panelB,rc_qr,rc_qrframe,rc_qrhint,rc_sec1,rc_sec2,rc_sec3,rc_showQr,rc_uri,rc_verify,sd_addSelf,sd_broadcast,sd_clear,sd_copyRaw,sd_locktime,sd_locktimeCap,sd_out,sd_panelA,sd_panelB,sd_paste,sd_preview,sd_rate,sd_rateCap,sd_ratehint,sd_rbf,sd_sec1,sd_sec2,sd_sec3,sd_sec4,sd_sign,sd_stratBnb,sd_stratLargest,sd_stratManual,sd_stratOldest,sd_stratSmallest,sd_strategyCap,sd_to,sd_toCap,sd_toPsbt,sd_warn,st_about,st_browse,st_filenote,st_forget,st_forgetnote,st_gap,st_gapCap,st_load,st_panelA,st_panelB,st_password,st_passwordCap,st_path,st_pathCap,st_save,st_sec1,st_sec2,st_sec3,st_unitBtc,st_unitMbtc,st_unitSat,tl_copyOut,tl_decode,tl_derive,tl_entropy,tl_export,tl_hex,tl_hexCap,tl_hold,tl_inspect,tl_msg,tl_msgAddr,tl_msgAddrCap,tl_msgCap,tl_msgSig,tl_msgSigCap,tl_msgSign,tl_msgVerify,tl_newKey,tl_note,tl_out,tl_panelA,tl_panelB,tl_pass,tl_passCap,tl_psbtCombine,tl_psbtFinal,tl_psbtSign,tl_sec1,tl_sec2,tl_sec3,tl_sweep,tl_toEntropy,tl_validate,uiFooter,uiStatus,uiTitle,wl_account,wl_accountCap,wl_addCosigner,wl_backup,wl_copyDesc,wl_copyXpub,wl_custody,wl_generate,wl_kindKey,wl_kindMulti,wl_kindRestore,wl_kindSeed,wl_kindWatch,wl_label,wl_labelCap,wl_m,wl_mCap,wl_mnemonic,wl_mnemonicCap,wl_netMain,wl_netReg,wl_netSignet,wl_netTest,wl_open,wl_out,wl_panelA,wl_panelB,wl_pass,wl_passCap,wl_path,wl_pathCap,wl_sec1,wl_sec2,wl_sec3,wl_sec4,wl_typeLegacy,wl_typeMulti,wl_typeNative,wl_typeNested,wl_typeTaproot,wl_warn,wl_xkey,wl_xkeyCap"
 
 command waScRun
    local tMissing, tRec, tError, tAddr
@@ -17521,6 +18499,16 @@ command waScRun
             "80e795d4a4caadd7047af389d9f7f220562feb6196032e2131e10563352c4bcc"
       scAssert "a BIP-21 amount reads as BTC, not satoshi", \
             waSelfTestUriAmount() is 100000
+      -- A WELL-FRAMED SCRIPT AND A TRUNCATED ONE, both, because a checker
+      -- that says yes to everything passes the first half of this on its own.
+      scAssert "a P2WPKH script frames", \
+            cwScriptCheck("0014751e76e8199196d454941c45d1b3a323f1433bd6") is ""
+      scAssert "a push running past the end is caught", \
+            cwScriptCheck("0020dead") is not ""
+      -- The BIP-39 round trip, on the phrase every wallet tests with.
+      scAssert "a mnemonic round-trips through its entropy", \
+            cxMnemonicFromEntropy(cxMnemonicToEntropy(kWaTestMnemonic)) is \
+            kWaTestMnemonic
       scAssert "this wallet derived its own addresses", waAddressCount() > 0
    else
       scSkip "every derivation and encoding check", \

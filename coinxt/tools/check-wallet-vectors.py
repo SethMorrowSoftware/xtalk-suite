@@ -1213,6 +1213,67 @@ def check_audit_2026_09_01(c, ip):
                int(LCS._n(call("cwListCount", [sig["witness"]]))) > 0)
 
 
+def check_script_framing(c, ip):
+    """cwScriptCheck, in both directions and at every push encoding.
+
+    The renderer beside it (cwScriptAsm) cannot ask this question, because a
+    LiveCodeScript chunk expression that runs past the end of a string answers
+    with what is there instead of refusing: a push claiming forty bytes with
+    ten left renders as a ten-byte push and reads exactly like a correct
+    decode of a different script. That is why the Tools screen's script
+    decoder frames the bytes BEFORE it renders them, and why every one of
+    these is checked both ways round - a checker that says "not framed" to
+    everything passes half of this on its own.
+    """
+    call = ip.call
+    c.note("\nbare-script framing (cwScriptCheck)")
+
+    good = [
+        ("P2WPKH", "0014" + "75" * 20),
+        ("P2PKH", "76a914" + "75" * 20 + "88ac"),
+        ("P2SH", "a914" + "75" * 20 + "87"),
+        ("P2WSH", "0020" + "ab" * 32),
+        ("P2TR", "5120" + "ab" * 32),
+        ("OP_RETURN with a 4-byte push", "6a04deadbeef"),
+        ("bare OP_1", "51"),
+        # OP_PUSHDATA1 of exactly 76 bytes, the first length that needs it
+        ("PUSHDATA1", "4c4c" + "11" * 76),
+        # OP_PUSHDATA2 of 256 bytes, LITTLE-endian length
+        ("PUSHDATA2", "4d0001" + "22" * 256),
+    ]
+    for label, hexs in good:
+        c.ck("%s frames" % label, call("cwScriptCheck", [hexs]), "")
+
+    bad = [
+        ("a 20-byte push with 2 bytes left", "0014dead"),
+        ("a 32-byte push with nothing left", "0020"),
+        ("PUSHDATA1 with no length byte", "4c"),
+        ("PUSHDATA1 claiming 76 with 4 given", "4c4cdeadbeef"),
+        ("PUSHDATA2 with a truncated length", "4d00"),
+        ("PUSHDATA2 claiming 256 with 4 given", "4d0001deadbeef"),
+        ("PUSHDATA4 with a truncated length", "4e000000"),
+        ("PUSHDATA4 claiming 1 with nothing given", "4e01000000"),
+    ]
+    for label, hexs in bad:
+        c.true("%s is refused" % label, str(call("cwScriptCheck", [hexs])) != "")
+
+    # ...and the two shapes that are not scripts at all.
+    c.true("empty is refused", "empty" in str(call("cwScriptCheck", [""])))
+    c.true("non-hex is refused", "hex" in str(call("cwScriptCheck", ["zz01"])))
+    # An ODD number of hex characters is half a byte, and the walker reads two
+    # at a time - so without the cleanliness gate it would read the last one
+    # against nothing and answer for a script that does not exist.
+    c.true("an odd-length string is refused",
+           str(call("cwScriptCheck", ["001"])) != "")
+
+    # THE RENDERER STILL AGREES WITH THE FRAMER on everything the framer
+    # accepts. Two walks over the same bytes is the arrangement this file's
+    # own comment defends, and the cost of it is that they can disagree.
+    for label, hexs in good:
+        asm = str(call("cwScriptAsm", [hexs]))
+        c.true("%s still disassembles to something" % label, asm != "")
+
+
 def check_messages(c, ip):
     call = ip.call
     c.note("\nsigned messages, URIs and descriptors")
@@ -1607,6 +1668,7 @@ def main(argv):
                 check_json_and_qr(ck, interp)
                 check_odds(ck, interp)
                 check_audit_2026_09_01(ck, interp)
+                check_script_framing(ck, interp)
 
             run_all(c, ip)
             c.note("re-running the whole set with `is` and `offset()` folded "

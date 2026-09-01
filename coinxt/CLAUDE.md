@@ -2170,3 +2170,117 @@ above excepted. The three transports have never spoken to a real backend from he
 Tor ones additionally need a live-Tor pass. No transaction this wallet built has been broadcast to
 any network. The honesty labels in the file, in `docs/wallet.md` and on its own Settings screen all
 say so.
+
+### 2026-09-01 - a right-click menu, a full toolset, and the fee bump that used to be a paragraph
+
+Five things landed together. Four are tools the wallet advertised and did not have; the fifth is
+the one that had been talked out of existing.
+
+**THE CONTEXT MENU IS IN THE KIT, AND IT IS OPT-IN.** `tools/ui-kit.livecodescript` gained
+`uiContextMenu`, `uiPopupMenu` and `uiMenuSource` - a hidden `style "menu"` / `menuMode "popup"`
+button, `popup button ... at the clickLoc`, and the menu's own name read back so a `menuPick`
+label can be resolved against the screen it came from. Nothing about the other seventeen adopters
+changed: a stack that never calls `uiContextMenu` never builds a button, so the block is carried
+by all eighteen and used by one. That mattered more than it sounds. The kit is held BYTE-IDENTICAL
+across every carrier, so a look change is a fleet change; adding behaviour that fires only when
+asked for is how a shared block grows without eighteen re-passes.
+
+**A MENU ITEM MEANS WHAT THE BUTTON MEANS, BY CONSTRUCTION.** The obvious implementation gives
+each item its own call, which is a second copy of the click router that drifts from the first the
+week somebody renames a role. Instead `mouseUp`'s dispatch was extracted into `waRouteKnows` and
+`waRouteClick`, and `waMenuRoute` resolves an item to the same `"<prefix> <role>"` pair a button
+name produces. An item that routes to nothing answers EMPTY and `waMenuPick` throws, so an
+unwired item is a failed check rather than a click that quietly does nothing -
+`tools/check-wallet-boot.py` walks every item of every screen's menu through the router and
+requires each non-self route to name a control the app's own registry already carries.
+
+**NONE OF THE MENU HAS RUN ON AN ENGINE.** `popup`, `menuMode` and `menuPick` are documented
+LiveCode and OpenXTalk is a fork of it, but no stack in this suite has ever opened a menu and the
+headless runner models no mouse button. What the gates settle is the menu's CONTENT and its
+ROUTING. That it APPEARS needs an OXT pass, and `mouseDown` is written so that the answer does not
+matter: button 3 only, `uiPopupMenu` ANSWERS false rather than throwing, and every failure path
+is `pass mouseDown`.
+
+**THE FOUR TOOLS.** A script decoder for bare hex, first-class validation, the BIP-39 round trip,
+and the fee bump. Two of them are worth more than their code.
+
+`cwScriptCheck` is a SECOND WALK over the same bytes `cwScriptAsm` renders, and the duplication is
+the point. A LiveCodeScript chunk expression that runs past the end of a string ANSWERS with what
+is there rather than refusing - so a push claiming forty bytes with ten left renders as a ten-byte
+push and reads exactly like a correct decode of a different script. `cwScriptAsm` never had to ask,
+because everything it had ever been given came out of a transaction, where the varint that
+introduced the script had already framed it. A script pasted into a box has no such frame. The
+renderer's output is pinned by the vector gate and by every transaction the inspector has ever
+printed, so folding the check into it would have been a change to both; it is a separate function
+with the reason in its docstring, and eight truncation shapes plus nine well-framed ones are
+vector-tested in both directions.
+
+`waValidateAnything` asks a different question from `waInspectAnything`, and the difference is the
+whole reason it exists: the inspector says what something IS, the validator says whether it is safe
+to pay and ON WHICH CHAIN. **It checks every network, not this wallet's.** The mistake that costs
+money is not a mistyped address - a checksum catches that - it is a well-formed address for the
+wrong chain, which a validator that only asks about the current network reports as simply invalid.
+"Invalid" reads as "I mistyped it". The extended-key branch adds the structural check no checksum
+makes: BIP-32 fixes a depth-0 key's parent fingerprint and child index at zero, so a key claiming
+depth 0 with either set was assembled by hand, and one claiming depth 3 with a zero parent had its
+header edited. Neither is caught by Base58Check, and both derive perfectly valid addresses nobody
+else will ever see. It derives through `cwAddressAt` - the wallet's own builder - rather than a
+private reimplementation, because a validator that agrees with itself and disagrees with the wallet
+is worse than no validator.
+
+`waWordsToEntropy` closes a one-way street: entropy-to-words shipped alone, so you could check what
+a dice roll would become but not what a phrase you already hold came from. **It runs the trip both
+ways and refuses to report a number the return journey does not reproduce.** Recovering entropy
+means stripping checksum bits, and an off-by-one there yields a plausible hex string that
+regenerates DIFFERENT words - a number that looks right and is wrong, which is this member's
+recorded failure shape. It prints the master fingerprint with and without the passphrase side by
+side, because the passphrase is a thirteenth word rather than a password on the phrase: every
+passphrase opens a real, empty, different wallet, and nothing anywhere will tell you that you typed
+it wrong.
+
+**AND THE BUMP.** What stood there was advice, and the advice was defended in a comment: "this
+wallet does not do it for you, deliberately - building it where you can see every line is safer
+than a button that rebuilds it out of sight." The safety argument is real and it is kept -
+`waBumpFee` prints every input, every payment and both change amounts, and signs nothing until it
+has checked its own arithmetic against the transaction it actually produced. What was not
+defensible was the reason underneath it, which is that **the wallet could not do it**. Signing an
+input under BIP-143 commits to that input's VALUE, and the raw transaction does not carry it; the
+moment a spend is signed those coins leave `sWaUtxos`, so the wallet was looking at a transaction
+it could price a replacement for and could not build one. Reconstructing a spend by hand under time
+pressure, from a fee estimate that has already proved wrong once, is the moment a person pays the
+wrong address.
+
+`waRecordSpend` keeps what each signed spend was made of, keyed by txid. The replacement is the
+same transaction with a smaller change output: same inputs, same BIP-125 opt-in, same payments to
+the same people, and the extra fee out of the coins that were coming back to you anyway. Nothing is
+re-selected, so no path here spends a coin the original did not - which the gate checks by decoding
+both transactions independently and comparing outpoint sets. **The floor is computed over the
+REPLACEMENT'S OWN size**, not the original's, because a signature is a byte or two shorter about
+half the time and a bump that misses the floor by a byte is refused by every node, silently, and
+looks exactly like a bump that was never sent. The replacement is itself recorded, so it can be
+bumped again.
+
+**THE RECORD IS MEMORY ONLY, and that is a decision rather than an omission.** The wallet file is
+one field per line with a tab between name and value; a per-transaction coin list is a nested
+structure that format has no spelling for. Inventing one would be a change to the format every
+existing wallet file is written in, for the case of bumping a transaction made in an earlier
+session - which the advice text still covers. So the button is one button either way: it builds
+when the window holds the makeup, and prints the advice plus a plain sentence about why it cannot
+when it does not. A person with a stuck transaction should not have to know which case they are in
+before pressing something.
+
+**ONE LAYOUT DEFECT FOUND ON THE WAY, and it was mine from earlier the same day.** `waPaintTools`
+re-lays `tl_note` on every refresh, at a rect that the two buttons added that morning had been put
+underneath. The builder and the painter each named the rect, and only the builder was updated. Both
+name the same rect now, and the Tools panel was re-laid to fit thirteen buttons and the passphrase
+input. It is worth noting how it surfaced: not from a gate and not from reading the new code, but
+from reading the PAINTER while looking for somewhere to put a button. A control created in two
+places with two rects is invisible to a boot check that only asks whether it exists.
+
+**WHAT IS PROVEN AND WHAT IS NOT.** Everything above is settled headlessly, against the real
+committed shim, by `tools/check-wallet-boot.py` and `tools/check-wallet-vectors.py` - the framing
+checks in both directions, the validator on four address cases and two key cases, the round trip
+against `cxMnemonicFromEntropy`, and the replacement decoded by the independent oracle and checked
+against BIP-125 rules 1, 2, 3 and 4. None of the five additions above has run on an engine, no
+menu has been opened by a person, and no transaction this wallet built has been broadcast to any
+network.
