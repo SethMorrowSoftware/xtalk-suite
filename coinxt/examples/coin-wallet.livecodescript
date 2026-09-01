@@ -11303,6 +11303,7 @@ local sWaNetwork          -- mainnet | testnet | signet | regtest
 local sWaScriptType       -- p2pkh | p2sh-p2wpkh | p2wpkh | p2tr | p2wsh
 local sWaKind             -- seed | watch | key | multisig
 local sWaAccount          -- the BIP-44 account number
+local sWaCustomPath       -- an account path typed by hand; empty = the standard one
 local sWaLabel            -- the wallet's own name
 local sWaUnit             -- BTC | mBTC | sat
 
@@ -11462,6 +11463,7 @@ command waResetWallet
    put "p2wpkh" into sWaScriptType
    put "seed" into sWaKind
    put 0 into sWaAccount
+   put empty into sWaCustomPath
    put "Demonstration wallet" into sWaLabel
    put "BTC" into sWaUnit
    put kWaTestMnemonic into sWaMnemonic
@@ -11807,10 +11809,15 @@ command waBuildWallet
    uiButton "wl_typeNative", "Native 84", "384,174,474,198"
    uiButton "wl_typeTaproot", "Taproot 86", "478,174,568,198"
    uiButton "wl_typeMulti", "Multisig 48", "572,174,688,198"
-   uiCap "wl_accountCap", "Account number", "196,204,320,220"
-   uiInput "wl_account", "324,202,400,222"
-   uiCap "wl_labelCap", "Wallet name", "410,204,520,220"
-   uiInput "wl_label", "524,202,688,222"
+   uiCap "wl_accountCap", "Account", "196,204,254,220"
+   uiInput "wl_account", "258,202,304,222"
+   -- THE PATH IS THE POINT OF THIS ROW NOW. Blank means the standard path for
+   -- the script type above, which is what it has always silently been; typing
+   -- one recovers a wallet made somewhere that chose differently.
+   uiCap "wl_pathCap", "Custom path", "314,204,398,220"
+   uiInput "wl_path", "402,202,570,222"
+   uiCap "wl_labelCap", "Name", "580,204,620,220"
+   uiInput "wl_label", "624,202,688,222"
    uiSection "wl_sec3", "3. The secret", "196,230,688,248"
    uiCap "wl_mnemonicCap", "Seed phrase (12, 15, 18, 21 or 24 words)", \
          "196,252,688,268"
@@ -11978,7 +11985,9 @@ command waBuildTools
    uiButton "tl_sweep", "Sweep this key", "196,476,340,502"
    uiButton "tl_entropy", "Entropy to mnemonic", "344,476,530,502"
    uiButton "tl_hold", "Hold as the current PSBT", "534,476,688,502"
-   uiWrap "tl_note", "", "196,510,688,584", 11
+   uiButton "tl_newKey", "New single key", "196,508,340,534"
+   uiButton "tl_derive", "Derive at path", "344,508,490,534"
+   uiWrap "tl_note", "", "196,542,688,584", 11
    uiSection "tl_sec3", "Result", "720,66,1172,84"
    uiArea "tl_out", "720,90,1172,530"
    uiButton "tl_copyOut", "Copy this", "720,538,860,564"
@@ -12225,7 +12234,7 @@ command waDeriveAccount
    put cxHdFromSeed(tSeed) into tMaster
    put empty into tSeed
    put cwFingerprint(cxHexEncode(tMaster["pubkey"])) into sWaFingerprint
-   put cwAccountPath(sWaScriptType, sWaNetwork, sWaAccount) into tPath
+   put waAccountPath() into tPath
    put cxHdDerivePath(tMaster, tPath) into tNode
    put cwXKeyEncode(tNode, cwXKeyVersion(sWaNetwork, sWaScriptType, false), true) \
          into sWaAccountXprv
@@ -12235,6 +12244,58 @@ command waDeriveAccount
    put empty into tNode
    waDeriveAddresses
 end waDeriveAccount
+
+function waAccountPath
+   -- THE ACCOUNT PATH THIS WALLET ACTUALLY DERIVES FROM.
+   --
+   -- cwAccountPath answers the STANDARD path for a script type - BIP-44's
+   -- purpose 44, BIP-84's 84, BIP-48's extra level - and until now that was
+   -- the only answer this app could give. It is not the only path in
+   -- circulation: Electrum's legacy wallets sit at m/0', early Bitcoin Core
+   -- at m/0'/0', and plenty of hardware wallets have shipped their own. A
+   -- person recovering one of those has correct words and no way to say where
+   -- to look, and a wallet that can only find the addresses it would itself
+   -- have made is a wallet that cannot recover.
+   --
+   -- ONE ACCESSOR, because the path is not a display string: it is in the
+   -- descriptor this wallet exports and in the BIP32_DERIVATION a cosigner
+   -- uses to find its own key in a PSBT. Eight readers each had their own
+   -- copy of the call, and a ninth that missed the override would hand
+   -- somebody a descriptor for a wallet that is not this one.
+   --
+   -- The override is validated where it is SET, so every reader here gets a
+   -- path that has already parsed.
+   if sWaCustomPath is not empty then
+      return sWaCustomPath
+   end if
+   return cwAccountPath(sWaScriptType, sWaNetwork, sWaAccount)
+end waAccountPath
+
+private function waCheckedPath pText
+   -- A PATH TYPED BY HAND, OR READ OUT OF A WALLET FILE. cwParsePath is the
+   -- authority and is vector-tested: it refuses a trailing separator (the
+   -- engine's ignore-one-delimiter rule made "m/84'/" parse as a good
+   -- one-level path once already), an empty level, a non-numeric level, and a
+   -- level at or above 2^31.
+   --
+   -- The depth cap is this handler's own. BIP-32 serializes depth in ONE
+   -- byte, and this path gets two more levels below it before an address, so
+   -- a path deeper than 253 could not round-trip through an extended key. 32
+   -- is far below that and far above anything in circulation; the point is
+   -- that the refusal is a sentence rather than a truncated byte.
+   local tLevels, tTrimmed
+   put cwTrim(pText) into tTrimmed
+   if tTrimmed is "" then
+      return ""
+   end if
+   put cwParsePath(tTrimmed) into tLevels
+   if cwListCount(tLevels) > 32 then
+      throw "that path is " & cwListCount(tLevels) & " levels deep. This " & \
+            "wallet derives two more below it for the chain and the index, " & \
+            "and BIP-32 has one byte for the depth."
+   end if
+   return tTrimmed
+end waCheckedPath
 
 function waAccountNode
    -- The account node, rebuilt on demand from whichever half we hold. A
@@ -12580,11 +12641,12 @@ command waPaintWallet
    waPaintChoice "wl_net", "Main,Test,Signet,Reg", waNetChoice()
    waPaintChoice "wl_type", "Legacy,Nested,Native,Taproot,Multi", waTypeChoice()
    put sWaAccount into field "wl_account"
+   put sWaCustomPath into field "wl_path"
    put sWaLabel into field "wl_label"
    if field "wl_mnemonic" is empty then
       put sWaMnemonic into field "wl_mnemonic"
    end if
-   put cwAccountPath(sWaScriptType, sWaNetwork, sWaAccount) into tPath
+   put waAccountPath() into tPath
    put "network        " & sWaNetwork & return into tOut
    put "script type    " & sWaScriptType && "(" & waTypeName() & ")" & return after tOut
    put "kind           " & sWaKind & return after tOut
@@ -12752,7 +12814,7 @@ function waDescriptorFor pChange
    -- rejects a SLIP-132 zpub inside a descriptor outright.
    put cwXKeyRespell(sWaAccountXpub, sWaNetwork, "p2pkh", true) into tXpub
    return cwDescriptor(sWaScriptType, tXpub, sWaFingerprint, \
-         cwAccountPath(sWaScriptType, sWaNetwork, sWaAccount), pChange)
+         waAccountPath(), pChange)
 end waDescriptorFor
 
 command waWalletClick pRole
@@ -12923,6 +12985,10 @@ command waOpenWallet
    if tAccountText is an integer then
       put tAccountText + 0 into sWaAccount
    end if
+   -- VALIDATED HERE, ONCE, so waAccountPath's eight readers never see a path
+   -- that has not parsed. An empty box means the standard path, which is what
+   -- every wallet this app made before today used.
+   put waCheckedPath(field "wl_path") into sWaCustomPath
    put waEmptyList() into sWaUtxos
    put waEmptyList() into sWaHistory
    if sWaKind is "watch" then
@@ -13075,7 +13141,7 @@ function waBackupChecklist
    put "   It is not in the phrase and cannot be recovered from it. An" & return after tOut
    put "   empty passphrase is normal; a forgotten one is a lost wallet." & return & return after tOut
    put "3. Write down the derivation path: " & \
-         cwAccountPath(sWaScriptType, sWaNetwork, sWaAccount) & return after tOut
+         waAccountPath() & return after tOut
    put "   Another wallet restoring your phrase needs it to find the same" & return after tOut
    put "   addresses. " & sWaScriptType && "(" & waTypeName() & ")." & return & return after tOut
    put "4. Check the backup by restoring it: type the words back in on a" & return after tOut
@@ -13137,7 +13203,7 @@ command waPaintReceive
    if waPublicSeedWarning() is not "" then
       put waPublicSeedWarning() & return & return into tOut
    end if
-   put tOut & "derivation   " & cwAccountPath(sWaScriptType, sWaNetwork, sWaAccount) & \
+   put tOut & "derivation   " & waAccountPath() & \
          tRec["suffix"] & return into tOut
    put "script type  " & tRec["scripttype"] & return after tOut
    put "scriptPubKey " & tRec["script"] & return after tOut
@@ -13253,7 +13319,7 @@ function waAddressProof pRec
    end if
    put "WHY THIS ADDRESS IS YOURS" & return & return into tOut
    put "account key   " & sWaAccountXpub & return after tOut
-   put "path          " & cwAccountPath(sWaScriptType, sWaNetwork, sWaAccount) & \
+   put "path          " & waAccountPath() & \
          pRec["suffix"] & return after tOut
    put "public key    " & pRec["pubkey"] & return after tOut
    if pRec["internalkey"] is not "" then
@@ -14284,7 +14350,7 @@ private function waBip32Record pAddrRec, pPubkeyHex
    local tRec
    put pPubkeyHex into tRec["pubkey"]
    put sWaFingerprint into tRec["fingerprint"]
-   put cwAccountPath(sWaScriptType, sWaNetwork, sWaAccount) & \
+   put waAccountPath() & \
          pAddrRec["suffix"] into tRec["path"]
    return tRec
 end waBip32Record
@@ -14643,6 +14709,10 @@ command waToolsClick pRole
       waPsbtFinalize
    else if pRole is "psbtCombine" then
       waPsbtCombine tText
+   else if pRole is "newKey" then
+      waNewKey
+   else if pRole is "derive" then
+      waDeriveAtPath tText
    else if pRole is "sweep" then
       waSweep tText
    else if pRole is "entropy" then
@@ -14812,6 +14882,102 @@ command waPsbtCombine pOther
    uiStatus "Combined. Try Finalize.", "ok"
 end waPsbtCombine
 
+command waNewKey
+   -- A SINGLE KEY WITH NO WALLET BEHIND IT, which is the other half of what a
+   -- key tool is for. Everything else here derives from a seed; sometimes what
+   -- is wanted is one key, made now, that no seed will ever produce again.
+   --
+   -- The entropy is SodiumXT's and there is no fallback, for the reason
+   -- waGenerateSeed gives: a key made from anything weaker is a key somebody
+   -- else can guess. cxWifEncode refuses a value that is zero or at or above
+   -- the group order, so the 1-in-2^128 case fails closed here rather than
+   -- encoding something no node will accept.
+   local tEntropy, tHex, tWif, tInfo, tOut, tWifNet
+   set the defaultStack to the short name of this stack
+   if sWaHaveSodium is not "true" then
+      throw "a new key needs SodiumXT for entropy and it is not installed. " & \
+            "There is no fallback here on purpose."
+   end if
+   put "testnet" into tWifNet
+   if sWaNetwork is "mainnet" then
+      put "mainnet" into tWifNet
+   end if
+   put sxRandomBytes(32) into tEntropy
+   put cxHexEncode(tEntropy) into tHex
+   put empty into tEntropy
+   put cxWifEncode(tHex, tWifNet, true) into tWif
+   put empty into tHex
+   put cwWifInfo(tWif, sWaNetwork) into tInfo
+   put "A NEW SINGLE KEY" & return & return into tOut
+   put "  network      " & sWaNetwork & return after tOut
+   put "  WIF          " & tWif & return after tOut
+   put "  public key   " & tInfo["pubkey"] & return & return after tOut
+   put "  P2PKH        " & tInfo["p2pkh"] & return after tOut
+   put "  P2SH-P2WPKH  " & tInfo["p2sh-p2wpkh"] & return after tOut
+   put "  P2WPKH       " & tInfo["p2wpkh"] & return & return after tOut
+   put "THIS KEY IS NOT IN THIS WALLET and nothing here will remember it. " & \
+         "Copy it somewhere before you move on. To spend from it later, " & \
+         "open an Import-key wallet with that WIF." after tOut
+   put tOut into field "tl_out"
+   put empty into tWif
+   uiStatus "Made one key. It is NOT part of this wallet - copy it now.", "warn"
+end waNewKey
+
+command waDeriveAtPath pPath
+   -- ONE ADDRESS AT ANY PATH, from this wallet's own master key.
+   --
+   -- The Wallet screen's custom path changes where the whole wallet lives;
+   -- this answers a narrower question that comes up while looking for it -
+   -- "what is at m/44'/0'/0'/0/7?" - without moving anything. It is how you
+   -- find which path an old wallet used: try one, compare the address.
+   local tPath, tSeed, tMaster, tNode, tHex, tWif, tInfo, tOut, tWifNet
+   set the defaultStack to the short name of this stack
+   put cwTrim(pPath) into tPath
+   if tPath is "" then
+      throw "type a derivation path into the box above, like " & \
+            "m/44'/0'/0'/0/7, and press Derive at path."
+   end if
+   if sWaMnemonic is empty then
+      throw "this wallet has no seed phrase, so there is no master key to " & \
+            "derive from. Open a seed or a restored wallet first."
+   end if
+   -- cwParsePath is the authority on the shape and refuses a trailing
+   -- separator, an empty level and a level out of range, so a mistyped path
+   -- is a sentence rather than a confident wrong address.
+   get cwParsePath(tPath)
+   put "testnet" into tWifNet
+   if sWaNetwork is "mainnet" then
+      put "mainnet" into tWifNet
+   end if
+   put cxMnemonicToSeed(cxMnemonicNormalize(sWaMnemonic), sWaPassphrase) into tSeed
+   put cxHdFromSeed(tSeed) into tMaster
+   put empty into tSeed
+   put cxHdDerivePath(tMaster, tPath) into tNode
+   put empty into tMaster
+   put cxHexEncode(tNode["seckey"]) into tHex
+   put empty into tNode
+   if tHex is "" then
+      throw "that path produced no private key, so there is nothing to show."
+   end if
+   put cxWifEncode(tHex, tWifNet, true) into tWif
+   put empty into tHex
+   put cwWifInfo(tWif, sWaNetwork) into tInfo
+   put "DERIVED AT " & tPath & return & return into tOut
+   put "  network      " & sWaNetwork & return after tOut
+   put "  WIF          " & tWif & return after tOut
+   put "  public key   " & tInfo["pubkey"] & return & return after tOut
+   put "  P2PKH        " & tInfo["p2pkh"] & return after tOut
+   put "  P2SH-P2WPKH  " & tInfo["p2sh-p2wpkh"] & return after tOut
+   put "  P2WPKH       " & tInfo["p2wpkh"] & return & return after tOut
+   put "This is the key at that exact path. It is shown, not imported: " & \
+         "nothing about this wallet has changed. If this is where your coins " & \
+         "are, put the ACCOUNT part of the path in the Custom path box on " & \
+         "the Wallet screen and open the wallet there." after tOut
+   put tOut into field "tl_out"
+   put empty into tWif
+   uiStatus "Derived " & tPath & ". Nothing was imported.", "ok"
+end waDeriveAtPath
+
 command waSweep pWif
    -- Read a private key and say what it can reach. Sweeping proper needs a
    -- backend to find the coins; this half - which addresses the key unlocks -
@@ -14869,7 +15035,7 @@ function waExportText
    put "wallet        " & sWaLabel & return after tOut
    put "network       " & sWaNetwork & return after tOut
    put "script type   " & sWaScriptType & return after tOut
-   put "account path  " & cwAccountPath(sWaScriptType, sWaNetwork, sWaAccount) & \
+   put "account path  " & waAccountPath() & \
          return after tOut
    put "fingerprint   " & sWaFingerprint & return & return after tOut
    put "account extended public key (SLIP-132 spelling):" & return after tOut
@@ -16962,6 +17128,9 @@ function waSerializeWallet
    put "scripttype" & tTab & sWaScriptType & return after tOut
    put "kind" & tTab & sWaKind & return after tOut
    put "account" & tTab & sWaAccount & return after tOut
+   if sWaCustomPath is not empty then
+      put "path" & tTab & sWaCustomPath & return after tOut
+   end if
    put "unit" & tTab & sWaUnit & return after tOut
    put "m" & tTab & sWaM & return after tOut
    -- ONLY THE KIND THAT OWNS A SECRET WRITES IT. Belt to waDropSeed's
@@ -17054,6 +17223,7 @@ command waDeserializeWallet pText
    put empty into sWaAccountXprv
    put empty into sWaFingerprint
    put empty into sWaImportedWif
+   put empty into sWaCustomPath
    put waEmptyList() into sWaAddresses
    put waEmptyList() into sWaCosigners
    put the number of lines of pText into tCount
@@ -17075,6 +17245,12 @@ command waDeserializeWallet pText
          put tValue into sWaKind
       else if tName is "account" then
          put tValue + 0 into sWaAccount
+      else if tName is "path" then
+         -- CHECKED ON THE WAY IN. A file is not a person: waLoadInto turns a
+         -- throw here into "that file did not parse, so nothing was loaded",
+         -- which is the right answer for a path that would otherwise reach
+         -- the descriptor and the PSBT metadata unexamined.
+         put waCheckedPath(tValue) into sWaCustomPath
       else if tName is "unit" then
          put tValue into sWaUnit
       else if tName is "m" then
@@ -17304,7 +17480,7 @@ end scFinish
 -- clipboard. What they check is that this stack's own arithmetic agrees with
 -- the library it carries, on this engine, before anybody types anything.
 
-constant kWaScControls = "ad_change,ad_detail,ad_label,ad_labelCap,ad_more,ad_panel,ad_receive,ad_scan,ad_sec1,ad_setLabel,ad_table,cn_addManual,cn_detail,cn_freeze,cn_hint,cn_panel,cn_sec1,cn_table,cn_tick,cn_tickAll,cn_tickNone,hs_bump,hs_copyTxid,hs_detail,hs_inspect,hs_panel,hs_refresh,hs_sec1,hs_table,lg_boot,lg_clear,lg_copy,lg_hint,lg_panel,lg_sec1,lg_sec2,lg_text,nv_ad,nv_bal,nv_chain,nv_cn,nv_confirmed,nv_frozenamt,nv_hs,nv_lg,nv_net,nv_nw,nv_panel,nv_pending,nv_rc,nv_refresh,nv_sd,nv_st,nv_tip,nv_tl,nv_wallet,nv_wl,nw_bElectrumClear,nw_bElectrumTor,nw_bEsploraClear,nw_bEsploraTor,nw_bOffline,nw_host,nw_hostCap,nw_out,nw_panelA,nw_panelB,nw_port,nw_portCap,nw_privacy,nw_sec1,nw_sec2,nw_sec3,nw_socks,nw_socksCap,nw_state,nw_stop,nw_syncNow,nw_test,nw_why,rc_address,rc_amount,rc_amountCap,rc_copy,rc_copyUri,rc_detail,rc_label,rc_labelCap,rc_message,rc_messageCap,rc_next,rc_panelA,rc_panelB,rc_qr,rc_qrframe,rc_qrhint,rc_sec1,rc_sec2,rc_sec3,rc_showQr,rc_uri,rc_verify,sd_addSelf,sd_broadcast,sd_clear,sd_copyRaw,sd_locktime,sd_locktimeCap,sd_out,sd_panelA,sd_panelB,sd_paste,sd_preview,sd_rate,sd_rateCap,sd_ratehint,sd_rbf,sd_sec1,sd_sec2,sd_sec3,sd_sec4,sd_sign,sd_stratBnb,sd_stratLargest,sd_stratManual,sd_stratOldest,sd_stratSmallest,sd_strategyCap,sd_to,sd_toCap,sd_toPsbt,sd_warn,st_about,st_browse,st_filenote,st_forget,st_forgetnote,st_gap,st_gapCap,st_load,st_panelA,st_panelB,st_password,st_passwordCap,st_path,st_pathCap,st_save,st_sec1,st_sec2,st_sec3,st_unitBtc,st_unitMbtc,st_unitSat,tl_copyOut,tl_entropy,tl_export,tl_hex,tl_hexCap,tl_hold,tl_inspect,tl_msg,tl_msgAddr,tl_msgAddrCap,tl_msgCap,tl_msgSig,tl_msgSigCap,tl_msgSign,tl_msgVerify,tl_note,tl_out,tl_panelA,tl_panelB,tl_psbtCombine,tl_psbtFinal,tl_psbtSign,tl_sec1,tl_sec2,tl_sec3,tl_sweep,uiFooter,uiStatus,uiTitle,wl_account,wl_accountCap,wl_addCosigner,wl_backup,wl_copyDesc,wl_copyXpub,wl_custody,wl_generate,wl_kindKey,wl_kindMulti,wl_kindRestore,wl_kindSeed,wl_kindWatch,wl_label,wl_labelCap,wl_m,wl_mCap,wl_mnemonic,wl_mnemonicCap,wl_netMain,wl_netReg,wl_netSignet,wl_netTest,wl_open,wl_out,wl_panelA,wl_panelB,wl_pass,wl_passCap,wl_sec1,wl_sec2,wl_sec3,wl_sec4,wl_typeLegacy,wl_typeMulti,wl_typeNative,wl_typeNested,wl_typeTaproot,wl_warn,wl_xkey,wl_xkeyCap"
+constant kWaScControls = "ad_change,ad_detail,ad_label,ad_labelCap,ad_more,ad_panel,ad_receive,ad_scan,ad_sec1,ad_setLabel,ad_table,cn_addManual,cn_detail,cn_freeze,cn_hint,cn_panel,cn_sec1,cn_table,cn_tick,cn_tickAll,cn_tickNone,hs_bump,hs_copyTxid,hs_detail,hs_inspect,hs_panel,hs_refresh,hs_sec1,hs_table,lg_boot,lg_clear,lg_copy,lg_hint,lg_panel,lg_sec1,lg_sec2,lg_text,nv_ad,nv_bal,nv_chain,nv_cn,nv_confirmed,nv_frozenamt,nv_hs,nv_lg,nv_net,nv_nw,nv_panel,nv_pending,nv_rc,nv_refresh,nv_sd,nv_st,nv_tip,nv_tl,nv_wallet,nv_wl,nw_bElectrumClear,nw_bElectrumTor,nw_bEsploraClear,nw_bEsploraTor,nw_bOffline,nw_host,nw_hostCap,nw_out,nw_panelA,nw_panelB,nw_port,nw_portCap,nw_privacy,nw_sec1,nw_sec2,nw_sec3,nw_socks,nw_socksCap,nw_state,nw_stop,nw_syncNow,nw_test,nw_why,rc_address,rc_amount,rc_amountCap,rc_copy,rc_copyUri,rc_detail,rc_label,rc_labelCap,rc_message,rc_messageCap,rc_next,rc_panelA,rc_panelB,rc_qr,rc_qrframe,rc_qrhint,rc_sec1,rc_sec2,rc_sec3,rc_showQr,rc_uri,rc_verify,sd_addSelf,sd_broadcast,sd_clear,sd_copyRaw,sd_locktime,sd_locktimeCap,sd_out,sd_panelA,sd_panelB,sd_paste,sd_preview,sd_rate,sd_rateCap,sd_ratehint,sd_rbf,sd_sec1,sd_sec2,sd_sec3,sd_sec4,sd_sign,sd_stratBnb,sd_stratLargest,sd_stratManual,sd_stratOldest,sd_stratSmallest,sd_strategyCap,sd_to,sd_toCap,sd_toPsbt,sd_warn,st_about,st_browse,st_filenote,st_forget,st_forgetnote,st_gap,st_gapCap,st_load,st_panelA,st_panelB,st_password,st_passwordCap,st_path,st_pathCap,st_save,st_sec1,st_sec2,st_sec3,st_unitBtc,st_unitMbtc,st_unitSat,tl_copyOut,tl_derive,tl_entropy,tl_export,tl_hex,tl_hexCap,tl_hold,tl_inspect,tl_msg,tl_msgAddr,tl_msgAddrCap,tl_msgCap,tl_msgSig,tl_msgSigCap,tl_msgSign,tl_msgVerify,tl_newKey,tl_note,tl_out,tl_panelA,tl_panelB,tl_psbtCombine,tl_psbtFinal,tl_psbtSign,tl_sec1,tl_sec2,tl_sec3,tl_sweep,uiFooter,uiStatus,uiTitle,wl_account,wl_accountCap,wl_addCosigner,wl_backup,wl_copyDesc,wl_copyXpub,wl_custody,wl_generate,wl_kindKey,wl_kindMulti,wl_kindRestore,wl_kindSeed,wl_kindWatch,wl_label,wl_labelCap,wl_m,wl_mCap,wl_mnemonic,wl_mnemonicCap,wl_netMain,wl_netReg,wl_netSignet,wl_netTest,wl_open,wl_out,wl_panelA,wl_panelB,wl_pass,wl_passCap,wl_path,wl_pathCap,wl_sec1,wl_sec2,wl_sec3,wl_sec4,wl_typeLegacy,wl_typeMulti,wl_typeNative,wl_typeNested,wl_typeTaproot,wl_warn,wl_xkey,wl_xkeyCap"
 
 command waScRun
    local tMissing, tRec, tError, tAddr

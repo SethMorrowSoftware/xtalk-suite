@@ -1588,6 +1588,129 @@ def drive(c, ip, world, sandbox):
          str(ip.globals.get("swasock")) != "oldhost.example:50001",
          repr(ip.globals.get("swasock")))
 
+    # (16) NON-STANDARD DERIVATION PATHS. cwParsePath has always accepted any
+    # path; the app could only ever ask cwAccountPath for the standard one, so
+    # a person recovering an Electrum legacy wallet (m/0') or an early Core
+    # wallet (m/0'/0') had correct words and nowhere to put them. The override
+    # goes through ONE accessor because the path is not decoration: it is in
+    # the exported descriptor and in the BIP32_DERIVATION a cosigner uses to
+    # find its own key.
+    saved_path = {k: ip.globals.get(k) for k in
+                  ("swacustompath", "swanetwork", "swascripttype", "swaaccount",
+                   "swakind", "swamnemonic", "swapassphrase", "swafingerprint")}
+    ip.globals["swanetwork"] = "mainnet"
+    ip.globals["swascripttype"] = "p2wpkh"
+    ip.globals["swaaccount"] = 0
+    ip.globals["swacustompath"] = ""
+    std = str(ip.call("waAccountPath", []))
+    c.eq("with no override the path is still the standard one", std, "m/84'/0'/0'")
+    ip.globals["swacustompath"] = "m/0'"
+    c.eq("and an override replaces it", str(ip.call("waAccountPath", [])), "m/0'")
+    # it must reach the two places that are not display
+    ip.globals["swafingerprint"] = "deadbeef"
+    rec = ip.call("waBip32Record", [{"suffix": "/0/5"}, "00" * 33])
+    c.eq("the PSBT derivation carries the override, not the standard path",
+         str(rec["path"]), "m/0'/0/5")
+    ip.globals["swacustompath"] = ""
+    rec = ip.call("waBip32Record", [{"suffix": "/0/5"}, "00" * 33])
+    c.eq("and the standard one when there is no override",
+         str(rec["path"]), "m/84'/0'/0'/0/5")
+    # the descriptor moves with it too
+    ip.globals["swakind"] = "seed"
+    ip.globals["swamnemonic"] = str(ip.constants.get("kWaTestMnemonic", ""))
+    ip.globals["swapassphrase"] = ""
+    ip.call("waDeriveAccount", [])
+    d_std = str(ip.call("waDescriptorFor", [0]))
+    ip.globals["swacustompath"] = "m/0'"
+    ip.call("waDeriveAccount", [])
+    d_cus = str(ip.call("waDescriptorFor", [0]))
+    c.ck("the exported descriptor is not the same one for a different path",
+         d_std != d_cus and d_std != "" and d_cus != "",
+         "%r vs %r" % (d_std[:40], d_cus[:40]))
+
+    # the shapes cwParsePath already refuses must stay refused, and the ones
+    # in circulation must stay accepted - an over-strict guard here is a
+    # wallet that still cannot recover.
+    for good in ("m/0'", "m/0'/0'", "m/44'/0'/0'", "m/84'/0'/0'", "m/1852'/1815'/0'",
+                 "m/0h/0h", "m/0H", "0'/0'"):
+        try:
+            c.ck("a real-world path is accepted: %s" % good,
+                 str(ip.call("waCheckedPath", [good])) != "", good)
+        except LCS.Thrown as exc:
+            c.ck("a real-world path is accepted: %s" % good, False, str(exc.msg)[:80])
+    c.eq("and a blank box still means the standard path",
+         str(ip.call("waCheckedPath", ["   "])), "")
+    for bad, why in (("m/84'/", "a trailing separator"),
+                     ("m//0", "an empty level"),
+                     ("m/x'", "a level that is not a number"),
+                     ("m/2147483648", "a level at or above 2^31"),
+                     ("m/" + "/".join(["0"] * 40), "a path deeper than the cap")):
+        try:
+            ip.call("waCheckedPath", [bad])
+            c.ck("a path with %s is refused" % why, False, "accepted %r" % bad)
+        except LCS.Thrown as exc:
+            c.ck("a path with %s is refused" % why, True, str(exc.msg)[:70])
+
+    # and it survives the wallet file, because a path that does not persist is
+    # a wallet that finds its own coins once
+    ip.globals["swacustompath"] = "m/0'/0'"
+    ser = str(ip.call("waSerializeWallet", []))
+    c.ck("the wallet file carries the override", "path\tm/0'/0'" in ser,
+         repr([l for l in ser.split("\n") if l.startswith("path")]))
+    ip.globals["swacustompath"] = "m/99'"
+    ip.call("waDeserializeWallet", [ser])
+    c.eq("and a load restores it", str(ip.globals.get("swacustompath")), "m/0'/0'")
+    for k, v in saved_path.items():
+        ip.globals[k] = v
+
+    # (17) THE TWO SINGLE-KEY TOOLS. Derive-at-path is pinned to BIP-84's own
+    # published vector, so this is a real answer and not this wallet agreeing
+    # with itself.
+    saved_tools = {k: ip.globals.get(k) for k in
+                   ("swanetwork", "swamnemonic", "swapassphrase", "swacustompath")}
+    ip.globals["swanetwork"] = "mainnet"
+    ip.globals["swamnemonic"] = str(ip.constants.get("kWaTestMnemonic", ""))
+    ip.globals["swapassphrase"] = ""
+    ip.call("waDeriveAtPath", ["m/84'/0'/0'/0/0"])
+    out = _fld(world, "tl_out")
+    c.ck("derive-at-path finds BIP-84's published address",
+         "bc1qcr8te4kr609gcawutmrza0j4xv80jy8z306fyu" in out, out[:200])
+    c.ck("and its published private key",
+         "KyZpNDKnfs94vbrwhJneDi77V6jF64PWPF8x5cdJb8ifgg2DUc9d" in out, out[:200])
+    c.ck("and it imports nothing", str(ip.globals.get("swakind")) != "key",
+         str(ip.globals.get("swakind")))
+    for bad in ("", "m/84'/", "m/x"):
+        try:
+            ip.call("waDeriveAtPath", [bad])
+            c.ck("derive-at-path refuses %r" % bad, False, "accepted")
+        except LCS.Thrown:
+            c.ck("derive-at-path refuses %r" % bad, True)
+    # a fresh single key must be a REAL key: its WIF has to decode back to the
+    # addresses it was printed with
+    ip.call("waNewKey", [])
+    out = _fld(world, "tl_out")
+    # THE LABELLED LINE, not any line mentioning the word. The closing
+    # paragraph of that panel ends "...with that WIF.", so a last-match scrape
+    # picks up "WIF." and the base58 decoder refuses it - which is this
+    # check's own bug and not the wallet's, but it is exactly how a test comes
+    # to assert something other than what it names.
+    wif = ""
+    for ln in out.split("\n"):
+        if ln.strip().startswith("WIF"):
+            wif = ln.split()[-1]
+            break
+    c.ck("a new single key produced a WIF", len(wif) > 40, repr(wif[:12]))
+    if len(wif) > 40:
+        info = ip.call("cwWifInfo", [wif, "mainnet"])
+        c.ck("and the WIF decodes to the addresses it was shown with",
+             str(info["p2wpkh"]) in out and str(info["p2pkh"]) in out,
+             "%s / %s" % (str(info["p2wpkh"])[:16], str(info["p2pkh"])[:16]))
+        c.ck("and it is NOT one of this wallet's own addresses",
+             ip.call("waIsMine", [str(info["p2wpkh"])]) is not True,
+             "the tool put a key into the wallet")
+    for k, v in saved_tools.items():
+        ip.globals[k] = v
+
     for k, v in saved_audit.items():
         ip.globals[k] = v
 

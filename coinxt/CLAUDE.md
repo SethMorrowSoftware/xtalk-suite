@@ -2082,6 +2082,54 @@ the chain-selecting port, the old server answered every request for the other ch
 well-formed empty list. The socket id IS its `host:port` in this engine, so the comparison is
 exact and costs nothing.
 
+### 2026-09-01 - non-standard derivation paths, and two single-key tools
+
+The audit above found what was wrong. This is the first thing added because it was MISSING, and
+the shape of it is worth recording: **almost none of it was new code.**
+
+**A WALLET THAT CAN ONLY FIND THE ADDRESSES IT WOULD ITSELF HAVE MADE CANNOT RECOVER.**
+`cwParsePath` has accepted an arbitrary path since the day it was written - any depth, `'` or `h`
+or `H` for hardened, a refusal for a trailing separator and for a level at or above 2^31, all of
+it vector-tested. What the app could ask for was `cwAccountPath`, which answers the STANDARD path
+for a script type and nothing else. So a person recovering an Electrum legacy wallet (`m/0'`) or
+an early Bitcoin Core one (`m/0'/0'`) had correct words, a working parser sitting in the file
+they had pasted, and nowhere to type the path. The engine layer was never the limit; the app was.
+
+**THE OVERRIDE GOES THROUGH ONE ACCESSOR, AND THAT IS THE WHOLE DESIGN.** Eight readers each had
+their own `cwAccountPath(sWaScriptType, sWaNetwork, sWaAccount)`. Two of them are not display:
+`waDescriptorFor`, which is what somebody imports into Bitcoin Core, and `waBip32Record`, which
+is the `BIP32_DERIVATION` a cosigner uses to find its own key in a PSBT. A ninth reader that
+missed the override would hand a person a descriptor for a wallet that is not theirs, so
+`waAccountPath()` is the only caller of `cwAccountPath` in the app now, and the gate checks the
+override reaches both of the two that matter rather than only the label.
+
+A NINTH SITE IS DELIBERATELY LEFT ALONE and this is the one to be careful about on any future
+edit: `waSelfTestAddress` derives BIP-84's published vector from the published test seed, takes
+its type and network as PARAMETERS, and must stay on the standard path whatever the open wallet
+is doing. It is the boot self-check's own anchor; routing it through the override would make it
+agree with the wallet instead of with BIP-84.
+
+**Validated where it is SET, not where it is read**, so eight readers never see a path that has
+not parsed - and validated on the way out of a wallet FILE too, because a file is not a person
+and `waLoadInto` already turns a throw there into "nothing was loaded". The depth cap is this
+layer's own: BIP-32 has ONE BYTE for depth and this path gets two more levels below it, so a
+refusal at 32 is a sentence rather than a truncated byte.
+
+**AND TWO SINGLE-KEY TOOLS, because everything else here derives from a seed.** `waNewKey` mints
+one key from SodiumXT entropy with no fallback (waGenerateSeed's reasoning, unchanged) and says
+plainly that the wallet will not remember it; `cxWifEncode` refuses a value at or above the group
+order, so the 1-in-2^128 case fails closed rather than printing something no node accepts.
+`waDeriveAtPath` answers "what is at m/44'/0'/0'/0/7?" without moving anything, which is how a
+person finds which path an old wallet used: try one, compare the address. **It is pinned to
+BIP-84's published address AND its published private key**, so that check is a real answer and
+not this wallet agreeing with itself.
+
+**One test bug worth the line.** The single-key check scraped the WIF out of the panel by taking
+the last line containing "WIF" - and that panel's closing sentence ends "...with that WIF.", so
+it scraped the word and the base58 decoder refused it. The check failed loudly, which is the
+right outcome, but it is the same shape as every other defect in this member's record: a thing
+that reads like what it means and is not. It matches the labelled line now.
+
 **WHAT THIS AUDIT DID NOT SETTLE.** It read the app layer, the transport, the amount and fee
 paths, and the PSBT signer, and it ran both gates. It did not re-audit the QR encoder, the
 wallet file format or the address encodings, all of which have their own records above.
