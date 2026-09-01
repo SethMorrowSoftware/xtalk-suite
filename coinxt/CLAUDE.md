@@ -1855,6 +1855,266 @@ descriptors and PSBT metadata. It did not re-audit coin selection, the QR
 encoder, the file format or the network layer, all of which have their own
 records above. And it settles none of the open items below.
 
+### 2026-09-01 - the audit of the wallet, and why eight of its eleven defects were in code written that week
+
+An audit was asked for and run against `f1408c5`, which is a different tree from the one
+the entries above describe: the eight commits of 2026-08-31 landed a whole new transport
+(`electrum-clear`, Electrum JSON-RPC over a plain TCP socket), the `lock screen` freeze fix,
+the script-type pass and `cwExpandExponent`. **Eight of the eleven defects confirmed are in
+that week's code, and six of those eight are in the new transport.** That distribution is
+the finding, not a coincidence: the two gates were extended along with the transport and
+they check what the transport IS - the host, the port, the chain guard, the wire shapes -
+and not what it DOES over time. Nothing in either gate had an opinion about a second request
+on a connection that was already open.
+
+**THE SHAPE THE TRANSPORT CLUSTER SHARES: one socket, many requests, and nothing tying an
+answer to its question.** Before `f021c57` this transport opened a socket per request, and
+the socket handle WAS the correlation, exactly as the comment beside it still says. Making
+the connection persistent - correctly, because eighty connections in a few seconds is abuse -
+removed that correlation and replaced it with nothing, while the comment claiming it went on
+standing. Four defects fall out of that one change and each is silent:
+
+- `waNetFail` closed the Tor stream and never touched `sWaSock`. `waSockClose` had exactly one
+  caller, `waNetAbort`. So a 45-second deadline left the connection open with the server still
+  owing an answer, `waTick` kept pumping the rest of the queue down it, and the next request's
+  armed read collected the PREVIOUS request's reply. `waMergeUtxos` REPLACES every coin at the
+  address it was asked about, so one address's coins were written under another's and the second
+  address's real coins went with them.
+- Nothing ever read the JSON-RPC `id` off a reply. Six writes of `pRec["id"]`, zero reads.
+- The `tip` request is `blockchain.headers.subscribe`, which SUBSCRIBES, so a real server pushes
+  a header object down that same socket at every block. Between requests no read is armed, so
+  the push sits in the buffer and is collected as the next answer: no `result`, `cwJsonCount` 0,
+  and `waMergeUtxos` empties a funded address.
+- A write that failed forgot `sWaSock` without CLOSING it and dropped `sWaInFlight` on the floor.
+  The request was never sent and never requeued, so that address was simply never asked about.
+
+The fixes are `waNetFail waSockClose`, an id check in `waNetApply` that refuses both a mismatched
+id and an id-less notification by name, and a requeue-once on a failed write. **The id check is
+written to refuse in both directions and the gate asserts both**, because an over-refusing
+correlation check breaks every working server, which is the same defect with the sign flipped.
+
+**AND THE PORT IS THE CHAIN, WHICH ONLY ONE HANDLER KNEW.** `waSetBackend` picked the Electrum
+port from the network because on this transport the port selects the chain. `waSetNetwork` -
+the handler a person actually uses, on a different screen - changed the network and left the
+port alone, and `waBackendChainWhy` allows the built-in host on both mainnet and testnet because
+it does carry both. So a testnet wallet dialled the mainnet server, which answers a foreign
+script hash with an EMPTY LIST, and reported itself synced, green and empty over funded
+addresses. **This is the same failure this member learned from a real machine on 2026-08-31 by
+way of the Esplora API root, arriving through the port instead**, and the table now lives in
+`waRetunePort` alone. A host somebody typed is deliberately left alone: this wallet has no port
+table for a server it does not ship.
+
+**WHY THE GATE COULD NOT SEE IT, AND THIS IS THE TRANSFERABLE PART.** `check-wallet-boot.py`
+already proved the port was right, in a block that reads `ip.globals["swanetwork"] = "testnet"`
+and then calls `waSetBackend`. **It set the state the handler under test was supposed to set.**
+A check written that way can only ever confirm the path it already assumes, and it is invisible
+at the call site because the assertion that follows it is correct. Every check added here drives
+the handler a person reaches - `waSetNetwork`, `waPaintNetwork`, `waNetFail`, `waNetDeliver` -
+and reads the result off the same state the app reads.
+
+**THE THREE THAT ARE NOT THE TRANSPORT.**
+
+*An amount can be written in three units and only one of them was written down.* `waReadUri`
+put `cwSatToBtc(amountsat)` into field `sd_to`; `waParsePayments` reads that same field with
+`cwParseAmount(text, sWaUnit)`. With mBTC selected, a BIP-21 request for 1.5 BTC was written as
+`1.5` and read back as 1.5 mBTC - **a thousandfold underpayment, silent, because both numbers
+read "1.5"**. Driven through the shipped `wallet-core`: 150000000 sat in, 150000 sat out. On
+satoshi it threw instead, which is the dangerous arrangement rather than a lucky one - two of
+three units looked fine. `waAmountBare` exists now and is the only thing that writes into that
+box; `waAddSelfPayment`'s hard-coded `0.0001` went the same way.
+
+*A fee rate that arrived over a socket became the default the Send screen proposes.* The Esplora
+branch wrote `cwJsonGet(tNode, "1")` straight into `sWaFeeRates` with no check at all, while the
+Electrum branch three hundred lines above already tested `is a number` and `> 0`: two transports
+disagreeing about validating the same quantity. Both go through `waSetSuggestedRate` now, with a
+ceiling, and a rate the PERSON types is still their own business.
+
+*And a backend that could never be shown as selected.* `waPaintChoice` only touches the names it
+is handed, and `electrum-clear` was added to `waBackendChoice`, to the screen and to
+`kWaScControls` but not to that literal - so selecting it darkened the previously lit button and
+lit nothing, and the Network screen reported no backend while one was running. The check reads
+the hilite off all five real controls, because the defect was a name missing from a literal and
+nothing had ever looked at the buttons.
+
+**THREE FAIL-OPEN PATHS IN THE ENGINE, and the first is the one that matters.** `cwPsbtSign`'s
+p2wsh branch asked only whether one of our public keys appears inside the witness script THE
+SENDER SUPPLIED, and never compared `cwScriptP2wsh(tWitScript)` against the input's own
+scriptPubKey. Our cosigner keys are not secret - they are in any descriptor or account xpub this
+wallet has ever exported - so anyone could build a 1-of-1 witness script around one, pair it with
+a witness UTXO naming any 32-byte P2WSH program and any amount, and get back a real signature
+over a BIP-143 preimage of their choosing, reported as `SIGNED 1 input(s)` with no why-line.
+**The taproot branch's own comment, eighty lines above, says "every other branch here checks the
+script it is about to unlock".** It was the one branch that did not, and the comment is what
+should have found it: a claim in a comment that nothing enforces is this member's own recorded
+failure shape, and here it sat directly above the code that broke it. Beside it, `cwTxDecode`
+drove `repeat with tI = 1 to tCount` from a varint the input supplied, so eighteen pasted
+characters (`01000000feffffff0f`) meant 268 million iterations over a string that had already
+ended, and an `0xff` count meant no end at all - a frozen ENGINE, on the UI thread, which is the
+same class as the `lock screen` freeze recorded above arriving through a different door.
+`cwNeedBytes` refuses a count the remaining bytes cannot satisfy, using the SMALLEST an item can
+be so it refuses only the impossible. And `cwSignInput` had no default: everything that was not
+p2tr, p2pkh or p2sh-p2wpkh fell through to a `[signature, pubkey]` witness with an empty
+scriptSig, which is P2WPKH's shape - and `p2wsh` reaches it through the file's own documented
+pairing with `cwSighash`, so the pairing produced a signed-looking transaction no node accepts.
+
+**THE ASYMMETRY WAS THE PATTERN, NOT AN INSTANCE.** The unchecked fee rate above turned out
+to be one of four places where the Esplora branch validated something and the Electrum branch
+beside it did not, in the same handler, on the same quantity. The Esplora tip refused anything
+that was not a non-negative integer; the Electrum tip wrote `result/height` straight into
+`sWaTipHeight`. The Esplora broadcast required 32 bytes of hex and says in its own comment that
+reporting a success the backend did not give is "the failure this whole block exists to stop";
+the Electrum broadcast reported a green `Broadcast.` for whatever scalar the server put in
+`result`, an error string included - **and a wallet that says a transaction was sent when it was
+not is worse than one that says nothing, because the person stops watching.** Neither branch
+asked whether the answer was a LIST: `waMergeUtxos` and `waMergeHistory` delete every record for
+the address before re-filling, and `cwJsonCount` answers 0 for a null, a string, a number or a
+boolean, so any well-formed non-list reply read as "this address has never been used" and
+DELETED what it holds. And `kWaMaxBody` was enforced in exactly one place, the OnionXT data
+event, so two transports of three accepted a reply of unbounded size.
+
+Each is now ONE handler that both transports call - `waCheckedHeight`, `waCheckedTxid`,
+`waCheckList`, `waSetSuggestedRate` - which is the only fix that stops the fifth instance. The
+general form is worth stating once, because it is what made all four invisible: **a validation
+written inside a per-transport branch is a validation the next transport does not inherit**, and
+this file gained a whole new transport that week.
+
+**AND THE FIRST VERSION OF THE PARTIAL-SYNC FIX WAS ITSELF INCOMPLETE**, which is the reason to
+write it down. `waNetDeliver` preserved `sWaNetWhy` when a request had failed but still wrote
+`"ok"` into `sWaNetState` - so the sentence survived on the Network screen and the PILL, which
+is the thing visible on every screen while somebody reads a balance, went green anyway. The
+state has its own value now (`partial`), painted `warn` in both places that render it. Fixing
+the explanation and leaving the indicator is the same defect one layer out.
+
+**AND A FOURTH CALL SITE OF THE CLASS THE 2026-08-31 SCRIPT-TYPE AUDIT CLOSED, which is worth
+its own sentence because the entry above says that audit found the structural half.** That pass
+replaced `waInputType()` - the WALLET's type - with a per-record answer at `waSignSpend`, the
+PSBT builder and the size estimate, and added `waSelectedInputSpecs` for exactly this. But
+`waBuildSpend`'s non-MAX branch still hands `cwSelectCoins` a single `waInputType()`, so the
+fee, the vsize, the change-or-changeless decision and the branch-and-bound acceptance window
+are all priced for a type the selected coins may not have - while `waMaxSpend`, forty lines
+below it, does it correctly through `waSelectedInputSpecs`. **A fix applied at one call site and
+not its sibling is this tree's own recorded shape, and here the sibling is in the same handler.**
+It is NOT fixed here: closing it means `cwSelectCoins` taking per-coin specs rather than one
+type, which is a change to the selector that `tools/wallet_reference.py` mirrors, and the entry
+above already records that an oracle-based gate cannot see a rule both sides share. That is a
+change to make deliberately, with the oracle moved first, not on the end of an audit commit.
+
+**AND CUSTODY PROMISED MORE THAN IT DELIVERED FOR A FIFTH AND SIXTH TIME, in the two places
+where being wrong costs the most.** `waSaveWallet` writes the wallet file with
+`put tSealed into URL ("binfile:" & tPath)` on both branches and checked `the result` on
+neither, so a full disk, a path inside a directory that does not exist, or a read-only volume
+was reported as `Saved, sealed, to <path>`. **The whole value of that sentence is that somebody
+then stops worrying about their seed**, which makes an unchecked write here worse than an
+unchecked write anywhere else in the file. Both paths throw now, naming the path and saying
+NOTHING has been saved. And `waDropSeed`, whose own comment says "the status line is now true
+about the state", cleared the mnemonic and the passphrase and left `sWaAccountXprv` and the
+`seckey` inside every derived address record exactly where the previous seed wallet put them -
+while `waAccountNode` PREFERS the private half and `waSeckeyFor` reads the record's key. A
+wallet the screen had just called watch-only still held, and would still have used, full
+spending keys. Both `waOpenWallet` branches that reach `waDropSeed` call `waDeriveAddresses`
+immediately afterwards, so dropping the derived list there costs nothing and is the only way to
+be rid of the keys inside it.
+
+**ONE OF THOSE TWO HAS NO REGRESSION CHECK, AND SAYING SO IS THE POINT.** `waDropSeed` is
+pinned in both directions. The write-result guard is NOT, because `check-wallet-boot.py`'s
+sandboxed `url_write` RAISES on a bad path rather than setting `the result`, so the model cannot
+produce the failure the guard reads. A check written against it anyway would be a check that
+cannot fail, which is this member's own recorded worst outcome for a gate - it answers the
+question nobody asks twice. The gap is recorded here instead.
+
+**AND THE GATE FOUND THREE MORE BY RUNNING THE FIX, which is the argument for the runners in
+one line.** `check-wallet-boot.py` drove `waNetDeliver` for the first time and died in code no
+audit had read: `put char -6000 to -1 of (field "nw_out" & tKind && ...)` binds the
+concatenation INTO THE CHUNK TARGET, so the engine is asked for a field whose NAME is the whole
+log line. `waStreamOpened` already carries that note beside a Content-Length and settles it with
+a local; these three sites were written before the note existed. The other two are
+`waSignMessage`'s report, which asks for a field named `tl_msg` followed by the signature and
+the paragraph after it, and the Log screen's Copy, which asks for one named `lg_boot` followed
+by the entire log. Each is silent in its own way - a raw-reply pane that never grows, a signed
+message missing the message, a clipboard holding a field name - and none of them is reachable
+from any check that existed before this commit.
+
+**Two of my own edits went the same way and are worth the same sentence.** `cwNeedBytes`
+computed `the number of chars of pHex - pPos`, which is the identical trap one file over, and
+used `div` in an expression where this layer routes integer division through `cwIntDiv`.
+`waSetSuggestedRate` and `waCheckedHeight` were written as
+`if X is not a number or X <= 0`, and LiveCodeScript evaluates BOTH operands of `or` - so the
+comparison still runs on a value that is not a number, which the interpreter refuses and the
+engine answers by comparing as text. Nested now. **All four were caught by running the gate,
+not by reading the diff**, on code written by somebody who had just finished writing the
+paragraph above about the first one.
+
+**AND THE FLEET'S OWN PASS FOUND THREE MORE, TWO OF THEM THE WORST IN THIS ENTRY.** They are
+here because a second, independent read of the same files was run against the same brief, and
+the two it found that nothing above had are both places where the wallet believed a stranger.
+
+*A PAYMENT REQUEST COULD REPLACE THE WALLET'S ACCOUNT KEY.* The wallet file is one record per
+LINE with the name and value split by a TAB, parsed last-wins - and a label is the one field a
+person does not type. BIP-21 carries one, and `cwPercentDecode` turns `%0A` into a real newline
+and `%09` into a real tab. So a payer could put
+`Refund%0Akind%09watch%0Amnemonic%09%0Axpub%09<their key>` in the label of an invoice, and the
+next Save-then-Open replaced this wallet's own account key with theirs, after which every
+address the Receive screen offered was an address THEY could spend from. It was demonstrated
+end to end through the boot harness before it was fixed, driving only real controls. The fix is
+`waSafeText` at every door a label enters by, plus a refusal in `waSerializeWallet` so a door
+somebody adds later is loud rather than silent. Stripped rather than escaped, deliberately: an
+escape needs an unescape and the two drift, and a label has no legitimate use for a tab.
+
+*AND THE WATCH-ONLY BOX ACCEPTED A PRIVATE KEY.* That branch checked the extended key's NETWORK
+and nothing else, so an account `xprv` - one character from its `xpub`, and the line directly
+above it in whatever a signing wallet exported - was stored in `sWaAccountXpub` and thereafter
+treated as public by everything downstream: printed on the Wallet screen under "account extended
+PUBLIC key (safe to hand out)", put on the clipboard by Copy, exported by Tools, and written to
+the wallet file on the line labelled `xpub`. It was not watch-only either, because
+`waDeriveAddresses` re-fills every record through `waAccountNode`, which prefers the private
+half - so the records carried spending keys while the status line said "This wallet cannot sign
+anything." **`wallet-core` has shipped `cwXKeyIsPrivate` for exactly this question since the day
+it was written, and nothing in the stack called it.** A handler that exists for a question
+nobody asks is the same defect as a comment that claims a check nobody makes; this entry now
+carries one of each.
+
+*And the third is the sibling of the port defect above, one layer down.* `waNetStart` reused
+`sWaSock` on the test "is one open?" alone, never comparing it to the `host:port` it had just
+computed - so a host or a port edited on the Network screen reached the state and the fields and
+NOT the connection. Every script hash of the sync still went to the server the person had just
+acted to leave, which is a privacy loss they explicitly moved to avoid; and where the edit was
+the chain-selecting port, the old server answered every request for the other chain with a
+well-formed empty list. The socket id IS its `host:port` in this engine, so the comparison is
+exact and costs nothing.
+
+**WHAT THIS AUDIT DID NOT SETTLE.** It read the app layer, the transport, the amount and fee
+paths, and the PSBT signer, and it ran both gates. It did not re-audit the QR encoder, the
+wallet file format or the address encodings, all of which have their own records above.
+Findings CONFIRMED by reading and deliberately NOT fixed here are listed so this entry cannot be
+read as a clean bill: the selection-input-type site above; `cwInputBaseBytes` pricing every
+P2PKH input with a 33-byte pubkey when an imported UNCOMPRESSED key's scriptSig carries 65, so
+such an input is estimated 32 bytes short in a function whose whole contract is the worst case;
+`waBumpAdvice` computing a BIP-125 floor from `pRec["fee"]` and `pRec["vsize"]` that
+`waMergeHistory` never writes, so it is always `cwRbfMinFee(0, 0)`; a taproot input signed
+SIGHASH_DEFAULT where the PSBT asked for ALL; `cwPsbtFinalize` not reading the `PSBT_IN_FINAL_*`
+fields it writes; `cwSignMultisig` not capping its signature count at m; and `cwReadVarInt`
+accepting a non-minimal varint, after which the txid it feeds is not the txid of those bytes.
+
+Also confirmed and open, all in the transport and the file the fixes above touched, and left
+because each is a change of its own rather than a line: `waNetStart` reuses `sWaSock` whenever
+it is non-empty without comparing it to the `host:port` it has just computed, so a host or port
+edited on the Network screen is applied to the state and NOT to the connection already open -
+the sibling of the port defect fixed above, one layer down; `waSockOpened` reads `the result`
+to test whether the connect succeeded, after an intervening `set the defaultStack`, and `set`
+is a command that clears `the result`, so that branch cannot be reading the outcome of the
+`open socket` at all (failures do arrive, through `socketError`, which is why nothing looked
+broken); `waMergeUtxos` stores the backend's txid with no shape check while `waPaintCoins`
+renders one line per coin and `waSelectedCoinKey` maps a clicked row back by arithmetic, so a
+txid containing a return shifts every row after it; the PLAIN wallet-file branch writes and
+reads its payload with no `textEncode`/`textDecode` where the sealed branch of the same two
+handlers wraps the identical bytes in UTF-8, so a non-ASCII label round-trips differently
+depending on whether the file is encrypted; and the boot self-check's three base58 address
+assertions use `is`, which is case-INSENSITIVE by default - so the checks the file calls "the
+cheapest possible place" to catch a wrong address cannot catch a case-only one.
+
+**Naming them here rather than fixing them quietly is the point**: a partial audit read as a
+whole one is worse than none.
+
 **WHAT IS STILL OPEN.** Neither gate is an OXT pass: they settle that the code RUNS and what it
 computes, not parser behaviour and not that a window appeared. Everything in
 `docs/OXT-ENGINE-NOTES.md` the interpreter models differently is invisible to both, the case rule

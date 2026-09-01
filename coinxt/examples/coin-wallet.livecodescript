@@ -5457,6 +5457,21 @@ function cwSignInput pScriptType, pSeckeyHex, pDigestHex, pPubkeyHex
       throw "wallet-core: cwSignInput: taproot signs with cwSignTaproot, which " & \
             "must tweak the private key first."
    end if
+   -- THE SET IS CLOSED, AND THE FALLTHROUGH WAS THE P2WPKH SHAPE. Everything
+   -- that was not p2tr or p2pkh or p2sh-p2wpkh ended up with a
+   -- [signature, pubkey] witness and an empty scriptSig, which is P2WPKH's
+   -- witness and is invalid for anything else. "p2wsh" is the one that
+   -- matters: cwSighash accepts it and returns a correct BIP-143 digest for
+   -- it, so the documented pairing produced a signed-looking transaction that
+   -- no node will accept - and cwTxSerialize and cwTxid both answer for it
+   -- without complaint. A multisig input is signed by cwSignMultisig, which
+   -- knows how many signatures the script wants and in what order.
+   if pScriptType is not "p2pkh" and pScriptType is not "p2wpkh" \
+         and pScriptType is not "p2sh-p2wpkh" then
+      throw "wallet-core: cwSignInput: " & pScriptType & " is not a " & \
+            "single-key input type. p2wsh multisig signs with " & \
+            "cwSignMultisig and taproot with cwSignTaproot."
+   end if
    put cxHexEncode(cxDerEncode(cxSign(cxHexDecode(pSeckeyHex), cxHexDecode(pDigestHex)))) \
          & "01" into tSig
    if pScriptType is "p2pkh" then
@@ -5699,6 +5714,41 @@ private function cwReadVarInt pHex, pPos
    return tOut
 end cwReadVarInt
 
+private command cwNeedBytes pHex, pPos, pCount, pEach, pWhat
+   -- A COUNT A HOSTILE STRING SUPPLIED IS NOT A LOOP BOUND.
+   --
+   -- Every count in a transaction comes out of a varint, so it can be up to
+   -- 2^64-1, and it was driving `repeat with tI = 1 to tCount` directly with
+   -- nothing comparing it against the bytes actually present. Eighteen
+   -- characters pasted into the Tools inspect box - 01000000feffffff0f - read
+   -- as an input count of 268,435,455 over a string that ended eight
+   -- characters ago: every chunk read returns empty, nothing throws, and the
+   -- loop runs for hours. With an 0xff varint it does not end at all. OXT
+   -- runs script on the UI thread, so that is a frozen ENGINE with no error
+   -- anybody can read - the same class as the `lock screen` freeze this file
+   -- already records, arriving through a different door.
+   --
+   -- pEach is the SMALLEST a single item can be, so this refuses only counts
+   -- that are impossible, never one that is merely large.
+   --
+   -- THE LENGTH GOES INTO A LOCAL FIRST. `the number of chars of pHex - pPos`
+   -- binds the arithmetic INTO the chunk target, so the engine is asked for
+   -- the character count of a subtraction rather than the count of pHex minus
+   -- a number. This file's own network layer carries the same note beside a
+   -- Content-Length for exactly this reason; it cost a gate run to meet it
+   -- again here.
+   -- AND THE DIVISION GOES THROUGH cwIntDiv, which is why that helper
+   -- exists: this layer's own byte discipline routes integer div and mod
+   -- through helpers rather than writing the operators inline.
+   local tLeft, tLen
+   put the number of chars of pHex into tLen
+   put cwIntDiv(tLen - pPos + 1, 2) into tLeft
+   if pCount > cwIntDiv(tLeft, pEach) then
+      throw "wallet-core: cwTxDecode: this claims " & pCount & " " & pWhat & \
+            " but only " & tLeft & " byte(s) remain, so it is malformed."
+   end if
+end cwNeedBytes
+
 function cwTxDecode pRawHex
    local tHex, tPos, tOut, tVer, tSegwit, tCount, tI, tJ, tRec, tIn, tOutRec
    local tIns, tOuts, tLen, tWit, tItems, tStripped, tWeight, tRbf, tTotal, tEnd
@@ -5717,6 +5767,8 @@ function cwTxDecode pRawHex
    put cwReadVarInt(tHex, tPos) into tRec
    put tRec["value"] into tCount
    put tRec["next"] into tPos
+   -- 32 outpoint + 4 index + 1 script length + 4 sequence
+   cwNeedBytes tHex, tPos, tCount, 41, "input(s)"
    put cwListNew() into tIns
    repeat with tI = 1 to tCount
       -- the outpoint's txid is stored LITTLE-endian and displayed big-endian;
@@ -5740,6 +5792,8 @@ function cwTxDecode pRawHex
    put cwReadVarInt(tHex, tPos) into tRec
    put tRec["value"] into tCount
    put tRec["next"] into tPos
+   -- 8 value + 1 script length
+   cwNeedBytes tHex, tPos, tCount, 9, "output(s)"
    put cwListNew() into tOuts
    put 0 into tTotal
    repeat with tI = 1 to tCount
@@ -5759,6 +5813,8 @@ function cwTxDecode pRawHex
       repeat with tI = 1 to tCount
          put cwReadVarInt(tHex, tPos) into tRec
          put tRec["next"] into tPos
+         -- a witness item is at least its own 1-byte length
+         cwNeedBytes tHex, tPos, tRec["value"], 1, "witness item(s)"
          put cwListNew() into tItems
          repeat with tJ = 1 to tRec["value"]
             put cwReadVarInt(tHex, tPos) into tWit
@@ -6430,6 +6486,32 @@ function cwPsbtSign pB64, pKeys, pNetwork
          next repeat
       end if
       put cwPsbtFind(tMap, kCwPsbtInWitnessScript, "") into tWitScript
+      -- AND THE WITNESS SCRIPT MUST BE THE ONE THIS OUTPUT COMMITS TO.
+      --
+      -- The taproot branch below says, in its own comment, that "every other
+      -- branch here checks the script it is about to unlock". That was not
+      -- true of the p2wsh branch, which was the one branch with no comparison
+      -- against tSpk at all: it asked only whether one of our public keys
+      -- appears somewhere inside the witness script THE SENDER SUPPLIED.
+      --
+      -- Our cosigner keys are not secret - they are in any account xpub or
+      -- descriptor this wallet has ever exported - so anyone can build a
+      -- 1-of-1 witness script around one, pair it with a witness UTXO naming
+      -- any 32-byte P2WSH program and any amount, and get back a real
+      -- signature over a BIP-143 preimage of their choosing, reported as
+      -- "SIGNED 1 input(s)" with no why-line. BIP-174 requires a Signer to
+      -- check that the scripts it is given correspond to the output being
+      -- spent; this is that check, and P2WSH makes it exact, because the
+      -- output IS the hash of the script.
+      if tType is "p2wsh" and tWitScript is not "" then
+         if cwScriptP2wsh(tWitScript) is not tSpk then
+            put tWhy & "input " & tI & ": the witness script this PSBT " & \
+                  "carries does not hash to the output it says it spends, " & \
+                  "so signing it would sign a preimage of the sender's " & \
+                  "choosing rather than this input" & return into tWhy
+            next repeat
+         end if
+      end if
       put false into tFound
       -- THE SIGHASH TYPE THE PSBT ASKS FOR. BIP-174 requires a Signer to use
       -- the value in PSBT_IN_SIGHASH_TYPE and to FAIL if it cannot; this
@@ -10775,6 +10857,16 @@ constant kWaNetDeadline = 45000
 -- here rather than exhausting the engine's memory.
 constant kWaMaxBody = 4194304
 
+-- THE CEILING ON A FEE RATE THE BACKEND SUGGESTED. The rate the Send screen
+-- starts with comes from whatever the backend answered, and nothing checked
+-- it: a server that says 900000 sets the default, and the only thing between
+-- that and a transaction is somebody reading the fee line. Bitcoin's busiest
+-- blocks have cleared under a few hundred sat/vB, so this is generous by an
+-- order of magnitude and still refuses a number that is not a fee estimate.
+-- A rate the PERSON types is their own business and is not capped here; this
+-- is about a number that arrived over a socket.
+constant kWaMaxSuggestedRate = 5000
+
 -- The default backends. Blockstream's onion mirror is the private default;
 -- the clearnet host is the same service and is offered second, with what it
 -- costs written on the Network screen.
@@ -11239,10 +11331,11 @@ local sWaPort             -- the backend port
 local sWaSocksPort        -- the Tor SOCKS port
 local sWaSock             -- the clearnet Electrum socket ("host:port"), empty when none
 local sWaBooted           -- "true" once waBoot has run, however it was reached
-local sWaNetState         -- idle | dialing | busy | ok | failed
+local sWaNetState         -- idle | dialing | busy | ok | partial | failed
 local sWaNetWhy           -- the last network message
 local sWaTipHeight        -- the chain tip, when a backend has told us
 local sWaFeeRates         -- array: target blocks -> sat/vB, from the backend
+local sWaSyncFailures     -- requests this sync gave up on; a sync is not "ok" while it is set
 
 local sWaQueue            -- list of pending request records
 local sWaInFlight         -- the request record being served, or empty
@@ -11398,6 +11491,7 @@ command waResetWallet
    put empty into sWaNetWhy
    put empty into sWaTipHeight
    put empty into sWaFeeRates
+   put 0 into sWaSyncFailures
    put waEmptyList() into sWaQueue
    put empty into sWaInFlight
    put empty into sWaStream
@@ -12313,6 +12407,62 @@ function waAmount pSat
    return cwFormatAmount(pSat, sWaUnit)
 end waAmount
 
+private function waSafeText pText
+   -- NOTHING A STRANGER CHOSE MAY CARRY THIS FILE FORMAT'S SEPARATORS.
+   --
+   -- waSerializeWallet writes one record per LINE, name and value split by a
+   -- TAB, and waDeserializeWallet dispatches each line last-wins. A label is
+   -- the one field a person does not type: a BIP-21 URI carries one, and
+   -- cwPercentDecode turns %0A into a real newline and %09 into a real tab.
+   -- So a payer could put
+   --     Refund%0Akind%09watch%0Amnemonic%09%0Axpub%09<their key>
+   -- in the label of an invoice, and the next Save-then-Open replaced the
+   -- wallet's OWN account key with theirs - after which every address the
+   -- Receive screen offered was an address they could spend from. That is
+   -- the whole wallet, taken by a payment request.
+   --
+   -- Stripped rather than escaped, and stripped at every door rather than at
+   -- the file: an escape needs an unescape and the two drift, while a label
+   -- has no legitimate use for a tab or a newline in the first place.
+   local tOut, tI, tCount, tCh
+   put "" into tOut
+   put the number of chars of pText into tCount
+   repeat with tI = 1 to tCount
+      put char tI of pText into tCh
+      if tCh is not numToChar(9) and tCh is not numToChar(10) \
+            and tCh is not numToChar(13) then
+         put tCh after tOut
+      end if
+   end repeat
+   return tOut
+end waSafeText
+
+private function waAmountBare pSat
+   -- THE AMOUNT AS waParsePayments WILL READ IT BACK: a bare number in the
+   -- unit the Send box is parsed in, with no unit name after it.
+   --
+   -- There are three ways to render an amount here and they are not
+   -- interchangeable. cwFormatAmount appends the unit NAME, which is right
+   -- for a label and wrong for an input field. cwSatToBtc is always BTC.
+   -- And field "sd_to" is read by cwParseAmount(text, sWaUnit), so the ONLY
+   -- correct thing to write into it is a bare number in sWaUnit.
+   --
+   -- waReadUri wrote cwSatToBtc, which is BTC whatever the display unit says.
+   -- With mBTC selected, a BIP-21 request for 1.5 BTC was written as "1.5"
+   -- and read back as 1.5 mBTC: the person paid a THOUSANDTH of what they
+   -- were asked for, and nothing on screen disagreed, because both numbers
+   -- read "1.5". On satoshi it threw instead, which is why only one of the
+   -- three units was silently wrong - the most dangerous arrangement there
+   -- is, because two units looked fine.
+   if sWaUnit is "sat" then
+      return pSat
+   end if
+   if sWaUnit is "mBTC" then
+      return cwSatToBtc(pSat * 1000)
+   end if
+   return cwSatToBtc(pSat)
+end waAmountBare
+
 -- ==============================================================================
 -- REPAINTING
 --
@@ -12377,6 +12527,9 @@ command waPaintNav
       put "ok" into tKind
    else if sWaNetState is "failed" then
       put "bad" into tKind
+   else if sWaNetState is "partial" then
+      -- the rail pill is the one a person sees while reading a balance
+      put "warn" into tKind
    end if
    uiPill "nv_net", waBackendLabel(), "20,458,168,478", tKind
    put sWaNetwork && "/" && sWaScriptType into field "nv_chain"
@@ -12695,6 +12848,18 @@ command waSetNetwork pNetwork
    -- Changing the network can invalidate the BACKEND as well as the addresses,
    -- and the backend half used to go unsaid: the Esplora root moved under the
    -- wallet's feet and a mainnet-only Electrum server stayed selected.
+   --
+   -- STOP FIRST. A request already in flight was asked about an address on the
+   -- OTHER chain, and its answer arrives after the addresses have been
+   -- re-derived - so waMergeUtxos files a coin under an address this wallet no
+   -- longer derives, and waRecomputeBalance, which sums every row of sWaUtxos
+   -- whatever its address, adds the other chain's coins to this chain's
+   -- balance. Dropping sWaUtxos two lines above is not enough on its own,
+   -- because the reply lands afterwards.
+   waNetAbort
+   -- AND RETUNE THE PORT, which on clearnet Electrum is what selects the
+   -- chain. See waRetunePort: this is the half that used to go unsaid.
+   waRetunePort
    waRefreshNetState
    if sWaNetState is "failed" then
       uiStatus "Now on " & pNetwork & ", and the backend cannot serve it: " & \
@@ -12744,13 +12909,19 @@ command waGenerateSeed
 end waGenerateSeed
 
 command waOpenWallet
-   local tText, tInfo, tNode
-   put cwTrim(field "wl_label") into sWaLabel
+   local tText, tInfo, tNode, tAccountText
+   put waSafeText(cwTrim(field "wl_label")) into sWaLabel
    if sWaLabel is "" then
       put "Wallet" into sWaLabel
    end if
-   if field "wl_account" is an integer then
-      put field "wl_account" + 0 into sWaAccount
+   -- INTO A LOCAL FIRST, and this is the fourth site of the same shape in
+   -- this file: `field "wl_account" + 0` binds the arithmetic INTO the chunk
+   -- target, so the engine is asked for a field named `wl_account` plus zero.
+   -- It is the account NUMBER, so getting it wrong derives a different
+   -- wallet from the same seed.
+   put field "wl_account" into tAccountText
+   if tAccountText is an integer then
+      put tAccountText + 0 into sWaAccount
    end if
    put waEmptyList() into sWaUtxos
    put waEmptyList() into sWaHistory
@@ -12766,6 +12937,28 @@ command waOpenWallet
          throw "that extended key belongs to " & tNode["network"] & \
                " and this wallet is on " & sWaNetwork & \
                ". Switch the network, or paste the right key."
+      end if
+      -- AND IT MUST NOT BE A PRIVATE KEY. This branch checked the NETWORK and
+      -- nothing else, so an account xprv - one character from its xpub, and
+      -- the line directly above it in whatever a signing wallet exported -
+      -- was stored in sWaAccountXpub and thereafter treated as public by
+      -- everything downstream: printed on the Wallet screen under "account
+      -- extended PUBLIC key (safe to hand out)", put on the clipboard by
+      -- Copy, written into the wallet file on the line labelled `xpub`, and
+      -- exported by Tools. It was not watch-only either: waDeriveAddresses
+      -- re-fills every record through waAccountNode, which prefers the
+      -- private half, so the records carried seckeys again while the status
+      -- line said "This wallet cannot sign anything."
+      --
+      -- wallet-core ships cwXKeyIsPrivate for exactly this question and
+      -- nothing in this stack was calling it.
+      if cwXKeyIsPrivate(tText) is true then
+         throw "that is a PRIVATE extended key, and this is the watch-only " & \
+               "box. Watching it would put a spending key on the Wallet " & \
+               "screen labelled as safe to hand out, and into the wallet " & \
+               "file. Paste the matching PUBLIC key instead (xpub, ypub, " & \
+               "zpub, tpub, upub or vpub), or choose Restore if you meant " & \
+               "to open a spending wallet."
       end if
       put tText into sWaAccountXpub
       put empty into sWaAccountXprv
@@ -12817,7 +13010,7 @@ command waAddCosigners
    -- same network before anything is derived, because a multisig built from
    -- keys on two chains produces an address nobody can ever spend from and
    -- there is no later moment at which that becomes obvious.
-   local tText, tI, tCount, tLine, tNode, tList, tKey
+   local tText, tI, tCount, tLine, tNode, tList, tKey, tMText
    put field "wl_xkey" into tText
    put waEmptyList() into tList
    put the number of lines of tText into tCount
@@ -12837,8 +13030,9 @@ command waAddCosigners
    if cwListCount(tList) < 1 then
       throw "paste at least one cosigner account key, one per line."
    end if
-   if field "wl_m" is an integer then
-      put field "wl_m" + 0 into sWaM
+   put field "wl_m" into tMText
+   if tMText is an integer then
+      put tMText + 0 into sWaM
    end if
    if sWaM < 1 or sWaM > cwListCount(tList) then
       throw "the number of required signatures must be between 1 and the " & \
@@ -13172,7 +13366,7 @@ command waAddressesClick pRole
       if tAddr is "" then
          throw "select a row first."
       end if
-      put field "ad_label" into sWaLabels[tAddr]
+      put waSafeText(field "ad_label") into sWaLabels[tAddr]
       uiStatus "Labelled " & tAddr & ".", "ok"
    end if
    waRefreshScreen
@@ -13433,11 +13627,13 @@ command waReadUri
    end if
    put tRec["address"] into tLine
    if tRec["amountsat"] > 0 then
-      put tLine & ", " & cwSatToBtc(tRec["amountsat"]) into tLine
+      -- IN THE DISPLAY UNIT, because that is what reads this box back.
+      put tLine & ", " & waAmountBare(tRec["amountsat"]) into tLine
    end if
    put tLine & return into field "sd_to"
    if tRec["label"] is not "" then
-      put tRec["label"] into sWaLabels[tRec["address"]]
+      -- THE URI'S LABEL IS A STRANGER'S TEXT. See waSafeText.
+      put waSafeText(tRec["label"]) into sWaLabels[tRec["address"]]
    end if
    uiStatus "Read a BIP-21 URI" & waUriExtra(tRec) & ".", "ok"
 end waReadUri
@@ -13460,7 +13656,10 @@ command waAddSelfPayment
    if tRec is "" then
       throw "this wallet has no address to pay."
    end if
-   put tRec["address"] & ", 0.0001" & return after field "sd_to"
+   -- 10000 sat, written in whatever unit this wallet is displaying. The
+   -- literal "0.0001" that stood here was BTC, so on mBTC it proposed 10 sat
+   -- (refused as dust) and on satoshi it proposed a fraction of one.
+   put tRec["address"] & ", " & waAmountBare(10000) & return after field "sd_to"
 end waAddSelfPayment
 
 function waParsePayments
@@ -14458,7 +14657,7 @@ command waToolsClick pRole
 end waToolsClick
 
 command waSignMessage
-   local tAddr, tRec, tSig, tKey, tType
+   local tAddr, tRec, tSig, tKey, tType, tMsg
    set the defaultStack to the short name of this stack
    put cwTrim(field "tl_msgAddr") into tAddr
    if tAddr is "" then
@@ -14480,8 +14679,10 @@ command waSignMessage
    put cwMsgSign(tKey, field "tl_msg", tType, true) into tSig
    put empty into tKey
    put tSig into field "tl_msgSig"
+   -- the message goes into a local first, for the reason waNetDeliver gives
+   put field "tl_msg" into tMsg
    put "SIGNED" & return & return & "address   " & tAddr & return & \
-         "message   " & field "tl_msg" & return & "signature " & tSig & return & \
+         "message   " & tMsg & return & "signature " & tSig & return & \
          return & "Anyone can check this with the address, the message and the " & \
          "signature. Nothing about it can move coins." into field "tl_out"
    uiStatus "Signed as " & tAddr & ".", "ok"
@@ -14887,7 +15088,15 @@ end waInspectAddress
 command waPaintNetwork
    local tKind
    set the defaultStack to the short name of this stack
-   waPaintChoice "nw_b", "Offline,EsploraTor,ElectrumTor,EsploraClear", waBackendChoice()
+   -- EVERY BACKEND IS IN THIS LIST. waPaintChoice only touches the names it
+   -- is given, so a backend missing from it can never be shown as the
+   -- selected one - and worse, switching TO it darkens the previously lit
+   -- button without lighting anything, so the screen reports no backend at
+   -- all while one is running. electrum-clear was added to waBackendChoice
+   -- and to the screen and not to this line.
+   waPaintChoice "nw_b", \
+         "Offline,EsploraTor,ElectrumTor,EsploraClear,ElectrumClear", \
+         waBackendChoice()
    if field "nw_host" is empty then
       put sWaHost into field "nw_host"
    end if
@@ -14902,6 +15111,12 @@ command waPaintNetwork
       put "ok" into tKind
    else if sWaNetState is "failed" then
       put "bad" into tKind
+   else if sWaNetState is "partial" then
+      -- NOT "ok". A sync that lost requests holds a balance that is missing
+      -- whatever those addresses held, which is a wrong number rather than a
+      -- smaller one, and a green pill over it is the wallet asserting
+      -- something it does not know.
+      put "warn" into tKind
    end if
    uiPill "nw_state", sWaNetState, "196,246,340,268", tKind
    put sWaNetWhy into field "nw_why"
@@ -14994,9 +15209,21 @@ command waDropSeed
    -- made for a wallet the status line had just described as unable to sign
    -- carried their real seed phrase, ready to hand to the cosigner whose
    -- xpub it was. The status line is now true about the state.
+   -- AND THE PRIVATE HALF GOES WITH IT, which the sentence above claimed and
+   -- the code did not do. Clearing the mnemonic left sWaAccountXprv and the
+   -- `seckey` inside every one of the derived address records exactly where
+   -- the previous seed wallet put them - and waAccountNode PREFERS the
+   -- private half while waSeckeyFor reads the record's key, so a wallet the
+   -- status line had just called watch-only still held, and would still use,
+   -- full spending keys for somebody else's addresses. The two waOpenWallet
+   -- branches that reach here both call waDeriveAddresses immediately
+   -- afterwards, so dropping the derived list costs nothing and is the only
+   -- way to be rid of the keys inside it.
    set the defaultStack to the short name of this stack
    put empty into sWaMnemonic
    put empty into sWaPassphrase
+   put empty into sWaAccountXprv
+   put waEmptyList() into sWaAddresses
    if there is a field "wl_mnemonic" then
       put empty into field "wl_mnemonic"
    end if
@@ -15055,12 +15282,10 @@ command waSetBackend pBackend
       put kWaElectrumClear into sWaHost
       -- THE PORT IS THE CHAIN SELECTOR here, where Esplora used a path root.
       -- One Electrum connection serves exactly one chain and never says which,
-      -- so getting this wrong is the silent-empty-wallet failure again.
-      if sWaNetwork is "mainnet" then
-         put kWaElectrumClearPort into sWaPort
-      else
-         put kWaElectrumClearTestPort into sWaPort
-      end if
+      -- so getting this wrong is the silent-empty-wallet failure again. The
+      -- table lives in waRetunePort, in ONE place, because the network can
+      -- move without this handler running.
+      waRetunePort
    end if
    set the defaultStack to the short name of this stack
    put sWaHost into field "nw_host"
@@ -15101,6 +15326,122 @@ function waNeedsTor pBackend
    -- by default. The next transport added here needs no edit to be correct.
    return pBackend is "esplora-tor" or pBackend is "electrum-tor"
 end waNeedsTor
+
+private function waCheckedHeight pText, pWhere
+   -- A CHAIN TIP IS A NON-NEGATIVE INTEGER, whichever protocol brought it.
+   -- The Esplora branch refused anything else and the Electrum branch wrote
+   -- `result/height` straight into sWaTipHeight, so the two transports
+   -- disagreed about the same quantity - the shape that already produced the
+   -- unchecked fee rate, one screen over.
+   -- NESTED for the same reason waSetSuggestedRate is: `or` evaluates both
+   -- sides, and `<!DOCTYPE html>` is exactly the value this guard exists to
+   -- catch.
+   if pText is not an integer then
+      throw "the " & pWhere & " backend answered the chain-tip request with " & \
+            "something that is not a height: " & char 1 to 80 of pText
+   end if
+   if pText < 0 then
+      -- SAME PHRASE AS THE BRANCH ABOVE, deliberately: a caller (and the
+      -- gate) matches one string to mean "that was not a chain tip", and two
+      -- wordings for one refusal is how a check ends up asserting a message
+      -- instead of a behaviour.
+      throw "the " & pWhere & " backend answered the chain-tip request with " & \
+            "something that is not a height, being negative: " & \
+            char 1 to 80 of pText
+   end if
+   return cwTrim(pText)
+end waCheckedHeight
+
+private function waCheckedTxid pText, pWhere
+   -- A TXID IS 32 BYTES OF HEX AND NOTHING ELSE. The Esplora branch says, in
+   -- its own comment, that reporting a success the backend did not give is
+   -- "the failure this whole block exists to stop" - and the Electrum branch
+   -- beside it reported a green "Broadcast." for whatever scalar the server
+   -- put in `result`, including an error string. A wallet that says a
+   -- transaction was sent when it was not is worse than one that says
+   -- nothing, because the person stops watching.
+   if the number of chars of pText is not 64 or not cwHexIsClean(pText) then
+      throw "the " & pWhere & " backend did not return a txid, so this " & \
+            "transaction was NOT accepted. It said: " & char 1 to 200 of pText
+   end if
+   return pText
+end waCheckedTxid
+
+private command waCheckList pNode, pWhat
+   -- AN ANSWER THAT IS NOT A LIST IS NOT AN EMPTY LIST. waMergeUtxos and
+   -- waMergeHistory drop every record for the address and then re-fill from
+   -- cwJsonCount(pNode), which answers 0 for a null, a string, a number or a
+   -- boolean - so any well-formed reply whose `result` is not an array reads
+   -- as "this address has never been used" and DELETES what the address
+   -- actually holds. Refuse it instead: a failure is visible and an empty
+   -- address is not.
+   if cwJsonType(pNode) is not "array" then
+      throw "the backend answered the " & pWhat & " request with a " & \
+            cwJsonType(pNode) & " rather than a list, so it has not been " & \
+            "believed. Nothing about this address has been changed."
+   end if
+end waCheckList
+
+private command waSetSuggestedRate pTarget, pRate
+   -- One place where a backend-supplied fee rate becomes wallet state, so
+   -- there is one rule instead of two. A rate that is not a positive number
+   -- at or below kWaMaxSuggestedRate is not written and is said out loud,
+   -- because a backend answering nonsense about fees is worth knowing.
+   -- NESTED, NOT `or`-ed. LiveCodeScript evaluates BOTH operands of `or`, so
+   -- `pRate is not a number or pRate <= 0` still performs the comparison on a
+   -- value that is not a number - which the family's interpreter refuses
+   -- outright and the engine answers by comparing as TEXT, neither of them
+   -- what this guard means. Ask the type question first and only then the
+   -- range one. (waBuildSpend carries the older spelling on a value that is
+   -- always a field's contents; this one is handed whatever a backend sent.)
+   if pRate is not a number then
+      waLog "ignored a fee rate of " & pRate & " sat/vB for " & pTarget & \
+            " block(s): that is not a number"
+      exit waSetSuggestedRate
+   end if
+   if pRate <= 0 or pRate > kWaMaxSuggestedRate then
+      waLog "ignored a fee rate of " & pRate & " sat/vB for " & pTarget & \
+            " block(s): not a believable estimate"
+      exit waSetSuggestedRate
+   end if
+   put pRate into sWaFeeRates[pTarget]
+end waSetSuggestedRate
+
+private command waRetunePort
+   -- THE PORT THAT SELECTS THE CHAIN, recomputed from the network in the one
+   -- place that knows the table.
+   --
+   -- waSetBackend used to hold this inline, and it was the only writer that
+   -- knew the network - so changing the NETWORK left it behind. Pick clearnet
+   -- Electrum on mainnet, switch the wallet to testnet, and waBackendChainWhy
+   -- says fine (the built-in host does carry testnet) while the socket still
+   -- dials 50001. A mainnet Electrum server answers a testnet script hash with
+   -- an EMPTY LIST - a well-formed "this address has never been used" - so the
+   -- wallet reports itself synced, green and empty over funded addresses, with
+   -- nothing anywhere to contradict it. That is the failure this member has
+   -- already learned once from a real machine, by way of the Esplora API root,
+   -- and it came back through the port.
+   --
+   -- A HOST SOMEBODY TYPED IS LEFT ALONE. The table is the built-in server's,
+   -- and this wallet has no table for anybody else's: retuning a custom host's
+   -- port would be inventing one. waBackendChainWhy already says it cannot
+   -- speak for a host it does not know.
+   if sWaBackend is not "electrum-clear" then
+      exit waRetunePort
+   end if
+   if sWaHost is not kWaElectrumClear then
+      exit waRetunePort
+   end if
+   if sWaNetwork is "mainnet" then
+      put kWaElectrumClearPort into sWaPort
+   else
+      put kWaElectrumClearTestPort into sWaPort
+   end if
+   set the defaultStack to the short name of this stack
+   if there is a field "nw_port" then
+      put sWaPort into field "nw_port"
+   end if
+end waRetunePort
 
 command waRefreshNetState
    -- The two reasons a transport cannot run that are knowable WITHOUT talking
@@ -15146,6 +15487,9 @@ command waSync
    if tWhy is not empty then
       throw tWhy
    end if
+   -- A FRESH SYNC IS ALLOWED TO BE GREEN AGAIN. The count is per sync, so a
+   -- failure from the last one does not follow this one around.
+   put 0 into sWaSyncFailures
    waNetQueue "tip", ""
    waNetQueue "fees", ""
    -- UTXOS AND HISTORY, both, per address. Unspent outputs alone answer
@@ -15173,6 +15517,20 @@ command waNetQueue pKind, pArg
    put pArg into tRec["arg"]
    put cwListAdd(sWaQueue, tRec) into sWaQueue
 end waNetQueue
+
+private function waQueueFirst pRec
+   -- The queue with pRec at the FRONT. A retry belongs where the request was,
+   -- not behind every address after it, because the answers are folded in as
+   -- they arrive and a sync that reorders itself is harder to read in the log.
+   local tOut, tI, tCount
+   put waEmptyList() into tOut
+   put cwListAdd(tOut, pRec) into tOut
+   put cwListCount(sWaQueue) into tCount
+   repeat with tI = 1 to tCount
+      put cwListAdd(tOut, sWaQueue[tI]) into tOut
+   end repeat
+   return tOut
+end waQueueFirst
 
 command waNetAbort
    local tError
@@ -15240,10 +15598,30 @@ command waNetFail pWhy
       end try
       put empty into sWaStream
    end if
+   -- AND THE CLEARNET SOCKET, for the same reason and with sharper teeth.
+   -- This handler closed the Tor stream and left sWaSock alone, and on that
+   -- transport the connection is PERSISTENT and reused for every request of a
+   -- sync. So a deadline left the socket open with the server still owing an
+   -- answer, waTick kept pumping the rest of the queue down it, and the next
+   -- request's armed read collected the PREVIOUS request's reply. waMergeUtxos
+   -- REPLACES every coin at the address it was asked about, so one address's
+   -- coins were written under another's - which is exactly the misattribution
+   -- the `load URL` branch carries pRec["url"] to prevent, arriving on the new
+   -- transport by a different door. A failure tears the connection down; the
+   -- next request dials again, which is one connection, not a desynchronised
+   -- one.
+   waSockClose
    put empty into sWaInFlight
    put empty into sWaBuffer
    put "failed" into sWaNetState
-   put pWhy into sWaNetWhy
+   add 1 to sWaSyncFailures
+   if sWaSyncFailures > 1 then
+      put pWhy & " (" & sWaSyncFailures & " request(s) of this sync have " & \
+            "failed, so anything below is incomplete)" into sWaNetWhy
+   else
+      put pWhy & " (this sync is incomplete: a balance missing one " & \
+            "address's coins is a wrong number, not a smaller one)" into sWaNetWhy
+   end if
    waLog "FAILED: " & pWhy
    uiStatus "Network: " & pWhy, "bad"
    waPaintNav
@@ -15302,6 +15680,18 @@ command waNetStart pRec
       -- count requests, so a full scan would have hammered a public server
       -- with eighty-odd connections in a few seconds. The tip answered and
       -- nothing after it did, which reads as an empty wallet.
+      -- AND IT MUST BE THE SOCKET THE SETTINGS NOW NAME. Reuse was tested by
+      -- "is one open?" alone, so a host or a port edited on the Network
+      -- screen reached sWaHost and sWaPort and the fields and NOT the
+      -- connection: every script hash of the sync still went to the server
+      -- the person had just acted to leave, and if what they changed was the
+      -- chain-selecting port, the old server answered every request for the
+      -- other chain with a well-formed empty list. The socket id IS its
+      -- "host:port" in this engine, so the comparison is exact and free.
+      if sWaSock is not empty and sWaSock is not tSock then
+         waLog "backend moved to " & tSock & " - closing " & sWaSock
+         waSockClose
+      end if
       if sWaSock is not empty then
          put "busy" into sWaNetState
          waSockSend
@@ -15499,6 +15889,20 @@ on waUrlDone pUrl, pStatus
    catch tError
       put empty into tBody
    end try
+   -- AND THE CAP HERE TOO. `load URL` has already read the whole body by the
+   -- time this runs, so this cannot stop the read the way the socket cap can;
+   -- what it stops is everything downstream - the parse, the merge and the
+   -- 6000-character tail written into the Network screen - from working on a
+   -- reply no backend of this kind sends.
+   if the number of bytes of tBody > kWaMaxBody then
+      try
+         unload URL pUrl
+      catch tError
+      end try
+      waNetFail "the backend sent more than " & kWaMaxBody & \
+            " bytes for one answer, which is not a shape this wallet asked for."
+      exit waUrlDone
+   end if
    try
       unload URL pUrl
    catch tError
@@ -15531,7 +15935,7 @@ private command waSockSend
    -- Write the in-flight request and arm the read. Shared by the first
    -- request on a new connection and every one that reuses it, so the two
    -- cannot drift.
-   local tLine
+   local tLine, tRec
    if sWaSock is empty or sWaInFlight is empty then
       exit waSockSend
    end if
@@ -15540,11 +15944,30 @@ private command waSockSend
    write tLine & numToChar(10) to socket sWaSock
    if the result is not empty then
       -- A WRITE THAT FAILS ON A REUSED CONNECTION is the ordinary way a
-      -- server drops an idle client, so the socket is forgotten and the next
-      -- tick dials again rather than the sync dying here.
+      -- server drops an idle client, so the connection is torn down and the
+      -- next tick dials again rather than the sync dying here.
+      --
+      -- TWO THINGS THIS USED TO GET WRONG, and both were silent. It forgot
+      -- sWaSock without CLOSING it, so the engine kept the connection and
+      -- the next dial asked for a socket whose id - "host:port" in this
+      -- engine - was the one still open. And it dropped sWaInFlight on the
+      -- floor: the request was never sent and never requeued, so that
+      -- address was simply never asked about and its coins never appeared,
+      -- which on a balance is a wrong number rather than an error.
+      --
+      -- Requeued ONCE. A server that refuses the write twice is a failure
+      -- worth reporting, not a loop worth running.
       waLog "write failed on " & sWaSock & ": " & the result & " - reconnecting"
-      put empty into sWaSock
+      put sWaInFlight into tRec
+      waSockClose
       put empty into sWaInFlight
+      if tRec["rewritten"] is "true" then
+         waNetFail "the backend refused the same request twice on a fresh " & \
+               "connection: " & tRec["kind"] & " " & tRec["arg"]
+         exit waSockSend
+      end if
+      put "true" into tRec["rewritten"]
+      put waQueueFirst(tRec) into sWaQueue
       put "idle" into sWaNetState
       exit waSockSend
    end if
@@ -15564,6 +15987,16 @@ on waSockLine pSocket, pData
       if pData is empty then
          waNetFail "the Electrum server closed " & pSocket & \
                " before answering."
+         exit waSockLine
+      end if
+      -- THE SAME CAP THE TOR STREAM HAS. kWaMaxBody was enforced in exactly
+      -- one place, the OnionXT data event, so a backend that never stops
+      -- sending was refused on one transport of three and could exhaust the
+      -- engine's memory on the other two.
+      if the number of bytes of pData > kWaMaxBody then
+         waNetFail "the backend sent more than " & kWaMaxBody & \
+               " bytes for one answer, which is not a shape this wallet " & \
+               "asked for."
          exit waSockLine
       end if
       -- The connection is NOT closed here: the next request reuses it.
@@ -15806,22 +16239,50 @@ command waNetDeliver pBody
    end if
    put the number of chars of pBody into tSeen
    waLog "<- " & tKind & " " & tRec["arg"] & " (" & tSeen & " chars)"
-   put "ok" into sWaNetState
-   put "" into sWaNetWhy
+   -- ONE ANSWER DOES NOT MAKE A SYNC. This cleared the failure state on every
+   -- reply, so a scan in which one address's request timed out or was refused
+   -- went green on the next address that answered - and the wallet then
+   -- reported a balance that was simply missing whatever that address holds.
+   -- A number that is quietly incomplete is the failure mode this member
+   -- keeps re-learning: "you have nothing" and "you have less than you have"
+   -- are both wrong answers that look like working software.
+   -- AND THE PILL IS THE STATE, NOT JUST THE SENTENCE. Preserving sWaNetWhy
+   -- while still writing "ok" left the indicator that is visible on EVERY
+   -- screen green over a sync that lost requests, with the explanation only
+   -- on the Network screen. "partial" is its own value so the pill, the rail
+   -- and the Network screen all say the same thing.
+   if sWaSyncFailures is 0 then
+      put "ok" into sWaNetState
+      put "" into sWaNetWhy
+   else
+      put "partial" into sWaNetState
+   end if
    try
-      waNetApply tKind, tRec["arg"], pBody
+      -- THE REQUEST ID GOES WITH IT. On Electrum it is the only correlation
+      -- there is; see waNetApply.
+      waNetApply tKind, tRec["arg"], pBody, tRec["id"]
    catch tError
       waNetFail "could not read the answer to " & tKind & ": " & tError
       exit waNetDeliver
    end try
    if there is a field "nw_out" then
-      put char -6000 to -1 of (field "nw_out" & tKind && tRec["arg"] & return & \
+      -- THE FIELD'S CONTENTS GO INTO A LOCAL FIRST. `field "nw_out" & tKind`
+      -- binds the concatenation into the CHUNK TARGET, so what is being asked
+      -- for is a field whose NAME is the whole log line - which is not a
+      -- field, and is not what this line means. waStreamOpened carries the
+      -- same note beside a Content-Length and settles it the same way; this
+      -- site and the two below were written before that note existed. All
+      -- three are places where the wrong answer is silent: a log that never
+      -- grows, a signed-message panel missing the message it signed, and a
+      -- clipboard copy of a field name.
+      put field "nw_out" into tOut
+      put char -6000 to -1 of (tOut & tKind && tRec["arg"] & return & \
             pBody & return & return) into field "nw_out"
    end if
    waRefreshAll
 end waNetDeliver
 
-private command waNetApply pKind, pArg, pBody
+private command waNetApply pKind, pArg, pBody, pId
    -- pBody arrives as BYTES from every transport. Decoding it here, once, is
    -- what lets everything below treat it as text - and UTF-8 is what both
    -- protocols say their JSON is. textDecode on this engine is LOSSY rather
@@ -15829,6 +16290,7 @@ private command waNetApply pKind, pArg, pBody
    -- otherwise), so nothing here treats a clean decode as proof of anything;
    -- the JSON parser refuses malformed input on its own.
    local tNode, tI, tCount, tItem, tRec, tList, tKey, tText, tResult, tError
+   local tIdNode, tGotId
    put pBody into tText
    try
       put textDecode(pBody, "UTF-8") into tText
@@ -15838,13 +16300,45 @@ private command waNetApply pKind, pArg, pBody
    put cwTrim(tText) into tText
    if waIsElectrum(sWaBackend) then
       put cwJsonParse(tText) into tNode
+      -- THE ID IS THE CORRELATION, AND ON A REUSED CONNECTION IT IS THE ONLY
+      -- ONE. Every request this wallet sends carries an id, and until this
+      -- check no reply was ever asked for one - so the field existed to
+      -- correlate answers and correlated nothing.
+      --
+      -- It matters most on electrum-clear, where ONE socket serves the whole
+      -- sync. Two well-formed things arrive on it that are not the answer to
+      -- the request in flight. A late answer to a request that already timed
+      -- out: read as the current one, so one address's coins are written
+      -- under another's - and waMergeUtxos REPLACES, so the second address's
+      -- real coins go with it. And a NOTIFICATION: the "tip" request is
+      -- blockchain.headers.subscribe, which SUBSCRIBES, so a real server
+      -- pushes a header object down the same socket at every block. A
+      -- notification carries a method and no id and no result, so it parses
+      -- cleanly, yields an empty result, and empties an address that is not
+      -- empty.
+      --
+      -- Refuse both, by name. Esplora gets this from the URL it issued and
+      -- the Tor stream from its handle; here it is this field or nothing.
+      put cwJsonPath(tNode, "id") into tIdNode
+      put cwJsonText(tIdNode) into tGotId
+      if cwJsonType(tIdNode) is "missing" or cwJsonType(tIdNode) is "null" then
+         throw "the server sent a message with no id while request " & pId & \
+               " was in flight. That is a notification, not an answer, and " & \
+               "this wallet does not act on one."
+      end if
+      if tGotId is not pId then
+         throw "the server answered request " & tGotId & " while request " & \
+               pId & " was in flight, so that reply answers a different " & \
+               "question and has been discarded."
+      end if
       put cwJsonPath(tNode, "error") into tResult
       if cwJsonType(tResult) is not "missing" and cwJsonType(tResult) is not "null" then
          throw "the Electrum server refused: " & cwJsonGet(tResult, "message")
       end if
       put cwJsonPath(tNode, "result") into tNode
       if pKind is "tip" then
-         put cwJsonGet(tNode, "height") into sWaTipHeight
+         put waCheckedHeight(cwJsonGet(tNode, "height"), "Electrum") \
+               into sWaTipHeight
          exit waNetApply
       end if
       if pKind is "fees" then
@@ -15858,21 +16352,25 @@ private command waNetApply pKind, pArg, pBody
          -- sync stopped on it.
          put cwExpandExponent(cwJsonText(tNode)) into tText
          if tText is not "" and tText is a number and tText > 0 then
-            put cwCeilDiv(cwBtcToSat(tText), 1000) into sWaFeeRates["6"]
-            put sWaFeeRates["6"] into sWaFeeRates["1"]
+            -- through the same gate as Esplora's, so the two transports
+            -- cannot disagree about what a believable rate is
+            waSetSuggestedRate "6", cwCeilDiv(cwBtcToSat(tText), 1000)
+            waSetSuggestedRate "1", sWaFeeRates["6"]
          end if
          exit waNetApply
       end if
       if pKind is "utxos" then
+         waCheckList tNode, "unspent-output"
          waMergeUtxos pArg, tNode, "electrum"
          exit waNetApply
       end if
       if pKind is "history" then
+         waCheckList tNode, "history"
          waMergeHistory pArg, tNode, "electrum"
          exit waNetApply
       end if
       if pKind is "broadcast" then
-         put cwJsonText(tNode) into tText
+         put waCheckedTxid(cwTrim(cwJsonText(tNode)), "Electrum") into tText
          uiStatus "Broadcast. The server returned txid " & tText & ".", "ok"
          exit waNetApply
       end if
@@ -15886,26 +16384,31 @@ private command waNetApply pKind, pArg, pBody
    -- malformed input; the two that take bare text are not, and a chain tip
    -- of "<!DOCTYPE html>" would sit on the rail looking like a height.
    if pKind is "tip" then
-      if tText is not an integer or tText < 0 then
-         throw "the backend answered the chain-tip request with something " & \
-               "that is not a height: " & char 1 to 80 of tText
-      end if
-      put cwTrim(tText) into sWaTipHeight
+      put waCheckedHeight(tText, "Esplora") into sWaTipHeight
       exit waNetApply
    end if
    if pKind is "fees" then
+      -- CHECKED BEFORE IT IS BELIEVED. These two numbers become the default
+      -- fee rate on the Send screen, so an unchecked one is a backend setting
+      -- what this wallet proposes to spend. The Electrum branch above already
+      -- tested `is a number` and `> 0`; this one wrote whatever came back,
+      -- including a JSON string, a negative, or nothing at all. Keeping the
+      -- previous value on a bad answer is the fail-closed direction: a stale
+      -- estimate is wrong by a little, an unchecked one by any amount.
       put cwJsonParse(tText) into tNode
-      put cwJsonGet(tNode, "1") into sWaFeeRates["1"]
-      put cwJsonGet(tNode, "6") into sWaFeeRates["6"]
+      waSetSuggestedRate "1", cwJsonGet(tNode, "1")
+      waSetSuggestedRate "6", cwJsonGet(tNode, "6")
       exit waNetApply
    end if
    if pKind is "utxos" then
       put cwJsonParse(tText) into tNode
+      waCheckList tNode, "unspent-output"
       waMergeUtxos pArg, tNode, "esplora"
       exit waNetApply
    end if
    if pKind is "history" then
       put cwJsonParse(tText) into tNode
+      waCheckList tNode, "history"
       waMergeHistory pArg, tNode, "esplora"
       exit waNetApply
    end if
@@ -15920,10 +16423,7 @@ private command waNetApply pKind, pArg, pBody
    if pKind is "broadcast" then
       -- A txid is 32 bytes of hex and nothing else. Reporting a success the
       -- backend did not give is the failure this whole block exists to stop.
-      if the number of chars of tText is not 64 or not cwHexIsClean(tText) then
-         throw "the backend did not return a txid, so this transaction was " & \
-               "NOT accepted. It said: " & char 1 to 200 of tText
-      end if
+      get waCheckedTxid(tText, "Esplora")
       uiStatus "Broadcast. The backend returned txid " & tText & ".", "ok"
       exit waNetApply
    end if
@@ -16111,9 +16611,13 @@ command waPaintLog
 end waPaintLog
 
 command waLogClick pRole
+   local tBoot
    if pRole is "copy" then
       set the defaultStack to the short name of this stack
-      set the clipboardData["text"] to field "lg_boot" & return & sWaLog
+      -- and here too: `field "lg_boot" & return & sWaLog` asks for a field
+      -- whose name is the boot report followed by the whole log
+      put field "lg_boot" into tBoot
+      set the clipboardData["text"] to tBoot & return & sWaLog
       uiCopyFlash "lg_copy"
    else if pRole is "clear" then
       put empty into sWaLog
@@ -16305,7 +16809,14 @@ command waSaveWallet
       put kWaFileMagic & "|plain|" & sWaNetwork & "|" & sWaScriptType & return & \
             tPlain into tSealed
       put tSealed into URL ("binfile:" & tPath)
+      put the result into tError
       put empty into tPlain
+      if tError is not empty then
+         put empty into tSealed
+         waForgetPassword
+         throw "the wallet file could not be written to " & tPath & ": " & \
+               tError & ". NOTHING has been saved."
+      end if
       -- tSealed carries the whole plaintext on this branch, mnemonic and all
       put empty into tSealed
       waForgetPassword
@@ -16323,7 +16834,21 @@ command waSaveWallet
    put empty into tKey
    put empty into tPlain
    put tSealed into URL ("binfile:" & tPath)
+   -- A WRITE THAT FAILED IS NOT A BACKUP, and this is the one place in the
+   -- wallet where being wrong about that costs everything: neither write
+   -- checked `the result`, so a full disk, a path inside a directory that
+   -- does not exist, or a read-only volume was reported as "Saved, sealed" -
+   -- and the whole point of the sentence is that somebody then stops
+   -- worrying about their seed. It is a THROW rather than a status line
+   -- because the caller turns a throw into a red message the person has to
+   -- read, and a warning beside the word "Saved" is not that.
+   put the result into tError
    put empty into tPassword
+   if tError is not empty then
+      waForgetPassword
+      throw "the wallet file could not be written to " & tPath & ": " & \
+            tError & ". NOTHING has been saved."
+   end if
    waForgetPassword
    uiStatus "Saved, sealed, to " & tPath & ".", "ok"
 end waSaveWallet
@@ -16428,6 +16953,10 @@ function waSerializeWallet
    -- there can be many of them.
    local tOut, tTab, tI, tCount, tKey, tKeys
    put numToChar(9) into tTab
+   if waSafeText(sWaLabel) is not sWaLabel then
+      throw "this wallet's name carries a tab or a newline, which is this " & \
+            "file format's record separator. Nothing has been saved."
+   end if
    put "label" & tTab & sWaLabel & return into tOut
    put "network" & tTab & sWaNetwork & return after tOut
    put "scripttype" & tTab & sWaScriptType & return after tOut
@@ -16458,6 +16987,18 @@ function waSerializeWallet
    repeat with tI = 1 to tCount
       put line tI of tKeys into tKey
       if tKey is not "" then
+         -- BELT TO waSafeText'S BRACES. Stripping at every door is the fix;
+         -- refusing here is what makes a door somebody adds later loud
+         -- instead of silent, because this is the one place where a stray
+         -- separator stops being a display bug and becomes a forged record.
+         if waSafeText(tKey) is not tKey \
+               or waSafeText(sWaLabels[tKey]) is not sWaLabels[tKey] then
+            throw "a label or address in this wallet carries a tab or a " & \
+                  "newline, which is this file format's own record " & \
+                  "separator, so saving it would write records nobody " & \
+                  "chose. Nothing has been saved. Clear the label on " & \
+                  tKey & " and save again."
+         end if
          put "label:" & tKey & tTab & sWaLabels[tKey] & return after tOut
       end if
    end repeat
