@@ -1213,6 +1213,27 @@ def drive(c, ip, world, sandbox):
     except LCS.Thrown as exc:
         c.ck("a JSON-RPC error reply is refused",
              "refused" in str(exc.msg), str(exc.msg)[:80])
+    # THE SCRIPT HASH, against an independent computation. Electrum asks by
+    # SHA-256 of the scriptPubKey BYTE-REVERSED, and getting the reversal
+    # wrong makes every address look unused - an empty wallet, not an error,
+    # and indistinguishable from the socket bug that sat on top of it.
+    import hashlib as _hl
+    spk = str(ip.call("cwScriptForAddress", ["testnet", addr0]))
+    c.eq("the Electrum script hash is sha256(spk) reversed",
+         str(ip.call("cwElectrumScripthash", [spk])).lower(),
+         _hl.sha256(bytes.fromhex(spk)).digest()[::-1].hex())
+    # ...and the reversal is really happening, or the check above would pass
+    # for an implementation that simply returned the digest.
+    c.ck("and the reversal is not a no-op",
+         str(ip.call("cwElectrumScripthash", [spk])).lower()
+         != _hl.sha256(bytes.fromhex(spk)).hexdigest())
+    req = str(ip.call("waElectrumRequest",
+                      [{"kind": "utxos", "arg": addr0, "id": 7}]))
+    c.ck("and listunspent asks for that hash",
+         "blockchain.scripthash.listunspent" in req
+         and str(ip.call("cwElectrumScripthash", [spk])).lower() in req.lower(),
+         req[:120])
+
     # And the protocol predicate itself, over every backend.
     for backend, want in (("electrum-tor", True), ("electrum-clear", True),
                           ("esplora-tor", False), ("esplora-clear", False),
