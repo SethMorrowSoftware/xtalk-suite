@@ -1136,6 +1136,340 @@ def drive(c, ip, world, sandbox):
     for k, v in saved4.items():
         ip.globals[k] = v
 
+    # ---- the audit of 2026-09-01: five defects, each pinned here ---------
+    #
+    # Every check below drives the handler A PERSON REACHES, not the state
+    # that handler is supposed to set. That distinction is the whole reason
+    # the first of them got through: the block above proves the port is right
+    # after waSetBackend by writing swanetwork itself and calling
+    # waSetBackend - so it could never see a network change that does not go
+    # through waSetBackend, which is the one a person makes.
+
+    saved_audit = {k: ip.globals.get(k) for k in
+              ("swabackend", "swahost", "swaport", "swanetwork", "swamnemonic",
+               "swainflight", "swasock", "swaqueue", "swanetstate",
+               "swafeerates", "swaunit")}
+
+    # (1) THE PORT IS THE CHAIN, AND THE NETWORK CAN MOVE WITHOUT THE BACKEND.
+    # The mnemonic is emptied first only so waSetNetwork does not re-derive
+    # forty addresses per call; the handler under test is unchanged by that
+    # (it guards the derivation on `sWaMnemonic is not empty`), and what is
+    # being checked is the port, not the derivation.
+    ip.globals["swamnemonic"] = ""
+    mainport = int(LCS._n(ip.constants.get("kWaElectrumClearPort", 0)))
+    testport = int(LCS._n(ip.constants.get("kWaElectrumClearTestPort", 0)))
+    ip.call("waSetNetwork", ["mainnet"])
+    ip.call("waSetBackend", ["electrum-clear"])
+    c.eq("clearnet Electrum on mainnet dials the mainnet port",
+         int(LCS._n(ip.globals.get("swaport"))), mainport)
+    ip.call("waSetNetwork", ["testnet"])
+    c.eq("and switching the NETWORK retunes it, without touching the backend",
+         int(LCS._n(ip.globals.get("swaport"))), testport)
+    c.eq("the chain guard still allows that combination",
+         str(ip.call("waBackendChainWhy", [])), "")
+    ip.call("waSetNetwork", ["mainnet"])
+    c.eq("and back again, so the guard is not one-directional",
+         int(LCS._n(ip.globals.get("swaport"))), mainport)
+    # A HOST SOMEBODY TYPED IS LEFT ALONE: this wallet has no port table for
+    # a server it does not ship, and inventing one would be worse than
+    # leaving it. An over-reaching fix is the same defect with the sign
+    # flipped, which this member has recorded once already.
+    ip.globals["swahost"] = "electrum.example.invalid"
+    ip.globals["swaport"] = 12345
+    ip.call("waSetNetwork", ["testnet"])
+    c.eq("a custom Electrum host keeps the port it was given",
+         int(LCS._n(ip.globals.get("swaport"))), 12345)
+    # and the other backends are indifferent to it
+    ip.call("waSetBackend", ["esplora-clear"])
+    before = int(LCS._n(ip.globals.get("swaport")))
+    ip.call("waSetNetwork", ["mainnet"])
+    c.eq("Esplora's port is not the chain selector and does not move",
+         int(LCS._n(ip.globals.get("swaport"))), before)
+
+    # (2) A NETWORK CHANGE STOPS WHAT IS IN FLIGHT. The reply to a request
+    # about the OTHER chain's address arrives after the addresses have been
+    # re-derived, and waRecomputeBalance sums every row of sWaUtxos whatever
+    # its address - so the other chain's coins land in this chain's balance.
+    ip.call("waSetBackend", ["electrum-clear"])
+    ip.globals["swainflight"] = {"kind": "utxos", "arg": "tb1qoldchain", "id": "3"}
+    ip.globals["swasock"] = "electrum.blockstream.info:50001"
+    ip.call("waSetNetwork", ["testnet"])
+    c.ck("a network change abandons the request in flight",
+         not str(ip.globals.get("swainflight")).strip(),
+         repr(ip.globals.get("swainflight")))
+    c.ck("and closes the socket it was riding on",
+         not str(ip.globals.get("swasock")).strip(),
+         repr(ip.globals.get("swasock")))
+
+    # (3) A FAILURE CLOSES THE CLEARNET SOCKET, as it has always closed the
+    # Tor stream. Without this the connection survives a deadline with the
+    # server still owing an answer, and the next request's armed read
+    # collects the previous request's reply - so waMergeUtxos, which
+    # REPLACES, writes one address's coins under another's.
+    ip.call("waSetBackend", ["electrum-clear"])
+    ip.globals["swasock"] = "electrum.blockstream.info:50001"
+    ip.globals["swainflight"] = {"kind": "utxos", "arg": "addrA", "id": "9"}
+    ip.call("waNetFail", ["a deadline, in the gate"])
+    c.ck("waNetFail forgets the clearnet socket",
+         not str(ip.globals.get("swasock")).strip(),
+         repr(ip.globals.get("swasock")))
+    c.ck("and still forgets what was in flight",
+         not str(ip.globals.get("swainflight")).strip(),
+         repr(ip.globals.get("swainflight")))
+    ip.globals["swasock"] = "electrum.blockstream.info:50001"
+    ip.call("waNetAbort", [])
+    c.ck("waNetAbort forgets it too, as it always did",
+         not str(ip.globals.get("swasock")).strip(),
+         repr(ip.globals.get("swasock")))
+
+    # (4) A REPLY MUST ANSWER THE QUESTION THAT WAS ASKED. The id was written
+    # on every request and read on no reply, on a transport where ONE socket
+    # serves the whole sync. Both directions are checked: a wrong id and a
+    # missing one are refused, and the RIGHT one is still accepted - an
+    # over-refusing correlation check would break every working server.
+    ip.call("waSetBackend", ["electrum-clear"])
+    ip.globals["swatipheight"] = ""
+    good = '{"jsonrpc":"2.0","id":11,"result":{"height":812345,"hex":"00"}}'
+    ip.call("waNetApply", ["tip", "", good, "11"])
+    c.eq("a reply whose id matches is applied",
+         str(ip.globals.get("swatipheight")), "812345")
+    ip.globals["swatipheight"] = "812345"
+    stale = '{"jsonrpc":"2.0","id":10,"result":{"height":999999,"hex":"00"}}'
+    try:
+        ip.call("waNetApply", ["tip", "", stale, "11"])
+        c.ck("a reply whose id does NOT match is refused", False,
+             "it was applied")
+    except LCS.Thrown as exc:
+        c.ck("a reply whose id does NOT match is refused",
+             "different question" in str(exc.msg), str(exc.msg)[:110])
+    c.eq("and it changed nothing", str(ip.globals.get("swatipheight")), "812345")
+    # blockchain.headers.subscribe SUBSCRIBES, so a real server pushes this
+    # down the same socket at every block. It has no id and no result.
+    notif = ('{"jsonrpc":"2.0","method":"blockchain.headers.subscribe",'
+             '"params":[{"height":999999,"hex":"00"}]}')
+    try:
+        ip.call("waNetApply", ["utxos", "addrB", notif, "12"])
+        c.ck("a subscription notification is refused, not believed", False,
+             "it was applied")
+    except LCS.Thrown as exc:
+        c.ck("a subscription notification is refused, not believed",
+             "notification" in str(exc.msg), str(exc.msg)[:110])
+
+    # (5) AN AMOUNT WRITTEN INTO THE SEND BOX IS IN THE UNIT THAT BOX IS READ
+    # IN. waReadUri wrote BTC unconditionally, so a BIP-21 request for 1.5
+    # BTC read back as 1.5 mBTC when the display unit was mBTC: a
+    # thousandfold underpayment, silent because both numbers read "1.5".
+    for unit, sat in (("BTC", 150000000), ("mBTC", 150000000),
+                      ("sat", 150000000), ("mBTC", 10000), ("BTC", 10000)):
+        ip.globals["swaunit"] = unit
+        bare = ip.call("waAmountBare", [sat])
+        back = int(LCS._n(ip.call("cwParseAmount", [str(bare), unit])))
+        c.eq("%d sat written as %r in %s reads back unchanged"
+             % (sat, str(bare), unit), back, sat)
+
+    # (6) A FEE RATE THAT ARRIVED OVER A SOCKET IS CHECKED BEFORE IT BECOMES
+    # THE DEFAULT THE SEND SCREEN PROPOSES. Both directions again: nonsense
+    # is dropped and the previous value kept, and a believable rate is taken.
+    cap = int(LCS._n(ip.constants.get("kWaMaxSuggestedRate", 0)))
+    c.ck("there is a ceiling on a suggested fee rate", cap > 0, repr(cap))
+    ip.globals["swafeerates"] = {"1": "7", "6": "3"}
+    for bad in ("-1", "0", "not-a-number", "", str(cap + 1), "900000"):
+        ip.call("waSetSuggestedRate", ["6", bad])
+        c.eq("a suggested rate of %r is refused" % bad,
+             str((ip.globals.get("swafeerates") or {}).get("6")), "3")
+    ip.call("waSetSuggestedRate", ["6", "42"])
+    c.eq("and a believable one is taken",
+         str((ip.globals.get("swafeerates") or {}).get("6")), "42")
+    ip.call("waSetSuggestedRate", ["6", str(cap)])
+    c.eq("the ceiling itself is allowed, not off by one",
+         str((ip.globals.get("swafeerates") or {}).get("6")), str(cap))
+
+    # (7) A WRITE THAT FAILS MUST NOT SWALLOW THE REQUEST. The old path forgot
+    # the socket without closing it and dropped sWaInFlight on the floor, so
+    # that address was never asked about again and its coins never appeared -
+    # a balance that is quietly short, which is a wrong number and not a
+    # smaller one. The write itself cannot be driven here (this model has no
+    # socket layer), so what is pinned is the shape the fix rests on: the
+    # retry puts the record back at the FRONT and keeps everything behind it.
+    ip.globals["swaqueue"] = ip.call("waEmptyList", [])
+    ip.call("waNetQueue", ["utxos", "addrOne"])
+    ip.call("waNetQueue", ["utxos", "addrTwo"])
+    q = ip.call("waQueueFirst", [{"kind": "utxos", "arg": "addrZero",
+                                  "id": "0", "rewritten": "true"}])
+    c.eq("a requeued request goes to the FRONT",
+         str((q.get("1") or {}).get("arg")), "addrZero")
+    c.eq("and nothing behind it is lost",
+         int(LCS._n(ip.call("cwListCount", [q]))),
+         int(LCS._n(ip.call("cwListCount", [ip.globals.get("swaqueue")]))) + 1)
+    c.eq("in the order they were queued",
+         str((q.get("2") or {}).get("arg")), "addrOne")
+
+    # (8) EVERY BACKEND IS IN THE PAINT LIST. waPaintChoice only touches the
+    # names it is handed, so a backend missing from that literal can never
+    # show as selected - and switching TO it darkens the previously lit
+    # button without lighting anything, so the screen reports NO backend
+    # while one is running. Driven through the real painter and read off the
+    # real controls, because the defect was a name absent from a literal and
+    # nothing looked at the buttons.
+    saved_paint = {k: ip.globals.get(k) for k in ("swabackend", "swanetwork")}
+    ip.globals["swanetwork"] = "mainnet"
+    buttons = ("nw_bOffline", "nw_bEsploraTor", "nw_bElectrumTor",
+               "nw_bEsploraClear", "nw_bElectrumClear")
+    for backend, button in (("offline", "nw_bOffline"),
+                            ("esplora-tor", "nw_bEsploraTor"),
+                            ("electrum-tor", "nw_bElectrumTor"),
+                            ("esplora-clear", "nw_bEsploraClear"),
+                            ("electrum-clear", "nw_bElectrumClear")):
+        ip.call("waSetBackend", [backend])
+        ip.call("waPaintNetwork", [])
+        lit = [n for n in buttons
+               if str(_ctl_prop_get(world.anywhere(n), "hilite")).lower()
+               in ("true", "1")]
+        c.eq("selecting %s lights exactly its own button" % backend,
+             lit, [button])
+    for k, v in saved_paint.items():
+        ip.globals[k] = v
+
+    # (9) A SYNC WITH A FAILED REQUEST IS NOT GREEN. waNetDeliver cleared the
+    # failure state on every reply, so a scan in which one address timed out
+    # went green on the next address that answered, and the wallet reported a
+    # balance simply missing whatever that address holds.
+    ip.globals["swanetwork"] = "mainnet"
+    ip.call("waSetBackend", ["electrum-clear"])
+    ip.globals["swasyncfailures"] = 0
+    ip.call("waNetFail", ["a refused request, in the gate"])
+    c.ck("a failed request is counted",
+         int(LCS._n(ip.globals.get("swasyncfailures"))) >= 1,
+         repr(ip.globals.get("swasyncfailures")))
+    c.ck("and the reason says the sync is incomplete",
+         "incomplete" in str(ip.globals.get("swanetwhy")),
+         str(ip.globals.get("swanetwhy"))[:140])
+    ip.globals["swainflight"] = {"kind": "tip", "arg": "", "id": "5"}
+    ip.globals["swasock"] = ""
+    ip.globals["swatipheight"] = ""
+    ip.call("waNetDeliver",
+            ['{"jsonrpc":"2.0","id":5,"result":{"height":800001,"hex":"00"}}'])
+    c.eq("a later success still applies",
+         str(ip.globals.get("swatipheight")), "800001")
+    c.ck("but does not erase the failure it did not fix",
+         str(ip.globals.get("swanetwhy")) != "",
+         "a later reply cleared swanetwhy")
+    ip.globals["swasyncfailures"] = 3
+    try:
+        ip.call("waSync", [])
+    except LCS.Thrown:
+        pass
+    c.eq("and a fresh sync is allowed to be green again",
+         int(LCS._n(ip.globals.get("swasyncfailures"))), 0)
+
+    # (10) THE TWO TRANSPORTS MUST AGREE ABOUT THE SAME QUANTITY. Three times
+    # over, the Esplora branch validated something and the Electrum branch
+    # beside it did not - a chain tip, a broadcast txid, and whether the
+    # answer was even a list. Each validator is now one handler used by both,
+    # and each is checked in both directions.
+    c.eq("a real height is taken",
+         str(ip.call("waCheckedHeight", ["812345", "test"])), "812345")
+    for bad in ("not-a-height", "<!DOCTYPE html>", "-1", ""):
+        try:
+            ip.call("waCheckedHeight", [bad, "test"])
+            c.ck("a chain tip of %r is refused" % bad, False, "accepted")
+        except LCS.Thrown as exc:
+            c.ck("a chain tip of %r is refused" % bad,
+                 "not a height" in str(exc.msg), str(exc.msg)[:90])
+    good_txid = "ab" * 32
+    c.eq("a real txid is taken",
+         str(ip.call("waCheckedTxid", [good_txid, "test"])), good_txid)
+    for bad in ("", "ok", "ab" * 31, "zz" * 32, "error: fee too low"):
+        try:
+            ip.call("waCheckedTxid", [bad, "test"])
+            c.ck("a broadcast reply of %r is refused" % bad[:24], False,
+                 "reported as sent")
+        except LCS.Thrown as exc:
+            c.ck("a broadcast reply of %r is refused" % bad[:24],
+                 "NOT accepted" in str(exc.msg), str(exc.msg)[:90])
+
+    # AN ANSWER THAT IS NOT A LIST IS NOT AN EMPTY LIST. waMergeUtxos drops
+    # every record for the address before it re-fills, and cwJsonCount answers
+    # 0 for a null or a string - so without this a well-formed non-list reply
+    # DELETED what the address holds and reported a synced, empty wallet.
+    # AND AN EMPTY LIST IS STILL A LIST. Written as a bare c.ck(..., True)
+    # after the call, this was a check that could not fail - which this
+    # member's own record calls the worst kind of gate, and which the entry
+    # this commit adds says out loud. It asserts the absence of a throw now.
+    try:
+        ip.call("waCheckList", [ip.call("cwJsonParse", ["[]"]), "unspent-output"])
+        c.ck("an empty list is still a list and is not refused", True)
+    except LCS.Thrown as exc:
+        c.ck("an empty list is still a list and is not refused", False,
+             str(exc.msg)[:90])
+    for bad in ("null", '"nope"', "42", "true", "{}"):
+        try:
+            ip.call("waCheckList", [ip.call("cwJsonParse", [bad]), "utxo"])
+            c.ck("a %s result is refused, not read as empty" % bad, False,
+                 "accepted")
+        except LCS.Thrown as exc:
+            c.ck("a %s result is refused, not read as empty" % bad,
+                 "rather than a list" in str(exc.msg), str(exc.msg)[:90])
+    # and end to end: a hostile non-list must leave the coins alone
+    ip.call("waSetBackend", ["electrum-clear"])
+    ip.globals["swautxos"] = ip.call("cwListAdd",
+        [ip.call("waEmptyList", []),
+         {"address": "addrK", "txid": "cc" * 32, "vout": 0, "value": 500000,
+          "confirmations": 6, "height": 800000}])
+    before = int(LCS._n(ip.call("cwListCount", [ip.globals.get("swautxos")])))
+    try:
+        ip.call("waNetApply",
+                ["utxos", "addrK", '{"jsonrpc":"2.0","id":3,"result":null}', "3"])
+    except LCS.Thrown:
+        pass
+    c.eq("a null utxo reply does not delete the address's coins",
+         int(LCS._n(ip.call("cwListCount", [ip.globals.get("swautxos")]))), before)
+
+    # (11) AND THE PILL IS THE STATE. Preserving only the sentence left the
+    # indicator visible on every screen green over a sync that lost requests.
+    ip.globals["swasyncfailures"] = 0
+    ip.call("waNetFail", ["a lost request, in the gate"])
+    ip.globals["swainflight"] = {"kind": "tip", "arg": "", "id": "8"}
+    ip.globals["swasock"] = ""
+    ip.call("waNetDeliver",
+            ['{"jsonrpc":"2.0","id":8,"result":{"height":800002,"hex":"00"}}'])
+    c.eq("a later reply on a lossy sync leaves the state partial, not ok",
+         str(ip.globals.get("swanetstate")), "partial")
+    ip.globals["swasyncfailures"] = 0
+    ip.globals["swainflight"] = {"kind": "tip", "arg": "", "id": "9"}
+    ip.call("waNetDeliver",
+            ['{"jsonrpc":"2.0","id":9,"result":{"height":800003,"hex":"00"}}'])
+    c.eq("and a clean sync is still ok", str(ip.globals.get("swanetstate")), "ok")
+
+    # (12) A WALLET THAT CANNOT SIGN MUST NOT BE HOLDING KEYS. waDropSeed's own
+    # comment says the status line is "now true about the state", and it was
+    # not: it cleared the mnemonic and left sWaAccountXprv and the `seckey`
+    # inside every derived address record where the previous seed wallet put
+    # them. waAccountNode PREFERS the private half and waSeckeyFor reads the
+    # record's key, so a wallet the screen called watch-only could still sign.
+    saved_drop = {k: ip.globals.get(k) for k in
+                  ("swakind", "swamnemonic", "swapassphrase", "swaaccountxprv",
+                   "swaaddresses")}
+    ip.globals["swaaccountxprv"] = "xprvSENTINEL"
+    ip.globals["swamnemonic"] = "sentinel mnemonic words"
+    before = int(LCS._n(ip.call("cwListCount", [ip.globals.get("swaaddresses")])))
+    c.ck("the wallet has derived addresses to lose", before > 0, repr(before))
+    seckeys = [k for i in range(1, before + 1)
+               if str((ip.globals["swaaddresses"].get(str(i)) or {}).get("seckey", ""))]
+    c.ck("and those records really do carry private keys",
+         len(seckeys) > 0, "%d of %d" % (len(seckeys), before))
+    ip.call("waDropSeed", [])
+    c.eq("waDropSeed clears the mnemonic", str(ip.globals.get("swamnemonic")), "")
+    c.eq("and the account xprv the previous wallet left",
+         str(ip.globals.get("swaaccountxprv")), "")
+    c.eq("and every derived record that carried a seckey with it",
+         int(LCS._n(ip.call("cwListCount", [ip.globals.get("swaaddresses")]))), 0)
+    for k, v in saved_drop.items():
+        ip.globals[k] = v
+
+    for k, v in saved_audit.items():
+        ip.globals[k] = v
+
     # ---- the wallet boots even when openStack never fired ----------------
     # Pasting this script into a stack that is ALREADY OPEN means openStack
     # has already fired, so waBoot never runs: no probe, no wallet state. Both
@@ -1174,8 +1508,16 @@ def drive(c, ip, world, sandbox):
     ip.globals["swabackend"] = "electrum-clear"
 
     def wire(kind, arg, body):
-        ip.globals["swainflight"] = {"kind": kind, "arg": arg}
-        ip.call("waNetApply", [kind, arg, body])
+        # THE ID GOES WITH IT. waNetApply correlates a reply to its request by
+        # the JSON-RPC id now - on a persistent connection that is the only
+        # correlation there is - so these fixtures, which are a real server's
+        # bytes and carry real ids, must claim to have asked the question they
+        # are answering. Taking the id OUT of the body rather than passing it
+        # separately keeps the fixture and the request it answers in one place.
+        m = re.search(r'"id"\s*:\s*"?([^,"}\s]+)', body)
+        rid = m.group(1) if m else ""
+        ip.globals["swainflight"] = {"kind": kind, "arg": arg, "id": rid}
+        ip.call("waNetApply", [kind, arg, body, rid])
 
     wire("tip", "", '{"id":1,"jsonrpc":"2.0","result":{"height":5127803,'
                     '"hex":"00e008208dbd5e3fc1750a0000000000000000000000"}}')

@@ -2286,6 +2286,21 @@ function cwSignInput pScriptType, pSeckeyHex, pDigestHex, pPubkeyHex
       throw "wallet-core: cwSignInput: taproot signs with cwSignTaproot, which " & \
             "must tweak the private key first."
    end if
+   -- THE SET IS CLOSED, AND THE FALLTHROUGH WAS THE P2WPKH SHAPE. Everything
+   -- that was not p2tr or p2pkh or p2sh-p2wpkh ended up with a
+   -- [signature, pubkey] witness and an empty scriptSig, which is P2WPKH's
+   -- witness and is invalid for anything else. "p2wsh" is the one that
+   -- matters: cwSighash accepts it and returns a correct BIP-143 digest for
+   -- it, so the documented pairing produced a signed-looking transaction that
+   -- no node will accept - and cwTxSerialize and cwTxid both answer for it
+   -- without complaint. A multisig input is signed by cwSignMultisig, which
+   -- knows how many signatures the script wants and in what order.
+   if pScriptType is not "p2pkh" and pScriptType is not "p2wpkh" \
+         and pScriptType is not "p2sh-p2wpkh" then
+      throw "wallet-core: cwSignInput: " & pScriptType & " is not a " & \
+            "single-key input type. p2wsh multisig signs with " & \
+            "cwSignMultisig and taproot with cwSignTaproot."
+   end if
    put cxHexEncode(cxDerEncode(cxSign(cxHexDecode(pSeckeyHex), cxHexDecode(pDigestHex)))) \
          & "01" into tSig
    if pScriptType is "p2pkh" then
@@ -2528,6 +2543,41 @@ private function cwReadVarInt pHex, pPos
    return tOut
 end cwReadVarInt
 
+private command cwNeedBytes pHex, pPos, pCount, pEach, pWhat
+   -- A COUNT A HOSTILE STRING SUPPLIED IS NOT A LOOP BOUND.
+   --
+   -- Every count in a transaction comes out of a varint, so it can be up to
+   -- 2^64-1, and it was driving `repeat with tI = 1 to tCount` directly with
+   -- nothing comparing it against the bytes actually present. Eighteen
+   -- characters pasted into the Tools inspect box - 01000000feffffff0f - read
+   -- as an input count of 268,435,455 over a string that ended eight
+   -- characters ago: every chunk read returns empty, nothing throws, and the
+   -- loop runs for hours. With an 0xff varint it does not end at all. OXT
+   -- runs script on the UI thread, so that is a frozen ENGINE with no error
+   -- anybody can read - the same class as the `lock screen` freeze this file
+   -- already records, arriving through a different door.
+   --
+   -- pEach is the SMALLEST a single item can be, so this refuses only counts
+   -- that are impossible, never one that is merely large.
+   --
+   -- THE LENGTH GOES INTO A LOCAL FIRST. `the number of chars of pHex - pPos`
+   -- binds the arithmetic INTO the chunk target, so the engine is asked for
+   -- the character count of a subtraction rather than the count of pHex minus
+   -- a number. This file's own network layer carries the same note beside a
+   -- Content-Length for exactly this reason; it cost a gate run to meet it
+   -- again here.
+   -- AND THE DIVISION GOES THROUGH cwIntDiv, which is why that helper
+   -- exists: this layer's own byte discipline routes integer div and mod
+   -- through helpers rather than writing the operators inline.
+   local tLeft, tLen
+   put the number of chars of pHex into tLen
+   put cwIntDiv(tLen - pPos + 1, 2) into tLeft
+   if pCount > cwIntDiv(tLeft, pEach) then
+      throw "wallet-core: cwTxDecode: this claims " & pCount & " " & pWhat & \
+            " but only " & tLeft & " byte(s) remain, so it is malformed."
+   end if
+end cwNeedBytes
+
 function cwTxDecode pRawHex
    local tHex, tPos, tOut, tVer, tSegwit, tCount, tI, tJ, tRec, tIn, tOutRec
    local tIns, tOuts, tLen, tWit, tItems, tStripped, tWeight, tRbf, tTotal, tEnd
@@ -2546,6 +2596,8 @@ function cwTxDecode pRawHex
    put cwReadVarInt(tHex, tPos) into tRec
    put tRec["value"] into tCount
    put tRec["next"] into tPos
+   -- 32 outpoint + 4 index + 1 script length + 4 sequence
+   cwNeedBytes tHex, tPos, tCount, 41, "input(s)"
    put cwListNew() into tIns
    repeat with tI = 1 to tCount
       -- the outpoint's txid is stored LITTLE-endian and displayed big-endian;
@@ -2569,6 +2621,8 @@ function cwTxDecode pRawHex
    put cwReadVarInt(tHex, tPos) into tRec
    put tRec["value"] into tCount
    put tRec["next"] into tPos
+   -- 8 value + 1 script length
+   cwNeedBytes tHex, tPos, tCount, 9, "output(s)"
    put cwListNew() into tOuts
    put 0 into tTotal
    repeat with tI = 1 to tCount
@@ -2588,6 +2642,8 @@ function cwTxDecode pRawHex
       repeat with tI = 1 to tCount
          put cwReadVarInt(tHex, tPos) into tRec
          put tRec["next"] into tPos
+         -- a witness item is at least its own 1-byte length
+         cwNeedBytes tHex, tPos, tRec["value"], 1, "witness item(s)"
          put cwListNew() into tItems
          repeat with tJ = 1 to tRec["value"]
             put cwReadVarInt(tHex, tPos) into tWit
@@ -3259,6 +3315,32 @@ function cwPsbtSign pB64, pKeys, pNetwork
          next repeat
       end if
       put cwPsbtFind(tMap, kCwPsbtInWitnessScript, "") into tWitScript
+      -- AND THE WITNESS SCRIPT MUST BE THE ONE THIS OUTPUT COMMITS TO.
+      --
+      -- The taproot branch below says, in its own comment, that "every other
+      -- branch here checks the script it is about to unlock". That was not
+      -- true of the p2wsh branch, which was the one branch with no comparison
+      -- against tSpk at all: it asked only whether one of our public keys
+      -- appears somewhere inside the witness script THE SENDER SUPPLIED.
+      --
+      -- Our cosigner keys are not secret - they are in any account xpub or
+      -- descriptor this wallet has ever exported - so anyone can build a
+      -- 1-of-1 witness script around one, pair it with a witness UTXO naming
+      -- any 32-byte P2WSH program and any amount, and get back a real
+      -- signature over a BIP-143 preimage of their choosing, reported as
+      -- "SIGNED 1 input(s)" with no why-line. BIP-174 requires a Signer to
+      -- check that the scripts it is given correspond to the output being
+      -- spent; this is that check, and P2WSH makes it exact, because the
+      -- output IS the hash of the script.
+      if tType is "p2wsh" and tWitScript is not "" then
+         if cwScriptP2wsh(tWitScript) is not tSpk then
+            put tWhy & "input " & tI & ": the witness script this PSBT " & \
+                  "carries does not hash to the output it says it spends, " & \
+                  "so signing it would sign a preimage of the sender's " & \
+                  "choosing rather than this input" & return into tWhy
+            next repeat
+         end if
+      end if
       put false into tFound
       -- THE SIGHASH TYPE THE PSBT ASKS FOR. BIP-174 requires a Signer to use
       -- the value in PSBT_IN_SIGHASH_TYPE and to FAIL if it cannot; this

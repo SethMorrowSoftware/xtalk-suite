@@ -1127,6 +1127,92 @@ def check_psbt(c, ip):
            "amount" in r["why"] and "guess" in r["why"])
 
 
+def check_audit_2026_09_01(c, ip):
+    """The wallet-core half of the 2026-09-01 audit: three fail-open paths.
+
+    Each is checked in BOTH directions - the hostile shape is refused AND the
+    legitimate one still works - because an over-refusing guard is the same
+    defect with the sign flipped, and this member has shipped one of those
+    before.
+    """
+    call = ip.call
+    c.note("\nthe 2026-09-01 audit: three fail-open paths in the engine")
+
+    master_py = CR.bip32_master(CR.bip39_seed(TEST_MNEMONIC, ""))
+    node = CR.bip32_path(master_py, "m/84'/0'/0'/0/0")
+    ourpub = node["pubkey"].hex()
+    seckey = node["seckey"].hex()
+
+    # (1) cwPsbtSign must bind the witness script to the output it claims to
+    # spend. Our cosigner pubkeys are public - they are in any descriptor or
+    # account xpub this wallet has ever exported - so without this an attacker
+    # builds a 1-of-1 witness script around one, names any 32-byte P2WSH
+    # program as the witness UTXO, and gets a signature over a BIP-143
+    # preimage of their own choosing, reported as "SIGNED 1 input(s)".
+    hostile_ws = call("cwMultisigScript", [1, lst([ourpub])])
+    real_spk = call("cwScriptP2wsh", [hostile_ws])
+    fake_spk = "0020" + "cd" * 32
+    ins = lst([call("cwTxInput", ["aa" * 32, 0, 0xFFFFFFFD])])
+    dest = REF.spk_for_address("mainnet", ADDRESSES["mainnet"][2]).hex()
+    outs = lst([call("cwTxOutput", [45000, dest])])
+
+    def psbt_with(spk):
+        meta = {"witnessutxoscript": spk, "witnessutxovalue": 50000,
+                "witnessscript": hostile_ws}
+        return call("cwPsbtCreate", [2, ins, outs, 0, {"1": meta}, {}])
+
+    keys = lst([{"seckey": seckey}])
+    got = call("cwPsbtSign", [psbt_with(fake_spk), keys, "mainnet"])
+    c.ck("a P2WSH input whose witness script does not hash to its own "
+         "scriptPubKey is NOT signed", int(LCS._n(got["signed"])), 0)
+    # c.true, NOT c.ck: this gate's ck is (label, got, want) and the boot
+    # gate's beside it is (label, ok, detail). Written in the other file's
+    # shape, this compared a Python bool against a description string - the
+    # exact mistake this member recorded finding eleven times in one file.
+    c.true("and it says why", "does not hash to the output" in str(got["why"]))
+    got = call("cwPsbtSign", [psbt_with(real_spk), keys, "mainnet"])
+    c.ck("but the same script over its OWN scriptPubKey still signs",
+         int(LCS._n(got["signed"])), 1)
+
+    # (2) cwTxDecode must not take a count from the bytes and use it as a loop
+    # bound. OXT runs script on the UI thread, so an unbounded loop here is a
+    # frozen engine with no error anybody can read.
+    c.refuses("cwTxDecode refuses an input count the bytes cannot satisfy",
+              lambda: call("cwTxDecode", ["01000000feffffff0f"]))
+    c.refuses("cwTxDecode refuses an 0xff input count",
+              lambda: call("cwTxDecode", ["01000000ffffffffffffffffff"]))
+    c.refuses("cwTxDecode refuses an output count the bytes cannot satisfy",
+              lambda: call("cwTxDecode",
+                           ["0100000001" + "aa" * 32 + "00000000" + "00"
+                            + "ffffffff" + "fdffff"]))
+    # AND A REAL TRANSACTION STILL DECODES, so the bound is a refusal of the
+    # impossible and not a wall. Without this the guard could be arbitrarily
+    # strict and every refusal check above would still pass.
+    good = call("cwTxSerialize", [2, ins, outs, 0, lst([""]), lst([lst([])])])
+    dec = call("cwTxDecode", [good])
+    c.ck("a real transaction still decodes past the bound",
+         int(LCS._n(call("cwListCount", [dec["inputs"]]))), 1)
+    c.ck("and reports its one output",
+         int(LCS._n(call("cwListCount", [dec["outputs"]]))), 1)
+    c.ck("and its txid", len(str(dec["txid"])), 64)
+
+    # (3) cwSignInput's type set is closed. Everything that fell through got a
+    # [signature, pubkey] witness with an empty scriptSig, which is P2WPKH's
+    # shape - and "p2wsh" reaches it through the file's own documented
+    # pairing with cwSighash, so the wallet produced a signed-looking
+    # transaction no node will accept.
+    digest = "11" * 32
+    c.refuses("cwSignInput refuses p2wsh, which cwSignMultisig owns",
+              lambda: call("cwSignInput", ["p2wsh", seckey, digest, ourpub]))
+    c.refuses("cwSignInput refuses a type it does not know",
+              lambda: call("cwSignInput", ["p2sh", seckey, digest, ourpub]))
+    for kind in ("p2pkh", "p2wpkh", "p2sh-p2wpkh"):
+        sig = call("cwSignInput", [kind, seckey, digest, ourpub])
+        c.true("cwSignInput still signs %s" % kind,
+               str(sig["scriptsig"]) != "" or
+               int(LCS._n(call("cwListCount", [sig["witness"]]))) > 0)
+
+
 def check_messages(c, ip):
     call = ip.call
     c.note("\nsigned messages, URIs and descriptors")
@@ -1520,6 +1606,7 @@ def main(argv):
                 check_messages(ck, interp)
                 check_json_and_qr(ck, interp)
                 check_odds(ck, interp)
+                check_audit_2026_09_01(ck, interp)
 
             run_all(c, ip)
             c.note("re-running the whole set with `is` and `offset()` folded "
