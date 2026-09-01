@@ -1467,6 +1467,127 @@ def drive(c, ip, world, sandbox):
     for k, v in saved_drop.items():
         ip.globals[k] = v
 
+    # (13) THE WATCH-ONLY BOX MUST REFUSE A PRIVATE KEY. The branch checked the
+    # network and nothing else, so an account xprv - one character from its
+    # xpub - was stored in sWaAccountXpub and then shown as "safe to hand
+    # out", copied, exported and written to the wallet file as `xpub`. And it
+    # was not watch-only either: waDeriveAddresses re-fills every record
+    # through waAccountNode, which prefers the private half.
+    saved_watch = {k: ip.globals.get(k) for k in
+                   ("swakind", "swanetwork", "swascripttype", "swaaccountxpub",
+                    "swaaccountxprv", "swaaddresses", "swamnemonic")}
+    ip.globals["swanetwork"] = "mainnet"
+    ip.globals["swascripttype"] = "p2wpkh"
+    ip.globals["swakind"] = "watch"
+    # THE PAIR IS DERIVED, NOT PASTED. A hand-copied zprv/zpub pair would be
+    # one typo away from a checksum failure that reads like the guard working,
+    # so the wallet derives its own from the published test seed and the two
+    # halves are a real pair by construction.
+    ip.globals["swakind"] = "seed"
+    ip.globals["swamnemonic"] = str(ip.constants.get("kWaTestMnemonic", ""))
+    ip.globals["swapassphrase"] = ""
+    ip.call("waDeriveAccount", [])
+    XPRV = str(ip.globals.get("swaaccountxprv"))
+    XPUB = str(ip.globals.get("swaaccountxpub"))
+    c.ck("the test seed produced a mainnet p2wpkh account pair",
+         XPRV.startswith("zprv") and XPUB.startswith("zpub"),
+         "%r / %r" % (XPRV[:8], XPUB[:8]))
+    ip.globals["swakind"] = "watch"
+    ip.globals["swamnemonic"] = ""
+    ip.globals["swaaccountxpub"] = ""
+    ip.globals["swaaccountxprv"] = ""
+    c.ck("wallet-core can tell a private extended key from a public one",
+         ip.call("cwXKeyIsPrivate", [XPRV]) is True, "cwXKeyIsPrivate(zprv)")
+    c.ck("and says so the other way too",
+         ip.call("cwXKeyIsPrivate", [XPUB]) is False, "cwXKeyIsPrivate(zpub)")
+    world.anywhere("wl_xkey").content = XPRV
+    try:
+        ip.call("waOpenWallet", [])
+        c.ck("the watch-only box refuses a PRIVATE extended key", False,
+             "it was accepted; swaaccountxpub=%r"
+             % str(ip.globals.get("swaaccountxpub"))[:24])
+    except LCS.Thrown as exc:
+        c.ck("the watch-only box refuses a PRIVATE extended key",
+             "PRIVATE extended key" in str(exc.msg), str(exc.msg)[:110])
+    c.eq("and stores nothing when it refuses",
+         str(ip.globals.get("swaaccountxpub")), "")
+    # and the matching PUBLIC key still opens, so the guard is not a wall
+    world.anywhere("wl_xkey").content = XPUB
+    try:
+        ip.call("waOpenWallet", [])
+        c.eq("but the matching PUBLIC key is still accepted",
+             str(ip.globals.get("swaaccountxpub")), XPUB)
+    except LCS.Thrown as exc:
+        c.ck("but the matching PUBLIC key is still accepted", False,
+             str(exc.msg)[:110])
+    for k, v in saved_watch.items():
+        ip.globals[k] = v
+
+    # (14) A LABEL CANNOT FORGE A WALLET-FILE RECORD. The file is one record
+    # per line, name and value split by a tab, parsed last-wins - and a label
+    # is the one field a person does not type: a BIP-21 URI carries one, and
+    # cwPercentDecode turns %0A into a real newline. So a payer could put
+    # `Refund\nkind\twatch\nxpub\t<their key>` in an invoice and have the
+    # next save-then-open replace this wallet's account key with theirs.
+    tab, nl, cr = chr(9), chr(10), chr(13)
+    hostile = "Refund" + nl + "kind" + tab + "watch" + nl + "xpub" + tab + "zpubEVIL"
+    cleaned = str(ip.call("waSafeText", [hostile]))
+    c.ck("waSafeText removes the record separators", 
+         (tab not in cleaned) and (nl not in cleaned) and (cr not in cleaned),
+         repr(cleaned[:60]))
+    c.ck("and keeps everything else", "Refund" in cleaned and "zpubEVIL" in cleaned,
+         repr(cleaned[:60]))
+    c.eq("ordinary label text is untouched",
+         str(ip.call("waSafeText", ["Alice's refund #3 (rent)"])),
+         "Alice's refund #3 (rent)")
+    # end to end through the URI reader, which is how it would actually arrive
+    saved_lbl = {k: ip.globals.get(k) for k in ("swalabels", "swanetwork")}
+    ip.globals["swalabels"] = {}
+    ip.globals["swanetwork"] = "mainnet"
+    world.anywhere("sd_to").content = (
+        "bitcoin:bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4?amount=0.001"
+        "&label=Refund%0Akind%09watch%0Axpub%09zpubEVIL")
+    try:
+        ip.call("waReadUri", [])
+    except LCS.Thrown as exc:
+        c.ck("the URI reader accepted the payment", False, str(exc.msg)[:90])
+    stored = str((ip.globals.get("swalabels") or {}).get(
+        "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4", ""))
+    c.ck("a URI label reaches the wallet with no separators in it",
+         (tab not in stored) and (nl not in stored), repr(stored[:70]))
+    # and the writer refuses one anyway, so a door added later is loud
+    ip.globals["swalabels"] = {"bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4":
+                               "Refund" + nl + "xpub" + tab + "zpubEVIL"}
+    try:
+        ip.call("waSerializeWallet", [])
+        c.ck("and waSerializeWallet refuses to write one anyway", False,
+             "it wrote the forged record")
+    except LCS.Thrown as exc:
+        c.ck("and waSerializeWallet refuses to write one anyway",
+             "record separator" in str(exc.msg) or "separator" in str(exc.msg),
+             str(exc.msg)[:110])
+    for k, v in saved_lbl.items():
+        ip.globals[k] = v
+
+    # (15) THE PERSISTENT SOCKET MUST BE THE ONE THE SETTINGS NAME. Reuse was
+    # tested by "is one open?" alone, so a host or port edited on the Network
+    # screen reached the state and the fields and not the connection.
+    ip.globals["swanetwork"] = "mainnet"
+    ip.call("waSetBackend", ["electrum-clear"])
+    ip.globals["swasock"] = "oldhost.example:50001"
+    ip.globals["swahost"] = "newhost.example"
+    ip.globals["swaport"] = 50001
+    ip.globals["swainflight"] = ""
+    ip.globals["swaqueue"] = ip.call("waEmptyList", [])
+    ip.call("waNetQueue", ["tip", ""])
+    try:
+        ip.call("waNetPump", [])
+    except LCS.Thrown:
+        pass
+    c.ck("a host change closes the socket it no longer names",
+         str(ip.globals.get("swasock")) != "oldhost.example:50001",
+         repr(ip.globals.get("swasock")))
+
     for k, v in saved_audit.items():
         ip.globals[k] = v
 

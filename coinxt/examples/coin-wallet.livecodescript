@@ -12407,6 +12407,36 @@ function waAmount pSat
    return cwFormatAmount(pSat, sWaUnit)
 end waAmount
 
+private function waSafeText pText
+   -- NOTHING A STRANGER CHOSE MAY CARRY THIS FILE FORMAT'S SEPARATORS.
+   --
+   -- waSerializeWallet writes one record per LINE, name and value split by a
+   -- TAB, and waDeserializeWallet dispatches each line last-wins. A label is
+   -- the one field a person does not type: a BIP-21 URI carries one, and
+   -- cwPercentDecode turns %0A into a real newline and %09 into a real tab.
+   -- So a payer could put
+   --     Refund%0Akind%09watch%0Amnemonic%09%0Axpub%09<their key>
+   -- in the label of an invoice, and the next Save-then-Open replaced the
+   -- wallet's OWN account key with theirs - after which every address the
+   -- Receive screen offered was an address they could spend from. That is
+   -- the whole wallet, taken by a payment request.
+   --
+   -- Stripped rather than escaped, and stripped at every door rather than at
+   -- the file: an escape needs an unescape and the two drift, while a label
+   -- has no legitimate use for a tab or a newline in the first place.
+   local tOut, tI, tCount, tCh
+   put "" into tOut
+   put the number of chars of pText into tCount
+   repeat with tI = 1 to tCount
+      put char tI of pText into tCh
+      if tCh is not numToChar(9) and tCh is not numToChar(10) \
+            and tCh is not numToChar(13) then
+         put tCh after tOut
+      end if
+   end repeat
+   return tOut
+end waSafeText
+
 private function waAmountBare pSat
    -- THE AMOUNT AS waParsePayments WILL READ IT BACK: a bare number in the
    -- unit the Send box is parsed in, with no unit name after it.
@@ -12879,13 +12909,19 @@ command waGenerateSeed
 end waGenerateSeed
 
 command waOpenWallet
-   local tText, tInfo, tNode
-   put cwTrim(field "wl_label") into sWaLabel
+   local tText, tInfo, tNode, tAccountText
+   put waSafeText(cwTrim(field "wl_label")) into sWaLabel
    if sWaLabel is "" then
       put "Wallet" into sWaLabel
    end if
-   if field "wl_account" is an integer then
-      put field "wl_account" + 0 into sWaAccount
+   -- INTO A LOCAL FIRST, and this is the fourth site of the same shape in
+   -- this file: `field "wl_account" + 0` binds the arithmetic INTO the chunk
+   -- target, so the engine is asked for a field named `wl_account` plus zero.
+   -- It is the account NUMBER, so getting it wrong derives a different
+   -- wallet from the same seed.
+   put field "wl_account" into tAccountText
+   if tAccountText is an integer then
+      put tAccountText + 0 into sWaAccount
    end if
    put waEmptyList() into sWaUtxos
    put waEmptyList() into sWaHistory
@@ -12901,6 +12937,28 @@ command waOpenWallet
          throw "that extended key belongs to " & tNode["network"] & \
                " and this wallet is on " & sWaNetwork & \
                ". Switch the network, or paste the right key."
+      end if
+      -- AND IT MUST NOT BE A PRIVATE KEY. This branch checked the NETWORK and
+      -- nothing else, so an account xprv - one character from its xpub, and
+      -- the line directly above it in whatever a signing wallet exported -
+      -- was stored in sWaAccountXpub and thereafter treated as public by
+      -- everything downstream: printed on the Wallet screen under "account
+      -- extended PUBLIC key (safe to hand out)", put on the clipboard by
+      -- Copy, written into the wallet file on the line labelled `xpub`, and
+      -- exported by Tools. It was not watch-only either: waDeriveAddresses
+      -- re-fills every record through waAccountNode, which prefers the
+      -- private half, so the records carried seckeys again while the status
+      -- line said "This wallet cannot sign anything."
+      --
+      -- wallet-core ships cwXKeyIsPrivate for exactly this question and
+      -- nothing in this stack was calling it.
+      if cwXKeyIsPrivate(tText) is true then
+         throw "that is a PRIVATE extended key, and this is the watch-only " & \
+               "box. Watching it would put a spending key on the Wallet " & \
+               "screen labelled as safe to hand out, and into the wallet " & \
+               "file. Paste the matching PUBLIC key instead (xpub, ypub, " & \
+               "zpub, tpub, upub or vpub), or choose Restore if you meant " & \
+               "to open a spending wallet."
       end if
       put tText into sWaAccountXpub
       put empty into sWaAccountXprv
@@ -12952,7 +13010,7 @@ command waAddCosigners
    -- same network before anything is derived, because a multisig built from
    -- keys on two chains produces an address nobody can ever spend from and
    -- there is no later moment at which that becomes obvious.
-   local tText, tI, tCount, tLine, tNode, tList, tKey
+   local tText, tI, tCount, tLine, tNode, tList, tKey, tMText
    put field "wl_xkey" into tText
    put waEmptyList() into tList
    put the number of lines of tText into tCount
@@ -12972,8 +13030,9 @@ command waAddCosigners
    if cwListCount(tList) < 1 then
       throw "paste at least one cosigner account key, one per line."
    end if
-   if field "wl_m" is an integer then
-      put field "wl_m" + 0 into sWaM
+   put field "wl_m" into tMText
+   if tMText is an integer then
+      put tMText + 0 into sWaM
    end if
    if sWaM < 1 or sWaM > cwListCount(tList) then
       throw "the number of required signatures must be between 1 and the " & \
@@ -13307,7 +13366,7 @@ command waAddressesClick pRole
       if tAddr is "" then
          throw "select a row first."
       end if
-      put field "ad_label" into sWaLabels[tAddr]
+      put waSafeText(field "ad_label") into sWaLabels[tAddr]
       uiStatus "Labelled " & tAddr & ".", "ok"
    end if
    waRefreshScreen
@@ -13573,7 +13632,8 @@ command waReadUri
    end if
    put tLine & return into field "sd_to"
    if tRec["label"] is not "" then
-      put tRec["label"] into sWaLabels[tRec["address"]]
+      -- THE URI'S LABEL IS A STRANGER'S TEXT. See waSafeText.
+      put waSafeText(tRec["label"]) into sWaLabels[tRec["address"]]
    end if
    uiStatus "Read a BIP-21 URI" & waUriExtra(tRec) & ".", "ok"
 end waReadUri
@@ -15620,6 +15680,18 @@ command waNetStart pRec
       -- count requests, so a full scan would have hammered a public server
       -- with eighty-odd connections in a few seconds. The tip answered and
       -- nothing after it did, which reads as an empty wallet.
+      -- AND IT MUST BE THE SOCKET THE SETTINGS NOW NAME. Reuse was tested by
+      -- "is one open?" alone, so a host or a port edited on the Network
+      -- screen reached sWaHost and sWaPort and the fields and NOT the
+      -- connection: every script hash of the sync still went to the server
+      -- the person had just acted to leave, and if what they changed was the
+      -- chain-selecting port, the old server answered every request for the
+      -- other chain with a well-formed empty list. The socket id IS its
+      -- "host:port" in this engine, so the comparison is exact and free.
+      if sWaSock is not empty and sWaSock is not tSock then
+         waLog "backend moved to " & tSock & " - closing " & sWaSock
+         waSockClose
+      end if
       if sWaSock is not empty then
          put "busy" into sWaNetState
          waSockSend
@@ -16881,6 +16953,10 @@ function waSerializeWallet
    -- there can be many of them.
    local tOut, tTab, tI, tCount, tKey, tKeys
    put numToChar(9) into tTab
+   if waSafeText(sWaLabel) is not sWaLabel then
+      throw "this wallet's name carries a tab or a newline, which is this " & \
+            "file format's record separator. Nothing has been saved."
+   end if
    put "label" & tTab & sWaLabel & return into tOut
    put "network" & tTab & sWaNetwork & return after tOut
    put "scripttype" & tTab & sWaScriptType & return after tOut
@@ -16911,6 +16987,18 @@ function waSerializeWallet
    repeat with tI = 1 to tCount
       put line tI of tKeys into tKey
       if tKey is not "" then
+         -- BELT TO waSafeText'S BRACES. Stripping at every door is the fix;
+         -- refusing here is what makes a door somebody adds later loud
+         -- instead of silent, because this is the one place where a stray
+         -- separator stops being a display bug and becomes a forged record.
+         if waSafeText(tKey) is not tKey \
+               or waSafeText(sWaLabels[tKey]) is not sWaLabels[tKey] then
+            throw "a label or address in this wallet carries a tab or a " & \
+                  "newline, which is this file format's own record " & \
+                  "separator, so saving it would write records nobody " & \
+                  "chose. Nothing has been saved. Clear the label on " & \
+                  tKey & " and save again."
+         end if
          put "label:" & tKey & tTab & sWaLabels[tKey] & return after tOut
       end if
    end repeat

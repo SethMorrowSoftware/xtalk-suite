@@ -2044,6 +2044,44 @@ engine answers by comparing as text. Nested now. **All four were caught by runni
 not by reading the diff**, on code written by somebody who had just finished writing the
 paragraph above about the first one.
 
+**AND THE FLEET'S OWN PASS FOUND THREE MORE, TWO OF THEM THE WORST IN THIS ENTRY.** They are
+here because a second, independent read of the same files was run against the same brief, and
+the two it found that nothing above had are both places where the wallet believed a stranger.
+
+*A PAYMENT REQUEST COULD REPLACE THE WALLET'S ACCOUNT KEY.* The wallet file is one record per
+LINE with the name and value split by a TAB, parsed last-wins - and a label is the one field a
+person does not type. BIP-21 carries one, and `cwPercentDecode` turns `%0A` into a real newline
+and `%09` into a real tab. So a payer could put
+`Refund%0Akind%09watch%0Amnemonic%09%0Axpub%09<their key>` in the label of an invoice, and the
+next Save-then-Open replaced this wallet's own account key with theirs, after which every
+address the Receive screen offered was an address THEY could spend from. It was demonstrated
+end to end through the boot harness before it was fixed, driving only real controls. The fix is
+`waSafeText` at every door a label enters by, plus a refusal in `waSerializeWallet` so a door
+somebody adds later is loud rather than silent. Stripped rather than escaped, deliberately: an
+escape needs an unescape and the two drift, and a label has no legitimate use for a tab.
+
+*AND THE WATCH-ONLY BOX ACCEPTED A PRIVATE KEY.* That branch checked the extended key's NETWORK
+and nothing else, so an account `xprv` - one character from its `xpub`, and the line directly
+above it in whatever a signing wallet exported - was stored in `sWaAccountXpub` and thereafter
+treated as public by everything downstream: printed on the Wallet screen under "account extended
+PUBLIC key (safe to hand out)", put on the clipboard by Copy, exported by Tools, and written to
+the wallet file on the line labelled `xpub`. It was not watch-only either, because
+`waDeriveAddresses` re-fills every record through `waAccountNode`, which prefers the private
+half - so the records carried spending keys while the status line said "This wallet cannot sign
+anything." **`wallet-core` has shipped `cwXKeyIsPrivate` for exactly this question since the day
+it was written, and nothing in the stack called it.** A handler that exists for a question
+nobody asks is the same defect as a comment that claims a check nobody makes; this entry now
+carries one of each.
+
+*And the third is the sibling of the port defect above, one layer down.* `waNetStart` reused
+`sWaSock` on the test "is one open?" alone, never comparing it to the `host:port` it had just
+computed - so a host or a port edited on the Network screen reached the state and the fields and
+NOT the connection. Every script hash of the sync still went to the server the person had just
+acted to leave, which is a privacy loss they explicitly moved to avoid; and where the edit was
+the chain-selecting port, the old server answered every request for the other chain with a
+well-formed empty list. The socket id IS its `host:port` in this engine, so the comparison is
+exact and costs nothing.
+
 **WHAT THIS AUDIT DID NOT SETTLE.** It read the app layer, the transport, the amount and fee
 paths, and the PSBT signer, and it ran both gates. It did not re-audit the QR encoder, the
 wallet file format or the address encodings, all of which have their own records above.
