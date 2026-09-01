@@ -736,6 +736,122 @@ def drive(c, ip, world, sandbox):
              all(o["value"] >= 294 for o in dec["vout"]),
              repr([o["value"] for o in dec["vout"]]))
 
+    # ---- the RBF fee bump BUILDS the replacement --------------------------
+    #
+    # This is the leg that used to be advice. waBumpAdvice computed the floor
+    # a replacement must clear and then told the person to go and rebuild the
+    # spend by hand on two other screens, which is the worst moment in the
+    # wallet to be retyping an address. Everything below drives the real
+    # button and checks the transaction that comes out against an independent
+    # decode, because the failure mode here is not an error message: it is a
+    # replacement that no node accepts, which looks exactly like one that was
+    # never sent.
+    if raw:
+        dec = REF.tx_decode(bytes.fromhex(raw))
+        spends = ip.globals.get("swaspends") or {}
+        rec = spends.get(dec["txid"]) or {}
+        c.ck("signing records what the spend was made of, keyed by txid",
+             bool(rec), repr(sorted(spends.keys())[:2]))
+        old_fee = int(LCS._n(rec.get("fee", 0)))
+        old_change = int(LCS._n(rec.get("change", 0)))
+        old_vsize = int(LCS._n(rec.get("vsize", 0)))
+        c.ck("the record carries the fee, the change and the size",
+             old_fee > 0 and old_change > 0 and old_vsize > 0,
+             "fee %r change %r vsize %r" % (old_fee, old_change, old_vsize))
+        # ...and the recorded fee is the real one, or every bump computed
+        # from it is off by however far the record drifted.
+        total_in = sum(u["value"] for u in UTXOS
+                       if any(v["txid"] == u["txid"] and v["vout"] == u["vout"]
+                              for v in dec["vin"]))
+        c.eq("and the recorded fee is inputs minus outputs",
+             old_fee, total_in - sum(o["value"] for o in dec["vout"]))
+
+        # Drive the History screen's own button, on a row for that txid.
+        hist = {"n": 1, "1": {
+            "txid": dec["txid"], "confirmations": 0, "fee": old_fee,
+            "vsize": old_vsize, "raw": raw, "address": first,
+            "value": 0, "height": 0}}
+        saved_hist = ip.globals.get("swahistory")
+        ip.globals["swahistory"] = hist
+        click(ip, world, "nv_hs")
+        tbl = world.anywhere("hs_table")
+        if tbl is not None:
+            tbl.props["hilitedline"] = 2
+        put_field("sd_rate", "20")
+        click(ip, world, "hs_bump")
+        detail = _fld(world, "hs_detail")
+        c.ck("the Bump button builds and signs a replacement",
+             "REPLACEMENT BUILT AND SIGNED" in detail, repr(detail[:160]))
+        new_raw = str(ip.globals.get("swalastraw", ""))
+        c.ck("and the replacement is a different transaction",
+             new_raw and new_raw != raw, "unchanged" if new_raw == raw else "")
+        if new_raw and new_raw != raw:
+            rep = REF.tx_decode(bytes.fromhex(new_raw))
+            # BIP-125 RULE 1: it must itself signal replaceability, or the
+            # first bump is also the last.
+            c.ck("the replacement signals RBF in its turn",
+                 all(v["sequence"] <= 0xFFFFFFFD for v in rep["vin"]),
+                 repr([hex(v["sequence"]) for v in rep["vin"]]))
+            # RULE 2: no input the original did not have. This is the one
+            # that would quietly spend a coin nobody chose.
+            c.eq("it spends exactly the same outpoints",
+                 sorted((v["txid"], v["vout"]) for v in rep["vin"]),
+                 sorted((v["txid"], v["vout"]) for v in dec["vin"]))
+            # The payments are untouched and only the CHANGE shrinks - which
+            # is what makes this a bump rather than a new transaction.
+            old_outs = sorted((o["value"], o["scriptpubkey"]) for o in dec["vout"])
+            new_outs = sorted((o["value"], o["scriptpubkey"]) for o in rep["vout"])
+            c.eq("it has the same number of outputs",
+                 len(new_outs), len(old_outs))
+            changed = [a for a, b in zip(old_outs, new_outs) if a != b]
+            c.ck("and exactly one output changed", len(changed) <= 1,
+                 "%r -> %r" % (old_outs, new_outs))
+            new_fee = total_in - sum(o["value"] for o in rep["vout"])
+            c.ck("it pays more than the transaction it evicts",
+                 new_fee > old_fee, "%d vs %d" % (new_fee, old_fee))
+            # RULES 3 AND 4, over the REPLACEMENT'S OWN size - which is not
+            # the original's, because a signature is a byte or two shorter
+            # about half the time.
+            floor = old_fee + rep["vsize"]
+            c.ck("and it clears the BIP-125 floor for its own size",
+                 new_fee >= floor, "%d < %d (vsize %d)"
+                 % (new_fee, floor, rep["vsize"]))
+            c.ck("the requested 20 sat/vB was honoured, not just the floor",
+                 new_fee >= 20 * rep["vsize"],
+                 "%d for %d vB" % (new_fee, rep["vsize"]))
+            # It is recorded like any other spend, so it can be bumped again.
+            c.ck("the replacement is itself recorded for a second bump",
+                 bool((ip.globals.get("swaspends") or {}).get(rep["txid"])),
+                 repr(sorted((ip.globals.get("swaspends") or {}).keys())[:3]))
+
+        # A CONFIRMED transaction has nothing to bump, and a transaction this
+        # window never built cannot be bumped here at all - both are refused
+        # by saying so, not by building something.
+        ip.globals["swahistory"] = {"n": 1, "1": dict(hist["1"],
+                                                      confirmations=3)}
+        click(ip, world, "nv_hs")
+        tbl = world.anywhere("hs_table")
+        if tbl is not None:
+            tbl.props["hilitedline"] = 2
+        click(ip, world, "hs_bump")
+        c.ck("a confirmed transaction is refused",
+             "confirmed" in _fld(world, "hs_detail").lower()
+             or "confirmed" in str(_fld(world, "uiStatus")).lower(),
+             repr(_fld(world, "hs_detail")[:100]))
+        ip.globals["swahistory"] = {"n": 1, "1": dict(hist["1"],
+                                                      txid="ee" * 32)}
+        click(ip, world, "nv_hs")
+        tbl = world.anywhere("hs_table")
+        if tbl is not None:
+            tbl.props["hilitedline"] = 2
+        click(ip, world, "hs_bump")
+        detail = _fld(world, "hs_detail")
+        c.ck("a transaction this window did not build falls back to advice",
+             "CANNOT BUILD THE REPLACEMENT" in detail
+             and "BUMPING THE FEE" in detail, repr(detail[:160]))
+        ip.globals["swahistory"] = saved_hist
+        ip.globals["swalastraw"] = raw
+
     # ---- Send: the same spend as a PSBT, round-tripped through Tools -----
     click(ip, world, "sd_toPsbt")
     psbt = str(ip.globals.get("swalastpsbt", ""))
@@ -1588,6 +1704,129 @@ def drive(c, ip, world, sandbox):
          str(ip.globals.get("swasock")) != "oldhost.example:50001",
          repr(ip.globals.get("swasock")))
 
+    # (16) NON-STANDARD DERIVATION PATHS. cwParsePath has always accepted any
+    # path; the app could only ever ask cwAccountPath for the standard one, so
+    # a person recovering an Electrum legacy wallet (m/0') or an early Core
+    # wallet (m/0'/0') had correct words and nowhere to put them. The override
+    # goes through ONE accessor because the path is not decoration: it is in
+    # the exported descriptor and in the BIP32_DERIVATION a cosigner uses to
+    # find its own key.
+    saved_path = {k: ip.globals.get(k) for k in
+                  ("swacustompath", "swanetwork", "swascripttype", "swaaccount",
+                   "swakind", "swamnemonic", "swapassphrase", "swafingerprint")}
+    ip.globals["swanetwork"] = "mainnet"
+    ip.globals["swascripttype"] = "p2wpkh"
+    ip.globals["swaaccount"] = 0
+    ip.globals["swacustompath"] = ""
+    std = str(ip.call("waAccountPath", []))
+    c.eq("with no override the path is still the standard one", std, "m/84'/0'/0'")
+    ip.globals["swacustompath"] = "m/0'"
+    c.eq("and an override replaces it", str(ip.call("waAccountPath", [])), "m/0'")
+    # it must reach the two places that are not display
+    ip.globals["swafingerprint"] = "deadbeef"
+    rec = ip.call("waBip32Record", [{"suffix": "/0/5"}, "00" * 33])
+    c.eq("the PSBT derivation carries the override, not the standard path",
+         str(rec["path"]), "m/0'/0/5")
+    ip.globals["swacustompath"] = ""
+    rec = ip.call("waBip32Record", [{"suffix": "/0/5"}, "00" * 33])
+    c.eq("and the standard one when there is no override",
+         str(rec["path"]), "m/84'/0'/0'/0/5")
+    # the descriptor moves with it too
+    ip.globals["swakind"] = "seed"
+    ip.globals["swamnemonic"] = str(ip.constants.get("kWaTestMnemonic", ""))
+    ip.globals["swapassphrase"] = ""
+    ip.call("waDeriveAccount", [])
+    d_std = str(ip.call("waDescriptorFor", [0]))
+    ip.globals["swacustompath"] = "m/0'"
+    ip.call("waDeriveAccount", [])
+    d_cus = str(ip.call("waDescriptorFor", [0]))
+    c.ck("the exported descriptor is not the same one for a different path",
+         d_std != d_cus and d_std != "" and d_cus != "",
+         "%r vs %r" % (d_std[:40], d_cus[:40]))
+
+    # the shapes cwParsePath already refuses must stay refused, and the ones
+    # in circulation must stay accepted - an over-strict guard here is a
+    # wallet that still cannot recover.
+    for good in ("m/0'", "m/0'/0'", "m/44'/0'/0'", "m/84'/0'/0'", "m/1852'/1815'/0'",
+                 "m/0h/0h", "m/0H", "0'/0'"):
+        try:
+            c.ck("a real-world path is accepted: %s" % good,
+                 str(ip.call("waCheckedPath", [good])) != "", good)
+        except LCS.Thrown as exc:
+            c.ck("a real-world path is accepted: %s" % good, False, str(exc.msg)[:80])
+    c.eq("and a blank box still means the standard path",
+         str(ip.call("waCheckedPath", ["   "])), "")
+    for bad, why in (("m/84'/", "a trailing separator"),
+                     ("m//0", "an empty level"),
+                     ("m/x'", "a level that is not a number"),
+                     ("m/2147483648", "a level at or above 2^31"),
+                     ("m/" + "/".join(["0"] * 40), "a path deeper than the cap")):
+        try:
+            ip.call("waCheckedPath", [bad])
+            c.ck("a path with %s is refused" % why, False, "accepted %r" % bad)
+        except LCS.Thrown as exc:
+            c.ck("a path with %s is refused" % why, True, str(exc.msg)[:70])
+
+    # and it survives the wallet file, because a path that does not persist is
+    # a wallet that finds its own coins once
+    ip.globals["swacustompath"] = "m/0'/0'"
+    ser = str(ip.call("waSerializeWallet", []))
+    c.ck("the wallet file carries the override", "path\tm/0'/0'" in ser,
+         repr([l for l in ser.split("\n") if l.startswith("path")]))
+    ip.globals["swacustompath"] = "m/99'"
+    ip.call("waDeserializeWallet", [ser])
+    c.eq("and a load restores it", str(ip.globals.get("swacustompath")), "m/0'/0'")
+    for k, v in saved_path.items():
+        ip.globals[k] = v
+
+    # (17) THE TWO SINGLE-KEY TOOLS. Derive-at-path is pinned to BIP-84's own
+    # published vector, so this is a real answer and not this wallet agreeing
+    # with itself.
+    saved_tools = {k: ip.globals.get(k) for k in
+                   ("swanetwork", "swamnemonic", "swapassphrase", "swacustompath")}
+    ip.globals["swanetwork"] = "mainnet"
+    ip.globals["swamnemonic"] = str(ip.constants.get("kWaTestMnemonic", ""))
+    ip.globals["swapassphrase"] = ""
+    ip.call("waDeriveAtPath", ["m/84'/0'/0'/0/0"])
+    out = _fld(world, "tl_out")
+    c.ck("derive-at-path finds BIP-84's published address",
+         "bc1qcr8te4kr609gcawutmrza0j4xv80jy8z306fyu" in out, out[:200])
+    c.ck("and its published private key",
+         "KyZpNDKnfs94vbrwhJneDi77V6jF64PWPF8x5cdJb8ifgg2DUc9d" in out, out[:200])
+    c.ck("and it imports nothing", str(ip.globals.get("swakind")) != "key",
+         str(ip.globals.get("swakind")))
+    for bad in ("", "m/84'/", "m/x"):
+        try:
+            ip.call("waDeriveAtPath", [bad])
+            c.ck("derive-at-path refuses %r" % bad, False, "accepted")
+        except LCS.Thrown:
+            c.ck("derive-at-path refuses %r" % bad, True)
+    # a fresh single key must be a REAL key: its WIF has to decode back to the
+    # addresses it was printed with
+    ip.call("waNewKey", [])
+    out = _fld(world, "tl_out")
+    # THE LABELLED LINE, not any line mentioning the word. The closing
+    # paragraph of that panel ends "...with that WIF.", so a last-match scrape
+    # picks up "WIF." and the base58 decoder refuses it - which is this
+    # check's own bug and not the wallet's, but it is exactly how a test comes
+    # to assert something other than what it names.
+    wif = ""
+    for ln in out.split("\n"):
+        if ln.strip().startswith("WIF"):
+            wif = ln.split()[-1]
+            break
+    c.ck("a new single key produced a WIF", len(wif) > 40, repr(wif[:12]))
+    if len(wif) > 40:
+        info = ip.call("cwWifInfo", [wif, "mainnet"])
+        c.ck("and the WIF decodes to the addresses it was shown with",
+             str(info["p2wpkh"]) in out and str(info["p2pkh"]) in out,
+             "%s / %s" % (str(info["p2wpkh"])[:16], str(info["p2pkh"])[:16]))
+        c.ck("and it is NOT one of this wallet's own addresses",
+             ip.call("waIsMine", [str(info["p2wpkh"])]) is not True,
+             "the tool put a key into the wallet")
+    for k, v in saved_tools.items():
+        ip.globals[k] = v
+
     for k, v in saved_audit.items():
         ip.globals[k] = v
 
@@ -1705,6 +1944,212 @@ def drive(c, ip, world, sandbox):
              ip.call("waIsElectrum", [backend]) is True, want)
     for k, v in saved6.items():
         ip.globals[k] = v
+
+    # ---- the four tools added 2026-09-01, driven through their buttons ----
+    #
+    # DRIVEN, not called: every one of these went in with a button, a role in
+    # waToolsClick and a menu item, and this member's own record is that a
+    # handler nobody has ever reached is a handler whose first reader is a
+    # person with a stuck transaction. click() goes through the real mouseUp
+    # router, so a role that is not wired fails here.
+    click(ip, world, "nv_tl")
+
+    # DECODE SCRIPT: the bare hex the Inspect button could never be given.
+    put_field("tl_hex", "0014" + "75" * 20)
+    click(ip, world, "tl_decode")
+    out = _fld(world, "tl_out")
+    c.ck("a P2WPKH script decodes", "SCRIPT" in out and "p2wpkh" in out,
+         repr(out[:120]))
+    c.ck("and it says what paying it would pay",
+         "tb1q" in out or "bcrt1q" in out, repr(out[:200]))
+    # The truncated push is the whole reason cwScriptCheck exists: a chunk
+    # expression past the end of a string ANSWERS, so this shape used to
+    # render as a short push and read like a correct decode.
+    put_field("tl_hex", "0020dead")
+    try:
+        ip.call("waDecodeScript", ["0020dead"])
+        c.ck("a truncated push is refused, not rendered short", False,
+             "it was rendered")
+    except LCS.Thrown as exc:
+        c.ck("a truncated push is refused, not rendered short",
+             "well-framed" in str(exc.msg), str(exc.msg)[:90])
+
+    # VALIDATE: a verdict, on every chain and not just this wallet's.
+    main_addr = "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4"
+    put_field("tl_hex", main_addr)
+    click(ip, world, "tl_validate")
+    out = _fld(world, "tl_out")
+    c.ck("a mainnet address on a testnet wallet is VALID but not payable",
+         "NOT ON THIS WALLET'S CHAIN" in out and "mainnet" in out,
+         repr(out[:160]))
+    # ...which is the case that matters. A validator that only asks about the
+    # current network reports this as simply invalid, and "invalid" is what a
+    # person reads as "I mistyped it" rather than "this is another chain".
+    c.ck("and it is not reported as invalid", "NOT VALID ANYWHERE" not in out)
+    own = str((ip.globals.get("swaaddresses") or {}).get("1", {})
+              .get("address", ""))
+    put_field("tl_hex", own)
+    click(ip, world, "tl_validate")
+    out = _fld(world, "tl_out")
+    c.ck("this wallet's own address validates and is recognised as ours",
+         "VALID on testnet" in out and "YOUR OWN" in out, repr(out[:160]))
+    put_field("tl_hex", main_addr[:-1] + ("q" if main_addr[-1] != "q" else "p"))
+    click(ip, world, "tl_validate")
+    c.ck("one changed character is NOT VALID ANYWHERE",
+         "NOT VALID ANYWHERE" in _fld(world, "tl_out"),
+         repr(_fld(world, "tl_out")[:120]))
+    # An extended key takes the other branch, and the structural check there
+    # is the one no checksum makes.
+    xpub = str(ip.globals.get("swaaccountxpub", ""))
+    if xpub:
+        put_field("tl_hex", xpub)
+        click(ip, world, "tl_validate")
+        out = _fld(world, "tl_out")
+        c.ck("this wallet's own account xpub validates",
+             "VALID EXTENDED KEY" in out and "public" in out, repr(out[:120]))
+        c.ck("and it prints addresses this wallet recognises",
+             "THIS WALLET'S" in out, repr(out[:400]))
+        put_field("tl_hex", xpub[:-1] + ("a" if xpub[-1] != "a" else "b"))
+        click(ip, world, "tl_validate")
+        c.ck("a one-character edit fails Base58Check",
+             "NOT A VALID EXTENDED KEY" in _fld(world, "tl_out"),
+             repr(_fld(world, "tl_out")[:120]))
+
+    # WORDS TO ENTROPY: the round trip, both ways, and the passphrase.
+    seed_words = str(ip.globals.get("swamnemonic", ""))
+    if seed_words:
+        put_field("tl_hex", seed_words)
+        put_field("tl_pass", "")
+        click(ip, world, "tl_toEntropy")
+        out = _fld(world, "tl_out")
+        c.ck("a seed phrase converts to entropy",
+             "SEED PHRASE" in out and "entropy" in out, repr(out[:120]))
+        ent = str(ip.call("cxMnemonicToEntropy", [seed_words]))
+        c.ck("and the hex on screen is really that entropy",
+             ent.encode("latin-1", "ignore").hex() in out.lower()
+             or str(ip.call("cxHexEncode", [ent])).lower() in out.lower(),
+             repr(out[:300]))
+        # THE ROUND TRIP IS THE POINT. Recovering entropy means stripping
+        # checksum bits, and an off-by-one there yields a plausible hex
+        # string that regenerates DIFFERENT words - a number that looks
+        # right and is wrong.
+        c.eq("the entropy regenerates exactly the same words",
+             str(ip.call("cxMnemonicFromEntropy", [ent])), seed_words)
+        # ...and the two directions are really different code, or the check
+        # above would pass for a pair of functions that both returned their
+        # input.
+        c.ck("and the two directions are not the identity",
+             str(ip.call("cxHexEncode", [ent])).lower() != seed_words.lower())
+        # A passphrase is a THIRTEENTH WORD, not a password on the phrase.
+        put_field("tl_pass", "hunter2")
+        click(ip, world, "tl_toEntropy")
+        out = _fld(world, "tl_out")
+        c.ck("with a passphrase, two master fingerprints are shown",
+             out.count("master key") == 2, repr(out[-500:]))
+        fp0 = str(ip.call("waSeedFingerprint", [seed_words, ""]))
+        fp1 = str(ip.call("waSeedFingerprint", [seed_words, "hunter2"]))
+        c.ck("and they are different wallets", fp0 != fp1 and fp0 and fp1,
+             "%r vs %r" % (fp0, fp1))
+        c.ck("the fingerprint without a passphrase is this wallet's",
+             fp0 == str(ip.globals.get("swafingerprint", "")),
+             "%r vs %r" % (fp0, ip.globals.get("swafingerprint")))
+        put_field("tl_pass", "")
+        # A phrase that fails its checksum is refused before anything is
+        # derived from it, because every passphrase opens a real wallet and
+        # so does every mistyped phrase.
+        broken = seed_words.split()
+        broken[-1] = "abandon" if broken[-1] != "abandon" else "ability"
+        try:
+            ip.call("waWordsToEntropy", [" ".join(broken), ""])
+            c.ck("a phrase failing its checksum is refused", False,
+                 "it was accepted")
+        except LCS.Thrown as exc:
+            c.ck("a phrase failing its checksum is refused",
+                 "checksum" in str(exc.msg), str(exc.msg)[:90])
+
+    # ---- the context menu routes to the buttons, item by item -------------
+    #
+    # THE MENU IS NOT A SECOND IMPLEMENTATION, and this is what holds it to
+    # that. Every screen's menu is built, every item is resolved through
+    # waMenuRoute, and every route that is not "self" must name a control the
+    # app's own registry already carries - so an item can only ever mean what
+    # some button on that screen means. An item nobody wired answers empty and
+    # fails here, which is the whole reason waMenuRoute answers empty rather
+    # than shrugging.
+    #
+    # What this CANNOT settle is that the menu appears: the interpreter models
+    # no mouse button and no popup. The wallet's own mouseDown says so.
+    reg = set(n.strip().lower() for n in
+              str(ip.constants.get("kWaScControls", "")).split(",") if n.strip())
+    menu_screens = ["wallet", "receive", "addresses", "send", "coins",
+                    "history", "tools", "log"]
+    unrouted, unbuilt, wrong_screen = [], [], []
+    for screen in SCREENS:
+        name = str(ip.call("waMenuFor", [screen]))
+        if name != "menu_" + screen:
+            wrong_screen.append(screen)
+            continue
+        btn = world.anywhere(name)
+        if btn is None:
+            unbuilt.append(screen)
+            continue
+        items = [ln for ln in str(_ctl_prop_get(btn, "text")).split("\n") if ln]
+        for item in items:
+            route = str(ip.call("waMenuRoute", [item]))
+            if route == "":
+                unrouted.append("%s/%s" % (screen, item))
+            elif route != "self":
+                pre, _, role = route.partition(" ")
+                if ip.call("waRouteKnows", [pre]) is not True:
+                    unrouted.append("%s/%s -> %s" % (screen, item, route))
+                elif ("%s_%s" % (pre, role)).lower() not in reg:
+                    unrouted.append("%s/%s -> no button %s_%s"
+                                    % (screen, item, pre, role))
+    c.ck("every menu item routes to a real button or to the router itself",
+         not unrouted, "; ".join(unrouted[:6]))
+    c.ck("waMenuFor builds the button it names", not unbuilt and not wrong_screen,
+         "unbuilt: %s wrong: %s" % (",".join(unbuilt), ",".join(wrong_screen)))
+
+    # The eight screens with something worth offering carry a menu of their
+    # own; the other two get the common tail. Both halves end with the same
+    # two items, because a menu that differs everywhere is a menu nobody
+    # learns - so that is asserted rather than left to the reading.
+    tails, sized = [], []
+    for screen in SCREENS:
+        btn = world.anywhere("menu_" + screen)
+        items = [ln for ln in
+                 str(_ctl_prop_get(btn, "text")).split("\n") if ln]
+        if items[-2:] != ["Refresh", "About this wallet"]:
+            tails.append(screen)
+        want_more = screen in menu_screens
+        if (len(items) > 2) is not want_more:
+            sized.append("%s:%d" % (screen, len(items)))
+    c.ck("every screen's menu ends with the same two items", not tails,
+         ",".join(tails))
+    c.ck("the eight screens with actions carry them; the other two do not",
+         not sized, ",".join(sized))
+
+    # An item nobody wired must be a FAILED CHECK, not a click that quietly
+    # does nothing - so the empty answer really does reach a throw.
+    try:
+        ip.call("waMenuPick", ["menu_wallet", "Sell the house"])
+        c.ck("an unrouted item is refused, not swallowed", False,
+             "it was accepted")
+    except LCS.Thrown as exc:
+        c.ck("an unrouted item is refused, not swallowed",
+             "nothing routes it" in str(exc.msg), str(exc.msg)[:80])
+    # ...and the prefix guard is a closed set, or the router would dispatch
+    # a two-letter name it does not own.
+    c.ck("waRouteKnows is closed over the eleven screens",
+         all(ip.call("waRouteKnows", [p]) is True for p in ["nv"] + CODES)
+         and ip.call("waRouteKnows", ["zz"]) is not True)
+    try:
+        ip.call("waRouteClick", ["zz", "whatever"])
+        c.ck("and waRouteClick refuses an unknown prefix", False,
+             "it was accepted")
+    except LCS.Thrown as exc:
+        c.ck("and waRouteClick refuses an unknown prefix",
+             "no screen owns" in str(exc.msg), str(exc.msg)[:80])
 
     # ---- the log recorded all of it --------------------------------------
     click(ip, world, "nv_lg")

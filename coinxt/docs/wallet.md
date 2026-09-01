@@ -97,12 +97,29 @@ unsigned PSBT.
 a hand-entry path so an offline wallet can be told what it owns.
 
 **History.** Transactions with confirmations, amounts and fees, a full decode of
-any of them, and the arithmetic for a BIP-125 fee bump.
+any of them, and a BIP-125 fee bump that BUILDS the replacement: same inputs,
+same payments, the extra fee out of the change, signed and printed line by line
+and not broadcast. It can do that for a spend this window signed, because
+signing records what the spend was made of - an input's value is committed to by
+BIP-143 and is not carried in the raw transaction. For a transaction made in an
+earlier session it prints the arithmetic and says plainly why it cannot build
+one.
 
 **Tools.** Sign and verify a message in the 2011 Bitcoin format, load, sign,
 combine and finalize a PSBT, inspect anything you paste (a raw transaction, a
-PSBT, an extended key, a WIF, an address or a URI), sweep a private key, export
-descriptors and account keys, and convert entropy to a mnemonic.
+PSBT, an extended key, a WIF, an address or a URI), decode a bare script from
+hex, validate an address or an extended key on EVERY chain rather than only this
+one, convert entropy to a mnemonic and a mnemonic back to entropy (with the
+master fingerprint with and without a BIP-39 passphrase), mint a single key,
+derive at an arbitrary path, sweep a private key, and export descriptors and
+account keys.
+
+**A right-click anywhere** opens a menu for the screen you are on. Every item on
+it routes to the same handler the screen's own buttons route to, so an item can
+only ever mean what a button means. `popup` and `menuPick` are documented
+LiveCode, but no stack in this suite has opened a menu on a real engine yet: if
+the engine declines, the right-click does nothing and the wallet is otherwise
+exactly as it was.
 
 **Settings.** The wallet file and its password, the display unit, the gap limit,
 and the honesty record.
@@ -191,8 +208,10 @@ navigation button through the real click router, the show/hide sweep checked
 control by control across all ten screens, a real spend built and signed and
 decoded by the oracle, the same spend exported as a PSBT and round-tripped
 through the Tools screen, a message signed and verified (and refused for a
-case-mangled Base58 address), and the wallet file sealed, re-opened, and
-refused after one flipped bit. SodiumXT is modelled there and each model is
+case-mangled Base58 address), a fee bump built and decoded by the oracle and
+checked against BIP-125 rules 1 to 4, every item of every screen's context menu
+walked through the router, and the wallet file sealed, re-opened, and refused
+after one flipped bit. SodiumXT is modelled there and each model is
 declared in the gate; OnionXT answers its version probe and nothing else,
 because a gate that dialled a real onion would be a gate that fails when the
 network does.

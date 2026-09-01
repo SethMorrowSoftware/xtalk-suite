@@ -2786,6 +2786,81 @@ function cwScriptAsm pScriptHex
    return cwTrim(tOut)
 end cwScriptAsm
 
+function cwScriptCheck pScriptHex
+   -- DOES THIS SCRIPT FRAME? Empty when every push in it fits inside the
+   -- bytes that were handed over, otherwise the reason it does not.
+   --
+   -- cwScriptAsm deliberately does not ask. It renders what a TRANSACTION
+   -- carried, and a transaction's scripts are already framed by the varint
+   -- that introduced them, so a truncated push there is impossible. A bare
+   -- script pasted into a box has no such guarantee, and a chunk expression
+   -- that runs past the end of a string answers with what is there rather
+   -- than refusing - so an over-long PUSH renders as a SHORT push and the
+   -- reader is told a lie in a format that looks exactly like the truth.
+   --
+   -- Separate from the renderer rather than folded into it because the
+   -- renderer's output is pinned by tools/check-wallet-vectors.py and by
+   -- every transaction the inspector has ever printed. One walk that
+   -- answered two questions would have made this a change to both.
+   local tHex, tPos, tEnd, tByte, tLen, tNeed
+   put cwLower(cwTrim(pScriptHex)) into tHex
+   put the number of chars of tHex into tEnd
+   -- EMPTY IS ASKED FIRST, and the order is the answer's whole value.
+   -- cwHexIsClean refuses an empty string too, so with the tests the other way
+   -- round a blank box came back "that is not hex" - which is true and useless,
+   -- because the person has not typed anything yet.
+   if tEnd is 0 then
+      return "the script is empty."
+   end if
+   if cwHexIsClean(tHex) is not true then
+      return "that is not hex."
+   end if
+   put 1 into tPos
+   repeat while tPos <= tEnd
+      put cwBeRead(cxHexDecode(char tPos to (tPos + 1) of tHex)) into tByte
+      add 2 to tPos
+      put -1 into tLen
+      if tByte >= 1 and tByte <= 75 then
+         put tByte into tLen
+      else if tByte is 76 then
+         if tPos + 1 > tEnd then
+            return "OP_PUSHDATA1 at byte " & cwIntDiv(tPos - 1, 2) & \
+                  " has no length byte after it."
+         end if
+         put cwBeRead(cxHexDecode(char tPos to (tPos + 1) of tHex)) into tLen
+         add 2 to tPos
+      else if tByte is 77 then
+         if tPos + 3 > tEnd then
+            return "OP_PUSHDATA2 at byte " & cwIntDiv(tPos - 1, 2) & \
+                  " has no length after it."
+         end if
+         put cwLeRead(cxHexDecode(char tPos to (tPos + 3) of tHex)) into tLen
+         add 4 to tPos
+      else if tByte is 78 then
+         if tPos + 7 > tEnd then
+            return "OP_PUSHDATA4 at byte " & cwIntDiv(tPos - 1, 2) & \
+                  " has no length after it."
+         end if
+         put cwLeRead(cxHexDecode(char tPos to (tPos + 7) of tHex)) into tLen
+         add 8 to tPos
+      end if
+      if tLen >= 0 then
+         -- THE COMPARISON GOES THROUGH A LOCAL. `tEnd - tPos + 1` written
+         -- inside a chunk expression binds the arithmetic into the chunk,
+         -- which is this member's own recorded trap and cost a gate run to
+         -- find in cwNeedBytes.
+         put tEnd - tPos + 1 into tNeed
+         if tLen * 2 > tNeed then
+            return "a push of " & tLen & " byte(s) at byte " & \
+                  cwIntDiv(tPos - 1, 2) & " runs past the end of the script, " & \
+                  "which holds only " & cwIntDiv(tNeed, 2) & " more."
+         end if
+         add tLen * 2 to tPos
+      end if
+   end repeat
+   return ""
+end cwScriptCheck
+
 -- ==============================================================================
 -- PSBT (BIP-174 version 0, with BIP-371's taproot fields)
 --
