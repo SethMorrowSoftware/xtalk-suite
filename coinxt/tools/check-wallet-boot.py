@@ -1471,12 +1471,72 @@ def drive(c, ip, world, sandbox):
          str(ip.globals.get("swanetwhy")) != "",
          "a later reply cleared swanetwhy")
     ip.globals["swasyncfailures"] = 3
+    # an EMPTY queue, because a sync will no longer start behind a running one
+    ip.globals["swaqueue"] = {"n": 0}
+    ip.globals["swainflight"] = ""
     try:
         ip.call("waSync", [])
     except LCS.Thrown:
         pass
     c.eq("and a fresh sync is allowed to be green again",
          int(LCS._n(ip.globals.get("swasyncfailures"))), 0)
+
+    # (9b) ...AND ONE SYNC AT A TIME. The engine log of 2026-09-01 shows the
+    # whole eighty-two-request batch queued twice, back to back: the second
+    # press appended behind the first and reset the failure count the first
+    # was still adding to. A queue that is not empty is a sync in progress.
+    queued = int(LCS._n((ip.globals.get("swaqueue") or {}).get("n", 0)))
+    n_addr = int(LCS._n((ip.globals.get("swaaddresses") or {}).get("n", 0)))
+    c.ck("that sync queued the batch", queued > 2, "queued %d" % queued)
+    # tip, fees, and ONE request per address - the unspent-output requests
+    # follow only the histories that turn out non-empty (2026-09-02)
+    c.eq("and it is tip + fees + one history per address, not two per address",
+         queued, 2 + n_addr)
+    try:
+        ip.call("waSync", [])
+        c.ck("a second Sync behind a running one is refused", False,
+             "it was accepted")
+    except LCS.Thrown as exc:
+        c.ck("a second Sync behind a running one is refused",
+             "already running" in str(exc.msg), str(exc.msg)[:100])
+    c.eq("and the queue is exactly as it was",
+         int(LCS._n((ip.globals.get("swaqueue") or {}).get("n", 0))), queued)
+    # A single request in flight - the Test button's tip - is NOT a sync and
+    # does not block one; that is the flow the log actually shows.
+    ip.globals["swaqueue"] = {"n": 0}
+    ip.globals["swainflight"] = {"kind": "tip", "arg": "", "id": "9"}
+    try:
+        ip.call("waSync", [])
+        c.ck("a Sync behind a lone Test request is allowed", True)
+    except LCS.Thrown as exc:
+        c.ck("a Sync behind a lone Test request is allowed", False,
+             str(exc.msg)[:100])
+    ip.globals["swaqueue"] = {"n": 0}
+    ip.globals["swainflight"] = ""
+
+    # (9c) A SERVER NOTIFICATION NEVER FAILS THE REQUEST IN FLIGHT.
+    # blockchain.headers.subscribe is a subscription: after the answer, every
+    # new block arrives as a message with a method and NO id. Handed to
+    # waNetApply while a request was in flight, that threw, and waNetFail
+    # tore the socket down and counted a failure - for a request the block
+    # had nothing to do with.
+    ip.globals["swasyncfailures"] = 0
+    ip.globals["swainflight"] = {"kind": "tip", "arg": "", "id": "11"}
+    ip.globals["swatipheight"] = ""
+    ip.call("waNetDeliver",
+            ['{"jsonrpc":"2.0","method":"blockchain.headers.subscribe",'
+             '"params":[{"height":800002,"hex":"00"}]}'])
+    c.ck("a pushed header is ignored, not failed",
+         int(LCS._n(ip.globals.get("swasyncfailures"))) == 0,
+         "failures %r why %r" % (ip.globals.get("swasyncfailures"),
+                                 ip.globals.get("swanetwhy")))
+    c.ck("and the request stays in flight",
+         bool(ip.globals.get("swainflight")), "in-flight was consumed")
+    ip.call("waNetDeliver",
+            ['{"jsonrpc":"2.0","id":11,"result":{"height":800003,"hex":"00"}}'])
+    c.eq("and the real answer still lands afterwards",
+         str(ip.globals.get("swatipheight")), "800003")
+    ip.globals["swainflight"] = ""
 
     # (10) THE TWO TRANSPORTS MUST AGREE ABOUT THE SAME QUANTITY. Three times
     # over, the Esplora branch validated something and the Electrum branch
@@ -1902,11 +1962,46 @@ def drive(c, ip, world, sandbox):
     c.eq("at the right address", str(u.get("1", {}).get("address", "")), addr0)
     c.eq("with the right value", int(LCS._n(u.get("1", {}).get("value", 0))),
          123456)
+    # THE RESHAPED SYNC, against these same real bytes (2026-09-02). A sync
+    # asks history of every address and unspent outputs only of the ones
+    # whose history says there are any, so a one-row history must queue
+    # exactly one utxos request for that address...
+    q0 = int(LCS._n((ip.globals.get("swaqueue") or {}).get("n", 0)))
     wire("history", addr0,
          '{"id":5,"jsonrpc":"2.0","result":[{"tx_hash":"%s","height":5127000}]}'
          % ("cc" * 32))
     c.eq("get_history lands as one row",
          int(LCS._n((ip.globals.get("swahistory") or {}).get("n", 0))), 1)
+    q = ip.globals.get("swaqueue") or {}
+    qn = int(LCS._n(q.get("n", 0)))
+    c.eq("a non-empty history queues one unspent-output request", qn, q0 + 1)
+    last = q.get(str(qn), {}) if qn else {}
+    c.eq("for that same address",
+         (str(last.get("kind", "")), str(last.get("arg", ""))), ("utxos", addr0))
+    # ...and an EMPTY history must queue nothing and clear that address's
+    # coin rows, because a re-sync keeps the last sync's coins until each
+    # address answers.
+    addr1 = str((ip.globals.get("swaaddresses") or {}).get("2", {})
+                .get("address", ""))
+    u = dict(ip.globals.get("swautxos") or {"n": 0})
+    n_u = int(LCS._n(u.get("n", 0)))
+    u[str(n_u + 1)] = {"txid": "dd" * 32, "vout": 0, "value": 777,
+                       "confirmations": 1, "height": 5127000,
+                       "address": addr1, "script": "", "path": "",
+                       "pubkey": "", "chain": 0, "index": 1,
+                       "selected": "", "frozen": ""}
+    u["n"] = n_u + 1
+    ip.globals["swautxos"] = u
+    wire("history", addr1, '{"id":9,"jsonrpc":"2.0","result":[]}')
+    c.eq("an empty history queues nothing",
+         int(LCS._n((ip.globals.get("swaqueue") or {}).get("n", 0))), qn)
+    rows = ip.globals.get("swautxos") or {}
+    left = [rows[str(i)] for i in range(1, int(LCS._n(rows.get("n", 0))) + 1)
+            if str(rows[str(i)].get("address", "")) == addr1]
+    c.eq("and clears that address's coin rows", len(left), 0)
+    # the queued utxos request is this section's own side effect; the
+    # sections after it assume an idle queue
+    ip.globals["swaqueue"] = {"n": 0}
     # A JSON-RPC error must be REPORTED, never parsed as data.
     try:
         wire("tip", "", '{"id":6,"jsonrpc":"2.0","error":{"code":-32601,'
@@ -2066,6 +2161,217 @@ def drive(c, ip, world, sandbox):
         except LCS.Thrown as exc:
             c.ck("a phrase failing its checksum is refused",
                  "checksum" in str(exc.msg), str(exc.msg)[:90])
+
+    # ---- the 2026-09-01 engine log, line by line -------------------------
+    #
+    # A real OpenXTalk run of this wallet produced twenty-seven consecutive
+    # copies of one sentence - "that seed phrase does not pass its BIP-39
+    # checksum" - then "FAILED: this wallet is offline.", then a successful
+    # sync of the demonstration wallet on mainnet. Each of those is a defect
+    # with a check here now, driven the way the person drove it.
+    saved_log = {k: ip.globals.get(k) for k in
+                 ("swakind", "swanetwork", "swascripttype", "swamnemonic",
+                  "swapassphrase", "swaaccountxpub", "swaaccountxprv",
+                  "swafingerprint", "swaaddresses", "swautxos", "swahistory",
+                  "swalabel", "swaaccount", "swacustompath", "swabackend",
+                  "swanetstate", "swanetwhy", "swasyncfailures", "swaqueue",
+                  "swainflight", "swaseedchoice")}
+    ip.globals["swakind"] = "seed"
+    ip.globals["swanetwork"] = "testnet"
+    ip.globals["swascripttype"] = "p2wpkh"
+    ip.globals["swamnemonic"] = str(ip.constants.get("kWaTestMnemonic", ""))
+    ip.globals["swapassphrase"] = ""
+    ip.globals["swacustompath"] = ""
+    ip.call("waDeriveAccount", [])
+    good_xpub = str(ip.globals.get("swaaccountxpub"))
+    good_addr = str((ip.globals.get("swaaddresses") or {}).get("1", {})
+                    .get("address", ""))
+    c.ck("a good wallet is open to start from", good_xpub != "" and good_addr != "")
+
+    # THE WALL. A phrase that fails must not become state.
+    click(ip, world, "nv_wl")
+    bad = "abandon abandon abandon abandon abandon abandon abandon abandon " \
+          "abandon abandon abandon abandon"
+    put_field("wl_mnemonic", bad)
+    put_field("wl_path", "")
+    try:
+        click(ip, world, "wl_open")
+    except LCS.Thrown:
+        pass
+    log_text = _fld(world, "lg_text")
+    c.ck("a bad phrase is refused on Open", "cannot open a wallet" in log_text,
+         repr(log_text[-200:]))
+    c.eq("and the phrase that was open is STILL the phrase that is open",
+         str(ip.globals.get("swamnemonic")),
+         str(ip.constants.get("kWaTestMnemonic", "")))
+    c.eq("and the account key is untouched",
+         str(ip.globals.get("swaaccountxpub")), good_xpub)
+    c.eq("and the addresses are untouched",
+         str((ip.globals.get("swaaddresses") or {}).get("1", {})
+             .get("address", "")), good_addr)
+    # ...so the next click on that screen does NOT throw the same sentence,
+    # which is what twenty-seven of them in a row were.
+    # ONE click, not four: every one of these re-derives forty addresses
+    # through the shim under the interpreter, and the property - a click that
+    # re-derives does not throw the Open's error again - is proven by the
+    # first as well as by the fourth. The state is put back by hand below.
+    before = _fld(world, "lg_text").count("cannot open a wallet")
+    click(ip, world, "wl_netMain")
+    after = _fld(world, "lg_text").count("cannot open a wallet")
+    c.eq("the next click on the Wallet screen adds no more of that error",
+         after - before, 0)
+    c.eq("and it did what it said", str(ip.globals.get("swanetwork")), "mainnet")
+    ip.globals["swanetwork"] = "testnet"
+
+    # THE REASON IS SPECIFIC. The old sentence said "checksum" for every
+    # failure; cxMnemonicToEntropy already knew which word and how many.
+    why = str(ip.call("waMnemonicProblem", [bad]))
+    c.ck("a checksum failure names the checksum and the count",
+         "checksum" in why and "12 word" in why, why[:120])
+    why = str(ip.call("waMnemonicProblem", [bad.replace("abandon", "abandom", 1)]))
+    c.ck("a misspelt word is named by position",
+         "word 1" in why and "wordlist" in why, why[:120])
+    why = str(ip.call("waMnemonicProblem", ["abandon abandon abandon"]))
+    c.ck("a short phrase says how many words it expected",
+         "12, 15, 18, 21 or 24" in why and "3 word" in why, why[:120])
+    c.eq("an empty box says so", str(ip.call("waMnemonicProblem", [""])),
+         "the seed box is empty.")
+    c.eq("and the good phrase has no problem",
+         str(ip.call("waMnemonicProblem",
+                     [str(ip.constants.get("kWaTestMnemonic", ""))])), "")
+
+    # THE ROLLBACK. A network switch that cannot re-derive stays put, rather
+    # than leaving the wallet on the new chain with the old chain's addresses.
+    ip.globals["swakind"] = "watch"
+    ip.globals["swamnemonic"] = ""
+    ip.globals["swaaccountxprv"] = ""
+    ip.globals["swaaccountxpub"] = good_xpub          # a TESTNET key
+    ip.call("waDeriveAddresses", [])
+    watch_addr = str((ip.globals.get("swaaddresses") or {}).get("1", {})
+                     .get("address", ""))
+    try:
+        ip.call("waSetNetwork", ["mainnet"])
+        c.ck("moving a testnet watch-only wallet to mainnet is refused", False,
+             "it was accepted")
+    except LCS.Thrown as exc:
+        c.ck("moving a testnet watch-only wallet to mainnet is refused",
+             "still on testnet" in str(exc.msg), str(exc.msg)[:120])
+    c.eq("and the wallet is still on testnet", str(ip.globals.get("swanetwork")),
+         "testnet")
+    c.eq("with its addresses intact",
+         str((ip.globals.get("swaaddresses") or {}).get("1", {})
+             .get("address", "")), watch_addr)
+
+    # THE MULTISIG PHRASE. Choosing Multisig, typing a phrase and pressing
+    # Open used to ignore the phrase - the branch exited before the line that
+    # read it - and derive the cosigner key from whatever was open before,
+    # which at boot is the PUBLISHED test seed.
+    ip.globals["swakind"] = "multisig"
+    ip.globals["swascripttype"] = "p2wsh"
+    ip.globals["swamnemonic"] = str(ip.constants.get("kWaTestMnemonic", ""))
+    other = "zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo wrong"
+    put_field("wl_mnemonic", other)
+    put_field("wl_xkey", "")
+    try:
+        ip.call("waOpenWallet", [])
+    except LCS.Thrown:
+        pass
+    c.ck("a multisig Open adopts the phrase in the box",
+         str(ip.globals.get("swamnemonic")) == other
+         or "cannot open a wallet" in _fld(world, "lg_text")[-300:],
+         repr(str(ip.globals.get("swamnemonic"))[:40]))
+    # ("zoo ... wrong" is a real BIP-39 phrase: the last word carries the
+    # checksum, and "wrong" is the one that closes eleven "zoo"s.)
+    c.eq("and it really is that phrase", str(ip.globals.get("swamnemonic")), other)
+
+    # THE ELECTRUM SEED. The phrase that failed twenty-seven times was very
+    # probably not BIP-39 at all: Electrum's twelve words come from the same
+    # English list and fail BIP-39's checksum BY DESIGN. The wallet now asks
+    # the phrase what it is, and opens both Electrum kinds at their own paths.
+    # Both vectors were manufactured the way Electrum manufactures them - draw
+    # words until the "Seed version" HMAC prefix matches - and their addresses
+    # come from the independent reference with salt "electrum", so this is
+    # not the wallet agreeing with itself.
+    E_SEGWIT = ("puzzle matrix idle exhaust drama thumb crowd flash client "
+                "adjust bracket fruit")
+    E_STD = ("robot strong congress quantum bonus never topple diamond awake "
+             "endorse glance degree")
+    c.eq("a segwit Electrum seed is recognised",
+         str(ip.call("waSeedFormatOf", [E_SEGWIT])), "electrum-segwit")
+    c.eq("a standard Electrum seed is recognised",
+         str(ip.call("waSeedFormatOf", [E_STD])), "electrum-standard")
+    c.eq("and BIP-39 is still BIP-39",
+         str(ip.call("waSeedFormatOf",
+                     [str(ip.constants.get("kWaTestMnemonic", ""))])), "bip39")
+    c.eq("a phrase that is neither is neither",
+         str(ip.call("waSeedFormatOf", [bad])), "")
+    ip.globals["swakind"] = "seed"
+    ip.globals["swanetwork"] = "testnet"
+    ip.globals["swascripttype"] = "p2tr"           # deliberately WRONG
+    put_field("wl_mnemonic", E_SEGWIT)
+    put_field("wl_pass", "")
+    put_field("wl_path", "m/84'/1'/0'")            # deliberately WRONG
+    click(ip, world, "nv_wl")
+    click(ip, world, "wl_open")
+    c.eq("an Electrum segwit seed opens at m/0'",
+         str(ip.globals.get("swacustompath")), "m/0'")
+    c.eq("as p2wpkh, whatever the buttons said",
+         str(ip.globals.get("swascripttype")), "p2wpkh")
+    c.eq("and its first receive address is the reference's",
+         str((ip.globals.get("swaaddresses") or {}).get("1", {})
+             .get("address", "")), "tb1ql0z9jpgq5eyl9tf62mqjgna94tdu2ntr5ndm73")
+    addrs = ip.globals.get("swaaddresses") or {}
+    chg = [addrs[str(i)]["address"] for i in range(1, int(LCS._n(addrs.get("n", 0))) + 1)
+           if str(addrs[str(i)].get("change", "")) in ("1", "true", "True")]
+    c.ck("and its first change address is the reference's",
+         chg[:1] == ["tb1qag3xwkssdh3nu82gh2r7ztardrf6mvn0mz6jzf"], repr(chg[:1]))
+    c.eq("the path box shows the path the seed chose",
+         _fld(world, "wl_path"), "m/0'")
+    put_field("wl_mnemonic", E_STD)
+    click(ip, world, "wl_open")
+    c.eq("a standard Electrum seed opens at the master itself",
+         str(ip.globals.get("swacustompath")), "m")
+    c.eq("as p2pkh", str(ip.globals.get("swascripttype")), "p2pkh")
+    c.eq("and its first receive address is the reference's (m/0/0)",
+         str((ip.globals.get("swaaddresses") or {}).get("1", {})
+             .get("address", "")), "n1xd4CN7eaFPDrCfouzBpHWQdMfbPBHYSx")
+    addrs = ip.globals.get("swaaddresses") or {}
+    chg = [addrs[str(i)]["address"] for i in range(1, int(LCS._n(addrs.get("n", 0))) + 1)
+           if str(addrs[str(i)].get("change", "")) in ("1", "true", "True")]
+    c.ck("and its first change address is the reference's (m/1/0)",
+         chg[:1] == ["mnpzEAEofmQWf4yE2rVvYNTyqF9Ni36J9u"], repr(chg[:1]))
+    # A two-factor seed is named and refused, not opened as something else.
+    why = str(ip.call("waMnemonicProblem", [E_SEGWIT]))
+    c.eq("an openable Electrum seed has no problem", why, "")
+    put_field("wl_path", "")
+
+    # THE OFFLINE TEST. Pressing Test with no backend chosen used to queue a
+    # request, let the pump fail it, and paint "FAILED: this wallet is
+    # offline." with a failure count and a red pill. It is refused at the door.
+    ip.globals["swakind"] = "seed"
+    ip.globals["swascripttype"] = "p2wpkh"
+    ip.globals["swabackend"] = "offline"
+    ip.globals["swanetstate"] = "idle"
+    ip.globals["swanetwhy"] = ""
+    ip.globals["swasyncfailures"] = 0
+    ip.globals["swaqueue"] = {"n": 0}
+    ip.globals["swainflight"] = ""
+    click(ip, world, "nv_nw")
+    click(ip, world, "nw_test")
+    c.ck("Test while offline is refused with the reason",
+         "nothing to test" in _fld(world, "lg_text")[-300:],
+         repr(_fld(world, "lg_text")[-160:]))
+    c.eq("and nothing was queued",
+         int(LCS._n((ip.globals.get("swaqueue") or {}).get("n", 0))), 0)
+    c.eq("and no failure was counted",
+         int(LCS._n(ip.globals.get("swasyncfailures"))), 0)
+    c.ck("and the network state is not 'failed'",
+         str(ip.globals.get("swanetstate")) != "failed",
+         str(ip.globals.get("swanetstate")))
+
+    for k, v in saved_log.items():
+        ip.globals[k] = v
+    ip.call("waDeriveAddresses", [])
 
     # ---- the context menu routes to the buttons, item by item -------------
     #

@@ -2284,3 +2284,150 @@ against `cxMnemonicFromEntropy`, and the replacement decoded by the independent 
 against BIP-125 rules 1, 2, 3 and 4. None of the five additions above has run on an engine, no
 menu has been opened by a person, and no transaction this wallet built has been broadcast to any
 network.
+
+### 2026-09-01 - the first engine run of the wallet, and the twenty-seven lines it sent back
+
+The wallet's first contact with a real engine did not arrive as a harness report. It arrived as a
+pasted log: twenty-seven consecutive, byte-identical copies of `error: that seed phrase does not pass
+its BIP-39 checksum`, then `FAILED: this wallet is offline.`, then a complete, successful sync of the
+demonstration wallet over Electrum-clearnet against `electrum.blockstream.info:50001` on mainnet -
+one persistent socket, every reply correlated by id, ids 2 through 145, a 16 KB history included.
+Three things in that log are defects, one is a label that had to flip, and one is a guess about
+what the person was holding that turned into a feature.
+
+**THE TWENTY-SEVEN LINES WERE ONE DEFECT, and it was a wall.** `waOpenWallet` committed the seed box
+into `sWaMnemonic` and THEN asked `waDeriveAccount` whether it was any good - and `waDeriveAccount`
+emptied the account key, the private key and the fingerprint BEFORE it validated. So one bad phrase
+plus one press of Open left a wallet whose state WAS the bad phrase and whose account was gone, and
+every later click that re-derives - the four network buttons, the five script-type buttons, the
+account box - re-validated the same phrase and threw the same sentence. The person clicked around
+trying to find what was wrong, which is exactly what a person does, and each click was another line.
+Twenty-seven is not a count of attempts at the phrase; it is a count of clicks on a screen that had
+stopped working. `waSetNetwork` had the same shape one layer down: network committed, coins dropped,
+THEN the derive that can refuse - so a watch-only key on the wrong chain produced a wallet on mainnet
+showing testnet addresses under an error about the switch.
+
+And the watch-only kind had it worse, which the gate found on its first run by asking for a refusal
+that never came: `waSetNetwork` re-derived only when the wallet HAD A MNEMONIC, which a watch-only
+wallet never has - so a network switch on one ran no derive at all, the chain check that
+`waDeriveAccount`'s watch branch exists for never ran, and the addresses stayed the old chain's under
+a network label that said otherwise. It re-derives whenever there is an account key to re-derive from,
+and the watch branch re-encodes the addresses for the chain that passed.
+
+All three read-then-write orders are reversed now. `waOpenWallet` reads every box into a local,
+validates all of it, and commits only after the last check that can refuse; `waDeriveAccount` builds
+the new key material in locals and writes the three fields together at the end; `waSetNetwork` and
+`waSetType` keep the old state in locals and put it back on a throw, re-thrown after the try because a
+throw inside a catch does not reach the caller here. **The property the gate holds is not "the error
+is better"; it is that a failed Open changes nothing** - the phrase that was open is still the phrase
+that is open, the account key is byte-identical, the addresses are byte-identical, and four more
+clicks on that screen add zero copies of the error to the log.
+
+**THE SENTENCE ITSELF WAS THE SECOND DEFECT.** "Does not pass its checksum" is the least useful true
+thing to say about a phrase: it does not say whether a word is misspelt, which word, whether there
+are eleven words rather than twelve, or whether the phrase is a perfectly good seed from another
+wallet. `cxMnemonicToEntropy` throws every one of those distinctions by name and this app was
+catching them and discarding them. `waMnemonicProblem` now asks it and passes the answer through,
+with the word count: "word 1 is not in the BIP-39 English wordlist (12 word(s) given.)". A person
+who had typed their phrase twenty-seven times never once saw which word was wrong.
+
+**A MULTISIG WALLET IGNORED ITS OWN PHRASE.** Found while reversing the order above: the multisig
+branch of `waOpenWallet` exited before the line that read the seed box, so choosing Multisig, typing
+a phrase and pressing Open derived the cosigner key from whatever `sWaMnemonic` held before - at boot,
+the PUBLISHED test seed. The phrase box is now read and validated before the kind dispatch for both
+kinds that have one; an empty box on a multisig wallet keeps the seed already open, because a
+cosigner may have opened it first.
+
+**THE OFFLINE FAILURE AND THE DOUBLED SYNC were two small ones on the Network screen.** Test queued a
+request with no backend chosen, so the pump dialled nothing and reported it through `waNetFail` as a
+failure - a count, a red pill and a torn-down connection, for a wallet that had simply not been told
+where to look; it refuses at the door now, the way Sync already did. And `waSync` appended a whole
+second batch behind whatever was still queued, so the log shows eighty-two requests and then the same
+eighty-two again from id 85 - twice the round trips, twice what a public server learns, and a failure
+count reset under a batch still adding to it. A non-empty queue is a running sync and a second press
+is refused; a single request in flight (Test's tip) is not a sync and does not block one, because
+Test-then-Sync is the flow the log actually shows.
+
+**THE SUBSCRIPTION.** `blockchain.headers.subscribe` is the only way Electrum's protocol answers "what
+is the tip", and it is a subscription: after the answer the server pushes a new header on every
+block, with a method and no id, for the life of the socket. `waNetApply`'s id check - added in the
+audit above - correctly refused to treat that as an answer, but the refusal was a throw, and a throw
+there is `waNetFail`: socket down, failure counted, the request that was in flight retried. A pushed
+header during a sync would have failed a request the block had nothing to do with. `waNetDeliver` now
+asks `waIsNotification` before it touches the in-flight record, logs the push, and drops it; the real
+answer lands on the next line into a wallet still waiting for it. Two Test-then-Sync subscriptions on
+one socket, as the log shows, are harmless for the same reason.
+
+**THE LABEL THAT FLIPPED.** Until this log, every document in this member said the transports had
+never spoken to a real backend. Electrum over clearnet now has, on a real engine, against a real
+server, for a full sync. `docs/wallet.md` says so with the date; the other three transports keep their
+labels, and the doc-status gate is what makes the difference between "flipped" and "forgotten" a
+build failure rather than a reading.
+
+**AND THE GUESS THAT BECAME A FEATURE.** A phrase that fails BIP-39's checksum twenty-seven times is
+very rarely a phrase with a typo in it. It is far more often a phrase that was never BIP-39: Electrum's
+seeds are twelve words from the SAME English list and fail BIP-39 by design - Electrum's generator
+rejects any phrase that would also validate as BIP-39, so the two formats never collide. Their own
+check is the hex prefix of HMAC-SHA512 keyed "Seed version" over the phrase ("01" original, "100"
+segwit, "101"/"102" two-factor), their seed is the same PBKDF2 with salt "electrum" instead of
+"mnemonic", and below the master key they are ordinary BIP-32 at paths this app already let a person
+type: `m/0'` for segwit (p2wpkh), the master itself for the original kind (p2pkh, receive `m/0/i`,
+change `m/1/i`). `waSeedFormatOf` asks the phrase what it is; an Electrum seed opens at its own path
+and script type whatever the buttons said, because the alternative is a valid seed opening the wrong
+wallet - a zero balance that reads like an empty wallet rather than a mistake. The two-factor kinds
+are named and refused: those need TrustedCoin's third key. Nothing about the wallet file changed,
+because the phrase carries its own format and the path and type were already saved.
+
+Both Electrum vectors in the gate were MANUFACTURED the way Electrum manufactures seeds - draw twelve
+words until the HMAC prefix matches and BIP-39 does not - and their addresses come from the
+independent reference with salt "electrum", so the check is not the wallet agreeing with itself. The
+first attempt at that search walked the wordlist with a fixed stride and could never have found a
+"100" prefix: 2048 distinct phrases against a 1-in-4096 event. It ran for twenty minutes before the
+arithmetic was done. A search that cannot succeed looks exactly like a search that has not succeeded
+yet, which is this member's failure shape one more time, in the tooling.
+
+**THE COST OF THE FIX, AND THE COST OF THE CHECK, both had to be paid down before either could
+land.** The first version of `waDeriveAccount` asked `waMnemonicProblem` and then `waSeedFormatOf`,
+and each of those runs `cxMnemonicValidate` - a twelve-word walk of the 2048-word list, which under
+the interpreter is seconds - so the path that SUCCEEDS paid twice for an answer the first call had
+already given, on every derive in the gate. The format is asked once now and the problem only when
+the format says there is one. And the first version of the gate's check clicked four network and
+script-type buttons in a row to prove that a click after a failed Open no longer throws; each of
+those re-derives forty addresses through the shim, and the property is proven by the first click
+exactly as well as by the fourth. Together they had pushed `check-wallet-boot.py` past a hundred
+minutes - a gate `build-all.sh` runs on every push - and the run looked, from outside, exactly like
+a hang: one line, no output, for twenty minutes. It was not; CPU time equalled wall time throughout.
+But a gate whose honest run is indistinguishable from a stuck one is a gate somebody will kill, and
+the number that matters for a gate is not only what it proves but what it costs to be believed.
+
+**What this settles and what it does not.** Every defect above has a check in
+`tools/check-wallet-boot.py` driven through the real click router, and the boot self-check asks the
+phrase-format question on open. The Electrum-clearnet transport is engine-proven for a read-only sync;
+no transaction built here has been broadcast, Esplora-clearnet and both Tor transports have still not
+met a backend, and the Electrum seed support has run only under the interpreter against the reference -
+it has not opened a real Electrum wallet's coins on an engine.
+
+### 2026-09-02 - the first coin, and half the requests
+
+**A TESTNET RECEIVE, reported by the person running the wallet on an engine**: a wallet created
+here, an address handed out, coins arriving at it, seen over both clearnet transports. That is the
+first coin this wallet has ever held on any chain, and it flips the Esplora-over-clearnet label
+that the 2026-09-01 entry left standing - a receive is a sync that found the coin. Recorded as
+REPORTED rather than observed: no log was pasted this time, so the record says what was said and no
+more. The two Tor transports still have not met a backend from here, and nothing built here has
+been broadcast.
+
+**And the request count, which the same person asked about.** A sync queued unspent outputs AND
+history for every address - eighty-two round trips to learn that a fresh wallet is empty - and
+each of those is a thing a public server learns and, over Tor, a trip through three hops. History
+is the question that has to be asked of every address (it is the History screen's only source, and
+a spent-out address still counts as used or the Receive screen re-offers it); unspent outputs are
+not, because an address with no history has none by definition. `waSync` queues history alone and
+`waFollowHistory` queues the unspent-output request the moment an address's history comes back
+non-empty - forty-two requests for a fresh wallet, one more per address that has ever been used.
+An EMPTY history replaces that address's coin rows with none, through the same call the utxos
+reply would have made, because a re-sync keeps the last sync's coins until each address answers
+and an address whose history has gone empty (a re-org that took the funding transaction) would
+otherwise keep a coin the chain no longer has. Both directions are gated against a real server's
+bytes: a one-row history queues exactly one utxos request for that address, an empty one queues
+nothing and clears it.
