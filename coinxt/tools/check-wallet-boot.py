@@ -1501,6 +1501,30 @@ def drive(c, ip, world, sandbox):
              "already running" in str(exc.msg), str(exc.msg)[:100])
     c.eq("and the queue is exactly as it was",
          int(LCS._n((ip.globals.get("swaqueue") or {}).get("n", 0))), queued)
+    # ...but a REFRESH during a sync is not a second Sync. The Tor log of
+    # 2026-09-02 has the refusal seven times, every one the nav rail's
+    # Refresh pressed while a slow sync walked its queue - an error line
+    # about the thing the person was waiting for. Refresh repaints, reports
+    # the running sync on the status line, and leaves the queue alone; the
+    # same for the History screen's refresh and the Addresses screen's scan.
+    for label, button in (("the nav rail's Refresh", "nv_refresh"),
+                          ("the History screen's refresh", "hs_refresh"),
+                          ("the Addresses screen's scan", "ad_scan")):
+        before_log = _fld(world, "lg_text").count("already running")
+        try:
+            click(ip, world, button)
+            c.ck("%s during a sync does not throw" % label, True)
+        except LCS.Thrown as exc:
+            c.ck("%s during a sync does not throw" % label, False,
+                 str(exc.msg)[:100])
+        c.eq("and leaves the queue alone",
+             int(LCS._n((ip.globals.get("swaqueue") or {}).get("n", 0))),
+             queued)
+        c.eq("and logs no error for it",
+             _fld(world, "lg_text").count("already running") - before_log, 0)
+    c.ck("but the status line says a sync is running",
+         "already running" in str(_fld(world, "uiStatus")),
+         repr(_fld(world, "uiStatus"))[:120])
     # A single request in flight - the Test button's tip - is NOT a sync and
     # does not block one; that is the flow the log actually shows.
     ip.globals["swaqueue"] = {"n": 0}

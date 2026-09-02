@@ -248,8 +248,14 @@ differently is invisible to both, the case rule above excepted. A green boot
 here does not mean a window appeared. The three network transports have never
 spoken to a real backend from here until 2026-09-01, when Electrum over
 clearnet did, and 2026-09-02, when a testnet receive over both clearnet
-transports was reported (above); the two Tor ones have not, and additionally
-need a live-Tor pass. No transaction this wallet built has been broadcast to any
+transports was reported (above). Later on 2026-09-02 a second pasted log
+closed two more: **Esplora over Tor** dialled the onion mirror through
+OnionXT's SOCKS client on a real engine and answered every request kind (tip,
+fees, history, unspent outputs) over 147 circuits, and **the wallet's first
+broadcast** went out over that transport - a 226 vB legacy spend, txid
+`7978bdd2c097c929cae2ab00084d4454b68b1d054a3f2d53fc7b51b70551e4d5`, accepted by the mirror and seen spent by
+the sync that followed. Electrum over Tor is the one transport that has still
+not spoken to a backend from here. Until that log, no transaction this wallet built had been broadcast to any
 network, so "this would confirm" is a claim nobody has tested.
 
 ## Custody, said plainly
