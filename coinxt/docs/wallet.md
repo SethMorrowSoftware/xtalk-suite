@@ -97,7 +97,9 @@ unsigned PSBT.
 a hand-entry path so an offline wallet can be told what it owns.
 
 **History.** Transactions with confirmations, amounts and fees, a full decode of
-any of them, and a BIP-125 fee bump that BUILDS the replacement: same inputs,
+any of them (Inspect asks the backend for the raw bytes it does not hold and
+paints the decode when they arrive), and a BIP-125 fee bump that BUILDS the
+replacement: same inputs,
 same payments, the extra fee out of the change, signed and printed line by line
 and not broadcast. It can do that for a spend this window signed, because
 signing records what the spend was made of - an input's value is committed to by

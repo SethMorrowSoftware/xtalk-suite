@@ -686,6 +686,7 @@ def drive(c, ip, world, sandbox):
     c.eq("both chains are prefilled", n,
          2 * int(LCS._n(ip.constants.get("kWaPrefill", 0))))
     first = str(addrs.get("1", {}).get("address", "")) if n else ""
+    second = str(addrs.get("2", {}).get("address", "")) if n > 1 else ""
     leaf = cr.bip32_ckd(cr.bip32_ckd(acct, 0), 0)
     c.eq("the first receive address is BIP-84's published one for this seed",
          first,
@@ -1525,6 +1526,192 @@ def drive(c, ip, world, sandbox):
     c.ck("but the status line says a sync is running",
          "already running" in str(_fld(world, "uiStatus")),
          repr(_fld(world, "uiStatus"))[:120])
+
+    # (9d) THE PUMP RE-ARMS ITSELF. With the poll flag off - closeStack sets
+    # it, and a re-pasted script reinitialises every local so the pending tick
+    # fires into an empty flag - a queued request sat forever with nothing
+    # behind it: no dial, no FAILED line, a Tor daemon that never hears a
+    # handshake. Reported 2026-09-02 as "neither clearnet nor tor ever fire".
+    # Sync, Test and the broadcast now arm the pump before they queue, and
+    # say so in the log when they had to.
+    ip.globals["swaqueue"] = {"n": 0}
+    ip.globals["swainflight"] = ""
+    ip.globals["swapolling"] = "false"
+    before_ticks = sum(1 for m in world.pending if "watick" in str(m).lower()) \
+        if hasattr(world, "pending") else None
+    ip.call("waSync", [])
+    c.eq("a Sync with the pump stopped re-arms it",
+         str(ip.globals.get("swapolling")), "true")
+    c.ck("and says so in the log",
+         "re-armed" in _fld(world, "lg_text"), repr(_fld(world, "lg_text")[-200:]))
+    c.ck("and logs that it queued the batch",
+         "sync: queued" in _fld(world, "lg_text"),
+         repr(_fld(world, "lg_text")[-200:]))
+    # ...and a Sync with the pump already running does NOT re-arm a second one
+    ip.globals["swaqueue"] = {"n": 0}
+    log_before = _fld(world, "lg_text").count("re-armed")
+    ip.call("waSync", [])
+    c.eq("a Sync with the pump running leaves it alone",
+         _fld(world, "lg_text").count("re-armed"), log_before)
+    ip.globals["swaqueue"] = {"n": 0}
+    ip.globals["swapolling"] = "true"
+
+    # (9e) A FEE ESTIMATE IS A FLOAT ON THE WIRE. The 2026-09-02 log carries
+    # the real Electrum reply for estimatefee - electrs computing 263744/1e8
+    # in doubles and serialising every digit - and cwBtcToSat's eight-decimal
+    # rule, right for an amount, failed the fees request on every sync. The
+    # bytes here are the log's bytes, not a fixture written to pass.
+    ip.globals["swabackend"] = "electrum-clear"
+    ip.globals["swafeerates"] = {}
+    ip.globals["swainflight"] = {"kind": "fees", "arg": "", "id": "504"}
+    ip.call("waNetApply", ["fees", "",
+                           '{"jsonrpc":"2.0","id":504,"result":0.0026374400000000004}',
+                           "504"])
+    c.eq("a float-noisy BTC/kB estimate becomes sat/vB, not a failure",
+         str((ip.globals.get("swafeerates") or {}).get("6")), "264")
+    ip.globals["swainflight"] = {"kind": "fees", "arg": "", "id": "505"}
+    ip.call("waNetApply", ["fees", "", '{"jsonrpc":"2.0","id":505,"result":0.00001}',
+                           "505"])
+    c.eq("and a clean one still does", str((ip.globals.get("swafeerates") or {}).get("6")),
+         "1")
+    c.eq("waRateTo8Decimals is by characters, not arithmetic",
+         str(ip.call("waRateTo8Decimals", ["0.0026374400000000004"])), "0.00263744")
+    c.eq("and leaves a short one alone",
+         str(ip.call("waRateTo8Decimals", ["0.00001"])), "0.00001")
+
+    # (9f) A TRANSPORT FAILURE RETRIES THE REQUEST ONCE BEFORE IT COUNTS. Two
+    # Tor circuits died mid-sync in the same log and both times the wallet
+    # moved on to the next address: a history never merged, its coins never
+    # asked for. The second failure of the same request counts as before.
+    ip.globals["swaqueue"] = {"n": 0}
+    ip.globals["swasyncfailures"] = 0
+    ip.globals["swainflight"] = {"kind": "history", "arg": first, "id": "9"}
+    ip.call("waNetFail", ["the Tor stream closed before the server sent anything"])
+    q = ip.globals.get("swaqueue") or {}
+    head = q.get("1", {}) if int(LCS._n(q.get("n", 0))) else {}
+    c.eq("a failed request goes back to the FRONT of the queue",
+         str(head.get("kind", "")) + " " + str(head.get("arg", "")),
+         "history " + first)
+    c.eq("marked as retried", str(head.get("retried", "")), "true")
+    c.eq("and nothing is counted yet",
+         int(LCS._n(ip.globals.get("swasyncfailures"))), 0)
+    c.ck("and the log says it is retrying",
+         "retrying history" in _fld(world, "lg_text"),
+         repr(_fld(world, "lg_text")[-200:]))
+    c.eq("and the in-flight slot is free for it",
+         str(ip.globals.get("swainflight") or ""), "")
+    # the SECOND failure of the same request is the real one
+    ip.globals["swainflight"] = dict(head)
+    ip.globals["swaqueue"] = {"n": 0}
+    ip.call("waNetFail", ["the Tor stream closed before the server sent anything"])
+    c.eq("a second failure of the same request counts",
+         int(LCS._n(ip.globals.get("swasyncfailures"))), 1)
+    c.eq("and is not requeued again",
+         int(LCS._n((ip.globals.get("swaqueue") or {}).get("n", 0))), 0)
+    # ...and a reply that arrived and did not parse is NOT a transport
+    # failure: waNetDeliver clears the in-flight record before applying, so
+    # waNetFail from a parse error has nothing to retry.
+    ip.globals["swainflight"] = ""
+    ip.globals["swasyncfailures"] = 0
+    ip.call("waNetFail", ["could not read the answer: not a number"])
+    c.eq("a parse failure with nothing in flight counts at once",
+         int(LCS._n(ip.globals.get("swasyncfailures"))), 1)
+    c.eq("and requeues nothing",
+         int(LCS._n((ip.globals.get("swaqueue") or {}).get("n", 0))), 0)
+
+    # (9g) A STREAM THAT CLOSES BEFORE SENDING is named as a dead circuit,
+    # not as a malformed reply ("no header/body boundary in 0 bytes").
+    ip.globals["swabackend"] = "esplora-tor"
+    ip.globals["swaqueue"] = {"n": 0}
+    ip.globals["swasyncfailures"] = 0
+    ip.globals["swabuffer"] = ""
+    ip.globals["swainflight"] = {"kind": "history", "arg": first, "id": "10"}
+    ip.call("waStreamClosed", [])
+    c.ck("an empty close is named as a dead circuit",
+         "before the server sent anything" in _fld(world, "lg_text")[-400:],
+         repr(_fld(world, "lg_text")[-200:]))
+    c.eq("and the request is back at the front of the queue",
+         str((ip.globals.get("swaqueue") or {}).get("1", {}).get("arg", "")), first)
+    ip.globals["swaqueue"] = {"n": 0}
+    ip.globals["swasyncfailures"] = 0
+
+    # (9h) INSPECT ASKS THE BACKEND FOR THE BYTES IT DOES NOT HAVE. The
+    # message said "ask the backend for it" about a wallet with no button
+    # that did; both transports had the request and nothing queued it, and
+    # the Electrum branch had no case for the reply at all.
+    if raw:
+        dec = REF.tx_decode(bytes.fromhex(raw))
+        ip.globals["swahistory"] = {"n": 2,
+            "1": {"txid": dec["txid"], "confirmations": 1, "fee": 0, "vsize": 0,
+                  "raw": "", "address": first, "value": 0, "height": 1},
+            "2": {"txid": dec["txid"], "confirmations": 1, "fee": 0, "vsize": 0,
+                  "raw": "", "address": second, "value": 0, "height": 1}}
+        ip.globals["swabackend"] = "esplora-clear"
+        click(ip, world, "nv_hs")
+        tbl = world.anywhere("hs_table")
+        if tbl is not None:
+            tbl.props["hilitedline"] = 2
+        click(ip, world, "hs_inspect")
+        q = ip.globals.get("swaqueue") or {}
+        c.eq("Inspect with no bytes queues a raw-transaction request",
+             str(q.get(str(int(LCS._n(q.get("n", 0)))), {}).get("kind", "")), "tx")
+        c.eq("for that txid",
+             str(q.get(str(int(LCS._n(q.get("n", 0)))), {}).get("arg", "")), dec["txid"])
+        c.ck("and says so in the panel",
+             "Asking" in _fld(world, "hs_detail"), repr(_fld(world, "hs_detail")[:80]))
+        # the reply lands: Esplora shape first
+        ip.globals["swainflight"] = {"kind": "tx", "arg": dec["txid"], "id": "11"}
+        ip.call("waNetApply", ["tx", dec["txid"], raw, "11"])
+        rows = ip.globals.get("swahistory") or {}
+        c.ck("the bytes land on every row carrying that txid",
+             all(str(rows[str(i)].get("raw", "")) == raw.lower() for i in (1, 2)),
+             repr([str(rows[str(i)].get("raw", ""))[:12] for i in (1, 2)]))
+        c.ck("and the panel is painted with the decode",
+             "RAW TRANSACTION" in _fld(world, "hs_detail"),
+             repr(_fld(world, "hs_detail")[:80]))
+        c.eq("and nothing is left waiting", str(ip.globals.get("swainspectwanted") or ""), "")
+        # the Electrum shape answers the hex as a JSON string
+        rows["1"]["raw"] = ""; rows["2"]["raw"] = ""
+        ip.globals["swahistory"] = rows
+        ip.globals["swabackend"] = "electrum-clear"
+        ip.globals["swainflight"] = {"kind": "tx", "arg": dec["txid"], "id": "12"}
+        ip.call("waNetApply", ["tx", dec["txid"],
+                               '{"jsonrpc":"2.0","id":12,"result":"%s"}' % raw, "12"])
+        rows = ip.globals.get("swahistory") or {}
+        c.ck("the Electrum reply lands the same way",
+             all(str(rows[str(i)].get("raw", "")) == raw.lower() for i in (1, 2)),
+             repr([str(rows[str(i)].get("raw", ""))[:12] for i in (1, 2)]))
+        # and bytes for a DIFFERENT transaction are refused, not stored
+        other = "02000000" + raw[8:]   # a version flip changes the txid
+        ip.globals["swainflight"] = {"kind": "tx", "arg": dec["txid"], "id": "13"}
+        try:
+            ip.call("waStoreRawTx", [dec["txid"], other])
+            c.ck("bytes of a different transaction are refused", False, "stored")
+        except LCS.Thrown as exc:
+            c.ck("bytes of a different transaction are refused",
+                 "different transaction" in str(exc.msg), str(exc.msg)[:100])
+        ip.globals["swaqueue"] = {"n": 0}
+        ip.globals["swainflight"] = ""
+        ip.globals["swahistory"] = {"n": 0}
+
+    # (9i) THE DEADLINE IS FOR SILENCE, NOT FOR SIZE: every chunk that lands
+    # pushes it out, so a two-megabyte history over Tor can still be arriving
+    # past the forty-five seconds a fixed deadline gave the whole reply.
+    ip.globals["swabackend"] = "esplora-tor"
+    ip.globals["swastream"] = 1
+    ip.globals["swabuffer"] = ""
+    ip.globals["swainflight"] = {"kind": "history", "arg": first, "id": "14",
+                                 "deadline": 1}
+    ip.call("waStreamEvent", [1, "data", "HTTP/1.0 200 OK"])
+    c.ck("a chunk of reply pushes the deadline out",
+         int(LCS._n((ip.globals.get("swainflight") or {}).get("deadline", 0))) > 1,
+         repr((ip.globals.get("swainflight") or {}).get("deadline")))
+    c.eq("and the chunk was kept", str(ip.globals.get("swabuffer")), "HTTP/1.0 200 OK")
+    ip.globals["swainflight"] = ""
+    ip.globals["swastream"] = ""
+    ip.globals["swabuffer"] = ""
+    ip.globals["swaqueue"] = {"n": 0}
+    ip.globals["swasyncfailures"] = 0
     # A single request in flight - the Test button's tip - is NOT a sync and
     # does not block one; that is the flow the log actually shows.
     ip.globals["swaqueue"] = {"n": 0}
