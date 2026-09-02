@@ -229,9 +229,15 @@ The Electrum-over-clearnet transport spoke to a real server
 (electrum.blockstream.info:50001, mainnet, the demonstration wallet): every
 request from `headers.subscribe` through 40 addresses of `listunspent` and
 `get_history` was answered on one persistent socket, each reply correlated by
-id, a 16 KB history included. That flips the label on ONE of the four
-transports; Esplora-over-clearnet and both Tor transports have still not spoken
-to a backend from here. And the same log carried twenty-seven identical
+id, a 16 KB history included. That flipped the label on one of the four
+transports. **The next day (2026-09-02) the person running it reported creating
+a testnet wallet and RECEIVING coins at it over both clearnet transports**, which
+flips Esplora-over-clearnet as well - a receive is a sync that found the coin -
+and is the first coin this wallet has ever held on any chain. The two Tor
+transports have still not spoken to a backend from here. The same run is why a
+fresh sync is now forty-two requests rather than eighty-two: history is asked of
+every address, and unspent outputs only of the addresses whose history says
+there are any. And the same log carried twenty-seven identical
 "does not pass its BIP-39 checksum" lines, which is the defect record in
 `coinxt/CLAUDE.md` for that date: a failed Open committed the bad phrase as
 wallet state and every later click re-validated it. Fixed the same day, with
@@ -241,8 +247,9 @@ Everything in `docs/OXT-ENGINE-NOTES.md` that the interpreter models
 differently is invisible to both, the case rule above excepted. A green boot
 here does not mean a window appeared. The three network transports have never
 spoken to a real backend from here until 2026-09-01, when Electrum over
-clearnet did (above); Esplora over clearnet has not, and the two Tor ones
-additionally need a live-Tor pass. No transaction this wallet built has been broadcast to any
+clearnet did, and 2026-09-02, when a testnet receive over both clearnet
+transports was reported (above); the two Tor ones have not, and additionally
+need a live-Tor pass. No transaction this wallet built has been broadcast to any
 network, so "this would confirm" is a claim nobody has tested.
 
 ## Custody, said plainly

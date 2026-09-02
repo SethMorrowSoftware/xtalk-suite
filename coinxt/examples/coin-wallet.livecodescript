@@ -16882,20 +16882,29 @@ command waSync
    put 0 into sWaSyncFailures
    waNetQueue "tip", ""
    waNetQueue "fees", ""
-   -- UTXOS AND HISTORY, both, per address. Unspent outputs alone answer
-   -- "what can this wallet spend" and nothing else: the History screen has
-   -- no other source, and - the sharper cost - an address whose only output
-   -- has been SPENT disappears from sWaUtxos entirely, so waUsedAddresses
-   -- calls it unused and the Receive screen offers it again. Re-using an
-   -- address is a privacy loss the person never asked for. Both request
-   -- kinds were already built by both transports and neither was ever sent.
+   -- HISTORY FIRST, AND UNSPENT OUTPUTS ONLY WHERE THERE IS ANY. History is
+   -- the question that has to be asked of every address: it is the History
+   -- screen's only source, and an address whose one output has been SPENT
+   -- has no unspent outputs and still must count as used, or the Receive
+   -- screen offers it again - a privacy loss the person never asked for. But
+   -- an address with NO history has no unspent outputs by definition, and a
+   -- fresh wallet is forty of those. This queued both kinds for every
+   -- address - eighty-two requests to learn that a new wallet is empty - and
+   -- the 2026-09-02 engine run over both clearnet transports is where that
+   -- was seen for what it costs: on a public server every request is a
+   -- thing that server learns, and on Tor every request is a round trip
+   -- through three hops. waNetApply queues the utxos request for an address
+   -- the moment its history comes back non-empty, so a used address costs
+   -- one request more and an unused one costs nothing more; a fresh wallet
+   -- is forty-two requests instead of eighty-two.
    put cwListCount(sWaAddresses) into tCount
    repeat with tI = 1 to tCount
       put sWaAddresses[tI] into tRec
-      waNetQueue "utxos", tRec["address"]
       waNetQueue "history", tRec["address"]
    end repeat
-   uiStatus "Queued " & (tCount * 2 + 2) & " requests to " & sWaHost & ".", ""
+   uiStatus "Queued " & (tCount + 2) & " requests to " & sWaHost & \
+         " (unspent outputs are asked for only where the history says there " & \
+         "are any).", ""
 end waSync
 
 command waNetQueue pKind, pArg
@@ -17796,6 +17805,7 @@ private command waNetApply pKind, pArg, pBody, pId
       if pKind is "history" then
          waCheckList tNode, "history"
          waMergeHistory pArg, tNode, "electrum"
+         waFollowHistory pArg, tNode, "electrum"
          exit waNetApply
       end if
       if pKind is "broadcast" then
@@ -17839,6 +17849,7 @@ private command waNetApply pKind, pArg, pBody, pId
       put cwJsonParse(tText) into tNode
       waCheckList tNode, "history"
       waMergeHistory pArg, tNode, "esplora"
+      waFollowHistory pArg, tNode, "esplora"
       exit waNetApply
    end if
    if pKind is "tx" then
@@ -17906,6 +17917,22 @@ command waMergeUtxos pAddress, pNode, pShape
    end repeat
    put tList into sWaUtxos
 end waMergeUtxos
+
+command waFollowHistory pAddress, pNode, pShape
+   -- THE SECOND QUESTION IS ASKED ONLY WHEN THE FIRST SAID THERE IS ONE.
+   -- A non-empty history queues the unspent-output request for this address;
+   -- an empty one does not, and instead REPLACES whatever unspent rows this
+   -- address had with none - the same call the utxos reply would have made,
+   -- given an empty list - because a re-sync keeps the last sync's coins
+   -- until each address answers, and an address whose history has gone
+   -- empty (a re-org that took the funding transaction with it) would
+   -- otherwise keep a coin the chain no longer has.
+   if cwJsonCount(pNode) > 0 then
+      waNetQueue "utxos", pAddress
+   else
+      waMergeUtxos pAddress, pNode, pShape
+   end if
+end waFollowHistory
 
 command waMergeHistory pAddress, pNode, pShape
    -- Replace every history row for this address, on the same reasoning

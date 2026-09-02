@@ -2406,3 +2406,28 @@ phrase-format question on open. The Electrum-clearnet transport is engine-proven
 no transaction built here has been broadcast, Esplora-clearnet and both Tor transports have still not
 met a backend, and the Electrum seed support has run only under the interpreter against the reference -
 it has not opened a real Electrum wallet's coins on an engine.
+
+### 2026-09-02 - the first coin, and half the requests
+
+**A TESTNET RECEIVE, reported by the person running the wallet on an engine**: a wallet created
+here, an address handed out, coins arriving at it, seen over both clearnet transports. That is the
+first coin this wallet has ever held on any chain, and it flips the Esplora-over-clearnet label
+that the 2026-09-01 entry left standing - a receive is a sync that found the coin. Recorded as
+REPORTED rather than observed: no log was pasted this time, so the record says what was said and no
+more. The two Tor transports still have not met a backend from here, and nothing built here has
+been broadcast.
+
+**And the request count, which the same person asked about.** A sync queued unspent outputs AND
+history for every address - eighty-two round trips to learn that a fresh wallet is empty - and
+each of those is a thing a public server learns and, over Tor, a trip through three hops. History
+is the question that has to be asked of every address (it is the History screen's only source, and
+a spent-out address still counts as used or the Receive screen re-offers it); unspent outputs are
+not, because an address with no history has none by definition. `waSync` queues history alone and
+`waFollowHistory` queues the unspent-output request the moment an address's history comes back
+non-empty - forty-two requests for a fresh wallet, one more per address that has ever been used.
+An EMPTY history replaces that address's coin rows with none, through the same call the utxos
+reply would have made, because a re-sync keeps the last sync's coins until each address answers
+and an address whose history has gone empty (a re-org that took the funding transaction) would
+otherwise keep a coin the chain no longer has. Both directions are gated against a real server's
+bytes: a one-row history queues exactly one utxos request for that address, an empty one queues
+nothing and clears it.

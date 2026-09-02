@@ -1486,7 +1486,12 @@ def drive(c, ip, world, sandbox):
     # press appended behind the first and reset the failure count the first
     # was still adding to. A queue that is not empty is a sync in progress.
     queued = int(LCS._n((ip.globals.get("swaqueue") or {}).get("n", 0)))
+    n_addr = int(LCS._n((ip.globals.get("swaaddresses") or {}).get("n", 0)))
     c.ck("that sync queued the batch", queued > 2, "queued %d" % queued)
+    # tip, fees, and ONE request per address - the unspent-output requests
+    # follow only the histories that turn out non-empty (2026-09-02)
+    c.eq("and it is tip + fees + one history per address, not two per address",
+         queued, 2 + n_addr)
     try:
         ip.call("waSync", [])
         c.ck("a second Sync behind a running one is refused", False,
@@ -1957,11 +1962,46 @@ def drive(c, ip, world, sandbox):
     c.eq("at the right address", str(u.get("1", {}).get("address", "")), addr0)
     c.eq("with the right value", int(LCS._n(u.get("1", {}).get("value", 0))),
          123456)
+    # THE RESHAPED SYNC, against these same real bytes (2026-09-02). A sync
+    # asks history of every address and unspent outputs only of the ones
+    # whose history says there are any, so a one-row history must queue
+    # exactly one utxos request for that address...
+    q0 = int(LCS._n((ip.globals.get("swaqueue") or {}).get("n", 0)))
     wire("history", addr0,
          '{"id":5,"jsonrpc":"2.0","result":[{"tx_hash":"%s","height":5127000}]}'
          % ("cc" * 32))
     c.eq("get_history lands as one row",
          int(LCS._n((ip.globals.get("swahistory") or {}).get("n", 0))), 1)
+    q = ip.globals.get("swaqueue") or {}
+    qn = int(LCS._n(q.get("n", 0)))
+    c.eq("a non-empty history queues one unspent-output request", qn, q0 + 1)
+    last = q.get(str(qn), {}) if qn else {}
+    c.eq("for that same address",
+         (str(last.get("kind", "")), str(last.get("arg", ""))), ("utxos", addr0))
+    # ...and an EMPTY history must queue nothing and clear that address's
+    # coin rows, because a re-sync keeps the last sync's coins until each
+    # address answers.
+    addr1 = str((ip.globals.get("swaaddresses") or {}).get("2", {})
+                .get("address", ""))
+    u = dict(ip.globals.get("swautxos") or {"n": 0})
+    n_u = int(LCS._n(u.get("n", 0)))
+    u[str(n_u + 1)] = {"txid": "dd" * 32, "vout": 0, "value": 777,
+                       "confirmations": 1, "height": 5127000,
+                       "address": addr1, "script": "", "path": "",
+                       "pubkey": "", "chain": 0, "index": 1,
+                       "selected": "", "frozen": ""}
+    u["n"] = n_u + 1
+    ip.globals["swautxos"] = u
+    wire("history", addr1, '{"id":9,"jsonrpc":"2.0","result":[]}')
+    c.eq("an empty history queues nothing",
+         int(LCS._n((ip.globals.get("swaqueue") or {}).get("n", 0))), qn)
+    rows = ip.globals.get("swautxos") or {}
+    left = [rows[str(i)] for i in range(1, int(LCS._n(rows.get("n", 0))) + 1)
+            if str(rows[str(i)].get("address", "")) == addr1]
+    c.eq("and clears that address's coin rows", len(left), 0)
+    # the queued utxos request is this section's own side effect; the
+    # sections after it assume an idle queue
+    ip.globals["swaqueue"] = {"n": 0}
     # A JSON-RPC error must be REPORTED, never parsed as data.
     try:
         wire("tip", "", '{"id":6,"jsonrpc":"2.0","error":{"code":-32601,'
