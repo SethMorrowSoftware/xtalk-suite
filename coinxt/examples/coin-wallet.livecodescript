@@ -12564,10 +12564,29 @@ command waNavClick pRole
    if pRole is "refresh" then
       waRefreshAll
       if sWaBackend is not "offline" then
-         waSync
+         waSyncIfIdle
       end if
    end if
 end waNavClick
+
+command waSyncIfIdle
+   -- A refresh is a REPAINT that would also like fresh data, and the two must
+   -- not be confused: the Tor log of 2026-09-02 has "a sync is already
+   -- running" seven times, each one the nav rail's Refresh pressed while a
+   -- slow Tor sync was still walking its queue - which, before the
+   -- one-sync-at-a-time guard, had been appending a whole second batch each
+   -- time, and after it was an error line about the very thing the person
+   -- was waiting for. Refresh now starts a sync only when none is running,
+   -- and otherwise says where the running one is, as information. The Sync
+   -- button on the Network screen keeps the refusal, because pressing SYNC
+   -- during a sync is the one case where a person meant to start another.
+   if cwListCount(sWaQueue) > 0 then
+      uiStatus "A sync is already running, " & cwListCount(sWaQueue) & \
+            " request(s) to go. This repainted what has arrived so far.", ""
+      exit waSyncIfIdle
+   end if
+   waSync
+end waSyncIfIdle
 
 -- ==============================================================================
 -- THE WALLET MODEL
@@ -14042,7 +14061,7 @@ command waAddressesClick pRole
       if sWaBackend is "offline" then
          throw "a scan needs a backend. Choose one on the Network screen."
       end if
-      waSync
+      waSyncIfIdle
    else if pRole is "setLabel" then
       put waSelectedAddress() into tAddr
       if tAddr is "" then
@@ -15212,7 +15231,7 @@ command waHistoryClick pRole
       if sWaBackend is "offline" then
          throw "history comes from a backend. Choose one on the Network screen."
       end if
-      waSync
+      waSyncIfIdle
    else if pRole is "inspect" then
       put waSelectedHistory() into tRec
       if tRec is "" then

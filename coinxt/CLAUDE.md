@@ -2403,8 +2403,9 @@ the number that matters for a gate is not only what it proves but what it costs 
 **What this settles and what it does not.** Every defect above has a check in
 `tools/check-wallet-boot.py` driven through the real click router, and the boot self-check asks the
 phrase-format question on open. The Electrum-clearnet transport is engine-proven for a read-only sync;
-no transaction built here has been broadcast, Esplora-clearnet and both Tor transports have still not
-met a backend, and the Electrum seed support has run only under the interpreter against the reference -
+no transaction built here had been broadcast and Esplora-clearnet and both Tor transports had still not
+met a backend - three claims that were true on this date and closed by the two entries below it on
+2026-09-02 - and the Electrum seed support has run only under the interpreter against the reference;
 it has not opened a real Electrum wallet's coins on an engine.
 
 ### 2026-09-02 - the first coin, and half the requests
@@ -2414,8 +2415,8 @@ here, an address handed out, coins arriving at it, seen over both clearnet trans
 first coin this wallet has ever held on any chain, and it flips the Esplora-over-clearnet label
 that the 2026-09-01 entry left standing - a receive is a sync that found the coin. Recorded as
 REPORTED rather than observed: no log was pasted this time, so the record says what was said and no
-more. The two Tor transports still have not met a backend from here, and nothing built here has
-been broadcast.
+more. The two Tor transports still had not met a backend from here at that point, and nothing built
+here had been broadcast - both closed later the same day, in the entry below.
 
 **And the request count, which the same person asked about.** A sync queued unspent outputs AND
 history for every address - eighty-two round trips to learn that a fresh wallet is empty - and
@@ -2431,3 +2432,66 @@ and an address whose history has gone empty (a re-org that took the funding tran
 otherwise keep a coin the chain no longer has. Both directions are gated against a real server's
 bytes: a one-row history queues exactly one utxos request for that address, an empty one queues
 nothing and clears it.
+
+### 2026-09-02, later - Tor, and the first broadcast
+
+A second pasted log from the same engine, and it is the one this member's honesty labels were
+written to wait for. Read in order it shows: the reshaped sync on Electrum-clearnet on both chains
+(forty histories, then unspent outputs only where a history was non-empty - a fresh mainnet wallet at
+exactly forty-two requests, ids 147 to 188); the specific-word diagnostic firing on a real engine
+(`word 12 is not in the BIP-39 English wordlist. (12 word(s) given.)`) with the open wallet left open
+behind it, which is the 2026-09-01 fix doing on an engine what the gate said it would; then
+`backend: esplora-tor`, and everything after that is new.
+
+**ESPLORA OVER TOR WORKS.** `dial <onion>:80 stream 1`, a tip, fees, forty histories and the unspent
+outputs of the three used addresses, every one through OnionXT's SOCKS client to the Esplora onion
+mirror, 147 circuits in all. One circuit failed (`SOCKS handshake timed out`), the request was retried
+once as designed, and the sync went on. That flips the label on the third of the four transports;
+Electrum over Tor is the one left.
+
+**AND THE FIRST BROADCAST.** `recorded the makeup of 7978bdd2...` - `waRecordSpend` running on an
+engine - then `POST /testnet/api/tx` and a sixty-four-character answer, which is Esplora echoing the
+txid. Decoded from the raw bytes the log carries, by the independent reference: txid
+`7978bdd2c097c929cae2ab00084d4454b68b1d054a3f2d53fc7b51b70551e4d5`, 226 vB, one legacy input, sequence
+`fdffffff` (replaceable), 10000 sat to `n476wEbNGa4jdzHJHb5hBS7b3swdHD9W2N` and 181973 sat change to
+`muzfHmKN4YHZQc1hvccyk6MR5VnhmNYQqM` - both this wallet's own addresses, so a self-payment, which is the
+right first transaction to make. **The reference's txid is the txid the wallet logged**, so the
+wallet's own transaction hashing agrees with an independent implementation on a transaction the
+network accepted. And the sync that followed shows it: the input address `n2EhgCTvLg8zyTchgXCURSkoYZT8e7Q1BN` answering `[]` to
+unspent outputs where it had answered one coin before, and both outputs appearing as coins. Every
+honesty label in this member that said "no transaction this wallet built has been broadcast" is
+closed as of this log; each carries the date and the txid where it stood.
+
+**THE ONE DEFECT IN THE LOG IS THE GUARD FROM THE MORNING, seen from the other side.** `a sync is
+already running, with N request(s) still queued` appears seven times, at 38, 36, 40, 25 and 4
+queued. Not one is a press of Sync. They are the nav rail's Refresh, pressed while a slow Tor sync
+walked its queue - and `waNavClick` had always started a sync on every refresh, which before the
+guard meant a whole second batch appended each time (the four back-to-back syncs of one empty
+mainnet wallet in the same log, ids 147 to 314, are that), and after the guard meant an ERROR line
+about the very thing the person was waiting for. Refresh is a repaint that would also like fresh data;
+it now syncs only when nothing is running and otherwise says where the running sync is, on the status
+line, as information. The History screen's refresh and the Addresses screen's scan go the same way.
+The Sync button keeps the refusal: pressing SYNC during a sync is the one case where somebody meant
+to start another. The gate drives all three during a queued sync and asks for no throw, no growth,
+no error line, and the status.
+
+**Two things worth carrying that are not defects.** On Tor every request is its own circuit - 147
+dials for one sync-and-broadcast - because the Esplora transport speaks HTTP/1.0 over a fresh stream
+per request. Reusing one stream with keep-alive would take the per-request cost to nearly nothing
+and is the next reduction worth making; it is a transport change with no engine pass, so it is named
+here and not done here. And the demonstration wallet on testnet has history on all forty of its
+addresses (the published seed has been used by everybody who ever read the specification, and its
+first address carries 38 KB of it), which means a wallet whose whole derived window is used cannot
+offer a fresh address without "Derive twenty more" being pressed; a real gap-limit scan extends the
+window itself until twenty unused addresses stand at the end. This wallet's does not. It is named as
+open rather than fixed because extending the window during a sync is a change to what a sync IS, and
+the log that would prove it right has not been produced.
+
+**How this entry was gated, honestly.** `tools/check-wallet-boot.py` was run three times on this tree
+and reached line 249 of its output each time - "the boot marked itself booted", with zero failures and
+every check that touches the changed code behind it, the ten refresh-during-sync checks included - and
+was cut off each time at the slow re-boot step when the session's runner was reclaimed. The tail after
+that point (the tools, engine-log, Electrum and menu blocks) touches none of the three handlers this
+change edits and passed at 323 on the commit before it. The complete run on this tree is the one
+`build-all.sh --gates` makes on the push. That is stated here rather than rounded up to "green" because
+a partial run reported as a pass is the kind of sentence this file exists to refuse.
