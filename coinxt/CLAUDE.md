@@ -2495,3 +2495,26 @@ that point (the tools, engine-log, Electrum and menu blocks) touches none of the
 change edits and passed at 323 on the commit before it. The complete run on this tree is the one
 `build-all.sh --gates` makes on the push. That is stated here rather than rounded up to "green" because
 a partial run reported as a pass is the kind of sentence this file exists to refuse.
+
+### 2026-09-02, later still - "neither clearnet nor tor ever fire"
+
+Reported against the commit above, with no log: after updating, no transport made a request - not
+clearnet, not Tor, "the tor daemon never even gets the request", ports checked. The commit's diff is
+three Refresh call sites and one new handler, none of them near the pump, the sockets or Tor, so the
+cause is not a code path but a STATE - and the one state that silences every transport at once is the
+request pump not running. `waTick` exits for good the moment `sWaPolling` is not "true"; `closeStack`
+sets it, and a re-pasted script reinitialises every script local so the pending tick fires into an
+empty flag and never re-arms. From then on every request sits in the queue with nothing behind it: no
+`open`, no `dial`, no FAILED line, a Tor daemon that never hears a handshake, and Refresh reporting a
+sync "already running" that will never move. Nothing that queued a request had ever asked whether the
+pump was alive. It is a shape this member has met before - a queue is not a transport - and it was
+invisible to the boot gate because the gate drives `waSync` and reads the queue; it never pumps.
+
+`waEnsurePolling` arms the pump before Sync, Test and the broadcast queue anything, and writes one
+line to the log when it had to. Sync and Test also log what they queued and to where, because the
+last three logs went from `backend: ...` straight to the next thing and could not say whether a sync
+had been asked for at all. Whether this was the cause of the report is NOT settled here - no log was
+pasted - and the record says so: the fix makes the pump-stopped state impossible to stay in and makes
+the next log name it if it was. Gated for both directions under the interpreter (a stopped pump is
+re-armed and logged; a running one is left alone), fast gates green; the full boot gate is CI's on
+the push, for the reason the entry above gives.

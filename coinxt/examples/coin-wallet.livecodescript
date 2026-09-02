@@ -16587,7 +16587,10 @@ command waNetworkClick pRole
                "nothing to test yet."
       end if
       waApplyNetworkFields
+      waEnsurePolling
       waNetQueue "tip", ""
+      waLog "test: asking " & sWaHost & ":" & sWaPort & " for the tip over " & \
+            sWaBackend
       uiStatus "Asking " & sWaHost & " for the chain tip.", ""
    else if pRole is "syncNow" then
       waApplyNetworkFields
@@ -16870,6 +16873,26 @@ command waRefreshNetState
    end if
 end waRefreshNetState
 
+command waEnsurePolling
+   -- A QUEUE MEANS NOTHING UNLESS THE PUMP IS RUNNING, and until now nothing
+   -- that queued a request asked whether it was. waTick exits for good the
+   -- moment sWaPolling is not "true" - closeStack sets it, and a re-pasted
+   -- script reinitialises every script local so the pending tick fires into
+   -- an empty flag - and from then on every request sits in the queue with
+   -- nothing behind it: no dial, no open, no FAILED line, a Tor daemon that
+   -- never hears a SOCKS handshake, and Refresh reporting a sync "already
+   -- running" that will never move. That is indistinguishable, from the
+   -- outside, from a broken transport, and it was reported as one on
+   -- 2026-09-02. Every path that queues a request now arms the pump first
+   -- and SAYS so in the log when it had to, so the next log names the cause.
+   if sWaPolling is "true" then
+      exit waEnsurePolling
+   end if
+   put "true" into sWaPolling
+   send "waTick" to me in kWaTick milliseconds
+   waLog "the request pump was not running; re-armed it"
+end waEnsurePolling
+
 command waSync
    -- Ask the backend about everything the wallet needs, in one batch. Each
    -- address becomes its own request because that is what both protocols
@@ -16896,6 +16919,7 @@ command waSync
       throw "a sync is already running, with " & cwListCount(sWaQueue) & \
             " request(s) still queued. Let it finish, or press Stop first."
    end if
+   waEnsurePolling
    -- A FRESH SYNC IS ALLOWED TO BE GREEN AGAIN. The count is per sync, so a
    -- failure from the last one does not follow this one around.
    put 0 into sWaSyncFailures
@@ -16921,6 +16945,11 @@ command waSync
       put sWaAddresses[tI] into tRec
       waNetQueue "history", tRec["address"]
    end repeat
+   -- IN THE LOG AS WELL AS ON THE STATUS LINE, because the log is what gets
+   -- pasted back, and a log that goes from "backend: ..." straight to silence
+   -- cannot say whether a sync was ever asked for.
+   waLog "sync: queued " & (tCount + 2) & " request(s) to " & sWaHost & \
+         ":" & sWaPort & " over " & sWaBackend
    uiStatus "Queued " & (tCount + 2) & " requests to " & sWaHost & \
          " (unspent outputs are asked for only where the history says there " & \
          "are any).", ""
@@ -18005,6 +18034,7 @@ command waBroadcast
             "a network - the signature is already valid."
    end if
    waNetQueue "broadcast", sWaLastRaw
+   waEnsurePolling
    uiStatus "Queued the broadcast to " & sWaHost & ".", ""
 end waBroadcast
 

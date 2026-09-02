@@ -1525,6 +1525,35 @@ def drive(c, ip, world, sandbox):
     c.ck("but the status line says a sync is running",
          "already running" in str(_fld(world, "uiStatus")),
          repr(_fld(world, "uiStatus"))[:120])
+
+    # (9d) THE PUMP RE-ARMS ITSELF. With the poll flag off - closeStack sets
+    # it, and a re-pasted script reinitialises every local so the pending tick
+    # fires into an empty flag - a queued request sat forever with nothing
+    # behind it: no dial, no FAILED line, a Tor daemon that never hears a
+    # handshake. Reported 2026-09-02 as "neither clearnet nor tor ever fire".
+    # Sync, Test and the broadcast now arm the pump before they queue, and
+    # say so in the log when they had to.
+    ip.globals["swaqueue"] = {"n": 0}
+    ip.globals["swainflight"] = ""
+    ip.globals["swapolling"] = "false"
+    before_ticks = sum(1 for m in world.pending if "watick" in str(m).lower()) \
+        if hasattr(world, "pending") else None
+    ip.call("waSync", [])
+    c.eq("a Sync with the pump stopped re-arms it",
+         str(ip.globals.get("swapolling")), "true")
+    c.ck("and says so in the log",
+         "re-armed" in _fld(world, "lg_text"), repr(_fld(world, "lg_text")[-200:]))
+    c.ck("and logs that it queued the batch",
+         "sync: queued" in _fld(world, "lg_text"),
+         repr(_fld(world, "lg_text")[-200:]))
+    # ...and a Sync with the pump already running does NOT re-arm a second one
+    ip.globals["swaqueue"] = {"n": 0}
+    log_before = _fld(world, "lg_text").count("re-armed")
+    ip.call("waSync", [])
+    c.eq("a Sync with the pump running leaves it alone",
+         _fld(world, "lg_text").count("re-armed"), log_before)
+    ip.globals["swaqueue"] = {"n": 0}
+    ip.globals["swapolling"] = "true"
     # A single request in flight - the Test button's tip - is NOT a sync and
     # does not block one; that is the flow the log actually shows.
     ip.globals["swaqueue"] = {"n": 0}
