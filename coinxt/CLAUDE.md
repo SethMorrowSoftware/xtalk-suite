@@ -2518,3 +2518,59 @@ pasted - and the record says so: the fix makes the pump-stopped state impossible
 the next log name it if it was. Gated for both directions under the interpreter (a stopped pump is
 re-armed and logged; a running one is left alone), fast gates green; the full boot gate is CI's on
 the push, for the reason the entry above gives.
+
+### 2026-09-02, the fourth log - every transport fires, and three things the fleet had not met
+
+A pasted log from a fresh open of the stack, and it answers the report above first: Esplora over
+clearnet, Esplora over Tor and Electrum over clearnet all fire, on both chains, with the halved sync
+and the Refresh that no longer errors. The log begins with the boot self-check (27 green, the
+Electrum-format assertions among them), which is `openStack` running `waBoot` and arming the pump -
+so the reopen is what cleared the "nothing fires" state, exactly as the pump-not-running diagnosis
+predicted, and `waEnsurePolling` is what keeps a re-paste from putting it back. Three defects
+followed, each one a real backend doing something the interpreter's fixtures had never done.
+
+**A FEE ESTIMATE IS A FLOAT ON THE WIRE.** `{"result":0.0026374400000000004}` - electrs computing
+263744/1e8 in IEEE doubles and serialising every digit - and `cwBtcToSat` refused it, correctly for
+an AMOUNT (a ninth decimal is money that does not exist) and wrongly for a RATE (noise a thousandth
+of a satoshi wide). Every Electrum sync failed its fees request, reported itself partial, and left
+the Send screen on its default rate. `cwExpandExponent` had already met the other float artefact
+(`1e-05`, the 2026-09-01 log); this is the second, and the fix is the same shape: the string is cut to
+eight decimals BY CHARACTERS before it goes near the converter, because arithmetic is where the
+extra digits came from. The gate wires the log's own bytes and asks for 264 sat/vB.
+
+**A FAILED TOR REQUEST WAS DROPPED, NOT RETRIED.** Two circuits died mid-sync (`no header/body
+boundary in 0 bytes`), and both times the wallet moved on to the NEXT address: a history never
+merged, so - under the halved sync - its unspent outputs never asked for, so a funded address
+missing from a sync that called itself merely partial. The requeue-once that existed covered one
+failure shape only, a refused socket write. `waNetFail` now puts any request that was still in
+flight back at the FRONT of the queue and tries it once more before anything is counted; a reply
+that arrived and did not parse is not retried, because `waNetDeliver` clears the in-flight record
+before applying and a deterministic failure has nothing to gain from a second attempt. The empty
+close is also named for what it is - a circuit that failed - rather than as a malformed reply. And
+the deadline now moves with progress: it was set once per request and measured a whole reply against
+forty-five seconds, and the same log has a 2155402-character history arriving over Tor, which is a
+body that can still be arriving when a fixed deadline expires.
+
+**INSPECT TOLD THE PERSON TO ASK THE BACKEND, AND HAD NO BUTTON THAT DID.** `error: this wallet does
+not hold the raw bytes of that transaction. Ask the backend for it` - about a wallet whose two
+transports had each carried a raw-transaction request since they were written, which nothing ever
+queued, and whose Electrum branch had no case for the reply at all (it fell off the end of the
+dispatch). Inspect now asks, the answer lands on every history row carrying that txid, the panel
+paints when it arrives, and the bytes are checked against the txid they were asked for so a stale or
+mistaken reply cannot be inspected as the transaction somebody clicked.
+
+Also in the log and not a defect: the legacy demonstration wallet on testnet has addresses with
+2 MB histories (the published seed, used by everyone), and the sync of it over Tor was restarted
+three times before it got through - the fixed deadline above, seen from the outside.
+
+Gated under the interpreter with the log's own bytes for the fee reply, both directions of the
+retry, the empty close, and the Inspect round trip on both transports; fast gates green; the full
+boot gate is CI's on the push, for the reason the entries above give.
+
+**And the wallet's own honesty panel was two days stale**, which the person running it noticed
+before this file did. The Settings screen's "What is proven, and what is not" still said "this
+STACK has not run on an OXT engine" and "the three network transports have never spoken to a real
+backend" under a wallet that had synced on three transports and broadcast. The doc-status gate
+deliberately does not read `.livecodescript` prose (its docstring says so), so nothing could have
+caught it; the panel is rewritten with every claim dated and the log that made it named, and this
+sentence is the reminder that the gate's blind spot is exactly where the most-read label lives.

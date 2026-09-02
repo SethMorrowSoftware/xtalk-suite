@@ -11506,6 +11506,7 @@ local sWaLastRaw          -- the raw transaction the Send screen produced
 -- It holds no private key and nothing that is not already in the transaction
 -- it names, so it is saved with the wallet like the labels are.
 local sWaSpends
+local sWaInspectWanted    -- the txid the History screen is waiting on bytes for
 local sWaQrCache          -- array: payload -> the BMP bytes already rendered
 local sWaCtrlByScreen     -- array: screen -> comma list of its control names
 local sWaBusyUntil        -- the milliseconds a long build is allowed to run to
@@ -15238,8 +15239,27 @@ command waHistoryClick pRole
          throw "select a transaction first."
       end if
       if tRec["raw"] is "" then
-         throw "this wallet does not hold the raw bytes of that transaction. " & \
-               "Ask the backend for it, or paste it on the Tools screen."
+         -- ASK THE BACKEND, RATHER THAN TELLING THE PERSON TO. Both backends
+         -- have had a raw-transaction request since the transports were
+         -- written and nothing pressed it; the message said "ask the backend
+         -- for it" about a wallet with no button that did. The answer lands
+         -- on every history row carrying that txid and paints this panel
+         -- when it does.
+         if sWaBackend is "offline" then
+            throw "this wallet does not hold the raw bytes of that " & \
+                  "transaction, and it is offline. Choose a backend and " & \
+                  "press Inspect again, or paste the transaction on the " & \
+                  "Tools screen."
+         end if
+         put cwLower(tRec["txid"]) into sWaInspectWanted
+         waEnsurePolling
+         waNetQueue "tx", tRec["txid"]
+         waLog "inspect: asked " & sWaHost & " for the bytes of " & tRec["txid"]
+         put "Asking " & sWaHost & " for the bytes of " & tRec["txid"] & \
+               "..." & return & return & "They will appear here when they " & \
+               "arrive." into field "hs_detail"
+         uiStatus "Asked the backend for that transaction.", ""
+         exit waHistoryClick
       end if
       put waInspectRaw(tRec["raw"]) into field "hs_detail"
       exit waHistoryClick
@@ -16783,6 +16803,24 @@ private command waCheckList pNode, pWhat
    end if
 end waCheckList
 
+private function waRateTo8Decimals pText
+   -- The first eight decimals of a decimal string, by CHARACTERS and never by
+   -- arithmetic, because arithmetic is where the extra digits came from.
+   -- Truncation rather than rounding: the caller ceil-divides by a thousand
+   -- afterwards, so the most this can lose is a thousandth of a sat/vB.
+   local tPos, tWhole, tFrac
+   put offset(".", pText) into tPos
+   if tPos is 0 then
+      return pText
+   end if
+   put char 1 to (tPos - 1) of pText into tWhole
+   put char (tPos + 1) to -1 of pText into tFrac
+   if the number of chars of tFrac <= 8 then
+      return pText
+   end if
+   return tWhole & "." & char 1 to 8 of tFrac
+end waRateTo8Decimals
+
 private command waSetSuggestedRate pTarget, pRate
    -- One place where a backend-supplied fee rate becomes wallet state, so
    -- there is one rule instead of two. A rate that is not a positive number
@@ -17037,7 +17075,36 @@ end waNetCheckDeadline
 
 command waNetFail pWhy
    set the defaultStack to the short name of this stack
-   local tError
+   local tError, tRec
+   -- ONCE MORE, FIRST. A request that was still in flight when the transport
+   -- failed - a Tor circuit that closed before sending, a SOCKS handshake that
+   -- timed out, a deadline, a dial that threw - is put back at the FRONT of
+   -- the queue and tried again before anything is counted. The 2026-09-02
+   -- Tor log shows why: two circuits died mid-sync and both times the wallet
+   -- moved on to the NEXT address, so a history was never merged, so its
+   -- unspent outputs were never asked for - a funded address missing from a
+   -- sync that reported itself merely partial. A reply that ARRIVED and did
+   -- not parse never gets here with a request in flight (waNetDeliver clears
+   -- it before applying), so a deterministic failure is not retried; only
+   -- the transport is. The second failure counts, as before.
+   put sWaInFlight into tRec
+   if tRec is not empty and tRec["retried"] is not "true" then
+      if sWaStream is not empty then
+         try
+            oxCloseStream sWaStream
+         catch tError
+         end try
+         put empty into sWaStream
+      end if
+      waSockClose
+      put empty into sWaInFlight
+      put empty into sWaBuffer
+      put "true" into tRec["retried"]
+      put waQueueFirst(tRec) into sWaQueue
+      put "idle" into sWaNetState
+      waLog "retrying " & tRec["kind"] & " " & tRec["arg"] & " once: " & pWhy
+      exit waNetFail
+   end if
    if sWaStream is not empty then
       try
          oxCloseStream sWaStream
@@ -17480,6 +17547,15 @@ on waStreamEvent pStream, pEvent, pData
          waStreamOpened
       else if pEvent is "data" then
          put sWaBuffer & pData into sWaBuffer
+         -- THE DEADLINE IS FOR SILENCE, NOT FOR SIZE. It was set once at the
+         -- request and measured a whole reply against forty-five seconds, so
+         -- a two-megabyte history over Tor - the 2026-09-02 log has one at
+         -- 2155402 chars - could time out while still arriving, and did.
+         -- Every chunk that lands pushes it out; only a stream that goes
+         -- quiet still expires.
+         if sWaInFlight is not empty then
+            put the milliseconds + kWaNetDeadline into sWaInFlight["deadline"]
+         end if
          if the number of bytes of sWaBuffer > kWaMaxBody then
             waNetFail "the backend sent more than " & kWaMaxBody & \
                   " bytes for one answer, which is not a shape this wallet " & \
@@ -17550,6 +17626,15 @@ private command waStreamClosed
    end if
    if waIsElectrum(sWaBackend) then
       waNetFail "the Electrum server closed the connection before answering."
+      exit waStreamClosed
+   end if
+   -- NOTHING ARRIVED is a circuit that failed, not a reply that is malformed,
+   -- and the HTTP parser's "no header/body boundary in 0 bytes" said the
+   -- second when the first was true. Named for what it is; waNetFail retries
+   -- it once like any other transport failure.
+   if sWaBuffer is empty then
+      waNetFail "the Tor stream closed before the server sent anything " & \
+            "(the circuit failed)."
       exit waStreamClosed
    end if
    put waHttpBody(sWaBuffer) into tBody
@@ -17836,7 +17921,17 @@ private command waNetApply pKind, pArg, pBody, pId
          -- writes it with an exponent ("4.22e-06"), and the strict amount
          -- parser refuses that - correctly, but the reply was good and the
          -- sync stopped on it.
-         put cwExpandExponent(cwJsonText(tNode)) into tText
+         -- A FEE ESTIMATE IS A FLOAT ON THE WIRE, and this is what a float
+         -- looks like: the 2026-09-02 engine log carries the real reply
+         -- {"result":0.0026374400000000004} - electrs computing 263744/1e8
+         -- in IEEE doubles and serialising every digit. cwBtcToSat refuses
+         -- more than eight decimals, correctly, because for an AMOUNT a ninth
+         -- decimal is money that does not exist; for a RATE it is noise a
+         -- thousandth of a satoshi wide, and refusing it failed the fees
+         -- request on every Electrum sync, marked each one partial, and left
+         -- the Send screen on its default rate. cwExpandExponent had already
+         -- met the other float artefact (1e-05); this is the second.
+         put waRateTo8Decimals(cwExpandExponent(cwJsonText(tNode))) into tText
          if tText is not "" and tText is a number and tText > 0 then
             -- through the same gate as Esplora's, so the two transports
             -- cannot disagree about what a believable rate is
@@ -17859,6 +17954,13 @@ private command waNetApply pKind, pArg, pBody, pId
       if pKind is "broadcast" then
          put waCheckedTxid(cwTrim(cwJsonText(tNode)), "Electrum") into tText
          uiStatus "Broadcast. The server returned txid " & tText & ".", "ok"
+         exit waNetApply
+      end if
+      if pKind is "tx" then
+         -- blockchain.transaction.get answers the hex as a JSON string. This
+         -- branch had no case for it: the request existed, the reply fell
+         -- off the end of the dispatch and was silently dropped.
+         waStoreRawTx pArg, cwJsonText(tNode)
          exit waNetApply
       end if
       exit waNetApply
@@ -17901,11 +18003,7 @@ private command waNetApply pKind, pArg, pBody, pId
       exit waNetApply
    end if
    if pKind is "tx" then
-      if not cwHexIsClean(tText) then
-         throw "the backend answered the raw-transaction request with " & \
-               "something that is not hex: " & char 1 to 80 of tText
-      end if
-      put tText into sWaLastRaw
+      waStoreRawTx pArg, tText
       exit waNetApply
    end if
    if pKind is "broadcast" then
@@ -17981,6 +18079,43 @@ command waFollowHistory pAddress, pNode, pShape
       waMergeUtxos pAddress, pNode, pShape
    end if
 end waFollowHistory
+
+command waStoreRawTx pTxid, pHex
+   -- The raw bytes of one transaction, onto every history row that carries
+   -- its txid (a transaction touching two of this wallet's addresses has two
+   -- rows), and into the Inspect panel if that is what was waiting for them.
+   -- The txid is CHECKED against the bytes: a backend that answered a
+   -- different transaction, or a stale reply landing under a fresh request,
+   -- would otherwise be inspected as the one that was asked for.
+   local tHex, tTx, tI, tCount, tRec, tHit
+   set the defaultStack to the short name of this stack
+   put cwLower(cwTrim(pHex)) into tHex
+   if not cwHexIsClean(tHex) then
+      throw "the backend answered the raw-transaction request with " & \
+            "something that is not hex: " & char 1 to 80 of tHex
+   end if
+   put cwTxDecode(tHex) into tTx
+   if tTx["txid"] is not cwLower(pTxid) then
+      throw "the backend answered the request for " & pTxid & " with the " & \
+            "bytes of " & tTx["txid"] & ", which is a different transaction."
+   end if
+   put 0 into tHit
+   put cwListCount(sWaHistory) into tCount
+   repeat with tI = 1 to tCount
+      put sWaHistory[tI] into tRec
+      if tRec["txid"] is cwLower(pTxid) then
+         put tHex into tRec["raw"]
+         put tRec into sWaHistory[tI]
+         add 1 to tHit
+      end if
+   end repeat
+   waLog "stored the bytes of " & pTxid & " on " & tHit & " history row(s)"
+   if sWaInspectWanted is cwLower(pTxid) then
+      put empty into sWaInspectWanted
+      put waInspectRaw(tHex) into field "hs_detail"
+      uiStatus "The bytes of " & pTxid & " arrived.", "ok"
+   end if
+end waStoreRawTx
 
 command waMergeHistory pAddress, pNode, pShape
    -- Replace every history row for this address, on the same reasoning
@@ -18201,6 +18336,15 @@ private function waFileNote
 end waFileNote
 
 function waAboutText
+   -- THE HONESTY PANEL, and it is dated because a label without a date is a
+   -- label a reader learns to skip. It said "this stack has not run on an
+   -- engine" and "the three transports have never spoken to a real backend"
+   -- for two days after both had stopped being true, which is the honesty
+   -- convention failing in the understating direction - the direction that
+   -- feels safe and is not, because a label saying "unproven" over a wallet
+   -- that had just broadcast teaches the reader that none of the labels
+   -- mean anything. Every claim below names the date and the log that made
+   -- it, so the next one to expire can be found by its date.
    local tOut
    put "COINXT WALLET " & kWaVersion & return & return into tOut
    put "WHAT IS PROVEN" & return after tOut
@@ -18211,18 +18355,30 @@ function waAboutText
    put "  an independent implementation anchored to the published BIP vectors," & return after tOut
    put "  with the real native CoinXT library doing the cryptography. Every" & return after tOut
    put "  spend path produces a transaction byte-identical to that other" & return after tOut
-   put "  implementation's." & return & return after tOut
-   put "  CoinXT itself has had two on-engine passes (2026-08-10 and" & return after tOut
-   put "  2026-08-12), so the hashes and signatures under all of this are" & return after tOut
-   put "  engine-observed." & return & return after tOut
+   put "  implementation's. CoinXT itself has had on-engine passes since" & return after tOut
+   put "  2026-08-10, so the hashes and signatures are engine-observed." & return & return after tOut
+   put "  THIS STACK HAS RUN ON AN OXT ENGINE: four pasted logs, 2026-09-01" & return after tOut
+   put "  and 2026-09-02. In them, Electrum over clearnet, Esplora over" & return after tOut
+   put "  clearnet and Esplora over Tor each synced real wallets on mainnet" & return after tOut
+   put "  and testnet against real servers (the Tor one through OnionXT's" & return after tOut
+   put "  SOCKS client to the Esplora onion mirror); coins were received at" & return after tOut
+   put "  a testnet address made here; and one testnet spend built here was" & return after tOut
+   put "  broadcast over Tor, accepted by the mirror, and seen spent by the" & return after tOut
+   put "  sync that followed - txid 7978bdd2c097c929cae2ab00084d4454b68b1d05" & return after tOut
+   put "  4a3f2d53fc7b51b70551e4d5, its bytes decoded by the independent" & return after tOut
+   put "  reference to the same txid the wallet logged." & return & return after tOut
    put "WHAT IS NOT" & return after tOut
-   put "  This STACK has not run on an OXT engine. Everything above settles" & return after tOut
-   put "  logic, not parser behaviour, and an interpreter is an approximation" & return after tOut
-   put "  of the engine and never the engine." & return & return after tOut
-   put "  The three network transports have never spoken to a real backend" & return after tOut
-   put "  from here. The Tor ones additionally need a live-Tor pass." & return & return after tOut
-   put "  No transaction this wallet built has been broadcast to any network," & return after tOut
-   put "  so 'this would confirm' is a claim nobody has tested." & return & return after tOut
+   put "  Electrum over Tor has not spoken to a backend from here. No spend" & return after tOut
+   put "  built here has been broadcast on MAINNET. The right-click menu has" & return after tOut
+   put "  not been opened on an engine (its routing is gated; its appearing" & return after tOut
+   put "  is not). An Electrum-format seed has opened only under the" & return after tOut
+   put "  interpreter, against the reference, never a real wallet's coins." & return & return after tOut
+   put "  The two gates (coinxt/tools/check-wallet-boot.py boots this stack" & return after tOut
+   put "  headlessly and drives every screen; check-wallet-vectors.py pins" & return after tOut
+   put "  the engine layer) run under an interpreter, which is an" & return after tOut
+   put "  approximation of the engine and never the engine. Where the two" & return after tOut
+   put "  have disagreed, the engine was right, and each such disagreement" & return after tOut
+   put "  is recorded in coinxt/CLAUDE.md by date." & return & return after tOut
    put "CUSTODY" & return after tOut
    put "  OXT script variables are not locked memory. A seed typed into this" & return after tOut
    put "  window can be paged to disk by the operating system, and any process" & return after tOut
