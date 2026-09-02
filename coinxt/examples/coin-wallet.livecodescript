@@ -12580,12 +12580,98 @@ end waNavClick
 -- signing path re-derives the one key it needs and clears it on the way out.
 -- ==============================================================================
 
+constant kWaElectrumSalt = "electrum"
+
+function waSeedFormatOf pText
+   -- WHAT KIND OF PHRASE THIS IS, by asking the phrase rather than the person:
+   -- "bip39", "electrum-standard", "electrum-segwit", "electrum-2fa", or
+   -- empty for a phrase that is none of them.
+   --
+   -- An Electrum seed is twelve words from the SAME English list as BIP-39,
+   -- and it fails BIP-39's checksum BY DESIGN - Electrum's generator rejects
+   -- any phrase that would also validate as BIP-39, so the two formats never
+   -- collide and BIP-39 can be asked first. Its own check is the hex prefix of
+   -- HMAC-SHA512 keyed "Seed version" over the normalised phrase: "01" for the
+   -- original (legacy p2pkh, receive m/0/i and change m/1/i straight off the
+   -- master), "100" for segwit (p2wpkh under m/0'), "101" and "102" for the
+   -- two-factor kinds that need TrustedCoin's third key and which this wallet
+   -- cannot open. What made this worth having is the engine log that arrived
+   -- 2026-09-01: twenty-seven identical "does not pass its BIP-39 checksum"
+   -- lines from a person whose phrase almost certainly was not BIP-39 at all,
+   -- and nothing on screen that could have told them so.
+   local tWords, tHex
+   put cxMnemonicNormalize(cwTrim(pText)) into tWords
+   if tWords is "" then
+      return ""
+   end if
+   if cxMnemonicValidate(tWords) is true then
+      return "bip39"
+   end if
+   put cxHexEncode(cxHmacSha512("Seed version", tWords)) into tHex
+   if char 1 to 2 of tHex is "01" then
+      return "electrum-standard"
+   end if
+   if char 1 to 3 of tHex is "100" then
+      return "electrum-segwit"
+   end if
+   if char 1 to 3 of tHex is "101" or char 1 to 3 of tHex is "102" then
+      return "electrum-2fa"
+   end if
+   return ""
+end waSeedFormatOf
+
+function waMnemonicProblem pText
+   -- EMPTY when the phrase can open a wallet here, otherwise WHY NOT - and
+   -- the why is the specific one. The sentence this replaced said only that
+   -- the checksum failed, and a checksum failure is the LEAST useful thing to
+   -- know about a phrase: it does not say whether a word is misspelt, which
+   -- word, whether there are eleven words instead of twelve, or whether the
+   -- phrase is a perfectly good seed from another wallet. cxMnemonicToEntropy
+   -- already throws every one of those distinctions by name and this app was
+   -- discarding them.
+   local tWords, tFormat, tError, tWhy, tCount, tSavedDelim
+   put cxMnemonicNormalize(cwTrim(pText)) into tWords
+   if tWords is "" then
+      return "the seed box is empty."
+   end if
+   put waSeedFormatOf(tWords) into tFormat
+   if tFormat is "bip39" or tFormat is "electrum-standard" \
+         or tFormat is "electrum-segwit" then
+      return ""
+   end if
+   if tFormat is "electrum-2fa" then
+      return "that is an Electrum TWO-FACTOR seed. Those wallets are 2-of-3 " & \
+            "with a key held by TrustedCoin, and this wallet cannot open one. " & \
+            "Electrum itself can, and can export the keys from there."
+   end if
+   put "" into tWhy
+   try
+      get cxMnemonicToEntropy(tWords)
+   catch tError
+      put line 1 of tError into tWhy
+   end try
+   -- the library prefixes its throws with its own name; a person does not
+   -- need to know which function said it
+   if tWhy begins with "CoinXT: cxMnemonicToEntropy: " then
+      put char 30 to -1 of tWhy into tWhy
+   end if
+   if tWhy is "" then
+      put "it is not a BIP-39 phrase and not an Electrum seed." into tWhy
+   end if
+   put the itemDelimiter into tSavedDelim
+   set the itemDelimiter to space
+   put the number of items of tWords into tCount
+   set the itemDelimiter to tSavedDelim
+   return tWhy & " (" & tCount & " word(s) given.)"
+end waMnemonicProblem
+
 command waDeriveAccount
    -- Turn whatever the user gave us into the account-level key material every
    -- other screen works from. Four wallet kinds arrive here and each one ends
    -- with the same two facts: an account extended PUBLIC key (always) and an
    -- account extended private key (only when we actually hold the secret).
-   local tSeed, tMaster, tNode, tPath, tError, tRec
+   local tSeed, tMaster, tNode, tPath, tError, tRec, tWhy, tFormat
+   local tFp, tXprv, tXpub
    -- THE TWO NON-SEED KINDS EXIT BEFORE ANYTHING IS CLEARED. Their account
    -- key did not come from a mnemonic and cannot be re-derived from one, so
    -- clearing it first and then reading it back - which is what this handler
@@ -12603,6 +12689,9 @@ command waDeriveAccount
                   tNode["network"] & ", and the wallet is now on " & \
                   sWaNetwork & ". Switch back, or paste a key for this chain."
          end if
+         -- and the addresses are RE-ENCODED for the chain that passed the
+         -- check: testnet and signet spell them the same, regtest does not
+         waDeriveAddresses
       end if
       exit waDeriveAccount
    end if
@@ -12611,28 +12700,59 @@ command waDeriveAccount
       -- screen shows exactly one address per script type and says so
       exit waDeriveAccount
    end if
-   put empty into sWaAccountXpub
-   put empty into sWaAccountXprv
-   put empty into sWaFingerprint
    if sWaMnemonic is empty then
+      put empty into sWaAccountXpub
+      put empty into sWaAccountXprv
+      put empty into sWaFingerprint
       exit waDeriveAccount
    end if
-   if cxMnemonicValidate(cxMnemonicNormalize(sWaMnemonic)) is not true then
-      throw "that seed phrase does not pass its BIP-39 checksum. One mistyped " & \
-            "word is a different wallet, so nothing has been derived."
+   -- VALIDATED BEFORE ANYTHING IS CLEARED. This handler used to empty the
+   -- account key, the private key and the fingerprint and THEN test the
+   -- phrase, so a phrase that failed took the open wallet down with it: no
+   -- account, no addresses, and every screen reading an empty key. The engine
+   -- log of 2026-09-01 is what that looks like from the outside - the same
+   -- error twenty-seven times, from a wallet that had nothing left to show.
+   -- Now the new key material is built in locals and the three fields are
+   -- written together at the end, so a throw anywhere above leaves whatever
+   -- was open still open.
+   -- THE FORMAT IS ASKED ONCE. waSeedFormatOf and waMnemonicProblem each walk
+   -- the phrase against the 2048-word list, and asking both on the path that
+   -- succeeds doubled the cost of every derive for no answer the first had
+   -- not already given. The problem is asked only when the format says there
+   -- is one.
+   put waSeedFormatOf(sWaMnemonic) into tFormat
+   if tFormat is "" or tFormat is "electrum-2fa" then
+      put waMnemonicProblem(sWaMnemonic) into tWhy
+      throw "that seed phrase cannot open a wallet: " & tWhy & \
+            " Nothing has been derived, and whatever was open is still open."
    end if
-   put cxMnemonicToSeed(cxMnemonicNormalize(sWaMnemonic), sWaPassphrase) into tSeed
+   -- THE SEED BYTES DEPEND ON THE FORMAT, and only the seed bytes do: from
+   -- the master key down, an Electrum wallet is ordinary BIP-32 at a path
+   -- this app already lets a person type (m/0' for segwit, the master itself
+   -- for the original kind), so everything below this line is shared.
+   -- Electrum salts its PBKDF2 with "electrum" where BIP-39 uses "mnemonic";
+   -- same rounds, same length, same passphrase rule.
+   if tFormat begins with "electrum" then
+      put cxPbkdf2HmacSha512(cxMnemonicNormalize(sWaMnemonic), \
+            kWaElectrumSalt & sWaPassphrase, kCxBip39Rounds, 64) into tSeed
+   else
+      put cxMnemonicToSeed(cxMnemonicNormalize(sWaMnemonic), sWaPassphrase) into tSeed
+   end if
    put cxHdFromSeed(tSeed) into tMaster
    put empty into tSeed
-   put cwFingerprint(cxHexEncode(tMaster["pubkey"])) into sWaFingerprint
+   put cwFingerprint(cxHexEncode(tMaster["pubkey"])) into tFp
    put waAccountPath() into tPath
    put cxHdDerivePath(tMaster, tPath) into tNode
    put cwXKeyEncode(tNode, cwXKeyVersion(sWaNetwork, sWaScriptType, false), true) \
-         into sWaAccountXprv
+         into tXprv
    put cwXKeyEncode(cxHdNeuter(tNode), \
-         cwXKeyVersion(sWaNetwork, sWaScriptType, true), false) into sWaAccountXpub
+         cwXKeyVersion(sWaNetwork, sWaScriptType, true), false) into tXpub
    put empty into tMaster
    put empty into tNode
+   put tFp into sWaFingerprint
+   put tXprv into sWaAccountXprv
+   put tXpub into sWaAccountXpub
+   put empty into tXprv
    waDeriveAddresses
 end waDeriveAccount
 
@@ -13291,12 +13411,42 @@ command waSetNetwork pNetwork
    -- Changing network changes every address in the wallet, so it re-derives
    -- and drops the chain state rather than showing addresses from one network
    -- beside balances from another.
+   -- AND IT ROLLS BACK. A re-derive can refuse - a watch-only key belongs to
+   -- one chain, and waDeriveAccount says so - and this handler used to have
+   -- already committed the new network and dropped the coins by the time it
+   -- heard. What was left was a wallet on mainnet showing testnet addresses
+   -- under an error about the switch, which is neither chain. The old state
+   -- is kept in locals and put back on a throw, which is re-thrown AFTER the
+   -- try because a throw inside a catch does not reach the caller here.
+   local tOldNet, tOldUtxos, tOldHistory, tOldTip, tError, tFailed
+   put sWaNetwork into tOldNet
+   put sWaUtxos into tOldUtxos
+   put sWaHistory into tOldHistory
+   put sWaTipHeight into tOldTip
    put pNetwork into sWaNetwork
    put waEmptyList() into sWaUtxos
    put waEmptyList() into sWaHistory
    put empty into sWaTipHeight
-   if sWaHaveCoin is "true" and sWaMnemonic is not empty then
-      waDeriveAccount
+   put "" into tFailed
+   -- A WATCH-ONLY WALLET RE-DERIVES TOO. The condition was "has a mnemonic",
+   -- which a watch-only wallet never has - so a network switch on one ran no
+   -- derive at all: the chain check that waDeriveAccount's watch branch exists
+   -- for never ran, and the addresses stayed the OLD chain's under a network
+   -- label that said otherwise. The gate found it on its first run by asking
+   -- for a refusal that never came.
+   if sWaHaveCoin is "true" and (sWaMnemonic is not empty or sWaAccountXpub is not empty) then
+      try
+         waDeriveAccount
+      catch tError
+         put tError into tFailed
+      end try
+   end if
+   if tFailed is not "" then
+      put tOldNet into sWaNetwork
+      put tOldUtxos into sWaUtxos
+      put tOldHistory into sWaHistory
+      put tOldTip into sWaTipHeight
+      throw "still on " & tOldNet & ": " & tFailed
    end if
    -- Changing the network can invalidate the BACKEND as well as the addresses,
    -- and the backend half used to go unsaid: the Esplora root moved under the
@@ -13324,6 +13474,12 @@ command waSetNetwork pNetwork
 end waSetNetwork
 
 command waSetType pType
+   -- Same rollback as waSetNetwork, for the same reason.
+   local tOldType, tOldKind, tOldUtxos, tOldHistory, tError, tFailed
+   put sWaScriptType into tOldType
+   put sWaKind into tOldKind
+   put sWaUtxos into tOldUtxos
+   put sWaHistory into tOldHistory
    put pType into sWaScriptType
    if pType is "p2wsh" then
       put "multisig" into sWaKind
@@ -13332,8 +13488,20 @@ command waSetType pType
    end if
    put waEmptyList() into sWaUtxos
    put waEmptyList() into sWaHistory
+   put "" into tFailed
    if sWaHaveCoin is "true" and sWaMnemonic is not empty and sWaKind is "seed" then
-      waDeriveAccount
+      try
+         waDeriveAccount
+      catch tError
+         put tError into tFailed
+      end try
+   end if
+   if tFailed is not "" then
+      put tOldType into sWaScriptType
+      put tOldKind into sWaKind
+      put tOldUtxos into sWaUtxos
+      put tOldHistory into sWaHistory
+      throw "still " & tOldType & ": " & tFailed
    end if
    uiStatus "Script type " & pType & ": " & waTypeName() & ".", ""
 end waSetType
@@ -13362,26 +13530,75 @@ command waGenerateSeed
 end waGenerateSeed
 
 command waOpenWallet
-   local tText, tInfo, tNode, tAccountText
-   put waSafeText(cwTrim(field "wl_label")) into sWaLabel
-   if sWaLabel is "" then
-      put "Wallet" into sWaLabel
+   -- EVERYTHING IS READ AND CHECKED BEFORE ANYTHING IS WRITTEN. This handler
+   -- used to commit the label, the account number, the path, an empty coin
+   -- list and an empty history - and, for a seed wallet, the PHRASE ITSELF
+   -- into sWaMnemonic - and only then ask waDeriveAccount whether the phrase
+   -- was any good. When it was not, the throw left all of that behind: a
+   -- wallet with somebody's half-typed phrase as its state, no coins, and
+   -- every later network or script-type click re-validating the same bad
+   -- phrase and throwing the same sentence. That is the twenty-seven-line
+   -- engine log of 2026-09-01. A failed Open now changes nothing at all.
+   local tText, tInfo, tNode, tAccountText, tLabel, tAccount, tPath
+   local tPhrase, tWhy, tFormat
+   put waSafeText(cwTrim(field "wl_label")) into tLabel
+   if tLabel is "" then
+      put "Wallet" into tLabel
    end if
    -- INTO A LOCAL FIRST, and this is the fourth site of the same shape in
    -- this file: `field "wl_account" + 0` binds the arithmetic INTO the chunk
    -- target, so the engine is asked for a field named `wl_account` plus zero.
    -- It is the account NUMBER, so getting it wrong derives a different
    -- wallet from the same seed.
+   put sWaAccount into tAccount
    put field "wl_account" into tAccountText
    if tAccountText is an integer then
-      put tAccountText + 0 into sWaAccount
+      put tAccountText + 0 into tAccount
    end if
    -- VALIDATED HERE, ONCE, so waAccountPath's eight readers never see a path
    -- that has not parsed. An empty box means the standard path, which is what
    -- every wallet this app made before today used.
-   put waCheckedPath(field "wl_path") into sWaCustomPath
-   put waEmptyList() into sWaUtxos
-   put waEmptyList() into sWaHistory
+   put waCheckedPath(field "wl_path") into tPath
+   -- THE PHRASE, for the two kinds that have one. A multisig wallet is one of
+   -- the cosigners and signs with its own seed, and this branch used to exit
+   -- before the line that read the seed box - so a person who chose Multisig,
+   -- typed their phrase and pressed Open had their phrase silently ignored and
+   -- their cosigner key derived from whatever sWaMnemonic held before, which
+   -- at boot is the PUBLISHED test seed. An empty box on a multisig wallet
+   -- keeps the seed already open (a cosigner may have opened it first); a
+   -- non-empty box is adopted, after the same check the seed kind gets.
+   put "" into tPhrase
+   put "" into tFormat
+   if sWaKind is "seed" or sWaKind is "multisig" then
+      put cwTrim(field "wl_mnemonic") into tPhrase
+      if sWaKind is "seed" or tPhrase is not "" then
+         put waSeedFormatOf(tPhrase) into tFormat
+         if tFormat is "" or tFormat is "electrum-2fa" then
+            put waMnemonicProblem(tPhrase) into tWhy
+            throw "that seed phrase cannot open a wallet: " & tWhy & \
+                  " Nothing has changed; whatever was open is still open."
+         end if
+      end if
+   end if
+   -- Every check that can refuse has run. Commit.
+   put tLabel into sWaLabel
+   put tAccount into sWaAccount
+   put tPath into sWaCustomPath
+   -- AN ELECTRUM SEED NAMES ITS OWN PATH AND SCRIPT TYPE, and this is the
+   -- only place a format is allowed to override what the buttons say: the
+   -- alternative is a valid seed opening the wrong wallet, which shows a zero
+   -- balance and reads like an empty wallet rather than a mistake.
+   if tFormat is "electrum-segwit" then
+      put "m/0'" into sWaCustomPath
+      put "p2wpkh" into sWaScriptType
+      set the defaultStack to the short name of this stack
+      put sWaCustomPath into field "wl_path"
+   else if tFormat is "electrum-standard" then
+      put "m" into sWaCustomPath
+      put "p2pkh" into sWaScriptType
+      set the defaultStack to the short name of this stack
+      put sWaCustomPath into field "wl_path"
+   end if
    if sWaKind is "watch" then
       put cwTrim(field "wl_xkey") into tText
       -- DECODED WITH THE CONTEXT THIS SCREEN ALREADY HAS. Most extended-key
@@ -13417,6 +13634,8 @@ command waOpenWallet
                "zpub, tpub, upub or vpub), or choose Restore if you meant " & \
                "to open a spending wallet."
       end if
+      put waEmptyList() into sWaUtxos
+      put waEmptyList() into sWaHistory
       put tText into sWaAccountXpub
       put empty into sWaAccountXprv
       waDropSeed
@@ -13438,6 +13657,8 @@ command waOpenWallet
    if sWaKind is "key" then
       put cwTrim(field "wl_xkey") into tText
       put cwWifInfo(tText, sWaNetwork) into tInfo
+      put waEmptyList() into sWaUtxos
+      put waEmptyList() into sWaHistory
       put tText into sWaImportedWif
       put empty into sWaAccountXpub
       put empty into sWaAccountXprv
@@ -13451,12 +13672,16 @@ command waOpenWallet
       end if
       exit waOpenWallet
    end if
+   if tPhrase is not "" then
+      put tPhrase into sWaMnemonic
+      put field "wl_pass" into sWaPassphrase
+   end if
+   put waEmptyList() into sWaUtxos
+   put waEmptyList() into sWaHistory
    if sWaKind is "multisig" then
       waAddCosigners
       exit waOpenWallet
    end if
-   put cwTrim(field "wl_mnemonic") into sWaMnemonic
-   put field "wl_pass" into sWaPassphrase
    waDeriveAccount
    uiStatus "Open: " & sWaLabel & ", " & sWaScriptType & " on " & sWaNetwork & \
          ", " & waAddressCount() & " addresses derived.", "ok"
@@ -16332,6 +16557,16 @@ command waNetworkClick pRole
    else if pRole is "bElectrumClear" then
       waSetBackend "electrum-clear"
    else if pRole is "test" then
+      -- REFUSED HERE, not three ticks later. Queuing a request while offline
+      -- let the pump dial nothing, fail through waNetFail, and report "FAILED:
+      -- this wallet is offline" - a failure count, a red pill and a torn-down
+      -- connection, for a wallet that had simply not been given a backend
+      -- yet. waSync already refuses this at the door; Test now says the same
+      -- thing the same way.
+      if sWaBackend is "offline" then
+         throw "this wallet is offline. Choose a backend above; there is " & \
+               "nothing to test yet."
+      end if
       waApplyNetworkFields
       waNetQueue "tip", ""
       uiStatus "Asking " & sWaHost & " for the chain tip.", ""
@@ -16630,6 +16865,17 @@ command waSync
    put waBackendChainWhy() into tWhy
    if tWhy is not empty then
       throw tWhy
+   end if
+   -- ONE SYNC AT A TIME. This appended a whole second batch behind whatever
+   -- was still queued, so a second press doubled the round trips - and on a
+   -- public server doubled what that server learns - and reset the failure
+   -- count that the first batch was still adding to. The engine log of
+   -- 2026-09-01 shows exactly that: eighty-two requests, then the same
+   -- eighty-two again from id 85. A request in flight on its own (the Test
+   -- button's tip) is not a sync and does not block one.
+   if cwListCount(sWaQueue) > 0 then
+      throw "a sync is already running, with " & cwListCount(sWaQueue) & \
+            " request(s) still queued. Let it finish, or press Stop first."
    end if
    -- A FRESH SYNC IS ALLOWED TO BE GREEN AGAIN. The count is per sync, so a
    -- failure from the last one does not follow this one around.
@@ -17363,11 +17609,50 @@ private command waElectrumMaybeComplete
    waNetDeliver tLine
 end waElectrumMaybeComplete
 
+private function waIsNotification pBody
+   -- JSON-RPC with a method and no id: a server-initiated message. Anything
+   -- that does not parse answers false and is left for waNetApply to refuse
+   -- with its own, better sentence.
+   local tNode, tError, tId, tMethod, tText
+   -- decoded the way waNetApply decodes it, so the two never disagree about
+   -- what a body says
+   put pBody into tText
+   try
+      put textDecode(pBody, "UTF-8") into tText
+   catch tError
+      put pBody into tText
+   end try
+   try
+      put cwJsonParse(cwTrim(tText)) into tNode
+   catch tError
+      return false
+   end try
+   put cwJsonPath(tNode, "id") into tId
+   put cwJsonPath(tNode, "method") into tMethod
+   if cwJsonType(tId) is not "missing" and cwJsonType(tId) is not "null" then
+      return false
+   end if
+   return cwJsonType(tMethod) is not "missing"
+end waIsNotification
+
 command waNetDeliver pBody
    -- One answer, whichever transport brought it. Parsed by kind, folded into
    -- the wallet's state, then the next request starts on the next tick.
    local tRec, tKind, tError, tNode, tOut, tSeen
    set the defaultStack to the short name of this stack
+   -- A NOTIFICATION IS NOT AN ANSWER, and it must not be consumed as one.
+   -- blockchain.headers.subscribe is a SUBSCRIPTION: the server answers once
+   -- with the tip and then pushes a new header on every block, with no id,
+   -- for the life of the connection. Handing that to waNetApply while a
+   -- request was in flight threw "no id while request N was in flight", which
+   -- waNetFail turned into a torn-down socket, a failure count and a retry -
+   -- for the request the notification had nothing to do with. It is logged
+   -- and dropped here, BEFORE the in-flight record is touched, so the real
+   -- answer arrives on the next line into a wallet still waiting for it.
+   if waIsElectrum(sWaBackend) and waIsNotification(pBody) then
+      waLog "<- notification (no id) from the server, ignored"
+      exit waNetDeliver
+   end if
    put sWaInFlight into tRec
    if tRec is empty then
       exit waNetDeliver
@@ -18509,6 +18794,18 @@ command waScRun
       scAssert "a mnemonic round-trips through its entropy", \
             cxMnemonicFromEntropy(cxMnemonicToEntropy(kWaTestMnemonic)) is \
             kWaTestMnemonic
+      -- THE PHRASE SAYS WHAT IT IS. An Electrum seed fails BIP-39 by design
+      -- and carries its own version in an HMAC; the wallet asks before it
+      -- refuses. The vector is one Electrum's own generator would produce.
+      scAssert "the test seed is recognised as BIP-39", \
+            waSeedFormatOf(kWaTestMnemonic) is "bip39"
+      scAssert "an Electrum segwit seed is recognised as one", \
+            waSeedFormatOf("puzzle matrix idle exhaust drama thumb crowd " & \
+            "flash client adjust bracket fruit") is "electrum-segwit"
+      scAssert "a phrase failing both is named by word, not by checksum", \
+            waMnemonicProblem("abandom abandon abandon abandon abandon " & \
+            "abandon abandon abandon abandon abandon abandon about") \
+            contains "word 1"
       scAssert "this wallet derived its own addresses", waAddressCount() > 0
    else
       scSkip "every derivation and encoding check", \

@@ -222,11 +222,27 @@ cryptography under all of that is engine-observed.
 **Not proven.** None of this is an OXT pass. What the two gates settle is that
 the code RUNS and what it computes; an interpreter is an approximation of the
 engine and never the engine, and where they disagree the engine is right.
+
+**THE FIRST ENGINE RUN OF THE WALLET ARRIVED 2026-09-01**, as a pasted log
+rather than a harness report, and it settled two things the gates could not.
+The Electrum-over-clearnet transport spoke to a real server
+(electrum.blockstream.info:50001, mainnet, the demonstration wallet): every
+request from `headers.subscribe` through 40 addresses of `listunspent` and
+`get_history` was answered on one persistent socket, each reply correlated by
+id, a 16 KB history included. That flips the label on ONE of the four
+transports; Esplora-over-clearnet and both Tor transports have still not spoken
+to a backend from here. And the same log carried twenty-seven identical
+"does not pass its BIP-39 checksum" lines, which is the defect record in
+`coinxt/CLAUDE.md` for that date: a failed Open committed the bad phrase as
+wallet state and every later click re-validated it. Fixed the same day, with
+the specific reason on screen (which word, how many words, or that the phrase
+is an Electrum seed - which the wallet now opens).
 Everything in `docs/OXT-ENGINE-NOTES.md` that the interpreter models
 differently is invisible to both, the case rule above excepted. A green boot
 here does not mean a window appeared. The three network transports have never
-spoken to a real backend from here, and the two Tor ones additionally need a
-live-Tor pass. No transaction this wallet built has been broadcast to any
+spoken to a real backend from here until 2026-09-01, when Electrum over
+clearnet did (above); Esplora over clearnet has not, and the two Tor ones
+additionally need a live-Tor pass. No transaction this wallet built has been broadcast to any
 network, so "this would confirm" is a claim nobody has tested.
 
 ## Custody, said plainly
