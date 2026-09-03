@@ -282,13 +282,70 @@ class WalletExpr(DB.DemoExpr):
         return super().p_atom()
 
 
+_OX_CMD = re.compile(r'(oxDial|oxWrite|oxCloseStream|oxSetSocksPort|'
+                     r'oxSetCallbackOwner|oxSetStreamCallback)\b\s*(.*)$', re.I)
+
+
 class WalletInterp(DB.DemoInterp):
     def eval_expr(self, expr, env):
         return WalletExpr(self, env).parse(expr)
 
+    def _call_args(self, rest, env):
+        # the interpreter's own comma-separated argument parse, so a call's
+        # arguments here mean what they mean everywhere else
+        args = []
+        if rest.strip():
+            p = WalletExpr(self, env)
+            p.s, p.i = rest, 0
+            while True:
+                args.append(p.p_or())
+                p.ws()
+                if p.i < len(p.s) and p.s[p.i] == ",":
+                    p.i += 1
+                    continue
+                break
+            if p.i < len(p.s):
+                raise SyntaxError("trailing input in call %r" % rest)
+        return args
+
     def _exec_stmt(self, body, i, env):
         line = body[i].strip()
         world = self.world
+
+        # THE MODELLED TOR. OnionXT's own dial goes to `open socket`, which
+        # nothing headless can model, so while a block has switched it on
+        # (world.tor is a list) the five stream commands the wallet issues
+        # are recorded there instead of run, and answer through `the result`
+        # the way the real ones do: a dial hands back the next handle, a
+        # write succeeds unless the block plants a refusal. The stream STATE
+        # the wallet asks about is world.tor_state, answered by the
+        # oxStreamState stand-in the same block installs. Off by default:
+        # the boot must still fail loudly if it ever dials.
+        m = _OX_CMD.match(line)
+        if m and isinstance(getattr(world, "tor", None), list):
+            name = m.group(1).lower()
+            if name in ("oxsetcallbackowner", "oxsetsocksport",
+                        "oxsetstreamcallback"):
+                world.tor.append((name, m.group(2)))
+                return i + 1
+            args = self._call_args(m.group(2), env)
+            if name == "oxdial":
+                world.tor_handles += 1
+                h = world.tor_handles
+                world.tor_state[h] = "connecting"
+                world.tor.append(("dial", str(LCS._disp(args[0])),
+                                  int(LCS._n(args[1])), h))
+                world.result = h
+                return i + 1
+            h = int(LCS._n(args[0]))
+            if name == "oxwrite":
+                world.tor.append(("write", h, str(LCS._disp(args[1]))))
+                world.result = world.tor_write_fail
+                return i + 1
+            world.tor.append(("close", h))
+            world.tor_state.pop(h, None)
+            world.result = ""
+            return i + 1
 
         if re.match(r'create\s+image\s*$', line, re.I):
             world.create("image")
@@ -1367,6 +1424,215 @@ def drive(c, ip, world, sandbox):
          int(LCS._n(ip.constants.get("kWaElectrumClearTestPort", 0))))
     for k, v in saved5.items():
         ip.globals[k] = v
+
+    # ---- Electrum over Tor keeps ONE stream for a sync (2026-09-03) --------
+    # The first engine log in which this transport spoke to a server dialled
+    # a fresh rendezvous stream for every one of 173 requests - the
+    # per-request-connection shape the clearnet transport was cured of two
+    # days earlier. The stream is kept between requests now, and this drives
+    # the whole life of one through the modelled Tor above: dialled once,
+    # written to for each request, a notification pushed in the same chunk
+    # as a reply, a reply split across chunks, dropped by the server while
+    # idle (not a failure), dialled again, abandoned when the host moves,
+    # and a refused write retried once on a fresh stream. Esplora stays one
+    # stream per request, and that is asserted too.
+    saved7 = {k: ip.globals.get(k) for k in
+              ("swabackend", "swahost", "swaport", "swanetwork", "swahaveonion",
+               "swanetstate", "swanetwhy", "swaqueue", "swainflight", "swabuffer",
+               "swastream", "swastreamto", "swasyncfailures", "swatipheight",
+               "swafeerates", "swautxos", "swahistory")}
+    world.tor, world.tor_state, world.tor_handles = [], {}, 0
+    world.tor_write_fail = ""
+    LCS.HASHES["oxstreamstate"] = (
+        lambda a: world.tor_state.get(int(LCS._n(a[0])), "unknown"))
+
+    def tor_count(kind):
+        return sum(1 for t in world.tor if t[0] == kind)
+
+    def tor_last_write():
+        w = [t for t in world.tor if t[0] == "write"]
+        return w[-1][2] if w else ""
+
+    def inflight_id():
+        rec = ip.globals.get("swainflight") or {}
+        return str(rec.get("id", ""))
+
+    def stream_event(h, kind, data=""):
+        ip.call("waStreamEvent", [h, kind, data])
+
+    def log_tail(n=1200):
+        return _fld(world, "lg_text")[-n:]
+
+    try:
+        ip.globals["swahaveonion"] = "true"
+        ip.globals["swanetwork"] = "testnet"
+        ip.globals["swasyncfailures"] = 0
+        ip.call("waSetBackend", ["electrum-tor"])
+        onion_to = "%s:%s" % (ip.globals.get("swahost"), ip.globals.get("swaport"))
+        ip.call("waNetQueue", ["tip", ""])
+        ip.call("waNetPump", [])
+        c.eq("the first request dials", tor_count("dial"), 1)
+        c.eq("and remembers the stream", str(ip.globals.get("swastream")), "1")
+        c.eq("and where it went", str(ip.globals.get("swastreamto")), onion_to)
+        world.tor_state[1] = "connected"
+        stream_event(1, "open")
+        c.ck("the open stream carries the request",
+             "blockchain.headers.subscribe" in tor_last_write(), tor_last_write()[:80])
+        stream_event(1, "data", '{"jsonrpc":"2.0","id":%s,"result":{"height":'
+                     '5127803,"hex":"00"}}\n' % inflight_id())
+        c.eq("the reply lands", str(ip.globals.get("swatipheight")), "5127803")
+        c.eq("and nothing is in flight", str(ip.globals.get("swainflight")), "")
+        c.eq("THE STREAM IS KEPT after the reply",
+             str(ip.globals.get("swastream")), "1")
+        c.eq("and was not closed", tor_count("close"), 0)
+
+        ip.call("waNetQueue", ["fees", ""])
+        ip.call("waNetPump", [])
+        c.eq("the next request does NOT dial", tor_count("dial"), 1)
+        c.ck("it is written down the same stream",
+             tor_count("write") == 2 and "estimatefee" in tor_last_write(),
+             tor_last_write()[:80])
+        c.eq("and the state says busy", str(ip.globals.get("swanetstate")), "busy")
+        # a notification pushed in the same chunk as the reply, FIRST
+        stream_event(1, "data",
+                     '{"jsonrpc":"2.0","method":"blockchain.headers.subscribe",'
+                     '"params":[{"height":5127804,"hex":"00"}]}\n'
+                     '{"jsonrpc":"2.0","id":%s,"result":0.00001}\n' % inflight_id())
+        c.eq("a notification ahead of the reply in one chunk is ignored and "
+             "the reply still lands",
+             str((ip.globals.get("swafeerates") or {}).get("6")), "1")
+        c.ck("and the log says so", "notification (no id)" in log_tail())
+        c.eq("the buffer is empty afterwards", str(ip.globals.get("swabuffer")), "")
+
+        # a reply split across two chunks, with a coin in it
+        addr0 = str((ip.globals.get("swaaddresses") or {}).get("1", {})
+                    .get("address", ""))
+        ip.call("waNetQueue", ["utxos", addr0])
+        ip.call("waNetPump", [])
+        rid = inflight_id()
+        stream_event(1, "data", '{"jsonrpc":"2.0","id":%s,"res' % rid)
+        c.eq("half a line is not an answer", inflight_id(), rid)
+        stream_event(1, "data", 'ult":[{"tx_hash":"%s","tx_pos":0,"height":'
+                     '5127000,"value":4242}]}\n' % ("dd" * 32))
+        u = ip.globals.get("swautxos") or {}
+        c.ck("the two halves make one coin",
+             any(str(u.get(str(k), {}).get("value", "")) == "4242"
+                 for k in range(1, int(LCS._n(u.get("n", 0))) + 1)),
+             "%s coins" % u.get("n"))
+        c.eq("still the one dial", tor_count("dial"), 1)
+
+        # a partial notification straddling the pump boundary is kept
+        stream_event(1, "data", '{"jsonrpc":"2.0","method":"blockchain.head')
+        ip.call("waNetQueue", ["tip", ""])
+        ip.call("waNetPump", [])
+        c.ck("the pump keeps a partial line on the kept stream",
+             str(ip.globals.get("swabuffer")).endswith("blockchain.head"),
+             repr(str(ip.globals.get("swabuffer"))[-40:]))
+        stream_event(1, "data", 'ers.subscribe","params":[{"height":5127805}]}\n'
+                     '{"jsonrpc":"2.0","id":%s,"result":{"height":5127805,'
+                     '"hex":"00"}}\n' % inflight_id())
+        c.eq("its tail is a notification, not a broken reply",
+             str(ip.globals.get("swatipheight")), "5127805")
+        c.eq("and no failure was counted", int(LCS._n(ip.globals.get("swasyncfailures"))), 0)
+
+        # the server drops the idle stream
+        stream_event(1, "closed")
+        c.eq("an idle close forgets the stream", str(ip.globals.get("swastream")), "")
+        c.eq("and counts no failure", int(LCS._n(ip.globals.get("swasyncfailures"))), 0)
+        c.ck("and is not a failed state", str(ip.globals.get("swanetstate")) != "failed",
+             str(ip.globals.get("swanetstate")))
+        c.ck("and the log says the next request will dial",
+             "idle stream 1" in log_tail() and "dial again" in log_tail(),
+             log_tail(200))
+        ip.call("waNetQueue", ["tip", ""])
+        ip.call("waNetPump", [])
+        c.eq("which it does", tor_count("dial"), 2)
+        c.eq("on a new handle", str(ip.globals.get("swastream")), "2")
+        world.tor_state[2] = "connected"
+        stream_event(2, "open")
+        stream_event(2, "data", '{"jsonrpc":"2.0","id":%s,"result":{"height":'
+                     '5127806,"hex":"00"}}\n' % inflight_id())
+        # an idle ERROR is the same shape
+        stream_event(2, "error", "connection reset")
+        c.eq("an idle error forgets the stream too", str(ip.globals.get("swastream")), "")
+        c.eq("without a failure", int(LCS._n(ip.globals.get("swasyncfailures"))), 0)
+
+        # the host moves under an open stream
+        ip.call("waNetQueue", ["tip", ""])
+        ip.call("waNetPump", [])
+        world.tor_state[3] = "connected"
+        stream_event(3, "open")
+        stream_event(3, "data", '{"jsonrpc":"2.0","id":%s,"result":{"height":'
+                     '5127807,"hex":"00"}}\n' % inflight_id())
+        c.eq("a third stream is open and kept", str(ip.globals.get("swastream")), "3")
+        onion_e = str(ip.constants.get("kWaElectrumOnion", ""))
+        ip.globals["swahost"] = "aaaa" + onion_e[4:]
+        ip.call("waNetQueue", ["tip", ""])
+        ip.call("waNetPump", [])
+        c.ck("a moved host closes the kept stream", ("close", 3) in world.tor)
+        c.eq("and dials the new one", tor_count("dial"), 4)
+        c.ck("and says so", "backend moved" in log_tail(), log_tail(200))
+        ip.globals["swahost"] = onion_e
+
+        # a refused write on a reused stream: closed, retried once, dialled again
+        ip.call("waNetAbort", [])
+        ip.call("waNetQueue", ["tip", ""])
+        ip.call("waNetPump", [])
+        h = int(LCS._n(ip.globals.get("swastream")))
+        world.tor_state[h] = "connected"
+        stream_event(h, "open")
+        stream_event(h, "data", '{"jsonrpc":"2.0","id":%s,"result":{"height":'
+                     '5127808,"hex":"00"}}\n' % inflight_id())
+        ip.call("waNetQueue", ["fees", ""])
+        world.tor_write_fail = "socket closed"
+        ip.call("waNetPump", [])
+        world.tor_write_fail = ""
+        c.ck("a refused write closes the stream", ("close", h) in world.tor)
+        c.ck("and retries the request once, at the front",
+             "retrying fees" in log_tail()
+             and str((ip.globals.get("swaqueue") or {}).get("1", {}).get("kind")) == "fees"
+             and str((ip.globals.get("swaqueue") or {}).get("1", {}).get("retried")) == "true",
+             log_tail(200))
+        c.eq("counting nothing yet", int(LCS._n(ip.globals.get("swasyncfailures"))), 0)
+        dials = tor_count("dial")
+        ip.call("waNetPump", [])
+        c.eq("and the retry dials afresh", tor_count("dial"), dials + 1)
+
+        # Esplora over Tor stays one stream per request
+        ip.call("waNetAbort", [])
+        ip.call("waSetBackend", ["esplora-tor"])
+        ip.call("waNetQueue", ["tip", ""])
+        ip.call("waNetPump", [])
+        h = int(LCS._n(ip.globals.get("swastream")))
+        world.tor_state[h] = "connected"
+        stream_event(h, "open")
+        c.ck("Esplora writes an HTTP request", tor_last_write().startswith("GET "),
+             tor_last_write()[:40])
+        stream_event(h, "data", "HTTP/1.0 200 OK\r\nContent-Type: text/plain\r\n"
+                     "\r\n5127809")
+        stream_event(h, "closed")
+        c.eq("the HTTP reply lands when the peer closes",
+             str(ip.globals.get("swatipheight")), "5127809")
+        c.eq("and the Esplora stream is NOT kept", str(ip.globals.get("swastream")), "")
+        # the abort says what it dropped
+        ip.call("waNetQueue", ["fees", ""])
+        ip.call("waNetQueue", ["tip", ""])
+        ip.call("waNetPump", [])
+        ip.call("waNetQueue", ["fees", ""])
+        ip.call("waNetAbort", [])
+        # fees in flight; tip and a second fees behind it
+        c.ck("an abort names the request in flight and the queue it dropped",
+             "abandoned fees" in log_tail() and "2 queued request(s)" in log_tail(),
+             log_tail(200))
+        c.eq("and leaves nothing behind",
+             (str(ip.globals.get("swastream")), str(ip.globals.get("swainflight")),
+              int(LCS._n((ip.globals.get("swaqueue") or {}).get("n", 0)))),
+             ("", "", 0))
+    finally:
+        LCS.HASHES.pop("oxstreamstate", None)
+        world.tor = None
+        for k, v in saved7.items():
+            ip.globals[k] = v
 
     # ---- the audit of 2026-09-01: five defects, each pinned here ---------
     #

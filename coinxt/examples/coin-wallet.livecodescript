@@ -10956,11 +10956,13 @@ constant kWaEsploraClear = "blockstream.info"
 constant kWaEsploraClearAlt = "mempool.space"
 -- ELECTRUM OVER TOR, on the SAME onion as the Esplora mirror: Blockstream
 -- serves both from one version-3 address, with the chain selected by PORT the
--- way its clearnet server does it - 110 mainnet, 143 testnet. That table is
--- the operator's own published one and has NOT been observed from this stack:
--- the 2026-09-02 run that should have tried it never reached a server, for
--- the reason below. The constant stays separate from kWaEsploraOnion so the
--- two can move independently.
+-- way its clearnet server does it - 110 mainnet, 143 testnet. The testnet
+-- half was OBSERVED on 2026-09-03: the first engine log in which this
+-- transport spoke to a server, port 143, a full sync and a broadcast (the
+-- 2026-09-02 attempt never reached a server, for the reason below). The
+-- mainnet port is still the operator's published table and nothing more.
+-- The constant stays separate from kWaEsploraOnion so the two can move
+-- independently.
 --
 -- WHAT STOOD HERE UNTIL 2026-09-02 was "explorernuoc63nb.onion" - a
 -- sixteen-character VERSION-2 onion, a kind the Tor network stopped resolving
@@ -11503,6 +11505,8 @@ local sWaSyncFailures     -- requests this sync gave up on; a sync is not "ok" w
 local sWaQueue            -- list of pending request records
 local sWaInFlight         -- the request record being served, or empty
 local sWaStream           -- the OnionXT stream handle in flight, or empty
+local sWaStreamTo         -- "host:port" that stream was dialled to; the Electrum
+                          -- transport keeps it open between requests (2026-09-03)
 local sWaBuffer           -- the bytes accumulated for the in-flight request
 local sWaReqId            -- a monotonic id, so a late reply cannot be mistaken
 local sWaPolling          -- "true" while the tick is armed
@@ -14390,7 +14394,18 @@ command waAddSelfPayment
    local tRec
    put waNextUnused(0) into tRec
    if tRec is "" then
-      throw "this wallet has no address to pay."
+      -- Reported from the 2026-09-03 engine log mid-sync of the public test
+      -- seed, whose every address everybody has used: the sentence that
+      -- stood here said what was missing and nothing about why or what to
+      -- press.
+      if waIsPublicTestSeed() then
+         throw "this wallet has no unused receive address to pay itself: " & \
+               "every address the public test seed derives has been used " & \
+               "by somebody, because everybody has that seed. Derive more " & \
+               "on the Addresses screen (More), or pay a wallet of your own."
+      end if
+      throw "this wallet has no unused receive address to pay itself. " & \
+            "Derive more on the Addresses screen (More)."
    end if
    -- 10000 sat, written in whatever unit this wallet is displaying. The
    -- literal "0.0001" that stood here was BTC, so on mBTC it proposed 10 sat
@@ -17067,15 +17082,20 @@ private function waQueueFirst pRec
 end waQueueFirst
 
 command waNetAbort
-   local tError
-   waSockClose
-   if sWaStream is not empty then
-      try
-         oxCloseStream sWaStream
-      catch tError
-      end try
+   -- SAY WHAT WAS DROPPED. The 2026-09-03 log has request ids jumping from
+   -- 73 to 84 with nothing between: the wallet was switched mid-sync, this
+   -- handler threw ten queued requests and the one in flight away, and the
+   -- next reader of that log had to work that out from the numbers.
+   local tError, tDropped
+   put cwListCount(sWaQueue) into tDropped
+   if sWaInFlight is not empty then
+      waLog "abandoned " & sWaInFlight["kind"] & " " & sWaInFlight["arg"] & \
+            " in flight and " & tDropped & " queued request(s)"
+   else if tDropped > 0 then
+      waLog "dropped " & tDropped & " queued request(s)"
    end if
-   put empty into sWaStream
+   waSockClose
+   waStreamClose
    put empty into sWaInFlight
    put empty into sWaBuffer
    put waEmptyList() into sWaQueue
@@ -17104,7 +17124,13 @@ command waNetPump
    put tRest into sWaQueue
    put the milliseconds + kWaNetDeadline into tRec["deadline"]
    put tRec into sWaInFlight
-   put empty into sWaBuffer
+   -- A PARTIAL LINE ON A KEPT STREAM BELONGS TO THE STREAM, not to the
+   -- request that just ended: it is the head of a notification the server
+   -- pushed between two requests, and clearing it here would hand its tail
+   -- to the next reply as a line that parses as nothing.
+   if sWaBackend is not "electrum-tor" or sWaStream is empty then
+      put empty into sWaBuffer
+   end if
    put "busy" into sWaNetState
    try
       waNetStart tRec
@@ -17138,13 +17164,7 @@ command waNetFail pWhy
    -- the transport is. The second failure counts, as before.
    put sWaInFlight into tRec
    if tRec is not empty and tRec["retried"] is not "true" then
-      if sWaStream is not empty then
-         try
-            oxCloseStream sWaStream
-         catch tError
-         end try
-         put empty into sWaStream
-      end if
+      waStreamClose
       waSockClose
       put empty into sWaInFlight
       put empty into sWaBuffer
@@ -17154,13 +17174,7 @@ command waNetFail pWhy
       waLog "retrying " & tRec["kind"] & " " & tRec["arg"] & " once: " & pWhy
       exit waNetFail
    end if
-   if sWaStream is not empty then
-      try
-         oxCloseStream sWaStream
-      catch tError
-      end try
-      put empty into sWaStream
-   end if
+   waStreamClose
    -- AND THE CLEARNET SOCKET, for the same reason and with sharper teeth.
    -- This handler closed the Tor stream and left sWaSock alone, and on that
    -- transport the connection is PERSISTENT and reused for every request of a
@@ -17274,17 +17288,44 @@ command waNetStart pRec
       if tError is not empty then
          throw tError
       end if
+      -- ONE STREAM, MANY REQUESTS, on the Electrum transport (2026-09-03).
+      -- The first engine log in which this transport spoke to a server
+      -- dialled a fresh rendezvous stream for every one of its 173 requests
+      -- - the per-request-connection shape the clearnet Electrum transport
+      -- was cured of on 2026-09-01, arriving on the Tor transport by the
+      -- other door. Electrum is designed for one connection (the id on
+      -- every request exists to correlate answers over it), so the stream
+      -- the last reply came down is kept open and the next request is
+      -- written to it. It has to be the stream the settings NOW name, for
+      -- the reason sWaSock compares its id; and a stream the server has
+      -- since dropped is "unknown" to OnionXT (a peer close reaches
+      -- waStreamClosed, which forgets the handle; oxCloseStream forgets it
+      -- too), so anything but a connected stream to this host and port
+      -- dials again. Esplora stays one stream per request: HTTP/1.0 with
+      -- Connection: close, where the body ends when the peer closes.
+      put sWaHost & ":" & sWaPort into tSock
+      if sWaBackend is "electrum-tor" and sWaStream is not empty then
+         if sWaStreamTo is tSock and oxStreamState(sWaStream) is "connected" then
+            put "busy" into sWaNetState
+            waStreamSendElectrum
+            exit waNetStart
+         end if
+         waLog "backend moved to " & tSock & " or stream " & sWaStream & \
+               " is " & oxStreamState(sWaStream) & " - closing it"
+         waStreamClose
+      end if
       oxSetSocksPort sWaSocksPort
       oxSetCallbackOwner the long id of me
       put "dialing" into sWaNetState
       oxDial sWaHost, sWaPort
       put the result into tHandle
       if tHandle is not an integer then
-         throw "could not dial " & sWaHost & ":" & sWaPort & " - " & tHandle
+         throw "could not dial " & tSock & " - " & tHandle
       end if
       put tHandle into sWaStream
+      put tSock into sWaStreamTo
       oxSetStreamCallback tHandle, "waStreamEvent"
-      waLog "dial " & sWaHost & ":" & sWaPort & " stream " & tHandle
+      waLog "dial " & tSock & " stream " & tHandle
       exit waNetStart
    end if
    throw "this wallet is offline."
@@ -17670,24 +17711,57 @@ on waStreamEvent pStream, pEvent, pData
       else if pEvent is "closed" then
          waStreamClosed
       else if pEvent is "error" then
-         waNetFail "the Tor stream reported: " & pData
+         if sWaInFlight is empty then
+            waStreamIdleGone "reported: " & pData
+         else
+            waNetFail "the Tor stream reported: " & pData
+         end if
       end if
    catch tError
       waNetFail "handling a stream event: " & tError
    end try
 end waStreamEvent
 
+private command waStreamSendElectrum
+   -- Write the in-flight request down the open stream. Shared by the first
+   -- request on a new stream and every one that reuses it, so the two cannot
+   -- drift - the same split as waSockSend on the clearnet transport.
+   local tLine
+   if sWaStream is empty or sWaInFlight is empty then
+      exit waStreamSendElectrum
+   end if
+   put waElectrumRequest(sWaInFlight) into tLine
+   waLog "-> " & tLine
+   oxWrite sWaStream, textEncode(tLine & numToChar(10), "UTF-8")
+   if the result is not empty then
+      -- A refused write on a reused stream is the ordinary way a server
+      -- drops a quiet client. waNetFail closes the stream and tries the
+      -- request once more, and the retry dials afresh.
+      waNetFail "writing to the Tor stream: " & the result
+   end if
+end waStreamSendElectrum
+
+private command waStreamClose
+   -- Close the Tor stream if one is open and forget it, wherever a path
+   -- gives up on it. One handler so the two halves - the close and the
+   -- forgetting - cannot come apart, which is the sWaSock lesson.
+   local tError
+   if sWaStream is not empty then
+      try
+         oxCloseStream sWaStream
+      catch tError
+      end try
+   end if
+   put empty into sWaStream
+   put empty into sWaStreamTo
+end waStreamClose
+
 private command waStreamOpened
-   local tRec, tReq, tCrlf, tBody, tLine, tLen
+   local tRec, tReq, tCrlf, tBody, tLen
    put sWaInFlight into tRec
    put numToChar(13) & numToChar(10) into tCrlf
    if waIsElectrum(sWaBackend) then
-      put waElectrumRequest(tRec) into tLine
-      waLog "-> " & tLine
-      oxWrite sWaStream, textEncode(tLine & numToChar(10), "UTF-8")
-      if the result is not empty then
-         waNetFail "writing to the Tor stream: " & the result
-      end if
+      waStreamSendElectrum
       exit waStreamOpened
    end if
    -- HTTP/1.0 with Connection: close, so the body ends when the peer closes
@@ -17721,9 +17795,24 @@ private command waStreamOpened
    end if
 end waStreamOpened
 
+private command waStreamIdleGone pWhat
+   -- A STREAM NOTHING WAS WAITING ON is not a failure of anything. The
+   -- Electrum stream is kept open between requests (waNetStart, 2026-09-03)
+   -- and a server is entitled to drop a quiet client; before the reuse this
+   -- could not happen, because a stream was closed the moment its one reply
+   -- landed. Forget the handle so the next request dials again, count
+   -- nothing, and say so in the log.
+   if sWaStream is not empty then
+      waLog "the idle stream " & sWaStream & " " & pWhat & \
+            "; the next request will dial again"
+   end if
+   waStreamClose
+end waStreamIdleGone
+
 private command waStreamClosed
    local tBody
    if sWaInFlight is empty then
+      waStreamIdleGone "was closed by the server"
       exit waStreamClosed
    end if
    if waIsElectrum(sWaBackend) then
@@ -17840,17 +17929,33 @@ function waElectrumRequest pRec
 end waElectrumRequest
 
 private command waElectrumMaybeComplete
-   -- One JSON object per line: the answer is complete at the first newline.
-   -- Sliced in BYTES for the same reason waHttpBody is - offset() answers in
-   -- bytes and the slice must agree with it.
-   local tPos, tLine
-   put offset(numToChar(10), sWaBuffer) into tPos
-   if tPos is 0 then
-      exit waElectrumMaybeComplete
-   end if
-   put byte 1 to (tPos - 1) of sWaBuffer into tLine
-   put empty into sWaBuffer
-   waNetDeliver tLine
+   -- One JSON object per line: an answer is complete at a newline. Sliced in
+   -- BYTES for the same reason waHttpBody is - offset() answers in bytes and
+   -- the slice must agree with it.
+   --
+   -- EVERY line, and the remainder is KEPT. This took the first line and
+   -- emptied the buffer, which was fine while a stream carried one reply and
+   -- was closed. On the stream that is now kept open between requests the
+   -- server can push a headers.subscribe notification at any moment, so one
+   -- chunk can hold "notification LF reply LF" - and taking the first line
+   -- and dropping the rest would have dropped the REPLY, into a deadline and
+   -- a retry, over a block arriving. waNetDeliver ignores the notification
+   -- and applies the reply in whichever order they came.
+   local tPos, tLine, tLen
+   repeat forever
+      put offset(numToChar(10), sWaBuffer) into tPos
+      if tPos is 0 then
+         exit repeat
+      end if
+      put byte 1 to (tPos - 1) of sWaBuffer into tLine
+      put the number of bytes of sWaBuffer into tLen
+      if tPos < tLen then
+         put byte (tPos + 1) to tLen of sWaBuffer into sWaBuffer
+      else
+         put empty into sWaBuffer
+      end if
+      waNetDeliver tLine
+   end repeat
 end waElectrumMaybeComplete
 
 private function waIsNotification pBody
@@ -17882,7 +17987,7 @@ end waIsNotification
 command waNetDeliver pBody
    -- One answer, whichever transport brought it. Parsed by kind, folded into
    -- the wallet's state, then the next request starts on the next tick.
-   local tRec, tKind, tError, tNode, tOut, tSeen
+   local tRec, tKind, tError, tNode, tOut, tSeen, tArg, tLen
    set the defaultStack to the short name of this stack
    -- A NOTIFICATION IS NOT AN ANSWER, and it must not be consumed as one.
    -- blockchain.headers.subscribe is a SUBSCRIPTION: the server answers once
@@ -17903,15 +18008,23 @@ command waNetDeliver pBody
    end if
    put tRec["kind"] into tKind
    put empty into sWaInFlight
-   if sWaStream is not empty then
-      try
-         oxCloseStream sWaStream
-      catch tError
-      end try
-      put empty into sWaStream
+   -- The Esplora stream is already gone by here (HTTP/1.0: the peer closed
+   -- it and waStreamClosed forgot the handle). The Electrum stream is KEPT
+   -- for the next request (waNetStart) since 2026-09-03; it was closed here
+   -- before, which is what made every request a new rendezvous.
+   if sWaStream is not empty and sWaBackend is not "electrum-tor" then
+      waStreamClose
    end if
    put the number of chars of pBody into tSeen
-   waLog "<- " & tKind & " " & tRec["arg"] & " (" & tSeen & " chars)"
+   put tRec["arg"] into tArg
+   if tKind is "broadcast" then
+      -- The argument IS the raw transaction, already on the "->" line
+      -- above; echoing it again made the 2026-09-03 log's broadcast reply a
+      -- 600-character line that hid the one number on it.
+      put the number of chars of tArg into tLen
+      put "(a " & tLen & "-hex-char transaction)" into tArg
+   end if
+   waLog "<- " & tKind & " " & tArg & " (" & tSeen & " chars)"
    -- ONE ANSWER DOES NOT MAKE A SYNC. This cleared the failure state on every
    -- reply, so a scan in which one address's request timed out or was refused
    -- went green on the next address that answered - and the wallet then
@@ -18055,6 +18168,10 @@ private command waNetApply pKind, pArg, pBody, pId
       end if
       if pKind is "broadcast" then
          put waCheckedTxid(cwTrim(cwJsonText(tNode)), "Electrum") into tText
+         -- In the log as well as on the status line: the 2026-09-03 log's
+         -- only record of its broadcast's txid was the fee-bump bookkeeping
+         -- line, and the status line is not what gets pasted back.
+         waLog "broadcast accepted: txid " & tText
          uiStatus "Broadcast. The server returned txid " & tText & ".", "ok"
          exit waNetApply
       end if
@@ -18112,6 +18229,7 @@ private command waNetApply pKind, pArg, pBody, pId
       -- A txid is 32 bytes of hex and nothing else. Reporting a success the
       -- backend did not give is the failure this whole block exists to stop.
       get waCheckedTxid(tText, "Esplora")
+      waLog "broadcast accepted: txid " & tText
       uiStatus "Broadcast. The backend returned txid " & tText & ".", "ok"
       exit waNetApply
    end if
@@ -18459,20 +18577,23 @@ function waAboutText
    put "  spend path produces a transaction byte-identical to that other" & return after tOut
    put "  implementation's. CoinXT itself has had on-engine passes since" & return after tOut
    put "  2026-08-10, so the hashes and signatures are engine-observed." & return & return after tOut
-   put "  THIS STACK HAS RUN ON AN OXT ENGINE: four pasted logs, 2026-09-01" & return after tOut
-   put "  and 2026-09-02. In them, Electrum over clearnet, Esplora over" & return after tOut
-   put "  clearnet and Esplora over Tor each synced real wallets on mainnet" & return after tOut
-   put "  and testnet against real servers (the Tor one through OnionXT's" & return after tOut
-   put "  SOCKS client to the Esplora onion mirror); coins were received at" & return after tOut
-   put "  a testnet address made here; and one testnet spend built here was" & return after tOut
-   put "  broadcast over Tor, accepted by the mirror, and seen spent by the" & return after tOut
-   put "  sync that followed - txid 7978bdd2c097c929cae2ab00084d4454b68b1d05" & return after tOut
-   put "  4a3f2d53fc7b51b70551e4d5, its bytes decoded by the independent" & return after tOut
-   put "  reference to the same txid the wallet logged." & return & return after tOut
+   put "  THIS STACK HAS RUN ON AN OXT ENGINE: six pasted logs, 2026-09-01" & return after tOut
+   put "  to 2026-09-03. In them ALL FOUR transports synced real wallets" & return after tOut
+   put "  against real servers - Electrum and Esplora over clearnet on" & return after tOut
+   put "  mainnet and testnet, Esplora over Tor the same, and Electrum over" & return after tOut
+   put "  Tor on testnet (2026-09-03, through OnionXT's SOCKS client to" & return after tOut
+   put "  Blockstream's v3 onion on port 143: tip, fees, forty histories," & return after tOut
+   put "  unspent outputs). Coins were received at a testnet address made" & return after tOut
+   put "  here. Two testnet spends built here were broadcast and seen spent" & return after tOut
+   put "  by the sync that followed: over Esplora/Tor, txid 7978bdd2c097c9" & return after tOut
+   put "  29cae2ab00084d4454b68b1d054a3f2d53fc7b51b70551e4d5 (its bytes" & return after tOut
+   put "  decoded by the independent reference to the same txid), and over" & return after tOut
+   put "  Electrum/Tor, txid 9bab6640f2bbe01f96a95ffdeca3e96881f1819e6773" & return after tOut
+   put "  48562ef8bf87da6b719a." & return & return after tOut
    put "WHAT IS NOT" & return after tOut
-   put "  Electrum over Tor has not spoken to a backend from here: the one" & return after tOut
-   put "  attempt (2026-09-02) dialled a retired version-2 onion, which Tor" & return after tOut
-   put "  refused, and the v3 address that replaced it has not been tried." & return after tOut
+   put "  Electrum over Tor on MAINNET (port 110) has not been tried, and" & return after tOut
+   put "  the one-stream-per-sync reuse added 2026-09-03 has not run on an" & return after tOut
+   put "  engine (the log it answers dialled a stream per request)." & return after tOut
    put "  No spend built here has been broadcast on MAINNET. The right-click" & return after tOut
    put "  menu opened on an engine on 2026-09-02; that it selects the row" & return after tOut
    put "  under the cursor since then has not been seen there. An" & return after tOut
