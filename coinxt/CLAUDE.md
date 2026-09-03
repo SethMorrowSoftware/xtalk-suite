@@ -3074,7 +3074,11 @@ and the fee from the record first. The boot gate drives all of it through
 autotest asked to pay 30000 sat to a freshly prepared timelock address and the
 selector answered `insufficient funds` over 451087 sat confirmed. The report was
 cut at 120 characters by the autotest itself, so what the advice said after
-"confirmed" is not in the record, and the selector clears the same pool
-headlessly. The isolated probe that pays into a vault address on the booted
-wallet is the next step, and this entry is here so the failure is not mistaken
-for the two above.
+"confirmed" is not in the record. It does not reproduce headlessly: the selector
+clears a five-coin p2pkh pool of that total for that target at rates 2 and 5,
+and the booted fixture wallet, asked to pay 30000 sat into a timelock address it
+had just prepared, builds and signs the spend at both rates (the review labels
+it a self-send, locked until its block). The autotest now reports 400 characters
+of a refusal instead of 120, so the next engine run carries the rest of that
+advice line - frozen, unconfirmed, or something else - and this entry is here so
+the failure is not mistaken for the two above.
