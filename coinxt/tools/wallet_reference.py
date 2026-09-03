@@ -1395,7 +1395,7 @@ def rune_amount_text(amount: int, divisibility: int) -> str:
 def runestone_script(integers, pushes=None) -> bytes:
     """OP_RETURN OP_13 with the varints in one push (or in the given
     chunks of bytes, to test payload concatenation)."""
-    payload = b"".join(leb128_encode(i) for i in integers)
+    payload = b"".join(leb128_encode(i) for i in (integers or []))
     if pushes is None:
         pushes = [payload] if payload else []
     return b"\x6a\x5d" + b"".join(push(p) for p in pushes)

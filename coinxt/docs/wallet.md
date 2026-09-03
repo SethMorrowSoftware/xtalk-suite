@@ -403,8 +403,14 @@ three refusals - no eligible input, a zero key sum, and more than 2323
 outputs to one scan key. Which inputs take part is the receiver's rule, and
 the oracle implements that side of it too, checked against the vectors'
 own input lists. Receiving - scanning the chain for payments to a scan key
-of this wallet's own - is not built; the wallet says so wherever it
-mentions the feature. Not run on an engine.
+of this wallet's own - is not built, and the reason is a library gap rather
+than a design choice: the receiver sums the INPUT PUBLIC KEYS of every
+transaction it scans, which is point addition, and coinxt exposes scalar
+multiplication (ECDH), scalar tweaks and point compression but no
+point-plus-point. That is one native handler away (a `cxPubkeyCombine`
+over secp256k1_ec_pubkey_combine, with binaries refreshed on every
+platform), and until it lands the wallet says so wherever it mentions the
+feature. Not run on an engine.
 
 ## Runes, read only
 
@@ -489,8 +495,12 @@ the node key the invoice names. The reader is wallet-core's: the long
 bech32 decoder from the silent-payment work, the 5-bit field walk, and
 coinxt's signature recovery. The vector gate holds every field of every
 example in the specification (`tests/bolt11-vectors.json`) and each of its
-invalid examples. This wallet holds no channels and cannot pay an invoice;
-it says so on the same screen. Not run on an engine.
+invalid examples. A BIP-21 URI that carries a `lightning=` parameter - the
+unified QR most Lightning wallets now show - is read as both halves, the
+on-chain address and amount with the invoice beneath, and one with no
+address at all is read as the invoice alone. This wallet holds no channels
+and cannot pay an invoice; it says so on the same screen. Not run on an
+engine.
 
 ## Testnet4, and labels that travel
 

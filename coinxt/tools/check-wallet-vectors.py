@@ -1447,6 +1447,13 @@ def check_messages(c, ip):
                              "Donation for project xyz"]),
          REF.uri_build(ADDRESSES["mainnet"][2], 100000, "Luke-Jr",
                        "Donation for project xyz"))
+    u = call("cwUriParse", ["bitcoin:%s?amount=0.001&lightning=LNBC10U1P3PJ257PP5"
+                            % ADDRESSES["mainnet"][2]])
+    c.ck("a unified URI keeps its lightning invoice beside the address",
+         (u["address"], u["amountsat"], u["lightning"]),
+         (ADDRESSES["mainnet"][2], 100000, "LNBC10U1P3PJ257PP5"))
+    c.ck("and one with no address still parses",
+         call("cwUriParse", ["bitcoin:?lightning=lnbc1abc"])["lightning"], "lnbc1abc")
     c.ck("percent-encoding round-trips",
          call("cwPercentDecode", [call("cwPercentEncode", ["a b/c?d=e&f"])]),
          "a b/c?d=e&f")

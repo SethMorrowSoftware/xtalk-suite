@@ -9437,6 +9437,9 @@ function cwUriParse pUri
    put "" into tOut["message"]
    put "" into tOut["amount"]
    put -1 into tOut["amountsat"]
+   -- a "unified" URI carries a Lightning invoice beside (or instead of)
+   -- the address; kept verbatim for the invoice reader
+   put "" into tOut["lightning"]
    put cwListNew() into tReq
    repeat while tQuery is not ""
       put offset("&", tQuery) into tPos
@@ -9468,6 +9471,8 @@ function cwUriParse pUri
          put tValue into tOut["label"]
       else if cwLower(tKey) is "message" then
          put tValue into tOut["message"]
+      else if cwLower(tKey) is "lightning" then
+         put tValue into tOut["lightning"]
       end if
       if cwLower(char 1 to 4 of tKey) is "req-" then
          put cwListAdd(tReq, tKey) into tReq
@@ -19870,6 +19875,11 @@ function waInspectUri pText
    local tRec, tOut, tI, tCount, tReq
    put cwUriParse(cwTrim(pText)) into tRec
    if cwAddressIsValid(sWaNetwork, tRec["address"]) is not true then
+      -- a unified URI may carry only the invoice ("bitcoin:?lightning=...")
+      if tRec["address"] is "" and cwBolt11IsInvoice(tRec["lightning"]) then
+         return "PAYMENT URI (BIP-21), Lightning only" & return & return & \
+               waInvoiceText(tRec["lightning"])
+      end if
       throw "not a URI for this network"
    end if
    put "PAYMENT URI (BIP-21)" & return & return into tOut
@@ -19891,6 +19901,13 @@ function waInspectUri pText
          put "    " & tReq[tI] & return after tOut
       end repeat
       put "  BIP-21 says a wallet must refuse rather than pay and ignore them." after tOut
+   end if
+   if tRec["lightning"] is not "" then
+      -- the unified shape: the same payment offered both ways, and the
+      -- invoice read out beneath the on-chain half
+      put return & "  lightning: this URI also carries an invoice for the same " & \
+            "payment" & return & return after tOut
+      put waInvoiceText(tRec["lightning"]) after tOut
    end if
    return tOut
 end waInspectUri

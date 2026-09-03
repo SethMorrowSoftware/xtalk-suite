@@ -6266,6 +6266,9 @@ function cwUriParse pUri
    put "" into tOut["message"]
    put "" into tOut["amount"]
    put -1 into tOut["amountsat"]
+   -- a "unified" URI carries a Lightning invoice beside (or instead of)
+   -- the address; kept verbatim for the invoice reader
+   put "" into tOut["lightning"]
    put cwListNew() into tReq
    repeat while tQuery is not ""
       put offset("&", tQuery) into tPos
@@ -6297,6 +6300,8 @@ function cwUriParse pUri
          put tValue into tOut["label"]
       else if cwLower(tKey) is "message" then
          put tValue into tOut["message"]
+      else if cwLower(tKey) is "lightning" then
+         put tValue into tOut["lightning"]
       end if
       if cwLower(char 1 to 4 of tKey) is "req-" then
          put cwListAdd(tReq, tKey) into tReq

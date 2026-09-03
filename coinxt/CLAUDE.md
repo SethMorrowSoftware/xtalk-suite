@@ -2970,3 +2970,19 @@ wiring declared `cxEcdh`'s output as 32 bytes where the native returns the 65-by
 offline ECDH had been a BADLEN refusal since the wiring was written - unnoticed because nothing in
 the gates had called it until BIP-352 did.
 
+### 2026-09-04, what stopped silent-payment receiving, for whoever picks it up
+
+The sending side is done and gated; the receiving side was designed the same evening and stopped at
+one line. A receiver computes A_sum, the sum of the eligible inputs' PUBLIC keys, and that is point
+addition - `secp256k1_ec_pubkey_combine` - which coinxt does not expose. Everything else it needs is
+here: the input-key extraction (`sp_input_pubkey` in the oracle, mirrored by the vectors' own
+input lists), the scan and spend keys at `m/352'/coin'/0'/1'/0` and `.../0'/0`, the shared secret by
+`cxEcdh`, the candidate outputs by `cxPubkeyTweakAdd`, and a found output's spending key by
+`cwScalarAdd` (which then signs UNTWEAKED - a silent payment output is the raw key, not a BIP-341
+tweak - so the record needs a flag `waSignSpend` does not yet read). Doing point addition in script
+was costed and rejected: a field inversion is ~400 big multiplies, minutes in the offline
+interpreter per input, which would make the gate unrunnable. The honest next step is the native
+handler, with `check-binary-freshness.py` holding rule 5, and then the receiving vectors already in
+the fetched file (`receiving[*].given.key_material` and `expected.outputs`, dropped from
+`tests/bip352-sending-vectors.json` deliberately) become the gate.
+

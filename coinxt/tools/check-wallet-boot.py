@@ -946,8 +946,8 @@ def drive(c, ip, world, sandbox):
             c.eq("carrying the asked amount", int(trs[0]["value"]), 50000)
         c.ck("and the review showed that output's address",
              REF.address_for_spk("testnet", bytes.fromhex(want_spk)) in out, repr(out[:300]))
-        c.ck("Inspect shows it as a taproot output",
-             "p2tr" in str(ip.call("waInspectRaw", [raw_sp])).lower(), "")
+        c.ck("Inspect shows the derived output at its taproot address",
+             REF.address_for_spk("testnet", bytes.fromhex(want_spk)) in str(ip.call("waInspectRaw", [raw_sp])), "")
     # the refusals, each by name
     put_field("sd_to", "%s,0.0005" % sp_addr)
     try:
@@ -1321,6 +1321,13 @@ def drive(c, ip, world, sandbox):
     text = str(ip.call("waValidateAnything", [b11["invalid"][1]["invoice"]]))
     c.ck("Validate refuses a corrupt invoice with the reason",
          "NOT A VALID LIGHTNING INVOICE" in text and "checksum" in text, text[:200])
+    tinv = b11["valid"][4]      # the testnet example, so the URI's address and invoice agree
+    text = str(ip.call("waInspectAnything", ["bitcoin:%s?amount=0.0002&lightning=%s" % (first, tinv["invoice"])]))
+    c.ck("Inspect reads a unified URI: the on-chain half and the invoice beneath it",
+         "PAYMENT URI (BIP-21)" in text and first in text and "LIGHTNING INVOICE" in text
+         and tinv["expected"]["payee"] in text, text[:300])
+    text = str(ip.call("waInspectAnything", ["bitcoin:?lightning=%s" % tinv["invoice"]]))
+    c.ck("and a Lightning-only URI", "Lightning only" in text and tinv["expected"]["payee"] in text, text[:200])
 
     # ---- Tools: coins locked until a block (2026-09-04) --------------------
     # "lock: <height>" prepares a taproot address whose only leaf is
