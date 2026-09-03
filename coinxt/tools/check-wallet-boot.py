@@ -259,6 +259,15 @@ class WalletExpr(DB.DemoExpr):
             return _ctl_prop_get(self.control_at(m.group(3), m.group(4)),
                                  m.group(2).lower())
 
+        # `the clickLine` - what the engine sets on a mouseDown in a field,
+        # "line N of field M". The world carries one while a click drives, the
+        # way it carries the target; empty otherwise, which is the engine's
+        # own answer outside a click.
+        m = re.match(r'the\s+clickLine\b', rest, re.I)
+        if m:
+            self.i += m.end()
+            return getattr(self.ip.world, "clickline", "") or ""
+
         # `the effective filename of this stack` - the path the Settings
         # screen derives its default wallet-file location from. Answered with
         # a path INSIDE THE SANDBOX, so the default the app computes is a
@@ -507,6 +516,7 @@ def run(c, path=None):
             return
         c.ck("the stack script parses (%d handlers, %d constants)"
              % (len(ip.handlers), len(ip.constants)), True)
+        ip.src_text = src       # for the checks that read ORDER from the source
 
         DB.install_common(world)
         install_sodium()
@@ -1016,10 +1026,17 @@ def drive(c, ip, world, sandbox):
     # The Electrum case is the one that MUST be refused rather than attempted:
     # a server answers for the wrong chain with an empty list, not an error,
     # so it is indistinguishable from an unused address.
-    c.ck("the built-in Electrum server is refused off mainnet",
-         why("electrum-tor", elec, "testnet") != "")
+    # Until 2026-09-02 the first of these read "refused off mainnet": the v2
+    # address that stood in kWaElectrumOnion carried mainnet only. The v3
+    # onion serves testnet on its own port, so the guard now refuses only
+    # the chains NEITHER port carries - and lifting it without the port
+    # table below would have swapped a refusal for an empty wallet.
+    c.ck("the built-in Electrum onion is refused on signet, which no port carries",
+         why("electrum-tor", elec, "signet") != "")
     c.eq("and allowed on mainnet, which it serves",
          why("electrum-tor", elec, "mainnet"), "")
+    c.eq("and on testnet, which it serves on a second port",
+         why("electrum-tor", elec, "testnet"), "")
     # The guard must not over-refuse either, or it becomes the defect.
     c.eq("Esplora is allowed on testnet", why("esplora-clear", clear, "testnet"), "")
     c.eq("Esplora is allowed on signet", why("esplora-tor", onion, "signet"), "")
@@ -1034,7 +1051,7 @@ def drive(c, ip, world, sandbox):
     # And the guard is REACHED: waSync refuses before it builds a request.
     ip.globals["swabackend"] = "electrum-tor"
     ip.globals["swahost"] = elec
-    ip.globals["swanetwork"] = "testnet"
+    ip.globals["swanetwork"] = "signet"
     try:
         ip.call("waSync", [])
         c.ck("waSync refuses a backend that cannot serve this chain", False,
@@ -1251,6 +1268,104 @@ def drive(c, ip, world, sandbox):
     c.ck("the privacy text covers it", "ELECTRUM OVER CLEARNET" in priv)
     c.ck("and says it needs no TLS", "no TLS" in priv, priv[-400:][:120])
     for k, v in saved4.items():
+        ip.globals[k] = v
+
+    # ---- Electrum over Tor: the dead onion of the 2026-09-02 log ---------
+    # The first engine attempt at this transport dialled
+    # "explorernuoc63nb.onion:110", retried it once as designed, and failed
+    # with the daemon's "general SOCKS server failure" - Tor's answer for a
+    # VERSION-2 onion, a shape it stopped resolving in 2021, and also its
+    # answer for a failed circuit, which is why the retry looked reasonable.
+    # The constant is a v3 address now, the chain is selected by port the
+    # way the clearnet server does it, and the retired shape is refused by
+    # name before a dial. Nothing here says the v3 onion ANSWERS: that still
+    # needs the engine, and docs/wallet.md says so.
+    saved5 = {k: ip.globals.get(k) for k in
+              ("swabackend", "swahost", "swaport", "swanetwork",
+               "swahaveonion", "swanetstate", "swanetwhy")}
+    onion_e = str(ip.constants.get("kWaElectrumOnion", ""))
+    c.ck("the built-in Electrum onion is a version-3 address (56 + .onion)",
+         onion_e.endswith(".onion") and len(onion_e) == 62, onion_e)
+    c.eq("and waOnionWhy accepts it", str(ip.call("waOnionWhy", [onion_e])), "")
+    dead = "explorernuoc63nb.onion"
+    why_dead = str(ip.call("waOnionWhy", [dead]))
+    c.ck("the v2 onion that stood there until 2026-09-02 is refused by name",
+         "version-2" in why_dead and "2021" in why_dead
+         and "SOCKS server failure" in why_dead, why_dead[:120])
+    c.eq("a clearnet host through Tor is not judged",
+         str(ip.call("waOnionWhy", ["electrum.blockstream.info"])), "")
+    c.ck("a malformed onion is refused, with its length named",
+         "10 characters" in str(ip.call("waOnionWhy", ["abcdefghij.onion"])),
+         str(ip.call("waOnionWhy", ["abcdefghij.onion"]))[:100])
+    c.eq("a subdomain of a v3 onion is judged by its onion label",
+         str(ip.call("waOnionWhy", ["www." + onion_e])), "")
+    c.eq("upper case and whitespace do not change the answer",
+         str(ip.call("waOnionWhy", ["  " + dead.upper() + " "])) != "", True)
+
+    # the port IS the chain on the onion too, through the one table
+    ip.globals["swahaveonion"] = "true"
+    ip.globals["swanetwork"] = "mainnet"
+    ip.call("waSetBackend", ["electrum-tor"])
+    c.eq("Electrum over Tor picks the v3 onion", str(ip.globals.get("swahost")),
+         onion_e)
+    c.eq("and mainnet's port",
+         int(LCS._n(ip.globals.get("swaport"))),
+         int(LCS._n(ip.constants.get("kWaElectrumPort", 0))))
+    ip.globals["swanetwork"] = "testnet"
+    ip.call("waSetBackend", ["electrum-tor"])
+    c.eq("testnet gets the onion's testnet port - it was 110 for every chain",
+         int(LCS._n(ip.globals.get("swaport"))),
+         int(LCS._n(ip.constants.get("kWaElectrumTorTestPort", 0))))
+    c.ck("the two onion ports differ",
+         int(LCS._n(ip.constants.get("kWaElectrumPort", 0)))
+         != int(LCS._n(ip.constants.get("kWaElectrumTorTestPort", 0))))
+    c.eq("and the state is idle, not a chain complaint",
+         str(ip.globals.get("swanetstate")), "idle")
+    ip.globals["swanetwork"] = "mainnet"
+    ip.call("waRetunePort", [])
+    c.eq("switching the network retunes the onion's port too",
+         int(LCS._n(ip.globals.get("swaport"))),
+         int(LCS._n(ip.constants.get("kWaElectrumPort", 0))))
+    # a host the person typed is left alone, onion or not
+    ip.globals["swahost"] = "myownserver" + onion_e[11:]
+    ip.globals["swaport"] = 50099
+    ip.globals["swanetwork"] = "testnet"
+    ip.call("waRetunePort", [])
+    c.eq("a typed onion keeps its typed port",
+         int(LCS._n(ip.globals.get("swaport"))), 50099)
+
+    # the refusal reaches the network state and the sync, not just the function
+    ip.globals["swahost"] = dead
+    ip.call("waRefreshNetState", [])
+    c.eq("a v2 host typed into the field fails the network state",
+         str(ip.globals.get("swanetstate")), "failed")
+    c.ck("and the reason names the shape",
+         "version-2" in str(ip.globals.get("swanetwhy")),
+         str(ip.globals.get("swanetwhy"))[:100])
+    try:
+        ip.call("waSync", [])
+        c.ck("waSync refuses to queue a request for a v2 onion", False,
+             "it queued the requests instead")
+    except LCS.Thrown as exc:
+        c.ck("waSync refuses to queue a request for a v2 onion",
+             "version-2" in str(exc.msg), str(exc.msg)[:100])
+    # ...and the dial itself, for a host that changed after the state did
+    try:
+        ip.call("waNetStart", [{"kind": "tip", "arg": ""}])
+        c.ck("waNetStart refuses to dial a v2 onion", False, "it dialled")
+    except LCS.Thrown as exc:
+        c.ck("waNetStart refuses to dial a v2 onion",
+             "version-2" in str(exc.msg), str(exc.msg)[:100])
+    c.ck("and nothing was queued or left in flight by the refusal",
+         not ip.globals.get("swainflight")
+         and ip.call("cwListCount", [ip.globals.get("swaqueue")]) == 0)
+    # the clearnet Electrum server is unaffected by any of it
+    ip.globals["swanetwork"] = "testnet"
+    ip.call("waSetBackend", ["electrum-clear"])
+    c.eq("clearnet Electrum still retunes to its own testnet port",
+         int(LCS._n(ip.globals.get("swaport"))),
+         int(LCS._n(ip.constants.get("kWaElectrumClearTestPort", 0))))
+    for k, v in saved5.items():
         ip.globals[k] = v
 
     # ---- the audit of 2026-09-01: five defects, each pinned here ---------
@@ -2584,6 +2699,29 @@ def drive(c, ip, world, sandbox):
         ip.globals[k] = v
     ip.call("waDeriveAddresses", [])
 
+    # ---- the boot record is THIS run's, not every run's -------------------
+    # The 2026-09-02 engine log opened with three boot self-check blocks, one
+    # per open, because the field is saved with the stack and the carried
+    # block appends. The clearing is its own handler so it can be driven here
+    # without paying for a second boot; the ORDER - clear, then begin - is
+    # read from the source, because a clear after scBegin would erase the
+    # block it had just started.
+    lgb = world.anywhere("lg_boot")
+    c.ck("the boot wrote exactly one self-check block",
+         lgb is not None and lgb.content.count("== boot self-check") == 1,
+         "" if lgb is None else "%d blocks" % lgb.content.count("== boot self-check"))
+    if lgb is not None:
+        lgb.content = "== boot self-check (stale, from an earlier open) ==\n" + lgb.content
+        ip.call("waScFresh", [])
+        c.eq("waScFresh empties the boot record", lgb.content, "")
+    m_run = re.search(r'^command waScRun\b(.*?)^end waScRun\b',
+                      getattr(ip, "src_text", ""), re.S | re.M)
+    body = m_run.group(1) if m_run else ""
+    c.ck("waScRun clears the record BEFORE it begins a new one",
+         0 <= body.find("waScFresh") < body.find('scBegin "lg_boot"'),
+         "fresh at %d, begin at %d" % (body.find("waScFresh"),
+                                       body.find('scBegin "lg_boot"')))
+
     # ---- the context menu routes to the buttons, item by item -------------
     #
     # THE MENU IS NOT A SECOND IMPLEMENTATION, and this is what holds it to
@@ -2667,6 +2805,61 @@ def drive(c, ip, world, sandbox):
     except LCS.Thrown as exc:
         c.ck("and waRouteClick refuses an unknown prefix",
              "no screen owns" in str(exc.msg), str(exc.msg)[:80])
+
+    # ---- the right-click acts on the row under the cursor -----------------
+    # Seen open on an engine for the first time on 2026-09-02, and reported
+    # as needing "a second look for usability": a list field moves its
+    # selection on button 1 only, so the menu's Inspect, Copy and Freeze
+    # acted on whatever had been clicked BEFORE. The stack now selects the
+    # clicked line before the menu pops. The popup itself is still nothing
+    # the interpreter models; mouseDown contains that, so what is asserted
+    # here is the selection and that no other click is touched.
+    click(ip, world, "nv_ad")
+    tbl = world.anywhere("ad_table")
+    c.ck("the Addresses table exists to be right-clicked", tbl is not None)
+    if tbl is not None:
+        tbl.props["hilitedline"] = 1
+        world.target = ("field", "ad_table")
+        world.clickline = "line 3 of field 9"
+        try:
+            ip.call("mouseDown", [3])
+        except Exception as exc:                        # noqa: BLE001
+            c.ck("a right-click on a table does not throw", False,
+                 "%s: %s" % (type(exc).__name__, exc))
+        finally:
+            world.target = None
+            world.clickline = ""
+        c.eq("a right-click on a table selects the row under the cursor",
+             int(LCS._n(tbl.props.get("hilitedline"))), 3)
+        # button 1 is the engine's own selection and passes straight through
+        world.target = ("field", "ad_table")
+        world.clickline = "line 5 of field 9"
+        try:
+            ip.call("mouseDown", [1])
+        finally:
+            world.target = None
+            world.clickline = ""
+        c.eq("a left-click is left to the engine",
+             int(LCS._n(tbl.props.get("hilitedline"))), 3)
+        # a right-click below the last line keeps the selection it had
+        world.target = ("field", "ad_table")
+        world.clickline = ""
+        try:
+            ip.call("mouseDown", [3])
+        finally:
+            world.target = None
+        c.eq("a right-click on empty space keeps the selection",
+             int(LCS._n(tbl.props.get("hilitedline"))), 3)
+        # and a right-click on a button selects nothing
+        world.target = ("button", "ad_scan")
+        world.clickline = "line 7 of field 9"
+        try:
+            ip.call("mouseDown", [3])
+        finally:
+            world.target = None
+            world.clickline = ""
+        c.eq("a right-click on a button touches no table",
+             int(LCS._n(tbl.props.get("hilitedline"))), 3)
 
     # ---- the log recorded all of it --------------------------------------
     click(ip, world, "nv_lg")

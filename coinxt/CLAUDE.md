@@ -1774,7 +1774,9 @@ address. A wallet that says "you have nothing" is not a visibly broken wallet.
 An Electrum server asked for a script hash from another chain answers with an
 EMPTY LIST - a perfectly well-formed "this address has never been used" - so
 there is no status to read and no error to surface at any layer. The built-in
-Electrum onion is mainnet-only, and the wallet defaults to testnet, so that
+Electrum onion was mainnet-only (the v2 address that stood there until
+2026-09-02; the v3 one carries testnet on its own port, see that day's entry),
+and the wallet defaults to testnet, so that
 combination was one click away and would have reported the same empty wallet
 with nothing anywhere to contradict it. `waBackendChainWhy` now refuses any
 backend that does not carry the selected chain BEFORE a request is built, and
@@ -2574,3 +2576,46 @@ backend" under a wallet that had synced on three transports and broadcast. The d
 deliberately does not read `.livecodescript` prose (its docstring says so), so nothing could have
 caught it; the panel is rewritten with every claim dated and the log that made it named, and this
 sentence is the reminder that the gate's blind spot is exactly where the most-read label lives.
+
+### 2026-09-02, the fifth engine log: a dead onion, a boot record that grew, and a menu that acted on the wrong row
+
+**THE ELECTRUM ONION WAS A VERSION-2 ADDRESS, and Tor stopped resolving those in 2021.**
+`kWaElectrumOnion` read `explorernuoc63nb.onion` - sixteen characters, the retired shape - so the
+first engine attempt at Electrum over Tor dialled it, was answered by the daemon with "general SOCKS
+server failure", retried once (the requeue of the previous entry, seen working on an engine for the
+first time), and failed on the retry. The daemon uses the same words for a circuit that failed, which
+is why the retry was reasonable and why the log could not say what was wrong. The constant is
+Blockstream's v3 onion now (the address the Esplora mirror already used; the two constants stay
+separate so they can move apart), with the chain selected by PORT the way the clearnet server does it
+- 110 mainnet, 143 testnet, the operator's published table and NOT yet observed from this stack.
+`waRetunePort` now holds that table for the onion as well as for the clearnet host; it held only the
+clearnet one, so the Tor transport would have dialled 110 for every chain, and the chain guard that
+refused testnet on the onion for exactly that reason now refuses only signet and regtest. Lifting the
+guard without the port branch would have swapped a refusal for a well-formed empty wallet. And
+`waOnionWhy` refuses the retired shape BY NAME - on the Network screen's state line, in `waSync`
+before a request is built, and in the dial itself for a host edited after the state was computed -
+because "general SOCKS server failure" is not a sentence anybody can act on. Electrum over Tor is
+still the one transport with no engine pass; what changed is that the next attempt can reach a
+server.
+
+**THE BOOT RECORD GREW BY ONE BLOCK PER OPEN.** The log opened with three boot self-check blocks.
+The field is saved with the stack and the carried block appends, so every open added a block and
+nothing in the text said which one was about the build being read. `waScFresh` empties the field
+before `scBegin`, as its own handler so the gate can drive it without paying for a second boot, and
+the gate reads the ORDER from the source, because a clear after `scBegin` would erase the block it had
+just started. This is the adopter's line, not the master block's: the block's log field is whatever
+the adopter passes it, and a demo passing its general log would lose what it wrote before boot.
+
+**THE RIGHT-CLICK MENU ACTED ON THE PREVIOUSLY SELECTED ROW.** First seen open on an engine in this
+log ("menu works, but maybe needs a second look for usability"). A list field moves its selection on
+button 1 only, so a right-click on a table popped a menu whose Inspect, Copy and Freeze acted on
+whatever had been clicked before. `mouseDown` now sets the hilitedLine from the clickLine before the
+popup, contained so an engine that answers the clickLine oddly still gets its menu; the gate models
+the clickLine the way it already modelled the target, and asserts the selection moves on button 3
+and on nothing else. That the selection is seen to move on an engine needs the next pass.
+
+Also in the log: clearnet Electrum on testnet synced clean under the new log lines ("test: asking",
+"sync: queued 42 request(s)"), which is the first log in which every queue names its transport.
+
+Fast gates green; the boot gate's new blocks were driven in isolation against the booted stack
+(the full gate is CI's on the push, for the reason the entries above give).
