@@ -3074,7 +3074,24 @@ and the fee from the record first. The boot gate drives all of it through
 autotest asked to pay 30000 sat to a freshly prepared timelock address and the
 selector answered `insufficient funds` over 451087 sat confirmed. The report was
 cut at 120 characters by the autotest itself, so what the advice said after
-"confirmed" is not in the record, and the selector clears the same pool
-headlessly. The isolated probe that pays into a vault address on the booted
-wallet is the next step, and this entry is here so the failure is not mistaken
-for the two above.
+"confirmed" is not in the record. It does not reproduce headlessly: the selector
+clears a five-coin p2pkh pool of that total for that target at rates 2 and 5,
+and the booted fixture wallet, asked to pay 30000 sat into a timelock address it
+had just prepared, builds and signs the spend at both rates (the review labels
+it a self-send, locked until its block). The autotest now reports 400 characters
+of a refusal instead of 120, so the next engine run carries the rest of that
+advice line - frozen, unconfirmed, or something else - and this entry is here so
+the failure is not mistaken for the two above.
+
+**A refused batch is halved, not abandoned (2026-09-03).** The same engine log
+had the onion Electrum server close the connection on the sync's first batch of
+22, after which `waBatchSplit` switched batching off and the sync asked its 41
+requests one at a time - 41 Tor round trips where two or three lines would have
+done. ElectrumX caps the SIZE of a line, and 22 histories of a busy wallet can be
+over it where 11 are not, so a refusal now puts the members back and tries half
+as many on the next line (`sWaBatchCap`, read by `waBatchCap` in the pump),
+halving again on each refusal; when the half would be one, batching is off for
+that server as before, and `waSetBackend` forgets the cap with the refusal. The
+boot gate's Tor section drives four requests refused to two, two refused to
+singles, and the forgetting; the section passed in isolation, 114 checks with
+the boot. Not run on an engine.

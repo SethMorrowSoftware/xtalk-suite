@@ -309,8 +309,11 @@ fifty-one requests down one Tor stream on HTTP/1.1. The same log saw both of
 Blockstream's Electrum servers, onion and clearnet, take JSON-RPC BATCHES: an
 Electrum sync sends its histories, and then its unspent-output requests, as
 arrays of requests in one line, and a sync of fifty-one requests was five
-round trips. A server that refuses a batch is asked one at a time from then
-on, a member's own error counts as that member's failure only, and a member
+round trips. A server that refuses a batch is asked with half as many on the
+next line, and half again on the next refusal, down to one at a time (since
+2026-09-03, after an onion server closed the connection on a batch of 22 and
+the sync fell to 41 single Tor round trips); a member's own error counts as
+that member's failure only, and a member
 the server leaves unanswered is asked again alone. After that log the tip and
 the fee estimate ride in the first batch too (three round trips for a fresh
 sync), which has not run on an engine; nor has the same day's other trimming

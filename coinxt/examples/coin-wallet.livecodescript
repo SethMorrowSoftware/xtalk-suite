@@ -13127,7 +13127,11 @@ constant kWaFeesFresh = 600000
 -- its id - and the Electrum servers this wallet talks to take one (the
 -- reference clients batch by default, and the eighth engine log, 2026-09-03,
 -- saw both of Blockstream's servers take them). A server that refuses a
--- batch is asked one at a time from then on (waBatchSplit).
+-- batch is asked with HALF as many on the next line, and half again on the
+-- next refusal, down to one at a time (waBatchSplit): the ninth engine log,
+-- 2026-09-03, had an onion server close the connection on a batch of 22 and
+-- then answer 41 single requests, each its own Tor round trip, when a line
+-- of 11 might well have gone through.
 -- TWENTY-TWO is the tip, the fee estimate and one chain's twenty addresses:
 -- a fresh sync is one batch for the receive chain, one for the change chain
 -- and one for the unspent outputs, three round trips. Not larger, because a
@@ -13724,6 +13728,7 @@ local sWaStreamTo         -- "host:port" that stream was dialled to; the Electru
                           -- transport keeps it open between requests (2026-09-03)
 local sWaLastPaint        -- the milliseconds of the last full repaint during a sync
 local sWaBatch            -- "false" once this server has refused a JSON-RPC batch
+local sWaBatchCap         -- how many requests the next batch may carry after a refusal (empty: kWaBatchSize); halved per refusal until batching is off
 local sWaBatchMembers     -- the requests inside the batch in flight (waNetPump)
 local sWaHttpPhase        -- the Esplora reply decoder's phase: head, size, data,
                           -- gap, trailer, len, close, done (waHttpFeed)
@@ -20938,6 +20943,7 @@ command waSetBackend pBackend
    put empty into sWaTipAt
    put empty into sWaFeesAt
    put empty into sWaBatch
+   put empty into sWaBatchCap
    put "idle" into sWaNetState
    put empty into sWaNetWhy
    if pBackend is "esplora-tor" then
@@ -21343,7 +21349,7 @@ command waNetPump
    repeat with tI = 2 to tCount
       put sWaQueue[tI] into tNext
       if tGather is "true" and tNext["kind"] is not "broadcast" \
-            and cwListCount(tMembers) < kWaBatchSize then
+            and cwListCount(tMembers) < waBatchCap() then
          put cwListAdd(tMembers, tNext) into tMembers
       else
          put "false" into tGather
@@ -22788,14 +22794,38 @@ private command waBatchMemberFailed pRec, pWhy
 end waBatchMemberFailed
 
 command waBatchSplit pMembers, pWhy
-   -- The server did not take the batch: ask one at a time from now on, and
-   -- put the members back at the front in their order. Not a failure of
-   -- anything - nothing has been lost yet.
-   put "false" into sWaBatch
-   waLog "the server did not take a batch of " & cwListCount(pMembers) & \
-         " (" & pWhy & "); asking one at a time from now on"
+   -- The server did not take the batch: put the members back at the front
+   -- in their order and try HALF as many on the next line. Not a failure of
+   -- anything - nothing has been lost yet. Halving rather than giving up is
+   -- the ninth engine log's lesson (2026-09-03): an onion server closed the
+   -- connection on a batch of 22 and the sync fell to 41 single requests,
+   -- each a Tor round trip, when a smaller line might have gone through -
+   -- ElectrumX caps the SIZE of a line, and 22 histories of a busy wallet
+   -- can be over it where 11 are not. When the half would be one, batching
+   -- is off for this server, as before.
+   local tN, tCap
+   put cwListCount(pMembers) into tN
+   put cwIntDiv(tN, 2) into tCap
+   if tCap < 2 then
+      put "false" into sWaBatch
+      waLog "the server did not take a batch of " & tN & " (" & pWhy & \
+            "); asking one at a time from now on"
+   else
+      put tCap into sWaBatchCap
+      waLog "the server did not take a batch of " & tN & " (" & pWhy & \
+            "); trying " & tCap & " at a time"
+   end if
    waRequeueSingly pMembers
 end waBatchSplit
+
+private function waBatchCap
+   -- How many requests the next batch may carry: the constant until a
+   -- refusal, then whatever the refusals have halved it to.
+   if sWaBatchCap is an integer and sWaBatchCap >= 1 then
+      return sWaBatchCap
+   end if
+   return kWaBatchSize
+end waBatchCap
 
 private command waRequeueSingly pMembers
    local tOut, tI, tCount
@@ -23697,7 +23727,7 @@ command waUpdateRestore
    -- The other side of the swap, from waBoot: if a carry is parked on the
    -- stack, read it back, clear it, and say what happened.
    local tCarry, tWallet, tI, tCount, tLine, tTab, tName, tValue, tFrom, tScreen
-   local tError
+   local tError, tBackend, tHost, tPort, tSocks
    set the defaultStack to the short name of this stack
    put the uWaUpdateCarry of this stack into tCarry
    if tCarry is empty then
@@ -23717,13 +23747,13 @@ command waUpdateRestore
          if tName is "from" then
             put tValue into tFrom
          else if tName is "backend" then
-            put tValue into sWaBackend
+            put tValue into tBackend
          else if tName is "host" then
-            put tValue into sWaHost
+            put tValue into tHost
          else if tName is "port" then
-            put tValue into sWaPort
+            put tValue into tPort
          else if tName is "socks" then
-            put tValue into sWaSocksPort
+            put tValue into tSocks
          else if tName is "screen" then
             put tValue into tScreen
          end if
@@ -23740,6 +23770,22 @@ command waUpdateRestore
             "memory did not carry across: " & tError, "bad"
       exit waUpdateRestore
    end try
+   -- THE NETWORK SETTINGS GO ON AFTER THE WALLET LOADS, not before: loading
+   -- resets the backend to its defaults, and the first full gate run
+   -- (2026-09-03) came back with the carried backend and a default host and
+   -- port - a person's own server, lost in the update.
+   if tBackend is not empty then
+      put tBackend into sWaBackend
+   end if
+   if tHost is not empty then
+      put tHost into sWaHost
+   end if
+   if tPort is not empty then
+      put tPort into sWaPort
+   end if
+   if tSocks is not empty then
+      put tSocks into sWaSocksPort
+   end if
    waRefreshNetState
    waApplyNetworkFields
    if tScreen is not empty then

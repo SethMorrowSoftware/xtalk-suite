@@ -1270,6 +1270,11 @@ def drive(c, ip, world, sandbox):
         first_spk = REF.spk_for_address("testnet", first).hex()
         chg = [(i, o) for i, o in enumerate(d1["vout"]) if o["scriptpubkey"] != first_spk]
         c.eq("the spend had one change output", len(chg), 1)
+        # the payment went to this wallet's own first address, so BOTH outputs
+        # come back as coins: the change and the payment itself
+        mine = [(i, o) for i, o in enumerate(d1["vout"])
+                if ip.call("waIsMine", [REF.address_for_spk("testnet", bytes.fromhex(o["scriptpubkey"]))]) is True]
+        c.eq("both outputs of a self-payment are this wallet's", len(mine), 2)
         if chg:
             ci, co = chg[0]
             c.ck("which is now a coin of this wallet at 0 confirmations",
@@ -1279,17 +1284,17 @@ def drive(c, ip, world, sandbox):
                      and ip.call("waIsMine", [str(r["address"])]) is True
                      for r in _coins(after)),
                  repr(sorted(offered)))
-        c.eq("so the offered count moved by the inputs spent and the change made",
-             len(offered), n_before - len(ins1) + len(chg))
+        c.eq("so the offered count moved by the inputs spent and the outputs that came back",
+             len(offered), n_before - len(ins1) + len(mine))
         log = _fld(world, "lg_text")
         c.ck("and the log says what was spent and what came back",
              ("spent %d coin(s)" % len(ins1)) in log and "came back" in log, repr(log[-200:]))
         bal = ip.globals.get("swabalance") or {}
         c.eq("the confirmed balance no longer counts the spent coins",
              int(LCS._n(bal.get("confirmed", 0))), conf_before - spent_conf)
-        c.eq("and the change is counted as pending",
+        c.eq("and what came back is counted as pending",
              int(LCS._n(bal.get("unconfirmed", 0))),
-             pend_before - spent_pend + sum(int(o["value"]) for _, o in chg))
+             pend_before - spent_pend + sum(int(o["value"]) for _, o in mine))
         click(ip, world, "nv_cn")
         tbl = _fld(world, "cn_table")
         c.ck("the Coins screen marks each spent coin SPT",
@@ -2526,9 +2531,9 @@ def drive(c, ip, world, sandbox):
         # JSON-RPC batching: the pump gathers a run of same-kind requests
         # into one array, the server answers an array, each element goes to
         # its member by id. Forty histories are two round trips. A server
-        # that refuses the batch is asked singly from then on, a member's own
-        # error is that member's failure, and an unanswered member is asked
-        # again alone.
+        # that refuses the batch is asked with half as many, down to singly, a
+        # member's own error is that member's failure, and an unanswered
+        # member is asked again alone.
         ip.call("waNetAbort", [])
         ip.globals["swabatch"] = ""
         ip.call("waSetBackend", ["electrum-tor"])
@@ -2635,6 +2640,45 @@ def drive(c, ip, world, sandbox):
         c.eq("the next request goes alone",
              str((ip.globals.get("swainflight") or {}).get("kind")), "history")
         c.ck("as a single object", tor_last_write().startswith("{"), tor_last_write()[:40])
+        # A REFUSAL HALVES THE BATCH BEFORE IT GIVES UP ON BATCHING (2026-09-03):
+        # the ninth engine log had an onion server close the connection on a
+        # batch of 22 and the sync fall to 41 single Tor round trips. Four
+        # requests refused go on as two; two refused go on singly.
+        ip.call("waNetAbort", [])
+        ip.globals["swabatch"] = ""
+        ip.globals["swabatchcap"] = ""
+        ip.call("waNetQueue", ["tip", ""])
+        for a in (a1, a2, a3):
+            ip.call("waNetQueue", ["history", a])
+        ip.call("waNetPump", [])
+        c.eq("four requests go as one batch",
+             int(LCS._n((ip.globals.get("swabatchmembers") or {}).get("n", 0))), 4)
+        h = int(LCS._n(ip.globals.get("swastream")))
+        world.tor_state[h] = "connected"
+        stream_event(h, "open")
+        stream_event(h, "data", '{"jsonrpc":"2.0","id":null,"error":{"code":-32600,'
+                     '"message":"Invalid Request"}}\n')
+        c.eq("a refused batch of four halves the cap to two", str(ip.globals.get("swabatchcap")), "2")
+        c.ck("and the log says what is tried next", "trying 2 at a time" in log_tail(), log_tail(200))
+        c.ck("batching itself stays on", str(ip.globals.get("swabatch")) != "false", "")
+        q = ip.globals.get("swaqueue") or {}
+        c.eq("with the members back in order",
+             [str(q.get(str(k), {}).get("kind")) for k in range(1, 5)], ["tip", "history", "history", "history"])
+        ip.call("waNetAbort", [])
+        for a in (a1, a2):
+            ip.call("waNetQueue", ["history", a])
+        ip.call("waNetPump", [])
+        c.eq("the next line carries two",
+             int(LCS._n((ip.globals.get("swabatchmembers") or {}).get("n", 0))), 2)
+        h = int(LCS._n(ip.globals.get("swastream")))
+        world.tor_state[h] = "connected"
+        stream_event(h, "open")
+        stream_event(h, "data", '{"jsonrpc":"2.0","id":null,"error":{"code":-32600,'
+                     '"message":"Invalid Request"}}\n')
+        c.eq("a second refusal, at two, turns batching off", str(ip.globals.get("swabatch")), "false")
+        c.ck("and says so", "asking one at a time" in log_tail(), log_tail(200))
+        ip.call("waNetAbort", [])
+        ip.globals["swabatchcap"] = ""
         # a batch that fails in transit is split, not retried whole
         ip.call("waNetAbort", [])
         ip.globals["swabatch"] = ""
@@ -2652,8 +2696,10 @@ def drive(c, ip, world, sandbox):
         ip.globals["swabatch"] = ""
         # a new backend may take a batch this one refused
         ip.globals["swabatch"] = "false"
+        ip.globals["swabatchcap"] = "5"
         ip.call("waSetBackend", ["electrum-tor"])
         c.eq("a backend change forgets a refusal", str(ip.globals.get("swabatch")), "")
+        c.eq("and the halved cap with it", str(ip.globals.get("swabatchcap") or ""), "")
 
         # Esplora over Tor keeps its stream too
         ip.call("waNetAbort", [])
@@ -3289,6 +3335,7 @@ def drive(c, ip, world, sandbox):
     # tore the socket down and counted a failure - for a request the block
     # had nothing to do with.
     ip.globals["swasyncfailures"] = 0
+    ip.globals["swabackend"] = "electrum-clear"   # (9i) above left it on Esplora
     ip.globals["swainflight"] = {"kind": "tip", "arg": "", "id": "11"}
     ip.globals["swatipheight"] = ""
     ip.call("waNetDeliver",
