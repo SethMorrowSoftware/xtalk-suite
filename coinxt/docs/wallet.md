@@ -257,7 +257,16 @@ fees, history, unspent outputs) over 147 circuits, and **the wallet's first
 broadcast** went out over that transport - a 226 vB legacy spend, txid
 `7978bdd2c097c929cae2ab00084d4454b68b1d054a3f2d53fc7b51b70551e4d5`, accepted by the mirror and seen spent by
 the sync that followed. Electrum over Tor is the one transport that has still
-not spoken to a backend from here. Until that log, no transaction this wallet built had been broadcast to any
+not spoken to a backend from here, and the 2026-09-02 log says why: the
+built-in address was `explorernuoc63nb.onion`, a sixteen-character VERSION-2
+onion that the Tor network stopped resolving in 2021, and the daemon answered
+every dial of it with "general SOCKS server failure" - the same words a failed
+circuit gets, so the wallet retried it once, as designed, and failed again.
+The constant is Blockstream's version-3 onion now (the same address the
+Esplora mirror uses, with the chain selected by port: 110 mainnet, 143 testnet,
+the operator's published table and not yet observed from this stack), the
+wallet refuses a v2 shape by name before it dials, and the transport still
+needs its first engine pass. Until that log, no transaction this wallet built had been broadcast to any
 network, so "this would confirm" is a claim nobody has tested.
 
 ## Custody, said plainly

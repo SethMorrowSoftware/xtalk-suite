@@ -10954,8 +10954,24 @@ constant kWaEsploraClear = "blockstream.info"
 -- work and the answer is a Tor backend (plain HTTP inside the circuit) or your
 -- own local Esplora typed into the host field.
 constant kWaEsploraClearAlt = "mempool.space"
-constant kWaElectrumOnion = "explorernuoc63nb.onion"
+-- ELECTRUM OVER TOR, on the SAME onion as the Esplora mirror: Blockstream
+-- serves both from one version-3 address, with the chain selected by PORT the
+-- way its clearnet server does it - 110 mainnet, 143 testnet. That table is
+-- the operator's own published one and has NOT been observed from this stack:
+-- the 2026-09-02 run that should have tried it never reached a server, for
+-- the reason below. The constant stays separate from kWaEsploraOnion so the
+-- two can move independently.
+--
+-- WHAT STOOD HERE UNTIL 2026-09-02 was "explorernuoc63nb.onion" - a
+-- sixteen-character VERSION-2 onion, a kind the Tor network stopped resolving
+-- in 2021. The daemon does not say "retired" for one of those; it answers the
+-- SOCKS connect with "general SOCKS server failure", which is also what a
+-- failed circuit says, so the engine log showed this wallet retrying a dead
+-- address once, as designed, and then failing on it. waOnionWhy now refuses
+-- the shape by name before anything is dialled.
+constant kWaElectrumOnion = "explorerzydxu5ecjrkwceayqybizmpjjznk5izmitf2modhcusuqlid.onion"
 constant kWaElectrumPort = 110
+constant kWaElectrumTorTestPort = 143
 
 -- ELECTRUM OVER PLAIN CLEARNET TCP, and the reason it exists is the shape of
 -- what the other three transports need. Esplora is HTTPS-only on every public
@@ -12289,11 +12305,29 @@ on mouseDown pWhich
    -- so what the gate can settle is the menu's CONTENT and its ROUTING - what
    -- each screen offers, and that picking an item does the same thing the
    -- button does. That the menu APPEARS needs an OXT pass.
-   local tError
+   local tError, tName, tLine
    if pWhich is not 3 then
       pass mouseDown
    end if
    waEnsureBooted
+   -- THE ROW UNDER THE CURSOR IS THE ROW THE MENU ACTS ON. A list field
+   -- moves its selection on button 1 only, so a right-click on a table popped
+   -- a menu whose Inspect, Copy and Freeze acted on whatever had been clicked
+   -- BEFORE - the "needs a second look for usability" of the 2026-09-02
+   -- engine report, the first time the menu was seen to open. Selecting first
+   -- is the whole of the fix: every item reads the hilitedLine at the moment
+   -- it acts. Contained, so an engine that answers the clickLine oddly still
+   -- gets its menu, on the old selection.
+   try
+      put the short name of the target into tName
+      if word 1 of the name of the target is "field" and tName ends with "_table" then
+         put word 2 of the clickLine into tLine
+         if tLine is an integer then
+            set the hilitedLine of the target to tLine
+         end if
+      end if
+   catch tError
+   end try
    try
       if uiPopupMenu(waMenuFor(sWaScreen)) is false then
          pass mouseDown
@@ -16696,6 +16730,10 @@ command waSetBackend pBackend
    else if pBackend is "electrum-tor" then
       put kWaElectrumOnion into sWaHost
       put kWaElectrumPort into sWaPort
+      -- the same port-is-the-chain table as the clearnet server, in the one
+      -- place that holds it (added 2026-09-02; before that testnet dialled
+      -- the mainnet port, which answers well-formedly and emptily)
+      waRetunePort
    else if pBackend is "esplora-clear" then
       put kWaEsploraClear into sWaHost
       put 443 into sWaPort
@@ -16865,16 +16903,27 @@ private command waRetunePort
    -- and this wallet has no table for anybody else's: retuning a custom host's
    -- port would be inventing one. waBackendChainWhy already says it cannot
    -- speak for a host it does not know.
-   if sWaBackend is not "electrum-clear" then
-      exit waRetunePort
-   end if
-   if sWaHost is not kWaElectrumClear then
-      exit waRetunePort
-   end if
-   if sWaNetwork is "mainnet" then
-      put kWaElectrumClearPort into sWaPort
+   if sWaBackend is "electrum-clear" and sWaHost is kWaElectrumClear then
+      if sWaNetwork is "mainnet" then
+         put kWaElectrumClearPort into sWaPort
+      else
+         put kWaElectrumClearTestPort into sWaPort
+      end if
+   else if sWaBackend is "electrum-tor" and sWaHost is kWaElectrumOnion then
+      -- THE ONION HAS THE SAME TABLE, and until 2026-09-02 this handler did
+      -- not know it: only the clearnet server was retuned, so the Tor
+      -- transport dialled port 110 for every chain. The 2026-09-02 log never
+      -- got far enough to show that (the address it dialled was dead, see
+      -- kWaElectrumOnion), but the guard below had been refusing testnet on
+      -- the onion for exactly this reason, and lifting the guard without
+      -- adding the branch would have swapped a refusal for an empty wallet.
+      if sWaNetwork is "mainnet" then
+         put kWaElectrumPort into sWaPort
+      else
+         put kWaElectrumTorTestPort into sWaPort
+      end if
    else
-      put kWaElectrumClearTestPort into sWaPort
+      exit waRetunePort
    end if
    set the defaultStack to the short name of this stack
    if there is a field "nw_port" then
@@ -17221,6 +17270,10 @@ command waNetStart pRec
       if sWaHaveOnion is not "true" then
          throw "OnionXT is not loaded, so there is no Tor transport here."
       end if
+      put waOnionWhy(sWaHost) into tError
+      if tError is not empty then
+         throw tError
+      end if
       oxSetSocksPort sWaSocksPort
       oxSetCallbackOwner the long id of me
       put "dialing" into sWaNetState
@@ -17288,16 +17341,29 @@ function waBackendChainWhy
    -- perfectly well-formed "this address has never been used": a testnet
    -- wallet on a mainnet server reports itself synced, green, and empty, with
    -- nothing anywhere saying otherwise. Fail closed and name the remedy.
+   local tWhy
    if sWaBackend is "offline" then
       return empty
    end if
+   -- A host Tor cannot even look up is refused before its chain is asked
+   -- about, because the daemon's answer for one is indistinguishable from a
+   -- failed circuit (the 2026-09-02 log; see waOnionWhy).
+   if waNeedsTor(sWaBackend) then
+      put waOnionWhy(sWaHost) into tWhy
+      if tWhy is not empty then
+         return tWhy
+      end if
+   end if
    if sWaBackend is "electrum-tor" and sWaHost is kWaElectrumOnion \
-         and sWaNetwork is not "mainnet" then
-      return "the built-in Electrum server serves mainnet only, and this " & \
-            "wallet is on " & sWaNetwork & ". An Electrum server answers " & \
-            "for the wrong chain with an empty list rather than an error, " & \
-            "so this would look like a synced, empty wallet. Put a " & \
-            sWaNetwork & " server in the host field, or use an Esplora backend."
+         and sWaNetwork is not "mainnet" and sWaNetwork is not "testnet" then
+      -- The onion carries mainnet on 110 and testnet on 143 (waRetunePort)
+      -- and nothing else. Until 2026-09-02 this guard refused everything but
+      -- mainnet, which was right for the v2 address that stood here.
+      return "the built-in Electrum onion carries mainnet and testnet " & \
+            "only, and this wallet is on " & sWaNetwork & ". An Electrum " & \
+            "server answers for the wrong chain with an empty list rather " & \
+            "than an error, so this would look like a synced, empty " & \
+            "wallet. Put a " & sWaNetwork & " server in the host field."
    end if
    if sWaBackend is "electrum-clear" and sWaHost is kWaElectrumClear \
          and sWaNetwork is not "mainnet" and sWaNetwork is not "testnet" then
@@ -17315,6 +17381,42 @@ function waBackendChainWhy
    end if
    return empty
 end waBackendChainWhy
+
+function waOnionWhy pHost
+   -- CAN TOR EVEN LOOK THIS HOST UP? A ".onion" name comes in two shapes:
+   -- fifty-six base32 characters (version 3, the only kind the network has
+   -- resolved since 2021) or sixteen (version 2, retired). The daemon does
+   -- not say "retired" for the old shape: it answers the SOCKS connect with
+   -- "general SOCKS server failure", the same words a failed circuit gets,
+   -- so the 2026-09-02 engine log showed this wallet retrying a dead
+   -- address as if it were weather and then reporting the retry's failure.
+   -- Answering here, by shape, turns that into a sentence that names the
+   -- remedy. A clearnet name through Tor is legal and is not judged.
+   local tLabel, tLen
+   put cwLower(cwTrim(pHost)) into tLabel
+   if not (tLabel ends with ".onion") then
+      return empty
+   end if
+   delete char -6 to -1 of tLabel
+   if tLabel contains "." then
+      -- a subdomain of an onion (rare, legal): the onion is the LAST label
+      set the itemDelimiter to "."
+      put item -1 of tLabel into tLabel
+      set the itemDelimiter to comma
+   end if
+   put the number of chars of tLabel into tLen
+   if tLen is 16 then
+      return pHost & " is a version-2 onion address, which the Tor " & \
+            "network stopped resolving in 2021; the daemon reports one as " & \
+            "'general SOCKS server failure'. Put a 56-character " & \
+            "(version 3) .onion in the host field."
+   end if
+   if tLen is not 56 then
+      return pHost & " is not a well-formed .onion address (" & tLen & \
+            " characters before .onion; version 3 has 56)."
+   end if
+   return empty
+end waOnionWhy
 
 function waIsPublicTestSeed
    -- The wallet PRE-FILLS BIP-39's published test mnemonic so a person can
@@ -18368,11 +18470,14 @@ function waAboutText
    put "  4a3f2d53fc7b51b70551e4d5, its bytes decoded by the independent" & return after tOut
    put "  reference to the same txid the wallet logged." & return & return after tOut
    put "WHAT IS NOT" & return after tOut
-   put "  Electrum over Tor has not spoken to a backend from here. No spend" & return after tOut
-   put "  built here has been broadcast on MAINNET. The right-click menu has" & return after tOut
-   put "  not been opened on an engine (its routing is gated; its appearing" & return after tOut
-   put "  is not). An Electrum-format seed has opened only under the" & return after tOut
-   put "  interpreter, against the reference, never a real wallet's coins." & return & return after tOut
+   put "  Electrum over Tor has not spoken to a backend from here: the one" & return after tOut
+   put "  attempt (2026-09-02) dialled a retired version-2 onion, which Tor" & return after tOut
+   put "  refused, and the v3 address that replaced it has not been tried." & return after tOut
+   put "  No spend built here has been broadcast on MAINNET. The right-click" & return after tOut
+   put "  menu opened on an engine on 2026-09-02; that it selects the row" & return after tOut
+   put "  under the cursor since then has not been seen there. An" & return after tOut
+   put "  Electrum-format seed has opened only under the interpreter," & return after tOut
+   put "  against the reference, never a real wallet's coins." & return & return after tOut
    put "  The two gates (coinxt/tools/check-wallet-boot.py boots this stack" & return after tOut
    put "  headlessly and drives every screen; check-wallet-vectors.py pins" & return after tOut
    put "  the engine layer) run under an interpreter, which is an" & return after tOut
@@ -18977,8 +19082,21 @@ end scFinish
 
 constant kWaScControls = "ad_change,ad_detail,ad_label,ad_labelCap,ad_more,ad_panel,ad_receive,ad_scan,ad_sec1,ad_setLabel,ad_table,cn_addManual,cn_detail,cn_freeze,cn_hint,cn_panel,cn_sec1,cn_table,cn_tick,cn_tickAll,cn_tickNone,hs_bump,hs_copyTxid,hs_detail,hs_inspect,hs_panel,hs_refresh,hs_sec1,hs_table,lg_boot,lg_clear,lg_copy,lg_hint,lg_panel,lg_sec1,lg_sec2,lg_text,nv_ad,nv_bal,nv_chain,nv_cn,nv_confirmed,nv_frozenamt,nv_hs,nv_lg,nv_net,nv_nw,nv_panel,nv_pending,nv_rc,nv_refresh,nv_sd,nv_st,nv_tip,nv_tl,nv_wallet,nv_wl,nw_bElectrumClear,nw_bElectrumTor,nw_bEsploraClear,nw_bEsploraTor,nw_bOffline,nw_host,nw_hostCap,nw_out,nw_panelA,nw_panelB,nw_port,nw_portCap,nw_privacy,nw_sec1,nw_sec2,nw_sec3,nw_socks,nw_socksCap,nw_state,nw_stop,nw_syncNow,nw_test,nw_why,rc_address,rc_amount,rc_amountCap,rc_copy,rc_copyUri,rc_detail,rc_label,rc_labelCap,rc_message,rc_messageCap,rc_next,rc_panelA,rc_panelB,rc_qr,rc_qrframe,rc_qrhint,rc_sec1,rc_sec2,rc_sec3,rc_showQr,rc_uri,rc_verify,sd_addSelf,sd_broadcast,sd_clear,sd_copyRaw,sd_locktime,sd_locktimeCap,sd_out,sd_panelA,sd_panelB,sd_paste,sd_preview,sd_rate,sd_rateCap,sd_ratehint,sd_rbf,sd_sec1,sd_sec2,sd_sec3,sd_sec4,sd_sign,sd_stratBnb,sd_stratLargest,sd_stratManual,sd_stratOldest,sd_stratSmallest,sd_strategyCap,sd_to,sd_toCap,sd_toPsbt,sd_warn,st_about,st_browse,st_filenote,st_forget,st_forgetnote,st_gap,st_gapCap,st_load,st_panelA,st_panelB,st_password,st_passwordCap,st_path,st_pathCap,st_save,st_sec1,st_sec2,st_sec3,st_unitBtc,st_unitMbtc,st_unitSat,tl_copyOut,tl_decode,tl_derive,tl_entropy,tl_export,tl_hex,tl_hexCap,tl_hold,tl_inspect,tl_msg,tl_msgAddr,tl_msgAddrCap,tl_msgCap,tl_msgSig,tl_msgSigCap,tl_msgSign,tl_msgVerify,tl_newKey,tl_note,tl_out,tl_panelA,tl_panelB,tl_pass,tl_passCap,tl_psbtCombine,tl_psbtFinal,tl_psbtSign,tl_sec1,tl_sec2,tl_sec3,tl_sweep,tl_toEntropy,tl_validate,uiFooter,uiStatus,uiTitle,wl_account,wl_accountCap,wl_addCosigner,wl_backup,wl_copyDesc,wl_copyXpub,wl_custody,wl_generate,wl_kindKey,wl_kindMulti,wl_kindRestore,wl_kindSeed,wl_kindWatch,wl_label,wl_labelCap,wl_m,wl_mCap,wl_mnemonic,wl_mnemonicCap,wl_netMain,wl_netReg,wl_netSignet,wl_netTest,wl_open,wl_out,wl_panelA,wl_panelB,wl_pass,wl_passCap,wl_path,wl_pathCap,wl_sec1,wl_sec2,wl_sec3,wl_sec4,wl_typeLegacy,wl_typeMulti,wl_typeNative,wl_typeNested,wl_typeTaproot,wl_warn,wl_xkey,wl_xkeyCap"
 
+command waScFresh
+   -- THIS RUN'S RECORD, NOT EVERY RUN'S. The field is saved with the stack,
+   -- and the carried block APPENDS, so the 2026-09-02 engine log opened with
+   -- three boot blocks stacked from three opens - only the last of them about
+   -- the build being read, and nothing in the text saying which. Its own
+   -- handler so the boot gate can drive it without paying for a second boot.
+   set the defaultStack to the short name of this stack
+   if there is a field "lg_boot" then
+      put empty into field "lg_boot"
+   end if
+end waScFresh
+
 command waScRun
    local tMissing, tRec, tError, tAddr
+   waScFresh
    scBegin "lg_boot"
    put scMissing(kWaScControls) into tMissing
    scAssert "all the controls this script names exist (missing: " & \
