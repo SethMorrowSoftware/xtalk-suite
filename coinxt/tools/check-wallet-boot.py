@@ -513,8 +513,8 @@ def build_source(path=None):
 # ==========================================================================
 
 SCREENS = ["wallet", "receive", "addresses", "send", "coins", "history",
-           "tools", "network", "log", "settings"]
-CODES = ["wl", "rc", "ad", "sd", "cn", "hs", "tl", "nw", "lg", "st"]
+           "ordinals", "vault", "tools", "network", "log", "settings"]
+CODES = ["wl", "rc", "ad", "sd", "cn", "hs", "od", "vt", "tl", "nw", "lg", "st"]
 
 # One UTXO set, planted directly into the wallet's own state. Values and
 # txids are arbitrary but FIXED, because every number this gate asserts is
@@ -987,7 +987,7 @@ def drive(c, ip, world, sandbox):
     # carry and rebuilds. Pinned here the only way that matters: a control
     # taken away comes back when the stored version is stale, and stays away
     # when it is current.
-    lock_btn = world.anywhere("tl_lock")
+    lock_btn = world.anywhere("vt_prepare")
     c.ck("the boot stored the builder's own version",
          str(world.stack_props.get("uuiversion", "")) == str(ip.constants.get("kWaUiVersion", "?")),
          "stored %r, constant %r" % (world.stack_props.get("uuiversion"), ip.constants.get("kWaUiVersion")))
@@ -996,12 +996,12 @@ def drive(c, ip, world, sandbox):
     if lock_btn is not None:
         world.current().controls.remove(lock_btn)
         ip.call("waBuild", [])
-        c.ck("a current version does not rebuild (the Lock button stays gone)",
-             world.anywhere("tl_lock") is None, "")
+        c.ck("a current version does not rebuild (the Prepare button stays gone)",
+             world.anywhere("vt_prepare") is None, "")
         world.stack_props["uuiversion"] = "coinwallet-1"
         ip.call("waBuild", [])
-        c.ck("a stale version rebuilds: the Lock button is back",
-             world.anywhere("tl_lock") is not None, "")
+        c.ck("a stale version rebuilds: the Prepare button is back",
+             world.anywhere("vt_prepare") is not None, "")
         c.ck("and the stored version is the builder's again",
              str(world.stack_props.get("uuiversion", "")) == str(ip.constants.get("kWaUiVersion", "?")), "")
 
@@ -1209,6 +1209,195 @@ def drive(c, ip, world, sandbox):
     utx.pop(str(n_u)); utx["n"] = n_u - 1
     ip.globals["swautxos"] = utx
 
+    # ---- what the wallet just did: a broadcast is remembered (2026-09-03) --
+    #
+    # The engine log of 2026-09-03 built a silent payment and, a minute later
+    # with no sync between, the funding of an inscription commit - and the
+    # second spent the first one's input, because the coin list was the last
+    # sync's. The server took the first and refused the second as a
+    # replacement paying nothing extra. A broadcast the backend ACCEPTS now
+    # marks its inputs as spent (waNoteBroadcast): the selector, the CPFP coin
+    # finder and the balance skip a marked coin, the Coins screen shows SPT,
+    # and the outputs that come back to this wallet are coins at 0
+    # confirmations. The backend's next word on an address outranks all of
+    # it, and a replacement voids the coins added from what it replaced. The
+    # same log's Bump on the wallet's own note transaction asked the server
+    # for bytes the spend record already held; that is pinned here too.
+    import copy as _copy
+    saved_utx = _copy.deepcopy(ip.globals.get("swautxos"))
+    saved_spent = _copy.deepcopy(ip.globals.get("swaspentby"))
+    saved_hist = _copy.deepcopy(ip.globals.get("swahistory"))
+    saved_backend = ip.globals.get("swabackend")
+
+    def _coins(lst):
+        n = int(LCS._n((lst or {}).get("n", 0)))
+        return [lst[str(i)] for i in range(1, n + 1)]
+
+    def _keys(lst):
+        return {(str(r["txid"]), int(LCS._n(r["vout"]))) for r in _coins(lst)}
+
+    put_field("sd_to", "%s,0.0005" % first)
+    put_field("sd_rate", "2")
+    click(ip, world, "sd_sign")
+    raw1 = str(ip.globals.get("swalastraw", ""))
+    c.ck("a spend signs for the broadcast-memory leg", len(raw1) > 200, "%d hex chars" % len(raw1))
+    if len(raw1) > 200:
+        d1 = REF.tx_decode(bytes.fromhex(raw1))
+        ins1 = [(v["txid"], v["vout"]) for v in d1["vin"]]
+        n_before = len(_coins(ip.call("waSpendableCoins", [])))
+        conf_before = sum(int(LCS._n(r["value"])) for r in _coins(saved_utx)
+                          if int(LCS._n(r["confirmations"])) > 0)
+        pend_before = sum(int(LCS._n(r["value"])) for r in _coins(saved_utx)
+                          if int(LCS._n(r["confirmations"])) == 0)
+        spent_conf = sum(int(LCS._n(r["value"])) for r in _coins(saved_utx)
+                         if int(LCS._n(r["confirmations"])) > 0
+                         and (str(r["txid"]), int(LCS._n(r["vout"]))) in set(ins1))
+        spent_pend = sum(int(LCS._n(r["value"])) for r in _coins(saved_utx)
+                         if int(LCS._n(r["confirmations"])) == 0
+                         and (str(r["txid"]), int(LCS._n(r["vout"]))) in set(ins1))
+        ip.globals["swabackend"] = "electrum-clear"
+        ip.globals["swainflight"] = {"kind": "broadcast", "arg": raw1, "id": "71"}
+        ip.call("waNetApply", ["broadcast", raw1,
+                               '{"jsonrpc":"2.0","id":71,"result":"%s"}' % d1["txid"], "71"])
+        marks = ip.globals.get("swaspentby") or {}
+        c.ck("an accepted broadcast marks every input it spent, by outpoint",
+             all(str(marks.get("%s:%d" % (t, v), "")) == d1["txid"] for t, v in ins1),
+             repr({k: str(v)[:12] for k, v in marks.items()}))
+        after = ip.call("waSpendableCoins", [])
+        offered = _keys(after)
+        c.ck("and the selector is no longer offered those coins",
+             not (offered & set(ins1)), repr(sorted(offered & set(ins1))))
+        first_spk = REF.spk_for_address("testnet", first).hex()
+        chg = [(i, o) for i, o in enumerate(d1["vout"]) if o["scriptpubkey"] != first_spk]
+        c.eq("the spend had one change output", len(chg), 1)
+        if chg:
+            ci, co = chg[0]
+            c.ck("which is now a coin of this wallet at 0 confirmations",
+                 any(str(r["txid"]) == d1["txid"] and int(LCS._n(r["vout"])) == ci
+                     and int(LCS._n(r["confirmations"])) == 0
+                     and int(LCS._n(r["value"])) == int(co["value"])
+                     and ip.call("waIsMine", [str(r["address"])]) is True
+                     for r in _coins(after)),
+                 repr(sorted(offered)))
+        c.eq("so the offered count moved by the inputs spent and the change made",
+             len(offered), n_before - len(ins1) + len(chg))
+        log = _fld(world, "lg_text")
+        c.ck("and the log says what was spent and what came back",
+             ("spent %d coin(s)" % len(ins1)) in log and "came back" in log, repr(log[-200:]))
+        bal = ip.globals.get("swabalance") or {}
+        c.eq("the confirmed balance no longer counts the spent coins",
+             int(LCS._n(bal.get("confirmed", 0))), conf_before - spent_conf)
+        c.eq("and the change is counted as pending",
+             int(LCS._n(bal.get("unconfirmed", 0))),
+             pend_before - spent_pend + sum(int(o["value"]) for _, o in chg))
+        click(ip, world, "nv_cn")
+        tbl = _fld(world, "cn_table")
+        c.ck("the Coins screen marks each spent coin SPT",
+             all(any("SPT" in ln and t[:20] in ln for ln in tbl.split("\n")) for t, v in ins1),
+             repr(tbl[:300]))
+        c.ck("and explains the mark", "SPT marks a coin" in _fld(world, "cn_detail"), "")
+        # a second spend a moment later, with no sync between
+        click(ip, world, "nv_sd")
+        put_field("sd_to", "%s,0.0005" % first)
+        click(ip, world, "sd_sign")
+        raw2 = str(ip.globals.get("swalastraw", ""))
+        if len(raw2) > 200:
+            d2 = REF.tx_decode(bytes.fromhex(raw2))
+            ins2 = [(v["txid"], v["vout"]) for v in d2["vin"]]
+            c.ck("a second spend a moment later reuses none of the first one's inputs",
+                 not (set(ins1) & set(ins2)), repr(sorted(set(ins1) & set(ins2))))
+        else:
+            c.ck("a second spend a moment later signs", False, _fld(world, "sd_out")[:160])
+        # CPFP on the wallet's own transaction prices from the record
+        spends = ip.globals.get("swaspends") or {}
+        rec1 = spends.get(d1["txid"]) or {}
+        c.ck("the first spend is on record", bool(rec1), "")
+        if rec1:
+            old_change = rec1.get("change")
+            rec1["change"] = 0          # as if it had been built without change
+            ip.globals["swaqueue"] = {"n": 0}
+            put_field("sd_rate", "3")
+            row = {"txid": d1["txid"], "address": first, "confirmations": 0, "height": ""}
+            try:
+                ip.call("waBumpFee", [row])
+                det = _fld(world, "hs_detail")
+                q = ip.globals.get("swaqueue") or {}
+                c.ck("Bump on the wallet's own change-less transaction builds the child at once",
+                     det.startswith("CHILD PAYS FOR PARENT"), det[:80])
+                c.eq("without asking the backend for bytes the record already holds",
+                     int(LCS._n(q.get("n", 0))), 0)
+                c.ck("and prices the pair from the recorded fee",
+                     "together they pay" in det, det[:300])
+            except LCS.Thrown as exc:
+                c.ck("Bump on the wallet's own change-less transaction builds the child at once",
+                     False, str(exc.msg)[:120])
+            rec1["change"] = old_change
+            put_field("sd_rate", "2")
+        # a replacement voids what it replaced
+        last_txid = d1["txid"]
+        if rec1:
+            row_full = {"txid": d1["txid"], "confirmations": 0, "height": 0, "value": 0,
+                        "fee": int(LCS._n(rec1.get("fee", 0))),
+                        "vsize": int(LCS._n(rec1.get("vsize", 0))),
+                        "raw": raw1, "address": first}
+            put_field("sd_rate", "20")
+            try:
+                ip.call("waBumpFee", [row_full])
+                raw3 = str(ip.globals.get("swalastraw", ""))
+            except LCS.Thrown as exc:
+                raw3 = ""
+                c.ck("the replacement builds for the void leg", False, str(exc.msg)[:120])
+            put_field("sd_rate", "2")
+            if len(raw3) > 200 and raw3 != raw1:
+                d3 = REF.tx_decode(bytes.fromhex(raw3))
+                last_txid = d3["txid"]
+                ip.globals["swainflight"] = {"kind": "broadcast", "arg": raw3, "id": "72"}
+                ip.call("waNetApply", ["broadcast", raw3,
+                                       '{"jsonrpc":"2.0","id":72,"result":"%s"}' % d3["txid"], "72"])
+                marks = ip.globals.get("swaspentby") or {}
+                c.ck("an accepted replacement re-marks the inputs with its own txid",
+                     all(str(marks.get("%s:%d" % (t, v), "")) == d3["txid"]
+                         for t, v in [(x["txid"], x["vout"]) for x in d3["vin"]]),
+                     repr({k: str(v)[:12] for k, v in marks.items()}))
+                held = _keys(ip.globals.get("swautxos") or {})
+                c.ck("and voids the coins the wallet had added from the replaced transaction",
+                     not any(t == d1["txid"] for t, v in held), repr(sorted(held)))
+                c.ck("while adding the replacement's own change at 0 confirmations",
+                     any(t == d3["txid"] for t, v in held), repr(sorted(held)))
+                c.ck("and the log says which transaction replaced which",
+                     ("%s replaces %s" % (d3["txid"], d1["txid"])) in _fld(world, "lg_text"), "")
+        # the backend's word outranks the memory: a coin it still lists comes back
+        t0, v0 = ins1[0]
+        rec0 = next((r for r in _coins(saved_utx)
+                     if str(r["txid"]) == t0 and int(LCS._n(r["vout"])) == v0), None)
+        c.ck("the first input is a fixture coin", rec0 is not None, "")
+        if rec0 is not None:
+            node = ip.call("cwJsonParse", [
+                '[{"tx_hash":"%s","tx_pos":%d,"value":%d,"height":12}]'
+                % (t0, v0, int(LCS._n(rec0["value"])))])
+            ip.call("waMergeUtxos", [str(rec0["address"]), node, "electrum"])
+            marks = ip.globals.get("swaspentby") or {}
+            c.eq("a coin the backend still lists as unspent loses its mark",
+                 str(marks.get("%s:%d" % (t0, v0), "")), "")
+            c.ck("and is offered again", (t0, v0) in _keys(ip.call("waSpendableCoins", [])), "")
+            log = _fld(world, "lg_text")[-500:]
+            c.ck("with the log naming the transaction that had spent it",
+                 "offering it again" in log and last_txid in log, repr(log[-160:]))
+    # leave the wallet as this block found it
+    ip.globals["swautxos"] = saved_utx
+    if saved_spent is None:
+        ip.globals.pop("swaspentby", None)
+    else:
+        ip.globals["swaspentby"] = saved_spent
+    ip.globals["swahistory"] = saved_hist
+    ip.globals["swabackend"] = saved_backend
+    ip.globals["swainflight"] = ""
+    ip.globals["swaqueue"] = {"n": 0}
+    ip.call("waRecomputeBalance", [])
+    put_field("sd_rate", "2")
+    put_field("sd_to", "%s,0.0005" % first)
+    click(ip, world, "nv_sd")
+
     # ---- Send: the same spend as a PSBT, round-tripped through Tools -----
     click(ip, world, "sd_toPsbt")
     psbt = str(ip.globals.get("swalastpsbt", ""))
@@ -1236,19 +1425,29 @@ def drive(c, ip, world, sandbox):
              or len(str(ip.globals.get("swalastraw", ""))) > 200,
              repr(_fld(world, "tl_out")[:100]))
 
-    # ---- Tools: an inscription, by commit and reveal (2026-09-04) ---------
-    # One button, two phases. "inscribe: <type>; <text>" in the paste box
-    # prepares the COMMIT: the next unused receive key becomes the leaf key,
-    # the commit address joins the address list, the recipe is saved with
-    # the wallet. A coin planted on that address, and Inscribe with the box
-    # empty signs the REVEAL through the leaf; the oracle rebuilds the same
-    # transaction from the same key, and the wallet's own inscription reader
-    # gets the envelope back out of the witness.
-    click(ip, world, "nv_tl")
+    # ---- Ordinals: an inscription, by commit and reveal (2026-09-04) ------
+    # Two numbered buttons on their own screen. The content type and body
+    # in their fields and "1. Prepare" makes the COMMIT: the next unused
+    # receive key becomes the leaf key, the commit address joins the address
+    # list, the recipe is saved with the wallet. A coin planted on that
+    # address, and "2. Sign the reveal" signs the REVEAL through the leaf;
+    # the oracle rebuilds the same transaction from the same key, and the
+    # wallet's own inscription reader gets the envelope back out of the
+    # witness. The table between them says which state each one is in.
+    click(ip, world, "nv_od")
     before_n = int(LCS._n((ip.globals.get("swaaddresses") or {}).get("n", 0)))
-    put_field("tl_hex", "inscribe: text/plain;charset=utf-8; Hello, ordinals")
-    click(ip, world, "tl_inscribe")
-    out = _fld(world, "tl_out")
+    click(ip, world, "od_typeText")
+    c.eq("the text quick-pick fills the content type", _fld(world, "od_type"),
+         "text/plain;charset=utf-8")
+    put_field("od_body", "Hello, ordinals")
+    click(ip, world, "nv_od")
+    c.ck("the size line prices the reveal before anything is made",
+         "15 bytes" in _fld(world, "od_size") and "sat/vB" in _fld(world, "od_size"),
+         _fld(world, "od_size"))
+    c.ck("the table says there is nothing yet, and what to do",
+         "press 1" in _fld(world, "od_table"), _fld(world, "od_table")[:120])
+    click(ip, world, "od_prepare")
+    out = _fld(world, "od_out")
     c.ck("Inscribe prepares a commit and says what to fund",
          "INSCRIPTION COMMIT PREPARED" in out and "tb1p" in out and "Fund that address" in out,
          repr(out[:200]))
@@ -1276,6 +1475,13 @@ def drive(c, ip, world, sandbox):
              "leaf\tinscribe|%d|text/plain;charset=utf-8|%s" % (int(LCS._n(commit["index"])), b"Hello, ordinals".hex())
              in str(ip.call("waSerializeWallet", [])),
              " / ".join(ln for ln in str(ip.call("waSerializeWallet", [])).split("\n") if ln.startswith("leaf"))[:300])
+        c.ck("the table lists it as unfunded, with its address",
+             "unfunded" in _fld(world, "od_table") and str(commit.get("address")) in _fld(world, "od_table"),
+             _fld(world, "od_table")[:200])
+        click(ip, world, "od_copyAddr")
+        clip = world.clipboard.get("text") if isinstance(world.clipboard, dict) else world.clipboard
+        c.ck("Copy its commit address with nothing selected copies the one just made",
+             str(clip) == str(commit.get("address")), repr(clip)[:80])
         # fund it, then reveal
         utx = dict(ip.globals.get("swautxos") or {"n": 0})
         n_u = int(LCS._n(utx.get("n", 0))) + 1
@@ -1285,11 +1491,14 @@ def drive(c, ip, world, sandbox):
                          "index": commit["index"], "selected": "", "frozen": ""}
         utx["n"] = n_u
         ip.globals["swautxos"] = utx
-        put_field("tl_hex", "")
-        click(ip, world, "tl_inscribe")
-        out = _fld(world, "tl_out")
+        click(ip, world, "nv_od")
+        c.ck("once a coin is at the commit address the table says funded, press 2",
+             "funded" in _fld(world, "od_table") and "press 2" in _fld(world, "od_table"),
+             _fld(world, "od_table")[:200])
+        click(ip, world, "od_reveal")
+        out = _fld(world, "od_out")
         raw_r = str(ip.globals.get("swalastraw", ""))
-        c.ck("Inscribe with the box empty signs the reveal",
+        c.ck("2. Sign the reveal signs it",
              "INSCRIPTION REVEAL SIGNED" in out and len(raw_r) > 200, repr(out[:160]))
         if len(raw_r) > 200:
             dec_r = REF.tx_decode(bytes.fromhex(raw_r))
@@ -1322,19 +1531,23 @@ def drive(c, ip, world, sandbox):
                  str((ip.globals.get("swafrozen") or {}).get(dec_r["txid"] + ":0", "")), "true")
             c.ck("and the wallet file carries that freeze",
                  "frozen\t%s:0" % dec_r["txid"] in str(ip.call("waSerializeWallet", [])), "")
-    # the refusals
-    for label, text, want in (
-            ("a body without a content type is refused", "inscribe: hello", "semicolon"),
-            ("an empty body is refused", "inscribe: text/plain;", "empty"),
-            ("bad hex is refused", "inscribehex: image/png; zz", "hex"),
-            ("other text is not an inscription", "hello", "inscribe:")):
-        put_field("tl_hex", text)
+    # the refusals, from the screen's fields and from the line form
+    for label, args, want in (
+            ("a body without a content type is refused", ["", "hello", False], "type"),
+            ("an empty body is refused", ["text/plain", "", False], "empty"),
+            ("bad hex is refused", ["image/png", "zz", True], "hex")):
         try:
-            ip.call("waInscribe", [text])
+            ip.call("waInscribePrepare", args)
             c.ck(label, False, "accepted")
         except LCS.Thrown as exc:
             c.ck(label, want in str(exc.msg), str(exc.msg)[:100])
-    put_field("tl_hex", "")
+    try:
+        ip.call("waInscribeLineParts", ["inscribe: hello"])
+        c.ck("a line without the semicolon is refused", False, "accepted")
+    except LCS.Thrown as exc:
+        c.ck("a line without the semicolon is refused", "semicolon" in str(exc.msg), str(exc.msg)[:100])
+    c.ck("other text is not carried anywhere",
+         ip.call("waCarryLineToScreen", ["hello"]) is not True, "")
 
     # ---- Tools: a Lightning invoice, read out (2026-09-04) -----------------
     # Inspect and Validate both read a BOLT11 invoice: the specification's
@@ -1360,17 +1573,26 @@ def drive(c, ip, world, sandbox):
     text = str(ip.call("waInspectAnything", ["bitcoin:?lightning=%s" % tinv["invoice"]]))
     c.ck("and a Lightning-only URI", "Lightning only" in text and tinv["expected"]["payee"] in text, text[:200])
 
-    # ---- Tools: coins locked until a block (2026-09-04) --------------------
-    # "lock: <height>" prepares a taproot address whose only leaf is
-    # <height> OP_CLTV OP_DROP <receive key> OP_CHECKSIG under the NUMS
-    # point, so nothing spends it before that block. A coin planted on it is
-    # withheld from selection while the tip is below the height, and spent
-    # by the Send screen - locktime raised, leaf witness - once it is not.
-    click(ip, world, "nv_tl")
+    # ---- Vault: coins locked until a block (2026-09-04) --------------------
+    # A height in the field and Prepare makes a taproot address whose only
+    # leaf is <height> OP_CLTV OP_DROP <receive key> OP_CHECKSIG under the
+    # NUMS point, so nothing spends it before that block. A coin planted on
+    # it is withheld from selection while the tip is below the height, and
+    # spent by the Send screen - locktime raised, leaf witness - once it is
+    # not. The quick-pick buttons fill the height from the tip.
+    click(ip, world, "nv_vt")
     before_n = int(LCS._n((ip.globals.get("swaaddresses") or {}).get("n", 0)))
-    put_field("tl_hex", "lock: 900000")
-    click(ip, world, "tl_lock")
-    out = _fld(world, "tl_out")
+    tip_was = ip.globals.get("swatipheight")
+    ip.globals["swatipheight"] = 800000
+    click(ip, world, "vt_week")
+    c.eq("+1 week fills the tip plus 1008 blocks", int(LCS._n(_fld(world, "vt_height"))), 801008)
+    c.ck("and the line under it says how far away that is",
+         "1008 blocks" in _fld(world, "vt_when") and "7 days" in _fld(world, "vt_when"),
+         _fld(world, "vt_when"))
+    ip.globals["swatipheight"] = tip_was
+    put_field("vt_height", "900000")
+    click(ip, world, "vt_prepare")
+    out = _fld(world, "vt_out")
     c.ck("Lock prepares a timelock address and says what it means",
          "TIMELOCK ADDRESS PREPARED" in out and "block 900000" in out and "tb1p" in out
          and "NUMS" in out, repr(out[:200]))
@@ -1443,16 +1665,70 @@ def drive(c, ip, world, sandbox):
         ip.globals["swaselected"] = {}
         world.stack_props["ustrategy"] = "bnb"
     for label, text, want in (
-            ("a lock without a height is refused", "lock:", "block height"),
-            ("a lock in the timestamp range is refused", "lock: 500000000", "block height"),
-            ("other text is not a lock", "hello", "lock:")):
-        put_field("tl_hex", text)
+            ("a lock without a height is refused", "", "block height"),
+            ("a lock in the timestamp range is refused", "500000000", "block height"),
+            ("a lock that is not a number is refused", "soon", "block height")):
         try:
-            ip.call("waLockCoins", [text])
+            ip.call("waLockPrepare", [text])
             c.ck(label, False, "accepted")
         except LCS.Thrown as exc:
             c.ck(label, want in str(exc.msg), str(exc.msg)[:100])
-    put_field("tl_hex", "")
+
+    # ---- the two new screens say what they do (2026-09-04) -----------------
+    # Every button on Ordinals and Vault carries a tooltip, the rail has
+    # twelve entries inside its panel, the vault table reads the lock's
+    # state from the tip, the Send screen's note button writes the line for
+    # you, and the old "inscribe:" / "lock:" lines pasted on Tools are
+    # carried to their screens rather than refused.
+    bare = []
+    for ct in world.cards[0].controls:
+        if ct.ctype == "button" and (ct.name.startswith("od_") or ct.name.startswith("vt_")
+                                     or ct.name.startswith("nv_")):
+            if not str(ct.props.get("tooltip", "")).strip():
+                bare.append(ct.name)
+    c.ck("every button on Ordinals, Vault and the rail has a tooltip", bare == [], ",".join(bare))
+    c.ck("and the Pay-to box explains its line forms on hover",
+         "silent payment" in str((world.anywhere("sd_to").props if world.anywhere("sd_to") else {}).get("tooltip", "")),
+         "")
+    rail = [ct for ct in world.cards[0].controls if ct.ctype == "button" and ct.name.startswith("nv_")
+            and ct.name != "nv_refresh"]
+    c.eq("the rail has twelve screen buttons", len(rail), 12)
+    panel = world.anywhere("nv_panel")
+    if panel is not None and panel.rect:
+        outside = [ct.name for ct in rail if ct.rect and (ct.rect[1] < panel.rect[1] or ct.rect[3] > panel.rect[3])]
+        refresh = world.anywhere("nv_refresh")
+        if refresh is not None and refresh.rect and refresh.rect[3] > panel.rect[3]:
+            outside.append("nv_refresh")
+        c.ck("and every rail button sits inside the rail panel", outside == [], ",".join(outside))
+    click(ip, world, "nv_vt")
+    tip_was = ip.globals.get("swatipheight")
+    ip.globals["swatipheight"] = 899000
+    click(ip, world, "nv_vt")
+    c.ck("the vault table reads a lock as locked with the blocks to go",
+         "locked, 1000 blocks" in _fld(world, "vt_table"), _fld(world, "vt_table")[:200])
+    ip.globals["swatipheight"] = 900000
+    click(ip, world, "nv_vt")
+    c.ck("and as UNLOCKED once the tip reaches its height",
+         "UNLOCKED" in _fld(world, "vt_table"), _fld(world, "vt_table")[:200])
+    ip.globals["swatipheight"] = tip_was
+    click(ip, world, "nv_sd")
+    put_field("sd_to", "%s,0.0005" % first)
+    click(ip, world, "sd_addNote")
+    c.ck("Add a note appends a note: line to the Pay-to box",
+         _fld(world, "sd_to").endswith("note: "), repr(_fld(world, "sd_to")[-30:]))
+    click(ip, world, "nv_tl")
+    put_field("tl_hex", "inscribe: image/svg+xml; <svg/>")
+    click(ip, world, "tl_inspect")
+    c.ck("an inscribe: line on Tools is carried to the Ordinals screen, filled in",
+         ip.globals.get("swascreen") == "ordinals" and _fld(world, "od_type") == "image/svg+xml"
+         and _fld(world, "od_body") == "<svg/>", "%r %r" % (ip.globals.get("swascreen"), _fld(world, "od_type")))
+    click(ip, world, "nv_tl")
+    put_field("tl_hex", "lock: 123456")
+    click(ip, world, "tl_inspect")
+    c.ck("and a lock: line to the Vault screen",
+         ip.globals.get("swascreen") == "vault" and _fld(world, "vt_height") == "123456",
+         "%r %r" % (ip.globals.get("swascreen"), _fld(world, "vt_height")))
+    put_field("sd_to", "%s,0.0005" % first)
 
     # ---- Tools: BIP-322 on the wallet's own native-SegWit key (2026-09-04) --
     # The box ticked, Sign produces a witness stack rather than a 65-byte
@@ -2708,7 +2984,7 @@ def drive(c, ip, world, sandbox):
     ip.globals["swasock"] = ""
     ip.globals["swatipheight"] = ""
     ip.call("waNetDeliver",
-            ['{"jsonrpc":"2.0","id":5,"result":{"height":800001,"hex":"00"}}'])
+            ['{"jsonrpc":"2.0","id":5,"result":{"height":800001,"hex":"00"}}\n'])
     c.eq("a later success still applies",
          str(ip.globals.get("swatipheight")), "800001")
     c.ck("but does not erase the failure it did not fix",
@@ -3017,7 +3293,7 @@ def drive(c, ip, world, sandbox):
     ip.globals["swatipheight"] = ""
     ip.call("waNetDeliver",
             ['{"jsonrpc":"2.0","method":"blockchain.headers.subscribe",'
-             '"params":[{"height":800002,"hex":"00"}]}'])
+             '"params":[{"height":800002,"hex":"00"}]}\n'])
     c.ck("a pushed header is ignored, not failed",
          int(LCS._n(ip.globals.get("swasyncfailures"))) == 0,
          "failures %r why %r" % (ip.globals.get("swasyncfailures"),
@@ -3025,7 +3301,7 @@ def drive(c, ip, world, sandbox):
     c.ck("and the request stays in flight",
          bool(ip.globals.get("swainflight")), "in-flight was consumed")
     ip.call("waNetDeliver",
-            ['{"jsonrpc":"2.0","id":11,"result":{"height":800003,"hex":"00"}}'])
+            ['{"jsonrpc":"2.0","id":11,"result":{"height":800003,"hex":"00"}}\n'])
     c.eq("and the real answer still lands afterwards",
          str(ip.globals.get("swatipheight")), "800003")
     ip.globals["swainflight"] = ""
@@ -3100,13 +3376,13 @@ def drive(c, ip, world, sandbox):
     ip.globals["swainflight"] = {"kind": "tip", "arg": "", "id": "8"}
     ip.globals["swasock"] = ""
     ip.call("waNetDeliver",
-            ['{"jsonrpc":"2.0","id":8,"result":{"height":800002,"hex":"00"}}'])
+            ['{"jsonrpc":"2.0","id":8,"result":{"height":800002,"hex":"00"}}\n'])
     c.eq("a later reply on a lossy sync leaves the state partial, not ok",
          str(ip.globals.get("swanetstate")), "partial")
     ip.globals["swasyncfailures"] = 0
     ip.globals["swainflight"] = {"kind": "tip", "arg": "", "id": "9"}
     ip.call("waNetDeliver",
-            ['{"jsonrpc":"2.0","id":9,"result":{"height":800003,"hex":"00"}}'])
+            ['{"jsonrpc":"2.0","id":9,"result":{"height":800003,"hex":"00"}}\n'])
     c.eq("and a clean sync is still ok", str(ip.globals.get("swanetstate")), "ok")
 
     # (12) A WALLET THAT CANNOT SIGN MUST NOT BE HOLDING KEYS. waDropSeed's own
@@ -3903,7 +4179,7 @@ def drive(c, ip, world, sandbox):
     reg = set(n.strip().lower() for n in
               str(ip.constants.get("kWaScControls", "")).split(",") if n.strip())
     menu_screens = ["wallet", "receive", "addresses", "send", "coins",
-                    "history", "tools", "log"]
+                    "history", "ordinals", "vault", "tools", "log"]
     unrouted, unbuilt, wrong_screen = [], [], []
     for screen in SCREENS:
         name = str(ip.call("waMenuFor", [screen]))
@@ -3961,7 +4237,7 @@ def drive(c, ip, world, sandbox):
              "nothing routes it" in str(exc.msg), str(exc.msg)[:80])
     # ...and the prefix guard is a closed set, or the router would dispatch
     # a two-letter name it does not own.
-    c.ck("waRouteKnows is closed over the eleven screens",
+    c.ck("waRouteKnows is closed over the thirteen prefixes",
          all(ip.call("waRouteKnows", [p]) is True for p in ["nv"] + CODES)
          and ip.call("waRouteKnows", ["zz"]) is not True)
     try:
@@ -4111,9 +4387,9 @@ def drive(c, ip, world, sandbox):
     c.ck("and its SHA-256, as hex",
          re.match(r'^[0-9a-f]{64}$', str(info.get("sha", ""))) is not None,
          str(info.get("sha", ""))[:70])
-    c.ck("which is not the running script's",
-         str(info.get("sha", "")) != str(ip.call("cxHexEncode",
-                                                  [ip.call("cxSha256", [cur])])))
+    other = cur.replace('constant kWaVersion = "', 'constant kWaVersion = "9.9.8-', 1)
+    c.ck("which follows the content: a different copy reports a different SHA",
+         str(info.get("sha", "")) != str(check(other).get("sha", "")))
 
     # the carry and the restore, on a one-key wallet (cheap to re-derive)
     saved8 = {k: ip.globals.get(k) for k in

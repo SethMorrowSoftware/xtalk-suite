@@ -86,6 +86,21 @@ control.
 balance, and an explicit "derive twenty more" that says what going past the gap
 limit costs.
 
+**Ordinals** (a screen of its own since 2026-09-04). A content type with three
+quick picks, a body, a line that prices the reveal as you type, and two
+numbered buttons: 1 prepares the commit address (and saves the recipe with
+the wallet), 2 signs the reveal once that address holds a coin. A table lists
+every inscription this wallet prepared with its state - unfunded, funded
+(press 2), revealed - and a box on the right reads any transaction's
+inscription or runestone. Every control carries a tooltip.
+
+**Vault** (the same day). A block height, or +1 day / week / month / year
+from the tip, a line saying how far away that is, and Prepare, which makes
+the CLTV address and saves its recipe. A table lists every vault address
+with its state read from the tip - locked with the blocks to go, or
+UNLOCKED - and what it holds. Locked coins are left out of every spend;
+unlocked ones are spent from Send with the locktime raised automatically.
+
 **Send.** One payment or many, amounts in BTC, mBTC or satoshi, `MAX`, a fee
 rate in sat/vB with a plain-language description of what that rate means, four
 coin-selection strategies plus manual coin control, opt-in RBF, a locktime, and
@@ -370,6 +385,35 @@ from the weight Esplora reports); its fee is known only where the backend
 says it, and when it is not the child pays for both sizes in full and says
 so. The child signals RBF so a rate that proves too low can be raised. Not
 run on an engine.
+
+For a transaction this wallet built itself, the size and the fee come from
+the spend record and no bytes are asked for: the 2026-09-03 engine run
+pressed Bump on the wallet's own note transaction and was told to press it
+again when the server's copy arrived. Not run on an engine since.
+
+## What the wallet remembers about a broadcast
+
+A broadcast the backend accepts is the wallet's own word about its coins,
+and since 2026-09-03 it acts on it before the next sync does. The inputs
+the transaction spent are marked (the Coins screen shows them as `SPT`),
+and a marked coin is not offered to the selector, not offered to a
+child-pays-for-parent bump, and not counted in the balance. Every output
+that comes back to this wallet - the change, usually - is listed as a coin
+at 0 confirmations and counted as pending, so a second spend a moment later
+has the change to draw on and reuses nothing. The reason is the 2026-09-03
+engine run: a silent payment and, a minute later, the funding of an
+inscription commit spent the same input, because the coin list was still
+the last sync's, and the server took the first and refused the second as a
+replacement paying nothing extra.
+
+The memory is subordinate to the backend. The next sync of an address
+replaces the coins at that address with what the backend lists, and a coin
+the backend still lists as unspent loses its mark and is offered again,
+with a log line naming the transaction that was supposed to have spent it.
+A replacement (an RBF bump) re-marks the inputs with its own txid and drops
+the coins that had been added from the transaction it replaced. Nothing is
+saved: the marks live for the session, like the spend records. Not run on
+an engine.
 
 ## Silent payments, the sending side
 

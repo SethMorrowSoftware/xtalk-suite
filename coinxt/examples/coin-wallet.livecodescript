@@ -13070,7 +13070,7 @@ constant kWaVersion = "1.2.0"
 -- text before it is offered, the offer names the version and the SHA-256,
 -- and nothing replaces the script until you press Update.
 constant kWaUpdateUrl = "https://raw.githubusercontent.com/SethMorrowSoftware/xtalk-suite/main/coinxt/examples/coin-wallet.livecodescript"
-constant kWaUiVersion = "ui-ad3d7975ecc2"
+constant kWaUiVersion = "ui-2de3bd949691"
 
 -- The window, inside the family's 720p budget (tools/check-stack-size.py).
 constant kWaWidth = 1200
@@ -13084,8 +13084,9 @@ constant kWaContentRight = 1184
 constant kWaContentBottom = 594
 
 -- The ten screens, in rail order, and their labels.
-constant kWaScreens = "wallet,receive,addresses,send,coins,history,tools,network,log,settings"
-constant kWaScreenLabels = "Wallet,Receive,Addresses,Send,Coins,History,Tools,Network,Log,Settings"
+constant kWaScreens = "wallet,receive,addresses,send,coins,history,ordinals,vault,tools,network,log,settings"
+constant kWaScreenCount = 12
+constant kWaScreenLabels = "Wallet,Receive,Addresses,Send,Coins,History,Ordinals,Vault,Tools,Network,Log,Settings"
 
 -- The BIP-39 test mnemonic. It is the phrase every wallet ships in its own
 -- tests, its funds are burned by design, and it is prefilled here so a reader
@@ -13751,7 +13752,9 @@ local sWaLastRaw          -- the raw transaction the Send screen produced
 -- It holds no private key and nothing that is not already in the transaction
 -- it names, so it is saved with the wallet like the labels are.
 local sWaSpends
-local sWaLeaves           -- list of {kind, index, type, bodyhex, height}: the one-leaf taproot outputs this wallet prepared (inscription commits, timelocks), re-attached after every derivation and saved with the wallet
+local sWaLeaves
+local sWaLastCommit, sWaLastLock, sWaLastReveal           -- list of {kind, index, type, bodyhex, height}: the one-leaf taproot outputs this wallet prepared (inscription commits, timelocks), re-attached after every derivation and saved with the wallet
+local sWaSpentBy                                            -- "txid:vout" -> the txid of the transaction THIS WALLET BROADCAST that spends it; memory only, and the mark comes off the moment the backend lists the coin as unspent again (waNoteBroadcast, waMergeUtxos)
 local sWaInspectWanted    -- the txid the History screen is waiting on bytes for
 local sWaQrCache          -- array: payload -> the BMP bytes already rendered
 local sWaCtrlByScreen     -- array: screen -> comma list of its control names
@@ -14049,6 +14052,8 @@ private command waBuildAll
    waBuildSend
    waBuildCoins
    waBuildHistory
+   waBuildOrdinals
+   waBuildVault
    waBuildTools
    waBuildNetwork
    waBuildLog
@@ -14059,7 +14064,86 @@ private command waBuildAll
          "Verified statically and by tools/check-wallet-vectors.py against an " & \
          "independent implementation; needs an OXT pass (Tor: + a live-Tor pass).", \
          "16,598,1184,636"
+   waTips
 end waBuildAll
+
+-- ---- tooltips ----------------------------------------------------------------
+-- Every button a person might wonder about says what it does on hover
+-- (2026-09-04). The kit builds no tooltips, so this is the wallet's own
+-- pass over its own controls, after the build; a name that does not exist
+-- is skipped rather than thrown on, because a tooltip is never worth a
+-- failed boot.
+
+private command waTip pName, pText
+   if there is a button pName then
+      set the tooltip of button pName to pText
+   else if there is a field pName then
+      set the tooltip of field pName to pText
+   end if
+end waTip
+
+command waTips
+   waTip "nv_wl", "Open, create or restore a wallet; pick the network and address type"
+   waTip "nv_rc", "Your next unused address, as text, a payment URI and a QR code"
+   waTip "nv_ad", "Every derived address with its label, use and balance"
+   waTip "nv_sd", "Pay addresses, silent payment addresses, or write a note to the chain"
+   waTip "nv_cn", "Your unspent coins: tick them for manual selection, freeze them to keep them"
+   waTip "nv_hs", "Transactions seen for this wallet; bump a stuck one (RBF or CPFP)"
+   waTip "nv_od", "Inscribe content onto a satoshi (Ordinals) and read runestones"
+   waTip "nv_vt", "Lock coins until a block height with a CLTV vault address"
+   waTip "nv_tl", "Sign and verify messages (2011 format or BIP-322); inspect, decode, validate anything; PSBTs"
+   waTip "nv_nw", "Choose Electrum or Esplora, clearnet or Tor, and watch the sync"
+   waTip "nv_lg", "Everything the wallet did, in order, with the boot self-check"
+   waTip "nv_st", "Units, the wallet file, labels in BIP-329, and Update from main"
+   waTip "nv_refresh", "Repaint every screen and sync if the backend is idle"
+   waTip "sd_to", "One payment per line: address, amount (or MAX). An sp1.../tsp1... address is a BIP-352 silent payment. note: text or data: hex writes an OP_RETURN output."
+   waTip "sd_addNote", "Adds a note: line - the text goes on the chain as an OP_RETURN output of value 0"
+   waTip "sd_addSelf", "Adds a line paying one of this wallet's own addresses"
+   waTip "sd_paste", "Reads a bitcoin: URI from the clipboard into the lines above"
+   waTip "sd_rbf", "Opt in to BIP-125 so the fee can be raised later from History"
+   waTip "sd_toPsbt", "Build the unsigned transaction as a PSBT for a cosigner or hardware signer (not for silent payments, which need the keys here)"
+   waTip "sd_preview", "Build and show the transaction without signing it"
+   waTip "sd_sign", "Build, review and sign; nothing is broadcast until you press Broadcast"
+   waTip "sd_broadcast", "Push the last signed transaction to the network through the chosen backend"
+   waTip "hs_bump", "Replace a stuck transaction with a higher fee (BIP-125), or when that cannot apply, spend its output to pull it in (CPFP)"
+   waTip "hs_inspect", "Fetch and decode the selected transaction: OP_RETURN notes, inscriptions and runestones included"
+   waTip "tl_msg322", "Sign native-SegWit addresses in the BIP-322 format instead of the 2011 one; taproot always uses BIP-322"
+   waTip "tl_msgSign", "Sign the message with the address's key (the first receive key when the address box is empty)"
+   waTip "tl_msgVerify", "Verify a signature in either format against the address"
+   waTip "tl_inspect", "Say what the box holds: transaction, PSBT, key, address, URI, mnemonic or Lightning invoice"
+   waTip "tl_validate", "A verdict on an address (silent payment addresses too) or an extended key, on every chain"
+   waTip "tl_decode", "Read bare script hex as opcodes and pushes"
+   waTip "tl_hold", "Keep a PSBT here for Sign, Combine and Finalize"
+   waTip "st_exportLabels", "Write every label to a BIP-329 file other wallets can read"
+   waTip "st_importLabels", "Read labels from a BIP-329 file"
+   waTip "st_update", "Fetch this script from the repository's main branch, show its version, and replace this one with the wallet carried across"
+   waTip "wl_netTest4", "Testnet4: the current test network (Bitcoin Core 28 and later)"
+   waTip "od_type", "A MIME type such as text/plain, application/json or image/svg+xml; parameters are fine"
+   waTip "od_typeText", "Sets the type to text/plain;charset=utf-8"
+   waTip "od_typeJson", "Sets the type to application/json"
+   waTip "od_typeSvg", "Sets the type to image/svg+xml"
+   waTip "od_body", "What goes on the chain. Begin with hex: to inscribe raw bytes"
+   waTip "od_prepare", "Step 1: make the commit address from your next receive key and this content, and save the recipe with the wallet"
+   waTip "od_reveal", "Step 2: once the commit address holds a coin, sign the reveal that spends it and puts the content on the chain"
+   waTip "od_table", "Every inscription this wallet prepared, with its status"
+   waTip "od_details", "Show the selected inscription's keys, scripts and addresses"
+   waTip "od_copyAddr", "Copy the selected inscription's commit address to pay it"
+   waTip "od_hex", "A transaction's hex, or its txid to fetch it"
+   waTip "od_read", "Decode the transaction and show any inscription or runestone in it"
+   waTip "od_copyOut", "Copy the text on the right"
+   waTip "od_inspect", "Open the Tools screen with the last reveal in the paste box"
+   waTip "vt_height", "The block height before which the coins cannot move"
+   waTip "vt_day", "Fill in the tip plus 144 blocks (about a day)"
+   waTip "vt_week", "Fill in the tip plus 1008 blocks (about a week)"
+   waTip "vt_month", "Fill in the tip plus 4320 blocks (about a month)"
+   waTip "vt_year", "Fill in the tip plus 52560 blocks (about a year)"
+   waTip "vt_prepare", "Make the vault address for that height and save the recipe with the wallet"
+   waTip "vt_copyAddr", "Copy the vault address you just prepared"
+   waTip "vt_table", "Every vault address this wallet made, its height, state and what it holds"
+   waTip "vt_details", "Show the selected vault's script, keys and coins"
+   waTip "vt_copyOut", "Copy the text on the right"
+   waTip "vt_send", "Go to the Send screen; unlocked vault coins are selected like any other"
+end waTips
 
 command waBuildNav
    -- THE TEN RAIL BUTTONS ARE NAMED LITERALLY, like every other control this
@@ -14072,25 +14156,29 @@ command waBuildNav
    -- to the registry by hand is exactly what that generator exists to refuse.
    -- The geometry is still arithmetic; only the names are literal.
    uiPanel "nv_panel", "12,58,176,590"
-   uiButton "nv_wl", waScreenLabel(1), "20,66,168,92"
-   uiButton "nv_rc", waScreenLabel(2), "20,96,168,122"
-   uiButton "nv_ad", waScreenLabel(3), "20,126,168,152"
-   uiButton "nv_sd", waScreenLabel(4), "20,156,168,182"
-   uiButton "nv_cn", waScreenLabel(5), "20,186,168,212"
-   uiButton "nv_hs", waScreenLabel(6), "20,216,168,242"
-   uiButton "nv_tl", waScreenLabel(7), "20,246,168,272"
-   uiButton "nv_nw", waScreenLabel(8), "20,276,168,302"
-   uiButton "nv_lg", waScreenLabel(9), "20,306,168,332"
-   uiButton "nv_st", waScreenLabel(10), "20,336,168,362"
-   uiSection "nv_bal", "Balance", "20,372,168,390"
-   uiLabel "nv_confirmed", "-", "20,394,168,412", 13
-   uiLabel "nv_pending", "-", "20,414,168,430", 11
-   uiLabel "nv_frozenamt", "-", "20,432,168,448", 11
-   uiPill "nv_net", "offline", "20,458,168,478", "wait"
-   uiLabel "nv_chain", "-", "20,484,168,500", 11
-   uiLabel "nv_tip", "-", "20,502,168,518", 11
-   uiLabel "nv_wallet", "-", "20,524,168,556", 11
-   uiButton "nv_refresh", "Refresh", "20,560,168,586"
+   -- twelve screens at a 26-pixel pitch since 2026-09-04 (Ordinals and
+   -- Vault joined); the balance block below moved down to make room
+   uiButton "nv_wl", waScreenLabel(1), "20,66,168,90"
+   uiButton "nv_rc", waScreenLabel(2), "20,92,168,116"
+   uiButton "nv_ad", waScreenLabel(3), "20,118,168,142"
+   uiButton "nv_sd", waScreenLabel(4), "20,144,168,168"
+   uiButton "nv_cn", waScreenLabel(5), "20,170,168,194"
+   uiButton "nv_hs", waScreenLabel(6), "20,196,168,220"
+   uiButton "nv_od", waScreenLabel(7), "20,222,168,246"
+   uiButton "nv_vt", waScreenLabel(8), "20,248,168,272"
+   uiButton "nv_tl", waScreenLabel(9), "20,274,168,298"
+   uiButton "nv_nw", waScreenLabel(10), "20,300,168,324"
+   uiButton "nv_lg", waScreenLabel(11), "20,326,168,350"
+   uiButton "nv_st", waScreenLabel(12), "20,352,168,376"
+   uiSection "nv_bal", "Balance", "20,382,168,400"
+   uiLabel "nv_confirmed", "-", "20,402,168,418", 13
+   uiLabel "nv_pending", "-", "20,420,168,434", 11
+   uiLabel "nv_frozenamt", "-", "20,436,168,450", 11
+   uiPill "nv_net", "offline", "20,456,168,474", "wait"
+   uiLabel "nv_chain", "-", "20,478,168,492", 11
+   uiLabel "nv_tip", "-", "20,494,168,508", 11
+   uiLabel "nv_wallet", "-", "20,512,168,540", 11
+   uiButton "nv_refresh", "Refresh", "20,546,168,572"
 end waBuildNav
 
 function waScreenCode pIndex
@@ -14110,10 +14198,14 @@ function waScreenCode pIndex
    else if pIndex is 6 then
       return "hs"
    else if pIndex is 7 then
-      return "tl"
+      return "od"
    else if pIndex is 8 then
-      return "nw"
+      return "vt"
    else if pIndex is 9 then
+      return "tl"
+   else if pIndex is 10 then
+      return "nw"
+   else if pIndex is 11 then
       return "lg"
    end if
    return "st"
@@ -14129,7 +14221,7 @@ end waScreenName
 
 function waCodeForScreen pScreen
    local tI
-   repeat with tI = 1 to 10
+   repeat with tI = 1 to kWaScreenCount
       if waScreenName(tI) is pScreen then
          return waScreenCode(tI)
       end if
@@ -14174,7 +14266,7 @@ private command waShowSweep pCode
          set the visible of control tI of this card to (tPrefix is pCode)
       end if
    end repeat
-   repeat with tI = 1 to 10
+   repeat with tI = 1 to kWaScreenCount
       waNavPaint waScreenCode(tI), (waScreenName(tI) is sWaScreen)
    end repeat
 end waShowSweep
@@ -14323,6 +14415,7 @@ command waBuildSend
    waEditArea "sd_to", "196,106,688,186"
    uiButton "sd_paste", "Read a BIP-21 URI", "196,192,360,218"
    uiButton "sd_addSelf", "Pay myself", "364,192,490,218"
+   uiButton "sd_addNote", "Add a note (OP_RETURN)", "494,192,688,218"
    uiSection "sd_sec2", "2. Fee and options", "196,226,688,244"
    uiCap "sd_rateCap", "Fee rate, sat/vB", "196,250,320,266"
    uiInput "sd_rate", "324,248,400,268"
@@ -14394,8 +14487,7 @@ command waBuildTools
    uiCheckbox "tl_msg322", "BIP-322 (taproot always is)", "416,286,688,308"
    uiSection "tl_sec2", "Inspect, decode, validate, sweep", "196,318,688,336"
    uiCap "tl_hexCap", "Paste anything: a transaction, script, PSBT, key, address, " & \
-         "URI, mnemonic or Lightning invoice; or write inscribe: / lock:", \
-         "196,340,688,356"
+         "URI, mnemonic or Lightning invoice", "196,340,688,356"
    waEditArea "tl_hex", "196,358,688,412"
    uiCap "tl_passCap", "BIP-39 passphrase (the seed tools only)", "196,416,470,432"
    uiInput "tl_pass", "474,414,688,436"
@@ -14416,9 +14508,88 @@ command waBuildTools
    uiArea "tl_out", "720,90,1172,530"
    uiButton "tl_copyOut", "Copy this", "720,538,860,564"
    uiButton "tl_export", "Export keys", "864,538,1000,564"
-   uiButton "tl_inscribe", "Inscribe", "1004,538,1084,564"
-   uiButton "tl_lock", "Lock", "1088,538,1172,564"
 end waBuildTools
+
+-- ---- 7b. Ordinals -----------------------------------------------------------
+-- Inscriptions and runes get a screen of their own (2026-09-04) because a
+-- feature reached only by a line format nobody is told about is a feature
+-- that does not exist: every control here says what it does, in order.
+
+command waBuildOrdinals
+   uiPanel "od_panelA", "184,58,700,590"
+   uiPanel "od_panelB", "708,58,1184,590"
+   uiSection "od_sec1", "Inscribe: write something onto one satoshi, for ever", "196,66,688,84"
+   uiWrap "od_intro", "An inscription (an Ordinal) puts your bytes into a " & \
+         "transaction's witness, where every node keeps them. It takes two " & \
+         "transactions: a COMMIT to a special address made from your next " & \
+         "receive key and the content, then a REVEAL that spends it and " & \
+         "shows the content. Write the content, press 1, pay the address " & \
+         "it gives you, wait for the coin to arrive, press 2.", \
+         "196,88,688,134", 11
+   uiCap "od_typeCap", "Content type (what the body is)", "196,140,440,156"
+   uiInput "od_type", "196,158,440,180"
+   uiButton "od_typeText", "text", "446,158,520,180"
+   uiButton "od_typeJson", "JSON", "524,158,598,180"
+   uiButton "od_typeSvg", "SVG", "602,158,688,180"
+   uiCap "od_bodyCap", "Body: the text to inscribe (write hex: first for raw bytes)", \
+         "196,186,688,202"
+   waEditArea "od_body", "196,204,688,286"
+   uiLabel "od_size", "-", "196,290,688,306", 11
+   uiButton "od_prepare", "1. Prepare the commit address", "196,312,440,338"
+   uiButton "od_reveal", "2. Sign the reveal (once funded)", "446,312,688,338"
+   uiSection "od_sec2", "Your inscriptions", "196,348,688,366"
+   uiTable "od_table", "196,372,688,522", "50,250,440"
+   uiButton "od_details", "Details of the selected", "196,528,388,554"
+   uiButton "od_copyAddr", "Copy its commit address", "392,528,688,554"
+   uiWrap "od_hint", "Status reads unfunded, funded (press 2) or revealed. " & \
+         "The revealed sat is frozen on the Coins screen so no spend picks " & \
+         "it up by accident.", "196,558,688,586", 11
+   uiSection "od_sec3", "What happened", "720,66,1172,84"
+   uiArea "od_out", "720,90,1172,392"
+   uiSection "od_sec4", "Read the chain: an inscription or a runestone", "720,400,1172,418"
+   uiCap "od_hexCap", "Paste a transaction (hex) or a txid, then press Read", "720,422,1172,438"
+   uiInput "od_hex", "720,440,1060,462"
+   uiButton "od_read", "Read", "1064,440,1172,462"
+   uiWrap "od_runes", "RUNES are fungible tokens carried in an OP_RETURN " & \
+         "runestone: an etching names one, a mint issues it, edicts move " & \
+         "it, and a malformed stone is a cenotaph that burns. This wallet " & \
+         "reads all of that and never makes one.", "720,468,1172,530", 11
+   uiButton "od_copyOut", "Copy this", "720,538,860,564"
+   uiButton "od_inspect", "Inspect the reveal on Tools", "864,538,1172,564"
+end waBuildOrdinals
+
+-- ---- 7c. Vault ----------------------------------------------------------------
+
+command waBuildVault
+   uiPanel "vt_panelA", "184,58,700,590"
+   uiPanel "vt_panelB", "708,58,1184,590"
+   uiSection "vt_sec1", "Lock coins until a block height", "196,66,688,84"
+   uiWrap "vt_intro", "A vault address holds coins that NOBODY can spend " & \
+         "before a block height you choose - not this wallet, not anyone " & \
+         "holding its seed - because its only way out is a script the " & \
+         "network refuses until then (OP_CHECKLOCKTIMEVERIFY under an " & \
+         "unspendable key). From that block on, the Send screen spends " & \
+         "them like any other coin.", "196,88,688,146", 11
+   uiCap "vt_heightCap", "Unlock at block height", "196,152,440,168"
+   uiInput "vt_height", "196,170,440,192"
+   uiButton "vt_day", "+1 day", "446,170,504,192"
+   uiButton "vt_week", "+1 week", "508,170,566,192"
+   uiButton "vt_month", "+1 month", "570,170,628,192"
+   uiButton "vt_year", "+1 year", "632,170,688,192"
+   uiLabel "vt_when", "-", "196,198,688,214", 11
+   uiButton "vt_prepare", "Prepare the locked address", "196,222,440,248"
+   uiButton "vt_copyAddr", "Copy it", "446,222,560,248"
+   uiSection "vt_sec2", "Your locked coins", "196,258,688,276"
+   uiTable "vt_table", "196,282,688,496", "80,300,400"
+   uiButton "vt_details", "Details of the selected", "196,502,388,528"
+   uiWrap "vt_hint", "A locked coin is left out of every spend until its " & \
+         "block; after it, the Send screen raises the locktime and signs " & \
+         "through the leaf by itself.", "196,534,688,586", 11
+   uiSection "vt_sec3", "What happened", "720,66,1172,84"
+   uiArea "vt_out", "720,90,1172,530"
+   uiButton "vt_copyOut", "Copy this", "720,538,860,564"
+   uiButton "vt_send", "Spend an unlocked coin (Send)", "864,538,1172,564"
+end waBuildVault
 
 -- ---- 8. Network --------------------------------------------------------------
 
@@ -14635,7 +14806,7 @@ function waRouteKnows pPrefix
    -- before dispatching so an unknown prefix can `pass mouseUp` from the
    -- handler that owns the message, rather than from inside a helper that
    -- cannot pass on its caller's behalf.
-   return "nv,wl,rc,ad,sd,cn,hs,tl,nw,lg,st" contains pPrefix
+   return "nv,wl,rc,ad,sd,cn,hs,od,vt,tl,nw,lg,st" contains pPrefix
 end waRouteKnows
 
 command waRouteClick pPrefix, pRole
@@ -14657,6 +14828,10 @@ command waRouteClick pPrefix, pRole
       waCoinsClick pRole
    else if pPrefix is "hs" then
       waHistoryClick pRole
+   else if pPrefix is "od" then
+      waOrdinalsClick pRole
+   else if pPrefix is "vt" then
+      waVaultClick pRole
    else if pPrefix is "tl" then
       waToolsClick pRole
    else if pPrefix is "nw" then
@@ -14747,6 +14922,24 @@ function waMenuRoute pItem
    if pItem is "Bump the fee" then
       return "hs bump"
    end if
+   if pItem is "Prepare the commit" then
+      return "od prepare"
+   end if
+   if pItem is "Sign the reveal" then
+      return "od reveal"
+   end if
+   if pItem is "Read what is in the box" then
+      return "od read"
+   end if
+   if pItem is "Copy the commit address" then
+      return "od copyAddr"
+   end if
+   if pItem is "Prepare the locked address" then
+      return "vt prepare"
+   end if
+   if pItem is "Copy the locked address" then
+      return "vt copyAddr"
+   end if
    if pItem is "Copy the result" then
       return "tl copyOut"
    end if
@@ -14804,6 +14997,13 @@ function waMenuFor pScreen
       put "Copy the result" & return & "Inspect what is in the box" & return & \
             "Validate it" & return & "Decode it as a script" & return & \
             "Words to entropy" & return & "-" & return into tItems
+   else if pScreen is "ordinals" then
+      put "Prepare the commit" & return & "Sign the reveal" & return & \
+            "Read what is in the box" & return & "Copy the commit address" & \
+            return & "-" & return into tItems
+   else if pScreen is "vault" then
+      put "Prepare the locked address" & return & "Copy the locked address" & \
+            return & "-" & return into tItems
    else if pScreen is "log" then
       put "Copy the log" & return & "Clear the log" & return & "-" & return into tItems
    end if
@@ -14870,7 +15070,7 @@ end waMenuPick
 
 command waNavClick pRole
    local tI
-   repeat with tI = 1 to 10
+   repeat with tI = 1 to kWaScreenCount
       if waScreenCode(tI) is pRole then
          waShow waScreenName(tI)
          exit waNavClick
@@ -15297,6 +15497,10 @@ command waRecomputeBalance
    repeat with tI = 1 to tCount
       put sWaUtxos[tI] into tRec
       put tRec["txid"] & ":" & tRec["vout"] into tKey
+      if sWaSpentBy[tKey] is not "" then
+         -- gone, by this wallet's own hand; its change is counted as pending
+         next repeat
+      end if
       if sWaFrozen[tKey] is "true" then
          add tRec["value"] to tFrozen
       else if tRec["confirmations"] + 0 > 0 then
@@ -15399,6 +15603,10 @@ command waRefreshScreen
          waPaintCoins
       else if sWaScreen is "history" then
          waPaintHistory
+      else if sWaScreen is "ordinals" then
+         waPaintOrdinals
+      else if sWaScreen is "vault" then
+         waPaintVault
       else if sWaScreen is "tools" then
          waPaintTools
       else if sWaScreen is "network" then
@@ -16606,6 +16814,8 @@ command waSendClick pRole
       waReadUri
    else if pRole is "addSelf" then
       waAddSelfPayment
+   else if pRole is "addNote" then
+      waAddNoteLine
    else if pRole is "preview" then
       waBuildSpend false, false
    else if pRole is "sign" then
@@ -17056,6 +17266,13 @@ function waSpendableCoins
          next repeat
       end if
       put tRec["txid"] & ":" & tRec["vout"] into tKey
+      -- A COIN A TRANSACTION THIS WALLET BROADCAST HAS SPENT is not spendable
+      -- either, however unspent the last sync's coin list still says it is:
+      -- the second spend would be a replacement of the first paying nothing
+      -- extra, which every node refuses (waNoteBroadcast has the record).
+      if sWaSpentBy[tKey] is not "" then
+         next repeat
+      end if
       put tRec into tCoin
       put (sWaFrozen[tKey] is "true") into tCoin["frozen"]
       put (sWaSelected[tKey] is "true") into tCoin["selected"]
@@ -17214,6 +17431,121 @@ command waRecordSpend pTxid, pSel, pPays, pChange, pChangeRec, pLock, pSeq, pFee
    put tRec into sWaSpends[pTxid]
    waLog "recorded the makeup of " & pTxid & " so its fee can be bumped"
 end waRecordSpend
+
+command waNoteBroadcast pRaw, pTxid
+   -- WHAT THE WALLET JUST DID, before the backend says so. The 2026-09-03
+   -- engine log built two spends a minute apart with no sync between them,
+   -- and the second reused the first one's input: the server took the first,
+   -- refused the second as a replacement paying nothing extra ("insufficient
+   -- fee, rejecting replacement"), and the wallet had been choosing from a
+   -- coin list that was true when the sync answered and not since. A
+   -- broadcast the backend ACCEPTED is the wallet's own word that those
+   -- coins are gone, so they are marked here - waSpendableCoins, waCpfpCoins
+   -- and the balance skip a marked coin and the Coins screen shows SPT - and
+   -- every output that comes back to this wallet, the change usually, is
+   -- added as a coin at 0 confirmations, which is also what lets a
+   -- child-pays-for-parent bump find it without a sync.
+   --
+   -- THE BACKEND OUTRANKS THIS MEMORY: waMergeUtxos drops the mark from any
+   -- coin the backend still lists (the spend never reached it) and replaces
+   -- the added coins with what it says the moment the address is asked. And
+   -- A REPLACEMENT VOIDS WHAT IT REPLACES: an input already marked as spent
+   -- by a DIFFERENT transaction means that one has just been replaced, and
+   -- the coins this wallet added from its outputs will never exist, so they
+   -- go with it. Nothing here can be read on a raw transaction this wallet
+   -- cannot decode; that case is logged and the next sync puts it right.
+   local tTx, tError, tIns, tOuts, tI, tCount, tIn, tOut, tKey, tOld
+   local tAddr, tRec, tSpent, tBack, tVoided
+   try
+      put cwTxDecode(pRaw) into tTx
+   catch tError
+      waLog "could not read back the transaction just broadcast (" & tError & \
+            "); its coins will be right after the next sync"
+      exit waNoteBroadcast
+   end try
+   put tTx["inputs"] into tIns
+   put cwListCount(tIns) into tCount
+   put 0 into tSpent
+   put "" into tVoided
+   repeat with tI = 1 to tCount
+      put tIns[tI] into tIn
+      put tIn["txid"] & ":" & tIn["vout"] into tKey
+      put sWaSpentBy[tKey] into tOld
+      if tOld is not "" and tOld is not pTxid then
+         if not (tVoided contains tOld) then
+            put waCoinsNotFrom(tOld) into sWaUtxos
+            put tOld & return after tVoided
+            waLog pTxid & " replaces " & tOld & "; the coins this wallet had " & \
+                  "added from it are void"
+         end if
+      end if
+      put pTxid into sWaSpentBy[tKey]
+      add 1 to tSpent
+   end repeat
+   put tTx["outputs"] into tOuts
+   put cwListCount(tOuts) into tCount
+   put 0 into tBack
+   repeat with tI = 1 to tCount
+      put tOuts[tI] into tOut
+      put "" into tAddr
+      try
+         put cwAddressForScript(sWaNetwork, tOut["script"]) into tAddr
+      catch tError
+         -- an OP_RETURN, or a script with no address: not a coin of anyone's
+         put "" into tAddr
+      end try
+      if tAddr is "" then
+         next repeat
+      end if
+      if waIsMine(tAddr) is not true then
+         next repeat
+      end if
+      put pTxid & ":" & (tI - 1) into tKey
+      if waHoldsCoin(tKey) is true then
+         next repeat
+      end if
+      put "" into tRec
+      put pTxid into tRec["txid"]
+      put tI - 1 into tRec["vout"]
+      put tOut["value"] into tRec["value"]
+      put tAddr into tRec["address"]
+      put 0 into tRec["confirmations"]
+      put "" into tRec["height"]
+      put cwListAdd(sWaUtxos, tRec) into sWaUtxos
+      add 1 to tBack
+   end repeat
+   waLog pTxid & " spent " & tSpent & " coin(s) this wallet will not offer " & \
+         "again, and " & tBack & " output(s) came back to it as unconfirmed coin(s)"
+   waRecomputeBalance
+   waPaintNav
+end waNoteBroadcast
+
+private function waHoldsCoin pKey
+   -- Whether a coin with that outpoint is already in the list.
+   local tI, tCount, tRec
+   put cwListCount(sWaUtxos) into tCount
+   repeat with tI = 1 to tCount
+      put sWaUtxos[tI] into tRec
+      if tRec["txid"] & ":" & tRec["vout"] is pKey then
+         return true
+      end if
+   end repeat
+   return false
+end waHoldsCoin
+
+private function waCoinsNotFrom pTxid
+   -- The coin list without the outputs of one transaction.
+   local tI, tCount, tRec, tOut
+   put waEmptyList() into tOut
+   put cwListCount(sWaUtxos) into tCount
+   repeat with tI = 1 to tCount
+      put sWaUtxos[tI] into tRec
+      if tRec["txid"] is not pTxid then
+         put cwListAdd(tOut, tRec) into tOut
+      end if
+   end repeat
+   return tOut
+end waCoinsNotFrom
 
 function waLockedHeight pSel, pLock
    -- The locktime a spend of these coins needs: the given one, raised to
@@ -17726,7 +18058,9 @@ command waPaintCoins
       else
          put tRows & "[ ]" & tTab into tRows
       end if
-      if sWaFrozen[tKey] is "true" then
+      if sWaSpentBy[tKey] is not "" then
+         put "SPT" after tRows
+      else if sWaFrozen[tKey] is "true" then
          put "FRZ" after tRows
       else if waCoinLockHeight(tRec) is not "" then
          put "LCK" after tRows
@@ -17758,6 +18092,12 @@ private function waCoinsDetail
    put "FREEZING a coin keeps the selector away from it without deleting " & \
          "anything - useful for a coin whose history you would rather not " & \
          "mix with the rest, and for one you are keeping for a fee bump." & \
+         return & return after tOut
+   put "SPT marks a coin a transaction this wallet broadcast has already " & \
+         "spent. The backend has not been asked since, so the coin is still " & \
+         "listed, but it is not offered to the selector and not counted in " & \
+         "the balance; the change that came back is, at 0 confirmations. " & \
+         "The next sync of its address settles it either way." & \
          return & return after tOut
    if sWaBackend is "offline" then
       put "This wallet is OFFLINE, so it only knows the coins you have told " & \
@@ -17987,6 +18327,10 @@ function waCpfpCoins pTxid
       if sWaFrozen[tKey] is "true" then
          next repeat
       end if
+      if sWaSpentBy[tKey] is not "" then
+         -- a child already spends it; a second one would only replace the first
+         next repeat
+      end if
       put cwListAdd(tOut, tRec) into tOut
    end repeat
    return tOut
@@ -18186,6 +18530,18 @@ command waBumpFee pRec
    if cwListCount(tKids) > 0 and (tOld is "" \
          or tOld["sequence"] + 0 >= kCwSeqNoRbf or tOld["change"] + 0 <= 0 \
          or tOld["changerec"] is "") then
+      -- A TRANSACTION THIS WALLET BUILT NEEDS NO ROUND TRIP for its size or
+      -- its fee: both are in the spend record. The 2026-09-03 log asked the
+      -- backend for the bytes of the wallet's own note transaction and told
+      -- the person to press Bump again when they arrived.
+      if tOld is not "" then
+         if pRec["vsize"] is not an integer then
+            put tOld["vsize"] into pRec["vsize"]
+         end if
+         if pRec["fee"] is not an integer then
+            put tOld["fee"] into pRec["fee"]
+         end if
+      end if
       waCpfpBuild pRec, tKids
       exit waBumpFee
    end if
@@ -18373,11 +18729,10 @@ private function waToolsNote
          "VALIDATE gives a verdict on an address (a silent payment address " & \
          "too) or an extended key, on EVERY chain. DECODE SCRIPT reads bare " & \
          "script hex." & return & return after tOut
-   put "INSCRIBE: write " & quote & "inscribe: text/plain; hello" & quote & \
-         " above and press Inscribe to prepare the commit; fund it; press " & \
-         "Inscribe again with the box empty to sign the reveal. LOCK: write " & \
-         quote & "lock: 900000" & quote & " and press Lock for an address " & \
-         "nothing can spend before that block." & return & return after tOut
+   put "Inscriptions and runes have the ORDINALS screen; timelocked coins " & \
+         "have the VAULT screen. An " & quote & "inscribe:" & quote & " or " & \
+         quote & "lock:" & quote & " line pasted here is carried there." & \
+         return & return after tOut
    if sWaLastPsbt is not empty then
       put the number of chars of sWaLastPsbt into tLen
       put "Holding a PSBT (" & tLen & \
@@ -18430,10 +18785,6 @@ command waToolsClick pRole
       uiCopyFlash "tl_copyOut"
    else if pRole is "export" then
       put waExportText() into field "tl_out"
-   else if pRole is "inscribe" then
-      waInscribe tText
-   else if pRole is "lock" then
-      waLockCoins tText
    end if
    waRefreshScreen
 end waToolsClick
@@ -18454,36 +18805,55 @@ end waToolsClick
 -- address, which receives the first sat and with it the inscription.
 -- ==============================================================================
 
-command waInscribe pText
-   local tLower
-   put cwLower(pText) into tLower
-   if char 1 to 9 of tLower is "inscribe:" or char 1 to 12 of tLower is "inscribehex:" then
-      waInscribeCommit pText
-   else if pText is "" then
-      waInscribeReveal
-   else
-      throw "to prepare an inscription, put " & quote & "inscribe: text/plain; " & \
-            "your text" & quote & " (or " & quote & "inscribehex: <type>; <hex>" & \
-            quote & ") in the paste box. To reveal a funded one, leave the box empty."
-   end if
-end waInscribe
+function waScreenIndexOf pScreen
+   local tI
+   repeat with tI = 1 to kWaScreenCount
+      if waScreenName(tI) is pScreen then
+         return tI
+      end if
+   end repeat
+   return kWaScreenCount
+end waScreenIndexOf
 
-private command waInscribeCommit pText
-   local tRest, tPos, tType, tBody, tHex, tRec, tLen, tOut, tCommit, tKey
-   if sWaKind is "watch" or sWaKind is "multisig" then
-      throw "an inscription is signed through a script only this wallet's " & \
-            "own single key can satisfy, so it needs a seed or key wallet."
+function waCarryLineToScreen pText
+   -- The old line forms, "inscribe: <type>; <text>" and "lock: <height>",
+   -- still work from the Tools paste box: they fill the screen that owns
+   -- them and open it, and the person presses the numbered button there.
+   -- True when the line was carried; false for anything else.
+   local tLower, tParts
+   put cwLower(char 1 to 12 of pText) into tLower
+   if char 1 to 9 of tLower is "inscribe:" or tLower is "inscribehex:" then
+      put waInscribeLineParts(pText) into tParts
+      put tParts["type"] into field "od_type"
+      if tParts["ishex"] is true then
+         put "hex: " & tParts["body"] into field "od_body"
+      else
+         put tParts["body"] into field "od_body"
+      end if
+      waShow "ordinals"
+      return true
    end if
-   if cwLower(char 1 to 12 of pText) is "inscribehex:" then
-      put cwTrim(char 13 to -1 of pText) into tRest
-      put true into tHex
-   else
-      put cwTrim(char 10 to -1 of pText) into tRest
-      put false into tHex
+   if char 1 to 5 of tLower is "lock:" then
+      put cwTrim(char 6 to -1 of pText) into field "vt_height"
+      waShow "vault"
+      return true
    end if
+   return false
+end waCarryLineToScreen
+
+function waInscribeLineParts pText
+   -- "inscribe: <type>; <text>" or "inscribehex: <type>; <hex>" taken apart.
    -- THE SEPARATOR IS "; " (semicolon, space), because a content type may
    -- carry parameters after semicolons of its own ("text/plain;charset=utf-8");
-   -- a bare semicolon is accepted when no spaced one exists
+   -- a bare semicolon is accepted when no spaced one exists.
+   local tRest, tPos, tOut
+   if cwLower(char 1 to 12 of pText) is "inscribehex:" then
+      put cwTrim(char 13 to -1 of pText) into tRest
+      put true into tOut["ishex"]
+   else
+      put cwTrim(char 10 to -1 of pText) into tRest
+      put false into tOut["ishex"]
+   end if
    put offset("; ", tRest) into tPos
    if tPos is 0 then
       put offset(";", tRest) into tPos
@@ -18492,8 +18862,28 @@ private command waInscribeCommit pText
       throw "write the content type, a semicolon, then the body: " & quote & \
             "inscribe: text/plain; hello" & quote & "."
    end if
-   put cwTrim(char 1 to (tPos - 1) of tRest) into tType
-   put cwTrim(char (tPos + 1) to -1 of tRest) into tBody
+   put cwTrim(char 1 to (tPos - 1) of tRest) into tOut["type"]
+   put cwTrim(char (tPos + 1) to -1 of tRest) into tOut["body"]
+   return tOut
+end waInscribeLineParts
+
+function waInscribePrepare pType, pBody, pIsHex
+   -- The COMMIT, from its parts: the next unused receive key becomes the
+   -- leaf key, the commit address joins the address list, the recipe is
+   -- saved with the wallet. Returns the report; the screen that asked puts
+   -- it where it belongs.
+   local tType, tBody, tHex, tRec, tLen, tOut, tCommit, tKey
+   if sWaKind is "watch" or sWaKind is "multisig" then
+      throw "an inscription is signed through a script only this wallet's " & \
+            "own single key can satisfy, so it needs a seed or key wallet."
+   end if
+   put cwTrim(pType) into tType
+   put pBody into tBody
+   put (pIsHex is true) into tHex
+   if tType is "" then
+      throw "give the content a type: text/plain for text, application/json, " & \
+            "image/svg+xml, or any MIME type."
+   end if
    if tBody is "" then
       throw "the inscription body is empty."
    end if
@@ -18539,19 +18929,19 @@ private command waInscribeCommit pText
    put "  " & waAmount(waInscribeNeeds(tCommit["leafscript"])) & \
          " at the Send screen's rate (the reveal's fee, plus the output that " & \
          "carries the inscription)." & return & return after tOut
-   put "When the coin shows up (Refresh on the Coins screen), come back here " & \
-         "with the paste box EMPTY and press Inscribe again: it will sign the " & \
-         "reveal, which spends the commit through its hidden script and puts " & \
-         "the envelope on the chain. The inscription lands on the first sat " & \
-         "of the reveal's first output, at this wallet's next receive " & \
+   put "When the coin shows up (Refresh), press 2: it signs the reveal, " & \
+         "which spends the commit through its hidden script and puts the " & \
+         "envelope on the chain. The inscription lands on the first sat of " & \
+         "the reveal's first output, at this wallet's next receive " & \
          "address." & return & return after tOut
    put "The recipe is saved with the wallet, so the commit survives a reopen." after tOut
-   put tOut into field "tl_out"
+   put tCommit["address"] into sWaLastCommit
    waLog "inscribe: commit " & tCommit["address"] & " for " & tType & ", " & \
          tLen & " bytes, leaf key at receive index " & tRec["index"]
    uiStatus "Commit address ready: fund " & char 1 to 20 of tCommit["address"] & \
-         "..., then press Inscribe again with the box empty.", "ok"
-end waInscribeCommit
+         "..., then press 2 once the coin is here.", "ok"
+   return tOut
+end waInscribePrepare
 
 private function waInscribeNeeds pLeafScriptHex
    -- What a commit must hold: the reveal's fee at the Send screen's rate
@@ -18675,24 +19065,27 @@ function waLeafKeyFrom pText
    return tKey
 end waLeafKeyFrom
 
-command waLockCoins pText
-   -- "lock: <height>" in the paste box: an address whose coins cannot move
-   -- before that block, by consensus rather than by promise. The leaf is
-   -- <height> OP_CHECKLOCKTIMEVERIFY OP_DROP <receive key> OP_CHECKSIG and
-   -- the internal key is the NUMS point, so there is no key-path spend to
-   -- go around it. After the height, the Send screen spends the coin like
-   -- any other: it raises the locktime itself and signs through the leaf.
+function waLockPrepare pHeightText
+   -- A vault address for one height: coins paid to it cannot move before
+   -- that block, by consensus rather than by promise. The leaf is <height>
+   -- OP_CHECKLOCKTIMEVERIFY OP_DROP <receive key> OP_CHECKSIG and the
+   -- internal key is the NUMS point, so there is no key-path spend to go
+   -- around it. After the height, the Send screen spends the coin like any
+   -- other: it raises the locktime itself and signs through the leaf.
    local tRest, tHeight, tRec, tKey, tLeaf, tOut
    if sWaKind is "watch" or sWaKind is "multisig" then
       throw "a timelock is spent through a script only this wallet's own " & \
             "single key can satisfy, so it needs a seed or key wallet."
    end if
-   if cwLower(char 1 to 5 of pText) is not "lock:" then
-      throw "to lock coins, put " & quote & "lock: <block height>" & quote & \
-            " in the paste box, then pay the address it gives you."
+   put cwTrim(pHeightText) into tRest
+   if tRest is "" then
+      throw "write the block height to unlock at, or press one of the " & \
+            "+1 day / +1 week / +1 month / +1 year buttons."
    end if
-   put cwTrim(char 6 to -1 of pText) into tRest
-   if tRest is not an integer or tRest < 1 or tRest >= 500000000 then
+   if tRest is not an integer then
+      throw "the lock is a block height: a whole number from 1 to 499999999."
+   end if
+   if tRest < 1 or tRest >= 500000000 then
       throw "the lock is a block height: a whole number from 1 to 499999999."
    end if
    put tRest + 0 into tHeight
@@ -18727,14 +19120,356 @@ command waLockCoins pText
          "coin: it sets the locktime to " & tHeight & " itself and signs " & \
          "through the leaf." & return & return after tOut
    put "The recipe is saved with the wallet, so the address survives a reopen." after tOut
-   put tOut into field "tl_out"
+   put tLeaf["address"] into sWaLastLock
    waLog "lock: " & tLeaf["address"] & " until block " & tHeight & \
          ", key at receive index " & tRec["index"]
    uiStatus "Lock address ready: pay " & char 1 to 20 of tLeaf["address"] & \
          "... and it stays put until block " & tHeight & ".", "ok"
-end waLockCoins
+   return tOut
+end waLockPrepare
 
-private command waInscribeReveal
+-- ---- the Ordinals screen ----------------------------------------------------------
+
+command waOrdinalsClick pRole
+   local tBody, tHex, tRow, tRec
+   set the defaultStack to the short name of this stack
+   if pRole is "typeText" then
+      put "text/plain;charset=utf-8" into field "od_type"
+   else if pRole is "typeJson" then
+      put "application/json" into field "od_type"
+   else if pRole is "typeSvg" then
+      put "image/svg+xml" into field "od_type"
+   else if pRole is "prepare" then
+      put field "od_body" into tBody
+      put false into tHex
+      if cwLower(char 1 to 4 of tBody) is "hex:" then
+         put cwTrim(char 5 to -1 of tBody) into tBody
+         put true into tHex
+      end if
+      put waInscribePrepare(field "od_type", tBody, tHex) into field "od_out"
+   else if pRole is "reveal" then
+      put waInscribeRevealText() into field "od_out"
+   else if pRole is "read" then
+      put waInspectAnything(cwTrim(field "od_hex")) into field "od_out"
+   else if pRole is "details" then
+      put waOrdinalSelected() into tRec
+      if tRec is "" then
+         throw "select an inscription in the list first."
+      end if
+      put waLeafDetailText(tRec) into field "od_out"
+   else if pRole is "copyAddr" then
+      put waOrdinalSelected() into tRec
+      if tRec is "" then
+         if sWaLastCommit is "" then
+            throw "prepare a commit first, or select one in the list."
+         end if
+         set the clipboardData["text"] to sWaLastCommit
+         uiStatus sWaLastCommit & " is on the clipboard: pay it to fund the inscription.", "ok"
+      else
+         set the clipboardData["text"] to tRec["address"]
+         uiStatus tRec["address"] & " is on the clipboard.", "ok"
+      end if
+   else if pRole is "copyOut" then
+      set the clipboardData["text"] to field "od_out"
+      uiCopyFlash "od_copyOut"
+   else if pRole is "inspect" then
+      if sWaLastRaw is "" then
+         throw "nothing has been signed yet."
+      end if
+      put sWaLastRaw into field "tl_hex"
+      waShow "tools"
+      put waInspectAnything(sWaLastRaw) into field "tl_out"
+   end if
+   waRefreshScreen
+end waOrdinalsClick
+
+function waOrdinalSelected
+   -- The leaf record behind the selected row of the inscriptions table, or
+   -- empty. Rows are painted in sWaLeaves order, inscriptions only, with a
+   -- header line first.
+   local tLine, tI, tCount, tN, tKey
+   put the hilitedLine of field "od_table" into tLine
+   if tLine is not an integer or tLine < 2 then
+      return ""
+   end if
+   put 0 into tN
+   put cwListCount(sWaLeaves) into tCount
+   repeat with tI = 1 to tCount
+      put sWaLeaves[tI] into tKey
+      if tKey["kind"] is "lock" then
+         next repeat
+      end if
+      add 1 to tN
+      if tN + 1 is tLine then
+         return waLeafRecord(tKey)
+      end if
+   end repeat
+   return ""
+end waOrdinalSelected
+
+function waVaultSelected
+   local tLine, tI, tCount, tN, tKey
+   put the hilitedLine of field "vt_table" into tLine
+   if tLine is not an integer or tLine < 2 then
+      return ""
+   end if
+   put 0 into tN
+   put cwListCount(sWaLeaves) into tCount
+   repeat with tI = 1 to tCount
+      put sWaLeaves[tI] into tKey
+      if tKey["kind"] is not "lock" then
+         next repeat
+      end if
+      add 1 to tN
+      if tN + 1 is tLine then
+         return waLeafRecord(tKey)
+      end if
+   end repeat
+   return ""
+end waVaultSelected
+
+function waLeafHeld pAddress
+   -- The satoshi held at a leaf address by coins this wallet has seen.
+   local tI, tCount, tRec, tSum
+   put 0 into tSum
+   put cwListCount(sWaUtxos) into tCount
+   repeat with tI = 1 to tCount
+      put sWaUtxos[tI] into tRec
+      if tRec["address"] is pAddress then
+         add tRec["value"] to tSum
+      end if
+   end repeat
+   return tSum
+end waLeafHeld
+
+function waLeafRevealedBy pAddress
+   -- The txid of a spend this session built from a coin at that address,
+   -- or empty. Memory only, like the spend records themselves.
+   local tTxid, tRec, tSel, tI, tCount, tCoin
+   repeat for each key tTxid in sWaSpends
+      put sWaSpends[tTxid] into tRec
+      put tRec["selected"] into tSel
+      put cwListCount(tSel) into tCount
+      repeat with tI = 1 to tCount
+         put tSel[tI] into tCoin
+         if tCoin["address"] is pAddress then
+            return tTxid
+         end if
+      end repeat
+   end repeat
+   return ""
+end waLeafRevealedBy
+
+function waLeafDetailText pRec
+   local tOut, tHeld, tSpent
+   if pRec["lockheight"] is "" then
+      put "INSCRIPTION COMMIT" & return & return into tOut
+      put "  content      " & pRec["note"] & return after tOut
+   else
+      put "VAULT ADDRESS" & return & return into tOut
+      put "  unlocks at   block " & pRec["lockheight"] & return after tOut
+   end if
+   put "  address      " & pRec["address"] & return after tOut
+   put "  leaf key     receive index " & pRec["index"] & return after tOut
+   put "  internal key " & pRec["internalkey"] & return after tOut
+   put "  output key   " & pRec["outputkey"] & return after tOut
+   put "  leaf hash    " & pRec["leafhash"] & return after tOut
+   put "  leaf script  " & pRec["leafscript"] & return after tOut
+   put "  scriptPubKey " & pRec["script"] & return after tOut
+   put waLeafHeld(pRec["address"]) into tHeld
+   put "  holds        " & waAmount(tHeld) & return after tOut
+   put waLeafRevealedBy(pRec["address"]) into tSpent
+   if tSpent is not "" then
+      put "  spent by     " & tSpent & " (built here)" & return after tOut
+   end if
+   return tOut
+end waLeafDetailText
+
+command waPaintOrdinals
+   local tI, tCount, tKey, tRec, tRows, tTab, tN, tStatus, tHeld, tSpent
+   local tBody, tLen, tRate, tNeeds
+   set the defaultStack to the short name of this stack
+   put numToChar(9) into tTab
+   if field "od_type" is "" then
+      put "text/plain;charset=utf-8" into field "od_type"
+   end if
+   put "#" & tTab & "content" & tTab & "status" & tTab & "commit address" & return into tRows
+   put 0 into tN
+   put cwListCount(sWaLeaves) into tCount
+   repeat with tI = 1 to tCount
+      put sWaLeaves[tI] into tKey
+      if tKey["kind"] is "lock" then
+         next repeat
+      end if
+      add 1 to tN
+      put waLeafRecord(tKey) into tRec
+      put waLeafRevealedBy(tRec["address"]) into tSpent
+      put waLeafHeld(tRec["address"]) into tHeld
+      if tSpent is not "" then
+         put "revealed " & char 1 to 12 of tSpent & "..i0" into tStatus
+      else if tHeld > 0 then
+         put "funded " & waAmount(tHeld) & " - press 2" into tStatus
+      else
+         put "unfunded - pay the address" into tStatus
+      end if
+      put the number of chars of tKey["bodyhex"] into tLen
+      put tRows & tN & tTab & tKey["type"] & ", " & cwIntDiv(tLen, 2) & " bytes" & \
+            tTab & tStatus & tTab & tRec["address"] & return into tRows
+   end repeat
+   if tN is 0 then
+      put tRows & "(none yet: write something above and press 1)" & return into tRows
+   end if
+   put tRows into field "od_table"
+   -- the size line: what the body is and roughly what the reveal costs
+   put field "od_body" into tBody
+   if cwLower(char 1 to 4 of tBody) is "hex:" then
+      put cwStripWhitespace(char 5 to -1 of tBody) into tBody
+      put the number of chars of tBody into tLen
+      put cwIntDiv(tLen, 2) into tLen
+   else
+      put the number of bytes of textEncode(tBody, "utf-8") into tLen
+   end if
+   put field "sd_rate" into tRate
+   if tRate is not a number or tRate <= 0 then
+      put 1 into tRate
+   end if
+   if tLen is 0 then
+      put "Nothing to inscribe yet." into field "od_size"
+   else
+      put waCeilSat(tRate * (11 + 60 + cwIntDiv(tLen, 4) + 43)) into tNeeds
+      put tLen & " bytes; the reveal will cost about " & waAmount(tNeeds) & \
+            " at the Send screen's " & tRate & " sat/vB, plus a coin above dust" \
+            into field "od_size"
+   end if
+end waPaintOrdinals
+
+-- ---- the Vault screen -------------------------------------------------------------
+
+command waVaultClick pRole
+   local tRec
+   set the defaultStack to the short name of this stack
+   if pRole is "day" then
+      waVaultFill 144
+   else if pRole is "week" then
+      waVaultFill 1008
+   else if pRole is "month" then
+      waVaultFill 4320
+   else if pRole is "year" then
+      waVaultFill 52560
+   else if pRole is "prepare" then
+      put waLockPrepare(field "vt_height") into field "vt_out"
+   else if pRole is "copyAddr" then
+      put waVaultSelected() into tRec
+      if tRec is "" then
+         if sWaLastLock is "" then
+            throw "prepare a locked address first, or select one in the list."
+         end if
+         set the clipboardData["text"] to sWaLastLock
+         uiStatus sWaLastLock & " is on the clipboard: whatever you pay it stays put.", "ok"
+      else
+         set the clipboardData["text"] to tRec["address"]
+         uiStatus tRec["address"] & " is on the clipboard.", "ok"
+      end if
+   else if pRole is "details" then
+      put waVaultSelected() into tRec
+      if tRec is "" then
+         throw "select a vault address in the list first."
+      end if
+      put waLeafDetailText(tRec) into field "vt_out"
+   else if pRole is "copyOut" then
+      set the clipboardData["text"] to field "vt_out"
+      uiCopyFlash "vt_copyOut"
+   else if pRole is "send" then
+      waShow "send"
+      uiStatus "Unlocked vault coins are selected like any other; locked ones are left out.", ""
+      exit waVaultClick
+   end if
+   waRefreshScreen
+end waVaultClick
+
+command waVaultFill pBlocks
+   if sWaTipHeight is empty then
+      throw "the tip height is not known yet: press Refresh with a backend " & \
+            "chosen on the Network screen, or type the height yourself."
+   end if
+   put sWaTipHeight + pBlocks into field "vt_height"
+   waRefreshScreen
+end waVaultFill
+
+function waBlocksAway pHeight
+   -- "about N days" from a block count, for the person reading the list.
+   local tBlocks, tDays
+   put pHeight - sWaTipHeight into tBlocks
+   if tBlocks <= 0 then
+      return "passed"
+   end if
+   if tBlocks < 144 then
+      return tBlocks & " blocks (about " & cwIntDiv(tBlocks * 10 + 59, 60) & " hours)"
+   end if
+   put cwIntDiv(tBlocks + 71, 144) into tDays
+   return tBlocks & " blocks (about " & tDays & " days)"
+end waBlocksAway
+
+command waPaintVault
+   local tI, tCount, tKey, tRec, tRows, tTab, tN, tState, tHeld, tHeight
+   set the defaultStack to the short name of this stack
+   put numToChar(9) into tTab
+   put "height" & tTab & "state" & tTab & "holds" & tTab & "address" & return into tRows
+   put 0 into tN
+   put cwListCount(sWaLeaves) into tCount
+   repeat with tI = 1 to tCount
+      put sWaLeaves[tI] into tKey
+      if tKey["kind"] is not "lock" then
+         next repeat
+      end if
+      add 1 to tN
+      put waLeafRecord(tKey) into tRec
+      put waLeafHeld(tRec["address"]) into tHeld
+      if sWaTipHeight is empty then
+         put "tip unknown - sync to see" into tState
+      else if sWaTipHeight < tKey["height"] then
+         put "locked, " & waBlocksAway(tKey["height"]) & " to go" into tState
+      else
+         put "UNLOCKED - spendable from Send" into tState
+      end if
+      put tRows & tKey["height"] & tTab & tState & tTab & waAmount(tHeld) & tTab & \
+            tRec["address"] & return into tRows
+   end repeat
+   if tN is 0 then
+      put tRows & "(none yet: choose a height above and press Prepare)" & return into tRows
+   end if
+   put tRows into field "vt_table"
+   put cwTrim(field "vt_height") into tHeight
+   if tHeight is "" then
+      if sWaTipHeight is empty then
+         put "The tip height is not known yet; type a height or sync first." into field "vt_when"
+      else
+         put "The tip is block " & sWaTipHeight & "; a day is about 144 blocks." into field "vt_when"
+      end if
+   else if tHeight is not an integer then
+      put "A height is a whole number of blocks." into field "vt_when"
+   else if sWaTipHeight is empty then
+      put "Block " & tHeight & "; the tip is not known yet, so how far away it is cannot be said." into field "vt_when"
+   else
+      put "Block " & tHeight & " is " & waBlocksAway(tHeight + 0) & " from the tip (" & \
+            sWaTipHeight & ")." into field "vt_when"
+   end if
+end waPaintVault
+
+command waAddNoteLine
+   -- A "note: " line for the Pay-to box, so the OP_RETURN form is a button
+   -- away rather than a thing to know.
+   local tText
+   put field "sd_to" into tText
+   if tText is not "" and char -1 of tText is not return then
+      put return after tText
+   end if
+   put tText & "note: " into field "sd_to"
+   uiStatus "Write the note after " & quote & "note: " & quote & \
+         "; it goes on the chain as an OP_RETURN output of value 0 (up to 80 bytes relays everywhere).", ""
+end waAddNoteLine
+
+function waInscribeRevealText
    local tI, tCount, tCoin, tRec, tAddrRec, tRate, tVsize, tFee, tValue, tDust
    local tInputs, tOutputs, tSel, tTo, tRaw, tNew, tOut
    put "" into tCoin
@@ -18750,11 +19485,10 @@ private command waInscribeReveal
    end repeat
    if tCoin is "" then
       if cwListCount(sWaLeaves) is 0 then
-         throw "nothing to reveal: prepare a commit first (" & quote & \
-               "inscribe: text/plain; hello" & quote & " in the paste box)."
+         throw "nothing to reveal: write the content above and press 1 first."
       end if
-      throw "no commit is funded yet. Pay the commit address, Refresh on the " & \
-            "Coins screen so the coin is seen, then press Inscribe again."
+      throw "no commit is funded yet. Pay the commit address, press Refresh " & \
+            "so the coin is seen, then press 2 again."
    end if
    if sWaKind is "watch" then
       throw "this watch-only wallet cannot sign the reveal."
@@ -18814,11 +19548,12 @@ private command waInscribeReveal
          return & return after tOut
    put tRaw & return & return after tOut
    put "NOTHING HAS BEEN BROADCAST. The Send screen's Broadcast button will push it." after tOut
-   put tOut into field "tl_out"
+   put tNew["txid"] into sWaLastReveal
    waLog "inscribe: reveal " & tNew["txid"] & " spends " & tCoin["txid"] & ":" & \
          tCoin["vout"] & " through the leaf, " & tNew["vsize"] & " vB"
    uiStatus "Reveal signed: " & tNew["txid"] & "i0. Broadcast is on the Send screen.", "ok"
-end waInscribeReveal
+   return tOut
+end waInscribeRevealText
 
 command waSignMessage
    local tAddr, tRec, tSig, tKey, tType, tMsg, tFormat
@@ -19283,6 +20018,11 @@ function waInspectAnything pText
    end if
    if cwBolt11IsInvoice(pText) then
       return waInvoiceText(pText)
+   end if
+   if waCarryLineToScreen(pText) then
+      return "That line belongs to the " & waScreenLabel(waScreenIndexOf(sWaScreen)) & \
+            " screen, which is open now with it filled in. Press the numbered " & \
+            "button there."
    end if
    try
       return waInspectRaw(pText)
@@ -21959,6 +22699,7 @@ private command waElectrumApply pKind, pArg, pNode
       -- only record of its broadcast's txid was the fee-bump bookkeeping
       -- line, and the status line is not what gets pasted back.
       waLog "broadcast accepted: txid " & tText
+      waNoteBroadcast pArg, tText
       uiStatus "Broadcast. The server returned txid " & tText & ".", "ok"
       exit waElectrumApply
    end if
@@ -22182,6 +22923,7 @@ private command waNetApply pKind, pArg, pBody, pId
       -- backend did not give is the failure this whole block exists to stop.
       get waCheckedTxid(tText, "Esplora")
       waLog "broadcast accepted: txid " & tText
+      waNoteBroadcast pArg, tText
       uiStatus "Broadcast. The backend returned txid " & tText & ".", "ok"
       exit waNetApply
    end if
@@ -22192,7 +22934,7 @@ command waMergeUtxos pAddress, pNode, pShape
    -- leave every other address alone. Replacing rather than merging is what
    -- makes a spent coin disappear; merging would leave the wallet claiming a
    -- balance it no longer has.
-   local tList, tI, tCount, tRec, tItem, tHeight, tConf
+   local tList, tI, tCount, tRec, tItem, tHeight, tConf, tKey
    put waEmptyList() into tList
    put cwListCount(sWaUtxos) into tCount
    repeat with tI = 1 to tCount
@@ -22230,6 +22972,17 @@ command waMergeUtxos pAddress, pNode, pShape
          end if
          put tConf into tRec["confirmations"]
          put tHeight into tRec["height"]
+      end if
+      -- THE BACKEND'S WORD OUTRANKS THE WALLET'S MEMORY. A coin still listed
+      -- as unspent after this wallet broadcast a spend of it means the
+      -- backend has no such spend (dropped, or never seen), and holding the
+      -- coin back would hide money the network says is there - so the mark
+      -- comes off, and the log names the transaction it was.
+      put tRec["txid"] & ":" & tRec["vout"] into tKey
+      if sWaSpentBy[tKey] is not "" then
+         waLog "the backend still lists " & tKey & " as unspent, which " & \
+               sWaSpentBy[tKey] & " spent when it was broadcast; offering it again"
+         put "" into sWaSpentBy[tKey]
       end if
       put cwListAdd(tList, tRec) into tList
    end repeat
@@ -22566,11 +23319,11 @@ function waAboutText
    put "WHERE THE NEW THINGS ARE (2026-09-02 to 2026-09-04)" & return after tOut
    put "  Send: a line " & quote & "note: text" & quote & " or " & quote & "data: hex" & quote & " writes" & return after tOut
    put "  an OP_RETURN output; a line paying an sp1.../tsp1... address is a" & return after tOut
-   put "  BIP-352 silent payment. Tools: the BIP-322 box beside Verify;" & return after tOut
-   put "  Inspect reads runestones, inscriptions and Lightning invoices;" & return after tOut
-   put "  Inscribe and Lock (bottom right) take " & quote & "inscribe: type; text" & quote & return after tOut
-   put "  and " & quote & "lock: height" & quote & " lines. History: Bump does CPFP where RBF" & return after tOut
-   put "  cannot apply. Wallet: a testnet4 button. Settings: export and" & return after tOut
+   put "  BIP-352 silent payment. ORDINALS: inscribe content onto a satoshi" & return after tOut
+   put "  in two numbered steps, and read any runestone or inscription." & return after tOut
+   put "  VAULT: lock coins until a block height. Tools: the BIP-322 box" & return after tOut
+   put "  beside Verify; Inspect reads Lightning invoices too. History:" & return after tOut
+   put "  Bump does CPFP where RBF cannot apply. Wallet: a testnet4 button. Settings: export and" & return after tOut
    put "  import labels (BIP-329), and Update from main. Right-click any" & return after tOut
    put "  list for the menu." & return & return after tOut
    put "  THIS IS VERSION " & kWaVersion & ". Update from main (Settings, or" & return after tOut
@@ -22852,11 +23605,15 @@ function waUpdateCheck pText, pCurrent
       throw "main's copy is " & tChars & " chars against this script's " & \
             tCurChars & ", which is too large to be this wallet."
    end if
-   put offset("constant kWaVersion = " & quote, pText) into tPos
+   -- AT A LINE START, because this handler's own source carries the same
+   -- characters mid-line (the literal below), and an unanchored search
+   -- found that occurrence first in a copy whose real declaration was gone
+   put offset(return & "constant kWaVersion = " & quote, pText) into tPos
    if tPos is 0 then
       throw "main's copy declares no kWaVersion, so it is not a version of " & \
             "this wallet."
    end if
+   add 1 to tPos
    -- the forty chars after the opening quote, sliced first: the three-
    -- argument offset (with a skip) is not a form the family's interpreter
    -- models, and a form the gate cannot run is a form nobody has run
@@ -22866,11 +23623,15 @@ function waUpdateCheck pText, pCurrent
       throw "main's copy has an unreadable kWaVersion."
    end if
    put char 1 to (tEnd - 1) of tSlice into tVersion
-   if not (pText contains "command waUpdateRestore") then
+   -- WHOLE LINES, not substrings: "command waUpdateRestore" is a prefix of
+   -- "command waUpdateRestoreX", and the literal in this very handler would
+   -- satisfy a substring test on a copy that had lost the handler
+   if not (pText contains return & "command waUpdateRestore" & return) then
       throw "main's copy (version " & tVersion & ") has no waUpdateRestore, " & \
             "so your wallet would not come back after the swap. Not offered."
    end if
-   if not (pText contains "on openStack") or not (pText contains "on preOpenStack") then
+   if not (pText contains return & "on openStack" & return) \
+         or not (pText contains return & "on preOpenStack" & return) then
       throw "main's copy (version " & tVersion & ") has no openStack, so it " & \
             "could not boot. Not offered."
    end if
@@ -23537,7 +24298,7 @@ end scFinish
 -- clipboard. What they check is that this stack's own arithmetic agrees with
 -- the library it carries, on this engine, before anybody types anything.
 
-constant kWaScControls = "ad_change,ad_detail,ad_label,ad_labelCap,ad_more,ad_panel,ad_receive,ad_scan,ad_sec1,ad_setLabel,ad_table,cn_addManual,cn_detail,cn_freeze,cn_hint,cn_panel,cn_sec1,cn_table,cn_tick,cn_tickAll,cn_tickNone,hs_bump,hs_copyTxid,hs_detail,hs_inspect,hs_panel,hs_refresh,hs_sec1,hs_table,lg_boot,lg_clear,lg_copy,lg_hint,lg_panel,lg_sec1,lg_sec2,lg_text,nv_ad,nv_bal,nv_chain,nv_cn,nv_confirmed,nv_frozenamt,nv_hs,nv_lg,nv_net,nv_nw,nv_panel,nv_pending,nv_rc,nv_refresh,nv_sd,nv_st,nv_tip,nv_tl,nv_wallet,nv_wl,nw_bElectrumClear,nw_bElectrumTor,nw_bEsploraClear,nw_bEsploraTor,nw_bOffline,nw_host,nw_hostCap,nw_out,nw_panelA,nw_panelB,nw_port,nw_portCap,nw_privacy,nw_sec1,nw_sec2,nw_sec3,nw_socks,nw_socksCap,nw_state,nw_stop,nw_syncNow,nw_test,nw_why,rc_address,rc_amount,rc_amountCap,rc_copy,rc_copyUri,rc_detail,rc_label,rc_labelCap,rc_message,rc_messageCap,rc_next,rc_panelA,rc_panelB,rc_qr,rc_qrframe,rc_qrhint,rc_sec1,rc_sec2,rc_sec3,rc_showQr,rc_uri,rc_verify,sd_addSelf,sd_broadcast,sd_clear,sd_copyRaw,sd_locktime,sd_locktimeCap,sd_out,sd_panelA,sd_panelB,sd_paste,sd_preview,sd_rate,sd_rateCap,sd_ratehint,sd_rbf,sd_sec1,sd_sec2,sd_sec3,sd_sec4,sd_sign,sd_stratBnb,sd_stratLargest,sd_stratManual,sd_stratOldest,sd_stratSmallest,sd_strategyCap,sd_to,sd_toCap,sd_toPsbt,sd_warn,st_about,st_browse,st_exportLabels,st_filenote,st_forget,st_forgetnote,st_gap,st_gapCap,st_importLabels,st_load,st_panelA,st_panelB,st_password,st_passwordCap,st_path,st_pathCap,st_save,st_sec1,st_sec2,st_sec3,st_unitBtc,st_unitMbtc,st_unitSat,st_update,tl_copyOut,tl_decode,tl_derive,tl_entropy,tl_export,tl_hex,tl_hexCap,tl_hold,tl_inscribe,tl_inspect,tl_lock,tl_msg,tl_msg322,tl_msgAddr,tl_msgAddrCap,tl_msgCap,tl_msgSig,tl_msgSigCap,tl_msgSign,tl_msgVerify,tl_newKey,tl_note,tl_out,tl_panelA,tl_panelB,tl_pass,tl_passCap,tl_psbtCombine,tl_psbtFinal,tl_psbtSign,tl_sec1,tl_sec2,tl_sec3,tl_sweep,tl_toEntropy,tl_validate,uiFooter,uiStatus,uiTitle,wl_account,wl_accountCap,wl_addCosigner,wl_backup,wl_copyDesc,wl_copyXpub,wl_custody,wl_generate,wl_kindKey,wl_kindMulti,wl_kindRestore,wl_kindSeed,wl_kindWatch,wl_label,wl_labelCap,wl_m,wl_mCap,wl_mnemonic,wl_mnemonicCap,wl_netMain,wl_netReg,wl_netSignet,wl_netTest,wl_netTest4,wl_open,wl_out,wl_panelA,wl_panelB,wl_pass,wl_passCap,wl_path,wl_pathCap,wl_sec1,wl_sec2,wl_sec3,wl_sec4,wl_typeLegacy,wl_typeMulti,wl_typeNative,wl_typeNested,wl_typeTaproot,wl_warn,wl_xkey,wl_xkeyCap"
+constant kWaScControls = "ad_change,ad_detail,ad_label,ad_labelCap,ad_more,ad_panel,ad_receive,ad_scan,ad_sec1,ad_setLabel,ad_table,cn_addManual,cn_detail,cn_freeze,cn_hint,cn_panel,cn_sec1,cn_table,cn_tick,cn_tickAll,cn_tickNone,hs_bump,hs_copyTxid,hs_detail,hs_inspect,hs_panel,hs_refresh,hs_sec1,hs_table,lg_boot,lg_clear,lg_copy,lg_hint,lg_panel,lg_sec1,lg_sec2,lg_text,nv_ad,nv_bal,nv_chain,nv_cn,nv_confirmed,nv_frozenamt,nv_hs,nv_lg,nv_net,nv_nw,nv_od,nv_panel,nv_pending,nv_rc,nv_refresh,nv_sd,nv_st,nv_tip,nv_tl,nv_vt,nv_wallet,nv_wl,nw_bElectrumClear,nw_bElectrumTor,nw_bEsploraClear,nw_bEsploraTor,nw_bOffline,nw_host,nw_hostCap,nw_out,nw_panelA,nw_panelB,nw_port,nw_portCap,nw_privacy,nw_sec1,nw_sec2,nw_sec3,nw_socks,nw_socksCap,nw_state,nw_stop,nw_syncNow,nw_test,nw_why,od_body,od_bodyCap,od_copyAddr,od_copyOut,od_details,od_hex,od_hexCap,od_hint,od_inspect,od_intro,od_out,od_panelA,od_panelB,od_prepare,od_read,od_reveal,od_runes,od_sec1,od_sec2,od_sec3,od_sec4,od_size,od_table,od_type,od_typeCap,od_typeJson,od_typeSvg,od_typeText,rc_address,rc_amount,rc_amountCap,rc_copy,rc_copyUri,rc_detail,rc_label,rc_labelCap,rc_message,rc_messageCap,rc_next,rc_panelA,rc_panelB,rc_qr,rc_qrframe,rc_qrhint,rc_sec1,rc_sec2,rc_sec3,rc_showQr,rc_uri,rc_verify,sd_addNote,sd_addSelf,sd_broadcast,sd_clear,sd_copyRaw,sd_locktime,sd_locktimeCap,sd_out,sd_panelA,sd_panelB,sd_paste,sd_preview,sd_rate,sd_rateCap,sd_ratehint,sd_rbf,sd_sec1,sd_sec2,sd_sec3,sd_sec4,sd_sign,sd_stratBnb,sd_stratLargest,sd_stratManual,sd_stratOldest,sd_stratSmallest,sd_strategyCap,sd_to,sd_toCap,sd_toPsbt,sd_warn,st_about,st_browse,st_exportLabels,st_filenote,st_forget,st_forgetnote,st_gap,st_gapCap,st_importLabels,st_load,st_panelA,st_panelB,st_password,st_passwordCap,st_path,st_pathCap,st_save,st_sec1,st_sec2,st_sec3,st_unitBtc,st_unitMbtc,st_unitSat,st_update,tl_copyOut,tl_decode,tl_derive,tl_entropy,tl_export,tl_hex,tl_hexCap,tl_hold,tl_inspect,tl_msg,tl_msg322,tl_msgAddr,tl_msgAddrCap,tl_msgCap,tl_msgSig,tl_msgSigCap,tl_msgSign,tl_msgVerify,tl_newKey,tl_note,tl_out,tl_panelA,tl_panelB,tl_pass,tl_passCap,tl_psbtCombine,tl_psbtFinal,tl_psbtSign,tl_sec1,tl_sec2,tl_sec3,tl_sweep,tl_toEntropy,tl_validate,uiFooter,uiStatus,uiTitle,vt_copyAddr,vt_copyOut,vt_day,vt_details,vt_height,vt_heightCap,vt_hint,vt_intro,vt_month,vt_out,vt_panelA,vt_panelB,vt_prepare,vt_sec1,vt_sec2,vt_sec3,vt_send,vt_table,vt_week,vt_when,vt_year,wl_account,wl_accountCap,wl_addCosigner,wl_backup,wl_copyDesc,wl_copyXpub,wl_custody,wl_generate,wl_kindKey,wl_kindMulti,wl_kindRestore,wl_kindSeed,wl_kindWatch,wl_label,wl_labelCap,wl_m,wl_mCap,wl_mnemonic,wl_mnemonicCap,wl_netMain,wl_netReg,wl_netSignet,wl_netTest,wl_netTest4,wl_open,wl_out,wl_panelA,wl_panelB,wl_pass,wl_passCap,wl_path,wl_pathCap,wl_sec1,wl_sec2,wl_sec3,wl_sec4,wl_typeLegacy,wl_typeMulti,wl_typeNative,wl_typeNested,wl_typeTaproot,wl_warn,wl_xkey,wl_xkeyCap"
 
 command waScFresh
    -- THIS RUN'S RECORD, NOT EVERY RUN'S. The field is saved with the stack,

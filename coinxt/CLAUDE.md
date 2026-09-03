@@ -3015,3 +3015,66 @@ stale, and stays away when it is current). The same day the About text gained a 
 are" section and the Tools note the `inscribe:` and `lock:` recipes, because a feature reached only
 by a line format nobody is told about is a feature that does not exist. Not run on an engine.
 
+### 2026-09-04, two screens, a rail of twelve, and tooltips: "this needs to be an impressive display"
+
+The maintainer's second reading, after the rebuild fix, was that the new features were not
+self-explanatory, and that was right: inscriptions and timelocks lived behind `inscribe:` and `lock:`
+lines in a paste box, silent payments and notes behind line forms in the Pay-to box, and nothing
+on any screen said so. The wallet now has an ORDINALS screen (content type with quick picks, body,
+a size line that prices the reveal as you type, two NUMBERED buttons, a table of every inscription
+with its state read from the coins and spends, a reader for any transaction's inscription or
+runestone) and a VAULT screen (a height or +1 day/week/month/year from the tip, a line saying how far
+away that is, Prepare, a table of every vault with locked-with-N-blocks-to-go or UNLOCKED read from
+the tip). The rail grew to twelve at a 26-pixel pitch; the router, the sweep, the menus and every
+`1 to 10` loop follow `kWaScreenCount`. Every button on both screens and the rail carries a tooltip
+(`waTips`, the wallet's own pass after the build, since the kit sets none), the Pay-to box explains its
+line forms on hover and has an Add-a-note button, and the old line forms pasted on Tools are CARRIED
+to their screens filled in rather than refused. The commit, reveal and lock bodies became functions
+that return their report, so a screen and a line form share one core. The boot gate drives the
+numbered buttons, the quick picks, the tables' states, the tooltips, the rail geometry and the
+carrying. Not run on an engine.
+
+### 2026-09-04, the update check was fooled by its own source, and the gate that found it had never run
+
+The Update-from-main boot block was committed on the maintainer's "commit what you have" and never
+driven to the end, so its first complete run was in CI, two days later, and it found three things.
+Two are the wallet's. `waUpdateCheck` looked for `constant kWaVersion = "` anywhere in the fetched
+copy and for `command waUpdateRestore` and `on openStack` as substrings; the handler's OWN SOURCE
+carries all three as literals, and `command waUpdateRestoreX` contains `command waUpdateRestore`,
+so a copy with no version declaration read as "unreadable" instead of "missing" and a copy that had
+lost its restore handler or its openStack was OFFERED. The version is searched at a line start now
+and the handlers as whole lines. The third is the gate's: it asked `ip.call` for `cxSha256`, which
+the driver cannot reach (natives resolve from script, not from Python), so the block crashed on its
+last check. The same run showed the 9c header-notification check reading an empty tip, because its
+two Electrum deliveries had no trailing newline and the line-framed receiver rightly held both in
+its buffer; the fixture now sends lines, as every server does. Not run on an engine.
+
+**The second spend reused the first one's coin (engine log, 2026-09-03).** The
+autotest script built a silent payment and, sixty seconds later with no sync
+between, the funding of an inscription commit - and the second transaction spent
+the same input as the first. The server took the first and refused the second
+with `insufficient fee, rejecting replacement`, which is exactly right: the
+wallet had chosen from a coin list that was true when the last sync answered and
+not since, and nothing in it remembered what the wallet itself had just done.
+`waNoteBroadcast` runs on every accepted broadcast now, from both transports: it
+decodes the raw it sent, marks each input as spent by that txid (`sWaSpentBy`,
+memory only), and lists each output that pays an address of ours as a coin at 0
+confirmations - so a second spend has the change to draw on. The selector, the
+CPFP coin finder and the balance skip a marked coin and the Coins screen shows
+it as SPT. The backend outranks the memory in both directions: `waMergeUtxos`
+un-marks a coin the backend still lists and says so in the log, and a
+replacement re-marks the inputs and voids the coins added from what it replaced.
+The same log's Bump on the wallet's own note transaction went the
+child-pays-for-parent way (no change to shrink) and asked the server for the
+parent's bytes, which the spend record already held; `waBumpFee` fills the size
+and the fee from the record first. The boot gate drives all of it through
+`waNetApply` with modelled acceptances. Not run on an engine.
+
+**A third failure in that log is still open: paying the vault address.** The
+autotest asked to pay 30000 sat to a freshly prepared timelock address and the
+selector answered `insufficient funds` over 451087 sat confirmed. The report was
+cut at 120 characters by the autotest itself, so what the advice said after
+"confirmed" is not in the record, and the selector clears the same pool
+headlessly. The isolated probe that pays into a vault address on the booted
+wallet is the next step, and this entry is here so the failure is not mistaken
+for the two above.
