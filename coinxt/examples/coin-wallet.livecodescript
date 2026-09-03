@@ -23919,17 +23919,24 @@ command waUpdateRestore
    -- resets the backend to its defaults, and the first full gate run
    -- (2026-09-03) came back with the carried backend and a default host and
    -- port - a person's own server, lost in the update.
+   -- AND INTO THE FIELDS, because waApplyNetworkFields below reads the
+   -- Network screen's fields back into these same locals - which still
+   -- held the defaults, so the carried server was overwritten a second
+   -- time (the prefill-2 driver of 2026-09-03 caught it after the reorder).
    if tBackend is not empty then
       put tBackend into sWaBackend
    end if
    if tHost is not empty then
       put tHost into sWaHost
+      put tHost into field "nw_host"
    end if
    if tPort is not empty then
       put tPort into sWaPort
+      put tPort into field "nw_port"
    end if
    if tSocks is not empty then
       put tSocks into sWaSocksPort
+      put tSocks into field "nw_socks"
    end if
    waRefreshNetState
    waApplyNetworkFields
