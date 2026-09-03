@@ -1440,7 +1440,8 @@ def drive(c, ip, world, sandbox):
               ("swabackend", "swahost", "swaport", "swanetwork", "swahaveonion",
                "swanetstate", "swanetwhy", "swaqueue", "swainflight", "swabuffer",
                "swastream", "swastreamto", "swasyncfailures", "swatipheight",
-               "swafeerates", "swautxos", "swahistory")}
+               "swafeerates", "swautxos", "swahistory", "swabatch",
+               "swabatchmembers", "swatipat", "swafeesat")}
     world.tor, world.tor_state, world.tor_handles = [], {}, 0
     world.tor_write_fail = ""
     LCS.HASHES["oxstreamstate"] = (
@@ -1487,6 +1488,16 @@ def drive(c, ip, world, sandbox):
         c.eq("and was not closed", tor_count("close"), 0)
 
         ip.call("waNetQueue", ["fees", ""])
+        # a reply with more queued behind it asks for the pump NOW, deferred
+        # by one turn, rather than waiting up to a tick (2026-09-03)
+        world.sends = [m for m in world.sends if "wapumpnow" not in str(m[0]).lower()]
+        ip.globals["swainflight"] = {"kind": "tip", "arg": "", "id": "77"}
+        stream_event(1, "data", '{"jsonrpc":"2.0","id":77,"result":{"height":'
+                     '5127803,"hex":"00"}}\n')
+        c.ck("a reply with requests still queued arms an immediate pump",
+             any("wapumpnow" in str(m[0]).lower() for m in world.sends),
+             str(world.sends[-3:]))
+        world.sends = [m for m in world.sends if "wapumpnow" not in str(m[0]).lower()]
         ip.call("waNetPump", [])
         c.eq("the next request does NOT dial", tor_count("dial"), 1)
         c.ck("it is written down the same stream",
@@ -1598,7 +1609,129 @@ def drive(c, ip, world, sandbox):
         ip.call("waNetPump", [])
         c.eq("and the retry dials afresh", tor_count("dial"), dials + 1)
 
-        # Esplora over Tor stays one stream per request
+        # ---- A RUN OF HISTORIES GOES AS ONE BATCH (2026-09-03) ----
+        # JSON-RPC batching: the pump gathers a run of same-kind requests
+        # into one array, the server answers an array, each element goes to
+        # its member by id. Forty histories are two round trips. A server
+        # that refuses the batch is asked singly from then on, a member's own
+        # error is that member's failure, and an unanswered member is asked
+        # again alone.
+        ip.call("waNetAbort", [])
+        ip.globals["swabatch"] = ""
+        ip.call("waSetBackend", ["electrum-tor"])
+        addrs_b = ip.globals.get("swaaddresses") or {}
+        a1, a2, a3 = (str(addrs_b.get(str(k), {}).get("address", "")) for k in (1, 2, 3))
+        ip.call("waNetQueue", ["tip", ""])
+        for a in (a1, a2, a3):
+            ip.call("waNetQueue", ["history", a])
+        ip.call("waNetQueue", ["fees", ""])
+        ip.call("waNetPump", [])
+        c.eq("the tip goes alone", str((ip.globals.get("swainflight") or {}).get("kind")), "tip")
+        h = int(LCS._n(ip.globals.get("swastream")))
+        world.tor_state[h] = "connected"
+        stream_event(h, "open")
+        stream_event(h, "data", '{"jsonrpc":"2.0","id":%s,"result":{"height":'
+                     '5127820,"hex":"00"}}\n' % inflight_id())
+        ip.call("waNetPump", [])
+        rec = ip.globals.get("swainflight") or {}
+        c.eq("the three histories go as one batch", str(rec.get("kind")), "batch")
+        c.eq("and the fees stay behind them",
+             [int(LCS._n((ip.globals.get("swaqueue") or {}).get("n", 0))),
+              str((ip.globals.get("swaqueue") or {}).get("1", {}).get("kind"))],
+             [1, "fees"])
+        w = tor_last_write()
+        c.ck("the batch is one JSON array of the members' requests",
+             w.startswith("[{") and w.rstrip("\n").endswith("}]")
+             and w.count("blockchain.scripthash.get_history") == 3, w[:80])
+        c.ck("and the log says its shape, not its script hashes",
+             "-> batch of 3 history requests, ids" in log_tail(), log_tail(200))
+        members = ip.globals.get("swabatchmembers") or {}
+        ids = [str(members.get(str(k), {}).get("id")) for k in (1, 2, 3)]
+        # answered out of order, one member with a history (so a utxos request
+        # follows), one empty, one refused
+        reply = ('[{"jsonrpc":"2.0","id":%s,"result":[]},'
+                 '{"jsonrpc":"2.0","id":%s,"error":{"code":1,"message":"no such hash"}},'
+                 '{"jsonrpc":"2.0","id":%s,"result":[{"tx_hash":"%s","height":5127000}]}]\n'
+                 % (ids[1], ids[2], ids[0], "ee" * 32))
+        fails_before = int(LCS._n(ip.globals.get("swasyncfailures")))
+        stream_event(h, "data", reply)
+        c.eq("the batch reply is applied and nothing is in flight",
+             str(ip.globals.get("swainflight")), "")
+        hist = ip.globals.get("swahistory") or {}
+        c.ck("the answered history landed on its own address",
+             any(str(hist.get(str(k), {}).get("txid", "")) == "ee" * 32
+                 and str(hist.get(str(k), {}).get("address", "")) == a1
+                 for k in range(1, int(LCS._n(hist.get("n", 0))) + 1)),
+             "%s rows" % hist.get("n"))
+        q = ip.globals.get("swaqueue") or {}
+        qk = [(str(q.get(str(k), {}).get("kind")), str(q.get(str(k), {}).get("arg")))
+              for k in range(1, int(LCS._n(q.get("n", 0))) + 1)]
+        c.ck("its unspent outputs are asked for, after the fees",
+             ("utxos", a1) in qk and qk[0][0] == "fees", str(qk))
+        c.eq("the refused member counts as one failure, not the sync's",
+             int(LCS._n(ip.globals.get("swasyncfailures"))), fails_before + 1)
+        c.ck("and is named in the log", "FAILED: history " + a3 in log_tail(), log_tail(200))
+        c.eq("the stream is kept through all of it", str(ip.globals.get("swastream")), str(h))
+        # an unanswered member is asked again on its own
+        ip.call("waNetAbort", [])
+        ip.globals["swasyncfailures"] = 0
+        for a in (a1, a2):
+            ip.call("waNetQueue", ["history", a])
+        ip.call("waNetPump", [])
+        h = int(LCS._n(ip.globals.get("swastream")))
+        world.tor_state[h] = "connected"
+        stream_event(h, "open")
+        members = ip.globals.get("swabatchmembers") or {}
+        ids = [str(members.get(str(k), {}).get("id")) for k in (1, 2)]
+        stream_event(h, "data", '[{"jsonrpc":"2.0","id":%s,"result":[]},'
+                     '{"jsonrpc":"2.0","id":999,"result":[]}]\n' % ids[0])
+        q = ip.globals.get("swaqueue") or {}
+        c.eq("a member the server left out is queued again, alone",
+             [int(LCS._n(q.get("n", 0))), str(q.get("1", {}).get("arg"))], [1, a2])
+        c.ck("and the stray id is ignored and said so",
+             "id 999" in log_tail() and "ignored" in log_tail(), log_tail(200))
+        # a server that does not take batches
+        ip.call("waNetAbort", [])
+        for a in (a1, a2, a3):
+            ip.call("waNetQueue", ["history", a])
+        ip.call("waNetPump", [])
+        h = int(LCS._n(ip.globals.get("swastream")))
+        world.tor_state[h] = "connected"
+        stream_event(h, "open")
+        stream_event(h, "data", '{"jsonrpc":"2.0","id":null,"error":{"code":-32600,'
+                     '"message":"Invalid Request"}}\n')
+        q = ip.globals.get("swaqueue") or {}
+        c.eq("a refused batch puts its members back, singly and in order",
+             [str(q.get(str(k), {}).get("arg")) for k in range(1, 4)], [a1, a2, a3])
+        c.eq("and nothing is counted against the sync",
+             int(LCS._n(ip.globals.get("swasyncfailures"))), 0)
+        c.eq("and batching is off for this server", str(ip.globals.get("swabatch")), "false")
+        c.ck("and the log says so", "did not take a batch of 3" in log_tail(), log_tail(200))
+        ip.call("waNetPump", [])
+        c.eq("the next request goes alone",
+             str((ip.globals.get("swainflight") or {}).get("kind")), "history")
+        c.ck("as a single object", tor_last_write().startswith("{"), tor_last_write()[:40])
+        # a batch that fails in transit is split, not retried whole
+        ip.call("waNetAbort", [])
+        ip.globals["swabatch"] = ""
+        for a in (a1, a2):
+            ip.call("waNetQueue", ["history", a])
+        ip.call("waNetPump", [])
+        c.eq("batching is back on a new backend or when told",
+             str((ip.globals.get("swainflight") or {}).get("kind")), "batch")
+        h = int(LCS._n(ip.globals.get("swastream")))
+        stream_event(h, "error", "connection reset")
+        q = ip.globals.get("swaqueue") or {}
+        c.eq("a batch lost in transit is split into its members",
+             [int(LCS._n(q.get("n", 0))), str(q.get("1", {}).get("kind"))], [2, "history"])
+        c.eq("without counting a failure", int(LCS._n(ip.globals.get("swasyncfailures"))), 0)
+        ip.globals["swabatch"] = ""
+        # a new backend may take a batch this one refused
+        ip.globals["swabatch"] = "false"
+        ip.call("waSetBackend", ["electrum-tor"])
+        c.eq("a backend change forgets a refusal", str(ip.globals.get("swabatch")), "")
+
+        # Esplora over Tor keeps its stream too
         ip.call("waNetAbort", [])
         ip.call("waSetBackend", ["esplora-tor"])
         ip.call("waNetQueue", ["tip", ""])
@@ -1606,18 +1739,95 @@ def drive(c, ip, world, sandbox):
         h = int(LCS._n(ip.globals.get("swastream")))
         world.tor_state[h] = "connected"
         stream_event(h, "open")
-        c.ck("Esplora writes an HTTP request", tor_last_write().startswith("GET "),
-             tor_last_write()[:40])
-        stream_event(h, "data", "HTTP/1.0 200 OK\r\nContent-Type: text/plain\r\n"
-                     "\r\n5127809")
-        stream_event(h, "closed")
-        c.eq("the HTTP reply lands when the peer closes",
+        c.ck("Esplora writes an HTTP/1.1 request that asks to keep the stream",
+             tor_last_write().startswith("GET ") and " HTTP/1.1\r\n" in tor_last_write()
+             and "keep-alive" in tor_last_write().lower(), tor_last_write()[:60])
+        # THE REPLY DECODER, shape by shape (2026-09-03). Content-Length first,
+        # in two pieces split inside the body.
+        stream_event(h, "data", "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n"
+                     "Content-Length: 7\r\n\r\n51")
+        c.ck("a Content-Length reply is not delivered short",
+             str(ip.globals.get("swainflight")) != "")
+        stream_event(h, "data", "27809")
+        c.eq("and lands when the length is met",
              str(ip.globals.get("swatipheight")), "5127809")
-        c.eq("and the Esplora stream is NOT kept", str(ip.globals.get("swastream")), "")
-        # ...and the Network screen tells the person choosing which is cheaper
+        c.eq("and the Esplora stream IS kept", str(ip.globals.get("swastream")), str(h))
+        c.eq("with nothing left in the buffer", str(ip.globals.get("swabuffer")), "")
+        dials = tor_count("dial")
+        # chunked, split at the worst places: inside a size line, inside a
+        # chunk, across the final CRLF
+        ip.call("waNetQueue", ["fees", ""])
+        ip.call("waNetPump", [])
+        c.eq("the next Esplora request reuses the stream", tor_count("dial"), dials)
+        c.ck("and is written to it", "fee-estimates" in tor_last_write(),
+             tor_last_write()[:60])
+        stream_event(h, "data", "HTTP/1.1 200 OK\r\ntransfer-encoding: chunked\r\n"
+                     "\r\n6\r\n{\"1")
+        stream_event(h, "data", "\":1\r\n8\r")
+        c.ck("a chunked reply is not delivered until its last chunk",
+             str(ip.globals.get("swainflight")) != "")
+        stream_event(h, "data", "\n0,\"6\":5}\r\n0\r\n\r\n")
+        c.eq("chunks are joined into the body",
+             str((ip.globals.get("swafeerates") or {}).get("6")), "5")
+        c.eq("and the stream is still kept", str(ip.globals.get("swastream")), str(h))
+        # a chunk extension and a trailer are skipped, not read as data
+        ip.call("waNetQueue", ["tip", ""])
+        ip.call("waNetPump", [])
+        stream_event(h, "data", "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n"
+                     "4;ext=1\r\n5127\r\n3\r\n810\r\n0\r\nX-Trailer: yes\r\n\r\n")
+        c.eq("a chunk extension and a trailer are skipped",
+             str(ip.globals.get("swatipheight")), "5127810")
+        # Connection: close forgets the stream after delivering
+        ip.call("waNetQueue", ["tip", ""])
+        ip.call("waNetPump", [])
+        stream_event(h, "data", "HTTP/1.1 200 OK\r\nConnection: close\r\n"
+                     "Content-Length: 7\r\n\r\n5127811")
+        c.eq("a reply that says close is delivered", str(ip.globals.get("swatipheight")),
+             "5127811")
+        c.eq("and its stream is forgotten", str(ip.globals.get("swastream")), "")
+        c.ck("and closed", ("close", h) in world.tor)
+        # no framing at all: the body ends when the peer closes, as it always did
+        ip.call("waNetQueue", ["tip", ""])
+        ip.call("waNetPump", [])
+        c.eq("the next request dials", tor_count("dial"), dials + 1)
+        h = int(LCS._n(ip.globals.get("swastream")))
+        world.tor_state[h] = "connected"
+        stream_event(h, "open")
+        stream_event(h, "data", "HTTP/1.0 200 OK\r\n\r\n5127812")
+        c.ck("an unframed reply waits for the close",
+             str(ip.globals.get("swainflight")) != "")
+        stream_event(h, "closed")
+        c.eq("and lands on it", str(ip.globals.get("swatipheight")), "5127812")
+        c.eq("without a failure", int(LCS._n(ip.globals.get("swasyncfailures"))), 0)
+        c.eq("and its stream is not kept", str(ip.globals.get("swastream")), "")
+        # a refusal is known at the head, and retried like any failure
+        ip.call("waNetQueue", ["tip", ""])
+        ip.call("waNetPump", [])
+        h = int(LCS._n(ip.globals.get("swastream")))
+        world.tor_state[h] = "connected"
+        stream_event(h, "open")
+        stream_event(h, "data", "HTTP/1.1 404 Not Found\r\nContent-Length: 9\r\n\r\nnot found")
+        c.ck("a 404 is a failure named by its status, retried once",
+             "retrying tip" in log_tail() and "404" in log_tail(), log_tail(200))
+        c.eq("and its stream is closed", str(ip.globals.get("swastream")), "")
+        ip.call("waNetAbort", [])
+        # a framed reply cut off by the peer is a failure, not a short answer
+        ip.call("waNetQueue", ["tip", ""])
+        ip.call("waNetPump", [])
+        h = int(LCS._n(ip.globals.get("swastream")))
+        world.tor_state[h] = "connected"
+        stream_event(h, "open")
+        stream_event(h, "data", "HTTP/1.1 200 OK\r\nContent-Length: 7\r\n\r\n51")
+        stream_event(h, "closed")
+        c.ck("a framed reply the peer cut short is retried, not delivered",
+             "retrying tip" in log_tail() and "middle of a framed reply" in log_tail(),
+             log_tail(200))
+        c.eq("and the tip is untouched", str(ip.globals.get("swatipheight")), "5127812")
+        ip.call("waNetAbort", [])
+        # ...and the Network screen says a sync is one rendezvous on both
         priv_tor = str(ip.call("waPrivacyText", []))
-        c.ck("the privacy text says Electrum over Tor uses one stream per sync",
-             "one stream" in priv_tor and "stream per request" in priv_tor)
+        c.ck("the privacy text says both Tor transports run a sync down one stream",
+             "one stream" in priv_tor and "keep-alive" in priv_tor)
         # the abort says what it dropped
         ip.call("waNetQueue", ["fees", ""])
         ip.call("waNetQueue", ["tip", ""])
@@ -1860,6 +2070,14 @@ def drive(c, ip, world, sandbox):
     # an EMPTY queue, because a sync will no longer start behind a running one
     ip.globals["swaqueue"] = {"n": 0}
     ip.globals["swainflight"] = ""
+    # ...and a STALE tip and fee estimate, so the sync asks for both; and a
+    # backend, which the blocks before this one leave set and a block run on
+    # its own does not
+    ip.globals["swatipat"] = ""
+    ip.globals["swafeesat"] = ""
+    if str(ip.globals.get("swabackend")) in ("", "offline"):
+        ip.globals["swanetwork"] = "testnet"
+        ip.call("waSetBackend", ["electrum-clear"])
     try:
         ip.call("waSync", [])
     except LCS.Thrown:
@@ -1878,6 +2096,36 @@ def drive(c, ip, world, sandbox):
     # follow only the histories that turn out non-empty (2026-09-02)
     c.eq("and it is tip + fees + one history per address, not two per address",
          queued, 2 + n_addr)
+    c.ck("and the log counts what was queued, not a formula",
+         ("sync: queued %d request(s)" % queued) in _fld(world, "lg_text"),
+         _fld(world, "lg_text")[-160:])
+    # ONLY WHAT IS STALE (2026-09-03). Every engine log shows the Test button
+    # fetching the tip seconds before the sync fetched it again; a sync now
+    # keeps a tip under thirty seconds old and a fee estimate under ten
+    # minutes old, which is two round trips fewer over Tor.
+    ip.globals["swaqueue"] = {"n": 0}
+    now_ms = int(LCS._n(ip.eval_expr("the milliseconds", {})))
+    ip.globals["swatipat"] = now_ms
+    ip.globals["swafeesat"] = now_ms
+    ip.call("waSync", [])
+    c.eq("a sync with a fresh tip and fee estimate asks only for histories",
+         int(LCS._n((ip.globals.get("swaqueue") or {}).get("n", 0))), n_addr)
+    kinds = [str((ip.globals.get("swaqueue") or {}).get(str(k), {}).get("kind"))
+             for k in range(1, n_addr + 1)]
+    c.ck("every one of them a history", all(k == "history" for k in kinds),
+         ",".join(sorted(set(kinds))))
+    ip.globals["swaqueue"] = {"n": 0}
+    ip.globals["swatipat"] = now_ms - int(LCS._n(ip.constants.get("kWaTipFresh", 0))) - 1
+    ip.globals["swafeesat"] = now_ms
+    ip.call("waSync", [])
+    c.eq("a tip past its freshness is asked for again, the fees not",
+         [str((ip.globals.get("swaqueue") or {}).get("1", {}).get("kind")),
+          int(LCS._n((ip.globals.get("swaqueue") or {}).get("n", 0)))],
+         ["tip", 1 + n_addr])
+    ip.globals["swaqueue"] = {"n": 0}
+    ip.globals["swatipat"] = ""
+    ip.globals["swafeesat"] = ""
+    ip.call("waSync", [])
     try:
         ip.call("waSync", [])
         c.ck("a second Sync behind a running one is refused", False,
@@ -3130,6 +3378,47 @@ def drive(c, ip, world, sandbox):
             world.clickline = ""
         c.eq("a right-click on a button touches no table",
              int(LCS._n(tbl.props.get("hilitedline"))), 3)
+        # ...AND THE ITEM ACTS ON THAT ROW. "Copy selected address" routed to
+        # "ad receive" - the receive-chain TOGGLE - until 2026-09-03, and the
+        # route check above could not tell: the toggle is a real button. The
+        # copy, the sign-with-it and the coins outpoint copy are the router's
+        # own now, and each is driven against the selected row.
+        # a field's text is its content (the world keeps a painted field
+        # there; props hold what `set the text of` writes, the buttons' menus)
+        rows_a = _fld(world, "ad_table").split("\n")
+        row3 = rows_a[2] if len(rows_a) > 2 else ""
+        addr3 = row3.split("\t")[1].strip() if "\t" in row3 else ""
+        c.ck("row 3 of the table names an address",
+             addr3.startswith(("tb1", "m", "n", "2")), row3[:60])
+        world.clipboard.clear()
+        ip.call("waMenuPick", ["menu_addresses", "Copy selected address"])
+        c.eq("Copy selected address copies the SELECTED address",
+             str(world.clipboard.get("text", "")), addr3)
+        ip.call("waMenuPick", ["menu_addresses", "Sign a message with it"])
+        c.eq("Sign a message with it fills the Tools address box",
+             _fld(world, "tl_msgAddr"), addr3)
+        c.eq("and shows the Tools screen", str(ip.globals.get("swascreen")), "tools")
+        tbl.props["hilitedline"] = ""
+        try:
+            ip.call("waMenuPick", ["menu_addresses", "Copy selected address"])
+            c.ck("with no row selected the copy says so", False, "it copied")
+        except LCS.Thrown as exc:
+            c.ck("with no row selected the copy says so",
+                 "select an address row" in str(exc.msg), str(exc.msg)[:80])
+        # the coins outpoint, on whatever coin the boot planted
+        click(ip, world, "nv_cn")
+        ctbl = world.anywhere("cn_table")
+        rows = _fld(world, "cn_table").split("\n") if ctbl is not None else []
+        if len(rows) >= 2 and rows[1].strip():
+            ctbl.props["hilitedline"] = 2
+            world.clipboard.clear()
+            ip.call("waMenuPick", ["menu_coins", "Copy selected outpoint"])
+            got = str(world.clipboard.get("text", ""))
+            c.ck("Copy selected outpoint copies a txid:vout",
+                 re.match(r'^[0-9a-f]{64}:\d+$', got) is not None, got[:80])
+        else:
+            c.ck("Copy selected outpoint copies a txid:vout (no coin to select)",
+                 True)
 
     # ---- the log recorded all of it --------------------------------------
     click(ip, world, "nv_lg")
