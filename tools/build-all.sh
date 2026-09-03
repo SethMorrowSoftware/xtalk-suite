@@ -187,6 +187,15 @@ run_gates() {
   # wrong alphabet or an inverted checksum, which on this surface would produce
   # a valid-looking WRONG address. Slow by nature (every bit of the bech32
   # checksum is interpreted arithmetic), so it runs after the fast gates.
+  # The wallet's UI version must FOLLOW its builder: coin-wallet rebuilds its
+  # window only when kWaUiVersion changes, and a week of new controls shipped
+  # under a constant nobody bumped, so no existing stack ever built them
+  # (2026-09-04). The constant is a fingerprint of the waBuild* handlers now,
+  # and this refuses a stale one (--fix writes the right value).
+  if [ -f "$m/tools/check-wallet-ui-version.py" ]; then
+    echo "== $m: tools/check-wallet-ui-version.py =="
+    ( cd "$m" && python3 tools/check-wallet-ui-version.py )
+  fi
   if [ -f "$m/tools/check-script-vectors.py" ]; then
     echo "== $m: tools/check-script-vectors.py =="
     ( cd "$m" && python3 tools/check-script-vectors.py --check )

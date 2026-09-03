@@ -978,6 +978,33 @@ def drive(c, ip, world, sandbox):
     put_field("sd_to", "%s,0.0005" % first)
     click(ip, world, "sd_sign")
 
+    # ---- the window follows its builder (2026-09-04) ------------------------
+    # waBuild skips the build when the stack's stored uUiVersion equals
+    # kWaUiVersion, which is what let a week of new controls ship without
+    # ever appearing in an existing stack: the constant never changed. It is
+    # a fingerprint of the waBuild* handlers now (tools/check-wallet-ui-version.py
+    # holds it), so an updated stack stores a version the new script does not
+    # carry and rebuilds. Pinned here the only way that matters: a control
+    # taken away comes back when the stored version is stale, and stays away
+    # when it is current.
+    lock_btn = world.anywhere("tl_lock")
+    c.ck("the boot stored the builder's own version",
+         str(world.stack_props.get("uuiversion", "")) == str(ip.constants.get("kWaUiVersion", "?")),
+         "stored %r, constant %r" % (world.stack_props.get("uuiversion"), ip.constants.get("kWaUiVersion")))
+    c.ck("kWaUiVersion is a fingerprint, not a hand-bumped number",
+         str(ip.constants.get("kWaUiVersion", "")).startswith("ui-"), str(ip.constants.get("kWaUiVersion")))
+    if lock_btn is not None:
+        world.current().controls.remove(lock_btn)
+        ip.call("waBuild", [])
+        c.ck("a current version does not rebuild (the Lock button stays gone)",
+             world.anywhere("tl_lock") is None, "")
+        world.stack_props["uuiversion"] = "coinwallet-1"
+        ip.call("waBuild", [])
+        c.ck("a stale version rebuilds: the Lock button is back",
+             world.anywhere("tl_lock") is not None, "")
+        c.ck("and the stored version is the builder's again",
+             str(world.stack_props.get("uuiversion", "")) == str(ip.constants.get("kWaUiVersion", "?")), "")
+
     # ---- the RBF fee bump BUILDS the replacement --------------------------
     #
     # This is the leg that used to be advice. waBumpAdvice computed the floor
