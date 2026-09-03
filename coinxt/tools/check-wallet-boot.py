@@ -1270,6 +1270,11 @@ def drive(c, ip, world, sandbox):
         first_spk = REF.spk_for_address("testnet", first).hex()
         chg = [(i, o) for i, o in enumerate(d1["vout"]) if o["scriptpubkey"] != first_spk]
         c.eq("the spend had one change output", len(chg), 1)
+        # the payment went to this wallet's own first address, so BOTH outputs
+        # come back as coins: the change and the payment itself
+        mine = [(i, o) for i, o in enumerate(d1["vout"])
+                if ip.call("waIsMine", [REF.address_for_spk("testnet", bytes.fromhex(o["scriptpubkey"]))]) is True]
+        c.eq("both outputs of a self-payment are this wallet's", len(mine), 2)
         if chg:
             ci, co = chg[0]
             c.ck("which is now a coin of this wallet at 0 confirmations",
@@ -1279,17 +1284,17 @@ def drive(c, ip, world, sandbox):
                      and ip.call("waIsMine", [str(r["address"])]) is True
                      for r in _coins(after)),
                  repr(sorted(offered)))
-        c.eq("so the offered count moved by the inputs spent and the change made",
-             len(offered), n_before - len(ins1) + len(chg))
+        c.eq("so the offered count moved by the inputs spent and the outputs that came back",
+             len(offered), n_before - len(ins1) + len(mine))
         log = _fld(world, "lg_text")
         c.ck("and the log says what was spent and what came back",
              ("spent %d coin(s)" % len(ins1)) in log and "came back" in log, repr(log[-200:]))
         bal = ip.globals.get("swabalance") or {}
         c.eq("the confirmed balance no longer counts the spent coins",
              int(LCS._n(bal.get("confirmed", 0))), conf_before - spent_conf)
-        c.eq("and the change is counted as pending",
+        c.eq("and what came back is counted as pending",
              int(LCS._n(bal.get("unconfirmed", 0))),
-             pend_before - spent_pend + sum(int(o["value"]) for _, o in chg))
+             pend_before - spent_pend + sum(int(o["value"]) for _, o in mine))
         click(ip, world, "nv_cn")
         tbl = _fld(world, "cn_table")
         c.ck("the Coins screen marks each spent coin SPT",
