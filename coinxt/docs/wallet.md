@@ -91,7 +91,16 @@ rate in sat/vB with a plain-language description of what that rate means, four
 coin-selection strategies plus manual coin control, opt-in RBF, a locktime, and
 a review panel that shows every output in full, the fee, the change address and
 which coins are being spent, before anything is signed. It can also stop at an
-unsigned PSBT.
+unsigned PSBT. Since 2026-09-04 a line reading `note: some text` (or
+`data: hex`) adds one OP_RETURN output of value 0 carrying those bytes - a note
+to the chain - sized, selected for, reviewed, signed and fee-bumped like any
+other output; one per transaction, because a second is what most nodes refuse
+to relay, and anything over eighty bytes is warned about for the same reason.
+Inspect reads such outputs back as text, and reads an Ordinals inscription
+(content type, size, body) out of any witness that carries one. A BIP-352
+silent payment address (`sp1...`, `tsp1...`) goes on a line like any other
+since the same day; its taproot output is derived from the coins chosen to
+fund it, so it is signed here, never as a PSBT (the section below).
 
 **Coins.** The UTXO set with freeze and thaw, ticking for manual selection, and
 a hand-entry path so an offline wallet can be told what it owns.
@@ -331,6 +340,191 @@ the carry, the restore, the button and the menu route - is gated headlessly;
 the swap itself (`set the script of this stack` from inside one of that
 script's own handlers) is engine work and has not run on an engine.
 
+## Signed messages, in both formats
+
+The Tools screen signs in the 2011 format (the header that names the key's
+shape, the one Electrum and every explorer read) for legacy, nested and
+native SegWit addresses, and since 2026-09-04 in **BIP-322** as well: always
+for taproot, which the 2011 format cannot express, and for native SegWit
+when the box beside Verify is ticked. BIP-322 proves an address by SPENDING
+it - a virtual transaction pays the message's tagged hash to the address, a
+second one spends that output to OP_RETURN, and the signature is the second
+one's witness, base64 - so a verifier checks it the way a node would. Verify
+reads the format off the signature (the 2011 form is exactly 65 bytes; a
+witness stack never is). The vector gate holds the BIP's published message
+hashes, to_spend txids and signatures for its test key, and both shapes
+against the reference byte for byte. Not run on an engine.
+
+## Child pays for parent
+
+The History screen's Bump button replaces a transaction when it can (BIP-125,
+for a spend this wallet built with the opt-in and some change). Since
+2026-09-04 it does the other thing when it cannot: for a transaction this
+wallet did not build - a stuck incoming payment, typically - or one built
+without the opt-in or without change, if this wallet holds an unconfirmed
+output of it, Bump builds a CHILD that spends that output back to the
+wallet's next change address at a fee covering the parent's bytes as well as
+its own at the Send screen's rate. A miner takes the pair as a package. The
+parent's size comes from its bytes (fetched like Inspect fetches them, or
+from the weight Esplora reports); its fee is known only where the backend
+says it, and when it is not the child pays for both sizes in full and says
+so. The child signals RBF so a rate that proves too low can be raised. Not
+run on an engine.
+
+## Silent payments, the sending side
+
+Since 2026-09-04 the Pay-to box takes a **BIP-352 silent payment address**
+(`sp1...` on mainnet, `tsp1...` on the test networks) on a line like any
+other. Such an address is two public keys, not a script: the output that
+actually receives the coins is a taproot output derived from the private
+keys of the coins that fund the transaction and its smallest outpoint, so
+paying the same address twice lands on two unrelated outputs and only the
+payee's scan key can find either. That shape decides what the wallet does.
+The parser keeps the two keys and gives the line a taproot kind, which is
+all the sizer and the dust rule need; coin selection runs as usual; and
+only then, with the inputs known, is the output derived (a taproot input's
+key is the tweaked one, negated to even y as the BIP says) and its script
+written into the payment. The review names the derived address, and Inspect
+shows a plain taproot output, because that is all the chain ever sees. It is
+refused where it cannot be honest: as a PSBT and from a watch-only wallet
+(there is no script to hand a signer, only a derivation only the key holder
+can repeat), and from a multisig wallet, whose P2WSH inputs take no part in
+the BIP at all. The Tools inspector explains one instead of showing a
+scriptPubKey it does not have.
+
+The derivation is wallet-core's, staged so the vector gate can hold each
+step to the BIP's published sending vectors (`tests/bip352-sending-vectors.json`,
+the published file's sending half): the address decode under the BIP's own
+1023-character waiver on bech32m, the input key sum done in hex mod n (the
+native tweak-add refuses a zero intermediate, and one of the BIP's vectors
+is exactly that), the input hash over the smallest outpoint, the shared
+secret, and the outputs with their per-scan-key counter, including the
+three refusals - no eligible input, a zero key sum, and more than 2323
+outputs to one scan key. Which inputs take part is the receiver's rule, and
+the oracle implements that side of it too, checked against the vectors'
+own input lists. Receiving - scanning the chain for payments to a scan key
+of this wallet's own - is not built, and the reason is a library gap rather
+than a design choice: the receiver sums the INPUT PUBLIC KEYS of every
+transaction it scans, which is point addition, and coinxt exposes scalar
+multiplication (ECDH), scalar tweaks and point compression but no
+point-plus-point. That is one native handler away (a `cxPubkeyCombine`
+over secp256k1_ec_pubkey_combine, with binaries refreshed on every
+platform), and until it lands the wallet says so wherever it mentions the
+feature. Not run on an engine.
+
+## Runes, read only
+
+Since 2026-09-04 Inspect reads a **runestone** - the Runes protocol's
+OP_RETURN OP_13 output - and prints what it says under the output: the
+etching with its name (spacers as dots, since the source cannot carry the
+bullet), symbol, divisibility, premine and open-mint terms; the mint; the
+pointer; every edict as rune id, amount and destination output; and the
+CENOTAPH verdict with its flaws, because a malformed runestone burns the
+runes it touches and a reader that stayed quiet about that would be lying by
+omission. The numbers are 128-bit, so wallet-core keeps them as decimal
+strings and never lets one near a double: LEB128 decoding, the delta-encoded
+edict ids, the modified-base-26 name and the amount display are all digit
+loops. Read only is the whole of it - no etching, no minting, no balances,
+which need an indexer that has seen every block since the protocol began.
+The vector gate holds the reader to the reference implementation's own test
+cases (names from `A` to the 2^128 - 1 edge, the spacer and divisibility
+tables, the all-tags etching, the specification's delta-encoding example,
+and each cenotaph rule by name). Not run on an engine.
+
+## Inscriptions, by commit and reveal
+
+Since 2026-09-04 the Tools screen inscribes. The protocol has two steps and
+so does the button: with `inscribe: text/plain; hello` (or `inscribehex:
+<type>; <hex>`) in the paste box, Inscribe prepares the **commit** - a
+taproot output whose single hidden leaf is the ord envelope
+(`<key> OP_CHECKSIG OP_FALSE OP_IF "ord" <type> <body> OP_ENDIF`) keyed by
+the next unused receive key; the commit address joins the wallet's own
+address list so sync watches it, the recipe is saved with the wallet so a
+reopen rebuilds it, and the report says how much to fund it with. Once the
+coin is seen, Inscribe with the box empty signs the **reveal**: one input
+spent through the leaf (the witness is the Schnorr signature by the internal
+key, the leaf script and the control block), one output to the next receive
+address, which receives the first sat and with it the inscription - and
+that output is frozen on the Coins screen from the moment the reveal is
+signed, so no ordinary spend can hand the inscribed sat to a miner as fee
+or to a payee who never asked; unfreeze it when you mean to move the
+inscription. Inspect on the reveal reads the envelope back out of its
+witness, which is the loop this wallet could already close from the other
+end. The pieces are
+wallet-core's: a leaf hash with a real compact size (coinxt's stops at 252
+bytes, and an inscription body is exactly the script that exceeds it), the
+envelope in pushes of at most 520 bytes, the commit (tweak by the leaf,
+control block, script), the script-path sighash and the witness. The vector
+gate holds each to the oracle, the boot gate drives both presses and
+rebuilds the reveal's signature from the same key byte for byte. A commit
+coin spent any other way is still spendable - waSignSpend signs any coin of
+this wallet through its leaf - but the reveal builder is the intended path,
+and a silent payment funded from one tweaks by the leaf as BIP-352 requires.
+Not run on an engine.
+
+## Coins locked until a block
+
+The same one-leaf machinery, turned the other way, is a vault. Since
+2026-09-04 `lock: <height>` in the Tools paste box and the Lock button
+prepare an address whose only leaf is `<height> OP_CHECKLOCKTIMEVERIFY
+OP_DROP <receive key> OP_CHECKSIG` under the NUMS point as internal key -
+so there is no key-path spend to go around it, and whatever is paid there
+cannot move before that block, not by this wallet and not by anyone holding
+its seed, because consensus refuses the only script that releases it. The
+address joins the wallet's list and the recipe is saved with the wallet,
+like an inscription commit. The Coins screen marks such a coin `LCK`; while
+the tip is below the height it is withheld from selection (a transaction
+every node would reject is not a spend), and from the height on the Send
+screen spends it like any other coin: it raises the locktime itself, says
+so in the review, and signs through the leaf. The boot gate drives the
+button, plants a coin, checks the withholding on both sides of the height,
+and rebuilds the release's signature from the same key. Not run on an
+engine.
+
+## Lightning invoices, read out
+
+Since 2026-09-04 Inspect and Validate read a **BOLT11 Lightning invoice**
+and say what it asks before anyone pays it somewhere else: the network, the
+amount (the invoice's unit is bitcoin with a multiplier letter; the wallet
+prints millisatoshi and the whole-satoshi part in its own unit), the payee's
+node key recovered from the signature, the description or its hash, the
+payment hash, when it was issued and when it expires, the final CLTV, the
+on-chain fallback address if it carries one (which this wallet CAN pay),
+route hints hop by hop, feature bits and payment metadata. It refuses what
+the specification calls invalid, naming the reason: a bad checksum or
+mixed case, a bad amount or multiplier, sub-millisatoshi precision, an
+unknown required feature bit, a missing payment hash, secret or
+description, a signature that does not recover, or one that disagrees with
+the node key the invoice names. The reader is wallet-core's: the long
+bech32 decoder from the silent-payment work, the 5-bit field walk, and
+coinxt's signature recovery. The vector gate holds every field of every
+example in the specification (`tests/bolt11-vectors.json`) and each of its
+invalid examples. A BIP-21 URI that carries a `lightning=` parameter - the
+unified QR most Lightning wallets now show - is read as both halves, the
+on-chain address and amount with the invoice beneath, and one with no
+address at all is read as the invoice alone. This wallet holds no channels
+and cannot pay an invoice; it says so on the same screen. Not run on an
+engine.
+
+## Testnet4, and labels that travel
+
+Since 2026-09-04 the Wallet screen offers **testnet4** beside testnet. It is
+a different chain with testnet3's bytes everywhere (prefixes, WIF, extended
+keys, coin type), so the backend is the only thing that tells them apart:
+Blockstream's mirrors index testnet3 and are refused for it by name, with
+`mempool.space` - the built-in second Esplora host, which serves `/testnet4`
+- offered as the remedy; the built-in Electrum servers are refused too.
+Testnet3 is being retired, so this is where new test coins will come from.
+Not run on an engine, nor against mempool.space's testnet4 index.
+
+The Settings screen exports and imports labels in **BIP-329**, one JSON
+object per line, the format Sparrow, Bitcoin Core and the rest read. Address
+labels go out as `addr` records; frozen coins as `output` records with
+`spendable: false`; both come back, and the record types this wallet keeps
+no home for (tx, input, pubkey, xpub) are counted and skipped, never
+refused. The file sits beside the wallet file, named for it. The gate drives
+the round trip, the BIP's own example lines, and the refusals.
+
 ## Custody, said plainly
 
 OXT script variables are not locked memory. A seed typed into this stack can be
@@ -415,3 +609,40 @@ cd coinxt && python3 tools/check-wallet-vectors.py
 
 It builds the native shim from `native/coinxt.c`, so it needs a C compiler; with
 none, it runs the constant checks and says loudly that it skipped the rest.
+
+## The next engine pass, and what each step proves
+
+Everything dated 2026-09-04 above says "not run on an engine". The order
+below is shortest feedback first; each line names the honesty label it
+flips when it comes back clean.
+
+1. **Boot, and the log.** Open the stack; the boot self-check prints its
+   own record. Green flips nothing new but is the precondition for all of it.
+2. **Tools, paste box.** Paste any `lnbc...` invoice and press Inspect: the
+   payee node key, amount and fields. Then a mainnet transaction id known
+   to carry a runestone (any Runes etching or transfer; block 840,000
+   onward) with a backend chosen on Network, press Inspect, and read the
+   runestone under its OP_RETURN output. Both flip their sections' labels.
+3. **Tools, `inscribe: text/plain; hello` and Inscribe.** The commit
+   address appears and joins the Addresses screen; save the wallet, reopen
+   it, and the commit is still there (the recipe line). Flips the commit
+   half of the inscription section. Funding it on signet or testnet4 and
+   pressing Inscribe again with the box empty, then Broadcast, is the reveal
+   half - an explorer that reads inscriptions will show it at `<txid>i0`.
+4. **Tools, `lock: <height a few blocks ahead>` and Lock.** Pay the address
+   from the Send screen; the Coins screen shows `LCK`; before the height a
+   MAX spend leaves it out, after the height a manual spend of it signs with
+   the raised locktime, and a node accepts the broadcast. Flips the timelock
+   section.
+5. **Send, a `tsp1...` line.** Any silent payment address for the network
+   (a wallet that supports BIP-352 receiving can give one); Preview shows
+   the derived `tb1p...` output, Sign, Broadcast, and the receiving wallet
+   finds it. Flips the silent-payment section. Paying one from a mainnet
+   wallet is real money to an address only the payee can find; test first.
+6. **Tools, BIP-322.** Sign with a taproot wallet's first address and verify
+   the result in Bitcoin Core's `verifymessage` or Sparrow. Flips the
+   signed-messages section.
+
+What comes back from an engine goes into the section it belongs to, dated,
+and into `CLAUDE.md` - the convention the rest of this file follows.
+

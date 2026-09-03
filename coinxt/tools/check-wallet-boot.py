@@ -105,6 +105,7 @@ import ctypes
 import hashlib
 import hmac
 import importlib.util
+import json
 import os
 import re
 import shutil
@@ -547,6 +548,12 @@ def plant_utxos(ip, world):
     return True
 
 
+def unlst_boot(a):
+    """A cw list (an array with "n") as a Python list of its records."""
+    n = int(LCS._n(a.get("n", 0) or 0)) if isinstance(a, dict) else 0
+    return [a.get(str(i), "") for i in range(1, n + 1)]
+
+
 def _fld(world, name):
     ctl = world.anywhere(name)
     return "" if ctl is None else ctl.content
@@ -804,6 +811,173 @@ def drive(c, ip, world, sandbox):
              all(o["value"] >= 294 for o in dec["vout"]),
              repr([o["value"] for o in dec["vout"]]))
 
+    # ---- a note to the chain: OP_RETURN as a payment line (2026-09-04) ----
+    # "note: text" or "data: hex" in the Pay-to box becomes one OP_RETURN
+    # output of value 0, carried as a payment record so sizing, selection,
+    # review, signing and the fee bump see nothing new. The output's size is
+    # in its kind ("nulldata:N"); the oracle sizes the same spend the same way.
+    put_field("sd_to", "%s,0.0005\nnote: hello, chain" % first)
+    click(ip, world, "sd_preview")
+    out = _fld(world, "sd_out")
+    c.ck("the review names the data output and shows the note",
+         "OP_RETURN" in out and "12 bytes" in out and 'text "hello, chain"' in out,
+         repr(out[:200]))
+    click(ip, world, "sd_sign")
+    raw_n = str(ip.globals.get("swalastraw", ""))
+    c.ck("a spend with a note signs", len(raw_n) > 200, "%d hex chars" % len(raw_n))
+    if len(raw_n) > 200:
+        dec_n = REF.tx_decode(bytes.fromhex(raw_n))
+        nulls = [o for o in dec_n["vout"] if o["scriptpubkey"].startswith("6a")]
+        c.eq("exactly one OP_RETURN output", len(nulls), 1)
+        if nulls:
+            c.eq("of value 0", nulls[0]["value"], 0)
+            c.eq("carrying the note's bytes",
+                 nulls[0]["scriptpubkey"], REF.spk_op_return(b"hello, chain").hex())
+        c.ck("the other outputs still clear dust",
+             all(o["value"] >= 294 for o in dec_n["vout"]
+                 if not o["scriptpubkey"].startswith("6a")),
+             repr([o["value"] for o in dec_n["vout"]]))
+        # the sizer counted it: the wallet's vsize and the oracle's agree on
+        # a spend with a data output of this length
+        kinds = ["p2wpkh"] * (len(dec_n["vout"]) - 1) + ["nulldata:12"]
+        want_vs = REF.estimate_vsize(["p2wpkh"] * len(dec_n["vin"]), kinds)
+        c.ck("the estimated vsize allows for the data output",
+             abs(int(dec_n["vsize"]) - want_vs) <= 2,
+             "decoded %s vs estimated %d" % (dec_n.get("vsize"), want_vs))
+        # ...and Inspect reads it back as text
+        insp = str(ip.call("waInspectRaw", [raw_n]))
+        c.ck("Inspect shows the OP_RETURN output as text",
+             'OP_RETURN text "hello, chain"' in insp, insp[-300:])
+    # the refusals, each by name
+    for label, text, want in (
+            ("two notes are refused - a second OP_RETURN does not relay",
+             "%s,0.0005\nnote: one\nnote: two" % first, "only one OP_RETURN"),
+            ("data: with odd hex is refused",
+             "%s,0.0005\ndata: abc" % first, "even number"),
+            ("data: with non-hex is refused",
+             "%s,0.0005\ndata: zz" % first, "0-9 a-f"),
+            ("an empty note is refused",
+             "%s,0.0005\nnote:" % first, "empty")):
+        put_field("sd_to", text)
+        try:
+            ip.call("waParsePayments", [])
+            c.ck(label, False, "accepted")
+        except LCS.Thrown as exc:
+            c.ck(label, want in str(exc.msg), str(exc.msg)[:100])
+    # a long note is offered with a warning, not refused
+    put_field("sd_to", "%s,0.0005\nnote: %s" % (first, "x" * 100))
+    click(ip, world, "sd_preview")
+    out = _fld(world, "sd_out")
+    c.ck("a note over 80 bytes is warned about, not refused",
+         "OVER 80 BYTES" in out and "100 bytes" in out, repr(out[:200]))
+    # data: hex, and a note-only spend (everything but the fee comes back)
+    put_field("sd_to", "data: deadbeef")
+    pays = ip.call("waParsePayments", [])
+    rec = pays.get("1", {}) if isinstance(pays, dict) else {}
+    c.eq("data: hex becomes a nulldata payment of that many bytes",
+         [str(rec.get("kind")), str(rec.get("script")), int(LCS._n(rec.get("value", 1)))],
+         ["nulldata:4", REF.spk_op_return(bytes.fromhex("deadbeef")).hex(), 0])
+    # the inscription reader, on an envelope the oracle builds
+    env = (b"\x00\x63" + REF.push(b"ord") + REF.push(b"\x01")
+           + REF.push(b"text/plain;charset=utf-8") + b"\x00"
+           + REF.push(b"Hello, ") + REF.push(b"ordinals") + b"\x68")
+    def wit(items):
+        d = {"n": len(items)}
+        for k, v in enumerate(items):
+            d[str(k + 1)] = v
+        return d
+    got = str(ip.call("waInscriptionIn", [wit(["aa" * 64, env.hex(), "c0" + "11" * 32])]))
+    c.ck("Inspect reads an inscription out of a witness: type, size, body",
+         got.startswith("text/plain;charset=utf-8, 15 bytes") and '"Hello, ordinals"' in got, got)
+    c.eq("and a witness without one reads as nothing",
+         str(ip.call("waInscriptionIn", [wit(["aa" * 64])])), "")
+    # ...and a runestone out of an OP_RETURN OP_13 output (read only): the
+    # reference's all-tags etching, rendered the way Inspect prints it
+    T = REF.RUNE_TAGS
+    rs = REF.runestone_script([T["flags"], 0b111, T["rune"], 4, T["divisibility"], 1,
+                               T["spacers"], 5, T["symbol"], ord("a"), T["offsetend"], 2,
+                               T["amount"], 3, T["premine"], 8, T["cap"], 9, T["pointer"], 0,
+                               T["mint"], 1, T["mint"], 1, T["body"], 1, 1, 2, 0]).hex()
+    rtext = str(ip.call("waRunestoneText", [rs, 2]))
+    c.ck("Inspect renders a runestone: etching, terms, mint, pointer, edict",
+         all(s in rtext for s in ("etching E symbol a divisibility 1 premine 0.8 turbo",
+                                  "open mint: 0.3 per mint, cap 9, offsets ..2",
+                                  "mint 1:1", "go to output 1",
+                                  "edict 1:1  amount 2  to output 1"))
+         and "CENOTAPH" not in rtext, rtext)
+    rtext = str(ip.call("waRunestoneText", [REF.runestone_script([T["cenotaph"], 0]).hex(), 2]))
+    c.ck("and names a cenotaph with its flaw",
+         "CENOTAPH (unrecognized even tag)" in rtext and "burned" in rtext, rtext)
+    c.eq("an ordinary OP_RETURN renders nothing as a runestone",
+         str(ip.call("waRunestoneText", [REF.spk_op_return(b"hi").hex(), 2])), "")
+    # ---- a silent payment, from the coins that fund it (2026-09-04) --------
+    # A BIP-352 address in the Pay-to box: the parser keeps its two keys and
+    # no script, selection picks the coins, and only then is the taproot
+    # output derived (wallet-core's cwSpSend) from those coins' private keys
+    # and the smallest outpoint. The oracle repeats the derivation from the
+    # fixture's own keys, so the output in the signed transaction is checked
+    # against what it must be, not just counted.
+    sp_scan = bytes.fromhex("0220bcfac5b99e04ad1a06ddfb016ee13582609d60b6291e98d01a9bc9a16c96d4")
+    sp_spend = bytes.fromhex("025cc9856d6f8375350e123978daac200c260cb5b5ae83106cab90484dcd8fcf36")
+    sp_addr = REF.sp_encode("testnet", sp_scan, sp_spend)
+    put_field("sd_to", "%s,0.0005" % sp_addr)
+    click(ip, world, "sd_preview")
+    out = _fld(world, "sd_out")
+    c.ck("the review names the silent payment and the taproot output it derives",
+         "SILENT PAYMENT" in out and "tb1p" in out, repr(out[:300]))
+    click(ip, world, "sd_sign")
+    raw_sp = str(ip.globals.get("swalastraw", ""))
+    c.ck("a silent payment signs", len(raw_sp) > 200, "%d hex chars" % len(raw_sp))
+    if len(raw_sp) > 200:
+        dec_sp = REF.tx_decode(bytes.fromhex(raw_sp))
+        addrs = ip.globals.get("swaaddresses") or {}
+        keys, points = [], []
+        for vin in dec_sp["vin"]:
+            points.append((vin["txid"], int(vin["vout"])))
+            idx = [i for i, u in enumerate(UTXOS, 1)
+                   if u["txid"] == vin["txid"] and u["vout"] == int(vin["vout"])]
+            rec = addrs.get(str(idx[0]), {}) if idx else {}
+            keys.append((bytes.fromhex(str(rec.get("seckey", ""))), False))
+        want_spk = REF.spk_p2tr(REF.sp_send(keys, points, [(sp_scan, sp_spend)])[0]).hex()
+        trs = [o for o in dec_sp["vout"] if o["scriptpubkey"] == want_spk]
+        c.eq("its taproot output is the one the oracle derives from the same coins",
+             len(trs), 1)
+        if trs:
+            c.eq("carrying the asked amount", int(trs[0]["value"]), 50000)
+        c.ck("and the review showed that output's address",
+             REF.address_for_spk("testnet", bytes.fromhex(want_spk)) in out, repr(out[:300]))
+        c.ck("Inspect shows the derived output at its taproot address",
+             REF.address_for_spk("testnet", bytes.fromhex(want_spk)) in str(ip.call("waInspectRaw", [raw_sp])), "")
+    # the refusals, each by name
+    put_field("sd_to", "%s,0.0005" % sp_addr)
+    try:
+        ip.call("waBuildSpend", [False, True])
+        c.ck("a silent payment as a PSBT is refused", False, "accepted")
+    except LCS.Thrown as exc:
+        c.ck("a silent payment as a PSBT is refused, saying why",
+             "PSBT" in str(exc.msg) and "private keys" in str(exc.msg), str(exc.msg)[:120])
+    put_field("sd_to", "sp1qqgste7k9hx0qftg6qmwlkqtwuy6cycyavzmzj85c6qdfhjdpdjtdgqjuexzk6murw"
+              "56suy3e0rd2cgqvycxttddwsvgxe2usfpxumr70xc9pkqwv,0.0005")
+    try:
+        ip.call("waParsePayments", [])
+        c.ck("a mainnet silent payment address is refused on this testnet wallet",
+             False, "accepted")
+    except LCS.Thrown as exc:
+        c.ck("a mainnet silent payment address is refused on this testnet wallet",
+             "mainnet" in str(exc.msg) and "line 1" in str(exc.msg), str(exc.msg)[:120])
+    put_field("sd_to", "%s,0.0005" % (sp_addr[:-1] + ("q" if sp_addr[-1] != "q" else "p")))
+    try:
+        ip.call("waParsePayments", [])
+        c.ck("a corrupt silent payment address is refused", False, "accepted")
+    except LCS.Thrown as exc:
+        c.ck("a corrupt silent payment address is refused",
+             "checksum" in str(exc.msg), str(exc.msg)[:120])
+    insp = str(ip.call("waValidateAddress", [sp_addr]))
+    c.ck("the Tools inspector explains a silent payment address",
+         "SILENT PAYMENT" in insp and sp_scan.hex() in insp, insp[:200])
+    put_field("sd_to", "%s,0.0005" % first)
+    click(ip, world, "sd_sign")
+
     # ---- the RBF fee bump BUILDS the replacement --------------------------
     #
     # This is the leg that used to be advice. waBumpAdvice computed the floor
@@ -920,6 +1094,94 @@ def drive(c, ip, world, sandbox):
         ip.globals["swahistory"] = saved_hist
         ip.globals["swalastraw"] = raw
 
+    # ---- child pays for parent (2026-09-04) --------------------------------
+    # The bump a replacement cannot do: a stuck transaction this wallet did
+    # not build - an incoming payment, typically - is carried by a child that
+    # spends its unconfirmed output back to this wallet at a fee covering
+    # both. The parent is built by the oracle so its size and txid are real.
+    a3 = str((ip.globals.get("swaaddresses") or {}).get("3", {}).get("address", ""))
+    spk3 = REF.spk_for_address("testnet", a3)
+    parent = REF.unsigned_tx(2, [("d" * 64, 0, 0xFFFFFFFD)],
+                             [(40000, spk3), (1000, REF.spk_op_return(b"x"))], 0)
+    pdec = REF.tx_decode(parent)
+    ptxid, pvsize = pdec["txid"], int(pdec["vsize"])
+    utx = dict(ip.globals.get("swautxos") or {"n": 0})
+    n_u = int(LCS._n(utx.get("n", 0))) + 1
+    utx[str(n_u)] = {"txid": ptxid, "vout": 0, "value": 40000, "confirmations": 0,
+                     "height": "", "address": a3, "script": spk3.hex(),
+                     "selected": "", "frozen": ""}
+    utx["n"] = n_u
+    ip.globals["swautxos"] = utx
+    kids = ip.call("waCpfpCoins", [ptxid])
+    c.eq("the wallet finds its one unconfirmed coin of the parent",
+         int(LCS._n(kids.get("n", 0))), 1)
+    put_field("sd_rate", "3")
+    row = {"txid": ptxid, "address": a3, "confirmations": 0, "height": "",
+           "fee": 150, "vsize": pvsize, "raw": parent.hex()}
+    ip.call("waBumpFee", [row])
+    det = _fld(world, "hs_detail")
+    c.ck("Bump on a transaction the wallet did not build offers a child",
+         det.startswith("CHILD PAYS FOR PARENT"), det[:80])
+    craw = str(ip.globals.get("swalastraw", ""))
+    c.ck("and signs it", len(craw) > 100, "%d hex chars" % len(craw))
+    if len(craw) > 100:
+        cdec = REF.tx_decode(bytes.fromhex(craw))
+        c.eq("the child spends exactly the parent's output",
+             [(v["txid"], v["vout"]) for v in cdec["vin"]], [(ptxid, 0)])
+        c.ck("and signals RBF, so it can be raised in its turn",
+             all(v["sequence"] == 0xFFFFFFFD for v in cdec["vin"]))
+        c.eq("to one output", len(cdec["vout"]), 1)
+        cval = cdec["vout"][0]["value"]
+        c.ck("which is this wallet's own change address",
+             ip.call("waIsMine", [str(ip.call("cwAddressForScript",
+                                                ["testnet", cdec["vout"][0]["scriptpubkey"]]))])
+             is True)
+        cfee = 40000 - cval
+        want = -(-(3 * (int(cdec["vsize"]) + pvsize)) // 1) - 150
+        c.ck("the child's fee is the pair's shortfall at 3 sat/vB (parent paid 150)",
+             abs(cfee - want) <= 6, "fee %d, wanted about %d" % (cfee, want))
+        c.ck("the detail says what the pair pays together",
+             "together they pay" in det and "150 sat" in det.replace(",", "") or
+             "together they pay" in det, det[:400])
+        c.ck("and the child is recorded, so it can be replaced",
+             isinstance((ip.globals.get("swaspends") or {}).get(cdec["txid"]), dict))
+    # without a fee from the backend (Electrum's history), the child pays for both
+    row2 = dict(row); row2.pop("fee")
+    ip.call("waBumpFee", [row2])
+    det2 = _fld(world, "hs_detail")
+    craw2 = str(ip.globals.get("swalastraw", ""))
+    if len(craw2) > 100:
+        cdec2 = REF.tx_decode(bytes.fromhex(craw2))
+        cfee2 = 40000 - cdec2["vout"][0]["value"]
+        c.ck("with the parent's fee unknown the child pays for both sizes in full",
+             abs(cfee2 - 3 * (int(cdec2["vsize"]) + pvsize)) <= 6 and "does not report" in det2,
+             "fee %d" % cfee2)
+    # without the parent's bytes or size, the bytes are asked for first
+    row3 = dict(row); row3.pop("raw"); row3.pop("vsize")
+    ip.globals["swaqueue"] = {"n": 0}
+    ip.globals["swabackend"] = "electrum-clear"
+    try:
+        ip.call("waBumpFee", [row3])
+        c.ck("without the parent's size the wallet asks for its bytes first", False, "built")
+    except LCS.Thrown as exc:
+        q = ip.globals.get("swaqueue") or {}
+        c.ck("without the parent's size the wallet asks for its bytes first",
+             "press Bump again" in str(exc.msg)
+             and str(q.get("1", {}).get("kind")) == "tx", str(exc.msg)[:80])
+    ip.globals["swaqueue"] = {"n": 0}
+    ip.globals["swabackend"] = "offline"
+    # a rate too high for the coin is refused, not built
+    put_field("sd_rate", "900")
+    try:
+        ip.call("waBumpFee", [row])
+        c.ck("a child that would leave dust is refused", False, "built")
+    except LCS.Thrown as exc:
+        c.ck("a child that would leave dust is refused", "dust" in str(exc.msg),
+             str(exc.msg)[:80])
+    put_field("sd_rate", "2")
+    utx.pop(str(n_u)); utx["n"] = n_u - 1
+    ip.globals["swautxos"] = utx
+
     # ---- Send: the same spend as a PSBT, round-tripped through Tools -----
     click(ip, world, "sd_toPsbt")
     psbt = str(ip.globals.get("swalastpsbt", ""))
@@ -946,6 +1208,262 @@ def drive(c, ip, world, sandbox):
              "final" in _fld(world, "tl_out").lower()
              or len(str(ip.globals.get("swalastraw", ""))) > 200,
              repr(_fld(world, "tl_out")[:100]))
+
+    # ---- Tools: an inscription, by commit and reveal (2026-09-04) ---------
+    # One button, two phases. "inscribe: <type>; <text>" in the paste box
+    # prepares the COMMIT: the next unused receive key becomes the leaf key,
+    # the commit address joins the address list, the recipe is saved with
+    # the wallet. A coin planted on that address, and Inscribe with the box
+    # empty signs the REVEAL through the leaf; the oracle rebuilds the same
+    # transaction from the same key, and the wallet's own inscription reader
+    # gets the envelope back out of the witness.
+    click(ip, world, "nv_tl")
+    before_n = int(LCS._n((ip.globals.get("swaaddresses") or {}).get("n", 0)))
+    put_field("tl_hex", "inscribe: text/plain;charset=utf-8; Hello, ordinals")
+    click(ip, world, "tl_inscribe")
+    out = _fld(world, "tl_out")
+    c.ck("Inscribe prepares a commit and says what to fund",
+         "INSCRIPTION COMMIT PREPARED" in out and "tb1p" in out and "Fund that address" in out,
+         repr(out[:200]))
+    addrs = ip.globals.get("swaaddresses") or {}
+    n_addr = int(LCS._n(addrs.get("n", 0)))
+    commit = dict(addrs.get(str(n_addr), {})) if n_addr > before_n else {}
+    c.eq("the commit joined the wallet's address list", n_addr, before_n + 1)
+    base = None
+    for i in range(1, n_addr + 1):
+        r = addrs.get(str(i), {})
+        if str(r.get("change")) == "0" and str(r.get("index")) == str(commit.get("index")) and not r.get("leafscript"):
+            base = r
+            break
+    if base is not None:
+        xonly = bytes.fromhex(str(base["pubkey"]))[1:]
+        env = REF.inscription_script(xonly, "text/plain;charset=utf-8", b"Hello, ordinals")
+        want_c = REF.tap_commit(xonly, env)
+        c.ck("its leaf, key and script are the oracle's for that receive key",
+             (str(commit.get("leafscript")), str(commit.get("leafhash")), str(commit.get("script")),
+              str(commit.get("controlblock"))),
+             (env.hex(), want_c["leafhash"].hex(), want_c["script"].hex(), want_c["controlblock"].hex()))
+        c.ck("and its address is the commit script's",
+             str(commit.get("address")), REF.address_for_spk("testnet", want_c["script"]))
+        c.ck("the recipe is in the wallet file",
+             "leaf\tinscribe|%d|text/plain;charset=utf-8|%s" % (int(LCS._n(commit["index"])), b"Hello, ordinals".hex())
+             in str(ip.call("waSerializeWallet", [])),
+             " / ".join(ln for ln in str(ip.call("waSerializeWallet", [])).split("\n") if ln.startswith("leaf"))[:300])
+        # fund it, then reveal
+        utx = dict(ip.globals.get("swautxos") or {"n": 0})
+        n_u = int(LCS._n(utx.get("n", 0))) + 1
+        utx[str(n_u)] = {"txid": "dd" * 32, "vout": 1, "value": 20000, "confirmations": 1,
+                         "height": 1, "address": commit["address"], "script": commit["script"],
+                         "path": "", "pubkey": commit.get("pubkey", ""), "chain": 0,
+                         "index": commit["index"], "selected": "", "frozen": ""}
+        utx["n"] = n_u
+        ip.globals["swautxos"] = utx
+        put_field("tl_hex", "")
+        click(ip, world, "tl_inscribe")
+        out = _fld(world, "tl_out")
+        raw_r = str(ip.globals.get("swalastraw", ""))
+        c.ck("Inscribe with the box empty signs the reveal",
+             "INSCRIPTION REVEAL SIGNED" in out and len(raw_r) > 200, repr(out[:160]))
+        if len(raw_r) > 200:
+            dec_r = REF.tx_decode(bytes.fromhex(raw_r))
+            wit = dec_r["vin"][0].get("witness", [])
+            c.ck("it spends the commit through the leaf: signature, script, control block",
+                 (dec_r["vin"][0]["txid"], len(wit), wit[1:] if len(wit) == 3 else wit),
+                 ("dd" * 32, 3, [env.hex(), want_c["controlblock"].hex()]))
+            # the oracle signs the same reveal with the same key
+            seckey = bytes.fromhex(str(base["seckey"]))
+            nxt = [addrs.get(str(i), {}) for i in range(1, n_addr + 1)]
+            to_spk = bytes.fromhex(dec_r["vout"][0]["scriptpubkey"])
+            fee = 20000 - int(dec_r["vout"][0]["value"])
+            vs = 11 + REF.tapscript_input_vsize(env) + 43
+            c.ck("the fee is the Send screen's rate over the estimated size",
+                 fee, 2 * vs)
+            digest = REF.tapscript_sighash(2, [("dd" * 32, 1, 0xFFFFFFFD)],
+                                           [(20000 - fee, to_spk)], 0, 0,
+                                           [want_c["script"]], [20000], want_c["leafhash"])
+            c.ck("and the signature is the oracle's, byte for byte",
+                 wit[0] if wit else "", REF.cr.schnorr_sign(seckey, digest, bytes(32)).hex())
+            c.ck("the output is this wallet's next receive address",
+                 any(str(r.get("script")) == to_spk.hex() and str(r.get("change")) == "0"
+                     and not r.get("leafscript") for r in nxt), to_spk.hex())
+            c.ck("Inspect reads the inscription back out of the reveal",
+                 'text/plain;charset=utf-8, 15 bytes' in str(ip.call("waInspectRaw", [raw_r]))
+                 and '"Hello, ordinals"' in str(ip.call("waInspectRaw", [raw_r])), "")
+            c.ck("and the report names the inscription id",
+                 dec_r["txid"] + "i0" in out, "")
+            c.ck("the output that receives the inscription is frozen before it is seen",
+                 str((ip.globals.get("swafrozen") or {}).get(dec_r["txid"] + ":0", "")), "true")
+            c.ck("and the wallet file carries that freeze",
+                 "frozen\t%s:0" % dec_r["txid"] in str(ip.call("waSerializeWallet", [])), "")
+    # the refusals
+    for label, text, want in (
+            ("a body without a content type is refused", "inscribe: hello", "semicolon"),
+            ("an empty body is refused", "inscribe: text/plain;", "empty"),
+            ("bad hex is refused", "inscribehex: image/png; zz", "hex"),
+            ("other text is not an inscription", "hello", "inscribe:")):
+        put_field("tl_hex", text)
+        try:
+            ip.call("waInscribe", [text])
+            c.ck(label, False, "accepted")
+        except LCS.Thrown as exc:
+            c.ck(label, want in str(exc.msg), str(exc.msg)[:100])
+    put_field("tl_hex", "")
+
+    # ---- Tools: a Lightning invoice, read out (2026-09-04) -----------------
+    # Inspect and Validate both read a BOLT11 invoice: the specification's
+    # first example, whose payee is the node key every example signs with.
+    import json as _json
+    b11 = _json.load(open(os.path.join(MEMBER, "tests", "bolt11-vectors.json"), encoding="utf-8"))
+    inv = b11["valid"][5]
+    text = str(ip.call("waInspectAnything", [inv["invoice"]]))
+    c.ck("Inspect reads a Lightning invoice: payee, amount, fallback, route hints",
+         all(s in text for s in ("LIGHTNING INVOICE", inv["expected"]["payee"], "2000000000 msat",
+                                 inv["expected"]["fallback"], "route hint 1", "66051x263430x1800",
+                                 "cannot pay this")), text[:300])
+    c.ck("and says the invoice is for another network than this wallet",
+         "(this wallet is on testnet)" in text, "")
+    text = str(ip.call("waValidateAnything", [b11["invalid"][1]["invoice"]]))
+    c.ck("Validate refuses a corrupt invoice with the reason",
+         "NOT A VALID LIGHTNING INVOICE" in text and "checksum" in text, text[:200])
+    tinv = b11["valid"][4]      # the testnet example, so the URI's address and invoice agree
+    text = str(ip.call("waInspectAnything", ["bitcoin:%s?amount=0.0002&lightning=%s" % (first, tinv["invoice"])]))
+    c.ck("Inspect reads a unified URI: the on-chain half and the invoice beneath it",
+         "PAYMENT URI (BIP-21)" in text and first in text and "LIGHTNING INVOICE" in text
+         and tinv["expected"]["payee"] in text, text[:300])
+    text = str(ip.call("waInspectAnything", ["bitcoin:?lightning=%s" % tinv["invoice"]]))
+    c.ck("and a Lightning-only URI", "Lightning only" in text and tinv["expected"]["payee"] in text, text[:200])
+
+    # ---- Tools: coins locked until a block (2026-09-04) --------------------
+    # "lock: <height>" prepares a taproot address whose only leaf is
+    # <height> OP_CLTV OP_DROP <receive key> OP_CHECKSIG under the NUMS
+    # point, so nothing spends it before that block. A coin planted on it is
+    # withheld from selection while the tip is below the height, and spent
+    # by the Send screen - locktime raised, leaf witness - once it is not.
+    click(ip, world, "nv_tl")
+    before_n = int(LCS._n((ip.globals.get("swaaddresses") or {}).get("n", 0)))
+    put_field("tl_hex", "lock: 900000")
+    click(ip, world, "tl_lock")
+    out = _fld(world, "tl_out")
+    c.ck("Lock prepares a timelock address and says what it means",
+         "TIMELOCK ADDRESS PREPARED" in out and "block 900000" in out and "tb1p" in out
+         and "NUMS" in out, repr(out[:200]))
+    addrs = ip.globals.get("swaaddresses") or {}
+    n_addr = int(LCS._n(addrs.get("n", 0)))
+    lockrec = dict(addrs.get(str(n_addr), {})) if n_addr > before_n else {}
+    c.eq("the lock joined the address list", n_addr, before_n + 1)
+    base = None
+    for i in range(1, n_addr + 1):
+        r = addrs.get(str(i), {})
+        if str(r.get("change")) == "0" and str(r.get("index")) == str(lockrec.get("index")) and not r.get("leafscript"):
+            base = r
+            break
+    if base is not None:
+        xonly = bytes.fromhex(str(base["pubkey"]))[1:]
+        leaf = REF.timelock_script(900000, xonly)
+        want_l = REF.tap_commit(REF.SP_NUMS_H, leaf)
+        c.ck("its leaf and commit are the oracle's, under the NUMS point",
+             (str(lockrec.get("leafscript")), str(lockrec.get("script")), str(lockrec.get("internalkey")),
+              LCS._n(lockrec.get("lockheight"))),
+             (leaf.hex(), want_l["script"].hex(), REF.SP_NUMS_H.hex(), 900000))
+        c.ck("the recipe is in the wallet file",
+             "leaf\tlock|%d|900000" % int(LCS._n(lockrec["index"])) in str(ip.call("waSerializeWallet", [])),
+             " / ".join(ln for ln in str(ip.call("waSerializeWallet", [])).split("\n") if ln.startswith("leaf"))[:300])
+        utx = dict(ip.globals.get("swautxos") or {"n": 0})
+        n_u = int(LCS._n(utx.get("n", 0))) + 1
+        utx[str(n_u)] = {"txid": "ee" * 32, "vout": 0, "value": 30000, "confirmations": 1,
+                         "height": 1, "address": lockrec["address"], "script": lockrec["script"],
+                         "path": "", "pubkey": lockrec.get("pubkey", ""), "chain": 0,
+                         "index": lockrec["index"], "selected": "", "frozen": ""}
+        utx["n"] = n_u
+        ip.globals["swautxos"] = utx
+        # below the height the coin is withheld; at it, offered
+        ip.globals["swatipheight"] = 899999
+        offered = [u["txid"] for u in unlst_boot(ip.call("waSpendableCoins", []))]
+        c.ck("below the height the locked coin is not offered for spending",
+             "ee" * 32 not in offered, offered)
+        ip.globals["swatipheight"] = 900000
+        offered = [u["txid"] for u in unlst_boot(ip.call("waSpendableCoins", []))]
+        c.ck("at the height it is", "ee" * 32 in offered, offered)
+        ip.globals["swatipheight"] = ""
+        # a manual spend of exactly that coin: the locktime rises, the leaf signs
+        click(ip, world, "nv_cn")
+        ip.globals["swaselected"] = {"%s:0" % ("ee" * 32): "true"}
+        world.stack_props["ustrategy"] = "manual"
+        click(ip, world, "nv_sd")
+        put_field("sd_to", "%s,0.0001" % first)
+        put_field("sd_locktime", "0")
+        click(ip, world, "sd_preview")
+        out = _fld(world, "sd_out")
+        c.ck("the review says the locktime was raised for the locked coin",
+             "locktime     900000" in out and "locked until block 900000" in out, repr(out[-400:]))
+        click(ip, world, "sd_sign")
+        raw_l = str(ip.globals.get("swalastraw", ""))
+        c.ck("the spend signs", len(raw_l) > 200, "%d hex chars" % len(raw_l))
+        if len(raw_l) > 200:
+            dec_l = REF.tx_decode(bytes.fromhex(raw_l))
+            wit = dec_l["vin"][0].get("witness", [])
+            c.ck("with locktime 900000, the locked coin as its input, and the leaf in the witness",
+                 (int(dec_l["locktime"]), dec_l["vin"][0]["txid"], len(wit), wit[1:] if len(wit) == 3 else wit),
+                 (900000, "ee" * 32, 3, [leaf.hex(), want_l["controlblock"].hex()]))
+            c.ck("and a sequence that lets the locktime bind",
+                 int(dec_l["vin"][0]["sequence"]) < 0xFFFFFFFF, dec_l["vin"][0].get("sequence"))
+            digest = REF.tapscript_sighash(2, [(dec_l["vin"][0]["txid"], int(dec_l["vin"][0]["vout"]),
+                                                int(dec_l["vin"][0]["sequence"]))],
+                                           [(int(o["value"]), bytes.fromhex(o["scriptpubkey"])) for o in dec_l["vout"]],
+                                           0, 900000, [want_l["script"]], [30000], want_l["leafhash"])
+            c.ck("the signature is the leaf key's over that digest, byte for byte",
+                 wit[0] if wit else "", REF.cr.schnorr_sign(bytes.fromhex(str(base["seckey"])), digest, bytes(32)).hex())
+        ip.globals["swaselected"] = {}
+        world.stack_props["ustrategy"] = "bnb"
+    for label, text, want in (
+            ("a lock without a height is refused", "lock:", "block height"),
+            ("a lock in the timestamp range is refused", "lock: 500000000", "block height"),
+            ("other text is not a lock", "hello", "lock:")):
+        put_field("tl_hex", text)
+        try:
+            ip.call("waLockCoins", [text])
+            c.ck(label, False, "accepted")
+        except LCS.Thrown as exc:
+            c.ck(label, want in str(exc.msg), str(exc.msg)[:100])
+    put_field("tl_hex", "")
+
+    # ---- Tools: BIP-322 on the wallet's own native-SegWit key (2026-09-04) --
+    # The box ticked, Sign produces a witness stack rather than a 65-byte
+    # header signature, Verify reads the format off the signature and
+    # answers with the shape, and a tampered message is refused.
+    cb = world.anywhere("tl_msg322")
+    c.ck("the Tools screen carries the BIP-322 box", cb is not None)
+    if cb is not None:
+        click(ip, world, "nv_tl")
+        put_field("tl_msg", "proof of keys, 2026-09-04")
+        put_field("tl_msgAddr", first)
+        cb.props["hilite"] = True
+        click(ip, world, "tl_msgSign")
+        sig322 = _fld(world, "tl_msgSig").strip()
+        import base64 as _b64
+        raw322 = _b64.b64decode(sig322) if sig322 else b""
+        c.ck("Sign with the box ticked makes a BIP-322 witness stack, not a header",
+             len(raw322) > 65 and raw322[:1] == b"\x02", "%d bytes" % len(raw322))
+        c.ck("and says which format it used", "SIGNED (BIP-322)" in _fld(world, "tl_out"))
+        click(ip, world, "tl_msgVerify")
+        c.ck("Verify reads the format off the signature and accepts it",
+             _fld(world, "tl_out").startswith("VERIFIED")
+             and "bip322-p2wpkh" in str(world.anywhere("uiStatus").content
+                                          if world.anywhere("uiStatus") else ""),
+             _fld(world, "tl_out")[:80])
+        put_field("tl_msg", "proof of keys, 2026-09-05")
+        click(ip, world, "tl_msgVerify")
+        c.ck("a changed message is NOT VERIFIED",
+             _fld(world, "tl_out").startswith("NOT VERIFIED"), _fld(world, "tl_out")[:60])
+        cb.props["hilite"] = False
+        put_field("tl_msg", "proof of keys, 2026-09-04")
+        click(ip, world, "tl_msgSign")
+        raw2011 = _b64.b64decode(_fld(world, "tl_msgSig").strip() or "AA==")
+        c.eq("with the box clear the same key signs in the 2011 format (65 bytes)",
+             len(raw2011), 65)
+        click(ip, world, "tl_msgVerify")
+        c.ck("which Verify also reads off the signature",
+             _fld(world, "tl_out").startswith("VERIFIED"), _fld(world, "tl_out")[:60])
 
     # ---- Tools: sign and verify a message, and the tamper case ----------
     click(ip, world, "nv_tl")
@@ -1035,6 +1553,78 @@ def drive(c, ip, world, sandbox):
         c.eq("and the wallet it had open is untouched",
              str(ip.globals.get("swalabel", "")), "Boot gate wallet")
 
+    # ---- labels in BIP-329, out and back (2026-09-04) ---------------------
+    # One JSON object per line; this wallet's address labels go out as
+    # "addr" records and its frozen coins as "output" records with
+    # spendable false, and both come back. Types it does not keep are
+    # counted and skipped, a line that is not JSON is named.
+    saved_lab = {k: ip.globals.get(k) for k in ("swalabels", "swafrozen")}
+    lab_path = os.path.join(sandbox, "labels-test.wallet")
+    put_field("st_path", lab_path)
+    a_lab = str((ip.globals.get("swaaddresses") or {}).get("1", {}).get("address", ""))
+    b_lab = str((ip.globals.get("swaaddresses") or {}).get("2", {}).get("address", ""))
+    ip.globals["swalabels"] = {a_lab: "rent", b_lab: 'says "hi"\ttab'}
+    ip.globals["swafrozen"] = {"cc" * 32 + ":0": "true"}
+    text = str(ip.call("waLabelsText", []))
+    lines = [ln for ln in text.split("\n") if ln.strip()]
+    c.eq("two labels and one frozen coin make three BIP-329 lines", len(lines), 3)
+    try:
+        recs = [json.loads(ln) for ln in lines]
+    except ValueError as exc:
+        recs = []
+        c.ck("every line is JSON", False, str(exc)[:80])
+    if recs:
+        c.ck("every line is JSON", True)
+        c.ck("the address labels are addr records with the label escaped intact",
+             {"type": "addr", "ref": b_lab, "label": 'says "hi"\ttab'} in recs
+             and {"type": "addr", "ref": a_lab, "label": "rent"} in recs, str(recs)[:200])
+        c.ck("the frozen coin is an output record that is not spendable",
+             {"type": "output", "ref": "cc" * 32 + ":0", "spendable": False} in recs,
+             str(recs)[:200])
+    click(ip, world, "st_exportLabels")
+    c.ck("Export writes the file beside the wallet file",
+         os.path.exists(lab_path + ".labels.jsonl"), lab_path + ".labels.jsonl")
+    ip.globals["swalabels"] = {}
+    ip.globals["swafrozen"] = {}
+    click(ip, world, "st_importLabels")
+    c.eq("Import brings the labels back", str((ip.globals.get("swalabels") or {}).get(a_lab)),
+         "rent")
+    c.eq("with the escaped one intact",
+         str((ip.globals.get("swalabels") or {}).get(b_lab)), 'says "hi"\ttab')
+    c.eq("and the frozen coin", str((ip.globals.get("swafrozen") or {}).get("cc" * 32 + ":0")),
+         "true")
+    # the BIP's own examples: kept where the wallet has a home for them,
+    # counted and skipped where it does not
+    bip = ('{ "type": "tx", "ref": "f91d0a8a78462bc59398f2c5d7a84fcff491c26ba54c4833478b202796c8aafd", "label": "Transaction", "origin": "wpkh([d34db33f/84h/0h/0h])" }\n'
+           '{ "type": "addr", "ref": "bc1q34aq5drpuwy3wgl9lhup9892qp6svr8ldzyy7c", "label": "Address" }\n'
+           '{ "type": "pubkey", "ref": "0283409659355b6d1cc3c32decd5d561abaac86c37a353b52895a5e6c196d6f448", "label": "Public Key" }\n'
+           '{ "type": "input", "ref": "f91d0a8a78462bc59398f2c5d7a84fcff491c26ba54c4833478b202796c8aafd:0", "label": "Input" }\n'
+           '{ "type": "output", "ref": "f91d0a8a78462bc59398f2c5d7a84fcff491c26ba54c4833478b202796c8aafd:1", "label": "Output", "spendable": false }\n'
+           '{ "type": "xpub", "ref": "xpub661MyMwAqRbcFtXgS5sYJABqqG9YLmC4Q1Rdap9gSE8NqtwybGhePY2gZ29ESFjqJoCu1Rupje8YtGqsefD265TMg7usUDFdp6W1EGMcet8", "label": "Extended Public Key" }\n')
+    summary = str(ip.call("waLabelsApply", [bip]))
+    c.ck("the BIP's examples: one address label kept, one output frozen and labelled, four skipped",
+         summary.startswith("1 address label(s), 1 output record(s), 4 other"), summary)
+    c.eq("the example address label landed",
+         str((ip.globals.get("swalabels") or {}).get("bc1q34aq5drpuwy3wgl9lhup9892qp6svr8ldzyy7c")),
+         "Address")
+    c.eq("the example output is frozen",
+         str((ip.globals.get("swafrozen") or {}).get("f91d0a8a78462bc59398f2c5d7a84fcff491c26ba54c4833478b202796c8aafd:1")),
+         "true")
+    try:
+        ip.call("waLabelsApply", ['{"type":"addr","ref":"x","label":"ok"}\nnot json\n'])
+        c.ck("a line that is not JSON is refused by its number", False, "accepted")
+    except LCS.Thrown as exc:
+        c.ck("a line that is not JSON is refused by its number",
+             "line 2" in str(exc.msg), str(exc.msg)[:100])
+    put_field("st_path", "")
+    try:
+        ip.call("waLabelsExport", [])
+        c.ck("Export with no wallet path says so", False, "wrote somewhere")
+    except LCS.Thrown as exc:
+        c.ck("Export with no wallet path says so", "path first" in str(exc.msg), str(exc.msg)[:80])
+    for k, v in saved_lab.items():
+        ip.globals[k] = v
+
     # ---- the network root, and the chain the backend actually carries ----
     # THE DEFECT THIS SECTION EXISTS FOR: a funded testnet address reported no
     # coins, because waEsploraPath emitted the MAINNET "/api" root for every
@@ -1104,6 +1694,26 @@ def drive(c, ip, world, sandbox):
     c.eq("regtest is allowed against a host the person typed themselves",
          why("esplora-clear", "127.0.0.1:3002", "regtest"), "")
     c.eq("offline is never a chain complaint", why("offline", clear, "regtest"), "")
+    # TESTNET4 (2026-09-04): testnet3's bytes on a different chain, so the
+    # backend is the only thing that can tell them apart - and Blockstream's
+    # mirrors index testnet3. The guard names the host that serves it.
+    alt = str(ip.constants.get("kWaEsploraClearAlt", ""))
+    w4 = why("esplora-clear", clear, "testnet4")
+    c.ck("testnet4 is refused on Blockstream's clearnet mirror, naming mempool.space",
+         w4 != "" and alt in w4, w4[:120])
+    c.ck("and on its onion", why("esplora-tor", onion, "testnet4") != "")
+    c.eq("and allowed on mempool.space, which serves it",
+         why("esplora-clear", alt, "testnet4"), "")
+    c.ck("the built-in Electrum servers are refused on testnet4",
+         why("electrum-tor", elec, "testnet4") != ""
+         and why("electrum-clear", str(ip.constants.get("kWaElectrumClear", "")), "testnet4") != "")
+    ip.globals["swanetwork"] = "testnet4"
+    c.ck("testnet4 asks its own Esplora root",
+         esplora_path("tip").startswith("/testnet4/api"), esplora_path("tip"))
+    c.eq("and the wallet knows the chain by name", str(ip.call("waNetChoice", [])), "Test4")
+    c.ck("and derives testnet-shaped addresses for it",
+         str(ip.call("waSelfTestAddress", ["p2wpkh", "testnet4"])).startswith("tb1"),
+         str(ip.call("waSelfTestAddress", ["p2wpkh", "testnet4"])))
 
     # And the guard is REACHED: waSync refuses before it builds a request.
     ip.globals["swabackend"] = "electrum-tor"

@@ -2791,3 +2791,210 @@ one-key wallet with the stack property cleared and the log line written, a carry
 reported rather than half-applied, and the route from the button and the menu item.
 
 kWaVersion moved to 1.1.0 with this, so the first update anyone runs has a version to name.
+
+
+### 2026-09-04, a note to the chain: OP_RETURN outputs, and reading data back
+
+The first of the "modern Bitcoin" additions, and the shape was the decision: a note is a LINE in the
+Pay-to box (`note: text`, `data: hex`), not a screen, and it becomes a payment record whose script is
+`OP_RETURN <push>`, whose value is 0 and whose KIND carries its byte count - `nulldata:N` - because
+every caller of wallet-core sizes outputs by type and a data output's size is not a property of its
+type. That one choice is why nothing downstream changed: `cwOutputBytes` and `cwDustThreshold` learned
+the parametrised kind (0 is the threshold: there is no spend to price), and selection, the review,
+signing, the PSBT and the fee bump all saw a payment. One per transaction, because a second OP_RETURN
+output is what most nodes refuse to relay; over eighty bytes is warned about, not refused, because
+Bitcoin Core 30 relays far more and whether a longer note reaches a miner depends on whose node it
+meets; the hard cap is the encoder's (PUSHDATA2). wallet-core gained `cwOpReturnScript`,
+`cwOpReturnData`, `cwPushLen` and `cwScriptItems` - the one script reader the decoders now share,
+one item per line - each vector-gated against the reference across every push form (direct,
+PUSHDATA1, PUSHDATA2), with a push that runs past the end refused. Inspect reads an OP_RETURN
+output back as text when every byte is printable UTF-8 and as hex otherwise, and reads an Ordinals
+inscription out of a witness: the OP_FALSE OP_IF "ord" envelope, the content type after a push of
+0x01, the body after OP_0 across as many pushes as it takes - which is the read half of ordinals and
+costs a parser, not a protocol. Two things the interpreters taught while it was written: the base
+interpreter models `repeat for each item` and not `for each line` (core code loops by index), and
+`pI` is the engine token `pi` (the checker's rule). Gated end to end: the review names the output,
+the signed spend decodes to exactly one OP_RETURN of value 0 carrying the bytes, the wallet's vsize
+agrees with the oracle's for a spend with a data output, the four refusals by name, the long-note
+warning, and the inscription reader on an envelope the oracle builds. The note output and the
+inscription reader have not run on an engine.
+
+### 2026-09-04, testnet4 and BIP-329 labels
+
+**TESTNET4** is a fifth column in wallet-core's network tables with testnet3's value in every row -
+prefixes, WIF, extended-key versions, coin type - because that is what testnet4 is: a new chain
+(Bitcoin Core 28) with the old bytes. The vector gate re-derives every row against the reference,
+which gained the same entry with the same comment. The app is where the chains differ: the Esplora
+root is `/testnet4`, Blockstream's mirrors (which index testnet3) are refused for it by name with
+mempool.space - already the built-in second Esplora host - named as the remedy, and both built-in
+Electrum servers are refused. The Wallet screen's network row is five buttons now. Testnet3 is being
+retired, which is the reason this landed ahead of the bigger items.
+
+**BIP-329 LABELS.** One JSON object per line; address labels go out as `addr` records, frozen coins as
+`output` records with `spendable: false` (the one BIP-329 field this wallet's freeze maps onto exactly),
+both come back, and the types it keeps no home for are counted and skipped rather than refused - a
+label file from another wallet should always import. The file sits beside the wallet file, named for
+it, so there is no dialog to model. Gated: the round trip with an escaped label, the BIP's own six
+example lines (one kept, one frozen and labelled, four skipped), a non-JSON line refused by its
+number, and Export without a wallet path refused. Neither has run on an engine.
+
+### 2026-09-04, child pays for parent
+
+The bump a replacement cannot make. `waBumpFee` used to explain, at length, why a transaction this
+wallet did not build could not be bumped here; the honest half of that explanation was that a
+replacement needs the inputs, and the missing half was that a CHILD needs only an output. If the
+wallet holds an unconfirmed coin of the parent - which it does for every incoming payment, the case
+RBF can never touch - `waCpfpBuild` spends it back to the next change address at a fee that carries
+both, so the pair clears together. Three things had to be decided rather than coded. The parent's size:
+from its bytes (the same fetch Inspect makes, and the wallet asks for them and says "press Bump again"
+rather than guessing) or from the weight Esplora reports, which `waMergeHistory` now keeps. The
+parent's fee: Esplora says it, Electrum's history does not, and when it is unknown the child pays for
+both sizes in full as if the parent had paid nothing - an overpayment, stated in the detail, rather
+than a guess. And the child's own floor: never below one sat/vB of its own bytes. It signals RBF and
+is recorded with no payees and its whole value as change, so the existing replacement path can raise
+it. Gated against a parent the oracle builds, so its txid and size are real: the child spends exactly
+that output to an address of this wallet, its fee is the pair's shortfall at the asked rate within a
+few sat, the fee-unknown case pays in full, the size-unknown case asks for the bytes and queues the
+request, and a rate that would leave dust is refused. Not run on an engine.
+
+### 2026-09-04, BIP-322 signed messages
+
+The wallet's own refusal named the gap: "Bitcoin Core signs those with BIP-322, which this wallet does
+not implement." It does now, for the two single-key shapes the 2011 format cannot or should not
+carry - taproot always, native SegWit by choice - and the design point is that BIP-322 is a SPEND: a
+virtual `to_spend` pays `tagged_hash("BIP0322-signed-message", message)` to the address, a virtual
+`to_sign` spends it to OP_RETURN, and the signature is `to_sign`'s witness stack, base64. That is why
+it cost so little: `cwBip322Digest` is `cwSighash` over two transactions the wallet already knows how
+to build, the P2WPKH witness is `cwSignInput`'s and the taproot witness is `cwSignTaproot`'s, and the
+verifier checks the witness the way a node would (key matches the program, then `cxVerify` on the
+BIP-143 digest; or `cxSchnorrVerify` on the BIP-341 digest against the output key). Three small
+pieces were new: a witness-stack encoder and decoder, a DER-to-compact converter for `cxVerify`, and
+the reader's rule that a 65-byte signature is the 2011 format and anything else is BIP-322. The
+reference gained the same four functions; both sides sign deterministically, so the vector gate
+compares signatures byte for byte, and it also holds the BIP's published message hashes, `to_spend`
+txids and signatures for its test key. Legacy and nested addresses stay 2011, which is what the world
+expects of them, and a taproot signature offered against a P2WPKH address is refused with the
+reason. Not run on an engine.
+
+### 2026-09-04, silent payments (BIP-352), sending
+
+The address is the whole design problem: `sp1...` is two public keys, and the output that pays it does
+not exist until the funding coins are chosen, because it is derived from THEIR private keys and the
+smallest outpoint. So the Send screen's record for such a line carries the keys and no script, sizing
+and selection run on its taproot kind, and `waSpResolve` fills the script in between selection and
+the outputs loop - the one place in `waBuildSpend` where the inputs are known and nothing has been
+built from the outputs yet. That is also why it is refused as a PSBT, on a watch-only wallet and on
+a multisig wallet: the first two have no key to derive with, the third has inputs the BIP excludes.
+Three things in wallet-core were decided rather than coded. The address needs bech32m under the
+BIP's own 1023-character waiver, and coinxt's decoder enforces BIP-173's 90 as it should, so
+wallet-core carries its own polymod over a list rather than loosening the library. The key sum is
+done in hex mod n by two nibble loops, because `cxSeckeyTweakAdd` refuses a zero result by design and
+the BIP's vector "intermediate sum is zero but final sum is non-zero" is precisely the chain of
+tweak-adds that would refuse half way. And the K_max refusal counts the groups BEFORE deriving,
+so the vector that asks for 2324 outputs costs nothing. The gate holds every stage to the BIP's
+published sending vectors, trimmed into `tests/bip352-sending-vectors.json` with the receiving half
+dropped and the trimming recorded in the file; which inputs take part is the receiver's rule, so the
+oracle carries the receiver-side extraction (the malleated-P2PKH window scan, the NUMS-point skip,
+the annex) and the vectors' own input lists hold IT. The same day the BIP-322 gate learned its lesson
+one entry up: the two published signatures it held were written from memory and were wrong, and
+the BIP's text carries none - they live in `bip-0322/basic-test-vectors.json`, four per key, and
+those are what it holds now. Not run on an engine.
+
+### 2026-09-04, Runes, read only
+
+The reader Inspect gained is small and the reason it is small is worth keeping: a runestone is a
+handful of LEB128 varints in an OP_RETURN, but they are 128-bit, and a double-based reader would
+render a rune name or an amount wrongly without ever erroring. So wallet-core carries decimal-string
+arithmetic (multiply-add, divmod by a small number, add, subtract-one, compare) and every rune number
+stays text from the varint to the screen. The cenotaph rules are the specification's, applied in its
+order - a non-push opcode, a bad varint, a truncated field, the edict rules, the flags, the pointer,
+the even tags that need a flag they do not have - and a malformed runestone is still returned with
+its fields, as the specification requires, with the flaws named so Inspect can say what burns. The
+gate uses the reference's own test cases, mined out of ord's `rune.rs` and `runestone.rs` rather than
+invented, and a Python oracle that reads the same bytes. Nothing here writes a runestone. Not run on
+an engine.
+
+### 2026-09-04, inscriptions by commit and reveal
+
+The one-leaf script path was the last taproot capability the wallet lacked, and inscriptions are its
+most legible use: the commit hides the envelope behind a key, the reveal spends through the leaf and
+puts it on the chain. Every primitive was already in coinxt - the tweak with a merkle root, the control
+block, the script-path sighash with a leaf hash - except one, and it is the instructive gap: coinxt's
+`cxTapLeafHash` refuses scripts of 253 bytes or more because it models a one-byte compact size, and an
+inscription body is precisely the script that is longer, so wallet-core carries a leaf hash with a real
+varint and the gate checks a 600-byte leaf against the oracle's. The wallet side is ONE button with two
+phases, and the state that makes the second phase possible is an ADDRESS RECORD: the commit is appended
+to the wallet's own address list carrying its leaf script, leaf hash and control block, so sync watches
+it like any address, the coin arrives like any coin, and `waSignSpend` gained one branch that signs a
+coin through its leaf. Two consequences were designed rather than discovered. The recipe (receive index,
+type, body) is saved with the wallet and re-attached after EVERY derivation, because `waDeriveAddresses`
+rebuilds the list from scratch and a commit that vanished on a gap change would be a funded output the
+wallet had forgotten how to spend. And a commit coin funding a silent payment tweaks by the leaf hash,
+not the empty root, because BIP-352 wants the key that spends the output. The boot gate drives both
+presses on the fixture wallet, plants a coin on the commit, and rebuilds the reveal signature from the
+same key byte for byte; Inspect reads the envelope back. Not run on an engine.
+
+### 2026-09-04, coins locked until a block
+
+Once the inscription commit existed as an ADDRESS RECORD carrying a leaf, a timelock vault was a second
+recipe kind and one new leaf, and the record store was generalised rather than duplicated (`sWaLeaves`,
+kinds "inscribe" and "lock", saved as `leaf` lines). The design points are the two the record makes
+easy to get wrong. The internal key is the NUMS point, not the receive key: with the receive key there
+the lock would be a suggestion, because the key path would still spend. And a locked coin is WITHHELD
+from selection while the tip is below its height, not merely warned about, because the alternative is
+a signed transaction every node rejects - and offered from the height on, with `waBuildSpend` raising
+the locktime to the coin's height and the review saying it did; the sequence numbers the wallet already
+uses are both below 0xffffffff, which is what lets a locktime bind at all. `cwScriptNum` is the small
+piece that had to be right (minimal little-endian with a sign bit; 900000 is `a0bb0d`), and the gate
+pins its edge values against the oracle. Not run on an engine.
+
+### 2026-09-04, Lightning invoices read out
+
+Reading a BOLT11 invoice cost almost nothing because the silent-payment work had already paid for
+the expensive part: a bech32 decoder with the length cap a parameter. What was new is small and
+worth naming. The amount is in BITCOIN with a multiplier letter, and pico-bitcoin is a tenth of a
+millisatoshi, so the amount is decimal-string arithmetic with the divide-by-ten check the
+specification's "sub-millisatoshi precision" example exists for. The fields are 5-bit values whose
+byte conversions differ by ONE rule - a field drops its incomplete tail, the signed message zero-pads
+its own - and the two converters are written twice rather than parameterised so a reader sees which
+is which. The signature is coinxt's recoverable form byte for byte (64 + recovery id), so the payee
+is `cxRecover` and a compress; and when the invoice names its node key the specification wants the
+signature checked against it AND canonical, which is the only place this wallet looks at high-S. The
+vectors are the specification's examples with expected values taken from its own breakdowns, held in
+`tests/bolt11-vectors.json`; the high-S recovery example recovers to a different key than the one
+every other example signs with, which is that example's point, and the file records the key it
+recovers to rather than the one a reader might expect. Not run on an engine.
+
+The same day's offline finding, recorded here because it is the kind that hides: the vector gate's
+wiring declared `cxEcdh`'s output as 32 bytes where the native returns the 65-byte point, so every
+offline ECDH had been a BADLEN refusal since the wiring was written - unnoticed because nothing in
+the gates had called it until BIP-352 did.
+
+### 2026-09-04, what stopped silent-payment receiving, for whoever picks it up
+
+The sending side is done and gated; the receiving side was designed the same evening and stopped at
+one line. A receiver computes A_sum, the sum of the eligible inputs' PUBLIC keys, and that is point
+addition - `secp256k1_ec_pubkey_combine` - which coinxt does not expose. Everything else it needs is
+here: the input-key extraction (`sp_input_pubkey` in the oracle, mirrored by the vectors' own
+input lists), the scan and spend keys at `m/352'/coin'/0'/1'/0` and `.../0'/0`, the shared secret by
+`cxEcdh`, the candidate outputs by `cxPubkeyTweakAdd`, and a found output's spending key by
+`cwScalarAdd` (which then signs UNTWEAKED - a silent payment output is the raw key, not a BIP-341
+tweak - so the record needs a flag `waSignSpend` does not yet read). Doing point addition in script
+was costed and rejected: a field inversion is ~400 big multiplies, minutes in the offline
+interpreter per input, which would make the gate unrunnable. The honest next step is the native
+handler, with `check-binary-freshness.py` holding rule 5, and then the receiving vectors already in
+the fetched file (`receiving[*].given.key_material` and `expected.outputs`, dropped from
+`tests/bip352-sending-vectors.json` deliberately) become the gate.
+
+### 2026-09-04, the checksum got five times faster, and why that mattered to the gate
+
+The long bech32 decoder did its 30-bit xor one bit at a time (thirty tests, each two divisions),
+which was fine for a 116-character address and was not fine for a 765-character invoice, where the
+offline vector run spent twelve minutes per block on checksums. It is now six lookups in a 1024-entry
+table of 5-bit xors (`kCwXor5`, two decimal digits per entry), and the generator bits are tested by
+halving the top five bits rather than by a power-of-two per bit. Same answers on the same vectors
+(the sp address round-trips, the invoice recovers the same payee), a 585-character invoice in 14 s
+where it took the best part of a minute. The lesson is the family's usual one about the offline
+interpreter: it is where the cost of an arithmetic idiom shows up first, and a block that takes
+twelve minutes there is a gate people stop running.
+
