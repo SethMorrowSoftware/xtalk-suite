@@ -337,6 +337,41 @@ the carry, the restore, the button and the menu route - is gated headlessly;
 the swap itself (`set the script of this stack` from inside one of that
 script's own handlers) is engine work and has not run on an engine.
 
+## Child pays for parent
+
+The History screen's Bump button replaces a transaction when it can (BIP-125,
+for a spend this wallet built with the opt-in and some change). Since
+2026-09-04 it does the other thing when it cannot: for a transaction this
+wallet did not build - a stuck incoming payment, typically - or one built
+without the opt-in or without change, if this wallet holds an unconfirmed
+output of it, Bump builds a CHILD that spends that output back to the
+wallet's next change address at a fee covering the parent's bytes as well as
+its own at the Send screen's rate. A miner takes the pair as a package. The
+parent's size comes from its bytes (fetched like Inspect fetches them, or
+from the weight Esplora reports); its fee is known only where the backend
+says it, and when it is not the child pays for both sizes in full and says
+so. The child signals RBF so a rate that proves too low can be raised. Not
+run on an engine.
+
+## Testnet4, and labels that travel
+
+Since 2026-09-04 the Wallet screen offers **testnet4** beside testnet. It is
+a different chain with testnet3's bytes everywhere (prefixes, WIF, extended
+keys, coin type), so the backend is the only thing that tells them apart:
+Blockstream's mirrors index testnet3 and are refused for it by name, with
+`mempool.space` - the built-in second Esplora host, which serves `/testnet4`
+- offered as the remedy; the built-in Electrum servers are refused too.
+Testnet3 is being retired, so this is where new test coins will come from.
+Not run on an engine, nor against mempool.space's testnet4 index.
+
+The Settings screen exports and imports labels in **BIP-329**, one JSON
+object per line, the format Sparrow, Bitcoin Core and the rest read. Address
+labels go out as `addr` records; frozen coins as `output` records with
+`spendable: false`; both come back, and the record types this wallet keeps
+no home for (tx, input, pubkey, xpub) are counted and skipped, never
+refused. The file sits beside the wallet file, named for it. The gate drives
+the round trip, the BIP's own example lines, and the refusals.
+
 ## Custody, said plainly
 
 OXT script variables are not locked memory. A seed typed into this stack can be

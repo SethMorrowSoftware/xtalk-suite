@@ -329,7 +329,7 @@ def check_constants(c, text):
     c.note("\nconstants: re-derived from tools/wallet_reference.py")
     consts = dict(re.findall(r'^constant\s+(\w+)\s*=\s*"([^"]*)"', text, re.M))
     nums = dict(re.findall(r'^constant\s+(\w+)\s*=\s*(-?\d+)\s*$', text, re.M))
-    order = ["mainnet", "testnet", "signet", "regtest"]
+    order = ["mainnet", "testnet", "signet", "regtest", "testnet4"]
 
     def row(key):
         return ",".join(str(REF.NETWORKS[n][key]) for n in order)

@@ -101,6 +101,18 @@ NETWORKS = {
         "Ypub": 0x024289EF, "Yprv": 0x024285B5,
         "Zpub": 0x02575483, "Zprv": 0x02575048,
     },
+    # Testnet4 (Bitcoin Core 28, 2024) is a new chain with testnet3's bytes
+    # everywhere: prefixes, WIF, extended-key versions, coin type. Only the
+    # backend can tell them apart, and that is the app's table, not this one.
+    "testnet4": {
+        "hrp": "tb",
+        "p2pkh": 0x6F, "p2sh": 0xC4, "wif": 0xEF, "coin": 1,
+        "xpub": 0x043587CF, "xprv": 0x04358394,
+        "ypub": 0x044A5262, "yprv": 0x044A4E28,
+        "zpub": 0x045F1CF6, "zprv": 0x045F18BC,
+        "Ypub": 0x024289EF, "Yprv": 0x024285B5,
+        "Zpub": 0x02575483, "Zprv": 0x02575048,
+    },
     "regtest": {
         "hrp": "bcrt",
         "p2pkh": 0x6F, "p2sh": 0xC4, "wif": 0xEF, "coin": 1,

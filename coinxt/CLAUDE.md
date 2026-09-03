@@ -2818,3 +2818,41 @@ the signed spend decodes to exactly one OP_RETURN of value 0 carrying the bytes,
 agrees with the oracle's for a spend with a data output, the four refusals by name, the long-note
 warning, and the inscription reader on an envelope the oracle builds. The note output and the
 inscription reader have not run on an engine.
+
+### 2026-09-04, testnet4 and BIP-329 labels
+
+**TESTNET4** is a fifth column in wallet-core's network tables with testnet3's value in every row -
+prefixes, WIF, extended-key versions, coin type - because that is what testnet4 is: a new chain
+(Bitcoin Core 28) with the old bytes. The vector gate re-derives every row against the reference,
+which gained the same entry with the same comment. The app is where the chains differ: the Esplora
+root is `/testnet4`, Blockstream's mirrors (which index testnet3) are refused for it by name with
+mempool.space - already the built-in second Esplora host - named as the remedy, and both built-in
+Electrum servers are refused. The Wallet screen's network row is five buttons now. Testnet3 is being
+retired, which is the reason this landed ahead of the bigger items.
+
+**BIP-329 LABELS.** One JSON object per line; address labels go out as `addr` records, frozen coins as
+`output` records with `spendable: false` (the one BIP-329 field this wallet's freeze maps onto exactly),
+both come back, and the types it keeps no home for are counted and skipped rather than refused - a
+label file from another wallet should always import. The file sits beside the wallet file, named for
+it, so there is no dialog to model. Gated: the round trip with an escaped label, the BIP's own six
+example lines (one kept, one frozen and labelled, four skipped), a non-JSON line refused by its
+number, and Export without a wallet path refused. Neither has run on an engine.
+
+### 2026-09-04, child pays for parent
+
+The bump a replacement cannot make. `waBumpFee` used to explain, at length, why a transaction this
+wallet did not build could not be bumped here; the honest half of that explanation was that a
+replacement needs the inputs, and the missing half was that a CHILD needs only an output. If the
+wallet holds an unconfirmed coin of the parent - which it does for every incoming payment, the case
+RBF can never touch - `waCpfpBuild` spends it back to the next change address at a fee that carries
+both, so the pair clears together. Three things had to be decided rather than coded. The parent's size:
+from its bytes (the same fetch Inspect makes, and the wallet asks for them and says "press Bump again"
+rather than guessing) or from the weight Esplora reports, which `waMergeHistory` now keeps. The
+parent's fee: Esplora says it, Electrum's history does not, and when it is unknown the child pays for
+both sizes in full as if the parent had paid nothing - an overpayment, stated in the detail, rather
+than a guess. And the child's own floor: never below one sat/vB of its own bytes. It signals RBF and
+is recorded with no payees and its whole value as change, so the existing replacement path can raise
+it. Gated against a parent the oracle builds, so its txid and size are real: the child spends exactly
+that output to an address of this wallet, its fee is the pair's shortfall at the asked rate within a
+few sat, the fee-unknown case pays in full, the size-unknown case asks for the bytes and queues the
+request, and a rate that would leave dust is refused. Not run on an engine.

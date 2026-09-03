@@ -102,21 +102,26 @@ constant kCwOpOne = 81
 -- assignment: BIP-86 keeps xpub deliberately, so the p2tr row repeats the
 -- BIP-32 numbers rather than inventing any.
 
-constant kCwNetworks = "mainnet,testnet,signet,regtest"
-constant kCwHrps = "bc,tb,tb,bcrt"
-constant kCwP2pkhVersions = "0,111,111,111"
-constant kCwP2shVersions = "5,196,196,196"
-constant kCwWifVersions = "128,239,239,239"
-constant kCwCoinTypes = "0,1,1,1"
+-- TESTNET4 (2026-09-04) is a fifth column with testnet3's bytes in every
+-- row: same address prefixes, same WIF and extended-key versions, same coin
+-- type. It is a different CHAIN - a fresh genesis, since Bitcoin Core 28 -
+-- and testnet3 is being retired, so which chain a backend indexes is the
+-- only thing that tells them apart. That lives in the app's backend tables.
+constant kCwNetworks = "mainnet,testnet,signet,regtest,testnet4"
+constant kCwHrps = "bc,tb,tb,bcrt,tb"
+constant kCwP2pkhVersions = "0,111,111,111,111"
+constant kCwP2shVersions = "5,196,196,196,196"
+constant kCwWifVersions = "128,239,239,239,239"
+constant kCwCoinTypes = "0,1,1,1,1"
 
-constant kCwXpubVersions = "76067358,70617039,70617039,70617039"
-constant kCwXprvVersions = "76066276,70615956,70615956,70615956"
-constant kCwYpubVersions = "77429938,71979618,71979618,71979618"
-constant kCwYprvVersions = "77428856,71978536,71978536,71978536"
-constant kCwZpubVersions = "78792518,73342198,73342198,73342198"
-constant kCwZprvVersions = "78791436,73341116,73341116,73341116"
-constant kCwZshPubVersions = "44728019,39277699,39277699,39277699"
-constant kCwZshPrvVersions = "44726937,39276616,39276616,39276616"
+constant kCwXpubVersions = "76067358,70617039,70617039,70617039,70617039"
+constant kCwXprvVersions = "76066276,70615956,70615956,70615956,70615956"
+constant kCwYpubVersions = "77429938,71979618,71979618,71979618,71979618"
+constant kCwYprvVersions = "77428856,71978536,71978536,71978536,71978536"
+constant kCwZpubVersions = "78792518,73342198,73342198,73342198,73342198"
+constant kCwZprvVersions = "78791436,73341116,73341116,73341116,73341116"
+constant kCwZshPubVersions = "44728019,39277699,39277699,39277699,39277699"
+constant kCwZshPrvVersions = "44726937,39276616,39276616,39276616,39276616"
 
 -- ---- script types ------------------------------------------------------------
 -- The five standard output types this wallet builds and spends, with the BIP

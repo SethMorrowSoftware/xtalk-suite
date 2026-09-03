@@ -105,6 +105,7 @@ import ctypes
 import hashlib
 import hmac
 import importlib.util
+import json
 import os
 import re
 import shutil
@@ -1003,6 +1004,94 @@ def drive(c, ip, world, sandbox):
         ip.globals["swahistory"] = saved_hist
         ip.globals["swalastraw"] = raw
 
+    # ---- child pays for parent (2026-09-04) --------------------------------
+    # The bump a replacement cannot do: a stuck transaction this wallet did
+    # not build - an incoming payment, typically - is carried by a child that
+    # spends its unconfirmed output back to this wallet at a fee covering
+    # both. The parent is built by the oracle so its size and txid are real.
+    a3 = str((ip.globals.get("swaaddresses") or {}).get("3", {}).get("address", ""))
+    spk3 = REF.spk_for_address("testnet", a3)
+    parent = REF.unsigned_tx(2, [("d" * 64, 0, 0xFFFFFFFD)],
+                             [(40000, spk3), (1000, REF.spk_op_return(b"x"))], 0)
+    pdec = REF.tx_decode(parent)
+    ptxid, pvsize = pdec["txid"], int(pdec["vsize"])
+    utx = dict(ip.globals.get("swautxos") or {"n": 0})
+    n_u = int(LCS._n(utx.get("n", 0))) + 1
+    utx[str(n_u)] = {"txid": ptxid, "vout": 0, "value": 40000, "confirmations": 0,
+                     "height": "", "address": a3, "script": spk3.hex(),
+                     "selected": "", "frozen": ""}
+    utx["n"] = n_u
+    ip.globals["swautxos"] = utx
+    kids = ip.call("waCpfpCoins", [ptxid])
+    c.eq("the wallet finds its one unconfirmed coin of the parent",
+         int(LCS._n(kids.get("n", 0))), 1)
+    put_field("sd_rate", "3")
+    row = {"txid": ptxid, "address": a3, "confirmations": 0, "height": "",
+           "fee": 150, "vsize": pvsize, "raw": parent.hex()}
+    ip.call("waBumpFee", [row])
+    det = _fld(world, "hs_detail")
+    c.ck("Bump on a transaction the wallet did not build offers a child",
+         det.startswith("CHILD PAYS FOR PARENT"), det[:80])
+    craw = str(ip.globals.get("swalastraw", ""))
+    c.ck("and signs it", len(craw) > 100, "%d hex chars" % len(craw))
+    if len(craw) > 100:
+        cdec = REF.tx_decode(bytes.fromhex(craw))
+        c.eq("the child spends exactly the parent's output",
+             [(v["txid"], v["vout"]) for v in cdec["vin"]], [(ptxid, 0)])
+        c.ck("and signals RBF, so it can be raised in its turn",
+             all(v["sequence"] == 0xFFFFFFFD for v in cdec["vin"]))
+        c.eq("to one output", len(cdec["vout"]), 1)
+        cval = cdec["vout"][0]["value"]
+        c.ck("which is this wallet's own change address",
+             ip.call("waIsMine", [str(ip.call("cwAddressForScript",
+                                                ["testnet", cdec["vout"][0]["scriptpubkey"]]))])
+             is True)
+        cfee = 40000 - cval
+        want = -(-(3 * (int(cdec["vsize"]) + pvsize)) // 1) - 150
+        c.ck("the child's fee is the pair's shortfall at 3 sat/vB (parent paid 150)",
+             abs(cfee - want) <= 6, "fee %d, wanted about %d" % (cfee, want))
+        c.ck("the detail says what the pair pays together",
+             "together they pay" in det and "150 sat" in det.replace(",", "") or
+             "together they pay" in det, det[:400])
+        c.ck("and the child is recorded, so it can be replaced",
+             isinstance((ip.globals.get("swaspends") or {}).get(cdec["txid"]), dict))
+    # without a fee from the backend (Electrum's history), the child pays for both
+    row2 = dict(row); row2.pop("fee")
+    ip.call("waBumpFee", [row2])
+    det2 = _fld(world, "hs_detail")
+    craw2 = str(ip.globals.get("swalastraw", ""))
+    if len(craw2) > 100:
+        cdec2 = REF.tx_decode(bytes.fromhex(craw2))
+        cfee2 = 40000 - cdec2["vout"][0]["value"]
+        c.ck("with the parent's fee unknown the child pays for both sizes in full",
+             abs(cfee2 - 3 * (int(cdec2["vsize"]) + pvsize)) <= 6 and "does not report" in det2,
+             "fee %d" % cfee2)
+    # without the parent's bytes or size, the bytes are asked for first
+    row3 = dict(row); row3.pop("raw"); row3.pop("vsize")
+    ip.globals["swaqueue"] = {"n": 0}
+    ip.globals["swabackend"] = "electrum-clear"
+    try:
+        ip.call("waBumpFee", [row3])
+        c.ck("without the parent's size the wallet asks for its bytes first", False, "built")
+    except LCS.Thrown as exc:
+        q = ip.globals.get("swaqueue") or {}
+        c.ck("without the parent's size the wallet asks for its bytes first",
+             "press Bump again" in str(exc.msg)
+             and str(q.get("1", {}).get("kind")) == "tx", str(exc.msg)[:80])
+    ip.globals["swaqueue"] = {"n": 0}
+    ip.globals["swabackend"] = "offline"
+    # a rate too high for the coin is refused, not built
+    put_field("sd_rate", "900")
+    try:
+        ip.call("waBumpFee", [row])
+        c.ck("a child that would leave dust is refused", False, "built")
+    except LCS.Thrown as exc:
+        c.ck("a child that would leave dust is refused", "dust" in str(exc.msg),
+             str(exc.msg)[:80])
+    put_field("sd_rate", "2")
+    utx.pop(str(n_u)); utx["n"] = n_u - 1
+    ip.globals["swautxos"] = utx
+
     # ---- Send: the same spend as a PSBT, round-tripped through Tools -----
     click(ip, world, "sd_toPsbt")
     psbt = str(ip.globals.get("swalastpsbt", ""))
@@ -1118,6 +1207,78 @@ def drive(c, ip, world, sandbox):
         c.eq("and the wallet it had open is untouched",
              str(ip.globals.get("swalabel", "")), "Boot gate wallet")
 
+    # ---- labels in BIP-329, out and back (2026-09-04) ---------------------
+    # One JSON object per line; this wallet's address labels go out as
+    # "addr" records and its frozen coins as "output" records with
+    # spendable false, and both come back. Types it does not keep are
+    # counted and skipped, a line that is not JSON is named.
+    saved_lab = {k: ip.globals.get(k) for k in ("swalabels", "swafrozen")}
+    lab_path = os.path.join(sandbox, "labels-test.wallet")
+    put_field("st_path", lab_path)
+    a_lab = str((ip.globals.get("swaaddresses") or {}).get("1", {}).get("address", ""))
+    b_lab = str((ip.globals.get("swaaddresses") or {}).get("2", {}).get("address", ""))
+    ip.globals["swalabels"] = {a_lab: "rent", b_lab: 'says "hi"\ttab'}
+    ip.globals["swafrozen"] = {"cc" * 32 + ":0": "true"}
+    text = str(ip.call("waLabelsText", []))
+    lines = [ln for ln in text.split("\n") if ln.strip()]
+    c.eq("two labels and one frozen coin make three BIP-329 lines", len(lines), 3)
+    try:
+        recs = [json.loads(ln) for ln in lines]
+    except ValueError as exc:
+        recs = []
+        c.ck("every line is JSON", False, str(exc)[:80])
+    if recs:
+        c.ck("every line is JSON", True)
+        c.ck("the address labels are addr records with the label escaped intact",
+             {"type": "addr", "ref": b_lab, "label": 'says "hi"\ttab'} in recs
+             and {"type": "addr", "ref": a_lab, "label": "rent"} in recs, str(recs)[:200])
+        c.ck("the frozen coin is an output record that is not spendable",
+             {"type": "output", "ref": "cc" * 32 + ":0", "spendable": False} in recs,
+             str(recs)[:200])
+    click(ip, world, "st_exportLabels")
+    c.ck("Export writes the file beside the wallet file",
+         os.path.exists(lab_path + ".labels.jsonl"), lab_path + ".labels.jsonl")
+    ip.globals["swalabels"] = {}
+    ip.globals["swafrozen"] = {}
+    click(ip, world, "st_importLabels")
+    c.eq("Import brings the labels back", str((ip.globals.get("swalabels") or {}).get(a_lab)),
+         "rent")
+    c.eq("with the escaped one intact",
+         str((ip.globals.get("swalabels") or {}).get(b_lab)), 'says "hi"\ttab')
+    c.eq("and the frozen coin", str((ip.globals.get("swafrozen") or {}).get("cc" * 32 + ":0")),
+         "true")
+    # the BIP's own examples: kept where the wallet has a home for them,
+    # counted and skipped where it does not
+    bip = ('{ "type": "tx", "ref": "f91d0a8a78462bc59398f2c5d7a84fcff491c26ba54c4833478b202796c8aafd", "label": "Transaction", "origin": "wpkh([d34db33f/84h/0h/0h])" }\n'
+           '{ "type": "addr", "ref": "bc1q34aq5drpuwy3wgl9lhup9892qp6svr8ldzyy7c", "label": "Address" }\n'
+           '{ "type": "pubkey", "ref": "0283409659355b6d1cc3c32decd5d561abaac86c37a353b52895a5e6c196d6f448", "label": "Public Key" }\n'
+           '{ "type": "input", "ref": "f91d0a8a78462bc59398f2c5d7a84fcff491c26ba54c4833478b202796c8aafd:0", "label": "Input" }\n'
+           '{ "type": "output", "ref": "f91d0a8a78462bc59398f2c5d7a84fcff491c26ba54c4833478b202796c8aafd:1", "label": "Output", "spendable": false }\n'
+           '{ "type": "xpub", "ref": "xpub661MyMwAqRbcFtXgS5sYJABqqG9YLmC4Q1Rdap9gSE8NqtwybGhePY2gZ29ESFjqJoCu1Rupje8YtGqsefD265TMg7usUDFdp6W1EGMcet8", "label": "Extended Public Key" }\n')
+    summary = str(ip.call("waLabelsApply", [bip]))
+    c.ck("the BIP's examples: one address label kept, one output frozen and labelled, four skipped",
+         summary.startswith("1 address label(s), 1 output record(s), 4 other"), summary)
+    c.eq("the example address label landed",
+         str((ip.globals.get("swalabels") or {}).get("bc1q34aq5drpuwy3wgl9lhup9892qp6svr8ldzyy7c")),
+         "Address")
+    c.eq("the example output is frozen",
+         str((ip.globals.get("swafrozen") or {}).get("f91d0a8a78462bc59398f2c5d7a84fcff491c26ba54c4833478b202796c8aafd:1")),
+         "true")
+    try:
+        ip.call("waLabelsApply", ['{"type":"addr","ref":"x","label":"ok"}\nnot json\n'])
+        c.ck("a line that is not JSON is refused by its number", False, "accepted")
+    except LCS.Thrown as exc:
+        c.ck("a line that is not JSON is refused by its number",
+             "line 2" in str(exc.msg), str(exc.msg)[:100])
+    put_field("st_path", "")
+    try:
+        ip.call("waLabelsExport", [])
+        c.ck("Export with no wallet path says so", False, "wrote somewhere")
+    except LCS.Thrown as exc:
+        c.ck("Export with no wallet path says so", "path first" in str(exc.msg), str(exc.msg)[:80])
+    for k, v in saved_lab.items():
+        ip.globals[k] = v
+
     # ---- the network root, and the chain the backend actually carries ----
     # THE DEFECT THIS SECTION EXISTS FOR: a funded testnet address reported no
     # coins, because waEsploraPath emitted the MAINNET "/api" root for every
@@ -1187,6 +1348,26 @@ def drive(c, ip, world, sandbox):
     c.eq("regtest is allowed against a host the person typed themselves",
          why("esplora-clear", "127.0.0.1:3002", "regtest"), "")
     c.eq("offline is never a chain complaint", why("offline", clear, "regtest"), "")
+    # TESTNET4 (2026-09-04): testnet3's bytes on a different chain, so the
+    # backend is the only thing that can tell them apart - and Blockstream's
+    # mirrors index testnet3. The guard names the host that serves it.
+    alt = str(ip.constants.get("kWaEsploraClearAlt", ""))
+    w4 = why("esplora-clear", clear, "testnet4")
+    c.ck("testnet4 is refused on Blockstream's clearnet mirror, naming mempool.space",
+         w4 != "" and alt in w4, w4[:120])
+    c.ck("and on its onion", why("esplora-tor", onion, "testnet4") != "")
+    c.eq("and allowed on mempool.space, which serves it",
+         why("esplora-clear", alt, "testnet4"), "")
+    c.ck("the built-in Electrum servers are refused on testnet4",
+         why("electrum-tor", elec, "testnet4") != ""
+         and why("electrum-clear", str(ip.constants.get("kWaElectrumClear", "")), "testnet4") != "")
+    ip.globals["swanetwork"] = "testnet4"
+    c.ck("testnet4 asks its own Esplora root",
+         esplora_path("tip").startswith("/testnet4/api"), esplora_path("tip"))
+    c.eq("and the wallet knows the chain by name", str(ip.call("waNetChoice", [])), "Test4")
+    c.ck("and derives testnet-shaped addresses for it",
+         str(ip.call("waSelfTestAddress", ["p2wpkh", "testnet4"])).startswith("tb1"),
+         str(ip.call("waSelfTestAddress", ["p2wpkh", "testnet4"])))
 
     # And the guard is REACHED: waSync refuses before it builds a request.
     ip.globals["swabackend"] = "electrum-tor"

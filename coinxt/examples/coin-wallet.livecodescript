@@ -6,8 +6,8 @@ script "coinXTWallet"
 -- WHAT IT IS. The whole wallet surface CoinXT makes possible, on ten screens:
 --
 --   Wallet     create a new seed, restore one, watch an xpub/ypub/zpub/tpub,
---              import a single key, or build an m-of-n multisig; four
---              networks (mainnet, testnet, signet, regtest) and five script
+--              import a single key, or build an m-of-n multisig; five
+--              networks (mainnet, testnet, testnet4, signet, regtest) and five script
 --              types (legacy, nested SegWit, native SegWit, taproot, P2WSH
 --              multisig)
 --   Receive    the next unused address, its BIP-21 URI and a scannable QR
@@ -3273,21 +3273,26 @@ constant kCwOpOne = 81
 -- assignment: BIP-86 keeps xpub deliberately, so the p2tr row repeats the
 -- BIP-32 numbers rather than inventing any.
 
-constant kCwNetworks = "mainnet,testnet,signet,regtest"
-constant kCwHrps = "bc,tb,tb,bcrt"
-constant kCwP2pkhVersions = "0,111,111,111"
-constant kCwP2shVersions = "5,196,196,196"
-constant kCwWifVersions = "128,239,239,239"
-constant kCwCoinTypes = "0,1,1,1"
+-- TESTNET4 (2026-09-04) is a fifth column with testnet3's bytes in every
+-- row: same address prefixes, same WIF and extended-key versions, same coin
+-- type. It is a different CHAIN - a fresh genesis, since Bitcoin Core 28 -
+-- and testnet3 is being retired, so which chain a backend indexes is the
+-- only thing that tells them apart. That lives in the app's backend tables.
+constant kCwNetworks = "mainnet,testnet,signet,regtest,testnet4"
+constant kCwHrps = "bc,tb,tb,bcrt,tb"
+constant kCwP2pkhVersions = "0,111,111,111,111"
+constant kCwP2shVersions = "5,196,196,196,196"
+constant kCwWifVersions = "128,239,239,239,239"
+constant kCwCoinTypes = "0,1,1,1,1"
 
-constant kCwXpubVersions = "76067358,70617039,70617039,70617039"
-constant kCwXprvVersions = "76066276,70615956,70615956,70615956"
-constant kCwYpubVersions = "77429938,71979618,71979618,71979618"
-constant kCwYprvVersions = "77428856,71978536,71978536,71978536"
-constant kCwZpubVersions = "78792518,73342198,73342198,73342198"
-constant kCwZprvVersions = "78791436,73341116,73341116,73341116"
-constant kCwZshPubVersions = "44728019,39277699,39277699,39277699"
-constant kCwZshPrvVersions = "44726937,39276616,39276616,39276616"
+constant kCwXpubVersions = "76067358,70617039,70617039,70617039,70617039"
+constant kCwXprvVersions = "76066276,70615956,70615956,70615956,70615956"
+constant kCwYpubVersions = "77429938,71979618,71979618,71979618,71979618"
+constant kCwYprvVersions = "77428856,71978536,71978536,71978536,71978536"
+constant kCwZpubVersions = "78792518,73342198,73342198,73342198,73342198"
+constant kCwZprvVersions = "78791436,73341116,73341116,73341116,73341116"
+constant kCwZshPubVersions = "44728019,39277699,39277699,39277699,39277699"
+constant kCwZshPrvVersions = "44726937,39276616,39276616,39276616,39276616"
 
 -- ---- script types ------------------------------------------------------------
 -- The five standard output types this wallet builds and spends, with the BIP
@@ -12143,8 +12148,9 @@ command waBuildWallet
    uiSection "wl_sec2", "2. Network and script type", "196,122,688,140"
    uiButton "wl_netMain", "mainnet", "196,146,286,170"
    uiButton "wl_netTest", "testnet", "290,146,380,170"
-   uiButton "wl_netSignet", "signet", "384,146,474,170"
-   uiButton "wl_netReg", "regtest", "478,146,568,170"
+   uiButton "wl_netTest4", "testnet4", "384,146,474,170"
+   uiButton "wl_netSignet", "signet", "478,146,568,170"
+   uiButton "wl_netReg", "regtest", "572,146,662,170"
    uiButton "wl_typeLegacy", "Legacy 44", "196,174,286,198"
    uiButton "wl_typeNested", "Nested 49", "290,174,380,198"
    uiButton "wl_typeNative", "Native 84", "384,174,474,198"
@@ -12405,7 +12411,9 @@ command waBuildSettings
    uiButton "st_save", "Save", "196,182,300,208"
    uiButton "st_load", "Open", "304,182,408,208"
    uiButton "st_browse", "Choose a file", "412,182,560,208"
-   uiWrap "st_filenote", "", "196,216,688,300", 11
+   uiButton "st_exportLabels", "Export labels (BIP-329)", "196,212,408,238"
+   uiButton "st_importLabels", "Import labels", "412,212,560,238"
+   uiWrap "st_filenote", "", "196,244,688,300", 11
    uiSection "st_sec2", "Display", "196,308,688,326"
    uiButton "st_unitBtc", "BTC", "196,332,290,356"
    uiButton "st_unitMbtc", "mBTC", "294,332,388,356"
@@ -13401,7 +13409,7 @@ command waPaintWallet
    local tOut, tError, tNode, tPath, tRec, tI, tCount
    set the defaultStack to the short name of this stack
    waPaintChoice "wl_kind", "Seed,Restore,Watch,Key,Multi", waKindChoice()
-   waPaintChoice "wl_net", "Main,Test,Signet,Reg", waNetChoice()
+   waPaintChoice "wl_net", "Main,Test,Test4,Signet,Reg", waNetChoice()
    waPaintChoice "wl_type", "Legacy,Nested,Native,Taproot,Multi", waTypeChoice()
    put sWaAccount into field "wl_account"
    put sWaCustomPath into field "wl_path"
@@ -13523,6 +13531,9 @@ private function waNetChoice
    if sWaNetwork is "testnet" then
       return "Test"
    end if
+   if sWaNetwork is "testnet4" then
+      return "Test4"
+   end if
    if sWaNetwork is "signet" then
       return "Signet"
    end if
@@ -13618,6 +13629,8 @@ command waWalletClick pRole
       waSetNetwork "mainnet"
    else if pRole is "netTest" then
       waSetNetwork "testnet"
+   else if pRole is "netTest4" then
+      waSetNetwork "testnet4"
    else if pRole is "netSignet" then
       waSetNetwork "signet"
    else if pRole is "netReg" then
@@ -15682,6 +15695,146 @@ command waHistoryClick pRole
    waRefreshScreen
 end waHistoryClick
 
+function waCpfpCoins pTxid
+   -- The unfrozen, unconfirmed coins this wallet holds from one transaction:
+   -- what a child-pays-for-parent bump can spend.
+   local tI, tCount, tRec, tOut, tKey
+   put waEmptyList() into tOut
+   put cwListCount(sWaUtxos) into tCount
+   repeat with tI = 1 to tCount
+      put sWaUtxos[tI] into tRec
+      if tRec["txid"] is not pTxid then
+         next repeat
+      end if
+      if tRec["confirmations"] + 0 > 0 then
+         next repeat
+      end if
+      put tRec["txid"] & ":" & tRec["vout"] into tKey
+      if sWaFrozen[tKey] is "true" then
+         next repeat
+      end if
+      put cwListAdd(tOut, tRec) into tOut
+   end repeat
+   return tOut
+end waCpfpCoins
+
+command waCpfpBuild pRec, pKids
+   -- The child: every unconfirmed coin of the parent that is ours, spent to
+   -- this wallet's next change address, at a fee that pays for the parent's
+   -- bytes as well as its own at the rate on the Send screen. A miner takes
+   -- the pair as a package, so the parent's shortfall is what the child adds.
+   --
+   -- The parent's SIZE comes from its bytes (the history row's raw, fetched
+   -- like Inspect fetches them) or from the backend's weight where Esplora
+   -- gave one; its FEE is known only where the backend said it - Electrum's
+   -- history does not - and when it is unknown the child pays for both sizes
+   -- in full, as if the parent had paid nothing, and says so.
+   local tRate, tParentVsize, tParentFee, tFeeKnown, tTx, tI, tCount, tRec
+   local tInputs, tOutputs, tSel, tTotalIn, tChangeRec, tTypes, tOutTypes
+   local tChildVsize, tWant, tFee, tFloor, tValue, tDust, tRaw, tNew, tOut
+   set the defaultStack to the short name of this stack
+   put field "sd_rate" into tRate
+   if tRate is not a number or tRate <= 0 then
+      throw "set a fee rate on the Send screen first: the child pays for " & \
+            "the parent at that rate."
+   end if
+   if pRec["vsize"] is an integer and pRec["vsize"] > 0 then
+      put pRec["vsize"] into tParentVsize
+   else if pRec["raw"] is not "" then
+      put cwTxDecode(pRec["raw"]) into tTx
+      put tTx["vsize"] into tParentVsize
+   else
+      if sWaBackend is "offline" then
+         throw "the parent's size is needed to price the child, and this " & \
+               "wallet is offline. Choose a backend and press Inspect first."
+      end if
+      put cwLower(pRec["txid"]) into sWaInspectWanted
+      waEnsurePolling
+      waNetQueue "tx", pRec["txid"]
+      waLog "cpfp: asking the backend for the bytes of " & pRec["txid"]
+      throw "asking the backend for the parent's bytes; press Bump again " & \
+            "when they arrive (the log will say)."
+   end if
+   put false into tFeeKnown
+   put 0 into tParentFee
+   if pRec["fee"] is an integer and pRec["fee"] >= 0 then
+      put pRec["fee"] into tParentFee
+      put true into tFeeKnown
+   end if
+   put waNextUnused(1) into tChangeRec
+   if tChangeRec is "" then
+      throw "there is no change address left in the derived window. Derive " & \
+            "more on the Addresses screen."
+   end if
+   put waEmptyList() into tInputs
+   put waEmptyList() into tSel
+   put 0 into tTotalIn
+   put cwListCount(pKids) into tCount
+   repeat with tI = 1 to tCount
+      put pKids[tI] into tRec
+      put cwListAdd(tInputs, cwTxInput(tRec["txid"], tRec["vout"], kCwSeqRbf)) into tInputs
+      put cwListAdd(tSel, tRec) into tSel
+      add tRec["value"] to tTotalIn
+   end repeat
+   put waEmptyList() into tOutTypes
+   put cwListAdd(tOutTypes, waChangeType()) into tOutTypes
+   put cwEstimateVsize(cwSimpleInputs(waInputType(), tCount, sWaM, \
+         cwListCount(sWaCosigners)), tOutTypes) into tChildVsize
+   put waCeilSat(tRate * (tChildVsize + tParentVsize)) into tWant
+   put tWant - tParentFee into tFee
+   put cwFeeFor(tChildVsize, 1) into tFloor
+   if tFee < tFloor then
+      put tFloor into tFee
+   end if
+   put tTotalIn - tFee into tValue
+   put cwDustThreshold(waChangeType()) into tDust
+   if tValue < tDust then
+      throw "the " & waAmount(tTotalIn) & " this wallet holds from that " & \
+            "transaction cannot carry a fee of " & waAmount(tFee) & " and " & \
+            "leave more than dust. Lower the rate on the Send screen, or " & \
+            "let it confirm on its own."
+   end if
+   put waEmptyList() into tOutputs
+   put cwListAdd(tOutputs, cwTxOutput(tValue, tChangeRec["script"])) into tOutputs
+   put waSignSpend(tInputs, tOutputs, tSel, 0) into tRaw
+   put cwTxDecode(tRaw) into tNew
+   put tRaw into sWaLastRaw
+   -- recorded with no payees and the whole value as change, so it can be
+   -- replaced in its turn if the rate proves too low
+   waRecordSpend tNew["txid"], tSel, waEmptyList(), tValue, tChangeRec, 0, \
+         kCwSeqRbf, tFee, tNew["vsize"] + 0
+   put "CHILD PAYS FOR PARENT (CPFP)" & return & return into tOut
+   put "  parent     " & pRec["txid"] & return after tOut
+   put "  child      " & tNew["txid"] & return & return after tOut
+   put "  the parent weighs " & tParentVsize & " vB and paid " after tOut
+   if tFeeKnown is true then
+      put waAmount(tParentFee) & return after tOut
+   else
+      put "an amount this backend does not report, so the" & return & \
+            "  child pays for both sizes in full, as if the parent had paid " & \
+            "nothing" & return after tOut
+   end if
+   put "  the child weighs " & tNew["vsize"] & " vB and pays " & waAmount(tFee) & \
+         return after tOut
+   put "  together they pay " & waAmount(tFee + tParentFee) & " over " & \
+         (tNew["vsize"] + tParentVsize) & " vB, about " & \
+         cwCeilDiv(tFee + tParentFee, tNew["vsize"] + tParentVsize) & \
+         " sat/vB, which is the rate you asked for" & return & return after tOut
+   put "  it spends " & tCount & " coin(s) of the parent, " & waAmount(tTotalIn) & \
+         ", and pays" & return after tOut
+   put "    " & waAmount(tValue) & "  ->  " & tChangeRec["address"] & \
+         "  (this wallet's next change address)" & return & return after tOut
+   put "  It is replaceable in its turn, so a rate that proves too low can " & \
+         "be raised." & return & return after tOut
+   put tRaw & return & return after tOut
+   put "NOTHING HAS BEEN BROADCAST. The Send screen's Broadcast button will" & return after tOut
+   put "push it; a miner that takes the child must take the parent with it." after tOut
+   put tOut into field "hs_detail"
+   uiStatus "Built a child that pays for " & char 1 to 16 of pRec["txid"] & \
+         "... at " & tRate & " sat/vB for the pair. Broadcast is on the " & \
+         "Send screen.", "ok"
+end waCpfpBuild
+
 private function waHistoryRows
    -- sWaHistory is keyed by (txid, ADDRESS), because that is what
    -- waUsedAddresses reads: an address is used if any transaction touched it,
@@ -15740,7 +15893,7 @@ command waBumpFee pRec
    -- the extra fee comes out of the coins that were coming back to you
    -- anyway. Nothing is re-selected, so there is no path here that spends a
    -- coin the original did not.
-   local tOld, tSel, tPays, tI, tCount, tRec, tInputs, tOutputs, tSeq
+   local tOld, tSel, tPays, tI, tCount, tRec, tInputs, tOutputs, tSeq, tKids
    local tOldFee, tVsize, tFloor, tRate, tWant, tDelta, tNewChange, tChangeRec
    local tTotalIn, tTotalOut, tRaw, tNew, tRealFee, tOut, tDust, tError
    set the defaultStack to the short name of this stack
@@ -15749,6 +15902,19 @@ command waBumpFee pRec
             "and nothing on earth can replace it now."
    end if
    put sWaSpends[pRec["txid"]] into tOld
+   -- CHILD PAYS FOR PARENT (2026-09-04), when a replacement cannot: a
+   -- transaction this wallet did not build, one built without the RBF
+   -- opt-in, or one that kept no change - and an INCOMING payment that is
+   -- stuck, which is the case a replacement can never touch. If this wallet
+   -- holds an unconfirmed output of it, a child spending that output back to
+   -- this wallet at a fee that carries both is the one bump left.
+   put waCpfpCoins(pRec["txid"]) into tKids
+   if cwListCount(tKids) > 0 and (tOld is "" \
+         or tOld["sequence"] + 0 >= kCwSeqNoRbf or tOld["change"] + 0 <= 0 \
+         or tOld["changerec"] is "") then
+      waCpfpBuild pRec, tKids
+      exit waBumpFee
+   end if
    if tOld is "" then
       -- The honest answer, and the advice is still the right thing to print.
       put waBumpAdvice(pRec) & return & return & \
@@ -17790,6 +17956,9 @@ function waEsploraRoot
    if sWaNetwork is "testnet" then
       return "/testnet"
    end if
+   if sWaNetwork is "testnet4" then
+      return "/testnet4"
+   end if
    if sWaNetwork is "signet" then
       return "/signet"
    end if
@@ -17836,6 +18005,23 @@ function waBackendChainWhy
       return "the built-in clearnet Electrum server carries mainnet and " & \
             "testnet only, and this wallet is on " & sWaNetwork & \
             ". Put a " & sWaNetwork & " server in the host field."
+   end if
+   -- TESTNET4 (2026-09-04): the same bytes as testnet3 and a different chain,
+   -- so a backend that indexes testnet3 answers a testnet4 address with a
+   -- well-formed nothing. Blockstream's mirrors carry testnet3 only;
+   -- mempool.space carries testnet4 under /testnet4, and is the built-in
+   -- second Esplora host already. Neither built-in Electrum server carries it.
+   if sWaNetwork is "testnet4" and (sWaHost is kWaEsploraOnion \
+         or sWaHost is kWaEsploraClear) then
+      return "Blockstream's mirrors index testnet3, not testnet4, and " & \
+            "would answer every address with an empty list. Put " & \
+            kWaEsploraClearAlt & " in the host field: it serves testnet4."
+   end if
+   if sWaNetwork is "testnet4" and (sWaHost is kWaElectrumOnion \
+         or sWaHost is kWaElectrumClear) then
+      return "the built-in Electrum servers carry mainnet and testnet3, " & \
+            "not testnet4. Put a testnet4 Electrum server in the host " & \
+            "field, or use Esplora over clearnet with " & kWaEsploraClearAlt & "."
    end if
    if sWaNetwork is "regtest" and (sWaHost is kWaEsploraOnion \
          or sWaHost is kWaEsploraClear or sWaHost is kWaElectrumOnion \
@@ -19201,6 +19387,13 @@ command waMergeHistory pAddress, pNode, pShape
       else
          put cwJsonGet(tItem, "txid") into tRec["txid"]
          put cwJsonGet(tItem, "status/block_height") into tHeight
+         -- Esplora says what a transaction paid and weighed; Electrum's
+         -- history does not, and a child-pays-for-parent bump (waCpfpBuild)
+         -- needs both, so they are kept where they are offered (2026-09-04)
+         put cwJsonGet(tItem, "fee") into tRec["fee"]
+         if cwJsonGet(tItem, "weight") is an integer then
+            put cwCeilDiv(cwJsonGet(tItem, "weight"), 4) into tRec["vsize"]
+         end if
       end if
       if tHeight is not "" and tHeight + 0 > 0 and sWaTipHeight is not "" then
          put sWaTipHeight - tHeight + 1 into tConf
@@ -19499,6 +19692,10 @@ command waSettingsClick pRole
    else if pRole is "update" then
       waUpdateFromMain
       exit waSettingsClick
+   else if pRole is "exportLabels" then
+      waLabelsExport
+   else if pRole is "importLabels" then
+      waLabelsImport
    else if pRole is "forget" then
       waResetWallet
       set the defaultStack to the short name of this stack
@@ -19516,6 +19713,128 @@ command waSettingsClick pRole
    end if
    waRefreshAll
 end waSettingsClick
+
+-- ---- labels, in BIP-329 -----------------------------------------------------
+-- The one interoperable label format (2022): one JSON object per line, a
+-- "type", a "ref" and a "label", read and written by Sparrow, Bitcoin Core
+-- and the rest. This wallet's labels are address labels, and its frozen
+-- coins map onto the BIP's "spendable": false on an output record, so both
+-- go out and both come back. Record types it does not keep (tx, input,
+-- pubkey, xpub) are counted and skipped on import, never refused.
+
+function waLabelsPath
+   -- Beside the wallet file, named for it.
+   local tPath
+   set the defaultStack to the short name of this stack
+   put cwTrim(field "st_path") into tPath
+   if tPath is "" then
+      throw "set the wallet file's path first; the labels file goes beside it."
+   end if
+   return tPath & ".labels.jsonl"
+end waLabelsPath
+
+function waLabelsText
+   -- Every label and every frozen coin, as BIP-329 lines.
+   local tOut, tKeys, tKey, tI, tCount
+   put "" into tOut
+   put the keys of sWaLabels into tKeys
+   sort lines of tKeys
+   put the number of lines of tKeys into tCount
+   repeat with tI = 1 to tCount
+      put line tI of tKeys into tKey
+      if sWaLabels[tKey] is "" then
+         next repeat
+      end if
+      put "{" & cwJsonString2("type") & ":" & cwJsonString2("addr") & "," & \
+            cwJsonString2("ref") & ":" & cwJsonString2(tKey) & "," & \
+            cwJsonString2("label") & ":" & cwJsonString2(sWaLabels[tKey]) & \
+            "}" & numToChar(10) after tOut
+   end repeat
+   put the keys of sWaFrozen into tKeys
+   sort lines of tKeys
+   put the number of lines of tKeys into tCount
+   repeat with tI = 1 to tCount
+      put line tI of tKeys into tKey
+      if sWaFrozen[tKey] is not "true" then
+         next repeat
+      end if
+      put "{" & cwJsonString2("type") & ":" & cwJsonString2("output") & "," & \
+            cwJsonString2("ref") & ":" & cwJsonString2(tKey) & "," & \
+            cwJsonString2("spendable") & ":false}" & numToChar(10) after tOut
+   end repeat
+   return tOut
+end waLabelsText
+
+function waLabelsApply pText
+   -- Read BIP-329 lines into the wallet's labels and frozen coins. Answers
+   -- what it did; throws, naming the line, on one that is not JSON.
+   local tI, tCount, tLine, tNode, tType, tRef, tError, tAddrs, tOuts, tOther
+   put 0 into tAddrs
+   put 0 into tOuts
+   put 0 into tOther
+   put the number of lines of pText into tCount
+   repeat with tI = 1 to tCount
+      put cwTrim(line tI of pText) into tLine
+      if tLine is "" then
+         next repeat
+      end if
+      try
+         put cwJsonParse(tLine) into tNode
+      catch tError
+         put "line " & tI & " is not JSON: " & line 1 of tError into tError
+      end try
+      if cwJsonType(tNode) is not "object" then
+         if tError is "" then
+            put "line " & tI & " is not a JSON object." into tError
+         end if
+         throw tError
+      end if
+      put cwJsonGet(tNode, "type") into tType
+      put cwJsonGet(tNode, "ref") into tRef
+      if tType is "addr" and tRef is not "" then
+         put cwJsonGet(tNode, "label") into sWaLabels[tRef]
+         add 1 to tAddrs
+      else if tType is "output" and tRef is not "" then
+         if cwJsonGet(tNode, "spendable") is "false" then
+            put "true" into sWaFrozen[tRef]
+         else
+            delete variable sWaFrozen[tRef]
+         end if
+         if cwJsonGet(tNode, "label") is not "" then
+            put cwJsonGet(tNode, "label") into sWaLabels[tRef]
+         end if
+         add 1 to tOuts
+      else
+         add 1 to tOther
+      end if
+   end repeat
+   return tAddrs & " address label(s), " & tOuts & " output record(s), " & \
+         tOther & " other record(s) skipped (this wallet keeps no tx, " & \
+         "input, pubkey or xpub labels)"
+end waLabelsApply
+
+command waLabelsExport
+   local tPath, tText, tLines
+   put waLabelsPath() into tPath
+   put waLabelsText() into tText
+   put tText into URL ("file:" & tPath)
+   put the number of lines of tText into tLines
+   waLog "labels: wrote " & tLines & " BIP-329 line(s) to " & tPath
+   uiStatus "Wrote " & tLines & " label line(s) to " & tPath & ".", "ok"
+end waLabelsExport
+
+command waLabelsImport
+   local tPath, tText, tSummary
+   put waLabelsPath() into tPath
+   put URL ("file:" & tPath) into tText
+   if tText is "" then
+      throw "there is nothing at " & tPath & ". Export writes there; put " & \
+            "another wallet's BIP-329 file there to import it."
+   end if
+   put waLabelsApply(tText) into tSummary
+   waLog "labels: read " & tPath & ": " & tSummary
+   uiStatus "Imported: " & tSummary & ".", "ok"
+end waLabelsImport
 
 -- ---- update from main -------------------------------------------------------
 -- A wallet that replaces its own code is a wallet whose code can be replaced,
@@ -20265,7 +20584,7 @@ end scFinish
 -- clipboard. What they check is that this stack's own arithmetic agrees with
 -- the library it carries, on this engine, before anybody types anything.
 
-constant kWaScControls = "ad_change,ad_detail,ad_label,ad_labelCap,ad_more,ad_panel,ad_receive,ad_scan,ad_sec1,ad_setLabel,ad_table,cn_addManual,cn_detail,cn_freeze,cn_hint,cn_panel,cn_sec1,cn_table,cn_tick,cn_tickAll,cn_tickNone,hs_bump,hs_copyTxid,hs_detail,hs_inspect,hs_panel,hs_refresh,hs_sec1,hs_table,lg_boot,lg_clear,lg_copy,lg_hint,lg_panel,lg_sec1,lg_sec2,lg_text,nv_ad,nv_bal,nv_chain,nv_cn,nv_confirmed,nv_frozenamt,nv_hs,nv_lg,nv_net,nv_nw,nv_panel,nv_pending,nv_rc,nv_refresh,nv_sd,nv_st,nv_tip,nv_tl,nv_wallet,nv_wl,nw_bElectrumClear,nw_bElectrumTor,nw_bEsploraClear,nw_bEsploraTor,nw_bOffline,nw_host,nw_hostCap,nw_out,nw_panelA,nw_panelB,nw_port,nw_portCap,nw_privacy,nw_sec1,nw_sec2,nw_sec3,nw_socks,nw_socksCap,nw_state,nw_stop,nw_syncNow,nw_test,nw_why,rc_address,rc_amount,rc_amountCap,rc_copy,rc_copyUri,rc_detail,rc_label,rc_labelCap,rc_message,rc_messageCap,rc_next,rc_panelA,rc_panelB,rc_qr,rc_qrframe,rc_qrhint,rc_sec1,rc_sec2,rc_sec3,rc_showQr,rc_uri,rc_verify,sd_addSelf,sd_broadcast,sd_clear,sd_copyRaw,sd_locktime,sd_locktimeCap,sd_out,sd_panelA,sd_panelB,sd_paste,sd_preview,sd_rate,sd_rateCap,sd_ratehint,sd_rbf,sd_sec1,sd_sec2,sd_sec3,sd_sec4,sd_sign,sd_stratBnb,sd_stratLargest,sd_stratManual,sd_stratOldest,sd_stratSmallest,sd_strategyCap,sd_to,sd_toCap,sd_toPsbt,sd_warn,st_about,st_browse,st_filenote,st_forget,st_forgetnote,st_gap,st_gapCap,st_load,st_panelA,st_panelB,st_password,st_passwordCap,st_path,st_pathCap,st_save,st_sec1,st_sec2,st_sec3,st_unitBtc,st_unitMbtc,st_unitSat,st_update,tl_copyOut,tl_decode,tl_derive,tl_entropy,tl_export,tl_hex,tl_hexCap,tl_hold,tl_inspect,tl_msg,tl_msgAddr,tl_msgAddrCap,tl_msgCap,tl_msgSig,tl_msgSigCap,tl_msgSign,tl_msgVerify,tl_newKey,tl_note,tl_out,tl_panelA,tl_panelB,tl_pass,tl_passCap,tl_psbtCombine,tl_psbtFinal,tl_psbtSign,tl_sec1,tl_sec2,tl_sec3,tl_sweep,tl_toEntropy,tl_validate,uiFooter,uiStatus,uiTitle,wl_account,wl_accountCap,wl_addCosigner,wl_backup,wl_copyDesc,wl_copyXpub,wl_custody,wl_generate,wl_kindKey,wl_kindMulti,wl_kindRestore,wl_kindSeed,wl_kindWatch,wl_label,wl_labelCap,wl_m,wl_mCap,wl_mnemonic,wl_mnemonicCap,wl_netMain,wl_netReg,wl_netSignet,wl_netTest,wl_open,wl_out,wl_panelA,wl_panelB,wl_pass,wl_passCap,wl_path,wl_pathCap,wl_sec1,wl_sec2,wl_sec3,wl_sec4,wl_typeLegacy,wl_typeMulti,wl_typeNative,wl_typeNested,wl_typeTaproot,wl_warn,wl_xkey,wl_xkeyCap"
+constant kWaScControls = "ad_change,ad_detail,ad_label,ad_labelCap,ad_more,ad_panel,ad_receive,ad_scan,ad_sec1,ad_setLabel,ad_table,cn_addManual,cn_detail,cn_freeze,cn_hint,cn_panel,cn_sec1,cn_table,cn_tick,cn_tickAll,cn_tickNone,hs_bump,hs_copyTxid,hs_detail,hs_inspect,hs_panel,hs_refresh,hs_sec1,hs_table,lg_boot,lg_clear,lg_copy,lg_hint,lg_panel,lg_sec1,lg_sec2,lg_text,nv_ad,nv_bal,nv_chain,nv_cn,nv_confirmed,nv_frozenamt,nv_hs,nv_lg,nv_net,nv_nw,nv_panel,nv_pending,nv_rc,nv_refresh,nv_sd,nv_st,nv_tip,nv_tl,nv_wallet,nv_wl,nw_bElectrumClear,nw_bElectrumTor,nw_bEsploraClear,nw_bEsploraTor,nw_bOffline,nw_host,nw_hostCap,nw_out,nw_panelA,nw_panelB,nw_port,nw_portCap,nw_privacy,nw_sec1,nw_sec2,nw_sec3,nw_socks,nw_socksCap,nw_state,nw_stop,nw_syncNow,nw_test,nw_why,rc_address,rc_amount,rc_amountCap,rc_copy,rc_copyUri,rc_detail,rc_label,rc_labelCap,rc_message,rc_messageCap,rc_next,rc_panelA,rc_panelB,rc_qr,rc_qrframe,rc_qrhint,rc_sec1,rc_sec2,rc_sec3,rc_showQr,rc_uri,rc_verify,sd_addSelf,sd_broadcast,sd_clear,sd_copyRaw,sd_locktime,sd_locktimeCap,sd_out,sd_panelA,sd_panelB,sd_paste,sd_preview,sd_rate,sd_rateCap,sd_ratehint,sd_rbf,sd_sec1,sd_sec2,sd_sec3,sd_sec4,sd_sign,sd_stratBnb,sd_stratLargest,sd_stratManual,sd_stratOldest,sd_stratSmallest,sd_strategyCap,sd_to,sd_toCap,sd_toPsbt,sd_warn,st_about,st_browse,st_exportLabels,st_filenote,st_forget,st_forgetnote,st_gap,st_gapCap,st_importLabels,st_load,st_panelA,st_panelB,st_password,st_passwordCap,st_path,st_pathCap,st_save,st_sec1,st_sec2,st_sec3,st_unitBtc,st_unitMbtc,st_unitSat,st_update,tl_copyOut,tl_decode,tl_derive,tl_entropy,tl_export,tl_hex,tl_hexCap,tl_hold,tl_inspect,tl_msg,tl_msgAddr,tl_msgAddrCap,tl_msgCap,tl_msgSig,tl_msgSigCap,tl_msgSign,tl_msgVerify,tl_newKey,tl_note,tl_out,tl_panelA,tl_panelB,tl_pass,tl_passCap,tl_psbtCombine,tl_psbtFinal,tl_psbtSign,tl_sec1,tl_sec2,tl_sec3,tl_sweep,tl_toEntropy,tl_validate,uiFooter,uiStatus,uiTitle,wl_account,wl_accountCap,wl_addCosigner,wl_backup,wl_copyDesc,wl_copyXpub,wl_custody,wl_generate,wl_kindKey,wl_kindMulti,wl_kindRestore,wl_kindSeed,wl_kindWatch,wl_label,wl_labelCap,wl_m,wl_mCap,wl_mnemonic,wl_mnemonicCap,wl_netMain,wl_netReg,wl_netSignet,wl_netTest,wl_netTest4,wl_open,wl_out,wl_panelA,wl_panelB,wl_pass,wl_passCap,wl_path,wl_pathCap,wl_sec1,wl_sec2,wl_sec3,wl_sec4,wl_typeLegacy,wl_typeMulti,wl_typeNative,wl_typeNested,wl_typeTaproot,wl_warn,wl_xkey,wl_xkeyCap"
 
 command waScFresh
    -- THIS RUN'S RECORD, NOT EVERY RUN'S. The field is saved with the stack,
