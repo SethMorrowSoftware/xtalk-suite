@@ -3082,3 +3082,16 @@ it a self-send, locked until its block). The autotest now reports 400 characters
 of a refusal instead of 120, so the next engine run carries the rest of that
 advice line - frozen, unconfirmed, or something else - and this entry is here so
 the failure is not mistaken for the two above.
+
+**A refused batch is halved, not abandoned (2026-09-03).** The same engine log
+had the onion Electrum server close the connection on the sync's first batch of
+22, after which `waBatchSplit` switched batching off and the sync asked its 41
+requests one at a time - 41 Tor round trips where two or three lines would have
+done. ElectrumX caps the SIZE of a line, and 22 histories of a busy wallet can be
+over it where 11 are not, so a refusal now puts the members back and tries half
+as many on the next line (`sWaBatchCap`, read by `waBatchCap` in the pump),
+halving again on each refusal; when the half would be one, batching is off for
+that server as before, and `waSetBackend` forgets the cap with the refusal. The
+boot gate's Tor section drives four requests refused to two, two refused to
+singles, and the forgetting; the section passed in isolation, 114 checks with
+the boot. Not run on an engine.
