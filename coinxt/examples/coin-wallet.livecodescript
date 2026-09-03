@@ -13070,7 +13070,7 @@ constant kWaVersion = "1.2.0"
 -- text before it is offered, the offer names the version and the SHA-256,
 -- and nothing replaces the script until you press Update.
 constant kWaUpdateUrl = "https://raw.githubusercontent.com/SethMorrowSoftware/xtalk-suite/main/coinxt/examples/coin-wallet.livecodescript"
-constant kWaUiVersion = "ui-2de3bd949691"
+constant kWaUiVersion = "ui-0f169f6d063f"
 
 -- The window, inside the family's 720p budget (tools/check-stack-size.py).
 constant kWaWidth = 1200
@@ -23919,17 +23919,24 @@ command waUpdateRestore
    -- resets the backend to its defaults, and the first full gate run
    -- (2026-09-03) came back with the carried backend and a default host and
    -- port - a person's own server, lost in the update.
+   -- AND INTO THE FIELDS, because waApplyNetworkFields below reads the
+   -- Network screen's fields back into these same locals - which still
+   -- held the defaults, so the carried server was overwritten a second
+   -- time (the prefill-2 driver of 2026-09-03 caught it after the reorder).
    if tBackend is not empty then
       put tBackend into sWaBackend
    end if
    if tHost is not empty then
       put tHost into sWaHost
+      put tHost into field "nw_host"
    end if
    if tPort is not empty then
       put tPort into sWaPort
+      put tPort into field "nw_port"
    end if
    if tSocks is not empty then
       put tSocks into sWaSocksPort
+      put tSocks into field "nw_socks"
    end if
    waRefreshNetState
    waApplyNetworkFields
