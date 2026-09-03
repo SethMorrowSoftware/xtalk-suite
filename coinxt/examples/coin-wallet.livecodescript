@@ -15473,6 +15473,34 @@ function waNextUnused pChange
    return ""
 end waNextUnused
 
+private function waNextUnusedOrMore
+   -- The next unused receive address, deriving a further window first when
+   -- the derived one is spent. A leaf (an inscription commit, a timelock)
+   -- and the reveal's destination each take a fresh receive key, and a
+   -- wallet that has prepared a few of them runs out of the window it
+   -- derived at open - which used to be a refusal that sent the person to
+   -- the Addresses screen and back. The window is extended here instead,
+   -- with the gap-limit warning that extending it always carries. A key
+   -- wallet has one address and no chain to extend, and says so.
+   local tRec
+   put waNextUnused(0) into tRec
+   if tRec is not "" then
+      return tRec
+   end if
+   if sWaKind is "key" then
+      throw "this wallet's one address is already used, and an imported key " & \
+            "has no chain to derive a fresh one from."
+   end if
+   waDeriveMore
+   waLog "derived a further window: every receive address was used"
+   put waNextUnused(0) into tRec
+   if tRec is "" then
+      throw "there is no unused receive address left, even after deriving " & \
+            "a further window."
+   end if
+   return tRec
+end waNextUnusedOrMore
+
 private function waUsedAddresses
    local tSeen, tI, tCount, tRec
    put empty into tSeen
@@ -18904,11 +18932,7 @@ function waInscribePrepare pType, pBody, pIsHex
    if waSafeText(tType) is not tType or offset("|", tType) > 0 then
       throw "the content type cannot carry a tab, a newline or a bar."
    end if
-   put waNextUnused(0) into tRec
-   if tRec is "" then
-      throw "there is no unused receive address left in the derived window. " & \
-            "Derive more on the Addresses screen."
-   end if
+   put waNextUnusedOrMore() into tRec
    if tRec["seckey"] is "" and sWaKind is not "key" then
       throw "this wallet holds no private key, so it cannot sign a reveal."
    end if
@@ -19098,11 +19122,7 @@ function waLockPrepare pHeightText
       throw "block " & tHeight & " has already passed (the tip is " & \
             sWaTipHeight & "), so that lock would lock nothing."
    end if
-   put waNextUnused(0) into tRec
-   if tRec is "" then
-      throw "there is no unused receive address left in the derived window. " & \
-            "Derive more on the Addresses screen."
-   end if
+   put waNextUnusedOrMore() into tRec
    put "" into tKey
    put "lock" into tKey["kind"]
    put tRec["index"] into tKey["index"]
@@ -19502,11 +19522,7 @@ function waInscribeRevealText
    if tRate is not a number or tRate <= 0 then
       throw "set a fee rate on the Send screen first: the reveal pays at that rate."
    end if
-   put waNextUnused(0) into tTo
-   if tTo is "" then
-      throw "there is no unused receive address left to receive the inscription. " & \
-            "Derive more on the Addresses screen."
-   end if
+   put waNextUnusedOrMore() into tTo
    put 11 + cwTapscriptInputVsize(tAddrRec["leafscript"]) + 43 into tVsize
    put waCeilSat(tRate * tVsize) into tFee
    if tFee < cwFeeFor(tVsize, 1) then

@@ -1459,7 +1459,13 @@ def drive(c, ip, world, sandbox):
     addrs = ip.globals.get("swaaddresses") or {}
     n_addr = int(LCS._n(addrs.get("n", 0)))
     commit = dict(addrs.get(str(n_addr), {})) if n_addr > before_n else {}
-    c.eq("the commit joined the wallet's address list", n_addr, before_n + 1)
+    # ONE record, or one plus a further window: when every receive address
+    # of the derived window is used (the harness's two-address prefill gets
+    # there at once), the wallet derives another window first and says so.
+    prefill = int(LCS._n(ip.constants.get("kWaPrefill", 20)))
+    c.ck("the commit joined the wallet's address list",
+         n_addr - before_n in (1, 1 + 2 * prefill),
+         "before %d, after %d; status %r" % (before_n, n_addr, _fld(world, "uiStatus")[:120]))
     base = None
     for i in range(1, n_addr + 1):
         r = addrs.get(str(i), {})
@@ -1604,10 +1610,14 @@ def drive(c, ip, world, sandbox):
     addrs = ip.globals.get("swaaddresses") or {}
     n_addr = int(LCS._n(addrs.get("n", 0)))
     lockrec = dict(addrs.get(str(n_addr), {})) if n_addr > before_n else {}
-    c.ck("the lock joined the address list", n_addr == before_n + 1,
-         "before %d, after %d; status %r; next unused receive %r; vt_out %r"
-         % (before_n, n_addr, _fld(world, "uiStatus")[:120],
-            str(ip.call("waNextUnused", [0]) or "")[:100], out[:80]))
+    prefill = int(LCS._n(ip.constants.get("kWaPrefill", 20)))
+    c.ck("the lock joined the address list (deriving a further window first if every receive address was used)",
+         n_addr - before_n in (1, 1 + 2 * prefill),
+         "before %d, after %d; status %r; vt_out %r"
+         % (before_n, n_addr, _fld(world, "uiStatus")[:120], out[:80]))
+    if n_addr - before_n == 1 + 2 * prefill:
+        c.ck("and the log says the window was extended",
+             "derived a further window" in _fld(world, "lg_text"), "")
     base = None
     for i in range(1, n_addr + 1):
         r = addrs.get(str(i), {})
