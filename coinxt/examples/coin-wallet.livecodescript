@@ -10882,7 +10882,14 @@ end oxProcessId
 
 -- <<< END EMBEDDED LIBRARIES <<<
 
-constant kWaVersion = "1.0.0"
+constant kWaVersion = "1.1.0"
+-- WHERE "UPDATE FROM MAIN" FETCHES THIS FILE (2026-09-04): the raw text of
+-- this script at the tip of main. Whoever can write to that branch can put
+-- code in front of your keys, and so can anyone who can answer for that host
+-- if TLS is not doing its job - which is why waUpdateCheck reads the fetched
+-- text before it is offered, the offer names the version and the SHA-256,
+-- and nothing replaces the script until you press Update.
+constant kWaUpdateUrl = "https://raw.githubusercontent.com/SethMorrowSoftware/xtalk-suite/main/coinxt/examples/coin-wallet.livecodescript"
 constant kWaUiVersion = "coinwallet-1"
 
 -- The window, inside the family's 720p budget (tools/check-stack-size.py).
@@ -11567,10 +11574,15 @@ local sWaBusyUntil        -- the milliseconds a long build is allowed to run to
 -- ==============================================================================
 
 on preOpenStack
+   -- pinned: since 2026-09-04 these two are also sent from a timer after an
+   -- update replaced the script (waUpdateApply), and a delayed handler's
+   -- unqualified control references resolve against the defaultStack
+   set the defaultStack to the short name of this stack
    waBuild
 end preOpenStack
 
 on openStack
+   set the defaultStack to the short name of this stack
    -- The self-check is called from HERE rather than from inside waBoot,
    -- because tools/check-demo-selfcheck-drift.py reads this handler's body
    -- looking for it: a run handler reached only through a helper is a run
@@ -11586,6 +11598,8 @@ on closeStack
    local tError
    put "false" into sWaPolling
    waNetAbort
+   -- an update's carry that was never read back must not outlive the window
+   set the uWaUpdateCarry of this stack to empty
    try
       oxShutdown
    catch tError
@@ -11628,6 +11642,9 @@ command waBoot
    waRefreshAll
    put "true" into sWaPolling
    send "waTick" to me in kWaTick milliseconds
+   -- LAST, so it lands on a booted wallet: the state an update carried
+   -- across the script swap (waUpdateApply), if there is one
+   waUpdateRestore
 end waBoot
 
 command waProbe
@@ -12288,6 +12305,7 @@ command waBuildSettings
          "196,366,480,382"
    uiLabel "st_gap", kWaGapLimit, "484,366,560,382", 12
    uiButton "st_forget", "Forget this wallet", "196,396,370,422"
+   uiButton "st_update", "Update from main", "374,396,560,422"
    uiWrap "st_forgetnote", "", "196,430,688,584", 11
    uiSection "st_sec3", "What is proven, and what is not", "720,66,1172,84"
    uiArea "st_about", "720,90,1172,584"
@@ -12473,6 +12491,9 @@ function waMenuRoute pItem
          or pItem is "Copy seed phrase" then
       return "self"
    end if
+   if pItem is "Update from main" then
+      return "st update"
+   end if
    if pItem is "Copy account key" then
       return "wl copyXpub"
    end if
@@ -12590,7 +12611,8 @@ function waMenuFor pScreen
    else if pScreen is "log" then
       put "Copy the log" & return & "Clear the log" & return & "-" & return into tItems
    end if
-   put tItems & "Refresh" & return & "About this wallet" into tItems
+   put tItems & "Refresh" & return & "About this wallet" & return & \
+         "Update from main" into tItems
    uiContextMenu tName, tItems
    return tName
 end waMenuFor
@@ -19143,7 +19165,12 @@ function waAboutText
    put "  change, which forgets them); the paint-once-a-second and" & return after tOut
    put "  pump-at-once changes; and the three menu items that now do what" & return after tOut
    put "  they say (copy the selected address, sign a message with it," & return after tOut
-   put "  copy the selected outpoint)." & return after tOut
+   put "  copy the selected outpoint)." & return & return after tOut
+   put "  THIS IS VERSION " & kWaVersion & ". Update from main (Settings, or" & return after tOut
+   put "  any right-click menu) fetches this script from the repository's" & return after tOut
+   put "  main branch, reads it, shows its version and SHA-256, and only on" & return after tOut
+   put "  Update replaces this stack's script and reboots it with the" & return after tOut
+   put "  wallet carried across. That swap has not run on an engine." & return after tOut
    put "  No spend built here has been broadcast on MAINNET. The right-click" & return after tOut
    put "  menu opened on an engine on 2026-09-02; that it selects the row" & return after tOut
    put "  under the cursor since then has not been seen there. An" & return after tOut
@@ -19195,6 +19222,9 @@ command waSettingsClick pRole
          set the defaultStack to the short name of this stack
          put it into field "st_path"
       end if
+   else if pRole is "update" then
+      waUpdateFromMain
+      exit waSettingsClick
    else if pRole is "forget" then
       waResetWallet
       set the defaultStack to the short name of this stack
@@ -19212,6 +19242,216 @@ command waSettingsClick pRole
    end if
    waRefreshAll
 end waSettingsClick
+
+-- ---- update from main -------------------------------------------------------
+-- A wallet that replaces its own code is a wallet whose code can be replaced,
+-- so the flow is built to be READ before it is trusted: the fetch is one
+-- `get URL` of a fixed address (kWaUpdateUrl); waUpdateCheck refuses anything
+-- that is not recognisably this script and names what it saw; the offer
+-- shows the version and the SHA-256 so a person can compare it with the
+-- commit they expect; and the swap happens only on Update. What survives the
+-- swap is what the wallet file carries plus the Network screen's settings,
+-- parked in a stack property for the milliseconds between the old script's
+-- last statement and the new script's boot, and cleared there (and on close).
+--
+-- THE SWAP ITSELF is engine work the headless gate cannot model: `set the
+-- script of this stack` from inside one of that script's own handlers, then
+-- preOpenStack and openStack sent to the new one. Everything around it -
+-- the check, the carry, the restore, the route - is gated.
+
+command waUpdateFromMain
+   local tText, tCurrent, tInfo, tError, tOffer
+   set the defaultStack to the short name of this stack
+   uiStatus "Fetching " & kWaUpdateUrl & " ...", ""
+   waLog "update: fetching " & kWaUpdateUrl
+   get URL kWaUpdateUrl
+   put the result into tError
+   put it into tText
+   if tError is not empty then
+      throw "could not fetch main: " & tError
+   end if
+   put the script of this stack into tCurrent
+   put waUpdateCheck(tText, tCurrent) into tInfo
+   waLog "update: main is version " & tInfo["version"] & ", " & tInfo["chars"] & \
+         " chars, sha256 " & tInfo["sha"] & "; this is version " & kWaVersion
+   put "Replace this wallet's script with the one on main?" & return & return & \
+         "main:  version " & tInfo["version"] & ", " & tInfo["chars"] & \
+         " chars" & return & "sha256 " & tInfo["sha"] & return & return & \
+         "this:  version " & kWaVersion & return & return & \
+         "The wallet in memory and the Network settings are carried across; " & \
+         "the log stays; the window is rebuilt where it needs to be." into tOffer
+   answer tOffer with "Update" or "Cancel"
+   if it is not "Update" then
+      uiStatus "Not updated. This is still version " & kWaVersion & ".", ""
+      waLog "update: declined"
+      exit waUpdateFromMain
+   end if
+   waUpdateApply tText, tInfo
+end waUpdateFromMain
+
+function waUpdateCheck pText, pCurrent
+   -- Is pText THIS SCRIPT, from main, and different? Refuses, with the reason,
+   -- anything else; answers the version, the size and the SHA-256 of what
+   -- it accepted. pCurrent is the running script, passed in so this can be
+   -- driven with any two texts.
+   local tOut, tLine, tPos, tEnd, tChars, tCurChars, tVersion, tSlice
+   if pText is empty then
+      throw "main sent nothing back."
+   end if
+   put line 1 of pText into tLine
+   if tLine is not line 1 of pCurrent then
+      throw "that is not this script: it begins " & quote & \
+            char 1 to 60 of tLine & quote & " where this one begins " & \
+            quote & line 1 of pCurrent & quote & "."
+   end if
+   put the number of chars of pText into tChars
+   put the number of chars of pCurrent into tCurChars
+   if tChars < tCurChars / 2 then
+      throw "main's copy is " & tChars & " chars against this script's " & \
+            tCurChars & ", which is too short to be a whole wallet (a " & \
+            "truncated download, most likely)."
+   end if
+   if tChars > tCurChars * 3 then
+      throw "main's copy is " & tChars & " chars against this script's " & \
+            tCurChars & ", which is too large to be this wallet."
+   end if
+   put offset("constant kWaVersion = " & quote, pText) into tPos
+   if tPos is 0 then
+      throw "main's copy declares no kWaVersion, so it is not a version of " & \
+            "this wallet."
+   end if
+   -- the forty chars after the opening quote, sliced first: the three-
+   -- argument offset (with a skip) is not a form the family's interpreter
+   -- models, and a form the gate cannot run is a form nobody has run
+   put char (tPos + 23) to (tPos + 62) of pText into tSlice
+   put offset(quote, tSlice) into tEnd
+   if tEnd < 2 then
+      throw "main's copy has an unreadable kWaVersion."
+   end if
+   put char 1 to (tEnd - 1) of tSlice into tVersion
+   if not (pText contains "command waUpdateRestore") then
+      throw "main's copy (version " & tVersion & ") has no waUpdateRestore, " & \
+            "so your wallet would not come back after the swap. Not offered."
+   end if
+   if not (pText contains "on openStack") or not (pText contains "on preOpenStack") then
+      throw "main's copy (version " & tVersion & ") has no openStack, so it " & \
+            "could not boot. Not offered."
+   end if
+   if pText is pCurrent then
+      throw "this is already what main has (version " & tVersion & ")."
+   end if
+   put tVersion into tOut["version"]
+   put tChars into tOut["chars"]
+   put cxHexEncode(cxSha256(textEncode(pText, "utf-8"))) into tOut["sha"]
+   return tOut
+end waUpdateCheck
+
+function waUpdateCarry
+   -- What crosses the swap: the wallet as the wallet file would hold it,
+   -- and the settings the file does not carry, as update:* rows after it.
+   local tOut, tTab
+   put numToChar(9) into tTab
+   put waSerializeWallet() into tOut
+   put "update:from" & tTab & kWaVersion & return after tOut
+   put "update:backend" & tTab & sWaBackend & return after tOut
+   put "update:host" & tTab & sWaHost & return after tOut
+   put "update:port" & tTab & sWaPort & return after tOut
+   put "update:socks" & tTab & sWaSocksPort & return after tOut
+   put "update:screen" & tTab & sWaScreen & return after tOut
+   return tOut
+end waUpdateCarry
+
+command waUpdateStash pCarry
+   set the uWaUpdateCarry of this stack to pCarry
+end waUpdateStash
+
+command waUpdateApply pText, pInfo
+   -- ENGINE ONLY: the swap. The old script's handler keeps running to its
+   -- end after the set; the new script answers every message after that,
+   -- starting with the two the boot needs.
+   local tError, tCarry, tFailed
+   put waUpdateCarry() into tCarry
+   waNetAbort
+   put "false" into sWaPolling
+   waUpdateStash tCarry
+   -- captured and thrown AFTER the try: a throw inside a catch does not
+   -- reach the caller on OXT (the checker's rule, from the engine)
+   put empty into tFailed
+   try
+      set the script of this stack to pText
+   catch tError
+      put tError into tFailed
+   end try
+   if tFailed is not empty then
+      waUpdateStash empty
+      put "true" into sWaPolling
+      send "waTick" to me in kWaTick milliseconds
+      throw "main's script (version " & pInfo["version"] & ") did not " & \
+            "compile on this engine, so nothing changed: " & tFailed
+   end if
+   waLog "update: the script is now version " & pInfo["version"] & \
+         " (sha256 " & pInfo["sha"] & "); rebooting"
+   send "preOpenStack" to this stack in 0 milliseconds
+   send "openStack" to this stack in 0 milliseconds
+end waUpdateApply
+
+command waUpdateRestore
+   -- The other side of the swap, from waBoot: if a carry is parked on the
+   -- stack, read it back, clear it, and say what happened.
+   local tCarry, tWallet, tI, tCount, tLine, tTab, tName, tValue, tFrom, tScreen
+   local tError
+   set the defaultStack to the short name of this stack
+   put the uWaUpdateCarry of this stack into tCarry
+   if tCarry is empty then
+      exit waUpdateRestore
+   end if
+   set the uWaUpdateCarry of this stack to empty
+   put numToChar(9) into tTab
+   put empty into tWallet
+   put empty into tFrom
+   put empty into tScreen
+   put the number of lines of tCarry into tCount
+   repeat with tI = 1 to tCount
+      put line tI of tCarry into tLine
+      if char 1 to 7 of tLine is "update:" then
+         put char 8 to (offset(tTab, tLine) - 1) of tLine into tName
+         put char (offset(tTab, tLine) + 1) to -1 of tLine into tValue
+         if tName is "from" then
+            put tValue into tFrom
+         else if tName is "backend" then
+            put tValue into sWaBackend
+         else if tName is "host" then
+            put tValue into sWaHost
+         else if tName is "port" then
+            put tValue into sWaPort
+         else if tName is "socks" then
+            put tValue into sWaSocksPort
+         else if tName is "screen" then
+            put tValue into tScreen
+         end if
+      else
+         put tLine & return after tWallet
+      end if
+   end repeat
+   try
+      waLoadInto tWallet
+   catch tError
+      waLog "update: the carried wallet did not load (" & tError & \
+            "); open it from its file"
+      uiStatus "Updated to version " & kWaVersion & ", but the wallet in " & \
+            "memory did not carry across: " & tError, "bad"
+      exit waUpdateRestore
+   end try
+   waRefreshNetState
+   waApplyNetworkFields
+   if tScreen is not empty then
+      waShow tScreen
+   end if
+   waRefreshAll
+   waLog "updated to version " & kWaVersion & " from " & tFrom & \
+         "; the wallet and the Network settings came across"
+   uiStatus "Updated to version " & kWaVersion & " from " & tFrom & ".", "ok"
+end waUpdateRestore
 
 -- ==============================================================================
 -- THE WALLET FILE
@@ -19751,7 +19991,7 @@ end scFinish
 -- clipboard. What they check is that this stack's own arithmetic agrees with
 -- the library it carries, on this engine, before anybody types anything.
 
-constant kWaScControls = "ad_change,ad_detail,ad_label,ad_labelCap,ad_more,ad_panel,ad_receive,ad_scan,ad_sec1,ad_setLabel,ad_table,cn_addManual,cn_detail,cn_freeze,cn_hint,cn_panel,cn_sec1,cn_table,cn_tick,cn_tickAll,cn_tickNone,hs_bump,hs_copyTxid,hs_detail,hs_inspect,hs_panel,hs_refresh,hs_sec1,hs_table,lg_boot,lg_clear,lg_copy,lg_hint,lg_panel,lg_sec1,lg_sec2,lg_text,nv_ad,nv_bal,nv_chain,nv_cn,nv_confirmed,nv_frozenamt,nv_hs,nv_lg,nv_net,nv_nw,nv_panel,nv_pending,nv_rc,nv_refresh,nv_sd,nv_st,nv_tip,nv_tl,nv_wallet,nv_wl,nw_bElectrumClear,nw_bElectrumTor,nw_bEsploraClear,nw_bEsploraTor,nw_bOffline,nw_host,nw_hostCap,nw_out,nw_panelA,nw_panelB,nw_port,nw_portCap,nw_privacy,nw_sec1,nw_sec2,nw_sec3,nw_socks,nw_socksCap,nw_state,nw_stop,nw_syncNow,nw_test,nw_why,rc_address,rc_amount,rc_amountCap,rc_copy,rc_copyUri,rc_detail,rc_label,rc_labelCap,rc_message,rc_messageCap,rc_next,rc_panelA,rc_panelB,rc_qr,rc_qrframe,rc_qrhint,rc_sec1,rc_sec2,rc_sec3,rc_showQr,rc_uri,rc_verify,sd_addSelf,sd_broadcast,sd_clear,sd_copyRaw,sd_locktime,sd_locktimeCap,sd_out,sd_panelA,sd_panelB,sd_paste,sd_preview,sd_rate,sd_rateCap,sd_ratehint,sd_rbf,sd_sec1,sd_sec2,sd_sec3,sd_sec4,sd_sign,sd_stratBnb,sd_stratLargest,sd_stratManual,sd_stratOldest,sd_stratSmallest,sd_strategyCap,sd_to,sd_toCap,sd_toPsbt,sd_warn,st_about,st_browse,st_filenote,st_forget,st_forgetnote,st_gap,st_gapCap,st_load,st_panelA,st_panelB,st_password,st_passwordCap,st_path,st_pathCap,st_save,st_sec1,st_sec2,st_sec3,st_unitBtc,st_unitMbtc,st_unitSat,tl_copyOut,tl_decode,tl_derive,tl_entropy,tl_export,tl_hex,tl_hexCap,tl_hold,tl_inspect,tl_msg,tl_msgAddr,tl_msgAddrCap,tl_msgCap,tl_msgSig,tl_msgSigCap,tl_msgSign,tl_msgVerify,tl_newKey,tl_note,tl_out,tl_panelA,tl_panelB,tl_pass,tl_passCap,tl_psbtCombine,tl_psbtFinal,tl_psbtSign,tl_sec1,tl_sec2,tl_sec3,tl_sweep,tl_toEntropy,tl_validate,uiFooter,uiStatus,uiTitle,wl_account,wl_accountCap,wl_addCosigner,wl_backup,wl_copyDesc,wl_copyXpub,wl_custody,wl_generate,wl_kindKey,wl_kindMulti,wl_kindRestore,wl_kindSeed,wl_kindWatch,wl_label,wl_labelCap,wl_m,wl_mCap,wl_mnemonic,wl_mnemonicCap,wl_netMain,wl_netReg,wl_netSignet,wl_netTest,wl_open,wl_out,wl_panelA,wl_panelB,wl_pass,wl_passCap,wl_path,wl_pathCap,wl_sec1,wl_sec2,wl_sec3,wl_sec4,wl_typeLegacy,wl_typeMulti,wl_typeNative,wl_typeNested,wl_typeTaproot,wl_warn,wl_xkey,wl_xkeyCap"
+constant kWaScControls = "ad_change,ad_detail,ad_label,ad_labelCap,ad_more,ad_panel,ad_receive,ad_scan,ad_sec1,ad_setLabel,ad_table,cn_addManual,cn_detail,cn_freeze,cn_hint,cn_panel,cn_sec1,cn_table,cn_tick,cn_tickAll,cn_tickNone,hs_bump,hs_copyTxid,hs_detail,hs_inspect,hs_panel,hs_refresh,hs_sec1,hs_table,lg_boot,lg_clear,lg_copy,lg_hint,lg_panel,lg_sec1,lg_sec2,lg_text,nv_ad,nv_bal,nv_chain,nv_cn,nv_confirmed,nv_frozenamt,nv_hs,nv_lg,nv_net,nv_nw,nv_panel,nv_pending,nv_rc,nv_refresh,nv_sd,nv_st,nv_tip,nv_tl,nv_wallet,nv_wl,nw_bElectrumClear,nw_bElectrumTor,nw_bEsploraClear,nw_bEsploraTor,nw_bOffline,nw_host,nw_hostCap,nw_out,nw_panelA,nw_panelB,nw_port,nw_portCap,nw_privacy,nw_sec1,nw_sec2,nw_sec3,nw_socks,nw_socksCap,nw_state,nw_stop,nw_syncNow,nw_test,nw_why,rc_address,rc_amount,rc_amountCap,rc_copy,rc_copyUri,rc_detail,rc_label,rc_labelCap,rc_message,rc_messageCap,rc_next,rc_panelA,rc_panelB,rc_qr,rc_qrframe,rc_qrhint,rc_sec1,rc_sec2,rc_sec3,rc_showQr,rc_uri,rc_verify,sd_addSelf,sd_broadcast,sd_clear,sd_copyRaw,sd_locktime,sd_locktimeCap,sd_out,sd_panelA,sd_panelB,sd_paste,sd_preview,sd_rate,sd_rateCap,sd_ratehint,sd_rbf,sd_sec1,sd_sec2,sd_sec3,sd_sec4,sd_sign,sd_stratBnb,sd_stratLargest,sd_stratManual,sd_stratOldest,sd_stratSmallest,sd_strategyCap,sd_to,sd_toCap,sd_toPsbt,sd_warn,st_about,st_browse,st_filenote,st_forget,st_forgetnote,st_gap,st_gapCap,st_load,st_panelA,st_panelB,st_password,st_passwordCap,st_path,st_pathCap,st_save,st_sec1,st_sec2,st_sec3,st_unitBtc,st_unitMbtc,st_unitSat,st_update,tl_copyOut,tl_decode,tl_derive,tl_entropy,tl_export,tl_hex,tl_hexCap,tl_hold,tl_inspect,tl_msg,tl_msgAddr,tl_msgAddrCap,tl_msgCap,tl_msgSig,tl_msgSigCap,tl_msgSign,tl_msgVerify,tl_newKey,tl_note,tl_out,tl_panelA,tl_panelB,tl_pass,tl_passCap,tl_psbtCombine,tl_psbtFinal,tl_psbtSign,tl_sec1,tl_sec2,tl_sec3,tl_sweep,tl_toEntropy,tl_validate,uiFooter,uiStatus,uiTitle,wl_account,wl_accountCap,wl_addCosigner,wl_backup,wl_copyDesc,wl_copyXpub,wl_custody,wl_generate,wl_kindKey,wl_kindMulti,wl_kindRestore,wl_kindSeed,wl_kindWatch,wl_label,wl_labelCap,wl_m,wl_mCap,wl_mnemonic,wl_mnemonicCap,wl_netMain,wl_netReg,wl_netSignet,wl_netTest,wl_open,wl_out,wl_panelA,wl_panelB,wl_pass,wl_passCap,wl_path,wl_pathCap,wl_sec1,wl_sec2,wl_sec3,wl_sec4,wl_typeLegacy,wl_typeMulti,wl_typeNative,wl_typeNested,wl_typeTaproot,wl_warn,wl_xkey,wl_xkeyCap"
 
 command waScFresh
    -- THIS RUN'S RECORD, NOT EVERY RUN'S. The field is saved with the stack,
