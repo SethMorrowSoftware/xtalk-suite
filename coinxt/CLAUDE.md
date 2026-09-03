@@ -2998,3 +2998,20 @@ where it took the best part of a minute. The lesson is the family's usual one ab
 interpreter: it is where the cost of an arithmetic idiom shows up first, and a block that takes
 twelve minutes there is a gate people stop running.
 
+### 2026-09-04, "I do not see any UI for the new features", and why the UI version is a fingerprint now
+
+Every control added between 2026-09-02 and 2026-09-04 was built, placed and gated, and none of it
+appeared in the maintainer's stack. `waBuild` rebuilds the window only when the stack's stored
+`uUiVersion` differs from `kWaUiVersion`, which is what makes a reopened stack open instantly, and
+that constant had read `coinwallet-1` since the day the wallet was written. A fresh paste built
+everything; a stack that was reopened, or replaced its script with Update from main (which fires
+`preOpenStack` and so `waBuild`), kept the window it had. The boot gate could not see it because it
+boots fresh every time. The fix is not a bump - a bumped number is a hand-copied number, the failure
+this file records more than any other - but a DERIVATION: `kWaUiVersion` is `ui-` plus twelve hex
+digits of the SHA-256 over every `command waBuild*` handler, `tools/check-wallet-ui-version.py`
+refuses a stale value and writes the right one with `--fix`, `build-all.sh` runs it, and the boot gate
+pins the mechanism the only way that matters (a control removed comes back when the stored version is
+stale, and stays away when it is current). The same day the About text gained a "where the new things
+are" section and the Tools note the `inscribe:` and `lock:` recipes, because a feature reached only
+by a line format nobody is told about is a feature that does not exist. Not run on an engine.
+

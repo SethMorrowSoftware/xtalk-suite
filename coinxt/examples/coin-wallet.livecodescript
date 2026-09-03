@@ -13062,7 +13062,7 @@ end oxProcessId
 
 -- <<< END EMBEDDED LIBRARIES <<<
 
-constant kWaVersion = "1.1.0"
+constant kWaVersion = "1.2.0"
 -- WHERE "UPDATE FROM MAIN" FETCHES THIS FILE (2026-09-04): the raw text of
 -- this script at the tip of main. Whoever can write to that branch can put
 -- code in front of your keys, and so can anyone who can answer for that host
@@ -13070,7 +13070,7 @@ constant kWaVersion = "1.1.0"
 -- text before it is offered, the offer names the version and the SHA-256,
 -- and nothing replaces the script until you press Update.
 constant kWaUpdateUrl = "https://raw.githubusercontent.com/SethMorrowSoftware/xtalk-suite/main/coinxt/examples/coin-wallet.livecodescript"
-constant kWaUiVersion = "coinwallet-1"
+constant kWaUiVersion = "ui-ad3d7975ecc2"
 
 -- The window, inside the family's 720p budget (tools/check-stack-size.py).
 constant kWaWidth = 1200
@@ -14370,7 +14370,7 @@ command waBuildHistory
    uiSection "hs_sec1", "Transactions", "196,66,1172,84"
    uiButton "hs_refresh", "Refresh from the backend", "196,90,420,116"
    uiButton "hs_inspect", "Inspect the selected one", "424,90,640,116"
-   uiButton "hs_bump", "Bump its fee (RBF)", "644,90,830,116"
+   uiButton "hs_bump", "Bump its fee (RBF or CPFP)", "644,90,830,116"
    uiButton "hs_copyTxid", "Copy txid", "834,90,950,116"
    uiTable "hs_table", "196,124,1172,470", "90,270,390,510,630,830"
    uiArea "hs_detail", "196,478,1172,584"
@@ -14393,8 +14393,9 @@ command waBuildTools
    uiButton "tl_msgVerify", "Verify", "304,284,410,310"
    uiCheckbox "tl_msg322", "BIP-322 (taproot always is)", "416,286,688,308"
    uiSection "tl_sec2", "Inspect, decode, validate, sweep", "196,318,688,336"
-   uiCap "tl_hexCap", "Paste anything: a transaction, a bare script, a PSBT, " & \
-         "a key, an address, a URI or a mnemonic", "196,340,688,356"
+   uiCap "tl_hexCap", "Paste anything: a transaction, script, PSBT, key, address, " & \
+         "URI, mnemonic or Lightning invoice; or write inscribe: / lock:", \
+         "196,340,688,356"
    waEditArea "tl_hex", "196,358,688,412"
    uiCap "tl_passCap", "BIP-39 passphrase (the seed tools only)", "196,416,470,432"
    uiInput "tl_pass", "474,414,688,436"
@@ -18367,9 +18368,16 @@ private function waToolsNote
    put "SIGN A MESSAGE to prove you hold the key to an address without " & \
          "spending anything. VERIFY to check somebody else's claim." & return & \
          return into tOut
-   put "INSPECT says what the box holds. VALIDATE gives a verdict on an " & \
-         "address or an extended key, on EVERY chain and not just this one. " & \
-         "DECODE SCRIPT reads bare script hex." & return & return after tOut
+   put "INSPECT says what the box holds - a transaction (with any OP_RETURN " & \
+         "note, runestone or inscription in it), a Lightning invoice, a URI. " & \
+         "VALIDATE gives a verdict on an address (a silent payment address " & \
+         "too) or an extended key, on EVERY chain. DECODE SCRIPT reads bare " & \
+         "script hex." & return & return after tOut
+   put "INSCRIBE: write " & quote & "inscribe: text/plain; hello" & quote & \
+         " above and press Inscribe to prepare the commit; fund it; press " & \
+         "Inscribe again with the box empty to sign the reveal. LOCK: write " & \
+         quote & "lock: 900000" & quote & " and press Lock for an address " & \
+         "nothing can spend before that block." & return & return after tOut
    if sWaLastPsbt is not empty then
       put the number of chars of sWaLastPsbt into tLen
       put "Holding a PSBT (" & tLen & \
@@ -22555,6 +22563,16 @@ function waAboutText
    put "  pump-at-once changes; and the three menu items that now do what" & return after tOut
    put "  they say (copy the selected address, sign a message with it," & return after tOut
    put "  copy the selected outpoint)." & return & return after tOut
+   put "WHERE THE NEW THINGS ARE (2026-09-02 to 2026-09-04)" & return after tOut
+   put "  Send: a line " & quote & "note: text" & quote & " or " & quote & "data: hex" & quote & " writes" & return after tOut
+   put "  an OP_RETURN output; a line paying an sp1.../tsp1... address is a" & return after tOut
+   put "  BIP-352 silent payment. Tools: the BIP-322 box beside Verify;" & return after tOut
+   put "  Inspect reads runestones, inscriptions and Lightning invoices;" & return after tOut
+   put "  Inscribe and Lock (bottom right) take " & quote & "inscribe: type; text" & quote & return after tOut
+   put "  and " & quote & "lock: height" & quote & " lines. History: Bump does CPFP where RBF" & return after tOut
+   put "  cannot apply. Wallet: a testnet4 button. Settings: export and" & return after tOut
+   put "  import labels (BIP-329), and Update from main. Right-click any" & return after tOut
+   put "  list for the menu." & return & return after tOut
    put "  THIS IS VERSION " & kWaVersion & ". Update from main (Settings, or" & return after tOut
    put "  any right-click menu) fetches this script from the repository's" & return after tOut
    put "  main branch, reads it, shows its version and SHA-256, and only on" & return after tOut
