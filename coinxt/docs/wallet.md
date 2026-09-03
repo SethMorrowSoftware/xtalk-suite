@@ -279,17 +279,22 @@ a stream per request in that log, by design (HTTP/1.0 with Connection: close,
 so there was no chunked-transfer decoder to get wrong); later the same day it
 was moved to HTTP/1.1 keep-alive with a reply decoder (Content-Length,
 chunked, Connection: close, and a fallback to close-delimited reading for a
-reply with no framing), so both Tor transports run a sync down one stream.
-That, and the same day's sync trimming (a tip under thirty seconds old and a
-fee estimate under ten minutes old are not asked for again; the screen is
-repainted once a second during a sync rather than on every reply; the next
-request leaves the moment a reply lands rather than on the next 250 ms tick),
-have not run on an engine. Nor has the day's last change: an Electrum sync
-sends its histories, and then its unspent-output requests, as JSON-RPC
-BATCHES of up to twenty in one line, so forty addresses are two round trips
-rather than forty; a server that refuses a batch is asked one at a time from
-then on, a member's own error counts as that member's failure only, and a
-member the server leaves unanswered is asked again alone.
+reply with no framing), so both Tor transports run a sync down one stream -
+**seen in the eighth log**, later the same day: a whole Esplora sync of
+fifty-one requests down one Tor stream on HTTP/1.1. The same log saw both of
+Blockstream's Electrum servers, onion and clearnet, take JSON-RPC BATCHES: an
+Electrum sync sends its histories, and then its unspent-output requests, as
+arrays of requests in one line, and a sync of fifty-one requests was five
+round trips. A server that refuses a batch is asked one at a time from then
+on, a member's own error counts as that member's failure only, and a member
+the server leaves unanswered is asked again alone. After that log the tip and
+the fee estimate ride in the first batch too (three round trips for a fresh
+sync), which has not run on an engine; nor has the same day's other trimming
+(a tip under thirty seconds old and a fee estimate under ten minutes old are
+not asked for again, which every sync in that log defeated by changing the
+backend first; the screen is repainted once a second during a sync rather
+than on every reply; the next request leaves the moment a reply lands rather
+than on the next 250 ms tick).
 Until the 2026-09-02 log, no transaction this wallet built had been broadcast to any
 network, so "this would confirm" is a claim nobody has tested.
 

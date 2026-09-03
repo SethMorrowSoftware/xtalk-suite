@@ -1621,42 +1621,53 @@ def drive(c, ip, world, sandbox):
         ip.call("waSetBackend", ["electrum-tor"])
         addrs_b = ip.globals.get("swaaddresses") or {}
         a1, a2, a3 = (str(addrs_b.get(str(k), {}).get("address", "")) for k in (1, 2, 3))
+        # a broadcast goes alone, ahead of anything queued behind it
+        ip.call("waNetQueue", ["broadcast", "00" * 60])
+        ip.call("waNetQueue", ["history", a1])
+        ip.call("waNetPump", [])
+        c.eq("a broadcast is never batched",
+             str((ip.globals.get("swainflight") or {}).get("kind")), "broadcast")
+        c.eq("and the history waits behind it",
+             int(LCS._n((ip.globals.get("swaqueue") or {}).get("n", 0))), 1)
+        ip.call("waNetAbort", [])
+        # the tip, three histories and the fees: ONE batch, in queue order
         ip.call("waNetQueue", ["tip", ""])
         for a in (a1, a2, a3):
             ip.call("waNetQueue", ["history", a])
         ip.call("waNetQueue", ["fees", ""])
         ip.call("waNetPump", [])
-        c.eq("the tip goes alone", str((ip.globals.get("swainflight") or {}).get("kind")), "tip")
+        rec = ip.globals.get("swainflight") or {}
+        c.eq("the tip, the histories and the fees go as one batch",
+             str(rec.get("kind")), "batch")
+        c.eq("leaving the queue empty",
+             int(LCS._n((ip.globals.get("swaqueue") or {}).get("n", 0))), 0)
         h = int(LCS._n(ip.globals.get("swastream")))
         world.tor_state[h] = "connected"
         stream_event(h, "open")
-        stream_event(h, "data", '{"jsonrpc":"2.0","id":%s,"result":{"height":'
-                     '5127820,"hex":"00"}}\n' % inflight_id())
-        ip.call("waNetPump", [])
-        rec = ip.globals.get("swainflight") or {}
-        c.eq("the three histories go as one batch", str(rec.get("kind")), "batch")
-        c.eq("and the fees stay behind them",
-             [int(LCS._n((ip.globals.get("swaqueue") or {}).get("n", 0))),
-              str((ip.globals.get("swaqueue") or {}).get("1", {}).get("kind"))],
-             [1, "fees"])
         w = tor_last_write()
         c.ck("the batch is one JSON array of the members' requests",
              w.startswith("[{") and w.rstrip("\n").endswith("}]")
-             and w.count("blockchain.scripthash.get_history") == 3, w[:80])
+             and w.count("blockchain.scripthash.get_history") == 3
+             and w.count("headers.subscribe") == 1 and w.count("estimatefee") == 1, w[:80])
         c.ck("and the log says its shape, not its script hashes",
-             "-> batch of 3 history requests, ids" in log_tail(), log_tail(200))
+             "-> batch of 5 (tip, 3 history, fees), ids" in log_tail(), log_tail(200))
         members = ip.globals.get("swabatchmembers") or {}
-        ids = [str(members.get(str(k), {}).get("id")) for k in (1, 2, 3)]
-        # answered out of order, one member with a history (so a utxos request
-        # follows), one empty, one refused
-        reply = ('[{"jsonrpc":"2.0","id":%s,"result":[]},'
+        ids = [str(members.get(str(k), {}).get("id")) for k in (1, 2, 3, 4, 5)]
+        # answered out of order: fees, an empty history, a refused one, the
+        # tip, and a history with a row (so a utxos request follows)
+        reply = ('[{"jsonrpc":"2.0","id":%s,"result":0.00002},'
+                 '{"jsonrpc":"2.0","id":%s,"result":[]},'
                  '{"jsonrpc":"2.0","id":%s,"error":{"code":1,"message":"no such hash"}},'
+                 '{"jsonrpc":"2.0","id":%s,"result":{"height":5127820,"hex":"00"}},'
                  '{"jsonrpc":"2.0","id":%s,"result":[{"tx_hash":"%s","height":5127000}]}]\n'
-                 % (ids[1], ids[2], ids[0], "ee" * 32))
+                 % (ids[4], ids[2], ids[3], ids[0], ids[1], "ee" * 32))
         fails_before = int(LCS._n(ip.globals.get("swasyncfailures")))
         stream_event(h, "data", reply)
         c.eq("the batch reply is applied and nothing is in flight",
              str(ip.globals.get("swainflight")), "")
+        c.eq("the tip in it landed", str(ip.globals.get("swatipheight")), "5127820")
+        c.eq("and the fee estimate in it",
+             str((ip.globals.get("swafeerates") or {}).get("6")), "2")
         hist = ip.globals.get("swahistory") or {}
         c.ck("the answered history landed on its own address",
              any(str(hist.get(str(k), {}).get("txid", "")) == "ee" * 32
@@ -1666,8 +1677,8 @@ def drive(c, ip, world, sandbox):
         q = ip.globals.get("swaqueue") or {}
         qk = [(str(q.get(str(k), {}).get("kind")), str(q.get(str(k), {}).get("arg")))
               for k in range(1, int(LCS._n(q.get("n", 0))) + 1)]
-        c.ck("its unspent outputs are asked for, after the fees",
-             ("utxos", a1) in qk and qk[0][0] == "fees", str(qk))
+        c.ck("its unspent outputs are asked for",
+             ("utxos", a1) in qk and len(qk) == 1, str(qk))
         c.eq("the refused member counts as one failure, not the sync's",
              int(LCS._n(ip.globals.get("swasyncfailures"))), fails_before + 1)
         c.ck("and is named in the log", "FAILED: history " + a3 in log_tail(), log_tail(200))
