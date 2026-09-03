@@ -1604,7 +1604,10 @@ def drive(c, ip, world, sandbox):
     addrs = ip.globals.get("swaaddresses") or {}
     n_addr = int(LCS._n(addrs.get("n", 0)))
     lockrec = dict(addrs.get(str(n_addr), {})) if n_addr > before_n else {}
-    c.eq("the lock joined the address list", n_addr, before_n + 1)
+    c.ck("the lock joined the address list", n_addr == before_n + 1,
+         "before %d, after %d; status %r; next unused receive %r; vt_out %r"
+         % (before_n, n_addr, _fld(world, "uiStatus")[:120],
+            str(ip.call("waNextUnused", [0]) or "")[:100], out[:80]))
     base = None
     for i in range(1, n_addr + 1):
         r = addrs.get(str(i), {})
@@ -3289,7 +3292,9 @@ def drive(c, ip, world, sandbox):
         ip.globals["swainflight"] = {"kind": "tx", "arg": dec["txid"], "id": "13"}
         try:
             ip.call("waStoreRawTx", [dec["txid"], other])
-            c.ck("bytes of a different transaction are refused", False, "stored")
+            c.ck("bytes of a different transaction are refused", False,
+                 "stored; raw starts %s, other decodes to %s against %s"
+                 % (raw[:8], REF.tx_decode(bytes.fromhex(other))["txid"][:16], dec["txid"][:16]))
         except LCS.Thrown as exc:
             c.ck("bytes of a different transaction are refused",
                  "different transaction" in str(exc.msg), str(exc.msg)[:100])
