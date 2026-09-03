@@ -2619,3 +2619,39 @@ Also in the log: clearnet Electrum on testnet synced clean under the new log lin
 
 Fast gates green; the boot gate's new blocks were driven in isolation against the booted stack
 (the full gate is CI's on the push, for the reason the entries above give).
+
+### 2026-09-03, the sixth engine log: Electrum over Tor runs, and dials 173 streams to do it
+
+**THE TRANSPORT WORKS.** First log in which Electrum over Tor spoke to a server: Blockstream's v3
+onion on port 143 (testnet), the tip, fees, forty histories and every unspent-output request of the
+public test seed, a second wallet synced, a broadcast (txid
+`9bab6640f2bbe01f96a95ffdeca3e96881f1819e677348562ef8bf87da6b719a`) seen spent by the sync that
+followed. All four transports have now synced real wallets on an engine; the labels in the Settings
+panel and docs/wallet.md moved with it. Also seen: one boot self-check block on open (the previous
+entry's fix), and the retry-once of two entries ago never needed. Mainnet on port 110 is still the
+operator's table and nothing more.
+
+**AND EVERY REQUEST WAS A NEW RENDEZVOUS.** 173 `dial ... stream N` lines for 173 requests. This is
+the per-request-connection shape the clearnet Electrum transport was cured of on 2026-09-01,
+arriving on the Tor transport by the other door: `waNetDeliver` closed the stream the moment its one
+line landed. The stream is kept now, exactly as `sWaSock` is - reused while it is the stream the
+settings name and OnionXT still reports it connected, dialled afresh otherwise - and three things had
+to move with it, each of which was harmless while a stream carried one reply. The line splitter took
+the FIRST line and emptied the buffer, which on a kept stream would have dropped a reply arriving in
+the same chunk as a pushed `headers.subscribe` notification (a block landing mid-sync); it delivers
+every line and keeps the remainder. The pump cleared the buffer before each request, which would
+have handed the tail of a straddling notification to the next reply as a line that parses as
+nothing; on a kept stream a partial line belongs to the stream. And a stream the server drops while
+nothing is waiting on it - a thing that could not happen before - is now forgotten and logged, not
+counted as a failure of the sync. The gate drives the whole life of a stream through a MODELLED Tor
+(OnionXT's five stream commands intercepted at statement level, `oxStreamState` answered from the
+model, `the result` the way the real ones set it), because OnionXT's own dial goes to `open socket`
+and nothing headless can run that. The reuse has not run on an engine.
+
+**Three log lines, from reading this one.** `waNetAbort` now says what it threw away (the log's
+request ids jumped 73 to 84 across a wallet switch, with nothing saying why); the broadcast reply's
+`<-` line no longer echoes the whole raw transaction that the `->` line above it already carries;
+and the accepted txid goes into the log on both transports, because the status line is not what
+gets pasted back and this log's only record of its txid was the fee-bump bookkeeping line. Also
+the one `error:` in the log - "this wallet has no address to pay", from Add self on the public test
+seed mid-sync - now says why (everybody has used every address that seed derives) and what to press.

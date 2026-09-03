@@ -256,17 +256,24 @@ OnionXT's SOCKS client on a real engine and answered every request kind (tip,
 fees, history, unspent outputs) over 147 circuits, and **the wallet's first
 broadcast** went out over that transport - a 226 vB legacy spend, txid
 `7978bdd2c097c929cae2ab00084d4454b68b1d054a3f2d53fc7b51b70551e4d5`, accepted by the mirror and seen spent by
-the sync that followed. Electrum over Tor is the one transport that has still
-not spoken to a backend from here, and the 2026-09-02 log says why: the
+the sync that followed. Electrum over Tor was the one transport that had still
+not spoken to a backend from here, and the 2026-09-02 log said why: the
 built-in address was `explorernuoc63nb.onion`, a sixteen-character VERSION-2
 onion that the Tor network stopped resolving in 2021, and the daemon answered
 every dial of it with "general SOCKS server failure" - the same words a failed
 circuit gets, so the wallet retried it once, as designed, and failed again.
 The constant is Blockstream's version-3 onion now (the same address the
-Esplora mirror uses, with the chain selected by port: 110 mainnet, 143 testnet,
-the operator's published table and not yet observed from this stack), the
-wallet refuses a v2 shape by name before it dials, and the transport still
-needs its first engine pass. Until that log, no transaction this wallet built had been broadcast to any
+Esplora mirror uses, with the chain selected by port: 110 mainnet, 143 testnet),
+the wallet refuses a v2 shape by name before it dials, and **on 2026-09-03 the
+transport ran** - the sixth engine log: port 143 on testnet, a full sync of the
+test seed (tip, fees, forty histories, unspent outputs), a second wallet
+synced, and a broadcast, txid
+`9bab6640f2bbe01f96a95ffdeca3e96881f1819e677348562ef8bf87da6b719a`, seen spent
+by the sync that followed. Mainnet on port 110 is still the operator's
+published table and nothing more. That log also dialled a fresh Tor stream for
+every one of its 173 requests, so the stream is now kept open for the whole
+sync the way the clearnet socket is; that reuse has not run on an engine yet.
+Until the 2026-09-02 log, no transaction this wallet built had been broadcast to any
 network, so "this would confirm" is a claim nobody has tested.
 
 ## Custody, said plainly
