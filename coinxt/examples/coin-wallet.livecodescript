@@ -23727,7 +23727,7 @@ command waUpdateRestore
    -- The other side of the swap, from waBoot: if a carry is parked on the
    -- stack, read it back, clear it, and say what happened.
    local tCarry, tWallet, tI, tCount, tLine, tTab, tName, tValue, tFrom, tScreen
-   local tError
+   local tError, tBackend, tHost, tPort, tSocks
    set the defaultStack to the short name of this stack
    put the uWaUpdateCarry of this stack into tCarry
    if tCarry is empty then
@@ -23747,13 +23747,13 @@ command waUpdateRestore
          if tName is "from" then
             put tValue into tFrom
          else if tName is "backend" then
-            put tValue into sWaBackend
+            put tValue into tBackend
          else if tName is "host" then
-            put tValue into sWaHost
+            put tValue into tHost
          else if tName is "port" then
-            put tValue into sWaPort
+            put tValue into tPort
          else if tName is "socks" then
-            put tValue into sWaSocksPort
+            put tValue into tSocks
          else if tName is "screen" then
             put tValue into tScreen
          end if
@@ -23770,6 +23770,22 @@ command waUpdateRestore
             "memory did not carry across: " & tError, "bad"
       exit waUpdateRestore
    end try
+   -- THE NETWORK SETTINGS GO ON AFTER THE WALLET LOADS, not before: loading
+   -- resets the backend to its defaults, and the first full gate run
+   -- (2026-09-03) came back with the carried backend and a default host and
+   -- port - a person's own server, lost in the update.
+   if tBackend is not empty then
+      put tBackend into sWaBackend
+   end if
+   if tHost is not empty then
+      put tHost into sWaHost
+   end if
+   if tPort is not empty then
+      put tPort into sWaPort
+   end if
+   if tSocks is not empty then
+      put tSocks into sWaSocksPort
+   end if
    waRefreshNetState
    waApplyNetworkFields
    if tScreen is not empty then

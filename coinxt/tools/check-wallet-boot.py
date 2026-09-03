@@ -3335,6 +3335,7 @@ def drive(c, ip, world, sandbox):
     # tore the socket down and counted a failure - for a request the block
     # had nothing to do with.
     ip.globals["swasyncfailures"] = 0
+    ip.globals["swabackend"] = "electrum-clear"   # (9i) above left it on Esplora
     ip.globals["swainflight"] = {"kind": "tip", "arg": "", "id": "11"}
     ip.globals["swatipheight"] = ""
     ip.call("waNetDeliver",
