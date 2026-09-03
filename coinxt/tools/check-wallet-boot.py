@@ -1248,7 +1248,7 @@ def drive(c, ip, world, sandbox):
         c.ck("the recipe is in the wallet file",
              "leaf\tinscribe|%d|text/plain;charset=utf-8|%s" % (int(LCS._n(commit["index"])), b"Hello, ordinals".hex())
              in str(ip.call("waSerializeWallet", [])),
-             [ln for ln in str(ip.call("waSerializeWallet", [])).split("\n") if ln.startswith("leaf")])
+             " / ".join(ln for ln in str(ip.call("waSerializeWallet", [])).split("\n") if ln.startswith("leaf"))[:300])
         # fund it, then reveal
         utx = dict(ip.globals.get("swautxos") or {"n": 0})
         n_u = int(LCS._n(utx.get("n", 0))) + 1
@@ -1363,7 +1363,7 @@ def drive(c, ip, world, sandbox):
              (leaf.hex(), want_l["script"].hex(), REF.SP_NUMS_H.hex(), 900000))
         c.ck("the recipe is in the wallet file",
              "leaf\tlock|%d|900000" % int(LCS._n(lockrec["index"])) in str(ip.call("waSerializeWallet", [])),
-             [ln for ln in str(ip.call("waSerializeWallet", [])).split("\n") if ln.startswith("leaf")])
+             " / ".join(ln for ln in str(ip.call("waSerializeWallet", [])).split("\n") if ln.startswith("leaf"))[:300])
         utx = dict(ip.globals.get("swautxos") or {"n": 0})
         n_u = int(LCS._n(utx.get("n", 0))) + 1
         utx[str(n_u)] = {"txid": "ee" * 32, "vout": 0, "value": 30000, "confirmations": 1,

@@ -18444,7 +18444,13 @@ private command waInscribeCommit pText
       put cwTrim(char 10 to -1 of pText) into tRest
       put false into tHex
    end if
-   put offset(";", tRest) into tPos
+   -- THE SEPARATOR IS "; " (semicolon, space), because a content type may
+   -- carry parameters after semicolons of its own ("text/plain;charset=utf-8");
+   -- a bare semicolon is accepted when no spaced one exists
+   put offset("; ", tRest) into tPos
+   if tPos is 0 then
+      put offset(";", tRest) into tPos
+   end if
    if tPos < 2 then
       throw "write the content type, a semicolon, then the body: " & quote & \
             "inscribe: text/plain; hello" & quote & "."
