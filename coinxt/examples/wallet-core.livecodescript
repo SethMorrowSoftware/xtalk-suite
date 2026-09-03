@@ -716,6 +716,94 @@ end cwXKeyVersion
 -- people, and a raw byte string that reaches a field is mojibake.
 -- ==============================================================================
 
+function cwPushLen pBytes
+   -- The bytes a push of pBytes data bytes occupies on the wire, opcode
+   -- included: the direct form to 75, OP_PUSHDATA1 to 255, OP_PUSHDATA2
+   -- beyond, the same three cwPush emits.
+   if pBytes < 76 then
+      return 1 + pBytes
+   end if
+   if pBytes < 256 then
+      return 2 + pBytes
+   end if
+   return 3 + pBytes
+end cwPushLen
+
+function cwOpReturnScript pDataHex
+   -- OP_RETURN followed by one push of the data; with no data, bare
+   -- OP_RETURN. A "nulldata" output in Bitcoin Core's vocabulary, provably
+   -- unspendable and carrying only what it says.
+   if pDataHex is "" then
+      return "6a"
+   end if
+   return "6a" & cwPush(pDataHex)
+end cwOpReturnScript
+
+function cwScriptItems pScriptHex
+   -- A script as one item per line: "push <hex>" for every data push (an
+   -- empty push is "push" alone) and "op <n>" for everything else, in order.
+   -- The reader every decoder here shares, so what one of them sees in a
+   -- script is what the others see.
+   local tHex, tPos, tEnd, tOut, tByte, tLen
+   put cwLower(pScriptHex) into tHex
+   if cwHexIsClean(tHex) is not true then
+      throw "wallet-core: cwScriptItems: the script is not hex."
+   end if
+   put 1 into tPos
+   put the number of chars of tHex into tEnd
+   put "" into tOut
+   repeat while tPos <= tEnd
+      put cwBeRead(cxHexDecode(char tPos to (tPos + 1) of tHex)) into tByte
+      add 2 to tPos
+      if tByte >= 1 and tByte <= 75 then
+         put tByte into tLen
+      else if tByte is 76 then
+         put cwBeRead(cxHexDecode(char tPos to (tPos + 1) of tHex)) into tLen
+         add 2 to tPos
+      else if tByte is 77 then
+         put cwLeRead(cxHexDecode(char tPos to (tPos + 3) of tHex)) into tLen
+         add 4 to tPos
+      else if tByte is 78 then
+         put cwLeRead(cxHexDecode(char tPos to (tPos + 7) of tHex)) into tLen
+         add 8 to tPos
+      else
+         put "op " & tByte & return after tOut
+         next repeat
+      end if
+      if tPos + tLen * 2 - 1 > tEnd then
+         throw "wallet-core: cwScriptItems: a push of " & tLen & \
+               " bytes runs past the end of the script."
+      end if
+      if tLen is 0 then
+         put "push" & return after tOut
+      else
+         put "push " & char tPos to (tPos + tLen * 2 - 1) of tHex & return after tOut
+      end if
+      add tLen * 2 to tPos
+   end repeat
+   return tOut
+end cwScriptItems
+
+function cwOpReturnData pScriptHex
+   -- The data an OP_RETURN output carries, as hex: every push after the
+   -- OP_RETURN, joined. Empty for a script that is not one.
+   local tItems, tLine, tOut, tI, tCount
+   if cwScriptKind(pScriptHex) is not "nulldata" then
+      return ""
+   end if
+   put cwScriptItems(pScriptHex) into tItems
+   put "" into tOut
+   put the number of lines of tItems into tCount
+   -- from line 2: line 1 is the OP_RETURN itself
+   repeat with tI = 2 to tCount
+      put line tI of tItems into tLine
+      if char 1 to 5 of tLine is "push " then
+         put char 6 to -1 of tLine after tOut
+      end if
+   end repeat
+   return tOut
+end cwOpReturnData
+
 function cwPush pDataHex
    -- A minimal data push. The direct form covers 1..75 bytes, which is every
    -- push a single-key script makes; OP_PUSHDATA1 and 2 are here because a
@@ -1676,6 +1764,7 @@ function cwInputWitnessBytes pType, pM, pCosigners
 end cwInputWitnessBytes
 
 function cwOutputBytes pType
+   local tN, tScript
    if pType is "p2pkh" then
       return 8 + 1 + 25
    end if
@@ -1687,6 +1776,19 @@ function cwOutputBytes pType
    end if
    if pType is "p2wsh" or pType is "p2tr" then
       return 8 + 1 + 34
+   end if
+   -- "nulldata:N" is an OP_RETURN output carrying N bytes (2026-09-04): the
+   -- 8-byte value, the script's own length prefix, then OP_RETURN and one
+   -- push of the data. The length rides in the type name because every
+   -- caller of this layer sizes outputs by TYPE, and a data output's size
+   -- is not a property of its type.
+   if char 1 to 9 of pType is "nulldata:" then
+      put char 10 to -1 of pType into tN
+      if tN is not an integer or tN < 0 then
+         throw "wallet-core: cwOutputBytes: " & pType & " is not nulldata:N."
+      end if
+      put 1 + cwPushLen(tN) into tScript
+      return 8 + cwVarIntLen(tScript) + tScript
    end if
    throw "wallet-core: cwOutputBytes: unknown output type " & pType & "."
 end cwOutputBytes
@@ -1752,6 +1854,11 @@ function cwFeeFor pVsize, pSatPerVb
 end cwFeeFor
 
 function cwDustThreshold pType
+   -- An OP_RETURN output is provably unspendable, so there is no spend to
+   -- price: the network relays it at value 0, and 0 is its threshold.
+   if char 1 to 9 of pType is "nulldata:" then
+      return 0
+   end if
    -- Bitcoin Core's rule: an output is dust when spending it would cost more
    -- than a third of its value at the 3000 sat/kvB dust relay fee. The
    -- familiar 546 (P2PKH), 540 (P2SH), 330 (P2WSH and P2TR) and 294 (P2WPKH)

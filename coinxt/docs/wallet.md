@@ -91,7 +91,13 @@ rate in sat/vB with a plain-language description of what that rate means, four
 coin-selection strategies plus manual coin control, opt-in RBF, a locktime, and
 a review panel that shows every output in full, the fee, the change address and
 which coins are being spent, before anything is signed. It can also stop at an
-unsigned PSBT.
+unsigned PSBT. Since 2026-09-04 a line reading `note: some text` (or
+`data: hex`) adds one OP_RETURN output of value 0 carrying those bytes - a note
+to the chain - sized, selected for, reviewed, signed and fee-bumped like any
+other output; one per transaction, because a second is what most nodes refuse
+to relay, and anything over eighty bytes is warned about for the same reason.
+Inspect reads such outputs back as text, and reads an Ordinals inscription
+(content type, size, body) out of any witness that carries one.
 
 **Coins.** The UTXO set with freeze and thaw, ticking for manual selection, and
 a hand-entry path so an offline wallet can be told what it owns.

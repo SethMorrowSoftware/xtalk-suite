@@ -459,10 +459,68 @@ WITNESS_OUTPUTS = ("p2wpkh", "p2wsh", "p2tr")
 LONG_TERM_FEE_RATE = 10
 
 
+def push_len(n: int) -> int:
+    """Bytes a push of n data bytes occupies, opcode included."""
+    return n + (1 if n < 0x4C else 2 if n <= 0xFF else 3)
+
+
+def output_size(script_type: str) -> int:
+    """OUTPUT_SIZE plus the parametrised "nulldata:N" (an OP_RETURN carrying
+    N bytes): value, script length prefix, OP_RETURN, one push."""
+    if script_type.startswith("nulldata:"):
+        n = int(script_type[9:])
+        script = 1 + push_len(n)
+        return 8 + len(varint(script)) + script
+    if script_type not in OUTPUT_SIZE:
+        raise ValueError("unknown output type %r" % script_type)
+    return OUTPUT_SIZE[script_type]
+
+
 def dust_threshold(script_type: str) -> int:
+    if script_type.startswith("nulldata:"):
+        return 0                         # provably unspendable: nothing to price
     spend = (DUST_SPEND_WITNESS if script_type in WITNESS_OUTPUTS
              else DUST_SPEND_LEGACY)
     return (OUTPUT_SIZE.get(script_type, 34) + spend) * 3
+
+
+def spk_op_return(data: bytes) -> bytes:
+    """OP_RETURN and one push of the data; bare OP_RETURN for no data."""
+    return b"\x6a" + (push(data) if data else b"")
+
+
+def script_items(script: bytes):
+    """The script as a list of ("push", data) and ("op", n), in order."""
+    out, i = [], 0
+    while i < len(script):
+        b = script[i]
+        i += 1
+        if 1 <= b <= 75:
+            n = b
+        elif b == 76:
+            n = script[i]
+            i += 1
+        elif b == 77:
+            n = script[i] | (script[i + 1] << 8)
+            i += 2
+        elif b == 78:
+            n = int.from_bytes(script[i:i + 4], "little")
+            i += 4
+        else:
+            out.append(("op", b))
+            continue
+        if i + n > len(script):
+            raise ValueError("push runs past the end")
+        out.append(("push", script[i:i + n]))
+        i += n
+    return out
+
+
+def op_return_data(script: bytes) -> bytes:
+    """Every push after a leading OP_RETURN, joined; b"" for anything else."""
+    if not script or script[0] != 0x6A:
+        return b""
+    return b"".join(d for kind, d in script_items(script[1:]) if kind == "push")
 
 
 def multisig_witness_bytes(m: int, n: int) -> int:
@@ -497,9 +555,7 @@ def estimate_vsize(inputs, outputs, has_witness=None) -> int:
         if w:
             any_witness = True
     for spec in outputs:
-        if spec not in OUTPUT_SIZE:
-            raise ValueError("unknown output type %r" % spec)
-        base += OUTPUT_SIZE[spec]
+        base += output_size(spec)
     if has_witness is None:
         has_witness = any_witness
     if has_witness:

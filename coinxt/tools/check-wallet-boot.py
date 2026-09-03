@@ -804,6 +804,89 @@ def drive(c, ip, world, sandbox):
              all(o["value"] >= 294 for o in dec["vout"]),
              repr([o["value"] for o in dec["vout"]]))
 
+    # ---- a note to the chain: OP_RETURN as a payment line (2026-09-04) ----
+    # "note: text" or "data: hex" in the Pay-to box becomes one OP_RETURN
+    # output of value 0, carried as a payment record so sizing, selection,
+    # review, signing and the fee bump see nothing new. The output's size is
+    # in its kind ("nulldata:N"); the oracle sizes the same spend the same way.
+    put_field("sd_to", "%s,0.0005\nnote: hello, chain" % first)
+    click(ip, world, "sd_preview")
+    out = _fld(world, "sd_out")
+    c.ck("the review names the data output and shows the note",
+         "OP_RETURN" in out and "12 bytes" in out and 'text "hello, chain"' in out,
+         repr(out[:200]))
+    click(ip, world, "sd_sign")
+    raw_n = str(ip.globals.get("swalastraw", ""))
+    c.ck("a spend with a note signs", len(raw_n) > 200, "%d hex chars" % len(raw_n))
+    if len(raw_n) > 200:
+        dec_n = REF.tx_decode(bytes.fromhex(raw_n))
+        nulls = [o for o in dec_n["vout"] if o["scriptpubkey"].startswith("6a")]
+        c.eq("exactly one OP_RETURN output", len(nulls), 1)
+        if nulls:
+            c.eq("of value 0", nulls[0]["value"], 0)
+            c.eq("carrying the note's bytes",
+                 nulls[0]["scriptpubkey"], REF.spk_op_return(b"hello, chain").hex())
+        c.ck("the other outputs still clear dust",
+             all(o["value"] >= 294 for o in dec_n["vout"]
+                 if not o["scriptpubkey"].startswith("6a")),
+             repr([o["value"] for o in dec_n["vout"]]))
+        # the sizer counted it: the wallet's vsize and the oracle's agree on
+        # a spend with a data output of this length
+        kinds = ["p2wpkh"] * (len(dec_n["vout"]) - 1) + ["nulldata:12"]
+        want_vs = REF.estimate_vsize(["p2wpkh"] * len(dec_n["vin"]), kinds)
+        c.ck("the estimated vsize allows for the data output",
+             abs(int(dec_n["vsize"]) - want_vs) <= 2,
+             "decoded %s vs estimated %d" % (dec_n.get("vsize"), want_vs))
+        # ...and Inspect reads it back as text
+        insp = str(ip.call("waInspectRaw", [raw_n]))
+        c.ck("Inspect shows the OP_RETURN output as text",
+             'OP_RETURN text "hello, chain"' in insp, insp[-300:])
+    # the refusals, each by name
+    for label, text, want in (
+            ("two notes are refused - a second OP_RETURN does not relay",
+             "%s,0.0005\nnote: one\nnote: two" % first, "only one OP_RETURN"),
+            ("data: with odd hex is refused",
+             "%s,0.0005\ndata: abc" % first, "even number"),
+            ("data: with non-hex is refused",
+             "%s,0.0005\ndata: zz" % first, "0-9 a-f"),
+            ("an empty note is refused",
+             "%s,0.0005\nnote:" % first, "empty")):
+        put_field("sd_to", text)
+        try:
+            ip.call("waParsePayments", [])
+            c.ck(label, False, "accepted")
+        except LCS.Thrown as exc:
+            c.ck(label, want in str(exc.msg), str(exc.msg)[:100])
+    # a long note is offered with a warning, not refused
+    put_field("sd_to", "%s,0.0005\nnote: %s" % (first, "x" * 100))
+    click(ip, world, "sd_preview")
+    out = _fld(world, "sd_out")
+    c.ck("a note over 80 bytes is warned about, not refused",
+         "OVER 80 BYTES" in out and "100 bytes" in out, repr(out[:200]))
+    # data: hex, and a note-only spend (everything but the fee comes back)
+    put_field("sd_to", "data: deadbeef")
+    pays = ip.call("waParsePayments", [])
+    rec = pays.get("1", {}) if isinstance(pays, dict) else {}
+    c.eq("data: hex becomes a nulldata payment of that many bytes",
+         [str(rec.get("kind")), str(rec.get("script")), int(LCS._n(rec.get("value", 1)))],
+         ["nulldata:4", REF.spk_op_return(bytes.fromhex("deadbeef")).hex(), 0])
+    # the inscription reader, on an envelope the oracle builds
+    env = (b"\x00\x63" + REF.push(b"ord") + REF.push(b"\x01")
+           + REF.push(b"text/plain;charset=utf-8") + b"\x00"
+           + REF.push(b"Hello, ") + REF.push(b"ordinals") + b"\x68")
+    def wit(items):
+        d = {"n": len(items)}
+        for k, v in enumerate(items):
+            d[str(k + 1)] = v
+        return d
+    got = str(ip.call("waInscriptionIn", [wit(["aa" * 64, env.hex(), "c0" + "11" * 32])]))
+    c.ck("Inspect reads an inscription out of a witness: type, size, body",
+         got.startswith("text/plain;charset=utf-8, 15 bytes") and '"Hello, ordinals"' in got, got)
+    c.eq("and a witness without one reads as nothing",
+         str(ip.call("waInscriptionIn", [wit(["aa" * 64])])), "")
+    put_field("sd_to", "%s,0.0005" % first)
+    click(ip, world, "sd_sign")
+
     # ---- the RBF fee bump BUILDS the replacement --------------------------
     #
     # This is the leg that used to be advice. waBumpAdvice computed the floor

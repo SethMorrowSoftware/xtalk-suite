@@ -643,6 +643,46 @@ def check_money(c, ip):
     for t in ("p2pkh", "p2sh", "p2sh-p2wpkh", "p2wpkh", "p2wsh", "p2tr"):
         c.ck("the dust threshold for %s" % t,
              call("cwDustThreshold", [t]), REF.dust_threshold(t))
+
+    # ---- OP_RETURN outputs (2026-09-04): the script, its size, its data ----
+    # A data output is sized by a parametrised type, "nulldata:N", because
+    # everything here sizes outputs by type and a data output's size is not
+    # a property of its type. Every push form the encoder emits is covered:
+    # direct (to 75), PUSHDATA1 (to 255), PUSHDATA2.
+    for n in (0, 1, 75, 76, 80, 255, 256, 1000):
+        data = bytes((i * 7 + 3) & 0xFF for i in range(n))
+        c.ck("the OP_RETURN script for %d bytes" % n,
+             call("cwOpReturnScript", [data.hex()]), REF.spk_op_return(data).hex())
+        c.ck("its output size, nulldata:%d" % n,
+             call("cwOutputBytes", ["nulldata:%d" % n]), REF.output_size("nulldata:%d" % n))
+        c.ck("its dust threshold is 0", call("cwDustThreshold", ["nulldata:%d" % n]), 0)
+        c.ck("and the data reads back", call("cwOpReturnData", [REF.spk_op_return(data).hex()]),
+             data.hex())
+        c.ck("and the kind is nulldata", call("cwScriptKind", [REF.spk_op_return(data).hex()]),
+             "nulldata")
+    c.ck("a vsize with a data output",
+         call("cwEstimateVsize", [ins([("p2wpkh", 0, 0)]), lst(["p2wpkh", "nulldata:32", "p2wpkh"])]),
+         REF.estimate_vsize(["p2wpkh"], ["p2wpkh", "nulldata:32", "p2wpkh"]))
+    c.ck("a script that is not OP_RETURN has no data",
+         call("cwOpReturnData", [REF.spk_p2wpkh(b"\x02" + b"\x11" * 32).hex()]), "")
+    # the shared script reader, on the shapes the decoders meet
+    ord_env = (b"\x00\x63" + REF.push(b"ord") + REF.push(b"\x01")
+               + REF.push(b"text/plain;charset=utf-8") + b"\x00"
+               + REF.push(b"Hello, chain") + b"\x68")
+    for label, scr in (("a P2PKH script", REF.spk_p2pkh(b"\x02" + b"\x11" * 32)),
+                       ("an OP_RETURN with two pushes", b"\x6a" + REF.push(b"ab") + REF.push(b"cd")),
+                       ("an inscription envelope", ord_env),
+                       ("a PUSHDATA2 script", b"\x6a" + REF.push(b"z" * 300))):
+        want = "".join(("push " + d.hex() if d else "push") + "\n" if k == "push"
+                       else "op %d\n" % d for k, d in REF.script_items(scr))
+        c.ck("cwScriptItems reads %s" % label, call("cwScriptItems", [scr.hex()]), want)
+    try:
+        call("cwScriptItems", ["6a4c05aabb"])
+        c.ck("a push running past the end is refused", "accepted", "refused")
+    except Exception as exc:                            # noqa: BLE001
+        c.ck("a push running past the end is refused",
+             "refused" if "past the end" in str(getattr(exc, "msg", exc)) else str(exc)[:80],
+             "refused")
     for vs, rate in ((110, 5), (141, 1), (226, 1.5), (99, 10.7), (1000, 0.5)):
         c.ck("the fee for %d vB at %s sat/vB" % (vs, rate),
              call("cwFeeFor", [vs, rate]), REF.fee_for(vs, rate))

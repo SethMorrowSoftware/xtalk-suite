@@ -2791,3 +2791,30 @@ one-key wallet with the stack property cleared and the log line written, a carry
 reported rather than half-applied, and the route from the button and the menu item.
 
 kWaVersion moved to 1.1.0 with this, so the first update anyone runs has a version to name.
+
+
+### 2026-09-04, a note to the chain: OP_RETURN outputs, and reading data back
+
+The first of the "modern Bitcoin" additions, and the shape was the decision: a note is a LINE in the
+Pay-to box (`note: text`, `data: hex`), not a screen, and it becomes a payment record whose script is
+`OP_RETURN <push>`, whose value is 0 and whose KIND carries its byte count - `nulldata:N` - because
+every caller of wallet-core sizes outputs by type and a data output's size is not a property of its
+type. That one choice is why nothing downstream changed: `cwOutputBytes` and `cwDustThreshold` learned
+the parametrised kind (0 is the threshold: there is no spend to price), and selection, the review,
+signing, the PSBT and the fee bump all saw a payment. One per transaction, because a second OP_RETURN
+output is what most nodes refuse to relay; over eighty bytes is warned about, not refused, because
+Bitcoin Core 30 relays far more and whether a longer note reaches a miner depends on whose node it
+meets; the hard cap is the encoder's (PUSHDATA2). wallet-core gained `cwOpReturnScript`,
+`cwOpReturnData`, `cwPushLen` and `cwScriptItems` - the one script reader the decoders now share,
+one item per line - each vector-gated against the reference across every push form (direct,
+PUSHDATA1, PUSHDATA2), with a push that runs past the end refused. Inspect reads an OP_RETURN
+output back as text when every byte is printable UTF-8 and as hex otherwise, and reads an Ordinals
+inscription out of a witness: the OP_FALSE OP_IF "ord" envelope, the content type after a push of
+0x01, the body after OP_0 across as many pushes as it takes - which is the read half of ordinals and
+costs a parser, not a protocol. Two things the interpreters taught while it was written: the base
+interpreter models `repeat for each item` and not `for each line` (core code loops by index), and
+`pI` is the engine token `pi` (the checker's rule). Gated end to end: the review names the output,
+the signed spend decodes to exactly one OP_RETURN of value 0 carrying the bytes, the wallet's vsize
+agrees with the oracle's for a spend with a data output, the four refusals by name, the long-note
+warning, and the inscription reader on an envelope the oracle builds. The note output and the
+inscription reader have not run on an engine.

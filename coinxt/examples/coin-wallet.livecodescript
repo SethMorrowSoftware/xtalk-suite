@@ -3887,6 +3887,94 @@ end cwXKeyVersion
 -- people, and a raw byte string that reaches a field is mojibake.
 -- ==============================================================================
 
+function cwPushLen pBytes
+   -- The bytes a push of pBytes data bytes occupies on the wire, opcode
+   -- included: the direct form to 75, OP_PUSHDATA1 to 255, OP_PUSHDATA2
+   -- beyond, the same three cwPush emits.
+   if pBytes < 76 then
+      return 1 + pBytes
+   end if
+   if pBytes < 256 then
+      return 2 + pBytes
+   end if
+   return 3 + pBytes
+end cwPushLen
+
+function cwOpReturnScript pDataHex
+   -- OP_RETURN followed by one push of the data; with no data, bare
+   -- OP_RETURN. A "nulldata" output in Bitcoin Core's vocabulary, provably
+   -- unspendable and carrying only what it says.
+   if pDataHex is "" then
+      return "6a"
+   end if
+   return "6a" & cwPush(pDataHex)
+end cwOpReturnScript
+
+function cwScriptItems pScriptHex
+   -- A script as one item per line: "push <hex>" for every data push (an
+   -- empty push is "push" alone) and "op <n>" for everything else, in order.
+   -- The reader every decoder here shares, so what one of them sees in a
+   -- script is what the others see.
+   local tHex, tPos, tEnd, tOut, tByte, tLen
+   put cwLower(pScriptHex) into tHex
+   if cwHexIsClean(tHex) is not true then
+      throw "wallet-core: cwScriptItems: the script is not hex."
+   end if
+   put 1 into tPos
+   put the number of chars of tHex into tEnd
+   put "" into tOut
+   repeat while tPos <= tEnd
+      put cwBeRead(cxHexDecode(char tPos to (tPos + 1) of tHex)) into tByte
+      add 2 to tPos
+      if tByte >= 1 and tByte <= 75 then
+         put tByte into tLen
+      else if tByte is 76 then
+         put cwBeRead(cxHexDecode(char tPos to (tPos + 1) of tHex)) into tLen
+         add 2 to tPos
+      else if tByte is 77 then
+         put cwLeRead(cxHexDecode(char tPos to (tPos + 3) of tHex)) into tLen
+         add 4 to tPos
+      else if tByte is 78 then
+         put cwLeRead(cxHexDecode(char tPos to (tPos + 7) of tHex)) into tLen
+         add 8 to tPos
+      else
+         put "op " & tByte & return after tOut
+         next repeat
+      end if
+      if tPos + tLen * 2 - 1 > tEnd then
+         throw "wallet-core: cwScriptItems: a push of " & tLen & \
+               " bytes runs past the end of the script."
+      end if
+      if tLen is 0 then
+         put "push" & return after tOut
+      else
+         put "push " & char tPos to (tPos + tLen * 2 - 1) of tHex & return after tOut
+      end if
+      add tLen * 2 to tPos
+   end repeat
+   return tOut
+end cwScriptItems
+
+function cwOpReturnData pScriptHex
+   -- The data an OP_RETURN output carries, as hex: every push after the
+   -- OP_RETURN, joined. Empty for a script that is not one.
+   local tItems, tLine, tOut, tI, tCount
+   if cwScriptKind(pScriptHex) is not "nulldata" then
+      return ""
+   end if
+   put cwScriptItems(pScriptHex) into tItems
+   put "" into tOut
+   put the number of lines of tItems into tCount
+   -- from line 2: line 1 is the OP_RETURN itself
+   repeat with tI = 2 to tCount
+      put line tI of tItems into tLine
+      if char 1 to 5 of tLine is "push " then
+         put char 6 to -1 of tLine after tOut
+      end if
+   end repeat
+   return tOut
+end cwOpReturnData
+
 function cwPush pDataHex
    -- A minimal data push. The direct form covers 1..75 bytes, which is every
    -- push a single-key script makes; OP_PUSHDATA1 and 2 are here because a
@@ -4847,6 +4935,7 @@ function cwInputWitnessBytes pType, pM, pCosigners
 end cwInputWitnessBytes
 
 function cwOutputBytes pType
+   local tN, tScript
    if pType is "p2pkh" then
       return 8 + 1 + 25
    end if
@@ -4858,6 +4947,19 @@ function cwOutputBytes pType
    end if
    if pType is "p2wsh" or pType is "p2tr" then
       return 8 + 1 + 34
+   end if
+   -- "nulldata:N" is an OP_RETURN output carrying N bytes (2026-09-04): the
+   -- 8-byte value, the script's own length prefix, then OP_RETURN and one
+   -- push of the data. The length rides in the type name because every
+   -- caller of this layer sizes outputs by TYPE, and a data output's size
+   -- is not a property of its type.
+   if char 1 to 9 of pType is "nulldata:" then
+      put char 10 to -1 of pType into tN
+      if tN is not an integer or tN < 0 then
+         throw "wallet-core: cwOutputBytes: " & pType & " is not nulldata:N."
+      end if
+      put 1 + cwPushLen(tN) into tScript
+      return 8 + cwVarIntLen(tScript) + tScript
    end if
    throw "wallet-core: cwOutputBytes: unknown output type " & pType & "."
 end cwOutputBytes
@@ -4923,6 +5025,11 @@ function cwFeeFor pVsize, pSatPerVb
 end cwFeeFor
 
 function cwDustThreshold pType
+   -- An OP_RETURN output is provably unspendable, so there is no spend to
+   -- price: the network relays it at value 0, and 0 is its threshold.
+   if char 1 to 9 of pType is "nulldata:" then
+      return 0
+   end if
    -- Bitcoin Core's rule: an output is dust when spending it would cost more
    -- than a third of its value at the 3000 sat/kvB dust relay fee. The
    -- familiar 546 (P2PKH), 540 (P2SH), 330 (P2WSH and P2TR) and 294 (P2WPKH)
@@ -10954,6 +11061,13 @@ constant kWaFeesFresh = 600000
 -- (ElectrumX's default is a megabyte); a busy wallet's histories are the
 -- case, and the split-on-failure keeps it a slow sync rather than a lost one.
 constant kWaBatchSize = 22
+-- AN OP_RETURN OUTPUT'S DATA (2026-09-04). Eighty bytes is what most nodes
+-- still relay by default; Bitcoin Core 30 relays far more, but a note over
+-- eighty bytes is warned about because whether it reaches a miner depends on
+-- whose node it meets. The hard cap is the encoder's (cwPush stops at
+-- PUSHDATA2), and a note that long is a fee bill rather than a note.
+constant kWaDataWarnBytes = 80
+constant kWaDataMaxBytes = 65535
 
 -- The cap on one response body. A backend that never stops sending hits a wall
 -- here rather than exhausting the engine's memory.
@@ -12128,7 +12242,7 @@ command waBuildSend
    uiPanel "sd_panelA", "184,58,700,590"
    uiPanel "sd_panelB", "708,58,1184,590"
    uiSection "sd_sec1", "1. Pay to", "196,66,688,84"
-   uiCap "sd_toCap", "One address per line: address, amount (or MAX)", \
+   uiCap "sd_toCap", "One per line: address, amount (or MAX); note: text or data: hex", \
          "196,88,688,104"
    waEditArea "sd_to", "196,106,688,186"
    uiButton "sd_paste", "Read a BIP-21 URI", "196,192,360,218"
@@ -14501,13 +14615,31 @@ function waParsePayments
    -- on the engine's current itemDelimiter, which anything in the process may
    -- have changed.
    local tText, tI, tCount, tLine, tPos, tAddr, tAmountText, tRec, tList, tMax
+   local tHaveData
    put field "sd_to" into tText
    put waEmptyList() into tList
    put false into tMax
+   put false into tHaveData
    put the number of lines of tText into tCount
    repeat with tI = 1 to tCount
       put cwTrim(line tI of tText) into tLine
       if tLine is "" then
+         next repeat
+      end if
+      -- A NOTE TO THE CHAIN is a line, not a screen (2026-09-04): "note:"
+      -- writes the text as UTF-8, "data:" writes hex, either as one
+      -- OP_RETURN output of value 0. One per transaction, because a second
+      -- OP_RETURN output is what most nodes refuse to relay. As a payment
+      -- record it rides everything downstream unchanged - sizing, selection,
+      -- review, signing, the fee bump - with its size in its kind.
+      if cwLower(char 1 to 5 of tLine) is "note:" \
+            or cwLower(char 1 to 5 of tLine) is "data:" then
+         if tHaveData is true then
+            throw "line " & tI & ": only one OP_RETURN output per " & \
+                  "transaction will relay. Put everything in one note."
+         end if
+         put true into tHaveData
+         put cwListAdd(tList, waDataPayment(tLine, tI)) into tList
          next repeat
       end if
       put offset(",", tLine) into tPos
@@ -14558,6 +14690,128 @@ function waParsePayments
    end if
    return tList
 end waParsePayments
+
+function waDataPayment pLine, pLineNo
+   -- The payment record for a "note:" or "data:" line: an OP_RETURN script
+   -- of value 0 whose kind carries its byte count for the sizer.
+   local tRec, tText, tHex, tBytes, tLen
+   put cwTrim(char 6 to -1 of pLine) into tText
+   if cwLower(char 1 to 5 of pLine) is "note:" then
+      if tText is "" then
+         throw "line " & pLineNo & ": the note is empty."
+      end if
+      put cxHexEncode(textEncode(tText, "utf-8")) into tHex
+   else
+      put cwLower(cwStripWhitespace(tText)) into tHex
+      put the number of chars of tHex into tLen
+      if tHex is "" or cwHexIsClean(tHex) is not true or tLen mod 2 is not 0 then
+         throw "line " & pLineNo & ": data: takes hex, an even number of 0-9 a-f."
+      end if
+   end if
+   put the number of chars of tHex into tLen
+   put tLen div 2 into tBytes
+   if tBytes > kWaDataMaxBytes then
+      throw "line " & pLineNo & ": " & tBytes & " bytes is more than an OP_RETURN " & \
+            "output can carry from here (" & kWaDataMaxBytes & ")."
+   end if
+   put "" into tRec
+   put "OP_RETURN" into tRec["address"]
+   put cwOpReturnScript(tHex) into tRec["script"]
+   put "nulldata:" & tBytes into tRec["kind"]
+   put false into tRec["max"]
+   put 0 into tRec["value"]
+   put tHex into tRec["data"]
+   return tRec
+end waDataPayment
+
+function waDataPreview pHex
+   -- Data as a person would read it: the text in quotes when every byte is
+   -- printable UTF-8, otherwise the byte count and the hex, cut short.
+   local tBytes, tText, tI, tCount, tCode, tPrintable, tLen
+   if pHex is "" then
+      return "(no data)"
+   end if
+   put the number of chars of pHex into tLen
+   put tLen div 2 into tBytes
+   put textDecode(cxHexDecode(pHex), "utf-8") into tText
+   put true into tPrintable
+   put the number of chars of tText into tCount
+   repeat with tI = 1 to tCount
+      put charToNum(char tI of tText) into tCode
+      if tCode is 65533 or (tCode < 32 and tCode is not 9 and tCode is not 10 \
+            and tCode is not 13) then
+         put false into tPrintable
+         exit repeat
+      end if
+   end repeat
+   if tPrintable is true then
+      return "text " & quote & tText & quote & " (" & tBytes & " bytes)"
+   end if
+   if tLen > 64 then
+      return tBytes & " bytes: " & char 1 to 64 of pHex & "..."
+   end if
+   return tBytes & " bytes: " & pHex
+end waDataPreview
+
+function waInscriptionIn pWitness
+   -- An Ordinals inscription in a witness, if there is one: the envelope is
+   -- OP_FALSE OP_IF "ord" ... OP_ENDIF inside the tapscript, with the
+   -- content type after a push of 0x01 and the body after OP_0, in as many
+   -- pushes as it takes. Answers "<type>, <N> bytes: <preview>" or empty.
+   local tI, tCount, tItem, tItems, tJ, tLines, tLine, tData, tPhase, tType
+   local tBody, tBytes, tIn, tLen
+   put cwListCount(pWitness) into tCount
+   repeat with tI = 1 to tCount
+      put pWitness[tI] into tItem
+      if not (cwLower(tItem) contains "0063036f7264") then
+         next repeat
+      end if
+      put cwScriptItems(tItem) into tItems
+      put "" into tPhase
+      put "" into tType
+      put "" into tBody
+      put false into tIn
+      put the number of lines of tItems into tLines
+      repeat with tJ = 1 to tLines
+         put line tJ of tItems into tLine
+         if char 1 to 5 of tLine is "push " then
+            put char 6 to -1 of tLine into tData
+         else
+            put "" into tData
+         end if
+         if tIn is false then
+            if tLine is "push 6f7264" then
+               put true into tIn
+            end if
+            next repeat
+         end if
+         if tLine is "op 104" then
+            exit repeat
+         end if
+         if tPhase is "body" then
+            if char 1 to 4 of tLine is "push" then
+               put tData after tBody
+            end if
+         else if tPhase is "type" then
+            put textDecode(cxHexDecode(tData), "utf-8") into tType
+            put "" into tPhase
+         else if tLine is "push 01" then
+            put "type" into tPhase
+         else if tLine is "op 0" then
+            put "body" into tPhase
+         end if
+      end repeat
+      if tIn is true then
+         put the number of chars of tBody into tLen
+         put tLen div 2 into tBytes
+         if tType is "" then
+            put "(no content type)" into tType
+         end if
+         return tType & ", " & tBytes & " bytes: " & waDataPreview(tBody)
+      end if
+   end repeat
+   return ""
+end waInscriptionIn
 
 function waSpendableCoins
    -- The UTXO set as the selector wants it, carrying the freeze and tick
@@ -14887,6 +15141,18 @@ function waReviewText pPays, pSel, pFee, pChange, pChangeRec, pVsize, pRate, pSe
    repeat with tI = 1 to tCount
       put pPays[tI] into tRec
       add tRec["value"] to tTotalOut
+      if char 1 to 9 of tRec["kind"] is "nulldata:" then
+         put "  data   " & char 10 to -1 of tRec["kind"] & " bytes in an " & \
+               "OP_RETURN output (value 0; it pays nobody)" & return after tOut
+         put "         " & waDataPreview(tRec["data"]) & return after tOut
+         if char 10 to -1 of tRec["kind"] > kWaDataWarnBytes then
+            put "         OVER " & kWaDataWarnBytes & " BYTES: many nodes " & \
+                  "will not relay this; whether it reaches a miner depends " & \
+                  "on whose node it meets." & return after tOut
+         end if
+         put return after tOut
+         next repeat
+      end if
       put "  pay    " & waAmount(tRec["value"]) & return after tOut
       put "  to     " & tRec["address"] & return after tOut
       if waIsMine(tRec["address"]) then
@@ -16471,7 +16737,7 @@ private function waScriptKindName pKind
 end waScriptKindName
 
 function waInspectRaw pHex
-   local tTx, tOut, tI, tCount, tRec, tAddr, tError
+   local tTx, tOut, tI, tCount, tRec, tAddr, tError, tIns
    put cwTxDecode(cwTrim(pHex)) into tTx
    put "RAW TRANSACTION" & return & return into tOut
    put "  txid      " & tTx["txid"] & return after tOut
@@ -16492,6 +16758,10 @@ function waInspectRaw pHex
          put "       scriptSig " & cwScriptAsm(tRec["scriptsig"]) & return after tOut
       end if
       put "       witness " & cwListCount(tRec["witness"]) & " item(s)" & return after tOut
+      put waInscriptionIn(tRec["witness"]) into tIns
+      if tIns is not "" then
+         put "       inscription " & tIns & return after tOut
+      end if
    end repeat
    put cwListCount(tTx["outputs"]) into tCount
    put return & "  " & tCount & " output(s), " & waAmount(tTx["outputtotal"]) & \
@@ -16500,11 +16770,15 @@ function waInspectRaw pHex
       put tTx["outputs"] into tRec
       put tRec[tI] into tRec
       put "unrecognised" into tAddr
-      try
-         put cwAddressForScript(sWaNetwork, tRec["script"]) into tAddr
-      catch tError
-         put "unrecognised (" & tRec["kind"] & ")" into tAddr
-      end try
+      if tRec["kind"] is "nulldata" then
+         put "OP_RETURN " & waDataPreview(cwOpReturnData(tRec["script"])) into tAddr
+      else
+         try
+            put cwAddressForScript(sWaNetwork, tRec["script"]) into tAddr
+         catch tError
+            put "unrecognised (" & tRec["kind"] & ")" into tAddr
+         end try
+      end if
       put "    " & tI & ". " & waAmount(tRec["value"]) & "  -> " & tAddr after tOut
       if waIsMine(tAddr) then
          put "   (YOURS)" after tOut
