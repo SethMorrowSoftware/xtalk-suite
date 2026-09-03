@@ -2751,3 +2751,43 @@ with the tip and the fees landing from inside it) and has not run on an engine.
 Not visible in that log, and so still unseen: the stale-answer skip (every sync followed a backend
 change, which forgets the tip and fees on purpose), the paint and pump timing, and the three menu
 items.
+
+### 2026-09-04, Update from main
+
+Asked for as a button, a menu item, or both, "to make updating seamless": fetch the latest script
+from `main`, set it as the stack script, fire `preOpenStack`. Both, and the fetch is `get URL` as
+asked. What the design had to settle first is what makes a self-replacing wallet honest.
+
+**THE WALLET MUST SURVIVE THE SWAP.** Setting a stack's script reinitialises every script local, so
+the seed, the coins and the settings in memory would simply vanish - the pump re-arm entry above is
+the same fact from the other side. The carry is the wallet-file text (`waSerializeWallet`, the one
+serialisation the wallet already trusts) plus `update:*` rows for the Network settings and the
+screen, parked in a stack custom property for the milliseconds between the old script's last
+statement and the new script's boot. A property rather than a global, because the family's
+interpreter models script-level `local`/`constant` and stack properties and not `global`, and a carry
+the gate cannot drive is a carry nobody has run. `waBoot` reads it back LAST, so it lands on a booted
+wallet, clears it, and logs the version it came from; `closeStack` clears it too, so a swap that never
+came back cannot leave a seed in a property of a saved stack. The log survives on its own: it is a
+field, and `waBuild` is guarded by `uUiVersion`, so nothing is rebuilt.
+
+**WHAT PROVES THE FETCHED TEXT IS THIS WALLET.** `waUpdateCheck` takes the fetched text AND the
+running script, so it can be driven with any two texts: the first line must match; the size must be
+within a half and three times the running script's (a truncated download is the likely failure); it
+must declare `kWaVersion`, carry `waUpdateRestore` (or the wallet would not come back) and an
+`openStack` (or it could not boot); and a copy identical to the running script is refused as already
+current. What it accepts is offered with its version, size and SHA-256 beside the running version,
+and nothing happens until Update is pressed. That is the whole of the trust model and it is stated on
+the Settings panel and in docs/wallet.md: whoever writes to `main` writes in front of your keys, and
+so does anyone who can answer for the host if TLS is not doing its job.
+
+**THE SWAP IS THE ONE UNGATED PIECE.** `set the script of this stack` from inside one of that
+script's own handlers, then `preOpenStack` and `openStack` sent to the new script on a timer - engine
+work nothing headless can model, so `preOpenStack`/`openStack` now pin the defaultStack (they are
+timer-reached for the first time) and the label says the swap has not run on an engine. A script
+that does not compile leaves the old one running, restores the pump and says so; the throw for that
+sits AFTER the try, per the checker's rule, which flagged the first draft. Everything else is gated:
+seven refusals by name, the accepted copy's version and hash, the carry's rows, the restore on a
+one-key wallet with the stack property cleared and the log line written, a carry that will not load
+reported rather than half-applied, and the route from the button and the menu item.
+
+kWaVersion moved to 1.1.0 with this, so the first update anyone runs has a version to name.

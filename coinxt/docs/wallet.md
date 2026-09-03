@@ -298,6 +298,39 @@ than on the next 250 ms tick).
 Until the 2026-09-02 log, no transaction this wallet built had been broadcast to any
 network, so "this would confirm" is a claim nobody has tested.
 
+## Updating from main
+
+Since 2026-09-04 the Settings screen has an **Update from main** button, and
+every right-click menu ends with the same item. It fetches this file - the
+raw text of `coinxt/examples/coin-wallet.livecodescript` at the tip of the
+repository's `main` branch, one `get URL` of a fixed address - reads it, and
+offers it: the version it declares, its size and its SHA-256 next to the
+running version. Nothing replaces the script until Update is pressed. The
+reading refuses, with the reason, anything that does not begin the way this
+script begins, is too short to be a whole wallet or too long to be this one,
+declares no version, or lacks the handler that brings the wallet back after
+the swap; and it refuses a copy identical to the running script as already
+current.
+
+On Update the wallet as the wallet file would hold it, plus the Network
+settings and the screen, is parked in a stack property; the network is
+stopped; the stack's script is replaced; and `preOpenStack` and `openStack`
+are sent to the new script, whose boot reads the carry back, clears it, and
+says what version it came from. The log stays, because the log is a field
+and fields are not rebuilt. A script that does not compile on the engine
+leaves everything as it was and says so. The carry is cleared on close as
+well, so a swap that never came back cannot leave a seed on a saved stack.
+
+**What that trusts, said plainly.** Whoever can write to `main` can put code
+in front of your keys, and so can anyone who can answer for
+`raw.githubusercontent.com` if the engine's TLS is not doing its job (this
+suite has not measured that; see the engine notes). The version and the
+SHA-256 in the offer are there so a person can compare them with the commit
+they expect before pressing Update. Everything around the swap - the check,
+the carry, the restore, the button and the menu route - is gated headlessly;
+the swap itself (`set the script of this stack` from inside one of that
+script's own handlers) is engine work and has not run on an engine.
+
 ## Custody, said plainly
 
 OXT script variables are not locked memory. A seed typed into this stack can be

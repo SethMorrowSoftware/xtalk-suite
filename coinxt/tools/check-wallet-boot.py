@@ -3303,12 +3303,12 @@ def drive(c, ip, world, sandbox):
         btn = world.anywhere("menu_" + screen)
         items = [ln for ln in
                  str(_ctl_prop_get(btn, "text")).split("\n") if ln]
-        if items[-2:] != ["Refresh", "About this wallet"]:
+        if items[-3:] != ["Refresh", "About this wallet", "Update from main"]:
             tails.append(screen)
         want_more = screen in menu_screens
-        if (len(items) > 2) is not want_more:
+        if (len(items) > 3) is not want_more:
             sized.append("%s:%d" % (screen, len(items)))
-    c.ck("every screen's menu ends with the same two items", not tails,
+    c.ck("every screen's menu ends with the same three items", not tails,
          ",".join(tails))
     c.ck("the eight screens with actions carry them; the other two do not",
          not sized, ",".join(sized))
@@ -3430,6 +3430,118 @@ def drive(c, ip, world, sandbox):
         else:
             c.ck("Copy selected outpoint copies a txid:vout (no coin to select)",
                  True)
+
+    # ---- Update from main: everything around the swap (2026-09-04) --------
+    # The swap itself - `set the script of this stack` from inside its own
+    # handler, then preOpenStack and openStack to the new one - is engine
+    # work nothing headless can model, and the fetch is one `get URL`. What
+    # IS gated is what makes the swap safe to offer: the check that refuses
+    # anything that is not recognisably this script and names why, the
+    # carry of the wallet and the Network settings across it, the restore on
+    # the other side, and the route from the button and the menu item.
+    cur = getattr(ip, "src_text", "")
+    c.ck("the check has the running script to compare against", len(cur) > 100000)
+
+    def check(text):
+        return ip.call("waUpdateCheck", [text, cur])
+
+    def refused(label, text, want):
+        try:
+            got = check(text)
+            c.ck(label, False, "accepted: %s" % str(got)[:60])
+        except LCS.Thrown as exc:
+            c.ck(label, want in str(exc.msg), str(exc.msg)[:100])
+
+    refused("an identical copy is refused as already current", cur, "already")
+    refused("an empty reply is refused", "", "nothing back")
+    refused("a page that is not this script is refused by its first line",
+            "<!DOCTYPE html>\n<html>not found</html>", "not this script")
+    refused("a truncated download is refused by its size",
+            cur[: len(cur) // 3], "too short")
+    refused("a copy with no version is refused",
+            cur.replace('constant kWaVersion = "', 'constant kWaVersionX = "', 1),
+            "declares no kWaVersion")
+    refused("a copy without the restore handler is refused - the wallet would not come back",
+            cur.replace("command waUpdateRestore", "command waUpdateRestoreX"),
+            "no waUpdateRestore")
+    refused("a copy with no openStack is refused - it could not boot",
+            cur.replace("on openStack", "on openStackX"), "no openStack")
+    newer = cur.replace('constant kWaVersion = "', 'constant kWaVersion = "9.9.9-', 1)
+    info = check(newer)
+    c.ck("a newer copy is accepted with its version read out",
+         str(info.get("version", "")).startswith("9.9.9-"), str(info)[:80])
+    c.eq("and its size", int(LCS._n(info.get("chars", 0))), len(newer))
+    c.ck("and its SHA-256, as hex",
+         re.match(r'^[0-9a-f]{64}$', str(info.get("sha", ""))) is not None,
+         str(info.get("sha", ""))[:70])
+    c.ck("which is not the running script's",
+         str(info.get("sha", "")) != str(ip.call("cxHexEncode",
+                                                  [ip.call("cxSha256", [cur])])))
+
+    # the carry and the restore, on a one-key wallet (cheap to re-derive)
+    saved8 = {k: ip.globals.get(k) for k in
+              ("swanetwork", "swascripttype", "swakind", "swaimportedwif",
+               "swaaddresses", "swautxos", "swahistory", "swamnemonic",
+               "swabackend", "swahost", "swaport", "swasocksport", "swascreen",
+               "swalabel", "swalabels", "swaunit")}
+    wif_k = WV.REF.cr.wif_encode(bytes.fromhex("07" * 32), "testnet", True)
+    ip.globals["swanetwork"] = "testnet"
+    ip.globals["swascripttype"] = "p2wpkh"
+    ip.globals["swakind"] = "key"
+    ip.globals["swaimportedwif"] = wif_k
+    ip.globals["swamnemonic"] = ""
+    ip.globals["swalabel"] = "carried"
+    ip.globals["swaunit"] = "sat"
+    ip.call("waDeriveAddresses", [])
+    ip.globals["swabackend"] = "electrum-tor"
+    ip.globals["swahost"] = "example" + str(ip.constants.get("kWaElectrumOnion", ""))[7:]
+    ip.globals["swaport"] = 4443
+    ip.globals["swasocksport"] = 9150
+    ip.globals["swascreen"] = "coins"
+    carry = str(ip.call("waUpdateCarry", []))
+    c.ck("the carry is the wallet file's text plus update rows",
+         "wif\t" + wif_k in carry and "update:backend\telectrum-tor" in carry
+         and "update:port\t4443" in carry and "update:screen\tcoins" in carry
+         and ("update:from\t" + str(ip.constants.get("kWaVersion", ""))) in carry,
+         carry[-200:])
+    # the other side: a fresh wallet, the carry parked on the stack
+    ip.call("waUpdateStash", [carry])
+    c.eq("the carry is parked on the stack",
+         str(world.stack_props.get("uwaupdatecarry", "")), carry)
+    ip.call("waResetWallet", [])
+    ip.globals["swabackend"] = "offline"
+    ip.globals["swascreen"] = "wallet"
+    c.eq("a reset wallet has no key", str(ip.globals.get("swaimportedwif")), "")
+    ip.call("waUpdateRestore", [])
+    c.eq("the restore brings the key back", str(ip.globals.get("swaimportedwif")), wif_k)
+    c.eq("and the label", str(ip.globals.get("swalabel")), "carried")
+    c.eq("and the unit", str(ip.globals.get("swaunit")), "sat")
+    c.eq("and the backend, host, port and SOCKS port",
+         [str(ip.globals.get(k)) for k in ("swabackend", "swahost", "swaport", "swasocksport")],
+         ["electrum-tor", "example" + str(ip.constants.get("kWaElectrumOnion", ""))[7:],
+          "4443", "9150"])
+    c.eq("and the screen", str(ip.globals.get("swascreen")), "coins")
+    c.eq("and clears the carry", str(world.stack_props.get("uwaupdatecarry", "")), "")
+    c.ck("and says so in the log",
+         "updated to version" in _fld(world, "lg_text"), _fld(world, "lg_text")[-160:])
+    ip.call("waUpdateRestore", [])
+    c.ck("a second restore with nothing parked does nothing",
+         _fld(world, "lg_text").count("updated to version") == 1)
+    # a carry that will not load is reported, not left half-applied
+    ip.call("waUpdateStash", ["label\tbroken\nkind\tseed\nmnemonic\tnot words at all\n"
+                              "update:from\t0.0.1\n"])
+    ip.call("waUpdateRestore", [])
+    c.ck("a carry that will not load is named in the log",
+         "did not load" in _fld(world, "lg_text"), _fld(world, "lg_text")[-200:])
+    c.eq("and the carry is still cleared", str(world.stack_props.get("uwaupdatecarry", "")), "")
+    # the route: the button exists and the menu item names it
+    c.ck("the Settings screen carries the Update button",
+         world.anywhere("st_update") is not None)
+    c.eq("the menu item routes to it", str(ip.call("waMenuRoute", ["Update from main"])),
+         "st update")
+    for k, v in saved8.items():
+        ip.globals[k] = v
+    ip.call("waDeriveAddresses", []) if str(ip.globals.get("swakind")) == "key" else None
 
     # ---- the log recorded all of it --------------------------------------
     click(ip, world, "nv_lg")
