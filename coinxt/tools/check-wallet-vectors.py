@@ -1839,7 +1839,7 @@ def check_tapscript(c, ip):
          env_big, REF.inscription_script(xonly, "application/octet-stream", big).hex())
     items = call("cwScriptItems", [env_big]).split("\n")
     c.ck("and the script reader sees those pushes",
-         [len(x) // 2 - 3 for x in items if x.startswith("push ") and len(x) > 200], [520, 520, 240])
+         [(len(x) - 5) // 2 for x in items if x.startswith("push ") and len(x) > 200], [520, 520, 240])
     c.refuses("an empty body is refused", lambda: call("cwInscriptionScript", [xonly.hex(), "text/plain", ""]))
     c.refuses("a missing content type is refused", lambda: call("cwInscriptionScript", [xonly.hex(), "", "00"]))
     commit = call("cwTapCommit", [xonly.hex(), env])
@@ -1867,7 +1867,7 @@ def check_tapscript(c, ip):
     c.ck("the witness is signature, script, control block",
          wit, [x.hex() for x in REF.sign_tapscript(node["seckey"], want, bytes.fromhex(env), o["controlblock"])])
     c.true("and the signature verifies against the leaf's key",
-           call("cxSchnorrVerify", [to_str(xonly), to_str(want), to_str(bytes.fromhex(wit[0]))]))
+           CR.schnorr_verify(xonly, want, bytes.fromhex(wit[0])))
     c.ck("the reveal input's vsize", LCS._n(call("cwTapscriptInputVsize", [env])),
          REF.tapscript_input_vsize(bytes.fromhex(env)))
     raw = call("cwTxSerialize", [2, ins, outs, 0, lst([""]), lst([sig["witness"]])])
@@ -1908,8 +1908,8 @@ def check_tapscript(c, ip):
          call("cwTapscriptSighash", [2, ins_l, outs, 1, 899999, lst([nums["script"]]), lst([10000]), nums["leafhash"]]) == dig_l,
          False)
     sig_l = call("cwSignTapscript", [node["seckey"].hex(), dig_l, lock, nums["controlblock"]])
-    c.true("the leaf's key signs it", call("cxSchnorrVerify", [to_str(xonly), to_str(bytes.fromhex(dig_l)),
-                                                             to_str(bytes.fromhex(unlst(sig_l["witness"])[0]))]))
+    c.true("the leaf's key signs it",
+           CR.schnorr_verify(xonly, bytes.fromhex(dig_l), bytes.fromhex(unlst(sig_l["witness"])[0])))
 
 
 BOLT11_VECTORS = os.path.join(MEMBER, "tests", "bolt11-vectors.json")
