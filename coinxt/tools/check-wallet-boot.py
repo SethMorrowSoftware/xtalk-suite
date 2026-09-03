@@ -548,6 +548,12 @@ def plant_utxos(ip, world):
     return True
 
 
+def unlst_boot(a):
+    """A cw list (an array with "n") as a Python list of its records."""
+    n = int(LCS._n(a.get("n", 0) or 0)) if isinstance(a, dict) else 0
+    return [a.get(str(i), "") for i in range(1, n + 1)]
+
+
 def _fld(world, name):
     ctl = world.anywhere(name)
     return "" if ctl is None else ctl.content
@@ -885,6 +891,25 @@ def drive(c, ip, world, sandbox):
          got.startswith("text/plain;charset=utf-8, 15 bytes") and '"Hello, ordinals"' in got, got)
     c.eq("and a witness without one reads as nothing",
          str(ip.call("waInscriptionIn", [wit(["aa" * 64])])), "")
+    # ...and a runestone out of an OP_RETURN OP_13 output (read only): the
+    # reference's all-tags etching, rendered the way Inspect prints it
+    T = REF.RUNE_TAGS
+    rs = REF.runestone_script([T["flags"], 0b111, T["rune"], 4, T["divisibility"], 1,
+                               T["spacers"], 5, T["symbol"], ord("a"), T["offsetend"], 2,
+                               T["amount"], 3, T["premine"], 8, T["cap"], 9, T["pointer"], 0,
+                               T["mint"], 1, T["mint"], 1, T["body"], 1, 1, 2, 0]).hex()
+    rtext = str(ip.call("waRunestoneText", [rs, 2]))
+    c.ck("Inspect renders a runestone: etching, terms, mint, pointer, edict",
+         all(s in rtext for s in ("etching E symbol a divisibility 1 premine 0.8 turbo",
+                                  "open mint: 0.3 per mint, cap 9, offsets ..2",
+                                  "mint 1:1", "go to output 1",
+                                  "edict 1:1  amount 2  to output 1"))
+         and "CENOTAPH" not in rtext, rtext)
+    rtext = str(ip.call("waRunestoneText", [REF.runestone_script([T["cenotaph"], 0]).hex(), 2]))
+    c.ck("and names a cenotaph with its flaw",
+         "CENOTAPH (unrecognized even tag)" in rtext and "burned" in rtext, rtext)
+    c.eq("an ordinary OP_RETURN renders nothing as a runestone",
+         str(ip.call("waRunestoneText", [REF.spk_op_return(b"hi").hex(), 2])), "")
     # ---- a silent payment, from the coins that fund it (2026-09-04) --------
     # A BIP-352 address in the Pay-to box: the parser keeps its two keys and
     # no script, selection picks the coins, and only then is the taproot
@@ -1183,6 +1208,213 @@ def drive(c, ip, world, sandbox):
              "final" in _fld(world, "tl_out").lower()
              or len(str(ip.globals.get("swalastraw", ""))) > 200,
              repr(_fld(world, "tl_out")[:100]))
+
+    # ---- Tools: an inscription, by commit and reveal (2026-09-04) ---------
+    # One button, two phases. "inscribe: <type>; <text>" in the paste box
+    # prepares the COMMIT: the next unused receive key becomes the leaf key,
+    # the commit address joins the address list, the recipe is saved with
+    # the wallet. A coin planted on that address, and Inscribe with the box
+    # empty signs the REVEAL through the leaf; the oracle rebuilds the same
+    # transaction from the same key, and the wallet's own inscription reader
+    # gets the envelope back out of the witness.
+    click(ip, world, "nv_tl")
+    before_n = int(LCS._n((ip.globals.get("swaaddresses") or {}).get("n", 0)))
+    put_field("tl_hex", "inscribe: text/plain;charset=utf-8; Hello, ordinals")
+    click(ip, world, "tl_inscribe")
+    out = _fld(world, "tl_out")
+    c.ck("Inscribe prepares a commit and says what to fund",
+         "INSCRIPTION COMMIT PREPARED" in out and "tb1p" in out and "Fund that address" in out,
+         repr(out[:200]))
+    addrs = ip.globals.get("swaaddresses") or {}
+    n_addr = int(LCS._n(addrs.get("n", 0)))
+    commit = dict(addrs.get(str(n_addr), {})) if n_addr > before_n else {}
+    c.eq("the commit joined the wallet's address list", n_addr, before_n + 1)
+    base = None
+    for i in range(1, n_addr + 1):
+        r = addrs.get(str(i), {})
+        if str(r.get("change")) == "0" and str(r.get("index")) == str(commit.get("index")) and not r.get("leafscript"):
+            base = r
+            break
+    if base is not None:
+        xonly = bytes.fromhex(str(base["pubkey"]))[1:]
+        env = REF.inscription_script(xonly, "text/plain;charset=utf-8", b"Hello, ordinals")
+        want_c = REF.tap_commit(xonly, env)
+        c.ck("its leaf, key and script are the oracle's for that receive key",
+             (str(commit.get("leafscript")), str(commit.get("leafhash")), str(commit.get("script")),
+              str(commit.get("controlblock"))),
+             (env.hex(), want_c["leafhash"].hex(), want_c["script"].hex(), want_c["controlblock"].hex()))
+        c.ck("and its address is the commit script's",
+             str(commit.get("address")), REF.address_for_spk("testnet", want_c["script"]))
+        c.ck("the recipe is in the wallet file",
+             "leaf\tinscribe|%d|text/plain;charset=utf-8|%s" % (int(LCS._n(commit["index"])), b"Hello, ordinals".hex())
+             in str(ip.call("waSerializeWallet", [])),
+             [ln for ln in str(ip.call("waSerializeWallet", [])).split("\n") if ln.startswith("leaf")])
+        # fund it, then reveal
+        utx = dict(ip.globals.get("swautxos") or {"n": 0})
+        n_u = int(LCS._n(utx.get("n", 0))) + 1
+        utx[str(n_u)] = {"txid": "dd" * 32, "vout": 1, "value": 20000, "confirmations": 1,
+                         "height": 1, "address": commit["address"], "script": commit["script"],
+                         "path": "", "pubkey": commit.get("pubkey", ""), "chain": 0,
+                         "index": commit["index"], "selected": "", "frozen": ""}
+        utx["n"] = n_u
+        ip.globals["swautxos"] = utx
+        put_field("tl_hex", "")
+        click(ip, world, "tl_inscribe")
+        out = _fld(world, "tl_out")
+        raw_r = str(ip.globals.get("swalastraw", ""))
+        c.ck("Inscribe with the box empty signs the reveal",
+             "INSCRIPTION REVEAL SIGNED" in out and len(raw_r) > 200, repr(out[:160]))
+        if len(raw_r) > 200:
+            dec_r = REF.tx_decode(bytes.fromhex(raw_r))
+            wit = dec_r["vin"][0].get("witness", [])
+            c.ck("it spends the commit through the leaf: signature, script, control block",
+                 (dec_r["vin"][0]["txid"], len(wit), wit[1:] if len(wit) == 3 else wit),
+                 ("dd" * 32, 3, [env.hex(), want_c["controlblock"].hex()]))
+            # the oracle signs the same reveal with the same key
+            seckey = bytes.fromhex(str(base["seckey"]))
+            nxt = [addrs.get(str(i), {}) for i in range(1, n_addr + 1)]
+            to_spk = bytes.fromhex(dec_r["vout"][0]["scriptpubkey"])
+            fee = 20000 - int(dec_r["vout"][0]["value"])
+            vs = 11 + REF.tapscript_input_vsize(env) + 43
+            c.ck("the fee is the Send screen's rate over the estimated size",
+                 fee, 2 * vs)
+            digest = REF.tapscript_sighash(2, [("dd" * 32, 1, 0xFFFFFFFD)],
+                                           [(20000 - fee, to_spk)], 0, 0,
+                                           [want_c["script"]], [20000], want_c["leafhash"])
+            c.ck("and the signature is the oracle's, byte for byte",
+                 wit[0] if wit else "", REF.cr.schnorr_sign(seckey, digest, bytes(32)).hex())
+            c.ck("the output is this wallet's next receive address",
+                 any(str(r.get("script")) == to_spk.hex() and str(r.get("change")) == "0"
+                     and not r.get("leafscript") for r in nxt), to_spk.hex())
+            c.ck("Inspect reads the inscription back out of the reveal",
+                 'text/plain;charset=utf-8, 15 bytes' in str(ip.call("waInspectRaw", [raw_r]))
+                 and '"Hello, ordinals"' in str(ip.call("waInspectRaw", [raw_r])), "")
+            c.ck("and the report names the inscription id",
+                 dec_r["txid"] + "i0" in out, "")
+    # the refusals
+    for label, text, want in (
+            ("a body without a content type is refused", "inscribe: hello", "semicolon"),
+            ("an empty body is refused", "inscribe: text/plain;", "empty"),
+            ("bad hex is refused", "inscribehex: image/png; zz", "hex"),
+            ("other text is not an inscription", "hello", "inscribe:")):
+        put_field("tl_hex", text)
+        try:
+            ip.call("waInscribe", [text])
+            c.ck(label, False, "accepted")
+        except LCS.Thrown as exc:
+            c.ck(label, want in str(exc.msg), str(exc.msg)[:100])
+    put_field("tl_hex", "")
+
+    # ---- Tools: a Lightning invoice, read out (2026-09-04) -----------------
+    # Inspect and Validate both read a BOLT11 invoice: the specification's
+    # first example, whose payee is the node key every example signs with.
+    import json as _json
+    b11 = _json.load(open(os.path.join(MEMBER, "tests", "bolt11-vectors.json"), encoding="utf-8"))
+    inv = b11["valid"][5]
+    text = str(ip.call("waInspectAnything", [inv["invoice"]]))
+    c.ck("Inspect reads a Lightning invoice: payee, amount, fallback, route hints",
+         all(s in text for s in ("LIGHTNING INVOICE", inv["expected"]["payee"], "2000000000 msat",
+                                 inv["expected"]["fallback"], "route hint 1", "66051x263430x1800",
+                                 "cannot pay this")), text[:300])
+    c.ck("and says the invoice is for another network than this wallet",
+         "(this wallet is on testnet)" in text, "")
+    text = str(ip.call("waValidateAnything", [b11["invalid"][1]["invoice"]]))
+    c.ck("Validate refuses a corrupt invoice with the reason",
+         "NOT A VALID LIGHTNING INVOICE" in text and "checksum" in text, text[:200])
+
+    # ---- Tools: coins locked until a block (2026-09-04) --------------------
+    # "lock: <height>" prepares a taproot address whose only leaf is
+    # <height> OP_CLTV OP_DROP <receive key> OP_CHECKSIG under the NUMS
+    # point, so nothing spends it before that block. A coin planted on it is
+    # withheld from selection while the tip is below the height, and spent
+    # by the Send screen - locktime raised, leaf witness - once it is not.
+    click(ip, world, "nv_tl")
+    before_n = int(LCS._n((ip.globals.get("swaaddresses") or {}).get("n", 0)))
+    put_field("tl_hex", "lock: 900000")
+    click(ip, world, "tl_lock")
+    out = _fld(world, "tl_out")
+    c.ck("Lock prepares a timelock address and says what it means",
+         "TIMELOCK ADDRESS PREPARED" in out and "block 900000" in out and "tb1p" in out
+         and "NUMS" in out, repr(out[:200]))
+    addrs = ip.globals.get("swaaddresses") or {}
+    n_addr = int(LCS._n(addrs.get("n", 0)))
+    lockrec = dict(addrs.get(str(n_addr), {})) if n_addr > before_n else {}
+    c.eq("the lock joined the address list", n_addr, before_n + 1)
+    base = None
+    for i in range(1, n_addr + 1):
+        r = addrs.get(str(i), {})
+        if str(r.get("change")) == "0" and str(r.get("index")) == str(lockrec.get("index")) and not r.get("leafscript"):
+            base = r
+            break
+    if base is not None:
+        xonly = bytes.fromhex(str(base["pubkey"]))[1:]
+        leaf = REF.timelock_script(900000, xonly)
+        want_l = REF.tap_commit(REF.SP_NUMS_H, leaf)
+        c.ck("its leaf and commit are the oracle's, under the NUMS point",
+             (str(lockrec.get("leafscript")), str(lockrec.get("script")), str(lockrec.get("internalkey")),
+              LCS._n(lockrec.get("lockheight"))),
+             (leaf.hex(), want_l["script"].hex(), REF.SP_NUMS_H.hex(), 900000))
+        c.ck("the recipe is in the wallet file",
+             "leaf\tlock|%d|900000" % int(LCS._n(lockrec["index"])) in str(ip.call("waSerializeWallet", [])),
+             [ln for ln in str(ip.call("waSerializeWallet", [])).split("\n") if ln.startswith("leaf")])
+        utx = dict(ip.globals.get("swautxos") or {"n": 0})
+        n_u = int(LCS._n(utx.get("n", 0))) + 1
+        utx[str(n_u)] = {"txid": "ee" * 32, "vout": 0, "value": 30000, "confirmations": 1,
+                         "height": 1, "address": lockrec["address"], "script": lockrec["script"],
+                         "path": "", "pubkey": lockrec.get("pubkey", ""), "chain": 0,
+                         "index": lockrec["index"], "selected": "", "frozen": ""}
+        utx["n"] = n_u
+        ip.globals["swautxos"] = utx
+        # below the height the coin is withheld; at it, offered
+        ip.globals["swatipheight"] = 899999
+        offered = [u["txid"] for u in unlst_boot(ip.call("waSpendableCoins", []))]
+        c.ck("below the height the locked coin is not offered for spending",
+             "ee" * 32 not in offered, offered)
+        ip.globals["swatipheight"] = 900000
+        offered = [u["txid"] for u in unlst_boot(ip.call("waSpendableCoins", []))]
+        c.ck("at the height it is", "ee" * 32 in offered, offered)
+        ip.globals["swatipheight"] = ""
+        # a manual spend of exactly that coin: the locktime rises, the leaf signs
+        click(ip, world, "nv_cn")
+        ip.globals["swaselected"] = {"%s:0" % ("ee" * 32): "true"}
+        world.stack_props["ustrategy"] = "manual"
+        click(ip, world, "nv_sd")
+        put_field("sd_to", "%s,0.0001" % first)
+        put_field("sd_locktime", "0")
+        click(ip, world, "sd_preview")
+        out = _fld(world, "sd_out")
+        c.ck("the review says the locktime was raised for the locked coin",
+             "locktime     900000" in out and "locked until block 900000" in out, repr(out[-400:]))
+        click(ip, world, "sd_sign")
+        raw_l = str(ip.globals.get("swalastraw", ""))
+        c.ck("the spend signs", len(raw_l) > 200, "%d hex chars" % len(raw_l))
+        if len(raw_l) > 200:
+            dec_l = REF.tx_decode(bytes.fromhex(raw_l))
+            wit = dec_l["vin"][0].get("witness", [])
+            c.ck("with locktime 900000, the locked coin as its input, and the leaf in the witness",
+                 (int(dec_l["locktime"]), dec_l["vin"][0]["txid"], len(wit), wit[1:] if len(wit) == 3 else wit),
+                 (900000, "ee" * 32, 3, [leaf.hex(), want_l["controlblock"].hex()]))
+            c.ck("and a sequence that lets the locktime bind",
+                 int(dec_l["vin"][0]["sequence"]) < 0xFFFFFFFF, dec_l["vin"][0].get("sequence"))
+            digest = REF.tapscript_sighash(2, [(dec_l["vin"][0]["txid"], int(dec_l["vin"][0]["vout"]),
+                                                int(dec_l["vin"][0]["sequence"]))],
+                                           [(int(o["value"]), bytes.fromhex(o["scriptpubkey"])) for o in dec_l["vout"]],
+                                           0, 900000, [want_l["script"]], [30000], want_l["leafhash"])
+            c.ck("the signature is the leaf key's over that digest, byte for byte",
+                 wit[0] if wit else "", REF.cr.schnorr_sign(bytes.fromhex(str(base["seckey"])), digest, bytes(32)).hex())
+        ip.globals["swaselected"] = {}
+        world.stack_props["ustrategy"] = "bnb"
+    for label, text, want in (
+            ("a lock without a height is refused", "lock:", "block height"),
+            ("a lock in the timestamp range is refused", "lock: 500000000", "block height"),
+            ("other text is not a lock", "hello", "lock:")):
+        put_field("tl_hex", text)
+        try:
+            ip.call("waLockCoins", [text])
+            c.ck(label, False, "accepted")
+        except LCS.Thrown as exc:
+            c.ck(label, want in str(exc.msg), str(exc.msg)[:100])
+    put_field("tl_hex", "")
 
     # ---- Tools: BIP-322 on the wallet's own native-SegWit key (2026-09-04) --
     # The box ticked, Sign produces a witness stack rather than a 65-byte

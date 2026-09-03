@@ -8226,6 +8226,1189 @@ function cwSpSend pInputs, pOutpoints, pRecipients
 end cwSpSend
 
 -- ==============================================================================
+-- RUNES, read only (2026-09-04)
+--
+-- A runestone is the OP_RETURN OP_13 output of a transaction: LEB128 varints
+-- that spell tag/value fields and then edicts. This layer DECODES one - the
+-- reader Inspect uses - and does nothing else: no etching, no minting, no
+-- balance tracking, which need an indexer that has seen every block since
+-- the protocol activated. The numbers are 128-bit, so they are kept as
+-- DECIMAL STRINGS throughout and never touch a double; the only arithmetic
+-- is multiply-by-small-and-add, divide-by-small, add, and subtract-one, each
+-- a digit loop. The cenotaph rules are the specification's, and where it
+-- says a malformed runestone is still returned with its fields, so is this
+-- one, with every flaw named.
+-- ==============================================================================
+constant kCwRuneU128Max = "340282366920938463463374607431768211455"
+constant kCwRuneAlphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+constant kCwRuneMaxDivisibility = 38
+constant kCwRuneMaxSymbol = 1114111
+constant kCwRuneMaxSpacers = 134217727
+
+-- ---- decimal strings ---------------------------------------------------------
+
+private function cwDecClean pDec
+   -- Strip leading zeros; an empty string is zero.
+   local tI, tCount, tDigit
+   put the number of chars of pDec into tCount
+   repeat with tI = 1 to tCount
+      put char tI of pDec into tDigit
+      if tDigit is not "0" then
+         return char tI to tCount of pDec
+      end if
+   end repeat
+   return "0"
+end cwDecClean
+
+function cwDecCheck pDec, pWho
+   local tI, tCount, tDigit
+   put the number of chars of pDec into tCount
+   if tCount < 1 then
+      throw "wallet-core: " & pWho & ": an empty number."
+   end if
+   repeat with tI = 1 to tCount
+      put char tI of pDec into tDigit
+      if offset(tDigit, "0123456789") is 0 then
+         throw "wallet-core: " & pWho & ": " & pDec & " is not a decimal number."
+      end if
+   end repeat
+   return cwDecClean(pDec)
+end cwDecCheck
+
+function cwDecMulAdd pDec, pMul, pAdd
+   -- pDec * pMul + pAdd, for small non-negative pMul and pAdd.
+   local tOut, tI, tCount, tCarry, tDigit, tVal
+   put pAdd into tCarry
+   put the number of chars of pDec into tCount
+   put "" into tOut
+   repeat with tI = tCount down to 1
+      put char tI of pDec into tDigit
+      put tDigit * pMul + tCarry into tVal
+      put cwIntMod(tVal, 10) into tDigit
+      put cwIntDiv(tVal, 10) into tCarry
+      put tDigit & tOut into tOut
+   end repeat
+   repeat while tCarry > 0
+      put cwIntMod(tCarry, 10) & tOut into tOut
+      put cwIntDiv(tCarry, 10) into tCarry
+   end repeat
+   return cwDecClean(tOut)
+end cwDecMulAdd
+
+function cwDecDivMod pDec, pDiv
+   -- pDec divided by a small positive pDiv: an array with "q" and "r".
+   local tOut, tI, tCount, tRem, tDigit, tVal, tQ
+   put 0 into tRem
+   put "" into tQ
+   put the number of chars of pDec into tCount
+   repeat with tI = 1 to tCount
+      put char tI of pDec into tDigit
+      put tRem * 10 + tDigit into tVal
+      put cwIntDiv(tVal, pDiv) after tQ
+      put cwIntMod(tVal, pDiv) into tRem
+   end repeat
+   put cwDecClean(tQ) into tOut["q"]
+   put tRem into tOut["r"]
+   return tOut
+end cwDecDivMod
+
+function cwDecAdd pA, pB
+   local tA, tB, tOut, tI, tLen, tCarry, tDa, tDb, tVal
+   put cwDecClean(pA) into tA
+   put cwDecClean(pB) into tB
+   put cwMax(the number of chars of tA, the number of chars of tB) into tLen
+   put cwDecPad(tA, tLen) into tA
+   put cwDecPad(tB, tLen) into tB
+   put 0 into tCarry
+   put "" into tOut
+   repeat with tI = tLen down to 1
+      put char tI of tA into tDa
+      put char tI of tB into tDb
+      put tDa + tDb + tCarry into tVal
+      put cwIntMod(tVal, 10) & tOut into tOut
+      put cwIntDiv(tVal, 10) into tCarry
+   end repeat
+   if tCarry > 0 then
+      put tCarry & tOut into tOut
+   end if
+   return cwDecClean(tOut)
+end cwDecAdd
+
+private function cwDecPad pDec, pLen
+   local tOut, tCount
+   put pDec into tOut
+   put the number of chars of tOut into tCount
+   repeat while tCount < pLen
+      put "0" & tOut into tOut
+      add 1 to tCount
+   end repeat
+   return tOut
+end cwDecPad
+
+function cwDecSub1 pDec
+   -- pDec - 1, for pDec >= 1: borrow from the right, rebuilt as a string
+   -- rather than assigned into a chunk.
+   local tIn, tOut, tI, tCount, tDigit, tBorrow
+   put cwDecClean(pDec) into tIn
+   if tIn is "0" then
+      throw "wallet-core: cwDecSub1: cannot go below zero."
+   end if
+   put the number of chars of tIn into tCount
+   put 1 into tBorrow
+   put "" into tOut
+   repeat with tI = tCount down to 1
+      put char tI of tIn into tDigit
+      if tBorrow is 1 then
+         if tDigit is 0 then
+            put 9 into tDigit
+         else
+            subtract 1 from tDigit
+            put 0 into tBorrow
+         end if
+      end if
+      put tDigit & tOut into tOut
+   end repeat
+   return cwDecClean(tOut)
+end cwDecSub1
+
+function cwDecCompare pA, pB
+   -- -1, 0 or 1 for two clean decimal strings.
+   local tA, tB, tLa, tLb
+   put cwDecClean(pA) into tA
+   put cwDecClean(pB) into tB
+   put the number of chars of tA into tLa
+   put the number of chars of tB into tLb
+   if tLa < tLb then
+      return -1
+   end if
+   if tLa > tLb then
+      return 1
+   end if
+   return cwHexCompare(tA, tB)
+end cwDecCompare
+
+private function cwDecSmall pDec
+   -- A decimal string as a number when it is small enough to be exact, else
+   -- empty. Fifteen digits stays under 2^53.
+   put cwDecClean(pDec) into pDec
+   if the number of chars of pDec > 15 then
+      return ""
+   end if
+   return pDec + 0
+end cwDecSmall
+
+-- ---- LEB128 ------------------------------------------------------------------
+
+function cwLeb128Decode pHex, pPos
+   -- One unsigned LEB128 varint from a hex payload at char pPos: an array
+   -- with "value" (decimal), "next" (the char after it) and "flaw" (empty,
+   -- or "truncated", "overlong" for more than 19 bytes, "overflow" for a
+   -- value past 2^128 - 1).
+   local tOut, tPos, tEnd, tByte, tBytes, tCount, tI, tValue
+   put the number of chars of pHex into tEnd
+   put pPos into tPos
+   put cwListNew() into tBytes
+   put "" into tOut["flaw"]
+   put "0" into tOut["value"]
+   repeat while true
+      if tPos + 1 > tEnd then
+         put "truncated" into tOut["flaw"]
+         put tPos into tOut["next"]
+         return tOut
+      end if
+      put cwBeRead(cxHexDecode(char tPos to (tPos + 1) of pHex)) into tByte
+      add 2 to tPos
+      put cwListAdd(tBytes, tByte) into tBytes
+      if cwListCount(tBytes) > 19 then
+         put "overlong" into tOut["flaw"]
+         put tPos into tOut["next"]
+         return tOut
+      end if
+      if tByte < 128 then
+         exit repeat
+      end if
+   end repeat
+   put "0" into tValue
+   put cwListCount(tBytes) into tCount
+   repeat with tI = tCount down to 1
+      put cwDecMulAdd(tValue, 128, cwIntMod(tBytes[tI], 128)) into tValue
+   end repeat
+   if cwDecCompare(tValue, kCwRuneU128Max) > 0 then
+      put "overflow" into tOut["flaw"]
+   end if
+   put tValue into tOut["value"]
+   put tPos into tOut["next"]
+   return tOut
+end cwLeb128Decode
+
+function cwLeb128Encode pDec
+   -- The inverse, for the vector gate and for anything that wants to write
+   -- one: hex of the LEB128 encoding of a decimal string.
+   local tN, tOut, tPart, tByte
+   put cwDecCheck(pDec, "cwLeb128Encode") into tN
+   put "" into tOut
+   repeat while true
+      put cwDecDivMod(tN, 128) into tPart
+      put tPart["r"] into tByte
+      put tPart["q"] into tN
+      if tN is not "0" then
+         add 128 to tByte
+      end if
+      put cxHexEncode(numToByte(tByte)) after tOut
+      if tN is "0" then
+         exit repeat
+      end if
+   end repeat
+   return tOut
+end cwLeb128Encode
+
+-- ---- names, spacers, amounts -------------------------------------------------
+
+function cwRuneName pDec
+   -- The rune name for a 128-bit number: modified base 26, where 0 is "A",
+   -- 25 is "Z", 26 is "AA" - the reference's algorithm digit for digit.
+   local tN, tOut, tPart, tIdx
+   put cwDecCheck(pDec, "cwRuneName") into tN
+   if cwDecCompare(tN, kCwRuneU128Max) > 0 then
+      throw "wallet-core: cwRuneName: a rune number is at most 2^128 - 1."
+   end if
+   put "" into tOut
+   repeat while true
+      put cwDecDivMod(tN, 26) into tPart
+      put tPart["r"] + 1 into tIdx
+      put char tIdx of kCwRuneAlphabet & tOut into tOut
+      if tPart["q"] is "0" then
+         exit repeat
+      end if
+      put cwDecSub1(tPart["q"]) into tN
+   end repeat
+   return tOut
+end cwRuneName
+
+function cwRuneSpaced pName, pSpacers
+   -- The name with a bullet after every letter whose bit is set in the
+   -- spacers bitfield (bit 0 after the first letter). ASCII only here: the
+   -- separator is the middle dot's stand-in "." for a source file that
+   -- cannot carry the character, and the caller may swap it.
+   local tOut, tI, tCount, tBits, tPart
+   put cwDecClean(pSpacers) into tBits
+   put the number of chars of pName into tCount
+   put "" into tOut
+   repeat with tI = 1 to tCount
+      put char tI of pName after tOut
+      if tI < tCount then
+         put cwDecDivMod(tBits, 2) into tPart
+         if tPart["r"] is 1 then
+            put "." after tOut
+         end if
+         put tPart["q"] into tBits
+      end if
+   end repeat
+   return tOut
+end cwRuneSpaced
+
+function cwRuneAmountText pDec, pDivisibility
+   -- An amount with the decimal point pDivisibility digits from the right,
+   -- trailing zeros of the fraction dropped, as the reference displays it.
+   local tN, tCount, tWhole, tFrac, tI
+   put cwDecClean(pDec) into tN
+   if pDivisibility is "" or pDivisibility + 0 <= 0 then
+      return tN
+   end if
+   put cwDecPad(tN, pDivisibility + 1) into tN
+   put the number of chars of tN into tCount
+   put char 1 to (tCount - pDivisibility) of tN into tWhole
+   put char (tCount - pDivisibility + 1) to tCount of tN into tFrac
+   repeat with tI = the number of chars of tFrac down to 1
+      if char tI of tFrac is not "0" then
+         return tWhole & "." & char 1 to tI of tFrac
+      end if
+   end repeat
+   return tWhole
+end cwRuneAmountText
+
+-- ---- the runestone -----------------------------------------------------------
+
+function cwRunestonePayload pScriptHex
+   -- The bytes after OP_RETURN OP_13 as hex, with "runestone" false for a
+   -- script that is not one at all and "flaw" set ("opcode" for a non-push
+   -- opcode after the magic, "script" for a push running past the end).
+   local tOut, tHex, tItems, tI, tCount, tLine, tError
+   put cwLower(pScriptHex) into tHex
+   put false into tOut["runestone"]
+   put "" into tOut["flaw"]
+   put "" into tOut["payload"]
+   if char 1 to 4 of tHex is not "6a5d" then
+      return tOut
+   end if
+   put true into tOut["runestone"]
+   try
+      put cwScriptItems(tHex) into tItems
+   catch tError
+      put "script" into tOut["flaw"]
+      return tOut
+   end try
+   put the number of lines of tItems into tCount
+   repeat with tI = 3 to tCount
+      put line tI of tItems into tLine
+      if char 1 to 5 of tLine is "push " then
+         put char 6 to -1 of tLine after tOut["payload"]
+      else if tLine is "push" or tLine is "op 0" then
+         next repeat
+      else
+         put "opcode" into tOut["flaw"]
+         put "" into tOut["payload"]
+         return tOut
+      end if
+   end repeat
+   return tOut
+end cwRunestonePayload
+
+function cwRunestoneIntegers pHex
+   -- The payload's varints as a list of decimal strings; "flaw" names the
+   -- first bad one, after which nothing more is read.
+   local tOut, tPos, tEnd, tPart, tList
+   put cwListNew() into tList
+   put "" into tOut["flaw"]
+   put 1 into tPos
+   put the number of chars of pHex into tEnd
+   repeat while tPos <= tEnd
+      put cwLeb128Decode(pHex, tPos) into tPart
+      if tPart["flaw"] is not "" then
+         put "varint" into tOut["flaw"]
+         exit repeat
+      end if
+      put cwListAdd(tList, tPart["value"]) into tList
+      put tPart["next"] into tPos
+   end repeat
+   put tList into tOut["integers"]
+   return tOut
+end cwRunestoneIntegers
+
+function cwRunestoneDecode pScriptHex, pOutputCount
+   -- A runestone from one scriptPubKey, given how many outputs the
+   -- transaction has (an edict may name any of them, or all of them by
+   -- naming the count). The array: "runestone" (false when the script is
+   -- not one); "cenotaph" with "flaws" (a list of names); "edicts" (a list
+   -- of block, tx, amount, output); "etching" (empty, or rune, name,
+   -- divisibility, spacers, symbol, premine, turbo, terms with amount, cap,
+   -- heightstart, heightend, offsetstart, offsetend); "mint" ("block:tx"
+   -- or empty); "pointer" (a number or empty). Every big value is decimal
+   -- text; the small ones the display needs are numbers.
+   local tOut, tPay, tInts, tList, tI, tCount, tTag, tValue, tFields, tOrder
+   local tFlaws, tEdicts, tBody, tBlock, tTx, tDelta, tE, tAbs, tPart, tRest
+   local tFlags, tEtching, tTerms, tHave, tBit, tPtr, tMint, tSym, tDiv
+   put false into tOut["runestone"]
+   put cwRunestonePayload(pScriptHex) into tPay
+   if tPay["runestone"] is not true then
+      return tOut
+   end if
+   put true into tOut["runestone"]
+   put cwListNew() into tFlaws
+   put cwListNew() into tEdicts
+   put "" into tOut["etching"]
+   put "" into tOut["mint"]
+   put "" into tOut["pointer"]
+   if tPay["flaw"] is not "" then
+      put cwListAdd(tFlaws, tPay["flaw"]) into tFlaws
+      put tFlaws into tOut["flaws"]
+      put true into tOut["cenotaph"]
+      put tEdicts into tOut["edicts"]
+      return tOut
+   end if
+   put cwRunestoneIntegers(tPay["payload"]) into tInts
+   if tInts["flaw"] is not "" then
+      put cwListAdd(tFlaws, tInts["flaw"]) into tFlaws
+      put tFlaws into tOut["flaws"]
+      put true into tOut["cenotaph"]
+      put tEdicts into tOut["edicts"]
+      return tOut
+   end if
+   -- fields: tag/value pairs until a Body tag (0); duplicates append
+   put tInts["integers"] into tList
+   put cwListCount(tList) into tCount
+   put cwListNew() into tOrder
+   put 0 into tBody
+   put 1 into tI
+   repeat while tI <= tCount
+      put tList[tI] into tTag
+      if tTag is "0" then
+         put tI + 1 into tBody
+         exit repeat
+      end if
+      if tI + 1 > tCount then
+         put cwListAdd(tFlaws, "truncated field") into tFlaws
+         put tCount + 1 into tI
+         exit repeat
+      end if
+      put tList[tI + 1] into tValue
+      if tFields[tTag] is "" then
+         put cwListNew() into tFields[tTag]
+         put cwListAdd(tOrder, tTag) into tOrder
+      end if
+      put cwListAdd(tFields[tTag], tValue) into tFields[tTag]
+      add 2 to tI
+   end repeat
+   -- edicts: groups of four after the body tag, ids delta-encoded
+   if tBody > 0 then
+      put "0" into tBlock
+      put "0" into tTx
+      put tBody into tI
+      repeat while tI + 3 <= tCount
+         put tList[tI] into tDelta
+         put cwDecAdd(tBlock, tDelta) into tBlock
+         if tDelta is "0" then
+            put cwDecAdd(tTx, tList[tI + 1]) into tTx
+         else
+            put tList[tI + 1] into tTx
+         end if
+         if cwDecCompare(tBlock, kCwRuneU128Max) > 0 or cwDecCompare(tTx, kCwRuneU128Max) > 0 then
+            put cwListAdd(tFlaws, "edict rune id") into tFlaws
+            exit repeat
+         end if
+         if tBlock is "0" and tTx is not "0" then
+            put cwListAdd(tFlaws, "edict rune id") into tFlaws
+            exit repeat
+         end if
+         put cwDecSmall(tList[tI + 3]) into tAbs
+         if tAbs is "" or tAbs > pOutputCount then
+            put cwListAdd(tFlaws, "edict output") into tFlaws
+            exit repeat
+         end if
+         put "" into tE
+         put tBlock into tE["block"]
+         put tTx into tE["tx"]
+         put tList[tI + 2] into tE["amount"]
+         put tAbs into tE["output"]
+         put cwListAdd(tEdicts, tE) into tEdicts
+         add 4 to tI
+      end repeat
+      if tI <= tCount and cwListCount(tFlaws) is 0 then
+         put cwListAdd(tFlaws, "trailing integers") into tFlaws
+      end if
+   end if
+   -- flags: bit 0 etching, bit 1 terms, bit 2 turbo; anything else is a flaw
+   put "0" into tFlags
+   if tFields["2"] is not "" then
+      put tFields["2"][1] into tFlags
+   end if
+   put cwDecDivMod(tFlags, 2) into tPart
+   put (tPart["r"] is 1) into tHave["etching"]
+   put cwDecDivMod(tPart["q"], 2) into tPart
+   put (tPart["r"] is 1) into tHave["terms"]
+   put cwDecDivMod(tPart["q"], 2) into tPart
+   put (tPart["r"] is 1) into tHave["turbo"]
+   if tPart["q"] is not "0" then
+      put cwListAdd(tFlaws, "unrecognized flag") into tFlaws
+   end if
+   if tHave["etching"] is true then
+      put "" into tEtching
+      put "" into tEtching["rune"]
+      put "" into tEtching["name"]
+      if tFields["4"] is not "" then
+         put tFields["4"][1] into tEtching["rune"]
+         put cwRuneName(tEtching["rune"]) into tEtching["name"]
+      end if
+      put "" into tEtching["divisibility"]
+      if tFields["1"] is not "" then
+         put cwDecSmall(tFields["1"][1]) into tDiv
+         if tDiv is not "" and tDiv <= kCwRuneMaxDivisibility then
+            put tDiv into tEtching["divisibility"]
+         end if
+      end if
+      put "" into tEtching["spacers"]
+      if tFields["3"] is not "" then
+         put cwDecSmall(tFields["3"][1]) into tDiv
+         if tDiv is not "" and tDiv <= kCwRuneMaxSpacers then
+            put tDiv into tEtching["spacers"]
+         end if
+      end if
+      put "" into tEtching["symbol"]
+      if tFields["5"] is not "" then
+         put cwDecSmall(tFields["5"][1]) into tSym
+         if tSym is not "" and tSym <= kCwRuneMaxSymbol then
+            put tSym into tEtching["symbol"]
+         end if
+      end if
+      put "" into tEtching["premine"]
+      if tFields["6"] is not "" then
+         put tFields["6"][1] into tEtching["premine"]
+      end if
+      put tHave["turbo"] into tEtching["turbo"]
+      put "" into tEtching["terms"]
+      if tHave["terms"] is true then
+         put "" into tTerms
+         put cwRuneField(tFields, "10") into tTerms["amount"]
+         put cwRuneField(tFields, "8") into tTerms["cap"]
+         put cwRuneField(tFields, "12") into tTerms["heightstart"]
+         put cwRuneField(tFields, "14") into tTerms["heightend"]
+         put cwRuneField(tFields, "16") into tTerms["offsetstart"]
+         put cwRuneField(tFields, "18") into tTerms["offsetend"]
+         put tTerms into tEtching["terms"]
+      end if
+      put tEtching into tOut["etching"]
+   end if
+   -- mint: two values, block and tx
+   if tFields["20"] is not "" then
+      if cwListCount(tFields["20"]) >= 2 then
+         put tFields["20"][1] into tBlock
+         put tFields["20"][2] into tTx
+         if tBlock is "0" and tTx is not "0" then
+            put cwListAdd(tFlaws, "mint rune id") into tFlaws
+         else
+            put tBlock & ":" & tTx into tOut["mint"]
+         end if
+      else
+         put cwListAdd(tFlaws, "mint rune id") into tFlaws
+      end if
+   end if
+   -- pointer: must name an output
+   if tFields["22"] is not "" then
+      put cwDecSmall(tFields["22"][1]) into tPtr
+      if tPtr is "" or tPtr >= pOutputCount then
+         put cwListAdd(tFlaws, "pointer") into tFlaws
+      else
+         put tPtr into tOut["pointer"]
+      end if
+   end if
+   -- even tags this reader does not know, and etching fields without the
+   -- flag that would let them mean anything, are the specification's flaws
+   put cwListCount(tOrder) into tCount
+   repeat with tI = 1 to tCount
+      put tOrder[tI] into tTag
+      put cwDecDivMod(tTag, 2) into tPart
+      if tPart["r"] is 1 then
+         next repeat
+      end if
+      if tTag is "2" or tTag is "20" or tTag is "22" then
+         next repeat
+      end if
+      if tTag is "4" or tTag is "6" then
+         if tHave["etching"] is not true then
+            put cwListAdd(tFlaws, "unrecognized even tag") into tFlaws
+         end if
+         next repeat
+      end if
+      if tTag is "8" or tTag is "10" or tTag is "12" or tTag is "14" \
+            or tTag is "16" or tTag is "18" then
+         if tHave["terms"] is not true then
+            put cwListAdd(tFlaws, "unrecognized even tag") into tFlaws
+         end if
+         next repeat
+      end if
+      put cwListAdd(tFlaws, "unrecognized even tag") into tFlaws
+   end repeat
+   put tEdicts into tOut["edicts"]
+   put tFlaws into tOut["flaws"]
+   put (cwListCount(tFlaws) > 0) into tOut["cenotaph"]
+   return tOut
+end cwRunestoneDecode
+
+private function cwRuneField pFields, pTag
+   if pFields[pTag] is "" then
+      return ""
+   end if
+   return pFields[pTag][1]
+end cwRuneField
+
+-- ==============================================================================
+-- TAPSCRIPT, one leaf: inscriptions by commit and reveal (2026-09-04)
+--
+-- A taproot output can hide a script behind its key, and spending through
+-- that script (the SCRIPT PATH) puts the script itself on the chain in the
+-- witness. That is all an Ordinals inscription is: a leaf whose script is
+-- "<key> OP_CHECKSIG" followed by an envelope the interpreter never runs
+-- (OP_FALSE OP_IF ... OP_ENDIF) carrying a content type and a body; the
+-- COMMIT pays a taproot output whose tree is that one leaf, and the REVEAL
+-- spends it through the leaf, revealing the envelope. Everything needed is
+-- BIP-341/342 machinery the library already has - the leaf hash, the tweak
+-- with a merkle root, the control block, the script-path sighash - plus
+-- the envelope itself and a leaf hash without coinxt's 253-byte cap, since
+-- an inscription body is exactly the kind of script that exceeds it.
+-- ==============================================================================
+constant kCwTapLeafVersion = 192
+constant kCwInscriptionChunk = 520
+constant kCwOpIf = 99
+constant kCwOpEndIf = 104
+constant kCwOpDrop = 117
+constant kCwOpCltv = 177
+constant kCwNumsH = "50929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0"
+
+function cwTapLeafHash pScriptHex
+   -- BIP-341's TapLeaf hash for a tapscript leaf (version 0xc0), with a
+   -- real compact size so a script over 252 bytes hashes correctly.
+   local tScript, tTag, tLen
+   put cxHexDecode(pScriptHex) into tScript
+   put the number of bytes of tScript into tLen
+   put cxSha256(textEncode("TapLeaf", "UTF-8")) into tTag
+   return cxHexEncode(cxSha256(tTag & tTag & numToByte(kCwTapLeafVersion) & \
+         cxHexDecode(cwVarIntHex(tLen)) & tScript))
+end cwTapLeafHash
+
+function cwInscriptionScript pXonlyHex, pContentType, pBodyHex
+   -- The envelope, as ord writes it: <xonly> OP_CHECKSIG OP_FALSE OP_IF
+   -- "ord" <1> <content type> <0> <body in pushes of at most 520 bytes>
+   -- OP_ENDIF. OP_FALSE is an empty push (0x00) and the field tags are
+   -- one-byte pushes, which is what a reader that walks pushes expects.
+   local tOut, tBody, tLen, tPos, tChunk
+   if the number of chars of pXonlyHex is not 64 then
+      throw "wallet-core: cwInscriptionScript: the key is 32 bytes of x-only hex."
+   end if
+   if pContentType is "" then
+      throw "wallet-core: cwInscriptionScript: an inscription needs a content type."
+   end if
+   put cwLower(pBodyHex) into tBody
+   put the number of chars of tBody into tLen
+   if tLen is 0 or cwHexIsClean(tBody) is not true or cwIntMod(tLen, 2) is not 0 then
+      throw "wallet-core: cwInscriptionScript: the body is hex, and not empty."
+   end if
+   put cwPush(pXonlyHex) & cwOpHex(kCwOpCheckSig) & "00" & cwOpHex(kCwOpIf) & \
+         cwPush(cxHexEncode(textEncode("ord", "UTF-8"))) & cwPush("01") & \
+         cwPush(cxHexEncode(textEncode(pContentType, "UTF-8"))) & "00" into tOut
+   put 1 into tPos
+   repeat while tPos <= tLen
+      put char tPos to (tPos + kCwInscriptionChunk * 2 - 1) of tBody into tChunk
+      put cwPush(tChunk) after tOut
+      add kCwInscriptionChunk * 2 to tPos
+   end repeat
+   put cwOpHex(kCwOpEndIf) after tOut
+   return tOut
+end cwInscriptionScript
+
+function cwTapCommit pInternalKeyHex, pLeafScriptHex
+   -- The output an internal key commits to with ONE leaf: an array with
+   -- "leafhash", "outputkey" (x-only hex), "parity", "script" (the P2TR
+   -- scriptPubKey) and "controlblock" (the witness element a script-path
+   -- spend carries: version|parity, the internal key, and no merkle path
+   -- because a single leaf IS the root).
+   local tOut, tTweak, tLeaf
+   if the number of chars of pInternalKeyHex is not 64 then
+      throw "wallet-core: cwTapCommit: the internal key is 32 bytes of x-only hex."
+   end if
+   put cwTapLeafHash(pLeafScriptHex) into tLeaf
+   put cxTaprootTweak(cxHexDecode(pInternalKeyHex), cxHexDecode(tLeaf)) into tTweak
+   put tLeaf into tOut["leafhash"]
+   put cxHexEncode(tTweak["outputKey"]) into tOut["outputkey"]
+   put tTweak["parity"] into tOut["parity"]
+   put cwScriptP2tr(tOut["outputkey"]) into tOut["script"]
+   put cxTapControlBlock(kCwTapLeafVersion, tTweak["parity"], pInternalKeyHex, "") \
+         into tOut["controlblock"]
+   return tOut
+end cwTapCommit
+
+function cwTapscriptSighash pVersion, pInputs, pOutputs, pIndex, pLocktime, pPrevScripts, pPrevAmounts, pLeafHashHex
+   -- The BIP-341 digest for a SCRIPT-PATH spend of input pIndex: the same
+   -- commitment to every spent output as the key path, extended with the
+   -- leaf hash (key version 0, no OP_CODESEPARATOR).
+   local tSpks, tAmts, tI, tCount
+   put "" into tSpks
+   put "" into tAmts
+   put cwListCount(pPrevScripts) into tCount
+   repeat with tI = 1 to tCount
+      if tI > 1 then
+         put "," after tSpks
+         put "," after tAmts
+      end if
+      put pPrevScripts[tI] after tSpks
+      put pPrevAmounts[tI] after tAmts
+   end repeat
+   return cxHexEncode(cxBtcSighashTaproot(pVersion, cwOutpointsHex(pInputs), \
+         cwSequencesList(pInputs), tAmts, tSpks, cwOutputsHex(pOutputs), pIndex, \
+         pLocktime, 0, pLeafHashHex))
+end cwTapscriptSighash
+
+function cwSignTapscript pSeckeyHex, pDigestHex, pLeafScriptHex, pControlBlockHex
+   -- The witness for a "<key> OP_CHECKSIG ..." leaf: the Schnorr signature
+   -- by the INTERNAL key - untweaked, because the script names that key -
+   -- then the leaf script, then the control block. Aux randomness is 32
+   -- zero bytes, as cwSignTaproot's note explains.
+   local tSig, tOut, tWit
+   put cxHexEncode(cxSchnorrSign(cxHexDecode(pSeckeyHex), cxHexDecode(pDigestHex), \
+         cxHexDecode("0000000000000000000000000000000000000000000000000000000000000000"))) into tSig
+   put cwListNew() into tWit
+   put cwListAdd(tWit, tSig) into tWit
+   put cwListAdd(tWit, cwLower(pLeafScriptHex)) into tWit
+   put cwListAdd(tWit, cwLower(pControlBlockHex)) into tWit
+   put "" into tOut["scriptsig"]
+   put tWit into tOut["witness"]
+   return tOut
+end cwSignTapscript
+
+function cwScriptNum pN
+   -- A non-negative integer as a script number push: minimal little-endian
+   -- bytes with a sign bit, 0 as OP_0, 1 to 16 as OP_1 to OP_16, and the
+   -- rest as a data push. What OP_CHECKLOCKTIMEVERIFY compares against.
+   local tN, tOut, tByte, tLast
+   if pN is not an integer or pN < 0 then
+      throw "wallet-core: cwScriptNum: a non-negative integer."
+   end if
+   if pN is 0 then
+      return cwOpHex(kCwOpZero)
+   end if
+   if pN <= 16 then
+      return cwOpHex(kCwOpOne + pN - 1)
+   end if
+   put pN into tN
+   put "" into tOut
+   repeat while tN > 0
+      put cwIntMod(tN, 256) into tByte
+      put cwIntDiv(tN, 256) into tN
+      put tOut & cxHexEncode(numToByte(tByte)) into tOut
+      put tByte into tLast
+   end repeat
+   if tLast >= 128 then
+      put "00" after tOut
+   end if
+   return cwPush(tOut)
+end cwScriptNum
+
+function cwTimelockScript pHeight, pXonlyHex
+   -- A leaf that can be satisfied only in a transaction whose locktime is
+   -- pHeight or later: <height> OP_CHECKLOCKTIMEVERIFY OP_DROP <key>
+   -- OP_CHECKSIG. Under an unspendable internal key (kCwNumsH) this is a
+   -- coin nobody can move before that block, its owner included.
+   if pHeight is not an integer or pHeight < 1 or pHeight >= 500000000 then
+      throw "wallet-core: cwTimelockScript: a block height, 1 to 499999999."
+   end if
+   if the number of chars of pXonlyHex is not 64 then
+      throw "wallet-core: cwTimelockScript: the key is 32 bytes of x-only hex."
+   end if
+   return cwScriptNum(pHeight) & cwOpHex(kCwOpCltv) & cwOpHex(kCwOpDrop) & \
+         cwPush(pXonlyHex) & cwOpHex(kCwOpCheckSig)
+end cwTimelockScript
+
+function cwTapscriptInputVsize pLeafScriptHex
+   -- The virtual size one script-path input adds: 41 base bytes (outpoint,
+   -- empty scriptSig, sequence) plus a quarter of the witness - the item
+   -- count, a 64-byte signature, the script and a 33-byte control block,
+   -- each with its length prefix - rounded up.
+   local tScriptBytes, tWitness
+   put the number of chars of pLeafScriptHex into tScriptBytes
+   put cwIntDiv(tScriptBytes, 2) into tScriptBytes
+   put 1 + 1 + 64 + cwIntDiv(the number of chars of cwVarIntHex(tScriptBytes), 2) \
+         + tScriptBytes + 1 + 33 into tWitness
+   return 41 + cwCeilDiv(tWitness, 4)
+end cwTapscriptInputVsize
+
+-- ==============================================================================
+-- BOLT11 LIGHTNING INVOICES, decoded (2026-09-04)
+--
+-- An invoice is bech32 with the length cap waived, an amount in its
+-- human-readable part, a 35-bit timestamp, tagged fields of 5-bit values,
+-- and a recoverable ECDSA signature over the lot. This layer READS one -
+-- who is asking, for how much, for what, until when, with what fallback
+-- and route hints - and recovers the payee's node key from the signature,
+-- which is the check the specification requires. The wallet cannot pay it:
+-- that needs a Lightning node. It can show, before anyone pays, exactly
+-- what the invoice says, which is the part that gets people robbed.
+-- ==============================================================================
+constant kCwBolt11MaxLen = 65535
+constant kCwBolt11SigValues = 104
+constant kCwBolt11KnownFeatures = "0,1,8,9,14,15,16,17,48,49"
+constant kCwCurveHalfN = "7fffffffffffffffffffffffffffffff5d576e7357a4501ddfe92f46681b20a0"
+
+function cwBolt11IsInvoice pText
+   -- Shaped like an invoice: the ln prefix of a Bitcoin network, and long.
+   local tLower
+   put cwLower(cwTrim(pText)) into tLower
+   if the number of chars of tLower < 60 then
+      return false
+   end if
+   if char 1 to 4 of tLower is "lnbc" or char 1 to 4 of tLower is "lntb" then
+      return true
+   end if
+   return false
+end cwBolt11IsInvoice
+
+function cwBolt11Prefix pHrp
+   -- The network and the amount text a human-readable part splits into;
+   -- the longer prefixes are tried first so "lnbcrt" is not read as "lnbc".
+   local tOut
+   if char 1 to 6 of pHrp is "lnbcrt" then
+      put "regtest" into tOut["network"]
+      put char 7 to -1 of pHrp into tOut["amount"]
+   else if char 1 to 5 of pHrp is "lntbs" then
+      put "signet" into tOut["network"]
+      put char 6 to -1 of pHrp into tOut["amount"]
+   else if char 1 to 4 of pHrp is "lnbc" then
+      put "mainnet" into tOut["network"]
+      put char 5 to -1 of pHrp into tOut["amount"]
+   else if char 1 to 4 of pHrp is "lntb" then
+      put "testnet" into tOut["network"]
+      put char 5 to -1 of pHrp into tOut["amount"]
+   else
+      throw "wallet-core: not a Lightning invoice for a Bitcoin network (" & pHrp & ")."
+   end if
+   return tOut
+end cwBolt11Prefix
+
+function cwBolt11AmountMsat pAmount
+   -- The amount in millisatoshi as decimal text, or empty for "any
+   -- amount". The unit is BITCOIN with a multiplier letter (m, u, n, p);
+   -- pico-bitcoin is a tenth of a millisatoshi, so an amount that does not
+   -- divide by ten there is refused as sub-millisatoshi.
+   local tText, tLast, tMult, tI, tCount, tDigit, tOut, tPart
+   put pAmount into tText
+   if tText is "" then
+      return ""
+   end if
+   put the number of chars of tText into tCount
+   put char tCount of tText into tLast
+   put "" into tMult
+   if tLast is "m" then
+      put 8 into tMult
+   else if tLast is "u" then
+      put 5 into tMult
+   else if tLast is "n" then
+      put 2 into tMult
+   else if tLast is "p" then
+      put -1 into tMult
+   else if offset(tLast, "0123456789") is 0 then
+      throw "wallet-core: invalid amount multiplier " & quote & tLast & quote & \
+            " (m, u, n or p)."
+   else
+      put 11 into tMult
+   end if
+   if tMult is not 11 then
+      put char 1 to (tCount - 1) of tText into tText
+   end if
+   put the number of chars of tText into tCount
+   if tCount is 0 then
+      throw "wallet-core: an invoice amount with no digits."
+   end if
+   repeat with tI = 1 to tCount
+      put char tI of tText into tDigit
+      if offset(tDigit, "0123456789") is 0 then
+         throw "wallet-core: an invoice amount that is not a number."
+      end if
+   end repeat
+   if tCount > 1 and char 1 of tText is "0" then
+      throw "wallet-core: an invoice amount with a leading zero."
+   end if
+   put cwDecClean(tText) into tOut
+   if tMult is -1 then
+      put cwDecDivMod(tOut, 10) into tPart
+      if tPart["r"] is not 0 then
+         throw "wallet-core: an invoice amount with sub-millisatoshi precision."
+      end if
+      return tPart["q"]
+   end if
+   repeat with tI = 1 to tMult
+      put cwDecMulAdd(tOut, 10, 0) into tOut
+   end repeat
+   return tOut
+end cwBolt11AmountMsat
+
+private function cwBitsToInt pValues, pFrom, pTo
+   -- 5-bit values as one big-endian number; stays exact to 53 bits.
+   local tI, tOut
+   put 0 into tOut
+   repeat with tI = pFrom to pTo
+      put tOut * 32 + pValues[tI] into tOut
+   end repeat
+   return tOut
+end cwBitsToInt
+
+private function cwBitsToHexLoose pValues, pFrom, pTo
+   -- Values to bytes as hex, DROPPING the incomplete tail, which is how
+   -- BOLT11's fields are laid out (a 52-value field is 32 bytes plus four
+   -- bits nobody reads).
+   local tAcc, tBits, tOut, tI, tByte
+   put 0 into tAcc
+   put 0 into tBits
+   put "" into tOut
+   repeat with tI = pFrom to pTo
+      put tAcc * 32 + pValues[tI] into tAcc
+      add 5 to tBits
+      if tBits >= 8 then
+         subtract 8 from tBits
+         put cwIntDiv(tAcc, cwPow2(tBits)) into tByte
+         put tAcc - tByte * cwPow2(tBits) into tAcc
+         put cxHexEncode(numToByte(tByte)) after tOut
+      end if
+   end repeat
+   return tOut
+end cwBitsToHexLoose
+
+private function cwBitsToHexPadded pValues, pFrom, pTo
+   -- The same with the tail zero-padded to a byte: the signed message.
+   local tAcc, tBits, tOut, tI, tByte
+   put 0 into tAcc
+   put 0 into tBits
+   put "" into tOut
+   repeat with tI = pFrom to pTo
+      put tAcc * 32 + pValues[tI] into tAcc
+      add 5 to tBits
+      if tBits >= 8 then
+         subtract 8 from tBits
+         put cwIntDiv(tAcc, cwPow2(tBits)) into tByte
+         put tAcc - tByte * cwPow2(tBits) into tAcc
+         put cxHexEncode(numToByte(tByte)) after tOut
+      end if
+   end repeat
+   if tBits > 0 then
+      put cxHexEncode(numToByte(tAcc * cwPow2(8 - tBits))) after tOut
+   end if
+   return tOut
+end cwBitsToHexPadded
+
+private function cwBolt11Fallback pNetwork, pValues, pFrom, pTo
+   -- A fallback address from its 5-bit version and program, or empty for a
+   -- shape this wallet does not know (the specification says to ignore).
+   local tVer, tProg, tLen, tSpk, tError, tOut
+   if pTo < pFrom then
+      return ""
+   end if
+   put pValues[pFrom] into tVer
+   put cwBitsToHexLoose(pValues, pFrom + 1, pTo) into tProg
+   put the number of chars of tProg into tLen
+   put cwIntDiv(tLen, 2) into tLen
+   put "" into tSpk
+   if tVer is 17 and tLen is 20 then
+      put cwOpHex(kCwOpDup) & cwOpHex(kCwOpHash160) & cwPush(tProg) & \
+            cwOpHex(kCwOpEqualVerify) & cwOpHex(kCwOpCheckSig) into tSpk
+   else if tVer is 18 and tLen is 20 then
+      put cwOpHex(kCwOpHash160) & cwPush(tProg) & cwOpHex(kCwOpEqual) into tSpk
+   else if tVer is 0 and (tLen is 20 or tLen is 32) then
+      put "00" & cwPush(tProg) into tSpk
+   else if tVer >= 1 and tVer <= 16 and tLen >= 2 and tLen <= 40 then
+      put cwOpHex(kCwOpOne + tVer - 1) & cwPush(tProg) into tSpk
+   end if
+   if tSpk is "" then
+      return ""
+   end if
+   put "" into tOut
+   try
+      put cwAddressForScript(pNetwork, tSpk) into tOut
+   catch tError
+      put "" into tOut
+   end try
+   return tOut
+end cwBolt11Fallback
+
+private function cwBolt11Routes pValues, pFrom, pTo
+   -- One r field: hops of 51 bytes each (pubkey, short channel id, base
+   -- fee, proportional fee, cltv delta), as a list of records.
+   local tHex, tCount, tI, tHop, tRec, tOut, tScid
+   put cwBitsToHexLoose(pValues, pFrom, pTo) into tHex
+   put cwListNew() into tOut
+   put the number of chars of tHex into tCount
+   put cwIntDiv(tCount, 102) into tCount
+   repeat with tI = 1 to tCount
+      put char ((tI - 1) * 102 + 1) to (tI * 102) of tHex into tHop
+      put "" into tRec
+      put char 1 to 66 of tHop into tRec["pubkey"]
+      put char 67 to 82 of tHop into tScid
+      put cwBeRead(cxHexDecode(char 1 to 6 of tScid)) & "x" & \
+            cwBeRead(cxHexDecode(char 7 to 12 of tScid)) & "x" & \
+            cwBeRead(cxHexDecode(char 13 to 16 of tScid)) into tRec["channel"]
+      put cwBeRead(cxHexDecode(char 83 to 90 of tHop)) into tRec["feebase"]
+      put cwBeRead(cxHexDecode(char 91 to 98 of tHop)) into tRec["feeppm"]
+      put cwBeRead(cxHexDecode(char 99 to 102 of tHop)) into tRec["cltvdelta"]
+      put cwListAdd(tOut, tRec) into tOut
+   end repeat
+   return tOut
+end cwBolt11Routes
+
+private function cwBolt11Features pValues, pFrom, pTo
+   -- The set feature bits, by number: the last value holds bits 0 to 4.
+   local tI, tJ, tV, tBit, tOut, tBase
+   put cwListNew() into tOut
+   repeat with tI = pTo down to pFrom
+      put pValues[tI] into tV
+      put (pTo - tI) * 5 into tBase
+      repeat with tJ = 0 to 4
+         if cwIntMod(cwIntDiv(tV, cwPow2(tJ)), 2) is 1 then
+            put cwListAdd(tOut, tBase + tJ) into tOut
+         end if
+      end repeat
+   end repeat
+   return tOut
+end cwBolt11Features
+
+function cwBolt11Decode pInvoice
+   -- The invoice as an array: network, amountmsat (decimal text, or empty
+   -- for any amount), timestamp, paymenthash, secret, description,
+   -- descriptionhash, payee (the n field, else the key the signature
+   -- recovers to), expiry (default 3600), cltv (default 18), fallback,
+   -- routes (a list of hop lists), features (a list of bit numbers),
+   -- metadata, signature and digest. Throws with the reason on every
+   -- shape the specification calls invalid: a bad checksum or case, no
+   -- separator, too short, a bad amount, an unknown REQUIRED (even)
+   -- feature, no payment hash, no payment secret, no description, a
+   -- signature that does not recover, or one that disagrees with n.
+   local tDec, tValues, tCount, tPre, tOut, tI, tEnd, tTag, tLen, tChar
+   local tFrom, tTo, tSig, tRecid, tMsg, tDigest, tPub, tBits, tJ, tKnown
+   local tHave, tError, tS
+   put cwBech32DecodeLong(cwTrim(pInvoice), kCwBolt11MaxLen) into tDec
+   if tDec["spec"] is not "bech32" then
+      throw "wallet-core: an invoice carries a bech32 checksum, not bech32m."
+   end if
+   put cwBolt11Prefix(tDec["hrp"]) into tPre
+   put tPre["network"] into tOut["network"]
+   put cwBolt11AmountMsat(tPre["amount"]) into tOut["amountmsat"]
+   put tDec["values"] into tValues
+   put cwListCount(tValues) into tCount
+   if tCount < 7 + kCwBolt11SigValues then
+      throw "wallet-core: the invoice is too short to carry a timestamp and a signature."
+   end if
+   put cwBitsToInt(tValues, 1, 7) into tOut["timestamp"]
+   put tCount - kCwBolt11SigValues into tEnd
+   put "" into tOut["paymenthash"]
+   put "" into tOut["secret"]
+   put "" into tOut["description"]
+   put "" into tOut["descriptionhash"]
+   put "" into tOut["payee"]
+   put 3600 into tOut["expiry"]
+   put 18 into tOut["cltv"]
+   put "" into tOut["fallback"]
+   put "" into tOut["metadata"]
+   put cwListNew() into tOut["routes"]
+   put cwListNew() into tOut["features"]
+   put 8 into tI
+   repeat while tI + 2 <= tEnd
+      put tValues[tI] into tTag
+      put tValues[tI + 1] * 32 + tValues[tI + 2] into tLen
+      put tI + 3 into tFrom
+      put tI + 2 + tLen into tTo
+      if tTo > tEnd then
+         throw "wallet-core: a tagged field runs past the end of the invoice."
+      end if
+      put char (tTag + 1) of kCwDescCharset into tChar
+      if tChar is "p" and tLen is 52 and tOut["paymenthash"] is "" then
+         put char 1 to 64 of cwBitsToHexLoose(tValues, tFrom, tTo) into tOut["paymenthash"]
+      else if tChar is "s" and tLen is 52 and tOut["secret"] is "" then
+         put char 1 to 64 of cwBitsToHexLoose(tValues, tFrom, tTo) into tOut["secret"]
+      else if tChar is "d" and tHave["d"] is not true then
+         put true into tHave["d"]
+         put textDecode(cxHexDecode(cwBitsToHexLoose(tValues, tFrom, tTo)), "UTF-8") \
+               into tOut["description"]
+      else if tChar is "h" and tLen is 52 and tOut["descriptionhash"] is "" then
+         put char 1 to 64 of cwBitsToHexLoose(tValues, tFrom, tTo) into tOut["descriptionhash"]
+      else if tChar is "n" and tLen is 53 and tOut["payee"] is "" then
+         put char 1 to 66 of cwBitsToHexLoose(tValues, tFrom, tTo) into tOut["payee"]
+      else if tChar is "x" then
+         put cwBitsToInt(tValues, tFrom, tTo) into tOut["expiry"]
+      else if tChar is "c" then
+         put cwBitsToInt(tValues, tFrom, tTo) into tOut["cltv"]
+      else if tChar is "m" and tHave["m"] is not true then
+         put true into tHave["m"]
+         put cwBitsToHexLoose(tValues, tFrom, tTo) into tOut["metadata"]
+      else if tChar is "f" and tOut["fallback"] is "" then
+         put cwBolt11Fallback(tOut["network"], tValues, tFrom, tTo) into tOut["fallback"]
+      else if tChar is "r" then
+         put cwListAdd(tOut["routes"], cwBolt11Routes(tValues, tFrom, tTo)) into tOut["routes"]
+      else if tChar is "9" then
+         put cwBolt11Features(tValues, tFrom, tTo) into tOut["features"]
+      end if
+      put tTo + 1 into tI
+   end repeat
+   -- an even feature bit is REQUIRED, and one this reader does not know
+   -- means it cannot know what the invoice asks of a payer
+   put tOut["features"] into tBits
+   put cwListCount(tBits) into tJ
+   repeat with tI = 1 to tJ
+      if cwIntMod(tBits[tI], 2) is 0 then
+         put cwCommaHas(kCwBolt11KnownFeatures, tBits[tI]) into tKnown
+         if tKnown is not true then
+            throw "wallet-core: the invoice requires feature " & tBits[tI] & \
+                  ", which this reader does not know."
+         end if
+      end if
+   end repeat
+   if tOut["paymenthash"] is "" then
+      throw "wallet-core: the invoice has no payment hash."
+   end if
+   if tOut["secret"] is "" then
+      throw "wallet-core: the invoice has no payment secret (the required s field)."
+   end if
+   if tHave["d"] is not true and tOut["descriptionhash"] is "" then
+      throw "wallet-core: the invoice has neither a description nor a description hash."
+   end if
+   -- the signature: 64 bytes and a recovery id, over sha256(hrp || data)
+   put cwBitsToHexLoose(tValues, tEnd + 1, tCount) into tSig
+   if the number of chars of tSig < 130 then
+      throw "wallet-core: the invoice's signature is short."
+   end if
+   put char 1 to 130 of tSig into tSig
+   put cwBeRead(cxHexDecode(char 129 to 130 of tSig)) into tRecid
+   if tRecid > 3 then
+      throw "wallet-core: the invoice's signature has a recovery id above 3."
+   end if
+   put cxHexEncode(textEncode(tDec["hrp"], "UTF-8")) & \
+         cwBitsToHexPadded(tValues, 1, tEnd) into tMsg
+   put cxHexEncode(cxSha256(cxHexDecode(tMsg))) into tDigest
+   put "" into tPub
+   try
+      put cwCompressPubkey(cxHexEncode(cxRecover(cxHexDecode(tSig), \
+            cxHexDecode(tDigest)))) into tPub
+   catch tError
+      put "" into tPub
+   end try
+   if tPub is "" then
+      throw "wallet-core: the invoice's signature is not recoverable."
+   end if
+   if tOut["payee"] is not "" then
+      if tOut["payee"] is not tPub then
+         throw "wallet-core: the invoice's signature does not recover to the node key it names (n)."
+      end if
+      put char 65 to 128 of tSig into tS
+      if cwHexCompare(tS, kCwCurveHalfN) > 0 then
+         throw "wallet-core: the invoice names its node key (n) and carries a non-canonical high-S signature."
+      end if
+   else
+      put tPub into tOut["payee"]
+   end if
+   put tSig into tOut["signature"]
+   put tDigest into tOut["digest"]
+   return tOut
+end cwBolt11Decode
+
+private function cwCommaHas pList, pValue
+   -- Whether a comma list holds pValue, read without `item`.
+   return (cwListIndex(pList, pValue) > 0)
+end cwCommaHas
+
+function cwUnixDate pSeconds
+   -- "YYYY-MM-DD HH:MM UTC" from seconds since 1970, by arithmetic rather
+   -- than the engine's date conversion, whose format follows the machine's
+   -- locale. The civil-from-days algorithm.
+   local tDays, tSecs, tZ, tEra, tDoe, tYoe, tY, tDoy, tMp, tD, tM, tH, tMin
+   if pSeconds is not an integer or pSeconds < 0 then
+      return ""
+   end if
+   put cwIntDiv(pSeconds, 86400) into tDays
+   put pSeconds - tDays * 86400 into tSecs
+   put tDays + 719468 into tZ
+   put cwIntDiv(tZ, 146097) into tEra
+   put tZ - tEra * 146097 into tDoe
+   put cwIntDiv(tDoe - cwIntDiv(tDoe, 1460) + cwIntDiv(tDoe, 36524) - cwIntDiv(tDoe, 146096), 365) into tYoe
+   put tYoe + tEra * 400 into tY
+   put tDoe - (365 * tYoe + cwIntDiv(tYoe, 4) - cwIntDiv(tYoe, 100)) into tDoy
+   put cwIntDiv(5 * tDoy + 2, 153) into tMp
+   put tDoy - cwIntDiv(153 * tMp + 2, 5) + 1 into tD
+   if tMp < 10 then
+      put tMp + 3 into tM
+   else
+      put tMp - 9 into tM
+   end if
+   if tM <= 2 then
+      add 1 to tY
+   end if
+   put cwIntDiv(tSecs, 3600) into tH
+   put cwIntDiv(tSecs - tH * 3600, 60) into tMin
+   return tY & "-" & cwPad2(tM) & "-" & cwPad2(tD) & " " & cwPad2(tH) & ":" & \
+         cwPad2(tMin) & " UTC"
+end cwUnixDate
+
+private function cwPad2 pN
+   if pN < 10 then
+      return "0" & pN
+   end if
+   return pN
+end cwPad2
+
+-- ==============================================================================
 -- BIP-21 PAYMENT URIs
 --
 -- Two rules carry all the weight. `amount` is in BTC WITH A DECIMAL POINT,
@@ -12534,6 +13717,7 @@ local sWaLastRaw          -- the raw transaction the Send screen produced
 -- It holds no private key and nothing that is not already in the transaction
 -- it names, so it is saved with the wallet like the labels are.
 local sWaSpends
+local sWaLeaves           -- list of {kind, index, type, bodyhex, height}: the one-leaf taproot outputs this wallet prepared (inscription commits, timelocks), re-attached after every derivation and saved with the wallet
 local sWaInspectWanted    -- the txid the History screen is waiting on bytes for
 local sWaQrCache          -- array: payload -> the BMP bytes already rendered
 local sWaCtrlByScreen     -- array: screen -> comma list of its control names
@@ -12671,6 +13855,7 @@ command waResetWallet
    put waEmptyList() into sWaUtxos
    put waEmptyList() into sWaHistory
    put waEmptyList() into sWaAddresses
+   put waEmptyList() into sWaLeaves
    put empty into sWaLabels
    put empty into sWaSelected
    put empty into sWaFrozen
@@ -13195,7 +14380,9 @@ command waBuildTools
    uiSection "tl_sec3", "Result", "720,66,1172,84"
    uiArea "tl_out", "720,90,1172,530"
    uiButton "tl_copyOut", "Copy this", "720,538,860,564"
-   uiButton "tl_export", "Export descriptors + keys", "864,538,1096,564"
+   uiButton "tl_export", "Export keys", "864,538,1000,564"
+   uiButton "tl_inscribe", "Inscribe", "1004,538,1084,564"
+   uiButton "tl_lock", "Lock", "1088,538,1172,564"
 end waBuildTools
 
 -- ---- 8. Network --------------------------------------------------------------
@@ -13973,6 +15160,7 @@ command waDeriveAddresses
    end repeat
    put empty into tNode
    put tList into sWaAddresses
+   waLeavesAttach
 end waDeriveAddresses
 
 private function waImportedRecords
@@ -14941,6 +16129,9 @@ command waPaintReceive
    put tOut & "derivation   " & waAccountPath() & \
          tRec["suffix"] & return into tOut
    put "script type  " & tRec["scripttype"] & return after tOut
+   if tRec["note"] is not "" then
+      put "note         " & tRec["note"] & return after tOut
+   end if
    put "scriptPubKey " & tRec["script"] & return after tOut
    if sWaBackend is "offline" then
       put return & "This wallet is OFFLINE, so it cannot know whether this " & \
@@ -15679,8 +16870,10 @@ private function waSpResolve pPays, pSel, pAsPsbt
       put waSeckeyFor(tAddrRec) into tKey
       put "" into tIn
       if tType is "p2tr" then
-         put cxHexEncode(cxTaprootTweakSeckey(cxHexDecode(tKey), cxHexDecode(""))) \
-               into tIn["seckey"]
+         -- the key that spends the output: tweaked by an empty root, or by
+         -- the leaf hash for an inscription commit
+         put cxHexEncode(cxTaprootTweakSeckey(cxHexDecode(tKey), \
+               cxHexDecode(tAddrRec["leafhash"]))) into tIn["seckey"]
          put true into tIn["xonly"]
       else
          put tKey into tIn["seckey"]
@@ -15813,11 +17006,20 @@ end waInscriptionIn
 function waSpendableCoins
    -- The UTXO set as the selector wants it, carrying the freeze and tick
    -- flags the Coins screen sets.
-   local tI, tCount, tRec, tKey, tOut, tCoin
+   local tI, tCount, tRec, tKey, tOut, tCoin, tAddrRec
    put waEmptyList() into tOut
    put cwListCount(sWaUtxos) into tCount
    repeat with tI = 1 to tCount
       put sWaUtxos[tI] into tRec
+      -- A LOCKED COIN THE CHAIN CANNOT YET RELEASE IS NOT SPENDABLE, and
+      -- offering it would build a transaction every node rejects. Once the
+      -- tip reaches its height (or while the tip is unknown, offline) it is
+      -- offered, and waBuildSpend raises the locktime to match.
+      put waRecordFor(tRec["address"]) into tAddrRec
+      if tAddrRec is not "" and tAddrRec["lockheight"] is not "" \
+            and sWaTipHeight is not empty and tAddrRec["lockheight"] > sWaTipHeight then
+         next repeat
+      end if
       put tRec["txid"] & ":" & tRec["vout"] into tKey
       put tRec into tCoin
       put (sWaFrozen[tKey] is "true") into tCoin["frozen"]
@@ -15885,6 +17087,8 @@ command waBuildSpend pSign, pAsPsbt
    if waPaysNeedSp(tPays) then
       put waSpResolve(tPays, tSel, pAsPsbt) into tPays
    end if
+   -- a locked coin needs the transaction's locktime at or past its height
+   put waLockedHeight(tSel, tLock) into tLock
    -- inputs
    put waEmptyList() into tInputs
    put cwListCount(tSel) into tCount
@@ -15975,6 +17179,24 @@ command waRecordSpend pTxid, pSel, pPays, pChange, pChangeRec, pLock, pSeq, pFee
    put tRec into sWaSpends[pTxid]
    waLog "recorded the makeup of " & pTxid & " so its fee can be bumped"
 end waRecordSpend
+
+function waLockedHeight pSel, pLock
+   -- The locktime a spend of these coins needs: the given one, raised to
+   -- the highest lock height among them (a CLTV leaf is satisfied only by
+   -- a locktime at or past its number).
+   local tI, tCount, tRec, tAddrRec, tLock
+   put pLock into tLock
+   put cwListCount(pSel) into tCount
+   repeat with tI = 1 to tCount
+      put pSel[tI] into tRec
+      put waRecordFor(tRec["address"]) into tAddrRec
+      if tAddrRec is not "" and tAddrRec["lockheight"] is not "" \
+            and tAddrRec["lockheight"] > tLock then
+         put tAddrRec["lockheight"] + 0 into tLock
+      end if
+   end repeat
+   return tLock
+end waLockedHeight
 
 function waSequenceNumber
    -- BIP-125 opt-in replaceability is a SEQUENCE NUMBER, not a flag in the
@@ -16196,7 +17418,12 @@ function waReviewText pPays, pSel, pFee, pChange, pChangeRec, pVsize, pRate, pSe
    else
       put "NO. If the fee turns out too low this cannot be bumped." & return after tOut
    end if
-   put "  locktime     " & pLock & return after tOut
+   put "  locktime     " & pLock after tOut
+   if waLockedHeight(pSel, 0) > 0 then
+      put "  (raised to release a coin locked until block " & \
+            waLockedHeight(pSel, 0) & ")" after tOut
+   end if
+   put return after tOut
    put "  network      " & sWaNetwork after tOut
    if sWaNetwork is "mainnet" then
       put "  - THIS IS REAL MONEY" after tOut
@@ -16267,6 +17494,13 @@ function waSignSpend pInputs, pOutputs, pSel, pLock
                   "send it to your cosigners, and combine what comes back " & \
                   "on the Tools screen."
          end if
+      else if tAddrRec["leafscript"] is not "" then
+         -- an inscription commit: spent through its leaf, signed by the
+         -- INTERNAL key the leaf script names (waLeafRecord)
+         put cwTapscriptSighash(tVersion, pInputs, pOutputs, tI, pLock, \
+               tScripts, tAmounts, tAddrRec["leafhash"]) into tDigest
+         put cwSignTapscript(waSeckeyFor(tAddrRec), tDigest, \
+               tAddrRec["leafscript"], tAddrRec["controlblock"]) into tSig
       else if waRecordType(tAddrRec) is "p2tr" then
          put cwSighash("p2tr", tVersion, pInputs, pOutputs, tI, pLock, "", 0, "", \
                tScripts, tAmounts) into tDigest
@@ -16429,6 +17663,15 @@ end waBip32Record
 -- 5. COINS
 -- ==============================================================================
 
+private function waCoinLockHeight pCoin
+   local tAddrRec
+   put waRecordFor(pCoin["address"]) into tAddrRec
+   if tAddrRec is "" then
+      return ""
+   end if
+   return tAddrRec["lockheight"]
+end waCoinLockHeight
+
 command waPaintCoins
    local tI, tCount, tRec, tRows, tTab, tKey, tSelCount, tSelValue
    set the defaultStack to the short name of this stack
@@ -16450,6 +17693,8 @@ command waPaintCoins
       end if
       if sWaFrozen[tKey] is "true" then
          put "FRZ" after tRows
+      else if waCoinLockHeight(tRec) is not "" then
+         put "LCK" after tRows
       else
          put "-" after tRows
       end if
@@ -17143,9 +18388,379 @@ command waToolsClick pRole
       uiCopyFlash "tl_copyOut"
    else if pRole is "export" then
       put waExportText() into field "tl_out"
+   else if pRole is "inscribe" then
+      waInscribe tText
+   else if pRole is "lock" then
+      waLockCoins tText
    end if
    waRefreshScreen
 end waToolsClick
+
+-- ==============================================================================
+-- INSCRIPTIONS, by commit and reveal (2026-09-04)
+--
+-- ONE BUTTON, TWO PHASES, because that is the shape of the protocol: the
+-- COMMIT is a taproot output whose hidden leaf carries the envelope, and it
+-- has to be funded and seen before the REVEAL can spend it through that
+-- leaf and put the envelope on the chain. With "inscribe: <type>; <text>"
+-- (or "inscribehex: <type>; <hex>") in the paste box, Inscribe prepares
+-- the commit: the next unused receive key becomes the leaf's key, the
+-- commit address joins the wallet's own address list so sync watches it,
+-- and the recipe is saved with the wallet so a reopen can rebuild it. With
+-- the box empty, Inscribe looks for a funded commit and signs its reveal:
+-- one input through the script path, one output to the next receive
+-- address, which receives the first sat and with it the inscription.
+-- ==============================================================================
+
+command waInscribe pText
+   local tLower
+   put cwLower(pText) into tLower
+   if char 1 to 9 of tLower is "inscribe:" or char 1 to 12 of tLower is "inscribehex:" then
+      waInscribeCommit pText
+   else if pText is "" then
+      waInscribeReveal
+   else
+      throw "to prepare an inscription, put " & quote & "inscribe: text/plain; " & \
+            "your text" & quote & " (or " & quote & "inscribehex: <type>; <hex>" & \
+            quote & ") in the paste box. To reveal a funded one, leave the box empty."
+   end if
+end waInscribe
+
+private command waInscribeCommit pText
+   local tRest, tPos, tType, tBody, tHex, tRec, tLen, tOut, tCommit, tKey
+   if sWaKind is "watch" or sWaKind is "multisig" then
+      throw "an inscription is signed through a script only this wallet's " & \
+            "own single key can satisfy, so it needs a seed or key wallet."
+   end if
+   if cwLower(char 1 to 12 of pText) is "inscribehex:" then
+      put cwTrim(char 13 to -1 of pText) into tRest
+      put true into tHex
+   else
+      put cwTrim(char 10 to -1 of pText) into tRest
+      put false into tHex
+   end if
+   put offset(";", tRest) into tPos
+   if tPos < 2 then
+      throw "write the content type, a semicolon, then the body: " & quote & \
+            "inscribe: text/plain; hello" & quote & "."
+   end if
+   put cwTrim(char 1 to (tPos - 1) of tRest) into tType
+   put cwTrim(char (tPos + 1) to -1 of tRest) into tBody
+   if tBody is "" then
+      throw "the inscription body is empty."
+   end if
+   if tHex is true then
+      put cwLower(cwStripWhitespace(tBody)) into tBody
+      put the number of chars of tBody into tLen
+      if cwHexIsClean(tBody) is not true or tLen mod 2 is not 0 then
+         throw "inscribehex: takes hex, an even number of 0-9 a-f."
+      end if
+   else
+      put cxHexEncode(textEncode(tBody, "utf-8")) into tBody
+   end if
+   if waSafeText(tType) is not tType or offset("|", tType) > 0 then
+      throw "the content type cannot carry a tab, a newline or a bar."
+   end if
+   put waNextUnused(0) into tRec
+   if tRec is "" then
+      throw "there is no unused receive address left in the derived window. " & \
+            "Derive more on the Addresses screen."
+   end if
+   if tRec["seckey"] is "" and sWaKind is not "key" then
+      throw "this wallet holds no private key, so it cannot sign a reveal."
+   end if
+   put "" into tKey
+   put "inscribe" into tKey["kind"]
+   put tRec["index"] into tKey["index"]
+   put tType into tKey["type"]
+   put tBody into tKey["bodyhex"]
+   put cwListAdd(sWaLeaves, tKey) into sWaLeaves
+   put waLeafRecord(tKey) into tCommit
+   put cwListAdd(sWaAddresses, tCommit) into sWaAddresses
+   put "inscription commit: " & tType into sWaLabels[tCommit["address"]]
+   put the number of chars of tBody into tLen
+   put cwIntDiv(tLen, 2) into tLen
+   put "INSCRIPTION COMMIT PREPARED" & return & return into tOut
+   put "  content     " & tType & ", " & tLen & " bytes" & return after tOut
+   put "  leaf key    receive index " & tRec["index"] & " (x-only " & \
+         tCommit["internalkey"] & ")" & return after tOut
+   put "  leaf hash   " & tCommit["leafhash"] & return after tOut
+   put "  commit to   " & tCommit["address"] & return & return after tOut
+   put "Fund that address - from this wallet's Send screen or from anywhere - " & \
+         "with at least" & return after tOut
+   put "  " & waAmount(waInscribeNeeds(tCommit["leafscript"])) & \
+         " at the Send screen's rate (the reveal's fee, plus the output that " & \
+         "carries the inscription)." & return & return after tOut
+   put "When the coin shows up (Refresh on the Coins screen), come back here " & \
+         "with the paste box EMPTY and press Inscribe again: it will sign the " & \
+         "reveal, which spends the commit through its hidden script and puts " & \
+         "the envelope on the chain. The inscription lands on the first sat " & \
+         "of the reveal's first output, at this wallet's next receive " & \
+         "address." & return & return after tOut
+   put "The recipe is saved with the wallet, so the commit survives a reopen." after tOut
+   put tOut into field "tl_out"
+   waLog "inscribe: commit " & tCommit["address"] & " for " & tType & ", " & \
+         tLen & " bytes, leaf key at receive index " & tRec["index"]
+   uiStatus "Commit address ready: fund " & char 1 to 20 of tCommit["address"] & \
+         "..., then press Inscribe again with the box empty.", "ok"
+end waInscribeCommit
+
+private function waInscribeNeeds pLeafScriptHex
+   -- What a commit must hold: the reveal's fee at the Send screen's rate
+   -- over one script-path input and one taproot output, plus that output
+   -- above dust with a little room.
+   local tRate, tVsize
+   put field "sd_rate" into tRate
+   if tRate is not a number or tRate <= 0 then
+      put 1 into tRate
+   end if
+   put 11 + cwTapscriptInputVsize(pLeafScriptHex) + 43 into tVsize
+   return waCeilSat(tRate * tVsize) + cwDustThreshold("p2tr") + 216
+end waInscribeNeeds
+
+function waLeafRecord pKey
+   -- The address record for one saved leaf recipe: the base receive record
+   -- at its index, with the leaf and everything a script-path spend needs
+   -- added. An inscription commit keeps the receive key as the internal key
+   -- (a key-path spend stays possible); a timelock puts the NUMS point
+   -- there, so the leaf is the ONLY way out and the lock is real. Throws if
+   -- the index is outside the derived window.
+   local tI, tCount, tRec, tBase, tXonly, tScript, tCommit, tInternal
+   put "" into tBase
+   put cwListCount(sWaAddresses) into tCount
+   repeat with tI = 1 to tCount
+      put sWaAddresses[tI] into tRec
+      if tRec["change"] is 0 and tRec["index"] is pKey["index"] and tRec["leafscript"] is "" then
+         put tRec into tBase
+         exit repeat
+      end if
+   end repeat
+   if tBase is "" then
+      throw "receive index " & pKey["index"] & " is not in the derived window."
+   end if
+   put char 3 to 66 of tBase["pubkey"] into tXonly
+   if pKey["kind"] is "lock" then
+      put cwTimelockScript(pKey["height"], tXonly) into tScript
+      put kCwNumsH into tInternal
+   else
+      put cwInscriptionScript(tXonly, pKey["type"], pKey["bodyhex"]) into tScript
+      put tXonly into tInternal
+   end if
+   put cwTapCommit(tInternal, tScript) into tCommit
+   put tBase into tRec
+   put tCommit["script"] into tRec["script"]
+   put cwAddressForScript(sWaNetwork, tCommit["script"]) into tRec["address"]
+   put "p2tr" into tRec["scripttype"]
+   put tScript into tRec["leafscript"]
+   put tCommit["leafhash"] into tRec["leafhash"]
+   put tCommit["controlblock"] into tRec["controlblock"]
+   put tInternal into tRec["internalkey"]
+   put tCommit["outputkey"] into tRec["outputkey"]
+   put tCommit["parity"] into tRec["parity"]
+   put "" into tRec["lockheight"]
+   if pKey["kind"] is "lock" then
+      put pKey["height"] + 0 into tRec["lockheight"]
+      put "locked until block " & pKey["height"] & " (CLTV leaf, unspendable key path)" into tRec["note"]
+   else
+      put "inscription commit (" & pKey["type"] & ")" into tRec["note"]
+   end if
+   return tRec
+end waLeafRecord
+
+command waLeavesAttach
+   -- Re-append every saved leaf output to the freshly derived address
+   -- list. Called at the end of waDeriveAddresses, so a re-derivation (a
+   -- gap change, a network switch, a reopen) never loses one - a funded
+   -- output the wallet had forgotten how to spend would be the failure.
+   local tI, tCount, tError
+   put cwListCount(sWaLeaves) into tCount
+   repeat with tI = 1 to tCount
+      try
+         put cwListAdd(sWaAddresses, waLeafRecord(sWaLeaves[tI])) into sWaAddresses
+      catch tError
+         waLog "leaf: could not rebuild a saved output: " & tError
+      end try
+   end repeat
+end waLeavesAttach
+
+function waLeafLine pKey
+   -- The wallet file's spelling of a leaf recipe: "kind|index|..." with
+   -- "type|bodyhex" for an inscription and "height" for a lock.
+   if pKey["kind"] is "lock" then
+      return "lock|" & pKey["index"] & "|" & pKey["height"]
+   end if
+   return "inscribe|" & pKey["index"] & "|" & pKey["type"] & "|" & pKey["bodyhex"]
+end waLeafLine
+
+function waLeafKeyFrom pText
+   local tKey, tParts, tI, tCount, tRest, tPos
+   put pText into tRest
+   put waEmptyList() into tParts
+   repeat with tI = 1 to 3
+      put offset("|", tRest) into tPos
+      if tPos is 0 then
+         exit repeat
+      end if
+      put cwListAdd(tParts, char 1 to (tPos - 1) of tRest) into tParts
+      put char (tPos + 1) to -1 of tRest into tRest
+   end repeat
+   put cwListAdd(tParts, tRest) into tParts
+   put cwListCount(tParts) into tCount
+   put tParts[1] into tKey["kind"]
+   put tParts[2] into tKey["index"]
+   if tKey["kind"] is "lock" and tCount is 3 then
+      put tParts[3] into tKey["height"]
+      if tKey["height"] is not an integer then
+         throw "a saved lock recipe is malformed: " & char 1 to 40 of pText
+      end if
+      put tKey["height"] + 0 into tKey["height"]
+   else if tKey["kind"] is "inscribe" and tCount is 4 then
+      put tParts[3] into tKey["type"]
+      put tParts[4] into tKey["bodyhex"]
+   else
+      throw "a saved leaf recipe is malformed: " & char 1 to 40 of pText
+   end if
+   if tKey["index"] is not an integer then
+      throw "a saved leaf recipe is malformed: " & char 1 to 40 of pText
+   end if
+   put tKey["index"] + 0 into tKey["index"]
+   return tKey
+end waLeafKeyFrom
+
+command waLockCoins pText
+   -- "lock: <height>" in the paste box: an address whose coins cannot move
+   -- before that block, by consensus rather than by promise. The leaf is
+   -- <height> OP_CHECKLOCKTIMEVERIFY OP_DROP <receive key> OP_CHECKSIG and
+   -- the internal key is the NUMS point, so there is no key-path spend to
+   -- go around it. After the height, the Send screen spends the coin like
+   -- any other: it raises the locktime itself and signs through the leaf.
+   local tRest, tHeight, tRec, tKey, tLeaf, tOut
+   if sWaKind is "watch" or sWaKind is "multisig" then
+      throw "a timelock is spent through a script only this wallet's own " & \
+            "single key can satisfy, so it needs a seed or key wallet."
+   end if
+   if cwLower(char 1 to 5 of pText) is not "lock:" then
+      throw "to lock coins, put " & quote & "lock: <block height>" & quote & \
+            " in the paste box, then pay the address it gives you."
+   end if
+   put cwTrim(char 6 to -1 of pText) into tRest
+   if tRest is not an integer or tRest < 1 or tRest >= 500000000 then
+      throw "the lock is a block height: a whole number from 1 to 499999999."
+   end if
+   put tRest + 0 into tHeight
+   if sWaTipHeight is not empty and tHeight <= sWaTipHeight then
+      throw "block " & tHeight & " has already passed (the tip is " & \
+            sWaTipHeight & "), so that lock would lock nothing."
+   end if
+   put waNextUnused(0) into tRec
+   if tRec is "" then
+      throw "there is no unused receive address left in the derived window. " & \
+            "Derive more on the Addresses screen."
+   end if
+   put "" into tKey
+   put "lock" into tKey["kind"]
+   put tRec["index"] into tKey["index"]
+   put tHeight into tKey["height"]
+   put cwListAdd(sWaLeaves, tKey) into sWaLeaves
+   put waLeafRecord(tKey) into tLeaf
+   put cwListAdd(sWaAddresses, tLeaf) into sWaAddresses
+   put "locked until block " & tHeight into sWaLabels[tLeaf["address"]]
+   put "TIMELOCK ADDRESS PREPARED" & return & return into tOut
+   put "  locked until block " & tHeight & return after tOut
+   put "  key          receive index " & tRec["index"] & " (x-only " & \
+         char 3 to 66 of tRec["pubkey"] & ")" & return after tOut
+   put "  internal key the NUMS point, so there is no key-path spend" & return after tOut
+   put "  leaf         " & tLeaf["leafscript"] & return after tOut
+   put "  pay to       " & tLeaf["address"] & return & return after tOut
+   put "Whatever is paid to that address cannot be spent before block " & \
+         tHeight & " - not by this wallet, not by anyone holding its seed - " & \
+         "because the only way out is a script the network refuses until " & \
+         "then. From that block on, the Send screen spends it like any other " & \
+         "coin: it sets the locktime to " & tHeight & " itself and signs " & \
+         "through the leaf." & return & return after tOut
+   put "The recipe is saved with the wallet, so the address survives a reopen." after tOut
+   put tOut into field "tl_out"
+   waLog "lock: " & tLeaf["address"] & " until block " & tHeight & \
+         ", key at receive index " & tRec["index"]
+   uiStatus "Lock address ready: pay " & char 1 to 20 of tLeaf["address"] & \
+         "... and it stays put until block " & tHeight & ".", "ok"
+end waLockCoins
+
+private command waInscribeReveal
+   local tI, tCount, tCoin, tRec, tAddrRec, tRate, tVsize, tFee, tValue, tDust
+   local tInputs, tOutputs, tSel, tTo, tRaw, tNew, tOut
+   put "" into tCoin
+   put cwListCount(sWaUtxos) into tCount
+   repeat with tI = 1 to tCount
+      put sWaUtxos[tI] into tRec
+      put waRecordFor(tRec["address"]) into tAddrRec
+      if tAddrRec is not "" and tAddrRec["leafscript"] is not "" \
+            and tAddrRec["lockheight"] is "" and tRec["frozen"] is not "true" then
+         put tRec into tCoin
+         exit repeat
+      end if
+   end repeat
+   if tCoin is "" then
+      if cwListCount(sWaLeaves) is 0 then
+         throw "nothing to reveal: prepare a commit first (" & quote & \
+               "inscribe: text/plain; hello" & quote & " in the paste box)."
+      end if
+      throw "no commit is funded yet. Pay the commit address, Refresh on the " & \
+            "Coins screen so the coin is seen, then press Inscribe again."
+   end if
+   if sWaKind is "watch" then
+      throw "this watch-only wallet cannot sign the reveal."
+   end if
+   put field "sd_rate" into tRate
+   if tRate is not a number or tRate <= 0 then
+      throw "set a fee rate on the Send screen first: the reveal pays at that rate."
+   end if
+   put waNextUnused(0) into tTo
+   if tTo is "" then
+      throw "there is no unused receive address left to receive the inscription. " & \
+            "Derive more on the Addresses screen."
+   end if
+   put 11 + cwTapscriptInputVsize(tAddrRec["leafscript"]) + 43 into tVsize
+   put waCeilSat(tRate * tVsize) into tFee
+   if tFee < cwFeeFor(tVsize, 1) then
+      put cwFeeFor(tVsize, 1) into tFee
+   end if
+   put tCoin["value"] - tFee into tValue
+   put cwDustThreshold("p2tr") into tDust
+   if tValue < tDust then
+      throw "the commit holds " & waAmount(tCoin["value"]) & ", and the reveal " & \
+            "needs " & waAmount(tFee) & " in fees at " & tRate & " sat/vB plus an " & \
+            "output above " & tDust & " sat. Lower the rate, or fund the commit again."
+   end if
+   put waEmptyList() into tInputs
+   put cwListAdd(tInputs, cwTxInput(tCoin["txid"], tCoin["vout"], kCwSeqRbf)) into tInputs
+   put waEmptyList() into tSel
+   put cwListAdd(tSel, tCoin) into tSel
+   put waEmptyList() into tOutputs
+   put cwListAdd(tOutputs, cwTxOutput(tValue, tTo["script"])) into tOutputs
+   put waSignSpend(tInputs, tOutputs, tSel, 0) into tRaw
+   put cwTxDecode(tRaw) into tNew
+   put tRaw into sWaLastRaw
+   waRecordSpend tNew["txid"], tSel, waEmptyList(), tValue, tTo, 0, kCwSeqRbf, \
+         tFee, tNew["vsize"] + 0
+   put "INSCRIPTION REVEAL SIGNED" & return & return into tOut
+   put "  inscription " & tNew["txid"] & "i0" & return after tOut
+   put "  content     " & tAddrRec["note"] & return after tOut
+   put "  commit      " & tCoin["txid"] & ":" & tCoin["vout"] & "  " & \
+         waAmount(tCoin["value"]) & return after tOut
+   put "  reveal      " & tNew["txid"] & ", " & tNew["vsize"] & " vB, fee " & \
+         waAmount(tFee) & " (" & tRate & " sat/vB)" & return after tOut
+   put "  lands on    " & tTo["address"] & "  (receive index " & tTo["index"] & \
+         ", first sat of the first output)" & return & return after tOut
+   put "The witness carries the envelope; Inspect on this transaction reads " & \
+         "it back." & return & return after tOut
+   put tRaw & return & return after tOut
+   put "NOTHING HAS BEEN BROADCAST. The Send screen's Broadcast button will push it." after tOut
+   put tOut into field "tl_out"
+   waLog "inscribe: reveal " & tNew["txid"] & " spends " & tCoin["txid"] & ":" & \
+         tCoin["vout"] & " through the leaf, " & tNew["vsize"] & " vB"
+   uiStatus "Reveal signed: " & tNew["txid"] & "i0. Broadcast is on the Send screen.", "ok"
+end waInscribeReveal
 
 command waSignMessage
    local tAddr, tRec, tSig, tKey, tType, tMsg, tFormat
@@ -17608,6 +19223,9 @@ function waInspectAnything pText
             "in base64, a WIF private key, an extended key, an address, or a " & \
             "bitcoin: URI."
    end if
+   if cwBolt11IsInvoice(pText) then
+      return waInvoiceText(pText)
+   end if
    try
       return waInspectRaw(pText)
    catch tError
@@ -17659,8 +19277,105 @@ function waValidateAnything pText
    if waLooksExtended(tText) then
       return waValidateXKey(tText)
    end if
+   if cwBolt11IsInvoice(tText) then
+      return waInvoiceText(tText)
+   end if
    return waValidateAddress(tText)
 end waValidateAnything
+
+function waInvoiceText pText
+   -- A Lightning invoice, read out for a person about to pay it somewhere
+   -- else: who (the payee node key, recovered from the signature), how much,
+   -- for what, until when, and the on-chain fallback and route hints if it
+   -- carries them. This wallet cannot pay it - that takes a Lightning node
+   -- - and says so; what it can do is show what the invoice says.
+   local tInv, tError, tWhy, tOut, tI, tJ, tCount, tHops, tHop, tBits, tList
+   local tSats, tPart, tNet
+   put "" into tWhy
+   try
+      put cwBolt11Decode(pText) into tInv
+   catch tError
+      put tError into tWhy
+   end try
+   if tWhy is not "" then
+      put "NOT A VALID LIGHTNING INVOICE" & return & return into tOut
+      put "  " & char 1 to 40 of cwTrim(pText) & "..." & return & return after tOut
+      put "  why  " & tWhy & return & return after tOut
+      put "A Lightning invoice is signed by the node that issued it, so a" & return after tOut
+      put "single wrong character fails here rather than paying nobody." after tOut
+      return tOut
+   end if
+   put "LIGHTNING INVOICE (BOLT11)" & return & return into tOut
+   put tInv["network"] into tNet
+   put "  network      " & tNet after tOut
+   if tNet is not sWaNetwork then
+      put "   (this wallet is on " & sWaNetwork & ")" after tOut
+   end if
+   put return after tOut
+   if tInv["amountmsat"] is "" then
+      put "  amount       any (the invoice names none)" & return after tOut
+   else
+      put cwDecDivMod(tInv["amountmsat"], 1000) into tPart
+      put "  amount       " & tInv["amountmsat"] & " msat" after tOut
+      if tPart["q"] is not "0" then
+         put " = " & waAmount(tPart["q"] + 0) after tOut
+         if tPart["r"] is not 0 then
+            put " and " & tPart["r"] & " msat" after tOut
+         end if
+      end if
+      put return after tOut
+   end if
+   put "  payee node   " & tInv["payee"] & return after tOut
+   if tInv["description"] is not "" then
+      put "  for          " & tInv["description"] & return after tOut
+   end if
+   if tInv["descriptionhash"] is not "" then
+      put "  for (hash)   " & tInv["descriptionhash"] & return after tOut
+   end if
+   put "  payment hash " & tInv["paymenthash"] & return after tOut
+   put "  issued       " & cwUnixDate(tInv["timestamp"]) & "  (" & tInv["timestamp"] & ")" & \
+         return after tOut
+   put "  expires      " & tInv["expiry"] & " s after that: " & \
+         cwUnixDate(tInv["timestamp"] + tInv["expiry"]) & return after tOut
+   put "  final cltv   " & tInv["cltv"] & " blocks" & return after tOut
+   if tInv["fallback"] is not "" then
+      put "  fallback     " & tInv["fallback"] & "  (an on-chain address this " & \
+            "wallet CAN pay)" & return after tOut
+   end if
+   if tInv["metadata"] is not "" then
+      put "  metadata     " & tInv["metadata"] & return after tOut
+   end if
+   put tInv["features"] into tBits
+   put cwListCount(tBits) into tCount
+   if tCount > 0 then
+      put "" into tList
+      repeat with tI = 1 to tCount
+         if tList is not "" then
+            put ", " after tList
+         end if
+         put tBits[tI] after tList
+      end repeat
+      put "  features     bits " & tList & return after tOut
+   end if
+   put cwListCount(tInv["routes"]) into tCount
+   repeat with tI = 1 to tCount
+      put tInv["routes"] into tHops
+      put tHops[tI] into tHops
+      put "  route hint " & tI & return after tOut
+      put cwListCount(tHops) into tJ
+      repeat with tJ = 1 to cwListCount(tHops)
+         put tHops[tJ] into tHop
+         put "    via " & tHop["pubkey"] & return after tOut
+         put "        channel " & tHop["channel"] & ", fee " & tHop["feebase"] & \
+               " msat + " & tHop["feeppm"] & " ppm, cltv delta " & \
+               tHop["cltvdelta"] & return after tOut
+      end repeat
+   end repeat
+   put return & "This wallet holds no Lightning channels, so it cannot pay this; " & \
+         "what it can do is tell you, before you pay it elsewhere, exactly " & \
+         "what it asks and who signed it." after tOut
+   return tOut
+end waInvoiceText
 
 private function waLooksExtended pText
    -- Base58 and 111 characters is an extended key and nothing else this
@@ -17984,6 +19699,9 @@ function waInspectRaw pHex
       put "unrecognised" into tAddr
       if tRec["kind"] is "nulldata" then
          put "OP_RETURN " & waDataPreview(cwOpReturnData(tRec["script"])) into tAddr
+         if char 1 to 4 of tRec["script"] is "6a5d" then
+            put "RUNESTONE" & waRunestoneText(tRec["script"], tCount) into tAddr
+         end if
       else
          try
             put cwAddressForScript(sWaNetwork, tRec["script"]) into tAddr
@@ -17999,6 +19717,102 @@ function waInspectRaw pHex
    end repeat
    return tOut
 end waInspectRaw
+
+function waRunestoneText pScriptHex, pOutputCount
+   -- A runestone (Runes protocol) read out of an OP_RETURN OP_13 output, as
+   -- the indented lines Inspect prints under it: the etching with its name
+   -- (spacers shown as dots, since this source cannot carry the bullet),
+   -- symbol, divisibility, premine and mint terms; the mint; the pointer;
+   -- every edict; and the CENOTAPH verdict with its flaws, because a
+   -- malformed runestone burns what it touches and a reader must say so.
+   -- Read only: the wallet neither etches nor tracks balances (docs/wallet.md).
+   local tOut, tRs, tE, tTerms, tI, tCount, tEd, tLine, tSym, tFlaws, tName
+   put cwRunestoneDecode(pScriptHex, pOutputCount) into tRs
+   if tRs["runestone"] is not true then
+      return ""
+   end if
+   put "" into tOut
+   put tRs["etching"] into tE
+   if tE is not "" then
+      put "etching" into tLine
+      if tE["name"] is not "" then
+         put tE["name"] into tName
+         if tE["spacers"] is not "" then
+            put cwRuneSpaced(tE["name"], tE["spacers"]) into tName
+         end if
+         put " " & tName after tLine
+      else
+         put " (reserved name, allocated by the protocol)" after tLine
+      end if
+      if tE["symbol"] is not "" then
+         put tE["symbol"] into tSym
+         if tSym >= 32 and tSym <= 126 then
+            put " symbol " & numToChar(tSym) after tLine
+         else
+            put " symbol U+" & cwUpper(cxHexEncode(cwBeBytes(tSym, 3))) after tLine
+         end if
+      end if
+      if tE["divisibility"] is not "" then
+         put " divisibility " & tE["divisibility"] after tLine
+      end if
+      if tE["premine"] is not "" then
+         put " premine " & cwRuneAmountText(tE["premine"], tE["divisibility"]) after tLine
+      end if
+      if tE["turbo"] is true then
+         put " turbo" after tLine
+      end if
+      put return & "         " & tLine after tOut
+      put tE["terms"] into tTerms
+      if tTerms is not "" then
+         put "open mint:" into tLine
+         if tTerms["amount"] is not "" then
+            put " " & cwRuneAmountText(tTerms["amount"], tE["divisibility"]) & \
+                  " per mint" after tLine
+         end if
+         if tTerms["cap"] is not "" then
+            put ", cap " & tTerms["cap"] after tLine
+         end if
+         if tTerms["heightstart"] is not "" or tTerms["heightend"] is not "" then
+            put ", heights " & tTerms["heightstart"] & ".." & tTerms["heightend"] after tLine
+         end if
+         if tTerms["offsetstart"] is not "" or tTerms["offsetend"] is not "" then
+            put ", offsets " & tTerms["offsetstart"] & ".." & tTerms["offsetend"] after tLine
+         end if
+         put return & "           " & tLine after tOut
+      end if
+   end if
+   if tRs["mint"] is not "" then
+      put return & "         mint " & tRs["mint"] after tOut
+   end if
+   if tRs["pointer"] is not "" then
+      put return & "         pointer: unallocated runes go to output " & \
+            (tRs["pointer"] + 1) after tOut
+   end if
+   put cwListCount(tRs["edicts"]) into tCount
+   repeat with tI = 1 to tCount
+      put tRs["edicts"] into tEd
+      put tEd[tI] into tEd
+      put return & "         edict " & tEd["block"] & ":" & tEd["tx"] & \
+            "  amount " & tEd["amount"] & "  to output " & (tEd["output"] + 1) after tOut
+      if tEd["output"] is pOutputCount then
+         put " (split across all outputs)" after tOut
+      end if
+   end repeat
+   if tRs["cenotaph"] is true then
+      put "" into tFlaws
+      put cwListCount(tRs["flaws"]) into tCount
+      repeat with tI = 1 to tCount
+         if tFlaws is not "" then
+            put ", " after tFlaws
+         end if
+         put tRs["flaws"] into tEd
+         put tEd[tI] after tFlaws
+      end repeat
+      put return & "         CENOTAPH (" & tFlaws & "): the runes this " & \
+            "transaction moves are burned" after tOut
+   end if
+   return tOut
+end waRunestoneText
 
 function waInspectXKey pText
    -- THE INSPECTOR TAKES NO PREFERENCE ON PURPOSE. Everywhere else in this
@@ -21304,6 +23118,10 @@ function waSerializeWallet
    repeat with tI = 1 to tCount
       put "cosigner" & tTab & sWaCosigners[tI] & return after tOut
    end repeat
+   put cwListCount(sWaLeaves) into tCount
+   repeat with tI = 1 to tCount
+      put "leaf" & tTab & waLeafLine(sWaLeaves[tI]) & return after tOut
+   end repeat
    put the keys of sWaLabels into tKeys
    sort lines of tKeys
    put the number of lines of tKeys into tCount
@@ -21360,9 +23178,10 @@ command waLoadInto pText
 end waLoadInto
 
 command waDeserializeWallet pText
-   local tI, tCount, tLine, tTab, tPos, tName, tValue, tCosigners
+   local tI, tCount, tLine, tTab, tPos, tName, tValue, tCosigners, tInscriptions
    put numToChar(9) into tTab
    put waEmptyList() into tCosigners
+   put waEmptyList() into tInscriptions
    -- EVERY PIECE OF KEY MATERIAL IS CLEARED FIRST, not just the two arrays
    -- this handler happens to append to. sWaAccountXprv is never WRITTEN to a
    -- wallet file, so without this it survives the load with the PREVIOUS
@@ -21371,6 +23190,7 @@ command waDeserializeWallet pText
    -- xpub, derived OUR addresses, and would sign. A load starts from nothing.
    put empty into sWaLabels
    put empty into sWaFrozen
+   put waEmptyList() into sWaLeaves
    put empty into sWaMnemonic
    put empty into sWaPassphrase
    put empty into sWaAccountXpub
@@ -21423,9 +23243,12 @@ command waDeserializeWallet pText
          put "true" into sWaFrozen[tValue]
       else if char 1 to 6 of tName is "label:" then
          put tValue into sWaLabels[char 7 to -1 of tName]
+      else if tName is "leaf" then
+         put cwListAdd(tInscriptions, waLeafKeyFrom(tValue)) into tInscriptions
       end if
    end repeat
    put tCosigners into sWaCosigners
+   put tInscriptions into sWaLeaves
    put waEmptyList() into sWaUtxos
    put waEmptyList() into sWaHistory
    if sWaKind is "seed" and sWaMnemonic is not empty then
@@ -21634,7 +23457,7 @@ end scFinish
 -- clipboard. What they check is that this stack's own arithmetic agrees with
 -- the library it carries, on this engine, before anybody types anything.
 
-constant kWaScControls = "ad_change,ad_detail,ad_label,ad_labelCap,ad_more,ad_panel,ad_receive,ad_scan,ad_sec1,ad_setLabel,ad_table,cn_addManual,cn_detail,cn_freeze,cn_hint,cn_panel,cn_sec1,cn_table,cn_tick,cn_tickAll,cn_tickNone,hs_bump,hs_copyTxid,hs_detail,hs_inspect,hs_panel,hs_refresh,hs_sec1,hs_table,lg_boot,lg_clear,lg_copy,lg_hint,lg_panel,lg_sec1,lg_sec2,lg_text,nv_ad,nv_bal,nv_chain,nv_cn,nv_confirmed,nv_frozenamt,nv_hs,nv_lg,nv_net,nv_nw,nv_panel,nv_pending,nv_rc,nv_refresh,nv_sd,nv_st,nv_tip,nv_tl,nv_wallet,nv_wl,nw_bElectrumClear,nw_bElectrumTor,nw_bEsploraClear,nw_bEsploraTor,nw_bOffline,nw_host,nw_hostCap,nw_out,nw_panelA,nw_panelB,nw_port,nw_portCap,nw_privacy,nw_sec1,nw_sec2,nw_sec3,nw_socks,nw_socksCap,nw_state,nw_stop,nw_syncNow,nw_test,nw_why,rc_address,rc_amount,rc_amountCap,rc_copy,rc_copyUri,rc_detail,rc_label,rc_labelCap,rc_message,rc_messageCap,rc_next,rc_panelA,rc_panelB,rc_qr,rc_qrframe,rc_qrhint,rc_sec1,rc_sec2,rc_sec3,rc_showQr,rc_uri,rc_verify,sd_addSelf,sd_broadcast,sd_clear,sd_copyRaw,sd_locktime,sd_locktimeCap,sd_out,sd_panelA,sd_panelB,sd_paste,sd_preview,sd_rate,sd_rateCap,sd_ratehint,sd_rbf,sd_sec1,sd_sec2,sd_sec3,sd_sec4,sd_sign,sd_stratBnb,sd_stratLargest,sd_stratManual,sd_stratOldest,sd_stratSmallest,sd_strategyCap,sd_to,sd_toCap,sd_toPsbt,sd_warn,st_about,st_browse,st_exportLabels,st_filenote,st_forget,st_forgetnote,st_gap,st_gapCap,st_importLabels,st_load,st_panelA,st_panelB,st_password,st_passwordCap,st_path,st_pathCap,st_save,st_sec1,st_sec2,st_sec3,st_unitBtc,st_unitMbtc,st_unitSat,st_update,tl_copyOut,tl_decode,tl_derive,tl_entropy,tl_export,tl_hex,tl_hexCap,tl_hold,tl_inspect,tl_msg,tl_msg322,tl_msgAddr,tl_msgAddrCap,tl_msgCap,tl_msgSig,tl_msgSigCap,tl_msgSign,tl_msgVerify,tl_newKey,tl_note,tl_out,tl_panelA,tl_panelB,tl_pass,tl_passCap,tl_psbtCombine,tl_psbtFinal,tl_psbtSign,tl_sec1,tl_sec2,tl_sec3,tl_sweep,tl_toEntropy,tl_validate,uiFooter,uiStatus,uiTitle,wl_account,wl_accountCap,wl_addCosigner,wl_backup,wl_copyDesc,wl_copyXpub,wl_custody,wl_generate,wl_kindKey,wl_kindMulti,wl_kindRestore,wl_kindSeed,wl_kindWatch,wl_label,wl_labelCap,wl_m,wl_mCap,wl_mnemonic,wl_mnemonicCap,wl_netMain,wl_netReg,wl_netSignet,wl_netTest,wl_netTest4,wl_open,wl_out,wl_panelA,wl_panelB,wl_pass,wl_passCap,wl_path,wl_pathCap,wl_sec1,wl_sec2,wl_sec3,wl_sec4,wl_typeLegacy,wl_typeMulti,wl_typeNative,wl_typeNested,wl_typeTaproot,wl_warn,wl_xkey,wl_xkeyCap"
+constant kWaScControls = "ad_change,ad_detail,ad_label,ad_labelCap,ad_more,ad_panel,ad_receive,ad_scan,ad_sec1,ad_setLabel,ad_table,cn_addManual,cn_detail,cn_freeze,cn_hint,cn_panel,cn_sec1,cn_table,cn_tick,cn_tickAll,cn_tickNone,hs_bump,hs_copyTxid,hs_detail,hs_inspect,hs_panel,hs_refresh,hs_sec1,hs_table,lg_boot,lg_clear,lg_copy,lg_hint,lg_panel,lg_sec1,lg_sec2,lg_text,nv_ad,nv_bal,nv_chain,nv_cn,nv_confirmed,nv_frozenamt,nv_hs,nv_lg,nv_net,nv_nw,nv_panel,nv_pending,nv_rc,nv_refresh,nv_sd,nv_st,nv_tip,nv_tl,nv_wallet,nv_wl,nw_bElectrumClear,nw_bElectrumTor,nw_bEsploraClear,nw_bEsploraTor,nw_bOffline,nw_host,nw_hostCap,nw_out,nw_panelA,nw_panelB,nw_port,nw_portCap,nw_privacy,nw_sec1,nw_sec2,nw_sec3,nw_socks,nw_socksCap,nw_state,nw_stop,nw_syncNow,nw_test,nw_why,rc_address,rc_amount,rc_amountCap,rc_copy,rc_copyUri,rc_detail,rc_label,rc_labelCap,rc_message,rc_messageCap,rc_next,rc_panelA,rc_panelB,rc_qr,rc_qrframe,rc_qrhint,rc_sec1,rc_sec2,rc_sec3,rc_showQr,rc_uri,rc_verify,sd_addSelf,sd_broadcast,sd_clear,sd_copyRaw,sd_locktime,sd_locktimeCap,sd_out,sd_panelA,sd_panelB,sd_paste,sd_preview,sd_rate,sd_rateCap,sd_ratehint,sd_rbf,sd_sec1,sd_sec2,sd_sec3,sd_sec4,sd_sign,sd_stratBnb,sd_stratLargest,sd_stratManual,sd_stratOldest,sd_stratSmallest,sd_strategyCap,sd_to,sd_toCap,sd_toPsbt,sd_warn,st_about,st_browse,st_exportLabels,st_filenote,st_forget,st_forgetnote,st_gap,st_gapCap,st_importLabels,st_load,st_panelA,st_panelB,st_password,st_passwordCap,st_path,st_pathCap,st_save,st_sec1,st_sec2,st_sec3,st_unitBtc,st_unitMbtc,st_unitSat,st_update,tl_copyOut,tl_decode,tl_derive,tl_entropy,tl_export,tl_hex,tl_hexCap,tl_hold,tl_inscribe,tl_inspect,tl_lock,tl_msg,tl_msg322,tl_msgAddr,tl_msgAddrCap,tl_msgCap,tl_msgSig,tl_msgSigCap,tl_msgSign,tl_msgVerify,tl_newKey,tl_note,tl_out,tl_panelA,tl_panelB,tl_pass,tl_passCap,tl_psbtCombine,tl_psbtFinal,tl_psbtSign,tl_sec1,tl_sec2,tl_sec3,tl_sweep,tl_toEntropy,tl_validate,uiFooter,uiStatus,uiTitle,wl_account,wl_accountCap,wl_addCosigner,wl_backup,wl_copyDesc,wl_copyXpub,wl_custody,wl_generate,wl_kindKey,wl_kindMulti,wl_kindRestore,wl_kindSeed,wl_kindWatch,wl_label,wl_labelCap,wl_m,wl_mCap,wl_mnemonic,wl_mnemonicCap,wl_netMain,wl_netReg,wl_netSignet,wl_netTest,wl_netTest4,wl_open,wl_out,wl_panelA,wl_panelB,wl_pass,wl_passCap,wl_path,wl_pathCap,wl_sec1,wl_sec2,wl_sec3,wl_sec4,wl_typeLegacy,wl_typeMulti,wl_typeNative,wl_typeNested,wl_typeTaproot,wl_warn,wl_xkey,wl_xkeyCap"
 
 command waScFresh
    -- THIS RUN'S RECORD, NOT EVERY RUN'S. The field is saved with the stack,

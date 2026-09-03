@@ -1316,6 +1316,481 @@ def sp_input_pubkey(vin: dict):
         return b"\x02" + spk[2:34]
     return None
 
+# ---- Runes, read only (2026-09-04) -------------------------------------------
+# The oracle for wallet-core's runestone reader: LEB128 over Python ints, the
+# specification's tag table and cenotaph rules, and the reference's name,
+# spacer and amount display. Etching, minting and balances are not here,
+# because the wallet does not do them either.
+
+RUNE_U128_MAX = (1 << 128) - 1
+RUNE_TAGS = {"body": 0, "flags": 2, "rune": 4, "premine": 6, "cap": 8,
+             "amount": 10, "heightstart": 12, "heightend": 14,
+             "offsetstart": 16, "offsetend": 18, "mint": 20, "pointer": 22,
+             "cenotaph": 126, "divisibility": 1, "spacers": 3, "symbol": 5,
+             "nop": 127}
+
+
+def leb128_encode(n: int) -> bytes:
+    out = bytearray()
+    while True:
+        byte = n & 0x7F
+        n >>= 7
+        if n:
+            out.append(byte | 0x80)
+        else:
+            out.append(byte)
+            return bytes(out)
+
+
+def leb128_decode(b: bytes, i: int):
+    """(value, next_index) or raise ValueError('truncated'|'overlong'|'overflow')."""
+    value, shift, count = 0, 0, 0
+    while True:
+        if i >= len(b):
+            raise ValueError("truncated")
+        byte = b[i]
+        i += 1
+        count += 1
+        if count > 19:
+            raise ValueError("overlong")
+        value |= (byte & 0x7F) << shift
+        shift += 7
+        if byte < 0x80:
+            break
+    if value > RUNE_U128_MAX:
+        raise ValueError("overflow")
+    return value, i
+
+
+def rune_name(n: int) -> str:
+    if n == RUNE_U128_MAX:
+        return "BCGDENLQRQWDSLRUGSNLBTMFIJAV"
+    n += 1
+    out = ""
+    while n > 0:
+        out = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"[(n - 1) % 26] + out
+        n = (n - 1) // 26
+    return out
+
+
+def rune_spaced(name: str, spacers: int, sep: str = ".") -> str:
+    out = ""
+    for i, ch in enumerate(name):
+        out += ch
+        if i < len(name) - 1 and (spacers >> i) & 1:
+            out += sep
+    return out
+
+
+def rune_amount_text(amount: int, divisibility: int) -> str:
+    if divisibility <= 0:
+        return str(amount)
+    cutoff = 10 ** divisibility
+    whole, frac = divmod(amount, cutoff)
+    if frac == 0:
+        return str(whole)
+    return "%d.%s" % (whole, str(frac).rjust(divisibility, "0").rstrip("0"))
+
+
+def runestone_script(integers, pushes=None) -> bytes:
+    """OP_RETURN OP_13 with the varints in one push (or in the given
+    chunks of bytes, to test payload concatenation)."""
+    payload = b"".join(leb128_encode(i) for i in integers)
+    if pushes is None:
+        pushes = [payload] if payload else []
+    return b"\x6a\x5d" + b"".join(push(p) for p in pushes)
+
+
+def runestone_decode(spk: bytes, n_outputs: int) -> dict:
+    """The reader's answer, in the same shape as cwRunestoneDecode with big
+    values as decimal strings."""
+    out = {"runestone": False}
+    if spk[:2] != b"\x6a\x5d":
+        return out
+    out.update({"runestone": True, "edicts": [], "etching": "", "mint": "",
+                "pointer": "", "flaws": []})
+    payload = b""
+    i = 2
+    while i < len(spk):
+        op = spk[i]
+        i += 1
+        if op == 0:
+            continue
+        if 1 <= op <= 75:
+            ln = op
+        elif op == 76:
+            ln = spk[i] if i < len(spk) else None
+            i += 1
+        elif op == 77:
+            ln = int.from_bytes(spk[i:i + 2], "little") if i + 2 <= len(spk) else None
+            i += 2
+        elif op == 78:
+            ln = int.from_bytes(spk[i:i + 4], "little") if i + 4 <= len(spk) else None
+            i += 4
+        else:
+            out["flaws"] = ["opcode"]
+            out["cenotaph"] = True
+            return out
+        if ln is None or i + ln > len(spk):
+            out["flaws"] = ["script"]
+            out["cenotaph"] = True
+            return out
+        payload += spk[i:i + ln]
+        i += ln
+    ints = []
+    i = 0
+    try:
+        while i < len(payload):
+            v, i = leb128_decode(payload, i)
+            ints.append(v)
+    except ValueError:
+        out["flaws"] = ["varint"]
+        out["cenotaph"] = True
+        return out
+    fields, order, flaws = {}, [], []
+    body = None
+    i = 0
+    while i < len(ints):
+        tag = ints[i]
+        if tag == 0:
+            body = i + 1
+            break
+        if i + 1 >= len(ints):
+            flaws.append("truncated field")
+            break
+        if tag not in fields:
+            fields[tag] = []
+            order.append(tag)
+        fields[tag].append(ints[i + 1])
+        i += 2
+    edicts = []
+    if body is not None:
+        block = tx = 0
+        i = body
+        while i + 3 < len(ints):
+            delta = ints[i]
+            block += delta
+            tx = tx + ints[i + 1] if delta == 0 else ints[i + 1]
+            if block > RUNE_U128_MAX or tx > RUNE_U128_MAX or (block == 0 and tx != 0):
+                flaws.append("edict rune id")
+                break
+            output = ints[i + 3]
+            if output > n_outputs:
+                flaws.append("edict output")
+                break
+            edicts.append({"block": str(block), "tx": str(tx),
+                           "amount": str(ints[i + 2]), "output": output})
+            i += 4
+        if i < len(ints) and not flaws:
+            flaws.append("trailing integers")
+    flags = fields.get(2, [0])[0]
+    etching_flag, terms_flag, turbo = flags & 1, flags & 2, flags & 4
+    if flags >> 3:
+        flaws.append("unrecognized flag")
+    if etching_flag:
+        e = {"rune": "", "name": "", "divisibility": "", "spacers": "",
+             "symbol": "", "premine": "", "turbo": bool(turbo), "terms": ""}
+        if 4 in fields:
+            e["rune"] = str(fields[4][0])
+            e["name"] = rune_name(fields[4][0])
+        if 1 in fields and fields[1][0] <= 38:
+            e["divisibility"] = fields[1][0]
+        if 3 in fields and fields[3][0] <= 0x7FFFFFF:
+            e["spacers"] = fields[3][0]
+        if 5 in fields and fields[5][0] <= 0x10FFFF:
+            e["symbol"] = fields[5][0]
+        if 6 in fields:
+            e["premine"] = str(fields[6][0])
+        if terms_flag:
+            e["terms"] = {k: (str(fields[tag][0]) if tag in fields else "")
+                          for k, tag in (("amount", 10), ("cap", 8), ("heightstart", 12),
+                                         ("heightend", 14), ("offsetstart", 16),
+                                         ("offsetend", 18))}
+        out["etching"] = e
+    if 20 in fields:
+        if len(fields[20]) >= 2 and not (fields[20][0] == 0 and fields[20][1] != 0):
+            out["mint"] = "%d:%d" % (fields[20][0], fields[20][1])
+        else:
+            flaws.append("mint rune id")
+    if 22 in fields:
+        if fields[22][0] >= n_outputs:
+            flaws.append("pointer")
+        else:
+            out["pointer"] = fields[22][0]
+    for tag in order:
+        if tag % 2 == 1 or tag in (2, 20, 22):
+            continue
+        if tag in (4, 6):
+            if not etching_flag:
+                flaws.append("unrecognized even tag")
+            continue
+        if tag in (8, 10, 12, 14, 16, 18):
+            if not terms_flag:
+                flaws.append("unrecognized even tag")
+            continue
+        flaws.append("unrecognized even tag")
+    out["edicts"] = edicts
+    out["flaws"] = flaws
+    out["cenotaph"] = bool(flaws)
+    return out
+
+# ---- tapscript, one leaf: inscriptions by commit and reveal (2026-09-04) ----
+
+TAP_LEAF_VERSION = 0xC0
+INSCRIPTION_CHUNK = 520
+
+
+def tap_leaf_hash_long(script: bytes) -> bytes:
+    """BIP-341's TapLeaf hash with a real compact size (the coin_reference
+    one stops at 252 bytes; an inscription body is longer)."""
+    return cr.tagged_hash("TapLeaf", bytes([TAP_LEAF_VERSION]) + varint(len(script)) + script)
+
+
+def inscription_script(xonly: bytes, content_type: str, body: bytes) -> bytes:
+    out = push(xonly) + b"\xac" + b"\x00" + b"\x63" + push(b"ord") + push(b"\x01")
+    out += push(content_type.encode("utf-8")) + b"\x00"
+    for i in range(0, len(body), INSCRIPTION_CHUNK):
+        out += push(body[i:i + INSCRIPTION_CHUNK])
+    return out + b"\x68"
+
+
+def tap_commit(internal32: bytes, leaf_script: bytes) -> dict:
+    leaf = tap_leaf_hash_long(leaf_script)
+    output_key, parity = cr.taproot_tweak_pubkey(internal32, leaf)
+    return {"leafhash": leaf, "outputkey": output_key, "parity": parity,
+            "script": spk_p2tr(output_key),
+            "controlblock": bytes([TAP_LEAF_VERSION | parity]) + internal32}
+
+
+def tapscript_sighash(version, inputs, outputs, index, locktime, prev_spks,
+                      prev_amounts, leaf_hash):
+    co = _cr_outputs(outputs)
+    return cr.btc_sighash_taproot(
+        version, locktime,
+        [cr.btc_outpoint(bytes.fromhex(t), v) for t, v, _ in inputs],
+        prev_amounts, prev_spks, [s for _, _, s in inputs], co, index, 0,
+        tapleaf=leaf_hash)
+
+
+def sign_tapscript(seckey: bytes, digest: bytes, leaf_script: bytes,
+                   control_block: bytes):
+    return [cr.schnorr_sign(seckey, digest, bytes(32)), leaf_script, control_block]
+
+
+def script_num(n: int) -> bytes:
+    if n < 0:
+        raise ValueError("non-negative only")
+    if n == 0:
+        return b"\x00"
+    if n <= 16:
+        return bytes([0x50 + n])
+    out = bytearray()
+    while n:
+        out.append(n & 0xFF)
+        n >>= 8
+    if out[-1] & 0x80:
+        out.append(0)
+    return push(bytes(out))
+
+
+def timelock_script(height: int, xonly: bytes) -> bytes:
+    return script_num(height) + b"\xb1\x75" + push(xonly) + b"\xac"
+
+
+def tapscript_input_vsize(leaf_script: bytes) -> int:
+    witness = 1 + 1 + 64 + len(varint(len(leaf_script))) + len(leaf_script) + 1 + 33
+    return 41 + (witness + 3) // 4
+
+# ---- BOLT11 Lightning invoices, decoded (2026-09-04) ------------------------
+# The oracle for wallet-core's cwBolt11Decode: the human-readable amount, the
+# 35-bit timestamp, the tagged fields, the signature's recovery. Read only.
+
+BOLT11_HRPS = {"lnbc": "mainnet", "lntb": "testnet", "lntbs": "signet", "lnbcrt": "regtest"}
+BOLT11_MULTIPLIERS = {"m": 10 ** 8, "u": 10 ** 5, "n": 10 ** 2, "p": None}   # to msat
+BOLT11_KNOWN_FEATURES = {0, 1, 8, 9, 14, 15, 16, 17, 48, 49}
+
+
+def _bits_to_bytes(values, exact=False):
+    """5-bit values to bytes, dropping the incomplete tail (the spec's fields
+    carry up to four padding bits)."""
+    acc = bits = 0
+    out = bytearray()
+    for v in values:
+        acc = (acc << 5) | v
+        bits += 5
+        if bits >= 8:
+            bits -= 8
+            out.append((acc >> bits) & 0xFF)
+            acc &= (1 << bits) - 1
+    return bytes(out)
+
+
+def _bits_to_int(values):
+    n = 0
+    for v in values:
+        n = (n << 5) | v
+    return n
+
+
+def bolt11_decode(invoice: str) -> dict:
+    """The decoded invoice, or raise ValueError(reason)."""
+    hrp, spec, values = bech32_decode_long(invoice.strip(), 65535)
+    if spec != "bech32":
+        raise ValueError("an invoice carries a bech32 checksum, not bech32m")
+    prefix = None
+    for p in sorted(BOLT11_HRPS, key=len, reverse=True):
+        if hrp.startswith(p):
+            prefix = p
+            break
+    if prefix is None:
+        raise ValueError("not a Lightning invoice prefix")
+    network = BOLT11_HRPS[prefix]
+    amount = hrp[len(prefix):]
+    msat = None
+    if amount:
+        mult = 10 ** 11
+        if amount[-1] in BOLT11_MULTIPLIERS:
+            mult = BOLT11_MULTIPLIERS[amount[-1]]
+            amount = amount[:-1]
+        elif not amount[-1].isdigit():
+            raise ValueError("invalid multiplier")
+        if not amount.isdigit() or (len(amount) > 1 and amount[0] == "0"):
+            raise ValueError("invalid amount")
+        n = int(amount)
+        if mult is None:
+            if n % 10:
+                raise ValueError("sub-millisatoshi precision")
+            msat = n // 10
+        else:
+            msat = n * mult
+    if len(values) < 7 + 104:
+        raise ValueError("too short")
+    timestamp = _bits_to_int(values[:7])
+    sig_values = values[-104:]
+    body = values[7:-104]
+    fields = {"routes": [], "features": [], "expiry": 3600, "cltv": 18}
+    i = 0
+    while i + 3 <= len(body):
+        tag, ln = body[i], body[i + 1] * 32 + body[i + 2]
+        data = body[i + 3:i + 3 + ln]
+        if len(data) < ln:
+            raise ValueError("truncated field")
+        i += 3 + ln
+        ch = cr.CHARSET[tag]
+        if ch == "p" and ln == 52 and "payment_hash" not in fields:
+            fields["payment_hash"] = _bits_to_bytes(data)[:32].hex()
+        elif ch == "s" and ln == 52 and "secret" not in fields:
+            fields["secret"] = _bits_to_bytes(data)[:32].hex()
+        elif ch == "d" and "description" not in fields:
+            fields["description"] = _bits_to_bytes(data).decode("utf-8", "replace")
+        elif ch == "h" and ln == 52 and "description_hash" not in fields:
+            fields["description_hash"] = _bits_to_bytes(data)[:32].hex()
+        elif ch == "n" and ln == 53 and "payee" not in fields:
+            fields["payee"] = _bits_to_bytes(data)[:33].hex()
+        elif ch == "x":
+            fields["expiry"] = _bits_to_int(data)
+        elif ch == "c":
+            fields["cltv"] = _bits_to_int(data)
+        elif ch == "m" and "metadata" not in fields:
+            fields["metadata"] = _bits_to_bytes(data).hex()
+        elif ch == "f" and data and "fallback" not in fields:
+            ver, prog = data[0], _bits_to_bytes(data[1:])
+            if ver == 17 and len(prog) == 20:
+                fields["fallback"] = address_for_spk(network, b"\x76\xa9\x14" + prog + b"\x88\xac")
+            elif ver == 18 and len(prog) == 20:
+                fields["fallback"] = address_for_spk(network, b"\xa9\x14" + prog + b"\x87")
+            elif ver == 0 and len(prog) in (20, 32):
+                fields["fallback"] = address_for_spk(network, b"\x00" + push(prog))
+            elif 1 <= ver <= 16 and 2 <= len(prog) <= 40:
+                fields["fallback"] = address_for_spk(network, bytes([0x50 + ver]) + push(prog))
+        elif ch == "r":
+            raw = _bits_to_bytes(data)
+            hops = []
+            for k in range(0, len(raw) - len(raw) % 51, 51):
+                h = raw[k:k + 51]
+                scid = int.from_bytes(h[33:41], "big")
+                hops.append({"pubkey": h[:33].hex(),
+                             "channel": "%dx%dx%d" % (scid >> 40, (scid >> 16) & 0xFFFFFF, scid & 0xFFFF),
+                             "fee_base_msat": int.from_bytes(h[41:45], "big"),
+                             "fee_ppm": int.from_bytes(h[45:49], "big"),
+                             "cltv_delta": int.from_bytes(h[49:51], "big")})
+            fields["routes"].append(hops)
+        elif ch == "9":
+            n = _bits_to_int(data)
+            bits = [b for b in range(n.bit_length()) if (n >> b) & 1]
+            fields["features"] = bits
+            unknown_required = [b for b in bits if b % 2 == 0 and b not in BOLT11_KNOWN_FEATURES]
+            if unknown_required:
+                raise ValueError("unknown required feature %d" % unknown_required[0])
+    if "payment_hash" not in fields:
+        raise ValueError("no payment hash")
+    if "secret" not in fields:
+        raise ValueError("no payment secret")
+    if "description" not in fields and "description_hash" not in fields:
+        raise ValueError("no description")
+    sig = _bits_to_bytes(sig_values)
+    if len(sig) < 65 or sig[64] > 3:
+        raise ValueError("bad signature encoding")
+    msg = hrp.encode("ascii") + _bits_to_bytes_padded(body_all(values))
+    digest = cr.sha256(msg)
+    r, s = int.from_bytes(sig[:32], "big"), int.from_bytes(sig[32:64], "big")
+    if not (1 <= r < cr._N and 1 <= s < cr._N):
+        raise ValueError("signature not recoverable")
+    pub = ecdsa_recover(sig[:64], sig[64], digest)
+    if pub is None:
+        raise ValueError("signature not recoverable")
+    if "payee" in fields:
+        if pub != fields["payee"]:
+            raise ValueError("signature does not match the n field")
+        if s > cr._N // 2:
+            raise ValueError("high-S signature with n present")
+    fields.update({"network": network, "amount_msat": msat, "timestamp": timestamp,
+                   "payee": fields.get("payee", pub), "signature": sig.hex(), "digest": digest.hex()})
+    return fields
+
+
+def body_all(values):
+    return values[:-104]
+
+
+def _bits_to_bytes_padded(values):
+    acc = bits = 0
+    out = bytearray()
+    for v in values:
+        acc = (acc << 5) | v
+        bits += 5
+        while bits >= 8:
+            bits -= 8
+            out.append((acc >> bits) & 0xFF)
+            acc &= (1 << bits) - 1
+    if bits:
+        out.append((acc << (8 - bits)) & 0xFF)
+    return bytes(out)
+
+
+def ecdsa_recover(sig64: bytes, recid: int, digest: bytes):
+    """The compressed public key an ECDSA signature recovers to, or None."""
+    r, s = int.from_bytes(sig64[:32], "big"), int.from_bytes(sig64[32:], "big")
+    e = int.from_bytes(digest, "big")
+    x = r + (recid >> 1) * cr._N
+    if x >= cr._P:
+        return None
+    y_sq = (pow(x, 3, cr._P) + 7) % cr._P
+    y = pow(y_sq, (cr._P + 1) // 4, cr._P)
+    if pow(y, 2, cr._P) != y_sq:
+        return None
+    if (y & 1) != (recid & 1):
+        y = cr._P - y
+    R = (x, y)
+    r_inv = pow(r, cr._N - 2, cr._N)
+    sR = cr._pt_mul(s, R)
+    eG = cr._pt_mul(e)
+    neg_eG = (eG[0], cr._P - eG[1])
+    Q = cr._pt_mul(r_inv, cr._pt_add(sR, neg_eG))
+    if Q is None:
+        return None
+    return cr._compress(Q).hex()
+
 def message_sign(seckey: bytes, message: str, script_type="p2pkh",
                  compressed=True) -> str:
     import base64 as _b64

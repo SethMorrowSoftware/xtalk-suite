@@ -406,6 +406,92 @@ own input lists. Receiving - scanning the chain for payments to a scan key
 of this wallet's own - is not built; the wallet says so wherever it
 mentions the feature. Not run on an engine.
 
+## Runes, read only
+
+Since 2026-09-04 Inspect reads a **runestone** - the Runes protocol's
+OP_RETURN OP_13 output - and prints what it says under the output: the
+etching with its name (spacers as dots, since the source cannot carry the
+bullet), symbol, divisibility, premine and open-mint terms; the mint; the
+pointer; every edict as rune id, amount and destination output; and the
+CENOTAPH verdict with its flaws, because a malformed runestone burns the
+runes it touches and a reader that stayed quiet about that would be lying by
+omission. The numbers are 128-bit, so wallet-core keeps them as decimal
+strings and never lets one near a double: LEB128 decoding, the delta-encoded
+edict ids, the modified-base-26 name and the amount display are all digit
+loops. Read only is the whole of it - no etching, no minting, no balances,
+which need an indexer that has seen every block since the protocol began.
+The vector gate holds the reader to the reference implementation's own test
+cases (names from `A` to the 2^128 - 1 edge, the spacer and divisibility
+tables, the all-tags etching, the specification's delta-encoding example,
+and each cenotaph rule by name). Not run on an engine.
+
+## Inscriptions, by commit and reveal
+
+Since 2026-09-04 the Tools screen inscribes. The protocol has two steps and
+so does the button: with `inscribe: text/plain; hello` (or `inscribehex:
+<type>; <hex>`) in the paste box, Inscribe prepares the **commit** - a
+taproot output whose single hidden leaf is the ord envelope
+(`<key> OP_CHECKSIG OP_FALSE OP_IF "ord" <type> <body> OP_ENDIF`) keyed by
+the next unused receive key; the commit address joins the wallet's own
+address list so sync watches it, the recipe is saved with the wallet so a
+reopen rebuilds it, and the report says how much to fund it with. Once the
+coin is seen, Inscribe with the box empty signs the **reveal**: one input
+spent through the leaf (the witness is the Schnorr signature by the internal
+key, the leaf script and the control block), one output to the next receive
+address, which receives the first sat and with it the inscription. Inspect
+on the reveal reads the envelope back out of its witness, which is the
+loop this wallet could already close from the other end. The pieces are
+wallet-core's: a leaf hash with a real compact size (coinxt's stops at 252
+bytes, and an inscription body is exactly the script that exceeds it), the
+envelope in pushes of at most 520 bytes, the commit (tweak by the leaf,
+control block, script), the script-path sighash and the witness. The vector
+gate holds each to the oracle, the boot gate drives both presses and
+rebuilds the reveal's signature from the same key byte for byte. A commit
+coin spent any other way is still spendable - waSignSpend signs any coin of
+this wallet through its leaf - but the reveal builder is the intended path,
+and a silent payment funded from one tweaks by the leaf as BIP-352 requires.
+Not run on an engine.
+
+## Coins locked until a block
+
+The same one-leaf machinery, turned the other way, is a vault. Since
+2026-09-04 `lock: <height>` in the Tools paste box and the Lock button
+prepare an address whose only leaf is `<height> OP_CHECKLOCKTIMEVERIFY
+OP_DROP <receive key> OP_CHECKSIG` under the NUMS point as internal key -
+so there is no key-path spend to go around it, and whatever is paid there
+cannot move before that block, not by this wallet and not by anyone holding
+its seed, because consensus refuses the only script that releases it. The
+address joins the wallet's list and the recipe is saved with the wallet,
+like an inscription commit. The Coins screen marks such a coin `LCK`; while
+the tip is below the height it is withheld from selection (a transaction
+every node would reject is not a spend), and from the height on the Send
+screen spends it like any other coin: it raises the locktime itself, says
+so in the review, and signs through the leaf. The boot gate drives the
+button, plants a coin, checks the withholding on both sides of the height,
+and rebuilds the release's signature from the same key. Not run on an
+engine.
+
+## Lightning invoices, read out
+
+Since 2026-09-04 Inspect and Validate read a **BOLT11 Lightning invoice**
+and say what it asks before anyone pays it somewhere else: the network, the
+amount (the invoice's unit is bitcoin with a multiplier letter; the wallet
+prints millisatoshi and the whole-satoshi part in its own unit), the payee's
+node key recovered from the signature, the description or its hash, the
+payment hash, when it was issued and when it expires, the final CLTV, the
+on-chain fallback address if it carries one (which this wallet CAN pay),
+route hints hop by hop, feature bits and payment metadata. It refuses what
+the specification calls invalid, naming the reason: a bad checksum or
+mixed case, a bad amount or multiplier, sub-millisatoshi precision, an
+unknown required feature bit, a missing payment hash, secret or
+description, a signature that does not recover, or one that disagrees with
+the node key the invoice names. The reader is wallet-core's: the long
+bech32 decoder from the silent-payment work, the 5-bit field walk, and
+coinxt's signature recovery. The vector gate holds every field of every
+example in the specification (`tests/bolt11-vectors.json`) and each of its
+invalid examples. This wallet holds no channels and cannot pay an invoice;
+it says so on the same screen. Not run on an engine.
+
 ## Testnet4, and labels that travel
 
 Since 2026-09-04 the Wallet screen offers **testnet4** beside testnet. It is
@@ -509,3 +595,40 @@ cd coinxt && python3 tools/check-wallet-vectors.py
 
 It builds the native shim from `native/coinxt.c`, so it needs a C compiler; with
 none, it runs the constant checks and says loudly that it skipped the rest.
+
+## The next engine pass, and what each step proves
+
+Everything dated 2026-09-04 above says "not run on an engine". The order
+below is shortest feedback first; each line names the honesty label it
+flips when it comes back clean.
+
+1. **Boot, and the log.** Open the stack; the boot self-check prints its
+   own record. Green flips nothing new but is the precondition for all of it.
+2. **Tools, paste box.** Paste any `lnbc...` invoice and press Inspect: the
+   payee node key, amount and fields. Then a mainnet transaction id known
+   to carry a runestone (any Runes etching or transfer; block 840,000
+   onward) with a backend chosen on Network, press Inspect, and read the
+   runestone under its OP_RETURN output. Both flip their sections' labels.
+3. **Tools, `inscribe: text/plain; hello` and Inscribe.** The commit
+   address appears and joins the Addresses screen; save the wallet, reopen
+   it, and the commit is still there (the recipe line). Flips the commit
+   half of the inscription section. Funding it on signet or testnet4 and
+   pressing Inscribe again with the box empty, then Broadcast, is the reveal
+   half - an explorer that reads inscriptions will show it at `<txid>i0`.
+4. **Tools, `lock: <height a few blocks ahead>` and Lock.** Pay the address
+   from the Send screen; the Coins screen shows `LCK`; before the height a
+   MAX spend leaves it out, after the height a manual spend of it signs with
+   the raised locktime, and a node accepts the broadcast. Flips the timelock
+   section.
+5. **Send, a `tsp1...` line.** Any silent payment address for the network
+   (a wallet that supports BIP-352 receiving can give one); Preview shows
+   the derived `tb1p...` output, Sign, Broadcast, and the receiving wallet
+   finds it. Flips the silent-payment section. Paying one from a mainnet
+   wallet is real money to an address only the payee can find; test first.
+6. **Tools, BIP-322.** Sign with a taproot wallet's first address and verify
+   the result in Bitcoin Core's `verifymessage` or Sparrow. Flips the
+   signed-messages section.
+
+What comes back from an engine goes into the section it belongs to, dated,
+and into `CLAUDE.md` - the convention the rest of this file follows.
+

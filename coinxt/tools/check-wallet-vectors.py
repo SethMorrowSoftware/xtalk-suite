@@ -163,7 +163,10 @@ def wire_signing(lib):
         "cxsignrecoverable": fixed("cnx_ecdsa_sign_recoverable", 2, 65,
                                    "cxSignRecoverable"),
         "cxrecover": fixed("cnx_ecdsa_recover", 2, 65, "cxRecover"),
-        "cxecdh": fixed("cnx_ecdh", 2, 32, "cxEcdh"),
+        # the RAW 65-byte point (0x04 || X || Y), as cnx_ecdh_len says; the
+        # 32 this line carried until 2026-09-04 made every offline ECDH a
+        # BADLEN refusal, which nothing noticed until BIP-352 used it
+        "cxecdh": fixed("cnx_ecdh", 2, 65, "cxEcdh"),
         "cxschnorrsign": fixed("cnx_schnorr_sign", 3, 64, "cxSchnorrSign"),
         "cxxonlypubkey": fixed("cnx_xonly_pubkey_from_seckey", 1, 32,
                                "cxXOnlyPubkey"),
@@ -1559,6 +1562,11 @@ def check_silent_payments(c, ip):
             c.ck(label, "accepted", "refused")
         except LCS.Thrown as exc:
             c.ck(label, True if want in str(exc.msg) else str(exc.msg)[:120], True)
+        except RuntimeError as exc:
+            # the not-a-point case: the decompressor refuses natively, which
+            # the engine surfaces as a script throw and this offline wiring
+            # as a RuntimeError (check-script-vectors.py's decompress)
+            c.ck(label, True if want == "" else str(exc)[:120], True)
     v1 = REF.bech32_encode_long(
         "sp", [1] + REF._convertbits(scan0 + spend0 + b"\x00" * 4, 8, 5, True), "bech32m")
     d1 = call("cwSpDecode", ["mainnet", v1])
@@ -1664,6 +1672,299 @@ def check_silent_payments(c, ip):
     c.ck("cwSpSend does the whole derivation in one call", whole, v0[0]["expected"]["outputs"][0])
     c.ck("and the output script is a taproot output",
          call("cwScriptKind", [call("cwScriptP2tr", [whole[0]])]), "p2tr")
+
+
+def check_runes(c, ip):
+    """The runestone reader against the reference's own test cases (ord's
+    crates/ordinals/src/{rune,runestone}.rs, 2026-09-04): names, spacers,
+    amounts, LEB128 at the 128-bit edge, the tag table, delta-encoded
+    edicts, and every cenotaph rule the specification lists."""
+    call = ip.call
+    c.note("\nRunes, read only")
+    M = REF.RUNE_U128_MAX
+    for n, want in ((0, "A"), (25, "Z"), (26, "AA"), (27, "AB"), (51, "AZ"),
+                    (52, "BA"), (M - 2, "BCGDENLQRQWDSLRUGSNLBTMFIJAT"),
+                    (M, "BCGDENLQRQWDSLRUGSNLBTMFIJAV")):
+        c.ck("rune %s is %s" % (str(n)[:12], want), call("cwRuneName", [str(n)]), want)
+    c.refuses("a rune past 2^128 - 1", lambda: call("cwRuneName", [str(M + 1)]))
+    for bits, want in ((1, "A.AAA"), (3, "A.A.AA"), (2, "AA.AA"), (7, "A.A.A.A"), (8, "AAAA")):
+        c.ck("spacers %d on AAAA" % bits, call("cwRuneSpaced", ["AAAA", str(bits)]), want)
+    for div, want in ((0, "1234"), (1, "123.4"), (2, "12.34"), (3, "1.234"), (5, "0.01234")):
+        c.ck("1234 at divisibility %d" % div, call("cwRuneAmountText", ["1234", div]), want)
+    c.ck("a whole amount drops its zero fraction", call("cwRuneAmountText", ["1000", 3]), "1")
+    c.ck("and a fraction drops its trailing zeros", call("cwRuneAmountText", ["1500", 3]), "1.5")
+    # decimal strings
+    c.ck("decimal multiply-add", call("cwDecMulAdd", ["99999999999999999999", 128, 127]),
+         str(99999999999999999999 * 128 + 127))
+    d = call("cwDecDivMod", [str(M), 26])
+    c.ck("decimal divmod", (d["q"], LCS._n(d["r"])), (str(M // 26), M % 26))
+    c.ck("decimal add", call("cwDecAdd", [str(M), "1"]), str(M + 1))
+    c.ck("decimal subtract one", call("cwDecSub1", ["1000000000000000000000"]),
+         "999999999999999999999")
+    c.ck("decimal compare", [LCS._n(call("cwDecCompare", [a, b]))
+                              for a, b in (("9", "10"), ("10", "9"), ("0010", "10"))], [-1, 1, 0])
+    # LEB128
+    for n in (0, 1, 127, 128, 300, 2 ** 64, M):
+        enc = REF.leb128_encode(n).hex()
+        c.ck("LEB128 encodes %s" % str(n)[:12], call("cwLeb128Encode", [str(n)]), enc)
+        d = call("cwLeb128Decode", [enc, 1])
+        c.ck("and decodes back", (d["value"], d["flaw"]), (str(n), ""))
+    c.ck("2^128 - 1 is 19 bytes", len(REF.leb128_encode(M)), 19)
+    c.ck("a truncated varint is flagged", call("cwLeb128Decode", ["80", 1])["flaw"], "truncated")
+    c.ck("a 20-byte varint is overlong", call("cwLeb128Decode", ["80" * 19 + "01", 1])["flaw"],
+         "overlong")
+    c.ck("2^128 is an overflow",
+         call("cwLeb128Decode", [REF.leb128_encode(M + 1).hex(), 1])["flaw"], "overflow")
+    # the tag table, on the reference's all-tags etching
+    T = REF.RUNE_TAGS
+    ints = [T["flags"], 0b111, T["rune"], 4, T["divisibility"], 1, T["spacers"], 5,
+            T["symbol"], ord("a"), T["offsetend"], 2, T["amount"], 3, T["premine"], 8,
+            T["cap"], 9, T["pointer"], 0, T["mint"], 1, T["mint"], 1, T["body"], 1, 1, 2, 0]
+    spk = REF.runestone_script(ints).hex()
+    r = call("cwRunestoneDecode", [spk, 2])
+    o = REF.runestone_decode(bytes.fromhex(spk), 2)
+    e = r["etching"]
+    c.true("an etching with every tag is a runestone", r["runestone"])
+    c.ck("and not a cenotaph", r["cenotaph"] is True or r["cenotaph"] == "true", False)
+    c.ck("its rune", (e["rune"], e["name"]), ("4", "E"))
+    c.ck("divisibility, spacers, symbol", [LCS._n(e[k]) for k in ("divisibility", "spacers", "symbol")],
+         [1, 5, ord("a")])
+    c.ck("premine and turbo", (e["premine"], e["turbo"] is True or e["turbo"] == "true"), ("8", True))
+    c.ck("terms", [e["terms"][k] for k in ("amount", "cap", "offsetend", "heightstart")],
+         ["3", "9", "2", ""])
+    c.ck("mint and pointer", (r["mint"], LCS._n(r["pointer"])), ("1:1", 0))
+    ed = unlst(r["edicts"])
+    c.ck("one edict", [(x["block"], x["tx"], x["amount"], LCS._n(x["output"])) for x in ed],
+         [("1", "1", "2", 0)])
+    c.ck("the oracle reads the same", [(x["block"], x["tx"], x["amount"], x["output"])
+                                       for x in o["edicts"]], [("1", "1", "2", 0)])
+    # delta-encoded edicts, the specification's worked example
+    ints = [T["body"], 10, 5, 5, 1, 0, 0, 10, 3, 0, 2, 1, 8, 40, 1, 25, 4]
+    r = call("cwRunestoneDecode", [REF.runestone_script(ints).hex(), 9])
+    got = [(x["block"], x["tx"], x["amount"], LCS._n(x["output"])) for x in unlst(r["edicts"])]
+    c.ck("delta-encoded edicts decode to the specification's table", got,
+         [("10", "5", "5", 1), ("10", "5", "10", 3), ("10", "7", "1", 8), ("50", "1", "25", 4)])
+    c.ck("and no etching, mint or pointer", (r["etching"], r["mint"], r["pointer"]), ("", "", ""))
+    # the reference's multiple-edicts case
+    r = call("cwRunestoneDecode", [REF.runestone_script([T["body"], 1, 1, 2, 0, 0, 3, 5, 0]).hex(), 1])
+    c.ck("two edicts, the second by tx delta",
+         [(x["block"], x["tx"], x["amount"]) for x in unlst(r["edicts"])],
+         [("1", "1", "2"), ("1", "4", "5")])
+    # min and max runes are not cenotaphs
+    for n in (0, M):
+        r = call("cwRunestoneDecode", [REF.runestone_script([T["flags"], 1, T["rune"], n]).hex(), 1])
+        c.ck("rune %s etches cleanly" % str(n)[:8],
+             (r["etching"]["name"], r["cenotaph"] is True or r["cenotaph"] == "true"),
+             (REF.rune_name(n), False))
+    # an empty runestone, and a payload split across pushes
+    r = call("cwRunestoneDecode", ["6a5d", 1])
+    c.ck("an empty runestone is one, with nothing in it",
+         (r["runestone"] is True or r["runestone"] == "true", unlst(r["edicts"]), r["etching"]),
+         (True, [], ""))
+    payload = b"".join(REF.leb128_encode(i) for i in [T["flags"], 1, T["rune"], 26])
+    r = call("cwRunestoneDecode", [REF.runestone_script(None, [payload[:1], payload[1:]]).hex(), 1])
+    c.ck("pushes are concatenated into one payload", r["etching"]["name"], "AA")
+    # odd tags are ignored, even ones are not
+    r = call("cwRunestoneDecode", [REF.runestone_script([T["nop"], 100, 129, 5, T["flags"], 1]).hex(), 1])
+    c.ck("unrecognized odd tags are ignored", r["cenotaph"] is True or r["cenotaph"] == "true", False)
+    r = call("cwRunestoneDecode", [REF.runestone_script([T["divisibility"], 1, T["divisibility"], 2,
+                                                          T["flags"], 1]).hex(), 1])
+    c.ck("a duplicate odd tag keeps its first value", LCS._n(r["etching"]["divisibility"]), 1)
+    # the cenotaph rules, each by name
+    for label, spk, want in (
+            ("an unrecognized even tag", REF.runestone_script([T["cenotaph"], 0]), "unrecognized even tag"),
+            ("an unrecognized flag", REF.runestone_script([T["flags"], 1 << 127 | 1]), "unrecognized flag"),
+            ("a tag with no value", REF.runestone_script([T["flags"]]), "truncated field"),
+            ("trailing integers after the edicts", REF.runestone_script([T["body"], 1, 1, 2, 0, 5]),
+             "trailing integers"),
+            ("an edict output past the outputs", REF.runestone_script([T["body"], 1, 1, 2, 3]), "edict output"),
+            ("a rune id with block zero and nonzero tx", REF.runestone_script([T["body"], 0, 1, 2, 0]),
+             "edict rune id"),
+            ("an overflowing edict id", REF.runestone_script([T["body"], M, 1, 2, 0, 1, 1, 1, 0]),
+             "edict rune id"),
+            ("a pointer past the outputs", REF.runestone_script([T["pointer"], 2]), "pointer"),
+            ("a mint id with block zero", REF.runestone_script([T["mint"], 0, T["mint"], 1]), "mint rune id"),
+            ("a truncated varint", b"\x6a\x5d" + REF.push(b"\x80"), "varint"),
+            ("a non-push opcode after the magic", b"\x6a\x5d\x51", "opcode"),
+            ("an etching field without the flag", REF.runestone_script([T["rune"], 4]),
+             "unrecognized even tag"),
+            ("a terms field without the flag", REF.runestone_script([T["flags"], 1, T["cap"], 4]),
+             "unrecognized even tag")):
+        r = call("cwRunestoneDecode", [spk.hex(), 2])
+        c.ck("%s is a cenotaph" % label,
+             (r["cenotaph"] is True or r["cenotaph"] == "true", unlst(r["flaws"])[:1]), (True, [want]))
+        c.ck("and the oracle agrees", REF.runestone_decode(spk, 2)["flaws"][:1], [want])
+    r = call("cwRunestoneDecode", [REF.runestone_script([T["flags"], 1, T["divisibility"], 39,
+                                                          T["symbol"], 0x110000, T["spacers"], 1 << 27]).hex(), 1])
+    c.ck("out-of-range divisibility, symbol and spacers are ignored, not cenotaphs",
+         (r["cenotaph"] is True or r["cenotaph"] == "true",
+          r["etching"]["divisibility"], r["etching"]["symbol"], r["etching"]["spacers"]),
+         (False, "", "", ""))
+    c.ck("an ordinary OP_RETURN is not a runestone",
+         call("cwRunestoneDecode", [REF.spk_op_return(b"hi").hex(), 1])["runestone"] in (True, "true"),
+         False)
+    c.ck("an edict naming the output count means all outputs",
+         call("cwRunestoneDecode", [REF.runestone_script([T["body"], 1, 1, 2, 2]).hex(), 2])["cenotaph"]
+         in (True, "true"), False)
+
+
+def check_tapscript(c, ip):
+    """One-leaf tapscript for inscriptions (2026-09-04): the leaf hash with a
+    real compact size, the ord envelope, the commit (tweak, control block,
+    script), the script-path sighash against the oracle, and a reveal whose
+    witness the wallet's own inscription reader parses back."""
+    call = ip.call
+    c.note("\nTapscript, one leaf: inscriptions by commit and reveal")
+    master_py = CR.bip32_master(CR.bip39_seed(TEST_MNEMONIC, ""))
+    node = CR.bip32_path(master_py, "m/86'/0'/0'/0/0")
+    xonly = node["pubkey"][1:]
+    c.ck("a short leaf hashes as coinxt's own leaf hash",
+         call("cwTapLeafHash", ["51"]), CR.tap_leaf_hash(0xC0, b"\x51").hex())
+    long_script = b"\x51" * 600
+    c.ck("a 600-byte leaf hashes with a three-byte compact size",
+         call("cwTapLeafHash", [long_script.hex()]), REF.tap_leaf_hash_long(long_script).hex())
+    body = b"Hello, ordinals"
+    env = call("cwInscriptionScript", [xonly.hex(), "text/plain;charset=utf-8", body.hex()])
+    c.ck("the envelope is ord's", env, REF.inscription_script(xonly, "text/plain;charset=utf-8", body).hex())
+    big = bytes(range(256)) * 5
+    env_big = call("cwInscriptionScript", [xonly.hex(), "application/octet-stream", big.hex()])
+    c.ck("a 1280-byte body goes in three pushes of at most 520",
+         env_big, REF.inscription_script(xonly, "application/octet-stream", big).hex())
+    items = call("cwScriptItems", [env_big]).split("\n")
+    c.ck("and the script reader sees those pushes",
+         [len(x) // 2 - 3 for x in items if x.startswith("push ") and len(x) > 200], [520, 520, 240])
+    c.refuses("an empty body is refused", lambda: call("cwInscriptionScript", [xonly.hex(), "text/plain", ""]))
+    c.refuses("a missing content type is refused", lambda: call("cwInscriptionScript", [xonly.hex(), "", "00"]))
+    commit = call("cwTapCommit", [xonly.hex(), env])
+    o = REF.tap_commit(xonly, bytes.fromhex(env))
+    c.ck("the commit's leaf hash", commit["leafhash"], o["leafhash"].hex())
+    c.ck("its output key and parity", (commit["outputkey"], LCS._n(commit["parity"])),
+         (o["outputkey"].hex(), o["parity"]))
+    c.ck("its scriptPubKey", commit["script"], o["script"].hex())
+    c.ck("its control block: version|parity then the internal key, no path",
+         commit["controlblock"], o["controlblock"].hex())
+    c.ck("the commit address is a taproot address",
+         call("cwAddressKind", ["mainnet", call("cwAddressForScript", ["mainnet", commit["script"]])]), "p2tr")
+    # a reveal: one input through the leaf, one output
+    txid = "ab" * 32
+    ins = lst([call("cwTxInput", [txid, 0, 0xFFFFFFFD])])
+    out_spk = REF.spk_p2tr(CR.taproot_tweak_pubkey(CR.bip32_path(master_py, "m/86'/0'/0'/0/1")["pubkey"][1:], None)[0]).hex()
+    outs = lst([call("cwTxOutput", [9000, out_spk])])
+    digest = call("cwTapscriptSighash", [2, ins, outs, 1, 0, lst([commit["script"]]), lst([10000]), commit["leafhash"]])
+    # the script counts inputs from 1, the oracle from 0
+    want = REF.tapscript_sighash(2, [(txid, 0, 0xFFFFFFFD)], [(9000, bytes.fromhex(out_spk))], 0, 0,
+                                 [o["script"]], [10000], o["leafhash"])
+    c.ck("the script-path sighash matches the oracle", digest, want.hex())
+    sig = call("cwSignTapscript", [node["seckey"].hex(), digest, env, commit["controlblock"]])
+    wit = unlst(sig["witness"])
+    c.ck("the witness is signature, script, control block",
+         wit, [x.hex() for x in REF.sign_tapscript(node["seckey"], want, bytes.fromhex(env), o["controlblock"])])
+    c.true("and the signature verifies against the leaf's key",
+           call("cxSchnorrVerify", [to_str(xonly), to_str(want), to_str(bytes.fromhex(wit[0]))]))
+    c.ck("the reveal input's vsize", LCS._n(call("cwTapscriptInputVsize", [env])),
+         REF.tapscript_input_vsize(bytes.fromhex(env)))
+    raw = call("cwTxSerialize", [2, ins, outs, 0, lst([""]), lst([sig["witness"]])])
+    dec = REF.tx_decode(bytes.fromhex(raw))
+    c.ck("the serialized reveal decodes with that witness", dec["vin"][0].get("witness", dec["vin"][0].get("txinwitness")),
+         wit)
+    c.ck("and its vsize is what the estimate said, within a byte",
+         abs(int(dec["vsize"]) - (11 + REF.tapscript_input_vsize(bytes.fromhex(env)) + 43)) <= 1,
+         (dec["vsize"], 11 + REF.tapscript_input_vsize(bytes.fromhex(env)) + 43))
+    # ---- a timelock leaf under an unspendable key (2026-09-04) ----------
+    for n, want in ((0, "00"), (1, "51"), (16, "60"), (17, "0111"), (127, "017f"),
+                    (128, "028000"), (255, "02ff00"), (256, "020001"), (900000, "03a0bb0d"),
+                    (499999999, "04ff64cd1d")):
+        c.ck("script number %d" % n, call("cwScriptNum", [n]), want)
+        c.ck("and the oracle's", REF.script_num(n).hex(), want)
+    c.refuses("a negative script number", lambda: call("cwScriptNum", [-1]))
+    lock = call("cwTimelockScript", [900000, xonly.hex()])
+    c.ck("the timelock leaf: <height> CLTV DROP <key> CHECKSIG",
+         lock, REF.timelock_script(900000, xonly).hex())
+    c.ck("which the script reader decodes as those five items",
+         call("cwScriptItems", [lock]).split("\n")[:5],
+         ["push a0bb0d", "op 177", "op 117", "push " + xonly.hex(), "op 172"])
+    c.refuses("a height of zero", lambda: call("cwTimelockScript", [0, xonly.hex()]))
+    c.refuses("a height in the timestamp range", lambda: call("cwTimelockScript", [500000000, xonly.hex()]))
+    nums = call("cwTapCommit", [REF.SP_NUMS_H.hex(), lock])
+    o_nums = REF.tap_commit(REF.SP_NUMS_H, bytes.fromhex(lock))
+    c.ck("under the NUMS point the commit is the oracle's",
+         (nums["outputkey"], nums["controlblock"]), (o_nums["outputkey"].hex(), o_nums["controlblock"].hex()))
+    c.ck("and its control block carries the NUMS point, not a wallet key",
+         nums["controlblock"][2:], REF.SP_NUMS_H.hex())
+    # the spend: a locktime at the height, signed by the leaf's key through the leaf
+    ins_l = lst([call("cwTxInput", [txid, 1, 0xFFFFFFFD])])
+    dig_l = call("cwTapscriptSighash", [2, ins_l, outs, 1, 900000, lst([nums["script"]]), lst([10000]), nums["leafhash"]])
+    c.ck("the script-path sighash with the locktime set matches the oracle", dig_l,
+         REF.tapscript_sighash(2, [(txid, 1, 0xFFFFFFFD)], [(9000, bytes.fromhex(out_spk))], 0, 900000,
+                               [o_nums["script"]], [10000], o_nums["leafhash"]).hex())
+    c.ck("and a different locktime is a different digest",
+         call("cwTapscriptSighash", [2, ins_l, outs, 1, 899999, lst([nums["script"]]), lst([10000]), nums["leafhash"]]) == dig_l,
+         False)
+    sig_l = call("cwSignTapscript", [node["seckey"].hex(), dig_l, lock, nums["controlblock"]])
+    c.true("the leaf's key signs it", call("cxSchnorrVerify", [to_str(xonly), to_str(bytes.fromhex(dig_l)),
+                                                             to_str(bytes.fromhex(unlst(sig_l["witness"])[0]))]))
+
+
+BOLT11_VECTORS = os.path.join(MEMBER, "tests", "bolt11-vectors.json")
+
+
+def check_bolt11(c, ip):
+    """BOLT11 invoices against the specification's own examples
+    (tests/bolt11-vectors.json): every field of every valid example, the
+    recovered payee, and each invalid example refused for its stated
+    reason. Read only; the wallet cannot pay one."""
+    import json as _json
+    call = ip.call
+    c.note("\nBOLT11 Lightning invoices, decoded")
+    v = _json.load(open(BOLT11_VECTORS, encoding="utf-8"))
+    for amt, want in (("", ""), ("2500u", "250000000"), ("20m", "2000000000"), ("25m", "2500000000"),
+                      ("10m", "1000000000"), ("9678785340p", "967878534"), ("1", "100000000000"),
+                      ("2500n", "250000")):
+        c.ck("amount %r is %s msat" % (amt, want or "any"), call("cwBolt11AmountMsat", [amt]), want)
+    for amt in ("2500x", "2500000001p", "0500u", "abc", "m"):
+        c.refuses("amount %r is refused" % amt, lambda a=amt: call("cwBolt11AmountMsat", [a]))
+    c.ck("a Unix time renders as a UTC date", call("cwUnixDate", [1496314658]), "2017-06-01 10:57 UTC")
+    c.ck("and the epoch does", call("cwUnixDate", [0]), "1970-01-01 00:00 UTC")
+    c.ck("a leap day does", call("cwUnixDate", [951782400]), "2000-02-29 00:00 UTC")
+    for vec in v["valid"]:
+        title, want = vec["title"][:52], vec["expected"]
+        got = call("cwBolt11Decode", [vec["invoice"]])
+        c.ck("%s: network and amount" % title, (got["network"], got["amountmsat"]),
+             (want["network"], "" if want["amount_msat"] is None else str(want["amount_msat"])))
+        c.ck("%s: timestamp" % title, LCS._n(got["timestamp"]), want["timestamp"])
+        c.ck("%s: payment hash and secret" % title, (got["paymenthash"], got["secret"]),
+             (want["payment_hash"], want["secret"]))
+        if "description" in want:
+            c.ck("%s: description" % title, str(LCS._disp(got["description"])), want["description"])
+        if "description_hash" in want:
+            c.ck("%s: description hash" % title, got["descriptionhash"], want["description_hash"])
+        c.ck("%s: expiry and final cltv" % title, (LCS._n(got["expiry"]), LCS._n(got["cltv"])),
+             (want["expiry"], want["cltv"]))
+        c.ck("%s: fallback address" % title, got["fallback"], want.get("fallback", ""))
+        c.ck("%s: features" % title, [LCS._n(b) for b in unlst(got["features"])], want["features"])
+        c.ck("%s: metadata" % title, got["metadata"], want.get("metadata", ""))
+        routes = [[(h["pubkey"], h["channel"], LCS._n(h["feebase"]), LCS._n(h["feeppm"]), LCS._n(h["cltvdelta"]))
+                   for h in unlst(r)] for r in unlst(got["routes"])]
+        c.ck("%s: route hints" % title, routes,
+             [[(h["pubkey"], h["channel"], h["fee_base_msat"], h["fee_ppm"], h["cltv_delta"]) for h in r]
+              for r in want["routes"]])
+        c.ck("%s: the payee recovered from the signature" % title, got["payee"], want["payee"])
+        c.ck("%s: the oracle agrees" % title, REF.bolt11_decode(vec["invoice"])["payee"], want["payee"])
+    for vec in v["invalid"]:
+        title = vec["title"][:52]
+        try:
+            call("cwBolt11Decode", [vec["invoice"]])
+            c.ck("%s: refused" % title, "accepted", "refused")
+        except LCS.Thrown as exc:
+            c.ck("%s: refused, naming the reason" % title,
+                 True if vec["reason"] in str(exc.msg) else str(exc.msg)[:120], True)
+        try:
+            REF.bolt11_decode(vec["invoice"])
+            c.ck("%s: the oracle refuses too" % title, "accepted", "refused")
+        except ValueError:
+            c.ck("%s: the oracle refuses too" % title, True, True)
+    c.true("an invoice is recognised by shape", call("cwBolt11IsInvoice", [v["valid"][0]["invoice"]]))
+    c.ck("an address is not", call("cwBolt11IsInvoice", ["bc1q9vza2e8x573nczrlzms0wvx3gsqjx7vavgkx0l"]), False)
 
 
 def check_json_and_qr(c, ip):
@@ -1956,6 +2257,9 @@ def main(argv):
                 check_psbt(ck, interp)
                 check_messages(ck, interp)
                 check_silent_payments(ck, interp)
+                check_runes(ck, interp)
+                check_tapscript(ck, interp)
+                check_bolt11(ck, interp)
                 check_json_and_qr(ck, interp)
                 check_odds(ck, interp)
                 check_audit_2026_09_01(ck, interp)

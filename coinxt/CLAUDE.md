@@ -2900,3 +2900,73 @@ one entry up: the two published signatures it held were written from memory and 
 the BIP's text carries none - they live in `bip-0322/basic-test-vectors.json`, four per key, and
 those are what it holds now. Not run on an engine.
 
+### 2026-09-04, Runes, read only
+
+The reader Inspect gained is small and the reason it is small is worth keeping: a runestone is a
+handful of LEB128 varints in an OP_RETURN, but they are 128-bit, and a double-based reader would
+render a rune name or an amount wrongly without ever erroring. So wallet-core carries decimal-string
+arithmetic (multiply-add, divmod by a small number, add, subtract-one, compare) and every rune number
+stays text from the varint to the screen. The cenotaph rules are the specification's, applied in its
+order - a non-push opcode, a bad varint, a truncated field, the edict rules, the flags, the pointer,
+the even tags that need a flag they do not have - and a malformed runestone is still returned with
+its fields, as the specification requires, with the flaws named so Inspect can say what burns. The
+gate uses the reference's own test cases, mined out of ord's `rune.rs` and `runestone.rs` rather than
+invented, and a Python oracle that reads the same bytes. Nothing here writes a runestone. Not run on
+an engine.
+
+### 2026-09-04, inscriptions by commit and reveal
+
+The one-leaf script path was the last taproot capability the wallet lacked, and inscriptions are its
+most legible use: the commit hides the envelope behind a key, the reveal spends through the leaf and
+puts it on the chain. Every primitive was already in coinxt - the tweak with a merkle root, the control
+block, the script-path sighash with a leaf hash - except one, and it is the instructive gap: coinxt's
+`cxTapLeafHash` refuses scripts of 253 bytes or more because it models a one-byte compact size, and an
+inscription body is precisely the script that is longer, so wallet-core carries a leaf hash with a real
+varint and the gate checks a 600-byte leaf against the oracle's. The wallet side is ONE button with two
+phases, and the state that makes the second phase possible is an ADDRESS RECORD: the commit is appended
+to the wallet's own address list carrying its leaf script, leaf hash and control block, so sync watches
+it like any address, the coin arrives like any coin, and `waSignSpend` gained one branch that signs a
+coin through its leaf. Two consequences were designed rather than discovered. The recipe (receive index,
+type, body) is saved with the wallet and re-attached after EVERY derivation, because `waDeriveAddresses`
+rebuilds the list from scratch and a commit that vanished on a gap change would be a funded output the
+wallet had forgotten how to spend. And a commit coin funding a silent payment tweaks by the leaf hash,
+not the empty root, because BIP-352 wants the key that spends the output. The boot gate drives both
+presses on the fixture wallet, plants a coin on the commit, and rebuilds the reveal signature from the
+same key byte for byte; Inspect reads the envelope back. Not run on an engine.
+
+### 2026-09-04, coins locked until a block
+
+Once the inscription commit existed as an ADDRESS RECORD carrying a leaf, a timelock vault was a second
+recipe kind and one new leaf, and the record store was generalised rather than duplicated (`sWaLeaves`,
+kinds "inscribe" and "lock", saved as `leaf` lines). The design points are the two the record makes
+easy to get wrong. The internal key is the NUMS point, not the receive key: with the receive key there
+the lock would be a suggestion, because the key path would still spend. And a locked coin is WITHHELD
+from selection while the tip is below its height, not merely warned about, because the alternative is
+a signed transaction every node rejects - and offered from the height on, with `waBuildSpend` raising
+the locktime to the coin's height and the review saying it did; the sequence numbers the wallet already
+uses are both below 0xffffffff, which is what lets a locktime bind at all. `cwScriptNum` is the small
+piece that had to be right (minimal little-endian with a sign bit; 900000 is `a0bb0d`), and the gate
+pins its edge values against the oracle. Not run on an engine.
+
+### 2026-09-04, Lightning invoices read out
+
+Reading a BOLT11 invoice cost almost nothing because the silent-payment work had already paid for
+the expensive part: a bech32 decoder with the length cap a parameter. What was new is small and
+worth naming. The amount is in BITCOIN with a multiplier letter, and pico-bitcoin is a tenth of a
+millisatoshi, so the amount is decimal-string arithmetic with the divide-by-ten check the
+specification's "sub-millisatoshi precision" example exists for. The fields are 5-bit values whose
+byte conversions differ by ONE rule - a field drops its incomplete tail, the signed message zero-pads
+its own - and the two converters are written twice rather than parameterised so a reader sees which
+is which. The signature is coinxt's recoverable form byte for byte (64 + recovery id), so the payee
+is `cxRecover` and a compress; and when the invoice names its node key the specification wants the
+signature checked against it AND canonical, which is the only place this wallet looks at high-S. The
+vectors are the specification's examples with expected values taken from its own breakdowns, held in
+`tests/bolt11-vectors.json`; the high-S recovery example recovers to a different key than the one
+every other example signs with, which is that example's point, and the file records the key it
+recovers to rather than the one a reader might expect. Not run on an engine.
+
+The same day's offline finding, recorded here because it is the kind that hides: the vector gate's
+wiring declared `cxEcdh`'s output as 32 bytes where the native returns the 65-byte point, so every
+offline ECDH had been a BADLEN refusal since the wiring was written - unnoticed because nothing in
+the gates had called it until BIP-352 did.
+
