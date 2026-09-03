@@ -1209,6 +1209,195 @@ def drive(c, ip, world, sandbox):
     utx.pop(str(n_u)); utx["n"] = n_u - 1
     ip.globals["swautxos"] = utx
 
+    # ---- what the wallet just did: a broadcast is remembered (2026-09-03) --
+    #
+    # The engine log of 2026-09-03 built a silent payment and, a minute later
+    # with no sync between, the funding of an inscription commit - and the
+    # second spent the first one's input, because the coin list was the last
+    # sync's. The server took the first and refused the second as a
+    # replacement paying nothing extra. A broadcast the backend ACCEPTS now
+    # marks its inputs as spent (waNoteBroadcast): the selector, the CPFP coin
+    # finder and the balance skip a marked coin, the Coins screen shows SPT,
+    # and the outputs that come back to this wallet are coins at 0
+    # confirmations. The backend's next word on an address outranks all of
+    # it, and a replacement voids the coins added from what it replaced. The
+    # same log's Bump on the wallet's own note transaction asked the server
+    # for bytes the spend record already held; that is pinned here too.
+    import copy as _copy
+    saved_utx = _copy.deepcopy(ip.globals.get("swautxos"))
+    saved_spent = _copy.deepcopy(ip.globals.get("swaspentby"))
+    saved_hist = _copy.deepcopy(ip.globals.get("swahistory"))
+    saved_backend = ip.globals.get("swabackend")
+
+    def _coins(lst):
+        n = int(LCS._n((lst or {}).get("n", 0)))
+        return [lst[str(i)] for i in range(1, n + 1)]
+
+    def _keys(lst):
+        return {(str(r["txid"]), int(LCS._n(r["vout"]))) for r in _coins(lst)}
+
+    put_field("sd_to", "%s,0.0005" % first)
+    put_field("sd_rate", "2")
+    click(ip, world, "sd_sign")
+    raw1 = str(ip.globals.get("swalastraw", ""))
+    c.ck("a spend signs for the broadcast-memory leg", len(raw1) > 200, "%d hex chars" % len(raw1))
+    if len(raw1) > 200:
+        d1 = REF.tx_decode(bytes.fromhex(raw1))
+        ins1 = [(v["txid"], v["vout"]) for v in d1["vin"]]
+        n_before = len(_coins(ip.call("waSpendableCoins", [])))
+        conf_before = sum(int(LCS._n(r["value"])) for r in _coins(saved_utx)
+                          if int(LCS._n(r["confirmations"])) > 0)
+        pend_before = sum(int(LCS._n(r["value"])) for r in _coins(saved_utx)
+                          if int(LCS._n(r["confirmations"])) == 0)
+        spent_conf = sum(int(LCS._n(r["value"])) for r in _coins(saved_utx)
+                         if int(LCS._n(r["confirmations"])) > 0
+                         and (str(r["txid"]), int(LCS._n(r["vout"]))) in set(ins1))
+        spent_pend = sum(int(LCS._n(r["value"])) for r in _coins(saved_utx)
+                         if int(LCS._n(r["confirmations"])) == 0
+                         and (str(r["txid"]), int(LCS._n(r["vout"]))) in set(ins1))
+        ip.globals["swabackend"] = "electrum-clear"
+        ip.globals["swainflight"] = {"kind": "broadcast", "arg": raw1, "id": "71"}
+        ip.call("waNetApply", ["broadcast", raw1,
+                               '{"jsonrpc":"2.0","id":71,"result":"%s"}' % d1["txid"], "71"])
+        marks = ip.globals.get("swaspentby") or {}
+        c.ck("an accepted broadcast marks every input it spent, by outpoint",
+             all(str(marks.get("%s:%d" % (t, v), "")) == d1["txid"] for t, v in ins1),
+             repr({k: str(v)[:12] for k, v in marks.items()}))
+        after = ip.call("waSpendableCoins", [])
+        offered = _keys(after)
+        c.ck("and the selector is no longer offered those coins",
+             not (offered & set(ins1)), repr(sorted(offered & set(ins1))))
+        first_spk = REF.spk_for_address("testnet", first).hex()
+        chg = [(i, o) for i, o in enumerate(d1["vout"]) if o["scriptpubkey"] != first_spk]
+        c.eq("the spend had one change output", len(chg), 1)
+        if chg:
+            ci, co = chg[0]
+            c.ck("which is now a coin of this wallet at 0 confirmations",
+                 any(str(r["txid"]) == d1["txid"] and int(LCS._n(r["vout"])) == ci
+                     and int(LCS._n(r["confirmations"])) == 0
+                     and int(LCS._n(r["value"])) == int(co["value"])
+                     and ip.call("waIsMine", [str(r["address"])]) is True
+                     for r in _coins(after)),
+                 repr(sorted(offered)))
+        c.eq("so the offered count moved by the inputs spent and the change made",
+             len(offered), n_before - len(ins1) + len(chg))
+        log = _fld(world, "lg_text")
+        c.ck("and the log says what was spent and what came back",
+             ("spent %d coin(s)" % len(ins1)) in log and "came back" in log, repr(log[-200:]))
+        bal = ip.globals.get("swabalance") or {}
+        c.eq("the confirmed balance no longer counts the spent coins",
+             int(LCS._n(bal.get("confirmed", 0))), conf_before - spent_conf)
+        c.eq("and the change is counted as pending",
+             int(LCS._n(bal.get("unconfirmed", 0))),
+             pend_before - spent_pend + sum(int(o["value"]) for _, o in chg))
+        click(ip, world, "nv_cn")
+        tbl = _fld(world, "cn_table")
+        c.ck("the Coins screen marks each spent coin SPT",
+             all(any("SPT" in ln and t[:20] in ln for ln in tbl.split("\n")) for t, v in ins1),
+             repr(tbl[:300]))
+        c.ck("and explains the mark", "SPT marks a coin" in _fld(world, "cn_detail"), "")
+        # a second spend a moment later, with no sync between
+        click(ip, world, "nv_sd")
+        put_field("sd_to", "%s,0.0005" % first)
+        click(ip, world, "sd_sign")
+        raw2 = str(ip.globals.get("swalastraw", ""))
+        if len(raw2) > 200:
+            d2 = REF.tx_decode(bytes.fromhex(raw2))
+            ins2 = [(v["txid"], v["vout"]) for v in d2["vin"]]
+            c.ck("a second spend a moment later reuses none of the first one's inputs",
+                 not (set(ins1) & set(ins2)), repr(sorted(set(ins1) & set(ins2))))
+        else:
+            c.ck("a second spend a moment later signs", False, _fld(world, "sd_out")[:160])
+        # CPFP on the wallet's own transaction prices from the record
+        spends = ip.globals.get("swaspends") or {}
+        rec1 = spends.get(d1["txid"]) or {}
+        c.ck("the first spend is on record", bool(rec1), "")
+        if rec1:
+            old_change = rec1.get("change")
+            rec1["change"] = 0          # as if it had been built without change
+            ip.globals["swaqueue"] = {"n": 0}
+            put_field("sd_rate", "3")
+            row = {"txid": d1["txid"], "address": first, "confirmations": 0, "height": ""}
+            try:
+                ip.call("waBumpFee", [row])
+                det = _fld(world, "hs_detail")
+                q = ip.globals.get("swaqueue") or {}
+                c.ck("Bump on the wallet's own change-less transaction builds the child at once",
+                     det.startswith("CHILD PAYS FOR PARENT"), det[:80])
+                c.eq("without asking the backend for bytes the record already holds",
+                     int(LCS._n(q.get("n", 0))), 0)
+                c.ck("and prices the pair from the recorded fee",
+                     "together they pay" in det, det[:300])
+            except LCS.Thrown as exc:
+                c.ck("Bump on the wallet's own change-less transaction builds the child at once",
+                     False, str(exc.msg)[:120])
+            rec1["change"] = old_change
+            put_field("sd_rate", "2")
+        # a replacement voids what it replaced
+        last_txid = d1["txid"]
+        if rec1:
+            row_full = {"txid": d1["txid"], "confirmations": 0, "height": 0, "value": 0,
+                        "fee": int(LCS._n(rec1.get("fee", 0))),
+                        "vsize": int(LCS._n(rec1.get("vsize", 0))),
+                        "raw": raw1, "address": first}
+            put_field("sd_rate", "20")
+            try:
+                ip.call("waBumpFee", [row_full])
+                raw3 = str(ip.globals.get("swalastraw", ""))
+            except LCS.Thrown as exc:
+                raw3 = ""
+                c.ck("the replacement builds for the void leg", False, str(exc.msg)[:120])
+            put_field("sd_rate", "2")
+            if len(raw3) > 200 and raw3 != raw1:
+                d3 = REF.tx_decode(bytes.fromhex(raw3))
+                last_txid = d3["txid"]
+                ip.globals["swainflight"] = {"kind": "broadcast", "arg": raw3, "id": "72"}
+                ip.call("waNetApply", ["broadcast", raw3,
+                                       '{"jsonrpc":"2.0","id":72,"result":"%s"}' % d3["txid"], "72"])
+                marks = ip.globals.get("swaspentby") or {}
+                c.ck("an accepted replacement re-marks the inputs with its own txid",
+                     all(str(marks.get("%s:%d" % (t, v), "")) == d3["txid"]
+                         for t, v in [(x["txid"], x["vout"]) for x in d3["vin"]]),
+                     repr({k: str(v)[:12] for k, v in marks.items()}))
+                held = _keys(ip.globals.get("swautxos") or {})
+                c.ck("and voids the coins the wallet had added from the replaced transaction",
+                     not any(t == d1["txid"] for t, v in held), repr(sorted(held)))
+                c.ck("while adding the replacement's own change at 0 confirmations",
+                     any(t == d3["txid"] for t, v in held), repr(sorted(held)))
+                c.ck("and the log says which transaction replaced which",
+                     ("%s replaces %s" % (d3["txid"], d1["txid"])) in _fld(world, "lg_text"), "")
+        # the backend's word outranks the memory: a coin it still lists comes back
+        t0, v0 = ins1[0]
+        rec0 = next((r for r in _coins(saved_utx)
+                     if str(r["txid"]) == t0 and int(LCS._n(r["vout"])) == v0), None)
+        c.ck("the first input is a fixture coin", rec0 is not None, "")
+        if rec0 is not None:
+            node = ip.call("cwJsonParse", [
+                '[{"tx_hash":"%s","tx_pos":%d,"value":%d,"height":12}]'
+                % (t0, v0, int(LCS._n(rec0["value"])))])
+            ip.call("waMergeUtxos", [str(rec0["address"]), node, "electrum"])
+            marks = ip.globals.get("swaspentby") or {}
+            c.eq("a coin the backend still lists as unspent loses its mark",
+                 str(marks.get("%s:%d" % (t0, v0), "")), "")
+            c.ck("and is offered again", (t0, v0) in _keys(ip.call("waSpendableCoins", [])), "")
+            log = _fld(world, "lg_text")[-500:]
+            c.ck("with the log naming the transaction that had spent it",
+                 "offering it again" in log and last_txid in log, repr(log[-160:]))
+    # leave the wallet as this block found it
+    ip.globals["swautxos"] = saved_utx
+    if saved_spent is None:
+        ip.globals.pop("swaspentby", None)
+    else:
+        ip.globals["swaspentby"] = saved_spent
+    ip.globals["swahistory"] = saved_hist
+    ip.globals["swabackend"] = saved_backend
+    ip.globals["swainflight"] = ""
+    ip.globals["swaqueue"] = {"n": 0}
+    ip.call("waRecomputeBalance", [])
+    put_field("sd_rate", "2")
+    put_field("sd_to", "%s,0.0005" % first)
+    click(ip, world, "nv_sd")
+
     # ---- Send: the same spend as a PSBT, round-tripped through Tools -----
     click(ip, world, "sd_toPsbt")
     psbt = str(ip.globals.get("swalastpsbt", ""))

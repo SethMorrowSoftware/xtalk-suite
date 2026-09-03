@@ -3049,3 +3049,32 @@ last check. The same run showed the 9c header-notification check reading an empt
 two Electrum deliveries had no trailing newline and the line-framed receiver rightly held both in
 its buffer; the fixture now sends lines, as every server does. Not run on an engine.
 
+**The second spend reused the first one's coin (engine log, 2026-09-03).** The
+autotest script built a silent payment and, sixty seconds later with no sync
+between, the funding of an inscription commit - and the second transaction spent
+the same input as the first. The server took the first and refused the second
+with `insufficient fee, rejecting replacement`, which is exactly right: the
+wallet had chosen from a coin list that was true when the last sync answered and
+not since, and nothing in it remembered what the wallet itself had just done.
+`waNoteBroadcast` runs on every accepted broadcast now, from both transports: it
+decodes the raw it sent, marks each input as spent by that txid (`sWaSpentBy`,
+memory only), and lists each output that pays an address of ours as a coin at 0
+confirmations - so a second spend has the change to draw on. The selector, the
+CPFP coin finder and the balance skip a marked coin and the Coins screen shows
+it as SPT. The backend outranks the memory in both directions: `waMergeUtxos`
+un-marks a coin the backend still lists and says so in the log, and a
+replacement re-marks the inputs and voids the coins added from what it replaced.
+The same log's Bump on the wallet's own note transaction went the
+child-pays-for-parent way (no change to shrink) and asked the server for the
+parent's bytes, which the spend record already held; `waBumpFee` fills the size
+and the fee from the record first. The boot gate drives all of it through
+`waNetApply` with modelled acceptances. Not run on an engine.
+
+**A third failure in that log is still open: paying the vault address.** The
+autotest asked to pay 30000 sat to a freshly prepared timelock address and the
+selector answered `insufficient funds` over 451087 sat confirmed. The report was
+cut at 120 characters by the autotest itself, so what the advice said after
+"confirmed" is not in the record, and the selector clears the same pool
+headlessly. The isolated probe that pays into a vault address on the booted
+wallet is the next step, and this entry is here so the failure is not mistaken
+for the two above.

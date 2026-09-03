@@ -13754,6 +13754,7 @@ local sWaLastRaw          -- the raw transaction the Send screen produced
 local sWaSpends
 local sWaLeaves
 local sWaLastCommit, sWaLastLock, sWaLastReveal           -- list of {kind, index, type, bodyhex, height}: the one-leaf taproot outputs this wallet prepared (inscription commits, timelocks), re-attached after every derivation and saved with the wallet
+local sWaSpentBy                                            -- "txid:vout" -> the txid of the transaction THIS WALLET BROADCAST that spends it; memory only, and the mark comes off the moment the backend lists the coin as unspent again (waNoteBroadcast, waMergeUtxos)
 local sWaInspectWanted    -- the txid the History screen is waiting on bytes for
 local sWaQrCache          -- array: payload -> the BMP bytes already rendered
 local sWaCtrlByScreen     -- array: screen -> comma list of its control names
@@ -15496,6 +15497,10 @@ command waRecomputeBalance
    repeat with tI = 1 to tCount
       put sWaUtxos[tI] into tRec
       put tRec["txid"] & ":" & tRec["vout"] into tKey
+      if sWaSpentBy[tKey] is not "" then
+         -- gone, by this wallet's own hand; its change is counted as pending
+         next repeat
+      end if
       if sWaFrozen[tKey] is "true" then
          add tRec["value"] to tFrozen
       else if tRec["confirmations"] + 0 > 0 then
@@ -17261,6 +17266,13 @@ function waSpendableCoins
          next repeat
       end if
       put tRec["txid"] & ":" & tRec["vout"] into tKey
+      -- A COIN A TRANSACTION THIS WALLET BROADCAST HAS SPENT is not spendable
+      -- either, however unspent the last sync's coin list still says it is:
+      -- the second spend would be a replacement of the first paying nothing
+      -- extra, which every node refuses (waNoteBroadcast has the record).
+      if sWaSpentBy[tKey] is not "" then
+         next repeat
+      end if
       put tRec into tCoin
       put (sWaFrozen[tKey] is "true") into tCoin["frozen"]
       put (sWaSelected[tKey] is "true") into tCoin["selected"]
@@ -17419,6 +17431,121 @@ command waRecordSpend pTxid, pSel, pPays, pChange, pChangeRec, pLock, pSeq, pFee
    put tRec into sWaSpends[pTxid]
    waLog "recorded the makeup of " & pTxid & " so its fee can be bumped"
 end waRecordSpend
+
+command waNoteBroadcast pRaw, pTxid
+   -- WHAT THE WALLET JUST DID, before the backend says so. The 2026-09-03
+   -- engine log built two spends a minute apart with no sync between them,
+   -- and the second reused the first one's input: the server took the first,
+   -- refused the second as a replacement paying nothing extra ("insufficient
+   -- fee, rejecting replacement"), and the wallet had been choosing from a
+   -- coin list that was true when the sync answered and not since. A
+   -- broadcast the backend ACCEPTED is the wallet's own word that those
+   -- coins are gone, so they are marked here - waSpendableCoins, waCpfpCoins
+   -- and the balance skip a marked coin and the Coins screen shows SPT - and
+   -- every output that comes back to this wallet, the change usually, is
+   -- added as a coin at 0 confirmations, which is also what lets a
+   -- child-pays-for-parent bump find it without a sync.
+   --
+   -- THE BACKEND OUTRANKS THIS MEMORY: waMergeUtxos drops the mark from any
+   -- coin the backend still lists (the spend never reached it) and replaces
+   -- the added coins with what it says the moment the address is asked. And
+   -- A REPLACEMENT VOIDS WHAT IT REPLACES: an input already marked as spent
+   -- by a DIFFERENT transaction means that one has just been replaced, and
+   -- the coins this wallet added from its outputs will never exist, so they
+   -- go with it. Nothing here can be read on a raw transaction this wallet
+   -- cannot decode; that case is logged and the next sync puts it right.
+   local tTx, tError, tIns, tOuts, tI, tCount, tIn, tOut, tKey, tOld
+   local tAddr, tRec, tSpent, tBack, tVoided
+   try
+      put cwTxDecode(pRaw) into tTx
+   catch tError
+      waLog "could not read back the transaction just broadcast (" & tError & \
+            "); its coins will be right after the next sync"
+      exit waNoteBroadcast
+   end try
+   put tTx["inputs"] into tIns
+   put cwListCount(tIns) into tCount
+   put 0 into tSpent
+   put "" into tVoided
+   repeat with tI = 1 to tCount
+      put tIns[tI] into tIn
+      put tIn["txid"] & ":" & tIn["vout"] into tKey
+      put sWaSpentBy[tKey] into tOld
+      if tOld is not "" and tOld is not pTxid then
+         if not (tVoided contains tOld) then
+            put waCoinsNotFrom(tOld) into sWaUtxos
+            put tOld & return after tVoided
+            waLog pTxid & " replaces " & tOld & "; the coins this wallet had " & \
+                  "added from it are void"
+         end if
+      end if
+      put pTxid into sWaSpentBy[tKey]
+      add 1 to tSpent
+   end repeat
+   put tTx["outputs"] into tOuts
+   put cwListCount(tOuts) into tCount
+   put 0 into tBack
+   repeat with tI = 1 to tCount
+      put tOuts[tI] into tOut
+      put "" into tAddr
+      try
+         put cwAddressForScript(sWaNetwork, tOut["script"]) into tAddr
+      catch tError
+         -- an OP_RETURN, or a script with no address: not a coin of anyone's
+         put "" into tAddr
+      end try
+      if tAddr is "" then
+         next repeat
+      end if
+      if waIsMine(tAddr) is not true then
+         next repeat
+      end if
+      put pTxid & ":" & (tI - 1) into tKey
+      if waHoldsCoin(tKey) is true then
+         next repeat
+      end if
+      put "" into tRec
+      put pTxid into tRec["txid"]
+      put tI - 1 into tRec["vout"]
+      put tOut["value"] into tRec["value"]
+      put tAddr into tRec["address"]
+      put 0 into tRec["confirmations"]
+      put "" into tRec["height"]
+      put cwListAdd(sWaUtxos, tRec) into sWaUtxos
+      add 1 to tBack
+   end repeat
+   waLog pTxid & " spent " & tSpent & " coin(s) this wallet will not offer " & \
+         "again, and " & tBack & " output(s) came back to it as unconfirmed coin(s)"
+   waRecomputeBalance
+   waPaintNav
+end waNoteBroadcast
+
+private function waHoldsCoin pKey
+   -- Whether a coin with that outpoint is already in the list.
+   local tI, tCount, tRec
+   put cwListCount(sWaUtxos) into tCount
+   repeat with tI = 1 to tCount
+      put sWaUtxos[tI] into tRec
+      if tRec["txid"] & ":" & tRec["vout"] is pKey then
+         return true
+      end if
+   end repeat
+   return false
+end waHoldsCoin
+
+private function waCoinsNotFrom pTxid
+   -- The coin list without the outputs of one transaction.
+   local tI, tCount, tRec, tOut
+   put waEmptyList() into tOut
+   put cwListCount(sWaUtxos) into tCount
+   repeat with tI = 1 to tCount
+      put sWaUtxos[tI] into tRec
+      if tRec["txid"] is not pTxid then
+         put cwListAdd(tOut, tRec) into tOut
+      end if
+   end repeat
+   return tOut
+end waCoinsNotFrom
 
 function waLockedHeight pSel, pLock
    -- The locktime a spend of these coins needs: the given one, raised to
@@ -17931,7 +18058,9 @@ command waPaintCoins
       else
          put tRows & "[ ]" & tTab into tRows
       end if
-      if sWaFrozen[tKey] is "true" then
+      if sWaSpentBy[tKey] is not "" then
+         put "SPT" after tRows
+      else if sWaFrozen[tKey] is "true" then
          put "FRZ" after tRows
       else if waCoinLockHeight(tRec) is not "" then
          put "LCK" after tRows
@@ -17963,6 +18092,12 @@ private function waCoinsDetail
    put "FREEZING a coin keeps the selector away from it without deleting " & \
          "anything - useful for a coin whose history you would rather not " & \
          "mix with the rest, and for one you are keeping for a fee bump." & \
+         return & return after tOut
+   put "SPT marks a coin a transaction this wallet broadcast has already " & \
+         "spent. The backend has not been asked since, so the coin is still " & \
+         "listed, but it is not offered to the selector and not counted in " & \
+         "the balance; the change that came back is, at 0 confirmations. " & \
+         "The next sync of its address settles it either way." & \
          return & return after tOut
    if sWaBackend is "offline" then
       put "This wallet is OFFLINE, so it only knows the coins you have told " & \
@@ -18192,6 +18327,10 @@ function waCpfpCoins pTxid
       if sWaFrozen[tKey] is "true" then
          next repeat
       end if
+      if sWaSpentBy[tKey] is not "" then
+         -- a child already spends it; a second one would only replace the first
+         next repeat
+      end if
       put cwListAdd(tOut, tRec) into tOut
    end repeat
    return tOut
@@ -18391,6 +18530,18 @@ command waBumpFee pRec
    if cwListCount(tKids) > 0 and (tOld is "" \
          or tOld["sequence"] + 0 >= kCwSeqNoRbf or tOld["change"] + 0 <= 0 \
          or tOld["changerec"] is "") then
+      -- A TRANSACTION THIS WALLET BUILT NEEDS NO ROUND TRIP for its size or
+      -- its fee: both are in the spend record. The 2026-09-03 log asked the
+      -- backend for the bytes of the wallet's own note transaction and told
+      -- the person to press Bump again when they arrived.
+      if tOld is not "" then
+         if pRec["vsize"] is not an integer then
+            put tOld["vsize"] into pRec["vsize"]
+         end if
+         if pRec["fee"] is not an integer then
+            put tOld["fee"] into pRec["fee"]
+         end if
+      end if
       waCpfpBuild pRec, tKids
       exit waBumpFee
    end if
@@ -22548,6 +22699,7 @@ private command waElectrumApply pKind, pArg, pNode
       -- only record of its broadcast's txid was the fee-bump bookkeeping
       -- line, and the status line is not what gets pasted back.
       waLog "broadcast accepted: txid " & tText
+      waNoteBroadcast pArg, tText
       uiStatus "Broadcast. The server returned txid " & tText & ".", "ok"
       exit waElectrumApply
    end if
@@ -22771,6 +22923,7 @@ private command waNetApply pKind, pArg, pBody, pId
       -- backend did not give is the failure this whole block exists to stop.
       get waCheckedTxid(tText, "Esplora")
       waLog "broadcast accepted: txid " & tText
+      waNoteBroadcast pArg, tText
       uiStatus "Broadcast. The backend returned txid " & tText & ".", "ok"
       exit waNetApply
    end if
@@ -22781,7 +22934,7 @@ command waMergeUtxos pAddress, pNode, pShape
    -- leave every other address alone. Replacing rather than merging is what
    -- makes a spent coin disappear; merging would leave the wallet claiming a
    -- balance it no longer has.
-   local tList, tI, tCount, tRec, tItem, tHeight, tConf
+   local tList, tI, tCount, tRec, tItem, tHeight, tConf, tKey
    put waEmptyList() into tList
    put cwListCount(sWaUtxos) into tCount
    repeat with tI = 1 to tCount
@@ -22819,6 +22972,17 @@ command waMergeUtxos pAddress, pNode, pShape
          end if
          put tConf into tRec["confirmations"]
          put tHeight into tRec["height"]
+      end if
+      -- THE BACKEND'S WORD OUTRANKS THE WALLET'S MEMORY. A coin still listed
+      -- as unspent after this wallet broadcast a spend of it means the
+      -- backend has no such spend (dropped, or never seen), and holding the
+      -- coin back would hide money the network says is there - so the mark
+      -- comes off, and the log names the transaction it was.
+      put tRec["txid"] & ":" & tRec["vout"] into tKey
+      if sWaSpentBy[tKey] is not "" then
+         waLog "the backend still lists " & tKey & " as unspent, which " & \
+               sWaSpentBy[tKey] & " spent when it was broadcast; offering it again"
+         put "" into sWaSpentBy[tKey]
       end if
       put cwListAdd(tList, tRec) into tList
    end repeat
