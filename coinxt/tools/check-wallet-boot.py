@@ -3351,7 +3351,12 @@ def drive(c, ip, world, sandbox):
              all(str(rows[str(i)].get("raw", "")) == raw.lower() for i in (1, 2)),
              repr([str(rows[str(i)].get("raw", ""))[:12] for i in (1, 2)]))
         # and bytes for a DIFFERENT transaction are refused, not stored
-        other = "02000000" + raw[8:]   # a version flip changes the txid
+        # a version flip changes the txid - AWAY from whatever version the
+        # transaction has: the harness's clean pass signs a version-2
+        # transaction here, and a flip TO 2 was a no-op the wallet rightly
+        # stored (CI runs 595 to 598, "bytes of a different transaction are
+        # refused: stored", the fixture's fault and not the wallet's)
+        other = ("01000000" if raw[:8] == "02000000" else "02000000") + raw[8:]
         ip.globals["swainflight"] = {"kind": "tx", "arg": dec["txid"], "id": "13"}
         try:
             ip.call("waStoreRawTx", [dec["txid"], other])
