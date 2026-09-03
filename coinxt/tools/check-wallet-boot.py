@@ -1291,6 +1291,10 @@ def drive(c, ip, world, sandbox):
                  and '"Hello, ordinals"' in str(ip.call("waInspectRaw", [raw_r])), "")
             c.ck("and the report names the inscription id",
                  dec_r["txid"] + "i0" in out, "")
+            c.ck("the output that receives the inscription is frozen before it is seen",
+                 str((ip.globals.get("swafrozen") or {}).get(dec_r["txid"] + ":0", "")), "true")
+            c.ck("and the wallet file carries that freeze",
+                 "frozen\t%s:0" % dec_r["txid"] in str(ip.call("waSerializeWallet", [])), "")
     # the refusals
     for label, text, want in (
             ("a body without a content type is refused", "inscribe: hello", "semicolon"),

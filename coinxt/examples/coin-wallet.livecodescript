@@ -18754,6 +18754,12 @@ private command waInscribeReveal
    put tRaw into sWaLastRaw
    waRecordSpend tNew["txid"], tSel, waEmptyList(), tValue, tTo, 0, kCwSeqRbf, \
          tFee, tNew["vsize"] + 0
+   -- THE INSCRIBED SAT IS FROZEN BEFORE IT EXISTS. The reveal's first output
+   -- carries the inscription on its first sat, and a later spend that picked
+   -- it as an ordinary coin would hand the inscription to a miner as fee or
+   -- to a payee who never asked. The freeze is keyed by outpoint, so it is
+   -- in place the moment the coin is seen, and it is saved with the wallet.
+   put "true" into sWaFrozen[tNew["txid"] & ":0"]
    put "INSCRIPTION REVEAL SIGNED" & return & return into tOut
    put "  inscription " & tNew["txid"] & "i0" & return after tOut
    put "  content     " & tAddrRec["note"] & return after tOut
@@ -18765,6 +18771,10 @@ private command waInscribeReveal
          ", first sat of the first output)" & return & return after tOut
    put "The witness carries the envelope; Inspect on this transaction reads " & \
          "it back." & return & return after tOut
+   put "The output that receives it is FROZEN on the Coins screen from now, so " & \
+         "no ordinary spend can pick the inscribed sat up as a fee or a " & \
+         "payment. Unfreeze it there when you mean to move the inscription." & \
+         return & return after tOut
    put tRaw & return & return after tOut
    put "NOTHING HAS BEEN BROADCAST. The Send screen's Broadcast button will push it." after tOut
    put tOut into field "tl_out"

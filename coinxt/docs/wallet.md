@@ -444,9 +444,13 @@ reopen rebuilds it, and the report says how much to fund it with. Once the
 coin is seen, Inscribe with the box empty signs the **reveal**: one input
 spent through the leaf (the witness is the Schnorr signature by the internal
 key, the leaf script and the control block), one output to the next receive
-address, which receives the first sat and with it the inscription. Inspect
-on the reveal reads the envelope back out of its witness, which is the
-loop this wallet could already close from the other end. The pieces are
+address, which receives the first sat and with it the inscription - and
+that output is frozen on the Coins screen from the moment the reveal is
+signed, so no ordinary spend can hand the inscribed sat to a miner as fee
+or to a payee who never asked; unfreeze it when you mean to move the
+inscription. Inspect on the reveal reads the envelope back out of its
+witness, which is the loop this wallet could already close from the other
+end. The pieces are
 wallet-core's: a leaf hash with a real compact size (coinxt's stops at 252
 bytes, and an inscription body is exactly the script that exceeds it), the
 envelope in pushes of at most 520 bytes, the commit (tweak by the leaf,
