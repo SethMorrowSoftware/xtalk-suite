@@ -7683,10 +7683,38 @@ constant kCwBech32mConst = 734539939
 
 -- ---- bech32m, uncapped ------------------------------------------------------
 
+-- The exclusive-or of two 5-bit values, as a 1024-entry table of two-digit
+-- decimals: a 30-bit xor is six lookups instead of thirty bit tests, and the
+-- bech32 checksum over a 700-character invoice does thousands of them.
+constant kCwXor5 = "00010203040506070809101112131415161718192021222324252627282930310100030205040706090811101312151417161918212023222524272629283130020300010607040510110809141512131819161722232021262724253031282903020100070605041110090815141312191817162322212027262524313029280405060700010203121314150809101120212223161718192829303124252627050407060100030213121514090811102120232217161918292831302524272606070405020300011415121310110809222320211819161730312829262724250706050403020100151413121110090823222120191817163130292827262524080910111213141500010203040506072425262728293031161718192021222309081110131215140100030205040706252427262928313017161918212023221011080914151213020300010607040526272425303128291819161722232021111009081514131203020100070605042726252431302928191817162322212012131415080910110405060700010203282930312425262720212223161718191312151409081110050407060100030229283130252427262120232217161918141512131011080906070405020300013031282926272425222320211819161715141312111009080706050403020100313029282726252423222120191817161617181920212223242526272829303100010203040506070809101112131415171619182120232225242726292831300100030205040706090811101312151418191617222320212627242530312829020300010607040510110809141512131918171623222120272625243130292803020100070605041110090815141312202122231617181928293031242526270405060700010203121314150809101121202322171619182928313025242726050407060100030213121514090811102223202118191617303128292627242506070405020300011415121310110809232221201918171631302928272625240706050403020100151413121110090824252627282930311617181920212223080910111213141500010203040506072524272629283130171619182120232209081110131215140100030205040706262724253031282918191617222320211011080914151213020300010607040527262524313029281918171623222120111009081514131203020100070605042829303124252627202122231617181912131415080910110405060700010203292831302524272621202322171619181312151409081110050407060100030230312829262724252223202118191617141512131011080906070405020300013130292827262524232221201918171615141312111009080706050403020100"
+
+private function cwXor5 pA, pB
+   local tPos
+   put (pA * 32 + pB) * 2 + 1 into tPos
+   return (char tPos to (tPos + 1) of kCwXor5) + 0
+end cwXor5
+
+private function cwBitXor30 pA, pB
+   -- Bitwise exclusive-or over 30 bits, five bits at a time from the low end.
+   local tOut, tMul, tI, tA, tB
+   put 0 into tOut
+   put 1 into tMul
+   put pA into tA
+   put pB into tB
+   repeat with tI = 1 to 6
+      add cwXor5(cwIntMod(tA, 32), cwIntMod(tB, 32)) * tMul to tOut
+      put cwIntDiv(tA, 32) into tA
+      put cwIntDiv(tB, 32) into tB
+      multiply tMul by 32
+   end repeat
+   return tOut
+end cwBitXor30
+
 private function cwBech32Polymod pValues
    -- BIP-173's checksum over a LIST of 5-bit values, from arithmetic: the
-   -- state is 30 bits, so every xor is cwBitXorN at 30. The generator
-   -- constants are the BIP's, the same five coinxt carries.
+   -- state is 30 bits, so every xor is cwBitXor30. The generator constants
+   -- are the BIP's, the same five coinxt carries; the top five bits of the
+   -- state choose which of them fold in, tested low bit first.
    local tChk, tI, tCount, tTop, tBit, tGen
    put cwListNew() into tGen
    put cwListAdd(tGen, 996825010) into tGen
@@ -7698,11 +7726,12 @@ private function cwBech32Polymod pValues
    put cwListCount(pValues) into tCount
    repeat with tI = 1 to tCount
       put cwIntDiv(tChk, 33554432) into tTop
-      put cwBitXorN(cwIntMod(tChk, 33554432) * 32, pValues[tI], 30) into tChk
+      put cwBitXor30(cwIntMod(tChk, 33554432) * 32, pValues[tI]) into tChk
       repeat with tBit = 1 to 5
-         if cwIntMod(cwIntDiv(tTop, cwPow2(tBit - 1)), 2) is 1 then
-            put cwBitXorN(tChk, tGen[tBit], 30) into tChk
+         if cwIntMod(tTop, 2) is 1 then
+            put cwBitXor30(tChk, tGen[tBit]) into tChk
          end if
+         put cwIntDiv(tTop, 2) into tTop
       end repeat
    end repeat
    return tChk
@@ -7832,7 +7861,7 @@ function cwBech32EncodeLong pHrp, pValues, pSpec
    repeat with tI = 1 to 6
       put cwListAdd(tCombined, 0) into tCombined
    end repeat
-   put cwBitXorN(cwBech32Polymod(tCombined), tConst, 30) into tChk
+   put cwBitXor30(cwBech32Polymod(tCombined), tConst) into tChk
    put pHrp & "1" into tOut
    repeat with tI = 1 to tCount
       put pValues[tI] + 1 into tIdx
@@ -9350,7 +9379,7 @@ function cwBolt11Decode pInvoice
    end if
    if tOut["payee"] is not "" then
       if tOut["payee"] is not tPub then
-         throw "wallet-core: the invoice's signature does not recover to the node key it names (n)."
+         throw "wallet-core: the invoice's signature does not recover to the node key its n field names."
       end if
       put char 65 to 128 of tSig into tS
       if cwHexCompare(tS, kCwCurveHalfN) > 0 then

@@ -1874,9 +1874,9 @@ def check_tapscript(c, ip):
     dec = REF.tx_decode(bytes.fromhex(raw))
     c.ck("the serialized reveal decodes with that witness", dec["vin"][0].get("witness", dec["vin"][0].get("txinwitness")),
          wit)
+    est = 11 + REF.tapscript_input_vsize(bytes.fromhex(env)) + 43
     c.ck("and its vsize is what the estimate said, within a byte",
-         abs(int(dec["vsize"]) - (11 + REF.tapscript_input_vsize(bytes.fromhex(env)) + 43)) <= 1,
-         (dec["vsize"], 11 + REF.tapscript_input_vsize(bytes.fromhex(env)) + 43))
+         True if abs(int(dec["vsize"]) - est) <= 1 else (dec["vsize"], est), True)
     # ---- a timelock leaf under an unspendable key (2026-09-04) ----------
     for n, want in ((0, "00"), (1, "51"), (16, "60"), (17, "0111"), (127, "017f"),
                     (128, "028000"), (255, "02ff00"), (256, "020001"), (900000, "03a0bb0d"),

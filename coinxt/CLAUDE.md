@@ -2986,3 +2986,15 @@ handler, with `check-binary-freshness.py` holding rule 5, and then the receiving
 the fetched file (`receiving[*].given.key_material` and `expected.outputs`, dropped from
 `tests/bip352-sending-vectors.json` deliberately) become the gate.
 
+### 2026-09-04, the checksum got five times faster, and why that mattered to the gate
+
+The long bech32 decoder did its 30-bit xor one bit at a time (thirty tests, each two divisions),
+which was fine for a 116-character address and was not fine for a 765-character invoice, where the
+offline vector run spent twelve minutes per block on checksums. It is now six lookups in a 1024-entry
+table of 5-bit xors (`kCwXor5`, two decimal digits per entry), and the generator bits are tested by
+halving the top five bits rather than by a power-of-two per bit. Same answers on the same vectors
+(the sp address round-trips, the invoice recovers the same payee), a 585-character invoice in 14 s
+where it took the best part of a minute. The lesson is the family's usual one about the offline
+interpreter: it is where the cost of an arithmetic idiom shows up first, and a block that takes
+twelve minutes there is a gate people stop running.
+
