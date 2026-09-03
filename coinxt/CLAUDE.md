@@ -3095,3 +3095,23 @@ that server as before, and `waSetBackend` forgets the cap with the refusal. The
 boot gate's Tor section drives four requests refused to two, two refused to
 singles, and the forgetting; the section passed in isolation, 114 checks with
 the boot. Not run on an engine.
+
+**The marks moved from acceptance to queueing (the 2026-09-03 evening run).** With
+the broadcast memory in place, the autotest queued the note's fee bump, then built
+the silent payment and the commit funding one second apart - on the ORIGINAL
+note's change, because the bump was still behind Tor and its acceptance is what
+voided that change. Both children were refused by every node (`400 Bad Request`),
+and the log showed the status line and two headers, not the reason. Three
+changes: `waBroadcast` calls `waNoteBroadcast` when it QUEUES (the acceptance
+call stays, idempotent, and logs "reserved when it was queued"); `waNetFail`
+calls `waUnnoteBroadcast` on a broadcast's final failure, which hands the
+reserved coins back and drops the outputs it had added; and `waBumpFee` refuses
+to replace a transaction whose output a queued spend of ours already uses
+(`waPendingSpenderOf`), naming the child. The Tor Esplora reader now HOLDS a
+non-2xx status (`sWaHttpBad`) until the body is in and refuses with the body's
+first 240 bytes, so the reason reaches the log. The same run proved the batch
+halving (22 refused, then six lines of 11 answered) and the vault payment that
+had failed the day before went through. Both windows extend themselves now too:
+`waNextChangeOrMore` for change, after the harness's two-address prefill showed
+the change chain running out the way the receive chain had. Not run on an
+engine since.

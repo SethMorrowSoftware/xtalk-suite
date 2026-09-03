@@ -396,23 +396,37 @@ again when the server's copy arrived. Not run on an engine since.
 
 ## What the wallet remembers about a broadcast
 
-A broadcast the backend accepts is the wallet's own word about its coins,
-and since 2026-09-03 it acts on it before the next sync does. The inputs
-the transaction spent are marked (the Coins screen shows them as `SPT`),
-and a marked coin is not offered to the selector, not offered to a
+A transaction this wallet hands to the network is its own word about its
+coins, and since 2026-09-03 it acts on it from the moment the broadcast is
+QUEUED, before the next sync and before any server answers. The inputs the
+transaction spends are marked (the Coins screen shows them as `SPT`), and a
+marked coin is not offered to the selector, not offered to a
 child-pays-for-parent bump, and not counted in the balance. Every output
 that comes back to this wallet - the change, usually - is listed as a coin
 at 0 confirmations and counted as pending, so a second spend a moment later
-has the change to draw on and reuses nothing. The reason is the 2026-09-03
-engine run: a silent payment and, a minute later, the funding of an
-inscription commit spent the same input, because the coin list was still
-the last sync's, and the server took the first and refused the second as a
-replacement paying nothing extra.
+has the change to draw on and reuses nothing. A broadcast the backend
+refuses for good (after its one retry) hands the coins back and drops the
+outputs it had added, with a log line saying so. The reason is two engine
+runs on 2026-09-03: in the first, a silent payment and, a minute later, the
+funding of an inscription commit spent the same input, because the coin
+list was still the last sync's; in the second, with marks made only on
+acceptance, both were built on a change output while the fee bump that
+voided it was still queued behind Tor, and both were refused by every node.
+
+For the same reason, Bump refuses to replace a transaction whose output a
+queued or broadcast spend of this wallet already uses: the replacement makes
+different outputs, so that child would spend a coin that never exists. The
+refusal names the child and says to bump that one instead, or wait for the
+parent to confirm.
 
 The memory is subordinate to the backend. The next sync of an address
 replaces the coins at that address with what the backend lists, and a coin
 the backend still lists as unspent loses its mark and is offered again,
 with a log line naming the transaction that was supposed to have spent it.
+And a refused broadcast quotes the backend's REASON: the Tor Esplora reader
+holds a non-2xx status line until the body has arrived, so the log says
+"400 Bad Request: bad-txns-inputs-missingorspent" rather than the status
+line and two headers, which is all the 2026-09-03 evening log had to offer.
 A replacement (an RBF bump) re-marks the inputs with its own txid and drops
 the coins that had been added from the transaction it replaced. Nothing is
 saved: the marks live for the session, like the spend records. Not run on

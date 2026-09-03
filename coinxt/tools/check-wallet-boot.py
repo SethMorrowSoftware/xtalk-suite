@@ -1313,6 +1313,38 @@ def drive(c, ip, world, sandbox):
                  not (set(ins1) & set(ins2)), repr(sorted(set(ins1) & set(ins2))))
         else:
             c.ck("a second spend a moment later signs", False, _fld(world, "sd_out")[:160])
+        # RESERVED AT QUEUE TIME, RELEASED ON REFUSAL (the 2026-09-03 evening
+        # run built two spends on a change output while the bump that voided
+        # it was still queued behind Tor; both were refused by every node).
+        if len(raw2) > 200:
+            ip.globals["swaqueue"] = {"n": 0}
+            ip.globals["swainflight"] = ""
+            ip.call("waBroadcast", [])
+            marks = ip.globals.get("swaspentby") or {}
+            c.ck("queueing a broadcast reserves its inputs before any server answers",
+                 all(str(marks.get("%s:%d" % (t, v), "")) == d2["txid"] for t, v in ins2),
+                 repr({k: str(v)[:12] for k, v in marks.items()}))
+            c.ck("and lists its own outputs as coins at once",
+                 any(str(r["txid"]) == d2["txid"] for r in _coins(ip.globals.get("swautxos") or {})), "")
+            c.eq("the broadcast is queued", str((ip.globals.get("swaqueue") or {}).get("1", {}).get("kind")), "broadcast")
+            # in flight now, past its one retry, and refused for good
+            ip.globals["swaqueue"] = {"n": 0}
+            ip.globals["swainflight"] = {"kind": "broadcast", "arg": raw2, "id": "73", "retried": "true"}
+            ip.call("waNetFail", ["the backend answered HTTP/1.1 400 Bad Request: bad-txns-inputs-missingorspent"])
+            marks = ip.globals.get("swaspentby") or {}
+            c.ck("a refused broadcast hands its coins back",
+                 all(str(marks.get("%s:%d" % (t, v), "")) == "" for t, v in ins2),
+                 repr({k: str(v)[:12] for k, v in marks.items()}))
+            c.ck("and drops the coins it had added",
+                 not any(str(r["txid"]) == d2["txid"] for r in _coins(ip.globals.get("swautxos") or {})), "")
+            c.ck("and the log says so",
+                 "coin(s) it had reserved are offered again" in _fld(world, "lg_text"), "")
+            c.ck("and the first spend's marks are untouched",
+                 all(str(marks.get("%s:%d" % (t, v), "")) == d1["txid"] for t, v in ins1),
+                 repr({k: str(v)[:12] for k, v in marks.items()}))
+            ip.globals["swasyncfailures"] = 0
+            ip.globals["swanetstate"] = "idle"
+            ip.globals["swainflight"] = ""
         # CPFP on the wallet's own transaction prices from the record
         spends = ip.globals.get("swaspends") or {}
         rec1 = spends.get(d1["txid"]) or {}
@@ -1337,6 +1369,27 @@ def drive(c, ip, world, sandbox):
                 c.ck("Bump on the wallet's own change-less transaction builds the child at once",
                      False, str(exc.msg)[:120])
             rec1["change"] = old_change
+            put_field("sd_rate", "2")
+        # a parent whose output a pending spend of ours uses is not replaced
+        if rec1 and chg:
+            marks = ip.globals.get("swaspentby") or {}
+            key_c = "%s:%d" % (d1["txid"], chg[0][0])
+            marks[key_c] = "ff" * 32
+            ip.globals["swaspentby"] = marks
+            row_full = {"txid": d1["txid"], "confirmations": 0, "height": 0, "value": 0,
+                        "fee": int(LCS._n(rec1.get("fee", 0))),
+                        "vsize": int(LCS._n(rec1.get("vsize", 0))),
+                        "raw": raw1, "address": first}
+            put_field("sd_rate", "20")
+            try:
+                ip.call("waBumpFee", [row_full])
+                c.ck("a parent whose change a queued spend uses is not replaced", False, "replaced")
+            except LCS.Thrown as exc:
+                c.ck("a parent whose change a queued spend uses is not replaced",
+                     "already spent by ff" in str(exc.msg) and "Bump the child" in str(exc.msg),
+                     str(exc.msg)[:160])
+            marks[key_c] = ""
+            ip.globals["swaspentby"] = marks
             put_field("sd_rate", "2")
         # a replacement voids what it replaced
         last_txid = d1["txid"]
