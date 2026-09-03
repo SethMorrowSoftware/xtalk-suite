@@ -2347,8 +2347,13 @@ def main(argv):
     # THE COMPILER-FREE FLOOR IS THE CONSTANTS TIER'S OWN SIZE. It read 60
     # for a larger tier that has since shrunk, so the no-compiler path could
     # not pass at all: it ran its 35 checks and then reported a collapse that
-    # had not happened. A floor that no run can clear is not a floor.
-    floor = 30 if cc is None else 400
+    # had not happened. A floor that no run can clear is not a floor - and a
+    # floor the tier can clear with a third of itself missing is not one
+    # either: it stayed at 30 while the tier grew to 58 (2026-09-04), so
+    # the 22 checks added that day could all have stopped running under it.
+    # Fifty catches that; the full run is over a thousand checks now and
+    # 900 catches the loss of any of its blocks.
+    floor = 50 if cc is None else 900
     if c.count < floor:
         print("check-wallet-vectors: FAILED - only %d checks ran, expected at least "
               "%d. Something stopped the vector set early." % (c.count, floor))
