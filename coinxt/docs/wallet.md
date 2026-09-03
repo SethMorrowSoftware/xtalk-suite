@@ -97,7 +97,10 @@ to the chain - sized, selected for, reviewed, signed and fee-bumped like any
 other output; one per transaction, because a second is what most nodes refuse
 to relay, and anything over eighty bytes is warned about for the same reason.
 Inspect reads such outputs back as text, and reads an Ordinals inscription
-(content type, size, body) out of any witness that carries one.
+(content type, size, body) out of any witness that carries one. A BIP-352
+silent payment address (`sp1...`, `tsp1...`) goes on a line like any other
+since the same day; its taproot output is derived from the coins chosen to
+fund it, so it is signed here, never as a PSBT (the section below).
 
 **Coins.** The UTXO set with freeze and thaw, ticking for manual selection, and
 a hand-entry path so an offline wallet can be told what it owns.
@@ -337,6 +340,21 @@ the carry, the restore, the button and the menu route - is gated headlessly;
 the swap itself (`set the script of this stack` from inside one of that
 script's own handlers) is engine work and has not run on an engine.
 
+## Signed messages, in both formats
+
+The Tools screen signs in the 2011 format (the header that names the key's
+shape, the one Electrum and every explorer read) for legacy, nested and
+native SegWit addresses, and since 2026-09-04 in **BIP-322** as well: always
+for taproot, which the 2011 format cannot express, and for native SegWit
+when the box beside Verify is ticked. BIP-322 proves an address by SPENDING
+it - a virtual transaction pays the message's tagged hash to the address, a
+second one spends that output to OP_RETURN, and the signature is the second
+one's witness, base64 - so a verifier checks it the way a node would. Verify
+reads the format off the signature (the 2011 form is exactly 65 bytes; a
+witness stack never is). The vector gate holds the BIP's published message
+hashes, to_spend txids and signatures for its test key, and both shapes
+against the reference byte for byte. Not run on an engine.
+
 ## Child pays for parent
 
 The History screen's Bump button replaces a transaction when it can (BIP-125,
@@ -352,6 +370,41 @@ from the weight Esplora reports); its fee is known only where the backend
 says it, and when it is not the child pays for both sizes in full and says
 so. The child signals RBF so a rate that proves too low can be raised. Not
 run on an engine.
+
+## Silent payments, the sending side
+
+Since 2026-09-04 the Pay-to box takes a **BIP-352 silent payment address**
+(`sp1...` on mainnet, `tsp1...` on the test networks) on a line like any
+other. Such an address is two public keys, not a script: the output that
+actually receives the coins is a taproot output derived from the private
+keys of the coins that fund the transaction and its smallest outpoint, so
+paying the same address twice lands on two unrelated outputs and only the
+payee's scan key can find either. That shape decides what the wallet does.
+The parser keeps the two keys and gives the line a taproot kind, which is
+all the sizer and the dust rule need; coin selection runs as usual; and
+only then, with the inputs known, is the output derived (a taproot input's
+key is the tweaked one, negated to even y as the BIP says) and its script
+written into the payment. The review names the derived address, and Inspect
+shows a plain taproot output, because that is all the chain ever sees. It is
+refused where it cannot be honest: as a PSBT and from a watch-only wallet
+(there is no script to hand a signer, only a derivation only the key holder
+can repeat), and from a multisig wallet, whose P2WSH inputs take no part in
+the BIP at all. The Tools inspector explains one instead of showing a
+scriptPubKey it does not have.
+
+The derivation is wallet-core's, staged so the vector gate can hold each
+step to the BIP's published sending vectors (`tests/bip352-sending-vectors.json`,
+the published file's sending half): the address decode under the BIP's own
+1023-character waiver on bech32m, the input key sum done in hex mod n (the
+native tweak-add refuses a zero intermediate, and one of the BIP's vectors
+is exactly that), the input hash over the smallest outpoint, the shared
+secret, and the outputs with their per-scan-key counter, including the
+three refusals - no eligible input, a zero key sum, and more than 2323
+outputs to one scan key. Which inputs take part is the receiver's rule, and
+the oracle implements that side of it too, checked against the vectors'
+own input lists. Receiving - scanning the chain for payments to a scan key
+of this wallet's own - is not built; the wallet says so wherever it
+mentions the feature. Not run on an engine.
 
 ## Testnet4, and labels that travel
 

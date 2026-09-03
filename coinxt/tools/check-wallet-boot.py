@@ -885,6 +885,71 @@ def drive(c, ip, world, sandbox):
          got.startswith("text/plain;charset=utf-8, 15 bytes") and '"Hello, ordinals"' in got, got)
     c.eq("and a witness without one reads as nothing",
          str(ip.call("waInscriptionIn", [wit(["aa" * 64])])), "")
+    # ---- a silent payment, from the coins that fund it (2026-09-04) --------
+    # A BIP-352 address in the Pay-to box: the parser keeps its two keys and
+    # no script, selection picks the coins, and only then is the taproot
+    # output derived (wallet-core's cwSpSend) from those coins' private keys
+    # and the smallest outpoint. The oracle repeats the derivation from the
+    # fixture's own keys, so the output in the signed transaction is checked
+    # against what it must be, not just counted.
+    sp_scan = bytes.fromhex("0220bcfac5b99e04ad1a06ddfb016ee13582609d60b6291e98d01a9bc9a16c96d4")
+    sp_spend = bytes.fromhex("025cc9856d6f8375350e123978daac200c260cb5b5ae83106cab90484dcd8fcf36")
+    sp_addr = REF.sp_encode("testnet", sp_scan, sp_spend)
+    put_field("sd_to", "%s,0.0005" % sp_addr)
+    click(ip, world, "sd_preview")
+    out = _fld(world, "sd_out")
+    c.ck("the review names the silent payment and the taproot output it derives",
+         "SILENT PAYMENT" in out and "tb1p" in out, repr(out[:300]))
+    click(ip, world, "sd_sign")
+    raw_sp = str(ip.globals.get("swalastraw", ""))
+    c.ck("a silent payment signs", len(raw_sp) > 200, "%d hex chars" % len(raw_sp))
+    if len(raw_sp) > 200:
+        dec_sp = REF.tx_decode(bytes.fromhex(raw_sp))
+        addrs = ip.globals.get("swaaddresses") or {}
+        keys, points = [], []
+        for vin in dec_sp["vin"]:
+            points.append((vin["txid"], int(vin["vout"])))
+            idx = [i for i, u in enumerate(UTXOS, 1)
+                   if u["txid"] == vin["txid"] and u["vout"] == int(vin["vout"])]
+            rec = addrs.get(str(idx[0]), {}) if idx else {}
+            keys.append((bytes.fromhex(str(rec.get("seckey", ""))), False))
+        want_spk = REF.spk_p2tr(REF.sp_send(keys, points, [(sp_scan, sp_spend)])[0]).hex()
+        trs = [o for o in dec_sp["vout"] if o["scriptpubkey"] == want_spk]
+        c.eq("its taproot output is the one the oracle derives from the same coins",
+             len(trs), 1)
+        if trs:
+            c.eq("carrying the asked amount", int(trs[0]["value"]), 50000)
+        c.ck("and the review showed that output's address",
+             REF.address_for_spk("testnet", bytes.fromhex(want_spk)) in out, repr(out[:300]))
+        c.ck("Inspect shows it as a taproot output",
+             "p2tr" in str(ip.call("waInspectRaw", [raw_sp])).lower(), "")
+    # the refusals, each by name
+    put_field("sd_to", "%s,0.0005" % sp_addr)
+    try:
+        ip.call("waBuildSpend", [False, True])
+        c.ck("a silent payment as a PSBT is refused", False, "accepted")
+    except LCS.Thrown as exc:
+        c.ck("a silent payment as a PSBT is refused, saying why",
+             "PSBT" in str(exc.msg) and "private keys" in str(exc.msg), str(exc.msg)[:120])
+    put_field("sd_to", "sp1qqgste7k9hx0qftg6qmwlkqtwuy6cycyavzmzj85c6qdfhjdpdjtdgqjuexzk6murw"
+              "56suy3e0rd2cgqvycxttddwsvgxe2usfpxumr70xc9pkqwv,0.0005")
+    try:
+        ip.call("waParsePayments", [])
+        c.ck("a mainnet silent payment address is refused on this testnet wallet",
+             False, "accepted")
+    except LCS.Thrown as exc:
+        c.ck("a mainnet silent payment address is refused on this testnet wallet",
+             "mainnet" in str(exc.msg) and "line 1" in str(exc.msg), str(exc.msg)[:120])
+    put_field("sd_to", "%s,0.0005" % (sp_addr[:-1] + ("q" if sp_addr[-1] != "q" else "p")))
+    try:
+        ip.call("waParsePayments", [])
+        c.ck("a corrupt silent payment address is refused", False, "accepted")
+    except LCS.Thrown as exc:
+        c.ck("a corrupt silent payment address is refused",
+             "checksum" in str(exc.msg), str(exc.msg)[:120])
+    insp = str(ip.call("waValidateAddress", [sp_addr]))
+    c.ck("the Tools inspector explains a silent payment address",
+         "SILENT PAYMENT" in insp and sp_scan.hex() in insp, insp[:200])
     put_field("sd_to", "%s,0.0005" % first)
     click(ip, world, "sd_sign")
 
@@ -1118,6 +1183,44 @@ def drive(c, ip, world, sandbox):
              "final" in _fld(world, "tl_out").lower()
              or len(str(ip.globals.get("swalastraw", ""))) > 200,
              repr(_fld(world, "tl_out")[:100]))
+
+    # ---- Tools: BIP-322 on the wallet's own native-SegWit key (2026-09-04) --
+    # The box ticked, Sign produces a witness stack rather than a 65-byte
+    # header signature, Verify reads the format off the signature and
+    # answers with the shape, and a tampered message is refused.
+    cb = world.anywhere("tl_msg322")
+    c.ck("the Tools screen carries the BIP-322 box", cb is not None)
+    if cb is not None:
+        click(ip, world, "nv_tl")
+        put_field("tl_msg", "proof of keys, 2026-09-04")
+        put_field("tl_msgAddr", first)
+        cb.props["hilite"] = True
+        click(ip, world, "tl_msgSign")
+        sig322 = _fld(world, "tl_msgSig").strip()
+        import base64 as _b64
+        raw322 = _b64.b64decode(sig322) if sig322 else b""
+        c.ck("Sign with the box ticked makes a BIP-322 witness stack, not a header",
+             len(raw322) > 65 and raw322[:1] == b"\x02", "%d bytes" % len(raw322))
+        c.ck("and says which format it used", "SIGNED (BIP-322)" in _fld(world, "tl_out"))
+        click(ip, world, "tl_msgVerify")
+        c.ck("Verify reads the format off the signature and accepts it",
+             _fld(world, "tl_out").startswith("VERIFIED")
+             and "bip322-p2wpkh" in str(world.anywhere("uiStatus").content
+                                          if world.anywhere("uiStatus") else ""),
+             _fld(world, "tl_out")[:80])
+        put_field("tl_msg", "proof of keys, 2026-09-05")
+        click(ip, world, "tl_msgVerify")
+        c.ck("a changed message is NOT VERIFIED",
+             _fld(world, "tl_out").startswith("NOT VERIFIED"), _fld(world, "tl_out")[:60])
+        cb.props["hilite"] = False
+        put_field("tl_msg", "proof of keys, 2026-09-04")
+        click(ip, world, "tl_msgSign")
+        raw2011 = _b64.b64decode(_fld(world, "tl_msgSig").strip() or "AA==")
+        c.eq("with the box clear the same key signs in the 2011 format (65 bytes)",
+             len(raw2011), 65)
+        click(ip, world, "tl_msgVerify")
+        c.ck("which Verify also reads off the signature",
+             _fld(world, "tl_out").startswith("VERIFIED"), _fld(world, "tl_out")[:60])
 
     # ---- Tools: sign and verify a message, and the tamper case ----------
     click(ip, world, "nv_tl")

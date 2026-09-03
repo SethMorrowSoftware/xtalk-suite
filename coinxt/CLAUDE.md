@@ -2856,3 +2856,47 @@ it. Gated against a parent the oracle builds, so its txid and size are real: the
 that output to an address of this wallet, its fee is the pair's shortfall at the asked rate within a
 few sat, the fee-unknown case pays in full, the size-unknown case asks for the bytes and queues the
 request, and a rate that would leave dust is refused. Not run on an engine.
+
+### 2026-09-04, BIP-322 signed messages
+
+The wallet's own refusal named the gap: "Bitcoin Core signs those with BIP-322, which this wallet does
+not implement." It does now, for the two single-key shapes the 2011 format cannot or should not
+carry - taproot always, native SegWit by choice - and the design point is that BIP-322 is a SPEND: a
+virtual `to_spend` pays `tagged_hash("BIP0322-signed-message", message)` to the address, a virtual
+`to_sign` spends it to OP_RETURN, and the signature is `to_sign`'s witness stack, base64. That is why
+it cost so little: `cwBip322Digest` is `cwSighash` over two transactions the wallet already knows how
+to build, the P2WPKH witness is `cwSignInput`'s and the taproot witness is `cwSignTaproot`'s, and the
+verifier checks the witness the way a node would (key matches the program, then `cxVerify` on the
+BIP-143 digest; or `cxSchnorrVerify` on the BIP-341 digest against the output key). Three small
+pieces were new: a witness-stack encoder and decoder, a DER-to-compact converter for `cxVerify`, and
+the reader's rule that a 65-byte signature is the 2011 format and anything else is BIP-322. The
+reference gained the same four functions; both sides sign deterministically, so the vector gate
+compares signatures byte for byte, and it also holds the BIP's published message hashes, `to_spend`
+txids and signatures for its test key. Legacy and nested addresses stay 2011, which is what the world
+expects of them, and a taproot signature offered against a P2WPKH address is refused with the
+reason. Not run on an engine.
+
+### 2026-09-04, silent payments (BIP-352), sending
+
+The address is the whole design problem: `sp1...` is two public keys, and the output that pays it does
+not exist until the funding coins are chosen, because it is derived from THEIR private keys and the
+smallest outpoint. So the Send screen's record for such a line carries the keys and no script, sizing
+and selection run on its taproot kind, and `waSpResolve` fills the script in between selection and
+the outputs loop - the one place in `waBuildSpend` where the inputs are known and nothing has been
+built from the outputs yet. That is also why it is refused as a PSBT, on a watch-only wallet and on
+a multisig wallet: the first two have no key to derive with, the third has inputs the BIP excludes.
+Three things in wallet-core were decided rather than coded. The address needs bech32m under the
+BIP's own 1023-character waiver, and coinxt's decoder enforces BIP-173's 90 as it should, so
+wallet-core carries its own polymod over a list rather than loosening the library. The key sum is
+done in hex mod n by two nibble loops, because `cxSeckeyTweakAdd` refuses a zero result by design and
+the BIP's vector "intermediate sum is zero but final sum is non-zero" is precisely the chain of
+tweak-adds that would refuse half way. And the K_max refusal counts the groups BEFORE deriving,
+so the vector that asks for 2324 outputs costs nothing. The gate holds every stage to the BIP's
+published sending vectors, trimmed into `tests/bip352-sending-vectors.json` with the receiving half
+dropped and the trimming recorded in the file; which inputs take part is the receiver's rule, so the
+oracle carries the receiver-side extraction (the malleated-P2PKH window scan, the NUMS-point skip,
+the annex) and the vectors' own input lists hold IT. The same day the BIP-322 gate learned its lesson
+one entry up: the two published signatures it held were written from memory and were wrong, and
+the BIP's text carries none - they live in `bip-0322/basic-test-vectors.json`, four per key, and
+those are what it holds now. Not run on an engine.
+

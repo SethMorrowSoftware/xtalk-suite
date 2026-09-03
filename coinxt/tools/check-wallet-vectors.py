@@ -1337,6 +1337,79 @@ def check_messages(c, ip):
         bad = call("cwMsgVerify", ["mainnet", addr, "hello wallEt", sig])
         c.ck("%s: a tampered message does not" % kind,
              bad["ok"] is True or bad["ok"] == "true", False)
+    # ---- BIP-322 (2026-09-04): the hash, the virtual spend, both shapes ----
+    # The BIP's published values for the message hash and the to_spend txid
+    # come first, then the signatures against the oracle byte for byte (both
+    # sides sign deterministically), then the verifier on each, on a
+    # tampered message, on the wrong address, and on the BIP's own
+    # signatures for its test key.
+    for msg, want in (("", "c90c269c4f8fcbe6880f72a721ddfbf1914268a794cbb21cfafee13770ae19f1"),
+                      ("Hello World", "f0eb03b1a75ac6d9847f55c624a99169b5dccba2a31f5b23bea77ba270de0a7a")):
+        c.ck("BIP-322's message hash for %r, as published" % msg,
+             call("cwBip322Hash", [msg]), want)
+        c.ck("and it is the oracle's", REF.bip322_hash(msg).hex(), want)
+    bip_sk, bip_comp, bip_net = CR.wif_decode("L3VFeEujGtevx9w18HD1fhRbCH67Az2dpCymeRE1SoPK6XQtaN2k")[:3]
+    bip_pub = CR.pubkey(bip_sk)
+    bip_spk = REF.spk_p2wpkh(bip_pub)
+    bip_addr = REF.address_for_spk("mainnet", bip_spk)
+    c.ck("the BIP's test key gives the BIP's address", bip_addr,
+         "bc1q9vza2e8x573nczrlzms0wvx3gsqjx7vavgkx0l")
+    for msg, want in (("", "c5680aa69bb8d860bf82d4e9cd3504b55dde018de765a91bb566283c545a99a7"),
+                      ("Hello World", "b79d196740ad5217771c1098fc4a4b51e0535c32236c71f1ea4d61a2d603352b")):
+        c.ck("to_spend's txid for %r, as published" % msg,
+             call("cwBip322ToSpendTxid", [msg, bip_spk.hex()]), want)
+        c.ck("and the oracle's", REF.bip322_to_spend_txid(msg, bip_spk), want)
+    for msg in ("", "Hello World", "hello wallet"):
+        sig = call("cwBip322Sign", [bip_sk.hex(), msg, "p2wpkh", bip_spk.hex(), bip_pub.hex()])
+        c.ck("a P2WPKH BIP-322 signature for %r matches the oracle" % msg, sig,
+             REF.bip322_sign(bip_sk, msg, "p2wpkh", bip_spk, bip_pub))
+        v = call("cwBip322Verify", ["mainnet", bip_addr, msg, sig])
+        c.true("p2wpkh: it verifies (%r)" % msg, v["ok"])
+        c.ck("p2wpkh: and says which shape", v["kind"], "bip322-p2wpkh")
+        bad = call("cwBip322Verify", ["mainnet", bip_addr, msg + "!", sig])
+        c.ck("p2wpkh: a tampered message does not verify",
+             bad["ok"] is True or bad["ok"] == "true", False)
+    # bip-0322/basic-test-vectors.json (the BIP's own file, "simple" cases
+    # for its test key; the file prefixes each with "smp"): two signatures
+    # per message, one low-R and one not, and both must verify
+    for msg, published in (
+            ("", "AkcwRAIgM2gBAQqvZX15ZiysmKmQpDrG83avLIT492QBzLnQIxYCIBaTpOaD20qRlEylyxFSeEA2ba9YOixpX8z46TSDtS40ASECx/EgAxlkQpQ9hYjgGu6EBCPMVPwVIVJqO4XCsMvViHI="),
+            ("", "AkgwRQIhAPkJ1Q4oYS0htvyuSFHLxRQpFAY56b70UvE7Dxazen0ZAiAtZfFz1S6T6I23MWI2lK/pcNTWncuyL8UL+oMdydVgzAEhAsfxIAMZZEKUPYWI4BruhAQjzFT8FSFSajuFwrDL1Yhy"),
+            ("Hello World", "AkcwRAIgZRfIY3p7/DoVTty6YZbWS71bc5Vct9p9Fia83eRmw2QCICK/ENGfwLtptFluMGs2KsqoNSk89pO7F29zJLUx9a/sASECx/EgAxlkQpQ9hYjgGu6EBCPMVPwVIVJqO4XCsMvViHI="),
+            ("Hello World", "AkgwRQIhAOzyynlqt93lOKJr+wmmxIens//zPzl9tqIOua93wO6MAiBi5n5EyAcPScOjf1lAqIUIQtr3zKNeavYabHyR8eGhowEhAsfxIAMZZEKUPYWI4BruhAQjzFT8FSFSajuFwrDL1Yhy")):
+        v = call("cwBip322Verify", ["mainnet", bip_addr, msg, published])
+        c.true("the BIP's published signature for %r verifies" % msg, v["ok"])
+    tr = CR.bip32_path(master_py, "m/86'/0'/0'/0/0")
+    okey, _ = CR.taproot_tweak_pubkey(tr["pubkey"][1:], None)
+    tr_spk = REF.spk_p2tr(okey)
+    tr_addr = REF.address_for_spk("mainnet", tr_spk)
+    sig = call("cwBip322Sign", [tr["seckey"].hex(), "hello taproot", "p2tr", tr_spk.hex(), ""])
+    c.ck("a P2TR BIP-322 signature matches the oracle", sig,
+         REF.bip322_sign(tr["seckey"], "hello taproot", "p2tr", tr_spk))
+    v = call("cwBip322Verify", ["mainnet", tr_addr, "hello taproot", sig])
+    c.true("p2tr: it verifies", v["ok"])
+    c.ck("p2tr: and says which shape", v["kind"], "bip322-p2tr")
+    bad = call("cwBip322Verify", ["mainnet", tr_addr, "hello Taproot", sig])
+    c.ck("p2tr: a tampered message does not verify",
+         bad["ok"] is True or bad["ok"] == "true", False)
+    wrong = call("cwBip322Verify", ["mainnet", bip_addr, "hello taproot", sig])
+    c.ck("a taproot signature against a P2WPKH address is refused, with the reason",
+         "two items" in str(wrong["why"]), True)
+    for junk in ("not base64!!", "", "AAAA", "AQ=="):
+        r = call("cwBip322Verify", ["mainnet", bip_addr, "x", junk])
+        c.ck("BIP-322: %r is refused without throwing" % junk,
+             r["ok"] is True or r["ok"] == "true", False)
+    legacy_addr = REF.address_for_spk("mainnet", REF.spk_p2pkh(bip_pub))
+    r = call("cwBip322Verify", ["mainnet", legacy_addr, "x", sig])
+    c.ck("a legacy address is sent to the 2011 format", "2011" in str(r["why"]), True)
+    stack = call("cwWitnessStackEncode", [lst(["aa", "", "bb" * 300])])
+    back = call("cwWitnessStackDecode", [stack])
+    c.ck("a witness stack with an empty item and a long one round-trips",
+         unlst(back), ["aa", "", "bb" * 300])
+    r_der = call("cwDerToCompact", [CR.der_encode(1, 2 ** 255 + 7).hex()])
+    c.ck("DER to compact pads and strips as the encoding requires", r_der,
+         (1).to_bytes(32, "big").hex() + (2 ** 255 + 7).to_bytes(32, "big").hex())
+
     node = CR.bip32_path(master_py, "m/84'/0'/0'/0/0")
     addr = REF.address_for_spk("mainnet", REF.spk_p2wpkh(node["pubkey"]))
     legacy_header = call("cwMsgSign", [node["seckey"].hex(), "x", "p2pkh", True])
@@ -1414,6 +1487,183 @@ JSON_SAMPLES = [
     '{"jsonrpc":"2.0","result":["one","two"],"id":1}',
     '[]', '{}', '"just a string"', '42', 'true', 'null',
 ]
+
+
+SP_VECTORS = os.path.join(MEMBER, "tests", "bip352-sending-vectors.json")
+
+
+def check_silent_payments(c, ip):
+    """BIP-352, the sending side: the long bech32m codec, the hex scalars,
+    and every stage of the derivation against the BIP's own sending vectors
+    (tests/bip352-sending-vectors.json, the published file's sending half).
+    The receiver-side input extraction that decides which inputs take part
+    is the oracle's, and the vectors' input_pub_keys hold IT to the BIP."""
+    import json as _json
+    call = ip.call
+    c.note("\nBIP-352 silent payments, the sending side")
+    # ---- the codec, with the BIP's own waiver on BIP-173's length --------
+    v0 = _json.load(open(SP_VECTORS, encoding="utf-8"))["vectors"]
+    r0 = v0[0]["given"]["recipients"][0]
+    scan0, spend0 = bytes.fromhex(r0["scan_pub_key"]), bytes.fromhex(r0["spend_pub_key"])
+    c.ck("a 116-character silent payment address decodes past BIP-173's 90",
+         len(r0["address"]) > 90, True)
+    d = call("cwSpDecode", ["mainnet", r0["address"]])
+    c.ck("its scan key", d["scan"], r0["scan_pub_key"])
+    c.ck("its spend key", d["spend"], r0["spend_pub_key"])
+    c.ck("its version", LCS._n(d["version"]), 0)
+    c.ck("and it re-encodes to the same address",
+         call("cwSpEncode", ["mainnet", r0["scan_pub_key"], r0["spend_pub_key"]]),
+         r0["address"])
+    c.ck("the oracle encodes it the same way",
+         REF.sp_encode("mainnet", scan0, spend0), r0["address"])
+    up = r0["address"].upper()
+    c.ck("an all-uppercase address decodes",
+         call("cwSpDecode", ["mainnet", up])["scan"], r0["scan_pub_key"])
+    for net, hrp in (("testnet", "tsp"), ("signet", "tsp"), ("testnet4", "tsp"),
+                     ("regtest", "sprt"), ("mainnet", "sp")):
+        c.ck("%s's prefix is %s" % (net, hrp), call("cwSpHrp", [net]), hrp)
+        a = REF.sp_encode(net, scan0, spend0)
+        c.ck("a %s address round-trips" % net,
+             call("cwSpDecode", [net, a])["spend"], r0["spend_pub_key"])
+        c.true("and is recognised by shape", call("cwSpIsAddress", [a]))
+    c.ck("an ordinary bech32 address is not one",
+         call("cwSpIsAddress", ["bc1q9vza2e8x573nczrlzms0wvx3gsqjx7vavgkx0l"]),
+         False)
+    tsp = REF.sp_encode("testnet", scan0, spend0)
+    for label, net, text, want in (
+            ("a testnet address is refused on mainnet, naming both",
+             "mainnet", tsp, "test network"),
+            ("a mainnet address is refused on signet",
+             "signet", r0["address"], "mainnet"),
+            ("a corrupt checksum is refused",
+             "mainnet", r0["address"][:-1] + ("q" if r0["address"][-1] != "q" else "p"),
+             "checksum"),
+            ("mixed case is refused",
+             "mainnet", r0["address"][:20].upper() + r0["address"][20:], "mixes"),
+            ("version 31 is refused as reserved",
+             "mainnet", REF.sp_encode("mainnet", scan0, spend0, 31), "reserved"),
+            ("a version 0 address with 65 bytes is refused",
+             "mainnet", REF.bech32_encode_long(
+                 "sp", [0] + REF._convertbits(scan0 + spend0[:32], 8, 5, True), "bech32m"),
+             "exactly 66"),
+            ("a bech32 (not m) checksum is refused",
+             "mainnet", REF.bech32_encode_long(
+                 "sp", [0] + REF._convertbits(scan0 + spend0, 8, 5, True), "bech32"),
+             "bech32m"),
+            ("a scan key that is not a point is refused",
+             "mainnet", REF.bech32_encode_long(
+                 "sp", [0] + REF._convertbits(b"\x02" + b"\xff" * 32 + spend0, 8, 5, True),
+                 "bech32m"), "")):
+        try:
+            call("cwSpDecode", [net, text])
+            c.ck(label, "accepted", "refused")
+        except LCS.Thrown as exc:
+            c.ck(label, True if want in str(exc.msg) else str(exc.msg)[:120], True)
+    v1 = REF.bech32_encode_long(
+        "sp", [1] + REF._convertbits(scan0 + spend0 + b"\x00" * 4, 8, 5, True), "bech32m")
+    d1 = call("cwSpDecode", ["mainnet", v1])
+    c.ck("a version 1 address with more bytes decodes to its first 66",
+         (d1["scan"], d1["spend"], LCS._n(d1["version"])),
+         (r0["scan_pub_key"], r0["spend_pub_key"], 1))
+    c.refuses("a version 1 address with fewer than 66 bytes",
+              lambda: call("cwSpDecode", ["mainnet", REF.bech32_encode_long(
+                  "sp", [1] + REF._convertbits(scan0 + spend0[:20], 8, 5, True),
+                  "bech32m")]))
+    c.refuses("a 1024-character string", lambda: call(
+        "cwBech32DecodeLong", ["sp1" + "q" * 1021, 1023]))
+    # ---- scalars mod n, in hex ---------------------------------------------
+    n_hex = "%064x" % CR._N
+    one = "%064x" % 1
+    c.ck("n - 1 plus 2 wraps to 1",
+         call("cwScalarAdd", ["%064x" % (CR._N - 1), "%064x" % 2]), one)
+    c.ck("1 plus 1", call("cwScalarAdd", [one, one]), "%064x" % 2)
+    c.ck("negating 1 gives n - 1", call("cwScalarNegate", [one]), "%064x" % (CR._N - 1))
+    c.ck("negating 0 stays 0", call("cwScalarNegate", ["0" * 64]), "0" * 64)
+    for i in range(4):
+        a = CR.sha256(b"scalar a %d" % i)
+        b = CR.sha256(b"scalar b %d" % i)
+        c.ck("a random add matches the oracle (%d)" % i,
+             call("cwScalarAdd", [a.hex(), b.hex()]), REF.scalar_add(a, b).hex())
+        c.ck("a random negation matches the oracle (%d)" % i,
+             call("cwScalarNegate", [a.hex()]), REF.scalar_negate(a).hex())
+        c.ck("a value plus its negation is 0 (%d)" % i,
+             call("cwScalarAdd", [a.hex(), REF.scalar_negate(a).hex()]), "0" * 64)
+    c.refuses("a scalar at n is refused", lambda: call("cwScalarAdd", [n_hex, one]))
+    c.refuses("a 31-byte scalar is refused", lambda: call("cwScalarNegate", ["11" * 31]))
+    for kind, pub, want in (("p2tr", "", True), ("p2wpkh", "", True),
+                            ("p2sh-p2wpkh", "", True), ("p2pkh", "02" + "11" * 32, True),
+                            ("p2pkh", "04" + "11" * 64, False), ("p2wsh", "", False),
+                            ("nulldata:4", "", False)):
+        c.ck("eligibility: %s%s" % (kind, " (uncompressed)" if pub.startswith("04") else ""),
+             call("cwSpEligible", [kind, pub]), want)
+    # ---- the published sending vectors, stage by stage ---------------------
+    decoded = {}
+    for vec in v0:
+        name = vec["comment"]
+        given, expected = vec["given"], vec["expected"]
+        pubs, inputs, outpoints = [], [], []
+        for vin in given["vin"]:
+            pk = REF.sp_input_pubkey(vin)
+            outpoints.append({"txid": vin["txid"], "vout": vin["vout"]})
+            if pk is None:
+                continue
+            pubs.append(pk.hex())
+            inputs.append({"seckey": vin["private_key"],
+                           "xonly": REF._spk_kind(bytes.fromhex(vin["prevout"])) == "p2tr"})
+        c.ck("%s: the inputs that take part are the BIP's" % name,
+             pubs, expected["input_pub_keys"])
+        recipients = []
+        for r in given["recipients"]:
+            if r["address"] not in decoded:
+                d = call("cwSpDecode", ["mainnet", r["address"]])
+                decoded[r["address"]] = d
+                c.ck("%s: the address decodes to its published keys" % name,
+                     (d["scan"], d["spend"]), (r["scan_pub_key"], r["spend_pub_key"]))
+            d = decoded[r["address"]]
+            recipients += [{"scan": d["scan"], "spend": d["spend"]}] * int(r.get("count", 1))
+        if not inputs:
+            c.refuses("%s: no eligible inputs is a refusal" % name,
+                      lambda: call("cwSpInputSum", [lst(inputs)]))
+            c.ck("%s: and the BIP expects no outputs" % name, expected["outputs"], [[]])
+            continue
+        if "input_private_key_sum" not in expected:
+            c.refuses("%s: a zero key sum is a refusal" % name,
+                      lambda: call("cwSpInputSum", [lst(inputs)]))
+            c.ck("%s: and the BIP expects no outputs" % name, expected["outputs"], [[]])
+            continue
+        a = call("cwSpInputSum", [lst(inputs)])
+        c.ck("%s: the input key sum" % name, a, expected["input_private_key_sum"])
+        a_py = bytes.fromhex(expected["input_private_key_sum"])
+        pub = CR.pubkey(a_py).hex()
+        ih = call("cwSpInputHash", [lst(outpoints), pub])
+        c.ck("%s: the input hash over the smallest outpoint" % name, ih,
+             REF.sp_input_hash([(o["txid"], o["vout"]) for o in outpoints], CR.pubkey(a_py)).hex())
+        if expected["shared_secrets"][0]:
+            c.ck("%s: the shared secret" % name,
+                 call("cwSpSharedSecret", [a, ih, recipients[0]["scan"]]),
+                 expected["shared_secrets"][0])
+        if expected["outputs"] == [[]]:
+            c.refuses("%s: refused" % name,
+                      lambda: call("cwSpOutputs", [a, ih, lst(recipients)]))
+            continue
+        outs = unlst(call("cwSpOutputs", [a, ih, lst(recipients)]))
+        hit = any(sorted(outs) == sorted(alt) for alt in expected["outputs"])
+        c.ck("%s: %d output(s), one of the BIP's accepted sets" % (name, len(outs)),
+             True if hit else (outs, expected["outputs"][0]), True)
+        c.ck("%s: the oracle agrees" % name,
+             sorted(o.hex() for o in REF.sp_outputs(
+                 a_py, bytes.fromhex(ih),
+                 [(bytes.fromhex(r["scan"]), bytes.fromhex(r["spend"])) for r in recipients])),
+             sorted(outs))
+    # the one-call form the wallet uses, on the first vector
+    given = v0[0]["given"]
+    whole = unlst(call("cwSpSend", [
+        lst([{"seckey": vin["private_key"], "xonly": False} for vin in given["vin"]]),
+        lst([{"txid": vin["txid"], "vout": vin["vout"]} for vin in given["vin"]]),
+        lst([{"scan": r0["scan_pub_key"], "spend": r0["spend_pub_key"]}])]))
+    c.ck("cwSpSend does the whole derivation in one call", whole, v0[0]["expected"]["outputs"][0])
+    c.ck("and the output script is a taproot output",
+         call("cwScriptKind", [call("cwScriptP2tr", [whole[0]])]), "p2tr")
 
 
 def check_json_and_qr(c, ip):
@@ -1705,6 +1955,7 @@ def main(argv):
                 check_decode(ck, interp)
                 check_psbt(ck, interp)
                 check_messages(ck, interp)
+                check_silent_payments(ck, interp)
                 check_json_and_qr(ck, interp)
                 check_odds(ck, interp)
                 check_audit_2026_09_01(ck, interp)

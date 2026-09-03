@@ -1031,6 +1031,291 @@ def message_digest(message: str) -> bytes:
     return hash256(MSG_MAGIC + varint(len(body)) + body)
 
 
+# ---- BIP-322 (the "simple" encoding), for P2WPKH and P2TR key-path ----------
+BIP322_TAG = "BIP0322-signed-message"
+
+
+def bip322_hash(message: str) -> bytes:
+    return cr.tagged_hash(BIP322_TAG, message.encode("utf-8"))
+
+
+def bip322_to_spend_txid(message: str, spk: bytes) -> str:
+    raw = tx_serialize(0, [("00" * 32, 0xFFFFFFFF, 0)], [(0, spk)], 0,
+                       [b"\x00\x20" + bip322_hash(message)])
+    return hash256(raw)[::-1].hex()
+
+
+def bip322_digest(message: str, script_type: str, spk: bytes, pubkey=None) -> bytes:
+    ins = [(bip322_to_spend_txid(message, spk), 0, 0)]
+    outs = [(0, b"\x6a")]
+    if script_type == "p2tr":
+        return sighash_for("p2tr", 0, ins, outs, 0, 0, prev_spks=[spk],
+                           prev_amounts=[0])
+    if script_type == "p2wpkh":
+        return sighash_for("p2wpkh", 0, ins, outs, 0, 0, pubkey=pubkey, amount_sat=0)
+    raise ValueError("bip322 here covers p2wpkh and p2tr, not %r" % script_type)
+
+
+def bip322_sign(seckey: bytes, message: str, script_type: str, spk: bytes,
+                pubkey=None) -> str:
+    import base64 as _b64
+    digest = bip322_digest(message, script_type, spk, pubkey)
+    if script_type == "p2tr":
+        tweaked = cr.taproot_tweak_seckey(seckey, None)
+        items = [cr.schnorr_sign(tweaked, digest, bytes(32))]
+    else:
+        r, s, _ = cr.ecdsa_sign_recoverable(seckey, digest)
+        items = [cr.der_encode(r, s) + b"\x01", pubkey]
+    stack = varint(len(items)) + b"".join(varint(len(i)) + i for i in items)
+    return _b64.b64encode(stack).decode("ascii")
+
+
+# ---- BIP-352 silent payments, the sending side (2026-09-04) ----------------
+# The oracle for wallet-core's cwSp* handlers: the BIP's own algorithm over
+# coin_reference's curve arithmetic, plus the receiver-side input-pubkey
+# extraction the BIP's test vectors use to decide which inputs take part.
+
+SP_TAG_INPUTS = "BIP0352/Inputs"
+SP_TAG_SECRET = "BIP0352/SharedSecret"
+SP_MAX_LEN = 1023
+SP_K_MAX = 2323
+SP_NUMS_H = bytes.fromhex(
+    "50929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0")
+
+
+def sp_hrp(network: str) -> str:
+    if network == "mainnet":
+        return "sp"
+    if network == "regtest":
+        return "sprt"
+    if network in ("testnet", "testnet4", "signet"):
+        return "tsp"
+    raise ValueError("unknown network %r" % network)
+
+
+def sp_is_address(text: str) -> bool:
+    t = text.strip().lower()
+    return t.startswith("sp1") or t.startswith("tsp1") or t.startswith("sprt1")
+
+
+def bech32_decode_long(text: str, limit: int):
+    """(hrp, spec, values) with the length cap a parameter, or raise."""
+    if len(text) > limit:
+        raise ValueError("longer than %d" % limit)
+    if any(ord(x) < 33 or ord(x) > 126 for x in text):
+        raise ValueError("non-printable")
+    if text.lower() != text and text.upper() != text:
+        raise ValueError("mixed case")
+    text = text.lower()
+    pos = text.rfind("1")
+    if pos < 1 or pos + 7 > len(text):
+        raise ValueError("no separator or too short")
+    hrp, data = text[:pos], text[pos + 1:]
+    if any(ch not in cr.CHARSET for ch in data):
+        raise ValueError("bad charset")
+    values = [cr.CHARSET.find(ch) for ch in data]
+    chk = cr.bech32_polymod(cr.bech32_hrp_expand(hrp) + values)
+    if chk == 1:
+        spec = "bech32"
+    elif chk == cr.BECH32M_CONST:
+        spec = "bech32m"
+    else:
+        raise ValueError("bad checksum")
+    return hrp, spec, values[:-6]
+
+
+def bech32_encode_long(hrp: str, values, spec: str) -> str:
+    return cr.bech32_encode(hrp, list(values), spec)
+
+
+def _convertbits(data, frombits, tobits, pad):
+    acc, bits, out = 0, 0, []
+    maxv = (1 << tobits) - 1
+    for v in data:
+        acc = (acc << frombits) | v
+        bits += frombits
+        while bits >= tobits:
+            bits -= tobits
+            out.append((acc >> bits) & maxv)
+    if pad:
+        if bits:
+            out.append((acc << (tobits - bits)) & maxv)
+    elif bits >= frombits or ((acc << (tobits - bits)) & maxv):
+        raise ValueError("bad padding")
+    return out
+
+
+def sp_decode(network: str, address: str):
+    """(version, scan33, spend33) or raise, by the BIP's rules."""
+    hrp, spec, values = bech32_decode_long(address.strip(), SP_MAX_LEN)
+    if hrp != sp_hrp(network):
+        raise ValueError("hrp %s is not %s's" % (hrp, network))
+    if spec != "bech32m":
+        raise ValueError("not bech32m")
+    if not values:
+        raise ValueError("no version")
+    version = values[0]
+    if version == 31:
+        raise ValueError("version 31 is reserved")
+    payload = bytes(_convertbits(values[1:], 5, 8, False))
+    if version == 0 and len(payload) != 66:
+        raise ValueError("v0 carries 66 bytes, not %d" % len(payload))
+    if len(payload) < 66:
+        raise ValueError("fewer than 66 bytes")
+    scan, spend = payload[:33], payload[33:66]
+    for k in (scan, spend):
+        if k[0] not in (2, 3):
+            raise ValueError("not a compressed point")
+        cr._decompress(k)
+    return version, scan, spend
+
+
+def sp_encode(network: str, scan: bytes, spend: bytes, version: int = 0) -> str:
+    values = [version] + _convertbits(scan + spend, 8, 5, True)
+    return bech32_encode_long(sp_hrp(network), values, "bech32m")
+
+
+def scalar_add(a: bytes, b: bytes) -> bytes:
+    return ((int.from_bytes(a, "big") + int.from_bytes(b, "big")) % cr._N
+            ).to_bytes(32, "big")
+
+
+def scalar_negate(a: bytes) -> bytes:
+    v = int.from_bytes(a, "big")
+    return bytes(32) if v == 0 else (cr._N - v).to_bytes(32, "big")
+
+
+def sp_eligible(script_type: str, pubkey: bytes) -> bool:
+    if script_type in ("p2tr", "p2wpkh", "p2sh-p2wpkh"):
+        return True
+    if script_type == "p2pkh":
+        return len(pubkey) == 33
+    return False
+
+
+def sp_input_sum(inputs) -> bytes:
+    """inputs: [(seckey32, xonly_bool)]; the BIP's a, or raise on empty/zero."""
+    if not inputs:
+        raise ValueError("no eligible inputs")
+    total = 0
+    for sk, xonly in inputs:
+        k = int.from_bytes(sk, "big")
+        if xonly and cr._pt_mul(k)[1] % 2 == 1:
+            k = cr._N - k
+        total = (total + k) % cr._N
+    if total == 0:
+        raise ValueError("the input keys sum to zero")
+    return total.to_bytes(32, "big")
+
+
+def sp_input_hash(outpoints, sum_pubkey33: bytes) -> bytes:
+    """outpoints: [(txid_hex_display, vout)] over ALL inputs."""
+    low = min(cr.btc_outpoint(bytes.fromhex(t), v) for t, v in outpoints)
+    return cr.tagged_hash(SP_TAG_INPUTS, low + sum_pubkey33)
+
+
+def sp_shared_secret(a: bytes, input_hash: bytes, scan33: bytes) -> bytes:
+    k = (int.from_bytes(input_hash, "big") * int.from_bytes(a, "big")) % cr._N
+    if int.from_bytes(input_hash, "big") == 0 or int.from_bytes(input_hash, "big") >= cr._N:
+        raise ValueError("input hash is not a scalar")
+    return cr._compress(cr._pt_mul(k, cr._decompress(scan33)))
+
+
+def sp_outputs(a: bytes, input_hash: bytes, recipients):
+    """recipients: [(scan33, spend33)] -> [xonly32] in the same order."""
+    sizes = {}
+    for scan, _ in recipients:
+        sizes[scan] = sizes.get(scan, 0) + 1
+        if sizes[scan] > SP_K_MAX:
+            raise ValueError("more than K_max outputs to one scan key")
+    secrets, counters, out = {}, {}, []
+    for scan, spend in recipients:
+        if scan not in secrets:
+            secrets[scan] = sp_shared_secret(a, input_hash, scan)
+            counters[scan] = 0
+        t_k = cr.tagged_hash(SP_TAG_SECRET,
+                             secrets[scan] + counters[scan].to_bytes(4, "big"))
+        tk = int.from_bytes(t_k, "big")
+        if tk == 0 or tk >= cr._N:
+            raise ValueError("t_k is not a scalar")
+        point = cr._pt_add(cr._decompress(spend), cr._pt_mul(tk))
+        out.append(point[0].to_bytes(32, "big"))
+        counters[scan] += 1
+    return out
+
+
+def sp_send(inputs, outpoints, recipients):
+    a = sp_input_sum(inputs)
+    return sp_outputs(a, sp_input_hash(outpoints, cr.pubkey(a)), recipients)
+
+
+def _spk_kind(spk: bytes) -> str:
+    n = len(spk)
+    if n == 25 and spk[:3] == b"\x76\xa9\x14" and spk[23:] == b"\x88\xac":
+        return "p2pkh"
+    if n == 23 and spk[:2] == b"\xa9\x14" and spk[22:] == b"\x87":
+        return "p2sh"
+    if n == 22 and spk[:2] == b"\x00\x14":
+        return "p2wpkh"
+    if n == 34 and spk[:2] == b"\x00\x20":
+        return "p2wsh"
+    if n == 34 and spk[:2] == b"\x51\x20":
+        return "p2tr"
+    return "unknown"
+
+
+def _witness_stack(hexstr: str):
+    b = bytes.fromhex(hexstr or "")
+    if not b:
+        return []
+    n, i = _read_varint(b, 0)
+    items = []
+    for _ in range(n):
+        ln, i = _read_varint(b, i)
+        items.append(b[i:i + ln])
+        i += ln
+    return items
+
+
+def sp_input_pubkey(vin: dict):
+    """The receiver's view of one input: the public key it contributes, or
+    None if it is skipped. vin: txid, vout, scriptSig (hex), txinwitness
+    (hex, the serialized stack), prevout (spk hex). The BIP reference's
+    get_pubkey_from_input, including the malleated-P2PKH window scan."""
+    spk = bytes.fromhex(vin["prevout"])
+    ss = bytes.fromhex(vin.get("scriptSig") or "")
+    stack = _witness_stack(vin.get("txinwitness") or "")
+    kind = _spk_kind(spk)
+    if kind == "p2pkh":
+        want = spk[3:23]
+        for i in range(len(ss), 32, -1):
+            cand = ss[i - 33:i]
+            if cr.hash160(cand) == want and cand[0] in (2, 3):
+                try:
+                    cr._decompress(cand)
+                    return cand
+                except Exception:
+                    pass
+        return None
+    if kind == "p2sh":
+        redeem = ss[1:]
+        if _spk_kind(redeem) == "p2wpkh" and stack and len(stack[-1]) == 33:
+            return stack[-1]
+        return None
+    if kind == "p2wpkh":
+        if stack and len(stack[-1]) == 33:
+            return stack[-1]
+        return None
+    if kind == "p2tr":
+        if not stack:
+            return None
+        if len(stack) > 1 and stack[-1][:1] == b"\x50":
+            stack = stack[:-1]
+        if len(stack) > 1 and stack[-1][1:33] == SP_NUMS_H:
+            return None
+        return b"\x02" + spk[2:34]
+    return None
+
 def message_sign(seckey: bytes, message: str, script_type="p2pkh",
                  compressed=True) -> str:
     import base64 as _b64

@@ -4046,6 +4046,280 @@ end cwPsbtSummary
 -- common.
 -- ==============================================================================
 
+-- ---- BIP-322 signed messages (2026-09-04) ------------------------------------
+-- The 2011 format above proves a key by RECOVERING it from the signature,
+-- which only works where the address is a hash of one ECDSA key with a header
+-- to say which shape. BIP-322 proves an address by SPENDING it: a virtual
+-- "to_spend" transaction pays the message hash to the address, a virtual
+-- "to_sign" spends that output to OP_RETURN, and the signature is to_sign's
+-- witness - so any address the wallet can spend, it can sign for, taproot
+-- included, and a verifier checks the witness the way a node would. The
+-- "simple" encoding here is that witness stack, base64. Native SegWit and
+-- taproot single-key challenges are what this layer signs and verifies; the
+-- legacy and nested shapes keep the 2011 format, which is what the world
+-- expects of them.
+constant kCwBip322Tag = "BIP0322-signed-message"
+constant kCwBip322NullTxid = "0000000000000000000000000000000000000000000000000000000000000000"
+
+function cwBip322Hash pMessage
+   -- tagged_hash("BIP0322-signed-message", message): SHA-256 of the tag's
+   -- hash twice and the message, BIP-340's construction.
+   local tTag, tBody
+   put cxSha256(textEncode(kCwBip322Tag, "UTF-8")) into tTag
+   put textEncode(pMessage, "UTF-8") into tBody
+   return cxHexEncode(cxSha256(tTag & tTag & tBody))
+end cwBip322Hash
+
+function cwBip322ToSpendTxid pMessage, pScriptHex
+   -- to_spend: version 0, one input from the null outpoint (vout 0xffffffff,
+   -- sequence 0) whose scriptSig is OP_0 PUSH32 <message hash>, one output
+   -- of value 0 to the address's script, locktime 0.
+   local tIns, tOuts, tSigs
+   put cwListNew() into tIns
+   put cwListAdd(tIns, cwTxInput(kCwBip322NullTxid, 4294967295, 0)) into tIns
+   put cwListNew() into tOuts
+   put cwListAdd(tOuts, cwTxOutput(0, pScriptHex)) into tOuts
+   put cwListNew() into tSigs
+   put cwListAdd(tSigs, "0020" & cwBip322Hash(pMessage)) into tSigs
+   return cwTxid(0, tIns, tOuts, 0, tSigs)
+end cwBip322ToSpendTxid
+
+function cwBip322Digest pMessage, pScriptType, pScriptHex, pPubkeyHex
+   -- The digest to_sign's one input signs: to_sign is version 0, spends
+   -- to_spend:0 with sequence 0, pays 0 to OP_RETURN, locktime 0. The
+   -- sighash is the challenge's own - BIP-143 for P2WPKH (SIGHASH_ALL),
+   -- BIP-341 for P2TR (SIGHASH_DEFAULT) - over an output worth 0.
+   local tIns, tOuts, tSpks, tAmts
+   put cwListNew() into tIns
+   put cwListAdd(tIns, cwTxInput(cwBip322ToSpendTxid(pMessage, pScriptHex), 0, 0)) \
+         into tIns
+   put cwListNew() into tOuts
+   put cwListAdd(tOuts, cwTxOutput(0, "6a")) into tOuts
+   if pScriptType is "p2tr" then
+      put cwListNew() into tSpks
+      put cwListAdd(tSpks, pScriptHex) into tSpks
+      put cwListNew() into tAmts
+      put cwListAdd(tAmts, 0) into tAmts
+      return cwSighash("p2tr", 0, tIns, tOuts, 1, 0, "", 0, "", tSpks, tAmts)
+   end if
+   if pScriptType is "p2wpkh" then
+      return cwSighash("p2wpkh", 0, tIns, tOuts, 1, 0, pPubkeyHex, 0, "", \
+            cwListNew(), cwListNew())
+   end if
+   throw "wallet-core: cwBip322Digest: BIP-322 here covers native SegWit " & \
+         "and taproot single-key addresses, not " & pScriptType & "."
+end cwBip322Digest
+
+function cwWitnessStackEncode pItems
+   -- A witness stack on the wire: the item count, then each item with its
+   -- length, as varints. The bytes BIP-322 base64s.
+   local tOut, tI, tCount, tItem
+   put cwListCount(pItems) into tCount
+   put cxVarInt(tCount) into tOut
+   repeat with tI = 1 to tCount
+      put cxHexDecode(pItems[tI]) into tItem
+      put cxVarInt(the number of bytes of tItem) & tItem after tOut
+   end repeat
+   return tOut
+end cwWitnessStackEncode
+
+function cwWitnessStackDecode pRaw
+   -- The inverse, as a list of hex items; throws on bytes that do not frame.
+   local tPos, tEnd, tCount, tItems, tI, tLen, tByte
+   put the number of bytes of pRaw into tEnd
+   put 1 into tPos
+   put cwWitnessVarInt(pRaw, tPos) into tCount
+   put tCount["value"] into tI
+   put tCount["next"] into tPos
+   put tI into tCount
+   put cwListNew() into tItems
+   repeat with tI = 1 to tCount
+      put cwWitnessVarInt(pRaw, tPos) into tLen
+      put tLen["next"] into tPos
+      put tLen["value"] into tLen
+      if tPos + tLen - 1 > tEnd then
+         throw "wallet-core: cwWitnessStackDecode: item " & tI & " runs past " & \
+               "the end."
+      end if
+      if tLen is 0 then
+         put cwListAdd(tItems, "") into tItems
+      else
+         put cwListAdd(tItems, cxHexEncode(byte tPos to (tPos + tLen - 1) of pRaw)) \
+               into tItems
+      end if
+      add tLen to tPos
+   end repeat
+   if tPos is not tEnd + 1 then
+      throw "wallet-core: cwWitnessStackDecode: " & (tEnd + 1 - tPos) & \
+            " byte(s) follow the last item."
+   end if
+   return tItems
+end cwWitnessStackDecode
+
+private function cwWitnessVarInt pRaw, pPos
+   -- One varint at pPos (1-based, bytes): "value" and "next".
+   local tOut, tByte, tEnd
+   put the number of bytes of pRaw into tEnd
+   if pPos > tEnd then
+      throw "wallet-core: cwWitnessStackDecode: a length is missing."
+   end if
+   put byteToNum(byte pPos of pRaw) into tByte
+   if tByte < 253 then
+      put tByte into tOut["value"]
+      put pPos + 1 into tOut["next"]
+   else if tByte is 253 then
+      if pPos + 2 > tEnd then
+         throw "wallet-core: cwWitnessStackDecode: a length is cut short."
+      end if
+      put cwLeRead(byte (pPos + 1) to (pPos + 2) of pRaw) into tOut["value"]
+      put pPos + 3 into tOut["next"]
+   else if tByte is 254 then
+      if pPos + 4 > tEnd then
+         throw "wallet-core: cwWitnessStackDecode: a length is cut short."
+      end if
+      put cwLeRead(byte (pPos + 1) to (pPos + 4) of pRaw) into tOut["value"]
+      put pPos + 5 into tOut["next"]
+   else
+      throw "wallet-core: cwWitnessStackDecode: an eight-byte length is not " & \
+            "a witness this layer reads."
+   end if
+   return tOut
+end cwWitnessVarInt
+
+function cwDerToCompact pDerHex
+   -- A DER ECDSA signature (30 len 02 rlen r 02 slen s) to r || s, 32 bytes
+   -- each: what cxVerify takes. Throws on a shape that is not that.
+   local tHex, tPos, tRLen, tSLen, tR, tS
+   put cwLower(pDerHex) into tHex
+   if char 1 to 2 of tHex is not "30" or char 5 to 6 of tHex is not "02" then
+      throw "wallet-core: cwDerToCompact: not a DER signature."
+   end if
+   put cwBeRead(cxHexDecode(char 7 to 8 of tHex)) into tRLen
+   put char 9 to (8 + tRLen * 2) of tHex into tR
+   put 9 + tRLen * 2 into tPos
+   if char tPos to (tPos + 1) of tHex is not "02" then
+      throw "wallet-core: cwDerToCompact: not a DER signature (no s)."
+   end if
+   put cwBeRead(cxHexDecode(char (tPos + 2) to (tPos + 3) of tHex)) into tSLen
+   put char (tPos + 4) to (tPos + 3 + tSLen * 2) of tHex into tS
+   repeat while the number of chars of tR > 64 and char 1 to 2 of tR is "00"
+      delete char 1 to 2 of tR
+   end repeat
+   repeat while the number of chars of tS > 64 and char 1 to 2 of tS is "00"
+      delete char 1 to 2 of tS
+   end repeat
+   if the number of chars of tR > 64 or the number of chars of tS > 64 then
+      throw "wallet-core: cwDerToCompact: r or s is wider than 32 bytes."
+   end if
+   repeat while the number of chars of tR < 64
+      put "00" before tR
+   end repeat
+   repeat while the number of chars of tS < 64
+      put "00" before tS
+   end repeat
+   return tR & tS
+end cwDerToCompact
+
+function cwBip322Sign pSeckeyHex, pMessage, pScriptType, pScriptHex, pPubkeyHex
+   -- The simple signature: to_sign's witness stack, base64. P2WPKH signs
+   -- with the key's ECDSA signature and pubkey; P2TR key-path with the
+   -- tweaked key's Schnorr signature (cwSignTaproot, empty tree).
+   local tDigest, tSig
+   put cwBip322Digest(pMessage, pScriptType, pScriptHex, pPubkeyHex) into tDigest
+   if pScriptType is "p2tr" then
+      put cwSignTaproot(pSeckeyHex, tDigest, "") into tSig
+   else
+      put cwSignInput("p2wpkh", pSeckeyHex, tDigest, pPubkeyHex) into tSig
+   end if
+   return cwStripWhitespace(base64Encode(cwWitnessStackEncode(tSig["witness"])))
+end cwBip322Sign
+
+function cwBip322Verify pNetwork, pAddress, pMessage, pSigB64
+   -- Answers ok / kind / why and never throws: the address's script picks
+   -- the check, and the witness is checked the way a node would check it.
+   local tOut, tRaw, tItems, tScript, tKind, tSig, tPub, tDigest, tError, tLen
+   put false into tOut["ok"]
+   put "" into tOut["kind"]
+   put "" into tOut["why"]
+   put base64Decode(cwStripWhitespace(pSigB64)) into tRaw
+   if tRaw is empty then
+      put "the signature is not base64" into tOut["why"]
+      return tOut
+   end if
+   try
+      put cwWitnessStackDecode(tRaw) into tItems
+   catch tError
+      put "not a BIP-322 witness: " & line 1 of tError into tOut["why"]
+      return tOut
+   end try
+   try
+      put cwScriptForAddress(pNetwork, cwTrim(pAddress)) into tScript
+   catch tError
+      put line 1 of tError into tOut["why"]
+      return tOut
+   end try
+   put cwScriptKind(tScript) into tKind
+   put "bip322-" & tKind into tOut["kind"]
+   if tKind is "p2wpkh" then
+      if cwListCount(tItems) is not 2 then
+         put "a P2WPKH witness is two items, a signature and a key; this " & \
+               "has " & cwListCount(tItems) into tOut["why"]
+         return tOut
+      end if
+      put tItems[1] into tSig
+      put tItems[2] into tPub
+      put the number of chars of tSig into tLen
+      if tLen < 4 or char (tLen - 1) to tLen of tSig is not "01" then
+         put "a simple signature signs with SIGHASH_ALL; this one does not" \
+               into tOut["why"]
+         return tOut
+      end if
+      if cwScriptP2wpkh(tPub) is not tScript then
+         put "the key in the signature is not the address's" into tOut["why"]
+         return tOut
+      end if
+      put cwBip322Digest(pMessage, "p2wpkh", tScript, tPub) into tDigest
+      try
+         put cxVerify(cxHexDecode(tPub), cxHexDecode(tDigest), \
+               cxHexDecode(cwDerToCompact(char 1 to (tLen - 2) of tSig))) into tOut["ok"]
+      catch tError
+         put line 1 of tError into tOut["why"]
+         return tOut
+      end try
+      if tOut["ok"] is not true then
+         put false into tOut["ok"]
+         put "the signature does not verify against the key for this message" \
+               into tOut["why"]
+      end if
+      return tOut
+   end if
+   if tKind is "p2tr" then
+      if cwListCount(tItems) is not 1 then
+         put "a taproot key-path witness is one item; this has " & \
+               cwListCount(tItems) into tOut["why"]
+         return tOut
+      end if
+      put tItems[1] into tSig
+      if the number of chars of tSig is not 128 then
+         put "a taproot signature here is 64 bytes (SIGHASH_DEFAULT); this " & \
+               "one is " & (the number of chars of tSig div 2) into tOut["why"]
+         return tOut
+      end if
+      put cwBip322Digest(pMessage, "p2tr", tScript, "") into tDigest
+      put cxSchnorrVerify(cxHexDecode(char 5 to 68 of tScript), \
+            cxHexDecode(tDigest), cxHexDecode(tSig)) into tOut["ok"]
+      if tOut["ok"] is not true then
+         put false into tOut["ok"]
+         put "the signature does not verify against the address's key for " & \
+               "this message" into tOut["why"]
+      end if
+      return tOut
+   end if
+   put "BIP-322 here covers native SegWit and taproot addresses; a " & \
+         tKind & " address signs in the 2011 format" into tOut["why"]
+   return tOut
+end cwBip322Verify
+
 function cwMsgDigest pMessage
    local tBody, tPrefix
    put textEncode(kCwMsgMagic & numToChar(10), "UTF-8") into tPrefix
@@ -4202,6 +4476,583 @@ function cwCompressPubkey pPubkeyHex
    end if
    return "03" & cwLower(char 3 to 66 of pPubkeyHex)
 end cwCompressPubkey
+
+-- ==============================================================================
+-- BIP-352 SILENT PAYMENTS, the sending side (2026-09-04)
+--
+-- A silent payment address is two public keys, not an output script. The
+-- output is DERIVED per transaction from the sender's input keys and the
+-- smallest input outpoint, so the same address paid twice lands on two
+-- unrelated taproot outputs and nothing on the chain links them - and only
+-- the receiver's scan key can find them. The sender needs its private keys
+-- to do it, which is why the wallet refuses this for a PSBT and for a
+-- watch-only wallet: there is no script to hand a signer, only a derivation
+-- the signer would have to repeat.
+--
+-- Everything below is the BIP's sending algorithm, split so the vector gate
+-- can hold each stage to the reference's published vectors: the address
+-- decode, the input key sum (taproot keys negated to even y), the input
+-- hash over the smallest outpoint, the shared secret, and the per-recipient
+-- outputs with k counted per scan key. Two things are this file's own. The
+-- address is bech32m under the BIP's own length waiver (1023 characters
+-- against BIP-173's 90, which coinxt's decoder rightly enforces), so this
+-- layer carries the same polymod over a list. And the key sum is done in
+-- hex, mod n, rather than through cxSeckeyTweakAdd: that handler refuses a
+-- ZERO result by design, and the BIP's own vector "intermediate sum is zero
+-- but final sum is non-zero" is exactly the chain of adds it would refuse
+-- half way through.
+-- ==============================================================================
+constant kCwSpTagInputs = "BIP0352/Inputs"
+constant kCwSpTagSecret = "BIP0352/SharedSecret"
+constant kCwSpMaxLen = 1023
+constant kCwSpKMax = 2323
+constant kCwCurveN = "fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141"
+constant kCwScalarZero = "0000000000000000000000000000000000000000000000000000000000000000"
+constant kCwBech32mConst = 734539939
+
+-- ---- bech32m, uncapped ------------------------------------------------------
+
+private function cwBech32Polymod pValues
+   -- BIP-173's checksum over a LIST of 5-bit values, from arithmetic: the
+   -- state is 30 bits, so every xor is cwBitXorN at 30. The generator
+   -- constants are the BIP's, the same five coinxt carries.
+   local tChk, tI, tCount, tTop, tBit, tGen
+   put cwListNew() into tGen
+   put cwListAdd(tGen, 996825010) into tGen
+   put cwListAdd(tGen, 642813549) into tGen
+   put cwListAdd(tGen, 513874426) into tGen
+   put cwListAdd(tGen, 1027748829) into tGen
+   put cwListAdd(tGen, 705979059) into tGen
+   put 1 into tChk
+   put cwListCount(pValues) into tCount
+   repeat with tI = 1 to tCount
+      put cwIntDiv(tChk, 33554432) into tTop
+      put cwBitXorN(cwIntMod(tChk, 33554432) * 32, pValues[tI], 30) into tChk
+      repeat with tBit = 1 to 5
+         if cwIntMod(cwIntDiv(tTop, cwPow2(tBit - 1)), 2) is 1 then
+            put cwBitXorN(tChk, tGen[tBit], 30) into tChk
+         end if
+      end repeat
+   end repeat
+   return tChk
+end cwBech32Polymod
+
+private function cwBech32HrpExpand pHrp
+   -- The HRP's high bits, a zero, then its low bits, as a list.
+   local tOut, tI, tCount, tCode
+   put cwListNew() into tOut
+   put the number of chars of pHrp into tCount
+   repeat with tI = 1 to tCount
+      put byteToNum(char tI of pHrp) into tCode
+      put cwListAdd(tOut, cwIntDiv(tCode, 32)) into tOut
+   end repeat
+   put cwListAdd(tOut, 0) into tOut
+   repeat with tI = 1 to tCount
+      put byteToNum(char tI of pHrp) into tCode
+      put cwListAdd(tOut, cwIntMod(tCode, 32)) into tOut
+   end repeat
+   return tOut
+end cwBech32HrpExpand
+
+private function cwListJoin pA, pB
+   local tOut, tI, tCount
+   put pA into tOut
+   put cwListCount(pB) into tCount
+   repeat with tI = 1 to tCount
+      put cwListAdd(tOut, pB[tI]) into tOut
+   end repeat
+   return tOut
+end cwListJoin
+
+function cwBech32DecodeLong pText, pMaxLen
+   -- A bech32 or bech32m string of up to pMaxLen characters: an array with
+   -- "hrp", "spec" ("bech32" or "bech32m", whichever verified) and "values"
+   -- (the data part as a LIST of 5-bit numbers, checksum removed). The same
+   -- refusals as coinxt's decoder - mixed case, a character outside printable
+   -- ASCII or the charset, no separator, too short, a bad checksum - with
+   -- the length cap a parameter, because BIP-173's 90 is the rule for
+   -- SegWit addresses and BIP-352 waives it for its own.
+   local tOut, tCount, tI, tCode, tHasUpper, tHasLower, tData, tPos, tIdx
+   local tValues, tCombined, tChk, tHrp
+   put the number of chars of pText into tCount
+   if tCount > pMaxLen then
+      throw "wallet-core: cwBech32DecodeLong: the string is longer than the " & \
+            pMaxLen & " characters allowed here."
+   end if
+   put false into tHasUpper
+   put false into tHasLower
+   repeat with tI = 1 to tCount
+      put byteToNum(char tI of pText) into tCode
+      if tCode < 33 or tCode > 126 then
+         throw "wallet-core: cwBech32DecodeLong: a character outside the printable ASCII range."
+      end if
+      if tCode >= 65 and tCode <= 90 then
+         put true into tHasUpper
+      end if
+      if tCode >= 97 and tCode <= 122 then
+         put true into tHasLower
+      end if
+   end repeat
+   if tHasUpper is true and tHasLower is true then
+      throw "wallet-core: cwBech32DecodeLong: the string mixes upper and lower case, which bech32 does not allow."
+   end if
+   put cwLower(pText) into tData
+   -- the separator is the LAST "1": the charset has none, the HRP may
+   put 0 into tPos
+   repeat with tI = tCount down to 1
+      if byteToNum(char tI of tData) is 49 then
+         put tI into tPos
+         exit repeat
+      end if
+   end repeat
+   if tPos < 2 then
+      throw "wallet-core: cwBech32DecodeLong: no human-readable part before the separator."
+   end if
+   if tPos + 6 > tCount then
+      throw "wallet-core: cwBech32DecodeLong: too short to carry a 6-character checksum."
+   end if
+   put char 1 to (tPos - 1) of tData into tHrp
+   put cwListNew() into tValues
+   repeat with tI = (tPos + 1) to tCount
+      put offset(char tI of tData, kCwDescCharset) into tIdx
+      if tIdx is 0 then
+         throw "wallet-core: cwBech32DecodeLong: a character that is not in the bech32 charset."
+      end if
+      put cwListAdd(tValues, tIdx - 1) into tValues
+   end repeat
+   put cwListJoin(cwBech32HrpExpand(tHrp), tValues) into tCombined
+   put cwBech32Polymod(tCombined) into tChk
+   put "" into tOut["spec"]
+   if tChk is 1 then
+      put "bech32" into tOut["spec"]
+   end if
+   if tChk is kCwBech32mConst then
+      put "bech32m" into tOut["spec"]
+   end if
+   if tOut["spec"] is "" then
+      throw "wallet-core: cwBech32DecodeLong: the checksum does not match, so the string is corrupt."
+   end if
+   put tHrp into tOut["hrp"]
+   -- drop the six checksum values
+   put cwListCount(tValues) into tCount
+   put tCount - 6 into tValues["n"]
+   put tValues into tOut["values"]
+   return tOut
+end cwBech32DecodeLong
+
+function cwBech32EncodeLong pHrp, pValues, pSpec
+   -- The inverse: pHrp lowercase, pValues a list of 5-bit numbers, pSpec
+   -- "bech32" or "bech32m". No length cap; the caller owns that.
+   local tCombined, tI, tCount, tConst, tChk, tOut, tIdx
+   if pSpec is "bech32m" then
+      put kCwBech32mConst into tConst
+   else if pSpec is "bech32" then
+      put 1 into tConst
+   else
+      throw "wallet-core: cwBech32EncodeLong: the encoding must be bech32 or bech32m."
+   end if
+   put cwListCount(pValues) into tCount
+   repeat with tI = 1 to tCount
+      if pValues[tI] < 0 or pValues[tI] > 31 then
+         throw "wallet-core: cwBech32EncodeLong: every data value must be 0 to 31."
+      end if
+   end repeat
+   put cwListJoin(cwBech32HrpExpand(pHrp), pValues) into tCombined
+   repeat with tI = 1 to 6
+      put cwListAdd(tCombined, 0) into tCombined
+   end repeat
+   put cwBitXorN(cwBech32Polymod(tCombined), tConst, 30) into tChk
+   put pHrp & "1" into tOut
+   repeat with tI = 1 to tCount
+      put pValues[tI] + 1 into tIdx
+      put char tIdx of kCwDescCharset after tOut
+   end repeat
+   repeat with tI = 0 to 5
+      put cwIntMod(cwIntDiv(tChk, cwPow2(5 * (5 - tI))), 32) + 1 into tIdx
+      put char tIdx of kCwDescCharset after tOut
+   end repeat
+   return tOut
+end cwBech32EncodeLong
+
+function cwBitsToHex pValues, pFrom
+   -- 5-bit values from position pFrom onward, regrouped into bytes as hex,
+   -- BIP-173's convertbits(5 -> 8) with padding REFUSED: more than four
+   -- leftover bits, or a nonzero remainder, is a corrupt payload.
+   local tAcc, tBits, tOut, tI, tCount, tByte
+   put 0 into tAcc
+   put 0 into tBits
+   put "" into tOut
+   put cwListCount(pValues) into tCount
+   repeat with tI = pFrom to tCount
+      put tAcc * 32 + pValues[tI] into tAcc
+      add 5 to tBits
+      if tBits >= 8 then
+         subtract 8 from tBits
+         put cwIntDiv(tAcc, cwPow2(tBits)) into tByte
+         put tAcc - tByte * cwPow2(tBits) into tAcc
+         put cxHexEncode(numToByte(tByte)) after tOut
+      end if
+   end repeat
+   if tBits >= 5 or tAcc is not 0 then
+      throw "wallet-core: cwBitsToHex: the payload has bad padding."
+   end if
+   return tOut
+end cwBitsToHex
+
+function cwHexToBits pHex
+   -- Bytes to 5-bit values, the last group zero-padded (convertbits 8 -> 5).
+   local tBytes, tAcc, tBits, tOut, tI, tCount, tValue, tJ
+   put cxHexDecode(pHex) into tBytes
+   put the number of bytes of tBytes into tCount
+   put 0 into tAcc
+   put 0 into tBits
+   put cwListNew() into tOut
+   repeat with tI = 1 to tCount
+      put tAcc * 256 + byteToNum(byte tI of tBytes) into tAcc
+      add 8 to tBits
+      -- at most two 5-bit groups can be complete after one byte
+      repeat with tJ = 1 to 2
+         if tBits >= 5 then
+            subtract 5 from tBits
+            put cwIntDiv(tAcc, cwPow2(tBits)) into tValue
+            put tAcc - tValue * cwPow2(tBits) into tAcc
+            put cwListAdd(tOut, tValue) into tOut
+         end if
+      end repeat
+   end repeat
+   if tBits > 0 then
+      put cwListAdd(tOut, tAcc * cwPow2(5 - tBits)) into tOut
+   end if
+   return tOut
+end cwHexToBits
+
+-- ---- scalars mod n, in hex ----------------------------------------------------
+
+private function cwHexDigitValue pChar
+   local tIdx
+   put offset(pChar, kCwHexDigits) into tIdx
+   if tIdx is 0 then
+      throw "wallet-core: not a hex digit."
+   end if
+   return tIdx - 1
+end cwHexDigitValue
+
+private function cwHexAdd pA, pB
+   -- pA + pB over hex strings of the SAME width, returned one nibble wider
+   -- so a carry out is never lost.
+   local tOut, tI, tCount, tCarry, tSum
+   put the number of chars of pA into tCount
+   put "" into tOut
+   put 0 into tCarry
+   repeat with tI = tCount down to 1
+      put cwHexDigitValue(char tI of pA) + cwHexDigitValue(char tI of pB) + tCarry into tSum
+      put cwIntDiv(tSum, 16) into tCarry
+      put char (cwIntMod(tSum, 16) + 1) of kCwHexDigits & tOut into tOut
+   end repeat
+   put char (tCarry + 1) of kCwHexDigits & tOut into tOut
+   return tOut
+end cwHexAdd
+
+private function cwHexSub pA, pB
+   -- pA - pB over hex strings of the same width, for pA >= pB.
+   local tOut, tI, tCount, tBorrow, tDiff
+   put the number of chars of pA into tCount
+   put "" into tOut
+   put 0 into tBorrow
+   repeat with tI = tCount down to 1
+      put cwHexDigitValue(char tI of pA) - cwHexDigitValue(char tI of pB) - tBorrow into tDiff
+      if tDiff < 0 then
+         add 16 to tDiff
+         put 1 into tBorrow
+      else
+         put 0 into tBorrow
+      end if
+      put char (tDiff + 1) of kCwHexDigits & tOut into tOut
+   end repeat
+   if tBorrow is not 0 then
+      throw "wallet-core: cwHexSub: the result would be negative."
+   end if
+   return tOut
+end cwHexSub
+
+private function cwScalarCheck pHex, pWho
+   local tHex, tLen
+   put cwLower(pHex) into tHex
+   put the number of chars of tHex into tLen
+   if tLen is not 64 or cwHexIsClean(tHex) is not true then
+      throw "wallet-core: " & pWho & ": a scalar is 32 bytes of hex."
+   end if
+   if cwHexCompare(tHex, kCwCurveN) >= 0 then
+      throw "wallet-core: " & pWho & ": the value is not below the curve order."
+   end if
+   return tHex
+end cwScalarCheck
+
+function cwScalarAdd pA, pB
+   -- (a + b) mod n, for two 32-byte hex scalars below n.
+   local tA, tB, tSum
+   put cwScalarCheck(pA, "cwScalarAdd") into tA
+   put cwScalarCheck(pB, "cwScalarAdd") into tB
+   put cwHexAdd(tA, tB) into tSum
+   if cwHexCompare(tSum, "0" & kCwCurveN) >= 0 then
+      put cwHexSub(tSum, "0" & kCwCurveN) into tSum
+   end if
+   return char 2 to 65 of tSum
+end cwScalarAdd
+
+function cwScalarNegate pA
+   -- n - a, which is the private key of the negated point; zero stays zero.
+   local tA
+   put cwScalarCheck(pA, "cwScalarNegate") into tA
+   if tA is kCwScalarZero then
+      return tA
+   end if
+   return cwHexSub(kCwCurveN, tA)
+end cwScalarNegate
+
+-- ---- the address ------------------------------------------------------------
+
+function cwSpHrp pNetwork
+   -- "sp" on mainnet, "tsp" on every test network, "sprt" on regtest: the
+   -- BIP names the first two; the third is the reference implementation's.
+   if pNetwork is "mainnet" then
+      return "sp"
+   end if
+   if pNetwork is "regtest" then
+      return "sprt"
+   end if
+   if pNetwork is "testnet" or pNetwork is "testnet4" or pNetwork is "signet" then
+      return "tsp"
+   end if
+   throw "wallet-core: cwSpHrp: unknown network " & pNetwork & "."
+end cwSpHrp
+
+function cwSpIsAddress pAddress
+   -- Whether a string is SHAPED like a silent payment address, for any
+   -- network - the cheap routing test a Send screen asks before decoding.
+   local tAddr
+   put cwLower(cwTrim(pAddress)) into tAddr
+   if char 1 to 3 of tAddr is "sp1" or char 1 to 4 of tAddr is "tsp1" \
+         or char 1 to 5 of tAddr is "sprt1" then
+      return true
+   end if
+   return false
+end cwSpIsAddress
+
+function cwSpDecode pNetwork, pAddress
+   -- The two keys inside a silent payment address, as an array with "scan",
+   -- "spend" (33-byte compressed hex) and "version". Fails closed on every
+   -- rule the BIP states: bech32m only, the network's own HRP, version 31
+   -- reserved, version 0 exactly 66 bytes, later versions at least 66 with
+   -- the rest ignored, and both keys must be points.
+   local tAddr, tDecoded, tHrp, tWant, tVersion, tPayload, tBytes, tOut, tOther
+   put cwTrim(pAddress) into tAddr
+   put cwBech32DecodeLong(tAddr, kCwSpMaxLen) into tDecoded
+   put cwSpHrp(pNetwork) into tWant
+   put tDecoded["hrp"] into tHrp
+   if tHrp is not tWant then
+      put "another network" into tOther
+      if tHrp is "sp" then
+         put "mainnet" into tOther
+      else if tHrp is "tsp" then
+         put "a test network" into tOther
+      else if tHrp is "sprt" then
+         put "regtest" into tOther
+      end if
+      throw "wallet-core: that silent payment address is for " & tOther & \
+            ", not " & pNetwork & " (its prefix is " & tHrp & ", and " & \
+            pNetwork & "'s is " & tWant & ")."
+   end if
+   if tDecoded["spec"] is not "bech32m" then
+      throw "wallet-core: a silent payment address is bech32m; this one carries a bech32 checksum."
+   end if
+   if cwListCount(tDecoded["values"]) < 1 then
+      throw "wallet-core: the silent payment address has no version."
+   end if
+   put tDecoded["values"][1] into tVersion
+   if tVersion is 31 then
+      throw "wallet-core: silent payment address version 31 is reserved for an incompatible change; nothing can pay it."
+   end if
+   put cwBitsToHex(tDecoded["values"], 2) into tPayload
+   put the number of chars of tPayload into tBytes
+   put cwIntDiv(tBytes, 2) into tBytes
+   if tVersion is 0 and tBytes is not 66 then
+      throw "wallet-core: a version 0 silent payment address carries exactly 66 bytes; this one carries " & tBytes & "."
+   end if
+   if tBytes < 66 then
+      throw "wallet-core: a silent payment address carries at least 66 bytes; this one carries " & tBytes & "."
+   end if
+   put char 1 to 66 of tPayload into tOut["scan"]
+   put char 67 to 132 of tPayload into tOut["spend"]
+   if char 1 to 2 of tOut["scan"] is not "02" and char 1 to 2 of tOut["scan"] is not "03" then
+      throw "wallet-core: the silent payment address's scan key is not a compressed point."
+   end if
+   if char 1 to 2 of tOut["spend"] is not "02" and char 1 to 2 of tOut["spend"] is not "03" then
+      throw "wallet-core: the silent payment address's spend key is not a compressed point."
+   end if
+   -- both must be ON the curve: the decompressor refuses one that is not
+   get cxPubkeyDecompress(cxHexDecode(tOut["scan"]))
+   get cxPubkeyDecompress(cxHexDecode(tOut["spend"]))
+   put tVersion into tOut["version"]
+   return tOut
+end cwSpDecode
+
+function cwSpEncode pNetwork, pScanHex, pSpendHex
+   -- A version 0 address from two compressed keys.
+   local tValues
+   if the number of chars of pScanHex is not 66 or the number of chars of pSpendHex is not 66 then
+      throw "wallet-core: cwSpEncode: both keys are 33-byte compressed hex."
+   end if
+   put cwListNew() into tValues
+   put cwListAdd(tValues, 0) into tValues
+   put cwListJoin(tValues, cwHexToBits(cwLower(pScanHex) & cwLower(pSpendHex))) into tValues
+   return cwBech32EncodeLong(cwSpHrp(pNetwork), tValues, "bech32m")
+end cwSpEncode
+
+-- ---- the derivation -----------------------------------------------------------
+
+private function cwSpTagged pTag, pDataHex
+   -- BIP-340's tagged hash: sha256(sha256(tag) || sha256(tag) || data).
+   local tTag
+   put cxSha256(textEncode(pTag, "UTF-8")) into tTag
+   return cxHexEncode(cxSha256(tTag & tTag & cxHexDecode(pDataHex)))
+end cwSpTagged
+
+function cwSpEligible pScriptType, pPubkeyHex
+   -- Which inputs take part in the shared secret: taproot, native and nested
+   -- P2WPKH always; legacy P2PKH only with a compressed key. Anything else
+   -- (multisig, unknown scripts) is left out, and a spend with nothing
+   -- eligible cannot make a silent payment at all.
+   if pScriptType is "p2tr" or pScriptType is "p2wpkh" or pScriptType is "p2sh-p2wpkh" then
+      return true
+   end if
+   if pScriptType is "p2pkh" then
+      return (the number of chars of pPubkeyHex is 66)
+   end if
+   return false
+end cwSpEligible
+
+function cwSpInputSum pInputs
+   -- a = the sum of the eligible inputs' private keys, mod n. Each record
+   -- carries "seckey" (hex) and "xonly" (true for a taproot input, whose
+   -- key is the TWEAKED one that spends the output): an x-only key stands
+   -- for the even-y point, so a key whose point has odd y is negated first.
+   -- A zero sum is a refusal - the BIP's own rule, and the point at infinity
+   -- has no x for a receiver to find.
+   local tI, tCount, tRec, tKey, tSum, tPub
+   put cwListCount(pInputs) into tCount
+   if tCount < 1 then
+      throw "wallet-core: cwSpInputSum: no eligible inputs. A silent payment " & \
+            "needs at least one taproot, P2WPKH, P2SH-P2WPKH or compressed-key " & \
+            "P2PKH input to derive from."
+   end if
+   put kCwScalarZero into tSum
+   repeat with tI = 1 to tCount
+      put pInputs[tI] into tRec
+      put cwScalarCheck(tRec["seckey"], "cwSpInputSum") into tKey
+      if tRec["xonly"] is true then
+         put cxHexEncode(cxPublicKey(cxHexDecode(tKey), true)) into tPub
+         if char 1 to 2 of tPub is "03" then
+            put cwScalarNegate(tKey) into tKey
+         end if
+      end if
+      put cwScalarAdd(tSum, tKey) into tSum
+   end repeat
+   if tSum is kCwScalarZero then
+      throw "wallet-core: cwSpInputSum: the input keys sum to zero, so no " & \
+            "silent payment can be derived from these coins. Spend a " & \
+            "different set."
+   end if
+   return tSum
+end cwSpInputSum
+
+function cwSpInputHash pOutpoints, pSumPubkeyHex
+   -- hash_BIP0352/Inputs(outpoint_L || A): the lexicographically smallest
+   -- outpoint of ALL the transaction's inputs (eligible or not), in its
+   -- serialized form, then the compressed sum key.
+   local tI, tCount, tRec, tHex, tLow
+   put cwListCount(pOutpoints) into tCount
+   if tCount < 1 then
+      throw "wallet-core: cwSpInputHash: a transaction has at least one input."
+   end if
+   if the number of chars of pSumPubkeyHex is not 66 then
+      throw "wallet-core: cwSpInputHash: the sum key is 33-byte compressed hex."
+   end if
+   put "" into tLow
+   repeat with tI = 1 to tCount
+      put pOutpoints[tI] into tRec
+      put cxHexEncode(cxBtcOutpoint(tRec["txid"], tRec["vout"])) into tHex
+      if tLow is "" or cwHexCompare(tHex, tLow) < 0 then
+         put tHex into tLow
+      end if
+   end repeat
+   return cwSpTagged(kCwSpTagInputs, tLow & cwLower(pSumPubkeyHex))
+end cwSpInputHash
+
+function cwSpSharedSecret pSumSeckeyHex, pInputHashHex, pScanPubHex
+   -- input_hash * a * B_scan, compressed. Two ECDH steps: a * B_scan is a
+   -- point, and multiplying a point by the input hash is ECDH again with the
+   -- hash as the scalar - which is also where an input hash that is not a
+   -- valid scalar is refused, by the curve library rather than by a check.
+   local tPoint
+   put cxEcdh(cxHexDecode(cwScalarCheck(pSumSeckeyHex, "cwSpSharedSecret")), \
+         cxHexDecode(pScanPubHex)) into tPoint
+   put cxEcdh(cxHexDecode(cwScalarCheck(pInputHashHex, "cwSpSharedSecret")), \
+         tPoint) into tPoint
+   return cwCompressPubkey(cxHexEncode(tPoint))
+end cwSpSharedSecret
+
+function cwSpOutputs pSumSeckeyHex, pInputHashHex, pRecipients
+   -- One x-only output key per recipient, in the recipients' order. Each
+   -- record carries "scan" and "spend". Recipients sharing a scan key form a
+   -- group with one shared secret and a counter k that runs 0, 1, 2... over
+   -- the group's members in list order: t_k = hash_BIP0352/SharedSecret(
+   -- secret || ser32(k)), P = B_spend + t_k * G. More than K_max members in
+   -- one group is refused BEFORE anything is derived, so the refusal costs
+   -- nothing however many were asked for.
+   local tI, tCount, tRec, tScan, tSpend, tSizes, tSecrets, tK, tTweak, tPoint, tOut
+   put cwListCount(pRecipients) into tCount
+   repeat with tI = 1 to tCount
+      put pRecipients[tI] into tRec
+      put cwLower(tRec["scan"]) into tScan
+      if tSizes[tScan] is "" then
+         put 0 into tSizes[tScan]
+      end if
+      add 1 to tSizes[tScan]
+      if tSizes[tScan] > kCwSpKMax then
+         throw "wallet-core: cwSpOutputs: more than " & kCwSpKMax & \
+               " outputs to one silent payment scan key in a single " & \
+               "transaction, which BIP-352 does not allow (K_max)."
+      end if
+   end repeat
+   put cwListNew() into tOut
+   repeat with tI = 1 to tCount
+      put pRecipients[tI] into tRec
+      put cwLower(tRec["scan"]) into tScan
+      put cwLower(tRec["spend"]) into tSpend
+      if tSecrets[tScan] is "" then
+         put cwSpSharedSecret(pSumSeckeyHex, pInputHashHex, tScan) into tSecrets[tScan]
+         put 0 into tK[tScan]
+      end if
+      put cwSpTagged(kCwSpTagSecret, tSecrets[tScan] & \
+            cxHexEncode(cwBeBytes(tK[tScan], 4))) into tTweak
+      put cxHexEncode(cxPubkeyTweakAdd(cxHexDecode(tSpend), cxHexDecode(tTweak))) into tPoint
+      put cwListAdd(tOut, char 3 to 66 of tPoint) into tOut
+      add 1 to tK[tScan]
+   end repeat
+   return tOut
+end cwSpOutputs
+
+function cwSpSend pInputs, pOutpoints, pRecipients
+   -- The whole sending side in one call: the key sum, its public key, the
+   -- input hash over every outpoint, and the outputs. Returns the list of
+   -- x-only keys; cwScriptP2tr turns each into the output script.
+   local tSum, tPub, tHash
+   put cwSpInputSum(pInputs) into tSum
+   put cxHexEncode(cxPublicKey(cxHexDecode(tSum), true)) into tPub
+   put cwSpInputHash(pOutpoints, tPub) into tHash
+   return cwSpOutputs(tSum, tHash, pRecipients)
+end cwSpSend
 
 -- ==============================================================================
 -- BIP-21 PAYMENT URIs
