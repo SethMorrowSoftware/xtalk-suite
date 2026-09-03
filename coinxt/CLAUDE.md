@@ -3115,3 +3115,23 @@ had failed the day before went through. Both windows extend themselves now too:
 `waNextChangeOrMore` for change, after the harness's two-address prefill showed
 the change chain running out the way the receive chain had. Not run on an
 engine since.
+
+**A failure only CI sees is the harness's own copy (2026-09-03).** Four boot-gate
+checks failed in every CI run from 595 on and passed in every local run, under
+Python 3.11 and 3.13 alike, with no relevant diff between the green and red
+commits. The difference was `tools/test-wallet-boot.py`: its clean pass runs the
+gate on a COPY with `kWaPrefill` cut from 20 to 2, so the wallet has four
+addresses, the inscription commit takes the last unused receive address, the
+vault lock has none and throws, and everything downstream of that state (the
+vault table, a version-2 transaction that made the "different bytes" fixture a
+no-op, the update restore) reads differently. The rule for next time: when CI
+and a local run disagree, run the gate the way CI does - `test-wallet-boot.py`'s
+clean copy, not the shipped file - before looking anywhere else; the scratchpad
+drivers now take that copy as their path. What it found was real either way: a
+wallet that had prepared a few leaves ran out of receive addresses and sent the
+person to another screen, and the change chain ran out the same way, so both
+windows extend themselves now (`waNextUnusedOrMore`, `waNextChangeOrMore`); the
+update restore lost the carried server twice over (loading reset it, then the
+Network fields overwrote it) and keeps it now; and the fixture flips the version
+away from whatever the transaction has. The whole Send-to-audit region and the
+update block pass on the prefill-2 copy: 561 and 43 checks. Not run on an engine.
