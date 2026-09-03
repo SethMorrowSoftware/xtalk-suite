@@ -10927,6 +10927,21 @@ constant kWaNetPoll = 20000
 -- the socket thinks. A stalled peer accepts the connection and then says
 -- nothing, which no socket timeout resolves on its own.
 constant kWaNetDeadline = 45000
+-- HOW OLD AN ANSWER MAY BE before a sync asks again (2026-09-03). Every sync
+-- asked for the tip and the fee estimate, and every engine log shows the Test
+-- button fetching the tip seconds before the sync that followed fetched it
+-- again. A block is ten minutes apart on average; a fee estimate moves more
+-- slowly than that. Two fewer round trips per sync, which over Tor is real.
+constant kWaTipFresh = 30000
+constant kWaFeesFresh = 600000
+-- HOW MANY ELECTRUM REQUESTS GO IN ONE LINE (2026-09-03). JSON-RPC allows a
+-- batch - an array of requests answered by an array of replies, each carrying
+-- its id - and the Electrum servers this wallet talks to take one (the
+-- reference clients batch by default). Forty histories are two round trips
+-- instead of forty, which over Tor is most of a sync's wall clock. A server
+-- that refuses a batch is asked one at a time from then on (waBatchSplit).
+-- Twenty rather than forty so one reply stays well inside kWaMaxBody.
+constant kWaBatchSize = 20
 
 -- The cap on one response body. A backend that never stops sending hits a wall
 -- here rather than exhausting the engine's memory.
@@ -11507,6 +11522,17 @@ local sWaInFlight         -- the request record being served, or empty
 local sWaStream           -- the OnionXT stream handle in flight, or empty
 local sWaStreamTo         -- "host:port" that stream was dialled to; the Electrum
                           -- transport keeps it open between requests (2026-09-03)
+local sWaLastPaint        -- the milliseconds of the last full repaint during a sync
+local sWaBatch            -- "false" once this server has refused a JSON-RPC batch
+local sWaBatchMembers     -- the requests inside the batch in flight (waNetPump)
+local sWaHttpPhase        -- the Esplora reply decoder's phase: head, size, data,
+                          -- gap, trailer, len, close, done (waHttpFeed)
+local sWaHttpHead         -- that reply's status line and headers
+local sWaHttpBody         -- ...and its body so far, de-chunked
+local sWaHttpLeft         -- bytes still to come in the current chunk or body
+local sWaHttpDrop         -- "true" when the reply said Connection: close
+local sWaTipAt            -- the milliseconds the tip was last answered, or empty
+local sWaFeesAt           -- ...and the fee estimate; a sync asks only for what is stale
 local sWaBuffer           -- the bytes accumulated for the in-flight request
 local sWaReqId            -- a monotonic id, so a late reply cannot be mistaken
 local sWaPolling          -- "true" while the tick is armed
@@ -12457,11 +12483,17 @@ function waMenuRoute pItem
    if pItem is "Next unused address" then
       return "rc next"
    end if
-   if pItem is "Copy selected address" then
-      return "ad receive"
-   end if
-   if pItem is "Prove this address" then
-      return "ad scan"
+   -- THREE ITEMS ROUTED TO THE WRONG BUTTON until 2026-09-03, and the gate
+   -- could not see it: it proves every route names a control the registry
+   -- carries, and "ad receive" IS a control - the receive-chain toggle. So
+   -- "Copy selected address" switched the chain view, "Prove this address"
+   -- ran a sync (ad scan), and "Copy selected outpoint" named the coins
+   -- DETAIL FIELD, which no click handler answers. Reported from the engine
+   -- as the menu failing to copy the selected address. The Addresses and
+   -- Coins screens have no copy button, so these are the router's own.
+   if pItem is "Copy selected address" or pItem is "Sign a message with it" \
+         or pItem is "Copy selected outpoint" then
+      return "self"
    end if
    if pItem is "Derive twenty more" then
       return "ad more"
@@ -12474,9 +12506,6 @@ function waMenuRoute pItem
    end if
    if pItem is "Clear the form" then
       return "sd clear"
-   end if
-   if pItem is "Copy selected outpoint" then
-      return "cn detail"
    end if
    if pItem is "Freeze or thaw" then
       return "cn freeze"
@@ -12538,7 +12567,7 @@ function waMenuFor pScreen
       put "Copy address" & return & "Copy payment URI" & return & \
             "Next unused address" & return & "-" & return into tItems
    else if pScreen is "addresses" then
-      put "Copy selected address" & return & "Prove this address" & return & \
+      put "Copy selected address" & return & "Sign a message with it" & return & \
             "Derive twenty more" & return & "-" & return into tItems
    else if pScreen is "send" then
       put "Paste a payment URI" & return & "Pay myself" & return & \
@@ -12567,7 +12596,7 @@ command waMenuPick pMenu, pItem
    -- agreement with them, which is this member's own recorded failure shape,
    -- so this resolves the item to a (prefix, role) pair and hands it to the
    -- SAME dispatcher the buttons use.
-   local tRoute
+   local tRoute, tAddr, tKey
    set the defaultStack to the short name of this stack
    put waMenuRoute(pItem) into tRoute
    if tRoute is "" then
@@ -12579,6 +12608,30 @@ command waMenuPick pMenu, pItem
          waRefreshAll
       else if pItem is "About this wallet" then
          waShow "settings"
+      else if pItem is "Copy selected address" then
+         put waSelectedAddress() into tAddr
+         if tAddr is "" then
+            throw "select an address row first."
+         end if
+         set the clipboardData["text"] to tAddr
+         uiStatus tAddr & " is on the clipboard.", "ok"
+      else if pItem is "Sign a message with it" then
+         put waSelectedAddress() into tAddr
+         if tAddr is "" then
+            throw "select an address row first."
+         end if
+         -- shown first, then filled: the screen's paint owns its fields
+         waShow "tools"
+         put tAddr into field "tl_msgAddr"
+         uiStatus "Type the message and press Sign; " & tAddr & \
+               " is filled in.", ""
+      else if pItem is "Copy selected outpoint" then
+         put waSelectedCoinKey() into tKey
+         if tKey is "" then
+            throw "select a coin row first."
+         end if
+         set the clipboardData["text"] to tKey
+         uiStatus tKey & " is on the clipboard.", "ok"
       else if pItem is "Copy seed phrase" then
          if sWaMnemonic is empty then
             throw "this wallet has no seed phrase to copy."
@@ -13485,6 +13538,8 @@ command waSetNetwork pNetwork
    put waEmptyList() into sWaUtxos
    put waEmptyList() into sWaHistory
    put empty into sWaTipHeight
+   put empty into sWaTipAt
+   put empty into sWaFeesAt
    put "" into tFailed
    -- A WATCH-ONLY WALLET RE-DERIVES TOO. The condition was "has a mnemonic",
    -- which a watch-only wallet never has - so a network switch on one ran no
@@ -16608,7 +16663,11 @@ private function waPrivacyText
          "is correct here: the circuit is the encryption." & return & return after tOut
    put "ELECTRUM OVER TOR is the same privacy with a different protocol. The " & \
          "server is asked about SCRIPT HASHES rather than addresses, which " & \
-         "is marginally better, and it can push updates." & return & return after tOut
+         "is marginally better, and it can push updates. Both Tor " & \
+         "transports run a whole sync down one stream (Esplora over " & \
+         "HTTP/1.1 keep-alive since 2026-09-03; a reply that carries no " & \
+         "framing, or says close, costs one more dial), so a sync is one " & \
+         "rendezvous rather than one per request." & return & return after tOut
    put "ESPLORA OVER CLEARNET uses the engine's own URL library. It is the " & \
          "simplest and the least private: the server learns your addresses " & \
          "AND your IP address, and on http:// so does everyone between you " & \
@@ -16737,6 +16796,11 @@ end waApplyNetworkFields
 command waSetBackend pBackend
    waNetAbort
    put pBackend into sWaBackend
+   -- another server's tip and fees are another server's answers, and
+   -- another server may take a batch this one refused
+   put empty into sWaTipAt
+   put empty into sWaFeesAt
+   put empty into sWaBatch
    put "idle" into sWaNetState
    put empty into sWaNetWhy
    if pBackend is "esplora-tor" then
@@ -17025,8 +17089,13 @@ command waSync
    -- A FRESH SYNC IS ALLOWED TO BE GREEN AGAIN. The count is per sync, so a
    -- failure from the last one does not follow this one around.
    put 0 into sWaSyncFailures
-   waNetQueue "tip", ""
-   waNetQueue "fees", ""
+   -- only what is stale (kWaTipFresh, kWaFeesFresh); a fresh answer is kept
+   if sWaTipAt is empty or the milliseconds - sWaTipAt > kWaTipFresh then
+      waNetQueue "tip", ""
+   end if
+   if sWaFeesAt is empty or the milliseconds - sWaFeesAt > kWaFeesFresh then
+      waNetQueue "fees", ""
+   end if
    -- HISTORY FIRST, AND UNSPENT OUTPUTS ONLY WHERE THERE IS ANY. History is
    -- the question that has to be asked of every address: it is the History
    -- screen's only source, and an address whose one output has been SPENT
@@ -17050,9 +17119,10 @@ command waSync
    -- IN THE LOG AS WELL AS ON THE STATUS LINE, because the log is what gets
    -- pasted back, and a log that goes from "backend: ..." straight to silence
    -- cannot say whether a sync was ever asked for.
-   waLog "sync: queued " & (tCount + 2) & " request(s) to " & sWaHost & \
+   put cwListCount(sWaQueue) into tCount
+   waLog "sync: queued " & tCount & " request(s) to " & sWaHost & \
          ":" & sWaPort & " over " & sWaBackend
-   uiStatus "Queued " & (tCount + 2) & " requests to " & sWaHost & \
+   uiStatus "Queued " & tCount & " requests to " & sWaHost & \
          " (unspent outputs are asked for only where the history says there " & \
          "are any).", ""
 end waSync
@@ -17097,6 +17167,7 @@ command waNetAbort
    waSockClose
    waStreamClose
    put empty into sWaInFlight
+   put empty into sWaBatchMembers
    put empty into sWaBuffer
    put waEmptyList() into sWaQueue
    if sWaNetState is "busy" or sWaNetState is "dialing" then
@@ -17107,7 +17178,7 @@ end waNetAbort
 command waNetPump
    -- One request at a time. Called from the tick, so it must return quickly
    -- and must never throw past its caller.
-   local tRec, tI, tCount, tRest, tError
+   local tRec, tI, tCount, tRest, tError, tMembers, tNext, tGather, tBatch
    if sWaInFlight is not empty then
       waNetCheckDeadline
       exit waNetPump
@@ -17117,11 +17188,38 @@ command waNetPump
    end if
    put sWaQueue[1] into tRec
    put waEmptyList() into tRest
+   put waEmptyList() into tMembers
    put cwListCount(sWaQueue) into tCount
+   -- A RUN OF THE SAME KIND GOES AS ONE BATCH on an Electrum backend
+   -- (kWaBatchSize): the histories a sync queues are contiguous, and so are
+   -- the unspent-output requests that follow a batch of them. Anything
+   -- else - the tip, the fees, a broadcast - goes alone, as before.
+   put "false" into tGather
+   if waIsElectrum(sWaBackend) and sWaBatch is not "false" \
+         and (tRec["kind"] is "history" or tRec["kind"] is "utxos") then
+      put "true" into tGather
+   end if
+   put cwListAdd(tMembers, tRec) into tMembers
    repeat with tI = 2 to tCount
-      put cwListAdd(tRest, sWaQueue[tI]) into tRest
+      put sWaQueue[tI] into tNext
+      if tGather is "true" and tNext["kind"] is tRec["kind"] \
+            and cwListCount(tMembers) < kWaBatchSize then
+         put cwListAdd(tMembers, tNext) into tMembers
+      else
+         put "false" into tGather
+         put cwListAdd(tRest, tNext) into tRest
+      end if
    end repeat
    put tRest into sWaQueue
+   put empty into sWaBatchMembers
+   if cwListCount(tMembers) > 1 then
+      put tMembers into sWaBatchMembers
+      put "" into tBatch
+      put tRec["id"] into tBatch["id"]
+      put "batch" into tBatch["kind"]
+      put "of " & cwListCount(tMembers) & " " & tRec["kind"] into tBatch["arg"]
+      put tBatch into tRec
+   end if
    put the milliseconds + kWaNetDeadline into tRec["deadline"]
    put tRec into sWaInFlight
    -- A PARTIAL LINE ON A KEPT STREAM BELONGS TO THE STREAM, not to the
@@ -17131,6 +17229,7 @@ command waNetPump
    if sWaBackend is not "electrum-tor" or sWaStream is empty then
       put empty into sWaBuffer
    end if
+   waHttpReset
    put "busy" into sWaNetState
    try
       waNetStart tRec
@@ -17163,6 +17262,20 @@ command waNetFail pWhy
    -- it before applying), so a deterministic failure is not retried; only
    -- the transport is. The second failure counts, as before.
    put sWaInFlight into tRec
+   -- A BATCH THAT FAILED IN TRANSIT is not retried as a batch: whatever
+   -- refused it - a reply over kWaMaxBody, a server that dropped the line -
+   -- is likelier to refuse it again, and its members retried singly each
+   -- get the ordinary once-more below. Nothing is counted here.
+   if tRec is not empty and tRec["kind"] is "batch" then
+      waStreamClose
+      waSockClose
+      put empty into sWaInFlight
+      put empty into sWaBuffer
+      put "idle" into sWaNetState
+      waBatchSplit sWaBatchMembers, pWhy
+      put empty into sWaBatchMembers
+      exit waNetFail
+   end if
    if tRec is not empty and tRec["retried"] is not "true" then
       waStreamClose
       waSockClose
@@ -17207,8 +17320,11 @@ end waNetFail
 command waNetStart pRec
    -- Dispatch one request to whichever transport is selected.
    local tPath, tUrl, tError, tHandle, tBody, tMethod, tSock
-   put waEsploraPath(pRec) into tPath
    if sWaBackend is "esplora-clear" then
+      -- the path is Esplora's business and asked for only here and in
+      -- waStreamSendHttp: asked of every record, it threw on the first
+      -- Electrum batch, whose kind no HTTP path has (2026-09-03)
+      put waEsploraPath(pRec) into tPath
       -- THIS TRANSPORT CANNOT BROADCAST, and it says so instead of pretending.
       -- Esplora takes a transaction by POSTing it to /api/tx; `load URL` does
       -- a GET and carries no body, so the signed transaction would simply be
@@ -17301,13 +17417,15 @@ command waNetStart pRec
       -- since dropped is "unknown" to OnionXT (a peer close reaches
       -- waStreamClosed, which forgets the handle; oxCloseStream forgets it
       -- too), so anything but a connected stream to this host and port
-      -- dials again. Esplora stays one stream per request: HTTP/1.0 with
-      -- Connection: close, where the body ends when the peer closes.
+      -- dials again. Esplora joined it later the same day, over HTTP/1.1
+      -- keep-alive with the reply framing in waHttpFeed; a reply that
+      -- carries no framing, or says Connection: close, forgets the stream
+      -- and the next request dials.
       put sWaHost & ":" & sWaPort into tSock
-      if sWaBackend is "electrum-tor" and sWaStream is not empty then
+      if sWaStream is not empty then
          if sWaStreamTo is tSock and oxStreamState(sWaStream) is "connected" then
             put "busy" into sWaNetState
-            waStreamSendElectrum
+            waStreamSend
             exit waNetStart
          end if
          waLog "backend moved to " & tSock & " or stream " & sWaStream & \
@@ -17597,7 +17715,7 @@ private command waSockSend
       exit waSockSend
    end if
    put waElectrumRequest(sWaInFlight) into tLine
-   waLog "-> " & tLine
+   waLog waRequestLogLine(tLine)
    write tLine & numToChar(10) to socket sWaSock
    if the result is not empty then
       -- A WRITE THAT FAILS ON A REUSED CONNECTION is the ordinary way a
@@ -17707,6 +17825,8 @@ on waStreamEvent pStream, pEvent, pData
          end if
          if waIsElectrum(sWaBackend) then
             waElectrumMaybeComplete
+         else
+            waHttpFeed
          end if
       else if pEvent is "closed" then
          waStreamClosed
@@ -17731,7 +17851,7 @@ private command waStreamSendElectrum
       exit waStreamSendElectrum
    end if
    put waElectrumRequest(sWaInFlight) into tLine
-   waLog "-> " & tLine
+   waLog waRequestLogLine(tLine)
    oxWrite sWaStream, textEncode(tLine & numToChar(10), "UTF-8")
    if the result is not empty then
       -- A refused write on a reused stream is the ordinary way a server
@@ -17741,10 +17861,29 @@ private command waStreamSendElectrum
    end if
 end waStreamSendElectrum
 
+private function waRequestLogLine pLine
+   -- The "->" line: a single request verbatim, a batch as its shape and its
+   -- ids, because twenty script hashes on one log line hide the two numbers
+   -- a reader of the log wants.
+   local tCount, tFirst, tLast, tLen
+   if sWaInFlight["kind"] is not "batch" then
+      return "-> " & pLine
+   end if
+   put cwListCount(sWaBatchMembers) into tCount
+   put sWaBatchMembers[1]["id"] into tFirst
+   put sWaBatchMembers[tCount]["id"] into tLast
+   -- the length into a local first: `the number of chars of pLine & "..."`
+   -- binds the concatenation into the chunk target (engine notes)
+   put the number of chars of pLine into tLen
+   return "-> batch " & sWaInFlight["arg"] & " requests, ids " & tFirst & \
+         ".." & tLast & " (" & tLen & " chars)"
+end waRequestLogLine
+
 private command waStreamClose
    -- Close the Tor stream if one is open and forget it, wherever a path
    -- gives up on it. One handler so the two halves - the close and the
-   -- forgetting - cannot come apart, which is the sWaSock lesson.
+   -- forgetting - cannot come apart, which is the sWaSock lesson. A reply
+   -- half-decoded on it is forgotten with it.
    local tError
    if sWaStream is not empty then
       try
@@ -17754,18 +17893,37 @@ private command waStreamClose
    end if
    put empty into sWaStream
    put empty into sWaStreamTo
+   waHttpReset
 end waStreamClose
 
 private command waStreamOpened
-   local tRec, tReq, tCrlf, tBody, tLen
-   put sWaInFlight into tRec
-   put numToChar(13) & numToChar(10) into tCrlf
+   waStreamSend
+end waStreamOpened
+
+private command waStreamSend
+   -- The in-flight request, down whichever stream is open: the first one
+   -- on a stream just dialled (waStreamOpened) and every one that reuses it
+   -- (waNetStart), so the two cannot drift.
    if waIsElectrum(sWaBackend) then
       waStreamSendElectrum
-      exit waStreamOpened
+   else
+      waStreamSendHttp
    end if
-   -- HTTP/1.0 with Connection: close, so the body ends when the peer closes
-   -- and there is no chunked-transfer decoder to get wrong.
+end waStreamSend
+
+private command waStreamSendHttp
+   -- HTTP/1.1, KEPT ALIVE (2026-09-03). This was HTTP/1.0 with Connection:
+   -- close, so that the body ended when the peer closed and there was no
+   -- response framing to get wrong - and the price was a fresh rendezvous
+   -- stream for every request: the 2026-09-03 engine log dials one per
+   -- request while the Electrum transport beside it runs a whole sync down
+   -- one. The framing is waHttpFeed's now, so the stream is asked to stay.
+   local tRec, tReq, tCrlf, tBody, tLen
+   if sWaStream is empty or sWaInFlight is empty then
+      exit waStreamSendHttp
+   end if
+   put sWaInFlight into tRec
+   put numToChar(13) & numToChar(10) into tCrlf
    if tRec["kind"] is "broadcast" then
       put tRec["arg"] into tBody
       -- THE LENGTH GOES INTO A LOCAL FIRST. Whether `the number of chars of
@@ -17776,24 +17934,208 @@ private command waStreamOpened
       -- and the server would sit waiting for bytes that never arrive - a HANG
       -- rather than an error. A local costs one line and removes the question.
       put the number of chars of tBody into tLen
-      put "POST " & waEsploraPath(tRec) & " HTTP/1.0" & tCrlf & \
+      put "POST " & waEsploraPath(tRec) & " HTTP/1.1" & tCrlf & \
             "Host: " & sWaHost & tCrlf & \
             "User-Agent: CoinXTWallet/" & kWaVersion & tCrlf & \
             "Content-Type: text/plain" & tCrlf & \
             "Content-Length: " & tLen & tCrlf & \
-            "Connection: close" & tCrlf & tCrlf & tBody into tReq
+            "Connection: keep-alive" & tCrlf & tCrlf & tBody into tReq
    else
-      put "GET " & waEsploraPath(tRec) & " HTTP/1.0" & tCrlf & \
+      put "GET " & waEsploraPath(tRec) & " HTTP/1.1" & tCrlf & \
             "Host: " & sWaHost & tCrlf & \
             "User-Agent: CoinXTWallet/" & kWaVersion & tCrlf & \
-            "Connection: close" & tCrlf & tCrlf into tReq
+            "Connection: keep-alive" & tCrlf & tCrlf into tReq
    end if
    waLog "-> " & line 1 of tReq
    oxWrite sWaStream, textEncode(tReq, "UTF-8")
    if the result is not empty then
       waNetFail "writing to the Tor stream: " & the result
    end if
-end waStreamOpened
+end waStreamSendHttp
+
+command waHttpReset
+   -- The reply decoder back to its first phase, before a request goes out
+   -- and after anything that gives up on one.
+   put "head" into sWaHttpPhase
+   put empty into sWaHttpHead
+   put empty into sWaHttpBody
+   put 0 into sWaHttpLeft
+   put "false" into sWaHttpDrop
+end waHttpReset
+
+private function waHttpHeader pHead, pName
+   -- The value of one header, lower-cased and trimmed, or empty. Header
+   -- names are case-insensitive on the wire and nginx and electrs spell
+   -- them differently.
+   local tI, tCount, tLine, tLen
+   put cwLower(pHead) into pHead
+   put the number of chars of pName into tLen
+   put the number of lines of pHead into tCount
+   repeat with tI = 2 to tCount
+      put line tI of pHead into tLine
+      if char 1 to tLen of tLine is pName and char (tLen + 1) of tLine is ":" then
+         return cwTrim(char (tLen + 2) to -1 of tLine)
+      end if
+   end repeat
+   return empty
+end waHttpHeader
+
+function waHexToInt pHex
+   -- A hex number the way a chunk-size line spells it: digits until the
+   -- first thing that is not one (chunk extensions follow a semicolon).
+   local tI, tCount, tDigit, tOut
+   put 0 into tOut
+   put cwLower(cwTrim(pHex)) into pHex
+   put the number of chars of pHex into tCount
+   repeat with tI = 1 to tCount
+      put offset(char tI of pHex, "0123456789abcdef") into tDigit
+      if tDigit is 0 then
+         exit repeat
+      end if
+      put tOut * 16 + tDigit - 1 into tOut
+   end repeat
+   return tOut
+end waHexToInt
+
+command waHttpFeed
+   -- THE ESPLORA REPLY DECODER, a phase machine over sWaBuffer that consumes
+   -- what it has understood and keeps only what it has not, so a two-megabyte
+   -- history never sits in the buffer twice. Bytes throughout, for the reason
+   -- waHttpBody gave: offset() answers in bytes on a binary value and the
+   -- slice must agree with it.
+   --
+   --   head     until the blank line: status checked at once, framing chosen
+   --   len      Content-Length bytes, then done
+   --   size     a chunk-size line (hex, extensions after ";"); 0 -> trailer
+   --   data     that many bytes into the body, then gap
+   --   gap      the CRLF after a chunk, then size
+   --   trailer  header lines after the last chunk, until a blank one -> done
+   --   close    no framing at all: the body ends when the peer closes
+   --            (waStreamClosed), the way every reply did until 2026-09-03,
+   --            and such a stream is not kept
+   --   done     delivered; the stream is kept unless the reply said close
+   local tCrlf, tPos, tTotal, tSkip, tLine, tTake, tLen, tEnc, tConn
+   put numToChar(13) & numToChar(10) into tCrlf
+   repeat forever
+      put the number of bytes of sWaBuffer into tTotal
+      if sWaHttpPhase is "head" then
+         put offset(tCrlf & tCrlf, sWaBuffer) into tPos
+         put 4 into tSkip
+         if tPos is 0 then
+            -- some servers send bare LF; accept that rather than failing on
+            -- a response that is otherwise fine
+            put offset(numToChar(10) & numToChar(10), sWaBuffer) into tPos
+            put 2 into tSkip
+         end if
+         if tPos is 0 then
+            exit repeat
+         end if
+         put byte 1 to (tPos - 1) of sWaBuffer into sWaHttpHead
+         waHttpConsume tPos + tSkip - 1
+         -- a refusal is known at the head; no point reading its body first
+         waHttpCheckStatus sWaHttpHead
+         put waHttpHeader(sWaHttpHead, "connection") into tConn
+         if tConn is "close" then
+            put "true" into sWaHttpDrop
+         end if
+         put waHttpHeader(sWaHttpHead, "transfer-encoding") into tEnc
+         put waHttpHeader(sWaHttpHead, "content-length") into tLen
+         if tEnc contains "chunked" then
+            put "size" into sWaHttpPhase
+         else if tLen is an integer and tLen >= 0 then
+            put tLen into sWaHttpLeft
+            put "len" into sWaHttpPhase
+         else
+            put "true" into sWaHttpDrop
+            put "close" into sWaHttpPhase
+         end if
+      else if sWaHttpPhase is "len" then
+         if tTotal < sWaHttpLeft then
+            put sWaBuffer after sWaHttpBody
+            put empty into sWaBuffer
+            subtract tTotal from sWaHttpLeft
+            exit repeat
+         end if
+         put byte 1 to sWaHttpLeft of sWaBuffer after sWaHttpBody
+         waHttpConsume sWaHttpLeft
+         put 0 into sWaHttpLeft
+         put "done" into sWaHttpPhase
+      else if sWaHttpPhase is "size" then
+         put offset(tCrlf, sWaBuffer) into tPos
+         if tPos is 0 then
+            exit repeat
+         end if
+         put byte 1 to (tPos - 1) of sWaBuffer into tLine
+         waHttpConsume tPos + 1
+         put waHexToInt(tLine) into sWaHttpLeft
+         if sWaHttpLeft is 0 then
+            put "trailer" into sWaHttpPhase
+         else
+            put "data" into sWaHttpPhase
+         end if
+      else if sWaHttpPhase is "data" then
+         if tTotal is 0 then
+            exit repeat
+         end if
+         if tTotal < sWaHttpLeft then
+            put tTotal into tTake
+         else
+            put sWaHttpLeft into tTake
+         end if
+         put byte 1 to tTake of sWaBuffer after sWaHttpBody
+         waHttpConsume tTake
+         subtract tTake from sWaHttpLeft
+         if sWaHttpLeft is 0 then
+            put "gap" into sWaHttpPhase
+         end if
+      else if sWaHttpPhase is "gap" then
+         if tTotal < 2 then
+            exit repeat
+         end if
+         waHttpConsume 2
+         put "size" into sWaHttpPhase
+      else if sWaHttpPhase is "trailer" then
+         put offset(tCrlf, sWaBuffer) into tPos
+         if tPos is 0 then
+            exit repeat
+         end if
+         waHttpConsume tPos + 1
+         if tPos is 1 then
+            put "done" into sWaHttpPhase
+         end if
+      else if sWaHttpPhase is "close" then
+         put sWaBuffer after sWaHttpBody
+         put empty into sWaBuffer
+         exit repeat
+      else
+         -- done: hand it over, and forget a stream the server is closing
+         put "head" into sWaHttpPhase
+         waNetDeliver sWaHttpBody
+         put empty into sWaHttpBody
+         if sWaHttpDrop is "true" then
+            waStreamClose
+         end if
+         exit repeat
+      end if
+      if the number of bytes of sWaHttpBody > kWaMaxBody then
+         waNetFail "the backend sent more than " & kWaMaxBody & \
+               " bytes for one answer, which is not a shape this wallet " & \
+               "asked for."
+         exit repeat
+      end if
+   end repeat
+end waHttpFeed
+
+private command waHttpConsume pCount
+   -- Drop the first pCount bytes of the buffer.
+   local tTotal
+   put the number of bytes of sWaBuffer into tTotal
+   if pCount >= tTotal then
+      put empty into sWaBuffer
+   else
+      put byte (pCount + 1) to tTotal of sWaBuffer into sWaBuffer
+   end if
+end waHttpConsume
 
 private command waStreamIdleGone pWhat
    -- A STREAM NOTHING WAS WAITING ON is not a failure of anything. The
@@ -17810,7 +18152,7 @@ private command waStreamIdleGone pWhat
 end waStreamIdleGone
 
 private command waStreamClosed
-   local tBody
+   local tBody, tSeen
    if sWaInFlight is empty then
       waStreamIdleGone "was closed by the server"
       exit waStreamClosed
@@ -17823,49 +18165,41 @@ private command waStreamClosed
    -- and the HTTP parser's "no header/body boundary in 0 bytes" said the
    -- second when the first was true. Named for what it is; waNetFail retries
    -- it once like any other transport failure.
-   if sWaBuffer is empty then
+   if sWaHttpPhase is "head" and sWaBuffer is empty then
       waNetFail "the Tor stream closed before the server sent anything " & \
             "(the circuit failed)."
       exit waStreamClosed
    end if
-   put waHttpBody(sWaBuffer) into tBody
-   put empty into sWaStream
-   waNetDeliver tBody
+   -- A reply with no framing ends here, the way every reply did until
+   -- 2026-09-03. The server has closed, so the handle is simply forgotten.
+   if sWaHttpPhase is "close" then
+      put sWaHttpBody into tBody
+      put empty into sWaHttpBody
+      put "head" into sWaHttpPhase
+      put empty into sWaStream
+      put empty into sWaStreamTo
+      waNetDeliver tBody
+      exit waStreamClosed
+   end if
+   -- the two lengths into locals first: `the number of bytes of X & "..."`
+   -- binds the concatenation into the chunk target (engine notes)
+   put the number of bytes of sWaBuffer into tSeen
+   if sWaHttpPhase is "head" then
+      waNetFail "the backend's reply has no header/body boundary in " & \
+            tSeen & " bytes."
+      exit waStreamClosed
+   end if
+   put the number of bytes of sWaHttpBody into tSeen
+   waNetFail "the Tor stream closed in the middle of a framed reply (" & \
+         sWaHttpPhase & ", " & tSeen & " body bytes so far)."
 end waStreamClosed
 
-function waHttpBody pRaw
-   -- Split an HTTP/1.0 response at the blank line, in BYTES.
-   --
+private command waHttpCheckStatus pStatus
    -- This is a network buffer. `char` and `line` are Unicode- and
    -- delimiter-aware, and the family rule is that binary is indexed with
-   -- `byte` and nothing else. offset() answers in bytes on a binary value, so
-   -- byte slicing is also the only way to keep the position it returns and
-   -- the slice that uses it talking about the same thing.
-   --
-   -- The body is decoded as UTF-8 by the caller; a backend's error text is the
-   -- one place a non-ASCII byte can reach this.
-   local tCrlf, tPos, tStatus, tCode, tSeen
-   put numToChar(13) & numToChar(10) into tCrlf
-   put offset(tCrlf & tCrlf, pRaw) into tPos
-   if tPos is 0 then
-      -- some servers send bare LF; accept that rather than failing on a
-      -- response that is otherwise fine
-      put offset(numToChar(10) & numToChar(10), pRaw) into tPos
-      if tPos is 0 then
-         put the number of bytes of pRaw into tSeen
-         throw "the backend's reply has no header/body boundary in " & \
-               tSeen & " bytes."
-      end if
-      put byte 1 to (tPos - 1) of pRaw into tStatus
-      waHttpCheckStatus tStatus
-      return byte (tPos + 2) to -1 of pRaw
-   end if
-   put byte 1 to (tPos - 1) of pRaw into tStatus
-   waHttpCheckStatus tStatus
-   return byte (tPos + 4) to -1 of pRaw
-end waHttpBody
-
-private command waHttpCheckStatus pStatus
+   -- `byte` and nothing else. (waHttpBody, which split a whole HTTP/1.0
+   -- reply at the blank line, stood here until 2026-09-03; waHttpFeed
+   -- decodes a reply as it arrives now, and this is the half it kept.)
    local tCode
    if byte 1 to 4 of pStatus is not "HTTP" then
       throw "that is not an HTTP reply."
@@ -17880,9 +18214,23 @@ function waElectrumRequest pRec
    -- JSON-RPC 2.0, one object per line. Addresses never leave this wallet on
    -- this protocol: the server is asked about SCRIPT HASHES, which is the one
    -- genuine privacy difference between the two backends.
-   local tKind, tArg, tScript, tHash
+   local tKind, tArg, tScript, tHash, tI, tCount, tOut
    put pRec["kind"] into tKind
    put pRec["arg"] into tArg
+   if tKind is "batch" then
+      -- the members' own requests, in one JSON array; the members are the
+      -- ones the pump gathered (sWaBatchMembers), not carried in the record,
+      -- so a record stays the small thing the retry path copies around
+      put cwListCount(sWaBatchMembers) into tCount
+      put "[" into tOut
+      repeat with tI = 1 to tCount
+         if tI > 1 then
+            put "," after tOut
+         end if
+         put waElectrumRequest(sWaBatchMembers[tI]) after tOut
+      end repeat
+      return tOut & "]"
+   end if
    if tKind is "tip" then
       return "{" & cwJsonString2("jsonrpc") & ":" & cwJsonString2("2.0") & "," & \
             cwJsonString2("id") & ":" & pRec["id"] & "," & \
@@ -17987,7 +18335,7 @@ end waIsNotification
 command waNetDeliver pBody
    -- One answer, whichever transport brought it. Parsed by kind, folded into
    -- the wallet's state, then the next request starts on the next tick.
-   local tRec, tKind, tError, tNode, tOut, tSeen, tArg, tLen
+   local tRec, tKind, tError, tNode, tOut, tSeen, tArg, tLen, tTail
    set the defaultStack to the short name of this stack
    -- A NOTIFICATION IS NOT AN ANSWER, and it must not be consumed as one.
    -- blockchain.headers.subscribe is a SUBSCRIPTION: the server answers once
@@ -18008,13 +18356,11 @@ command waNetDeliver pBody
    end if
    put tRec["kind"] into tKind
    put empty into sWaInFlight
-   -- The Esplora stream is already gone by here (HTTP/1.0: the peer closed
-   -- it and waStreamClosed forgot the handle). The Electrum stream is KEPT
-   -- for the next request (waNetStart) since 2026-09-03; it was closed here
-   -- before, which is what made every request a new rendezvous.
-   if sWaStream is not empty and sWaBackend is not "electrum-tor" then
-      waStreamClose
-   end if
+   -- The stream, on either Tor transport, is KEPT for the next request
+   -- (waNetStart) since 2026-09-03; it was closed here before, which is what
+   -- made every request a new rendezvous. An Esplora reply that cannot be
+   -- kept (no framing, or Connection: close) is forgotten by waHttpFeed and
+   -- waStreamClosed, not here.
    put the number of chars of pBody into tSeen
    put tRec["arg"] into tArg
    if tKind is "broadcast" then
@@ -18061,12 +18407,216 @@ command waNetDeliver pBody
       -- three are places where the wrong answer is silent: a log that never
       -- grows, a signed-message panel missing the message it signed, and a
       -- clipboard copy of a field name.
+      -- And the tail of the body FIRST (2026-09-03): this concatenated a
+      -- two-megabyte history onto the field's text and then kept 6000 chars.
+      put char -6000 to -1 of pBody into tTail
       put field "nw_out" into tOut
       put char -6000 to -1 of (tOut & tKind && tRec["arg"] & return & \
-            pBody & return & return) into field "nw_out"
+            tTail & return & return) into field "nw_out"
    end if
-   waRefreshAll
+   -- PAINT WHEN THERE IS SOMETHING TO SHOW, not on every reply. A sync of
+   -- fifty replies repainted the whole screen fifty times, each a rebuild
+   -- of the visible table from every row and a walk of every coin and
+   -- history row for the balances. The screen is painted when the queue
+   -- drains - the sync is done, or a lone request answered - and at most
+   -- once a second while it is still going, so a person watching still
+   -- sees it fill in; the rail's balance is cheap and painted every time.
+   if cwListCount(sWaQueue) is 0 or the milliseconds - sWaLastPaint > 1000 then
+      put the milliseconds into sWaLastPaint
+      waRefreshAll
+   else
+      waRecomputeBalance
+      waPaintNav
+   end if
+   -- THE NEXT REQUEST GOES NOW, not on the next tick. The pump ran only
+   -- from the 250 ms timer, so every reply cost up to a quarter of a second
+   -- of nothing before the next request left - seconds of pure waiting
+   -- across a sync. Deferred by one event-loop turn rather than called
+   -- here, because this handler runs inside the transport's own read
+   -- callback and a write from inside a read is a shape this engine has
+   -- not been asked to prove.
+   if sWaInFlight is empty and cwListCount(sWaQueue) > 0 then
+      send "waPumpNow" to me in 0 milliseconds
+   end if
 end waNetDeliver
+
+command waPumpNow
+   -- The tick's pump, without waiting for the tick (waNetDeliver).
+   set the defaultStack to the short name of this stack
+   local tError
+   try
+      waNetPump
+   catch tError
+      waLog "pump error: " & tError
+   end try
+end waPumpNow
+
+private command waElectrumApply pKind, pArg, pNode
+   -- One Electrum RESULT, by kind. The single-reply path reaches here after
+   -- its id and error checks; a batch reaches here once per member.
+   local tText
+   if pKind is "tip" then
+      put waCheckedHeight(cwJsonGet(pNode, "height"), "Electrum") \
+            into sWaTipHeight
+      put the milliseconds into sWaTipAt
+      exit waElectrumApply
+   end if
+   if pKind is "fees" then
+      -- Electrum's estimatefee answers in BTC per kilobyte, which is a
+      -- different unit from everything else on this screen; converting it
+      -- here rather than at each use is what keeps sat/vB meaning sat/vB.
+      -- EXPANDED FIRST. estimatefee answers in BTC per kilobyte, which
+      -- for any realistic fee is small enough that a server's serializer
+      -- writes it with an exponent ("4.22e-06"), and the strict amount
+      -- parser refuses that - correctly, but the reply was good and the
+      -- sync stopped on it.
+      -- A FEE ESTIMATE IS A FLOAT ON THE WIRE, and this is what a float
+      -- looks like: the 2026-09-02 engine log carries the real reply
+      -- {"result":0.0026374400000000004} - electrs computing 263744/1e8
+      -- in IEEE doubles and serialising every digit. cwBtcToSat refuses
+      -- more than eight decimals, correctly, because for an AMOUNT a ninth
+      -- decimal is money that does not exist; for a RATE it is noise a
+      -- thousandth of a satoshi wide, and refusing it failed the fees
+      -- request on every Electrum sync, marked each one partial, and left
+      -- the Send screen on its default rate. cwExpandExponent had already
+      -- met the other float artefact (1e-05); this is the second.
+      put waRateTo8Decimals(cwExpandExponent(cwJsonText(pNode))) into tText
+      if tText is not "" and tText is a number and tText > 0 then
+         -- through the same gate as Esplora's, so the two transports
+         -- cannot disagree about what a believable rate is
+         waSetSuggestedRate "6", cwCeilDiv(cwBtcToSat(tText), 1000)
+         waSetSuggestedRate "1", sWaFeeRates["6"]
+         put the milliseconds into sWaFeesAt
+      end if
+      exit waElectrumApply
+   end if
+   if pKind is "utxos" then
+      waCheckList pNode, "unspent-output"
+      waMergeUtxos pArg, pNode, "electrum"
+      exit waElectrumApply
+   end if
+   if pKind is "history" then
+      waCheckList pNode, "history"
+      waMergeHistory pArg, pNode, "electrum"
+      waFollowHistory pArg, pNode, "electrum"
+      exit waElectrumApply
+   end if
+   if pKind is "broadcast" then
+      put waCheckedTxid(cwTrim(cwJsonText(pNode)), "Electrum") into tText
+      -- In the log as well as on the status line: the 2026-09-03 log's
+      -- only record of its broadcast's txid was the fee-bump bookkeeping
+      -- line, and the status line is not what gets pasted back.
+      waLog "broadcast accepted: txid " & tText
+      uiStatus "Broadcast. The server returned txid " & tText & ".", "ok"
+      exit waElectrumApply
+   end if
+   if pKind is "tx" then
+      -- blockchain.transaction.get answers the hex as a JSON string. This
+      -- branch had no case for it: the request existed, the reply fell
+      -- off the end of the dispatch and was silently dropped.
+      waStoreRawTx pArg, cwJsonText(pNode)
+      exit waElectrumApply
+   end if
+   exit waElectrumApply
+end waElectrumApply
+
+private command waBatchApply pNode
+   -- The array a batch is answered with: every element to its member by id.
+   -- A member the server left unanswered is asked again on its own; an
+   -- element nobody asked for is ignored and said so.
+   local tI, tCount, tItem, tIdNode, tId, tByOwner, tIdx, tRec, tResult
+   local tMembers, tSeen, tWhy, tLeft
+   put sWaBatchMembers into tMembers
+   put empty into sWaBatchMembers
+   if cwJsonType(pNode) is not "array" then
+      put cwJsonPath(pNode, "error") into tResult
+      if cwJsonType(tResult) is not "missing" and cwJsonType(tResult) is not "null" then
+         put cwJsonGet(tResult, "message") into tWhy
+      else
+         put "a " & cwJsonType(pNode) & " rather than an array" into tWhy
+      end if
+      waBatchSplit tMembers, tWhy
+      exit waBatchApply
+   end if
+   put cwListCount(tMembers) into tCount
+   repeat with tI = 1 to tCount
+      put tMembers[tI] into tRec
+      put tI into tByOwner[tRec["id"]]
+   end repeat
+   put empty into tSeen
+   put cwJsonCount(pNode) into tCount
+   repeat with tI = 1 to tCount
+      put cwJsonAt(pNode, tI) into tItem
+      put cwJsonPath(tItem, "id") into tIdNode
+      put cwJsonText(tIdNode) into tId
+      put tByOwner[tId] into tIdx
+      if tIdx is empty then
+         waLog "batch: an answer for id " & tId & ", which is not in this " & \
+               "batch; ignored"
+         next repeat
+      end if
+      put "true" into tSeen[tId]
+      put tMembers[tIdx] into tRec
+      put cwJsonPath(tItem, "error") into tResult
+      if cwJsonType(tResult) is not "missing" and cwJsonType(tResult) is not "null" then
+         waBatchMemberFailed tRec, cwJsonGet(tResult, "message")
+         next repeat
+      end if
+      try
+         waElectrumApply tRec["kind"], tRec["arg"], cwJsonPath(tItem, "result")
+      catch tWhy
+         waBatchMemberFailed tRec, tWhy
+      end try
+   end repeat
+   put waEmptyList() into tLeft
+   put cwListCount(tMembers) into tCount
+   repeat with tI = 1 to tCount
+      put tMembers[tI] into tRec
+      if tSeen[tRec["id"]] is not "true" then
+         put cwListAdd(tLeft, tRec) into tLeft
+      end if
+   end repeat
+   if cwListCount(tLeft) > 0 then
+      waLog "batch: " & cwListCount(tLeft) & " member(s) went unanswered; " & \
+            "asking for them one at a time"
+      waRequeueSingly tLeft
+   end if
+end waBatchApply
+
+private command waBatchMemberFailed pRec, pWhy
+   -- One member of a batch refused or unreadable: counted like a lone
+   -- request's second failure, because there is no transport to retry.
+   add 1 to sWaSyncFailures
+   put "partial" into sWaNetState
+   put pRec["kind"] & " " & pRec["arg"] & ": " & pWhy & " (this sync is " & \
+         "incomplete: a balance missing one address's coins is a wrong " & \
+         "number, not a smaller one)" into sWaNetWhy
+   waLog "FAILED: " & pRec["kind"] & " " & pRec["arg"] & ": " & pWhy
+end waBatchMemberFailed
+
+command waBatchSplit pMembers, pWhy
+   -- The server did not take the batch: ask one at a time from now on, and
+   -- put the members back at the front in their order. Not a failure of
+   -- anything - nothing has been lost yet.
+   put "false" into sWaBatch
+   waLog "the server did not take a batch of " & cwListCount(pMembers) & \
+         " (" & pWhy & "); asking one at a time from now on"
+   waRequeueSingly pMembers
+end waBatchSplit
+
+private command waRequeueSingly pMembers
+   local tOut, tI, tCount
+   put waEmptyList() into tOut
+   put cwListCount(pMembers) into tCount
+   repeat with tI = 1 to tCount
+      put cwListAdd(tOut, pMembers[tI]) into tOut
+   end repeat
+   put cwListCount(sWaQueue) into tCount
+   repeat with tI = 1 to tCount
+      put cwListAdd(tOut, sWaQueue[tI]) into tOut
+   end repeat
+   put tOut into sWaQueue
+end waRequeueSingly
 
 private command waNetApply pKind, pArg, pBody, pId
    -- pBody arrives as BYTES from every transport. Decoding it here, once, is
@@ -18105,6 +18655,14 @@ private command waNetApply pKind, pArg, pBody, pId
       --
       -- Refuse both, by name. Esplora gets this from the URL it issued and
       -- the Tor stream from its handle; here it is this field or nothing.
+      -- A BATCH IS AN ARRAY OF ANSWERS (2026-09-03), each carrying the id
+      -- of the member it answers; anything else back to a batch is a server
+      -- that does not take one, and the members are asked singly from then
+      -- on. A member's own error is that member's failure, not the sync's.
+      if pKind is "batch" then
+         waBatchApply tNode
+         exit waNetApply
+      end if
       put cwJsonPath(tNode, "id") into tIdNode
       put cwJsonText(tIdNode) into tGotId
       if cwJsonType(tIdNode) is "missing" or cwJsonType(tIdNode) is "null" then
@@ -18121,67 +18679,7 @@ private command waNetApply pKind, pArg, pBody, pId
       if cwJsonType(tResult) is not "missing" and cwJsonType(tResult) is not "null" then
          throw "the Electrum server refused: " & cwJsonGet(tResult, "message")
       end if
-      put cwJsonPath(tNode, "result") into tNode
-      if pKind is "tip" then
-         put waCheckedHeight(cwJsonGet(tNode, "height"), "Electrum") \
-               into sWaTipHeight
-         exit waNetApply
-      end if
-      if pKind is "fees" then
-         -- Electrum's estimatefee answers in BTC per kilobyte, which is a
-         -- different unit from everything else on this screen; converting it
-         -- here rather than at each use is what keeps sat/vB meaning sat/vB.
-         -- EXPANDED FIRST. estimatefee answers in BTC per kilobyte, which
-         -- for any realistic fee is small enough that a server's serializer
-         -- writes it with an exponent ("4.22e-06"), and the strict amount
-         -- parser refuses that - correctly, but the reply was good and the
-         -- sync stopped on it.
-         -- A FEE ESTIMATE IS A FLOAT ON THE WIRE, and this is what a float
-         -- looks like: the 2026-09-02 engine log carries the real reply
-         -- {"result":0.0026374400000000004} - electrs computing 263744/1e8
-         -- in IEEE doubles and serialising every digit. cwBtcToSat refuses
-         -- more than eight decimals, correctly, because for an AMOUNT a ninth
-         -- decimal is money that does not exist; for a RATE it is noise a
-         -- thousandth of a satoshi wide, and refusing it failed the fees
-         -- request on every Electrum sync, marked each one partial, and left
-         -- the Send screen on its default rate. cwExpandExponent had already
-         -- met the other float artefact (1e-05); this is the second.
-         put waRateTo8Decimals(cwExpandExponent(cwJsonText(tNode))) into tText
-         if tText is not "" and tText is a number and tText > 0 then
-            -- through the same gate as Esplora's, so the two transports
-            -- cannot disagree about what a believable rate is
-            waSetSuggestedRate "6", cwCeilDiv(cwBtcToSat(tText), 1000)
-            waSetSuggestedRate "1", sWaFeeRates["6"]
-         end if
-         exit waNetApply
-      end if
-      if pKind is "utxos" then
-         waCheckList tNode, "unspent-output"
-         waMergeUtxos pArg, tNode, "electrum"
-         exit waNetApply
-      end if
-      if pKind is "history" then
-         waCheckList tNode, "history"
-         waMergeHistory pArg, tNode, "electrum"
-         waFollowHistory pArg, tNode, "electrum"
-         exit waNetApply
-      end if
-      if pKind is "broadcast" then
-         put waCheckedTxid(cwTrim(cwJsonText(tNode)), "Electrum") into tText
-         -- In the log as well as on the status line: the 2026-09-03 log's
-         -- only record of its broadcast's txid was the fee-bump bookkeeping
-         -- line, and the status line is not what gets pasted back.
-         waLog "broadcast accepted: txid " & tText
-         uiStatus "Broadcast. The server returned txid " & tText & ".", "ok"
-         exit waNetApply
-      end if
-      if pKind is "tx" then
-         -- blockchain.transaction.get answers the hex as a JSON string. This
-         -- branch had no case for it: the request existed, the reply fell
-         -- off the end of the dispatch and was silently dropped.
-         waStoreRawTx pArg, cwJsonText(tNode)
-         exit waNetApply
-      end if
+      waElectrumApply pKind, pArg, cwJsonPath(tNode, "result")
       exit waNetApply
    end if
    -- Esplora
@@ -18193,6 +18691,7 @@ private command waNetApply pKind, pArg, pBody, pId
    -- of "<!DOCTYPE html>" would sit on the rail looking like a height.
    if pKind is "tip" then
       put waCheckedHeight(tText, "Esplora") into sWaTipHeight
+      put the milliseconds into sWaTipAt
       exit waNetApply
    end if
    if pKind is "fees" then
@@ -18206,6 +18705,7 @@ private command waNetApply pKind, pArg, pBody, pId
       put cwJsonParse(tText) into tNode
       waSetSuggestedRate "1", cwJsonGet(tNode, "1")
       waSetSuggestedRate "6", cwJsonGet(tNode, "6")
+      put the milliseconds into sWaFeesAt
       exit waNetApply
    end if
    if pKind is "utxos" then
@@ -18589,11 +19089,20 @@ function waAboutText
    put "  29cae2ab00084d4454b68b1d054a3f2d53fc7b51b70551e4d5 (its bytes" & return after tOut
    put "  decoded by the independent reference to the same txid), and over" & return after tOut
    put "  Electrum/Tor, txid 9bab6640f2bbe01f96a95ffdeca3e96881f1819e6773" & return after tOut
-   put "  48562ef8bf87da6b719a." & return & return after tOut
+   put "  48562ef8bf87da6b719a. The seventh log (2026-09-03) ran two whole" & return after tOut
+   put "  Electrum syncs down ONE Tor stream each, and ignored a header the" & return after tOut
+   put "  server pushed on the idle stream between them." & return & return after tOut
    put "WHAT IS NOT" & return after tOut
-   put "  Electrum over Tor on MAINNET (port 110) has not been tried, and" & return after tOut
-   put "  the one-stream-per-sync reuse added 2026-09-03 has not run on an" & return after tOut
-   put "  engine (the log it answers dialled a stream per request)." & return after tOut
+   put "  Electrum over Tor on MAINNET (port 110) has not been tried. The" & return after tOut
+   put "  changes of 2026-09-03 after the seventh log have not run on an" & return after tOut
+   put "  engine: Esplora over Tor keeping its stream (HTTP/1.1 and the" & return after tOut
+   put "  reply decoder), the sync skipping a fresh tip and fee estimate," & return after tOut
+   put "  the paint-once-a-second and pump-at-once changes, and the three" & return after tOut
+   put "  menu items that now do what they say (copy the selected address," & return after tOut
+   put "  sign a message with it, copy the selected outpoint), and the" & return after tOut
+   put "  JSON-RPC batches (twenty histories in one line) that an Electrum" & return after tOut
+   put "  sync sends now - with a fallback to one at a time if the server" & return after tOut
+   put "  refuses them, which no server has yet been seen to do or not do." & return after tOut
    put "  No spend built here has been broadcast on MAINNET. The right-click" & return after tOut
    put "  menu opened on an engine on 2026-09-02; that it selects the row" & return after tOut
    put "  under the cursor since then has not been seen there. An" & return after tOut

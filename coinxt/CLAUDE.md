@@ -2655,3 +2655,74 @@ and the accepted txid goes into the log on both transports, because the status l
 gets pasted back and this log's only record of its txid was the fee-bump bookkeeping line. Also
 the one `error:` in the log - "this wallet has no address to pay", from Add self on the public test
 seed mid-sync - now says why (everybody has used every address that seed derives) and what to press.
+
+### 2026-09-03, the seventh engine log: one stream per sync, seen
+
+The reuse of the entry above ran on the engine the same day: one `dial` line, then the test's tip
+and every one of the sync's requests down stream 1; a wallet action mid-sync (the new abort line
+names what it dropped: one in flight, one queued) closed it and the next sync dialled stream 2 and
+ran to the end on it; and a `headers.subscribe` push arrived on the idle stream afterwards and was
+logged and ignored - the notification guard's first engine sighting on the Tor transport. Nothing
+failed. The label moved; the only thing left unproven on this transport is mainnet on port 110.
+Esplora over Tor in the same log dialled a stream per request, as it is designed to (HTTP/1.0 with
+Connection: close), which now makes Electrum the cheaper Tor transport, and the Network screen's
+privacy text says so - the difference is one a person choosing a backend should be told.
+
+### 2026-09-03, after the seventh log: fewer requests, faster replies, and a menu that copies
+
+Asked for in three words - "as efficient as we can" - and one defect: the context menu did not copy
+the selected address.
+
+**THE MENU ROUTED THREE ITEMS TO THE WRONG BUTTON, and the gate could not tell.** "Copy selected
+address" routed to `ad receive`, which is the receive-chain TOGGLE; "Prove this address" to `ad scan`,
+a sync; "Copy selected outpoint" to `cn detail`, the coins detail FIELD, which no click handler
+answers. The menu gate proves every route names a control the registry carries, and every one of
+those does - so a right-click copy switched the chain view and reported nothing. The three are the
+router's own now (copy the selected address; "Sign a message with it", which fills the Tools address
+box and shows Tools; copy the selected txid:vout), and the gate drives each against the row the
+right-click selected rather than checking that the route resolves. The lesson is the gate's: "names a
+real control" is not "does what the label says", and the second question needs the selected row and
+the clipboard, not the registry.
+
+**ESPLORA OVER TOR KEEPS ITS STREAM TOO.** HTTP/1.0 with Connection: close was chosen so a reply
+ended when the peer closed and there was no framing to get wrong; the price, visible in the seventh
+log beside an Electrum sync running down one stream, was a rendezvous per request. It is HTTP/1.1
+keep-alive now, and `waHttpFeed` is the framing: a phase machine over the receive buffer that
+consumes what it has understood (Content-Length; chunked with extensions and trailers; a reply that
+says close forgets the stream after delivering; a reply with no framing at all falls back to the old
+close-delimited read and is not kept), checks the status at the head so a 404 is refused before its
+body is read, and reports a framed reply the peer cut short as a failure rather than a short answer.
+The gate drives every shape through the modelled Tor, split at the worst byte boundaries. The
+keep-alive path has not run on an engine; the fallback exists because which framing the mirror sends
+is not known from here.
+
+**A SYNC ASKS ONLY FOR WHAT IS STALE.** Every engine log shows the Test button fetching the tip
+seconds before the sync fetched it again, and the fee estimate asked for on every sync. A tip under
+thirty seconds old and a fee estimate under ten minutes old are kept (`kWaTipFresh`, `kWaFeesFresh`;
+cleared on a backend or network change), and the sync's log line counts what it queued instead of
+adding two to a formula.
+
+**AND THE REPLY PATH DOES LESS PER REPLY.** Every reply repainted the whole screen - a rebuild of the
+visible table and a walk of every coin and history row for the balances, fifty times a sync; it is
+once a second and when the queue drains now, with the rail's balance painted every time. The next
+request left on the next 250 ms tick; it leaves on the next event-loop turn (`waPumpNow`, deferred
+rather than called from inside the transport's read callback). And the Network screen's raw-reply
+window concatenated a two-megabyte history onto the field before keeping its last 6000 characters.
+None of this has an engine pass; the gate holds the queue counts, the immediate pump and the menu.
+
+**AND AN ELECTRUM SYNC SENDS ITS REQUESTS IN BATCHES.** JSON-RPC allows an array of requests
+answered by an array of replies, each carrying its id, and the reference Electrum clients batch by
+default. The pump gathers a contiguous run of same-kind requests - the histories a sync queues, then
+the unspent-output requests that follow them - into one line of up to twenty (`kWaBatchSize`), so
+forty addresses are two round trips instead of forty and a Tor sync is mostly no longer waiting.
+`waBatchApply` hands each element to its member by id through `waElectrumApply`, the per-kind half
+of the old apply handler, which the single-reply path now reaches after its id and error checks.
+Three ways a batch goes wrong, each pinned in the gate through the modelled Tor: a server that
+answers something other than an array (an error object, typically "Invalid Request") has the batch
+split into its members at the front of the queue and is asked singly from then on (`sWaBatch`,
+forgotten on a backend change); a member's own error element counts as that member's failure and
+nobody else's; a member the server leaves unanswered is asked again alone. A batch that fails in
+transit is split rather than retried whole, because whatever refused it is likelier to refuse it
+again, and the members then get the ordinary once-more each. The log carries a batch as its shape and
+id range rather than twenty script hashes. Whether the mirror takes a batch is not known from here -
+the fallback is what makes that safe to find out on an engine.
