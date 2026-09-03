@@ -18931,7 +18931,10 @@ function waLockPrepare pHeightText
       throw "write the block height to unlock at, or press one of the " & \
             "+1 day / +1 week / +1 month / +1 year buttons."
    end if
-   if tRest is not an integer or tRest < 1 or tRest >= 500000000 then
+   if tRest is not an integer then
+      throw "the lock is a block height: a whole number from 1 to 499999999."
+   end if
+   if tRest < 1 or tRest >= 500000000 then
       throw "the lock is a block height: a whole number from 1 to 499999999."
    end if
    put tRest + 0 into tHeight
