@@ -3034,3 +3034,18 @@ that return their report, so a screen and a line form share one core. The boot g
 numbered buttons, the quick picks, the tables' states, the tooltips, the rail geometry and the
 carrying. Not run on an engine.
 
+### 2026-09-04, the update check was fooled by its own source, and the gate that found it had never run
+
+The Update-from-main boot block was committed on the maintainer's "commit what you have" and never
+driven to the end, so its first complete run was in CI, two days later, and it found three things.
+Two are the wallet's. `waUpdateCheck` looked for `constant kWaVersion = "` anywhere in the fetched
+copy and for `command waUpdateRestore` and `on openStack` as substrings; the handler's OWN SOURCE
+carries all three as literals, and `command waUpdateRestoreX` contains `command waUpdateRestore`,
+so a copy with no version declaration read as "unreadable" instead of "missing" and a copy that had
+lost its restore handler or its openStack was OFFERED. The version is searched at a line start now
+and the handlers as whole lines. The third is the gate's: it asked `ip.call` for `cxSha256`, which
+the driver cannot reach (natives resolve from script, not from Python), so the block crashed on its
+last check. The same run showed the 9c header-notification check reading an empty tip, because its
+two Electrum deliveries had no trailing newline and the line-framed receiver rightly held both in
+its buffer; the fixture now sends lines, as every server does. Not run on an engine.
+

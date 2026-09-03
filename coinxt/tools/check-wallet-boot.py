@@ -2795,7 +2795,7 @@ def drive(c, ip, world, sandbox):
     ip.globals["swasock"] = ""
     ip.globals["swatipheight"] = ""
     ip.call("waNetDeliver",
-            ['{"jsonrpc":"2.0","id":5,"result":{"height":800001,"hex":"00"}}'])
+            ['{"jsonrpc":"2.0","id":5,"result":{"height":800001,"hex":"00"}}\n'])
     c.eq("a later success still applies",
          str(ip.globals.get("swatipheight")), "800001")
     c.ck("but does not erase the failure it did not fix",
@@ -3104,7 +3104,7 @@ def drive(c, ip, world, sandbox):
     ip.globals["swatipheight"] = ""
     ip.call("waNetDeliver",
             ['{"jsonrpc":"2.0","method":"blockchain.headers.subscribe",'
-             '"params":[{"height":800002,"hex":"00"}]}'])
+             '"params":[{"height":800002,"hex":"00"}]}\n'])
     c.ck("a pushed header is ignored, not failed",
          int(LCS._n(ip.globals.get("swasyncfailures"))) == 0,
          "failures %r why %r" % (ip.globals.get("swasyncfailures"),
@@ -3112,7 +3112,7 @@ def drive(c, ip, world, sandbox):
     c.ck("and the request stays in flight",
          bool(ip.globals.get("swainflight")), "in-flight was consumed")
     ip.call("waNetDeliver",
-            ['{"jsonrpc":"2.0","id":11,"result":{"height":800003,"hex":"00"}}'])
+            ['{"jsonrpc":"2.0","id":11,"result":{"height":800003,"hex":"00"}}\n'])
     c.eq("and the real answer still lands afterwards",
          str(ip.globals.get("swatipheight")), "800003")
     ip.globals["swainflight"] = ""
@@ -3187,13 +3187,13 @@ def drive(c, ip, world, sandbox):
     ip.globals["swainflight"] = {"kind": "tip", "arg": "", "id": "8"}
     ip.globals["swasock"] = ""
     ip.call("waNetDeliver",
-            ['{"jsonrpc":"2.0","id":8,"result":{"height":800002,"hex":"00"}}'])
+            ['{"jsonrpc":"2.0","id":8,"result":{"height":800002,"hex":"00"}}\n'])
     c.eq("a later reply on a lossy sync leaves the state partial, not ok",
          str(ip.globals.get("swanetstate")), "partial")
     ip.globals["swasyncfailures"] = 0
     ip.globals["swainflight"] = {"kind": "tip", "arg": "", "id": "9"}
     ip.call("waNetDeliver",
-            ['{"jsonrpc":"2.0","id":9,"result":{"height":800003,"hex":"00"}}'])
+            ['{"jsonrpc":"2.0","id":9,"result":{"height":800003,"hex":"00"}}\n'])
     c.eq("and a clean sync is still ok", str(ip.globals.get("swanetstate")), "ok")
 
     # (12) A WALLET THAT CANNOT SIGN MUST NOT BE HOLDING KEYS. waDropSeed's own
@@ -4198,9 +4198,9 @@ def drive(c, ip, world, sandbox):
     c.ck("and its SHA-256, as hex",
          re.match(r'^[0-9a-f]{64}$', str(info.get("sha", ""))) is not None,
          str(info.get("sha", ""))[:70])
-    c.ck("which is not the running script's",
-         str(info.get("sha", "")) != str(ip.call("cxHexEncode",
-                                                  [ip.call("cxSha256", [cur])])))
+    other = cur.replace('constant kWaVersion = "', 'constant kWaVersion = "9.9.8-', 1)
+    c.ck("which follows the content: a different copy reports a different SHA",
+         str(info.get("sha", "")) != str(check(other).get("sha", "")))
 
     # the carry and the restore, on a one-key wallet (cheap to re-derive)
     saved8 = {k: ip.globals.get(k) for k in

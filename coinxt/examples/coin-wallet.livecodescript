@@ -23441,11 +23441,15 @@ function waUpdateCheck pText, pCurrent
       throw "main's copy is " & tChars & " chars against this script's " & \
             tCurChars & ", which is too large to be this wallet."
    end if
-   put offset("constant kWaVersion = " & quote, pText) into tPos
+   -- AT A LINE START, because this handler's own source carries the same
+   -- characters mid-line (the literal below), and an unanchored search
+   -- found that occurrence first in a copy whose real declaration was gone
+   put offset(return & "constant kWaVersion = " & quote, pText) into tPos
    if tPos is 0 then
       throw "main's copy declares no kWaVersion, so it is not a version of " & \
             "this wallet."
    end if
+   add 1 to tPos
    -- the forty chars after the opening quote, sliced first: the three-
    -- argument offset (with a skip) is not a form the family's interpreter
    -- models, and a form the gate cannot run is a form nobody has run
@@ -23455,11 +23459,15 @@ function waUpdateCheck pText, pCurrent
       throw "main's copy has an unreadable kWaVersion."
    end if
    put char 1 to (tEnd - 1) of tSlice into tVersion
-   if not (pText contains "command waUpdateRestore") then
+   -- WHOLE LINES, not substrings: "command waUpdateRestore" is a prefix of
+   -- "command waUpdateRestoreX", and the literal in this very handler would
+   -- satisfy a substring test on a copy that had lost the handler
+   if not (pText contains return & "command waUpdateRestore" & return) then
       throw "main's copy (version " & tVersion & ") has no waUpdateRestore, " & \
             "so your wallet would not come back after the swap. Not offered."
    end if
-   if not (pText contains "on openStack") or not (pText contains "on preOpenStack") then
+   if not (pText contains return & "on openStack" & return) \
+         or not (pText contains return & "on preOpenStack" & return) then
       throw "main's copy (version " & tVersion & ") has no openStack, so it " & \
             "could not boot. Not offered."
    end if
