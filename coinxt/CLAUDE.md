@@ -2655,3 +2655,15 @@ and the accepted txid goes into the log on both transports, because the status l
 gets pasted back and this log's only record of its txid was the fee-bump bookkeeping line. Also
 the one `error:` in the log - "this wallet has no address to pay", from Add self on the public test
 seed mid-sync - now says why (everybody has used every address that seed derives) and what to press.
+
+### 2026-09-03, the seventh engine log: one stream per sync, seen
+
+The reuse of the entry above ran on the engine the same day: one `dial` line, then the test's tip
+and every one of the sync's requests down stream 1; a wallet action mid-sync (the new abort line
+names what it dropped: one in flight, one queued) closed it and the next sync dialled stream 2 and
+ran to the end on it; and a `headers.subscribe` push arrived on the idle stream afterwards and was
+logged and ignored - the notification guard's first engine sighting on the Tor transport. Nothing
+failed. The label moved; the only thing left unproven on this transport is mainnet on port 110.
+Esplora over Tor in the same log dialled a stream per request, as it is designed to (HTTP/1.0 with
+Connection: close), which now makes Electrum the cheaper Tor transport, and the Network screen's
+privacy text says so - the difference is one a person choosing a backend should be told.

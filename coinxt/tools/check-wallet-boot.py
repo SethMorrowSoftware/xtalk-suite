@@ -1614,6 +1614,10 @@ def drive(c, ip, world, sandbox):
         c.eq("the HTTP reply lands when the peer closes",
              str(ip.globals.get("swatipheight")), "5127809")
         c.eq("and the Esplora stream is NOT kept", str(ip.globals.get("swastream")), "")
+        # ...and the Network screen tells the person choosing which is cheaper
+        priv_tor = str(ip.call("waPrivacyText", []))
+        c.ck("the privacy text says Electrum over Tor uses one stream per sync",
+             "one stream" in priv_tor and "stream per request" in priv_tor)
         # the abort says what it dropped
         ip.call("waNetQueue", ["fees", ""])
         ip.call("waNetQueue", ["tip", ""])

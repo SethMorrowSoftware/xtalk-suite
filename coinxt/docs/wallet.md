@@ -272,7 +272,12 @@ synced, and a broadcast, txid
 by the sync that followed. Mainnet on port 110 is still the operator's
 published table and nothing more. That log also dialled a fresh Tor stream for
 every one of its 173 requests, so the stream is now kept open for the whole
-sync the way the clearnet socket is; that reuse has not run on an engine yet.
+sync the way the clearnet socket is - and the seventh log, later the same day,
+ran two full syncs down one stream each, with a header the server pushed on
+the idle stream between them logged and ignored. Esplora over Tor still opens
+a stream per request, by design (HTTP/1.0 with Connection: close, so there is
+no chunked-transfer decoder to get wrong), which now makes Electrum the cheaper
+of the two Tor transports and the Network screen says so.
 Until the 2026-09-02 log, no transaction this wallet built had been broadcast to any
 network, so "this would confirm" is a claim nobody has tested.
 

@@ -16608,7 +16608,10 @@ private function waPrivacyText
          "is correct here: the circuit is the encryption." & return & return after tOut
    put "ELECTRUM OVER TOR is the same privacy with a different protocol. The " & \
          "server is asked about SCRIPT HASHES rather than addresses, which " & \
-         "is marginally better, and it can push updates." & return & return after tOut
+         "is marginally better, and it can push updates. It is also the " & \
+         "cheaper Tor transport: a whole sync goes down one stream, where " & \
+         "Esplora over Tor opens a stream per request (HTTP/1.0, so that " & \
+         "no chunked-transfer decoder has to be right)." & return & return after tOut
    put "ESPLORA OVER CLEARNET uses the engine's own URL library. It is the " & \
          "simplest and the least private: the server learns your addresses " & \
          "AND your IP address, and on http:// so does everyone between you " & \
@@ -18589,11 +18592,11 @@ function waAboutText
    put "  29cae2ab00084d4454b68b1d054a3f2d53fc7b51b70551e4d5 (its bytes" & return after tOut
    put "  decoded by the independent reference to the same txid), and over" & return after tOut
    put "  Electrum/Tor, txid 9bab6640f2bbe01f96a95ffdeca3e96881f1819e6773" & return after tOut
-   put "  48562ef8bf87da6b719a." & return & return after tOut
+   put "  48562ef8bf87da6b719a. The seventh log (2026-09-03) ran two whole" & return after tOut
+   put "  Electrum syncs down ONE Tor stream each, and ignored a header the" & return after tOut
+   put "  server pushed on the idle stream between them." & return & return after tOut
    put "WHAT IS NOT" & return after tOut
-   put "  Electrum over Tor on MAINNET (port 110) has not been tried, and" & return after tOut
-   put "  the one-stream-per-sync reuse added 2026-09-03 has not run on an" & return after tOut
-   put "  engine (the log it answers dialled a stream per request)." & return after tOut
+   put "  Electrum over Tor on MAINNET (port 110) has not been tried." & return after tOut
    put "  No spend built here has been broadcast on MAINNET. The right-click" & return after tOut
    put "  menu opened on an engine on 2026-09-02; that it selects the row" & return after tOut
    put "  under the cursor since then has not been seen there. An" & return after tOut
