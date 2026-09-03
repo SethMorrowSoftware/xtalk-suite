@@ -3015,3 +3015,22 @@ stale, and stays away when it is current). The same day the About text gained a 
 are" section and the Tools note the `inscribe:` and `lock:` recipes, because a feature reached only
 by a line format nobody is told about is a feature that does not exist. Not run on an engine.
 
+### 2026-09-04, two screens, a rail of twelve, and tooltips: "this needs to be an impressive display"
+
+The maintainer's second reading, after the rebuild fix, was that the new features were not
+self-explanatory, and that was right: inscriptions and timelocks lived behind `inscribe:` and `lock:`
+lines in a paste box, silent payments and notes behind line forms in the Pay-to box, and nothing
+on any screen said so. The wallet now has an ORDINALS screen (content type with quick picks, body,
+a size line that prices the reveal as you type, two NUMBERED buttons, a table of every inscription
+with its state read from the coins and spends, a reader for any transaction's inscription or
+runestone) and a VAULT screen (a height or +1 day/week/month/year from the tip, a line saying how far
+away that is, Prepare, a table of every vault with locked-with-N-blocks-to-go or UNLOCKED read from
+the tip). The rail grew to twelve at a 26-pixel pitch; the router, the sweep, the menus and every
+`1 to 10` loop follow `kWaScreenCount`. Every button on both screens and the rail carries a tooltip
+(`waTips`, the wallet's own pass after the build, since the kit sets none), the Pay-to box explains its
+line forms on hover and has an Add-a-note button, and the old line forms pasted on Tools are CARRIED
+to their screens filled in rather than refused. The commit, reveal and lock bodies became functions
+that return their report, so a screen and a line form share one core. The boot gate drives the
+numbered buttons, the quick picks, the tables' states, the tooltips, the rail geometry and the
+carrying. Not run on an engine.
+

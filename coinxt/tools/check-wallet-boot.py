@@ -513,8 +513,8 @@ def build_source(path=None):
 # ==========================================================================
 
 SCREENS = ["wallet", "receive", "addresses", "send", "coins", "history",
-           "tools", "network", "log", "settings"]
-CODES = ["wl", "rc", "ad", "sd", "cn", "hs", "tl", "nw", "lg", "st"]
+           "ordinals", "vault", "tools", "network", "log", "settings"]
+CODES = ["wl", "rc", "ad", "sd", "cn", "hs", "od", "vt", "tl", "nw", "lg", "st"]
 
 # One UTXO set, planted directly into the wallet's own state. Values and
 # txids are arbitrary but FIXED, because every number this gate asserts is
@@ -987,7 +987,7 @@ def drive(c, ip, world, sandbox):
     # carry and rebuilds. Pinned here the only way that matters: a control
     # taken away comes back when the stored version is stale, and stays away
     # when it is current.
-    lock_btn = world.anywhere("tl_lock")
+    lock_btn = world.anywhere("vt_prepare")
     c.ck("the boot stored the builder's own version",
          str(world.stack_props.get("uuiversion", "")) == str(ip.constants.get("kWaUiVersion", "?")),
          "stored %r, constant %r" % (world.stack_props.get("uuiversion"), ip.constants.get("kWaUiVersion")))
@@ -996,12 +996,12 @@ def drive(c, ip, world, sandbox):
     if lock_btn is not None:
         world.current().controls.remove(lock_btn)
         ip.call("waBuild", [])
-        c.ck("a current version does not rebuild (the Lock button stays gone)",
-             world.anywhere("tl_lock") is None, "")
+        c.ck("a current version does not rebuild (the Prepare button stays gone)",
+             world.anywhere("vt_prepare") is None, "")
         world.stack_props["uuiversion"] = "coinwallet-1"
         ip.call("waBuild", [])
-        c.ck("a stale version rebuilds: the Lock button is back",
-             world.anywhere("tl_lock") is not None, "")
+        c.ck("a stale version rebuilds: the Prepare button is back",
+             world.anywhere("vt_prepare") is not None, "")
         c.ck("and the stored version is the builder's again",
              str(world.stack_props.get("uuiversion", "")) == str(ip.constants.get("kWaUiVersion", "?")), "")
 
@@ -1236,19 +1236,29 @@ def drive(c, ip, world, sandbox):
              or len(str(ip.globals.get("swalastraw", ""))) > 200,
              repr(_fld(world, "tl_out")[:100]))
 
-    # ---- Tools: an inscription, by commit and reveal (2026-09-04) ---------
-    # One button, two phases. "inscribe: <type>; <text>" in the paste box
-    # prepares the COMMIT: the next unused receive key becomes the leaf key,
-    # the commit address joins the address list, the recipe is saved with
-    # the wallet. A coin planted on that address, and Inscribe with the box
-    # empty signs the REVEAL through the leaf; the oracle rebuilds the same
-    # transaction from the same key, and the wallet's own inscription reader
-    # gets the envelope back out of the witness.
-    click(ip, world, "nv_tl")
+    # ---- Ordinals: an inscription, by commit and reveal (2026-09-04) ------
+    # Two numbered buttons on their own screen. The content type and body
+    # in their fields and "1. Prepare" makes the COMMIT: the next unused
+    # receive key becomes the leaf key, the commit address joins the address
+    # list, the recipe is saved with the wallet. A coin planted on that
+    # address, and "2. Sign the reveal" signs the REVEAL through the leaf;
+    # the oracle rebuilds the same transaction from the same key, and the
+    # wallet's own inscription reader gets the envelope back out of the
+    # witness. The table between them says which state each one is in.
+    click(ip, world, "nv_od")
     before_n = int(LCS._n((ip.globals.get("swaaddresses") or {}).get("n", 0)))
-    put_field("tl_hex", "inscribe: text/plain;charset=utf-8; Hello, ordinals")
-    click(ip, world, "tl_inscribe")
-    out = _fld(world, "tl_out")
+    click(ip, world, "od_typeText")
+    c.eq("the text quick-pick fills the content type", _fld(world, "od_type"),
+         "text/plain;charset=utf-8")
+    put_field("od_body", "Hello, ordinals")
+    click(ip, world, "nv_od")
+    c.ck("the size line prices the reveal before anything is made",
+         "15 bytes" in _fld(world, "od_size") and "sat/vB" in _fld(world, "od_size"),
+         _fld(world, "od_size"))
+    c.ck("the table says there is nothing yet, and what to do",
+         "press 1" in _fld(world, "od_table"), _fld(world, "od_table")[:120])
+    click(ip, world, "od_prepare")
+    out = _fld(world, "od_out")
     c.ck("Inscribe prepares a commit and says what to fund",
          "INSCRIPTION COMMIT PREPARED" in out and "tb1p" in out and "Fund that address" in out,
          repr(out[:200]))
@@ -1276,6 +1286,12 @@ def drive(c, ip, world, sandbox):
              "leaf\tinscribe|%d|text/plain;charset=utf-8|%s" % (int(LCS._n(commit["index"])), b"Hello, ordinals".hex())
              in str(ip.call("waSerializeWallet", [])),
              " / ".join(ln for ln in str(ip.call("waSerializeWallet", [])).split("\n") if ln.startswith("leaf"))[:300])
+        c.ck("the table lists it as unfunded, with its address",
+             "unfunded" in _fld(world, "od_table") and str(commit.get("address")) in _fld(world, "od_table"),
+             _fld(world, "od_table")[:200])
+        c.ck("Copy its commit address with nothing selected copies the one just made",
+             (click(ip, world, "od_copyAddr") or True) and world.clipboard == str(commit.get("address")),
+             repr(world.clipboard)[:80])
         # fund it, then reveal
         utx = dict(ip.globals.get("swautxos") or {"n": 0})
         n_u = int(LCS._n(utx.get("n", 0))) + 1
@@ -1285,11 +1301,14 @@ def drive(c, ip, world, sandbox):
                          "index": commit["index"], "selected": "", "frozen": ""}
         utx["n"] = n_u
         ip.globals["swautxos"] = utx
-        put_field("tl_hex", "")
-        click(ip, world, "tl_inscribe")
-        out = _fld(world, "tl_out")
+        click(ip, world, "nv_od")
+        c.ck("once a coin is at the commit address the table says funded, press 2",
+             "funded" in _fld(world, "od_table") and "press 2" in _fld(world, "od_table"),
+             _fld(world, "od_table")[:200])
+        click(ip, world, "od_reveal")
+        out = _fld(world, "od_out")
         raw_r = str(ip.globals.get("swalastraw", ""))
-        c.ck("Inscribe with the box empty signs the reveal",
+        c.ck("2. Sign the reveal signs it",
              "INSCRIPTION REVEAL SIGNED" in out and len(raw_r) > 200, repr(out[:160]))
         if len(raw_r) > 200:
             dec_r = REF.tx_decode(bytes.fromhex(raw_r))
@@ -1360,17 +1379,26 @@ def drive(c, ip, world, sandbox):
     text = str(ip.call("waInspectAnything", ["bitcoin:?lightning=%s" % tinv["invoice"]]))
     c.ck("and a Lightning-only URI", "Lightning only" in text and tinv["expected"]["payee"] in text, text[:200])
 
-    # ---- Tools: coins locked until a block (2026-09-04) --------------------
-    # "lock: <height>" prepares a taproot address whose only leaf is
-    # <height> OP_CLTV OP_DROP <receive key> OP_CHECKSIG under the NUMS
-    # point, so nothing spends it before that block. A coin planted on it is
-    # withheld from selection while the tip is below the height, and spent
-    # by the Send screen - locktime raised, leaf witness - once it is not.
-    click(ip, world, "nv_tl")
+    # ---- Vault: coins locked until a block (2026-09-04) --------------------
+    # A height in the field and Prepare makes a taproot address whose only
+    # leaf is <height> OP_CLTV OP_DROP <receive key> OP_CHECKSIG under the
+    # NUMS point, so nothing spends it before that block. A coin planted on
+    # it is withheld from selection while the tip is below the height, and
+    # spent by the Send screen - locktime raised, leaf witness - once it is
+    # not. The quick-pick buttons fill the height from the tip.
+    click(ip, world, "nv_vt")
     before_n = int(LCS._n((ip.globals.get("swaaddresses") or {}).get("n", 0)))
-    put_field("tl_hex", "lock: 900000")
-    click(ip, world, "tl_lock")
-    out = _fld(world, "tl_out")
+    tip_was = ip.globals.get("swatipheight")
+    ip.globals["swatipheight"] = 800000
+    click(ip, world, "vt_week")
+    c.eq("+1 week fills the tip plus 1008 blocks", int(LCS._n(_fld(world, "vt_height"))), 801008)
+    c.ck("and the line under it says how far away that is",
+         "1008 blocks" in _fld(world, "vt_when") and "7 days" in _fld(world, "vt_when"),
+         _fld(world, "vt_when"))
+    ip.globals["swatipheight"] = tip_was
+    put_field("vt_height", "900000")
+    click(ip, world, "vt_prepare")
+    out = _fld(world, "vt_out")
     c.ck("Lock prepares a timelock address and says what it means",
          "TIMELOCK ADDRESS PREPARED" in out and "block 900000" in out and "tb1p" in out
          and "NUMS" in out, repr(out[:200]))
@@ -1453,6 +1481,62 @@ def drive(c, ip, world, sandbox):
         except LCS.Thrown as exc:
             c.ck(label, want in str(exc.msg), str(exc.msg)[:100])
     put_field("tl_hex", "")
+
+    # ---- the two new screens say what they do (2026-09-04) -----------------
+    # Every button on Ordinals and Vault carries a tooltip, the rail has
+    # twelve entries inside its panel, the vault table reads the lock's
+    # state from the tip, the Send screen's note button writes the line for
+    # you, and the old "inscribe:" / "lock:" lines pasted on Tools are
+    # carried to their screens rather than refused.
+    bare = []
+    for ct in world.cards[0].controls:
+        if ct.ctype == "button" and (ct.name.startswith("od_") or ct.name.startswith("vt_")
+                                     or ct.name.startswith("nv_")):
+            if not str(ct.props.get("tooltip", "")).strip():
+                bare.append(ct.name)
+    c.ck("every button on Ordinals, Vault and the rail has a tooltip", bare == [], ",".join(bare))
+    c.ck("and the Pay-to box explains its line forms on hover",
+         "silent payment" in str((world.anywhere("sd_to").props if world.anywhere("sd_to") else {}).get("tooltip", "")),
+         "")
+    rail = [ct for ct in world.cards[0].controls if ct.ctype == "button" and ct.name.startswith("nv_")
+            and ct.name != "nv_refresh"]
+    c.eq("the rail has twelve screen buttons", len(rail), 12)
+    panel = world.anywhere("nv_panel")
+    if panel is not None and panel.rect:
+        outside = [ct.name for ct in rail if ct.rect and (ct.rect[1] < panel.rect[1] or ct.rect[3] > panel.rect[3])]
+        refresh = world.anywhere("nv_refresh")
+        if refresh is not None and refresh.rect and refresh.rect[3] > panel.rect[3]:
+            outside.append("nv_refresh")
+        c.ck("and every rail button sits inside the rail panel", outside == [], ",".join(outside))
+    click(ip, world, "nv_vt")
+    tip_was = ip.globals.get("swatipheight")
+    ip.globals["swatipheight"] = 899000
+    click(ip, world, "nv_vt")
+    c.ck("the vault table reads a lock as locked with the blocks to go",
+         "locked, 1000 blocks" in _fld(world, "vt_table"), _fld(world, "vt_table")[:200])
+    ip.globals["swatipheight"] = 900000
+    click(ip, world, "nv_vt")
+    c.ck("and as UNLOCKED once the tip reaches its height",
+         "UNLOCKED" in _fld(world, "vt_table"), _fld(world, "vt_table")[:200])
+    ip.globals["swatipheight"] = tip_was
+    click(ip, world, "nv_sd")
+    put_field("sd_to", "%s,0.0005" % first)
+    click(ip, world, "sd_addNote")
+    c.ck("Add a note appends a note: line to the Pay-to box",
+         _fld(world, "sd_to").endswith("note: "), repr(_fld(world, "sd_to")[-30:]))
+    click(ip, world, "nv_tl")
+    put_field("tl_hex", "inscribe: image/svg+xml; <svg/>")
+    click(ip, world, "tl_inspect")
+    c.ck("an inscribe: line on Tools is carried to the Ordinals screen, filled in",
+         ip.globals.get("swascreen") == "ordinals" and _fld(world, "od_type") == "image/svg+xml"
+         and _fld(world, "od_body") == "<svg/>", "%r %r" % (ip.globals.get("swascreen"), _fld(world, "od_type")))
+    click(ip, world, "nv_tl")
+    put_field("tl_hex", "lock: 123456")
+    click(ip, world, "tl_inspect")
+    c.ck("and a lock: line to the Vault screen",
+         ip.globals.get("swascreen") == "vault" and _fld(world, "vt_height") == "123456",
+         "%r %r" % (ip.globals.get("swascreen"), _fld(world, "vt_height")))
+    put_field("sd_to", "%s,0.0005" % first)
 
     # ---- Tools: BIP-322 on the wallet's own native-SegWit key (2026-09-04) --
     # The box ticked, Sign produces a witness stack rather than a 65-byte
@@ -3903,7 +3987,7 @@ def drive(c, ip, world, sandbox):
     reg = set(n.strip().lower() for n in
               str(ip.constants.get("kWaScControls", "")).split(",") if n.strip())
     menu_screens = ["wallet", "receive", "addresses", "send", "coins",
-                    "history", "tools", "log"]
+                    "history", "ordinals", "vault", "tools", "log"]
     unrouted, unbuilt, wrong_screen = [], [], []
     for screen in SCREENS:
         name = str(ip.call("waMenuFor", [screen]))
@@ -3961,7 +4045,7 @@ def drive(c, ip, world, sandbox):
              "nothing routes it" in str(exc.msg), str(exc.msg)[:80])
     # ...and the prefix guard is a closed set, or the router would dispatch
     # a two-letter name it does not own.
-    c.ck("waRouteKnows is closed over the eleven screens",
+    c.ck("waRouteKnows is closed over the thirteen prefixes",
          all(ip.call("waRouteKnows", [p]) is True for p in ["nv"] + CODES)
          and ip.call("waRouteKnows", ["zz"]) is not True)
     try:

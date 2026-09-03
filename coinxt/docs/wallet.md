@@ -86,6 +86,21 @@ control.
 balance, and an explicit "derive twenty more" that says what going past the gap
 limit costs.
 
+**Ordinals** (a screen of its own since 2026-09-04). A content type with three
+quick picks, a body, a line that prices the reveal as you type, and two
+numbered buttons: 1 prepares the commit address (and saves the recipe with
+the wallet), 2 signs the reveal once that address holds a coin. A table lists
+every inscription this wallet prepared with its state - unfunded, funded
+(press 2), revealed - and a box on the right reads any transaction's
+inscription or runestone. Every control carries a tooltip.
+
+**Vault** (the same day). A block height, or +1 day / week / month / year
+from the tip, a line saying how far away that is, and Prepare, which makes
+the CLTV address and saves its recipe. A table lists every vault address
+with its state read from the tip - locked with the blocks to go, or
+UNLOCKED - and what it holds. Locked coins are left out of every spend;
+unlocked ones are spent from Send with the locktime raised automatically.
+
 **Send.** One payment or many, amounts in BTC, mBTC or satoshi, `MAX`, a fee
 rate in sat/vB with a plain-language description of what that rate means, four
 coin-selection strategies plus manual coin control, opt-in RBF, a locktime, and
