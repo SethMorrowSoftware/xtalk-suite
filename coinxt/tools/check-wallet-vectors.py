@@ -267,6 +267,17 @@ CONSTANT_INPUTS.update({("kCwOp" + n): "a script opcode; checked by the "
                         "scriptPubKey vectors that emit it"
                         for n in ("Zero", "Dup", "Equal", "EqualVerify",
                                   "Hash160", "CheckSig", "CheckMultisig", "One")})
+CONSTANT_INPUTS.update({
+    "kCwOpIf": "a script opcode; the inscription envelope vectors emit it and "
+               "the reader's byte-compared script carries it",
+    "kCwOpEndIf": "a script opcode; same envelope vectors",
+    "kCwOpDrop": "a script opcode; the CLTV leaf vectors emit it",
+    "kCwOpCltv": "a script opcode; the CLTV leaf vectors emit it and the "
+                 "timelocked spend's witness carries the leaf",
+    "kCwBolt11MaxLen": "this reader's own cap on an invoice's length (BOLT11 "
+                       "sets none); the longest specification example is 765 "
+                       "characters and decodes under it",
+})
 # THE PSBT KEY TYPES, NAMED ONE AT A TIME. These carried a single blanket
 # excuse - "a BIP-174 key type; checked by the PSBT round-trip vectors" - and
 # it was not true of most of them: exactly one byte-exact comparison existed,
@@ -392,6 +403,46 @@ def check_constants(c, text):
     c.ck("the non-RBF sequence number", int(nums.get("kCwSeqNoRbf", -1)), 0xFFFFFFFE)
     c.ck("the long-term fee rate is the one the oracle prices with",
          int(nums.get("kCwLongTermFeeRate", -1)), REF.LONG_TERM_FEE_RATE)
+    # ---- 2026-09-04: BIP-322, BIP-352, Runes, inscriptions, BOLT11 ------
+    # Each of these has an answer the oracle (or the mathematics) supplies,
+    # so none is an input. The first CI run after they landed was the gate
+    # refusing all 26 by name, which is the tier doing its job: the isolated
+    # drivers that proved the vectors never ran this tier.
+    import string as _string
+    c.ck("the BIP-322 tag", consts.get("kCwBip322Tag"), REF.BIP322_TAG)
+    c.ck("the BIP-322 null txid", consts.get("kCwBip322NullTxid"), "00" * 32)
+    c.ck("the BIP-352 inputs tag", consts.get("kCwSpTagInputs"), REF.SP_TAG_INPUTS)
+    c.ck("the BIP-352 shared-secret tag", consts.get("kCwSpTagSecret"), REF.SP_TAG_SECRET)
+    c.ck("the BIP-352 address length waiver", int(nums.get("kCwSpMaxLen", -1)), REF.SP_MAX_LEN)
+    c.ck("the BIP-352 per-group limit K_max", int(nums.get("kCwSpKMax", -1)), REF.SP_K_MAX)
+    c.ck("the curve order n", consts.get("kCwCurveN"), "%064x" % CR._N)
+    c.ck("half the curve order, the low-S bound", consts.get("kCwCurveHalfN"),
+         "%064x" % (CR._N // 2))
+    c.ck("the zero scalar", consts.get("kCwScalarZero"), "0" * 64)
+    c.ck("the bech32m constant", int(nums.get("kCwBech32mConst", -1)), CR.BECH32M_CONST)
+    c.ck("the 5-bit xor table", consts.get("kCwXor5"),
+         "".join("%02d" % (a ^ b) for a in range(32) for b in range(32)))
+    c.ck("the Runes u128 maximum", consts.get("kCwRuneU128Max"), str(REF.RUNE_U128_MAX))
+    c.ck("the Runes name alphabet", consts.get("kCwRuneAlphabet"), _string.ascii_uppercase)
+    c.ck("the Runes divisibility ceiling is one below u128's digit count",
+         int(nums.get("kCwRuneMaxDivisibility", -1)), len(str(REF.RUNE_U128_MAX)) - 1)
+    c.ck("the Runes symbol ceiling is the last Unicode scalar",
+         int(nums.get("kCwRuneMaxSymbol", -1)), 0x10FFFF)
+    c.ck("the Runes spacer ceiling is 27 set bits (one gap per letter of a 28-letter name)",
+         int(nums.get("kCwRuneMaxSpacers", -1)), (1 << 27) - 1)
+    c.ck("the tapscript leaf version", int(nums.get("kCwTapLeafVersion", -1)), REF.TAP_LEAF_VERSION)
+    c.ck("the inscription push chunk is the script element limit",
+         int(nums.get("kCwInscriptionChunk", -1)), REF.INSCRIPTION_CHUNK)
+    gx, gy = CR._G
+    c.ck("the NUMS point H is the hash of G's uncompressed encoding, as BIP-341 says",
+         consts.get("kCwNumsH"),
+         CR.sha256(b"\x04" + gx.to_bytes(32, "big") + gy.to_bytes(32, "big")).hex())
+    c.ck("and it is the oracle's", consts.get("kCwNumsH"), REF.SP_NUMS_H.hex())
+    c.ck("a BOLT11 signature spans 104 five-bit values (65 bytes)",
+         int(nums.get("kCwBolt11SigValues", -1)), (65 * 8 + 4) // 5)
+    c.ck("the BOLT11 feature bits this reader knows",
+         consts.get("kCwBolt11KnownFeatures"),
+         ",".join(str(b) for b in sorted(REF.BOLT11_KNOWN_FEATURES)))
 
     # THE HONEST SPLIT: everything parsed is either checked above or listed.
     derived = {
@@ -401,6 +452,12 @@ def check_constants(c, text):
         "kCwQrEccPer", "kCwQrG1Blocks", "kCwQrG1Cw", "kCwQrG2Blocks",
         "kCwQrG2Cw", "kCwQrRemainder", "kCwQrAlign", "kCwSeqRbf",
         "kCwSeqFinal", "kCwSeqNoRbf", "kCwLongTermFeeRate",
+        "kCwBip322Tag", "kCwBip322NullTxid", "kCwSpTagInputs", "kCwSpTagSecret",
+        "kCwSpMaxLen", "kCwSpKMax", "kCwCurveN", "kCwCurveHalfN", "kCwScalarZero",
+        "kCwBech32mConst", "kCwXor5", "kCwRuneU128Max", "kCwRuneAlphabet",
+        "kCwRuneMaxDivisibility", "kCwRuneMaxSymbol", "kCwRuneMaxSpacers",
+        "kCwTapLeafVersion", "kCwInscriptionChunk", "kCwNumsH",
+        "kCwBolt11SigValues", "kCwBolt11KnownFeatures",
     }
     for name in ("kCwXpubVersions", "kCwXprvVersions", "kCwYpubVersions",
                  "kCwYprvVersions", "kCwZpubVersions", "kCwZprvVersions",
@@ -2290,8 +2347,13 @@ def main(argv):
     # THE COMPILER-FREE FLOOR IS THE CONSTANTS TIER'S OWN SIZE. It read 60
     # for a larger tier that has since shrunk, so the no-compiler path could
     # not pass at all: it ran its 35 checks and then reported a collapse that
-    # had not happened. A floor that no run can clear is not a floor.
-    floor = 30 if cc is None else 400
+    # had not happened. A floor that no run can clear is not a floor - and a
+    # floor the tier can clear with a third of itself missing is not one
+    # either: it stayed at 30 while the tier grew to 58 (2026-09-04), so
+    # the 22 checks added that day could all have stopped running under it.
+    # Fifty catches that; the full run is over a thousand checks now and
+    # 900 catches the loss of any of its blocks.
+    floor = 50 if cc is None else 900
     if c.count < floor:
         print("check-wallet-vectors: FAILED - only %d checks ran, expected at least "
               "%d. Something stopped the vector set early." % (c.count, floor))
