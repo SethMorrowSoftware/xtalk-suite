@@ -1313,6 +1313,38 @@ def drive(c, ip, world, sandbox):
                  not (set(ins1) & set(ins2)), repr(sorted(set(ins1) & set(ins2))))
         else:
             c.ck("a second spend a moment later signs", False, _fld(world, "sd_out")[:160])
+        # RESERVED AT QUEUE TIME, RELEASED ON REFUSAL (the 2026-09-03 evening
+        # run built two spends on a change output while the bump that voided
+        # it was still queued behind Tor; both were refused by every node).
+        if len(raw2) > 200:
+            ip.globals["swaqueue"] = {"n": 0}
+            ip.globals["swainflight"] = ""
+            ip.call("waBroadcast", [])
+            marks = ip.globals.get("swaspentby") or {}
+            c.ck("queueing a broadcast reserves its inputs before any server answers",
+                 all(str(marks.get("%s:%d" % (t, v), "")) == d2["txid"] for t, v in ins2),
+                 repr({k: str(v)[:12] for k, v in marks.items()}))
+            c.ck("and lists its own outputs as coins at once",
+                 any(str(r["txid"]) == d2["txid"] for r in _coins(ip.globals.get("swautxos") or {})), "")
+            c.eq("the broadcast is queued", str((ip.globals.get("swaqueue") or {}).get("1", {}).get("kind")), "broadcast")
+            # in flight now, past its one retry, and refused for good
+            ip.globals["swaqueue"] = {"n": 0}
+            ip.globals["swainflight"] = {"kind": "broadcast", "arg": raw2, "id": "73", "retried": "true"}
+            ip.call("waNetFail", ["the backend answered HTTP/1.1 400 Bad Request: bad-txns-inputs-missingorspent"])
+            marks = ip.globals.get("swaspentby") or {}
+            c.ck("a refused broadcast hands its coins back",
+                 all(str(marks.get("%s:%d" % (t, v), "")) == "" for t, v in ins2),
+                 repr({k: str(v)[:12] for k, v in marks.items()}))
+            c.ck("and drops the coins it had added",
+                 not any(str(r["txid"]) == d2["txid"] for r in _coins(ip.globals.get("swautxos") or {})), "")
+            c.ck("and the log says so",
+                 "coin(s) it had reserved are offered again" in _fld(world, "lg_text"), "")
+            c.ck("and the first spend's marks are untouched",
+                 all(str(marks.get("%s:%d" % (t, v), "")) == d1["txid"] for t, v in ins1),
+                 repr({k: str(v)[:12] for k, v in marks.items()}))
+            ip.globals["swasyncfailures"] = 0
+            ip.globals["swanetstate"] = "idle"
+            ip.globals["swainflight"] = ""
         # CPFP on the wallet's own transaction prices from the record
         spends = ip.globals.get("swaspends") or {}
         rec1 = spends.get(d1["txid"]) or {}
@@ -1337,6 +1369,27 @@ def drive(c, ip, world, sandbox):
                 c.ck("Bump on the wallet's own change-less transaction builds the child at once",
                      False, str(exc.msg)[:120])
             rec1["change"] = old_change
+            put_field("sd_rate", "2")
+        # a parent whose output a pending spend of ours uses is not replaced
+        if rec1 and chg:
+            marks = ip.globals.get("swaspentby") or {}
+            key_c = "%s:%d" % (d1["txid"], chg[0][0])
+            marks[key_c] = "ff" * 32
+            ip.globals["swaspentby"] = marks
+            row_full = {"txid": d1["txid"], "confirmations": 0, "height": 0, "value": 0,
+                        "fee": int(LCS._n(rec1.get("fee", 0))),
+                        "vsize": int(LCS._n(rec1.get("vsize", 0))),
+                        "raw": raw1, "address": first}
+            put_field("sd_rate", "20")
+            try:
+                ip.call("waBumpFee", [row_full])
+                c.ck("a parent whose change a queued spend uses is not replaced", False, "replaced")
+            except LCS.Thrown as exc:
+                c.ck("a parent whose change a queued spend uses is not replaced",
+                     "already spent by ff" in str(exc.msg) and "Bump the child" in str(exc.msg),
+                     str(exc.msg)[:160])
+            marks[key_c] = ""
+            ip.globals["swaspentby"] = marks
             put_field("sd_rate", "2")
         # a replacement voids what it replaced
         last_txid = d1["txid"]
@@ -1459,7 +1512,13 @@ def drive(c, ip, world, sandbox):
     addrs = ip.globals.get("swaaddresses") or {}
     n_addr = int(LCS._n(addrs.get("n", 0)))
     commit = dict(addrs.get(str(n_addr), {})) if n_addr > before_n else {}
-    c.eq("the commit joined the wallet's address list", n_addr, before_n + 1)
+    # ONE record, or one plus a further window: when every receive address
+    # of the derived window is used (the harness's two-address prefill gets
+    # there at once), the wallet derives another window first and says so.
+    prefill = int(LCS._n(ip.constants.get("kWaPrefill", 20)))
+    c.ck("the commit joined the wallet's address list",
+         n_addr - before_n in (1, 1 + 2 * prefill),
+         "before %d, after %d; status %r" % (before_n, n_addr, _fld(world, "uiStatus")[:120]))
     base = None
     for i in range(1, n_addr + 1):
         r = addrs.get(str(i), {})
@@ -1604,7 +1663,14 @@ def drive(c, ip, world, sandbox):
     addrs = ip.globals.get("swaaddresses") or {}
     n_addr = int(LCS._n(addrs.get("n", 0)))
     lockrec = dict(addrs.get(str(n_addr), {})) if n_addr > before_n else {}
-    c.eq("the lock joined the address list", n_addr, before_n + 1)
+    prefill = int(LCS._n(ip.constants.get("kWaPrefill", 20)))
+    c.ck("the lock joined the address list (deriving a further window first if every receive address was used)",
+         n_addr - before_n in (1, 1 + 2 * prefill),
+         "before %d, after %d; status %r; vt_out %r"
+         % (before_n, n_addr, _fld(world, "uiStatus")[:120], out[:80]))
+    if n_addr - before_n == 1 + 2 * prefill:
+        c.ck("and the log says the window was extended",
+             "derived a further window" in _fld(world, "lg_text"), "")
     base = None
     for i in range(1, n_addr + 1):
         r = addrs.get(str(i), {})
@@ -3289,7 +3355,9 @@ def drive(c, ip, world, sandbox):
         ip.globals["swainflight"] = {"kind": "tx", "arg": dec["txid"], "id": "13"}
         try:
             ip.call("waStoreRawTx", [dec["txid"], other])
-            c.ck("bytes of a different transaction are refused", False, "stored")
+            c.ck("bytes of a different transaction are refused", False,
+                 "stored; raw starts %s, other decodes to %s against %s"
+                 % (raw[:8], REF.tx_decode(bytes.fromhex(other))["txid"][:16], dec["txid"][:16]))
         except LCS.Thrown as exc:
             c.ck("bytes of a different transaction are refused",
                  "different transaction" in str(exc.msg), str(exc.msg)[:100])

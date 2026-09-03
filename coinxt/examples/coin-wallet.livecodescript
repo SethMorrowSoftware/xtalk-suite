@@ -13733,6 +13733,7 @@ local sWaBatchMembers     -- the requests inside the batch in flight (waNetPump)
 local sWaHttpPhase        -- the Esplora reply decoder's phase: head, size, data,
                           -- gap, trailer, len, close, done (waHttpFeed)
 local sWaHttpHead         -- that reply's status line and headers
+local sWaHttpBad          -- a non-2xx status line, held until the body has arrived so the refusal can quote the reason instead of the headers
 local sWaHttpBody         -- ...and its body so far, de-chunked
 local sWaHttpLeft         -- bytes still to come in the current chunk or body
 local sWaHttpDrop         -- "true" when the reply said Connection: close
@@ -15472,6 +15473,60 @@ function waNextUnused pChange
    end repeat
    return ""
 end waNextUnused
+
+private function waNextUnusedOrMore
+   -- The next unused receive address, deriving a further window first when
+   -- the derived one is spent. A leaf (an inscription commit, a timelock)
+   -- and the reveal's destination each take a fresh receive key, and a
+   -- wallet that has prepared a few of them runs out of the window it
+   -- derived at open - which used to be a refusal that sent the person to
+   -- the Addresses screen and back. The window is extended here instead,
+   -- with the gap-limit warning that extending it always carries. A key
+   -- wallet has one address and no chain to extend, and says so.
+   local tRec
+   put waNextUnused(0) into tRec
+   if tRec is not "" then
+      return tRec
+   end if
+   if sWaKind is "key" then
+      throw "this wallet's one address is already used, and an imported key " & \
+            "has no chain to derive a fresh one from."
+   end if
+   waDeriveMore
+   waLog "derived a further window: every receive address was used"
+   put waNextUnused(0) into tRec
+   if tRec is "" then
+      throw "there is no unused receive address left, even after deriving " & \
+            "a further window."
+   end if
+   return tRec
+end waNextUnusedOrMore
+
+private function waNextChangeOrMore
+   -- The next unused change address, deriving a further window first when
+   -- the derived one is spent: the same rule as waNextUnusedOrMore, for the
+   -- change chain. A key wallet's one address is its change address too.
+   local tRec
+   put waNextUnused(1) into tRec
+   if tRec is not "" then
+      return tRec
+   end if
+   if sWaKind is "key" then
+      put waNextUnused(0) into tRec
+      if tRec is not "" then
+         return tRec
+      end if
+      throw "this wallet's one address is already used, and an imported key " & \
+            "has no chain to derive a fresh change address from."
+   end if
+   waDeriveMore
+   waLog "derived a further window: every change address was used"
+   put waNextUnused(1) into tRec
+   if tRec is "" then
+      throw "there is no change address left, even after deriving a further window."
+   end if
+   return tRec
+end waNextChangeOrMore
 
 private function waUsedAddresses
    local tSeen, tI, tCount, tRec
@@ -17369,11 +17424,7 @@ command waBuildSpend pSign, pAsPsbt
    end repeat
    put "" into tChangeRec
    if tChange > 0 then
-      put waNextUnused(1) into tChangeRec
-      if tChangeRec is "" then
-         throw "there is no change address left in the derived window. Derive " & \
-               "more on the Addresses screen."
-      end if
+      put waNextChangeOrMore() into tChangeRec
       put cwListAdd(tOutputs, cwTxOutput(tChange, tChangeRec["script"])) into tOutputs
    end if
    put waReviewText(tPays, tSel, tFee, tChange, tChangeRec, tVsize, tRate, \
@@ -17460,7 +17511,7 @@ command waNoteBroadcast pRaw, pTxid
    -- go with it. Nothing here can be read on a raw transaction this wallet
    -- cannot decode; that case is logged and the next sync puts it right.
    local tTx, tError, tIns, tOuts, tI, tCount, tIn, tOut, tKey, tOld
-   local tAddr, tRec, tSpent, tBack, tVoided
+   local tAddr, tRec, tSpent, tBack, tVoided, tTxid, tNew
    try
       put cwTxDecode(pRaw) into tTx
    catch tError
@@ -17468,23 +17519,31 @@ command waNoteBroadcast pRaw, pTxid
             "); its coins will be right after the next sync"
       exit waNoteBroadcast
    end try
+   put pTxid into tTxid
+   if tTxid is "" then
+      put tTx["txid"] into tTxid
+   end if
    put tTx["inputs"] into tIns
    put cwListCount(tIns) into tCount
    put 0 into tSpent
+   put 0 into tNew
    put "" into tVoided
    repeat with tI = 1 to tCount
       put tIns[tI] into tIn
       put tIn["txid"] & ":" & tIn["vout"] into tKey
       put sWaSpentBy[tKey] into tOld
-      if tOld is not "" and tOld is not pTxid then
+      if tOld is not "" and tOld is not tTxid then
          if not (tVoided contains tOld) then
             put waCoinsNotFrom(tOld) into sWaUtxos
             put tOld & return after tVoided
-            waLog pTxid & " replaces " & tOld & "; the coins this wallet had " & \
+            waLog tTxid & " replaces " & tOld & "; the coins this wallet had " & \
                   "added from it are void"
          end if
       end if
-      put pTxid into sWaSpentBy[tKey]
+      if tOld is not tTxid then
+         add 1 to tNew
+      end if
+      put tTxid into sWaSpentBy[tKey]
       add 1 to tSpent
    end repeat
    put tTx["outputs"] into tOuts
@@ -17505,12 +17564,12 @@ command waNoteBroadcast pRaw, pTxid
       if waIsMine(tAddr) is not true then
          next repeat
       end if
-      put pTxid & ":" & (tI - 1) into tKey
+      put tTxid & ":" & (tI - 1) into tKey
       if waHoldsCoin(tKey) is true then
          next repeat
       end if
       put "" into tRec
-      put pTxid into tRec["txid"]
+      put tTxid into tRec["txid"]
       put tI - 1 into tRec["vout"]
       put tOut["value"] into tRec["value"]
       put tAddr into tRec["address"]
@@ -17519,11 +17578,59 @@ command waNoteBroadcast pRaw, pTxid
       put cwListAdd(sWaUtxos, tRec) into sWaUtxos
       add 1 to tBack
    end repeat
-   waLog pTxid & " spent " & tSpent & " coin(s) this wallet will not offer " & \
-         "again, and " & tBack & " output(s) came back to it as unconfirmed coin(s)"
+   if tNew is 0 and tBack is 0 then
+      -- the acceptance of a transaction reserved when it was queued
+      waLog tTxid & " accepted; its " & tSpent & " coin(s) were reserved when it was queued"
+   else
+      waLog tTxid & " spent " & tSpent & " coin(s) this wallet will not offer " & \
+            "again, and " & tBack & " output(s) came back to it as unconfirmed coin(s)"
+   end if
    waRecomputeBalance
    waPaintNav
 end waNoteBroadcast
+
+command waUnnoteBroadcast pRaw
+   -- The backend refused the transaction for good (after the one retry):
+   -- the coins it reserved are offered again, and the coins added from its
+   -- outputs go, because they will never exist. A mark that another
+   -- transaction has since taken over is left to that one.
+   local tTx, tError, tIns, tI, tCount, tIn, tKey, tFreed
+   try
+      put cwTxDecode(pRaw) into tTx
+   catch tError
+      exit waUnnoteBroadcast
+   end try
+   put tTx["inputs"] into tIns
+   put cwListCount(tIns) into tCount
+   put 0 into tFreed
+   repeat with tI = 1 to tCount
+      put tIns[tI] into tIn
+      put tIn["txid"] & ":" & tIn["vout"] into tKey
+      if sWaSpentBy[tKey] is tTx["txid"] then
+         put "" into sWaSpentBy[tKey]
+         add 1 to tFreed
+      end if
+   end repeat
+   put waCoinsNotFrom(tTx["txid"]) into sWaUtxos
+   waLog "the broadcast of " & tTx["txid"] & " failed; " & tFreed & \
+         " coin(s) it had reserved are offered again"
+   waRecomputeBalance
+   waPaintNav
+end waUnnoteBroadcast
+
+function waPendingSpenderOf pTxid
+   -- The txid of a transaction this wallet has queued or broadcast that
+   -- spends an output of pTxid, or empty. Memory only, like the marks.
+   local tKey, tLen
+   put the number of chars of pTxid into tLen
+   repeat for each key tKey in sWaSpentBy
+      if char 1 to tLen of tKey is pTxid and char (tLen + 1) of tKey is ":" \
+            and sWaSpentBy[tKey] is not "" then
+         return sWaSpentBy[tKey]
+      end if
+   end repeat
+   return ""
+end waPendingSpenderOf
 
 private function waHoldsCoin pKey
    -- Whether a coin with that outpoint is already in the list.
@@ -18384,11 +18491,7 @@ command waCpfpBuild pRec, pKids
       put pRec["fee"] into tParentFee
       put true into tFeeKnown
    end if
-   put waNextUnused(1) into tChangeRec
-   if tChangeRec is "" then
-      throw "there is no change address left in the derived window. Derive " & \
-            "more on the Addresses screen."
-   end if
+   put waNextChangeOrMore() into tChangeRec
    put waEmptyList() into tInputs
    put waEmptyList() into tSel
    put 0 into tTotalIn
@@ -18518,13 +18621,24 @@ command waBumpFee pRec
    -- coin the original did not.
    local tOld, tSel, tPays, tI, tCount, tRec, tInputs, tOutputs, tSeq, tKids
    local tOldFee, tVsize, tFloor, tRate, tWant, tDelta, tNewChange, tChangeRec
-   local tTotalIn, tTotalOut, tRaw, tNew, tRealFee, tOut, tDust, tError
+   local tTotalIn, tTotalOut, tRaw, tNew, tRealFee, tOut, tDust, tError, tSpender
    set the defaultStack to the short name of this stack
    if pRec["confirmations"] + 0 > 0 then
       throw "that transaction is confirmed. There is nothing left to bump, " & \
             "and nothing on earth can replace it now."
    end if
    put sWaSpends[pRec["txid"]] into tOld
+   -- A TRANSACTION WHOSE OUTPUT A PENDING SPEND OF OURS ALREADY USES is not
+   -- replaced: the replacement makes different outputs, so the child would
+   -- be spending a coin that never exists - which is what the 2026-09-03
+   -- evening run did, and both children were refused by every node.
+   put waPendingSpenderOf(pRec["txid"]) into tSpender
+   if tSpender is not "" and tSpender is not pRec["txid"] then
+      throw "an output of that transaction is already spent by " & tSpender & \
+            ", which this wallet built and queued; replacing the parent would " & \
+            "leave that one spending a coin that never exists. Bump the child " & \
+            "instead, or wait for the parent to confirm."
+   end if
    -- CHILD PAYS FOR PARENT (2026-09-04), when a replacement cannot: a
    -- transaction this wallet did not build, one built without the RBF
    -- opt-in, or one that kept no change - and an INCOMING payment that is
@@ -18904,11 +19018,7 @@ function waInscribePrepare pType, pBody, pIsHex
    if waSafeText(tType) is not tType or offset("|", tType) > 0 then
       throw "the content type cannot carry a tab, a newline or a bar."
    end if
-   put waNextUnused(0) into tRec
-   if tRec is "" then
-      throw "there is no unused receive address left in the derived window. " & \
-            "Derive more on the Addresses screen."
-   end if
+   put waNextUnusedOrMore() into tRec
    if tRec["seckey"] is "" and sWaKind is not "key" then
       throw "this wallet holds no private key, so it cannot sign a reveal."
    end if
@@ -19098,11 +19208,7 @@ function waLockPrepare pHeightText
       throw "block " & tHeight & " has already passed (the tip is " & \
             sWaTipHeight & "), so that lock would lock nothing."
    end if
-   put waNextUnused(0) into tRec
-   if tRec is "" then
-      throw "there is no unused receive address left in the derived window. " & \
-            "Derive more on the Addresses screen."
-   end if
+   put waNextUnusedOrMore() into tRec
    put "" into tKey
    put "lock" into tKey["kind"]
    put tRec["index"] into tKey["index"]
@@ -19502,11 +19608,7 @@ function waInscribeRevealText
    if tRate is not a number or tRate <= 0 then
       throw "set a fee rate on the Send screen first: the reveal pays at that rate."
    end if
-   put waNextUnused(0) into tTo
-   if tTo is "" then
-      throw "there is no unused receive address left to receive the inscription. " & \
-            "Derive more on the Addresses screen."
-   end if
+   put waNextUnusedOrMore() into tTo
    put 11 + cwTapscriptInputVsize(tAddrRec["leafscript"]) + 43 into tVsize
    put waCeilSat(tRate * tVsize) into tFee
    if tFee < cwFeeFor(tVsize, 1) then
@@ -21451,6 +21553,9 @@ command waNetFail pWhy
    put empty into sWaInFlight
    put empty into sWaBuffer
    put "failed" into sWaNetState
+   if tRec is not empty and tRec["kind"] is "broadcast" then
+      waUnnoteBroadcast tRec["arg"]
+   end if
    add 1 to sWaSyncFailures
    if sWaSyncFailures > 1 then
       put pWhy & " (" & sWaSyncFailures & " request(s) of this sync have " & \
@@ -22159,6 +22264,7 @@ command waHttpReset
    put empty into sWaHttpBody
    put 0 into sWaHttpLeft
    put "false" into sWaHttpDrop
+   put "" into sWaHttpBad
 end waHttpReset
 
 private function waHttpHeader pHead, pName
@@ -22212,7 +22318,7 @@ command waHttpFeed
    --            (waStreamClosed), the way every reply did until 2026-09-03,
    --            and such a stream is not kept
    --   done     delivered; the stream is kept unless the reply said close
-   local tCrlf, tPos, tTotal, tSkip, tLine, tTake, tLen, tEnc, tConn
+   local tCrlf, tPos, tTotal, tSkip, tLine, tTake, tLen, tEnc, tConn, tBody
    put numToChar(13) & numToChar(10) into tCrlf
    repeat forever
       put the number of bytes of sWaBuffer into tTotal
@@ -22308,6 +22414,12 @@ command waHttpFeed
       else
          -- done: hand it over, and forget a stream the server is closing
          put "head" into sWaHttpPhase
+         if sWaHttpBad is not "" then
+            put sWaHttpBody into tBody
+            put empty into sWaHttpBody
+            waNetFail waHttpBadWhy(tBody)
+            exit repeat
+         end if
          waNetDeliver sWaHttpBody
          put empty into sWaHttpBody
          if sWaHttpDrop is "true" then
@@ -22376,6 +22488,10 @@ private command waStreamClosed
       put "head" into sWaHttpPhase
       put empty into sWaStream
       put empty into sWaStreamTo
+      if sWaHttpBad is not "" then
+         waNetFail waHttpBadWhy(tBody)
+         exit waStreamClosed
+      end if
       waNetDeliver tBody
       exit waStreamClosed
    end if
@@ -22404,9 +22520,30 @@ private command waHttpCheckStatus pStatus
    end if
    put byte 10 to 12 of pStatus into tCode
    if tCode is not "200" and tCode is not "201" then
-      throw "the backend answered " & cwTrim(byte 1 to 60 of pStatus) & "."
+      -- HELD, NOT THROWN: the body is where the reason is. Esplora answers a
+      -- refused broadcast with 400 and the node's own words in the body
+      -- (bad-txns-inputs-missingorspent, insufficient fee...), and the
+      -- 2026-09-03 evening log showed "400 Bad Request / Server: openresty /
+      -- Date:" and nothing a person could act on. The decoder reads the
+      -- body as it would any other, and the done branch refuses with it.
+      put cwTrim(byte 1 to 60 of pStatus) into sWaHttpBad
+      put "" into tCode
    end if
 end waHttpCheckStatus
+
+private function waHttpBadWhy pBody
+   -- The refusal a held status line becomes once its body is in.
+   local tWhy, tBody
+   put "the backend answered " & sWaHttpBad into tWhy
+   put cwTrim(byte 1 to 240 of pBody) into tBody
+   if tBody is not "" then
+      put ": " & tBody after tWhy
+   else
+      put "." after tWhy
+   end if
+   put "" into sWaHttpBad
+   return tWhy
+end waHttpBadWhy
 
 function waElectrumRequest pRec
    -- JSON-RPC 2.0, one object per line. Addresses never leave this wallet on
@@ -23131,6 +23268,14 @@ command waBroadcast
             "a network - the signature is already valid."
    end if
    waNetQueue "broadcast", sWaLastRaw
+   -- RESERVED AT QUEUE TIME, not at acceptance. The 2026-09-03 evening run
+   -- queued a fee bump, then built a silent payment and a commit funding on
+   -- the ORIGINAL's change while the bump was still behind Tor - and the
+   -- bump's acceptance voided that change, so both were refused by every
+   -- node. A transaction this wallet has handed to the network is its own
+   -- word about its coins from that moment; if the backend refuses it,
+   -- waNetFail hands the coins back (waUnnoteBroadcast).
+   waNoteBroadcast sWaLastRaw, ""
    waEnsurePolling
    uiStatus "Queued the broadcast to " & sWaHost & ".", ""
 end waBroadcast
