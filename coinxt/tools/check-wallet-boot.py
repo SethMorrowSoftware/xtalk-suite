@@ -1289,9 +1289,10 @@ def drive(c, ip, world, sandbox):
         c.ck("the table lists it as unfunded, with its address",
              "unfunded" in _fld(world, "od_table") and str(commit.get("address")) in _fld(world, "od_table"),
              _fld(world, "od_table")[:200])
+        click(ip, world, "od_copyAddr")
+        clip = world.clipboard.get("text") if isinstance(world.clipboard, dict) else world.clipboard
         c.ck("Copy its commit address with nothing selected copies the one just made",
-             (click(ip, world, "od_copyAddr") or True) and world.clipboard == str(commit.get("address")),
-             repr(world.clipboard)[:80])
+             str(clip) == str(commit.get("address")), repr(clip)[:80])
         # fund it, then reveal
         utx = dict(ip.globals.get("swautxos") or {"n": 0})
         n_u = int(LCS._n(utx.get("n", 0))) + 1
@@ -1341,19 +1342,23 @@ def drive(c, ip, world, sandbox):
                  str((ip.globals.get("swafrozen") or {}).get(dec_r["txid"] + ":0", "")), "true")
             c.ck("and the wallet file carries that freeze",
                  "frozen\t%s:0" % dec_r["txid"] in str(ip.call("waSerializeWallet", [])), "")
-    # the refusals
-    for label, text, want in (
-            ("a body without a content type is refused", "inscribe: hello", "semicolon"),
-            ("an empty body is refused", "inscribe: text/plain;", "empty"),
-            ("bad hex is refused", "inscribehex: image/png; zz", "hex"),
-            ("other text is not an inscription", "hello", "inscribe:")):
-        put_field("tl_hex", text)
+    # the refusals, from the screen's fields and from the line form
+    for label, args, want in (
+            ("a body without a content type is refused", ["", "hello", False], "type"),
+            ("an empty body is refused", ["text/plain", "", False], "empty"),
+            ("bad hex is refused", ["image/png", "zz", True], "hex")):
         try:
-            ip.call("waInscribe", [text])
+            ip.call("waInscribePrepare", args)
             c.ck(label, False, "accepted")
         except LCS.Thrown as exc:
             c.ck(label, want in str(exc.msg), str(exc.msg)[:100])
-    put_field("tl_hex", "")
+    try:
+        ip.call("waInscribeLineParts", ["inscribe: hello"])
+        c.ck("a line without the semicolon is refused", False, "accepted")
+    except LCS.Thrown as exc:
+        c.ck("a line without the semicolon is refused", "semicolon" in str(exc.msg), str(exc.msg)[:100])
+    c.ck("other text is not carried anywhere",
+         ip.call("waCarryLineToScreen", ["hello"]) is not True, "")
 
     # ---- Tools: a Lightning invoice, read out (2026-09-04) -----------------
     # Inspect and Validate both read a BOLT11 invoice: the specification's
@@ -1471,16 +1476,14 @@ def drive(c, ip, world, sandbox):
         ip.globals["swaselected"] = {}
         world.stack_props["ustrategy"] = "bnb"
     for label, text, want in (
-            ("a lock without a height is refused", "lock:", "block height"),
-            ("a lock in the timestamp range is refused", "lock: 500000000", "block height"),
-            ("other text is not a lock", "hello", "lock:")):
-        put_field("tl_hex", text)
+            ("a lock without a height is refused", "", "block height"),
+            ("a lock in the timestamp range is refused", "500000000", "block height"),
+            ("a lock that is not a number is refused", "soon", "block height")):
         try:
-            ip.call("waLockCoins", [text])
+            ip.call("waLockPrepare", [text])
             c.ck(label, False, "accepted")
         except LCS.Thrown as exc:
             c.ck(label, want in str(exc.msg), str(exc.msg)[:100])
-    put_field("tl_hex", "")
 
     # ---- the two new screens say what they do (2026-09-04) -----------------
     # Every button on Ordinals and Vault carries a tooltip, the rail has
