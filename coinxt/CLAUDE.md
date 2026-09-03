@@ -2726,3 +2726,28 @@ transit is split rather than retried whole, because whatever refused it is likel
 again, and the members then get the ordinary once-more each. The log carries a batch as its shape and
 id range rather than twenty script hashes. Whether the mirror takes a batch is not known from here -
 the fallback is what makes that safe to find out on an engine.
+
+### 2026-09-03, the eighth engine log: one stream, five round trips
+
+The transport changes of the entry above ran the same day. Esplora over Tor: one `dial`, then
+fifty-one requests down stream 1 on HTTP/1.1 - so whichever framing the mirror sends, `waHttpFeed`
+read it, and the fallback never fired. Electrum over Tor and over clearnet: the tip, the fees, two
+batches of twenty histories and one of nine unspent-output requests, every batch answered - so both
+of Blockstream's servers take a JSON-RPC batch, and a sync of fifty-one requests was five round
+trips. Nothing failed, and nothing in the log needed the split path.
+
+Two things in that log were worth a change. The tip and the fee estimate went alone and cost two of
+the five round trips, because the pump batched only a run of the SAME kind; a batch is now any run of
+requests but a broadcast (a broadcast stays its own line so its acknowledgement is its own line), and
+`kWaBatchSize` is twenty-two - the tip, the fees and one chain's twenty addresses, so a fresh sync is
+three round trips: receive chain, change chain, unspent outputs. Not larger, because a reply is one
+line and some servers cap what they will send on one (ElectrumX's default is a megabyte), and the
+split-on-failure makes that a slow sync rather than a lost one. And the receive buffer was rebuilt
+on every chunk - `put sWaBuffer & pData into sWaBuffer` copies the whole buffer, so a two-megabyte
+history arriving in Tor-cell-sized pieces was a gigabyte of copying; it is `put pData after`, which
+the engine extends in place. The mixed batch is gated (five kinds in one line, answered out of order,
+with the tip and the fees landing from inside it) and has not run on an engine.
+
+Not visible in that log, and so still unseen: the stale-answer skip (every sync followed a backend
+change, which forgets the tip and fees on purpose), the paint and pump timing, and the three menu
+items.

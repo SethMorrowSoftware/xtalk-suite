@@ -10937,11 +10937,16 @@ constant kWaFeesFresh = 600000
 -- HOW MANY ELECTRUM REQUESTS GO IN ONE LINE (2026-09-03). JSON-RPC allows a
 -- batch - an array of requests answered by an array of replies, each carrying
 -- its id - and the Electrum servers this wallet talks to take one (the
--- reference clients batch by default). Forty histories are two round trips
--- instead of forty, which over Tor is most of a sync's wall clock. A server
--- that refuses a batch is asked one at a time from then on (waBatchSplit).
--- Twenty rather than forty so one reply stays well inside kWaMaxBody.
-constant kWaBatchSize = 20
+-- reference clients batch by default, and the eighth engine log, 2026-09-03,
+-- saw both of Blockstream's servers take them). A server that refuses a
+-- batch is asked one at a time from then on (waBatchSplit).
+-- TWENTY-TWO is the tip, the fee estimate and one chain's twenty addresses:
+-- a fresh sync is one batch for the receive chain, one for the change chain
+-- and one for the unspent outputs, three round trips. Not larger, because a
+-- reply is one line and some servers cap what they will send on one
+-- (ElectrumX's default is a megabyte); a busy wallet's histories are the
+-- case, and the split-on-failure keeps it a slow sync rather than a lost one.
+constant kWaBatchSize = 22
 
 -- The cap on one response body. A backend that never stops sending hits a wall
 -- here rather than exhausting the engine's memory.
@@ -17190,19 +17195,22 @@ command waNetPump
    put waEmptyList() into tRest
    put waEmptyList() into tMembers
    put cwListCount(sWaQueue) into tCount
-   -- A RUN OF THE SAME KIND GOES AS ONE BATCH on an Electrum backend
-   -- (kWaBatchSize): the histories a sync queues are contiguous, and so are
-   -- the unspent-output requests that follow a batch of them. Anything
-   -- else - the tip, the fees, a broadcast - goes alone, as before.
+   -- A RUN OF REQUESTS GOES AS ONE BATCH on an Electrum backend
+   -- (kWaBatchSize), whatever their kinds: the tip, the fees and the
+   -- histories a sync queues are one line, and so are the unspent-output
+   -- requests that follow. The eighth engine log (2026-09-03) batched
+   -- histories only and spent two of its five round trips on a tip and a
+   -- fee estimate that could have ridden along. A broadcast goes alone, so
+   -- its acknowledgement is its own line in the log.
    put "false" into tGather
    if waIsElectrum(sWaBackend) and sWaBatch is not "false" \
-         and (tRec["kind"] is "history" or tRec["kind"] is "utxos") then
+         and tRec["kind"] is not "broadcast" then
       put "true" into tGather
    end if
    put cwListAdd(tMembers, tRec) into tMembers
    repeat with tI = 2 to tCount
       put sWaQueue[tI] into tNext
-      if tGather is "true" and tNext["kind"] is tRec["kind"] \
+      if tGather is "true" and tNext["kind"] is not "broadcast" \
             and cwListCount(tMembers) < kWaBatchSize then
          put cwListAdd(tMembers, tNext) into tMembers
       else
@@ -17217,7 +17225,8 @@ command waNetPump
       put "" into tBatch
       put tRec["id"] into tBatch["id"]
       put "batch" into tBatch["kind"]
-      put "of " & cwListCount(tMembers) & " " & tRec["kind"] into tBatch["arg"]
+      put "of " & cwListCount(tMembers) & " (" & waBatchShape(tMembers) & ")" \
+            into tBatch["arg"]
       put tBatch into tRec
    end if
    put the milliseconds + kWaNetDeadline into tRec["deadline"]
@@ -17807,7 +17816,11 @@ on waStreamEvent pStream, pEvent, pData
       if pEvent is "open" then
          waStreamOpened
       else if pEvent is "data" then
-         put sWaBuffer & pData into sWaBuffer
+         -- APPENDED, not rebuilt. `put sWaBuffer & pData into sWaBuffer`
+         -- copies the whole buffer on every chunk - a two-megabyte history
+         -- arriving in Tor-cell-sized pieces was a gigabyte of copying - where
+         -- the engine's `after` extends in place (2026-09-03).
+         put pData after sWaBuffer
          -- THE DEADLINE IS FOR SILENCE, NOT FOR SIZE. It was set once at the
          -- request and measured a whole reply against forty-five seconds, so
          -- a two-megabyte history over Tor - the 2026-09-02 log has one at
@@ -17861,6 +17874,33 @@ private command waStreamSendElectrum
    end if
 end waStreamSendElectrum
 
+private function waBatchShape pMembers
+   -- "tip, fees, 20 history": the kinds in a batch, in order of first
+   -- appearance, with a count where there is more than one.
+   local tI, tCount, tKind, tKinds, tSeen, tOut
+   put cwListCount(pMembers) into tCount
+   put empty into tSeen
+   put empty into tKinds
+   repeat with tI = 1 to tCount
+      put pMembers[tI]["kind"] into tKind
+      if tSeen[tKind] is empty then
+         put tKind & return after tKinds
+      end if
+      add 1 to tSeen[tKind]
+   end repeat
+   put empty into tOut
+   repeat for each line tKind in tKinds
+      if tOut is not empty then
+         put ", " after tOut
+      end if
+      if tSeen[tKind] > 1 then
+         put tSeen[tKind] & " " after tOut
+      end if
+      put tKind after tOut
+   end repeat
+   return tOut
+end waBatchShape
+
 private function waRequestLogLine pLine
    -- The "->" line: a single request verbatim, a batch as its shape and its
    -- ids, because twenty script hashes on one log line hide the two numbers
@@ -17875,7 +17915,7 @@ private function waRequestLogLine pLine
    -- the length into a local first: `the number of chars of pLine & "..."`
    -- binds the concatenation into the chunk target (engine notes)
    put the number of chars of pLine into tLen
-   return "-> batch " & sWaInFlight["arg"] & " requests, ids " & tFirst & \
+   return "-> batch " & sWaInFlight["arg"] & ", ids " & tFirst & \
          ".." & tLast & " (" & tLen & " chars)"
 end waRequestLogLine
 
@@ -19094,15 +19134,16 @@ function waAboutText
    put "  server pushed on the idle stream between them." & return & return after tOut
    put "WHAT IS NOT" & return after tOut
    put "  Electrum over Tor on MAINNET (port 110) has not been tried. The" & return after tOut
-   put "  changes of 2026-09-03 after the seventh log have not run on an" & return after tOut
-   put "  engine: Esplora over Tor keeping its stream (HTTP/1.1 and the" & return after tOut
-   put "  reply decoder), the sync skipping a fresh tip and fee estimate," & return after tOut
-   put "  the paint-once-a-second and pump-at-once changes, and the three" & return after tOut
-   put "  menu items that now do what they say (copy the selected address," & return after tOut
-   put "  sign a message with it, copy the selected outpoint), and the" & return after tOut
-   put "  JSON-RPC batches (twenty histories in one line) that an Electrum" & return after tOut
-   put "  sync sends now - with a fallback to one at a time if the server" & return after tOut
-   put "  refuses them, which no server has yet been seen to do or not do." & return after tOut
+   put "  eighth log (2026-09-03) saw Esplora over Tor run a sync down one" & return after tOut
+   put "  stream on HTTP/1.1 and both Electrum transports take JSON-RPC" & return after tOut
+   put "  batches (five round trips for a sync of fifty-one requests)." & return after tOut
+   put "  Not seen on an engine: batches that mix the tip and fees in with" & return after tOut
+   put "  the histories (three round trips); the sync skipping a fresh tip" & return after tOut
+   put "  and fee estimate (every sync in that log followed a backend" & return after tOut
+   put "  change, which forgets them); the paint-once-a-second and" & return after tOut
+   put "  pump-at-once changes; and the three menu items that now do what" & return after tOut
+   put "  they say (copy the selected address, sign a message with it," & return after tOut
+   put "  copy the selected outpoint)." & return after tOut
    put "  No spend built here has been broadcast on MAINNET. The right-click" & return after tOut
    put "  menu opened on an engine on 2026-09-02; that it selects the row" & return after tOut
    put "  under the cursor since then has not been seen there. An" & return after tOut
