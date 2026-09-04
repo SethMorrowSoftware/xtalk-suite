@@ -22770,7 +22770,15 @@ command waNetDeliver pBody
          -- tRec["arg"], not tArg: the latter became the log's label above
          waUnnoteBroadcast tRec["arg"]
       end if
-      waNetFail "could not read the answer to " & tKind & ": " & tError
+      -- A REFUSAL IS NOT AN UNREADABLE ANSWER. The twelfth engine log (2026-09-03)
+      -- read "could not read the answer to broadcast: the Electrum server
+      -- refused: ..." - the answer was read perfectly well; it was a no. The
+      -- prefix stays for what it was written for (a reply that did not parse).
+      if char 1 to 27 of tError is "the Electrum server refused" then
+         waNetFail tKind & ": " & tError
+      else
+         waNetFail "could not read the answer to " & tKind & ": " & tError
+      end if
       exit waNetDeliver
    end try
    if there is a field "nw_out" then

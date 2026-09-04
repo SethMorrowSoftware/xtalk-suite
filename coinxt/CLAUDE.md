@@ -3179,3 +3179,21 @@ node accepts. The script's own case-insensitive `contains` matched the release
 line ("...failed;") for "FAILED" once; it matches "FAILED: " now. Still unproven:
 the window extending itself (the fix above lands after these runs), the backend
 un-marking a coin, and Esplora's 400 body in the log.
+
+**The twelfth engine log (2026-09-03, 21:54 EDT): the second autotest, fourteen
+of fourteen.** The same script on the wallet as fixed by its second run, on
+Electrum over Tor: the refused broadcast released with the node's reason, the
+bump refused naming the child, the change-less sweep bumped by a child priced
+from the record ("about 3 sat/vB" for 1152 sat over 384 vB, the integer-tenths
+fix), and - new - BOTH windows extending themselves: the change chain while
+child B was built ("derived a further window: every change address was used"),
+and the receive chain on the twenty-seventh timelock, at index 40, after locks
+took indices 14 to 39 one each (the leaf-skip fix of the entry above, seen
+working). Every queued transaction was accepted by the network after the
+script finished - the parent, the child, the sweep and the CPFP child - so the
+pair is real on testnet. The one wording fix from reading the log: the release
+line was followed by "FAILED: could not read the answer to broadcast: the
+Electrum server refused: ...", and the answer had been read perfectly well;
+a refusal is logged as "broadcast: the Electrum server refused: ..." now, with
+the old prefix kept for a reply that does not parse. Still unproven: the
+backend un-marking a coin it still lists, and Esplora's 400 body in the log.
