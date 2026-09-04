@@ -13076,7 +13076,7 @@ constant kWaVersion = "1.2.0"
 -- text before it is offered, the offer names the version and the SHA-256,
 -- and nothing replaces the script until you press Update.
 constant kWaUpdateUrl = "https://raw.githubusercontent.com/SethMorrowSoftware/xtalk-suite/main/coinxt/examples/coin-wallet.livecodescript"
-constant kWaUiVersion = "ui-d8cb0cafb9a1"
+constant kWaUiVersion = "ui-d4536b9e36b6"
 
 -- The window, inside the family's 720p budget (tools/check-stack-size.py).
 constant kWaWidth = 1200
@@ -13813,6 +13813,7 @@ local sWaCoreScanPct      -- core-rpc: the node's rescan progress while it is sc
 local sWaCoreMempool      -- core-rpc: the Node screen's mempool card
 local sWaCoreNodeText     -- core-rpc: the Node screen's status card
 local sWaSandboxDir       -- core-cli: the regtest sandbox's data directory, once started
+local sWaCoreOnion        -- core-tor: the onion of the person's OWN node, remembered across a backend switch
 local sWaReqId            -- a monotonic id, so a late reply cannot be mistaken
 local sWaPolling          -- "true" while the tick is armed
 
@@ -14173,6 +14174,7 @@ command waTips
    waTip "nv_vt", "Lock coins until a block height with a CLTV vault address"
    waTip "nv_tl", "Sign and verify messages (2011 format or BIP-322); inspect, decode, validate anything; PSBTs"
    waTip "nv_nw", "Choose Electrum, Esplora or your own Bitcoin Core node, and watch the sync"
+   waTip "tl_askNode", "A second opinion from your own Bitcoin Core node on the address, descriptor or PSBT in the box"
    waTip "nv_nd", "Your Bitcoin Core node: what it is, what it says fees are, its mempool, and a watch-only wallet in it"
    waTip "nv_lg", "Everything the wallet did, in order, with the boot self-check"
    waTip "nv_st", "Units, the wallet file, labels in BIP-329, and Update from main"
@@ -14594,6 +14596,7 @@ command waBuildTools
    uiArea "tl_out", "720,90,1172,530"
    uiButton "tl_copyOut", "Copy this", "720,538,860,564"
    uiButton "tl_export", "Export keys", "864,538,1000,564"
+   uiButton "tl_askNode", "Ask the node", "1004,538,1172,564"
 end waBuildTools
 
 -- ---- 7b. Ordinals -----------------------------------------------------------
@@ -18685,6 +18688,19 @@ command waCpfpBuild pRec, pKids
       waEnsurePolling
       waNetQueue "tx", pRec["txid"]
       waLog "cpfp: asking the backend for the bytes of " & pRec["txid"]
+      if waIsCore(sWaBackend) then
+         -- A NODE CAN ANSWER BOTH HALVES AT ONCE, and the better half:
+         -- getmempoolentry gives the size AND the fee of the whole
+         -- unconfirmed ANCESTOR package, which is what a child actually
+         -- has to pay for. The bytes are asked for as well, because the
+         -- entry is gone the moment the parent confirms and the size is
+         -- still wanted then.
+         waNetQueue "mempool", pRec["txid"]
+         waLog "cpfp: and asking the node what its mempool holds for it, " & \
+               "which prices the whole unconfirmed package rather than " & \
+               "the parent alone"
+      end if
+      waAfterQueue
       throw "asking the backend for the parent's bytes; press Bump again " & \
             "when they arrive (the log will say)."
    end if
@@ -19103,6 +19119,8 @@ command waToolsClick pRole
       waSweep tText
    else if pRole is "entropy" then
       waEntropyToMnemonic tText
+   else if pRole is "askNode" then
+      waToolsAskNode
    else if pRole is "toEntropy" then
       waWordsToEntropy tText, field "tl_pass"
    else if pRole is "copyOut" then
@@ -21439,6 +21457,90 @@ private function waNodeWatchState
    return tOut & "."
 end waNodeWatchState
 
+command waToolsAskNode
+   -- A SECOND OPINION FROM A NODE on what is in the Tools box. Every one
+   -- of these three is something this wallet computes for itself, and
+   -- that is the point: an address it built, a descriptor it exported and
+   -- a PSBT it signed, checked by the implementation everybody else's
+   -- wallet is checked against. It is a CROSS-CHECK and never an
+   -- authority - nothing here changes what the wallet does, and the node
+   -- is never given a key.
+   local tText, tMethod, tLead
+   set the defaultStack to the short name of this stack
+   put cwTrim(field "tl_hex") into tText
+   if tText is "" then
+      throw "put an address, an extended key, a descriptor or a PSBT in " & \
+            "the box first."
+   end if
+   if waIsCore(sWaBackend) is not true then
+      throw "this asks a Bitcoin Core node, and this wallet is talking to " & \
+            waBackendLabel() & ". Choose one of the Bitcoin Core backends " & \
+            "on the Network screen."
+   end if
+   put char 1 to 6 of tText into tLead
+   if tLead is "cHNidP" then
+      -- base64 of the PSBT magic, which is what every PSBT begins with
+      put "analyzepsbt" into tMethod
+   else if tText contains "(" then
+      put "getdescriptorinfo" into tMethod
+   else if the number of chars of tText > 100 then
+      throw "that is longer than an address, a key or a descriptor, and it " & \
+            "does not begin like a PSBT. Nothing was asked."
+   else
+      put "validateaddress" into tMethod
+   end if
+   waEnsurePolling
+   waNetQueue "rpc", tMethod & " [" & cwJsonString2(tText) & "]"
+   waLog "tools: asking the node to " & tMethod
+   uiStatus "Asked the node to " & tMethod & ". The answer lands in the " & \
+         "Result panel.", ""
+   waAfterQueue
+end waToolsAskNode
+
+function waCoreRpcText pMethod, pNode
+   -- The node's answer to one of the three cross-checks, rendered BY NAME
+   -- rather than through a general JSON printer: the fields worth reading
+   -- differ per method, and a printer that dumps everything is a panel
+   -- nobody reads. An unknown method prints nothing rather than guessing.
+   local tOut
+   if pMethod is "validateaddress" then
+      put "the node on this address" & return into tOut
+      put "  valid        " & cwJsonGet(pNode, "isvalid") & return after tOut
+      if cwJsonGet(pNode, "isvalid") is not "true" then
+         put "  why not      " & cwJsonGet(pNode, "error") & return after tOut
+         return tOut
+      end if
+      put "  address      " & cwJsonGet(pNode, "address") & return after tOut
+      put "  scriptPubKey " & cwJsonGet(pNode, "scriptPubKey") & return after tOut
+      put "  script       " & cwJsonGet(pNode, "isscript") & return after tOut
+      put "  witness      " & cwJsonGet(pNode, "iswitness") after tOut
+      if cwJsonGet(pNode, "iswitness") is "true" then
+         put " (version " & cwJsonGet(pNode, "witness_version") & ")" after tOut
+      end if
+      return tOut
+   end if
+   if pMethod is "getdescriptorinfo" then
+      put "the node on this descriptor" & return into tOut
+      put "  with checksum " & cwJsonGet(pNode, "descriptor") & return after tOut
+      put "  checksum      " & cwJsonGet(pNode, "checksum") & return after tOut
+      put "  ranged        " & cwJsonGet(pNode, "isrange") & return after tOut
+      put "  solvable      " & cwJsonGet(pNode, "issolvable") & return after tOut
+      put "  private keys  " & cwJsonGet(pNode, "hasprivatekeys") after tOut
+      return tOut
+   end if
+   if pMethod is "analyzepsbt" then
+      put "the node on this PSBT" & return into tOut
+      put "  next          " & cwJsonGet(pNode, "next") & return after tOut
+      put "  vsize         " & cwJsonGet(pNode, "estimated_vsize") & return after tOut
+      put "  fee rate      " & cwJsonGet(pNode, "estimated_feerate") & \
+            " BTC/kvB" & return after tOut
+      put "  fee           " & cwJsonGet(pNode, "fee") & " BTC" & return after tOut
+      put "  error         " & cwJsonGet(pNode, "error") after tOut
+      return tOut
+   end if
+   return ""
+end waCoreRpcText
+
 command waNodeClick pRole
    local tError, tTxid, tRate, tTarget, tRec
    set the defaultStack to the short name of this stack
@@ -21681,6 +21783,12 @@ command waApplyNetworkFields
    end if
    if tHost is not empty then
       put tHost into sWaHost
+      if sWaBackend is "core-tor" then
+         -- remembered under its own name, so a switch away and back does
+         -- not lose it and a switch from another Tor backend does not
+         -- inherit that one's host (waSetBackend)
+         put tHost into sWaCoreOnion
+      end if
    end if
    if tPort is not empty then
       if tPort is not an integer or tPort < 1 or tPort > 65535 then
@@ -21750,15 +21858,18 @@ command waSetBackend pBackend
    else if pBackend is "core-tor" then
       -- NO DEFAULT HOST: there is no such thing as a public Bitcoin Core
       -- onion, and inventing one would be inviting somebody to hand their
-      -- addresses to a stranger's node. The host stays whatever is in the
-      -- box, and the state line says what is missing.
+      -- addresses to a stranger's node.
+      --
+      -- AND NOT WHATEVER HOST THE LAST BACKEND LEFT BEHIND, either. The
+      -- first version kept any host ending in ".onion", which is every
+      -- Esplora and Electrum onion this wallet ships - so switching from
+      -- one of those to this pointed a node's RPC credentials at a public
+      -- block explorer. The person's own onion is remembered under its own
+      -- name and restored here; anything else is cleared.
       put empty into sWaCoreChain
       put empty into sWaCoreInfo
-      if sWaHost is kWaCoreHost or sWaHost is "" \
-            or not (sWaHost ends with ".onion") then
-         put empty into sWaHost
-         put waCorePortFor(sWaNetwork) into sWaPort
-      end if
+      put sWaCoreOnion into sWaHost
+      put waCorePortFor(sWaNetwork) into sWaPort
    end if
    set the defaultStack to the short name of this stack
    put sWaHost into field "nw_host"
@@ -23563,6 +23674,10 @@ function waJsonSplitTop pArrayText
 end waJsonSplitTop
 
 function waCliArgsFrom pParams
+   return waCliArgsFromFor(pParams, waCliStyle())
+end waCliArgsFrom
+
+function waCliArgsFromFor pParams, pStyle
    -- THE SAME PARAMETERS THE RPC SENDS, as command-line arguments. Split
    -- back out of the JSON array waCoreParams built rather than assembled
    -- a second time, because two builders of one request drift and this
@@ -23580,19 +23695,31 @@ function waCliArgsFrom pParams
          put " " after tOut
       end if
       if char 1 of tPart is quote then
-         put waCliQuote(cwJsonText(cwJsonParse(tPart))) after tOut
+         put waCliQuoteFor(cwJsonText(cwJsonParse(tPart)), pStyle) after tOut
       else
-         put waCliQuote(tPart) after tOut
+         put waCliQuoteFor(tPart, pStyle) after tOut
       end if
    end repeat
    return tOut
-end waCliArgsFrom
+end waCliArgsFromFor
 
 function waCliCommand pRec
+   return waCliCommandFor(pRec, waCliStyle())
+end waCliCommand
+
+function waCliCommandFor pRec, pStyle
    -- The whole command line for one request. NO host, port, cookie or data
    -- directory: finding those is what bitcoin-cli is for here, and a
    -- person whose bitcoin-cli already works has configured this wallet by
    -- having done so.
+   --
+   -- THE SHELL STYLE IS A PARAMETER for the reason waCliQuoteFor's is: the
+   -- rule differs per platform, and a rule that can only be exercised on
+   -- the machine it was written for is a rule nothing checks. On Windows
+   -- a structured argument is refused (see the quoter), so scantxoutset,
+   -- importdescriptors, listunspent and testmempoolaccept are RPC-only
+   -- there - which is stated on the Network screen rather than worked
+   -- around with an escaping scheme this suite cannot test.
    local tMethod, tParams, tOut, tFlag, tName
    put waCoreMethodFor(pRec) into tMethod
    if not (("," & kWaCoreMethods & ",") contains ("," & tMethod & ",")) then
@@ -23611,15 +23738,15 @@ function waCliCommand pRec
          throw "this wallet has no account key yet, so there is no watch " & \
                "wallet in the node to ask."
       end if
-      put " -rpcwallet=" & waCliQuote(tName) after tOut
+      put " -rpcwallet=" & waCliQuoteFor(tName, pStyle) after tOut
    end if
    put " " & tMethod after tOut
-   put waCliArgsFrom(waCoreParams(pRec)) into tParams
+   put waCliArgsFromFor(waCoreParams(pRec), pStyle) into tParams
    if tParams is not "" then
       put " " & tParams after tOut
    end if
    return tOut
-end waCliCommand
+end waCliCommandFor
 
 command waCliRun pRec
    -- ONE COMMAND, RUN NOW. Synchronous by nature: shell() does not return
@@ -24184,6 +24311,7 @@ private command waCoreApply pKind, pArg, pNode
    if pKind is "mempool" then
       put waCoreMempoolText(pArg, pNode) into sWaCoreMempool
       waLog "mempool: " & line 1 of sWaCoreMempool
+      waCoreMempoolRecord pArg, pNode
       exit waCoreApply
    end if
    if pKind is "testaccept" then
@@ -24208,7 +24336,20 @@ private command waCoreApply pKind, pArg, pNode
       uiStatus "Broadcast. The node returned txid " & tText & ".", "ok"
       exit waCoreApply
    end if
-   -- rpc: the raw answer is already in the Network screen's pane
+   if pKind is "rpc" then
+      -- THE CROSS-CHECKS, into the panel every other Tools answer lands in
+      put waCoreRpcText(word 1 of pArg, pNode) into tText
+      if tText is "" then
+         exit waCoreApply
+      end if
+      set the defaultStack to the short name of this stack
+      if there is a field "tl_out" then
+         put tText into field "tl_out"
+      end if
+      waLog "tools: " & line 1 of tText
+      uiStatus "The node answered; the Result panel has it.", "ok"
+      exit waCoreApply
+   end if
 end waCoreApply
 
 private command waCoreWalletInfo pNode
@@ -24281,6 +24422,42 @@ function waCoreBirthWord
    return "the genesis block (no birth date is set, so the node reads the " & \
          "whole chain)"
 end waCoreBirthWord
+
+private command waCoreMempoolRecord pTxid, pNode
+   -- WHAT A FEE BUMP NEEDS, WRITTEN WHERE IT LOOKS FOR IT. waCpfpBuild
+   -- prices a child from the history row's own vsize and fee - which
+   -- Esplora supplies and Electrum does not - and a node supplies
+   -- something better than either: the size and fee of the whole
+   -- unconfirmed ANCESTOR package, which is exactly what the child has to
+   -- pay for. One unconfirmed parent makes them the parent's own numbers,
+   -- so nothing is lost in the ordinary case and the chain case stops
+   -- being priced short.
+   local tSize, tFee, tI, tCount, tRec, tHit
+   put cwJsonGet(pNode, "ancestorsize") into tSize
+   put cwJsonGet(pNode, "fees/ancestor") into tFee
+   if tSize is not an integer or tSize < 1 then
+      exit waCoreMempoolRecord
+   end if
+   if tFee is not a number then
+      exit waCoreMempoolRecord
+   end if
+   put 0 into tHit
+   put cwListCount(sWaHistory) into tCount
+   repeat with tI = 1 to tCount
+      put sWaHistory[tI] into tRec
+      if tRec["txid"] is cwLower(pTxid) then
+         put tSize into tRec["vsize"]
+         put cwBtcToSat(cwExpandExponent(tFee)) into tRec["fee"]
+         put tRec into sWaHistory[tI]
+         add 1 to tHit
+      end if
+   end repeat
+   if tHit > 0 then
+      waLog "the node prices " & pTxid & "'s unconfirmed package at " & \
+            waAmount(cwBtcToSat(cwExpandExponent(tFee))) & " over " & tSize & \
+            " vB; Bump can build a child from that without asking again"
+   end if
+end waCoreMempoolRecord
 
 private function waCoreMempoolText pTxid, pNode
    local tOut, tBase, tAnc, tDesc
@@ -26454,6 +26631,7 @@ function waUpdateCarry
    put "update:cookie" & tTab & sWaCoreCookie & return after tOut
    put "update:auth" & tTab & sWaCoreAuth & return after tOut
    put "update:remoteok" & tTab & sWaCoreRemoteOk & return after tOut
+   put "update:coreonion" & tTab & sWaCoreOnion & return after tOut
    put "update:screen" & tTab & sWaScreen & return after tOut
    return tOut
 end waUpdateCarry
@@ -26529,6 +26707,8 @@ command waUpdateRestore
             put tValue into tAuth
          else if tName is "remoteok" then
             put tValue into tRemote
+         else if tName is "coreonion" then
+            put tValue into sWaCoreOnion
          else if tName is "screen" then
             put tValue into tScreen
          end if
@@ -27149,7 +27329,7 @@ end scFinish
 -- clipboard. What they check is that this stack's own arithmetic agrees with
 -- the library it carries, on this engine, before anybody types anything.
 
-constant kWaScControls = "ad_change,ad_detail,ad_label,ad_labelCap,ad_more,ad_panel,ad_receive,ad_scan,ad_sec1,ad_setLabel,ad_table,cn_addManual,cn_detail,cn_freeze,cn_hint,cn_panel,cn_sec1,cn_table,cn_tick,cn_tickAll,cn_tickNone,hs_bump,hs_copyTxid,hs_detail,hs_inspect,hs_panel,hs_refresh,hs_sec1,hs_table,lg_boot,lg_clear,lg_copy,lg_hint,lg_panel,lg_sec1,lg_sec2,lg_text,nd_ask,nd_birth,nd_birthCap,nd_copy,nd_create,nd_fees,nd_lookup,nd_mempool,nd_mempoolNote,nd_netinfo,nd_note,nd_panelA,nd_panelB,nd_reimport,nd_sandboxNote,nd_sbMine,nd_sbReorg,nd_sbStart,nd_sbStop,nd_sec1,nd_sec2,nd_sec3,nd_sec4,nd_sec5,nd_sec6,nd_status,nd_testAccept,nd_tierNote,nd_tierScan,nd_tierWatch,nd_useFast,nd_useNormal,nd_useSlow,nd_watchNote,nd_watchState,nv_ad,nv_bal,nv_chain,nv_cn,nv_confirmed,nv_frozenamt,nv_hs,nv_lg,nv_nd,nv_net,nv_nw,nv_od,nv_panel,nv_pending,nv_rc,nv_refresh,nv_sd,nv_st,nv_tip,nv_tl,nv_vt,nv_wallet,nv_wl,nw_auth,nw_authCap,nw_bCore,nw_bCoreCli,nw_bCoreTor,nw_bElectrumClear,nw_bElectrumTor,nw_bEsploraClear,nw_bEsploraTor,nw_bOffline,nw_cookie,nw_cookieCap,nw_host,nw_hostCap,nw_out,nw_panelA,nw_panelB,nw_port,nw_portCap,nw_privacy,nw_remoteOk,nw_sec1,nw_sec2,nw_sec3,nw_socks,nw_socksCap,nw_state,nw_stop,nw_syncNow,nw_test,nw_why,od_body,od_bodyCap,od_copyAddr,od_copyOut,od_details,od_hex,od_hexCap,od_hint,od_inspect,od_intro,od_out,od_panelA,od_panelB,od_prepare,od_read,od_reveal,od_runes,od_sec1,od_sec2,od_sec3,od_sec4,od_size,od_table,od_type,od_typeCap,od_typeJson,od_typeSvg,od_typeText,rc_address,rc_amount,rc_amountCap,rc_copy,rc_copyUri,rc_detail,rc_label,rc_labelCap,rc_message,rc_messageCap,rc_next,rc_panelA,rc_panelB,rc_qr,rc_qrframe,rc_qrhint,rc_sec1,rc_sec2,rc_sec3,rc_showQr,rc_uri,rc_verify,sd_addNote,sd_addSelf,sd_broadcast,sd_clear,sd_copyRaw,sd_locktime,sd_locktimeCap,sd_out,sd_panelA,sd_panelB,sd_paste,sd_preview,sd_rate,sd_rateCap,sd_ratehint,sd_rbf,sd_sec1,sd_sec2,sd_sec3,sd_sec4,sd_sign,sd_stratBnb,sd_stratLargest,sd_stratManual,sd_stratOldest,sd_stratSmallest,sd_strategyCap,sd_to,sd_toCap,sd_toPsbt,sd_warn,st_about,st_browse,st_exportLabels,st_filenote,st_forget,st_forgetnote,st_gap,st_gapCap,st_importLabels,st_load,st_panelA,st_panelB,st_password,st_passwordCap,st_path,st_pathCap,st_save,st_sec1,st_sec2,st_sec3,st_unitBtc,st_unitMbtc,st_unitSat,st_update,tl_copyOut,tl_decode,tl_derive,tl_entropy,tl_export,tl_hex,tl_hexCap,tl_hold,tl_inspect,tl_msg,tl_msg322,tl_msgAddr,tl_msgAddrCap,tl_msgCap,tl_msgSig,tl_msgSigCap,tl_msgSign,tl_msgVerify,tl_newKey,tl_note,tl_out,tl_panelA,tl_panelB,tl_pass,tl_passCap,tl_psbtCombine,tl_psbtFinal,tl_psbtSign,tl_sec1,tl_sec2,tl_sec3,tl_sweep,tl_toEntropy,tl_validate,uiFooter,uiStatus,uiTitle,vt_copyAddr,vt_copyOut,vt_day,vt_details,vt_height,vt_heightCap,vt_hint,vt_intro,vt_month,vt_out,vt_panelA,vt_panelB,vt_prepare,vt_sec1,vt_sec2,vt_sec3,vt_send,vt_table,vt_week,vt_when,vt_year,wl_account,wl_accountCap,wl_addCosigner,wl_backup,wl_copyDesc,wl_copyXpub,wl_custody,wl_generate,wl_kindKey,wl_kindMulti,wl_kindRestore,wl_kindSeed,wl_kindWatch,wl_label,wl_labelCap,wl_m,wl_mCap,wl_mnemonic,wl_mnemonicCap,wl_netMain,wl_netReg,wl_netSignet,wl_netTest,wl_netTest4,wl_open,wl_out,wl_panelA,wl_panelB,wl_pass,wl_passCap,wl_path,wl_pathCap,wl_sec1,wl_sec2,wl_sec3,wl_sec4,wl_typeLegacy,wl_typeMulti,wl_typeNative,wl_typeNested,wl_typeTaproot,wl_warn,wl_xkey,wl_xkeyCap"
+constant kWaScControls = "ad_change,ad_detail,ad_label,ad_labelCap,ad_more,ad_panel,ad_receive,ad_scan,ad_sec1,ad_setLabel,ad_table,cn_addManual,cn_detail,cn_freeze,cn_hint,cn_panel,cn_sec1,cn_table,cn_tick,cn_tickAll,cn_tickNone,hs_bump,hs_copyTxid,hs_detail,hs_inspect,hs_panel,hs_refresh,hs_sec1,hs_table,lg_boot,lg_clear,lg_copy,lg_hint,lg_panel,lg_sec1,lg_sec2,lg_text,nd_ask,nd_birth,nd_birthCap,nd_copy,nd_create,nd_fees,nd_lookup,nd_mempool,nd_mempoolNote,nd_netinfo,nd_note,nd_panelA,nd_panelB,nd_reimport,nd_sandboxNote,nd_sbMine,nd_sbReorg,nd_sbStart,nd_sbStop,nd_sec1,nd_sec2,nd_sec3,nd_sec4,nd_sec5,nd_sec6,nd_status,nd_testAccept,nd_tierNote,nd_tierScan,nd_tierWatch,nd_useFast,nd_useNormal,nd_useSlow,nd_watchNote,nd_watchState,nv_ad,nv_bal,nv_chain,nv_cn,nv_confirmed,nv_frozenamt,nv_hs,nv_lg,nv_nd,nv_net,nv_nw,nv_od,nv_panel,nv_pending,nv_rc,nv_refresh,nv_sd,nv_st,nv_tip,nv_tl,nv_vt,nv_wallet,nv_wl,nw_auth,nw_authCap,nw_bCore,nw_bCoreCli,nw_bCoreTor,nw_bElectrumClear,nw_bElectrumTor,nw_bEsploraClear,nw_bEsploraTor,nw_bOffline,nw_cookie,nw_cookieCap,nw_host,nw_hostCap,nw_out,nw_panelA,nw_panelB,nw_port,nw_portCap,nw_privacy,nw_remoteOk,nw_sec1,nw_sec2,nw_sec3,nw_socks,nw_socksCap,nw_state,nw_stop,nw_syncNow,nw_test,nw_why,od_body,od_bodyCap,od_copyAddr,od_copyOut,od_details,od_hex,od_hexCap,od_hint,od_inspect,od_intro,od_out,od_panelA,od_panelB,od_prepare,od_read,od_reveal,od_runes,od_sec1,od_sec2,od_sec3,od_sec4,od_size,od_table,od_type,od_typeCap,od_typeJson,od_typeSvg,od_typeText,rc_address,rc_amount,rc_amountCap,rc_copy,rc_copyUri,rc_detail,rc_label,rc_labelCap,rc_message,rc_messageCap,rc_next,rc_panelA,rc_panelB,rc_qr,rc_qrframe,rc_qrhint,rc_sec1,rc_sec2,rc_sec3,rc_showQr,rc_uri,rc_verify,sd_addNote,sd_addSelf,sd_broadcast,sd_clear,sd_copyRaw,sd_locktime,sd_locktimeCap,sd_out,sd_panelA,sd_panelB,sd_paste,sd_preview,sd_rate,sd_rateCap,sd_ratehint,sd_rbf,sd_sec1,sd_sec2,sd_sec3,sd_sec4,sd_sign,sd_stratBnb,sd_stratLargest,sd_stratManual,sd_stratOldest,sd_stratSmallest,sd_strategyCap,sd_to,sd_toCap,sd_toPsbt,sd_warn,st_about,st_browse,st_exportLabels,st_filenote,st_forget,st_forgetnote,st_gap,st_gapCap,st_importLabels,st_load,st_panelA,st_panelB,st_password,st_passwordCap,st_path,st_pathCap,st_save,st_sec1,st_sec2,st_sec3,st_unitBtc,st_unitMbtc,st_unitSat,st_update,tl_askNode,tl_copyOut,tl_decode,tl_derive,tl_entropy,tl_export,tl_hex,tl_hexCap,tl_hold,tl_inspect,tl_msg,tl_msg322,tl_msgAddr,tl_msgAddrCap,tl_msgCap,tl_msgSig,tl_msgSigCap,tl_msgSign,tl_msgVerify,tl_newKey,tl_note,tl_out,tl_panelA,tl_panelB,tl_pass,tl_passCap,tl_psbtCombine,tl_psbtFinal,tl_psbtSign,tl_sec1,tl_sec2,tl_sec3,tl_sweep,tl_toEntropy,tl_validate,uiFooter,uiStatus,uiTitle,vt_copyAddr,vt_copyOut,vt_day,vt_details,vt_height,vt_heightCap,vt_hint,vt_intro,vt_month,vt_out,vt_panelA,vt_panelB,vt_prepare,vt_sec1,vt_sec2,vt_sec3,vt_send,vt_table,vt_week,vt_when,vt_year,wl_account,wl_accountCap,wl_addCosigner,wl_backup,wl_copyDesc,wl_copyXpub,wl_custody,wl_generate,wl_kindKey,wl_kindMulti,wl_kindRestore,wl_kindSeed,wl_kindWatch,wl_label,wl_labelCap,wl_m,wl_mCap,wl_mnemonic,wl_mnemonicCap,wl_netMain,wl_netReg,wl_netSignet,wl_netTest,wl_netTest4,wl_open,wl_out,wl_panelA,wl_panelB,wl_pass,wl_passCap,wl_path,wl_pathCap,wl_sec1,wl_sec2,wl_sec3,wl_sec4,wl_typeLegacy,wl_typeMulti,wl_typeNative,wl_typeNested,wl_typeTaproot,wl_warn,wl_xkey,wl_xkeyCap"
 
 command waScFresh
    -- THIS RUN'S RECORD, NOT EVERY RUN'S. The field is saved with the stack,

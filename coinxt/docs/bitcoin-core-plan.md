@@ -6,10 +6,13 @@ guard, tip and fees, the `addr()` scan tier, the watch tier (createwallet,
 importdescriptors with a birth date, listunspent, listtransactions, rescan
 progress and the re-import on derive), the Node screen, the mempool and
 `testmempoolaccept` cards, and the regtest sandbox. See [wallet.md](wallet.md),
-"Bitcoin Core as a backend" and "The Node screen". **Nothing described here
-has met a node**; phase 5 (PSBT and address cross-checks, `verifymessage`,
-RPC batching, a bump priced from the node's ancestor figures) is still plan,
-and so is every claim below that a real node would settle. This document is
+"Bitcoin Core as a backend" and "The Node screen". Most of phase 5
+went with them: the PSBT and address cross-checks on Tools
+(`validateaddress`, `getdescriptorinfo`, `analyzepsbt`), the mempool card,
+`testmempoolaccept`, `core-tor`, and a fee bump priced from the node's own
+ancestor package. **Nothing described here has met a node**; what is left of
+the plan is `verifymessage`, JSON-RPC batching for Core, and every claim
+below that only a real node can settle. This document is
 the design and the
 order of work for making the CoinXT Wallet talk to a person's own Bitcoin Core
 node - local or self-hosted - for everything a node can do for a wallet, and

@@ -3326,6 +3326,19 @@ that), and `waCliDeliver` concatenated `the number of chars of` into a log
 line, which binds into the chunk target - three sites over in the same file
 carry the note explaining it.
 
+**AND ONE MORE THE GATE FOUND, which is the worst thing in this entry.**
+`waSetBackend "core-tor"` kept whatever host was already in the box if it
+ended in ".onion", on the reasoning that a person's own node address should
+survive a switch. Every onion this wallet ships ends in ".onion": switching
+from Esplora over Tor to Core over Tor therefore pointed a NODE'S RPC
+CREDENTIALS at a public block explorer, which would have sent them in a
+Basic auth header to somebody else's server on the first request. The
+person's own onion is remembered under its own name (`sWaCoreOnion`) and
+restored; anything else is cleared, and the gate drives the switch away and
+back. The general form is one this file already knows in another dress: a
+condition that tests the SHAPE of a value where the question is which
+BACKEND it belongs to.
+
 **One thing the gate itself taught.** Four checks in the first Core block
 were about the wrong request, because a pump that had to DIAL writes nothing
 until the engine's `waSockOpened` callback arrives and the model only sends

@@ -562,8 +562,13 @@ watching some of its addresses reports a balance missing the rest.
 
 **The mempool.** For a selected history row, what the node holds: size, fee,
 ancestors, descendants, how long it has been there and whether it opted in
-to replacement. Beside it, Test asks `testmempoolaccept` whether the node
-WOULD accept the transaction the Send screen last signed, which is the
+to replacement. That lookup also writes the numbers a fee bump needs onto
+the history row, and they are better numbers than any other backend's: a
+child pays for the whole unconfirmed ANCESTOR package, which is what a node
+reports, where Esplora gives the parent alone and Electrum gives neither. So
+a Bump on a Core backend prices the package exactly instead of paying in
+full for an unknown fee. Beside it, Test asks `testmempoolaccept` whether the
+node WOULD accept the transaction the Send screen last signed, which is the
 cheapest way there is to find out that a fee is too low, and sends nothing.
 
 **A regtest sandbox.** On regtest only, and refused by name on every other
@@ -576,15 +581,24 @@ than talking to one, and the reason it exists is that a chain of your own
 makes every screen here exercisable without a faucet and without waiting
 ten minutes for a block.
 
+**A second opinion, on Tools.** Ask the node reads the box on the Tools
+screen and asks the node about it: an address goes to `validateaddress`, a
+descriptor to `getdescriptorinfo`, a PSBT to `analyzepsbt`, and the answer
+lands in the Result panel beside everything else Tools prints. It is a
+cross-check and never an authority - an address this wallet built, a
+descriptor it exported and a PSBT it signed, read back by the implementation
+everybody else's wallet is checked against. Nothing it says changes what the
+wallet does, and the node is never given a key.
+
 Not run against a node: everything above is driven headlessly by
 `tools/check-wallet-boot.py` through a modelled socket, a modelled Tor
 stream and a modelled shell, against fixtures of the node's reply shapes,
 with the request bytes and the command lines asserted. The framing on a real
 node, the cookie on a real platform, a real rescan and the sandbox are the
-plan's phase 0 on the maintainer's machine. What is not built at all: PSBT
-and address cross-checks against the node (`decodepsbt`, `analyzepsbt`,
-`validateaddress`, `getdescriptorinfo`, `verifymessage`), JSON-RPC batching
-for Core, and pricing a fee bump from the node's own ancestor figures.
+plan's phase 0 on the maintainer's machine. What is not built at all: `verifymessage`
+(the 2011 format only, which this wallet verifies itself), JSON-RPC batching
+for Core, and a Node screen card for the sandbox's own mining address rather
+than this wallet's first one.
 
 ## Silent payments, the sending side
 

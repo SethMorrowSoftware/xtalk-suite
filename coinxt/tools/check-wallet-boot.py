@@ -3057,7 +3057,7 @@ def drive(c, ip, world, sandbox):
 
     def nd_pump_and_open():
         # see core_pump above: the engine's callback follows its own dial
-        nd_pump_and_open()
+        ip.call("waNetPump", [])
         if world.sock and world.sock[-1][0] == "open":
             world.result = ""
             ip.call("waSockOpened", [str(ip.globals.get("swasock"))])
@@ -3426,6 +3426,18 @@ def drive(c, ip, world, sandbox):
              and "descendants  2" in _fld(world, "nd_mempool")
              and "bip125 rbf   true" in _fld(world, "nd_mempool"),
              _fld(world, "nd_mempool")[:200])
+        # AND THE NUMBERS A FEE BUMP NEEDS GO ON THE HISTORY ROW. A child
+        # pays for the whole unconfirmed ANCESTOR package, which is what a
+        # node reports and neither of the other backends does; Esplora
+        # gives the parent alone and Electrum gives neither, so on those
+        # the child overpays by design and here it does not have to.
+        hist = ip.globals.get("swahistory") or {}
+        row = hist["1"]
+        c.eq("the node's ancestor size lands on the history row",
+             int(LCS._n(row["vsize"])), 141)
+        c.eq("and its ancestor fee, in satoshi", int(LCS._n(row["fee"])), 282)
+        c.ck("said, so a reader of the log knows Bump will not ask again",
+             "unconfirmed package at" in nd_log(), nd_log(200))
         # testmempoolaccept: the verdict before anything is sent
         ip.globals["swalastraw"] = raw
         click(ip, world, "nd_testAccept")
@@ -3481,6 +3493,56 @@ def drive(c, ip, world, sandbox):
         ip.call("waDeserializeWallet", [filetext])
         c.eq("and read back", int(LCS._n(ip.globals.get("swacorebirth"))), 1700000000)
 
+        # ---- the Tools box, checked by the node ----
+        # A cross-check and never an authority: an address this wallet
+        # built, a descriptor it exported and a PSBT it signed, read back
+        # by the implementation everybody else's wallet is checked
+        # against. Nothing here changes what the wallet does and the node
+        # is never given a key.
+        ip.call("waNetAbort", [])
+        world.anywhere("tl_hex").content = ""
+        try:
+            ip.call("waToolsAskNode", [])
+            c.ck("an empty box is refused", False, "it asked")
+        except LCS.Thrown as exc:
+            c.ck("an empty box is refused", "in the box first" in str(exc.msg),
+                 str(exc.msg)[:100])
+        for text, method in ((a1, "validateaddress"),
+                             ("wpkh([abcd1234/84h/1h/0h]tpubD6N/0/*)", "getdescriptorinfo"),
+                             ("cHNidP8BAHECAAAAAA==", "analyzepsbt")):
+            ip.call("waNetAbort", [])
+            world.anywhere("tl_hex").content = text
+            ip.call("waToolsAskNode", [])
+            q = ip.globals.get("swaqueue") or {}
+            rec = q.get("1") or {}
+            c.eq("%s in the box asks the node to %s" % (text[:14], method),
+                 str(rec.get("arg")).split(" ")[0], method)
+            c.ck("and hands it exactly what is in the box",
+                 '["%s"]' % text in str(rec.get("arg")), str(rec.get("arg"))[:120])
+        ip.call("waNetPump", [])
+        c.ck("the request carries the method the box chose",
+             '"method":"analyzepsbt"' in nd_write(), nd_write()[-140:])
+        nd_answer("200 OK", nd_result(
+            '{"inputs":[],"estimated_vsize":141,"estimated_feerate":0.00002,'
+            '"fee":0.00000282,"next":"signer"}'))
+        c.ck("and the node's answer lands in the Result panel, by field name",
+             "the node on this PSBT" in _fld(world, "tl_out")
+             and "vsize         141" in _fld(world, "tl_out")
+             and "next          signer" in _fld(world, "tl_out"),
+             _fld(world, "tl_out")[:160])
+        ip.call("waNetAbort", [])
+        world.anywhere("tl_hex").content = a1
+        ip.call("waToolsAskNode", [])
+        ip.call("waNetPump", [])
+        nd_answer("200 OK", nd_result(
+            '{"isvalid":true,"address":"%s","scriptPubKey":"0014aabb",'
+            '"isscript":false,"iswitness":true,"witness_version":0}' % a1))
+        c.ck("an address answer names the script the node derived",
+             "scriptPubKey 0014aabb" in _fld(world, "tl_out")
+             and "witness      true (version 0)" in _fld(world, "tl_out"),
+             _fld(world, "tl_out")[:160])
+        world.anywhere("tl_hex").content = ""
+
         # ---- the screen refuses when the backend is not a node ----
         ip.call("waNetAbort", [])
         ip.call("waSetBackend", ["electrum-clear"])
@@ -3495,6 +3557,14 @@ def drive(c, ip, world, sandbox):
             c.ck("and asking is refused by name",
                  "not talking to a Bitcoin Core node" in str(exc.msg),
                  str(exc.msg)[:110])
+        world.anywhere("tl_hex").content = a1
+        try:
+            ip.call("waToolsAskNode", [])
+            c.ck("and so is the Tools cross-check", False, "it queued")
+        except LCS.Thrown as exc:
+            c.ck("and so is the Tools cross-check",
+                 "Bitcoin Core backends" in str(exc.msg), str(exc.msg)[:110])
+        world.anywhere("tl_hex").content = ""
         c.eq("with nothing queued",
              int(LCS._n(ip.call("cwListCount", [ip.globals.get("swaqueue")]))), 0)
     finally:
@@ -3518,7 +3588,8 @@ def drive(c, ip, world, sandbox):
         "swatipat", "swafeesat", "swafeerates", "swautxos", "swahistory",
         "swacorecookie", "swacoreauth", "swacorechain", "swacoreinfo",
         "swacoreremoteok", "swacoretier", "swacorewallet", "swacoreimported",
-        "swahaveonion", "swasandboxdir", "swalastraw", "swahttpbad")}
+        "swahaveonion", "swasandboxdir", "swalastraw", "swahttpbad",
+        "swacoreonion")}
     world.tor, world.tor_state, world.tor_handles = [], {}, 0
     world.tor_write_fail = ""
     LCS.HASHES["oxstreamstate"] = (
@@ -3576,6 +3647,21 @@ def drive(c, ip, world, sandbox):
              "version-2 onion" in str(ip.call("waBackendChainWhy", [])),
              str(ip.call("waBackendChainWhy", []))[:110])
         onion = "abcdefghijklmnopqrstuvwxyz234567abcdefghijklmnopqrstuvwx.onion"
+        # THE ONION IS THE PERSON'S OWN, typed on the screen, which is the
+        # only way this backend ever gets a host - and it is remembered
+        # under its own name so a switch to another Tor backend and back
+        # does not lose it, and a switch FROM one does not inherit its host
+        world.anywhere("nw_host").content = onion
+        ip.call("waApplyNetworkFields", [])
+        c.eq("an onion typed for this backend is taken", str(ip.globals.get("swahost")), onion)
+        ip.call("waSetBackend", ["esplora-tor"])
+        c.ck("switching to Esplora over Tor takes ITS onion",
+             str(ip.globals.get("swahost")) != onion, str(ip.globals.get("swahost")))
+        ip.call("waSetBackend", ["core-tor"])
+        c.eq("AND SWITCHING BACK DOES NOT INHERIT IT: a node's RPC "
+             "credentials must never be pointed at a public explorer, which "
+             "is what keeping any host ending in .onion would have done",
+             str(ip.globals.get("swahost")), onion)
         ip.globals["swahost"] = onion
         c.eq("a version-3 one is not", str(ip.call("waBackendChainWhy", [])), "")
         c.eq("AN ONION IS NOT 'SOMEWHERE ELSE' for the credentials tick: the "
@@ -3585,14 +3671,12 @@ def drive(c, ip, world, sandbox):
              str(ip.call("waCoreIsRemote", ["192.168.1.9"])).lower(), "true")
         c.eq("and this machine never was",
              str(ip.call("waCoreIsRemote", ["127.0.0.1"])).lower(), "false")
-        cookie = str(ip.globals.get("swacorecookie"))
-        if not cookie:
-            ip.call("waRetunePort", [])
-            cookie = str(ip.globals.get("swacorecookie"))
-        os.makedirs(os.path.dirname(cookie), exist_ok=True)
-        with open(cookie, "w") as fh:
-            fh.write("__cookie__:" + "ef" * 32)
-        ip.globals["swacoreauth"] = ""
+        # A COOKIE FILE IS THIS MACHINE'S, and a node reached over Tor is
+        # somebody else's machine - so the credentials for one are
+        # rpcuser:rpcpassword out of its bitcoin.conf, which is what a
+        # person publishing a node as a hidden service actually sets.
+        ip.globals["swacorecookie"] = ""
+        ip.globals["swacoreauth"] = "bob:hunter2"
         ip.globals["swacorechain"] = ""
         ip.globals["swacoretier"] = "scan"
         ip.call("waNetQueue", ["tip", ""])
@@ -3689,21 +3773,30 @@ def drive(c, ip, world, sandbox):
                range(1, int(LCS._n(ip.call("cwListCount", [parts]))) + 1)]
         c.eq("the parameter list splits at the top level only",
              got, ['"start"', '["addr(a)#c","x,y"]', "6", "true"])
-        c.eq("and a JSON string becomes a bare word on the command line, "
-             "while a structure stays the text the RPC would have sent",
-             str(ip.call("waCliArgsFrom", ['["start",["addr(a)#c"],6,true]'])),
-             "'start' '[\"addr(a)#c\"]' '6' 'true'"
-             if str(ip.call("waCliStyle", [])) == "posix" else "REFUSED")
+        c.eq("on POSIX a JSON string becomes a bare word and a structure "
+             "stays the text the RPC would have sent",
+             str(ip.call("waCliArgsFromFor",
+                         ['["start",["addr(a)#c"],6,true]', "posix"])),
+             "'start' '[\"addr(a)#c\"]' '6' 'true'")
+        try:
+            ip.call("waCliArgsFromFor", ['["start",["addr(a)#c"]]', "win"])
+            c.ck("and on Windows the structured argument is refused, not "
+                 "escaped", False, "it was quoted")
+        except LCS.Thrown as exc:
+            c.ck("and on Windows the structured argument is refused, not "
+                 "escaped", "no command line" in str(exc.msg), str(exc.msg)[:120])
 
         # the command line, for the kinds that matter
         ip.globals["swanetwork"] = "testnet"
         ip.globals["swacoretier"] = "scan"
-        cmd = str(ip.call("waCliCommand", [{"kind": "tip", "arg": "", "id": "3"}]))
+        cmd = str(ip.call("waCliCommandFor",
+                          [{"kind": "tip", "arg": "", "id": "3"}, "posix"]))
         c.ck("a node request names the program, the chain and the method",
              cmd.startswith("bitcoin-cli -testnet -rpcclienttimeout=")
              and cmd.endswith("getblockchaininfo"), cmd)
         ip.globals["swacoretier"] = "watch"
-        cmd = str(ip.call("waCliCommand", [{"kind": "listunspent", "arg": "", "id": "4"}]))
+        cmd = str(ip.call("waCliCommandFor",
+                          [{"kind": "listunspent", "arg": "", "id": "4"}, "posix"]))
         name = str(ip.call("waCoreWalletName", []))
         c.ck("a WALLET request carries -rpcwallet, which is what the path is "
              "on the other channel",
@@ -3711,7 +3804,8 @@ def drive(c, ip, world, sandbox):
         c.ck("with the same parameters the RPC sends",
              "0" in cmd and "9999999" in cmd and "true" in cmd, cmd)
         try:
-            ip.call("waCliCommand", [{"kind": "rpc", "arg": "stop", "id": "5"}])
+            ip.call("waCliCommandFor",
+                    [{"kind": "rpc", "arg": "stop", "id": "5"}, "posix"])
             c.ck("a method off the allowlist is refused on this channel too",
                  False, "it was built")
         except LCS.Thrown as exc:
@@ -3732,6 +3826,10 @@ def drive(c, ip, world, sandbox):
              not world.shell_cmds
              and int(LCS._n(ip.call("cwListCount", [ip.globals.get("swaqueue")]))) == 1,
              str(world.shell_cmds))
+        # THE DRAIN GOES THROUGH THE PLATFORM'S OWN STYLE, which this model
+        # answers as Win32 - so the requests it can run are the ones with no
+        # structured argument, which is the honest Windows surface of this
+        # channel and is what a person there would actually get.
         world.shell_answers = ['{"chain":"test","blocks":5129002,"headers":5129002,'
                                '"initialblockdownload":false,"pruned":false,'
                                '"verificationprogress":1}']
@@ -3756,17 +3854,28 @@ def drive(c, ip, world, sandbox):
             '{"txid":"%s","vout":0,"scriptPubKey":"%s","amount":0.00050000,'
             '"height":5129000}],"total_amount":0.00050000}' % ("55" * 32, s1)]
         ip.call("waSync", [])
-        c.eq("a sync of a node through the program is three commands",
-             len(world.shell_cmds), 3)
-        c.ck("and they are the three the RPC channel sends",
+        c.ck("a sync through the program runs the same requests the socket "
+             "sends, in the same order",
              "getblockchaininfo" in world.shell_cmds[0]
-             and "estimatesmartfee" in world.shell_cmds[1]
-             and "scantxoutset" in world.shell_cmds[2], str(world.shell_cmds)[:200])
-        coins = ip.globals.get("swautxos") or {}
-        c.eq("the coins arrive", int(LCS._n(ip.call("cwListCount", [coins]))), 1)
-        c.eq("with the value the node gave",
-             int(LCS._n(coins["1"]["value"])), 50000)
-        c.eq("and the rate", str((ip.globals.get("swafeerates") or {}).get("6")), "3")
+             and "estimatesmartfee" in world.shell_cmds[1],
+             str(world.shell_cmds)[:200])
+        c.eq("and the rate arrives",
+             str((ip.globals.get("swafeerates") or {}).get("6")), "3")
+        if str(ip.call("waCliStyle", [])) == "posix":
+            c.eq("with the scan behind them", len(world.shell_cmds), 3)
+            coins = ip.globals.get("swautxos") or {}
+            c.eq("the coins arrive",
+                 int(LCS._n(ip.call("cwListCount", [coins]))), 1)
+            c.eq("with the value the node gave",
+                 int(LCS._n(coins["1"]["value"])), 50000)
+        else:
+            # Windows: the scan's descriptor list cannot go on a command
+            # line, so it is REFUSED by name rather than mangled, and the
+            # refusal names the channel that can carry it
+            c.eq("while the scan is refused on Windows rather than mangled",
+                 len(world.shell_cmds), 2)
+            c.ck("with the RPC channel named",
+                 "no command line" in ct_log(), ct_log(240))
         # a refusal the program prints
         world.shell_cmds = []
         world.shell_answers = ["error code: -8\nerror message:\nInvalid parameter"]
