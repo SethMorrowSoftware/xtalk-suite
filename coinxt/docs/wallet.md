@@ -468,6 +468,138 @@ network afterwards, so the child-pays-for-parent pair is a real one on
 testnet. Still not run on an engine: the backend un-marking a coin it still
 lists, and a refusal's 400 body reaching the log on Esplora.
 
+## Bitcoin Core as a backend
+
+Since 2026-09-04 the Network screen has a sixth choice: **Bitcoin Core, your
+own node, over RPC**. It is [the plan's](bitcoin-core-plan.md) phase 1 with
+the scan half of phase 2, and it works like this. The node is spoken to over
+JSON-RPC 1.0 on plain HTTP, one POST per request down a socket the wallet
+keeps open between requests (Core drops a quiet client after thirty seconds;
+the next request connects again and nothing is counted). The host is 127.0.0.1
+and the port follows the chain by Core's own table (8332, 18332, 48332 for
+testnet4, 38332, 18443 for regtest), both editable. Two ways in: the cookie
+file the running node writes, read at EVERY request because it changes when
+the node restarts (the path is filled in for the chain and the platform, and
+editable), or `rpcuser:rpcpassword`, which wins when both boxes are filled. A
+node that is not on this machine gets the credentials only if you tick the
+box for it, because Core's RPC is unencrypted; an SSH tunnel to 127.0.0.1 is
+the better answer.
+
+**The chain is asked, not assumed.** The first request of every sync whose
+node is not yet known is `getblockchaininfo`, and a node on another chain is
+refused with both names in the sentence, the queue behind it emptied, and the
+refusal held on the Network screen until the network or the host moves. The
+same answer gives the tip, whether the node is pruned or still in its initial
+block download (said in the log and under the state line; balances from a
+node still downloading are provisional), and the headers it is behind.
+
+**A sync is three requests however many addresses there are:** the chain, the
+fee estimate (`estimatesmartfee` for six blocks, on the same ceiling as every
+other backend's), and ONE `scantxoutset` over an `addr()` entry for every
+address of the wallet, leaves included. That is what makes a pruned node
+enough. What a scan cannot see is written on the screen and in the log: it
+reads the chain and not the mempool, so a payment on its way to you is
+invisible until it confirms; the wallet's own unconfirmed change is kept by
+the wallet's broadcast memory until a scan lists it; a coin this wallet spent
+and the node still lists (the spend not yet confirmed) stays marked spent,
+because a scan is not evidence either way; and there is no history, so the
+History screen shows only what this wallet did itself and a spent-out
+address counts as unused until the watch tier lands. A scan of a mainnet
+UTXO set takes tens of seconds and gets its own deadline.
+
+**A broadcast is `sendrawtransaction`**, and a refusal comes back as the
+node's own words with its RPC code (-26 for a policy rejection, -25 and -27
+for missing inputs and already-in-chain, -28 for a node still starting,
+-5 for not found), released to the coins the way an Electrum refusal is. HTTP
+401, 403 and 404 are mapped to sentences naming the cookie, `rpcallowip` and
+the wallet path. The log line for a request is the method and its size, never
+the headers, and the wallet file never carries the credentials; Update from
+main carries them across the swap with the other Network settings.
+
+**Three ways to reach the same node.** `Bitcoin Core (RPC)` is the socket
+above. `Core over Tor` sends the identical POST down a Tor stream to a node
+you have published as a hidden service, which is the honest way to use a
+node at home from somewhere else; there is no default onion, because there
+is no such thing as a public Bitcoin Core one, and the credentials tick is
+not asked for there because the circuit is the encryption. `Core via
+bitcoin-cli` runs the program instead of opening a connection: if
+`bitcoin-cli getblockchaininfo` works in your terminal it works here, with
+no host, port, cookie or password to type. That last one blocks the window
+while the program runs, so its requests go when you press a button and
+never on the poll timer, and an argument this wallet cannot quote safely
+for your shell is refused rather than escaped. On POSIX a single-quoted
+argument carries a JSON payload untouched; on Windows a structured argument
+is refused with the RPC choice named as the remedy.
+
+## The Node screen
+
+A thirteenth screen, and everything on it is about a node.
+
+**What the node is.** Its host, which credentials are in use, the chain it
+reported against the chain this wallet is on, its blocks and headers,
+whether it is pruned or still in its initial block download, its version and
+peer count. Ask the node fetches all of that plus three fee estimates.
+
+**What it says fees are.** One, six and a hundred and forty-four blocks,
+each with a button that writes it into the Send screen. Every other backend
+answers one estimate, which this wallet reads as both of its rates; a node
+answers as many as it is asked, so a real one-block estimate is never
+overwritten by the six-block one.
+
+**A watch-only wallet in the node.** The scan tier needs nothing set up and
+cannot see the mempool. The watch tier asks the node to keep a wallet of its
+own for your addresses, named for this wallet's master fingerprint so two
+accounts on one node never share one, with private keys DISABLED and created
+blank: the node is given addresses to watch and can never be asked to sign.
+Then a sync is what that wallet has found, mempool included, with history
+from `listtransactions`. It costs one rescan when it is created, which is
+what the first-used box is for: a date earlier than the wallet's first use
+is safe and slow, a later one silently loses history, so an empty box means
+the genesis block and this wallet never guesses. A seed generated here
+records its own birth. When the address window grows past what the node was
+given, the next sync re-imports before it asks anything, because a wallet
+watching some of its addresses reports a balance missing the rest.
+
+**The mempool.** For a selected history row, what the node holds: size, fee,
+ancestors, descendants, how long it has been there and whether it opted in
+to replacement. That lookup also writes the numbers a fee bump needs onto
+the history row, and they are better numbers than any other backend's: a
+child pays for the whole unconfirmed ANCESTOR package, which is what a node
+reports, where Esplora gives the parent alone and Electrum gives neither. So
+a Bump on a Core backend prices the package exactly instead of paying in
+full for an unknown fee. Beside it, Test asks `testmempoolaccept` whether the
+node WOULD accept the transaction the Send screen last signed, which is the
+cheapest way there is to find out that a fee is too low, and sends nothing.
+
+**A regtest sandbox.** On regtest only, and refused by name on every other
+chain before any program is run: Start makes a node in a directory beside
+the wallet file and waits for it to answer, Mine pays six blocks to this
+wallet's first address, Reorg throws the tip away, mines a longer chain and
+reconsiders the old block, and Stop asks the node to stop without deleting
+anything. It is the only part of this wallet that starts a program rather
+than talking to one, and the reason it exists is that a chain of your own
+makes every screen here exercisable without a faucet and without waiting
+ten minutes for a block.
+
+**A second opinion, on Tools.** Ask the node reads the box on the Tools
+screen and asks the node about it: an address goes to `validateaddress`, a
+descriptor to `getdescriptorinfo`, a PSBT to `analyzepsbt`, and the answer
+lands in the Result panel beside everything else Tools prints. It is a
+cross-check and never an authority - an address this wallet built, a
+descriptor it exported and a PSBT it signed, read back by the implementation
+everybody else's wallet is checked against. Nothing it says changes what the
+wallet does, and the node is never given a key.
+
+Not run against a node: everything above is driven headlessly by
+`tools/check-wallet-boot.py` through a modelled socket, a modelled Tor
+stream and a modelled shell, against fixtures of the node's reply shapes,
+with the request bytes and the command lines asserted. The framing on a real
+node, the cookie on a real platform, a real rescan and the sandbox are the
+plan's phase 0 on the maintainer's machine. What is not built at all: `verifymessage`
+(the 2011 format only, which this wallet verifies itself), JSON-RPC batching
+for Core, and a Node screen card for the sandbox's own mining address rather
+than this wallet's first one.
+
 ## Silent payments, the sending side
 
 Since 2026-09-04 the Pay-to box takes a **BIP-352 silent payment address**

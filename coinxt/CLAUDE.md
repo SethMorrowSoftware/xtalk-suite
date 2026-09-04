@@ -3197,3 +3197,170 @@ Electrum server refused: ...", and the answer had been read perfectly well;
 a refusal is logged as "broadcast: the Electrum server refused: ..." now, with
 the old prefix kept for a reply that does not parse. Still unproven: the
 backend un-marking a coin it still lists, and Esplora's 400 body in the log.
+
+### 2026-09-04, Bitcoin Core as a backend: the plan's phase 1, and the scan
+
+`docs/bitcoin-core-plan.md` was written the day before as a plan and this is
+its first code: a `core-rpc` transport beside the four public ones, on the
+Network screen as "Bitcoin Core: your own node, over RPC", with the cookie
+and rpcauth boxes, the remote-host tick, and a scan of the node's UTXO set in
+place of the per-address requests. Four decisions are worth the record.
+
+**IT RIDES THE CLEARNET SOCKET PATH, AND ONLY THE BYTES DIFFER.** Core's RPC
+is HTTP on a plain socket, kept alive between requests, which is exactly what
+the clearnet Electrum transport already owns (one socket, the id as the
+correlation, the write-failure requeue, the deadline, the close on failure);
+`waNetStart` dials the same way and `waSockSend` dispatches to `waCoreSend`.
+The reply framing is two engine reads rather than a phase machine, because
+Core never chunks: the head until the blank line, then the body for exactly
+its Content-Length. The write-failure branch was extracted (`waSockWriteFailed`)
+so the two protocols on one socket cannot drift about it, which is the
+per-transport-validation lesson of 2026-09-01 applied before the fifth
+instance rather than after.
+
+**THE CHAIN IS ASKED FIRST, EVERY TIME IT IS NOT KNOWN.** The port table is
+Core's own and is still only a guess about what a person runs where, so the
+sync puts `getblockchaininfo` ahead of the scan whenever the node's chain is
+not known, and a mismatch empties the queue, is remembered (`sWaCoreChain`),
+and is refused by `waBackendChainWhy` until the network or the host moves.
+The chain is NOT forgotten on a network change: what the node said is what
+the guard compares, and comparing it to the new network is the question.
+
+**ONE addr() PER ADDRESS RATHER THAN THE ACCOUNT'S DESCRIPTORS**, because
+every wallet kind has addresses and only some have a descriptor Core can
+range, and an address list needs no fingerprint, path override or range
+bookkeeping to be right. The watch tier (phase 3) is where the descriptors
+earn their place. **AND THE SCAN IS NOT BELIEVED ABOUT THE MEMPOOL**, in
+either direction: a scanned coin this wallet has marked spent stays marked
+(the spend is in the mempool the scan cannot see), where `waMergeUtxos` would
+drop the mark; and the wallet's own unconfirmed coins survive the replace.
+Getting either wrong is a coin offered twice or a balance that falls on every
+sync until a confirmation.
+
+**THE GATE MODELS THE SOCKET, which nothing had needed before.** The
+clearnet Electrum checks drive the handlers around the socket and never the
+socket; the Core block switches on a modelled one (`world.sock`, the four
+statements recorded and `the result` answered the way the engine's are, the
+same shape as the modelled Tor) and drives the whole life of a request: the
+dial, the write asserted byte for byte with the auth header base64 of a
+cookie file written in the sandbox, the two armed reads, the head and body
+delivered as the engine would, the socket kept. Nothing here has met a node;
+the labels say so in three places.
+
+### 2026-09-04, the rest of Bitcoin Core: three ways in, a watch wallet, a screen and a sandbox
+
+The entry above landed the plan's phase 1 and the scan tier. This is phases 2
+to 4 in one pass, built while an engine was unavailable, so every word of it
+is headless: `core-tor` and `core-cli` beside `core-rpc`, the watch tier (a
+descriptor wallet inside the node), a thirteenth screen, and a regtest
+sandbox. Six decisions are worth the record and two of them are lessons this
+member had already written down and I made anyway.
+
+**ONE PARAMETER BUILDER, TWO CHANNELS.** `waCoreParams` answers the JSON
+array for a request and nothing else; the RPC wraps it in an envelope and
+`waCliArgsFrom` splits it back into command-line arguments. The alternative -
+a second builder for the command line - is the shape this file has scars
+from, and the split is a scanner (`waJsonSplitTop`) rather than a chunk
+expression because a bracket inside a string is not a bracket. Nothing is
+re-serialised, so a structured argument reaches `bitcoin-cli` as the same
+bytes the socket would have sent.
+
+**THE SHELL IS QUOTED BY ITS OWN RULE, AND REFUSED WHERE IT HAS NONE.** Inside
+POSIX single quotes every byte is literal but a single quote, so a JSON
+payload full of double quotes and parentheses - which is exactly what
+`scantxoutset` and `importdescriptors` take - passes through untouched, and
+one refusal covers the whole shell. Windows has no such rule, so a structured
+argument there is REFUSED with the RPC channel named as the remedy. The first
+version of the quoter refused parentheses and double quotes on every
+platform, which would have made the two requests that matter impossible on
+the channel built to carry them. The quoting takes the style as a PARAMETER
+(`waCliQuoteFor`) so both can be driven offline: a rule that can only be
+exercised on the machine it is written for is a rule nothing checks, and the
+model answers `the platform` as Win32.
+
+**shell() BLOCKS, SO THE POLL TICK NEVER RUNS ONE.** `waNetPump` exits
+immediately for the cli backend and `waCliDrain` runs the queue from the
+press that filled it. This is the frozen-window shape this file has already
+met twice by other doors (`lock screen` with an unguarded body; `cwTxDecode`
+looping on a count the input supplied), and it would have arrived a third
+time as a wallet that hangs whenever a node is slow, with nothing on screen
+to say why.
+
+**A NODE IS ASKED WHAT CHAIN IT IS ON, and the answer outranks the port
+table.** Core's default ports are only a guess about what a person runs
+where. The sync puts `getblockchaininfo` ahead of everything whenever the
+node's chain is not known, a mismatch empties the queue and is remembered,
+and `waBackendChainWhy` keeps refusing until the network or the host moves.
+The chain is deliberately NOT forgotten on a network change: what the node
+said is what the guard compares.
+
+**THE WATCH TIER IMPORTS addr() PER ADDRESS, not the account's ranged
+descriptors** - every wallet kind has addresses and only some have a
+descriptor Core can range, and a leaf (an inscription commit, a timelock) is
+an address and not a range at all. The cost is a re-import when the window
+grows, which `waSync` queues by comparing counts rather than trusting anyone
+to remember. And the birth date is never guessed: an earlier one is safe and
+slow, a later one silently loses history, so an empty box means the genesis
+block and a seed generated here records its own birth.
+
+**A SCAN IS NOT EVIDENCE ABOUT THE MEMPOOL, IN EITHER DIRECTION.**
+`waMergeUtxos` drops a mark from a coin the backend still lists, because the
+backends that see the mempool are believed over this wallet's memory.
+`waMergeScan` must NOT: a scan reads the chain, so a coin it lists may be
+spent by a transaction in a mempool it cannot see, and dropping the mark
+would offer that coin twice. The wallet's own unconfirmed coins survive a
+scan for the same reason, or the balance would fall on every sync until a
+confirmation. `waMergeCoreUnspent`, on the watch tier, goes back to the
+`waMergeUtxos` rule, because that answer DOES include the mempool.
+
+**AND THE GATE CAUGHT THE ONE REAL DEFECT IN ALL OF IT, which was mine and
+was already in this file twice.** `waNodeApplyBirth` was written
+`if tText is not an integer or tText < 1`, and LiveCodeScript evaluates BOTH
+operands of `or` - the exact mistake recorded here for `waSetSuggestedRate`
+and `waCheckedHeight` on 2026-09-01, in the same words, by the same author.
+The boot gate died on "last tuesday" rather than reporting it, which is the
+interpreter refusing what the engine would have answered as text. Nested now.
+Two more of the same class went the same way in one sitting: the sandbox
+helpers were declared `command` and called as functions (the checker caught
+that), and `waCliDeliver` concatenated `the number of chars of` into a log
+line, which binds into the chunk target - three sites over in the same file
+carry the note explaining it.
+
+**AND ONE MORE THE GATE FOUND, which is the worst thing in this entry.**
+`waSetBackend "core-tor"` kept whatever host was already in the box if it
+ended in ".onion", on the reasoning that a person's own node address should
+survive a switch. Every onion this wallet ships ends in ".onion": switching
+from Esplora over Tor to Core over Tor therefore pointed a NODE'S RPC
+CREDENTIALS at a public block explorer, which would have sent them in a
+Basic auth header to somebody else's server on the first request. The
+person's own onion is remembered under its own name (`sWaCoreOnion`) and
+restored; anything else is cleared, and the gate drives the switch away and
+back. The general form is one this file already knows in another dress: a
+condition that tests the SHAPE of a value where the question is which
+BACKEND it belongs to.
+
+**One thing the gate itself taught.** Four checks in the first Core block
+were about the wrong request, because a pump that had to DIAL writes nothing
+until the engine's `waSockOpened` callback arrives and the model only sends
+one when the test remembers to. They were green while asserting on the
+previous request's bytes. The fix is a `core_pump()` helper that delivers the
+callback whenever the last thing the model recorded was an open - and the
+general form is the one this member keeps meeting: a check that passes
+because it is looking at the wrong thing is worse than one that fails.
+Beside it, the shared `Checker.ck` in riptide's runner crashed while PRINTING
+a failure whose detail was a tuple, so the one thing that had gone wrong was
+replaced by a traceback about printing it; it coerces now.
+
+**AND THE LAST THING THE GATE FOUND was the shape of a failure rather than
+one.** A command line that cannot be built - which on Windows is any request
+carrying a structured argument - threw out of `waCliRun`, through
+`waCliDrain` and `waSync`, to the press that started the sync: so a Windows
+person choosing this channel lost the tip and the fee estimate as well as
+the scan, from one refusal that was only ever about the scan. A refusal
+belongs to the request it is about, which is what every other transport
+already does through `waNetFail`, and the drain goes on to the next one. The
+general form is worth the sentence: **a throw crosses every frame between
+where it happens and where somebody catches it, and a queue is exactly the
+place where that difference is a whole sync.**
+
+Not run against a node, a program, or an engine.

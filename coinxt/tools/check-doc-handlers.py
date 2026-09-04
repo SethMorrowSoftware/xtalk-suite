@@ -134,6 +134,20 @@ NOT_A_HANDLER = {
         "the correction by searching for what they typed. This is the defect "
         "that caused this gate to be written."),
 
+    "cxPubkeyCombine": (
+        "deferred", None,
+        "The one library gap that stops BIP-352 silent-payment RECEIVING, "
+        "named in docs/wallet.md in a sentence whose whole content is that it "
+        "does not exist: a receiver sums the input PUBLIC KEYS of every "
+        "transaction it scans, which is point addition, and coinxt exposes "
+        "scalar multiplication, scalar tweaks and compression but no "
+        "point-plus-point. Doing it in script was costed and refused (a field "
+        "inversion is minutes per input under the offline interpreter, which "
+        "would make the vector gate unrunnable), so the honest next step is a "
+        "native handler over secp256k1_ec_pubkey_combine with an ABI bump and "
+        "a binary refresh on every platform under suite rule 5. This entry "
+        "goes stale the day it ships, which is the point."),
+
     "cxPascalCase": (
         "convention", None,
         "SPEC.md's house-style line, 'Public API cxPascalCase; C ABI "

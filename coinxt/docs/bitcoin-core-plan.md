@@ -1,7 +1,19 @@
 # Bitcoin Core as a backend: the upgrade plan
 
-**Status: PLAN ONLY, written 2026-09-03. No code exists for any of it, and
-nothing described here has met a node.** This document is the design and the
+**Status: written 2026-09-03 as a plan; phases 1 to 4 landed as code on
+2026-09-04** - the `core-rpc`, `core-tor` and `core-cli` backends, the chain
+guard, tip and fees, the `addr()` scan tier, the watch tier (createwallet,
+importdescriptors with a birth date, listunspent, listtransactions, rescan
+progress and the re-import on derive), the Node screen, the mempool and
+`testmempoolaccept` cards, and the regtest sandbox. See [wallet.md](wallet.md),
+"Bitcoin Core as a backend" and "The Node screen". Most of phase 5
+went with them: the PSBT and address cross-checks on Tools
+(`validateaddress`, `getdescriptorinfo`, `analyzepsbt`), the mempool card,
+`testmempoolaccept`, `core-tor`, and a fee bump priced from the node's own
+ancestor package. **Nothing described here has met a node**; what is left of
+the plan is `verifymessage`, JSON-RPC batching for Core, and every claim
+below that only a real node can settle. This document is
+the design and the
 order of work for making the CoinXT Wallet talk to a person's own Bitcoin Core
 node - local or self-hosted - for everything a node can do for a wallet, and
 for a few things only a node can do (mining on regtest, mempool policy checks,
@@ -377,4 +389,5 @@ questions below with facts instead of guesses.
   say where the new things are, which the 2026-09-04 discoverability lesson
   in `../CLAUDE.md` makes a requirement rather than a courtesy.
 
-Not run on a node: this is a plan, and it says so at the top.
+Not run on a node: the parts that are code say so in wallet.md, and the rest
+is a plan, as the top of this document says.
