@@ -84,7 +84,13 @@ control.
 
 **Addresses.** Both chains to a gap-limit window, with per-address labels, use,
 balance, and an explicit "derive twenty more" that says what going past the gap
-limit costs.
+limit costs. Since 2026-09-03 the window also extends itself when it has to: an
+inscription commit, a timelock, a change output or a reveal that finds every
+address of its chain used derives a further window first and says so in the
+log, rather than sending you to this screen. Seen on the engine in the twelfth
+log (2026-09-03, 21:54 EDT): the change chain extended while a child spend was
+built, and the receive chain on the twenty-seventh timelock of a run that used
+every base address before it.
 
 **Ordinals** (a screen of its own since 2026-09-04). A content type with three
 quick picks, a body, a line that prices the reveal as you type, and two
@@ -453,9 +459,14 @@ second autotest) saw a broadcast the server refused hand its coin back with
 the balance returning to the sat and the node's reason in the log
 (mempool-script-verify-flag-failed), a parent refused a bump because a
 queued child spent its output, and a change-less parent bumped by a child
-priced from the record, all on Electrum over Tor. Still not run on an
-engine: the backend un-marking a coin it still lists, and a refusal's 400
-body reaching the log on Esplora.
+priced from the record, all on Electrum over Tor. The TWELFTH (2026-09-03,
+21:54 EDT, the same script on the wallet as fixed by it) ran fourteen of
+fourteen with nothing skipped: the same three again, and every transaction
+the script queued behind the broken one - the parent, the child on its
+output, the change-less sweep and the child paying for it - accepted by the
+network afterwards, so the child-pays-for-parent pair is a real one on
+testnet. Still not run on an engine: the backend un-marking a coin it still
+lists, and a refusal's 400 body reaching the log on Esplora.
 
 ## Silent payments, the sending side
 
