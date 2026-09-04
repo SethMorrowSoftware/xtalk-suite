@@ -3351,4 +3351,16 @@ Beside it, the shared `Checker.ck` in riptide's runner crashed while PRINTING
 a failure whose detail was a tuple, so the one thing that had gone wrong was
 replaced by a traceback about printing it; it coerces now.
 
+**AND THE LAST THING THE GATE FOUND was the shape of a failure rather than
+one.** A command line that cannot be built - which on Windows is any request
+carrying a structured argument - threw out of `waCliRun`, through
+`waCliDrain` and `waSync`, to the press that started the sync: so a Windows
+person choosing this channel lost the tip and the fee estimate as well as
+the scan, from one refusal that was only ever about the scan. A refusal
+belongs to the request it is about, which is what every other transport
+already does through `waNetFail`, and the drain goes on to the next one. The
+general form is worth the sentence: **a throw crosses every frame between
+where it happens and where somebody catches it, and a queue is exactly the
+place where that difference is a whole sync.**
+
 Not run against a node, a program, or an engine.

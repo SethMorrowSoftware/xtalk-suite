@@ -3519,7 +3519,7 @@ def drive(c, ip, world, sandbox):
                  str(rec.get("arg")).split(" ")[0], method)
             c.ck("and hands it exactly what is in the box",
                  '["%s"]' % text in str(rec.get("arg")), str(rec.get("arg"))[:120])
-        ip.call("waNetPump", [])
+        nd_pump_and_open()
         c.ck("the request carries the method the box chose",
              '"method":"analyzepsbt"' in nd_write(), nd_write()[-140:])
         nd_answer("200 OK", nd_result(
@@ -3533,7 +3533,7 @@ def drive(c, ip, world, sandbox):
         ip.call("waNetAbort", [])
         world.anywhere("tl_hex").content = a1
         ip.call("waToolsAskNode", [])
-        ip.call("waNetPump", [])
+        nd_pump_and_open()
         nd_answer("200 OK", nd_result(
             '{"isvalid":true,"address":"%s","scriptPubKey":"0014aabb",'
             '"isscript":false,"iswitness":true,"witness_version":0}' % a1))
@@ -3870,12 +3870,15 @@ def drive(c, ip, world, sandbox):
                  int(LCS._n(coins["1"]["value"])), 50000)
         else:
             # Windows: the scan's descriptor list cannot go on a command
-            # line, so it is REFUSED by name rather than mangled, and the
-            # refusal names the channel that can carry it
+            # line, so it is REFUSED by name rather than mangled - and the
+            # refusal is THAT REQUEST'S, not the sync's: the tip and the
+            # fee estimate before it still ran and still landed.
             c.eq("while the scan is refused on Windows rather than mangled",
                  len(world.shell_cmds), 2)
             c.ck("with the RPC channel named",
-                 "no command line" in ct_log(), ct_log(240))
+                 "no command line" in ct_log(), ct_log(300))
+            c.eq("and the requests before it still landed",
+                 str(ip.globals.get("swatipheight")), "5129003")
         # a refusal the program prints
         world.shell_cmds = []
         world.shell_answers = ["error code: -8\nerror message:\nInvalid parameter"]

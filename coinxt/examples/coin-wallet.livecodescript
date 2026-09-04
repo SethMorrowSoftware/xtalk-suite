@@ -23768,8 +23768,26 @@ command waCliRun pRec
    -- until the program does, so this is only ever reached from a button
    -- (waCliDrain) and never from the poll tick. The console window is
    -- suppressed on Windows, where every shell() otherwise flashes one.
-   local tCmd, tOut, tError, tOld
-   put waCliCommand(pRec) into tCmd
+   local tCmd, tOut, tError, tBuilt
+   -- BUILDING THE COMMAND CAN REFUSE, and that refusal belongs to THIS
+   -- request rather than to the press that queued it. On Windows a
+   -- structured argument cannot be quoted safely (waCliQuoteFor), so the
+   -- scan and the import are refused there - and outside this try that
+   -- throw travelled out through waCliDrain and waSync to the caller,
+   -- taking the tip and the fee estimate down with it. The drain goes on
+   -- to the next request now, which is what every other transport does
+   -- with a failure.
+   put "" into tError
+   put "" into tBuilt
+   try
+      put waCliCommand(pRec) into tCmd
+      put "true" into tBuilt
+   catch tError
+   end try
+   if tBuilt is not "true" then
+      waNetFail tError
+      exit waCliRun
+   end if
    waLog "-> " & tCmd
    uiStatus "Asking bitcoin-cli: " & waCoreMethodFor(pRec) & " ...", ""
    put "" into tError
@@ -23856,7 +23874,7 @@ command waCliDrain
    -- Bounded by the queue's own length rather than by `repeat forever`: a
    -- request whose reply queues another (waFollowHistory does, on the
    -- other backends) must not be able to make this loop unending.
-   local tGuard, tRec
+   local tGuard, tRec, tError
    if waIsCli(sWaBackend) is not true then
       exit waCliDrain
    end if
@@ -23873,7 +23891,19 @@ command waCliDrain
       put the milliseconds + kWaNetDeadline into tRec["deadline"]
       put tRec into sWaInFlight
       put "busy" into sWaNetState
-      waCliRun tRec
+      -- ONE REQUEST'S FAILURE IS NOT THE QUEUE'S. waCliRun reports through
+      -- waNetFail, which is what every transport does; anything that
+      -- escapes it anyway is caught here so the rest of the sync still
+      -- runs, and is reported rather than swallowed.
+      put "" into tError
+      try
+         waCliRun tRec
+      catch tError
+      end try
+      if tError is not "" then
+         waNetFail tError
+      end if
+      put empty into sWaInFlight
    end repeat
    if sWaNetState is "busy" then
       put "ok" into sWaNetState
