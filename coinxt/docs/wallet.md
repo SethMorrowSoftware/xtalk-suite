@@ -468,6 +468,62 @@ network afterwards, so the child-pays-for-parent pair is a real one on
 testnet. Still not run on an engine: the backend un-marking a coin it still
 lists, and a refusal's 400 body reaching the log on Esplora.
 
+## Bitcoin Core as a backend
+
+Since 2026-09-04 the Network screen has a sixth choice: **Bitcoin Core, your
+own node, over RPC**. It is [the plan's](bitcoin-core-plan.md) phase 1 with
+the scan half of phase 2, and it works like this. The node is spoken to over
+JSON-RPC 1.0 on plain HTTP, one POST per request down a socket the wallet
+keeps open between requests (Core drops a quiet client after thirty seconds;
+the next request connects again and nothing is counted). The host is 127.0.0.1
+and the port follows the chain by Core's own table (8332, 18332, 48332 for
+testnet4, 38332, 18443 for regtest), both editable. Two ways in: the cookie
+file the running node writes, read at EVERY request because it changes when
+the node restarts (the path is filled in for the chain and the platform, and
+editable), or `rpcuser:rpcpassword`, which wins when both boxes are filled. A
+node that is not on this machine gets the credentials only if you tick the
+box for it, because Core's RPC is unencrypted; an SSH tunnel to 127.0.0.1 is
+the better answer.
+
+**The chain is asked, not assumed.** The first request of every sync whose
+node is not yet known is `getblockchaininfo`, and a node on another chain is
+refused with both names in the sentence, the queue behind it emptied, and the
+refusal held on the Network screen until the network or the host moves. The
+same answer gives the tip, whether the node is pruned or still in its initial
+block download (said in the log and under the state line; balances from a
+node still downloading are provisional), and the headers it is behind.
+
+**A sync is three requests however many addresses there are:** the chain, the
+fee estimate (`estimatesmartfee` for six blocks, on the same ceiling as every
+other backend's), and ONE `scantxoutset` over an `addr()` entry for every
+address of the wallet, leaves included. That is what makes a pruned node
+enough. What a scan cannot see is written on the screen and in the log: it
+reads the chain and not the mempool, so a payment on its way to you is
+invisible until it confirms; the wallet's own unconfirmed change is kept by
+the wallet's broadcast memory until a scan lists it; a coin this wallet spent
+and the node still lists (the spend not yet confirmed) stays marked spent,
+because a scan is not evidence either way; and there is no history, so the
+History screen shows only what this wallet did itself and a spent-out
+address counts as unused until the watch tier lands. A scan of a mainnet
+UTXO set takes tens of seconds and gets its own deadline.
+
+**A broadcast is `sendrawtransaction`**, and a refusal comes back as the
+node's own words with its RPC code (-26 for a policy rejection, -25 and -27
+for missing inputs and already-in-chain, -28 for a node still starting,
+-5 for not found), released to the coins the way an Electrum refusal is. HTTP
+401, 403 and 404 are mapped to sentences naming the cookie, `rpcallowip` and
+the wallet path. The log line for a request is the method and its size, never
+the headers, and the wallet file never carries the credentials; Update from
+main carries them across the swap with the other Network settings.
+
+Not run against a node: everything above is driven headlessly by
+`tools/check-wallet-boot.py` through a modelled socket against fixtures of
+the node's reply shapes, and the request bytes are asserted; the framing on a
+real node, the cookie on a real platform and the scan on a real UTXO set are
+the plan's phase 0 on the maintainer's machine. The Node screen, the watch
+tier (a descriptor wallet in Core, for history and the mempool), `bitcoin-cli`
+and the regtest sandbox are the plan's later phases.
+
 ## Silent payments, the sending side
 
 Since 2026-09-04 the Pay-to box takes a **BIP-352 silent payment address**

@@ -69,6 +69,12 @@ script "coinXTWallet"
 --                           (docs/OXT-ENGINE-NOTES 6.8), so https:// here is
 --                           offered with that written on the screen rather
 --                           than assumed.
+--   Bitcoin Core            your own node, over its JSON-RPC interface on a
+--                           plain socket (2026-09-04). Nobody but your node
+--                           learns anything. One scan of its UTXO set stands
+--                           in for the per-address requests, so there is no
+--                           history and no mempool on this tier; see
+--                           docs/bitcoin-core-plan.md for what comes next.
 --   offline                 always available and always honest: the wallet
 --                           derives, builds, signs and exports, and you carry
 --                           the bytes to the network yourself.
@@ -13070,7 +13076,7 @@ constant kWaVersion = "1.2.0"
 -- text before it is offered, the offer names the version and the SHA-256,
 -- and nothing replaces the script until you press Update.
 constant kWaUpdateUrl = "https://raw.githubusercontent.com/SethMorrowSoftware/xtalk-suite/main/coinxt/examples/coin-wallet.livecodescript"
-constant kWaUiVersion = "ui-0f169f6d063f"
+constant kWaUiVersion = "ui-ef131dd254eb"
 
 -- The window, inside the family's 720p budget (tools/check-stack-size.py).
 constant kWaWidth = 1200
@@ -13215,6 +13221,31 @@ constant kWaElectrumClearTestPort = 60001
 
 -- The Tor SOCKS port. 9050 is a system tor daemon; 9150 is Tor Browser's.
 constant kWaSocksDefault = 9050
+
+-- BITCOIN CORE, YOUR OWN NODE (2026-09-04; docs/bitcoin-core-plan.md is the
+-- design and the order of work, and this is its phase 1 with the scan half
+-- of phase 2). The node is spoken to over JSON-RPC 1.0 on plain HTTP, which
+-- is what Core serves on 127.0.0.1 and nowhere else by default. The port IS
+-- the chain here, as it is for Electrum, and the table is Core's own; the
+-- chain is ALSO asked for (getblockchaininfo) before anything else, because
+-- a person can run any chain on any port and a wrong guess would be the
+-- silent-empty-wallet failure this member has met twice.
+constant kWaCoreHost = "127.0.0.1"
+constant kWaCorePortMain = 8332
+constant kWaCorePortTest = 18332
+constant kWaCorePortTest4 = 48332
+constant kWaCorePortSignet = 38332
+constant kWaCorePortRegtest = 18443
+-- A SCAN OF THE UTXO SET IS ONE REQUEST THAT SAYS NOTHING FOR A WHILE:
+-- tens of seconds on a mainnet set, a second on regtest, and the reply is
+-- one HTTP answer at the end. The ordinary deadline is for a peer that
+-- accepted a connection and went quiet; a scan is a peer that is working.
+constant kWaScanDeadline = 900000
+-- THE METHODS THIS WALLET WILL ASK A NODE FOR, and no other. The request
+-- builder refuses a method outside this list by name, so a screen that
+-- grows a free-text RPC box later cannot become a way to run `stop` or a
+-- spending call against somebody's node.
+constant kWaCoreMethods = "getblockchaininfo,getblockcount,getbestblockhash,getnetworkinfo,getmempoolinfo,getmempoolentry,getrawmempool,getindexinfo,uptime,estimatesmartfee,scantxoutset,getrawtransaction,sendrawtransaction,testmempoolaccept,validateaddress,getdescriptorinfo,decodepsbt,analyzepsbt,verifymessage"
 
 -- The wallet file's format marker. It is the plaintext associated data of the
 -- AEAD when SodiumXT is present, so a tampered header is caught even though
@@ -13740,6 +13771,11 @@ local sWaHttpDrop         -- "true" when the reply said Connection: close
 local sWaTipAt            -- the milliseconds the tip was last answered, or empty
 local sWaFeesAt           -- ...and the fee estimate; a sync asks only for what is stale
 local sWaBuffer           -- the bytes accumulated for the in-flight request
+local sWaCoreCookie       -- core-rpc: the path of the node's cookie file, read afresh at every request
+local sWaCoreAuth         -- core-rpc: rpcuser:rpcpassword when a person typed one; empty means the cookie
+local sWaCoreChain        -- core-rpc: the chain the node last reported (main, test, ...), or empty
+local sWaCoreInfo         -- core-rpc: one line about the node from its last getblockchaininfo
+local sWaCoreRemoteOk     -- core-rpc: "true" once the person has accepted sending credentials off this machine
 local sWaReqId            -- a monotonic id, so a late reply cannot be mistaken
 local sWaPolling          -- "true" while the tick is armed
 
@@ -14608,22 +14644,35 @@ command waBuildNetwork
    uiButton "nw_bElectrumTor", "Electrum over Tor", "504,90,688,116"
    uiButton "nw_bEsploraClear", "Esplora over clearnet", "196,120,420,146"
    uiButton "nw_bElectrumClear", "Electrum over clearnet", "424,120,688,146"
-   uiCap "nw_hostCap", "Host", "196,156,250,172"
-   uiInput "nw_host", "254,154,560,176"
-   uiCap "nw_portCap", "Port", "570,156,610,172"
-   uiInput "nw_port", "614,154,688,176"
+   uiButton "nw_bCore", "Bitcoin Core: your own node, over RPC", "196,150,688,176"
+   uiCap "nw_hostCap", "Host", "196,186,250,202"
+   uiInput "nw_host", "254,184,560,206"
+   uiCap "nw_portCap", "Port", "570,186,610,202"
+   uiInput "nw_port", "614,184,688,206"
    uiCap "nw_socksCap", "Tor SOCKS port (9050 daemon, 9150 Tor Browser)", \
-         "196,182,560,198"
-   uiInput "nw_socks", "564,180,688,202"
-   uiButton "nw_test", "Test the connection", "196,210,390,236"
-   uiButton "nw_syncNow", "Sync the wallet", "394,210,560,236"
-   uiButton "nw_stop", "Stop", "564,210,688,236"
-   uiPill "nw_state", "offline", "196,246,340,268"
-   uiWrap "nw_why", "", "350,244,688,300", 11
-   uiSection "nw_sec2", "What each choice costs you", "196,308,688,326"
-   uiWrap "nw_privacy", "", "196,330,688,584", 11
+         "196,212,560,228"
+   uiInput "nw_socks", "564,210,688,232"
+   -- Core's two ways in: the cookie file the running node writes (read at
+   -- every request, because it changes when the node restarts), or a
+   -- user:password from bitcoin.conf; the second wins when both are filled
+   uiCap "nw_cookieCap", "Core cookie file", "196,240,330,256"
+   uiInput "nw_cookie", "334,238,688,260"
+   uiCap "nw_authCap", "or rpcuser:rpcpassword", "196,268,330,284"
+   uiInput "nw_auth", "334,266,688,288"
+   uiCheckbox "nw_remoteOk", \
+         "Send Core's credentials to a node that is not on this machine", \
+         "196,294,688,316"
+   uiButton "nw_test", "Test the connection", "196,322,390,348"
+   uiButton "nw_syncNow", "Sync the wallet", "394,322,560,348"
+   uiButton "nw_stop", "Stop", "564,322,688,348"
+   uiPill "nw_state", "offline", "196,356,340,378"
+   uiWrap "nw_why", "", "350,354,688,584", 11
    uiSection "nw_sec3", "The backend's answers", "720,66,1172,84"
-   uiArea "nw_out", "720,90,1172,584"
+   uiArea "nw_out", "720,90,1172,300"
+   -- the privacy text moved to the right panel, as a scrolling area, when
+   -- the Core rows took its room on the left (2026-09-04)
+   uiSection "nw_sec2", "What each choice costs you", "720,308,1172,326"
+   uiArea "nw_privacy", "720,330,1172,584"
 end waBuildNetwork
 
 -- ---- 9. Log ------------------------------------------------------------------
@@ -15754,6 +15803,9 @@ function waBackendLabel
    end if
    if sWaBackend is "electrum-clear" then
       return "Electrum / clear"
+   end if
+   if sWaBackend is "core-rpc" then
+      return "Bitcoin Core"
    end if
    return "Esplora / clear"
 end waBackendLabel
@@ -20875,7 +20927,7 @@ end waInspectAddress
 -- ==============================================================================
 
 command waPaintNetwork
-   local tKind
+   local tKind, tWhy
    set the defaultStack to the short name of this stack
    -- EVERY BACKEND IS IN THIS LIST. waPaintChoice only touches the names it
    -- is given, so a backend missing from it can never be shown as the
@@ -20884,7 +20936,7 @@ command waPaintNetwork
    -- all while one is running. electrum-clear was added to waBackendChoice
    -- and to the screen and not to this line.
    waPaintChoice "nw_b", \
-         "Offline,EsploraTor,ElectrumTor,EsploraClear,ElectrumClear", \
+         "Offline,EsploraTor,ElectrumTor,EsploraClear,ElectrumClear,Core", \
          waBackendChoice()
    if field "nw_host" is empty then
       put sWaHost into field "nw_host"
@@ -20894,6 +20946,19 @@ command waPaintNetwork
    end if
    if field "nw_socks" is empty then
       put sWaSocksPort into field "nw_socks"
+   end if
+   if there is a field "nw_cookie" then
+      if field "nw_cookie" is empty then
+         put sWaCoreCookie into field "nw_cookie"
+      end if
+   end if
+   if there is a field "nw_auth" then
+      if field "nw_auth" is empty then
+         put sWaCoreAuth into field "nw_auth"
+      end if
+   end if
+   if there is a button "nw_remoteOk" then
+      set the hilite of button "nw_remoteOk" to (sWaCoreRemoteOk is "true")
    end if
    put "wait" into tKind
    if sWaNetState is "ok" then
@@ -20907,8 +20972,16 @@ command waPaintNetwork
       -- something it does not know.
       put "warn" into tKind
    end if
-   uiPill "nw_state", sWaNetState, "196,246,340,268", tKind
-   put sWaNetWhy into field "nw_why"
+   uiPill "nw_state", sWaNetState, "196,356,340,378", tKind
+   put sWaNetWhy into tWhy
+   -- what the node said about itself, under whatever the state line says
+   if waIsCore(sWaBackend) and sWaCoreInfo is not empty then
+      if tWhy is not empty then
+         put return after tWhy
+      end if
+      put "node: " & sWaCoreInfo after tWhy
+   end if
+   put tWhy into field "nw_why"
    put waPrivacyText() into field "nw_privacy"
 end waPaintNetwork
 
@@ -20924,6 +20997,9 @@ private function waBackendChoice
    end if
    if sWaBackend is "electrum-clear" then
       return "ElectrumClear"
+   end if
+   if sWaBackend is "core-rpc" then
+      return "Core"
    end if
    return "Offline"
 end waBackendChoice
@@ -20958,6 +21034,21 @@ private function waPrivacyText
          "addresses); anyone between you and it sees that you talked to an " & \
          "Electrum server and how much, but not what about. The chain is " & \
          "chosen by the PORT: 50001 mainnet, 60001 testnet." & return & return after tOut
+   put "BITCOIN CORE is your own node, over its JSON-RPC interface: plain " & \
+         "HTTP on 127.0.0.1, which is where Core serves it by default, so " & \
+         "nobody but your node learns anything. The node is asked with ONE " & \
+         "scan of its UTXO set (scantxoutset) for every address of this " & \
+         "wallet, so a sync is three requests however many addresses there " & \
+         "are and works on a pruned node. A scan reads the CHAIN and not the " & \
+         "mempool: a payment on its way to you is invisible until it " & \
+         "confirms, this wallet's own unconfirmed change is remembered by " & \
+         "the wallet rather than the node, and there is no history, so the " & \
+         "History screen shows only what this wallet did itself. The cookie " & \
+         "file is read at every request (it changes when the node restarts); " & \
+         "rpcuser:rpcpassword works instead. A node that is not on this " & \
+         "machine gets the credentials only if you tick the box, because " & \
+         "Core's RPC is unencrypted. Not run against a node yet (2026-09-04)." & \
+         return & return after tOut
    if sWaHaveOnion is not "true" then
       put "The OnionXT layer did not answer, so the two Tor options cannot " & \
             "work in this stack. Electrum over clearnet needs neither Tor " & \
@@ -20980,6 +21071,16 @@ command waNetworkClick pRole
       waSetBackend "esplora-clear"
    else if pRole is "bElectrumClear" then
       waSetBackend "electrum-clear"
+   else if pRole is "bCore" then
+      waSetBackend "core-rpc"
+   else if pRole is "remoteOk" then
+      -- app state, painted onto the box: the kit builds a checkbox with
+      -- autoHilite off, so a box nothing drives can never be ticked
+      if sWaCoreRemoteOk is "true" then
+         put "" into sWaCoreRemoteOk
+      else
+         put "true" into sWaCoreRemoteOk
+      end if
    else if pRole is "test" then
       -- REFUSED HERE, not three ticks later. Queuing a request while offline
       -- let the pump dial nothing, fail through waNetFail, and report "FAILED:
@@ -21046,11 +21147,30 @@ command waApplyNetworkFields
    -- and the failure it produced ("could not dial ...") named neither the
    -- port nor the reason. Refusals are loud rather than silent for the same
    -- reason: a port the wallet quietly declined to use is the bug again.
-   local tHost, tPort, tSocks
+   local tHost, tPort, tSocks, tCookie, tAuth, tMoved
    set the defaultStack to the short name of this stack
    put cwTrim(field "nw_host") into tHost
    put cwTrim(field "nw_port") into tPort
    put cwTrim(field "nw_socks") into tSocks
+   -- A DIFFERENT HOST OR PORT IS A DIFFERENT NODE, whose chain is not known
+   -- until it has been asked (the core-rpc chain guard, waBackendChainWhy).
+   put "false" into tMoved
+   if tHost is not empty and tHost is not sWaHost then
+      put "true" into tMoved
+   end if
+   if tPort is not empty and tPort is an integer and tPort + 0 is not sWaPort then
+      put "true" into tMoved
+   end if
+   if tMoved is "true" then
+      put empty into sWaCoreChain
+      put empty into sWaCoreInfo
+   end if
+   if there is a field "nw_cookie" then
+      put cwTrim(field "nw_cookie") into sWaCoreCookie
+   end if
+   if there is a field "nw_auth" then
+      put cwTrim(field "nw_auth") into sWaCoreAuth
+   end if
    if tHost is not empty then
       put tHost into sWaHost
    end if
@@ -21102,10 +21222,20 @@ command waSetBackend pBackend
       -- table lives in waRetunePort, in ONE place, because the network can
       -- move without this handler running.
       waRetunePort
+   else if pBackend is "core-rpc" then
+      put kWaCoreHost into sWaHost
+      -- a node not yet asked has no known chain; the port and the cookie
+      -- path follow the network through the one table in waRetunePort
+      put empty into sWaCoreChain
+      put empty into sWaCoreInfo
+      waRetunePort
    end if
    set the defaultStack to the short name of this stack
    put sWaHost into field "nw_host"
    put sWaPort into field "nw_port"
+   if there is a field "nw_cookie" then
+      put sWaCoreCookie into field "nw_cookie"
+   end if
    waRefreshNetState
    waLog "backend: " & pBackend & " (" & sWaHost & ":" & sWaPort & ")"
 end waSetBackend
@@ -21279,6 +21409,20 @@ private command waRetunePort
       else
          put kWaElectrumTorTestPort into sWaPort
       end if
+   else if sWaBackend is "core-rpc" and sWaHost is kWaCoreHost then
+      -- CORE'S OWN TABLE: one RPC port per chain, and the cookie file lives
+      -- in that chain's data directory. A cookie path the person typed is
+      -- left alone; the default-shaped one follows the network. The chain
+      -- the node last reported is NOT forgotten here: it is what the node
+      -- said, and comparing it to the new network is exactly the question.
+      put waCorePortFor(sWaNetwork) into sWaPort
+      if sWaCoreCookie is empty or waCoreCookieIsDefault(sWaCoreCookie) then
+         put waCoreCookieDefault() into sWaCoreCookie
+         set the defaultStack to the short name of this stack
+         if there is a field "nw_cookie" then
+            put sWaCoreCookie into field "nw_cookie"
+         end if
+      end if
    else
       exit waRetunePort
    end if
@@ -21287,6 +21431,105 @@ private command waRetunePort
       put sWaPort into field "nw_port"
    end if
 end waRetunePort
+
+function waIsCore pBackend
+   -- WHICH BACKEND IS A NODE OF THE PERSON'S OWN, named positively, for the
+   -- reason waIsElectrum and waNeedsTor give: a predicate answers for a
+   -- backend added later by construction, a list of the others does not.
+   return pBackend is "core-rpc"
+end waIsCore
+
+function waCorePortFor pNetwork
+   -- Bitcoin Core's default RPC port per chain (bitcoin.conf's rpcport
+   -- overrides it, and the port field is editable for exactly that).
+   if pNetwork is "mainnet" then
+      return kWaCorePortMain
+   end if
+   if pNetwork is "testnet4" then
+      return kWaCorePortTest4
+   end if
+   if pNetwork is "signet" then
+      return kWaCorePortSignet
+   end if
+   if pNetwork is "regtest" then
+      return kWaCorePortRegtest
+   end if
+   return kWaCorePortTest
+end waCorePortFor
+
+function waCoreChainName pNetwork
+   -- What getblockchaininfo calls each of this wallet's networks.
+   if pNetwork is "mainnet" then
+      return "main"
+   end if
+   if pNetwork is "testnet" then
+      return "test"
+   end if
+   return pNetwork
+end waCoreChainName
+
+function waCoreDataDir
+   -- Core's default data directory on this platform. The folder lookup is
+   -- an engine call this file makes nowhere else, so it is inside a try and
+   -- the shell's own spelling stands in when it refuses; the path is shown
+   -- on the Network screen and editable either way.
+   local tHome, tError
+   put "" into tHome
+   try
+      if the platform is "Win32" then
+         put specialFolderPath(26) & "/Bitcoin" into tHome
+      else if the platform is "MacOS" then
+         put specialFolderPath("home") & "/Library/Application Support/Bitcoin" into tHome
+      else
+         put specialFolderPath("home") & "/.bitcoin" into tHome
+      end if
+   catch tError
+      put "~/.bitcoin" into tHome
+   end try
+   if tHome is "" or tHome is "/Bitcoin" or tHome is "/.bitcoin" then
+      put "~/.bitcoin" into tHome
+   end if
+   return tHome
+end waCoreDataDir
+
+function waCoreCookieDefault
+   -- The cookie file of the node serving this wallet's network: mainnet in
+   -- the data directory itself, every other chain in its own subdirectory
+   -- (Core's names: testnet3 is BIP-9's testnet, testnet4 is Core 28's).
+   local tDir
+   put waCoreDataDir() into tDir
+   if sWaNetwork is "testnet" then
+      put "/testnet3" after tDir
+   else if sWaNetwork is not "mainnet" then
+      put "/" & sWaNetwork after tDir
+   end if
+   return tDir & "/.cookie"
+end waCoreCookieDefault
+
+function waCoreCookieIsDefault pPath
+   -- A path this wallet computed rather than one somebody typed: inside the
+   -- default data directory and named .cookie.
+   local tDir, tLen
+   put waCoreDataDir() into tDir
+   put the number of chars of tDir into tLen
+   if char 1 to tLen of pPath is not tDir then
+      return false
+   end if
+   return pPath ends with "/.cookie"
+end waCoreCookieIsDefault
+
+function waCoreIsRemote pHost
+   -- Is this host somewhere else? Core's RPC is plain HTTP, so credentials
+   -- to a host that is not this machine cross the network readable; the
+   -- dial refuses that unless the person has ticked the box for it.
+   local tHost
+   put cwLower(cwTrim(pHost)) into tHost
+   if tHost is "127.0.0.1" or tHost is "localhost" or tHost is "::1" \
+         or tHost is "[::1]" then
+      return false
+   end if
+   return true
+end waCoreIsRemote
 
 command waRefreshNetState
    -- The two reasons a transport cannot run that are knowable WITHOUT talking
@@ -21367,6 +21610,33 @@ command waSync
    -- A FRESH SYNC IS ALLOWED TO BE GREEN AGAIN. The count is per sync, so a
    -- failure from the last one does not follow this one around.
    put 0 into sWaSyncFailures
+   if waIsCore(sWaBackend) then
+      -- A NODE IS ASKED THREE THINGS, HOWEVER MANY ADDRESSES THERE ARE. The
+      -- chain and the tip first (getblockchaininfo), EVERY time the node's
+      -- chain is not yet known, because the scan must not run against a
+      -- node on another chain and the answer is what the guard compares;
+      -- the fee estimate when stale; then ONE scan of the UTXO set for
+      -- every address of this wallet (waCoreRequest), which is what stands
+      -- in for the per-address history and unspent-output requests the
+      -- other backends take. What the scan cannot say - history, and the
+      -- mempool - is written on the Network screen and in the log line.
+      if sWaCoreChain is empty or sWaTipAt is empty \
+            or the milliseconds - sWaTipAt > kWaTipFresh then
+         waNetQueue "tip", ""
+      end if
+      if sWaFeesAt is empty or the milliseconds - sWaFeesAt > kWaFeesFresh then
+         waNetQueue "fees", ""
+      end if
+      waNetQueue "scan", ""
+      put cwListCount(sWaQueue) into tCount
+      waLog "sync: queued " & tCount & " request(s) to " & sWaHost & ":" & \
+            sWaPort & " over core-rpc (one scan of the node's UTXO set for " & \
+            cwListCount(sWaAddresses) & " address(es); a scan reads the " & \
+            "chain, not the mempool, and carries no history)"
+      uiStatus "Queued " & tCount & " request(s) to the node at " & sWaHost & \
+            ": the chain, the fee estimate and one scan of its UTXO set.", ""
+      exit waSync
+   end if
    -- only what is stale (kWaTipFresh, kWaFeesFresh); a fresh answer is kept
    if sWaTipAt is empty or the milliseconds - sWaTipAt > kWaTipFresh then
       waNetQueue "tip", ""
@@ -21503,6 +21773,10 @@ command waNetPump
       put tBatch into tRec
    end if
    put the milliseconds + kWaNetDeadline into tRec["deadline"]
+   if tRec["kind"] is "scan" then
+      -- a node scanning its UTXO set is working, not silent (kWaScanDeadline)
+      put the milliseconds + kWaScanDeadline into tRec["deadline"]
+   end if
    put tRec into sWaInFlight
    -- A PARTIAL LINE ON A KEPT STREAM BELONGS TO THE STREAM, not to the
    -- request that just ended: it is the head of a notification the server
@@ -21521,11 +21795,15 @@ command waNetPump
 end waNetPump
 
 private command waNetCheckDeadline
-   local tRec
+   local tRec, tSecs
    put sWaInFlight into tRec
    if the milliseconds > tRec["deadline"] then
+      put kWaNetDeadline / 1000 into tSecs
+      if tRec["kind"] is "scan" then
+         put kWaScanDeadline / 1000 into tSecs
+      end if
       waNetFail "the backend accepted the connection and then said nothing " & \
-            "for " & (kWaNetDeadline / 1000) & " seconds."
+            "for " & tSecs & " seconds."
    end if
 end waNetCheckDeadline
 
@@ -21641,11 +21919,23 @@ command waNetStart pRec
       load URL tUrl with message "waUrlDone"
       exit waNetStart
    end if
-   if sWaBackend is "electrum-clear" then
+   if sWaBackend is "electrum-clear" or waIsCore(sWaBackend) then
       -- A PLAIN TCP SOCKET, which is the whole point: no TLS for the engine
       -- to get wrong and no daemon to be running. The socket id IS the
       -- "host:port" string in this engine, so it doubles as the correlation
-      -- token the way the Tor stream handle does.
+      -- token the way the Tor stream handle does. Bitcoin Core rides the
+      -- same socket path (2026-09-04): its RPC is HTTP on a plain socket,
+      -- kept alive between requests the way this socket already is, and
+      -- only what is written and how the reply is framed differ
+      -- (waSockSend dispatches to waCoreSend).
+      if waIsCore(sWaBackend) and waCoreIsRemote(sWaHost) \
+            and sWaCoreRemoteOk is not "true" then
+         throw "the node at " & sWaHost & " is not on this machine, and " & \
+               "Core's RPC is plain HTTP, so its credentials would cross " & \
+               "the network readable by anyone on the way. Tick the box on " & \
+               "the Network screen to send them anyway, or reach the node " & \
+               "through an SSH tunnel to 127.0.0.1. Nothing was sent."
+      end if
       put sWaHost & ":" & sWaPort into tSock
       put tSock into pRec["sock"]
       put pRec into sWaInFlight
@@ -21790,6 +22080,24 @@ function waBackendChainWhy
    -- nothing anywhere saying otherwise. Fail closed and name the remedy.
    local tWhy
    if sWaBackend is "offline" then
+      return empty
+   end if
+   if waIsCore(sWaBackend) then
+      -- A NODE SAYS WHICH CHAIN IT IS ON, and is believed over the port
+      -- table: the first getblockchaininfo answer is kept (sWaCoreChain)
+      -- and compared to the wallet's network here, on every recompute, so
+      -- a node on the wrong chain stays refused until the network moves or
+      -- the host does. Unknown (not yet asked) is not a refusal; the sync
+      -- asks first, before the scan (waSync, waCoreApply).
+      if sWaCoreChain is not empty \
+            and sWaCoreChain is not waCoreChainName(sWaNetwork) then
+         return "the node at " & sWaHost & ":" & sWaPort & " reported chain " & \
+               quote & sWaCoreChain & quote & " and this wallet is on " & \
+               sWaNetwork & " (chain " & quote & waCoreChainName(sWaNetwork) & \
+               quote & "). Switch the wallet's network on the Wallet " & \
+               "screen, or point the host and port at a node on " & \
+               sWaNetwork & "."
+      end if
       return empty
    end if
    -- A host Tor cannot even look up is refused before its chain is asked
@@ -22019,10 +22327,28 @@ private command waSockSend
    if sWaSock is empty or sWaInFlight is empty then
       exit waSockSend
    end if
+   if waIsCore(sWaBackend) then
+      waCoreSend
+      exit waSockSend
+   end if
    put waElectrumRequest(sWaInFlight) into tLine
    waLog waRequestLogLine(tLine)
    write tLine & numToChar(10) to socket sWaSock
    if the result is not empty then
+      waSockWriteFailed the result
+      exit waSockSend
+   end if
+   -- ONE LINE IS ONE ANSWER. Electrum frames its JSON-RPC by newline, so
+   -- reading until one is the whole framing problem solved - no buffer to
+   -- accumulate and no completeness heuristic to get wrong.
+   read from socket sWaSock until numToChar(10) with message "waSockLine"
+end waSockSend
+
+private command waSockWriteFailed pWhy
+   -- The failure branch of every write to sWaSock, in one place so the two
+   -- protocols that share the socket cannot drift about it.
+   local tRec
+   if true then
       -- A WRITE THAT FAILS ON A REUSED CONNECTION is the ordinary way a
       -- server drops an idle client, so the connection is torn down and the
       -- next tick dials again rather than the sync dying here.
@@ -22037,25 +22363,571 @@ private command waSockSend
       --
       -- Requeued ONCE. A server that refuses the write twice is a failure
       -- worth reporting, not a loop worth running.
-      waLog "write failed on " & sWaSock & ": " & the result & " - reconnecting"
+      waLog "write failed on " & sWaSock & ": " & pWhy & " - reconnecting"
       put sWaInFlight into tRec
       waSockClose
       put empty into sWaInFlight
       if tRec["rewritten"] is "true" then
          waNetFail "the backend refused the same request twice on a fresh " & \
                "connection: " & tRec["kind"] & " " & tRec["arg"]
-         exit waSockSend
+         exit waSockWriteFailed
       end if
       put "true" into tRec["rewritten"]
       put waQueueFirst(tRec) into sWaQueue
       put "idle" into sWaNetState
-      exit waSockSend
    end if
-   -- ONE LINE IS ONE ANSWER. Electrum frames its JSON-RPC by newline, so
-   -- reading until one is the whole framing problem solved - no buffer to
-   -- accumulate and no completeness heuristic to get wrong.
-   read from socket sWaSock until numToChar(10) with message "waSockLine"
-end waSockSend
+end waSockWriteFailed
+
+-- ---- Bitcoin Core over the same socket (2026-09-04) ---------------------------
+--
+-- JSON-RPC 1.0 in one HTTP POST per request, on the socket waNetStart opened
+-- and keeps. The reply is Content-Length-framed (Core never chunks), so the
+-- framing is two engine reads and no phase machine: the head until the
+-- blank line (waCoreHead), then the body for exactly that many bytes
+-- (waCoreBody). The status line is HELD, not thrown, for the reason
+-- waHttpCheckStatus gives: on a refusal the body is where the node's own
+-- words are, and a 500 carries a JSON-RPC error object that is delivered
+-- like any other answer so the id check and the release of a refused
+-- broadcast's coins run on the one path every backend shares.
+
+private command waCoreSend
+   local tReq, tError, tSep
+   if sWaSock is empty or sWaInFlight is empty then
+      exit waCoreSend
+   end if
+   put "" into tError
+   try
+      put waCoreHttp(sWaInFlight) into tReq
+   catch tError
+   end try
+   if tError is not "" then
+      -- no credentials, or a method off the list: this machine's failure,
+      -- not the node's, and the sentence names the remedy
+      waNetFail tError
+      exit waCoreSend
+   end if
+   -- THE LOG LINE IS THE METHOD AND THE PARAMS, NEVER THE HEADERS: the
+   -- Authorization header carries the credentials in base64, which is a
+   -- spelling and not a secret, and the log is what gets pasted back.
+   waLog waCoreLogLine(sWaInFlight)
+   write textEncode(tReq, "UTF-8") to socket sWaSock
+   if the result is not empty then
+      waSockWriteFailed the result
+      exit waCoreSend
+   end if
+   waHttpReset
+   put numToChar(13) & numToChar(10) into tSep
+   put tSep & tSep into tSep
+   read from socket sWaSock until tSep with message "waCoreHead"
+end waCoreSend
+
+on waCoreHead pSocket, pData
+   -- The status line and the headers, up to and including the blank line.
+   set the defaultStack to the short name of this stack
+   local tError, tLen
+   if pSocket is not sWaSock then
+      exit waCoreHead
+   end if
+   try
+      if pData is empty then
+         waNetFail "the node closed " & pSocket & " before answering."
+         exit waCoreHead
+      end if
+      put pData into sWaHttpHead
+      -- throws on a reply that is not HTTP at all (a port that is not an
+      -- RPC port); holds a non-2xx status for the body to explain
+      waHttpCheckStatus pData
+      put waHttpHeader(pData, "content-length") into tLen
+      if tLen is not an integer then
+         waNetFail "the reply from " & pSocket & " carried no " & \
+               "Content-Length, which Bitcoin Core always sends. Is that " & \
+               "port a Bitcoin Core RPC port?"
+         exit waCoreHead
+      end if
+      if tLen > kWaMaxBody then
+         waNetFail "the backend sent more than " & kWaMaxBody & \
+               " bytes for one answer, which is not a shape this wallet " & \
+               "asked for."
+         exit waCoreHead
+      end if
+      if tLen is 0 then
+         waCoreBody pSocket, ""
+         exit waCoreHead
+      end if
+      -- bytes are arriving: the deadline is for silence (waStreamEvent)
+      if sWaInFlight is not empty then
+         put the milliseconds + kWaNetDeadline into sWaInFlight["deadline"]
+      end if
+      read from socket pSocket for tLen with message "waCoreBody"
+   catch tError
+      waNetFail "reading from " & pSocket & " - " & tError
+   end try
+end waCoreHead
+
+on waCoreBody pSocket, pData
+   -- The body, exactly Content-Length bytes of it.
+   set the defaultStack to the short name of this stack
+   local tError, tWhy
+   if pSocket is not sWaSock then
+      exit waCoreBody
+   end if
+   try
+      if sWaHttpBad is not "" then
+         put waCoreRefusal(pData) into tWhy
+         if tWhy is "" then
+            -- a JSON-RPC error object: delivered, so the id check, the
+            -- refusal path and a broadcast's release run as on every
+            -- other backend (waNetApply, waNetDeliver)
+            waNetDeliver pData
+         else
+            waNetFail tWhy
+         end if
+         exit waCoreBody
+      end if
+      waNetDeliver pData
+   catch tError
+      waNetFail "reading from " & pSocket & " - " & tError
+   end try
+end waCoreBody
+
+private function waCoreRefusal pBody
+   -- A held non-2xx status, mapped once. Empty means "deliver the body":
+   -- Core answers an RPC error with HTTP 500 and a JSON-RPC error object,
+   -- which the ordinary path refuses with the node's own words. Anything
+   -- else is the transport's to explain, with the remedy in the sentence.
+   local tCode, tText, tNode, tError, tErr
+   put byte 10 to 12 of sWaHttpBad into tCode
+   put cwTrim(byte 1 to 240 of pBody) into tText
+   if tCode is "401" then
+      put "" into sWaHttpBad
+      return "the node refused the credentials (HTTP 401). With the cookie " & \
+            "file, it must be the RUNNING node's own (" & sWaCoreCookie & \
+            "); with rpcuser:rpcpassword, they must match the rpcauth or " & \
+            "rpcuser/rpcpassword lines in the node's bitcoin.conf."
+   end if
+   if tCode is "403" then
+      put "" into sWaHttpBad
+      return "the node does not allow requests from this address (HTTP " & \
+            "403): its rpcallowip setting decides who may ask."
+   end if
+   if tCode is "404" then
+      put "" into sWaHttpBad
+      return "the node answered 404 for that path: no wallet of that name " & \
+            "is loaded there."
+   end if
+   if tCode is "500" then
+      put "" into tError
+      try
+         put cwJsonParse(tText) into tNode
+      catch tError
+         put "" into tNode
+      end try
+      if tError is "" then
+         put cwJsonPath(tNode, "error") into tErr
+         if cwJsonType(tErr) is "object" then
+            put "" into sWaHttpBad
+            return ""
+         end if
+      end if
+   end if
+   return waHttpBadWhy(pBody)
+end waCoreRefusal
+
+function waCoreMethodFor pRec
+   -- The RPC method a request kind maps to; the per-address kinds have no
+   -- meaning on a node, which is asked with one scan instead (waSync).
+   local tKind
+   put pRec["kind"] into tKind
+   if tKind is "tip" then
+      return "getblockchaininfo"
+   end if
+   if tKind is "fees" then
+      return "estimatesmartfee"
+   end if
+   if tKind is "scan" then
+      return "scantxoutset"
+   end if
+   if tKind is "tx" then
+      return "getrawtransaction"
+   end if
+   if tKind is "broadcast" then
+      return "sendrawtransaction"
+   end if
+   if tKind is "rpc" then
+      return word 1 of pRec["arg"]
+   end if
+   throw "a node is not asked per address (" & tKind & "); it is asked " & \
+         "with one scan of its UTXO set."
+end waCoreMethodFor
+
+function waCoreRequest pRec
+   -- One JSON-RPC 1.0 request, the shape Core documents. Strings through
+   -- cwJsonString2, numbers bare, and the method checked against the list
+   -- this wallet will ever ask for (kWaCoreMethods).
+   local tMethod, tParams, tI, tCount, tRec, tArg
+   put waCoreMethodFor(pRec) into tMethod
+   if not (("," & kWaCoreMethods & ",") contains ("," & tMethod & ",")) then
+      throw "this wallet does not ask a node for " & quote & tMethod & quote & \
+            "; the methods it will ask for are " & kWaCoreMethods & "."
+   end if
+   put pRec["arg"] into tArg
+   if pRec["kind"] is "tip" then
+      put "[]" into tParams
+   else if pRec["kind"] is "fees" then
+      put "[6," & cwJsonString2("economical") & "]" into tParams
+   else if pRec["kind"] is "scan" then
+      -- ONE addr() ENTRY PER ADDRESS OF THIS WALLET, leaves included (they
+      -- are address records like any other), rather than the account's
+      -- ranged descriptors: every wallet kind has addresses and only some
+      -- have a descriptor Core can range, and an address list needs no
+      -- fingerprint, path override or range bookkeeping to be right.
+      put "[" & cwJsonString2("start") & ",[" into tParams
+      put cwListCount(sWaAddresses) into tCount
+      repeat with tI = 1 to tCount
+         put sWaAddresses[tI] into tRec
+         if tI > 1 then
+            put "," after tParams
+         end if
+         put cwJsonString2("addr(" & tRec["address"] & ")") after tParams
+      end repeat
+      put "]]" after tParams
+   else if pRec["kind"] is "tx" then
+      put "[" & cwJsonString2(tArg) & ",false]" into tParams
+   else if pRec["kind"] is "broadcast" then
+      put "[" & cwJsonString2(tArg) & "]" into tParams
+   else
+      -- rpc: "method [params as JSON]", the Node-screen shape
+      put cwTrim(char (the number of chars of tMethod + 1) to -1 of tArg) into tParams
+      if tParams is "" then
+         put "[]" into tParams
+      end if
+   end if
+   return "{" & cwJsonString2("jsonrpc") & ":" & cwJsonString2("1.0") & "," & \
+         cwJsonString2("id") & ":" & pRec["id"] & "," & \
+         cwJsonString2("method") & ":" & cwJsonString2(tMethod) & "," & \
+         cwJsonString2("params") & ":" & tParams & "}"
+end waCoreRequest
+
+function waCoreCredentials
+   -- user:password for the Authorization header: what the person typed, or
+   -- the cookie file READ NOW - it changes every time the node restarts, so
+   -- it is never remembered between requests.
+   local tText, tError, tPath
+   if sWaCoreAuth is not empty then
+      if sWaCoreAuth contains ":" then
+         return sWaCoreAuth
+      end if
+      throw "the rpcuser:rpcpassword box must hold both, with a colon " & \
+            "between them."
+   end if
+   put sWaCoreCookie into tPath
+   if tPath is empty then
+      throw "no cookie file path and no rpcuser:rpcpassword: put one or " & \
+            "the other in the boxes on the Network screen."
+   end if
+   put "" into tText
+   try
+      put URL ("file:" & tPath) into tText
+   catch tError
+      put "" into tText
+   end try
+   put cwTrim(tText) into tText
+   if tText is "" then
+      throw "could not read the node's cookie file at " & tPath & ". Is the " & \
+            "node running? Its cookie exists only while it runs. (Or put " & \
+            "rpcuser:rpcpassword in the box beside it.)"
+   end if
+   if char 1 to 11 of tText is not "__cookie__:" then
+      throw "the file at " & tPath & " does not look like Core's cookie " & \
+            "(it should begin __cookie__:)."
+   end if
+   if tText contains numToChar(10) or tText contains numToChar(13) then
+      throw "the file at " & tPath & " holds more than one line, which a " & \
+            "cookie file does not."
+   end if
+   return tText
+end waCoreCredentials
+
+function waCoreHttp pRec
+   -- The whole POST, as text; the caller encodes it. The Content-Length is
+   -- the body's UTF-8 BYTE count, taken from a local (the chunk-binding
+   -- note waStreamSendHttp carries), because a short one leaves the node
+   -- waiting for bytes that never come - a hang rather than an error.
+   local tBody, tBytes, tLen, tCrlf, tAuth
+   put numToChar(13) & numToChar(10) into tCrlf
+   put waCoreRequest(pRec) into tBody
+   put textEncode(tBody, "UTF-8") into tBytes
+   put the number of bytes of tBytes into tLen
+   -- base64Encode wraps at 72 characters and a header is one line
+   put cwStripWhitespace(base64Encode(waCoreCredentials())) into tAuth
+   return "POST / HTTP/1.1" & tCrlf & \
+         "Host: " & sWaHost & ":" & sWaPort & tCrlf & \
+         "Authorization: Basic " & tAuth & tCrlf & \
+         "User-Agent: CoinXTWallet/" & kWaVersion & tCrlf & \
+         "Content-Type: application/json" & tCrlf & \
+         "Content-Length: " & tLen & tCrlf & \
+         "Connection: keep-alive" & tCrlf & tCrlf & tBody
+end waCoreHttp
+
+function waCoreLogLine pRec
+   -- "-> method ..." with what a reader of the log wants and nothing that
+   -- a paste could leak: no headers, and a transaction as its size.
+   local tMethod, tLen, tKind
+   put pRec["kind"] into tKind
+   put waCoreMethodFor(pRec) into tMethod
+   if tKind is "scan" then
+      return "-> " & tMethod & " over " & cwListCount(sWaAddresses) & \
+            " address(es) (id " & pRec["id"] & ")"
+   end if
+   if tKind is "broadcast" then
+      put the number of chars of pRec["arg"] into tLen
+      return "-> " & tMethod & " (a " & tLen & "-hex-char transaction) (id " & \
+            pRec["id"] & ")"
+   end if
+   if tKind is "tx" or tKind is "rpc" then
+      return "-> " & tMethod & " " & char 1 to 120 of pRec["arg"] & " (id " & \
+            pRec["id"] & ")"
+   end if
+   return "-> " & tMethod & " (id " & pRec["id"] & ")"
+end waCoreLogLine
+
+function waCoreErrorText pErr
+   -- The node's error object as one sentence: Core's code mapped where a
+   -- reader would otherwise have to look it up, the node's own words kept
+   -- after the colon in every case.
+   local tCode, tMessage
+   put cwJsonGet(pErr, "code") into tCode
+   put cwJsonGet(pErr, "message") into tMessage
+   if tCode is "-28" then
+      return "the node is still starting (" & tMessage & "); try again in " & \
+            "a moment"
+   end if
+   if tCode is "-5" then
+      return "not found: " & tMessage
+   end if
+   if tCode is "-8" then
+      return "bad parameters, which is this wallet's mistake (please report " & \
+            "it): " & tMessage
+   end if
+   if tCode is "-25" or tCode is "-26" or tCode is "-27" then
+      return tMessage & " (RPC error " & tCode & ")"
+   end if
+   return "RPC error " & tCode & ": " & tMessage
+end waCoreErrorText
+
+private command waCoreApply pKind, pArg, pNode
+   -- One RESULT from the node, by kind.
+   local tChain, tWant, tHeaders, tIbd, tPruned, tProgress, tText, tPct, tDot
+   if pKind is "tip" then
+      -- THE CHAIN, FIRST AND EVERY TIME. A mismatch empties the queue
+      -- (the scan behind this must not run) and is remembered, so the
+      -- guard keeps refusing until the network or the host moves.
+      put cwJsonGet(pNode, "chain") into tChain
+      put waCoreChainName(sWaNetwork) into tWant
+      if tChain is "" then
+         throw "the node's getblockchaininfo answer names no chain, so " & \
+               "nothing has been believed about it."
+      end if
+      if tChain is not tWant then
+         put tChain into sWaCoreChain
+         put waEmptyList() into sWaQueue
+         throw "the node at " & sWaHost & ":" & sWaPort & " is on chain " & \
+               quote & tChain & quote & " and this wallet is on " & sWaNetwork & \
+               " (chain " & quote & tWant & quote & "). Nothing more was " & \
+               "asked of it. Switch the wallet's network on the Wallet " & \
+               "screen, or point the host and port at a node on " & \
+               sWaNetwork & "."
+      end if
+      put tChain into sWaCoreChain
+      put waCheckedHeight(cwJsonGet(pNode, "blocks"), "Bitcoin Core") \
+            into sWaTipHeight
+      put the milliseconds into sWaTipAt
+      put cwJsonGet(pNode, "headers") into tHeaders
+      put cwJsonGet(pNode, "initialblockdownload") into tIbd
+      put cwJsonGet(pNode, "pruned") into tPruned
+      put cwJsonGet(pNode, "verificationprogress") into tProgress
+      put "chain " & tChain & ", " & sWaTipHeight & " blocks" into tText
+      if tHeaders is an integer and tHeaders > sWaTipHeight then
+         put " of " & tHeaders & " headers (" & (tHeaders - sWaTipHeight) & \
+               " behind)" after tText
+      end if
+      if tIbd is "true" then
+         put ", still in its initial block download (balances are " & \
+               "provisional)" after tText
+      end if
+      if tPruned is "true" then
+         put ", pruned" after tText
+      end if
+      if tProgress is a number and tProgress < 0.9999 then
+         -- a percentage by CHARACTERS: round() is not a function the
+         -- family's interpreter models (the eleventh engine log's lesson)
+         put tProgress * 100 into tPct
+         put offset(".", tPct) into tDot
+         if tDot > 0 then
+            put char 1 to (tDot - 1) of tPct into tPct
+         end if
+         put ", " & tPct & "% verified" after tText
+      end if
+      put tText into sWaCoreInfo
+      waLog "node: " & tText
+      exit waCoreApply
+   end if
+   if pKind is "fees" then
+      -- estimatesmartfee answers BTC per kilobyte, like Electrum, and with
+      -- no estimate at all on a fresh node (an errors list instead); the
+      -- Send screen then keeps whatever rate it had.
+      put cwJsonGet(pNode, "feerate") into tText
+      if tText is "" then
+         waLog "the node has no fee estimate yet (" & \
+               cwJsonCount(cwJsonPath(pNode, "errors")) & " reason(s) " & \
+               "given); the Send screen keeps its rate"
+         exit waCoreApply
+      end if
+      put waRateTo8Decimals(cwExpandExponent(tText)) into tText
+      if tText is a number and tText > 0 then
+         waSetSuggestedRate "6", cwCeilDiv(cwBtcToSat(tText), 1000)
+         waSetSuggestedRate "1", sWaFeeRates["6"]
+         put the milliseconds into sWaFeesAt
+      end if
+      exit waCoreApply
+   end if
+   if pKind is "scan" then
+      if cwJsonGet(pNode, "success") is not "true" then
+         throw "the node's scan did not finish (success was not true). " & \
+               "Another scan may be running on it; press Sync again in a " & \
+               "moment."
+      end if
+      waMergeScan pNode
+      exit waCoreApply
+   end if
+   if pKind is "tx" then
+      waStoreRawTx pArg, cwJsonText(pNode)
+      exit waCoreApply
+   end if
+   if pKind is "broadcast" then
+      put waCheckedTxid(cwTrim(cwJsonText(pNode)), "Bitcoin Core") into tText
+      waLog "broadcast accepted: txid " & tText
+      waNoteBroadcast pArg, tText
+      uiStatus "Broadcast. The node returned txid " & tText & ".", "ok"
+      exit waCoreApply
+   end if
+   -- rpc: the raw answer is already in the Network screen's pane
+end waCoreApply
+
+command waMergeScan pNode
+   -- EVERY COIN THE NODE'S UTXO SET HOLDS FOR THIS WALLET, in one answer,
+   -- replacing what the wallet knew - the whole-wallet form of what
+   -- waMergeUtxos does per address. Two things a scan cannot see, and what
+   -- is done about each. The MEMPOOL: a coin this wallet spent an hour ago
+   -- is still in the UTXO set until that spend confirms, so a mark this
+   -- wallet holds on a scanned coin is KEPT, where waMergeUtxos would drop
+   -- it (the backends that see the mempool are believed over the memory;
+   -- a scan is not evidence either way). And the wallet's OWN unconfirmed
+   -- coins - the change of what it broadcast - are kept too, because the
+   -- scan cannot list them yet and dropping them would make the balance
+   -- fall on every sync until the spend confirmed.
+   local tList, tI, tCount, tRec, tItem, tHeight, tScanHeight, tAddr, tError
+   local tKey, tKept, tSeen, tFound, tForeign, tTotal, tMarked, tAddrs, tItems
+   put cwJsonGet(pNode, "height") into tScanHeight
+   if tScanHeight is an integer then
+      if sWaTipHeight is "" or tScanHeight > sWaTipHeight then
+         put tScanHeight into sWaTipHeight
+      end if
+   end if
+   put cwJsonPath(pNode, "unspents") into tItems
+   if cwJsonType(tItems) is not "array" then
+      throw "the node's scan answered with no unspents list, so nothing " & \
+            "about this wallet's coins has been changed."
+   end if
+   put waEmptyList() into tList
+   put empty into tSeen
+   put empty into tAddrs
+   put 0 into tForeign
+   put 0 into tTotal
+   put 0 into tMarked
+   put cwJsonCount(tItems) into tCount
+   repeat with tI = 1 to tCount
+      put cwJsonAt(tItems, tI) into tItem
+      put "" into tAddr
+      try
+         put cwAddressForScript(sWaNetwork, cwJsonGet(tItem, "scriptPubKey")) \
+               into tAddr
+      catch tError
+         put "" into tAddr
+      end try
+      if tAddr is "" or waIsMine(tAddr) is not true then
+         add 1 to tForeign
+         next repeat
+      end if
+      put "" into tRec
+      put tAddr into tRec["address"]
+      put cwJsonGet(tItem, "txid") into tRec["txid"]
+      put cwJsonGet(tItem, "vout") + 0 into tRec["vout"]
+      -- Core prints an amount with exactly eight decimals, as text here
+      put cwBtcToSat(cwJsonGet(tItem, "amount")) into tRec["value"]
+      put cwJsonGet(tItem, "height") into tHeight
+      if tHeight is an integer and tHeight > 0 and tScanHeight is an integer then
+         put tScanHeight - tHeight + 1 into tRec["confirmations"]
+      else
+         put 0 into tRec["confirmations"]
+      end if
+      put tHeight into tRec["height"]
+      put tRec["txid"] & ":" & tRec["vout"] into tKey
+      put "true" into tSeen[tKey]
+      put "true" into tAddrs[tAddr]
+      if sWaSpentBy[tKey] is not "" then
+         add 1 to tMarked
+      end if
+      add tRec["value"] to tTotal
+      put cwListAdd(tList, tRec) into tList
+   end repeat
+   put 0 into tKept
+   put cwListCount(sWaUtxos) into tCount
+   repeat with tI = 1 to tCount
+      put sWaUtxos[tI] into tRec
+      put tRec["txid"] & ":" & tRec["vout"] into tKey
+      if tSeen[tKey] is "true" then
+         next repeat
+      end if
+      if tRec["confirmations"] + 0 is 0 and waIsOwnBroadcast(tRec["txid"]) is true then
+         put cwListAdd(tList, tRec) into tList
+         add 1 to tKept
+      end if
+   end repeat
+   put tList into sWaUtxos
+   put 0 into tFound
+   repeat for each key tAddr in tAddrs
+      add 1 to tFound
+   end repeat
+   waLog "scan: " & (cwListCount(tList) - tKept) & " unspent output(s) at " & \
+         tFound & " address(es), " & waAmount(tTotal) & ", at height " & \
+         tScanHeight & " (a scan reads the chain, not the node's mempool)"
+   if tMarked > 0 then
+      waLog tMarked & " of them spent by this wallet's own unconfirmed " & \
+            "transaction(s); kept marked, because a scan cannot see the mempool"
+   end if
+   if tKept > 0 then
+      waLog tKept & " unconfirmed coin(s) from this wallet's own broadcasts " & \
+            "kept until a scan lists them"
+   end if
+   if tForeign > 0 then
+      waLog tForeign & " output(s) at addresses this wallet does not derive " & \
+            "were ignored"
+   end if
+   waRecomputeBalance
+end waMergeScan
+
+function waIsOwnBroadcast pTxid
+   -- Did this wallet broadcast pTxid in this session? The marks say so:
+   -- every input a broadcast spent carries its txid (waNoteBroadcast).
+   local tKey
+   repeat for each key tKey in sWaSpentBy
+      if sWaSpentBy[tKey] is pTxid then
+         return true
+      end if
+   end repeat
+   return false
+end waIsOwnBroadcast
 
 on waSockLine pSocket, pData
    set the defaultStack to the short name of this stack
@@ -22774,7 +23646,9 @@ command waNetDeliver pBody
       -- read "could not read the answer to broadcast: the Electrum server
       -- refused: ..." - the answer was read perfectly well; it was a no. The
       -- prefix stays for what it was written for (a reply that did not parse).
-      if char 1 to 27 of tError is "the Electrum server refused" then
+      if char 1 to 27 of tError is "the Electrum server refused" \
+            or char 1 to 16 of tError is "the node refused" \
+            or char 1 to 11 of tError is "the node at" then
          waNetFail tKind & ": " & tError
       else
          waNetFail "could not read the answer to " & tKind & ": " & tError
@@ -23043,6 +23917,30 @@ private command waNetApply pKind, pArg, pBody, pId
       put pBody into tText
    end try
    put cwTrim(tText) into tText
+   if waIsCore(sWaBackend) then
+      -- The node's JSON-RPC 1.0: the same id check as Electrum's (one
+      -- socket serves the whole sync here too), an error object refused
+      -- with the node's own words, the result to waCoreApply.
+      put cwJsonParse(tText) into tNode
+      put cwJsonPath(tNode, "id") into tIdNode
+      put cwJsonText(tIdNode) into tGotId
+      if cwJsonType(tIdNode) is "missing" or cwJsonType(tIdNode) is "null" then
+         throw "the node answered with no id while request " & pId & \
+               " was in flight, so that reply answers no question this " & \
+               "wallet asked and has been discarded."
+      end if
+      if tGotId is not pId then
+         throw "the node answered request " & tGotId & " while request " & \
+               pId & " was in flight, so that reply answers a different " & \
+               "question and has been discarded."
+      end if
+      put cwJsonPath(tNode, "error") into tResult
+      if cwJsonType(tResult) is not "missing" and cwJsonType(tResult) is not "null" then
+         throw "the node refused: " & waCoreErrorText(tResult)
+      end if
+      waCoreApply pKind, pArg, cwJsonPath(tNode, "result")
+      exit waNetApply
+   end if
    if waIsElectrum(sWaBackend) then
       put cwJsonParse(tText) into tNode
       -- THE ID IS THE CORRELATION, AND ON A REUSED CONNECTION IT IS THE ONLY
@@ -23367,7 +24265,12 @@ on socketClosed pSocketID
       set the defaultStack to the short name of this stack
       put empty into sWaSock
       if sWaInFlight is not empty then
-         waNetFail "the Electrum server closed the connection before answering."
+         waNetFail "the server closed the connection before answering."
+      else if waIsCore(sWaBackend) then
+         -- Core drops a quiet client after rpcservertimeout (30 s by
+         -- default); the next request connects again and nothing is counted
+         waLog "the node closed the idle connection; the next request " & \
+               "will connect again"
       end if
       exit socketClosed
    end if
@@ -23539,7 +24442,13 @@ function waAboutText
    put "  change, which forgets them); the paint-once-a-second and" & return after tOut
    put "  pump-at-once changes; and the three menu items that now do what" & return after tOut
    put "  they say (copy the selected address, sign a message with it," & return after tOut
-   put "  copy the selected outpoint)." & return & return after tOut
+   put "  copy the selected outpoint)." & return after tOut
+   put "  BITCOIN CORE AS A BACKEND (Network screen, 2026-09-04) has not met" & return after tOut
+   put "  a node: the HTTP framing, the cookie and rpcauth credentials, the" & return after tOut
+   put "  chain guard, the fee estimate, the UTXO-set scan and the broadcast" & return after tOut
+   put "  are each driven headlessly against fixtures of the node's replies" & return after tOut
+   put "  and nothing more. Scan tier only: no history and no mempool from" & return after tOut
+   put "  the node (docs/bitcoin-core-plan.md is the rest)." & return & return after tOut
    put "WHERE THE NEW THINGS ARE (2026-09-02 to 2026-09-04)" & return after tOut
    put "  Send: a line " & quote & "note: text" & quote & " or " & quote & "data: hex" & quote & " writes" & return after tOut
    put "  an OP_RETURN output; a line paying an sp1.../tsp1... address is a" & return after tOut
@@ -23549,7 +24458,8 @@ function waAboutText
    put "  beside Verify; Inspect reads Lightning invoices too. History:" & return after tOut
    put "  Bump does CPFP where RBF cannot apply. Wallet: a testnet4 button. Settings: export and" & return after tOut
    put "  import labels (BIP-329), and Update from main. Right-click any" & return after tOut
-   put "  list for the menu." & return & return after tOut
+   put "  list for the menu. Network: Bitcoin Core, your own node (cookie" & return after tOut
+   put "  or rpcuser:rpcpassword; the port follows the chain)." & return & return after tOut
    put "  THIS IS VERSION " & kWaVersion & ". Update from main (Settings, or" & return after tOut
    put "  any right-click menu) fetches this script from the repository's" & return after tOut
    put "  main branch, reads it, shows its version and SHA-256, and only on" & return after tOut
@@ -23879,6 +24789,12 @@ function waUpdateCarry
    put "update:host" & tTab & sWaHost & return after tOut
    put "update:port" & tTab & sWaPort & return after tOut
    put "update:socks" & tTab & sWaSocksPort & return after tOut
+   -- Core's credentials cross the swap in the stack property with the
+   -- other Network settings, for the milliseconds it holds them; the
+   -- wallet FILE never carries them (waSerializeWallet), and the gate says so
+   put "update:cookie" & tTab & sWaCoreCookie & return after tOut
+   put "update:auth" & tTab & sWaCoreAuth & return after tOut
+   put "update:remoteok" & tTab & sWaCoreRemoteOk & return after tOut
    put "update:screen" & tTab & sWaScreen & return after tOut
    return tOut
 end waUpdateCarry
@@ -23921,7 +24837,7 @@ command waUpdateRestore
    -- The other side of the swap, from waBoot: if a carry is parked on the
    -- stack, read it back, clear it, and say what happened.
    local tCarry, tWallet, tI, tCount, tLine, tTab, tName, tValue, tFrom, tScreen
-   local tError, tBackend, tHost, tPort, tSocks
+   local tError, tBackend, tHost, tPort, tSocks, tCookie, tAuth, tRemote
    set the defaultStack to the short name of this stack
    put the uWaUpdateCarry of this stack into tCarry
    if tCarry is empty then
@@ -23948,6 +24864,12 @@ command waUpdateRestore
             put tValue into tPort
          else if tName is "socks" then
             put tValue into tSocks
+         else if tName is "cookie" then
+            put tValue into tCookie
+         else if tName is "auth" then
+            put tValue into tAuth
+         else if tName is "remoteok" then
+            put tValue into tRemote
          else if tName is "screen" then
             put tValue into tScreen
          end if
@@ -23987,6 +24909,19 @@ command waUpdateRestore
       put tSocks into sWaSocksPort
       put tSocks into field "nw_socks"
    end if
+   if tCookie is not empty then
+      put tCookie into sWaCoreCookie
+      if there is a field "nw_cookie" then
+         put tCookie into field "nw_cookie"
+      end if
+   end if
+   if tAuth is not empty then
+      put tAuth into sWaCoreAuth
+      if there is a field "nw_auth" then
+         put tAuth into field "nw_auth"
+      end if
+   end if
+   put tRemote into sWaCoreRemoteOk
    waRefreshNetState
    waApplyNetworkFields
    if tScreen is not empty then
@@ -24545,7 +25480,7 @@ end scFinish
 -- clipboard. What they check is that this stack's own arithmetic agrees with
 -- the library it carries, on this engine, before anybody types anything.
 
-constant kWaScControls = "ad_change,ad_detail,ad_label,ad_labelCap,ad_more,ad_panel,ad_receive,ad_scan,ad_sec1,ad_setLabel,ad_table,cn_addManual,cn_detail,cn_freeze,cn_hint,cn_panel,cn_sec1,cn_table,cn_tick,cn_tickAll,cn_tickNone,hs_bump,hs_copyTxid,hs_detail,hs_inspect,hs_panel,hs_refresh,hs_sec1,hs_table,lg_boot,lg_clear,lg_copy,lg_hint,lg_panel,lg_sec1,lg_sec2,lg_text,nv_ad,nv_bal,nv_chain,nv_cn,nv_confirmed,nv_frozenamt,nv_hs,nv_lg,nv_net,nv_nw,nv_od,nv_panel,nv_pending,nv_rc,nv_refresh,nv_sd,nv_st,nv_tip,nv_tl,nv_vt,nv_wallet,nv_wl,nw_bElectrumClear,nw_bElectrumTor,nw_bEsploraClear,nw_bEsploraTor,nw_bOffline,nw_host,nw_hostCap,nw_out,nw_panelA,nw_panelB,nw_port,nw_portCap,nw_privacy,nw_sec1,nw_sec2,nw_sec3,nw_socks,nw_socksCap,nw_state,nw_stop,nw_syncNow,nw_test,nw_why,od_body,od_bodyCap,od_copyAddr,od_copyOut,od_details,od_hex,od_hexCap,od_hint,od_inspect,od_intro,od_out,od_panelA,od_panelB,od_prepare,od_read,od_reveal,od_runes,od_sec1,od_sec2,od_sec3,od_sec4,od_size,od_table,od_type,od_typeCap,od_typeJson,od_typeSvg,od_typeText,rc_address,rc_amount,rc_amountCap,rc_copy,rc_copyUri,rc_detail,rc_label,rc_labelCap,rc_message,rc_messageCap,rc_next,rc_panelA,rc_panelB,rc_qr,rc_qrframe,rc_qrhint,rc_sec1,rc_sec2,rc_sec3,rc_showQr,rc_uri,rc_verify,sd_addNote,sd_addSelf,sd_broadcast,sd_clear,sd_copyRaw,sd_locktime,sd_locktimeCap,sd_out,sd_panelA,sd_panelB,sd_paste,sd_preview,sd_rate,sd_rateCap,sd_ratehint,sd_rbf,sd_sec1,sd_sec2,sd_sec3,sd_sec4,sd_sign,sd_stratBnb,sd_stratLargest,sd_stratManual,sd_stratOldest,sd_stratSmallest,sd_strategyCap,sd_to,sd_toCap,sd_toPsbt,sd_warn,st_about,st_browse,st_exportLabels,st_filenote,st_forget,st_forgetnote,st_gap,st_gapCap,st_importLabels,st_load,st_panelA,st_panelB,st_password,st_passwordCap,st_path,st_pathCap,st_save,st_sec1,st_sec2,st_sec3,st_unitBtc,st_unitMbtc,st_unitSat,st_update,tl_copyOut,tl_decode,tl_derive,tl_entropy,tl_export,tl_hex,tl_hexCap,tl_hold,tl_inspect,tl_msg,tl_msg322,tl_msgAddr,tl_msgAddrCap,tl_msgCap,tl_msgSig,tl_msgSigCap,tl_msgSign,tl_msgVerify,tl_newKey,tl_note,tl_out,tl_panelA,tl_panelB,tl_pass,tl_passCap,tl_psbtCombine,tl_psbtFinal,tl_psbtSign,tl_sec1,tl_sec2,tl_sec3,tl_sweep,tl_toEntropy,tl_validate,uiFooter,uiStatus,uiTitle,vt_copyAddr,vt_copyOut,vt_day,vt_details,vt_height,vt_heightCap,vt_hint,vt_intro,vt_month,vt_out,vt_panelA,vt_panelB,vt_prepare,vt_sec1,vt_sec2,vt_sec3,vt_send,vt_table,vt_week,vt_when,vt_year,wl_account,wl_accountCap,wl_addCosigner,wl_backup,wl_copyDesc,wl_copyXpub,wl_custody,wl_generate,wl_kindKey,wl_kindMulti,wl_kindRestore,wl_kindSeed,wl_kindWatch,wl_label,wl_labelCap,wl_m,wl_mCap,wl_mnemonic,wl_mnemonicCap,wl_netMain,wl_netReg,wl_netSignet,wl_netTest,wl_netTest4,wl_open,wl_out,wl_panelA,wl_panelB,wl_pass,wl_passCap,wl_path,wl_pathCap,wl_sec1,wl_sec2,wl_sec3,wl_sec4,wl_typeLegacy,wl_typeMulti,wl_typeNative,wl_typeNested,wl_typeTaproot,wl_warn,wl_xkey,wl_xkeyCap"
+constant kWaScControls = "ad_change,ad_detail,ad_label,ad_labelCap,ad_more,ad_panel,ad_receive,ad_scan,ad_sec1,ad_setLabel,ad_table,cn_addManual,cn_detail,cn_freeze,cn_hint,cn_panel,cn_sec1,cn_table,cn_tick,cn_tickAll,cn_tickNone,hs_bump,hs_copyTxid,hs_detail,hs_inspect,hs_panel,hs_refresh,hs_sec1,hs_table,lg_boot,lg_clear,lg_copy,lg_hint,lg_panel,lg_sec1,lg_sec2,lg_text,nv_ad,nv_bal,nv_chain,nv_cn,nv_confirmed,nv_frozenamt,nv_hs,nv_lg,nv_net,nv_nw,nv_od,nv_panel,nv_pending,nv_rc,nv_refresh,nv_sd,nv_st,nv_tip,nv_tl,nv_vt,nv_wallet,nv_wl,nw_auth,nw_authCap,nw_bCore,nw_bElectrumClear,nw_bElectrumTor,nw_bEsploraClear,nw_bEsploraTor,nw_bOffline,nw_cookie,nw_cookieCap,nw_host,nw_hostCap,nw_out,nw_panelA,nw_panelB,nw_port,nw_portCap,nw_privacy,nw_remoteOk,nw_sec1,nw_sec2,nw_sec3,nw_socks,nw_socksCap,nw_state,nw_stop,nw_syncNow,nw_test,nw_why,od_body,od_bodyCap,od_copyAddr,od_copyOut,od_details,od_hex,od_hexCap,od_hint,od_inspect,od_intro,od_out,od_panelA,od_panelB,od_prepare,od_read,od_reveal,od_runes,od_sec1,od_sec2,od_sec3,od_sec4,od_size,od_table,od_type,od_typeCap,od_typeJson,od_typeSvg,od_typeText,rc_address,rc_amount,rc_amountCap,rc_copy,rc_copyUri,rc_detail,rc_label,rc_labelCap,rc_message,rc_messageCap,rc_next,rc_panelA,rc_panelB,rc_qr,rc_qrframe,rc_qrhint,rc_sec1,rc_sec2,rc_sec3,rc_showQr,rc_uri,rc_verify,sd_addNote,sd_addSelf,sd_broadcast,sd_clear,sd_copyRaw,sd_locktime,sd_locktimeCap,sd_out,sd_panelA,sd_panelB,sd_paste,sd_preview,sd_rate,sd_rateCap,sd_ratehint,sd_rbf,sd_sec1,sd_sec2,sd_sec3,sd_sec4,sd_sign,sd_stratBnb,sd_stratLargest,sd_stratManual,sd_stratOldest,sd_stratSmallest,sd_strategyCap,sd_to,sd_toCap,sd_toPsbt,sd_warn,st_about,st_browse,st_exportLabels,st_filenote,st_forget,st_forgetnote,st_gap,st_gapCap,st_importLabels,st_load,st_panelA,st_panelB,st_password,st_passwordCap,st_path,st_pathCap,st_save,st_sec1,st_sec2,st_sec3,st_unitBtc,st_unitMbtc,st_unitSat,st_update,tl_copyOut,tl_decode,tl_derive,tl_entropy,tl_export,tl_hex,tl_hexCap,tl_hold,tl_inspect,tl_msg,tl_msg322,tl_msgAddr,tl_msgAddrCap,tl_msgCap,tl_msgSig,tl_msgSigCap,tl_msgSign,tl_msgVerify,tl_newKey,tl_note,tl_out,tl_panelA,tl_panelB,tl_pass,tl_passCap,tl_psbtCombine,tl_psbtFinal,tl_psbtSign,tl_sec1,tl_sec2,tl_sec3,tl_sweep,tl_toEntropy,tl_validate,uiFooter,uiStatus,uiTitle,vt_copyAddr,vt_copyOut,vt_day,vt_details,vt_height,vt_heightCap,vt_hint,vt_intro,vt_month,vt_out,vt_panelA,vt_panelB,vt_prepare,vt_sec1,vt_sec2,vt_sec3,vt_send,vt_table,vt_week,vt_when,vt_year,wl_account,wl_accountCap,wl_addCosigner,wl_backup,wl_copyDesc,wl_copyXpub,wl_custody,wl_generate,wl_kindKey,wl_kindMulti,wl_kindRestore,wl_kindSeed,wl_kindWatch,wl_label,wl_labelCap,wl_m,wl_mCap,wl_mnemonic,wl_mnemonicCap,wl_netMain,wl_netReg,wl_netSignet,wl_netTest,wl_netTest4,wl_open,wl_out,wl_panelA,wl_panelB,wl_pass,wl_passCap,wl_path,wl_pathCap,wl_sec1,wl_sec2,wl_sec3,wl_sec4,wl_typeLegacy,wl_typeMulti,wl_typeNative,wl_typeNested,wl_typeTaproot,wl_warn,wl_xkey,wl_xkeyCap"
 
 command waScFresh
    -- THIS RUN'S RECORD, NOT EVERY RUN'S. The field is saved with the stack,

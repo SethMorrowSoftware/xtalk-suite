@@ -3197,3 +3197,52 @@ Electrum server refused: ...", and the answer had been read perfectly well;
 a refusal is logged as "broadcast: the Electrum server refused: ..." now, with
 the old prefix kept for a reply that does not parse. Still unproven: the
 backend un-marking a coin it still lists, and Esplora's 400 body in the log.
+
+### 2026-09-04, Bitcoin Core as a backend: the plan's phase 1, and the scan
+
+`docs/bitcoin-core-plan.md` was written the day before as a plan and this is
+its first code: a `core-rpc` transport beside the four public ones, on the
+Network screen as "Bitcoin Core: your own node, over RPC", with the cookie
+and rpcauth boxes, the remote-host tick, and a scan of the node's UTXO set in
+place of the per-address requests. Four decisions are worth the record.
+
+**IT RIDES THE CLEARNET SOCKET PATH, AND ONLY THE BYTES DIFFER.** Core's RPC
+is HTTP on a plain socket, kept alive between requests, which is exactly what
+the clearnet Electrum transport already owns (one socket, the id as the
+correlation, the write-failure requeue, the deadline, the close on failure);
+`waNetStart` dials the same way and `waSockSend` dispatches to `waCoreSend`.
+The reply framing is two engine reads rather than a phase machine, because
+Core never chunks: the head until the blank line, then the body for exactly
+its Content-Length. The write-failure branch was extracted (`waSockWriteFailed`)
+so the two protocols on one socket cannot drift about it, which is the
+per-transport-validation lesson of 2026-09-01 applied before the fifth
+instance rather than after.
+
+**THE CHAIN IS ASKED FIRST, EVERY TIME IT IS NOT KNOWN.** The port table is
+Core's own and is still only a guess about what a person runs where, so the
+sync puts `getblockchaininfo` ahead of the scan whenever the node's chain is
+not known, and a mismatch empties the queue, is remembered (`sWaCoreChain`),
+and is refused by `waBackendChainWhy` until the network or the host moves.
+The chain is NOT forgotten on a network change: what the node said is what
+the guard compares, and comparing it to the new network is the question.
+
+**ONE addr() PER ADDRESS RATHER THAN THE ACCOUNT'S DESCRIPTORS**, because
+every wallet kind has addresses and only some have a descriptor Core can
+range, and an address list needs no fingerprint, path override or range
+bookkeeping to be right. The watch tier (phase 3) is where the descriptors
+earn their place. **AND THE SCAN IS NOT BELIEVED ABOUT THE MEMPOOL**, in
+either direction: a scanned coin this wallet has marked spent stays marked
+(the spend is in the mempool the scan cannot see), where `waMergeUtxos` would
+drop the mark; and the wallet's own unconfirmed coins survive the replace.
+Getting either wrong is a coin offered twice or a balance that falls on every
+sync until a confirmation.
+
+**THE GATE MODELS THE SOCKET, which nothing had needed before.** The
+clearnet Electrum checks drive the handlers around the socket and never the
+socket; the Core block switches on a modelled one (`world.sock`, the four
+statements recorded and `the result` answered the way the engine's are, the
+same shape as the modelled Tor) and drives the whole life of a request: the
+dial, the write asserted byte for byte with the auth header base64 of a
+cookie file written in the sandbox, the two armed reads, the head and body
+delivered as the engine would, the socket kept. Nothing here has met a node;
+the labels say so in three places.

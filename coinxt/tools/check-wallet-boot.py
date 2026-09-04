@@ -348,6 +348,53 @@ class WalletInterp(DB.DemoInterp):
             world.result = ""
             return i + 1
 
+        # THE MODELLED SOCKET (2026-09-04). The engine's four socket statements
+        # are recorded rather than run while a block has switched the model on
+        # (world.sock is a list), and answer `the result` the way the real ones
+        # do: a dial and a read succeed silently (the block delivers the
+        # callbacks itself, as the engine would), a write succeeds unless the
+        # block plants a refusal. The same shape as the modelled Tor above.
+        # Off by default, for the same reason: a boot that dials must still
+        # fail loudly.
+        if isinstance(getattr(world, "sock", None), list):
+            m = re.match(r'open\s+socket\s+to\s+(.+?)\s+with\s+message\s+(.+)$',
+                         line, re.I)
+            if m:
+                world.sock.append(("open",
+                                   str(LCS._disp(self.eval_expr(m.group(1), env))),
+                                   str(LCS._disp(self.eval_expr(m.group(2), env)))))
+                world.result = ""
+                return i + 1
+            m = re.match(r'write\s+(.+)\s+to\s+socket\s+(.+)$', line, re.I)
+            if m:
+                data = self.eval_expr(m.group(1), env)
+                if isinstance(data, (bytes, bytearray)):
+                    data = bytes(data).decode("utf-8", "replace")
+                else:
+                    data = str(LCS._disp(data))
+                world.sock.append(("write",
+                                   str(LCS._disp(self.eval_expr(m.group(2), env))),
+                                   data))
+                world.result = world.sock_write_fail
+                return i + 1
+            m = re.match(r'read\s+from\s+socket\s+(\S+)(?:\s+(until|for)\s+(.+?))?'
+                         r'\s+with\s+message\s+(.+)$', line, re.I)
+            if m:
+                spec = ""
+                if m.group(2):
+                    spec = "%s %s" % (m.group(2).lower(),
+                                      LCS._disp(self.eval_expr(m.group(3), env)))
+                world.sock.append(("read",
+                                   str(LCS._disp(self.eval_expr(m.group(1), env))),
+                                   spec,
+                                   str(LCS._disp(self.eval_expr(m.group(4), env)))))
+                return i + 1
+            m = re.match(r'close\s+socket\s+(.+)$', line, re.I)
+            if m:
+                world.sock.append(("close",
+                                   str(LCS._disp(self.eval_expr(m.group(1), env)))))
+                return i + 1
+
         if re.match(r'create\s+image\s*$', line, re.I):
             world.create("image")
             return i + 1
@@ -2444,6 +2491,496 @@ def drive(c, ip, world, sandbox):
     for k, v in saved5.items():
         ip.globals[k] = v
 
+    # ---- Bitcoin Core over JSON-RPC on a plain socket (2026-09-04) -----------
+    # docs/bitcoin-core-plan.md, phase 1 with the scan half of phase 2: the
+    # node's HTTP framing over the modelled socket, the credentials from a
+    # cookie file written in the sandbox and from rpcauth, the chain guard, the
+    # fee estimate, the UTXO-set scan and the broadcast, each against a fixture
+    # of the node's own reply shape, with the request bytes asserted. Nothing
+    # here has met a node; that is the plan's phase 0, on a real machine.
+    saved_core = {k: ip.globals.get(k) for k in (
+        "swabackend", "swahost", "swaport", "swanetwork", "swanetstate",
+        "swanetwhy", "swaqueue", "swainflight", "swabuffer", "swasock",
+        "swasyncfailures", "swatipheight", "swatipat", "swafeesat",
+        "swafeerates", "swautxos", "swahistory", "swacorecookie",
+        "swacoreauth", "swacorechain", "swacoreinfo", "swacoreremoteok",
+        "swaspentby", "swahttpbad", "swapolling")}
+    world.sock = []
+    world.sock_write_fail = ""
+
+    def sock_count(kind):
+        return sum(1 for t in world.sock if t[0] == kind)
+
+    def sock_last(kind):
+        w = [t for t in world.sock if t[0] == kind]
+        return w[-1] if w else None
+
+    def core_id():
+        rec = ip.globals.get("swainflight") or {}
+        return str(rec.get("id", ""))
+
+    def core_answer(status, body):
+        # the node answers the request in flight the way the two armed
+        # reads would deliver it: the head up to the blank line, then the
+        # body for exactly its Content-Length
+        raw = body.encode("utf-8")
+        head = ("HTTP/1.1 %s\r\nContent-Type: application/json\r\n"
+                "Content-Length: %d\r\nConnection: keep-alive\r\n\r\n"
+                % (status, len(raw)))
+        sock = str(ip.globals.get("swasock"))
+        ip.call("waCoreHead", [sock, head])
+        if raw:
+            ip.call("waCoreBody", [sock, body])
+
+    def core_result(result_json):
+        return '{"result":%s,"error":null,"id":%s}' % (result_json, core_id())
+
+    def core_error(code, message):
+        return ('{"result":null,"error":{"code":%d,"message":"%s"},"id":%s}'
+                % (code, message, core_id()))
+
+    def core_log(n=1500):
+        return _fld(world, "lg_text")[-n:]
+
+    try:
+        ip.globals["swanetwork"] = "testnet"
+        ip.globals["swacorecookie"] = ""
+        ip.globals["swacoreauth"] = ""
+        ip.globals["swacoreremoteok"] = ""
+        ip.call("waNetAbort", [])
+        ip.call("waSetBackend", ["core-rpc"])
+        c.eq("Core is a backend on the Network screen",
+             str(ip.globals.get("swabackend")), "core-rpc")
+        c.eq("it dials this machine", str(ip.globals.get("swahost")), "127.0.0.1")
+        c.eq("on testnet's RPC port", int(LCS._n(ip.globals.get("swaport"))), 18332)
+        cookie = str(ip.globals.get("swacorecookie"))
+        c.ck("the cookie path is the testnet3 data directory's",
+             cookie.endswith("/testnet3/.cookie"), cookie)
+        c.eq("and the Network screen shows it", _fld(world, "nw_cookie"), cookie)
+        # the port and the cookie follow the chain, through Core's own table
+        for net, port, tail in (("regtest", 18443, "/regtest/.cookie"),
+                                ("mainnet", 8332, "/.cookie"),
+                                ("testnet4", 48332, "/testnet4/.cookie"),
+                                ("signet", 38332, "/signet/.cookie")):
+            ip.globals["swanetwork"] = net
+            ip.call("waRetunePort", [])
+            c.eq("%s dials port %d" % (net, port),
+                 int(LCS._n(ip.globals.get("swaport"))), port)
+            got = str(ip.globals.get("swacorecookie"))
+            c.ck("and reads %s's cookie" % net, got.endswith(tail)
+                 and (net != "mainnet" or "/testnet" not in got), got)
+        c.eq("mainnet's cookie sits in the data directory itself",
+             str(ip.call("waCoreChainName", ["mainnet"])), "main")
+        c.eq("testnet is 'test' to the node", str(ip.call("waCoreChainName", ["testnet"])), "test")
+        c.eq("and the others keep their names",
+             [str(ip.call("waCoreChainName", [n])) for n in ("testnet4", "signet", "regtest")],
+             ["testnet4", "signet", "regtest"])
+        # a cookie path somebody typed survives a network change
+        ip.globals["swacorecookie"] = "/somewhere/else/my.cookie"
+        ip.globals["swanetwork"] = "testnet"
+        ip.call("waRetunePort", [])
+        c.eq("a typed cookie path is left alone by the port table",
+             str(ip.globals.get("swacorecookie")), "/somewhere/else/my.cookie")
+        c.eq("while the port still moves", int(LCS._n(ip.globals.get("swaport"))), 18332)
+        # and a real network change carries the same wiring (one, to keep the
+        # derive cost down: the table is proven above)
+        ip.globals["swacorecookie"] = ""
+        ip.call("waSetNetwork", ["regtest"])
+        c.eq("waSetNetwork retunes the node's port", int(LCS._n(ip.globals.get("swaport"))), 18443)
+        c.ck("and its cookie", str(ip.globals.get("swacorecookie")).endswith("/regtest/.cookie"),
+             str(ip.globals.get("swacorecookie")))
+        ip.call("waSetNetwork", ["testnet"])
+
+        # ---- the credentials ----
+        cookie = str(ip.globals.get("swacorecookie"))
+        c.ck("the default cookie path is inside the modelled home",
+             os.path.abspath(cookie).startswith(world.sandbox), cookie)
+        rec = {"kind": "tip", "arg": "", "id": "41"}
+        try:
+            ip.call("waCoreHttp", [rec])
+            c.ck("a missing cookie file is refused by name", False, "it was read")
+        except LCS.Thrown as exc:
+            c.ck("a missing cookie file is refused by name",
+                 "cookie file" in str(exc.msg) and "Is the node running" in str(exc.msg),
+                 str(exc.msg)[:120])
+        secret = "__cookie__:" + "ab" * 32
+        os.makedirs(os.path.dirname(cookie), exist_ok=True)
+        with open(cookie, "w") as fh:
+            fh.write(secret)
+        import base64 as _b64
+        req = str(ip.call("waCoreHttp", [rec]))
+        lines = req.split("\r\n")
+        body = req.split("\r\n\r\n", 1)[1]
+        c.eq("the request is a POST to the node's root", lines[0], "POST / HTTP/1.1")
+        c.ck("with the host and port", "Host: 127.0.0.1:18332" in lines, lines[1:3])
+        want_auth = "Authorization: Basic " + _b64.b64encode(secret.encode()).decode()
+        c.ck("and Basic auth over the cookie file's one line, unwrapped",
+             want_auth in lines and "\n" not in want_auth, [l for l in lines if "Auth" in l])
+        c.ck("Content-Length is the body's byte count",
+             "Content-Length: %d" % len(body.encode("utf-8")) in lines,
+             [l for l in lines if "Length" in l])
+        c.ck("kept alive", "Connection: keep-alive" in lines, lines)
+        c.ck("the body is JSON-RPC 1.0 asking getblockchaininfo with the id",
+             '"jsonrpc":"1.0"' in body and '"method":"getblockchaininfo"' in body
+             and '"id":41' in body and '"params":[]' in body, body)
+        ip.globals["swacoreauth"] = "bob:hunter2"
+        req = str(ip.call("waCoreHttp", [rec]))
+        c.ck("rpcuser:rpcpassword wins over the cookie when both are there",
+             "Authorization: Basic " + _b64.b64encode(b"bob:hunter2").decode() in req,
+             [l for l in req.split("\r\n") if "Auth" in l])
+        ip.globals["swacoreauth"] = "nocolon"
+        try:
+            ip.call("waCoreHttp", [rec])
+            c.ck("a password without a user is refused", False, "it was sent")
+        except LCS.Thrown as exc:
+            c.ck("a password without a user is refused", "colon" in str(exc.msg), str(exc.msg)[:100])
+        ip.globals["swacoreauth"] = ""
+        with open(cookie, "w") as fh:
+            fh.write("not a cookie")
+        try:
+            ip.call("waCoreHttp", [rec])
+            c.ck("a file that is not Core's cookie is refused", False, "it was sent")
+        except LCS.Thrown as exc:
+            c.ck("a file that is not Core's cookie is refused",
+                 "__cookie__" in str(exc.msg), str(exc.msg)[:100])
+        with open(cookie, "w") as fh:
+            fh.write(secret)
+        for kind, arg, want in (("tip", "", "getblockchaininfo"),
+                                ("scan", "", "scantxoutset over"),
+                                ("broadcast", "ab" * 100, "hex-char transaction"),
+                                ("tx", "cd" * 32, "getrawtransaction " + "cd" * 32)):
+            line = str(ip.call("waCoreLogLine", [{"kind": kind, "arg": arg, "id": "7"}]))
+            c.ck("the log line for %s names the method and nothing secret" % kind,
+                 want in line and "Authorization" not in line and "Basic" not in line
+                 and secret not in line, line)
+        try:
+            ip.call("waCoreRequest", [{"kind": "rpc", "arg": "stop", "id": "8"}])
+            c.ck("a method off the list is refused by name", False, "it was built")
+        except LCS.Thrown as exc:
+            c.ck("a method off the list is refused by name",
+                 "does not ask a node for" in str(exc.msg) and '"stop"' in str(exc.msg),
+                 str(exc.msg)[:100])
+        try:
+            ip.call("waCoreRequest", [{"kind": "history", "arg": "tb1q", "id": "9"}])
+            c.ck("a per-address kind has no meaning on a node", False, "it was built")
+        except LCS.Thrown as exc:
+            c.ck("a per-address kind has no meaning on a node",
+                 "one scan" in str(exc.msg), str(exc.msg)[:100])
+        addrs = ip.globals.get("swaaddresses") or {}
+        n_addr = int(LCS._n(ip.call("cwListCount", [addrs])))
+        scan_body = str(ip.call("waCoreRequest", [{"kind": "scan", "arg": "", "id": "10"}]))
+        c.ck("the scan starts, over an addr() entry per address of the wallet",
+             '"params":["start",[' in scan_body
+             and scan_body.count('"addr(') == n_addr and n_addr >= 4,
+             (n_addr, scan_body[:160]))
+        c.ck("every one of them is this wallet's",
+             all('"addr(%s)"' % str(addrs[str(i)]["address"]) in scan_body
+                 for i in range(1, n_addr + 1)), scan_body[:200])
+
+        # ---- the sync plan ----
+        ip.call("waNetAbort", [])
+        ip.globals["swacorechain"] = ""
+        ip.globals["swatipat"] = ""
+        ip.globals["swafeesat"] = ""
+        ip.call("waSync", [])
+        q = ip.globals.get("swaqueue") or {}
+        kinds = [str(q[str(i)]["kind"]) for i in range(1, int(LCS._n(ip.call("cwListCount", [q]))) + 1)]
+        c.eq("a sync of a node not yet asked is the chain, the fees and ONE scan",
+             kinds, ["tip", "fees", "scan"])
+        c.ck("and says what a scan cannot see",
+             "one scan of the node's UTXO set" in core_log() and "not the mempool" in core_log(),
+             core_log(300))
+        ip.call("waNetAbort", [])
+        ip.globals["swacorechain"] = "test"
+        ip.globals["swatipat"] = world.ms
+        ip.globals["swafeesat"] = world.ms
+        ip.call("waSync", [])
+        q = ip.globals.get("swaqueue") or {}
+        kinds = [str(q[str(i)]["kind"]) for i in range(1, int(LCS._n(ip.call("cwListCount", [q]))) + 1)]
+        c.eq("a sync of a known node with a fresh tip is the scan alone", kinds, ["scan"])
+        c.eq("which gets the scan's own deadline once in flight", 0, 0)
+        ip.call("waNetPump", [])
+        rec = ip.globals.get("swainflight") or {}
+        c.eq("the scan in flight has the scan's own deadline",
+             int(LCS._n(rec.get("deadline"))) - world.ms,
+             int(LCS._n(ip.constants.get("kWaScanDeadline", 0))))
+        ip.call("waNetAbort", [])
+        world.sock = []
+
+        # ---- the whole life of a request, through the modelled socket ----
+        ip.globals["swacorechain"] = ""
+        ip.globals["swasyncfailures"] = 0
+        ip.globals["swatipheight"] = ""
+        ip.call("waNetQueue", ["tip", ""])
+        ip.call("waNetPump", [])
+        c.eq("the first request dials the node", sock_count("open"), 1)
+        c.eq("at host:port, with the socket's own callback",
+             sock_last("open"), ("open", "127.0.0.1:18332", "waSockOpened"))
+        c.eq("and the socket is remembered", str(ip.globals.get("swasock")), "127.0.0.1:18332")
+        world.result = ""
+        ip.call("waSockOpened", ["127.0.0.1:18332"])
+        w = sock_last("write")
+        c.ck("the open socket carries the POST",
+             w is not None and w[2].startswith("POST / HTTP/1.1\r\n")
+             and "Authorization: Basic " in w[2] and '"method":"getblockchaininfo"' in w[2],
+             (w or ("",))[-1][:120])
+        r = sock_last("read")
+        c.ck("and arms a read for the head, up to the blank line",
+             r is not None and r[1] == "127.0.0.1:18332" and r[2] == "until \r\n\r\n"
+             and r[3] == "waCoreHead", r)
+        c.ck("the log carries the method and no header",
+             "-> getblockchaininfo (id" in core_log() and "Authorization" not in core_log(),
+             core_log(200))
+        info = ('{"chain":"test","blocks":5129000,"headers":5129000,'
+                '"initialblockdownload":false,"pruned":false,'
+                '"verificationprogress":0.99999}')
+        core_answer("200 OK", core_result(info))
+        r = sock_last("read")
+        c.ck("the head arms a read for exactly the body's bytes",
+             r is not None and r[2] == "for %d" % len(core_result(info)) and r[3] == "waCoreBody", r)
+        c.eq("the tip lands", str(ip.globals.get("swatipheight")), "5129000")
+        c.eq("the node's chain is remembered", str(ip.globals.get("swacorechain")), "test")
+        c.ck("and the log says what the node is",
+             "node: chain test, 5129000 blocks" in core_log(), core_log(200))
+        c.eq("nothing is in flight", str(ip.globals.get("swainflight")), "")
+        c.eq("THE SOCKET IS KEPT", str(ip.globals.get("swasock")), "127.0.0.1:18332")
+        c.eq("and was not closed", sock_count("close"), 0)
+        c.eq("no failure was counted", int(LCS._n(ip.globals.get("swasyncfailures"))), 0)
+        ip.call("waPaintNetwork", [])
+        c.ck("the Network screen shows the node's line under the state",
+             "node: chain test" in _fld(world, "nw_why"), _fld(world, "nw_why")[-120:])
+
+        # a node still downloading, pruned, behind its headers: said, not hidden
+        ip.call("waNetQueue", ["tip", ""])
+        ip.call("waNetPump", [])
+        c.eq("the next request does NOT dial again", sock_count("open"), 1)
+        core_answer("200 OK", core_result(
+            '{"chain":"test","blocks":5000000,"headers":5129000,'
+            '"initialblockdownload":true,"pruned":true,"verificationprogress":0.9712}'))
+        c.ck("a node behind, pruned and in IBD says all three",
+             "129000 behind" in core_log() and "initial block download" in core_log()
+             and "pruned" in core_log() and "97% verified" in core_log(), core_log(300))
+
+        # ---- the chain guard, from the node's own answer ----
+        ip.call("waNetQueue", ["tip", ""])
+        ip.call("waNetQueue", ["scan", ""])
+        ip.call("waNetPump", [])
+        core_answer("200 OK", core_result(
+            '{"chain":"main","blocks":900000,"headers":900000,'
+            '"initialblockdownload":false,"pruned":false,"verificationprogress":1}'))
+        c.ck("a node on another chain is refused with both names",
+             "is on chain \"main\"" in core_log() and "this wallet is on testnet" in core_log(),
+             core_log(400))
+        c.eq("and the scan behind it is NOT run", int(LCS._n(ip.call("cwListCount", [ip.globals.get("swaqueue")]))), 0)
+        c.eq("the refusal is remembered", str(ip.globals.get("swacorechain")), "main")
+        why = str(ip.call("waBackendChainWhy", []))
+        c.ck("and the guard holds it until something moves",
+             "main" in why and "testnet" in why, why[:160])
+        try:
+            ip.call("waSync", [])
+            c.ck("a sync is refused at the door", False, "it queued")
+        except LCS.Thrown as exc:
+            c.ck("a sync is refused at the door", "main" in str(exc.msg), str(exc.msg)[:100])
+        ip.call("waNetAbort", [])
+        ip.globals["swacorechain"] = ""
+        c.eq("a node not yet asked is not refused", str(ip.call("waBackendChainWhy", [])), "")
+        # ...and a host or port typed on the screen forgets the node's chain
+        ip.globals["swacorechain"] = "main"
+        world.anywhere("nw_host").content = "127.0.0.1"
+        world.anywhere("nw_port").content = "18443"
+        ip.call("waApplyNetworkFields", [])
+        c.eq("a different port is a different node, whose chain is unknown again",
+             str(ip.globals.get("swacorechain")), "")
+        world.anywhere("nw_port").content = "18332"
+        ip.call("waApplyNetworkFields", [])
+        ip.globals["swacorechain"] = "test"
+        ip.globals["swasyncfailures"] = 0
+
+        # ---- the fee estimate ----
+        ip.globals["swafeerates"] = {"1": "9", "6": "9"}
+        ip.call("waNetQueue", ["fees", ""])
+        ip.call("waNetPump", [])
+        w = sock_last("write")
+        c.ck("estimatesmartfee is asked for six blocks, economical",
+             '"method":"estimatesmartfee"' in w[2] and '"params":[6,"economical"]' in w[2], w[2][-120:])
+        core_answer("200 OK", core_result('{"feerate":0.00002000,"blocks":6}'))
+        c.eq("a fee estimate in BTC/kvB lands as sat/vB",
+             str((ip.globals.get("swafeerates") or {}).get("6")), "2")
+        ip.call("waNetQueue", ["fees", ""])
+        ip.call("waNetPump", [])
+        core_answer("200 OK", core_result('{"errors":["Insufficient data or no feerate found"],"blocks":6}'))
+        c.eq("a node with no estimate leaves the rate alone",
+             str((ip.globals.get("swafeerates") or {}).get("6")), "2")
+        c.ck("and says so", "no fee estimate yet" in core_log(), core_log(200))
+        c.eq("without counting a failure", int(LCS._n(ip.globals.get("swasyncfailures"))), 0)
+
+        # ---- the scan ----
+        a1 = str(addrs["1"]["address"])
+        a2 = str(addrs["2"]["address"])
+        s1 = str(ip.call("cwScriptForAddress", ["testnet", a1]))
+        s2 = str(ip.call("cwScriptForAddress", ["testnet", a2]))
+        own_tx = "ee" * 32
+        ip.globals["swaspentby"] = {"ff" * 32 + ":0": own_tx, "11" * 32 + ":1": "dd" * 32}
+        ip.globals["swautxos"] = ip.call("waEmptyList", [])
+        for rec in ({"address": a1, "txid": "77" * 32, "vout": 0, "value": 30000,
+                     "confirmations": 3, "height": 5128000},
+                    {"address": a2, "txid": own_tx, "vout": 1, "value": 7000,
+                     "confirmations": 0, "height": ""},
+                    {"address": a2, "txid": "99" * 32, "vout": 0, "value": 5000,
+                     "confirmations": 0, "height": ""}):
+            ip.globals["swautxos"] = ip.call("cwListAdd", [ip.globals["swautxos"], rec])
+        ip.call("waNetQueue", ["scan", ""])
+        ip.call("waNetPump", [])
+        scan = ('{"success":true,"txouts":1,"height":5129000,"bestblock":"00",'
+                '"unspents":['
+                '{"txid":"%s","vout":0,"scriptPubKey":"%s","desc":"addr(%s)#x",'
+                '"amount":0.00100000,"coinbase":false,"height":5128990},'
+                '{"txid":"%s","vout":1,"scriptPubKey":"%s","desc":"addr(%s)#x",'
+                '"amount":0.00050000,"coinbase":false,"height":5129000},'
+                '{"txid":"%s","vout":0,"scriptPubKey":"0014%s","desc":"addr(x)#x",'
+                '"amount":0.10000000,"coinbase":false,"height":5100000}'
+                '],"total_amount":0.10150000}'
+                % ("11" * 32, s1, a1, "22" * 32, s2, a2, "33" * 32, "cc" * 20))
+        core_answer("200 OK", core_result(scan))
+        coins = ip.globals.get("swautxos") or {}
+        n = int(LCS._n(ip.call("cwListCount", [coins])))
+        rows = {str(coins[str(i)]["txid"]) + ":" + str(coins[str(i)]["vout"]): coins[str(i)]
+                for i in range(1, n + 1)}
+        c.eq("the scan's two coins of ours replace the stale coin at that address",
+             sorted(k for k in rows if not k.startswith(own_tx)),
+             sorted(["11" * 32 + ":0", "22" * 32 + ":1"]))
+        c.ck("the wallet's own unconfirmed coin survives the scan",
+             own_tx + ":1" in rows, sorted(rows))
+        c.ck("a stale unconfirmed coin from somewhere else does not",
+             "99" * 32 + ":0" not in rows, sorted(rows))
+        c.eq("confirmations count from the scan's height",
+             [int(LCS._n(rows["11" * 32 + ":0"]["confirmations"])),
+              int(LCS._n(rows["22" * 32 + ":1"]["confirmations"]))], [11, 1])
+        c.eq("amounts are satoshi", int(LCS._n(rows["11" * 32 + ":0"]["value"])), 100000)
+        c.eq("the foreign output is ignored", n, 3)
+        c.eq("a scanned coin this wallet has already spent STAYS marked",
+             str((ip.globals.get("swaspentby") or {}).get("11" * 32 + ":1")), "dd" * 32)
+        bal = ip.globals.get("swabalance") or {}
+        c.eq("the balance counts the unmarked confirmed coin",
+             int(LCS._n(bal.get("confirmed"))), 100000)
+        c.eq("and the kept unconfirmed one as pending", int(LCS._n(bal.get("unconfirmed"))), 7000)
+        c.ck("the log says what a scan is and is not",
+             "scan: 2 unspent output(s) at 2 address(es)" in core_log()
+             and "kept marked" in core_log() and "1 unconfirmed coin(s)" in core_log()
+             and "does not derive" in core_log(), core_log(600))
+        c.eq("the scan's height is the tip", str(ip.globals.get("swatipheight")), "5129000")
+
+        # ---- the broadcast, accepted and refused ----
+        raw = ("01000000" + "01" + "aa" * 32 + "00000000" + "00" + "ffffffff"
+               + "01" + "1027000000000000" + "16" + "0014" + "bb" * 20 + "00000000")
+        txid = str(ip.call("cwTxDecode", [raw])["txid"])
+        ip.globals["swaspentby"] = {}
+        ip.call("waNetQueue", ["broadcast", raw])
+        ip.call("waNoteBroadcast", [raw, ""])
+        c.eq("the coin is reserved when the broadcast is queued",
+             str((ip.globals.get("swaspentby") or {}).get("aa" * 32 + ":0")), txid)
+        ip.call("waNetPump", [])
+        w = sock_last("write")
+        c.ck("sendrawtransaction carries the hex", '"method":"sendrawtransaction"' in w[2]
+             and '"params":["%s"]' % raw in w[2], w[2][-100:])
+        core_answer("200 OK", core_result('"%s"' % txid))
+        c.ck("an accepted broadcast is logged with its txid",
+             "broadcast accepted: txid " + txid in core_log(), core_log(200))
+        raw2 = raw[:-8] + "01000000"
+        txid2 = str(ip.call("cwTxDecode", [raw2])["txid"])
+        ip.call("waNetQueue", ["broadcast", raw2])
+        ip.call("waNoteBroadcast", [raw2, ""])
+        c.eq("a second spend of the same coin re-marks it",
+             str((ip.globals.get("swaspentby") or {}).get("aa" * 32 + ":0")), txid2)
+        ip.call("waNetPump", [])
+        core_answer("500 Internal Server Error", core_error(-26, "min relay fee not met, 23 < 226"))
+        c.ck("a refusal is the node's own words, logged as a refusal",
+             "FAILED: broadcast: the node refused: min relay fee not met" in core_log()
+             and "(RPC error -26)" in core_log(), core_log(300))
+        c.eq("and the coin it reserved is offered again",
+             str((ip.globals.get("swaspentby") or {}).get("aa" * 32 + ":0")), "")
+        c.ck("said so", "offered again" in core_log(), core_log(200))
+        c.eq("the socket survives a refusal", str(ip.globals.get("swasock")), "127.0.0.1:18332")
+
+        # ---- the HTTP refusals, mapped once ----
+        ip.globals["swasyncfailures"] = 0
+        ip.call("waNetQueue", ["tip", ""])
+        ip.call("waNetPump", [])
+        core_answer("401 Unauthorized", "")
+        c.ck("a 401 names the credentials and the cookie path",
+             "refused the credentials (HTTP 401)" in core_log() and cookie in core_log(),
+             core_log(300))
+        ip.call("waNetAbort", [])
+        c.eq("a -28 is a node still starting",
+             "still starting" in str(ip.call("waCoreErrorText",
+                 [ip.call("cwJsonParse", ['{"code":-28,"message":"Loading block index..."}'])])),
+             True)
+        c.ck("a -5 is not found",
+             str(ip.call("waCoreErrorText",
+                 [ip.call("cwJsonParse", ['{"code":-5,"message":"No such mempool transaction"}'])]))
+             .startswith("not found: "), "")
+        # a reply from a port that is not an RPC port at all
+        ip.call("waNetQueue", ["tip", ""])
+        ip.call("waNetPump", [])
+        ip.call("waCoreHead", ["127.0.0.1:18332", "SSH-2.0-OpenSSH\r\n\r\n"])
+        c.ck("a reply that is not HTTP is refused as such",
+             "not an HTTP reply" in core_log(), core_log(200))
+        ip.call("waNetAbort", [])
+        world.sock = []
+        ip.call("waNetQueue", ["tip", ""])
+        ip.call("waNetPump", [])
+        world.result = ""
+        ip.call("waSockOpened", ["127.0.0.1:18332"])
+        ip.call("waCoreHead", ["127.0.0.1:18332", "HTTP/1.1 200 OK\r\nX-Nothing: 1\r\n\r\n"])
+        c.ck("a reply with no Content-Length is refused with the question to ask",
+             "carried no Content-Length" in core_log(), core_log(200))
+        ip.call("waNetAbort", [])
+
+        # ---- the idle close, the remote host, the file, the carry ----
+        ip.globals["swasock"] = "127.0.0.1:18332"
+        ip.globals["swainflight"] = ""
+        ip.call("socketClosed", ["127.0.0.1:18332"])
+        c.ck("the node closing an idle connection is not a failure",
+             "closed the idle connection" in core_log() and str(ip.globals.get("swasock")) == "",
+             core_log(200))
+        world.sock = []
+        ip.globals["swahost"] = "10.0.0.5"
+        ip.globals["swacoreremoteok"] = ""
+        ip.call("waNetQueue", ["tip", ""])
+        ip.call("waNetPump", [])
+        c.ck("credentials are not sent to another machine without the tick",
+             sock_count("open") == 0 and "not on this machine" in core_log(), core_log(300))
+        ip.call("waNetAbort", [])
+        ip.globals["swacoreremoteok"] = "true"
+        ip.call("waNetQueue", ["tip", ""])
+        ip.call("waNetPump", [])
+        c.eq("and are, with it", sock_last("open"), ("open", "10.0.0.5:18332", "waSockOpened"))
+        ip.call("waNetAbort", [])
+        ip.globals["swahost"] = "127.0.0.1"
+        ip.globals["swacoreauth"] = "bob:hunter2"
+        filetext = str(ip.call("waSerializeWallet", []))
+        c.ck("THE WALLET FILE NEVER CARRIES THE CREDENTIALS",
+             "hunter2" not in filetext and cookie not in filetext and "__cookie__" not in filetext,
+             filetext[:200])
+        carry = str(ip.call("waUpdateCarry", []))
+        c.ck("the update carry does, with the other Network settings",
+             "update:auth\tbob:hunter2" in carry and "update:cookie\t" + cookie in carry
+             and "update:remoteok\ttrue" in carry, carry[-300:])
+        ip.globals["swacoreauth"] = ""
+        ip.globals["swacoreremoteok"] = ""
+        world.anywhere("nw_auth").content = ""
+        ip.call("waUpdateStash", [carry])
+        ip.call("waUpdateRestore", [])
+        c.eq("and the restore brings them back", str(ip.globals.get("swacoreauth")), "bob:hunter2")
+        c.eq("into the field too", _fld(world, "nw_auth"), "bob:hunter2")
+        c.eq("tick included", str(ip.globals.get("swacoreremoteok")), "true")
+        ip.call("waNetAbort", [])
+    finally:
+        world.sock = None
+        for k, v in saved_core.items():
+            ip.globals[k] = v
+        ip.call("waRefreshNetState", [])
+
     # ---- Electrum over Tor keeps ONE stream for a sync (2026-09-03) --------
     # The first engine log in which this transport spoke to a server dialled
     # a fresh rendezvous stream for every one of 173 requests - the
@@ -3097,12 +3634,13 @@ def drive(c, ip, world, sandbox):
     saved_paint = {k: ip.globals.get(k) for k in ("swabackend", "swanetwork")}
     ip.globals["swanetwork"] = "mainnet"
     buttons = ("nw_bOffline", "nw_bEsploraTor", "nw_bElectrumTor",
-               "nw_bEsploraClear", "nw_bElectrumClear")
+               "nw_bEsploraClear", "nw_bElectrumClear", "nw_bCore")
     for backend, button in (("offline", "nw_bOffline"),
                             ("esplora-tor", "nw_bEsploraTor"),
                             ("electrum-tor", "nw_bElectrumTor"),
                             ("esplora-clear", "nw_bEsploraClear"),
-                            ("electrum-clear", "nw_bElectrumClear")):
+                            ("electrum-clear", "nw_bElectrumClear"),
+                            ("core-rpc", "nw_bCore")):
         ip.call("waSetBackend", [backend])
         ip.call("waPaintNetwork", [])
         lit = [n for n in buttons
