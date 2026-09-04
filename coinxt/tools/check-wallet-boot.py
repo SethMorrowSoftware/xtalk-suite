@@ -1694,6 +1694,11 @@ def drive(c, ip, world, sandbox):
     if n_addr - before_n == 1 + 2 * prefill:
         c.ck("and the log says the window was extended",
              "derived a further window" in _fld(world, "lg_text"), "")
+    # A LEAF USES UP ITS KEY'S INDEX: thirty timelocks on an engine all said
+    # "key at receive index 14" before this was pinned (2026-09-03 evening)
+    c.ck("the lock takes a fresh key, not the inscription commit's",
+         lockrec and commit and str(lockrec.get("index")) != str(commit.get("index")),
+         "lock index %r, commit index %r" % (lockrec.get("index"), commit.get("index")))
     base = None
     for i in range(1, n_addr + 1):
         r = addrs.get(str(i), {})
