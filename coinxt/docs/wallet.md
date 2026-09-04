@@ -312,7 +312,9 @@ arrays of requests in one line, and a sync of fifty-one requests was five
 round trips. A server that refuses a batch is asked with half as many on the
 next line, and half again on the next refusal, down to one at a time (since
 2026-09-03, after an onion server closed the connection on a batch of 22 and
-the sync fell to 41 single Tor round trips); a member's own error counts as
+the sync fell to 41 single Tor round trips; seen working on the engine the
+same evening: the batch of 22 refused, then every line of 11 answered, a
+sync of 41 requests in eight round trips); a member's own error counts as
 that member's failure only, and a member
 the server leaves unanswered is asked again alone. After that log the tip and
 the fee estimate ride in the first batch too (three round trips for a fresh
@@ -418,6 +420,19 @@ queued or broadcast spend of this wallet already uses: the replacement makes
 different outputs, so that child would spend a coin that never exists. The
 refusal names the child and says to bump that one instead, or wait for the
 parent to confirm.
+
+RUN ON AN ENGINE 2026-09-03 (the tenth engine log, 19:42 EDT, testnet over
+Electrum on Tor): the autotest's whole chain phase went green, 41 passed
+and 0 failed in 248 seconds. The note's fee bump was accepted and voided the
+note's coins ("replaces ..."), the silent payment and the commit funding
+were built on the replacement's change and accepted, the commit coin was
+seen at 0 confirmations the moment its funding was queued and the reveal
+was signed and accepted on top of it (inscription
+f002bfb2bde8ff4354c89ca590291bea96416ed6e2e5797c0e863b9be79bc0ee i0), and
+the vault was paid from the same memory; every acceptance logged "its coin(s)
+were reserved when it was queued". Not exercised in that run, and still
+unproven on an engine: the release of a refused broadcast, the bump refusal
+above, and a refusal's body reaching the log.
 
 The memory is subordinate to the backend. The next sync of an address
 replaces the coins at that address with what the backend lists, and a coin
