@@ -394,7 +394,9 @@ run on an engine.
 For a transaction this wallet built itself, the size and the fee come from
 the spend record and no bytes are asked for: the 2026-09-03 engine run
 pressed Bump on the wallet's own note transaction and was told to press it
-again when the server's copy arrived. Not run on an engine since.
+again when the server's copy arrived. Seen working on the engine the same
+evening (the eleventh log): a change-less sweep bumped by a child at once,
+no round trip, the pair priced at the asked rate, and the child accepted.
 
 ## What the wallet remembers about a broadcast
 
@@ -446,8 +448,14 @@ A replacement (an RBF bump) re-marks the inputs with its own txid and drops
 the coins that had been added from the transaction it replaced. Nothing is
 saved: the marks live for the session, like the spend records. Of this
 paragraph, the replacement's re-marking and voiding were seen on the engine
-in the tenth log (above); the backend un-marking a coin it still lists, and
-a refusal's body reaching the log, have not run on an engine.
+in the tenth log (above), and the ELEVENTH (2026-09-03, 20:30 EDT, the
+second autotest) saw a broadcast the server refused hand its coin back with
+the balance returning to the sat and the node's reason in the log
+(mempool-script-verify-flag-failed), a parent refused a bump because a
+queued child spent its output, and a change-less parent bumped by a child
+priced from the record, all on Electrum over Tor. Still not run on an
+engine: the backend un-marking a coin it still lists, and a refusal's 400
+body reaching the log on Esplora.
 
 ## Silent payments, the sending side
 

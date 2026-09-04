@@ -15465,7 +15465,12 @@ function waNextUnused pChange
    put cwListCount(sWaAddresses) into tCount
    repeat with tI = 1 to tCount
       put sWaAddresses[tI] into tRec
-      if tRec["change"] is pChange then
+      -- NEVER A LEAF: a prepared commit or timelock sits in this list on
+      -- chain 0 with an address nobody has paid, and once every base
+      -- address was used the eleventh engine log (2026-09-03) handed the
+      -- first leaf back as "the next unused receive address" - the same
+      -- key again, twenty-four times, with the window never extending.
+      if tRec["change"] is pChange and tRec["leafscript"] is "" then
          if tSeen[tRec["address"]] is not "true" then
             return tRec
          end if

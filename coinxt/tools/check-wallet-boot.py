@@ -1699,6 +1699,13 @@ def drive(c, ip, world, sandbox):
     c.ck("the lock takes a fresh key, not the inscription commit's",
          lockrec and commit and str(lockrec.get("index")) != str(commit.get("index")),
          "lock index %r, commit index %r" % (lockrec.get("index"), commit.get("index")))
+    # and the next unused receive address is never a leaf record (on the
+    # harness's two-address prefill every base address is used by now, which
+    # is exactly when the eleventh engine log handed a leaf back)
+    nxt_rec = ip.call("waNextUnused", [0])
+    c.ck("the next unused receive address is a base address, never a leaf",
+         nxt_rec == "" or not str((nxt_rec or {}).get("leafscript", "")),
+         repr(nxt_rec)[:120])
     base = None
     for i in range(1, n_addr + 1):
         r = addrs.get(str(i), {})
