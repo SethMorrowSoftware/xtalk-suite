@@ -15465,7 +15465,12 @@ function waNextUnused pChange
    put cwListCount(sWaAddresses) into tCount
    repeat with tI = 1 to tCount
       put sWaAddresses[tI] into tRec
-      if tRec["change"] is pChange then
+      -- NEVER A LEAF: a prepared commit or timelock sits in this list on
+      -- chain 0 with an address nobody has paid, and once every base
+      -- address was used the eleventh engine log (2026-09-03) handed the
+      -- first leaf back as "the next unused receive address" - the same
+      -- key again, twenty-four times, with the window never extending.
+      if tRec["change"] is pChange and tRec["leafscript"] is "" then
          if tSeen[tRec["address"]] is not "true" then
             return tRec
          end if
@@ -18486,6 +18491,7 @@ command waCpfpBuild pRec, pKids
    local tRate, tParentVsize, tParentFee, tFeeKnown, tTx, tI, tCount, tRec
    local tInputs, tOutputs, tSel, tTotalIn, tChangeRec, tTypes, tOutTypes
    local tChildVsize, tWant, tFee, tFloor, tValue, tDust, tRaw, tNew, tOut
+   local tPairVsize, tTenths
    set the defaultStack to the short name of this stack
    put field "sd_rate" into tRate
    if tRate is not a number or tRate <= 0 then
@@ -18566,9 +18572,12 @@ command waCpfpBuild pRec, pKids
    end if
    put "  the child weighs " & tNew["vsize"] & " vB and pays " & waAmount(tFee) & \
          return after tOut
+   -- to one decimal by integer arithmetic (the family's interpreter models
+   -- cwIntDiv, not round): tenths of a sat/vB, rounded half up
+   put tNew["vsize"] + tParentVsize into tPairVsize
+   put cwIntDiv((tFee + tParentFee) * 20 + tPairVsize, tPairVsize * 2) into tTenths
    put "  together they pay " & waAmount(tFee + tParentFee) & " over " & \
-         (tNew["vsize"] + tParentVsize) & " vB, about " & \
-         (round((tFee + tParentFee) * 10 / (tNew["vsize"] + tParentVsize)) / 10) & \
+         tPairVsize & " vB, about " & (tTenths / 10) & \
          " sat/vB, which is the rate you asked for" & return & return after tOut
    put "  it spends " & tCount & " coin(s) of the parent, " & waAmount(tTotalIn) & \
          ", and pays" & return after tOut

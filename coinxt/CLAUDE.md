@@ -3156,3 +3156,26 @@ and the windows extending themselves (receive index 14 was still inside the
 derived window). The four skips are the autotest's own: BIP-322 on a p2pkh
 wallet, spending the vault after its height, CPFP on a foreign transaction, and
 the update swap.
+
+**The eleventh engine log (2026-09-03, 20:13 and 20:30 EDT): the second autotest.**
+Two runs of a second button script, each forcing a path the first autotest never
+reached. Proven on Electrum over Tor: a broadcast the server refuses in its reply
+hands its coin back (the balance returned to the sat) with the node's reason in
+the log; a parent whose output a queued child spends is refused a bump, naming
+the child; a change-less sweep is bumped by a child priced from the spend record
+without a round trip, and the child was accepted. Found by the same runs, and
+fixed: (1) every timelock said "key at receive index 14", thirty times - a leaf
+never marked its key's address as used (`waUsedAddresses` counts leaf bases now),
+and once the base addresses DID run out, `waNextUnused` handed back the first
+LEAF RECORD as the next unused receive address (leaves sit on chain 0 with an
+unpaid address; they are skipped now); (2) the release of a reply-refused
+broadcast passed the log's label to the decoder instead of the bytes, so it never
+ran - the gate leg written for it caught that before the engine did; (3) the pair
+rate in the CPFP report rounded up ("about 4" for 3.0), and its first fix used
+`round()`, which the engine has and the gate's interpreter does not; (4) this
+testnet Electrum server ACCEPTS a 0.1 sat/vB transaction, so the script's
+refusal is a signed transaction whose locktime is changed afterwards, which no
+node accepts. The script's own case-insensitive `contains` matched the release
+line ("...failed;") for "FAILED" once; it matches "FAILED: " now. Still unproven:
+the window extending itself (the fix above lands after these runs), the backend
+un-marking a coin, and Esplora's 400 body in the log.
