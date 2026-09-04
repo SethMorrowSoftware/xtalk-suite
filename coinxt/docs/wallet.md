@@ -428,7 +428,7 @@ note's coins ("replaces ..."), the silent payment and the commit funding
 were built on the replacement's change and accepted, the commit coin was
 seen at 0 confirmations the moment its funding was queued and the reveal
 was signed and accepted on top of it (inscription
-f002bfb2bde8ff4354c89ca590291bea96416ed6e2e5797c0e863b9be79bc0ee i0), and
+f002bfb2bde8ff4354c89ca590291bea96416ed6e2e5797c0e863b9be79bc0eei0), and
 the vault was paid from the same memory; every acceptance logged "its coin(s)
 were reserved when it was queued". Not exercised in that run, and still
 unproven on an engine: the release of a refused broadcast, the bump refusal
@@ -444,8 +444,10 @@ holds a non-2xx status line until the body has arrived, so the log says
 line and two headers, which is all the 2026-09-03 evening log had to offer.
 A replacement (an RBF bump) re-marks the inputs with its own txid and drops
 the coins that had been added from the transaction it replaced. Nothing is
-saved: the marks live for the session, like the spend records. Not run on
-an engine.
+saved: the marks live for the session, like the spend records. Of this
+paragraph, the replacement's re-marking and voiding were seen on the engine
+in the tenth log (above); the backend un-marking a coin it still lists, and
+a refusal's body reaching the log, have not run on an engine.
 
 ## Silent payments, the sending side
 
