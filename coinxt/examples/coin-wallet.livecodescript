@@ -21426,9 +21426,10 @@ private function waNodeSandboxNote
    end if
    put "Start makes a node in " & waSandboxPath() & " and waits for it to " & \
          "answer. Then choose a Core backend on the Network screen and " & \
-         "press Sync. Mine pays 6 blocks to this wallet's first address (a " & \
-         "coinbase needs 100 confirmations before it can be spent, so " & \
-         "press it seventeen times to have something to send). Reorg " & \
+         "press Sync. Mine pays blocks to this wallet's first address: 101 " & \
+         "on a chain shorter than that, because a coinbase needs 100 " & \
+         "confirmations before it can be spent and the first press should " & \
+         "leave you with something to send, and 6 after that. Reorg " & \
          "throws the tip away, mines a longer chain and reconsiders the " & \
          "old block, which is the one thing no public chain will do on " & \
          "request. Stop asks the node to stop; the directory is left where " & \
@@ -21666,10 +21667,24 @@ private command waSandboxClick pWhat
       uiStatus "A regtest node is running in " & waSandboxPath() & \
             ". Choose Bitcoin Core on the Network screen and press Sync.", "ok"
    else if pWhat is "mine" then
-      get waSandboxMine(6, "")
-      uiStatus "Mined 6 blocks to this wallet's first address. A coinbase " & \
-            "needs 100 confirmations before it can be spent, so mine 101 " & \
-            "to have something to send.", "ok"
+      -- THE FIRST PRESS FUNDS THE WALLET. A coinbase needs 100
+      -- confirmations before it can be spent, so six blocks on a fresh
+      -- regtest chain buys nothing spendable and the old label's answer -
+      -- press it seventeen times - is a bad answer to give somebody who
+      -- just wants to try the Send screen. Below 101 blocks the button
+      -- mines 101; after that it mines six, which is what confirming a
+      -- transaction wants.
+      put waSandboxCli("getblockcount") into tOut
+      if tOut is an integer and tOut < 101 then
+         get waSandboxMine(101, "")
+         uiStatus "Mined 101 blocks to this wallet's first address, which " & \
+               "is what it takes for the first coinbase to become " & \
+               "spendable. Press Sync and you have 50 regtest BTC.", "ok"
+      else
+         get waSandboxMine(6, "")
+         uiStatus "Mined 6 blocks to this wallet's first address. Press " & \
+               "Sync to see the confirmations move.", "ok"
+      end if
    else if pWhat is "reorg" then
       get waSandboxReorg(1)
       uiStatus "Reorg drill done: the tip was thrown away, a longer chain " & \

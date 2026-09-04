@@ -3930,6 +3930,23 @@ def drive(c, ip, world, sandbox):
         c.ck("the directory sits beside the wallet file",
              str(ip.call("waSandboxPath", [])).endswith("/coinxt-regtest"),
              str(ip.call("waSandboxPath", [])))
+        # THE FIRST PRESS FUNDS THE WALLET: a coinbase needs 100
+        # confirmations, so six blocks on a fresh chain buys nothing
+        # spendable and the button asks the node how long the chain is
+        # before it decides.
+        world.shell_cmds = []
+        world.shell_answers = ["0", '["h1"]']
+        ip.call("waSandboxClick", ["mine"])
+        c.ck("on a fresh chain the button mines 101, not 6",
+             "getblockcount" in world.shell_cmds[0]
+             and "generatetoaddress 101 " in world.shell_cmds[1],
+             str(world.shell_cmds)[:160])
+        world.shell_cmds = []
+        world.shell_answers = ["150", '["h1"]']
+        ip.call("waSandboxClick", ["mine"])
+        c.ck("and six once the chain is long enough to have spendable coin",
+             "generatetoaddress 6 " in world.shell_cmds[1],
+             str(world.shell_cmds)[:160])
         world.shell_cmds = []
         world.shell_answers = ['["hash1","hash2","hash3","hash4","hash5","hash6"]']
         ip.call("waSandboxMine", [6, ""])
