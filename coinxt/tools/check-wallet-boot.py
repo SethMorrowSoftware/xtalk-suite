@@ -6147,9 +6147,17 @@ def drive(c, ip, world, sandbox):
     c.eq("and clears the carry", str(world.stack_props.get("uwaupdatecarry", "")), "")
     c.ck("and says so in the log",
          "updated to version" in _fld(world, "lg_text"), _fld(world, "lg_text")[-160:])
+    # COUNTED FROM HERE, not from the top of the log. This asserted that
+    # the whole run's log held exactly ONE "updated to version" - which was
+    # true only while nothing else in the gate ever restored a carry, and
+    # the Bitcoin Core block does (it carries the node's credentials across
+    # a swap and checks they come back). A check that reads a running total
+    # is a check about everything that happened before it; what this one
+    # means is that the SECOND restore added nothing.
+    said = _fld(world, "lg_text").count("updated to version")
     ip.call("waUpdateRestore", [])
-    c.ck("a second restore with nothing parked does nothing",
-         _fld(world, "lg_text").count("updated to version") == 1)
+    c.eq("a second restore with nothing parked does nothing",
+         _fld(world, "lg_text").count("updated to version"), said)
     # a carry that will not load is reported, not left half-applied
     ip.call("waUpdateStash", ["label\tbroken\nkind\tseed\nmnemonic\tnot words at all\n"
                               "update:from\t0.0.1\n"])

@@ -21675,7 +21675,7 @@ private command waSandboxClick pWhat
       -- mines 101; after that it mines six, which is what confirming a
       -- transaction wants.
       put waSandboxCli("getblockcount") into tOut
-      if tOut is an integer and tOut < 101 then
+      if waWholeInRange(tOut, 0, 100) then
          get waSandboxMine(101, "")
          uiStatus "Mined 101 blocks to this wallet's first address, which " & \
                "is what it takes for the first coinbase to become " & \
@@ -21720,12 +21720,7 @@ private command waNodeApplyBirth
    -- engine answers by comparing as TEXT. Ask the type question first.
    -- Caught by the boot gate on the day this was written, which is the
    -- argument for the gate in one line.
-   if tText is not an integer then
-      throw "the first-used box takes unix seconds (a whole number) or the " & \
-            "word now, and " & quote & tText & quote & " is neither. Leave " & \
-            "it empty to have the node read the whole chain."
-   end if
-   if tText < 1 then
+   if waWholeAtLeast(tText, 1) is not true then
       throw "the first-used box takes unix seconds (a whole number) or the " & \
             "word now, and " & quote & tText & quote & " is neither. Leave " & \
             "it empty to have the node read the whole chain."
@@ -23394,10 +23389,48 @@ function waCoreMethodFor pRec
          "with one scan of its UTXO set."
 end waCoreMethodFor
 
+function waWholeAtLeast pValue, pMin
+   -- IS THIS A WHOLE NUMBER, AND AT LEAST pMin? Asked as ONE question
+   -- because LiveCodeScript evaluates BOTH operands of `and` and `or`, so
+   -- the natural spelling - `X is an integer and X >= 1` - still runs the
+   -- comparison on a value that is not a number. The engine answers that
+   -- by comparing as TEXT (so "six" > 1 is true) and the family's
+   -- interpreter refuses it outright; neither is what the guard means.
+   --
+   -- This file has recorded the same mistake three times now
+   -- (waSetSuggestedRate and waCheckedHeight on 2026-09-01, waNodeApplyBirth
+   -- on 2026-09-04) and each fix nested one site. A named question closes
+   -- the class instead: every new Core guard asks it and cannot get the
+   -- order wrong.
+   if pValue is not an integer then
+      return false
+   end if
+   return pValue >= pMin
+end waWholeAtLeast
+
+function waWholeInRange pValue, pMin, pMax
+   if pValue is not an integer then
+      return false
+   end if
+   if pValue < pMin then
+      return false
+   end if
+   return pValue <= pMax
+end waWholeInRange
+
+function waNumAtLeast pValue, pMin
+   -- The same question for a value that may have a decimal point: a fee
+   -- rate, a rescan progress, a BTC amount off the wire.
+   if pValue is not a number then
+      return false
+   end if
+   return pValue >= pMin
+end waNumAtLeast
+
 function waCoreFeeTarget pArg
    -- How many blocks a fee estimate is for. Core takes 1 to 1008; anything
    -- else is six, which is what every other backend here answers.
-   if pArg is an integer and pArg >= 1 and pArg <= 1008 then
+   if waWholeInRange(pArg, 1, 1008) then
       return pArg + 0
    end if
    return 6
@@ -23487,8 +23520,14 @@ function waCoreParams pRec
    else if pRec["kind"] is "broadcast" then
       put "[" & cwJsonString2(tArg) & "]" into tParams
    else
-      -- rpc: "method [params as JSON]", the Node-screen shape
-      put cwTrim(char (the number of chars of tMethod + 1) to -1 of tArg) into tParams
+      -- rpc: "method [params as JSON]", the Node-screen shape.
+      -- THE LENGTH INTO A LOCAL FIRST: `the number of chars of tMethod + 1`
+      -- binds the arithmetic INTO THE CHUNK TARGET, so the engine is asked
+      -- for the length of (tMethod plus one) - which is not a number and is
+      -- not what this line means. Four sites in this file carry the same
+      -- note; this was the fifth, and the headless run found it.
+      put the number of chars of tMethod into tCount
+      put cwTrim(char (tCount + 1) to -1 of tArg) into tParams
       if tParams is "" then
          put "[]" into tParams
       end if
@@ -23537,7 +23576,7 @@ function waCoreImportTimestamp
    -- a later one silently loses history, which is why 0 - rescan from the
    -- genesis block - is the fallback rather than "now". The birth is saved
    -- with the wallet, so it is asked for once.
-   if sWaCoreBirth is an integer and sWaCoreBirth > 0 then
+   if waWholeAtLeast(sWaCoreBirth, 1) then
       return sWaCoreBirth
    end if
    return 0
@@ -24040,7 +24079,7 @@ end waSandboxCli
 function waSandboxMine pBlocks, pAddress
    local tAddr, tOut
    waSandboxRefuseUnlessRegtest
-   if pBlocks is not an integer or pBlocks < 1 or pBlocks > 200 then
+   if waWholeInRange(pBlocks, 1, 200) is not true then
       throw "mine between 1 and 200 blocks at a time."
    end if
    put pAddress into tAddr
@@ -24063,7 +24102,7 @@ function waSandboxReorg pDepth
    -- offline fixture can settle and no public chain will do on request.
    local tTip, tOut
    waSandboxRefuseUnlessRegtest
-   if pDepth is not an integer or pDepth < 1 or pDepth > 10 then
+   if waWholeInRange(pDepth, 1, 10) is not true then
       throw "a reorg drill goes 1 to 10 blocks deep."
    end if
    put waSandboxCli("getbestblockhash") into tTip
@@ -24248,7 +24287,7 @@ private command waCoreApply pKind, pArg, pNode
       put cwJsonGet(pNode, "pruned") into tPruned
       put cwJsonGet(pNode, "verificationprogress") into tProgress
       put "chain " & tChain & ", " & sWaTipHeight & " blocks" into tText
-      if tHeaders is an integer and tHeaders > sWaTipHeight then
+      if waWholeAtLeast(tHeaders, sWaTipHeight + 1) then
          put " of " & tHeaders & " headers (" & (tHeaders - sWaTipHeight) & \
                " behind)" after tText
       end if
@@ -24259,7 +24298,7 @@ private command waCoreApply pKind, pArg, pNode
       if tPruned is "true" then
          put ", pruned" after tText
       end if
-      if tProgress is a number and tProgress < 0.9999 then
+      if waNumAtLeast(tProgress, 0) and tProgress < 0.9999 then
          -- a percentage by CHARACTERS: round() is not a function the
          -- family's interpreter models (the eleventh engine log's lesson)
          put tProgress * 100 into tPct
@@ -24286,7 +24325,7 @@ private command waCoreApply pKind, pArg, pNode
          exit waCoreApply
       end if
       put waRateTo8Decimals(cwExpandExponent(tText)) into tText
-      if tText is a number and tText > 0 then
+      if waNumAtLeast(tText, 0) and tText > 0 then
          waSetSuggestedRate tTarget, cwCeilDiv(cwBtcToSat(tText), 1000)
          -- SIX MIRRORS INTO ONE ONLY WHILE ONE IS UNKNOWN. Every other
          -- backend answers one estimate and this wallet reads it as both;
@@ -24461,7 +24500,7 @@ private command waCoreImported pNode
 end waCoreImported
 
 function waCoreBirthWord
-   if sWaCoreBirth is an integer and sWaCoreBirth > 0 then
+   if waWholeAtLeast(sWaCoreBirth, 1) then
       return "unix time " & sWaCoreBirth
    end if
    return "the genesis block (no birth date is set, so the node reads the " & \
@@ -24480,10 +24519,10 @@ private command waCoreMempoolRecord pTxid, pNode
    local tSize, tFee, tI, tCount, tRec, tHit
    put cwJsonGet(pNode, "ancestorsize") into tSize
    put cwJsonGet(pNode, "fees/ancestor") into tFee
-   if tSize is not an integer or tSize < 1 then
+   if waWholeAtLeast(tSize, 1) is not true then
       exit waCoreMempoolRecord
    end if
-   if tFee is not a number then
+   if waNumAtLeast(tFee, 0) is not true then
       exit waCoreMempoolRecord
    end if
    put 0 into tHit
@@ -24604,7 +24643,7 @@ command waMergeCoreHistory pNode
       put cwJsonGet(tItem, "txid") into tRec["txid"]
       put cwJsonGet(tItem, "confirmations") + 0 into tRec["confirmations"]
       put cwJsonGet(tItem, "blockheight") into tHeight
-      if tHeight is an integer then
+      if waWholeAtLeast(tHeight, 0) then
          put tHeight into tRec["height"]
       else if tRec["confirmations"] > 0 and sWaTipHeight is not "" then
          put sWaTipHeight - tRec["confirmations"] + 1 into tRec["height"]
@@ -24615,8 +24654,12 @@ command waMergeCoreHistory pNode
       -- writes none on the receiving side. The fee bump wants satoshi and
       -- a positive number, which is what this wallet's own records hold.
       put cwJsonGet(tItem, "fee") into tFee
-      if tFee is a number and tFee < 0 then
-         put cwBtcToSat(cwExpandExponent(-tFee)) into tRec["fee"]
+      -- a NEGATIVE amount, which is how Core writes the fee of a send and
+      -- the only shape this reads; the type question is asked first, alone
+      if tFee is a number then
+         if tFee < 0 then
+            put cwBtcToSat(cwExpandExponent(-tFee)) into tRec["fee"]
+         end if
       end if
       put cwListAdd(tList, tRec) into tList
    end repeat
@@ -24644,7 +24687,7 @@ command waMergeScan pNode
    local tList, tI, tCount, tRec, tItem, tHeight, tScanHeight, tAddr, tError
    local tKey, tKept, tSeen, tFound, tForeign, tTotal, tMarked, tAddrs, tItems
    put cwJsonGet(pNode, "height") into tScanHeight
-   if tScanHeight is an integer then
+   if waWholeAtLeast(tScanHeight, 0) then
       if sWaTipHeight is "" or tScanHeight > sWaTipHeight then
          put tScanHeight into sWaTipHeight
       end if
@@ -24681,7 +24724,7 @@ command waMergeScan pNode
       -- Core prints an amount with exactly eight decimals, as text here
       put cwBtcToSat(cwJsonGet(tItem, "amount")) into tRec["value"]
       put cwJsonGet(tItem, "height") into tHeight
-      if tHeight is an integer and tHeight > 0 and tScanHeight is an integer then
+      if waWholeAtLeast(tHeight, 1) and waWholeAtLeast(tScanHeight, 0) then
          put tScanHeight - tHeight + 1 into tRec["confirmations"]
       else
          put 0 into tRec["confirmations"]
@@ -27008,7 +27051,7 @@ function waSerializeWallet
    end if
    put "unit" & tTab & sWaUnit & return after tOut
    put "m" & tTab & sWaM & return after tOut
-   if sWaCoreBirth is an integer and sWaCoreBirth > 0 then
+   if waWholeAtLeast(sWaCoreBirth, 1) then
       -- WHEN THIS WALLET WAS FIRST USED, for a node's rescan and nothing
       -- else. It is not a secret and not a key; what it saves is the hours
       -- a node spends reading a chain from its genesis block.
@@ -27143,7 +27186,7 @@ command waDeserializeWallet pText
       else if tName is "m" then
          put tValue + 0 into sWaM
       else if tName is "birth" then
-         if tValue is an integer and tValue > 0 then
+         if waWholeAtLeast(tValue, 1) then
             put tValue + 0 into sWaCoreBirth
          end if
       else if tName is "mnemonic" then

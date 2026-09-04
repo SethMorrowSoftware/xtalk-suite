@@ -3363,4 +3363,37 @@ general form is worth the sentence: **a throw crosses every frame between
 where it happens and where somebody catches it, and a queue is exactly the
 place where that difference is a whole sync.**
 
+**AND THE RUN AFTER THAT FOUND THE SAME CLASS TWICE MORE, so it stopped
+being a list of sites and became a named question.** LiveCodeScript
+evaluates BOTH operands of `and` and `or`, so `X is an integer and X >= 1`
+still runs the comparison on a value that is not a number - the engine
+answers by comparing as TEXT (so "six" is greater than 1) and the family's
+interpreter refuses outright. This file had recorded that three times, each
+fix nesting one site, and I wrote two more anyway (a block count off a
+node, a fee target off a request). `waWholeAtLeast`, `waWholeInRange` and
+`waNumAtLeast` ask it as one question now, and every Core guard goes through
+them: a rule with a name cannot be got in the wrong order. **A lesson
+written down three times and repeated twice is not a lesson, it is a
+missing function.**
+
+Beside them, the fifth instance in this file of the chunk-binding trap:
+`the number of chars of tMethod + 1` binds the arithmetic into the CHUNK
+TARGET, so the engine is asked for the length of (tMethod plus one). Four
+sites carry the note explaining it; this was the fifth, and it was found by
+running the code rather than by reading it - which is what the runner is
+for.
+
+**AND THE ONE FAILURE CI FOUND THAT THE THREE BLOCKS COULD NOT** is the
+mirror of the pump-callback lesson above, and worth its own line because it
+is the cost of adding a block to a long gate. `check-wallet-boot`'s update
+section asserted that the WHOLE RUN'S log held exactly one "updated to
+version" - true only while nothing else in the gate ever restored a carry.
+The Bitcoin Core block does, because the node's credentials cross the swap
+and that has to be checked. So a correct new block failed a correct old
+check, 972 checks in, on a phrase count neither of them is about. It counts
+from a mark now, which is what "a second restore does nothing" always
+meant. **A check that reads a running total is a check about everything
+that happened before it**, and in a gate this long that is a coupling
+nobody can see at the call site.
+
 Not run against a node, a program, or an engine.
