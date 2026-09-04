@@ -1345,6 +1345,29 @@ def drive(c, ip, world, sandbox):
             ip.globals["swasyncfailures"] = 0
             ip.globals["swanetstate"] = "idle"
             ip.globals["swainflight"] = ""
+            # and a refusal in the server's REPLY (an Electrum error object)
+            # releases them too: that path clears the in-flight record before
+            # it applies the answer, so the failure handler never saw a
+            # broadcast to release
+            ip.globals["swaqueue"] = {"n": 0}
+            ip.call("waBroadcast", [])
+            marks = ip.globals.get("swaspentby") or {}
+            c.ck("re-queued, the inputs are reserved again",
+                 all(str(marks.get("%s:%d" % (t, v), "")) == d2["txid"] for t, v in ins2), "")
+            ip.globals["swaqueue"] = {"n": 0}
+            ip.globals["swainflight"] = {"kind": "broadcast", "arg": raw2, "id": "74"}
+            ip.call("waNetDeliver", ['{"jsonrpc":"2.0","id":74,"error":{"code":-26,'
+                                     '"message":"min relay fee not met, 23 < 226"}}\n'])
+            marks = ip.globals.get("swaspentby") or {}
+            c.ck("a refusal in the server's reply hands the coins back too",
+                 all(str(marks.get("%s:%d" % (t, v), "")) == "" for t, v in ins2),
+                 repr({k: str(v)[:12] for k, v in marks.items()}))
+            c.ck("with the server's reason in the log",
+                 "min relay fee not met" in _fld(world, "lg_text")[-600:], _fld(world, "lg_text")[-200:])
+            ip.globals["swasyncfailures"] = 0
+            ip.globals["swanetstate"] = "idle"
+            ip.globals["swainflight"] = ""
+            ip.globals["swaqueue"] = {"n": 0}
         # CPFP on the wallet's own transaction prices from the record
         spends = ip.globals.get("swaspends") or {}
         rec1 = spends.get(d1["txid"]) or {}
@@ -1671,6 +1694,11 @@ def drive(c, ip, world, sandbox):
     if n_addr - before_n == 1 + 2 * prefill:
         c.ck("and the log says the window was extended",
              "derived a further window" in _fld(world, "lg_text"), "")
+    # A LEAF USES UP ITS KEY'S INDEX: thirty timelocks on an engine all said
+    # "key at receive index 14" before this was pinned (2026-09-03 evening)
+    c.ck("the lock takes a fresh key, not the inscription commit's",
+         lockrec and commit and str(lockrec.get("index")) != str(commit.get("index")),
+         "lock index %r, commit index %r" % (lockrec.get("index"), commit.get("index")))
     base = None
     for i in range(1, n_addr + 1):
         r = addrs.get(str(i), {})

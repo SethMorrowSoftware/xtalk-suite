@@ -3135,3 +3135,24 @@ update restore lost the carried server twice over (loading reset it, then the
 Network fields overwrote it) and keeps it now; and the fixture flips the version
 away from whatever the transaction has. The whole Send-to-audit region and the
 update block pass on the prefill-2 copy: 561 and 43 checks. Not run on an engine.
+
+**The tenth engine log (2026-09-03, 19:42 EDT): the whole chain phase green.**
+The autotest script, on a p2pkh testnet wallet over Electrum on Tor, reported 41
+passed, 0 failed, 4 skipped in 248 seconds - the first run in which every chain
+step went through without waiting on the network. What it proves, by the log:
+the batch halving (a batch of 22 refused by the onion server, then every line of
+11 answered; a sync of 41 requests in eight round trips instead of 41); the
+queue-time reservation (every acceptance says "its coin(s) were reserved when it
+was queued"); a replacement voiding the replaced transaction's coins and the
+next spends drawing on the replacement's change; the commit coin seen at 0
+confirmations from the wallet's own memory and the reveal signed and accepted on
+it - a real inscription on testnet, f002bfb2...i0; and the vault paid and its
+coin withheld from the selector. Labels flipped in docs/wallet.md accordingly.
+NOT exercised by that run, and still unproven on an engine: the release of a
+refused broadcast, the refusal to bump a parent whose change a queued spend
+uses, a refusal's body reaching the log, the child-pays-for-parent pricing from
+the spend record (the note had change, so the bump went the replacement way),
+and the windows extending themselves (receive index 14 was still inside the
+derived window). The four skips are the autotest's own: BIP-322 on a p2pkh
+wallet, spending the vault after its height, CPFP on a foreign transaction, and
+the update swap.

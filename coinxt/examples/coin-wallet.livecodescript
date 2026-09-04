@@ -15529,7 +15529,7 @@ private function waNextChangeOrMore
 end waNextChangeOrMore
 
 private function waUsedAddresses
-   local tSeen, tI, tCount, tRec
+   local tSeen, tI, tCount, tRec, tJ, tLeaves, tKey, tIndex
    put empty into tSeen
    put cwListCount(sWaHistory) into tCount
    repeat with tI = 1 to tCount
@@ -15542,6 +15542,27 @@ private function waUsedAddresses
    repeat with tI = 1 to tCount
       put sWaUtxos[tI] into tRec
       put "true" into tSeen[tRec["address"]]
+   end repeat
+   -- A LEAF USES UP THE RECEIVE INDEX WHOSE KEY IT TAKES. The eleventh
+   -- engine log (2026-09-03, 20:13 EDT) prepared thirty timelocks and every
+   -- one said "key at receive index 14": nothing marked the key's own
+   -- address as used, so every vault shared one key, the Receive screen
+   -- would have handed that address out beside them, and the window could
+   -- never run out. The base address of every leaf's index counts as used
+   -- now, so the next leaf, the reveal's destination and the Receive screen
+   -- all move on to a fresh key.
+   put cwListCount(sWaLeaves) into tLeaves
+   put cwListCount(sWaAddresses) into tCount
+   repeat with tJ = 1 to tLeaves
+      put sWaLeaves[tJ] into tKey
+      put tKey["index"] into tIndex
+      repeat with tI = 1 to tCount
+         put sWaAddresses[tI] into tRec
+         if tRec["change"] is 0 and tRec["index"] is tIndex and tRec["leafscript"] is "" then
+            put "true" into tSeen[tRec["address"]]
+            exit repeat
+         end if
+      end repeat
    end repeat
    return tSeen
 end waUsedAddresses
@@ -15725,6 +15746,9 @@ function waBackendLabel
    end if
    if sWaBackend is "electrum-tor" then
       return "Electrum / Tor"
+   end if
+   if sWaBackend is "electrum-clear" then
+      return "Electrum / clear"
    end if
    return "Esplora / clear"
 end waBackendLabel
@@ -18544,7 +18568,7 @@ command waCpfpBuild pRec, pKids
          return after tOut
    put "  together they pay " & waAmount(tFee + tParentFee) & " over " & \
          (tNew["vsize"] + tParentVsize) & " vB, about " & \
-         cwCeilDiv(tFee + tParentFee, tNew["vsize"] + tParentVsize) & \
+         (round((tFee + tParentFee) * 10 / (tNew["vsize"] + tParentVsize)) / 10) & \
          " sat/vB, which is the rate you asked for" & return & return after tOut
    put "  it spends " & tCount & " coin(s) of the parent, " & waAmount(tTotalIn) & \
          ", and pays" & return after tOut
@@ -22729,6 +22753,14 @@ command waNetDeliver pBody
       -- there is; see waNetApply.
       waNetApply tKind, tRec["arg"], pBody, tRec["id"]
    catch tError
+      -- A SERVER'S REFUSAL IS FINAL, AND THE COINS COME BACK HERE: the
+      -- in-flight record was cleared above, so waNetFail sees no request
+      -- to retry or to release, and a broadcast the server refused in its
+      -- reply (an Electrum error object) would keep its coins reserved.
+      if tKind is "broadcast" then
+         -- tRec["arg"], not tArg: the latter became the log's label above
+         waUnnoteBroadcast tRec["arg"]
+      end if
       waNetFail "could not read the answer to " & tKind & ": " & tError
       exit waNetDeliver
    end try
