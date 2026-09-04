@@ -13076,7 +13076,7 @@ constant kWaVersion = "1.2.0"
 -- text before it is offered, the offer names the version and the SHA-256,
 -- and nothing replaces the script until you press Update.
 constant kWaUpdateUrl = "https://raw.githubusercontent.com/SethMorrowSoftware/xtalk-suite/main/coinxt/examples/coin-wallet.livecodescript"
-constant kWaUiVersion = "ui-ef131dd254eb"
+constant kWaUiVersion = "ui-d8cb0cafb9a1"
 
 -- The window, inside the family's 720p budget (tools/check-stack-size.py).
 constant kWaWidth = 1200
@@ -13090,9 +13090,9 @@ constant kWaContentRight = 1184
 constant kWaContentBottom = 594
 
 -- The ten screens, in rail order, and their labels.
-constant kWaScreens = "wallet,receive,addresses,send,coins,history,ordinals,vault,tools,network,log,settings"
-constant kWaScreenCount = 12
-constant kWaScreenLabels = "Wallet,Receive,Addresses,Send,Coins,History,Ordinals,Vault,Tools,Network,Log,Settings"
+constant kWaScreens = "wallet,receive,addresses,send,coins,history,ordinals,vault,tools,network,node,log,settings"
+constant kWaScreenCount = 13
+constant kWaScreenLabels = "Wallet,Receive,Addresses,Send,Coins,History,Ordinals,Vault,Tools,Network,Node,Log,Settings"
 
 -- The BIP-39 test mnemonic. It is the phrase every wallet ships in its own
 -- tests, its funds are burned by design, and it is prefilled here so a reader
@@ -13245,7 +13245,36 @@ constant kWaScanDeadline = 900000
 -- builder refuses a method outside this list by name, so a screen that
 -- grows a free-text RPC box later cannot become a way to run `stop` or a
 -- spending call against somebody's node.
-constant kWaCoreMethods = "getblockchaininfo,getblockcount,getbestblockhash,getnetworkinfo,getmempoolinfo,getmempoolentry,getrawmempool,getindexinfo,uptime,estimatesmartfee,scantxoutset,getrawtransaction,sendrawtransaction,testmempoolaccept,validateaddress,getdescriptorinfo,decodepsbt,analyzepsbt,verifymessage"
+constant kWaCoreMethods = "getblockchaininfo,getblockcount,getbestblockhash,getnetworkinfo,getmempoolinfo,getmempoolentry,getrawmempool,getindexinfo,uptime,estimatesmartfee,scantxoutset,getrawtransaction,sendrawtransaction,testmempoolaccept,validateaddress,getdescriptorinfo,decodepsbt,analyzepsbt,verifymessage,getwalletinfo,listwallets,createwallet,loadwallet,importdescriptors,listunspent,listtransactions,gettransaction"
+-- THE WATCH TIER'S WALLET IN THE NODE is named for this wallet's master
+-- fingerprint, so two accounts on one node never share one and this wallet
+-- can tell its own from somebody else's. It is created with private keys
+-- DISABLED: the node holds no key of ours and never signs. Nothing here
+-- ever calls unloadwallet on a name it did not create.
+constant kWaCoreWalletPrefix = "coinxt-"
+-- How many transactions one listtransactions page carries. Core's own
+-- default is 10; 500 is one page for any wallet a person watches by hand,
+-- and a fuller page than this says so in the log rather than paging
+-- silently and pretending the rest is not there.
+constant kWaCoreTxPage = 500
+-- CHANNEL B: bitcoin-cli. The plan (docs/bitcoin-core-plan.md section 2)
+-- confines it to the two things RPC cannot do as well: ZERO CONFIGURATION
+-- (a person whose bitcoin-cli already works has told this wallet the data
+-- directory, the cookie and the port without typing any of them) and NODE
+-- LIFECYCLE (a regtest sandbox: there is no node to ask over RPC until one
+-- is started). It is never used for anything that moves money or touches a
+-- key, and every command is built from the allowlist above - the method
+-- table both channels share - so a screen that grew a free-text box later
+-- still could not become a way to run `stop` against somebody's node.
+--
+-- shell() BLOCKS THE ENGINE, which is why the cli queue is drained by the
+-- press of a button (waCliDrain) and never by the poll tick: a stalled
+-- request on a timer is a frozen window with no way to say why.
+constant kWaCliBinary = "bitcoin-cli"
+constant kWaCliDaemon = "bitcoind"
+constant kWaCliTimeout = 30
+-- The sandbox's own directory name, made beside the wallet file.
+constant kWaSandboxDir = "coinxt-regtest"
 
 -- The wallet file's format marker. It is the plaintext associated data of the
 -- AEAD when SodiumXT is present, so a tampered header is caught even though
@@ -13776,6 +13805,14 @@ local sWaCoreAuth         -- core-rpc: rpcuser:rpcpassword when a person typed o
 local sWaCoreChain        -- core-rpc: the chain the node last reported (main, test, ...), or empty
 local sWaCoreInfo         -- core-rpc: one line about the node from its last getblockchaininfo
 local sWaCoreRemoteOk     -- core-rpc: "true" once the person has accepted sending credentials off this machine
+local sWaCoreTier         -- core-rpc: "scan" (one scantxoutset) or "watch" (a watch-only wallet in the node)
+local sWaCoreWallet       -- core-rpc: the watch wallet name the node has confirmed, or empty
+local sWaCoreImported     -- core-rpc: how many addresses the last successful import covered
+local sWaCoreBirth        -- the wallet's birth in unix seconds, for the node's rescan; saved in the wallet file
+local sWaCoreScanPct      -- core-rpc: the node's rescan progress while it is scanning, or empty
+local sWaCoreMempool      -- core-rpc: the Node screen's mempool card
+local sWaCoreNodeText     -- core-rpc: the Node screen's status card
+local sWaSandboxDir       -- core-cli: the regtest sandbox's data directory, once started
 local sWaReqId            -- a monotonic id, so a late reply cannot be mistaken
 local sWaPolling          -- "true" while the tick is armed
 
@@ -14098,6 +14135,7 @@ private command waBuildAll
    waBuildVault
    waBuildTools
    waBuildNetwork
+   waBuildNode
    waBuildLog
    waBuildSettings
    uiFooter "CoinXT Wallet " & kWaVersion & " - a DEMONSTRATION wallet. " & \
@@ -14134,7 +14172,8 @@ command waTips
    waTip "nv_od", "Inscribe content onto a satoshi (Ordinals) and read runestones"
    waTip "nv_vt", "Lock coins until a block height with a CLTV vault address"
    waTip "nv_tl", "Sign and verify messages (2011 format or BIP-322); inspect, decode, validate anything; PSBTs"
-   waTip "nv_nw", "Choose Electrum or Esplora, clearnet or Tor, and watch the sync"
+   waTip "nv_nw", "Choose Electrum, Esplora or your own Bitcoin Core node, and watch the sync"
+   waTip "nv_nd", "Your Bitcoin Core node: what it is, what it says fees are, its mempool, and a watch-only wallet in it"
    waTip "nv_lg", "Everything the wallet did, in order, with the boot self-check"
    waTip "nv_st", "Units, the wallet file, labels in BIP-329, and Update from main"
    waTip "nv_refresh", "Repaint every screen and sync if the backend is idle"
@@ -14198,20 +14237,23 @@ command waBuildNav
    -- to the registry by hand is exactly what that generator exists to refuse.
    -- The geometry is still arithmetic; only the names are literal.
    uiPanel "nv_panel", "12,58,176,590"
-   -- twelve screens at a 26-pixel pitch since 2026-09-04 (Ordinals and
-   -- Vault joined); the balance block below moved down to make room
-   uiButton "nv_wl", waScreenLabel(1), "20,66,168,90"
-   uiButton "nv_rc", waScreenLabel(2), "20,92,168,116"
-   uiButton "nv_ad", waScreenLabel(3), "20,118,168,142"
-   uiButton "nv_sd", waScreenLabel(4), "20,144,168,168"
-   uiButton "nv_cn", waScreenLabel(5), "20,170,168,194"
-   uiButton "nv_hs", waScreenLabel(6), "20,196,168,220"
-   uiButton "nv_od", waScreenLabel(7), "20,222,168,246"
-   uiButton "nv_vt", waScreenLabel(8), "20,248,168,272"
-   uiButton "nv_tl", waScreenLabel(9), "20,274,168,298"
-   uiButton "nv_nw", waScreenLabel(10), "20,300,168,324"
-   uiButton "nv_lg", waScreenLabel(11), "20,326,168,350"
-   uiButton "nv_st", waScreenLabel(12), "20,352,168,376"
+   -- THIRTEEN SCREENS AT A 24-PIXEL PITCH since 2026-09-04, when Node
+   -- joined: twelve at 26 ended at 376 and thirteen at 24 end at 376 too,
+   -- so nothing below the rail moved and the panel did not have to grow.
+   -- A row is 22 high with 2 between, which is what a text button needs.
+   uiButton "nv_wl", waScreenLabel(1), "20,66,168,88"
+   uiButton "nv_rc", waScreenLabel(2), "20,90,168,112"
+   uiButton "nv_ad", waScreenLabel(3), "20,114,168,136"
+   uiButton "nv_sd", waScreenLabel(4), "20,138,168,160"
+   uiButton "nv_cn", waScreenLabel(5), "20,162,168,184"
+   uiButton "nv_hs", waScreenLabel(6), "20,186,168,208"
+   uiButton "nv_od", waScreenLabel(7), "20,210,168,232"
+   uiButton "nv_vt", waScreenLabel(8), "20,234,168,256"
+   uiButton "nv_tl", waScreenLabel(9), "20,258,168,280"
+   uiButton "nv_nw", waScreenLabel(10), "20,282,168,304"
+   uiButton "nv_nd", waScreenLabel(11), "20,306,168,328"
+   uiButton "nv_lg", waScreenLabel(12), "20,330,168,352"
+   uiButton "nv_st", waScreenLabel(13), "20,354,168,376"
    uiSection "nv_bal", "Balance", "20,382,168,400"
    uiLabel "nv_confirmed", "-", "20,402,168,418", 13
    uiLabel "nv_pending", "-", "20,420,168,434", 11
@@ -14248,6 +14290,8 @@ function waScreenCode pIndex
    else if pIndex is 10 then
       return "nw"
    else if pIndex is 11 then
+      return "nd"
+   else if pIndex is 12 then
       return "lg"
    end if
    return "st"
@@ -14644,7 +14688,9 @@ command waBuildNetwork
    uiButton "nw_bElectrumTor", "Electrum over Tor", "504,90,688,116"
    uiButton "nw_bEsploraClear", "Esplora over clearnet", "196,120,420,146"
    uiButton "nw_bElectrumClear", "Electrum over clearnet", "424,120,688,146"
-   uiButton "nw_bCore", "Bitcoin Core: your own node, over RPC", "196,150,688,176"
+   uiButton "nw_bCore", "Bitcoin Core (RPC)", "196,150,358,176"
+   uiButton "nw_bCoreTor", "Core over Tor", "362,150,524,176"
+   uiButton "nw_bCoreCli", "Core via bitcoin-cli", "528,150,688,176"
    uiCap "nw_hostCap", "Host", "196,186,250,202"
    uiInput "nw_host", "254,184,560,206"
    uiCap "nw_portCap", "Port", "570,186,610,202"
@@ -14675,7 +14721,52 @@ command waBuildNetwork
    uiArea "nw_privacy", "720,330,1172,584"
 end waBuildNetwork
 
--- ---- 9. Log ------------------------------------------------------------------
+-- ---- 11. Node ----------------------------------------------------------------
+--
+-- Everything on this screen is about a Bitcoin Core node and nothing on it
+-- touches any other backend: every button refuses by name when the backend
+-- is not core-rpc, rather than being hidden, because a screen that empties
+-- itself teaches nothing about what it would do.
+
+command waBuildNode
+   uiPanel "nd_panelA", "184,58,700,590"
+   uiPanel "nd_panelB", "708,58,1184,590"
+   uiSection "nd_sec1", "The node", "196,66,688,84"
+   uiArea "nd_status", "196,90,688,250"
+   uiButton "nd_ask", "Ask the node", "196,258,360,284"
+   uiButton "nd_netinfo", "Peers and version", "364,258,528,284"
+   uiButton "nd_copy", "Copy the answers", "532,258,688,284"
+   uiSection "nd_sec2", "How this wallet asks it", "196,292,688,310"
+   uiButton "nd_tierScan", "Scan tier: one scan, no history", "196,316,440,342"
+   uiButton "nd_tierWatch", "Watch tier: a wallet in the node", "444,316,688,342"
+   uiWrap "nd_tierNote", "", "196,348,688,440", 11
+   uiSection "nd_sec3", "What the node says fees are", "196,448,688,466"
+   uiWrap "nd_fees", "", "196,470,688,516", 11
+   uiButton "nd_useFast", "Use the 1-block rate", "196,520,360,546"
+   uiButton "nd_useNormal", "Use the 6-block rate", "364,520,528,546"
+   uiButton "nd_useSlow", "Use the 144-block rate", "532,520,688,546"
+   uiWrap "nd_note", "", "196,552,688,584", 10
+   uiSection "nd_sec4", "A watch-only wallet in the node", "720,66,1172,84"
+   uiWrap "nd_watchNote", "", "720,90,1172,186", 11
+   uiCap "nd_birthCap", "First used (unix seconds, or now)", "720,196,940,212"
+   uiInput "nd_birth", "944,194,1172,216"
+   uiButton "nd_create", "Create it in the node", "720,222,940,248"
+   uiButton "nd_reimport", "Re-import the addresses", "944,222,1172,248"
+   uiLabel "nd_watchState", "-", "720,256,1172,274", 11
+   uiSection "nd_sec5", "The mempool", "720,284,1172,302"
+   uiArea "nd_mempool", "720,306,1172,406"
+   uiButton "nd_lookup", "Look up the selected transaction", "720,412,940,438"
+   uiButton "nd_testAccept", "Test the last signed transaction", "944,412,1172,438"
+   uiWrap "nd_mempoolNote", "", "720,444,1172,478", 10
+   uiSection "nd_sec6", "A regtest sandbox on this machine", "720,486,1172,504"
+   uiButton "nd_sbStart", "Start a node", "720,508,832,534"
+   uiButton "nd_sbMine", "Mine 6 blocks", "836,508,948,534"
+   uiButton "nd_sbReorg", "Reorg drill", "952,508,1064,534"
+   uiButton "nd_sbStop", "Stop it", "1068,508,1172,534"
+   uiWrap "nd_sandboxNote", "", "720,538,1172,584", 10
+end waBuildNode
+
+-- ---- 12. Log -----------------------------------------------------------------
 
 command waBuildLog
    uiPanel "lg_panel", "184,58,1184,590"
@@ -14861,7 +14952,7 @@ function waRouteKnows pPrefix
    -- before dispatching so an unknown prefix can `pass mouseUp` from the
    -- handler that owns the message, rather than from inside a helper that
    -- cannot pass on its caller's behalf.
-   return "nv,wl,rc,ad,sd,cn,hs,od,vt,tl,nw,lg,st" contains pPrefix
+   return "nv,wl,rc,ad,sd,cn,hs,od,vt,tl,nw,nd,lg,st" contains pPrefix
 end waRouteKnows
 
 command waRouteClick pPrefix, pRole
@@ -14891,6 +14982,8 @@ command waRouteClick pPrefix, pRole
       waToolsClick pRole
    else if pPrefix is "nw" then
       waNetworkClick pRole
+   else if pPrefix is "nd" then
+      waNodeClick pRole
    else if pPrefix is "lg" then
       waLogClick pRole
    else if pPrefix is "st" then
@@ -15010,6 +15103,18 @@ function waMenuRoute pItem
    if pItem is "Words to entropy" then
       return "tl toEntropy"
    end if
+   if pItem is "Ask the node" then
+      return "nd ask"
+   end if
+   if pItem is "Test the last signed transaction" then
+      return "nd testAccept"
+   end if
+   if pItem is "Look up the selected transaction" then
+      return "nd lookup"
+   end if
+   if pItem is "Copy the node's answers" then
+      return "nd copy"
+   end if
    if pItem is "Copy the log" then
       return "lg copy"
    end if
@@ -15059,6 +15164,10 @@ function waMenuFor pScreen
    else if pScreen is "vault" then
       put "Prepare the locked address" & return & "Copy the locked address" & \
             return & "-" & return into tItems
+   else if pScreen is "node" then
+      put "Ask the node" & return & "Test the last signed transaction" & \
+            return & "Look up the selected transaction" & return & \
+            "Copy the node's answers" & return & "-" & return into tItems
    else if pScreen is "log" then
       put "Copy the log" & return & "Clear the log" & return & "-" & return into tItems
    end if
@@ -15746,6 +15855,8 @@ command waRefreshScreen
          waPaintTools
       else if sWaScreen is "network" then
          waPaintNetwork
+      else if sWaScreen is "node" then
+         waPaintNode
       else if sWaScreen is "log" then
          waPaintLog
       else if sWaScreen is "settings" then
@@ -15806,6 +15917,12 @@ function waBackendLabel
    end if
    if sWaBackend is "core-rpc" then
       return "Bitcoin Core"
+   end if
+   if sWaBackend is "core-tor" then
+      return "Bitcoin Core / Tor"
+   end if
+   if sWaBackend is "core-cli" then
+      return "Bitcoin Core / bitcoin-cli"
    end if
    return "Esplora / clear"
 end waBackendLabel
@@ -16215,6 +16332,10 @@ command waGenerateSeed
    put tWords into sWaMnemonic
    put empty into tWords
    put "seed" into sWaKind
+   -- A SEED MADE HERE WAS NEVER USED BEFORE NOW, which is the one time this
+   -- wallet can know its own birth without asking. It saves a Bitcoin Core
+   -- watch wallet from reading the chain from its genesis block.
+   put the seconds into sWaCoreBirth
    waDeriveAccount
    uiStatus "A new 24-word seed. WRITE IT DOWN NOW, on paper, before you do " & \
          "anything else with this window.", "warn"
@@ -20936,7 +21057,7 @@ command waPaintNetwork
    -- all while one is running. electrum-clear was added to waBackendChoice
    -- and to the screen and not to this line.
    waPaintChoice "nw_b", \
-         "Offline,EsploraTor,ElectrumTor,EsploraClear,ElectrumClear,Core", \
+         "Offline,EsploraTor,ElectrumTor,EsploraClear,ElectrumClear,Core,CoreTor,CoreCli", \
          waBackendChoice()
    if field "nw_host" is empty then
       put sWaHost into field "nw_host"
@@ -21001,6 +21122,12 @@ private function waBackendChoice
    if sWaBackend is "core-rpc" then
       return "Core"
    end if
+   if sWaBackend is "core-tor" then
+      return "CoreTor"
+   end if
+   if sWaBackend is "core-cli" then
+      return "CoreCli"
+   end if
    return "Offline"
 end waBackendChoice
 
@@ -21034,6 +21161,27 @@ private function waPrivacyText
          "addresses); anyone between you and it sees that you talked to an " & \
          "Electrum server and how much, but not what about. The chain is " & \
          "chosen by the PORT: 50001 mainnet, 60001 testnet." & return & return after tOut
+   put "BITCOIN CORE VIA BITCOIN-CLI runs the program on this machine " & \
+         "instead of opening a connection: if " & quote & \
+         "bitcoin-cli getblockchaininfo" & quote & " already works in your " & \
+         "terminal, it works here, with no host, port, cookie or password " & \
+         "to type - the program finds all four. What it costs is that a " & \
+         "call BLOCKS this window until the program answers, so the " & \
+         "requests run when you press a button and never on the poll " & \
+         "timer, and a payload this wallet cannot quote safely for your " & \
+         "shell is refused rather than escaped (on Windows that is any " & \
+         "structured argument, which is what the RPC choice above is " & \
+         "for). It is also the only way to START a node: the regtest " & \
+         "sandbox on the Node screen." & return & return after tOut
+   put "BITCOIN CORE OVER TOR is the same node reached through a hidden " & \
+         "service you publish yourself, which is the honest way to use a " & \
+         "node at home from somewhere else. The circuit is the encryption " & \
+         "and the authentication, so the RPC credentials are no more " & \
+         "exposed than on a loopback socket - which is why the tick below " & \
+         "is not asked for here. Put your node's .onion in the host field; " & \
+         "there is no default, because there is no such thing as a public " & \
+         "Bitcoin Core onion and a stranger's node is the last place to " & \
+         "send your addresses." & return & return after tOut
    put "BITCOIN CORE is your own node, over its JSON-RPC interface: plain " & \
          "HTTP on 127.0.0.1, which is where Core serves it by default, so " & \
          "nobody but your node learns anything. The node is asked with ONE " & \
@@ -21073,6 +21221,10 @@ command waNetworkClick pRole
       waSetBackend "electrum-clear"
    else if pRole is "bCore" then
       waSetBackend "core-rpc"
+   else if pRole is "bCoreTor" then
+      waSetBackend "core-tor"
+   else if pRole is "bCoreCli" then
+      waSetBackend "core-cli"
    else if pRole is "remoteOk" then
       -- app state, painted onto the box: the kit builds a checkbox with
       -- autoHilite off, so a box nothing drives can never be ticked
@@ -21098,6 +21250,7 @@ command waNetworkClick pRole
       waLog "test: asking " & sWaHost & ":" & sWaPort & " for the tip over " & \
             sWaBackend
       uiStatus "Asking " & sWaHost & " for the chain tip.", ""
+      waAfterQueue
    else if pRole is "syncNow" then
       waApplyNetworkFields
       waSync
@@ -21107,6 +21260,361 @@ command waNetworkClick pRole
    end if
    waRefreshAll
 end waNetworkClick
+
+command waPaintNode
+   set the defaultStack to the short name of this stack
+   waPaintChoice "nd_tier", "Scan,Watch", waTierChoice()
+   put waNodeStatusText() into field "nd_status"
+   put waNodeTierNote() into field "nd_tierNote"
+   put waNodeFeesText() into field "nd_fees"
+   put waNodeWatchNote() into field "nd_watchNote"
+   put waNodeWatchState() into field "nd_watchState"
+   if field "nd_birth" is empty and sWaCoreBirth is an integer \
+         and sWaCoreBirth > 0 then
+      put sWaCoreBirth into field "nd_birth"
+   end if
+   if sWaCoreMempool is empty then
+      put "Nothing looked up yet. Select a row on the History screen and " & \
+            "press Look up, or press Test to ask the node whether it would " & \
+            "accept the transaction the Send screen last signed - which is " & \
+            "the cheapest way there is to find out that a fee is too low, " & \
+            "before anything is sent." into field "nd_mempool"
+   else
+      put sWaCoreMempool into field "nd_mempool"
+   end if
+   put "A node answers about ITS mempool, which is not everybody's: a " & \
+         "transaction it has not heard of may still be alive elsewhere. " & \
+         "Test sends nothing." into field "nd_mempoolNote"
+   put waNodeSandboxNote() into field "nd_sandboxNote"
+   put "None of this screen has been run against a real node (2026-09-04). " & \
+         "It is driven headlessly against fixtures of the node's replies." \
+         into field "nd_note"
+end waPaintNode
+
+private function waTierChoice
+   if waCoreTier() is "watch" then
+      return "Watch"
+   end if
+   return "Scan"
+end waTierChoice
+
+private function waNodeStatusText
+   local tOut
+   if waIsCore(sWaBackend) is not true then
+      put "This wallet is not talking to a Bitcoin Core node." & return & return \
+            into tOut
+      put "Choose " & quote & "Bitcoin Core: your own node, over RPC" & \
+            quote & " on the Network screen. Everything on this screen is " & \
+            "about a node and nothing here touches the backend you are " & \
+            "using now (" & waBackendLabel() & ")." & return & return after tOut
+      put "A node of your own is the only backend that tells nobody " & \
+            "anything about your addresses. It is also the only one that " & \
+            "can say whether a transaction would be accepted before you " & \
+            "send it." after tOut
+      return tOut
+   end if
+   put "host          " & sWaHost & ":" & sWaPort & return into tOut
+   put "credentials   " after tOut
+   if sWaCoreAuth is not empty then
+      put "rpcuser:rpcpassword from the Network screen" & return after tOut
+   else
+      put "the cookie file " & sWaCoreCookie & return after tOut
+   end if
+   put "chain         " after tOut
+   if sWaCoreChain is empty then
+      put "not asked yet (press Ask the node)" & return after tOut
+   else
+      put sWaCoreChain & ", and this wallet is on " & sWaNetwork & return after tOut
+   end if
+   if sWaCoreInfo is not empty then
+      put "last answer   " & sWaCoreInfo & return after tOut
+   end if
+   if sWaCoreNodeText is not empty then
+      put "peers         " & sWaCoreNodeText & return after tOut
+   end if
+   put "tip           " after tOut
+   if sWaTipHeight is empty then
+      put "unknown" & return after tOut
+   else
+      put sWaTipHeight & return after tOut
+   end if
+   return tOut
+end waNodeStatusText
+
+private function waNodeTierNote
+   local tOut
+   put "SCAN reads the node's whole UTXO set once for every address of " & \
+         "this wallet (scantxoutset). Three requests a sync however many " & \
+         "addresses there are, nothing to set up, and it works on a pruned " & \
+         "node. What it cannot see is the MEMPOOL - a payment on its way " & \
+         "to you is invisible until it confirms - and it carries no " & \
+         "history, so the History screen shows only what this wallet did " & \
+         "itself." & return & return into tOut
+   put "WATCH asks the node to keep a watch-only wallet of its own for " & \
+         "your addresses (no private keys in it; it can never sign). Then " & \
+         "a sync is what that wallet has found, mempool included, with " & \
+         "history. It costs one rescan when it is created, which is why " & \
+         "the birth date beside it matters, and a re-import whenever this " & \
+         "wallet derives further." after tOut
+   return tOut
+end waNodeTierNote
+
+private function waNodeFeesText
+   local tOut, tI, tRate
+   put "" into tOut
+   repeat for each item tI in "1,6,144"
+      put sWaFeeRates[tI] into tRate
+      if tRate is "" then
+         put "  " & tI & " block(s): not asked yet" & return after tOut
+      else
+         put "  " & tI & " block(s): " & tRate & " sat/vB" & return after tOut
+      end if
+   end repeat
+   put "Press Ask the node to fetch all three. The Send screen proposes " & \
+         "whichever you press Use for." after tOut
+   return tOut
+end waNodeFeesText
+
+private function waNodeWatchNote
+   local tOut
+   put "The node keeps a wallet named " after tOut
+   if waCoreWalletName() is "" then
+      put "for this wallet's master fingerprint - which there is not one " & \
+            "of yet, because no account key is open." & return & return into tOut
+   else
+      put quote & waCoreWalletName() & quote & ", named for this wallet's " & \
+            "master fingerprint so two accounts on one node never share " & \
+            "one." & return & return into tOut
+   end if
+   put "Private keys are DISABLED in it and it is created blank: the node " & \
+         "is given addresses to watch and can never be asked to sign. " & \
+         "Creating it makes the node rescan the chain from the date below, " & \
+         "which on a full chain takes a while; the state line says when it " & \
+         "is finished." & return & return after tOut
+   put "Leave the date empty and the node reads from the genesis block, " & \
+         "which is safe and slow. A date LATER than the wallet's first use " & \
+         "silently loses history, so this wallet never guesses one." after tOut
+   return tOut
+end waNodeWatchNote
+
+private function waNodeSandboxNote
+   local tOut
+   if sWaNetwork is not "regtest" then
+      return "A chain of your own, on this machine, for trying everything " & \
+            "here without a faucet and without waiting for blocks. It runs " & \
+            "bitcoind, so it needs that program on this machine's PATH. " & \
+            "Switch the network to regtest on the Wallet screen to use it; " & \
+            "these four buttons refuse on every other chain."
+   end if
+   put "Start makes a node in " & waSandboxPath() & " and waits for it to " & \
+         "answer. Then choose a Core backend on the Network screen and " & \
+         "press Sync. Mine pays 6 blocks to this wallet's first address (a " & \
+         "coinbase needs 100 confirmations before it can be spent, so " & \
+         "press it seventeen times to have something to send). Reorg " & \
+         "throws the tip away, mines a longer chain and reconsiders the " & \
+         "old block, which is the one thing no public chain will do on " & \
+         "request. Stop asks the node to stop; the directory is left where " & \
+         "it is." into tOut
+   if sWaSandboxDir is not "" then
+      put return & return & "A sandbox node was started from here, in " & \
+            sWaSandboxDir & "." after tOut
+   end if
+   return tOut
+end waNodeSandboxNote
+
+private function waNodeWatchState
+   local tOut
+   if waCoreWatchReady() is not true then
+      return "Not created for this wallet yet."
+   end if
+   put "Watching " & sWaCoreImported & " address(es) as " & sWaCoreWallet into tOut
+   if cwListCount(sWaAddresses) > sWaCoreImported then
+      put "; this wallet now derives " & cwListCount(sWaAddresses) & \
+            ", so the next sync re-imports first" after tOut
+   end if
+   if sWaCoreScanPct is not empty then
+      put ". The node is still rescanning (" & sWaCoreScanPct & \
+            "%), so the numbers are what it has found so far" after tOut
+   end if
+   return tOut & "."
+end waNodeWatchState
+
+command waNodeClick pRole
+   local tError, tTxid, tRate, tTarget, tRec
+   set the defaultStack to the short name of this stack
+   if pRole is "tierScan" then
+      put "scan" into sWaCoreTier
+      uiStatus "Scan tier: one scan of the node's UTXO set per sync, and " & \
+            "no history.", ""
+      waRefreshAll
+      exit waNodeClick
+   end if
+   if pRole is "tierWatch" then
+      put "watch" into sWaCoreTier
+      uiStatus "Watch tier: a watch-only wallet in the node. Press Create " & \
+            "it in the node if you have not.", ""
+      waRefreshAll
+      exit waNodeClick
+   end if
+   if pRole is "copy" then
+      set the clipboardData["text"] to field "nd_status" & return & \
+            field "nd_fees" & return & field "nd_mempool"
+      uiStatus "The node's answers are on the clipboard.", "ok"
+      exit waNodeClick
+   end if
+   if pRole is "useFast" or pRole is "useNormal" or pRole is "useSlow" then
+      put "6" into tTarget
+      if pRole is "useFast" then
+         put "1" into tTarget
+      else if pRole is "useSlow" then
+         put "144" into tTarget
+      end if
+      put sWaFeeRates[tTarget] into tRate
+      if tRate is "" then
+         throw "the node has not been asked for a " & tTarget & \
+               "-block estimate yet. Press Ask the node."
+      end if
+      put tRate into field "sd_rate"
+      uiStatus "The Send screen now proposes " & tRate & " sat/vB (the " & \
+            "node's estimate for " & tTarget & " block(s)).", "ok"
+      exit waNodeClick
+   end if
+   -- EVERYTHING BELOW ASKS THE NODE, so it needs one.
+   if waIsCore(sWaBackend) is not true then
+      throw "this wallet is not talking to a Bitcoin Core node. Choose " & \
+            quote & "Bitcoin Core: your own node, over RPC" & quote & \
+            " on the Network screen first."
+   end if
+   waEnsurePolling
+   if pRole is "ask" then
+      waNetQueue "tip", ""
+      waNetQueue "netinfo", ""
+      waNetQueue "fees", "1"
+      waNetQueue "fees", "6"
+      waNetQueue "fees", "144"
+      waLog "node: asking " & sWaHost & ":" & sWaPort & " what it is and " & \
+            "what it says fees are"
+      uiStatus "Asked the node for its chain, its peers and three fee " & \
+            "estimates.", ""
+   else if pRole is "netinfo" then
+      waNetQueue "netinfo", ""
+      uiStatus "Asked the node for its version and peer count.", ""
+   else if pRole is "create" then
+      waNodeApplyBirth
+      if waCoreWalletName() is "" then
+         throw "this wallet has no account key yet, so there is no name to " & \
+               "give the node's watch wallet. Open a wallet first."
+      end if
+      -- CREATE, LOAD, IMPORT, ASK - in that order, and the first two are
+      -- allowed to say "already": a node that has been set up before is
+      -- the ordinary case on a second run, not a failure (waCoreTolerates).
+      waNetQueue "createwallet", ""
+      waNetQueue "loadwallet", ""
+      waNetQueue "importdesc", ""
+      waNetQueue "walletinfo", ""
+      put "watch" into sWaCoreTier
+      waLog "node: creating the watch-only wallet " & waCoreWalletName() & \
+            " and giving it " & cwListCount(sWaAddresses) & " address(es) " & \
+            "from " & waCoreBirthWord()
+      uiStatus "Asked the node to create and fill its watch wallet. The " & \
+            "rescan can take a while; this screen says when it ends.", ""
+   else if pRole is "reimport" then
+      waNodeApplyBirth
+      if waCoreWalletName() is "" then
+         throw "this wallet has no account key yet."
+      end if
+      waNetQueue "importdesc", ""
+      waNetQueue "walletinfo", ""
+      uiStatus "Asked the node to watch this wallet's " & \
+            cwListCount(sWaAddresses) & " address(es).", ""
+   else if pRole is "lookup" then
+      put waSelectedHistory() into tRec
+      put tRec["txid"] into tTxid
+      if tTxid is "" then
+         throw "select a row on the History screen first; this looks that " & \
+               "transaction up in the node's mempool."
+      end if
+      waNetQueue "mempool", tTxid
+      uiStatus "Asked the node about " & tTxid & " in its mempool.", ""
+   else if pRole is "testAccept" then
+      if sWaLastRaw is empty then
+         throw "there is nothing signed to test. Build and sign on the " & \
+               "Send screen first."
+      end if
+      waNetQueue "testaccept", sWaLastRaw
+      uiStatus "Asked the node whether it would accept that transaction. " & \
+            "Nothing has been sent.", ""
+   else if pRole is "sbStart" then
+      waSandboxClick "start"
+   else if pRole is "sbMine" then
+      waSandboxClick "mine"
+   else if pRole is "sbReorg" then
+      waSandboxClick "reorg"
+   else if pRole is "sbStop" then
+      waSandboxClick "stop"
+   end if
+   waAfterQueue
+   waRefreshAll
+end waNodeClick
+
+private command waSandboxClick pWhat
+   local tOut
+   if pWhat is "start" then
+      get waSandboxStart()
+      uiStatus "A regtest node is running in " & waSandboxPath() & \
+            ". Choose Bitcoin Core on the Network screen and press Sync.", "ok"
+   else if pWhat is "mine" then
+      get waSandboxMine(6, "")
+      uiStatus "Mined 6 blocks to this wallet's first address. A coinbase " & \
+            "needs 100 confirmations before it can be spent, so mine 101 " & \
+            "to have something to send.", "ok"
+   else if pWhat is "reorg" then
+      get waSandboxReorg(1)
+      uiStatus "Reorg drill done: the tip was thrown away, a longer chain " & \
+            "mined, and the old block reconsidered. Press Sync and watch " & \
+            "the confirmations move.", "warn"
+   else if pWhat is "stop" then
+      get waSandboxStop()
+      uiStatus "The sandbox node was asked to stop. Its directory is left " & \
+            "where it is.", ""
+   end if
+end waSandboxClick
+
+private command waNodeApplyBirth
+   -- The birth date, read off the screen at the moment it matters. "now" is
+   -- allowed because a wallet somebody has just made has no history behind
+   -- it; an empty box means the genesis block, which is slow and never
+   -- wrong. A date is never guessed: a later one loses history silently.
+   local tText
+   put cwTrim(field "nd_birth") into tText
+   if tText is "" then
+      put empty into sWaCoreBirth
+      exit waNodeApplyBirth
+   end if
+   if cwLower(tText) is "now" then
+      put the seconds into sWaCoreBirth
+      put sWaCoreBirth into field "nd_birth"
+      exit waNodeApplyBirth
+   end if
+   -- NESTED, NOT `or`-ed, and this file has recorded the same mistake twice
+   -- before (waSetSuggestedRate, waCheckedHeight): LiveCodeScript evaluates
+   -- BOTH operands of `or`, so `tText < 1` would run on a value that is not
+   -- a number - which the family's interpreter refuses outright and the
+   -- engine answers by comparing as TEXT. Ask the type question first.
+   -- Caught by the boot gate on the day this was written, which is the
+   -- argument for the gate in one line.
+   if tText is not an integer then
+      throw "the first-used box takes unix seconds (a whole number) or the " & \
+            "word now, and " & quote & tText & quote & " is neither. Leave " & \
+            "it empty to have the node read the whole chain."
+   end if
+   if tText < 1 then
+      throw "the first-used box takes unix seconds (a whole number) or the " & \
+            "word now, and " & quote & tText & quote & " is neither. Leave " & \
+            "it empty to have the node read the whole chain."
+   end if
+   put tText + 0 into sWaCoreBirth
+end waNodeApplyBirth
 
 command waDropSeed
    -- A WALLET THAT CANNOT SIGN MUST NOT BE HOLDING A SEED. Choosing
@@ -21229,6 +21737,28 @@ command waSetBackend pBackend
       put empty into sWaCoreChain
       put empty into sWaCoreInfo
       waRetunePort
+   else if pBackend is "core-cli" then
+      -- NEITHER A HOST NOR A PORT. Finding the data directory, the cookie
+      -- and the port is what bitcoin-cli is for here, so this wallet holds
+      -- none of them and shows the program's name where the others show a
+      -- server. The CHAIN still travels, as the -testnet flag and friends
+      -- (waCliChainFlag), and the node is still asked what chain it is on.
+      put kWaCliBinary into sWaHost
+      put empty into sWaPort
+      put empty into sWaCoreChain
+      put empty into sWaCoreInfo
+   else if pBackend is "core-tor" then
+      -- NO DEFAULT HOST: there is no such thing as a public Bitcoin Core
+      -- onion, and inventing one would be inviting somebody to hand their
+      -- addresses to a stranger's node. The host stays whatever is in the
+      -- box, and the state line says what is missing.
+      put empty into sWaCoreChain
+      put empty into sWaCoreInfo
+      if sWaHost is kWaCoreHost or sWaHost is "" \
+            or not (sWaHost ends with ".onion") then
+         put empty into sWaHost
+         put waCorePortFor(sWaNetwork) into sWaPort
+      end if
    end if
    set the defaultStack to the short name of this stack
    put sWaHost into field "nw_host"
@@ -21270,7 +21800,8 @@ function waNeedsTor pBackend
    -- A deny-list of the things a rule does NOT apply to is wrong by default
    -- for anything new; an allow-list of the things it DOES apply to is right
    -- by default. The next transport added here needs no edit to be correct.
-   return pBackend is "esplora-tor" or pBackend is "electrum-tor"
+   return pBackend is "esplora-tor" or pBackend is "electrum-tor" \
+         or pBackend is "core-tor"
 end waNeedsTor
 
 private function waCheckedHeight pText, pWhere
@@ -21432,12 +21963,87 @@ private command waRetunePort
    end if
 end waRetunePort
 
+function waCoreTier
+   -- Scan by default: it changes nothing on the node and works on a pruned
+   -- one. The watch tier is chosen on the Node screen.
+   if sWaCoreTier is "watch" then
+      return "watch"
+   end if
+   return "scan"
+end waCoreTier
+
+function waCoreWalletName
+   -- The name of THIS wallet's watch-only wallet in the node. Empty when
+   -- there is no account key yet, which is what makes "not created" and
+   -- "created for a different wallet" the same answer here: the name is
+   -- derived, so a wallet the person switches to has a different one and
+   -- the node's confirmation (sWaCoreWallet) stops matching by itself.
+   if sWaFingerprint is empty then
+      return ""
+   end if
+   return kWaCoreWalletPrefix & cwLower(sWaFingerprint)
+end waCoreWalletName
+
+function waCoreWatchReady
+   local tName
+   put waCoreWalletName() into tName
+   if tName is "" then
+      return false
+   end if
+   return sWaCoreWallet is tName
+end waCoreWatchReady
+
+function waCoreIsWalletKind pKind
+   -- Which request kinds are WALLET rpcs, which Core serves under
+   -- /wallet/<name> and refuses (404) at the root once more than one
+   -- wallet is loaded. Named positively, for the reason waIsElectrum is.
+   return pKind is "walletinfo" or pKind is "importdesc" \
+         or pKind is "listunspent" or pKind is "listtx" \
+         or (pKind is "tx" and waCoreTier() is "watch")
+end waCoreIsWalletKind
+
+function waCorePath pRec
+   -- The POST's path: the root for node rpcs, /wallet/<name> for wallet
+   -- ones. createwallet and loadwallet are NODE rpcs that name their
+   -- wallet in the parameters, so they go to the root.
+   local tName
+   if waCoreIsWalletKind(pRec["kind"]) then
+      put waCoreWalletName() into tName
+      if tName is "" then
+         throw "this wallet has no account key yet, so there is no watch " & \
+               "wallet in the node to ask."
+      end if
+      return "/wallet/" & tName
+   end if
+   return "/"
+end waCorePath
+
 function waIsCore pBackend
    -- WHICH BACKEND IS A NODE OF THE PERSON'S OWN, named positively, for the
    -- reason waIsElectrum and waNeedsTor give: a predicate answers for a
    -- backend added later by construction, a list of the others does not.
-   return pBackend is "core-rpc"
+   -- Two of them now: over a socket to this machine, and over a Tor stream
+   -- to a node published as an onion service, which is the one honest way
+   -- to reach a home node from somewhere else.
+   return pBackend is "core-rpc" or pBackend is "core-tor" \
+         or pBackend is "core-cli"
 end waIsCore
+
+function waCoreWhere
+   -- WHERE THE NODE IS, in a sentence. Two of the three Core backends are
+   -- a host and a port; the third is a program that finds its own, and a
+   -- port printed beside it would be a number this wallet does not use.
+   if waIsCli(sWaBackend) then
+      return kWaCliBinary
+   end if
+   return sWaHost & ":" & sWaPort
+end waCoreWhere
+
+function waIsCli pBackend
+   -- The one backend that is a PROGRAM rather than a connection. Named
+   -- positively for the reason every other predicate here is.
+   return pBackend is "core-cli"
+end waIsCli
 
 function waCorePortFor pNetwork
    -- Bitcoin Core's default RPC port per chain (bitcoin.conf's rpcport
@@ -21519,13 +22125,25 @@ function waCoreCookieIsDefault pPath
 end waCoreCookieIsDefault
 
 function waCoreIsRemote pHost
-   -- Is this host somewhere else? Core's RPC is plain HTTP, so credentials
-   -- to a host that is not this machine cross the network readable; the
-   -- dial refuses that unless the person has ticked the box for it.
+   -- Is this host somewhere else IN THE SENSE THE TICK IS ABOUT - that
+   -- Core's RPC is plain HTTP, so credentials to it cross the network
+   -- readable by anyone on the way?
+   --
+   -- A .onion is NOT, and the reason is the same one this wallet already
+   -- makes about plain HTTP to an Esplora mirror over Tor: the rendezvous
+   -- circuit is the encryption AND the authentication, end to end, so the
+   -- credentials are no more exposed than they are on a loopback socket.
+   -- Treating an onion as remote here would make the tick meaningless -
+   -- everybody would have to set it - and a tick everybody sets protects
+   -- nobody from the case it was written for, which is a node on a LAN or
+   -- across the open internet.
    local tHost
    put cwLower(cwTrim(pHost)) into tHost
    if tHost is "127.0.0.1" or tHost is "localhost" or tHost is "::1" \
          or tHost is "[::1]" then
+      return false
+   end if
+   if tHost ends with ".onion" then
       return false
    end if
    return true
@@ -21627,6 +22245,39 @@ command waSync
       if sWaFeesAt is empty or the milliseconds - sWaFeesAt > kWaFeesFresh then
          waNetQueue "fees", ""
       end if
+      if waCoreTier() is "watch" then
+         -- THE WATCH TIER ASKS THE WALLET IN THE NODE: what it has found
+         -- (listunspent, the mempool included), what it has seen
+         -- (listtransactions), and whether it is still rescanning
+         -- (getwalletinfo, first, so the screen can say so about the
+         -- numbers below it). A window that has grown past what was
+         -- imported is re-imported BEFORE any of that, because a wallet
+         -- watching some of its addresses reports a balance missing the
+         -- rest.
+         if waCoreWatchReady() is not true then
+            throw "the node has no watch-only wallet for this wallet yet. " & \
+                  "Open the Node screen and press " & quote & \
+                  "Create it in the node" & quote & ", or choose the scan " & \
+                  "tier, which needs nothing set up."
+         end if
+         if cwListCount(sWaAddresses) > sWaCoreImported then
+            waNetQueue "importdesc", ""
+            waLog "the address window has grown past what the node was " & \
+                  "given (" & sWaCoreImported & "); re-importing first"
+         end if
+         waNetQueue "walletinfo", ""
+         waNetQueue "listunspent", ""
+         waNetQueue "listtx", ""
+         put cwListCount(sWaQueue) into tCount
+         waLog "sync: queued " & tCount & " request(s) to " & sWaHost & ":" & \
+               sWaPort & " over core-rpc, watch tier (the wallet " & \
+               waCoreWalletName() & " in the node: its unspent outputs, " & \
+               "its transactions, and whether it is still rescanning)"
+         uiStatus "Queued " & tCount & " request(s) to the node at " & \
+               sWaHost & ": the watch wallet's coins and its history.", ""
+         waAfterQueue
+         exit waSync
+      end if
       waNetQueue "scan", ""
       put cwListCount(sWaQueue) into tCount
       waLog "sync: queued " & tCount & " request(s) to " & sWaHost & ":" & \
@@ -21635,6 +22286,7 @@ command waSync
             "chain, not the mempool, and carries no history)"
       uiStatus "Queued " & tCount & " request(s) to the node at " & sWaHost & \
             ": the chain, the fee estimate and one scan of its UTXO set.", ""
+      waAfterQueue
       exit waSync
    end if
    -- only what is stale (kWaTipFresh, kWaFeesFresh); a fresh answer is kept
@@ -21673,6 +22325,7 @@ command waSync
    uiStatus "Queued " & tCount & " requests to " & sWaHost & \
          " (unspent outputs are asked for only where the history says there " & \
          "are any).", ""
+   waAfterQueue
 end waSync
 
 command waNetQueue pKind, pArg
@@ -21727,6 +22380,13 @@ command waNetPump
    -- One request at a time. Called from the tick, so it must return quickly
    -- and must never throw past its caller.
    local tRec, tI, tCount, tRest, tError, tMembers, tNext, tGather, tBatch
+   -- BITCOIN-CLI IS NOT PUMPED. shell() does not return until the program
+   -- does, so a request run from here would block the engine on the poll
+   -- tick - the frozen-window shape this file has met twice by other
+   -- doors. Its queue is drained by the press that filled it (waCliDrain).
+   if waIsCli(sWaBackend) then
+      exit waNetPump
+   end if
    if sWaInFlight is not empty then
       waNetCheckDeadline
       exit waNetPump
@@ -21773,8 +22433,12 @@ command waNetPump
       put tBatch into tRec
    end if
    put the milliseconds + kWaNetDeadline into tRec["deadline"]
-   if tRec["kind"] is "scan" then
-      -- a node scanning its UTXO set is working, not silent (kWaScanDeadline)
+   if tRec["kind"] is "scan" or tRec["kind"] is "importdesc" then
+      -- A NODE SCANNING IS WORKING, NOT SILENT (kWaScanDeadline). The scan
+      -- of a UTXO set is tens of seconds; importdescriptors with a birth
+      -- date behind the tip does not answer until the RESCAN has finished,
+      -- which on a full chain is minutes to hours - and the ordinary
+      -- deadline is for a peer that accepted a connection and went quiet.
       put the milliseconds + kWaScanDeadline into tRec["deadline"]
    end if
    put tRec into sWaInFlight
@@ -21919,7 +22583,7 @@ command waNetStart pRec
       load URL tUrl with message "waUrlDone"
       exit waNetStart
    end if
-   if sWaBackend is "electrum-clear" or waIsCore(sWaBackend) then
+   if sWaBackend is "electrum-clear" or sWaBackend is "core-rpc" then
       -- A PLAIN TCP SOCKET, which is the whole point: no TLS for the engine
       -- to get wrong and no daemon to be running. The socket id IS the
       -- "host:port" string in this engine, so it doubles as the correlation
@@ -21971,7 +22635,7 @@ command waNetStart pRec
       open socket to tSock with message "waSockOpened"
       exit waNetStart
    end if
-   if sWaBackend is "esplora-tor" or sWaBackend is "electrum-tor" then
+   if waNeedsTor(sWaBackend) then
       if sWaHaveOnion is not "true" then
          throw "OnionXT is not loaded, so there is no Tor transport here."
       end if
@@ -22083,6 +22747,14 @@ function waBackendChainWhy
       return empty
    end if
    if waIsCore(sWaBackend) then
+      -- A host Tor cannot look up is refused before anything else, the
+      -- same as for the other two Tor transports (waOnionWhy).
+      if waNeedsTor(sWaBackend) then
+         put waOnionWhy(sWaHost) into tWhy
+         if tWhy is not empty then
+            return tWhy
+         end if
+      end if
       -- A NODE SAYS WHICH CHAIN IT IS ON, and is believed over the port
       -- table: the first getblockchaininfo answer is kept (sWaCoreChain)
       -- and compared to the wallet's network here, on every recompute, so
@@ -22091,7 +22763,7 @@ function waBackendChainWhy
       -- asks first, before the scan (waSync, waCoreApply).
       if sWaCoreChain is not empty \
             and sWaCoreChain is not waCoreChainName(sWaNetwork) then
-         return "the node at " & sWaHost & ":" & sWaPort & " reported chain " & \
+         return "the node at " & waCoreWhere() & " reported chain " & \
                quote & sWaCoreChain & quote & " and this wallet is on " & \
                sWaNetwork & " (chain " & quote & waCoreChainName(sWaNetwork) & \
                quote & "). Switch the wallet's network on the Wallet " & \
@@ -22547,7 +23219,43 @@ function waCoreMethodFor pRec
    if tKind is "scan" then
       return "scantxoutset"
    end if
+   if tKind is "walletinfo" then
+      return "getwalletinfo"
+   end if
+   if tKind is "createwallet" then
+      return "createwallet"
+   end if
+   if tKind is "loadwallet" then
+      return "loadwallet"
+   end if
+   if tKind is "importdesc" then
+      return "importdescriptors"
+   end if
+   if tKind is "listunspent" then
+      return "listunspent"
+   end if
+   if tKind is "listtx" then
+      return "listtransactions"
+   end if
+   if tKind is "mempool" then
+      return "getmempoolentry"
+   end if
+   if tKind is "testaccept" then
+      return "testmempoolaccept"
+   end if
+   if tKind is "netinfo" then
+      return "getnetworkinfo"
+   end if
    if tKind is "tx" then
+      -- THE WATCH TIER ASKS ITS WALLET, which knows every transaction that
+      -- pays it whether or not the node has a transaction index; the scan
+      -- tier has no wallet to ask, so it asks the node, which answers for
+      -- a CONFIRMED transaction only where txindex=1 (and always for one
+      -- in the mempool). The two answers differ in shape and waCoreApply
+      -- reads both.
+      if waCoreTier() is "watch" then
+         return "gettransaction"
+      end if
       return "getrawtransaction"
    end if
    if tKind is "broadcast" then
@@ -22560,21 +23268,45 @@ function waCoreMethodFor pRec
          "with one scan of its UTXO set."
 end waCoreMethodFor
 
+function waCoreFeeTarget pArg
+   -- How many blocks a fee estimate is for. Core takes 1 to 1008; anything
+   -- else is six, which is what every other backend here answers.
+   if pArg is an integer and pArg >= 1 and pArg <= 1008 then
+      return pArg + 0
+   end if
+   return 6
+end waCoreFeeTarget
+
 function waCoreRequest pRec
-   -- One JSON-RPC 1.0 request, the shape Core documents. Strings through
-   -- cwJsonString2, numbers bare, and the method checked against the list
-   -- this wallet will ever ask for (kWaCoreMethods).
-   local tMethod, tParams, tI, tCount, tRec, tArg
+   -- One JSON-RPC 1.0 request, the shape Core documents.
+   local tMethod
    put waCoreMethodFor(pRec) into tMethod
    if not (("," & kWaCoreMethods & ",") contains ("," & tMethod & ",")) then
       throw "this wallet does not ask a node for " & quote & tMethod & quote & \
             "; the methods it will ask for are " & kWaCoreMethods & "."
    end if
+   return "{" & cwJsonString2("jsonrpc") & ":" & cwJsonString2("1.0") & "," & \
+         cwJsonString2("id") & ":" & pRec["id"] & "," & \
+         cwJsonString2("method") & ":" & cwJsonString2(tMethod) & "," & \
+         cwJsonString2("params") & ":" & waCoreParams(pRec) & "}"
+end waCoreRequest
+
+function waCoreParams pRec
+   -- THE PARAMETERS OF ONE REQUEST, as a JSON array, in ONE place. Both
+   -- channels read this: the RPC wraps it in an envelope and bitcoin-cli
+   -- splits it back into command-line arguments (waCliArgsFrom), so the
+   -- two can never disagree about what was asked.
+   local tParams, tI, tCount, tRec, tArg, tMethod
+   put waCoreMethodFor(pRec) into tMethod
    put pRec["arg"] into tArg
    if pRec["kind"] is "tip" then
       put "[]" into tParams
    else if pRec["kind"] is "fees" then
-      put "[6," & cwJsonString2("economical") & "]" into tParams
+      -- THE TARGET TRAVELS IN THE ARGUMENT, empty meaning six blocks. The
+      -- other backends offer one estimate and this one offers as many as
+      -- you ask for, which is what the Node screen's three buttons are.
+      put waCoreFeeTarget(tArg) into tI
+      put "[" & tI & "," & cwJsonString2("economical") & "]" into tParams
    else if pRec["kind"] is "scan" then
       -- ONE addr() ENTRY PER ADDRESS OF THIS WALLET, leaves included (they
       -- are address records like any other), rather than the account's
@@ -22591,8 +23323,41 @@ function waCoreRequest pRec
          put cwJsonString2("addr(" & tRec["address"] & ")") after tParams
       end repeat
       put "]]" after tParams
+   else if pRec["kind"] is "walletinfo" or pRec["kind"] is "netinfo" then
+      put "[]" into tParams
+   else if pRec["kind"] is "createwallet" then
+      -- name, disable_private_keys, blank, passphrase, avoid_reuse,
+      -- descriptors, load_on_startup. PRIVATE KEYS DISABLED and BLANK: the
+      -- node holds no key of this wallet's and cannot be asked to sign,
+      -- which is what makes handing it our addresses safe. load_on_startup
+      -- false, because a wallet this app made should not change what the
+      -- node does when the person restarts it.
+      put "[" & cwJsonString2(waCoreWalletName()) & ",true,true," & \
+            cwJsonString2("") & ",false,true,false]" into tParams
+   else if pRec["kind"] is "loadwallet" then
+      put "[" & cwJsonString2(waCoreWalletName()) & ",false]" into tParams
+   else if pRec["kind"] is "importdesc" then
+      put waCoreImportParams() into tParams
+   else if pRec["kind"] is "listunspent" then
+      -- from 0 confirmations, every address, INCLUDING unsafe: an
+      -- unconfirmed coin is what this tier is for, and "unsafe" is Core's
+      -- word for one that is not yet safe to spend by ITS rules, which
+      -- this wallet decides for itself.
+      put "[0,9999999,[],true]" into tParams
+   else if pRec["kind"] is "listtx" then
+      put "[" & cwJsonString2("*") & "," & kWaCoreTxPage & ",0,true]" into tParams
+   else if pRec["kind"] is "mempool" then
+      put "[" & cwJsonString2(tArg) & "]" into tParams
+   else if pRec["kind"] is "testaccept" then
+      put "[[" & cwJsonString2(tArg) & "]]" into tParams
    else if pRec["kind"] is "tx" then
-      put "[" & cwJsonString2(tArg) & ",false]" into tParams
+      if waCoreTier() is "watch" then
+         -- gettransaction txid include_watchonly verbose: the second true
+         -- is what puts the raw hex in the answer
+         put "[" & cwJsonString2(tArg) & ",true,true]" into tParams
+      else
+         put "[" & cwJsonString2(tArg) & ",false]" into tParams
+      end if
    else if pRec["kind"] is "broadcast" then
       put "[" & cwJsonString2(tArg) & "]" into tParams
    else
@@ -22602,11 +23367,552 @@ function waCoreRequest pRec
          put "[]" into tParams
       end if
    end if
-   return "{" & cwJsonString2("jsonrpc") & ":" & cwJsonString2("1.0") & "," & \
-         cwJsonString2("id") & ":" & pRec["id"] & "," & \
-         cwJsonString2("method") & ":" & cwJsonString2(tMethod) & "," & \
-         cwJsonString2("params") & ":" & tParams & "}"
-end waCoreRequest
+   return tParams
+end waCoreParams
+
+function waCoreImportParams
+   -- ONE addr() DESCRIPTOR PER ADDRESS, the same list the scan tier sends,
+   -- rather than the account's two ranged descriptors. Every wallet kind
+   -- has addresses and only some have a descriptor Core can range (an
+   -- imported single key has none, a multisig's is not this wallet's own
+   -- account key), and a leaf - an inscription commit, a timelock - is an
+   -- address and not a range at all. An address list needs no fingerprint,
+   -- no path override and no range bookkeeping to be right, and the one
+   -- thing it costs is a re-import when the window grows, which waSync
+   -- queues by comparing the count (sWaCoreImported).
+   --
+   -- EVERY DESCRIPTOR CARRIES ITS CHECKSUM, because importdescriptors
+   -- refuses one without: cwDescriptorChecksum is the same routine the
+   -- Wallet screen's exported descriptor uses, and the boot self-check
+   -- pins it against Core's published example.
+   local tOut, tI, tCount, tRec, tDesc, tStamp
+   put waCoreImportTimestamp() into tStamp
+   put "[[" into tOut
+   put cwListCount(sWaAddresses) into tCount
+   repeat with tI = 1 to tCount
+      put sWaAddresses[tI] into tRec
+      put "addr(" & tRec["address"] & ")" into tDesc
+      put tDesc & "#" & cwDescriptorChecksum(tDesc) into tDesc
+      if tI > 1 then
+         put "," after tOut
+      end if
+      put "{" & cwJsonString2("desc") & ":" & cwJsonString2(tDesc) & "," & \
+            cwJsonString2("timestamp") & ":" & tStamp & "," & \
+            cwJsonString2("internal") & ":false," & \
+            cwJsonString2("active") & ":false," & \
+            cwJsonString2("watchonly") & ":true}" after tOut
+   end repeat
+   put "]]" after tOut
+   return tOut
+end waCoreImportParams
+
+function waCoreImportTimestamp
+   -- WHEN THE NODE SHOULD START LOOKING. An earlier time is safe and slow;
+   -- a later one silently loses history, which is why 0 - rescan from the
+   -- genesis block - is the fallback rather than "now". The birth is saved
+   -- with the wallet, so it is asked for once.
+   if sWaCoreBirth is an integer and sWaCoreBirth > 0 then
+      return sWaCoreBirth
+   end if
+   return 0
+end waCoreImportTimestamp
+
+-- ---- channel B: bitcoin-cli --------------------------------------------------
+
+function waCliStyle
+   -- Which shell quoting this platform needs. Read here and passed as an
+   -- argument, so the quoting itself can be driven both ways offline: a
+   -- rule that can only be exercised on the machine it is written for is a
+   -- rule nothing checks.
+   if the platform is "Win32" then
+      return "win"
+   end if
+   return "posix"
+end waCliStyle
+
+function waCliQuoteFor pText, pStyle
+   -- ONE ARGUMENT, SAFE TO HAND A SHELL, by the rule of whichever shell it
+   -- is - and REFUSED rather than escaped where the rule does not cover
+   -- it. An escape needs an unescape and the two drift; a refusal that
+   -- names the other channel does not.
+   --
+   -- POSIX: inside single quotes every byte is literal except a single
+   -- quote itself, so a JSON payload full of double quotes, braces and
+   -- parentheses - which is exactly what scantxoutset and
+   -- importdescriptors take - passes through untouched and unexamined.
+   -- One refusal covers the whole shell: the single quote.
+   --
+   -- WINDOWS has no such rule. Inside double quotes a double quote ends
+   -- the argument, and what cmd.exe does with the rest depends on the
+   -- shell, so a JSON payload CANNOT be passed safely and is refused with
+   -- the remedy: the RPC channel, which has no command line at all. That
+   -- is the plan's rule 3 and it is the honest half of channel B.
+   local tI, tCount, tC, tCode, tBad
+   put the number of chars of pText into tCount
+   if pStyle is "win" then
+      put quote & "%^&|<>" into tBad
+   else
+      put "'" into tBad
+   end if
+   repeat with tI = 1 to tCount
+      put char tI of pText into tC
+      put charToNum(tC) into tCode
+      if tCode < 32 or tCode > 126 then
+         throw "bitcoin-cli would be handed a byte this wallet will not " & \
+               "put on a command line (character " & tI & " is code " & \
+               tCode & "). Use the RPC backend for this."
+      end if
+      -- BY BYTE VALUE, not offset(): `the caseSensitive` is FALSE by
+      -- default on this engine and this is a set of punctuation, so a
+      -- case-folding search here would be answering a different question
+      -- than the one the shell asks.
+      if cwCharIndex(tC, tBad) > 0 then
+         throw "bitcoin-cli on this platform would be handed a character " & \
+               "this wallet will not try to quote its way around (" & tC & \
+               ") in " & quote & char 1 to 40 of pText & quote & \
+               ". Use the RPC backend, which has no command line."
+      end if
+   end repeat
+   if pStyle is "win" then
+      return quote & pText & quote
+   end if
+   return "'" & pText & "'"
+end waCliQuoteFor
+
+function waCliQuote pText
+   return waCliQuoteFor(pText, waCliStyle())
+end waCliQuote
+
+function waCliChainFlag pNetwork
+   -- Which chain bitcoin-cli should talk to. Mainnet has no flag, which is
+   -- also bitcoin-cli's default, so the empty answer is the right one and
+   -- not a missing case.
+   if pNetwork is "testnet" then
+      return "-testnet"
+   end if
+   if pNetwork is "testnet4" then
+      return "-testnet4"
+   end if
+   if pNetwork is "signet" then
+      return "-signet"
+   end if
+   if pNetwork is "regtest" then
+      return "-regtest"
+   end if
+   return ""
+end waCliChainFlag
+
+function waJsonSplitTop pArrayText
+   -- The TEXT of each element of a JSON array, split at the top level -
+   -- brace and bracket depth counted, and a bracket inside a string
+   -- ignored, which is the whole reason this is a scanner and not a
+   -- chunk expression. Nothing is re-serialised, so a structured argument
+   -- reaches bitcoin-cli as the same bytes the RPC would have sent.
+   local tI, tCount, tC, tDepth, tIn, tEsc, tPart, tOut, tStart, tSeen
+   put cwTrim(pArrayText) into pArrayText
+   if char 1 of pArrayText is not "[" or char -1 of pArrayText is not "]" then
+      throw "the parameters for a bitcoin-cli command must be a list."
+   end if
+   put waEmptyList() into tOut
+   put 0 into tDepth
+   put "false" into tIn
+   put "false" into tEsc
+   put "" into tPart
+   put "false" into tSeen
+   put the number of chars of pArrayText into tCount
+   repeat with tI = 2 to (tCount - 1)
+      put char tI of pArrayText into tC
+      put "true" into tSeen
+      if tIn is "true" then
+         put tC after tPart
+         if tEsc is "true" then
+            put "false" into tEsc
+         else if tC is "\\" then
+            put "true" into tEsc
+         else if tC is quote then
+            put "false" into tIn
+         end if
+         next repeat
+      end if
+      if tC is quote then
+         put "true" into tIn
+         put tC after tPart
+         next repeat
+      end if
+      if tC is "[" or tC is "{" then
+         add 1 to tDepth
+         put tC after tPart
+         next repeat
+      end if
+      if tC is "]" or tC is "}" then
+         subtract 1 from tDepth
+         put tC after tPart
+         next repeat
+      end if
+      if tC is "," and tDepth is 0 then
+         put cwListAdd(tOut, cwTrim(tPart)) into tOut
+         put "" into tPart
+         next repeat
+      end if
+      put tC after tPart
+   end repeat
+   if cwTrim(tPart) is not "" then
+      put cwListAdd(tOut, cwTrim(tPart)) into tOut
+   end if
+   return tOut
+end waJsonSplitTop
+
+function waCliArgsFrom pParams
+   -- THE SAME PARAMETERS THE RPC SENDS, as command-line arguments. Split
+   -- back out of the JSON array waCoreParams built rather than assembled
+   -- a second time, because two builders of one request drift and this
+   -- file has the scars to prove it. A JSON STRING loses its quotes (a
+   -- txid is a bare word on a command line); a number, a boolean, an
+   -- array and an object go as the text they already are, which is what
+   -- bitcoin-cli reads a structured argument as.
+   local tParts, tI, tCount, tPart, tOut
+   put waJsonSplitTop(pParams) into tParts
+   put "" into tOut
+   put cwListCount(tParts) into tCount
+   repeat with tI = 1 to tCount
+      put tParts[tI] into tPart
+      if tOut is not "" then
+         put " " after tOut
+      end if
+      if char 1 of tPart is quote then
+         put waCliQuote(cwJsonText(cwJsonParse(tPart))) after tOut
+      else
+         put waCliQuote(tPart) after tOut
+      end if
+   end repeat
+   return tOut
+end waCliArgsFrom
+
+function waCliCommand pRec
+   -- The whole command line for one request. NO host, port, cookie or data
+   -- directory: finding those is what bitcoin-cli is for here, and a
+   -- person whose bitcoin-cli already works has configured this wallet by
+   -- having done so.
+   local tMethod, tParams, tOut, tFlag, tName
+   put waCoreMethodFor(pRec) into tMethod
+   if not (("," & kWaCoreMethods & ",") contains ("," & tMethod & ",")) then
+      throw "this wallet does not ask a node for " & quote & tMethod & quote & \
+            "; the methods it will ask for are " & kWaCoreMethods & "."
+   end if
+   put kWaCliBinary into tOut
+   put waCliChainFlag(sWaNetwork) into tFlag
+   if tFlag is not "" then
+      put " " & tFlag after tOut
+   end if
+   put " -rpcclienttimeout=" & kWaCliTimeout after tOut
+   if waCoreIsWalletKind(pRec["kind"]) then
+      put waCoreWalletName() into tName
+      if tName is "" then
+         throw "this wallet has no account key yet, so there is no watch " & \
+               "wallet in the node to ask."
+      end if
+      put " -rpcwallet=" & waCliQuote(tName) after tOut
+   end if
+   put " " & tMethod after tOut
+   put waCliArgsFrom(waCoreParams(pRec)) into tParams
+   if tParams is not "" then
+      put " " & tParams after tOut
+   end if
+   return tOut
+end waCliCommand
+
+command waCliRun pRec
+   -- ONE COMMAND, RUN NOW. Synchronous by nature: shell() does not return
+   -- until the program does, so this is only ever reached from a button
+   -- (waCliDrain) and never from the poll tick. The console window is
+   -- suppressed on Windows, where every shell() otherwise flashes one.
+   local tCmd, tOut, tError, tOld
+   put waCliCommand(pRec) into tCmd
+   waLog "-> " & tCmd
+   uiStatus "Asking bitcoin-cli: " & waCoreMethodFor(pRec) & " ...", ""
+   put "" into tError
+   put "" into tOut
+   try
+      set the hideConsoleWindows to true
+      put shell(tCmd) into tOut
+   catch tError
+   end try
+   if tError is not "" then
+      waNetFail "bitcoin-cli could not be run (" & tError & "). Is it on " & \
+            "this machine's PATH? Everything it does, the RPC backend " & \
+            "does over a socket instead."
+      exit waCliRun
+   end if
+   waCliDeliver tOut
+end waCliRun
+
+command waCliDeliver pText
+   -- The program's output, applied the way a reply is. bitcoin-cli prints
+   -- the RESULT rather than a JSON-RPC envelope, so there is no id to
+   -- check - and none is needed, because the answer arrives from the call
+   -- that asked for it rather than down a connection carrying others.
+   local tRec, tKind, tError, tTrim, tLen
+   set the defaultStack to the short name of this stack
+   put sWaInFlight into tRec
+   if tRec is empty then
+      exit waCliDeliver
+   end if
+   put tRec["kind"] into tKind
+   put empty into sWaInFlight
+   put cwTrim(pText) into tTrim
+   put "" into tError
+   try
+      waCliApply tKind, tRec["arg"], tTrim
+   catch tError
+   end try
+   if tError is not "" then
+      waNetFail tKind & ": " & tError
+      exit waCliDeliver
+   end if
+   -- the length into a local first: `the number of chars of X & "..."` binds
+   -- the concatenation into the CHUNK TARGET (this file's own note, three
+   -- sites over)
+   put the number of chars of tTrim into tLen
+   waLog "<- " & tKind & " (" & tLen & " chars)"
+   waRefreshAll
+end waCliDeliver
+
+private command waCliApply pKind, pArg, pText
+   -- WHAT THE PROGRAM SAID, and whether it is an answer at all. bitcoin-cli
+   -- prints a refusal as "error code: -26" and the message on the lines
+   -- after it, and prints usage when it does not understand - neither of
+   -- which is JSON, and both of which would otherwise reach a parser that
+   -- would report something unhelpful about a brace.
+   local tNode, tHead
+   put cwLower(char 1 to 6 of pText) into tHead
+   if tHead is "error " or tHead is "error:" then
+      throw "bitcoin-cli said: " & char 1 to 240 of pText
+   end if
+   if pText is "" then
+      -- a command whose answer is nothing (Core prints an empty line for
+      -- some), which is not a failure and not something to parse
+      exit waCliApply
+   end if
+   put waCliResultNode(pKind, pText) into tNode
+   waCoreApply pKind, pArg, tNode
+end waCliApply
+
+private function waCliResultNode pKind, pText
+   -- bitcoin-cli unquotes a string result, so a txid or a raw transaction
+   -- arrives as a bare word where the RPC would have sent a JSON string.
+   -- Quoting it back is safe for exactly these two kinds, whose answers
+   -- are hex and nothing else - and waCheckedTxid still refuses one that
+   -- is not.
+   if pKind is "broadcast" or (pKind is "tx" and waCoreTier() is not "watch") then
+      return cwJsonParse(cwJsonString2(pText))
+   end if
+   return cwJsonParse(pText)
+end waCliResultNode
+
+command waCliDrain
+   -- THE QUEUE, RUN THROUGH TO THE END, from the button that filled it.
+   -- Bounded by the queue's own length rather than by `repeat forever`: a
+   -- request whose reply queues another (waFollowHistory does, on the
+   -- other backends) must not be able to make this loop unending.
+   local tGuard, tRec
+   if waIsCli(sWaBackend) is not true then
+      exit waCliDrain
+   end if
+   put 0 into tGuard
+   repeat while cwListCount(sWaQueue) > 0
+      add 1 to tGuard
+      if tGuard > 200 then
+         waNetFail "bitcoin-cli was asked two hundred things in one press, " & \
+               "which is more than this wallet ever means to ask."
+         exit repeat
+      end if
+      put sWaQueue[1] into tRec
+      put waQueueRest() into sWaQueue
+      put the milliseconds + kWaNetDeadline into tRec["deadline"]
+      put tRec into sWaInFlight
+      put "busy" into sWaNetState
+      waCliRun tRec
+   end repeat
+   if sWaNetState is "busy" then
+      put "ok" into sWaNetState
+   end if
+   waRefreshAll
+end waCliDrain
+
+private function waQueueRest
+   -- The queue without its first record.
+   local tOut, tI, tCount
+   put waEmptyList() into tOut
+   put cwListCount(sWaQueue) into tCount
+   repeat with tI = 2 to tCount
+      put cwListAdd(tOut, sWaQueue[tI]) into tOut
+   end repeat
+   return tOut
+end waQueueRest
+
+command waAfterQueue
+   -- Every path that queues requests ends here. On a connection backend
+   -- the pump is already armed and this does nothing; on bitcoin-cli the
+   -- queue is drained NOW, by the press that filled it, because shell()
+   -- blocks and a blocking call on the poll tick is a frozen window.
+   if waIsCli(sWaBackend) then
+      waCliDrain
+   end if
+end waAfterQueue
+
+-- ---- the regtest sandbox ------------------------------------------------------
+--
+-- A chain of your own, on this machine, in a directory this wallet makes
+-- beside the wallet file. It is the cheapest way there is to exercise
+-- everything the Send, Ordinals, Vault and History screens do without a
+-- faucet and without waiting ten minutes for a block. Every command here
+-- is refused unless the wallet is on regtest, BEFORE the shell is reached:
+-- a mining call against mainnet is not a thing to find out about afterwards.
+
+function waSandboxPath
+   local tPath, tI, tCut, tLen
+   put waDefaultPath() into tPath
+   put 0 into tCut
+   put the number of chars of tPath into tLen
+   repeat with tI = tLen down to 1
+      if char tI of tPath is "/" then
+         put tI - 1 into tCut
+         exit repeat
+      end if
+   end repeat
+   if tCut < 1 then
+      return kWaSandboxDir
+   end if
+   return char 1 to tCut of tPath & "/" & kWaSandboxDir
+end waSandboxPath
+
+private command waSandboxRefuseUnlessRegtest
+   if sWaNetwork is not "regtest" then
+      throw "the sandbox is a REGTEST node and this wallet is on " & \
+            sWaNetwork & ". Switch the network on the Wallet screen " & \
+            "first; nothing has been run."
+   end if
+end waSandboxRefuseUnlessRegtest
+
+function waSandboxStart
+   -- There is no node to ask over RPC until one is running, which is the
+   -- whole reason this one command is a program rather than a request.
+   local tDir, tCmd, tOut, tError
+   waSandboxRefuseUnlessRegtest
+   put waSandboxPath() into tDir
+   put "" into tError
+   try
+      create folder tDir
+   catch tError
+   end try
+   put kWaCliDaemon & " -regtest -daemon -datadir=" & waCliQuote(tDir) & \
+         " -fallbackfee=0.0001 -rpcport=" & kWaCorePortRegtest into tCmd
+   waLog "-> " & tCmd
+   put "" into tError
+   try
+      set the hideConsoleWindows to true
+      put shell(tCmd) into tOut
+   catch tError
+   end try
+   if tError is not "" then
+      throw "could not run " & kWaCliDaemon & " (" & tError & "). It has to " & \
+            "be on this machine's PATH."
+   end if
+   put tDir into sWaSandboxDir
+   waLog "sandbox: " & cwTrim(tOut)
+   -- and wait for it to answer, which -rpcwait does for us
+   put kWaCliBinary & " -regtest -datadir=" & waCliQuote(tDir) & \
+         " -rpcwait -rpcclienttimeout=" & kWaCliTimeout & " getblockchaininfo" into tCmd
+   waLog "-> " & tCmd
+   put "" into tError
+   try
+      put shell(tCmd) into tOut
+   catch tError
+   end try
+   if tError is not "" then
+      throw "the sandbox node did not answer (" & tError & ")."
+   end if
+   waLog "sandbox: the node answers; its directory is " & tDir
+   return cwTrim(tOut)
+end waSandboxStart
+
+function waSandboxCli pArgs
+   -- One bitcoin-cli command against the sandbox, built from the same
+   -- quoting as every other. Refused off regtest, before the shell.
+   local tCmd, tOut, tError, tDir
+   waSandboxRefuseUnlessRegtest
+   put sWaSandboxDir into tDir
+   if tDir is "" then
+      put waSandboxPath() into tDir
+   end if
+   put kWaCliBinary & " -regtest -datadir=" & waCliQuote(tDir) & \
+         " -rpcclienttimeout=" & kWaCliTimeout & " " & pArgs into tCmd
+   waLog "-> " & tCmd
+   put "" into tError
+   try
+      set the hideConsoleWindows to true
+      put shell(tCmd) into tOut
+   catch tError
+   end try
+   if tError is not "" then
+      throw "bitcoin-cli could not be run (" & tError & ")."
+   end if
+   put cwTrim(tOut) into tOut
+   waLog "sandbox: " & char 1 to 200 of tOut
+   if cwLower(char 1 to 6 of tOut) is "error " or cwLower(char 1 to 6 of tOut) is "error:" then
+      throw "the sandbox node said: " & char 1 to 240 of tOut
+   end if
+   return tOut
+end waSandboxCli
+
+function waSandboxMine pBlocks, pAddress
+   local tAddr, tOut
+   waSandboxRefuseUnlessRegtest
+   if pBlocks is not an integer or pBlocks < 1 or pBlocks > 200 then
+      throw "mine between 1 and 200 blocks at a time."
+   end if
+   put pAddress into tAddr
+   if tAddr is "" then
+      put waFirstAddress() into tAddr
+   end if
+   if tAddr is "" then
+      throw "this wallet has no address to mine to. Open a wallet first."
+   end if
+   put waSandboxCli("generatetoaddress " & pBlocks & " " & waCliQuote(tAddr)) into tOut
+   waLog "sandbox: mined " & pBlocks & " block(s) to " & tAddr & \
+         " (a coinbase needs 100 confirmations before it can be spent)"
+   return tOut
+end waSandboxMine
+
+function waSandboxReorg pDepth
+   -- THE DRILL: throw the tip away, mine a longer chain, and put the old
+   -- one back on the table. What it proves is that this wallet's
+   -- confirmations, coins and history follow a chain that moves - which no
+   -- offline fixture can settle and no public chain will do on request.
+   local tTip, tOut
+   waSandboxRefuseUnlessRegtest
+   if pDepth is not an integer or pDepth < 1 or pDepth > 10 then
+      throw "a reorg drill goes 1 to 10 blocks deep."
+   end if
+   put waSandboxCli("getbestblockhash") into tTip
+   waLog "sandbox: invalidating the tip " & tTip
+   get waSandboxCli("invalidateblock " & waCliQuote(tTip))
+   put waSandboxMine(pDepth + 1, "") into tOut
+   waLog "sandbox: mined " & (pDepth + 1) & " block(s) on the shorter " & \
+         "chain, so the invalidated one is now the shorter of the two"
+   get waSandboxCli("reconsiderblock " & waCliQuote(tTip))
+   return tOut
+end waSandboxReorg
+
+function waSandboxStop
+   local tOut
+   waSandboxRefuseUnlessRegtest
+   put waSandboxCli("stop") into tOut
+   put "" into sWaSandboxDir
+   waLog "sandbox: asked the node to stop. Its directory is NOT deleted; " & \
+         "this wallet never removes a chain you may want again."
+   return tOut
+end waSandboxStop
 
 function waCoreCredentials
    -- user:password for the Authorization header: what the person typed, or
@@ -22660,7 +23966,7 @@ function waCoreHttp pRec
    put the number of bytes of tBytes into tLen
    -- base64Encode wraps at 72 characters and a header is one line
    put cwStripWhitespace(base64Encode(waCoreCredentials())) into tAuth
-   return "POST / HTTP/1.1" & tCrlf & \
+   return "POST " & waCorePath(pRec) & " HTTP/1.1" & tCrlf & \
          "Host: " & sWaHost & ":" & sWaPort & tCrlf & \
          "Authorization: Basic " & tAuth & tCrlf & \
          "User-Agent: CoinXTWallet/" & kWaVersion & tCrlf & \
@@ -22691,6 +23997,28 @@ function waCoreLogLine pRec
    return "-> " & tMethod & " (id " & pRec["id"] & ")"
 end waCoreLogLine
 
+function waCoreTolerates pKind, pCode
+   -- -4 is "wallet already exists" from createwallet; -35 is "wallet
+   -- already loaded" from loadwallet. Narrow on purpose: the pair (kind,
+   -- code), never a code on its own, so a -4 from anything else is still a
+   -- failure.
+   if pKind is "createwallet" and pCode is "-4" then
+      return true
+   end if
+   if pKind is "loadwallet" and (pCode is "-35" or pCode is "-4") then
+      return true
+   end if
+   return false
+end waCoreTolerates
+
+private command waCoreTolerated pKind
+   -- The state a tolerated refusal still establishes: the wallet of that
+   -- name IS there in the node, which is what the next request needs.
+   if pKind is "createwallet" or pKind is "loadwallet" then
+      put waCoreWalletName() into sWaCoreWallet
+   end if
+end waCoreTolerated
+
 function waCoreErrorText pErr
    -- The node's error object as one sentence: Core's code mapped where a
    -- reader would otherwise have to look it up, the node's own words kept
@@ -22718,6 +24046,7 @@ end waCoreErrorText
 private command waCoreApply pKind, pArg, pNode
    -- One RESULT from the node, by kind.
    local tChain, tWant, tHeaders, tIbd, tPruned, tProgress, tText, tPct, tDot
+   local tTarget
    if pKind is "tip" then
       -- THE CHAIN, FIRST AND EVERY TIME. A mismatch empties the queue
       -- (the scan behind this must not run) and is remembered, so the
@@ -22731,7 +24060,7 @@ private command waCoreApply pKind, pArg, pNode
       if tChain is not tWant then
          put tChain into sWaCoreChain
          put waEmptyList() into sWaQueue
-         throw "the node at " & sWaHost & ":" & sWaPort & " is on chain " & \
+         throw "the node at " & waCoreWhere() & " is on chain " & \
                quote & tChain & quote & " and this wallet is on " & sWaNetwork & \
                " (chain " & quote & tWant & quote & "). Nothing more was " & \
                "asked of it. Switch the wallet's network on the Wallet " & \
@@ -22776,17 +24105,25 @@ private command waCoreApply pKind, pArg, pNode
       -- estimatesmartfee answers BTC per kilobyte, like Electrum, and with
       -- no estimate at all on a fresh node (an errors list instead); the
       -- Send screen then keeps whatever rate it had.
+      put waCoreFeeTarget(pArg) into tTarget
       put cwJsonGet(pNode, "feerate") into tText
       if tText is "" then
-         waLog "the node has no fee estimate yet (" & \
+         waLog "the node has no fee estimate for " & tTarget & " block(s) (" & \
                cwJsonCount(cwJsonPath(pNode, "errors")) & " reason(s) " & \
                "given); the Send screen keeps its rate"
          exit waCoreApply
       end if
       put waRateTo8Decimals(cwExpandExponent(tText)) into tText
       if tText is a number and tText > 0 then
-         waSetSuggestedRate "6", cwCeilDiv(cwBtcToSat(tText), 1000)
-         waSetSuggestedRate "1", sWaFeeRates["6"]
+         waSetSuggestedRate tTarget, cwCeilDiv(cwBtcToSat(tText), 1000)
+         -- SIX MIRRORS INTO ONE ONLY WHILE ONE IS UNKNOWN. Every other
+         -- backend answers one estimate and this wallet reads it as both;
+         -- a node answers as many targets as it is asked, so mirroring
+         -- unconditionally would overwrite a REAL one-block estimate with
+         -- the six-block one the sync happens to ask for last.
+         if tTarget is 6 and sWaFeeRates["1"] is "" then
+            waSetSuggestedRate "1", sWaFeeRates["6"]
+         end if
          put the milliseconds into sWaFeesAt
       end if
       exit waCoreApply
@@ -22801,7 +24138,67 @@ private command waCoreApply pKind, pArg, pNode
       exit waCoreApply
    end if
    if pKind is "tx" then
-      waStoreRawTx pArg, cwJsonText(pNode)
+      -- getrawtransaction answers the hex as a string; gettransaction
+      -- answers an object carrying it under "hex" (and the fee, which the
+      -- fee bump wants). Read both, because the tier decides which was
+      -- asked and a reader of this handler should not have to remember.
+      if cwJsonType(pNode) is "object" then
+         waStoreRawTx pArg, cwJsonGet(pNode, "hex")
+      else
+         waStoreRawTx pArg, cwJsonText(pNode)
+      end if
+      exit waCoreApply
+   end if
+   if pKind is "walletinfo" then
+      waCoreWalletInfo pNode
+      exit waCoreApply
+   end if
+   if pKind is "createwallet" then
+      put cwJsonGet(pNode, "name") into tText
+      if tText is "" then
+         put waCoreWalletName() into tText
+      end if
+      put tText into sWaCoreWallet
+      put 0 into sWaCoreImported
+      waLog "the node created the watch-only wallet " & tText & \
+            " (no private keys in it, and it is not loaded at startup)"
+      exit waCoreApply
+   end if
+   if pKind is "loadwallet" then
+      put waCoreWalletName() into sWaCoreWallet
+      waLog "the node loaded the watch-only wallet " & sWaCoreWallet
+      exit waCoreApply
+   end if
+   if pKind is "importdesc" then
+      waCoreImported pNode
+      exit waCoreApply
+   end if
+   if pKind is "listunspent" then
+      waMergeCoreUnspent pNode
+      exit waCoreApply
+   end if
+   if pKind is "listtx" then
+      waMergeCoreHistory pNode
+      exit waCoreApply
+   end if
+   if pKind is "mempool" then
+      put waCoreMempoolText(pArg, pNode) into sWaCoreMempool
+      waLog "mempool: " & line 1 of sWaCoreMempool
+      exit waCoreApply
+   end if
+   if pKind is "testaccept" then
+      put waCoreTestText(pNode) into sWaCoreMempool
+      waLog "testmempoolaccept: " & line 1 of sWaCoreMempool
+      exit waCoreApply
+   end if
+   if pKind is "netinfo" then
+      put "the node is " & cwJsonGet(pNode, "subversion") & ", protocol " & \
+            cwJsonGet(pNode, "protocolversion") & ", with " & \
+            cwJsonGet(pNode, "connections") & " peer(s) (" & \
+            cwJsonGet(pNode, "connections_in") & " in, " & \
+            cwJsonGet(pNode, "connections_out") & " out)" into tText
+      put tText into sWaCoreNodeText
+      waLog tText
       exit waCoreApply
    end if
    if pKind is "broadcast" then
@@ -22813,6 +24210,202 @@ private command waCoreApply pKind, pArg, pNode
    end if
    -- rpc: the raw answer is already in the Network screen's pane
 end waCoreApply
+
+private command waCoreWalletInfo pNode
+   -- getwalletinfo: whether the node is still rescanning for our
+   -- addresses, and which wallet answered. A rescan is not a failure and
+   -- not a wait: the coins the sync reads while one runs are what the node
+   -- has found SO FAR, so the screen says so rather than showing a number
+   -- that will grow and calling it a balance.
+   local tName, tScan, tProgress, tPct, tDot
+   put cwJsonGet(pNode, "walletname") into tName
+   if tName is not "" then
+      put tName into sWaCoreWallet
+   end if
+   put cwJsonPath(pNode, "scanning") into tScan
+   if cwJsonType(tScan) is "object" then
+      put cwJsonGet(tScan, "progress") into tProgress
+      -- a percentage by CHARACTERS: round() is an engine function the
+      -- family's interpreter does not model (the eleventh engine log)
+      put tProgress * 100 into tPct
+      put offset(".", tPct) into tDot
+      if tDot > 0 then
+         put char 1 to (tDot - 1) of tPct into tPct
+      end if
+      put tPct into sWaCoreScanPct
+      waLog "the node is still rescanning for this wallet's addresses (" & \
+            tPct & "%); what it has found so far is what you are looking at"
+   else
+      put empty into sWaCoreScanPct
+   end if
+end waCoreWalletInfo
+
+private command waCoreImported pNode
+   -- importdescriptors answers one object per descriptor, each with its
+   -- own success flag, warnings and error. A single failure is the whole
+   -- import's failure here, because a wallet watching SOME of its
+   -- addresses reports a balance missing the rest - a wrong number, not a
+   -- smaller one, which is this file's most repeated lesson.
+   local tI, tCount, tItem, tOk, tErr, tWhy
+   put cwJsonCount(pNode) into tCount
+   put 0 into tOk
+   put "" into tWhy
+   repeat with tI = 1 to tCount
+      put cwJsonAt(pNode, tI) into tItem
+      if cwJsonGet(tItem, "success") is "true" then
+         add 1 to tOk
+      else
+         put cwJsonPath(tItem, "error") into tErr
+         if tWhy is "" then
+            put waCoreErrorText(tErr) into tWhy
+         end if
+      end if
+   end repeat
+   if tWhy is not "" then
+      put 0 into sWaCoreImported
+      throw "the node refused " & (tCount - tOk) & " of " & tCount & \
+            " address imports, so its watch wallet is NOT watching this " & \
+            "wallet and nothing it says about coins would be complete: " & tWhy
+   end if
+   put tOk into sWaCoreImported
+   put waCoreWalletName() into sWaCoreWallet
+   waLog "the node's watch wallet now watches " & tOk & " address(es) of " & \
+         "this wallet, from " & waCoreBirthWord() & \
+         ". A rescan may take a while; the Node screen says when it ends."
+end waCoreImported
+
+function waCoreBirthWord
+   if sWaCoreBirth is an integer and sWaCoreBirth > 0 then
+      return "unix time " & sWaCoreBirth
+   end if
+   return "the genesis block (no birth date is set, so the node reads the " & \
+         "whole chain)"
+end waCoreBirthWord
+
+private function waCoreMempoolText pTxid, pNode
+   local tOut, tBase, tAnc, tDesc
+   put "in this node's mempool: " & pTxid & return into tOut
+   put cwJsonGet(pNode, "vsize") into tBase
+   put "  vsize        " & tBase & " vB" & return after tOut
+   put "  fee          " & cwJsonGet(pNode, "fees/base") & " BTC" & return after tOut
+   put cwJsonGet(pNode, "ancestorcount") into tAnc
+   put cwJsonGet(pNode, "descendantcount") into tDesc
+   put "  ancestors    " & tAnc & " (" & cwJsonGet(pNode, "fees/ancestor") & \
+         " BTC over " & cwJsonGet(pNode, "ancestorsize") & " vB)" & return after tOut
+   put "  descendants  " & tDesc & " (" & cwJsonGet(pNode, "fees/descendant") & \
+         " BTC over " & cwJsonGet(pNode, "descendantsize") & " vB)" & return after tOut
+   put "  in mempool   since unix time " & cwJsonGet(pNode, "time") & return after tOut
+   put "  bip125 rbf   " & cwJsonGet(pNode, "bip125-replaceable") after tOut
+   return tOut
+end waCoreMempoolText
+
+private function waCoreTestText pNode
+   -- testmempoolaccept answers one object per transaction. This wallet
+   -- sends one, and reads the answer as the node's own verdict on whether
+   -- the transaction WOULD be accepted - which is the cheapest way there
+   -- is to find out that a replacement pays too little, before it is sent.
+   local tItem, tOut, tAllowed
+   put cwJsonAt(pNode, 1) into tItem
+   put cwJsonGet(tItem, "allowed") into tAllowed
+   if tAllowed is "true" then
+      put "the node WOULD accept " & cwJsonGet(tItem, "txid") & return into tOut
+      put "  vsize        " & cwJsonGet(tItem, "vsize") & " vB" & return after tOut
+      put "  fee          " & cwJsonGet(tItem, "fees/base") & " BTC" & return after tOut
+      put "  nothing has been sent: press Broadcast on the Send screen." after tOut
+      return tOut
+   end if
+   put "the node would REFUSE " & cwJsonGet(tItem, "txid") & return into tOut
+   put "  because      " & cwJsonGet(tItem, "reject-reason") & return after tOut
+   put "  nothing has been sent." after tOut
+   return tOut
+end waCoreTestText
+
+command waMergeCoreUnspent pNode
+   -- listunspent, which answers for the WHOLE watch wallet in one reply -
+   -- so this replaces every coin, the way waMergeScan does, rather than
+   -- one address's the way waMergeUtxos does. Unlike a scan it DOES see
+   -- the mempool, so the node's word outranks this wallet's memory in both
+   -- directions: a coin the node still lists after we broadcast a spend of
+   -- it loses its mark (the spend never reached the node), and a coin the
+   -- node lists at 0 confirmations is a real unconfirmed coin.
+   local tList, tI, tCount, tItem, tRec, tAddr, tKey, tTotal
+   put waEmptyList() into tList
+   put 0 into tTotal
+   put cwJsonCount(pNode) into tCount
+   repeat with tI = 1 to tCount
+      put cwJsonAt(pNode, tI) into tItem
+      put cwJsonGet(tItem, "address") into tAddr
+      if tAddr is "" or waIsMine(tAddr) is not true then
+         next repeat
+      end if
+      put "" into tRec
+      put tAddr into tRec["address"]
+      put cwJsonGet(tItem, "txid") into tRec["txid"]
+      put cwJsonGet(tItem, "vout") + 0 into tRec["vout"]
+      put cwBtcToSat(cwJsonGet(tItem, "amount")) into tRec["value"]
+      put cwJsonGet(tItem, "confirmations") + 0 into tRec["confirmations"]
+      if tRec["confirmations"] > 0 and sWaTipHeight is not "" then
+         put sWaTipHeight - tRec["confirmations"] + 1 into tRec["height"]
+      else
+         put "" into tRec["height"]
+      end if
+      put tRec["txid"] & ":" & tRec["vout"] into tKey
+      if sWaSpentBy[tKey] is not "" then
+         waLog "the node still lists " & tKey & " as unspent, which " & \
+               sWaSpentBy[tKey] & " spent when it was broadcast; offering it again"
+         put "" into sWaSpentBy[tKey]
+      end if
+      add tRec["value"] to tTotal
+      put cwListAdd(tList, tRec) into tList
+   end repeat
+   put tList into sWaUtxos
+   waLog "the node's watch wallet lists " & cwListCount(tList) & \
+         " unspent output(s), " & waAmount(tTotal) & \
+         " (its mempool included)"
+   waRecomputeBalance
+end waMergeCoreUnspent
+
+command waMergeCoreHistory pNode
+   -- listtransactions, also whole-wallet, so it replaces the history the
+   -- same way. Core answers one entry per (transaction, category,
+   -- address), which is the shape this wallet's rows already have; a
+   -- transaction that pays two of our addresses is two rows, and the
+   -- History screen de-duplicates by txid when it paints.
+   local tList, tI, tCount, tItem, tRec, tAddr, tFee, tHeight, tSeen, tPaged
+   put waEmptyList() into tList
+   put cwJsonCount(pNode) into tCount
+   repeat with tI = 1 to tCount
+      put cwJsonAt(pNode, tI) into tItem
+      put cwJsonGet(tItem, "address") into tAddr
+      put "" into tRec
+      put tAddr into tRec["address"]
+      put cwJsonGet(tItem, "txid") into tRec["txid"]
+      put cwJsonGet(tItem, "confirmations") + 0 into tRec["confirmations"]
+      put cwJsonGet(tItem, "blockheight") into tHeight
+      if tHeight is an integer then
+         put tHeight into tRec["height"]
+      else if tRec["confirmations"] > 0 and sWaTipHeight is not "" then
+         put sWaTipHeight - tRec["confirmations"] + 1 into tRec["height"]
+      else
+         put "" into tRec["height"]
+      end if
+      -- CORE WRITES A FEE AS A NEGATIVE BTC AMOUNT on the sending side and
+      -- writes none on the receiving side. The fee bump wants satoshi and
+      -- a positive number, which is what this wallet's own records hold.
+      put cwJsonGet(tItem, "fee") into tFee
+      if tFee is a number and tFee < 0 then
+         put cwBtcToSat(cwExpandExponent(-tFee)) into tRec["fee"]
+      end if
+      put cwListAdd(tList, tRec) into tList
+   end repeat
+   put tList into sWaHistory
+   put ""  into tPaged
+   if tCount >= kWaCoreTxPage then
+      put " (a full page: this wallet asks for " & kWaCoreTxPage & \
+            " and there may be older ones it has not been shown)" into tPaged
+   end if
+   waLog "the node's watch wallet lists " & tCount & " transaction row(s)" & tPaged
+end waMergeCoreHistory
 
 command waMergeScan pNode
    -- EVERY COIN THE NODE'S UTXO SET HOLDS FOR THIS WALLET, in one answer,
@@ -23114,10 +24707,39 @@ private command waStreamSend
    -- (waNetStart), so the two cannot drift.
    if waIsElectrum(sWaBackend) then
       waStreamSendElectrum
+   else if waIsCore(sWaBackend) then
+      waStreamSendCore
    else
       waStreamSendHttp
    end if
 end waStreamSend
+
+private command waStreamSendCore
+   -- A NODE OF YOUR OWN, REACHED THROUGH TOR. The bytes are exactly the
+   -- ones the socket transport writes (waCoreHttp), because the request is
+   -- the same HTTP POST and only the pipe differs; the reply is framed by
+   -- waHttpFeed, which already reads Content-Length, and Core never
+   -- chunks. Everything below the transport - the id check, the tolerated
+   -- refusals, the tier - is the one path both share.
+   local tReq, tError
+   if sWaStream is empty or sWaInFlight is empty then
+      exit waStreamSendCore
+   end if
+   put "" into tError
+   try
+      put waCoreHttp(sWaInFlight) into tReq
+   catch tError
+   end try
+   if tError is not "" then
+      waNetFail tError
+      exit waStreamSendCore
+   end if
+   waLog waCoreLogLine(sWaInFlight)
+   oxWrite sWaStream, textEncode(tReq, "UTF-8")
+   if the result is not empty then
+      waNetFail "writing to the Tor stream: " & the result
+   end if
+end waStreamSendCore
 
 private command waStreamSendHttp
    -- HTTP/1.1, KEPT ALIVE (2026-09-03). This was HTTP/1.0 with Connection:
@@ -23223,7 +24845,7 @@ command waHttpFeed
    --            (waStreamClosed), the way every reply did until 2026-09-03,
    --            and such a stream is not kept
    --   done     delivered; the stream is kept unless the reply said close
-   local tCrlf, tPos, tTotal, tSkip, tLine, tTake, tLen, tEnc, tConn, tBody
+   local tCrlf, tPos, tTotal, tSkip, tLine, tTake, tLen, tEnc, tConn, tBody, tWhy
    put numToChar(13) & numToChar(10) into tCrlf
    repeat forever
       put the number of bytes of sWaBuffer into tTotal
@@ -23322,7 +24944,14 @@ command waHttpFeed
          if sWaHttpBad is not "" then
             put sWaHttpBody into tBody
             put empty into sWaHttpBody
-            waNetFail waHttpBadWhy(tBody)
+            put waHttpRefusalWhy(tBody) into tWhy
+            if tWhy is "" then
+               -- a node's JSON-RPC error object: delivered, so the one
+               -- refusal path every backend shares runs on it
+               waNetDeliver tBody
+            else
+               waNetFail tWhy
+            end if
             exit repeat
          end if
          waNetDeliver sWaHttpBody
@@ -23367,7 +24996,7 @@ private command waStreamIdleGone pWhat
 end waStreamIdleGone
 
 private command waStreamClosed
-   local tBody, tSeen
+   local tBody, tSeen, tWhy
    if sWaInFlight is empty then
       waStreamIdleGone "was closed by the server"
       exit waStreamClosed
@@ -23394,7 +25023,12 @@ private command waStreamClosed
       put empty into sWaStream
       put empty into sWaStreamTo
       if sWaHttpBad is not "" then
-         waNetFail waHttpBadWhy(tBody)
+         put waHttpRefusalWhy(tBody) into tWhy
+         if tWhy is "" then
+            waNetDeliver tBody
+         else
+            waNetFail tWhy
+         end if
          exit waStreamClosed
       end if
       waNetDeliver tBody
@@ -23435,6 +25069,18 @@ private command waHttpCheckStatus pStatus
       put "" into tCode
    end if
 end waHttpCheckStatus
+
+private function waHttpRefusalWhy pBody
+   -- A held non-2xx status, turned into a sentence - or into EMPTY, which
+   -- means "this is not the transport's to explain: deliver it". Only a
+   -- node produces that case (a JSON-RPC error object under HTTP 500), and
+   -- both transports that carry one reach it through here so the two
+   -- cannot disagree about the same reply.
+   if waIsCore(sWaBackend) then
+      return waCoreRefusal(pBody)
+   end if
+   return waHttpBadWhy(pBody)
+end waHttpRefusalWhy
 
 private function waHttpBadWhy pBody
    -- The refusal a held status line becomes once its body is in.
@@ -23936,6 +25582,18 @@ private command waNetApply pKind, pArg, pBody, pId
       end if
       put cwJsonPath(tNode, "error") into tResult
       if cwJsonType(tResult) is not "missing" and cwJsonType(tResult) is not "null" then
+         -- SOME REFUSALS ARE THE ANSWER YES. Setting the watch tier up is
+         -- create-then-load-then-import, and a node that already has the
+         -- wallet refuses the first two by name: treating that as a failed
+         -- request would tear the socket down and count a failure for a
+         -- node doing exactly what was wanted. Everything else is refused
+         -- with the node's own words.
+         if waCoreTolerates(pKind, cwJsonGet(tResult, "code")) is true then
+            waLog pKind & ": the node says " & \
+                  cwJsonGet(tResult, "message") & ", which is not a problem"
+            waCoreTolerated pKind
+            exit waNetApply
+         end if
          throw "the node refused: " & waCoreErrorText(tResult)
       end if
       waCoreApply pKind, pArg, cwJsonPath(tNode, "result")
@@ -24225,6 +25883,7 @@ command waBroadcast
    waNoteBroadcast sWaLastRaw, ""
    waEnsurePolling
    uiStatus "Queued the broadcast to " & sWaHost & ".", ""
+   waAfterQueue
 end waBroadcast
 
 -- ---- the engine's socket messages --------------------------------------------
@@ -25124,6 +26783,12 @@ function waSerializeWallet
    end if
    put "unit" & tTab & sWaUnit & return after tOut
    put "m" & tTab & sWaM & return after tOut
+   if sWaCoreBirth is an integer and sWaCoreBirth > 0 then
+      -- WHEN THIS WALLET WAS FIRST USED, for a node's rescan and nothing
+      -- else. It is not a secret and not a key; what it saves is the hours
+      -- a node spends reading a chain from its genesis block.
+      put "birth" & tTab & sWaCoreBirth & return after tOut
+   end if
    -- ONLY THE KIND THAT OWNS A SECRET WRITES IT. Belt to waDropSeed's
    -- braces: even if some future path leaves a stale mnemonic behind, a
    -- watch-only file cannot carry one, because a watch-only wallet has no
@@ -25252,6 +26917,10 @@ command waDeserializeWallet pText
          put tValue into sWaUnit
       else if tName is "m" then
          put tValue + 0 into sWaM
+      else if tName is "birth" then
+         if tValue is an integer and tValue > 0 then
+            put tValue + 0 into sWaCoreBirth
+         end if
       else if tName is "mnemonic" then
          put tValue into sWaMnemonic
       else if tName is "passphrase" then
@@ -25480,7 +27149,7 @@ end scFinish
 -- clipboard. What they check is that this stack's own arithmetic agrees with
 -- the library it carries, on this engine, before anybody types anything.
 
-constant kWaScControls = "ad_change,ad_detail,ad_label,ad_labelCap,ad_more,ad_panel,ad_receive,ad_scan,ad_sec1,ad_setLabel,ad_table,cn_addManual,cn_detail,cn_freeze,cn_hint,cn_panel,cn_sec1,cn_table,cn_tick,cn_tickAll,cn_tickNone,hs_bump,hs_copyTxid,hs_detail,hs_inspect,hs_panel,hs_refresh,hs_sec1,hs_table,lg_boot,lg_clear,lg_copy,lg_hint,lg_panel,lg_sec1,lg_sec2,lg_text,nv_ad,nv_bal,nv_chain,nv_cn,nv_confirmed,nv_frozenamt,nv_hs,nv_lg,nv_net,nv_nw,nv_od,nv_panel,nv_pending,nv_rc,nv_refresh,nv_sd,nv_st,nv_tip,nv_tl,nv_vt,nv_wallet,nv_wl,nw_auth,nw_authCap,nw_bCore,nw_bElectrumClear,nw_bElectrumTor,nw_bEsploraClear,nw_bEsploraTor,nw_bOffline,nw_cookie,nw_cookieCap,nw_host,nw_hostCap,nw_out,nw_panelA,nw_panelB,nw_port,nw_portCap,nw_privacy,nw_remoteOk,nw_sec1,nw_sec2,nw_sec3,nw_socks,nw_socksCap,nw_state,nw_stop,nw_syncNow,nw_test,nw_why,od_body,od_bodyCap,od_copyAddr,od_copyOut,od_details,od_hex,od_hexCap,od_hint,od_inspect,od_intro,od_out,od_panelA,od_panelB,od_prepare,od_read,od_reveal,od_runes,od_sec1,od_sec2,od_sec3,od_sec4,od_size,od_table,od_type,od_typeCap,od_typeJson,od_typeSvg,od_typeText,rc_address,rc_amount,rc_amountCap,rc_copy,rc_copyUri,rc_detail,rc_label,rc_labelCap,rc_message,rc_messageCap,rc_next,rc_panelA,rc_panelB,rc_qr,rc_qrframe,rc_qrhint,rc_sec1,rc_sec2,rc_sec3,rc_showQr,rc_uri,rc_verify,sd_addNote,sd_addSelf,sd_broadcast,sd_clear,sd_copyRaw,sd_locktime,sd_locktimeCap,sd_out,sd_panelA,sd_panelB,sd_paste,sd_preview,sd_rate,sd_rateCap,sd_ratehint,sd_rbf,sd_sec1,sd_sec2,sd_sec3,sd_sec4,sd_sign,sd_stratBnb,sd_stratLargest,sd_stratManual,sd_stratOldest,sd_stratSmallest,sd_strategyCap,sd_to,sd_toCap,sd_toPsbt,sd_warn,st_about,st_browse,st_exportLabels,st_filenote,st_forget,st_forgetnote,st_gap,st_gapCap,st_importLabels,st_load,st_panelA,st_panelB,st_password,st_passwordCap,st_path,st_pathCap,st_save,st_sec1,st_sec2,st_sec3,st_unitBtc,st_unitMbtc,st_unitSat,st_update,tl_copyOut,tl_decode,tl_derive,tl_entropy,tl_export,tl_hex,tl_hexCap,tl_hold,tl_inspect,tl_msg,tl_msg322,tl_msgAddr,tl_msgAddrCap,tl_msgCap,tl_msgSig,tl_msgSigCap,tl_msgSign,tl_msgVerify,tl_newKey,tl_note,tl_out,tl_panelA,tl_panelB,tl_pass,tl_passCap,tl_psbtCombine,tl_psbtFinal,tl_psbtSign,tl_sec1,tl_sec2,tl_sec3,tl_sweep,tl_toEntropy,tl_validate,uiFooter,uiStatus,uiTitle,vt_copyAddr,vt_copyOut,vt_day,vt_details,vt_height,vt_heightCap,vt_hint,vt_intro,vt_month,vt_out,vt_panelA,vt_panelB,vt_prepare,vt_sec1,vt_sec2,vt_sec3,vt_send,vt_table,vt_week,vt_when,vt_year,wl_account,wl_accountCap,wl_addCosigner,wl_backup,wl_copyDesc,wl_copyXpub,wl_custody,wl_generate,wl_kindKey,wl_kindMulti,wl_kindRestore,wl_kindSeed,wl_kindWatch,wl_label,wl_labelCap,wl_m,wl_mCap,wl_mnemonic,wl_mnemonicCap,wl_netMain,wl_netReg,wl_netSignet,wl_netTest,wl_netTest4,wl_open,wl_out,wl_panelA,wl_panelB,wl_pass,wl_passCap,wl_path,wl_pathCap,wl_sec1,wl_sec2,wl_sec3,wl_sec4,wl_typeLegacy,wl_typeMulti,wl_typeNative,wl_typeNested,wl_typeTaproot,wl_warn,wl_xkey,wl_xkeyCap"
+constant kWaScControls = "ad_change,ad_detail,ad_label,ad_labelCap,ad_more,ad_panel,ad_receive,ad_scan,ad_sec1,ad_setLabel,ad_table,cn_addManual,cn_detail,cn_freeze,cn_hint,cn_panel,cn_sec1,cn_table,cn_tick,cn_tickAll,cn_tickNone,hs_bump,hs_copyTxid,hs_detail,hs_inspect,hs_panel,hs_refresh,hs_sec1,hs_table,lg_boot,lg_clear,lg_copy,lg_hint,lg_panel,lg_sec1,lg_sec2,lg_text,nd_ask,nd_birth,nd_birthCap,nd_copy,nd_create,nd_fees,nd_lookup,nd_mempool,nd_mempoolNote,nd_netinfo,nd_note,nd_panelA,nd_panelB,nd_reimport,nd_sandboxNote,nd_sbMine,nd_sbReorg,nd_sbStart,nd_sbStop,nd_sec1,nd_sec2,nd_sec3,nd_sec4,nd_sec5,nd_sec6,nd_status,nd_testAccept,nd_tierNote,nd_tierScan,nd_tierWatch,nd_useFast,nd_useNormal,nd_useSlow,nd_watchNote,nd_watchState,nv_ad,nv_bal,nv_chain,nv_cn,nv_confirmed,nv_frozenamt,nv_hs,nv_lg,nv_nd,nv_net,nv_nw,nv_od,nv_panel,nv_pending,nv_rc,nv_refresh,nv_sd,nv_st,nv_tip,nv_tl,nv_vt,nv_wallet,nv_wl,nw_auth,nw_authCap,nw_bCore,nw_bCoreCli,nw_bCoreTor,nw_bElectrumClear,nw_bElectrumTor,nw_bEsploraClear,nw_bEsploraTor,nw_bOffline,nw_cookie,nw_cookieCap,nw_host,nw_hostCap,nw_out,nw_panelA,nw_panelB,nw_port,nw_portCap,nw_privacy,nw_remoteOk,nw_sec1,nw_sec2,nw_sec3,nw_socks,nw_socksCap,nw_state,nw_stop,nw_syncNow,nw_test,nw_why,od_body,od_bodyCap,od_copyAddr,od_copyOut,od_details,od_hex,od_hexCap,od_hint,od_inspect,od_intro,od_out,od_panelA,od_panelB,od_prepare,od_read,od_reveal,od_runes,od_sec1,od_sec2,od_sec3,od_sec4,od_size,od_table,od_type,od_typeCap,od_typeJson,od_typeSvg,od_typeText,rc_address,rc_amount,rc_amountCap,rc_copy,rc_copyUri,rc_detail,rc_label,rc_labelCap,rc_message,rc_messageCap,rc_next,rc_panelA,rc_panelB,rc_qr,rc_qrframe,rc_qrhint,rc_sec1,rc_sec2,rc_sec3,rc_showQr,rc_uri,rc_verify,sd_addNote,sd_addSelf,sd_broadcast,sd_clear,sd_copyRaw,sd_locktime,sd_locktimeCap,sd_out,sd_panelA,sd_panelB,sd_paste,sd_preview,sd_rate,sd_rateCap,sd_ratehint,sd_rbf,sd_sec1,sd_sec2,sd_sec3,sd_sec4,sd_sign,sd_stratBnb,sd_stratLargest,sd_stratManual,sd_stratOldest,sd_stratSmallest,sd_strategyCap,sd_to,sd_toCap,sd_toPsbt,sd_warn,st_about,st_browse,st_exportLabels,st_filenote,st_forget,st_forgetnote,st_gap,st_gapCap,st_importLabels,st_load,st_panelA,st_panelB,st_password,st_passwordCap,st_path,st_pathCap,st_save,st_sec1,st_sec2,st_sec3,st_unitBtc,st_unitMbtc,st_unitSat,st_update,tl_copyOut,tl_decode,tl_derive,tl_entropy,tl_export,tl_hex,tl_hexCap,tl_hold,tl_inspect,tl_msg,tl_msg322,tl_msgAddr,tl_msgAddrCap,tl_msgCap,tl_msgSig,tl_msgSigCap,tl_msgSign,tl_msgVerify,tl_newKey,tl_note,tl_out,tl_panelA,tl_panelB,tl_pass,tl_passCap,tl_psbtCombine,tl_psbtFinal,tl_psbtSign,tl_sec1,tl_sec2,tl_sec3,tl_sweep,tl_toEntropy,tl_validate,uiFooter,uiStatus,uiTitle,vt_copyAddr,vt_copyOut,vt_day,vt_details,vt_height,vt_heightCap,vt_hint,vt_intro,vt_month,vt_out,vt_panelA,vt_panelB,vt_prepare,vt_sec1,vt_sec2,vt_sec3,vt_send,vt_table,vt_week,vt_when,vt_year,wl_account,wl_accountCap,wl_addCosigner,wl_backup,wl_copyDesc,wl_copyXpub,wl_custody,wl_generate,wl_kindKey,wl_kindMulti,wl_kindRestore,wl_kindSeed,wl_kindWatch,wl_label,wl_labelCap,wl_m,wl_mCap,wl_mnemonic,wl_mnemonicCap,wl_netMain,wl_netReg,wl_netSignet,wl_netTest,wl_netTest4,wl_open,wl_out,wl_panelA,wl_panelB,wl_pass,wl_passCap,wl_path,wl_pathCap,wl_sec1,wl_sec2,wl_sec3,wl_sec4,wl_typeLegacy,wl_typeMulti,wl_typeNative,wl_typeNested,wl_typeTaproot,wl_warn,wl_xkey,wl_xkeyCap"
 
 command waScFresh
    -- THIS RUN'S RECORD, NOT EVERY RUN'S. The field is saved with the stack,

@@ -1093,7 +1093,12 @@ class Checker:
                 print("  ok   %s" % label)
         else:
             self.failed += 1
-            print("  FAIL %s%s" % (label, ("\n       " + detail) if detail
+            # str(): a detail is whatever the caller had to hand, and a
+            # tuple or a list here used to raise INSIDE the report of a
+            # failing check - so the one thing that had gone wrong was
+            # replaced by a traceback about printing it. Found by coinxt's
+            # Core block, 2026-09-04.
+            print("  FAIL %s%s" % (label, ("\n       " + str(detail)) if detail
                                    else ""))
 
 

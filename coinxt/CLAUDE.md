@@ -3246,3 +3246,96 @@ dial, the write asserted byte for byte with the auth header base64 of a
 cookie file written in the sandbox, the two armed reads, the head and body
 delivered as the engine would, the socket kept. Nothing here has met a node;
 the labels say so in three places.
+
+### 2026-09-04, the rest of Bitcoin Core: three ways in, a watch wallet, a screen and a sandbox
+
+The entry above landed the plan's phase 1 and the scan tier. This is phases 2
+to 4 in one pass, built while an engine was unavailable, so every word of it
+is headless: `core-tor` and `core-cli` beside `core-rpc`, the watch tier (a
+descriptor wallet inside the node), a thirteenth screen, and a regtest
+sandbox. Six decisions are worth the record and two of them are lessons this
+member had already written down and I made anyway.
+
+**ONE PARAMETER BUILDER, TWO CHANNELS.** `waCoreParams` answers the JSON
+array for a request and nothing else; the RPC wraps it in an envelope and
+`waCliArgsFrom` splits it back into command-line arguments. The alternative -
+a second builder for the command line - is the shape this file has scars
+from, and the split is a scanner (`waJsonSplitTop`) rather than a chunk
+expression because a bracket inside a string is not a bracket. Nothing is
+re-serialised, so a structured argument reaches `bitcoin-cli` as the same
+bytes the socket would have sent.
+
+**THE SHELL IS QUOTED BY ITS OWN RULE, AND REFUSED WHERE IT HAS NONE.** Inside
+POSIX single quotes every byte is literal but a single quote, so a JSON
+payload full of double quotes and parentheses - which is exactly what
+`scantxoutset` and `importdescriptors` take - passes through untouched, and
+one refusal covers the whole shell. Windows has no such rule, so a structured
+argument there is REFUSED with the RPC channel named as the remedy. The first
+version of the quoter refused parentheses and double quotes on every
+platform, which would have made the two requests that matter impossible on
+the channel built to carry them. The quoting takes the style as a PARAMETER
+(`waCliQuoteFor`) so both can be driven offline: a rule that can only be
+exercised on the machine it is written for is a rule nothing checks, and the
+model answers `the platform` as Win32.
+
+**shell() BLOCKS, SO THE POLL TICK NEVER RUNS ONE.** `waNetPump` exits
+immediately for the cli backend and `waCliDrain` runs the queue from the
+press that filled it. This is the frozen-window shape this file has already
+met twice by other doors (`lock screen` with an unguarded body; `cwTxDecode`
+looping on a count the input supplied), and it would have arrived a third
+time as a wallet that hangs whenever a node is slow, with nothing on screen
+to say why.
+
+**A NODE IS ASKED WHAT CHAIN IT IS ON, and the answer outranks the port
+table.** Core's default ports are only a guess about what a person runs
+where. The sync puts `getblockchaininfo` ahead of everything whenever the
+node's chain is not known, a mismatch empties the queue and is remembered,
+and `waBackendChainWhy` keeps refusing until the network or the host moves.
+The chain is deliberately NOT forgotten on a network change: what the node
+said is what the guard compares.
+
+**THE WATCH TIER IMPORTS addr() PER ADDRESS, not the account's ranged
+descriptors** - every wallet kind has addresses and only some have a
+descriptor Core can range, and a leaf (an inscription commit, a timelock) is
+an address and not a range at all. The cost is a re-import when the window
+grows, which `waSync` queues by comparing counts rather than trusting anyone
+to remember. And the birth date is never guessed: an earlier one is safe and
+slow, a later one silently loses history, so an empty box means the genesis
+block and a seed generated here records its own birth.
+
+**A SCAN IS NOT EVIDENCE ABOUT THE MEMPOOL, IN EITHER DIRECTION.**
+`waMergeUtxos` drops a mark from a coin the backend still lists, because the
+backends that see the mempool are believed over this wallet's memory.
+`waMergeScan` must NOT: a scan reads the chain, so a coin it lists may be
+spent by a transaction in a mempool it cannot see, and dropping the mark
+would offer that coin twice. The wallet's own unconfirmed coins survive a
+scan for the same reason, or the balance would fall on every sync until a
+confirmation. `waMergeCoreUnspent`, on the watch tier, goes back to the
+`waMergeUtxos` rule, because that answer DOES include the mempool.
+
+**AND THE GATE CAUGHT THE ONE REAL DEFECT IN ALL OF IT, which was mine and
+was already in this file twice.** `waNodeApplyBirth` was written
+`if tText is not an integer or tText < 1`, and LiveCodeScript evaluates BOTH
+operands of `or` - the exact mistake recorded here for `waSetSuggestedRate`
+and `waCheckedHeight` on 2026-09-01, in the same words, by the same author.
+The boot gate died on "last tuesday" rather than reporting it, which is the
+interpreter refusing what the engine would have answered as text. Nested now.
+Two more of the same class went the same way in one sitting: the sandbox
+helpers were declared `command` and called as functions (the checker caught
+that), and `waCliDeliver` concatenated `the number of chars of` into a log
+line, which binds into the chunk target - three sites over in the same file
+carry the note explaining it.
+
+**One thing the gate itself taught.** Four checks in the first Core block
+were about the wrong request, because a pump that had to DIAL writes nothing
+until the engine's `waSockOpened` callback arrives and the model only sends
+one when the test remembers to. They were green while asserting on the
+previous request's bytes. The fix is a `core_pump()` helper that delivers the
+callback whenever the last thing the model recorded was an open - and the
+general form is the one this member keeps meeting: a check that passes
+because it is looking at the wrong thing is worse than one that fails.
+Beside it, the shared `Checker.ck` in riptide's runner crashed while PRINTING
+a failure whose detail was a tuple, so the one thing that had gone wrong was
+replaced by a traceback about printing it; it coerces now.
+
+Not run against a node, a program, or an engine.

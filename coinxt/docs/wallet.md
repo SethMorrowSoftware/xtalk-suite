@@ -516,13 +516,75 @@ the wallet path. The log line for a request is the method and its size, never
 the headers, and the wallet file never carries the credentials; Update from
 main carries them across the swap with the other Network settings.
 
+**Three ways to reach the same node.** `Bitcoin Core (RPC)` is the socket
+above. `Core over Tor` sends the identical POST down a Tor stream to a node
+you have published as a hidden service, which is the honest way to use a
+node at home from somewhere else; there is no default onion, because there
+is no such thing as a public Bitcoin Core one, and the credentials tick is
+not asked for there because the circuit is the encryption. `Core via
+bitcoin-cli` runs the program instead of opening a connection: if
+`bitcoin-cli getblockchaininfo` works in your terminal it works here, with
+no host, port, cookie or password to type. That last one blocks the window
+while the program runs, so its requests go when you press a button and
+never on the poll timer, and an argument this wallet cannot quote safely
+for your shell is refused rather than escaped. On POSIX a single-quoted
+argument carries a JSON payload untouched; on Windows a structured argument
+is refused with the RPC choice named as the remedy.
+
+## The Node screen
+
+A thirteenth screen, and everything on it is about a node.
+
+**What the node is.** Its host, which credentials are in use, the chain it
+reported against the chain this wallet is on, its blocks and headers,
+whether it is pruned or still in its initial block download, its version and
+peer count. Ask the node fetches all of that plus three fee estimates.
+
+**What it says fees are.** One, six and a hundred and forty-four blocks,
+each with a button that writes it into the Send screen. Every other backend
+answers one estimate, which this wallet reads as both of its rates; a node
+answers as many as it is asked, so a real one-block estimate is never
+overwritten by the six-block one.
+
+**A watch-only wallet in the node.** The scan tier needs nothing set up and
+cannot see the mempool. The watch tier asks the node to keep a wallet of its
+own for your addresses, named for this wallet's master fingerprint so two
+accounts on one node never share one, with private keys DISABLED and created
+blank: the node is given addresses to watch and can never be asked to sign.
+Then a sync is what that wallet has found, mempool included, with history
+from `listtransactions`. It costs one rescan when it is created, which is
+what the first-used box is for: a date earlier than the wallet's first use
+is safe and slow, a later one silently loses history, so an empty box means
+the genesis block and this wallet never guesses. A seed generated here
+records its own birth. When the address window grows past what the node was
+given, the next sync re-imports before it asks anything, because a wallet
+watching some of its addresses reports a balance missing the rest.
+
+**The mempool.** For a selected history row, what the node holds: size, fee,
+ancestors, descendants, how long it has been there and whether it opted in
+to replacement. Beside it, Test asks `testmempoolaccept` whether the node
+WOULD accept the transaction the Send screen last signed, which is the
+cheapest way there is to find out that a fee is too low, and sends nothing.
+
+**A regtest sandbox.** On regtest only, and refused by name on every other
+chain before any program is run: Start makes a node in a directory beside
+the wallet file and waits for it to answer, Mine pays six blocks to this
+wallet's first address, Reorg throws the tip away, mines a longer chain and
+reconsiders the old block, and Stop asks the node to stop without deleting
+anything. It is the only part of this wallet that starts a program rather
+than talking to one, and the reason it exists is that a chain of your own
+makes every screen here exercisable without a faucet and without waiting
+ten minutes for a block.
+
 Not run against a node: everything above is driven headlessly by
-`tools/check-wallet-boot.py` through a modelled socket against fixtures of
-the node's reply shapes, and the request bytes are asserted; the framing on a
-real node, the cookie on a real platform and the scan on a real UTXO set are
-the plan's phase 0 on the maintainer's machine. The Node screen, the watch
-tier (a descriptor wallet in Core, for history and the mempool), `bitcoin-cli`
-and the regtest sandbox are the plan's later phases.
+`tools/check-wallet-boot.py` through a modelled socket, a modelled Tor
+stream and a modelled shell, against fixtures of the node's reply shapes,
+with the request bytes and the command lines asserted. The framing on a real
+node, the cookie on a real platform, a real rescan and the sandbox are the
+plan's phase 0 on the maintainer's machine. What is not built at all: PSBT
+and address cross-checks against the node (`decodepsbt`, `analyzepsbt`,
+`validateaddress`, `getdescriptorinfo`, `verifymessage`), JSON-RPC batching
+for Core, and pricing a fee bump from the node's own ancestor figures.
 
 ## Silent payments, the sending side
 

@@ -1,11 +1,16 @@
 # Bitcoin Core as a backend: the upgrade plan
 
-**Status: written 2026-09-03 as a plan; phase 1 and the scan half of phase 2
-landed as code on 2026-09-04 (the `core-rpc` transport, the Network screen's
-Core rows, the chain guard, tip and fees, the `addr()` scan and the broadcast;
-see [wallet.md](wallet.md), "Bitcoin Core as a backend"). Nothing described
-here has met a node; the Node screen and everything from phase 3 on is still
-plan.** This document is the design and the
+**Status: written 2026-09-03 as a plan; phases 1 to 4 landed as code on
+2026-09-04** - the `core-rpc`, `core-tor` and `core-cli` backends, the chain
+guard, tip and fees, the `addr()` scan tier, the watch tier (createwallet,
+importdescriptors with a birth date, listunspent, listtransactions, rescan
+progress and the re-import on derive), the Node screen, the mempool and
+`testmempoolaccept` cards, and the regtest sandbox. See [wallet.md](wallet.md),
+"Bitcoin Core as a backend" and "The Node screen". **Nothing described here
+has met a node**; phase 5 (PSBT and address cross-checks, `verifymessage`,
+RPC batching, a bump priced from the node's ancestor figures) is still plan,
+and so is every claim below that a real node would settle. This document is
+the design and the
 order of work for making the CoinXT Wallet talk to a person's own Bitcoin Core
 node - local or self-hosted - for everything a node can do for a wallet, and
 for a few things only a node can do (mining on regtest, mempool policy checks,
