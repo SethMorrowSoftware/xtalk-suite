@@ -3383,4 +3383,17 @@ sites carry the note explaining it; this was the fifth, and it was found by
 running the code rather than by reading it - which is what the runner is
 for.
 
+**AND THE ONE FAILURE CI FOUND THAT THE THREE BLOCKS COULD NOT** is the
+mirror of the pump-callback lesson above, and worth its own line because it
+is the cost of adding a block to a long gate. `check-wallet-boot`'s update
+section asserted that the WHOLE RUN'S log held exactly one "updated to
+version" - true only while nothing else in the gate ever restored a carry.
+The Bitcoin Core block does, because the node's credentials cross the swap
+and that has to be checked. So a correct new block failed a correct old
+check, 972 checks in, on a phrase count neither of them is about. It counts
+from a mark now, which is what "a second restore does nothing" always
+meant. **A check that reads a running total is a check about everything
+that happened before it**, and in a gate this long that is a coupling
+nobody can see at the call site.
+
 Not run against a node, a program, or an engine.
