@@ -15726,6 +15726,9 @@ function waBackendLabel
    if sWaBackend is "electrum-tor" then
       return "Electrum / Tor"
    end if
+   if sWaBackend is "electrum-clear" then
+      return "Electrum / clear"
+   end if
    return "Esplora / clear"
 end waBackendLabel
 
@@ -22729,6 +22732,13 @@ command waNetDeliver pBody
       -- there is; see waNetApply.
       waNetApply tKind, tRec["arg"], pBody, tRec["id"]
    catch tError
+      -- A SERVER'S REFUSAL IS FINAL, AND THE COINS COME BACK HERE: the
+      -- in-flight record was cleared above, so waNetFail sees no request
+      -- to retry or to release, and a broadcast the server refused in its
+      -- reply (an Electrum error object) would keep its coins reserved.
+      if tKind is "broadcast" then
+         waUnnoteBroadcast tArg
+      end if
       waNetFail "could not read the answer to " & tKind & ": " & tError
       exit waNetDeliver
    end try
