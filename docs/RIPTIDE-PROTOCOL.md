@@ -126,6 +126,15 @@ envelope is the contract, the contents are not.
 
 - Multi-byte integers are **big-endian**; u64 travels as two u32 halves
   (hi, lo).
+- **A u64 field above 2^53 MUST be refused, and the record with it
+  (normative, 2026-09-08).** Every u64 here is a counter, a unix
+  timestamp or a byte count, so no legitimate value comes close; but the
+  field is eight attacker-supplied bytes read BEFORE any signature is
+  checked, and an xTalk engine holds every number as an IEEE double,
+  exact only to 9007199254740992. Past that the value silently ROUNDS,
+  so an implementation that accepts it is not parsing the record on the
+  wire - it is parsing a nearby number. 2^53 itself is representable and
+  is accepted; 2^53 + 1 is the first refusal.
 - DHT targets and torrent info-hashes travel as **40 ASCII lowercase hex
   bytes**; the all-zeros target means "none". Handles and public keys as
   **64 ASCII lowercase hex bytes**; the all-zeros handle means "none".

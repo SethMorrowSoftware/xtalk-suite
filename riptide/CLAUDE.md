@@ -173,6 +173,22 @@ watching exactly that check fail. **The general lesson is cheap to apply: any
 value worth persisting is worth round-tripping in a test, because a dead write
 is invisible to every other kind of gate.**
 
+**And every u64 field could be silently rounded (2026-09-08).**
+`rsReadBEu64` computed `hi * 2^32 + lo` with no bound, so any of the ten
+fields declared u64 on the wire - seq, timestamps, feedSeq, readUpTo, tick,
+fileSize - came back ROUNDED once the value passed 2^53, on records parsed
+BEFORE any signature is checked. It now returns empty past the bound and all
+ten call sites refuse the record. The head rail was already fails-closed by
+accident (rsIngestHead bounds the BEP44 seq below 2^53, and a rounded value
+cannot equal something under it); the other nine were not.
+
+Proven headlessly, both directions, through riptide's own runner against the
+real shipped script: 2^53 parses and returns exactly 2^53, 2^53+1 and an
+all-ones u64 are refused. And the mutation test is the interesting part -
+with the bound removed, coinxt's newly-clamped lcs-interp raises Imprecise at
+9007199254740993 and names the site. The two fixes compound: the interpreter
+clamp is what makes this class visible headlessly at all.
+
 **And the caps were four bytes too generous.** `kRsMaxRecord` was 1000, but
 BEP44's 1000 is on the BENCODED value `<len>:<bytes>` (`rsBencodeBytes`), so a
 1000-byte record went out as 1005 and was refused by every node - silently.

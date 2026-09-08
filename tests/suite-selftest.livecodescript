@@ -12936,6 +12936,10 @@ function rsParseHead pBytes
       return empty
    end if
    put rsReadBEu64(byte 5 to 12 of pBytes) into tHead["seq"]
+   if tHead["seq"] is empty then
+      rsSetError "rsParseHead: the seq is over 2^53 and cannot be held exactly"
+      return empty
+   end if
    put byteToNum(byte 13 of pBytes) into tNameLen
    if tNameLen > kRsMaxDisplayName then
       rsSetError "rsParseHead: display name length over cap"
@@ -13130,6 +13134,10 @@ function rsParsePost pBytes
       return empty
    end if
    put rsReadBEu64(byte 5 to 12 of pBytes) into tPost["timestamp"]
+   if tPost["timestamp"] is empty then
+      rsSetError "rsParsePost: the timestamp is over 2^53 and cannot be held exactly"
+      return empty
+   end if
    put textDecode(byte 13 to 52 of pBytes, "ASCII") into tField
    if not rsIsHexOfLen(tField, 40) then
       rsSetError "rsParsePost: malformed previous-post target"
@@ -14104,6 +14112,10 @@ function rsParseIntro pBytes
    end if
    put tField into tOut["recipientHandle"]
    put rsReadBEu64(byte 197 to 204 of pBytes) into tOut["timestamp"]
+   if tOut["timestamp"] is empty then
+      rsSetError "rsParseIntro: the timestamp is over 2^53 and cannot be held exactly"
+      return empty
+   end if
    return tOut
 end rsParseIntro
 
@@ -14252,6 +14264,10 @@ function rsDmParseMessage pBytes
    end if
    put textDecode(byte 1 of pBytes, "ASCII") into tOut["kind"]
    put rsReadBEu64(byte 2 to 9 of pBytes) into tOut["timestamp"]
+   if tOut["timestamp"] is empty then
+      rsSetError "rsDmParseMessage: the timestamp is over 2^53 and cannot be held exactly"
+      return empty
+   end if
    -- the body is authenticated (it came out of the secretstream) but is
    -- still declared UTF-8 text; OXT's textDecode is lossy not throwing (see
    -- rsBytesAreUtf8), so validate by round-trip rather than an inert try
@@ -14725,6 +14741,10 @@ function rsLanVerifyDraft pBytes, pMaster
          tOut["name"]
    put rsReadBEu64(byte (7 + tNameLen) to (14 + tNameLen) of pBytes) \
          into tOut["seq"]
+   if tOut["seq"] is empty then
+      rsSetError "rsLanVerifyDraft: the seq is over 2^53 and cannot be held exactly"
+      return empty
+   end if
    if tDraftLen is 0 then
       put empty into tOut["draft"]
    else
@@ -14827,6 +14847,10 @@ function rsLanVerifyFeedState pBytes, pMaster
          tOut["name"]
    put rsReadBEu64(byte (7 + tNameLen) to (14 + tNameLen) of pBytes) \
          into tOut["feedSeq"]
+   if tOut["feedSeq"] is empty then
+      rsSetError "rsLanVerifyFeedState: the feedSeq is over 2^53 and cannot be held exactly"
+      return empty
+   end if
    if tPeer is kRsZeroHandle then
       put empty into tOut["readPeer"]
    else
@@ -14834,6 +14858,10 @@ function rsLanVerifyFeedState pBytes, pMaster
    end if
    put rsReadBEu64(byte (79 + tNameLen) to (86 + tNameLen) of pBytes) \
          into tOut["readUpTo"]
+   if tOut["readUpTo"] is empty then
+      rsSetError "rsLanVerifyFeedState: the readUpTo is over 2^53 and cannot be held exactly"
+      return empty
+   end if
    return tOut
 end rsLanVerifyFeedState
 
@@ -14921,6 +14949,10 @@ function rsLanVerifyPresence pBytes, pMaster
    end if
    put rsReadBEu64(byte (8 + tNameLen) to (15 + tNameLen) of pBytes) \
          into tOut["tick"]
+   if tOut["tick"] is empty then
+      rsSetError "rsLanVerifyPresence: the tick is over 2^53 and cannot be held exactly"
+      return empty
+   end if
    return tOut
 end rsLanVerifyPresence
 
@@ -15031,11 +15063,19 @@ function rsLanVerifyHandoff pBytes, pMaster
          tOut["name"]
    put rsReadBEu64(byte (7 + tNameLen) to (14 + tNameLen) of pBytes) \
          into tOut["seq"]
+   if tOut["seq"] is empty then
+      rsSetError "rsLanVerifyHandoff: the seq is over 2^53 and cannot be held exactly"
+      return empty
+   end if
    put tHash into tOut["infoHash"]
    put textDecode(byte (56 + tNameLen) to (55 + tNameLen + tFileLen) \
          of pBytes, "UTF-8") into tOut["fileName"]
    put rsReadBEu64(byte (56 + tNameLen + tFileLen) to \
          (63 + tNameLen + tFileLen) of pBytes) into tOut["fileSize"]
+   if tOut["fileSize"] is empty then
+      rsSetError "rsLanVerifyHandoff: the fileSize is over 2^53 and cannot be held exactly"
+      return empty
+   end if
    return tOut
 end rsLanVerifyHandoff
 
@@ -16060,8 +16100,28 @@ private function rsReadBEu32 pBytes
 end rsReadBEu32
 
 private function rsReadBEu64 pBytes
-   return rsReadBEu32(byte 1 to 4 of pBytes) * 4294967296 + \
-         rsReadBEu32(byte 5 to 8 of pBytes)
+   -- A big-endian u64, REFUSED (empty) past 2^53.
+   --
+   -- The wire field is 64 bits but an engine number is an IEEE double, exact
+   -- only to 9007199254740992 (docs/OXT-ENGINE-NOTES.md 2.4). Past that the
+   -- sum ROUNDS with no error, so this used to hand its callers a number that
+   -- was quietly not the one on the wire - and EVERY field that reaches here
+   -- is attacker-supplied and parsed BEFORE any signature is checked.
+   --
+   -- Every legitimate value fits with enormous room: a seq is a counter, a
+   -- unix timestamp in seconds is about 1.8e9, and a file size is capped at
+   -- kRsBtxoMaxTotal (8 GiB). So a value over the bound is always a malformed
+   -- or hostile record, and empty - this library's refusal - is the right
+   -- answer rather than a rounded one. EVERY call site checks for empty and
+   -- refuses the record; that is what makes this safe rather than merely
+   -- different.
+   local tHi, tLo
+   put rsReadBEu32(byte 1 to 4 of pBytes) into tHi
+   put rsReadBEu32(byte 5 to 8 of pBytes) into tLo
+   if tHi > (9007199254740992 - tLo) / 4294967296 then
+      return empty
+   end if
+   return tHi * 4294967296 + tLo
 end rsReadBEu64
 
 private function rsPow2 pN
@@ -26487,7 +26547,7 @@ private command rs1rstSectionKeyFile
 end rs1rstSectionKeyFile
 
 private command rs1rstSectionHead
-   local rs1tHead, rs1tParsed, rs1tRebuilt, rs1tUpper
+   local rs1tHead, rs1tParsed, rs1tRebuilt, rs1tUpper, rs1tBig, rs1tBigParsed, rs1rstI
    rs1rstSection "RSH1 - the feed head"
    put rsBuildHead(rs1kRsGoldHeadSeq, rs1kRsGoldHeadName, rs1kRsGoldPost2Target, \
          rs1kRsGoldPrekeyTarget, rs1kRsGoldOnion, rs1kRsGoldProfileTarget) into rs1tHead
@@ -26517,6 +26577,37 @@ private command rs1rstSectionHead
          "a truncated head is refused"
    rs1rstCheck (rsParseHead(rs1tHead & numToByte(0)) is empty), \
          "trailing bytes are refused"
+   -- THE u64 BOUND (2026-09-08). Every record field declared u64 arrives as
+   -- eight ATTACKER-supplied bytes and is read BEFORE any signature is
+   -- checked, but an engine number is an IEEE double and is exact only to
+   -- 2^53 (engine notes 2.4). rsReadBEu64 used to return a silently ROUNDED
+   -- number past that; it now returns empty and every parser refuses the
+   -- record. The boundary is checked from both sides, because a bound that
+   -- only ever refuses is indistinguishable from a parser that is simply
+   -- broken.
+   put rs1tHead into rs1tBig
+   put numToByte(0) into byte 5 of rs1tBig
+   put numToByte(32) into byte 6 of rs1tBig
+   put numToByte(0) into byte 7 of rs1tBig
+   put numToByte(0) into byte 8 of rs1tBig
+   put numToByte(0) into byte 9 of rs1tBig
+   put numToByte(0) into byte 10 of rs1tBig
+   put numToByte(0) into byte 11 of rs1tBig
+   put numToByte(0) into byte 12 of rs1tBig
+   put rsParseHead(rs1tBig) into rs1tBigParsed
+   rs1rstCheck (rs1tBigParsed is not empty), \
+         "a seq of exactly 2^53 still parses (it IS representable)"
+   rs1rstCheck (rs1tBigParsed["seq"] is 9007199254740992), \
+         "and comes back as exactly 2^53, not a rounded neighbour"
+   put numToByte(1) into byte 12 of rs1tBig
+   rs1rstCheck (rsParseHead(rs1tBig) is empty), \
+         "a seq of 2^53 + 1 is REFUSED (the first unrepresentable value)"
+   put rs1tHead into rs1tBig
+   repeat with rs1rstI = 5 to 12
+      put numToByte(255) into byte rs1rstI of rs1tBig
+   end repeat
+   rs1rstCheck (rsParseHead(rs1tBig) is empty), \
+         "an all-ones u64 seq is refused, not rounded to 1.8e19"
    -- A non-canonical (uppercase) hex target must be refused, not silently
    -- accepted: byte 61 is the first char of the prekey target ("ab"*20), so
    -- turning that 'a' (97) into 'A' (65) is a valid-length but non-lowercase

@@ -375,7 +375,7 @@ private command rstSectionKeyFile
 end rstSectionKeyFile
 
 private command rstSectionHead
-   local tHead, tParsed, tRebuilt, tUpper
+   local tHead, tParsed, tRebuilt, tUpper, tBig, tBigParsed, rstI
    rstSection "RSH1 - the feed head"
    put rsBuildHead(kRsGoldHeadSeq, kRsGoldHeadName, kRsGoldPost2Target, \
          kRsGoldPrekeyTarget, kRsGoldOnion, kRsGoldProfileTarget) into tHead
@@ -405,6 +405,37 @@ private command rstSectionHead
          "a truncated head is refused"
    rstCheck (rsParseHead(tHead & numToByte(0)) is empty), \
          "trailing bytes are refused"
+   -- THE u64 BOUND (2026-09-08). Every record field declared u64 arrives as
+   -- eight ATTACKER-supplied bytes and is read BEFORE any signature is
+   -- checked, but an engine number is an IEEE double and is exact only to
+   -- 2^53 (engine notes 2.4). rsReadBEu64 used to return a silently ROUNDED
+   -- number past that; it now returns empty and every parser refuses the
+   -- record. The boundary is checked from both sides, because a bound that
+   -- only ever refuses is indistinguishable from a parser that is simply
+   -- broken.
+   put tHead into tBig
+   put numToByte(0) into byte 5 of tBig
+   put numToByte(32) into byte 6 of tBig
+   put numToByte(0) into byte 7 of tBig
+   put numToByte(0) into byte 8 of tBig
+   put numToByte(0) into byte 9 of tBig
+   put numToByte(0) into byte 10 of tBig
+   put numToByte(0) into byte 11 of tBig
+   put numToByte(0) into byte 12 of tBig
+   put rsParseHead(tBig) into tBigParsed
+   rstCheck (tBigParsed is not empty), \
+         "a seq of exactly 2^53 still parses (it IS representable)"
+   rstCheck (tBigParsed["seq"] is 9007199254740992), \
+         "and comes back as exactly 2^53, not a rounded neighbour"
+   put numToByte(1) into byte 12 of tBig
+   rstCheck (rsParseHead(tBig) is empty), \
+         "a seq of 2^53 + 1 is REFUSED (the first unrepresentable value)"
+   put tHead into tBig
+   repeat with rstI = 5 to 12
+      put numToByte(255) into byte rstI of tBig
+   end repeat
+   rstCheck (rsParseHead(tBig) is empty), \
+         "an all-ones u64 seq is refused, not rounded to 1.8e19"
    -- A non-canonical (uppercase) hex target must be refused, not silently
    -- accepted: byte 61 is the first char of the prekey target ("ab"*20), so
    -- turning that 'a' (97) into 'A' (65) is a valid-length but non-lowercase
