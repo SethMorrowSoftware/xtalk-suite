@@ -91,6 +91,19 @@ THE NAMED DIVERGENCES GREW WITH IT, same contract as the `is` note above
     the engine-proven corpus and the MODEL was the bug. Suspect the probe
     first.) _disp still refuses to stringify an array in every string
     context (concatenation, chunks, contains) - the coinxt lesson stands.
+
+AND ONE REFUSAL, ADDED 2026-09-08, which is a different KIND of entry from
+every divergence above: those are modelling choices, this is a hard stop.
+Numbers here are held to the engine's exact integer range (|v| <= 2^53) and
+REFUSED past it, because python's arbitrary-precision int made this file
+LOOSER than the engine on the one arithmetic that matters most - an 8-byte
+little-endian accumulator answers 18446744073709551615 in python and
+1.8446744073709552e+19 on OXT. Looser is the direction the contract forbids,
+and this particular looseness was invisible to every other gate: a wide-integer
+defect could pass the static checker AND every headless vector AND still be
+wrong on an engine. See _exact(). The refusal is STRICTER than the engine,
+which is allowed and is the point - the engine carries on with a rounded number
+and tells nobody, and that is the failure this stop exists to make loud.
 """
 import base64
 import re
@@ -100,6 +113,16 @@ class Thrown(Exception):
     def __init__(self, msg):
         self.msg = msg
         super().__init__(msg)
+
+
+class Imprecise(Exception):
+    """An integer the ENGINE could not have held exactly, produced where the
+    script is doing exact integer arithmetic.
+
+    Deliberately NOT a Thrown: an interpreted `try ... catch` must not be able
+    to swallow it. This is a statement about the TOOL's fidelity ("what you
+    just computed would be a different number on an engine"), not a script
+    error the script gets to handle."""
 
 
 class Bytes(str):
@@ -157,17 +180,65 @@ def _copy(v):
     return {k: _copy(x) for k, x in v.items()} if isinstance(v, dict) else v
 
 
+# The engine holds every number as an IEEE double, so an INTEGER is exact only
+# while |v| <= 2^53. Python's int is arbitrary-precision, which made this
+# interpreter LOOSER than the engine on exactly the arithmetic that matters
+# most here: an 8-byte little-endian accumulator returns 18446744073709551615
+# in python and 1.8446744073709552e+19 on OXT. That is the one direction this
+# file's contract forbids ("stricter-than-engine is acceptable and documented;
+# looser is a bug"), and it is invisible to every other gate - a wide-integer
+# defect could pass the static checker AND every headless vector AND still be
+# wrong on an engine.
+#
+# So every value that reaches arithmetic, and every arithmetic RESULT, is held
+# to the engine's exact range and REFUSED past it. Refusing rather than
+# emulating the double is the deliberate choice, and it is this file's existing
+# posture ("it REFUSES anything outside the subset rather than guessing"): a
+# silently-rounded answer here would just move the silence, while a refusal
+# names the site. Refusing is STRICTER than the engine, which is allowed; the
+# engine would carry on with a rounded value.
+_EXACT_INT_MAX = 2 ** 53   # 9007199254740992
+
+
+def _exact(v):
+    """Return v, or refuse it as outside the engine's exact integer range.
+
+    Applies to a python int (exact by construction) and to an INTEGRAL float,
+    because both mean the script is treating the value as a whole number. A
+    non-integral float is left alone: it is approximate on any engine and the
+    script is not claiming otherwise."""
+    if isinstance(v, int) and not isinstance(v, bool):
+        if -_EXACT_INT_MAX <= v <= _EXACT_INT_MAX:
+            return v
+    elif isinstance(v, float):
+        if v != v or v in (float("inf"), float("-inf")):
+            raise Imprecise(
+                "arithmetic produced %r, which no engine double holds as a "
+                "number" % (v,))
+        if v != int(v) or -_EXACT_INT_MAX <= v <= _EXACT_INT_MAX:
+            return v
+    else:
+        return v
+    raise Imprecise(
+        "the value %s exceeds 2^53, the largest integer an engine double holds "
+        "exactly. On OXT this arithmetic yields a ROUNDED number, so the "
+        "script is wrong there even though it is right here. Split the value "
+        "(bytes, hex or decimal digits) instead of accumulating it - see the "
+        "no-big-integer discipline in coinxt/src/coinxt.livecodescript."
+        % (v,))
+
+
 def _n(v):
     """Coerce to number the way xTalk does when arithmetic is applied."""
     if isinstance(v, bool):
         return 1 if v else 0
     if isinstance(v, (int, float)):
-        return v
+        return _exact(v)
     s = str(v).strip()
     if s == "":
         return 0
     f = float(s)
-    return int(f) if f == int(f) else f
+    return _exact(int(f) if f == int(f) else f)
 
 
 class Interp:
@@ -451,17 +522,17 @@ class Interp:
         m = re.match(r'add\s+(.+?)\s+to\s+(.+)$', line, re.I)
         if m:
             tgt = m.group(2).strip()
-            self.assign(tgt, _n(self.eval_expr(tgt, env)) + _n(self.eval_expr(m.group(1), env)), env)
+            self.assign(tgt, _exact(_n(self.eval_expr(tgt, env)) + _n(self.eval_expr(m.group(1), env))), env)
             return i + 1
         m = re.match(r'subtract\s+(.+?)\s+from\s+(.+)$', line, re.I)
         if m:
             tgt = m.group(2).strip()
-            self.assign(tgt, _n(self.eval_expr(tgt, env)) - _n(self.eval_expr(m.group(1), env)), env)
+            self.assign(tgt, _exact(_n(self.eval_expr(tgt, env)) - _n(self.eval_expr(m.group(1), env))), env)
             return i + 1
         m = re.match(r'multiply\s+(.+?)\s+by\s+(.+)$', line, re.I)
         if m:
             tgt = m.group(1).strip()
-            self.assign(tgt, _n(self.eval_expr(tgt, env)) * _n(self.eval_expr(m.group(2), env)), env)
+            self.assign(tgt, _exact(_n(self.eval_expr(tgt, env)) * _n(self.eval_expr(m.group(2), env))), env)
             return i + 1
         m = re.match(r'set\s+the\s+itemDelimiter\s+to\s+(.+)$', line, re.I)
         if m:
@@ -739,7 +810,7 @@ class _Expr:
             if self.i < len(self.s) and self.s[self.i] in "+-":
                 op = self.s[self.i]; self.i += 1
                 r = self.p_mul()
-                v = _n(v) + _n(r) if op == "+" else _n(v) - _n(r)
+                v = _exact(_n(v) + _n(r) if op == "+" else _n(v) - _n(r))
             else:
                 return v
 
@@ -750,7 +821,7 @@ class _Expr:
             if self.i < len(self.s) and self.s[self.i] in "*/":
                 op = self.s[self.i]; self.i += 1
                 r = self.p_unary()
-                v = _n(v) * _n(r) if op == "*" else _n(v) / _n(r)
+                v = _exact(_n(v) * _n(r) if op == "*" else _n(v) / _n(r))
             else:
                 return v
 
@@ -783,7 +854,7 @@ class _Expr:
             while j < len(self.s) and (self.s[j].isdigit() or self.s[j] == "."):
                 j += 1
             txt = self.s[self.i:j]; self.i = j
-            return float(txt) if "." in txt else int(txt)
+            return float(txt) if "." in txt else _exact(int(txt))
         # `the number of X of Y`
         if self.kw("the"):
             if self.kw("itemdelimiter"):

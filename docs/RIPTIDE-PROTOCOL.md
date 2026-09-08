@@ -151,12 +151,33 @@ key = the handle's key, salt = `"riptide-head"`.
     prekeyTarget(40 hex)  onionLen(u8: 0 or 62) onionAddr
     profileMetaTarget(40 hex)
 
-Caps: name 0..64 UTF-8 bytes; the whole record inside the BEP44
-1000-byte value cap. `seq` MUST equal the BEP44 sequence number the item
-is published under; an ingester MUST refuse a head whose embedded seq
-disagrees with the BEP44 seq it arrived under, and MUST verify the
-BEP44 signature itself with the handle's key rather than trusting the
-transport.
+Caps: name 0..64 UTF-8 bytes; the whole record inside the BEP44 value
+cap. That cap is **1000 bytes on the BENCODED value**, and the stored
+`v` is the bencoded byte string `<len>:<bytes>`, so the **raw record
+MUST be at most 996 bytes** ("996:" is four bytes and 4 + 996 = 1000
+exactly). A 1000-byte raw record is 1005 on the wire and every node
+refuses it, silently - a rejected put is indistinguishable from a put
+nobody has fetched. (Corrected 2026-09-08; the reference implementation
+had capped the raw record at 1000.) `seq` MUST equal the BEP44 sequence
+number the item is published under; an ingester MUST refuse a head whose
+embedded seq disagrees with the BEP44 seq it arrived under, and MUST
+verify the BEP44 signature itself with the handle's key rather than
+trusting the transport.
+
+**Head ingest is monotone per handle, and this is normative
+(2026-09-08).** A reader MUST keep, per handle, the highest head `seq`
+it has accepted, and MUST refuse a head whose seq is strictly lower.
+Every other check above is about one record in isolation and passes on
+a head the author really signed - just an old one - so without this rule
+a DHT node, or anyone replaying a captured put, can roll a reader back
+to a superseded follow list, profile and post chain for as long as it
+keeps serving the stale item. An equal seq is ACCEPTED: re-reading the
+head you already hold is what a refresh looks like. The watermark MUST
+survive a restart, or every launch re-opens the window. This is
+apply-semantics, not a wire change - no byte of RSH1 moves and no magic
+bumps - and it is the same rule section 6 already states for the LAN
+rail ("replay and reorder are neutralized by apply semantics, not by
+the wire").
 
 On the DHT the stored value `v` is the **bencoded byte string** of the
 record (`<len>:<bytes>`), and the canonical signing buffer is BEP44's:
@@ -193,7 +214,7 @@ chunk **values** (raw UTF-8 bytes, split by byte - a boundary may fall
 inside a UTF-8 sequence). The reassembler MUST validate content
 addresses per chunk and UTF-8-round-trip the **concatenation**, never a
 chunk alone. Any split of the same bytes reassembles identically; full
-1000-byte chunks are the reference policy.
+996-byte chunks are the reference policy (the raw BEP44 cap; see 4.1).
 
 ### 4.3 Media
 

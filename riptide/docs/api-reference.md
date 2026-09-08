@@ -92,8 +92,8 @@ strings, matching `sxKdfDerive`.
 | `rsBuildPostChunked(pTimestamp, pPrevTarget, pChunkTargets, pMediaList, pIdentitySeed)` | Data | a signed kind-C post naming 1..16 immutable text chunks in order |
 | `rsParsePost(pBytes)` | Array | `timestamp`, `prevPostTarget`, `kind`, `text` (D) or `chunkTargets` (C), `mediaTargets`. Parsing does not verify the signature |
 | `rsVerifyPost(pBytes, pHandleHex)` | Boolean | true only if the record parses strictly AND its trailing 64 bytes are a valid ed25519 signature by the handle over everything before them |
-| `rsPostTextCapacity(pMediaCount)` | Integer | how many UTF-8 text bytes fit a DIRECT (kind-D) post beside that many attachments - the RSP1 layout against the 1000-byte cap, published so the app's D-or-C decision never hand-copies 880 |
-| `rsChunkPostText(pTextContent)` | Array | split text into kind-C chunk VALUES (keys 1..count): full 1000-byte immutable items by BYTE, remainder last; over 16000 UTF-8 bytes refuses, never truncates. A boundary may split a UTF-8 sequence - reassembly decodes the concatenation, never a chunk alone |
+| `rsPostTextCapacity(pMediaCount)` | Integer | how many UTF-8 text bytes fit a DIRECT (kind-D) post beside that many attachments - the RSP1 layout against the 996-byte raw cap (996, not 1000: the BEP44 limit is on the BENCODED value - see the protocol spec 4.1), published so the app's D-or-C decision never hand-copies 876 |
+| `rsChunkPostText(pTextContent)` | Array | split text into kind-C chunk VALUES (keys 1..count): full 996-byte immutable items by BYTE, remainder last; over 15936 UTF-8 bytes refuses, never truncates. A boundary may split a UTF-8 sequence - reassembly decodes the concatenation, never a chunk alone |
 | `rsAssembleChunkText(pChunkTargets, pParts)` | String | the reassembling verify: `pParts` keyed by lowercase target (from `rsIngestBlob`); every part is re-hashed against its own content address BEFORE a byte is believed, then the CONCATENATION must round-trip as UTF-8. Empty names the first missing chunk - the honest-placeholder path |
 
 ## BEP44 plumbing and ingest verifiers

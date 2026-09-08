@@ -123,7 +123,7 @@ What ships today, per the spec's phased roadmap (section 10.3):
     persona's own subkeys). The demo registers the onion-httpd routes;
     the library stays pure
   - **the kind-C chunked-post rail and the streaming seams**
-    (2026-08-23): a post whose text outgrows the 1000-byte RSP1 direct
+    (2026-08-23): a post whose text outgrows the 996-byte RSP1 direct
     layout splits into immutable chunks named in order
     (`rsChunkPostText` / `rsPublishChunkedPost`, with
     `rsPostTextCapacity` publishing the D-or-C boundary so no caller

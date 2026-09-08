@@ -3625,21 +3625,48 @@ end cwBeBytes
 
 function cwLeRead pBytes
    -- A little-endian unsigned integer from however many bytes it is given.
-   local tValue, tI, tCount
+   --
+   -- REFUSES PAST 2^53, AT THE PARSE SITE (2026-09-08). An engine number is an
+   -- IEEE double, so an integer is exact only to 9007199254740992 and an
+   -- accumulator past that ROUNDS with no error - a wrong number that looks
+   -- like a right one (docs/OXT-ENGINE-NOTES.md 2.4). Every 8-byte field that
+   -- reaches here is ATTACKER-CONTROLLED: a fetched transaction's output value
+   -- and an 0xff CompactSize length both arrive as eight bytes of somebody
+   -- else's choosing. Every LEGITIMATE value fits with room to spare - 21e14
+   -- satoshis is the entire supply and is under a quarter of the bound - so a
+   -- value over it is always a malformed field or an attack, and a refusal is
+   -- the right answer rather than a rounded one.
+   --
+   -- The check goes BEFORE the multiply, not after: after it there is nothing
+   -- left to detect, because the rounding has already happened silently. This
+   -- is also what makes the downstream length guards honest - they were
+   -- comparing against a number the engine may already have changed.
+   local tValue, tI, tCount, tByte
    put the number of bytes of pBytes into tCount
    put 0 into tValue
    repeat with tI = tCount down to 1
-      put tValue * 256 + byteToNum(byte tI of pBytes) into tValue
+      put byteToNum(byte tI of pBytes) into tByte
+      if tValue > (9007199254740992 - tByte) / 256 then
+         throw "cwLeRead: the value is over 2^53 and cannot be held exactly"
+      end if
+      put tValue * 256 + tByte into tValue
    end repeat
    return tValue
 end cwLeRead
 
 function cwBeRead pBytes
-   local tValue, tI, tCount
+   -- Big-endian twin of cwLeRead, and it carries the same 2^53 refusal for the
+   -- same reason - see that handler's note. Same bound, same placement before
+   -- the multiply.
+   local tValue, tI, tCount, tByte
    put the number of bytes of pBytes into tCount
    put 0 into tValue
    repeat with tI = 1 to tCount
-      put tValue * 256 + byteToNum(byte tI of pBytes) into tValue
+      put byteToNum(byte tI of pBytes) into tByte
+      if tValue > (9007199254740992 - tByte) / 256 then
+         throw "cwBeRead: the value is over 2^53 and cannot be held exactly"
+      end if
+      put tValue * 256 + tByte into tValue
    end repeat
    return tValue
 end cwBeRead

@@ -457,7 +457,11 @@ ZERO_TARGET = "0" * 40
 MAX_DISPLAY_NAME = 64  # bytes of UTF-8
 MAX_MEDIA = 8
 MAX_CHUNKS = 16
-MAX_RECORD = 1000  # the BEP44 value cap
+MAX_RECORD = 996  # the BEP44 value cap is 1000 on the BENCODED value
+                  # `<len>:<bytes>`, so the RAW cap is 996 ("996:" is 4
+                  # bytes; 4 + 996 = 1000 exactly). Was 1000 until
+                  # 2026-09-08, which let this oracle bless a record the
+                  # DHT would silently refuse. Mirrors kRsMaxRecord.
 ONION_ADDR_LEN = 62  # "<56 chars>.onion"
 
 
@@ -496,7 +500,7 @@ def build_head(seq, display_name, latest_post, prekey, onion_addr, profile_meta)
 
 
 # ---------------------------------------------------------------------------
-# RSP1 - the post record (BEP44 immutable item, 1..1000 bytes)
+# RSP1 - the post record (BEP44 immutable item, 1..996 raw bytes)
 #
 # magic(4) timestamp(u64) prevPostTarget(40 hex) kind(1: "D"/"C")
 #   D: textLen(u16) text(UTF-8)

@@ -235,12 +235,15 @@ def main(argv):
             post_c[94:134] != chunk2_target.encode("ascii"):
         failures.append("the kind-C chunk list is not the two golden "
                         "targets in order")
-    if len(post_c) > 1000:
+    if len(post_c) > 996:
         failures.append("the kind-C golden record exceeds the BEP44 cap")
     if head[20:60] != post2_target.encode("ascii"):
         failures.append("the head does not name post 2 as latest")
-    if len(head) > 1000 or len(post1) > 1000 or len(post2) > 1000:
-        failures.append("a golden record exceeds the BEP44 1000-byte cap")
+    # 996, not 1000: BEP44's 1000 is on the BENCODED value `<len>:<bytes>`,
+    # so a 1000-byte raw record is 1005 on the wire and is refused (corrected
+    # 2026-09-08 with kRsMaxRecord; this gate had blessed the same 4 bytes).
+    if len(head) > 996 or len(post1) > 996 or len(post2) > 996:
+        failures.append("a golden record exceeds the BEP44 raw 996-byte cap")
     if intro[4:68] != handle.encode("ascii"):
         failures.append("the golden intro's sender is not the golden handle")
     if intro[132:196] != conf_pub.encode("ascii"):

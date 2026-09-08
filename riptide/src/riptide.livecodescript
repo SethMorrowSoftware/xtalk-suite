@@ -57,7 +57,7 @@ script "RiptideSocial"
 --   - the RSH1 feed-head and RSP1 post-record framings, build + parse +
 --     signature verification, caps enforced on BOTH sides - including,
 --     since 2026-08-23 (backlog A2), the kind-C CHUNKED rail end to end:
---     the producer split (rsChunkPostText, full 1000-byte chunks by BYTE
+--     the producer split (rsChunkPostText, full 996-byte chunks by BYTE
 --     - reassembly validates the concatenation, never a chunk alone),
 --     the D-or-C capacity arithmetic (rsPostTextCapacity), the one-call
 --     producer (rsPublishChunkedPost: chunks stored, then the signed
@@ -312,7 +312,24 @@ constant kRsAppStateMax = 1048576
 constant kRsMaxDisplayName = 64
 constant kRsMaxMedia = 8
 constant kRsMaxChunks = 16
-constant kRsMaxRecord = 1000
+-- The largest RAW record this layer will build or accept.
+--
+-- 996, NOT 1000, and the four bytes are the whole point (fixed 2026-09-08).
+-- BEP44 caps the stored value `v` at 1000 bytes, and `v` is the BENCODED byte
+-- string `<len>:<bytes>` (rsBencodeBytes, and section 4.1 of the protocol says
+-- so). So a 1000-byte raw record goes on the wire as "1000:" + 1000 = 1005
+-- bytes and every DHT node REFUSES it - silently, because a rejected put looks
+-- exactly like a put nobody has fetched yet. 996 is the largest raw value that
+-- fits: "996:" is 4 bytes, 4 + 996 = 1000 exactly, and libtorrent's own check
+-- refuses only what is STRICTLY over 1000.
+--
+-- Nothing that ever worked is lost by tightening this: a record between 997
+-- and 1000 raw bytes was never storable, so the only change is that the
+-- refusal now happens here, loudly, on the writer's own machine, instead of
+-- vanishing into the DHT. It does move two derived numbers - a post's text
+-- capacity and the 16-chunk content ceiling (15,936 bytes, not 16,000) - and
+-- those were overstatements for the same reason.
+constant kRsMaxRecord = 996
 constant kRsMaxSalt = 64
 constant kRsOnionAddrLen = 62
 constant kRsArgonOps = "2"
@@ -1165,8 +1182,9 @@ end rsVerifyPost
 
 -- How many UTF-8 text bytes fit a DIRECT (kind-D) post beside pMediaCount
 -- attachments. The arithmetic is the RSP1 layout itself against the BEP44
--- 1000-byte value cap, published as API so the app's D-or-C decision can
--- never drift from the builder's refusal - a hand-copied 880 in a demo is
+-- value cap (kRsMaxRecord, 996 raw - see its note), published as API so the
+-- app's D-or-C decision can never drift from the builder's refusal - a
+-- hand-copied 876 in a demo is
 -- exactly the class of constant this repo keeps finding stale. Returns
 -- the byte budget, or empty on a media count outside 0..8.
 function rsPostTextCapacity pMediaCount
@@ -1182,15 +1200,15 @@ function rsPostTextCapacity pMediaCount
    return kRsMaxRecord - (4 + 8 + 40 + 1 + 2 + 1 + 64) - 40 * tCount
 end rsPostTextCapacity
 
--- Split post text into kind-C chunk VALUES: full 1000-byte immutable
+-- Split post text into kind-C chunk VALUES: full 996-byte immutable
 -- items in order, the last one carrying the remainder. The split is by
 -- BYTE, deliberately - a boundary may fall inside a UTF-8 sequence, and
 -- that is fine because reassembly validates and decodes the CONCATENATION,
 -- never a chunk alone (rsAssembleChunkText). The split policy is
 -- producer-local (any 1..16-chunk split of the same bytes reassembles
 -- identically); the CAPS are the wire format's - at most 16 chunks of at
--- most 1000 bytes, so 16000 UTF-8 bytes is the most text a kind-C post
--- can carry, refused over (never truncated). Returns a numerically keyed
+-- most kRsMaxRecord (996) bytes, so 15936 UTF-8 bytes is the most text a
+-- kind-C post can carry, refused over (never truncated). Returns a numerically keyed
 -- array (1..count) of chunk byte strings, or empty.
 function rsChunkPostText pTextContent
    local tBytes, tLen, tPos, tTake, tI, tOut
@@ -1386,18 +1404,56 @@ end rsImmutableTarget
 -- Verify and unpack a drained dhtMutableItem EVENT as a followee's feed
 -- head. pEvent is the event array btPoll returned (publicKey, salt, seq,
 -- value, signature); pExpectedHandleHex is the handle the app trusts (the
--- key it asked rsRequestHead about). Refuses: an event for another key or
--- salt, an insane seq, a value that is not a strict RSH1 record, a record
--- whose embedded seq disagrees with the BEP44 seq, and - the point - a
--- BEP44 signature that does not verify under the handle. libtorrent already
--- verified that signature once on receipt; re-verifying here in SodiumXT
--- costs one call and means the app's trust does not rest on the transport.
+-- key it asked rsRequestHead about); pMinSeq is the READER'S WATERMARK, the
+-- highest seq this reader has already accepted for this handle (0 for a
+-- handle whose head has never been seen). Refuses: an event for another key
+-- or salt, an insane seq, a value that is not a strict RSH1 record, a record
+-- whose embedded seq disagrees with the BEP44 seq, a head OLDER than the
+-- watermark, and - the point - a BEP44 signature that does not verify under
+-- the handle. libtorrent already verified that signature once on receipt;
+-- re-verifying here in SodiumXT costs one call and means the app's trust does
+-- not rest on the transport.
 -- Returns the parsed head array (rsParseHead's shape), or empty.
-function rsIngestHead pEvent, pExpectedHandleHex
+--
+-- THE WATERMARK IS REQUIRED, AND THAT IS THE 2026-09-08 FIX. Every check
+-- above is about ONE record in isolation, and each one passes on a head the
+-- author really did sign - just an OLD one. A DHT node (or anyone replaying a
+-- captured put) can serve a stale-but-validly-signed head forever, and this
+-- function used to return it happily, rolling the reader back to a superseded
+-- follow list, profile and post chain. The comment that stood here deferred
+-- the question ("the app's replay protection reads the one true seq") and no
+-- app implemented one, which is exactly why the parameter is not optional: an
+-- EMPTY pMinSeq is REFUSED rather than treated as "no watermark", so a caller
+-- that has not been taught about this gets a loud failure instead of the
+-- silent rollback that shipped. A reader with no prior head says so by passing
+-- 0, which is an affirmative statement rather than an omission.
+--
+-- Equal seq is ACCEPTED, not refused: re-reading the head you already hold is
+-- the normal shape of a refresh, and the DHT re-serves the same item for as
+-- long as it is republished. Only a STRICTLY older head is a rollback. (Two
+-- DIFFERENT values at the SAME seq is author equivocation - it needs the
+-- author's own key, so it is a different threat with a different answer, and
+-- this layer does not pretend to detect it.)
+--
+-- This is apply-semantics, not a wire change: no byte of RSH1 moves and no
+-- magic bumps. It brings the head rail in line with the rule the LAN rail has
+-- carried since it was written (docs/RIPTIDE-PROTOCOL.md section 6: "replay
+-- and reorder are neutralized by apply semantics, not by the wire", drafts at
+-- a strictly higher per-device seq, feed state as max).
+function rsIngestHead pEvent, pExpectedHandleHex, pMinSeq
    local tHandle, tEventKey, tSeq, tHead, tSigHex, tSig, tBuf, tOk, tErr
    put toLower(pExpectedHandleHex) into tHandle
    if not rsIsHexOfLen(tHandle, 64) then
       rsSetError "rsIngestHead: the expected handle must be 64 hex chars"
+      return empty
+   end if
+   -- Fail closed FIRST: a caller that omits the watermark gets refused, never
+   -- served. Same sanity bounds as the event seq below (0 .. 2^53-1, the
+   -- engine's exact-integer range - a double cannot compare a bigger one
+   -- correctly, so accepting one would make this very check unreliable).
+   if pMinSeq is not an integer or pMinSeq < 0 or pMinSeq >= 9007199254740992 then
+      rsSetError "rsIngestHead: a reader watermark is required (pass 0 for a" && \
+            "handle whose head has never been accepted)"
       return empty
    end if
    put toLower(pEvent["publicKey"]) into tEventKey
@@ -1417,13 +1473,22 @@ function rsIngestHead pEvent, pExpectedHandleHex
       rsSetError "rsIngestHead: the event seq is not a sane integer"
       return empty
    end if
+   -- The rollback gate. Placed after the seq SANITY check (so the comparison
+   -- is between two numbers the engine can hold exactly) and before the parse
+   -- and the signature verify (so a replayed head costs the reader nothing).
+   if tSeq < pMinSeq then
+      rsSetError "rsIngestHead: this head is older than one already accepted" && \
+            "for this handle (seq" && tSeq && "before" && pMinSeq & ")"
+      return empty
+   end if
    put rsParseHead(pEvent["value"]) into tHead
    if tHead is empty then return empty
    if tHead["seq"] is not tSeq then
       -- rsPublishHead uses the head's own embedded seq as the BEP44 seq, so
       -- a disagreement means this record was not published by this layer
       -- (or was reassembled); refuse rather than guess which counter to
-      -- believe - the app's replay protection reads the one true seq.
+      -- believe. Both counters have now been checked against the reader's
+      -- watermark above, so there is no "one true seq" left to defer to.
       rsSetError "rsIngestHead: the BEP44 seq and the head's embedded seq" && \
             "disagree"
       return empty

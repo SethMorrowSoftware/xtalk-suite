@@ -1065,7 +1065,7 @@ constant kRsAppStateMax = 1048576
 constant kRsMaxDisplayName = 64
 constant kRsMaxMedia = 8
 constant kRsMaxChunks = 16
-constant kRsMaxRecord = 1000
+constant kRsMaxRecord = 996
 constant kRsMaxSalt = 64
 constant kRsOnionAddrLen = 62
 constant kRsArgonOps = "2"
@@ -13398,11 +13398,20 @@ function rsImmutableTarget pValue
    return rsBinToHexString(sha1Digest(rsBencodeBytes(pValue)))
 end rsImmutableTarget
 
-function rsIngestHead pEvent, pExpectedHandleHex
+function rsIngestHead pEvent, pExpectedHandleHex, pMinSeq
    local tHandle, tEventKey, tSeq, tHead, tSigHex, tSig, tBuf, tOk, tErr
    put toLower(pExpectedHandleHex) into tHandle
    if not rsIsHexOfLen(tHandle, 64) then
       rsSetError "rsIngestHead: the expected handle must be 64 hex chars"
+      return empty
+   end if
+   -- Fail closed FIRST: a caller that omits the watermark gets refused, never
+   -- served. Same sanity bounds as the event seq below (0 .. 2^53-1, the
+   -- engine's exact-integer range - a double cannot compare a bigger one
+   -- correctly, so accepting one would make this very check unreliable).
+   if pMinSeq is not an integer or pMinSeq < 0 or pMinSeq >= 9007199254740992 then
+      rsSetError "rsIngestHead: a reader watermark is required (pass 0 for a" && \
+            "handle whose head has never been accepted)"
       return empty
    end if
    put toLower(pEvent["publicKey"]) into tEventKey
@@ -13422,13 +13431,22 @@ function rsIngestHead pEvent, pExpectedHandleHex
       rsSetError "rsIngestHead: the event seq is not a sane integer"
       return empty
    end if
+   -- The rollback gate. Placed after the seq SANITY check (so the comparison
+   -- is between two numbers the engine can hold exactly) and before the parse
+   -- and the signature verify (so a replayed head costs the reader nothing).
+   if tSeq < pMinSeq then
+      rsSetError "rsIngestHead: this head is older than one already accepted" && \
+            "for this handle (seq" && tSeq && "before" && pMinSeq & ")"
+      return empty
+   end if
    put rsParseHead(pEvent["value"]) into tHead
    if tHead is empty then return empty
    if tHead["seq"] is not tSeq then
       -- rsPublishHead uses the head's own embedded seq as the BEP44 seq, so
       -- a disagreement means this record was not published by this layer
       -- (or was reassembled); refuse rather than guess which counter to
-      -- believe - the app's replay protection reads the one true seq.
+      -- believe. Both counters have now been checked against the reader's
+      -- watermark above, so there is no "one true seq" left to defer to.
       rsSetError "rsIngestHead: the BEP44 seq and the head's embedded seq" && \
             "disagree"
       return empty
@@ -26798,31 +26816,31 @@ private command rs1rstSectionIngest
    put 7 into rs1tEvent["seq"]
    put rs1rstBin(rs1kRsGoldHeadHex) into rs1tEvent["value"]
    put rs1kRsGoldHeadSigHex into rs1tEvent["signature"]
-   put rsIngestHead(rs1tEvent, rs1kRsGoldHandle) into rs1tHead
+   put rsIngestHead(rs1tEvent, rs1kRsGoldHandle, 0) into rs1tHead
    rs1rstCheck (rs1tHead is not empty), "the golden head event ingests"
    rs1rstCheck (rs1tHead["displayName"] is rs1kRsGoldHeadName), \
          "and hands back the parsed head"
    rs1rstCheck (rs1tHead["latestPostTarget"] is rs1kRsGoldPost2Target), \
          "naming post 2 as latest"
-   rs1rstCheck (rsIngestHead(rs1tEvent, rs1kRsGoldConfPub) is empty), \
+   rs1rstCheck (rsIngestHead(rs1tEvent, rs1kRsGoldConfPub, 0) is empty), \
          "an event for another handle is refused"
    put rs1tEvent into rs1tBad
    put "riptide-lies" into rs1tBad["salt"]
-   rs1rstCheck (rsIngestHead(rs1tBad, rs1kRsGoldHandle) is empty), \
+   rs1rstCheck (rsIngestHead(rs1tBad, rs1kRsGoldHandle, 0) is empty), \
          "a wrong salt is refused"
    put rs1tEvent into rs1tBad
    put 8 into rs1tBad["seq"]
-   rs1rstCheck (rsIngestHead(rs1tBad, rs1kRsGoldHandle) is empty), \
+   rs1rstCheck (rsIngestHead(rs1tBad, rs1kRsGoldHandle, 0) is empty), \
          "a seq disagreeing with the head's embedded seq is refused"
    put rs1tEvent into rs1tBad
    put rs1rstFlipByte(rs1tBad["value"], 2) into rs1tBad["value"]
-   rs1rstCheck (rsIngestHead(rs1tBad, rs1kRsGoldHandle) is empty), \
+   rs1rstCheck (rsIngestHead(rs1tBad, rs1kRsGoldHandle, 0) is empty), \
          "a value that is not an RSH1 record is refused"
    put rs1tEvent into rs1tBad
    -- byte 20 is the last display-name char: the record still PARSES, so
    -- this refusal is the signature's, not the parser's
    put rs1rstFlipByte(rs1tBad["value"], 20) into rs1tBad["value"]
-   rs1rstCheck (rsIngestHead(rs1tBad, rs1kRsGoldHandle) is empty), \
+   rs1rstCheck (rsIngestHead(rs1tBad, rs1kRsGoldHandle, 0) is empty), \
          "a tampered-but-parseable value fails the BEP44 signature"
    put rs1tEvent into rs1tBad
    put rs1tBad["signature"] into rs1tSig
@@ -26832,12 +26850,38 @@ private command rs1rstSectionIngest
       put "6" into char 1 of rs1tSig
    end if
    put rs1tSig into rs1tBad["signature"]
-   rs1rstCheck (rsIngestHead(rs1tBad, rs1kRsGoldHandle) is empty), \
+   rs1rstCheck (rsIngestHead(rs1tBad, rs1kRsGoldHandle, 0) is empty), \
          "a forged signature is refused"
    put rs1tEvent into rs1tBad
    put char 1 to 127 of rs1tBad["signature"] into rs1tBad["signature"]
-   rs1rstCheck (rsIngestHead(rs1tBad, rs1kRsGoldHandle) is empty), \
+   rs1rstCheck (rsIngestHead(rs1tBad, rs1kRsGoldHandle, 0) is empty), \
          "a truncated signature is refused"
+   -- THE READER WATERMARK (2026-09-08). The golden head is seq 7. Every
+   -- refusal above is about one record in isolation and passes on a head the
+   -- author really signed; these are the ones that catch a head that is
+   -- perfectly valid and simply OLD, which is what a replaying DHT node
+   -- serves. The first check is the one that matters most: an omitted
+   -- watermark must FAIL CLOSED, because the shipped bug was precisely a
+   -- caller that never supplied one.
+   rs1rstCheck (rsIngestHead(rs1tEvent, rs1kRsGoldHandle) is empty), \
+         "an omitted reader watermark is refused (fail closed)"
+   rs1rstCheck (rsIngestHead(rs1tEvent, rs1kRsGoldHandle, empty) is empty), \
+         "an empty reader watermark is refused"
+   rs1rstCheck (rsIngestHead(rs1tEvent, rs1kRsGoldHandle, "later") is empty), \
+         "a non-numeric reader watermark is refused"
+   rs1rstCheck (rsIngestHead(rs1tEvent, rs1kRsGoldHandle, -1) is empty), \
+         "a negative reader watermark is refused"
+   rs1rstCheck (rsIngestHead(rs1tEvent, rs1kRsGoldHandle, 9007199254740992) is empty), \
+         "a watermark past the engine's exact-integer range is refused"
+   rs1rstCheck (rsIngestHead(rs1tEvent, rs1kRsGoldHandle, 7) is not empty), \
+         "the SAME seq still ingests (a refresh is not a rollback)"
+   rs1rstCheck (rsIngestHead(rs1tEvent, rs1kRsGoldHandle, 6) is not empty), \
+         "a seq above the watermark ingests"
+   rs1rstCheck (rsIngestHead(rs1tEvent, rs1kRsGoldHandle, 8) is empty), \
+         "a head OLDER than the watermark is refused (the rollback gate)"
+   rs1rstCheck (rsIngestHead(rs1tEvent, rs1kRsGoldHandle, 4096) is empty), \
+         "and a far-older head is refused the same way"
+
    -- the post walk, on synthetic dhtImmutableItem events: head names post 2,
    -- post 2's prev names post 1, post 1's prev is the zero target - the end
    put rs1kRsGoldPost2Target into rs1tPostEvent["target"]

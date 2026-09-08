@@ -132,6 +132,56 @@ lane), 6 (the mesh, through the draft-appears criterion), 7 (tor,
 now including its built 8.2/8.3 serving) and 8 (a real relay) - all
 scripted in docs/two-machine-runbook.md.
 
+## rsIngestHead had no reader watermark, and headseq was written but never read (2026-09-08)
+
+One defect with two ends, found by a read-through of the DHT rail.
+
+**The rollback hole.** `rsIngestHead` verified handle, salt, seq self-agreement
+and the BEP44 signature, and then returned the head. Every one of those checks
+is about ONE record in isolation, and every one of them PASSES on a head the
+author really signed - just an old one. So a DHT node, or anyone replaying a
+captured put, could serve a stale-but-valid head forever and roll a reader back
+to a superseded follow list, profile and post chain. The comment that stood
+there deferred the question ("the app's replay protection reads the one true
+seq") and no app implemented one. That is the shape worth remembering: **a
+deferral written in a comment is not a design, it is an open defect with a
+polite name.**
+
+The fix is a required third parameter, not an optional one. `rsIngestHead` now
+takes the reader's watermark and REFUSES an empty or insane value rather than
+treating it as "no watermark", so a caller that has not been taught about this
+gets a loud failure instead of the silent rollback that shipped. A reader with
+no prior head says so by passing 0, which is an affirmative statement rather
+than an omission. Equal seq is accepted (a refresh is not a rollback); only a
+strictly older head is refused. Two DIFFERENT values at the SAME seq is author
+equivocation, needs the author's own key, and is a different threat this layer
+does not pretend to detect.
+
+This is apply-semantics, not a wire change: no byte of RSH1 moves and no magic
+bumps. It brings the head rail in line with the rule `docs/RIPTIDE-PROTOCOL.md`
+section 6 has stated for the LAN rail since it was written ("replay and reorder
+are neutralized by apply semantics, not by the wire"), which is why the protocol
+doc gained the rule in section 4.1 rather than a new version.
+
+**The other end: a write with no reader.** `raAppSave` had emitted `headseq`
+since it was written and `raAppLoad`'s switch had no case for it, so our own
+head sequence was persisted on every save and read back never. Nothing in the
+tree could see that: it is not a parse error, not a name any checker can miss,
+and not a vector anything pins. It is now covered by a round-trip check in
+`tools/check-demo-boot.py`, mutation-proved by deleting the load case and
+watching exactly that check fail. **The general lesson is cheap to apply: any
+value worth persisting is worth round-tripping in a test, because a dead write
+is invisible to every other kind of gate.**
+
+**And the caps were four bytes too generous.** `kRsMaxRecord` was 1000, but
+BEP44's 1000 is on the BENCODED value `<len>:<bytes>` (`rsBencodeBytes`), so a
+1000-byte record went out as 1005 and was refused by every node - silently.
+996 is the largest raw value that fits. Nothing that ever worked is lost: a
+record of 997..1000 raw bytes was never storable, so the only change is that the
+refusal now happens on the writer's own machine. Two derived numbers moved with
+it and were overstatements for the same reason: a post's text capacity (876, not
+880) and the 16-chunk content ceiling (15,936 bytes, not 16,000).
+
 ## The rules that bind this directory
 
 1. **The oracle comes first.** `tools/riptide_reference.py` was written
@@ -851,7 +901,7 @@ keep their stricter labels at each site.
   concatenation is the post's full text, plus a media attachment BEHIND
   the chunk list so the kind-C tail parse is pinned), held in all three
   holders per rule 2 - after this there is nothing left to pin in the
-  record layer. Then the rail: rsChunkPostText (full 1000-byte chunks by
+  record layer. Then the rail: rsChunkPostText (full 996-byte chunks by
   BYTE - a boundary may split a UTF-8 sequence, which is why the
   reassembly validates the CONCATENATION, never a chunk alone),
   rsPostTextCapacity (the D-or-C arithmetic as API, so the demo never

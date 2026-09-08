@@ -709,31 +709,31 @@ private command rstSectionIngest
    put 7 into tEvent["seq"]
    put rstBin(kRsGoldHeadHex) into tEvent["value"]
    put kRsGoldHeadSigHex into tEvent["signature"]
-   put rsIngestHead(tEvent, kRsGoldHandle) into tHead
+   put rsIngestHead(tEvent, kRsGoldHandle, 0) into tHead
    rstCheck (tHead is not empty), "the golden head event ingests"
    rstCheck (tHead["displayName"] is kRsGoldHeadName), \
          "and hands back the parsed head"
    rstCheck (tHead["latestPostTarget"] is kRsGoldPost2Target), \
          "naming post 2 as latest"
-   rstCheck (rsIngestHead(tEvent, kRsGoldConfPub) is empty), \
+   rstCheck (rsIngestHead(tEvent, kRsGoldConfPub, 0) is empty), \
          "an event for another handle is refused"
    put tEvent into tBad
    put "riptide-lies" into tBad["salt"]
-   rstCheck (rsIngestHead(tBad, kRsGoldHandle) is empty), \
+   rstCheck (rsIngestHead(tBad, kRsGoldHandle, 0) is empty), \
          "a wrong salt is refused"
    put tEvent into tBad
    put 8 into tBad["seq"]
-   rstCheck (rsIngestHead(tBad, kRsGoldHandle) is empty), \
+   rstCheck (rsIngestHead(tBad, kRsGoldHandle, 0) is empty), \
          "a seq disagreeing with the head's embedded seq is refused"
    put tEvent into tBad
    put rstFlipByte(tBad["value"], 2) into tBad["value"]
-   rstCheck (rsIngestHead(tBad, kRsGoldHandle) is empty), \
+   rstCheck (rsIngestHead(tBad, kRsGoldHandle, 0) is empty), \
          "a value that is not an RSH1 record is refused"
    put tEvent into tBad
    -- byte 20 is the last display-name char: the record still PARSES, so
    -- this refusal is the signature's, not the parser's
    put rstFlipByte(tBad["value"], 20) into tBad["value"]
-   rstCheck (rsIngestHead(tBad, kRsGoldHandle) is empty), \
+   rstCheck (rsIngestHead(tBad, kRsGoldHandle, 0) is empty), \
          "a tampered-but-parseable value fails the BEP44 signature"
    put tEvent into tBad
    put tBad["signature"] into tSig
@@ -743,12 +743,38 @@ private command rstSectionIngest
       put "6" into char 1 of tSig
    end if
    put tSig into tBad["signature"]
-   rstCheck (rsIngestHead(tBad, kRsGoldHandle) is empty), \
+   rstCheck (rsIngestHead(tBad, kRsGoldHandle, 0) is empty), \
          "a forged signature is refused"
    put tEvent into tBad
    put char 1 to 127 of tBad["signature"] into tBad["signature"]
-   rstCheck (rsIngestHead(tBad, kRsGoldHandle) is empty), \
+   rstCheck (rsIngestHead(tBad, kRsGoldHandle, 0) is empty), \
          "a truncated signature is refused"
+   -- THE READER WATERMARK (2026-09-08). The golden head is seq 7. Every
+   -- refusal above is about one record in isolation and passes on a head the
+   -- author really signed; these are the ones that catch a head that is
+   -- perfectly valid and simply OLD, which is what a replaying DHT node
+   -- serves. The first check is the one that matters most: an omitted
+   -- watermark must FAIL CLOSED, because the shipped bug was precisely a
+   -- caller that never supplied one.
+   rstCheck (rsIngestHead(tEvent, kRsGoldHandle) is empty), \
+         "an omitted reader watermark is refused (fail closed)"
+   rstCheck (rsIngestHead(tEvent, kRsGoldHandle, empty) is empty), \
+         "an empty reader watermark is refused"
+   rstCheck (rsIngestHead(tEvent, kRsGoldHandle, "later") is empty), \
+         "a non-numeric reader watermark is refused"
+   rstCheck (rsIngestHead(tEvent, kRsGoldHandle, -1) is empty), \
+         "a negative reader watermark is refused"
+   rstCheck (rsIngestHead(tEvent, kRsGoldHandle, 9007199254740992) is empty), \
+         "a watermark past the engine's exact-integer range is refused"
+   rstCheck (rsIngestHead(tEvent, kRsGoldHandle, 7) is not empty), \
+         "the SAME seq still ingests (a refresh is not a rollback)"
+   rstCheck (rsIngestHead(tEvent, kRsGoldHandle, 6) is not empty), \
+         "a seq above the watermark ingests"
+   rstCheck (rsIngestHead(tEvent, kRsGoldHandle, 8) is empty), \
+         "a head OLDER than the watermark is refused (the rollback gate)"
+   rstCheck (rsIngestHead(tEvent, kRsGoldHandle, 4096) is empty), \
+         "and a far-older head is refused the same way"
+
    -- the post walk, on synthetic dhtImmutableItem events: head names post 2,
    -- post 2's prev names post 1, post 1's prev is the zero target - the end
    put kRsGoldPost2Target into tPostEvent["target"]
