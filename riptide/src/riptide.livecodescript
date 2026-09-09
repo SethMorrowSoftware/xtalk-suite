@@ -3759,6 +3759,25 @@ function rsBtxoParseHeader pBytes
    put textDecode(byte 9 to (8 + tNameLen) of pBytes, "UTF-8") into \
          tOut["name"]
    put rsReadBEu64(byte (9 + tNameLen) to tLen of pBytes) into tOut["total"]
+   -- MISSED BY THE 2026-09-08 SWEEP, AND THAT MISS WAS A REGRESSION, WHICH
+   -- IS WHY THIS COMMENT IS LONGER THAN THE GUARD. Before the bound existed,
+   -- an absurd declared total came back as a ROUNDED enormous number and
+   -- rsBtxoStreamStep's `> kRsBtxoMaxTotal` ceiling refused it. With the
+   -- bound and without this check it comes back EMPTY, and `empty > 8589934592`
+   -- is FALSE under both the engine's string fallback and the interpreter's
+   -- numeric coercion - so the ceiling stopped firing and the bigger the lie,
+   -- the more likely it was to be believed. A peer declaring 8 GiB was
+   -- refused; the same peer declaring 18 exabytes was admitted.
+   --
+   -- The general shape is worth carrying: changing a failure value from
+   -- "wrong number" to "empty" moves every downstream comparison from
+   -- arithmetic to string, and a guard that reads `> cap` silently becomes a
+   -- guard that never fires. A partial sweep of call sites is not a safe
+   -- state for this kind of change.
+   if tOut["total"] is empty then
+      rsSetError "rsBtxoParseHeader: the total is over 2^53 and cannot be held exactly"
+      return empty
+   end if
    return tOut
 end rsBtxoParseHeader
 
@@ -4289,6 +4308,13 @@ function rsParseBridge pBytes
    put tPub into tOut["nostrPub"]
    put rsReadBEu64(byte 133 to 140 of pBytes) into tOut["seq"]
    put rsReadBEu64(byte 141 to 148 of pBytes) into tOut["timestamp"]
+   -- Same sweep, same miss (2026-09-09). A bridge record whose seq or
+   -- timestamp is over 2^53 would otherwise VERIFY with those fields silently
+   -- empty, and rsVerifyBridge hands the array straight to the app.
+   if tOut["seq"] is empty or tOut["timestamp"] is empty then
+      rsSetError "rsParseBridge: the seq or timestamp is over 2^53 and cannot be held exactly"
+      return empty
+   end if
    return tOut
 end rsParseBridge
 

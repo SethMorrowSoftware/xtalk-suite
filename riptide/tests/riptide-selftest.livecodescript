@@ -787,10 +787,14 @@ private command rstSectionIngest
    -- serves. The first check is the one that matters most: an omitted
    -- watermark must FAIL CLOSED, because the shipped bug was precisely a
    -- caller that never supplied one.
-   rstCheck (rsIngestHead(tEvent, kRsGoldHandle) is empty), \
-         "an omitted reader watermark is refused (fail closed)"
+   -- An OMITTED third argument and an explicit `empty` one are the SAME
+   -- thing to the engine (a missing parameter is empty), so the check below
+   -- covers both and the under-arity spelling is not written here: it is
+   -- legal LiveCodeScript, but tools/check-handler-calls.py refuses any arity
+   -- mismatch and this tree has no other one, so writing it would turn the
+   -- whole suite gate set red to test something this line already tests.
    rstCheck (rsIngestHead(tEvent, kRsGoldHandle, empty) is empty), \
-         "an empty reader watermark is refused"
+         "an omitted or empty reader watermark is refused (fail closed)"
    rstCheck (rsIngestHead(tEvent, kRsGoldHandle, "later") is empty), \
          "a non-numeric reader watermark is refused"
    rstCheck (rsIngestHead(tEvent, kRsGoldHandle, -1) is empty), \
