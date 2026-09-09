@@ -126,6 +126,15 @@ envelope is the contract, the contents are not.
 
 - Multi-byte integers are **big-endian**; u64 travels as two u32 halves
   (hi, lo).
+- **A u64 field above 2^53 MUST be refused, and the record with it
+  (normative, 2026-09-08).** Every u64 here is a counter, a unix
+  timestamp or a byte count, so no legitimate value comes close; but the
+  field is eight attacker-supplied bytes read BEFORE any signature is
+  checked, and an xTalk engine holds every number as an IEEE double,
+  exact only to 9007199254740992. Past that the value silently ROUNDS,
+  so an implementation that accepts it is not parsing the record on the
+  wire - it is parsing a nearby number. 2^53 itself is representable and
+  is accepted; 2^53 + 1 is the first refusal.
 - DHT targets and torrent info-hashes travel as **40 ASCII lowercase hex
   bytes**; the all-zeros target means "none". Handles and public keys as
   **64 ASCII lowercase hex bytes**; the all-zeros handle means "none".
@@ -151,12 +160,33 @@ key = the handle's key, salt = `"riptide-head"`.
     prekeyTarget(40 hex)  onionLen(u8: 0 or 62) onionAddr
     profileMetaTarget(40 hex)
 
-Caps: name 0..64 UTF-8 bytes; the whole record inside the BEP44
-1000-byte value cap. `seq` MUST equal the BEP44 sequence number the item
-is published under; an ingester MUST refuse a head whose embedded seq
-disagrees with the BEP44 seq it arrived under, and MUST verify the
-BEP44 signature itself with the handle's key rather than trusting the
-transport.
+Caps: name 0..64 UTF-8 bytes; the whole record inside the BEP44 value
+cap. That cap is **1000 bytes on the BENCODED value**, and the stored
+`v` is the bencoded byte string `<len>:<bytes>`, so the **raw record
+MUST be at most 996 bytes** ("996:" is four bytes and 4 + 996 = 1000
+exactly). A 1000-byte raw record is 1005 on the wire and every node
+refuses it, silently - a rejected put is indistinguishable from a put
+nobody has fetched. (Corrected 2026-09-08; the reference implementation
+had capped the raw record at 1000.) `seq` MUST equal the BEP44 sequence
+number the item is published under; an ingester MUST refuse a head whose
+embedded seq disagrees with the BEP44 seq it arrived under, and MUST
+verify the BEP44 signature itself with the handle's key rather than
+trusting the transport.
+
+**Head ingest is monotone per handle, and this is normative
+(2026-09-08).** A reader MUST keep, per handle, the highest head `seq`
+it has accepted, and MUST refuse a head whose seq is strictly lower.
+Every other check above is about one record in isolation and passes on
+a head the author really signed - just an old one - so without this rule
+a DHT node, or anyone replaying a captured put, can roll a reader back
+to a superseded follow list, profile and post chain for as long as it
+keeps serving the stale item. An equal seq is ACCEPTED: re-reading the
+head you already hold is what a refresh looks like. The watermark MUST
+survive a restart, or every launch re-opens the window. This is
+apply-semantics, not a wire change - no byte of RSH1 moves and no magic
+bumps - and it is the same rule section 6 already states for the LAN
+rail ("replay and reorder are neutralized by apply semantics, not by
+the wire").
 
 On the DHT the stored value `v` is the **bencoded byte string** of the
 record (`<len>:<bytes>`), and the canonical signing buffer is BEP44's:
@@ -170,7 +200,7 @@ against the target before believing them.
 
 ### 4.2 RSP1 - the post record
 
-An immutable BEP44 item (target = SHA-1 of the bencoded value), 1..1000
+An immutable BEP44 item (target = SHA-1 of the bencoded value), 1..996
 bytes:
 
     "RSP1"  timestamp(u64, unix seconds)  prevPostTarget(40 hex)
@@ -187,13 +217,13 @@ content address before rendering anything**; a verified feed IS a
 verified chain walk.
 
 Kind D carries text directly; its capacity beside `m` attachments is
-`1000 - 120 - 40*m` bytes (the layout arithmetic; publish this as API,
+`996 - 120 - 40*m` bytes (the layout arithmetic; publish this as API,
 never hand-copy the number). Kind C carries the text as 1..16 immutable
 chunk **values** (raw UTF-8 bytes, split by byte - a boundary may fall
 inside a UTF-8 sequence). The reassembler MUST validate content
 addresses per chunk and UTF-8-round-trip the **concatenation**, never a
 chunk alone. Any split of the same bytes reassembles identically; full
-1000-byte chunks are the reference policy.
+996-byte chunks are the reference policy (the raw BEP44 cap; see 4.1).
 
 ### 4.3 Media
 
@@ -291,7 +321,7 @@ Device names are display labels; any admitted device can sign any name
 | Kind | Body after name | Signature |
 |---|---|---|
 | `C` challenge | nonce(32, fresh random) | none |
-| `R` response | sig(64) | ed25519 over `"riptide-lan" \|\| nonce \|\| joinerName` |
+| `R` response | sig(64) | ed25519 over `"riptide-lan-a" \|\| nonce \|\| joinerName` |
 | `W` welcome | sig(64) | ed25519 over `"riptide-lan-w" \|\| responseSig \|\| hostName` |
 | `D` draft | seq(u64) draftLen(u16) draft(0..4096 UTF-8) | see below |
 | `F` feed state | feedSeq(u64) readPeer(64 hex or zeros) readUpTo(u64) | see below |
@@ -304,7 +334,21 @@ handshake, and only a master-holder can produce it.
 
 The four sync kinds (`D`/`F`/`P`/`M`) sign ed25519 under the shared LAN
 key over `"riptide-lan-s" || the whole record body` (kind byte
-included). Every record is **absolute state**, never a delta; replay
+included).
+
+**The three LAN domain tags MUST be prefix-free, not merely distinct
+(normative, 2026-09-09).** They are raw-concatenated in front of the
+signed body, so if one tag is a PREFIX of another the two preimage
+grammars overlap and a signature minted for one rail is a valid
+signature for the other. This was real: the admission tag was
+`"riptide-lan"`, a strict prefix of `"riptide-lan-s"`, and the bytes
+straight after it in an admission preimage are the 32-byte challenge
+nonce chosen wholesale by the remote peer - so a nonce beginning `-s`
+made an admission signature byte-identical to a sync-record signature
+under the same key. The tags are now `"riptide-lan-a"`, `"riptide-lan-w"`
+and `"riptide-lan-s"`: all 13 bytes, differing at byte 13. An
+implementation that keeps the old admission tag is not
+wire-compatible and is exploitable. Every record is **absolute state**, never a delta; replay
 and reorder are neutralized by apply semantics, not by the wire:
 drafts and handoffs apply only at a strictly higher per-**device** seq
 (keyed by the signed name, not the transport peer - a host relays

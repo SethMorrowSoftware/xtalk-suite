@@ -226,6 +226,39 @@ shape: "item 1 returned the whole list".
 
 **Rule:** save, set, restore - around the NARROWEST span that needs it.
 
+### 2.4 Every number is an IEEE double, so integers are exact only to 2^53
+**DOCUMENTED**, and deliberately not stronger: LiveCode documents its numeric
+model, this tree has acted on it since coinxt was written
+(`coinxt/src/coinxt.livecodescript`: "a 320-bit base58 payload is NEVER held as
+one number ... which is why this file has no bignum"), and **nobody has yet run
+a 2^53 probe on OXT**. Promoting this to OBSERVED needs one dated run, and it is
+a five-minute probe.
+
+The consequence: an integer accumulator is exact while |v| <= 9007199254740992
+and silently ROUNDS above it. `byteToNum` over eight bytes is the shape that
+bites - 2^64-1 is not representable, so an 8-byte little-endian read answers
+1.8446744073709552e+19 and every comparison against it is then wrong. There is
+no error, no overflow flag and no exception; the script simply continues with a
+different number. This is the same class as 2.1 (an undeclared name evaluates to
+its own spelling): the engine's failure mode is a plausible wrong answer, not a
+stop.
+
+**What made it worth an entry** (2026-09-08): the tree's only headless execution
+path did not model it. `coinxt/tools/lcs-interp.py` ran arithmetic at python's
+ARBITRARY precision, so the 8-byte read that rounds on an engine returned
+18446744073709551615 exactly in the interpreter. That is LOOSER than the engine,
+the one direction that file's own contract forbids, and it meant wide-integer
+code could pass the static checker AND every headless vector AND still be wrong
+on an engine. The interpreter now refuses any integer past the exact range
+rather than emulating the rounding, so the gate names the site instead of
+inheriting the engine's silence. Refusing is stricter than the engine, which is
+allowed; the engine carries on and tells nobody.
+
+**Rule:** never accumulate a value past 2^53. Split it - bytes, hex, or decimal
+digits - which is the no-big-integer discipline coinxt already writes down.
+Bound every wide decoder at its parse site rather than after the arithmetic,
+because after it there is nothing left to detect.
+
 ---
 
 ## 3. Control flow

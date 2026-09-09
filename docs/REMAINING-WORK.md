@@ -609,7 +609,31 @@ Built and statically verified; pending under the honesty convention.
     stale-socket-close tolerance, the topStack default callback owner.
     — `onionxt/src/onionxt.livecodescript:1018,1140,1713,1744`
 
-## C. Release and CI (7)
+## C. Release and CI (8)
+
+0. **torrentxt's committed binaries are BEHIND its shim (opened 2026-09-08).**
+   Two source fixes landed in `torrentxt/src/torrent_shim.cpp` that no
+   committed library carries yet, so on every platform the shipped behaviour is
+   still the old behaviour: (a) the rp1 inbound queue is now BOUNDED
+   (tail-drop plus a shed counter, datachannelxt's policy) - until a rebuild,
+   a peer that sends faster than the app polls still grows the process without
+   bound, which is remote memory exhaustion on a normally-polling node; (b)
+   `btx_dht_put_immutable` / `btx_dht_put_mutable` now cap the RAW value at
+   996 rather than 1000, because BEP44's 1000 is on the BENCODED value and a
+   1000-byte raw value goes out as 1005 and is silently refused by every node.
+   Neither change touches the exported surface or `BTX_ABI_VERSION`, so
+   `check-binary-freshness.py` stays green and nothing is mis-described; the
+   gate simply cannot see a body-only change, which is the honest limit of its
+   four legs. **Closing this is one `release-binaries.yml` dispatch**, which is
+   deliberately a human decision (suite rule 5's point is that a committed
+   binary traces to a person pressing "Run workflow").
+   Also deferred with it: reporting the shed count as a proper
+   `A_RP1_QUEUE_OVERFLOW` alert, which needs a new alert code and therefore
+   ABI 11 -> 12; until then the count rides the existing last-error channel on
+   the next drain.
+   - `torrentxt/src/torrent_shim.cpp` ("THE BOUNDED INBOUND QUEUE"),
+     `torrentxt/src/btx_abi.h` (the ABI contract), `tools/check-binary-freshness.py`
+
 
 1. **~~macOS universal binaries~~ CLOSED 2026-08-27 by release run 12**, the
    first `release-binaries.yml` dispatch to reach its commit stage: first-ever

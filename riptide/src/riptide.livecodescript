@@ -57,7 +57,7 @@ script "RiptideSocial"
 --   - the RSH1 feed-head and RSP1 post-record framings, build + parse +
 --     signature verification, caps enforced on BOTH sides - including,
 --     since 2026-08-23 (backlog A2), the kind-C CHUNKED rail end to end:
---     the producer split (rsChunkPostText, full 1000-byte chunks by BYTE
+--     the producer split (rsChunkPostText, full 996-byte chunks by BYTE
 --     - reassembly validates the concatenation, never a chunk alone),
 --     the D-or-C capacity arithmetic (rsPostTextCapacity), the one-call
 --     producer (rsPublishChunkedPost: chunks stored, then the signed
@@ -189,7 +189,7 @@ script "RiptideSocial"
 --     timestamp(u64 BE) body(UTF-8, non-empty); O/A carry SDP (phase 5)
 --   RSL1 LAN challenge: magic(4) "C" nameLen(u8) name nonce(32)
 --   RSL1 LAN response: magic(4) "R" nameLen(u8) name sig(64); sig is
---     ed25519 by the shared LAN key over "riptide-lan" || nonce || name
+--     ed25519 by the shared LAN key over "riptide-lan-a" || nonce || name
 --   RSL1 LAN draft sync: magic(4) "D" nameLen(u8) name seq(u64 BE)
 --     draftLen(u16 BE) draft(UTF-8, 0..4096; empty = cleared) sig(64)
 --   RSL1 LAN feed state: magic(4) "F" nameLen(u8) name feedSeq(u64 BE)
@@ -227,11 +227,27 @@ constant kRsIntroMagic = "RSI1"
 constant kRsFrameMagic = "RSM1"
 constant kRsFrameMax = 60000
 constant kRsLanMagic = "RSL1"
-constant kRsLanDomain = "riptide-lan"
+-- "riptide-lan-a", NOT "riptide-lan", and the trailing byte is a security
+-- fix (2026-09-09). These tags are RAW-CONCATENATED in front of the signed
+-- body, and "riptide-lan" is a strict PREFIX of "riptide-lan-s". The byte
+-- immediately after the short tag in an admission preimage is the 32-byte
+-- challenge nonce, which the REMOTE peer chooses wholesale - so an attacker
+-- who sets the nonce to "-s" || <30 bytes> made the joiner's admission
+-- signature come out BYTE-IDENTICAL to a signature over
+-- "riptide-lan-s" || <sync record body>, under the same LAN subkey. One
+-- signature satisfied both verifiers: a device that merely completed a
+-- pairing handshake could be made to have "signed" a sync record it never saw.
+--
+-- The three tags are now all 13 bytes and differ at byte 13
+-- ("riptide-lan-a" / "-w" / "-s"), which makes them PREFIX-FREE rather than
+-- merely unequal. That distinction is the whole lesson: for a raw-concat
+-- signing prefix, "distinct" is not the property you need, and a test that
+-- checks inequality (as ours did) cannot see the difference.
+constant kRsLanDomain = "riptide-lan-a"
 constant kRsLanNonceLen = 32
 constant kRsLanMaxName = 32
 -- the phase-6 SYNC records over the admitted mesh: a distinct signature
--- domain (admission signs "riptide-lan", the welcome "riptide-lan-w"),
+-- domain (admission signs "riptide-lan-a", the welcome "riptide-lan-w"),
 -- a draft-text cap (refused, never truncated - a draft over it still
 -- lives locally, it just does not sync), and the all-zeros "no peer"
 -- spelling for the feed-state record's optional read receipt
@@ -312,7 +328,24 @@ constant kRsAppStateMax = 1048576
 constant kRsMaxDisplayName = 64
 constant kRsMaxMedia = 8
 constant kRsMaxChunks = 16
-constant kRsMaxRecord = 1000
+-- The largest RAW record this layer will build or accept.
+--
+-- 996, NOT 1000, and the four bytes are the whole point (fixed 2026-09-08).
+-- BEP44 caps the stored value `v` at 1000 bytes, and `v` is the BENCODED byte
+-- string `<len>:<bytes>` (rsBencodeBytes, and section 4.1 of the protocol says
+-- so). So a 1000-byte raw record goes on the wire as "1000:" + 1000 = 1005
+-- bytes and every DHT node REFUSES it - silently, because a rejected put looks
+-- exactly like a put nobody has fetched yet. 996 is the largest raw value that
+-- fits: "996:" is 4 bytes, 4 + 996 = 1000 exactly, and libtorrent's own check
+-- refuses only what is STRICTLY over 1000.
+--
+-- Nothing that ever worked is lost by tightening this: a record between 997
+-- and 1000 raw bytes was never storable, so the only change is that the
+-- refusal now happens here, loudly, on the writer's own machine, instead of
+-- vanishing into the DHT. It does move two derived numbers - a post's text
+-- capacity and the 16-chunk content ceiling (15,936 bytes, not 16,000) - and
+-- those were overstatements for the same reason.
+constant kRsMaxRecord = 996
 constant kRsMaxSalt = 64
 constant kRsOnionAddrLen = 62
 constant kRsArgonOps = "2"
@@ -829,6 +862,10 @@ function rsParseHead pBytes
       return empty
    end if
    put rsReadBEu64(byte 5 to 12 of pBytes) into tHead["seq"]
+   if tHead["seq"] is empty then
+      rsSetError "rsParseHead: the seq is over 2^53 and cannot be held exactly"
+      return empty
+   end if
    put byteToNum(byte 13 of pBytes) into tNameLen
    if tNameLen > kRsMaxDisplayName then
       rsSetError "rsParseHead: display name length over cap"
@@ -1050,6 +1087,10 @@ function rsParsePost pBytes
       return empty
    end if
    put rsReadBEu64(byte 5 to 12 of pBytes) into tPost["timestamp"]
+   if tPost["timestamp"] is empty then
+      rsSetError "rsParsePost: the timestamp is over 2^53 and cannot be held exactly"
+      return empty
+   end if
    put textDecode(byte 13 to 52 of pBytes, "ASCII") into tField
    if not rsIsHexOfLen(tField, 40) then
       rsSetError "rsParsePost: malformed previous-post target"
@@ -1165,8 +1206,9 @@ end rsVerifyPost
 
 -- How many UTF-8 text bytes fit a DIRECT (kind-D) post beside pMediaCount
 -- attachments. The arithmetic is the RSP1 layout itself against the BEP44
--- 1000-byte value cap, published as API so the app's D-or-C decision can
--- never drift from the builder's refusal - a hand-copied 880 in a demo is
+-- value cap (kRsMaxRecord, 996 raw - see its note), published as API so the
+-- app's D-or-C decision can never drift from the builder's refusal - a
+-- hand-copied 876 in a demo is
 -- exactly the class of constant this repo keeps finding stale. Returns
 -- the byte budget, or empty on a media count outside 0..8.
 function rsPostTextCapacity pMediaCount
@@ -1182,15 +1224,15 @@ function rsPostTextCapacity pMediaCount
    return kRsMaxRecord - (4 + 8 + 40 + 1 + 2 + 1 + 64) - 40 * tCount
 end rsPostTextCapacity
 
--- Split post text into kind-C chunk VALUES: full 1000-byte immutable
+-- Split post text into kind-C chunk VALUES: full 996-byte immutable
 -- items in order, the last one carrying the remainder. The split is by
 -- BYTE, deliberately - a boundary may fall inside a UTF-8 sequence, and
 -- that is fine because reassembly validates and decodes the CONCATENATION,
 -- never a chunk alone (rsAssembleChunkText). The split policy is
 -- producer-local (any 1..16-chunk split of the same bytes reassembles
 -- identically); the CAPS are the wire format's - at most 16 chunks of at
--- most 1000 bytes, so 16000 UTF-8 bytes is the most text a kind-C post
--- can carry, refused over (never truncated). Returns a numerically keyed
+-- most kRsMaxRecord (996) bytes, so 15936 UTF-8 bytes is the most text a
+-- kind-C post can carry, refused over (never truncated). Returns a numerically keyed
 -- array (1..count) of chunk byte strings, or empty.
 function rsChunkPostText pTextContent
    local tBytes, tLen, tPos, tTake, tI, tOut
@@ -1386,18 +1428,56 @@ end rsImmutableTarget
 -- Verify and unpack a drained dhtMutableItem EVENT as a followee's feed
 -- head. pEvent is the event array btPoll returned (publicKey, salt, seq,
 -- value, signature); pExpectedHandleHex is the handle the app trusts (the
--- key it asked rsRequestHead about). Refuses: an event for another key or
--- salt, an insane seq, a value that is not a strict RSH1 record, a record
--- whose embedded seq disagrees with the BEP44 seq, and - the point - a
--- BEP44 signature that does not verify under the handle. libtorrent already
--- verified that signature once on receipt; re-verifying here in SodiumXT
--- costs one call and means the app's trust does not rest on the transport.
+-- key it asked rsRequestHead about); pMinSeq is the READER'S WATERMARK, the
+-- highest seq this reader has already accepted for this handle (0 for a
+-- handle whose head has never been seen). Refuses: an event for another key
+-- or salt, an insane seq, a value that is not a strict RSH1 record, a record
+-- whose embedded seq disagrees with the BEP44 seq, a head OLDER than the
+-- watermark, and - the point - a BEP44 signature that does not verify under
+-- the handle. libtorrent already verified that signature once on receipt;
+-- re-verifying here in SodiumXT costs one call and means the app's trust does
+-- not rest on the transport.
 -- Returns the parsed head array (rsParseHead's shape), or empty.
-function rsIngestHead pEvent, pExpectedHandleHex
+--
+-- THE WATERMARK IS REQUIRED, AND THAT IS THE 2026-09-08 FIX. Every check
+-- above is about ONE record in isolation, and each one passes on a head the
+-- author really did sign - just an OLD one. A DHT node (or anyone replaying a
+-- captured put) can serve a stale-but-validly-signed head forever, and this
+-- function used to return it happily, rolling the reader back to a superseded
+-- follow list, profile and post chain. The comment that stood here deferred
+-- the question ("the app's replay protection reads the one true seq") and no
+-- app implemented one, which is exactly why the parameter is not optional: an
+-- EMPTY pMinSeq is REFUSED rather than treated as "no watermark", so a caller
+-- that has not been taught about this gets a loud failure instead of the
+-- silent rollback that shipped. A reader with no prior head says so by passing
+-- 0, which is an affirmative statement rather than an omission.
+--
+-- Equal seq is ACCEPTED, not refused: re-reading the head you already hold is
+-- the normal shape of a refresh, and the DHT re-serves the same item for as
+-- long as it is republished. Only a STRICTLY older head is a rollback. (Two
+-- DIFFERENT values at the SAME seq is author equivocation - it needs the
+-- author's own key, so it is a different threat with a different answer, and
+-- this layer does not pretend to detect it.)
+--
+-- This is apply-semantics, not a wire change: no byte of RSH1 moves and no
+-- magic bumps. It brings the head rail in line with the rule the LAN rail has
+-- carried since it was written (docs/RIPTIDE-PROTOCOL.md section 6: "replay
+-- and reorder are neutralized by apply semantics, not by the wire", drafts at
+-- a strictly higher per-device seq, feed state as max).
+function rsIngestHead pEvent, pExpectedHandleHex, pMinSeq
    local tHandle, tEventKey, tSeq, tHead, tSigHex, tSig, tBuf, tOk, tErr
    put toLower(pExpectedHandleHex) into tHandle
    if not rsIsHexOfLen(tHandle, 64) then
       rsSetError "rsIngestHead: the expected handle must be 64 hex chars"
+      return empty
+   end if
+   -- Fail closed FIRST: a caller that omits the watermark gets refused, never
+   -- served. Same sanity bounds as the event seq below (0 .. 2^53-1, the
+   -- engine's exact-integer range - a double cannot compare a bigger one
+   -- correctly, so accepting one would make this very check unreliable).
+   if pMinSeq is not an integer or pMinSeq < 0 or pMinSeq >= 9007199254740992 then
+      rsSetError "rsIngestHead: a reader watermark is required (pass 0 for a" && \
+            "handle whose head has never been accepted)"
       return empty
    end if
    put toLower(pEvent["publicKey"]) into tEventKey
@@ -1417,13 +1497,22 @@ function rsIngestHead pEvent, pExpectedHandleHex
       rsSetError "rsIngestHead: the event seq is not a sane integer"
       return empty
    end if
+   -- The rollback gate. Placed after the seq SANITY check (so the comparison
+   -- is between two numbers the engine can hold exactly) and before the parse
+   -- and the signature verify (so a replayed head costs the reader nothing).
+   if tSeq < pMinSeq then
+      rsSetError "rsIngestHead: this head is older than one already accepted" && \
+            "for this handle (seq" && tSeq && "before" && pMinSeq & ")"
+      return empty
+   end if
    put rsParseHead(pEvent["value"]) into tHead
    if tHead is empty then return empty
    if tHead["seq"] is not tSeq then
       -- rsPublishHead uses the head's own embedded seq as the BEP44 seq, so
       -- a disagreement means this record was not published by this layer
       -- (or was reassembled); refuse rather than guess which counter to
-      -- believe - the app's replay protection reads the one true seq.
+      -- believe. Both counters have now been checked against the reader's
+      -- watermark above, so there is no "one true seq" left to defer to.
       rsSetError "rsIngestHead: the BEP44 seq and the head's embedded seq" && \
             "disagree"
       return empty
@@ -2238,6 +2327,10 @@ function rsParseIntro pBytes
    end if
    put tField into tOut["recipientHandle"]
    put rsReadBEu64(byte 197 to 204 of pBytes) into tOut["timestamp"]
+   if tOut["timestamp"] is empty then
+      rsSetError "rsParseIntro: the timestamp is over 2^53 and cannot be held exactly"
+      return empty
+   end if
    return tOut
 end rsParseIntro
 
@@ -2405,6 +2498,10 @@ function rsDmParseMessage pBytes
    end if
    put textDecode(byte 1 of pBytes, "ASCII") into tOut["kind"]
    put rsReadBEu64(byte 2 to 9 of pBytes) into tOut["timestamp"]
+   if tOut["timestamp"] is empty then
+      rsSetError "rsDmParseMessage: the timestamp is over 2^53 and cannot be held exactly"
+      return empty
+   end if
    -- the body is authenticated (it came out of the secretstream) but is
    -- still declared UTF-8 text; OXT's textDecode is lossy not throwing (see
    -- rsBytesAreUtf8), so validate by round-trip rather than an inert try
@@ -2520,7 +2617,7 @@ end rsDmSend
 -- passphrase, so every device derives the SAME LAN subkey ed25519 keypair
 -- (rsLanKey -> sxSignKeypairFromSeed). Admission proves the joiner holds
 -- the master: the host sends a random challenge, the joiner signs
--- "riptide-lan" || nonce || itsName under the LAN secret, and the host
+-- "riptide-lan-a" || nonce || itsName under the LAN secret, and the host
 -- verifies against the LAN public it derives from its OWN master. A
 -- stranger on the same cafe Wi-Fi cannot produce that signature, so
 -- cannot join the mesh. The records ride enet channel-0 messages (the
@@ -2819,8 +2916,8 @@ end rsLanVerifyWelcome
 --
 -- THE AUTHENTICATION CHOICE, recorded (do not re-litigate). Every sync
 -- record is SIGNED under the SAME shared LAN ed25519 key the admission
--- uses, with a DISTINCT domain tag - "riptide-lan-s"; admission signs
--- "riptide-lan", the welcome "riptide-lan-w" - over the WHOLE record
+-- uses, with a PREFIX-FREE domain tag - "riptide-lan-s"; admission signs
+-- "riptide-lan-a", the welcome "riptide-lan-w" - over the WHOLE record
 -- body, kind byte included, so an admission signature can never be
 -- replayed as a sync record, and one sync kind can never be read as
 -- another (the case-folded-kind trick dies on the signature too: the
@@ -2981,6 +3078,10 @@ function rsLanVerifyDraft pBytes, pMaster
          tOut["name"]
    put rsReadBEu64(byte (7 + tNameLen) to (14 + tNameLen) of pBytes) \
          into tOut["seq"]
+   if tOut["seq"] is empty then
+      rsSetError "rsLanVerifyDraft: the seq is over 2^53 and cannot be held exactly"
+      return empty
+   end if
    if tDraftLen is 0 then
       put empty into tOut["draft"]
    else
@@ -3092,6 +3193,10 @@ function rsLanVerifyFeedState pBytes, pMaster
          tOut["name"]
    put rsReadBEu64(byte (7 + tNameLen) to (14 + tNameLen) of pBytes) \
          into tOut["feedSeq"]
+   if tOut["feedSeq"] is empty then
+      rsSetError "rsLanVerifyFeedState: the feedSeq is over 2^53 and cannot be held exactly"
+      return empty
+   end if
    if tPeer is kRsZeroHandle then
       put empty into tOut["readPeer"]
    else
@@ -3099,6 +3204,10 @@ function rsLanVerifyFeedState pBytes, pMaster
    end if
    put rsReadBEu64(byte (79 + tNameLen) to (86 + tNameLen) of pBytes) \
          into tOut["readUpTo"]
+   if tOut["readUpTo"] is empty then
+      rsSetError "rsLanVerifyFeedState: the readUpTo is over 2^53 and cannot be held exactly"
+      return empty
+   end if
    return tOut
 end rsLanVerifyFeedState
 
@@ -3196,6 +3305,10 @@ function rsLanVerifyPresence pBytes, pMaster
    end if
    put rsReadBEu64(byte (8 + tNameLen) to (15 + tNameLen) of pBytes) \
          into tOut["tick"]
+   if tOut["tick"] is empty then
+      rsSetError "rsLanVerifyPresence: the tick is over 2^53 and cannot be held exactly"
+      return empty
+   end if
    return tOut
 end rsLanVerifyPresence
 
@@ -3336,11 +3449,19 @@ function rsLanVerifyHandoff pBytes, pMaster
          tOut["name"]
    put rsReadBEu64(byte (7 + tNameLen) to (14 + tNameLen) of pBytes) \
          into tOut["seq"]
+   if tOut["seq"] is empty then
+      rsSetError "rsLanVerifyHandoff: the seq is over 2^53 and cannot be held exactly"
+      return empty
+   end if
    put tHash into tOut["infoHash"]
    put textDecode(byte (56 + tNameLen) to (55 + tNameLen + tFileLen) \
          of pBytes, "UTF-8") into tOut["fileName"]
    put rsReadBEu64(byte (56 + tNameLen + tFileLen) to \
          (63 + tNameLen + tFileLen) of pBytes) into tOut["fileSize"]
+   if tOut["fileSize"] is empty then
+      rsSetError "rsLanVerifyHandoff: the fileSize is over 2^53 and cannot be held exactly"
+      return empty
+   end if
    return tOut
 end rsLanVerifyHandoff
 
@@ -3654,6 +3775,25 @@ function rsBtxoParseHeader pBytes
    put textDecode(byte 9 to (8 + tNameLen) of pBytes, "UTF-8") into \
          tOut["name"]
    put rsReadBEu64(byte (9 + tNameLen) to tLen of pBytes) into tOut["total"]
+   -- MISSED BY THE 2026-09-08 SWEEP, AND THAT MISS WAS A REGRESSION, WHICH
+   -- IS WHY THIS COMMENT IS LONGER THAN THE GUARD. Before the bound existed,
+   -- an absurd declared total came back as a ROUNDED enormous number and
+   -- rsBtxoStreamStep's `> kRsBtxoMaxTotal` ceiling refused it. With the
+   -- bound and without this check it comes back EMPTY, and `empty > 8589934592`
+   -- is FALSE under both the engine's string fallback and the interpreter's
+   -- numeric coercion - so the ceiling stopped firing and the bigger the lie,
+   -- the more likely it was to be believed. A peer declaring 8 GiB was
+   -- refused; the same peer declaring 18 exabytes was admitted.
+   --
+   -- The general shape is worth carrying: changing a failure value from
+   -- "wrong number" to "empty" moves every downstream comparison from
+   -- arithmetic to string, and a guard that reads `> cap` silently becomes a
+   -- guard that never fires. A partial sweep of call sites is not a safe
+   -- state for this kind of change.
+   if tOut["total"] is empty then
+      rsSetError "rsBtxoParseHeader: the total is over 2^53 and cannot be held exactly"
+      return empty
+   end if
    return tOut
 end rsBtxoParseHeader
 
@@ -4184,6 +4324,13 @@ function rsParseBridge pBytes
    put tPub into tOut["nostrPub"]
    put rsReadBEu64(byte 133 to 140 of pBytes) into tOut["seq"]
    put rsReadBEu64(byte 141 to 148 of pBytes) into tOut["timestamp"]
+   -- Same sweep, same miss (2026-09-09). A bridge record whose seq or
+   -- timestamp is over 2^53 would otherwise VERIFY with those fields silently
+   -- empty, and rsVerifyBridge hands the array straight to the app.
+   if tOut["seq"] is empty or tOut["timestamp"] is empty then
+      rsSetError "rsParseBridge: the seq or timestamp is over 2^53 and cannot be held exactly"
+      return empty
+   end if
    return tOut
 end rsParseBridge
 
@@ -4710,8 +4857,28 @@ private function rsReadBEu32 pBytes
 end rsReadBEu32
 
 private function rsReadBEu64 pBytes
-   return rsReadBEu32(byte 1 to 4 of pBytes) * 4294967296 + \
-         rsReadBEu32(byte 5 to 8 of pBytes)
+   -- A big-endian u64, REFUSED (empty) past 2^53.
+   --
+   -- The wire field is 64 bits but an engine number is an IEEE double, exact
+   -- only to 9007199254740992 (docs/OXT-ENGINE-NOTES.md 2.4). Past that the
+   -- sum ROUNDS with no error, so this used to hand its callers a number that
+   -- was quietly not the one on the wire - and EVERY field that reaches here
+   -- is attacker-supplied and parsed BEFORE any signature is checked.
+   --
+   -- Every legitimate value fits with enormous room: a seq is a counter, a
+   -- unix timestamp in seconds is about 1.8e9, and a file size is capped at
+   -- kRsBtxoMaxTotal (8 GiB). So a value over the bound is always a malformed
+   -- or hostile record, and empty - this library's refusal - is the right
+   -- answer rather than a rounded one. EVERY call site checks for empty and
+   -- refuses the record; that is what makes this safe rather than merely
+   -- different.
+   local tHi, tLo
+   put rsReadBEu32(byte 1 to 4 of pBytes) into tHi
+   put rsReadBEu32(byte 5 to 8 of pBytes) into tLo
+   if tHi > (9007199254740992 - tLo) / 4294967296 then
+      return empty
+   end if
+   return tHi * 4294967296 + tLo
 end rsReadBEu64
 
 -- Base32, RFC 4648 lowercase, no padding - the onionxt algorithm with the

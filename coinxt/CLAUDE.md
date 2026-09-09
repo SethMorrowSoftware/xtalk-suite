@@ -36,6 +36,42 @@ CoinXT C shim (cnx_)   native/coinxt.c  +  vendored trezor-crypto subset
       SHA2/SHA3/Keccak-256/RIPEMD-160, HMAC, PBKDF2, BIP-32 node math, BIP-39 seed
 ```
 
+## The headless interpreter could not see a 2^53 defect (2026-09-08)
+
+`tools/lcs-interp.py` is this member's answer to "OXT cannot run a
+`.livecodescript` headlessly", and it is load-bearing: `check-script-vectors.py`
+and `check-wallet-vectors.py` drive the SHIPPED script through it against the
+real committed `.so`, and riptide's runner loads nostrxt's byte-identical copy.
+Its own contract is explicit - "stricter-than-engine is acceptable and
+documented; looser is a bug".
+
+It was looser, on exactly the arithmetic that matters most here. Numbers were
+python ints, which are arbitrary-precision, while the engine holds every number
+as an IEEE double and is exact only to 2^53. An 8-byte little-endian read
+answers 18446744073709551615 in the interpreter and 1.8446744073709552e+19 on
+OXT. That divergence was not in the file's named list, and its consequence is
+the worst kind: **a wide-integer defect could pass the static checker AND every
+headless vector AND still be wrong on an engine**, because the only tool that
+executes the code was more capable than the thing it models.
+
+Every value reaching arithmetic, every arithmetic RESULT and every integer
+literal now goes through `_exact()`, which REFUSES past 2^53 rather than
+emulating the rounding. Refusing is the deliberate choice and it is this file's
+existing posture ("it REFUSES anything outside the subset rather than
+guessing"): a silently-rounded answer would just move the silence, while a
+refusal names the site. `Imprecise` is deliberately NOT a `Thrown`, so an
+interpreted `try ... catch` cannot swallow it - this is a statement about the
+tool's fidelity, not a script error the script gets to handle.
+
+The engine behaviour itself is now `docs/OXT-ENGINE-NOTES.md` 2.4, classed
+DOCUMENTED and not stronger, because nobody has yet run a 2^53 probe on OXT.
+Promoting it is a five-minute probe and the entry says so.
+
+**The general lesson, which is this tree's own and keeps recurring:** a gate is
+only as good as its model, and a model that is MORE capable than the engine
+fails in the silent direction. `check-checker-drift.py` had been proving the two
+copies were identical the whole time. Identical is not correct.
+
 ## How CoinXT differs from its siblings (read before you assume)
 
 1. **Unlike OnionXT, CoinXT HAS a C shim, and it is central.** OnionXT is pure script over engine

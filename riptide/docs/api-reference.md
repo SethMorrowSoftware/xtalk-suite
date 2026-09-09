@@ -92,8 +92,8 @@ strings, matching `sxKdfDerive`.
 | `rsBuildPostChunked(pTimestamp, pPrevTarget, pChunkTargets, pMediaList, pIdentitySeed)` | Data | a signed kind-C post naming 1..16 immutable text chunks in order |
 | `rsParsePost(pBytes)` | Array | `timestamp`, `prevPostTarget`, `kind`, `text` (D) or `chunkTargets` (C), `mediaTargets`. Parsing does not verify the signature |
 | `rsVerifyPost(pBytes, pHandleHex)` | Boolean | true only if the record parses strictly AND its trailing 64 bytes are a valid ed25519 signature by the handle over everything before them |
-| `rsPostTextCapacity(pMediaCount)` | Integer | how many UTF-8 text bytes fit a DIRECT (kind-D) post beside that many attachments - the RSP1 layout against the 1000-byte cap, published so the app's D-or-C decision never hand-copies 880 |
-| `rsChunkPostText(pTextContent)` | Array | split text into kind-C chunk VALUES (keys 1..count): full 1000-byte immutable items by BYTE, remainder last; over 16000 UTF-8 bytes refuses, never truncates. A boundary may split a UTF-8 sequence - reassembly decodes the concatenation, never a chunk alone |
+| `rsPostTextCapacity(pMediaCount)` | Integer | how many UTF-8 text bytes fit a DIRECT (kind-D) post beside that many attachments - the RSP1 layout against the 996-byte raw cap (996, not 1000: the BEP44 limit is on the BENCODED value - see the protocol spec 4.1), published so the app's D-or-C decision never hand-copies 876 |
+| `rsChunkPostText(pTextContent)` | Array | split text into kind-C chunk VALUES (keys 1..count): full 996-byte immutable items by BYTE, remainder last; over 15936 UTF-8 bytes refuses, never truncates. A boundary may split a UTF-8 sequence - reassembly decodes the concatenation, never a chunk alone |
 | `rsAssembleChunkText(pChunkTargets, pParts)` | String | the reassembling verify: `pParts` keyed by lowercase target (from `rsIngestBlob`); every part is re-hashed against its own content address BEFORE a byte is believed, then the CONCATENATION must round-trip as UTF-8. Empty names the first missing chunk - the honest-placeholder path |
 
 ## BEP44 plumbing and ingest verifiers
@@ -101,9 +101,9 @@ strings, matching `sxKdfDerive`.
 | Handler | Returns | Notes |
 |---|---|---|
 | `rsBencodeBytes(pData)` | Data | `<len>:<bytes>`, the BEP44 value shape (the only bencode riptide puts on the DHT) |
-| `rsBep44SignBuf(pSalt, pSeq, pValue)` | Data | the canonical signing buffer `[4:salt<n>:<salt>] 3:seqi<seq>e 1:v <value>`, byte-identical to torrentxt's `btDhtBep44SignBuf`. `pValue` must be strictly well-formed bencode of 1..1000 raw bytes; salt max 64 bytes; seq a non-negative integer below 2^53 |
+| `rsBep44SignBuf(pSalt, pSeq, pValue)` | Data | the canonical signing buffer `[4:salt<n>:<salt>] 3:seqi<seq>e 1:v <value>`, byte-identical to torrentxt's `btDhtBep44SignBuf`. `pValue` must be strictly well-formed bencode of 1..996 raw bytes (996, not 1000: BEP44's cap is on the BENCODED value - protocol spec 4.1); salt max 64 bytes; seq a non-negative integer below 2^53 |
 | `rsImmutableTarget(pValue)` | String | SHA-1 of the bencoded value: the immutable item's 40-hex target (what `btDhtPutImmutable` returns for the same bytes) |
-| `rsIngestHead(pEvent, pExpectedHandleHex)` | Array | the parsed head, only if the drained `dhtMutableItem` event is for that handle and salt, the value is a strict RSH1 record, the embedded and BEP44 seqs agree, and the BEP44 signature verifies under the handle |
+| `rsIngestHead(pEvent, pExpectedHandleHex, pMinSeq)` | Array | the parsed head, only if the drained `dhtMutableItem` event is for that handle and salt, the value is a strict RSH1 record, the embedded and BEP44 seqs agree, the seq is **not below `pMinSeq`** (the reader's watermark - the highest seq already accepted for this handle; pass `0` for a handle never seen), and the BEP44 signature verifies under the handle. `pMinSeq` is REQUIRED and fails closed: an omitted or non-numeric watermark is refused, because a validly-signed OLD head is a rollback and every other check here passes on one |
 | `rsIngestPost(pEvent, pExpectedTarget, pAuthorHandleHex)` | Array | the parsed post, only if the event answers the expected target, the value's recomputed SHA-1 IS that target, and the author's signature verifies |
 | `rsIngestBlob(pEvent, pExpectedTarget)` | Data | the verified bytes of a raw content-addressed blob (a kind-C text chunk, a profileMeta display-name blob): the event answers the awaited target and the value hashes to it - rsIngestPost minus the post parse, because content addressing is what extends the naming record's authorSig to these bytes |
 
@@ -134,7 +134,7 @@ more:
 
 ```
 -- ask for the head, then on its dhtMutableItem event:
-put rsIngestHead(tEvent, tHandle) into tHead
+put rsIngestHead(tEvent, tHandle, tHighestSeqSeenForThisHandle) into tHead
 put tHead["latestPostTarget"] into tNext
 -- then, until tNext is rsZeroTarget():
 --   rsRequestImmutable sSession, tNext ... on its dhtImmutableItem event:
@@ -194,7 +194,7 @@ handshake by the joiner's own response signature - mutual auth).
 | `rsLanKeys(pMaster)` | Array | the shared mesh ed25519 pair every one of your devices derives |
 | `rsLanBuildChallenge(pName, pNonce)` | Data | host -> joiner; pNonce is 32 FRESH bytes (`sxRandomBytes`) - never reuse one |
 | `rsLanParseChallenge(pBytes)` | Array | `name`, `nonce` |
-| `rsLanBuildResponse(pChallengeBytes, pName, pMaster)` | Data | joiner -> host: sig over `"riptide-lan" \|\| nonce \|\| name` |
+| `rsLanBuildResponse(pChallengeBytes, pName, pMaster)` | Data | joiner -> host: sig over `"riptide-lan-a" \|\| nonce \|\| name` (the tags are PREFIX-FREE; see the protocol spec 6) |
 | `rsLanParseResponse(pBytes)` | Array | `name`, `signature` |
 | `rsLanVerifyResponse(pResponseBytes, pChallengeBytes, pMaster)` | String | the joiner's device name, or empty (a stranger, a stale nonce, tamper) |
 | `rsLanBuildWelcome(pResponseBytes, pHostName, pMaster)` | Data | host -> joiner after admitting: sig over `"riptide-lan-w" \|\| responseSig \|\| hostName` |
@@ -303,7 +303,7 @@ behaviour. Needs an OXT + a live-relay pass.
 | `rsNostrBridgeFromEvent(pEventJson)` | Array | the inbound half, four gates in order: structure, the event's own BIP-340 signature, the kind and `d` tag, then both bridge signatures with the event's OWN author pinned as the expected Nostr key. That last gate is what makes a republished copy of somebody else's bridge verify as THEIRS and never as the republisher's |
 | `rsPublishBridge(pSession, pBridgeBytes, pIdentitySeed)` | Boolean | BEP44 put under the identity key at salt `"riptide-nostr"` - a new rail gets a new salt, never a new field in `RSH1`. Validates the record AND that the seed is the handle the bridge names BEFORE touching the session, so both refusals run with no torrentxt installed |
 | `rsRequestBridge(pSession, pHandleHex)` | Boolean | async lookup at that salt; the value arrives as a `dhtMutableItem` event for `rsIngestBridge` |
-| `rsIngestBridge(pEvent, pExpectedHandleHex)` | Array | the same three-layer discipline `rsIngestHead` has (right handle, right salt, BEP44 signature re-verified in SodiumXT, embedded seq agreeing), and then the FULL `rsVerifyBridge` on top - because this record carries a second signature libtorrent knows nothing about |
+| `rsIngestBridge(pEvent, pExpectedHandleHex)` | Array | the same handle/salt/signature/embedded-seq discipline `rsIngestHead` applies (note it takes NO watermark: `rsIngestHead` gained a required `pMinSeq` and this one did not, so a caller wanting rollback protection on the bridge rail must keep its own high-water mark), and then the FULL `rsVerifyBridge` on top - because this record carries a second signature libtorrent knows nothing about |
 
 ## The app-state store (spec 8A.4, added 2026-08-29)
 

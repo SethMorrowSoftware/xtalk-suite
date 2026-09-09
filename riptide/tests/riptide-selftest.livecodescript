@@ -99,8 +99,8 @@ constant kRsGoldIntroHex = "5253493135613534366534666566356431623736663934646331
 constant kRsGoldDmMsgHex = "54000000006899333468656c6c6f2c20646d"
 constant kRsGoldLanPub = "2008657949f2e06e9786315cde35ecf4aa419152787e4fa1670f189dc07285d9"
 constant kRsGoldLanChallengeHex = "52534c3143066c6170746f705a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a"
-constant kRsGoldLanResponseHex = "52534c31520570686f6e658941d7087e125898cb16acdc61f814e91ea4cd861d133fdd5f38e611ea8416958b2e5a1a96540afdbe6f979f475abf77b235d8c1c06ca8306c3e04f0bec7ae08"
-constant kRsGoldLanWelcomeHex = "52534c3157066c6170746f7006c1a710d7dd13ac6ade03ec0a853563c1c506923a042d38473d15abb29761c9699a013070c4f4a24527cafde5fb30ea0375d56ae85e53a1726f91612cf2b805"
+constant kRsGoldLanResponseHex = "52534c31520570686f6e65422b5e54ae2971f0d88668768d896a114b78c2f9158fb9b31aa1213aecc0edf0486c28c2446c52d0e0c7935b4b5c140ba94961a45fa4a1e866d35a72084baa0c"
+constant kRsGoldLanWelcomeHex = "52534c3157066c6170746f70223326f9f65924ec77c6f292201eff0a25224288b7b15814f7d2cc352e12e670e642ebfb3d39ca77f2d668431810ff95e09e12ca758cb2e2bb5597e8e6a7de08"
 constant kRsGoldLanDraftHex = "52534c31440570686f6e650000000000000005001164726166743a2068656c6c6f206d65736874cf0ede5c356853d97eb42b76b44ad279c5ac4622ef48738675ee26fd58cfa6fb672a60196700cda0ceabf81900d3b335ff85c1d0a8d318fef53ae05ec0bc0b"
 constant kRsGoldLanFeedStateHex = "52534c31460570686f6e6500000000000000093561353436653466656635643162373666393464633162326564656437356334346266666339303061663734363161323664383432373435336139326632326400000000689933ac685240060b5fdf7539152e57b472e039f1b5c7eee3680cebfa94b43ae5209d81c45c83ae72ff10e355fc1cf1abcbc1c3664cd5d25e27efda7f169375b831ca09"
 constant kRsGoldLanPresenceHex = "52534c31500570686f6e650100000000000000036c788687ae09387aa6195fd6132a06c72fc80a84d404feafe27d433cc4d12e153cb20ef814b592af8ec9ebb92ac70ae87d2aea6e71d9bf911ce2c4f60962ef0f"
@@ -375,7 +375,7 @@ private command rstSectionKeyFile
 end rstSectionKeyFile
 
 private command rstSectionHead
-   local tHead, tParsed, tRebuilt, tUpper
+   local tHead, tParsed, tRebuilt, tUpper, tBig, tBigParsed, rstI
    rstSection "RSH1 - the feed head"
    put rsBuildHead(kRsGoldHeadSeq, kRsGoldHeadName, kRsGoldPost2Target, \
          kRsGoldPrekeyTarget, kRsGoldOnion, kRsGoldProfileTarget) into tHead
@@ -405,6 +405,37 @@ private command rstSectionHead
          "a truncated head is refused"
    rstCheck (rsParseHead(tHead & numToByte(0)) is empty), \
          "trailing bytes are refused"
+   -- THE u64 BOUND (2026-09-08). Every record field declared u64 arrives as
+   -- eight ATTACKER-supplied bytes and is read BEFORE any signature is
+   -- checked, but an engine number is an IEEE double and is exact only to
+   -- 2^53 (engine notes 2.4). rsReadBEu64 used to return a silently ROUNDED
+   -- number past that; it now returns empty and every parser refuses the
+   -- record. The boundary is checked from both sides, because a bound that
+   -- only ever refuses is indistinguishable from a parser that is simply
+   -- broken.
+   put tHead into tBig
+   put numToByte(0) into byte 5 of tBig
+   put numToByte(32) into byte 6 of tBig
+   put numToByte(0) into byte 7 of tBig
+   put numToByte(0) into byte 8 of tBig
+   put numToByte(0) into byte 9 of tBig
+   put numToByte(0) into byte 10 of tBig
+   put numToByte(0) into byte 11 of tBig
+   put numToByte(0) into byte 12 of tBig
+   put rsParseHead(tBig) into tBigParsed
+   rstCheck (tBigParsed is not empty), \
+         "a seq of exactly 2^53 still parses (it IS representable)"
+   rstCheck (tBigParsed["seq"] is 9007199254740992), \
+         "and comes back as exactly 2^53, not a rounded neighbour"
+   put numToByte(1) into byte 12 of tBig
+   rstCheck (rsParseHead(tBig) is empty), \
+         "a seq of 2^53 + 1 is REFUSED (the first unrepresentable value)"
+   put tHead into tBig
+   repeat with rstI = 5 to 12
+      put numToByte(255) into byte rstI of tBig
+   end repeat
+   rstCheck (rsParseHead(tBig) is empty), \
+         "an all-ones u64 seq is refused, not rounded to 1.8e19"
    -- A non-canonical (uppercase) hex target must be refused, not silently
    -- accepted: byte 61 is the first char of the prekey target ("ab"*20), so
    -- turning that 'a' (97) into 'A' (65) is a valid-length but non-lowercase
@@ -535,9 +566,15 @@ private command rstSectionChunked pCaps
    rstCheck (rsLastError() contains kRsGoldChunk2Target), \
          "and the refusal names WHICH chunk is missing"
    -- the capacity arithmetic the app's D-or-C decision rides on
-   rstCheck (rsPostTextCapacity(0) is 880), \
-         "capacity with no media is 880 bytes"
-   rstCheck (rsPostTextCapacity(8) is 560), \
+   -- 876/556, not 880/560: kRsMaxRecord went 1000 -> 996 on 2026-09-08
+   -- (BEP44's cap is on the BENCODED value, so 1000 raw is 1005 on the wire
+   -- and every node refuses it). These four numbers and the chunk sizes below
+   -- all moved with it, and NOTHING headless could see them - this section
+   -- only runs on an engine, which is exactly why the change shipped with
+   -- them stale.
+   rstCheck (rsPostTextCapacity(0) is 876), \
+         "capacity with no media is 876 bytes"
+   rstCheck (rsPostTextCapacity(8) is 556), \
          "each attachment costs its 40-hex spelling"
    rstCheck (rsPostTextCapacity(9) is empty), \
          "a media count over the cap is refused"
@@ -545,11 +582,11 @@ private command rstSectionChunked pCaps
    repeat 14 times
       put tHuge & tHuge into tHuge
    end repeat
-   rstCheck (rsBuildPost(1, empty, char 1 to 880 of tHuge, empty, tSeed) \
+   rstCheck (rsBuildPost(1, empty, char 1 to 876 of tHuge, empty, tSeed) \
          is not empty), "a direct post takes exactly the stated capacity"
-   rstCheck (rsBuildPost(1, empty, char 1 to 881 of tHuge, empty, tSeed) \
+   rstCheck (rsBuildPost(1, empty, char 1 to 877 of tHuge, empty, tSeed) \
          is empty), "and refuses one byte more"
-   -- the producer split: full 1000-byte chunks, remainder last, by BYTE
+   -- the producer split: full 996-byte chunks, remainder last, by BYTE
    put empty into tBig
    repeat 250 times
       put "0123456789" after tBig
@@ -557,25 +594,29 @@ private command rstSectionChunked pCaps
    put rsChunkPostText(tBig) into tParts
    rstCheck (the number of elements in tParts is 3), \
          "2500 bytes split into three chunks"
-   rstCheck (the number of bytes in tParts[1] is 1000 and \
-         the number of bytes in tParts[2] is 1000 and \
-         the number of bytes in tParts[3] is 500), \
+   rstCheck (the number of bytes in tParts[1] is 996 and \
+         the number of bytes in tParts[2] is 996 and \
+         the number of bytes in tParts[3] is 508), \
          "full chunks first, the remainder last"
    rstCheck (tParts[1] & tParts[2] & tParts[3] is \
          textEncode(tBig, "UTF-8")), "and nothing is lost or reordered"
    rstCheck (rsChunkPostText(empty) is empty), "empty text is refused"
    rstCheck (rsChunkPostText(tHuge) is empty), \
-         "text over 16000 UTF-8 bytes is refused, never truncated"
+         "text over 15936 UTF-8 bytes is refused, never truncated"
    -- 16 is the wire's kRsMaxChunks; a library constant is not visible
    -- from this separate script, and the number here is the FORMAT's
    rstCheck ((the number of elements in \
-         rsChunkPostText(char 1 to 16000 of tHuge)) is 16), \
-         "exactly 16000 bytes takes exactly 16 chunks"
+         rsChunkPostText(char 1 to 15936 of tHuge)) is 16), \
+         "exactly 15936 bytes takes exactly 16 chunks"
    -- a chunk boundary INSIDE a UTF-8 sequence: legal on the wire, and
    -- the reassembly (which validates the concatenation, never a part
    -- alone) must reproduce the text exactly
+   -- 995, not 999. With 996-byte chunks a 999-byte pad puts the whole
+   -- two-byte character in chunk 2 and the test silently stops testing a
+   -- SPLIT character while still passing its count assertion. 995 puts the
+   -- boundary back inside the character: chunk 1 is 995 a's + the first byte.
    put empty into tPad
-   repeat 999 times
+   repeat 995 times
       put "a" after tPad
    end repeat
    put tPad & textDecode(rstBin("c3a9"), "UTF-8") into tSplit
@@ -709,31 +750,31 @@ private command rstSectionIngest
    put 7 into tEvent["seq"]
    put rstBin(kRsGoldHeadHex) into tEvent["value"]
    put kRsGoldHeadSigHex into tEvent["signature"]
-   put rsIngestHead(tEvent, kRsGoldHandle) into tHead
+   put rsIngestHead(tEvent, kRsGoldHandle, 0) into tHead
    rstCheck (tHead is not empty), "the golden head event ingests"
    rstCheck (tHead["displayName"] is kRsGoldHeadName), \
          "and hands back the parsed head"
    rstCheck (tHead["latestPostTarget"] is kRsGoldPost2Target), \
          "naming post 2 as latest"
-   rstCheck (rsIngestHead(tEvent, kRsGoldConfPub) is empty), \
+   rstCheck (rsIngestHead(tEvent, kRsGoldConfPub, 0) is empty), \
          "an event for another handle is refused"
    put tEvent into tBad
    put "riptide-lies" into tBad["salt"]
-   rstCheck (rsIngestHead(tBad, kRsGoldHandle) is empty), \
+   rstCheck (rsIngestHead(tBad, kRsGoldHandle, 0) is empty), \
          "a wrong salt is refused"
    put tEvent into tBad
    put 8 into tBad["seq"]
-   rstCheck (rsIngestHead(tBad, kRsGoldHandle) is empty), \
+   rstCheck (rsIngestHead(tBad, kRsGoldHandle, 0) is empty), \
          "a seq disagreeing with the head's embedded seq is refused"
    put tEvent into tBad
    put rstFlipByte(tBad["value"], 2) into tBad["value"]
-   rstCheck (rsIngestHead(tBad, kRsGoldHandle) is empty), \
+   rstCheck (rsIngestHead(tBad, kRsGoldHandle, 0) is empty), \
          "a value that is not an RSH1 record is refused"
    put tEvent into tBad
    -- byte 20 is the last display-name char: the record still PARSES, so
    -- this refusal is the signature's, not the parser's
    put rstFlipByte(tBad["value"], 20) into tBad["value"]
-   rstCheck (rsIngestHead(tBad, kRsGoldHandle) is empty), \
+   rstCheck (rsIngestHead(tBad, kRsGoldHandle, 0) is empty), \
          "a tampered-but-parseable value fails the BEP44 signature"
    put tEvent into tBad
    put tBad["signature"] into tSig
@@ -743,12 +784,42 @@ private command rstSectionIngest
       put "6" into char 1 of tSig
    end if
    put tSig into tBad["signature"]
-   rstCheck (rsIngestHead(tBad, kRsGoldHandle) is empty), \
+   rstCheck (rsIngestHead(tBad, kRsGoldHandle, 0) is empty), \
          "a forged signature is refused"
    put tEvent into tBad
    put char 1 to 127 of tBad["signature"] into tBad["signature"]
-   rstCheck (rsIngestHead(tBad, kRsGoldHandle) is empty), \
+   rstCheck (rsIngestHead(tBad, kRsGoldHandle, 0) is empty), \
          "a truncated signature is refused"
+   -- THE READER WATERMARK (2026-09-08). The golden head is seq 7. Every
+   -- refusal above is about one record in isolation and passes on a head the
+   -- author really signed; these are the ones that catch a head that is
+   -- perfectly valid and simply OLD, which is what a replaying DHT node
+   -- serves. The first check is the one that matters most: an omitted
+   -- watermark must FAIL CLOSED, because the shipped bug was precisely a
+   -- caller that never supplied one.
+   -- An OMITTED third argument and an explicit `empty` one are the SAME
+   -- thing to the engine (a missing parameter is empty), so the check below
+   -- covers both and the under-arity spelling is not written here: it is
+   -- legal LiveCodeScript, but tools/check-handler-calls.py refuses any arity
+   -- mismatch and this tree has no other one, so writing it would turn the
+   -- whole suite gate set red to test something this line already tests.
+   rstCheck (rsIngestHead(tEvent, kRsGoldHandle, empty) is empty), \
+         "an omitted or empty reader watermark is refused (fail closed)"
+   rstCheck (rsIngestHead(tEvent, kRsGoldHandle, "later") is empty), \
+         "a non-numeric reader watermark is refused"
+   rstCheck (rsIngestHead(tEvent, kRsGoldHandle, -1) is empty), \
+         "a negative reader watermark is refused"
+   rstCheck (rsIngestHead(tEvent, kRsGoldHandle, 9007199254740992) is empty), \
+         "a watermark past the engine's exact-integer range is refused"
+   rstCheck (rsIngestHead(tEvent, kRsGoldHandle, 7) is not empty), \
+         "the SAME seq still ingests (a refresh is not a rollback)"
+   rstCheck (rsIngestHead(tEvent, kRsGoldHandle, 6) is not empty), \
+         "a seq above the watermark ingests"
+   rstCheck (rsIngestHead(tEvent, kRsGoldHandle, 8) is empty), \
+         "a head OLDER than the watermark is refused (the rollback gate)"
+   rstCheck (rsIngestHead(tEvent, kRsGoldHandle, 4096) is empty), \
+         "and a far-older head is refused the same way"
+
    -- the post walk, on synthetic dhtImmutableItem events: head names post 2,
    -- post 2's prev names post 1, post 1's prev is the zero target - the end
    put kRsGoldPost2Target into tPostEvent["target"]

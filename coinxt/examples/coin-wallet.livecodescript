@@ -3625,21 +3625,48 @@ end cwBeBytes
 
 function cwLeRead pBytes
    -- A little-endian unsigned integer from however many bytes it is given.
-   local tValue, tI, tCount
+   --
+   -- REFUSES PAST 2^53, AT THE PARSE SITE (2026-09-08). An engine number is an
+   -- IEEE double, so an integer is exact only to 9007199254740992 and an
+   -- accumulator past that ROUNDS with no error - a wrong number that looks
+   -- like a right one (docs/OXT-ENGINE-NOTES.md 2.4). Every 8-byte field that
+   -- reaches here is ATTACKER-CONTROLLED: a fetched transaction's output value
+   -- and an 0xff CompactSize length both arrive as eight bytes of somebody
+   -- else's choosing. Every LEGITIMATE value fits with room to spare - 21e14
+   -- satoshis is the entire supply and is under a quarter of the bound - so a
+   -- value over it is always a malformed field or an attack, and a refusal is
+   -- the right answer rather than a rounded one.
+   --
+   -- The check goes BEFORE the multiply, not after: after it there is nothing
+   -- left to detect, because the rounding has already happened silently. This
+   -- is also what makes the downstream length guards honest - they were
+   -- comparing against a number the engine may already have changed.
+   local tValue, tI, tCount, tByte
    put the number of bytes of pBytes into tCount
    put 0 into tValue
    repeat with tI = tCount down to 1
-      put tValue * 256 + byteToNum(byte tI of pBytes) into tValue
+      put byteToNum(byte tI of pBytes) into tByte
+      if tValue > (9007199254740992 - tByte) / 256 then
+         throw "cwLeRead: the value is over 2^53 and cannot be held exactly"
+      end if
+      put tValue * 256 + tByte into tValue
    end repeat
    return tValue
 end cwLeRead
 
 function cwBeRead pBytes
-   local tValue, tI, tCount
+   -- Big-endian twin of cwLeRead, and it carries the same 2^53 refusal for the
+   -- same reason - see that handler's note. Same bound, same placement before
+   -- the multiply.
+   local tValue, tI, tCount, tByte
    put the number of bytes of pBytes into tCount
    put 0 into tValue
    repeat with tI = 1 to tCount
-      put tValue * 256 + byteToNum(byte tI of pBytes) into tValue
+      put byteToNum(byte tI of pBytes) into tByte
+      if tValue > (9007199254740992 - tByte) / 256 then
+         throw "cwBeRead: the value is over 2^53 and cannot be held exactly"
+      end if
+      put tValue * 256 + tByte into tValue
    end repeat
    return tValue
 end cwBeRead
@@ -11634,10 +11661,35 @@ end oxSetStreamCallback
 command oxWrite pStream, pData
    -- Write app bytes (already sealed by the app via SodiumXT) to the
    -- tunnel. OnionXT does not encrypt (docs/02).
+   --
+   -- THE WRITE RESULT IS READ, AND IT DID NOT USED TO BE (2026-09-09). The
+   -- engine reports a socket write failure in `the result`, and the bare
+   -- `return empty` that stood here overwrote it unconditionally - so a
+   -- broken tunnel was reported to every caller as a successful send. That is
+   -- the opposite of this module's documented contract (docs/05: "Commands set
+   -- `the result` to empty on success, or to a clear, human-readable error
+   -- string on failure ... Every wire error fails closed and tears the
+   -- resource down"), and 93 call sites across the suite branch on it, so all
+   -- of them were dead code on the failure path.
+   --
+   -- The most reachable consequence is the onion send pump, which paces
+   -- ENTIRELY on this return: nocloud's own comment says "We pace with the
+   -- kOnionPumpTick timer + oxWrite's error return instead", so a receiver
+   -- that aborts mid-transfer left the sender writing into a dead socket
+   -- forever instead of aborting the serve.
+   --
+   -- `the result` must be captured into a local on the very next line: any
+   -- intervening statement can clear it, which is the same one-statement
+   -- discipline this file already uses around `open socket`.
+   local tWriteErr
    if sStreams[pStream]["state"] is not "connected" then
       return "OnionXT: stream " & pStream & " is not open"
    end if
    write pData to socket sStreams[pStream]["socketID"]
+   put the result into tWriteErr
+   if tWriteErr is not empty then
+      return "OnionXT: write to stream " & pStream & " failed:" && tWriteErr
+   end if
    return empty
 end oxWrite
 

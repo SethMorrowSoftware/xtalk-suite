@@ -1019,7 +1019,26 @@ private function nxJsonPathNode pJson, pPath
       else if tNode["t"] is "a" then
          -- Digit runs only: "2.0" and "03" pass `is an integer` by numeric
          -- fold, then miss the STRING-keyed child table silently.
-         if not nxIsDigits(tStep) or tStep + 0 < 1 or tStep + 0 > nxSeqCount(tNode["c"]) then
+         -- NESTED, not one `or` chain (2026-09-09). xTalk's `or` evaluates
+         -- BOTH operands - there is no short-circuit (engine notes; coinxt
+         -- paid for this at five sites before it was written down) - so
+         -- `tStep + 0` ran even when nxIsDigits had already said no, and
+         -- arithmetic on non-numeric text is a HARD engine error, not a
+         -- coercion to 0. One hostile relay message with a path step like
+         -- "abc" turned this never-throw library into an uncaught engine
+         -- error, and OXT runs script on the UI thread.
+         --
+         -- The itemDelimiter restore has to be repeated in the new early-out:
+         -- it is "/" at this point and it is GLOBAL mutable state (engine
+         -- notes 2.3), so returning without restoring would corrupt every
+         -- later `item` operation in the process - a far worse and much
+         -- quieter bug than the one being fixed.
+         if not nxIsDigits(tStep) then
+            set the itemDelimiter to tSavedDelim
+            nxSetError "nxJson: no element" && tStep
+            return empty
+         end if
+         if tStep + 0 < 1 or tStep + 0 > nxSeqCount(tNode["c"]) then
             set the itemDelimiter to tSavedDelim
             nxSetError "nxJson: no element" && tStep
             return empty
@@ -3398,7 +3417,14 @@ function nxWsUrlParse pUrl
    else
       put char 1 to (tColonPos - 1) of tHostPort into tOut["host"]
       put char (tColonPos + 1) to tCount of tHostPort into tPortText
-      if not nxIsDigits(tPortText) or tPortText + 0 < 1 or tPortText + 0 > 65535 then
+      -- Nested for the same reason as nxJsonPathNode: `or` evaluates both
+      -- operands, so `tPortText + 0` on a non-numeric port ("wss://h:abc/")
+      -- was a hard engine error rather than this clean refusal.
+      if not nxIsDigits(tPortText) then
+         nxSetError "nxWsUrlParse: the port must be 1 to 65535"
+         return empty
+      end if
+      if tPortText + 0 < 1 or tPortText + 0 > 65535 then
          nxSetError "nxWsUrlParse: the port must be 1 to 65535"
          return empty
       end if
@@ -3661,7 +3687,14 @@ function nxPowCheck pEvent, pMinBits
    repeat with tI = 1 to tTagCount
       if nxStrEqExact(pEvent["tags"][tI][1], "nonce") and 3 is among the keys of pEvent["tags"][tI] then
          put pEvent["tags"][tI][3] into tTarget
-         if not nxIsDigits(tTarget) or tTarget + 0 < pMinBits then
+         -- Nested, same `or` rule. This one has no caller in the tree today,
+         -- so it is not reachable now - but the tag value is straight off the
+         -- relay, and a future caller would inherit the hard error.
+         if not nxIsDigits(tTarget) then
+            nxSetError "nxPowCheck: the committed target" && tTarget && "is below" && pMinBits
+            return false
+         end if
+         if tTarget + 0 < pMinBits then
             nxSetError "nxPowCheck: the committed target" && tTarget && "is below" && pMinBits
             return false
          end if

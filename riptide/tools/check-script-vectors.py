@@ -413,6 +413,96 @@ MASTER = to_str(bytes([0x42] * 32))
 AUX = "00" * 32
 
 
+def check_u64_bound(c, ip):
+    """The 2^53 refusal, and the ceilings that DEPEND on it, driven end to end.
+
+    This section exists because of a regression, not a theory. rsReadBEu64 was
+    given a 2^53 bound on 2026-09-08 and ten of its THIRTEEN call sites were
+    guarded. One of the three misses was rsBtxoParseHeader, and the miss did
+    not merely leave a gap - it INVERTED an existing guard. Before the bound an
+    absurd declared total arrived as a rounded enormous number and
+    rsBtxoStreamStep's `> kRsBtxoMaxTotal` ceiling refused it; after the bound
+    it arrived EMPTY, and `empty > 8589934592` is false under both the engine's
+    string fallback and this interpreter's numeric coercion. A peer declaring
+    8 GiB was refused and the same peer declaring 18 exabytes was admitted.
+
+    So the checks below are deliberately written as a MONOTONIC table rather
+    than as isolated refusals: a bound that only ever refuses is
+    indistinguishable from a parser that is simply broken, and the defect this
+    guards against was precisely non-monotonic.
+    """
+    c.note("tier 1b: the 2^53 u64 bound and the ceilings that depend on it")
+
+    def head_with_seq(seq8):
+        b  = b"RSH1" + seq8 + bytes([1]) + b"n"
+        b += b"ab" * 20 + b"cd" * 20 + bytes([0]) + b"ef" * 20
+        return to_str(b)
+
+    for seq8, label, should_parse in [
+            (b"\x00" * 8, "seq 0", True),
+            (b"\x00\x1f\xff\xff\xff\xff\xff\xff", "seq 2^53-1", True),
+            (b"\x00\x20\x00\x00\x00\x00\x00\x00", "seq 2^53 (representable)", True),
+            (b"\x00\x20\x00\x00\x00\x00\x00\x01", "seq 2^53+1", False),
+            (b"\xff" * 8, "seq 2^64-1", False)]:
+        out = ip.call("rsParseHead", [head_with_seq(seq8)])
+        c.ck("rsParseHead: %s %s" % (label, "parses" if should_parse else "refused"),
+             bool(out) and out != "", should_parse)
+
+    out = ip.call("rsParseHead", [head_with_seq(b"\x00\x20\x00\x00\x00\x00\x00\x00")])
+    c.ck("rsParseHead: 2^53 comes back exact, not a rounded neighbour",
+         str(LCS._n(out["seq"])), "9007199254740992")
+
+    def btxo_header(total):
+        name = b"x.bin"
+        b  = b"BTXO" + bytes([1]) + bytes([0])
+        b += bytes([(len(name) >> 8) & 255, len(name) & 255]) + name
+        b += bytes([(total >> (8 * i)) & 255 for i in range(7, -1, -1)])
+        return to_str(b)
+
+    CEIL = 8589934592          # kRsBtxoMaxTotal
+    for total, label, want in [
+            (1024, "1 KiB", "header"),
+            (CEIL, "exactly the 8 GiB ceiling", "header"),
+            (CEIL + 1, "8 GiB + 1", "refused"),
+            (2 ** 53, "2^53", "refused"),
+            (2 ** 53 + 1, "2^53+1 (the regression case)", "refused"),
+            (2 ** 64 - 1, "2^64-1 (the big lie)", "refused")]:
+        out = ip.call("rsBtxoStreamStep", [btxo_header(total), "header"])
+        got = out.get("status") if isinstance(out, dict) else str(out)
+        c.ck("rsBtxoStreamStep: declared total %s -> %s" % (label, want), got, want)
+
+
+def check_capacity_arithmetic(c, ip):
+    """The numbers that MOVE when kRsMaxRecord moves, pinned headlessly.
+
+    kRsMaxRecord went 1000 -> 996 on 2026-09-08 (BEP44's cap is on the BENCODED
+    value, so a 1000-byte raw record is 1005 on the wire and every node refuses
+    it). Six assertions in riptide's harness were derived from the old number
+    and went stale with it - and NOTHING could see them, because that harness
+    only runs on an engine. They shipped wrong for a day.
+
+    So they are pinned here as well, where they run on every push. The chunk
+    boundary case is the one worth keeping honest: a 999-byte pad plus a
+    two-byte character used to straddle a 1000-byte boundary and no longer
+    does, so that test would have kept PASSING its count assertion while
+    silently no longer testing a split character. 995 puts the boundary back
+    inside the character.
+    """
+    c.note("the capacity arithmetic that rides on kRsMaxRecord")
+    c.ck("rsPostTextCapacity(0)", str(LCS._n(ip.call("rsPostTextCapacity", [0]))), "876")
+    c.ck("rsPostTextCapacity(8)", str(LCS._n(ip.call("rsPostTextCapacity", [8]))), "556")
+    parts = ip.call("rsChunkPostText", ["0123456789" * 250])
+    c.ck("2500 bytes splits 996/996/508",
+         [len(parts[k]) for k in sorted(parts, key=lambda x: int(x))], [996, 996, 508])
+    c.ck("15936 bytes is exactly 16 chunks",
+         len(ip.call("rsChunkPostText", ["x" * 15936])), 16)
+    c.ck("15937 bytes is refused, never truncated",
+         ip.call("rsChunkPostText", ["x" * 15937]) in ("", {}), True)
+    split = ip.call("rsChunkPostText", ["a" * 995 + "\u00e9"])
+    c.ck("a 2-byte char still STRADDLES the chunk boundary",
+         [len(split[k]) for k in sorted(split, key=lambda x: int(x))], [996, 1])
+
+
 def check_pure(c, ip, V):
     c.note("tier 1: the pure paths (no CoinXT needed)")
     c.ck("the subkey registry has not shifted under the new rows",
@@ -422,10 +512,24 @@ def check_pure(c, ip, V):
           ip.constants.get("kRsSubkeyNostr"),
           ip.constants.get("kRsSubkeyAppState")],
          ["1", "2", "3", "4", "5"])
-    c.ck("the bridge signature domain is distinct from the LAN domains",
-         len({ip.constants.get("kRsNostrDomain"),
-              ip.constants.get("kRsLanDomain"),
-              ip.constants.get("kRsLanSyncDomain")}), 3)
+    # PREFIX-FREE, not merely distinct - and this check used to be the weaker
+    # one, which is why the bug it now catches shipped. These tags are
+    # RAW-CONCATENATED in front of the signed body, so if tag A is a prefix of
+    # tag B the two preimage grammars overlap and a signature minted for one
+    # rail verifies on the other. `len({...}) == 3` cannot see that: the old
+    # admission tag "riptide-lan" and the sync tag "riptide-lan-s" are unequal
+    # (so it passed) and yet one is a prefix of the other (so an attacker-chosen
+    # challenge nonce beginning "-s" made the two preimages byte-identical).
+    # Inequality is the wrong property for a concatenated domain separator.
+    _domains = [ip.constants.get(n) for n in
+                ("kRsNostrDomain", "kRsLanDomain", "kRsLanSyncDomain")]
+    _domains.append("riptide-lan-w")      # the welcome tag, a literal in-source
+    _bad = sorted("%s is a prefix of %s" % (a, b)
+                  for a in _domains for b in _domains
+                  if a is not None and b is not None and a != b and b.startswith(a))
+    c.ck("every raw-concat signature domain is PREFIX-FREE of the others",
+         _bad, [])
+    c.ck("and there are still four distinct ones", len(set(_domains)), 4)
     c.ck("the RSN1 body and record lengths agree with the layout",
          [ip.constants.get("kRsNostrBridgeBody"),
           ip.constants.get("kRsNostrBridgeLen")], [148, 276])
@@ -659,6 +763,8 @@ def main(argv):
         print("-- rewrites applied: " + ", ".join(
             "%s x%d" % (n, hits[n]) for n, _w, _f in REWRITES))
     check_pure(c, ip, V)
+    check_u64_bound(c, ip)
+    check_capacity_arithmetic(c, ip)
     if install_coin_natives():
         check_composed(c, ip, V)
     else:

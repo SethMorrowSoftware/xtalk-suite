@@ -1444,6 +1444,62 @@ def drive_nostr(c, ip, world, profile):
         c.ck("[FULL] follows survive the sealed save/load round trip",
              False, "%s: %s" % (type(exc).__name__, exc))
 
+    # The READER WATERMARKS across the same round trip (2026-09-08). This is
+    # the check that would have caught the bug it was written for: raAppSave
+    # had emitted `headseq` since it was written and raAppLoad's switch had no
+    # case for it, so our own head sequence was persisted every save and read
+    # back never. A write with no reader is invisible to every other gate in
+    # this tree - it is not a parse error, not a name the checker can miss, and
+    # not a vector anything pins - so it can only be caught by round-tripping
+    # the value and looking. rsIngestHead's rollback gate is only as good as
+    # these surviving a restart: at 0 every launch would accept the oldest head
+    # a DHT node still holds.
+    try:
+        handle = "ab" * 32
+        ip.globals["sheadseen"] = {handle: 42}
+        ip.globals["sseq"] = 7
+        ip.call("raAppSave", [])
+        ip.globals["sheadseen"] = {}
+        ip.globals["sseq"] = ""
+        ip.call("raAppLoad", [])
+        seen = ip.globals.get("sheadseen", {})
+        seq = ip.globals.get("sseq", "")
+        c.ck("[FULL] the reader watermarks survive the save/load round trip",
+             seen.get(handle) in (42, "42"),
+             "got %r" % (seen,))
+        c.ck("[FULL] our own head seq survives it too (headseq had no reader)",
+             str(seq) == "7", "got %r" % (seq,))
+    except Exception as exc:                            # noqa: BLE001
+        c.ck("[FULL] the reader watermarks survive the save/load round trip",
+             False, "%s: %s" % (type(exc).__name__, exc))
+
+    # Surviving a round trip is not the same as REACHING one. raAppSave only
+    # runs when sAppDirty is "true" (the debounced tick and raNxTeardown both
+    # gate on it), so a session that accepts a head and changes nothing else
+    # would quit with the new watermark still in memory - and the next launch
+    # would start from 0 and accept the same stale head again. Reported by
+    # review on PR #132; the round-trip check above could not see it, because
+    # it calls raAppSave directly.
+    try:
+        # NOTE the signature: this file's ck() is (label, OK_BOOLEAN, detail),
+        # not the (label, got, want) that riptide's check-script-vectors.py
+        # uses. Passing got/want here makes every non-empty "got" truthy and
+        # the check pass vacuously - which is exactly what the first draft of
+        # these two lines did.
+        ip.globals["sappdirty"] = ""
+        ip.call("raHeadAccepted", ["cd" * 32, 9])
+        got_new = str(ip.globals.get("sappdirty", ""))
+        c.ck("[FULL] accepting a newer head marks the app state dirty",
+             got_new == "true", "sAppDirty = %r" % (got_new,))
+        ip.globals["sappdirty"] = ""
+        ip.call("raHeadAccepted", ["cd" * 32, 4])
+        got_stale = str(ip.globals.get("sappdirty", ""))
+        c.ck("[FULL] a STALE head does not mark it dirty (no pointless save)",
+             got_stale == "", "sAppDirty = %r" % (got_stale,))
+    except Exception as exc:                            # noqa: BLE001
+        c.ck("[FULL] accepting a newer head marks the app state dirty",
+             False, "%s: %s" % (type(exc).__name__, exc))
+
 
 def main(argv):
     terse = "--check" in argv

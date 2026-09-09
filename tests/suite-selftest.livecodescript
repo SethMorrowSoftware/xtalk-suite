@@ -531,8 +531,8 @@ constant rs1kRsGoldIntroHex = "5253493135613534366534666566356431623736663934646
 constant rs1kRsGoldDmMsgHex = "54000000006899333468656c6c6f2c20646d"
 constant rs1kRsGoldLanPub = "2008657949f2e06e9786315cde35ecf4aa419152787e4fa1670f189dc07285d9"
 constant rs1kRsGoldLanChallengeHex = "52534c3143066c6170746f705a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a"
-constant rs1kRsGoldLanResponseHex = "52534c31520570686f6e658941d7087e125898cb16acdc61f814e91ea4cd861d133fdd5f38e611ea8416958b2e5a1a96540afdbe6f979f475abf77b235d8c1c06ca8306c3e04f0bec7ae08"
-constant rs1kRsGoldLanWelcomeHex = "52534c3157066c6170746f7006c1a710d7dd13ac6ade03ec0a853563c1c506923a042d38473d15abb29761c9699a013070c4f4a24527cafde5fb30ea0375d56ae85e53a1726f91612cf2b805"
+constant rs1kRsGoldLanResponseHex = "52534c31520570686f6e65422b5e54ae2971f0d88668768d896a114b78c2f9158fb9b31aa1213aecc0edf0486c28c2446c52d0e0c7935b4b5c140ba94961a45fa4a1e866d35a72084baa0c"
+constant rs1kRsGoldLanWelcomeHex = "52534c3157066c6170746f70223326f9f65924ec77c6f292201eff0a25224288b7b15814f7d2cc352e12e670e642ebfb3d39ca77f2d668431810ff95e09e12ca758cb2e2bb5597e8e6a7de08"
 constant rs1kRsGoldLanDraftHex = "52534c31440570686f6e650000000000000005001164726166743a2068656c6c6f206d65736874cf0ede5c356853d97eb42b76b44ad279c5ac4622ef48738675ee26fd58cfa6fb672a60196700cda0ceabf81900d3b335ff85c1d0a8d318fef53ae05ec0bc0b"
 constant rs1kRsGoldLanFeedStateHex = "52534c31460570686f6e6500000000000000093561353436653466656635643162373666393464633162326564656437356334346266666339303061663734363161323664383432373435336139326632326400000000689933ac685240060b5fdf7539152e57b472e039f1b5c7eee3680cebfa94b43ae5209d81c45c83ae72ff10e355fc1cf1abcbc1c3664cd5d25e27efda7f169375b831ca09"
 constant rs1kRsGoldLanPresenceHex = "52534c31500570686f6e650100000000000000036c788687ae09387aa6195fd6132a06c72fc80a84d404feafe27d433cc4d12e153cb20ef814b592af8ec9ebb92ac70ae87d2aea6e71d9bf911ce2c4f60962ef0f"
@@ -1023,7 +1023,7 @@ constant kRsIntroMagic = "RSI1"
 constant kRsFrameMagic = "RSM1"
 constant kRsFrameMax = 60000
 constant kRsLanMagic = "RSL1"
-constant kRsLanDomain = "riptide-lan"
+constant kRsLanDomain = "riptide-lan-a"
 constant kRsLanNonceLen = 32
 constant kRsLanMaxName = 32
 constant kRsLanSyncDomain = "riptide-lan-s"
@@ -1065,7 +1065,7 @@ constant kRsAppStateMax = 1048576
 constant kRsMaxDisplayName = 64
 constant kRsMaxMedia = 8
 constant kRsMaxChunks = 16
-constant kRsMaxRecord = 1000
+constant kRsMaxRecord = 996
 constant kRsMaxSalt = 64
 constant kRsOnionAddrLen = 62
 constant kRsArgonOps = "2"
@@ -6361,10 +6361,35 @@ end oxSetStreamCallback
 command oxWrite pStream, pData
    -- Write app bytes (already sealed by the app via SodiumXT) to the
    -- tunnel. OnionXT does not encrypt (docs/02).
+   --
+   -- THE WRITE RESULT IS READ, AND IT DID NOT USED TO BE (2026-09-09). The
+   -- engine reports a socket write failure in `the result`, and the bare
+   -- `return empty` that stood here overwrote it unconditionally - so a
+   -- broken tunnel was reported to every caller as a successful send. That is
+   -- the opposite of this module's documented contract (docs/05: "Commands set
+   -- `the result` to empty on success, or to a clear, human-readable error
+   -- string on failure ... Every wire error fails closed and tears the
+   -- resource down"), and 93 call sites across the suite branch on it, so all
+   -- of them were dead code on the failure path.
+   --
+   -- The most reachable consequence is the onion send pump, which paces
+   -- ENTIRELY on this return: nocloud's own comment says "We pace with the
+   -- kOnionPumpTick timer + oxWrite's error return instead", so a receiver
+   -- that aborts mid-transfer left the sender writing into a dead socket
+   -- forever instead of aborting the serve.
+   --
+   -- `the result` must be captured into a local on the very next line: any
+   -- intervening statement can clear it, which is the same one-statement
+   -- discipline this file already uses around `open socket`.
+   local tWriteErr
    if sStreams[pStream]["state"] is not "connected" then
       return "OnionXT: stream " & pStream & " is not open"
    end if
    write pData to socket sStreams[pStream]["socketID"]
+   put the result into tWriteErr
+   if tWriteErr is not empty then
+      return "OnionXT: write to stream " & pStream & " failed:" && tWriteErr
+   end if
    return empty
 end oxWrite
 
@@ -12936,6 +12961,10 @@ function rsParseHead pBytes
       return empty
    end if
    put rsReadBEu64(byte 5 to 12 of pBytes) into tHead["seq"]
+   if tHead["seq"] is empty then
+      rsSetError "rsParseHead: the seq is over 2^53 and cannot be held exactly"
+      return empty
+   end if
    put byteToNum(byte 13 of pBytes) into tNameLen
    if tNameLen > kRsMaxDisplayName then
       rsSetError "rsParseHead: display name length over cap"
@@ -13130,6 +13159,10 @@ function rsParsePost pBytes
       return empty
    end if
    put rsReadBEu64(byte 5 to 12 of pBytes) into tPost["timestamp"]
+   if tPost["timestamp"] is empty then
+      rsSetError "rsParsePost: the timestamp is over 2^53 and cannot be held exactly"
+      return empty
+   end if
    put textDecode(byte 13 to 52 of pBytes, "ASCII") into tField
    if not rsIsHexOfLen(tField, 40) then
       rsSetError "rsParsePost: malformed previous-post target"
@@ -13398,11 +13431,20 @@ function rsImmutableTarget pValue
    return rsBinToHexString(sha1Digest(rsBencodeBytes(pValue)))
 end rsImmutableTarget
 
-function rsIngestHead pEvent, pExpectedHandleHex
+function rsIngestHead pEvent, pExpectedHandleHex, pMinSeq
    local tHandle, tEventKey, tSeq, tHead, tSigHex, tSig, tBuf, tOk, tErr
    put toLower(pExpectedHandleHex) into tHandle
    if not rsIsHexOfLen(tHandle, 64) then
       rsSetError "rsIngestHead: the expected handle must be 64 hex chars"
+      return empty
+   end if
+   -- Fail closed FIRST: a caller that omits the watermark gets refused, never
+   -- served. Same sanity bounds as the event seq below (0 .. 2^53-1, the
+   -- engine's exact-integer range - a double cannot compare a bigger one
+   -- correctly, so accepting one would make this very check unreliable).
+   if pMinSeq is not an integer or pMinSeq < 0 or pMinSeq >= 9007199254740992 then
+      rsSetError "rsIngestHead: a reader watermark is required (pass 0 for a" && \
+            "handle whose head has never been accepted)"
       return empty
    end if
    put toLower(pEvent["publicKey"]) into tEventKey
@@ -13422,13 +13464,22 @@ function rsIngestHead pEvent, pExpectedHandleHex
       rsSetError "rsIngestHead: the event seq is not a sane integer"
       return empty
    end if
+   -- The rollback gate. Placed after the seq SANITY check (so the comparison
+   -- is between two numbers the engine can hold exactly) and before the parse
+   -- and the signature verify (so a replayed head costs the reader nothing).
+   if tSeq < pMinSeq then
+      rsSetError "rsIngestHead: this head is older than one already accepted" && \
+            "for this handle (seq" && tSeq && "before" && pMinSeq & ")"
+      return empty
+   end if
    put rsParseHead(pEvent["value"]) into tHead
    if tHead is empty then return empty
    if tHead["seq"] is not tSeq then
       -- rsPublishHead uses the head's own embedded seq as the BEP44 seq, so
       -- a disagreement means this record was not published by this layer
       -- (or was reassembled); refuse rather than guess which counter to
-      -- believe - the app's replay protection reads the one true seq.
+      -- believe. Both counters have now been checked against the reader's
+      -- watermark above, so there is no "one true seq" left to defer to.
       rsSetError "rsIngestHead: the BEP44 seq and the head's embedded seq" && \
             "disagree"
       return empty
@@ -14086,6 +14137,10 @@ function rsParseIntro pBytes
    end if
    put tField into tOut["recipientHandle"]
    put rsReadBEu64(byte 197 to 204 of pBytes) into tOut["timestamp"]
+   if tOut["timestamp"] is empty then
+      rsSetError "rsParseIntro: the timestamp is over 2^53 and cannot be held exactly"
+      return empty
+   end if
    return tOut
 end rsParseIntro
 
@@ -14234,6 +14289,10 @@ function rsDmParseMessage pBytes
    end if
    put textDecode(byte 1 of pBytes, "ASCII") into tOut["kind"]
    put rsReadBEu64(byte 2 to 9 of pBytes) into tOut["timestamp"]
+   if tOut["timestamp"] is empty then
+      rsSetError "rsDmParseMessage: the timestamp is over 2^53 and cannot be held exactly"
+      return empty
+   end if
    -- the body is authenticated (it came out of the secretstream) but is
    -- still declared UTF-8 text; OXT's textDecode is lossy not throwing (see
    -- rsBytesAreUtf8), so validate by round-trip rather than an inert try
@@ -14707,6 +14766,10 @@ function rsLanVerifyDraft pBytes, pMaster
          tOut["name"]
    put rsReadBEu64(byte (7 + tNameLen) to (14 + tNameLen) of pBytes) \
          into tOut["seq"]
+   if tOut["seq"] is empty then
+      rsSetError "rsLanVerifyDraft: the seq is over 2^53 and cannot be held exactly"
+      return empty
+   end if
    if tDraftLen is 0 then
       put empty into tOut["draft"]
    else
@@ -14809,6 +14872,10 @@ function rsLanVerifyFeedState pBytes, pMaster
          tOut["name"]
    put rsReadBEu64(byte (7 + tNameLen) to (14 + tNameLen) of pBytes) \
          into tOut["feedSeq"]
+   if tOut["feedSeq"] is empty then
+      rsSetError "rsLanVerifyFeedState: the feedSeq is over 2^53 and cannot be held exactly"
+      return empty
+   end if
    if tPeer is kRsZeroHandle then
       put empty into tOut["readPeer"]
    else
@@ -14816,6 +14883,10 @@ function rsLanVerifyFeedState pBytes, pMaster
    end if
    put rsReadBEu64(byte (79 + tNameLen) to (86 + tNameLen) of pBytes) \
          into tOut["readUpTo"]
+   if tOut["readUpTo"] is empty then
+      rsSetError "rsLanVerifyFeedState: the readUpTo is over 2^53 and cannot be held exactly"
+      return empty
+   end if
    return tOut
 end rsLanVerifyFeedState
 
@@ -14903,6 +14974,10 @@ function rsLanVerifyPresence pBytes, pMaster
    end if
    put rsReadBEu64(byte (8 + tNameLen) to (15 + tNameLen) of pBytes) \
          into tOut["tick"]
+   if tOut["tick"] is empty then
+      rsSetError "rsLanVerifyPresence: the tick is over 2^53 and cannot be held exactly"
+      return empty
+   end if
    return tOut
 end rsLanVerifyPresence
 
@@ -15013,11 +15088,19 @@ function rsLanVerifyHandoff pBytes, pMaster
          tOut["name"]
    put rsReadBEu64(byte (7 + tNameLen) to (14 + tNameLen) of pBytes) \
          into tOut["seq"]
+   if tOut["seq"] is empty then
+      rsSetError "rsLanVerifyHandoff: the seq is over 2^53 and cannot be held exactly"
+      return empty
+   end if
    put tHash into tOut["infoHash"]
    put textDecode(byte (56 + tNameLen) to (55 + tNameLen + tFileLen) \
          of pBytes, "UTF-8") into tOut["fileName"]
    put rsReadBEu64(byte (56 + tNameLen + tFileLen) to \
          (63 + tNameLen + tFileLen) of pBytes) into tOut["fileSize"]
+   if tOut["fileSize"] is empty then
+      rsSetError "rsLanVerifyHandoff: the fileSize is over 2^53 and cannot be held exactly"
+      return empty
+   end if
    return tOut
 end rsLanVerifyHandoff
 
@@ -15250,6 +15333,25 @@ function rsBtxoParseHeader pBytes
    put textDecode(byte 9 to (8 + tNameLen) of pBytes, "UTF-8") into \
          tOut["name"]
    put rsReadBEu64(byte (9 + tNameLen) to tLen of pBytes) into tOut["total"]
+   -- MISSED BY THE 2026-09-08 SWEEP, AND THAT MISS WAS A REGRESSION, WHICH
+   -- IS WHY THIS COMMENT IS LONGER THAN THE GUARD. Before the bound existed,
+   -- an absurd declared total came back as a ROUNDED enormous number and
+   -- rsBtxoStreamStep's `> kRsBtxoMaxTotal` ceiling refused it. With the
+   -- bound and without this check it comes back EMPTY, and `empty > 8589934592`
+   -- is FALSE under both the engine's string fallback and the interpreter's
+   -- numeric coercion - so the ceiling stopped firing and the bigger the lie,
+   -- the more likely it was to be believed. A peer declaring 8 GiB was
+   -- refused; the same peer declaring 18 exabytes was admitted.
+   --
+   -- The general shape is worth carrying: changing a failure value from
+   -- "wrong number" to "empty" moves every downstream comparison from
+   -- arithmetic to string, and a guard that reads `> cap` silently becomes a
+   -- guard that never fires. A partial sweep of call sites is not a safe
+   -- state for this kind of change.
+   if tOut["total"] is empty then
+      rsSetError "rsBtxoParseHeader: the total is over 2^53 and cannot be held exactly"
+      return empty
+   end if
    return tOut
 end rsBtxoParseHeader
 
@@ -15622,6 +15724,13 @@ function rsParseBridge pBytes
    put tPub into tOut["nostrPub"]
    put rsReadBEu64(byte 133 to 140 of pBytes) into tOut["seq"]
    put rsReadBEu64(byte 141 to 148 of pBytes) into tOut["timestamp"]
+   -- Same sweep, same miss (2026-09-09). A bridge record whose seq or
+   -- timestamp is over 2^53 would otherwise VERIFY with those fields silently
+   -- empty, and rsVerifyBridge hands the array straight to the app.
+   if tOut["seq"] is empty or tOut["timestamp"] is empty then
+      rsSetError "rsParseBridge: the seq or timestamp is over 2^53 and cannot be held exactly"
+      return empty
+   end if
    return tOut
 end rsParseBridge
 
@@ -16042,8 +16151,28 @@ private function rsReadBEu32 pBytes
 end rsReadBEu32
 
 private function rsReadBEu64 pBytes
-   return rsReadBEu32(byte 1 to 4 of pBytes) * 4294967296 + \
-         rsReadBEu32(byte 5 to 8 of pBytes)
+   -- A big-endian u64, REFUSED (empty) past 2^53.
+   --
+   -- The wire field is 64 bits but an engine number is an IEEE double, exact
+   -- only to 9007199254740992 (docs/OXT-ENGINE-NOTES.md 2.4). Past that the
+   -- sum ROUNDS with no error, so this used to hand its callers a number that
+   -- was quietly not the one on the wire - and EVERY field that reaches here
+   -- is attacker-supplied and parsed BEFORE any signature is checked.
+   --
+   -- Every legitimate value fits with enormous room: a seq is a counter, a
+   -- unix timestamp in seconds is about 1.8e9, and a file size is capped at
+   -- kRsBtxoMaxTotal (8 GiB). So a value over the bound is always a malformed
+   -- or hostile record, and empty - this library's refusal - is the right
+   -- answer rather than a rounded one. EVERY call site checks for empty and
+   -- refuses the record; that is what makes this safe rather than merely
+   -- different.
+   local tHi, tLo
+   put rsReadBEu32(byte 1 to 4 of pBytes) into tHi
+   put rsReadBEu32(byte 5 to 8 of pBytes) into tLo
+   if tHi > (9007199254740992 - tLo) / 4294967296 then
+      return empty
+   end if
+   return tHi * 4294967296 + tLo
 end rsReadBEu64
 
 private function rsPow2 pN
@@ -16923,7 +17052,26 @@ private function nxJsonPathNode pJson, pPath
       else if tNode["t"] is "a" then
          -- Digit runs only: "2.0" and "03" pass `is an integer` by numeric
          -- fold, then miss the STRING-keyed child table silently.
-         if not nxIsDigits(tStep) or tStep + 0 < 1 or tStep + 0 > nxSeqCount(tNode["c"]) then
+         -- NESTED, not one `or` chain (2026-09-09). xTalk's `or` evaluates
+         -- BOTH operands - there is no short-circuit (engine notes; coinxt
+         -- paid for this at five sites before it was written down) - so
+         -- `tStep + 0` ran even when nxIsDigits had already said no, and
+         -- arithmetic on non-numeric text is a HARD engine error, not a
+         -- coercion to 0. One hostile relay message with a path step like
+         -- "abc" turned this never-throw library into an uncaught engine
+         -- error, and OXT runs script on the UI thread.
+         --
+         -- The itemDelimiter restore has to be repeated in the new early-out:
+         -- it is "/" at this point and it is GLOBAL mutable state (engine
+         -- notes 2.3), so returning without restoring would corrupt every
+         -- later `item` operation in the process - a far worse and much
+         -- quieter bug than the one being fixed.
+         if not nxIsDigits(tStep) then
+            set the itemDelimiter to tSavedDelim
+            nxSetError "nxJson: no element" && tStep
+            return empty
+         end if
+         if tStep + 0 < 1 or tStep + 0 > nxSeqCount(tNode["c"]) then
             set the itemDelimiter to tSavedDelim
             nxSetError "nxJson: no element" && tStep
             return empty
@@ -19246,7 +19394,14 @@ function nxWsUrlParse pUrl
    else
       put char 1 to (tColonPos - 1) of tHostPort into tOut["host"]
       put char (tColonPos + 1) to tCount of tHostPort into tPortText
-      if not nxIsDigits(tPortText) or tPortText + 0 < 1 or tPortText + 0 > 65535 then
+      -- Nested for the same reason as nxJsonPathNode: `or` evaluates both
+      -- operands, so `tPortText + 0` on a non-numeric port ("wss://h:abc/")
+      -- was a hard engine error rather than this clean refusal.
+      if not nxIsDigits(tPortText) then
+         nxSetError "nxWsUrlParse: the port must be 1 to 65535"
+         return empty
+      end if
+      if tPortText + 0 < 1 or tPortText + 0 > 65535 then
          nxSetError "nxWsUrlParse: the port must be 1 to 65535"
          return empty
       end if
@@ -19505,7 +19660,14 @@ function nxPowCheck pEvent, pMinBits
    repeat with tI = 1 to tTagCount
       if nxStrEqExact(pEvent["tags"][tI][1], "nonce") and 3 is among the keys of pEvent["tags"][tI] then
          put pEvent["tags"][tI][3] into tTarget
-         if not nxIsDigits(tTarget) or tTarget + 0 < pMinBits then
+         -- Nested, same `or` rule. This one has no caller in the tree today,
+         -- so it is not reachable now - but the tag value is straight off the
+         -- relay, and a future caller would inherit the hard error.
+         if not nxIsDigits(tTarget) then
+            nxSetError "nxPowCheck: the committed target" && tTarget && "is below" && pMinBits
+            return false
+         end if
+         if tTarget + 0 < pMinBits then
             nxSetError "nxPowCheck: the committed target" && tTarget && "is below" && pMinBits
             return false
          end if
@@ -26469,7 +26631,7 @@ private command rs1rstSectionKeyFile
 end rs1rstSectionKeyFile
 
 private command rs1rstSectionHead
-   local rs1tHead, rs1tParsed, rs1tRebuilt, rs1tUpper
+   local rs1tHead, rs1tParsed, rs1tRebuilt, rs1tUpper, rs1tBig, rs1tBigParsed, rs1rstI
    rs1rstSection "RSH1 - the feed head"
    put rsBuildHead(rs1kRsGoldHeadSeq, rs1kRsGoldHeadName, rs1kRsGoldPost2Target, \
          rs1kRsGoldPrekeyTarget, rs1kRsGoldOnion, rs1kRsGoldProfileTarget) into rs1tHead
@@ -26499,6 +26661,37 @@ private command rs1rstSectionHead
          "a truncated head is refused"
    rs1rstCheck (rsParseHead(rs1tHead & numToByte(0)) is empty), \
          "trailing bytes are refused"
+   -- THE u64 BOUND (2026-09-08). Every record field declared u64 arrives as
+   -- eight ATTACKER-supplied bytes and is read BEFORE any signature is
+   -- checked, but an engine number is an IEEE double and is exact only to
+   -- 2^53 (engine notes 2.4). rsReadBEu64 used to return a silently ROUNDED
+   -- number past that; it now returns empty and every parser refuses the
+   -- record. The boundary is checked from both sides, because a bound that
+   -- only ever refuses is indistinguishable from a parser that is simply
+   -- broken.
+   put rs1tHead into rs1tBig
+   put numToByte(0) into byte 5 of rs1tBig
+   put numToByte(32) into byte 6 of rs1tBig
+   put numToByte(0) into byte 7 of rs1tBig
+   put numToByte(0) into byte 8 of rs1tBig
+   put numToByte(0) into byte 9 of rs1tBig
+   put numToByte(0) into byte 10 of rs1tBig
+   put numToByte(0) into byte 11 of rs1tBig
+   put numToByte(0) into byte 12 of rs1tBig
+   put rsParseHead(rs1tBig) into rs1tBigParsed
+   rs1rstCheck (rs1tBigParsed is not empty), \
+         "a seq of exactly 2^53 still parses (it IS representable)"
+   rs1rstCheck (rs1tBigParsed["seq"] is 9007199254740992), \
+         "and comes back as exactly 2^53, not a rounded neighbour"
+   put numToByte(1) into byte 12 of rs1tBig
+   rs1rstCheck (rsParseHead(rs1tBig) is empty), \
+         "a seq of 2^53 + 1 is REFUSED (the first unrepresentable value)"
+   put rs1tHead into rs1tBig
+   repeat with rs1rstI = 5 to 12
+      put numToByte(255) into byte rs1rstI of rs1tBig
+   end repeat
+   rs1rstCheck (rsParseHead(rs1tBig) is empty), \
+         "an all-ones u64 seq is refused, not rounded to 1.8e19"
    -- A non-canonical (uppercase) hex target must be refused, not silently
    -- accepted: byte 61 is the first char of the prekey target ("ab"*20), so
    -- turning that 'a' (97) into 'A' (65) is a valid-length but non-lowercase
@@ -26624,9 +26817,15 @@ private command rs1rstSectionChunked pCaps
    rs1rstCheck (rsLastError() contains rs1kRsGoldChunk2Target), \
          "and the refusal names WHICH chunk is missing"
    -- the capacity arithmetic the app's D-or-C decision rides on
-   rs1rstCheck (rsPostTextCapacity(0) is 880), \
-         "capacity with no media is 880 bytes"
-   rs1rstCheck (rsPostTextCapacity(8) is 560), \
+   -- 876/556, not 880/560: kRsMaxRecord went 1000 -> 996 on 2026-09-08
+   -- (BEP44's cap is on the BENCODED value, so 1000 raw is 1005 on the wire
+   -- and every node refuses it). These four numbers and the chunk sizes below
+   -- all moved with it, and NOTHING headless could see them - this section
+   -- only runs on an engine, which is exactly why the change shipped with
+   -- them stale.
+   rs1rstCheck (rsPostTextCapacity(0) is 876), \
+         "capacity with no media is 876 bytes"
+   rs1rstCheck (rsPostTextCapacity(8) is 556), \
          "each attachment costs its 40-hex spelling"
    rs1rstCheck (rsPostTextCapacity(9) is empty), \
          "a media count over the cap is refused"
@@ -26634,11 +26833,11 @@ private command rs1rstSectionChunked pCaps
    repeat 14 times
       put rs1tHuge & rs1tHuge into rs1tHuge
    end repeat
-   rs1rstCheck (rsBuildPost(1, empty, char 1 to 880 of rs1tHuge, empty, rs1tSeed) \
+   rs1rstCheck (rsBuildPost(1, empty, char 1 to 876 of rs1tHuge, empty, rs1tSeed) \
          is not empty), "a direct post takes exactly the stated capacity"
-   rs1rstCheck (rsBuildPost(1, empty, char 1 to 881 of rs1tHuge, empty, rs1tSeed) \
+   rs1rstCheck (rsBuildPost(1, empty, char 1 to 877 of rs1tHuge, empty, rs1tSeed) \
          is empty), "and refuses one byte more"
-   -- the producer split: full 1000-byte chunks, remainder last, by BYTE
+   -- the producer split: full 996-byte chunks, remainder last, by BYTE
    put empty into rs1tBig
    repeat 250 times
       put "0123456789" after rs1tBig
@@ -26646,25 +26845,29 @@ private command rs1rstSectionChunked pCaps
    put rsChunkPostText(rs1tBig) into rs1tParts
    rs1rstCheck (the number of elements in rs1tParts is 3), \
          "2500 bytes split into three chunks"
-   rs1rstCheck (the number of bytes in rs1tParts[1] is 1000 and \
-         the number of bytes in rs1tParts[2] is 1000 and \
-         the number of bytes in rs1tParts[3] is 500), \
+   rs1rstCheck (the number of bytes in rs1tParts[1] is 996 and \
+         the number of bytes in rs1tParts[2] is 996 and \
+         the number of bytes in rs1tParts[3] is 508), \
          "full chunks first, the remainder last"
    rs1rstCheck (rs1tParts[1] & rs1tParts[2] & rs1tParts[3] is \
          textEncode(rs1tBig, "UTF-8")), "and nothing is lost or reordered"
    rs1rstCheck (rsChunkPostText(empty) is empty), "empty text is refused"
    rs1rstCheck (rsChunkPostText(rs1tHuge) is empty), \
-         "text over 16000 UTF-8 bytes is refused, never truncated"
+         "text over 15936 UTF-8 bytes is refused, never truncated"
    -- 16 is the wire's kRsMaxChunks; a library constant is not visible
    -- from this separate script, and the number here is the FORMAT's
    rs1rstCheck ((the number of elements in \
-         rsChunkPostText(char 1 to 16000 of rs1tHuge)) is 16), \
-         "exactly 16000 bytes takes exactly 16 chunks"
+         rsChunkPostText(char 1 to 15936 of rs1tHuge)) is 16), \
+         "exactly 15936 bytes takes exactly 16 chunks"
    -- a chunk boundary INSIDE a UTF-8 sequence: legal on the wire, and
    -- the reassembly (which validates the concatenation, never a part
    -- alone) must reproduce the text exactly
+   -- 995, not 999. With 996-byte chunks a 999-byte pad puts the whole
+   -- two-byte character in chunk 2 and the test silently stops testing a
+   -- SPLIT character while still passing its count assertion. 995 puts the
+   -- boundary back inside the character: chunk 1 is 995 a's + the first byte.
    put empty into rs1tPad
-   repeat 999 times
+   repeat 995 times
       put "a" after rs1tPad
    end repeat
    put rs1tPad & textDecode(rs1rstBin("c3a9"), "UTF-8") into rs1tSplit
@@ -26798,31 +27001,31 @@ private command rs1rstSectionIngest
    put 7 into rs1tEvent["seq"]
    put rs1rstBin(rs1kRsGoldHeadHex) into rs1tEvent["value"]
    put rs1kRsGoldHeadSigHex into rs1tEvent["signature"]
-   put rsIngestHead(rs1tEvent, rs1kRsGoldHandle) into rs1tHead
+   put rsIngestHead(rs1tEvent, rs1kRsGoldHandle, 0) into rs1tHead
    rs1rstCheck (rs1tHead is not empty), "the golden head event ingests"
    rs1rstCheck (rs1tHead["displayName"] is rs1kRsGoldHeadName), \
          "and hands back the parsed head"
    rs1rstCheck (rs1tHead["latestPostTarget"] is rs1kRsGoldPost2Target), \
          "naming post 2 as latest"
-   rs1rstCheck (rsIngestHead(rs1tEvent, rs1kRsGoldConfPub) is empty), \
+   rs1rstCheck (rsIngestHead(rs1tEvent, rs1kRsGoldConfPub, 0) is empty), \
          "an event for another handle is refused"
    put rs1tEvent into rs1tBad
    put "riptide-lies" into rs1tBad["salt"]
-   rs1rstCheck (rsIngestHead(rs1tBad, rs1kRsGoldHandle) is empty), \
+   rs1rstCheck (rsIngestHead(rs1tBad, rs1kRsGoldHandle, 0) is empty), \
          "a wrong salt is refused"
    put rs1tEvent into rs1tBad
    put 8 into rs1tBad["seq"]
-   rs1rstCheck (rsIngestHead(rs1tBad, rs1kRsGoldHandle) is empty), \
+   rs1rstCheck (rsIngestHead(rs1tBad, rs1kRsGoldHandle, 0) is empty), \
          "a seq disagreeing with the head's embedded seq is refused"
    put rs1tEvent into rs1tBad
    put rs1rstFlipByte(rs1tBad["value"], 2) into rs1tBad["value"]
-   rs1rstCheck (rsIngestHead(rs1tBad, rs1kRsGoldHandle) is empty), \
+   rs1rstCheck (rsIngestHead(rs1tBad, rs1kRsGoldHandle, 0) is empty), \
          "a value that is not an RSH1 record is refused"
    put rs1tEvent into rs1tBad
    -- byte 20 is the last display-name char: the record still PARSES, so
    -- this refusal is the signature's, not the parser's
    put rs1rstFlipByte(rs1tBad["value"], 20) into rs1tBad["value"]
-   rs1rstCheck (rsIngestHead(rs1tBad, rs1kRsGoldHandle) is empty), \
+   rs1rstCheck (rsIngestHead(rs1tBad, rs1kRsGoldHandle, 0) is empty), \
          "a tampered-but-parseable value fails the BEP44 signature"
    put rs1tEvent into rs1tBad
    put rs1tBad["signature"] into rs1tSig
@@ -26832,12 +27035,42 @@ private command rs1rstSectionIngest
       put "6" into char 1 of rs1tSig
    end if
    put rs1tSig into rs1tBad["signature"]
-   rs1rstCheck (rsIngestHead(rs1tBad, rs1kRsGoldHandle) is empty), \
+   rs1rstCheck (rsIngestHead(rs1tBad, rs1kRsGoldHandle, 0) is empty), \
          "a forged signature is refused"
    put rs1tEvent into rs1tBad
    put char 1 to 127 of rs1tBad["signature"] into rs1tBad["signature"]
-   rs1rstCheck (rsIngestHead(rs1tBad, rs1kRsGoldHandle) is empty), \
+   rs1rstCheck (rsIngestHead(rs1tBad, rs1kRsGoldHandle, 0) is empty), \
          "a truncated signature is refused"
+   -- THE READER WATERMARK (2026-09-08). The golden head is seq 7. Every
+   -- refusal above is about one record in isolation and passes on a head the
+   -- author really signed; these are the ones that catch a head that is
+   -- perfectly valid and simply OLD, which is what a replaying DHT node
+   -- serves. The first check is the one that matters most: an omitted
+   -- watermark must FAIL CLOSED, because the shipped bug was precisely a
+   -- caller that never supplied one.
+   -- An OMITTED third argument and an explicit `empty` one are the SAME
+   -- thing to the engine (a missing parameter is empty), so the check below
+   -- covers both and the under-arity spelling is not written here: it is
+   -- legal LiveCodeScript, but tools/check-handler-calls.py refuses any arity
+   -- mismatch and this tree has no other one, so writing it would turn the
+   -- whole suite gate set red to test something this line already tests.
+   rs1rstCheck (rsIngestHead(rs1tEvent, rs1kRsGoldHandle, empty) is empty), \
+         "an omitted or empty reader watermark is refused (fail closed)"
+   rs1rstCheck (rsIngestHead(rs1tEvent, rs1kRsGoldHandle, "later") is empty), \
+         "a non-numeric reader watermark is refused"
+   rs1rstCheck (rsIngestHead(rs1tEvent, rs1kRsGoldHandle, -1) is empty), \
+         "a negative reader watermark is refused"
+   rs1rstCheck (rsIngestHead(rs1tEvent, rs1kRsGoldHandle, 9007199254740992) is empty), \
+         "a watermark past the engine's exact-integer range is refused"
+   rs1rstCheck (rsIngestHead(rs1tEvent, rs1kRsGoldHandle, 7) is not empty), \
+         "the SAME seq still ingests (a refresh is not a rollback)"
+   rs1rstCheck (rsIngestHead(rs1tEvent, rs1kRsGoldHandle, 6) is not empty), \
+         "a seq above the watermark ingests"
+   rs1rstCheck (rsIngestHead(rs1tEvent, rs1kRsGoldHandle, 8) is empty), \
+         "a head OLDER than the watermark is refused (the rollback gate)"
+   rs1rstCheck (rsIngestHead(rs1tEvent, rs1kRsGoldHandle, 4096) is empty), \
+         "and a far-older head is refused the same way"
+
    -- the post walk, on synthetic dhtImmutableItem events: head names post 2,
    -- post 2's prev names post 1, post 1's prev is the zero target - the end
    put rs1kRsGoldPost2Target into rs1tPostEvent["target"]
@@ -28420,6 +28653,16 @@ function he1heEnvWireParse pWireLine
    put item 10 of he1tLine into he1tA["hostSig"]
    put item 1 to 6 of he1tLine into he1tA["contentLine"]
    put item 1 to 9 of he1tLine into he1tA["envLine"]
+   -- The wire ARITY, measured while the tab delimiter is still set (2026-09-09).
+   -- A wire line is exactly ten tab-separated fields, and until now nothing
+   -- counted them: the reads above take items 1..10 and IGNORE anything after,
+   -- while he1heNetApplyWire advances the transcript hash chain over the raw line
+   -- verbatim. So appending a tab and one byte to any host-signed wire left
+   -- both signed spans (items 1-6 and 1-9) byte-identical - the frame verified
+   -- "ok" - and moved the victim's chain head somewhere no other player holds.
+   -- Measured here rather than in the caller because the delimiter is restored
+   -- on the next line and the harness pins that restore contract.
+   put the number of items of he1tLine into he1tA["n"]
    set the itemDelimiter to he1tSaved
    return he1tA
 end he1heEnvWireParse
@@ -28442,6 +28685,29 @@ function he1heEnvVerify pWireLine, pFromPubHex, pHostPubHex, pExpectedPrevHex
    -- check); pExpectedPrevHex is the local chain head ("" to skip).
    local he1tA, he1tFrom, he1tSenderSig, he1tHostSig, he1tBodyHex
    put he1heEnvWireParse(pWireLine) into he1tA
+   -- ARITY FIRST, before any decode (2026-09-09). Both signatures cover a
+   -- PREFIX of the line - the sender signs items 1-6, the host items 1-9 - but
+   -- the transcript chain hashes the WHOLE line, so any trailing field is
+   -- unsigned text that still moves the chain head. A peer could take a
+   -- genuine host-signed wire, append a tab and one byte, and hand it to one
+   -- victim: every signature check passes, seq and prev bind, the frame
+   -- applies, and that client's head forks away from the table's for the rest
+   -- of the session (the resync cannot recover it either, because the replayed
+   -- wires all carry seq <= the already-advanced lastSeq and are dropped).
+   -- Ten fields exactly, or it is not a wire this protocol signed.
+   --
+   -- AND A TRAILING DELIMITER IS CHECKED SEPARATELY, because the count alone
+   -- cannot see it: the engine IGNORES ONE trailing delimiter when counting
+   -- items (docs/OXT-ENGINE-NOTES.md 2.2, OBSERVED), so `W & tab` still
+   -- counts as ten and the arity test passes - while he1heNetApplyWire hashes
+   -- the raw line, tab included, and the chain forks exactly as before. That
+   -- note's own rule is "never infer 'there is no trailing empty component'
+   -- from an item count. Check the string." A legal wire never ends in a tab:
+   -- its last field is a 128-hex host signature. (Two trailing tabs ARE
+   -- caught by the count, since only one is eaten.)
+   if he1tA["n"] is not 10 or the last char of pWireLine is tab then
+      return "drop:malformed"
+   end if
    -- shape-check every hex field BEFORE any decode: he1heHex2BinD (sxHex2Bin)
    -- throws on malformed hex, and this path runs on untrusted inbound bytes,
    -- so a bad frame must become a clean drop, never an uncaught throw (H4).
@@ -39524,6 +39790,34 @@ command he1heTestCryptoRun
          he1heEnvVerify(he1tTampered, empty, he1heBin2HexS(he1tPub), he1kHeGenesisPrev), "drop:malformed"
    he1heTAssert "crypto: he1heIsHex rejects odd-length and non-hex", \
          he1heIsHex("abc", 0) & "," & he1heIsHex("zz", 0) & "," & he1heIsHex("ab", 0), "false,false,true"
+
+   -- WIRE ARITY (2026-09-09). Both signatures cover a PREFIX of the line (the
+   -- sender signs items 1-6, the host 1-9) but he1heNetApplyWire hashes the WHOLE
+   -- line into the transcript chain, so a trailing field is unsigned text that
+   -- still moves the chain head. Appending one to a genuine host-signed wire
+   -- left every signature check passing - verified against the oracle: items
+   -- 1-6 and 1-9 rejoin byte-identically and item 10 is still the host
+   -- signature - while the victim's head forked away from the table's for the
+   -- rest of the session. Ten fields exactly, or it is not a wire we signed.
+   -- Both directions, because a check that only ever refuses cannot be told
+   -- from a parser that has stopped working.
+   he1heTAssert "crypto: the unmodified 10-field wire still verifies", \
+         he1heEnvVerify(he1tWire, he1heBin2HexS(he1tPub), he1heBin2HexS(he1tPub), he1kHeGenesisPrev), "ok"
+   he1heTAssert "crypto: an APPENDED 11th field is dropped (chain-fork guard)", \
+         he1heEnvVerify(he1tWire & tab & "X", he1heBin2HexS(he1tPub), he1heBin2HexS(he1tPub), \
+         he1kHeGenesisPrev), "drop:malformed"
+   he1heTAssert "crypto: an appended EMPTY field is dropped too", \
+         he1heEnvVerify(he1tWire & tab, he1heBin2HexS(he1tPub), he1heBin2HexS(he1tPub), \
+         he1kHeGenesisPrev), "drop:malformed"
+   -- The truncated side needs the TAB delimiter in hand: at this point the
+   -- ambient one is comma, and `item 1 to 9` under comma would return the
+   -- whole ten-field line unchanged - a check that silently tested nothing.
+   set the itemDelimiter to tab
+   put item 1 to 9 of he1tWire into he1tTampered
+   set the itemDelimiter to comma
+   he1heTAssert "crypto: a truncated 9-field wire is dropped", \
+         he1heEnvVerify(he1tTampered, he1heBin2HexS(he1tPub), he1heBin2HexS(he1tPub), \
+         he1kHeGenesisPrev), "drop:malformed"
 
    -- admission token (spec 5): host-role signature pinned, and the verify
    -- roundtrip returns the admitted pubkey for a good token, "" for a wrong
