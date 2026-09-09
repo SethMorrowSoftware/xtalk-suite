@@ -141,6 +141,15 @@ senderSig   = sxSignDetached over utf8(contentLine), by the sender key
 envLine     = contentLine TAB senderSigHex TAB seq TAB prevHex
 hostSig     = sxSignDetached over utf8(envLine), by the host relay key
 wire        = envLine TAB hostSigHex          -- one wire line = one rp1 payload
+            -- EXACTLY ten TAB-separated fields. A receiver MUST count them and
+            -- drop anything else (normative, 2026-09-09). Both signatures cover
+            -- a PREFIX of the line - the sender signs items 1-6, the host 1-9 -
+            -- but the transcript chain hashes the WHOLE line, so a trailing
+            -- field is unsigned text that still moves the chain head. Appending
+            -- one to a genuine host-signed wire leaves every signature check
+            -- passing and forks the receiving client's chain away from the
+            -- table's, unrecoverably: the replayed wires that follow all carry
+            -- seq <= the already-advanced lastSeq and are dropped.
 chainHead   = sxHash("HOLDEM-CHAIN-v1|" || utf8(wire)); genesis prev = 32 zero bytes
 ```
 

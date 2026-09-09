@@ -4081,6 +4081,16 @@ function heEnvWireParse pWireLine
    put item 10 of tLine into tA["hostSig"]
    put item 1 to 6 of tLine into tA["contentLine"]
    put item 1 to 9 of tLine into tA["envLine"]
+   -- The wire ARITY, measured while the tab delimiter is still set (2026-09-09).
+   -- A wire line is exactly ten tab-separated fields, and until now nothing
+   -- counted them: the reads above take items 1..10 and IGNORE anything after,
+   -- while heNetApplyWire advances the transcript hash chain over the raw line
+   -- verbatim. So appending a tab and one byte to any host-signed wire left
+   -- both signed spans (items 1-6 and 1-9) byte-identical - the frame verified
+   -- "ok" - and moved the victim's chain head somewhere no other player holds.
+   -- Measured here rather than in the caller because the delimiter is restored
+   -- on the next line and the harness pins that restore contract.
+   put the number of items of tLine into tA["n"]
    set the itemDelimiter to tSaved
    return tA
 end heEnvWireParse
@@ -4103,6 +4113,19 @@ function heEnvVerify pWireLine, pFromPubHex, pHostPubHex, pExpectedPrevHex
    -- check); pExpectedPrevHex is the local chain head ("" to skip).
    local tA, tFrom, tSenderSig, tHostSig, tBodyHex
    put heEnvWireParse(pWireLine) into tA
+   -- ARITY FIRST, before any decode (2026-09-09). Both signatures cover a
+   -- PREFIX of the line - the sender signs items 1-6, the host items 1-9 - but
+   -- the transcript chain hashes the WHOLE line, so any trailing field is
+   -- unsigned text that still moves the chain head. A peer could take a
+   -- genuine host-signed wire, append a tab and one byte, and hand it to one
+   -- victim: every signature check passes, seq and prev bind, the frame
+   -- applies, and that client's head forks away from the table's for the rest
+   -- of the session (the resync cannot recover it either, because the replayed
+   -- wires all carry seq <= the already-advanced lastSeq and are dropped).
+   -- Ten fields exactly, or it is not a wire this protocol signed.
+   if tA["n"] is not 10 then
+      return "drop:malformed"
+   end if
    -- shape-check every hex field BEFORE any decode: heHex2BinD (sxHex2Bin)
    -- throws on malformed hex, and this path runs on untrusted inbound bytes,
    -- so a bad frame must become a clean drop, never an uncaught throw (H4).
@@ -15719,6 +15742,34 @@ command heTestCryptoRun
          heEnvVerify(tTampered, empty, heBin2HexS(tPub), kHeGenesisPrev), "drop:malformed"
    heTAssert "crypto: heIsHex rejects odd-length and non-hex", \
          heIsHex("abc", 0) & "," & heIsHex("zz", 0) & "," & heIsHex("ab", 0), "false,false,true"
+
+   -- WIRE ARITY (2026-09-09). Both signatures cover a PREFIX of the line (the
+   -- sender signs items 1-6, the host 1-9) but heNetApplyWire hashes the WHOLE
+   -- line into the transcript chain, so a trailing field is unsigned text that
+   -- still moves the chain head. Appending one to a genuine host-signed wire
+   -- left every signature check passing - verified against the oracle: items
+   -- 1-6 and 1-9 rejoin byte-identically and item 10 is still the host
+   -- signature - while the victim's head forked away from the table's for the
+   -- rest of the session. Ten fields exactly, or it is not a wire we signed.
+   -- Both directions, because a check that only ever refuses cannot be told
+   -- from a parser that has stopped working.
+   heTAssert "crypto: the unmodified 10-field wire still verifies", \
+         heEnvVerify(tWire, heBin2HexS(tPub), heBin2HexS(tPub), kHeGenesisPrev), "ok"
+   heTAssert "crypto: an APPENDED 11th field is dropped (chain-fork guard)", \
+         heEnvVerify(tWire & tab & "X", heBin2HexS(tPub), heBin2HexS(tPub), \
+         kHeGenesisPrev), "drop:malformed"
+   heTAssert "crypto: an appended EMPTY field is dropped too", \
+         heEnvVerify(tWire & tab, heBin2HexS(tPub), heBin2HexS(tPub), \
+         kHeGenesisPrev), "drop:malformed"
+   -- The truncated side needs the TAB delimiter in hand: at this point the
+   -- ambient one is comma, and `item 1 to 9` under comma would return the
+   -- whole ten-field line unchanged - a check that silently tested nothing.
+   set the itemDelimiter to tab
+   put item 1 to 9 of tWire into tTampered
+   set the itemDelimiter to comma
+   heTAssert "crypto: a truncated 9-field wire is dropped", \
+         heEnvVerify(tTampered, heBin2HexS(tPub), heBin2HexS(tPub), \
+         kHeGenesisPrev), "drop:malformed"
 
    -- admission token (spec 5): host-role signature pinned, and the verify
    -- roundtrip returns the admitted pubkey for a good token, "" for a wrong
