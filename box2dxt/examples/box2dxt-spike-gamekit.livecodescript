@@ -1968,6 +1968,7 @@ end b2kToWorldY
 -- =====================================================================
 command b2kAddBox pControl, pDynamic
    local tRef, tType, tFixed, tBody, tHw, tHh, tWx, tWy, tGraphic, tImage
+   set the itemDelimiter to comma   -- locs and anchors are "x,y" (gotcha 5)
    if sWorld is empty then return 0   -- attach needs a world (b2kSetup first)
    put the long id of pControl into tRef
    put (pDynamic is not false) into pDynamic
@@ -2009,6 +2010,7 @@ end b2kAddBox
 
 command b2kAddBall pControl, pDynamic
    local tRef, tType, tBody, tRad, tWx, tWy
+   set the itemDelimiter to comma   -- locs and anchors are "x,y" (gotcha 5)
    if sWorld is empty then return 0
    put the long id of pControl into tRef
    put (pDynamic is not false) into pDynamic
@@ -2035,6 +2037,7 @@ end b2kAddBall
 -- images rotate via `the angle`; other controls follow position upright.
 command b2kAddCapsule pControl, pDynamic
    local tRef, tType, tFixed, tBody, tWx, tWy, tWm, tHm, tR, tL, tHoriz, tGraphic, tImage
+   set the itemDelimiter to comma   -- locs and anchors are "x,y" (gotcha 5)
    if sWorld is empty then return 0
    put the long id of pControl into tRef
    put (pDynamic is not false) into pDynamic
@@ -2083,6 +2086,7 @@ end b2kAddCapsule
 -- Build a body from a polygon graphic's own points (<= 8 vertices, convex).
 command b2kAddPolygon pControl, pDynamic
    local tRef, tType, tBody, tCx, tCy, tWx, tWy, tPoints, p, tLocal, lx, ly, tCount
+   set the itemDelimiter to comma   -- locs and anchors are "x,y" (gotcha 5)
    if sWorld is empty then return 0
    put the long id of pControl into tRef
    put (pDynamic is not false) into pDynamic
@@ -2283,6 +2287,7 @@ end b2kSetDensity
 command b2kReshape pControl, pShape, pW, pH
    local tRef, tBody, tOld, tHw, tHh, tWm, tHm, tR, tL, tHoriz, tCx, tCy, p, lx, ly, tCount, tNewVerts
    local tWx, tWy, tWa
+   set the itemDelimiter to comma   -- locs and anchors are "x,y" (gotcha 5)
    put the long id of pControl into tRef
    if sBody[tRef] is empty then exit b2kReshape
    put sBody[tRef] into tBody
@@ -2919,6 +2924,7 @@ end b2kEndContactB
 -- world at that point (great for pendulums and swinging doors).
 command b2kHinge pCtrlA, pCtrlB, pScreenX, pScreenY
    local bA, bB, wx, wy, aA, aB, j
+   set the itemDelimiter to comma   -- locs and anchors are "x,y" (gotcha 5)
    put sBody[the long id of pCtrlA] into bA
    if bA is empty or sWorld is empty then return 0
    if pCtrlB is not empty and sBody[the long id of pCtrlB] is empty then return 0
@@ -2938,6 +2944,7 @@ end b2kHinge
 
 command b2kWeld pCtrlA, pCtrlB
    local bA, bB, wx, wy, aA, refA, j
+   set the itemDelimiter to comma   -- locs and anchors are "x,y" (gotcha 5)
    put sBody[the long id of pCtrlA] into bA
    put sBody[the long id of pCtrlB] into bB
    if bA is empty or bB is empty or sWorld is empty then return 0
@@ -3018,6 +3025,7 @@ end b2kWeldSpring
 -- (0 = horizontal, 90 = vertical; default vertical). Drive it with b2kSliderMotor.
 command b2kSlider pCtrlA, pCtrlB, pAxisDeg
    local bMover, bFixed, wax, way, ca, sa, lax, lay, anchX, anchY, aFix, aMov, refA, fixAng, j
+   set the itemDelimiter to comma   -- locs and anchors are "x,y" (gotcha 5)
    put sBody[the long id of pCtrlA] into bMover
    if pCtrlB is empty then put sDragAnchor into bFixed
    else put sBody[the long id of pCtrlB] into bFixed
@@ -3061,6 +3069,7 @@ end b2kSliderPos
 -- Drive with b2kWheelMotor, tune ride with b2kWheelSpring.
 command b2kWheel pChassis, pWheel, pScreenX, pScreenY, pAxisDeg
    local bA, bB, anchX, anchY, aA, aB, wax, way, ca, sa, lax, lay, angA, j
+   set the itemDelimiter to comma   -- locs and anchors are "x,y" (gotcha 5)
    put sBody[the long id of pChassis] into bA
    put sBody[the long id of pWheel] into bB
    if bA is empty or bB is empty or sWorld is empty then return 0
@@ -6896,6 +6905,7 @@ end b2kDrawBody
 
 command b2kDrawPoly pRef, pWx, pWy, pWa
    local c, s, p, pt, tPts, tFirst, tKey
+   set the itemDelimiter to comma   -- locs and anchors are "x,y" (gotcha 5)
    put round(b2kToScreenX(pWx)) & "," & round(b2kToScreenY(pWy)) & "," & round(pWa * 1800 / kPI) into tKey
    if sDrawKey[pRef] is tKey then exit b2kDrawPoly
    put cos(pWa) into c
