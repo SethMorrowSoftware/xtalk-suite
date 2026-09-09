@@ -79,6 +79,34 @@ rename is what makes that legal). Verified statically; needs a two-machine,
 two-network OXT pass - the leg the stack exists to close. Carrier-gated like
 every demo: ui-kit, selfcheck, embeds, launcher, stack-size, timer-pin.
 
+## enx_disconnect leaked the handle from every pre-connect state (2026-09-09)
+
+`enx_disconnect`'s own comment said the handle retires when OUR E_DISCONNECT is
+drained. That is true from exactly TWO states, and the code trusted it from all
+of them.
+
+Read out of enet 1.3.18 `peer.c` rather than recalled: `enet_peer_disconnect`
+returns having done NOTHING when the peer is DISCONNECTING / DISCONNECTED /
+ACKNOWLEDGING_DISCONNECT / ZOMBIE; it queues the acknowledged command and moves
+to DISCONNECTING only from CONNECTED or DISCONNECT_LATER; and from every other
+state it takes the else branch - `enet_host_flush` + `enet_peer_reset` - which
+queues no event and leaves the peer DISCONNECTED.
+
+CONNECTING is exactly where `enx_connect` leaves a peer. So an app that gives up
+while the UI still says "connecting" and calls `enDisconnect` got no event, no
+retire, and a slot nobody frees, with the ENet-side backlink still pointing at
+it. A dashboard that lets a user cancel and retry leaks one handle per attempt.
+
+The fix tests the POST-call state, which is why it sits after the call rather
+than before: DISCONNECTED means either the peer was reset here or the call was a
+no-op on an already-dead peer, and both mean nothing is owed. Anything else
+still owes an event and the drain retires it there. `retire_peer` is idempotent,
+so racing the drain is harmless.
+
+Compile-verified against ENet v1.3.18 (the tag CMakeLists pins), `-Wall
+-Wextra`, no warnings. The committed binaries do NOT carry it yet -
+`docs/REMAINING-WORK.md` C.0.
+
 ## The rules that carry over unchanged
 
 1. **Never call script from a foreign thread** — trivially satisfied here:

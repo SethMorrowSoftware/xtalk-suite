@@ -458,6 +458,17 @@ void clear_peer_callbacks(int pcId) {
     rtcSetDataChannelCallback(pcId, nullptr);
 }
 
+/* Park an inbound rtc channel nobody will ever own, so reap_orphan_channels
+ * deletes it from the script thread. A callback MAY NOT rtcDelete* (the capi
+ * self-deadlock this binding already paid for once), so an early return in
+ * cb_data_channel cannot simply free what its sibling dcx_channel_new frees
+ * inline - it has to hand the id over instead. Takes g_mu itself, so callers
+ * must NOT hold it. */
+void orphan_channel(int dcId) {
+    std::lock_guard<std::mutex> lock(g_mu);
+    g_orphanChans.push_back(dcId);
+}
+
 /* Delete any channel cb_data_channel orphaned (see g_orphanChans). MUST be
  * called from a script-thread entry point with g_mu NOT held: it both blocks
  * (rtcDelete waits for in-flight callbacks, which need g_mu) and does the
@@ -485,7 +496,11 @@ void cb_data_channel(int pc, int dc, void *) {
             std::lock_guard<std::mutex> lock(g_mu);
             peerH = peer_handle_for_rtc_locked(pc);
         }
-        if (!peerH) return;
+        /* The peer went away before we could claim this channel. libdatachannel
+         * has ALREADY created it and holds it in its own map with an open SCTP
+         * stream, so returning bare leaks it for the life of the process. Park
+         * it (the lock above is released by now, which orphan_channel needs). */
+        if (!peerH) { orphan_channel(dc); return; }
 
         /* Label/protocol are cheap rtc getters — legal from a callback, and
          * read BEFORE our lock (never call rtc* while holding g_mu). */
@@ -498,7 +513,13 @@ void cb_data_channel(int pc, int dc, void *) {
          * handle's birth, so INCOMING always precedes this channel's OPEN. */
         int h = register_channel(dc, peerH, /*announceIncoming=*/true,
                                  ln > 0 ? label : "", pn > 0 ? proto : "");
-        if (h == 0) return;   /* table full: nothing was registered */
+        /* Table full: register_channel returned before wiring any callback and
+         * before publishing a mapping, so nothing here owns `dc` - but it
+         * exists. Its two script-thread siblings (dcx_channel_new,
+         * dcx_channel_new_ex) rtcDeleteDataChannel on exactly this failure;
+         * this path is the one that could not, and so leaked a live channel
+         * per remote open once 65536 of ours are live. */
+        if (h == 0) { orphan_channel(dc); return; }
 
         /* THE ORPHAN WINDOW (see g_orphanChans): register_channel necessarily
          * runs unlocked, so a dcx_peer_free may have swept this peer between

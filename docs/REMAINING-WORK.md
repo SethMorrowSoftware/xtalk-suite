@@ -611,7 +611,7 @@ Built and statically verified; pending under the honesty convention.
 
 ## C. Release and CI (8)
 
-0. **torrentxt's committed binaries are BEHIND its shim (opened 2026-09-08).**
+0. **Three members' committed binaries are BEHIND their shims (opened 2026-09-08, widened 2026-09-09 to enetxt and datachannelxt).**
    Two source fixes landed in `torrentxt/src/torrent_shim.cpp` that no
    committed library carries yet, so on every platform the shipped behaviour is
    still the old behaviour: (a) the rp1 inbound queue is now BOUNDED
@@ -631,6 +631,23 @@ Built and statically verified; pending under the honesty convention.
    `A_RP1_QUEUE_OVERFLOW` alert, which needs a new alert code and therefore
    ABI 11 -> 12; until then the count rides the existing last-error channel on
    the next drain.
+
+   **enetxt (2026-09-09):** `enx_disconnect` now retires the peer handle when
+   ENet queued no event. Until a rebuild, an app that gives up on a connection
+   while it is still CONNECTING leaks that handle for the life of the process.
+
+   **datachannelxt (2026-09-09):** both early returns in `cb_data_channel` now
+   park the inbound rtc channel for `reap_orphan_channels`. Until a rebuild, a
+   remote-initiated channel arriving after the peer was freed, or once the
+   handle table is exhausted, leaks a live channel and its SCTP stream.
+
+   None of the three changes touches an exported symbol or an ABI constant, so
+   `check-binary-freshness.py` is green and nothing is mis-described - it
+   simply cannot see a body-only change, which is the honest limit of its four
+   legs. All three shims are COMPILE-VERIFIED here against their pinned
+   upstreams (libtorrent 2.0.10 via apt, ENet v1.3.18 and libdatachannel
+   v0.24.5 cloned at the tags the CMakeLists pin), `-Wall -Wextra`, zero
+   warnings in any shim.
    - `torrentxt/src/torrent_shim.cpp` ("THE BOUNDED INBOUND QUEUE"),
      `torrentxt/src/btx_abi.h` (the ABI contract), `tools/check-binary-freshness.py`
 

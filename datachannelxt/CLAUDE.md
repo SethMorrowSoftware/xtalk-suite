@@ -31,6 +31,33 @@ The native library ships **bundled inside the extension** under
 prefix; platform-ids `x86_64-linux` / `x86-linux` / `x86_64-win32` / `x86-win32` /
 `universal-mac`, architecture first, Windows `-win32` for both bitnesses).
 
+## cb_data_channel's two early returns leaked the channel (2026-09-09)
+
+A remote-initiated channel is BORN inside `cb_data_channel` - libdatachannel has
+already created it and holds it in its own map with an open SCTP stream - so an
+early return there abandons a live object, not a plan to make one. Two returns
+did exactly that: the peer-already-freed exit, and the handle-table-full exit.
+
+Both script-thread siblings get this right: `dcx_channel_new` and
+`dcx_channel_new_ex` call `rtcDeleteDataChannel` on precisely the
+register_channel failure. The callback path could NOT copy them, because a
+callback may not `rtcDelete*` - that is the capi self-deadlock this binding
+already paid for once - and that is presumably why the returns are bare.
+
+The machinery to do it correctly was already here and unused on these two
+paths: `g_orphanChans` plus `reap_orphan_channels`, which the orphan-window
+check a few lines below has always used. Both exits now hand the id over
+through a small `orphan_channel` helper and the reaper deletes it on the script
+thread.
+
+The ordering matters at the first exit and is worth stating: `orphan_channel`
+takes `g_mu` itself, so it must run after the peer-lookup block has released
+it. It does.
+
+Compile-verified against libdatachannel v0.24.5 (the pinned tag), `-Wall
+-Wextra`, no warnings. The committed binaries do NOT carry it yet -
+`docs/REMAINING-WORK.md` C.0.
+
 ## The three rules that make this safe
 
 1. **Never call an LCB handler from a libdatachannel (foreign) thread.** This is
