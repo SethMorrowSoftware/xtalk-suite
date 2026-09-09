@@ -14164,6 +14164,14 @@ private command raHeadAccepted pHandleHex, pSeq
    put sHeadSeen[tKey] into tSeen
    if tSeen is not an integer or pSeq > tSeen then
       put pSeq into sHeadSeen[tKey]
+      -- MARK DIRTY, or the watermark never reaches disk. raAppSave runs only
+      -- when sAppDirty is "true" (the debounced tick and raNxTeardown both
+      -- gate on it), so a session that fetches a head and changes nothing
+      -- else would lock or quit with the new watermark still in memory - and
+      -- the next launch would start from a floor of 0 and accept the same
+      -- stale, validly-signed head all over again. Persisting the watermark
+      -- is what makes the rollback gate survive a restart at all.
+      raAppMark
    end if
 end raHeadAccepted
 

@@ -1473,6 +1473,33 @@ def drive_nostr(c, ip, world, profile):
         c.ck("[FULL] the reader watermarks survive the save/load round trip",
              False, "%s: %s" % (type(exc).__name__, exc))
 
+    # Surviving a round trip is not the same as REACHING one. raAppSave only
+    # runs when sAppDirty is "true" (the debounced tick and raNxTeardown both
+    # gate on it), so a session that accepts a head and changes nothing else
+    # would quit with the new watermark still in memory - and the next launch
+    # would start from 0 and accept the same stale head again. Reported by
+    # review on PR #132; the round-trip check above could not see it, because
+    # it calls raAppSave directly.
+    try:
+        # NOTE the signature: this file's ck() is (label, OK_BOOLEAN, detail),
+        # not the (label, got, want) that riptide's check-script-vectors.py
+        # uses. Passing got/want here makes every non-empty "got" truthy and
+        # the check pass vacuously - which is exactly what the first draft of
+        # these two lines did.
+        ip.globals["sappdirty"] = ""
+        ip.call("raHeadAccepted", ["cd" * 32, 9])
+        got_new = str(ip.globals.get("sappdirty", ""))
+        c.ck("[FULL] accepting a newer head marks the app state dirty",
+             got_new == "true", "sAppDirty = %r" % (got_new,))
+        ip.globals["sappdirty"] = ""
+        ip.call("raHeadAccepted", ["cd" * 32, 4])
+        got_stale = str(ip.globals.get("sappdirty", ""))
+        c.ck("[FULL] a STALE head does not mark it dirty (no pointless save)",
+             got_stale == "", "sAppDirty = %r" % (got_stale,))
+    except Exception as exc:                            # noqa: BLE001
+        c.ck("[FULL] accepting a newer head marks the app state dirty",
+             False, "%s: %s" % (type(exc).__name__, exc))
+
 
 def main(argv):
     terse = "--check" in argv

@@ -4123,7 +4123,17 @@ function heEnvVerify pWireLine, pFromPubHex, pHostPubHex, pExpectedPrevHex
    -- of the session (the resync cannot recover it either, because the replayed
    -- wires all carry seq <= the already-advanced lastSeq and are dropped).
    -- Ten fields exactly, or it is not a wire this protocol signed.
-   if tA["n"] is not 10 then
+   --
+   -- AND A TRAILING DELIMITER IS CHECKED SEPARATELY, because the count alone
+   -- cannot see it: the engine IGNORES ONE trailing delimiter when counting
+   -- items (docs/OXT-ENGINE-NOTES.md 2.2, OBSERVED), so `W & tab` still
+   -- counts as ten and the arity test passes - while heNetApplyWire hashes
+   -- the raw line, tab included, and the chain forks exactly as before. That
+   -- note's own rule is "never infer 'there is no trailing empty component'
+   -- from an item count. Check the string." A legal wire never ends in a tab:
+   -- its last field is a 128-hex host signature. (Two trailing tabs ARE
+   -- caught by the count, since only one is eaten.)
+   if tA["n"] is not 10 or the last char of pWireLine is tab then
       return "drop:malformed"
    end if
    -- shape-check every hex field BEFORE any decode: heHex2BinD (sxHex2Bin)
