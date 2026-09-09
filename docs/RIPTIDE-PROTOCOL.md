@@ -200,7 +200,7 @@ against the target before believing them.
 
 ### 4.2 RSP1 - the post record
 
-An immutable BEP44 item (target = SHA-1 of the bencoded value), 1..1000
+An immutable BEP44 item (target = SHA-1 of the bencoded value), 1..996
 bytes:
 
     "RSP1"  timestamp(u64, unix seconds)  prevPostTarget(40 hex)
@@ -217,7 +217,7 @@ content address before rendering anything**; a verified feed IS a
 verified chain walk.
 
 Kind D carries text directly; its capacity beside `m` attachments is
-`1000 - 120 - 40*m` bytes (the layout arithmetic; publish this as API,
+`996 - 120 - 40*m` bytes (the layout arithmetic; publish this as API,
 never hand-copy the number). Kind C carries the text as 1..16 immutable
 chunk **values** (raw UTF-8 bytes, split by byte - a boundary may fall
 inside a UTF-8 sequence). The reassembler MUST validate content

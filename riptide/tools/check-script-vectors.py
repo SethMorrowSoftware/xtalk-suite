@@ -472,6 +472,37 @@ def check_u64_bound(c, ip):
         c.ck("rsBtxoStreamStep: declared total %s -> %s" % (label, want), got, want)
 
 
+def check_capacity_arithmetic(c, ip):
+    """The numbers that MOVE when kRsMaxRecord moves, pinned headlessly.
+
+    kRsMaxRecord went 1000 -> 996 on 2026-09-08 (BEP44's cap is on the BENCODED
+    value, so a 1000-byte raw record is 1005 on the wire and every node refuses
+    it). Six assertions in riptide's harness were derived from the old number
+    and went stale with it - and NOTHING could see them, because that harness
+    only runs on an engine. They shipped wrong for a day.
+
+    So they are pinned here as well, where they run on every push. The chunk
+    boundary case is the one worth keeping honest: a 999-byte pad plus a
+    two-byte character used to straddle a 1000-byte boundary and no longer
+    does, so that test would have kept PASSING its count assertion while
+    silently no longer testing a split character. 995 puts the boundary back
+    inside the character.
+    """
+    c.note("the capacity arithmetic that rides on kRsMaxRecord")
+    c.ck("rsPostTextCapacity(0)", str(LCS._n(ip.call("rsPostTextCapacity", [0]))), "876")
+    c.ck("rsPostTextCapacity(8)", str(LCS._n(ip.call("rsPostTextCapacity", [8]))), "556")
+    parts = ip.call("rsChunkPostText", ["0123456789" * 250])
+    c.ck("2500 bytes splits 996/996/508",
+         [len(parts[k]) for k in sorted(parts, key=lambda x: int(x))], [996, 996, 508])
+    c.ck("15936 bytes is exactly 16 chunks",
+         len(ip.call("rsChunkPostText", ["x" * 15936])), 16)
+    c.ck("15937 bytes is refused, never truncated",
+         ip.call("rsChunkPostText", ["x" * 15937]) in ("", {}), True)
+    split = ip.call("rsChunkPostText", ["a" * 995 + "\u00e9"])
+    c.ck("a 2-byte char still STRADDLES the chunk boundary",
+         [len(split[k]) for k in sorted(split, key=lambda x: int(x))], [996, 1])
+
+
 def check_pure(c, ip, V):
     c.note("tier 1: the pure paths (no CoinXT needed)")
     c.ck("the subkey registry has not shifted under the new rows",
@@ -733,6 +764,7 @@ def main(argv):
             "%s x%d" % (n, hits[n]) for n, _w, _f in REWRITES))
     check_pure(c, ip, V)
     check_u64_bound(c, ip)
+    check_capacity_arithmetic(c, ip)
     if install_coin_natives():
         check_composed(c, ip, V)
     else:

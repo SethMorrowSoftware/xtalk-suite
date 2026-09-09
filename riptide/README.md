@@ -127,7 +127,7 @@ What ships today, per the spec's phased roadmap (section 10.3):
     layout splits into immutable chunks named in order
     (`rsChunkPostText` / `rsPublishChunkedPost`, with
     `rsPostTextCapacity` publishing the D-or-C boundary so no caller
-    ever hand-copies 880), and reassembly re-hashes every part against
+    ever hand-copies 876), and reassembly re-hashes every part against
     its own content address before a byte is believed (`rsIngestBlob` /
     `rsAssembleChunkText`, which names the first missing chunk rather
     than guessing). Alongside them the BTXO receive-path stream machine

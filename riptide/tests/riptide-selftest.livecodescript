@@ -566,9 +566,15 @@ private command rstSectionChunked pCaps
    rstCheck (rsLastError() contains kRsGoldChunk2Target), \
          "and the refusal names WHICH chunk is missing"
    -- the capacity arithmetic the app's D-or-C decision rides on
-   rstCheck (rsPostTextCapacity(0) is 880), \
-         "capacity with no media is 880 bytes"
-   rstCheck (rsPostTextCapacity(8) is 560), \
+   -- 876/556, not 880/560: kRsMaxRecord went 1000 -> 996 on 2026-09-08
+   -- (BEP44's cap is on the BENCODED value, so 1000 raw is 1005 on the wire
+   -- and every node refuses it). These four numbers and the chunk sizes below
+   -- all moved with it, and NOTHING headless could see them - this section
+   -- only runs on an engine, which is exactly why the change shipped with
+   -- them stale.
+   rstCheck (rsPostTextCapacity(0) is 876), \
+         "capacity with no media is 876 bytes"
+   rstCheck (rsPostTextCapacity(8) is 556), \
          "each attachment costs its 40-hex spelling"
    rstCheck (rsPostTextCapacity(9) is empty), \
          "a media count over the cap is refused"
@@ -576,11 +582,11 @@ private command rstSectionChunked pCaps
    repeat 14 times
       put tHuge & tHuge into tHuge
    end repeat
-   rstCheck (rsBuildPost(1, empty, char 1 to 880 of tHuge, empty, tSeed) \
+   rstCheck (rsBuildPost(1, empty, char 1 to 876 of tHuge, empty, tSeed) \
          is not empty), "a direct post takes exactly the stated capacity"
-   rstCheck (rsBuildPost(1, empty, char 1 to 881 of tHuge, empty, tSeed) \
+   rstCheck (rsBuildPost(1, empty, char 1 to 877 of tHuge, empty, tSeed) \
          is empty), "and refuses one byte more"
-   -- the producer split: full 1000-byte chunks, remainder last, by BYTE
+   -- the producer split: full 996-byte chunks, remainder last, by BYTE
    put empty into tBig
    repeat 250 times
       put "0123456789" after tBig
@@ -588,25 +594,29 @@ private command rstSectionChunked pCaps
    put rsChunkPostText(tBig) into tParts
    rstCheck (the number of elements in tParts is 3), \
          "2500 bytes split into three chunks"
-   rstCheck (the number of bytes in tParts[1] is 1000 and \
-         the number of bytes in tParts[2] is 1000 and \
-         the number of bytes in tParts[3] is 500), \
+   rstCheck (the number of bytes in tParts[1] is 996 and \
+         the number of bytes in tParts[2] is 996 and \
+         the number of bytes in tParts[3] is 508), \
          "full chunks first, the remainder last"
    rstCheck (tParts[1] & tParts[2] & tParts[3] is \
          textEncode(tBig, "UTF-8")), "and nothing is lost or reordered"
    rstCheck (rsChunkPostText(empty) is empty), "empty text is refused"
    rstCheck (rsChunkPostText(tHuge) is empty), \
-         "text over 16000 UTF-8 bytes is refused, never truncated"
+         "text over 15936 UTF-8 bytes is refused, never truncated"
    -- 16 is the wire's kRsMaxChunks; a library constant is not visible
    -- from this separate script, and the number here is the FORMAT's
    rstCheck ((the number of elements in \
-         rsChunkPostText(char 1 to 16000 of tHuge)) is 16), \
-         "exactly 16000 bytes takes exactly 16 chunks"
+         rsChunkPostText(char 1 to 15936 of tHuge)) is 16), \
+         "exactly 15936 bytes takes exactly 16 chunks"
    -- a chunk boundary INSIDE a UTF-8 sequence: legal on the wire, and
    -- the reassembly (which validates the concatenation, never a part
    -- alone) must reproduce the text exactly
+   -- 995, not 999. With 996-byte chunks a 999-byte pad puts the whole
+   -- two-byte character in chunk 2 and the test silently stops testing a
+   -- SPLIT character while still passing its count assertion. 995 puts the
+   -- boundary back inside the character: chunk 1 is 995 a's + the first byte.
    put empty into tPad
-   repeat 999 times
+   repeat 995 times
       put "a" after tPad
    end repeat
    put tPad & textDecode(rstBin("c3a9"), "UTF-8") into tSplit

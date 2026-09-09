@@ -26817,9 +26817,15 @@ private command rs1rstSectionChunked pCaps
    rs1rstCheck (rsLastError() contains rs1kRsGoldChunk2Target), \
          "and the refusal names WHICH chunk is missing"
    -- the capacity arithmetic the app's D-or-C decision rides on
-   rs1rstCheck (rsPostTextCapacity(0) is 880), \
-         "capacity with no media is 880 bytes"
-   rs1rstCheck (rsPostTextCapacity(8) is 560), \
+   -- 876/556, not 880/560: kRsMaxRecord went 1000 -> 996 on 2026-09-08
+   -- (BEP44's cap is on the BENCODED value, so 1000 raw is 1005 on the wire
+   -- and every node refuses it). These four numbers and the chunk sizes below
+   -- all moved with it, and NOTHING headless could see them - this section
+   -- only runs on an engine, which is exactly why the change shipped with
+   -- them stale.
+   rs1rstCheck (rsPostTextCapacity(0) is 876), \
+         "capacity with no media is 876 bytes"
+   rs1rstCheck (rsPostTextCapacity(8) is 556), \
          "each attachment costs its 40-hex spelling"
    rs1rstCheck (rsPostTextCapacity(9) is empty), \
          "a media count over the cap is refused"
@@ -26827,11 +26833,11 @@ private command rs1rstSectionChunked pCaps
    repeat 14 times
       put rs1tHuge & rs1tHuge into rs1tHuge
    end repeat
-   rs1rstCheck (rsBuildPost(1, empty, char 1 to 880 of rs1tHuge, empty, rs1tSeed) \
+   rs1rstCheck (rsBuildPost(1, empty, char 1 to 876 of rs1tHuge, empty, rs1tSeed) \
          is not empty), "a direct post takes exactly the stated capacity"
-   rs1rstCheck (rsBuildPost(1, empty, char 1 to 881 of rs1tHuge, empty, rs1tSeed) \
+   rs1rstCheck (rsBuildPost(1, empty, char 1 to 877 of rs1tHuge, empty, rs1tSeed) \
          is empty), "and refuses one byte more"
-   -- the producer split: full 1000-byte chunks, remainder last, by BYTE
+   -- the producer split: full 996-byte chunks, remainder last, by BYTE
    put empty into rs1tBig
    repeat 250 times
       put "0123456789" after rs1tBig
@@ -26839,25 +26845,29 @@ private command rs1rstSectionChunked pCaps
    put rsChunkPostText(rs1tBig) into rs1tParts
    rs1rstCheck (the number of elements in rs1tParts is 3), \
          "2500 bytes split into three chunks"
-   rs1rstCheck (the number of bytes in rs1tParts[1] is 1000 and \
-         the number of bytes in rs1tParts[2] is 1000 and \
-         the number of bytes in rs1tParts[3] is 500), \
+   rs1rstCheck (the number of bytes in rs1tParts[1] is 996 and \
+         the number of bytes in rs1tParts[2] is 996 and \
+         the number of bytes in rs1tParts[3] is 508), \
          "full chunks first, the remainder last"
    rs1rstCheck (rs1tParts[1] & rs1tParts[2] & rs1tParts[3] is \
          textEncode(rs1tBig, "UTF-8")), "and nothing is lost or reordered"
    rs1rstCheck (rsChunkPostText(empty) is empty), "empty text is refused"
    rs1rstCheck (rsChunkPostText(rs1tHuge) is empty), \
-         "text over 16000 UTF-8 bytes is refused, never truncated"
+         "text over 15936 UTF-8 bytes is refused, never truncated"
    -- 16 is the wire's kRsMaxChunks; a library constant is not visible
    -- from this separate script, and the number here is the FORMAT's
    rs1rstCheck ((the number of elements in \
-         rsChunkPostText(char 1 to 16000 of rs1tHuge)) is 16), \
-         "exactly 16000 bytes takes exactly 16 chunks"
+         rsChunkPostText(char 1 to 15936 of rs1tHuge)) is 16), \
+         "exactly 15936 bytes takes exactly 16 chunks"
    -- a chunk boundary INSIDE a UTF-8 sequence: legal on the wire, and
    -- the reassembly (which validates the concatenation, never a part
    -- alone) must reproduce the text exactly
+   -- 995, not 999. With 996-byte chunks a 999-byte pad puts the whole
+   -- two-byte character in chunk 2 and the test silently stops testing a
+   -- SPLIT character while still passing its count assertion. 995 puts the
+   -- boundary back inside the character: chunk 1 is 995 a's + the first byte.
    put empty into rs1tPad
-   repeat 999 times
+   repeat 995 times
       put "a" after rs1tPad
    end repeat
    put rs1tPad & textDecode(rs1rstBin("c3a9"), "UTF-8") into rs1tSplit
