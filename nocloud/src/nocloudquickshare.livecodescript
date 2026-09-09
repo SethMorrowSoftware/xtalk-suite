@@ -3448,8 +3448,45 @@ command qsStart
    put qsHasOnion() into sHasOnion
    put qsCanJson() into sHasJson
 
-   btStartSession
-   put the result into sSession
+   -- GUARDED (2026-09-09). btStartSession is a TorrentXT handler, not an
+   -- engine command, so with org.openxtalk.library.torrent absent - or an
+   -- ABI-skewed build that does not export it, whose recorded symptom in this
+   -- tree is a "can't find handler" on btRp1Enable - the engine raises and,
+   -- outside any try, that unwinds straight out of qsStart AND out of
+   -- openStack. Everything below was skipped: the status line, the sync
+   -- method, the onion pill, both poll arms, and back in openStack the carried
+   -- self-check boot record. The app came up as a built-but-dead window behind
+   -- a raw engine dialog, with no capability line to explain it.
+   --
+   -- The 2026-08-24 reordering above was written to stop exactly this class
+   -- ("a session failure cannot report itself as a missing extension"). It
+   -- fixed the ordering and left the call unguarded, so the HARDER failure -
+   -- TorrentXT absent rather than a session refused - still took the window.
+   --
+   -- THE CATCH MUST NOT FALL THROUGH to the branch below, and this is not
+   -- style: that branch calls btLastError(), which is itself a bt* handler, so
+   -- on the absent-extension path it would throw a SECOND time from inside the
+   -- recovery. Do not tidy these two into one.
+   local tStartErr
+   try
+      btStartSession
+      put the result into sSession
+   catch tStartErr
+      -- Handle it HERE and leave. Falling through to the branch below would
+      -- call btLastError(), which is another bt* handler and would throw a
+      -- second time on precisely this path. Same tail as that branch: paint
+      -- from the probes already taken, so the captions describe what IS
+      -- installed instead of defaulting to "missing".
+      put 0 into sSession
+      qsLog "TorrentXT did not load, so sharing and downloading are OFF:" && \
+            tStartErr
+      qsLog "This says nothing about your other extensions:" && \
+            qsCapabilityLine()
+      uiStatus "No transport: TorrentXT is not installed or did not load - see the log.", "bad"
+      qsSyncMethod
+      qsOnionPill
+      exit qsStart
+   end try
    if sSession is 0 or sSession is empty then
       qsLog "Could not start a session (is another No Cloud Quick Share stack open?):" && btLastError()
       qsLog "Sharing and downloading are OFF until that is resolved. This is a TorrentXT problem and says nothing about your other extensions:" && qsCapabilityLine()
