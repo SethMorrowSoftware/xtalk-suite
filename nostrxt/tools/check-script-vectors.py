@@ -489,6 +489,52 @@ def check_ws_accept(c, ip):
          "s3pPLMBiTxaQ9kYGzzhZRbK+xOo=")
 
 
+def check_or_evaluation(c, ip):
+    """`or` evaluates BOTH operands, so a digit guard cannot sit in one chain.
+
+    xTalk has no short-circuit: `if not nxIsDigits(X) or X + 0 < 1` runs the
+    arithmetic even when the guard has already said no, and arithmetic on
+    non-numeric text is a HARD engine error rather than a coercion to 0. Three
+    sites here were written that way, and nxJsonPathNode is reachable straight
+    from relay bytes (nxMetadataParse) and from a hostile nostr.json
+    (nxNip05Verify) - so one malformed message turned a never-throw library
+    into an uncaught engine error, on the thread that also runs the UI.
+
+    Checked from BOTH sides: an empty-only fuzz misses this entirely, because
+    empty DOES coerce to 0. It takes non-numeric text to see it.
+    """
+    c.note("the `or` rule: a digit guard must be its own `if`")
+    for label, fn, args, want_empty in [
+            ("nxWsUrlParse keeps a numeric port", "nxWsUrlParse",
+             ["wss://h:443/"], False),
+            ("nxWsUrlParse refuses a non-numeric port", "nxWsUrlParse",
+             ["wss://h:abc/"], True),
+            ("nxWsUrlParse refuses port 0", "nxWsUrlParse",
+             ["wss://h:0/"], True),
+            ("nxWsUrlParse refuses port 99999", "nxWsUrlParse",
+             ["wss://h:99999/"], True),
+            ("nxJsonGet keeps a numeric array index", "nxJsonGet",
+             ['{"a":["x","y"]}', "a/1"], False),
+            ("nxJsonGet refuses a non-numeric array index", "nxJsonGet",
+             ['{"a":["x","y"]}', "a/abc"], True),
+            ("nxJsonGet refuses array index 0", "nxJsonGet",
+             ['{"a":["x","y"]}', "a/0"], True),
+            ("nxJsonGet refuses an out-of-range array index", "nxJsonGet",
+             ['{"a":["x","y"]}', "a/99"], True)]:
+        try:
+            got = ip.call(fn, args)
+            c.ck(label, got == "" or got is None, want_empty)
+        except Exception as exc:                       # noqa: BLE001
+            c.ck("%s (raised %s)" % (label, type(exc).__name__), False, True)
+
+    # The itemDelimiter is "/" inside nxJsonPathNode and is GLOBAL mutable
+    # state, so the new early-out must restore it. If it did not, a later
+    # comma-delimited read would see "/" and quietly return the whole string.
+    ip.call("nxJsonGet", ['{"a":["x","y"]}', "a/abc"])
+    c.ck("the itemDelimiter survives the refusal path",
+         ip.call("nxJsonGet", ['{"a":["x","y"]}', "a/1"]), "x")
+
+
 def main(argv):
     terse = "--check" in argv
     c = Checker(terse)
@@ -496,6 +542,8 @@ def main(argv):
     ip = LCS.Interp(src)
 
     check_interp_model(c, ip)
+
+    check_or_evaluation(c, ip)
     check_constants(c, ip)
     check_serializer(c, ip)
     check_bech32(c, ip)
