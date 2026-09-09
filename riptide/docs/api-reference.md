@@ -194,7 +194,7 @@ handshake by the joiner's own response signature - mutual auth).
 | `rsLanKeys(pMaster)` | Array | the shared mesh ed25519 pair every one of your devices derives |
 | `rsLanBuildChallenge(pName, pNonce)` | Data | host -> joiner; pNonce is 32 FRESH bytes (`sxRandomBytes`) - never reuse one |
 | `rsLanParseChallenge(pBytes)` | Array | `name`, `nonce` |
-| `rsLanBuildResponse(pChallengeBytes, pName, pMaster)` | Data | joiner -> host: sig over `"riptide-lan" \|\| nonce \|\| name` |
+| `rsLanBuildResponse(pChallengeBytes, pName, pMaster)` | Data | joiner -> host: sig over `"riptide-lan-a" \|\| nonce \|\| name` (the tags are PREFIX-FREE; see the protocol spec 6) |
 | `rsLanParseResponse(pBytes)` | Array | `name`, `signature` |
 | `rsLanVerifyResponse(pResponseBytes, pChallengeBytes, pMaster)` | String | the joiner's device name, or empty (a stranger, a stale nonce, tamper) |
 | `rsLanBuildWelcome(pResponseBytes, pHostName, pMaster)` | Data | host -> joiner after admitting: sig over `"riptide-lan-w" \|\| responseSig \|\| hostName` |

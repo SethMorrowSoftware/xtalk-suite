@@ -531,8 +531,8 @@ constant rs1kRsGoldIntroHex = "5253493135613534366534666566356431623736663934646
 constant rs1kRsGoldDmMsgHex = "54000000006899333468656c6c6f2c20646d"
 constant rs1kRsGoldLanPub = "2008657949f2e06e9786315cde35ecf4aa419152787e4fa1670f189dc07285d9"
 constant rs1kRsGoldLanChallengeHex = "52534c3143066c6170746f705a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a"
-constant rs1kRsGoldLanResponseHex = "52534c31520570686f6e658941d7087e125898cb16acdc61f814e91ea4cd861d133fdd5f38e611ea8416958b2e5a1a96540afdbe6f979f475abf77b235d8c1c06ca8306c3e04f0bec7ae08"
-constant rs1kRsGoldLanWelcomeHex = "52534c3157066c6170746f7006c1a710d7dd13ac6ade03ec0a853563c1c506923a042d38473d15abb29761c9699a013070c4f4a24527cafde5fb30ea0375d56ae85e53a1726f91612cf2b805"
+constant rs1kRsGoldLanResponseHex = "52534c31520570686f6e65422b5e54ae2971f0d88668768d896a114b78c2f9158fb9b31aa1213aecc0edf0486c28c2446c52d0e0c7935b4b5c140ba94961a45fa4a1e866d35a72084baa0c"
+constant rs1kRsGoldLanWelcomeHex = "52534c3157066c6170746f70223326f9f65924ec77c6f292201eff0a25224288b7b15814f7d2cc352e12e670e642ebfb3d39ca77f2d668431810ff95e09e12ca758cb2e2bb5597e8e6a7de08"
 constant rs1kRsGoldLanDraftHex = "52534c31440570686f6e650000000000000005001164726166743a2068656c6c6f206d65736874cf0ede5c356853d97eb42b76b44ad279c5ac4622ef48738675ee26fd58cfa6fb672a60196700cda0ceabf81900d3b335ff85c1d0a8d318fef53ae05ec0bc0b"
 constant rs1kRsGoldLanFeedStateHex = "52534c31460570686f6e6500000000000000093561353436653466656635643162373666393464633162326564656437356334346266666339303061663734363161323664383432373435336139326632326400000000689933ac685240060b5fdf7539152e57b472e039f1b5c7eee3680cebfa94b43ae5209d81c45c83ae72ff10e355fc1cf1abcbc1c3664cd5d25e27efda7f169375b831ca09"
 constant rs1kRsGoldLanPresenceHex = "52534c31500570686f6e650100000000000000036c788687ae09387aa6195fd6132a06c72fc80a84d404feafe27d433cc4d12e153cb20ef814b592af8ec9ebb92ac70ae87d2aea6e71d9bf911ce2c4f60962ef0f"
@@ -1023,7 +1023,7 @@ constant kRsIntroMagic = "RSI1"
 constant kRsFrameMagic = "RSM1"
 constant kRsFrameMax = 60000
 constant kRsLanMagic = "RSL1"
-constant kRsLanDomain = "riptide-lan"
+constant kRsLanDomain = "riptide-lan-a"
 constant kRsLanNonceLen = 32
 constant kRsLanMaxName = 32
 constant kRsLanSyncDomain = "riptide-lan-s"
@@ -6361,10 +6361,35 @@ end oxSetStreamCallback
 command oxWrite pStream, pData
    -- Write app bytes (already sealed by the app via SodiumXT) to the
    -- tunnel. OnionXT does not encrypt (docs/02).
+   --
+   -- THE WRITE RESULT IS READ, AND IT DID NOT USED TO BE (2026-09-09). The
+   -- engine reports a socket write failure in `the result`, and the bare
+   -- `return empty` that stood here overwrote it unconditionally - so a
+   -- broken tunnel was reported to every caller as a successful send. That is
+   -- the opposite of this module's documented contract (docs/05: "Commands set
+   -- `the result` to empty on success, or to a clear, human-readable error
+   -- string on failure ... Every wire error fails closed and tears the
+   -- resource down"), and 93 call sites across the suite branch on it, so all
+   -- of them were dead code on the failure path.
+   --
+   -- The most reachable consequence is the onion send pump, which paces
+   -- ENTIRELY on this return: nocloud's own comment says "We pace with the
+   -- kOnionPumpTick timer + oxWrite's error return instead", so a receiver
+   -- that aborts mid-transfer left the sender writing into a dead socket
+   -- forever instead of aborting the serve.
+   --
+   -- `the result` must be captured into a local on the very next line: any
+   -- intervening statement can clear it, which is the same one-statement
+   -- discipline this file already uses around `open socket`.
+   local tWriteErr
    if sStreams[pStream]["state"] is not "connected" then
       return "OnionXT: stream " & pStream & " is not open"
    end if
    write pData to socket sStreams[pStream]["socketID"]
+   put the result into tWriteErr
+   if tWriteErr is not empty then
+      return "OnionXT: write to stream " & pStream & " failed:" && tWriteErr
+   end if
    return empty
 end oxWrite
 

@@ -633,7 +633,7 @@ def build_dm_message(kind, timestamp, body_text):
 # All your devices share one master seed, so they all derive the SAME LAN
 # subkey ed25519 keypair (lan_key -> sxSignKeypairFromSeed). Admission is a
 # proof that the joiner holds the master: the host sends a random challenge,
-# the joiner signs "riptide-lan" || nonce || itsName under the LAN secret,
+# the joiner signs "riptide-lan-a" || nonce || itsName under the LAN secret,
 # and the host verifies against the LAN public it derives from its OWN
 # master. A stranger on the same Wi-Fi cannot sign, so cannot join.
 #
@@ -643,7 +643,12 @@ def build_dm_message(kind, timestamp, body_text):
 # ---------------------------------------------------------------------------
 
 LAN_MAGIC = b"RSL1"
-LAN_DOMAIN = b"riptide-lan"  # signature domain separator
+LAN_DOMAIN = b"riptide-lan-a"  # signature domain separator, PREFIX-FREE
+# "-a", not bare "riptide-lan": these tags are raw-concatenated in front of the
+# signed body and the bare form is a strict prefix of LAN_SYNC_DOMAIN, so an
+# attacker-chosen 32-byte challenge nonce beginning "-s" made an admission
+# signature byte-identical to a sync-record signature under the same key
+# (fixed 2026-09-09). All three LAN tags are 13 bytes and differ at byte 13.
 LAN_NONCE_BYTES = 32
 LAN_MAX_NAME = 32  # bytes of UTF-8 device name
 
@@ -677,7 +682,7 @@ def lan_sig_message(nonce, name):
 
 def lan_build_response(challenge_bytes, name, master):
     """Joiner -> host: magic(4) "R" nameLen(u8) name sig(64), sig ed25519 by
-    the LAN key over "riptide-lan" || nonce || name."""
+    the LAN key over "riptide-lan-a" || nonce || name."""
     nonce = _lan_parse_challenge(challenge_bytes)["nonce"]
     nb = _lan_name(name)
     _pub, seed = lan_keys(master)
@@ -994,7 +999,7 @@ SUBKEY_APPSTATE = 5
 # The SIGNATURE domain and the BEP44 SALT are deliberately different strings
 # even though both name this rail. They live in different namespaces and could
 # safely collide, but the LAN rail already sets the house pattern of a suffixed
-# domain per record kind ("riptide-lan", "-w", "-s"), and a reader who sees one
+# domain per record kind ("riptide-lan-a", "-w", "-s"), and a reader who sees one
 # string doing two jobs has to work out that it is not a bug.
 NOSTR_DOMAIN = b"riptide-nostr-b"
 NOSTR_BRIDGE_MAGIC = b"RSN1"
@@ -1072,7 +1077,8 @@ def bridge_preimage(handle_hex, nostr_pub_hex, seq, timestamp):
     """What BOTH signatures cover: a domain tag then the whole body.
 
     The domain is distinct from every other one this library signs under
-    ("riptide-lan", "riptide-lan-w", "riptide-lan-s"), so a signature minted
+    ("riptide-lan-a", "riptide-lan-w", "riptide-lan-s"), and they are
+    PREFIX-FREE, not merely unequal, so a signature minted
     for one rail can never be presented as a signature for another - and the
     kind of record is inside the signed span because the magic is."""
     return NOSTR_DOMAIN + _bridge_body(handle_hex, nostr_pub_hex, seq,

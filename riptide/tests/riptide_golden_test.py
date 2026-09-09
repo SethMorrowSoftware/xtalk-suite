@@ -323,8 +323,8 @@ LAN_CHALLENGE_HEX = (
     "52534c3143066c6170746f70" + "5a" * 32)
 LAN_RESPONSE_HEX = (
     "52534c31520570686f6e65"
-    "8941d7087e125898cb16acdc61f814e91ea4cd861d133fdd5f38e611ea8416958b"
-    "2e5a1a96540afdbe6f979f475abf77b235d8c1c06ca8306c3e04f0bec7ae08")
+    "422b5e54ae2971f0d88668768d896a114b78c2f9158fb9b31aa1213aecc0edf048"
+    "6c28c2446c52d0e0c7935b4b5c140ba94961a45fa4a1e866d35a72084baa0c")
 
 lan_pub, lan_seed = ref["lan_keys"](MASTER)
 check("lan pub", lan_pub.hex(), LAN_PUB)
@@ -352,10 +352,15 @@ check_raises("lan bad nonce len", lambda: ref["lan_build_challenge"](
 
 # the W welcome: mutual auth back to the joiner, bound to THIS handshake by
 # the joiner's own response signature
+# Re-pinned 2026-09-09: the admission domain tag moved from "riptide-lan" to
+# "riptide-lan-a" (it was a strict PREFIX of "riptide-lan-s", so an
+# attacker-chosen challenge nonce made an admission signature byte-identical to
+# a sync-record signature under the same key). The welcome chains from the
+# response signature, so both moved.
 LAN_WELCOME_HEX = (
-    "52534c3157066c6170746f7006c1a710d7dd13ac6ade03ec0a853563c1c50692"
-    "3a042d38473d15abb29761c9699a013070c4f4a24527cafde5fb30ea0375d56a"
-    "e85e53a1726f91612cf2b805")
+    "52534c3157066c6170746f70223326f9f65924ec77c6f292201eff0a25224288"
+    "b7b15814f7d2cc352e12e670e642ebfb3d39ca77f2d668431810ff95e09e12ca"
+    "758cb2e2bb5597e8e6a7de08")
 
 welcome = ref["lan_build_welcome"](response, "laptop", MASTER)
 check("lan welcome bytes", welcome.hex(), LAN_WELCOME_HEX)

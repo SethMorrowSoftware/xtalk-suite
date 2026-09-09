@@ -481,10 +481,24 @@ def check_pure(c, ip, V):
           ip.constants.get("kRsSubkeyNostr"),
           ip.constants.get("kRsSubkeyAppState")],
          ["1", "2", "3", "4", "5"])
-    c.ck("the bridge signature domain is distinct from the LAN domains",
-         len({ip.constants.get("kRsNostrDomain"),
-              ip.constants.get("kRsLanDomain"),
-              ip.constants.get("kRsLanSyncDomain")}), 3)
+    # PREFIX-FREE, not merely distinct - and this check used to be the weaker
+    # one, which is why the bug it now catches shipped. These tags are
+    # RAW-CONCATENATED in front of the signed body, so if tag A is a prefix of
+    # tag B the two preimage grammars overlap and a signature minted for one
+    # rail verifies on the other. `len({...}) == 3` cannot see that: the old
+    # admission tag "riptide-lan" and the sync tag "riptide-lan-s" are unequal
+    # (so it passed) and yet one is a prefix of the other (so an attacker-chosen
+    # challenge nonce beginning "-s" made the two preimages byte-identical).
+    # Inequality is the wrong property for a concatenated domain separator.
+    _domains = [ip.constants.get(n) for n in
+                ("kRsNostrDomain", "kRsLanDomain", "kRsLanSyncDomain")]
+    _domains.append("riptide-lan-w")      # the welcome tag, a literal in-source
+    _bad = sorted("%s is a prefix of %s" % (a, b)
+                  for a in _domains for b in _domains
+                  if a is not None and b is not None and a != b and b.startswith(a))
+    c.ck("every raw-concat signature domain is PREFIX-FREE of the others",
+         _bad, [])
+    c.ck("and there are still four distinct ones", len(set(_domains)), 4)
     c.ck("the RSN1 body and record lengths agree with the layout",
          [ip.constants.get("kRsNostrBridgeBody"),
           ip.constants.get("kRsNostrBridgeLen")], [148, 276])

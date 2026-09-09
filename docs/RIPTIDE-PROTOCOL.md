@@ -321,7 +321,7 @@ Device names are display labels; any admitted device can sign any name
 | Kind | Body after name | Signature |
 |---|---|---|
 | `C` challenge | nonce(32, fresh random) | none |
-| `R` response | sig(64) | ed25519 over `"riptide-lan" \|\| nonce \|\| joinerName` |
+| `R` response | sig(64) | ed25519 over `"riptide-lan-a" \|\| nonce \|\| joinerName` |
 | `W` welcome | sig(64) | ed25519 over `"riptide-lan-w" \|\| responseSig \|\| hostName` |
 | `D` draft | seq(u64) draftLen(u16) draft(0..4096 UTF-8) | see below |
 | `F` feed state | feedSeq(u64) readPeer(64 hex or zeros) readUpTo(u64) | see below |
@@ -334,7 +334,21 @@ handshake, and only a master-holder can produce it.
 
 The four sync kinds (`D`/`F`/`P`/`M`) sign ed25519 under the shared LAN
 key over `"riptide-lan-s" || the whole record body` (kind byte
-included). Every record is **absolute state**, never a delta; replay
+included).
+
+**The three LAN domain tags MUST be prefix-free, not merely distinct
+(normative, 2026-09-09).** They are raw-concatenated in front of the
+signed body, so if one tag is a PREFIX of another the two preimage
+grammars overlap and a signature minted for one rail is a valid
+signature for the other. This was real: the admission tag was
+`"riptide-lan"`, a strict prefix of `"riptide-lan-s"`, and the bytes
+straight after it in an admission preimage are the 32-byte challenge
+nonce chosen wholesale by the remote peer - so a nonce beginning `-s`
+made an admission signature byte-identical to a sync-record signature
+under the same key. The tags are now `"riptide-lan-a"`, `"riptide-lan-w"`
+and `"riptide-lan-s"`: all 13 bytes, differing at byte 13. An
+implementation that keeps the old admission tag is not
+wire-compatible and is exploitable. Every record is **absolute state**, never a delta; replay
 and reorder are neutralized by apply semantics, not by the wire:
 drafts and handoffs apply only at a strictly higher per-**device** seq
 (keyed by the signed name, not the transport peer - a host relays

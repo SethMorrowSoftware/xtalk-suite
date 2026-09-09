@@ -433,7 +433,7 @@ it and were overstatements for the same reason: a post's text capacity (876, not
   proves "I hold the master," which is exactly the device-mesh trust
   question. It is deliberately NOT a per-device identity - that would be
   a different feature (and a different spec).
-- **The signature binds the nonce AND the name.** `"riptide-lan" ||
+- **The signature binds the nonce AND the name.** `"riptide-lan-a" ||
   nonce || name`: the nonce (fresh per challenge, from `sxRandomBytes`)
   stops a replayed response, and the name stops a captured signature
   being re-presented under a different device name. The harness proves
@@ -462,7 +462,7 @@ it and were overstatements for the same reason: a post's text capacity (876, not
   from subkey 1), and binding records to a handshake would break the
   hub-and-spoke RELAY - a record the host forwards verbatim must verify
   identically at every admitted peer. So: ed25519 under the shared key,
-  domain "riptide-lan-s" (admission signs "riptide-lan", the welcome
+  domain "riptide-lan-s" (admission signs "riptide-lan-a", the welcome
   "riptide-lan-w"), over the WHOLE record body with the kind byte
   inside the signed span. Replay is neutralized where it matters by
   each record's APPLY semantics - drafts by strictly-increasing

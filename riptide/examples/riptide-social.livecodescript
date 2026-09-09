@@ -4860,7 +4860,7 @@ end nxrSocketTimeout
 --     timestamp(u64 BE) body(UTF-8, non-empty); O/A carry SDP (phase 5)
 --   RSL1 LAN challenge: magic(4) "C" nameLen(u8) name nonce(32)
 --   RSL1 LAN response: magic(4) "R" nameLen(u8) name sig(64); sig is
---     ed25519 by the shared LAN key over "riptide-lan" || nonce || name
+--     ed25519 by the shared LAN key over "riptide-lan-a" || nonce || name
 --   RSL1 LAN draft sync: magic(4) "D" nameLen(u8) name seq(u64 BE)
 --     draftLen(u16 BE) draft(UTF-8, 0..4096; empty = cleared) sig(64)
 --   RSL1 LAN feed state: magic(4) "F" nameLen(u8) name feedSeq(u64 BE)
@@ -4898,11 +4898,27 @@ constant kRsIntroMagic = "RSI1"
 constant kRsFrameMagic = "RSM1"
 constant kRsFrameMax = 60000
 constant kRsLanMagic = "RSL1"
-constant kRsLanDomain = "riptide-lan"
+-- "riptide-lan-a", NOT "riptide-lan", and the trailing byte is a security
+-- fix (2026-09-09). These tags are RAW-CONCATENATED in front of the signed
+-- body, and "riptide-lan" is a strict PREFIX of "riptide-lan-s". The byte
+-- immediately after the short tag in an admission preimage is the 32-byte
+-- challenge nonce, which the REMOTE peer chooses wholesale - so an attacker
+-- who sets the nonce to "-s" || <30 bytes> made the joiner's admission
+-- signature come out BYTE-IDENTICAL to a signature over
+-- "riptide-lan-s" || <sync record body>, under the same LAN subkey. One
+-- signature satisfied both verifiers: a device that merely completed a
+-- pairing handshake could be made to have "signed" a sync record it never saw.
+--
+-- The three tags are now all 13 bytes and differ at byte 13
+-- ("riptide-lan-a" / "-w" / "-s"), which makes them PREFIX-FREE rather than
+-- merely unequal. That distinction is the whole lesson: for a raw-concat
+-- signing prefix, "distinct" is not the property you need, and a test that
+-- checks inequality (as ours did) cannot see the difference.
+constant kRsLanDomain = "riptide-lan-a"
 constant kRsLanNonceLen = 32
 constant kRsLanMaxName = 32
 -- the phase-6 SYNC records over the admitted mesh: a distinct signature
--- domain (admission signs "riptide-lan", the welcome "riptide-lan-w"),
+-- domain (admission signs "riptide-lan-a", the welcome "riptide-lan-w"),
 -- a draft-text cap (refused, never truncated - a draft over it still
 -- lives locally, it just does not sync), and the all-zeros "no peer"
 -- spelling for the feed-state record's optional read receipt
@@ -7272,7 +7288,7 @@ end rsDmSend
 -- passphrase, so every device derives the SAME LAN subkey ed25519 keypair
 -- (rsLanKey -> sxSignKeypairFromSeed). Admission proves the joiner holds
 -- the master: the host sends a random challenge, the joiner signs
--- "riptide-lan" || nonce || itsName under the LAN secret, and the host
+-- "riptide-lan-a" || nonce || itsName under the LAN secret, and the host
 -- verifies against the LAN public it derives from its OWN master. A
 -- stranger on the same cafe Wi-Fi cannot produce that signature, so
 -- cannot join the mesh. The records ride enet channel-0 messages (the
@@ -7571,8 +7587,8 @@ end rsLanVerifyWelcome
 --
 -- THE AUTHENTICATION CHOICE, recorded (do not re-litigate). Every sync
 -- record is SIGNED under the SAME shared LAN ed25519 key the admission
--- uses, with a DISTINCT domain tag - "riptide-lan-s"; admission signs
--- "riptide-lan", the welcome "riptide-lan-w" - over the WHOLE record
+-- uses, with a PREFIX-FREE domain tag - "riptide-lan-s"; admission signs
+-- "riptide-lan-a", the welcome "riptide-lan-w" - over the WHOLE record
 -- body, kind byte included, so an admission signature can never be
 -- replayed as a sync record, and one sync kind can never be read as
 -- another (the case-folded-kind trick dies on the signature too: the
@@ -10229,10 +10245,35 @@ end oxSetStreamCallback
 command oxWrite pStream, pData
    -- Write app bytes (already sealed by the app via SodiumXT) to the
    -- tunnel. OnionXT does not encrypt (docs/02).
+   --
+   -- THE WRITE RESULT IS READ, AND IT DID NOT USED TO BE (2026-09-09). The
+   -- engine reports a socket write failure in `the result`, and the bare
+   -- `return empty` that stood here overwrote it unconditionally - so a
+   -- broken tunnel was reported to every caller as a successful send. That is
+   -- the opposite of this module's documented contract (docs/05: "Commands set
+   -- `the result` to empty on success, or to a clear, human-readable error
+   -- string on failure ... Every wire error fails closed and tears the
+   -- resource down"), and 93 call sites across the suite branch on it, so all
+   -- of them were dead code on the failure path.
+   --
+   -- The most reachable consequence is the onion send pump, which paces
+   -- ENTIRELY on this return: nocloud's own comment says "We pace with the
+   -- kOnionPumpTick timer + oxWrite's error return instead", so a receiver
+   -- that aborts mid-transfer left the sender writing into a dead socket
+   -- forever instead of aborting the serve.
+   --
+   -- `the result` must be captured into a local on the very next line: any
+   -- intervening statement can clear it, which is the same one-statement
+   -- discipline this file already uses around `open socket`.
+   local tWriteErr
    if sStreams[pStream]["state"] is not "connected" then
       return "OnionXT: stream " & pStream & " is not open"
    end if
    write pData to socket sStreams[pStream]["socketID"]
+   put the result into tWriteErr
+   if tWriteErr is not empty then
+      return "OnionXT: write to stream " & pStream & " failed:" && tWriteErr
+   end if
    return empty
 end oxWrite
 
