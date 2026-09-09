@@ -4385,6 +4385,11 @@ end demoSendDial
 -- The Dial tab's stream callback. Stale-guard against a handle that has already
 -- moved on (the app may have redialed since this event was queued).
 on onDialStream pStream, pEvent, pData
+   -- PIN (2026-09-09): this handler is registered as a library callback, so the defaultStack is
+   -- whatever stack is in front when it runs, not this one. Every
+   -- unqualified control reference below, and in everything it calls,
+   -- resolves against that stack instead. Engine notes 5.3.
+   set the defaultStack to the short name of this stack
    if pStream is not sDialStream then
       exit onDialStream
    end if
@@ -4527,6 +4532,11 @@ end demoRemoveService
 -- the demo only builds the body, substituting the live address for {{ADDRESS}}.
 command demoServePage pStream, pRequest
    local tBody
+   -- PIN (2026-09-09): this handler is registered as a library callback, so the defaultStack is
+   -- whatever stack is in front when it runs, not this one. Every
+   -- unqualified control reference below, and in everything it calls,
+   -- resolves against that stack instead. Engine notes 5.3.
+   set the defaultStack to the short name of this stack
    put field "svc:html" into tBody
    if tBody is empty then
       put demoDefaultHtml() into tBody
@@ -4697,6 +4707,11 @@ end demoRunSelfTest
 -- ==========================================================================
 
 on onStatus pKind, pInfo
+   -- PIN (2026-09-09): this handler is registered as a library callback, so the defaultStack is
+   -- whatever stack is in front when it runs, not this one. Every
+   -- unqualified control reference below, and in everything it calls,
+   -- resolves against that stack instead. Engine notes 5.3.
+   set the defaultStack to the short name of this stack
    if pKind is "control" then
       if pInfo is "authenticated" then
          put "authenticated" into sConnState

@@ -4930,6 +4930,11 @@ end qsOnionTryTB
 -- OnionXT status callback (dispatched with pKind, pInfo). Coalesced bootstrap and
 -- event updates on the main thread. Keep it short - it runs on the shared thread.
 command qsOnionStatus pKind, pInfo
+   -- PIN (2026-09-09): this handler is registered as a library callback, so the defaultStack is
+   -- whatever stack is in front when it runs, not this one. Every
+   -- unqualified control reference below, and in everything it calls,
+   -- resolves against that stack instead. Engine notes 5.3.
+   set the defaultStack to the short name of this stack
    if pKind is "control" then
       if pInfo is "authenticated" then
          qsLog "Tor control connected - bootstrapping (this can take a minute)..."
@@ -5600,6 +5605,11 @@ end qsOnionPeer
 -- (HTTP). Anything else is junk from a local process and is dropped.
 command qsOnionServeStream pStream, pEvent, pData
    local tFirst, tCrlf2
+   -- PIN (2026-09-09): this handler is registered as a library callback, so the defaultStack is
+   -- whatever stack is in front when it runs, not this one. Every
+   -- unqualified control reference below, and in everything it calls,
+   -- resolves against that stack instead. Engine notes 5.3.
+   set the defaultStack to the short name of this stack
    if pEvent is "data" then
       if sActiveShare["stream"] is not pStream then
          exit qsOnionServeStream
@@ -5903,6 +5913,11 @@ end qsFsPeer
 -- arrived AND, if the head declares a Content-Length (a POST to a route), the whole
 -- body too. The kFsMaxReq cap bounds head + body together (abuse guard).
 command qsFsStream pStream, pEvent, pData
+   -- PIN (2026-09-09): this handler is registered as a library callback, so the defaultStack is
+   -- whatever stack is in front when it runs, not this one. Every
+   -- unqualified control reference below, and in everything it calls,
+   -- resolves against that stack instead. Engine notes 5.3.
+   set the defaultStack to the short name of this stack
    if pEvent is "data" then
       if sFsServed[pStream] is "true" then
          exit qsFsStream
@@ -8988,6 +9003,11 @@ command qsCwAccept pSocketID
 end qsCwAccept
 
 command qsCwData pSocketID, pData
+   -- PIN (2026-09-09): this handler is named by `with message`, so the defaultStack is
+   -- whatever stack is in front when it runs, not this one. Every
+   -- unqualified control reference below, and in everything it calls,
+   -- resolves against that stack instead. Engine notes 5.3.
+   set the defaultStack to the short name of this stack
    if sCwServed[pSocketID] is empty then
       exit qsCwData            -- not one of ours (or already cleaned up)
    end if
@@ -9184,6 +9204,11 @@ command qsCwPump pSocketID
 end qsCwPump
 
 command qsCwWrote pSocketID
+   -- PIN (2026-09-09): this handler is named by `with message`, so the defaultStack is
+   -- whatever stack is in front when it runs, not this one. Every
+   -- unqualified control reference below, and in everything it calls,
+   -- resolves against that stack instead. Engine notes 5.3.
+   set the defaultStack to the short name of this stack
    if sCwTxPath[pSocketID] is empty then
       exit qsCwWrote           -- already finished/cleaned
    end if
@@ -9275,6 +9300,11 @@ command qsCwWriteContinue pSocketID, pBytes
 end qsCwWriteContinue
 
 command qsCwWroteContinue pSocketID
+   -- PIN (2026-09-09): this handler is named by `with message`, so the defaultStack is
+   -- whatever stack is in front when it runs, not this one. Every
+   -- unqualified control reference below, and in everything it calls,
+   -- resolves against that stack instead. Engine notes 5.3.
+   set the defaultStack to the short name of this stack
    put "false" into sCwWriting[pSocketID]
    qsCwNext pSocketID
 end qsCwWroteContinue
@@ -9581,6 +9611,11 @@ end qsCwFetchPublicIp
 
 command qsCwIpReply pUrl, pStatus
    local tIp, tErr, tSavedID, tOk
+   -- PIN (2026-09-09): this handler is named by `with message`, so the defaultStack is
+   -- whatever stack is in front when it runs, not this one. Every
+   -- unqualified control reference below, and in everything it calls,
+   -- resolves against that stack instead. Engine notes 5.3.
+   set the defaultStack to the short name of this stack
    if pStatus is not "cached" then
       try
          unload URL pUrl
@@ -9702,6 +9737,11 @@ end qsReceiveOnion
 -- Receiver's per-stream handler: send the request on open, feed data to the state
 -- machine, abort a partial transfer on close/error.
 command qsOnionRecvStream pStream, pEvent, pData
+   -- PIN (2026-09-09): this handler is registered as a library callback, so the defaultStack is
+   -- whatever stack is in front when it runs, not this one. Every
+   -- unqualified control reference below, and in everything it calls,
+   -- resolves against that stack instead. Engine notes 5.3.
+   set the defaultStack to the short name of this stack
    if pEvent is "open" then
       oxWrite pStream, kOnionMagic
       put the milliseconds into sRxDeadline[pStream]
