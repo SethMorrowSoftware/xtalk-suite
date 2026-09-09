@@ -299,7 +299,11 @@ spellings), `tools/test-demo-embeds.py` and `tools/sync-demo-embeds.py`'s
 collision detector (1.6), `tools/check-lcb-call-types.py` (6.4) and its check 4
 (6.7, which refuses any future event-name/handler-name collision).
 `tools/check-timer-stack-pin.py` landed in the same sweep and pinned 71 delayed
-handlers across 26 files.
+handlers across 26 files. (Those are the numbers OF THAT SWEEP and stay as
+written. The gate has since been widened twice - the entry set on 2026-09-09,
+from `send ... in` alone to three delivery classes - and now covers 298 delayed
+handlers across 37 files. Run it for the current figure rather than reading one
+out of a dated record.)
 
 **The fixes are verified statically; they need an OXT pass.** Every one of them
 was written after the run and none has been re-run on an engine, so nothing here
