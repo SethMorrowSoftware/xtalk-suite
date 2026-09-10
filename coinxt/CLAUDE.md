@@ -3625,3 +3625,22 @@ Verified statically, under sanitizers, by KAT and through both vector gates;
 needs an OXT pass (the one-argument `Data` shape of `cxPubkeyCombine`, and
 `cwSpScan`'s `try` around a refused combine inside a loop).
 
+**And the wallet, the same day.** A seed wallet derives its scan and spend keys
+beside the account, prints its silent payment address on the Receive screen
+with a button to copy it, scans a transaction it is HANDED (the raw hex, then
+the script each input spends, one per line, on Tools; Inspect does the rest),
+remembers every found output as an address record and as an `sp` line in the
+wallet file, and spends one through `waSignSpend`'s own branch, untweaked, by
+`b_spend + tweak` (`cwSignKeyPath`; `cwSignTaproot` would tweak first and sign
+for a point nobody paid). It does not scan the chain - a raw transaction does
+not carry its prevouts and no backend here publishes a tweak index - and the
+Tools note and the doc both say so. Two small lessons on the way: the checker
+refused `tOp` (the token-shadow trap, `top`), and `waNextUnused` needed the
+same "never a leaf" exclusion for a found output, because a record in the
+address list on chain 0 with an address nobody has paid is exactly what that
+rule exists for. The boot gate drives the keys against the oracle's derivation,
+the address on screen and clipboard, a transaction the oracle builds to pay it
+found and kept through a file round trip, and a coin on the found output
+signed and verified by the oracle against the OUTPUT key. Not run on an
+engine; the Receive button is a `waBuild*` change, so `kWaUiVersion` moved.
+

@@ -1005,6 +1005,119 @@ def drive(c, ip, world, sandbox):
              REF.address_for_spk("testnet", bytes.fromhex(want_spk)) in out, repr(out[:300]))
         c.ck("Inspect shows the derived output at its taproot address",
              REF.address_for_spk("testnet", bytes.fromhex(want_spk)) in str(ip.call("waInspectRaw", [raw_sp])), "")
+    # ---- silent payments, RECEIVED (2026-09-10) ---------------------------
+    # The wallet's own BIP-352 address comes off the seed beside the account;
+    # a paying transaction pasted with its prevout scripts is scanned, the
+    # found output becomes an address record that survives the wallet file,
+    # and a coin planted on it is signed UNTWEAKED by b_spend + tweak - which
+    # the oracle verifies against the output key, not against the wallet.
+    sp_scan_node = cr.bip32_path(master, "m/352'/1'/0'/1'/0")
+    sp_spend_node = cr.bip32_path(master, "m/352'/1'/0'/0'/0")
+    c.eq("the scan key is BIP-352's m/352'/1'/0'/1'/0 for this seed",
+         str(ip.globals.get("swaspscanseckey", "")), sp_scan_node["seckey"].hex())
+    c.eq("and the spend key is m/352'/1'/0'/0'/0",
+         str(ip.globals.get("swaspspendseckey", "")), sp_spend_node["seckey"].hex())
+    own_scan33 = REF.cr.pubkey(sp_scan_node["seckey"])
+    own_spend33 = REF.cr.pubkey(sp_spend_node["seckey"])
+    own_sp = REF.sp_receive_address("testnet", own_scan33, own_spend33)
+    c.eq("waSpAddress is the oracle's address for those keys",
+         str(ip.call("waSpAddress", [])), own_sp)
+    click(ip, world, "nv_rc")
+    c.ck("the Receive screen shows the silent payment address",
+         own_sp in _fld(world, "rc_detail"), repr(_fld(world, "rc_detail")[-300:]))
+    click(ip, world, "rc_copySp")
+    clip_sp = world.clipboard.get("text") if isinstance(world.clipboard, dict) else world.clipboard
+    c.eq("and its button copies it", str(clip_sp or ""), own_sp)
+    # a payer: one P2WPKH input from a fixture key, paying our address
+    payer_sk = bytes.fromhex("33" * 32)
+    payer_pub = REF.cr.pubkey(payer_sk)
+    payer_spk = REF.spk_p2wpkh(payer_pub)
+    pay_points = [("dd" * 32, 0)]
+    want_out = REF.sp_send([(payer_sk, False)], pay_points, [(own_scan33, own_spend33)])[0]
+    pay_raw = REF.tx_serialize(2, [("dd" * 32, 0, 0xFFFFFFFD)],
+                               [(70000, REF.spk_p2tr(want_out))], 0, [b""],
+                               [[b"\x30" + b"\x44" + b"\x02" * 69 + b"\x01", payer_pub]]).hex()
+    paste = pay_raw + "\n" + payer_spk.hex()
+    put_field("tl_hex", paste)
+    click(ip, world, "nv_tl")
+    click(ip, world, "tl_inspect")
+    rep_sp = _fld(world, "tl_out")
+    sp_out_addr = REF.address_for_spk("testnet", REF.spk_p2tr(want_out))
+    c.ck("Inspect on a transaction with its prevouts finds the payment",
+         "FOUND: " + sp_out_addr in rep_sp, repr(rep_sp[:300]))
+    found = unlst_boot(ip.globals.get("swaspfound") or {"n": 0})
+    c.eq("one found output is remembered", len(found), 1)
+    want_scan = REF.sp_scan(sp_scan_node["seckey"], own_spend33,
+                            REF.sp_pubkey_sum([payer_pub]),
+                            REF.sp_input_hash(pay_points, REF.sp_pubkey_sum([payer_pub])),
+                            [want_out], [])
+    if found and want_scan:
+        c.eq("with the output the oracle finds", str(found[0].get("output", "")),
+             want_scan[0]["pub_key"])
+        c.eq("and the tweak the oracle computes", str(found[0].get("tweak", "")),
+             want_scan[0]["priv_key_tweak"])
+    sp_recs = [r for r in unlst_boot(ip.globals.get("swaaddresses") or {"n": 0})
+               if str(r.get("sptweak", ""))]
+    c.eq("and it is an address record now", len(sp_recs), 1)
+    if sp_recs:
+        c.eq("at the output's own taproot address", str(sp_recs[0]["address"]), sp_out_addr)
+    c.eq("the next unused receive address is not the found output",
+         str(ip.call("waNextUnused", [0]).get("sptweak", "")), "")
+    click(ip, world, "tl_inspect")
+    c.ck("scanning the same transaction again adds nothing",
+         "already in your addresses" in _fld(world, "tl_out")
+         and len(unlst_boot(ip.globals.get("swaspfound") or {"n": 0})) == 1,
+         repr(_fld(world, "tl_out")[:200]))
+    # the wallet file carries it
+    text_sp = str(ip.call("waSerializeWallet", []))
+    c.ck("the wallet file carries an sp line for it",
+         ("sp\t%s|%s|" % (want_scan[0]["pub_key"], want_scan[0]["priv_key_tweak"])) in text_sp
+         if want_scan else False, "")
+    saved_found = ip.globals.get("swaspfound")
+    ip.globals["swaspfound"] = {"n": 0}
+    ip.call("waLoadInto", [text_sp])
+    c.eq("and a reopen restores the found output", 
+         len([r for r in unlst_boot(ip.globals.get("swaaddresses") or {"n": 0})
+              if str(r.get("sptweak", ""))]), 1)
+    # a coin on it is spent untweaked, and the oracle checks the signature
+    # against the OUTPUT KEY
+    sp_coin = {"address": sp_out_addr, "txid": "ee" * 32, "vout": 1, "value": 70000,
+               "height": 100, "frozen": False, "selected": True,
+               "script": REF.spk_p2tr(want_out).hex()}
+    ins_sp = ip.call("cwListAdd", [ip.call("waEmptyList", []),
+                                   ip.call("cwTxInput", ["ee" * 32, 1, 4294967293])])
+    outs_sp = ip.call("cwListAdd", [ip.call("waEmptyList", []),
+                                    ip.call("cwTxOutput", [60000, REF.spk_for_address("testnet", first).hex()])])
+    sel_sp = ip.call("cwListAdd", [ip.call("waEmptyList", []), sp_coin])
+    raw_from_sp = ""
+    try:
+        raw_from_sp = str(ip.call("waSignSpend", [ins_sp, outs_sp, sel_sp, 0]))
+        c.ck("a found silent payment output signs", True)
+    except LCS.Thrown as exc:
+        c.ck("a found silent payment output signs", False, str(exc.msg)[:160])
+    if raw_from_sp:
+        dec_from = REF.tx_decode(bytes.fromhex(raw_from_sp))
+        wit = dec_from["vin"][0].get("witness", [])
+        sig = bytes.fromhex(wit[0]) if wit else b""
+        c.eq("with a 64-byte key-path signature (no tweak, no sighash byte)", len(sig), 64)
+        digest = REF.sighash_for("p2tr", 2, [("ee" * 32, 1, 0xFFFFFFFD)],
+                                 [(60000, REF.spk_for_address("testnet", first))], 0, 0,
+                                 prev_spks=[REF.spk_p2tr(want_out)], prev_amounts=[70000])
+        c.ck("that verifies against the OUTPUT KEY under BIP-340",
+             REF.cr.schnorr_verify(want_out, digest, sig) if len(sig) == 64 else False, "")
+    put_field("tl_hex", "")
+    # a watch-only wallet has no such address, and says so
+    saved_sp_keys = (ip.globals.get("swaspscanseckey"), ip.globals.get("swaspspendseckey"))
+    ip.globals["swaspscanseckey"] = ""
+    ip.globals["swaspspendseckey"] = ""
+    c.eq("without the keys there is no silent payment address", str(ip.call("waSpAddress", [])), "")
+    click(ip, world, "nv_rc")
+    click(ip, world, "rc_copySp")
+    c.ck("and the copy button says why, without a seed",
+         "seed" in str(_fld(world, "uiStatus")).lower(), repr(_fld(world, "uiStatus")))
+    ip.globals["swaspscanseckey"], ip.globals["swaspspendseckey"] = saved_sp_keys
+    ip.globals["swaspfound"] = saved_found
+
     # the refusals, each by name
     put_field("sd_to", "%s,0.0005" % sp_addr)
     try:

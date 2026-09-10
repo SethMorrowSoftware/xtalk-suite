@@ -5317,6 +5317,40 @@ end cwSpSend
 -- receiving vectors in tools/check-wallet-vectors.py.
 constant kCwSpTagLabel = "BIP0352/Label"
 
+function cwSpPath pNetwork, pWhich
+   -- BIP-352's derivation: m/352'/coin'/0'/1'/0 is the SCAN key and
+   -- m/352'/coin'/0'/0'/0 the SPEND key, coin type by network as BIP-44
+   -- counts it. The two are separate hardened branches on purpose: a scan
+   -- key can be handed to a server that scans on your behalf without giving
+   -- it the power to spend.
+   local tLevel
+   if pWhich is "scan" then
+      put 1 into tLevel
+   else if pWhich is "spend" then
+      put 0 into tLevel
+   else
+      throw "wallet-core: cwSpPath: the key is scan or spend."
+   end if
+   return "m/352'/" & cwNetCoinType(pNetwork) & "'/0'/" & tLevel & "'/0"
+end cwSpPath
+
+function cwSignKeyPath pSeckeyHex, pDigestHex
+   -- A key-path witness for an output that IS this key - a silent payment
+   -- output, whose key is b_spend + t_k with no BIP-341 tweak on top - so
+   -- the signature is by the key as given. cwSignTaproot tweaks first, and
+   -- would sign for a point nobody paid. Aux randomness is 32 zero bytes,
+   -- as cwSignTaproot's note explains.
+   local tSig, tOut, tWit
+   put cxHexEncode(cxSchnorrSign(cxHexDecode(cwScalarCheck(pSeckeyHex, "cwSignKeyPath")), \
+         cxHexDecode(pDigestHex), \
+         cxHexDecode("0000000000000000000000000000000000000000000000000000000000000000"))) into tSig
+   put cwListNew() into tWit
+   put cwListAdd(tWit, tSig) into tWit
+   put "" into tOut["scriptsig"]
+   put tWit into tOut["witness"]
+   return tOut
+end cwSignKeyPath
+
 function cwSpLabelTweak pScanSeckeyHex, pM
    -- hash_BIP0352/Label(b_scan || ser32(m)), a scalar. Label 0 is the BIP's
    -- change label; any other 32-bit integer is a per-payer label.

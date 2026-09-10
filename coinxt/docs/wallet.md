@@ -660,8 +660,31 @@ the outputs found and their tweaks; and the published BIP-340 signature from
 the recovered key) on both the shipped script and the oracle. The one case
 the script is not driven through is K_max - 2324 outputs walked up to 2323
 times is millions of interpreted iterations - so the oracle proves that
-count and the script's cap is checked as a source shape. What the APP does
-with it is the next entry; the calculator is not run on an engine.
+count and the script's cap is checked as a source shape.
+
+**What the wallet does with it.** A seed wallet derives its scan and spend
+keys beside the account (`waDeriveAccount`, at BIP-352's own hardened
+branches, so the address is per seed and not per account), the Receive
+screen prints the address under the derivation and a button copies it, and
+the keys go wherever the seed goes (`waDropSeed`, `closeStack`). The wallet
+does NOT scan the chain: finding a payment needs the script each input of
+the paying transaction spends, which a raw transaction does not carry, and
+none of the backends here publishes the per-transaction tweak index a light
+client would use. What it does is scan a transaction it is HANDED: paste the
+transaction on Tools, then the script each input spends (one per line, in
+input order), press Inspect, and every output that is a silent payment to
+this wallet is reported, added to the address list at its own taproot
+address (so sync watches it like any address and never offers it as "next
+unused") and written to the wallet file as an `sp` line so a reopen keeps
+it. Spending one goes through `waSignSpend`'s own branch: the key is
+`b_spend + tweak` and it signs UNTWEAKED (`cwSignKeyPath`), because the
+output is that key and not a BIP-341 tweak of it. Labels are not used on the
+receiving side; the calculator supports them and the wallet publishes one
+address. The boot gate drives all of it - the keys against the oracle's
+derivation, the address on screen and on the clipboard, a transaction the
+oracle builds to pay it found and remembered through a file round trip, and
+a coin on the found output signed and VERIFIED by the oracle against the
+output key. Not run on an engine.
 
 ## Runes, read only
 
