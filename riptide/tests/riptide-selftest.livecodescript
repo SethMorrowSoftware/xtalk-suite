@@ -1414,19 +1414,19 @@ private command rstNostrIngest pBridge
    put kRsGoldNostrSeq into tEvent["seq"]
    put pBridge into tEvent["value"]
    put tSigHex into tEvent["signature"]
-   put rsIngestBridge(tEvent, kRsGoldHandle) into tRec
+   put rsIngestBridge(tEvent, kRsGoldHandle, 0) into tRec
    rstCheck (tRec is not empty), "a synthetic bridge event ingests"
    rstCheck (tRec["nostrPub"] is kRsGoldNostrPubkey), \
          "and hands back the Nostr key it names"
-   rstCheck (rsIngestBridge(tEvent, kRsGoldConfPub) is empty), \
+   rstCheck (rsIngestBridge(tEvent, kRsGoldConfPub, 0) is empty), \
          "an event for another handle is refused"
    put tEvent into tBad
    put rsHeadSalt() into tBad["salt"]
-   rstCheck (rsIngestBridge(tBad, kRsGoldHandle) is empty), \
+   rstCheck (rsIngestBridge(tBad, kRsGoldHandle, 0) is empty), \
          "the HEAD salt is refused (one rail, one salt)"
    put tEvent into tBad
    put 2 into tBad["seq"]
-   rstCheck (rsIngestBridge(tBad, kRsGoldHandle) is empty), \
+   rstCheck (rsIngestBridge(tBad, kRsGoldHandle, 0) is empty), \
          "a seq disagreeing with the bridge's embedded seq is refused"
    put tEvent into tBad
    -- byte 150 is inside the ed25519 signature: the BEP44 layer still
@@ -1436,7 +1436,7 @@ private command rstNostrIngest pBridge
    put rsBencodeBytes(tBad["value"]) into tValue
    put rsBep44SignBuf("riptide-nostr", kRsGoldNostrSeq, tValue) into tBuf
    put rstHex(sxSignDetached(tBuf, tKeys["secretKey"])) into tBad["signature"]
-   rstCheck (rsIngestBridge(tBad, kRsGoldHandle) is empty), \
+   rstCheck (rsIngestBridge(tBad, kRsGoldHandle, 0) is empty), \
          "a correctly RE-SIGNED but tampered bridge is still refused"
    put tEvent into tBad
    put tBad["signature"] into tSig
@@ -1446,12 +1446,33 @@ private command rstNostrIngest pBridge
       put "6" into char 1 of tSig
    end if
    put tSig into tBad["signature"]
-   rstCheck (rsIngestBridge(tBad, kRsGoldHandle) is empty), \
+   rstCheck (rsIngestBridge(tBad, kRsGoldHandle, 0) is empty), \
          "a forged BEP44 signature is refused"
    put tEvent into tBad
    put textEncode("junk", "ASCII") into tBad["value"]
-   rstCheck (rsIngestBridge(tBad, kRsGoldHandle) is empty), \
+   rstCheck (rsIngestBridge(tBad, kRsGoldHandle, 0) is empty), \
          "a value that is not an RSN1 record is refused"
+   -- THE READER WATERMARK ON THIS RAIL (2026-09-10), the same contract the
+   -- head rail gained on 2026-09-08: every refusal above is about one record
+   -- in isolation and passes on a bridge the handle really signed, just an
+   -- OLD one. The golden bridge is seq 1 (kRsGoldNostrSeq). An omitted
+   -- watermark and an explicit `empty` are the same thing to the engine, so
+   -- the empty check covers both (the under-arity spelling would turn the
+   -- suite's arity gate red to test what this line already tests).
+   rstCheck (rsIngestBridge(tEvent, kRsGoldHandle, empty) is empty), \
+         "an omitted or empty reader watermark is refused (fail closed)"
+   rstCheck (rsIngestBridge(tEvent, kRsGoldHandle, "later") is empty), \
+         "a non-numeric reader watermark is refused"
+   rstCheck (rsIngestBridge(tEvent, kRsGoldHandle, -1) is empty), \
+         "a negative reader watermark is refused"
+   rstCheck (rsIngestBridge(tEvent, kRsGoldHandle, 9007199254740992) is empty), \
+         "a watermark past the engine's exact-integer range is refused"
+   rstCheck (rsIngestBridge(tEvent, kRsGoldHandle, kRsGoldNostrSeq) is not empty), \
+         "the SAME seq still ingests (a refresh is not a rollback)"
+   rstCheck (rsIngestBridge(tEvent, kRsGoldHandle, kRsGoldNostrSeq + 1) is empty), \
+         "a bridge OLDER than the watermark is refused (the rollback gate)"
+   rstCheck (rsIngestBridge(tEvent, kRsGoldHandle, 4096) is empty), \
+         "and a far-older bridge is refused the same way"
 end rstNostrIngest
 
 -- The phase-6 LAN admission layer. Entirely pure crypto (no transport),

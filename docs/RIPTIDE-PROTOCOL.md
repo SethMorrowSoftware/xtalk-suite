@@ -423,6 +423,16 @@ Published in both worlds:
   republish someone else's bridge, and a copy must verify as the
   original author's linkage, never the republisher's.
 
+**Bridge ingest from the DHT is monotone per handle, exactly as head
+ingest is (normative, 2026-09-10; section 4.1 states the rule for RSH1).**
+A reader MUST keep, per handle, the highest bridge `seq` it has accepted
+and MUST refuse a bridge whose seq is strictly lower; an equal seq is
+accepted. Both signatures pass on a bridge the handle really signed - just
+an old one - so without this rule a replaying DHT node can point a reader
+at a superseded Nostr key for as long as it keeps serving the stale item.
+The watermark MUST survive a restart. Apply-semantics, not a wire change:
+no byte of RSN1 moves.
+
 **8.2 Media on the Nostr wire.** Kind-1 notes carry riptide attachments
 as one `r` tag per attachment: `["r", "magnet:?xt=urn:btih:<40 hex>"]`.
 Strict on the way in; ordinary clients render a link.

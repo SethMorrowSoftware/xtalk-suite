@@ -180,6 +180,19 @@ hands with a real relay.
    tried, so verification is unproven in both directions), nor TLS versions, nor failure
    delivery. Do not let "wss works" become "wss verifies" in any file here. The remaining
    three still go into the engine notes, whatever the answer is.
+8. **`and` / `or` evaluate BOTH operands - there is no short-circuit** (root
+   `docs/OXT-ENGINE-NOTES.md` 2.5). A digit guard cannot protect arithmetic in the same
+   expression: `if not nxIsDigits(X) or X + 0 < 1` runs `X + 0` even after the guard has said
+   no, and arithmetic on non-numeric text is a HARD engine error, not a coercion to 0. Three
+   sites here were written that way, and one (`nxJsonPathNode`) is reachable straight from
+   relay bytes, so a single hostile message with a path step like "abc" was an uncaught throw
+   from a never-throw library, on the thread that draws the UI. Fixed 2026-09-09 as nested
+   `if`s - and the early-out at the JSON site repeats the itemDelimiter restore, because it is
+   "/" there and returning without it would corrupt every later `item` in the process (gotcha
+   2). `tools/check-script-vectors.py` pins the refusal, the restore and the legitimate cases
+   (81 -> 90 checks). The as-built notes below record the SAME class caught on 2026-08-23 ("1e"
+   reaching `+ 0`), so this was its second visit: nest the guard, because nothing else protects
+   the right-hand operand.
 
 ## As-built notes (v0.1.0, 2026-08-23)
 

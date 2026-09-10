@@ -632,6 +632,15 @@ if [ -f tools/check-lcb-signatures.py ]; then
   python3 tools/check-lcb-signatures.py
 fi
 
+# The fixture test runs FIRST: the gate has been widened twice, each time
+# because it asked the question that described the bug already found, and a
+# gate that has narrowed again still prints OK. The fixtures drive the real
+# main() over a tree shaped like all three delivery classes, the wall, and the
+# kit, and refuse a scan that finds nothing.
+if [ -f tools/test-timer-stack-pin.py ]; then
+  echo "== suite: tools/test-timer-stack-pin.py =="
+  python3 tools/test-timer-stack-pin.py
+fi
 if [ -f tools/check-timer-stack-pin.py ]; then
   echo "== suite: tools/check-timer-stack-pin.py =="
   python3 tools/check-timer-stack-pin.py

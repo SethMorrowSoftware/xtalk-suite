@@ -267,6 +267,25 @@ order: **(1) interpreter ops, (2) FFI round-trips, (3) property-set redraws.**
 7. **`itemDelimiter` / `lineDelimiter` are global mutable state** — set them
    immediately before use (the code sets `the itemDelimiter to ":"` right before
    splitting a `BTXQS1:`/`BTXTOR1:` code).
+8. **A `bt*` call outside a `try`, with TorrentXT absent, is an uncaught engine error
+   that unwinds `openStack`.** `btStartSession` is a TorrentXT handler, not an engine
+   command; with `org.openxtalk.library.torrent` missing (or an ABI-skewed build that
+   does not export it - the recorded symptom is "can't find handler" on `btRp1Enable`)
+   the engine raises, and until 2026-09-09 that took `qsStart` AND `openStack` with
+   it: no status line, no sync method, no onion pill, no poll arms, no boot self-check
+   record - a built-but-dead window behind a raw engine dialog. The call is guarded
+   now, and the catch deliberately does NOT fall through to the session-refused branch,
+   because that branch opens with `btLastError()`, another `bt*` handler that would
+   throw a second time from inside the recovery. Verified statically; the probe is
+   "launch with TorrentXT not installed" (`docs/oxt-pass-checklist.md` section 8).
+9. **Engine and library callbacks are DELAYED handlers - pin the defaultStack at their
+   entry.** `with message "X"` on a socket read/write or URL load, the engine's own
+   `socketError` / `socketClosed` / `socketTimeout`, and the stream/status/peer
+   callbacks handed to OnionXT all run later, from the engine's loop, with no
+   defaultStack guarantee (root `docs/OXT-ENGINE-NOTES.md` 5.3). Eight such handlers
+   here reached `qsLog` or the status line unqualified and were pinned 2026-09-09; the
+   suite's `tools/check-timer-stack-pin.py` holds all three delivery classes since
+   that day, and a fixture test (`tools/test-timer-stack-pin.py`) holds the gate.
 
 ## Testing: the two gates + the OXT pass
 

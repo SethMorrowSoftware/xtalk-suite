@@ -439,7 +439,11 @@ WHICH class delivered the handler, because a message claiming a `send` that is
 not there is how a reader decides the gate is confused and stops reading it.
 **Both widenings have the same moral and it is worth stating once: a gate is
 bounded by the question it asks, and the tempting question is always the one
-that describes the bug you already found.**
+that describes the bug you already found.** Since 2026-09-10 the widened
+question is held by a fixture test, `tools/test-timer-stack-pin.py`, which
+drives the gate's real entry point over a tree shaped like all three delivery
+classes, the pin wall and the kit, and refuses a scan that finds nothing -
+because neither widening had one, and a gate that narrows again prints OK.
 **`tools/sync-demo-embeds.py` / `tools/test-demo-embeds.py`** are the
 paragraph above; the fixtures exist because that tool's collision detector
 shipped blind - it required the remainder of a declaration line to be a bare

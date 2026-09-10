@@ -222,6 +222,12 @@ Inspect the raw headers on any file response (curl `-I`, or the webapp Backend i
 - [ ] Without **SodiumXT** -> encryption / editor / Tor off with a clear message; Share-code and
       Web-link still work.
 - [ ] Without **OnionXT** -> Private/Tor path off; the other two work.
+- [ ] Without **TorrentXT** (guarded 2026-09-09, verified statically - THIS is its engine pass)
+      -> the window still BUILDS: the log says "TorrentXT did not load, so sharing and
+      downloading are OFF", the status line reads "No transport: ...", the capability line names
+      what IS installed rather than defaulting to "missing", the boot self-check record prints,
+      and there is NO raw engine dialog. Before the guard `btStartSession` raised straight out
+      of `openStack` and left a built-but-dead window behind that dialog.
 - [ ] Quit via window close **and** via a standalone Cmd-Q -> `qsStop` runs (session stops, Tor
       and web listener torn down, temp `.enc` files deleted).
 
