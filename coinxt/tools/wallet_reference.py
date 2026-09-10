@@ -427,6 +427,9 @@ def btc_to_sat(text: str) -> int:
 INPUT_WITNESS = {
     # scriptSig bytes (non-witness), witness bytes (weight units / 4 later)
     "p2pkh":       (1 + 72 + 1 + 33, 0),
+    # an IMPORTED uncompressed key: same script, a 65-byte pubkey push. A
+    # sizing name only - signing, sighash and address code never see it.
+    "p2pkh-uncompressed": (1 + 72 + 1 + 65, 0),
     "p2sh-p2wpkh": (1 + 1 + 1 + 20, 1 + 1 + 72 + 1 + 33),
     "p2wpkh":      (0, 1 + 1 + 72 + 1 + 33),
     "p2tr":        (0, 1 + 1 + 64),
@@ -610,6 +613,15 @@ def select_coins(utxos, target_sat, fee_rate, input_type, output_types,
     """utxos: list of dicts with at least value (sat) and height/confirmations.
     Returns a dict: selected, fee, change, total_in, vsize, strategy, ok, why.
 
+    A coin may carry "inputtype" - the sizing type of THAT coin ("p2pkh",
+    "p2pkh-uncompressed", "p2wpkh", ...); input_type is the type of any coin
+    that does not say. Until 2026-09-10 every coin was priced as input_type,
+    which is right for a seed wallet and wrong the moment an imported key or
+    a leaf sits beside derived coins: the fee, the vsize, the change decision
+    and the branch-and-bound window were all computed for a type the coins
+    did not have, and the wallet's own waMaxSpend (per-coin) and waBuildSpend
+    (one type) disagreed about the same selection.
+
     The invariant every branch must hold, and the one a hand-rolled selector
     usually breaks: total_in == target + fee + change, with change either 0 or
     at least the dust threshold. A selector that returns a change output below
@@ -624,12 +636,15 @@ def select_coins(utxos, target_sat, fee_rate, input_type, output_types,
         # they answered differently. Freezing is the more deliberate signal.
         spendable = [u for u in spendable if u.get("selected")]
 
-    def _vsize(n, with_change):
+    def _type(u):
+        return u.get("inputtype") or input_type
+
+    def _vsize(sel, with_change):
         outs = list(output_types) + ([change_type] if with_change else [])
-        return estimate_vsize([input_type] * n, outs)
+        return estimate_vsize([_type(u) for u in sel], outs)
 
     def _result(sel, with_change):
-        vs = _vsize(len(sel), with_change)
+        vs = _vsize(sel, with_change)
         fee = fee_for(vs, fee_rate)
         total = sum(u["value"] for u in sel)
         change = total - target_sat - fee
@@ -642,7 +657,12 @@ def select_coins(utxos, target_sat, fee_rate, input_type, output_types,
                 "strategy": strategy}
 
     dust = dust_threshold(change_type)
-    cost_of_change = _coin_weight_cost(input_type, long_term_fee_rate) + \
+    # The future spend of the change output is priced by the CHANGE type,
+    # which is what that output will be; it read input_type until the coins
+    # stopped sharing one. (For a p2wsh change this file has no m-of-n spec
+    # to price it with - the script does; multisig selection is not driven
+    # through this oracle, and that is a known gap, not a modelled one.)
+    cost_of_change = _coin_weight_cost(change_type, long_term_fee_rate) + \
         fee_for(OUTPUT_SIZE[change_type], fee_rate)
 
     # --- 1. branch and bound: an exact match within [target+fee, target+fee+
@@ -651,11 +671,11 @@ def select_coins(utxos, target_sat, fee_rate, input_type, output_types,
         pool = sorted(spendable, key=lambda u: -u["value"])
         eff = []
         for u in pool:
-            cost = _coin_weight_cost(input_type, fee_rate)
+            cost = _coin_weight_cost(_type(u), fee_rate)
             e = u["value"] - cost
             if e > 0:
                 eff.append((e, u))
-        base_fee = fee_for(_vsize(0, False), fee_rate)
+        base_fee = fee_for(_vsize([], False), fee_rate)
         lo = target_sat + base_fee
         hi = lo + cost_of_change
         best = None
@@ -819,15 +839,26 @@ def _emit_map(entries) -> bytes:
 
 
 def _read_varint(b, i):
+    """A compact size, REFUSING a non-minimal encoding. Core's ReadCompactSize
+    throws "non-canonical ReadCompactSize()" for 0xfd carrying a value under
+    253, 0xfe under 65536 and 0xff under 2^32, so bytes that decode here and
+    nowhere else would give this file a txid no node computes - the exact
+    silent disagreement an oracle exists to refuse."""
     n = b[i]
     i += 1
     if n < 0xFD:
         return n, i
     if n == 0xFD:
-        return int.from_bytes(b[i:i + 2], "little"), i + 2
-    if n == 0xFE:
-        return int.from_bytes(b[i:i + 4], "little"), i + 4
-    return int.from_bytes(b[i:i + 8], "little"), i + 8
+        v, width, floor = int.from_bytes(b[i:i + 2], "little"), 2, 253
+    elif n == 0xFE:
+        v, width, floor = int.from_bytes(b[i:i + 4], "little"), 4, 65536
+    else:
+        v, width, floor = int.from_bytes(b[i:i + 8], "little"), 8, 1 << 32
+    if len(b) < i + width:
+        raise ValueError("a compact size is cut short")
+    if v < floor:
+        raise ValueError("non-minimal compact size: 0x%02x carrying %d" % (n, v))
+    return v, i + width
 
 
 def _parse_map(b, i):
@@ -2597,8 +2628,17 @@ def sign_multisig(seckeys, digest, witness_script, sighash_byte=1):
         ln = witness_script[i]
         order.append(witness_script[i + 1:i + 1 + ln])
         i += 1 + ln
+    # CAPPED AT m. CHECKMULTISIG consumes exactly m signatures; a witness
+    # carrying m+1 fails script (the extra element is left on the stack and
+    # the CLEANSTACK rule refuses it), so a wallet holding all three keys of
+    # a 2-of-3 must sign with the first two IN SCRIPT ORDER and stop. The
+    # script did not cap and neither did this file, which is why no vector
+    # ever asked.
+    m = witness_script[0] - OP_1 + 1
     sigs = []
     for pk in order:
+        if len(sigs) >= m:
+            break
         for sk in seckeys:
             if cr.pubkey(sk) == pk:
                 der = cr.der_encode(*cr.ecdsa_sign_recoverable(sk, digest)[:2])
@@ -2607,9 +2647,16 @@ def sign_multisig(seckeys, digest, witness_script, sighash_byte=1):
     return b"", [b""] + sigs + [witness_script]
 
 
-def sign_taproot_keypath(seckey, digest, merkle_root=None, aux=b"\x00" * 32):
+def sign_taproot_keypath(seckey, digest, merkle_root=None, aux=b"\x00" * 32,
+                         sighash_type=0):
+    """BIP-341: a key-path signature is 64 bytes for SIGHASH_DEFAULT (0) and
+    65 bytes - the type appended - for anything else. The digest must have
+    been built with the SAME type, which is the caller's to get right."""
     tweaked = cr.taproot_tweak_seckey(seckey, merkle_root)
-    return b"", [cr.schnorr_sign(tweaked, digest, aux)]
+    sig = cr.schnorr_sign(tweaked, digest, aux)
+    if sighash_type != 0:
+        sig += bytes([sighash_type])
+    return b"", [sig]
 
 
 def _cr_inputs(inputs):
@@ -2622,8 +2669,16 @@ def _cr_outputs(outputs):
 
 def sighash_for(script_type, version, inputs, outputs, index, locktime,
                 pubkey=None, amount_sat=None, witness_script=None,
-                prev_spks=None, prev_amounts=None, sighash_type=1):
+                prev_spks=None, prev_amounts=None, sighash_type=None):
     """The digest to sign for one input, chosen by the input's script type.
+
+    sighash_type defaults PER FAMILY: SIGHASH_ALL (1) for every pre-taproot
+    type and SIGHASH_DEFAULT (0) for taproot. Until 2026-09-10 the taproot
+    branch MAPPED an explicit 1 to 0, which made this oracle agree with a
+    script that signed SIGHASH_DEFAULT whatever a PSBT asked for - and
+    BIP-341 makes them different digests (the type byte is in the SigMsg) and
+    different signatures (65 bytes for ALL, 64 for DEFAULT). An explicit type
+    is now used as given, for every family.
 
     The scriptCode rules are the ones a wallet gets wrong: for P2WPKH and for
     P2SH-P2WPKH the BIP-143 scriptCode is the P2PKH script of the SAME key,
@@ -2631,6 +2686,8 @@ def sighash_for(script_type, version, inputs, outputs, index, locktime,
     taproot does not use a scriptCode at all - it commits to every input's
     scriptPubKey and amount, which is why prev_spks and prev_amounts are
     required there and forbidden elsewhere."""
+    if sighash_type is None:
+        sighash_type = 0 if script_type == "p2tr" else 1
     ci, co = _cr_inputs(inputs), _cr_outputs(outputs)
     if script_type == "p2pkh":
         code = spk_p2pkh(pubkey)
@@ -2648,8 +2705,7 @@ def sighash_for(script_type, version, inputs, outputs, index, locktime,
             version, locktime,
             [cr.btc_outpoint(bytes.fromhex(t), v) for t, v, _ in inputs],
             prev_amounts, prev_spks,
-            [s for _, _, s in inputs], co, index,
-            0 if sighash_type == 1 else sighash_type)
+            [s for _, _, s in inputs], co, index, sighash_type)
     raise ValueError("unknown script type %r" % script_type)
 
 

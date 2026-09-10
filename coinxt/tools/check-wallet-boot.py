@@ -1175,6 +1175,34 @@ def drive(c, ip, world, sandbox):
         c.ck("a transaction this window did not build falls back to advice",
              "CANNOT BUILD THE REPLACEMENT" in detail
              and "BUMPING THE FEE" in detail, repr(detail[:160]))
+        # 2026-09-10: THE ADVICE PRINTS A FLOOR ONLY FROM A FEE AND A SIZE IT
+        # HAS. That row carries both (Esplora's history does), so the floor
+        # is real and is BIP-125's: fee + 1 sat/vB over the size.
+        want_floor = old_fee + old_vsize
+        c.ck("with a fee and a size known, the advice states the floor",
+             "must pay at least" in detail
+             and str(ip.call("waAmount", [want_floor])) in detail,
+             repr(detail[:400]))
+        # Electrum's history carries neither; it used to print "it paid
+        # 0.00000000 / its size  vB / at least 0.00000000" and a rate
+        # "above" a division by zero. Now: unknown, and how to learn it.
+        bare = {"txid": "ee" * 32, "confirmations": 0, "address": first,
+                "value": 0, "height": 0}
+        adv = str(ip.call("waBumpAdvice", [bare]))
+        c.ck("with neither known, the advice says the fee is unknown",
+             "it paid       (unknown" in adv, repr(adv[:400]))
+        c.ck("and the size is unknown, naming Inspect",
+             "its size      (unknown" in adv and "Inspect" in adv, repr(adv[:400]))
+        c.ck("and prints NO floor computed from zeros",
+             "must pay at least" not in adv and "0.00000000" not in adv, repr(adv[:400]))
+        # the size can come from the bytes when Inspect has fetched them;
+        # the fee still cannot
+        adv2 = str(ip.call("waBumpAdvice", [dict(bare, raw=raw)]))
+        c.ck("with the bytes held, the size is read off them",
+             ("its size      %d vB" % old_vsize) in adv2, repr(adv2[:400]))
+        c.ck("and the fee is still reported unknown, so no floor",
+             "it paid       (unknown" in adv2 and "must pay at least" not in adv2,
+             repr(adv2[:400]))
         ip.globals["swahistory"] = saved_hist
         ip.globals["swalastraw"] = raw
 
@@ -2225,6 +2253,14 @@ def drive(c, ip, world, sandbox):
          str(ip.call("waRecordType", [rec1])), "p2pkh")
     c.eq("while the WALLET's own type is still what a new address would be",
          str(ip.call("waInputType", [])), "p2wpkh")
+    # 2026-09-10: and it is PRICED as what it is. cwInputBaseBytes budgeted
+    # every P2PKH input a 33-byte pubkey push; this key's scriptSig carries
+    # 65. The sizing name never reaches the signer (the record's scripttype
+    # is still p2pkh); it reaches the estimator and the selector.
+    c.eq("waSizingType prices an uncompressed key's record as uncompressed",
+         str(ip.call("waSizingType", [rec1])), "p2pkh-uncompressed")
+    c.eq("while its script type for signing stays p2pkh",
+         str(ip.call("waRecordType", [rec1])), "p2pkh")
 
     # (2) waSignSpend asked waAccountNode() before the check that excuses an
     # imported key, so a WIF wallet could not sign ANYTHING - refused with
@@ -2253,6 +2289,32 @@ def drive(c, ip, world, sandbox):
         ssig = str(dec["inputs"]["1"]["scriptsig"])
         c.ck("with a real scriptSig on the input", len(ssig) > 100,
              "%d hex chars" % len(ssig))
+        # (4) 2026-09-10: the estimate for that selection is a WORST CASE
+        # again. waSelectedInputSpecs prices the coin as uncompressed, and
+        # that estimate covers the transaction actually signed; priced as a
+        # compressed p2pkh - what every caller got until today - it was
+        # short of the real size, in the one function whose contract is
+        # "never under".
+        specs = ip.call("waSelectedInputSpecs", [sel])
+        c.eq("waSelectedInputSpecs prices the coin as uncompressed",
+             str(specs["1"]["type"]), "p2pkh-uncompressed")
+        outs_t = ip.call("cwListAdd", [ip.call("waEmptyList", []), "p2pkh"])
+        est = int(LCS._n(ip.call("cwEstimateVsize", [specs, outs_t])))
+        short = ip.call("cwListAdd", [ip.call("waEmptyList", []),
+                                      {"type": "p2pkh", "m": 0, "cosigners": 0}])
+        est_old = int(LCS._n(ip.call("cwEstimateVsize", [short, outs_t])))
+        real = int(LCS._n(dec["vsize"]))
+        c.ck("the uncompressed estimate covers the signed transaction",
+             est >= real, "estimate %d, signed %d" % (est, real))
+        c.ck("and the compressed estimate would NOT have",
+             est_old < real, "estimate %d, signed %d" % (est_old, real))
+        # and the coins the selector is handed carry the same name
+        saved_utx = ip.globals.get("swautxos")
+        ip.globals["swautxos"] = {"n": 1, "1": dict(coin, height=100)}
+        pool = ip.call("waSpendableCoins", [])
+        c.eq("waSpendableCoins tags the coin with its sizing type",
+             str(pool.get("1", {}).get("inputtype", "")), "p2pkh-uncompressed")
+        ip.globals["swautxos"] = saved_utx
 
     # A COMPRESSED key at p2sh-p2wpkh keeps its own type - the fallback must
     # not fire where a SegWit address genuinely exists.
@@ -2262,6 +2324,8 @@ def drive(c, ip, world, sandbox):
     rec2 = ip.call("waImportedRecords", []).get("1", {})
     c.eq("a compressed key at p2sh-p2wpkh keeps that type",
          str(rec2.get("scripttype", "")), "p2sh-p2wpkh")
+    c.eq("and is priced as that type, with no uncompressed refinement",
+         str(ip.call("waSizingType", [rec2])), "p2sh-p2wpkh")
     c.ck("and gets a P2SH address", str(rec2.get("address", ""))[:1] == "2",
          str(rec2.get("address", "")))
 

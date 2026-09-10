@@ -3325,6 +3325,7 @@ constant kCwLongTermFeeRate = 10
 
 constant kCwSigBytes = 72
 constant kCwPubkeyBytes = 33
+constant kCwPubkeyUncompressedBytes = 65
 constant kCwSchnorrSigBytes = 64
 
 -- Core's dust rule: an output is dust when spending it would cost more than a
@@ -4942,9 +4943,19 @@ end cwVarIntLen
 function cwInputBaseBytes pType, pM, pCosigners
    -- The non-witness bytes one input contributes: outpoint, the scriptSig
    -- length prefix, the scriptSig itself and the sequence.
+   --
+   -- "p2pkh-uncompressed" is a SIZING name, not a script type: an imported
+   -- uncompressed key pays to the same P2PKH script and signs the same way,
+   -- but its scriptSig pushes a 65-byte pubkey, so pricing it as p2pkh left
+   -- the estimate 32 bytes short in a function whose whole contract is the
+   -- worst case. Only the estimator and the selector ever see the name
+   -- (waSizingType chooses it from the record's pubkey length); signing,
+   -- sighash and address code are handed "p2pkh" as before.
    local tSig
    if pType is "p2pkh" then
       put 1 + kCwSigBytes + 1 + kCwPubkeyBytes into tSig
+   else if pType is "p2pkh-uncompressed" then
+      put 1 + kCwSigBytes + 1 + kCwPubkeyUncompressedBytes into tSig
    else if pType is "p2sh-p2wpkh" then
       put 1 + 1 + 1 + 20 into tSig
    else
@@ -5018,7 +5029,7 @@ function cwEstimateVsize pInputs, pOutputs
       put tSpec["type"] into tType
       add cwInputBaseBytes(tType, tSpec["m"], tSpec["cosigners"]) to tBase
       add cwInputWitnessBytes(tType, tSpec["m"], tSpec["cosigners"]) to tWit
-      if tType is not "p2pkh" then
+      if cwIsLegacyInput(tType) is not true then
          put true into tAnyWitness
       end if
    end repeat
@@ -5031,7 +5042,7 @@ function cwEstimateVsize pInputs, pOutputs
       put cwListCount(pInputs) into tCount
       repeat with tI = 1 to tCount
          put pInputs[tI] into tSpec
-         if tSpec["type"] is "p2pkh" then
+         if cwIsLegacyInput(tSpec["type"]) is true then
             add 1 to tWit
          end if
       end repeat
@@ -5039,6 +5050,14 @@ function cwEstimateVsize pInputs, pOutputs
    put tBase * 4 + tWit into tWeight
    return cwCeilDiv(tWeight, 4)
 end cwEstimateVsize
+
+private function cwIsLegacyInput pType
+   -- The inputs that carry NO witness stack of their own, and so contribute
+   -- the one empty-stack byte whenever any other input has one. Both P2PKH
+   -- sizing names are legacy; asked in one place so a third spelling cannot
+   -- be added to one test and not the other.
+   return pType is "p2pkh" or pType is "p2pkh-uncompressed"
+end cwIsLegacyInput
 
 function cwSimpleInputs pType, pCount, pM, pCosigners
    -- The common shape: pCount inputs all of one type. Written once because
@@ -5142,9 +5161,22 @@ end cwInputCost
 
 function cwSelectCoins pUtxos, pTargetSat, pFeeRate, pInputType, pOutputTypes, pChangeType, pStrategy, pM, pCosigners
    -- pUtxos: a list of arrays with "value" (satoshi) and optionally "frozen",
-   -- "selected", "confirmations", "txid", "vout". Returns an array carrying
-   -- "ok", "why", "selected" (a list), "fee", "change", "totalin", "vsize"
-   -- and "strategy".
+   -- "selected", "confirmations", "txid", "vout" and "inputtype". Returns an
+   -- array carrying "ok", "why", "selected" (a list), "fee", "change",
+   -- "totalin", "vsize" and "strategy".
+   --
+   -- EACH COIN IS PRICED BY ITS OWN TYPE. "inputtype" is the sizing type of
+   -- that coin (a script type, or "p2pkh-uncompressed"); pInputType is the
+   -- type of any coin that does not say, which for a seed wallet is every
+   -- coin. Until 2026-09-10 the selector priced every coin as pInputType,
+   -- and the fee, the vsize, the change-or-changeless decision and the
+   -- branch-and-bound window were all computed for a type the selected coins
+   -- may not have had - an imported legacy key beside derived SegWit coins,
+   -- or an inscription commit and a timelock leaf, which are taproot on a
+   -- wallet of any type. waMaxSpend had priced its selection per coin since
+   -- 2026-08-31 and waBuildSpend's other branch had not: a fix at one call
+   -- site and not its sibling, in the same handler. The oracle was moved
+   -- first (the same rule on both sides is invisible to the vector gate).
    local tPool, tI, tCount, tCoin, tResult, tStrategy, tDust, tSel, tOut
    local tVsize, tFee, tTotal, tChange, tSurplus, tOuts, tIns
    put pStrategy into tStrategy
@@ -5269,7 +5301,7 @@ private function cwSelectionResult pSel, pTargetSat, pFeeRate, pInputType, pOutp
       put cwListAdd(tOuts, pChangeType) into tOuts
    end if
    put cwListCount(pSel) into tCount
-   put cwSimpleInputs(pInputType, tCount, pM, pCosigners) into tIns
+   put cwCoinSpecs(pSel, pInputType, pM, pCosigners) into tIns
    put cwEstimateVsize(tIns, tOuts) into tVsize
    put cwFeeFor(tVsize, pFeeRate) into tFee
    put 0 into tTotal
@@ -5289,6 +5321,31 @@ private function cwSelectionResult pSel, pTargetSat, pFeeRate, pInputType, pOutp
    end if
    return tOut
 end cwSelectionResult
+
+private function cwCoinType pCoin, pInputType
+   -- The sizing type of one coin: what it says, or the wallet's type.
+   if pCoin["inputtype"] is not "" then
+      return pCoin["inputtype"]
+   end if
+   return pInputType
+end cwCoinType
+
+private function cwCoinSpecs pCoins, pInputType, pM, pCosigners
+   -- The cwEstimateVsize input list for these particular coins, each by its
+   -- own type. cwSimpleInputs (count x one type) is still right where the
+   -- caller genuinely has one type, and was wrong here.
+   local tList, tI, tCount, tSpec
+   put cwListNew() into tList
+   put cwListCount(pCoins) into tCount
+   repeat with tI = 1 to tCount
+      put "" into tSpec
+      put cwCoinType(pCoins[tI], pInputType) into tSpec["type"]
+      put pM into tSpec["m"]
+      put pCosigners into tSpec["cosigners"]
+      put cwListAdd(tList, tSpec) into tList
+   end repeat
+   return tList
+end cwCoinSpecs
 
 private function cwSortCoins pPool, pStrategy
    -- Insertion sort with an explicit tie-break on txid and vout, so two coins
@@ -5368,11 +5425,12 @@ private function cwBranchAndBound pPool, pTargetSat, pFeeRate, pInputType, pOutp
    local tLongTermCost
    put cwSortCoins(pPool, "largest") into tSorted
    put cwListCount(tSorted) into tCount
-   put cwInputCost(pInputType, pFeeRate, pM, pCosigners) into tCost
    put cwListNew() into tValues
    put cwListNew() into tCoins
    repeat with tI = 1 to tCount
       put tSorted[tI] into tCoin
+      -- what THIS coin costs to spend, by its own type
+      put cwInputCost(cwCoinType(tCoin, pInputType), pFeeRate, pM, pCosigners) into tCost
       put tCoin["value"] - tCost into tEff
       if tEff > 0 then
          put cwListAdd(tValues, tEff) into tValues
@@ -5393,7 +5451,10 @@ private function cwBranchAndBound pPool, pTargetSat, pFeeRate, pInputType, pOutp
    -- satoshi narrower than the same wallet's own oracle computed, and no
    -- vector sat inside the band, so two different rules read as agreement.
    put cwFeeFor(cwOutputBytes(pChangeType), pFeeRate) into tChangeCost
-   put cwInputCost(pInputType, kCwLongTermFeeRate, pM, pCosigners) \
+   -- and the future spend is priced by the CHANGE type, which is what that
+   -- output will be. It read pInputType until the coins stopped sharing one
+   -- type; for every wallet this file ships the two are the same string.
+   put cwInputCost(pChangeType, kCwLongTermFeeRate, pM, pCosigners) \
          into tLongTermCost
    put tLongTermCost + tChangeCost into tCostOfChange
    put tLo + tCostOfChange into tHi
@@ -5570,26 +5631,43 @@ function cwSighash pScriptType, pVersion, pInputs, pOutputs, pIndex, pLocktime, 
             pWitnessScriptHex, pAmountSat, tOuts, pLocktime, 1))
    end if
    if pScriptType is "p2tr" then
-      put "" into tSpks
-      put "" into tAmts
-      put cwListCount(pPrevScripts) into tCount
-      repeat with tI = 1 to tCount
-         if tI > 1 then
-            put "," after tSpks
-            put "," after tAmts
-         end if
-         put pPrevScripts[tI] after tSpks
-         put pPrevAmounts[tI] after tAmts
-      end repeat
       -- BIP-341's DEFAULT sighash type is 0, which is not SIGHASH_ALL's 1 and
-      -- does not appear in the signature at all. Passing 1 here would produce
-      -- a valid but longer 65-byte signature; 0 is what a key-path spend
-      -- normally uses.
-      return cxHexEncode(cxBtcSighashTaproot(pVersion, tOutpoints, tSeqs, tAmts, \
-            tSpks, tOuts, pIndex, pLocktime, 0, ""))
+      -- does not appear in the signature at all. 0 is what a key-path spend
+      -- this wallet builds uses; a PSBT that ASKS for 1 goes through
+      -- cwSighashTaproot directly (cwPsbtSign), because the type byte is in
+      -- the SigMsg and the two digests differ.
+      return cwSighashTaproot(pVersion, pInputs, pOutputs, pIndex, pLocktime, \
+            pPrevScripts, pPrevAmounts, 0)
    end if
    throw "wallet-core: cwSighash: unknown script type " & pScriptType & "."
 end cwSighash
+
+function cwSighashTaproot pVersion, pInputs, pOutputs, pIndex, pLocktime, pPrevScripts, pPrevAmounts, pSighashType
+   -- The BIP-341 key-path digest with an explicit hash type. Split out of
+   -- cwSighash on 2026-09-10 because cwPsbtSign signed SIGHASH_DEFAULT
+   -- whatever PSBT_IN_SIGHASH_TYPE asked for: it refused 2 and 3 by name and
+   -- let 1 through to a branch that hard-coded 0, so the signature it wrote
+   -- was over a different digest from the one the PSBT's creator specified
+   -- and had the wrong length (64, where SIGHASH_ALL is 65). The oracle
+   -- MAPPED 1 to 0 for taproot, which is how a vector never saw it.
+   local tOutpoints, tSeqs, tOuts, tSpks, tAmts, tI, tCount
+   put cwOutpointsHex(pInputs) into tOutpoints
+   put cwSequencesList(pInputs) into tSeqs
+   put cwOutputsHex(pOutputs) into tOuts
+   put "" into tSpks
+   put "" into tAmts
+   put cwListCount(pPrevScripts) into tCount
+   repeat with tI = 1 to tCount
+      if tI > 1 then
+         put "," after tSpks
+         put "," after tAmts
+      end if
+      put pPrevScripts[tI] after tSpks
+      put pPrevAmounts[tI] after tAmts
+   end repeat
+   return cxHexEncode(cxBtcSighashTaproot(pVersion, tOutpoints, tSeqs, tAmts, \
+         tSpks, tOuts, pIndex, pLocktime, pSighashType, ""))
+end cwSighashTaproot
 
 function cwSignInput pScriptType, pSeckeyHex, pDigestHex, pPubkeyHex
    -- Returns an array with "scriptsig" (hex) and "witness" (a list of hex
@@ -5671,15 +5749,30 @@ function cwSignMultisig pSeckeys, pDigestHex, pWitnessScriptHex
    -- thing to put in a PSBT. What was missing was the count: the caller could
    -- not tell a complete witness from a short one, and waSignSpend was
    -- presenting a one-of-two witness as a signed transaction.
+   --
+   -- AND CAPPED AT m. CHECKMULTISIG consumes exactly m signatures; a witness
+   -- carrying more leaves the extra element on the stack, which CLEANSTACK
+   -- refuses, so a wallet holding all three keys of a 2-of-3 must sign with
+   -- the first two in script order and stop. m is read BEFORE the loop for
+   -- that reason - it was computed after, from the same byte, and nothing
+   -- compared the count against it. The oracle had the same shape, which is
+   -- why no vector saw it (two implementations agreeing is not either being
+   -- right); it was capped first, and the 2026-09-10 all-keys vector pins
+   -- both.
    local tKeys, tI, tJ, tCount, tKeyCount, tWit, tOut, tSig, tSk, tPub
    local tHave, tM
    put cwMultisigKeys(pWitnessScriptHex) into tKeys
    put cwListCount(tKeys) into tKeyCount
    put cwListCount(pSeckeys) into tCount
+   put cwBeRead(cxHexDecode(char 1 to 2 of pWitnessScriptHex)) - kCwOpOne + 1 \
+         into tM
    put cwListNew() into tWit
    put cwListAdd(tWit, "") into tWit
    put 0 into tHave
    repeat with tI = 1 to tKeyCount
+      if tHave >= tM then
+         exit repeat
+      end if
       repeat with tJ = 1 to tCount
          put pSeckeys[tJ] into tSk
          put cxHexEncode(cxPublicKey(cxHexDecode(tSk), true)) into tPub
@@ -5693,8 +5786,6 @@ function cwSignMultisig pSeckeys, pDigestHex, pWitnessScriptHex
       end repeat
    end repeat
    put cwListAdd(tWit, pWitnessScriptHex) into tWit
-   put cwBeRead(cxHexDecode(char 1 to 2 of pWitnessScriptHex)) - kCwOpOne + 1 \
-         into tM
    put "" into tOut["scriptsig"]
    put tWit into tOut["witness"]
    put tHave into tOut["signed"]
@@ -5840,7 +5931,21 @@ end cwTxid
 private function cwReadVarInt pHex, pPos
    -- Returns an array with "value" and "next" (the 1-based hex character
    -- position after the field).
-   local tFirst, tOut, tLen
+   --
+   -- A NON-MINIMAL ENCODING IS REFUSED, and the reason is the txid. Consensus
+   -- (Core's ReadCompactSize) rejects 0xfd carrying a value under 253, 0xfe
+   -- under 65536 and 0xff under 2^32 as "non-canonical", so a transaction
+   -- spelled that way is not a transaction any node will take - but this
+   -- reader used to decode it happily, and every field it feeds (the txid,
+   -- the vsize, the inspector's rendering) then described bytes that do not
+   -- exist on any chain. A decoder that answers for bytes the network
+   -- refuses is a decoder whose answer cannot be checked against anything.
+   --
+   -- The eight-byte form is read as two halves and refused when the high
+   -- half is not zero: a count above 2^32 fits no string this layer can hold
+   -- (Core caps every compact size at 0x02000000 anyway), and reading it as
+   -- one number would round past 2^53 on the engine rather than error.
+   local tFirst, tOut, tLen, tHigh, tValue, tFloor
    put cwBeRead(cxHexDecode(char pPos to (pPos + 1) of pHex)) into tFirst
    if tFirst < 253 then
       put tFirst into tOut["value"]
@@ -5849,12 +5954,37 @@ private function cwReadVarInt pHex, pPos
    end if
    if tFirst is 253 then
       put 2 into tLen
+      put 253 into tFloor
    else if tFirst is 254 then
       put 4 into tLen
+      put 65536 into tFloor
    else
       put 8 into tLen
+      put 4294967296 into tFloor
    end if
-   put cwLeRead(cxHexDecode(char (pPos + 2) to (pPos + 1 + tLen * 2) of pHex)) into tOut["value"]
+   if (pPos + 1 + tLen * 2) > the number of chars of pHex then
+      throw "wallet-core: a compact size is cut short: its prefix promises " & \
+            tLen & " byte(s) that are not there."
+   end if
+   if tLen is 8 then
+      put cwLeRead(cxHexDecode(char (pPos + 10) to (pPos + 17) of pHex)) into tHigh
+      if tHigh is not 0 then
+         throw "wallet-core: a compact size above 2^32 (0xff prefix, high " & \
+               "bytes " & char (pPos + 10) to (pPos + 17) of pHex & \
+               ") cannot describe anything in these bytes, and is refused " & \
+               "rather than rounded."
+      end if
+      put cwLeRead(cxHexDecode(char (pPos + 2) to (pPos + 9) of pHex)) into tValue
+   else
+      put cwLeRead(cxHexDecode(char (pPos + 2) to (pPos + 1 + tLen * 2) of pHex)) into tValue
+   end if
+   if tValue < tFloor then
+      throw "wallet-core: a compact size is not minimally encoded (prefix " & \
+            char pPos to (pPos + 1) of pHex & " carrying " & tValue & \
+            ", which fits a shorter form). Consensus refuses these bytes, " & \
+            "so the txid of them would be the txid of nothing."
+   end if
+   put tValue into tOut["value"]
    put pPos + 2 + tLen * 2 into tOut["next"]
    return tOut
 end cwReadVarInt
@@ -6680,7 +6810,7 @@ function cwPsbtSign pB64, pKeys, pNetwork
    local tP, tTx, tIns, tOuts, tCount, tI, tJ, tKeyCount, tMap, tType, tAmount
    local tSpk, tDigest, tKey, tPub, tSig, tSigned, tWhy, tOut, tInternal
    local tWitScript, tRedeem, tTweaked, tTapKey, tKeys, tTxIns, tTxOuts, tFound
-   local tTweak, tSighashType, tError
+   local tTweak, tSighashType, tError, tTapType
    put cwPsbtParse(pB64) into tP
    put tP["tx"] into tTx
    put tTx["inputs"] into tTxIns
@@ -6734,13 +6864,30 @@ function cwPsbtSign pB64, pKeys, pNetwork
       end if
       put false into tFound
       -- THE SIGHASH TYPE THE PSBT ASKS FOR. BIP-174 requires a Signer to use
-      -- the value in PSBT_IN_SIGHASH_TYPE and to FAIL if it cannot; this
-      -- layer only ever produces SIGHASH_ALL, so anything else is a refusal
-      -- rather than a signature over a commitment nobody asked for. Absent
-      -- means SIGHASH_ALL, which is the only value cwPsbtCreate emits.
+      -- the value in PSBT_IN_SIGHASH_TYPE and to FAIL if it cannot. For a
+      -- pre-taproot input this layer produces only SIGHASH_ALL, so anything
+      -- else is a refusal rather than a signature over a commitment nobody
+      -- asked for; absent means SIGHASH_ALL, the only value cwPsbtCreate
+      -- emits there. For a TAPROOT input absent means SIGHASH_DEFAULT (0,
+      -- BIP-371's default), an explicit 0 is the same, and an explicit 1 is
+      -- honoured AS 1: the type byte is part of the BIP-341 SigMsg, so
+      -- signing DEFAULT for a PSBT that asked for ALL - which this branch
+      -- did until 2026-09-10, by letting 1 through to a digest hard-coded
+      -- at 0 - is a signature over the wrong digest, and 64 bytes long where
+      -- the network expects 65. The other types are refused by name.
       put cwPsbtFind(tMap, kCwPsbtInSighashType, "") into tSighashType
+      put 0 into tTapType
       if tSighashType is not "" then
-         if cwLeRead(cxHexDecode(tSighashType)) is not 1 then
+         if tType is "p2tr" then
+            put cwLeRead(cxHexDecode(tSighashType)) into tTapType
+            if tTapType is not 0 and tTapType is not 1 then
+               put tWhy & "input " & tI & ": it asks for sighash type " & \
+                     tTapType & " and this wallet signs a taproot input " & \
+                     "only as SIGHASH_DEFAULT (0) or SIGHASH_ALL (1)." & \
+                     return into tWhy
+               next repeat
+            end if
+         else if cwLeRead(cxHexDecode(tSighashType)) is not 1 then
             put tWhy & "input " & tI & ": it asks for sighash type " & \
                   cwLeRead(cxHexDecode(tSighashType)) & " and this wallet " & \
                   "signs only SIGHASH_ALL (1)." & return into tWhy
@@ -6755,8 +6902,8 @@ function cwPsbtSign pB64, pKeys, pNetwork
             next repeat
          end if
          put cwPsbtTaprootPrevouts(tP) into tOut
-         put cwSighash("p2tr", tTx["version"], tTxIns, tTxOuts, tI, tTx["locktime"], \
-               "", 0, "", tOut["scripts"], tOut["amounts"]) into tDigest
+         put cwSighashTaproot(tTx["version"], tTxIns, tTxOuts, tI, tTx["locktime"], \
+               tOut["scripts"], tOut["amounts"], tTapType) into tDigest
          repeat with tJ = 1 to tKeyCount
             put pKeys[tJ] into tKey
             put cxHexEncode(cxXOnlyPubkey(cxHexDecode(tKey["seckey"]))) into tPub
@@ -6785,7 +6932,13 @@ function cwPsbtSign pB64, pKeys, pNetwork
                end if
                put cwSignTaproot(tKey["seckey"], tDigest, "") into tSig
                put tSig["witness"] into tOut
-               put cwPsbtSetEntry(tMap, kCwPsbtInTapKeySig, "", tOut[1]) into tMap
+               put tOut[1] into tTapKey
+               if tTapType is not 0 then
+                  -- BIP-341: a signature for any type but DEFAULT carries
+                  -- the type as its 65th byte
+                  put tTapKey & cxHexEncode(numToByte(tTapType)) into tTapKey
+               end if
+               put cwPsbtSetEntry(tMap, kCwPsbtInTapKeySig, "", tTapKey) into tMap
                put tMap into tIns[tI]
                add 1 to tSigned
                put true into tFound
@@ -6909,7 +7062,7 @@ function cwPsbtFinalize pB64
    local tP, tTx, tIns, tCount, tI, tMap, tType, tSigs, tKeys, tWitScript
    local tOut, tScriptSigs, tWitnesses, tItems, tComplete, tWhy, tPub, tSig
    local tJ, tM, tKeyCount, tTapSig, tTxIns, tTxOuts, tHave, tRedeem, tError
-   local tSuperseded
+   local tSuperseded, tFinalSig, tFinalWit
    put cwPsbtParse(pB64) into tP
    put tP["tx"] into tTx
    put tP["inputs"] into tIns
@@ -6923,6 +7076,36 @@ function cwPsbtFinalize pB64
       put cwPsbtInputType(tMap) into tType
       put cwListNew() into tItems
       put "" into tSig
+      -- AN INPUT ALREADY FINALIZED IS TAKEN AS IT STANDS. PSBT_IN_FINAL_SCRIPTSIG
+      -- and PSBT_IN_FINAL_SCRIPTWITNESS are what a Finalizer WRITES - this one
+      -- included, forty lines down - and BIP-174 has the Finalizer drop the
+      -- partial signatures and scripts they supersede once written. So a PSBT
+      -- another wallet finalized (or this one, on an earlier pass) carries
+      -- the answer and none of the workings, and this function used to read
+      -- only the workings: it reported such an input "unsigned" and built a
+      -- transaction with an empty witness for it. cwPsbtSign had skipped
+      -- those inputs by name since 2026-08-31; the finalizer is the half
+      -- that was missing.
+      put cwPsbtFind(tMap, kCwPsbtInFinalScriptSig, "") into tFinalSig
+      put cwPsbtFind(tMap, kCwPsbtInFinalScriptWitness, "") into tFinalWit
+      if tFinalSig is not "" or tFinalWit is not "" then
+         if tFinalWit is not "" then
+            -- contained: a stack that does not frame is that INPUT's
+            -- why-line, not the whole operation's
+            try
+               put cwWitnessStackDecode(cxHexDecode(tFinalWit)) into tItems
+            catch tError
+               put false into tComplete
+               put tWhy & "input " & tI & ": its final witness does not " & \
+                     "frame as a witness stack (" & line 1 of tError & ")" & \
+                     return into tWhy
+               put cwListNew() into tItems
+            end try
+         end if
+         put cwListAdd(tScriptSigs, tFinalSig) into tScriptSigs
+         put cwListAdd(tWitnesses, tItems) into tWitnesses
+         next repeat
+      end if
       if tType is "p2tr" then
          put cwPsbtFind(tMap, kCwPsbtInTapKeySig, "") into tTapSig
          if tTapSig is "" then
@@ -17593,6 +17776,16 @@ function waSpendableCoins
       put tRec into tCoin
       put (sWaFrozen[tKey] is "true") into tCoin["frozen"]
       put (sWaSelected[tKey] is "true") into tCoin["selected"]
+      -- AND THE TYPE THIS COIN IS PRICED AS. cwSelectCoins sizes each coin
+      -- by its own "inputtype" and falls back to the wallet's type only for
+      -- a coin that carries none - so an imported legacy key's coins, and
+      -- the taproot coins of an inscription commit or a timelock, are priced
+      -- by what they cost rather than by what a new address would.
+      if tAddrRec is "" then
+         put waInputType() into tCoin["inputtype"]
+      else
+         put waSizingType(tAddrRec) into tCoin["inputtype"]
+      end if
       put cwListAdd(tOut, tCoin) into tOut
    end repeat
    return tOut
@@ -17980,6 +18173,23 @@ function waRecordType pAddrRec
    return waInputType()
 end waRecordType
 
+function waSizingType pAddrRec
+   -- THE TYPE ONE ADDRESS IS PRICED AS, which is waRecordType with one
+   -- refinement the estimator needs and the signer must never see: an
+   -- imported UNCOMPRESSED key pays to an ordinary P2PKH script and signs as
+   -- one, but its scriptSig pushes a 65-byte pubkey, and cwInputBaseBytes
+   -- priced every P2PKH input at 33 - 32 bytes short, in the one estimate
+   -- whose contract is the worst case. The record's pubkey length is the
+   -- fact (cwWifInfo writes the key as it was imported); the name
+   -- "p2pkh-uncompressed" exists only in wallet-core's sizing tables.
+   local tType
+   put waRecordType(pAddrRec) into tType
+   if tType is "p2pkh" and the number of chars of pAddrRec["pubkey"] is 130 then
+      return "p2pkh-uncompressed"
+   end if
+   return tType
+end waSizingType
+
 function waSelectedInputSpecs pSel
    -- The cwEstimateVsize input list built from the ACTUAL coins, so a mixed
    -- selection is priced by what it really costs rather than by the wallet's
@@ -17995,7 +18205,7 @@ function waSelectedInputSpecs pSel
       if tAddrRec is "" then
          put waInputType() into tSpec["type"]
       else
-         put waRecordType(tAddrRec) into tSpec["type"]
+         put waSizingType(tAddrRec) into tSpec["type"]
       end if
       put sWaM into tSpec["m"]
       put cwListCount(sWaCosigners) into tSpec["cosigners"]
@@ -19079,24 +19289,67 @@ private function waCeilSat pValue
 end waCeilSat
 
 function waBumpAdvice pRec
-   local tOut, tOld, tFloor
+   -- THE FLOOR IS PRINTED ONLY WHEN BOTH ITS INPUTS ARE KNOWN. This read
+   -- pRec["fee"] and pRec["vsize"] straight off a history row and printed
+   -- cwRbfMinFee of whatever it found: Esplora's history carries both (and
+   -- waMergeHistory keeps them), Electrum's carries neither, so on the
+   -- transport this wallet is most often on it printed "it paid 0.00000000,
+   -- its size vB, a replacement must pay at least 0.00000000" and a rate
+   -- "above" a division by zero. The size can come from the bytes if
+   -- Inspect has fetched them; the fee cannot come from anywhere but the
+   -- backend, because the raw transaction does not carry its inputs' values.
+   -- What is unknown is said to be unknown, with the way to learn it.
+   local tOut, tOld, tFloor, tVsize, tTx, tError
    put "BUMPING THE FEE (BIP-125)" & return & return into tOut
    if pRec["confirmations"] + 0 > 0 then
       return "That transaction is confirmed. There is nothing left to bump."
    end if
-   put pRec["fee"] into tOld
-   if tOld is "" then
-      put 0 into tOld
+   put "" into tVsize
+   if waWholeAtLeast(pRec["vsize"], 1) then
+      put pRec["vsize"] into tVsize
+   else if pRec["raw"] is not "" then
+      try
+         put cwTxDecode(pRec["raw"]) into tTx
+         put tTx["vsize"] into tVsize
+      catch tError
+         put "" into tVsize
+      end try
    end if
-   put cwRbfMinFee(tOld, pRec["vsize"] + 0) into tFloor
+   put "" into tOld
+   if waWholeAtLeast(pRec["fee"], 0) then
+      put pRec["fee"] into tOld
+   end if
    put "A replacement must pay everything the transaction it evicts paid," & return after tOut
    put "PLUS the incremental relay fee over its own size. For this one:" & return & return after tOut
-   put "  it paid       " & waAmount(tOld) & return after tOut
-   put "  its size      " & pRec["vsize"] & " vB" & return after tOut
-   put "  a replacement must pay at least " & waAmount(tFloor) & return & return after tOut
+   if tOld is "" then
+      put "  it paid       (unknown: this backend's history does not report" & return after tOut
+      put "                 a fee. An Esplora backend does; a Bitcoin Core" & return after tOut
+      put "                 node reports it under Inspect.)" & return after tOut
+   else
+      put "  it paid       " & waAmount(tOld) & return after tOut
+   end if
+   if tVsize is "" then
+      put "  its size      (unknown: press Inspect to fetch its bytes)" & return after tOut
+   else
+      put "  its size      " & tVsize & " vB" & return after tOut
+   end if
+   if tOld is "" or tVsize is "" then
+      put "  the floor a replacement must clear cannot be computed until" & return after tOut
+      put "  both are known; it is the fee it paid plus " & \
+            kCwIncrementalRelayFee & " sat/vB over the replacement's size." & \
+            return & return after tOut
+   else
+      put cwRbfMinFee(tOld, tVsize) into tFloor
+      put "  a replacement must pay at least " & waAmount(tFloor) & return & return after tOut
+   end if
    put "To do it by hand: tick the same coins on the Coins screen, choose" & return after tOut
    put "'Ticked coins' on Send, pay the same destination, and set a fee rate" & return after tOut
-   put "above " & cwCeilDiv(tFloor, pRec["vsize"] + 0) & " sat/vB." & return & return after tOut
+   if tOld is "" or tVsize is "" then
+      put "above the rate it paid plus " & kCwIncrementalRelayFee & " sat/vB." & \
+            return & return after tOut
+   else
+      put "above " & cwCeilDiv(tFloor, tVsize) & " sat/vB." & return & return after tOut
+   end if
    put "A replacement is a NEW transaction that must spend the same coins, so" & return after tOut
    put "every line of it is worth reading before it is signed - which is why" & return after tOut
    put "the Bump button prints the whole thing rather than just doing it." after tOut

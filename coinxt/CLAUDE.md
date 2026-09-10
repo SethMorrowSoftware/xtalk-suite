@@ -3480,11 +3480,90 @@ it listed as "CONFIRMED by reading and NOT fixed": the selection-input-type site
 `waBumpAdvice` reading a fee and vsize `waMergeHistory` never writes, a taproot
 input signed SIGHASH_DEFAULT where the PSBT asked for ALL, `cwPsbtFinalize` not
 reading the `PSBT_IN_FINAL_*` fields it writes, `cwSignMultisig` not capping its
-signature count at m, and the varint reader accepting a non-minimal encoding
-(note: no handler named `cwReadVarInt` exists; the reader the entry means is
-inline in the transaction parser). Every one is a `wallet-core` change with an
-oracle pin in `check-wallet-vectors.py`, and they are the next headless slice.
+signature count at m, and the varint reader accepting a non-minimal encoding.
+(This paragraph said, until later the same day, that no handler named
+`cwReadVarInt` existed and the reader was inline in the parser. It exists,
+private, at the head of the decoding section; the claim was made from a grep
+that had been scoped wrong, and it is struck here rather than deleted because a
+record that says a thing does not exist is exactly the kind of sentence the
+next reader stops checking.) Every one is a `wallet-core` change with an
+oracle pin in `check-wallet-vectors.py`, and they were the next headless
+slice - closed the same day, in the entry below.
 
 Verified statically and through the boot gate; needs an OXT pass (a socket the
 far side refuses, a plain-file save and reopen with a non-ASCII label, and the
 boot record's four address lines).
+
+### 2026-09-10, later: the seven wallet-core findings, closed with the oracle moved first
+
+Every one of the seven was a rule the SCRIPT and the ORACLE shared, which is why
+none had ever failed a vector and why each fix went into
+`tools/wallet_reference.py` before the script was touched - the standing rule
+from the 2026-08-31 entry ("an oracle-based gate cannot see a rule both sides
+get wrong"). What each turned out to be, in the order it was worth learning:
+
+- **The taproot sighash type was a one-line MAPPING in the oracle.**
+  `sighash_for` turned an explicit 1 into 0 for p2tr, so a script that signed
+  SIGHASH_DEFAULT whatever a PSBT asked agreed with it perfectly. BIP-341 puts
+  the type byte in the SigMsg, so a PSBT asking for ALL got a signature over a
+  different digest and 64 bytes long where the network wants 65. The oracle's
+  default is now PER FAMILY (None resolves to 0 for p2tr and 1 otherwise) and an
+  explicit type is used as given; the script's `cwSighashTaproot` is the p2tr
+  branch of `cwSighash` with the type as a parameter, `cwPsbtSign` honours 0 and
+  1 (appending the byte for 1) and refuses 2, 3 and the ANYONECANPAY forms by
+  name. The vector proves the two digests differ and pins the 65-byte
+  transaction byte for byte.
+- **`cwSignMultisig` computed m AFTER the loop that needed it.** Both sides
+  added every matching signature; CHECKMULTISIG consumes exactly m and
+  CLEANSTACK refuses the extra element, so a wallet holding all three keys of
+  a 2-of-3 built a witness no node accepts. m is read first now, on both sides,
+  and the all-keys vector pins count, completeness and bytes.
+- **`cwPsbtFinalize` never read the two fields it writes.** BIP-174's
+  Finalizer drops the partial signatures once `PSBT_IN_FINAL_*` are written -
+  this one did, forty lines down - so a PSBT finalized by any wallet, this one
+  included, came back "unsigned" on a second pass. An already-final input is
+  taken as it stands now (the witness through `cwWitnessStackDecode`, contained
+  to a why-line); the vector finalizes both finalized documents again and
+  requires the same bytes and the same PSBT.
+- **The varint reader accepted a non-minimal encoding, and the txid it fed
+  was the txid of nothing.** Core's `ReadCompactSize` refuses `0xfd` under 253,
+  `0xfe` under 65536 and `0xff` under 2^32 as non-canonical; both readers took
+  them. Both refuse now, and the script reads the eight-byte form as two halves
+  so a count above 2^32 is a refusal rather than a value rounded past 2^53 on
+  the engine (root engine notes 2.4). Six refusals and one positive (a genuine
+  253-item witness through the `0xfd` form) pin it.
+- **`cwInputBaseBytes` priced every P2PKH input a 33-byte pubkey push**, so an
+  imported UNCOMPRESSED key's input was 32 bytes short in the function whose
+  contract is the worst case. The fix is a SIZING NAME, `p2pkh-uncompressed`,
+  chosen by `waSizingType` from the record's pubkey length and known only to
+  the estimator and the selector - the signer still sees `p2pkh`, because the
+  script and the sighash are the same. The boot gate signs a real uncompressed
+  legacy spend and shows the new estimate covers it and the old one did not.
+- **The selector priced every coin as ONE type**, the audit's "fix at one call
+  site and not its sibling": `waMaxSpend` had gone per-coin on 2026-08-31 and
+  `waBuildSpend`'s other branch had not. A coin may now carry `inputtype`;
+  `cwSelectionResult` and branch-and-bound price each coin by its own, the
+  future spend of change is priced by the CHANGE type (it read the input type,
+  which stops meaning anything once the coins differ; for every wallet here the
+  two are one string), and `waSpendableCoins` tags each coin from its address
+  record. The mixed-pool vectors compare pick, fee and size with the oracle and
+  additionally require the size to be what the selected coins' OWN types cost.
+- **`waBumpAdvice` was half wrong rather than wrong**: Esplora's history does
+  carry a fee and a weight and `waMergeHistory` has kept both since 2026-09-04,
+  so the audit's "never writes" was stale on one transport and true on the
+  other. On Electrum it printed a floor from two zeros and a rate above a
+  division by zero. It reads the size off the bytes when Inspect has fetched
+  them, says what it does not know and how to learn it, and prints a floor only
+  from a fee and a size it has.
+
+The transferable half is the oracle's shape. Three of the seven were the same
+rule written twice with the same omission (the cap, the minimality check, the
+one-type selector), and one was the oracle AGREEING BY CONSTRUCTION (the
+sighash mapping) - a line that exists to make two implementations match is a
+line that makes the gate blind, and the fix was to delete it and let the
+default do the work. Verified statically, through `check-wallet-vectors.py` and
+`check-wallet-boot.py`; needs an OXT pass (nothing here touches a control, so
+the engine questions are the three new `cw*` shapes: `cwSighashTaproot`'s
+eight arguments, `numToByte` into a hex concatenation for the 65th byte, and
+`cwWitnessStackDecode` inside a `try` in the finalizer).
+
