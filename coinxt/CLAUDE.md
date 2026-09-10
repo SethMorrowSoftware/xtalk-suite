@@ -3433,3 +3433,58 @@ that happened before it**, and in a gate this long that is a coupling
 nobody can see at the call site.
 
 Not run against a node, a program, or an engine.
+
+### 2026-09-10, the audit's "confirmed and open" list, closed - and what it had already lost
+
+The 2026-09-03 audit ended with five transport and file defects it CONFIRMED and
+deliberately left, "because each is a change of its own rather than a line". Read
+against the source a week later, one of the five was already gone and nobody had
+struck it: `waNetStart` has compared `sWaSock` to the `host:port` it just computed
+since the 2026-09-04 socket fix, which is the sibling defect the same entry
+describes as fixed one paragraph earlier. A list of open defects that is not
+re-read when its neighbours are fixed is the description-rots-checks-do-not
+lesson, one file over. The other four were real and are closed:
+
+- **`waSockOpened` read `the result` after a `set`.** `set` is a command and a
+  command clears `the result`, so the "could not connect" branch was reading the
+  outcome of `set the defaultStack`, never of the `open socket` - dead code that
+  claimed to be the check, invisible because a failed open also arrives through
+  `socketError`. The result is captured into a local before any other statement
+  runs. The boot gate pins the ORDER as a source-shape check, because no
+  interpreter models which commands clear the result.
+- **`waMergeUtxos` stored the backend's txid unchecked** while the Coins screen maps
+  a clicked row back to a coin by arithmetic, so a txid carrying a return shifted
+  every row after it; and its `+ 0` on `vout` and `value` ran before anything
+  asked whether they were numbers, which on the engine is a hard error rather
+  than a coercion (root engine notes 2.5). Each field is refused by name now,
+  BEFORE the arithmetic, through two predicates (`waIsDigits`, and `waIsInt` for
+  the one field a backend legitimately reports negative - Electrum's height is -1
+  when the parent is unconfirmed too). The refusal reaches `waNetFail` through
+  `waNetDeliver`'s try as "could not read the answer to utxos", which is what it
+  is. Driven for real in the boot gate: four malformed replies refused, the coin
+  table untouched after each.
+- **The plain wallet-file branch wrote and read its text raw** where the sealed
+  branch wraps the identical bytes in UTF-8, so a non-ASCII label round-tripped
+  differently depending on whether the file was encrypted. Both branches encode
+  and decode the same way now; an ASCII file is byte-identical either way, which
+  is every file this wallet has written.
+- **The boot self-check's address assertions used `is`**, which honours the
+  caseSensitive and so could not catch an address wrong only in case - in the
+  four lines the file calls "the cheapest possible place" to catch a wrong
+  address. They bind with `cwSameBytes` now, the helper that exists for exactly
+  this and that the file already uses everywhere else a string names an address.
+
+**Still open from the same audit, and still deliberately so** - the seven findings
+it listed as "CONFIRMED by reading and NOT fixed": the selection-input-type site,
+`cwInputBaseBytes` pricing an uncompressed P2PKH input 32 bytes short,
+`waBumpAdvice` reading a fee and vsize `waMergeHistory` never writes, a taproot
+input signed SIGHASH_DEFAULT where the PSBT asked for ALL, `cwPsbtFinalize` not
+reading the `PSBT_IN_FINAL_*` fields it writes, `cwSignMultisig` not capping its
+signature count at m, and the varint reader accepting a non-minimal encoding
+(note: no handler named `cwReadVarInt` exists; the reader the entry means is
+inline in the transaction parser). Every one is a `wallet-core` change with an
+oracle pin in `check-wallet-vectors.py`, and they are the next headless slice.
+
+Verified statically and through the boot gate; needs an OXT pass (a socket the
+far side refuses, a plain-file save and reopen with a non-ASCII label, and the
+boot record's four address lines).

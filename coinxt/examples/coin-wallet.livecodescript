@@ -23147,14 +23147,25 @@ on waSockOpened pSocket
    -- The engine's callback for `open socket`. Everything here is inside a try
    -- for the reason the Tor path documents: a throw in a socket callback is
    -- swallowed by the engine, so an unguarded bug here is a silent hang.
+   --
+   -- THE RESULT IS READ FIRST (2026-09-10). `set` is a command, and a command
+   -- clears `the result`, so the `set the defaultStack` that used to open
+   -- this handler meant the test below was reading the outcome of the `set`
+   -- and never of the `open socket`. Nothing looked broken because a failed
+   -- open also arrives as a socketError message, which is the path that
+   -- actually tore the connection down - this branch was dead code that
+   -- claimed to be the check (recorded in the 2026-09-03 audit). It is
+   -- captured into a local before any other statement runs; the `local`
+   -- line above it is a declaration, not a command, and clears nothing.
+   local tError, tLine, tOpenErr
+   put the result into tOpenErr
    set the defaultStack to the short name of this stack
-   local tError, tLine
    if pSocket is not sWaSock then
       exit waSockOpened
    end if
    try
-      if the result is not empty then
-         waNetFail "could not connect to " & pSocket & " - " & the result
+      if tOpenErr is not empty then
+         waNetFail "could not connect to " & pSocket & " - " & tOpenErr
          exit waSockOpened
       end if
       put "busy" into sWaNetState
@@ -26024,6 +26035,7 @@ command waMergeUtxos pAddress, pNode, pShape
    -- makes a spent coin disappear; merging would leave the wallet claiming a
    -- balance it no longer has.
    local tList, tI, tCount, tRec, tItem, tHeight, tConf, tKey
+   local tTxid, tVout, tValue
    put waEmptyList() into tList
    put cwListCount(sWaUtxos) into tCount
    repeat with tI = 1 to tCount
@@ -26038,30 +26050,52 @@ command waMergeUtxos pAddress, pNode, pShape
       put "" into tRec
       put pAddress into tRec["address"]
       if pShape is "electrum" then
-         put cwJsonGet(tItem, "tx_hash") into tRec["txid"]
-         put cwJsonGet(tItem, "tx_pos") + 0 into tRec["vout"]
-         put cwJsonGet(tItem, "value") + 0 into tRec["value"]
+         put cwJsonGet(tItem, "tx_hash") into tTxid
+         put cwJsonGet(tItem, "tx_pos") into tVout
+         put cwJsonGet(tItem, "value") into tValue
          put cwJsonGet(tItem, "height") into tHeight
-         if tHeight is not "" and tHeight + 0 > 0 and sWaTipHeight is not "" then
-            put sWaTipHeight - tHeight + 1 into tConf
-         else
-            put 0 into tConf
-         end if
-         put tConf into tRec["confirmations"]
-         put tHeight into tRec["height"]
       else
-         put cwJsonGet(tItem, "txid") into tRec["txid"]
-         put cwJsonGet(tItem, "vout") + 0 into tRec["vout"]
-         put cwJsonGet(tItem, "value") + 0 into tRec["value"]
+         put cwJsonGet(tItem, "txid") into tTxid
+         put cwJsonGet(tItem, "vout") into tVout
+         put cwJsonGet(tItem, "value") into tValue
          put cwJsonGet(tItem, "status/block_height") into tHeight
-         if tHeight is not "" and sWaTipHeight is not "" then
-            put sWaTipHeight - tHeight + 1 into tConf
-         else
-            put 0 into tConf
-         end if
-         put tConf into tRec["confirmations"]
-         put tHeight into tRec["height"]
       end if
+      -- THE BACKEND'S FIELDS ARE CHECKED BEFORE THEY ARE USED (2026-09-10).
+      -- Every one of them is the server's word. The txid used to be stored
+      -- with no shape check while waPaintCoins renders one line per coin and
+      -- waSelectedCoinKey maps a clicked row back by ARITHMETIC, so a txid
+      -- carrying a return shifted every row after it and a click selected
+      -- the wrong coin (the 2026-09-03 audit's finding); and `+ 0` on
+      -- non-numeric text is a hard engine error rather than a coercion (root
+      -- engine notes 2.5), so a malformed vout or value used to throw the
+      -- engine's own message from inside the reply. Each is refused by name
+      -- now, and the refusal reaches waNetFail through waNetDeliver's try
+      -- as "could not read the answer to utxos", which is what it is.
+      if the number of chars of tTxid is not 64 or not cwHexIsClean(tTxid) then
+         throw "the backend listed a coin whose txid is not 64 hex chars: " & \
+               char 1 to 80 of tTxid
+      end if
+      if not waIsDigits(tVout) or not waIsDigits(tValue) then
+         throw "the backend listed a coin whose vout or value is not a whole " & \
+               "number: " & char 1 to 40 of tVout & " / " & char 1 to 40 of tValue
+      end if
+      put cwLower(tTxid) into tRec["txid"]
+      put tVout + 0 into tRec["vout"]
+      put tValue + 0 into tRec["value"]
+      -- The height is not refused, because its absent and negative spellings
+      -- are legitimate: Esplora omits it for an unconfirmed coin, Electrum
+      -- says 0, and -1 when the parent is unconfirmed too. Anything that is
+      -- not an integer is treated as unconfirmed rather than fed to the
+      -- subtraction. NESTED, not one `and` chain: the right operand would be
+      -- evaluated even when the guard said no (engine notes 2.5).
+      put 0 into tConf
+      if waIsInt(tHeight) then
+         if tHeight + 0 > 0 and sWaTipHeight is not "" then
+            put sWaTipHeight - tHeight + 1 into tConf
+         end if
+      end if
+      put tConf into tRec["confirmations"]
+      put tHeight into tRec["height"]
       -- THE BACKEND'S WORD OUTRANKS THE WALLET'S MEMORY. A coin still listed
       -- as unspent after this wallet broadcast a spend of it means the
       -- backend has no such spend (dropped, or never seen), and holding the
@@ -26077,6 +26111,35 @@ command waMergeUtxos pAddress, pNode, pShape
    end repeat
    put tList into sWaUtxos
 end waMergeUtxos
+
+private function waIsDigits pText
+   -- A non-empty run of ASCII digits and nothing else. The backend's numbers
+   -- reach arithmetic in waMergeUtxos, and `+ 0` on non-numeric text is a
+   -- hard engine error rather than a coercion to 0 (root engine notes 2.5),
+   -- so the shape is settled before the first `+`. Digits have no case, so
+   -- `offset` answers the same under either caseSensitive.
+   local tI, tCount
+   put the number of chars of pText into tCount
+   if tCount is 0 then
+      return false
+   end if
+   repeat with tI = 1 to tCount
+      if offset(char tI of pText, "0123456789") is 0 then
+         return false
+      end if
+   end repeat
+   return true
+end waIsDigits
+
+private function waIsInt pText
+   -- waIsDigits with an optional leading minus, for the one field a backend
+   -- legitimately reports negative: Electrum's height is -1 for an
+   -- unconfirmed coin whose parent is unconfirmed too.
+   if char 1 of pText is "-" then
+      return waIsDigits(char 2 to -1 of pText)
+   end if
+   return waIsDigits(pText)
+end waIsInt
 
 command waFollowHistory pAddress, pNode, pShape
    -- THE SECOND QUESTION IS ASKED ONLY WHEN THE FIRST SAID THERE IS ONE.
@@ -26942,8 +27005,15 @@ command waSaveWallet
                "anything. Clear the password field to save in the clear, and " & \
                "know what that means."
       end if
-      put kWaFileMagic & "|plain|" & sWaNetwork & "|" & sWaScriptType & return & \
-            tPlain into tSealed
+      -- ENCODED LIKE THE SEALED BRANCH (2026-09-10). The sealed branch below
+      -- wraps the identical text in textEncode(..., "utf-8") before it meets
+      -- a binfile URL; this branch wrote the text as it was, so a label with a
+      -- non-ASCII character round-tripped differently depending on whether
+      -- the file was encrypted (the 2026-09-03 audit). An ASCII file is
+      -- byte-identical either way, which is every file this wallet has
+      -- written so far.
+      put textEncode(kWaFileMagic & "|plain|" & sWaNetwork & "|" & sWaScriptType & \
+            return & tPlain, "utf-8") into tSealed
       put tSealed into URL ("binfile:" & tPath)
       put the result into tError
       put empty into tPlain
@@ -27019,7 +27089,8 @@ command waLoadWallet
       throw "that file is not a CoinXT wallet."
    end if
    if waField2(tHeader, 2) is "plain" then
-      waLoadInto tBody
+      -- decoded the way the sealed branch decodes (2026-09-10; see waSaveWallet)
+      waLoadInto textDecode(tBody, "utf-8")
       waForgetPassword
       uiStatus "Opened an UNENCRYPTED wallet file.", "warn"
       exit waLoadWallet
@@ -27496,16 +27567,21 @@ command waScRun
       -- mnemonic. If this line is wrong, every address this wallet has ever
       -- shown anybody is wrong, and it is the cheapest possible place to
       -- find that out.
+      -- cwSameBytes, NOT `is` (2026-09-10): `is` honours the caseSensitive,
+      -- which defaults to FALSE, and Base58 is a case-significant alphabet -
+      -- so the three legacy checks below could not catch an address wrong
+      -- only in case, which is exactly the class of wrong "the cheapest
+      -- possible place" exists to catch (the 2026-09-03 audit).
       scAssert "BIP-84's published first address derives", \
-            waSelfTestAddress("p2wpkh", "mainnet") is \
-            "bc1qcr8te4kr609gcawutmrza0j4xv80jy8z306fyu"
-      scAssert "BIP-44's does too", waSelfTestAddress("p2pkh", "mainnet") is \
-            "1LqBGSKuX5yYUonjxT5qGfpUsXKYYWeabA"
-      scAssert "BIP-49's does too", waSelfTestAddress("p2sh-p2wpkh", "mainnet") is \
-            "37VucYSaXLCAsxYyAPfbSi9eh4iEcbShgf"
+            cwSameBytes(waSelfTestAddress("p2wpkh", "mainnet"), \
+            "bc1qcr8te4kr609gcawutmrza0j4xv80jy8z306fyu")
+      scAssert "BIP-44's does too", cwSameBytes(waSelfTestAddress("p2pkh", "mainnet"), \
+            "1LqBGSKuX5yYUonjxT5qGfpUsXKYYWeabA")
+      scAssert "BIP-49's does too", cwSameBytes(waSelfTestAddress("p2sh-p2wpkh", "mainnet"), \
+            "37VucYSaXLCAsxYyAPfbSi9eh4iEcbShgf")
       scAssert "BIP-86's taproot address does too", \
-            waSelfTestAddress("p2tr", "mainnet") is \
-            "bc1p5cyxnuxmeuwuvkwfem96lqzszd02n6xdcjrs20cac6yqjjwudpxqkedrcr"
+            cwSameBytes(waSelfTestAddress("p2tr", "mainnet"), \
+            "bc1p5cyxnuxmeuwuvkwfem96lqzszd02n6xdcjrs20cac6yqjjwudpxqkedrcr")
       scAssert "a testnet address is refused on mainnet", \
             cwAddressIsValid("mainnet", "tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx") is false
       scAssert "a corrupt checksum is refused", \

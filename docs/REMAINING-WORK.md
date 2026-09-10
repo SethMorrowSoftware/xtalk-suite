@@ -10,6 +10,23 @@ audit. When an item closes, strike it here in the same change (the truth-sync
 discipline), and when this file's date grows old, re-audit or retire it rather
 than trust it.
 
+**RE-AUDITED 2026-09-10, against the tree rather than against itself.** Five
+entries had closed without being struck, which is this file's own recorded
+failure mode: D.2 and D.3 say CLOSED inside their own bodies (the 2026-08-15
+hygiene sweep) and were never struck in their headings; D.5's idiom gate file
+no longer exists - the eight checks were unioned into the unified checker on
+2026-08-15 and `holde-em/tools/check-holdem-idioms.py` was retired, as the
+root `CLAUDE.md` records; D.7 was decided on 2026-08-27 (D-16: the deferral
+stands) and `coinxt/SPEC.md` marks both mentions; and A.1's heading still
+listed Hold'em phases 4 and 5 as open although its own body says the 4a-4e
+layer and Phase 5's DLEQ proofs shipped, and the runbook records their engine
+passes (rows 26 and 27, 2026-08-17). Struck below. The E section is decided
+in full except D-04, which waits on an engine `VERIFY`; its rows keep their
+dated pointers into `docs/OPEN-DECISIONS.md`. What is genuinely open after
+this pass is the engine-pass backlog (B, in full), the release dispatch and
+its dependents (C.0, C.3, C.5), the per-push CI and inert-workflow items (C.6,
+C.7), the stale family template (D.4), and box2dxt's polish plan (A.16).
+
 **CORRECTION (2026-08-15, wave 4): "exhausted" was true at this document's
 ITEM granularity, not absolutely.** With sparse OXT access the right lens is
 "what can the tree gain headlessly", and under it more remains: the ladder
@@ -328,7 +345,7 @@ records what the engine SHOWED, not that the repairs work.
 Code that does not exist yet: planned phases, designed-but-unshipped surfaces,
 and one functional hole.
 
-1. **Hold'em: the open phases — ~~2e remainder, 2f, 3~~, 4, 5** (was large;
+1. **Hold'em: ~~the open phases — 2e remainder, 2f, 3, 4, 5~~ ALL SHIPPED; what remains is engine time (B.11, runbook rows 14, 18, 20, 28)** (was large;
    rewritten 2026-08-16 to its as-built state). Everything statically
    buildable is BUILT, at v0.23.0: all of 2e (checkpoints, show/muck,
    online History, host election, and — closing the last recorded slice —
@@ -634,7 +651,12 @@ Built and statically verified; pending under the honesty convention.
    Also deferred with it: reporting the shed count as a proper
    `A_RP1_QUEUE_OVERFLOW` alert, which needs a new alert code and therefore
    ABI 11 -> 12; until then the count rides the existing last-error channel on
-   the next drain.
+   the next drain. **torrentxt (2026-09-10):** libtorrent's own
+   `alerts_dropped_alert` - its report that ITS queue overflowed and alerts
+   were thrown away - was unmapped, so a lost DHT item or put confirmation was
+   silence; it is counted in the drain and reported through the same
+   last-error channel now. Same status: source only until the dispatch, and a
+   proper alert code waits for ABI 12 with the rp1 one.
 
    **enetxt (2026-09-09):** `enx_disconnect` now retires the peer handle when
    ENet queued no event. Until a rebuild, an app that gives up on a connection
@@ -797,7 +819,7 @@ Built and statically verified; pending under the honesty convention.
    "SHA3-256 (deferred)" strings were fixed 2026-08-15, standalones and the
    suite harness regenerated; the rest of this item stands.)
 
-2. **The tracked consolidation path-rewrite pass** (medium). Docs moved
+2. **~~The tracked consolidation path-rewrite pass~~ CLOSED 2026-08-15; struck 2026-09-10** (medium). Docs moved
    verbatim still cite member-root-relative paths; includes box2dxt's README
    badge, riptide/examples/README's runbook path, and suite-gates.yml's
    "tracked follow-up" header for a port that shipped.
@@ -808,7 +830,7 @@ Built and statically verified; pending under the honesty convention.
    residual convention: a member's own docs stay member-root-relative, and
    dated records keep their original pre-suite spellings.)
 
-3. **nocloud CONTRIBUTING still describes the standalone repo** (small). Names
+3. **~~nocloud CONTRIBUTING still describes the standalone repo~~ CLOSED 2026-08-15; struck 2026-09-10** (small). Names
    only the two member gates; the suite gate set has walked the directory
    since the fold. A contributor following it verbatim misses all of that.
    — `nocloud/CONTRIBUTING.md:5-15,32-58,127-135`
@@ -824,7 +846,7 @@ Built and statically verified; pending under the honesty convention.
    gate or master. Hoist one master with a drift gate, then sync.
    — `onionxt/templates/CLAUDE.md`, `coinxt/MIGRATION.md:105-109`
 
-5. **Union the eight holde-em idiom checks into the unified checker** (medium).
+5. **~~Union the eight holde-em idiom checks into the unified checker~~ DONE 2026-08-15 (the idiom gate file is retired; root `CLAUDE.md`, docstring 13-21); struck 2026-09-10** (medium).
    (Replaces the resolved stale-seed-checker item — the fold removed
    `docs/holde-em/` and registered the member's unified copy.)
    `holde-em/tools/check-holdem-idioms.py` survives because eight checks with
@@ -857,7 +879,7 @@ Built and statically verified; pending under the honesty convention.
    "can never serve a stale file" claim.
    — `nocloud/SECURITY.md:8,18-98`, `nocloud/webapp/sw.js:6-8`
 
-7. **coinxt SPEC/README claim SHA3-512; only SHA3-256 exists, unmarked**
+7. **~~coinxt SPEC/README claim SHA3-512; only SHA3-256 exists, unmarked~~ DECIDED 2026-08-27 (D-16, the deferral stands) and marked in `coinxt/SPEC.md`; struck 2026-09-10**
    (small). Ship it (sha3.c already vendors it) or mark the two mentions.
    — `coinxt/SPEC.md:33` vs `:164`
 
