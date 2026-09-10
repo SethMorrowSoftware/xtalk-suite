@@ -1884,6 +1884,156 @@ def check_silent_payments(c, ip):
          call("cwScriptKind", [call("cwScriptP2tr", [whole[0]])]), "p2tr")
 
 
+SP_RECEIVING_VECTORS = os.path.join(MEMBER, "tests", "bip352-receiving-vectors.json")
+
+
+def check_silent_payment_receiving(c, ip):
+    """BIP-352, the receiving side (2026-09-10), against every receiving
+    case of the BIP's own vector file (tests/bip352-receiving-vectors.json,
+    the published file's receiving half). Both the shipped script and the
+    oracle are driven through every stage - which inputs contribute a key,
+    the key sum (cxPubkeyCombine, ABI 7), the input hash, the wallet's own
+    plain and labeled addresses, the scan itself, and a BIP-340 signature
+    from the recovered private key - and compared with each other AND with
+    the file. The one case the script is not driven through is the K_max
+    one: 2324 outputs walked up to 2323 times is millions of interpreted
+    iterations, so the oracle proves the count and the script's cap is
+    checked as a source shape (the loop condition names kCwSpKMax)."""
+    import hashlib as _hashlib
+    import json as _json
+    call = ip.call
+    c.note("\nBIP-352 silent payments, the receiving side")
+    vectors = _json.load(open(SP_RECEIVING_VECTORS, encoding="utf-8"))["vectors"]
+    msg = _hashlib.sha256(b"message").digest()
+    aux = _hashlib.sha256(b"random auxiliary data").digest()
+    cases = 0
+    for case in vectors:
+        for rt in case["receiving"]:
+            g, e = rt["given"], rt["expected"]
+            label = case["comment"]
+            big = len(g["outputs"]) > 200
+            # --- which inputs contribute a key, per input, both sides ------
+            script_keys, oracle_keys = [], []
+            for vin in g["vin"]:
+                want = REF.sp_input_pubkey(vin)
+                stack = REF._witness_stack(vin.get("txinwitness") or "")
+                got = call("cwSpInputPubkey", [{"prevout": vin["prevout"],
+                                                "scriptsig": vin["scriptSig"],
+                                                "witness": lst([x.hex() for x in stack])}])
+                c.ck("%s: input %s.. contributes %s" % (label, vin["txid"][:8],
+                                                      "a key" if want else "nothing"),
+                     got, want.hex() if want else "")
+                if want:
+                    oracle_keys.append(want)
+                if got:
+                    script_keys.append(str(got))
+            outputs = g["outputs"]
+            if not oracle_keys:
+                c.ck("%s: no eligible input, so nothing is found" % label,
+                     e.get("outputs", []), [])
+                c.refuses("%s: the script refuses an empty key sum" % label,
+                          lambda: call("cwSpPubkeySum", [lst([])]))
+                cases += 1
+                continue
+            # --- the key sum: the whole set at once -----------------------
+            try:
+                want_sum = REF.sp_pubkey_sum(oracle_keys)
+            except ValueError:
+                want_sum = None
+            if want_sum is None:
+                c.ck("%s: the keys sum to infinity and the receiver skips" % label,
+                     e.get("outputs", []), [])
+                c.refuses("%s: the script refuses the infinite sum" % label,
+                          lambda: call("cwSpPubkeySum", [lst(script_keys)]))
+                cases += 1
+                continue
+            got_sum = call("cwSpPubkeySum", [lst(script_keys)])
+            c.ck("%s: the input key sum, as published" % label, got_sum,
+                 e["input_pub_key_sum"])
+            c.ck("%s: and the oracle's" % label, want_sum.hex(), e["input_pub_key_sum"])
+            # --- the input hash ------------------------------------------
+            outpoints = [{"txid": v["txid"], "vout": v["vout"]} for v in g["vin"]]
+            got_hash = call("cwSpInputHash", [lst(outpoints), got_sum])
+            want_hash = REF.sp_input_hash([(v["txid"], v["vout"]) for v in g["vin"]], want_sum)
+            c.ck("%s: the input hash agrees" % label, got_hash, want_hash.hex())
+            # --- the receiver's keys and addresses -----------------------
+            b_scan = g["key_material"]["scan_priv_key"]
+            b_spend = g["key_material"]["spend_priv_key"]
+            scan33 = REF.cr.pubkey(bytes.fromhex(b_scan)).hex()
+            spend33 = REF.cr.pubkey(bytes.fromhex(b_spend)).hex()
+            tweaks_s, tweaks_o = [], []
+            for m in g["labels"]:
+                ts = call("cwSpLabelTweak", [b_scan, m])
+                to = REF.sp_label_tweak(bytes.fromhex(b_scan), m)
+                c.ck("%s: label %d's tweak agrees" % (label, m), ts, to.hex())
+                tweaks_s.append(str(ts))
+                tweaks_o.append(to)
+            addrs_s = [call("cwSpReceiveAddress", ["mainnet", scan33, spend33, ""])]
+            addrs_s += [call("cwSpReceiveAddress", ["mainnet", scan33, spend33, t])
+                        for t in tweaks_s]
+            addrs_o = [REF.sp_receive_address("mainnet", bytes.fromhex(scan33),
+                                              bytes.fromhex(spend33))]
+            addrs_o += [REF.sp_receive_address("mainnet", bytes.fromhex(scan33),
+                                               bytes.fromhex(spend33), t) for t in tweaks_o]
+            c.ck("%s: the wallet's own addresses, as published" % label,
+                 [str(a) for a in addrs_s], e["addresses"])
+            c.ck("%s: and the oracle's" % label, addrs_o, e["addresses"])
+            # --- the shared secret ---------------------------------------
+            c.ck("%s: the shared secret, as published" % label,
+                 call("cwSpSharedSecret", [b_scan, got_hash, got_sum]), e["shared_secret"])
+            # --- the scan ------------------------------------------------
+            found_o = REF.sp_scan(bytes.fromhex(b_scan), bytes.fromhex(spend33),
+                                  want_sum, want_hash,
+                                  [bytes.fromhex(o) for o in outputs], tweaks_o)
+            if "outputs" in e:
+                want_set = sorted((o["pub_key"], o["priv_key_tweak"]) for o in e["outputs"])
+                c.ck("%s: the oracle finds the published outputs" % label,
+                     sorted((f["pub_key"], f["priv_key_tweak"]) for f in found_o), want_set)
+            else:
+                c.ck("%s: the oracle stops at K_max" % label, len(found_o), e["n_outputs"])
+            if big:
+                cases += 1
+                continue
+            found_s = unlst(call("cwSpScan", [b_scan, spend33, got_sum, got_hash,
+                                              lst(outputs), lst(tweaks_s)]))
+            c.ck("%s: the script finds the published outputs" % label,
+                 sorted((str(f["output"]), str(f["tweak"])) for f in found_s),
+                 sorted((o["pub_key"], o["priv_key_tweak"]) for o in e["outputs"]))
+            c.ck("%s: in the same order as the oracle" % label,
+                 [(str(f["output"]), str(f["tweak"]), str(f["label"])) for f in found_s],
+                 [(f["pub_key"], f["priv_key_tweak"], f["label"]) for f in found_o])
+            # --- and the coin's own key signs, untweaked -----------------
+            # The script's part is the scalar (cwScalarAdd: the interpreter
+            # reaches natives only through script, so cxSchnorrSign is not
+            # callable from here); the oracle takes that key and must land on
+            # the published x-only key and the published BIP-340 signature,
+            # which is what proves the tweak recovered is the right one.
+            for o in e["outputs"]:
+                full = str(call("cwScalarAdd", [b_spend, o["priv_key_tweak"]]))
+                c.ck("%s: b_spend + tweak agrees with the oracle for %s.." % (label, o["pub_key"][:8]),
+                     full, REF.scalar_add(bytes.fromhex(b_spend),
+                                          bytes.fromhex(o["priv_key_tweak"])).hex())
+                c.ck("%s: and is the private key of that output" % label,
+                     REF.cr.pubkey(bytes.fromhex(full))[1:].hex(), o["pub_key"])
+                c.ck("%s: and signs the published signature" % label,
+                     REF.cr.schnorr_sign(bytes.fromhex(full), msg, aux).hex(), o["signature"])
+            cases += 1
+    c.ck("every receiving case in the file was driven", cases,
+         sum(len(x["receiving"]) for x in vectors))
+    # the script's K_max cap, as a source shape (see the docstring)
+    src = open(os.path.join(MEMBER, "examples", "wallet-core.livecodescript"),
+               encoding="utf-8").read()
+    c.true("cwSpScan's loop is bounded by kCwSpKMax",
+           "repeat while tK < kCwSpKMax" in src)
+    # refusals
+    c.refuses("a label above 2^32 - 1 is refused",
+              lambda: call("cwSpLabelTweak", ["11" * 32, 4294967296]))
+    c.refuses("a negative label is refused",
+              lambda: call("cwSpLabelTweak", ["11" * 32, -1]))
+    c.refuses("a label tweak that is not a scalar is refused",
+              lambda: call("cwSpLabeledSpend", [scan33, "ff" * 32]))
+
+
 def check_runes(c, ip):
     """The runestone reader against the reference's own test cases (ord's
     crates/ordinals/src/{rune,runestone}.rs, 2026-09-04): names, spacers,
@@ -2467,6 +2617,7 @@ def main(argv):
                 check_psbt(ck, interp)
                 check_messages(ck, interp)
                 check_silent_payments(ck, interp)
+                check_silent_payment_receiving(ck, interp)
                 check_runes(ck, interp)
                 check_tapscript(ck, interp)
                 check_bolt11(ck, interp)

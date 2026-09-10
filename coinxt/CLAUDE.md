@@ -3567,3 +3567,61 @@ the engine questions are the three new `cw*` shapes: `cwSighashTaproot`'s
 eight arguments, `numToByte` into a hex concatenation for the 65th byte, and
 `cwWitnessStackDecode` inside a `try` in the finalizer).
 
+### 2026-09-10, later still: silent-payment receiving, and the ABI bump under it
+
+The 2026-09-04 entry above ends "the honest next step is the native handler". This
+is it, plus the receiver it was for.
+
+**ABI 7 is one export.** `cnx_pubkey_combine` takes ONE buffer of 33-byte keys
+(a Data is a pointer and a length; the count is the length over 33) and returns
+the compressed sum over upstream libsecp256k1's `secp256k1_ec_pubkey_combine`,
+summed as a whole - the n pointers upstream wants are heap-allocated for that
+reason, because a pairwise fold refuses the BIP's "intermediate sum is zero but
+final sum is non-zero" vector. Proven under ASan/UBSan (G+G against the OTHER
+library's tweak of G by 1, the intermediate-infinity case, seven guards), in
+`coin-kat.py` from source and against the committed x86_64-linux library, and
+by six new assertions in the member harness.
+
+**All five binaries were rebuilt HERE, and the mac one taught a lesson.** MinGW
+and gcc-multilib installed, so the Linux and Windows four were the recorded
+recipes. The mac dylib had only ever been built by the release lane on a real
+Mac; cross-building it with Zig's clang compiled fine and shipped **257
+vendored names in the export trie**, because Zig's own Mach-O linker IGNORES
+`-exported_symbols_list` without a word, and the suite freshness gate refused
+it - which is the gate doing exactly its job. Two changes, both kept: the
+vendored units are now compiled `-fvisibility=hidden` on EVERY platform (the
+narrow surface is a property of the objects, whichever linker assembles them;
+the one non-static non-cnx_ symbol, trezor's `random_buffer` hook, carries the
+attribute in the source), and `tools/mac-cross-cc.sh` compiles with Zig and
+links with LLVM's ld64.lld, which takes the list and produces the same trie
+Apple's ld64 did (44 `_cnx_*` names, nothing else - checked against the
+previous release-built dylib). Both slices present, `check-binary-freshness.py`
+green at ABI 7 across all 30 libraries. The mac dylib is verified the way the
+Windows DLLs always were: by its export trie, its ABI constant and its slices,
+never by execution; the next `release-binaries.yml` dispatch supersedes all
+five.
+
+**The receiver is the BIP's reference `scanning`, and it is held to all 29
+published receiving cases.** `cwSpInputPubkey` (the malleated-P2PKH window,
+nested P2WPKH, the annex and the NUMS-point control block), `cwSpPubkeySum`,
+`cwSpLabelTweak`, `cwSpLabeledSpend`, `cwSpReceiveAddress` and `cwSpScan`; the
+oracle gained the same six over coin_reference's affine model. The vector gate
+drives both through every stage - which input contributes, the sum, the input
+hash and the shared secret against the published values, the plain and labeled
+addresses, the outputs found with their tweaks and their order, and the
+published BIP-340 signature from `b_spend + tweak` - 423 checks. The K_max case
+(2324 outputs, up to 2323 rounds) is the oracle's alone; the script's cap is a
+source-shape check, and the docstring says so.
+
+**Two things the build caught on the way.** The checker refused `kCwNumsH`
+read from 700 lines above its declaration - the constant-order trap, in code
+written by someone who had just moved a constant for the same reason in the
+`.lcb` - so it is declared with the silent-payment constants now, above both
+readers. And `ip.call` reaches natives only through script, so the gate's
+signature check goes: the script's `cwScalarAdd` must agree with the oracle's,
+and the oracle's key must then produce the published x-only key and signature.
+
+Verified statically, under sanitizers, by KAT and through both vector gates;
+needs an OXT pass (the one-argument `Data` shape of `cxPubkeyCombine`, and
+`cwSpScan`'s `try` around a refused combine inside a loop).
+

@@ -7893,6 +7893,13 @@ constant kCwSpTagInputs = "BIP0352/Inputs"
 constant kCwSpTagSecret = "BIP0352/SharedSecret"
 constant kCwSpMaxLen = 1023
 constant kCwSpKMax = 2323
+-- The NUMS point of BIP-341 (the x of H = lift_x(sha256(ser(G)))), the internal
+-- key of an output nobody can key-path spend. The vault's leaves use it, and
+-- the silent-payment receiver skips a script-path input whose control block
+-- names it. Declared here, ABOVE both readers, because OXT resolves a constant
+-- by lexical position and the checker refused the receiver reading it from
+-- below (2026-09-10).
+constant kCwNumsH = "50929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0"
 constant kCwCurveN = "fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141"
 constant kCwScalarZero = "0000000000000000000000000000000000000000000000000000000000000000"
 constant kCwBech32mConst = 734539939
@@ -8469,6 +8476,253 @@ function cwSpSend pInputs, pOutpoints, pRecipients
    put cwSpInputHash(pOutpoints, tPub) into tHash
    return cwSpOutputs(tSum, tHash, pRecipients)
 end cwSpSend
+
+-- ---- receiving (2026-09-10) ---------------------------------------------------
+--
+-- The other half. A receiver holds a SCAN key (b_scan, at m/352'/coin'/0'/1'/0)
+-- and a SPEND key (b_spend, at .../0'/0), publishes B_scan || B_spend as its
+-- address, and for every transaction it sees computes what a sender would have
+-- computed - the sum of the eligible INPUT public keys (point addition, which
+-- is what ABI 7's cxPubkeyCombine exists for), the input hash, the shared
+-- secret input_hash * b_scan * A_sum - and then walks k = 0, 1, 2... asking
+-- whether B_spend + t_k * G is one of the transaction's taproot outputs. Each
+-- hit yields the tweak t_k; the coin's private key is b_spend + t_k, and it
+-- signs UNTWEAKED (the output IS that key, it is not a BIP-341 tweak of it).
+-- Labels (BIP-352's change and per-payer addresses) are a second lookup per
+-- output: output - P_k, or -output - P_k, against the receiver's label points.
+-- Everything here is the BIP's reference `scanning`, pinned to the published
+-- receiving vectors in tools/check-wallet-vectors.py.
+constant kCwSpTagLabel = "BIP0352/Label"
+
+function cwSpLabelTweak pScanSeckeyHex, pM
+   -- hash_BIP0352/Label(b_scan || ser32(m)), a scalar. Label 0 is the BIP's
+   -- change label; any other 32-bit integer is a per-payer label.
+   local tTweak
+   if pM is not an integer then
+      throw "wallet-core: cwSpLabelTweak: a label is a whole number."
+   end if
+   if pM < 0 or pM > 4294967295 then
+      throw "wallet-core: cwSpLabelTweak: a label is a 32-bit unsigned integer."
+   end if
+   put cwSpTagged(kCwSpTagLabel, cwScalarCheck(pScanSeckeyHex, "cwSpLabelTweak") \
+         & cxHexEncode(cwBeBytes(pM, 4))) into tTweak
+   return cwScalarCheck(tTweak, "cwSpLabelTweak")
+end cwSpLabelTweak
+
+function cwSpLabeledSpend pSpendPubHex, pLabelTweakHex
+   -- B_m = B_spend + label_tweak * G, compressed: the spend half of a labeled
+   -- address.
+   return cxHexEncode(cxPubkeyTweakAdd(cxHexDecode(pSpendPubHex), \
+         cxHexDecode(cwScalarCheck(pLabelTweakHex, "cwSpLabeledSpend"))))
+end cwSpLabeledSpend
+
+function cwSpReceiveAddress pNetwork, pScanPubHex, pSpendPubHex, pLabelTweakHex
+   -- This wallet's own address: plain when pLabelTweakHex is empty, labeled
+   -- otherwise. The scan half is always B_scan; a label changes only B_m.
+   if pLabelTweakHex is "" then
+      return cwSpEncode(pNetwork, pScanPubHex, pSpendPubHex)
+   end if
+   return cwSpEncode(pNetwork, pScanPubHex, cwSpLabeledSpend(pSpendPubHex, pLabelTweakHex))
+end cwSpReceiveAddress
+
+private function cwSpNegate pPubHex
+   -- -P for a compressed point is the same x with the parity byte flipped.
+   if char 1 to 2 of pPubHex is "02" then
+      return "03" & char 3 to 66 of pPubHex
+   end if
+   return "02" & char 3 to 66 of pPubHex
+end cwSpNegate
+
+private function cwSpOnCurve pPubHex
+   -- Is this compressed key a point? The decompressor refuses one that is
+   -- not, and a refusal here is an answer, not an error: the BIP's reference
+   -- skips such an input.
+   local tError
+   if char 1 to 2 of pPubHex is not "02" and char 1 to 2 of pPubHex is not "03" then
+      return false
+   end if
+   try
+      get cxPubkeyDecompress(cxHexDecode(pPubHex))
+   catch tError
+      return false
+   end try
+   return true
+end cwSpOnCurve
+
+function cwSpInputPubkey pVin
+   -- The public key one input contributes to A_sum, or "" if it contributes
+   -- nothing. pVin carries "prevout" (the scriptPubKey being spent, hex),
+   -- "scriptsig" (hex) and "witness" (a list of hex items). This is the BIP
+   -- reference's get_pubkey_from_input: legacy P2PKH is found by sliding a
+   -- 33-byte window back over the scriptSig and hashing (so a MALLEATED
+   -- scriptSig with the key somewhere other than last still yields it, and
+   -- an uncompressed key never does), nested P2WPKH through its redeem
+   -- script, native P2WPKH from the last witness item, and taproot from the
+   -- output key itself - unless the spend is a script path whose control
+   -- block names the NUMS point, which the BIP excludes (that output can
+   -- never have been a silent payment, and its key would poison the sum).
+   local tSpk, tKind, tSig, tWit, tCount, tWant, tI, tLen, tCand, tRedeem, tControl
+   put cwLower(pVin["prevout"]) into tSpk
+   put cwScriptKind(tSpk) into tKind
+   put cwLower(pVin["scriptsig"]) into tSig
+   put pVin["witness"] into tWit
+   put cwListCount(tWit) into tCount
+   if tKind is "p2pkh" then
+      put char 7 to 46 of tSpk into tWant
+      put cwIntDiv(the number of chars of tSig, 2) into tLen
+      put tLen into tI
+      repeat while tI >= 33
+         put char ((tI - 33) * 2 + 1) to (tI * 2) of tSig into tCand
+         if cwHexCompare(cxHexEncode(cxHash160(cxHexDecode(tCand))), tWant) is 0 then
+            if cwSpOnCurve(tCand) is true then
+               return tCand
+            end if
+         end if
+         subtract 1 from tI
+      end repeat
+      return ""
+   end if
+   if tKind is "p2sh" then
+      -- the redeem script is the scriptSig's one push, minus its length byte
+      put char 3 to (the number of chars of tSig) of tSig into tRedeem
+      if cwScriptKind(tRedeem) is "p2wpkh" and tCount > 0 then
+         put cwLower(tWit[tCount]) into tCand
+         if the number of chars of tCand is 66 and cwSpOnCurve(tCand) is true then
+            return tCand
+         end if
+      end if
+      return ""
+   end if
+   if tKind is "p2wpkh" then
+      if tCount > 0 then
+         put cwLower(tWit[tCount]) into tCand
+         if the number of chars of tCand is 66 and cwSpOnCurve(tCand) is true then
+            return tCand
+         end if
+      end if
+      return ""
+   end if
+   if tKind is "p2tr" then
+      if tCount < 1 then
+         return ""
+      end if
+      -- an annex is the last item and starts 0x50; drop it before looking
+      -- for a control block
+      if tCount > 1 and char 1 to 2 of cwLower(tWit[tCount]) is "50" then
+         subtract 1 from tCount
+      end if
+      if tCount > 1 then
+         put cwLower(tWit[tCount]) into tControl
+         if cwHexCompare(char 3 to 66 of tControl, kCwNumsH) is 0 then
+            return ""
+         end if
+      end if
+      put "02" & char 5 to 68 of tSpk into tCand
+      if cwSpOnCurve(tCand) is true then
+         return tCand
+      end if
+      return ""
+   end if
+   return ""
+end cwSpInputPubkey
+
+function cwSpPubkeySum pPubkeys
+   -- A_sum: the compressed sum of a list of compressed keys, taken over the
+   -- WHOLE set at once so an intermediate infinity is not a refusal (the
+   -- BIP's own vector). A final infinity, or an empty list, throws: the BIP
+   -- says a receiver skips that transaction, and the caller turns the throw
+   -- into a skip.
+   local tI, tCount, tKeys
+   put cwListCount(pPubkeys) into tCount
+   if tCount < 1 then
+      throw "wallet-core: cwSpPubkeySum: no eligible inputs, so this " & \
+            "transaction cannot carry a silent payment."
+   end if
+   put empty into tKeys
+   repeat with tI = 1 to tCount
+      put cxHexDecode(pPubkeys[tI]) after tKeys
+   end repeat
+   return cxHexEncode(cxPubkeyCombine(tKeys))
+end cwSpPubkeySum
+
+function cwSpScan pScanSeckeyHex, pSpendPubHex, pSumPubHex, pInputHashHex, pOutputs, pLabelTweaks
+   -- The BIP's scanning loop. pOutputs is the transaction's taproot output
+   -- keys (x-only hex, in any order); pLabelTweaks the receiver's label
+   -- scalars (cwSpLabelTweak). Returns a list of records, one per output that
+   -- is ours, in the order found: "output" (the x-only key), "tweak" (what to
+   -- add to b_spend to get the coin's private key; the label's tweak is
+   -- already folded in) and "label" (that label's tweak, or "" for the plain
+   -- address). k stops at K_max, as the reference does, so a hostile
+   -- transaction cannot make a scan run forever.
+   local tSecret, tLabelKeys, tLabelCount, tI, tCount, tK, tTweak, tPk, tPkX
+   local tTaken, tFound, tOut, tRec, tCand, tDiff, tJ, tError, tLabel, tSum
+   put cwSpSharedSecret(pScanSeckeyHex, pInputHashHex, pSumPubHex) into tSecret
+   put cwListCount(pLabelTweaks) into tLabelCount
+   repeat with tI = 1 to tLabelCount
+      put cwScalarCheck(pLabelTweaks[tI], "cwSpScan") into tLabel
+      put tLabel into tLabelKeys[cxHexEncode(cxPublicKey(cxHexDecode(tLabel), true))]
+   end repeat
+   put cwListCount(pOutputs) into tCount
+   put cwListNew() into tOut
+   put 0 into tK
+   repeat while tK < kCwSpKMax
+      put cwSpTagged(kCwSpTagSecret, tSecret & cxHexEncode(cwBeBytes(tK, 4))) into tTweak
+      put cxHexEncode(cxPubkeyTweakAdd(cxHexDecode(pSpendPubHex), cxHexDecode(tTweak))) into tPk
+      put char 3 to 66 of tPk into tPkX
+      put false into tFound
+      repeat with tI = 1 to tCount
+         if tTaken[tI] is true then
+            next repeat
+         end if
+         put cwLower(pOutputs[tI]) into tCand
+         if cwHexCompare(tCand, tPkX) is 0 then
+            put "" into tRec
+            put tCand into tRec["output"]
+            put tTweak into tRec["tweak"]
+            put "" into tRec["label"]
+            put cwListAdd(tOut, tRec) into tOut
+            put true into tTaken[tI]
+            put true into tFound
+            exit repeat
+         end if
+         if tLabelCount > 0 then
+            -- output - P_k, then -output - P_k: a hit names the label
+            repeat with tJ = 1 to 2
+               if tJ is 1 then
+                  put "02" & tCand into tSum
+               else
+                  put "03" & tCand into tSum
+               end if
+               put "" into tDiff
+               try
+                  put cxHexEncode(cxPubkeyCombine(cxHexDecode(tSum & cwSpNegate(tPk)))) into tDiff
+               catch tError
+                  -- the difference is the point at infinity: not a label
+                  put "" into tDiff
+               end try
+               if tDiff is not "" and tLabelKeys[tDiff] is not "" then
+                  put "" into tRec
+                  put tCand into tRec["output"]
+                  put cwScalarAdd(tTweak, tLabelKeys[tDiff]) into tRec["tweak"]
+                  put tLabelKeys[tDiff] into tRec["label"]
+                  put cwListAdd(tOut, tRec) into tOut
+                  put true into tTaken[tI]
+                  put true into tFound
+                  exit repeat
+               end if
+            end repeat
+            if tFound is true then
+               exit repeat
+            end if
+         end if
+      end repeat
+      if tFound is not true then
+         exit repeat
+      end if
+      add 1 to tK
+   end repeat
+   return tOut
+end cwSpScan
 
 -- ==============================================================================
 -- RUNES, read only (2026-09-04)
@@ -9077,7 +9331,8 @@ constant kCwOpIf = 99
 constant kCwOpEndIf = 104
 constant kCwOpDrop = 117
 constant kCwOpCltv = 177
-constant kCwNumsH = "50929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0"
+-- kCwNumsH is declared with the silent-payment constants above: the
+-- receiver reads it too, and OXT resolves a constant by lexical position.
 
 function cwTapLeafHash pScriptHex
    -- BIP-341's TapLeaf hash for a tapscript leaf (version 0xc0), with a

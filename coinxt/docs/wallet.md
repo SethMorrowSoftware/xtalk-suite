@@ -631,15 +631,37 @@ secret, and the outputs with their per-scan-key counter, including the
 three refusals - no eligible input, a zero key sum, and more than 2323
 outputs to one scan key. Which inputs take part is the receiver's rule, and
 the oracle implements that side of it too, checked against the vectors'
-own input lists. Receiving - scanning the chain for payments to a scan key
-of this wallet's own - is not built, and the reason is a library gap rather
-than a design choice: the receiver sums the INPUT PUBLIC KEYS of every
-transaction it scans, which is point addition, and coinxt exposes scalar
-multiplication (ECDH), scalar tweaks and point compression but no
-point-plus-point. That is one native handler away (a `cxPubkeyCombine`
-over secp256k1_ec_pubkey_combine, with binaries refreshed on every
-platform), and until it lands the wallet says so wherever it mentions the
-feature. Not run on an engine.
+own input lists. Not run on an engine.
+
+## Silent payments, the receiving side
+
+Since 2026-09-10 `wallet-core` has the other half. A receiver holds a scan
+key and a spend key (BIP-352's `m/352'/coin'/0'/1'/0` and `.../0'/0`),
+publishes them as its address, and for every transaction it sees repeats
+what a sender computed: the sum of the eligible input public keys, the input
+hash over the smallest outpoint, the shared secret, and then `k = 0, 1, 2...`
+asking whether `B_spend + t_k * G` is one of the transaction's taproot
+outputs. The sum is point addition, the one curve operation coinxt had never
+exposed, and it is ABI 7's `cxPubkeyCombine` - summed over the whole set at
+once, so the BIP's "intermediate sum is infinity, final sum is not" vector is
+accepted and a final infinity is a skip. `cwSpInputPubkey` is the reference's
+`get_pubkey_from_input` (the malleated-P2PKH window scan, nested P2WPKH
+through its redeem script, the annex dropped and the NUMS-point control
+block skipped on taproot); `cwSpPubkeySum`, `cwSpScan`, `cwSpLabelTweak` and
+`cwSpReceiveAddress` are the rest, labels included. A found output's private
+key is `b_spend + tweak` and it signs UNTWEAKED - the output is that key, not
+a BIP-341 tweak of it.
+
+Every stage is held to the BIP's own receiving vectors
+(`tests/bip352-receiving-vectors.json`, the published file's receiving half,
+all 29 cases: the addresses, plain and labeled; which input contributes a key;
+the sum, the input hash and the shared secret against the published values;
+the outputs found and their tweaks; and the published BIP-340 signature from
+the recovered key) on both the shipped script and the oracle. The one case
+the script is not driven through is K_max - 2324 outputs walked up to 2323
+times is millions of interpreted iterations - so the oracle proves that
+count and the script's cap is checked as a source shape. What the APP does
+with it is the next entry; the calculator is not run on an engine.
 
 ## Runes, read only
 

@@ -1347,6 +1347,107 @@ def sp_input_pubkey(vin: dict):
         return b"\x02" + spk[2:34]
     return None
 
+# ---- BIP-352 silent payments, the RECEIVING side (2026-09-10) ---------------
+# The BIP's reference `scanning`, `generate_label` and
+# `create_labeled_silent_payment_address`, written over coin_reference's
+# affine curve model. Point addition is what the script now has natively
+# (cxPubkeyCombine, ABI 7); here it is _pt_add.
+
+SP_TAG_LABEL = "BIP0352/Label"
+
+
+def sp_label_tweak(b_scan: bytes, m: int) -> bytes:
+    """hash_BIP0352/Label(b_scan || ser32(m)), checked to be a scalar."""
+    if not 0 <= m < (1 << 32):
+        raise ValueError("a label is a 32-bit unsigned integer")
+    t = cr.tagged_hash(SP_TAG_LABEL, b_scan + m.to_bytes(4, "big"))
+    v = int.from_bytes(t, "big")
+    if v == 0 or v >= cr._N:
+        raise ValueError("the label tweak is not a scalar")
+    return t
+
+
+def sp_labeled_spend(spend33: bytes, label_tweak: bytes) -> bytes:
+    """B_m = B_spend + label_tweak * G, compressed."""
+    return cr._compress(cr._pt_add(cr._decompress(spend33),
+                                   cr._pt_mul(int.from_bytes(label_tweak, "big"))))
+
+
+def sp_receive_address(network: str, scan33: bytes, spend33: bytes,
+                       label_tweak=None) -> str:
+    """The wallet's own address, plain or for one label."""
+    b_m = spend33 if label_tweak is None else sp_labeled_spend(spend33, label_tweak)
+    return sp_encode(network, scan33, b_m)
+
+
+def sp_pubkey_sum(pubkeys) -> bytes:
+    """A_sum over compressed keys, summed as a whole; raise on infinity."""
+    if not pubkeys:
+        raise ValueError("no eligible inputs")
+    # coin_reference spells the point at infinity as None, and its _pt_add
+    # takes and returns it, so a whole-set sum is a plain fold
+    acc = None
+    for k in pubkeys:
+        acc = cr._pt_add(acc, cr._decompress(k))
+    if acc is None:
+        raise ValueError("the input keys sum to the point at infinity")
+    return cr._compress(acc)
+
+
+def _sp_pt_neg(pt):
+    return (pt[0], (-pt[1]) % cr._P)
+
+
+def sp_scan(b_scan: bytes, spend33: bytes, sum33: bytes, input_hash: bytes,
+            outputs, label_tweaks=()):
+    """The BIP's scanning loop. outputs: x-only 32-byte keys; label_tweaks:
+    the receiver's label scalars. Returns [{pub_key (xonly hex),
+    priv_key_tweak (hex), label (tweak hex or "")}] in the order found."""
+    ih = int.from_bytes(input_hash, "big")
+    if ih == 0 or ih >= cr._N:
+        raise ValueError("input hash is not a scalar")
+    bs = int.from_bytes(b_scan, "big")
+    secret = cr._compress(cr._pt_mul((ih * bs) % cr._N, cr._decompress(sum33)))
+    labels = {}
+    for lt in label_tweaks:
+        labels[cr._compress(cr._pt_mul(int.from_bytes(lt, "big")))] = lt
+    remaining = [bytes(o) for o in outputs]
+    b_spend = cr._decompress(spend33)
+    found = []
+    k = 0
+    while k < SP_K_MAX:
+        t_k = cr.tagged_hash(SP_TAG_SECRET, secret + k.to_bytes(4, "big"))
+        tk = int.from_bytes(t_k, "big")
+        if tk == 0 or tk >= cr._N:
+            raise ValueError("t_k is not a scalar")
+        p_k = cr._pt_add(b_spend, cr._pt_mul(tk))
+        hit = None
+        for out in remaining:
+            if p_k[0].to_bytes(32, "big") == out:
+                hit = (out, t_k, "")
+                break
+            if labels:
+                out_pt = cr._decompress(b"\x02" + out)
+                for cand in (out_pt, _sp_pt_neg(out_pt)):
+                    diff = cr._pt_add(cand, _sp_pt_neg(p_k))
+                    if diff is None:
+                        continue
+                    key = cr._compress(diff)
+                    if key in labels:
+                        lt = labels[key]
+                        hit = (out, scalar_add(t_k, lt), lt.hex())
+                        break
+                if hit:
+                    break
+        if hit is None:
+            break
+        remaining.remove(hit[0])
+        found.append({"pub_key": hit[0].hex(), "priv_key_tweak": hit[1].hex(),
+                      "label": hit[2]})
+        k += 1
+    return found
+
+
 # ---- Runes, read only (2026-09-04) -------------------------------------------
 # The oracle for wallet-core's runestone reader: LEB128 over Python ints, the
 # specification's tag table and cenotaph rules, and the reference's name,
