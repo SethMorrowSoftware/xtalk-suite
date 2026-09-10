@@ -565,7 +565,11 @@ fixes.
   named. The clamp above is what made the wallet's unbounded accumulator
   visible; the watermark's u64 bound exposed an INVERTED ceiling in riptide's
   BTXO reader; the BEP44 fix turned out to be needed in two layers, not one.
-  `alerts_dropped_alert` is still unmapped and still worth doing.
+  ~~`alerts_dropped_alert` is still unmapped and still worth doing.~~ **DONE
+  2026-09-10, source only**: it is counted in the drain and reported through
+  the last-error channel, the same interim the rp1 shed count rides; a proper
+  alert code still waits for ABI 12 and the release dispatch (`REMAINING-WORK`
+  C.0).
 
 Falsifies: "we know what this runtime costs" (nobody does), "chunk indexing is
 O(1)" (unknown, and if it is O(N) then every byte loop in the suite is quadratic

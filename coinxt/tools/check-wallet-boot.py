@@ -6174,6 +6174,53 @@ def drive(c, ip, world, sandbox):
         ip.globals[k] = v
     ip.call("waDeriveAddresses", []) if str(ip.globals.get("swakind")) == "key" else None
 
+    # ---- the 2026-09-03 audit's "confirmed and open" list, closed 2026-09-10 ----
+    # Four of its five entries were still in the source (the socket-reuse one
+    # had been closed by the 2026-09-04 host:port comparison). Two are engine
+    # ORDERING facts no interpreter models - `set` clearing `the result`, and
+    # a binfile URL's text encoding - so those are pinned as source-shape
+    # checks, the same tool the suite's timer-pin gate is; the refusal is
+    # driven for real.
+    m = re.search(r'^on waSockOpened pSocket\n(.*?)^end waSockOpened', cur, re.S | re.M)
+    stmts = [l.strip() for l in (m.group(1) if m else "").splitlines()
+             if l.strip() and not l.strip().startswith("--")
+             and not l.strip().startswith("local ")]
+    c.ck("waSockOpened captures the result before its first command can clear it",
+         bool(stmts) and stmts[0].startswith("put the result into"), repr(stmts[:1]))
+    n_before = len(_coins(ip.globals.get("swautxos") or {}))
+
+    def bad_coin(label, node_json, want):
+        try:
+            ip.call("waMergeUtxos", ["bc1qnotmine",
+                                     ip.call("cwJsonParse", [node_json]), "esplora"])
+            c.ck(label, False, "accepted")
+        except LCS.Thrown as exc:
+            c.ck(label, want in str(exc.msg), str(exc.msg)[:100])
+
+    bad_coin("a coin whose txid is not hex is refused by name",
+             '[{"txid":"%s","vout":0,"value":1000}]' % ("zz" * 32), "not 64 hex")
+    bad_coin("a coin whose txid is the wrong length is refused",
+             '[{"txid":"abcd","vout":0,"value":1000}]', "not 64 hex")
+    bad_coin("a coin whose vout is not a number is refused BEFORE any arithmetic",
+             '[{"txid":"%s","vout":"x","value":1000}]' % ("ab" * 32), "whole number")
+    bad_coin("a coin whose value is not a number is refused the same way",
+             '[{"txid":"%s","vout":0,"value":"lots"}]' % ("ab" * 32), "whole number")
+    c.eq("and a refused reply leaves the coin table exactly as it was",
+         len(_coins(ip.globals.get("swautxos") or {})), n_before)
+    save = re.search(r'^command waSaveWallet\n(.*?)^end waSaveWallet', cur, re.S | re.M)
+    c.ck("the plain wallet-file branch UTF-8 encodes what it writes, like the sealed one",
+         save is not None and
+         re.search(r'put textEncode\(kWaFileMagic & "\|plain\|"', save.group(1)) is not None)
+    load = re.search(r'^command waLoadWallet\n(.*?)^end waLoadWallet', cur, re.S | re.M)
+    c.ck("and the plain branch UTF-8 decodes what it reads",
+         load is not None and 'waLoadInto textDecode(tBody, "utf-8")' in load.group(1))
+    boot = re.search(r'scAssert "BIP-84\'s published first address derives".*?'
+                     r'scAssert "a testnet address', cur, re.S)
+    span = boot.group(0) if boot else ""
+    c.ck("the boot self-check binds its four addresses byte-exactly, not with case-folding `is`",
+         span.count("cwSameBytes(") == 4 and ") is " not in span and " is \\" not in span,
+         span[:120])
+
     # ---- the log recorded all of it --------------------------------------
     click(ip, world, "nv_lg")
     c.ck("the log is not empty", len(_fld(world, "lg_text")) > 0)
