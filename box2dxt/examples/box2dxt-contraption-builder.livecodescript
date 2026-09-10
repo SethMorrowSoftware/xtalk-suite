@@ -624,6 +624,7 @@ end b2kToWorldY
 -- =====================================================================
 command b2kAddBox pControl, pDynamic
    local tRef, tType, tFixed, tBody, tHw, tHh, tWx, tWy, tGraphic, tImage
+   set the itemDelimiter to comma   -- locs and anchors are "x,y" (gotcha 5)
    if sWorld is empty then return 0   -- attach needs a world (b2kSetup first)
    put the long id of pControl into tRef
    put (pDynamic is not false) into pDynamic
@@ -665,6 +666,7 @@ end b2kAddBox
 
 command b2kAddBall pControl, pDynamic
    local tRef, tType, tBody, tRad, tWx, tWy
+   set the itemDelimiter to comma   -- locs and anchors are "x,y" (gotcha 5)
    if sWorld is empty then return 0
    put the long id of pControl into tRef
    put (pDynamic is not false) into pDynamic
@@ -691,6 +693,7 @@ end b2kAddBall
 -- images rotate via `the angle`; other controls follow position upright.
 command b2kAddCapsule pControl, pDynamic
    local tRef, tType, tFixed, tBody, tWx, tWy, tWm, tHm, tR, tL, tHoriz, tGraphic, tImage
+   set the itemDelimiter to comma   -- locs and anchors are "x,y" (gotcha 5)
    if sWorld is empty then return 0
    put the long id of pControl into tRef
    put (pDynamic is not false) into pDynamic
@@ -739,6 +742,7 @@ end b2kAddCapsule
 -- Build a body from a polygon graphic's own points (<= 8 vertices, convex).
 command b2kAddPolygon pControl, pDynamic
    local tRef, tType, tBody, tCx, tCy, tWx, tWy, tPoints, p, tLocal, lx, ly, tCount
+   set the itemDelimiter to comma   -- locs and anchors are "x,y" (gotcha 5)
    if sWorld is empty then return 0
    put the long id of pControl into tRef
    put (pDynamic is not false) into pDynamic
@@ -939,6 +943,7 @@ end b2kSetDensity
 command b2kReshape pControl, pShape, pW, pH
    local tRef, tBody, tOld, tHw, tHh, tWm, tHm, tR, tL, tHoriz, tCx, tCy, p, lx, ly, tCount, tNewVerts
    local tWx, tWy, tWa
+   set the itemDelimiter to comma   -- locs and anchors are "x,y" (gotcha 5)
    put the long id of pControl into tRef
    if sBody[tRef] is empty then exit b2kReshape
    put sBody[tRef] into tBody
@@ -1575,6 +1580,7 @@ end b2kEndContactB
 -- world at that point (great for pendulums and swinging doors).
 command b2kHinge pCtrlA, pCtrlB, pScreenX, pScreenY
    local bA, bB, wx, wy, aA, aB, j
+   set the itemDelimiter to comma   -- locs and anchors are "x,y" (gotcha 5)
    put sBody[the long id of pCtrlA] into bA
    if bA is empty or sWorld is empty then return 0
    if pCtrlB is not empty and sBody[the long id of pCtrlB] is empty then return 0
@@ -1594,6 +1600,7 @@ end b2kHinge
 
 command b2kWeld pCtrlA, pCtrlB
    local bA, bB, wx, wy, aA, refA, j
+   set the itemDelimiter to comma   -- locs and anchors are "x,y" (gotcha 5)
    put sBody[the long id of pCtrlA] into bA
    put sBody[the long id of pCtrlB] into bB
    if bA is empty or bB is empty or sWorld is empty then return 0
@@ -1674,6 +1681,7 @@ end b2kWeldSpring
 -- (0 = horizontal, 90 = vertical; default vertical). Drive it with b2kSliderMotor.
 command b2kSlider pCtrlA, pCtrlB, pAxisDeg
    local bMover, bFixed, wax, way, ca, sa, lax, lay, anchX, anchY, aFix, aMov, refA, fixAng, j
+   set the itemDelimiter to comma   -- locs and anchors are "x,y" (gotcha 5)
    put sBody[the long id of pCtrlA] into bMover
    if pCtrlB is empty then put sDragAnchor into bFixed
    else put sBody[the long id of pCtrlB] into bFixed
@@ -1717,6 +1725,7 @@ end b2kSliderPos
 -- Drive with b2kWheelMotor, tune ride with b2kWheelSpring.
 command b2kWheel pChassis, pWheel, pScreenX, pScreenY, pAxisDeg
    local bA, bB, anchX, anchY, aA, aB, wax, way, ca, sa, lax, lay, angA, j
+   set the itemDelimiter to comma   -- locs and anchors are "x,y" (gotcha 5)
    put sBody[the long id of pChassis] into bA
    put sBody[the long id of pWheel] into bB
    if bA is empty or bB is empty or sWorld is empty then return 0
@@ -5552,6 +5561,7 @@ end b2kDrawBody
 
 command b2kDrawPoly pRef, pWx, pWy, pWa
    local c, s, p, pt, tPts, tFirst, tKey
+   set the itemDelimiter to comma   -- locs and anchors are "x,y" (gotcha 5)
    put round(b2kToScreenX(pWx)) & "," & round(b2kToScreenY(pWy)) & "," & round(pWa * 1800 / kPI) into tKey
    if sDrawKey[pRef] is tKey then exit b2kDrawPoly
    put cos(pWa) into c
@@ -7884,25 +7894,35 @@ end saveImageLibrary
 
 -- A friendly name from a file path: the file name without folders or extension.
 function assetNameFromPath pPath
-   local tN
+   -- SAVE/RESTORE (2026-09-09). This used to leave the delimiter at "." for
+   -- everything downstream. gotcha 5 and engine notes 2.3: the delimiter is
+   -- GLOBAL mutable state, so save, set, restore around the narrowest span.
+   local tN, tSaved
+   put the itemDelimiter into tSaved
    set the itemDelimiter to "/"        -- LiveCode uses "/" in paths on every platform
    put the last item of pPath into tN
    set the itemDelimiter to "."
    if the number of items of tN > 1 then delete the last item of tN
+   set the itemDelimiter to tSaved
    return tN
 end assetNameFromPath
 
 -- Add a file to the library (deduped by path), with its import-time shape.
 on addToLibrary pPath, pShape
    if pPath is empty then exit addToLibrary
+   local tRec, tSaved
+   put the itemDelimiter into tSaved
    set the itemDelimiter to tab
-   local tRec
    repeat for each line tRec in gAssets
-      if item 1 of tRec is pPath then exit addToLibrary    -- already in the library
+      if item 1 of tRec is pPath then
+         set the itemDelimiter to tSaved
+         exit addToLibrary                                 -- already in the library
+      end if
    end repeat
    if pShape is empty then put "auto" into pShape
    put pPath & tab & pShape & tab & assetNameFromPath(pPath) & cr after gAssets
    if the last char of gAssets is return then delete the last char of gAssets
+   set the itemDelimiter to tSaved
    saveImageLibrary
 end addToLibrary
 
@@ -7915,11 +7935,24 @@ end removeFromLibrary
 
 -- Place an instance of a library image - an ordinary image part.
 function placeAssetInstance pIndex, pX, pY
+   -- The delimiter is restored BEFORE spawnImageFrom, and that ordering is the
+   -- whole point: spawnImageFrom sets a control's loc to "512,246" and calls
+   -- b2kAddBox, which reads `item 1 of the loc of pControl`. With tab still
+   -- set, item 1 was the WHOLE "512,246" string, and it went straight into a
+   -- Number-typed .lcb parameter - a hard runtime throw (engine notes 6.4),
+   -- not a wrong number. Placing an image from the panel was the live trigger.
+   local tRec, tSaved, tPath, tShape
+   put the itemDelimiter into tSaved
    set the itemDelimiter to tab
-   local tRec
    put line pIndex of gAssets into tRec
-   if tRec is empty then return empty
-   return spawnImageFrom(item 1 of tRec, item 2 of tRec, pX, pY)
+   if tRec is empty then
+      set the itemDelimiter to tSaved
+      return empty
+   end if
+   put item 1 of tRec into tPath
+   put item 2 of tRec into tShape
+   set the itemDelimiter to tSaved
+   return spawnImageFrom(tPath, tShape, pX, pY)
 end placeAssetInstance
 
 -- Import a new image into the library, choosing how it collides now.
@@ -8698,6 +8731,10 @@ function serializeText
          put "wire" & tab & (the uPartId of tWsrc) & tab & (the uPartId of tWtgt) & cr after tOut
       end if
    end repeat
+   -- back to comma before returning: this handler opens by setting comma and
+   -- noting "never assume the caller left it at comma", then left TAB set for
+   -- everyone downstream. Its own advice, applied to itself.
+   set the itemDelimiter to comma
    return tOut
 end serializeText
 
@@ -10027,7 +10064,8 @@ end addWire
 -- Drop every wire touching a part (called when the part is deleted).
 on removeWiresFor pCtrl
    if gWires is empty then exit removeWiresFor
-   local tEdge, tKept
+   local tEdge, tKept, tSaved
+   put the itemDelimiter into tSaved
    set the itemDelimiter to tab
    put empty into tKept
    repeat for each line tEdge in gWires
@@ -10036,22 +10074,33 @@ on removeWiresFor pCtrl
    end repeat
    if the last char of tKept is return then delete the last char of tKept
    put tKept into gWires
+   set the itemDelimiter to tSaved
 end removeWiresFor
 
 -- A trigger fired: set off its wired targets, or - if it has none - fall back to
 -- the legacy global signal so an unwired plate/sensor still does something.
 on fireEmitter pEmitter
-   local tEdge, tTgt, tFired
+   -- COLLECT under the tab delimiter, RESTORE, then fire. fireTarget used to
+   -- be called from inside this loop with tab still set, so everything it
+   -- reaches parsed "x,y" locs by tab. Same targets, same order; the only
+   -- change is that no outward call happens while the delimiter is borrowed.
+   local tEdge, tTgt, tFired, tSaved, tTargets
    put false into tFired
+   put the itemDelimiter into tSaved
    set the itemDelimiter to tab
+   put empty into tTargets
    repeat for each line tEdge in gWires
       if item 1 of tEdge is pEmitter then
          put item 2 of tEdge into tTgt
          if tTgt is not empty and tTgt is among the lines of gParts then
-            fireTarget tTgt
-            put true into tFired
+            put tTgt & cr after tTargets
          end if
       end if
+   end repeat
+   set the itemDelimiter to tSaved
+   repeat for each line tTgt in tTargets
+      fireTarget tTgt
+      put true into tFired
    end repeat
    if not tFired then triggerSignal
 end fireEmitter
@@ -10165,12 +10214,14 @@ end checkGoals
 -- The payload parts a goal requires (wired from the goal with the Link tool);
 -- empty means "any movable part".
 function goalTargets pGoal
-   local tEdge, tList
+   local tEdge, tList, tSaved
+   put the itemDelimiter into tSaved
    set the itemDelimiter to tab
    put empty into tList
    repeat for each line tEdge in gWires
       if item 1 of tEdge is pGoal then put (item 2 of tEdge) & cr after tList
    end repeat
+   set the itemDelimiter to tSaved
    return tList
 end goalTargets
 
@@ -10362,11 +10413,16 @@ on refreshImagePanel
       else put empty into field "ui_img_empty"
       set the visible of field "ui_img_empty" to (the text of field "ui_img_empty" is not empty)
    end if
-   set the itemDelimiter to tab
+   -- The tab span is narrowed to the two item reads. makeAction builds
+   -- controls and sets their locs ("x,y"), and it used to run with tab still
+   -- set - so the panel was drawing rows through a delimiter that cannot
+   -- split a loc.
    repeat with tI = 1 to min(tN, 9)
+      set the itemDelimiter to tab
       put line tI of gAssets into tRec
       put item 3 of tRec into tName
       put item 2 of tRec into tShape
+      set the itemDelimiter to comma
       put tT + 96 + (tI - 1) * 34 into tRowY
       makeAction ("asset_" & tI), (tName & "   (" & tShape & ")"), tL + 18, tRowY, tW - 84, 28
       set the uImgMenu of button ("ui_act_asset_" & tI) to true

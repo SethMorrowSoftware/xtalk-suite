@@ -37,6 +37,11 @@ private command startDial pSocksPort
 end startDial
 
 on onStreamEvent pStream, pEvent, pData
+   -- PIN (2026-09-09): this handler is registered as a library callback, so the defaultStack is
+   -- whatever stack is in front when it runs, not this one. Every
+   -- unqualified control reference below, and in everything it calls,
+   -- resolves against that stack instead. Engine notes 5.3.
+   set the defaultStack to the short name of this stack
    if pEvent is "open" then
       -- The SOCKS tunnel is live. Send a minimal HTTP/1.0 request. Build CRLF as
       -- explicit bytes so the wire framing does not depend on the crlf constant,

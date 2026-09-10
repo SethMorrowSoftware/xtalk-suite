@@ -3448,8 +3448,45 @@ command qsStart
    put qsHasOnion() into sHasOnion
    put qsCanJson() into sHasJson
 
-   btStartSession
-   put the result into sSession
+   -- GUARDED (2026-09-09). btStartSession is a TorrentXT handler, not an
+   -- engine command, so with org.openxtalk.library.torrent absent - or an
+   -- ABI-skewed build that does not export it, whose recorded symptom in this
+   -- tree is a "can't find handler" on btRp1Enable - the engine raises and,
+   -- outside any try, that unwinds straight out of qsStart AND out of
+   -- openStack. Everything below was skipped: the status line, the sync
+   -- method, the onion pill, both poll arms, and back in openStack the carried
+   -- self-check boot record. The app came up as a built-but-dead window behind
+   -- a raw engine dialog, with no capability line to explain it.
+   --
+   -- The 2026-08-24 reordering above was written to stop exactly this class
+   -- ("a session failure cannot report itself as a missing extension"). It
+   -- fixed the ordering and left the call unguarded, so the HARDER failure -
+   -- TorrentXT absent rather than a session refused - still took the window.
+   --
+   -- THE CATCH MUST NOT FALL THROUGH to the branch below, and this is not
+   -- style: that branch calls btLastError(), which is itself a bt* handler, so
+   -- on the absent-extension path it would throw a SECOND time from inside the
+   -- recovery. Do not tidy these two into one.
+   local tStartErr
+   try
+      btStartSession
+      put the result into sSession
+   catch tStartErr
+      -- Handle it HERE and leave. Falling through to the branch below would
+      -- call btLastError(), which is another bt* handler and would throw a
+      -- second time on precisely this path. Same tail as that branch: paint
+      -- from the probes already taken, so the captions describe what IS
+      -- installed instead of defaulting to "missing".
+      put 0 into sSession
+      qsLog "TorrentXT did not load, so sharing and downloading are OFF:" && \
+            tStartErr
+      qsLog "This says nothing about your other extensions:" && \
+            qsCapabilityLine()
+      uiStatus "No transport: TorrentXT is not installed or did not load - see the log.", "bad"
+      qsSyncMethod
+      qsOnionPill
+      exit qsStart
+   end try
    if sSession is 0 or sSession is empty then
       qsLog "Could not start a session (is another No Cloud Quick Share stack open?):" && btLastError()
       qsLog "Sharing and downloading are OFF until that is resolved. This is a TorrentXT problem and says nothing about your other extensions:" && qsCapabilityLine()
@@ -4930,6 +4967,11 @@ end qsOnionTryTB
 -- OnionXT status callback (dispatched with pKind, pInfo). Coalesced bootstrap and
 -- event updates on the main thread. Keep it short - it runs on the shared thread.
 command qsOnionStatus pKind, pInfo
+   -- PIN (2026-09-09): this handler is registered as a library callback, so the defaultStack is
+   -- whatever stack is in front when it runs, not this one. Every
+   -- unqualified control reference below, and in everything it calls,
+   -- resolves against that stack instead. Engine notes 5.3.
+   set the defaultStack to the short name of this stack
    if pKind is "control" then
       if pInfo is "authenticated" then
          qsLog "Tor control connected - bootstrapping (this can take a minute)..."
@@ -5600,6 +5642,11 @@ end qsOnionPeer
 -- (HTTP). Anything else is junk from a local process and is dropped.
 command qsOnionServeStream pStream, pEvent, pData
    local tFirst, tCrlf2
+   -- PIN (2026-09-09): this handler is registered as a library callback, so the defaultStack is
+   -- whatever stack is in front when it runs, not this one. Every
+   -- unqualified control reference below, and in everything it calls,
+   -- resolves against that stack instead. Engine notes 5.3.
+   set the defaultStack to the short name of this stack
    if pEvent is "data" then
       if sActiveShare["stream"] is not pStream then
          exit qsOnionServeStream
@@ -5903,6 +5950,11 @@ end qsFsPeer
 -- arrived AND, if the head declares a Content-Length (a POST to a route), the whole
 -- body too. The kFsMaxReq cap bounds head + body together (abuse guard).
 command qsFsStream pStream, pEvent, pData
+   -- PIN (2026-09-09): this handler is registered as a library callback, so the defaultStack is
+   -- whatever stack is in front when it runs, not this one. Every
+   -- unqualified control reference below, and in everything it calls,
+   -- resolves against that stack instead. Engine notes 5.3.
+   set the defaultStack to the short name of this stack
    if pEvent is "data" then
       if sFsServed[pStream] is "true" then
          exit qsFsStream
@@ -8988,6 +9040,11 @@ command qsCwAccept pSocketID
 end qsCwAccept
 
 command qsCwData pSocketID, pData
+   -- PIN (2026-09-09): this handler is named by `with message`, so the defaultStack is
+   -- whatever stack is in front when it runs, not this one. Every
+   -- unqualified control reference below, and in everything it calls,
+   -- resolves against that stack instead. Engine notes 5.3.
+   set the defaultStack to the short name of this stack
    if sCwServed[pSocketID] is empty then
       exit qsCwData            -- not one of ours (or already cleaned up)
    end if
@@ -9184,6 +9241,11 @@ command qsCwPump pSocketID
 end qsCwPump
 
 command qsCwWrote pSocketID
+   -- PIN (2026-09-09): this handler is named by `with message`, so the defaultStack is
+   -- whatever stack is in front when it runs, not this one. Every
+   -- unqualified control reference below, and in everything it calls,
+   -- resolves against that stack instead. Engine notes 5.3.
+   set the defaultStack to the short name of this stack
    if sCwTxPath[pSocketID] is empty then
       exit qsCwWrote           -- already finished/cleaned
    end if
@@ -9275,6 +9337,11 @@ command qsCwWriteContinue pSocketID, pBytes
 end qsCwWriteContinue
 
 command qsCwWroteContinue pSocketID
+   -- PIN (2026-09-09): this handler is named by `with message`, so the defaultStack is
+   -- whatever stack is in front when it runs, not this one. Every
+   -- unqualified control reference below, and in everything it calls,
+   -- resolves against that stack instead. Engine notes 5.3.
+   set the defaultStack to the short name of this stack
    put "false" into sCwWriting[pSocketID]
    qsCwNext pSocketID
 end qsCwWroteContinue
@@ -9581,6 +9648,11 @@ end qsCwFetchPublicIp
 
 command qsCwIpReply pUrl, pStatus
    local tIp, tErr, tSavedID, tOk
+   -- PIN (2026-09-09): this handler is named by `with message`, so the defaultStack is
+   -- whatever stack is in front when it runs, not this one. Every
+   -- unqualified control reference below, and in everything it calls,
+   -- resolves against that stack instead. Engine notes 5.3.
+   set the defaultStack to the short name of this stack
    if pStatus is not "cached" then
       try
          unload URL pUrl
@@ -9702,6 +9774,11 @@ end qsReceiveOnion
 -- Receiver's per-stream handler: send the request on open, feed data to the state
 -- machine, abort a partial transfer on close/error.
 command qsOnionRecvStream pStream, pEvent, pData
+   -- PIN (2026-09-09): this handler is registered as a library callback, so the defaultStack is
+   -- whatever stack is in front when it runs, not this one. Every
+   -- unqualified control reference below, and in everything it calls,
+   -- resolves against that stack instead. Engine notes 5.3.
+   set the defaultStack to the short name of this stack
    if pEvent is "open" then
       oxWrite pStream, kOnionMagic
       put the milliseconds into sRxDeadline[pStream]

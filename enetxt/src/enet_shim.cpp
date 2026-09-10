@@ -502,6 +502,33 @@ extern "C" ENX_API int ENX_CALL enx_disconnect(int peer, int data) {
             return ENX_ERR_STALE;
         }
         enet_peer_disconnect(ref->peer, static_cast<enet_uint32>(data));
+        /* RETIRE THE HANDLE WHEN NO EVENT CAN EVER ARRIVE (2026-09-09).
+         *
+         * The comment above says the handle retires when OUR E_DISCONNECT is
+         * drained. That is only true from two states. Read from enet 1.3.18
+         * peer.c rather than recalled: enet_peer_disconnect returns doing
+         * NOTHING when the peer is already DISCONNECTING / DISCONNECTED /
+         * ACKNOWLEDGING_DISCONNECT / ZOMBIE; it queues the acknowledged
+         * command and moves to DISCONNECTING only from CONNECTED or
+         * DISCONNECT_LATER; and from EVERY OTHER state - CONNECTING, which is
+         * exactly where enx_connect leaves a peer - it takes the else branch,
+         * enet_host_flush + enet_peer_reset, which queues no event at all and
+         * sets the state to DISCONNECTED.
+         *
+         * So an app that gives up on a connection while it is still
+         * "connecting" leaked the handle forever: no event, no retire, and the
+         * ENet-side backlink left pointing at a slot nobody frees.
+         *
+         * Testing the POST-call state settles it in one condition, and is why
+         * this is placed after rather than before: DISCONNECTED means either
+         * the peer was reset here or the call was a no-op on an already-dead
+         * peer - both mean nothing is owed. Anything else (DISCONNECTING,
+         * ACKNOWLEDGING_DISCONNECT, ZOMBIE) still owes an event, and the drain
+         * retires it there. retire_peer is idempotent, so a race with the
+         * drain is harmless. */
+        if (ref->peer->state == ENET_PEER_STATE_DISCONNECTED) {
+            retire_peer(peer);
+        }
         return ENX_OK;
     });
 }

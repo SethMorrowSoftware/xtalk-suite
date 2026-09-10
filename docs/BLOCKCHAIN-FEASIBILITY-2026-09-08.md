@@ -16,6 +16,40 @@ Where the verification pass contradicts the survey, the verification wins and
 the finding is marked **[CORRECTED]**. Claims that could not be resolved from
 the tree are marked UNVERIFIED and are collected in section 6.
 
+> **WHAT HAS CLOSED SINCE THIS WAS COMPILED (struck 2026-09-09).** A snapshot
+> is only honest if it is struck as items close, and this one's own defect list
+> was acted on immediately. **Every defect named in section 3 as a thing to fix
+> has been fixed and pushed** (PR #132), so read those items as the REASONING
+> behind a change rather than as open work:
+>
+> - **item 6 (no atomic write)** and **item 8 (no database)** stand unchanged.
+> - **item 7, riptide's missing read-side watermark** - CLOSED. `rsIngestHead`
+>   now requires a reader watermark and fails closed on an omitted one, and the
+>   dead `headseq` write has a reader. The u64 bound that came with it exposed
+>   two further defects this document did not know about: a partial sweep that
+>   INVERTED riptide's BTXO 8 GiB ceiling, and thirteen call sites where the
+>   report said ten.
+> - **item 9, the unbounded rp1 queue** - CLOSED IN SOURCE, bounded with
+>   datachannelxt's tail-drop policy. The committed binaries do not carry it
+>   until a release dispatch runs (`REMAINING-WORK` C.0), and two more shim
+>   leaks were found beside it (`enx_disconnect`, `cb_data_channel`).
+> - **item 13, the BEP44 bencode overshoot** - CLOSED, and WIDER than recorded
+>   here: the same off-by-the-bencoding was in riptide's own `kRsMaxRecord`,
+>   not only in the shim. 1000 raw -> 996 in both layers.
+> - **item 16, `lcs-interp.py`'s arbitrary-precision blind spot** - CLOSED. It
+>   refuses past 2^53 now, and it earned its keep within a day by finding an
+>   unbounded 8-byte accumulator in coinxt's shipped wallet.
+>
+> Three defects this document did not find were found afterwards by an
+> adversarial sweep over the same tree and are also fixed: a signature-domain
+> COLLISION on riptide's LAN rail (one tag was a strict prefix of another, so
+> an admission signature was also a valid sync signature), `oxWrite` discarding
+> every socket write result, and holde-em's wire signatures covering a PREFIX
+> of a line the transcript chain hashed whole. **That this document's own
+> survey missed all three is the most useful thing it says about its own
+> reliability**, and section 7's "the measurement gap is the dominant risk"
+> should be read next to it.
+
 ---
 
 ## 1. The bottom line
@@ -276,6 +310,9 @@ the crash window. And the runbook's persist-then-restart leg is still open:
 own state back.**
 
 **7. No reader-side monotonicity on the DHT rail, and it is a live defect.**
+**[CLOSED 2026-09-09 - `rsIngestHead` now requires a reader watermark and fails
+closed on an omitted one; the dead `headseq` write has a reader. Kept for the
+reasoning.]**
 Verified in code: `rsIngestHead` (`riptide/src/riptide.livecodescript`) checks
 handle, salt, sequence self-agreement and signature, and nothing else; its own
 comment defers replay protection to "the app's replay protection", and the app
@@ -289,7 +326,10 @@ sites touch it. Persistence is whole-blob `arrayEncode` or
 `put ... into url("binfile:")`. No index, no cursor, no range scan, no
 transaction.
 
-**9. The rp1 inbound queue is unbounded.** Verified: `push_event` is a bare
+**9. The rp1 inbound queue is unbounded.**
+**[CLOSED IN SOURCE 2026-09-09 - bounded with tail-drop and a shed counter. The
+committed binaries do not carry it until a release dispatch runs; see
+`REMAINING-WORK` C.0.]** Verified: `push_event` is a bare
 `events.push_back` under a mutex (`torrentxt/src/torrent_shim.cpp`), fed from
 libtorrent's network threads, while the drain moves at most 65536 bytes per
 poll. At the shipped 250 ms cadence that is roughly 262 KB/s of drain against a
@@ -364,7 +404,8 @@ this suite already does.
 ### Tier 4: the gate that cannot see the bug class
 
 **16. `coinxt/tools/lcs-interp.py` models integers at Python's arbitrary
-precision.** Verified: `_n()` returns `int(f)` for any integral value, and
+precision.** **[CLOSED 2026-09-09 - it refuses past 2^53 now, and found a real
+unbounded accumulator in the shipped wallet within a day. Engine notes 2.4.]** Verified: `_n()` returns `int(f)` for any integral value, and
 integer literals parse to Python `int`. The engine has IEEE doubles, exact only
 to 2^53. The interpreter's own contract says "stricter-than-engine is acceptable
 and documented; looser is a bug", and this divergence is looser and is not in its
@@ -515,10 +556,16 @@ fixes.
 - Clamp `lcs-interp.py`'s arithmetic to double precision in all three
   drift-gated copies, add the divergence to its named list, and triage whatever
   shipped script the clamp newly flags.
-- Fix the three verified defects independently of everything else: riptide's
+- ~~Fix the three verified defects independently of everything else: riptide's
   missing high-water mark, the unbounded rp1 deque (copy datachannelxt's
   tail-drop-and-count policy verbatim and map `alerts_dropped_alert`), and the
-  BEP44 bencode overshoot.
+  BEP44 bencode overshoot.~~ **DONE 2026-09-09** (PR #132), and doing them
+  independently of everything else was the right call for a reason this plan
+  did not anticipate: each one uncovered a defect next to it that no survey had
+  named. The clamp above is what made the wallet's unbounded accumulator
+  visible; the watermark's u64 bound exposed an INVERTED ceiling in riptide's
+  BTXO reader; the BEP44 fix turned out to be needed in two layers, not one.
+  `alerts_dropped_alert` is still unmapped and still worth doing.
 
 Falsifies: "we know what this runtime costs" (nobody does), "chunk indexing is
 O(1)" (unknown, and if it is O(N) then every byte loop in the suite is quadratic

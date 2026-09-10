@@ -18,10 +18,30 @@ WHY THIS EXISTS
     than a fix.
 
 WHAT IT CHECKS
-    A handler armed by `send ... to me in ...` must pin the defaultStack if
-    anything REACHABLE from it touches an unqualified control. The pin is
+    A handler the ENGINE (or a library) calls LATER must pin the defaultStack
+    if anything REACHABLE from it touches an unqualified control. The pin is
     `set the defaultStack to the short name of this stack` - holde-em's idiom,
     engine-proven there, whose own comment names this hazard.
+
+    THREE ENTRY CLASSES, and the second and third were added 2026-09-09
+    because the scan had only ever known the first:
+      1. `send ... to me in ...`.
+      2. Engine socket / URL callbacks - the name in `with message "X"` on a
+         read/write/open socket or load URL, plus socketError / socketClosed /
+         socketTimeout where the file defines one.
+      3. Library-dispatched callbacks - the names handed to oxSetStreamCallback
+         / oxSetStatusCallback / oxSetPeerCallback / nxrSetCallback / oxhRoute,
+         which onionxt's oxDispatch, nostr-relay's nxrDispatch and onion-httpd's
+         oxhHandle deliver with `dispatch <variable>` from inside a socket
+         callback - so the name appears at NO call site the closure can follow.
+
+    The rule was always about DELIVERY, not about `send`: a handler called back
+    later has no defaultStack guarantee whatever put it in the queue. Knowing
+    only class 1 left 24 chains across 9 files invisible, in exactly the code
+    most likely to hit the hazard - inbound socket handlers in apps that also
+    open other stacks. The gate reported OK over all 24 for as long as it had
+    existed. Every finding now names WHICH class delivered the handler, so the
+    message cannot claim a `send` that is not there.
 
     "Reachable" is a closure over the handlers defined in the SAME FILE, plus
     the ui* kit master. The first version knew about ONE carried block - the ui
@@ -81,6 +101,32 @@ BLOCK_END = re.compile(r'^end\s+(if|repeat|switch|try)\b', re.I)
 END_ANY = re.compile(r'^end\s+(\w+)')
 # both spellings: send "name" to me in ... / send ("name" && ...) to me in ...
 ARMED = re.compile(r'send\s+\(?\s*"(\w+)"[^\n]*?\bto\s+me\s+in\b')
+
+# THE OTHER TWO WAYS A HANDLER ARRIVES DELAYED (added 2026-09-09).
+#
+# The rule this gate holds is about DELIVERY, not about `send`: a handler the
+# ENGINE calls later has no guarantee about the defaultStack, so an unqualified
+# control reference in it resolves against whatever stack happens to be in
+# front. `send ... to me in` was the only entry class the scan knew, so two
+# equally-delayed classes were invisible to it and the gate reported OK over
+# them for as long as it has existed.
+#
+# 1. ENGINE SOCKET / URL CALLBACKS. `read from socket ... with message "X"`,
+#    `write ... with message "X"`, `open socket ... with message "X"`,
+#    `load URL ... with message "X"` - the engine calls X later, from its own
+#    loop. Plus the three socket messages the engine delivers by name.
+WITHMSG = re.compile(r'with\s+message\s+\(?\s*"(\w+)"')
+SOCKET_MSGS = {"socketError", "socketClosed", "socketTimeout"}
+
+# 2. LIBRARY-DISPATCHED CALLBACKS. An app hands a handler NAME to one of these
+#    registrars, and the library delivers it with `dispatch <variable>` from
+#    inside a socket callback - so the closure cannot follow it and the name
+#    never appears at a call site at all. Take every quoted word on a
+#    registration line and keep the ones that name a handler in THIS file;
+#    "GET" and "/" filter themselves out by not being handler names.
+REGISTRAR = re.compile(r'\b(?:oxSetStreamCallback|oxSetStatusCallback'
+                       r'|oxSetPeerCallback|nxrSetCallback|oxhRoute)\b[^\n]*')
+QUOTED = re.compile(r'"(\w+)"')
 CTRL = re.compile(r'\b(field|button|graphic|image|scrollbar|player)\s+'
                   r'("[^"]*"|\w+)(?!\s+of\b)')
 PIN = "defaultStack"
@@ -141,11 +187,28 @@ def main(argv):
         if rel.startswith(".git"):
             continue
         raw = open(path, encoding="utf-8", errors="replace").read()
-        armed = set(ARMED.findall(raw))     # RAW: see the header
-        if not armed:
+        # RAW (not noise-stripped): see the header. Each entry carries WHY it
+        # is delayed, so the finding can name the real delivery path instead of
+        # claiming everything arrives from `send ... in`.
+        entries = {}
+        for n in ARMED.findall(raw):
+            entries.setdefault(n, "is armed by `send ... to me in`")
+        for n in WITHMSG.findall(raw):
+            entries.setdefault(n, "is named by `with message` and is called "
+                                  "later by the ENGINE")
+        for line in REGISTRAR.findall(raw):
+            for n in QUOTED.findall(line):
+                entries.setdefault(n, "is registered as a library callback and "
+                                      "is delivered by `dispatch`")
+        if not entries:
             continue
         nfiles += 1
         bodies = handler_bodies(strip_noise(raw))
+        # The engine's own socket messages, only where this file defines one.
+        for n in SOCKET_MSGS:
+            if n in bodies:
+                entries.setdefault(n, "is an engine socket message delivered "
+                                      "by the ENGINE")
         # one tokenise per body, intersected with the file's own handler names:
         # a name-by-name regex sweep is quadratic and this file walks a 36k-line
         # generated harness.
@@ -154,32 +217,34 @@ def main(argv):
                     for n, b in bodies.items()}
         unpinned = {n for n, b in bodies.items()
                     if CTRL.search(b) and PIN not in b}
-        for h in sorted(armed):
+        for h in sorted(entries):
             body = bodies.get(h)
             if body is None:
                 continue
             narmed += 1
             if PIN in body:
                 continue
+            how = entries[h]
             own = CTRL.search(body)
             if own:
-                findings.append((rel, h, f"touches {own.group(0).strip()!r} "
+                findings.append((rel, h, how, f"touches {own.group(0).strip()!r} "
                                  "unqualified"))
                 continue
             hit = reaches_unpinned(h, bodies, mentions, unpinned)
             if hit and len(hit) > 1:
-                findings.append((rel, h, "reaches " + " -> ".join(hit[1:])
+                findings.append((rel, h, how, "reaches " + " -> ".join(hit[1:])
                                  + ", which touches a control unqualified "
                                  "and does not pin"))
                 continue
             for k in sorted(kit_unpinned):
                 if re.search(r'\b' + k + r'\b', body):
-                    findings.append((rel, h, f"calls {k}, which touches a control "
+                    findings.append((rel, h, how,
+                                     f"calls {k}, which touches a control "
                                      "unqualified and does not pin"))
                     break
 
-    for rel, h, why in findings:
-        print(f"{rel}: {h}() is armed by `send ... to me in` and {why}.\n"
+    for rel, h, how, why in findings:
+        print(f"{rel}: {h}() {how} and {why}.\n"
               "    Add: set the defaultStack to the short name of this stack")
     if findings:
         print(f"check-timer-stack-pin: {len(findings)} finding(s)")

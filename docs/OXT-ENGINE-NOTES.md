@@ -259,6 +259,42 @@ digits - which is the no-big-integer discipline coinxt already writes down.
 Bound every wide decoder at its parse site rather than after the arithmetic,
 because after it there is nothing left to detect.
 
+### 2.5 `and` and `or` evaluate BOTH operands - there is no short-circuit
+**DOCUMENTED for the evaluation rule itself; the two CONSEQUENCES below differ
+in class and the difference is the whole entry.** No engine run has been made
+that isolates the rule, but coinxt has now hit it at eight separate sites and
+`tools/lcs-interp.py` models it explicitly (`p_or` computes the right operand
+unconditionally), so it is the working assumption throughout the tree.
+
+A type guard therefore CANNOT sit in the same expression as the thing it
+guards. `if X is not an integer or X < 1` runs `X < 1` even when X is not an
+integer, and `if not isDigits(X) or X + 0 < 1` runs `X + 0` even when the digit
+test already said no.
+
+**What happens next depends on what the second operand does, and the two are
+not the same severity:**
+
+- **A COMPARISON folds to a TEXT comparison.** `X < 1` on non-numeric X does
+  not error on the engine - it compares as text and answers something. A wrong
+  answer, silently, which is the harder one to notice. (This is also where the
+  interpreter is STRICTER than the engine: it refuses, so the gate reports a
+  failure the engine would not have.)
+- **ARITHMETIC IS A HARD ERROR.** `X + 0` on non-numeric X is the same class as
+  `add "cx1sPassed" to sPassed` in 2.1 - "error in source expression",
+  OBSERVED. In a library whose contract is never to throw, that is an uncaught
+  engine error reaching the app, on the thread that also draws the UI.
+
+Found in nostrxt on 2026-09-09 at three sites written as
+`if not nxIsDigits(X) or X + 0 <op> ...`, one of them (`nxJsonPathNode`)
+reachable straight from relay bytes - so a single malformed message from a
+hostile relay was an uncaught throw. coinxt's own record (`coinxt/CLAUDE.md`)
+has the same shape five times over, twice written by someone who had just
+finished documenting the previous one.
+
+**Rule:** nest the guard. `if not guard(X) then refuse` as its own `if`, then
+the arithmetic or comparison in a second `if`. Never rely on the left operand
+to protect the right one - nothing does.
+
 ---
 
 ## 3. Control flow

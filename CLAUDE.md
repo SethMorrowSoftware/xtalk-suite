@@ -421,7 +421,26 @@ the lesson: asking only "does this call an unpinned `ui*` handler?" was a check
 for the bug already found. As a closure it named 40 unpinned timer chains across
 15 files, every demo's own log/refresh/status helper reached from its poll tick;
 all 33 distinct handlers are pinned at the timer ENTRY POINT, where one line
-covers everything downstream. **`tools/sync-demo-embeds.py` / `tools/test-demo-embeds.py`** are the
+covers everything downstream. **AND IT WAS WIDENED AGAIN ON 2026-09-09, along
+the other axis, which is the one that had been wrong from the start.** The 2026-08-20
+pass widened what "reachable" means and left the ENTRY SET a single regex for
+`send ... to me in` - but the rule is about DELIVERY, not about `send`: a
+handler the engine calls back later has no defaultStack guarantee whatever put
+it in the queue. Two whole classes were therefore invisible: engine socket and
+URL callbacks (the name in `with message "X"`, plus `socketError` /
+`socketClosed` / `socketTimeout`), and library-dispatched callbacks (the names
+handed to `oxSetStreamCallback` / `nxrSetCallback` / `oxhRoute` and friends,
+which the libraries deliver with `dispatch <variable>` from inside a socket
+callback - so the name appears at NO call site a closure can follow). That was
+**24 more unpinned chains across 9 files**, in exactly the code most likely to
+hit the hazard: inbound socket handlers in apps that also open other stacks. The
+scan now covers 298 delayed handlers across 37 files, and each finding names
+WHICH class delivered the handler, because a message claiming a `send` that is
+not there is how a reader decides the gate is confused and stops reading it.
+**Both widenings have the same moral and it is worth stating once: a gate is
+bounded by the question it asks, and the tempting question is always the one
+that describes the bug you already found.**
+**`tools/sync-demo-embeds.py` / `tools/test-demo-embeds.py`** are the
 paragraph above; the fixtures exist because that tool's collision detector
 shipped blind - it required the remainder of a declaration line to be a bare
 identifier, so a `local` with a trailing comment was invisible to it and a

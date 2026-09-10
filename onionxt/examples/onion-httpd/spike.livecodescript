@@ -3159,6 +3159,11 @@ on preOpenStack
 end preOpenStack
 
 on onStatus pKind, pInfo
+   -- PIN (2026-09-09): this handler is registered as a library callback, so the defaultStack is
+   -- whatever stack is in front when it runs, not this one. Every
+   -- unqualified control reference below, and in everything it calls,
+   -- resolves against that stack instead. Engine notes 5.3.
+   set the defaultStack to the short name of this stack
    if pKind is "control" then
       if pInfo is "authenticated" then
          demoLog "control authenticated - now click 'Share Folder' and pick a folder"

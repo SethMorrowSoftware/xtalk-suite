@@ -428,6 +428,40 @@ knockdown over 3 levels — the physics core carrying a whole game with zero eve
 the **self-test harness** (below). (The single-screen micro-game was retired in Wave 5; its "whole game
 from the physics core" pattern survives only as `kit-guide` section 20 prose.)
 
+## Ten Kit handlers read "x,y" with whatever delimiter the caller left (2026-09-09)
+
+This member's own gotcha 5 says it: "Set the delimiter immediately before
+parsing - never assume its current value." Ten public Kit handlers did assume
+it. `b2kAddBox`, `b2kAddBall`, `b2kAddCapsule`, `b2kAddPolygon`, `b2kReshape`,
+`b2kHinge`, `b2kWeld`, `b2kSlider`, `b2kWheel` and `b2kDrawPoly` all split a
+loc or an anchor with `item` and none of them set the delimiter first, while
+20+ other sites in the same file do.
+
+What makes it more than theoretical is that the consequence is not a wrong
+number. `item 1 of the loc of pControl` under a tab delimiter returns the WHOLE
+"512,246", and that goes straight into a Number-typed `.lcb` parameter - which
+is a hard runtime throw, not a coercion (engine notes 6.4).
+
+And the contraption builder had a live trigger for it, one call chain deep:
+`placeAssetInstance` set the delimiter to tab, never restored it, and returned
+`spawnImageFrom(...)`, which sets a control's loc to "512,246" and calls
+`b2kAddBox`. Clicking a row in the Images panel was enough.
+
+Fixed on both sides, which is deliberate. The Kit now sets comma first in all
+ten (the file's existing idiom, and what gotcha 5 asks for), so it no longer
+depends on its caller. And eight handlers in the demo that leaked a non-comma
+delimiter now save and restore around the narrowest span - including two the
+first pass missed, `serializeText` (which OPENS by setting comma and warning
+"never assume the caller left it at comma", then left tab set for everyone
+downstream) and `refreshImagePanel`.
+
+Two of those needed more than a restore at the end, because they made outward
+calls while the delimiter was borrowed: `fireEmitter` called `fireTarget` from
+inside its tab loop (it collects targets, restores, then fires - same targets,
+same order), and `refreshImagePanel` called `makeAction`, which builds controls
+and sets their locs, from inside its own. A restore at the end would have left
+both bugs in place while looking fixed.
+
 ## The golden rule: the embedded-Kit sync
 
 The example stacks are **deliberately self-contained** — you paste the whole `.livecodescript`
