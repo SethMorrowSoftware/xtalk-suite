@@ -54,7 +54,7 @@ constant kAbiEnet = 2
 -- datachannelxt/src/dcx_abi.h (DCX_ABI_VERSION), cross-checked against datachannelxt/src/datachannel.lcb
 constant kAbiDc = 1
 -- coinxt/native/coinxt.c (CNX_ABI_VERSION), cross-checked against coinxt/src/coinxt.lcb
-constant kAbiCoin = 6
+constant kAbiCoin = 7
 -- box2dxt/src/box2d_lc.c (LC_ABI_VERSION), cross-checked against box2dxt/src/box2dxt.lcb
 constant kAbiBox2d = 4
 

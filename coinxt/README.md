@@ -100,7 +100,7 @@ CoinXT/
     api-reference.md        the cx* handlers that EXIST today (contrast SPEC.md, which describes
                             the whole designed API including phases not yet built)
   src/
-    coinxt.lcb              the foreign-handler module (binds to all 43 cnx_* exports, ABI 6);
+    coinxt.lcb              the foreign-handler module (binds to all 44 cnx_* exports, ABI 7);
                             engine-proven end to end: phase 1 closed 2026-08-08, phases 2-4
                             closed 2026-08-10 (the folded harness, 207/207 on the re-run)
     coinxt.livecodescript   the phase-3 script layer: hex, Base58Check, bech32/bech32m, RLP
@@ -108,8 +108,8 @@ CoinXT/
                             message path (`start using stack "coinxt"`)
   tests/
     coin-selftest.livecodescript  the OXT runtime harness: paste into a stack script, it builds
-                            its own UI and drives ALL 94 public cx* handlers against the
-                            published vectors (43 from the .lcb, 51 from the script layer);
+                            its own UI and drives ALL 95 public cx* handlers against the
+                            published vectors (44 from the .lcb, 51 from the script layer);
                             the suite's tools/check-suite-coverage.py is what reads 94/94
   tools/
     coin-kat.py             known-answer vectors (builds the shim headless, drives it via ctypes)

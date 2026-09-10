@@ -114,6 +114,7 @@ def wire_signing(lib):
         ("cnx_schnorr_verify", [B, S, B, S, B, S]),
         ("cnx_xonly_pubkey_from_seckey", [B, S, B, S]),
         ("cnx_taproot_tweak_seckey", [B, S, B, S, B, S]),
+        ("cnx_pubkey_combine", [B, S, B, S]),
     ):
         f = getattr(lib, fn)
         f.restype = ctypes.c_int
@@ -172,6 +173,8 @@ def wire_signing(lib):
                                "cxXOnlyPubkey"),
         "cxtaproottweakseckey": fixed("cnx_taproot_tweak_seckey", 2, 32,
                                       "cxTaprootTweakSeckey"),
+        # ABI 7: point addition, one Data of 33-byte keys in, 33 bytes out
+        "cxpubkeycombine": fixed("cnx_pubkey_combine", 1, 33, "cxPubkeyCombine"),
         "cxverify": boolean("cnx_ecdsa_verify", "cxVerify"),
         "cxschnorrverify": boolean("cnx_schnorr_verify", "cxSchnorrVerify"),
         "cxsignaturelen": lambda a: 64,

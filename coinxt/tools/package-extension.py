@@ -100,6 +100,8 @@ EXPECTED_EXPORTS = [
     "cnx_schnorr_sign", "cnx_schnorr_verify", "cnx_xonly_pubkey_from_seckey",
     "cnx_taproot_tweak_pubkey", "cnx_taproot_tweak_seckey",
     "cnx_schnorr_sig_len", "cnx_xonly_pubkey_len", "cnx_taproot_output_len",
+    # ABI 7: point addition, for BIP-352 silent payment receiving
+    "cnx_pubkey_combine",
 ]
 
 

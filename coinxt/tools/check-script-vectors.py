@@ -340,6 +340,21 @@ def wire_hashes(lib):
     LCS.HASHES["cxtaproottweakpubkey"] = taproottweakpubkey
     LCS.HASHES["cxxonlypubkeylen"] = lambda _args: lib.cnx_xonly_pubkey_len()
 
+    # ---- ABI 7: point addition, for BIP-352 receiving -----------------------
+    lib.cnx_pubkey_combine.restype = ctypes.c_int
+    lib.cnx_pubkey_combine.argtypes = [ctypes.c_char_p, ctypes.c_size_t,
+                                       ctypes.c_char_p, ctypes.c_size_t]
+
+    def pubkeycombine(args):
+        keys = to_bytes(args[0])
+        out = ctypes.create_string_buffer(33)
+        rc = lib.cnx_pubkey_combine(keys if keys else None, len(keys), out, 33)
+        if rc != 0:
+            raise LCS.Thrown(f"CoinXT: cxPubkeyCombine: status {rc}")
+        return to_str(out.raw[:33])
+
+    LCS.HASHES["cxpubkeycombine"] = pubkeycombine
+
     LCS.HASHES["cxhmacsha512"] = hmac512
     LCS.HASHES["cxpbkdf2hmacsha512"] = pbkdf2
     LCS.HASHES["cxpublickey"] = publickey

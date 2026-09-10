@@ -171,7 +171,7 @@ metadata summary is "Bitcoin and Ethereum cryptography for xTalk via trezor-cryp
 -- be refused with a legible error, not discovered at the first missing bind.
 -- Declared before first use - OXT resolves a constant by lexical position, and
 -- a forward reference silently evaluates to nothing.
-constant kABIVersion is 6
+constant kABIVersion is 7
 
 -- The largest PBKDF2 iteration count this binding will marshal. The shim takes
 -- a uint32_t, so 2^32-1 would technically fit, but 2^31-1 is the largest value
@@ -346,6 +346,16 @@ private foreign handler _cnx_taproot_tweak_seckey(in pSk as Pointer, in pSkLen a
 private foreign handler _cnx_schnorr_sig_len() returns UIntSize binds to "c:coinxt>cnx_schnorr_sig_len"
 private foreign handler _cnx_xonly_pubkey_len() returns UIntSize binds to "c:coinxt>cnx_xonly_pubkey_len"
 private foreign handler _cnx_taproot_output_len() returns UIntSize binds to "c:coinxt>cnx_taproot_output_len"
+
+-- --------------------------------------------------------------------------
+-- ABI 7: point addition (2026-09-10).
+--
+-- One buffer of n compressed keys in, the compressed sum out. The count is the
+-- Data's length divided by 33, which is why the input is ONE Data and not a
+-- list: a Data is a pointer and a length, the same shape as every in-buffer
+-- above, so nothing new has to be true about marshalling for this to work.
+-- --------------------------------------------------------------------------
+private foreign handler _cnx_pubkey_combine(in pKeys as Pointer, in pKeysLen as UIntSize, in pOut as Pointer, in pOutLen as UIntSize) returns CInt binds to "c:coinxt>cnx_pubkey_combine"
 
 -- --------------------------------------------------------------------------
 -- Private helpers. Each wraps its foreign call(s) in `unsafe`, so the public
@@ -1091,6 +1101,37 @@ public handler cxPubkeyTweakAdd(in pPubkey as Data, in pTweak as Data) returns D
       put _cnx_pubkey_tweak_add(tPubPtr, tPubLen, tTweakPtr, tTweakLen, tOut, tLen) into tStatus
    end unsafe
    return sFinish("cxPubkeyTweakAdd", tOut, tStatus, tLen)
+end handler
+
+-- ABI 7: the compressed SUM of n compressed public keys - point addition,
+-- which is the one curve operation BIP-352 silent payment RECEIVING needs
+-- and nothing above provided (ECDH, the two tweak-adds and decompression are
+-- all "a point and a scalar"). pKeys is the 33-byte keys concatenated, n >= 1;
+-- returns 33 bytes.
+--
+-- The whole set is summed at once, so an INTERMEDIATE sum that is the point
+-- at infinity is fine as long as the final one is not - BIP-352's own vector
+-- "intermediate sum is zero but final sum is non-zero" is that case. A FINAL
+-- sum at infinity throws (it has no x coordinate; a receiver skips such a
+-- transaction), as does a key that does not parse, a length that is not a
+-- multiple of 33, and an empty set.
+public handler cxPubkeyCombine(in pKeys as Data) returns Data
+   variable tLen as Integer
+   variable tOut as Pointer
+   variable tKeysPtr as Pointer
+   variable tKeysLen as Integer
+   variable tStatus as Integer
+   sPrepare()
+   put sDataLen(pKeys) into tKeysLen
+   put sDataPtr(pKeys) into tKeysPtr
+   unsafe
+      put _cnx_pubkey_len_compressed() into tLen
+   end unsafe
+   put sAlloc(tLen) into tOut
+   unsafe
+      put _cnx_pubkey_combine(tKeysPtr, tKeysLen, tOut, tLen) into tStatus
+   end unsafe
+   return sFinish("cxPubkeyCombine", tOut, tStatus, tLen)
 end handler
 
 -- The normative BIP-39 English wordlist as 2048 fixed-width 8-byte slots, each

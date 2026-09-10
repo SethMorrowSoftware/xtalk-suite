@@ -21540,6 +21540,17 @@ command cx1stRunCurveKeys
       cx1stAssert "a zero tweak is refused on the private path", cx1stThrows2("cxSeckeyTweakAdd", cx1tSk, cx1stRepeatByte(0, 32))
       cx1stAssert "a zero tweak is refused on the public path", cx1stThrows2("cxPubkeyTweakAdd", cx1tPubC, cx1stRepeatByte(0, 32))
       cx1stAssert "a wrong-length tweak is refused", cx1stThrows2("cxSeckeyTweakAdd", cx1tSk, cx1stRepeatByte(1, 31))
+      -- ABI 7 (2026-09-10): point addition. G + G must land where the tweak
+      -- of G by 1 landed (the other vendored library's answer), G + (-G) is
+      -- the point at infinity and is refused, and an INTERMEDIATE infinity
+      -- inside a larger sum is not - BIP-352's receiving vectors need that
+      -- distinction, and a pairwise fold would get it wrong.
+      cx1stAssert "cxPubkeyCombine of G and G is 2G", cx1stHex(cxPubkeyCombine(cx1tPubC & cx1tPubC)) is cx1kPubTwoCompressed
+      cx1stAssert "cxPubkeyCombine of one key is that key", cx1stHex(cxPubkeyCombine(cx1tPubC)) is cx1kPubOneCompressed
+      cx1stAssert "G + (-G) + 2G is 2G: an intermediate infinity is fine", cx1stHex(cxPubkeyCombine(cx1tPubC & (numToByte(3) & byte 2 to 33 of cx1tPubC) & cxPubkeyTweakAdd(cx1tPubC, cx1tSk))) is cx1kPubTwoCompressed
+      cx1stAssert "G + (-G) is the point at infinity and is refused", cx1stThrows("cxPubkeyCombine", cx1tPubC & (numToByte(3) & byte 2 to 33 of cx1tPubC))
+      cx1stAssert "a length that is not a multiple of 33 is refused", cx1stThrows("cxPubkeyCombine", cx1tPubC & byte 1 to 32 of cx1tPubC)
+      cx1stAssert "an empty key set is refused", cx1stThrows("cxPubkeyCombine", empty)
    catch cx1tError
       cx1stSectionFailed "secp256k1 keys", cx1tError
    end try

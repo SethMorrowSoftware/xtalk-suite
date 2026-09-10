@@ -80,7 +80,7 @@ any more except SHA3-512 and SLIP-39.
 > the full decision, its cost (an ABI bump plus a four-platform binary refresh) and the condition
 > for revisiting it are in that section. SLIP-39 remains a later phase.
 >
-> Nothing else in this file is in that position: every one of the 94 shipped `cx*` handlers is
+> Nothing else in this file is in that position: every one of the 95 shipped `cx*` handlers is
 > documented here, and `tools/check-doc-handlers.py` holds both directions - a shipped handler that
 > never reaches this page, and a `cx*` name in these docs that no handler defines, each fail the
 > build.
@@ -115,11 +115,12 @@ extension is not installed or did not load.
 - **Errors throw.** A failure raises a string beginning `"CoinXT:"` and naming the handler.
   There is no error-code return and no partial result. Catch with `try ... catch tError`.
 - **Every call re-checks the ABI.** Each handler begins by verifying the loaded library
-  reports ABI 6, and throws if not, so a mismatched library cannot silently produce garbage.
+  reports ABI 7, and throws if not, so a mismatched library cannot silently produce garbage.
   (ABI 5, 2026-08-16, was an internal secret-hygiene change that added no public handler.
-  ABI 6, the same day, added the BIP-340 / BIP-341 surface. Both bumps are additive - no
-  shipped symbol was renamed or changed shape - but the version moves on ANY ABI change so a
-  stale library is refused rather than discovered at the first missing bind.)
+  ABI 6, the same day, added the BIP-340 / BIP-341 surface. ABI 7, 2026-09-10, added one
+  export, `cxPubkeyCombine`. Every bump is additive - no shipped symbol was renamed or
+  changed shape - but the version moves on ANY ABI change so a stale library is refused
+  rather than discovered at the first missing bind.)
 - **An empty `Data` is legal input** for every digest and for both HMAC slots. It returns the
   documented empty-input digest rather than throwing. This was the binding's one genuinely
   open marshalling question and the 2026-08-08 engine pass settled it.
@@ -654,6 +655,24 @@ It takes the internal **private** key and derives `bytes(P)` itself, rather than
 supply both halves: the tagged hash commits to the internal public key, so a mismatched pair
 would otherwise produce a spendable-looking key for coins it cannot touch. Pass the SAME
 `pMerkleRoot` you passed to `cxTaprootTweakPubkey`.
+
+### `cxPubkeyCombine(pKeys)` (ABI 7, 2026-09-10)
+
+Point addition: the compressed 33-byte **sum** of the compressed public keys in `pKeys`,
+which is the 33-byte keys concatenated (so its length is 33 x n, n >= 1). It exists for
+one caller: BIP-352 silent-payment RECEIVING, where the receiver sums the eligible input
+public keys of every transaction it scans (`A_sum`), and nothing else in this binding
+added two points (ECDH, the two tweak-adds and decompression are all "a point and a
+scalar"). Over upstream libsecp256k1's `secp256k1_ec_pubkey_combine`.
+
+The whole set is summed at once, never pairwise, so an INTERMEDIATE sum that is the point
+at infinity is accepted as long as the final sum is not - BIP-352's own vector "input keys
+intermediate sum is zero but final sum is non-zero" is that case. A final sum at infinity
+throws (it has no x coordinate; a receiver skips such a transaction), as does a key that
+does not parse, a length that is not a multiple of 33, and an empty set. Pinned in the
+KAT against the OTHER vendored library (G + G must equal trezor-crypto's tweak of G by 1)
+and against a multiplication (G + 2G = 3G). Verified statically and headlessly; needs an
+OXT pass (a one-argument `Data` in, 33 bytes out - the simplest shape this binding has).
 
 ### `cxBtcSighashTaproot(pVersion, pOutpoints, pSequences, pAmountsSat, pScriptPubkeys, pOutputs, pIndex, pLocktime, pSighashType, pTapleafHex)`
 
