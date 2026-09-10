@@ -216,6 +216,15 @@ jobs:
       # two libraries. It now builds those two. coinxt is NOT built here, so
       # COINXT_REQUIRE_CROSSCHECK is deliberately absent rather than set and
       # silently inapplicable - the fast --gates job above owns that check.
+      #
+      # AND SINCE 2026-09-10 THE KNOB SCOPES THE GATE WALK TOO. It had scoped
+      # only the builds, so this lane still ran every member's compiler-free
+      # gates before its first cmake - fine while they took minutes, fatal
+      # once coinxt's wallet gates crossed two hours: the lane burned its
+      # whole timeout inside coinxt/tools/test-wallet-boot.py and was
+      # cancelled on main (runs 660 and 667) and on every PR in scope, never
+      # reaching the build it exists for. Those gates run in the fast job on
+      # the same push; this lane runs sodiumxt's and torrentxt's own.
       - name: Build sodiumxt + torrentxt, then settle the invariants
         env:
           SUITE_ONLY_MEMBERS: "sodiumxt torrentxt"
