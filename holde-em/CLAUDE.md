@@ -1261,6 +1261,25 @@ every secret comparison; `sxRandomBytes` for everything unguessable (the engine
 on any failure; fresh per-hand deal randomness and per-table session keys; long-term
 keys only ever sign. When in doubt, the spec's threat model (section 2) decides.
 
+**Count the fields before you verify (2026-09-09).** A wire line is EXACTLY ten
+tab-separated fields, normative in `holdem-spec.md` since that day. The sender signs
+items 1-6 and the host items 1-9, but `heNetApplyWire` hashes the WHOLE line into the
+transcript chain, so a trailing field is unsigned text that still moves the chain head:
+append a tab and a byte to any genuine host-signed wire and hand it to one victim, every
+signature check passes, and that client's head forks away from the table's for the rest
+of the session (the resync cannot heal it - every replayed wire then carries a seq the
+victim has already passed). `heEnvVerify` drops anything that is not exactly ten fields
+before any decode. And the count alone cannot see a BARE trailing tab, because the engine
+ignores one trailing delimiter when counting items (root `docs/OXT-ENGINE-NOTES.md` 2.2,
+OBSERVED) - so the last char of the line is checked too; a legal wire ends in a 128-hex
+host signature, never a tab. Four harness checks pin both directions (the unmodified
+wire still verifies; an appended field, an appended EMPTY field and a nine-field line
+are all dropped). Verified statically; runs on the next engine pass. Those four
+sites landed WITHOUT a harness bump, which is the "two different totals under one
+harness version" ambiguity this file records for v41 - so `kHeHarnessV` went 43 -> 44
+on 2026-09-10, and the next run RECORDS the v44 total rather than matching the v43
+one the suite runbook holds.
+
 ## Workflow
 
 - **After every `.livecodescript` edit:** `python3 tools/check-livecodescript.py`

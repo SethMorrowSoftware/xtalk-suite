@@ -3252,7 +3252,7 @@ end oxProcessId
 --------------------------------------------------------------------------
 
 constant kHeVersion = "0.25.3"
-constant kHeHarnessV = "43"
+constant kHeHarnessV = "44"
 constant kUIVersion = "15"
 
 -- card contract (mirrored in tools/evaluator-kat.py): index 1..52,

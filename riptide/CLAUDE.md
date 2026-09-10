@@ -163,6 +163,20 @@ section 6 has stated for the LAN rail since it was written ("replay and reorder
 are neutralized by apply semantics, not by the wire"), which is why the protocol
 doc gained the rule in section 4.1 rather than a new version.
 
+**The bridge rail was left behind, and closed on 2026-09-10.** The head fix
+added the required watermark to `rsIngestHead` and left `rsIngestBridge` -
+the SAME three-layer ingest, one salt over - without one; the API reference
+was corrected the next day to say so ("a caller wanting rollback protection
+on the bridge rail must keep its own high-water mark"). That sentence is the
+deferral-in-a-comment shape this section names, one rail over: a replaying
+DHT node could serve a stale-but-valid bridge and point a reader at a
+superseded Nostr key. `rsIngestBridge` now takes the same required `pMinSeq`
+with the same contract (empty refused, 0 affirmative, equal accepted,
+strictly older refused), the harness pins it in both directions, and
+`docs/RIPTIDE-PROTOCOL.md` 8.1 states it as normative. No app in this tree
+ingests a foreign bridge yet, so no app changed. Verified statically; the
+harness section runs on an engine.
+
 **The other end: a write with no reader.** `raAppSave` had emitted `headseq`
 since it was written and `raAppLoad`'s switch had no case for it, so our own
 head sequence was persisted on every save and read back never. Nothing in the

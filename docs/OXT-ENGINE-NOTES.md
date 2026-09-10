@@ -232,7 +232,8 @@ model, this tree has acted on it since coinxt was written
 (`coinxt/src/coinxt.livecodescript`: "a 320-bit base58 payload is NEVER held as
 one number ... which is why this file has no bignum"), and **nobody has yet run
 a 2^53 probe on OXT**. Promoting this to OBSERVED needs one dated run, and it is
-a five-minute probe.
+a five-minute probe - written out, with its discriminating outcomes, as
+`docs/OXT-PASS-RUNBOOK.md` S1 row P (2026-09-10).
 
 The consequence: an integer accumulator is exact while |v| <= 9007199254740992
 and silently ROUNDS above it. `byteToNum` over eight bytes is the shape that
@@ -262,7 +263,8 @@ because after it there is nothing left to detect.
 ### 2.5 `and` and `or` evaluate BOTH operands - there is no short-circuit
 **DOCUMENTED for the evaluation rule itself; the two CONSEQUENCES below differ
 in class and the difference is the whole entry.** No engine run has been made
-that isolates the rule, but coinxt has now hit it at eight separate sites and
+that isolates the rule (the probe that would, in both directions, is
+`docs/OXT-PASS-RUNBOOK.md` S1 row P), but coinxt has now hit it at eight separate sites and
 `tools/lcs-interp.py` models it explicitly (`p_or` computes the right operand
 unconditionally), so it is the working assumption throughout the tree.
 

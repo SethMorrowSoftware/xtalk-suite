@@ -479,6 +479,23 @@ troubleshooting):
   local port (Windows `Error 10013` WSAEACCES: Hyper-V / WSL2 / Docker reserve TCP ranges; `10048` is
   in-use) otherwise silently produces an onion whose traffic Tor forwards to a dead port. `oxStartService`
   now fails closed with the error; pick another local port (keep the virtual port 80).
+- **`write ... to socket` sets `the result` on failure too, and `oxWrite` threw it away until
+  2026-09-09.** A bare `return empty` after the write overwrote the engine's error
+  unconditionally, so a dead tunnel was reported to every caller as a successful send - the
+  inverse of docs/05's contract ("every wire error fails closed") - and the 93 call sites across
+  the suite that branch on that return were dead code on the failure path. The most reachable
+  victim was the onion send pump, which paces on exactly this return: a receiver aborting
+  mid-transfer left the sender writing into a dead socket instead of aborting the serve. The
+  result is captured on the very next line, the one-statement discipline `open socket` already
+  gets here. Verified statically; needs an OXT pass (a write into a stream the far side has
+  closed is the probe).
+- **A handler OnionXT DISPATCHES - the stream, status and peer callbacks an app registers - is a
+  DELAYED handler**: it runs from inside a socket callback with no defaultStack guarantee, so an
+  unqualified control reference in it resolves against whatever stack is in front (root engine
+  notes 5.3). The suite's `tools/check-timer-stack-pin.py` held this for `send ... in` from
+  2026-08-17 and only learned the other two delivery classes on 2026-09-09, when it found and
+  pinned six such chains in this member's demos and eighteen more across the stacks that carry
+  OnionXT. Pin at the callback's entry: `set the defaultStack to the short name of this stack`.
 - **`STATUS_CLIENT BOOTSTRAP` events only fire WHILE bootstrapping.** Connecting to a tor already at 100%
   delivers none, so a UI seeded at 0 stays there. Query `GETINFO status/bootstrap-phase` once on connect
   to seed it, then let the events update it.

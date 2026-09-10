@@ -4595,16 +4595,37 @@ function rsRequestBridge pSession, pHandleHex
 end rsRequestBridge
 
 -- Verify a drained dhtMutableItem EVENT as a handle's bridge. The same
--- three-layer discipline rsIngestHead uses - the event is for this handle
--- and this salt, the BEP44 signature re-verifies in SodiumXT, and the
--- embedded seq agrees with the event's - and then, because this record
--- carries a second signature libtorrent knows nothing about, the FULL
--- rsVerifyBridge on top. Returns the bridge array, or empty.
-function rsIngestBridge pEvent, pExpectedHandleHex
+-- discipline rsIngestHead uses - the event is for this handle and this
+-- salt, the BEP44 signature re-verifies in SodiumXT, the embedded seq
+-- agrees with the event's, and the seq is not below the READER'S WATERMARK
+-- pMinSeq - and then, because this record carries a second signature
+-- libtorrent knows nothing about, the FULL rsVerifyBridge on top. Returns
+-- the bridge array, or empty.
+--
+-- THE WATERMARK IS REQUIRED HERE TOO (2026-09-10). When rsIngestHead gained
+-- its required pMinSeq on 2026-09-08 this rail was left without one, and the
+-- API reference said so: "a caller wanting rollback protection on the bridge
+-- rail must keep its own high-water mark". That is the same deferral the
+-- head fix was written to remove, one rail over - every check below passes
+-- on a bridge the handle really signed, just an OLD one, so a replaying DHT
+-- node could point a reader at a superseded Nostr key for as long as it kept
+-- serving the stale item. Same contract as the head rail, deliberately, so
+-- there is one rule to learn: EMPTY is refused rather than read as "no
+-- watermark", 0 is the affirmative "never seen this handle's bridge", equal
+-- seq is accepted (a refresh), strictly older is refused (a rollback).
+function rsIngestBridge pEvent, pExpectedHandleHex, pMinSeq
    local tHandle, tEventKey, tSeq, tRec, tSigHex, tSig, tBuf, tOk, tErr
    put toLower(pExpectedHandleHex) into tHandle
    if not rsIsHexOfLen(tHandle, 64) then
       rsSetError "rsIngestBridge: the expected handle must be 64 hex chars"
+      return empty
+   end if
+   -- Fail closed FIRST, before the event is even looked at: an untaught
+   -- caller gets a refusal, never a served record. Same bounds as the event
+   -- seq below (0 .. 2^53-1, the engine's exact-integer range).
+   if pMinSeq is not an integer or pMinSeq < 0 or pMinSeq >= 9007199254740992 then
+      rsSetError "rsIngestBridge: a reader watermark is required (pass 0 for a" && \
+            "handle whose bridge has never been accepted)"
       return empty
    end if
    put toLower(pEvent["publicKey"]) into tEventKey
@@ -4621,6 +4642,14 @@ function rsIngestBridge pEvent, pExpectedHandleHex
    put pEvent["seq"] into tSeq
    if tSeq is not an integer or tSeq < 0 or tSeq >= 9007199254740992 then
       rsSetError "rsIngestBridge: the event seq is not a sane integer"
+      return empty
+   end if
+   -- The rollback gate, in the same place as rsIngestHead's: after the seq
+   -- sanity check (two exact integers) and before the two signature
+   -- verifications (a replayed bridge costs the reader nothing).
+   if tSeq < pMinSeq then
+      rsSetError "rsIngestBridge: this bridge is older than one already" && \
+            "accepted for this handle (seq" && tSeq && "before" && pMinSeq & ")"
       return empty
    end if
    put toLower(pEvent["signature"]) into tSigHex

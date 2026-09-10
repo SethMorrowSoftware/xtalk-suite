@@ -564,7 +564,7 @@ local rs1sRsTestSession
 
 -- ---- holde-em: the full he* self-test ----
 constant he1kHeVersion = "0.25.3"
-constant he1kHeHarnessV = "43"
+constant he1kHeHarnessV = "44"
 constant he1kUIVersion = "15"
 constant he1kHeRankChars = "23456789TJQKA"
 constant he1kHeSuitChars = "cdhs"
@@ -15967,11 +15967,19 @@ function rsRequestBridge pSession, pHandleHex
    return true
 end rsRequestBridge
 
-function rsIngestBridge pEvent, pExpectedHandleHex
+function rsIngestBridge pEvent, pExpectedHandleHex, pMinSeq
    local tHandle, tEventKey, tSeq, tRec, tSigHex, tSig, tBuf, tOk, tErr
    put toLower(pExpectedHandleHex) into tHandle
    if not rsIsHexOfLen(tHandle, 64) then
       rsSetError "rsIngestBridge: the expected handle must be 64 hex chars"
+      return empty
+   end if
+   -- Fail closed FIRST, before the event is even looked at: an untaught
+   -- caller gets a refusal, never a served record. Same bounds as the event
+   -- seq below (0 .. 2^53-1, the engine's exact-integer range).
+   if pMinSeq is not an integer or pMinSeq < 0 or pMinSeq >= 9007199254740992 then
+      rsSetError "rsIngestBridge: a reader watermark is required (pass 0 for a" && \
+            "handle whose bridge has never been accepted)"
       return empty
    end if
    put toLower(pEvent["publicKey"]) into tEventKey
@@ -15988,6 +15996,14 @@ function rsIngestBridge pEvent, pExpectedHandleHex
    put pEvent["seq"] into tSeq
    if tSeq is not an integer or tSeq < 0 or tSeq >= 9007199254740992 then
       rsSetError "rsIngestBridge: the event seq is not a sane integer"
+      return empty
+   end if
+   -- The rollback gate, in the same place as rsIngestHead's: after the seq
+   -- sanity check (two exact integers) and before the two signature
+   -- verifications (a replayed bridge costs the reader nothing).
+   if tSeq < pMinSeq then
+      rsSetError "rsIngestBridge: this bridge is older than one already" && \
+            "accepted for this handle (seq" && tSeq && "before" && pMinSeq & ")"
       return empty
    end if
    put toLower(pEvent["signature"]) into tSigHex
@@ -27639,19 +27655,19 @@ private command rs1rstNostrIngest pBridge
    put rs1kRsGoldNostrSeq into rs1tEvent["seq"]
    put pBridge into rs1tEvent["value"]
    put rs1tSigHex into rs1tEvent["signature"]
-   put rsIngestBridge(rs1tEvent, rs1kRsGoldHandle) into rs1tRec
+   put rsIngestBridge(rs1tEvent, rs1kRsGoldHandle, 0) into rs1tRec
    rs1rstCheck (rs1tRec is not empty), "a synthetic bridge event ingests"
    rs1rstCheck (rs1tRec["nostrPub"] is rs1kRsGoldNostrPubkey), \
          "and hands back the Nostr key it names"
-   rs1rstCheck (rsIngestBridge(rs1tEvent, rs1kRsGoldConfPub) is empty), \
+   rs1rstCheck (rsIngestBridge(rs1tEvent, rs1kRsGoldConfPub, 0) is empty), \
          "an event for another handle is refused"
    put rs1tEvent into rs1tBad
    put rsHeadSalt() into rs1tBad["salt"]
-   rs1rstCheck (rsIngestBridge(rs1tBad, rs1kRsGoldHandle) is empty), \
+   rs1rstCheck (rsIngestBridge(rs1tBad, rs1kRsGoldHandle, 0) is empty), \
          "the HEAD salt is refused (one rail, one salt)"
    put rs1tEvent into rs1tBad
    put 2 into rs1tBad["seq"]
-   rs1rstCheck (rsIngestBridge(rs1tBad, rs1kRsGoldHandle) is empty), \
+   rs1rstCheck (rsIngestBridge(rs1tBad, rs1kRsGoldHandle, 0) is empty), \
          "a seq disagreeing with the bridge's embedded seq is refused"
    put rs1tEvent into rs1tBad
    -- byte 150 is inside the ed25519 signature: the BEP44 layer still
@@ -27661,7 +27677,7 @@ private command rs1rstNostrIngest pBridge
    put rsBencodeBytes(rs1tBad["value"]) into rs1tValue
    put rsBep44SignBuf("riptide-nostr", rs1kRsGoldNostrSeq, rs1tValue) into rs1tBuf
    put rs1rstHex(sxSignDetached(rs1tBuf, rs1tKeys["secretKey"])) into rs1tBad["signature"]
-   rs1rstCheck (rsIngestBridge(rs1tBad, rs1kRsGoldHandle) is empty), \
+   rs1rstCheck (rsIngestBridge(rs1tBad, rs1kRsGoldHandle, 0) is empty), \
          "a correctly RE-SIGNED but tampered bridge is still refused"
    put rs1tEvent into rs1tBad
    put rs1tBad["signature"] into rs1tSig
@@ -27671,12 +27687,33 @@ private command rs1rstNostrIngest pBridge
       put "6" into char 1 of rs1tSig
    end if
    put rs1tSig into rs1tBad["signature"]
-   rs1rstCheck (rsIngestBridge(rs1tBad, rs1kRsGoldHandle) is empty), \
+   rs1rstCheck (rsIngestBridge(rs1tBad, rs1kRsGoldHandle, 0) is empty), \
          "a forged BEP44 signature is refused"
    put rs1tEvent into rs1tBad
    put textEncode("junk", "ASCII") into rs1tBad["value"]
-   rs1rstCheck (rsIngestBridge(rs1tBad, rs1kRsGoldHandle) is empty), \
+   rs1rstCheck (rsIngestBridge(rs1tBad, rs1kRsGoldHandle, 0) is empty), \
          "a value that is not an RSN1 record is refused"
+   -- THE READER WATERMARK ON THIS RAIL (2026-09-10), the same contract the
+   -- head rail gained on 2026-09-08: every refusal above is about one record
+   -- in isolation and passes on a bridge the handle really signed, just an
+   -- OLD one. The golden bridge is seq 1 (rs1kRsGoldNostrSeq). An omitted
+   -- watermark and an explicit `empty` are the same thing to the engine, so
+   -- the empty check covers both (the under-arity spelling would turn the
+   -- suite's arity gate red to test what this line already tests).
+   rs1rstCheck (rsIngestBridge(rs1tEvent, rs1kRsGoldHandle, empty) is empty), \
+         "an omitted or empty reader watermark is refused (fail closed)"
+   rs1rstCheck (rsIngestBridge(rs1tEvent, rs1kRsGoldHandle, "later") is empty), \
+         "a non-numeric reader watermark is refused"
+   rs1rstCheck (rsIngestBridge(rs1tEvent, rs1kRsGoldHandle, -1) is empty), \
+         "a negative reader watermark is refused"
+   rs1rstCheck (rsIngestBridge(rs1tEvent, rs1kRsGoldHandle, 9007199254740992) is empty), \
+         "a watermark past the engine's exact-integer range is refused"
+   rs1rstCheck (rsIngestBridge(rs1tEvent, rs1kRsGoldHandle, rs1kRsGoldNostrSeq) is not empty), \
+         "the SAME seq still ingests (a refresh is not a rollback)"
+   rs1rstCheck (rsIngestBridge(rs1tEvent, rs1kRsGoldHandle, rs1kRsGoldNostrSeq + 1) is empty), \
+         "a bridge OLDER than the watermark is refused (the rollback gate)"
+   rs1rstCheck (rsIngestBridge(rs1tEvent, rs1kRsGoldHandle, 4096) is empty), \
+         "and a far-older bridge is refused the same way"
 end rs1rstNostrIngest
 
 private command rs1rstSectionLan

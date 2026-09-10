@@ -91,6 +91,21 @@ fi
 # torrentxt/build/torrentxt.so, so building enetxt, datachannelxt, box2dxt and
 # coinxt for them is runner time spent proving nothing. Empty = build them all,
 # which is what a local full walk and the release lane both want.
+#
+# AND THE PER-MEMBER GATE WALK IS SCOPED BY THE SAME KNOB (2026-09-10). When
+# the knob landed it scoped only the native builds, and the walk below still
+# ran every member's gates first - which was invisible while those took
+# minutes. coinxt's wallet gates now take hours (check-wallet-vectors ~25 min,
+# then test-wallet-boot.py boots the whole wallet once per fixture at ~30 min
+# each), so the cross-member lane spent its entire 120-minute budget inside
+# coinxt's gates and was CANCELLED before its first native build began, on
+# main and on every PR that touched the scope list - a lane that could not
+# pass, and a gate that could not fail, since 2026-09-09. The fast --gates
+# job owns every member's gates and runs them on the same push; a scoped lane
+# runs the listed members' own gates (their MANIFEST, record and golden
+# checks are what its build must agree with) and nothing else. The suite-level
+# blocks are not scoped: they are seconds, and the harness/embeds they check
+# are what the two libraries are loaded FOR.
 SUITE_ONLY_MEMBERS="${SUITE_ONLY_MEMBERS:-}"
 # CoinXT builds via coinxt/native/build.sh; OnionXT is pure script (nothing to
 # compile).
@@ -514,7 +529,16 @@ fi
 # shape (script checker, golden glob, vector gate, docs style), so they ride
 # the same loop.
 for m in sodiumxt torrentxt enetxt datachannelxt onionxt coinxt riptide nocloud box2dxt holde-em nostrxt; do
-  if [ -d "$m" ]; then run_gates "$m"; fi
+  [ -d "$m" ] || continue
+  # the same skip the native loop applies - see SUITE_ONLY_MEMBERS above for
+  # why the gate walk has to honour it too
+  if [ -n "$SUITE_ONLY_MEMBERS" ]; then
+    case " $SUITE_ONLY_MEMBERS " in
+      *" $m "*) ;;
+      *) echo "== $m: gates SKIPPED (SUITE_ONLY_MEMBERS=$SUITE_ONLY_MEMBERS) =="; continue ;;
+    esac
+  fi
+  run_gates "$m"
 done
 
 # --- suite-level: the scripts that live at the ROOT, not inside a member ---
@@ -632,6 +656,15 @@ if [ -f tools/check-lcb-signatures.py ]; then
   python3 tools/check-lcb-signatures.py
 fi
 
+# The fixture test runs FIRST: the gate has been widened twice, each time
+# because it asked the question that described the bug already found, and a
+# gate that has narrowed again still prints OK. The fixtures drive the real
+# main() over a tree shaped like all three delivery classes, the wall, and the
+# kit, and refuse a scan that finds nothing.
+if [ -f tools/test-timer-stack-pin.py ]; then
+  echo "== suite: tools/test-timer-stack-pin.py =="
+  python3 tools/test-timer-stack-pin.py
+fi
 if [ -f tools/check-timer-stack-pin.py ]; then
   echo "== suite: tools/check-timer-stack-pin.py =="
   python3 tools/check-timer-stack-pin.py

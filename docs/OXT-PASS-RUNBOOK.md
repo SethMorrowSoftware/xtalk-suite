@@ -69,6 +69,7 @@ route, not as a priority claim:
 | 4 | holde-em hotseat: 2-3 hands in item 2's launch (blinds through showdown; force a side pot if you can) | hands complete with no error dialog; the report header names `kHeVersion` 0.24.5 and the harness version | first post-fold hotseat evidence on the v0.24.5 tree (0.24.3 when this row was written; the awarded-pot fix and the sit-out election fix moved it). Tick: the hotseat line in the ADDED block | 10 |
 | 5 | the remaining restyle re-opens: `onionxt/examples/onionxt-demo.livecodescript` (probes must FAIL CLOSED with no tor - that IS tonight's pass), `enetxt/examples/enet-lan-chat.livecodescript`, `datachannelxt/examples/datachannel-loopback.livecodescript`, `torrentxt/examples/torrent-client.livecodescript` (fresh launch), `coinxt/examples/coinxt-demo.livecodescript` | as item 3 | as item 3; tick the DEMOS rows | 14 |
 | S | STRETCH: `nocloud/src/nocloudquickshare.livecodescript`, then the web-link half of `nocloud/docs/oxt-pass-checklist.md` (sections 0-6a over a LAN web link; skip every Tor column) | per that checklist's own action -> expected lines | row 22's web-link half; the checklist file is its own record sheet | 35 |
+| P | the two engine-notes PROBES no run has ever isolated (added 2026-09-10), typed one line at a time into the message box of any open stack; record EXACTLY what prints, even when it is what the note predicts. (a) `put 9007199254740993 + 0` then `put (9007199254740992 + 1 = 9007199254740992)` - the `+ 0` matters, a bare literal may echo its own spelling. (b) `put "abc" into x` then `put (x is not an integer or x < 1)` then `put (x is not an integer or x + 0 < 1)` | (a) the first prints `9007199254740992` (or a neighbour, never `...993`) and the second prints `true`: 2^53 + 1 is not representable and the engine carries on with the nearest double, silently (`docs/OXT-ENGINE-NOTES.md` 2.4, DOCUMENTED). (b) the comparison line prints `true` with NO error (a text comparison, folded silently) and the arithmetic line raises an ENGINE ERROR instead of printing (2.5, DOCUMENTED). **If the arithmetic line prints `true`, the engine short-circuits and 2.5 is WRONG as written** - the nostrxt/coinxt nested-guard fixes stay correct either way, they just stop being load-bearing | promote 2.4 and 2.5 to OBSERVED with the date and the exact text printed; if (b) printed, rewrite 2.5 rather than promote it. Tick: PROBES | 5 |
 
 ### S2 - one machine plus a tor daemon (~3 h with setup)
 
@@ -1969,6 +1970,10 @@ S4 two machines +tor, S5 mac/windows)
        enet-lan-chat ___  dc-loopback ___  torrent-client ___
        coinxt-demo ___  nocloud ___   (record per DEMOS rows too)
 [ ] 22 nocloud checklist: web-link half ______   Tor half ______
+[ ] -- nocloud launched WITHOUT TorrentXT (checklist section 8, guarded 2026-09-09):
+       window built ___  "No transport" status line ___  no engine dialog ___
+[ ] PROBES (S1 row P; engine notes 2.4 / 2.5, both DOCUMENTED until this line is filled):
+       2^53 + 1 printed as ______   `or` with arithmetic: ENGINE ERROR / printed ______
 [ ] 21 Channels  #31 ___  #32 ___  #33 ___  (tick the 12.3 register itself)
 [ ] 19 riptide phase 7: serving half (page/prekey/dm) ______
        anon delivery + zero-bt* trace ______
