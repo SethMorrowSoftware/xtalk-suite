@@ -22,6 +22,9 @@ site/                                   the standalone product landing page
                                         step - see site/README.md)
 tools/check-livecodescript.py           static gate for the stack script
 tests/fileserver_golden.py              pure-logic reference for the file server
+tools/check-script-vectors.py           the execution gate: the shipped script run
+                                        headlessly against the golden's mirrors
+tools/test-script-vectors.py            proves that gate can fail (runs first in CI)
 docs/                                   the member docs; docs/README.md indexes
                                         them, and oxt-pass-checklist.md is the
                                         engine pass every wire change owes
@@ -47,7 +50,7 @@ Because of this split, there's a hard honesty rule for anything runtime-related:
 
 ## Before every change: run the checks
 
-Every change to `src/nocloudquickshare.livecodescript` (and any `.lcb`, if you add one) must pass **both** of the member checks below, every time — and, since the 2026-08-13 fold, the suite gates in item 3 run over this directory too:
+Every change to `src/nocloudquickshare.livecodescript` (and any `.lcb`, if you add one) must pass **all three** of the member checks below, every time — and, since the 2026-08-13 fold, the suite gates in item 4 run over this directory too:
 
 ### 1. The static script gate
 
@@ -77,7 +80,17 @@ This guide used to enumerate the pinned handlers in a table here, and the golden
 
 Two of the mirrors — `qsEditSafePath` and `qsEditIsLocal` — gate a path that can **write to disk** and must only be reachable from the local network. Treat any change to them with real care.
 
-### 3. The suite gates (since the 2026-08-13 fold)
+### 3. The execution gate (since 2026-09-11)
+
+```sh
+python3 tools/check-script-vectors.py
+```
+
+The golden proves its Python mirrors; this proves the **shipped script agrees with them**. It loads `src/nocloudquickshare.livecodescript` through the family's interpreter (`lcs-interp.py`, the tool coinxt, nostrxt and riptide drive their script layers through - here by way of riptide's stack-shaped runner), calls every mirrored helper on the golden's own inputs, and requires the mirror's answer, so the chain is vector -> mirror -> script with no expected value ever typed twice. On its first run it found two mirrors that were wrong about the engine (`fs_leaf`'s trailing-slash rule; `parse_head`'s invented `__resource` and missing `__version`) - a mirror can only be checked against what its author believed until something runs the script. It is the interpreter and not the engine: what it settles is LOGIC, not parser behaviour, and nothing it drives is promoted out of "verified statically; needs an OXT pass". The handlers it deliberately does not drive (the two serving commands, the file-size probe's real file I/O, the clock token) are listed in its docstring with the reason. `tools/test-script-vectors.py` edits four defects into a copy of the script and requires the gate to name each; CI runs it before the gate, so a gate that had gone blind could not print OK.
+
+The spellings this app writes that the shared interpreter does not model (`repeat for each char`, a bare `repeat`, `delete char N of`, `the last item of`, `the round of`, `the number of bytes in`, `^`, text ordering under `<`, toUpper / toLower / urlDecode / byteOffset) are modelled in a subclass inside the gate. If you write a NEW spelling in a pure helper and the gate refuses it, model it there beside the others with its engine rule in a comment - do not edit `lcs-interp.py` from this member; that file is drift-gated across members and a change to it is a suite change.
+
+### 4. The suite gates (since the 2026-08-13 fold)
 
 The monorepo's cross-member gates walk this directory on every push. This guide used to enumerate them ("checker-drift, ui-kit-drift, handler-calls, stack-size"); audited 2026-08-23, that list had gone stale silently - the suite had since grown gates that also read this member (among them demo-selfcheck drift, demo control lists, the timer-defaultStack-pin closure, and the script-to-`.lcb` call-type check, several of which glob every `.livecodescript` in the tree), and a hand-copied list here rots every time one lands (the suite root `CLAUDE.md` records this exact failure shape for hand-copied ABI numbers). The authoritative set is the `== suite: tools/...` block in the suite root's `tools/build-all.sh` - the same set CI runs; read the script, not this paragraph. The one member-specific rule worth restating: `tools/check-livecodescript.py` must **never be edited here alone** - it is the suite's drift-gated unified copy, so a checker fix is a suite change. You don't need to run the gates one by one - run the set the way CI does, from the suite root:
 
@@ -87,7 +100,7 @@ tools/build-all.sh --gates
 
 ## Then: the manual OXT pass
 
-Once both scripts are green, do the human step:
+Once all three scripts are green, do the human step:
 
 1. **Open the stack** in the OpenXTalk IDE (`src/nocloudquickshare.livecodescript`).
 2. **Paste your changes into the stack script** (Object → Stack Script), if you edited the file outside the IDE.
@@ -125,7 +138,8 @@ The recipe when you add such a helper:
 3. **Reproduce xTalk semantics exactly**, not just the happy path. The existing mirrors document the gotchas that bite: `item N of X` is 1-based and returns empty past the end; `X is an integer` rejects decimals; `urlDecode` turns `+` into a space (so the mirror uses `unquote_plus`, not `unquote`); `the round of` rounds half away from zero. If your handler leans on an xTalk quirk, encode that quirk in Python and note it in a comment.
 4. **Add table-driven cases in `main()`** covering the edges — empties, out-of-range, traversal attempts, case-insensitivity, the deliberately-strict rejections. Look at the existing blocks for the density we aim for.
 5. Run `python3 tests/fileserver_golden.py` until it's green.
-6. During your OXT pass, spot-check a couple of the same inputs against the real handler so you've *seen* the two agree at least once.
+6. **Add the same inputs to `tools/check-script-vectors.py`'s drive** (a section per mirror, the mirror called for the expected value) and run it until it's green too - that is what holds the mirror and the script to EACH OTHER rather than each to your reading of the other.
+7. During your OXT pass, spot-check a couple of the same inputs against the real handler so you've *seen* the two agree at least once.
 
 If a handler is genuinely all I/O (it opens a socket, reads a file, sets a UI property) there's nothing to mirror — that's exactly the stuff the manual OXT pass is for.
 
@@ -133,9 +147,10 @@ If a handler is genuinely all I/O (it opens a socket, reads a file, sets a UI pr
 
 - [ ] `python3 tools/check-livecodescript.py` is clean
 - [ ] `python3 tests/fileserver_golden.py` is OK
+- [ ] `python3 tools/check-script-vectors.py` is OK (and `tools/test-script-vectors.py` still catches its four seeded defects)
 - [ ] The suite gates are clean too: `tools/build-all.sh --gates` at the suite root (that script's suite block is the authoritative gate list; several of its gates walk this directory)
 - [ ] `tools/check-livecodescript.py` was not edited here alone (it is the suite's drift-gated unified copy)
-- [ ] New pure-logic helpers are mirrored + covered in the golden, and listed in its docstring index
+- [ ] New pure-logic helpers are mirrored + covered in the golden, listed in its docstring index, and driven by the execution gate
 - [ ] Layout changed? `kQsUiVersion` bumped
 - [ ] Did an OXT pass: opened the stack, pasted the script, closed + reopened, exercised the change
 - [ ] PR text distinguishes what you **observed in OXT** from what's **verified statically; needs an OXT pass**

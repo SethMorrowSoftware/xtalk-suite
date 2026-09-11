@@ -153,7 +153,11 @@ RUN on every test while no test writes their name down. **holde-em folded the
 SAME DAY** (commit `7f55839`) — the sentence that stood here said it "remains
 unfolded pending five named blockers", and all five were cleared hours later;
 it is the ninth harness, at 380 folded handlers. nocloud has no script harness
-and is correctly out of scope.
+and is correctly out of scope. (It has an EXECUTION GATE since 2026-09-11 -
+`nocloud/tools/check-script-vectors.py` drives the shipped stack's pure helpers
+through the family's interpreter against its golden's mirrors - which is a
+different thing from a harness in the suite paste, and does not change this
+sentence.)
 
 **The short version — REWRITTEN 2026-08-17, and every claim it used to make was
 stale.** It said one big build was unstarted (Model C) — Model C is built, 629

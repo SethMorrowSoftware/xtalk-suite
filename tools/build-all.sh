@@ -211,6 +211,16 @@ run_gates() {
     echo "== $m: tools/check-wallet-ui-version.py =="
     ( cd "$m" && python3 tools/check-wallet-ui-version.py )
   fi
+  # A member's execution gate is believed only once it has been shown to
+  # FAIL: where a member ships tools/test-script-vectors.py it edits one
+  # defect at a time into a copy of the shipped script and drives the REAL
+  # gate over it, then drives the untouched copy and requires OK (nocloud,
+  # 2026-09-11). It runs BEFORE the gate for the reason the doc-status pair
+  # below runs its fixtures first: a gate that has gone blind prints OK.
+  if [ -f "$m/tools/test-script-vectors.py" ]; then
+    echo "== $m: tools/test-script-vectors.py =="
+    ( cd "$m" && python3 tools/test-script-vectors.py )
+  fi
   if [ -f "$m/tools/check-script-vectors.py" ]; then
     echo "== $m: tools/check-script-vectors.py =="
     ( cd "$m" && python3 tools/check-script-vectors.py --check )
