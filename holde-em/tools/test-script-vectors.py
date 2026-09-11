@@ -37,7 +37,15 @@ FIXTURES = [
      "      put 0 into tRemainder\n",
      "heTestBettingRun"),
     ("a shuffle that never swaps",
+     # four lines, because the swap alone is spelled identically in the
+     # Level 0 keyed-stream deal: the anchor must be the PLAYABLE shuffle's
+     "      put item 2 of tDrawPair into tState\n"
+     "      put tDeckA[tPos] into tHold\n"
+     "      put tDeckA[tSwapPos] into tDeckA[tPos]\n"
      "      put tHold into tDeckA[tSwapPos]\n",
+     "      put item 2 of tDrawPair into tState\n"
+     "      put tDeckA[tPos] into tHold\n"
+     "      put tDeckA[tSwapPos] into tDeckA[tPos]\n"
      "      put tHold into tDeckA[tPos]\n",
      "heTestShuffleRun"),
 ]
