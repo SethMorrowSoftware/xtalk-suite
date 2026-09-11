@@ -419,6 +419,8 @@ def check_constants(c, text):
     c.ck("the BIP-322 null txid", consts.get("kCwBip322NullTxid"), "00" * 32)
     c.ck("the BIP-352 inputs tag", consts.get("kCwSpTagInputs"), REF.SP_TAG_INPUTS)
     c.ck("the BIP-352 shared-secret tag", consts.get("kCwSpTagSecret"), REF.SP_TAG_SECRET)
+    c.ck("the BIP-352 label tag (receiving, 2026-09-10)", consts.get("kCwSpTagLabel"),
+         REF.SP_TAG_LABEL)
     c.ck("the BIP-352 address length waiver", int(nums.get("kCwSpMaxLen", -1)), REF.SP_MAX_LEN)
     c.ck("the BIP-352 per-group limit K_max", int(nums.get("kCwSpKMax", -1)), REF.SP_K_MAX)
     c.ck("the curve order n", consts.get("kCwCurveN"), "%064x" % CR._N)
@@ -459,6 +461,7 @@ def check_constants(c, text):
         "kCwQrG2Cw", "kCwQrRemainder", "kCwQrAlign", "kCwSeqRbf",
         "kCwSeqFinal", "kCwSeqNoRbf", "kCwLongTermFeeRate",
         "kCwBip322Tag", "kCwBip322NullTxid", "kCwSpTagInputs", "kCwSpTagSecret",
+        "kCwSpTagLabel",
         "kCwSpMaxLen", "kCwSpKMax", "kCwCurveN", "kCwCurveHalfN", "kCwScalarZero",
         "kCwBech32mConst", "kCwXor5", "kCwRuneU128Max", "kCwRuneAlphabet",
         "kCwRuneMaxDivisibility", "kCwRuneMaxSymbol", "kCwRuneMaxSpacers",
