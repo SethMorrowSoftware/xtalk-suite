@@ -840,7 +840,9 @@ Built and statically verified; pending under the honesty convention.
    patterns through `re`'s cache half a billion times, and the three hot
    files (the family interpreter, riptide's runner, coinxt's wallet gate)
    now compile each pattern once - 11 m 43 s to 7 m 02 s on the same
-   boot-plus-block driver, A/B on one box. What is still true: the job
+   boot-plus-block driver, A/B on one box, and **2 h 15 m / 2 h 32 m for
+   the two CI runs on that head** (pull-request and push), from 5 h 30 m
+   the same morning. What is still true: the job
    has no `timeout-minutes` of its own, so the six-hour default is the only
    ceiling, and a future gate that adds an hour of serial work will meet it
    again - the number to watch is the gates step in `suite-gates.yml`'s

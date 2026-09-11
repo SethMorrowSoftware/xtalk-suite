@@ -3754,8 +3754,13 @@ same time against a worktree of the tree before: **11 m 43 s to 7 m 02 s**
 (user CPU 9 m 38 s to 6 m 04 s), and every interpreter-driven gate green on
 the new code before anything heavier ran - riptide's script vectors, fixture
 suite and boot, nostrxt's fixtures and vectors, nocloud's, coinxt's 344,
-holde-em's 621 and its fixtures. The concurrent coinxt walk and CI carry the
-heavier confirmation.
+holde-em's 621 and its fixtures. The heavier confirmation came in the same
+evening: **both CI runs on that head green at 2 h 15 m (pull request) and
+2 h 32 m (push)**, from 5 h 30 m and a cancellation at the six-hour ceiling
+that morning - the concurrent walk alone had reached 4 h 06 m, and this is
+the rest. Locally the second concurrent coinxt walk cleared its vectors in
+44 min and its eight fixture boots in 57 min (89 min the morning before)
+while the prefill-20 boot ran beside them.
 
 Two things not done, on purpose. The patterns are NOT hoisted to named
 module constants: 105 names like `_RX_REPEAT_WITH` would move every pattern
