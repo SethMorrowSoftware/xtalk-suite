@@ -13639,6 +13639,7 @@ constant kWaPrefill = 20
 -- UI updates; the network poll is deliberately much slower than that because
 -- a public backend is somebody else's machine.
 constant kWaTick = 250
+constant kWaSpParentsMax = 64                                -- parent transactions kept for silent payment checks before the cache is dropped whole (waStoreRawTx)
 constant kWaNetPoll = 20000
 
 -- A network request that has produced nothing at all by here is dead, whatever
@@ -14363,6 +14364,8 @@ local sWaSpFound                                            -- silent payments F
 local sWaLastCommit, sWaLastLock, sWaLastReveal           -- list of {kind, index, type, bodyhex, height}: the one-leaf taproot outputs this wallet prepared (inscription commits, timelocks), re-attached after every derivation and saved with the wallet
 local sWaSpentBy                                            -- "txid:vout" -> the txid of the transaction THIS WALLET BROADCAST that spends it; memory only, and the mark comes off the moment the backend lists the coin as unspent again (waNoteBroadcast, waMergeUtxos)
 local sWaInspectWanted    -- the txid the History screen is waiting on bytes for
+local sWaSpParents        -- raw hex by txid: transactions the backend answered with (waStoreRawTx), which a silent payment check reads its prevout scripts from; public data, bounded by kWaSpParentsMax
+local sWaSpPending        -- the raw transaction a silent payment check is waiting on parents for; waStoreRawTx runs the scan when the last one lands, and clears it
 local sWaQrCache          -- array: payload -> the BMP bytes already rendered
 local sWaCtrlByScreen     -- array: screen -> comma list of its control names
 local sWaBusyUntil        -- the milliseconds a long build is allowed to run to
@@ -16783,6 +16786,8 @@ command waSetNetwork pNetwork
    put pNetwork into sWaNetwork
    put waEmptyList() into sWaUtxos
    put waEmptyList() into sWaHistory
+   put empty into sWaSpParents
+   put empty into sWaSpPending
    put empty into sWaTipHeight
    put empty into sWaTipAt
    put empty into sWaFeesAt
@@ -19715,9 +19720,11 @@ private function waToolsNote
          "too) or an extended key, on EVERY chain. DECODE SCRIPT reads bare " & \
          "script hex." & return & return after tOut
    put "TO FIND A SILENT PAYMENT made to this wallet's own sp address, paste " & \
-         "the paying transaction, then the script each of its inputs spends " & \
-         "(one per line, in input order), and press Inspect: an output that " & \
-         "is yours is added to your addresses and can be spent like any coin." & \
+         "the paying transaction and press Inspect: the wallet asks the " & \
+         "backend for the transactions its inputs spend and scans when they " & \
+         "arrive. Offline, paste the script each input spends under it (one " & \
+         "per line, in input order) instead. An output that is yours is added " & \
+         "to your addresses and can be spent like any coin." & \
          return & return after tOut
    put "Inscriptions and runes have the ORDINALS screen; timelocked coins " & \
          "have the VAULT screen. An " & quote & "inscribe:" & quote & " or " & \
@@ -20002,12 +20009,23 @@ end waLeafRecord
 -- which needs the script EACH INPUT SPENDS - a fact the raw transaction does
 -- not carry. This wallet does not scan the chain: it has no way to, without
 -- an index server that publishes per-transaction tweaks, and none of its
--- backends offers one. What it does is scan a transaction it is HANDED, with
--- its prevout scripts, and remember every output that turns out to be its
--- own: as a record in the address list (so sync watches it like any address
--- and the signer can spend it, untweaked) and as an "sp" line in the wallet
--- file (so it survives a reopen). Labels are not used on the receiving side
--- yet; the calculator supports them, the wallet publishes one address.
+-- backends offers one. What it does is scan a transaction it is HANDED, and
+-- remember every output that turns out to be its own: as a record in the
+-- address list (so sync watches it like any address and the signer can spend
+-- it, untweaked) and as an "sp" line in the wallet file (so it survives a
+-- reopen). The prevout scripts come from one of two places. Pasted under the
+-- transaction, one per line (waSpScanPaste) - the 2026-09-10 shape, still
+-- there for an offline wallet. Or, since 2026-09-11, FETCHED: a raw
+-- transaction pasted ALONE and inspected on a wallet that holds the keys
+-- asks the backend for the transaction each input spends (the "tx" request
+-- every backend already answers for the fee bump), reads the scripts out of
+-- those, and scans when the last one lands - the report goes under the
+-- RAW TRANSACTION one on the Tools screen (waSpAfterInspect, waSpPendingCheck).
+-- The parents are kept in sWaSpParents so a second Inspect scans at once,
+-- and the cache is dropped WHOLE past kWaSpParentsMax rather than trimmed,
+-- because it is a convenience and a stale entry cannot be wrong (a txid
+-- names its bytes). Labels are not used on the receiving side yet; the
+-- calculator supports them, the wallet publishes one address.
 -- ==============================================================================
 
 function waSpAddress
@@ -20115,31 +20133,48 @@ function waSpScanPaste pText
    -- one, and reports. Throws when line 1 is not a transaction (so Inspect
    -- falls through to its other readers) and when the prevout count does not
    -- match the input count (so nothing is scanned against the wrong scripts).
-   local tTx, tIns, tOuts, tCount, tI, tIn, tVin, tKeys, tKey, tSum, tError
-   local tOutpoints, tOutpoint, tOutputs, tOut, tHash, tSpend, tFound, tRec, tReport
-   local tN, tKnown, tJ, tWhy, tLine, tPrev
+   local tTx, tCount, tI, tN, tPrev, tPrevouts
    if sWaSpScanSeckey is "" or sWaSpSpendSeckey is "" then
       throw "this wallet has no silent payment keys (only a seed wallet does)."
    end if
    put cwTxDecode(cwTrim(line 1 of pText)) into tTx
-   put tTx["inputs"] into tIns
-   put cwListCount(tIns) into tCount
+   put cwListCount(tTx["inputs"]) into tCount
    put the number of lines of pText into tN
    if tN - 1 is not tCount then
       throw "that transaction has " & tCount & " input(s) and " & (tN - 1) & \
             " prevout script line(s) follow it. Paste the script each input " & \
             "spends, one per line, in input order."
    end if
-   put waEmptyList() into tKeys
-   put waEmptyList() into tOutpoints
+   put waEmptyList() into tPrevouts
    repeat with tI = 1 to tCount
-      put tIns[tI] into tIn
       put cwTrim(line (tI + 1) of pText) into tPrev
       if cwHexIsClean(tPrev) is not true or tPrev is "" then
          throw "prevout line " & tI & " is not a script in hex."
       end if
+      put cwListAdd(tPrevouts, tPrev) into tPrevouts
+   end repeat
+   return waSpScanWith(tTx, tPrevouts)
+end waSpScanPaste
+
+function waSpScanWith pTx, pPrevouts
+   -- The scan itself: pTx decoded, pPrevouts the script each of its inputs
+   -- spends, in input order (one list entry per input, hex). Every output
+   -- that is a silent payment to this wallet is remembered and reported.
+   local tIns, tOuts, tCount, tI, tIn, tVin, tKeys, tKey, tSum, tError
+   local tOutpoints, tOutpoint, tOutputs, tOut, tHash, tSpend, tFound, tRec, tReport
+   local tN, tKnown, tJ, tWhy
+   put pTx["inputs"] into tIns
+   put cwListCount(tIns) into tCount
+   if cwListCount(pPrevouts) is not tCount then
+      throw "waSpScanWith: " & cwListCount(pPrevouts) & " prevout script(s) for " & \
+            tCount & " input(s)."
+   end if
+   put waEmptyList() into tKeys
+   put waEmptyList() into tOutpoints
+   repeat with tI = 1 to tCount
+      put tIns[tI] into tIn
       put "" into tVin
-      put tPrev into tVin["prevout"]
+      put pPrevouts[tI] into tVin["prevout"]
       put tIn["scriptsig"] into tVin["scriptsig"]
       put tIn["witness"] into tVin["witness"]
       put cwSpInputPubkey(tVin) into tKey
@@ -20151,7 +20186,7 @@ function waSpScanPaste pText
       put tIn["vout"] into tOutpoint["vout"]
       put cwListAdd(tOutpoints, tOutpoint) into tOutpoints
    end repeat
-   put "SILENT PAYMENT SCAN of " & tTx["txid"] & return & return into tReport
+   put "SILENT PAYMENT SCAN of " & pTx["txid"] & return & return into tReport
    put "" into tWhy
    try
       put cwSpPubkeySum(tKeys) into tSum
@@ -20162,7 +20197,7 @@ function waSpScanPaste pText
       return tReport & "  nothing to find: " & tWhy & return
    end if
    put waEmptyList() into tOutputs
-   put tTx["outputs"] into tOuts
+   put pTx["outputs"] into tOuts
    put cwListCount(tOuts) into tCount
    repeat with tI = 1 to tCount
       put tOuts[tI] into tOut
@@ -20202,11 +20237,178 @@ function waSpScanPaste pText
          put cwListAdd(sWaAddresses, waSpFoundRecord(tRec)) into sWaAddresses
          put "         added to your addresses; save the wallet to keep it, " & \
                "and sync to see the coin" & return after tReport
-         waLog "silent payment found in " & tTx["txid"] & ": output " & tRec["output"]
+         waLog "silent payment found in " & pTx["txid"] & ": output " & tRec["output"]
       end if
    end repeat
    return tReport
-end waSpScanPaste
+end waSpScanWith
+
+function waSpParentsNeeded pTx
+   -- The distinct txids pTx's inputs spend whose bytes this wallet does not
+   -- hold yet. Distinct, because two inputs from one parent are one request.
+   local tIns, tCount, tI, tIn, tTxid, tOut, tSeen
+   put waEmptyList() into tOut
+   put pTx["inputs"] into tIns
+   put cwListCount(tIns) into tCount
+   repeat with tI = 1 to tCount
+      put tIns[tI] into tIn
+      put cwLower(tIn["txid"]) into tTxid
+      if tSeen[tTxid] is not true then
+         put true into tSeen[tTxid]
+         if sWaSpParents[tTxid] is "" then
+            put cwListAdd(tOut, tTxid) into tOut
+         end if
+      end if
+   end repeat
+   return tOut
+end waSpParentsNeeded
+
+function waSpPrevoutsFrom pTx
+   -- The script each input of pTx spends, read out of the parent
+   -- transactions held in sWaSpParents (every one present, or
+   -- waSpParentsNeeded would have said). The vout is checked against the
+   -- parent's output count: a backend that answered the right txid cannot
+   -- have the wrong outputs, but an input can name an output that does not
+   -- exist and a list read past its end is silently empty in this dialect.
+   local tIns, tCount, tI, tIn, tParent, tOuts, tVout, tOut
+   put waEmptyList() into tOut
+   put pTx["inputs"] into tIns
+   put cwListCount(tIns) into tCount
+   repeat with tI = 1 to tCount
+      put tIns[tI] into tIn
+      put cwTxDecode(sWaSpParents[cwLower(tIn["txid"])]) into tParent
+      put tParent["outputs"] into tOuts
+      put tIn["vout"] into tVout
+      if tVout is not an integer or tVout < 0 or tVout >= cwListCount(tOuts) then
+         throw "input " & tI & " spends output " & tVout & " of " & tIn["txid"] & \
+               ", which has " & cwListCount(tOuts) & " output(s)."
+      end if
+      put cwListAdd(tOut, tOuts[tVout + 1]["script"]) into tOut
+   end repeat
+   return tOut
+end waSpPrevoutsFrom
+
+function waSpAfterInspect pHex
+   -- What Inspect prints UNDER the RAW TRANSACTION report for a transaction
+   -- pasted alone: nothing unless this wallet holds silent payment keys and
+   -- the transaction has a taproot output (the only kind a silent payment
+   -- can be). Then the scan, if the transactions its inputs spend are
+   -- already held; otherwise a request for each one and a note saying so,
+   -- and waStoreRawTx finishes the job when the last one lands. Offline,
+   -- the note says what to paste instead. Contained: a failure here is a
+   -- line under the report, never the loss of the report.
+   local tTx, tOuts, tIns, tCount, tI, tTaproot, tNeeded, tN, tError, tWhy
+   local tHead, tOut
+   if sWaSpScanSeckey is "" or sWaSpSpendSeckey is "" then
+      return ""
+   end if
+   put cwTxDecode(cwTrim(pHex)) into tTx
+   put 0 into tTaproot
+   put tTx["outputs"] into tOuts
+   put cwListCount(tOuts) into tCount
+   repeat with tI = 1 to tCount
+      if tOuts[tI]["kind"] is "p2tr" then
+         add 1 to tTaproot
+      end if
+   end repeat
+   if tTaproot is 0 then
+      return ""
+   end if
+   put return & "SILENT PAYMENT CHECK: " into tHead
+   put tTx["inputs"] into tIns
+   if cwListCount(tIns) is 1 and cwLower(tIns[1]["txid"]) is waZeroTxid() then
+      return tHead & "a coinbase transaction spends nothing, so it cannot " & \
+            "carry a silent payment." & return
+   end if
+   put waSpParentsNeeded(tTx) into tNeeded
+   put cwListCount(tNeeded) into tN
+   if tN > 0 and sWaBackend is "offline" then
+      return tHead & tTaproot & " taproot output(s) could be a payment to " & \
+            "this wallet's silent payment address, and telling needs the " & \
+            "script each input spends. This wallet is offline: choose a " & \
+            "backend and press Inspect again, or paste those scripts under " & \
+            "the transaction, one per line in input order." & return
+   end if
+   if tN > 0 then
+      repeat with tI = 1 to tN
+         waNetQueue "tx", tNeeded[tI]
+      end repeat
+      waEnsurePolling
+      waAfterQueue
+      -- bitcoin-cli drains the queue in that call, so the parents may be
+      -- held already; a connection backend answers on a later tick
+      put waSpParentsNeeded(tTx) into tNeeded
+      put cwListCount(tNeeded) into tN
+   end if
+   if tN > 0 then
+      put cwLower(cwTrim(pHex)) into sWaSpPending
+      waLog "silent payment check of " & tTx["txid"] & ": asked " & sWaHost & \
+            " for " & tN & " transaction(s) its inputs spend"
+      return tHead & tTaproot & " taproot output(s) could be a payment to " & \
+            "this wallet's silent payment address. Asked " & sWaHost & " for the " & \
+            tN & " transaction(s) these inputs spend; the result will appear " & \
+            "here when they arrive (the log will say)." & return
+   end if
+   put empty into sWaSpPending
+   put "" into tWhy
+   try
+      put waSpScanWith(tTx, waSpPrevoutsFrom(tTx)) into tOut
+   catch tError
+      put line 1 of tError into tWhy
+   end try
+   if tWhy is not "" then
+      return tHead & "could not run: " & tWhy & return
+   end if
+   return return & tOut
+end waSpAfterInspect
+
+function waZeroTxid
+   -- the coinbase's "previous" txid: 32 zero bytes
+   local tOut, tI
+   put "" into tOut
+   repeat with tI = 1 to 64
+      put "0" after tOut
+   end repeat
+   return tOut
+end waZeroTxid
+
+command waSpPendingCheck
+   -- Called by waStoreRawTx after every stored transaction while a silent
+   -- payment check is waiting: once the last parent is held, the scan runs
+   -- and the Tools screen's result box is repainted with the RAW
+   -- TRANSACTION report and the scan under it, whatever screen is showing
+   -- (the box is one control; the screen it belongs to is a matter of
+   -- what is visible). A scan that throws is reported there too, and the
+   -- wait ends either way - a second Inspect asks again.
+   local tTx, tHex, tReport, tError, tWhy
+   set the defaultStack to the short name of this stack
+   if sWaSpPending is "" then
+      exit waSpPendingCheck
+   end if
+   put sWaSpPending into tHex
+   put cwTxDecode(tHex) into tTx
+   if cwListCount(waSpParentsNeeded(tTx)) > 0 then
+      exit waSpPendingCheck
+   end if
+   put empty into sWaSpPending
+   put "" into tWhy
+   try
+      put waSpScanWith(tTx, waSpPrevoutsFrom(tTx)) into tReport
+   catch tError
+      put line 1 of tError into tWhy
+   end try
+   if tWhy is not "" then
+      put return & "SILENT PAYMENT CHECK: could not run: " & tWhy & return into tReport
+      waLog "silent payment check of " & tTx["txid"] & " could not run: " & tWhy
+   else
+      put return & tReport into tReport
+      waLog "silent payment check of " & tTx["txid"] & " finished; the result " & \
+            "is on the Tools screen"
+   end if
+   put waInspectRaw(tHex) & tReport into field "tl_out"
+   uiStatus "The transactions behind " & char 1 to 12 of tTx["txid"] & \
+         "... arrived; the silent payment check is on the Tools screen.", "ok"
+end waSpPendingCheck
 
 command waLeavesAttach
    -- Re-append every saved leaf output to the freshly derived address
@@ -21229,10 +21431,19 @@ function waInspectAnything pText
       catch tError
       end try
    end if
+   -- a raw transaction ALONE gets the silent payment check under its
+   -- report (2026-09-11): nothing unless this wallet holds the keys and the
+   -- transaction has a taproot output; then the scan, from the parents the
+   -- backend is asked for
+   put "" into tOut
    try
-      return waInspectRaw(pText)
+      put waInspectRaw(pText) into tOut
    catch tError
+      put "" into tOut
    end try
+   if tOut is not "" then
+      return tOut & waSpAfterInspect(pText)
+   end if
    try
       return cwPsbtSummary(pText, sWaNetwork) & return & \
             "Press 'Hold as the current PSBT' to sign or finalize it."
@@ -27011,10 +27222,22 @@ command waStoreRawTx pTxid, pHex
       end if
    end repeat
    waLog "stored the bytes of " & pTxid & " on " & tHit & " history row(s)"
+   -- AND INTO THE SILENT PAYMENT CHECK'S CACHE, whoever asked: a parent a
+   -- fee bump fetched serves a later check the same. Dropped whole past
+   -- the cap (never while a check is waiting on it), because a txid names
+   -- its bytes, so nothing in here can go stale - only large.
+   if the number of lines of the keys of sWaSpParents >= kWaSpParentsMax \
+         and sWaSpPending is "" then
+      put empty into sWaSpParents
+   end if
+   put tHex into sWaSpParents[cwLower(pTxid)]
    if sWaInspectWanted is cwLower(pTxid) then
       put empty into sWaInspectWanted
       put waInspectRaw(tHex) into field "hs_detail"
       uiStatus "The bytes of " & pTxid & " arrived.", "ok"
+   end if
+   if sWaSpPending is not "" then
+      waSpPendingCheck
    end if
 end waStoreRawTx
 

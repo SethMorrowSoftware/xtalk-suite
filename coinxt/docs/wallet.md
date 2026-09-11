@@ -670,21 +670,35 @@ the keys go wherever the seed goes (`waDropSeed`, `closeStack`). The wallet
 does NOT scan the chain: finding a payment needs the script each input of
 the paying transaction spends, which a raw transaction does not carry, and
 none of the backends here publishes the per-transaction tweak index a light
-client would use. What it does is scan a transaction it is HANDED: paste the
-transaction on Tools, then the script each input spends (one per line, in
-input order), press Inspect, and every output that is a silent payment to
-this wallet is reported, added to the address list at its own taproot
-address (so sync watches it like any address and never offers it as "next
-unused") and written to the wallet file as an `sp` line so a reopen keeps
-it. Spending one goes through `waSignSpend`'s own branch: the key is
-`b_spend + tweak` and it signs UNTWEAKED (`cwSignKeyPath`), because the
-output is that key and not a BIP-341 tweak of it. Labels are not used on the
-receiving side; the calculator supports them and the wallet publishes one
-address. The boot gate drives all of it - the keys against the oracle's
-derivation, the address on screen and on the clipboard, a transaction the
-oracle builds to pay it found and remembered through a file round trip, and
-a coin on the found output signed and VERIFIED by the oracle against the
-output key. Not run on an engine.
+client would use. What it does is scan a transaction it is HANDED. Paste
+the transaction on Tools and press Inspect: under the RAW TRANSACTION
+report comes a SILENT PAYMENT CHECK line, and (since 2026-09-11) the wallet
+asks the backend for the transaction each input spends - the same
+raw-transaction request the fee bump uses, on every backend - reads the
+prevout scripts out of those, and runs the scan when the last one lands,
+repainting the result box and saying so on the status line and in the log.
+The parents are kept (`sWaSpParents`, dropped whole past 64) so a second
+Inspect scans at once. Offline, the line says what to paste instead: the
+script each input spends under the transaction, one per line in input
+order, which is the 2026-09-10 shape and still works everywhere. A
+transaction with no taproot output gets no line (a silent payment can only
+be one), and a coinbase is refused without a request. Every output that is
+a silent payment to this wallet is reported, added to the address list at
+its own taproot address (so sync watches it like any address and never
+offers it as "next unused") and written to the wallet file as an `sp` line
+so a reopen keeps it. Spending one goes through `waSignSpend`'s own branch:
+the key is `b_spend + tweak` and it signs UNTWEAKED (`cwSignKeyPath`),
+because the output is that key and not a BIP-341 tweak of it. Labels are
+not used on the receiving side; the calculator supports them and the wallet
+publishes one address. The boot gate drives all of it - the keys against
+the oracle's derivation, the address on screen and on the clipboard, a
+transaction the oracle builds to pay it: pasted alone, the offline note,
+then the parent asked for by its real txid and delivered as Electrum would,
+the scan running on arrival, a second Inspect served from the held parent,
+a coinbase and a non-taproot transaction each left alone; then the same
+transaction with its script pasted under it, found again and remembered
+through a file round trip; and a coin on the found output signed and
+VERIFIED by the oracle against the output key. Not run on an engine.
 
 ## Runes, read only
 

@@ -1037,23 +1037,104 @@ def drive(c, ip, world, sandbox):
     click(ip, world, "rc_copySp")
     clip_sp = world.clipboard.get("text") if isinstance(world.clipboard, dict) else world.clipboard
     c.eq("and its button copies it", str(clip_sp or ""), own_sp)
-    # a payer: one P2WPKH input from a fixture key, paying our address
+    # a payer: one P2WPKH input from a fixture key, paying our address. The
+    # input spends a REAL parent (built here, so its txid is its bytes'),
+    # because the fetched-prevout path below asks the backend for that
+    # parent by txid and waStoreRawTx checks the answer's txid against it.
     payer_sk = bytes.fromhex("33" * 32)
     payer_pub = REF.cr.pubkey(payer_sk)
     payer_spk = REF.spk_p2wpkh(payer_pub)
-    pay_points = [("dd" * 32, 0)]
+    parent_in = [("aa" * 32, 0, 0xFFFFFFFF)]
+    parent_raw = REF.tx_serialize(1, parent_in, [(100000, payer_spk)], 0, [b""]).hex()
+    parent_txid = REF.txid_of(1, parent_in, [(100000, payer_spk)], 0, [b""])
+    pay_points = [(parent_txid, 0)]
     want_out = REF.sp_send([(payer_sk, False)], pay_points, [(own_scan33, own_spend33)])[0]
-    pay_raw = REF.tx_serialize(2, [("dd" * 32, 0, 0xFFFFFFFD)],
-                               [(70000, REF.spk_p2tr(want_out))], 0, [b""],
-                               [[b"\x30" + b"\x44" + b"\x02" * 69 + b"\x01", payer_pub]]).hex()
-    paste = pay_raw + "\n" + payer_spk.hex()
-    put_field("tl_hex", paste)
+    payer_wit = [[b"\x30" + b"\x44" + b"\x02" * 69 + b"\x01", payer_pub]]
+    pay_raw = REF.tx_serialize(2, [(parent_txid, 0, 0xFFFFFFFD)],
+                               [(70000, REF.spk_p2tr(want_out))], 0, [b""], payer_wit).hex()
+    sp_out_addr = REF.address_for_spk("testnet", REF.spk_p2tr(want_out))
+    # ---- FETCHED prevouts (2026-09-11): the transaction pasted ALONE ----
+    # Offline, Inspect prints the raw report and, under it, what the check
+    # would need; with a backend it asks for the parent, and the scan runs
+    # when the answer lands - through waStoreRawTx, the same door the fee
+    # bump's parent comes through.
+    sp_queue_was = ip.globals.get("swaqueue")
+    ip.globals["swaqueue"] = {"n": 0}
+    ip.globals["swabackend"] = "offline"
+    put_field("tl_hex", pay_raw)
     click(ip, world, "nv_tl")
     click(ip, world, "tl_inspect")
+    rep0 = _fld(world, "tl_out")
+    c.ck("offline, Inspect on the transaction alone reports it and says the check needs the prevout scripts",
+         "RAW TRANSACTION" in rep0 and "SILENT PAYMENT CHECK" in rep0 and "offline" in rep0
+         and "one per line" in rep0, repr(rep0[-400:]))
+    c.eq("and asks for nothing", int(LCS._n(ip.call("cwListCount", [ip.globals.get("swaqueue")]))), 0)
+    c.eq("and waits on nothing", str(ip.globals.get("swasppending", "")), "")
+    ip.globals["swabackend"] = "electrum-clear"
+    click(ip, world, "tl_inspect")
+    rep1 = _fld(world, "tl_out")
+    q_sp = ip.globals.get("swaqueue") or {}
+    c.ck("with a backend it asks for the one transaction the input spends",
+         int(LCS._n(ip.call("cwListCount", [q_sp]))) == 1
+         and str(q_sp.get("1", {}).get("kind")) == "tx"
+         and str(q_sp.get("1", {}).get("arg")) == parent_txid,
+         repr({k: str(v)[:80] for k, v in q_sp.items()}))
+    c.ck("and says so under the raw report", "Asked" in rep1 and "1 transaction(s)" in rep1
+         and "RAW TRANSACTION" in rep1, repr(rep1[-300:]))
+    c.eq("and remembers what it is waiting on", str(ip.globals.get("swasppending", "")), pay_raw.lower())
+    c.eq("nothing is found yet", len(unlst_boot(ip.globals.get("swaspfound") or {"n": 0})), 0)
+    # the answer, as Electrum's blockchain.transaction.get delivers it
+    ip.globals["swaqueue"] = {"n": 0}
+    ip.globals["swainflight"] = {"kind": "tx", "arg": parent_txid, "id": "81"}
+    ip.call("waNetApply", ["tx", parent_txid,
+                           '{"jsonrpc":"2.0","id":81,"result":"%s"}' % parent_raw, "81"])
+    rep2 = _fld(world, "tl_out")
+    c.ck("when the parent lands the scan runs and finds the payment, under the raw report",
+         "RAW TRANSACTION" in rep2 and ("FOUND: " + sp_out_addr) in rep2
+         and "added to your addresses" in rep2, repr(rep2[-400:]))
+    c.eq("and the wait is over", str(ip.globals.get("swasppending", "")), "")
+    c.ck("the status line says where the result is",
+         "silent payment check" in str(_fld(world, "uiStatus")), repr(_fld(world, "uiStatus")))
+    sp_log = str(ip.globals.get("swalog", ""))
+    c.ck("and the log records the request and the finish",
+         "silent payment check of " in sp_log and "finished" in sp_log, repr(sp_log[-300:]))
+    c.eq("the parent is held for the next check", 
+         str((ip.globals.get("swaspparents") or {}).get(parent_txid, ""))[:20], parent_raw[:20])
+    click(ip, world, "tl_inspect")
+    rep3 = _fld(world, "tl_out")
+    c.ck("a second Inspect scans at once from the held parent, asking nothing",
+         "already in your addresses" in rep3
+         and int(LCS._n(ip.call("cwListCount", [ip.globals.get("swaqueue")]))) == 0,
+         repr(rep3[-200:]))
+    # a coinbase can carry no silent payment, and is not asked about
+    cb_raw = REF.tx_serialize(1, [("00" * 32, 0xFFFFFFFF, 0xFFFFFFFF)],
+                              [(5000000000, REF.spk_p2tr(want_out))], 0, [b"\x03\x01\x02\x03"]).hex()
+    put_field("tl_hex", cb_raw)
+    click(ip, world, "tl_inspect")
+    rep4 = _fld(world, "tl_out")
+    c.ck("a coinbase with a taproot output is not asked about",
+         "coinbase" in rep4 and int(LCS._n(ip.call("cwListCount", [ip.globals.get("swaqueue")]))) == 0,
+         repr(rep4[-200:]))
+    # and a transaction with no taproot output gets no check line at all
+    plain_raw = REF.tx_serialize(2, [(parent_txid, 0, 0xFFFFFFFD)],
+                                 [(70000, payer_spk)], 0, [b""], payer_wit).hex()
+    put_field("tl_hex", plain_raw)
+    click(ip, world, "tl_inspect")
+    rep5 = _fld(world, "tl_out")
+    c.ck("a transaction with no taproot output gets no check line",
+         "RAW TRANSACTION" in rep5 and "SILENT PAYMENT" not in rep5, repr(rep5[-200:]))
+    ip.globals["swabackend"] = "offline"
+    ip.globals["swaqueue"] = sp_queue_was
+    # ---- PASTED prevouts (2026-09-10): the same transaction with its ----
+    # script under it - the offline shape; the output is known by now, so
+    # the report says so and the count stays at one
+    paste = pay_raw + "\n" + payer_spk.hex()
+    put_field("tl_hex", paste)
+    click(ip, world, "tl_inspect")
     rep_sp = _fld(world, "tl_out")
-    sp_out_addr = REF.address_for_spk("testnet", REF.spk_p2tr(want_out))
-    c.ck("Inspect on a transaction with its prevouts finds the payment",
-         "FOUND: " + sp_out_addr in rep_sp, repr(rep_sp[:300]))
+    c.ck("Inspect on a transaction with its prevouts pasted finds the payment too",
+         "FOUND: " + sp_out_addr in rep_sp and "already in your addresses" in rep_sp,
+         repr(rep_sp[:300]))
     found = unlst_boot(ip.globals.get("swaspfound") or {"n": 0})
     c.eq("one found output is remembered", len(found), 1)
     want_scan = REF.sp_scan(sp_scan_node["seckey"], own_spend33,

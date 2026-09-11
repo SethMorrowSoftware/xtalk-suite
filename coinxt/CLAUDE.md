@@ -3649,3 +3649,48 @@ found and kept through a file round trip, and a coin on the found output
 signed and verified by the oracle against the OUTPUT key. Not run on an
 engine; the Receive button is a `waBuild*` change, so `kWaUiVersion` moved.
 
+
+### 2026-09-11: the receiving side asks the backend for its prevouts
+
+The entry above ends with the wallet scanning a transaction it is HANDED, with
+the script each input spends pasted under it one line at a time - a shape that
+works everywhere and that nobody would use twice. The fact it needs is not
+secret and not far: the script an input spends is an output of the transaction
+the input names, and every backend here has answered "the raw bytes of txid X"
+since the fee bump needed a parent's size (`waNetQueue "tx"`, `waStoreRawTx`).
+So a raw transaction pasted ALONE and inspected on a wallet that holds the keys
+now gets a SILENT PAYMENT CHECK line under its RAW TRANSACTION report: the
+wallet asks for each distinct parent it does not already hold, and when the
+last one lands `waStoreRawTx` runs the scan and repaints the Tools result box
+(`waSpAfterInspect`, `waSpPendingCheck`; the scan itself is `waSpScanWith`, the
+2026-09-10 body over a prevout list, which the paste path now builds from its
+lines and the fetched path from `waSpPrevoutsFrom`). Offline, the line says
+what to paste instead. A transaction with no taproot output gets no line, a
+coinbase is refused without a request, and two inputs from one parent are one
+request.
+
+Three shapes worth writing down. **The pending flag is set only when the answer
+is still outstanding**: on bitcoin-cli `waAfterQueue` drains the queue in the
+same call, so the parents may be held before `waSpAfterInspect` returns, and
+it asks again and scans in place rather than leaving a wait that
+`waStoreRawTx` had already satisfied - which would otherwise have painted the
+box twice, the second time as "already in your addresses". **The parent cache
+is dropped whole, never trimmed**: a txid names its bytes, so nothing in it can
+be wrong, only large, and 64 raw transactions is the cap (`kWaSpParentsMax`);
+it is never dropped while a check is waiting on it. **And the boot gate's payer
+had to spend a REAL parent.** The 2026-09-10 fixture spent `dd...:0`, a txid
+that names no bytes, which the paste path never noticed because it is handed
+the script; the fetched path asks for that txid and `waStoreRawTx` refuses an
+answer whose bytes hash to anything else - so the fixture builds the parent
+first and takes its txid from the oracle, and every derived value (the
+outpoints, the input hash, the expected output) follows from it. The gate
+drives the offline note, the request by txid, the Electrum-shaped answer and
+the scan on arrival, the second Inspect served from the cache, the coinbase
+and the non-taproot case, and then the paste path over the same transaction,
+which now says "already in your addresses" and leaves the count at one.
+
+Verified statically and through the boot gate; needs an OXT pass (the result
+box repainted from a socket callback while another screen is showing, and a
+parent the backend refuses, which leaves the wait in place for the next
+Inspect to ask again). The Tools note changed and no `waBuild*` handler did,
+so `kWaUiVersion` stayed.
