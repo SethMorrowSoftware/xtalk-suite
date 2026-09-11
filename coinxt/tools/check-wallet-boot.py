@@ -1143,6 +1143,7 @@ def drive(c, ip, world, sandbox):
                                      [ip.globals.get("swautxos") or ip.call("waEmptyList", []),
                                       sp_refusal_coin])
     put_field("sd_to", "%s,0.0005" % sp_addr)
+    put_field("sd_rate", "2")       # the refusal under test is the PSBT's, not the rate's
     try:
         ip.call("waBuildSpend", [False, True])
         c.ck("a silent payment as a PSBT is refused", False, "accepted")
