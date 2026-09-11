@@ -157,7 +157,10 @@ and is correctly out of scope. (It has an EXECUTION GATE since 2026-09-11 -
 `nocloud/tools/check-script-vectors.py` drives the shipped stack's pure helpers
 through the family's interpreter against its golden's mirrors - which is a
 different thing from a harness in the suite paste, and does not change this
-sentence.)
+sentence. holde-em gained the same kind of gate the same day:
+`holde-em/tools/check-script-vectors.py` runs the harness's OWN sections
+headlessly through riptide's runner - which is how four defects in the shared
+runner and interpreter were found, since that harness is engine-proven.)
 
 **The short version — REWRITTEN 2026-08-17, and every claim it used to make was
 stale.** It said one big build was unstarted (Model C) — Model C is built, 629

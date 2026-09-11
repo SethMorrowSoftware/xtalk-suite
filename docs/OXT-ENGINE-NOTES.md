@@ -299,6 +299,32 @@ to protect the right one - nothing does.
 
 ---
 
+### 2.6 `the number of <chunks> of X & Y` counts X alone - the target is a factor
+**OBSERVED, by way of a harness assertion that passed on two engines.**
+holde-em's netplay section asserts
+
+    the number of lines of tOutboxTxt & "/" & char 1 to 3 of line 1 of tOutboxTxt
+
+against `"1/r!" & tab`, and that line was green in the suite paste on 2026-08-20
+(Windows x86_64, holde-em 543/0) and again on 2026-08-24 (584/0). So `&` after
+the count's target is NOT folded into the target: the count is taken of
+`tOutboxTxt` and the rest is concatenated onto the number - the everyday
+LiveCode idiom `put the number of lines of tList & " lines"`. Arithmetic after
+the target (`the number of chars of X + 1`) has no engine record either way
+and is assumed to bind the same way (a factor, then the operator outside).
+
+Why it is written down: the family's interpreter modelled the OPPOSITE until
+2026-09-11 - it parsed the target at the concatenation tier, so `& "/"` was
+folded in and the count came out as the count of the whole string. holde-em's
+execution gate read `2` where the engine had read `1/r!`, which is how the
+model's binding was found to be the model's. The "chunk-binding trap" sites
+coinxt and nocloud rewrote to locals in September were findings of that model,
+not of an engine; the rewrites are harmless either way and stay. (The FIELD
+NAME form, `field "x" & tKind`, is a different construct and is not settled by
+this entry.)
+
+---
+
 ## 3. Control flow
 
 ### 3.1 `repeat with i = A to B step N` does not honour the step

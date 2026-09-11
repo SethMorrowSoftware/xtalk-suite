@@ -10503,7 +10503,18 @@ function heBetApply pStateA, pMsgType, pSeatNum, pAmount
             -- where a fractional remainder hands a whole chip to EVERY winner
             -- and mints chips -- and the replay audit re-derives the same
             -- wrong payout, so it stamps the minting hand clean. Reject both.
-            if tTargetAmt is not a number or tTargetAmt is not trunc(tTargetAmt) then
+            -- NESTED, not `is not a number or is not trunc(...)`: both operands
+            -- of `or` are evaluated (root docs/OXT-ENGINE-NOTES.md 2.5), so the
+            -- one-line form runs trunc("abc") - which the family's interpreter
+            -- refuses and the engine's own answer to is not on record (whether
+            -- trunc of a non-number throws is the runbook's S1 row P). Nested,
+            -- the refusal is the same under either reading, and the section
+            -- that pins it (heTestLegalRun) can run headlessly (2026-09-11).
+            if tTargetAmt is not a number then
+               put "act-bad-amount" into tStateA["err"]
+               return tStateA
+            end if
+            if tTargetAmt is not trunc(tTargetAmt) then
                put "act-bad-amount" into tStateA["err"]
                return tStateA
             end if

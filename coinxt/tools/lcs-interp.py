@@ -92,6 +92,14 @@ THE NAMED DIVERGENCES GREW WITH IT, same contract as the `is` note above
     first.) _disp still refuses to stringify an array in every string
     context (concatenation, chunks, contains) - the coinxt lesson stands.
 
+AND A CHUNK STORE, ADDED 2026-09-11, for the same reason as the negative
+range: `put X into item N of VAR` fell through to the plain-name assignment
+and silently created a variable named after the chunk expression, so the
+container kept its old value with no error - LOOSER than the engine, invisible
+until holde-em's execution gate tampered a wire field and read "ok". Modelled
+now (see assign / _chunk_store), and the plain-name branch REFUSES a target
+that is not an identifier, so the next unmodelled container is loud.
+
 AND ONE REFUSAL, ADDED 2026-09-08, which is a different KIND of entry from
 every divergence above: those are modelling choices, this is a hard stop.
 Numbers here are held to the engine's exact integer range (|v| <= 2^53) and
@@ -621,6 +629,29 @@ class Interp:
         raise SyntaxError(f"unsupported statement: {line!r}")
 
     def assign(self, target, value, env):
+        # A CHUNK STORE: `put X into item|line|char|byte N of CONTAINER`.
+        # Until 2026-09-11 this fell through to the plain-name branch below
+        # and silently created a variable NAMED "item 6 of ttampered" - the
+        # container untouched, no error, and the script's next read of it
+        # answering the OLD value. That is the LOOSER-than-engine direction
+        # the header's contract forbids, and it was invisible for the same
+        # reason the negative-range defect was: no shipped source that any
+        # gate ran had written the form. holde-em's harness does (it tampers
+        # a wire's sixth field to prove verify drops it), and its execution
+        # gate read "ok" for a tampered wire on its first run. The container
+        # is stored back through this same function, so a bracket chain
+        # works as a container too. The plain-name branch now REFUSES any
+        # target that is not an identifier, so the next unmodelled form is
+        # loud rather than a variable nobody reads.
+        m = re.match(r'^(item|line|char|character|byte)\s+(.+?)\s+of\s+'
+                     r'(\w+(?:\s*\[.*\])?)$', target, re.I)
+        if m:
+            unit = m.group(1).lower()
+            n = int(_n(self.eval_expr(m.group(2), env)))
+            container = m.group(3).strip()
+            cur = str(_disp(self.eval_expr(container, env)))
+            self.assign(container, _chunk_store(unit, n, cur, str(_disp(value))), env)
+            return
         m = re.match(r'^(\w+)\s*\[', target)
         if m:
             # A bracket CHAIN (`tTags[tI][tJ]`, any depth), each key itself a
@@ -657,7 +688,9 @@ class Interp:
                 node = node[k]
             node[keys[-1]] = _copy(value)
             return
-        low = target.lower()
+        low = target.strip().lower()
+        if not re.match(r'^[a-z_]\w*$', low):
+            raise SyntaxError(f"cannot assign to {target!r} (unmodelled container)")
         if low not in env and low in self.globals:
             self.globals[low] = _copy(value)
             return
@@ -878,9 +911,20 @@ class _Expr:
                 assert self.kw("of")
                 unit = self.kw("bytes", "chars", "characters", "items", "lines")
                 assert self.kw("of")
-                # bind the target tightly: `the number of items of X < 1` must
-                # parse as `(count of X) < 1`, not as a count of `X < 1`
-                target = self.p_concat()
+                # The target is a FACTOR: `the number of lines of X & "/" & Y`
+                # is `(count of X) & "/" & Y` and `... of X < 1` is
+                # `(count of X) < 1`. Until 2026-09-11 the target was parsed
+                # at the concatenation tier, so `&` and `+` after the target
+                # were folded INTO it - a model of a binding the engine does
+                # not have. The evidence is holde-em's harness, which asserts
+                # `the number of lines of tOutboxTxt & "/" & char 1 to 3 of
+                # line 1 of tOutboxTxt` against "1/r!" and passed on two
+                # engines (2026-08-20, 2026-08-24); the idiom `the number of
+                # lines of tList & " lines"` is everyday LiveCode. The three
+                # "chunk-binding" sites coinxt and nocloud rewrote to locals
+                # in 2026-09 were findings of THIS model, not of an engine,
+                # and are harmless either way.
+                target = self.p_unary()
                 s = str(_disp(target))
                 if unit in ("bytes", "chars", "characters"):
                     return len(s)
@@ -1052,6 +1096,32 @@ def _chunk(unit, a, b, target):
     if b < 0:
         return ""
     return s[a - 1:b]
+
+
+def _chunk_store(unit, n, cur, val):
+    """The engine's chunk STORE. An item or line past the end is reached by
+    padding with delimiters (`put "x" into item 4 of "a,b"` is "a,b,,x"); a
+    negative index counts from the end under the same one-trailing-delimiter
+    rule the reader applies; a char or byte replaces one character, or
+    appends when N is exactly one past the end. Anything else (a store past
+    the end of a string, a zero or unreachable index) is REFUSED, because the
+    engine's answer there has not been observed and a guess would be silent."""
+    if unit in ("item", "line"):
+        d = ITEM_DELIMITER[0] if unit == "item" else LINE_DELIMITER[0]
+        raw = cur.split(d) if cur != "" else []
+        n = _negative_index(n, len(_split_chunks(cur, d)))
+        if n < 1:
+            raise SyntaxError(f"chunk store into {unit} {n}: not modelled")
+        while len(raw) < n:
+            raw.append("")
+        raw[n - 1] = val
+        return d.join(raw)
+    n = _negative_index(n, len(cur))
+    if 1 <= n <= len(cur):
+        return cur[:n - 1] + val + cur[n:]
+    if n == len(cur) + 1:
+        return cur + val
+    raise SyntaxError(f"chunk store into {unit} {n} of a {len(cur)}-char string: not modelled")
 
 
 def _is_numeric(v, want_int):

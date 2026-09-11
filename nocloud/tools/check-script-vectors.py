@@ -32,20 +32,21 @@ that `is`, `contains`, `begins with` and `ends with` are modelled CASE-SENSITIVE
 where the engine folds case. Every helper driven here is either
 case-indifferent by construction or compares through toLower first.
 
-THE SPELLINGS THIS FILE TEACHES, AND WHERE. nocloud writes nine forms the
-shared interpreter has never modelled: `repeat for each char`, a bare `repeat`
-(the engine's `repeat forever`), `delete char N of X` / `delete the last char
-of X`, `the last item|char|line|word of X`, `the round of X`, `the number of
-bytes IN X` (the base accepts only `of`), `^`, text ORDERING under `<` and `>`
-(the runner refuses a non-numeric operand), and the engine functions toUpper /
-toLower / urlDecode / byteOffset. They are modelled in a SUBCLASS in this file
-rather than in lcs-interp.py, following the precedent coinxt's wallet gate set
-for `the number of controls`: the shared interpreter is byte-identical in two
-members and re-verified by four gates, so a change there rides on all of them,
-and a spelling only this member writes does not earn that. If a second member
-starts writing one of these, promote it to the base then. Each model states
-its engine rule beside it; `the round of` rounds half AWAY from zero, which is
-the engine's rule and the golden's _round1, and NOT python's round().
+THE SPELLINGS, AND WHERE THEY LIVE. nocloud writes nine forms the shared
+interpreter had never modelled: `repeat for each char`, a bare `repeat` (the
+engine's `repeat forever`), `delete char N of X` / `delete the last char of X`,
+`the last item|char|line|word of X`, `the round of X`, `the number of bytes IN
+X` (the base accepts only `of`), `^`, text ORDERING under `<` and `>` (the base
+refuses a non-numeric operand), and the engine functions toUpper / toLower /
+urlDecode / byteOffset. The first version of this gate modelled them in a
+subclass here, by the precedent coinxt's wallet gate set for `the number of
+controls`, with the note that a second writer would promote them. holde-em
+turned out to be that second writer the same day, so they live in riptide's
+runner now (DemoExpr / DemoInterp / install_engine_functions), beside `div`,
+`mod` and the word chunk, and this file keeps only the write interception
+below. Each model states its engine rule beside it there; `the round of`
+rounds half AWAY from zero, the engine's rule and the golden's _round1, NOT
+python's round().
 
 WHAT IS DELIBERATELY NOT DRIVEN, each with the reason - a partial gate read as
 a whole one is worse than none:
@@ -79,7 +80,6 @@ import os
 import re
 import sys
 import tempfile
-from urllib.parse import unquote_plus
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 MEMBER = os.path.dirname(HERE)
@@ -108,159 +108,25 @@ Thrown = LCS.Thrown
 
 
 # --------------------------------------------------------------------------
-# the spellings nocloud writes beyond the shared subset (see the header)
-
-class NcExpr(DB.DemoExpr):
-    def p_unary(self):
-        # `^` - exponentiation, one tier above `*`; the base does not model
-        # it because coinxt's layer avoids the operator (some OXT parsers
-        # reject it inside a compound expression). nocloud writes it
-        # parenthesised, `(2 ^ tExp)`, in the login backoff.
-        v = super().p_unary()
-        while True:
-            self.ws()
-            if self.i < len(self.s) and self.s[self.i] == "^":
-                self.i += 1
-                r = super().p_unary()
-                v = LCS._exact(LCS._n(v) ** LCS._n(r))
-                continue
-            return v
-
-    def p_cmp(self):
-        # The runner's comparator, restated with ONE extension: `<` / `>` and
-        # friends over operands that are NOT both numbers compare as TEXT,
-        # case-insensitively (the engine's default; `the caseSensitive` is
-        # never set in this app). The runner refuses those with a ValueError
-        # out of _n, which is stricter than the engine - and qsUserRouteFind
-        # breaks a specificity tie on `tKey < tBestKey`, two route keys.
-        # Restated rather than delegated for the reason the runner gives for
-        # restating the base: the operand is consumed before the operator is
-        # seen, so a partial override cannot hand the tail back to super().
-        v = self.p_concat()
-        while True:
-            save = self.i
-            if self.kw("contains"):
-                r = self.p_concat()
-                v = str(LCS._disp(r)) in str(LCS._disp(v))
-                continue
-            if self.kw("begins"):
-                assert self.kw("with"), "expected `with` in %r" % self.s
-                r = self.p_concat()
-                v = str(LCS._disp(v)).startswith(str(LCS._disp(r)))
-                continue
-            if self.kw("ends"):
-                assert self.kw("with"), "expected `with` in %r" % self.s
-                r = self.p_concat()
-                v = str(LCS._disp(v)).endswith(str(LCS._disp(r)))
-                continue
-            if self.kw("is"):
-                neg = bool(self.kw("not"))
-                if self.kw("among"):
-                    assert self.kw("the"), "expected `the` in %r" % self.s
-                    word = self.kw("keys", "items", "lines")
-                    assert word and self.kw("of"), \
-                        "expected keys/items/lines `of` in %r" % self.s
-                    target = self.p_concat()
-                    if word == "keys":
-                        hit = (isinstance(target, dict)
-                               and str(LCS._disp(v)) in target)
-                    else:
-                        delim = (LCS.ITEM_DELIMITER[0] if word == "items"
-                                 else LCS.LINE_DELIMITER[0])
-                        parts = LCS._split_chunks(str(LCS._disp(target)), delim)
-                        hit = str(LCS._disp(v)) in parts
-                    v = (not hit) if neg else hit
-                    continue
-                save2 = self.i
-                if self.kw("an", "a"):
-                    word = self.kw("integer", "number", "array")
-                    if word == "array":
-                        hit = isinstance(v, dict)
-                        v = (not hit) if neg else hit
-                        continue
-                    if word:
-                        hit = LCS._is_numeric(v, word == "integer")
-                        v = (not hit) if neg else hit
-                        continue
-                    self.i = save2
-                r = self.p_concat()
-                v = (not LCS._eq(v, r)) if neg else LCS._eq(v, r)
-                continue
-            self.ws()
-            for op in (">=", "<=", "<>", ">", "<"):
-                if self.s[self.i:self.i + len(op)] == op:
-                    self.i += len(op)
-                    r = self.p_concat()
-                    if LCS._is_numeric(v, False) and LCS._is_numeric(r, False):
-                        a, b = LCS._n(v), LCS._n(r)
-                    else:
-                        a, b = str(LCS._disp(v)).lower(), str(LCS._disp(r)).lower()
-                    v = {">=": a >= b, "<=": a <= b, ">": a > b,
-                         "<": a < b, "<>": a != b}[op]
-                    break
-            else:
-                self.i = save
-                return v
-
-    def p_atom(self):
-        self.ws()
-        rest = self.s[self.i:]
-        # `the last item|char|line|word of X` - the engine's last-chunk form.
-        # The target binds tightly (an atom), so `the last char of X is Y`
-        # leaves `is Y` to the comparator above.
-        m = re.match(r'the\s+last\s+(item|char|line|word)\s+of\s+', rest, re.I)
-        if m:
-            self.i += m.end()
-            unit = m.group(1).lower()
-            s = str(LCS._disp(self.p_atom()))
-            if unit == "char":
-                return s[-1:]
-            if unit == "word":
-                w = s.split()
-                return w[-1] if w else ""
-            delim = LCS.ITEM_DELIMITER[0] if unit == "item" else LCS.LINE_DELIMITER[0]
-            parts = LCS._split_chunks(s, delim)
-            return parts[-1] if parts else ""
-        # `the number of bytes IN X` - the base models `of`; `in` is the same
-        # count (the engine accepts both prepositions).
-        m = re.match(r'the\s+number\s+of\s+(bytes|chars|characters|items|lines|words)'
-                     r'\s+in\s+', rest, re.I)
-        if m:
-            self.i += m.end()
-            unit = m.group(1).lower()
-            s = str(LCS._disp(self.p_concat()))
-            if unit in ("bytes", "chars", "characters"):
-                return len(s)
-            if unit == "words":
-                return len(s.split())
-            if unit == "items":
-                return len(LCS._split_chunks(s, LCS.ITEM_DELIMITER[0]))
-            return len(LCS._split_chunks(s, LCS.LINE_DELIMITER[0]))
-        # `the round of X` - half AWAY from zero (the engine's rule; python's
-        # round() is banker's and would answer 2 for 2.5). Binds to the atom.
-        m = re.match(r'the\s+round\s+of\s+', rest, re.I)
-        if m:
-            self.i += m.end()
-            x = LCS._n(self.p_atom())
-            import math
-            r = math.floor(x + 0.5) if x >= 0 else math.ceil(x - 0.5)
-            return LCS._exact(int(r))
-        return super().p_atom()
-
+# the one thing this gate models that the shared runner does not: the writes
 
 class NcInterp(DB.DemoInterp):
+    """The transport writes, intercepted at statement level: OnionXT's stream
+    write and close, and the clearweb twin's two socket writers. Everything a
+    send command computed is in the bytes it hands over, which is what the
+    golden's http_text_response pins. Every other spelling this app writes
+    beyond the base subset lives in the runner itself since 2026-09-11 (see
+    the header)."""
+
     def __init__(self, src, world):
         self.sent = []          # (handler, [args]) for every intercepted write
         super().__init__(src, world)
-
-    def eval_expr(self, expr, env):
-        return NcExpr(self, env).parse(expr)
 
     def _args(self, rest, env):
         args = []
         rest = rest.strip()
         if rest:
-            p = NcExpr(self, env)
+            p = DB.DemoExpr(self, env)
             p.s, p.i = rest, 0
             while True:
                 args.append(p.p_or())
@@ -275,84 +141,12 @@ class NcInterp(DB.DemoInterp):
 
     def _exec_stmt(self, body, i, env):
         line = body[i].strip()
-        low = line.lower()
-        # ---- repeat for each char VAR in EXPR (a snapshot, like the base's
-        # item form: the engine iterates the container as it was)
-        m = re.match(r'repeat\s+for\s+each\s+char\s+(\w+)\s+in\s+(.+)$', line, re.I)
-        if m:
-            var = m.group(1).lower()
-            inner, after = self._block(body, i, None, None)
-            for ch in str(LCS._disp(self.eval_expr(m.group(2), env))):
-                env[var] = ch
-                try:
-                    self._exec(inner, env)
-                except LCS._Next:
-                    pass
-                except LCS._Exit:
-                    break
-            return after
-        # ---- a bare `repeat` is `repeat forever`; the same runaway guard as
-        # the base's, because an interpreter that can hang is one whose
-        # failures nobody reads
-        if low == "repeat":
-            inner, after = self._block(body, i, None, None)
-            guard = 0
-            while True:
-                guard += 1
-                if guard > 2_000_000:
-                    raise RuntimeError("repeat did not terminate")
-                try:
-                    self._exec(inner, env)
-                except LCS._Next:
-                    pass
-                except LCS._Exit:
-                    break
-            return after
-        # ---- delete the last char of X / delete char N of X (one index,
-        # negative counted from the end; the base models only the N to M form)
-        m = re.match(r'delete\s+the\s+last\s+char\s+of\s+(\w+)$', line, re.I)
-        if m:
-            tgt = m.group(1)
-            s = str(LCS._disp(self.eval_expr(tgt, env)))
-            self.assign(tgt, s[:-1], env)
-            return i + 1
-        m = re.match(r'delete\s+char\s+(.+?)\s+of\s+(\w+)$', line, re.I)
-        if m and not re.search(r'\s+to\s+', m.group(1)):
-            n = int(LCS._n(self.eval_expr(m.group(1), env)))
-            tgt = m.group(2)
-            s = str(LCS._disp(self.eval_expr(tgt, env)))
-            if n < 0:
-                n = len(s) + 1 + n
-            if 1 <= n <= len(s):
-                s = s[:n - 1] + s[n:]
-            self.assign(tgt, s, env)
-            return i + 1
-        # ---- the transport writes, intercepted: OnionXT's stream write and
-        # close, and the clearweb twin's two socket writers. Everything the
-        # command computed is in the bytes it hands over, which is what the
-        # golden's http_text_response pins.
         m = re.match(r'(oxWrite|oxCloseStream|qsCwWriteContinue|qsCwWriteClose|'
                      r'qsFsCleanup)\b\s*(.*)$', line, re.I)
         if m:
             self.sent.append((m.group(1), self._args(m.group(2), env)))
             return i + 1
         return super()._exec_stmt(body, i, env)
-
-
-def install_engine_functions():
-    """The engine functions nocloud calls that neither the base nor the runner
-    models. byteOffset is the native scan qsHttpHeaderEnd probes for; modelling
-    it means the FAST path runs here, and the driver forces the loop path too."""
-    def _s(a):
-        return str(LCS._disp(a))
-    LCS.HASHES.update({
-        "toupper": lambda a: _s(a[0]).upper(),
-        "tolower": lambda a: _s(a[0]).lower(),
-        # LiveCode's urlDecode turns '+' into a space as well as %xx (the golden's
-        # query_param mirror says so and uses unquote_plus for the same reason)
-        "urldecode": lambda a: unquote_plus(_s(a[0])),
-        "byteoffset": lambda a: _s(a[1]).find(_s(a[0])) + 1,
-    })
 
 
 # --------------------------------------------------------------------------
@@ -645,6 +439,7 @@ def drive(c, ip, world, sandbox):
     # -- the always-sent header block, on a fixed clock --
     fh_epoch = 1751812800
     LCS.SECONDS[0] = fh_epoch
+    world.ms = fh_epoch * 1000      # the runner derives `the seconds` from its ms clock
     fh_extra = G.http_extra_headers(fh_epoch)
     c.ck("qsHttpExtraHeaders", call("qsHttpExtraHeaders", []), fh_extra)
 
@@ -856,11 +651,11 @@ def main(argv):
     elif args:
         print("usage: check-script-vectors.py [--check] [--source PATH]")
         return 2
-    install_engine_functions()
     c = Checker()
     sandbox = tempfile.mkdtemp(prefix="nocloud-vectors-")
     try:
         world = DB.World(sandbox)
+        DB.install_engine_functions(world)
         ip = NcInterp(build_source(path), world)
         drive(c, ip, world, sandbox)
     finally:

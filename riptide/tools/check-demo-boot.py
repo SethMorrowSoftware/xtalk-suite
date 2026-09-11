@@ -62,6 +62,34 @@ discovered:
     advancing the modeled clock. A handler that re-arms itself is delivered
     a bounded number of times.
 
+THREE MEMBERS DRIVE THIS RUNNER NOW, AND THE THIRD FOUND THREE MODEL DEFECTS
+(2026-09-11). coinxt's wallet gate was the second stack through it; nocloud's
+helper gate and holde-em's harness gate are the third and fourth, and the
+spellings they write beyond riptide's were promoted here rather than modelled
+per gate: `repeat for each char|word|element`, a bare `repeat`, single-chunk
+deletes, `split ... by`, `sort` with its options and `by EXPR`, the
+first/last-chunk forms, `the number of X in`, `the round of`, `^`, `is in`,
+`there is not a`, a scrollbar in `there is`, text ORDERING under `<` and `>`,
+and the engine functions in install_engine_functions (toUpper/toLower,
+urlDecode, byteOffset, min/max/abs, round, baseConvert, numToCodepoint, a
+SEEDED random). What holde-em's harness - engine-proven at 543/0 - found
+wrong in the model itself, each a silent wrong answer rather than a refusal:
+  - `break` was honoured only at a case arm's top level; nested inside an
+    `if` it fell to the unknown-call path, became a CATCHABLE error, and the
+    script's own try swallowed it, so the rest of the arm ran (four redial
+    attempts in eight ticks). `break` raises _Break from any depth now, and
+    `exit repeat` inside a switch is no longer caught by the switch.
+  - The millisecond clock started at 1,000,000 beside a 1.7e9 `the
+    seconds`, so a turn stamped in milliseconds and judged in seconds was
+    1.7 billion seconds old: every play context timed itself out. The two
+    clocks are one clock now (World.ms seeds from LCS.SECONDS; `the seconds`
+    is ms div 1000).
+  - In the base interpreter, `put X into item N of VAR` silently created a
+    variable named after the chunk expression (a tampered wire still
+    verified), and `the number of lines of X & Y` folded `& Y` into the
+    target (the engine counts X alone - root engine notes 2.6). Both are
+    fixed in the base, whose header carries the record.
+
 THE SOURCE REWRITES are shared with tools/check-script-vectors.py (imported
 from it, not copied), for the same reason with the same discipline: each is
 named, counted, and must fire, so a rewrite that stops applying fails the
@@ -74,6 +102,7 @@ Usage:
                                                # (the mutation fixtures)
 """
 import importlib.util
+import math
 import os
 import re
 import shutil
@@ -146,7 +175,14 @@ class World:
         self.result = ""
         self.target = None              # (ctype, name) while a click drives
         self.locked = 0
-        self.ms = 1000000               # the modeled clock, advanced on ticks
+        # The modeled clock, advanced on ticks. It starts at `the seconds`
+        # times 1000 so the two clocks the engine keeps in step ARE in step
+        # here: holde-em's liveness layer stamps a turn in milliseconds and
+        # judges it in seconds, and with the old 1,000,000 start beside a
+        # 1.7e9 `the seconds` every turn was 1.7 billion seconds old - the
+        # play context timed itself out the moment a refused timeout arrived
+        # (found by holde-em's execution gate, 2026-09-11).
+        self.ms = LCS.SECONDS[0] * 1000
         self.sandbox = sandbox
         self.log = []                   # what the model DID (diagnostics)
 
@@ -337,6 +373,13 @@ class DemoExpr(LCS._Expr):
                         hit = str(LCS._disp(v)) in parts
                     v = (not hit) if neg else hit
                     continue
+                # `X is [not] in Y` - the engine's string membership, the
+                # mirror of `Y contains X` (holde-em's onion whitespace test)
+                if self.kw("in"):
+                    r = self.p_concat()
+                    hit = str(LCS._disp(v)) in str(LCS._disp(r))
+                    v = (not hit) if neg else hit
+                    continue
                 save2 = self.i
                 if self.kw("an", "a"):
                     word = self.kw("integer", "number", "array")
@@ -357,13 +400,37 @@ class DemoExpr(LCS._Expr):
                 if self.s[self.i:self.i + len(op)] == op:
                     self.i += len(op)
                     r = self.p_concat()
-                    a, b = LCS._n(v), LCS._n(r)
+                    # operands that are not BOTH numbers order as TEXT,
+                    # case-insensitively (the engine's default; the base
+                    # refuses with a ValueError out of _n, which is stricter
+                    # than the engine). holde-em breaks a tie on two route
+                    # keys with `<`, nocloud on two 64-hex lines (2026-09-11).
+                    if LCS._is_numeric(v, False) and LCS._is_numeric(r, False):
+                        a, b = LCS._n(v), LCS._n(r)
+                    else:
+                        a, b = (str(LCS._disp(v)).lower(),
+                                str(LCS._disp(r)).lower())
                     v = {">=": a >= b, "<=": a <= b, ">": a > b,
                          "<": a < b, "<>": a != b}[op]
                     break
             else:
                 self.i = save
                 return v
+
+    def p_unary(self):
+        # `^` - exponentiation, one tier above `*`; the base does not model
+        # it because coinxt's layer avoids the operator (some OXT parsers
+        # reject it inside a compound expression). nocloud writes it
+        # parenthesised, `(2 ^ tExp)`, in its login backoff (2026-09-11).
+        v = super().p_unary()
+        while True:
+            self.ws()
+            if self.i < len(self.s) and self.s[self.i] == "^":
+                self.i += 1
+                r = super().p_unary()
+                v = LCS._exact(LCS._n(v) ** LCS._n(r))
+                continue
+            return v
 
     def p_atom(self):
         world = self.ip.world
@@ -380,18 +447,71 @@ class DemoExpr(LCS._Expr):
         self.ws()
         rest = self.s[self.i:]
 
+        # `the last|first item|char|line|word of X` - the engine's end-chunk forms
+        # (nocloud's leaf and MIME helpers, holde-em's helpers; promoted from
+        # nocloud's gate 2026-09-11 when holde-em became the second writer).
+        # The target binds tightly - an atom - so `the last char of X is Y`
+        # leaves `is Y` to the comparator. `the last <objtype>` (a control
+        # reference) is a different form and does not match this regex.
+        m = re.match(r'the\s+(last|first)\s+(item|char|line|word)\s+of\s+',
+                     rest, re.I)
+        if m:
+            self.i += m.end()
+            last = m.group(1).lower() == "last"
+            unit = m.group(2).lower()
+            s = str(LCS._disp(self.p_atom()))
+            if unit == "char":
+                return s[-1:] if last else s[:1]
+            if unit == "word":
+                w = s.split()
+                return (w[-1] if last else w[0]) if w else ""
+            delim = (LCS.ITEM_DELIMITER[0] if unit == "item"
+                     else LCS.LINE_DELIMITER[0])
+            parts = LCS._split_chunks(s, delim)
+            return (parts[-1] if last else parts[0]) if parts else ""
+        # `the number of bytes IN X` - the base models only `of`; the engine
+        # accepts either preposition and the count is the same. `words` is
+        # new in both spellings (holde-em's onion section counts them).
+        m = (re.match(r'the\s+number\s+of\s+(bytes|chars|characters|items|'
+                      r'lines|words)\s+in\s+', rest, re.I)
+             or re.match(r'the\s+number\s+of\s+(words)\s+of\s+', rest, re.I))
+        if m:
+            self.i += m.end()
+            unit = m.group(1).lower()
+            # a FACTOR, as the base's `of` form binds it (see the base)
+            s = str(LCS._disp(self.p_unary()))
+            if unit in ("bytes", "chars", "characters"):
+                return len(s)
+            if unit == "words":
+                return len(s.split())
+            if unit == "items":
+                return len(LCS._split_chunks(s, LCS.ITEM_DELIMITER[0]))
+            return len(LCS._split_chunks(s, LCS.LINE_DELIMITER[0]))
+        # `the round of X` - half AWAY from zero, the engine's rule (python's
+        # round() is banker's and would answer 2 for 2.5). Binds to the atom.
+        m = re.match(r'the\s+round\s+of\s+', rest, re.I)
+        if m:
+            self.i += m.end()
+            x = LCS._n(self.p_atom())
+            r = math.floor(x + 0.5) if x >= 0 else math.ceil(x - 0.5)
+            return LCS._exact(int(r))
+
         # `there is a|an|no <thing> <expr>` - never throws, answers a boolean
         # IMAGE joined the list on 2026-08-31, with the carried self-check
         # block: scMissing asks about it now, because a demo may build a
         # control the KIT does not (coinxt's wallet paints a QR into one).
         # Without it here every adopter's scMissing walk would die on an
         # unmodelled expression rather than answer.
-        m = re.match(r'there\s+is\s+(a|an|no)\s+'
-                     r'(field|button|graphic|image|card|file|folder)\s+', rest,
-                     re.I)
+        # scrollbar joined 2026-09-11 (holde-em's bet slider): no runner
+        # builds one, so the answer is "absent", which is what a headless
+        # harness run needs to hear
+        m = re.match(r'there\s+is\s+(a|an|no|not\s+a|not\s+an)\s+'
+                     r'(field|button|graphic|image|scrollbar|card|file|folder)\s+',
+                     rest, re.I)
         if m:
             self.i += m.end()
-            want_missing = m.group(1).lower() == "no"
+            # `there is no X` and `there is not a X` are the same question
+            want_missing = m.group(1).lower() in ("no", "not a", "not an")
             kind = m.group(2).lower()
             # the object-name expression binds tighter than `and`/`of card`
             name = LCS._disp(self.p_concat())
@@ -425,8 +545,8 @@ class DemoExpr(LCS._Expr):
             return len(world.cards)
 
         # bare engine `the` constants the demo reads
-        m = re.match(r'the\s+(platform|milliseconds|millisecs|result|target)'
-                     r'\b', rest, re.I)
+        m = re.match(r'the\s+(platform|milliseconds|millisecs|seconds|result|'
+                     r'target)\b', rest, re.I)
         if m:
             word = m.group(1).lower()
             self.i += m.end()
@@ -434,6 +554,10 @@ class DemoExpr(LCS._Expr):
                 return "Win32"
             if word in ("milliseconds", "millisecs"):
                 return world.ms
+            if word == "seconds":
+                # derived from the same clock as the milliseconds (see
+                # World.__init__), never the base's fixed constant alone
+                return world.ms // 1000
             if word == "result":
                 return world.result
             # `the target` bare: the long-ish reference of the clicked control
@@ -503,6 +627,12 @@ class DemoExpr(LCS._Expr):
             # script error, and it is exactly what the capability probes
             # catch on a machine without an extension
             raise Thrown("Handler: can't find handler (%s)" % e)
+
+
+class _Break(Exception):
+    """`break`: leave the enclosing switch. Not a Thrown, so a script's own
+    try/catch cannot swallow it (the engine's break is control flow, not an
+    error), and not an _Exit, so a repeat around the switch keeps looping."""
 
 
 class DemoInterp(LCS.Interp):
@@ -676,16 +806,37 @@ class DemoInterp(LCS.Interp):
         # ---- switch (absent from the base; mouseUp and raAppLoad use it)
         if low.startswith("switch"):
             return self._exec_switch(body, i, env)
+        # `break` leaves the ENCLOSING switch from any depth - inside an `if`
+        # in a case arm as much as at the arm's top level. Until 2026-09-11
+        # only a top-level `break` was honoured: a nested one fell through
+        # to the unknown-call path, became a CATCHABLE script error, and
+        # holde-em's onion tick (`if wait > 0 then break end if`) swallowed
+        # it in its own try and ran the rest of the arm - four redial
+        # attempts in eight ticks instead of one. Found by holde-em's
+        # execution gate.
+        if low == "break":
+            raise _Break()
 
-        # ---- repeat for each key/line (absent from the base)
-        m = re.match(r'repeat\s+for\s+each\s+(key|line)\s+(\w+)\s+in\s+(.+)$',
-                     line, re.I)
+        # ---- repeat for each key/element/line/char/word (absent from the
+        # base, which models `item` alone). The engine iterates a SNAPSHOT
+        # of the container, so the list is built before the first pass.
+        # char and word joined 2026-09-11 (nocloud's sanitisers, holde-em's
+        # evaluator harness), element the same day (holde-em).
+        m = re.match(r'repeat\s+for\s+each\s+(key|element|line|char|word)'
+                     r'\s+(\w+)\s+in\s+(.+)$', line, re.I)
         if m:
             kind, var = m.group(1).lower(), m.group(2).lower()
             inner, after = self._block(body, i, None, None)
             src = self.eval_expr(m.group(3), env)
             if kind == "key":
                 items = list(src.keys()) if isinstance(src, dict) else []
+            elif kind == "element":
+                items = ([LCS._copy(x) for x in src.values()]
+                         if isinstance(src, dict) else [])
+            elif kind == "char":
+                items = list(str(LCS._disp(src)))
+            elif kind == "word":
+                items = str(LCS._disp(src)).split()
             else:
                 items = LCS._split_chunks(str(LCS._disp(src)),
                                           LCS.LINE_DELIMITER[0])
@@ -698,6 +849,126 @@ class DemoInterp(LCS.Interp):
                 except LCS._Exit:
                     break
             return after
+
+        # ---- a bare `repeat` is the engine's `repeat forever`; the base's
+        # runaway guard applies, because an interpreter that can hang is one
+        # whose failures nobody reads (nocloud's template renderer, 2026-09-11)
+        if low == "repeat":
+            inner, after = self._block(body, i, None, None)
+            guard = 0
+            while True:
+                guard += 1
+                if guard > 2_000_000:
+                    raise RuntimeError("repeat did not terminate")
+                try:
+                    self._exec(inner, env)
+                except LCS._Next:
+                    pass
+                except LCS._Exit:
+                    break
+            return after
+
+        # ---- single-chunk deletes: `delete [the] last char|item|line|word
+        # of X`, `delete char|item|line N of X` (N may be negative, counted
+        # from the end). The base models only `delete char A to B of X`.
+        # Deleting an item or a line takes ONE adjacent delimiter with it,
+        # which is what makes `delete line 1 of sQueue` a queue pop; the
+        # engine's one-ignored-trailing-delimiter rule is applied when the
+        # index is resolved, as the base's chunk reader applies it.
+        m = (re.match(r'delete\s+(?:the\s+)?last\s+(char|item|line|word)'
+                      r'\s+of\s+(\w+)$', line, re.I)
+             or re.match(r'delete\s+(char|item|line)\s+(.+?)\s+of\s+(\w+)$',
+                         line, re.I))
+        if m and not re.search(r'\s+to\s+', m.group(2) if m.lastindex == 3
+                                else ""):
+            if m.lastindex == 2:
+                unit, n_expr, tgt = m.group(1).lower(), None, m.group(2)
+            else:
+                unit, n_expr, tgt = (m.group(1).lower(), m.group(2),
+                                     m.group(3))
+            s = str(LCS._disp(self.eval_expr(tgt, env)))
+            if unit == "char":
+                n = -1 if n_expr is None else int(LCS._n(self.eval_expr(n_expr, env)))
+                if n < 0:
+                    n = len(s) + 1 + n
+                if 1 <= n <= len(s):
+                    s = s[:n - 1] + s[n:]
+            elif unit == "word":
+                w = s.split()
+                if w:
+                    w.pop()
+                s = " ".join(w)
+            else:
+                d = (LCS.ITEM_DELIMITER[0] if unit == "item"
+                     else LCS.LINE_DELIMITER[0])
+                raw = s.split(d)
+                trailing = len(raw) > 1 and raw[-1] == ""
+                count = len(raw) - (1 if trailing else 0)
+                n = -1 if n_expr is None else int(LCS._n(self.eval_expr(n_expr, env)))
+                if n < 0:
+                    n = count + 1 + n
+                if 1 <= n <= count:
+                    del raw[n - 1]
+                    s = d.join(raw)
+            self.assign(tgt, s, env)
+            return i + 1
+
+        # ---- sort lines|items of VAR [ascending|descending] [numeric|text]
+        # [by EXPR]: the base models the bare `sort lines of VAR` only.
+        # The option words come in any order (holde-em writes both `numeric
+        # descending` and `ascending numeric`); `by EXPR` evaluates EXPR once
+        # per element with `each` bound to it. Stable, as the engine's is;
+        # text keys fold case (the engine default); international collation
+        # is not modelled (every sorted list in the corpus is ASCII).
+        m = re.match(r'sort\s+(lines|items)\s+of\s+(\w+)((?:\s+(?:ascending|'
+                     r'descending|numeric|text|international|datetime))*)'
+                     r'(?:\s+by\s+(.+))?$', line, re.I)
+        if m:
+            unit, tgt = m.group(1).lower(), m.group(2)
+            opts = m.group(3).lower().split()
+            by = m.group(4)
+            d = (LCS.ITEM_DELIMITER[0] if unit == "items"
+                 else LCS.LINE_DELIMITER[0])
+            s = str(LCS._disp(self.eval_expr(tgt, env)))
+            parts = LCS._split_chunks(s, d)
+            numeric = "numeric" in opts
+
+            def key_of(part):
+                if by is None:
+                    k = part
+                else:
+                    env["each"] = part
+                    k = LCS._disp(self.eval_expr(by, env))
+                if numeric:
+                    return LCS._n(k) if LCS._is_numeric(k, False) else 0
+                return str(k).lower()
+            parts.sort(key=key_of, reverse="descending" in opts)
+            env.pop("each", None)
+            self.assign(tgt, d.join(parts), env)
+            return i + 1
+
+        # ---- split VAR by A [and B]: the container becomes an array. With
+        # one delimiter the keys are 1..n; with two, each A-part is split at
+        # its first B into key and value (holde-em's wire bodies, 2026-09-11)
+        m = re.match(r'split\s+(\w+)\s+by\s+(.+?)(?:\s+and\s+(.+))?$', line,
+                     re.I)
+        if m:
+            tgt = m.group(1)
+            s = str(LCS._disp(self.eval_expr(tgt, env)))
+            a = str(LCS._disp(self.eval_expr(m.group(2), env)))
+            out = {}
+            if s != "":
+                parts = s.split(a) if a else [s]
+                if m.group(3) is None:
+                    for k, part in enumerate(parts):
+                        out[str(k + 1)] = part
+                else:
+                    b = str(LCS._disp(self.eval_expr(m.group(3), env)))
+                    for part in parts:
+                        k, _sep, val = part.partition(b)
+                        out[k] = val
+            self.assign(tgt, out, env)
+            return i + 1
 
         # ---- repeat N times (absent from the base; the base32 layer uses it)
         m = re.match(r'repeat\s+(.+?)\s+times$', line, re.I)
@@ -864,8 +1135,10 @@ class DemoInterp(LCS.Interp):
         # Here the engine statement is modeled instead, oracle-backed, and
         # the modeled secret is the 32-byte SEED (the named divergence: every
         # in-model consumer hands it back to natives that expect the seed).
+        # The seed is an EXPRESSION (holde-em passes `heHash32(...)` inline;
+        # riptide passes a variable), the two out-parameters are names.
         m = re.match(r'(sxSignKeypairFromSeed|sxKeyExchangeKeypairFromSeed)'
-                     r'\s+(\w+)\s*,\s*(\w+)\s*,\s*(\w+)\s*$', line, re.I)
+                     r'\s+(.+?)\s*,\s*(\w+)\s*,\s*(\w+)\s*$', line, re.I)
         if m:
             seed = str(LCS._disp(self.eval_expr(m.group(2), env))
                        ).encode("latin-1")
@@ -992,13 +1265,14 @@ class DemoInterp(LCS.Interp):
         if start is None:
             # no case matched and no default
             return after
+        # Arms fall through until a `break` is RAISED (from any depth); an
+        # `exit repeat` inside an arm belongs to the enclosing repeat and is
+        # deliberately NOT caught here (it used to be, which turned an exit
+        # from a loop into an exit from the switch alone).
         try:
             for _conds, stmts in arms[start:]:
-                self._exec([s for s in stmts
-                            if s.strip().lower() != "break"], env)
-                if any(s.strip().lower() == "break" for s in stmts):
-                    break
-        except LCS._Exit:
+                self._exec(stmts, env)
+        except _Break:
             pass
         return after
 
@@ -1017,8 +1291,70 @@ def _reshift(m):
 # natives and profiles
 # ==========================================================================
 
+def install_engine_functions(world):
+    """Engine FUNCTIONS the base does not model, for every stack this
+    runner drives (promoted from nocloud's gate 2026-09-11, when holde-em
+    became the second writer of most of them). `random(n)` is the engine's
+    1..n draw over a SEEDED generator on the world, so a run is reproducible
+    and a gate that reads it cannot flake; min/max take numbers or one
+    comma list, as the engine does."""
+    import random as _random
+    from urllib.parse import unquote_plus
+    world.rng = _random.Random(20260911)
+
+    def _s(a):
+        return str(LCS._disp(a[0]))
+
+    def _nums(a):
+        if len(a) == 1 and not isinstance(a[0], (int, float)):
+            return [LCS._n(x) for x in LCS._split_chunks(_s(a), LCS.ITEM_DELIMITER[0])]
+        return [LCS._n(x) for x in a]
+
+    LCS.HASHES.update({
+        "toupper": lambda a: _s(a).upper(),
+        "tolower": lambda a: _s(a).lower(),
+        # the engine's urlDecode turns '+' into a space as well as %xx
+        "urldecode": lambda a: unquote_plus(_s(a)),
+        "byteoffset": lambda a: str(LCS._disp(a[1])).find(_s(a)) + 1,
+        "min": lambda a: LCS._exact(min(_nums(a))),
+        "max": lambda a: LCS._exact(max(_nums(a))),
+        "abs": lambda a: LCS._exact(abs(LCS._n(a[0]))),
+        "numtocodepoint": lambda a: chr(int(LCS._n(a[0]))),
+        "codepointtonum": lambda a: ord(_s(a)[0]) if _s(a) else "",
+        "random": lambda a: world.rng.randint(1, max(1, int(LCS._n(a[0])))),
+        # round(x[, digits]) - half AWAY from zero, like `the round of`
+        "round": lambda a: _round_away(LCS._n(a[0]),
+                                       int(LCS._n(a[1])) if len(a) > 1 else 0),
+        # baseConvert(n, from, to): the engine answers hex digits UPPERCASE
+        "baseconvert": lambda a: _base_convert(_s(a), int(LCS._n(a[1])),
+                                               int(LCS._n(a[2]))),
+    })
+
+
+def _round_away(x, digits):
+    scale = 10 ** digits
+    y = x * scale
+    r = math.floor(y + 0.5) if y >= 0 else math.ceil(y - 0.5)
+    return LCS._exact(int(r)) if digits == 0 else r / scale
+
+
+def _base_convert(text, base_from, base_to):
+    n = int(str(text).strip(), base_from)
+    if base_to == 10:
+        return LCS._exact(n)
+    digits = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    neg = n < 0
+    n = abs(n)
+    out = ""
+    while n:
+        out = digits[n % base_to] + out
+        n //= base_to
+    return ("-" if neg else "") + (out or "0")
+
+
 def install_common(world):
     CSV.install_pure_natives()
+    install_engine_functions(world)
     import hashlib
 
     def to_str(b):

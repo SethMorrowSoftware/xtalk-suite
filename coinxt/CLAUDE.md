@@ -3417,7 +3417,12 @@ Beside them, the fifth instance in this file of the chunk-binding trap:
 TARGET, so the engine is asked for the length of (tMethod plus one). Four
 sites carry the note explaining it; this was the fifth, and it was found by
 running the code rather than by reading it - which is what the runner is
-for.
+for. **CORRECTED 2026-09-11: that binding was the RUNNER's, not the
+engine's.** holde-em's harness asserts `the number of lines of X & "/" & ...`
+against `"1/r!"` and passed on two engines, so the engine takes the count's
+target as a factor and applies `&` (and, by the same grammar, `+`) OUTSIDE it
+- root `docs/OXT-ENGINE-NOTES.md` 2.6. The interpreter is corrected; the
+local-variable rewrites here are harmless either way and stay.
 
 **AND THE ONE FAILURE CI FOUND THAT THE THREE BLOCKS COULD NOT** is the
 mirror of the pump-callback lesson above, and worth its own line because it

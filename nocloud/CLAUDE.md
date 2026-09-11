@@ -385,9 +385,12 @@ and requires the mirror's answer** - 435 checks, the inputs listed once, no expe
 value typed. The spellings this app writes beyond the shared subset (`repeat for each
 char`, a bare `repeat`, `delete char N of`, `the last item of`, `the round of`, `the
 number of bytes IN`, `^`, text ordering under `<`, toUpper / toLower / urlDecode /
-byteOffset) are modelled in a subclass inside the gate, not in the shared interpreter,
-by the precedent the wallet gate set: a form only one member writes does not earn a
-change that rides on four other members' gates. `tools/test-script-vectors.py` edits
+byteOffset) were modelled in a subclass inside the gate first, by the precedent the
+wallet gate set: a form only one member writes does not earn a change that rides on
+four other members' gates. holde-em became the second writer the same day, so they
+live in riptide's shared runner now (`DemoExpr` / `DemoInterp` /
+`install_engine_functions`), and the gate keeps only its write interception - the
+docstring says so. `tools/test-script-vectors.py` edits
 four defects into a copy - the dotfile guard answering false, the head parser keeping
 the FIRST Content-Length, the confinement admitting `..`, the Tor reply sending a body
 for HEAD - and requires the gate to name each; `build-all.sh` runs it before the gate.
