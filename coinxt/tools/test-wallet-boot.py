@@ -23,6 +23,17 @@ the same code paths, and cutting it in the clean run too is what keeps the
 comparison honest - the pass and the failures differ by the seeded defect and
 by nothing else.
 
+THE RUNS ARE CONCURRENT (2026-09-11), one subprocess per copy, bounded by the
+machine's core count (WALLET_BOOT_JOBS overrides it; 1 is the old serial
+order). Each copy is its own file and its own interpreter, so nothing is
+shared but the CPU; the verdicts are printed in fixture order once every run
+is in. The reason is the CI clock: the suite's static-gates job had grown to
+four to five hours on every push, with this file's serial walk - seven
+fixtures and a clean boot, each a full prefill-2 run - the single largest
+piece, and the job's ceiling is GitHub's six-hour default. A boot gate that
+takes an hour is a fact about interpreting 28,000 lines of xTalk in Python;
+running eight of them one after another was a choice, and the wrong one.
+
 The seeded defects, and what each stands in for:
   1. A non-literal `constant` value - the compile-killer that takes a whole
      one-unit .livecodescript down, which the engine refuses at COMPILE time
@@ -46,6 +57,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from concurrent.futures import ThreadPoolExecutor
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 MEMBER = os.path.dirname(HERE)
@@ -118,13 +130,31 @@ def main():
 
     tmp = tempfile.mkdtemp(prefix="wallet-boot-fixtures-")
     failed = 0
+    workers = 1
     try:
-        for label, old, new in FIXTURES:
+        # every copy written first, then every gate run at once (a thread per
+        # subprocess: the threads only wait on children, so the GIL is not
+        # in the way), the verdicts read back in fixture order
+        jobs = []
+        for i, (label, old, new) in enumerate(FIXTURES):
             src = mutate(clean, old, new, label)
-            path = os.path.join(tmp, "mutated.livecodescript")
+            path = os.path.join(tmp, "mutated-%d.livecodescript" % i)
             with open(path, "w", encoding="utf-8") as fh:
                 fh.write(src)
-            rc, out = run_gate(path, first_failure=True)
+            jobs.append((path, True))
+        clean_path = os.path.join(tmp, "clean.livecodescript")
+        with open(clean_path, "w", encoding="utf-8") as fh:
+            fh.write(clean)
+        jobs.append((clean_path, False))
+        workers = os.cpu_count() or 1
+        try:
+            workers = int(os.environ.get("WALLET_BOOT_JOBS", workers))
+        except ValueError:
+            pass
+        workers = max(1, min(workers, len(jobs)))
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            results = list(pool.map(lambda job: run_gate(job[0], first_failure=job[1]), jobs))
+        for (label, old, new), (rc, out) in zip(FIXTURES, results):
             if rc == 0:
                 failed += 1
                 print("FAIL  %s - the gate passed a stack carrying it" % label)
@@ -132,10 +162,7 @@ def main():
             else:
                 print("PASS  %s" % label)
 
-        path = os.path.join(tmp, "clean.livecodescript")
-        with open(path, "w", encoding="utf-8") as fh:
-            fh.write(clean)
-        rc, out = run_gate(path)
+        rc, out = results[-1]
         if rc != 0:
             failed += 1
             print("FAIL  the unmutated stack boots green - without this the "
@@ -149,8 +176,8 @@ def main():
     if failed:
         print("test-wallet-boot: %d problem(s)" % failed)
         return 1
-    print("test-wallet-boot: OK (%d seeded defects caught, clean run passes)"
-          % len(FIXTURES))
+    print("test-wallet-boot: OK (%d seeded defects caught, clean run passes; "
+          "%d run(s) at a time)" % (len(FIXTURES), workers))
     return 0
 
 

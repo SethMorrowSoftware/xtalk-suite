@@ -95,9 +95,10 @@ fi
 # AND THE PER-MEMBER GATE WALK IS SCOPED BY THE SAME KNOB (2026-09-10). When
 # the knob landed it scoped only the native builds, and the walk below still
 # ran every member's gates first - which was invisible while those took
-# minutes. coinxt's wallet gates now take hours (check-wallet-vectors ~25 min,
-# then test-wallet-boot.py boots the whole wallet once per fixture at ~30 min
-# each), so the cross-member lane spent its entire 120-minute budget inside
+# minutes. coinxt's wallet gates now take hours (check-wallet-vectors ~45 min,
+# then test-wallet-boot.py boots the whole wallet once per fixture, up to ~40
+# min each - they run at once since 2026-09-11, see the walk below), so the
+# cross-member lane spent its entire 120-minute budget inside
 # coinxt's gates and was CANCELLED before its first native build began, on
 # main and on every PR that touched the scope list - a lane that could not
 # pass, and a gate that could not fail, since 2026-09-09. The fast --gates
@@ -233,10 +234,6 @@ run_gates() {
   # implementation anchored to the published vectors, with the real shim
   # signing. A wrong length prefix there produces a transaction that parses
   # and pays somebody else. Slower still than the gate above, so it runs last.
-  if [ -f "$m/tools/check-wallet-vectors.py" ]; then
-    echo "== $m: tools/check-wallet-vectors.py =="
-    ( cd "$m" && python3 tools/check-wallet-vectors.py --check )
-  fi
   # And the layer ABOVE that one: check-wallet-boot BOOTS the shipped wallet
   # stack, headlessly, over riptide's engine object model (imported, not
   # copied) with the COMMITTED CoinXT under it. The vector gate never opens a
@@ -244,16 +241,57 @@ run_gates() {
   # click router and the wallet file were verified only by reading them -
   # this member's own recorded failure shape, one layer up.
   # THE FIXTURES FIRST, per the fixture-before-gate law: a boot runner that
-  # has gone blind reports OK, and the five seeded defects are what make the
-  # OK mean anything. They boot a cut-down copy, so they cost a fraction of
-  # the gate below them.
+  # has gone blind reports OK, and the seeded defects are what make the OK
+  # mean anything. They boot a cut-down copy.
+  #
+  # THE THREE WALLET GATES RUN AT ONCE (2026-09-11), and their verdicts are
+  # READ in the order above. Each is a separate interpreter over the same
+  # unchanged tree, so they share nothing but the CPU; run one after another
+  # they were the static-gates job's whole afternoon - measured on this
+  # machine, 44 minutes of vectors, then 2 h 20 of boot fixtures (two of the
+  # seven are caught late in the boot and cost ~37 min each), then the
+  # prefill-20 boot on top - against GitHub's six-hour job ceiling, which the
+  # 4 h 49 m gates step of main's last green run was closing on. The output
+  # of each is held in a file and printed under its own banner once all
+  # three are in, fixtures before gate, so the log reads exactly as the
+  # serial walk did and a blind runner is still the first thing on the page.
+  # Any one failing fails the walk after all three have reported.
+  wallet_jobs=()
+  wallet_start() {
+    local label="$1"; shift
+    local log
+    log="$(mktemp)"
+    echo "== $m: $label == (running alongside the other wallet gates; output below)"
+    ( cd "$m" && "$@" ) > "$log" 2>&1 &
+    wallet_jobs+=("$label|$!|$log")
+  }
+  if [ -f "$m/tools/check-wallet-vectors.py" ]; then
+    wallet_start "tools/check-wallet-vectors.py" python3 tools/check-wallet-vectors.py --check
+  fi
   if [ -f "$m/tools/test-wallet-boot.py" ]; then
-    echo "== $m: tools/test-wallet-boot.py =="
-    ( cd "$m" && python3 tools/test-wallet-boot.py )
+    wallet_start "tools/test-wallet-boot.py" python3 tools/test-wallet-boot.py
   fi
   if [ -f "$m/tools/check-wallet-boot.py" ]; then
-    echo "== $m: tools/check-wallet-boot.py =="
-    ( cd "$m" && python3 tools/check-wallet-boot.py --terse )
+    wallet_start "tools/check-wallet-boot.py" python3 tools/check-wallet-boot.py --terse
+  fi
+  wallet_failed=0
+  for wallet_job in ${wallet_jobs[@]+"${wallet_jobs[@]}"}; do
+    wallet_label="${wallet_job%%|*}"
+    wallet_rest="${wallet_job#*|}"
+    wallet_pid="${wallet_rest%%|*}"
+    wallet_log="${wallet_rest#*|}"
+    wallet_rc=0
+    wait "$wallet_pid" || wallet_rc=$?
+    echo "== $m: $wallet_label == (exit $wallet_rc)"
+    cat "$wallet_log"
+    rm -f "$wallet_log"
+    if [ "$wallet_rc" -ne 0 ]; then
+      wallet_failed=1
+    fi
+  done
+  if [ "$wallet_failed" -ne 0 ]; then
+    echo "$m: a wallet gate failed (its output is above)"
+    exit 1
   fi
   # The demo BOOT runner (riptide): executes the SHIPPED stack script's
   # whole openStack chain - card builders, kit, self-check, navigation, a

@@ -637,7 +637,7 @@ Built and statically verified; pending under the honesty convention.
     stale-socket-close tolerance, the topStack default callback owner.
     — `onionxt/src/onionxt.livecodescript:1018,1140,1713,1744`
 
-## C. Release and CI (8)
+## C. Release and CI (9)
 
 0. **Three members' committed binaries are BEHIND their shims (opened 2026-09-08, widened 2026-09-09 to enetxt and datachannelxt).**
    Two source fixes landed in `torrentxt/src/torrent_shim.cpp` that no
@@ -819,6 +819,28 @@ Built and statically verified; pending under the honesty convention.
    hand-kept copies of build config have a written mirror-by-hand obligation
    and no drift check.
    — `coinxt/.github/workflows/ci.yml:10-12`, `release-binaries.yml:106-114`
+
+8. **~~The static-gates job ran into GitHub's six-hour ceiling~~ CUT 2026-09-11: coinxt's wallet gates run at once** (medium; opened and closed the same day).
+   Main's last green run spent 4 h 49 m in the gates step; on this branch the
+   push run on `a009e09` took 5 h 30 m and its pull-request twin was
+   CANCELLED at exactly 6 h 00 m, the default job timeout, on a tree with
+   nothing wrong in it. Measured serially on a four-core box, coinxt alone
+   was the afternoon: 44 min of `check-wallet-vectors.py`, 2 h 59 m of
+   `test-wallet-boot.py` (eight full prefill-2 boots, one after another),
+   then the prefill-20 `check-wallet-boot.py` - honest interpreter work,
+   run in the one order that adds it all up. `test-wallet-boot.py` now runs
+   its eight copies concurrently (2 h 59 m -> 89 min at four workers, on the
+   same box) and `tools/build-all.sh` starts the three wallet gates together
+   and reads their verdicts in the old order, fixtures before the gate they
+   prove. The CPU-minutes are unchanged; the wall time is bounded by the
+   longest single boot instead of their sum. What is still true: the job
+   has no `timeout-minutes` of its own, so the six-hour default is the only
+   ceiling, and a future gate that adds an hour of serial work will meet it
+   again - the number to watch is the gates step in `suite-gates.yml`'s
+   run history, not this entry.
+   — `coinxt/tools/test-wallet-boot.py` (header), `tools/build-all.sh`
+     ("THE THREE WALLET GATES RUN AT ONCE"), `coinxt/CLAUDE.md` (the
+     2026-09-11 "CI clock" entry)
 
 ## D. Label and doc hygiene (9)
 

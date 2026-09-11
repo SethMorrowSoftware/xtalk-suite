@@ -3694,3 +3694,34 @@ box repainted from a socket callback while another screen is showing, and a
 parent the backend refuses, which leaves the wait in place for the next
 Inspect to ask again). The Tools note changed and no `waBuild*` handler did,
 so `kWaUiVersion` stayed.
+
+### 2026-09-11, later: the wallet gates ran into the CI clock, and now run at once
+
+The suite's static-gates job had grown to five and a half hours on every push,
+and on this day the pull-request twin of a green push run was CANCELLED at
+exactly six hours - GitHub's default job ceiling - having done nothing wrong.
+Measured on this machine, serially, the coinxt walk alone was the afternoon:
+`check-wallet-vectors.py` 44 minutes; `test-wallet-boot.py` two hours fifty-nine
+(seven fixtures at 5 to 38 minutes each - two of the seven are caught late in
+the boot - then a 79-minute clean prefill-2 boot); `check-wallet-boot.py` on the
+shipped prefill-20 stack after that. Every one of those is an interpreter
+walking 28,000 lines of xTalk in Python, and each is honest work; running them
+one after another on a four-core runner was the choice, and it was the wrong
+one.
+
+Two changes, both in the running and neither in what is checked.
+`test-wallet-boot.py` writes every copy first and runs the eight boots at once,
+bounded by the core count (`WALLET_BOOT_JOBS` overrides; 1 is the old order),
+printing the verdicts in fixture order once all are in: **2 h 59 m serial to
+89 minutes at four workers** on this box, both measured with another
+interpreter running beside them. And `tools/build-all.sh` starts the three
+wallet gates together and READS them in the old order - fixtures before the
+gate they prove, so a blind runner is still the first thing on the page -
+holding each one's output in a file and printing it under its own banner when
+all three are in; any one failing fails the walk after all three have reported.
+The mechanics (a failing job, a passing job, no jobs at all under `set -u`)
+were driven with stubs before the real gates went through them.
+
+What this does NOT do is make the gates cheaper: the CPU-minutes are the same,
+and a contributor on two cores gains less. What it changes is that the job's
+wall time is now bounded by its longest single boot rather than by their sum.
