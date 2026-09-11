@@ -1006,6 +1006,15 @@ def drive(c, ip, world, sandbox):
         c.ck("Inspect shows the derived output at its taproot address",
              REF.address_for_spk("testnet", bytes.fromhex(want_spk)) in str(ip.call("waInspectRaw", [raw_sp])), "")
     # ---- silent payments, RECEIVED (2026-09-10) ---------------------------
+    # HERMETIC: this block plants a found output, an address record, a coin
+    # and a recorded spend, and every block after it was written against the
+    # state BEFORE it. On the shipped prefill-20 stack the leftovers were
+    # harmless by luck of the pool size; on CI's prefill-2 copy they were
+    # not (ten checks in the broadcast-memory leg picked up this block's
+    # coin and spend record, 2026-09-11), so the wallet's whole script state
+    # is snapshotted here and put back at the end.
+    import copy as _cp
+    sp_saved_globals = _cp.deepcopy(ip.globals)
     # The wallet's own BIP-352 address comes off the seed beside the account;
     # a paying transaction pasted with its prevout scripts is scanned, the
     # found output becomes an address record that survives the wallet file,
@@ -1122,7 +1131,17 @@ def drive(c, ip, world, sandbox):
     ip.globals["swaspscanseckey"], ip.globals["swaspspendseckey"] = saved_sp_keys
     ip.globals["swaspfound"] = saved_found
 
-    # the refusals, each by name
+    # the refusals, each by name - over a coin planted for them: on a copy
+    # whose address window is two deep, every fixture coin can be spent or
+    # reserved by the time this block runs (CI's prefill-2 copy: "this wallet
+    # holds no coins to spend"), and that is the refusal of a different
+    # question. The coin sits on the first receive address like the fixtures.
+    sp_refusal_coin = dict((ip.globals.get("swaaddresses") or {}).get("1", {}))
+    sp_refusal_coin.update({"txid": "dd" * 32, "vout": 0, "value": 80000,
+                            "confirmations": 6, "height": 6, "selected": "", "frozen": ""})
+    ip.globals["swautxos"] = ip.call("cwListAdd",
+                                     [ip.globals.get("swautxos") or ip.call("waEmptyList", []),
+                                      sp_refusal_coin])
     put_field("sd_to", "%s,0.0005" % sp_addr)
     try:
         ip.call("waBuildSpend", [False, True])
@@ -1149,8 +1168,11 @@ def drive(c, ip, world, sandbox):
     insp = str(ip.call("waValidateAddress", [sp_addr]))
     c.ck("the Tools inspector explains a silent payment address",
          "SILENT PAYMENT" in insp and sp_scan.hex() in insp, insp[:200])
-    put_field("sd_to", "%s,0.0005" % first)
-    click(ip, world, "sd_sign")
+    # and the wallet is exactly what it was before this block (see its head)
+    ip.globals.clear()
+    ip.globals.update(sp_saved_globals)
+    put_field("sd_to", "")
+    put_field("tl_hex", "")
 
     # ---- the window follows its builder (2026-09-04) ------------------------
     # waBuild skips the build when the stack's stored uUiVersion equals
