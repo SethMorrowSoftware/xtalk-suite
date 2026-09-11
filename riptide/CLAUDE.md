@@ -1234,6 +1234,22 @@ is this tree's own recurring failure shape. The line between what got FIXED in
 the interpreter and what gets REWRITTEN here is deliberate: a wrong ANSWER
 earns a change to shared drift-gated tooling; three missing SPELLINGS do not.
 
+## The runner's regexes are compiled once (2026-09-11; a speed change, not a rules change)
+
+`tools/check-demo-boot.py` is the runner three members' gates drive (riptide's
+own boot, coinxt's wallet boot and its eight fixture boots, nocloud's and
+holde-em's execution gates), and a profile of coinxt's wallet boot put a third
+of its runtime in `re.match(pattern, s, re.I)` resolving the same inline
+patterns through `re`'s cache half a billion times. Every two-argument and
+`re.I`-flagged `re.match` / `fullmatch` / `search` here now reads
+`_rxi(pattern).match(s)` (or `_rx` without the flag): the pattern stays inline
+where the code is, compiled once and looked up by its literal. Same for the
+family's `lcs-interp.py` underneath (both copies) and coinxt's wallet gate.
+Nothing the runner accepts or refuses changed; the A/B and the gates that
+prove it are in `coinxt/CLAUDE.md`'s 2026-09-11 "CI clock" entry. A new
+`re.match` written here with a literal pattern works exactly as before and
+simply pays the old price - use the helpers on any path a boot walks.
+
 ## Suite integration status
 
 - `tools/build-all.sh` runs riptide's gates in the member loop (script

@@ -833,7 +833,14 @@ Built and statically verified; pending under the honesty convention.
    same box) and `tools/build-all.sh` starts the three wallet gates together
    and reads their verdicts in the old order, fixtures before the gate they
    prove. The CPU-minutes are unchanged; the wall time is bounded by the
-   longest single boot instead of their sum. What is still true: the job
+   longest single boot instead of their sum - which CI then measured as
+   4 h 06 m on the first concurrent head (from 5 h 30 m), bounded by the
+   three-hour prefill-20 boot. So, the same evening, the CPU-minutes moved
+   too: a profile put a third of a boot in `re.match` re-resolving inline
+   patterns through `re`'s cache half a billion times, and the three hot
+   files (the family interpreter, riptide's runner, coinxt's wallet gate)
+   now compile each pattern once - 11 m 43 s to 7 m 02 s on the same
+   boot-plus-block driver, A/B on one box. What is still true: the job
    has no `timeout-minutes` of its own, so the six-hour default is the only
    ceiling, and a future gate that adds an hour of serial work will meet it
    again - the number to watch is the gates step in `suite-gates.yml`'s

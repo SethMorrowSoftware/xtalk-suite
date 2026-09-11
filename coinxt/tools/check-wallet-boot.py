@@ -112,6 +112,30 @@ import shutil
 import sys
 import tempfile
 
+# COMPILED ONCE, LOOKED UP BY THE LITERAL (2026-09-11). A profile of a wallet
+# boot put over five hundred million `re.match(pattern, s, re.I)` calls at a
+# third of the runtime, and almost none of that was matching: the module-level
+# function re-resolves the compiled pattern through re's own cache on every
+# call and pays the RegexFlag enum descriptor for the `re.I` beside it. These
+# two return the compiled pattern for a literal, so a call site reads the same
+# and costs one dict lookup. The patterns stay inline where the code is.
+_RX_CACHE = {}
+_RXI_CACHE = {}
+
+
+def _rx(pattern):
+    p = _RX_CACHE.get(pattern)
+    if p is None:
+        p = _RX_CACHE[pattern] = re.compile(pattern)
+    return p
+
+
+def _rxi(pattern):
+    p = _RXI_CACHE.get(pattern)
+    if p is None:
+        p = _RXI_CACHE[pattern] = re.compile(pattern, re.I)
+    return p
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 MEMBER = os.path.dirname(HERE)
 SUITE = os.path.dirname(MEMBER)
@@ -246,15 +270,14 @@ class WalletExpr(DB.DemoExpr):
         self.ws()
         rest = self.s[self.i:]
 
-        m = re.match(r'the\s+number\s+of\s+controls\s+of\s+'
-                     r'(this\s+card|card\s+(?:"[^"]*"|\d+|[A-Za-z_]\w*))',
-                     rest, re.I)
+        m = _rxi(r'the\s+number\s+of\s+controls\s+of\s+'
+                     r'(this\s+card|card\s+(?:"[^"]*"|\d+|[A-Za-z_]\w*))').match(rest)
         if m:
             self.i += m.end()
             return len(self.card_of(m.group(1)).controls)
 
-        m = re.match(r'the\s+(?:(short|long|abbreviated)\s+)?(\w+)\s+of\s+'
-                     + _CTL_OF_CARD, rest, re.I)
+        m = _rxi(r'the\s+(?:(short|long|abbreviated)\s+)?(\w+)\s+of\s+'
+                     + _CTL_OF_CARD).match(rest)
         if m:
             self.i += m.end()
             return _ctl_prop_get(self.control_at(m.group(3), m.group(4)),
@@ -264,7 +287,7 @@ class WalletExpr(DB.DemoExpr):
         # "line N of field M". The world carries one while a click drives, the
         # way it carries the target; empty otherwise, which is the engine's
         # own answer outside a click.
-        m = re.match(r'the\s+clickLine\b', rest, re.I)
+        m = _rxi(r'the\s+clickLine\b').match(rest)
         if m:
             self.i += m.end()
             return getattr(self.ip.world, "clickline", "") or ""
@@ -274,8 +297,7 @@ class WalletExpr(DB.DemoExpr):
         # a path INSIDE THE SANDBOX, so the default the app computes is a
         # place this gate is allowed to write, and the derivation itself
         # (which walks back to the containing folder) is really exercised.
-        m = re.match(r'the\s+(?:effective\s+)?filename\s+of\s+this\s+stack\b',
-                     rest, re.I)
+        m = _rxi(r'the\s+(?:effective\s+)?filename\s+of\s+this\s+stack\b').match(rest)
         if m:
             self.i += m.end()
             return os.path.join(self.ip.world.sandbox, "coinXTWallet.livecode")
@@ -357,15 +379,14 @@ class WalletInterp(DB.DemoInterp):
         # Off by default, for the same reason: a boot that dials must still
         # fail loudly.
         if isinstance(getattr(world, "sock", None), list):
-            m = re.match(r'open\s+socket\s+to\s+(.+?)\s+with\s+message\s+(.+)$',
-                         line, re.I)
+            m = _rxi(r'open\s+socket\s+to\s+(.+?)\s+with\s+message\s+(.+)$').match(line)
             if m:
                 world.sock.append(("open",
                                    str(LCS._disp(self.eval_expr(m.group(1), env))),
                                    str(LCS._disp(self.eval_expr(m.group(2), env)))))
                 world.result = ""
                 return i + 1
-            m = re.match(r'write\s+(.+)\s+to\s+socket\s+(.+)$', line, re.I)
+            m = _rxi(r'write\s+(.+)\s+to\s+socket\s+(.+)$').match(line)
             if m:
                 data = self.eval_expr(m.group(1), env)
                 if isinstance(data, (bytes, bytearray)):
@@ -377,8 +398,8 @@ class WalletInterp(DB.DemoInterp):
                                    data))
                 world.result = world.sock_write_fail
                 return i + 1
-            m = re.match(r'read\s+from\s+socket\s+(\S+)(?:\s+(until|for)\s+(.+?))?'
-                         r'\s+with\s+message\s+(.+)$', line, re.I)
+            m = _rxi(r'read\s+from\s+socket\s+(\S+)(?:\s+(until|for)\s+(.+?))?'
+                         r'\s+with\s+message\s+(.+)$').match(line)
             if m:
                 spec = ""
                 if m.group(2):
@@ -389,7 +410,7 @@ class WalletInterp(DB.DemoInterp):
                                    spec,
                                    str(LCS._disp(self.eval_expr(m.group(4), env)))))
                 return i + 1
-            m = re.match(r'close\s+socket\s+(.+)$', line, re.I)
+            m = _rxi(r'close\s+socket\s+(.+)$').match(line)
             if m:
                 world.sock.append(("close",
                                    str(LCS._disp(self.eval_expr(m.group(1), env)))))
@@ -399,16 +420,16 @@ class WalletInterp(DB.DemoInterp):
         # runner models: on Windows every shell() flashes a console window
         # unless this is set, so the wallet sets it before each one. There
         # is nothing here for the model to do but remember it was asked.
-        m = re.match(r'set\s+the\s+hideConsoleWindows\s+to\s+(.+)$', line, re.I)
+        m = _rxi(r'set\s+the\s+hideConsoleWindows\s+to\s+(.+)$').match(line)
         if m:
             world.hide_console = self.eval_expr(m.group(1), env)
             return i + 1
 
-        if re.match(r'create\s+image\s*$', line, re.I):
+        if _rxi(r'create\s+image\s*$').match(line):
             world.create("image")
             return i + 1
 
-        m = re.match(r'(hide|show)\s+image\s+(.+)$', line, re.I)
+        m = _rxi(r'(hide|show)\s+image\s+(.+)$').match(line)
         if m:
             name = str(LCS._disp(self.eval_expr(m.group(2), env)))
             ctl = world.resolve("image", name)
@@ -417,8 +438,8 @@ class WalletInterp(DB.DemoInterp):
             ctl.props["visible"] = m.group(1).lower() == "show"
             return i + 1
 
-        m = re.match(r'set\s+the\s+(\w+)\s+of\s+' + _CTL_OF_CARD
-                     + r'\s+to\s+(.+)$', line, re.I)
+        m = _rxi(r'set\s+the\s+(\w+)\s+of\s+' + _CTL_OF_CARD
+                     + r'\s+to\s+(.+)$').match(line)
         if m:
             ctl = WalletExpr(self, env).control_at(m.group(2), m.group(3))
             value = self.eval_expr(m.group(4), env)
@@ -5697,7 +5718,7 @@ def drive(c, ip, world, sandbox):
         # bytes and carry real ids, must claim to have asked the question they
         # are answering. Taking the id OUT of the body rather than passing it
         # separately keeps the fixture and the request it answers in one place.
-        m = re.search(r'"id"\s*:\s*"?([^,"}\s]+)', body)
+        m = _rx(r'"id"\s*:\s*"?([^,"}\s]+)').search(body)
         rid = m.group(1) if m else ""
         ip.globals["swainflight"] = {"kind": kind, "arg": arg, "id": rid}
         ip.call("waNetApply", [kind, arg, body, rid])
@@ -6334,7 +6355,7 @@ def drive(c, ip, world, sandbox):
             ip.call("waMenuPick", ["menu_coins", "Copy selected outpoint"])
             got = str(world.clipboard.get("text", ""))
             c.ck("Copy selected outpoint copies a txid:vout",
-                 re.match(r'^[0-9a-f]{64}:\d+$', got) is not None, got[:80])
+                 _rx(r'^[0-9a-f]{64}:\d+$').match(got) is not None, got[:80])
         else:
             c.ck("Copy selected outpoint copies a txid:vout (no coin to select)",
                  True)
@@ -6380,7 +6401,7 @@ def drive(c, ip, world, sandbox):
          str(info.get("version", "")).startswith("9.9.9-"), str(info)[:80])
     c.eq("and its size", int(LCS._n(info.get("chars", 0))), len(newer))
     c.ck("and its SHA-256, as hex",
-         re.match(r'^[0-9a-f]{64}$', str(info.get("sha", ""))) is not None,
+         _rx(r'^[0-9a-f]{64}$').match(str(info.get("sha", ""))) is not None,
          str(info.get("sha", ""))[:70])
     other = cur.replace('constant kWaVersion = "', 'constant kWaVersion = "9.9.8-', 1)
     c.ck("which follows the content: a different copy reports a different SHA",
@@ -6495,7 +6516,7 @@ def drive(c, ip, world, sandbox):
     save = re.search(r'^command waSaveWallet\n(.*?)^end waSaveWallet', cur, re.S | re.M)
     c.ck("the plain wallet-file branch UTF-8 encodes what it writes, like the sealed one",
          save is not None and
-         re.search(r'put textEncode\(kWaFileMagic & "\|plain\|"', save.group(1)) is not None)
+         _rx(r'put textEncode\(kWaFileMagic & "\|plain\|"').search(save.group(1)) is not None)
     load = re.search(r'^command waLoadWallet\n(.*?)^end waLoadWallet', cur, re.S | re.M)
     c.ck("and the plain branch UTF-8 decodes what it reads",
          load is not None and 'waLoadInto textDecode(tBody, "utf-8")' in load.group(1))

@@ -109,6 +109,30 @@ import shutil
 import sys
 import tempfile
 
+# COMPILED ONCE, LOOKED UP BY THE LITERAL (2026-09-11). A profile of a wallet
+# boot put over five hundred million `re.match(pattern, s, re.I)` calls at a
+# third of the runtime, and almost none of that was matching: the module-level
+# function re-resolves the compiled pattern through re's own cache on every
+# call and pays the RegexFlag enum descriptor for the `re.I` beside it. These
+# two return the compiled pattern for a literal, so a call site reads the same
+# and costs one dict lookup. The patterns stay inline where the code is.
+_RX_CACHE = {}
+_RXI_CACHE = {}
+
+
+def _rx(pattern):
+    p = _RX_CACHE.get(pattern)
+    if p is None:
+        p = _RX_CACHE[pattern] = re.compile(pattern)
+    return p
+
+
+def _rxi(pattern):
+    p = _RXI_CACHE.get(pattern)
+    if p is None:
+        p = _RXI_CACHE[pattern] = re.compile(pattern, re.I)
+    return p
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 MEMBER = os.path.dirname(HERE)
 SUITE = os.path.dirname(MEMBER)
@@ -191,7 +215,7 @@ class World:
         s = str(name).strip()
         # numeric card addressing (`of card 1`), the engine-proven form the
         # demo's cross-card feed writes use
-        if re.fullmatch(r"\d+", s):
+        if _rx(r"\d+").fullmatch(s):
             n = int(s)
             return self.cards[n - 1] if 1 <= n <= len(self.cards) else None
         low = s.lower()
@@ -205,7 +229,7 @@ class World:
 
     def go_to(self, spec):
         s = str(spec).strip().strip('"')
-        if re.fullmatch(r"\d+", s):
+        if _rx(r"\d+").fullmatch(s):
             n = int(s)
             if 1 <= n <= len(self.cards):
                 self.cur = n - 1
@@ -321,7 +345,7 @@ class DemoExpr(LCS._Expr):
                 r = self.p_unary()
                 v = LCS._n(v) * LCS._n(r) if op == "*" else LCS._n(v) / LCS._n(r)
                 continue
-            m = re.match(r'(div|mod)\b', self.s[self.i:], re.I)
+            m = _rxi(r'(div|mod)\b').match(self.s[self.i:])
             if m:
                 self.i += len(m.group(1))
                 r = self.p_unary()
@@ -453,8 +477,7 @@ class DemoExpr(LCS._Expr):
         # The target binds tightly - an atom - so `the last char of X is Y`
         # leaves `is Y` to the comparator. `the last <objtype>` (a control
         # reference) is a different form and does not match this regex.
-        m = re.match(r'the\s+(last|first)\s+(item|char|line|word)\s+of\s+',
-                     rest, re.I)
+        m = _rxi(r'the\s+(last|first)\s+(item|char|line|word)\s+of\s+').match(rest)
         if m:
             self.i += m.end()
             last = m.group(1).lower() == "last"
@@ -472,9 +495,9 @@ class DemoExpr(LCS._Expr):
         # `the number of bytes IN X` - the base models only `of`; the engine
         # accepts either preposition and the count is the same. `words` is
         # new in both spellings (holde-em's onion section counts them).
-        m = (re.match(r'the\s+number\s+of\s+(bytes|chars|characters|items|'
-                      r'lines|words)\s+in\s+', rest, re.I)
-             or re.match(r'the\s+number\s+of\s+(words)\s+of\s+', rest, re.I))
+        m = (_rxi(r'the\s+number\s+of\s+(bytes|chars|characters|items|'
+                      r'lines|words)\s+in\s+').match(rest)
+             or _rxi(r'the\s+number\s+of\s+(words)\s+of\s+').match(rest))
         if m:
             self.i += m.end()
             unit = m.group(1).lower()
@@ -489,7 +512,7 @@ class DemoExpr(LCS._Expr):
             return len(LCS._split_chunks(s, LCS.LINE_DELIMITER[0]))
         # `the round of X` - half AWAY from zero, the engine's rule (python's
         # round() is banker's and would answer 2 for 2.5). Binds to the atom.
-        m = re.match(r'the\s+round\s+of\s+', rest, re.I)
+        m = _rxi(r'the\s+round\s+of\s+').match(rest)
         if m:
             self.i += m.end()
             x = LCS._n(self.p_atom())
@@ -505,9 +528,8 @@ class DemoExpr(LCS._Expr):
         # scrollbar joined 2026-09-11 (holde-em's bet slider): no runner
         # builds one, so the answer is "absent", which is what a headless
         # harness run needs to hear
-        m = re.match(r'there\s+is\s+(a|an|no|not\s+a|not\s+an)\s+'
-                     r'(field|button|graphic|image|scrollbar|card|file|folder)\s+',
-                     rest, re.I)
+        m = _rxi(r'there\s+is\s+(a|an|no|not\s+a|not\s+an)\s+'
+                     r'(field|button|graphic|image|scrollbar|card|file|folder)\s+').match(rest)
         if m:
             self.i += m.end()
             # `there is no X` and `there is not a X` are the same question
@@ -516,7 +538,7 @@ class DemoExpr(LCS._Expr):
             # the object-name expression binds tighter than `and`/`of card`
             name = LCS._disp(self.p_concat())
             cardspec = None
-            m2 = re.match(r'\s*of\s+card\s+', self.s[self.i:], re.I)
+            m2 = _rxi(r'\s*of\s+card\s+').match(self.s[self.i:])
             if m2 and kind in ("field", "button", "graphic", "image"):
                 self.i += m2.end()
                 cardspec = LCS._disp(self.p_concat())
@@ -531,22 +553,21 @@ class DemoExpr(LCS._Expr):
             return (not exists) if want_missing else exists
 
         # `the <adjective>? <prop> of <object>`
-        m = re.match(r'the\s+(?:(short|long|abbreviated)\s+)?(\w+)\s+of\s+'
-                     + _OBJ_RE, rest, re.I)
+        m = _rxi(r'the\s+(?:(short|long|abbreviated)\s+)?(\w+)\s+of\s+'
+                     + _OBJ_RE).match(rest)
         if m:
             self.i += m.end()
             return self.ip.obj_prop_get(m, self)
 
         # `the number of cards of this stack` (scMissing's card walk)
-        m = re.match(r'the\s+number\s+of\s+cards\s+of\s+this\s+stack\b',
-                     rest, re.I)
+        m = _rxi(r'the\s+number\s+of\s+cards\s+of\s+this\s+stack\b').match(rest)
         if m:
             self.i += m.end()
             return len(world.cards)
 
         # bare engine `the` constants the demo reads
-        m = re.match(r'the\s+(platform|milliseconds|millisecs|seconds|result|'
-                     r'target)\b', rest, re.I)
+        m = _rxi(r'the\s+(platform|milliseconds|millisecs|seconds|result|'
+                     r'target)\b').match(rest)
         if m:
             word = m.group(1).lower()
             self.i += m.end()
@@ -566,7 +587,7 @@ class DemoExpr(LCS._Expr):
             return '%s "%s"' % world.target
 
         # `field <expr> [of card <expr>]` as a VALUE (content read)
-        m = re.match(r'(field|button)\s+', rest, re.I)
+        m = _rxi(r'(field|button)\s+').match(rest)
         if m:
             save = self.i
             self.i += m.end()
@@ -577,7 +598,7 @@ class DemoExpr(LCS._Expr):
                 self.i = save
                 return super().p_atom()
             cardspec = None
-            m2 = re.match(r'\s*of\s+card\s+', self.s[self.i:], re.I)
+            m2 = _rxi(r'\s*of\s+card\s+').match(self.s[self.i:])
             if m2:
                 self.i += m2.end()
                 cardspec = LCS._disp(self.p_concat())
@@ -587,7 +608,7 @@ class DemoExpr(LCS._Expr):
             return ctl.content if kind == "field" else ctl.props.get("label", "")
 
         # bare engine globals read as `the <name>`
-        m = re.match(r'the\s+defaultStack\b', rest, re.I)
+        m = _rxi(r'the\s+defaultStack\b').match(rest)
         if m:
             self.i += m.end()
             return world.default_stack
@@ -614,7 +635,7 @@ class DemoExpr(LCS._Expr):
             return " ".join(words[max(ai, 1) - 1:bi])
 
         # `url ("binfile:" & ...)` as a VALUE
-        m = re.match(r'url\s+', rest, re.I)
+        m = _rxi(r'url\s+').match(rest)
         if m:
             self.i += m.end()
             spec = str(LCS._disp(self.p_concat()))
@@ -748,7 +769,7 @@ class DemoInterp(LCS.Interp):
 
     # -- url + sends --------------------------------------------------------
     def url_read(self, spec):
-        m = re.match(r'(?:binfile|file):(.*)$', spec)
+        m = _rx(r'(?:binfile|file):(.*)$').match(spec)
         if not m:
             raise Thrown("url: unmodeled scheme " + spec)
         path = m.group(1)
@@ -760,7 +781,7 @@ class DemoInterp(LCS.Interp):
             return fh.read().decode("latin-1")
 
     def url_write(self, spec, data):
-        m = re.match(r'(?:binfile|file):(.*)$', spec)
+        m = _rx(r'(?:binfile|file):(.*)$').match(spec)
         if not m:
             raise Thrown("url: unmodeled scheme " + spec)
         path = m.group(1)
@@ -822,8 +843,8 @@ class DemoInterp(LCS.Interp):
         # of the container, so the list is built before the first pass.
         # char and word joined 2026-09-11 (nocloud's sanitisers, holde-em's
         # evaluator harness), element the same day (holde-em).
-        m = re.match(r'repeat\s+for\s+each\s+(key|element|line|char|word)'
-                     r'\s+(\w+)\s+in\s+(.+)$', line, re.I)
+        m = _rxi(r'repeat\s+for\s+each\s+(key|element|line|char|word)'
+                     r'\s+(\w+)\s+in\s+(.+)$').match(line)
         if m:
             kind, var = m.group(1).lower(), m.group(2).lower()
             inner, after = self._block(body, i, None, None)
@@ -875,11 +896,10 @@ class DemoInterp(LCS.Interp):
         # which is what makes `delete line 1 of sQueue` a queue pop; the
         # engine's one-ignored-trailing-delimiter rule is applied when the
         # index is resolved, as the base's chunk reader applies it.
-        m = (re.match(r'delete\s+(?:the\s+)?last\s+(char|item|line|word)'
-                      r'\s+of\s+(\w+)$', line, re.I)
-             or re.match(r'delete\s+(char|item|line)\s+(.+?)\s+of\s+(\w+)$',
-                         line, re.I))
-        if m and not re.search(r'\s+to\s+', m.group(2) if m.lastindex == 3
+        m = (_rxi(r'delete\s+(?:the\s+)?last\s+(char|item|line|word)'
+                      r'\s+of\s+(\w+)$').match(line)
+             or _rxi(r'delete\s+(char|item|line)\s+(.+?)\s+of\s+(\w+)$').match(line))
+        if m and not _rx(r'\s+to\s+').search(m.group(2) if m.lastindex == 3
                                 else ""):
             if m.lastindex == 2:
                 unit, n_expr, tgt = m.group(1).lower(), None, m.group(2)
@@ -920,9 +940,9 @@ class DemoInterp(LCS.Interp):
         # per element with `each` bound to it. Stable, as the engine's is;
         # text keys fold case (the engine default); international collation
         # is not modelled (every sorted list in the corpus is ASCII).
-        m = re.match(r'sort\s+(lines|items)\s+of\s+(\w+)((?:\s+(?:ascending|'
+        m = _rxi(r'sort\s+(lines|items)\s+of\s+(\w+)((?:\s+(?:ascending|'
                      r'descending|numeric|text|international|datetime))*)'
-                     r'(?:\s+by\s+(.+))?$', line, re.I)
+                     r'(?:\s+by\s+(.+))?$').match(line)
         if m:
             unit, tgt = m.group(1).lower(), m.group(2)
             opts = m.group(3).lower().split()
@@ -950,8 +970,7 @@ class DemoInterp(LCS.Interp):
         # ---- split VAR by A [and B]: the container becomes an array. With
         # one delimiter the keys are 1..n; with two, each A-part is split at
         # its first B into key and value (holde-em's wire bodies, 2026-09-11)
-        m = re.match(r'split\s+(\w+)\s+by\s+(.+?)(?:\s+and\s+(.+))?$', line,
-                     re.I)
+        m = _rxi(r'split\s+(\w+)\s+by\s+(.+?)(?:\s+and\s+(.+))?$').match(line)
         if m:
             tgt = m.group(1)
             s = str(LCS._disp(self.eval_expr(tgt, env)))
@@ -971,7 +990,7 @@ class DemoInterp(LCS.Interp):
             return i + 1
 
         # ---- repeat N times (absent from the base; the base32 layer uses it)
-        m = re.match(r'repeat\s+(.+?)\s+times$', line, re.I)
+        m = _rxi(r'repeat\s+(.+?)\s+times$').match(line)
         if m:
             inner, after = self._block(body, i, None, None)
             count = int(LCS._n(self.eval_expr(m.group(1), env)))
@@ -989,26 +1008,25 @@ class DemoInterp(LCS.Interp):
             world.cards.append(Card("card%d" % (len(world.cards) + 1)))
             world.cur = len(world.cards) - 1
             return i + 1
-        m = re.match(r'create\s+(field|button|graphic)\s*$', line, re.I)
+        m = _rxi(r'create\s+(field|button|graphic)\s*$').match(line)
         if m:
             world.create(m.group(1).lower())
             return i + 1
-        m = re.match(r'create\s+folder\s+(.+)$', line, re.I)
+        m = _rxi(r'create\s+folder\s+(.+)$').match(line)
         if m:
             path = str(LCS._disp(self.eval_expr(m.group(1), env)))
             if not world.path_ok(path):
                 raise Thrown("create folder: outside the sandbox " + path)
             os.makedirs(path, exist_ok=True)
             return i + 1
-        m = re.match(r'go\s+to\s+card\s+(.+)$', line, re.I)
+        m = _rxi(r'go\s+to\s+card\s+(.+)$').match(line)
         if m:
             world.go_to(LCS._disp(self.eval_expr(m.group(1), env)))
             return i + 1
         if low in ("lock screen", "unlock screen"):
             world.locked += 1 if low == "lock screen" else -1
             return i + 1
-        m = re.match(r'(hide|show)\s+(field|button|graphic)\s+(.+)$', line,
-                     re.I)
+        m = _rxi(r'(hide|show)\s+(field|button|graphic)\s+(.+)$').match(line)
         if m:
             name = str(LCS._disp(self.eval_expr(m.group(3), env)))
             ctl = world.resolve(m.group(2).lower(), name)
@@ -1019,7 +1037,7 @@ class DemoInterp(LCS.Interp):
             return i + 1
 
         # ---- engine globals the script sets around strict compares
-        m = re.match(r'set\s+the\s+caseSensitive\s+to\s+(.+)$', line, re.I)
+        m = _rxi(r'set\s+the\s+caseSensitive\s+to\s+(.+)$').match(line)
         if m:
             # tracked only: the base interpreter's `is` is already
             # case-SENSITIVE (its named divergence), so both settings are
@@ -1029,19 +1047,17 @@ class DemoInterp(LCS.Interp):
             return i + 1
 
         # ---- set the <prop> of <obj> / defaultStack / clipboard
-        m = re.match(r'set\s+the\s+defaultStack\s+to\s+(.+)$', line, re.I)
+        m = _rxi(r'set\s+the\s+defaultStack\s+to\s+(.+)$').match(line)
         if m:
             world.default_stack = str(LCS._disp(self.eval_expr(m.group(1),
                                                                env)))
             return i + 1
-        m = re.match(r'set\s+the\s+clipboardData\[(.+?)\]\s+to\s+(.+)$',
-                     line, re.I)
+        m = _rxi(r'set\s+the\s+clipboardData\[(.+?)\]\s+to\s+(.+)$').match(line)
         if m:
             key = str(LCS._disp(self.eval_expr(m.group(1), env)))
             world.clipboard[key] = self.eval_expr(m.group(2), env)
             return i + 1
-        m = re.match(r'set\s+the\s+(\w+)\s+of\s+' + _OBJ_RE + r'\s+to\s+(.+)$',
-                     line, re.I)
+        m = _rxi(r'set\s+the\s+(\w+)\s+of\s+' + _OBJ_RE + r'\s+to\s+(.+)$').match(line)
         if m and m.group(1).lower() not in ("itemdelimiter", "linedelimiter"):
             # groups: 1 prop, 2-5 the object reference, 6 the value
             value = self.eval_expr(m.group(6), env)
@@ -1055,9 +1071,8 @@ class DemoInterp(LCS.Interp):
         # expression. See LCS.split_outside_strings for the case that found it.
         parts = (LCS.split_outside_strings(line[4:],
                                            ("into", "after", "before"))
-                 if re.match(r'put\s', line, re.I) else None)
-        if parts and re.match(r'(field\s+.+|url\s*\(.+\)|url\s+.+|msg)$',
-                              parts[2].strip(), re.I):
+                 if _rxi(r'put\s').match(line) else None)
+        if parts and _rxi(r'(field\s+.+|url\s*\(.+\)|url\s+.+|msg)$').match(parts[2].strip()):
             value = self.eval_expr(parts[0], env)
             prep, tgt = parts[1], parts[2].strip()
             if tgt.lower() == "msg":
@@ -1070,8 +1085,7 @@ class DemoInterp(LCS.Interp):
                 self.url_write(spec, LCS._disp(value))
                 return i + 1
             # field target
-            m2 = re.match(r'field\s+(.+?)(?:\s+of\s+card\s+(.+))?$', tgt,
-                          re.I)
+            m2 = _rxi(r'field\s+(.+?)(?:\s+of\s+card\s+(.+))?$').match(tgt)
             name = str(LCS._disp(self.eval_expr(m2.group(1), env)))
             cardspec = None
             if m2.group(2):
@@ -1089,9 +1103,8 @@ class DemoInterp(LCS.Interp):
             return i + 1
 
         # ---- send ... to me in N <unit>
-        m = re.match(r'send\s+(.+?)\s+to\s+me\s+in\s+(.+?)\s*'
-                     r'(milliseconds|millisecs|ms|seconds|ticks)$', line,
-                     re.I)
+        m = _rxi(r'send\s+(.+?)\s+to\s+me\s+in\s+(.+?)\s*'
+                     r'(milliseconds|millisecs|ms|seconds|ticks)$').match(line)
         if m:
             msg = str(LCS._disp(self.eval_expr(m.group(1), env)))
             delay = LCS._n(self.eval_expr(m.group(2), env))
@@ -1104,7 +1117,7 @@ class DemoInterp(LCS.Interp):
             return i + 1
 
         # ---- delete a control (the upgrade path's raBuildResetCard)
-        m = re.match(r'delete\s+(field|button|graphic)\s+(.+)$', line, re.I)
+        m = _rxi(r'delete\s+(field|button|graphic)\s+(.+)$').match(line)
         if m:
             name = str(LCS._disp(self.eval_expr(m.group(2), env)))
             ctl = world.resolve(m.group(1).lower(), name)
@@ -1115,7 +1128,7 @@ class DemoInterp(LCS.Interp):
             return i + 1
 
         # ---- delete variable (array-element teardown)
-        m = re.match(r'delete\s+variable\s+(\w+)\[(.+)\]$', line, re.I)
+        m = _rxi(r'delete\s+variable\s+(\w+)\[(.+)\]$').match(line)
         if m:
             name = m.group(1).lower()
             key = str(LCS._disp(self.eval_expr(m.group(2), env)))
@@ -1125,7 +1138,7 @@ class DemoInterp(LCS.Interp):
             return i + 1
 
         # ---- pass <message> (the model does not re-dispatch)
-        m = re.match(r'pass\s+\w+$', line, re.I)
+        m = _rxi(r'pass\s+\w+$').match(line)
         if m:
             raise LCS._Return("")
 
@@ -1137,8 +1150,8 @@ class DemoInterp(LCS.Interp):
         # in-model consumer hands it back to natives that expect the seed).
         # The seed is an EXPRESSION (holde-em passes `heHash32(...)` inline;
         # riptide passes a variable), the two out-parameters are names.
-        m = re.match(r'(sxSignKeypairFromSeed|sxKeyExchangeKeypairFromSeed)'
-                     r'\s+(.+?)\s*,\s*(\w+)\s*,\s*(\w+)\s*$', line, re.I)
+        m = _rxi(r'(sxSignKeypairFromSeed|sxKeyExchangeKeypairFromSeed)'
+                     r'\s+(.+?)\s*,\s*(\w+)\s*,\s*(\w+)\s*$').match(line)
         if m:
             seed = str(LCS._disp(self.eval_expr(m.group(2), env))
                        ).encode("latin-1")
@@ -1156,7 +1169,7 @@ class DemoInterp(LCS.Interp):
         # parser. The base handles these too, but builds its own _Expr for
         # the arguments - which cannot see the engine expressions this file
         # adds, so `nxrInit the long id of me` would die on the argument.
-        m = re.match(r'([A-Za-z_]\w*)\s*(.*)$', line)
+        m = _rx(r'([A-Za-z_]\w*)\s*(.*)$').match(line)
         if m and m.group(1).lower() in self.handlers:
             args = []
             rest = m.group(2).strip()
@@ -1186,23 +1199,22 @@ class DemoInterp(LCS.Interp):
             # CATCHABLE script error on the engine, and the capability
             # probes depend on that. Only convert clean call shapes; a
             # genuinely unmodeled construct stays a loud harness failure.
-            m = re.match(r'^([A-Za-z]\w*)(\s+.*)?$', line)
+            m = _rx(r'^([A-Za-z]\w*)(\s+.*)?$').match(line)
             if (m and "unsupported statement" in str(e)
                     and m.group(1).lower() not in self.handlers
-                    and not re.match(r'(if|else|end|repeat|switch|case|'
+                    and not _rxi(r'(if|else|end|repeat|switch|case|'
                                      r'default|break|try|catch|return|exit|'
                                      r'next|put|set|get|add|delete|create|'
                                      r'go|send|local|constant|global|throw|'
                                      r'pass|hide|show|lock|unlock|sort|'
                                      r'replace|multiply|subtract|divide|'
-                                     r'wait|answer|ask|do)$',
-                                     m.group(1), re.I)):
+                                     r'wait|answer|ask|do)$').match(m.group(1))):
                 raise Thrown("Handler: can't find handler: " + m.group(1))
             raise
 
     def _exec_switch(self, body, i, env):
         header = body[i].strip()
-        m = re.match(r'switch\s*(.*)$', header, re.I)
+        m = _rxi(r'switch\s*(.*)$').match(header)
         subject_expr = m.group(1).strip()
         # collect to the matching `end switch`, counting nested switches
         depth, j, inner = 0, i + 1, []
@@ -1210,7 +1222,7 @@ class DemoInterp(LCS.Interp):
             s = body[j].strip().lower()
             if s.startswith("switch"):
                 depth += 1
-            elif re.match(r'^end\s+switch\b', s):
+            elif _rx(r'^end\s+switch\b').match(s):
                 if depth == 0:
                     break
                 depth -= 1
@@ -1227,9 +1239,9 @@ class DemoInterp(LCS.Interp):
         for ln in inner:
             s = ln.strip()
             slow = s.lower()
-            if re.match(r'^(if\b.*\bthen$|repeat\b|try\b|switch\b)', slow):
+            if _rx(r'^(if\b.*\bthen$|repeat\b|try\b|switch\b)').match(slow):
                 depth += 1
-            elif re.match(r'^end\s+(if|repeat|try|switch)\b', slow):
+            elif _rx(r'^end\s+(if|repeat|try|switch)\b').match(slow):
                 depth -= 1
             if depth == 0 and slow.startswith("case "):
                 if cur_stmts:
@@ -1452,7 +1464,7 @@ def _refuse_nonliteral_constants(src, fail):
     compilation must refuse what the compiler refuses."""
     for lineno, line in enumerate(src.split("\n"), 1):
         code = line.split("--", 1)[0]
-        m = re.match(r'^\s*constant\s+(.+)$', code)
+        m = _rx(r'^\s*constant\s+(.+)$').match(code)
         if not m:
             continue
         parts, buf, instr = [], "", False

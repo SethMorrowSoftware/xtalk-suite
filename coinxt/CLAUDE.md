@@ -3725,3 +3725,41 @@ were driven with stubs before the real gates went through them.
 What this does NOT do is make the gates cheaper: the CPU-minutes are the same,
 and a contributor on two cores gains less. What it changes is that the job's
 wall time is now bounded by its longest single boot rather than by their sum.
+
+**And the interpreter itself was a third faster by evening, for one profile
+(2026-09-11, later).** Concurrency bounds the job by its longest boot, and the
+longest boot is the prefill-20 `check-wallet-boot.py` at over three hours on
+this box; the CI job went from 5 h 30 m to 4 h 06 m on the concurrent walk
+and no further, so the next lever was the interpreter. One `cProfile` of a
+prefill-2 boot plus one gate block (2284 s under the profiler) put over FIVE
+HUNDRED MILLION `re.match(pattern, s, re.I)` calls at roughly a third of the
+runtime - and almost none of it matching: the module-level `re.match`
+re-resolves the compiled pattern through `re`'s own cache on every call
+(`re._compile`, 391 s of its own), and the `re.I` beside it goes through the
+RegexFlag enum descriptor each time (489 million `enum.__get__`). The other
+hot spot was `kw`, the keyword helper every expression tier asks after every
+atom: 130 million calls, each slicing and lower-casing the input once per
+candidate word.
+
+The fix is mechanical and changes no rule. Every two-argument and
+`re.I`-flagged `re.match` / `fullmatch` / `search` in the three hot files -
+`tools/lcs-interp.py` (both copies, drift-gated), riptide's
+`tools/check-demo-boot.py` and `tools/check-wallet-boot.py` - now reads
+`_rx(pattern).match(s)` or `_rxi(pattern).match(s)`, the pattern compiled
+once and looked up by its literal (105 call sites, rewritten by a script that
+split the call's arguments at top level and touched nothing whose flags were
+not exactly `re.I`). `kw` rules a word out by its first character before it
+slices. Measured A/B on this box, the same boot-plus-block driver run at the
+same time against a worktree of the tree before: **11 m 43 s to 7 m 02 s**
+(user CPU 9 m 38 s to 6 m 04 s), and every interpreter-driven gate green on
+the new code before anything heavier ran - riptide's script vectors, fixture
+suite and boot, nostrxt's fixtures and vectors, nocloud's, coinxt's 344,
+holde-em's 621 and its fixtures. The concurrent coinxt walk and CI carry the
+heavier confirmation.
+
+Two things not done, on purpose. The patterns are NOT hoisted to named
+module constants: 105 names like `_RX_REPEAT_WITH` would move every pattern
+away from the line that reads it, and the dict lookup by literal costs a few
+percent of what it saves. And nothing was changed in what the interpreter
+ACCEPTS - the refusal posture recorded above stands, and the checker's
+fixtures and every member's script-vector gate say so.
