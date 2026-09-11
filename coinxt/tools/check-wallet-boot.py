@@ -1061,8 +1061,12 @@ def drive(c, ip, world, sandbox):
     c.eq("and it is an address record now", len(sp_recs), 1)
     if sp_recs:
         c.eq("at the output's own taproot address", str(sp_recs[0]["address"]), sp_out_addr)
+    # waNextUnused answers "" when every derived address is used - which is
+    # the state CI's prefill-2 copy reaches Receive in - and that is a pass
+    # here too: the found output was not offered
+    nxt = ip.call("waNextUnused", [0])
     c.eq("the next unused receive address is not the found output",
-         str(ip.call("waNextUnused", [0]).get("sptweak", "")), "")
+         str(nxt.get("sptweak", "")) if isinstance(nxt, dict) else "", "")
     click(ip, world, "tl_inspect")
     c.ck("scanning the same transaction again adds nothing",
          "already in your addresses" in _fld(world, "tl_out")

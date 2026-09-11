@@ -17154,9 +17154,20 @@ command waPaintReceive
    set the defaultStack to the short name of this stack
    put waCurrentReceive() into tRec
    if tRec is "" then
-      put "No address yet. Open a wallet first." into field "rc_address"
+      -- NO UNUSED ADDRESS is exactly when the reusable one matters (2026-09-11):
+      -- CI's prefill-2 copy of this stack reaches Receive with every derived
+      -- address used, and the silent payment address was painted only on
+      -- the branch below, so the one address that never runs out was the one
+      -- the screen withheld.
+      if waSpAddress() is "" then
+         put "No address yet. Open a wallet first." into field "rc_address"
+      else
+         put "No unused address in the derived window. Press 'Derive 20 " & \
+               "more' on the Addresses screen, or hand out the silent " & \
+               "payment address below, which never runs out." into field "rc_address"
+      end if
       put "" into field "rc_uri"
-      put "" into field "rc_detail"
+      put waSpAddressNote() into field "rc_detail"
       exit waPaintReceive
    end if
    put tRec["address"] into tAddr
@@ -17189,15 +17200,7 @@ command waPaintReceive
       put "note         " & tRec["note"] & return after tOut
    end if
    put "scriptPubKey " & tRec["script"] & return after tOut
-   if waSpAddress() is not "" then
-      put return & "SILENT PAYMENT ADDRESS (BIP-352), reusable:" & return & \
-            waSpAddress() & return & \
-            "Hand this one out as often as you like: every payment to it lands " & \
-            "on a fresh taproot output that only this wallet's scan key can " & \
-            "find. To find one, paste the paying transaction on Tools with the " & \
-            "script each input spends, one per line, and press Inspect." & \
-            return after tOut
-   end if
+   put waSpAddressNote() after tOut
    if sWaBackend is "offline" then
       put return & "This wallet is OFFLINE, so it cannot know whether this " & \
             "address has been used. It is showing index " & tRec["index"] & \
@@ -20018,6 +20021,21 @@ function waSpAddress
    put cxHexEncode(cxPublicKey(cxHexDecode(sWaSpSpendSeckey), true)) into tSpend
    return cwSpReceiveAddress(sWaNetwork, tScan, tSpend, "")
 end waSpAddress
+
+function waSpAddressNote
+   -- The Receive screen's paragraph about the silent payment address, or ""
+   -- for a wallet without one. ONE function because the screen has two
+   -- branches (an unused address to show, or none left) and both owe it.
+   if waSpAddress() is "" then
+      return ""
+   end if
+   return return & "SILENT PAYMENT ADDRESS (BIP-352), reusable:" & return & \
+         waSpAddress() & return & \
+         "Hand this one out as often as you like: every payment to it lands " & \
+         "on a fresh taproot output that only this wallet's scan key can " & \
+         "find. To find one, paste the paying transaction on Tools with the " & \
+         "script each input spends, one per line, and press Inspect." & return
+end waSpAddressNote
 
 function waSpSeckeyFor pAddrRec
    -- The private key of a found silent payment output: b_spend + its tweak.
