@@ -78,8 +78,13 @@ src/nocloudquickshare.livecodescript   the whole app: self-building UI, the 3
 webapp/                                 a bundled static SPA you can serve over a
                                         web link or a Tor page (demonstrates the
                                         static host + the /_qs/info live route)
-tools/check-livecodescript.py           the static linter (one of two gates)
-tests/fileserver_golden.py              the pure-logic golden (the other gate)
+tools/check-livecodescript.py           the static linter (the first gate)
+tests/fileserver_golden.py              the pure-logic golden (the second: the
+                                        Python MIRRORS, pinned to vectors)
+tools/check-script-vectors.py           the execution gate (the third, 2026-09-11:
+                                        the SHIPPED SCRIPT driven on the golden's
+                                        inputs, held to the mirrors' answers)
+tools/test-script-vectors.py            proves the third gate can fail
 docs/                                   README (the index), what-it-hides,
                                         user-routes, webapp, building-a-standalone,
                                         http-server-deep-dive, oxt-pass-checklist
@@ -286,28 +291,55 @@ order: **(1) interpreter ops, (2) FFI round-trips, (3) property-set redraws.**
    here reached `qsLog` or the status line unqualified and were pinned 2026-09-09; the
    suite's `tools/check-timer-stack-pin.py` holds all three delivery classes since
    that day, and a fixture test (`tools/test-timer-stack-pin.py`) holds the gate.
+10. **`and` / `or` evaluate BOTH operands, so a type guard cannot share an expression
+   with the comparison it guards** (root `docs/OXT-ENGINE-NOTES.md` 2.5).
+   `if tLen is not an integer or tLen < 0` runs `tLen < 0` on "abc" - which the engine
+   answers by comparing as TEXT (harmless there: the `or` is already true) and the
+   family's interpreter REFUSES, so the guard could not be driven headlessly until it
+   was nested. Two sites were nested 2026-09-11 (`qsHttpReqLength`, `qsHttpDate`);
+   the port guards and the transfer-row formatters carry the same shape on values
+   that are only ever compared, and are left as they are. The arithmetic form of the
+   same trap (`X + 0` on a non-number) IS a hard engine error, and none is written here.
 
-## Testing: the two gates + the OXT pass
+## Testing: the three gates + the OXT pass
 
-There is **no headless way to compile or run a `.livecodescript`**. So the automated
-safety net is exactly two things, and both must pass before any change is "done":
+There is **no headless way to compile a `.livecodescript` on the engine** - but since
+2026-09-11 there IS a headless way to RUN this one's pure helpers (the family's
+interpreter, the same tool coinxt, nostrxt and riptide drive their script layers
+through), so the sentence that stood here until then, "there is no headless way to
+compile or run", was true of the engine and no longer true of the tree. The automated
+safety net is three things, and all three must pass before any change is "done":
 
 ```sh
 python3 tools/check-livecodescript.py     # the linter (smart quotes, handler/block
                                           # balance, constant-before-use, stem shadowing,
                                           # invalid operators like `does not contain`)
-python3 tests/fileserver_golden.py        # pins the pure-logic helpers: HTTP range
+python3 tests/fileserver_golden.py        # pins the pure-logic MIRRORS: HTTP range
                                           # parse, MIME, request framing, the editor
                                           # path-confinement (qsEditSafePath), dotfile
                                           # guard, filename sanitiser, rate/ETA format
+python3 tools/check-script-vectors.py     # drives the SHIPPED SCRIPT on the golden's
+                                          # own inputs and requires the mirror's answer
+                                          # (435 checks; the count is the gate's, not
+                                          # this file's); tools/test-script-vectors.py
+                                          # proves it can fail and runs first in CI
 ```
+
+The golden proves the mirror is right; the execution gate proves the script agrees
+with the mirror; the chain is vector -> mirror -> script, with no expected value ever
+typed twice. What the third gate settles is LOGIC, not parser behaviour: nothing it
+runs is promoted out of "verified statically; needs an OXT pass". The handlers it
+deliberately does NOT drive are listed in its docstring with the reason each time
+(the two serving commands, the file-size probe's real file I/O, the clock token).
 
 Then do a **manual OXT pass**: open OpenXTalk, make a one-card stack, paste the script
 into the stack script, close+reopen, exercise it. **Claim only "verified statically;
 needs an OXT pass" for anything you could not observe on a running engine.** This is
 the through-line of the whole extension family: *never claim runtime behavior you
 cannot observe.* When you add a helper with a pure-logic core, **mirror it in the
-golden** so it can never silently drift.
+golden** so it can never silently drift - and **add its inputs to the execution
+gate's drive**, so the mirror and the script are held to each other rather than
+each to its author's reading of the other.
 
 ## Standalone packaging
 
@@ -330,8 +362,60 @@ The app is standalone-ready:
 
 - Develop on a per-task branch (`claude/...` or a feature name); open a **draft PR**;
   don't push to `main` without explicit permission.
-- A change is only "done" once `tools/check-livecodescript.py` **and**
-  `tests/fileserver_golden.py` pass, and any layout change has bumped `kQsUiVersion`.
+- A change is only "done" once `tools/check-livecodescript.py`,
+  `tests/fileserver_golden.py` **and** `tools/check-script-vectors.py` pass, and any
+  layout change has bumped `kQsUiVersion`.
 - Match the surrounding style: this codebase comments the **why**, densely — mirror it.
 - Do not claim a runtime fix works until it has had an OXT pass; say what was verified
   statically and what still needs the engine.
+
+## 2026-09-11 - the execution gate, and what it found on its first run
+
+Until this date the member's whole correctness net was the golden: a Python MIRROR of
+each security- and framing-critical helper, pinned to vectors. The golden proved the
+mirror; nothing proved the script. Every other member with a script layer had closed
+that gap with a gate that drives the shipped file through the family's interpreter
+(`lcs-interp.py`; coinxt's, nostrxt's, riptide's and the wallet's), and this file still
+said "there is no headless way to compile or run a `.livecodescript`" - true of the
+engine, and no longer true of the tree.
+
+**`tools/check-script-vectors.py` loads the shipped script through riptide's
+stack-shaped runner, calls every helper the golden mirrors on the golden's own inputs,
+and requires the mirror's answer** - 435 checks, the inputs listed once, no expected
+value typed. The spellings this app writes beyond the shared subset (`repeat for each
+char`, a bare `repeat`, `delete char N of`, `the last item of`, `the round of`, `the
+number of bytes IN`, `^`, text ordering under `<`, toUpper / toLower / urlDecode /
+byteOffset) were modelled in a subclass inside the gate first, by the precedent the
+wallet gate set: a form only one member writes does not earn a change that rides on
+four other members' gates. holde-em became the second writer the same day, so they
+live in riptide's shared runner now (`DemoExpr` / `DemoInterp` /
+`install_engine_functions`), and the gate keeps only its write interception - the
+docstring says so. `tools/test-script-vectors.py` edits
+four defects into a copy - the dotfile guard answering false, the head parser keeping
+the FIRST Content-Length, the confinement admitting `..`, the Tor reply sending a body
+for HEAD - and requires the gate to name each; `build-all.sh` runs it before the gate.
+
+**It found four things, and the two that matter were in the MIRROR, not the script.**
+
+- `fs_leaf` said, in its own docstring, that LiveCode's `the last item` of `"a/b/"` is
+  empty, and pinned `("dir/", "")` on that claim. The engine ignores ONE trailing
+  delimiter when it counts and fetches items (root engine notes 2.2 - the `"m/"` lesson
+  coinxt paid an engine pass for), so `the last item of "dir/"` is `"dir"`, which is what
+  the script answers. **The mirror had pinned a rule the engine does not have**, and the
+  golden was green about it for four weeks because a mirror can only be checked against
+  what its author believed. Corrected, with `"dir//"` added to pin the other half.
+- `parse_head` carried a `__resource` field the script has never set (the golden even
+  checked its value), and lacked the `__version` the script sets and `qsCwServe` reads for the
+  keep-alive default. Found because the gate compares the WHOLE
+  map, not the four keys the golden reads: a mirror that invents a field passes every
+  check written against the mirror. The one rule the comparison applies is the
+  engine's: an unset key reads as empty, so `__query` absent and `__query` empty are
+  the same map.
+- Two guards of the shape gotcha 10 above describes (`is not an integer or X < 0`) were
+  nested so the interpreter could drive them; same answer on the engine either way.
+
+**What this does not settle.** It is the interpreter, not the engine; every helper
+it drives keeps its honesty label. The serving commands, the file-size probe and the
+clock token are not driven, and the gate's docstring says why for each. The pass this
+member owes (`docs/oxt-pass-checklist.md`) is unchanged by it.
+

@@ -153,7 +153,14 @@ RUN on every test while no test writes their name down. **holde-em folded the
 SAME DAY** (commit `7f55839`) — the sentence that stood here said it "remains
 unfolded pending five named blockers", and all five were cleared hours later;
 it is the ninth harness, at 380 folded handlers. nocloud has no script harness
-and is correctly out of scope.
+and is correctly out of scope. (It has an EXECUTION GATE since 2026-09-11 -
+`nocloud/tools/check-script-vectors.py` drives the shipped stack's pure helpers
+through the family's interpreter against its golden's mirrors - which is a
+different thing from a harness in the suite paste, and does not change this
+sentence. holde-em gained the same kind of gate the same day:
+`holde-em/tools/check-script-vectors.py` runs the harness's OWN sections
+headlessly through riptide's runner - which is how four defects in the shared
+runner and interpreter were found, since that harness is engine-proven.)
 
 **The short version — REWRITTEN 2026-08-17, and every claim it used to make was
 stale.** It said one big build was unstarted (Model C) — Model C is built, 629
@@ -630,7 +637,7 @@ Built and statically verified; pending under the honesty convention.
     stale-socket-close tolerance, the topStack default callback owner.
     — `onionxt/src/onionxt.livecodescript:1018,1140,1713,1744`
 
-## C. Release and CI (8)
+## C. Release and CI (9)
 
 0. **Three members' committed binaries are BEHIND their shims (opened 2026-09-08, widened 2026-09-09 to enetxt and datachannelxt).**
    Two source fixes landed in `torrentxt/src/torrent_shim.cpp` that no
@@ -656,7 +663,17 @@ Built and statically verified; pending under the honesty convention.
    were thrown away - was unmapped, so a lost DHT item or put confirmation was
    silence; it is counted in the drain and reported through the same
    last-error channel now. Same status: source only until the dispatch, and a
-   proper alert code waits for ABI 12 with the rp1 one.
+   proper alert code waits for ABI 12 with the rp1 one. **And ABI 12 is
+   deliberately NOT prepared headlessly (2026-09-10):** this environment can
+   rebuild torrentxt's x86_64-linux library (libtorrent 2.0.10 is installed)
+   and none of the other four (a static libtorrent + Boost + OpenSSL stack
+   cross-built for i386, two Windows targets and two mac slices), so a bump
+   would leave four committed binaries answering ABI 11 under a source that
+   says 12 - exactly the skew `check-binary-freshness.py` exists to refuse
+   and rule 5 forbids. The two alert codes land in the same change as the
+   dispatch that can rebuild all five. (coinxt's ABI 7 the same day is the
+   contrast: a one-file C shim with no third-party build stack cross-builds
+   on every platform from here, and did.)
 
    **enetxt (2026-09-09):** `enx_disconnect` now retires the peer handle when
    ENet queued no event. Until a rebuild, an app that gives up on a connection
@@ -777,11 +794,62 @@ Built and statically verified; pending under the honesty convention.
    dispatch path is permanent.
    — `.github/workflows/native-coinxt.yml:23-37`
 
-7. **Inert member workflows carry stale pre-suite behavior, ungated** (small).
-   coinxt's still describes the abandoned repo split; torrentxt's would
-   auto-commit binaries if a mirror ran it; the three hand-kept copies of
-   build config have a written mirror-by-hand obligation and no drift check.
+7. **~~Inert member workflows carry stale pre-suite behavior, ungated~~ DECIDED 2026-09-10: they are the standalone mirrors' own, and stay as they are** (small).
+   Re-read against the files: coinxt's `ci.yml` no longer describes the split
+   - its header says it is INERT here, that the split was superseded by the
+   consolidation, and that the live lane is the root `native-coinxt.yml`
+   (so the first clause had already closed). torrentxt's, sodiumxt's,
+   enetxt's and datachannelxt's `commit-binaries` jobs DO auto-commit built
+   libraries on a push to `main` - in a repository where the file sits at the
+   root, i.e. a standalone mirror, where that was always that repository's
+   own convention and where suite rule 5 (a committed binary traces to a
+   person pressing "Run workflow") is the MONOREPO's rule. GitHub reads only
+   the root `.github/` here, so none of them can fire in this tree, and
+   neutering a mirror's own CI from the tree that does not run it would be
+   a change nobody asked for to a workflow nobody here executes. The
+   hand-mirrored matrix rows in `release-binaries.yml` keep their written
+   obligation ("change them there and mirror the row here"): a drift gate
+   would have to compare rows of two differently shaped YAML documents, and
+   the row that diverges on purpose (torrentxt's manylinux x86_64-linux) is
+   already the counter-example such a gate would have to special-case. The
+   decision is recorded here so the item is a decision and not a forgotten
+   task; reopen it if a mirror ever becomes the source of truth again.
+   Original entry: coinxt's still describes the abandoned repo split;
+   torrentxt's would auto-commit binaries if a mirror ran it; the three
+   hand-kept copies of build config have a written mirror-by-hand obligation
+   and no drift check.
    — `coinxt/.github/workflows/ci.yml:10-12`, `release-binaries.yml:106-114`
+
+8. **~~The static-gates job ran into GitHub's six-hour ceiling~~ CUT 2026-09-11: coinxt's wallet gates run at once** (medium; opened and closed the same day).
+   Main's last green run spent 4 h 49 m in the gates step; on this branch the
+   push run on `a009e09` took 5 h 30 m and its pull-request twin was
+   CANCELLED at exactly 6 h 00 m, the default job timeout, on a tree with
+   nothing wrong in it. Measured serially on a four-core box, coinxt alone
+   was the afternoon: 44 min of `check-wallet-vectors.py`, 2 h 59 m of
+   `test-wallet-boot.py` (eight full prefill-2 boots, one after another),
+   then the prefill-20 `check-wallet-boot.py` - honest interpreter work,
+   run in the one order that adds it all up. `test-wallet-boot.py` now runs
+   its eight copies concurrently (2 h 59 m -> 89 min at four workers, on the
+   same box) and `tools/build-all.sh` starts the three wallet gates together
+   and reads their verdicts in the old order, fixtures before the gate they
+   prove. The CPU-minutes are unchanged; the wall time is bounded by the
+   longest single boot instead of their sum - which CI then measured as
+   4 h 06 m on the first concurrent head (from 5 h 30 m), bounded by the
+   three-hour prefill-20 boot. So, the same evening, the CPU-minutes moved
+   too: a profile put a third of a boot in `re.match` re-resolving inline
+   patterns through `re`'s cache half a billion times, and the three hot
+   files (the family interpreter, riptide's runner, coinxt's wallet gate)
+   now compile each pattern once - 11 m 43 s to 7 m 02 s on the same
+   boot-plus-block driver, A/B on one box, and **2 h 15 m / 2 h 32 m for
+   the two CI runs on that head** (pull-request and push), from 5 h 30 m
+   the same morning. What is still true: the job
+   has no `timeout-minutes` of its own, so the six-hour default is the only
+   ceiling, and a future gate that adds an hour of serial work will meet it
+   again - the number to watch is the gates step in `suite-gates.yml`'s
+   run history, not this entry.
+   — `coinxt/tools/test-wallet-boot.py` (header), `tools/build-all.sh`
+     ("THE THREE WALLET GATES RUN AT ONCE"), `coinxt/CLAUDE.md` (the
+     2026-09-11 "CI clock" entry)
 
 ## D. Label and doc hygiene (9)
 
@@ -837,7 +905,20 @@ Built and statically verified; pending under the honesty convention.
    (CLOSED 2026-08-15 in the hygiene sweep: CONTRIBUTING opens with the fold
    preamble and names the suite gates as item 3 of its workflow.)
 
-4. **The family engineering template is stale and ungated** (medium).
+4. **~~The family engineering template is stale and ungated~~ CLOSED; struck 2026-09-10 against the file rather than against this entry** (medium).
+   Measured on 2026-09-10, every claim in the heading had already lapsed: the
+   checker section describes the UNIFIED tool with its twelve check families
+   and names `check-checker-drift.py` and `test-checker.py` (section 3);
+   shipped-is-not-run is section 1's "an attestation must become a committed
+   fixture"; the coverage-overstatement and the honest checked-vs-input split
+   are section 14's last two bullets; the carried harness scaffold is there
+   too; textDecode, the stale `the result` and the step-loop lesson are in the
+   gotcha log; and `tools/check-checker-drift.py`'s `TEMPLATE_SETS` has held
+   the two copies byte-identical since the 2026-08-15 wave-1 closure that
+   section A's own banner records ("Section D's item 4 ... also closed -
+   synced and drift-gated") - a closure this heading never received. The ONE
+   gap that was real, the dangling else, is appended to the gotcha log now
+   (both copies, still identical). Original entry kept below as the record.
    `onionxt/templates/CLAUDE.md` (+ byte-identical coinxt twin): its checker
    section describes the retired pre-unification rule set; shipped-is-not-run,
    coverage-overstatement, and the carried-block conventions never flowed in;

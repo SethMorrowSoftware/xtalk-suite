@@ -92,6 +92,14 @@ THE NAMED DIVERGENCES GREW WITH IT, same contract as the `is` note above
     first.) _disp still refuses to stringify an array in every string
     context (concatenation, chunks, contains) - the coinxt lesson stands.
 
+AND A CHUNK STORE, ADDED 2026-09-11, for the same reason as the negative
+range: `put X into item N of VAR` fell through to the plain-name assignment
+and silently created a variable named after the chunk expression, so the
+container kept its old value with no error - LOOSER than the engine, invisible
+until holde-em's execution gate tampered a wire field and read "ok". Modelled
+now (see assign / _chunk_store), and the plain-name branch REFUSES a target
+that is not an identifier, so the next unmodelled container is loud.
+
 AND ONE REFUSAL, ADDED 2026-09-08, which is a different KIND of entry from
 every divergence above: those are modelling choices, this is a hard stop.
 Numbers here are held to the engine's exact integer range (|v| <= 2^53) and
@@ -107,6 +115,30 @@ and tells nobody, and that is the failure this stop exists to make loud.
 """
 import base64
 import re
+
+# COMPILED ONCE, LOOKED UP BY THE LITERAL (2026-09-11). A profile of a wallet
+# boot put over five hundred million `re.match(pattern, s, re.I)` calls at a
+# third of the runtime, and almost none of that was matching: the module-level
+# function re-resolves the compiled pattern through re's own cache on every
+# call and pays the RegexFlag enum descriptor for the `re.I` beside it. These
+# two return the compiled pattern for a literal, so a call site reads the same
+# and costs one dict lookup. The patterns stay inline where the code is.
+_RX_CACHE = {}
+_RXI_CACHE = {}
+
+
+def _rx(pattern):
+    p = _RX_CACHE.get(pattern)
+    if p is None:
+        p = _RX_CACHE[pattern] = re.compile(pattern)
+    return p
+
+
+def _rxi(pattern):
+    p = _RXI_CACHE.get(pattern)
+    if p is None:
+        p = _RXI_CACHE[pattern] = re.compile(pattern, re.I)
+    return p
 
 
 class Thrown(Exception):
@@ -283,18 +315,18 @@ class Interp:
         i = 0
         while i < len(joined):
             ln = joined[i].strip()
-            m = re.match(r'constant\s+(\w+)\s*=\s*(.+)$', ln)
+            m = _rx(r'constant\s+(\w+)\s*=\s*(.+)$').match(ln)
             if m:
                 self.constants[m.group(1)] = self.eval_expr(m.group(2), {})
                 i += 1
                 continue
-            m = re.match(r'local\s+(.+)$', ln)
+            m = _rx(r'local\s+(.+)$').match(ln)
             if m:
                 for v in m.group(1).split(","):
                     self.globals.setdefault(v.strip().lower(), "")
                 i += 1
                 continue
-            m = re.match(r'(?:private\s+)?(?:function|command|on)\s+(\w+)\s*(.*)$', ln)
+            m = _rx(r'(?:private\s+)?(?:function|command|on)\s+(\w+)\s*(.*)$').match(ln)
             if m:
                 name, params = m.group(1), m.group(2)
                 plist = [p.strip() for p in params.split(",") if p.strip()]
@@ -309,11 +341,11 @@ class Interp:
         while i < len(lines):
             s = lines[i].strip()
             low = s.lower()
-            if re.match(r'^end\s+' + re.escape(name.lower()) + r'\b', low) and depth == 0:
+            if _rx(r'^end\s+' + re.escape(name.lower()) + r'\b').match(low) and depth == 0:
                 return body, i + 1
-            if re.match(r'^(if\b.*\bthen$|repeat\b|try\b)', low):
+            if _rx(r'^(if\b.*\bthen$|repeat\b|try\b)').match(low):
                 depth += 1
-            elif re.match(r'^end\s+(if|repeat|try)\b', low):
+            elif _rx(r'^end\s+(if|repeat|try)\b').match(low):
                 depth -= 1
             body.append(lines[i])
             i += 1
@@ -344,9 +376,9 @@ class Interp:
         depth, j, inner = 0, i + 1, []
         while j < len(body):
             s = body[j].strip().lower()
-            if re.match(r'^(if\b.*\bthen$|repeat\b|try\b)', s):
+            if _rx(r'^(if\b.*\bthen$|repeat\b|try\b)').match(s):
                 depth += 1
-            elif re.match(r'^end\s+(if|repeat|try)\b', s):
+            elif _rx(r'^end\s+(if|repeat|try)\b').match(s):
                 if depth == 0:
                     return inner, j + 1
                 depth -= 1
@@ -361,7 +393,7 @@ class Interp:
         low = line.lower()
 
         # --- if / else if / else
-        m = re.match(r'if\s+(.*)\s+then$', line, re.I)
+        m = _rxi(r'if\s+(.*)\s+then$').match(line)
         if m:
             inner, after = self._block(body, i, None, None)
             # split inner on top-level else
@@ -370,13 +402,13 @@ class Interp:
             conds = [cond]
             for ln in inner:
                 s = ln.strip().lower()
-                if re.match(r'^(if\b.*\bthen$|repeat\b|try\b)', s):
+                if _rx(r'^(if\b.*\bthen$|repeat\b|try\b)').match(s):
                     depth += 1
-                elif re.match(r'^end\s+(if|repeat|try)\b', s):
+                elif _rx(r'^end\s+(if|repeat|try)\b').match(s):
                     depth -= 1
-                if depth == 0 and re.match(r'^else\s+if\s+.*\s+then$', s):
+                if depth == 0 and _rx(r'^else\s+if\s+.*\s+then$').match(s):
                     branches.append(cur); cur = []
-                    conds.append(re.match(r'else\s+if\s+(.*)\s+then$', ln.strip(), re.I).group(1))
+                    conds.append(_rxi(r'else\s+if\s+(.*)\s+then$').match(ln.strip()).group(1))
                     continue
                 if depth == 0 and s == "else":
                     branches.append(cur); cur = []
@@ -399,11 +431,11 @@ class Interp:
             tryb, catchb, var, depth, seen = [], [], None, 0, False
             for ln in inner:
                 s = ln.strip().lower()
-                if re.match(r'^(if\b.*\bthen$|repeat\b|try\b)', s):
+                if _rx(r'^(if\b.*\bthen$|repeat\b|try\b)').match(s):
                     depth += 1
-                elif re.match(r'^end\s+(if|repeat|try)\b', s):
+                elif _rx(r'^end\s+(if|repeat|try)\b').match(s):
                     depth -= 1
-                mm = re.match(r'^catch\s+(\w+)$', ln.strip(), re.I)
+                mm = _rxi(r'^catch\s+(\w+)$').match(ln.strip())
                 if depth == 0 and mm and not seen:
                     seen, var = True, mm.group(1).lower()
                     continue
@@ -418,7 +450,7 @@ class Interp:
             return after
 
         # --- repeat forms
-        m = re.match(r'repeat\s+with\s+(\w+)\s*=\s*(.+?)\s+down\s+to\s+(.+)$', line, re.I)
+        m = _rxi(r'repeat\s+with\s+(\w+)\s*=\s*(.+?)\s+down\s+to\s+(.+)$').match(line)
         if m:
             var, a, b = m.group(1).lower(), m.group(2), m.group(3)
             inner, after = self._block(body, i, None, None)
@@ -433,7 +465,7 @@ class Interp:
                     break
                 k -= 1
             return after
-        m = re.match(r'repeat\s+with\s+(\w+)\s*=\s*(.+?)\s+to\s+(.+?)(?:\s+step\s+(.+))?$', line, re.I)
+        m = _rxi(r'repeat\s+with\s+(\w+)\s*=\s*(.+?)\s+to\s+(.+?)(?:\s+step\s+(.+))?$').match(line)
         if m:
             var, a, b, st = m.group(1).lower(), m.group(2), m.group(3), m.group(4)
             inner, after = self._block(body, i, None, None)
@@ -450,7 +482,7 @@ class Interp:
                     break
                 k += step
             return after
-        m = re.match(r'repeat\s+while\s+(.+)$', line, re.I)
+        m = _rxi(r'repeat\s+while\s+(.+)$').match(line)
         if m:
             cond = m.group(1)
             inner, after = self._block(body, i, None, None)
@@ -487,7 +519,7 @@ class Interp:
         # uses. The engine iterates a SNAPSHOT of the container, so the list is
         # materialised before the first pass and a mutation inside the loop
         # cannot change the iteration.
-        m = re.match(r'repeat\s+for\s+each\s+item\s+(\w+)\s+in\s+(.+)$', line, re.I)
+        m = _rxi(r'repeat\s+for\s+each\s+item\s+(\w+)\s+in\s+(.+)$').match(line)
         if m:
             var, src_expr = m.group(1).lower(), m.group(2)
             inner, after = self._block(body, i, None, None)
@@ -512,33 +544,33 @@ class Interp:
             raise _Exit()
         if low in ("next repeat",):
             raise _Next()
-        m = re.match(r'return\b\s*(.*)$', line, re.I)
+        m = _rxi(r'return\b\s*(.*)$').match(line)
         if m:
             raise _Return(_copy(self.eval_expr(m.group(1), env))
                           if m.group(1).strip() else "")
-        m = re.match(r'throw\s+(.+)$', line, re.I)
+        m = _rxi(r'throw\s+(.+)$').match(line)
         if m:
             raise Thrown(str(self.eval_expr(m.group(1), env)))
-        m = re.match(r'add\s+(.+?)\s+to\s+(.+)$', line, re.I)
+        m = _rxi(r'add\s+(.+?)\s+to\s+(.+)$').match(line)
         if m:
             tgt = m.group(2).strip()
             self.assign(tgt, _exact(_n(self.eval_expr(tgt, env)) + _n(self.eval_expr(m.group(1), env))), env)
             return i + 1
-        m = re.match(r'subtract\s+(.+?)\s+from\s+(.+)$', line, re.I)
+        m = _rxi(r'subtract\s+(.+?)\s+from\s+(.+)$').match(line)
         if m:
             tgt = m.group(2).strip()
             self.assign(tgt, _exact(_n(self.eval_expr(tgt, env)) - _n(self.eval_expr(m.group(1), env))), env)
             return i + 1
-        m = re.match(r'multiply\s+(.+?)\s+by\s+(.+)$', line, re.I)
+        m = _rxi(r'multiply\s+(.+?)\s+by\s+(.+)$').match(line)
         if m:
             tgt = m.group(1).strip()
             self.assign(tgt, _exact(_n(self.eval_expr(tgt, env)) * _n(self.eval_expr(m.group(2), env))), env)
             return i + 1
-        m = re.match(r'set\s+the\s+itemDelimiter\s+to\s+(.+)$', line, re.I)
+        m = _rxi(r'set\s+the\s+itemDelimiter\s+to\s+(.+)$').match(line)
         if m:
             ITEM_DELIMITER[0] = str(_disp(self.eval_expr(m.group(1), env)))
             return i + 1
-        m = re.match(r'set\s+the\s+lineDelimiter\s+to\s+(.+)$', line, re.I)
+        m = _rxi(r'set\s+the\s+lineDelimiter\s+to\s+(.+)$').match(line)
         if m:
             LINE_DELIMITER[0] = str(_disp(self.eval_expr(m.group(1), env)))
             return i + 1
@@ -546,7 +578,7 @@ class Interp:
         # default), which is all the corpus asks of it (canonicalising a key
         # list before iteration). International collation is NOT modelled;
         # every sorted list in the corpus is ASCII.
-        m = re.match(r'sort\s+lines\s+of\s+(\w+)$', line, re.I)
+        m = _rxi(r'sort\s+lines\s+of\s+(\w+)$').match(line)
         if m:
             tgt = m.group(1)
             s = str(_disp(self.eval_expr(tgt, env)))
@@ -554,21 +586,21 @@ class Interp:
             parts.sort(key=lambda x: x.lower())
             self.assign(tgt, LINE_DELIMITER[0].join(parts), env)
             return i + 1
-        m = re.match(r'get\s+(.+)$', line, re.I)
+        m = _rxi(r'get\s+(.+)$').match(line)
         if m:
             # `get EXPR` evaluates EXPR and puts the value in `it`. The script
             # layer uses it to call a validator for its THROW, discarding the
             # return - so the evaluation is the whole point and `it` is not read.
             env["it"] = self.eval_expr(m.group(1), env)
             return i + 1
-        m = re.match(r'replace\s+(.+?)\s+with\s+(.+?)\s+in\s+(\w+)$', line, re.I)
+        m = _rxi(r'replace\s+(.+?)\s+with\s+(.+?)\s+in\s+(\w+)$').match(line)
         if m:
             tgt = m.group(3).strip()
             old = str(_disp(self.eval_expr(m.group(1), env)))
             new = str(_disp(self.eval_expr(m.group(2), env)))
             self.assign(tgt, str(_disp(self.eval_expr(tgt, env))).replace(old, new), env)
             return i + 1
-        m = re.match(r'delete\s+char\s+(.+?)\s+to\s+(.+?)\s+of\s+(.+)$', line, re.I)
+        m = _rxi(r'delete\s+char\s+(.+?)\s+to\s+(.+?)\s+of\s+(.+)$').match(line)
         if m:
             a, b, tgt = int(_n(self.eval_expr(m.group(1), env))), int(_n(self.eval_expr(m.group(2), env))), m.group(3).strip()
             s = str(self.eval_expr(tgt, env))
@@ -576,7 +608,7 @@ class Interp:
             return i + 1
         # STRING-AWARE, not a non-greedy regex: see split_outside_strings.
         parts = (split_outside_strings(line[4:], ("into", "after", "before"))
-                 if re.match(r'put\s', line, re.I) else None)
+                 if _rxi(r'put\s').match(line) else None)
         if parts:
             val, prep, tgt = parts[0], parts[1], parts[2].strip()
             v = self.eval_expr(val, env)
@@ -592,7 +624,7 @@ class Interp:
         # repeat` was consumed above, so any exit reaching here names a
         # handler; the name is not checked against the enclosing one because
         # the checker already enforces that pairing statically.
-        m = re.match(r'exit\s+(\w+)$', line, re.I)
+        m = _rxi(r'exit\s+(\w+)$').match(line)
         if m and m.group(1).lower() != "repeat":
             raise _Return("")
         # A statement-position HANDLER CALL (`nxSetError "..."`, or bare with
@@ -600,7 +632,7 @@ class Interp:
         # checker enforces; the parenthesised spelling is the engine trap this
         # interpreter must not quietly accept either, and does not: it would
         # arrive here as a call whose one argument is `()` and fail to parse).
-        m = re.match(r'([A-Za-z_]\w*)\s*(.*)$', line)
+        m = _rx(r'([A-Za-z_]\w*)\s*(.*)$').match(line)
         if m and m.group(1).lower() in self.handlers:
             args = []
             rest = m.group(2).strip()
@@ -621,7 +653,30 @@ class Interp:
         raise SyntaxError(f"unsupported statement: {line!r}")
 
     def assign(self, target, value, env):
-        m = re.match(r'^(\w+)\s*\[', target)
+        # A CHUNK STORE: `put X into item|line|char|byte N of CONTAINER`.
+        # Until 2026-09-11 this fell through to the plain-name branch below
+        # and silently created a variable NAMED "item 6 of ttampered" - the
+        # container untouched, no error, and the script's next read of it
+        # answering the OLD value. That is the LOOSER-than-engine direction
+        # the header's contract forbids, and it was invisible for the same
+        # reason the negative-range defect was: no shipped source that any
+        # gate ran had written the form. holde-em's harness does (it tampers
+        # a wire's sixth field to prove verify drops it), and its execution
+        # gate read "ok" for a tampered wire on its first run. The container
+        # is stored back through this same function, so a bracket chain
+        # works as a container too. The plain-name branch now REFUSES any
+        # target that is not an identifier, so the next unmodelled form is
+        # loud rather than a variable nobody reads.
+        m = _rxi(r'^(item|line|char|character|byte)\s+(.+?)\s+of\s+'
+                     r'(\w+(?:\s*\[.*\])?)$').match(target)
+        if m:
+            unit = m.group(1).lower()
+            n = int(_n(self.eval_expr(m.group(2), env)))
+            container = m.group(3).strip()
+            cur = str(_disp(self.eval_expr(container, env)))
+            self.assign(container, _chunk_store(unit, n, cur, str(_disp(value))), env)
+            return
+        m = _rx(r'^(\w+)\s*\[').match(target)
         if m:
             # A bracket CHAIN (`tTags[tI][tJ]`, any depth), each key itself a
             # full expression, scanned with depth counting so a subscripted
@@ -657,7 +712,9 @@ class Interp:
                 node = node[k]
             node[keys[-1]] = _copy(value)
             return
-        low = target.lower()
+        low = target.strip().lower()
+        if not _rx(r'^[a-z_]\w*$').match(low):
+            raise SyntaxError(f"cannot assign to {target!r} (unmodelled container)")
         if low not in env and low in self.globals:
             self.globals[low] = _copy(value)
             return
@@ -700,11 +757,22 @@ class _Expr:
             self.i += 1
 
     def kw(self, *words):
+        # The hottest helper in a boot (130 million calls in one profile):
+        # every expression tier asks it for its keywords after every atom.
+        # The first character rules out nearly every word before any slice
+        # is taken, which is most of what it used to spend.
         self.ws()
+        s, i = self.s, self.i
+        n = len(s)
+        if i >= n:
+            return None
+        c0 = s[i].lower()
         for w in words:
-            if self.s[self.i:self.i + len(w)].lower() == w and (
-                    self.i + len(w) == len(self.s) or not self.s[self.i + len(w)].isalnum()):
-                self.i += len(w)
+            if w[0] != c0:
+                continue
+            j = i + len(w)
+            if s[i:j].lower() == w and (j == n or not s[j].isalnum()):
+                self.i = j
                 return w
         return None
 
@@ -878,9 +946,20 @@ class _Expr:
                 assert self.kw("of")
                 unit = self.kw("bytes", "chars", "characters", "items", "lines")
                 assert self.kw("of")
-                # bind the target tightly: `the number of items of X < 1` must
-                # parse as `(count of X) < 1`, not as a count of `X < 1`
-                target = self.p_concat()
+                # The target is a FACTOR: `the number of lines of X & "/" & Y`
+                # is `(count of X) & "/" & Y` and `... of X < 1` is
+                # `(count of X) < 1`. Until 2026-09-11 the target was parsed
+                # at the concatenation tier, so `&` and `+` after the target
+                # were folded INTO it - a model of a binding the engine does
+                # not have. The evidence is holde-em's harness, which asserts
+                # `the number of lines of tOutboxTxt & "/" & char 1 to 3 of
+                # line 1 of tOutboxTxt` against "1/r!" and passed on two
+                # engines (2026-08-20, 2026-08-24); the idiom `the number of
+                # lines of tList & " lines"` is everyday LiveCode. The three
+                # "chunk-binding" sites coinxt and nocloud rewrote to locals
+                # in 2026-09 were findings of THIS model, not of an engine,
+                # and are harmless either way.
+                target = self.p_unary()
                 s = str(_disp(target))
                 if unit in ("bytes", "chars", "characters"):
                     return len(s)
@@ -900,7 +979,7 @@ class _Expr:
             target = self.p_atom()
             return _chunk(unit, int(_n(a)), None if b is None else int(_n(b)), target)
         # identifier: constant, variable, array ref, or function call
-        m = re.match(r'[A-Za-z_]\w*', self.s[self.i:])
+        m = _rx(r'[A-Za-z_]\w*').match(self.s[self.i:])
         if not m:
             raise SyntaxError(f"cannot parse {self.s[self.i:]!r}")
         name = m.group(0)
@@ -987,8 +1066,8 @@ def _eq(a, b):
     sa, sb = str(_disp(a)), str(_disp(b))
     try:
         return _n(sa) == _n(sb) if sa.strip() and sb.strip() and \
-            re.fullmatch(r'-?\d+(\.\d+)?', sa.strip()) and \
-            re.fullmatch(r'-?\d+(\.\d+)?', sb.strip()) else sa == sb
+            _rx(r'-?\d+(\.\d+)?').fullmatch(sa.strip()) and \
+            _rx(r'-?\d+(\.\d+)?').fullmatch(sb.strip()) else sa == sb
     except Exception:
         return sa == sb
 
@@ -1052,6 +1131,32 @@ def _chunk(unit, a, b, target):
     if b < 0:
         return ""
     return s[a - 1:b]
+
+
+def _chunk_store(unit, n, cur, val):
+    """The engine's chunk STORE. An item or line past the end is reached by
+    padding with delimiters (`put "x" into item 4 of "a,b"` is "a,b,,x"); a
+    negative index counts from the end under the same one-trailing-delimiter
+    rule the reader applies; a char or byte replaces one character, or
+    appends when N is exactly one past the end. Anything else (a store past
+    the end of a string, a zero or unreachable index) is REFUSED, because the
+    engine's answer there has not been observed and a guess would be silent."""
+    if unit in ("item", "line"):
+        d = ITEM_DELIMITER[0] if unit == "item" else LINE_DELIMITER[0]
+        raw = cur.split(d) if cur != "" else []
+        n = _negative_index(n, len(_split_chunks(cur, d)))
+        if n < 1:
+            raise SyntaxError(f"chunk store into {unit} {n}: not modelled")
+        while len(raw) < n:
+            raw.append("")
+        raw[n - 1] = val
+        return d.join(raw)
+    n = _negative_index(n, len(cur))
+    if 1 <= n <= len(cur):
+        return cur[:n - 1] + val + cur[n:]
+    if n == len(cur) + 1:
+        return cur + val
+    raise SyntaxError(f"chunk store into {unit} {n} of a {len(cur)}-char string: not modelled")
 
 
 def _is_numeric(v, want_int):

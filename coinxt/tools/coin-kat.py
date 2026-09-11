@@ -567,6 +567,10 @@ def load(out_path):
                "cnx_schnorr_sig_len", "cnx_xonly_pubkey_len",
                "cnx_taproot_output_len"):
         getattr(lib, fn).restype = ctypes.c_size_t
+    # ABI 7: point addition
+    lib.cnx_pubkey_combine.restype = ctypes.c_int
+    lib.cnx_pubkey_combine.argtypes = [ctypes.c_char_p, ctypes.c_size_t,
+                                       ctypes.c_char_p, ctypes.c_size_t]
     return lib
 
 
@@ -669,8 +673,8 @@ def main(argv):
         lib = load(out_path)
 
         abi = lib.cnx_abi_version()
-        if abi != 6:
-            problems.append(f"abi_version = {abi}, expected 6")
+        if abi != 7:
+            problems.append(f"abi_version = {abi}, expected 7")
         elif not check:
             print(f"abi_version: {abi}")
 
@@ -1358,6 +1362,62 @@ def main(argv):
                 problems.append(f"ABI 6 guard '{name}' returned {rc2}, expected {want_rc}")
         if not check:
             print(f"  BIP-340/341 fail-closed guards x{len(schnorr_guards)} OK")
+
+        # ==================================================================
+        # ABI 7: cnx_pubkey_combine, point addition (BIP-352 receiving).
+        # ==================================================================
+        # The two vendored libraries answer the same question again, on
+        # purpose: G + G by upstream's combine must equal trezor-crypto's
+        # cnx_pubkey_tweak_add of G by the scalar 1, and G + 2G must equal the
+        # public key of the scalar 3 - so a sum is checked against a tweak and
+        # against a multiplication, neither of which shares code with it.
+        def combine(keys):
+            o = ctypes.create_string_buffer(33)
+            return lib.cnx_pubkey_combine(keys, len(keys), o, 33), o.raw[:33]
+
+        _, g33 = pubkey(lib, (1).to_bytes(32, "big"), True)
+        _, two33 = pk_tweak(g33, (1).to_bytes(32, "big"))
+        _, three33 = pubkey(lib, (3).to_bytes(32, "big"), True)
+        neg_g = bytes([g33[0] ^ 1]) + g33[1:]
+        rc_c, got_c = combine(g33 + g33)
+        if rc_c != 0 or got_c != two33:
+            problems.append("cnx_pubkey_combine(G, G) != cnx_pubkey_tweak_add(G, 1)")
+        rc_c, got_c = combine(g33 + two33)
+        if rc_c != 0 or got_c != three33:
+            problems.append("cnx_pubkey_combine(G, 2G) != 3G")
+        rc_c, got_c = combine(two33 + g33 + neg_g)
+        if rc_c != 0 or got_c != two33:
+            problems.append("cnx_pubkey_combine(2G, G, -G) != 2G")
+        # the whole set is summed at once: an INTERMEDIATE infinity is fine
+        rc_c, got_c = combine(g33 + neg_g + two33)
+        if rc_c != 0 or got_c != two33:
+            problems.append("cnx_pubkey_combine(G, -G, 2G) refused an intermediate "
+                            "infinity, which BIP-352's vectors require to be accepted")
+        rc_c, got_c = combine(g33)
+        if rc_c != 0 or got_c != g33:
+            problems.append("cnx_pubkey_combine of one key is not that key")
+        # and the BIP-352 receiving vectors' own input sums, where the file has
+        # been fetched: every case with a non-empty expected sum must land on
+        # it from the keys the vectors' own input lists name
+        combine_guards = [
+            ("G + (-G): the point at infinity", combine(g33 + neg_g)[0], -4),
+            ("a null key buffer",
+             lib.cnx_pubkey_combine(None, 33, ctypes.create_string_buffer(33), 33), -1),
+            ("a length that is not a multiple of 33", combine(g33 + g33[:32])[0], -2),
+            ("an empty set", combine(b"")[0], -2),
+            ("a 32-byte output buffer",
+             lib.cnx_pubkey_combine(g33, 33, ctypes.create_string_buffer(32), 32), -2),
+            ("an uncompressed prefix", combine(b"\x04" + g33[1:])[0], -4),
+            ("a key that is not on the curve", combine(b"\x02" + b"\xff" * 32)[0], -4),
+            ("65 bytes: an uncompressed key is not two keys",
+             combine(pubkey(lib, (1).to_bytes(32, "big"), False)[1])[0], -2),
+        ]
+        for name, rc2, want_rc in combine_guards:
+            if rc2 != want_rc:
+                problems.append(f"combine guard '{name}' returned {rc2}, expected {want_rc}")
+        if not check:
+            print(f"  ABI 7 cnx_pubkey_combine OK (cross-checked against the tweak and "
+                  f"the multiplication; fail-closed guards x{len(combine_guards)})")
 
         # ---- the independent second opinion, when it is installed
         # The published vectors above already stand on their own. This block is

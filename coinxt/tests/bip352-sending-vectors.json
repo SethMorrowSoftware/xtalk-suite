@@ -1,5 +1,5 @@
 {
- "_source": "The sending half of bip-0352/send_and_receive_test_vectors.json from github.com/bitcoin/bips, fetched 2026-09-04. Each entry keeps its comment, the sending case's given inputs and recipients, and its expected values; the receiving cases were dropped because the wallet implements sending only. Trimmed by hand from the published file, not edited.",
+ "_source": "The sending half of bip-0352/send_and_receive_test_vectors.json from github.com/bitcoin/bips, fetched 2026-09-04. Each entry keeps its comment, the sending case's given inputs and recipients, and its expected values; the receiving cases were dropped because the wallet implemented sending only at the time (they live in bip352-receiving-vectors.json since 2026-09-10). Trimmed by hand from the published file, not edited.",
  "vectors": [
   {
    "comment": "Simple send: two inputs",

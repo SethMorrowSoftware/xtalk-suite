@@ -112,6 +112,30 @@ import shutil
 import sys
 import tempfile
 
+# COMPILED ONCE, LOOKED UP BY THE LITERAL (2026-09-11). A profile of a wallet
+# boot put over five hundred million `re.match(pattern, s, re.I)` calls at a
+# third of the runtime, and almost none of that was matching: the module-level
+# function re-resolves the compiled pattern through re's own cache on every
+# call and pays the RegexFlag enum descriptor for the `re.I` beside it. These
+# two return the compiled pattern for a literal, so a call site reads the same
+# and costs one dict lookup. The patterns stay inline where the code is.
+_RX_CACHE = {}
+_RXI_CACHE = {}
+
+
+def _rx(pattern):
+    p = _RX_CACHE.get(pattern)
+    if p is None:
+        p = _RX_CACHE[pattern] = re.compile(pattern)
+    return p
+
+
+def _rxi(pattern):
+    p = _RXI_CACHE.get(pattern)
+    if p is None:
+        p = _RXI_CACHE[pattern] = re.compile(pattern, re.I)
+    return p
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 MEMBER = os.path.dirname(HERE)
 SUITE = os.path.dirname(MEMBER)
@@ -246,15 +270,14 @@ class WalletExpr(DB.DemoExpr):
         self.ws()
         rest = self.s[self.i:]
 
-        m = re.match(r'the\s+number\s+of\s+controls\s+of\s+'
-                     r'(this\s+card|card\s+(?:"[^"]*"|\d+|[A-Za-z_]\w*))',
-                     rest, re.I)
+        m = _rxi(r'the\s+number\s+of\s+controls\s+of\s+'
+                     r'(this\s+card|card\s+(?:"[^"]*"|\d+|[A-Za-z_]\w*))').match(rest)
         if m:
             self.i += m.end()
             return len(self.card_of(m.group(1)).controls)
 
-        m = re.match(r'the\s+(?:(short|long|abbreviated)\s+)?(\w+)\s+of\s+'
-                     + _CTL_OF_CARD, rest, re.I)
+        m = _rxi(r'the\s+(?:(short|long|abbreviated)\s+)?(\w+)\s+of\s+'
+                     + _CTL_OF_CARD).match(rest)
         if m:
             self.i += m.end()
             return _ctl_prop_get(self.control_at(m.group(3), m.group(4)),
@@ -264,7 +287,7 @@ class WalletExpr(DB.DemoExpr):
         # "line N of field M". The world carries one while a click drives, the
         # way it carries the target; empty otherwise, which is the engine's
         # own answer outside a click.
-        m = re.match(r'the\s+clickLine\b', rest, re.I)
+        m = _rxi(r'the\s+clickLine\b').match(rest)
         if m:
             self.i += m.end()
             return getattr(self.ip.world, "clickline", "") or ""
@@ -274,8 +297,7 @@ class WalletExpr(DB.DemoExpr):
         # a path INSIDE THE SANDBOX, so the default the app computes is a
         # place this gate is allowed to write, and the derivation itself
         # (which walks back to the containing folder) is really exercised.
-        m = re.match(r'the\s+(?:effective\s+)?filename\s+of\s+this\s+stack\b',
-                     rest, re.I)
+        m = _rxi(r'the\s+(?:effective\s+)?filename\s+of\s+this\s+stack\b').match(rest)
         if m:
             self.i += m.end()
             return os.path.join(self.ip.world.sandbox, "coinXTWallet.livecode")
@@ -357,15 +379,14 @@ class WalletInterp(DB.DemoInterp):
         # Off by default, for the same reason: a boot that dials must still
         # fail loudly.
         if isinstance(getattr(world, "sock", None), list):
-            m = re.match(r'open\s+socket\s+to\s+(.+?)\s+with\s+message\s+(.+)$',
-                         line, re.I)
+            m = _rxi(r'open\s+socket\s+to\s+(.+?)\s+with\s+message\s+(.+)$').match(line)
             if m:
                 world.sock.append(("open",
                                    str(LCS._disp(self.eval_expr(m.group(1), env))),
                                    str(LCS._disp(self.eval_expr(m.group(2), env)))))
                 world.result = ""
                 return i + 1
-            m = re.match(r'write\s+(.+)\s+to\s+socket\s+(.+)$', line, re.I)
+            m = _rxi(r'write\s+(.+)\s+to\s+socket\s+(.+)$').match(line)
             if m:
                 data = self.eval_expr(m.group(1), env)
                 if isinstance(data, (bytes, bytearray)):
@@ -377,8 +398,8 @@ class WalletInterp(DB.DemoInterp):
                                    data))
                 world.result = world.sock_write_fail
                 return i + 1
-            m = re.match(r'read\s+from\s+socket\s+(\S+)(?:\s+(until|for)\s+(.+?))?'
-                         r'\s+with\s+message\s+(.+)$', line, re.I)
+            m = _rxi(r'read\s+from\s+socket\s+(\S+)(?:\s+(until|for)\s+(.+?))?'
+                         r'\s+with\s+message\s+(.+)$').match(line)
             if m:
                 spec = ""
                 if m.group(2):
@@ -389,7 +410,7 @@ class WalletInterp(DB.DemoInterp):
                                    spec,
                                    str(LCS._disp(self.eval_expr(m.group(4), env)))))
                 return i + 1
-            m = re.match(r'close\s+socket\s+(.+)$', line, re.I)
+            m = _rxi(r'close\s+socket\s+(.+)$').match(line)
             if m:
                 world.sock.append(("close",
                                    str(LCS._disp(self.eval_expr(m.group(1), env)))))
@@ -399,16 +420,16 @@ class WalletInterp(DB.DemoInterp):
         # runner models: on Windows every shell() flashes a console window
         # unless this is set, so the wallet sets it before each one. There
         # is nothing here for the model to do but remember it was asked.
-        m = re.match(r'set\s+the\s+hideConsoleWindows\s+to\s+(.+)$', line, re.I)
+        m = _rxi(r'set\s+the\s+hideConsoleWindows\s+to\s+(.+)$').match(line)
         if m:
             world.hide_console = self.eval_expr(m.group(1), env)
             return i + 1
 
-        if re.match(r'create\s+image\s*$', line, re.I):
+        if _rxi(r'create\s+image\s*$').match(line):
             world.create("image")
             return i + 1
 
-        m = re.match(r'(hide|show)\s+image\s+(.+)$', line, re.I)
+        m = _rxi(r'(hide|show)\s+image\s+(.+)$').match(line)
         if m:
             name = str(LCS._disp(self.eval_expr(m.group(2), env)))
             ctl = world.resolve("image", name)
@@ -417,8 +438,8 @@ class WalletInterp(DB.DemoInterp):
             ctl.props["visible"] = m.group(1).lower() == "show"
             return i + 1
 
-        m = re.match(r'set\s+the\s+(\w+)\s+of\s+' + _CTL_OF_CARD
-                     + r'\s+to\s+(.+)$', line, re.I)
+        m = _rxi(r'set\s+the\s+(\w+)\s+of\s+' + _CTL_OF_CARD
+                     + r'\s+to\s+(.+)$').match(line)
         if m:
             ctl = WalletExpr(self, env).control_at(m.group(2), m.group(3))
             value = self.eval_expr(m.group(4), env)
@@ -1005,8 +1026,226 @@ def drive(c, ip, world, sandbox):
              REF.address_for_spk("testnet", bytes.fromhex(want_spk)) in out, repr(out[:300]))
         c.ck("Inspect shows the derived output at its taproot address",
              REF.address_for_spk("testnet", bytes.fromhex(want_spk)) in str(ip.call("waInspectRaw", [raw_sp])), "")
-    # the refusals, each by name
+    # ---- silent payments, RECEIVED (2026-09-10) ---------------------------
+    # HERMETIC: this block plants a found output, an address record, a coin
+    # and a recorded spend, and every block after it was written against the
+    # state BEFORE it. On the shipped prefill-20 stack the leftovers were
+    # harmless by luck of the pool size; on CI's prefill-2 copy they were
+    # not (ten checks in the broadcast-memory leg picked up this block's
+    # coin and spend record, 2026-09-11), so the wallet's whole script state
+    # is snapshotted here and put back at the end.
+    import copy as _cp
+    sp_saved_globals = _cp.deepcopy(ip.globals)
+    # The wallet's own BIP-352 address comes off the seed beside the account;
+    # a paying transaction pasted with its prevout scripts is scanned, the
+    # found output becomes an address record that survives the wallet file,
+    # and a coin planted on it is signed UNTWEAKED by b_spend + tweak - which
+    # the oracle verifies against the output key, not against the wallet.
+    sp_scan_node = cr.bip32_path(master, "m/352'/1'/0'/1'/0")
+    sp_spend_node = cr.bip32_path(master, "m/352'/1'/0'/0'/0")
+    c.eq("the scan key is BIP-352's m/352'/1'/0'/1'/0 for this seed",
+         str(ip.globals.get("swaspscanseckey", "")), sp_scan_node["seckey"].hex())
+    c.eq("and the spend key is m/352'/1'/0'/0'/0",
+         str(ip.globals.get("swaspspendseckey", "")), sp_spend_node["seckey"].hex())
+    own_scan33 = REF.cr.pubkey(sp_scan_node["seckey"])
+    own_spend33 = REF.cr.pubkey(sp_spend_node["seckey"])
+    own_sp = REF.sp_receive_address("testnet", own_scan33, own_spend33)
+    c.eq("waSpAddress is the oracle's address for those keys",
+         str(ip.call("waSpAddress", [])), own_sp)
+    click(ip, world, "nv_rc")
+    c.ck("the Receive screen shows the silent payment address",
+         own_sp in _fld(world, "rc_detail"), repr(_fld(world, "rc_detail")[-300:]))
+    click(ip, world, "rc_copySp")
+    clip_sp = world.clipboard.get("text") if isinstance(world.clipboard, dict) else world.clipboard
+    c.eq("and its button copies it", str(clip_sp or ""), own_sp)
+    # a payer: one P2WPKH input from a fixture key, paying our address. The
+    # input spends a REAL parent (built here, so its txid is its bytes'),
+    # because the fetched-prevout path below asks the backend for that
+    # parent by txid and waStoreRawTx checks the answer's txid against it.
+    payer_sk = bytes.fromhex("33" * 32)
+    payer_pub = REF.cr.pubkey(payer_sk)
+    payer_spk = REF.spk_p2wpkh(payer_pub)
+    parent_in = [("aa" * 32, 0, 0xFFFFFFFF)]
+    parent_raw = REF.tx_serialize(1, parent_in, [(100000, payer_spk)], 0, [b""]).hex()
+    parent_txid = REF.txid_of(1, parent_in, [(100000, payer_spk)], 0, [b""])
+    pay_points = [(parent_txid, 0)]
+    want_out = REF.sp_send([(payer_sk, False)], pay_points, [(own_scan33, own_spend33)])[0]
+    payer_wit = [[b"\x30" + b"\x44" + b"\x02" * 69 + b"\x01", payer_pub]]
+    pay_raw = REF.tx_serialize(2, [(parent_txid, 0, 0xFFFFFFFD)],
+                               [(70000, REF.spk_p2tr(want_out))], 0, [b""], payer_wit).hex()
+    sp_out_addr = REF.address_for_spk("testnet", REF.spk_p2tr(want_out))
+    # ---- FETCHED prevouts (2026-09-11): the transaction pasted ALONE ----
+    # Offline, Inspect prints the raw report and, under it, what the check
+    # would need; with a backend it asks for the parent, and the scan runs
+    # when the answer lands - through waStoreRawTx, the same door the fee
+    # bump's parent comes through.
+    sp_queue_was = ip.globals.get("swaqueue")
+    ip.globals["swaqueue"] = {"n": 0}
+    ip.globals["swabackend"] = "offline"
+    put_field("tl_hex", pay_raw)
+    click(ip, world, "nv_tl")
+    click(ip, world, "tl_inspect")
+    rep0 = _fld(world, "tl_out")
+    c.ck("offline, Inspect on the transaction alone reports it and says the check needs the prevout scripts",
+         "RAW TRANSACTION" in rep0 and "SILENT PAYMENT CHECK" in rep0 and "offline" in rep0
+         and "one per line" in rep0, repr(rep0[-400:]))
+    c.eq("and asks for nothing", int(LCS._n(ip.call("cwListCount", [ip.globals.get("swaqueue")]))), 0)
+    c.eq("and waits on nothing", str(ip.globals.get("swasppending", "")), "")
+    ip.globals["swabackend"] = "electrum-clear"
+    click(ip, world, "tl_inspect")
+    rep1 = _fld(world, "tl_out")
+    q_sp = ip.globals.get("swaqueue") or {}
+    c.ck("with a backend it asks for the one transaction the input spends",
+         int(LCS._n(ip.call("cwListCount", [q_sp]))) == 1
+         and str(q_sp.get("1", {}).get("kind")) == "tx"
+         and str(q_sp.get("1", {}).get("arg")) == parent_txid,
+         repr({k: str(v)[:80] for k, v in q_sp.items()}))
+    c.ck("and says so under the raw report", "Asked" in rep1 and "1 transaction(s)" in rep1
+         and "RAW TRANSACTION" in rep1, repr(rep1[-300:]))
+    c.eq("and remembers what it is waiting on", str(ip.globals.get("swasppending", "")), pay_raw.lower())
+    c.eq("nothing is found yet", len(unlst_boot(ip.globals.get("swaspfound") or {"n": 0})), 0)
+    # the answer, as Electrum's blockchain.transaction.get delivers it
+    ip.globals["swaqueue"] = {"n": 0}
+    ip.globals["swainflight"] = {"kind": "tx", "arg": parent_txid, "id": "81"}
+    ip.call("waNetApply", ["tx", parent_txid,
+                           '{"jsonrpc":"2.0","id":81,"result":"%s"}' % parent_raw, "81"])
+    rep2 = _fld(world, "tl_out")
+    c.ck("when the parent lands the scan runs and finds the payment, under the raw report",
+         "RAW TRANSACTION" in rep2 and ("FOUND: " + sp_out_addr) in rep2
+         and "added to your addresses" in rep2, repr(rep2[-400:]))
+    c.eq("and the wait is over", str(ip.globals.get("swasppending", "")), "")
+    c.ck("the status line says where the result is",
+         "silent payment check" in str(_fld(world, "uiStatus")), repr(_fld(world, "uiStatus")))
+    sp_log = str(ip.globals.get("swalog", ""))
+    c.ck("and the log records the request and the finish",
+         "silent payment check of " in sp_log and "finished" in sp_log, repr(sp_log[-300:]))
+    c.eq("the parent is held for the next check", 
+         str((ip.globals.get("swaspparents") or {}).get(parent_txid, ""))[:20], parent_raw[:20])
+    click(ip, world, "tl_inspect")
+    rep3 = _fld(world, "tl_out")
+    c.ck("a second Inspect scans at once from the held parent, asking nothing",
+         "already in your addresses" in rep3
+         and int(LCS._n(ip.call("cwListCount", [ip.globals.get("swaqueue")]))) == 0,
+         repr(rep3[-200:]))
+    # a coinbase can carry no silent payment, and is not asked about
+    cb_raw = REF.tx_serialize(1, [("00" * 32, 0xFFFFFFFF, 0xFFFFFFFF)],
+                              [(5000000000, REF.spk_p2tr(want_out))], 0, [b"\x03\x01\x02\x03"]).hex()
+    put_field("tl_hex", cb_raw)
+    click(ip, world, "tl_inspect")
+    rep4 = _fld(world, "tl_out")
+    c.ck("a coinbase with a taproot output is not asked about",
+         "coinbase" in rep4 and int(LCS._n(ip.call("cwListCount", [ip.globals.get("swaqueue")]))) == 0,
+         repr(rep4[-200:]))
+    # and a transaction with no taproot output gets no check line at all
+    plain_raw = REF.tx_serialize(2, [(parent_txid, 0, 0xFFFFFFFD)],
+                                 [(70000, payer_spk)], 0, [b""], payer_wit).hex()
+    put_field("tl_hex", plain_raw)
+    click(ip, world, "tl_inspect")
+    rep5 = _fld(world, "tl_out")
+    c.ck("a transaction with no taproot output gets no check line",
+         "RAW TRANSACTION" in rep5 and "SILENT PAYMENT" not in rep5, repr(rep5[-200:]))
+    ip.globals["swabackend"] = "offline"
+    ip.globals["swaqueue"] = sp_queue_was
+    # ---- PASTED prevouts (2026-09-10): the same transaction with its ----
+    # script under it - the offline shape; the output is known by now, so
+    # the report says so and the count stays at one
+    paste = pay_raw + "\n" + payer_spk.hex()
+    put_field("tl_hex", paste)
+    click(ip, world, "tl_inspect")
+    rep_sp = _fld(world, "tl_out")
+    c.ck("Inspect on a transaction with its prevouts pasted finds the payment too",
+         "FOUND: " + sp_out_addr in rep_sp and "already in your addresses" in rep_sp,
+         repr(rep_sp[:300]))
+    found = unlst_boot(ip.globals.get("swaspfound") or {"n": 0})
+    c.eq("one found output is remembered", len(found), 1)
+    want_scan = REF.sp_scan(sp_scan_node["seckey"], own_spend33,
+                            REF.sp_pubkey_sum([payer_pub]),
+                            REF.sp_input_hash(pay_points, REF.sp_pubkey_sum([payer_pub])),
+                            [want_out], [])
+    if found and want_scan:
+        c.eq("with the output the oracle finds", str(found[0].get("output", "")),
+             want_scan[0]["pub_key"])
+        c.eq("and the tweak the oracle computes", str(found[0].get("tweak", "")),
+             want_scan[0]["priv_key_tweak"])
+    sp_recs = [r for r in unlst_boot(ip.globals.get("swaaddresses") or {"n": 0})
+               if str(r.get("sptweak", ""))]
+    c.eq("and it is an address record now", len(sp_recs), 1)
+    if sp_recs:
+        c.eq("at the output's own taproot address", str(sp_recs[0]["address"]), sp_out_addr)
+    # waNextUnused answers "" when every derived address is used - which is
+    # the state CI's prefill-2 copy reaches Receive in - and that is a pass
+    # here too: the found output was not offered
+    nxt = ip.call("waNextUnused", [0])
+    c.eq("the next unused receive address is not the found output",
+         str(nxt.get("sptweak", "")) if isinstance(nxt, dict) else "", "")
+    click(ip, world, "tl_inspect")
+    c.ck("scanning the same transaction again adds nothing",
+         "already in your addresses" in _fld(world, "tl_out")
+         and len(unlst_boot(ip.globals.get("swaspfound") or {"n": 0})) == 1,
+         repr(_fld(world, "tl_out")[:200]))
+    # the wallet file carries it
+    text_sp = str(ip.call("waSerializeWallet", []))
+    c.ck("the wallet file carries an sp line for it",
+         ("sp\t%s|%s|" % (want_scan[0]["pub_key"], want_scan[0]["priv_key_tweak"])) in text_sp
+         if want_scan else False, "")
+    saved_found = ip.globals.get("swaspfound")
+    ip.globals["swaspfound"] = {"n": 0}
+    ip.call("waLoadInto", [text_sp])
+    c.eq("and a reopen restores the found output", 
+         len([r for r in unlst_boot(ip.globals.get("swaaddresses") or {"n": 0})
+              if str(r.get("sptweak", ""))]), 1)
+    # a coin on it is spent untweaked, and the oracle checks the signature
+    # against the OUTPUT KEY
+    sp_coin = {"address": sp_out_addr, "txid": "ee" * 32, "vout": 1, "value": 70000,
+               "height": 100, "frozen": False, "selected": True,
+               "script": REF.spk_p2tr(want_out).hex()}
+    ins_sp = ip.call("cwListAdd", [ip.call("waEmptyList", []),
+                                   ip.call("cwTxInput", ["ee" * 32, 1, 4294967293])])
+    outs_sp = ip.call("cwListAdd", [ip.call("waEmptyList", []),
+                                    ip.call("cwTxOutput", [60000, REF.spk_for_address("testnet", first).hex()])])
+    sel_sp = ip.call("cwListAdd", [ip.call("waEmptyList", []), sp_coin])
+    raw_from_sp = ""
+    try:
+        raw_from_sp = str(ip.call("waSignSpend", [ins_sp, outs_sp, sel_sp, 0]))
+        c.ck("a found silent payment output signs", True)
+    except LCS.Thrown as exc:
+        c.ck("a found silent payment output signs", False, str(exc.msg)[:160])
+    if raw_from_sp:
+        dec_from = REF.tx_decode(bytes.fromhex(raw_from_sp))
+        wit = dec_from["vin"][0].get("witness", [])
+        sig = bytes.fromhex(wit[0]) if wit else b""
+        c.eq("with a 64-byte key-path signature (no tweak, no sighash byte)", len(sig), 64)
+        digest = REF.sighash_for("p2tr", 2, [("ee" * 32, 1, 0xFFFFFFFD)],
+                                 [(60000, REF.spk_for_address("testnet", first))], 0, 0,
+                                 prev_spks=[REF.spk_p2tr(want_out)], prev_amounts=[70000])
+        c.ck("that verifies against the OUTPUT KEY under BIP-340",
+             REF.cr.schnorr_verify(want_out, digest, sig) if len(sig) == 64 else False, "")
+    put_field("tl_hex", "")
+    # a watch-only wallet has no such address, and says so
+    saved_sp_keys = (ip.globals.get("swaspscanseckey"), ip.globals.get("swaspspendseckey"))
+    ip.globals["swaspscanseckey"] = ""
+    ip.globals["swaspspendseckey"] = ""
+    c.eq("without the keys there is no silent payment address", str(ip.call("waSpAddress", [])), "")
+    click(ip, world, "nv_rc")
+    click(ip, world, "rc_copySp")
+    c.ck("and the copy button says why, without a seed",
+         "seed" in str(_fld(world, "uiStatus")).lower(), repr(_fld(world, "uiStatus")))
+    ip.globals["swaspscanseckey"], ip.globals["swaspspendseckey"] = saved_sp_keys
+    ip.globals["swaspfound"] = saved_found
+
+    # the refusals, each by name - over a coin planted for them: on a copy
+    # whose address window is two deep, every fixture coin can be spent or
+    # reserved by the time this block runs (CI's prefill-2 copy: "this wallet
+    # holds no coins to spend"), and that is the refusal of a different
+    # question. The coin sits on the first receive address like the fixtures.
+    sp_refusal_coin = dict((ip.globals.get("swaaddresses") or {}).get("1", {}))
+    sp_refusal_coin.update({"txid": "dd" * 32, "vout": 0, "value": 80000,
+                            "confirmations": 6, "height": 6, "selected": "", "frozen": ""})
+    ip.globals["swautxos"] = ip.call("cwListAdd",
+                                     [ip.globals.get("swautxos") or ip.call("waEmptyList", []),
+                                      sp_refusal_coin])
     put_field("sd_to", "%s,0.0005" % sp_addr)
+    put_field("sd_rate", "2")       # the refusal under test is the PSBT's, not the rate's
     try:
         ip.call("waBuildSpend", [False, True])
         c.ck("a silent payment as a PSBT is refused", False, "accepted")
@@ -1032,8 +1271,11 @@ def drive(c, ip, world, sandbox):
     insp = str(ip.call("waValidateAddress", [sp_addr]))
     c.ck("the Tools inspector explains a silent payment address",
          "SILENT PAYMENT" in insp and sp_scan.hex() in insp, insp[:200])
-    put_field("sd_to", "%s,0.0005" % first)
-    click(ip, world, "sd_sign")
+    # and the wallet is exactly what it was before this block (see its head)
+    ip.globals.clear()
+    ip.globals.update(sp_saved_globals)
+    put_field("sd_to", "")
+    put_field("tl_hex", "")
 
     # ---- the window follows its builder (2026-09-04) ------------------------
     # waBuild skips the build when the stack's stored uUiVersion equals
@@ -1175,6 +1417,34 @@ def drive(c, ip, world, sandbox):
         c.ck("a transaction this window did not build falls back to advice",
              "CANNOT BUILD THE REPLACEMENT" in detail
              and "BUMPING THE FEE" in detail, repr(detail[:160]))
+        # 2026-09-10: THE ADVICE PRINTS A FLOOR ONLY FROM A FEE AND A SIZE IT
+        # HAS. That row carries both (Esplora's history does), so the floor
+        # is real and is BIP-125's: fee + 1 sat/vB over the size.
+        want_floor = old_fee + old_vsize
+        c.ck("with a fee and a size known, the advice states the floor",
+             "must pay at least" in detail
+             and str(ip.call("waAmount", [want_floor])) in detail,
+             repr(detail[:400]))
+        # Electrum's history carries neither; it used to print "it paid
+        # 0.00000000 / its size  vB / at least 0.00000000" and a rate
+        # "above" a division by zero. Now: unknown, and how to learn it.
+        bare = {"txid": "ee" * 32, "confirmations": 0, "address": first,
+                "value": 0, "height": 0}
+        adv = str(ip.call("waBumpAdvice", [bare]))
+        c.ck("with neither known, the advice says the fee is unknown",
+             "it paid       (unknown" in adv, repr(adv[:400]))
+        c.ck("and the size is unknown, naming Inspect",
+             "its size      (unknown" in adv and "Inspect" in adv, repr(adv[:400]))
+        c.ck("and prints NO floor computed from zeros",
+             "must pay at least" not in adv and "0.00000000" not in adv, repr(adv[:400]))
+        # the size can come from the bytes when Inspect has fetched them;
+        # the fee still cannot
+        adv2 = str(ip.call("waBumpAdvice", [dict(bare, raw=raw)]))
+        c.ck("with the bytes held, the size is read off them",
+             ("its size      %d vB" % old_vsize) in adv2, repr(adv2[:400]))
+        c.ck("and the fee is still reported unknown, so no floor",
+             "it paid       (unknown" in adv2 and "must pay at least" not in adv2,
+             repr(adv2[:400]))
         ip.globals["swahistory"] = saved_hist
         ip.globals["swalastraw"] = raw
 
@@ -2225,6 +2495,14 @@ def drive(c, ip, world, sandbox):
          str(ip.call("waRecordType", [rec1])), "p2pkh")
     c.eq("while the WALLET's own type is still what a new address would be",
          str(ip.call("waInputType", [])), "p2wpkh")
+    # 2026-09-10: and it is PRICED as what it is. cwInputBaseBytes budgeted
+    # every P2PKH input a 33-byte pubkey push; this key's scriptSig carries
+    # 65. The sizing name never reaches the signer (the record's scripttype
+    # is still p2pkh); it reaches the estimator and the selector.
+    c.eq("waSizingType prices an uncompressed key's record as uncompressed",
+         str(ip.call("waSizingType", [rec1])), "p2pkh-uncompressed")
+    c.eq("while its script type for signing stays p2pkh",
+         str(ip.call("waRecordType", [rec1])), "p2pkh")
 
     # (2) waSignSpend asked waAccountNode() before the check that excuses an
     # imported key, so a WIF wallet could not sign ANYTHING - refused with
@@ -2253,6 +2531,32 @@ def drive(c, ip, world, sandbox):
         ssig = str(dec["inputs"]["1"]["scriptsig"])
         c.ck("with a real scriptSig on the input", len(ssig) > 100,
              "%d hex chars" % len(ssig))
+        # (4) 2026-09-10: the estimate for that selection is a WORST CASE
+        # again. waSelectedInputSpecs prices the coin as uncompressed, and
+        # that estimate covers the transaction actually signed; priced as a
+        # compressed p2pkh - what every caller got until today - it was
+        # short of the real size, in the one function whose contract is
+        # "never under".
+        specs = ip.call("waSelectedInputSpecs", [sel])
+        c.eq("waSelectedInputSpecs prices the coin as uncompressed",
+             str(specs["1"]["type"]), "p2pkh-uncompressed")
+        outs_t = ip.call("cwListAdd", [ip.call("waEmptyList", []), "p2pkh"])
+        est = int(LCS._n(ip.call("cwEstimateVsize", [specs, outs_t])))
+        short = ip.call("cwListAdd", [ip.call("waEmptyList", []),
+                                      {"type": "p2pkh", "m": 0, "cosigners": 0}])
+        est_old = int(LCS._n(ip.call("cwEstimateVsize", [short, outs_t])))
+        real = int(LCS._n(dec["vsize"]))
+        c.ck("the uncompressed estimate covers the signed transaction",
+             est >= real, "estimate %d, signed %d" % (est, real))
+        c.ck("and the compressed estimate would NOT have",
+             est_old < real, "estimate %d, signed %d" % (est_old, real))
+        # and the coins the selector is handed carry the same name
+        saved_utx = ip.globals.get("swautxos")
+        ip.globals["swautxos"] = {"n": 1, "1": dict(coin, height=100)}
+        pool = ip.call("waSpendableCoins", [])
+        c.eq("waSpendableCoins tags the coin with its sizing type",
+             str(pool.get("1", {}).get("inputtype", "")), "p2pkh-uncompressed")
+        ip.globals["swautxos"] = saved_utx
 
     # A COMPRESSED key at p2sh-p2wpkh keeps its own type - the fallback must
     # not fire where a SegWit address genuinely exists.
@@ -2262,6 +2566,8 @@ def drive(c, ip, world, sandbox):
     rec2 = ip.call("waImportedRecords", []).get("1", {})
     c.eq("a compressed key at p2sh-p2wpkh keeps that type",
          str(rec2.get("scripttype", "")), "p2sh-p2wpkh")
+    c.eq("and is priced as that type, with no uncompressed refinement",
+         str(ip.call("waSizingType", [rec2])), "p2sh-p2wpkh")
     c.ck("and gets a P2SH address", str(rec2.get("address", ""))[:1] == "2",
          str(rec2.get("address", "")))
 
@@ -5412,7 +5718,7 @@ def drive(c, ip, world, sandbox):
         # bytes and carry real ids, must claim to have asked the question they
         # are answering. Taking the id OUT of the body rather than passing it
         # separately keeps the fixture and the request it answers in one place.
-        m = re.search(r'"id"\s*:\s*"?([^,"}\s]+)', body)
+        m = _rx(r'"id"\s*:\s*"?([^,"}\s]+)').search(body)
         rid = m.group(1) if m else ""
         ip.globals["swainflight"] = {"kind": kind, "arg": arg, "id": rid}
         ip.call("waNetApply", [kind, arg, body, rid])
@@ -6049,7 +6355,7 @@ def drive(c, ip, world, sandbox):
             ip.call("waMenuPick", ["menu_coins", "Copy selected outpoint"])
             got = str(world.clipboard.get("text", ""))
             c.ck("Copy selected outpoint copies a txid:vout",
-                 re.match(r'^[0-9a-f]{64}:\d+$', got) is not None, got[:80])
+                 _rx(r'^[0-9a-f]{64}:\d+$').match(got) is not None, got[:80])
         else:
             c.ck("Copy selected outpoint copies a txid:vout (no coin to select)",
                  True)
@@ -6095,7 +6401,7 @@ def drive(c, ip, world, sandbox):
          str(info.get("version", "")).startswith("9.9.9-"), str(info)[:80])
     c.eq("and its size", int(LCS._n(info.get("chars", 0))), len(newer))
     c.ck("and its SHA-256, as hex",
-         re.match(r'^[0-9a-f]{64}$', str(info.get("sha", ""))) is not None,
+         _rx(r'^[0-9a-f]{64}$').match(str(info.get("sha", ""))) is not None,
          str(info.get("sha", ""))[:70])
     other = cur.replace('constant kWaVersion = "', 'constant kWaVersion = "9.9.8-', 1)
     c.ck("which follows the content: a different copy reports a different SHA",
@@ -6210,7 +6516,7 @@ def drive(c, ip, world, sandbox):
     save = re.search(r'^command waSaveWallet\n(.*?)^end waSaveWallet', cur, re.S | re.M)
     c.ck("the plain wallet-file branch UTF-8 encodes what it writes, like the sealed one",
          save is not None and
-         re.search(r'put textEncode\(kWaFileMagic & "\|plain\|"', save.group(1)) is not None)
+         _rx(r'put textEncode\(kWaFileMagic & "\|plain\|"').search(save.group(1)) is not None)
     load = re.search(r'^command waLoadWallet\n(.*?)^end waLoadWallet', cur, re.S | re.M)
     c.ck("and the plain branch UTF-8 decodes what it reads",
          load is not None and 'waLoadInto textDecode(tBody, "utf-8")' in load.group(1))

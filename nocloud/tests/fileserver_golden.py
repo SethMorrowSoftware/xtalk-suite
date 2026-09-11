@@ -7,7 +7,12 @@ path-confinement linchpin), in src/nocloudquickshare.livecodescript.
 OXT cannot compile/run .livecodescript headlessly, so this PINS the parts of the
 web server that are verifiable off-engine: the HTTP byte-range parser, the
 path-traversal decision, the MIME mapping, and the HTML escaper. If this and the
-.livecodescript ever disagree, one of them is wrong.
+.livecodescript ever disagree, one of them is wrong - and since 2026-09-11 that
+sentence is CHECKED rather than hoped: tools/check-script-vectors.py drives the
+shipped script through the family's interpreter on every input this file pins
+and requires each mirror below to agree with it. On its first run the two
+disagreed twice and the MIRROR was wrong both times (fs_leaf and parse_head,
+see their docstrings), which is the reason a mirror alone was never enough.
 
 Mirrors these LiveCodeScript handlers, grouped by surface. This index is the
 AUTHORITATIVE list (CONTRIBUTING.md points here instead of keeping its own
@@ -353,15 +358,21 @@ def http_header_end(data):
 # to let a client header shadow the "__" pseudo-field namespace.
 def parse_head(head_bytes):
     """Mirror qsHttpParseHead: lowercased header names -> values, plus the
-    synthetic __method / __path / __query / __resource and the __dupcl flag."""
+    synthetic __method / __version / __path / __query and the __dupcl flag.
+    (Until 2026-09-11 this mirror carried a `__resource` field the script has
+    never set and lacked the `__version` the script sets and the keep-alive
+    decision reads; the execution gate found both by comparing the whole map.
+    `__query` is "" rather than absent when the request has no `?`: the
+    script leaves the key unset, and the engine reads an unset key as empty,
+    so "" is what every reader of the map sees.)"""
     text = head_bytes.decode("utf-8", "replace")
     lines = text.split("\r\n")
     out = {}
     req = lines[0] if lines else ""
     words = req.split()
     out["__method"] = words[0] if words else ""
-    out["__resource"] = words[1] if len(words) > 1 else ""
-    res = out["__resource"]
+    out["__version"] = words[2] if len(words) > 2 else ""
+    res = words[1] if len(words) > 1 else ""
     out["__path"] = res.split("?", 1)[0]
     out["__query"] = res.split("?", 1)[1] if "?" in res else ""
     for line in lines[1:]:
@@ -826,8 +837,18 @@ def if_none_match(header, etag):
 
 def fs_leaf(path):
     """Mirror qsFsLeaf: the last '/'-segment of a path (backslashes normalised).
-    A trailing '/' yields '' - LiveCode's `the last item` of "a/b/" is empty too."""
-    return path.replace("\\", "/").split("/")[-1]
+    ONE trailing '/' is ignored, so "dir/" yields "dir": the engine ignores a
+    single trailing delimiter when it counts and fetches items (root
+    docs/OXT-ENGINE-NOTES.md 2.2, the "m/" lesson), so `the last item of
+    "dir/"` IS "dir" on OXT. This mirror said the opposite - "a trailing '/'
+    yields ''" - from 2026-08-15 until the execution gate
+    (tools/check-script-vectors.py) drove the shipped script on 2026-09-11 and
+    the two disagreed: the mirror had pinned a rule the engine does not have. A
+    SECOND trailing slash is not ignored ("a//" -> "")."""
+    p = path.replace("\\", "/")
+    if p.endswith("/"):
+        p = p[:-1]
+    return p.split("/")[-1]
 
 
 def http_disposition(formime, headers):
@@ -1239,7 +1260,9 @@ def main():
     check("parse_head method", hr.get("__method"), "GET")
     check("parse_head path", hr.get("__path"), "/a/b")
     check("parse_head query", hr.get("__query"), "x=1&y=2")
-    check("parse_head resource", hr.get("__resource"), "/a/b?x=1&y=2")
+    check("parse_head version", hr.get("__version"), "HTTP/1.1")
+    check("parse_head version absent",
+          parse_head(b"GET /a\r\nHost: h").get("__version"), "")
     check("parse_head no query is empty, not absent",
           parse_head(b"GET /a HTTP/1.1\r\nHost: h").get("__query"), "")
 
@@ -1476,7 +1499,8 @@ def main():
         ("a/b/c.txt", "c.txt"),
         ("a\\b\\x.png", "x.png"),                          # backslashes normalise
         ("/abs/dir/f.pdf", "f.pdf"),
-        ("dir/", ""),                                      # trailing slash -> empty leaf
+        ("dir/", "dir"),                                   # ONE trailing slash is ignored (engine notes 2.2)
+        ("dir//", ""),                                     # ...a second is not
     ]:
         check("fs_leaf(%r)" % path, fs_leaf(path), want)
     check("http_disposition inline", http_disposition("a/movie.mp4", {"__query": ""}),

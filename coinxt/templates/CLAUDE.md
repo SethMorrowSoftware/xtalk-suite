@@ -685,3 +685,15 @@ Seed entries (confirmed on-engine in the family; keep them, add to them):
            is exactly the one that went red on a platform nobody had run before. An assertion's
            failure message is the whole product of an engine pass - write it as though the run
            costs a day, because it does.
+- SYMPTOM: `missing end if` reported at the END of a handler whose `if` blocks all look balanced,
+           after a change that added an `else` branch.
+  CAUSE:   the dangling else. A single-line `if cond then stmt` may legally take an `else`, so a
+           BARE `else` on the line after one binds to that single-line `if`; its `end if` then
+           closes the wrong block and the OUTER `if` stays open until the handler ends. Chains
+           with the statement on the else line (`if c then s1` / `else s2`) are fine; it is the
+           bare `else` after a one-liner that mis-pairs. Learned in box2dxt and holde-em, where
+           the same edit (an `if` grown an alternative) produced it twice.
+  FIX:     never write a bare `else` under a single-line `if`. Either put the first branch's
+           statement on its own line under a block `if`, or keep both branches single-line.
+  GATE:    the unified checker's dangling-else check (family 13 since 2026-08-15, folded in from
+           holde-em's lineage) flags the broken pairing, in every member's copy.

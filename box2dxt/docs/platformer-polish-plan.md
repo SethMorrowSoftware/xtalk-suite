@@ -262,13 +262,21 @@ adjust on an OXT pass, level by level:
 - [ ] **Audio complete** — every action cued, nothing silent/doubled.
 - [ ] **No dev seams** — the level-picker reads as intentional or is tucked behind
   debug; the debug overlay stays on `` ` ``.
-- [ ] **Gates green** — `check-livecodescript.py`, `audit-platformer.py`, the
-  self-test harness, embedded-Kit sync, all clean.
+- [~] **Gates green** — `check-livecodescript.py`, `audit-platformer.py`, the
+  self-test harness, embedded-Kit sync, all clean. *(Headless half ticked
+  2026-09-10: the checker, `audit-platformer.py` (0 findings across 7 levels)
+  and `sync-embedded-kit.py --check` are clean in the suite gate set on every
+  push. The harness half is an engine result and its last one is v29's 374/374
+  on Windows and v30's 373/374 on Linux, both 2026-08-17/18 - see CLAUDE.md;
+  no v30 total on Windows yet.)*
 - [~] **Docs current** — README/getting-started/CLAUDE describe the 7-level final
   demo; this plan's items all checked. *(README + CLAUDE now describe the boot title +
   transition cards; the stale `fbc93b2` Clocktown recovery ref was corrected — that
   commit never existed. Remaining: tick the rest of this list as those passes land.)*
-- [ ] **Packages clean** — a fresh install runs the demo end to end.
+- [~] **Packages clean** — a fresh install runs the demo end to end. *(The
+  `src/code/` tree half: `package-extension.py --check` reports all five
+  platform binaries present, 2026-09-10. The fresh-machine run is an engine
+  pass and stays open.)*
 
 ---
 

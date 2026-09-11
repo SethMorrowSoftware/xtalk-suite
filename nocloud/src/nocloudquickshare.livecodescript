@@ -6065,7 +6065,15 @@ function qsHttpReqLength pData
    end if
    put qsHttpParseHead(byte 1 to (tHeadEnd - 1) of pData) into tHeaders
    put tHeaders["content-length"] into tLen
-   if tLen is not an integer or tLen < 0 then
+   -- NESTED, not `is not an integer or tLen < 0`: LiveCodeScript evaluates
+   -- BOTH operands of `or`, so the comparison also runs on a value that is
+   -- not a number - which the engine answers by comparing as text (harmless
+   -- here, the `or` is already true) and the family's interpreter REFUSES,
+   -- so the guard could not be driven headlessly until it was written this
+   -- way. Same answer on both; found by tools/check-script-vectors.py.
+   if tLen is not an integer then
+      put 0 into tLen
+   else if tLen < 0 then
       put 0 into tLen
    end if
    return tHeadEnd + 3 + tLen
@@ -6413,7 +6421,13 @@ end qsHttpReason
 function qsHttpDate pEpoch
    local tDays, tRem, tHour, tMin, tSec, tDow, tYear, tYlen, tLeap, tMon, tMlen, tDay
    local tWdays, tMons, tI
-   if pEpoch is not an integer or pEpoch < 0 then
+   -- nested, not `or`: both operands of `or` are evaluated, and the
+   -- comparison on a non-number is refused by the family's interpreter (the
+   -- engine compares as text, same answer) - see qsHttpReqLength
+   if pEpoch is not an integer then
+      return ""
+   end if
+   if pEpoch < 0 then
       return ""
    end if
    put pEpoch div 86400 into tDays         -- whole days since 1970-01-01 (a Thursday)

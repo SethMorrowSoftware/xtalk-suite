@@ -631,15 +631,74 @@ secret, and the outputs with their per-scan-key counter, including the
 three refusals - no eligible input, a zero key sum, and more than 2323
 outputs to one scan key. Which inputs take part is the receiver's rule, and
 the oracle implements that side of it too, checked against the vectors'
-own input lists. Receiving - scanning the chain for payments to a scan key
-of this wallet's own - is not built, and the reason is a library gap rather
-than a design choice: the receiver sums the INPUT PUBLIC KEYS of every
-transaction it scans, which is point addition, and coinxt exposes scalar
-multiplication (ECDH), scalar tweaks and point compression but no
-point-plus-point. That is one native handler away (a `cxPubkeyCombine`
-over secp256k1_ec_pubkey_combine, with binaries refreshed on every
-platform), and until it lands the wallet says so wherever it mentions the
-feature. Not run on an engine.
+own input lists. Not run on an engine.
+
+## Silent payments, the receiving side
+
+Since 2026-09-10 `wallet-core` has the other half. A receiver holds a scan
+key and a spend key (BIP-352's `m/352'/coin'/0'/1'/0` and `.../0'/0`),
+publishes them as its address, and for every transaction it sees repeats
+what a sender computed: the sum of the eligible input public keys, the input
+hash over the smallest outpoint, the shared secret, and then `k = 0, 1, 2...`
+asking whether `B_spend + t_k * G` is one of the transaction's taproot
+outputs. The sum is point addition, the one curve operation coinxt had never
+exposed, and it is ABI 7's `cxPubkeyCombine` - summed over the whole set at
+once, so the BIP's "intermediate sum is infinity, final sum is not" vector is
+accepted and a final infinity is a skip. `cwSpInputPubkey` is the reference's
+`get_pubkey_from_input` (the malleated-P2PKH window scan, nested P2WPKH
+through its redeem script, the annex dropped and the NUMS-point control
+block skipped on taproot); `cwSpPubkeySum`, `cwSpScan`, `cwSpLabelTweak` and
+`cwSpReceiveAddress` are the rest, labels included. A found output's private
+key is `b_spend + tweak` and it signs UNTWEAKED - the output is that key, not
+a BIP-341 tweak of it.
+
+Every stage is held to the BIP's own receiving vectors
+(`tests/bip352-receiving-vectors.json`, the published file's receiving half,
+all 29 cases: the addresses, plain and labeled; which input contributes a key;
+the sum, the input hash and the shared secret against the published values;
+the outputs found and their tweaks; and the published BIP-340 signature from
+the recovered key) on both the shipped script and the oracle. The one case
+the script is not driven through is K_max - 2324 outputs walked up to 2323
+times is millions of interpreted iterations - so the oracle proves that
+count and the script's cap is checked as a source shape.
+
+**What the wallet does with it.** A seed wallet derives its scan and spend
+keys beside the account (`waDeriveAccount`, at BIP-352's own hardened
+branches, so the address is per seed and not per account), the Receive
+screen prints the address under the derivation and a button copies it, and
+the keys go wherever the seed goes (`waDropSeed`, `closeStack`). The wallet
+does NOT scan the chain: finding a payment needs the script each input of
+the paying transaction spends, which a raw transaction does not carry, and
+none of the backends here publishes the per-transaction tweak index a light
+client would use. What it does is scan a transaction it is HANDED. Paste
+the transaction on Tools and press Inspect: under the RAW TRANSACTION
+report comes a SILENT PAYMENT CHECK line, and (since 2026-09-11) the wallet
+asks the backend for the transaction each input spends - the same
+raw-transaction request the fee bump uses, on every backend - reads the
+prevout scripts out of those, and runs the scan when the last one lands,
+repainting the result box and saying so on the status line and in the log.
+The parents are kept (`sWaSpParents`, dropped whole past 64) so a second
+Inspect scans at once. Offline, the line says what to paste instead: the
+script each input spends under the transaction, one per line in input
+order, which is the 2026-09-10 shape and still works everywhere. A
+transaction with no taproot output gets no line (a silent payment can only
+be one), and a coinbase is refused without a request. Every output that is
+a silent payment to this wallet is reported, added to the address list at
+its own taproot address (so sync watches it like any address and never
+offers it as "next unused") and written to the wallet file as an `sp` line
+so a reopen keeps it. Spending one goes through `waSignSpend`'s own branch:
+the key is `b_spend + tweak` and it signs UNTWEAKED (`cwSignKeyPath`),
+because the output is that key and not a BIP-341 tweak of it. Labels are
+not used on the receiving side; the calculator supports them and the wallet
+publishes one address. The boot gate drives all of it - the keys against
+the oracle's derivation, the address on screen and on the clipboard, a
+transaction the oracle builds to pay it: pasted alone, the offline note,
+then the parent asked for by its real txid and delivered as Electrum would,
+the scan running on arrival, a second Inspect served from the held parent,
+a coinbase and a non-taproot transaction each left alone; then the same
+transaction with its script pasted under it, found again and remembered
+through a file round trip; and a coin on the found output signed and
+VERIFIED by the oracle against the output key. Not run on an engine.
 
 ## Runes, read only
 
@@ -784,7 +843,7 @@ its names disjoint from every other library in the suite). The groups are:
 | Amounts | `cwSatToBtc`, `cwBtcToSat`, `cwFormatAmount`, `cwParseAmount` |
 | Size and fees | `cwVarIntLen`, `cwInputBaseBytes`, `cwInputWitnessBytes`, `cwOutputBytes`, `cwEstimateVsize`, `cwSimpleInputs`, `cwFeeFor`, `cwDustThreshold`, `cwRbfMinFee`, `cwFeeRateLabel` |
 | Coin selection | `cwSelectCoins` |
-| Transactions | `cwTxInput`, `cwTxOutput`, `cwOutpointsHex`, `cwSequencesList`, `cwOutputsHex`, `cwSighash`, `cwSignInput`, `cwSignTaproot`, `cwSignMultisig`, `cwMultisigKeys`, `cwWitnessBytes`, `cwCompressPubkey`, `cwTxSerialize`, `cwTxid`, `cwTxDecode` |
+| Transactions | `cwTxInput`, `cwTxOutput`, `cwOutpointsHex`, `cwSequencesList`, `cwOutputsHex`, `cwSighash`, `cwSighashTaproot`, `cwSignInput`, `cwSignTaproot`, `cwSignMultisig`, `cwMultisigKeys`, `cwWitnessBytes`, `cwCompressPubkey`, `cwTxSerialize`, `cwTxid`, `cwTxDecode` |
 | PSBT | `cwPsbtCreate`, `cwPsbtParse`, `cwPsbtEmit`, `cwPsbtSign`, `cwPsbtFinalize`, `cwPsbtCombine`, `cwPsbtSummary`, `cwPsbtFind`, `cwPsbtFindAll`, `cwPsbtInputAmount`, `cwPsbtInputScript`, `cwPsbtInputType`, `cwPathBytes`, `cwPathFromBytes`, `cwPsbtUnsignedTx` |
 | Messages | `cwMsgDigest`, `cwMsgSign`, `cwMsgVerify` |
 | URIs | `cwUriParse`, `cwUriBuild`, `cwPercentEncode`, `cwPercentDecode` |

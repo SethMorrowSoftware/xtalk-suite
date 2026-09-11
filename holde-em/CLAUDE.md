@@ -550,6 +550,11 @@ python3 tools/shuffle-kat.py            # playable integer deal (mirror of heShu
 python3 tools/protocol-kat.py           # spec 6/7.1 crypto deal + 7.3 L2 algebra
 python3 tools/sounds-kat.py             # vendored casino-audio WAVs <-> stack mapping
 python3 tools/logic-fuzz.py             # INDEPENDENT-reference fuzz (rules, not the port)
+python3 tools/test-script-vectors.py    # proves the execution gate below can fail (runs first)
+python3 tools/check-script-vectors.py   # THE EXECUTION GATE (2026-09-11): the shipped stack's
+                                        # own harness sections run headlessly through the
+                                        # family's runner, SodiumXT modelled, zero FAIL lines
+                                        # and a pass floor per section (~620 assertions)
 ```
 
 The KATs above are *mirrors* — ported line-for-line from the xTalk so a green KAT plus a
@@ -1280,11 +1285,62 @@ harness version" ambiguity this file records for v41 - so `kHeHarnessV` went 43 
 on 2026-09-10, and the next run RECORDS the v44 total rather than matching the v43
 one the suite runbook holds.
 
+## The execution gate (2026-09-11): the harness runs headlessly
+
+Until this date the sentence in "The three layers" above - "there is no headless
+way to compile or run it" - was the whole reason this member's correctness rested
+on MIRRORS: seven Python KATs pinned the game's pure handlers, the harness
+constants were re-derived from them, and the harness itself ran only on an engine.
+Every other member with a script layer had closed that gap with a gate that drives
+the shipped file through the family's interpreter; this is holde-em's, and it is
+the largest: `tools/check-script-vectors.py` loads `src/holdem.livecodescript`
+through riptide's stack runner with the SodiumXT surface the pure sections need
+modelled (BLAKE2b, ed25519 and X25519 over riptide's oracle - FAITHFUL; the sealed
+box a MODEL with the right shape; ristretto255 NOT modelled, so the Level 2
+sections skip through the harness's own probe exactly as on an engine without it)
+and calls every section of `heTestRunAllSections` in the engine's order, reading
+`gPassN`/`gFailN`/`gSkipN` and the report. Twenty-three sections, zero FAIL
+lines, a pass floor per section and an exact skip count per section; only
+`heTestNetPlay`'s real-TorrentXT leg and `heProbeSodium` (a printed diagnostic)
+are outside it, and the LIVE rows skip by name as they do everywhere.
+`tools/test-script-vectors.py` seeds a mis-ranked straight flush, a vanishing odd
+chip and a shuffle that never swaps, and requires the gate to name each section.
+
+**What its first runs found, and the two halves are different lessons.**
+
+*In the shipped stack, one thing:* `heBetApply`'s non-numeric wager refusal was
+written `X is not a number or X is not trunc(X)`, which evaluates `trunc("abc")`
+under the both-operands rule (root engine notes 2.5). Nested now, same answer
+either way; whether `trunc` of a non-number throws on the engine is unrecorded
+(the guard postdates the last engine run) and is the runbook's row P.
+
+*In the MODEL, four things, every one a silent wrong answer, and every one found
+because this harness is engine-proven (543/0 on 2026-08-20, 584/0 on 2026-08-24)
+so a disagreement could be attributed:* `break` nested inside an `if` in a
+`switch` arm was swallowed as a catchable error and the arm ran on (four redial
+attempts in eight ticks); the runner's millisecond and second clocks were 1.7
+billion seconds apart, so every turn timed itself out the moment it was marked;
+`put X into item 6 of tWire` created a variable NAMED "item 6 of twire" and left
+the wire untouched, so a tampered wire still verified "ok"; and `the number of
+lines of X & "/" & Y` counted the lines of the whole concatenation, where the
+engine counts X alone - which is now root engine notes 2.6, an OBSERVED entry
+made from this harness's own assertion, and a correction to the "chunk-binding
+trap" the coinxt and nocloud records had attributed to the engine. The general
+form is the family's oldest: a model that is LOOSER than the engine fails in the
+silent direction, and only a corpus with an engine record behind it can tell a
+model defect from a script defect. This harness is that corpus for the runner
+now, which is a second reason to keep it green on real engines.
+
+**What it does not settle.** It is the interpreter, not the engine: nothing here
+promotes a section out of its label, the five live legs still owe their passes,
+and a `sxRistretto*` call has still never been made by this member on an engine.
+
 ## Workflow
 
 - **After every `.livecodescript` edit:** `python3 tools/check-livecodescript.py`
   (since the 2026-08-15 checker union it carries the hold-em lineage checks too;
-  the separate idiom gate is retired).
+  the separate idiom gate is retired), then `python3 tools/check-script-vectors.py`
+  - the harness itself, headlessly (raise a section's floor when it grows).
 - **The self-test harness** (`heRunSelftest` interactive / `heSelfTest()` quiet, both
   embedded in the one stack) follows the
   Box2Dxt pattern: deterministic assertions, a version constant (`kHeHarnessV`) printed
@@ -1330,6 +1386,9 @@ tools/fold-kat.py                  transcript fold + settlement/deal audits (CI 
 tools/atlas-kat.py                 Kenney card atlas <-> frame-name mapping
 tools/sounds-kat.py                vendored casino WAVs <-> stack mapping
 tools/logic-fuzz.py                INDEPENDENT-reference fuzz (rules, not the port)
+tools/check-script-vectors.py      the execution gate: the harness's own sections,
+                                   run headlessly through riptide's stack runner
+tools/test-script-vectors.py       proves that gate can fail (three seeded rules defects)
 assets/cards/, assets/sounds/      vendored Kenney CC0 art + audio (see NOTICE.md)
 src/holdem.livecodescript          the whole thing: game + self-test + sodium probe
                                    + the carried onionxt layer (sync-demo-embeds

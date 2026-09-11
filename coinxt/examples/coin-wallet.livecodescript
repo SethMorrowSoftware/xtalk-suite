@@ -3325,6 +3325,7 @@ constant kCwLongTermFeeRate = 10
 
 constant kCwSigBytes = 72
 constant kCwPubkeyBytes = 33
+constant kCwPubkeyUncompressedBytes = 65
 constant kCwSchnorrSigBytes = 64
 
 -- Core's dust rule: an output is dust when spending it would cost more than a
@@ -4942,9 +4943,19 @@ end cwVarIntLen
 function cwInputBaseBytes pType, pM, pCosigners
    -- The non-witness bytes one input contributes: outpoint, the scriptSig
    -- length prefix, the scriptSig itself and the sequence.
+   --
+   -- "p2pkh-uncompressed" is a SIZING name, not a script type: an imported
+   -- uncompressed key pays to the same P2PKH script and signs the same way,
+   -- but its scriptSig pushes a 65-byte pubkey, so pricing it as p2pkh left
+   -- the estimate 32 bytes short in a function whose whole contract is the
+   -- worst case. Only the estimator and the selector ever see the name
+   -- (waSizingType chooses it from the record's pubkey length); signing,
+   -- sighash and address code are handed "p2pkh" as before.
    local tSig
    if pType is "p2pkh" then
       put 1 + kCwSigBytes + 1 + kCwPubkeyBytes into tSig
+   else if pType is "p2pkh-uncompressed" then
+      put 1 + kCwSigBytes + 1 + kCwPubkeyUncompressedBytes into tSig
    else if pType is "p2sh-p2wpkh" then
       put 1 + 1 + 1 + 20 into tSig
    else
@@ -5018,7 +5029,7 @@ function cwEstimateVsize pInputs, pOutputs
       put tSpec["type"] into tType
       add cwInputBaseBytes(tType, tSpec["m"], tSpec["cosigners"]) to tBase
       add cwInputWitnessBytes(tType, tSpec["m"], tSpec["cosigners"]) to tWit
-      if tType is not "p2pkh" then
+      if cwIsLegacyInput(tType) is not true then
          put true into tAnyWitness
       end if
    end repeat
@@ -5031,7 +5042,7 @@ function cwEstimateVsize pInputs, pOutputs
       put cwListCount(pInputs) into tCount
       repeat with tI = 1 to tCount
          put pInputs[tI] into tSpec
-         if tSpec["type"] is "p2pkh" then
+         if cwIsLegacyInput(tSpec["type"]) is true then
             add 1 to tWit
          end if
       end repeat
@@ -5039,6 +5050,14 @@ function cwEstimateVsize pInputs, pOutputs
    put tBase * 4 + tWit into tWeight
    return cwCeilDiv(tWeight, 4)
 end cwEstimateVsize
+
+private function cwIsLegacyInput pType
+   -- The inputs that carry NO witness stack of their own, and so contribute
+   -- the one empty-stack byte whenever any other input has one. Both P2PKH
+   -- sizing names are legacy; asked in one place so a third spelling cannot
+   -- be added to one test and not the other.
+   return pType is "p2pkh" or pType is "p2pkh-uncompressed"
+end cwIsLegacyInput
 
 function cwSimpleInputs pType, pCount, pM, pCosigners
    -- The common shape: pCount inputs all of one type. Written once because
@@ -5142,9 +5161,22 @@ end cwInputCost
 
 function cwSelectCoins pUtxos, pTargetSat, pFeeRate, pInputType, pOutputTypes, pChangeType, pStrategy, pM, pCosigners
    -- pUtxos: a list of arrays with "value" (satoshi) and optionally "frozen",
-   -- "selected", "confirmations", "txid", "vout". Returns an array carrying
-   -- "ok", "why", "selected" (a list), "fee", "change", "totalin", "vsize"
-   -- and "strategy".
+   -- "selected", "confirmations", "txid", "vout" and "inputtype". Returns an
+   -- array carrying "ok", "why", "selected" (a list), "fee", "change",
+   -- "totalin", "vsize" and "strategy".
+   --
+   -- EACH COIN IS PRICED BY ITS OWN TYPE. "inputtype" is the sizing type of
+   -- that coin (a script type, or "p2pkh-uncompressed"); pInputType is the
+   -- type of any coin that does not say, which for a seed wallet is every
+   -- coin. Until 2026-09-10 the selector priced every coin as pInputType,
+   -- and the fee, the vsize, the change-or-changeless decision and the
+   -- branch-and-bound window were all computed for a type the selected coins
+   -- may not have had - an imported legacy key beside derived SegWit coins,
+   -- or an inscription commit and a timelock leaf, which are taproot on a
+   -- wallet of any type. waMaxSpend had priced its selection per coin since
+   -- 2026-08-31 and waBuildSpend's other branch had not: a fix at one call
+   -- site and not its sibling, in the same handler. The oracle was moved
+   -- first (the same rule on both sides is invisible to the vector gate).
    local tPool, tI, tCount, tCoin, tResult, tStrategy, tDust, tSel, tOut
    local tVsize, tFee, tTotal, tChange, tSurplus, tOuts, tIns
    put pStrategy into tStrategy
@@ -5269,7 +5301,7 @@ private function cwSelectionResult pSel, pTargetSat, pFeeRate, pInputType, pOutp
       put cwListAdd(tOuts, pChangeType) into tOuts
    end if
    put cwListCount(pSel) into tCount
-   put cwSimpleInputs(pInputType, tCount, pM, pCosigners) into tIns
+   put cwCoinSpecs(pSel, pInputType, pM, pCosigners) into tIns
    put cwEstimateVsize(tIns, tOuts) into tVsize
    put cwFeeFor(tVsize, pFeeRate) into tFee
    put 0 into tTotal
@@ -5289,6 +5321,31 @@ private function cwSelectionResult pSel, pTargetSat, pFeeRate, pInputType, pOutp
    end if
    return tOut
 end cwSelectionResult
+
+private function cwCoinType pCoin, pInputType
+   -- The sizing type of one coin: what it says, or the wallet's type.
+   if pCoin["inputtype"] is not "" then
+      return pCoin["inputtype"]
+   end if
+   return pInputType
+end cwCoinType
+
+private function cwCoinSpecs pCoins, pInputType, pM, pCosigners
+   -- The cwEstimateVsize input list for these particular coins, each by its
+   -- own type. cwSimpleInputs (count x one type) is still right where the
+   -- caller genuinely has one type, and was wrong here.
+   local tList, tI, tCount, tSpec
+   put cwListNew() into tList
+   put cwListCount(pCoins) into tCount
+   repeat with tI = 1 to tCount
+      put "" into tSpec
+      put cwCoinType(pCoins[tI], pInputType) into tSpec["type"]
+      put pM into tSpec["m"]
+      put pCosigners into tSpec["cosigners"]
+      put cwListAdd(tList, tSpec) into tList
+   end repeat
+   return tList
+end cwCoinSpecs
 
 private function cwSortCoins pPool, pStrategy
    -- Insertion sort with an explicit tie-break on txid and vout, so two coins
@@ -5368,11 +5425,12 @@ private function cwBranchAndBound pPool, pTargetSat, pFeeRate, pInputType, pOutp
    local tLongTermCost
    put cwSortCoins(pPool, "largest") into tSorted
    put cwListCount(tSorted) into tCount
-   put cwInputCost(pInputType, pFeeRate, pM, pCosigners) into tCost
    put cwListNew() into tValues
    put cwListNew() into tCoins
    repeat with tI = 1 to tCount
       put tSorted[tI] into tCoin
+      -- what THIS coin costs to spend, by its own type
+      put cwInputCost(cwCoinType(tCoin, pInputType), pFeeRate, pM, pCosigners) into tCost
       put tCoin["value"] - tCost into tEff
       if tEff > 0 then
          put cwListAdd(tValues, tEff) into tValues
@@ -5393,7 +5451,10 @@ private function cwBranchAndBound pPool, pTargetSat, pFeeRate, pInputType, pOutp
    -- satoshi narrower than the same wallet's own oracle computed, and no
    -- vector sat inside the band, so two different rules read as agreement.
    put cwFeeFor(cwOutputBytes(pChangeType), pFeeRate) into tChangeCost
-   put cwInputCost(pInputType, kCwLongTermFeeRate, pM, pCosigners) \
+   -- and the future spend is priced by the CHANGE type, which is what that
+   -- output will be. It read pInputType until the coins stopped sharing one
+   -- type; for every wallet this file ships the two are the same string.
+   put cwInputCost(pChangeType, kCwLongTermFeeRate, pM, pCosigners) \
          into tLongTermCost
    put tLongTermCost + tChangeCost into tCostOfChange
    put tLo + tCostOfChange into tHi
@@ -5570,26 +5631,43 @@ function cwSighash pScriptType, pVersion, pInputs, pOutputs, pIndex, pLocktime, 
             pWitnessScriptHex, pAmountSat, tOuts, pLocktime, 1))
    end if
    if pScriptType is "p2tr" then
-      put "" into tSpks
-      put "" into tAmts
-      put cwListCount(pPrevScripts) into tCount
-      repeat with tI = 1 to tCount
-         if tI > 1 then
-            put "," after tSpks
-            put "," after tAmts
-         end if
-         put pPrevScripts[tI] after tSpks
-         put pPrevAmounts[tI] after tAmts
-      end repeat
       -- BIP-341's DEFAULT sighash type is 0, which is not SIGHASH_ALL's 1 and
-      -- does not appear in the signature at all. Passing 1 here would produce
-      -- a valid but longer 65-byte signature; 0 is what a key-path spend
-      -- normally uses.
-      return cxHexEncode(cxBtcSighashTaproot(pVersion, tOutpoints, tSeqs, tAmts, \
-            tSpks, tOuts, pIndex, pLocktime, 0, ""))
+      -- does not appear in the signature at all. 0 is what a key-path spend
+      -- this wallet builds uses; a PSBT that ASKS for 1 goes through
+      -- cwSighashTaproot directly (cwPsbtSign), because the type byte is in
+      -- the SigMsg and the two digests differ.
+      return cwSighashTaproot(pVersion, pInputs, pOutputs, pIndex, pLocktime, \
+            pPrevScripts, pPrevAmounts, 0)
    end if
    throw "wallet-core: cwSighash: unknown script type " & pScriptType & "."
 end cwSighash
+
+function cwSighashTaproot pVersion, pInputs, pOutputs, pIndex, pLocktime, pPrevScripts, pPrevAmounts, pSighashType
+   -- The BIP-341 key-path digest with an explicit hash type. Split out of
+   -- cwSighash on 2026-09-10 because cwPsbtSign signed SIGHASH_DEFAULT
+   -- whatever PSBT_IN_SIGHASH_TYPE asked for: it refused 2 and 3 by name and
+   -- let 1 through to a branch that hard-coded 0, so the signature it wrote
+   -- was over a different digest from the one the PSBT's creator specified
+   -- and had the wrong length (64, where SIGHASH_ALL is 65). The oracle
+   -- MAPPED 1 to 0 for taproot, which is how a vector never saw it.
+   local tOutpoints, tSeqs, tOuts, tSpks, tAmts, tI, tCount
+   put cwOutpointsHex(pInputs) into tOutpoints
+   put cwSequencesList(pInputs) into tSeqs
+   put cwOutputsHex(pOutputs) into tOuts
+   put "" into tSpks
+   put "" into tAmts
+   put cwListCount(pPrevScripts) into tCount
+   repeat with tI = 1 to tCount
+      if tI > 1 then
+         put "," after tSpks
+         put "," after tAmts
+      end if
+      put pPrevScripts[tI] after tSpks
+      put pPrevAmounts[tI] after tAmts
+   end repeat
+   return cxHexEncode(cxBtcSighashTaproot(pVersion, tOutpoints, tSeqs, tAmts, \
+         tSpks, tOuts, pIndex, pLocktime, pSighashType, ""))
+end cwSighashTaproot
 
 function cwSignInput pScriptType, pSeckeyHex, pDigestHex, pPubkeyHex
    -- Returns an array with "scriptsig" (hex) and "witness" (a list of hex
@@ -5671,15 +5749,30 @@ function cwSignMultisig pSeckeys, pDigestHex, pWitnessScriptHex
    -- thing to put in a PSBT. What was missing was the count: the caller could
    -- not tell a complete witness from a short one, and waSignSpend was
    -- presenting a one-of-two witness as a signed transaction.
+   --
+   -- AND CAPPED AT m. CHECKMULTISIG consumes exactly m signatures; a witness
+   -- carrying more leaves the extra element on the stack, which CLEANSTACK
+   -- refuses, so a wallet holding all three keys of a 2-of-3 must sign with
+   -- the first two in script order and stop. m is read BEFORE the loop for
+   -- that reason - it was computed after, from the same byte, and nothing
+   -- compared the count against it. The oracle had the same shape, which is
+   -- why no vector saw it (two implementations agreeing is not either being
+   -- right); it was capped first, and the 2026-09-10 all-keys vector pins
+   -- both.
    local tKeys, tI, tJ, tCount, tKeyCount, tWit, tOut, tSig, tSk, tPub
    local tHave, tM
    put cwMultisigKeys(pWitnessScriptHex) into tKeys
    put cwListCount(tKeys) into tKeyCount
    put cwListCount(pSeckeys) into tCount
+   put cwBeRead(cxHexDecode(char 1 to 2 of pWitnessScriptHex)) - kCwOpOne + 1 \
+         into tM
    put cwListNew() into tWit
    put cwListAdd(tWit, "") into tWit
    put 0 into tHave
    repeat with tI = 1 to tKeyCount
+      if tHave >= tM then
+         exit repeat
+      end if
       repeat with tJ = 1 to tCount
          put pSeckeys[tJ] into tSk
          put cxHexEncode(cxPublicKey(cxHexDecode(tSk), true)) into tPub
@@ -5693,8 +5786,6 @@ function cwSignMultisig pSeckeys, pDigestHex, pWitnessScriptHex
       end repeat
    end repeat
    put cwListAdd(tWit, pWitnessScriptHex) into tWit
-   put cwBeRead(cxHexDecode(char 1 to 2 of pWitnessScriptHex)) - kCwOpOne + 1 \
-         into tM
    put "" into tOut["scriptsig"]
    put tWit into tOut["witness"]
    put tHave into tOut["signed"]
@@ -5840,7 +5931,21 @@ end cwTxid
 private function cwReadVarInt pHex, pPos
    -- Returns an array with "value" and "next" (the 1-based hex character
    -- position after the field).
-   local tFirst, tOut, tLen
+   --
+   -- A NON-MINIMAL ENCODING IS REFUSED, and the reason is the txid. Consensus
+   -- (Core's ReadCompactSize) rejects 0xfd carrying a value under 253, 0xfe
+   -- under 65536 and 0xff under 2^32 as "non-canonical", so a transaction
+   -- spelled that way is not a transaction any node will take - but this
+   -- reader used to decode it happily, and every field it feeds (the txid,
+   -- the vsize, the inspector's rendering) then described bytes that do not
+   -- exist on any chain. A decoder that answers for bytes the network
+   -- refuses is a decoder whose answer cannot be checked against anything.
+   --
+   -- The eight-byte form is read as two halves and refused when the high
+   -- half is not zero: a count above 2^32 fits no string this layer can hold
+   -- (Core caps every compact size at 0x02000000 anyway), and reading it as
+   -- one number would round past 2^53 on the engine rather than error.
+   local tFirst, tOut, tLen, tHigh, tValue, tFloor
    put cwBeRead(cxHexDecode(char pPos to (pPos + 1) of pHex)) into tFirst
    if tFirst < 253 then
       put tFirst into tOut["value"]
@@ -5849,12 +5954,37 @@ private function cwReadVarInt pHex, pPos
    end if
    if tFirst is 253 then
       put 2 into tLen
+      put 253 into tFloor
    else if tFirst is 254 then
       put 4 into tLen
+      put 65536 into tFloor
    else
       put 8 into tLen
+      put 4294967296 into tFloor
    end if
-   put cwLeRead(cxHexDecode(char (pPos + 2) to (pPos + 1 + tLen * 2) of pHex)) into tOut["value"]
+   if (pPos + 1 + tLen * 2) > the number of chars of pHex then
+      throw "wallet-core: a compact size is cut short: its prefix promises " & \
+            tLen & " byte(s) that are not there."
+   end if
+   if tLen is 8 then
+      put cwLeRead(cxHexDecode(char (pPos + 10) to (pPos + 17) of pHex)) into tHigh
+      if tHigh is not 0 then
+         throw "wallet-core: a compact size above 2^32 (0xff prefix, high " & \
+               "bytes " & char (pPos + 10) to (pPos + 17) of pHex & \
+               ") cannot describe anything in these bytes, and is refused " & \
+               "rather than rounded."
+      end if
+      put cwLeRead(cxHexDecode(char (pPos + 2) to (pPos + 9) of pHex)) into tValue
+   else
+      put cwLeRead(cxHexDecode(char (pPos + 2) to (pPos + 1 + tLen * 2) of pHex)) into tValue
+   end if
+   if tValue < tFloor then
+      throw "wallet-core: a compact size is not minimally encoded (prefix " & \
+            char pPos to (pPos + 1) of pHex & " carrying " & tValue & \
+            ", which fits a shorter form). Consensus refuses these bytes, " & \
+            "so the txid of them would be the txid of nothing."
+   end if
+   put tValue into tOut["value"]
    put pPos + 2 + tLen * 2 into tOut["next"]
    return tOut
 end cwReadVarInt
@@ -6680,7 +6810,7 @@ function cwPsbtSign pB64, pKeys, pNetwork
    local tP, tTx, tIns, tOuts, tCount, tI, tJ, tKeyCount, tMap, tType, tAmount
    local tSpk, tDigest, tKey, tPub, tSig, tSigned, tWhy, tOut, tInternal
    local tWitScript, tRedeem, tTweaked, tTapKey, tKeys, tTxIns, tTxOuts, tFound
-   local tTweak, tSighashType, tError
+   local tTweak, tSighashType, tError, tTapType
    put cwPsbtParse(pB64) into tP
    put tP["tx"] into tTx
    put tTx["inputs"] into tTxIns
@@ -6734,13 +6864,30 @@ function cwPsbtSign pB64, pKeys, pNetwork
       end if
       put false into tFound
       -- THE SIGHASH TYPE THE PSBT ASKS FOR. BIP-174 requires a Signer to use
-      -- the value in PSBT_IN_SIGHASH_TYPE and to FAIL if it cannot; this
-      -- layer only ever produces SIGHASH_ALL, so anything else is a refusal
-      -- rather than a signature over a commitment nobody asked for. Absent
-      -- means SIGHASH_ALL, which is the only value cwPsbtCreate emits.
+      -- the value in PSBT_IN_SIGHASH_TYPE and to FAIL if it cannot. For a
+      -- pre-taproot input this layer produces only SIGHASH_ALL, so anything
+      -- else is a refusal rather than a signature over a commitment nobody
+      -- asked for; absent means SIGHASH_ALL, the only value cwPsbtCreate
+      -- emits there. For a TAPROOT input absent means SIGHASH_DEFAULT (0,
+      -- BIP-371's default), an explicit 0 is the same, and an explicit 1 is
+      -- honoured AS 1: the type byte is part of the BIP-341 SigMsg, so
+      -- signing DEFAULT for a PSBT that asked for ALL - which this branch
+      -- did until 2026-09-10, by letting 1 through to a digest hard-coded
+      -- at 0 - is a signature over the wrong digest, and 64 bytes long where
+      -- the network expects 65. The other types are refused by name.
       put cwPsbtFind(tMap, kCwPsbtInSighashType, "") into tSighashType
+      put 0 into tTapType
       if tSighashType is not "" then
-         if cwLeRead(cxHexDecode(tSighashType)) is not 1 then
+         if tType is "p2tr" then
+            put cwLeRead(cxHexDecode(tSighashType)) into tTapType
+            if tTapType is not 0 and tTapType is not 1 then
+               put tWhy & "input " & tI & ": it asks for sighash type " & \
+                     tTapType & " and this wallet signs a taproot input " & \
+                     "only as SIGHASH_DEFAULT (0) or SIGHASH_ALL (1)." & \
+                     return into tWhy
+               next repeat
+            end if
+         else if cwLeRead(cxHexDecode(tSighashType)) is not 1 then
             put tWhy & "input " & tI & ": it asks for sighash type " & \
                   cwLeRead(cxHexDecode(tSighashType)) & " and this wallet " & \
                   "signs only SIGHASH_ALL (1)." & return into tWhy
@@ -6755,8 +6902,8 @@ function cwPsbtSign pB64, pKeys, pNetwork
             next repeat
          end if
          put cwPsbtTaprootPrevouts(tP) into tOut
-         put cwSighash("p2tr", tTx["version"], tTxIns, tTxOuts, tI, tTx["locktime"], \
-               "", 0, "", tOut["scripts"], tOut["amounts"]) into tDigest
+         put cwSighashTaproot(tTx["version"], tTxIns, tTxOuts, tI, tTx["locktime"], \
+               tOut["scripts"], tOut["amounts"], tTapType) into tDigest
          repeat with tJ = 1 to tKeyCount
             put pKeys[tJ] into tKey
             put cxHexEncode(cxXOnlyPubkey(cxHexDecode(tKey["seckey"]))) into tPub
@@ -6785,7 +6932,13 @@ function cwPsbtSign pB64, pKeys, pNetwork
                end if
                put cwSignTaproot(tKey["seckey"], tDigest, "") into tSig
                put tSig["witness"] into tOut
-               put cwPsbtSetEntry(tMap, kCwPsbtInTapKeySig, "", tOut[1]) into tMap
+               put tOut[1] into tTapKey
+               if tTapType is not 0 then
+                  -- BIP-341: a signature for any type but DEFAULT carries
+                  -- the type as its 65th byte
+                  put tTapKey & cxHexEncode(numToByte(tTapType)) into tTapKey
+               end if
+               put cwPsbtSetEntry(tMap, kCwPsbtInTapKeySig, "", tTapKey) into tMap
                put tMap into tIns[tI]
                add 1 to tSigned
                put true into tFound
@@ -6909,7 +7062,7 @@ function cwPsbtFinalize pB64
    local tP, tTx, tIns, tCount, tI, tMap, tType, tSigs, tKeys, tWitScript
    local tOut, tScriptSigs, tWitnesses, tItems, tComplete, tWhy, tPub, tSig
    local tJ, tM, tKeyCount, tTapSig, tTxIns, tTxOuts, tHave, tRedeem, tError
-   local tSuperseded
+   local tSuperseded, tFinalSig, tFinalWit
    put cwPsbtParse(pB64) into tP
    put tP["tx"] into tTx
    put tP["inputs"] into tIns
@@ -6923,6 +7076,36 @@ function cwPsbtFinalize pB64
       put cwPsbtInputType(tMap) into tType
       put cwListNew() into tItems
       put "" into tSig
+      -- AN INPUT ALREADY FINALIZED IS TAKEN AS IT STANDS. PSBT_IN_FINAL_SCRIPTSIG
+      -- and PSBT_IN_FINAL_SCRIPTWITNESS are what a Finalizer WRITES - this one
+      -- included, forty lines down - and BIP-174 has the Finalizer drop the
+      -- partial signatures and scripts they supersede once written. So a PSBT
+      -- another wallet finalized (or this one, on an earlier pass) carries
+      -- the answer and none of the workings, and this function used to read
+      -- only the workings: it reported such an input "unsigned" and built a
+      -- transaction with an empty witness for it. cwPsbtSign had skipped
+      -- those inputs by name since 2026-08-31; the finalizer is the half
+      -- that was missing.
+      put cwPsbtFind(tMap, kCwPsbtInFinalScriptSig, "") into tFinalSig
+      put cwPsbtFind(tMap, kCwPsbtInFinalScriptWitness, "") into tFinalWit
+      if tFinalSig is not "" or tFinalWit is not "" then
+         if tFinalWit is not "" then
+            -- contained: a stack that does not frame is that INPUT's
+            -- why-line, not the whole operation's
+            try
+               put cwWitnessStackDecode(cxHexDecode(tFinalWit)) into tItems
+            catch tError
+               put false into tComplete
+               put tWhy & "input " & tI & ": its final witness does not " & \
+                     "frame as a witness stack (" & line 1 of tError & ")" & \
+                     return into tWhy
+               put cwListNew() into tItems
+            end try
+         end if
+         put cwListAdd(tScriptSigs, tFinalSig) into tScriptSigs
+         put cwListAdd(tWitnesses, tItems) into tWitnesses
+         next repeat
+      end if
       if tType is "p2tr" then
          put cwPsbtFind(tMap, kCwPsbtInTapKeySig, "") into tTapSig
          if tTapSig is "" then
@@ -7710,6 +7893,13 @@ constant kCwSpTagInputs = "BIP0352/Inputs"
 constant kCwSpTagSecret = "BIP0352/SharedSecret"
 constant kCwSpMaxLen = 1023
 constant kCwSpKMax = 2323
+-- The NUMS point of BIP-341 (the x of H = lift_x(sha256(ser(G)))), the internal
+-- key of an output nobody can key-path spend. The vault's leaves use it, and
+-- the silent-payment receiver skips a script-path input whose control block
+-- names it. Declared here, ABOVE both readers, because OXT resolves a constant
+-- by lexical position and the checker refused the receiver reading it from
+-- below (2026-09-10).
+constant kCwNumsH = "50929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0"
 constant kCwCurveN = "fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141"
 constant kCwScalarZero = "0000000000000000000000000000000000000000000000000000000000000000"
 constant kCwBech32mConst = 734539939
@@ -8286,6 +8476,287 @@ function cwSpSend pInputs, pOutpoints, pRecipients
    put cwSpInputHash(pOutpoints, tPub) into tHash
    return cwSpOutputs(tSum, tHash, pRecipients)
 end cwSpSend
+
+-- ---- receiving (2026-09-10) ---------------------------------------------------
+--
+-- The other half. A receiver holds a SCAN key (b_scan, at m/352'/coin'/0'/1'/0)
+-- and a SPEND key (b_spend, at .../0'/0), publishes B_scan || B_spend as its
+-- address, and for every transaction it sees computes what a sender would have
+-- computed - the sum of the eligible INPUT public keys (point addition, which
+-- is what ABI 7's cxPubkeyCombine exists for), the input hash, the shared
+-- secret input_hash * b_scan * A_sum - and then walks k = 0, 1, 2... asking
+-- whether B_spend + t_k * G is one of the transaction's taproot outputs. Each
+-- hit yields the tweak t_k; the coin's private key is b_spend + t_k, and it
+-- signs UNTWEAKED (the output IS that key, it is not a BIP-341 tweak of it).
+-- Labels (BIP-352's change and per-payer addresses) are a second lookup per
+-- output: output - P_k, or -output - P_k, against the receiver's label points.
+-- Everything here is the BIP's reference `scanning`, pinned to the published
+-- receiving vectors in tools/check-wallet-vectors.py.
+constant kCwSpTagLabel = "BIP0352/Label"
+
+function cwSpPath pNetwork, pWhich
+   -- BIP-352's derivation: m/352'/coin'/0'/1'/0 is the SCAN key and
+   -- m/352'/coin'/0'/0'/0 the SPEND key, coin type by network as BIP-44
+   -- counts it. The two are separate hardened branches on purpose: a scan
+   -- key can be handed to a server that scans on your behalf without giving
+   -- it the power to spend.
+   local tLevel
+   if pWhich is "scan" then
+      put 1 into tLevel
+   else if pWhich is "spend" then
+      put 0 into tLevel
+   else
+      throw "wallet-core: cwSpPath: the key is scan or spend."
+   end if
+   return "m/352'/" & cwNetCoinType(pNetwork) & "'/0'/" & tLevel & "'/0"
+end cwSpPath
+
+function cwSignKeyPath pSeckeyHex, pDigestHex
+   -- A key-path witness for an output that IS this key - a silent payment
+   -- output, whose key is b_spend + t_k with no BIP-341 tweak on top - so
+   -- the signature is by the key as given. cwSignTaproot tweaks first, and
+   -- would sign for a point nobody paid. Aux randomness is 32 zero bytes,
+   -- as cwSignTaproot's note explains.
+   local tSig, tOut, tWit
+   put cxHexEncode(cxSchnorrSign(cxHexDecode(cwScalarCheck(pSeckeyHex, "cwSignKeyPath")), \
+         cxHexDecode(pDigestHex), \
+         cxHexDecode("0000000000000000000000000000000000000000000000000000000000000000"))) into tSig
+   put cwListNew() into tWit
+   put cwListAdd(tWit, tSig) into tWit
+   put "" into tOut["scriptsig"]
+   put tWit into tOut["witness"]
+   return tOut
+end cwSignKeyPath
+
+function cwSpLabelTweak pScanSeckeyHex, pM
+   -- hash_BIP0352/Label(b_scan || ser32(m)), a scalar. Label 0 is the BIP's
+   -- change label; any other 32-bit integer is a per-payer label.
+   local tTweak
+   if pM is not an integer then
+      throw "wallet-core: cwSpLabelTweak: a label is a whole number."
+   end if
+   if pM < 0 or pM > 4294967295 then
+      throw "wallet-core: cwSpLabelTweak: a label is a 32-bit unsigned integer."
+   end if
+   put cwSpTagged(kCwSpTagLabel, cwScalarCheck(pScanSeckeyHex, "cwSpLabelTweak") \
+         & cxHexEncode(cwBeBytes(pM, 4))) into tTweak
+   return cwScalarCheck(tTweak, "cwSpLabelTweak")
+end cwSpLabelTweak
+
+function cwSpLabeledSpend pSpendPubHex, pLabelTweakHex
+   -- B_m = B_spend + label_tweak * G, compressed: the spend half of a labeled
+   -- address.
+   return cxHexEncode(cxPubkeyTweakAdd(cxHexDecode(pSpendPubHex), \
+         cxHexDecode(cwScalarCheck(pLabelTweakHex, "cwSpLabeledSpend"))))
+end cwSpLabeledSpend
+
+function cwSpReceiveAddress pNetwork, pScanPubHex, pSpendPubHex, pLabelTweakHex
+   -- This wallet's own address: plain when pLabelTweakHex is empty, labeled
+   -- otherwise. The scan half is always B_scan; a label changes only B_m.
+   if pLabelTweakHex is "" then
+      return cwSpEncode(pNetwork, pScanPubHex, pSpendPubHex)
+   end if
+   return cwSpEncode(pNetwork, pScanPubHex, cwSpLabeledSpend(pSpendPubHex, pLabelTweakHex))
+end cwSpReceiveAddress
+
+private function cwSpNegate pPubHex
+   -- -P for a compressed point is the same x with the parity byte flipped.
+   if char 1 to 2 of pPubHex is "02" then
+      return "03" & char 3 to 66 of pPubHex
+   end if
+   return "02" & char 3 to 66 of pPubHex
+end cwSpNegate
+
+private function cwSpOnCurve pPubHex
+   -- Is this compressed key a point? The decompressor refuses one that is
+   -- not, and a refusal here is an answer, not an error: the BIP's reference
+   -- skips such an input.
+   local tError
+   if char 1 to 2 of pPubHex is not "02" and char 1 to 2 of pPubHex is not "03" then
+      return false
+   end if
+   try
+      get cxPubkeyDecompress(cxHexDecode(pPubHex))
+   catch tError
+      return false
+   end try
+   return true
+end cwSpOnCurve
+
+function cwSpInputPubkey pVin
+   -- The public key one input contributes to A_sum, or "" if it contributes
+   -- nothing. pVin carries "prevout" (the scriptPubKey being spent, hex),
+   -- "scriptsig" (hex) and "witness" (a list of hex items). This is the BIP
+   -- reference's get_pubkey_from_input: legacy P2PKH is found by sliding a
+   -- 33-byte window back over the scriptSig and hashing (so a MALLEATED
+   -- scriptSig with the key somewhere other than last still yields it, and
+   -- an uncompressed key never does), nested P2WPKH through its redeem
+   -- script, native P2WPKH from the last witness item, and taproot from the
+   -- output key itself - unless the spend is a script path whose control
+   -- block names the NUMS point, which the BIP excludes (that output can
+   -- never have been a silent payment, and its key would poison the sum).
+   local tSpk, tKind, tSig, tWit, tCount, tWant, tI, tLen, tCand, tRedeem, tControl
+   put cwLower(pVin["prevout"]) into tSpk
+   put cwScriptKind(tSpk) into tKind
+   put cwLower(pVin["scriptsig"]) into tSig
+   put pVin["witness"] into tWit
+   put cwListCount(tWit) into tCount
+   if tKind is "p2pkh" then
+      put char 7 to 46 of tSpk into tWant
+      put cwIntDiv(the number of chars of tSig, 2) into tLen
+      put tLen into tI
+      repeat while tI >= 33
+         put char ((tI - 33) * 2 + 1) to (tI * 2) of tSig into tCand
+         if cwHexCompare(cxHexEncode(cxHash160(cxHexDecode(tCand))), tWant) is 0 then
+            if cwSpOnCurve(tCand) is true then
+               return tCand
+            end if
+         end if
+         subtract 1 from tI
+      end repeat
+      return ""
+   end if
+   if tKind is "p2sh" then
+      -- the redeem script is the scriptSig's one push, minus its length byte
+      put char 3 to (the number of chars of tSig) of tSig into tRedeem
+      if cwScriptKind(tRedeem) is "p2wpkh" and tCount > 0 then
+         put cwLower(tWit[tCount]) into tCand
+         if the number of chars of tCand is 66 and cwSpOnCurve(tCand) is true then
+            return tCand
+         end if
+      end if
+      return ""
+   end if
+   if tKind is "p2wpkh" then
+      if tCount > 0 then
+         put cwLower(tWit[tCount]) into tCand
+         if the number of chars of tCand is 66 and cwSpOnCurve(tCand) is true then
+            return tCand
+         end if
+      end if
+      return ""
+   end if
+   if tKind is "p2tr" then
+      if tCount < 1 then
+         return ""
+      end if
+      -- an annex is the last item and starts 0x50; drop it before looking
+      -- for a control block
+      if tCount > 1 and char 1 to 2 of cwLower(tWit[tCount]) is "50" then
+         subtract 1 from tCount
+      end if
+      if tCount > 1 then
+         put cwLower(tWit[tCount]) into tControl
+         if cwHexCompare(char 3 to 66 of tControl, kCwNumsH) is 0 then
+            return ""
+         end if
+      end if
+      put "02" & char 5 to 68 of tSpk into tCand
+      if cwSpOnCurve(tCand) is true then
+         return tCand
+      end if
+      return ""
+   end if
+   return ""
+end cwSpInputPubkey
+
+function cwSpPubkeySum pPubkeys
+   -- A_sum: the compressed sum of a list of compressed keys, taken over the
+   -- WHOLE set at once so an intermediate infinity is not a refusal (the
+   -- BIP's own vector). A final infinity, or an empty list, throws: the BIP
+   -- says a receiver skips that transaction, and the caller turns the throw
+   -- into a skip.
+   local tI, tCount, tKeys
+   put cwListCount(pPubkeys) into tCount
+   if tCount < 1 then
+      throw "wallet-core: cwSpPubkeySum: no eligible inputs, so this " & \
+            "transaction cannot carry a silent payment."
+   end if
+   put empty into tKeys
+   repeat with tI = 1 to tCount
+      put cxHexDecode(pPubkeys[tI]) after tKeys
+   end repeat
+   return cxHexEncode(cxPubkeyCombine(tKeys))
+end cwSpPubkeySum
+
+function cwSpScan pScanSeckeyHex, pSpendPubHex, pSumPubHex, pInputHashHex, pOutputs, pLabelTweaks
+   -- The BIP's scanning loop. pOutputs is the transaction's taproot output
+   -- keys (x-only hex, in any order); pLabelTweaks the receiver's label
+   -- scalars (cwSpLabelTweak). Returns a list of records, one per output that
+   -- is ours, in the order found: "output" (the x-only key), "tweak" (what to
+   -- add to b_spend to get the coin's private key; the label's tweak is
+   -- already folded in) and "label" (that label's tweak, or "" for the plain
+   -- address). k stops at K_max, as the reference does, so a hostile
+   -- transaction cannot make a scan run forever.
+   local tSecret, tLabelKeys, tLabelCount, tI, tCount, tK, tTweak, tPk, tPkX
+   local tTaken, tFound, tOut, tRec, tCand, tDiff, tJ, tError, tLabel, tSum
+   put cwSpSharedSecret(pScanSeckeyHex, pInputHashHex, pSumPubHex) into tSecret
+   put cwListCount(pLabelTweaks) into tLabelCount
+   repeat with tI = 1 to tLabelCount
+      put cwScalarCheck(pLabelTweaks[tI], "cwSpScan") into tLabel
+      put tLabel into tLabelKeys[cxHexEncode(cxPublicKey(cxHexDecode(tLabel), true))]
+   end repeat
+   put cwListCount(pOutputs) into tCount
+   put cwListNew() into tOut
+   put 0 into tK
+   repeat while tK < kCwSpKMax
+      put cwSpTagged(kCwSpTagSecret, tSecret & cxHexEncode(cwBeBytes(tK, 4))) into tTweak
+      put cxHexEncode(cxPubkeyTweakAdd(cxHexDecode(pSpendPubHex), cxHexDecode(tTweak))) into tPk
+      put char 3 to 66 of tPk into tPkX
+      put false into tFound
+      repeat with tI = 1 to tCount
+         if tTaken[tI] is true then
+            next repeat
+         end if
+         put cwLower(pOutputs[tI]) into tCand
+         if cwHexCompare(tCand, tPkX) is 0 then
+            put "" into tRec
+            put tCand into tRec["output"]
+            put tTweak into tRec["tweak"]
+            put "" into tRec["label"]
+            put cwListAdd(tOut, tRec) into tOut
+            put true into tTaken[tI]
+            put true into tFound
+            exit repeat
+         end if
+         if tLabelCount > 0 then
+            -- output - P_k, then -output - P_k: a hit names the label
+            repeat with tJ = 1 to 2
+               if tJ is 1 then
+                  put "02" & tCand into tSum
+               else
+                  put "03" & tCand into tSum
+               end if
+               put "" into tDiff
+               try
+                  put cxHexEncode(cxPubkeyCombine(cxHexDecode(tSum & cwSpNegate(tPk)))) into tDiff
+               catch tError
+                  -- the difference is the point at infinity: not a label
+                  put "" into tDiff
+               end try
+               if tDiff is not "" and tLabelKeys[tDiff] is not "" then
+                  put "" into tRec
+                  put tCand into tRec["output"]
+                  put cwScalarAdd(tTweak, tLabelKeys[tDiff]) into tRec["tweak"]
+                  put tLabelKeys[tDiff] into tRec["label"]
+                  put cwListAdd(tOut, tRec) into tOut
+                  put true into tTaken[tI]
+                  put true into tFound
+                  exit repeat
+               end if
+            end repeat
+            if tFound is true then
+               exit repeat
+            end if
+         end if
+      end repeat
+      if tFound is not true then
+         exit repeat
+      end if
+      add 1 to tK
+   end repeat
+   return tOut
+end cwSpScan
 
 -- ==============================================================================
 -- RUNES, read only (2026-09-04)
@@ -8894,7 +9365,8 @@ constant kCwOpIf = 99
 constant kCwOpEndIf = 104
 constant kCwOpDrop = 117
 constant kCwOpCltv = 177
-constant kCwNumsH = "50929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0"
+-- kCwNumsH is declared with the silent-payment constants above: the
+-- receiver reads it too, and OXT resolves a constant by lexical position.
 
 function cwTapLeafHash pScriptHex
    -- BIP-341's TapLeaf hash for a tapscript leaf (version 0xc0), with a
@@ -13128,7 +13600,7 @@ constant kWaVersion = "1.2.0"
 -- text before it is offered, the offer names the version and the SHA-256,
 -- and nothing replaces the script until you press Update.
 constant kWaUpdateUrl = "https://raw.githubusercontent.com/SethMorrowSoftware/xtalk-suite/main/coinxt/examples/coin-wallet.livecodescript"
-constant kWaUiVersion = "ui-d4536b9e36b6"
+constant kWaUiVersion = "ui-c9ceb65b44b0"
 
 -- The window, inside the family's 720p budget (tools/check-stack-size.py).
 constant kWaWidth = 1200
@@ -13167,6 +13639,7 @@ constant kWaPrefill = 20
 -- UI updates; the network poll is deliberately much slower than that because
 -- a public backend is somebody else's machine.
 constant kWaTick = 250
+constant kWaSpParentsMax = 64                                -- parent transactions kept for silent payment checks before the cache is dropped whole (waStoreRawTx)
 constant kWaNetPoll = 20000
 
 -- A network request that has produced nothing at all by here is dead, whatever
@@ -13885,9 +14358,14 @@ local sWaLastRaw          -- the raw transaction the Send screen produced
 -- it names, so it is saved with the wallet like the labels are.
 local sWaSpends
 local sWaLeaves
+local sWaSpScanSeckey                                       -- BIP-352 scan key (hex), derived with the account from the seed; a secret, cleared with the seed
+local sWaSpSpendSeckey                                      -- BIP-352 spend key (hex); a found output's own key is this plus its tweak
+local sWaSpFound                                            -- silent payments FOUND for this wallet: records of output (x-only hex), tweak, label; saved as "sp" lines
 local sWaLastCommit, sWaLastLock, sWaLastReveal           -- list of {kind, index, type, bodyhex, height}: the one-leaf taproot outputs this wallet prepared (inscription commits, timelocks), re-attached after every derivation and saved with the wallet
 local sWaSpentBy                                            -- "txid:vout" -> the txid of the transaction THIS WALLET BROADCAST that spends it; memory only, and the mark comes off the moment the backend lists the coin as unspent again (waNoteBroadcast, waMergeUtxos)
 local sWaInspectWanted    -- the txid the History screen is waiting on bytes for
+local sWaSpParents        -- raw hex by txid: transactions the backend answered with (waStoreRawTx), which a silent payment check reads its prevout scripts from; public data, bounded by kWaSpParentsMax
+local sWaSpPending        -- the raw transaction a silent payment check is waiting on parents for; waStoreRawTx runs the scan when the last one lands, and clears it
 local sWaQrCache          -- array: payload -> the BMP bytes already rendered
 local sWaCtrlByScreen     -- array: screen -> comma list of its control names
 local sWaBusyUntil        -- the milliseconds a long build is allowed to run to
@@ -13932,6 +14410,8 @@ on closeStack
    put empty into sWaMnemonic
    put empty into sWaPassphrase
    put empty into sWaAccountXprv
+   put empty into sWaSpScanSeckey
+   put empty into sWaSpSpendSeckey
    put empty into sWaImportedWif
    -- AND THE ADDRESS RECORDS, which is the one this comment used to be wrong
    -- about. cwAddressAt puts the derived private key into every record when
@@ -14218,6 +14698,7 @@ end waTip
 command waTips
    waTip "nv_wl", "Open, create or restore a wallet; pick the network and address type"
    waTip "nv_rc", "Your next unused address, as text, a payment URI and a QR code"
+   waTip "rc_copySp", "Your BIP-352 silent payment address: reusable, and every payment to it lands on a fresh taproot output only your scan key can find"
    waTip "nv_ad", "Every derived address with its label, use and balance"
    waTip "nv_sd", "Pay addresses, silent payment addresses, or write a note to the chain"
    waTip "nv_cn", "Your unspent coins: tick them for manual selection, freeze them to keep them"
@@ -14511,6 +14992,7 @@ command waBuildReceive
    uiArea "rc_uri", "196,288,688,336"
    uiButton "rc_copyUri", "Copy the URI", "196,342,340,368"
    uiButton "rc_showQr", "Redraw the QR", "344,342,490,368"
+   uiButton "rc_copySp", "Copy silent-payment address", "494,342,688,368"
    uiWrap "rc_detail", "", "196,378,688,584", 11
    uiSection "rc_sec3", "Scan this", "720,66,1172,84"
    uiGfx "rc_qrframe", "720,92,1172,540"
@@ -15424,7 +15906,7 @@ command waDeriveAccount
    -- with the same two facts: an account extended PUBLIC key (always) and an
    -- account extended private key (only when we actually hold the secret).
    local tSeed, tMaster, tNode, tPath, tError, tRec, tWhy, tFormat
-   local tFp, tXprv, tXpub
+   local tFp, tXprv, tXpub, tSpNode, tSpScan, tSpSpend
    -- THE TWO NON-SEED KINDS EXIT BEFORE ANYTHING IS CLEARED. Their account
    -- key did not come from a mnemonic and cannot be re-derived from one, so
    -- clearing it first and then reading it back - which is what this handler
@@ -15496,6 +15978,14 @@ command waDeriveAccount
    put cwFingerprint(cxHexEncode(tMaster["pubkey"])) into tFp
    put waAccountPath() into tPath
    put cxHdDerivePath(tMaster, tPath) into tNode
+   -- BIP-352 (2026-09-10): the scan and spend keys come off the same master,
+   -- at the BIP's own hardened branches, whatever account path the wallet
+   -- is on - a silent payment address is per SEED, not per account.
+   put cxHdDerivePath(tMaster, cwSpPath(sWaNetwork, "scan")) into tSpNode
+   put cxHexEncode(tSpNode["seckey"]) into tSpScan
+   put cxHdDerivePath(tMaster, cwSpPath(sWaNetwork, "spend")) into tSpNode
+   put cxHexEncode(tSpNode["seckey"]) into tSpSpend
+   put empty into tSpNode
    put cwXKeyEncode(tNode, cwXKeyVersion(sWaNetwork, sWaScriptType, false), true) \
          into tXprv
    put cwXKeyEncode(cxHdNeuter(tNode), \
@@ -15505,7 +15995,11 @@ command waDeriveAccount
    put tFp into sWaFingerprint
    put tXprv into sWaAccountXprv
    put tXpub into sWaAccountXpub
+   put tSpScan into sWaSpScanSeckey
+   put tSpSpend into sWaSpSpendSeckey
    put empty into tXprv
+   put empty into tSpScan
+   put empty into tSpSpend
    waDeriveAddresses
 end waDeriveAccount
 
@@ -15615,6 +16109,7 @@ command waDeriveAddresses
    put empty into tNode
    put tList into sWaAddresses
    waLeavesAttach
+   waSpAttach
 end waDeriveAddresses
 
 private function waImportedRecords
@@ -15683,7 +16178,11 @@ function waNextUnused pChange
       -- address was used the eleventh engine log (2026-09-03) handed the
       -- first leaf back as "the next unused receive address" - the same
       -- key again, twenty-four times, with the window never extending.
-      if tRec["change"] is pChange and tRec["leafscript"] is "" then
+      -- NOR A SILENT PAYMENT OUTPUT (2026-09-10): a found output sits here
+      -- so sync watches it and the signer can spend it, and it is paid
+      -- exactly once by construction - never offered as "next unused".
+      if tRec["change"] is pChange and tRec["leafscript"] is "" \
+            and tRec["sptweak"] is "" then
          if tSeen[tRec["address"]] is not "true" then
             return tRec
          end if
@@ -16287,6 +16786,8 @@ command waSetNetwork pNetwork
    put pNetwork into sWaNetwork
    put waEmptyList() into sWaUtxos
    put waEmptyList() into sWaHistory
+   put empty into sWaSpParents
+   put empty into sWaSpPending
    put empty into sWaTipHeight
    put empty into sWaTipAt
    put empty into sWaFeesAt
@@ -16658,9 +17159,20 @@ command waPaintReceive
    set the defaultStack to the short name of this stack
    put waCurrentReceive() into tRec
    if tRec is "" then
-      put "No address yet. Open a wallet first." into field "rc_address"
+      -- NO UNUSED ADDRESS is exactly when the reusable one matters (2026-09-11):
+      -- CI's prefill-2 copy of this stack reaches Receive with every derived
+      -- address used, and the silent payment address was painted only on
+      -- the branch below, so the one address that never runs out was the one
+      -- the screen withheld.
+      if waSpAddress() is "" then
+         put "No address yet. Open a wallet first." into field "rc_address"
+      else
+         put "No unused address in the derived window. Press 'Derive 20 " & \
+               "more' on the Addresses screen, or hand out the silent " & \
+               "payment address below, which never runs out." into field "rc_address"
+      end if
       put "" into field "rc_uri"
-      put "" into field "rc_detail"
+      put waSpAddressNote() into field "rc_detail"
       exit waPaintReceive
    end if
    put tRec["address"] into tAddr
@@ -16693,6 +17205,7 @@ command waPaintReceive
       put "note         " & tRec["note"] & return after tOut
    end if
    put "scriptPubKey " & tRec["script"] & return after tOut
+   put waSpAddressNote() after tOut
    if sWaBackend is "offline" then
       put return & "This wallet is OFFLINE, so it cannot know whether this " & \
             "address has been used. It is showing index " & tRec["index"] & \
@@ -16771,6 +17284,13 @@ command waReceiveClick pRole
    else if pRole is "copyUri" then
       set the clipboardData["text"] to field "rc_uri"
       uiCopyFlash "rc_copyUri"
+   else if pRole is "copySp" then
+      if waSpAddress() is "" then
+         throw "only a seed wallet has a silent payment address: its scan and " & \
+               "spend keys come off the seed. Open one on the Wallet screen."
+      end if
+      set the clipboardData["text"] to waSpAddress()
+      uiCopyFlash "rc_copySp"
    else if pRole is "next" then
       put waCurrentReceive() into tRec
       if tRec is "" then
@@ -17593,6 +18113,16 @@ function waSpendableCoins
       put tRec into tCoin
       put (sWaFrozen[tKey] is "true") into tCoin["frozen"]
       put (sWaSelected[tKey] is "true") into tCoin["selected"]
+      -- AND THE TYPE THIS COIN IS PRICED AS. cwSelectCoins sizes each coin
+      -- by its own "inputtype" and falls back to the wallet's type only for
+      -- a coin that carries none - so an imported legacy key's coins, and
+      -- the taproot coins of an inscription commit or a timelock, are priced
+      -- by what they cost rather than by what a new address would.
+      if tAddrRec is "" then
+         put waInputType() into tCoin["inputtype"]
+      else
+         put waSizingType(tAddrRec) into tCoin["inputtype"]
+      end if
       put cwListAdd(tOut, tCoin) into tOut
    end repeat
    return tOut
@@ -17980,6 +18510,23 @@ function waRecordType pAddrRec
    return waInputType()
 end waRecordType
 
+function waSizingType pAddrRec
+   -- THE TYPE ONE ADDRESS IS PRICED AS, which is waRecordType with one
+   -- refinement the estimator needs and the signer must never see: an
+   -- imported UNCOMPRESSED key pays to an ordinary P2PKH script and signs as
+   -- one, but its scriptSig pushes a 65-byte pubkey, and cwInputBaseBytes
+   -- priced every P2PKH input at 33 - 32 bytes short, in the one estimate
+   -- whose contract is the worst case. The record's pubkey length is the
+   -- fact (cwWifInfo writes the key as it was imported); the name
+   -- "p2pkh-uncompressed" exists only in wallet-core's sizing tables.
+   local tType
+   put waRecordType(pAddrRec) into tType
+   if tType is "p2pkh" and the number of chars of pAddrRec["pubkey"] is 130 then
+      return "p2pkh-uncompressed"
+   end if
+   return tType
+end waSizingType
+
 function waSelectedInputSpecs pSel
    -- The cwEstimateVsize input list built from the ACTUAL coins, so a mixed
    -- selection is priced by what it really costs rather than by the wallet's
@@ -17995,7 +18542,7 @@ function waSelectedInputSpecs pSel
       if tAddrRec is "" then
          put waInputType() into tSpec["type"]
       else
-         put waRecordType(tAddrRec) into tSpec["type"]
+         put waSizingType(tAddrRec) into tSpec["type"]
       end if
       put sWaM into tSpec["m"]
       put cwListCount(sWaCosigners) into tSpec["cosigners"]
@@ -18230,6 +18777,13 @@ function waSignSpend pInputs, pOutputs, pSel, pLock
                   "send it to your cosigners, and combine what comes back " & \
                   "on the Tools screen."
          end if
+      else if tAddrRec["sptweak"] is not "" then
+         -- a silent payment output (2026-09-10): the output key IS
+         -- b_spend + tweak, so it signs untweaked - cwSignTaproot would
+         -- tweak first and sign for a point nobody paid
+         put cwSighash("p2tr", tVersion, pInputs, pOutputs, tI, pLock, "", 0, "", \
+               tScripts, tAmounts) into tDigest
+         put cwSignKeyPath(waSpSeckeyFor(tAddrRec), tDigest) into tSig
       else if tAddrRec["leafscript"] is not "" then
          -- an inscription commit: spent through its leaf, signed by the
          -- INTERNAL key the leaf script names (waLeafRecord)
@@ -19079,24 +19633,67 @@ private function waCeilSat pValue
 end waCeilSat
 
 function waBumpAdvice pRec
-   local tOut, tOld, tFloor
+   -- THE FLOOR IS PRINTED ONLY WHEN BOTH ITS INPUTS ARE KNOWN. This read
+   -- pRec["fee"] and pRec["vsize"] straight off a history row and printed
+   -- cwRbfMinFee of whatever it found: Esplora's history carries both (and
+   -- waMergeHistory keeps them), Electrum's carries neither, so on the
+   -- transport this wallet is most often on it printed "it paid 0.00000000,
+   -- its size vB, a replacement must pay at least 0.00000000" and a rate
+   -- "above" a division by zero. The size can come from the bytes if
+   -- Inspect has fetched them; the fee cannot come from anywhere but the
+   -- backend, because the raw transaction does not carry its inputs' values.
+   -- What is unknown is said to be unknown, with the way to learn it.
+   local tOut, tOld, tFloor, tVsize, tTx, tError
    put "BUMPING THE FEE (BIP-125)" & return & return into tOut
    if pRec["confirmations"] + 0 > 0 then
       return "That transaction is confirmed. There is nothing left to bump."
    end if
-   put pRec["fee"] into tOld
-   if tOld is "" then
-      put 0 into tOld
+   put "" into tVsize
+   if waWholeAtLeast(pRec["vsize"], 1) then
+      put pRec["vsize"] into tVsize
+   else if pRec["raw"] is not "" then
+      try
+         put cwTxDecode(pRec["raw"]) into tTx
+         put tTx["vsize"] into tVsize
+      catch tError
+         put "" into tVsize
+      end try
    end if
-   put cwRbfMinFee(tOld, pRec["vsize"] + 0) into tFloor
+   put "" into tOld
+   if waWholeAtLeast(pRec["fee"], 0) then
+      put pRec["fee"] into tOld
+   end if
    put "A replacement must pay everything the transaction it evicts paid," & return after tOut
    put "PLUS the incremental relay fee over its own size. For this one:" & return & return after tOut
-   put "  it paid       " & waAmount(tOld) & return after tOut
-   put "  its size      " & pRec["vsize"] & " vB" & return after tOut
-   put "  a replacement must pay at least " & waAmount(tFloor) & return & return after tOut
+   if tOld is "" then
+      put "  it paid       (unknown: this backend's history does not report" & return after tOut
+      put "                 a fee. An Esplora backend does; a Bitcoin Core" & return after tOut
+      put "                 node reports it under Inspect.)" & return after tOut
+   else
+      put "  it paid       " & waAmount(tOld) & return after tOut
+   end if
+   if tVsize is "" then
+      put "  its size      (unknown: press Inspect to fetch its bytes)" & return after tOut
+   else
+      put "  its size      " & tVsize & " vB" & return after tOut
+   end if
+   if tOld is "" or tVsize is "" then
+      put "  the floor a replacement must clear cannot be computed until" & return after tOut
+      put "  both are known; it is the fee it paid plus " & \
+            kCwIncrementalRelayFee & " sat/vB over the replacement's size." & \
+            return & return after tOut
+   else
+      put cwRbfMinFee(tOld, tVsize) into tFloor
+      put "  a replacement must pay at least " & waAmount(tFloor) & return & return after tOut
+   end if
    put "To do it by hand: tick the same coins on the Coins screen, choose" & return after tOut
    put "'Ticked coins' on Send, pay the same destination, and set a fee rate" & return after tOut
-   put "above " & cwCeilDiv(tFloor, pRec["vsize"] + 0) & " sat/vB." & return & return after tOut
+   if tOld is "" or tVsize is "" then
+      put "above the rate it paid plus " & kCwIncrementalRelayFee & " sat/vB." & \
+            return & return after tOut
+   else
+      put "above " & cwCeilDiv(tFloor, tVsize) & " sat/vB." & return & return after tOut
+   end if
    put "A replacement is a NEW transaction that must spend the same coins, so" & return after tOut
    put "every line of it is worth reading before it is signed - which is why" & return after tOut
    put "the Bump button prints the whole thing rather than just doing it." after tOut
@@ -19122,6 +19719,13 @@ private function waToolsNote
          "VALIDATE gives a verdict on an address (a silent payment address " & \
          "too) or an extended key, on EVERY chain. DECODE SCRIPT reads bare " & \
          "script hex." & return & return after tOut
+   put "TO FIND A SILENT PAYMENT made to this wallet's own sp address, paste " & \
+         "the paying transaction and press Inspect: the wallet asks the " & \
+         "backend for the transactions its inputs spend and scans when they " & \
+         "arrive. Offline, paste the script each input spends under it (one " & \
+         "per line, in input order) instead. An output that is yours is added " & \
+         "to your addresses and can be spent like any coin." & \
+         return & return after tOut
    put "Inscriptions and runes have the ORDINALS screen; timelocked coins " & \
          "have the VAULT screen. An " & quote & "inscribe:" & quote & " or " & \
          quote & "lock:" & quote & " line pasted here is carried there." & \
@@ -19395,6 +19999,416 @@ function waLeafRecord pKey
    end if
    return tRec
 end waLeafRecord
+
+-- ==============================================================================
+-- SILENT PAYMENTS, RECEIVING (2026-09-10)
+--
+-- The wallet's own BIP-352 address is B_scan || B_spend, from two keys that
+-- come off the seed beside the account (waDeriveAccount). Finding a payment
+-- to it means repeating the sender's derivation over the paying transaction,
+-- which needs the script EACH INPUT SPENDS - a fact the raw transaction does
+-- not carry. This wallet does not scan the chain: it has no way to, without
+-- an index server that publishes per-transaction tweaks, and none of its
+-- backends offers one. What it does is scan a transaction it is HANDED, and
+-- remember every output that turns out to be its own: as a record in the
+-- address list (so sync watches it like any address and the signer can spend
+-- it, untweaked) and as an "sp" line in the wallet file (so it survives a
+-- reopen). The prevout scripts come from one of two places. Pasted under the
+-- transaction, one per line (waSpScanPaste) - the 2026-09-10 shape, still
+-- there for an offline wallet. Or, since 2026-09-11, FETCHED: a raw
+-- transaction pasted ALONE and inspected on a wallet that holds the keys
+-- asks the backend for the transaction each input spends (the "tx" request
+-- every backend already answers for the fee bump), reads the scripts out of
+-- those, and scans when the last one lands - the report goes under the
+-- RAW TRANSACTION one on the Tools screen (waSpAfterInspect, waSpPendingCheck).
+-- The parents are kept in sWaSpParents so a second Inspect scans at once,
+-- and the cache is dropped WHOLE past kWaSpParentsMax rather than trimmed,
+-- because it is a convenience and a stale entry cannot be wrong (a txid
+-- names its bytes). Labels are not used on the receiving side yet; the
+-- calculator supports them, the wallet publishes one address.
+-- ==============================================================================
+
+function waSpAddress
+   -- This wallet's silent payment address, or "" for a wallet without the
+   -- keys (watch-only, an imported key, multisig).
+   local tScan, tSpend
+   if sWaSpScanSeckey is "" or sWaSpSpendSeckey is "" then
+      return ""
+   end if
+   put cxHexEncode(cxPublicKey(cxHexDecode(sWaSpScanSeckey), true)) into tScan
+   put cxHexEncode(cxPublicKey(cxHexDecode(sWaSpSpendSeckey), true)) into tSpend
+   return cwSpReceiveAddress(sWaNetwork, tScan, tSpend, "")
+end waSpAddress
+
+function waSpAddressNote
+   -- The Receive screen's paragraph about the silent payment address, or ""
+   -- for a wallet without one. ONE function because the screen has two
+   -- branches (an unused address to show, or none left) and both owe it.
+   if waSpAddress() is "" then
+      return ""
+   end if
+   return return & "SILENT PAYMENT ADDRESS (BIP-352), reusable:" & return & \
+         waSpAddress() & return & \
+         "Hand this one out as often as you like: every payment to it lands " & \
+         "on a fresh taproot output that only this wallet's scan key can " & \
+         "find. To find one, paste the paying transaction on Tools with the " & \
+         "script each input spends, one per line, and press Inspect." & return
+end waSpAddressNote
+
+function waSpSeckeyFor pAddrRec
+   -- The private key of a found silent payment output: b_spend + its tweak.
+   if sWaSpSpendSeckey is "" then
+      throw "no spend key for " & pAddrRec["address"] & ": this wallet holds " & \
+            "no seed, so it cannot spend a silent payment made to it."
+   end if
+   return cwScalarAdd(sWaSpSpendSeckey, pAddrRec["sptweak"])
+end waSpSeckeyFor
+
+function waSpFoundRecord pFound
+   -- The address record for one found output: taproot, at the output key
+   -- itself, carrying the tweak the signer adds to b_spend.
+   local tRec, tScript
+   put cwScriptP2tr(pFound["output"]) into tScript
+   put "" into tRec
+   put cwAddressForScript(sWaNetwork, tScript) into tRec["address"]
+   put tScript into tRec["script"]
+   put "p2tr" into tRec["scripttype"]
+   put "02" & pFound["output"] into tRec["pubkey"]
+   put pFound["tweak"] into tRec["sptweak"]
+   put pFound["label"] into tRec["splabel"]
+   put 0 into tRec["change"]
+   put -1 into tRec["index"]
+   put "" into tRec["path"]
+   put " (silent payment)" into tRec["suffix"]
+   put "" into tRec["seckey"]
+   put "" into tRec["leafscript"]
+   put "" into tRec["lockheight"]
+   return tRec
+end waSpFoundRecord
+
+command waSpAttach
+   -- Re-append every found silent payment output to the freshly derived
+   -- address list, the way waLeavesAttach does for leaves and for the same
+   -- reason: a funded output the wallet had forgotten would be the failure.
+   local tI, tCount
+   put cwListCount(sWaSpFound) into tCount
+   repeat with tI = 1 to tCount
+      put cwListAdd(sWaAddresses, waSpFoundRecord(sWaSpFound[tI])) into sWaAddresses
+   end repeat
+end waSpAttach
+
+function waSpFoundLine pFound
+   -- The wallet file's spelling of a found output: "output|tweak|label".
+   return pFound["output"] & "|" & pFound["tweak"] & "|" & pFound["label"]
+end waSpFoundLine
+
+function waSpFoundFrom pLine
+   -- The inverse, validated: two 32-byte hex fields and a label tweak that
+   -- is empty or 32 bytes, or the file is refused.
+   local tRec, tOutput, tTweak, tLabel, tRest
+   put cwSplitAt(pLine, 1, "|") into tOutput
+   put cwSplitAt(pLine, 2, "|") into tTweak
+   put cwSplitAt(pLine, 3, "|") into tLabel
+   if the number of chars of tOutput is not 64 or cwHexIsClean(tOutput) is not true then
+      throw "an sp line's output is not 32 bytes of hex."
+   end if
+   if the number of chars of tTweak is not 64 or cwHexIsClean(tTweak) is not true then
+      throw "an sp line's tweak is not 32 bytes of hex."
+   end if
+   if tLabel is not "" then
+      if the number of chars of tLabel is not 64 or cwHexIsClean(tLabel) is not true then
+         throw "an sp line's label is not 32 bytes of hex."
+      end if
+   end if
+   put "" into tRec
+   put cwLower(tOutput) into tRec["output"]
+   put cwLower(tTweak) into tRec["tweak"]
+   put cwLower(tLabel) into tRec["label"]
+   return tRec
+end waSpFoundFrom
+
+function waSpScanPaste pText
+   -- Line 1 a raw transaction, lines 2.. the script each input spends. Finds
+   -- every output that is a silent payment to this wallet, remembers each
+   -- one, and reports. Throws when line 1 is not a transaction (so Inspect
+   -- falls through to its other readers) and when the prevout count does not
+   -- match the input count (so nothing is scanned against the wrong scripts).
+   local tTx, tCount, tI, tN, tPrev, tPrevouts
+   if sWaSpScanSeckey is "" or sWaSpSpendSeckey is "" then
+      throw "this wallet has no silent payment keys (only a seed wallet does)."
+   end if
+   put cwTxDecode(cwTrim(line 1 of pText)) into tTx
+   put cwListCount(tTx["inputs"]) into tCount
+   put the number of lines of pText into tN
+   if tN - 1 is not tCount then
+      throw "that transaction has " & tCount & " input(s) and " & (tN - 1) & \
+            " prevout script line(s) follow it. Paste the script each input " & \
+            "spends, one per line, in input order."
+   end if
+   put waEmptyList() into tPrevouts
+   repeat with tI = 1 to tCount
+      put cwTrim(line (tI + 1) of pText) into tPrev
+      if cwHexIsClean(tPrev) is not true or tPrev is "" then
+         throw "prevout line " & tI & " is not a script in hex."
+      end if
+      put cwListAdd(tPrevouts, tPrev) into tPrevouts
+   end repeat
+   return waSpScanWith(tTx, tPrevouts)
+end waSpScanPaste
+
+function waSpScanWith pTx, pPrevouts
+   -- The scan itself: pTx decoded, pPrevouts the script each of its inputs
+   -- spends, in input order (one list entry per input, hex). Every output
+   -- that is a silent payment to this wallet is remembered and reported.
+   local tIns, tOuts, tCount, tI, tIn, tVin, tKeys, tKey, tSum, tError
+   local tOutpoints, tOutpoint, tOutputs, tOut, tHash, tSpend, tFound, tRec, tReport
+   local tN, tKnown, tJ, tWhy
+   put pTx["inputs"] into tIns
+   put cwListCount(tIns) into tCount
+   if cwListCount(pPrevouts) is not tCount then
+      throw "waSpScanWith: " & cwListCount(pPrevouts) & " prevout script(s) for " & \
+            tCount & " input(s)."
+   end if
+   put waEmptyList() into tKeys
+   put waEmptyList() into tOutpoints
+   repeat with tI = 1 to tCount
+      put tIns[tI] into tIn
+      put "" into tVin
+      put pPrevouts[tI] into tVin["prevout"]
+      put tIn["scriptsig"] into tVin["scriptsig"]
+      put tIn["witness"] into tVin["witness"]
+      put cwSpInputPubkey(tVin) into tKey
+      if tKey is not "" then
+         put cwListAdd(tKeys, tKey) into tKeys
+      end if
+      put "" into tOutpoint
+      put tIn["txid"] into tOutpoint["txid"]
+      put tIn["vout"] into tOutpoint["vout"]
+      put cwListAdd(tOutpoints, tOutpoint) into tOutpoints
+   end repeat
+   put "SILENT PAYMENT SCAN of " & pTx["txid"] & return & return into tReport
+   put "" into tWhy
+   try
+      put cwSpPubkeySum(tKeys) into tSum
+   catch tError
+      put line 1 of tError into tWhy
+   end try
+   if tWhy is not "" then
+      return tReport & "  nothing to find: " & tWhy & return
+   end if
+   put waEmptyList() into tOutputs
+   put pTx["outputs"] into tOuts
+   put cwListCount(tOuts) into tCount
+   repeat with tI = 1 to tCount
+      put tOuts[tI] into tOut
+      if tOut["kind"] is "p2tr" then
+         put cwListAdd(tOutputs, char 5 to 68 of tOut["script"]) into tOutputs
+      end if
+   end repeat
+   if cwListCount(tOutputs) is 0 then
+      return tReport & "  no taproot outputs, so no silent payment." & return
+   end if
+   put cwSpInputHash(tOutpoints, tSum) into tHash
+   put cxHexEncode(cxPublicKey(cxHexDecode(sWaSpSpendSeckey), true)) into tSpend
+   put cwSpScan(sWaSpScanSeckey, tSpend, tSum, tHash, tOutputs, waEmptyList()) into tFound
+   put cwListCount(tFound) into tCount
+   if tCount is 0 then
+      return tReport & "  " & cwListCount(tOutputs) & " taproot output(s), none of " & \
+            "them a payment to this wallet's silent payment address." & return
+   end if
+   if sWaSpFound is "" then
+      put waEmptyList() into sWaSpFound
+   end if
+   repeat with tI = 1 to tCount
+      put tFound[tI] into tRec
+      put false into tKnown
+      put cwListCount(sWaSpFound) into tN
+      repeat with tJ = 1 to tN
+         if cwHexCompare(sWaSpFound[tJ]["output"], tRec["output"]) is 0 then
+            put true into tKnown
+         end if
+      end repeat
+      put "  FOUND: " & cwAddressForScript(sWaNetwork, cwScriptP2tr(tRec["output"])) & \
+            return after tReport
+      if tKnown is true then
+         put "         (already in your addresses)" & return after tReport
+      else
+         put cwListAdd(sWaSpFound, tRec) into sWaSpFound
+         put cwListAdd(sWaAddresses, waSpFoundRecord(tRec)) into sWaAddresses
+         put "         added to your addresses; save the wallet to keep it, " & \
+               "and sync to see the coin" & return after tReport
+         waLog "silent payment found in " & pTx["txid"] & ": output " & tRec["output"]
+      end if
+   end repeat
+   return tReport
+end waSpScanWith
+
+function waSpParentsNeeded pTx
+   -- The distinct txids pTx's inputs spend whose bytes this wallet does not
+   -- hold yet. Distinct, because two inputs from one parent are one request.
+   local tIns, tCount, tI, tIn, tTxid, tOut, tSeen
+   put waEmptyList() into tOut
+   put pTx["inputs"] into tIns
+   put cwListCount(tIns) into tCount
+   repeat with tI = 1 to tCount
+      put tIns[tI] into tIn
+      put cwLower(tIn["txid"]) into tTxid
+      if tSeen[tTxid] is not true then
+         put true into tSeen[tTxid]
+         if sWaSpParents[tTxid] is "" then
+            put cwListAdd(tOut, tTxid) into tOut
+         end if
+      end if
+   end repeat
+   return tOut
+end waSpParentsNeeded
+
+function waSpPrevoutsFrom pTx
+   -- The script each input of pTx spends, read out of the parent
+   -- transactions held in sWaSpParents (every one present, or
+   -- waSpParentsNeeded would have said). The vout is checked against the
+   -- parent's output count: a backend that answered the right txid cannot
+   -- have the wrong outputs, but an input can name an output that does not
+   -- exist and a list read past its end is silently empty in this dialect.
+   local tIns, tCount, tI, tIn, tParent, tOuts, tVout, tOut
+   put waEmptyList() into tOut
+   put pTx["inputs"] into tIns
+   put cwListCount(tIns) into tCount
+   repeat with tI = 1 to tCount
+      put tIns[tI] into tIn
+      put cwTxDecode(sWaSpParents[cwLower(tIn["txid"])]) into tParent
+      put tParent["outputs"] into tOuts
+      put tIn["vout"] into tVout
+      if tVout is not an integer or tVout < 0 or tVout >= cwListCount(tOuts) then
+         throw "input " & tI & " spends output " & tVout & " of " & tIn["txid"] & \
+               ", which has " & cwListCount(tOuts) & " output(s)."
+      end if
+      put cwListAdd(tOut, tOuts[tVout + 1]["script"]) into tOut
+   end repeat
+   return tOut
+end waSpPrevoutsFrom
+
+function waSpAfterInspect pHex
+   -- What Inspect prints UNDER the RAW TRANSACTION report for a transaction
+   -- pasted alone: nothing unless this wallet holds silent payment keys and
+   -- the transaction has a taproot output (the only kind a silent payment
+   -- can be). Then the scan, if the transactions its inputs spend are
+   -- already held; otherwise a request for each one and a note saying so,
+   -- and waStoreRawTx finishes the job when the last one lands. Offline,
+   -- the note says what to paste instead. Contained: a failure here is a
+   -- line under the report, never the loss of the report.
+   local tTx, tOuts, tIns, tCount, tI, tTaproot, tNeeded, tN, tError, tWhy
+   local tHead, tOut
+   if sWaSpScanSeckey is "" or sWaSpSpendSeckey is "" then
+      return ""
+   end if
+   put cwTxDecode(cwTrim(pHex)) into tTx
+   put 0 into tTaproot
+   put tTx["outputs"] into tOuts
+   put cwListCount(tOuts) into tCount
+   repeat with tI = 1 to tCount
+      if tOuts[tI]["kind"] is "p2tr" then
+         add 1 to tTaproot
+      end if
+   end repeat
+   if tTaproot is 0 then
+      return ""
+   end if
+   put return & "SILENT PAYMENT CHECK: " into tHead
+   put tTx["inputs"] into tIns
+   if cwListCount(tIns) is 1 and cwLower(tIns[1]["txid"]) is waZeroTxid() then
+      return tHead & "a coinbase transaction spends nothing, so it cannot " & \
+            "carry a silent payment." & return
+   end if
+   put waSpParentsNeeded(tTx) into tNeeded
+   put cwListCount(tNeeded) into tN
+   if tN > 0 and sWaBackend is "offline" then
+      return tHead & tTaproot & " taproot output(s) could be a payment to " & \
+            "this wallet's silent payment address, and telling needs the " & \
+            "script each input spends. This wallet is offline: choose a " & \
+            "backend and press Inspect again, or paste those scripts under " & \
+            "the transaction, one per line in input order." & return
+   end if
+   if tN > 0 then
+      repeat with tI = 1 to tN
+         waNetQueue "tx", tNeeded[tI]
+      end repeat
+      waEnsurePolling
+      waAfterQueue
+      -- bitcoin-cli drains the queue in that call, so the parents may be
+      -- held already; a connection backend answers on a later tick
+      put waSpParentsNeeded(tTx) into tNeeded
+      put cwListCount(tNeeded) into tN
+   end if
+   if tN > 0 then
+      put cwLower(cwTrim(pHex)) into sWaSpPending
+      waLog "silent payment check of " & tTx["txid"] & ": asked " & sWaHost & \
+            " for " & tN & " transaction(s) its inputs spend"
+      return tHead & tTaproot & " taproot output(s) could be a payment to " & \
+            "this wallet's silent payment address. Asked " & sWaHost & " for the " & \
+            tN & " transaction(s) these inputs spend; the result will appear " & \
+            "here when they arrive (the log will say)." & return
+   end if
+   put empty into sWaSpPending
+   put "" into tWhy
+   try
+      put waSpScanWith(tTx, waSpPrevoutsFrom(tTx)) into tOut
+   catch tError
+      put line 1 of tError into tWhy
+   end try
+   if tWhy is not "" then
+      return tHead & "could not run: " & tWhy & return
+   end if
+   return return & tOut
+end waSpAfterInspect
+
+function waZeroTxid
+   -- the coinbase's "previous" txid: 32 zero bytes
+   local tOut, tI
+   put "" into tOut
+   repeat with tI = 1 to 64
+      put "0" after tOut
+   end repeat
+   return tOut
+end waZeroTxid
+
+command waSpPendingCheck
+   -- Called by waStoreRawTx after every stored transaction while a silent
+   -- payment check is waiting: once the last parent is held, the scan runs
+   -- and the Tools screen's result box is repainted with the RAW
+   -- TRANSACTION report and the scan under it, whatever screen is showing
+   -- (the box is one control; the screen it belongs to is a matter of
+   -- what is visible). A scan that throws is reported there too, and the
+   -- wait ends either way - a second Inspect asks again.
+   local tTx, tHex, tReport, tError, tWhy
+   set the defaultStack to the short name of this stack
+   if sWaSpPending is "" then
+      exit waSpPendingCheck
+   end if
+   put sWaSpPending into tHex
+   put cwTxDecode(tHex) into tTx
+   if cwListCount(waSpParentsNeeded(tTx)) > 0 then
+      exit waSpPendingCheck
+   end if
+   put empty into sWaSpPending
+   put "" into tWhy
+   try
+      put waSpScanWith(tTx, waSpPrevoutsFrom(tTx)) into tReport
+   catch tError
+      put line 1 of tError into tWhy
+   end try
+   if tWhy is not "" then
+      put return & "SILENT PAYMENT CHECK: could not run: " & tWhy & return into tReport
+      waLog "silent payment check of " & tTx["txid"] & " could not run: " & tWhy
+   else
+      put return & tReport into tReport
+      waLog "silent payment check of " & tTx["txid"] & " finished; the result " & \
+            "is on the Tools screen"
+   end if
+   put waInspectRaw(tHex) & tReport into field "tl_out"
+   uiStatus "The transactions behind " & char 1 to 12 of tTx["txid"] & \
+         "... arrived; the silent payment check is on the Tools screen.", "ok"
+end waSpPendingCheck
 
 command waLeavesAttach
    -- Re-append every saved leaf output to the freshly derived address
@@ -20407,10 +21421,29 @@ function waInspectAnything pText
             " screen, which is open now with it filled in. Press the numbered " & \
             "button there."
    end if
+   -- a raw transaction followed by the script each of its inputs spends,
+   -- one per line, is a request to SCAN it for silent payments to this
+   -- wallet (2026-09-10); anything else with more than one line falls
+   -- through to the ordinary readers
+   if the number of lines of pText > 1 then
+      try
+         return waSpScanPaste(pText)
+      catch tError
+      end try
+   end if
+   -- a raw transaction ALONE gets the silent payment check under its
+   -- report (2026-09-11): nothing unless this wallet holds the keys and the
+   -- transaction has a taproot output; then the scan, from the parents the
+   -- backend is asked for
+   put "" into tOut
    try
-      return waInspectRaw(pText)
+      put waInspectRaw(pText) into tOut
    catch tError
+      put "" into tOut
    end try
+   if tOut is not "" then
+      return tOut & waSpAfterInspect(pText)
+   end if
    try
       return cwPsbtSummary(pText, sWaNetwork) & return & \
             "Press 'Hold as the current PSBT' to sign or finalize it."
@@ -21802,6 +22835,8 @@ command waDropSeed
    put empty into sWaMnemonic
    put empty into sWaPassphrase
    put empty into sWaAccountXprv
+   put empty into sWaSpScanSeckey
+   put empty into sWaSpSpendSeckey
    put waEmptyList() into sWaAddresses
    if there is a field "wl_mnemonic" then
       put empty into field "wl_mnemonic"
@@ -26187,10 +27222,22 @@ command waStoreRawTx pTxid, pHex
       end if
    end repeat
    waLog "stored the bytes of " & pTxid & " on " & tHit & " history row(s)"
+   -- AND INTO THE SILENT PAYMENT CHECK'S CACHE, whoever asked: a parent a
+   -- fee bump fetched serves a later check the same. Dropped whole past
+   -- the cap (never while a check is waiting on it), because a txid names
+   -- its bytes, so nothing in here can go stale - only large.
+   if the number of lines of the keys of sWaSpParents >= kWaSpParentsMax \
+         and sWaSpPending is "" then
+      put empty into sWaSpParents
+   end if
+   put tHex into sWaSpParents[cwLower(pTxid)]
    if sWaInspectWanted is cwLower(pTxid) then
       put empty into sWaInspectWanted
       put waInspectRaw(tHex) into field "hs_detail"
       uiStatus "The bytes of " & pTxid & " arrived.", "ok"
+   end if
+   if sWaSpPending is not "" then
+      waSpPendingCheck
    end if
 end waStoreRawTx
 
@@ -27201,6 +28248,10 @@ function waSerializeWallet
    repeat with tI = 1 to tCount
       put "leaf" & tTab & waLeafLine(sWaLeaves[tI]) & return after tOut
    end repeat
+   put cwListCount(sWaSpFound) into tCount
+   repeat with tI = 1 to tCount
+      put "sp" & tTab & waSpFoundLine(sWaSpFound[tI]) & return after tOut
+   end repeat
    put the keys of sWaLabels into tKeys
    sort lines of tKeys
    put the number of lines of tKeys into tCount
@@ -27258,6 +28309,7 @@ end waLoadInto
 
 command waDeserializeWallet pText
    local tI, tCount, tLine, tTab, tPos, tName, tValue, tCosigners, tInscriptions
+   local tSpFound
    put numToChar(9) into tTab
    put waEmptyList() into tCosigners
    put waEmptyList() into tInscriptions
@@ -27328,10 +28380,16 @@ command waDeserializeWallet pText
          put tValue into sWaLabels[char 7 to -1 of tName]
       else if tName is "leaf" then
          put cwListAdd(tInscriptions, waLeafKeyFrom(tValue)) into tInscriptions
+      else if tName is "sp" then
+         put cwListAdd(tSpFound, waSpFoundFrom(tValue)) into tSpFound
       end if
    end repeat
    put tCosigners into sWaCosigners
    put tInscriptions into sWaLeaves
+   if tSpFound is "" then
+      put waEmptyList() into tSpFound
+   end if
+   put tSpFound into sWaSpFound
    put waEmptyList() into sWaUtxos
    put waEmptyList() into sWaHistory
    if sWaKind is "seed" and sWaMnemonic is not empty then
@@ -27540,7 +28598,7 @@ end scFinish
 -- clipboard. What they check is that this stack's own arithmetic agrees with
 -- the library it carries, on this engine, before anybody types anything.
 
-constant kWaScControls = "ad_change,ad_detail,ad_label,ad_labelCap,ad_more,ad_panel,ad_receive,ad_scan,ad_sec1,ad_setLabel,ad_table,cn_addManual,cn_detail,cn_freeze,cn_hint,cn_panel,cn_sec1,cn_table,cn_tick,cn_tickAll,cn_tickNone,hs_bump,hs_copyTxid,hs_detail,hs_inspect,hs_panel,hs_refresh,hs_sec1,hs_table,lg_boot,lg_clear,lg_copy,lg_hint,lg_panel,lg_sec1,lg_sec2,lg_text,nd_ask,nd_birth,nd_birthCap,nd_copy,nd_create,nd_fees,nd_lookup,nd_mempool,nd_mempoolNote,nd_netinfo,nd_note,nd_panelA,nd_panelB,nd_reimport,nd_sandboxNote,nd_sbMine,nd_sbReorg,nd_sbStart,nd_sbStop,nd_sec1,nd_sec2,nd_sec3,nd_sec4,nd_sec5,nd_sec6,nd_status,nd_testAccept,nd_tierNote,nd_tierScan,nd_tierWatch,nd_useFast,nd_useNormal,nd_useSlow,nd_watchNote,nd_watchState,nv_ad,nv_bal,nv_chain,nv_cn,nv_confirmed,nv_frozenamt,nv_hs,nv_lg,nv_nd,nv_net,nv_nw,nv_od,nv_panel,nv_pending,nv_rc,nv_refresh,nv_sd,nv_st,nv_tip,nv_tl,nv_vt,nv_wallet,nv_wl,nw_auth,nw_authCap,nw_bCore,nw_bCoreCli,nw_bCoreTor,nw_bElectrumClear,nw_bElectrumTor,nw_bEsploraClear,nw_bEsploraTor,nw_bOffline,nw_cookie,nw_cookieCap,nw_host,nw_hostCap,nw_out,nw_panelA,nw_panelB,nw_port,nw_portCap,nw_privacy,nw_remoteOk,nw_sec1,nw_sec2,nw_sec3,nw_socks,nw_socksCap,nw_state,nw_stop,nw_syncNow,nw_test,nw_why,od_body,od_bodyCap,od_copyAddr,od_copyOut,od_details,od_hex,od_hexCap,od_hint,od_inspect,od_intro,od_out,od_panelA,od_panelB,od_prepare,od_read,od_reveal,od_runes,od_sec1,od_sec2,od_sec3,od_sec4,od_size,od_table,od_type,od_typeCap,od_typeJson,od_typeSvg,od_typeText,rc_address,rc_amount,rc_amountCap,rc_copy,rc_copyUri,rc_detail,rc_label,rc_labelCap,rc_message,rc_messageCap,rc_next,rc_panelA,rc_panelB,rc_qr,rc_qrframe,rc_qrhint,rc_sec1,rc_sec2,rc_sec3,rc_showQr,rc_uri,rc_verify,sd_addNote,sd_addSelf,sd_broadcast,sd_clear,sd_copyRaw,sd_locktime,sd_locktimeCap,sd_out,sd_panelA,sd_panelB,sd_paste,sd_preview,sd_rate,sd_rateCap,sd_ratehint,sd_rbf,sd_sec1,sd_sec2,sd_sec3,sd_sec4,sd_sign,sd_stratBnb,sd_stratLargest,sd_stratManual,sd_stratOldest,sd_stratSmallest,sd_strategyCap,sd_to,sd_toCap,sd_toPsbt,sd_warn,st_about,st_browse,st_exportLabels,st_filenote,st_forget,st_forgetnote,st_gap,st_gapCap,st_importLabels,st_load,st_panelA,st_panelB,st_password,st_passwordCap,st_path,st_pathCap,st_save,st_sec1,st_sec2,st_sec3,st_unitBtc,st_unitMbtc,st_unitSat,st_update,tl_askNode,tl_copyOut,tl_decode,tl_derive,tl_entropy,tl_export,tl_hex,tl_hexCap,tl_hold,tl_inspect,tl_msg,tl_msg322,tl_msgAddr,tl_msgAddrCap,tl_msgCap,tl_msgSig,tl_msgSigCap,tl_msgSign,tl_msgVerify,tl_newKey,tl_note,tl_out,tl_panelA,tl_panelB,tl_pass,tl_passCap,tl_psbtCombine,tl_psbtFinal,tl_psbtSign,tl_sec1,tl_sec2,tl_sec3,tl_sweep,tl_toEntropy,tl_validate,uiFooter,uiStatus,uiTitle,vt_copyAddr,vt_copyOut,vt_day,vt_details,vt_height,vt_heightCap,vt_hint,vt_intro,vt_month,vt_out,vt_panelA,vt_panelB,vt_prepare,vt_sec1,vt_sec2,vt_sec3,vt_send,vt_table,vt_week,vt_when,vt_year,wl_account,wl_accountCap,wl_addCosigner,wl_backup,wl_copyDesc,wl_copyXpub,wl_custody,wl_generate,wl_kindKey,wl_kindMulti,wl_kindRestore,wl_kindSeed,wl_kindWatch,wl_label,wl_labelCap,wl_m,wl_mCap,wl_mnemonic,wl_mnemonicCap,wl_netMain,wl_netReg,wl_netSignet,wl_netTest,wl_netTest4,wl_open,wl_out,wl_panelA,wl_panelB,wl_pass,wl_passCap,wl_path,wl_pathCap,wl_sec1,wl_sec2,wl_sec3,wl_sec4,wl_typeLegacy,wl_typeMulti,wl_typeNative,wl_typeNested,wl_typeTaproot,wl_warn,wl_xkey,wl_xkeyCap"
+constant kWaScControls = "ad_change,ad_detail,ad_label,ad_labelCap,ad_more,ad_panel,ad_receive,ad_scan,ad_sec1,ad_setLabel,ad_table,cn_addManual,cn_detail,cn_freeze,cn_hint,cn_panel,cn_sec1,cn_table,cn_tick,cn_tickAll,cn_tickNone,hs_bump,hs_copyTxid,hs_detail,hs_inspect,hs_panel,hs_refresh,hs_sec1,hs_table,lg_boot,lg_clear,lg_copy,lg_hint,lg_panel,lg_sec1,lg_sec2,lg_text,nd_ask,nd_birth,nd_birthCap,nd_copy,nd_create,nd_fees,nd_lookup,nd_mempool,nd_mempoolNote,nd_netinfo,nd_note,nd_panelA,nd_panelB,nd_reimport,nd_sandboxNote,nd_sbMine,nd_sbReorg,nd_sbStart,nd_sbStop,nd_sec1,nd_sec2,nd_sec3,nd_sec4,nd_sec5,nd_sec6,nd_status,nd_testAccept,nd_tierNote,nd_tierScan,nd_tierWatch,nd_useFast,nd_useNormal,nd_useSlow,nd_watchNote,nd_watchState,nv_ad,nv_bal,nv_chain,nv_cn,nv_confirmed,nv_frozenamt,nv_hs,nv_lg,nv_nd,nv_net,nv_nw,nv_od,nv_panel,nv_pending,nv_rc,nv_refresh,nv_sd,nv_st,nv_tip,nv_tl,nv_vt,nv_wallet,nv_wl,nw_auth,nw_authCap,nw_bCore,nw_bCoreCli,nw_bCoreTor,nw_bElectrumClear,nw_bElectrumTor,nw_bEsploraClear,nw_bEsploraTor,nw_bOffline,nw_cookie,nw_cookieCap,nw_host,nw_hostCap,nw_out,nw_panelA,nw_panelB,nw_port,nw_portCap,nw_privacy,nw_remoteOk,nw_sec1,nw_sec2,nw_sec3,nw_socks,nw_socksCap,nw_state,nw_stop,nw_syncNow,nw_test,nw_why,od_body,od_bodyCap,od_copyAddr,od_copyOut,od_details,od_hex,od_hexCap,od_hint,od_inspect,od_intro,od_out,od_panelA,od_panelB,od_prepare,od_read,od_reveal,od_runes,od_sec1,od_sec2,od_sec3,od_sec4,od_size,od_table,od_type,od_typeCap,od_typeJson,od_typeSvg,od_typeText,rc_address,rc_amount,rc_amountCap,rc_copy,rc_copySp,rc_copyUri,rc_detail,rc_label,rc_labelCap,rc_message,rc_messageCap,rc_next,rc_panelA,rc_panelB,rc_qr,rc_qrframe,rc_qrhint,rc_sec1,rc_sec2,rc_sec3,rc_showQr,rc_uri,rc_verify,sd_addNote,sd_addSelf,sd_broadcast,sd_clear,sd_copyRaw,sd_locktime,sd_locktimeCap,sd_out,sd_panelA,sd_panelB,sd_paste,sd_preview,sd_rate,sd_rateCap,sd_ratehint,sd_rbf,sd_sec1,sd_sec2,sd_sec3,sd_sec4,sd_sign,sd_stratBnb,sd_stratLargest,sd_stratManual,sd_stratOldest,sd_stratSmallest,sd_strategyCap,sd_to,sd_toCap,sd_toPsbt,sd_warn,st_about,st_browse,st_exportLabels,st_filenote,st_forget,st_forgetnote,st_gap,st_gapCap,st_importLabels,st_load,st_panelA,st_panelB,st_password,st_passwordCap,st_path,st_pathCap,st_save,st_sec1,st_sec2,st_sec3,st_unitBtc,st_unitMbtc,st_unitSat,st_update,tl_askNode,tl_copyOut,tl_decode,tl_derive,tl_entropy,tl_export,tl_hex,tl_hexCap,tl_hold,tl_inspect,tl_msg,tl_msg322,tl_msgAddr,tl_msgAddrCap,tl_msgCap,tl_msgSig,tl_msgSigCap,tl_msgSign,tl_msgVerify,tl_newKey,tl_note,tl_out,tl_panelA,tl_panelB,tl_pass,tl_passCap,tl_psbtCombine,tl_psbtFinal,tl_psbtSign,tl_sec1,tl_sec2,tl_sec3,tl_sweep,tl_toEntropy,tl_validate,uiFooter,uiStatus,uiTitle,vt_copyAddr,vt_copyOut,vt_day,vt_details,vt_height,vt_heightCap,vt_hint,vt_intro,vt_month,vt_out,vt_panelA,vt_panelB,vt_prepare,vt_sec1,vt_sec2,vt_sec3,vt_send,vt_table,vt_week,vt_when,vt_year,wl_account,wl_accountCap,wl_addCosigner,wl_backup,wl_copyDesc,wl_copyXpub,wl_custody,wl_generate,wl_kindKey,wl_kindMulti,wl_kindRestore,wl_kindSeed,wl_kindWatch,wl_label,wl_labelCap,wl_m,wl_mCap,wl_mnemonic,wl_mnemonicCap,wl_netMain,wl_netReg,wl_netSignet,wl_netTest,wl_netTest4,wl_open,wl_out,wl_panelA,wl_panelB,wl_pass,wl_passCap,wl_path,wl_pathCap,wl_sec1,wl_sec2,wl_sec3,wl_sec4,wl_typeLegacy,wl_typeMulti,wl_typeNative,wl_typeNested,wl_typeTaproot,wl_warn,wl_xkey,wl_xkeyCap"
 
 command waScFresh
    -- THIS RUN'S RECORD, NOT EVERY RUN'S. The field is saved with the stack,

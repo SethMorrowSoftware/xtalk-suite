@@ -114,6 +114,7 @@ def wire_signing(lib):
         ("cnx_schnorr_verify", [B, S, B, S, B, S]),
         ("cnx_xonly_pubkey_from_seckey", [B, S, B, S]),
         ("cnx_taproot_tweak_seckey", [B, S, B, S, B, S]),
+        ("cnx_pubkey_combine", [B, S, B, S]),
     ):
         f = getattr(lib, fn)
         f.restype = ctypes.c_int
@@ -172,6 +173,8 @@ def wire_signing(lib):
                                "cxXOnlyPubkey"),
         "cxtaproottweakseckey": fixed("cnx_taproot_tweak_seckey", 2, 32,
                                       "cxTaprootTweakSeckey"),
+        # ABI 7: point addition, one Data of 33-byte keys in, 33 bytes out
+        "cxpubkeycombine": fixed("cnx_pubkey_combine", 1, 33, "cxPubkeyCombine"),
         "cxverify": boolean("cnx_ecdsa_verify", "cxVerify"),
         "cxschnorrverify": boolean("cnx_schnorr_verify", "cxSchnorrVerify"),
         "cxsignaturelen": lambda a: 64,
@@ -250,6 +253,9 @@ CONSTANT_INPUTS = {
     "kCwSigBytes": "a worst-case budget, not a derivable constant; its effect "
                    "is checked by every vsize vector",
     "kCwPubkeyBytes": "same, and 33 is checked by every derived address",
+    "kCwPubkeyUncompressedBytes": "same; 65 is checked by the uncompressed "
+                                  "P2PKH vsize vector, which must be 32 over "
+                                  "the compressed one",
     "kCwSchnorrSigBytes": "same; checked by the taproot vsize vector",
     "kCwDustSpendLegacy": "an input to Core's dust rule; the four thresholds "
                           "it produces are all re-derived",
@@ -413,6 +419,8 @@ def check_constants(c, text):
     c.ck("the BIP-322 null txid", consts.get("kCwBip322NullTxid"), "00" * 32)
     c.ck("the BIP-352 inputs tag", consts.get("kCwSpTagInputs"), REF.SP_TAG_INPUTS)
     c.ck("the BIP-352 shared-secret tag", consts.get("kCwSpTagSecret"), REF.SP_TAG_SECRET)
+    c.ck("the BIP-352 label tag (receiving, 2026-09-10)", consts.get("kCwSpTagLabel"),
+         REF.SP_TAG_LABEL)
     c.ck("the BIP-352 address length waiver", int(nums.get("kCwSpMaxLen", -1)), REF.SP_MAX_LEN)
     c.ck("the BIP-352 per-group limit K_max", int(nums.get("kCwSpKMax", -1)), REF.SP_K_MAX)
     c.ck("the curve order n", consts.get("kCwCurveN"), "%064x" % CR._N)
@@ -453,6 +461,7 @@ def check_constants(c, text):
         "kCwQrG2Cw", "kCwQrRemainder", "kCwQrAlign", "kCwSeqRbf",
         "kCwSeqFinal", "kCwSeqNoRbf", "kCwLongTermFeeRate",
         "kCwBip322Tag", "kCwBip322NullTxid", "kCwSpTagInputs", "kCwSpTagSecret",
+        "kCwSpTagLabel",
         "kCwSpMaxLen", "kCwSpKMax", "kCwCurveN", "kCwCurveHalfN", "kCwScalarZero",
         "kCwBech32mConst", "kCwXor5", "kCwRuneU128Max", "kCwRuneAlphabet",
         "kCwRuneMaxDivisibility", "kCwRuneMaxSymbol", "kCwRuneMaxSpacers",
@@ -694,12 +703,20 @@ def check_money(c, ip):
         ([("p2wsh", 3, 5)], ["p2wsh", "p2wpkh"]),
         ([("p2wpkh", 0, 0), ("p2pkh", 0, 0)], ["p2wpkh", "p2tr"]),
         ([("p2wpkh", 0, 0)] * 30, ["p2wpkh", "p2wpkh"]),
+        # 2026-09-10: an imported UNCOMPRESSED key's legacy input, alone and
+        # beside a witness input (where it must still contribute the one
+        # empty-stack byte a legacy input owes a segwit transaction)
+        ([("p2pkh-uncompressed", 0, 0)], ["p2wpkh"]),
+        ([("p2wpkh", 0, 0), ("p2pkh-uncompressed", 0, 0)], ["p2wpkh", "p2wpkh"]),
     ]
     for spec, outs in cases:
         want = REF.estimate_vsize(
             [(x[0] if x[0] != "p2wsh" else (x[0], x[1], x[2])) for x in spec], outs)
         c.ck("vsize of %d %s in, %s out" % (len(spec), spec[0][0], ",".join(outs)),
              call("cwEstimateVsize", [ins(spec), lst(outs)]), want)
+    c.ck("an uncompressed P2PKH input is priced 32 bytes over a compressed one",
+         call("cwEstimateVsize", [ins([("p2pkh-uncompressed", 0, 0)]), lst(["p2wpkh"])])
+         - call("cwEstimateVsize", [ins([("p2pkh", 0, 0)]), lst(["p2wpkh"])]), 32)
     for t in ("p2pkh", "p2sh", "p2sh-p2wpkh", "p2wpkh", "p2wsh", "p2tr"):
         c.ck("the dust threshold for %s" % t,
              call("cwDustThreshold", [t]), REF.dust_threshold(t))
@@ -884,6 +901,43 @@ def check_selection(c, ip):
     got = call("cwSelectCoins", [lst(manual), 600000, 5, "p2wpkh", lst(["p2wpkh"]),
                                  "p2wpkh", "manual", 0, 0])
     c.ck("manual selection that cannot pay is refused", got["ok"], False)
+    # PER-COIN TYPES (2026-09-10). Two of the four coins say what they are -
+    # an imported uncompressed legacy key and a taproot leaf - and the other
+    # two fall back to the wallet's type. Both implementations must agree on
+    # the pick, the fee and the size, and the size must be what the SELECTED
+    # coins' own types cost, not four of the wallet's type.
+    mixed = [dict(x) for x in COINS]
+    mixed[0]["inputtype"] = "p2pkh-uncompressed"
+    mixed[2]["inputtype"] = "p2tr"
+    for strat, target, rate in (("largest", 60000, 5), ("bnb", 100000, 5),
+                                ("smallest", 150000, 2), ("oldest", 300000, 1)):
+        got = call("cwSelectCoins", [lst(mixed), target, rate, "p2wpkh",
+                                     lst(["p2wpkh"]), "p2wpkh", strat, 0, 0])
+        want = REF.select_coins(mixed, target, rate, "p2wpkh", ["p2wpkh"],
+                                "p2wpkh", strategy=strat)
+        label = "mixed types, %s for %d sat at %s sat/vB" % (strat, target, rate)
+        c.ck(label + ": ok", got["ok"] is True or got["ok"] == "true", want["ok"])
+        if want["ok"]:
+            c.ck(label + ": the coins",
+                 [int(x["value"]) for x in unlst(got["selected"])],
+                 [x["value"] for x in want["selected"]])
+            c.ck(label + ": the fee", got["fee"], want["fee"])
+            c.ck(label + ": the vsize", got["vsize"], want["vsize"])
+            c.ck(label + ": total in == target + fee + change",
+                 got["totalin"], target + got["fee"] + got["change"])
+            sel_types = [x.get("inputtype") or "p2wpkh" for x in unlst(got["selected"])]
+            spec = lst([{"type": t, "m": 0, "cosigners": 0} for t in sel_types])
+            outs = ["p2wpkh"] + (["p2wpkh"] if int(got["change"]) > 0 else [])
+            c.ck(label + ": the vsize is the selected coins' own types' cost",
+                 got["vsize"], call("cwEstimateVsize", [spec, lst(outs)]))
+    # and a wallet-typed pool answers exactly as it did before the change
+    same = call("cwSelectCoins", [lst(COINS), 60000, 5, "p2wpkh", lst(["p2wpkh"]),
+                                  "p2wpkh", "largest", 0, 0])
+    tagged = [dict(x, inputtype="p2wpkh") for x in COINS]
+    got = call("cwSelectCoins", [lst(tagged), 60000, 5, "p2wpkh", lst(["p2wpkh"]),
+                                 "p2wpkh", "largest", 0, 0])
+    c.ck("a coin tagged with the wallet's own type is priced as before",
+         (got["fee"], got["vsize"], got["change"]), (same["fee"], same["vsize"], same["change"]))
     got = call("cwSelectCoins", [lst([]), 1000, 5, "p2wpkh", lst(["p2wpkh"]),
                                  "p2wpkh", "largest", 0, 0])
     c.ck("an empty wallet is a clean refusal", got["ok"], False)
@@ -943,6 +997,23 @@ def check_signing(c, ip):
          call("cwTxSerialize", [2, ins, outs, 0, lst([sig["scriptsig"]]),
                                 lst([sig["witness"]])]),
          REF.tx_serialize(2, py_ins, py_outs, 0, [pss], [pwit]).hex())
+    # 2026-09-10: ALL THREE keys of a 2-of-3. CHECKMULTISIG consumes exactly
+    # m signatures and CLEANSTACK refuses a witness with one left over, so
+    # the third key must NOT sign. Both implementations used to add every
+    # matching signature; the oracle was capped first, and this vector pins
+    # the count, the completeness, and the bytes against it.
+    every = lst([k["seckey"].hex() for k in cosigners])
+    sig3 = call("cwSignMultisig", [every, digest, ws])
+    c.ck("with all three keys of a 2-of-3, exactly two sign", sig3["signed"], 2)
+    c.true("and the witness is complete", sig3["complete"])
+    c.ck("and the witness has empty, two signatures, script",
+         call("cwListCount", [sig3["witness"]]), 4)
+    pss3, pwit3 = REF.sign_multisig([k["seckey"] for k in cosigners],
+                                    bytes.fromhex(want), bytes.fromhex(ws))
+    c.ck("the all-keys 2-of-3 transaction, byte for byte",
+         call("cwTxSerialize", [2, ins, outs, 0, lst([sig3["scriptsig"]]),
+                                lst([sig3["witness"]])]),
+         REF.tx_serialize(2, py_ins, py_outs, 0, [pss3], [pwit3]).hex())
 
     tr = CR.bip32_path(master_py, "m/86'/0'/0'/0/0")
     okey, _ = CR.taproot_tweak_pubkey(tr["pubkey"][1:], None)
@@ -1011,6 +1082,35 @@ def check_decode(c, ip):
          got2["segwit"] is True or got2["segwit"] == "true", False)
     c.refuses("trailing bytes are refused", lambda: call("cwTxDecode", [raw2 + "00"]))
     c.refuses("non-hex is refused", lambda: call("cwTxDecode", ["zzzz"]))
+    # 2026-09-10: NON-MINIMAL compact sizes. Core's ReadCompactSize refuses
+    # 0xfd carrying under 253, 0xfe under 65536 and 0xff under 2^32 as
+    # non-canonical, so a transaction spelled that way is one no node takes
+    # and its txid the txid of nothing. raw2's input count is the byte at
+    # offset 4; each rewrite says "one input" in a form consensus rejects.
+    assert raw2[8:10] == "01", raw2[:12]
+    for prefix, body in (("fd", "0100"), ("fe", "01000000"),
+                         ("ff", "0100000000000000")):
+        bad = raw2[:8] + prefix + body + raw2[10:]
+        c.refuses("a %s compact size carrying 1 is refused by the script" % prefix,
+                  lambda bad=bad: call("cwTxDecode", [bad]))
+        try:
+            REF.tx_decode(bytes.fromhex(bad))
+            c.ck("a %s compact size carrying 1 is refused by the oracle" % prefix,
+                 "accepted", "refused")
+        except ValueError:
+            c.ck("a %s compact size carrying 1 is refused by the oracle" % prefix,
+                 "refused", "refused")
+    c.refuses("a compact size cut short is refused",
+              lambda: call("cwTxDecode", [raw2[:8] + "fd01"]))
+    c.refuses("an eight-byte compact size above 2^32 is refused, not rounded",
+              lambda: call("cwTxDecode", [raw2[:8] + "ff0000000001000000" + raw2[10:]]))
+    # and the MINIMAL three-byte form is still read: 253 witness items of
+    # one byte each, which needs the 0xfd prefix, decodes to 253 items
+    many = REF.tx_serialize(2, py_ins[:1], py_outs[:1], 0, [b""],
+                            [[b"\x01"] * 253]).hex()
+    got3 = call("cwTxDecode", [many])
+    c.ck("a minimal 0xfd count (253 witness items) decodes",
+         call("cwListCount", [unlst(got3["inputs"])[0]["witness"]]), 253)
 
 
 def check_psbt(c, ip):
@@ -1196,6 +1296,18 @@ def check_psbt(c, ip):
                                   d, bytes.fromhex(ws))
     c.ck("the combined 2-of-3 transaction", final["raw"],
          REF.tx_serialize(2, py_ins, py_outs, 0, [pss], [pwit]).hex())
+    # 2026-09-10: FINALIZING A FINALIZED PSBT. The Finalizer drops the
+    # partial signatures it supersedes, so the document it emits carries
+    # PSBT_IN_FINAL_SCRIPTWITNESS and nothing else - which cwPsbtFinalize
+    # used to read as "unsigned". A second pass must give the same bytes.
+    again = call("cwPsbtFinalize", [final["psbt"]])
+    c.true("a finalized PSBT finalizes again as complete", again["complete"])
+    c.ck("and to the same transaction", again["raw"], final["raw"])
+    c.ck("and to the same PSBT", again["psbt"], final["psbt"])
+    c.ck("and with no why-line", again["why"], "")
+    c.ck("a re-finalized PSBT still refuses a signer",
+         call("cwPsbtSign", [final["psbt"], lst([{"seckey": cosigners[1]["seckey"].hex()}]),
+                             "mainnet"])["signed"], 0)
     other = call("cwPsbtCreate", [2, ins, lst([call("cwTxOutput", [44000, dest])]),
                                   0, {"1": meta}, {}])
     c.refuses("combining two DIFFERENT transactions is refused",
@@ -1216,6 +1328,43 @@ def check_psbt(c, ip):
     pss, pwit = REF.sign_taproot_keypath(tr["seckey"], d)
     c.ck("the taproot transaction", final["raw"],
          REF.tx_serialize(2, py_ins, py_outs, 0, [pss], [pwit]).hex())
+    tap_default = final["raw"]
+    again = call("cwPsbtFinalize", [final["psbt"]])
+    c.ck("a finalized taproot PSBT finalizes again to the same bytes",
+         again["raw"], final["raw"])
+    # 2026-09-10: THE SIGHASH TYPE A TAPROOT PSBT ASKS FOR. An explicit 1
+    # (SIGHASH_ALL) is a different SigMsg from DEFAULT and a 65-byte
+    # signature; the signer used to let 1 through to a digest hard-coded at
+    # 0, and the oracle mapped 1 to 0, so the two agreed and both were
+    # wrong. An explicit 0 is DEFAULT; 2 and 3 are refused by name.
+    meta_all = dict(meta, sighash=1)
+    b64 = call("cwPsbtCreate", [2, ins, outs, 0, {"1": meta_all}, {}])
+    signed = call("cwPsbtSign", [b64, lst([{"seckey": tr["seckey"].hex()}]),
+                                 "mainnet"])
+    c.ck("a taproot input asked for SIGHASH_ALL is signed", signed["signed"], 1)
+    final = call("cwPsbtFinalize", [signed["psbt"]])
+    c.true("and finalizes", final["complete"])
+    d1 = REF.sighash_for("p2tr", 2, py_ins, py_outs, 0, 0,
+                         prev_spks=[bytes.fromhex(tspk)], prev_amounts=[50000],
+                         sighash_type=1)
+    c.ck("the ALL digest differs from the DEFAULT digest", d1 == d, False)
+    pss1, pwit1 = REF.sign_taproot_keypath(tr["seckey"], d1, sighash_type=1)
+    c.ck("its signature is 65 bytes ending in 01", len(pwit1[0]), 65)
+    c.ck("the SIGHASH_ALL taproot transaction, byte for byte", final["raw"],
+         REF.tx_serialize(2, py_ins, py_outs, 0, [pss1], [pwit1]).hex())
+    c.ck("and it is not the DEFAULT one", final["raw"] == tap_default, False)
+    meta_zero = dict(meta, sighash=0)
+    b64 = call("cwPsbtCreate", [2, ins, outs, 0, {"1": meta_zero}, {}])
+    signed = call("cwPsbtSign", [b64, lst([{"seckey": tr["seckey"].hex()}]),
+                                 "mainnet"])
+    c.ck("an explicit 0 signs as DEFAULT",
+         call("cwPsbtFinalize", [signed["psbt"]])["raw"], tap_default)
+    for t in (2, 3, 0x81):
+        b64 = call("cwPsbtCreate", [2, ins, outs, 0, {"1": dict(meta, sighash=t)}, {}])
+        r = call("cwPsbtSign", [b64, lst([{"seckey": tr["seckey"].hex()}]), "mainnet"])
+        c.ck("a taproot input asked for sighash type %d is not signed" % t,
+             r["signed"], 0)
+        c.true("and the refusal names the type", ("type %d" % t) in r["why"])
     summary = call("cwPsbtSummary", [b64, "mainnet"])
     c.true("the summary names the destination", ADDRESSES["mainnet"][2] in summary)
     c.true("the summary states the fee", "fee: 0.00005000" in summary)
@@ -1736,6 +1885,156 @@ def check_silent_payments(c, ip):
     c.ck("cwSpSend does the whole derivation in one call", whole, v0[0]["expected"]["outputs"][0])
     c.ck("and the output script is a taproot output",
          call("cwScriptKind", [call("cwScriptP2tr", [whole[0]])]), "p2tr")
+
+
+SP_RECEIVING_VECTORS = os.path.join(MEMBER, "tests", "bip352-receiving-vectors.json")
+
+
+def check_silent_payment_receiving(c, ip):
+    """BIP-352, the receiving side (2026-09-10), against every receiving
+    case of the BIP's own vector file (tests/bip352-receiving-vectors.json,
+    the published file's receiving half). Both the shipped script and the
+    oracle are driven through every stage - which inputs contribute a key,
+    the key sum (cxPubkeyCombine, ABI 7), the input hash, the wallet's own
+    plain and labeled addresses, the scan itself, and a BIP-340 signature
+    from the recovered private key - and compared with each other AND with
+    the file. The one case the script is not driven through is the K_max
+    one: 2324 outputs walked up to 2323 times is millions of interpreted
+    iterations, so the oracle proves the count and the script's cap is
+    checked as a source shape (the loop condition names kCwSpKMax)."""
+    import hashlib as _hashlib
+    import json as _json
+    call = ip.call
+    c.note("\nBIP-352 silent payments, the receiving side")
+    vectors = _json.load(open(SP_RECEIVING_VECTORS, encoding="utf-8"))["vectors"]
+    msg = _hashlib.sha256(b"message").digest()
+    aux = _hashlib.sha256(b"random auxiliary data").digest()
+    cases = 0
+    for case in vectors:
+        for rt in case["receiving"]:
+            g, e = rt["given"], rt["expected"]
+            label = case["comment"]
+            big = len(g["outputs"]) > 200
+            # --- which inputs contribute a key, per input, both sides ------
+            script_keys, oracle_keys = [], []
+            for vin in g["vin"]:
+                want = REF.sp_input_pubkey(vin)
+                stack = REF._witness_stack(vin.get("txinwitness") or "")
+                got = call("cwSpInputPubkey", [{"prevout": vin["prevout"],
+                                                "scriptsig": vin["scriptSig"],
+                                                "witness": lst([x.hex() for x in stack])}])
+                c.ck("%s: input %s.. contributes %s" % (label, vin["txid"][:8],
+                                                      "a key" if want else "nothing"),
+                     got, want.hex() if want else "")
+                if want:
+                    oracle_keys.append(want)
+                if got:
+                    script_keys.append(str(got))
+            outputs = g["outputs"]
+            if not oracle_keys:
+                c.ck("%s: no eligible input, so nothing is found" % label,
+                     e.get("outputs", []), [])
+                c.refuses("%s: the script refuses an empty key sum" % label,
+                          lambda: call("cwSpPubkeySum", [lst([])]))
+                cases += 1
+                continue
+            # --- the key sum: the whole set at once -----------------------
+            try:
+                want_sum = REF.sp_pubkey_sum(oracle_keys)
+            except ValueError:
+                want_sum = None
+            if want_sum is None:
+                c.ck("%s: the keys sum to infinity and the receiver skips" % label,
+                     e.get("outputs", []), [])
+                c.refuses("%s: the script refuses the infinite sum" % label,
+                          lambda: call("cwSpPubkeySum", [lst(script_keys)]))
+                cases += 1
+                continue
+            got_sum = call("cwSpPubkeySum", [lst(script_keys)])
+            c.ck("%s: the input key sum, as published" % label, got_sum,
+                 e["input_pub_key_sum"])
+            c.ck("%s: and the oracle's" % label, want_sum.hex(), e["input_pub_key_sum"])
+            # --- the input hash ------------------------------------------
+            outpoints = [{"txid": v["txid"], "vout": v["vout"]} for v in g["vin"]]
+            got_hash = call("cwSpInputHash", [lst(outpoints), got_sum])
+            want_hash = REF.sp_input_hash([(v["txid"], v["vout"]) for v in g["vin"]], want_sum)
+            c.ck("%s: the input hash agrees" % label, got_hash, want_hash.hex())
+            # --- the receiver's keys and addresses -----------------------
+            b_scan = g["key_material"]["scan_priv_key"]
+            b_spend = g["key_material"]["spend_priv_key"]
+            scan33 = REF.cr.pubkey(bytes.fromhex(b_scan)).hex()
+            spend33 = REF.cr.pubkey(bytes.fromhex(b_spend)).hex()
+            tweaks_s, tweaks_o = [], []
+            for m in g["labels"]:
+                ts = call("cwSpLabelTweak", [b_scan, m])
+                to = REF.sp_label_tweak(bytes.fromhex(b_scan), m)
+                c.ck("%s: label %d's tweak agrees" % (label, m), ts, to.hex())
+                tweaks_s.append(str(ts))
+                tweaks_o.append(to)
+            addrs_s = [call("cwSpReceiveAddress", ["mainnet", scan33, spend33, ""])]
+            addrs_s += [call("cwSpReceiveAddress", ["mainnet", scan33, spend33, t])
+                        for t in tweaks_s]
+            addrs_o = [REF.sp_receive_address("mainnet", bytes.fromhex(scan33),
+                                              bytes.fromhex(spend33))]
+            addrs_o += [REF.sp_receive_address("mainnet", bytes.fromhex(scan33),
+                                               bytes.fromhex(spend33), t) for t in tweaks_o]
+            c.ck("%s: the wallet's own addresses, as published" % label,
+                 [str(a) for a in addrs_s], e["addresses"])
+            c.ck("%s: and the oracle's" % label, addrs_o, e["addresses"])
+            # --- the shared secret ---------------------------------------
+            c.ck("%s: the shared secret, as published" % label,
+                 call("cwSpSharedSecret", [b_scan, got_hash, got_sum]), e["shared_secret"])
+            # --- the scan ------------------------------------------------
+            found_o = REF.sp_scan(bytes.fromhex(b_scan), bytes.fromhex(spend33),
+                                  want_sum, want_hash,
+                                  [bytes.fromhex(o) for o in outputs], tweaks_o)
+            if "outputs" in e:
+                want_set = sorted((o["pub_key"], o["priv_key_tweak"]) for o in e["outputs"])
+                c.ck("%s: the oracle finds the published outputs" % label,
+                     sorted((f["pub_key"], f["priv_key_tweak"]) for f in found_o), want_set)
+            else:
+                c.ck("%s: the oracle stops at K_max" % label, len(found_o), e["n_outputs"])
+            if big:
+                cases += 1
+                continue
+            found_s = unlst(call("cwSpScan", [b_scan, spend33, got_sum, got_hash,
+                                              lst(outputs), lst(tweaks_s)]))
+            c.ck("%s: the script finds the published outputs" % label,
+                 sorted((str(f["output"]), str(f["tweak"])) for f in found_s),
+                 sorted((o["pub_key"], o["priv_key_tweak"]) for o in e["outputs"]))
+            c.ck("%s: in the same order as the oracle" % label,
+                 [(str(f["output"]), str(f["tweak"]), str(f["label"])) for f in found_s],
+                 [(f["pub_key"], f["priv_key_tweak"], f["label"]) for f in found_o])
+            # --- and the coin's own key signs, untweaked -----------------
+            # The script's part is the scalar (cwScalarAdd: the interpreter
+            # reaches natives only through script, so cxSchnorrSign is not
+            # callable from here); the oracle takes that key and must land on
+            # the published x-only key and the published BIP-340 signature,
+            # which is what proves the tweak recovered is the right one.
+            for o in e["outputs"]:
+                full = str(call("cwScalarAdd", [b_spend, o["priv_key_tweak"]]))
+                c.ck("%s: b_spend + tweak agrees with the oracle for %s.." % (label, o["pub_key"][:8]),
+                     full, REF.scalar_add(bytes.fromhex(b_spend),
+                                          bytes.fromhex(o["priv_key_tweak"])).hex())
+                c.ck("%s: and is the private key of that output" % label,
+                     REF.cr.pubkey(bytes.fromhex(full))[1:].hex(), o["pub_key"])
+                c.ck("%s: and signs the published signature" % label,
+                     REF.cr.schnorr_sign(bytes.fromhex(full), msg, aux).hex(), o["signature"])
+            cases += 1
+    c.ck("every receiving case in the file was driven", cases,
+         sum(len(x["receiving"]) for x in vectors))
+    # the script's K_max cap, as a source shape (see the docstring)
+    src = open(os.path.join(MEMBER, "examples", "wallet-core.livecodescript"),
+               encoding="utf-8").read()
+    c.true("cwSpScan's loop is bounded by kCwSpKMax",
+           "repeat while tK < kCwSpKMax" in src)
+    # refusals
+    c.refuses("a label above 2^32 - 1 is refused",
+              lambda: call("cwSpLabelTweak", ["11" * 32, 4294967296]))
+    c.refuses("a negative label is refused",
+              lambda: call("cwSpLabelTweak", ["11" * 32, -1]))
+    c.refuses("a label tweak that is not a scalar is refused",
+              lambda: call("cwSpLabeledSpend", [scan33, "ff" * 32]))
 
 
 def check_runes(c, ip):
@@ -2321,6 +2620,7 @@ def main(argv):
                 check_psbt(ck, interp)
                 check_messages(ck, interp)
                 check_silent_payments(ck, interp)
+                check_silent_payment_receiving(ck, interp)
                 check_runes(ck, interp)
                 check_tapscript(ck, interp)
                 check_bolt11(ck, interp)

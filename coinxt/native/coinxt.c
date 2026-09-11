@@ -98,11 +98,14 @@ do not fall back to anything weaker (see the entropy section in coinxt.c)."
  * and the BIP-39 wordlist. 5: cnx_memzero, the secret-hygiene export the .lcb
  * header had recorded as future work (it lets the binding wipe its raw
  * out-buffers before freeing them). 6: BIP-340 Schnorr and the BIP-341 Taproot
- * tweak, over the newly vendored upstream libsecp256k1. Additive every time -
+ * tweak, over the newly vendored upstream libsecp256k1. 7: cnx_pubkey_combine,
+ * point addition over the same library - the one primitive BIP-352 silent
+ * payment RECEIVING needs that nothing here exposed (a receiver sums the input
+ * public keys of every transaction it scans). Additive every time -
  * each bump kept every prior symbol's name and signature - but the rule is to
  * bump on ANY ABI change so cxCheckABI() can refuse a stale binary rather than
  * fail at the first missing bind. */
-#define CNX_ABI_VERSION 6
+#define CNX_ABI_VERSION 7
 
 #define CNX_OK 0
 #define CNX_ERR_NULL (-1)   /* a required buffer pointer was NULL */
@@ -394,7 +397,22 @@ static int cnx_entropy_ok(void) {
  * (silently unblinded, or an infinite loop in generate_k_random) or to stop.
  * A money library stops. In practice this is unreachable - every caller runs
  * cnx_entropy_ok() microseconds earlier - which is precisely why it is safe to
- * make it fatal. */
+ * make it fatal.
+ *
+ * HIDDEN from the shipped surface by attribute, not only by the linker script.
+ * It is the one non-static, non-cnx_ symbol this file defines (vendored
+ * ecdsa.c calls it, so it cannot be static), and on ELF and PE the version
+ * script and the .def keep it out of the export table. Mach-O is the platform
+ * where that mechanism is a LINKER'S choice: ld64 honours
+ * -exported_symbols_list, the linker Zig ships for cross-building a dylib on
+ * Linux silently does not (measured 2026-09-10: 257 vendored names exported),
+ * so the mac slices are built with -fvisibility=hidden on every vendored unit
+ * and this attribute on the one hook - which makes the narrow surface a
+ * property of the OBJECTS rather than of whichever linker assembled them.
+ * MinGW ignores the attribute with a warning, so it is compiled out there. */
+#if defined(__GNUC__) && !defined(_WIN32)
+__attribute__((visibility("hidden")))
+#endif
 void random_buffer(uint8_t *buf, size_t len) {
   if (!cnx_entropy_fill(buf, len)) {
     memzero(buf, len);
@@ -1227,3 +1245,96 @@ int cnx_taproot_tweak_seckey(const unsigned char *sk, size_t sklen,
   memzero(&kp, sizeof kp);
   return CNX_OK;
 }
+
+/* ---- ABI 7: point addition -------------------------------------------------
+ *
+ * cnx_pubkey_combine: the compressed sum of n compressed public keys, over
+ * upstream libsecp256k1's secp256k1_ec_pubkey_combine.
+ *
+ * WHY IT EXISTS. BIP-352 silent payments: a RECEIVER computes A_sum, the sum of
+ * the eligible inputs' public keys of every transaction it scans, and derives
+ * the shared secret from that. Sending needed only scalar arithmetic (the
+ * sender holds the private keys, so it sums scalars and multiplies once);
+ * receiving needs point-plus-point, which this shim exposed nowhere - it had
+ * ECDH, two tweak-adds and decompression, all of them "a point and a scalar".
+ * Doing the addition in script was costed and rejected: a field inversion is
+ * hundreds of big multiplies, minutes per input in the family's offline
+ * interpreter, which would make the gate that proves the receiver unrunnable.
+ *
+ * THE INPUT IS ONE BUFFER OF 33-BYTE KEYS, not an array of pointers: the .lcb
+ * layer passes a Data, and a Data is one pointer and one length. The count is
+ * keyslen / 33 and a length that is not a multiple of 33 is CNX_ERR_BADLEN.
+ *
+ * THE SUM IS TAKEN OVER THE WHOLE SET AT ONCE, never pairwise. Upstream's
+ * combine accumulates in Jacobian coordinates and only checks the RESULT for
+ * infinity, so an INTERMEDIATE sum that is the point at infinity is fine as
+ * long as the final one is not - BIP-352's own vector "input keys intermediate
+ * sum is zero but final sum is non-zero" is exactly that case, and a pairwise
+ * fold would refuse a transaction the specification says to accept. The n
+ * pointers upstream wants are heap-allocated for that reason (n is bounded by
+ * CNX_COMBINE_MAX, well above any transaction's input count, so the
+ * allocation is small), and every parsed key is wiped before the free even
+ * though they are public: it costs one call and removes a judgement.
+ *
+ * Every input is PUBLIC, so the context is not re-randomized (see
+ * cnx_taproot_tweak_pubkey for the reasoning, and cnx_secp_ready for why the
+ * first call of any kind still needs the OS entropy source once).
+ *
+ * A sum that IS the point at infinity is CNX_ERR_BADKEY: it has no x
+ * coordinate, so there is no key to return, and BIP-352 says a receiver skips
+ * such a transaction. A key that does not parse is CNX_ERR_BADKEY too. */
+#define CNX_COMBINE_MAX 65536
+
+int cnx_pubkey_combine(const unsigned char *keys, size_t keyslen,
+                       unsigned char *out, size_t outlen) {
+  secp256k1_pubkey *parsed = NULL;
+  const secp256k1_pubkey **ptrs = NULL;
+  secp256k1_pubkey sum;
+  size_t n, i, wrote = 33;
+  int rc = CNX_OK;
+  if (keys == NULL || out == NULL) return CNX_ERR_NULL;
+  if (outlen != 33) return CNX_ERR_BADLEN;
+  if (keyslen == 0 || keyslen % 33 != 0) return CNX_ERR_BADLEN;
+  n = keyslen / 33;
+  if (n > CNX_COMBINE_MAX) return CNX_ERR_RANGE;
+  rc = cnx_secp_ready(0);
+  if (rc != CNX_OK) return rc;
+  parsed = (secp256k1_pubkey *)malloc(n * sizeof *parsed);
+  ptrs = (const secp256k1_pubkey **)malloc(n * sizeof *ptrs);
+  if (parsed == NULL || ptrs == NULL) {
+    free(parsed);
+    free(ptrs);
+    memzero(out, outlen);
+    return CNX_ERR_INTERNAL;
+  }
+  for (i = 0; i < n; i++) {
+    /* the 33-byte form only: a 65-byte key would be read as two keys, and
+     * the parse below refuses a 0x04 prefix over 33 bytes anyway */
+    if (keys[i * 33] != 0x02 && keys[i * 33] != 0x03) {
+      rc = CNX_ERR_BADKEY;
+      break;
+    }
+    if (!secp256k1_ec_pubkey_parse(cnx_secp_ctx, &parsed[i], keys + i * 33, 33)) {
+      rc = CNX_ERR_BADKEY;
+      break;
+    }
+    ptrs[i] = &parsed[i];
+  }
+  if (rc == CNX_OK) {
+    /* returns 0 only when the sum is the point at infinity */
+    if (!secp256k1_ec_pubkey_combine(cnx_secp_ctx, &sum, ptrs, n)) {
+      rc = CNX_ERR_BADKEY;
+    } else if (!secp256k1_ec_pubkey_serialize(cnx_secp_ctx, out, &wrote, &sum,
+                                              SECP256K1_EC_COMPRESSED) ||
+               wrote != 33) {
+      rc = CNX_ERR_INTERNAL;
+    }
+  }
+  memzero(parsed, n * sizeof *parsed);
+  memzero(&sum, sizeof sum);
+  free(parsed);
+  free(ptrs);
+  if (rc != CNX_OK) memzero(out, outlen);
+  return rc;
+}
+

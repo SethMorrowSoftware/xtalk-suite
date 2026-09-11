@@ -268,15 +268,29 @@ case "${1:-lib}" in
     STRIP_TOOL="${STRIP:-strip}"
     CC_TOOL="${CC:-cc}"
 
+    # THE VENDORED UNITS ARE COMPILED HIDDEN; the shim is not. On ELF and PE the
+    # version script and the .def below narrow the surface at link time, and
+    # that used to be the whole mechanism. It is not enough for a Mach-O built
+    # OFF a Mac: the linker Zig ships for cross-building a dylib ignores
+    # -exported_symbols_list without a word (measured 2026-09-10, 257 vendored
+    # names shipped), and the freshness gate refuses the result. Hidden
+    # visibility on every vendored object makes the narrow surface a property
+    # of the objects, so it holds whichever linker assembles them; the shim's
+    # one non-cnx_ global, random_buffer, carries the attribute in the source.
+    # MinGW ignores -fvisibility on PE (its .def is what decides), so the flag
+    # is harmless there and the mechanism stays one line for every platform.
     objs=""
-    for src in "$here/coinxt.c" $vendor_src; do
+    obj="$stage/coinxt.o"
+    $CC_TOOL -O2 $warn $secp_cppflags $inc -fPIC -c "$here/coinxt.c" -o "$obj"
+    objs="$objs $obj"
+    for src in $vendor_src; do
       obj="$stage/$(basename "$src" .c).o"
-      $CC_TOOL -O2 $warn $secp_cppflags $inc -fPIC -c "$src" -o "$obj"
+      $CC_TOOL -O2 $warn $secp_cppflags $inc -fPIC -fvisibility=hidden -c "$src" -o "$obj"
       objs="$objs $obj"
     done
     # Upstream libsecp256k1, with its own warning scope and a secp_ object
     # prefix - see compile_secp above for both reasons.
-    objs="$objs $(compile_secp "$stage" "$CC_TOOL")"
+    objs="$objs $(compile_secp "$stage" "$CC_TOOL" -fvisibility=hidden)"
 
     # Every global cnx_* the objects actually define. `nm -g --defined-only`
     # spells a defined global as a T/D/R/B code in column 2.
@@ -396,6 +410,8 @@ extern int cnx_taproot_tweak_seckey(const unsigned char *, size_t, const unsigne
 extern size_t cnx_schnorr_sig_len(void);
 extern size_t cnx_xonly_pubkey_len(void);
 extern size_t cnx_taproot_output_len(void);
+/* ABI 7: point addition (BIP-352 receiving). */
+extern int cnx_pubkey_combine(const unsigned char *, size_t, unsigned char *, size_t);
 /* Parse a hex string into bytes; returns the byte count. The ABI-6 vectors are
  * published as hex, and re-spelling them as C initialisers by hand is exactly
  * the transcription error a vector is supposed to catch. */
@@ -418,7 +434,7 @@ static int eqn(const unsigned char *b, int n, const char *hexexp) {
 static int eq(const unsigned char *b, const char *hexexp) { return eqn(b, 32, hexexp); }
 int main(void) {
   unsigned char o[64];
-  if (cnx_abi_version() != 6) { printf("ABI FAIL\n"); return 1; }
+  if (cnx_abi_version() != 7) { printf("ABI FAIL\n"); return 1; }
   cnx_keccak256((const unsigned char *)"", 0, o);
   if (!eq(o, "c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470")) { printf("keccak empty FAIL\n"); return 1; }
   cnx_keccak256(NULL, 0, o); /* NULL-with-zero guard path */
@@ -660,8 +676,47 @@ int main(void) {
       }
     }
   }
+  /* ---- ABI 7: cnx_pubkey_combine ----------------------------------------
+   * The buffer this call is most likely to get wrong is its own: n keys read
+   * at stride 33 out of one flat input, and two heap arrays sized from n.
+   * G + G must equal 2G by the OTHER library's tweak (trezor-crypto's
+   * cnx_pubkey_tweak_add of G by 1), the whole set is summed at once so an
+   * intermediate infinity is fine, and the final infinity is refused. */
+  {
+    unsigned char g33[33], two33[33], negg[33], sum[33], keys[99], one[32];
+    unsigned char sk1[32];
+    int i;
+    for (i = 0; i < 32; i++) { sk1[i] = 0; one[i] = 0; }
+    sk1[31] = 1; one[31] = 1;
+    if (cnx_pubkey_from_seckey(sk1, 32, 1, g33, 33) != 0) { printf("combine: G FAIL\n"); return 1; }
+    if (cnx_pubkey_tweak_add(g33, 33, one, 32, two33, 33) != 0) { printf("combine: 2G FAIL\n"); return 1; }
+    memcpy(keys, g33, 33); memcpy(keys + 33, g33, 33);
+    if (cnx_pubkey_combine(keys, 66, sum, 33) != 0) { printf("combine G+G FAIL\n"); return 1; }
+    if (memcmp(sum, two33, 33) != 0) { printf("combine G+G != 2G FAIL\n"); return 1; }
+    /* -G is G with its parity byte flipped; G + (-G) is infinity: refused */
+    memcpy(negg, g33, 33); negg[0] ^= 0x01;
+    memcpy(keys + 33, negg, 33);
+    if (cnx_pubkey_combine(keys, 66, sum, 33) != -4) { printf("combine infinity guard FAIL\n"); return 1; }
+    for (i = 0; i < 33; i++) if (sum[i] != 0) { printf("combine infinity left bytes FAIL\n"); return 1; }
+    /* G + (-G) + 2G: the intermediate sum is infinity and the final is 2G */
+    memcpy(keys, g33, 33); memcpy(keys + 33, negg, 33); memcpy(keys + 66, two33, 33);
+    if (cnx_pubkey_combine(keys, 99, sum, 33) != 0) { printf("combine intermediate-infinity FAIL\n"); return 1; }
+    if (memcmp(sum, two33, 33) != 0) { printf("combine intermediate-infinity value FAIL\n"); return 1; }
+    /* one key is the identity */
+    if (cnx_pubkey_combine(g33, 33, sum, 33) != 0 || memcmp(sum, g33, 33) != 0) { printf("combine single FAIL\n"); return 1; }
+    /* guards: null, a length that is not a multiple of 33, an empty set, a
+     * 32-byte out buffer, an uncompressed prefix, a key off the curve */
+    if (cnx_pubkey_combine(NULL, 33, sum, 33) != -1) { printf("combine null guard FAIL\n"); return 1; }
+    if (cnx_pubkey_combine(keys, 65, sum, 33) != -2) { printf("combine stride guard FAIL\n"); return 1; }
+    if (cnx_pubkey_combine(keys, 0, sum, 33) != -2) { printf("combine empty guard FAIL\n"); return 1; }
+    if (cnx_pubkey_combine(keys, 33, sum, 32) != -2) { printf("combine outlen guard FAIL\n"); return 1; }
+    keys[0] = 0x04;
+    if (cnx_pubkey_combine(keys, 33, sum, 33) != -4) { printf("combine prefix guard FAIL\n"); return 1; }
+    keys[0] = 0x02; for (i = 1; i < 33; i++) keys[i] = 0xff;
+    if (cnx_pubkey_combine(keys, 33, sum, 33) != -4) { printf("combine off-curve guard FAIL\n"); return 1; }
+  }
   printf("cnx_selftest: OK (ASan/UBSan clean, hashes + secp256k1 + BIP-32/39 + memzero"
-         " + BIP-340/341)\n");
+         " + BIP-340/341 + combine)\n");
   return 0;
 }
 EOF

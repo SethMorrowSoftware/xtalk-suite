@@ -3417,7 +3417,12 @@ Beside them, the fifth instance in this file of the chunk-binding trap:
 TARGET, so the engine is asked for the length of (tMethod plus one). Four
 sites carry the note explaining it; this was the fifth, and it was found by
 running the code rather than by reading it - which is what the runner is
-for.
+for. **CORRECTED 2026-09-11: that binding was the RUNNER's, not the
+engine's.** holde-em's harness asserts `the number of lines of X & "/" & ...`
+against `"1/r!"` and passed on two engines, so the engine takes the count's
+target as a factor and applies `&` (and, by the same grammar, `+`) OUTSIDE it
+- root `docs/OXT-ENGINE-NOTES.md` 2.6. The interpreter is corrected; the
+local-variable rewrites here are harmless either way and stay.
 
 **AND THE ONE FAILURE CI FOUND THAT THE THREE BLOCKS COULD NOT** is the
 mirror of the pump-callback lesson above, and worth its own line because it
@@ -3480,11 +3485,286 @@ it listed as "CONFIRMED by reading and NOT fixed": the selection-input-type site
 `waBumpAdvice` reading a fee and vsize `waMergeHistory` never writes, a taproot
 input signed SIGHASH_DEFAULT where the PSBT asked for ALL, `cwPsbtFinalize` not
 reading the `PSBT_IN_FINAL_*` fields it writes, `cwSignMultisig` not capping its
-signature count at m, and the varint reader accepting a non-minimal encoding
-(note: no handler named `cwReadVarInt` exists; the reader the entry means is
-inline in the transaction parser). Every one is a `wallet-core` change with an
-oracle pin in `check-wallet-vectors.py`, and they are the next headless slice.
+signature count at m, and the varint reader accepting a non-minimal encoding.
+(This paragraph said, until later the same day, that no handler named
+`cwReadVarInt` existed and the reader was inline in the parser. It exists,
+private, at the head of the decoding section; the claim was made from a grep
+that had been scoped wrong, and it is struck here rather than deleted because a
+record that says a thing does not exist is exactly the kind of sentence the
+next reader stops checking.) Every one is a `wallet-core` change with an
+oracle pin in `check-wallet-vectors.py`, and they were the next headless
+slice - closed the same day, in the entry below.
 
 Verified statically and through the boot gate; needs an OXT pass (a socket the
 far side refuses, a plain-file save and reopen with a non-ASCII label, and the
 boot record's four address lines).
+
+### 2026-09-10, later: the seven wallet-core findings, closed with the oracle moved first
+
+Every one of the seven was a rule the SCRIPT and the ORACLE shared, which is why
+none had ever failed a vector and why each fix went into
+`tools/wallet_reference.py` before the script was touched - the standing rule
+from the 2026-08-31 entry ("an oracle-based gate cannot see a rule both sides
+get wrong"). What each turned out to be, in the order it was worth learning:
+
+- **The taproot sighash type was a one-line MAPPING in the oracle.**
+  `sighash_for` turned an explicit 1 into 0 for p2tr, so a script that signed
+  SIGHASH_DEFAULT whatever a PSBT asked agreed with it perfectly. BIP-341 puts
+  the type byte in the SigMsg, so a PSBT asking for ALL got a signature over a
+  different digest and 64 bytes long where the network wants 65. The oracle's
+  default is now PER FAMILY (None resolves to 0 for p2tr and 1 otherwise) and an
+  explicit type is used as given; the script's `cwSighashTaproot` is the p2tr
+  branch of `cwSighash` with the type as a parameter, `cwPsbtSign` honours 0 and
+  1 (appending the byte for 1) and refuses 2, 3 and the ANYONECANPAY forms by
+  name. The vector proves the two digests differ and pins the 65-byte
+  transaction byte for byte.
+- **`cwSignMultisig` computed m AFTER the loop that needed it.** Both sides
+  added every matching signature; CHECKMULTISIG consumes exactly m and
+  CLEANSTACK refuses the extra element, so a wallet holding all three keys of
+  a 2-of-3 built a witness no node accepts. m is read first now, on both sides,
+  and the all-keys vector pins count, completeness and bytes.
+- **`cwPsbtFinalize` never read the two fields it writes.** BIP-174's
+  Finalizer drops the partial signatures once `PSBT_IN_FINAL_*` are written -
+  this one did, forty lines down - so a PSBT finalized by any wallet, this one
+  included, came back "unsigned" on a second pass. An already-final input is
+  taken as it stands now (the witness through `cwWitnessStackDecode`, contained
+  to a why-line); the vector finalizes both finalized documents again and
+  requires the same bytes and the same PSBT.
+- **The varint reader accepted a non-minimal encoding, and the txid it fed
+  was the txid of nothing.** Core's `ReadCompactSize` refuses `0xfd` under 253,
+  `0xfe` under 65536 and `0xff` under 2^32 as non-canonical; both readers took
+  them. Both refuse now, and the script reads the eight-byte form as two halves
+  so a count above 2^32 is a refusal rather than a value rounded past 2^53 on
+  the engine (root engine notes 2.4). Six refusals and one positive (a genuine
+  253-item witness through the `0xfd` form) pin it.
+- **`cwInputBaseBytes` priced every P2PKH input a 33-byte pubkey push**, so an
+  imported UNCOMPRESSED key's input was 32 bytes short in the function whose
+  contract is the worst case. The fix is a SIZING NAME, `p2pkh-uncompressed`,
+  chosen by `waSizingType` from the record's pubkey length and known only to
+  the estimator and the selector - the signer still sees `p2pkh`, because the
+  script and the sighash are the same. The boot gate signs a real uncompressed
+  legacy spend and shows the new estimate covers it and the old one did not.
+- **The selector priced every coin as ONE type**, the audit's "fix at one call
+  site and not its sibling": `waMaxSpend` had gone per-coin on 2026-08-31 and
+  `waBuildSpend`'s other branch had not. A coin may now carry `inputtype`;
+  `cwSelectionResult` and branch-and-bound price each coin by its own, the
+  future spend of change is priced by the CHANGE type (it read the input type,
+  which stops meaning anything once the coins differ; for every wallet here the
+  two are one string), and `waSpendableCoins` tags each coin from its address
+  record. The mixed-pool vectors compare pick, fee and size with the oracle and
+  additionally require the size to be what the selected coins' OWN types cost.
+- **`waBumpAdvice` was half wrong rather than wrong**: Esplora's history does
+  carry a fee and a weight and `waMergeHistory` has kept both since 2026-09-04,
+  so the audit's "never writes" was stale on one transport and true on the
+  other. On Electrum it printed a floor from two zeros and a rate above a
+  division by zero. It reads the size off the bytes when Inspect has fetched
+  them, says what it does not know and how to learn it, and prints a floor only
+  from a fee and a size it has.
+
+The transferable half is the oracle's shape. Three of the seven were the same
+rule written twice with the same omission (the cap, the minimality check, the
+one-type selector), and one was the oracle AGREEING BY CONSTRUCTION (the
+sighash mapping) - a line that exists to make two implementations match is a
+line that makes the gate blind, and the fix was to delete it and let the
+default do the work. Verified statically, through `check-wallet-vectors.py` and
+`check-wallet-boot.py`; needs an OXT pass (nothing here touches a control, so
+the engine questions are the three new `cw*` shapes: `cwSighashTaproot`'s
+eight arguments, `numToByte` into a hex concatenation for the 65th byte, and
+`cwWitnessStackDecode` inside a `try` in the finalizer).
+
+### 2026-09-10, later still: silent-payment receiving, and the ABI bump under it
+
+The 2026-09-04 entry above ends "the honest next step is the native handler". This
+is it, plus the receiver it was for.
+
+**ABI 7 is one export.** `cnx_pubkey_combine` takes ONE buffer of 33-byte keys
+(a Data is a pointer and a length; the count is the length over 33) and returns
+the compressed sum over upstream libsecp256k1's `secp256k1_ec_pubkey_combine`,
+summed as a whole - the n pointers upstream wants are heap-allocated for that
+reason, because a pairwise fold refuses the BIP's "intermediate sum is zero but
+final sum is non-zero" vector. Proven under ASan/UBSan (G+G against the OTHER
+library's tweak of G by 1, the intermediate-infinity case, seven guards), in
+`coin-kat.py` from source and against the committed x86_64-linux library, and
+by six new assertions in the member harness.
+
+**All five binaries were rebuilt HERE, and the mac one taught a lesson.** MinGW
+and gcc-multilib installed, so the Linux and Windows four were the recorded
+recipes. The mac dylib had only ever been built by the release lane on a real
+Mac; cross-building it with Zig's clang compiled fine and shipped **257
+vendored names in the export trie**, because Zig's own Mach-O linker IGNORES
+`-exported_symbols_list` without a word, and the suite freshness gate refused
+it - which is the gate doing exactly its job. Two changes, both kept: the
+vendored units are now compiled `-fvisibility=hidden` on EVERY platform (the
+narrow surface is a property of the objects, whichever linker assembles them;
+the one non-static non-cnx_ symbol, trezor's `random_buffer` hook, carries the
+attribute in the source), and `tools/mac-cross-cc.sh` compiles with Zig and
+links with LLVM's ld64.lld, which takes the list and produces the same trie
+Apple's ld64 did (44 `_cnx_*` names, nothing else - checked against the
+previous release-built dylib). Both slices present, `check-binary-freshness.py`
+green at ABI 7 across all 30 libraries. The mac dylib is verified the way the
+Windows DLLs always were: by its export trie, its ABI constant and its slices,
+never by execution; the next `release-binaries.yml` dispatch supersedes all
+five.
+
+**The receiver is the BIP's reference `scanning`, and it is held to all 29
+published receiving cases.** `cwSpInputPubkey` (the malleated-P2PKH window,
+nested P2WPKH, the annex and the NUMS-point control block), `cwSpPubkeySum`,
+`cwSpLabelTweak`, `cwSpLabeledSpend`, `cwSpReceiveAddress` and `cwSpScan`; the
+oracle gained the same six over coin_reference's affine model. The vector gate
+drives both through every stage - which input contributes, the sum, the input
+hash and the shared secret against the published values, the plain and labeled
+addresses, the outputs found with their tweaks and their order, and the
+published BIP-340 signature from `b_spend + tweak` - 423 checks. The K_max case
+(2324 outputs, up to 2323 rounds) is the oracle's alone; the script's cap is a
+source-shape check, and the docstring says so.
+
+**Two things the build caught on the way.** The checker refused `kCwNumsH`
+read from 700 lines above its declaration - the constant-order trap, in code
+written by someone who had just moved a constant for the same reason in the
+`.lcb` - so it is declared with the silent-payment constants now, above both
+readers. And `ip.call` reaches natives only through script, so the gate's
+signature check goes: the script's `cwScalarAdd` must agree with the oracle's,
+and the oracle's key must then produce the published x-only key and signature.
+
+Verified statically, under sanitizers, by KAT and through both vector gates;
+needs an OXT pass (the one-argument `Data` shape of `cxPubkeyCombine`, and
+`cwSpScan`'s `try` around a refused combine inside a loop).
+
+**And the wallet, the same day.** A seed wallet derives its scan and spend keys
+beside the account, prints its silent payment address on the Receive screen
+with a button to copy it, scans a transaction it is HANDED (the raw hex, then
+the script each input spends, one per line, on Tools; Inspect does the rest),
+remembers every found output as an address record and as an `sp` line in the
+wallet file, and spends one through `waSignSpend`'s own branch, untweaked, by
+`b_spend + tweak` (`cwSignKeyPath`; `cwSignTaproot` would tweak first and sign
+for a point nobody paid). It does not scan the chain - a raw transaction does
+not carry its prevouts and no backend here publishes a tweak index - and the
+Tools note and the doc both say so. Two small lessons on the way: the checker
+refused `tOp` (the token-shadow trap, `top`), and `waNextUnused` needed the
+same "never a leaf" exclusion for a found output, because a record in the
+address list on chain 0 with an address nobody has paid is exactly what that
+rule exists for. The boot gate drives the keys against the oracle's derivation,
+the address on screen and clipboard, a transaction the oracle builds to pay it
+found and kept through a file round trip, and a coin on the found output
+signed and verified by the oracle against the OUTPUT key. Not run on an
+engine; the Receive button is a `waBuild*` change, so `kWaUiVersion` moved.
+
+
+### 2026-09-11: the receiving side asks the backend for its prevouts
+
+The entry above ends with the wallet scanning a transaction it is HANDED, with
+the script each input spends pasted under it one line at a time - a shape that
+works everywhere and that nobody would use twice. The fact it needs is not
+secret and not far: the script an input spends is an output of the transaction
+the input names, and every backend here has answered "the raw bytes of txid X"
+since the fee bump needed a parent's size (`waNetQueue "tx"`, `waStoreRawTx`).
+So a raw transaction pasted ALONE and inspected on a wallet that holds the keys
+now gets a SILENT PAYMENT CHECK line under its RAW TRANSACTION report: the
+wallet asks for each distinct parent it does not already hold, and when the
+last one lands `waStoreRawTx` runs the scan and repaints the Tools result box
+(`waSpAfterInspect`, `waSpPendingCheck`; the scan itself is `waSpScanWith`, the
+2026-09-10 body over a prevout list, which the paste path now builds from its
+lines and the fetched path from `waSpPrevoutsFrom`). Offline, the line says
+what to paste instead. A transaction with no taproot output gets no line, a
+coinbase is refused without a request, and two inputs from one parent are one
+request.
+
+Three shapes worth writing down. **The pending flag is set only when the answer
+is still outstanding**: on bitcoin-cli `waAfterQueue` drains the queue in the
+same call, so the parents may be held before `waSpAfterInspect` returns, and
+it asks again and scans in place rather than leaving a wait that
+`waStoreRawTx` had already satisfied - which would otherwise have painted the
+box twice, the second time as "already in your addresses". **The parent cache
+is dropped whole, never trimmed**: a txid names its bytes, so nothing in it can
+be wrong, only large, and 64 raw transactions is the cap (`kWaSpParentsMax`);
+it is never dropped while a check is waiting on it. **And the boot gate's payer
+had to spend a REAL parent.** The 2026-09-10 fixture spent `dd...:0`, a txid
+that names no bytes, which the paste path never noticed because it is handed
+the script; the fetched path asks for that txid and `waStoreRawTx` refuses an
+answer whose bytes hash to anything else - so the fixture builds the parent
+first and takes its txid from the oracle, and every derived value (the
+outpoints, the input hash, the expected output) follows from it. The gate
+drives the offline note, the request by txid, the Electrum-shaped answer and
+the scan on arrival, the second Inspect served from the cache, the coinbase
+and the non-taproot case, and then the paste path over the same transaction,
+which now says "already in your addresses" and leaves the count at one.
+
+Verified statically and through the boot gate; needs an OXT pass (the result
+box repainted from a socket callback while another screen is showing, and a
+parent the backend refuses, which leaves the wait in place for the next
+Inspect to ask again). The Tools note changed and no `waBuild*` handler did,
+so `kWaUiVersion` stayed.
+
+### 2026-09-11, later: the wallet gates ran into the CI clock, and now run at once
+
+The suite's static-gates job had grown to five and a half hours on every push,
+and on this day the pull-request twin of a green push run was CANCELLED at
+exactly six hours - GitHub's default job ceiling - having done nothing wrong.
+Measured on this machine, serially, the coinxt walk alone was the afternoon:
+`check-wallet-vectors.py` 44 minutes; `test-wallet-boot.py` two hours fifty-nine
+(seven fixtures at 5 to 38 minutes each - two of the seven are caught late in
+the boot - then a 79-minute clean prefill-2 boot); `check-wallet-boot.py` on the
+shipped prefill-20 stack after that. Every one of those is an interpreter
+walking 28,000 lines of xTalk in Python, and each is honest work; running them
+one after another on a four-core runner was the choice, and it was the wrong
+one.
+
+Two changes, both in the running and neither in what is checked.
+`test-wallet-boot.py` writes every copy first and runs the eight boots at once,
+bounded by the core count (`WALLET_BOOT_JOBS` overrides; 1 is the old order),
+printing the verdicts in fixture order once all are in: **2 h 59 m serial to
+89 minutes at four workers** on this box, both measured with another
+interpreter running beside them. And `tools/build-all.sh` starts the three
+wallet gates together and READS them in the old order - fixtures before the
+gate they prove, so a blind runner is still the first thing on the page -
+holding each one's output in a file and printing it under its own banner when
+all three are in; any one failing fails the walk after all three have reported.
+The mechanics (a failing job, a passing job, no jobs at all under `set -u`)
+were driven with stubs before the real gates went through them.
+
+What this does NOT do is make the gates cheaper: the CPU-minutes are the same,
+and a contributor on two cores gains less. What it changes is that the job's
+wall time is now bounded by its longest single boot rather than by their sum.
+
+**And the interpreter itself was a third faster by evening, for one profile
+(2026-09-11, later).** Concurrency bounds the job by its longest boot, and the
+longest boot is the prefill-20 `check-wallet-boot.py` at over three hours on
+this box; the CI job went from 5 h 30 m to 4 h 06 m on the concurrent walk
+and no further, so the next lever was the interpreter. One `cProfile` of a
+prefill-2 boot plus one gate block (2284 s under the profiler) put over FIVE
+HUNDRED MILLION `re.match(pattern, s, re.I)` calls at roughly a third of the
+runtime - and almost none of it matching: the module-level `re.match`
+re-resolves the compiled pattern through `re`'s own cache on every call
+(`re._compile`, 391 s of its own), and the `re.I` beside it goes through the
+RegexFlag enum descriptor each time (489 million `enum.__get__`). The other
+hot spot was `kw`, the keyword helper every expression tier asks after every
+atom: 130 million calls, each slicing and lower-casing the input once per
+candidate word.
+
+The fix is mechanical and changes no rule. Every two-argument and
+`re.I`-flagged `re.match` / `fullmatch` / `search` in the three hot files -
+`tools/lcs-interp.py` (both copies, drift-gated), riptide's
+`tools/check-demo-boot.py` and `tools/check-wallet-boot.py` - now reads
+`_rx(pattern).match(s)` or `_rxi(pattern).match(s)`, the pattern compiled
+once and looked up by its literal (105 call sites, rewritten by a script that
+split the call's arguments at top level and touched nothing whose flags were
+not exactly `re.I`). `kw` rules a word out by its first character before it
+slices. Measured A/B on this box, the same boot-plus-block driver run at the
+same time against a worktree of the tree before: **11 m 43 s to 7 m 02 s**
+(user CPU 9 m 38 s to 6 m 04 s), and every interpreter-driven gate green on
+the new code before anything heavier ran - riptide's script vectors, fixture
+suite and boot, nostrxt's fixtures and vectors, nocloud's, coinxt's 344,
+holde-em's 621 and its fixtures. The heavier confirmation came in the same
+evening: **both CI runs on that head green at 2 h 15 m (pull request) and
+2 h 32 m (push)**, from 5 h 30 m and a cancellation at the six-hour ceiling
+that morning - the concurrent walk alone had reached 4 h 06 m, and this is
+the rest. Locally the second concurrent coinxt walk cleared its vectors in
+44 min and its eight fixture boots in 57 min (89 min the morning before)
+while the prefill-20 boot ran beside them.
+
+Two things not done, on purpose. The patterns are NOT hoisted to named
+module constants: 105 names like `_RX_REPEAT_WITH` would move every pattern
+away from the line that reads it, and the dict lookup by literal costs a few
+percent of what it saves. And nothing was changed in what the interpreter
+ACCEPTS - the refusal posture recorded above stands, and the checker's
+fixtures and every member's script-vector gate say so.
