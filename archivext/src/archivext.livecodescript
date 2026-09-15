@@ -106,7 +106,7 @@ constant kAxIdentifierMax = 100
 constant kAxJsonMaxDepth = 64
 constant kAxNaturalPad = 12
 constant kAxMaxBodyDefault = 16777216
-constant kAxTimeoutDefault = 30
+constant kAxTimeoutDefault = 60
 constant kAxCallbackDefault = "onArchive"
 -- The Lucene words the sanitizer treats as operators. Upper-case only, on
 -- purpose: "Pride and Prejudice" is a phrase, "Pride AND Prejudice" a query.
@@ -1394,7 +1394,12 @@ function axFamilyInfo pFamily
       put "movies" into tInfo["id"]
       put "Films and video" into tInfo["title"]
       put "video" into tInfo["kind"]
-      put axVideoScope() into tInfo["scope"]
+      -- the CHEAP scope, not the film club's full OR-list: on the live site
+      -- (2026-09-15) the full scope's search did not answer inside 30 s
+      -- while a collection-scoped search answered at once (gotcha 18);
+      -- axVideoScope() keeps the app's full form for callers who want the
+      -- collection docs among the results and can wait for them
+      put "mediatype:(" & kAxVideoMediatypes & ")" into tInfo["scope"]
       put 24 into tInfo["rows"]
       put "identifier,title,description,date,downloads,creator,runtime,licenseurl,subject,mediatype,num_items" into tInfo["fields"]
       put "downloads desc" into tInfo["sort"]
@@ -1591,10 +1596,13 @@ function axPresetTable pFamily
       repeat with tI = 1 to tCount
          put item 1 of line tI of tRows into tId
          put item 2 of line tI of tRows into tTitle
+         -- the cheap scope in both rows (gotcha 18): a collection clause is
+         -- what narrows the search, the mediatype clause keeps out the
+         -- collection's own sidecars and texts
          if tId is "all_videos" then
-            put tId & "|" & tTitle & "|Collections|" & axVideoScope() & "|||" & return after tT
+            put tId & "|" & tTitle & "|Collections|mediatype:(" & kAxVideoMediatypes & ")|||" & return after tT
          else
-            put tId & "|" & tTitle & "|Collections|" & axVideoScope() & " AND collection:(" & tId & ")|||" & return after tT
+            put tId & "|" & tTitle & "|Collections|collection:(" & tId & ") AND mediatype:(" & kAxVideoMediatypes & ")|||" & return after tT
          end if
       end repeat
       set the itemDelimiter to tSavedDelim
@@ -3884,7 +3892,7 @@ end axSetCallback
 
 command axSetTimeout pSeconds
    -- Seconds before an outstanding request is reported as "timeout" and
-   -- forgotten (default 30). A non-number or a value under 1 keeps the
+   -- forgotten (default 60; the live site took over 30 s on a broad search). A non-number or a value under 1 keeps the
    -- current setting.
    if pSeconds is not a number then
       exit axSetTimeout
@@ -3983,6 +3991,13 @@ private function axStartRequest pKind, pUrl, pTag
    -- header set for every later request, and it was the one thing this
    -- path did that a plain `load URL` does not. The library's defaults are
    -- what every other stack in this suite sends.
+   -- nothing of ours is in flight for this URL (checked above), so a load
+   -- the library still has running for it is an orphan - a timed-out request's
+   -- - and libURL would refuse a second load with "URL is currently loading"
+   try
+      unload URL pUrl
+   catch tError
+   end try
    try
       load URL pUrl with message "axUrlDone"
    catch tError
@@ -4166,7 +4181,7 @@ end axUrlDone
 command axDeadline pHandle
    -- The per-request watchdog: a request still in flight when it fires is
    -- reported as a timeout and forgotten, so its eventual reply is dropped.
-   local tReq, tUrl
+   local tReq, tUrl, tError
    if sAxReqs[pHandle] is not an array then
       exit axDeadline
    end if
@@ -4175,6 +4190,13 @@ command axDeadline pHandle
    put empty into sAxReqs[pHandle]
    if tUrl is not empty then
       put empty into sAxReqByUrl[tUrl]
+      -- cancel the library's load as well: left running, the next request
+      -- for the same URL is refused by libURL with "URL is currently
+      -- loading" (2026-09-15, the live probe after a timed-out search)
+      try
+         unload URL tUrl
+      catch tError
+      end try
    end if
    axDispatch pHandle, "error", "timeout after " & sAxTimeout & " seconds: " & tUrl, tReq["tag"]
 end axDeadline

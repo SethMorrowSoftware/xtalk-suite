@@ -848,7 +848,7 @@ constant ax1kAxVecVideoScope = "(mediatype:(movies OR video OR television) OR (m
 constant ax1kAxVecPresetRomance = "collection:(librivoxaudio) AND subject:(romance) AND (emma) AND subject:(solo) AND language:(English)"
 constant ax1kAxVecPresetDeadYears = "collection:(GratefulDead) AND mediatype:(etree) AND creator:(Grateful Dead) AND year:[1965 TO 1995]"
 constant ax1kAxVecPresetBobWeirHex = "636f6c6c656374696f6e3a2865747265652920414e442063726561746f723a2822426f6220576569722229202d63726561746f723a2822426f62205765697220616e6420526174646f672229"
-constant ax1kAxVecPresetPrelingerHex = "286d65646961747970653a286d6f76696573204f5220766964656f204f522074656c65766973696f6e29204f5220286d65646961747970653a636f6c6c656374696f6e20414e44206964656e7469666965723a28666561747572655f66696c6d73204f522061647669657773204f522061636164656d69635f66696c6d73204f5220616e696d6174696f6e616e64636172746f6f6e73204f522061727473616e646d75736963766964656f73204f5220636c61737369635f7476204f5220436f6d6564795f46696c6d73204f5220656475636174696f6e616c66696c6d73204f5220657068656d657261204f5220466564466c6978204f522046696c6d5f4e6f6972204f522067616d65766964656f73204f5220686f6d655f6d6f76696573204f52206d6f7669655f747261696c657273204f52206d6f76696573204f52206e617361204f52206e657773616e647075626c696361666661697273204f52206f70656e736f757263655f6d6f76696573204f52207072656c696e676572204f522073686f72745f66696c6d73204f522073696c656e745f66696c6d73204f522053636946695f486f72726f72204f522073706f727473204f5220747661726368697665204f522074656c65766973696f6e29292920414e4420636f6c6c656374696f6e3a287072656c696e6765722920414e4420286d6f6f6e20726f636b657420746573742920414e4420286c6963656e736575726c3a22687474703a2f2f6372656174697665636f6d6d6f6e732e6f72672f7075626c6963646f6d61696e2f6d61726b2f312e302f22204f52206c6963656e736575726c3a2268747470733a2f2f6372656174697665636f6d6d6f6e732e6f72672f7075626c6963646f6d61696e2f6d61726b2f312e302f22204f52206c6963656e736575726c3a22687474703a2f2f6372656174697665636f6d6d6f6e732e6f72672f7075626c6963646f6d61696e2f2229"
+constant ax1kAxVecPresetPrelingerHex = "636f6c6c656374696f6e3a287072656c696e6765722920414e44206d65646961747970653a286d6f76696573204f5220766964656f204f522074656c65766973696f6e2920414e4420286d6f6f6e20726f636b657420746573742920414e4420286c6963656e736575726c3a22687474703a2f2f6372656174697665636f6d6d6f6e732e6f72672f7075626c6963646f6d61696e2f6d61726b2f312e302f22204f52206c6963656e736575726c3a2268747470733a2f2f6372656174697665636f6d6d6f6e732e6f72672f7075626c6963646f6d61696e2f6d61726b2f312e302f22204f52206c6963656e736575726c3a22687474703a2f2f6372656174697665636f6d6d6f6e732e6f72672f7075626c6963646f6d61696e2f2229"
 constant ax1kAxVecPresetAuthor = "collection:(librivoxaudio) AND creator:(Jane Austen)"
 constant ax1kAxVecPresetCollectionHex = "6d65646961747970653a2865747265652920414e4420636f6c6c656374696f6e3a2850686973682920414e4420796561723a5b3139393720544f20313939395d20414e4420736f757263653a28736f756e64626f617264204f5220736264204f5220227362642229"
 local ax1sAxtLog
@@ -868,7 +868,7 @@ constant kAxIdentifierMax = 100
 constant kAxJsonMaxDepth = 64
 constant kAxNaturalPad = 12
 constant kAxMaxBodyDefault = 16777216
-constant kAxTimeoutDefault = 30
+constant kAxTimeoutDefault = 60
 constant kAxCallbackDefault = "onArchive"
 constant kAxOps = "AND,OR,NOT"
 constant kAxVideoMediatypes = "movies OR video OR television"
@@ -4829,7 +4829,12 @@ function axFamilyInfo pFamily
       put "movies" into tInfo["id"]
       put "Films and video" into tInfo["title"]
       put "video" into tInfo["kind"]
-      put axVideoScope() into tInfo["scope"]
+      -- the CHEAP scope, not the film club's full OR-list: on the live site
+      -- (2026-09-15) the full scope's search did not answer inside 30 s
+      -- while a collection-scoped search answered at once (gotcha 18);
+      -- axVideoScope() keeps the app's full form for callers who want the
+      -- collection docs among the results and can wait for them
+      put "mediatype:(" & kAxVideoMediatypes & ")" into tInfo["scope"]
       put 24 into tInfo["rows"]
       put "identifier,title,description,date,downloads,creator,runtime,licenseurl,subject,mediatype,num_items" into tInfo["fields"]
       put "downloads desc" into tInfo["sort"]
@@ -5026,10 +5031,13 @@ function axPresetTable pFamily
       repeat with tI = 1 to tCount
          put item 1 of line tI of tRows into tId
          put item 2 of line tI of tRows into tTitle
+         -- the cheap scope in both rows (gotcha 18): a collection clause is
+         -- what narrows the search, the mediatype clause keeps out the
+         -- collection's own sidecars and texts
          if tId is "all_videos" then
-            put tId & "|" & tTitle & "|Collections|" & axVideoScope() & "|||" & return after tT
+            put tId & "|" & tTitle & "|Collections|mediatype:(" & kAxVideoMediatypes & ")|||" & return after tT
          else
-            put tId & "|" & tTitle & "|Collections|" & axVideoScope() & " AND collection:(" & tId & ")|||" & return after tT
+            put tId & "|" & tTitle & "|Collections|collection:(" & tId & ") AND mediatype:(" & kAxVideoMediatypes & ")|||" & return after tT
          end if
       end repeat
       set the itemDelimiter to tSavedDelim
@@ -7225,7 +7233,7 @@ end axSetCallback
 
 command axSetTimeout pSeconds
    -- Seconds before an outstanding request is reported as "timeout" and
-   -- forgotten (default 30). A non-number or a value under 1 keeps the
+   -- forgotten (default 60; the live site took over 30 s on a broad search). A non-number or a value under 1 keeps the
    -- current setting.
    if pSeconds is not a number then
       exit axSetTimeout
@@ -7324,6 +7332,13 @@ private function axStartRequest pKind, pUrl, pTag
    -- header set for every later request, and it was the one thing this
    -- path did that a plain `load URL` does not. The library's defaults are
    -- what every other stack in this suite sends.
+   -- nothing of ours is in flight for this URL (checked above), so a load
+   -- the library still has running for it is an orphan - a timed-out request's
+   -- - and libURL would refuse a second load with "URL is currently loading"
+   try
+      unload URL pUrl
+   catch tError
+   end try
    try
       load URL pUrl with message "axUrlDone"
    catch tError
@@ -7507,7 +7522,7 @@ end axUrlDone
 command axDeadline pHandle
    -- The per-request watchdog: a request still in flight when it fires is
    -- reported as a timeout and forgotten, so its eventual reply is dropped.
-   local tReq, tUrl
+   local tReq, tUrl, tError
    if sAxReqs[pHandle] is not an array then
       exit axDeadline
    end if
@@ -7516,6 +7531,13 @@ command axDeadline pHandle
    put empty into sAxReqs[pHandle]
    if tUrl is not empty then
       put empty into sAxReqByUrl[tUrl]
+      -- cancel the library's load as well: left running, the next request
+      -- for the same URL is refused by libURL with "URL is currently
+      -- loading" (2026-09-15, the live probe after a timed-out search)
+      try
+         unload URL tUrl
+      catch tError
+      end try
    end if
    axDispatch pHandle, "error", "timeout after " & sAxTimeout & " seconds: " & tUrl, tReq["tag"]
 end axDeadline
@@ -47748,7 +47770,7 @@ private command ax1axtTestFamiliesAndPresets
    ax1axtCheck ax1tInfo["fields"] contains "venue", "etree asks for the venue"
    ax1axtCheck axFamilyInfo("nope") is empty, "an unknown family refuses"
    ax1axtCheck axFamilyScope("librivox") is "collection:(librivoxaudio)", "librivox scope"
-   ax1axtCheck axFamilyScope("movies") is ax1kAxVecVideoScope, "the video scope, verbatim"
+   ax1axtCheck axFamilyScope("movies") is "mediatype:(movies OR video OR television)", "the movies family scope is the cheap mediatype clause (the full OR-list timed out live, 2026-09-15)"
    put axFamilyInfo("any") into ax1tInfo
    ax1axtCheck ax1tInfo["scope"] is empty, "the any family has no scope"
    ax1axtCheck the number of lines of axVideoCollections() is 26, "26 film collections"
@@ -47769,8 +47791,8 @@ private command ax1axtTestFamiliesAndPresets
    ax1axtCheck axPresetInfo("etree", "gratefuldead") is empty, "preset ids are byte-exact"
    ax1axtCheck axPresetQuery("etree", "BobWeir") is ax1axtHex(ax1kAxVecPresetBobWeirHex), "a preset query with a negated clause"
    ax1axtCheck axPresetQuery("librivox", "Custom") is "collection:(librivoxaudio)", "a search-mode preset answers the scope"
-   ax1axtCheck axPresetQuery("movies", "all_videos") is ax1kAxVecVideoScope, "all_videos is the scope alone"
-   ax1axtCheck axPresetQuery("movies", "prelinger") ends with " AND collection:(prelinger)", "a film collection appends its clause"
+   ax1axtCheck axPresetQuery("movies", "all_videos") is axFamilyScope("movies"), "all_videos is the family scope alone"
+   ax1axtCheck axPresetQuery("movies", "prelinger") begins with "collection:(prelinger) AND ", "a film collection leads with its clause"
    put axPresetSpec("librivox", "Romance", "emma", empty, empty, axFilterClauses("librivox", "solo,english,bogus")) into ax1tSpec
    ax1axtCheck axQueryBuild(ax1tSpec) is ax1kAxVecPresetRomance, "axPresetSpec: the Romance vector"
    put axPresetSpec("etree", "GratefulDead", empty, empty, empty, empty) into ax1tSpec

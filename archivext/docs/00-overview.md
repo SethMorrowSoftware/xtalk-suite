@@ -64,7 +64,7 @@ sort and page size, and the playlist kind an item of that family wants:
 |---|---|---|---|
 | `etree` | `mediatype:(etree)` | `audio-tracks` (a concert's set list) | the tape finder |
 | `librivox` | `collection:(librivoxaudio)` | `audio-chapters` (a book's chapters) | the AudioBooks app |
-| `movies` | three mediatypes OR 26 collection identifiers | `video` (episodes with quality variants) | the film club |
+| `movies` | `mediatype:(movies OR video OR television)` (the film club's 26-collection OR-list is kept as `axVideoScope` but timed out on the live site) | `video` (episodes with quality variants) | the film club |
 | `any` | none - by mediatype | `auto` (decided per item from its mediatype) | new |
 
 `axFamilyInfo` answers all of that as an array; `axPresetSpec` turns a

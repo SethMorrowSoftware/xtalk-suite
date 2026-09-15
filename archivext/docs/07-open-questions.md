@@ -39,17 +39,25 @@
 
 ## What the first LIVE pass must answer
 
-5. **The search endpoint's shape today.** The first live request went out
-   2026-09-15 from the demo and archive.org answered 400 Bad Request to the
-   video-scope search; the custom User-Agent header (removed since, gotcha
-   17) is the leading suspect, the query's encoding the next. `axSearchSync`
+5. ~~The search endpoint's shape today.~~ **CLOSED 2026-09-15, live**: the
+   demo's Live probe ran `axSearchSync("collection:(librivoxaudio) AND
+   (austen)")` against the site and got 200, numFound 101, first
+   `emma_1903_librivox` - the URL bytes, the `+` encoding and the parser all
+   agree with the live site. What failed was the film club's full video
+   scope: a 400 once, then no answer inside 30 s, then libURL's `URL is
+   currently loading` for the orphaned load; the movies family now searches
+   the cheap mediatype clause (gotcha 18) and the next probe is its verdict.
+   Still open from this item: a deliberately broken query (`austen AND`,
+   unsanitized) coming back as HTTP 200 with a top-level `error` - `axSearchSync`
    from the message box against a LibriVox query: does `numFound` / `start` / `docs` still
    arrive as the fixtures assume, and does a deliberately broken query
    (`austen AND`, unsanitized) still come back as HTTP 200 with a top-level
    `error`? Record the exact body.
-6. **The metadata endpoint's shape**, and a missing item: `axFetchItemSync
-   "no_such_item_xyz"` should answer empty with the "could not be found"
-   reason from a `{}` body.
+6. **The metadata endpoint's shape**, and a missing item. Half observed
+   2026-09-15: a GET of `/metadata/gd1977-05-08.sbd.hicks.4982.sbeok.shnf`
+   answered HTTP 200 with the body `{}` - the documented missing-item shape,
+   live (that identifier is not the show's real one). A REAL item's metadata
+   body is still owed; the probe now fetches the first item its search finds.
 7. **A real file list through every kind**: a Grateful Dead show through
    `audio-tracks`, a LibriVox book through `audio-chapters`, a Prelinger film
    through `video`, a Gutenberg text through `documents`. The fixtures were

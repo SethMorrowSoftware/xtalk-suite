@@ -71,12 +71,17 @@ vectors.py` lists them in `SANITIZE_VECTORS`.
 
 A FAMILY's scope is the clause every search in it carries
 (`axFamilyScope`): `mediatype:(etree)`, `collection:(librivoxaudio)`, the
-film club's video scope, or nothing for `any`. The video scope is the film
-club's `videoQuery` half: three mediatypes OR-ed with 26 collection
-identifiers as a `mediatype:collection AND identifier:(...)` sub-clause
-(`axVideoScope`; the 26 are `axVideoCollections`), which is why a search in
-the movies family can return a COLLECTION doc among the films - the demo
-shows its `num_items` for that case.
+`mediatype:(movies OR video OR television)` for films, or nothing for
+`any`. The film club's own scope is wider: its `videoQuery` half OR-ed the
+three mediatypes with 26 collection identifiers as a `mediatype:collection
+AND identifier:(...)` sub-clause, so a search could return a COLLECTION doc
+among the films. That full form is kept verbatim as `axVideoScope` (the 26
+are `axVideoCollections`), but it is NOT the family scope: on the live site
+(2026-09-15) a search over it did not answer inside 30 seconds while a
+collection-scoped search answered at once, so the `movies` family and every
+film-collection preset use the cheap mediatype clause (`collection:(X) AND
+mediatype:(...)`). A caller who wants the collection docs and can wait
+passes `axVideoScope()` as a spec's `base`.
 
 A PRESET is a row of the family's table (`axPresetTable`, one `|`-separated
 row per line; `axPresetList` for the id and title lines; `axPresetInfo` for

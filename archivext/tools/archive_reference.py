@@ -447,10 +447,16 @@ def video_scope():
             + " OR ".join(ids) + ")))")
 
 
+VIDEO_SCOPE_FAST = "mediatype:(movies OR video OR television)"
+
+
 def movies_presets():
+    # The CHEAP scope (2026-09-15): the film club's full video_scope() did not
+    # answer inside 30 s on the live site; a collection clause plus the
+    # mediatype clause did.
     rows = []
     for cid, title in VIDEO_COLLECTIONS:
-        q = video_scope() if cid == "all_videos" else video_scope() + " AND collection:(%s)" % cid
+        q = VIDEO_SCOPE_FAST if cid == "all_videos" else "collection:(%s) AND %s" % (cid, VIDEO_SCOPE_FAST)
         rows.append((cid, title, "Collections", q, "", "", ""))
     return rows
 
@@ -503,7 +509,7 @@ FAMILIES = {
 
 def family_scope(family):
     if family == "movies":
-        return video_scope()
+        return VIDEO_SCOPE_FAST
     return FAMILIES[family]["scope"]
 
 

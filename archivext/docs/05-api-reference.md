@@ -77,7 +77,7 @@ and records the reason for `axLastError()`; no handler throws.
 | `axFamilyInfo(pFamily)` | an array: `id`, `title`, `kind` (the playlist kind), `scope`, `rows`, `fields`, `sort`; empty for an unknown family |
 | `axFamilyScope(pFamily)` | the scope clause alone |
 | `axVideoCollections()` | the film club's 26 collection identifiers, one per line |
-| `axVideoScope()` | `(mediatype:(movies OR video OR television) OR (mediatype:collection AND identifier:(...)))` |
+| `axVideoScope()` | the film club's FULL scope, `(mediatype:(movies OR video OR television) OR (mediatype:collection AND identifier:(...)))`; not the family scope since 2026-09-15 (it timed out on the live site) - pass it as a spec's `base` when the collection docs are wanted |
 | `axPresetTable(pFamily)` | every preset as `id\|title\|group\|query\|mode\|yearFrom\|yearTo` lines, `#` already swapped for `quote` |
 | `axPresetList(pFamily)` | `id\|title` lines, table order |
 | `axPresetInfo(pFamily, pId)` | one row as an array with those seven keys; empty for an unknown id |
@@ -161,7 +161,7 @@ arrays (`response/docs/3/title`).
 |---|---|
 | `axInit pOwner` | the object callbacks dispatch to (a long id); empty means the topStack at delivery. Fills the defaults; may be called again to move the callbacks |
 | `axSetCallback pHandlerName` | the handler dispatched for every outcome (default `onArchive`; empty restores it) |
-| `axSetTimeout pSeconds` | seconds before an outstanding request is reported as `timeout` (default 30; under 1 or a non-number keeps the current setting) |
+| `axSetTimeout pSeconds` | seconds before an outstanding request is reported as `timeout` (default 60; under 1 or a non-number keeps the current setting) |
 | `axSetMaxBody pBytes` | the largest reply parsed (default 16 MB; under 1024 keeps the current setting) |
 | `axPending()` | how many requests are in flight |
 | `axSearch(pQuery, pOptions)` | starts a search; options `fields`, `sort`, `rows`, `page`, `tag`; returns the handle, or empty when the URL cannot be built. Delivers `"search"` |

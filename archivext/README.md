@@ -56,7 +56,7 @@ re-derived a slice of the same client, and taking the union:
 |---|---|
 | **Grateful Dead Tape Finder** | the Live Music Archive (`etree`) grammar, a 49-preset band table with per-band year ranges, the SBD / AUD / matrix / top-rated quick filters, `d1t01`-style track titles cleaned of their prefix, natural filename order |
 | **AudioBooks (LibriVox)** | the query SANITIZER (the only user-input safety layer any of the three had), a 40-preset category table, chapter grouping by original file, MP3 format ranking, duration parsing, and the exact bytes of the search URL (its tests pin them) |
-| **Archive Film Club** | the video scope (three mediatypes OR 26 collection identifiers), the film-collection table, the sort menu, episode identity across encodes (`normalizeBaseName`), MP4-first and largest-size quality selection, quality labels, sentinel-file filters, the public-domain licence clause |
+| **Archive Film Club** | the video scope (three mediatypes OR 26 collection identifiers; kept as `axVideoScope`, while the family searches the cheap mediatype clause since the full form timed out live), the film-collection table, the sort menu, episode identity across encodes (`normalizeBaseName`), MP4-first and largest-size quality selection, quality labels, sentinel-file filters, the public-domain licence clause |
 
 Where two apps disagreed, `docs/03-items-files-and-playlists.md` records
 which rule ArchiveXT took and why. The demo stack

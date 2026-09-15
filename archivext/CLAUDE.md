@@ -121,6 +121,16 @@ line and the harness's section split.
   verdict. If a 400 survives it, the query itself is next: the message-box
   probes in `README.md` separate a header cause from an encoding cause in
   four lines.
+- **2026-09-15, later - the Live probe.** The header removal changed nothing
+  (a timeout instead of a 400), so the demo gained a Live probe button that
+  logs three blocking requests with their response headers. Its first run:
+  a LibriVox search through the library **200, numFound 101, first
+  emma_1903_librivox** - the first live search that ever succeeded, and the
+  live proof of the URL bytes and the parser; a metadata GET of a wrong
+  identifier answering `{}` (the missing-item shape, live); and the film
+  club's full video scope refused as `URL is currently loading` because the
+  earlier timed-out search was still loading in libURL. Gotcha 18 records
+  the scope change and the two fetch-layer rules that followed.
 
 ## Gotchas and lessons (each one cost a round)
 
@@ -229,6 +239,21 @@ line and the harness's section split.
     proven path. Identify the client some other way if it ever matters
     (the `httpHeaders` property ADDS headers rather than replacing them).
     Marked INFERRED until a run without the setter answers 200.
+18. **The film club's full video scope is too slow for the live site
+    (OBSERVED 2026-09-15).** The Live probe settled the search question in
+    one click: a LibriVox search through the library answered 200 with
+    numFound 101 (the URL bytes, the `+` encoding and the parser are right),
+    and the film club's `axVideoScope()` search - three mediatypes OR-ed
+    with 26 collection identifiers - had drawn a 400, then no answer inside
+    30 s, then libURL's `URL is currently loading` for the orphaned load.
+    The `movies` family and every film-collection preset now use the cheap
+    `mediatype:(movies OR video OR television)` clause (a collection preset
+    leads with `collection:(X) AND`); `axVideoScope()` keeps the app's full
+    form for a caller who wants the collection docs and can wait. Two
+    fetch-layer rules came out of the same probe: a timed-out request
+    `unload`s its URL and a fresh request unloads any orphan of its URL
+    first, because libURL refuses a second load of a URL it is still
+    loading; and the default timeout is 60 s, not 30.
 
 ## Working rules for this member
 

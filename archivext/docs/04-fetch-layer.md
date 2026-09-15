@@ -27,7 +27,7 @@ answer comes back through the message path. What the layer adds over a bare
 | Mechanism | What it does | Why |
 |---|---|---|
 | CORRELATION | a request is an integer handle; the reply is matched to it by the URL the engine hands back | a reply nobody is waiting for (a cancelled or timed-out request - the engine cannot cancel a load) is unloaded and dropped, never applied to whatever is in flight now |
-| A WATCHDOG | `axDeadline` fires per request after `axSetTimeout` seconds (default 30), reports `timeout`, forgets the handle | `load URL` has no deadline of its own |
+| A WATCHDOG | `axDeadline` fires per request after `axSetTimeout` seconds (default 60; a broad live search took over 30), reports `timeout`, forgets the handle | `load URL` has no deadline of its own |
 | A BODY CAP | `axSetMaxBody` (default 16 MB) stops the PARSE of an over-size reply | the whole body is read before this layer sees it, so the cap cannot stop the read; it still keeps a wrong-shaped reply out of a 300 KB JSON parse |
 | UNLOAD ALWAYS | every path through `axUrlDone` unloads the URL | the URL cache grows without limit otherwise |
 | NO CUSTOM HEADERS | the Internet library's default header set, untouched | the first live request (2026-09-15) set a User-Agent through `libURLSetCustomHTTPHeaders` and archive.org answered 400 Bad Request; that setter replaces the default headers for every later request, and it was the one thing this path did that a plain `load URL` does not - removed, and the next run is the verdict |
@@ -68,7 +68,10 @@ registered handler, so a demo that forgets it fails the build.
 
 - `axPending()` - how many requests are in flight.
 - `axCancel tHandle` - forget one; the engine's load still completes and is
-  then dropped as a late reply. A stale or unknown handle is a clean no-op.
+  then dropped as a late reply. A TIMEOUT additionally `unload`s the URL, and
+  a fresh request unloads any orphaned load of its URL first: left running,
+  libURL refuses the next load of that URL with `URL is currently loading`
+  (observed 2026-09-15). A stale or unknown handle is a clean no-op.
 - `axCancelAll` - forget everything.
 - `axShutdown` - forget everything and drop the owner; safe to call twice.
   Call it from `closeStack`.
