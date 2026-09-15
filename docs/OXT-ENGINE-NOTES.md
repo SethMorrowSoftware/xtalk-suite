@@ -325,6 +325,42 @@ this entry.)
 
 ---
 
+### 2.7 Array KEYS fold case: `tA["A"]` and `tA["a"]` are ONE element
+**OBSERVED 2026-09-15** - archivext's first engine contact, the member harness
+(`axSelfTest`) on the user's OXT (platform and version not recorded; 357
+passed, 2 failed, 0 skipped). The JSON reader indexed an object's children by
+key in an array (`sAxJsonM[node][key]`), and the harness asserted
+
+    axtCheck axJsonType(tDoc, "A") is "missing", "keys are case-sensitive"
+
+against a document whose only key was `a`. The engine answered the `a` node:
+`"A" is among the keys of tArray` is TRUE when the stored key is `a`, and
+`tArray["A"]` reads that element. `the caseSensitive` defaults to false and it
+governs array KEYS as well as `is` / `contains` / `offset` - coinxt's
+discipline 3 records the comparison half of that rule; this is the container
+half. Cost: one red line, and a reader whose documented contract ("object keys
+looked up exactly") was false on the engine from the day it shipped.
+
+**Rule:** never use an array as an exact-string index. Keep the original keys
+in a numbered list and scan it with a byte-exact compare (archivext's
+`axJsonFindKey` over `axStrEq`; nostrxt's `nxStrEqExact`), or fold on purpose
+and say so where the array is declared. Numeric keys, and every numeric-indexed
+table in this tree, are unaffected.
+
+**Gate:** none can see it. The family interpreter (`tools/lcs-interp.py`)
+models an array as a Python dict, which is case-SENSITIVE, so the model passed
+the code the engine folded - the same shape as 2.6, a model binding found to be
+the model's. Recorded as a model gap rather than fixed the same day: folding
+keys in the interpreter touches every member's execution gate at once (holde-em,
+coinxt, riptide, nostrxt, nocloud, archivext), and each of those should be
+re-run and read when it lands (`docs/REMAINING-WORK.md`).
+
+**What it does NOT mean:** `the keys of` still answers the key's ORIGINAL
+spelling (the archivext reader lists `a` for a document whose key is `a`), so a
+scan over the keys is exact; only the subscript lookup folds.
+
+---
+
 ## 3. Control flow
 
 ### 3.1 `repeat with i = A to B step N` does not honour the step

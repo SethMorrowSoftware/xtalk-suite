@@ -379,8 +379,13 @@ harness-exercised with zero exemptions.
   PHP and anchored at import to their published vectors; the harness
   constants are derived by a KAT and re-derived by name on every push; a
   seven-defect mutation drive proves the gate bites.
-- **Status**: verified statically + executed headlessly; needs an OXT pass
-  + a live archive.org pass. The fixtures are SYNTHETIC (the site is
+- **Status**: first engine contact 2026-09-15 - the member harness ran on
+  the user's OXT engine at 357 passed / 2 failed / 0 skipped, the library
+  compiling whole; both reds fixed the same day (the JSON reader's by-key
+  array index met the engine's array-key case folding, engine notes 2.7,
+  and one wrong hand-written expectation). Still owed: the re-run, the
+  suite-paste fold, the demo's window, and a live archive.org pass. The
+  fixtures are SYNTHETIC (the site is
   unreachable from the build sandbox), the fetch layer has no engine
   record, and libURL's https behaviour on the engine is the suite's open
   TLS question (`docs/OXT-ENGINE-NOTES.md` 6.8 is a socket observation).

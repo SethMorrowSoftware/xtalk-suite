@@ -1,8 +1,10 @@
 # 04 - The fetch layer
 
-> **Status: verified statically; needs an OXT pass + a live archive.org
-> pass.** The fetch layer (`axInit` to the end of the file) has no engine
-> record. It uses `load URL ... with message`, `URL x` after a `cached`
+> **Status: verified statically; needs a live archive.org pass.** On
+> 2026-09-15 the harness's fetch section ran on a real OXT engine: every
+> refusal path answered as written, `libURLVersion` reported a version, and
+> nothing was loaded. No request has yet been made from an engine, so the
+> load / callback / watchdog path has no engine record. It uses `load URL ... with message`, `URL x` after a `cached`
 > status, `unload URL`, `libURLSetCustomHTTPHeaders` and `libURLErrorData`
 > in the same shapes two shipped stacks in this suite use (nocloud's
 > public-IP probe, coin-wallet's Esplora transport), and neither of those

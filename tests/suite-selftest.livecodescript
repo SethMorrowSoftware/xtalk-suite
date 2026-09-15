@@ -879,7 +879,7 @@ local sAxCaps               -- the cached capability array (empty until probed)
 local sAxDocs
 local sAxDocNext            -- the next document handle to hand out
 local sAxJsonBytes, sAxJsonPos, sAxJsonLen, sAxJsonDepth, sAxJsonErr
-local sAxJsonN, sAxJsonT, sAxJsonV, sAxJsonC, sAxJsonX, sAxJsonK, sAxJsonM
+local sAxJsonN, sAxJsonT, sAxJsonV, sAxJsonC, sAxJsonX, sAxJsonK
 local sAxJsonB1, sAxJsonB2
 local sAxOwner              -- long id the callbacks dispatch to (empty: the topStack)
 local sAxCallback           -- the handler name dispatched (default onArchive)
@@ -5407,7 +5407,6 @@ function axJsonParse pJson
    put empty into sAxJsonC
    put empty into sAxJsonX
    put empty into sAxJsonK
-   put empty into sAxJsonM
    put empty into sAxJsonB1
    put empty into sAxJsonB2
    put axJsonParseValue() into tRoot
@@ -5433,7 +5432,6 @@ function axJsonParse pJson
    put sAxJsonC into sAxDocs[tHandle]["c"]
    put sAxJsonX into sAxDocs[tHandle]["x"]
    put sAxJsonK into sAxDocs[tHandle]["k"]
-   put sAxJsonM into sAxDocs[tHandle]["m"]
    put sAxJsonB1 into sAxDocs[tHandle]["b1"]
    put sAxJsonB2 into sAxDocs[tHandle]["b2"]
    put sAxJsonBytes into sAxDocs[tHandle]["src"]
@@ -5448,7 +5446,6 @@ private command axJsonClearParseState
    put empty into sAxJsonC
    put empty into sAxJsonX
    put empty into sAxJsonK
-   put empty into sAxJsonM
    put empty into sAxJsonB1
    put empty into sAxJsonB2
 end axJsonClearParseState
@@ -5873,9 +5870,8 @@ private function axJsonParseObject
       add 1 to tCount
       put tKey into sAxJsonK[tNode][tCount]
       put tChild into sAxJsonX[tNode][tCount]
-      if not (tKey is among the keys of sAxJsonM[tNode]) then
-         put tChild into sAxJsonM[tNode][tKey]
-      end if
+      -- a duplicate key is kept here in document order; axJsonFindKey
+      -- answers the FIRST exact match, which is the "first value wins" rule
       axJsonSkipWs
       if sAxJsonPos > sAxJsonLen then
          put "unterminated object" into sAxJsonErr
@@ -5935,6 +5931,27 @@ private function axJsonParseArray
    return tNode
 end axJsonParseArray
 
+private function axJsonFindKey pHandle, pNode, pKey
+   -- The child of object pNode whose key is BYTE-EXACTLY pKey, first in
+   -- document order, or 0. A scan over the key list, deliberately not an
+   -- array lookup: the first version kept an index keyed by the JSON key
+   -- and the engine answered the "a" node for "A" - array keys fold case on
+   -- OXT (OBSERVED 2026-09-15, the member's first engine contact;
+   -- docs/OXT-ENGINE-NOTES.md 2.7). Objects here are small (a file record
+   -- has a dozen keys), so the scan costs nothing a caller can see.
+   local tCount, tI
+   put sAxDocs[pHandle]["c"][pNode] into tCount
+   if not axIsDigits(tCount) then
+      return 0
+   end if
+   repeat with tI = 1 to tCount
+      if axStrEq(sAxDocs[pHandle]["k"][pNode][tI], pKey) then
+         return sAxDocs[pHandle]["x"][pNode][tI]
+      end if
+   end repeat
+   return 0
+end axJsonFindKey
+
 private function axJsonNode pHandle, pPath
    -- The node index at pPath ("response/docs/3/identifier": object keys
    -- exact, array indices 1-based digit runs), 1 for the root when pPath
@@ -5956,9 +5973,8 @@ private function axJsonNode pHandle, pPath
       put item tI of pPath into tStep
       put sAxDocs[pHandle]["t"][tNode] into tType
       if tType is "o" then
-         if tStep is among the keys of sAxDocs[pHandle]["m"][tNode] then
-            put sAxDocs[pHandle]["m"][tNode][tStep] into tNode
-         else
+         put axJsonFindKey(pHandle, tNode, tStep) into tNode
+         if tNode is 0 then
             set the itemDelimiter to tSavedDelim
             return 0
          end if
@@ -47799,7 +47815,7 @@ private command ax1axtTestUrls
 end ax1axtTestUrls
 
 private command ax1axtTestJsonReader
-   local ax1tJson, ax1tDoc, ax1tDeep, ax1tI
+   local ax1tJson, ax1tDoc, ax1tDeep, ax1tI, ax1tDoc2
    ax1axtSection "json reader"
    put "{" & quote & "a" & quote & ":[1,2,{" & quote & "b" & quote & ":" & quote & "x" & quote & "}],  " & quote & "c" & quote & ":true," & quote & "d" & quote & ":null," & quote & "e" & quote & ":[" & quote & "p" & quote & "," & quote & "q" & quote & "]}" into ax1tJson
    put axJsonParse(ax1tJson) into ax1tDoc
@@ -47817,6 +47833,14 @@ private command ax1axtTestJsonReader
    ax1axtCheck axJsonGet(ax1tDoc, "d") is empty, "null is empty"
    ax1axtCheck axJsonType(ax1tDoc, "missing") is "missing", "an absent key is missing"
    ax1axtCheck axJsonType(ax1tDoc, "A") is "missing", "keys are case-sensitive"
+   -- the engine folds ARRAY keys (2026-09-15: this line was red while the
+   -- reader indexed children by key in an array); the reader scans its key
+   -- list byte-exactly now, so two keys differing only in case both answer
+   put axJsonParse("{" & quote & "a" & quote & ":1," & quote & "A" & quote & ":2}") into ax1tDoc2
+   ax1axtCheck axJsonGet(ax1tDoc2, "a") is "1", "a lower-case key answers its own value beside its upper-case twin"
+   ax1axtCheck axJsonGet(ax1tDoc2, "A") is "2", "and the upper-case key answers its own"
+   ax1axtCheck axJsonCount(ax1tDoc2, empty) is 2, "both keys are members"
+   axJsonFree ax1tDoc2
    ax1axtCheck axJsonType(ax1tDoc, "a/4") is "missing", "an index past the end is missing"
    ax1axtCheck axJsonType(ax1tDoc, "a/0") is "missing", "index 0 is missing"
    ax1axtCheck axJsonType(ax1tDoc, "a/1/x") is "missing", "a path into a scalar is missing"
@@ -47970,7 +47994,13 @@ private command ax1axtTestFileRules
    ax1axtCheck axTrackTitleClean("Plain Title") is "Plain Title", "axTrackTitleClean leaves a plain title"
    ax1axtCheck axTrackTitleClean(empty) is empty, "axTrackTitleClean of empty"
    ax1axtCheck axCleanTitle("Show_E01.mp4", "Show") is "E01", "axCleanTitle drops the item title"
-   ax1axtCheck axCleanTitle("night_of_the_living_dead.mp4", "Night of the Living Dead") is "Untitled", "axCleanTitle: nothing left is Untitled"
+   ax1axtCheck axCleanTitle("nightofthelivingdead.mp4", "Night of the Living Dead") is "Untitled", "axCleanTitle: nothing left is Untitled"
+   -- the film club's prefix test compares the item title's letters and digits
+   -- against the file name as written, so a separator in the name defeats it
+   -- and the name survives as the title. The first engine run (2026-09-15)
+   -- caught this line expecting Untitled for the underscored name; the
+   -- expectation was wrong, not the library (the oracle agrees).
+   ax1axtCheck axCleanTitle("night_of_the_living_dead.mp4", "Night of the Living Dead") is "night of the living dead", "axCleanTitle: a separator in the name defeats the prefix test"
    ax1axtCheck axCleanTitle("reel-2_part-b.ogv", empty) is "reel 2 part b", "axCleanTitle without an item title"
    ax1axtCheck axQualityLabel("Show_E01_512kb.mp4") is "SD", "axQualityLabel 512kb"
    ax1axtCheck axQualityLabel("film_1080p.mp4") is "1080p", "axQualityLabel 1080p"

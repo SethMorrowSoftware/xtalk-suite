@@ -5,8 +5,9 @@
 > and from what the three source apps handle in their code and their tests -
 > the over-reporting count, the HTTP-200 error, the empty-body missing item.
 > None of it has been re-observed against the live site from this tree,
-> because the build sandbox cannot reach it. The first live pass confirms or
-> corrects each quirk below.
+> because the build sandbox cannot reach it (the 2026-09-15 engine run drove
+> the parsers over the synthetic fixtures only). The first live pass confirms
+> or corrects each quirk below.
 
 ## The four surfaces
 

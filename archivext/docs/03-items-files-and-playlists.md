@@ -1,7 +1,9 @@
 # 03 - Items, files and playlists
 
-> **Status: verified statically; needs an OXT pass + a live archive.org
-> pass.** The playlist engine is executed on every build over the synthetic
+> **Status: the playlist and file-rule sections ran green on a real OXT
+> engine 2026-09-15 (the member harness's first engine contact, 357/359
+> overall; the one red in this area was a wrong hand-written expectation,
+> corrected); still needs a live archive.org pass.** The playlist engine is executed on every build over the synthetic
 > fixtures for every kind, and its outputs are pinned by the KAT; the file-
 > name rules have direct vectors against the oracle since 2026-09-15 (the
 > mutation drive found that the fixtures alone could not see a stem rule

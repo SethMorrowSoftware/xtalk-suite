@@ -537,7 +537,7 @@ and one functional hole.
     feel/facing/scale half is engine work — B.5.)
     — `box2dxt/docs/platformer-polish-plan.md` §3-§7, §9
 
-## B. Verification backlog (13)
+## B. Verification backlog (14)
 
 Built and statically verified; pending under the honesty convention.
 `docs/OXT-PASS-RUNBOOK.md` scripts nearly all of it.
@@ -638,14 +638,29 @@ Built and statically verified; pending under the honesty convention.
     — `onionxt/src/onionxt.livecodescript:1018,1140,1713,1744`
 
 13. **archivext's first engine pass and first live pass** (medium; added
-    2026-09-15 with the member). The whole `ax*` pure layer has executed
+    2026-09-15 with the member; HALF CLOSED the same day - the standalone
+    harness ran on the user's OXT engine at 357/2/0 and both reds were fixed,
+    `docs/OXT-ENGINE-NOTES.md` 2.7). The whole `ax*` pure layer has executed
     headlessly against an independent oracle, but over SYNTHETIC fixtures,
-    and the `load URL ... with message` fetch layer has no engine record
-    anywhere in the suite. The fold (`ax1axSelfTest`) and the demo boot are
+    and the `load URL ... with message` fetch layer has made no request from
+    an engine yet. The fold (`ax1axSelfTest`) and the demo boot are
     an S1 paste; the search / metadata / playlist legs, the scrape API and
     the TLS question need Internet access from the engine machine.
     — `docs/OXT-PASS-RUNBOOK.md` inventory row 36 and section 4.10;
     `archivext/docs/07-open-questions.md`
+
+14. **The family interpreter does not fold array-key case, the engine does**
+    (small to change, wide to re-verify; found 2026-09-15). `tools/lcs-interp.py`
+    (three byte-identical copies) models an array as a Python dict, so
+    `tA["A"]` and `tA["a"]` are two elements in the model and one on the
+    engine (`docs/OXT-ENGINE-NOTES.md` 2.7). archivext's JSON reader shipped
+    on that model and met the engine red. Folding keys in the model (a
+    case-folded index that keeps the first spelling for `the keys of`) is
+    a small change; the cost is that every member's execution gate - coinxt,
+    nostrxt, riptide, holde-em, nocloud, archivext - runs on the new model and
+    each red it produces has to be READ, because it is either a latent
+    engine bug or a model artefact.
+    — `docs/OXT-ENGINE-NOTES.md` 2.7; `archivext/CLAUDE.md` gotcha 15
 
 ## C. Release and CI (9)
 

@@ -1,7 +1,8 @@
 # 06 - Usage guide: from zero to a playing stream
 
-> **Status: verified statically; needs an OXT pass + a live archive.org
-> pass.** Every recipe below is written against the shipped library and the
+> **Status: the library compiled and its self-test ran on a real OXT engine
+> 2026-09-15 (357/359, both reds fixed the same day); the live archive.org
+> legs are still owed.** Every recipe below is written against the shipped library and the
 > demo that carries it; the pure calls in them are executed on every build
 > against the oracle, the fetch calls have no engine record yet. Where a
 > recipe says "prints", that is what the fixtures say it prints.

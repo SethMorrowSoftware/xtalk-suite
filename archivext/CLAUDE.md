@@ -69,7 +69,7 @@ line and the harness's section split.
    / `mod` / bitwise, no single-line `if`, no `format`, no `word` chunks, no
    regex. What that cost is small (`put char 1 to -2 of x into x` instead of
    `delete the last char of x`) and what it buys is 2920 executed checks per
-   build on a member that has never seen an engine.
+   build - which, on 2026-09-15, met the engine at 357 of 359 (below).
 
 ## As-built record
 
@@ -85,6 +85,24 @@ line and the harness's section split.
   for this member (`offset` / `byteOffset` with the engine's third, skip,
   argument, answering relative to the skip), carried into all three copies
   and drift-gated.
+- **2026-09-15 - first engine contact, the same day.** The user pasted the
+  member and ran `axSelfTest` on a real OXT engine: **357 passed, 2 failed,
+  0 skipped** (zero skips: the Internet library answered `libURLVersion`).
+  The library COMPILED and every section ran, which retired the compile
+  question this member's engine-free build could never answer. The two reds,
+  both fixed that day: (1) `keys are case-sensitive` - the JSON reader
+  indexed an object's children by key in an ARRAY, and the engine folds
+  array-key case (`tA["A"]` reads `tA["a"]`; gotcha 15, engine notes 2.7),
+  so the reader now scans its key list with `axStrEq` (`axJsonFindKey`);
+  (2) `axCleanTitle: nothing left is Untitled` - a hand-written expectation
+  that the oracle never covered (gotcha 16); the library was right. The
+  re-run after the fixes, the suite-paste fold, the demo's window and the
+  live archive.org legs are still owed (docs/07). Before this run the user
+  met `Function: error in function handler` with the hint `axVersion` at
+  the harness's first library call - a library-not-answering symptom (not
+  in use, or not compiled) whose exact cause was never isolated because the
+  next run compiled and ran; the conservative rewrites of every
+  no-precedent form landed in the same commit window and are kept.
 
 ## Gotchas and lessons (each one cost a round)
 
@@ -167,6 +185,24 @@ line and the harness's section split.
     `check-checker-drift.py` (COPY_SETS) + `test-checker.py` (MEMBERS), and
     `build-preflight.py` (the script-layer probe). Miss one and a gate that
     walks a list it does not know about prints OK.
+15. **An array is never an exact-string index (OBSERVED 2026-09-15).** The
+    engine folds array-key CASE: `"A" is among the keys of tA` is true when
+    the stored key is `a`, and `tA["A"]` reads that element. The reader's
+    by-key child index answered the `a` node for `A`, and the first engine
+    run's one library red was exactly that line. Keys live in a numbered
+    list and are matched with `axStrEq`; root engine notes 2.7 carries the
+    rule. The family interpreter models arrays as Python dicts, which do
+    NOT fold, so the vector gate could not see it - a model gap recorded in
+    `docs/REMAINING-WORK.md` rather than fixed here, because folding keys in
+    the interpreter re-runs every member's execution gate at once.
+16. **A hand-written harness expectation is outside every gate.** The KAT
+    re-derives `kAxVec*` constants; the vector gate drives the LIBRARY
+    against the oracle. A literal expectation typed into an `axtCheck` line
+    is checked by nothing until an engine runs it - and the first engine run
+    found one wrong (`axCleanTitle` of an underscored name is the name, not
+    `Untitled`; the film club's prefix test compares against the name as
+    written). When a harness line pins a value the oracle can derive, pin
+    it through the KAT instead.
 
 ## Working rules for this member
 

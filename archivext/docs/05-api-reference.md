@@ -1,7 +1,8 @@
 # 05 - Public API Reference (`ax*`)
 
-> **Status: verified statically; needs an OXT pass + a live archive.org
-> pass.** The pure layer (every handler from `axVersion` to
+> **Status: First engine contact 2026-09-15: `axSelfTest` ran on the user's OXT engine (platform not recorded) at 357 passed / 2 failed / 0 skipped. Both reds were fixed the same day - the JSON reader indexed object children by key in an array and the engine folds array-key case (root `docs/OXT-ENGINE-NOTES.md` 2.7), and one hand-written harness expectation was simply wrong - and the re-run is owed. Every public handler on this page was called on that run (the
+> fetch handlers through their refusal paths); the live archive.org legs are
+> still owed.** The pure layer (every handler from `axVersion` to
 > `axPlaylistTable`) is executed on every build through the family's
 > headless interpreter against the independent oracle and the synthetic
 > fixtures; the fetch layer (`axInit` onward) is engine-only and has no

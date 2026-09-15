@@ -124,8 +124,8 @@ is. Send back the FULL text of the error dialog, every line.
 
 ## Status (honest)
 
-**Verified statically; needs an OXT pass + a live archive.org pass.** What
-IS machine-verified on every build, without an engine:
+**First engine contact 2026-09-15: `axSelfTest` ran on the user's OXT engine (platform not recorded) at 357 passed / 2 failed / 0 skipped. Both reds were fixed the same day - the JSON reader indexed object children by key in an array and the engine folds array-key case (root `docs/OXT-ENGINE-NOTES.md` 2.7), and one hand-written harness expectation was simply wrong - and the re-run is owed. Still needed: that re-run, the suite-paste fold, the demo's window,
+and a live archive.org pass.** What is machine-verified on every build, without an engine:
 
 - **The pure layer is EXECUTED**, not just read: `tools/check-script-vectors.py`
   drives the shipped script through the family's headless interpreter
@@ -160,8 +160,10 @@ What that does NOT cover, and what the runbook asks for:
   not a libURL one). `docs/04-fetch-layer.md` and `docs/07-open-questions.md`
   carry the detail.
 - The **member self-test** (`examples/archivext-tests.livecodescript`,
-  `axSelfTest()`, 12 sections) is folded into the suite paste as `ax1*` and
-  has not yet been run there; its one SKIP is the Internet-library probe.
+  `axSelfTest()`, 12 sections) ran standalone on 2026-09-15 with zero skips
+  (the engine's Internet library answered). It is folded into the suite
+  paste as `ax1*` and has not yet been run THERE; the demo's window has not
+  been opened on an engine either.
 
 ## Layout
 

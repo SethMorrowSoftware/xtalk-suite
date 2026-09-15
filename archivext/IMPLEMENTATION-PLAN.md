@@ -1,8 +1,9 @@
 # ArchiveXT implementation plan
 
 **Status: phases 0-5 BUILT 2026-09-15, verified statically + executed
-headlessly; needs an OXT pass + a live archive.org pass (phase 6). Phases
-7+ are open.** Each phase records what it built and where the evidence is.
+headlessly; phase 6 HALF DONE the same day (the member harness ran on a real
+OXT engine at 357/2/0, both reds fixed; the fold, the demo window and the
+live archive.org legs are still owed). Phases 7+ are open.** Each phase records what it built and where the evidence is.
 `docs/07-open-questions.md` is the item-level list; this page is the shape.
 
 ## The goal, restated
@@ -97,7 +98,13 @@ launcher registry, `check-cross-library-names.py`, `check-handler-calls.py`,
 joined the byte-identical set), `test-checker.py`, `build-preflight.py` (an
 `ArchiveXT script layer` probe), and the suite docs.
 
-## Phase 6 - the first engine pass and the first live pass (OPEN)
+## Phase 6 - the first engine pass and the first live pass (HALF DONE 2026-09-15)
+
+The member harness met the engine on 2026-09-15: 357 passed, 2 failed, 0
+skipped, standalone. The library compiled whole; the reds were the JSON
+reader's by-key array index (the engine folds array-key case; now a
+byte-exact scan) and one wrong hand-written harness expectation. What is
+still open is below.
 
 The runbook row and `docs/07-open-questions.md` items 1-10: the fold
 compiles and reports; the demo boots; the search, metadata and download

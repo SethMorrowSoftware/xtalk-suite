@@ -1,7 +1,7 @@
 # 00 - Overview and architecture
 
-> **Status: verified statically; needs an OXT pass + a live archive.org
-> pass.** The `ax*` pure layer is EXECUTED on every build through the
+> **Status: First engine contact 2026-09-15: `axSelfTest` ran on the user's OXT engine (platform not recorded) at 357 passed / 2 failed / 0 skipped. Both reds were fixed the same day - the JSON reader indexed object children by key in an array and the engine folds array-key case (root `docs/OXT-ENGINE-NOTES.md` 2.7), and one hand-written harness expectation was simply wrong - and the re-run is owed. Still owed: that re-run, the suite-paste fold, the demo's
+> window, and a live archive.org pass.** The `ax*` pure layer is EXECUTED on every build through the
 > family's headless interpreter against `tools/archive_reference.py`, an
 > independent implementation of the same rules anchored to the three source
 > apps' own test vectors; the fixtures it runs over are synthetic (the site

@@ -506,7 +506,7 @@ end axtTestUrls
 -- ==========================================================================
 
 private command axtTestJsonReader
-   local tJson, tDoc, tDeep, tI
+   local tJson, tDoc, tDeep, tI, tDoc2
    axtSection "json reader"
    put "{" & quote & "a" & quote & ":[1,2,{" & quote & "b" & quote & ":" & quote & "x" & quote & "}],  " & quote & "c" & quote & ":true," & quote & "d" & quote & ":null," & quote & "e" & quote & ":[" & quote & "p" & quote & "," & quote & "q" & quote & "]}" into tJson
    put axJsonParse(tJson) into tDoc
@@ -524,6 +524,14 @@ private command axtTestJsonReader
    axtCheck axJsonGet(tDoc, "d") is empty, "null is empty"
    axtCheck axJsonType(tDoc, "missing") is "missing", "an absent key is missing"
    axtCheck axJsonType(tDoc, "A") is "missing", "keys are case-sensitive"
+   -- the engine folds ARRAY keys (2026-09-15: this line was red while the
+   -- reader indexed children by key in an array); the reader scans its key
+   -- list byte-exactly now, so two keys differing only in case both answer
+   put axJsonParse("{" & quote & "a" & quote & ":1," & quote & "A" & quote & ":2}") into tDoc2
+   axtCheck axJsonGet(tDoc2, "a") is "1", "a lower-case key answers its own value beside its upper-case twin"
+   axtCheck axJsonGet(tDoc2, "A") is "2", "and the upper-case key answers its own"
+   axtCheck axJsonCount(tDoc2, empty) is 2, "both keys are members"
+   axJsonFree tDoc2
    axtCheck axJsonType(tDoc, "a/4") is "missing", "an index past the end is missing"
    axtCheck axJsonType(tDoc, "a/0") is "missing", "index 0 is missing"
    axtCheck axJsonType(tDoc, "a/1/x") is "missing", "a path into a scalar is missing"
@@ -685,7 +693,13 @@ private command axtTestFileRules
    axtCheck axTrackTitleClean("Plain Title") is "Plain Title", "axTrackTitleClean leaves a plain title"
    axtCheck axTrackTitleClean(empty) is empty, "axTrackTitleClean of empty"
    axtCheck axCleanTitle("Show_E01.mp4", "Show") is "E01", "axCleanTitle drops the item title"
-   axtCheck axCleanTitle("night_of_the_living_dead.mp4", "Night of the Living Dead") is "Untitled", "axCleanTitle: nothing left is Untitled"
+   axtCheck axCleanTitle("nightofthelivingdead.mp4", "Night of the Living Dead") is "Untitled", "axCleanTitle: nothing left is Untitled"
+   -- the film club's prefix test compares the item title's letters and digits
+   -- against the file name as written, so a separator in the name defeats it
+   -- and the name survives as the title. The first engine run (2026-09-15)
+   -- caught this line expecting Untitled for the underscored name; the
+   -- expectation was wrong, not the library (the oracle agrees).
+   axtCheck axCleanTitle("night_of_the_living_dead.mp4", "Night of the Living Dead") is "night of the living dead", "axCleanTitle: a separator in the name defeats the prefix test"
    axtCheck axCleanTitle("reel-2_part-b.ogv", empty) is "reel 2 part b", "axCleanTitle without an item title"
    axtCheck axQualityLabel("Show_E01_512kb.mp4") is "SD", "axQualityLabel 512kb"
    axtCheck axQualityLabel("film_1080p.mp4") is "1080p", "axQualityLabel 1080p"

@@ -374,6 +374,18 @@ def check_refusals(c, ip):
     for bad in ["not json", "{", "[1,2] x", '{"a":1,}', "[tRUE]", '["\\ud83d"]', '["\\q"]', "", "[01]"]:
         c.ck(f"axJsonParse refuses {bad!r}", call("axJsonParse", [bad]), "")
     c.ck("axJsonParse accepts a leading-zero-free number", call("axJsonParse", ["[0, 1.5, -2e3]"]) != "", True)
+    # Keys that differ only in case are DISTINCT members (the engine folds array
+    # keys, 2026-09-15, so the reader scans its key list byte-exactly; the
+    # interpreter's dict never folded, which is why this contract needs a
+    # vector rather than a model - the model cannot show the bug).
+    doc = call("axJsonParse", ['{"a":1,"A":2,"title":"t","Title":"T"}'])
+    c.ck("case-distinct keys: a", as_str(call("axJsonGet", [doc, "a"])), "1")
+    c.ck("case-distinct keys: A", as_str(call("axJsonGet", [doc, "A"])), "2")
+    c.ck("case-distinct keys: title", as_str(call("axJsonGet", [doc, "title"])), "t")
+    c.ck("case-distinct keys: Title", as_str(call("axJsonGet", [doc, "Title"])), "T")
+    c.ck("case-distinct keys: count", as_str(call("axJsonCount", [doc, ""])), "4")
+    c.ck("a wrong-case key is missing", as_str(call("axJsonType", [doc, "TITLE"])), "missing")
+    call("axJsonFree", [doc])
     for bad in ["", "../etc", "x y"]:
         c.ck(f"axMetadataUrl refuses {bad!r}", call("axMetadataUrl", [bad]), "")
     c.ck("axSearchUrl refuses an empty query", call("axSearchUrl", ["", "identifier", "", 10, 1]), "")

@@ -1,8 +1,9 @@
 # 07 - Open questions
 
-> **Status: this is the to-do list.** Every item is open as of 2026-09-15,
-> the day the member landed. Strike items in place as they close, with the
-> date and where the evidence went.
+> **Status: this is the to-do list.** Every item was open on 2026-09-15,
+> the day the member landed; the first engine contact later that day closed
+> the parts struck below. Strike items in place as they close, with the date
+> and where the evidence went.
 
 ## What the first ENGINE pass must answer (no network needed)
 
@@ -14,8 +15,12 @@
    `byteOffset` skip argument (added to the interpreter for this member, so
    the model is new), `sort lines of` over the rank keys, `the keys of` on a
    nested array, and `replace "#" with quote in tT`.
-2. **Does `ax1axSelfTest` report readably**, and what does the fetch section
-   SKIP on this engine? Copy the `ArchiveXT` line of the per-member table and
+2. ~~Does the harness run at all?~~ **CLOSED 2026-09-15, standalone**: `axSelfTest`
+   ran on the user's OXT engine at 357 passed / 2 failed / 0 skipped (the
+   Internet library answered, so the fetch section skipped nothing); both
+   reds fixed the same day (`CLAUDE.md` as-built, gotchas 15-16). Still open:
+   **does `ax1axSelfTest` report readably in the suite paste**, and does the
+   re-run after the fixes read 359/0? Copy the `ArchiveXT` line of the per-member table and
    every red line verbatim into `CLAUDE.md`'s as-built notes; that measured
    floor replaces the placeholder floor 1 at the core's
    `stMergeReturned "ArchiveXT"` call site.
@@ -24,11 +29,13 @@
    search URL, the etree fixture as six tracks). A red line there is the
    record; a FAIL on the control list is the kind of defect the carried block
    has found before (root `CLAUDE.md`, the `scMissing` widening).
-4. **Does the JSON reader agree with the engine about UTF-8?** `axUtf8Bytes`
-   builds the bytes of a code point by hand and the reader decodes them with
-   `textDecode`; the librivox fixture's chapter 3 title carries a `&`, HTML
-   tags and quotes, and the KAT pins it as hex. A non-BMP surrogate pair in a
-   real title is the case the fixtures do not carry.
+4. ~~Does the JSON reader agree with the engine about UTF-8?~~ **CLOSED
+   2026-09-15**: the escape checks (one-byte escapes, a surrogate pair to four
+   UTF-8 bytes, a two-byte code point) and the hex-pinned chapter title all
+   ran green on the engine. What the run also found, in the same section: the
+   engine folds ARRAY-KEY case, so the reader's by-key index answered `a` for
+   `A` - fixed by a byte-exact scan (`CLAUDE.md` gotcha 15, root engine notes
+   2.7). A non-BMP code point in a REAL title is still the live pass's.
 
 ## What the first LIVE pass must answer
 
@@ -70,7 +77,11 @@
     cheap once the correlation layer is proven.
 14. **The full-text and beta search endpoints**, favourites, reviews,
     authentication and upload: out of scope until someone needs them.
-15. **A second carrier for the library.** Today the only demo is the
+15. **The family interpreter folds no array-key case.** The engine does
+    (2026-09-15), so `tools/lcs-interp.py` passes code the engine folds; a
+    model fix touches every member's execution gate at once and is recorded
+    in root `docs/REMAINING-WORK.md` as suite work, not this member's.
+16. **A second carrier for the library.** Today the only demo is the
     three-in-one explorer; a minimal "one search box, one list" stack of
     thirty lines would be the better first read for a newcomer, and the
     usage guide's first recipe is written to become it.

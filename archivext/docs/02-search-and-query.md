@@ -1,8 +1,9 @@
 # 02 - Search and the query grammar
 
-> **Status: verified statically; needs a live archive.org pass.** Every
-> function on this page is pure and is executed on every build against the
-> oracle: the sanitizer over 38 vectors in both modes, the builders over the
+> **Status: ran green on a real OXT engine 2026-09-15 (the harness's
+> sanitizer, builder, table and URL sections, every line); needs a live
+> archive.org pass.** Every function on this page is pure and is executed on
+> every build against the oracle: the sanitizer over 38 vectors in both modes, the builders over the
 > AudioBooks app's own test cases, the preset / filter / sort tables against
 > a second transcription. What no build can check is whether archive.org's
 > Solr still parses what the grammar produces; the three apps' users did,

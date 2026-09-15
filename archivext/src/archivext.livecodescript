@@ -134,15 +134,19 @@ local sAxCaps               -- the cached capability array (empty until probed)
 --                "true"/"false", null empty)
 --   ["c"][i]     child count of a container
 --   ["x"][i][j]  j-th child node index (1-based)
---   ["k"][i][j]  j-th key of an object
---   ["m"][i][key] child index by key - the EXACT lookup (array keys are
---                case-sensitive; `is` is not)
+--   ["k"][i][j]  j-th key of an object. A key lookup SCANS this list with
+--                a byte-exact compare (axJsonFindKey): the first version
+--                indexed children by key in an array, and the engine folded
+--                the case - tA["A"] and tA["a"] are one element on OXT
+--                (OBSERVED 2026-09-15, docs/OXT-ENGINE-NOTES.md 2.7), so
+--                "Title" answered for "title". An array is never an exact
+--                string index in this file.
 --   ["b1"][i], ["b2"][i]  the node's first and last byte in the source
 local sAxDocs
 local sAxDocNext            -- the next document handle to hand out
 -- The parser's cursor state, live only inside axJsonParse.
 local sAxJsonBytes, sAxJsonPos, sAxJsonLen, sAxJsonDepth, sAxJsonErr
-local sAxJsonN, sAxJsonT, sAxJsonV, sAxJsonC, sAxJsonX, sAxJsonK, sAxJsonM
+local sAxJsonN, sAxJsonT, sAxJsonV, sAxJsonC, sAxJsonX, sAxJsonK
 local sAxJsonB1, sAxJsonB2
 
 -- The fetch layer.
@@ -1988,7 +1992,6 @@ function axJsonParse pJson
    put empty into sAxJsonC
    put empty into sAxJsonX
    put empty into sAxJsonK
-   put empty into sAxJsonM
    put empty into sAxJsonB1
    put empty into sAxJsonB2
    put axJsonParseValue() into tRoot
@@ -2014,7 +2017,6 @@ function axJsonParse pJson
    put sAxJsonC into sAxDocs[tHandle]["c"]
    put sAxJsonX into sAxDocs[tHandle]["x"]
    put sAxJsonK into sAxDocs[tHandle]["k"]
-   put sAxJsonM into sAxDocs[tHandle]["m"]
    put sAxJsonB1 into sAxDocs[tHandle]["b1"]
    put sAxJsonB2 into sAxDocs[tHandle]["b2"]
    put sAxJsonBytes into sAxDocs[tHandle]["src"]
@@ -2029,7 +2031,6 @@ private command axJsonClearParseState
    put empty into sAxJsonC
    put empty into sAxJsonX
    put empty into sAxJsonK
-   put empty into sAxJsonM
    put empty into sAxJsonB1
    put empty into sAxJsonB2
 end axJsonClearParseState
@@ -2454,9 +2455,8 @@ private function axJsonParseObject
       add 1 to tCount
       put tKey into sAxJsonK[tNode][tCount]
       put tChild into sAxJsonX[tNode][tCount]
-      if not (tKey is among the keys of sAxJsonM[tNode]) then
-         put tChild into sAxJsonM[tNode][tKey]
-      end if
+      -- a duplicate key is kept here in document order; axJsonFindKey
+      -- answers the FIRST exact match, which is the "first value wins" rule
       axJsonSkipWs
       if sAxJsonPos > sAxJsonLen then
          put "unterminated object" into sAxJsonErr
@@ -2516,6 +2516,27 @@ private function axJsonParseArray
    return tNode
 end axJsonParseArray
 
+private function axJsonFindKey pHandle, pNode, pKey
+   -- The child of object pNode whose key is BYTE-EXACTLY pKey, first in
+   -- document order, or 0. A scan over the key list, deliberately not an
+   -- array lookup: the first version kept an index keyed by the JSON key
+   -- and the engine answered the "a" node for "A" - array keys fold case on
+   -- OXT (OBSERVED 2026-09-15, the member's first engine contact;
+   -- docs/OXT-ENGINE-NOTES.md 2.7). Objects here are small (a file record
+   -- has a dozen keys), so the scan costs nothing a caller can see.
+   local tCount, tI
+   put sAxDocs[pHandle]["c"][pNode] into tCount
+   if not axIsDigits(tCount) then
+      return 0
+   end if
+   repeat with tI = 1 to tCount
+      if axStrEq(sAxDocs[pHandle]["k"][pNode][tI], pKey) then
+         return sAxDocs[pHandle]["x"][pNode][tI]
+      end if
+   end repeat
+   return 0
+end axJsonFindKey
+
 private function axJsonNode pHandle, pPath
    -- The node index at pPath ("response/docs/3/identifier": object keys
    -- exact, array indices 1-based digit runs), 1 for the root when pPath
@@ -2537,9 +2558,8 @@ private function axJsonNode pHandle, pPath
       put item tI of pPath into tStep
       put sAxDocs[pHandle]["t"][tNode] into tType
       if tType is "o" then
-         if tStep is among the keys of sAxDocs[pHandle]["m"][tNode] then
-            put sAxDocs[pHandle]["m"][tNode][tStep] into tNode
-         else
+         put axJsonFindKey(pHandle, tNode, tStep) into tNode
+         if tNode is 0 then
             set the itemDelimiter to tSavedDelim
             return 0
          end if
