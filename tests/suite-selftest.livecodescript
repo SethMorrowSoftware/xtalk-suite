@@ -7409,7 +7409,7 @@ end axShutdown
 on axUrlDone pUrl, pStatus
    -- The engine's URL callback: pStatus is "cached" on success and
    -- anything else on failure. The entry is unloaded on EVERY path.
-   local tHandle, tReq, tBody, tError, tKind, tTag, tParsed, tDetail
+   local tHandle, tReq, tBody, tError, tKind, tTag, tParsed, tDetail, tHeaders
    put empty into tHandle
    if pUrl is among the keys of sAxReqByUrl then
       put sAxReqByUrl[pUrl] into tHandle
@@ -7453,6 +7453,18 @@ on axUrlDone pUrl, pStatus
          put "the URL library said " & pStatus & " for " & pUrl into tDetail
       else
          put "the URL library said " & pStatus & " for " & pUrl & ": " & tDetail into tDetail
+      -- the site's response headers travel with the reason (2026-09-15: a
+      -- bare "400 Bad Request" said nothing about WHICH server refused, or why)
+      put empty into tHeaders
+      try
+         put libURLLastRHHeaders() into tHeaders
+      catch tError
+         put empty into tHeaders
+      end try
+      if tHeaders is not empty then
+         replace return with " | " in tHeaders
+         put " [headers: " & tHeaders & "]" after tDetail
+      end if
       end if
       axDispatch tHandle, "error", tDetail, tTag
       exit axUrlDone

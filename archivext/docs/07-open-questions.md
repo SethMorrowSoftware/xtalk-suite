@@ -25,7 +25,7 @@
    floor replaces the placeholder floor 1 at the core's
    `stMergeReturned "ArchiveXT"` call site.
 3. **Does the demo boot?** `examples/archivext-demo.livecodescript` prints
-   its own boot self-check (46 controls, the preset table, the vector-derived
+   its own boot self-check (47 controls, the preset table, the vector-derived
    search URL, the etree fixture as six tracks). A red line there is the
    record; a FAIL on the control list is the kind of defect the carried block
    has found before (root `CLAUDE.md`, the `scMissing` widening).

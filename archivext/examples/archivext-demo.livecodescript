@@ -4118,7 +4118,7 @@ end axShutdown
 on axUrlDone pUrl, pStatus
    -- The engine's URL callback: pStatus is "cached" on success and
    -- anything else on failure. The entry is unloaded on EVERY path.
-   local tHandle, tReq, tBody, tError, tKind, tTag, tParsed, tDetail
+   local tHandle, tReq, tBody, tError, tKind, tTag, tParsed, tDetail, tHeaders
    put empty into tHandle
    if pUrl is among the keys of sAxReqByUrl then
       put sAxReqByUrl[pUrl] into tHandle
@@ -4162,6 +4162,18 @@ on axUrlDone pUrl, pStatus
          put "the URL library said " & pStatus & " for " & pUrl into tDetail
       else
          put "the URL library said " & pStatus & " for " & pUrl & ": " & tDetail into tDetail
+      -- the site's response headers travel with the reason (2026-09-15: a
+      -- bare "400 Bad Request" said nothing about WHICH server refused, or why)
+      put empty into tHeaders
+      try
+         put libURLLastRHHeaders() into tHeaders
+      catch tError
+         put empty into tHeaders
+      end try
+      if tHeaders is not empty then
+         replace return with " | " in tHeaders
+         put " [headers: " & tHeaders & "]" after tDetail
+      end if
       end if
       axDispatch tHandle, "error", tDetail, tTag
       exit axUrlDone
@@ -5623,6 +5635,8 @@ on mouseUp
       adDoStopPlay
    else if tName is "adTests" then
       adDoSelfTest
+   else if tName is "adProbe" then
+      adDoProbe
    else
       pass mouseUp
    end if
@@ -5689,8 +5703,9 @@ command adBuild
    uiButton "adPlay", "Play", "988,436,1066,458"
    uiButton "adStopPlay", "Stop", "1070,436,1152,458"
    uiCap "adItemNote", "Play hands the stream URL to a player object over the list; Stop puts the list back", "762,462,1152,476"
-   uiSection "adLogCap", "Log", "762,482,1040,500"
-   uiButton "adTests", "Run axSelfTest", "1046,482,1152,500"
+   uiSection "adLogCap", "Log", "762,482,950,500"
+   uiButton "adTests", "Run axSelfTest", "954,482,1050,500"
+   uiButton "adProbe", "Live probe", "1056,482,1152,500"
    uiArea "adLog", "762,504,1152,570"
    uiFooter "This stack demonstrates ArchiveXT: search, metadata and streaming URLs from archive.org, with the three source apps' presets and file rules. It stores nothing and fetches only what you ask for. Verified statically + headless fixtures; needs an OXT pass + a live archive.org pass.", "16,586,1164,626"
    set the uAdUiVersion of this stack to kAdUiVersion
@@ -6239,6 +6254,61 @@ command adDoSelfTest
    uiStatus "self-test: " & line 1 of tReport, "ok"
 end adDoSelfTest
 
+command adDoProbe
+   -- Three BLOCKING requests, each logged with the site's answer and the
+   -- response headers, so a live failure can be read from the log rather
+   -- than reconstructed from the message box (the 2026-09-15 400 needed
+   -- exactly this): a plain metadata GET, a short search through the
+   -- library, and the film club's long video-scope search.
+   local tUrl, tBody, tResult, tOptions, tQuery, tInfo
+   set the defaultStack to the short name of this stack
+   uiStatus "live probe running (three blocking requests)...", "warn"
+   adLog "== live probe =="
+   put "https://archive.org/metadata/gd1977-05-08.sbd.hicks.4982.sbeok.shnf" into tUrl
+   adLog "1. GET " & tUrl
+   put axGetSync(tUrl) into tBody
+   if tBody is empty then
+      adLog "   FAILED: " & axLastError()
+   else
+      adLog "   ok: " & the number of bytes of tBody & " bytes, starts " & char 1 to 60 of tBody
+   end if
+   adLog "   headers: " & adProbeHeaders()
+   put "identifier,title" into tOptions["fields"]
+   put 3 into tOptions["rows"]
+   put "collection:(librivoxaudio) AND (austen)" into tQuery
+   adLog "2. axSearchSync " & tQuery
+   put axSearchSync(tQuery, tOptions) into tResult
+   if tResult is an array then
+      adLog "   ok: numFound " & tResult["numFound"] & ", first " & axFirst(tResult["docs"][1]["identifier"])
+   else
+      adLog "   FAILED: " & axLastError()
+   end if
+   adLog "   headers: " & adProbeHeaders()
+   put axFamilyInfo("movies") into tInfo
+   put axSearchUrl(tInfo["scope"], tInfo["fields"], tInfo["sort"], tInfo["rows"], 1) into tUrl
+   adLog "3. GET " & tUrl
+   put axGetSync(tUrl) into tBody
+   if tBody is empty then
+      adLog "   FAILED: " & axLastError()
+   else
+      adLog "   ok: " & the number of bytes of tBody & " bytes, starts " & char 1 to 60 of tBody
+   end if
+   adLog "   headers: " & adProbeHeaders()
+   uiStatus "live probe done - copy the log", "ok"
+end adDoProbe
+
+private function adProbeHeaders
+   local tHeaders, tError
+   put empty into tHeaders
+   try
+      put libURLLastRHHeaders() into tHeaders
+   catch tError
+      put "(libURLLastRHHeaders threw: " & tError & ")" into tHeaders
+   end try
+   replace return with " | " in tHeaders
+   return tHeaders
+end adProbeHeaders
+
 command adLog pText
    set the defaultStack to the short name of this stack
    put pText & return after field "adLog"
@@ -6437,13 +6507,13 @@ end scFinish
 -- Nothing here hosts, connects, binds or fetches.
 -- ==========================================================================
 
-constant kAdScControls = "adCopyUrl,adExplorePanel,adFamAny,adFamEtree,adFamLibrivox,adFamMovies,adFamilyCap,adFilter1,adFilter2,adFilter3,adFilter4,adFilterCap,adItemCap,adItemMeta,adItemNote,adItemPanel,adItemTitle,adLog,adLogCap,adNext,adOpenPage,adPageInfo,adPlay,adPresetCap,adPresets,adPrev,adQuery,adQueryNote,adRandom,adResults,adResultsHead,adSearch,adSearchCap,adSearchPanel,adSort,adSortNote,adStopPlay,adTests,adTracks,adTracksHead,adYearCap,adYearFrom,adYearTo,uiFooter,uiStatus,uiTitle"
+constant kAdScControls = "adCopyUrl,adExplorePanel,adFamAny,adFamEtree,adFamLibrivox,adFamMovies,adFamilyCap,adFilter1,adFilter2,adFilter3,adFilter4,adFilterCap,adItemCap,adItemMeta,adItemNote,adItemPanel,adItemTitle,adLog,adLogCap,adNext,adOpenPage,adPageInfo,adPlay,adPresetCap,adPresets,adPrev,adProbe,adQuery,adQueryNote,adRandom,adResults,adResultsHead,adSearch,adSearchCap,adSearchPanel,adSort,adSortNote,adStopPlay,adTests,adTracks,adTracksHead,adYearCap,adYearFrom,adYearTo,uiFooter,uiStatus,uiTitle"
 
 command adScRun
    local tMissing, tCaps, tPlaylist
    scBegin "adLog"
    put scMissing(kAdScControls) into tMissing
-   scAssert "all 46 controls this script names exist (missing: " & scShow(tMissing) & ")", tMissing is empty
+   scAssert "all 47 controls this script names exist (missing: " & scShow(tMissing) & ")", tMissing is empty
    scAssert "axVersion reports the member", axVersion() begins with "ArchiveXT"
    scAssert "the movies family is in play at boot", sAdFamily is "movies"
    scAssert "a preset is selected at boot (" & scShow(sAdPreset) & ")", sAdPreset is not empty
