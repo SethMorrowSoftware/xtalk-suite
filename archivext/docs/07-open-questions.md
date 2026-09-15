@@ -39,8 +39,11 @@
 
 ## What the first LIVE pass must answer
 
-5. **The search endpoint's shape today.** `axSearchSync` from the message
-   box against a LibriVox query: does `numFound` / `start` / `docs` still
+5. **The search endpoint's shape today.** The first live request went out
+   2026-09-15 from the demo and archive.org answered 400 Bad Request to the
+   video-scope search; the custom User-Agent header (removed since, gotcha
+   17) is the leading suspect, the query's encoding the next. `axSearchSync`
+   from the message box against a LibriVox query: does `numFound` / `start` / `docs` still
    arrive as the fixtures assume, and does a deliberately broken query
    (`austen AND`, unsanitized) still come back as HTTP 200 with a top-level
    `error`? Record the exact body.
@@ -55,9 +58,11 @@
 8. **The scrape API** (`axScrapeUrl`): no source app used it, and its body
    shape (`items`, `count`, `cursor`) is from the documentation only. The
    deep-paging walk it exists for is untested end to end.
-9. **TLS.** Does `load URL "https://archive.org/..."` work on this engine and
-   platform, and does the same call against a host with a bad certificate
-   FAIL? Both directions, recorded in root `docs/OXT-ENGINE-NOTES.md` 6.8
+9. **TLS.** ~~Does `load URL "https://archive.org/..."` work on this engine?~~
+   Half answered 2026-09-15: the request reached archive.org over https and
+   the site's answer came back (a 400, but an answer), so libURL speaks https
+   on this engine. Still open: does the same call against a host with a bad
+   certificate FAIL? Both directions, recorded in root `docs/OXT-ENGINE-NOTES.md` 6.8
    whatever the answer is (see `04-fetch-layer.md`).
 10. **Streaming.** Does a player object play an `axDownloadUrl` MP3 through
     the datanode redirect, per platform? The demo's Play button is the test;

@@ -123,6 +123,16 @@ message box: `ArchiveXT 0.1.0` means the library is loaded and the fault is
 elsewhere; an error means it is not, and `put the stacksInUse` shows what
 is. Send back the FULL text of the error dialog, every line.
 
+If a search reaches the site and the log says `400 Bad Request`, four
+message-box lines separate a header cause from an encoding cause:
+
+```
+put URL "https://archive.org/advancedsearch.php?q=collection%3Alibrivoxaudio&fl%5B%5D=identifier&rows=1&output=json"
+put the result          -- empty means the plain library path works
+put axSearchSync("collection:(librivoxaudio) AND (austen)", empty)["numFound"]
+put axLastError()       -- empty means archivext's path works too
+```
+
 ## Status (honest)
 
 **First engine contact 2026-09-15: `axSelfTest` ran on the user's OXT engine (platform not recorded) at 357 passed / 2 failed / 0 skipped. Both reds were fixed the same day - the JSON reader indexed object children by key in an array and the engine folds array-key case (root `docs/OXT-ENGINE-NOTES.md` 2.7), and one hand-written harness expectation was simply wrong - and the re-run is owed. Still needed: that re-run, the suite-paste fold, the demo's window,
@@ -153,7 +163,7 @@ What that does NOT cover, and what the runbook asks for:
   with the oracle about those bytes, not that the live site still answers in
   that shape. The first live pass will tell.
 - The **fetch layer** (`axInit` onward) uses `load URL ... with message`,
-  `unload URL`, `libURLSetCustomHTTPHeaders` and `libURLErrorData` in the
+  `unload URL` and `libURLErrorData` in the
   shapes two other stacks in this suite use, and none of the three has an
   engine record for them yet. Whether this engine's Internet library does
   https, and whether it verifies certificates, is the suite's open TLS
@@ -205,6 +215,5 @@ harness are pinned to their sources by `tools/sync-demo-embeds.py --check`.
 ## License
 
 MIT, see [`LICENSE`](LICENSE). ArchiveXT bundles no third-party code. The
-Internet Archive's APIs are theirs; be a polite client (the library sends a
-descriptive `User-Agent`, and the scrape API exists so a walk over a whole
+Internet Archive's APIs are theirs; be a polite client (the scrape API exists so a walk over a whole
 collection does not hammer the search endpoint).

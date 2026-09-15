@@ -869,7 +869,6 @@ constant kAxJsonMaxDepth = 64
 constant kAxNaturalPad = 12
 constant kAxMaxBodyDefault = 16777216
 constant kAxTimeoutDefault = 30
-constant kAxUserAgent = "ArchiveXT/0.1.0 (xTalk suite; https://github.com/SethMorrowSoftware/xtalk-suite)"
 constant kAxCallbackDefault = "onArchive"
 constant kAxOps = "AND,OR,NOT"
 constant kAxVideoMediatypes = "movies OR video OR television"
@@ -7319,14 +7318,12 @@ private function axStartRequest pKind, pUrl, pTag
    put the seconds into tReq["started"]
    put tReq into sAxReqs[tHandle]
    put tHandle into sAxReqByUrl[pUrl]
-   try
-      -- identify this client to the site, as every one of the three apps
-      -- did; the setter is global to libURL, so it is re-asserted per
-      -- request rather than trusted from the last one
-      libURLSetCustomHTTPHeaders "User-Agent: " & kAxUserAgent
-   catch tError
-      -- an older Internet library without the setter still fetches
-   end try
+   -- No custom headers. The first live request (2026-09-15) set a
+   -- User-Agent through libURLSetCustomHTTPHeaders and archive.org answered
+   -- 400 Bad Request; that setter REPLACES the Internet library's default
+   -- header set for every later request, and it was the one thing this
+   -- path did that a plain `load URL` does not. The library's defaults are
+   -- what every other stack in this suite sends.
    try
       load URL pUrl with message "axUrlDone"
    catch tError
@@ -7520,10 +7517,6 @@ function axGetSync pUrl
       axSetError "axGetSync: not an http(s) URL: " & pUrl
       return empty
    end if
-   try
-      libURLSetCustomHTTPHeaders "User-Agent: " & kAxUserAgent
-   catch tError
-   end try
    try
       put URL pUrl into tBody
       put the result into tWhy

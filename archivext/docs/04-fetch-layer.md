@@ -3,9 +3,14 @@
 > **Status: verified statically; needs a live archive.org pass.** On
 > 2026-09-15 the harness's fetch section ran on a real OXT engine: every
 > refusal path answered as written, `libURLVersion` reported a version, and
-> nothing was loaded. No request has yet been made from an engine, so the
-> load / callback / watchdog path has no engine record. It uses `load URL ... with message`, `URL x` after a `cached`
-> status, `unload URL`, `libURLSetCustomHTTPHeaders` and `libURLErrorData`
+> nothing was loaded. Later that day the demo made the suite's FIRST live
+> `load URL` to https://archive.org: the request reached the site over https
+> and the callback delivered the site's answer through the `error` kind, so
+> the load / callback / unload path is engine-observed. The answer itself was
+> 400 Bad Request, with the custom User-Agent header (since removed) as the
+> leading suspect; a successful search is still owed, and so is the watchdog
+> and the certificate question. It uses `load URL ... with message`, `URL x` after a `cached`
+> status, `unload URL` and `libURLErrorData`
 > in the same shapes two shipped stacks in this suite use (nocloud's
 > public-IP probe, coin-wallet's Esplora transport), and neither of those
 > has an engine record for them yet either. The harness reaches every fetch
@@ -25,7 +30,7 @@ answer comes back through the message path. What the layer adds over a bare
 | A WATCHDOG | `axDeadline` fires per request after `axSetTimeout` seconds (default 30), reports `timeout`, forgets the handle | `load URL` has no deadline of its own |
 | A BODY CAP | `axSetMaxBody` (default 16 MB) stops the PARSE of an over-size reply | the whole body is read before this layer sees it, so the cap cannot stop the read; it still keeps a wrong-shaped reply out of a 300 KB JSON parse |
 | UNLOAD ALWAYS | every path through `axUrlDone` unloads the URL | the URL cache grows without limit otherwise |
-| A USER AGENT | `libURLSetCustomHTTPHeaders` sends `ArchiveXT/<version> (xTalk suite; <repo>)` | be an identifiable client |
+| NO CUSTOM HEADERS | the Internet library's default header set, untouched | the first live request (2026-09-15) set a User-Agent through `libURLSetCustomHTTPHeaders` and archive.org answered 400 Bad Request; that setter replaces the default headers for every later request, and it was the one thing this path did that a plain `load URL` does not - removed, and the next run is the verdict |
 
 ## The callback contract
 
@@ -75,8 +80,7 @@ registered handler, so a demo that forgets it fails the build.
 have nothing else to do while they wait. Each BLOCKS the interpreter thread
 until the site answers or the URL library gives up, so a window that calls
 one freezes for that long; the asynchronous handlers above are the shape
-for anything with a user in front of it. They apply the same user agent,
-the same body cap and the same parsers, and read both `the result` (the
+for anything with a user in front of it. They apply the same body cap and the same parsers, and read both `the result` (the
 Internet library reports a failure there) and the body (which can be
 legitimately empty).
 

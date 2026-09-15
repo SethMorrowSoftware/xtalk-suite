@@ -106,6 +106,21 @@ line and the harness's section split.
   differently. The next run, with the library in the path, compiled and
   ran, which is the parse verdict; the conservative rewrites of every
   no-precedent form landed in the same commit window and are kept.
+- **2026-09-15 - the re-run and the first LIVE contact, same evening.** The
+  demo opened on the engine: boot self-check 11/11 GREEN (46 controls, the
+  Internet library at 1.2.0), `axSelfTest` **363 passed, 0 failed, 0
+  skipped** after the two fixes. Then the first live `load URL` to
+  https://archive.org went out - the request reached the site over https
+  and the callback delivered the answer through the `error` kind, so the
+  load / correlation / callback / unload path is engine-observed - and the
+  site answered **400 Bad Request** to the film club's video-scope search.
+  The one thing that request did that a plain `load URL` does not was
+  replace the Internet library's default headers with a custom User-Agent
+  through `libURLSetCustomHTTPHeaders` (no precedent anywhere in this
+  tree); that setter is REMOVED (gotcha 17), and the next run is the
+  verdict. If a 400 survives it, the query itself is next: the message-box
+  probes in `README.md` separate a header cause from an encoding cause in
+  four lines.
 
 ## Gotchas and lessons (each one cost a round)
 
@@ -206,6 +221,14 @@ line and the harness's section split.
     `Untitled`; the film club's prefix test compares against the name as
     written). When a harness line pins a value the oracle can derive, pin
     it through the KAT instead.
+17. **Do not replace the Internet library's headers (INFERRED 2026-09-15).**
+    `libURLSetCustomHTTPHeaders` replaces libURL's whole default header set
+    for every later request, globally, and the first live request that used
+    it for a User-Agent drew 400 Bad Request from archive.org. No other
+    stack in this suite sets it; the plain `load URL` defaults are the
+    proven path. Identify the client some other way if it ever matters
+    (the `httpHeaders` property ADDS headers rather than replacing them).
+    Marked INFERRED until a run without the setter answers 200.
 
 ## Working rules for this member
 

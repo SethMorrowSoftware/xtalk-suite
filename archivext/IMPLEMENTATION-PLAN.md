@@ -70,7 +70,7 @@ the test).
 
 `axInit` to `axFetchItemSync`: `load URL ... with message "axUrlDone"`, one
 handle per request, correlation by URL, a per-request watchdog
-(`axDeadline`), a body cap, unload on every path, a user agent, the four-kind
+(`axDeadline`), a body cap, unload on every path, the four-kind
 callback contract, and three blocking conveniences. Reached by the harness
 through refusal paths only. Registered with the suite's timer-stack-pin gate
 (`axSetCallback` is a registrar), so a callback that touches controls

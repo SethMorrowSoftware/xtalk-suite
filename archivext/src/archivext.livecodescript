@@ -107,7 +107,6 @@ constant kAxJsonMaxDepth = 64
 constant kAxNaturalPad = 12
 constant kAxMaxBodyDefault = 16777216
 constant kAxTimeoutDefault = 30
-constant kAxUserAgent = "ArchiveXT/0.1.0 (xTalk suite; https://github.com/SethMorrowSoftware/xtalk-suite)"
 constant kAxCallbackDefault = "onArchive"
 -- The Lucene words the sanitizer treats as operators. Upper-case only, on
 -- purpose: "Pride and Prejudice" is a phrase, "Pride AND Prejudice" a query.
@@ -3843,14 +3842,18 @@ end axPlaylistTable
 -- callback or a timer, so an app that touches its own controls in it pins
 -- the defaultStack first (root docs/OXT-ENGINE-NOTES.md 5.3).
 --
--- HONESTY: none of this has run on an engine. `load URL` with a message,
--- `URL x` after "cached", `unload URL`, libURLSetCustomHTTPHeaders and
--- libURLErrorData are documented LiveCode Internet-library calls that two
--- shipped stacks in this suite (nocloud's public-IP probe, coin-wallet's
--- Esplora transport) use in the same shapes, and neither has an engine
--- record for them yet. Whether this build's libURL does https at all, and
--- whether it verifies the certificate when it does, is the open TLS
--- question (docs/04-fetch-layer.md).
+-- HONESTY (2026-09-15): the refusal paths ran on a real OXT engine in the
+-- member harness (zero skips: libURLVersion answered), and the demo made
+-- the suite's first live `load URL` to https://archive.org the same day -
+-- the request reached the site over https and the callback delivered the
+-- site's answer through the "error" kind, which was 400 Bad Request. The
+-- one thing that request did that a plain `load URL` does not was replace
+-- the Internet library's default headers with a custom User-Agent
+-- (libURLSetCustomHTTPHeaders); that is gone, and the next run says
+-- whether it was the cause (docs/04-fetch-layer.md, docs/07 item 5).
+-- Whether libURL verifies the certificate is still unmeasured (root
+-- docs/OXT-ENGINE-NOTES.md 6.8); that it speaks https at all is now
+-- observed.
 -- ==========================================================================
 
 command axInit pOwner
@@ -3974,14 +3977,12 @@ private function axStartRequest pKind, pUrl, pTag
    put the seconds into tReq["started"]
    put tReq into sAxReqs[tHandle]
    put tHandle into sAxReqByUrl[pUrl]
-   try
-      -- identify this client to the site, as every one of the three apps
-      -- did; the setter is global to libURL, so it is re-asserted per
-      -- request rather than trusted from the last one
-      libURLSetCustomHTTPHeaders "User-Agent: " & kAxUserAgent
-   catch tError
-      -- an older Internet library without the setter still fetches
-   end try
+   -- No custom headers. The first live request (2026-09-15) set a
+   -- User-Agent through libURLSetCustomHTTPHeaders and archive.org answered
+   -- 400 Bad Request; that setter REPLACES the Internet library's default
+   -- header set for every later request, and it was the one thing this
+   -- path did that a plain `load URL` does not. The library's defaults are
+   -- what every other stack in this suite sends.
    try
       load URL pUrl with message "axUrlDone"
    catch tError
@@ -4182,10 +4183,6 @@ function axGetSync pUrl
       axSetError "axGetSync: not an http(s) URL: " & pUrl
       return empty
    end if
-   try
-      libURLSetCustomHTTPHeaders "User-Agent: " & kAxUserAgent
-   catch tError
-   end try
    try
       put URL pUrl into tBody
       put the result into tWhy
