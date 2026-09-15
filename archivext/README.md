@@ -97,6 +97,31 @@ end onArchive
 `docs/06-usage-guide.md` walks the whole path from a preset to a playing
 stream, and `docs/05-api-reference.md` names every handler.
 
+### First engine contact: the exact procedure
+
+The library and the harness are two files, and the harness only works when
+the library is in the message path. The demo removes that step, so use it
+first:
+
+1. In OXT, make a NEW stack (File > New Stack). Open its stack script.
+2. Paste the WHOLE of `examples/archivext-demo.livecodescript` in, apply,
+   save the stack somewhere, close it, and reopen it (a pasted script does
+   not run `openStack` until the stack is opened again).
+3. The window builds itself and the log panel prints the boot self-check.
+   Click **Run tests** for the full `axSelfTest` report; **Copy** it.
+
+To run the harness on its own instead: open `src/archivext.livecodescript`
+as a stack (File > Open Stack), type `start using stack "archivext"` in
+the message box, then paste `examples/archivext-tests.livecodescript` into
+a second new stack's script and type `put axSelfTest()`.
+
+If a call fails with `Function: error in function handler` and the hint is
+a library handler name, the library is NOT in the message path (it was not
+put in use, or its script did not compile). Type `put axVersion()` in the
+message box: `ArchiveXT 0.1.0` means the library is loaded and the fault is
+elsewhere; an error means it is not, and `put the stacksInUse` shows what
+is. Send back the FULL text of the error dialog, every line.
+
 ## Status (honest)
 
 **Verified statically; needs an OXT pass + a live archive.org pass.** What

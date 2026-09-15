@@ -496,10 +496,10 @@ function axIsHttpUrl pText
    local tLower
    put axLowerAscii(pText) into tLower
    if tLower begins with "http://" then
-      return the number of chars of pText > 7
+      return (the number of chars of pText > 7)
    end if
    if tLower begins with "https://" then
-      return the number of chars of pText > 8
+      return (the number of chars of pText > 8)
    end if
    return false
 end axIsHttpUrl
@@ -1481,7 +1481,8 @@ end axVideoScope
 function axPresetTable pFamily
    -- Every preset of one family, one row per line (see the header of this
    -- section for the columns). Empty for an unknown family.
-   local tT, tRows, tCount, tI, tId, tTitle, tSavedDelim
+   local tT, tRows, tCount, tI, tId, tTitle, tSavedDelim, tQuote
+   put quote into tQuote
    put empty into tT
    if pFamily is "etree" then
       -- the tape finder's bandConfig.js, group by group
@@ -1609,7 +1610,7 @@ function axPresetTable pFamily
       axSetError "axPresetTable: unknown family " & pFamily
       return empty
    end if
-   replace "#" with quote in tT
+   replace "#" with tQuote in tT
    return axChompLine(tT)
 end axPresetTable
 
@@ -1726,7 +1727,8 @@ function axFilterList pFamily
    -- The family's quick filters as id|label|clause lines (the tape
    -- finder's four, the AudioBooks three, the film club's public-domain
    -- switch); empty for a family with none.
-   local tT
+   local tT, tQuote
+   put quote into tQuote
    put empty into tT
    if pFamily is "etree" then
       put "soundboard|Soundboard (SBD)|source:(soundboard OR sbd OR #sbd#)" & return after tT
@@ -1740,7 +1742,7 @@ function axFilterList pFamily
    else if pFamily is "movies" then
       put "publicdomain|Public domain only|" & axPublicDomainClause() & return after tT
    end if
-   replace "#" with quote in tT
+   replace "#" with tQuote in tT
    return axChompLine(tT)
 end axFilterList
 
@@ -2888,16 +2890,17 @@ end axStripExtension
 private function axEndsWithAny pText, pSuffixes
    -- Byte-exact ends-with over a comma list of suffixes (call with both
    -- sides lower-cased).
-   local tSuffix, tLen
+   local tSuffix, tLen, tCount
+   put the number of chars of pText into tCount
    repeat for each item tSuffix in pSuffixes
       put the number of chars of tSuffix into tLen
       if tLen is 0 then
          next repeat
       end if
-      if the number of chars of pText < tLen then
+      if tCount < tLen then
          next repeat
       end if
-      if axStrEq(char -tLen to -1 of pText, tSuffix) then
+      if axStrEq(char (tCount - tLen + 1) to tCount of pText, tSuffix) then
          return true
       end if
    end repeat
@@ -3153,14 +3156,15 @@ end axVideoStem
 
 private function axStripSuffixAfterDot pText, pSuffixes
    -- pText without a trailing ".<suffix>" for the first matching suffix.
-   local tSuffix, tLen
+   local tSuffix, tLen, tCount
+   put the number of chars of pText into tCount
    repeat for each item tSuffix in pSuffixes
       put the number of chars of tSuffix + 1 into tLen
-      if the number of chars of pText <= tLen then
+      if tCount <= tLen then
          next repeat
       end if
-      if axStrEq(char -tLen to -1 of pText, "." & tSuffix) then
-         return char 1 to -(tLen + 1) of pText
+      if axStrEq(char (tCount - tLen + 1) to tCount of pText, "." & tSuffix) then
+         return char 1 to (tCount - tLen) of pText
       end if
    end repeat
    return pText
@@ -3168,16 +3172,17 @@ end axStripSuffixAfterDot
 
 private function axStripSuffixAfterSep pText, pSuffixes
    -- pText without a trailing "<_ . or ->< suffix>" for the first match.
-   local tSuffix, tLen, tSep
+   local tSuffix, tLen, tSep, tCount
+   put the number of chars of pText into tCount
    repeat for each item tSuffix in pSuffixes
       put the number of chars of tSuffix + 1 into tLen
-      if the number of chars of pText <= tLen then
+      if tCount <= tLen then
          next repeat
       end if
-      if axStrEq(char -(tLen - 1) to -1 of pText, tSuffix) then
-         put char -tLen of pText into tSep
+      if axStrEq(char (tCount - tLen + 2) to tCount of pText, tSuffix) then
+         put char (tCount - tLen + 1) of pText into tSep
          if axCharIn(tSep, "_.-") then
-            return char 1 to -(tLen + 1) of pText
+            return char 1 to (tCount - tLen) of pText
          end if
       end if
    end repeat
@@ -3898,7 +3903,7 @@ private function axCallbackTarget
    if sAxOwner is not empty then
       return sAxOwner
    end if
-   return the long id of the topStack
+   return the topStack
 end axCallbackTarget
 
 private command axDispatch pHandle, pKind, pArgOne, pTag
@@ -3921,7 +3926,7 @@ private function axStartRequest pKind, pUrl, pTag
    -- with the reason. A URL already in flight is refused rather than
    -- shared: the engine reports one reply per URL and the layer keeps one
    -- record per URL, so two requests for one URL would race for it.
-   local tHandle, tError, tReq
+   local tHandle, tError, tReq, tDelay
    if sAxReqNext is empty then
       put 0 into sAxReqNext
    end if
@@ -3965,7 +3970,8 @@ private function axStartRequest pKind, pUrl, pTag
       axSetError "axFetch: load URL failed to start: " & tError
       return empty
    end try
-   send ("axDeadline" && tHandle) to me in (sAxTimeout * 1000) milliseconds
+   put sAxTimeout * 1000 into tDelay
+   send ("axDeadline" && tHandle) to me in tDelay milliseconds
    return tHandle
 end axStartRequest
 
