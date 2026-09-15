@@ -537,7 +537,7 @@ and one functional hole.
     feel/facing/scale half is engine work — B.5.)
     — `box2dxt/docs/platformer-polish-plan.md` §3-§7, §9
 
-## B. Verification backlog (12)
+## B. Verification backlog (13)
 
 Built and statically verified; pending under the honesty convention.
 `docs/OXT-PASS-RUNBOOK.md` scripts nearly all of it.
@@ -636,6 +636,16 @@ Built and statically verified; pending under the honesty convention.
     duplicate-local-port refusal, oxGuessService's socket-id format,
     stale-socket-close tolerance, the topStack default callback owner.
     — `onionxt/src/onionxt.livecodescript:1018,1140,1713,1744`
+
+13. **archivext's first engine pass and first live pass** (medium; added
+    2026-09-15 with the member). The whole `ax*` pure layer has executed
+    headlessly against an independent oracle, but over SYNTHETIC fixtures,
+    and the `load URL ... with message` fetch layer has no engine record
+    anywhere in the suite. The fold (`ax1axSelfTest`) and the demo boot are
+    an S1 paste; the search / metadata / playlist legs, the scrape API and
+    the TLS question need Internet access from the engine machine.
+    — `docs/OXT-PASS-RUNBOOK.md` inventory row 36 and section 4.10;
+    `archivext/docs/07-open-questions.md`
 
 ## C. Release and CI (9)
 

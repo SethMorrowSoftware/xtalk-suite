@@ -74,6 +74,8 @@ ADOPTERS = {
                  "nostrxt-demo.livecodescript"): "nd",
     os.path.join("coinxt", "examples",
                  "coin-wallet.livecodescript"): "wa",
+    os.path.join("archivext", "examples",
+                 "archivext-demo.livecodescript"): "ad",
 }
 
 BEGIN = ("-- ==== DEMO SELF-CHECK v1 BEGIN (verbatim copy; master: "

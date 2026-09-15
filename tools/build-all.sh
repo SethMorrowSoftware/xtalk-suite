@@ -150,6 +150,12 @@ run_gates() {
     echo "== $m: tools/nostr-kat.py --check =="
     ( cd "$m" && python3 tools/nostr-kat.py --check )
   fi
+  # archivext's KAT is the same convention: --check re-derives every harness
+  # constant from the oracle + fixtures and compares it to the pasted one.
+  if [ -f "$m/tools/archive-kat.py" ]; then
+    echo "== $m: tools/archive-kat.py --check =="
+    ( cd "$m" && python3 tools/archive-kat.py --check )
+  fi
   # holde-em's pure-logic gates: the docs smart-quote scan, the table-layout
   # arithmetic, seven KAT mirrors of the game's pure handlers (evaluator,
   # betting/settlement, shuffle, crypto protocol, transcript fold, card
@@ -576,7 +582,7 @@ fi
 # riptide, nocloud, and holde-em are not extensions but carry the same gate
 # shape (script checker, golden glob, vector gate, docs style), so they ride
 # the same loop.
-for m in sodiumxt torrentxt enetxt datachannelxt onionxt coinxt riptide nocloud box2dxt holde-em nostrxt; do
+for m in sodiumxt torrentxt enetxt datachannelxt onionxt coinxt riptide nocloud box2dxt holde-em nostrxt archivext; do
   [ -d "$m" ] || continue
   # the same skip the native loop applies - see SUITE_ONLY_MEMBERS above for
   # why the gate walk has to honour it too

@@ -125,7 +125,8 @@ SOCKET_MSGS = {"socketError", "socketClosed", "socketTimeout"}
 #    registration line and keep the ones that name a handler in THIS file;
 #    "GET" and "/" filter themselves out by not being handler names.
 REGISTRAR = re.compile(r'\b(?:oxSetStreamCallback|oxSetStatusCallback'
-                       r'|oxSetPeerCallback|nxrSetCallback|oxhRoute)\b[^\n]*')
+                       r'|oxSetPeerCallback|nxrSetCallback|oxhRoute'
+                       r'|axSetCallback)\b[^\n]*')
 QUOTED = re.compile(r'"(\w+)"')
 CTRL = re.compile(r'\b(field|button|graphic|image|scrollbar|player)\s+'
                   r'("[^"]*"|\w+)(?!\s+of\b)')
