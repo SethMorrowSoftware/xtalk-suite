@@ -383,14 +383,20 @@ harness-exercised with zero exemptions.
   the user's OXT engine at 357 passed / 2 failed / 0 skipped, the library
   compiling whole; both reds fixed the same day (the JSON reader's by-key
   array index met the engine's array-key case folding, engine notes 2.7,
-  and one wrong hand-written expectation). Still owed: the re-run, the
-  suite-paste fold, the demo's window, and a live archive.org pass. The
-  fixtures are SYNTHETIC (the site is
-  unreachable from the build sandbox), the fetch layer has no engine
-  record, and libURL's https behaviour on the engine is the suite's open
-  TLS question (`docs/OXT-ENGINE-NOTES.md` 6.8 is a socket observation).
+  and one wrong hand-written expectation); the re-run read 363/0/0, the
+  demo booted 11/11, and the first LIVE pass went green the same evening
+  from the demo's Live probe - a LibriVox search (200, numFound 101), a
+  real item's metadata (200, 196 KB, chunked) and the movies family's
+  cheap scope (200, 17 million hits), after the film club's full video
+  scope had drawn a 400 and a 30 s timeout. Still owed: the suite-paste
+  fold, a live file list through the item parser and playlist engine, the
+  async `search` kind, the error shapes live, the scrape API, streaming.
+  The fixtures are SYNTHETIC (the site is unreachable from the build
+  sandbox); the fetch layer is the suite's first libURL engine record
+  (`docs/OXT-ENGINE-NOTES.md` 6.9), and whether libURL verifies
+  certificates is still the open TLS question (6.8 is the socket half).
   The runbook's inventory row 36 and `archivext/docs/07-open-questions.md`
-  list what the first passes must answer.
+  list what the remaining passes must answer.
 
 ## riptide — Riptide Social, the capstone app (`rs*`)
 

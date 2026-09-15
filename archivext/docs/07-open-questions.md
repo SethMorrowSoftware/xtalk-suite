@@ -46,18 +46,24 @@
    agree with the live site. What failed was the film club's full video
    scope: a 400 once, then no answer inside 30 s, then libURL's `URL is
    currently loading` for the orphaned load; the movies family now searches
-   the cheap mediatype clause (gotcha 18) and the next probe is its verdict.
-   Still open from this item: a deliberately broken query (`austen AND`,
-   unsanitized) coming back as HTTP 200 with a top-level `error` - `axSearchSync`
-   from the message box against a LibriVox query: does `numFound` / `start` / `docs` still
-   arrive as the fixtures assume, and does a deliberately broken query
-   (`austen AND`, unsanitized) still come back as HTTP 200 with a top-level
-   `error`? Record the exact body.
-6. **The metadata endpoint's shape**, and a missing item. Half observed
-   2026-09-15: a GET of `/metadata/gd1977-05-08.sbd.hicks.4982.sbeok.shnf`
+   the cheap mediatype clause (gotcha 18), and the next probe WAS its
+   verdict: `mediatype:(movies OR video OR television)` answered 200 with
+   numFound 17,098,672 inside a second. Still open from this item: a
+   deliberately broken query (`collection:(librivoxaudio) AND`, sent
+   unsanitized) coming back as HTTP 200 with a top-level `error` - the
+   probe's fourth leg sends exactly that and logs `axLastError`, which
+   quotes the site. Record the exact text.
+6. ~~The metadata endpoint's shape~~, and a missing item. **CLOSED 2026-09-15
+   for the raw body**: a GET of `/metadata/gd1977-05-08.sbd.hicks.4982.sbeok.shnf`
    answered HTTP 200 with the body `{}` - the documented missing-item shape,
-   live (that identifier is not the show's real one). A REAL item's metadata
-   body is still owed; the probe now fetches the first item its search finds.
+   live (that identifier is not the show's real one) - and a GET of
+   `/metadata/emma_version_5_1002_librivox` answered 200 with 196,716 bytes,
+   `Transfer-Encoding: chunked`, opening `{"alternate_locations":{"servers":`
+   (a key the fixtures do not carry; harmless to a by-key reader). Still
+   open: that body has not been through `axItemParse` - the probe's second
+   leg now calls `axFetchItemSync` and builds the item's playlist, which is
+   item 7's LibriVox kind as well; and the `{}` shape has not yet been seen
+   by `axFetchItemSync` (the fifth leg, `no_such_item_archivext_probe`).
 7. **A real file list through every kind**: a Grateful Dead show through
    `audio-tracks`, a LibriVox book through `audio-chapters`, a Prelinger film
    through `video`, a Gutenberg text through `documents`. The fixtures were
@@ -67,11 +73,12 @@
    shape (`items`, `count`, `cursor`) is from the documentation only. The
    deep-paging walk it exists for is untested end to end.
 9. **TLS.** ~~Does `load URL "https://archive.org/..."` work on this engine?~~
-   Half answered 2026-09-15: the request reached archive.org over https and
-   the site's answer came back (a 400, but an answer), so libURL speaks https
-   on this engine. Still open: does the same call against a host with a bad
-   certificate FAIL? Both directions, recorded in root `docs/OXT-ENGINE-NOTES.md` 6.8
-   whatever the answer is (see `04-fetch-layer.md`).
+   **Answered 2026-09-15, the working direction**: `load URL` and `put URL`
+   both reached archive.org over https and carried real bodies back (three
+   HTTP 200s, one of them 196 KB chunked; root `docs/OXT-ENGINE-NOTES.md`
+   6.9). Still open, and the only thing that can move that entry: does the
+   same call against a host with a BAD certificate fail? Record it beside
+   6.8 whatever the answer is (see `04-fetch-layer.md`).
 10. **Streaming.** Does a player object play an `axDownloadUrl` MP3 through
     the datanode redirect, per platform? The demo's Play button is the test;
     its fallback is `launch URL`.
@@ -104,6 +111,11 @@
 - `axSearchParse` trusts `numFound` only as a display number; the end of
   paging is a short page. The demo's Next button disables on a short page,
   not on the count.
+- The site's default result order is NOT stable: the same LibriVox query
+  answered `emma_1903_librivox` first at 21:12 and
+  `emma_version_5_1002_librivox` first at 22:44 on 2026-09-15, with the
+  same numFound. Never pin a live identifier from an unsorted search in a
+  test; sort, or pin the identifier itself.
 - The preset tables are bookmarks: a collection identifier the film club or
   the tape finder chose in 2024 may have been renamed. An empty result from
   a fixed preset is more likely a stale bookmark than a library defect.

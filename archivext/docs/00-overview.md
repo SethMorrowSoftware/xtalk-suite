@@ -1,13 +1,13 @@
 # 00 - Overview and architecture
 
-> **Status: First engine contact 2026-09-15: `axSelfTest` ran on the user's OXT engine (platform not recorded) at 357 passed / 2 failed / 0 skipped. Both reds were fixed the same day - the JSON reader indexed object children by key in an array and the engine folds array-key case (root `docs/OXT-ENGINE-NOTES.md` 2.7), and one hand-written harness expectation was simply wrong - and the re-run is owed. Still owed: that re-run, the suite-paste fold, the demo's
-> window, and a live archive.org pass.** The `ax*` pure layer is EXECUTED on every build through the
+> **Status: First engine contact 2026-09-15: `axSelfTest` ran on the user's OXT engine (platform not recorded) at 357 passed / 2 failed / 0 skipped. Both reds were fixed the same day - the JSON reader indexed object children by key in an array and the engine folds array-key case (root `docs/OXT-ENGINE-NOTES.md` 2.7), and one hand-written harness expectation was simply wrong. The re-run read 363 / 0 / 0, the demo's window booted 11/11, and the first LIVE pass ran 2026-09-15, later the same day, from the demo's Live probe on the user's OXT engine: a LibriVox search through the library answered HTTP 200 (numFound 101), a real item's metadata came back whole (196,716 bytes, chunked, through the blocking path), and the movies family's cheap scope answered with 17,098,672 hits - every URL byte, the form encoding and both parsers agree with the live site. Still owed: the suite-paste fold, a live file list through the item parser and the playlist engine, the async `search` kind, the two error shapes live, the scrape API, TLS's certificate direction, streaming.** The `ax*` pure layer is EXECUTED on every build through the
 > family's headless interpreter against `tools/archive_reference.py`, an
 > independent implementation of the same rules anchored to the three source
 > apps' own test vectors; the fixtures it runs over are synthetic (the site
 > is unreachable from the build sandbox). The fetch layer is written in the
-> shapes two other suite stacks use for the engine's Internet library and
-> has no engine record of its own. Claim nothing beyond that.
+> shapes two other suite stacks use for the engine's Internet library, and
+> since 2026-09-15 has the suite's first engine record for them (root
+> `docs/OXT-ENGINE-NOTES.md` 6.9). Claim nothing beyond that.
 
 ## What ArchiveXT is
 

@@ -1,13 +1,21 @@
 # 01 - The archive.org API model
 
-> **Status: verified statically; needs a live archive.org pass.** Everything
-> on this page about the site's behaviour comes from its public documentation
-> and from what the three source apps handle in their code and their tests -
-> the over-reporting count, the HTTP-200 error, the empty-body missing item.
-> None of it has been re-observed against the live site from this tree,
-> because the build sandbox cannot reach it (the 2026-09-15 engine run drove
-> the parsers over the synthetic fixtures only). The first live pass confirms
-> or corrects each quirk below.
+> **Status: verified statically; the first live archive.org pass ran
+> 2026-09-15 and re-observed the two main shapes.** Everything on this page
+> about the site's behaviour comes from its public documentation and from
+> what the three source apps handle in their code and their tests - the
+> over-reporting count, the HTTP-200 error, the empty-body missing item.
+> None of it had been re-observed against the live site from this tree
+> (the build sandbox cannot reach it) until the demo's Live probe ran on the
+> user's engine: the search shape (`response` / `numFound` / `docs`) arrived
+> as written, twice; a real `/metadata/` body arrived whole (196,716 bytes,
+> chunked, opening with an `alternate_locations` block the table below does
+> not list - the parser reads by key, so order and extra keys cost nothing);
+> and a GET of a non-existent identifier answered HTTP 200 with the body
+> `{}`, the documented missing-item shape. Still to re-observe: the HTTP-200
+> Solr error for a broken query, the over-reporting count at the end of a
+> paged walk, the scrape API's shape, and the datanode redirect on a
+> download URL. The Live probe's legs 4 and 5 are the first two.
 
 ## The four surfaces
 

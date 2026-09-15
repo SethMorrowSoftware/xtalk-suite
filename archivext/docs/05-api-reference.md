@@ -1,12 +1,17 @@
 # 05 - Public API Reference (`ax*`)
 
-> **Status: First engine contact 2026-09-15: `axSelfTest` ran on the user's OXT engine (platform not recorded) at 357 passed / 2 failed / 0 skipped. Both reds were fixed the same day - the JSON reader indexed object children by key in an array and the engine folds array-key case (root `docs/OXT-ENGINE-NOTES.md` 2.7), and one hand-written harness expectation was simply wrong - and the re-run is owed. Every public handler on this page was called on that run (the
-> fetch handlers through their refusal paths); the live archive.org legs are
-> still owed.** The pure layer (every handler from `axVersion` to
-> `axPlaylistTable`) is executed on every build through the family's
-> headless interpreter against the independent oracle and the synthetic
-> fixtures; the fetch layer (`axInit` onward) is engine-only and has no
-> engine record. `tools/check-doc-handlers.py` holds this page and the
+> **Status: First engine contact 2026-09-15: `axSelfTest` ran on the user's OXT engine (platform not recorded) at 357 passed / 2 failed / 0 skipped. Both reds were fixed the same day - the JSON reader indexed object children by key in an array and the engine folds array-key case (root `docs/OXT-ENGINE-NOTES.md` 2.7), and one hand-written harness expectation was simply wrong; the re-run read 363 / 0 / 0. Every public handler on this page was called on that run (the
+> fetch handlers through their refusal paths), and later that day
+> `axSearchSync`, `axGetSync`, `axMetadataUrl`, `axSearchUrl`, `axSearchParse`
+> and `axFamilyInfo` carried the first live archive.org legs green from the
+> demo's Live probe (three requests, all HTTP 200; `archivext/CLAUDE.md`
+> as-built record). Still owed live: `axFetchItemSync` / `axItemParse` /
+> `axPlaylist` over a real file list, the async `axSearch` / `axFetchItem`
+> success kinds, `axScrapeUrl`'s shape.** The pure layer (every handler from
+> `axVersion` to `axPlaylistTable`) is executed on every build through the
+> family's headless interpreter against the independent oracle and the
+> synthetic fixtures; the fetch layer (`axInit` onward) is engine-only, with
+> the engine record above. `tools/check-doc-handlers.py` holds this page and the
 > shipped handler set in agreement, both directions: a public handler this
 > page does not name, or a name here that no handler defines, fails the
 > build.

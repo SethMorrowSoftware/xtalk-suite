@@ -131,6 +131,26 @@ line and the harness's section split.
   club's full video scope refused as `URL is currently loading` because the
   earlier timed-out search was still loading in libURL. Gotcha 18 records
   the scope change and the two fetch-layer rules that followed.
+- **2026-09-15, later still - the first LIVE pass, three legs green.** The
+  rebuilt demo (boot self-check 11/11 with the probe button among its 47
+  controls; `axSelfTest` **363 / 0 / 0** again) ran the probe in its new
+  order: (1) the LibriVox search **200, numFound 101, first
+  emma_version_5_1002_librivox** (the first result differs from the earlier
+  run's because the site's default order is not stable - a fact worth
+  knowing before pinning any live identifier in a test); (2) that item's
+  metadata **200, 196,716 bytes, `Transfer-Encoding: chunked`**, the body
+  opening `{"alternate_locations":{"servers":[...` - a REAL item, whole,
+  through the blocking `put URL` path; (3) the movies family's cheap scope
+  **200, numFound 17,098,672, first dobba_graphics**, answering in the same
+  second the request went out. The `mediatype:(...)` clause is the verdict
+  gotcha 18 was waiting for. What that run did NOT do: the item body was
+  read raw (`axGetSync`), so `axItemParse` and the playlist engine have not
+  met a live file list; the async `axSearch` path has delivered only the
+  `error` kind so far (the earlier 400 and timeout), never a `search`; and
+  the two documented error shapes (a broken query inside an HTTP 200, a
+  missing item's `{}`) were seen only by accident on a wrong identifier.
+  The probe now has five legs for exactly those, and the demo's Search
+  button in the Films family is the async leg.
 
 ## Gotchas and lessons (each one cost a round)
 
@@ -238,7 +258,12 @@ line and the harness's section split.
     stack in this suite sets it; the plain `load URL` defaults are the
     proven path. Identify the client some other way if it ever matters
     (the `httpHeaders` property ADDS headers rather than replacing them).
-    Marked INFERRED until a run without the setter answers 200.
+    Marked INFERRED until a run without the setter answers 200 - and every
+    request since (three legs green on 2026-09-15) ran without it and did,
+    which is consistent with the header cause but does not isolate it: the
+    400 came from the broad video-scope query, which later timed out with
+    the header gone, so the query may have been the whole story. Stays
+    INFERRED; the rule (do not replace the defaults) stands on its own.
 18. **The film club's full video scope is too slow for the live site
     (OBSERVED 2026-09-15).** The Live probe settled the search question in
     one click: a LibriVox search through the library answered 200 with
@@ -253,7 +278,13 @@ line and the harness's section split.
     fetch-layer rules came out of the same probe: a timed-out request
     `unload`s its URL and a fresh request unloads any orphan of its URL
     first, because libURL refuses a second load of a URL it is still
-    loading; and the default timeout is 60 s, not 30.
+    loading; and the default timeout is 60 s, not 30. **The verdict came
+    the same evening**: the cheap clause answered 200 with 17,098,672 hits
+    inside a second, on the same engine that had waited 30 s for the full
+    form. Nothing about the full form is WRONG - the film club ships it -
+    but the site's cost for an OR over 26 `identifier:` terms inside a
+    `mediatype:collection` clause is a query-time cost the app's users pay
+    once per session and a library's callers would pay per keystroke.
 
 ## Working rules for this member
 
@@ -283,10 +314,13 @@ python3 archivext/tools/check-docs-style.py
 tools/build-all.sh --gates                          # the whole suite set
 ```
 
-- **Honesty labels.** Everything in this member reads "verified statically;
-  needs an OXT pass + a live archive.org pass". The first engine pass flips
-  the fold and demo labels; the first live pass flips the API-model and
-  fetch labels. Flip them in EVERY carrier (README, the STATUS blocks, the
+- **Honesty labels.** Everything in this member read "verified statically;
+  needs an OXT pass + a live archive.org pass" until 2026-09-15, when the
+  standalone harness, the demo's window and the first three live legs were
+  all observed (the as-built record above). What is still owed is SCOPED
+  now - the fold, the item parser and playlist engine on a live file list,
+  the async `search` kind, the two error shapes, the scrape API, the
+  certificate direction of TLS, streaming - and every label says which. Flip them in EVERY carrier (README, the STATUS blocks, the
   runbook row, the suite overview) in one change - the doc-status gate
   exists because nostrxt's pass reached five documents and not the other
   seven.

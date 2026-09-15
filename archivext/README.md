@@ -135,8 +135,7 @@ put axLastError()       -- empty means archivext's path works too
 
 ## Status (honest)
 
-**First engine contact 2026-09-15: `axSelfTest` ran on the user's OXT engine (platform not recorded) at 357 passed / 2 failed / 0 skipped. Both reds were fixed the same day - the JSON reader indexed object children by key in an array and the engine folds array-key case (root `docs/OXT-ENGINE-NOTES.md` 2.7), and one hand-written harness expectation was simply wrong - and the re-run is owed. Still needed: that re-run, the suite-paste fold, the demo's window,
-and a live archive.org pass.** What is machine-verified on every build, without an engine:
+**First engine contact 2026-09-15: `axSelfTest` ran on the user's OXT engine (platform not recorded) at 357 passed / 2 failed / 0 skipped. Both reds were fixed the same day - the JSON reader indexed object children by key in an array and the engine folds array-key case (root `docs/OXT-ENGINE-NOTES.md` 2.7), and one hand-written harness expectation was simply wrong. The re-run read 363 / 0 / 0, the demo's window booted with its self-check 11/11, and the first LIVE pass ran 2026-09-15, later the same day, from the demo's Live probe on the user's OXT engine: a LibriVox search through the library answered HTTP 200 (numFound 101), a real item's metadata came back whole (196,716 bytes, chunked, through the blocking path), and the movies family's cheap scope answered with 17,098,672 hits - every URL byte, the form encoding and both parsers agree with the live site. Still needed: the suite-paste fold, the item parser and playlist engine over a LIVE file list, the async `search` kind, the two error shapes live, the scrape API, TLS's certificate direction, and streaming.** What is machine-verified on every build, without an engine:
 
 - **The pure layer is EXECUTED**, not just read: `tools/check-script-vectors.py`
   drives the shipped script through the family's headless interpreter
@@ -161,20 +160,27 @@ What that does NOT cover, and what the runbook asks for:
   sandbox, so `tests/fixtures/*.json` are shaped from the apps' own mocked
   responses and the documented API. A green build says the script agrees
   with the oracle about those bytes, not that the live site still answers in
-  that shape. The first live pass will tell.
+  that shape. The first live pass (2026-09-15) said the search shape does -
+  `numFound` / `docs` arrived as the fixtures assume, twice - and a real
+  metadata body arrived whole; the file-list shape inside it has not yet
+  been through the parser live.
 - The **fetch layer** (`axInit` onward) uses `load URL ... with message`,
   `unload URL` and `libURLErrorData` in the
-  shapes two other stacks in this suite use, and none of the three has an
-  engine record for them yet. Whether this engine's Internet library does
-  https, and whether it verifies certificates, is the suite's open TLS
-  question (root `docs/OXT-ENGINE-NOTES.md` 6.8 is a socket observation,
-  not a libURL one). `docs/04-fetch-layer.md` and `docs/07-open-questions.md`
+  shapes two other stacks in this suite use, and since 2026-09-15 it is the
+  first of the three WITH an engine record: the async path delivered the
+  `error` kind (a 400, then the watchdog's `timeout`), and the blocking path
+  carried three green requests over https, one of them a 196 KB chunked
+  body (root `docs/OXT-ENGINE-NOTES.md` 6.9). Whether this engine's Internet
+  library VERIFIES certificates is still the suite's open TLS question (6.8
+  is a socket observation, 6.9 a libURL one, and neither offered the engine
+  a bad certificate). `docs/04-fetch-layer.md` and `docs/07-open-questions.md`
   carry the detail.
 - The **member self-test** (`examples/archivext-tests.livecodescript`,
   `axSelfTest()`, 12 sections) ran standalone on 2026-09-15 with zero skips
-  (the engine's Internet library answered). It is folded into the suite
-  paste as `ax1*` and has not yet been run THERE; the demo's window has not
-  been opened on an engine either.
+  (the engine's Internet library answered), and again at 363 / 0 / 0 after
+  the fixes. It is folded into the suite paste as `ax1*` and has not yet
+  been run THERE; the demo's window HAS opened on an engine (boot self-check
+  11/11, the Live probe's three legs green).
 
 ## Layout
 

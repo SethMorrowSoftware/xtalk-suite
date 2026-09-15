@@ -6288,14 +6288,20 @@ command adDoSelfTest
 end adDoSelfTest
 
 command adDoProbe
-   -- Three BLOCKING requests, each logged with the site's answer and the
+   -- Five BLOCKING requests, each logged with the site's answer and the
    -- response headers, so a live failure can be read from the log rather
    -- than reconstructed from the message box (the 2026-09-15 400 needed
-   -- exactly this): a short LibriVox search, the metadata of the item it
-   -- found, and the movies family's default search (the cheap scope).
-   local tUrl, tBody, tResult, tOptions, tQuery, tInfo, tId
+   -- exactly this). The first three ran green on 2026-09-15 (a LibriVox
+   -- search, a 196 KB metadata body, the movies family's cheap scope with
+   -- seventeen million hits); the item leg now goes THROUGH axItemParse and
+   -- the playlist engine rather than reading the raw body, and two legs
+   -- were added for the shapes the docs promise but no live run had seen:
+   -- a broken query (HTTP 200 with a top-level error) and a missing item
+   -- (HTTP 200 with the body {}).
+   local tUrl, tResult, tOptions, tQuery, tInfo, tId, tItem, tKind
+   local tPlaylist, tTable
    set the defaultStack to the short name of this stack
-   uiStatus "live probe running (three blocking requests)...", "warn"
+   uiStatus "live probe running (five blocking requests)...", "warn"
    adLog "== live probe =="
    put "identifier,title" into tOptions["fields"]
    put 3 into tOptions["rows"]
@@ -6306,22 +6312,32 @@ command adDoProbe
    if tResult is an array then
       put axFirst(tResult["docs"][1]["identifier"]) into tId
       adLog "   ok: numFound " & tResult["numFound"] & ", first " & tId
+      adProbeHeaders true
    else
       adLog "   FAILED: " & axLastError()
+      adProbeHeaders false
    end if
-   adLog "   headers: " & adProbeHeaders()
    if tId is empty then
       put "emma_1903_librivox" into tId
    end if
-   put axMetadataUrl(tId) into tUrl
-   adLog "2. GET " & tUrl
-   put axGetSync(tUrl) into tBody
-   if tBody is empty then
-      adLog "   FAILED: " & axLastError()
+   adLog "2. axFetchItemSync " & tId & " (parsed, then a playlist)"
+   put axFetchItemSync(tId) into tItem
+   if tItem is an array then
+      adLog "   ok: " & tItem["filesCount"] & " files, mediatype " & axFirst(tItem["metadata"]["mediatype"]) & ", server " & tItem["server"] & ", title " & axFirst(tItem["metadata"]["title"])
+      adProbeHeaders true
+      put axPlaylistKindFor("librivox", axFirst(tItem["metadata"]["mediatype"])) into tKind
+      put axPlaylist(tItem, tKind) into tPlaylist
+      if tPlaylist is an array then
+         put axPlaylistTable(tPlaylist) into tTable
+         adLog "   playlist (" & tKind & "): " & tPlaylist["count"] & " entries; first: " & line 1 of tTable
+         adLog "   first url: " & tPlaylist["entries"][1]["url"]
+      else
+         adLog "   playlist FAILED: " & axLastError()
+      end if
    else
-      adLog "   ok: " & the number of bytes of tBody & " bytes, starts " & char 1 to 60 of tBody
+      adLog "   FAILED: " & axLastError()
+      adProbeHeaders false
    end if
-   adLog "   headers: " & adProbeHeaders()
    put axFamilyInfo("movies") into tInfo
    put tInfo["fields"] into tOptions["fields"]
    put tInfo["sort"] into tOptions["sort"]
@@ -6330,15 +6346,42 @@ command adDoProbe
    put axSearchSync(tInfo["scope"], tOptions) into tResult
    if tResult is an array then
       adLog "   ok: numFound " & tResult["numFound"] & ", first " & axFirst(tResult["docs"][1]["identifier"])
+      adProbeHeaders true
    else
       adLog "   FAILED: " & axLastError()
+      adProbeHeaders false
    end if
-   adLog "   headers: " & adProbeHeaders()
+   put "identifier,title" into tOptions["fields"]
+   put empty into tOptions["sort"]
+   put 3 into tOptions["rows"]
+   put "collection:(librivoxaudio) AND" into tQuery
+   adLog "4. axSearchSync " & tQuery & " (a broken query, sent unsanitized: the site should refuse it inside an HTTP 200)"
+   put axSearchSync(tQuery, tOptions) into tResult
+   if tResult is an array then
+      adLog "   UNEXPECTED: the site accepted it - numFound " & tResult["numFound"]
+   else
+      adLog "   refused as expected: " & axLastError()
+   end if
+   adProbeHeaders true
+   put "no_such_item_archivext_probe" into tId
+   adLog "5. axFetchItemSync " & tId & " (a missing item: HTTP 200 with the body {})"
+   put axFetchItemSync(tId) into tItem
+   if tItem is an array then
+      adLog "   UNEXPECTED: an item came back - " & tItem["identifier"]
+   else
+      adLog "   refused as expected: " & axLastError()
+   end if
+   adProbeHeaders true
    uiStatus "live probe done - copy the log", "ok"
 end adDoProbe
 
-private function adProbeHeaders
+command adProbeHeaders pAnswered
+   -- The response headers of the LAST reply the Internet library received.
+   -- After a request that never got an answer (a timeout, a refused second
+   -- load) they are the PREVIOUS reply's, which the 2026-09-15 log showed
+   -- as a step-3 failure wearing step-2's Onion-Location; the label says so.
    local tHeaders, tError
+   set the defaultStack to the short name of this stack
    put empty into tHeaders
    try
       put libURLLastRHHeaders() into tHeaders
@@ -6346,7 +6389,11 @@ private function adProbeHeaders
       put "(libURLLastRHHeaders threw: " & tError & ")" into tHeaders
    end try
    replace return with " | " in tHeaders
-   return tHeaders
+   if pAnswered then
+      adLog "   headers: " & tHeaders
+   else
+      adLog "   headers (the last reply RECEIVED - after a failure these may be an earlier request's): " & tHeaders
+   end if
 end adProbeHeaders
 
 command adLog pText

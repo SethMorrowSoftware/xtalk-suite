@@ -638,14 +638,17 @@ Built and statically verified; pending under the honesty convention.
     — `onionxt/src/onionxt.livecodescript:1018,1140,1713,1744`
 
 13. **archivext's first engine pass and first live pass** (medium; added
-    2026-09-15 with the member; HALF CLOSED the same day - the standalone
+    2026-09-15 with the member; MOSTLY CLOSED the same day - the standalone
     harness ran on the user's OXT engine at 357/2/0 and both reds were fixed,
-    `docs/OXT-ENGINE-NOTES.md` 2.7). The whole `ax*` pure layer has executed
-    headlessly against an independent oracle, but over SYNTHETIC fixtures,
-    and the `load URL ... with message` fetch layer has made no request from
-    an engine yet. The fold (`ax1axSelfTest`) and the demo boot are
-    an S1 paste; the search / metadata / playlist legs, the scrape API and
-    the TLS question need Internet access from the engine machine.
+    `docs/OXT-ENGINE-NOTES.md` 2.7; the re-run read 363/0/0; the demo booted
+    11/11; and the first live pass went green in three legs from the demo's
+    Live probe - a LibriVox search, a 196 KB metadata body, the movies
+    family's cheap scope - which made the fetch layer the suite's first
+    libURL engine record, 6.9). Still owed: the fold (`ax1axSelfTest`, an S1
+    paste), a live file list through the item parser and playlist engine,
+    the async `search` / `item` kinds, the two error shapes live (the
+    probe's legs 4 and 5), the scrape API, streaming, and TLS's certificate
+    direction (only a deliberately bad certificate can move 6.8 / 6.9).
     — `docs/OXT-PASS-RUNBOOK.md` inventory row 36 and section 4.10;
     `archivext/docs/07-open-questions.md`
 

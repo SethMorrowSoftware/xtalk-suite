@@ -93,8 +93,14 @@ openxtalk-libraries/
                        site is unreachable from the build sandbox); folded
                        as the ELEVENTH member harness, embedded as the
                        sixth script layer, 99/99 coverage with zero
-                       exemptions; verified statically, needs an OXT pass
-                       + a live archive.org pass
+                       exemptions; met the engine the day it landed (the
+                       harness 357/2/0 then 363/0/0, the demo booting
+                       11/11) and the live site the same evening (three
+                       legs green from the demo's Live probe; engine notes
+                       2.7, 3.4 and 6.9 came out of that day); the fold, a
+                       live file list through the parser, the async
+                       success kinds, the scrape API and TLS's certificate
+                       direction are still owed
   box2dxt/             the family ANCESTOR, folded home 2026-08-14: Box2D v3
                        physics + the pure-script b2k game Kit (sprites, input,
                        camera); its checker was the oldest pre-unification

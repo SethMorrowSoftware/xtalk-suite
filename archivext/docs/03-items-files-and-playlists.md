@@ -7,7 +7,10 @@
 > fixtures for every kind, and its outputs are pinned by the KAT; the file-
 > name rules have direct vectors against the oracle since 2026-09-15 (the
 > mutation drive found that the fixtures alone could not see a stem rule
-> break, because a fixture groups by `original`). What a fixture cannot say
+> break, because a fixture groups by `original`). A real item's metadata
+> body HAS arrived on the engine (2026-09-15, 196,716 bytes) but was read
+> raw; the Live probe's second leg now parses it and builds its playlist,
+> and until that runs what a fixture cannot say
 > is whether a real item's file list still looks like the apps' mocks; the
 > live pass is what settles that.
 

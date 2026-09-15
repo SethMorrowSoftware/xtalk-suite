@@ -1,11 +1,15 @@
 # 06 - Usage guide: from zero to a playing stream
 
 > **Status: the library compiled and its self-test ran on a real OXT engine
-> 2026-09-15 (357/359, both reds fixed the same day); the live archive.org
-> legs are still owed.** Every recipe below is written against the shipped library and the
-> demo that carries it; the pure calls in them are executed on every build
-> against the oracle, the fetch calls have no engine record yet. Where a
-> recipe says "prints", that is what the fixtures say it prints.
+> 2026-09-15 (357/359, both reds fixed the same day; 363/363 on the re-run),
+> and the first live legs went green the same evening - recipe 1's blocking
+> search shape answered from the site, and a real metadata body arrived
+> whole. Recipes 2 and 4 (the async callback's `search` / `item` kinds, a
+> playlist from a live item) and 5 (streaming) are still owed.** Every
+> recipe below is written against the shipped library and the demo that
+> carries it; the pure calls in them are executed on every build against
+> the oracle. Where a recipe says "prints", that is what the fixtures say it
+> prints.
 
 The recipes are in the order an app grows. Each one is complete on its own.
 

@@ -7,7 +7,14 @@
 > AudioBooks app's own test cases, the preset / filter / sort tables against
 > a second transcription. What no build can check is whether archive.org's
 > Solr still parses what the grammar produces; the three apps' users did,
-> daily, and the first live pass re-confirms it here.
+> daily, and the first live pass (2026-09-15, the demo's Live probe)
+> re-confirmed it for two of the four families: `collection:(librivoxaudio)
+> AND (austen)` and `mediatype:(movies OR video OR television)` both
+> answered HTTP 200 with docs. The film club's full video scope did NOT
+> (a 400, then a 30 s timeout), which is why the movies family's scope is
+> the cheap clause now (`CLAUDE.md` gotcha 18); the sanitizer's refusal
+> shape (an HTTP 200 with a Solr error) is the probe's fourth leg, still
+> unobserved live.
 
 ## The grammar
 

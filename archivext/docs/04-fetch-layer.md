@@ -1,15 +1,22 @@
 # 04 - The fetch layer
 
-> **Status: verified statically; needs a live archive.org pass.** On
-> 2026-09-15 the harness's fetch section ran on a real OXT engine: every
-> refusal path answered as written, `libURLVersion` reported a version, and
-> nothing was loaded. Later that day the demo made the suite's FIRST live
-> `load URL` to https://archive.org: the request reached the site over https
-> and the callback delivered the site's answer through the `error` kind, so
-> the load / callback / unload path is engine-observed. The answer itself was
-> 400 Bad Request, with the custom User-Agent header (since removed) as the
-> leading suspect; a successful search is still owed, and so is the watchdog
-> and the certificate question. It uses `load URL ... with message`, `URL x` after a `cached`
+> **Status: engine-observed 2026-09-15 on both paths; the async `search`
+> kind and the certificate question are still owed.** That day the harness's
+> fetch section ran on a real OXT engine (every refusal path answered as
+> written, `libURLVersion` reported 1.2.0, nothing was loaded); then the demo
+> made the suite's FIRST live `load URL` to https://archive.org - the request
+> reached the site over https and the callback delivered the answer through
+> the `error` kind (400 Bad Request to the film club's full video scope; the
+> custom User-Agent header was removed on suspicion, and the same query then
+> TIMED OUT at 30 s, so the watchdog is observed too and the query, not the
+> header, is the likelier cause); and then the blocking path carried three
+> green requests through the demo's Live probe - a LibriVox search (200,
+> numFound 101), a real item's metadata (200, 196,716 bytes,
+> `Transfer-Encoding: chunked`, delivered whole) and the movies family's
+> cheap scope (200, 17,098,672 hits). The success path of `axUrlDone` (a
+> `search` or `item` kind delivered to the callback) has still not fired;
+> the demo's Search button in the Films family is that leg. Root
+> `docs/OXT-ENGINE-NOTES.md` 6.9 carries the libURL observations. It uses `load URL ... with message`, `URL x` after a `cached`
 > status, `unload URL` and `libURLErrorData`
 > in the same shapes two shipped stacks in this suite use (nocloud's
 > public-IP probe, coin-wallet's Esplora transport), and neither of those
@@ -30,7 +37,7 @@ answer comes back through the message path. What the layer adds over a bare
 | A WATCHDOG | `axDeadline` fires per request after `axSetTimeout` seconds (default 60; a broad live search took over 30), reports `timeout`, forgets the handle | `load URL` has no deadline of its own |
 | A BODY CAP | `axSetMaxBody` (default 16 MB) stops the PARSE of an over-size reply | the whole body is read before this layer sees it, so the cap cannot stop the read; it still keeps a wrong-shaped reply out of a 300 KB JSON parse |
 | UNLOAD ALWAYS | every path through `axUrlDone` unloads the URL | the URL cache grows without limit otherwise |
-| NO CUSTOM HEADERS | the Internet library's default header set, untouched | the first live request (2026-09-15) set a User-Agent through `libURLSetCustomHTTPHeaders` and archive.org answered 400 Bad Request; that setter replaces the default headers for every later request, and it was the one thing this path did that a plain `load URL` does not - removed, and the next run is the verdict |
+| NO CUSTOM HEADERS | the Internet library's default header set, untouched | the first live request (2026-09-15) set a User-Agent through `libURLSetCustomHTTPHeaders` and archive.org answered 400 Bad Request; that setter replaces the default headers for every later request, and it was the one thing this path did that a plain `load URL` does not - removed; every request since answered 200 with the defaults, though the 400's query later timed out on its own, so the header is INFERRED as a cause, not proven (`CLAUDE.md` gotcha 17) |
 
 ## The callback contract
 
