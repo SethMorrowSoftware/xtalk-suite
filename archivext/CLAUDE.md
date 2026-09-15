@@ -99,9 +99,12 @@ line and the harness's section split.
   re-run after the fixes, the suite-paste fold, the demo's window and the
   live archive.org legs are still owed (docs/07). Before this run the user
   met `Function: error in function handler` with the hint `axVersion` at
-  the harness's first library call - a library-not-answering symptom (not
-  in use, or not compiled) whose exact cause was never isolated because the
-  next run compiled and ran; the conservative rewrites of every
+  the harness's first library call. Read against the engine source that
+  evening (root engine notes 3.4), that trace means "no live handler in the
+  message path" - the library was not in use, or its script was dead from a
+  lazy parse failure; a fault inside `axVersion` would have read
+  differently. The next run, with the library in the path, compiled and
+  ran, which is the parse verdict; the conservative rewrites of every
   no-precedent form landed in the same commit window and are kept.
 
 ## Gotchas and lessons (each one cost a round)

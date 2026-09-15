@@ -404,6 +404,47 @@ engine-proven paths. "We do this everywhere" was true and irrelevant.
 
 ---
 
+### 3.4 `Function: error in function handler` with the hint = the function's NAME means "no live handler in the message path"
+**DOCUMENTED 2026-09-15**, from the engine source (livecode `develop-9.6`
+`engine/src/exec-keywords.cpp`, `object.cpp`; the OXT engine branch's copies
+of the error tables are byte-identical), read after archivext's first
+engine report:
+
+    Type    Function: error in function handler
+    Object  Untitled 3
+    Line    axtCheck axVersion() begins with "ArchiveXT", "..."
+    Hint    axVersion
+
+That trace says exactly one thing: the CALLER evaluated `axVersion()`, the
+engine walked the message path, found no live handler of that name, and
+appended EE-0219 with the name as the hint. A runtime fault INSIDE the
+function would read differently - the inner error would be line 1 (the
+Type row), and the function's own stack would be the Object. Two
+mechanisms produce the trace, and the dialog cannot tell them apart: the
+library was never put in use (no `start using`, or the wrong stack), or the
+library WAS reached but its script is DEAD - scripts are parsed LAZILY, on
+the first message (`MCObject::parsescript`), and a parse failure marks the
+script dead, sends an unhandled `scriptParsingError`, and reports nothing in
+`the executionError`. `start using` is the eager exception: it parses on
+the spot and throws EE-0845 `start: script of specified stack won't
+compile`, so a library that reached the path THAT way is not dead. The
+header line of the IDE dialog carries only an icon and "executing at
+<time>" - a description there ("bad syntax") was a paraphrase, and the
+verbatim text is what to ask for.
+
+**Rule:** treat this pair as "not loaded" first. From the message box:
+`put the stacksInUse`; `put axVersion()` (a version string proves loaded AND
+parsed); `set the script of stack "x" to the script of stack "x"` then
+`put the result` (empty means it compiles; otherwise the parse error's
+number, line, column and token). archivext's next run, with the library in
+use, compiled whole and ran 357 checks (2.7).
+
+**What it does NOT mean:** a COMMAND called with `()` throws the same
+EE-0219 at the call site (holde-em gotcha 7), so check the callee's kind
+before checking the path.
+
+---
+
 ## 4. The FFI boundary (LCB <-> C)
 
 These are the marshalling bets the suite had to place before any engine existed.

@@ -117,7 +117,8 @@ a second new stack's script and type `put axSelfTest()`.
 
 If a call fails with `Function: error in function handler` and the hint is
 a library handler name, the library is NOT in the message path (it was not
-put in use, or its script did not compile). Type `put axVersion()` in the
+put in use, or its script is dead from a parse failure the engine reports
+only lazily - root `docs/OXT-ENGINE-NOTES.md` 3.4). Type `put axVersion()` in the
 message box: `ArchiveXT 0.1.0` means the library is loaded and the fault is
 elsewhere; an error means it is not, and `put the stacksInUse` shows what
 is. Send back the FULL text of the error dialog, every line.
