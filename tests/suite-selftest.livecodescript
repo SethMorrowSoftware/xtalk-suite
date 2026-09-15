@@ -48074,8 +48074,13 @@ private command ax1axtTestPlaylists
 end ax1axtTestPlaylists
 
 private command ax1axtTestFetchLayerOffline
-   local ax1tOptions, ax1tError
+   local ax1tOptions, ax1tError, ax1tPendingBefore
    ax1axtSection "fetch layer, offline refusals"
+   -- The host may have a request in flight (the demo runs this harness from
+   -- a button, mid-search on 2026-09-15), so every pending check is a DELTA
+   -- against the count on entry, not an absolute zero. axShutdown at the end
+   -- still forgets the host's requests - their late replies are dropped.
+   put axPending() into ax1tPendingBefore
    axInit the long id of me
    ax1axtCheck true, "axInit accepts an owner"
    axSetCallback "onArchive"
@@ -48083,7 +48088,7 @@ private command ax1axtTestFetchLayerOffline
    axSetTimeout "soon"
    axSetMaxBody 65536
    axSetMaxBody 12
-   ax1axtCheck axPending() is 0, "nothing is pending"
+   ax1axtCheck axPending() is ax1tPendingBefore, "nothing new is pending"
    ax1axtCheck axSearch(empty, ax1tOptions) is empty, "axSearch refuses an empty query before loading"
    ax1axtCheck axLastError() contains "empty", "and says why"
    put "ten" into ax1tOptions["rows"]
@@ -48091,7 +48096,7 @@ private command ax1axtTestFetchLayerOffline
    ax1axtCheck axFetchItem("../etc", empty) is empty, "axFetchItem refuses a bad identifier before loading"
    ax1axtCheck axFetchUrl("ftp://x", empty) is empty, "axFetchUrl refuses a non-http url"
    ax1axtCheck axLastError() contains "http", "and says why"
-   ax1axtCheck axPending() is 0, "still nothing pending"
+   ax1axtCheck axPending() is ax1tPendingBefore, "still nothing new is pending"
    axCancel 999
    axCancel empty
    ax1axtCheck true, "axCancel of an unknown handle is a clean no-op"
