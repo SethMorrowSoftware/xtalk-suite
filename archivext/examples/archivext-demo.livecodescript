@@ -4234,10 +4234,13 @@ function axDownload pUrl, pPath, pTag
 end axDownload
 
 command axCancel pHandle
-   -- Forget a request. The engine's load cannot be stopped, so the reply
-   -- still arrives later and is then dropped as a late reply. A stale or
-   -- unknown handle is a clean no-op.
-   local tUrl
+   -- Forget a request and ask the Internet library to drop its load
+   -- (`unload URL`, the same cancel axDeadline sends). A reply that
+   -- arrives anyway is dropped as a late reply. A stale or unknown handle
+   -- is a clean no-op. The unload matters most for a download: a stack
+   -- that closes mid-transfer must not leave libURLDownloadToFile writing
+   -- the file and then calling back into a closed stack.
+   local tUrl, tError
    if sAxReqs[pHandle] is not an array then
       exit axCancel
    end if
@@ -4245,6 +4248,10 @@ command axCancel pHandle
    put empty into sAxReqs[pHandle]
    if tUrl is not empty then
       put empty into sAxReqByUrl[tUrl]
+      try
+         unload URL tUrl
+      catch tError
+      end try
    end if
 end axCancel
 
@@ -4402,6 +4409,42 @@ command axDeadline pHandle
    axDispatch pHandle, "error", "timeout after " & sAxTimeout & " seconds: " & tUrl, tReq["tag"]
 end axDeadline
 
+private function axDownloadHandleFor pUrl
+   -- The download a libURL callback is about: by the URL it hands back,
+   -- or - when that spelling is not in the table, which a redirect or a
+   -- normalisation inside the library could produce - the ONE download in
+   -- flight, if there is exactly one. Empty otherwise.
+   local tHandle, tKey, tFound, tCount
+   put empty into tHandle
+   if pUrl is among the keys of sAxReqByUrl then
+      put sAxReqByUrl[pUrl] into tHandle
+   end if
+   if tHandle is not empty then
+      if sAxReqs[tHandle] is an array then
+         if sAxReqs[tHandle]["kind"] is "download" then
+            return tHandle
+         end if
+      end if
+      return empty
+   end if
+   put 0 into tCount
+   put empty into tFound
+   if sAxReqs is an array then
+      repeat for each key tKey in sAxReqs
+         if sAxReqs[tKey] is an array then
+            if sAxReqs[tKey]["kind"] is "download" then
+               add 1 to tCount
+               put tKey into tFound
+            end if
+         end if
+      end repeat
+   end if
+   if tCount is 1 then
+      return tFound
+   end if
+   return empty
+end axDownloadHandleFor
+
 on axUrlStatus pUrl, pStatus
    -- The Internet library's status callback (registered by axHookStatus,
    -- one per process). A download in this layer's table gets its
@@ -4410,20 +4453,11 @@ on axUrlStatus pUrl, pStatus
    -- a download of ours (the searches load through the same library and
    -- report here too), is ignored.
    local tHandle, tReq
-   if pUrl is not among the keys of sAxReqByUrl then
-      exit axUrlStatus
-   end if
-   put sAxReqByUrl[pUrl] into tHandle
+   put axDownloadHandleFor(pUrl) into tHandle
    if tHandle is empty then
       exit axUrlStatus
    end if
-   if sAxReqs[tHandle] is not an array then
-      exit axUrlStatus
-   end if
    put sAxReqs[tHandle] into tReq
-   if tReq["kind"] is not "download" then
-      exit axUrlStatus
-   end if
    if item 1 of pStatus is not "loading" then
       exit axUrlStatus
    end if
@@ -4437,21 +4471,17 @@ on axDownloadDone pUrl, pStatus
    -- the final arbiter either way - a "downloaded" with no file is a
    -- failure, and the app is told which.
    local tHandle, tReq, tPath, tDetail, tError
-   put empty into tHandle
-   if pUrl is among the keys of sAxReqByUrl then
-      put sAxReqByUrl[pUrl] into tHandle
-   end if
+   put axDownloadHandleFor(pUrl) into tHandle
    if tHandle is empty then
-      exit axDownloadDone
-   end if
-   if sAxReqs[tHandle] is not an array then
-      put empty into sAxReqByUrl[pUrl]
       exit axDownloadDone
    end if
    put sAxReqs[tHandle] into tReq
    put tReq["path"] into tPath
    put empty into sAxReqs[tHandle]
-   put empty into sAxReqByUrl[pUrl]
+   put empty into sAxReqByUrl[tReq["url"]]
+   if pUrl is among the keys of sAxReqByUrl then
+      put empty into sAxReqByUrl[pUrl]
+   end if
    if pStatus is "downloaded" or pStatus is "cached" then
       if there is a file tPath then
          axDispatch tHandle, "file", tPath, tReq["tag"]
@@ -4541,7 +4571,7 @@ function axDownloadSync pUrl, pPath
    -- file. Returns pPath, or empty with the reason. The body passes
    -- through memory here (it is `put URL x into URL "binfile:..."`), so
    -- this is for the message box and for files a machine can hold.
-   local tError, tWhy
+   local tError, tWhy, tBody
    if not axIsHttpUrl(pUrl) then
       axSetError "axDownloadSync: not an http(s) URL: " & pUrl
       return empty
@@ -4550,8 +4580,12 @@ function axDownloadSync pUrl, pPath
       axSetError "axDownloadSync: no file path to write to"
       return empty
    end if
+   -- GET first and judge it, THEN write: `put URL x into URL "binfile:.."`
+   -- in one statement writes whatever the GET produced - an empty body on
+   -- a failed request - and the file write is what sets `the result` last,
+   -- so a failed download would come back as a 0-byte success.
    try
-      put URL pUrl into URL ("binfile:" & pPath)
+      put URL pUrl into tBody
       put the result into tWhy
    catch tError
       axSetError "axDownloadSync: " & tError
@@ -4559,6 +4593,21 @@ function axDownloadSync pUrl, pPath
    end try
    if tWhy is not empty then
       axSetError "axDownloadSync: the URL library said " & tWhy & " for " & pUrl
+      return empty
+   end if
+   if tBody is empty then
+      axSetError "axDownloadSync: the site answered with an empty body for " & pUrl
+      return empty
+   end if
+   try
+      put tBody into URL ("binfile:" & pPath)
+      put the result into tWhy
+   catch tError
+      axSetError "axDownloadSync: could not write " & pPath & ": " & tError
+      return empty
+   end try
+   if tWhy is not empty then
+      axSetError "axDownloadSync: could not write " & pPath & ": " & tWhy
       return empty
    end if
    if there is not a file pPath then
@@ -6495,7 +6544,7 @@ command adDoPlay
    -- named through a variable ON PURPOSE: the boot self-check derives its
    -- control list from every literal control name in this script, and a
    -- control that exists only after Play would read as missing at boot.
-   local tEntry, tError, tName, tUrl
+   local tEntry, tError, tName, tUrl, tWhy
    set the defaultStack to the short name of this stack
    put adSelectedEntry() into tEntry
    if tEntry is empty then
@@ -6517,17 +6566,40 @@ command adDoPlay
       set the visible of field "adTracks" to false
       set the visible of player tName to true
       set the filename of player tName to tUrl
+      put the result into tWhy
+      adLog "play: " & tUrl & " (" & tEntry["format"] & ", " & axFormatBytes(tEntry["size"]) & ") on " & the platform & " " & the systemVersion
+      if tWhy is not empty then
+         -- the platform player's SYNCHRONOUS verdict (DirectShow's
+         -- RenderFile, AVFoundation's typing) - "could not create movie
+         -- reference" is the usual text; no need to wait six seconds
+         adLog "the player refused the stream at once: " & tWhy & " - downloading the file and playing it from disk instead"
+         set the visible of player tName to false
+         set the visible of field "adTracks" to true
+         adDoDownload true
+         exit adDoPlay
+      end if
       start player tName
       put tUrl into sAdPlayUrl
-      adLog "play: " & tUrl & " (" & tEntry["format"] & ", " & axFormatBytes(tEntry["size"]) & ") on " & the platform & " " & the systemVersion
       uiStatus "opening the stream in the engine's player (" & tEntry["title"] & ")...", "warn"
-      send "adPlayCheck" to me in 6 seconds
+      adArmPlayCheck
    catch tError
       adLog "player failed: " & tError & " - downloading the file instead"
       set the visible of field "adTracks" to true
       adDoDownload true
    end try
 end adDoPlay
+
+command adArmPlayCheck
+   -- One pending check at a time: a second Play inside the six seconds
+   -- would otherwise leave the first check to judge the second stream.
+   local tLine
+   repeat for each line tLine in the pendingMessages
+      if item 3 of tLine begins with "adPlayCheck" then
+         cancel item 1 of tLine
+      end if
+   end repeat
+   send "adPlayCheck" to me in 6 seconds
+end adArmPlayCheck
 
 command adPlayCheck
    -- Six seconds after Play: a player that opened its stream reports a
@@ -6562,14 +6634,37 @@ command adPlayCheck
       put 0 into tTime
    end if
    if tDuration > 0 or tTime > 0 then
-      adLog "the player opened the stream: duration " & tDuration & ", currentTime " & tTime & " (timeScale " & the timeScale of player tName & ")"
-      uiStatus "streaming from archive.org in the engine's player; Stop puts the list back", "ok"
+      if axIsHttpUrl(tUrl) then
+         adLog "the player opened the stream: duration " & tDuration & ", currentTime " & tTime & " (timeScale " & the timeScale of player tName & ")"
+         uiStatus "streaming from archive.org in the engine's player; Stop puts the list back", "ok"
+      else
+         adLog "the player opened the local file: duration " & tDuration & ", currentTime " & tTime & " (timeScale " & the timeScale of player tName & ")"
+         uiStatus "playing the downloaded file in the engine's player; Stop puts the list back", "ok"
+      end if
       exit adPlayCheck
    end if
-   adLog "the player reports duration 0 and currentTime 0 six seconds after start on " & the platform & ": it could not open the stream - downloading the file and playing it from disk instead"
    put empty into sAdPlayUrl
    adDoStopPlay
-   adDoDownload true
+   if axIsHttpUrl(tUrl) then
+      adLog "the player reports duration 0 and currentTime 0 six seconds after start on " & the platform & ": it could not open the stream - downloading the file and playing it from disk instead"
+      adDoDownload true
+      exit adPlayCheck
+   end if
+   -- a LOCAL file the player could not open either: this engine has no
+   -- working player for the format (Linux builds have none at all), so
+   -- hand the file to the system player and STOP - never download again
+   adLog "the player reports duration 0 six seconds after start on the LOCAL file too, on " & the platform & ": no in-window playback for this format on this engine - opening it with the system player"
+   try
+      launch document tUrl
+      put the result into tError
+      if tError is empty then
+         uiStatus "no in-window playback on this engine; the file opened in the system player", "warn"
+      else
+         uiStatus "no in-window playback on this engine, and the system player refused: " & tError, "bad"
+      end if
+   catch tError
+      uiStatus "no in-window playback on this engine, and the system player refused: " & tError, "bad"
+   end try
 end adPlayCheck
 
 command adDoDownload pPlayAfter
@@ -6578,7 +6673,7 @@ command adDoDownload pPlayAfter
    -- which writes straight to disk with progress and a stall watchdog;
    -- pPlayAfter true plays the file when it lands. A file already there at
    -- the size the metadata promised is reused rather than fetched again.
-   local tEntry, tFolder, tPath, tName, tHandle, tError
+   local tEntry, tFolder, tPath, tName, tHandle, tError, tUrl
    set the defaultStack to the short name of this stack
    put adSelectedEntry() into tEntry
    if tEntry is empty then
@@ -6604,7 +6699,14 @@ command adDoDownload pPlayAfter
          exit adDoDownload
       end if
    end if
-   put axDownload(tEntry["url"], tPath, "download") into tHandle
+   -- the DATANODE URL, as Play uses: no /download/ redirect between the
+   -- request and the file, so the URL the library reports progress under
+   -- is the URL the layer registered
+   put tEntry["direct"] into tUrl
+   if tUrl is empty then
+      put tEntry["url"] into tUrl
+   end if
+   put axDownload(tUrl, tPath, "download") into tHandle
    if tHandle is empty then
       adLog "download refused: " & axLastError()
       uiStatus "download refused - see the log", "bad"
@@ -6613,7 +6715,7 @@ command adDoDownload pPlayAfter
    end if
    put tHandle into sAdDownloadHandle
    put tPath into sAdDownloadPath
-   adLog "download " & tHandle & ": " & tEntry["url"] & " -> " & tPath & " (" & axFormatBytes(tEntry["size"]) & ")"
+   adLog "download " & tHandle & ": " & tUrl & " -> " & tPath & " (" & axFormatBytes(tEntry["size"]) & ")"
    uiStatus "downloading " & tName & " (" & axFormatBytes(tEntry["size"]) & ")...", "warn"
 end adDoDownload
 
@@ -6648,7 +6750,7 @@ end adDownloadFinished
 command adPlayLocal pPath
    -- Play a file from disk in the same player: the path the engine's
    -- media stack can always open, whatever it thinks of https streams.
-   local tName, tError
+   local tName, tError, tWhy
    set the defaultStack to the short name of this stack
    put kAdPlayerName into tName
    try
@@ -6661,11 +6763,20 @@ command adPlayLocal pPath
       set the visible of field "adTracks" to false
       set the visible of player tName to true
       set the filename of player tName to pPath
+      put the result into tWhy
+      adLog "play (local): " & pPath
+      if tWhy is not empty then
+         adLog "the player refused the local file at once: " & tWhy & " - opening it with the system player"
+         set the visible of player tName to false
+         set the visible of field "adTracks" to true
+         launch document pPath
+         uiStatus "no in-window playback for this format on this engine; the file opened in the system player", "warn"
+         exit adPlayLocal
+      end if
       start player tName
       put pPath into sAdPlayUrl
-      adLog "play (local): " & pPath
       uiStatus "playing the downloaded file; Stop puts the list back", "ok"
-      send "adPlayCheck" to me in 6 seconds
+      adArmPlayCheck
    catch tError
       adLog "player failed on the local file: " & tError & " - opening it with the system player"
       set the visible of field "adTracks" to true

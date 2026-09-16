@@ -4184,10 +4184,13 @@ function axDownload pUrl, pPath, pTag
 end axDownload
 
 command axCancel pHandle
-   -- Forget a request. The engine's load cannot be stopped, so the reply
-   -- still arrives later and is then dropped as a late reply. A stale or
-   -- unknown handle is a clean no-op.
-   local tUrl
+   -- Forget a request and ask the Internet library to drop its load
+   -- (`unload URL`, the same cancel axDeadline sends). A reply that
+   -- arrives anyway is dropped as a late reply. A stale or unknown handle
+   -- is a clean no-op. The unload matters most for a download: a stack
+   -- that closes mid-transfer must not leave libURLDownloadToFile writing
+   -- the file and then calling back into a closed stack.
+   local tUrl, tError
    if sAxReqs[pHandle] is not an array then
       exit axCancel
    end if
@@ -4195,6 +4198,10 @@ command axCancel pHandle
    put empty into sAxReqs[pHandle]
    if tUrl is not empty then
       put empty into sAxReqByUrl[tUrl]
+      try
+         unload URL tUrl
+      catch tError
+      end try
    end if
 end axCancel
 
@@ -4352,6 +4359,42 @@ command axDeadline pHandle
    axDispatch pHandle, "error", "timeout after " & sAxTimeout & " seconds: " & tUrl, tReq["tag"]
 end axDeadline
 
+private function axDownloadHandleFor pUrl
+   -- The download a libURL callback is about: by the URL it hands back,
+   -- or - when that spelling is not in the table, which a redirect or a
+   -- normalisation inside the library could produce - the ONE download in
+   -- flight, if there is exactly one. Empty otherwise.
+   local tHandle, tKey, tFound, tCount
+   put empty into tHandle
+   if pUrl is among the keys of sAxReqByUrl then
+      put sAxReqByUrl[pUrl] into tHandle
+   end if
+   if tHandle is not empty then
+      if sAxReqs[tHandle] is an array then
+         if sAxReqs[tHandle]["kind"] is "download" then
+            return tHandle
+         end if
+      end if
+      return empty
+   end if
+   put 0 into tCount
+   put empty into tFound
+   if sAxReqs is an array then
+      repeat for each key tKey in sAxReqs
+         if sAxReqs[tKey] is an array then
+            if sAxReqs[tKey]["kind"] is "download" then
+               add 1 to tCount
+               put tKey into tFound
+            end if
+         end if
+      end repeat
+   end if
+   if tCount is 1 then
+      return tFound
+   end if
+   return empty
+end axDownloadHandleFor
+
 on axUrlStatus pUrl, pStatus
    -- The Internet library's status callback (registered by axHookStatus,
    -- one per process). A download in this layer's table gets its
@@ -4360,20 +4403,11 @@ on axUrlStatus pUrl, pStatus
    -- a download of ours (the searches load through the same library and
    -- report here too), is ignored.
    local tHandle, tReq
-   if pUrl is not among the keys of sAxReqByUrl then
-      exit axUrlStatus
-   end if
-   put sAxReqByUrl[pUrl] into tHandle
+   put axDownloadHandleFor(pUrl) into tHandle
    if tHandle is empty then
       exit axUrlStatus
    end if
-   if sAxReqs[tHandle] is not an array then
-      exit axUrlStatus
-   end if
    put sAxReqs[tHandle] into tReq
-   if tReq["kind"] is not "download" then
-      exit axUrlStatus
-   end if
    if item 1 of pStatus is not "loading" then
       exit axUrlStatus
    end if
@@ -4387,21 +4421,17 @@ on axDownloadDone pUrl, pStatus
    -- the final arbiter either way - a "downloaded" with no file is a
    -- failure, and the app is told which.
    local tHandle, tReq, tPath, tDetail, tError
-   put empty into tHandle
-   if pUrl is among the keys of sAxReqByUrl then
-      put sAxReqByUrl[pUrl] into tHandle
-   end if
+   put axDownloadHandleFor(pUrl) into tHandle
    if tHandle is empty then
-      exit axDownloadDone
-   end if
-   if sAxReqs[tHandle] is not an array then
-      put empty into sAxReqByUrl[pUrl]
       exit axDownloadDone
    end if
    put sAxReqs[tHandle] into tReq
    put tReq["path"] into tPath
    put empty into sAxReqs[tHandle]
-   put empty into sAxReqByUrl[pUrl]
+   put empty into sAxReqByUrl[tReq["url"]]
+   if pUrl is among the keys of sAxReqByUrl then
+      put empty into sAxReqByUrl[pUrl]
+   end if
    if pStatus is "downloaded" or pStatus is "cached" then
       if there is a file tPath then
          axDispatch tHandle, "file", tPath, tReq["tag"]
@@ -4491,7 +4521,7 @@ function axDownloadSync pUrl, pPath
    -- file. Returns pPath, or empty with the reason. The body passes
    -- through memory here (it is `put URL x into URL "binfile:..."`), so
    -- this is for the message box and for files a machine can hold.
-   local tError, tWhy
+   local tError, tWhy, tBody
    if not axIsHttpUrl(pUrl) then
       axSetError "axDownloadSync: not an http(s) URL: " & pUrl
       return empty
@@ -4500,8 +4530,12 @@ function axDownloadSync pUrl, pPath
       axSetError "axDownloadSync: no file path to write to"
       return empty
    end if
+   -- GET first and judge it, THEN write: `put URL x into URL "binfile:.."`
+   -- in one statement writes whatever the GET produced - an empty body on
+   -- a failed request - and the file write is what sets `the result` last,
+   -- so a failed download would come back as a 0-byte success.
    try
-      put URL pUrl into URL ("binfile:" & pPath)
+      put URL pUrl into tBody
       put the result into tWhy
    catch tError
       axSetError "axDownloadSync: " & tError
@@ -4509,6 +4543,21 @@ function axDownloadSync pUrl, pPath
    end try
    if tWhy is not empty then
       axSetError "axDownloadSync: the URL library said " & tWhy & " for " & pUrl
+      return empty
+   end if
+   if tBody is empty then
+      axSetError "axDownloadSync: the site answered with an empty body for " & pUrl
+      return empty
+   end if
+   try
+      put tBody into URL ("binfile:" & pPath)
+      put the result into tWhy
+   catch tError
+      axSetError "axDownloadSync: could not write " & pPath & ": " & tError
+      return empty
+   end try
+   if tWhy is not empty then
+      axSetError "axDownloadSync: could not write " & pPath & ": " & tWhy
       return empty
    end if
    if there is not a file pPath then

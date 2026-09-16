@@ -359,6 +359,20 @@ line and the harness's section split.
     first: the `/download/` 302 a player may not follow, https inside the
     player at all, and the container (VBR MP3 / MP4 are the safe pair the
     playlist engine already prefers). INFERRED until a log names the wall.
+    A pre-pass review the same afternoon added two things the first draft
+    lacked: `set the filename of player` DOES give a synchronous verdict in
+    `the result` on the platforms that type the media up front ("could not
+    create movie reference" is the usual text), so the demo reads it and
+    falls back at once instead of guessing after six seconds; and the
+    six-second check must know whether it is judging a STREAM or the LOCAL
+    file it fell back to, because a player that cannot open the local file
+    either (Linux builds have no working player at all; any platform for a
+    format its stack lacks) would otherwise download-and-play forever, six
+    seconds at a time - the local verdict now ends in `launch document`,
+    never in another download. The same review found `put URL x into URL
+    "binfile:.."` writing a 0-byte file on a failed GET and reporting
+    success (the file write sets `the result` last), which is why
+    `axDownloadSync` fetches, judges, then writes.
 
 ## Working rules for this member
 
