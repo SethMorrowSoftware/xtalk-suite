@@ -135,7 +135,7 @@ put axLastError()       -- empty means archivext's path works too
 
 ## Status (honest)
 
-**First engine contact 2026-09-15: `axSelfTest` ran on the user's OXT engine (platform not recorded) at 357 passed / 2 failed / 0 skipped. Both reds were fixed the same day - the JSON reader indexed object children by key in an array and the engine folds array-key case (root `docs/OXT-ENGINE-NOTES.md` 2.7), and one hand-written harness expectation was simply wrong. The re-run read 363 / 0 / 0, the demo's window booted with its self-check 11/11, and the first LIVE pass ran 2026-09-15, later the same day, from the demo's Live probe on the user's OXT engine: a LibriVox search through the library answered HTTP 200 (numFound 101), a real item's metadata came back whole (196,716 bytes, chunked, through the blocking path), and the movies family's cheap scope answered with 17,098,672 hits - every URL byte, the form encoding and both parsers agree with the live site. Still needed: the suite-paste fold, the item parser and playlist engine over a LIVE file list, the async `search` kind, the two error shapes live, the scrape API, TLS's certificate direction, and streaming.** What is machine-verified on every build, without an engine:
+**First engine contact 2026-09-15: `axSelfTest` ran on the user's OXT engine (platform not recorded) at 357 passed / 2 failed / 0 skipped. Both reds were fixed the same day - the JSON reader indexed object children by key in an array and the engine folds array-key case (root `docs/OXT-ENGINE-NOTES.md` 2.7), and one hand-written harness expectation was simply wrong. The re-run read 363 / 0 / 0, the demo's window booted with its self-check 11/11, and the first LIVE pass ran 2026-09-15, later the same day, from the demo's Live probe on the user's OXT engine: a LibriVox search through the library answered HTTP 200 (numFound 101), a real item's metadata came back whole (196,716 bytes, chunked, through the blocking path), and the movies family's cheap scope answered with 17,098,672 hits - every URL byte, the form encoding and both parsers agree with the live site. On 2026-09-16 the five-leg probe and the demo's Search button closed four more legs: a live 412-file list through the item parser and the playlist engine (58 chapters, each with a stream URL), the async `search` kind through the callback (four searches across three families), and both documented error shapes through the shipped code (a Solr error inside an HTTP 200, a missing item's `{}`). Still needed: the suite-paste fold, the async `item` kind, the scrape API, TLS's certificate direction, and streaming.** What is machine-verified on every build, without an engine:
 
 - **The pure layer is EXECUTED**, not just read: `tools/check-script-vectors.py`
   drives the shipped script through the family's headless interpreter
@@ -161,9 +161,9 @@ What that does NOT cover, and what the runbook asks for:
   responses and the documented API. A green build says the script agrees
   with the oracle about those bytes, not that the live site still answers in
   that shape. The first live pass (2026-09-15) said the search shape does -
-  `numFound` / `docs` arrived as the fixtures assume, twice - and a real
-  metadata body arrived whole; the file-list shape inside it has not yet
-  been through the parser live.
+  `numFound` / `docs` arrived as the fixtures assume - and the second
+  (2026-09-16) put a real 412-file list through the parser and the playlist
+  engine and got the book's 58 chapters in order.
 - The **fetch layer** (`axInit` onward) uses `load URL ... with message`,
   `unload URL` and `libURLErrorData` in the
   shapes two other stacks in this suite use, and since 2026-09-15 it is the

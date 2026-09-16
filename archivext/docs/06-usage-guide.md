@@ -4,8 +4,10 @@
 > 2026-09-15 (357/359, both reds fixed the same day; 363/363 on the re-run),
 > and the first live legs went green the same evening - recipe 1's blocking
 > search shape answered from the site, and a real metadata body arrived
-> whole. Recipes 2 and 4 (the async callback's `search` / `item` kinds, a
-> playlist from a live item) and 5 (streaming) are still owed.** Every
+> whole. On 2026-09-16 recipe 2's `search` kind arrived through the
+> callback (four searches, three families) and recipe 4's playlist was
+> built from a live item (58 chapters). Recipe 2's `item` kind and recipe 5
+> (streaming) are still owed.** Every
 > recipe below is written against the shipped library and the demo that
 > carries it; the pure calls in them are executed on every build against
 > the oracle. Where a recipe says "prints", that is what the fixtures say it

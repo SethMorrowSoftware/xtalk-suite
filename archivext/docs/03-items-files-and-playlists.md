@@ -3,16 +3,19 @@
 > **Status: the playlist and file-rule sections ran green on a real OXT
 > engine 2026-09-15 (the member harness's first engine contact, 357/359
 > overall; the one red in this area was a wrong hand-written expectation,
-> corrected); still needs a live archive.org pass.** The playlist engine is executed on every build over the synthetic
+> corrected); the first LIVE file list went through it 2026-09-16 - a
+> LibriVox book's 412 files became 58 chapters in track order, each with a
+> stream URL; the etree, video and document kinds still need theirs.** The playlist engine is executed on every build over the synthetic
 > fixtures for every kind, and its outputs are pinned by the KAT; the file-
 > name rules have direct vectors against the oracle since 2026-09-15 (the
 > mutation drive found that the fixtures alone could not see a stem rule
 > break, because a fixture groups by `original`). A real item's metadata
-> body HAS arrived on the engine (2026-09-15, 196,716 bytes) but was read
-> raw; the Live probe's second leg now parses it and builds its playlist,
-> and until that runs what a fixture cannot say
-> is whether a real item's file list still looks like the apps' mocks; the
-> live pass is what settles that.
+> body arrived on the engine on 2026-09-15 (196,716 bytes) and went through
+> `axItemParse` and `axPlaylist` on 2026-09-16: `emma_version_5_1002_librivox`,
+> 412 files, 58 `audio-chapters`, the first `01_01 - Volume 1, Chapter 1`
+> at 20:15 as a VBR MP3 of 18.54 MB. What a fixture cannot say is whether a
+> real item's file list still looks like the apps' mocks; for the LibriVox
+> kind the live pass has now said yes, and the other three kinds are owed.
 
 ## An item
 

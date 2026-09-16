@@ -12,9 +12,13 @@
 > AND (austen)` and `mediatype:(movies OR video OR television)` both
 > answered HTTP 200 with docs. The film club's full video scope did NOT
 > (a 400, then a 30 s timeout), which is why the movies family's scope is
-> the cheap clause now (`CLAUDE.md` gotcha 18); the sanitizer's refusal
-> shape (an HTTP 200 with a Solr error) is the probe's fourth leg, still
-> unobserved live.
+> the cheap clause now (`CLAUDE.md` gotcha 18). The refusal shape the
+> sanitizer exists to prevent was observed live on 2026-09-16: an
+> unsanitized trailing `AND` drew HTTP 200 with a Solr error, which
+> `axSearchParse` refused and quoted. The same day the demo's Search button
+> ran the third family too - `mediatype:(etree) AND (grateful dead) AND
+> year:[1900 TO *]` answered 10 of 29,267 - so every family's grammar has
+> now parsed on the live site.
 
 ## The grammar
 

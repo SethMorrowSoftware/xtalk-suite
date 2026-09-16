@@ -1,11 +1,13 @@
 # ArchiveXT implementation plan
 
 **Status: phases 0-5 BUILT 2026-09-15, verified statically + executed
-headlessly; phase 6 MOSTLY DONE the same day (the member harness ran on a real
-OXT engine at 357/2/0 then 363/0/0, the demo booted 11/11, and the first
-three live archive.org legs went green; the fold, a live file list through
-the parser, the async `search` kind, the error shapes, the scrape API, TLS's
-certificate direction and streaming are still owed). Phases 7+ are open.** Each phase records what it built and where the evidence is.
+headlessly; phase 6 MOSTLY DONE 2026-09-15/16 (the member harness ran on a
+real OXT engine at 357/2/0 then 363/0/0, the demo booted 11/11, the first
+three live archive.org legs went green, and the next day a live file list
+went through the parser and playlist engine, the async `search` kind fired
+and both error shapes were seen through the shipped code; the fold, the
+async `item` kind, the scrape API, TLS's certificate direction and streaming
+are still owed). Phases 7+ are open.** Each phase records what it built and where the evidence is.
 `docs/07-open-questions.md` is the item-level list; this page is the shape.
 
 ## The goal, restated
@@ -112,7 +114,11 @@ search (200, numFound 101), a real item's metadata (200, 196,716 bytes,
 chunked) and the movies family's cheap scope (200, 17,098,672 hits) - after
 the film club's full video scope had drawn a 400 and a 30 s timeout, which
 is why the family searches the cheap clause now (`CLAUDE.md` gotcha 18).
-What is still open is below.
+On 2026-09-16 the rewritten five-leg probe went green end to end (a live
+412-file list became 58 chapters; a Solr error inside an HTTP 200 and a
+missing item's `{}` were both refused by the shipped parsers) and the
+demo's Search button delivered the async `search` kind four times across
+three families. What is still open is below.
 
 The runbook row and `docs/07-open-questions.md` items 1-10: the fold
 compiles and reports; the demo boots; the search, metadata and download

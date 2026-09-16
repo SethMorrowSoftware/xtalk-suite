@@ -151,6 +151,33 @@ line and the harness's section split.
   missing item's `{}`) were seen only by accident on a wrong identifier.
   The probe now has five legs for exactly those, and the demo's Search
   button in the Films family is the async leg.
+- **2026-09-16 - the five-leg probe and the async leg, all green.** Boot
+  11/11 again, then the probe: (1) the LibriVox search **200, numFound
+  101**; (2) `axFetchItemSync emma_version_5_1002_librivox` PARSED - **412
+  files, mediatype audio, server ia800904.us.archive.org, title Emma** -
+  and `axPlaylist` over that live file list gave **58 audio-chapters**, the
+  first `1 / 01_01 - Volume 1, Chapter 1 / 20:15 / VBR MP3 / 18.54 MB`
+  with the stream URL `/download/emma_version_5_1002_librivox/emma_01_austen.mp3`
+  - the item parser and the playlist engine have now met a real file list
+  (item 7's LibriVox kind); (3) the movies scope **200, numFound
+  17,105,370** (up 6,698 overnight - the count is live); (4) the broken
+  query `collection:(librivoxaudio) AND`, sent unsanitized, came back
+  **HTTP 200 with a Solr error** and `axSearchParse` quoted it: `Archive.org
+  rejected the query: a token is at an unexpected position (group close
+  token ")" at position 32)` - position 32 in a 30-character query, so the
+  site wraps the query in its own parentheses before parsing (docs/01); (5)
+  `axFetchItemSync no_such_item_archivext_probe` answered **HTTP 200 with
+  `{}`** and the parser refused it as `the item could not be found on
+  Archive.org (no metadata block)`. Then the demo's own Search button, the
+  ASYNC path: four `axSearch` requests across three families delivered
+  their `search` kind through `onArchive` - Films `(test)` **24 of 88,882**,
+  etree `(rwat)` **0 of 0** (an empty page renders, not an error), etree
+  `(grateful dead)` **10 of 29,267**, LibriVox `(alice)` **24 of 262**. The
+  correlation-by-URL, the unload-on-handling and the callback contract are
+  engine-observed on the SUCCESS path now, not only on the error path.
+  Still owed after this run: the suite-paste fold, the async `item` kind
+  (click a result), the scrape API, streaming (the Play button), and TLS's
+  certificate direction.
 
 ## Gotchas and lessons (each one cost a round)
 

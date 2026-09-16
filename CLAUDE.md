@@ -97,10 +97,13 @@ openxtalk-libraries/
                        harness 357/2/0 then 363/0/0, the demo booting
                        11/11) and the live site the same evening (three
                        legs green from the demo's Live probe; engine notes
-                       2.7, 3.4 and 6.9 came out of that day); the fold, a
-                       live file list through the parser, the async
-                       success kinds, the scrape API and TLS's certificate
-                       direction are still owed
+                       2.7, 3.4 and 6.9 came out of that day); the next
+                       day a live 412-file list became 58 chapters through
+                       the parser and playlist engine, the async `search`
+                       kind fired four times and both documented error
+                       shapes were refused by the shipped code; the fold,
+                       the async `item` kind, the scrape API, streaming and
+                       TLS's certificate direction are still owed
   box2dxt/             the family ANCESTOR, folded home 2026-08-14: Box2D v3
                        physics + the pure-script b2k game Kit (sprites, input,
                        camera); its checker was the oldest pre-unification

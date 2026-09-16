@@ -985,6 +985,13 @@ archivext's demo, in one evening:
   out on its own once the header was gone, so the query may have been the
   whole story. The rule archivext keeps (do not replace the defaults; the
   `httpHeaders` property ADDS) stands on the reference, not on the run.
+- **The async success path delivers (OBSERVED 2026-09-16).** Four `load URL
+  ... with message "axUrlDone"` requests from the demo's Search button, across
+  three families, each reached the handler with the URL the engine hands back
+  matching the URL the request was made with, so correlation by URL, the
+  `cached` status read, `URL x` for the body and `unload URL` after it all
+  hold on a reply that ARRIVED - the previous day had shown only the error and
+  timeout arms. An empty result page came back as a normal reply.
 - **Not every archive.org query is cheap.** `mediatype:(movies OR video OR
   television)` answered 17,098,672 hits inside a second; the same three
   mediatypes OR-ed with 26 `identifier:` terms inside a `mediatype:collection`
@@ -993,7 +1000,7 @@ archivext's demo, in one evening:
   engine fault without a watchdog and a second, cheaper request.
 
 **Gate:** none possible headlessly. The narrowed questions (a bad certificate;
-the `unload` cancel actually freeing the URL; the async success kinds) are in
+the `unload` cancel actually freeing the URL; the async `item` kind) are in
 `archivext/docs/07-open-questions.md` items 6 and 9 and the demo's Live probe
 carries the legs.
 

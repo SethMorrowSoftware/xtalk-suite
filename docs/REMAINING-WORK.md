@@ -644,11 +644,14 @@ Built and statically verified; pending under the honesty convention.
     11/11; and the first live pass went green in three legs from the demo's
     Live probe - a LibriVox search, a 196 KB metadata body, the movies
     family's cheap scope - which made the fetch layer the suite's first
-    libURL engine record, 6.9). Still owed: the fold (`ax1axSelfTest`, an S1
-    paste), a live file list through the item parser and playlist engine,
-    the async `search` / `item` kinds, the two error shapes live (the
-    probe's legs 4 and 5), the scrape API, streaming, and TLS's certificate
-    direction (only a deliberately bad certificate can move 6.8 / 6.9).
+    libURL engine record, 6.9; and on 2026-09-16 the five-leg probe and the
+    demo's Search button closed a live 412-file list through the parser and
+    playlist engine, the async `search` kind, and both documented error
+    shapes through the shipped code). Still owed: the fold (`ax1axSelfTest`,
+    an S1 paste), the async `item` kind (the demo's item panel), the other
+    three playlist kinds live, the scrape API, streaming, and TLS's
+    certificate direction (only a deliberately bad certificate can move
+    6.8 / 6.9).
     — `docs/OXT-PASS-RUNBOOK.md` inventory row 36 and section 4.10;
     `archivext/docs/07-open-questions.md`
 

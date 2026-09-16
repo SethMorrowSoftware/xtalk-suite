@@ -24,11 +24,14 @@
    every red line verbatim into `CLAUDE.md`'s as-built notes; that measured
    floor replaces the placeholder floor 1 at the core's
    `stMergeReturned "ArchiveXT"` call site.
-3. **Does the demo boot?** `examples/archivext-demo.livecodescript` prints
-   its own boot self-check (47 controls, the preset table, the vector-derived
-   search URL, the etree fixture as six tracks). A red line there is the
-   record; a FAIL on the control list is the kind of defect the carried block
-   has found before (root `CLAUDE.md`, the `scMissing` widening).
+3. ~~Does the demo boot?~~ **CLOSED 2026-09-15**: `examples/archivext-demo.livecodescript`
+   booted on the user's engine with its self-check 11/11 (47 controls, the
+   preset table, the vector-derived search URL, the etree fixture as six
+   tracks), and again on 2026-09-16 after the probe rewrite. The one red it
+   ever showed was the copy-paste class the carried block exists for: a new
+   button reported `missing` because `kAdUiVersion` had not been bumped, so
+   the window was never rebuilt (the constant carries a BUMP-THIS comment
+   now).
 4. ~~Does the JSON reader agree with the engine about UTF-8?~~ **CLOSED
    2026-09-15**: the escape checks (one-byte escapes, a surrogate pair to four
    UTF-8 bytes, a two-byte code point) and the hex-pinned chapter title all
@@ -48,27 +51,42 @@
    currently loading` for the orphaned load; the movies family now searches
    the cheap mediatype clause (gotcha 18), and the next probe WAS its
    verdict: `mediatype:(movies OR video OR television)` answered 200 with
-   numFound 17,098,672 inside a second. Still open from this item: a
-   deliberately broken query (`collection:(librivoxaudio) AND`, sent
-   unsanitized) coming back as HTTP 200 with a top-level `error` - the
-   probe's fourth leg sends exactly that and logs `axLastError`, which
-   quotes the site. Record the exact text.
+   numFound 17,098,672 inside a second (17,105,370 the next day - the count
+   is live). **The broken-query half CLOSED 2026-09-16**: the probe's fourth
+   leg sent `collection:(librivoxaudio) AND` unsanitized and the site
+   answered HTTP 200 with a top-level error, which `axSearchParse` refused
+   and quoted verbatim: `Archive.org rejected the query: a token is at an
+   unexpected position (group close token ")" at position 32)`. Position 32
+   in a 30-character query: the site wraps the query in its own parentheses
+   before Solr sees it, which is why a trailing operator reads as a stray
+   group close (recorded in `01-archive-api-model.md`). The async path
+   closed the same day: the demo's Search button delivered the `search`
+   kind through `onArchive` four times across three families, including an
+   empty page (`0 of 0`) that rendered as a result, not an error.
 6. ~~The metadata endpoint's shape~~, and a missing item. **CLOSED 2026-09-15
    for the raw body**: a GET of `/metadata/gd1977-05-08.sbd.hicks.4982.sbeok.shnf`
    answered HTTP 200 with the body `{}` - the documented missing-item shape,
    live (that identifier is not the show's real one) - and a GET of
    `/metadata/emma_version_5_1002_librivox` answered 200 with 196,716 bytes,
    `Transfer-Encoding: chunked`, opening `{"alternate_locations":{"servers":`
-   (a key the fixtures do not carry; harmless to a by-key reader). Still
-   open: that body has not been through `axItemParse` - the probe's second
-   leg now calls `axFetchItemSync` and builds the item's playlist, which is
-   item 7's LibriVox kind as well; and the `{}` shape has not yet been seen
-   by `axFetchItemSync` (the fifth leg, `no_such_item_archivext_probe`).
-7. **A real file list through every kind**: a Grateful Dead show through
-   `audio-tracks`, a LibriVox book through `audio-chapters`, a Prelinger film
-   through `video`, a Gutenberg text through `documents`. The fixtures were
-   SHAPED from the apps' mocks; a real list is where the ranking rules meet
-   sidecars and derivative names the mocks do not have.
+   (a key the fixtures do not carry; harmless to a by-key reader).
+   **CLOSED 2026-09-16 through the parser too**: `axFetchItemSync` of the
+   same item answered 412 files, mediatype audio, server
+   ia800904.us.archive.org, title Emma; and `axFetchItemSync
+   no_such_item_archivext_probe` met the `{}` body and refused it with `the
+   item could not be found on Archive.org (no metadata block)`. Both
+   documented shapes are now observed through the shipped code, not read
+   raw.
+7. **A real file list through every kind**: ~~a LibriVox book through
+   `audio-chapters`~~ **CLOSED 2026-09-16** - `axPlaylist` over the live
+   412-file list of `emma_version_5_1002_librivox` gave 58 chapters, the
+   first `1 / 01_01 - Volume 1, Chapter 1 / 20:15 / VBR MP3 / 18.54 MB`
+   with the stream URL `/download/emma_version_5_1002_librivox/emma_01_austen.mp3`;
+   the accept / group / rank / derive / order rules held against sidecars
+   and derivative names the mocks never had. Still open: a Grateful Dead
+   show through `audio-tracks`, a Prelinger film through `video`, a
+   Gutenberg text through `documents` - the demo's item panel (click a
+   result) is the leg, and it is also the async `item` kind's first run.
 8. **The scrape API** (`axScrapeUrl`): no source app used it, and its body
    shape (`items`, `count`, `cursor`) is from the documentation only. The
    deep-paging walk it exists for is untested end to end.

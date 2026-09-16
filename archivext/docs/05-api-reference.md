@@ -5,9 +5,12 @@
 > `axSearchSync`, `axGetSync`, `axMetadataUrl`, `axSearchUrl`, `axSearchParse`
 > and `axFamilyInfo` carried the first live archive.org legs green from the
 > demo's Live probe (three requests, all HTTP 200; `archivext/CLAUDE.md`
-> as-built record). Still owed live: `axFetchItemSync` / `axItemParse` /
-> `axPlaylist` over a real file list, the async `axSearch` / `axFetchItem`
-> success kinds, `axScrapeUrl`'s shape.** The pure layer (every handler from
+> as-built record); on 2026-09-16 `axFetchItemSync` / `axItemParse` /
+> `axPlaylist` / `axPlaylistTable` / `axPlaylistKindFor` ran over a real
+> 412-file list, `axSearchParse` refused a live Solr error, `axItemParse`
+> refused a live `{}`, and `axSearch` delivered its `search` kind through
+> the callback four times. Still owed live: `axFetchItem`'s `item` kind,
+> `axScrapeUrl`'s shape.** The pure layer (every handler from
 > `axVersion` to `axPlaylistTable`) is executed on every build through the
 > family's headless interpreter against the independent oracle and the
 > synthetic fixtures; the fetch layer (`axInit` onward) is engine-only, with

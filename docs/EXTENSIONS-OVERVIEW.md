@@ -388,9 +388,13 @@ harness-exercised with zero exemptions.
   from the demo's Live probe - a LibriVox search (200, numFound 101), a
   real item's metadata (200, 196 KB, chunked) and the movies family's
   cheap scope (200, 17 million hits), after the film club's full video
-  scope had drawn a 400 and a 30 s timeout. Still owed: the suite-paste
-  fold, a live file list through the item parser and playlist engine, the
-  async `search` kind, the error shapes live, the scrape API, streaming.
+  scope had drawn a 400 and a 30 s timeout. The next day the five-leg
+  probe and the demo's Search button closed four more: a live 412-file
+  list through the item parser and playlist engine (58 chapters), the
+  async `search` kind through the callback (four searches, three
+  families), and both documented error shapes refused by the shipped code.
+  Still owed: the suite-paste fold, the async `item` kind, the scrape API,
+  streaming.
   The fixtures are SYNTHETIC (the site is unreachable from the build
   sandbox); the fetch layer is the suite's first libURL engine record
   (`docs/OXT-ENGINE-NOTES.md` 6.9), and whether libURL verifies

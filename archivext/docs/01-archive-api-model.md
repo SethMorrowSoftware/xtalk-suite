@@ -12,10 +12,15 @@
 > chunked, opening with an `alternate_locations` block the table below does
 > not list - the parser reads by key, so order and extra keys cost nothing);
 > and a GET of a non-existent identifier answered HTTP 200 with the body
-> `{}`, the documented missing-item shape. Still to re-observe: the HTTP-200
-> Solr error for a broken query, the over-reporting count at the end of a
+> `{}`, the documented missing-item shape. On 2026-09-16 the HTTP-200 Solr
+> error was re-observed too: `collection:(librivoxaudio) AND` drew a 200
+> whose body carried `a token is at an unexpected position (group close
+> token ")" at position 32)` - position 32 in a 30-character query, so **the
+> site wraps the query in its own parentheses before parsing**, and a
+> trailing operator reads as a stray group close rather than a trailing
+> operator. Still to re-observe: the over-reporting count at the end of a
 > paged walk, the scrape API's shape, and the datanode redirect on a
-> download URL. The Live probe's legs 4 and 5 are the first two.
+> download URL.
 
 ## The four surfaces
 

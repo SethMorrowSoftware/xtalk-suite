@@ -1,7 +1,8 @@
 # 04 - The fetch layer
 
-> **Status: engine-observed 2026-09-15 on both paths; the async `search`
-> kind and the certificate question are still owed.** That day the harness's
+> **Status: engine-observed 2026-09-15 on both paths, and the async
+> `search` kind on 2026-09-16; the async `item` kind and the certificate
+> question are still owed.** That day the harness's
 > fetch section ran on a real OXT engine (every refusal path answered as
 > written, `libURLVersion` reported 1.2.0, nothing was loaded); then the demo
 > made the suite's FIRST live `load URL` to https://archive.org - the request
@@ -13,10 +14,14 @@
 > green requests through the demo's Live probe - a LibriVox search (200,
 > numFound 101), a real item's metadata (200, 196,716 bytes,
 > `Transfer-Encoding: chunked`, delivered whole) and the movies family's
-> cheap scope (200, 17,098,672 hits). The success path of `axUrlDone` (a
-> `search` or `item` kind delivered to the callback) has still not fired;
-> the demo's Search button in the Films family is that leg. Root
-> `docs/OXT-ENGINE-NOTES.md` 6.9 carries the libURL observations. It uses `load URL ... with message`, `URL x` after a `cached`
+> cheap scope (200, 17,098,672 hits). On 2026-09-16 the success path of
+> `axUrlDone` fired: the demo's Search button sent four `axSearch` requests
+> across three families and each came back as the `search` kind through
+> `onArchive` - correlation by URL, the unload on handling and the callback
+> contract are observed on the success path now, and an empty result page
+> (`0 of 0`) arrived as a result, not an error. The `item` kind (the demo's
+> item panel) has not yet fired. Root `docs/OXT-ENGINE-NOTES.md` 6.9 carries
+> the libURL observations. It uses `load URL ... with message`, `URL x` after a `cached`
 > status, `unload URL` and `libURLErrorData`
 > in the same shapes two shipped stacks in this suite use (nocloud's
 > public-IP probe, coin-wallet's Esplora transport), and neither of those
