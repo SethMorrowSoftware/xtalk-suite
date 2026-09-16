@@ -7258,20 +7258,20 @@ command axInit pOwner
    if sAxMaxBody is empty then
       put kAxMaxBodyDefault into sAxMaxBody
    end if
-   axHookStatus
 end axInit
 
 private command axHookStatus
    -- Point the Internet library's status callback at axUrlStatus, once,
    -- so a download can report progress and re-arm its watchdog. The
    -- callback is GLOBAL to libURL (one per process), which is why the
-   -- library owns it rather than the app: every status the library does
-   -- not recognise is ignored. `me` is the object whose script holds this
-   -- handler - the library stack when it is `start using`d, the carrying
-   -- stack when it is embedded - and both define axUrlStatus. Without the
-   -- Internet library the setter throws, and a download simply reports no
-   -- progress (the try keeps axInit usable offline, which the harness
-   -- runs it as).
+   -- library takes it only when a download starts and gives it back in
+   -- axShutdown (axUnhookStatus): a stack that closes while still named
+   -- as the target would be sent every later status of every URL in the
+   -- process. Every status the library does not recognise is ignored.
+   -- `me` is the object whose script holds this handler - the library
+   -- stack when it is `start using`d, the carrying stack when it is
+   -- embedded - and both define axUrlStatus. Without the Internet library
+   -- the setter throws, and a download simply reports no progress.
    local tError
    if sAxStatusHooked is true then
       exit axHookStatus
@@ -7283,6 +7283,18 @@ private command axHookStatus
       put empty into sAxStatusHooked
    end try
 end axHookStatus
+
+private command axUnhookStatus
+   local tError
+   if sAxStatusHooked is not true then
+      exit axUnhookStatus
+   end if
+   try
+      libURLSetStatusCallback empty, empty
+   catch tError
+   end try
+   put empty into sAxStatusHooked
+end axUnhookStatus
 
 command axSetCallback pHandlerName
    -- The handler dispatched for every outcome (default onArchive). Empty
@@ -7539,8 +7551,10 @@ command axCancelAll
 end axCancelAll
 
 command axShutdown
-   -- Forget everything in flight and drop the owner. Safe to call twice.
+   -- Forget everything in flight, give the Internet library's status
+   -- callback back, and drop the owner. Safe to call twice.
    axCancelAll
+   axUnhookStatus
    put empty into sAxOwner
 end axShutdown
 

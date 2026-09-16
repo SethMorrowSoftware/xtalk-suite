@@ -89,14 +89,21 @@
    result) is the leg, and it is also the async `item` kind's first run.
 8. **The scrape API** (`axScrapeUrl`): no source app used it, and its body
    shape (`items`, `count`, `cursor`) is from the documentation only. The
-   deep-paging walk it exists for is untested end to end.
+   deep-paging walk it exists for is untested end to end. The Live probe's
+   ninth leg (added 2026-09-16) fetches one five-row page and logs the
+   body's top-level keys, `count`, the type and count of `items`, `cursor`,
+   `total` and the first identifier - enough to write the parser from.
 9. **TLS.** ~~Does `load URL "https://archive.org/..."` work on this engine?~~
    **Answered 2026-09-15, the working direction**: `load URL` and `put URL`
    both reached archive.org over https and carried real bodies back (three
    HTTP 200s, one of them 196 KB chunked; root `docs/OXT-ENGINE-NOTES.md`
    6.9). Still open, and the only thing that can move that entry: does the
-   same call against a host with a BAD certificate fail? Record it beside
-   6.8 whatever the answer is (see `04-fetch-layer.md`).
+   same call against a host with a BAD certificate fail? The Live probe's
+   legs 6-8 (added 2026-09-16) ask exactly that of three hosts that exist
+   to be refused - `self-signed.badssl.com`, `expired.badssl.com`,
+   `wrong.host.badssl.com` - and print a verdict line each: REFUSED means
+   libURL verifies that case, ANSWERED means it does not. Record all three
+   beside 6.8 whatever they say (see `04-fetch-layer.md`).
 10. **Streaming.** Does a player object play an archive.org MP3, per
     platform? The first report (2026-09-16) was "the player is still not
     working" with nothing in the log: a player handed a URL it cannot open

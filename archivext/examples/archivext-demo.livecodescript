@@ -3967,20 +3967,20 @@ command axInit pOwner
    if sAxMaxBody is empty then
       put kAxMaxBodyDefault into sAxMaxBody
    end if
-   axHookStatus
 end axInit
 
 private command axHookStatus
    -- Point the Internet library's status callback at axUrlStatus, once,
    -- so a download can report progress and re-arm its watchdog. The
    -- callback is GLOBAL to libURL (one per process), which is why the
-   -- library owns it rather than the app: every status the library does
-   -- not recognise is ignored. `me` is the object whose script holds this
-   -- handler - the library stack when it is `start using`d, the carrying
-   -- stack when it is embedded - and both define axUrlStatus. Without the
-   -- Internet library the setter throws, and a download simply reports no
-   -- progress (the try keeps axInit usable offline, which the harness
-   -- runs it as).
+   -- library takes it only when a download starts and gives it back in
+   -- axShutdown (axUnhookStatus): a stack that closes while still named
+   -- as the target would be sent every later status of every URL in the
+   -- process. Every status the library does not recognise is ignored.
+   -- `me` is the object whose script holds this handler - the library
+   -- stack when it is `start using`d, the carrying stack when it is
+   -- embedded - and both define axUrlStatus. Without the Internet library
+   -- the setter throws, and a download simply reports no progress.
    local tError
    if sAxStatusHooked is true then
       exit axHookStatus
@@ -3992,6 +3992,18 @@ private command axHookStatus
       put empty into sAxStatusHooked
    end try
 end axHookStatus
+
+private command axUnhookStatus
+   local tError
+   if sAxStatusHooked is not true then
+      exit axUnhookStatus
+   end if
+   try
+      libURLSetStatusCallback empty, empty
+   catch tError
+   end try
+   put empty into sAxStatusHooked
+end axUnhookStatus
 
 command axSetCallback pHandlerName
    -- The handler dispatched for every outcome (default onArchive). Empty
@@ -4248,8 +4260,10 @@ command axCancelAll
 end axCancelAll
 
 command axShutdown
-   -- Forget everything in flight and drop the owner. Safe to call twice.
+   -- Forget everything in flight, give the Internet library's status
+   -- callback back, and drop the owner. Safe to call twice.
    axCancelAll
+   axUnhookStatus
    put empty into sAxOwner
 end axShutdown
 
@@ -6828,20 +6842,22 @@ command adDoSelfTest
 end adDoSelfTest
 
 command adDoProbe
-   -- Five BLOCKING requests, each logged with the site's answer and the
+   -- Ten BLOCKING requests, each logged with the site's answer and the
    -- response headers, so a live failure can be read from the log rather
    -- than reconstructed from the message box (the 2026-09-15 400 needed
-   -- exactly this). The first three ran green on 2026-09-15 (a LibriVox
-   -- search, a 196 KB metadata body, the movies family's cheap scope with
-   -- seventeen million hits); the item leg now goes THROUGH axItemParse and
-   -- the playlist engine rather than reading the raw body, and two legs
-   -- were added for the shapes the docs promise but no live run had seen:
-   -- a broken query (HTTP 200 with a top-level error) and a missing item
-   -- (HTTP 200 with the body {}).
+   -- exactly this). Legs 1-5 ran green on 2026-09-16 (a LibriVox search; a
+   -- real item PARSED and its 58-chapter playlist; the movies family's
+   -- cheap scope; a broken query refused inside an HTTP 200; a missing
+   -- item's {}). Legs 6-10 were added the same day for the questions the
+   -- docs still carry open: three deliberately BAD certificates (the TLS
+   -- question root engine notes 6.8 / 6.9 have carried since the suite's
+   -- first secure socket - a refusal is the good answer), the scrape API's
+   -- body shape, and the blocking download through the /download/
+   -- redirect.
    local tUrl, tResult, tOptions, tQuery, tInfo, tId, tItem, tKind
-   local tPlaylist, tTable
+   local tPlaylist, tTable, tBody, tDoc, tPath
    set the defaultStack to the short name of this stack
-   uiStatus "live probe running (five blocking requests)...", "warn"
+   uiStatus "live probe running (ten blocking requests)...", "warn"
    adLog "== live probe =="
    put "identifier,title" into tOptions["fields"]
    put 3 into tOptions["rows"]
@@ -6912,8 +6928,65 @@ command adDoProbe
       adLog "   refused as expected: " & axLastError()
    end if
    adProbeHeaders true
-   uiStatus "live probe done - copy the log", "ok"
+   -- 6-8. TLS, the failing direction: three hosts that exist to be
+   -- refused (badssl.com). A REFUSAL is the good answer - it means the
+   -- Internet library verifies certificates; a body back means it does
+   -- not, and root engine notes 6.8 / 6.9 have been waiting for exactly
+   -- this measurement since the suite's first secure socket.
+   adProbeBadCert 6, "https://self-signed.badssl.com/", "a self-signed certificate"
+   adProbeBadCert 7, "https://expired.badssl.com/", "an expired certificate"
+   adProbeBadCert 8, "https://wrong.host.badssl.com/", "a certificate for another host name"
+   -- 9. the scrape API, which no source app used and no fixture models
+   put axScrapeUrl("collection:(librivoxaudio)", "identifier,title", 5, empty) into tUrl
+   adLog "9. GET " & tUrl & " (the scrape API: expecting items, count, cursor)"
+   put axGetSync(tUrl) into tBody
+   if tBody is empty then
+      adLog "   FAILED: " & axLastError()
+      adProbeHeaders false
+   else
+      put axJsonParse(tBody) into tDoc
+      if tDoc is empty then
+         adLog "   not JSON: " & axLastError() & " - body starts " & char 1 to 80 of tBody
+      else
+         adLog "   ok: " & the number of bytes of tBody & " bytes; count " & axJsonGet(tDoc, "count") & ", items is " & axJsonType(tDoc, "items") & " of " & axJsonCount(tDoc, "items") & ", cursor " & scShow(axJsonGet(tDoc, "cursor")) & ", total " & scShow(axJsonGet(tDoc, "total")) & "; first identifier " & scShow(axJsonGet(tDoc, "items/1/identifier"))
+         adLog "   keys: " & replaceText(axJsonKeys(tDoc, empty), return, ", ")
+         axJsonFree tDoc
+      end if
+      adProbeHeaders true
+   end if
+   -- 10. the blocking download through the /download/ redirect: the
+   -- item's own _meta.xml (a few KB) into the temporary folder
+   put "emma_version_5_1002_librivox" into tId
+   put axDownloadUrl(tId, tId & "_meta.xml") into tUrl
+   put specialFolderPath("temporary") & "/archivext-probe-meta.xml" into tPath
+   adLog "10. axDownloadSync " & tUrl & " -> " & tPath & " (the blocking download, through the /download/ redirect)"
+   if axDownloadSync(tUrl, tPath) is empty then
+      adLog "   FAILED: " & axLastError()
+      adProbeHeaders false
+   else
+      adLog "   ok: " & axFormatBytes(adFileSize(specialFolderPath("temporary"), "archivext-probe-meta.xml")) & " on disk; starts " & char 1 to 60 of URL ("binfile:" & tPath)
+      adProbeHeaders true
+   end if
+   uiStatus "live probe done (ten legs) - copy the log", "ok"
 end adDoProbe
+
+command adProbeBadCert pLeg, pUrl, pWhat
+   -- One deliberately bad certificate: log which way libURL went.
+   local tBody, tWhy
+   set the defaultStack to the short name of this stack
+   adLog pLeg & ". GET " & pUrl & " (" & pWhat & ": a refusal means libURL VERIFIES; a body means it does NOT)"
+   put axGetSync(pUrl) into tBody
+   if tBody is empty then
+      put axLastError() into tWhy
+      adLog "   REFUSED: " & tWhy
+      adLog "   verdict: libURL refused " & pWhat & " - certificate verification is ON for this case"
+      adProbeHeaders false
+   else
+      adLog "   ANSWERED: " & the number of bytes of tBody & " bytes, starts " & char 1 to 60 of tBody
+      adLog "   verdict: libURL accepted " & pWhat & " - certificate verification is OFF for this case; treat every https request from this engine as unverified"
+      adProbeHeaders true
+   end if
+end adProbeBadCert
 
 command adProbeHeaders pAnswered
    -- The response headers of the LAST reply the Internet library received.
@@ -7149,6 +7222,7 @@ command adScRun
    scAssert "the search URL derives the AudioBooks vector", axSearchUrl("collection:(librivoxaudio) AND (a " & quote & "b" & quote & ")", "identifier,title,year,creator,date,language,runtime,subject", "downloads desc", 24, 2) is kAxVecUrlSearch
    put axPlaylist(axItemParse(axtHex(kAxVecFixEtreeItemHex)), "audio-tracks") into tPlaylist
    scAssert "the etree fixture plays as six tracks", tPlaylist["count"] is 6
+   scAssert "every playlist entry carries a stream URL and a datanode URL", tPlaylist["entries"][1]["url"] is not empty and tPlaylist["entries"][1]["direct"] is not empty
    scAssert "nothing is in flight at boot", axPending() is 0
    put axProbeCapabilities() into tCaps
    if tCaps["hasUrlLib"] is true then

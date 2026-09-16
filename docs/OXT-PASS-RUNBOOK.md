@@ -1472,10 +1472,36 @@ demo has booted (11/11), and the demo's Live probe has carried three live legs
 green (engine notes 6.9; `archivext/CLAUDE.md`'s as-built record has the
 numbers). The FOLDED run is still first-time; the five-leg probe and a Search in
 three families ran green on 2026-09-16 (the as-built record has the
-numbers), so the remaining live legs are the demo's item panel (click a
-result: the async `item` kind and the etree / video / document playlist
-kinds), the Play button, the scrape API and a bad-certificate host - and
-unlike nostrxt this member's other half needs a NETWORK, so the pass splits
+numbers). **The next pass, in click order, each step a log the docs can
+quote** (every step is the demo, `archivext/examples/archivext-demo.livecodescript`,
+pasted fresh - the demo changed on 2026-09-16 and the old paste has no
+Download button):
+
+1. Open the demo: the boot self-check (12 lines now; a `missing:` FAIL means
+   the stack was not rebuilt - the UI version constant bumps on every
+   control change).
+2. **Live probe**: ten legs. Legs 1-5 re-confirm; legs 6-8 are three
+   deliberately BAD certificates (`self-signed`, `expired`, `wrong.host` at
+   badssl.com) and each prints a verdict line - REFUSED means the Internet
+   library verifies that case, ANSWERED means it does not; leg 9 is the
+   scrape API's body shape; leg 10 a blocking download through the
+   `/download/` redirect. The three verdict lines go to `docs/OXT-ENGINE-NOTES.md`
+   beside 6.8 / 6.9 whatever they say.
+3. Audiobooks family, search `alice`, click a result: the async `item` kind
+   and a live LibriVox playlist through the callback path.
+4. Select a chapter, **Play**, wait ten seconds: the log says `the player
+   opened the stream: duration N` or names the fallback (a download, then
+   the local file). Then **Stop**, then **Download**: progress in the status
+   line, then `downloaded: <path>`.
+5. Live music family, search `grateful dead`, click a result, **Play** one
+   track (the `audio-tracks` kind); Films family, `all_videos`, click a
+   result (the `video` kind; MP4 in the player is the second media
+   question); Any family, preset `texts`, click a result (the `documents`
+   kind - nothing to play, the list is the leg).
+6. Last, the suite paste: `tests/suite-selftest.livecodescript` into a NEW
+   stack, run it, copy the `ArchiveXT` line and any red lines.
+
+Unlike nostrxt this member's other half needs a NETWORK, so the pass splits
 cleanly. The folded run rides the
 suite paste: copy the `ArchiveXT` line of the per-member table and any red
 lines verbatim into `archivext/CLAUDE.md`'s as-built record, and let the

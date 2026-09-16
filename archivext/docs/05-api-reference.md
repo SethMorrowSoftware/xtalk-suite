@@ -177,11 +177,11 @@ arrays (`response/docs/3/title`).
 | `axFetchItem(pIdentifier, pTag)` | starts a metadata fetch. Delivers `"item"` |
 | `axFetchUrl(pUrl, pTag)` | starts a raw fetch of any http(s) URL. Delivers `"raw"` |
 | `axDownload(pUrl, pPath, pTag)` | starts a download of any http(s) URL STRAIGHT TO A FILE (`libURLDownloadToFile`: no body in memory, the body cap does not apply). Delivers `"progress"` (`received,total`, as often as the library reports) and then `"file"` (the path), or `"error"`. The watchdog is a STALL watchdog here: progress re-arms it. The folder must exist; the file is overwritten. Empty with the reason on a non-http URL, an empty path, or a URL already in flight |
-| `axUrlStatus pUrl, pStatus` | the Internet library's status callback (`libURLSetStatusCallback`, registered by `axInit` / `axDownload`, one per process); public because the library delivers it by name. Forwards a download's `loading,received,total` as `"progress"`; everything else, and every URL that is not a download of ours, is ignored |
+| `axUrlStatus pUrl, pStatus` | the Internet library's status callback (`libURLSetStatusCallback`, one per process: taken on the first `axDownload`, given back by `axShutdown`); public because the library delivers it by name. Forwards a download's `loading,received,total` as `"progress"`; everything else, and every URL that is not a download of ours, is ignored |
 | `axDownloadDone pUrl, pStatus` | `libURLDownloadToFile`'s completion callback; public for the same reason. `downloaded` with the file on disk delivers `"file"`; anything else `"error"` with `libURLErrorData` |
 | `axCancel pHandle` | forgets a request (the engine's load still completes and is dropped as a late reply); unknown handle is a no-op |
 | `axCancelAll` | forgets every request |
-| `axShutdown` | forgets everything and drops the owner; safe twice |
+| `axShutdown` | forgets everything, gives the Internet library's status callback back, and drops the owner; safe twice |
 | `axUrlDone pUrl, pStatus` | the engine's URL callback (`cached` on success); public because the engine delivers it by name, never called by an app |
 | `axDeadline pHandle` | the per-request watchdog the layer arms with `send ... in`; public for the same reason; unknown handle is a no-op |
 | `axGetSync(pUrl)` | BLOCKING: the body of an http(s) URL, or empty with the reason |

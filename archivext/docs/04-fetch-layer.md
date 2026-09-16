@@ -90,8 +90,10 @@ registered handler, so a demo that forgets it fails the build.
   libURL refuses the next load of that URL with `URL is currently loading`
   (observed 2026-09-15). A stale or unknown handle is a clean no-op.
 - `axCancelAll` - forget everything.
-- `axShutdown` - forget everything and drop the owner; safe to call twice.
-  Call it from `closeStack`.
+- `axShutdown` - forget everything, give libURL's status callback back
+  (it is global to the process, and a closed stack must not stay named as
+  its target), and drop the owner; safe to call twice. Call it from
+  `closeStack`.
 
 ## The blocking conveniences
 

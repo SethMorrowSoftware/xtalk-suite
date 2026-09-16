@@ -110,6 +110,16 @@ first:
    not run `openStack` until the stack is opened again).
 3. The window builds itself and the log panel prints the boot self-check.
    Click **Run tests** for the full `axSelfTest` report; **Copy** it.
+4. Click **Live probe**: ten blocking requests, each logged with its
+   headers - a LibriVox search, a real item parsed into its playlist, the
+   movies scope, a broken query, a missing item, three deliberately BAD
+   certificates (a refusal is the good answer: it means the Internet
+   library verifies), the scrape API's shape, and a blocking download
+   through the `/download/` redirect.
+5. Open a LibriVox book, select a chapter, click **Play** and wait ten
+   seconds (the log says whether the player opened the stream, and falls
+   back to a download when it did not), then **Download**. Copy the whole
+   log.
 
 To run the harness on its own instead: open `src/archivext.livecodescript`
 as a stack (File > Open Stack), type `start using stack "archivext"` in

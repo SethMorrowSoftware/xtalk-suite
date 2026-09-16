@@ -200,7 +200,17 @@ line and the harness's section split.
   `axUrlStatus`, `axDownloadDone`), every one named by the harness
   (104/104, zero exemptions); the timer-stack-pin gate learned
   `libURLSetStatusCallback` and `libURLDownloadToFile` as registrars, the
-  same delivery class as `load URL ... with message`.
+  same delivery class as `load URL ... with message`. Later the same day,
+  ahead of the evening pass: the status hook moved OUT of `axInit` - it is
+  global to libURL, so the library takes it on the first `axDownload` and
+  gives it back in `axShutdown`, and the harness (and therefore the suite
+  paste) never takes it at all; the probe grew to TEN legs so one click
+  also answers the questions the docs still carry open - three deliberately
+  bad certificates from badssl.com for the TLS direction 6.8 / 6.9 have
+  waited on (a refusal is the good answer), the scrape API's body shape,
+  and a blocking download through the `/download/` redirect; the boot
+  self-check gained a line (every entry carries a stream URL and a datanode
+  URL); and the runbook's 4.10 carries the pass in click order.
 
 ## Gotchas and lessons (each one cost a round)
 
