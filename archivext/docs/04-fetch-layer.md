@@ -41,6 +41,7 @@ answer comes back through the message path. What the layer adds over a bare
 | CORRELATION | a request is an integer handle; the reply is matched to it by the URL the engine hands back | a reply nobody is waiting for (a cancelled or timed-out request - the engine cannot cancel a load) is unloaded and dropped, never applied to whatever is in flight now |
 | A WATCHDOG | `axDeadline` fires per request after `axSetTimeout` seconds (default 60; a broad live search took over 30), reports `timeout`, forgets the handle | `load URL` has no deadline of its own |
 | A BODY CAP | `axSetMaxBody` (default 16 MB) stops the PARSE of an over-size reply | the whole body is read before this layer sees it, so the cap cannot stop the read; it still keeps a wrong-shaped reply out of a 300 KB JSON parse |
+| DOWNLOADS TO DISK | `axDownload` writes through `libURLDownloadToFile`, straight to the file, with `libURLSetStatusCallback` progress forwarded as the `progress` kind; the watchdog becomes a STALL watchdog (progress re-arms it), and the body cap does not apply | an 18 MB chapter or a 700 MB film never sits in memory, a slow link that is still moving never times out, and a player object handed a LOCAL file can always open it - which is what the demo falls back to when the engine's player cannot open an https stream (added 2026-09-16 after "the player is still not working"; unproven until its first run) |
 | UNLOAD ALWAYS | every path through `axUrlDone` unloads the URL | the URL cache grows without limit otherwise |
 | NO CUSTOM HEADERS | the Internet library's default header set, untouched | the first live request (2026-09-15) set a User-Agent through `libURLSetCustomHTTPHeaders` and archive.org answered 400 Bad Request; that setter replaces the default headers for every later request, and it was the one thing this path did that a plain `load URL` does not - removed; every request since answered 200 with the defaults, though the 400's query later timed out on its own, so the header is INFERRED as a cause, not proven (`CLAUDE.md` gotcha 17) |
 
@@ -53,6 +54,8 @@ axSetCallback "onArchive"              -- the handler name (default onArchive)
 put axSearch(tQuery, tOptions) into tHandle       -- onArchive h, "search", tResult, tag
 put axFetchItem(tIdentifier, tTag) into tHandle   -- onArchive h, "item",   tItem,   tag
 put axFetchUrl(tUrl, tTag) into tHandle           -- onArchive h, "raw",    tBody,   tag
+put axDownload(tUrl, tPath, tTag) into tHandle    -- onArchive h, "progress", "received,total", tag  (repeatedly)
+                                                  -- onArchive h, "file",   tPath,   tag
                                                   -- onArchive h, "error",  tReason, tag  (any failure)
 ```
 
@@ -63,7 +66,9 @@ returns the handle, or empty with the reason when the URL cannot be built
 those refusals happen BEFORE anything is loaded, which is what the offline
 harness section drives.
 
-Exactly one callback per handle. `tResult` is an `axSearchParse` array,
+Exactly one FINAL callback per handle (a download also reports
+`"progress"` as often as the Internet library does, before its `"file"`).
+`tResult` is an `axSearchParse` array,
 `tItem` an `axItemParse` array, `tBody` the raw bytes; on `"error"` the
 value is the reason (`timeout`, the engine's `libURLErrorData` text, the
 site's own rejection, a body over the cap, a parse failure) and
@@ -90,8 +95,8 @@ registered handler, so a demo that forgets it fails the build.
 
 ## The blocking conveniences
 
-`axGetSync(pUrl)`, `axSearchSync(pQuery, pOptions)` and
-`axFetchItemSync(pIdentifier)` are for the message box and for scripts that
+`axGetSync(pUrl)`, `axSearchSync(pQuery, pOptions)`,
+`axFetchItemSync(pIdentifier)` and `axDownloadSync(pUrl, pPath)` are for the message box and for scripts that
 have nothing else to do while they wait. Each BLOCKS the interpreter thread
 until the site answers or the URL library gives up, so a window that calls
 one freezes for that long; the asynchronous handlers above are the shape

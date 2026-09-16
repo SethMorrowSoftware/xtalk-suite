@@ -162,16 +162,26 @@ as the kind to let the item's mediatype decide.
 ## 5. Play it, open it, copy it
 
 ```
--- the stream URL of the selected entry
-put sPlaylist["entries"][tLine]["url"] into tUrl       -- an axDownloadUrl
+-- the two URLs of the selected entry
+put sPlaylist["entries"][tLine]["url"] into tUrl       -- /download/... (redirects to a datanode)
+put sPlaylist["entries"][tLine]["direct"] into tDirect -- the datanode itself (axDirectUrl)
 
--- hand it to a player object (created on demand; the engine's player streams
--- what the platform's media stack can decode)
+-- STREAM: hand the DIRECT url to a player object (created on demand). A
+-- player that cannot open a stream throws nothing and plays nothing, so
+-- ask it six seconds later: a duration of 0 means it did not open.
 if there is not a player "adPlayer" then
    create player "adPlayer"
 end if
-set the filename of player "adPlayer" to tUrl
+set the filename of player "adPlayer" to tDirect
 start player "adPlayer"
+send "checkPlayer" to me in 6 seconds      -- the duration of player "adPlayer" > 0 ?
+
+-- DOWNLOAD: straight to disk, with progress, then play the file
+put specialFolderPath("documents") & "/ArchiveXT/" & tIdentifier into tFolder
+create folder tFolder                       -- guard with `there is a folder` first
+put axDownload(tUrl, tFolder & "/" & tName, "download") into tHandle
+--   onArchive h, "progress", "received,total", "download"   (repeatedly)
+--   onArchive h, "file", tPath, "download"  -> set the filename of player "adPlayer" to tPath
 
 -- or the browser
 launch URL axDetailsUrl(tIdentifier)      -- the item's page
@@ -183,8 +193,10 @@ set the clipboardData["text"] to tUrl
 
 `axThumbnailUrl(tIdentifier)` is the item's image for an image object;
 `axEmbedUrl` the site's own player for a browser object. The demo does all
-of these behind its Play / Open page / Copy URL buttons, with `launch URL` as
-the fallback when a player cannot be created.
+of these behind its Play / Download / Open page / Copy URL buttons: Play
+streams the datanode URL and, when the six-second check finds the player
+never opened it, downloads the file and plays it from disk; Download saves
+to Documents/ArchiveXT/<identifier>/ with progress in the status line.
 
 ## 6. Paging
 

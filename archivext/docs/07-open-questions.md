@@ -97,19 +97,38 @@
    6.9). Still open, and the only thing that can move that entry: does the
    same call against a host with a BAD certificate fail? Record it beside
    6.8 whatever the answer is (see `04-fetch-layer.md`).
-10. **Streaming.** Does a player object play an `axDownloadUrl` MP3 through
-    the datanode redirect, per platform? The demo's Play button is the test;
-    its fallback is `launch URL`.
+10. **Streaming.** Does a player object play an archive.org MP3, per
+    platform? The first report (2026-09-16) was "the player is still not
+    working" with nothing in the log: a player handed a URL it cannot open
+    throws nothing and plays nothing. Two things changed the same day, both
+    UNPROVEN until the next run. Play now hands the player the DATANODE URL
+    (`axDirectUrl`, the `server` / `dir` the metadata names) rather than
+    the `/download/` URL whose 302 a player may not follow, and asks the
+    player six seconds later whether it opened the stream (`the duration`
+    is 0 when it did not); when it did not, the demo downloads the file
+    (item 12) and plays it from disk. The log now records the platform,
+    the URL, the format and the duration the player reported - the next
+    log will say WHICH of the three (the redirect, https in the player,
+    the format) was the wall.
 
 ## What is deliberately not built yet
 
 11. **More families.** `any` searches every mediatype with no presets beyond
     the ten mediatype rows; texts, images, software and audio (non-etree)
     could each carry a curated table the way the three app families do.
-12. **Downloads to disk.** A background download with progress (`load URL`
-    with a progress message, then a file write) is an app concern today;
-    a `axDownloadFile`-shaped helper is a natural next handler once the
-    fetch layer has an engine record.
+12. ~~Downloads to disk.~~ **BUILT 2026-09-16** (unproven until its first
+    run): `axDownload(pUrl, pPath, pTag)` writes straight to disk through
+    `libURLDownloadToFile`, forwards the Internet library's status
+    callback as the `progress` kind, re-arms its watchdog on every report
+    (a stall watchdog, not a total-time one), and delivers `file` with the
+    path; `axDownloadSync` is the blocking form. The demo's Download button
+    saves to Documents/ArchiveXT/<identifier>/ and reuses a file already
+    there at the promised size; Play falls back to download-and-play. What
+    the first run must answer: does `libURLDownloadToFile` follow the
+    `/download/` redirect (libURL follows redirects for `load URL`, and
+    this is the same library), does the status callback report
+    `loading,received,total` on this engine, and does a player open the
+    local file.
 13. **A result cache.** Every reply is unloaded on handling; an app that
     pages back and forth re-fetches. A small keyed cache with a TTL is
     cheap once the correlation layer is proven.

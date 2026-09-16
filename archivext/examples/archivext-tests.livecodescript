@@ -480,6 +480,7 @@ end axtTestFamiliesAndPresets
 -- ==========================================================================
 
 private command axtTestUrls
+   local tItem, tBare
    axtSection "url builders"
    axtCheck axSearchUrl("collection:(librivoxaudio) AND (a " & quote & "b" & quote & ")", "identifier,title,year,creator,date,language,runtime,subject", "downloads desc", 24, 2) is kAxVecUrlSearch, "axSearchUrl matches the AudioBooks bytes"
    axtCheck axSearchUrl("x", "identifier", empty, empty, empty) is "https://archive.org/advancedsearch.php?q=x&fl%5B%5D=identifier&rows=24&page=1&output=json", "axSearchUrl defaults and no sort"
@@ -499,6 +500,15 @@ private command axtTestUrls
    axtCheck axDetailsUrl("abc") is "https://archive.org/details/abc", "axDetailsUrl"
    axtCheck axEmbedUrl("abc") is "https://archive.org/embed/abc", "axEmbedUrl"
    axtCheck axEmbedUrl(empty) is empty, "axEmbedUrl refuses empty"
+   put axItemParse(axtHex(kAxVecFixLibrivoxItemHex)) into tItem
+   axtCheck axDirectUrl(tItem, "pp_01_austen_64kb.mp3") is "https://ia800000.us.archive.org/1/items/pride_prejudice_test/pp_01_austen_64kb.mp3", "axDirectUrl is the datanode host and directory"
+   axtCheck axDirectUrl(tItem, "a b#1.mp3") is "https://ia800000.us.archive.org/1/items/pride_prejudice_test/a%20b%231.mp3", "axDirectUrl encodes the name"
+   axtCheck axDirectUrl(tItem, empty) is empty, "axDirectUrl refuses an empty name"
+   put "abc" into tBare["identifier"]
+   axtCheck axDirectUrl(tBare, "f.mp3") is "https://archive.org/download/abc/f.mp3", "axDirectUrl falls back to /download/ without a server"
+   put "bad host" into tBare["server"]
+   put "/1/items/abc" into tBare["dir"]
+   axtCheck axDirectUrl(tBare, "f.mp3") is "https://archive.org/download/abc/f.mp3", "axDirectUrl falls back on a server that is not a host"
 end axtTestUrls
 
 -- ==========================================================================
@@ -734,6 +744,7 @@ private command axtTestPlaylists
    axtCheck axtEntryField(tPlaylist, "track") is kAxVecLibrivoxChapterTracks, "chapters: track numbers (4/5 reads as 4)"
    axtCheck axtEntryField(tPlaylist, "length") is kAxVecLibrivoxChapterLengths, "chapters: lengths"
    axtCheck tPlaylist["entries"][1]["url"] is "https://archive.org/download/pride_prejudice_test/pp_01_austen_64kb.mp3", "chapters: the stream url"
+   axtCheck tPlaylist["entries"][1]["direct"] is "https://ia800000.us.archive.org/1/items/pride_prejudice_test/pp_01_austen_64kb.mp3", "chapters: the datanode url"
    put axPlaylistTable(tPlaylist) into tTable
    axtCheck the number of lines of tTable is 5, "axPlaylistTable: one line per chapter"
    axtCheck line 1 of tTable begins with "1" & tab & "01 - Chapter 1" & tab & "10:00" & tab, "axPlaylistTable: number, title, duration"
@@ -811,6 +822,19 @@ private command axtTestFetchLayerOffline
    axtCheck tError is empty, "a late reply for nobody is dropped without a throw"
    axDeadline 999
    axtCheck true, "axDeadline of an unknown handle is a clean no-op"
+   axtCheck axDownload("ftp://x", "somewhere", empty) is empty, "axDownload refuses a non-http url before loading"
+   axtCheck axDownload("https://nobody.invalid/f", empty, empty) is empty, "axDownload refuses an empty path before loading"
+   axtCheck axLastError() contains "path", "and says why"
+   axtCheck axPending() is tPendingBefore, "no download was started"
+   put empty into tError
+   try
+      axUrlStatus "https://nobody.invalid/f", "loading,1,2"
+      axDownloadDone "https://nobody.invalid/f", "downloaded"
+   catch tError
+   end try
+   axtCheck tError is empty, "a status and a completion for nobody are dropped without a throw"
+   axtCheck axDownloadSync("not a url", "somewhere") is empty, "axDownloadSync refuses a non-url"
+   axtCheck axDownloadSync("https://nobody.invalid/f", empty) is empty, "axDownloadSync refuses an empty path"
    axtCheck axGetSync("not a url") is empty, "axGetSync refuses a non-url"
    axtCheck axSearchSync(empty, tOptions) is empty, "axSearchSync refuses an empty query"
    axtCheck axFetchItemSync("x y") is empty, "axFetchItemSync refuses a bad identifier"

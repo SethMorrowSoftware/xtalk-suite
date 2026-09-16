@@ -59,11 +59,6 @@ NOT_A_HANDLER = {
         "convention", None,
         "the house-style line ('public API axPascalCase') in CLAUDE.md and "
         "the docs; a naming convention example, not a call."),
-    "axDownloadFile": (
-        "deferred", None,
-        "the download-to-disk helper docs/07-open-questions.md item 12 "
-        "proposes; deliberately not built until the fetch layer has an "
-        "engine record (IMPLEMENTATION-PLAN.md phase 7)."),
 }
 
 DEF_RE = re.compile(

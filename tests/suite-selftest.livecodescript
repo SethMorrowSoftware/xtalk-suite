@@ -887,6 +887,7 @@ local sAxMaxBody            -- the largest body the layer will parse
 local sAxReqNext            -- the next request handle
 local sAxReqs               -- sAxReqs[h] = the request record (kind, url, tag, ...)
 local sAxReqByUrl           -- sAxReqByUrl[url] = h, the correlation index
+local sAxStatusHooked       -- true once libURLSetStatusCallback points at axUrlStatus
 -- <<< GENERATED EMBED: archivext script layer declarations <<< --
 
 -- >>> GENERATED EMBED: coinxt script layer declarations >>> --
@@ -5369,6 +5370,43 @@ function axDownloadUrl pIdentifier, pFileName
    return axBaseUrl() & "/download/" & axUrlEncode(pIdentifier) & "/" & axUrlEncodePath(pFileName)
 end axDownloadUrl
 
+function axDirectUrl pItem, pFileName
+   -- The DATANODE URL of one file of an axItemParse item: the host and
+   -- directory the metadata answer names (`server`, `dir`), which is where
+   -- `/download/` redirects to. The site's own player streams from here;
+   -- a player object handed the `/download/` form has to follow a 302 it
+   -- may not follow, and archive.org's download URL is also the one that
+   -- serves the "you are being redirected" page to clients that ask for
+   -- it wrongly. Falls back to axDownloadUrl when the item carries no
+   -- server (a hand-built array, an item parsed from a partial answer).
+   local tServer, tDir
+   if pFileName is empty then
+      axSetError "axDirectUrl: no file name"
+      return empty
+   end if
+   put pItem["server"] into tServer
+   put pItem["dir"] into tDir
+   if tServer is empty or tDir is empty then
+      return axDownloadUrl(pItem["identifier"], pFileName)
+   end if
+   if tServer contains "/" then
+      return axDownloadUrl(pItem["identifier"], pFileName)
+   end if
+   if tServer contains " " then
+      return axDownloadUrl(pItem["identifier"], pFileName)
+   end if
+   if not (tServer contains ".") then
+      return axDownloadUrl(pItem["identifier"], pFileName)
+   end if
+   if char 1 of tDir is not "/" then
+      put "/" before tDir
+   end if
+   if char -1 of tDir is "/" then
+      put char 1 to -2 of tDir into tDir
+   end if
+   return "https://" & tServer & axUrlEncodePath(tDir) & "/" & axUrlEncodePath(pFileName)
+end axDirectUrl
+
 function axThumbnailUrl pIdentifier
    -- The item image service: a JPEG the site derives for every item. The
    -- only thumbnail rule any of the three apps had.
@@ -7092,6 +7130,7 @@ function axPlaylist pItem, pKind
       put tFile["format"] into tEntry["format"]
       put tFile["size"] into tEntry["size"]
       put axDownloadUrl(tIdentifier, tFile["name"]) into tEntry["url"]
+      put axDirectUrl(pItem, tFile["name"]) into tEntry["direct"]
       put tGroupStems[tG] into tEntry["stem"]
       put tBest into tEntry["index"]
       put empty into tEntry["title"]
@@ -7219,7 +7258,31 @@ command axInit pOwner
    if sAxMaxBody is empty then
       put kAxMaxBodyDefault into sAxMaxBody
    end if
+   axHookStatus
 end axInit
+
+private command axHookStatus
+   -- Point the Internet library's status callback at axUrlStatus, once,
+   -- so a download can report progress and re-arm its watchdog. The
+   -- callback is GLOBAL to libURL (one per process), which is why the
+   -- library owns it rather than the app: every status the library does
+   -- not recognise is ignored. `me` is the object whose script holds this
+   -- handler - the library stack when it is `start using`d, the carrying
+   -- stack when it is embedded - and both define axUrlStatus. Without the
+   -- Internet library the setter throws, and a download simply reports no
+   -- progress (the try keeps axInit usable offline, which the harness
+   -- runs it as).
+   local tError
+   if sAxStatusHooked is true then
+      exit axHookStatus
+   end if
+   try
+      libURLSetStatusCallback "axUrlStatus", the long id of me
+      put true into sAxStatusHooked
+   catch tError
+      put empty into sAxStatusHooked
+   end try
+end axHookStatus
 
 command axSetCallback pHandlerName
    -- The handler dispatched for every outcome (default onArchive). Empty
@@ -7389,6 +7452,66 @@ function axFetchUrl pUrl, pTag
    return axStartRequest("raw", pUrl, pTag)
 end axFetchUrl
 
+function axDownload pUrl, pPath, pTag
+   -- Start a download of any http(s) URL STRAIGHT TO A FILE, through the
+   -- Internet library's libURLDownloadToFile, so the body never sits in
+   -- memory and the body cap does not apply (an 18 MB chapter, a 700 MB
+   -- film). Progress arrives as onArchive h, "progress", "received,total",
+   -- pTag (as often as libURL reports it); the finished file as onArchive
+   -- h, "file", pPath, pTag; any failure as "error". The watchdog is a
+   -- STALL watchdog here: every progress report re-arms it, so a slow
+   -- download that is still moving never times out and a stalled one does
+   -- after axSetTimeout seconds of silence. Returns the handle, or empty
+   -- with the reason. The folder must exist; the file is overwritten.
+   local tHandle, tError, tReq, tDelay
+   if sAxReqNext is empty then
+      put 0 into sAxReqNext
+   end if
+   if sAxTimeout is empty then
+      put kAxTimeoutDefault into sAxTimeout
+   end if
+   if not axIsHttpUrl(pUrl) then
+      axSetError "axDownload: not an http(s) URL: " & pUrl
+      return empty
+   end if
+   if pPath is empty then
+      axSetError "axDownload: no file path to write to"
+      return empty
+   end if
+   if pUrl is among the keys of sAxReqByUrl then
+      if sAxReqByUrl[pUrl] is not empty then
+         axSetError "axDownload: that URL is already in flight (handle " & sAxReqByUrl[pUrl] & ")"
+         return empty
+      end if
+   end if
+   axHookStatus
+   add 1 to sAxReqNext
+   put sAxReqNext into tHandle
+   put "download" into tReq["kind"]
+   put pUrl into tReq["url"]
+   put pPath into tReq["path"]
+   put pTag into tReq["tag"]
+   put the seconds into tReq["started"]
+   put the seconds into tReq["lastSeen"]
+   put tReq into sAxReqs[tHandle]
+   put tHandle into sAxReqByUrl[pUrl]
+   try
+      unload URL pUrl
+   catch tError
+   end try
+   try
+      libURLDownloadToFile pUrl, pPath, "axDownloadDone"
+   catch tError
+      put empty into sAxReqs[tHandle]
+      put empty into sAxReqByUrl[pUrl]
+      axSetError "axDownload: libURLDownloadToFile failed to start: " & tError
+      return empty
+   end try
+   put sAxTimeout * 1000 into tDelay
+   send ("axDeadline" && tHandle) to me in tDelay milliseconds
+   return tHandle
+end axDownload
+
 command axCancel pHandle
    -- Forget a request. The engine's load cannot be stopped, so the reply
    -- still arrives later and is then dropped as a late reply. A stale or
@@ -7522,12 +7645,26 @@ end axUrlDone
 command axDeadline pHandle
    -- The per-request watchdog: a request still in flight when it fires is
    -- reported as a timeout and forgotten, so its eventual reply is dropped.
-   local tReq, tUrl, tError
+   -- For a DOWNLOAD it is a stall watchdog: progress seen inside the window
+   -- re-arms it for the remainder instead of failing a transfer that is
+   -- merely long (an 18 MB chapter at a slow link outlives 60 seconds).
+   local tReq, tUrl, tError, tQuiet, tDelay
    if sAxReqs[pHandle] is not an array then
       exit axDeadline
    end if
    put sAxReqs[pHandle] into tReq
    put tReq["url"] into tUrl
+   if tReq["kind"] is "download" then
+      put the seconds - tReq["lastSeen"] into tQuiet
+      if tQuiet < sAxTimeout then
+         put (sAxTimeout - tQuiet) * 1000 into tDelay
+         if tDelay < 1000 then
+            put 1000 into tDelay
+         end if
+         send ("axDeadline" && pHandle) to me in tDelay milliseconds
+         exit axDeadline
+      end if
+   end if
    put empty into sAxReqs[pHandle]
    if tUrl is not empty then
       put empty into sAxReqByUrl[tUrl]
@@ -7541,6 +7678,78 @@ command axDeadline pHandle
    end if
    axDispatch pHandle, "error", "timeout after " & sAxTimeout & " seconds: " & tUrl, tReq["tag"]
 end axDeadline
+
+on axUrlStatus pUrl, pStatus
+   -- The Internet library's status callback (registered by axHookStatus,
+   -- one per process). A download in this layer's table gets its
+   -- "loading,received,total" reports forwarded as the progress kind and
+   -- its stall clock reset; every other status, and every URL that is not
+   -- a download of ours (the searches load through the same library and
+   -- report here too), is ignored.
+   local tHandle, tReq
+   if pUrl is not among the keys of sAxReqByUrl then
+      exit axUrlStatus
+   end if
+   put sAxReqByUrl[pUrl] into tHandle
+   if tHandle is empty then
+      exit axUrlStatus
+   end if
+   if sAxReqs[tHandle] is not an array then
+      exit axUrlStatus
+   end if
+   put sAxReqs[tHandle] into tReq
+   if tReq["kind"] is not "download" then
+      exit axUrlStatus
+   end if
+   if item 1 of pStatus is not "loading" then
+      exit axUrlStatus
+   end if
+   put the seconds into sAxReqs[tHandle]["lastSeen"]
+   axDispatch tHandle, "progress", item 2 of pStatus & comma & item 3 of pStatus, tReq["tag"]
+end axUrlStatus
+
+on axDownloadDone pUrl, pStatus
+   -- libURLDownloadToFile's completion callback: pStatus is "downloaded"
+   -- when the file is whole, anything else on failure. The file on disk is
+   -- the final arbiter either way - a "downloaded" with no file is a
+   -- failure, and the app is told which.
+   local tHandle, tReq, tPath, tDetail, tError
+   put empty into tHandle
+   if pUrl is among the keys of sAxReqByUrl then
+      put sAxReqByUrl[pUrl] into tHandle
+   end if
+   if tHandle is empty then
+      exit axDownloadDone
+   end if
+   if sAxReqs[tHandle] is not an array then
+      put empty into sAxReqByUrl[pUrl]
+      exit axDownloadDone
+   end if
+   put sAxReqs[tHandle] into tReq
+   put tReq["path"] into tPath
+   put empty into sAxReqs[tHandle]
+   put empty into sAxReqByUrl[pUrl]
+   if pStatus is "downloaded" or pStatus is "cached" then
+      if there is a file tPath then
+         axDispatch tHandle, "file", tPath, tReq["tag"]
+         exit axDownloadDone
+      end if
+      axDispatch tHandle, "error", "the download reported " & pStatus & " but no file is at " & tPath, tReq["tag"]
+      exit axDownloadDone
+   end if
+   put empty into tDetail
+   try
+      put libURLErrorData(pUrl) into tDetail
+   catch tError
+      put empty into tDetail
+   end try
+   if tDetail is empty then
+      put "the download failed: " & pStatus & " for " & pUrl into tDetail
+   else
+      put "the download failed: " & pStatus & " for " & pUrl & ": " & tDetail into tDetail
+   end if
+   axDispatch tHandle, "error", tDetail, tReq["tag"]
+end axDownloadDone
 
 function axGetSync pUrl
    -- The body of an http(s) URL, or empty with the reason. The Internet
@@ -7596,6 +7805,38 @@ function axFetchItemSync pIdentifier
    end if
    return axItemParse(tBody)
 end axFetchItemSync
+
+function axDownloadSync pUrl, pPath
+   -- axDownload, blocking: the whole body of an http(s) URL written to a
+   -- file. Returns pPath, or empty with the reason. The body passes
+   -- through memory here (it is `put URL x into URL "binfile:..."`), so
+   -- this is for the message box and for files a machine can hold.
+   local tError, tWhy
+   if not axIsHttpUrl(pUrl) then
+      axSetError "axDownloadSync: not an http(s) URL: " & pUrl
+      return empty
+   end if
+   if pPath is empty then
+      axSetError "axDownloadSync: no file path to write to"
+      return empty
+   end if
+   try
+      put URL pUrl into URL ("binfile:" & pPath)
+      put the result into tWhy
+   catch tError
+      axSetError "axDownloadSync: " & tError
+      return empty
+   end try
+   if tWhy is not empty then
+      axSetError "axDownloadSync: the URL library said " & tWhy & " for " & pUrl
+      return empty
+   end if
+   if there is not a file pPath then
+      axSetError "axDownloadSync: nothing was written to " & pPath
+      return empty
+   end if
+   return pPath
+end axDownloadSync
 -- <<< GENERATED EMBED: archivext script layer <<< --
 
 
@@ -47820,6 +48061,7 @@ private command ax1axtTestFamiliesAndPresets
 end ax1axtTestFamiliesAndPresets
 
 private command ax1axtTestUrls
+   local ax1tItem, ax1tBare
    ax1axtSection "url builders"
    ax1axtCheck axSearchUrl("collection:(librivoxaudio) AND (a " & quote & "b" & quote & ")", "identifier,title,year,creator,date,language,runtime,subject", "downloads desc", 24, 2) is ax1kAxVecUrlSearch, "axSearchUrl matches the AudioBooks bytes"
    ax1axtCheck axSearchUrl("x", "identifier", empty, empty, empty) is "https://archive.org/advancedsearch.php?q=x&fl%5B%5D=identifier&rows=24&page=1&output=json", "axSearchUrl defaults and no sort"
@@ -47839,6 +48081,15 @@ private command ax1axtTestUrls
    ax1axtCheck axDetailsUrl("abc") is "https://archive.org/details/abc", "axDetailsUrl"
    ax1axtCheck axEmbedUrl("abc") is "https://archive.org/embed/abc", "axEmbedUrl"
    ax1axtCheck axEmbedUrl(empty) is empty, "axEmbedUrl refuses empty"
+   put axItemParse(ax1axtHex(ax1kAxVecFixLibrivoxItemHex)) into ax1tItem
+   ax1axtCheck axDirectUrl(ax1tItem, "pp_01_austen_64kb.mp3") is "https://ia800000.us.archive.org/1/items/pride_prejudice_test/pp_01_austen_64kb.mp3", "axDirectUrl is the datanode host and directory"
+   ax1axtCheck axDirectUrl(ax1tItem, "a b#1.mp3") is "https://ia800000.us.archive.org/1/items/pride_prejudice_test/a%20b%231.mp3", "axDirectUrl encodes the name"
+   ax1axtCheck axDirectUrl(ax1tItem, empty) is empty, "axDirectUrl refuses an empty name"
+   put "abc" into ax1tBare["identifier"]
+   ax1axtCheck axDirectUrl(ax1tBare, "f.mp3") is "https://archive.org/download/abc/f.mp3", "axDirectUrl falls back to /download/ without a server"
+   put "bad host" into ax1tBare["server"]
+   put "/1/items/abc" into ax1tBare["dir"]
+   ax1axtCheck axDirectUrl(ax1tBare, "f.mp3") is "https://archive.org/download/abc/f.mp3", "axDirectUrl falls back on a server that is not a host"
 end ax1axtTestUrls
 
 private command ax1axtTestJsonReader
@@ -48058,6 +48309,7 @@ private command ax1axtTestPlaylists
    ax1axtCheck ax1axtEntryField(ax1tPlaylist, "track") is ax1kAxVecLibrivoxChapterTracks, "chapters: track numbers (4/5 reads as 4)"
    ax1axtCheck ax1axtEntryField(ax1tPlaylist, "length") is ax1kAxVecLibrivoxChapterLengths, "chapters: lengths"
    ax1axtCheck ax1tPlaylist["entries"][1]["url"] is "https://archive.org/download/pride_prejudice_test/pp_01_austen_64kb.mp3", "chapters: the stream url"
+   ax1axtCheck ax1tPlaylist["entries"][1]["direct"] is "https://ia800000.us.archive.org/1/items/pride_prejudice_test/pp_01_austen_64kb.mp3", "chapters: the datanode url"
    put axPlaylistTable(ax1tPlaylist) into ax1tTable
    ax1axtCheck the number of lines of ax1tTable is 5, "axPlaylistTable: one line per chapter"
    ax1axtCheck line 1 of ax1tTable begins with "1" & tab & "01 - Chapter 1" & tab & "10:00" & tab, "axPlaylistTable: number, title, duration"
@@ -48130,6 +48382,19 @@ private command ax1axtTestFetchLayerOffline
    ax1axtCheck ax1tError is empty, "a late reply for nobody is dropped without a throw"
    axDeadline 999
    ax1axtCheck true, "axDeadline of an unknown handle is a clean no-op"
+   ax1axtCheck axDownload("ftp://x", "somewhere", empty) is empty, "axDownload refuses a non-http url before loading"
+   ax1axtCheck axDownload("https://nobody.invalid/f", empty, empty) is empty, "axDownload refuses an empty path before loading"
+   ax1axtCheck axLastError() contains "path", "and says why"
+   ax1axtCheck axPending() is ax1tPendingBefore, "no download was started"
+   put empty into ax1tError
+   try
+      axUrlStatus "https://nobody.invalid/f", "loading,1,2"
+      axDownloadDone "https://nobody.invalid/f", "downloaded"
+   catch ax1tError
+   end try
+   ax1axtCheck ax1tError is empty, "a status and a completion for nobody are dropped without a throw"
+   ax1axtCheck axDownloadSync("not a url", "somewhere") is empty, "axDownloadSync refuses a non-url"
+   ax1axtCheck axDownloadSync("https://nobody.invalid/f", empty) is empty, "axDownloadSync refuses an empty path"
    ax1axtCheck axGetSync("not a url") is empty, "axGetSync refuses a non-url"
    ax1axtCheck axSearchSync(empty, ax1tOptions) is empty, "axSearchSync refuses an empty query"
    ax1axtCheck axFetchItemSync("x y") is empty, "axFetchItemSync refuses a bad identifier"

@@ -363,8 +363,10 @@ harness-exercised with zero exemptions.
   call.
 - **A fetch layer** over `load URL ... with message`: one handle per
   request, correlation by URL, a per-request watchdog, a body cap, unload on
-  every path, a four-kind callback (`search` / `item` / `raw` / `error`),
-  and blocking conveniences for the message box. Registered with the
+  every path, a six-kind callback (`search` / `item` / `raw` / `progress` /
+  `file` / `error`), downloads straight to disk with progress and a stall
+  watchdog (`libURLDownloadToFile`, added 2026-09-16), and blocking
+  conveniences for the message box. Registered with the
   timer-stack-pin gate so a callback that touches controls without pinning
   the defaultStack fails the build.
 - **The demo** (`archivext/examples/archivext-demo.livecodescript`) is the

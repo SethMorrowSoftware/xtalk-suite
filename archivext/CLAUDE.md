@@ -178,6 +178,29 @@ line and the harness's section split.
   Still owed after this run: the suite-paste fold, the async `item` kind
   (click a result), the scrape API, streaming (the Play button), and TLS's
   certificate direction.
+- **2026-09-16 - "the player is still not working": streaming rebuilt,
+  downloading added.** The report carried no log line, because a player
+  object handed a URL it cannot open throws nothing and plays nothing
+  (gotcha 19). Three changes, all UNPROVEN until the next run: Play hands
+  the player the DATANODE URL (`axDirectUrl`, new: `https://<server><dir>/
+  <name>` from the metadata's own fields, where `/download/` redirects to;
+  every playlist entry now carries it as `direct`), asks the player six
+  seconds later whether it opened the stream (`the duration` and `the
+  currentTime` are 0 when it did not) and logs the platform, the URL, the
+  format and the answer; when the answer is no it DOWNLOADS the file and
+  plays it from disk. Downloading is a library feature now: `axDownload`
+  writes straight to a file through `libURLDownloadToFile`, forwards
+  `libURLSetStatusCallback`'s `loading,received,total` as a `progress`
+  kind, re-arms its watchdog on every report (a STALL watchdog: a slow
+  transfer that is still moving never times out), delivers `file` with the
+  path, and `axDownloadSync` is the blocking form; the demo's Download
+  button saves to Documents/ArchiveXT/<identifier>/ with progress in the
+  status line and reuses a file already there at the promised size. Five
+  public handlers joined (`axDirectUrl`, `axDownload`, `axDownloadSync`,
+  `axUrlStatus`, `axDownloadDone`), every one named by the harness
+  (104/104, zero exemptions); the timer-stack-pin gate learned
+  `libURLSetStatusCallback` and `libURLDownloadToFile` as registrars, the
+  same delivery class as `load URL ... with message`.
 
 ## Gotchas and lessons (each one cost a round)
 
@@ -312,6 +335,20 @@ line and the harness's section split.
     but the site's cost for an OR over 26 `identifier:` terms inside a
     `mediatype:collection` clause is a query-time cost the app's users pay
     once per session and a library's callers would pay per keystroke.
+19. **A player object that cannot open its stream FAILS SILENTLY (INFERRED
+    2026-09-16).** "The player is still not working" arrived with a log
+    that showed nothing wrong: `set the filename` and `start player`
+    throw nothing on a URL the platform's media stack cannot open, and the
+    window shows a controller over silence. So a Play that only logs
+    "playing <url>" has recorded nothing. The demo now asks the player six
+    seconds later - `the duration` (and `the currentTime`) stay 0 when the
+    stream never opened - and logs the platform, the URL, the format and
+    the answer, then falls back to a download and a LOCAL file, which is
+    the one path every platform's player takes. Three suspects are still
+    open for the stream itself, and the datanode URL rules out only the
+    first: the `/download/` 302 a player may not follow, https inside the
+    player at all, and the container (VBR MP3 / MP4 are the safe pair the
+    playlist engine already prefers). INFERRED until a log names the wall.
 
 ## Working rules for this member
 

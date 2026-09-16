@@ -128,7 +128,10 @@ URL. Each result flips the STATUS blocks in place, dated.
 
 ## Phase 7+ - open
 
-More families with curated tables (texts, images, software), a download-
-to-disk helper with progress, a small result cache, a thirty-line minimal
-demo. None starts before phase 6 has an engine record: building more on an
-unproven fetch layer is how a member accumulates debt it cannot see.
+More families with curated tables (texts, images, software), a small
+result cache, a thirty-line minimal demo. The download-to-disk helper this
+list used to name was pulled forward on 2026-09-16 (`axDownload`, with
+progress and a stall watchdog) because the demo's Play button had no working
+path without it; it is unproven until its first run. Nothing else starts
+before phase 6 has its full engine record: building more on an unproven
+fetch layer is how a member accumulates debt it cannot see.

@@ -206,6 +206,7 @@ local sAxMaxBody            -- the largest body the layer will parse
 local sAxReqNext            -- the next request handle
 local sAxReqs               -- sAxReqs[h] = the request record (kind, url, tag, ...)
 local sAxReqByUrl           -- sAxReqByUrl[url] = h, the correlation index
+local sAxStatusHooked       -- true once libURLSetStatusCallback points at axUrlStatus
 
 -- ==========================================================================
 -- Version, errors, capabilities, base URL.
@@ -1990,6 +1991,43 @@ function axDownloadUrl pIdentifier, pFileName
    return axBaseUrl() & "/download/" & axUrlEncode(pIdentifier) & "/" & axUrlEncodePath(pFileName)
 end axDownloadUrl
 
+function axDirectUrl pItem, pFileName
+   -- The DATANODE URL of one file of an axItemParse item: the host and
+   -- directory the metadata answer names (`server`, `dir`), which is where
+   -- `/download/` redirects to. The site's own player streams from here;
+   -- a player object handed the `/download/` form has to follow a 302 it
+   -- may not follow, and archive.org's download URL is also the one that
+   -- serves the "you are being redirected" page to clients that ask for
+   -- it wrongly. Falls back to axDownloadUrl when the item carries no
+   -- server (a hand-built array, an item parsed from a partial answer).
+   local tServer, tDir
+   if pFileName is empty then
+      axSetError "axDirectUrl: no file name"
+      return empty
+   end if
+   put pItem["server"] into tServer
+   put pItem["dir"] into tDir
+   if tServer is empty or tDir is empty then
+      return axDownloadUrl(pItem["identifier"], pFileName)
+   end if
+   if tServer contains "/" then
+      return axDownloadUrl(pItem["identifier"], pFileName)
+   end if
+   if tServer contains " " then
+      return axDownloadUrl(pItem["identifier"], pFileName)
+   end if
+   if not (tServer contains ".") then
+      return axDownloadUrl(pItem["identifier"], pFileName)
+   end if
+   if char 1 of tDir is not "/" then
+      put "/" before tDir
+   end if
+   if char -1 of tDir is "/" then
+      put char 1 to -2 of tDir into tDir
+   end if
+   return "https://" & tServer & axUrlEncodePath(tDir) & "/" & axUrlEncodePath(pFileName)
+end axDirectUrl
+
 function axThumbnailUrl pIdentifier
    -- The item image service: a JPEG the site derives for every item. The
    -- only thumbnail rule any of the three apps had.
@@ -3758,6 +3796,7 @@ function axPlaylist pItem, pKind
       put tFile["format"] into tEntry["format"]
       put tFile["size"] into tEntry["size"]
       put axDownloadUrl(tIdentifier, tFile["name"]) into tEntry["url"]
+      put axDirectUrl(pItem, tFile["name"]) into tEntry["direct"]
       put tGroupStems[tG] into tEntry["stem"]
       put tBest into tEntry["index"]
       put empty into tEntry["title"]
@@ -3928,7 +3967,31 @@ command axInit pOwner
    if sAxMaxBody is empty then
       put kAxMaxBodyDefault into sAxMaxBody
    end if
+   axHookStatus
 end axInit
+
+private command axHookStatus
+   -- Point the Internet library's status callback at axUrlStatus, once,
+   -- so a download can report progress and re-arm its watchdog. The
+   -- callback is GLOBAL to libURL (one per process), which is why the
+   -- library owns it rather than the app: every status the library does
+   -- not recognise is ignored. `me` is the object whose script holds this
+   -- handler - the library stack when it is `start using`d, the carrying
+   -- stack when it is embedded - and both define axUrlStatus. Without the
+   -- Internet library the setter throws, and a download simply reports no
+   -- progress (the try keeps axInit usable offline, which the harness
+   -- runs it as).
+   local tError
+   if sAxStatusHooked is true then
+      exit axHookStatus
+   end if
+   try
+      libURLSetStatusCallback "axUrlStatus", the long id of me
+      put true into sAxStatusHooked
+   catch tError
+      put empty into sAxStatusHooked
+   end try
+end axHookStatus
 
 command axSetCallback pHandlerName
    -- The handler dispatched for every outcome (default onArchive). Empty
@@ -4098,6 +4161,66 @@ function axFetchUrl pUrl, pTag
    return axStartRequest("raw", pUrl, pTag)
 end axFetchUrl
 
+function axDownload pUrl, pPath, pTag
+   -- Start a download of any http(s) URL STRAIGHT TO A FILE, through the
+   -- Internet library's libURLDownloadToFile, so the body never sits in
+   -- memory and the body cap does not apply (an 18 MB chapter, a 700 MB
+   -- film). Progress arrives as onArchive h, "progress", "received,total",
+   -- pTag (as often as libURL reports it); the finished file as onArchive
+   -- h, "file", pPath, pTag; any failure as "error". The watchdog is a
+   -- STALL watchdog here: every progress report re-arms it, so a slow
+   -- download that is still moving never times out and a stalled one does
+   -- after axSetTimeout seconds of silence. Returns the handle, or empty
+   -- with the reason. The folder must exist; the file is overwritten.
+   local tHandle, tError, tReq, tDelay
+   if sAxReqNext is empty then
+      put 0 into sAxReqNext
+   end if
+   if sAxTimeout is empty then
+      put kAxTimeoutDefault into sAxTimeout
+   end if
+   if not axIsHttpUrl(pUrl) then
+      axSetError "axDownload: not an http(s) URL: " & pUrl
+      return empty
+   end if
+   if pPath is empty then
+      axSetError "axDownload: no file path to write to"
+      return empty
+   end if
+   if pUrl is among the keys of sAxReqByUrl then
+      if sAxReqByUrl[pUrl] is not empty then
+         axSetError "axDownload: that URL is already in flight (handle " & sAxReqByUrl[pUrl] & ")"
+         return empty
+      end if
+   end if
+   axHookStatus
+   add 1 to sAxReqNext
+   put sAxReqNext into tHandle
+   put "download" into tReq["kind"]
+   put pUrl into tReq["url"]
+   put pPath into tReq["path"]
+   put pTag into tReq["tag"]
+   put the seconds into tReq["started"]
+   put the seconds into tReq["lastSeen"]
+   put tReq into sAxReqs[tHandle]
+   put tHandle into sAxReqByUrl[pUrl]
+   try
+      unload URL pUrl
+   catch tError
+   end try
+   try
+      libURLDownloadToFile pUrl, pPath, "axDownloadDone"
+   catch tError
+      put empty into sAxReqs[tHandle]
+      put empty into sAxReqByUrl[pUrl]
+      axSetError "axDownload: libURLDownloadToFile failed to start: " & tError
+      return empty
+   end try
+   put sAxTimeout * 1000 into tDelay
+   send ("axDeadline" && tHandle) to me in tDelay milliseconds
+   return tHandle
+end axDownload
+
 command axCancel pHandle
    -- Forget a request. The engine's load cannot be stopped, so the reply
    -- still arrives later and is then dropped as a late reply. A stale or
@@ -4231,12 +4354,26 @@ end axUrlDone
 command axDeadline pHandle
    -- The per-request watchdog: a request still in flight when it fires is
    -- reported as a timeout and forgotten, so its eventual reply is dropped.
-   local tReq, tUrl, tError
+   -- For a DOWNLOAD it is a stall watchdog: progress seen inside the window
+   -- re-arms it for the remainder instead of failing a transfer that is
+   -- merely long (an 18 MB chapter at a slow link outlives 60 seconds).
+   local tReq, tUrl, tError, tQuiet, tDelay
    if sAxReqs[pHandle] is not an array then
       exit axDeadline
    end if
    put sAxReqs[pHandle] into tReq
    put tReq["url"] into tUrl
+   if tReq["kind"] is "download" then
+      put the seconds - tReq["lastSeen"] into tQuiet
+      if tQuiet < sAxTimeout then
+         put (sAxTimeout - tQuiet) * 1000 into tDelay
+         if tDelay < 1000 then
+            put 1000 into tDelay
+         end if
+         send ("axDeadline" && pHandle) to me in tDelay milliseconds
+         exit axDeadline
+      end if
+   end if
    put empty into sAxReqs[pHandle]
    if tUrl is not empty then
       put empty into sAxReqByUrl[tUrl]
@@ -4250,6 +4387,78 @@ command axDeadline pHandle
    end if
    axDispatch pHandle, "error", "timeout after " & sAxTimeout & " seconds: " & tUrl, tReq["tag"]
 end axDeadline
+
+on axUrlStatus pUrl, pStatus
+   -- The Internet library's status callback (registered by axHookStatus,
+   -- one per process). A download in this layer's table gets its
+   -- "loading,received,total" reports forwarded as the progress kind and
+   -- its stall clock reset; every other status, and every URL that is not
+   -- a download of ours (the searches load through the same library and
+   -- report here too), is ignored.
+   local tHandle, tReq
+   if pUrl is not among the keys of sAxReqByUrl then
+      exit axUrlStatus
+   end if
+   put sAxReqByUrl[pUrl] into tHandle
+   if tHandle is empty then
+      exit axUrlStatus
+   end if
+   if sAxReqs[tHandle] is not an array then
+      exit axUrlStatus
+   end if
+   put sAxReqs[tHandle] into tReq
+   if tReq["kind"] is not "download" then
+      exit axUrlStatus
+   end if
+   if item 1 of pStatus is not "loading" then
+      exit axUrlStatus
+   end if
+   put the seconds into sAxReqs[tHandle]["lastSeen"]
+   axDispatch tHandle, "progress", item 2 of pStatus & comma & item 3 of pStatus, tReq["tag"]
+end axUrlStatus
+
+on axDownloadDone pUrl, pStatus
+   -- libURLDownloadToFile's completion callback: pStatus is "downloaded"
+   -- when the file is whole, anything else on failure. The file on disk is
+   -- the final arbiter either way - a "downloaded" with no file is a
+   -- failure, and the app is told which.
+   local tHandle, tReq, tPath, tDetail, tError
+   put empty into tHandle
+   if pUrl is among the keys of sAxReqByUrl then
+      put sAxReqByUrl[pUrl] into tHandle
+   end if
+   if tHandle is empty then
+      exit axDownloadDone
+   end if
+   if sAxReqs[tHandle] is not an array then
+      put empty into sAxReqByUrl[pUrl]
+      exit axDownloadDone
+   end if
+   put sAxReqs[tHandle] into tReq
+   put tReq["path"] into tPath
+   put empty into sAxReqs[tHandle]
+   put empty into sAxReqByUrl[pUrl]
+   if pStatus is "downloaded" or pStatus is "cached" then
+      if there is a file tPath then
+         axDispatch tHandle, "file", tPath, tReq["tag"]
+         exit axDownloadDone
+      end if
+      axDispatch tHandle, "error", "the download reported " & pStatus & " but no file is at " & tPath, tReq["tag"]
+      exit axDownloadDone
+   end if
+   put empty into tDetail
+   try
+      put libURLErrorData(pUrl) into tDetail
+   catch tError
+      put empty into tDetail
+   end try
+   if tDetail is empty then
+      put "the download failed: " & pStatus & " for " & pUrl into tDetail
+   else
+      put "the download failed: " & pStatus & " for " & pUrl & ": " & tDetail into tDetail
+   end if
+   axDispatch tHandle, "error", tDetail, tReq["tag"]
+end axDownloadDone
 
 -- ---- the blocking conveniences ------------------------------------------
 -- For the message box and for scripts that have nothing else to do while
@@ -4312,6 +4521,38 @@ function axFetchItemSync pIdentifier
    end if
    return axItemParse(tBody)
 end axFetchItemSync
+
+function axDownloadSync pUrl, pPath
+   -- axDownload, blocking: the whole body of an http(s) URL written to a
+   -- file. Returns pPath, or empty with the reason. The body passes
+   -- through memory here (it is `put URL x into URL "binfile:..."`), so
+   -- this is for the message box and for files a machine can hold.
+   local tError, tWhy
+   if not axIsHttpUrl(pUrl) then
+      axSetError "axDownloadSync: not an http(s) URL: " & pUrl
+      return empty
+   end if
+   if pPath is empty then
+      axSetError "axDownloadSync: no file path to write to"
+      return empty
+   end if
+   try
+      put URL pUrl into URL ("binfile:" & pPath)
+      put the result into tWhy
+   catch tError
+      axSetError "axDownloadSync: " & tError
+      return empty
+   end try
+   if tWhy is not empty then
+      axSetError "axDownloadSync: the URL library said " & tWhy & " for " & pUrl
+      return empty
+   end if
+   if there is not a file pPath then
+      axSetError "axDownloadSync: nothing was written to " & pPath
+      return empty
+   end if
+   return pPath
+end axDownloadSync
 
 -- ---- archivext/examples/archivext-tests.livecodescript ----
 -- archivext-tests.livecodescript - the ArchiveXT member self-test.
@@ -4795,6 +5036,7 @@ end axtTestFamiliesAndPresets
 -- ==========================================================================
 
 private command axtTestUrls
+   local tItem, tBare
    axtSection "url builders"
    axtCheck axSearchUrl("collection:(librivoxaudio) AND (a " & quote & "b" & quote & ")", "identifier,title,year,creator,date,language,runtime,subject", "downloads desc", 24, 2) is kAxVecUrlSearch, "axSearchUrl matches the AudioBooks bytes"
    axtCheck axSearchUrl("x", "identifier", empty, empty, empty) is "https://archive.org/advancedsearch.php?q=x&fl%5B%5D=identifier&rows=24&page=1&output=json", "axSearchUrl defaults and no sort"
@@ -4814,6 +5056,15 @@ private command axtTestUrls
    axtCheck axDetailsUrl("abc") is "https://archive.org/details/abc", "axDetailsUrl"
    axtCheck axEmbedUrl("abc") is "https://archive.org/embed/abc", "axEmbedUrl"
    axtCheck axEmbedUrl(empty) is empty, "axEmbedUrl refuses empty"
+   put axItemParse(axtHex(kAxVecFixLibrivoxItemHex)) into tItem
+   axtCheck axDirectUrl(tItem, "pp_01_austen_64kb.mp3") is "https://ia800000.us.archive.org/1/items/pride_prejudice_test/pp_01_austen_64kb.mp3", "axDirectUrl is the datanode host and directory"
+   axtCheck axDirectUrl(tItem, "a b#1.mp3") is "https://ia800000.us.archive.org/1/items/pride_prejudice_test/a%20b%231.mp3", "axDirectUrl encodes the name"
+   axtCheck axDirectUrl(tItem, empty) is empty, "axDirectUrl refuses an empty name"
+   put "abc" into tBare["identifier"]
+   axtCheck axDirectUrl(tBare, "f.mp3") is "https://archive.org/download/abc/f.mp3", "axDirectUrl falls back to /download/ without a server"
+   put "bad host" into tBare["server"]
+   put "/1/items/abc" into tBare["dir"]
+   axtCheck axDirectUrl(tBare, "f.mp3") is "https://archive.org/download/abc/f.mp3", "axDirectUrl falls back on a server that is not a host"
 end axtTestUrls
 
 -- ==========================================================================
@@ -5049,6 +5300,7 @@ private command axtTestPlaylists
    axtCheck axtEntryField(tPlaylist, "track") is kAxVecLibrivoxChapterTracks, "chapters: track numbers (4/5 reads as 4)"
    axtCheck axtEntryField(tPlaylist, "length") is kAxVecLibrivoxChapterLengths, "chapters: lengths"
    axtCheck tPlaylist["entries"][1]["url"] is "https://archive.org/download/pride_prejudice_test/pp_01_austen_64kb.mp3", "chapters: the stream url"
+   axtCheck tPlaylist["entries"][1]["direct"] is "https://ia800000.us.archive.org/1/items/pride_prejudice_test/pp_01_austen_64kb.mp3", "chapters: the datanode url"
    put axPlaylistTable(tPlaylist) into tTable
    axtCheck the number of lines of tTable is 5, "axPlaylistTable: one line per chapter"
    axtCheck line 1 of tTable begins with "1" & tab & "01 - Chapter 1" & tab & "10:00" & tab, "axPlaylistTable: number, title, duration"
@@ -5126,6 +5378,19 @@ private command axtTestFetchLayerOffline
    axtCheck tError is empty, "a late reply for nobody is dropped without a throw"
    axDeadline 999
    axtCheck true, "axDeadline of an unknown handle is a clean no-op"
+   axtCheck axDownload("ftp://x", "somewhere", empty) is empty, "axDownload refuses a non-http url before loading"
+   axtCheck axDownload("https://nobody.invalid/f", empty, empty) is empty, "axDownload refuses an empty path before loading"
+   axtCheck axLastError() contains "path", "and says why"
+   axtCheck axPending() is tPendingBefore, "no download was started"
+   put empty into tError
+   try
+      axUrlStatus "https://nobody.invalid/f", "loading,1,2"
+      axDownloadDone "https://nobody.invalid/f", "downloaded"
+   catch tError
+   end try
+   axtCheck tError is empty, "a status and a completion for nobody are dropped without a throw"
+   axtCheck axDownloadSync("not a url", "somewhere") is empty, "axDownloadSync refuses a non-url"
+   axtCheck axDownloadSync("https://nobody.invalid/f", empty) is empty, "axDownloadSync refuses an empty path"
    axtCheck axGetSync("not a url") is empty, "axGetSync refuses a non-url"
    axtCheck axSearchSync(empty, tOptions) is empty, "axSearchSync refuses an empty query"
    axtCheck axFetchItemSync("x y") is empty, "axFetchItemSync refuses a bad identifier"
@@ -5148,7 +5413,7 @@ end axtTestFetchLayerOffline
 -- the Live probe button shipped under the old value and the boot self-check
 -- reported it missing on the first open - the self-check is the net, this
 -- line is the rule).
-constant kAdUiVersion = "archive-explorer-kit2-2"
+constant kAdUiVersion = "archive-explorer-kit2-3"
 constant kAdWinW = 1180
 constant kAdWinH = 630
 constant kAdPlayerName = "adPlayer"
@@ -5166,6 +5431,10 @@ local sAdPlaylist            -- the playlist of that item
 local sAdSearchHandle        -- the request in flight for the results table, or empty
 local sAdItemHandle          -- the request in flight for the item, or empty
 local sAdHaveUrlLib          -- the boot probe's answer
+local sAdDownloadHandle      -- the download in flight, or empty
+local sAdDownloadPath        -- where that download is being written
+local sAdPlayAfter           -- true when the finished download should play
+local sAdPlayUrl             -- the URL the player was last handed (empty after Stop)
 
 -- ==== SUITE UI KIT v2 BEGIN (verbatim copy; master: tools/ui-kit.livecodescript; gate: tools/check-ui-kit-drift.py) ====
 -- The family look as one carried block: the kit owns colors, chrome, and
@@ -5666,6 +5935,8 @@ on mouseUp
       adDoPlay
    else if tName is "adStopPlay" then
       adDoStopPlay
+   else if tName is "adDownload" then
+      adDoDownload false
    else if tName is "adTests" then
       adDoSelfTest
    else if tName is "adProbe" then
@@ -5731,11 +6002,12 @@ command adBuild
    set the tabStops of field "adTracksHead" to "30,300,350"
    set the foregroundColor of field "adTracksHead" to kUiMuted
    uiTable "adTracks", "762,224,1152,430", "30,300,350"
-   uiButton "adOpenPage", "Open page", "762,436,858,458"
-   uiButton "adCopyUrl", "Copy stream URL", "862,436,984,458"
-   uiButton "adPlay", "Play", "988,436,1066,458"
-   uiButton "adStopPlay", "Stop", "1070,436,1152,458"
-   uiCap "adItemNote", "Play hands the stream URL to a player object over the list; Stop puts the list back", "762,462,1152,476"
+   uiButton "adOpenPage", "Open page", "762,436,846,458"
+   uiButton "adCopyUrl", "Copy URL", "850,436,926,458"
+   uiButton "adPlay", "Play", "930,436,994,458"
+   uiButton "adStopPlay", "Stop", "998,436,1058,458"
+   uiButton "adDownload", "Download", "1062,436,1152,458"
+   uiCap "adItemNote", "Play streams the datanode URL in a player (falls back to download-and-play); Download saves to Documents/ArchiveXT", "762,462,1152,476"
    uiSection "adLogCap", "Log", "762,482,950,500"
    uiButton "adTests", "Run axSelfTest", "954,482,1050,500"
    uiButton "adProbe", "Live probe", "1056,482,1152,500"
@@ -5763,6 +6035,10 @@ command adStart
    put empty into sAdPlaylist
    put empty into sAdSearchHandle
    put empty into sAdItemHandle
+   put empty into sAdDownloadHandle
+   put empty into sAdDownloadPath
+   put empty into sAdPlayAfter
+   put empty into sAdPlayUrl
    put "downloads" into sAdSort
    put 1 into sAdPage
    put axProbeCapabilities() into tCaps
@@ -5778,8 +6054,16 @@ end adStart
 
 command adStop
    -- Guarded teardown: forget every request in flight (a late reply is
-   -- dropped by the layer) and stop the player if one was made.
+   -- dropped by the layer), the download among them, and stop the player
+   -- if one was made.
    local tError
+   try
+      if sAdDownloadHandle is not empty then
+         axCancel sAdDownloadHandle
+      end if
+   catch tError
+   end try
+   put empty into sAdDownloadHandle
    try
       axShutdown
    catch tError
@@ -6185,17 +6469,28 @@ command adDoCopyUrl
 end adDoCopyUrl
 
 command adDoPlay
-   -- Hand the stream URL to a player object over the playlist. The player
-   -- is created on demand and named through a variable ON PURPOSE: the
-   -- boot self-check derives its control list from every literal control
-   -- name in this script, and a control that exists only after Play would
-   -- read as missing at every boot.
-   local tEntry, tError, tName
+   -- STREAM the selected entry: hand the DATANODE URL (axDirectUrl - the
+   -- host and directory the metadata names, where /download/ redirects to)
+   -- to a player object drawn over the playlist, and check six seconds
+   -- later whether the player actually opened it. The 2026-09-16 report was
+   -- "the player is still not working" with no error anywhere: a player
+   -- handed a URL it cannot open throws nothing and plays nothing, so the
+   -- check is the only way to KNOW, and when it fails the demo downloads
+   -- the file and plays it from disk instead - which is the path every
+   -- platform's media stack can take. The player is created on demand and
+   -- named through a variable ON PURPOSE: the boot self-check derives its
+   -- control list from every literal control name in this script, and a
+   -- control that exists only after Play would read as missing at boot.
+   local tEntry, tError, tName, tUrl
    set the defaultStack to the short name of this stack
    put adSelectedEntry() into tEntry
    if tEntry is empty then
       uiStatus "open an item and select an entry first", "warn"
       exit adDoPlay
+   end if
+   put tEntry["direct"] into tUrl
+   if tUrl is empty then
+      put tEntry["url"] into tUrl
    end if
    put kAdPlayerName into tName
    try
@@ -6207,26 +6502,260 @@ command adDoPlay
       set the showController of player tName to true
       set the visible of field "adTracks" to false
       set the visible of player tName to true
-      set the filename of player tName to tEntry["url"]
+      set the filename of player tName to tUrl
       start player tName
-      adLog "playing " & tEntry["url"]
-      uiStatus "playing " & tEntry["title"] & " (the engine's player; Stop puts the list back)", "ok"
+      put tUrl into sAdPlayUrl
+      adLog "play: " & tUrl & " (" & tEntry["format"] & ", " & axFormatBytes(tEntry["size"]) & ") on " & the platform & " " & the systemVersion
+      uiStatus "opening the stream in the engine's player (" & tEntry["title"] & ")...", "warn"
+      send "adPlayCheck" to me in 6 seconds
    catch tError
-      adLog "player failed: " & tError & " - falling back to the browser"
+      adLog "player failed: " & tError & " - downloading the file instead"
       set the visible of field "adTracks" to true
-      try
-         launch URL tEntry["url"]
-         uiStatus "no in-window playback on this engine; the stream opened in the browser", "warn"
-      catch tError
-         uiStatus "could not play or launch: " & tError, "bad"
-      end try
+      adDoDownload true
    end try
 end adDoPlay
+
+command adPlayCheck
+   -- Six seconds after Play: a player that opened its stream reports a
+   -- duration (and, if it is playing, a moving currentTime); one that
+   -- could not open it reports 0 for both and NO error. Only the second
+   -- case falls back, and only if the user has not moved on.
+   local tName, tDuration, tTime, tError, tUrl
+   set the defaultStack to the short name of this stack
+   put kAdPlayerName into tName
+   put sAdPlayUrl into tUrl
+   if tUrl is empty then
+      exit adPlayCheck
+   end if
+   if there is no player tName then
+      exit adPlayCheck
+   end if
+   if the filename of player tName is not tUrl then
+      exit adPlayCheck
+   end if
+   put 0 into tDuration
+   put 0 into tTime
+   try
+      put the duration of player tName into tDuration
+      put the currentTime of player tName into tTime
+   catch tError
+      put 0 into tDuration
+   end try
+   if tDuration is not a number then
+      put 0 into tDuration
+   end if
+   if tTime is not a number then
+      put 0 into tTime
+   end if
+   if tDuration > 0 or tTime > 0 then
+      adLog "the player opened the stream: duration " & tDuration & ", currentTime " & tTime & " (timeScale " & the timeScale of player tName & ")"
+      uiStatus "streaming from archive.org in the engine's player; Stop puts the list back", "ok"
+      exit adPlayCheck
+   end if
+   adLog "the player reports duration 0 and currentTime 0 six seconds after start on " & the platform & ": it could not open the stream - downloading the file and playing it from disk instead"
+   put empty into sAdPlayUrl
+   adDoStopPlay
+   adDoDownload true
+end adPlayCheck
+
+command adDoDownload pPlayAfter
+   -- DOWNLOAD the selected entry to Documents/ArchiveXT/<identifier>/ (the
+   -- temporary folder when Documents is not writable) through axDownload,
+   -- which writes straight to disk with progress and a stall watchdog;
+   -- pPlayAfter true plays the file when it lands. A file already there at
+   -- the size the metadata promised is reused rather than fetched again.
+   local tEntry, tFolder, tPath, tName, tHandle, tError
+   set the defaultStack to the short name of this stack
+   put adSelectedEntry() into tEntry
+   if tEntry is empty then
+      uiStatus "open an item and select an entry first", "warn"
+      exit adDoDownload
+   end if
+   if sAdDownloadHandle is not empty then
+      uiStatus "a download is already running (" & sAdDownloadPath & ")", "warn"
+      exit adDoDownload
+   end if
+   put adDownloadFolder(sAdItem["identifier"]) into tFolder
+   if tFolder is empty then
+      uiStatus "no writable folder for downloads (Documents and temporary both refused)", "bad"
+      exit adDoDownload
+   end if
+   put adSafeFileName(tEntry["name"]) into tName
+   put tFolder & "/" & tName into tPath
+   put pPlayAfter is true into sAdPlayAfter
+   if there is a file tPath then
+      if adFileSize(tFolder, tName) is tEntry["size"] then
+         adLog "already downloaded: " & tPath
+         adDownloadFinished tPath
+         exit adDoDownload
+      end if
+   end if
+   put axDownload(tEntry["url"], tPath, "download") into tHandle
+   if tHandle is empty then
+      adLog "download refused: " & axLastError()
+      uiStatus "download refused - see the log", "bad"
+      put empty into sAdPlayAfter
+      exit adDoDownload
+   end if
+   put tHandle into sAdDownloadHandle
+   put tPath into sAdDownloadPath
+   adLog "download " & tHandle & ": " & tEntry["url"] & " -> " & tPath & " (" & axFormatBytes(tEntry["size"]) & ")"
+   uiStatus "downloading " & tName & " (" & axFormatBytes(tEntry["size"]) & ")...", "warn"
+end adDoDownload
+
+command adShowProgress pReceivedTotal
+   local tReceived, tTotal, tPercent
+   set the defaultStack to the short name of this stack
+   put item 1 of pReceivedTotal into tReceived
+   put item 2 of pReceivedTotal into tTotal
+   if tReceived is not a number then
+      exit adShowProgress
+   end if
+   if tTotal is a number and tTotal > 0 then
+      put trunc(tReceived * 100 / tTotal) into tPercent
+      uiStatus "downloading: " & axFormatBytes(tReceived) & " of " & axFormatBytes(tTotal) & " (" & tPercent & "%)", "warn"
+   else
+      uiStatus "downloading: " & axFormatBytes(tReceived) & " so far", "warn"
+   end if
+end adShowProgress
+
+command adDownloadFinished pPath
+   set the defaultStack to the short name of this stack
+   put empty into sAdDownloadPath
+   adLog "downloaded: " & pPath & " (" & axFormatBytes(adFileSize(adFolderOf(pPath), adSafeFileName(pPath))) & " on disk)"
+   if sAdPlayAfter is true then
+      put empty into sAdPlayAfter
+      adPlayLocal pPath
+   else
+      uiStatus "saved " & pPath, "ok"
+   end if
+end adDownloadFinished
+
+command adPlayLocal pPath
+   -- Play a file from disk in the same player: the path the engine's
+   -- media stack can always open, whatever it thinks of https streams.
+   local tName, tError
+   set the defaultStack to the short name of this stack
+   put kAdPlayerName into tName
+   try
+      if there is no player tName then
+         create player
+         set the name of the last player to tName
+      end if
+      set the rect of player tName to the rect of field "adTracks"
+      set the showController of player tName to true
+      set the visible of field "adTracks" to false
+      set the visible of player tName to true
+      set the filename of player tName to pPath
+      start player tName
+      put pPath into sAdPlayUrl
+      adLog "play (local): " & pPath
+      uiStatus "playing the downloaded file; Stop puts the list back", "ok"
+      send "adPlayCheck" to me in 6 seconds
+   catch tError
+      adLog "player failed on the local file: " & tError & " - opening it with the system player"
+      set the visible of field "adTracks" to true
+      try
+         launch document pPath
+         uiStatus "no in-window playback on this engine; the file opened in the system player", "warn"
+      catch tError
+         uiStatus "could not play or open the file: " & tError, "bad"
+      end try
+   end try
+end adPlayLocal
+
+function adDownloadFolder pIdentifier
+   -- Documents/ArchiveXT/<identifier>, created on demand; the temporary
+   -- folder when Documents refuses (the torrent demos' fallback order).
+   local tBase, tFolder, tError
+   put specialFolderPath("documents") into tBase
+   if tBase is empty then
+      put specialFolderPath("temporary") into tBase
+   end if
+   if tBase is empty then
+      return empty
+   end if
+   put tBase & "/ArchiveXT/" & pIdentifier into tFolder
+   if there is not a folder (tBase & "/ArchiveXT") then
+      create folder (tBase & "/ArchiveXT")
+   end if
+   if there is not a folder tFolder then
+      create folder tFolder
+   end if
+   if there is a folder tFolder then
+      return tFolder
+   end if
+   put specialFolderPath("temporary") & "/ArchiveXT/" & pIdentifier into tFolder
+   if there is not a folder (specialFolderPath("temporary") & "/ArchiveXT") then
+      create folder (specialFolderPath("temporary") & "/ArchiveXT")
+   end if
+   if there is not a folder tFolder then
+      create folder tFolder
+   end if
+   if there is a folder tFolder then
+      return tFolder
+   end if
+   return empty
+end adDownloadFolder
+
+function adFileSize pFolder, pName
+   -- The size of one file from `the detailed files` of its folder, WITHOUT
+   -- reading it: a 700 MB film is not a thing to pull into memory to ask
+   -- how big it is. Empty when the file is not there.
+   local tSaved, tLines, tLine, tSize
+   put empty into tSize
+   put the defaultFolder into tSaved
+   set the defaultFolder to pFolder
+   put the detailed files into tLines
+   set the defaultFolder to tSaved
+   repeat for each line tLine in tLines
+      if urlDecode(item 1 of tLine) is pName then
+         put item 2 of tLine into tSize
+         exit repeat
+      end if
+   end repeat
+   return tSize
+end adFileSize
+
+function adFolderOf pPath
+   local tName
+   put adSafeFileName(pPath) into tName
+   return char 1 to (the length of pPath - the length of tName - 1) of pPath
+end adFolderOf
+
+function adSafeFileName pName
+   -- The last path segment of an archive.org file name, with the
+   -- characters no platform's file system takes replaced.
+   local tName, tBad, tI, tChar
+   put pName into tName
+   if "/" is in tName then
+      put char (the length of tName - offset("/", adReverse(tName)) + 2) to -1 of tName into tName
+   end if
+   put ":*?" & quote & "<>|\" into tBad
+   repeat with tI = 1 to the length of tBad
+      put char tI of tBad into tChar
+      replace tChar with "_" in tName
+   end repeat
+   if tName is empty then
+      put "download.bin" into tName
+   end if
+   return tName
+end adSafeFileName
+
+function adReverse pText
+   local tOut, tI
+   put empty into tOut
+   repeat with tI = the length of pText down to 1
+      put char tI of pText after tOut
+   end repeat
+   return tOut
+end adReverse
 
 command adDoStopPlay
    local tName, tError
    set the defaultStack to the short name of this stack
    put kAdPlayerName into tName
+   put empty into sAdPlayUrl
    try
       if there is a player tName then
          stop player tName
@@ -6259,12 +6788,23 @@ on onArchive pHandle, pKind, pArgOne, pTag
       adShowItem pArgOne
    else if pKind is "raw" then
       adLog "raw reply for request " & pHandle & " (" & pTag & "): " & the number of bytes of pArgOne & " bytes"
+   else if pKind is "progress" then
+      adShowProgress pArgOne
+   else if pKind is "file" then
+      if pHandle is sAdDownloadHandle then
+         put empty into sAdDownloadHandle
+      end if
+      adDownloadFinished pArgOne
    else if pKind is "error" then
       if pHandle is sAdSearchHandle then
          put empty into sAdSearchHandle
       end if
       if pHandle is sAdItemHandle then
          put empty into sAdItemHandle
+      end if
+      if pHandle is sAdDownloadHandle then
+         put empty into sAdDownloadHandle
+         put empty into sAdPlayAfter
       end if
       adLog "request " & pHandle & " (" & pTag & ") failed: " & pArgOne
       uiStatus "request failed - see the log", "bad"
@@ -6594,13 +7134,13 @@ end scFinish
 -- Nothing here hosts, connects, binds or fetches.
 -- ==========================================================================
 
-constant kAdScControls = "adCopyUrl,adExplorePanel,adFamAny,adFamEtree,adFamLibrivox,adFamMovies,adFamilyCap,adFilter1,adFilter2,adFilter3,adFilter4,adFilterCap,adItemCap,adItemMeta,adItemNote,adItemPanel,adItemTitle,adLog,adLogCap,adNext,adOpenPage,adPageInfo,adPlay,adPresetCap,adPresets,adPrev,adProbe,adQuery,adQueryNote,adRandom,adResults,adResultsHead,adSearch,adSearchCap,adSearchPanel,adSort,adSortNote,adStopPlay,adTests,adTracks,adTracksHead,adYearCap,adYearFrom,adYearTo,uiFooter,uiStatus,uiTitle"
+constant kAdScControls = "adCopyUrl,adDownload,adExplorePanel,adFamAny,adFamEtree,adFamLibrivox,adFamMovies,adFamilyCap,adFilter1,adFilter2,adFilter3,adFilter4,adFilterCap,adItemCap,adItemMeta,adItemNote,adItemPanel,adItemTitle,adLog,adLogCap,adNext,adOpenPage,adPageInfo,adPlay,adPresetCap,adPresets,adPrev,adProbe,adQuery,adQueryNote,adRandom,adResults,adResultsHead,adSearch,adSearchCap,adSearchPanel,adSort,adSortNote,adStopPlay,adTests,adTracks,adTracksHead,adYearCap,adYearFrom,adYearTo,uiFooter,uiStatus,uiTitle"
 
 command adScRun
    local tMissing, tCaps, tPlaylist
    scBegin "adLog"
    put scMissing(kAdScControls) into tMissing
-   scAssert "all 47 controls this script names exist (missing: " & scShow(tMissing) & ")", tMissing is empty
+   scAssert "all 48 controls this script names exist (missing: " & scShow(tMissing) & ")", tMissing is empty
    scAssert "axVersion reports the member", axVersion() begins with "ArchiveXT"
    scAssert "the movies family is in play at boot", sAdFamily is "movies"
    scAssert "a preset is selected at boot (" & scShow(sAdPreset) & ")", sAdPreset is not empty

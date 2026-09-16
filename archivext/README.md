@@ -26,7 +26,8 @@ something a user can play:
    Image Archive's film collections, and a generic family for any mediatype.
 6. **An asynchronous fetch layer** over the engine's own Internet library:
    one callback per request, correlation by handle, a watchdog, a body cap,
-   a late-reply drop, and blocking conveniences for the message box.
+   a late-reply drop, downloads straight to disk with progress and a stall
+   watchdog, and blocking conveniences for the message box.
 
 ```
    your xTalk app

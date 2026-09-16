@@ -108,6 +108,7 @@ prefixes `axBaseUrl()`.
 | `axScrapeUrl(pQuery, pFields, pCount, pCursor)` | services/search/v1/scrape with `q`, `fields`, `count` (default 100) and the previous page's `cursor` |
 | `axMetadataUrl(pIdentifier)` | `/metadata/<identifier>` |
 | `axDownloadUrl(pIdentifier, pFileName)` | `/download/<identifier>/<encoded file name>` (the item's directory listing when the name is empty) |
+| `axDirectUrl(pItem, pFileName)` | the DATANODE URL of one file of an `axItemParse` item - `https://<server><dir>/<encoded name>`, where `/download/` redirects to and the site's own player streams from; falls back to `axDownloadUrl` when the item carries no usable `server` / `dir`; empty (with the reason) on an empty name |
 | `axThumbnailUrl(pIdentifier)` | `/services/img/<identifier>` |
 | `axDetailsUrl(pIdentifier)` | `/details/<identifier>` |
 | `axEmbedUrl(pIdentifier)` | `/embed/<identifier>` |
@@ -175,6 +176,9 @@ arrays (`response/docs/3/title`).
 | `axSearch(pQuery, pOptions)` | starts a search; options `fields`, `sort`, `rows`, `page`, `tag`; returns the handle, or empty when the URL cannot be built. Delivers `"search"` |
 | `axFetchItem(pIdentifier, pTag)` | starts a metadata fetch. Delivers `"item"` |
 | `axFetchUrl(pUrl, pTag)` | starts a raw fetch of any http(s) URL. Delivers `"raw"` |
+| `axDownload(pUrl, pPath, pTag)` | starts a download of any http(s) URL STRAIGHT TO A FILE (`libURLDownloadToFile`: no body in memory, the body cap does not apply). Delivers `"progress"` (`received,total`, as often as the library reports) and then `"file"` (the path), or `"error"`. The watchdog is a STALL watchdog here: progress re-arms it. The folder must exist; the file is overwritten. Empty with the reason on a non-http URL, an empty path, or a URL already in flight |
+| `axUrlStatus pUrl, pStatus` | the Internet library's status callback (`libURLSetStatusCallback`, registered by `axInit` / `axDownload`, one per process); public because the library delivers it by name. Forwards a download's `loading,received,total` as `"progress"`; everything else, and every URL that is not a download of ours, is ignored |
+| `axDownloadDone pUrl, pStatus` | `libURLDownloadToFile`'s completion callback; public for the same reason. `downloaded` with the file on disk delivers `"file"`; anything else `"error"` with `libURLErrorData` |
 | `axCancel pHandle` | forgets a request (the engine's load still completes and is dropped as a late reply); unknown handle is a no-op |
 | `axCancelAll` | forgets every request |
 | `axShutdown` | forgets everything and drops the owner; safe twice |
@@ -183,6 +187,7 @@ arrays (`response/docs/3/title`).
 | `axGetSync(pUrl)` | BLOCKING: the body of an http(s) URL, or empty with the reason |
 | `axSearchSync(pQuery, pOptions)` | BLOCKING: `axSearch` and `axSearchParse` in one call |
 | `axFetchItemSync(pIdentifier)` | BLOCKING: `axFetchItem` and `axItemParse` in one call |
+| `axDownloadSync(pUrl, pPath)` | BLOCKING: the whole body of an http(s) URL written to a file (`put URL x into URL "binfile:..."`, so it passes through memory); returns the path, or empty with the reason |
 
 The callback contract: `onArchive pHandle, pKind, pValue, pTag` with `pKind`
 one of `search`, `item`, `raw`, `error`; exactly one call per handle. Pin

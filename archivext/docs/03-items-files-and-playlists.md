@@ -68,7 +68,8 @@ everything else to files). Passing `auto` to `axPlaylist` does the same
 from the item itself.
 
 Every entry carries `name`, `title`, `track`, `length` (seconds), `format`,
-`size`, `url` (the download URL), `stem`, `index` (the file's position in
+`size`, `url` (the download URL), `direct` (the datanode URL, `axDirectUrl`,
+the one to hand a player), `stem`, `index` (the file's position in
 the item), and for video `quality` (the chosen encode's label) and
 `variants` (`name|label|size|format` lines, best first). `axPlaylistTable`
 renders a playlist as tab-separated lines: number, title, duration, format,
