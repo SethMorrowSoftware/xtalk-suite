@@ -28,7 +28,7 @@ three apps disagree in places and ArchiveXT had to pick:
     second MP3 and dropped a first-seen FLAC's later MP3); ArchiveXT ranks
     inside a group instead (VBR MP3 first), the rule the code reads as
     intending;
-  - the year is the first run of EXACTLY four digits, where PHP's /(\d{4})/
+  - the year is the first run of EXACTLY four digits, where PHP's /(\\d{4})/
     would take the first four of a longer run;
   - the film club keys episode titles off the file NAME even when the
     file carries a title; ArchiveXT prefers a file title when present,
