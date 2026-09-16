@@ -1256,9 +1256,25 @@ def _builtin_or_handler(ip, name, args):
             return base64.b64decode(txt.encode("ascii"), validate=False).decode("latin-1")
         except Exception:
             return ""
-    if low == "offset":
+    if low in ("offset", "byteoffset"):
+        # `offset(needle, hay[, skip])` and its byte twin. The THIRD argument
+        # is the engine's skip count, and the answer is RELATIVE to the
+        # skipped prefix (LiveCode: "the value returned is relative to this
+        # starting point"): offset("c", "abcabc", 3) is 3, not 6. Added
+        # 2026-09-15 for archivext's JSON reader, which jumps from token to
+        # token with it rather than walking every byte - the shipped file
+        # calls it hundreds of times per document, so a model that only knew
+        # the two-argument form would have refused the whole reader. Byte
+        # and char forms coincide here because every value is a latin-1
+        # code-point string (the Bytes docstring above).
         hay, nee = str(_disp(args[1])), str(_disp(args[0]))
-        return hay.find(nee) + 1
+        skip = int(_n(args[2])) if len(args) > 2 else 0
+        if skip < 0:
+            skip = 0
+        if nee == "":
+            return 0
+        pos = hay.find(nee, skip)
+        return 0 if pos < 0 else pos - skip + 1
     if low in HASHES:
         return HASHES[low](args)
     if low in ip.handlers:

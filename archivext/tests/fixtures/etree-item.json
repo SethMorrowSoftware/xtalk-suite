@@ -1,0 +1,335 @@
+{
+ "created": 1700000001,
+ "d1": "ia800300.us.archive.org",
+ "dir": "/12/items/gd1977-05-08.sbd.hicks.4982.sbeok.shnf",
+ "files": [
+  {
+   "name": "gd77-05-08d1t01.flac",
+   "source": "original",
+   "format": "Flac",
+   "title": "Scarlet Begonias",
+   "track": "01",
+   "length": "382.35",
+   "size": "45000000",
+   "md5": "11111111111111111111111111111111"
+  },
+  {
+   "name": "gd77-05-08d1t01_vbr.mp3",
+   "source": "derivative",
+   "original": "gd77-05-08d1t01.flac",
+   "format": "VBR MP3",
+   "title": "Scarlet Begonias",
+   "track": "01",
+   "length": "382.35",
+   "size": "9000000"
+  },
+  {
+   "name": "gd77-05-08d1t01_64kb.mp3",
+   "source": "derivative",
+   "original": "gd77-05-08d1t01.flac",
+   "format": "64Kbps MP3",
+   "title": "Scarlet Begonias",
+   "track": "01",
+   "length": "382.35",
+   "size": "3000000"
+  },
+  {
+   "name": "gd77-05-08d1t01.ogg",
+   "source": "derivative",
+   "original": "gd77-05-08d1t01.flac",
+   "format": "Ogg Vorbis",
+   "title": "Scarlet Begonias",
+   "length": "382.35",
+   "size": "6000000"
+  },
+  {
+   "name": "gd77-05-08d1t01_spectrogram.png",
+   "source": "derivative",
+   "original": "gd77-05-08d1t01.flac",
+   "format": "Spectrogram",
+   "size": "40000"
+  },
+  {
+   "name": "gd77-05-08d1t02.flac",
+   "source": "original",
+   "format": "Flac",
+   "title": "Fire On The Mountain",
+   "track": "02",
+   "length": "10:15",
+   "size": "45000000",
+   "md5": "11111111111111111111111111111111"
+  },
+  {
+   "name": "gd77-05-08d1t02_vbr.mp3",
+   "source": "derivative",
+   "original": "gd77-05-08d1t02.flac",
+   "format": "VBR MP3",
+   "title": "Fire On The Mountain",
+   "track": "02",
+   "length": "10:15",
+   "size": "9000000"
+  },
+  {
+   "name": "gd77-05-08d1t02_64kb.mp3",
+   "source": "derivative",
+   "original": "gd77-05-08d1t02.flac",
+   "format": "64Kbps MP3",
+   "title": "Fire On The Mountain",
+   "track": "02",
+   "length": "10:15",
+   "size": "3000000"
+  },
+  {
+   "name": "gd77-05-08d1t02.ogg",
+   "source": "derivative",
+   "original": "gd77-05-08d1t02.flac",
+   "format": "Ogg Vorbis",
+   "title": "Fire On The Mountain",
+   "length": "10:15",
+   "size": "6000000"
+  },
+  {
+   "name": "gd77-05-08d1t02_spectrogram.png",
+   "source": "derivative",
+   "original": "gd77-05-08d1t02.flac",
+   "format": "Spectrogram",
+   "size": "40000"
+  },
+  {
+   "name": "gd77-05-08d1t10.flac",
+   "source": "original",
+   "format": "Flac",
+   "title": "Dancing In The Street",
+   "track": "10",
+   "length": "1:03:45",
+   "size": "45000000",
+   "md5": "11111111111111111111111111111111"
+  },
+  {
+   "name": "gd77-05-08d1t10_vbr.mp3",
+   "source": "derivative",
+   "original": "gd77-05-08d1t10.flac",
+   "format": "VBR MP3",
+   "title": "Dancing In The Street",
+   "track": "10",
+   "length": "1:03:45",
+   "size": "9000000"
+  },
+  {
+   "name": "gd77-05-08d1t10_64kb.mp3",
+   "source": "derivative",
+   "original": "gd77-05-08d1t10.flac",
+   "format": "64Kbps MP3",
+   "title": "Dancing In The Street",
+   "track": "10",
+   "length": "1:03:45",
+   "size": "3000000"
+  },
+  {
+   "name": "gd77-05-08d1t10.ogg",
+   "source": "derivative",
+   "original": "gd77-05-08d1t10.flac",
+   "format": "Ogg Vorbis",
+   "title": "Dancing In The Street",
+   "length": "1:03:45",
+   "size": "6000000"
+  },
+  {
+   "name": "gd77-05-08d1t10_spectrogram.png",
+   "source": "derivative",
+   "original": "gd77-05-08d1t10.flac",
+   "format": "Spectrogram",
+   "size": "40000"
+  },
+  {
+   "name": "gd77-05-08d2t01.flac",
+   "source": "original",
+   "format": "Flac",
+   "title": "Not Fade Away",
+   "track": "01",
+   "length": "12:07",
+   "size": "45000000",
+   "md5": "11111111111111111111111111111111"
+  },
+  {
+   "name": "gd77-05-08d2t01_vbr.mp3",
+   "source": "derivative",
+   "original": "gd77-05-08d2t01.flac",
+   "format": "VBR MP3",
+   "title": "Not Fade Away",
+   "track": "01",
+   "length": "12:07",
+   "size": "9000000"
+  },
+  {
+   "name": "gd77-05-08d2t01_64kb.mp3",
+   "source": "derivative",
+   "original": "gd77-05-08d2t01.flac",
+   "format": "64Kbps MP3",
+   "title": "Not Fade Away",
+   "track": "01",
+   "length": "12:07",
+   "size": "3000000"
+  },
+  {
+   "name": "gd77-05-08d2t01.ogg",
+   "source": "derivative",
+   "original": "gd77-05-08d2t01.flac",
+   "format": "Ogg Vorbis",
+   "title": "Not Fade Away",
+   "length": "12:07",
+   "size": "6000000"
+  },
+  {
+   "name": "gd77-05-08d2t01_spectrogram.png",
+   "source": "derivative",
+   "original": "gd77-05-08d2t01.flac",
+   "format": "Spectrogram",
+   "size": "40000"
+  },
+  {
+   "name": "gd77-05-08d2t02.flac",
+   "source": "original",
+   "format": "Flac",
+   "title": "Morning Dew",
+   "track": "02",
+   "length": "742.50",
+   "size": "45000000",
+   "md5": "11111111111111111111111111111111"
+  },
+  {
+   "name": "gd77-05-08d2t02_vbr.mp3",
+   "source": "derivative",
+   "original": "gd77-05-08d2t02.flac",
+   "format": "VBR MP3",
+   "title": "Morning Dew",
+   "track": "02",
+   "length": "742.50",
+   "size": "9000000"
+  },
+  {
+   "name": "gd77-05-08d2t02_64kb.mp3",
+   "source": "derivative",
+   "original": "gd77-05-08d2t02.flac",
+   "format": "64Kbps MP3",
+   "title": "Morning Dew",
+   "track": "02",
+   "length": "742.50",
+   "size": "3000000"
+  },
+  {
+   "name": "gd77-05-08d2t02.ogg",
+   "source": "derivative",
+   "original": "gd77-05-08d2t02.flac",
+   "format": "Ogg Vorbis",
+   "title": "Morning Dew",
+   "length": "742.50",
+   "size": "6000000"
+  },
+  {
+   "name": "gd77-05-08d2t02_spectrogram.png",
+   "source": "derivative",
+   "original": "gd77-05-08d2t02.flac",
+   "format": "Spectrogram",
+   "size": "40000"
+  },
+  {
+   "name": "gd77-05-08d2t09_vbr.mp3",
+   "source": "derivative",
+   "original": "gd77-05-08d2t09.flac",
+   "format": "VBR MP3",
+   "length": "05:55",
+   "size": "8000000"
+  },
+  {
+   "name": "gd1977-05-08.sbd.hicks.4982.sbeok.shnf_meta.xml",
+   "source": "original",
+   "format": "Metadata",
+   "size": "3000"
+  },
+  {
+   "name": "gd1977-05-08.sbd.hicks.4982.sbeok.shnf_files.xml",
+   "source": "original",
+   "format": "Metadata",
+   "size": "6000"
+  },
+  {
+   "name": "gd1977-05-08.sbd.hicks.4982.sbeok.shnf_reviews.xml",
+   "source": "original",
+   "format": "Metadata",
+   "size": "9000"
+  },
+  {
+   "name": "gd1977-05-08.sbd.hicks.4982.sbeok.shnf_archive.torrent",
+   "source": "metadata",
+   "format": "Archive BitTorrent",
+   "size": "12000"
+  },
+  {
+   "name": "gd77-05-08.sbd.hicks.4982.sbeok.shnf.md5",
+   "source": "original",
+   "format": "Checksums",
+   "size": "500"
+  },
+  {
+   "name": "gd77-05-08.sbd.hicks.4982.sbeok.shnf.txt",
+   "source": "original",
+   "format": "Text",
+   "size": "2500"
+  },
+  {
+   "name": "gd77-05-08.sbd.hicks.4982.sbeok.shnf.ffp",
+   "source": "original",
+   "format": "Flac FingerPrint",
+   "size": "800"
+  },
+  {
+   "name": "gd1977-05-08.sbd.hicks.4982.sbeok.shnf_vbr.m3u",
+   "source": "derivative",
+   "format": "VBR M3U",
+   "size": "400"
+  }
+ ],
+ "files_count": 34,
+ "item_size": 350000000,
+ "metadata": {
+  "identifier": "gd1977-05-08.sbd.hicks.4982.sbeok.shnf",
+  "title": "Grateful Dead Live at Barton Hall, Cornell University on 1977-05-08",
+  "creator": "Grateful Dead",
+  "mediatype": "etree",
+  "collection": [
+   "GratefulDead",
+   "etree"
+  ],
+  "date": "1977-05-08",
+  "year": "1977",
+  "venue": "Barton Hall, Cornell University",
+  "coverage": "Ithaca, NY",
+  "source": "Soundboard: Betty Cantor Master Reels",
+  "lineage": "Betty Boards > Cassette > DAT > CD > EAC > FLAC",
+  "taper": "Betty Cantor",
+  "transferer": "Charlie Miller",
+  "description": "Set 1: Scarlet Begonias, Fire On The Mountain ... Set 2: Not Fade Away, Morning Dew",
+  "notes": [
+   "Disc 1 is set one.",
+   "Disc 2 is set two."
+  ],
+  "setlist": [
+   "Set 1",
+   "Scarlet Begonias",
+   "Fire On The Mountain",
+   "Set 2",
+   "Not Fade Away",
+   "Morning Dew"
+  ],
+  "downloads": "1234567",
+  "avg_rating": "4.8",
+  "num_reviews": "312",
+  "licenseurl": "http://creativecommons.org/licenses/by-nc-nd/2.0/"
+ },
+ "server": "ia800300.us.archive.org",
+ "uniq": 2,
+ "workable_servers": [
+  "ia800300.us.archive.org"
+ ]
+}

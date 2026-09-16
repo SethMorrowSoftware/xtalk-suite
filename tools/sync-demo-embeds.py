@@ -170,6 +170,15 @@ REGISTRY = {
     # back out (strip_spans on the holdem row, the coin-selftest precedent).
     "holde-em/src/holdem.livecodescript": [
         "onionxt/src/onionxt.livecodescript"],
+    # The archivext demo carries the library and its harness (the
+    # nostrxt-demo shape: the self-test button runs axSelfTest into the
+    # log, and the harness's pinned fixtures double as the boot
+    # self-check's vectors). Library first: the harness calls it. No socket
+    # handlers anywhere in this member - its network layer is the engine's
+    # Internet library (`load URL`), so nothing to drop.
+    "archivext/examples/archivext-demo.livecodescript": [
+        "archivext/src/archivext.livecodescript",
+        "archivext/examples/archivext-tests.livecodescript"],
 }
 
 # Demos deliberately NOT embedded, each with the reason. An entry here is a

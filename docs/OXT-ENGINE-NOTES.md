@@ -325,6 +325,42 @@ this entry.)
 
 ---
 
+### 2.7 Array KEYS fold case: `tA["A"]` and `tA["a"]` are ONE element
+**OBSERVED 2026-09-15** - archivext's first engine contact, the member harness
+(`axSelfTest`) on the user's OXT (platform and version not recorded; 357
+passed, 2 failed, 0 skipped). The JSON reader indexed an object's children by
+key in an array (`sAxJsonM[node][key]`), and the harness asserted
+
+    axtCheck axJsonType(tDoc, "A") is "missing", "keys are case-sensitive"
+
+against a document whose only key was `a`. The engine answered the `a` node:
+`"A" is among the keys of tArray` is TRUE when the stored key is `a`, and
+`tArray["A"]` reads that element. `the caseSensitive` defaults to false and it
+governs array KEYS as well as `is` / `contains` / `offset` - coinxt's
+discipline 3 records the comparison half of that rule; this is the container
+half. Cost: one red line, and a reader whose documented contract ("object keys
+looked up exactly") was false on the engine from the day it shipped.
+
+**Rule:** never use an array as an exact-string index. Keep the original keys
+in a numbered list and scan it with a byte-exact compare (archivext's
+`axJsonFindKey` over `axStrEq`; nostrxt's `nxStrEqExact`), or fold on purpose
+and say so where the array is declared. Numeric keys, and every numeric-indexed
+table in this tree, are unaffected.
+
+**Gate:** none can see it. The family interpreter (`tools/lcs-interp.py`)
+models an array as a Python dict, which is case-SENSITIVE, so the model passed
+the code the engine folded - the same shape as 2.6, a model binding found to be
+the model's. Recorded as a model gap rather than fixed the same day: folding
+keys in the interpreter touches every member's execution gate at once (holde-em,
+coinxt, riptide, nostrxt, nocloud, archivext), and each of those should be
+re-run and read when it lands (`docs/REMAINING-WORK.md`).
+
+**What it does NOT mean:** `the keys of` still answers the key's ORIGINAL
+spelling (the archivext reader lists `a` for a document whose key is `a`), so a
+scan over the keys is exact; only the subscript lookup folds.
+
+---
+
 ## 3. Control flow
 
 ### 3.1 `repeat with i = A to B step N` does not honour the step
@@ -365,6 +401,47 @@ are REQUIRED, same characters, opposite verdict; and LiveCode **Builder** allows
 engine-proven paths. "We do this everywhere" was true and irrelevant.
 
 **Gate:** `check_zero_arg_statement_calls`, `.livecodescript` only.
+
+---
+
+### 3.4 `Function: error in function handler` with the hint = the function's NAME means "no live handler in the message path"
+**DOCUMENTED 2026-09-15**, from the engine source (livecode `develop-9.6`
+`engine/src/exec-keywords.cpp`, `object.cpp`; the OXT engine branch's copies
+of the error tables are byte-identical), read after archivext's first
+engine report:
+
+    Type    Function: error in function handler
+    Object  Untitled 3
+    Line    axtCheck axVersion() begins with "ArchiveXT", "..."
+    Hint    axVersion
+
+That trace says exactly one thing: the CALLER evaluated `axVersion()`, the
+engine walked the message path, found no live handler of that name, and
+appended EE-0219 with the name as the hint. A runtime fault INSIDE the
+function would read differently - the inner error would be line 1 (the
+Type row), and the function's own stack would be the Object. Two
+mechanisms produce the trace, and the dialog cannot tell them apart: the
+library was never put in use (no `start using`, or the wrong stack), or the
+library WAS reached but its script is DEAD - scripts are parsed LAZILY, on
+the first message (`MCObject::parsescript`), and a parse failure marks the
+script dead, sends an unhandled `scriptParsingError`, and reports nothing in
+`the executionError`. `start using` is the eager exception: it parses on
+the spot and throws EE-0845 `start: script of specified stack won't
+compile`, so a library that reached the path THAT way is not dead. The
+header line of the IDE dialog carries only an icon and "executing at
+<time>" - a description there ("bad syntax") was a paraphrase, and the
+verbatim text is what to ask for.
+
+**Rule:** treat this pair as "not loaded" first. From the message box:
+`put the stacksInUse`; `put axVersion()` (a version string proves loaded AND
+parsed); `set the script of stack "x" to the script of stack "x"` then
+`put the result` (empty means it compiles; otherwise the parse error's
+number, line, column and token). archivext's next run, with the library in
+use, compiled whole and ran 357 checks (2.7).
+
+**What it does NOT mean:** a COMMAND called with `()` throws the same
+EE-0219 at the call site (holde-em gotcha 7), so check the callee's kind
+before checking the path.
 
 ---
 
@@ -868,6 +945,64 @@ of the two, which inverts the advice several documents used to give.
 **Gate:** none, and none is possible headlessly - this is an engine measurement.
 The narrowed question is carried in `nostrxt/docs/07-capabilities-required.md`
 gap #2 and flagged `VERIFY (on-engine)` at the call site.
+
+### 6.9 The Internet library (libURL) speaks https, delivers chunked bodies whole, and keeps the LAST reply's headers
+**OBSERVED 2026-09-15** (the user's OXT engine, libURL 1.2.0; platform not
+recorded), the suite's FIRST libURL record of any kind - before archivext,
+`load URL ... with message` appeared in two shipped stacks (nocloud's public-IP
+probe, coin-wallet's Esplora transport) and neither had run it. From
+archivext's demo, in one evening:
+
+- **`load URL "https://archive.org/..." with message` and `put URL "https://..."`
+  both work.** The async form reached the site and delivered its answer to
+  the message (a 400 first, then a watchdog timeout on the same broad query);
+  the blocking form then carried three HTTP 200s with real JSON bodies. Every
+  reply came back with `Server: nginx/1.31.3` and a `Strict-Transport-Security`
+  header, so the bytes were the live site's. Same caveat as 6.8, word for
+  word: a good host connecting is consistent with "verified" AND with
+  "verified nothing"; **nothing has offered libURL a bad certificate**, and only
+  that can say whether it checks one.
+- **A `Transfer-Encoding: chunked` body arrives whole**: 196,716 bytes of
+  item metadata through `put URL`, opening `{"alternate_locations":...` and
+  parsing as one JSON document. No `Content-Length` was present on any reply.
+- **`libURLLastRHHeaders()` answers the headers of the last reply RECEIVED,
+  not of the last request MADE.** After a request that got no answer (the
+  refused second load below), it still carried the previous reply's
+  `Onion-Location`, which names the URL it belongs to - a log that prints
+  headers beside a failure is quoting an earlier success unless it says so
+  (archivext's probe now labels them).
+- **libURL refuses a second load of a URL it is still loading**, with `the
+  result` reading `URL is currently loading` from the blocking form. A
+  `load URL` whose watchdog gave up on it is STILL loading in libURL, so the
+  next request for the same URL fails instantly and reads like a site
+  error. `unload URL` cancels it (DOCUMENTED, and archivext calls it on
+  timeout and before every load; the cancel itself has not been watched
+  work - the refusal was seen once, before the unload landed, and has not
+  recurred since).
+- **`libURLSetCustomHTTPHeaders` replaces the whole default header set**
+  (DOCUMENTED). The one request that used it drew the 400; every request
+  without it drew 200. INFERRED as the cause at best - the 400's query timed
+  out on its own once the header was gone, so the query may have been the
+  whole story. The rule archivext keeps (do not replace the defaults; the
+  `httpHeaders` property ADDS) stands on the reference, not on the run.
+- **The async success path delivers (OBSERVED 2026-09-16).** Four `load URL
+  ... with message "axUrlDone"` requests from the demo's Search button, across
+  three families, each reached the handler with the URL the engine hands back
+  matching the URL the request was made with, so correlation by URL, the
+  `cached` status read, `URL x` for the body and `unload URL` after it all
+  hold on a reply that ARRIVED - the previous day had shown only the error and
+  timeout arms. An empty result page came back as a normal reply.
+- **Not every archive.org query is cheap.** `mediatype:(movies OR video OR
+  television)` answered 17,098,672 hits inside a second; the same three
+  mediatypes OR-ed with 26 `identifier:` terms inside a `mediatype:collection`
+  clause got no answer in 30 s. That is the site, not the engine, and it is
+  here because a 30 s silence from `load URL` is indistinguishable from an
+  engine fault without a watchdog and a second, cheaper request.
+
+**Gate:** none possible headlessly. The narrowed questions (a bad certificate;
+the `unload` cancel actually freeing the URL; the async `item` kind) are in
+`archivext/docs/07-open-questions.md` items 6 and 9 and the demo's Live probe
+carries the legs.
 
 ---
 
