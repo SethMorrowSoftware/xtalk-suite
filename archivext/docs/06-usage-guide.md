@@ -209,8 +209,9 @@ put axSearch(sQuery, tOptions) into tHandle
 The end of the results is a page shorter than `rows`, not
 `start + count >= numFound`: the site over-reports its count. Disable Next
 on a short page. For a walk over a whole collection, use `axScrapeUrl` and
-`axFetchUrl` with the cursor each page returns (untested against the site;
-see `07-open-questions.md`).
+`axFetchUrl`, hand each `raw` body to `axScrapeParse`, and stop when the
+page's `cursor` comes back empty (untested against the site; see
+`07-open-questions.md` item 8).
 
 ## 7. The generic family
 

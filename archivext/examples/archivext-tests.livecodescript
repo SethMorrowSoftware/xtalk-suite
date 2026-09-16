@@ -616,6 +616,17 @@ private command axtTestResponses
    end repeat
    axtCheck tIds is kAxVecLibrivoxDocIds, "every doc's identifier, in order"
    axtCheck axtJoinLines(tResult["docs"][1]["creator"], "|") is kAxVecLibrivoxDocOneCreator, "a multi-valued creator is lines"
+   put axScrapeParse("{" & quote & "items" & quote & ":[{" & quote & "identifier" & quote & ":" & quote & "a" & quote & "," & quote & "subject" & quote & ":[" & quote & "x" & quote & "," & quote & "y" & quote & "]},{" & quote & "identifier" & quote & ":" & quote & "b" & quote & "}]," & quote & "count" & quote & ":2," & quote & "cursor" & quote & ":" & quote & "W3siaWQiOjF9XQ==" & quote & "," & quote & "total" & quote & ":17}") into tResult
+   axtCheck tResult is an array, "a scrape page parses"
+   axtCheck tResult["count"] is 2, "scrape: count"
+   axtCheck tResult["total"] is 17, "scrape: total"
+   axtCheck tResult["cursor"] is "W3siaWQiOjF9XQ==", "scrape: the cursor"
+   axtCheck axFirst(tResult["items"][2]["identifier"]) is "b", "scrape: items in order"
+   axtCheck axtJoinLines(tResult["items"][1]["subject"], "|") is "x|y", "scrape: a multi-valued field is lines"
+   put axScrapeParse("{" & quote & "items" & quote & ":[]," & quote & "count" & quote & ":0}") into tResult
+   axtCheck tResult["cursor"] is empty, "scrape: the last page has no cursor"
+   axtCheck axScrapeParse("{" & quote & "error" & quote & ":" & quote & "bad" & quote & "}") is empty, "scrape: the error shape refuses"
+   axtCheck axScrapeParse("[]") is empty, "scrape: a body without items refuses"
    axtCheck tResult["docs"][3]["subject"] is "single string subject", "a scalar subject is one line"
    axtCheck tResult["docs"][3]["creator"] is empty, "an absent field is empty"
    put axSearchParse(axtHex(kAxVecFixEtreeSearchHex)) into tResult

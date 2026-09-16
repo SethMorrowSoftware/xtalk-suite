@@ -2859,6 +2859,60 @@ function axSearchParse pJson
    return tResult
 end axSearchParse
 
+function axScrapeParse pJson
+   -- A services/search/v1/scrape response as an array, the deep-paging
+   -- API's shape from its documentation (no source app used it; the
+   -- demo's Live probe leg 9 is its first live reading):
+   --   count      items on this page
+   --   total      the site's total for the query (when it sends one)
+   --   cursor     the token for the next page; EMPTY on the last page,
+   --              which is how a walk knows to stop
+   --   items[i][field]   each field as lines
+   -- Empty, with the reason, for a malformed body and for the API's own
+   -- top-level "error" string.
+   local tDoc, tResult, tCount, tI, tKeys, tKeyCount, tJ, tKey, tPath, tNum
+   put axJsonParse(pJson) into tDoc
+   if tDoc is empty then
+      return empty
+   end if
+   if axJsonType(tDoc, "error") is "string" then
+      axSetError "Archive.org rejected the scrape: " & axJsonGet(tDoc, "error")
+      axJsonFree tDoc
+      return empty
+   end if
+   if axJsonType(tDoc, "items") is not "array" then
+      axSetError "axScrapeParse: unexpected response (no items array)"
+      axJsonFree tDoc
+      return empty
+   end if
+   put axJsonCount(tDoc, "items") into tCount
+   put tCount into tResult["count"]
+   put axJsonGet(tDoc, "total") into tNum
+   if not axIsDigits(tNum) then
+      put empty into tNum
+   end if
+   put tNum into tResult["total"]
+   if axJsonType(tDoc, "cursor") is "string" then
+      put axJsonGet(tDoc, "cursor") into tResult["cursor"]
+   else
+      put empty into tResult["cursor"]
+   end if
+   repeat with tI = 1 to tCount
+      put "items/" & tI into tPath
+      put axJsonKeys(tDoc, tPath) into tKeys
+      put the number of lines of tKeys into tKeyCount
+      repeat with tJ = 1 to tKeyCount
+         put line tJ of tKeys into tKey
+         put axJsonValues(tDoc, tPath & "/" & tKey) into tResult["items"][tI][tKey]
+      end repeat
+      if tKeyCount is 0 then
+         put empty into tResult["items"][tI]["identifier"]
+      end if
+   end repeat
+   axJsonFree tDoc
+   return tResult
+end axScrapeParse
+
 function axItemParse pJson
    -- A /metadata/<identifier> response as an array:
    --   identifier          from the metadata block
@@ -5235,6 +5289,17 @@ private command axtTestResponses
    end repeat
    axtCheck tIds is kAxVecLibrivoxDocIds, "every doc's identifier, in order"
    axtCheck axtJoinLines(tResult["docs"][1]["creator"], "|") is kAxVecLibrivoxDocOneCreator, "a multi-valued creator is lines"
+   put axScrapeParse("{" & quote & "items" & quote & ":[{" & quote & "identifier" & quote & ":" & quote & "a" & quote & "," & quote & "subject" & quote & ":[" & quote & "x" & quote & "," & quote & "y" & quote & "]},{" & quote & "identifier" & quote & ":" & quote & "b" & quote & "}]," & quote & "count" & quote & ":2," & quote & "cursor" & quote & ":" & quote & "W3siaWQiOjF9XQ==" & quote & "," & quote & "total" & quote & ":17}") into tResult
+   axtCheck tResult is an array, "a scrape page parses"
+   axtCheck tResult["count"] is 2, "scrape: count"
+   axtCheck tResult["total"] is 17, "scrape: total"
+   axtCheck tResult["cursor"] is "W3siaWQiOjF9XQ==", "scrape: the cursor"
+   axtCheck axFirst(tResult["items"][2]["identifier"]) is "b", "scrape: items in order"
+   axtCheck axtJoinLines(tResult["items"][1]["subject"], "|") is "x|y", "scrape: a multi-valued field is lines"
+   put axScrapeParse("{" & quote & "items" & quote & ":[]," & quote & "count" & quote & ":0}") into tResult
+   axtCheck tResult["cursor"] is empty, "scrape: the last page has no cursor"
+   axtCheck axScrapeParse("{" & quote & "error" & quote & ":" & quote & "bad" & quote & "}") is empty, "scrape: the error shape refuses"
+   axtCheck axScrapeParse("[]") is empty, "scrape: a body without items refuses"
    axtCheck tResult["docs"][3]["subject"] is "single string subject", "a scalar subject is one line"
    axtCheck tResult["docs"][3]["creator"] is empty, "an absent field is empty"
    put axSearchParse(axtHex(kAxVecFixEtreeSearchHex)) into tResult
@@ -7062,6 +7127,12 @@ command adDoProbe
          adLog "   ok: " & the number of bytes of tBody & " bytes; count " & axJsonGet(tDoc, "count") & ", items is " & axJsonType(tDoc, "items") & " of " & axJsonCount(tDoc, "items") & ", cursor " & scShow(axJsonGet(tDoc, "cursor")) & ", total " & scShow(axJsonGet(tDoc, "total")) & "; first identifier " & scShow(axJsonGet(tDoc, "items/1/identifier"))
          adLog "   keys: " & replaceText(axJsonKeys(tDoc, empty), return, ", ")
          axJsonFree tDoc
+      end if
+      put axScrapeParse(tBody) into tResult
+      if tResult is an array then
+         adLog "   axScrapeParse: count " & tResult["count"] & ", total " & scShow(tResult["total"]) & ", cursor " & scShow(tResult["cursor"]) & ", first " & scShow(axFirst(tResult["items"][1]["identifier"]))
+      else
+         adLog "   axScrapeParse refused: " & axLastError()
       end if
       adProbeHeaders true
    end if

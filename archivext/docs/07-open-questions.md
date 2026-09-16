@@ -92,7 +92,9 @@
    deep-paging walk it exists for is untested end to end. The Live probe's
    ninth leg (added 2026-09-16) fetches one five-row page and logs the
    body's top-level keys, `count`, the type and count of `items`, `cursor`,
-   `total` and the first identifier - enough to write the parser from.
+   `total` and the first identifier, then runs `axScrapeParse` over it -
+   the parser written from the documentation the same day, whose cursor
+   handling (empty on the last page) is the stop condition a walk needs.
 9. **TLS.** ~~Does `load URL "https://archive.org/..."` work on this engine?~~
    **Answered 2026-09-15, the working direction**: `load URL` and `put URL`
    both reached archive.org over https and carried real bodies back (three

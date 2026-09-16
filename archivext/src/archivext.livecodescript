@@ -2809,6 +2809,60 @@ function axSearchParse pJson
    return tResult
 end axSearchParse
 
+function axScrapeParse pJson
+   -- A services/search/v1/scrape response as an array, the deep-paging
+   -- API's shape from its documentation (no source app used it; the
+   -- demo's Live probe leg 9 is its first live reading):
+   --   count      items on this page
+   --   total      the site's total for the query (when it sends one)
+   --   cursor     the token for the next page; EMPTY on the last page,
+   --              which is how a walk knows to stop
+   --   items[i][field]   each field as lines
+   -- Empty, with the reason, for a malformed body and for the API's own
+   -- top-level "error" string.
+   local tDoc, tResult, tCount, tI, tKeys, tKeyCount, tJ, tKey, tPath, tNum
+   put axJsonParse(pJson) into tDoc
+   if tDoc is empty then
+      return empty
+   end if
+   if axJsonType(tDoc, "error") is "string" then
+      axSetError "Archive.org rejected the scrape: " & axJsonGet(tDoc, "error")
+      axJsonFree tDoc
+      return empty
+   end if
+   if axJsonType(tDoc, "items") is not "array" then
+      axSetError "axScrapeParse: unexpected response (no items array)"
+      axJsonFree tDoc
+      return empty
+   end if
+   put axJsonCount(tDoc, "items") into tCount
+   put tCount into tResult["count"]
+   put axJsonGet(tDoc, "total") into tNum
+   if not axIsDigits(tNum) then
+      put empty into tNum
+   end if
+   put tNum into tResult["total"]
+   if axJsonType(tDoc, "cursor") is "string" then
+      put axJsonGet(tDoc, "cursor") into tResult["cursor"]
+   else
+      put empty into tResult["cursor"]
+   end if
+   repeat with tI = 1 to tCount
+      put "items/" & tI into tPath
+      put axJsonKeys(tDoc, tPath) into tKeys
+      put the number of lines of tKeys into tKeyCount
+      repeat with tJ = 1 to tKeyCount
+         put line tJ of tKeys into tKey
+         put axJsonValues(tDoc, tPath & "/" & tKey) into tResult["items"][tI][tKey]
+      end repeat
+      if tKeyCount is 0 then
+         put empty into tResult["items"][tI]["identifier"]
+      end if
+   end repeat
+   axJsonFree tDoc
+   return tResult
+end axScrapeParse
+
 function axItemParse pJson
    -- A /metadata/<identifier> response as an array:
    --   identifier          from the metadata block

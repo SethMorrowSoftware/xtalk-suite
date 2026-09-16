@@ -60,6 +60,20 @@ INPUTS = {
         "written out so the parameter order is visible in the test",
     "https://archive.org/services/search/v1/scrape?q=x&count=100":
         "the defaults case of axScrapeUrl, same reason",
+    "https://ia800000.us.archive.org/1/items/pride_prejudice_test/pp_01_austen_64kb.mp3":
+        "the DATANODE url of the first chapter (axDirectUrl: the fixture's "
+        "server and dir fields plus the name), spelled out where it is "
+        "asserted, twice - as the builder's answer and as the playlist "
+        "entry's `direct` field - so a reader sees the shape the player is "
+        "handed; the oracle has no datanode rule to derive it from (no "
+        "source app streamed from the datanode directly)",
+    "https://ia800000.us.archive.org/1/items/pride_prejudice_test/a%20b%231.mp3":
+        "the same datanode host with an encoded name, the axUrlEncodePath "
+        "case of axDirectUrl",
+    "https://archive.org/download/abc/f.mp3":
+        "axDirectUrl's fallback to the /download/ form when the item "
+        "carries no server (twice: no server at all, a server that is not "
+        "a host name)",
 }
 
 CONST_RE = re.compile(r'^constant (kAxVec\w+) = "(.*)"\s*$', re.M)

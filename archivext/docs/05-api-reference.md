@@ -140,6 +140,7 @@ arrays (`response/docs/3/title`).
 | Handler | Answers |
 |---|---|
 | `axSearchParse(pJson)` | an array: `numFound`, `start`, `count`, `docs[i][field]` as lines; refuses the site's HTTP-200 `error` shape with its message, and a body with no `response.docs` |
+| `axScrapeParse(pJson)` | a scrape-API page as an array: `count`, `total` (when sent), `cursor` (EMPTY on the last page - the stop condition of a walk), `items[i][field]` as lines; refuses the `error` shape and a body with no `items` array. Written from the documentation; the Live probe's ninth leg is its first live reading |
 | `axItemParse(pJson)` | an array: `identifier`, `metadata[field]` as lines, `files[i][field]` as lines, `filesCount`, `itemSize`, `server`, `dir`; a `{}` body refuses as "could not be found" |
 | `axDocsTable(pResult, pFields)` | a search result as tab-separated lines for a table field, first value of each comma-listed field |
 
