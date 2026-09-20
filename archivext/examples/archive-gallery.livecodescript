@@ -5581,6 +5581,15 @@ constant kAgRowStep = 192
 constant kAgCol0 = 28
 constant kAgRow0 = 96
 
+-- The pane rect both panels share. Named because the boot self-check
+-- bounds the bottom row's captions against it, and a bound spelled twice
+-- is a bound that goes stale on one side (this file's own CLAUDE.md keeps
+-- a list of hand-copied numbers that did).
+constant kAgPaneL = 16
+constant kAgPaneT = 88
+constant kAgPaneR = 1164
+constant kAgPaneB = 500
+
 -- The viewer's dark stage: the one rect the player and the big image
 -- share, inset by four pixels so the stage reads as a frame around both.
 constant kAgStageL = 32
@@ -5610,7 +5619,8 @@ constant kAgBigMax = 12000000
 
 local sAgFamily              -- the family id in play (movies / etree / librivox / images / any)
 local sAgPage                -- the search page shown
-local sAgSerial              -- bumped by every search STARTED; a reply carrying an older one is dropped
+local sAgSerial              -- bumped by every search STARTED; a thumbnail carrying an older one is dropped
+local sAgViewSerial          -- the same idea for the VIEWER's picture, which a search does not invalidate but an item open does
 local sAgResult              -- the last axSearchParse array
 local sAgTileIds             -- one identifier per line, in tile order ("" for an empty tile)
 local sAgTilePics            -- sAgTilePics[i] is "true" once tile i holds a real picture
@@ -6182,8 +6192,9 @@ command agBuild
    -- BOTH panels before any control on either: a kit panel is chrome and
    -- has to stay behind what sits on it, and building them together is
    -- what keeps the two panes' z-order from depending on build order.
-   uiPanel "agGridPanel", "16,88,1164,500"
-   uiPanel "agViewPanel", "16,88,1164,500"
+   put kAgPaneL & comma & kAgPaneT & comma & kAgPaneR & comma & kAgPaneB into tRect
+   uiPanel "agGridPanel", tRect
+   uiPanel "agViewPanel", tRect
    -- The grid. Names are COMPUTED, so the derived control list does not
    -- carry them and the boot self-check asks about them in its own line.
    repeat with tI = 1 to kAgTiles
@@ -6305,6 +6316,7 @@ command agStart
    put empty into sAgPlayUrl
    put empty into sAgPlayIsFile
    put 0 into sAgSerial
+   put 0 into sAgViewSerial
    put 1 into sAgPage
    put axProbeCapabilities() into tCaps
    put tCaps["hasUrlLib"] is true into sAgHaveUrlLib
@@ -6429,14 +6441,38 @@ command agShowPane pWhich
       end if
    end repeat
    if tGrid is true then
-      -- leaving the viewer: the stage stops, so nothing plays behind a
-      -- grid the reader is looking at
+      -- LEAVING THE VIEWER ENDS PLAYBACK, and hiding the player is not
+      -- ending it. `stop player` leaves the filename loaded, so the
+      -- six-second check's two guards both still pass and it would fire
+      -- over a grid the reader is now looking at: a stream that had not
+      -- opened would start a download nobody asked for, and a stream that
+      -- HAD opened would paint "playing" over a stack where nothing is.
+      -- agDoStopPlay establishes this invariant; Back is the one path a
+      -- reader actually takes, so it has to keep it too.
+      agCancelPlayCheck
+      put empty into sAgPlayUrl
+      put empty into sAgPlayIsFile
       agHidePlayer
+      -- and the picture in flight is for a stage nobody is looking at
+      agVoidPicture
       if there is an image "agBigImage" then
          set the visible of image "agBigImage" to false
       end if
    end if
 end agShowPane
+
+command agVoidPicture
+   -- Every transition that changes WHAT THE STAGE IS ABOUT comes through
+   -- here: leaving the viewer, opening another item, asking for another
+   -- track. It cancels the fetch AND bumps the viewer serial, because
+   -- either alone is not enough - axCancel drops a reply still in flight,
+   -- and the serial drops one already sitting in the message queue.
+   add 1 to sAgViewSerial
+   if sAgBigHandle is not empty then
+      axCancel sAgBigHandle
+      put empty into sAgBigHandle
+   end if
+end agVoidPicture
 
 command agStagePrompt pText
    -- The stage with neither object on it: the player hidden, the picture
@@ -6563,6 +6599,7 @@ command agDoSearch pPage
    agCancelThumbs
    if sAgSearchHandle is not empty then
       axCancel sAgSearchHandle
+      put empty into sAgSearchHandle
       agLog "cancelled the previous search (its late reply will be dropped)"
    end if
    put axSearch(tQuery, tOptions) into tHandle
@@ -6622,6 +6659,9 @@ command agShowResults pResult
    end repeat
    put tIds into sAgTileIds
    put trunc((pResult["numFound"] + kAgTiles - 1) / kAgTiles) into tPages
+   if tPages < 1 then
+      put 1 into tPages
+   end if
    put "page " & sAgPage & " of " & tPages into field "agPageInfo"
    set the enabled of button "agPrev" to (sAgPage > 1)
    set the enabled of button "agNext" to (tCount >= kAgTiles)
@@ -6872,7 +6912,11 @@ command agOpenTile pIndex
    end if
    if sAgItemHandle is not empty then
       axCancel sAgItemHandle
+      put empty into sAgItemHandle
    end if
+   -- the stage is about to be about a different item, so whatever it was
+   -- loading is not wanted whether or not it has left the wire yet
+   agVoidPicture
    put axFetchItem(tId, "item") into tHandle
    if tHandle is empty then
       uiStatus "could not open that item: " & axLastError(), "bad"
@@ -7036,6 +7080,10 @@ command agLoadPicture pIndex
    if tEntry is not an array then
       exit agLoadPicture
    end if
+   -- VOID FIRST, BRANCH AFTER. The refusal below is an exit, and an exit
+   -- above the cancel would leave the PREVIOUS picture in flight to land
+   -- on a stage the reader has just been told is showing something else.
+   agVoidPicture
    put tEntry["size"] into tSize
    if tSize is a number then
       if tSize > kAgBigMax then
@@ -7048,11 +7096,7 @@ command agLoadPicture pIndex
    if tUrl is empty then
       put tEntry["url"] into tUrl
    end if
-   if sAgBigHandle is not empty then
-      axCancel sAgBigHandle
-      put empty into sAgBigHandle
-   end if
-   put axFetchUrl(tUrl, kAgBigTag && sAgSerial && pIndex) into tHandle
+   put axFetchUrl(tUrl, kAgBigTag && sAgViewSerial && pIndex) into tHandle
    if tHandle is empty then
       agStagePrompt "that picture was refused: " & axLastError()
       agLog "picture refused: " & axLastError()
@@ -7074,7 +7118,10 @@ command agBigPicture pIndex, pData
       exit agBigPicture
    end if
    agHidePlayer
-   set the visible of image "agBigImage" to true
+   -- THE PANE DECIDES, as it does for every tile (agTilePicture) and for
+   -- this picture's own FAILURE path (agStagePrompt). Without it a photograph
+   -- that lands after Back is pressed paints itself over the grid.
+   set the visible of image "agBigImage" to (sAgPane is "viewer")
    set the visible of field "agStageNote" to false
    put sAgPlaylist["entries"][pIndex] into tEntry
    agLog "picture " & pIndex & ": " & tSize & " pixels, " & the number of bytes of pData & " bytes, " & tEntry["format"]
@@ -7225,11 +7272,29 @@ command agArmPlayCheck
 end agArmPlayCheck
 
 command agCancelPlayCheck
-   local tLine
+   -- `the pendingMessages` is a COMMA record per line, so the delimiter is
+   -- set here rather than assumed (box2dxt gotcha 5; holde-em's own sweep
+   -- carries the same line for the same reason). It matters more here than
+   -- it looks: this handler is reached from closeStack, which inherits
+   -- whatever the IDE or another stack left set, and under a foreign
+   -- delimiter `item 3` is the whole record, nothing matches, and the
+   -- one-check-at-a-time contract fails SILENTLY.
+   --
+   -- COLLECT, RESTORE, THEN CANCEL, the discipline agCancelThumbs keeps:
+   -- `cancel` is an engine command run from inside a borrowed-delimiter
+   -- loop otherwise.
+   local tLine, tSaved, tIds, tId
+   put the itemDelimiter into tSaved
+   set the itemDelimiter to comma
+   put empty into tIds
    repeat for each line tLine in the pendingMessages
       if item 3 of tLine begins with "agPlayCheck" then
-         cancel item 1 of tLine
+         put item 1 of tLine & return after tIds
       end if
+   end repeat
+   set the itemDelimiter to tSaved
+   repeat for each line tId in tIds
+      cancel tId
    end repeat
 end agCancelPlayCheck
 
@@ -7273,6 +7338,7 @@ command agPlayCheck
    end if
    set the visible of player tName to false
    put empty into sAgPlayUrl
+   put empty into sAgPlayIsFile
    -- THE LADDER HAS TO KNOW WHICH RUNG IT IS ON. A stream that never
    -- opened goes to a download; a downloaded FILE that never opened goes
    -- to the system, never to another download. The explorer demo's
@@ -7334,6 +7400,13 @@ command agDoDownload pPlayAfter
    end if
    if sAgDownloadHandle is not empty then
       uiStatus "a download is already running (" & sAgDownloadPath & ")", "warn"
+      -- A REFUSAL ON THE PLAY LADDER HAS TO REACH THE STAGE. agPlayCheck
+      -- hides the player and clears its state before falling back here, so
+      -- a silent exit leaves a black rectangle and a status line about a
+      -- file the reader did not ask about.
+      if pPlayAfter is true then
+         agStagePrompt "the player did not open that stream, and a download is already running - try again when it finishes"
+      end if
       exit agDoDownload
    end if
    put agDownloadFolder(sAgItem["identifier"]) into tFolder
@@ -7419,7 +7492,7 @@ command agDownloadFinished pPath
       end try
       if agSetPicture("agBigImage", tData, (kAgStageL & comma & kAgStageT & comma & kAgStageR & comma & kAgStageB)) is not empty then
          agHidePlayer
-         set the visible of image "agBigImage" to true
+         set the visible of image "agBigImage" to (sAgPane is "viewer")
          set the visible of field "agStageNote" to false
          uiStatus "showing the downloaded picture", "ok"
          exit agDownloadFinished
@@ -7654,20 +7727,26 @@ command agRawReply pHandle, pBody, pTag
    put word 1 of pTag into tWhat
    put word 2 of pTag into tSerial
    put word 3 of pTag into tIndex
-   if tWhat is kAgBigTag then
-      if pHandle is sAgBigHandle then
-         put empty into sAgBigHandle
-      end if
-   end if
-   if tSerial is not sAgSerial then
-      agLog "dropped a picture from search " & tSerial & " (search " & sAgSerial & " is showing)"
-      exit agRawReply
-   end if
    if tWhat is kAgThumbTag then
+      if tSerial is not sAgSerial then
+         agLog "dropped a thumbnail from search " & tSerial & " (search " & sAgSerial & " is showing)"
+         exit agRawReply
+      end if
       agTilePicture tIndex, pBody
       exit agRawReply
    end if
    if tWhat is kAgBigTag then
+      if pHandle is sAgBigHandle then
+         put empty into sAgBigHandle
+      end if
+      -- THE VIEWER HAS ITS OWN SERIAL, and it has to. A search does not
+      -- invalidate the picture on the stage, and an item open does not
+      -- invalidate the grid's thumbnails - so one counter for both would
+      -- be wrong in whichever direction it was bumped.
+      if tSerial is not sAgViewSerial then
+         agLog "dropped a picture the stage has moved past (" & tSerial & " of " & sAgViewSerial & ")"
+         exit agRawReply
+      end if
       agBigPicture tIndex, pBody
       exit agRawReply
    end if
@@ -7678,13 +7757,18 @@ command agFailure pHandle, pReason, pTag
    -- One place for every failure, because a grid has three kinds at once
    -- and only one of them is worth a red status line. A thumbnail that
    -- did not arrive is a tile without a picture, not a broken stack.
-   local tWhat, tSerial, tIndex
+   local tWhat, tSerial, tIndex, tWasSearch
    set the defaultStack to the short name of this stack
    agForgetThumb pHandle
    put word 1 of pTag into tWhat
    put word 2 of pTag into tSerial
    put word 3 of pTag into tIndex
-   if pHandle is sAgSearchHandle then
+   -- ASKED BEFORE IT IS CLEARED. The first draft tested the handle against
+   -- sAgSearchHandle again at the bottom, after the line above had emptied
+   -- it, so the branch could never run - a check that cannot fire, which
+   -- is this tree's own worst gate shape written into an app.
+   put (pHandle is sAgSearchHandle) into tWasSearch
+   if tWasSearch then
       put empty into sAgSearchHandle
    end if
    if pHandle is sAgItemHandle then
@@ -7695,6 +7779,7 @@ command agFailure pHandle, pReason, pTag
    end if
    if pHandle is sAgDownloadHandle then
       put empty into sAgDownloadHandle
+      put empty into sAgDownloadPath
       put empty into sAgPlayAfter
    end if
    agLog "request " & pHandle & " (" & pTag & ") failed: " & pReason
@@ -7705,16 +7790,28 @@ command agFailure pHandle, pReason, pTag
       exit agFailure
    end if
    if tWhat is kAgBigTag then
-      if tSerial is sAgSerial then
+      if tSerial is sAgViewSerial then
          agStagePrompt "that picture did not arrive - press Download, or Open page"
       end if
       exit agFailure
+   end if
+   if tWasSearch then
+      -- the page label still names the page this search asked for, and
+      -- there is now no page: say so rather than leaving a number that
+      -- disagrees with what the grid is showing
+      put "search failed" into field "agPageInfo"
    end if
    uiStatus "request failed - see the log", "bad"
 end agFailure
 
 command agLog pText
+   -- Guarded like the kit's uiStatus, and for the kit's reason: this is
+   -- reached from a libURL callback, which can arrive while the window is
+   -- being rebuilt or after it has gone.
    set the defaultStack to the short name of this stack
+   if there is no field "agLog" then
+      exit agLog
+   end if
    put pText & return after field "agLog"
    set the vScroll of field "agLog" to the formattedHeight of field "agLog"
 end agLog
@@ -8021,6 +8118,7 @@ constant kAgScPngHex = "89504e470d0a1a0a0000000d49484452000000040000000408020000
 
 command agScRun
    local tMissing, tTiles, tI, tCaps, tPlaylist, tInfo, tRect, tSaved, tEdge, tSize
+   local tLit, tWhich, tName, tNames, tCount
    scBegin "agLog"
    put scMissing(kAgScControls) into tMissing
    scAssert "all 33 controls this script names exist (missing: " & scShow(tMissing) & ")", tMissing is empty
@@ -8034,10 +8132,25 @@ command agScRun
    end repeat
    put char 1 to -2 of tTiles into tTiles
    put scMissing(tTiles) into tMissing
-   scAssert "all 30 tile controls exist (missing: " & scShow(tMissing) & ")", tMissing is empty
+   put kAgTiles * 3 into tCount
+   scAssert "all " & tCount & " tile controls exist (missing: " & scShow(tMissing) & ")", tMissing is empty
    scAssert "axVersion reports the member", axVersion() begins with "ArchiveXT"
    scAssert "the movies family is in play at boot", sAgFamily is "movies"
-   scAssert "and its button is the lit one of the five", (the hilite of button "agFamMovies") and (not the hilite of button "agFamImages")
+   put 0 into tLit
+   put empty into tWhich
+   -- LINES, NOT ITEMS. A `repeat for each item` here would read the
+   -- ambient itemDelimiter, which is the one thing this file sets and
+   -- restores everywhere else; lines cost nothing and depend on nothing.
+   put "agFamMovies" & return & "agFamEtree" & return & "agFamLibrivox" & return & "agFamImages" & return & "agFamAny" into tNames
+   repeat for each line tName in tNames
+      if there is a button tName then
+         if the hilite of button tName then
+            add 1 to tLit
+            put tName into tWhich
+         end if
+      end if
+   end repeat
+   scAssert "exactly one family button is lit, and it is the movies one (" & scShow(tWhich) & ")", tLit is 1 and tWhich is "agFamMovies"
    scAssert "the grid pane is up at boot", sAgPane is "grid"
    scAssert "no tile holds a picture at boot", sAgTilePics[1] is "false"
    put agFamilyFor("images") into tInfo
@@ -8051,7 +8164,7 @@ command agScRun
    set the itemDelimiter to comma
    put item 4 of tRect into tEdge
    set the itemDelimiter to tSaved
-   scAssert "the last tile's caption ends inside the grid panel (" & scShow(tEdge) & ")", tEdge <= 500
+   scAssert "the last tile's caption ends inside the grid panel (" & scShow(tEdge) & " of " & kAgPaneB & ")", tEdge <= kAgPaneB
    put axPlaylist(axItemParse(axtHex(kAxVecFixEtreeItemHex)), "audio-tracks") into tPlaylist
    scAssert "the etree fixture plays as six tracks", tPlaylist["count"] is 6
    scAssert "every playlist entry carries a stream URL and a datanode URL", tPlaylist["entries"][1]["url"] is not empty and tPlaylist["entries"][1]["direct"] is not empty

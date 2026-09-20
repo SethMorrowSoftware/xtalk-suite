@@ -6657,11 +6657,27 @@ end adDoPlay
 command adArmPlayCheck
    -- One pending check at a time: a second Play inside the six seconds
    -- would otherwise leave the first check to judge the second stream.
-   local tLine
+   --
+   -- `the pendingMessages` is a COMMA record per line, so the delimiter is
+   -- SET here rather than assumed (box2dxt gotcha 5; holde-em's own sweep
+   -- carries the same line for the same reason). Under a foreign delimiter
+   -- `item 3` is the whole record, nothing ever matches, and the
+   -- one-check-at-a-time contract fails SILENTLY - which is the shape this
+   -- member keeps finding rather than the shape it keeps fixing. Collected
+   -- first and cancelled after the restore, because `cancel` is an engine
+   -- command and this loop has borrowed the delimiter.
+   local tLine, tSaved, tIds, tId
+   put the itemDelimiter into tSaved
+   set the itemDelimiter to comma
+   put empty into tIds
    repeat for each line tLine in the pendingMessages
       if item 3 of tLine begins with "adPlayCheck" then
-         cancel item 1 of tLine
+         put item 1 of tLine & return after tIds
       end if
+   end repeat
+   set the itemDelimiter to tSaved
+   repeat for each line tId in tIds
+      cancel tId
    end repeat
    send "adPlayCheck" to me in 6 seconds
 end adArmPlayCheck
@@ -6785,10 +6801,16 @@ command adDoDownload pPlayAfter
 end adDoDownload
 
 command adShowProgress pReceivedTotal
-   local tReceived, tTotal, tPercent
+   local tReceived, tTotal, tPercent, tDelim
    set the defaultStack to the short name of this stack
+   -- the layer reports progress as "received,total", and this handler is
+   -- reached from a libURL callback with no idea what the last thing to
+   -- run left the delimiter set to (box2dxt gotcha 5)
+   put the itemDelimiter into tDelim
+   set the itemDelimiter to comma
    put item 1 of pReceivedTotal into tReceived
    put item 2 of pReceivedTotal into tTotal
+   set the itemDelimiter to tDelim
    if tReceived is not a number then
       exit adShowProgress
    end if
@@ -6892,18 +6914,26 @@ function adFileSize pFolder, pName
    -- The size of one file from `the detailed files` of its folder, WITHOUT
    -- reading it: a 700 MB film is not a thing to pull into memory to ask
    -- how big it is. Empty when the file is not there.
-   local tSaved, tLines, tLine, tSize
+   local tSaved, tLines, tLine, tSize, tDelim
    put empty into tSize
    put the defaultFolder into tSaved
    set the defaultFolder to pFolder
    put the detailed files into tLines
    set the defaultFolder to tSaved
+   -- `the detailed files` is a COMMA record per line, so the delimiter is
+   -- set here rather than assumed (box2dxt gotcha 5). Added 2026-09-20,
+   -- with the gallery's copy of this handler: the sibling was written
+   -- without it and the omission is invisible until a caller leaves the
+   -- delimiter somewhere else.
+   put the itemDelimiter into tDelim
+   set the itemDelimiter to comma
    repeat for each line tLine in tLines
       if urlDecode(item 1 of tLine) is pName then
          put item 2 of tLine into tSize
          exit repeat
       end if
    end repeat
+   set the itemDelimiter to tDelim
    return tSize
 end adFileSize
 

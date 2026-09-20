@@ -472,6 +472,57 @@ restores the delimiter and only then calls `axCancel`, and why
 afterwards. A restore at the end of such a loop reads as a fix while
 leaving the bug in place.
 
+**THE ADVERSARIAL REVIEW, THE SAME DAY, AND THE SHAPE ITS TWO HIGH FINDINGS
+SHARE.** Both were about LEAVING: what the stack does when a reader presses
+Back while something is still in flight. The gallery had carefully thought
+about the grid's late replies and had not thought about the viewer's at all.
+
+- **Back hid the player and left the six-second check armed.** `stop player`
+  leaves the filename loaded, so both of `agPlayCheck`'s guards still
+  passed - and a stream that had not opened would then have started a
+  multi-hundred-megabyte DOWNLOAD nobody asked for and played a film over
+  the gallery when it landed, while a stream that HAD opened would have
+  painted "playing" over a stack where nothing was. `agDoStopPlay` already
+  established the invariant that leaving playback cancels the check; Back is
+  the one path a reader actually takes and it was the one path that broke
+  it. The handler's own comment claimed it fell back "only if the reader has
+  not moved on", which it had no way to tell - a claim in a comment that
+  nothing enforced, which is this member's own recorded failure shape.
+- **A picture in flight painted itself over the grid.** `agBigPicture` set
+  the big image visible unconditionally, where the tile path asks
+  `(sAgPane is "grid")` and this picture's own FAILURE path asks
+  `(sAgPane is "viewer")` through `agStagePrompt`. So the failure arm
+  respected the pane and the success arm did not.
+
+**And the third finding is the one worth carrying, because the header's own
+claim was half true.** "Every picture carries the search SERIAL" was written
+about thumbnails and was load-bearing-but-absent for the viewer's picture,
+which changes target on every item open and every track selection - neither
+of which bumps a SEARCH serial, and neither of which can, because opening an
+item must not drop the grid's thumbnails. One counter for two questions is
+wrong in whichever direction it is bumped. There are two now
+(`sAgViewSerial`), and every transition that changes what the stage is about
+goes through `agVoidPicture`, which cancels the fetch AND bumps the serial:
+`axCancel` drops a reply still on the wire, the serial drops one already
+sitting in the message queue, and neither alone is enough.
+
+**Two smaller ones are the delimiter rule again, and one of them was in the
+EXPLORER**, which has been on an engine: `adArmPlayCheck` and `adFileSize`
+both read `item` chunks of an engine record without setting the delimiter,
+and `adShowProgress` read the layer's `received,total` the same way from
+inside a libURL callback. All three are fixed on both demos. The
+reachable path is the one holde-em's own sweep names in its comment:
+`closeStack` inherits whatever the IDE or another open stack left set, and
+under a foreign delimiter the pending-message sweep matches nothing and
+cancels nothing, silently.
+
+**The review's own "found nothing" list is worth as much as its findings**
+and is recorded so the next reader knows what was looked at: every call
+site checked against its definition for arity and command-versus-function,
+no undeclared or unused locals, the layout arithmetic bounded inside the
+panel on every tile, `agFitRect` proved unable to divide by zero, and the
+download-and-play ladder proved terminating on every rung.
+
 **HONESTY.** No part of the gallery stack has run on an engine: not the
 grid, not one image object, not the player, not one live thumbnail. The
 suite gates
