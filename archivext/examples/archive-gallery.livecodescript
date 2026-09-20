@@ -5625,7 +5625,8 @@ local sAgBigHandle           -- the viewer picture in flight, or empty
 local sAgDownloadHandle      -- the download in flight, or empty
 local sAgDownloadPath        -- where that download is being written
 local sAgPlayAfter           -- true when the finished download should play
-local sAgPlayUrl             -- the URL the player was last handed (empty after Stop)
+local sAgPlayUrl             -- the URL or path the player was last handed (empty after Stop)
+local sAgPlayIsFile          -- true when that was a LOCAL file, which is what stops the ladder
 local sAgHaveUrlLib          -- the boot probe's answer
 
 -- ==== SUITE UI KIT v2 BEGIN (verbatim copy; master: tools/ui-kit.livecodescript; gate: tools/check-ui-kit-drift.py) ====
@@ -6302,6 +6303,7 @@ command agStart
    put empty into sAgDownloadPath
    put empty into sAgPlayAfter
    put empty into sAgPlayUrl
+   put empty into sAgPlayIsFile
    put 0 into sAgSerial
    put 1 into sAgPage
    put axProbeCapabilities() into tCaps
@@ -7182,6 +7184,7 @@ command agDoPlay
       end if
       start player tName
       put tUrl into sAgPlayUrl
+      put false into sAgPlayIsFile
       uiStatus "opening the stream in the stack's own player (" & agEllipsis(tEntry["title"], 50) & ")...", "warn"
       agArmPlayCheck
    catch tError
@@ -7235,10 +7238,11 @@ command agPlayCheck
    -- duration (and, if it is playing, a moving currentTime); one that
    -- could not open it reports 0 for both and NO error. Only the second
    -- case falls back, and only if the reader has not moved on.
-   local tName, tDuration, tTime, tError, tUrl
+   local tName, tDuration, tTime, tError, tUrl, tIsFile
    set the defaultStack to the short name of this stack
    put kAgPlayerName into tName
    put sAgPlayUrl into tUrl
+   put sAgPlayIsFile is true into tIsFile
    if tUrl is empty then
       exit agPlayCheck
    end if
@@ -7267,9 +7271,22 @@ command agPlayCheck
       uiStatus "playing in the stack's own player", "ok"
       exit agPlayCheck
    end if
-   agLog "six seconds in and the player reports no duration - downloading the file and playing it from disk instead"
    set the visible of player tName to false
    put empty into sAgPlayUrl
+   -- THE LADDER HAS TO KNOW WHICH RUNG IT IS ON. A stream that never
+   -- opened goes to a download; a downloaded FILE that never opened goes
+   -- to the system, never to another download. The explorer demo's
+   -- pre-pass review found exactly this loop before an engine ever saw it
+   -- (archivext/CLAUDE.md, 2026-09-16): Linux builds have no working
+   -- player at all, so a file failure there would have downloaded and
+   -- replayed forever, six seconds at a time.
+   if tIsFile then
+      agLog "six seconds in and the player reports no duration for the LOCAL file - handing it to the system instead"
+      agStagePrompt "this engine's player will not open that file - opening it outside"
+      agOpenOutside tUrl
+      exit agPlayCheck
+   end if
+   agLog "six seconds in and the player reports no duration - downloading the file and playing it from disk instead"
    agDoDownload true
 end agPlayCheck
 
@@ -7288,6 +7305,7 @@ end agHidePlayer
 command agDoStopPlay
    set the defaultStack to the short name of this stack
    put empty into sAgPlayUrl
+   put empty into sAgPlayIsFile
    agCancelPlayCheck
    agHidePlayer
    if sAgPane is "viewer" then
@@ -7432,7 +7450,11 @@ command agDownloadFinished pPath
       end if
       start player tName
       put pPath into sAgPlayUrl
+      put true into sAgPlayIsFile
       uiStatus "playing the downloaded file", "ok"
+      -- armed for the LOCAL file too, and agPlayCheck knows the
+      -- difference: a file that never opens ends in launch document
+      agArmPlayCheck
    catch tError
       agLog "the player refused the downloaded file as well: " & tError
       agStagePrompt "this engine's player will not open that file - opening it outside"

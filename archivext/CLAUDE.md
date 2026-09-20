@@ -445,6 +445,16 @@ below the player is unchanged (download, then play from disk) and the rung
 below THAT is `launch document`, the only media path in this tree with a
 real engine record behind it (riptide, 2026-08-15, two machines).
 
+**AND THE LADDER KNOWS WHICH RUNG IT IS ON, which is the explorer's own
+pre-pass finding applied before this demo met anything.** The six-second
+check is armed for the downloaded LOCAL file as well as for the stream, and
+`sAgPlayIsFile` is what stops that from being a loop: a stream that never
+opened goes to a download, a FILE that never opened goes to the system, and
+nothing ever downloads twice. Linux builds have no working player object at
+all in this engine line, so without the distinction that platform would have
+downloaded and replayed forever, six seconds at a time - which is exactly
+what the 2026-09-16 review caught in the explorer before an engine saw it.
+
 **LATE REPLIES ARE A GRID'S HAZARD AND A LIST DOES NOT HAVE IT.** Ten
 thumbnails are ten requests in flight at once, so a reader who presses Next
 before they land would otherwise see the previous page's pictures under the
