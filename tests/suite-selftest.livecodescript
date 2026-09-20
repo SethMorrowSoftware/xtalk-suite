@@ -7373,6 +7373,81 @@ command axSetTimeout pSeconds
    put trunc(pSeconds) into sAxTimeout
 end axSetTimeout
 
+function axSettings
+   -- EVERY PROCESS-WIDE SETTING OF THE FETCH LAYER, IN ONE ARRAY, so a
+   -- caller that is about to change them can put them back. That is not a
+   -- convenience: axInit, axSetCallback, axSetTimeout and axSetMaxBody
+   -- write script locals of THIS library, and a library is one object per
+   -- process - so a harness or a second panel exercising those setters
+   -- silently re-points the host app's callbacks and re-caps its replies.
+   -- It happened on a real engine (2026-09-20): this member's own harness
+   -- set the cap to 64 KB to prove the setter works, never put it back,
+   -- and from then on every item metadata reply, every full picture and
+   -- every 192-row search in the app around it was refused as "larger
+   -- than 65536 bytes". The app was correct, the library was correct, and
+   -- the state between them was a test fixture.
+   --   owner      the long id callbacks dispatch to (empty: the topStack)
+   --   callback   the handler name dispatched
+   --   timeout    seconds before a request is reported timed out
+   --   maxBody    the largest reply this layer will parse
+   --   baseUrl    the site the builders address
+   -- axRestoreSettings takes this array back.
+   local tOut
+   put sAxOwner into tOut["owner"]
+   if sAxCallback is empty then
+      put kAxCallbackDefault into tOut["callback"]
+   else
+      put sAxCallback into tOut["callback"]
+   end if
+   if sAxTimeout is empty then
+      put kAxTimeoutDefault into tOut["timeout"]
+   else
+      put sAxTimeout into tOut["timeout"]
+   end if
+   if sAxMaxBody is empty then
+      put kAxMaxBodyDefault into tOut["maxBody"]
+   else
+      put sAxMaxBody into tOut["maxBody"]
+   end if
+   put axBaseUrl() into tOut["baseUrl"]
+   return tOut
+end axSettings
+
+command axRestoreSettings pSettings
+   -- Put back what axSettings handed out. Restoring writes each setting
+   -- DIRECTLY rather than through the setters, because the setters refuse
+   -- values outside their own ranges and a restore is not a request - it
+   -- is an undo, and an undo that silently declines is the bug it exists
+   -- to prevent. A key the array does not carry is left alone, so a
+   -- caller may restore one setting.
+   if pSettings is not an array then
+      exit axRestoreSettings
+   end if
+   if "owner" is among the keys of pSettings then
+      put pSettings["owner"] into sAxOwner
+   end if
+   if "callback" is among the keys of pSettings then
+      if pSettings["callback"] is empty then
+         put kAxCallbackDefault into sAxCallback
+      else
+         put pSettings["callback"] into sAxCallback
+      end if
+   end if
+   if "timeout" is among the keys of pSettings then
+      if pSettings["timeout"] is a number then
+         put trunc(pSettings["timeout"]) into sAxTimeout
+      end if
+   end if
+   if "maxBody" is among the keys of pSettings then
+      if pSettings["maxBody"] is a number then
+         put trunc(pSettings["maxBody"]) into sAxMaxBody
+      end if
+   end if
+   if "baseUrl" is among the keys of pSettings then
+      axSetBaseUrl pSettings["baseUrl"]
+   end if
+end axRestoreSettings
+
 command axSetMaxBody pBytes
    -- The largest reply this layer will parse (default 16 MB). Under 1024
    -- keeps the current setting.
@@ -7666,8 +7741,14 @@ on axUrlDone pUrl, pStatus
          put "the URL library said " & pStatus & " for " & pUrl into tDetail
       else
          put "the URL library said " & pStatus & " for " & pUrl & ": " & tDetail into tDetail
-      -- the site's response headers travel with the reason (2026-09-15: a
-      -- bare "400 Bad Request" said nothing about WHICH server refused, or why)
+      -- The site's response headers travel with the reason (2026-09-15: a
+      -- bare "400 Bad Request" said nothing about WHICH server refused, or
+      -- why). They are LABELLED as the last reply's rather than as this
+      -- request's, because that is all libURLLastRHHeaders can promise
+      -- (engine notes 6.9) and a failure report is exactly where a reader
+      -- trusts a header block: on 2026-09-20 a timed-out search quoted a
+      -- 200 and an Onion-Location naming a DIFFERENT URL, which had been
+      -- fetched by a blocking call beside it (notes 5.10).
       put empty into tHeaders
       try
          put libURLLastRHHeaders() into tHeaders
@@ -7676,7 +7757,7 @@ on axUrlDone pUrl, pStatus
       end try
       if tHeaders is not empty then
          replace return with " | " in tHeaders
-         put " [headers: " & tHeaders & "]" after tDetail
+         put " [headers of the last reply this process received, which may be another request's: " & tHeaders & "]" after tDetail
       end if
       end if
       axDispatch tHandle, "error", tDetail, tTag
@@ -48493,13 +48574,27 @@ private command ax1axtTestPlaylists
 end ax1axtTestPlaylists
 
 private command ax1axtTestFetchLayerOffline
-   local ax1tOptions, ax1tError, ax1tPendingBefore
+   local ax1tOptions, ax1tError, ax1tPendingBefore, ax1tSettings, ax1tAfter, ax1tBack
    ax1axtSection "fetch layer, offline refusals"
    -- The host may have a request in flight (the demo runs this harness from
    -- a button, mid-search on 2026-09-15), so every pending check is a DELTA
    -- against the count on entry, not an absolute zero. axShutdown at the end
    -- still forgets the host's requests - their late replies are dropped.
    put axPending() into ax1tPendingBefore
+   -- SNAPSHOT THE HOST'S SETTINGS BEFORE TOUCHING THEM, and put them back
+   -- at the end of the section. axInit / axSetCallback / axSetTimeout /
+   -- axSetMaxBody write script locals of a library that is ONE object per
+   -- process, so exercising them here re-points the callbacks and re-caps
+   -- the replies of whatever app is carrying this harness. That is not a
+   -- theoretical hazard: on 2026-09-20 this section left the cap at 64 KB
+   -- on a real engine, and from then on every item metadata reply, every
+   -- full picture and every 192-row search in the gallery around it was
+   -- refused as \"larger than 65536 bytes\" - a green harness that broke
+   -- the app it had just certified.
+   put axSettings() into ax1tSettings
+   ax1axtCheck ax1tSettings is an array, "axSettings hands back the layer's settings"
+   ax1axtCheck ax1tSettings["maxBody"] is a number and ax1tSettings["timeout"] is a number, "and the numbers are numbers"
+   ax1axtCheck ax1tSettings["callback"] is not empty, "and the callback is never empty"
    axInit the long id of me
    ax1axtCheck true, "axInit accepts an owner"
    axSetCallback "onArchive"
@@ -48507,6 +48602,9 @@ private command ax1axtTestFetchLayerOffline
    axSetTimeout "soon"
    axSetMaxBody 65536
    axSetMaxBody 12
+   put axSettings() into ax1tAfter
+   ax1axtCheck ax1tAfter["timeout"] is 45, "a refused timeout keeps the accepted one"
+   ax1axtCheck ax1tAfter["maxBody"] is 65536, "a refused cap keeps the accepted one"
    ax1axtCheck axPending() is ax1tPendingBefore, "nothing new is pending"
    ax1axtCheck axSearch(empty, ax1tOptions) is empty, "axSearch refuses an empty query before loading"
    ax1axtCheck axLastError() contains "empty", "and says why"
@@ -48553,4 +48651,16 @@ private command ax1axtTestFetchLayerOffline
    axShutdown
    axShutdown
    ax1axtCheck axPending() is 0, "axShutdown twice leaves nothing pending"
+   -- PUT THE HOST'S SETTINGS BACK. This is the last thing the section does,
+   -- after axShutdown, because axShutdown forgets requests but does not
+   -- restore settings - it has no idea what they were before this harness
+   -- ran. Every assertion above this line has already been counted, so a
+   -- restore that fails is reported rather than losing the section.
+   axRestoreSettings ax1tSettings
+   put axSettings() into ax1tBack
+   ax1axtCheck ax1tBack["maxBody"] is ax1tSettings["maxBody"], "the host's body cap is back"
+   ax1axtCheck ax1tBack["timeout"] is ax1tSettings["timeout"], "the host's timeout is back"
+   ax1axtCheck ax1tBack["callback"] is ax1tSettings["callback"], "the host's callback is back"
+   ax1axtCheck ax1tBack["owner"] is ax1tSettings["owner"], "the host's owner is back"
+   ax1axtCheck ax1tBack["baseUrl"] is ax1tSettings["baseUrl"], "the host's base URL is back"
 end ax1axtTestFetchLayerOffline

@@ -182,6 +182,29 @@
     stack should not be the thing that finds out - a queue costs a second of
     latency and asks nothing of a public service that it cannot take.
 
+20. **What a blocking call does to an async request already in flight.**
+    ANSWERED once, badly, on 2026-09-20: a 192-row `axSearch` was out when
+    the gallery's Live probe ran its blocking legs, and the search ended at
+    the layer's 60-second watchdog carrying a 200 and another request's
+    response headers (engine notes 5.10). One observation is not a rule -
+    the pairing is established, the CAUSE is not, and the run that would
+    settle it is the same search with nothing blocking beside it. Until
+    then the rule to write code by is the conservative one: do not block
+    while the app's own requests are out, which is why the probe says so
+    in its own first log line and why a harness must never leave the
+    layer reconfigured (`axSettings` / `axRestoreSettings`).
+
+21. **Whether the platform player can open https at all.** Windows' media
+    path is DirectShow, documented for http and not for https, and on
+    2026-09-20 every video was refused at once with `could not create
+    movie reference` while audio over the same scheme played. The retry
+    that separates the two now runs BEFORE the download rather than after
+    it (`agStreamFailed`), so one click answers it - but that retry has
+    not been exercised on any engine, because the 2026-09-20 run refused
+    the h.264 files from DISK as well (engine notes 5.9), which rules the
+    container in and leaves the scheme question untouched. The test that settles it is a video this engine
+    CAN play locally, streamed.
+
 ## What is deliberately not built yet
 
 11. **More families.** `any` searches every mediatype with no presets beyond

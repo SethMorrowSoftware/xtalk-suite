@@ -692,6 +692,114 @@ drives the LIBRARY and `check-selftest-vectors.py` re-derives CONSTANTS, so
 the engine is the first thing that ever runs them, which makes every one of
 them a claim rather than a check until someone pastes the file.
 
+### 2026-09-20, the second engine run - the harness broke the app it had just certified
+
+A long session on the same engine (OXT 9.6.3, Windows x86_64): films and
+concerts searched, items opened, three MP3s played, the four-leg probe green
+again (180x124 and 1988x1367 into image objects, a second time). Four findings,
+and the first is the worst kind - everything was working correctly and the
+result was wrong.
+
+**`axSelfTest` LEFT THE LIBRARY CONFIGURED FOR THE HARNESS, and from then on
+the app around it was broken.** Every request after the Tests button read:
+
+```
+request 30 (item) failed: the reply is larger than 65536 bytes,
+which no answer this layer asked for should be
+```
+
+65536 is not a number anywhere in the gallery (its cap is 48 MB) or in the
+library (16 MB by default). It is the value the harness's own fetch-layer
+section sets to prove `axSetMaxBody` accepts a plausible number, one line
+before it proves the setter REFUSES 12. The section never put it back - and it
+also re-pointed `axInit`'s owner at itself and re-set the timeout. So item
+metadata, every full picture and every 192-row search were refused by a test
+fixture, with a correct sentence about a reply that was perfectly fine.
+
+**The fix is a library feature rather than a harness patch**, because the
+hazard is not the harness's: `axInit` / `axSetCallback` / `axSetTimeout` /
+`axSetMaxBody` write script locals of an object that exists ONCE per process,
+so any second caller - a harness, a settings panel, a second stack in the same
+IDE - silently reconfigures the first. `axSettings()` hands back all five
+settings and `axRestoreSettings` takes them, the harness snapshots on the way
+in and restores on the way out, and five assertions prove each one came back.
+Restoring writes the locals DIRECTLY rather than through the setters, because
+a setter declines values outside its range and an undo that silently declines
+is the bug it exists to prevent.
+
+**THE WINDOW WAS YESTERDAY'S.** The boot check reported `agCacheInfo`,
+`agLouder`, `agQuieter` and tiles 11 to 24 missing - the three controls and
+fourteen tiles added that morning. `agBuild` skips its work when the stack
+already carries `kAgUiVersion`, and that literal had not been bumped, so a
+reader pasting the new script over the stack they already had got the old
+window with the new code behind it. THREE halves, which is the interesting
+part, because each catches something the others cannot:
+
+- **`kAgUiVersion` is DERIVED from the builder's own text**
+  (`tools/check-gallery-ui-version.py`, `--fix` writes it): the first twelve
+  hex digits of a SHA-256 over every `command agBuild*` handler. A new
+  control changes that text, so the constant changes, so a stack carrying
+  the old one rebuilds. **coinxt had already hit this exact failure and
+  already built this exact gate** (2026-09-04: a BIP-322 checkbox, Inscribe,
+  Lock and four more buttons that never appeared in any existing stack), and
+  it took an engine run to notice that the wallet's lesson applied here
+  verbatim. Reading the sibling's `tools/` directory is cheaper than a
+  second engine pass.
+- **`agUiStamp()` carries the geometry**, because the failure has a second
+  shape the fingerprint cannot see: the grid went from 10 tiles to 24 by
+  changing `kAgTiles`, which the builder READS in a loop - not one character
+  of `agBuild`'s text changed. The stamp is the constant plus the grid, the
+  tile size and the window size, and the gate asserts that half is still
+  there so a tidy-up cannot quietly leave one mechanism doing two jobs.
+- **`agScRun` repairs before it reports.** When a control the DERIVED list
+  names is missing it calls `agRebuild` once, re-measures, and says in the
+  log that the window was redrawn; a second miss is a real defect and still
+  fails. That list is the right oracle because
+  `tools/check-demo-control-lists.py` maintains it from the source. The
+  rebuild repaints from the STATE rather than the defaults (the family
+  hilite, the pane, the cache line and any loaded page), because agStart
+  paints those AFTER agBuild and a repair that skipped them would leave a
+  stack whose script thinks a family is selected and whose window shows
+  none - which the boot check would then have failed on, one assertion
+  further down.
+
+**TWO FILMS COST 795 MB TO LEARN ONE FACT.** An h.264 MP4 stream was refused
+at once with `could not create movie reference`; the stack downloaded 408 MB,
+handed the file to the same player, got the same sentence, and passed it to the
+system - then did all of it again for a 386 MB MPEG4. Root engine notes 5.9 has
+the record (the container is the wall: audio on the same machine in the same
+session played). Three changes: a suffix refused from DISK is remembered for
+the session and a later stream of that container is not downloaded at all, but
+named in a prompt beside the two things that do work (Download, Open page); the
+http-scheme retry moved OUT of the six-second check into one
+`agStreamFailed`, so the cheap discriminator runs BEFORE the expensive
+download rather than after it; and both ways of learning a stream failed (the
+synchronous refusal and the six-second silence) now take that one ladder,
+which is why the retry had never run - the engine refused these streams
+instantly, and the retry lived only on the slow path.
+
+**AND THE FIRST `playStarted` WENT MISSING AGAIN, WHICH REFUTES THE FIX MADE
+THAT MORNING.** The morning's reading was ordering - the stack set its "this
+player is mine" variable after `start player`, so the message arrived before
+anything would recognise it - and that was corrected before this run. The run
+lost the first one anyway: silent on play one, reported on plays two and
+three, exactly as before. The correction was right about what to do and wrong
+about why, and the honest move is to say so in the note rather than leave a
+plausible story standing (root engine notes 5.8 now carries both). The one
+remaining difference between play one and every later play is that play one
+also CREATED the player control, so the player is created at start now
+(`agPlayerEnsure`) - and if the next run still loses the message, a
+script-side cause is ruled out, which is worth as much as a fix.
+
+**AND A FAILURE QUOTED ANOTHER REQUEST'S HEADERS.** A timed-out search came
+back carrying `HTTP/1.1 200 OK` and an `Onion-Location` naming the `/metadata/`
+URL a blocking probe leg had just fetched. That is `libURLLastRHHeaders`
+keeping the LAST reply (gotcha in engine notes 6.9) landing in the one place a
+reader trusts a header block absolutely. The header block is labelled in the
+sentence now rather than in a doc. Engine notes 5.10 also pairs the async
+timeout with the blocking call beside it and marks the causal half
+UNEVIDENCED - one observation is not a rule.
+
 ## Working rules for this member
 
 - **Edit `src/archivext.livecodescript`, then re-carry.** Two carriers hold a
@@ -716,6 +824,7 @@ python3 archivext/tools/check-selftest-vectors.py --check
 python3 archivext/tools/test-script-vectors.py     # slow: seven full gate runs
 python3 archivext/tools/check-script-vectors.py --check
 python3 archivext/tools/check-doc-handlers.py
+python3 archivext/tools/check-gallery-ui-version.py   # --fix writes the stamp
 python3 archivext/tools/check-docs-style.py
 tools/build-all.sh --gates                          # the whole suite set
 ```

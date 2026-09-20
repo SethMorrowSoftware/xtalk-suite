@@ -814,16 +814,31 @@ mediaTypes` and `the tracks`, each read in its own try. `the tracks` is the
 line that will settle it: it says whether an audio track was found at all.
 
 **A second thing the log establishes, and it is a RULE rather than a
-symptom: `playStarted` is dispatched while `start player` is still running.**
-INFERRED, from message ordering rather than from any direct observation. The
-stack set its "this player is mine" variable on the line AFTER `start player`,
-and the first play of the session printed no `playStarted` while the second
-and third did - which is only consistent with the message being delivered
-inside the `start player` call, before the next line ran. (The later plays saw
-the variable still set from the first.) So any handler that guards on state a
-`start player` is about to establish must establish it FIRST. Note 5.3's
-defaultStack rule is the same shape one layer out: a message can arrive before
-the code that was going to prepare for it.
+symptom: the FIRST `playStarted` of a session is not seen; later ones are.**
+OBSERVED twice, on two separate runs (2026-09-20, morning and evening), and
+the first explanation was WRONG - which is why it is written out rather than
+quietly replaced.
+
+The stack set its "this player is mine" variable on the line AFTER
+`start player`, so the obvious reading was that the message is dispatched
+inside the `start player` call, before the next line runs, and that the later
+plays printed the line only because the first had left the variable set. That
+would make it note 5.3's shape one layer out: a message arriving before the
+code that was going to prepare for it. The ordering was changed - state up
+first, then `set the filename`, then `start player` - and **the next run
+showed exactly the same gap**: first play silent, second and third reported.
+
+So ordering was not the cause, or not the whole one. The remaining difference
+between play one and every later play is that play one also **created the
+player control** (the stack made it on demand, inside the same handler that
+then started it). That is the hypothesis now under test: the gallery creates
+the player at start, and if the next run still loses the first message, a
+script-side cause is ruled out as well.
+
+The rule that survives either way is worth keeping, because it costs nothing
+and the first version of it was right about what to do even though it was
+wrong about why: **establish the state a message will be judged against
+BEFORE issuing the command that can send it.**
 
 **Also unsettled, and the gallery now tests it in one click**: whether the
 platform player can open **https** at all. On Windows the media path is
@@ -832,6 +847,78 @@ and video in this run did not open at all while audio appeared to. The
 six-second check now retries the same datanode URL once over `http://` before
 falling back to a download, which is the cheapest discriminator available and
 has never been run.
+
+### 5.9 A player refuses an h.264 MP4 from a LOCAL FILE, with a verbatim reason
+
+**OBSERVED 2026-09-20, OXT 9.6.3 Windows x86_64.** Two films, streamed from
+archive.org's datanode hosts, were refused the moment they were handed over:
+
+```
+play: https://dn800208.us.archive.org/0/items/TheGhoul/TheGhoul_1933.mp4
+      (h.264, 408.79 MB, chose TheGhoul_1933.mp4) on Win32 NT 10.0
+the player refused the stream at once: could not create movie reference
+```
+
+`could not create movie reference` is what `set the filename of player` leaves
+in `the result`, which is the SYNCHRONOUS verdict note 5.8 says a player
+sometimes gives - so on this platform the refusal is immediate and named, not
+silent. What makes the entry worth having is the next rung: the stack then
+downloaded all 408 MB and tried the file from disk, and got
+
+```
+the player refused the downloaded file as well: could not create movie reference
+```
+
+**So the container is the wall, not the scheme and not the redirect.** The same
+sequence repeated for a 386 MB MPEG4. MP3 audio on the same machine in the same
+session opened, reported a duration and advanced its clock (5.8), so the player
+object works - it has no decoder for these files. Handing the downloaded file
+to `launch document` opened it outside, which is the one media path in this
+tree with a real engine record behind it (riptide, 2026-08-15).
+
+The practical rule, and what the gallery does now: **once a LOCAL file of a
+given container has been refused, no stream of that container can end
+differently on that engine**, so a second download of the same suffix is known
+waste and is refused with a sentence rather than spent. The http-scheme retry
+(5.8's open question) is still worth running, but it now runs BEFORE the
+download rather than after it, because the cheap discriminator is only cheap
+if it goes first.
+
+---
+
+### 5.10 A blocking `put URL` while an async `load URL` is in flight: the async one times out, and its error headers belong to the other request
+
+**OBSERVED 2026-09-20, same session, libURL 1.2.0.** A search was in flight
+through `load URL ... with message` when the stack's Live probe ran its
+blocking legs (`put URL` through the library's sync helpers). The async request
+never delivered; it ended at the layer's own 60-second watchdog:
+
+```
+request 1 (gallery) failed: the URL library said timeout for
+https://archive.org/advancedsearch.php?...&rows=192&page=1&output=json:
+socket timeout archive.org:443|6925 [headers: HTTP/1.1 200 OK | ... |
+Onion-Location: https://archive...onion/metadata/arkivkopia.se-digmus-mha-MILIF.007916 ]
+```
+
+Two things in one line. The socket did get a **200** and then stalled, and the
+headers quoted with the failure are **the other request's** - the
+`Onion-Location` names the `/metadata/` URL the blocking leg had just fetched,
+not the `advancedsearch.php` URL that failed. That is note 6.9's
+`libURLLastRHHeaders` rule biting in the place it is most misleading: a failure
+report is exactly when a reader trusts a header block, and the block belongs to
+whatever reply arrived LAST. A library that quotes headers in an error should
+say that it cannot prove they are the failing request's; archivext's error
+text says so in the sentence itself now ("headers of the last reply this
+process received, which may be another request's"), because a caveat that
+lives only in a doc is not read at the moment the header block is.
+
+Whether the blocking call CAUSED the timeout is UNEVIDENCED: one observation,
+with a large (192-row) response on the async side, and no run that puts the
+same async request in flight without a blocking call beside it. What is
+established is the pairing, which is enough to stop writing harnesses and
+probes that block while an app's own requests are out.
+
+---
 
 ---
 

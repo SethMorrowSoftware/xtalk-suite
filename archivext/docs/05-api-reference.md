@@ -173,6 +173,8 @@ arrays (`response/docs/3/title`).
 | `axSetCallback pHandlerName` | the handler dispatched for every outcome (default `onArchive`; empty restores it) |
 | `axSetTimeout pSeconds` | seconds before an outstanding request is reported as `timeout` (default 60; under 1 or a non-number keeps the current setting) |
 | `axSetMaxBody pBytes` | the largest reply parsed (default 16 MB; under 1024 keeps the current setting) |
+| `axSettings()` | EVERY process-wide setting of the fetch layer in one array (`owner`, `callback`, `timeout`, `maxBody`, `baseUrl`), so code that is about to change them can put them back. A library is one object per process: a harness or a second panel calling the four setters above silently re-points the host app's callbacks and re-caps its replies |
+| `axRestoreSettings pSettings` | takes that array back, writing each setting directly rather than through the setters (an undo that silently declines is the bug it exists to prevent). A key the array does not carry is left alone |
 | `axPending()` | how many requests are in flight |
 | `axSearch(pQuery, pOptions)` | starts a search; options `fields`, `sort`, `rows`, `page`, `tag`; returns the handle, or empty when the URL cannot be built. Delivers `"search"` |
 | `axFetchItem(pIdentifier, pTag)` | starts a metadata fetch. Delivers `"item"` |

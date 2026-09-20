@@ -816,13 +816,27 @@ end axtTestPlaylists
 -- ==========================================================================
 
 private command axtTestFetchLayerOffline
-   local tOptions, tError, tPendingBefore
+   local tOptions, tError, tPendingBefore, tSettings, tAfter, tBack
    axtSection "fetch layer, offline refusals"
    -- The host may have a request in flight (the demo runs this harness from
    -- a button, mid-search on 2026-09-15), so every pending check is a DELTA
    -- against the count on entry, not an absolute zero. axShutdown at the end
    -- still forgets the host's requests - their late replies are dropped.
    put axPending() into tPendingBefore
+   -- SNAPSHOT THE HOST'S SETTINGS BEFORE TOUCHING THEM, and put them back
+   -- at the end of the section. axInit / axSetCallback / axSetTimeout /
+   -- axSetMaxBody write script locals of a library that is ONE object per
+   -- process, so exercising them here re-points the callbacks and re-caps
+   -- the replies of whatever app is carrying this harness. That is not a
+   -- theoretical hazard: on 2026-09-20 this section left the cap at 64 KB
+   -- on a real engine, and from then on every item metadata reply, every
+   -- full picture and every 192-row search in the gallery around it was
+   -- refused as \"larger than 65536 bytes\" - a green harness that broke
+   -- the app it had just certified.
+   put axSettings() into tSettings
+   axtCheck tSettings is an array, "axSettings hands back the layer's settings"
+   axtCheck tSettings["maxBody"] is a number and tSettings["timeout"] is a number, "and the numbers are numbers"
+   axtCheck tSettings["callback"] is not empty, "and the callback is never empty"
    axInit the long id of me
    axtCheck true, "axInit accepts an owner"
    axSetCallback "onArchive"
@@ -830,6 +844,9 @@ private command axtTestFetchLayerOffline
    axSetTimeout "soon"
    axSetMaxBody 65536
    axSetMaxBody 12
+   put axSettings() into tAfter
+   axtCheck tAfter["timeout"] is 45, "a refused timeout keeps the accepted one"
+   axtCheck tAfter["maxBody"] is 65536, "a refused cap keeps the accepted one"
    axtCheck axPending() is tPendingBefore, "nothing new is pending"
    axtCheck axSearch(empty, tOptions) is empty, "axSearch refuses an empty query before loading"
    axtCheck axLastError() contains "empty", "and says why"
@@ -876,4 +893,16 @@ private command axtTestFetchLayerOffline
    axShutdown
    axShutdown
    axtCheck axPending() is 0, "axShutdown twice leaves nothing pending"
+   -- PUT THE HOST'S SETTINGS BACK. This is the last thing the section does,
+   -- after axShutdown, because axShutdown forgets requests but does not
+   -- restore settings - it has no idea what they were before this harness
+   -- ran. Every assertion above this line has already been counted, so a
+   -- restore that fails is reported rather than losing the section.
+   axRestoreSettings tSettings
+   put axSettings() into tBack
+   axtCheck tBack["maxBody"] is tSettings["maxBody"], "the host's body cap is back"
+   axtCheck tBack["timeout"] is tSettings["timeout"], "the host's timeout is back"
+   axtCheck tBack["callback"] is tSettings["callback"], "the host's callback is back"
+   axtCheck tBack["owner"] is tSettings["owner"], "the host's owner is back"
+   axtCheck tBack["baseUrl"] is tSettings["baseUrl"], "the host's base URL is back"
 end axtTestFetchLayerOffline

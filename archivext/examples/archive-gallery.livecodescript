@@ -4106,6 +4106,81 @@ command axSetTimeout pSeconds
    put trunc(pSeconds) into sAxTimeout
 end axSetTimeout
 
+function axSettings
+   -- EVERY PROCESS-WIDE SETTING OF THE FETCH LAYER, IN ONE ARRAY, so a
+   -- caller that is about to change them can put them back. That is not a
+   -- convenience: axInit, axSetCallback, axSetTimeout and axSetMaxBody
+   -- write script locals of THIS library, and a library is one object per
+   -- process - so a harness or a second panel exercising those setters
+   -- silently re-points the host app's callbacks and re-caps its replies.
+   -- It happened on a real engine (2026-09-20): this member's own harness
+   -- set the cap to 64 KB to prove the setter works, never put it back,
+   -- and from then on every item metadata reply, every full picture and
+   -- every 192-row search in the app around it was refused as "larger
+   -- than 65536 bytes". The app was correct, the library was correct, and
+   -- the state between them was a test fixture.
+   --   owner      the long id callbacks dispatch to (empty: the topStack)
+   --   callback   the handler name dispatched
+   --   timeout    seconds before a request is reported timed out
+   --   maxBody    the largest reply this layer will parse
+   --   baseUrl    the site the builders address
+   -- axRestoreSettings takes this array back.
+   local tOut
+   put sAxOwner into tOut["owner"]
+   if sAxCallback is empty then
+      put kAxCallbackDefault into tOut["callback"]
+   else
+      put sAxCallback into tOut["callback"]
+   end if
+   if sAxTimeout is empty then
+      put kAxTimeoutDefault into tOut["timeout"]
+   else
+      put sAxTimeout into tOut["timeout"]
+   end if
+   if sAxMaxBody is empty then
+      put kAxMaxBodyDefault into tOut["maxBody"]
+   else
+      put sAxMaxBody into tOut["maxBody"]
+   end if
+   put axBaseUrl() into tOut["baseUrl"]
+   return tOut
+end axSettings
+
+command axRestoreSettings pSettings
+   -- Put back what axSettings handed out. Restoring writes each setting
+   -- DIRECTLY rather than through the setters, because the setters refuse
+   -- values outside their own ranges and a restore is not a request - it
+   -- is an undo, and an undo that silently declines is the bug it exists
+   -- to prevent. A key the array does not carry is left alone, so a
+   -- caller may restore one setting.
+   if pSettings is not an array then
+      exit axRestoreSettings
+   end if
+   if "owner" is among the keys of pSettings then
+      put pSettings["owner"] into sAxOwner
+   end if
+   if "callback" is among the keys of pSettings then
+      if pSettings["callback"] is empty then
+         put kAxCallbackDefault into sAxCallback
+      else
+         put pSettings["callback"] into sAxCallback
+      end if
+   end if
+   if "timeout" is among the keys of pSettings then
+      if pSettings["timeout"] is a number then
+         put trunc(pSettings["timeout"]) into sAxTimeout
+      end if
+   end if
+   if "maxBody" is among the keys of pSettings then
+      if pSettings["maxBody"] is a number then
+         put trunc(pSettings["maxBody"]) into sAxMaxBody
+      end if
+   end if
+   if "baseUrl" is among the keys of pSettings then
+      axSetBaseUrl pSettings["baseUrl"]
+   end if
+end axRestoreSettings
+
 command axSetMaxBody pBytes
    -- The largest reply this layer will parse (default 16 MB). Under 1024
    -- keeps the current setting.
@@ -4399,8 +4474,14 @@ on axUrlDone pUrl, pStatus
          put "the URL library said " & pStatus & " for " & pUrl into tDetail
       else
          put "the URL library said " & pStatus & " for " & pUrl & ": " & tDetail into tDetail
-      -- the site's response headers travel with the reason (2026-09-15: a
-      -- bare "400 Bad Request" said nothing about WHICH server refused, or why)
+      -- The site's response headers travel with the reason (2026-09-15: a
+      -- bare "400 Bad Request" said nothing about WHICH server refused, or
+      -- why). They are LABELLED as the last reply's rather than as this
+      -- request's, because that is all libURLLastRHHeaders can promise
+      -- (engine notes 6.9) and a failure report is exactly where a reader
+      -- trusts a header block: on 2026-09-20 a timed-out search quoted a
+      -- 200 and an Onion-Location naming a DIFFERENT URL, which had been
+      -- fetched by a blocking call beside it (notes 5.10).
       put empty into tHeaders
       try
          put libURLLastRHHeaders() into tHeaders
@@ -4409,7 +4490,7 @@ on axUrlDone pUrl, pStatus
       end try
       if tHeaders is not empty then
          replace return with " | " in tHeaders
-         put " [headers: " & tHeaders & "]" after tDetail
+         put " [headers of the last reply this process received, which may be another request's: " & tHeaders & "]" after tDetail
       end if
       end if
       axDispatch tHandle, "error", tDetail, tTag
@@ -5513,13 +5594,27 @@ end axtTestPlaylists
 -- ==========================================================================
 
 private command axtTestFetchLayerOffline
-   local tOptions, tError, tPendingBefore
+   local tOptions, tError, tPendingBefore, tSettings, tAfter, tBack
    axtSection "fetch layer, offline refusals"
    -- The host may have a request in flight (the demo runs this harness from
    -- a button, mid-search on 2026-09-15), so every pending check is a DELTA
    -- against the count on entry, not an absolute zero. axShutdown at the end
    -- still forgets the host's requests - their late replies are dropped.
    put axPending() into tPendingBefore
+   -- SNAPSHOT THE HOST'S SETTINGS BEFORE TOUCHING THEM, and put them back
+   -- at the end of the section. axInit / axSetCallback / axSetTimeout /
+   -- axSetMaxBody write script locals of a library that is ONE object per
+   -- process, so exercising them here re-points the callbacks and re-caps
+   -- the replies of whatever app is carrying this harness. That is not a
+   -- theoretical hazard: on 2026-09-20 this section left the cap at 64 KB
+   -- on a real engine, and from then on every item metadata reply, every
+   -- full picture and every 192-row search in the gallery around it was
+   -- refused as \"larger than 65536 bytes\" - a green harness that broke
+   -- the app it had just certified.
+   put axSettings() into tSettings
+   axtCheck tSettings is an array, "axSettings hands back the layer's settings"
+   axtCheck tSettings["maxBody"] is a number and tSettings["timeout"] is a number, "and the numbers are numbers"
+   axtCheck tSettings["callback"] is not empty, "and the callback is never empty"
    axInit the long id of me
    axtCheck true, "axInit accepts an owner"
    axSetCallback "onArchive"
@@ -5527,6 +5622,9 @@ private command axtTestFetchLayerOffline
    axSetTimeout "soon"
    axSetMaxBody 65536
    axSetMaxBody 12
+   put axSettings() into tAfter
+   axtCheck tAfter["timeout"] is 45, "a refused timeout keeps the accepted one"
+   axtCheck tAfter["maxBody"] is 65536, "a refused cap keeps the accepted one"
    axtCheck axPending() is tPendingBefore, "nothing new is pending"
    axtCheck axSearch(empty, tOptions) is empty, "axSearch refuses an empty query before loading"
    axtCheck axLastError() contains "empty", "and says why"
@@ -5573,6 +5671,18 @@ private command axtTestFetchLayerOffline
    axShutdown
    axShutdown
    axtCheck axPending() is 0, "axShutdown twice leaves nothing pending"
+   -- PUT THE HOST'S SETTINGS BACK. This is the last thing the section does,
+   -- after axShutdown, because axShutdown forgets requests but does not
+   -- restore settings - it has no idea what they were before this harness
+   -- ran. Every assertion above this line has already been counted, so a
+   -- restore that fails is reported rather than losing the section.
+   axRestoreSettings tSettings
+   put axSettings() into tBack
+   axtCheck tBack["maxBody"] is tSettings["maxBody"], "the host's body cap is back"
+   axtCheck tBack["timeout"] is tSettings["timeout"], "the host's timeout is back"
+   axtCheck tBack["callback"] is tSettings["callback"], "the host's callback is back"
+   axtCheck tBack["owner"] is tSettings["owner"], "the host's owner is back"
+   axtCheck tBack["baseUrl"] is tSettings["baseUrl"], "the host's base URL is back"
 end axtTestFetchLayerOffline
 
 -- <<< END EMBEDDED LIBRARIES <<<
@@ -5586,7 +5696,7 @@ end axtTestFetchLayerOffline
 -- control added without touching this line is never created on a stack
 -- somebody already opened once (the explorer shipped exactly that bug on
 -- 2026-09-15 and the boot self-check is what caught it).
-constant kAgUiVersion = "archive-gallery-kit2-1"
+constant kAgUiVersion = "gallery-48a710c67c6a"
 constant kAgWinW = 1180
 constant kAgWinH = 630
 
@@ -5776,6 +5886,13 @@ local sAgPlayAfter           -- true when the finished download should play
 local sAgPlayUrl             -- the URL or path the player was last handed (empty after Stop)
 local sAgPlayIsFile          -- true when that was a LOCAL file, which is what stops the ladder
 local sAgPlayRetried         -- true once the http retry below has been spent on this entry
+-- SUFFIXES THIS ENGINE'S PLAYER REFUSED FROM DISK, this session. A stream
+-- refusal is ambiguous (the scheme, the redirect, the container), which is
+-- why the ladder downloads and tries again - but once a LOCAL file of that
+-- suffix has been refused, the container is ruled in and the download is
+-- known waste. On 2026-09-20 an engine refused a 408 MB h.264 mp4 and a
+-- 386 MB MPEG4 the same way, and paid for both first.
+local sAgDeadSuffixes
 local sAgLoudness            -- what the volume buttons have asked for
 local sAgHaveUrlLib          -- the boot probe's answer
 
@@ -6313,9 +6430,27 @@ end agTileIndexOf
 -- is here (the coin wallet's ten-screen sweep, one demo smaller).
 -- ==========================================================================
 
+function agUiStamp
+   -- WHAT THE BUILT WINDOW IS, not just which revision of this script drew
+   -- it. agBuild skips its work when the stack already carries the stamp,
+   -- and on 2026-09-20 a real engine showed what that costs when the stamp
+   -- is a hand-bumped literal alone: the grid went from 10 tiles to 24 and
+   -- gained three buttons, the literal did not move, and a stack built by
+   -- the previous paste reported agCacheInfo, agLouder, agQuieter and
+   -- tiles 11 to 24 missing - in a boot check whose whole job is to catch
+   -- that, on a window a reader would have called merely small. Every
+   -- number the layout is made of is IN the stamp now, so changing the
+   -- grid, the tile count or the window invalidates the built copy without
+   -- anyone remembering to. The literal still carries what the numbers
+   -- cannot see (a new button at the same size), and agScRun's own
+   -- missing-control sweep is the backstop for a forgotten bump.
+   return kAgUiVersion & "/" & kAgCols & "x" & kAgGridRows & "/" & kAgTiles \
+      & "/" & kAgWinW & "x" & kAgWinH & "/" & kAgTileW & "x" & kAgTileH
+end agUiStamp
+
 command agBuild
    local tI, tName, tRect
-   if the uAgUiVersion of this stack is kAgUiVersion and there is a field "agLog" then
+   if the uAgUiVersion of this stack is agUiStamp() and there is a field "agLog" then
       exit agBuild
    end if
    lock screen
@@ -6411,10 +6546,48 @@ command agBuild
    uiButton "agProbe", "Live probe", "930,504,1046,526"
    uiButton "agTests", "Run axSelfTest", "1050,504,1164,526"
    uiArea "agLog", "16,530,1164,580"
-   uiFooter "This stack demonstrates ArchiveXT as a picture gallery: ten thumbnails per search in real engine image objects, then a film or a concert in the engine's own player and a photograph in an image object, all from archive.org's public APIs. It stores nothing and fetches only what you ask for. Verified statically + headless fixtures; needs an OXT pass + a live archive.org pass.", "16,586,1164,626"
-   set the uAgUiVersion of this stack to kAgUiVersion
+   uiFooter "This stack demonstrates ArchiveXT as a picture gallery: a screen of thumbnails in real engine image objects, then a film or a concert in the engine's own player and a photograph in an image object, all from archive.org's public APIs. It stores nothing and fetches only what you ask for. Verified statically + headless fixtures; needs an OXT pass + a live archive.org pass.", "16,586,1164,626"
+   set the uAgUiVersion of this stack to agUiStamp()
    unlock screen
 end agBuild
+
+command agRebuild
+   -- Force the window to be drawn again, whatever the stack carries. The
+   -- stamp is cleared FIRST, so agBuild cannot decide it has nothing to
+   -- do, and the log is carried across because the only two callers are
+   -- the boot check repairing a stale build (whose own lines are already
+   -- in the field and are the reason a reader will look) and a
+   -- maintainer at the message box.
+   local tLog
+   put empty into tLog
+   if there is a field "agLog" then
+      put the htmlText of field "agLog" into tLog
+   end if
+   set the uAgUiVersion of this stack to empty
+   agBuild
+   if tLog is not empty then
+      set the htmlText of field "agLog" to tLog
+   end if
+   -- A REBUILT WINDOW IS A BLANK ONE, and the state it lost is painted
+   -- rather than stored: agStart lights the family button, shows a pane
+   -- and clears the tiles AFTER agBuild, so a rebuild from anywhere else
+   -- leaves a stack whose script thinks a family is selected and whose
+   -- window shows none. Repainted from the state rather than from the
+   -- defaults, so a rebuild in the middle of a session keeps the session.
+   -- agPaintFamily rather than agSetFamily: the setter also rewrites the
+   -- status line and forces the grid pane, which a repair must not do.
+   if sAgFamily is not empty then
+      agPaintFamily
+   end if
+   agClearTiles
+   if sAgPane is not empty then
+      agShowPane sAgPane
+   end if
+   agPaintCache
+   if sAgResult is an array then
+      agPaintScreen
+   end if
+end agRebuild
 
 command agClearGeneratedUI
    -- Rebuild-proof: drop every control this script generates, then let
@@ -6502,12 +6675,14 @@ command agStart
    put empty into sAgPlayUrl
    put empty into sAgPlayIsFile
    put empty into sAgPlayRetried
+   put empty into sAgDeadSuffixes
    put kAgLoudness into sAgLoudness
    put 0 into sAgSerial
    put 0 into sAgViewSerial
    put 1 into sAgPage
    put axProbeCapabilities() into tCaps
    put tCaps["hasUrlLib"] is true into sAgHaveUrlLib
+   agPlayerEnsure
    agClearTiles
    agShowPane "grid"
    agSetFamily "movies"
@@ -8163,10 +8338,7 @@ command agPlayUrl pUrl, pIsFile
    set the defaultStack to the short name of this stack
    put kAgPlayerName into tName
    try
-      if there is no player tName then
-         create player
-         set the name of the last player to tName
-      end if
+      agPlayerEnsure
       set the visible of image "agBigImage" to false
       set the visible of field "agStageNote" to false
       set the rect of player tName to (kAgStageL & comma & kAgStageT & comma & kAgStageR & comma & kAgStageB)
@@ -8192,11 +8364,9 @@ command agPlayUrl pUrl, pIsFile
          put empty into sAgPlayUrl
          put empty into sAgPlayIsFile
          if pIsFile is true then
-            agStagePrompt "this engine's player will not open that file - opening it outside"
-            agOpenOutside pUrl
+            agFileFailed pUrl
          else
-            agLog "downloading the file and playing it from disk instead"
-            agDoDownload true
+            agStreamFailed pUrl
          end if
          exit agPlayUrl
       end if
@@ -8216,14 +8386,109 @@ command agPlayUrl pUrl, pIsFile
       put empty into sAgPlayUrl
       put empty into sAgPlayIsFile
       if pIsFile is true then
-         agStagePrompt "this engine's player will not open that file - opening it outside"
-         agOpenOutside pUrl
+         agFileFailed pUrl
       else
-         agStagePrompt "the player would not take that stream; downloading it"
-         agDoDownload true
+         agStagePrompt "the player would not take that stream"
+         agStreamFailed pUrl
       end if
    end try
 end agPlayUrl
+
+command agStreamFailed pUrl
+   -- WHAT TO DO WHEN A STREAM DID NOT OPEN, in one handler, because there
+   -- are two ways to find that out - the synchronous refusal `set the
+   -- filename` leaves in `the result`, and a duration still absent six
+   -- seconds later - and on 2026-09-20 only the slow one took the ladder:
+   -- an engine refused an h.264 stream AT ONCE, and the http retry that
+   -- exists precisely to tell a scheme problem from a container problem
+   -- never ran, because it lived in the six-second check. The stack then
+   -- downloaded 408 MB to learn what one retry might have told it.
+   local tRest
+   if sAgPlayRetried is not true then
+      if pUrl begins with "https://" then
+         put true into sAgPlayRetried
+         put char 9 to -1 of pUrl into tRest
+         agLog "retrying the same URL over http, which is the one test that separates the scheme from the container"
+         agPlayUrl ("http://" & tRest), false
+         exit agStreamFailed
+      end if
+   end if
+   if agFormatIsDead(pUrl) then
+      agRefuseDownload pUrl
+      exit agStreamFailed
+   end if
+   agLog "downloading the file and playing it from disk instead"
+   agDoDownload true
+end agStreamFailed
+
+command agFileFailed pPath
+   -- The bottom of the ladder: a LOCAL file this engine's player would
+   -- not open. Nothing below it downloads, and the suffix is remembered
+   -- so no stream of the same container costs a download either.
+   agNoteDeadFormat pPath
+   agStagePrompt "this engine's player will not open that file - opening it outside"
+   agOpenOutside pPath
+end agFileFailed
+
+command agNoteDeadFormat pPath
+   -- A LOCAL file of this suffix was refused, so the container is the
+   -- wall rather than the scheme or the redirect, and no download of
+   -- another one can end differently on this engine today.
+   local tSuffix, tSaved
+   put axFileExtension(pPath) into tSuffix
+   if tSuffix is empty then
+      exit agNoteDeadFormat
+   end if
+   if agFormatIsDead(pPath) then
+      exit agNoteDeadFormat
+   end if
+   put the itemDelimiter into tSaved
+   set the itemDelimiter to comma
+   if sAgDeadSuffixes is empty then
+      put tSuffix into sAgDeadSuffixes
+   else
+      put comma & tSuffix after sAgDeadSuffixes
+   end if
+   set the itemDelimiter to tSaved
+   agLog "noted: this engine's player refuses ." & tSuffix & " from disk, so it will not be downloaded again this session"
+end agNoteDeadFormat
+
+function agFormatIsDead pPath
+   -- Is this a suffix a local file already proved dead? Read with the
+   -- delimiter set, because the ambient one belongs to whatever ran last
+   -- (this member's own 2026-09-20 review found three of these).
+   local tSuffix, tSaved, tItem, tHit
+   put axFileExtension(pPath) into tSuffix
+   if tSuffix is empty then
+      return false
+   end if
+   if sAgDeadSuffixes is empty then
+      return false
+   end if
+   put false into tHit
+   put the itemDelimiter into tSaved
+   set the itemDelimiter to comma
+   repeat for each item tItem in sAgDeadSuffixes
+      if tItem is tSuffix then
+         put true into tHit
+      end if
+   end repeat
+   set the itemDelimiter to tSaved
+   return tHit
+end agFormatIsDead
+
+command agRefuseDownload pUrl
+   -- The ladder's rung that does NOT spend the reader's bandwidth. It is
+   -- a prompt rather than a silent stop because the two things that still
+   -- work are both one click away and neither is guessable: Download
+   -- saves the file for a player that can open it, and Open page is the
+   -- site's own embed player in a browser.
+   local tSuffix
+   put axFileExtension(pUrl) into tSuffix
+   agLog "not downloading: a ." & tSuffix & " file already failed to open from disk on this engine this session"
+   agStagePrompt "this engine's player cannot open ." & tSuffix & " at all - Download saves it for another player, and Open page plays it on the site"
+   uiStatus "this engine cannot play ." & tSuffix, "warn"
+end agRefuseDownload
 
 on playStarted
    -- THE POSITIVE SIGNAL, and the reason this stack is not just the
@@ -8287,7 +8552,7 @@ command agPlayCheck
    -- duration (and, if it is playing, a moving currentTime); one that
    -- could not open it reports 0 for both and NO error. Only the second
    -- case falls back, and only if the reader has not moved on.
-   local tName, tDuration, tTime, tError, tUrl, tIsFile, tScale, tSecs, tRest
+   local tName, tDuration, tTime, tError, tUrl, tIsFile, tScale, tSecs
    set the defaultStack to the short name of this stack
    put kAgPlayerName into tName
    put sAgPlayUrl into tUrl
@@ -8349,17 +8614,6 @@ command agPlayCheck
    -- nothing in this suite has ever run it, so the gallery runs it: the
    -- same datanode URL, one scheme down, once per entry. If it opens,
    -- the answer to "why will video not play" is a scheme.
-   if not tIsFile then
-      if sAgPlayRetried is not true then
-         if tUrl begins with "https://" then
-            put true into sAgPlayRetried
-            put char 9 to -1 of tUrl into tRest
-            agLog "no duration over https - retrying the same URL over http, which is the one test that separates the scheme from the container"
-            agPlayUrl ("http://" & tRest), false
-            exit agPlayCheck
-         end if
-      end if
-   end if
    set the visible of player tName to false
    put empty into sAgPlayUrl
    put empty into sAgPlayIsFile
@@ -8372,13 +8626,41 @@ command agPlayCheck
    -- replayed forever, six seconds at a time.
    if tIsFile then
       agLog "six seconds in and the player reports no duration for the LOCAL file - handing it to the system instead"
-      agStagePrompt "this engine's player will not open that file - opening it outside"
-      agOpenOutside tUrl
+      agFileFailed tUrl
       exit agPlayCheck
    end if
-   agLog "six seconds in and the player reports no duration - downloading the file and playing it from disk instead"
-   agDoDownload true
+   agLog "six seconds in and the player reports no duration"
+   agStreamFailed tUrl
 end agPlayCheck
+
+command agPlayerEnsure
+   -- THE PLAYER IS CREATED ONCE, AT START, AND THIS IS A MEASUREMENT
+   -- RATHER THAN TIDINESS. `playStarted` did not arrive for the FIRST
+   -- play of a session on 2026-09-20 and did for the second and third -
+   -- twice, on two runs. The first explanation was ordering (the stack
+   -- set its "this player is mine" variable after `start player`), that
+   -- was fixed, and the SECOND run showed the same gap: first play
+   -- silent, second play reported. So ordering was not the cause, or not
+   -- the only one, and the remaining difference between play one and play
+   -- two is that play one also CREATED the control. Creating it at start
+   -- removes that difference. If the next run still loses the first
+   -- message, the create is ruled out too and the cause is somewhere a
+   -- stack cannot reach - which is worth as much as a fix, and is why
+   -- this carries the reasoning instead of just the line. A refused
+   -- create is not fatal: Linux builds in this engine line have no
+   -- working player object at all, and every path here already ends in
+   -- launch document.
+   local tError
+   try
+      if there is no player kAgPlayerName then
+         create player
+         set the name of the last player to kAgPlayerName
+         set the visible of player kAgPlayerName to false
+      end if
+   catch tError
+      agLog "this engine would not create a player object: " & tError
+   end try
+end agPlayerEnsure
 
 command agPlayerPrepare pName
    -- Everything that can silence a player, set before it is handed a
@@ -8995,10 +9277,21 @@ end agLog
 -- ==========================================================================
 
 command agDoSelfTest
+   -- THE APP RE-TAKES ITS OWN CONFIGURATION AFTERWARDS. The harness
+   -- restores what it borrowed (axSettings / axRestoreSettings, added
+   -- 2026-09-20 after a run where it did not), but this stack cannot
+   -- check which harness is embedded in the copy a reader is holding, and
+   -- the failure it protects against is invisible: every later reply
+   -- refused as "larger than 65536 bytes", with the library, the app and
+   -- the test all behaving exactly as written. Two lines here cost
+   -- nothing and cannot be wrong.
    local tReport
    set the defaultStack to the short name of this stack
    uiStatus "running axSelfTest...", "warn"
    put axSelfTest() into tReport
+   axInit the long id of me
+   axSetCallback "onArchive"
+   axSetMaxBody kAgBodyMax
    agLog "== axSelfTest =="
    agLog tReport
    uiStatus "self-test: " & line 1 of tReport, "ok"
@@ -9292,10 +9585,31 @@ constant kAgScPngHex = "89504e470d0a1a0a0000000d49484452000000040000000408020000
 
 command agScRun
    local tMissing, tTiles, tI, tCaps, tPlaylist, tInfo, tRect, tSaved, tEdge, tSize
-   local tLit, tWhich, tName, tNames, tCount
+   local tLit, tWhich, tName, tNames, tCount, tHealed
    scBegin "agLog"
+   -- REPAIR BEFORE REPORTING, ONCE. agBuild's stamp decides whether the
+   -- window it already drew is the window this script wants, and the
+   -- stamp cannot see a control added at the same geometry. This list can:
+   -- it is DERIVED from the source by tools/check-demo-control-lists.py,
+   -- so a control this script names is a control that has to exist. When
+   -- one does not, the honest reading is that the stack is carrying an
+   -- older build - which is what a reader gets by pasting a new script
+   -- over yesterday's stack, and what happened on the engine on
+   -- 2026-09-20 - so rebuild and measure again rather than printing a red
+   -- line about a window nobody chose. A SECOND miss is a real defect and
+   -- is reported: agBuild has now run, and what it did not create it
+   -- cannot create.
+   put false into tHealed
    put scMissing(kAgScControls) into tMissing
+   if tMissing is not empty then
+      agRebuild
+      put true into tHealed
+      put scMissing(kAgScControls) into tMissing
+   end if
    scAssert "all 36 controls this script names exist (missing: " & scShow(tMissing) & ")", tMissing is empty
+   if tHealed then
+      agLog "the window was rebuilt on open: it was drawn by an older paste of this script"
+   end if
    -- The tiles are built in a LOOP, so their names are computed and the
    -- derived list above cannot see them. They get their own line rather
    -- than a hand-kept entry in that constant, because a hand-kept twin of
@@ -9306,6 +9620,15 @@ command agScRun
    end repeat
    put char 1 to -2 of tTiles into tTiles
    put scMissing(tTiles) into tMissing
+   if tMissing is not empty and not tHealed then
+      -- The tiles are the other half of the same question, and a stale
+      -- build can be short of them while every named control exists (the
+      -- grid grew from 10 to 24 on 2026-09-20 with no control renamed).
+      agRebuild
+      put true into tHealed
+      put scMissing(tTiles) into tMissing
+      agLog "the window was rebuilt on open: it was drawn by an older paste of this script"
+   end if
    put kAgTiles * 3 into tCount
    scAssert "all " & tCount & " tile controls exist (missing: " & scShow(tMissing) & ")", tMissing is empty
    scAssert "the grid is " & kAgCols & " by " & kAgGridRows & " and that is " & kAgTiles & " tiles", kAgCols * kAgGridRows is kAgTiles

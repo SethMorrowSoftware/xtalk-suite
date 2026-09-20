@@ -4032,6 +4032,81 @@ command axSetTimeout pSeconds
    put trunc(pSeconds) into sAxTimeout
 end axSetTimeout
 
+function axSettings
+   -- EVERY PROCESS-WIDE SETTING OF THE FETCH LAYER, IN ONE ARRAY, so a
+   -- caller that is about to change them can put them back. That is not a
+   -- convenience: axInit, axSetCallback, axSetTimeout and axSetMaxBody
+   -- write script locals of THIS library, and a library is one object per
+   -- process - so a harness or a second panel exercising those setters
+   -- silently re-points the host app's callbacks and re-caps its replies.
+   -- It happened on a real engine (2026-09-20): this member's own harness
+   -- set the cap to 64 KB to prove the setter works, never put it back,
+   -- and from then on every item metadata reply, every full picture and
+   -- every 192-row search in the app around it was refused as "larger
+   -- than 65536 bytes". The app was correct, the library was correct, and
+   -- the state between them was a test fixture.
+   --   owner      the long id callbacks dispatch to (empty: the topStack)
+   --   callback   the handler name dispatched
+   --   timeout    seconds before a request is reported timed out
+   --   maxBody    the largest reply this layer will parse
+   --   baseUrl    the site the builders address
+   -- axRestoreSettings takes this array back.
+   local tOut
+   put sAxOwner into tOut["owner"]
+   if sAxCallback is empty then
+      put kAxCallbackDefault into tOut["callback"]
+   else
+      put sAxCallback into tOut["callback"]
+   end if
+   if sAxTimeout is empty then
+      put kAxTimeoutDefault into tOut["timeout"]
+   else
+      put sAxTimeout into tOut["timeout"]
+   end if
+   if sAxMaxBody is empty then
+      put kAxMaxBodyDefault into tOut["maxBody"]
+   else
+      put sAxMaxBody into tOut["maxBody"]
+   end if
+   put axBaseUrl() into tOut["baseUrl"]
+   return tOut
+end axSettings
+
+command axRestoreSettings pSettings
+   -- Put back what axSettings handed out. Restoring writes each setting
+   -- DIRECTLY rather than through the setters, because the setters refuse
+   -- values outside their own ranges and a restore is not a request - it
+   -- is an undo, and an undo that silently declines is the bug it exists
+   -- to prevent. A key the array does not carry is left alone, so a
+   -- caller may restore one setting.
+   if pSettings is not an array then
+      exit axRestoreSettings
+   end if
+   if "owner" is among the keys of pSettings then
+      put pSettings["owner"] into sAxOwner
+   end if
+   if "callback" is among the keys of pSettings then
+      if pSettings["callback"] is empty then
+         put kAxCallbackDefault into sAxCallback
+      else
+         put pSettings["callback"] into sAxCallback
+      end if
+   end if
+   if "timeout" is among the keys of pSettings then
+      if pSettings["timeout"] is a number then
+         put trunc(pSettings["timeout"]) into sAxTimeout
+      end if
+   end if
+   if "maxBody" is among the keys of pSettings then
+      if pSettings["maxBody"] is a number then
+         put trunc(pSettings["maxBody"]) into sAxMaxBody
+      end if
+   end if
+   if "baseUrl" is among the keys of pSettings then
+      axSetBaseUrl pSettings["baseUrl"]
+   end if
+end axRestoreSettings
+
 command axSetMaxBody pBytes
    -- The largest reply this layer will parse (default 16 MB). Under 1024
    -- keeps the current setting.
@@ -4325,8 +4400,14 @@ on axUrlDone pUrl, pStatus
          put "the URL library said " & pStatus & " for " & pUrl into tDetail
       else
          put "the URL library said " & pStatus & " for " & pUrl & ": " & tDetail into tDetail
-      -- the site's response headers travel with the reason (2026-09-15: a
-      -- bare "400 Bad Request" said nothing about WHICH server refused, or why)
+      -- The site's response headers travel with the reason (2026-09-15: a
+      -- bare "400 Bad Request" said nothing about WHICH server refused, or
+      -- why). They are LABELLED as the last reply's rather than as this
+      -- request's, because that is all libURLLastRHHeaders can promise
+      -- (engine notes 6.9) and a failure report is exactly where a reader
+      -- trusts a header block: on 2026-09-20 a timed-out search quoted a
+      -- 200 and an Onion-Location naming a DIFFERENT URL, which had been
+      -- fetched by a blocking call beside it (notes 5.10).
       put empty into tHeaders
       try
          put libURLLastRHHeaders() into tHeaders
@@ -4335,7 +4416,7 @@ on axUrlDone pUrl, pStatus
       end try
       if tHeaders is not empty then
          replace return with " | " in tHeaders
-         put " [headers: " & tHeaders & "]" after tDetail
+         put " [headers of the last reply this process received, which may be another request's: " & tHeaders & "]" after tDetail
       end if
       end if
       axDispatch tHandle, "error", tDetail, tTag

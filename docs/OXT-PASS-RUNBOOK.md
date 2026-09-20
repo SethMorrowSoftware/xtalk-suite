@@ -1538,14 +1538,22 @@ sitting owes, in click order:
      settles it**: it says whether an audio track was found at all.
    - Press **Vol +** and say whether anything changes. If it does, the answer
      was loudness.
-5. **The http retry, which has never been run anywhere in this suite.** Play a
-   FILM. When the stream shows no duration at six seconds the stack now
-   retries the same datanode URL once over `http://` before downloading, and
-   says so in the log. The Windows media path is DirectShow, documented for
-   http and not for https. If the retry opens, the answer to "why will video
-   not play" is a scheme, and that goes to engine notes section 5 beside 5.8.
-   The log also prints the item's whole `encodes:` list, so a film that will
-   not open can be read against the encodes it actually had.
+5. **The http retry, which has never been run anywhere in this suite** - and
+   which the 2026-09-20 run could not reach, because the engine refused every
+   video AT ONCE (`could not create movie reference`) and the retry lived
+   only on the six-second path. It runs FIRST now, from `agStreamFailed`,
+   on both ways of learning a stream failed. Play a FILM and read the order
+   in the log: the refusal, then the http retry, and only then a download.
+   The Windows media path is DirectShow, documented for http and not for
+   https, so if the retry opens the answer to "why will video not play" is a
+   scheme, and that goes to engine notes section 5 beside 5.8 and 5.9.
+   **Expect the retry to fail on that machine and the download to be
+   refused rather than spent**: the same engine refused an h.264 file from
+   DISK (5.9), so the container is ruled in, and the stack now remembers a
+   suffix a local file failed on and declines to download another one -
+   naming Download and Open page, which both still work. If a video DOES
+   play, say which container it was: that is the case the scheme question
+   needs.
 6. Press Play again on a track you have already downloaded: it should say
    `already downloaded, so nothing is asked of the site` and play the local
    copy. That separates a streaming problem from a playback problem, which is
@@ -1553,9 +1561,22 @@ sitting owes, in click order:
 7. Press **Clear cache**, then re-run a search you have already done, and
    check the cache counters move the way they should.
 
-Write down, for engine notes 5.7 and 5.8: whether a refusal is detected now,
-what `the tracks` says, whether the volume control changes anything, and
-whether the http retry opens a stream https would not.
+**Two things about THIS sitting that the 2026-09-20 run turned into rules.**
+First: if the boot check says controls are missing, look for the line
+`the window was rebuilt on open` under it - the stack repairs a window drawn
+by an older paste of the script and re-measures, and a red line SURVIVING
+that repair is a real defect. Second: pressing **Run axSelfTest** used to
+leave the library configured for the harness (a 64 KB body cap, the
+harness's own callback), so every later reply in the app was refused as
+`larger than 65536 bytes`. The harness restores the host's settings now and
+both demos re-take their own afterwards - so run the tests in the MIDDLE of
+this sitting on purpose, and then search again: a search that works after
+the tests is the check that the fix holds.
+
+Write down, for engine notes 5.7, 5.8 and 5.9: whether a refusal is detected
+now, what `the tracks` says, whether the volume control changes anything,
+whether the http retry opens a stream https would not, and whether the second
+film was declined instead of downloaded.
 
 Unlike nostrxt this member's other half needs a NETWORK, so the pass splits
 cleanly. The folded run rides the

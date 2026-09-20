@@ -218,6 +218,16 @@ run_gates() {
     echo "== $m: tools/check-wallet-ui-version.py =="
     ( cd "$m" && python3 tools/check-wallet-ui-version.py )
   fi
+  # The same mechanism, and the same failure, one member over: archive-gallery
+  # skips its build when the stack already carries the stamp, and on
+  # 2026-09-20 an engine reported three buttons and fourteen tiles missing
+  # from a stack built by the previous paste. kAgUiVersion is derived from
+  # the builder's own text; agUiStamp() carries the geometry the text cannot
+  # show, and this gate asserts that half is still there.
+  if [ -f "$m/tools/check-gallery-ui-version.py" ]; then
+    echo "== $m: tools/check-gallery-ui-version.py =="
+    ( cd "$m" && python3 tools/check-gallery-ui-version.py )
+  fi
   # A member's execution gate is believed only once it has been shown to
   # FAIL: where a member ships tools/test-script-vectors.py it edits one
   # defect at a time into a copy of the shipped script and drives the REAL
