@@ -800,6 +800,43 @@ sentence now rather than in a doc. Engine notes 5.10 also pairs the async
 timeout with the blocking call beside it and marks the causal half
 UNEVIDENCED - one observation is not a rule.
 
+### 2026-09-20, the third run - the repair worked, and found a control that had never existed
+
+The stamp and the self-heal both did their job on the next paste: the tiles
+came back, the log said `the window was rebuilt on open`, and 25 of 26
+boot lines passed. One survived the rebuild - `agCacheInfo` - which is a
+different fact from the one the rebuild was built for. **A control that is
+still missing after the builder has run is a control the builder does not
+make.**
+
+`agPaintCache` had always written into `field "agCacheInfo"` behind
+`if there is no field "agCacheInfo" then exit agPaintCache`, and `agBuild`
+never created it. So the cache counters - the feature whose whole argument
+was that "a cache nobody can see is a claim rather than a feature" - had
+never been on screen on any machine, and nothing could tell: the painter
+ran on every search, wrote nowhere, and returned cleanly. The fail-closed
+guard was correct and was also a perfect hiding place.
+
+The gate for it is suite-level, because the shape is not this member's:
+`tools/check-demo-control-lists.py` already derives each demo's control list
+from the source, so it knows which names are REFERENCED and which are
+BUILT, and it now refuses a name that is only ever referenced. Three stacks
+looked like exemptions (coin-wallet's seven fields, onionxt-demo's
+twenty-three prefixed ones, nocloud's nine) and all three build through
+their own wrapper around a kit builder, so teaching the scan to recognise a
+local `command x pName` that calls a kit builder or creates a control left
+the exemption list EMPTY. Proved the way the build runs it: deleting the
+`uiLabel "agCacheInfo"` line reproduces the engine's sentence, restoring it
+clears the gate.
+
+Two things generalise. **The derived list is worth more than the assertion
+it feeds** - it found this twice (once as a stale window, once as a control
+that never existed) and both times from an engine, which is the argument for
+moving the question into a build-time gate rather than admiring the boot
+check. And **`if there is no X then exit` deserves a second look every
+time**: it is the right shape for a control that may not exist yet, and it
+is indistinguishable from the shape for a control that never will.
+
 ## Working rules for this member
 
 - **Edit `src/archivext.livecodescript`, then re-carry.** Two carriers hold a

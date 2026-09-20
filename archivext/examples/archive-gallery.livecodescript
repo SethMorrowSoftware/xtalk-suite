@@ -5696,7 +5696,7 @@ end axtTestFetchLayerOffline
 -- control added without touching this line is never created on a stack
 -- somebody already opened once (the explorer shipped exactly that bug on
 -- 2026-09-15 and the boot self-check is what caught it).
-constant kAgUiVersion = "gallery-48a710c67c6a"
+constant kAgUiVersion = "gallery-48faa7bd05e5"
 constant kAgWinW = 1180
 constant kAgWinH = 630
 
@@ -6543,6 +6543,19 @@ command agBuild
    uiCap "agViewNote", "Play puts a film or a concert in the stack's own player and a photograph in the stack's own image object; Download saves to Documents/ArchiveXT.", "730,436,1152,464"
    -- The log strip, shared by both panes.
    uiSection "agLogCap", "Log", "16,506,200,524"
+   -- THE CACHE COUNTERS, and this line is the one the boot check had to
+   -- find twice. agPaintCache has always written to a field "agCacheInfo"
+   -- behind `if there is no field ... then exit` - a fail-closed guard
+   -- that did exactly what it says and, because the builder never made
+   -- the control, meant the counters had never appeared on any machine.
+   -- Nothing could see that: the painter ran, wrote nowhere and returned
+   -- cleanly. The DERIVED control list caught it, on an engine, after a
+   -- rebuild had already restored everything else - which is the argument
+   -- for deriving that list from the source rather than keeping it by
+   -- hand, and for a guard being a reason to check rather than a reason
+   -- to relax.
+   uiLabel "agCacheInfo", "cache: nothing asked of the site yet", "208,506,924,524", 10
+   set the foregroundColor of field "agCacheInfo" to kUiMuted
    uiButton "agProbe", "Live probe", "930,504,1046,526"
    uiButton "agTests", "Run axSelfTest", "1050,504,1164,526"
    uiArea "agLog", "16,530,1164,580"
