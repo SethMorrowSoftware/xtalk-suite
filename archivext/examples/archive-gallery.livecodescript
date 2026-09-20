@@ -7624,6 +7624,30 @@ function agLocalCopy pEntry, pFile
    return empty
 end agLocalCopy
 
+function agFormatWarning pFile
+   -- Empty when the engine's player has a fair chance, and a sentence
+   -- naming the reason when it does not. Deliberately about the
+   -- CONTAINER and not about the item: an .ogv in a list that also has an
+   -- .mp4 never reaches here, because agStreamPick took the MP4.
+   -- tSuffix, not tExt: the checker's token-shadow trap catches the
+   -- second, because it lowercases to the engine token `text`
+   local tSuffix
+   put axFileExtension(pFile) into tSuffix
+   if tSuffix is "ogv" then
+      return "this is an Ogg Theora encode and neither Windows nor macOS decodes Theora - if it will not open, that is why; Open page plays it in a browser"
+   end if
+   if tSuffix is "ogg" then
+      return "this is an Ogg encode and neither Windows nor macOS decodes Theora or Vorbis video - Open page plays it in a browser"
+   end if
+   if tSuffix is "mkv" then
+      return "this is a Matroska encode and no desktop media stack opens one without an extra codec - Open page plays it in a browser"
+   end if
+   if tSuffix is "webm" then
+      return "this is a WebM encode, which this engine line does not decode - Open page plays it in a browser"
+   end if
+   return empty
+end agFormatWarning
+
 function agOneLine pText
    -- A multi-line value as one log line. agLog writes a line at a time,
    -- so a raw variants list would arrive as four unlabelled lines.
@@ -8071,7 +8095,7 @@ command agDoPlay
    --      them distinguishes a silent player from a working one.
    -- A failure downloads the file and plays it from disk, which is the
    -- path every platform's media stack can take.
-   local tEntry, tUrl, tFile, tLocal
+   local tEntry, tUrl, tFile, tLocal, tWarn
    set the defaultStack to the short name of this stack
    put agSelectedEntry() into tEntry
    if tEntry is not an array then
@@ -8113,6 +8137,17 @@ command agDoPlay
       -- against the encodes the item actually had. "chose X" alone cannot
       -- say whether the item had an MP4 to choose.
       agLog "      encodes: " & agOneLine(tEntry["variants"])
+   end if
+   -- AND SAY SO BEFORE THE SIX SECONDS, when the encode is one no desktop
+   -- media stack decodes. Neither DirectShow on Windows nor AVFoundation
+   -- on macOS ships a Theora or a Matroska decoder, so an item whose only
+   -- video is .ogv or .mkv is not a stack defect and should not read like
+   -- one: the reader gets the reason now rather than a blank stage and a
+   -- download six seconds later.
+   put agFormatWarning(tFile) into tWarn
+   if tWarn is not empty then
+      agLog "      " & tWarn
+      uiStatus tWarn, "warn"
    end if
    uiStatus "opening the stream in the stack's own player (" & agEllipsis(tEntry["title"], 50) & ")...", "warn"
    agPlayUrl tUrl, false
