@@ -120,6 +120,35 @@
     log will say WHICH of the three (the redirect, https in the player,
     the format) was the wall.
 
+17. **Does an engine IMAGE object take bytes from a script at all?** New
+    2026-09-20, with `examples/archive-gallery.livecodescript`, and it is
+    the sharpest open question this member has, because section 5 of root
+    `docs/OXT-ENGINE-NOTES.md` has NO image entry: nothing in this tree had
+    ever put fetched bytes into one and then asked what happened (box2dxt
+    loads sprite sheets from FILES, the coinxt wallet paints a QR it built
+    itself). The gallery settles the cheapest half offline - its boot
+    self-check decodes a 98-byte four-pixel PNG it carries in hex and
+    reports the size the control answered - and its Live probe settles the
+    rest against the site: the item image service's derivative and a full
+    picture's datanode URL, each reported as what the CONTROL said rather
+    than as what the fetch said. Three sub-questions the pass should write
+    down separately. Does the object take a picture at all; does it take
+    what archive.org actually sends (the image service is usually baseline
+    JPEG, and this engine line decodes neither WebP nor AVIF); and does a
+    refusal really present as a width under two pixels, which is the tell
+    box2dxt's idiom rests on and which nothing here has watched fail.
+18. **Does `playStarted` arrive?** Also new 2026-09-20. The explorer infers
+    from a duration that never appeared; the gallery additionally listens
+    for the message a player sends when it really begins, which nothing in
+    this suite had used. It is wired as an ADDITION rather than a
+    replacement exactly because of this question: if no engine sends it,
+    the six-second check still decides and the answer costs nothing.
+19. **Ten concurrent `load URL`s.** The gallery asks for ten thumbnails at
+    once, which is the first concurrency measurement this suite will have
+    for the Internet library. Engine notes 6.9 records that libURL refuses
+    a second load of a URL still loading; it says nothing about ten
+    different ones. The log counts what was asked for and what came back.
+
 ## What is deliberately not built yet
 
 11. **More families.** `any` searches every mediatype with no presets beyond
@@ -147,10 +176,16 @@
     (2026-09-15), so `tools/lcs-interp.py` passes code the engine folds; a
     model fix touches every member's execution gate at once and is recorded
     in root `docs/REMAINING-WORK.md` as suite work, not this member's.
-16. **A second carrier for the library.** Today the only demo is the
-    three-in-one explorer; a minimal "one search box, one list" stack of
-    thirty lines would be the better first read for a newcomer, and the
-    usage guide's first recipe is written to become it.
+16. ~~A second carrier for the library.~~ **PARTLY CLOSED 2026-09-20**:
+    `examples/archive-gallery.livecodescript` is a second demo carrying the
+    same library, and it drove the library over a path the explorer never
+    takes (the `images` playlist kind, `axFetchUrl` as a picture transport,
+    ten requests in flight at once) without needing one handler changed -
+    which is the strongest thing a second carrier can say about a surface.
+    What that item ASKED for is still open, though: a minimal "one search
+    box, one list" stack of thirty lines for a newcomer. Neither demo is
+    that; both are big. The usage guide's first recipe is still written to
+    become it.
 
 ## Standing hazards worth re-reading before the pass
 

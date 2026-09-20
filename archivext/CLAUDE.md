@@ -374,6 +374,101 @@ line and the harness's section split.
     success (the file write sets `the result` last), which is why
     `axDownloadSync` fetches, judges, then writes.
 
+### 2026-09-20 - the SECOND demo, and the object nothing in this tree had ever used
+
+`examples/archive-gallery.livecodescript` is the same library driven the
+other way round: a grid of ten thumbnails in real engine IMAGE objects,
+then a film or a concert on a dark stage in the engine's own PLAYER object,
+or a photograph in an image object. It was asked for in one sentence - "a
+gallery-style app using video player and image object from within the
+stack" - and the interesting part is what that turned out to require.
+
+**NO ARCHIVEXT HANDLER CHANGED FOR IT, AND THAT IS THE CLAIM.** The grid is
+`axSearch` with `rows` fixed at the tile count; a thumbnail is `axFetchUrl`
+against `axThumbnailUrl` arriving through the ordinary `raw` kind; a
+picture in the viewer is one playlist entry's datanode URL through the same
+call; the file list is `axPlaylist` with the `images` kind the playlist
+engine already had. The ONE addition is a fifth family, `mediatype:(image)`,
+and it lives in the demo's own `agFamilyFor` rather than in
+`axFamilyInfo` - the library's family table is the three source apps' table,
+none of them had a picture app, and widening a member's public surface for
+one stack is how a member stops describing the thing it was written from.
+
+**SECTION 5 OF `docs/OXT-ENGINE-NOTES.md` HAS NO IMAGE ENTRY, WHICH IS A
+FINDING RATHER THAN AN OVERSIGHT.** Nothing in this tree had ever put bytes
+into an image object from a script and then asked what happened: box2dxt
+loads sprite sheets from FILES, and the coinxt wallet paints a QR it built
+itself. So every claim this gallery rests on is DOCUMENTED-class at best,
+and the design is arranged around that rather than around a hope:
+
+- **`agSetPicture` is the only place in the stack that touches an image.**
+  It sets the content with the location UNLOCKED (the control then snaps to
+  the picture's natural size, which is what makes `the width` a
+  MEASUREMENT rather than the rect we already chose), asks the control how
+  big it became, and treats a width under two pixels as a refusal. That is
+  box2dxt's `b2kSheetSourceFromFile` idiom and the wallet's QR idiom
+  unchanged, because an image object handed bytes it cannot decode does not
+  throw and does not complain - it stays empty, which is gotcha 19's
+  silence one object over. Every caller gets EMPTY back and has to decide
+  what to show instead.
+- **The boot self-check settles the question offline, before anything is
+  fetched.** The stack carries a 98-byte four-pixel PNG in hex and puts it
+  through `agSetPicture` on open. A FAIL there says this engine will show
+  captions over empty frames, in the first second, rather than after ten
+  thumbnails have come back looking like a network failure.
+- **The live probe's four legs are all about the same question** and none
+  of them infers: a search in the image mediatype, the item image service's
+  bytes into an image object with the size it answered, the item parsed
+  into an `images` playlist, and the full picture's datanode URL into the
+  same object. Each leg reports what the CONTROL said.
+
+**THE PLAYER GOT A THIRD SIGNAL, AND IT IS THE ONE NOBODY HERE HAD USED.**
+The explorer reads the synchronous verdict `set the filename` leaves in
+`the result`, then infers from a duration that never appeared six seconds
+later. The gallery keeps both and adds `playStarted`, which a player sends
+when it really begins - a POSITIVE signal instead of an inference from
+zeros, and nothing in this suite had wired it. It is an addition rather
+than a replacement precisely because no engine here has ever been seen
+sending it: if none does, the six-second check still decides.
+
+**AND THE FILE-TYPE QUESTION FROM 2026-09-16 GOT AN ANSWER.** "I think we
+need to be more specific about file types perhaps" was the report beside
+"the player is still not working", and `agStreamPick` is what it turns
+into. `axPlaylist` already hands a video entry a `variants` list of
+`name|label|size|format` lines; archive.org very often lists an `.ogv`
+first, and neither Windows' DirectShow nor macOS' AVFoundation has a stock
+Theora decoder - so the playlist's own best entry can be the one encode the
+platform cannot open, which is exactly the silent controller over silence.
+The picker prefers h.264 / MPEG4 / `.mp4` when the item has one, keeps the
+entry's own choice otherwise, and the log says which it took. The rung
+below the player is unchanged (download, then play from disk) and the rung
+below THAT is `launch document`, the only media path in this tree with a
+real engine record behind it (riptide, 2026-08-15, two machines).
+
+**LATE REPLIES ARE A GRID'S HAZARD AND A LIST DOES NOT HAVE IT.** Ten
+thumbnails are ten requests in flight at once, so a reader who presses Next
+before they land would otherwise see the previous page's pictures under the
+new page's captions - a wrong answer that looks like a right one. Every
+thumbnail carries the search SERIAL in its tag and a reply whose serial is
+not the current one is dropped and logged. The serial is bumped by the
+search that STARTS, never by the reply that arrives, so a cancelled search
+cannot resurrect itself.
+
+**Two delimiter lessons were applied rather than re-learned.** Box2dxt's
+record of `fireEmitter` - an outward call made from inside a loop that has
+borrowed the `itemDelimiter` - is why `agCancelThumbs` collects the handles,
+restores the delimiter and only then calls `axCancel`, and why
+`agStreamPick` parses the variants into a tab record first and scans it
+afterwards. A restore at the end of such a loop reads as a fix while
+leaving the bug in place.
+
+**HONESTY.** No part of the gallery stack has run on an engine: not the
+grid, not one image object, not the player, not one live thumbnail. The
+suite gates
+it passes are static plus the member's headless fixtures, and the boot
+self-check is what will say - in its own first line, on the reader's own
+machine - whether the object this demo is about works there at all.
+
 ## Working rules for this member
 
 - **Edit `src/archivext.livecodescript`, then re-carry.** Two carriers hold a

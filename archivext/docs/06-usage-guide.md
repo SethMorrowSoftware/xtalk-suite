@@ -25,6 +25,15 @@ Nothing to install. Either:
   as the template for everything below (`onArchive` is the whole callback
   contract in one handler; `adDoSearch` is preset + text + filters to query
   to request; `adShowItem` is item to playlist to table).
+- **Paste the gallery.** `examples/archive-gallery.livecodescript`, same
+  procedure, is the library as PICTURES: ten thumbnails per search in engine
+  image objects, then a film or a concert in the engine's own player object
+  or a photograph in an image object. Read it for the parts the explorer has
+  no occasion to show - putting fetched bytes into an image and asking the
+  control whether they took, choosing a playable encode out of a video
+  entry's variants, and keeping ten concurrent fetches from landing on the
+  wrong tile. It adds a fifth family of its own, `mediatype:(image)`, which
+  is a scope clause in the demo and not a library change.
 - **Use the library.** Open `src/archivext.livecodescript` as a stack and
   `start using stack "archivext"`, or paste its contents into your own
   library stack. Check from the message box:

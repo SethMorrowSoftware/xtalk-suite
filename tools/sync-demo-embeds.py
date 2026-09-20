@@ -179,6 +179,14 @@ REGISTRY = {
     "archivext/examples/archivext-demo.livecodescript": [
         "archivext/src/archivext.livecodescript",
         "archivext/examples/archivext-tests.livecodescript"],
+    # The gallery carries the same pair for the same reasons, and it needs
+    # the harness for a second one: its boot self-check drives the etree
+    # fixture through the playlist engine and decodes its own four-pixel
+    # PNG with the harness's axtHex, so the tests file is a DEPENDENCY here
+    # rather than only the Run-axSelfTest button's provider.
+    "archivext/examples/archive-gallery.livecodescript": [
+        "archivext/src/archivext.livecodescript",
+        "archivext/examples/archivext-tests.livecodescript"],
 }
 
 # Demos deliberately NOT embedded, each with the reason. An entry here is a

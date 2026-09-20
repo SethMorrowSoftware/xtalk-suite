@@ -64,6 +64,16 @@ which rule ArchiveXT took and why. The demo stack
 (`examples/archivext-demo.livecodescript`) is all three apps in one window,
 plus the generic fourth family.
 
+There are TWO demo stacks, and they divide by question rather than by
+feature. The explorer above answers "what can I ask archive.org?" - three
+text columns, a results list, a track table.
+`examples/archive-gallery.livecodescript` answers "what does it look like,
+and can I watch it here?" - a grid of ten thumbnails in real engine IMAGE
+objects, then a film or a concert on a dark stage in the engine's own
+PLAYER object, or a photograph in an image object. It adds a fifth family
+of its own, `mediatype:(image)`, because none of the three source apps had
+a picture app and the library's family table is theirs.
+
 ## Quick start
 
 There is nothing to install: ArchiveXT is pure LiveCodeScript and its
@@ -204,6 +214,8 @@ archivext/
   src/archivext.livecodescript    THE LIBRARY: ax* pure layer + ax* fetch layer, one file
   examples/archivext-tests.livecodescript   the member self-test (axSelfTest), KAT constants pinned
   examples/archivext-demo.livecodescript    the three apps in one stack (carries library + harness)
+  examples/archive-gallery.livecodescript   the same library as a PICTURE gallery: thumbnails in
+                                            image objects, streams in a player (carries both too)
   tests/fixtures/*.json           nine synthetic archive.org responses, hex-pinned by the KAT
   tools/archive_reference.py      the independent oracle (Python, anchored to the apps' vectors)
   tools/archive-kat.py            derives the harness constants; --check sweeps everything

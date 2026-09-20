@@ -71,8 +71,10 @@ def main():
     # wallet app, whose single uiChrome call sizes its one card.
     # 50 since 2026-09-15: archivext/examples/archivext-demo.livecodescript,
     # the three-apps-in-one explorer, one uiChrome call at 1180x630.
-    if "50 stack window dimension" not in out:
-        print("test-stack-size: expected 50 measured dimensions, got:\n" + out)
+    # 51 since 2026-09-20: archivext/examples/archive-gallery.livecodescript,
+    # the picture gallery, one uiChrome call at the same 1180x630.
+    if "51 stack window dimension" not in out:
+        print("test-stack-size: expected 51 measured dimensions, got:\n" + out)
         return 1
 
     original = open(NOCLOUD, encoding="utf-8").read()

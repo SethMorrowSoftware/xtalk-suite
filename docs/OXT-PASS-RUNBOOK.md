@@ -1501,6 +1501,49 @@ Download button):
 6. Last, the suite paste: `tests/suite-selftest.livecodescript` into a NEW
    stack, run it, copy the `ArchiveXT` line and any red lines.
 
+**THE GALLERY IS A SECOND STACK AND A SEPARATE SITTING**
+(`archivext/examples/archive-gallery.livecodescript`, new 2026-09-20, nothing
+in it observed). It exists to answer questions the explorer cannot ask,
+because it is the first stack in this suite to put bytes into an engine IMAGE
+object from a script - `docs/OXT-ENGINE-NOTES.md` section 5 has no image entry
+at all, so every claim under it is DOCUMENTED-class. In click order:
+
+1. Open it. The boot self-check's own line settles the whole demo offline:
+   `an image object takes a picture this stack carries (4x4)`. It decodes a
+   98-byte PNG the file carries in hex, so it needs no network and no file. A
+   FAIL there means this engine will show captions over empty frames and the
+   rest of the sitting is about why. Whatever it says goes to engine notes
+   section 5 as the suite's FIRST image-object record.
+2. **Live probe**: four legs, all about the same question. A search in
+   `mediatype:(image)`; the item image service's bytes into an image object,
+   with the pixel size the control answered; the item parsed into an `images`
+   playlist; the full picture's datanode URL into the same object. Each leg
+   reports what the CONTROL said, never what the fetch said.
+3. Press Search on the Images family. Ten thumbnails through ten concurrent
+   `load URL`s is also the first concurrency measurement this suite has for
+   the Internet library: the log counts what was asked for, and every tile
+   that comes back empty prints the byte count it refused.
+4. Press Next while the pictures are still arriving. The log should print
+   `dropped a picture from search N` and NO tile should show a picture under
+   another tile's caption.
+5. Click a photograph: it goes straight onto the dark stage in the image
+   object, fitted and centred, with its pixel size in the log.
+6. Films family, click a film, **Play**. Three signals are in play and the
+   log names whichever arrives: `the player refused the stream at once`
+   (the synchronous verdict), `playStarted: the player opened the stream`
+   (the positive one, which NOTHING in this suite has ever seen), or a
+   duration that never appeared after six seconds. The log also prints
+   `chose <file>` - the h.264 / MPEG4 encode the picker preferred over the
+   item's first derivative, which is the 2026-09-16 "be more specific about
+   file types" report turned into code.
+7. Live music family, click a concert, Play one track (MP3 in a player);
+   then **Download** anything and let the fallback ladder finish.
+
+Write down, for engine notes section 5: whether an image object takes bytes
+at all, whether it takes what archive.org sends (the item image service is
+usually baseline JPEG; WebP and AVIF are not decoded by this engine line),
+and whether `playStarted` arrives.
+
 Unlike nostrxt this member's other half needs a NETWORK, so the pass splits
 cleanly. The folded run rides the
 suite paste: copy the `ArchiveXT` line of the per-member table and any red

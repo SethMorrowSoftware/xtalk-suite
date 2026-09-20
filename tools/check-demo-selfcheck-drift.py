@@ -76,6 +76,8 @@ ADOPTERS = {
                  "coin-wallet.livecodescript"): "wa",
     os.path.join("archivext", "examples",
                  "archivext-demo.livecodescript"): "ad",
+    os.path.join("archivext", "examples",
+                 "archive-gallery.livecodescript"): "ag",
 }
 
 BEGIN = ("-- ==== DEMO SELF-CHECK v1 BEGIN (verbatim copy; master: "

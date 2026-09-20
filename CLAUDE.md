@@ -103,7 +103,14 @@ openxtalk-libraries/
                        kind fired four times and both documented error
                        shapes were refused by the shipped code; the fold,
                        the async `item` kind, the scrape API, streaming and
-                       TLS's certificate direction are still owed
+                       TLS's certificate direction are still owed. A SECOND
+                       demo landed 2026-09-20: archive-gallery, the same
+                       library as a PICTURE gallery, and the first stack in
+                       this tree to put bytes into an engine IMAGE object
+                       from a script - which section 5 of the engine notes
+                       has no entry about at all, so its boot self-check
+                       decodes a PNG it carries in hex and says on open
+                       whether this engine can do it
   box2dxt/             the family ANCESTOR, folded home 2026-08-14: Box2D v3
                        physics + the pure-script b2k game Kit (sprites, input,
                        camera); its checker was the oldest pre-unification
