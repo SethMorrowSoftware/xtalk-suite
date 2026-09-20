@@ -5306,6 +5306,14 @@ private command axtTestResponses
    axtCheck axFirst(tScrape["items"][2]["identifier"]) is "b", "scrape: items in order"
    axtCheck axtJoinLines(tScrape["items"][1]["subject"], "|") is "x|y", "scrape: a multi-valued field is lines"
    put axScrapeParse("{" & quote & "items" & quote & ":[]," & quote & "count" & quote & ":0}") into tScrape
+   -- THE ARRAY FIRST, THEN THE ABSENT CURSOR. An empty cursor is the deep
+   -- walk's whole stop condition, and `tScrape["cursor"] is empty` alone
+   -- is also true of a parser that REFUSED the page - so the assertion
+   -- could not fail for the property it names. Measured on 2026-09-20: a
+   -- mutation that made axScrapeParse refuse an empty items page left
+   -- this harness fully green.
+   axtCheck tScrape is an array, "scrape: an empty page still parses"
+   axtCheck tScrape["count"] is 0, "scrape: and reports no items"
    axtCheck tScrape["cursor"] is empty, "scrape: the last page has no cursor"
    axtCheck axScrapeParse("{" & quote & "error" & quote & ":" & quote & "bad" & quote & "}") is empty, "scrape: the error shape refuses"
    axtCheck axScrapeParse("[]") is empty, "scrape: a body without items refuses"
@@ -5529,6 +5537,12 @@ private command axtTestFetchLayerOffline
    axtCheck axDownloadSync("not a url", "somewhere") is empty, "axDownloadSync refuses a non-url"
    axtCheck axDownloadSync("https://nobody.invalid/f", empty) is empty, "axDownloadSync refuses an empty path"
    axtCheck axGetSync("not a url") is empty, "axGetSync refuses a non-url"
+   -- A CLEAN OPTIONS ARRAY, because tOptions still carries the bad `rows`
+   -- from the refusal above and axSearchSync forwards it: the assertion
+   -- would then pass for the WRONG reason and could not fail for the one
+   -- its label names. Found by a dataflow sweep of this file on
+   -- 2026-09-20, in the same pass that found the clobbered tResult.
+   put empty into tOptions
    axtCheck axSearchSync(empty, tOptions) is empty, "axSearchSync refuses an empty query"
    axtCheck axFetchItemSync("x y") is empty, "axFetchItemSync refuses a bad identifier"
    axCancelAll

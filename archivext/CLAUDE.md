@@ -638,6 +638,60 @@ it: `check-script-vectors.py` drives the LIBRARY and `check-selftest-vectors.py`
 re-derives CONSTANTS, so nothing headless executes the harness's own
 assertions, and the engine is the first thing that ever runs them.
 
+### 2026-09-20, later - what ten reviewers found in the day's own work
+
+The engine pass above was reviewed by five pairs of agents, each pair an
+investigator and a reviewer told to REFUTE it, and the reviewers earned their
+place: two of the five investigations had their headline recommendation
+overturned by someone who ran the code instead of reading it. What survived,
+and is now in:
+
+- **`agHexBytes` had no even-length guard**, so `agHexBytes("abc")` answered
+  one byte instead of refusing - a truncated picture, which is still a
+  picture-shaped thing to hand an image object. Confirmed by driving the
+  shipped handler through the family interpreter, twice, independently.
+  coinxt's `cxHexDecode` carries that guard with a long comment about why;
+  this copy was written from the shape and not from the lesson.
+- **The tile caption could silently lose its second line.** The kit's
+  `uiLabel` sets neither `margins` nor `dontWrap`, and a `lockText` field with
+  neither WRAPS - so a title one character over budget becomes two lines and
+  pushes the creator onto a third, outside a two-line box. And the budget was
+  guessed: 26 characters needs 165 px of a 130 px cell at textSize 9. Measured
+  properly (12 px per em, 0.53 em a character worst case, 126 px drawable
+  inside 2 px margins) the answer is 20. The 52 it replaced was never measured
+  either - it implied 3.8 px a character, which no face in this family is.
+- **The row gutter was 4 px** against 12 px between columns, so a descender
+  sat on the next tile's border. The investigator's fix was to shrink the
+  tile to 92; the reviewer showed that is only free for LANDSCAPE sources -
+  the gallery's own `images` family is arbitrary aspect and LibriVox covers
+  are square to portrait, which would have lost 8% of their area. Taking the
+  10 px out of the CAPTION instead (30 to 28, which still holds two 12 px
+  lines inside 2 px margins) costs nothing at all.
+- **One fat entry could evict a whole screen from the thumbnail cache.** It is
+  refused from memory now, above a screenful's share, and still written to
+  disk.
+- **`kAgPageSize` went to 192**, which is eight screens a request. The
+  investigator wanted 200 to 300; the stack's OWN boot self-check refuses
+  those, because neither is a whole number of screens and `agStepScreen`'s
+  arithmetic is written for whole ones. A gate written that morning caught a
+  recommendation made that afternoon, which is the whole argument for writing
+  the assertion beside the constant.
+
+**AND TWO MORE ASSERTIONS IN THE HARNESS THAT COULD NOT FAIL**, both found by
+mutation against the shipped code rather than by reading it. `axSearchSync
+refuses an empty query` was passing because `tOptions` still carried the bad
+`rows` from the line above, so it refused for the wrong reason and could not
+fail for the property its label names. And `scrape: the last page has no
+cursor` - the stop condition of the whole deep-paging walk - is equally true
+of a parser that REFUSED the page: a mutation making `axScrapeParse` refuse an
+empty items page left the harness fully green at 350/0. Both fixed. That is
+the third and fourth instance of this class in one day, after the clobbered
+`tResult` and its vacuous neighbour, and they share one cause: **no gate in
+this tree executes the harness's own assertions.** `check-script-vectors.py`
+drives the LIBRARY and `check-selftest-vectors.py` re-derives CONSTANTS, so
+the engine is the first thing that ever runs them, which makes every one of
+them a claim rather than a check until someone pastes the file.
+
 ## Working rules for this member
 
 - **Edit `src/archivext.livecodescript`, then re-carry.** Two carriers hold a

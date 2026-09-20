@@ -48323,6 +48323,14 @@ private command ax1axtTestResponses
    ax1axtCheck axFirst(ax1tScrape["items"][2]["identifier"]) is "b", "scrape: items in order"
    ax1axtCheck ax1axtJoinLines(ax1tScrape["items"][1]["subject"], "|") is "x|y", "scrape: a multi-valued field is lines"
    put axScrapeParse("{" & quote & "items" & quote & ":[]," & quote & "count" & quote & ":0}") into ax1tScrape
+   -- THE ARRAY FIRST, THEN THE ABSENT CURSOR. An empty cursor is the deep
+   -- walk's whole stop condition, and `ax1tScrape["cursor"] is empty` alone
+   -- is also true of a parser that REFUSED the page - so the assertion
+   -- could not fail for the property it names. Measured on 2026-09-20: a
+   -- mutation that made axScrapeParse refuse an empty items page left
+   -- this harness fully green.
+   ax1axtCheck ax1tScrape is an array, "scrape: an empty page still parses"
+   ax1axtCheck ax1tScrape["count"] is 0, "scrape: and reports no items"
    ax1axtCheck ax1tScrape["cursor"] is empty, "scrape: the last page has no cursor"
    ax1axtCheck axScrapeParse("{" & quote & "error" & quote & ":" & quote & "bad" & quote & "}") is empty, "scrape: the error shape refuses"
    ax1axtCheck axScrapeParse("[]") is empty, "scrape: a body without items refuses"
@@ -48533,6 +48541,12 @@ private command ax1axtTestFetchLayerOffline
    ax1axtCheck axDownloadSync("not a url", "somewhere") is empty, "axDownloadSync refuses a non-url"
    ax1axtCheck axDownloadSync("https://nobody.invalid/f", empty) is empty, "axDownloadSync refuses an empty path"
    ax1axtCheck axGetSync("not a url") is empty, "axGetSync refuses a non-url"
+   -- A CLEAN OPTIONS ARRAY, because ax1tOptions still carries the bad `rows`
+   -- from the refusal above and axSearchSync forwards it: the assertion
+   -- would then pass for the WRONG reason and could not fail for the one
+   -- its label names. Found by a dataflow sweep of this file on
+   -- 2026-09-20, in the same pass that found the clobbered ax1tResult.
+   put empty into ax1tOptions
    ax1axtCheck axSearchSync(empty, ax1tOptions) is empty, "axSearchSync refuses an empty query"
    ax1axtCheck axFetchItemSync("x y") is empty, "axFetchItemSync refuses a bad identifier"
    axCancelAll

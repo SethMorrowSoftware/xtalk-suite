@@ -813,6 +813,18 @@ the reader a volume control, and LOGS every property the player will answer -
 mediaTypes` and `the tracks`, each read in its own try. `the tracks` is the
 line that will settle it: it says whether an audio track was found at all.
 
+**A second thing the log establishes, and it is a RULE rather than a
+symptom: `playStarted` is dispatched while `start player` is still running.**
+INFERRED, from message ordering rather than from any direct observation. The
+stack set its "this player is mine" variable on the line AFTER `start player`,
+and the first play of the session printed no `playStarted` while the second
+and third did - which is only consistent with the message being delivered
+inside the `start player` call, before the next line ran. (The later plays saw
+the variable still set from the first.) So any handler that guards on state a
+`start player` is about to establish must establish it FIRST. Note 5.3's
+defaultStack rule is the same shape one layer out: a message can arrive before
+the code that was going to prepare for it.
+
 **Also unsettled, and the gallery now tests it in one click**: whether the
 platform player can open **https** at all. On Windows the media path is
 DirectShow, whose URL source filter is documented for http and not for https,

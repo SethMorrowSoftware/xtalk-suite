@@ -5330,6 +5330,14 @@ private command axtTestResponses
    axtCheck axFirst(tScrape["items"][2]["identifier"]) is "b", "scrape: items in order"
    axtCheck axtJoinLines(tScrape["items"][1]["subject"], "|") is "x|y", "scrape: a multi-valued field is lines"
    put axScrapeParse("{" & quote & "items" & quote & ":[]," & quote & "count" & quote & ":0}") into tScrape
+   -- THE ARRAY FIRST, THEN THE ABSENT CURSOR. An empty cursor is the deep
+   -- walk's whole stop condition, and `tScrape["cursor"] is empty` alone
+   -- is also true of a parser that REFUSED the page - so the assertion
+   -- could not fail for the property it names. Measured on 2026-09-20: a
+   -- mutation that made axScrapeParse refuse an empty items page left
+   -- this harness fully green.
+   axtCheck tScrape is an array, "scrape: an empty page still parses"
+   axtCheck tScrape["count"] is 0, "scrape: and reports no items"
    axtCheck tScrape["cursor"] is empty, "scrape: the last page has no cursor"
    axtCheck axScrapeParse("{" & quote & "error" & quote & ":" & quote & "bad" & quote & "}") is empty, "scrape: the error shape refuses"
    axtCheck axScrapeParse("[]") is empty, "scrape: a body without items refuses"
@@ -5553,6 +5561,12 @@ private command axtTestFetchLayerOffline
    axtCheck axDownloadSync("not a url", "somewhere") is empty, "axDownloadSync refuses a non-url"
    axtCheck axDownloadSync("https://nobody.invalid/f", empty) is empty, "axDownloadSync refuses an empty path"
    axtCheck axGetSync("not a url") is empty, "axGetSync refuses a non-url"
+   -- A CLEAN OPTIONS ARRAY, because tOptions still carries the bad `rows`
+   -- from the refusal above and axSearchSync forwards it: the assertion
+   -- would then pass for the WRONG reason and could not fail for the one
+   -- its label names. Found by a dataflow sweep of this file on
+   -- 2026-09-20, in the same pass that found the clobbered tResult.
+   put empty into tOptions
    axtCheck axSearchSync(empty, tOptions) is empty, "axSearchSync refuses an empty query"
    axtCheck axFetchItemSync("x y") is empty, "axFetchItemSync refuses a bad identifier"
    axCancelAll
@@ -5596,9 +5610,9 @@ constant kAgGridRows = 3
 constant kAgTiles = 24
 constant kAgTileW = 130
 constant kAgTileH = 96
-constant kAgCapH = 30
+constant kAgCapH = 28
 constant kAgColStep = 142
-constant kAgRowStep = 132
+constant kAgRowStep = 136
 constant kAgCol0 = 28
 constant kAgRow0 = 96
 
@@ -5608,7 +5622,7 @@ constant kAgRow0 = 96
 -- site is asked once per four screens. archive.org's advancedsearch has
 -- no small cap here - axSearchUrl passes rows straight through - and the
 -- three source apps used 10 and 24 only because their own pages did.
-constant kAgPageSize = 96
+constant kAgPageSize = 192
 
 -- The site's own paging wall: advancedsearch.php will not page past the
 -- first 10,000 hits whatever rows and page say. A search with more hits
@@ -6349,6 +6363,16 @@ command agBuild
       -- one size down from the kit's caption, because the cell is 130
       -- wide now rather than 212 and two lines have to fit in kAgCapH
       set the textSize of field ("agTileCap" & tI) to 9
+      -- DONTWRAP IS THE LOAD-BEARING ONE. The kit's uiLabel sets neither
+      -- margins nor dontWrap, and a lockText field with neither WRAPS -
+      -- so a title one character over the budget below becomes two lines
+      -- and pushes the creator onto a third, outside a two-line box. The
+      -- failure of a bad character estimate is then not a shaved
+      -- descender, it is a caption that silently loses its second line.
+      -- The 4-item margins form is the one OXT honours (the kit's own
+      -- engine note on uiInput).
+      set the dontWrap of field ("agTileCap" & tI) to true
+      set the margins of field ("agTileCap" & tI) to "2,1,2,1"
    end repeat
    -- The viewer's stage, and the two objects that take turns on it.
    uiGfx "agStage", "28,96,720,462"
@@ -7241,10 +7265,19 @@ command agCacheThumb pId, pData
       exit agCacheThumb
    end if
    put the number of bytes of pData into tSize
+   -- ONE ENTRY MAY NOT COST A WHOLE SCREEN. A thumbnail is about 10 KB
+   -- (10,066 bytes, measured 2026-09-20), so anything past a screenful's
+   -- share of the cache is not a thumbnail - and letting one in would
+   -- evict the screen a reader is looking at to hold it. It still goes to
+   -- DISK, where the bound is the file system's.
+   agDiskWrite "thumb", pId, pData
+   if tSize > (kAgCacheMax / kAgTiles) then
+      agLog "cache: " & pId & " is " & axFormatBytes(tSize) & ", too big to keep in memory"
+      exit agCacheThumb
+   end if
    put pData into sAgCache[pId]
    put pId & return after sAgCacheKeys
    add tSize to sAgCacheBytes
-   agDiskWrite "thumb", pId, pData
    repeat while sAgCacheBytes > kAgCacheMax
       put line 1 of sAgCacheKeys into tOld
       if tOld is empty then
@@ -7479,11 +7512,16 @@ command agTileCaption pIndex, pTitle, pSub
    if there is no field tName then
       exit agTileCaption
    end if
-   -- the character budget is the CELL's, and the cell shrank with the
-   -- grid: about 26 characters fit across 130 pixels at textSize 9
-   put agEllipsis(pTitle, 26) into tText
+   -- THE CHARACTER BUDGET IS MEASURED, not guessed. textSize 9 is 12 px
+   -- per em; mixed-case English averages 0.48 to 0.53 em a character
+   -- depending on the face, so 6.4 px is the worst case and the drawable
+   -- width inside the 2 px margins is 126. 126 / 6.4 is 19.7. The 26 that
+   -- stood here needed 165 px of a 130 px cell, and the 52 it replaced
+   -- was never measured either - it implied 3.8 px a character, which no
+   -- face in this family is.
+   put agEllipsis(pTitle, 20) into tText
    if pSub is not empty then
-      put return & agEllipsis(pSub, 26) after tText
+      put return & agEllipsis(pSub, 20) after tText
    end if
    put tText into field tName
 end agTileCaption
@@ -7499,8 +7537,22 @@ function agHexBytes pHex
    -- something that was no longer a picture. The right fix is not to
    -- widen axtHex - its callers all want text - but to stop asking it for
    -- bytes.
+   --
+   -- AN ODD STRING IS A REFUSAL, not a shorter answer. The loop reads a
+   -- pair at a time and stops before an unpaired last character, so "abc"
+   -- would quietly decode to ONE byte - and a truncated picture is still
+   -- a picture-shaped thing to hand an image object. coinxt's
+   -- cxHexDecode carries this guard for the same reason; this copy
+   -- dropped it, and a driven run through the family interpreter on
+   -- 2026-09-20 produced exactly that one-byte answer.
    local tI, tCount, tOut, tHi, tLo
    put the number of chars of pHex into tCount
+   if tCount is 0 then
+      return empty
+   end if
+   if (tCount - (tCount div 2) * 2) is not 0 then
+      return empty
+   end if
    put empty into tOut
    put 1 into tI
    repeat while tI < tCount
@@ -9269,6 +9321,7 @@ command agScRun
    -- here on a decoder rather than on an image object
    scAssert "the carried PNG decodes to 98 bytes", the number of bytes of agHexBytes(kAgScPngHex) is 98
    scAssert "and a hex string with a non-hex character is refused", agHexBytes("47zz") is empty
+   scAssert "and an odd-length one is refused rather than truncated", agHexBytes("abc") is empty
    put agSetPicture("agBigImage", agHexBytes(kAgScPngHex), "0,0,4,4") into tSize
    scAssert "an image object takes a picture this stack carries (" & scShow(tSize) & ")", tSize is "4x4"
    -- AND THE OTHER DIRECTION, which is the half that was missing when the
