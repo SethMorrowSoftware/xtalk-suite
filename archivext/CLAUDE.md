@@ -523,12 +523,120 @@ no undeclared or unused locals, the layout arithmetic bounded inside the
 panel on every tile, `agFitRect` proved unable to divide by zero, and the
 download-and-play ladder proved terminating on every rung.
 
-**HONESTY.** No part of the gallery stack has run on an engine: not the
-grid, not one image object, not the player, not one live thumbnail. The
+**HONESTY, as it stood when this entry was written.** No part of the gallery
+stack had run on an engine: not the grid, not one image object, not the
+player, not one live thumbnail. That held for a few hours; the entry below
+is the run that closed it and the three things it found. The
 suite gates
 it passes are static plus the member's headless fixtures, and the boot
 self-check is what will say - in its own first line, on the reader's own
 machine - whether the object this demo is about works there at all.
+
+### 2026-09-20, the evening - the gallery's first engine run, and the three things it was wrong about
+
+The stack met an engine the day it was written (OXT 9.6.3, Windows x86_64).
+It booted, searched, opened items, showed the viewer, streamed three MP3s and
+ran its four-leg live probe green. It also got three things wrong, and each
+one is a different kind of wrong.
+
+**THE BOOT CHECK'S ONE RED LINE WAS THE DECODER, AND THE TELL BEHIND IT WAS
+ALSO WRONG.** `an image object takes a picture this stack carries (684x358)`.
+684x358 is exactly the stage rect the stack had already set, so the image had
+simply kept what it had. Two separate defects:
+
+- The bytes were never a picture. The check fed the carried PNG through the
+  harness's `axtHex`, which ends in `textDecode(tOut, "UTF-8")` because every
+  other thing it decodes is a JSON fixture and has to come back as TEXT. A
+  PNG is not UTF-8, so the decode replaced the invalid sequences and handed
+  the image object something else. The gallery owns `agHexBytes` now and asks
+  nothing of axtHex; the fix is not to widen axtHex, because all its other
+  callers want text.
+- **The refusal could not have been detected anyway.** "A width under two
+  pixels means the bytes were refused" is box2dxt's idiom, and it works there
+  because `b2kSheetSourceFromFile` puts bytes into a control it has just
+  CREATED, which has no rect. Here the control carried one, so a refusal read
+  back as the rect. `agSetPicture` now clears the content and forces the
+  control to one pixel before setting the bytes, and the boot check asserts
+  BOTH directions - a picture must be taken, and bytes that are plainly not a
+  picture must be refused, which is what will MEASURE the refusal shape on
+  the next engine rather than assume it. Root engine notes 5.7.
+
+**THE PLAYER OPENED, RAN, AND WAS SILENT - and its own properties could not
+say so.** Three streams: `the result` empty after `set the filename`, a
+non-zero duration, `playStarted` on two of the three, and a currentTime that
+had advanced 6.03 seconds when the six-second check looked. The reader heard
+nothing, and video did not open at all. Root engine notes 5.8 has the record;
+what belongs here is what the stack does about it, because every one of these
+was a thing the stack never did rather than a thing it did wrong:
+
+- **It never set `the playLoudness`.** Not on the player, not on the engine.
+  Note 5.4 already says the property is a request rather than a register, so
+  a stack that never sets it is a stack running on whatever the IDE or
+  another stack last left. It is set on both now, before every stream, and
+  there are Vol + / Vol - buttons because the first thing anyone does with a
+  silent player is look for a volume.
+- **It could not say what the player had.** `agPlayerReport` logs
+  `playLoudness`, `paused`, `playRate`, `status`, `mediaTypes` and `tracks`,
+  each read in its own try, at two moments. `the tracks` is the line that
+  settles it: it says whether an audio track was found at all.
+- **`playStarted` was thrown away on the first play of every session**, which
+  is the sharpest of the three because the log looked fine. `on playStarted`
+  exits when `sAgPlayUrl` is empty - it has to, or another stack's player
+  would be reported as ours - and `agDoPlay` set that variable AFTER
+  `start player`. The second and third plays printed the line only because
+  the first had left the variable set. State goes up before the player is
+  told anything now.
+- **And the one experiment nobody has run is now one click.** The platform
+  media path on Windows is DirectShow, documented for http and not for https.
+  The six-second check retries the same datanode URL once over `http://`
+  before falling back to a download. If that opens, the answer to "why will
+  video not play" is a scheme.
+- Play also prefers a copy **already on disk**, which is both the cheaper
+  path and the only way to separate a streaming problem from a playback one
+  without guessing - and it means Download and Play now agree about which
+  encode they are talking about (`agStreamPick` decides for both; Download
+  used to save the playlist's own best entry while Play streamed a different
+  one).
+
+**AND THE CAPACITY WAS TWO LIMITS WEARING ONE NUMBER.** A search for 29,281
+hits showed ten of them, because `kAgTiles` was also the `rows` the request
+asked for. They are different questions - how many results one request brings
+back, and how many fit on screen - and they are separate constants now: the
+grid is eight by three (a cell of 130x96 shows the item image service's own
+180x124 derivative at about 1:1, measured on this run), and a request brings
+back `kAgPageSize` results, four screens' worth, which Prev and Next walk with
+no network at all. The page label says "showing 25-48 of 29,281" rather than a
+page number, and Next stops at the site's 10,000-hit deep-paging wall instead
+of offering a button that comes back empty.
+
+**THE CACHE, asked for in the same breath.** archive.org is a public service
+run on donations and a gallery is the client shape most likely to abuse it, so
+nothing is asked for twice if it can be helped, on two tiers. Thumbnails and
+item metadata live in memory AND on disk under the same Documents/ArchiveXT
+folder Download writes to, so reopening the stack tomorrow costs the site
+nothing for anything it already answered; search pages live in memory only,
+deliberately, because the site's result order is not stable and its counts
+move - a search page is a thing to reuse for a minute and not for a week.
+Metadata expires after a week with the stamp written INTO the file rather than
+read from its modification date, because date formats are the engine's and
+this needed no engine pass to be right. A screen of twenty-four thumbnails
+also does not fire twenty-four requests: `kAgFetchMax` are in flight and the
+next starts when one lands, because the only concurrency this suite has ever
+measured is the ten that run happened to fire. The counters are on screen,
+because a cache nobody can see is a claim rather than a feature.
+
+**THE HARNESS'S ONE RED LINE WAS A CLOBBERED VARIABLE, and its neighbour had
+become a check that could not fail.** `axSelfTest` came back 384/1 on
+`a scalar subject is one line`. The scrape-API block added on 2026-09-16 was
+inserted between the block that parses the librivox SEARCH fixture into
+`tResult` and two assertions that still read it, and its own
+`put axScrapeParse(...) into tResult` took the name. So one assertion read
+docs out of an array that has no docs, and the line under it - "an absent
+field is empty" - passed VACUOUSLY for any input at all. The scrape block has
+its own variable now. Worth keeping because of WHERE the gates could not see
+it: `check-script-vectors.py` drives the LIBRARY and `check-selftest-vectors.py`
+re-derives CONSTANTS, so nothing headless executes the harness's own
+assertions, and the engine is the first thing that ever runs them.
 
 ## Working rules for this member
 

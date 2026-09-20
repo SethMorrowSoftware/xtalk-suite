@@ -48291,6 +48291,7 @@ end ax1axtTestJsonReader
 
 private command ax1axtTestResponses
    local ax1tResult, ax1tItem, ax1tIds, ax1tI, ax1tTable
+   local ax1tScrape
    ax1axtSection "response parsers (synthetic fixtures)"
    put axSearchParse(ax1axtHex(ax1kAxVecFixLibrivoxSearchHex)) into ax1tResult
    ax1axtCheck ax1tResult is an array, "the librivox search fixture parses"
@@ -48306,15 +48307,23 @@ private command ax1axtTestResponses
    end repeat
    ax1axtCheck ax1tIds is ax1kAxVecLibrivoxDocIds, "every doc's identifier, in order"
    ax1axtCheck ax1axtJoinLines(ax1tResult["docs"][1]["creator"], "|") is ax1kAxVecLibrivoxDocOneCreator, "a multi-valued creator is lines"
-   put axScrapeParse("{" & quote & "items" & quote & ":[{" & quote & "identifier" & quote & ":" & quote & "a" & quote & "," & quote & "subject" & quote & ":[" & quote & "x" & quote & "," & quote & "y" & quote & "]},{" & quote & "identifier" & quote & ":" & quote & "b" & quote & "}]," & quote & "count" & quote & ":2," & quote & "cursor" & quote & ":" & quote & "W3siaWQiOjF9XQ==" & quote & "," & quote & "total" & quote & ":17}") into ax1tResult
-   ax1axtCheck ax1tResult is an array, "a scrape page parses"
-   ax1axtCheck ax1tResult["count"] is 2, "scrape: count"
-   ax1axtCheck ax1tResult["total"] is 17, "scrape: total"
-   ax1axtCheck ax1tResult["cursor"] is "W3siaWQiOjF9XQ==", "scrape: the cursor"
-   ax1axtCheck axFirst(ax1tResult["items"][2]["identifier"]) is "b", "scrape: items in order"
-   ax1axtCheck ax1axtJoinLines(ax1tResult["items"][1]["subject"], "|") is "x|y", "scrape: a multi-valued field is lines"
-   put axScrapeParse("{" & quote & "items" & quote & ":[]," & quote & "count" & quote & ":0}") into ax1tResult
-   ax1axtCheck ax1tResult["cursor"] is empty, "scrape: the last page has no cursor"
+   -- THE SCRAPE BLOCK KEEPS ITS OWN VARIABLE, and the reason is a real
+   -- engine failure. It was written with ax1tResult, which the two lines
+   -- below it still expect to hold the librivox SEARCH fixture - so the
+   -- 2026-09-20 run reported `a scalar subject is one line` FAILED
+   -- against an array that had no docs in it at all, and the line after
+   -- it ("an absent field is empty") had quietly become a check that
+   -- could not fail for any input. A block inserted between a setup and
+   -- its assertions has to bring its own name.
+   put axScrapeParse("{" & quote & "items" & quote & ":[{" & quote & "identifier" & quote & ":" & quote & "a" & quote & "," & quote & "subject" & quote & ":[" & quote & "x" & quote & "," & quote & "y" & quote & "]},{" & quote & "identifier" & quote & ":" & quote & "b" & quote & "}]," & quote & "count" & quote & ":2," & quote & "cursor" & quote & ":" & quote & "W3siaWQiOjF9XQ==" & quote & "," & quote & "total" & quote & ":17}") into ax1tScrape
+   ax1axtCheck ax1tScrape is an array, "a scrape page parses"
+   ax1axtCheck ax1tScrape["count"] is 2, "scrape: count"
+   ax1axtCheck ax1tScrape["total"] is 17, "scrape: total"
+   ax1axtCheck ax1tScrape["cursor"] is "W3siaWQiOjF9XQ==", "scrape: the cursor"
+   ax1axtCheck axFirst(ax1tScrape["items"][2]["identifier"]) is "b", "scrape: items in order"
+   ax1axtCheck ax1axtJoinLines(ax1tScrape["items"][1]["subject"], "|") is "x|y", "scrape: a multi-valued field is lines"
+   put axScrapeParse("{" & quote & "items" & quote & ":[]," & quote & "count" & quote & ":0}") into ax1tScrape
+   ax1axtCheck ax1tScrape["cursor"] is empty, "scrape: the last page has no cursor"
    ax1axtCheck axScrapeParse("{" & quote & "error" & quote & ":" & quote & "bad" & quote & "}") is empty, "scrape: the error shape refuses"
    ax1axtCheck axScrapeParse("[]") is empty, "scrape: a body without items refuses"
    ax1axtCheck ax1tResult["docs"][3]["subject"] is "single string subject", "a scalar subject is one line"

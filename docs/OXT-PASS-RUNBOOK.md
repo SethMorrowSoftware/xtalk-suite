@@ -1502,47 +1502,60 @@ Download button):
    stack, run it, copy the `ArchiveXT` line and any red lines.
 
 **THE GALLERY IS A SECOND STACK AND A SEPARATE SITTING**
-(`archivext/examples/archive-gallery.livecodescript`, new 2026-09-20, nothing
-in it observed). It exists to answer questions the explorer cannot ask,
-because it is the first stack in this suite to put bytes into an engine IMAGE
-object from a script - `docs/OXT-ENGINE-NOTES.md` section 5 has no image entry
-at all, so every claim under it is DOCUMENTED-class. In click order:
+(`archivext/examples/archive-gallery.livecodescript`, first engine run
+2026-09-20). That run settled the image object and opened a sharper question
+about the player; engine notes 5.7 and 5.8 are its record. What the NEXT
+sitting owes, in click order:
 
-1. Open it. The boot self-check's own line settles the whole demo offline:
-   `an image object takes a picture this stack carries (4x4)`. It decodes a
-   98-byte PNG the file carries in hex, so it needs no network and no file. A
-   FAIL there means this engine will show captions over empty frames and the
-   rest of the sitting is about why. Whatever it says goes to engine notes
-   section 5 as the suite's FIRST image-object record.
-2. **Live probe**: four legs, all about the same question. A search in
-   `mediatype:(image)`; the item image service's bytes into an image object,
-   with the pixel size the control answered; the item parsed into an `images`
-   playlist; the full picture's datanode URL into the same object. Each leg
-   reports what the CONTROL said, never what the fetch said.
-3. Press Search on the Images family. Ten thumbnails through ten concurrent
-   `load URL`s is also the first concurrency measurement this suite has for
-   the Internet library: the log counts what was asked for, and every tile
-   that comes back empty prints the byte count it refused.
-4. Press Next while the pictures are still arriving. The log should print
-   `dropped a picture from search N` and NO tile should show a picture under
-   another tile's caption.
-5. Click a photograph: it goes straight onto the dark stage in the image
-   object, fitted and centred, with its pixel size in the log.
-6. Films family, click a film, **Play**. Three signals are in play and the
-   log names whichever arrives: `the player refused the stream at once`
-   (the synchronous verdict), `playStarted: the player opened the stream`
-   (the positive one, which NOTHING in this suite has ever seen), or a
-   duration that never appeared after six seconds. The log also prints
-   `chose <file>` - the h.264 / MPEG4 encode the picker preferred over the
-   item's first derivative, which is the 2026-09-16 "be more specific about
-   file types" report turned into code.
-7. Live music family, click a concert, Play one track (MP3 in a player);
-   then **Download** anything and let the fallback ladder finish.
+1. Open it. Two boot lines are the whole image question and they now assert
+   BOTH directions: `an image object takes a picture this stack carries`
+   (a 98-byte PNG the file carries in hex, decoded by the stack's own
+   `agHexBytes` - the first run failed this one on the harness's UTF-8 text
+   decoder, not on the engine) and `and refuses bytes that are not a
+   picture`. The second is the new measurement: 5.7 records that a refusal
+   KEEPS the control's rect rather than answering zero, and this line is what
+   confirms the fix detects it.
+2. **Live probe**: four legs, all about the same question - a search in
+   `mediatype:(image)`, the item image service's bytes into an image object,
+   the item's `images` playlist, and a full picture's datanode URL into the
+   same object. Legs 2 and 4 came back `180x124` and `1988x1367` on the first
+   run; they re-confirm here.
+3. Press Search on the Images family. The grid is eight by three now and a
+   request brings back four screens, so this is also the first measurement of
+   what the Internet library does with a queue: `kAgFetchMax` in flight, the
+   rest waiting. Step Next and Prev across a page boundary and watch the
+   cache line - the second visit to a screen should cost the site nothing.
+4. **THE PLAYER IS THE POINT OF THIS SITTING.** Click a concert, Play one
+   track, and read the two `player (...)` blocks the log now prints. The
+   first run opened three MP3 streams, reported a duration, fired
+   `playStarted`, advanced the clock six seconds and was SILENT. Three things
+   changed and each has a line in the log:
+   - `the playLoudness` is now set on the player AND on the engine before
+     every stream (it was never set at all), and the report prints what it
+     reads back - note 5.4 says that readback is not trustworthy, so it is
+     printed and never decided from.
+   - `the tracks` and `the mediaTypes` are printed. **This is the line that
+     settles it**: it says whether an audio track was found at all.
+   - Press **Vol +** and say whether anything changes. If it does, the answer
+     was loudness.
+5. **The http retry, which has never been run anywhere in this suite.** Play a
+   FILM. When the stream shows no duration at six seconds the stack now
+   retries the same datanode URL once over `http://` before downloading, and
+   says so in the log. The Windows media path is DirectShow, documented for
+   http and not for https. If the retry opens, the answer to "why will video
+   not play" is a scheme, and that goes to engine notes section 5 beside 5.8.
+   The log also prints the item's whole `encodes:` list, so a film that will
+   not open can be read against the encodes it actually had.
+6. Press Play again on a track you have already downloaded: it should say
+   `already downloaded, so nothing is asked of the site` and play the local
+   copy. That separates a streaming problem from a playback problem, which is
+   the one thing the first run could not do.
+7. Press **Clear cache**, then re-run a search you have already done, and
+   check the cache counters move the way they should.
 
-Write down, for engine notes section 5: whether an image object takes bytes
-at all, whether it takes what archive.org sends (the item image service is
-usually baseline JPEG; WebP and AVIF are not decoded by this engine line),
-and whether `playStarted` arrives.
+Write down, for engine notes 5.7 and 5.8: whether a refusal is detected now,
+what `the tracks` says, whether the volume control changes anything, and
+whether the http retry opens a stream https would not.
 
 Unlike nostrxt this member's other half needs a NETWORK, so the pass splits
 cleanly. The folded run rides the

@@ -5298,6 +5298,7 @@ end axtTestJsonReader
 
 private command axtTestResponses
    local tResult, tItem, tIds, tI, tTable
+   local tScrape
    axtSection "response parsers (synthetic fixtures)"
    put axSearchParse(axtHex(kAxVecFixLibrivoxSearchHex)) into tResult
    axtCheck tResult is an array, "the librivox search fixture parses"
@@ -5313,15 +5314,23 @@ private command axtTestResponses
    end repeat
    axtCheck tIds is kAxVecLibrivoxDocIds, "every doc's identifier, in order"
    axtCheck axtJoinLines(tResult["docs"][1]["creator"], "|") is kAxVecLibrivoxDocOneCreator, "a multi-valued creator is lines"
-   put axScrapeParse("{" & quote & "items" & quote & ":[{" & quote & "identifier" & quote & ":" & quote & "a" & quote & "," & quote & "subject" & quote & ":[" & quote & "x" & quote & "," & quote & "y" & quote & "]},{" & quote & "identifier" & quote & ":" & quote & "b" & quote & "}]," & quote & "count" & quote & ":2," & quote & "cursor" & quote & ":" & quote & "W3siaWQiOjF9XQ==" & quote & "," & quote & "total" & quote & ":17}") into tResult
-   axtCheck tResult is an array, "a scrape page parses"
-   axtCheck tResult["count"] is 2, "scrape: count"
-   axtCheck tResult["total"] is 17, "scrape: total"
-   axtCheck tResult["cursor"] is "W3siaWQiOjF9XQ==", "scrape: the cursor"
-   axtCheck axFirst(tResult["items"][2]["identifier"]) is "b", "scrape: items in order"
-   axtCheck axtJoinLines(tResult["items"][1]["subject"], "|") is "x|y", "scrape: a multi-valued field is lines"
-   put axScrapeParse("{" & quote & "items" & quote & ":[]," & quote & "count" & quote & ":0}") into tResult
-   axtCheck tResult["cursor"] is empty, "scrape: the last page has no cursor"
+   -- THE SCRAPE BLOCK KEEPS ITS OWN VARIABLE, and the reason is a real
+   -- engine failure. It was written with tResult, which the two lines
+   -- below it still expect to hold the librivox SEARCH fixture - so the
+   -- 2026-09-20 run reported `a scalar subject is one line` FAILED
+   -- against an array that had no docs in it at all, and the line after
+   -- it ("an absent field is empty") had quietly become a check that
+   -- could not fail for any input. A block inserted between a setup and
+   -- its assertions has to bring its own name.
+   put axScrapeParse("{" & quote & "items" & quote & ":[{" & quote & "identifier" & quote & ":" & quote & "a" & quote & "," & quote & "subject" & quote & ":[" & quote & "x" & quote & "," & quote & "y" & quote & "]},{" & quote & "identifier" & quote & ":" & quote & "b" & quote & "}]," & quote & "count" & quote & ":2," & quote & "cursor" & quote & ":" & quote & "W3siaWQiOjF9XQ==" & quote & "," & quote & "total" & quote & ":17}") into tScrape
+   axtCheck tScrape is an array, "a scrape page parses"
+   axtCheck tScrape["count"] is 2, "scrape: count"
+   axtCheck tScrape["total"] is 17, "scrape: total"
+   axtCheck tScrape["cursor"] is "W3siaWQiOjF9XQ==", "scrape: the cursor"
+   axtCheck axFirst(tScrape["items"][2]["identifier"]) is "b", "scrape: items in order"
+   axtCheck axtJoinLines(tScrape["items"][1]["subject"], "|") is "x|y", "scrape: a multi-valued field is lines"
+   put axScrapeParse("{" & quote & "items" & quote & ":[]," & quote & "count" & quote & ":0}") into tScrape
+   axtCheck tScrape["cursor"] is empty, "scrape: the last page has no cursor"
    axtCheck axScrapeParse("{" & quote & "error" & quote & ":" & quote & "bad" & quote & "}") is empty, "scrape: the error shape refuses"
    axtCheck axScrapeParse("[]") is empty, "scrape: a body without items refuses"
    axtCheck tResult["docs"][3]["subject"] is "single string subject", "a scalar subject is one line"
@@ -5567,19 +5576,47 @@ constant kAgUiVersion = "archive-gallery-kit2-1"
 constant kAgWinW = 1180
 constant kAgWinH = 630
 
--- The grid. Ten tiles because ten is what one archive.org search page
--- costs and what fits at a readable size in the family's 720p budget;
--- five across, two down. Every rect in the build comes out of these, so
--- moving the grid is an arithmetic change and not an editing pass.
-constant kAgTiles = 10
-constant kAgCols = 5
-constant kAgTileW = 212
-constant kAgTileH = 150
+-- THE GRID, RESIZED 2026-09-20 AFTER THE FIRST ENGINE RUN. It was five
+-- across and two down, because ten tiles at 212x150 read well - and ten
+-- was also, wrongly, the SEARCH page size, so a query answering 29,281
+-- hits showed ten of them and offered Next. "Some results could be
+-- hundreds of items" is the report that followed, and it is two separate
+-- limits wearing one number.
+--
+-- The tile size is now measured rather than chosen: the item image
+-- service answered 180x124 on that run, so a cell near 130x96 shows the
+-- site's own derivative at roughly 1:1 with no upscaling, and eight
+-- across by three down fits the same panel. Twenty-four tiles, and the
+-- SEARCH page is no longer tied to them at all (kAgPageSize below).
+--
+-- Every rect in the build comes out of these, so moving the grid stays an
+-- arithmetic change and not an editing pass.
+constant kAgCols = 8
+constant kAgGridRows = 3
+constant kAgTiles = 24
+constant kAgTileW = 130
+constant kAgTileH = 96
 constant kAgCapH = 30
-constant kAgColStep = 228
-constant kAgRowStep = 192
+constant kAgColStep = 142
+constant kAgRowStep = 132
 constant kAgCol0 = 28
 constant kAgRow0 = 96
+
+-- HOW MANY RESULTS ONE REQUEST BRINGS BACK, which is a different question
+-- from how many tiles there are. A page of 96 is four screens of 24 held
+-- in memory, so Prev and Next walk them with no network at all and the
+-- site is asked once per four screens. archive.org's advancedsearch has
+-- no small cap here - axSearchUrl passes rows straight through - and the
+-- three source apps used 10 and 24 only because their own pages did.
+constant kAgPageSize = 96
+
+-- The site's own paging wall: advancedsearch.php will not page past the
+-- first 10,000 hits whatever rows and page say. A search with more hits
+-- than that is not truncated data, it is a deep-paging limit, and the
+-- page label says so rather than offering a Next that would come back
+-- empty. axScrapeUrl is the cursor API that walks further; the gallery
+-- does not use it yet (archivext/docs/07-open-questions.md).
+constant kAgDeepWall = 10000
 
 -- The pane rect both panels share. Named because the boot self-check
 -- bounds the bottom row's captions against it, and a bound spelled twice
@@ -5606,16 +5643,84 @@ constant kAgStageB = 458
 -- every engine, so it IS named literally and IS checked at boot.
 constant kAgPlayerName = "agPlayer"
 
+-- HOW LOUD, and why this is a constant rather than a default.
+--
+-- The 2026-09-20 engine run opened three MP3 streams: the player reported
+-- a duration, playStarted fired, and currentTime had advanced six seconds
+-- when the check looked - and the reader heard nothing. A player that is
+-- demonstrably running and silent is the shape of a LOUDNESS problem, and
+-- this stack had never set one: it took whatever the engine's own
+-- `the playLoudness` happened to be, which is global state another stack
+-- or the IDE can have left at 0.
+--
+-- docs/OXT-ENGINE-NOTES.md 5.4 is the standing rule for this property and
+-- it is narrow: playLoudness is a REQUEST, not a register - Linux reads
+-- it back as a constant 0 whatever was written. So the gallery SETS it,
+-- on the player and on the engine, and REPORTS what it reads back
+-- without ever deciding anything from the answer.
+constant kAgLoudness = 100
+
 -- The two tag words a raw reply can carry. A tag is
 -- "<word> <serial> <index>": which picture, which search, which slot.
 constant kAgThumbTag = "thumb"
 constant kAgBigTag = "big"
 
--- A picture the viewer will not pull into memory. The library's body cap
--- is 16 MB and archive.org serves master TIFFs far past it, so the
--- gallery refuses first and says to use Download, rather than letting the
--- cap answer with a sentence about a reply being too large.
-constant kAgBigMax = 12000000
+-- ITEM METADATA COMES BACK AS RAW BYTES, not through the library's
+-- `item` kind, and the reason is the cache: the `item` kind delivers a
+-- PARSED array and the raw JSON is gone by then, so there is nothing to
+-- write to disk. axItemParse is public, the demo calls it itself, and the
+-- bytes go in the cache on the way past. (The async `item` kind is not
+-- left unexercised by this: the explorer demo drives it, and this stack
+-- drove it on 2026-09-20 before the cache existed.)
+constant kAgMetaTag = "meta"
+
+-- A picture the viewer will not pull into memory, RAISED 2026-09-20 with
+-- the grid. The first engine run pulled a 1,180,947-byte JPEG into an
+-- image object without trouble, and archive.org's scans routinely run to
+-- tens of megabytes, so the old 12 MB was refusing pictures this engine
+-- can plainly show. The library's own body cap is raised to sit ABOVE
+-- this one in agStart, so the thing that refuses a picture is always this
+-- constant with its own sentence, never the transport with a sentence
+-- about a reply being too large.
+constant kAgBigMax = 33554432
+constant kAgBodyMax = 50331648
+
+-- THE THUMBNAIL QUEUE. Twenty-four tiles is twenty-four requests, and the
+-- only concurrency this suite has ever measured is the ten the first
+-- engine run happened to fire (docs/OXT-ENGINE-NOTES.md 6.9 records what
+-- libURL does with one URL, not with twenty-four). So the grid asks for a
+-- few at a time and starts the next when one lands: a screen still fills
+-- in a second or two, and nothing here is betting on an unmeasured number.
+constant kAgFetchMax = 6
+
+-- WHAT THIS STACK REMEMBERS, AND WHERE.
+--
+-- archive.org is a public service run on donations, and a gallery is the
+-- shape of client most likely to abuse it: a screen of twenty-four
+-- thumbnails, a reader stepping back and forth, an identifier opened
+-- twice. So nothing here is asked for twice if it can be helped, on two
+-- tiers.
+--
+--   MEMORY   thumbnails by identifier, item metadata by identifier, and
+--            search pages by their exact request URL. Gone when the stack
+--            closes, which is correct for the third: result order and
+--            counts move under you, so a search page is a thing to reuse
+--            for a minute, not for a week.
+--   DISK     thumbnails and item metadata, under the same
+--            Documents/ArchiveXT folder Download writes to, so reopening
+--            the stack tomorrow costs the site nothing for anything it
+--            already answered. Search pages are deliberately NOT written
+--            there, for the reason above.
+--
+-- A thumbnail is named by its identifier and cannot go stale, so it has
+-- no expiry; metadata can gain files, so a cached item is re-fetched
+-- after kAgMetaTtl seconds. The stamp is written INTO the file rather
+-- than read from its modification date, because date formats are the
+-- engine's and this needs no engine pass to be right.
+constant kAgCacheMax = 12000000
+constant kAgMetaMax = 8000000
+constant kAgSearchKeep = 12
+constant kAgMetaTtl = 604800
 
 local sAgFamily              -- the family id in play (movies / etree / librivox / images / any)
 local sAgPage                -- the search page shown
@@ -5623,20 +5728,41 @@ local sAgSerial              -- bumped by every search STARTED; a thumbnail carr
 local sAgViewSerial          -- the same idea for the VIEWER's picture, which a search does not invalidate but an item open does
 local sAgResult              -- the last axSearchParse array
 local sAgTileIds             -- one identifier per line, in tile order ("" for an empty tile)
+local sAgOffset              -- the index into the loaded page of the first tile shown
+local sAgOffsetWanted        -- the offset to land on when the page being fetched arrives
+local sAgQueue               -- thumbnails waiting to be asked for: "<tile> <url>" per line
+local sAgInFlight            -- how many thumbnail requests are out right now
+local sAgCache               -- sAgCache[identifier] is that thumbnail's bytes
+local sAgCacheKeys           -- the identifiers in arrival order, for eviction
+local sAgCacheBytes          -- what the thumbnail cache is holding
+local sAgMeta                -- sAgMeta[identifier] is that item's raw metadata JSON
+local sAgMetaKeys            -- the identifiers in arrival order, for eviction
+local sAgMetaBytes           -- what the metadata cache is holding
+local sAgSearch              -- sAgSearch[url] is that request's parsed result
+local sAgSearchKeys          -- the urls in arrival order, for eviction
+local sAgDisk                -- the disk cache folder, or empty when there is none
+local sAgHits                -- answers served without asking the site
+local sAgMisses              -- answers that cost a request
+local sAgSaved               -- bytes the site did not have to send
 local sAgTilePics            -- sAgTilePics[i] is "true" once tile i holds a real picture
 local sAgItem                -- the last axItemParse array
 local sAgPlaylist            -- that item's playlist
 local sAgKind                -- the playlist kind in play
 local sAgPane                -- "grid" or "viewer"
 local sAgSearchHandle        -- the search in flight, or empty
+local sAgSearchUrl           -- the URL that search went to, which is the cache's key
 local sAgItemHandle          -- the metadata fetch in flight, or empty
 local sAgThumbHandles        -- the thumbnail requests in flight, comma list
 local sAgBigHandle           -- the viewer picture in flight, or empty
+local sAgLastPicUrl          -- the last full picture shown, kept so stepping back costs nothing
+local sAgLastPicData
 local sAgDownloadHandle      -- the download in flight, or empty
 local sAgDownloadPath        -- where that download is being written
 local sAgPlayAfter           -- true when the finished download should play
 local sAgPlayUrl             -- the URL or path the player was last handed (empty after Stop)
 local sAgPlayIsFile          -- true when that was a LOCAL file, which is what stops the ladder
+local sAgPlayRetried         -- true once the http retry below has been spent on this entry
+local sAgLoudness            -- what the volume buttons have asked for
 local sAgHaveUrlLib          -- the boot probe's answer
 
 -- ==== SUITE UI KIT v2 BEGIN (verbatim copy; master: tools/ui-kit.livecodescript; gate: tools/check-ui-kit-drift.py) ====
@@ -6118,11 +6244,15 @@ on mouseUp
    else if tName is "agSearch" then
       agDoSearch 1
    else if tName is "agPrev" then
-      agDoSearch sAgPage - 1
+      agStepScreen -1
    else if tName is "agNext" then
-      agDoSearch sAgPage + 1
+      agStepScreen 1
    else if tName is "agBack" then
       agShowPane "grid"
+   else if tName is "agLouder" then
+      agSetLoudness 20
+   else if tName is "agQuieter" then
+      agSetLoudness -20
    else if tName is "agTracks" then
       agSelectTrack
    else if tName is "agPlay" then
@@ -6216,6 +6346,9 @@ command agBuild
       set the visible of image tName to false
       uiCap ("agTileCap" & tI), empty, agCapRect(tI)
       set the foregroundColor of field ("agTileCap" & tI) to kUiInkSoft
+      -- one size down from the kit's caption, because the cell is 130
+      -- wide now rather than 212 and two lines have to fit in kAgCapH
+      set the textSize of field ("agTileCap" & tI) to 9
    end repeat
    -- The viewer's stage, and the two objects that take turns on it.
    uiGfx "agStage", "28,96,720,462"
@@ -6239,6 +6372,8 @@ command agBuild
    uiButton "agOpenPage", "Open page", "280,470,380,494"
    uiButton "agCopyUrl", "Copy URL", "384,470,470,494"
    uiButton "agBack", "Back to the gallery", "474,470,620,494"
+   uiButton "agQuieter", "Vol -", "624,470,676,494"
+   uiButton "agLouder", "Vol +", "680,470,732,494"
    -- The viewer's right column.
    uiWrap "agItemTitle", "nothing open yet", "730,96,1152,136", 13
    uiArea "agItemMeta", "730,140,1152,254"
@@ -6266,15 +6401,18 @@ command agClearGeneratedUI
 end agClearGeneratedUI
 
 function agTileRect pIndex
-   -- The picture cell of tile N. Five across then five more, derived from
-   -- the grid constants so nothing in the build hardcodes a tile rect.
+   -- The picture cell of tile N, row-major. Derived from the grid
+   -- constants so nothing in the build hardcodes a tile rect, and written
+   -- as a subtract loop rather than div/mod because this member's whole
+   -- pure layer stays inside the family interpreter's subset and the
+   -- habit is cheaper to keep than to remember.
    local tCol, tRow, tX, tY
    put pIndex - 1 into tCol
    put 0 into tRow
-   if tCol >= kAgCols then
-      put 1 into tRow
+   repeat while tCol >= kAgCols
+      add 1 to tRow
       subtract kAgCols from tCol
-   end if
+   end repeat
    put kAgCol0 + tCol * kAgColStep into tX
    put kAgRow0 + tRow * kAgRowStep into tY
    return tX & comma & tY & comma & (tX + kAgTileW) & comma & (tY + kAgTileH)
@@ -6301,20 +6439,46 @@ command agStart
    set the defaultStack to the short name of this stack
    axInit the long id of me
    axSetCallback "onArchive"
+   -- ABOVE kAgBigMax ON PURPOSE. The gallery refuses a picture it thinks
+   -- is too big to hold, with a sentence naming its size and pointing at
+   -- Download; the transport's cap must never get there first, because
+   -- its sentence is about a reply rather than about a picture.
+   axSetMaxBody kAgBodyMax
    put empty into sAgResult
    put empty into sAgItem
    put empty into sAgPlaylist
    put empty into sAgKind
    put empty into sAgTileIds
+   put 0 into sAgOffset
+   put empty into sAgOffsetWanted
+   put empty into sAgQueue
+   put 0 into sAgInFlight
+   put empty into sAgCache
+   put empty into sAgCacheKeys
+   put 0 into sAgCacheBytes
+   put empty into sAgMeta
+   put empty into sAgMetaKeys
+   put 0 into sAgMetaBytes
+   put empty into sAgSearch
+   put empty into sAgSearchKeys
+   put 0 into sAgHits
+   put 0 into sAgMisses
+   put 0 into sAgSaved
+   agCacheInit
    put empty into sAgSearchHandle
+   put empty into sAgSearchUrl
    put empty into sAgItemHandle
    put empty into sAgThumbHandles
    put empty into sAgBigHandle
+   put empty into sAgLastPicUrl
+   put empty into sAgLastPicData
    put empty into sAgDownloadHandle
    put empty into sAgDownloadPath
    put empty into sAgPlayAfter
    put empty into sAgPlayUrl
    put empty into sAgPlayIsFile
+   put empty into sAgPlayRetried
+   put kAgLoudness into sAgLoudness
    put 0 into sAgSerial
    put 0 into sAgViewSerial
    put 1 into sAgPage
@@ -6563,7 +6727,7 @@ command agPaintFamily
 end agPaintFamily
 
 command agDoSearch pPage
-   local tPage, tSpec, tQuery, tInfo, tOptions, tHandle
+   local tPage, tSpec, tQuery, tInfo, tOptions, tHandle, tUrl, tCached
    set the defaultStack to the short name of this stack
    put pPage into tPage
    if tPage is not an integer then
@@ -6590,12 +6754,29 @@ command agDoSearch pPage
    end if
    put tInfo["fields"] into tOptions["fields"]
    put tInfo["sort"] into tOptions["sort"]
-   -- ROWS IS THE TILE COUNT, not the family's own page size: the grid is
-   -- the page here, so asking for 24 rows to show 10 would make Next skip
-   -- fourteen items a reader never saw.
-   put kAgTiles into tOptions["rows"]
+   -- ROWS IS THE PAGE SIZE, NOT THE TILE COUNT, and the two were the same
+   -- number until 2026-09-20. They are different questions: how many
+   -- results one request brings back, and how many of them fit on screen.
+   -- Tying them made a 29,281-hit search fetch ten items and offer Next.
+   put kAgPageSize into tOptions["rows"]
    put tPage into tOptions["page"]
    put "gallery" into tOptions["tag"]
+   -- ALREADY ANSWERED? A reader stepping back over a page boundary asks
+   -- for the same URL again, and the site should not have to answer it
+   -- twice in one sitting.
+   put axSearchUrl(tQuery, tOptions["fields"], tOptions["sort"], kAgPageSize, tPage) into tUrl
+   put agCachedSearch(tUrl) into tCached
+   if tCached is an array then
+      put tPage into sAgPage
+      -- the key travels with the result, or agShowResults would re-cache
+      -- this page under the PREVIOUS request's URL
+      put tUrl into sAgSearchUrl
+      agShowPane "grid"
+      agNoteHit 0
+      agLog "cache: page " & tPage & " served without asking the site"
+      agShowResults tCached
+      exit agDoSearch
+   end if
    agCancelThumbs
    if sAgSearchHandle is not empty then
       axCancel sAgSearchHandle
@@ -6614,29 +6795,83 @@ command agDoSearch pPage
    -- pictures under the new page's captions.
    add 1 to sAgSerial
    put tHandle into sAgSearchHandle
+   put tUrl into sAgSearchUrl
    put tPage into sAgPage
    agShowPane "grid"
    agClearTiles
+   agNoteMiss
    agLog "q = " & tQuery
-   agLog "GET " & axSearchUrl(tQuery, tOptions["fields"], tOptions["sort"], kAgTiles, tPage)
+   agLog "GET " & tUrl
    uiStatus "searching (request " & tHandle & ")...", "warn"
 end agDoSearch
 
 command agShowResults pResult
-   local tCount, tI, tDoc, tId, tTitle, tSub, tIds, tUrl, tHandle, tPages, tAsked
+   -- A PAGE ARRIVED. The page is not the screen: kAgPageSize results are
+   -- held here and kAgTiles of them are drawn, so Prev and Next walk the
+   -- loaded page with no network at all and the site is asked once every
+   -- four screens.
+   local tCount, tWant, tUrl
    put pResult into sAgResult
    put pResult["count"] into tCount
+   put sAgOffsetWanted into tWant
+   put empty into sAgOffsetWanted
+   if tWant is not an integer then
+      put 0 into tWant
+   end if
+   -- landing on the LAST screen of a page is how Prev crosses a page
+   -- boundary backwards, and the page it lands on may be short
+   repeat while tWant >= tCount
+      subtract kAgTiles from tWant
+   end repeat
+   if tWant < 0 then
+      put 0 into tWant
+   end if
+   put tWant into sAgOffset
+   -- keyed by the URL THE REQUEST WENT TO, remembered when it was made:
+   -- rebuilding it here would be a second spelling of the same thing, and
+   -- a cache keyed by a rebuilt key is a cache that misses the day the
+   -- two spellings drift
+   put sAgSearchUrl into tUrl
+   agCacheSearch tUrl, pResult
+   agLog "results: " & tCount & " of " & pResult["numFound"] & " (page " & sAgPage & ", " & kAgPageSize & " per request)"
+   agPaintScreen
+   if tCount is 0 then
+      uiStatus "no results - try another family, or fewer words", "warn"
+   end if
+end agShowResults
+
+command agPaintScreen
+   -- Draw the kAgTiles tiles from the loaded page, starting at sAgOffset.
+   -- EVERY REPAINT BUMPS THE SERIAL, because a thumbnail still in flight
+   -- for tile 7 is a thumbnail for whatever tile 7 used to be: the grid's
+   -- serial is about what the TILES are showing, not about which search
+   -- asked, and a screen step changes that as completely as a new search
+   -- does.
+   local tI, tDoc, tId, tTitle, tSub, tIds, tCount, tShown, tBase
+   set the defaultStack to the short name of this stack
+   add 1 to sAgSerial
+   agCancelThumbs
+   put empty into sAgQueue
+   if sAgResult is not an array then
+      agClearTiles
+      exit agPaintScreen
+   end if
+   put sAgResult["count"] into tCount
+   if tCount is not an integer then
+      put 0 into tCount
+   end if
    put empty into tIds
-   put 0 into tAsked
+   put 0 into tShown
    repeat with tI = 1 to kAgTiles
-      if tI > tCount then
+      if (sAgOffset + tI) > tCount then
          agTileEmpty tI
          put return after tIds
          next repeat
       end if
-      put pResult["docs"][tI] into tDoc
+      put sAgResult["docs"][sAgOffset + tI] into tDoc
       put axFirst(tDoc["identifier"]) into tId
       put tId & return after tIds
+      add 1 to tShown
       put axCollapseSpaces(axFirst(tDoc["title"])) into tTitle
       if tTitle is empty then
          put tId into tTitle
@@ -6646,32 +6881,483 @@ command agShowResults pResult
          put char 1 to 10 of axFirst(tDoc["date"]) into tSub
       end if
       agTileCaption tI, tTitle, tSub
-      if axIdentifierIsValid(tId) then
-         put axThumbnailUrl(tId) into tUrl
-         put axFetchUrl(tUrl, kAgThumbTag && sAgSerial && tI) into tHandle
-         if tHandle is empty then
-            agLog "thumbnail refused for " & tId & ": " & axLastError()
-         else
-            put tHandle & comma after sAgThumbHandles
-            add 1 to tAsked
-         end if
-      end if
+      agWantThumb tI, tId
    end repeat
    put tIds into sAgTileIds
-   put trunc((pResult["numFound"] + kAgTiles - 1) / kAgTiles) into tPages
-   if tPages < 1 then
-      put 1 into tPages
+   agPumpThumbs
+   put (sAgPage - 1) * kAgPageSize + sAgOffset into tBase
+   agPaintPageInfo tBase, tShown
+   if tShown > 0 then
+      uiStatus tShown & " of " & sAgResult["numFound"] & " - the pictures are loading; click one to open it", "ok"
    end if
-   put "page " & sAgPage & " of " & tPages into field "agPageInfo"
-   set the enabled of button "agPrev" to (sAgPage > 1)
-   set the enabled of button "agNext" to (tCount >= kAgTiles)
-   agLog "results: " & tCount & " of " & pResult["numFound"] & "; asked for " & tAsked & " thumbnail(s)"
-   if tCount is 0 then
-      uiStatus "no results - try another family, or fewer words", "warn"
+end agPaintScreen
+
+command agPaintPageInfo pBase, pShown
+   -- WHICH RESULTS THESE ARE, not which page they came on. "showing 25-48
+   -- of 29,281" is the sentence the first engine run's "page 1 of 2929"
+   -- should have been: a reader wants to know where they are in the
+   -- answer, and the request's own page size is bookkeeping.
+   local tFound, tText, tEnd
+   put sAgResult["numFound"] into tFound
+   if tFound is not an integer then
+      put 0 into tFound
+   end if
+   put pBase + pShown into tEnd
+   if pShown < 1 then
+      put "nothing on this screen" into tText
    else
-      uiStatus tCount & " results on page " & sAgPage & " - the pictures are loading; click one to open it", "ok"
+      put "showing " & (pBase + 1) & "-" & tEnd & " of " & tFound into tText
    end if
-end agShowResults
+   if tFound > kAgDeepWall then
+      put tText & " (the site pages only the first " & kAgDeepWall & ")" into tText
+   end if
+   put tText into field "agPageInfo"
+   set the enabled of button "agPrev" to (pBase > 0)
+   set the enabled of button "agNext" to agHasMore(pBase, pShown)
+end agPaintPageInfo
+
+function agHasMore pBase, pShown
+   -- Is there a next screen to go to? Two walls, and only one of them is
+   -- the answer's size: the site refuses to page past kAgDeepWall however
+   -- many hits it reports, so offering Next past that is offering a
+   -- button that comes back empty.
+   local tFound, tEnd
+   put sAgResult["numFound"] into tFound
+   if tFound is not an integer then
+      return false
+   end if
+   put pBase + pShown into tEnd
+   if tEnd >= tFound then
+      return false
+   end if
+   if tEnd >= kAgDeepWall then
+      return false
+   end if
+   return true
+end agHasMore
+
+command agStepScreen pDelta
+   -- Prev and Next move one SCREEN. Inside the loaded page that costs
+   -- nothing; off either end it asks the site for the next page and says
+   -- which screen of it to land on.
+   local tWant, tCount, tBase
+   set the defaultStack to the short name of this stack
+   if sAgResult is not an array then
+      exit agStepScreen
+   end if
+   put sAgResult["count"] into tCount
+   if tCount is not an integer then
+      put 0 into tCount
+   end if
+   put sAgOffset + pDelta * kAgTiles into tWant
+   if tWant >= 0 then
+      if tWant < tCount then
+         put tWant into sAgOffset
+         agPaintScreen
+         exit agStepScreen
+      end if
+   end if
+   if tWant < 0 then
+      if sAgPage <= 1 then
+         exit agStepScreen
+      end if
+      -- land on the LAST screen of the previous page, which is where a
+      -- reader stepping backwards expects to arrive
+      put kAgPageSize into sAgOffsetWanted
+      agDoSearch sAgPage - 1
+      exit agStepScreen
+   end if
+   put (sAgPage - 1) * kAgPageSize + sAgOffset into tBase
+   if not agHasMore(tBase, tCount - sAgOffset) then
+      exit agStepScreen
+   end if
+   put 0 into sAgOffsetWanted
+   agDoSearch sAgPage + 1
+end agStepScreen
+
+-- ==========================================================================
+-- The thumbnail queue and its cache.
+--
+-- Twenty-four tiles is twenty-four requests, and firing them together
+-- would be this stack betting on a concurrency nobody has measured. So a
+-- screen QUEUES its thumbnails, kAgFetchMax are in flight at a time, and
+-- the next starts when one lands. What a screen has already seen is kept,
+-- so walking back is free and a reader paging through hundreds of items
+-- pays for each picture once.
+-- ==========================================================================
+
+command agWantThumb pIndex, pId
+   -- Cached: paint it now. Not cached: queue it. Nothing fetches here.
+   local tData
+   if not axIdentifierIsValid(pId) then
+      exit agWantThumb
+   end if
+   put agCachedThumb(pId) into tData
+   if tData is not empty then
+      agTilePicture pIndex, tData
+      agNoteHit the number of bytes of tData
+      exit agWantThumb
+   end if
+   agNoteMiss
+   put pIndex && axThumbnailUrl(pId) & return after sAgQueue
+end agWantThumb
+
+command agPumpThumbs
+   -- Start as many as the cap allows. Reached from a screen repaint and
+   -- from every reply, so the queue drains without a timer.
+   local tLine, tIndex, tUrl, tHandle
+   set the defaultStack to the short name of this stack
+   repeat while sAgInFlight < kAgFetchMax
+      put line 1 of sAgQueue into tLine
+      if tLine is empty then
+         exit repeat
+      end if
+      delete line 1 of sAgQueue
+      put word 1 of tLine into tIndex
+      put word 2 of tLine into tUrl
+      put axFetchUrl(tUrl, kAgThumbTag && sAgSerial && tIndex) into tHandle
+      if tHandle is empty then
+         agLog "thumbnail refused: " & axLastError()
+      else
+         put tHandle & comma after sAgThumbHandles
+         add 1 to sAgInFlight
+      end if
+   end repeat
+end agPumpThumbs
+
+command agThumbSettled
+   -- One thumbnail request is over, whichever way. The counter is the
+   -- queue's whole safety: it is decremented HERE, on one path, so a
+   -- reply and a failure cannot disagree about how many are out.
+   if sAgInFlight > 0 then
+      subtract 1 from sAgInFlight
+   end if
+   agPumpThumbs
+end agThumbSettled
+
+-- ==========================================================================
+-- The cache, two tiers, and the counters that prove it is working.
+-- ==========================================================================
+
+command agCacheInit
+   -- Where the disk tier lives, decided once. Empty when there is nowhere
+   -- writable, and then everything below quietly stays memory-only: a
+   -- cache that cannot be written is a slower gallery, never a broken one.
+   local tRoot, tError, tPath
+   put empty into sAgDisk
+   put empty into tRoot
+   try
+      put specialFolderPath("documents") into tRoot
+   catch tError
+      put empty into tRoot
+   end try
+   if tRoot is empty then
+      try
+         put specialFolderPath("temporary") into tRoot
+      catch tError
+         put empty into tRoot
+      end try
+   end if
+   if tRoot is empty then
+      exit agCacheInit
+   end if
+   if there is not a folder (tRoot & "/ArchiveXT") then
+      create folder (tRoot & "/ArchiveXT")
+   end if
+   put tRoot & "/ArchiveXT/cache" into tPath
+   if there is not a folder tPath then
+      create folder tPath
+   end if
+   if there is not a folder tPath then
+      exit agCacheInit
+   end if
+   if there is not a folder (tPath & "/thumb") then
+      create folder (tPath & "/thumb")
+   end if
+   if there is not a folder (tPath & "/meta") then
+      create folder (tPath & "/meta")
+   end if
+   if there is not a folder (tPath & "/thumb") then
+      exit agCacheInit
+   end if
+   put tPath into sAgDisk
+end agCacheInit
+
+function agDiskPath pKind, pId
+   -- Only ever called with an identifier axIdentifierIsValid has passed,
+   -- which is already a safe file name (letters, digits, dot, dash,
+   -- underscore) - so there is no escaping to get wrong here, and the
+   -- guard is the thing that makes that true rather than a comment
+   -- claiming it.
+   if sAgDisk is empty then
+      return empty
+   end if
+   if not axIdentifierIsValid(pId) then
+      return empty
+   end if
+   return sAgDisk & "/" & pKind & "/" & pId
+end agDiskPath
+
+function agDiskRead pKind, pId
+   -- The bytes, or empty. A metadata file carries its stamp on its first
+   -- line and is treated as absent once it is older than kAgMetaTtl.
+   local tPath, tData, tError, tWhy, tStamp
+   put agDiskPath(pKind, pId) into tPath
+   if tPath is empty then
+      return empty
+   end if
+   if there is no file tPath then
+      return empty
+   end if
+   put empty into tData
+   try
+      put URL ("binfile:" & tPath) into tData
+      put the result into tWhy
+   catch tError
+      return empty
+   end try
+   if tWhy is not empty then
+      return empty
+   end if
+   if tData is empty then
+      return empty
+   end if
+   if pKind is not "meta" then
+      return tData
+   end if
+   put line 1 of tData into tStamp
+   if not axIsDigits(tStamp) then
+      return empty
+   end if
+   if (the seconds - tStamp) > kAgMetaTtl then
+      return empty
+   end if
+   return char (the number of chars of line 1 of tData + 2) to -1 of tData
+end agDiskRead
+
+command agDiskWrite pKind, pId, pData
+   -- Best effort, and silent about it. A cache write that fails costs a
+   -- request next time and nothing else, so it must never reach the
+   -- reader - but `the result` IS read, because an unchecked write is
+   -- this tree's own recorded way of believing a file exists.
+   local tPath, tError, tWhy, tOut
+   put agDiskPath(pKind, pId) into tPath
+   if tPath is empty then
+      exit agDiskWrite
+   end if
+   if pData is empty then
+      exit agDiskWrite
+   end if
+   put pData into tOut
+   if pKind is "meta" then
+      put the seconds & return & pData into tOut
+   end if
+   try
+      put tOut into URL ("binfile:" & tPath)
+      put the result into tWhy
+   catch tError
+      exit agDiskWrite
+   end try
+   if tWhy is not empty then
+      agLog "cache: could not write " & tPath & " (" & tWhy & ")"
+   end if
+end agDiskWrite
+
+command agNoteHit pBytes
+   add 1 to sAgHits
+   if pBytes is a number then
+      add pBytes to sAgSaved
+   end if
+   agPaintCache
+end agNoteHit
+
+command agNoteMiss
+   add 1 to sAgMisses
+   agPaintCache
+end agNoteMiss
+
+command agPaintCache
+   -- The counters on screen, because a cache nobody can see is a claim
+   -- rather than a feature. Painted here only; every other handler
+   -- reports through agNoteHit / agNoteMiss so the two cannot disagree.
+   local tText
+   if there is no field "agCacheInfo" then
+      exit agPaintCache
+   end if
+   put sAgHits & " served from cache (" & axFormatBytes(sAgSaved) & " not fetched), " & sAgMisses & " asked of the site" into tText
+   if sAgDisk is empty then
+      put tText & " - memory only, no writable cache folder" into tText
+   end if
+   put tText into field "agCacheInfo"
+end agPaintCache
+
+command agClearCache
+   -- Memory always; disk when there is one. The files are removed one by
+   -- one out of the two folders this stack owns, never by deleting a
+   -- folder, so a wrong sAgDisk can only fail to find things.
+   local tKind, tName, tSaved, tCount, tError
+   set the defaultStack to the short name of this stack
+   put empty into sAgCache
+   put empty into sAgCacheKeys
+   put 0 into sAgCacheBytes
+   put empty into sAgMeta
+   put empty into sAgMetaKeys
+   put 0 into sAgMetaBytes
+   put empty into sAgSearch
+   put empty into sAgSearchKeys
+   put 0 into tCount
+   if sAgDisk is not empty then
+      repeat for each line tKind in ("thumb" & return & "meta")
+         put the defaultFolder into tSaved
+         try
+            set the defaultFolder to (sAgDisk & "/" & tKind)
+            repeat for each line tName in the files
+               delete file (sAgDisk & "/" & tKind & "/" & tName)
+               add 1 to tCount
+            end repeat
+         catch tError
+         end try
+         set the defaultFolder to tSaved
+      end repeat
+   end if
+   put 0 into sAgHits
+   put 0 into sAgMisses
+   put 0 into sAgSaved
+   agPaintCache
+   agLog "cache cleared: " & tCount & " file(s) removed from " & sAgDisk
+   uiStatus "cache cleared", "ok"
+end agClearCache
+
+command agCacheThumb pId, pData
+   -- Keep it in memory and on disk, and drop the oldest in memory until
+   -- the cache is inside its bound. A thumbnail is named by its
+   -- identifier and can never be stale, so nothing here expires; it only
+   -- runs out of room.
+   local tSize, tOld
+   if pId is empty then
+      exit agCacheThumb
+   end if
+   if pId is among the keys of sAgCache then
+      exit agCacheThumb
+   end if
+   put the number of bytes of pData into tSize
+   put pData into sAgCache[pId]
+   put pId & return after sAgCacheKeys
+   add tSize to sAgCacheBytes
+   agDiskWrite "thumb", pId, pData
+   repeat while sAgCacheBytes > kAgCacheMax
+      put line 1 of sAgCacheKeys into tOld
+      if tOld is empty then
+         exit repeat
+      end if
+      delete line 1 of sAgCacheKeys
+      subtract the number of bytes of sAgCache[tOld] from sAgCacheBytes
+      delete variable sAgCache[tOld]
+   end repeat
+   if sAgCacheBytes < 0 then
+      put 0 into sAgCacheBytes
+   end if
+end agCacheThumb
+
+function agCachedThumb pId
+   -- Memory, then disk, then nothing. A disk hit is promoted into memory
+   -- so a second screen does not read it again.
+   local tData
+   if pId is empty then
+      return empty
+   end if
+   if pId is among the keys of sAgCache then
+      return sAgCache[pId]
+   end if
+   put agDiskRead("thumb", pId) into tData
+   if tData is empty then
+      return empty
+   end if
+   put tData into sAgCache[pId]
+   put pId & return after sAgCacheKeys
+   add the number of bytes of tData to sAgCacheBytes
+   return tData
+end agCachedThumb
+
+command agCacheMeta pId, pJson
+   local tSize, tOld
+   if pId is empty then
+      exit agCacheMeta
+   end if
+   if pJson is empty then
+      exit agCacheMeta
+   end if
+   put the number of bytes of pJson into tSize
+   if pId is not among the keys of sAgMeta then
+      put pId & return after sAgMetaKeys
+      add tSize to sAgMetaBytes
+   end if
+   put pJson into sAgMeta[pId]
+   agDiskWrite "meta", pId, pJson
+   repeat while sAgMetaBytes > kAgMetaMax
+      put line 1 of sAgMetaKeys into tOld
+      if tOld is empty then
+         exit repeat
+      end if
+      delete line 1 of sAgMetaKeys
+      subtract the number of bytes of sAgMeta[tOld] from sAgMetaBytes
+      delete variable sAgMeta[tOld]
+   end repeat
+   if sAgMetaBytes < 0 then
+      put 0 into sAgMetaBytes
+   end if
+end agCacheMeta
+
+function agCachedMeta pId
+   local tData
+   if pId is empty then
+      return empty
+   end if
+   if pId is among the keys of sAgMeta then
+      return sAgMeta[pId]
+   end if
+   put agDiskRead("meta", pId) into tData
+   if tData is empty then
+      return empty
+   end if
+   put tData into sAgMeta[pId]
+   put pId & return after sAgMetaKeys
+   add the number of bytes of tData to sAgMetaBytes
+   return tData
+end agCachedMeta
+
+command agCacheSearch pUrl, pResult
+   -- MEMORY ONLY, on purpose. The site's default result order is not
+   -- stable and its counts move, so a search page is a thing to reuse
+   -- while a reader is stepping back and forth and NOT a thing to hand
+   -- back tomorrow as if it were the answer.
+   local tOld
+   if pUrl is empty then
+      exit agCacheSearch
+   end if
+   if pUrl is not among the keys of sAgSearch then
+      put pUrl & return after sAgSearchKeys
+   end if
+   put pResult into sAgSearch[pUrl]
+   repeat while the number of lines of sAgSearchKeys > kAgSearchKeep
+      put line 1 of sAgSearchKeys into tOld
+      if tOld is empty then
+         exit repeat
+      end if
+      delete line 1 of sAgSearchKeys
+      delete variable sAgSearch[tOld]
+   end repeat
+end agCacheSearch
+
+function agCachedSearch pUrl
+   if pUrl is empty then
+      return empty
+   end if
+   if pUrl is among the keys of sAgSearch then
+      return sAgSearch[pUrl]
+   end if
+   return empty
+end agCachedSearch
 
 -- ==========================================================================
 -- Pictures: the one place in this stack that talks to an image object.
@@ -6711,6 +7397,19 @@ function agSetPicture pName, pData, pBox
       set the resizeQuality of image pName to "good"
    catch tError
    end try
+   -- COLLAPSE BEFORE YOU MEASURE, and the first engine run is why. The
+   -- tell below - a width under two pixels means the bytes were refused -
+   -- is box2dxt's, and it works there because b2kSheetSourceFromFile puts
+   -- its bytes into a control it has just CREATED, which has no rect yet.
+   -- Here the control already carries one, and a refusal left it exactly
+   -- as it was: the boot check read back 684x358, which is the stage rect
+   -- this stack had set, and reported a refusal as a picture 684 pixels
+   -- wide. Clearing the content and forcing the control to one pixel
+   -- makes the measurement mean something again - a refusal cannot answer
+   -- 2 or more, and every real picture does.
+   set the lockLocation of image pName to true
+   set the text of image pName to empty
+   set the rect of image pName to (tL & comma & tT & comma & (tL + 1) & comma & (tT + 1))
    set the lockLocation of image pName to false
    put 0 into tW
    put 0 into tH
@@ -6780,12 +7479,107 @@ command agTileCaption pIndex, pTitle, pSub
    if there is no field tName then
       exit agTileCaption
    end if
-   put agEllipsis(pTitle, 52) into tText
+   -- the character budget is the CELL's, and the cell shrank with the
+   -- grid: about 26 characters fit across 130 pixels at textSize 9
+   put agEllipsis(pTitle, 26) into tText
    if pSub is not empty then
-      put return & agEllipsis(pSub, 52) after tText
+      put return & agEllipsis(pSub, 26) after tText
    end if
    put tText into field tName
 end agTileCaption
+
+function agHexBytes pHex
+   -- The BYTES pHex spells, and nothing else.
+   --
+   -- The boot self-check used the harness's axtHex for this and the first
+   -- engine run failed on it: axtHex ends in `textDecode(tOut, "UTF-8")`,
+   -- because every other thing it decodes is a JSON fixture and has to
+   -- come back as text. A PNG is not UTF-8, so the decode replaced the
+   -- bytes that were not valid sequences and handed the image object
+   -- something that was no longer a picture. The right fix is not to
+   -- widen axtHex - its callers all want text - but to stop asking it for
+   -- bytes.
+   local tI, tCount, tOut, tHi, tLo
+   put the number of chars of pHex into tCount
+   put empty into tOut
+   put 1 into tI
+   repeat while tI < tCount
+      put agHexNibble(char tI of pHex) into tHi
+      put agHexNibble(char (tI + 1) of pHex) into tLo
+      if tHi < 0 then
+         return empty
+      end if
+      if tLo < 0 then
+         return empty
+      end if
+      put numToByte(tHi * 16 + tLo) after tOut
+      add 2 to tI
+   end repeat
+   return tOut
+end agHexBytes
+
+function agHexNibble pChar
+   -- By BYTE VALUE, not by offset() in a lookup string: offset honours
+   -- the caseSensitive, which defaults to false, and "a" and "A" are the
+   -- same nibble here only by luck of the alphabet. Negative for anything
+   -- that is not a hex digit, so agHexBytes can refuse rather than encode
+   -- a wrong byte.
+   local tByte
+   put byteToNum(pChar) into tByte
+   if tByte >= 48 then
+      if tByte <= 57 then
+         return tByte - 48
+      end if
+   end if
+   if tByte >= 97 then
+      if tByte <= 102 then
+         return tByte - 87
+      end if
+   end if
+   if tByte >= 65 then
+      if tByte <= 70 then
+         return tByte - 55
+      end if
+   end if
+   return -1
+end agHexNibble
+
+function agLocalCopy pEntry, pFile
+   -- The path of an already-downloaded copy of this entry, at the size
+   -- the metadata promised, or empty. The size check is what makes a
+   -- half-finished download a miss rather than a broken file: the
+   -- download path writes straight to its final name, so an interrupted
+   -- one leaves exactly that.
+   local tFolder, tName, tPath
+   if sAgItem is not an array then
+      return empty
+   end if
+   put agDownloadFolder(sAgItem["identifier"]) into tFolder
+   if tFolder is empty then
+      return empty
+   end if
+   put agSafeFileName(pFile) into tName
+   if tName is empty then
+      put agSafeFileName(pEntry["name"]) into tName
+   end if
+   put tFolder & "/" & tName into tPath
+   if there is no file tPath then
+      return empty
+   end if
+   if agFileSize(tFolder, tName) is pEntry["size"] then
+      return tPath
+   end if
+   return empty
+end agLocalCopy
+
+function agOneLine pText
+   -- A multi-line value as one log line. agLog writes a line at a time,
+   -- so a raw variants list would arrive as four unlabelled lines.
+   local tOut
+   put pText into tOut
+   replace return with "; " in tOut
+   return tOut
+end agOneLine
 
 function agEllipsis pText, pMax
    local tOut
@@ -6864,13 +7658,17 @@ command agCancelThumbs
    end repeat
    set the itemDelimiter to tSaved
    put empty into sAgThumbHandles
+   put empty into sAgQueue
+   put 0 into sAgInFlight
    repeat for each line tHandle in tList
       axCancel tHandle
    end repeat
-   if sAgBigHandle is not empty then
-      axCancel sAgBigHandle
-      put empty into sAgBigHandle
-   end if
+   -- THE VIEWER'S PICTURE IS NOT THIS HANDLER'S. It used to be cancelled
+   -- here too, which meant a grid repaint reached into the stage without
+   -- bumping the viewer's serial - two handlers owning one thing, which
+   -- is how the stage came to be painted over the grid in the first
+   -- place. agVoidPicture owns it now, and agStop's axShutdown ends
+   -- anything either of them missed.
 end agCancelThumbs
 
 command agForgetThumb pHandle
@@ -6897,7 +7695,7 @@ end agForgetThumb
 -- ==========================================================================
 
 command agOpenTile pIndex
-   local tId, tHandle
+   local tId, tHandle, tJson, tItem
    set the defaultStack to the short name of this stack
    if pIndex < 1 then
       exit agOpenTile
@@ -6917,13 +7715,28 @@ command agOpenTile pIndex
    -- the stage is about to be about a different item, so whatever it was
    -- loading is not wanted whether or not it has left the wire yet
    agVoidPicture
-   put axFetchItem(tId, "item") into tHandle
+   -- ALREADY HELD? An item opened twice in one sitting, or yesterday, is
+   -- an item the site does not have to describe again. 196 KB was a real
+   -- metadata reply on the first engine run; twenty of those is four
+   -- megabytes this stack would otherwise ask for twice.
+   put agCachedMeta(tId) into tJson
+   if tJson is not empty then
+      put axItemParse(tJson) into tItem
+      if tItem is an array then
+         agNoteHit the number of bytes of tJson
+         agLog "cache: " & tId & " opened from the cache (" & axFormatBytes(the number of bytes of tJson) & ")"
+         agShowItem tItem
+         exit agOpenTile
+      end if
+   end if
+   put axFetchUrl(axMetadataUrl(tId), kAgMetaTag && sAgViewSerial && tId) into tHandle
    if tHandle is empty then
       uiStatus "could not open that item: " & axLastError(), "bad"
-      agLog "axFetchItem: " & axLastError()
+      agLog "axFetchUrl: " & axLastError()
       exit agOpenTile
    end if
    put tHandle into sAgItemHandle
+   agNoteMiss
    agLog "GET " & axMetadataUrl(tId)
    uiStatus "opening " & tId & "...", "warn"
 end agOpenTile
@@ -7096,6 +7909,19 @@ command agLoadPicture pIndex
    if tUrl is empty then
       put tEntry["url"] into tUrl
    end if
+   -- ONE PICTURE, KEPT. A full picture is megabytes, so this is not a
+   -- cache with a policy: it is the last one, held so that a reader
+   -- stepping between two images in an item does not pay for both twice.
+   -- The disk tier deliberately stops at thumbnails and metadata; the
+   -- Download button is where a picture goes to be kept.
+   if tUrl is sAgLastPicUrl then
+      if sAgLastPicData is not empty then
+         agNoteHit the number of bytes of sAgLastPicData
+         agLog "cache: that picture was already held"
+         agBigPicture pIndex, sAgLastPicData
+         exit agLoadPicture
+      end if
+   end if
    put axFetchUrl(tUrl, kAgBigTag && sAgViewSerial && pIndex) into tHandle
    if tHandle is empty then
       agStagePrompt "that picture was refused: " & axLastError()
@@ -7103,6 +7929,9 @@ command agLoadPicture pIndex
       exit agLoadPicture
    end if
    put tHandle into sAgBigHandle
+   put tUrl into sAgLastPicUrl
+   put empty into sAgLastPicData
+   agNoteMiss
    agStagePrompt "loading " & agEllipsis(tEntry["title"], 48) & " (" & axFormatBytes(tSize) & ")..."
    agLog "picture " & tHandle & ": " & tUrl
 end agLoadPicture
@@ -7178,18 +8007,19 @@ function agStreamPick pEntry
 end agStreamPick
 
 command agDoPlay
-   -- STREAM the selected entry into the stack's OWN player, on the stage,
-   -- and then check whether anything actually opened. Three signals, in
-   -- the order they can arrive:
+   -- STREAM the selected entry into the stack's OWN player, on the stage.
+   -- Four signals now, in the order they can arrive:
    --   1. `the result` after `set the filename` - the synchronous verdict
    --      the platforms that type media up front give for free;
    --   2. `playStarted`, which a player sends when it really begins;
-   --   3. six seconds later, a duration that never appeared.
-   -- Only the third is an inference, and it is the one the explorer demo
-   -- had alone. A failure at any of the three downloads the file and
-   -- plays it from disk, which is the path every platform's media stack
-   -- can take.
-   local tEntry, tError, tName, tUrl, tWhy, tFile
+   --   3. six seconds later, a duration and a currentTime;
+   --   4. everything the player will say about itself, logged at both
+   --      moments - because the 2026-09-20 run proved signals 1 to 3 can
+   --      all come back GOOD over a player nobody can hear, and none of
+   --      them distinguishes a silent player from a working one.
+   -- A failure downloads the file and plays it from disk, which is the
+   -- path every platform's media stack can take.
+   local tEntry, tUrl, tFile, tLocal
    set the defaultStack to the short name of this stack
    put agSelectedEntry() into tEntry
    if tEntry is not an array then
@@ -7208,6 +8038,41 @@ command agDoPlay
    if tUrl is empty then
       put tEntry["url"] into tUrl
    end if
+   put empty into sAgPlayRetried
+   -- ALREADY ON DISK? Download writes to Documents/ArchiveXT/<identifier>
+   -- and the file is named by the entry, so a track played once has been
+   -- kept. Playing the local copy is both the cheaper thing and the more
+   -- reliable one: a local file is the case every platform's media stack
+   -- handles, and it is the only way to tell a stream problem from a
+   -- playback problem without guessing.
+   put agLocalCopy(tEntry, tFile) into tLocal
+   if tLocal is not empty then
+      agNoteHit tEntry["size"]
+      agLog "play: " & tLocal
+      agLog "      (already downloaded, so nothing is asked of the site)"
+      uiStatus "playing the copy already on disk (" & agEllipsis(tEntry["title"], 46) & ")", "ok"
+      agPlayUrl tLocal, true
+      exit agDoPlay
+   end if
+   agLog "play: " & tUrl
+   agLog "      (" & tEntry["format"] & ", " & axFormatBytes(tEntry["size"]) & ", chose " & tFile & ") on " & the platform & " " & the systemVersion
+   if tEntry["variants"] is not empty then
+      -- WHAT WAS ON OFFER, so a stream that will not open can be read
+      -- against the encodes the item actually had. "chose X" alone cannot
+      -- say whether the item had an MP4 to choose.
+      agLog "      encodes: " & agOneLine(tEntry["variants"])
+   end if
+   uiStatus "opening the stream in the stack's own player (" & agEllipsis(tEntry["title"], 50) & ")...", "warn"
+   agPlayUrl tUrl, false
+end agDoPlay
+
+command agPlayUrl pUrl, pIsFile
+   -- HAND ONE URL OR PATH TO THE PLAYER. Its own handler because the
+   -- six-second check retries the same entry over http, and a retry that
+   -- re-implemented this would be a second spelling of the sequence that
+   -- matters most in the stack.
+   local tError, tName, tWhy
+   set the defaultStack to the short name of this stack
    put kAgPlayerName into tName
    try
       if there is no player tName then
@@ -7219,27 +8084,58 @@ command agDoPlay
       set the rect of player tName to (kAgStageL & comma & kAgStageT & comma & kAgStageR & comma & kAgStageB)
       set the showController of player tName to true
       set the visible of player tName to true
-      set the filename of player tName to tUrl
+      agPlayerPrepare tName
+      -- THE STATE GOES UP BEFORE THE PLAYER IS TOLD ANYTHING, and the
+      -- first engine run is why. `on playStarted` exits when sAgPlayUrl
+      -- is empty (it has to: a player another stack owns must not be
+      -- reported as ours), and the first Play of a session set sAgPlayUrl
+      -- AFTER `start player` - so the one message this stack added, the
+      -- only POSITIVE signal it has, was thrown away exactly once per
+      -- session and nobody could tell from the log. The second and third
+      -- plays printed it only because the first had left the variable
+      -- set. Cleared again on every path that gives up below.
+      put pUrl into sAgPlayUrl
+      put (pIsFile is true) into sAgPlayIsFile
+      set the filename of player tName to pUrl
       put the result into tWhy
-      agLog "play: " & tUrl
-      agLog "      (" & tEntry["format"] & ", " & axFormatBytes(tEntry["size"]) & ", chose " & tFile & ") on " & the platform & " " & the systemVersion
       if tWhy is not empty then
-         agLog "the player refused the stream at once: " & tWhy & " - downloading the file and playing it from disk instead"
+         agLog "the player refused it at once: " & tWhy
          set the visible of player tName to false
-         agDoDownload true
-         exit agDoPlay
+         put empty into sAgPlayUrl
+         put empty into sAgPlayIsFile
+         if pIsFile is true then
+            agStagePrompt "this engine's player will not open that file - opening it outside"
+            agOpenOutside pUrl
+         else
+            agLog "downloading the file and playing it from disk instead"
+            agDoDownload true
+         end if
+         exit agPlayUrl
       end if
       start player tName
-      put tUrl into sAgPlayUrl
-      put false into sAgPlayIsFile
-      uiStatus "opening the stream in the stack's own player (" & agEllipsis(tEntry["title"], 50) & ")...", "warn"
+      -- `start player` is the verb; the paused property is set as well
+      -- because a stream that loads paused shows a controller, reports a
+      -- duration and plays nothing, which is one of the two shapes the
+      -- 2026-09-20 report could have been.
+      try
+         set the paused of player tName to false
+      catch tError
+      end try
+      agPlayerReport tName, "just started"
       agArmPlayCheck
    catch tError
-      agLog "player failed: " & tError & " - downloading the file instead"
-      agStagePrompt "the player would not take that stream; downloading it"
-      agDoDownload true
+      agLog "player failed: " & tError
+      put empty into sAgPlayUrl
+      put empty into sAgPlayIsFile
+      if pIsFile is true then
+         agStagePrompt "this engine's player will not open that file - opening it outside"
+         agOpenOutside pUrl
+      else
+         agStagePrompt "the player would not take that stream; downloading it"
+         agDoDownload true
+      end if
    end try
-end agDoPlay
+end agPlayUrl
 
 on playStarted
    -- THE POSITIVE SIGNAL, and the reason this stack is not just the
@@ -7303,7 +8199,7 @@ command agPlayCheck
    -- duration (and, if it is playing, a moving currentTime); one that
    -- could not open it reports 0 for both and NO error. Only the second
    -- case falls back, and only if the reader has not moved on.
-   local tName, tDuration, tTime, tError, tUrl, tIsFile
+   local tName, tDuration, tTime, tError, tUrl, tIsFile, tScale, tSecs, tRest
    set the defaultStack to the short name of this stack
    put kAgPlayerName into tName
    put sAgPlayUrl into tUrl
@@ -7331,10 +8227,50 @@ command agPlayCheck
    if tTime is not a number then
       put 0 into tTime
    end if
-   agLog "play check: duration " & tDuration & ", currentTime " & tTime
+   put 0 into tScale
+   try
+      put the timeScale of player tName into tScale
+   catch tError
+      put 0 into tScale
+   end try
+   if tScale is not a number then
+      put 0 into tScale
+   end if
+   put empty into tSecs
+   if tScale > 0 then
+      put " (" & trunc(tDuration / tScale) & "s long, " & trunc(tTime / tScale) & "s in, timeScale " & tScale & ")" into tSecs
+   end if
+   agLog "play check: duration " & tDuration & ", currentTime " & tTime & tSecs
+   agPlayerReport tName, "six seconds in"
    if tDuration > 0 then
-      uiStatus "playing in the stack's own player", "ok"
+      -- OPEN AND RUNNING IS NOT AUDIBLE, and the 2026-09-20 report is why
+      -- this line says what it says. The check can prove the stream
+      -- opened and the clock moved; it cannot hear anything. So it says
+      -- so, and points at the control that is the usual answer.
+      if tTime > 0 then
+         uiStatus "playing - volume " & sAgLoudness & " of 100; use Vol + if you hear nothing", "ok"
+      else
+         uiStatus "open, but the clock has not moved - press the controller's play", "warn"
+      end if
       exit agPlayCheck
+   end if
+   -- ONE http RETRY BEFORE GIVING UP ON THE STREAM. The platform players
+   -- read a URL through the operating system's own source filter, and on
+   -- Windows that is DirectShow, which handles http and is not known to
+   -- handle https. That is the cheapest discriminator anyone can run and
+   -- nothing in this suite has ever run it, so the gallery runs it: the
+   -- same datanode URL, one scheme down, once per entry. If it opens,
+   -- the answer to "why will video not play" is a scheme.
+   if not tIsFile then
+      if sAgPlayRetried is not true then
+         if tUrl begins with "https://" then
+            put true into sAgPlayRetried
+            put char 9 to -1 of tUrl into tRest
+            agLog "no duration over https - retrying the same URL over http, which is the one test that separates the scheme from the container"
+            agPlayUrl ("http://" & tRest), false
+            exit agPlayCheck
+         end if
+      end if
    end if
    set the visible of player tName to false
    put empty into sAgPlayUrl
@@ -7355,6 +8291,129 @@ command agPlayCheck
    agLog "six seconds in and the player reports no duration - downloading the file and playing it from disk instead"
    agDoDownload true
 end agPlayCheck
+
+command agPlayerPrepare pName
+   -- Everything that can silence a player, set before it is handed a
+   -- stream. Each in its own try: these are properties this suite has
+   -- never measured, and an engine that does not know one of them must
+   -- not take Play down with it.
+   local tError
+   try
+      set the dontUseQT to true
+   catch tError
+   end try
+   try
+      set the playLoudness to kAgLoudness
+   catch tError
+   end try
+   try
+      set the playLoudness of player pName to kAgLoudness
+   catch tError
+   end try
+end agPlayerPrepare
+
+function agPlayerProp pName, pProp
+   -- One property, read defensively, rendered for a log line. Answers
+   -- "(n/a)" for anything this engine does not have, so a report can ask
+   -- about properties that may not exist without a guard per line.
+   local tValue, tError
+   put "(n/a)" into tValue
+   try
+      switch pProp
+         case "duration"
+            put the duration of player pName into tValue
+            break
+         case "currentTime"
+            put the currentTime of player pName into tValue
+            break
+         case "timeScale"
+            put the timeScale of player pName into tValue
+            break
+         case "playLoudness"
+            put the playLoudness of player pName into tValue
+            break
+         case "paused"
+            put the paused of player pName into tValue
+            break
+         case "playRate"
+            put the playRate of player pName into tValue
+            break
+         case "status"
+            put the status of player pName into tValue
+            break
+         case "mediaTypes"
+            put the mediaTypes of player pName into tValue
+            break
+         case "tracks"
+            put the tracks of player pName into tValue
+            break
+         default
+            put "(unknown property)" into tValue
+      end switch
+   catch tError
+      put "(n/a)" into tValue
+   end try
+   if tValue is empty then
+      return "(empty)"
+   end if
+   replace return with " / " in tValue
+   return tValue
+end agPlayerProp
+
+command agPlayerReport pName, pWhen
+   -- WHAT THE PLAYER SAYS ABOUT ITSELF, in one block, at two moments.
+   -- Nothing here decides anything; it exists so the next engine log can
+   -- answer "it opened and ran and was silent" with the properties that
+   -- distinguish the reasons, rather than with another guess. `the
+   -- tracks` is the line that matters most: it says whether an audio
+   -- track was found at all.
+   if there is no player pName then
+      exit agPlayerReport
+   end if
+   agLog "player (" & pWhen & "): loudness " & agPlayerProp(pName, "playLoudness") \
+         & ", paused " & agPlayerProp(pName, "paused") \
+         & ", rate " & agPlayerProp(pName, "playRate") \
+         & ", status " & agPlayerProp(pName, "status")
+   agLog "         duration " & agPlayerProp(pName, "duration") \
+         & ", currentTime " & agPlayerProp(pName, "currentTime") \
+         & ", timeScale " & agPlayerProp(pName, "timeScale")
+   agLog "         mediaTypes " & agPlayerProp(pName, "mediaTypes") \
+         & "; tracks " & agPlayerProp(pName, "tracks")
+end agPlayerReport
+
+command agSetLoudness pDelta
+   -- A volume a reader can reach, because the first thing anyone does
+   -- with a silent player is look for one. The engine's own global moves
+   -- with the player's: on a machine where the global was the thing at
+   -- zero, moving only the player's would change nothing and look like
+   -- the control was broken.
+   local tNow, tError
+   set the defaultStack to the short name of this stack
+   put sAgLoudness into tNow
+   if tNow is not a number then
+      put kAgLoudness into tNow
+   end if
+   add pDelta to tNow
+   if tNow > 100 then
+      put 100 into tNow
+   end if
+   if tNow < 0 then
+      put 0 into tNow
+   end if
+   put tNow into sAgLoudness
+   try
+      set the playLoudness to tNow
+   catch tError
+   end try
+   try
+      if there is a player kAgPlayerName then
+         set the playLoudness of player kAgPlayerName to tNow
+      end if
+   catch tError
+   end try
+   agLog "loudness asked for " & tNow & "; the engine reads back " & agPlayerProp(kAgPlayerName, "playLoudness")
+   uiStatus "volume " & tNow & " of 100", "ok"
+end agSetLoudness
 
 command agHidePlayer
    local tName, tError
@@ -7414,7 +8473,15 @@ command agDoDownload pPlayAfter
       uiStatus "no writable folder for downloads (Documents and temporary both refused)", "bad"
       exit agDoDownload
    end if
-   put agSafeFileName(tEntry["name"]) into tName
+   -- THE FILE THE PICKER CHOSE, not the playlist's own best entry. Play
+   -- may have picked an h.264 encode over an ogv, and a Download that
+   -- saved the other one would mean Play could never find its own copy
+   -- on disk again (agLocalCopy) and the reader would get a file they did
+   -- not hear.
+   put agSafeFileName(agStreamPick(tEntry)) into tName
+   if tName is empty then
+      put agSafeFileName(tEntry["name"]) into tName
+   end if
    put tFolder & "/" & tName into tPath
    put pPlayAfter is true into sAgPlayAfter
    if there is a file tPath then
@@ -7424,7 +8491,10 @@ command agDoDownload pPlayAfter
          exit agDoDownload
       end if
    end if
-   put tEntry["direct"] into tUrl
+   put axDirectUrl(sAgItem, agStreamPick(tEntry)) into tUrl
+   if tUrl is empty then
+      put tEntry["direct"] into tUrl
+   end if
    if tUrl is empty then
       put tEntry["url"] into tUrl
    end if
@@ -7473,7 +8543,7 @@ command agDownloadFinished pPath
    -- the system's own player if this engine's player will not have it
    -- either. There is no second download from here, ever: the file is
    -- already on the disk, so another fetch could only loop.
-   local tPlay, tError, tName, tWhy, tData
+   local tPlay, tError, tData
    set the defaultStack to the short name of this stack
    put sAgPlayAfter is true into tPlay
    put empty into sAgPlayAfter
@@ -7501,38 +8571,12 @@ command agDownloadFinished pPath
       agOpenOutside pPath
       exit agDownloadFinished
    end if
-   put kAgPlayerName into tName
-   try
-      if there is no player tName then
-         create player
-         set the name of the last player to tName
-      end if
-      set the rect of player tName to (kAgStageL & comma & kAgStageT & comma & kAgStageR & comma & kAgStageB)
-      set the showController of player tName to true
-      set the visible of image "agBigImage" to false
-      set the visible of field "agStageNote" to false
-      set the visible of player tName to true
-      set the filename of player tName to pPath
-      put the result into tWhy
-      if tWhy is not empty then
-         agLog "the player refused the downloaded file as well: " & tWhy
-         set the visible of player tName to false
-         agStagePrompt "this engine's player will not open that file - opening it outside"
-         agOpenOutside pPath
-         exit agDownloadFinished
-      end if
-      start player tName
-      put pPath into sAgPlayUrl
-      put true into sAgPlayIsFile
-      uiStatus "playing the downloaded file", "ok"
-      -- armed for the LOCAL file too, and agPlayCheck knows the
-      -- difference: a file that never opens ends in launch document
-      agArmPlayCheck
-   catch tError
-      agLog "the player refused the downloaded file as well: " & tError
-      agStagePrompt "this engine's player will not open that file - opening it outside"
-      agOpenOutside pPath
-   end try
+   -- THE SAME ONE HANDLER as the stream path, so the ladder's last rung
+   -- cannot drift from its first: agPlayUrl knows a file from a stream
+   -- and ends a file that will not open in launch document.
+   set the visible of image "agBigImage" to false
+   set the visible of field "agStageNote" to false
+   agPlayUrl pPath, true
 end agDownloadFinished
 
 command agOpenOutside pPath
@@ -7728,11 +8772,22 @@ command agRawReply pHandle, pBody, pTag
    put word 2 of pTag into tSerial
    put word 3 of pTag into tIndex
    if tWhat is kAgThumbTag then
+      -- SETTLED FIRST, WHATEVER HAPPENS NEXT. A stale thumbnail still
+      -- occupied a slot in the in-flight count, and a return that skipped
+      -- the decrement would wedge the queue at the cap with nothing out.
+      agThumbSettled
       if tSerial is not sAgSerial then
-         agLog "dropped a thumbnail from search " & tSerial & " (search " & sAgSerial & " is showing)"
          exit agRawReply
       end if
+      agCacheThumb (line tIndex of sAgTileIds), pBody
       agTilePicture tIndex, pBody
+      exit agRawReply
+   end if
+   if tWhat is kAgMetaTag then
+      if pHandle is sAgItemHandle then
+         put empty into sAgItemHandle
+      end if
+      agMetaArrived tIndex, pBody
       exit agRawReply
    end if
    if tWhat is kAgBigTag then
@@ -7752,6 +8807,23 @@ command agRawReply pHandle, pBody, pTag
    end if
    agLog "raw reply " & pHandle & " (" & pTag & "): " & the number of bytes of pBody & " bytes"
 end agRawReply
+
+command agMetaArrived pId, pJson
+   -- The metadata of one item, as bytes. Parsed here rather than by the
+   -- library's `item` kind so the RAW JSON exists to be cached, and the
+   -- refusal shapes the parser already knows (a missing item answers
+   -- "{}") still come through axItemParse.
+   local tItem
+   set the defaultStack to the short name of this stack
+   put axItemParse(pJson) into tItem
+   if tItem is not an array then
+      agLog "could not read that item: " & axLastError()
+      uiStatus "that item could not be read - see the log", "bad"
+      exit agMetaArrived
+   end if
+   agCacheMeta pId, pJson
+   agShowItem tItem
+end agMetaArrived
 
 command agFailure pHandle, pReason, pTag
    -- One place for every failure, because a grid has three kinds at once
@@ -7784,6 +8856,7 @@ command agFailure pHandle, pReason, pTag
    end if
    agLog "request " & pHandle & " (" & pTag & ") failed: " & pReason
    if tWhat is kAgThumbTag then
+      agThumbSettled
       if tSerial is sAgSerial then
          agTileEmpty tIndex
       end if
@@ -8106,7 +9179,7 @@ end scFinish
 -- picture at all. Nothing here hosts, connects, binds or fetches.
 -- ==========================================================================
 
-constant kAgScControls = "agBack,agBigImage,agCopyUrl,agDownload,agFamAny,agFamEtree,agFamImages,agFamLibrivox,agFamMovies,agGridPanel,agItemMeta,agItemTitle,agLog,agLogCap,agNext,agOpenPage,agPageInfo,agPlay,agPrev,agProbe,agQuery,agSearch,agStage,agStageNote,agStopPlay,agTests,agTracks,agTracksHead,agViewNote,agViewPanel,uiFooter,uiStatus,uiTitle"
+constant kAgScControls = "agBack,agBigImage,agCacheInfo,agCopyUrl,agDownload,agFamAny,agFamEtree,agFamImages,agFamLibrivox,agFamMovies,agGridPanel,agItemMeta,agItemTitle,agLog,agLogCap,agLouder,agNext,agOpenPage,agPageInfo,agPlay,agPrev,agProbe,agQuery,agQuieter,agSearch,agStage,agStageNote,agStopPlay,agTests,agTracks,agTracksHead,agViewNote,agViewPanel,uiFooter,uiStatus,uiTitle"
 
 -- A 98-byte four-pixel PNG, carried in hex so the boot check needs no
 -- network and no file. docs/OXT-ENGINE-NOTES.md section 5 has no entry
@@ -8121,7 +9194,7 @@ command agScRun
    local tLit, tWhich, tName, tNames, tCount
    scBegin "agLog"
    put scMissing(kAgScControls) into tMissing
-   scAssert "all 33 controls this script names exist (missing: " & scShow(tMissing) & ")", tMissing is empty
+   scAssert "all 36 controls this script names exist (missing: " & scShow(tMissing) & ")", tMissing is empty
    -- The tiles are built in a LOOP, so their names are computed and the
    -- derived list above cannot see them. They get their own line rather
    -- than a hand-kept entry in that constant, because a hand-kept twin of
@@ -8134,6 +9207,13 @@ command agScRun
    put scMissing(tTiles) into tMissing
    put kAgTiles * 3 into tCount
    scAssert "all " & tCount & " tile controls exist (missing: " & scShow(tMissing) & ")", tMissing is empty
+   scAssert "the grid is " & kAgCols & " by " & kAgGridRows & " and that is " & kAgTiles & " tiles", kAgCols * kAgGridRows is kAgTiles
+   -- THE PAGE IS NOT THE SCREEN, and the two were one number until the
+   -- first engine run showed ten of 29,281 hits. A page that is not a
+   -- whole number of screens would leave a short last screen inside every
+   -- page, which is not wrong but is not what agStepScreen's arithmetic
+   -- was written for.
+   scAssert "a request brings back " & kAgPageSize & ", which is " & (kAgPageSize / kAgTiles) & " whole screens", kAgPageSize >= kAgTiles and (kAgPageSize / kAgTiles) is an integer
    scAssert "axVersion reports the member", axVersion() begins with "ArchiveXT"
    scAssert "the movies family is in play at boot", sAgFamily is "movies"
    put 0 into tLit
@@ -8172,13 +9252,32 @@ command agScRun
    -- control refused the bytes, so a FAIL here says the gallery will show
    -- captions over empty frames on this engine and says it in the first
    -- second, rather than after ten thumbnails have been fetched.
-   put agSetPicture("agBigImage", axtHex(kAgScPngHex), "0,0,4,4") into tSize
+   -- the bytes BEFORE the picture, because the first engine run failed
+   -- here on a decoder rather than on an image object
+   scAssert "the carried PNG decodes to 98 bytes", the number of bytes of agHexBytes(kAgScPngHex) is 98
+   scAssert "and a hex string with a non-hex character is refused", agHexBytes("47zz") is empty
+   put agSetPicture("agBigImage", agHexBytes(kAgScPngHex), "0,0,4,4") into tSize
    scAssert "an image object takes a picture this stack carries (" & scShow(tSize) & ")", tSize is "4x4"
+   -- AND THE OTHER DIRECTION, which is the half that was missing when the
+   -- first engine run reported a refusal as a 684-pixel picture. A
+   -- positive vector cannot catch a check that is not being made: this
+   -- one feeds bytes that are certainly not an image and requires
+   -- agSetPicture to ANSWER EMPTY, so what a refusal looks like on this
+   -- engine is measured on every open rather than assumed once.
+   put agSetPicture("agBigImage", "this is not a picture", "0,0,4,4") into tSize
+   scAssert "and refuses bytes that are not a picture (" & scShow(tSize) & ")", tSize is empty
    set the text of image "agBigImage" to empty
    set the lockLocation of image "agBigImage" to true
    set the rect of image "agBigImage" to (kAgStageL & comma & kAgStageT & comma & kAgStageR & comma & kAgStageB)
    set the visible of image "agBigImage" to false
    scAssert "nothing is in flight at boot", axPending() is 0
+   scAssert "no thumbnail is queued or out at boot", sAgQueue is empty and sAgInFlight is 0
+   scAssert "the cache starts empty and has asked the site for nothing", sAgHits is 0 and sAgMisses is 0
+   if sAgDisk is empty then
+      scSkip "the disk cache has a folder", "neither Documents nor the temporary folder was writable"
+   else
+      scAssert "the disk cache has a folder (" & scShow(sAgDisk) & ")", there is a folder sAgDisk
+   end if
    put axProbeCapabilities() into tCaps
    if tCaps["hasUrlLib"] is true then
       scAssert "the Internet library answers (" & scShow(tCaps["urlLibVersion"]) & ")", true

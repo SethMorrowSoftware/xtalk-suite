@@ -68,11 +68,19 @@ There are TWO demo stacks, and they divide by question rather than by
 feature. The explorer above answers "what can I ask archive.org?" - three
 text columns, a results list, a track table.
 `examples/archive-gallery.livecodescript` answers "what does it look like,
-and can I watch it here?" - a grid of ten thumbnails in real engine IMAGE
-objects, then a film or a concert on a dark stage in the engine's own
+and can I watch it here?" - a grid of twenty-four thumbnails in real engine
+IMAGE objects, then a film or a concert on a dark stage in the engine's own
 PLAYER object, or a photograph in an image object. It adds a fifth family
 of its own, `mediatype:(image)`, because none of the three source apps had
 a picture app and the library's family table is theirs.
+
+It caches on two tiers, because archive.org is a public service run on
+donations and a gallery is the client shape most likely to abuse one:
+thumbnails and item metadata in memory AND on disk (under the same
+Documents/ArchiveXT folder Download writes to, so reopening tomorrow costs
+the site nothing for anything it already answered), search pages in memory
+only. A screen of thumbnails is fetched a few at a time rather than all at
+once, and Play prefers a copy already on disk over the network.
 
 ## Quick start
 

@@ -728,6 +728,101 @@ and a bug when it means "anywhere in this stack".
 
 ---
 
+### 5.7 An IMAGE object takes fetched bytes, and a refusal keeps the rect it already had
+
+**OBSERVED** (OXT 9.6.3, Windows x86_64 NT 10.0, 2026-09-20; the primary
+record is the pasted log of `archivext/examples/archive-gallery.livecodescript`,
+the first stack in this tree to put fetched bytes into an image object from a
+script). Until this run, section 5 had NO image entry at all: box2dxt loads
+sprite sheets from FILES and the coinxt wallet paints a QR it built itself, so
+nothing here had ever asked what an image object does with bytes off the wire.
+
+What the run establishes, all through the one handler `agSetPicture`:
+
+- **`set the text of image X to <bytes>` takes a fetched JPEG.** The item
+  image service's 10,066-byte derivative came back as `180x124`, and a
+  1,180,947-byte full picture as `1988x1367`. The bytes came from the
+  Internet library through a script variable (`put URL ... into tBody`), so
+  the whole path - libURL, a script variable, the image object - is observed
+  end to end.
+- **`the width` and `the height`, read with `the lockLocation` false
+  immediately after the content is set, ARE the picture's natural size.** Both
+  numbers above are the pictures' own dimensions, not the control's rect.
+- **A REFUSAL KEEPS THE CONTROL EXACTLY AS IT WAS**, which is the half that
+  cost this run its one red line. The stack's boot check fed the image bytes
+  that were no longer a picture and asked the same question, and the answer
+  was `684x358` - which is precisely the rect the stack had set on that
+  control (`32,100,716,458`). It did not throw, it did not blank, and it did
+  not answer 0.
+
+**Why that matters beyond one demo.** The idiom this tree uses for "did the
+image take it?" is box2dxt's `b2kSheetSourceFromFile`: set the content, then
+refuse anything whose width is under two pixels. That works THERE because
+box2dxt puts its bytes into a control it has just CREATED, which has no rect
+yet, so a refusal leaves 0. On a control that already carries a rect the same
+test reads the rect back and reports a refusal as a picture six hundred pixels
+wide. The idiom is not wrong; its precondition was never written down.
+
+**Held by**: `agSetPicture` clears the content, forces the control to one
+pixel and unlocks its location BEFORE setting the bytes, so the measurement
+can only be the picture's; and the gallery's boot self-check asserts BOTH
+directions on every open - a carried four-pixel PNG must be taken, and bytes
+that are plainly not a picture must be refused. The second of those is what
+will measure the refusal shape on the next engine, rather than assuming it.
+
+**Not settled by this run**: what a refusal does to `the text of image` (was
+the old content kept, or blanked?), whether an image object throws for any
+input at all, and whether progressive JPEG decodes. WebP and AVIF are
+DOCUMENTED as unsupported in this engine line and were not tested.
+
+---
+
+### 5.8 A player can open a stream, report a duration, advance its clock, and be SILENT
+
+**OBSERVED** (OXT 9.6.3, Windows x86_64 NT 10.0, 2026-09-20, same log). Three
+MP3 streams from archive.org were handed to a player object as `https://`
+datanode URLs. All three opened: `set the filename` left `the result` empty,
+`the duration` came back non-zero, `playStarted` fired for two of them, and
+six seconds later `the currentTime` had advanced by almost exactly six
+seconds. The reader heard nothing.
+
+    play check: duration 10623320000, currentTime 60337007
+
+**The timeScale is implied and worth having**: 60,337,007 units at the
+six-second mark is 6.03 seconds at a timeScale of 10,000,000, i.e. 100-nanosecond
+units, and 10,623,320,000 is then 1,062 seconds - a plausible MP3 chapter.
+Treat that as INFERRED until a run prints `the timeScale` beside it, which the
+gallery now does.
+
+**What this means for every "did it play?" check in this tree.** The explorer
+demo and the gallery both decided playback from `the duration` being non-zero
+six seconds in, and `archivext/CLAUDE.md` gotcha 19 records the opposite
+failure - a player that opens nothing and says nothing. This run adds the
+mirror: **a player object's own properties cannot distinguish playing from
+running-and-silent.** A duration, a moving clock and a `playStarted` are all
+consistent with silence.
+
+**The suspect, and it is not confirmed.** Neither demo had ever set
+`the playLoudness`, on the player or on the engine, so both took whatever
+global value the IDE or another stack had left. 5.4 records that the property
+is a REQUEST rather than a register (Linux reads it back as a constant 0), so
+a stack that never sets it is a stack betting on somebody else's state. The
+gallery now sets it on the player and on the engine before every stream, gives
+the reader a volume control, and LOGS every property the player will answer -
+`the playLoudness`, `the paused`, `the playRate`, `the status`, `the
+mediaTypes` and `the tracks`, each read in its own try. `the tracks` is the
+line that will settle it: it says whether an audio track was found at all.
+
+**Also unsettled, and the gallery now tests it in one click**: whether the
+platform player can open **https** at all. On Windows the media path is
+DirectShow, whose URL source filter is documented for http and not for https,
+and video in this run did not open at all while audio appeared to. The
+six-second check now retries the same datanode URL once over `http://` before
+falling back to a download, which is the cheapest discriminator available and
+has never been run.
+
+---
+
 ## 6. Sockets and processes
 
 ### 6.1 `socketTimeout` REPEATS while a read or write is pending

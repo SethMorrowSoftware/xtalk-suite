@@ -120,7 +120,19 @@
     log will say WHICH of the three (the redirect, https in the player,
     the format) was the wall.
 
-17. **Does an engine IMAGE object take bytes from a script at all?** New
+17. ~~Does an engine IMAGE object take bytes from a script at all?~~
+    **ANSWERED 2026-09-20, live**: yes. The gallery's Live probe put the item
+    image service's 10,066-byte derivative into an image object and read back
+    `180x124`, and a 1,180,947-byte full picture as `1988x1367` - so libURL,
+    a script variable and the image object are observed end to end (root
+    engine notes 5.7). What the same run ALSO found is the harder half, and
+    it is open: **a refusal keeps the control's rect**, so the
+    width-under-two tell only works on a control that has no rect yet, which
+    is box2dxt's case and not this one. The fix (clear, collapse to one
+    pixel, then set) and the assertion that measures a refusal on every open
+    are both in; whether the tell now fires is the next run's to say. The
+    original text stands below because the sub-questions it names are not all
+    closed. New
     2026-09-20, with `examples/archive-gallery.livecodescript`, and it is
     the sharpest open question this member has, because section 5 of root
     `docs/OXT-ENGINE-NOTES.md` has NO image entry: nothing in this tree had
@@ -137,17 +149,38 @@
     JPEG, and this engine line decodes neither WebP nor AVIF); and does a
     refusal really present as a width under two pixels, which is the tell
     box2dxt's idiom rests on and which nothing here has watched fail.
-18. **Does `playStarted` arrive?** Also new 2026-09-20. The explorer infers
-    from a duration that never appeared; the gallery additionally listens
-    for the message a player sends when it really begins, which nothing in
-    this suite had used. It is wired as an ADDITION rather than a
-    replacement exactly because of this question: if no engine sends it,
-    the six-second check still decides and the answer costs nothing.
-19. **Ten concurrent `load URL`s.** The gallery asks for ten thumbnails at
-    once, which is the first concurrency measurement this suite will have
-    for the Internet library. Engine notes 6.9 records that libURL refuses
-    a second load of a URL still loading; it says nothing about ten
-    different ones. The log counts what was asked for and what came back.
+18. ~~Does `playStarted` arrive?~~ **ANSWERED 2026-09-20, live: yes, on
+    Windows.** It fired for two of three MP3 streams, and the third was the
+    stack's own bug - `on playStarted` exits when `sAgPlayUrl` is empty and
+    `agDoPlay` set that variable after `start player`, so the first play of
+    every session threw the message away. Fixed.
+
+    **What that run opened instead is much sharper and is now the member's
+    biggest open question: A PLAYER CAN OPEN, RUN AND BE SILENT.** All three
+    streams reported a non-zero duration, advanced `the currentTime` by six
+    seconds, and could not be heard; video did not open at all. So no
+    property of the player object distinguishes playing from
+    running-and-silent, which is what every "did it play?" check in this tree
+    had been reading (root engine notes 5.8). Three things are now in the
+    stack to settle it on the next run, and each is a line in the log: `the
+    playLoudness` set on the player AND the engine before every stream (it
+    had never been set at all, and note 5.4 says the property is a request
+    rather than a register); a full property report including `the tracks`
+    and `the mediaTypes`, which say whether an audio track was found; and a
+    volume control a reader can reach. Plus the one experiment nobody in this
+    suite has run: **can the platform player open https at all?** The Windows
+    media path is DirectShow, documented for http and not for https, so the
+    six-second check now retries the same datanode URL once over `http://`
+    before falling back to a download.
+19. **Concurrent `load URL`s.** ~~Ten at once~~ went out on 2026-09-20 and
+    the grid filled, which is the first concurrency evidence this suite has
+    for the Internet library (engine notes 6.9 records only that libURL
+    refuses a second load of a URL still loading). The grid is
+    twenty-four tiles now, so the gallery no longer fires a screen at once:
+    `kAgFetchMax` are in flight and the next starts when one lands. What is
+    open is what the ceiling actually is, and the honest answer is that this
+    stack should not be the thing that finds out - a queue costs a second of
+    latency and asks nothing of a public service that it cannot take.
 
 ## What is deliberately not built yet
 

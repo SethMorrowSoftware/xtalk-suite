@@ -107,10 +107,16 @@ openxtalk-libraries/
                        demo landed 2026-09-20: archive-gallery, the same
                        library as a PICTURE gallery, and the first stack in
                        this tree to put bytes into an engine IMAGE object
-                       from a script - which section 5 of the engine notes
-                       has no entry about at all, so its boot self-check
-                       decodes a PNG it carries in hex and says on open
-                       whether this engine can do it
+                       from a script. It met an engine the same day and gave
+                       section 5 of the engine notes its first two media
+                       entries: 5.7 (an image object takes a fetched JPEG,
+                       and a REFUSAL keeps the rect it already had rather
+                       than answering zero, which is the precondition
+                       box2dxt's width-under-two idiom never wrote down) and
+                       5.8 (a player can open, report a duration, fire
+                       playStarted, advance its clock and be SILENT - so no
+                       property of a player object distinguishes playing
+                       from running-and-silent)
   box2dxt/             the family ANCESTOR, folded home 2026-08-14: Box2D v3
                        physics + the pure-script b2k game Kit (sprites, input,
                        camera); its checker was the oldest pre-unification
