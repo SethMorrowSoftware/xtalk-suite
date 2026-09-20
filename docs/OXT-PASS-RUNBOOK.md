@@ -1464,7 +1464,7 @@ gotcha 7, and `nostrxt/docs/05-relay-client.md`. The wss:// result - WHATEVER
 it is - goes to `docs/OXT-ENGINE-NOTES.md` section 6 as the suite's first TLS
 socket measurement.
 
-### 4.10 archivext (inventory item 36 - first engine contact 2026-09-15, standalone, and the first live legs the same evening; the fold and the remaining live legs still owed)
+### 4.10 archivext (inventory item 36 - first engine contact 2026-09-15, standalone, and the first live legs the same evening; the gallery's own first run 2026-09-20, which settled the image object and sharpened the player question; the fold and the remaining live legs still owed)
 
 The standalone harness has run twice (357/2/0, both reds fixed the same day -
 engine notes 2.7 and `archivext/CLAUDE.md` gotchas 15-16 - then 363/0/0), the
@@ -1521,7 +1521,7 @@ sitting owes, in click order:
    same object. Legs 2 and 4 came back `180x124` and `1988x1367` on the first
    run; they re-confirm here.
 3. Press Search on the Images family. The grid is eight by three now and a
-   request brings back four screens, so this is also the first measurement of
+   request brings back eight screens, so this is also the first measurement of
    what the Internet library does with a queue: `kAgFetchMax` in flight, the
    rest waiting. Step Next and Prev across a page boundary and watch the
    cache line - the second visit to a screen should cost the site nothing.

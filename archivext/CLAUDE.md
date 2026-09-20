@@ -604,7 +604,7 @@ asked for. They are different questions - how many results one request brings
 back, and how many fit on screen - and they are separate constants now: the
 grid is eight by three (a cell of 130x96 shows the item image service's own
 180x124 derivative at about 1:1, measured on this run), and a request brings
-back `kAgPageSize` results, four screens' worth, which Prev and Next walk with
+back `kAgPageSize` results, eight screens' worth, which Prev and Next walk with
 no network at all. The page label says "showing 25-48 of 29,281" rather than a
 page number, and Next stops at the site's 10,000-hit deep-paging wall instead
 of offering a button that comes back empty.

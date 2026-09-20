@@ -5617,9 +5617,9 @@ constant kAgCol0 = 28
 constant kAgRow0 = 96
 
 -- HOW MANY RESULTS ONE REQUEST BRINGS BACK, which is a different question
--- from how many tiles there are. A page of 96 is four screens of 24 held
--- in memory, so Prev and Next walk them with no network at all and the
--- site is asked once per four screens. archive.org's advancedsearch has
+-- from how many tiles there are. A page of 192 is eight screens of 24
+-- held in memory, so Prev and Next walk them with no network at all and
+-- the site is asked once per eight screens. advancedsearch.php has
 -- no small cap here - axSearchUrl passes rows straight through - and the
 -- three source apps used 10 and 24 only because their own pages did.
 constant kAgPageSize = 192
@@ -6833,7 +6833,8 @@ command agShowResults pResult
    -- A PAGE ARRIVED. The page is not the screen: kAgPageSize results are
    -- held here and kAgTiles of them are drawn, so Prev and Next walk the
    -- loaded page with no network at all and the site is asked once every
-   -- four screens.
+   -- kAgPageSize / kAgTiles screens. The boot self-check holds that ratio a
+   -- whole number, because agStepScreen's arithmetic is written for one.
    local tCount, tWant, tUrl
    put pResult into sAgResult
    put pResult["count"] into tCount
