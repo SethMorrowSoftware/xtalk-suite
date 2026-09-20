@@ -8387,7 +8387,7 @@ command agSetLoudness pDelta
    -- with the player's: on a machine where the global was the thing at
    -- zero, moving only the player's would change nothing and look like
    -- the control was broken.
-   local tNow, tError
+   local tNow, tError, tBeepError
    set the defaultStack to the short name of this stack
    put sAgLoudness into tNow
    if tNow is not a number then
@@ -8411,8 +8411,21 @@ command agSetLoudness pDelta
       end if
    catch tError
    end try
+   -- AND A NOISE THE PLAYER HAS NOTHING TO DO WITH. `beep` is the
+   -- engine's own alert sound, so it separates the two questions a silent
+   -- player raises and that no property of the player can: if this is
+   -- audible, the machine and the engine can make sound and the silence
+   -- belongs to the player or its stream; if it is not, nothing here was
+   -- ever going to be heard. One word of code, and the only test in this
+   -- stack that does not go through a player object at all.
+   try
+      beep
+      agLog "beep: the engine's own alert sound just played - if you did NOT hear it, the silence is the machine's or the engine's, not the player's"
+   catch tBeepError
+      agLog "beep: this engine refused to make a sound at all (" & tBeepError & ")"
+   end try
    agLog "loudness asked for " & tNow & "; the engine reads back " & agPlayerProp(kAgPlayerName, "playLoudness")
-   uiStatus "volume " & tNow & " of 100", "ok"
+   uiStatus "volume " & tNow & " of 100 (a beep just played - did you hear it?)", "ok"
 end agSetLoudness
 
 command agHidePlayer
