@@ -336,6 +336,13 @@ bundled third-party code; the crypto is CoinXT (`cxSha256`, BIP-340
 
 ## archivext — archive.org from xTalk, pure script (`ax*`)
 
+> **LEFT THE SUITE 2026-09-21.** archivext was the first member to move to its
+> own repository; its directory was deleted from this tree at commit 68d009b
+> (its last state here is 99806d2), and the paths this section cites no longer
+> resolve in the suite. The section is kept as the dated record of what it was
+> when it left. `docs/MEMBER-REPO-SPLIT.md` records the procedure its departure
+> taught.
+
 **Pure LiveCodeScript over the engine's Internet library** - no native
 code, no bundled third-party code, no other member required. Added
 2026-09-15, written from three shipped archive.org web apps (the Grateful

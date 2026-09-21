@@ -72,51 +72,18 @@ openxtalk-libraries/
                        interpreter-modeled engine-semantics pin held; the
                        relay layer's 2 skips are deliberate (not in the
                        paste) and still need their live pass
-  archivext/           the archive.org member, added 2026-09-15: pure
-                       LiveCodeScript over the engine's Internet library,
-                       written from three shipped archive.org web apps (the
-                       Grateful Dead Tape Finder, the LibriVox AudioBooks
-                       app, Archive Film Club) so their union is one
-                       library and one demo - the Lucene query grammar
-                       with the AudioBooks sanitizer, the three preset
-                       catalogues plus a generic family, an OWNED JSON
-                       reader, the two response parsers, and the playlist
-                       engine (accept / group / rank / derive / order, one
-                       kind per family); the fetch layer is `load URL ...
-                       with message` with handles, a watchdog and a body
-                       cap. Its whole pure layer EXECUTES headlessly on
-                       every build against an independent oracle written
-                       from the apps' own code (the coinxt machinery, third
-                       adopter; the interpreter gained `byteOffset` with a
-                       skip for it), a seven-defect mutation drive proves
-                       the gate bites, and the fixtures are SYNTHETIC (the
-                       site is unreachable from the build sandbox); folded
-                       as the ELEVENTH member harness, embedded as the
-                       sixth script layer, 99/99 coverage with zero
-                       exemptions; met the engine the day it landed (the
-                       harness 357/2/0 then 363/0/0, the demo booting
-                       11/11) and the live site the same evening (three
-                       legs green from the demo's Live probe; engine notes
-                       2.7, 3.4 and 6.9 came out of that day); the next
-                       day a live 412-file list became 58 chapters through
-                       the parser and playlist engine, the async `search`
-                       kind fired four times and both documented error
-                       shapes were refused by the shipped code; the fold,
-                       the async `item` kind, the scrape API, streaming and
-                       TLS's certificate direction are still owed. A SECOND
-                       demo landed 2026-09-20: archive-gallery, the same
-                       library as a PICTURE gallery, and the first stack in
-                       this tree to put bytes into an engine IMAGE object
-                       from a script. It met an engine the same day and gave
-                       section 5 of the engine notes its first two media
-                       entries: 5.7 (an image object takes a fetched JPEG,
-                       and a REFUSAL keeps the rect it already had rather
-                       than answering zero, which is the precondition
-                       box2dxt's width-under-two idiom never wrote down) and
-                       5.8 (a player can open, report a duration, fire
-                       playStarted, advance its clock and be SILENT - so no
-                       property of a player object distinguishes playing
-                       from running-and-silent)
+  (archivext/)         the archive.org member, added 2026-09-15 and the
+                       FIRST TO LEAVE, 2026-09-21: its directory was deleted
+                       from this tree so it could continue in its own
+                       repository. Its last state here is commit 99806d2
+                       (pure LiveCodeScript over the engine's Internet
+                       library; the ax* surface at 99/99 coverage; two
+                       demos, both engine-met). The dated engine records it
+                       produced stay where they landed (engine notes 2.7,
+                       3.4, 5.7, 5.8 and 6.9; runbook rows). What its
+                       departure taught is in docs/MEMBER-REPO-SPLIT.md:
+                       a member that leaves takes its ROWS with it, and
+                       thirteen suite gates named the rows it had not.
   box2dxt/             the family ANCESTOR, folded home 2026-08-14: Box2D v3
                        physics + the pure-script b2k game Kit (sprites, input,
                        camera); its checker was the oldest pre-unification
@@ -552,8 +519,9 @@ The paragraphs above and below name only the gates whose WHY needs prose.
 
 It is assembled from `tests/suite-selftest.core.livecodescript` (hand-maintained:
 the UI, the probe, the runner, and the cross-member sections) plus **every
-member's own deep self-test** (ELEVEN since 2026-09-15, when archivext joined;
-TEN since 2026-08-23, when nostrxt joined: the
+member's own deep self-test** (TEN since 2026-09-21, when archivext left for
+its own repository; ELEVEN from 2026-09-15, when it had joined; TEN since
+2026-08-23, when nostrxt joined: the
 eight extensions,
 riptide's harness — which now spans phases 1-4, 6, and 7 plus the spec-8.3
 sealed-anon-DM crypto — box2dxt's, and holde-em's, folded in with each one's

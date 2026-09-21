@@ -638,7 +638,9 @@ Built and statically verified; pending under the honesty convention.
     — `onionxt/src/onionxt.livecodescript:1018,1140,1713,1744`
 
 13. **archivext's first engine pass and first live pass** (medium; added
-    2026-09-15 with the member; MOSTLY CLOSED the same day - the standalone
+    2026-09-15 with the member; MOVED OUT 2026-09-21 - the member left for its
+    own repository, so what remains of this item is tracked there, not here;
+    MOSTLY CLOSED the same day it was added - the standalone
     harness ran on the user's OXT engine at 357/2/0 and both reds were fixed,
     `docs/OXT-ENGINE-NOTES.md` 2.7; the re-run read 363/0/0; the demo booted
     11/11; and the first live pass went green in three legs from the demo's

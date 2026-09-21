@@ -204,7 +204,6 @@ local sHaveSodium, sHaveTorrent, sHaveEnet, sHaveDc, sHaveOnion, sHaveCoin
 local sHaveCoinScript      -- coinxt ships in TWO pieces; see stProbe
 local sHaveRiptideScript   -- the embedded riptide layer; same tripwire shape
 local sHaveNostrScript     -- the embedded nostrxt core layer; same tripwire shape
-local sHaveArchiveScript   -- the embedded archivext layer; same tripwire shape
 local sHaveBox2d           -- the box2dxt EXTENSION (its Kit is embedded); see stProbe
 local sTorrentNote         -- why torrent is unavailable, when it is
 
@@ -849,19 +848,6 @@ command stProbe
       put false into sHaveNostrScript
    end try
    stProbeLine "NostrXT (script layer)", sHaveNostrScript, \
-         "embedded in this paste; a FAIL means the paste is damaged"
-
-   -- ARCHIVEXT (2026-09-15): the archive.org layer, pure script. Same
-   -- tripwire shape: one real call through the embedded layer (a URL
-   -- component with a space and a hash, the two bytes a wrong encoder
-   -- gets wrong first), so a present layer is a WORKING one.
-   put false into sHaveArchiveScript
-   try
-      put (axUrlEncode("a b#1.mp3") is "a%20b%231.mp3") into sHaveArchiveScript
-   catch tError
-      put false into sHaveArchiveScript
-   end try
-   stProbeLine "ArchiveXT (script layer)", sHaveArchiveScript, \
          "embedded in this paste; a FAIL means the paste is damaged"
 
    -- BOX2DXT IS THE SECOND TWO-PIECE MEMBER, and its pieces sit the other way
@@ -2266,23 +2252,6 @@ command stRunMemberHarnesses
    else
       stSkip "NostrXT deep self-test", \
             "the nostrxt script layer is not present; the paste is damaged"
-   end if
-
-   -- ARCHIVEXT (2026-09-15): the ax* self-test, entirely offline - every
-   -- section runs over hex-pinned fixtures, and the fetch layer is reached
-   -- only through its refusal paths, so no engine ever contacts archive.org
-   -- from this paste. Its one SKIP is the Internet-library probe.
-   if sHaveArchiveScript then
-      try
-         -- floor 1: catastrophic only, not measured (the riptide precedent;
-         -- a first engine pass will give this member its measured floor)
-         stMergeReturned "ArchiveXT", ax1axSelfTest(), 1
-      catch tError
-         stSectionFailed "ArchiveXT deep self-test", tError
-      end try
-   else
-      stSkip "ArchiveXT deep self-test", \
-            "the archivext script layer is not present; the paste is damaged"
    end if
 
    -- HOLDE-EM RUNS LAST, and unlike every other member there is nothing to

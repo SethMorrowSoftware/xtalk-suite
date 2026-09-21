@@ -592,7 +592,7 @@ fi
 # riptide, nocloud, and holde-em are not extensions but carry the same gate
 # shape (script checker, golden glob, vector gate, docs style), so they ride
 # the same loop.
-for m in sodiumxt torrentxt enetxt datachannelxt onionxt coinxt riptide nocloud box2dxt holde-em nostrxt archivext; do
+for m in sodiumxt torrentxt enetxt datachannelxt onionxt coinxt riptide nocloud box2dxt holde-em nostrxt; do
   [ -d "$m" ] || continue
   # the same skip the native loop applies - see SUITE_ONLY_MEMBERS above for
   # why the gate walk has to honour it too
