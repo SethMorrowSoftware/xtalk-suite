@@ -417,10 +417,21 @@ The members are deliberately non-overlapping, so real apps mix them:
 ## Development
 
 Members build independently (each has its own `CMakeLists.txt` /
-`tools/`), and `tools/build-all.sh` walks them. CI is two layers, both at the
-repository root (GitHub Actions runs only root workflows, so the per-member
-`.github/` files are retained for isolated development but are **inert in the
-monorepo**):
+`tools/`), and `tools/build-all.sh` walks them. **Each member owns its gate
+list** - `<member>/tools/run-gates.sh`, which the walker delegates to - and
+**each member is ready to be its own repository**: since 2026-09-21 every
+member directory carries the standalone kit (its own gate runner, a
+`.github/workflows/` DERIVED from the root lanes by
+`tools/sync-member-workflows.py`, a generated "Relationship to the xTalk
+suite" README section, `.gitignore`/`.gitattributes`/`LICENSE`, no link or
+tool that climbs out of the member), held as a property of the tree by
+`tools/check-member-standalone.py`. `docs/MEMBER-REPO-SPLIT.md` is the
+procedure, the sibling layout the cross-member gates expect, and the list of
+registries a departing member has to be removed from (archivext left on that
+date and taught it). CI is two layers, both at the repository root (GitHub
+Actions runs only root workflows, so the per-member `.github/` files are
+**inert in the monorepo** - and, being generated from the root lanes rather
+than snapshots of a pre-suite CI, no longer rot behind them):
 
 - **`suite-gates.yml`** — every member's compiler-free gates on every push: the
   LiveCodeScript checker, docs house-style, all golden-vector suites, the

@@ -1,0 +1,13 @@
+# Pure-script member: nothing is built here, so the only things to keep out
+# of the tree are what the Python tooling under tools/ and the editors leave
+# behind. The shipped .livecodescript files ARE the product and are committed.
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Editor / OS cruft
+.DS_Store
+*.swp
+*~
+.idea/
+.vscode/

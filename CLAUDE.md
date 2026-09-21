@@ -54,7 +54,10 @@ openxtalk-libraries/
   docs/                CROSS-CUTTING documents (span >1 member)
   tools/build-all.sh   walk every buildable member
   .github/workflows/   the CI that runs: suite-gates + a native matrix per
-                       member (member .github dirs are inert here)
+                       member (member .github dirs are inert here, and since
+                       2026-09-21 GENERATED from these root lanes by
+                       tools/sync-member-workflows.py rather than left as
+                       pre-suite snapshots - see the split paragraph below)
   sodiumxt/  torrentxt/  enetxt/  datachannelxt/  onionxt/  coinxt/
   nostrxt/             the Nostr member, added 2026-08-23: pure LiveCodeScript
                        over coinxt (BIP-340, sha256, ECDH) and sodiumxt
@@ -497,8 +500,9 @@ python3 tools/check-suite-coverage.py            # does it actually reach the su
 Those four are the harness's own gates, not the whole set. **The authoritative
 list of suite-level gates is the `== suite: tools/...` block in
 `tools/build-all.sh`**, and `tools/build-all.sh --gates` runs that block plus
-every member's own `run_gates` walk, compiler-free - the same set
-`suite-gates.yml` runs on every push. Read the script when you want to know what
+every member's own `tools/run-gates.sh` (the member OWNS its gate list since
+2026-09-21; the walker's `run_gates` delegates to it), compiler-free - the same
+set `suite-gates.yml` runs on every push. Read the script when you want to know what
 will fail, because it is the thing that runs. Deliberately no count is written
 here: a number would be true the day it was measured and false the next time a
 gate lands, silently, which is the same failure this file records for
@@ -1013,6 +1017,47 @@ gate proves it, and `build-all.sh` runs the root scripts through a single copy.)
   vectors on the runner that built them. The per-member `.github/workflows/` files are kept
   for when a member is worked on in isolation, but **GitHub Actions runs only
   the root workflows in a monorepo**, so they do not fire here.
+
+## Every member is ready to be its own repository (2026-09-21)
+
+The suite is the DEVELOPMENT repository now, and each member is to live in a
+repository of its own - the pre-suite mirrors become the destinations rather
+than the history. `docs/MEMBER-REPO-SPLIT.md` is the procedure; what belongs
+here is the shape, because it is the shape of everything above, one level up.
+**Readiness is derived and gated, not checked once.** `tools/member-registry.py`
+is the ONE table (name, target repository, native lane, the sibling members a
+member's GATES load - written closed by hand, and the docstring says why no
+transitive walk would get it right). `tools/sync-member-workflows.py` DERIVES
+each member's `.github/workflows/` from the root `native-<member>.yml` lanes
+(the `paths:` filters, the `working-directory:` defaults and the `<member>/`
+artifact prefixes removed, each rewrite asserted to fire) plus a `gates.yml`
+that checks the member out under its own name with its gate siblings beside
+it; `tools/sync-member-readmes.py` DERIVES the "Relationship to the xTalk
+suite" section of every README from that registry and the carried-copy
+registries; both `--check`s are in the gate set. `tools/check-member-standalone.py`
+(fixtures in `tools/test-member-standalone.py`) refuses a member missing the
+kit, a markdown link that climbs out of its member, a tool that climbs to the
+suite root except through the declared `sibling()` helper
+(`XTALK_SIBLINGS` / `XTALK_SIBLING_<NAME>`; `XTALK_REQUIRE_SIBLINGS=1` turns
+a sibling-absent skip into a failure, the `CROSSMEMBER_REQUIRE_ALL` shape), a
+gate file its `tools/run-gates.sh` never names, and a registry row whose
+directory is gone or a member-shaped directory the registry does not list.
+**The member owns its gate list**: `build-all.sh`'s `run_gates` was ~300 lines
+of probes that lived only here, which is a gate list the member's repository
+would not have had; it is `<member>/tools/run-gates.sh` now, with those
+why-comments moved in beside the gates they explain, and the walker
+delegates.
+
+**What the first departure taught.** archivext was deleted from this tree on
+2026-09-21 with none of its rows removed, and thirteen suite gates went red -
+every registry above that names a member, plus the launcher, the coverage
+rows, the generator's fold rows, the preflight probe and the member loop. The
+split document lists every one, and `check-member-standalone.py` refuses a
+registry row whose directory is gone, so the next departure is one change.
+What a standalone repository CANNOT check is also written down rather than
+implied: the carried-block drift gates, embed freshness, cross-library name
+disjointness, the cross-member call gates and the suite paste's coverage
+ratchet run only here, and the README section each member carries says so.
 
 ## Git / workflow
 

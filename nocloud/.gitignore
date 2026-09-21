@@ -1,0 +1,21 @@
+# The app is one committed .livecodescript stack plus its site/ and webapp/
+# assets; nothing here is generated except what the Python tooling under
+# tools/ and tests/ leaves behind, and the standalone builds a maintainer
+# saves out of the IDE (docs/building-a-standalone.md), which never belong in
+# the tree.
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# IDE-built standalones and packaging scratch
+/build/
+/dist/
+*.app
+*.exe
+
+# Editor / OS cruft
+.DS_Store
+*.swp
+*~
+.idea/
+.vscode/

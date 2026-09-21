@@ -974,16 +974,49 @@ def _load_nostr_oracle():
     (the coinxt check-selftest-vectors lesson). And this file is itself
     exec-loaded by tools/check-selftest-vectors.py into a bare globals dict,
     so `__file__` is NOT defined here - the fallback reads the code object's
-    own filename, which the loader sets to this file's absolute path."""
+    own filename, which the loader sets to this file's absolute path.
+
+    Where nostrxt IS is the sibling rule (docs/MEMBER-REPO-SPLIT.md), kept
+    as a nested helper for the same reason: this function must stand on
+    its own in a bare globals dict. An absent oracle stops the load with
+    one paragraph naming the clone to run, not an open() traceback."""
     try:
         here = os.path.dirname(os.path.abspath(__file__))
     except NameError:
         import inspect
         here = os.path.dirname(os.path.abspath(
             inspect.currentframe().f_code.co_filename))
-    path = os.path.normpath(
-        os.path.join(here, "..", "..", "nostrxt", "tools",
-                     "nostr_reference.py"))
+    member = os.path.dirname(here)
+
+    def sibling(name):
+        """Path of a sibling member's checkout. In the suite tree the
+        siblings are the directories beside this member; in a standalone
+        checkout they are the sibling repositories cloned beside it under
+        their member names. Two overrides, checked in this order:
+        XTALK_SIBLING_<NAME> (one member, any path) and XTALK_SIBLINGS (a
+        directory holding them all). No sibling is ever searched for."""
+        # A member is never its own sibling: its own name answers this
+        # checkout before any override is read, so XTALK_SIBLINGS cannot
+        # redirect a gate away from the tree running it.
+        if name == os.path.basename(member):
+            return member
+        one = os.environ.get("XTALK_SIBLING_" +
+                             name.upper().replace("-", "_"))
+        if one:
+            return one
+        return os.path.join(os.environ.get("XTALK_SIBLINGS")
+                            or os.path.dirname(member), name)
+
+    path = os.path.join(sibling("nostrxt"), "tools", "nostr_reference.py")
+    if not os.path.isfile(path):
+        print("riptide_reference: %s is not present: it belongs to the "
+              "nostrxt member, which is not beside this checkout. Clone "
+              "https://github.com/SethMorrowSoftware/NostrXT (the standalone "
+              "repository is being created; until then the member lives in "
+              "https://github.com/SethMorrowSoftware/xtalk-suite) beside "
+              "this checkout as ../nostrxt, or point XTALK_SIBLING_NOSTRXT / "
+              "XTALK_SIBLINGS at it." % path, file=sys.stderr)
+        sys.exit(2)
     ns = {}
     with open(path, "r", encoding="utf-8") as fh:
         exec(compile(fh.read(), path, "exec"), ns)

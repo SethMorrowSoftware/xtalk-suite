@@ -112,319 +112,34 @@ SUITE_ONLY_MEMBERS="${SUITE_ONLY_MEMBERS:-}"
 # compile).
 
 run_gates() {
-  local m="$1" rel
-  # The LiveCodeScript/LCB static gate (every member carries it).
-  if [ -f "$m/tools/check-livecodescript.py" ]; then
-    echo "== $m: static gate =="
-    ( cd "$m" && python3 tools/check-livecodescript.py )
-  fi
-  # The house-style docs gate, where a member ships one (onionxt, coinxt).
-  if [ -f "$m/tools/check-docs-style.py" ]; then
-    echo "== $m: docs-style gate =="
-    ( cd "$m" && python3 tools/check-docs-style.py )
-  fi
-  # Every golden-vector suite the member ships (wire formats, BEP44, the file
-  # server, ...) - glob, so a member adding one is covered with no edit here.
-  for rel in "$m"/tests/*golden*.py; do
-    if [ -f "$rel" ]; then
-      echo "== $m: ${rel#"$m"/} =="
-      ( cd "$m" && python3 "${rel#"$m"/}" )
-    fi
-  done
-  # Record-registry sync (shim header <-> .lcb constants).
-  if [ -f "$m/tools/check-record-registry.py" ]; then
-    echo "== $m: tools/check-record-registry.py =="
-    ( cd "$m" && python3 tools/check-record-registry.py )
-  fi
-  # Known-answer-vector harnesses: onionxt's is pure python; coinxt's builds
-  # the shim from source in a temp dir and drives it via ctypes.
-  if [ -f "$m/tools/onion-kat.py" ]; then
-    echo "== $m: tools/onion-kat.py --check =="
-    ( cd "$m" && python3 tools/onion-kat.py --check )
-  fi
-  if [ -f "$m/tools/coin-kat.py" ]; then
-    echo "== $m: tools/coin-kat.py --check =="
-    ( cd "$m" && python3 tools/coin-kat.py --check )
-  fi
-  if [ -f "$m/tools/nostr-kat.py" ]; then
-    echo "== $m: tools/nostr-kat.py --check =="
-    ( cd "$m" && python3 tools/nostr-kat.py --check )
-  fi
-  # archivext's KAT is the same convention: --check re-derives every harness
-  # constant from the oracle + fixtures and compares it to the pasted one.
-  if [ -f "$m/tools/archive-kat.py" ]; then
-    echo "== $m: tools/archive-kat.py --check =="
-    ( cd "$m" && python3 tools/archive-kat.py --check )
-  fi
-  # holde-em's pure-logic gates: the docs smart-quote scan, the table-layout
-  # arithmetic, seven KAT mirrors of the game's pure handlers (evaluator,
-  # betting/settlement, shuffle, crypto protocol, transcript fold, card
-  # atlas, sounds), and the independent-reference fuzz (a SECOND
-  # evaluator/settlement implementation plus whole-game invariants - the
-  # backing for the member's "verified sound" claim). The member's extra
-  # idiom checker (the hold-em lineage) was RETIRED 2026-08-15: its checks
-  # live in the unified check-livecodescript.py (docstring 13-21), which
-  # already ran above.
-  # Probed by exact name, not a glob: the *-kat.py names would otherwise
-  # collide with the different --check calling convention of
-  # onion-kat.py/coin-kat.py above.
-  if [ -f "$m/tools/check-docs.py" ]; then
-    echo "== $m: tools/check-docs.py =="
-    ( cd "$m" && python3 tools/check-docs.py )
-  fi
-  # The game table's CONTROL geometry, re-derived from the stack source:
-  # every rect the builders set, bounds-checked against kHeStackRect and
-  # proved pairwise disjoint outside a written exemption list. The suite's
-  # check-stack-size.py reads one number per stack (the stack's own rect)
-  # and never looks at a control, so without this a seat-spot or board-Y
-  # tweak could push chrome below the fold with every gate green - which is
-  # exactly what the 720p re-layout's once-run, never-committed scratchpad
-  # script left unrepeatable (added 2026-08-16).
-  if [ -f "$m/tools/check-table-layout.py" ]; then
-    echo "== $m: tools/check-table-layout.py =="
-    ( cd "$m" && python3 tools/check-table-layout.py )
-  fi
-  for rel in evaluator-kat.py betting-kat.py shuffle-kat.py protocol-kat.py \
-             fold-kat.py atlas-kat.py sounds-kat.py logic-fuzz.py; do
-    if [ -f "$m/tools/$rel" ]; then
-      echo "== $m: tools/$rel =="
-      ( cd "$m" && python3 "tools/$rel" )
-    fi
-  done
-  # The OXT self-test's vectors are hand-copied literals in a .livecodescript,
-  # so they can drift from the shim and from the published answers. A drifted
-  # expectation turns a real regression into a green run, which in a money
-  # library is the worst possible failure mode - so re-derive them on every
-  # push. Needs no compiler, unlike coin-kat.py above.
-  if [ -f "$m/tools/check-selftest-vectors.py" ]; then
-    echo "== $m: tools/check-selftest-vectors.py =="
-    ( cd "$m" && python3 tools/check-selftest-vectors.py --check )
-  fi
-
-  # The pure-SCRIPT encoding layer, actually executed. OXT cannot run a
-  # .livecodescript headlessly, so coinxt carries a small interpreter for the
-  # subset its encoders are written in and drives the real file against the
-  # published BIP-173 / BIP-350 / EIP-55 / RLP vectors. It is an approximation
-  # of the engine and does not replace the on-engine pass; what it catches is a
-  # wrong alphabet or an inverted checksum, which on this surface would produce
-  # a valid-looking WRONG address. Slow by nature (every bit of the bech32
-  # checksum is interpreted arithmetic), so it runs after the fast gates.
-  # The wallet's UI version must FOLLOW its builder: coin-wallet rebuilds its
-  # window only when kWaUiVersion changes, and a week of new controls shipped
-  # under a constant nobody bumped, so no existing stack ever built them
-  # (2026-09-04). The constant is a fingerprint of the waBuild* handlers now,
-  # and this refuses a stale one (--fix writes the right value).
-  if [ -f "$m/tools/check-wallet-ui-version.py" ]; then
-    echo "== $m: tools/check-wallet-ui-version.py =="
-    ( cd "$m" && python3 tools/check-wallet-ui-version.py )
-  fi
-  # The same mechanism, and the same failure, one member over: archive-gallery
-  # skips its build when the stack already carries the stamp, and on
-  # 2026-09-20 an engine reported three buttons and fourteen tiles missing
-  # from a stack built by the previous paste. kAgUiVersion is derived from
-  # the builder's own text; agUiStamp() carries the geometry the text cannot
-  # show, and this gate asserts that half is still there.
-  if [ -f "$m/tools/check-gallery-ui-version.py" ]; then
-    echo "== $m: tools/check-gallery-ui-version.py =="
-    ( cd "$m" && python3 tools/check-gallery-ui-version.py )
-  fi
-  # A member's execution gate is believed only once it has been shown to
-  # FAIL: where a member ships tools/test-script-vectors.py it edits one
-  # defect at a time into a copy of the shipped script and drives the REAL
-  # gate over it, then drives the untouched copy and requires OK (nocloud,
-  # 2026-09-11). It runs BEFORE the gate for the reason the doc-status pair
-  # below runs its fixtures first: a gate that has gone blind prints OK.
-  if [ -f "$m/tools/test-script-vectors.py" ]; then
-    echo "== $m: tools/test-script-vectors.py =="
-    ( cd "$m" && python3 tools/test-script-vectors.py )
-  fi
-  if [ -f "$m/tools/check-script-vectors.py" ]; then
-    echo "== $m: tools/check-script-vectors.py =="
-    ( cd "$m" && python3 tools/check-script-vectors.py --check )
-  fi
-  # The WALLET engine, same machinery one layer up: coinxt/examples/
-  # wallet-core.livecodescript is what coin-wallet is built out of, and every
-  # byte layout in it (scripts, addresses, extended keys, fees, coin
-  # selection, sighashes, witnesses, PSBT, signed messages, URIs, descriptors,
-  # QR) is compared against tools/wallet_reference.py, an independent
-  # implementation anchored to the published vectors, with the real shim
-  # signing. A wrong length prefix there produces a transaction that parses
-  # and pays somebody else. Slower still than the gate above, so it runs last.
-  # And the layer ABOVE that one: check-wallet-boot BOOTS the shipped wallet
-  # stack, headlessly, over riptide's engine object model (imported, not
-  # copied) with the COMMITTED CoinXT under it. The vector gate never opens a
-  # window, so until this landed the ten screens, the show/hide sweep, the
-  # click router and the wallet file were verified only by reading them -
-  # this member's own recorded failure shape, one layer up.
-  # THE FIXTURES FIRST, per the fixture-before-gate law: a boot runner that
-  # has gone blind reports OK, and the seeded defects are what make the OK
-  # mean anything. They boot a cut-down copy.
+  # THE MEMBER OWNS ITS GATE LIST (2026-09-21). Until this date this function
+  # was ~300 lines of `if [ -f "$m/tools/<gate>" ]` probes - the one place
+  # that knew which gates each member had, and it lived in the SUITE. Every
+  # member is on its way to being its own repository
+  # (docs/MEMBER-REPO-SPLIT.md), and a gate list that exists only in the
+  # walker of a repository the member is leaving is a gate list the member's
+  # repository does not have: archivext left on this date with no runner at
+  # all. So each member now carries tools/run-gates.sh - its own gates, in
+  # the order this function ran them, with the why-comments this function
+  # used to carry moved in beside the gate they explain (coinxt's script
+  # keeps the three wallet gates running at once, for the reason recorded
+  # there) - and this walker DELEGATES rather than duplicating, so the suite
+  # and the standalone repository run the same list by construction. Its
+  # generated .github/workflows/gates.yml runs the same script.
   #
-  # THE THREE WALLET GATES RUN AT ONCE (2026-09-11), and their verdicts are
-  # READ in the order above. Each is a separate interpreter over the same
-  # unchanged tree, so they share nothing but the CPU; run one after another
-  # they were the static-gates job's whole afternoon - measured on this
-  # machine, 44 minutes of vectors, then 2 h 20 of boot fixtures (two of the
-  # seven are caught late in the boot and cost ~37 min each), then the
-  # prefill-20 boot on top - against GitHub's six-hour job ceiling, which the
-  # 4 h 49 m gates step of main's last green run was closing on. The output
-  # of each is held in a file and printed under its own banner once all
-  # three are in, fixtures before gate, so the log reads exactly as the
-  # serial walk did and a blind runner is still the first thing on the page.
-  # Any one failing fails the walk after all three have reported.
-  wallet_jobs=()
-  wallet_start() {
-    local label="$1"; shift
-    local log
-    log="$(mktemp)"
-    echo "== $m: $label == (running alongside the other wallet gates; output below)"
-    ( cd "$m" && "$@" ) > "$log" 2>&1 &
-    wallet_jobs+=("$label|$!|$log")
-  }
-  if [ -f "$m/tools/check-wallet-vectors.py" ]; then
-    wallet_start "tools/check-wallet-vectors.py" python3 tools/check-wallet-vectors.py --check
-  fi
-  if [ -f "$m/tools/test-wallet-boot.py" ]; then
-    wallet_start "tools/test-wallet-boot.py" python3 tools/test-wallet-boot.py
-  fi
-  if [ -f "$m/tools/check-wallet-boot.py" ]; then
-    wallet_start "tools/check-wallet-boot.py" python3 tools/check-wallet-boot.py --terse
-  fi
-  wallet_failed=0
-  for wallet_job in ${wallet_jobs[@]+"${wallet_jobs[@]}"}; do
-    wallet_label="${wallet_job%%|*}"
-    wallet_rest="${wallet_job#*|}"
-    wallet_pid="${wallet_rest%%|*}"
-    wallet_log="${wallet_rest#*|}"
-    wallet_rc=0
-    wait "$wallet_pid" || wallet_rc=$?
-    echo "== $m: $wallet_label == (exit $wallet_rc)"
-    cat "$wallet_log"
-    rm -f "$wallet_log"
-    if [ "$wallet_rc" -ne 0 ]; then
-      wallet_failed=1
-    fi
-  done
-  if [ "$wallet_failed" -ne 0 ]; then
-    echo "$m: a wallet gate failed (its output is above)"
+  # Two things hold the shape. tools/check-member-standalone.py (the suite
+  # block below) refuses a gate file under a member's tools/ or tests/ that
+  # its run-gates.sh never names, because a gate nobody runs is this file's
+  # own recorded failure mode; and a member without the script fails the
+  # walk here rather than being silently walked as "no gates".
+  local m="$1"
+  if [ ! -f "$m/tools/run-gates.sh" ]; then
+    echo "build-all: $m has no tools/run-gates.sh - every member owns its" \
+         "gate list (docs/MEMBER-REPO-SPLIT.md); add one before it is walked" >&2
     exit 1
   fi
-  # The demo BOOT runner (riptide): executes the SHIPPED stack script's
-  # whole openStack chain - card builders, kit, self-check, navigation, a
-  # scripted identity session - through the family's interpreter over a
-  # modeled engine object world. Exists because on 2026-08-29 a card
-  # shipped through a fully green gate set and broke the whole app at
-  # openStack on a real engine, twice: no other gate here EXECUTES a stack
-  # script, so "all static gates passed" never meant "the window opens".
-  # The FIXTURES run first (the fixture-before-gate law): a boot runner
-  # that has gone blind reports OK, and the seeded defects - each drawn
-  # from the class that actually shipped that day - are what make the OK
-  # mean anything.
-  if [ -f "$m/tools/test-demo-boot.py" ]; then
-    echo "== $m: tools/test-demo-boot.py =="
-    ( cd "$m" && python3 tools/test-demo-boot.py )
-  fi
-  if [ -f "$m/tools/check-demo-boot.py" ]; then
-    echo "== $m: tools/check-demo-boot.py =="
-    ( cd "$m" && python3 tools/check-demo-boot.py --check )
-  fi
-  # The Riptide Protocol conformance bundle (riptide): the machine-readable
-  # golden + refusal vectors any-language implementations test against
-  # (docs/RIPTIDE-PROTOCOL.md is the prose half). --check regenerates the
-  # bundle from the oracle and requires the committed JSON to match
-  # byte-for-byte, and EXECUTES it first - every signed golden re-verifies,
-  # every target recomputes, every executed refusal vector refuses - so a
-  # bundle that stops proving what it claims fails before freshness is
-  # even compared.
-  if [ -f "$m/tools/export-protocol-vectors.py" ]; then
-    echo "== $m: tools/export-protocol-vectors.py --check =="
-    ( cd "$m" && python3 tools/export-protocol-vectors.py --check )
-  fi
-  # Embedded-Kit freshness (box2dxt): the same shape as
-  # tools/sync-demo-embeds.py below - src/box2dxt-kit.livecodescript is the
-  # master, and each of the six example stacks carries a verbatim copy between
-  # sentinels so it stays paste-and-run. Its docstring has always said "--check exits non-zero ... so
-  # CI fails until sync-embedded-kit.py is re-run", and until 2026-08-17 that
-  # was a claim with no caller behind it: the whole tree held five PROSE
-  # mentions of this tool and zero invocations. A drifted copy is the demo-kit
-  # failure with the blast radius the other way round - one stale example runs
-  # an old Kit and reports a bug that was fixed in src/ months ago.
-  if [ -f "$m/tools/sync-embedded-kit.py" ]; then
-    echo "== $m: tools/sync-embedded-kit.py --check =="
-    ( cd "$m" && python3 tools/sync-embedded-kit.py --check )
-  fi
-  # The platformer's level geometry (box2dxt). Read what this one IS before
-  # reading a green run as an endorsement: its own docstring calls the findings
-  # ADVISORY and "not a CI gate" - some beats deliberately sit a coin in an
-  # enemy's path - and main() prints the finding count without ever setting a
-  # non-zero exit. So what this probe actually holds is narrower than it looks:
-  # that the auditor can still PARSE the demo it audits. That is worth holding,
-  # because the parser reads the level builders by regex and a restructured
-  # pfL3Scene would leave the tool silently auditing nothing at all - the
-  # standard rot of a tool nobody runs. The findings themselves print into the
-  # build log for a human to read; nobody should treat "0 finding(s)" here as a
-  # layout gate.
-  # The .lcb <-> C signature gate: 370 `binds to "c:box2dxt>SYM!cdecl"`
-  # declarations against 370 LC_API definitions, comparing return type, arity
-  # and every parameter type. A mismatch here is not a compile error anywhere -
-  # it surfaces at RUN TIME on an engine, as a marshalling fault in a call that
-  # looks right in both files. Sub-second, and green today.
-  # Do the docs and the shipped handler set still agree? A `cx*` name in the
-  # docs that no handler defines costs a reader a `handler not found`, and every
-  # other gate stays green about it: SPEC.md named `cxSeckeyValidate` where the
-  # shipped handler is `cxSeckeyIsValid`, in the one document that member calls
-  # its source of truth. Holds BOTH directions - a documented name nothing
-  # defines, and a shipped public handler the api-reference never names - with
-  # the stale-excuse ratchet from tools/check-suite-coverage.py, so a rename
-  # cannot leave a permanent exemption behind it.
-  if [ -f "$m/tools/check-doc-handlers.py" ]; then
-    echo "== $m: tools/check-doc-handlers.py =="
-    ( cd "$m" && python3 tools/check-doc-handlers.py --check )
-  fi
-  if [ -f "$m/tools/check-lcb-signatures.py" ]; then
-    echo "== $m: tools/check-lcb-signatures.py =="
-    ( cd "$m" && python3 tools/check-lcb-signatures.py )
-  fi
-  if [ -f "$m/tools/audit-platformer.py" ]; then
-    echo "== $m: tools/audit-platformer.py (advisory; gates only that it still parses) =="
-    ( cd "$m" && python3 tools/audit-platformer.py )
-  fi
-  # Committed-binary FRESHNESS (distinct from the manifests below, which prove a
-  # committed blob is unchanged but say nothing about whether it still matches
-  # the source). This is the automated half of suite rule 5: a shim that gained,
-  # lost, or renamed an export, or bumped its ABI, without its committed library
-  # being rebuilt in the same change.
-  if [ -f "$m/tools/check-binary-freshness.py" ]; then
-    echo "== $m: tools/check-binary-freshness.py =="
-    ( cd "$m" && python3 tools/check-binary-freshness.py )
-  fi
-  # Committed-extension COMPLETENESS (box2dxt): --check lists src/code/ and
-  # exits non-zero if any of the five platform slots is empty. That is a
-  # different question from the MANIFEST below, which proves the blobs that ARE
-  # there are unchanged and says nothing about a missing one - and a missing
-  # slot is the failure a maintainer meets at run time on exactly the one
-  # platform they do not develop on, as "the extension will not load". Probed by
-  # CAPABILITY rather than by name, which is the one place the *-kat.py block's
-  # probe-by-exact-name trick does not work: six members ship a file with this
-  # exact name and only box2dxt's takes --check (enetxt's takes
-  # --platform-id/--build-dir and would fail on the flag). Probing the flag
-  # keeps the file's preference for lists that cover a new member with no edit
-  # here - a sibling that grows a --check is covered the day it does.
-  if [ -f "$m/tools/package-extension.py" ] && \
-     grep -q '"--check"' "$m/tools/package-extension.py"; then
-    echo "== $m: tools/package-extension.py --check =="
-    ( cd "$m" && python3 tools/package-extension.py --check )
-  fi
-  # Committed-binary / vendored-source integrity manifests: a committed blob
-  # that is unlisted or does not match its recorded SHA256 fails the gate.
-  if [ -f "$m/src/code/MANIFEST.sha256" ]; then
-    echo "== $m: src/code/MANIFEST.sha256 =="
-    ( cd "$m/src/code" && sha256sum -c --quiet MANIFEST.sha256 )
-  fi
-  if [ -f "$m/native/MANIFEST.sha256" ]; then
-    echo "== $m: native/MANIFEST.sha256 =="
-    ( cd "$m/native" && sha256sum -c --quiet MANIFEST.sha256 )
-  fi
+  echo "== $m: tools/run-gates.sh =="
+  ( cd "$m" && bash tools/run-gates.sh )
 }
 
 # --- suite-level: the copied tools have not drifted, and the checker works ---
@@ -586,6 +301,46 @@ fi
 if [ -f tools/check-doc-status-consistency.py ]; then
   echo "== suite: tools/check-doc-status-consistency.py =="
   python3 tools/check-doc-status-consistency.py
+fi
+
+# --- suite-level: every member is ready to be its own repository ------------
+# Each member directory is on its way to a repository of its own
+# (docs/MEMBER-REPO-SPLIT.md), and "ready" is held as a property of the tree
+# rather than of one cleanup pass, the way the ui-kit gate holds "every demo
+# is a kit adopter". Three generated-copy sets ride the same shape as the
+# demo embeds above - a generator writes the tree, --check refuses drift:
+#   sync-member-workflows.py  each member's own .github/workflows/, DERIVED
+#                             from the root native-<member>.yml lanes and the
+#                             member registry (the pre-suite copies had rotted
+#                             216-445 diff lines behind the lanes that run);
+#   sync-member-readmes.py    the "Relationship to the xTalk suite" section
+#                             of every README, derived from the registry and
+#                             the carried-copy registries so it cannot
+#                             disagree with them;
+#   check-member-standalone.py the readiness gate itself: the files a
+#                             standalone repository needs, no markdown link
+#                             that climbs out of the member, no tool that
+#                             climbs to the suite root except through the
+#                             declared sibling helper, and every gate file in
+#                             tools/ or tests/ named by the member's own
+#                             tools/run-gates.sh - because a gate nobody runs
+#                             is this file's recorded failure shape.
+# The fixture test runs first, for the reason every pair here does.
+if [ -f tools/sync-member-workflows.py ]; then
+  echo "== suite: tools/sync-member-workflows.py --check =="
+  python3 tools/sync-member-workflows.py --check
+fi
+if [ -f tools/sync-member-readmes.py ]; then
+  echo "== suite: tools/sync-member-readmes.py --check =="
+  python3 tools/sync-member-readmes.py --check
+fi
+if [ -f tools/test-member-standalone.py ]; then
+  echo "== suite: tools/test-member-standalone.py =="
+  python3 tools/test-member-standalone.py
+fi
+if [ -f tools/check-member-standalone.py ]; then
+  echo "== suite: tools/check-member-standalone.py =="
+  python3 tools/check-member-standalone.py
 fi
 
 # --- static gates for every member (always run) ---

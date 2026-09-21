@@ -27,7 +27,7 @@ paste it into a stack script to verify an installed extension end to end
 > on **2026-08-08** the suite selftest ran green on a real OXT engine, including
 > a live datachannelxt loopback that negotiated, opened, and round-tripped a
 > payload byte-for-byte. The verbatim engine output is in the suite's
-> [`docs/OXT-ENGINE-NOTES.md`](../../docs/OXT-ENGINE-NOTES.md), sections 1.6,
+> [`docs/OXT-ENGINE-NOTES.md`](https://github.com/SethMorrowSoftware/xtalk-suite/blob/main/docs/OXT-ENGINE-NOTES.md), sections 1.6,
 > 6.6 and 6.7.
 
 Every demo follows the family rules: self-building idempotent UI, a poll

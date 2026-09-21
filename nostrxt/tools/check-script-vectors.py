@@ -23,9 +23,14 @@ If this file and the engine disagree, the engine is right.
 HOW THE CRYPTO IS SUPPLIED. The nx* layer composes CoinXT (cx*) and SodiumXT
 (sx*), so tier 2 feeds those calls with the REAL COMMITTED sibling libraries
 through ctypes - the same libraries a packaged extension binds:
-    ../coinxt/src/code/x86_64-linux/coinxt.so     (cnx_* at ABI 6+)
-    ../sodiumxt/src/code/x86_64-linux/sodiumxt.so (sxt_* at ABI 10+)
-so what is under test is the script's own logic over genuine crypto, the
+    <coinxt>/src/code/x86_64-linux/coinxt.so     (cnx_* at ABI 6+)
+    <sodiumxt>/src/code/x86_64-linux/sodiumxt.so (sxt_* at ABI 10+)
+where <coinxt> and <sodiumxt> are the sibling members' checkouts as
+sibling() below resolves them: the directories beside this member in the
+suite tree, the repositories cloned beside it under their member names in
+a standalone checkout, or wherever XTALK_SIBLING_COINXT /
+XTALK_SIBLING_SODIUMXT / XTALK_SIBLINGS point (docs/MEMBER-REPO-SPLIT.md).
+So what is under test is the script's own logic over genuine crypto, the
 CoinXT model. Two deliberate stand-ins, both named here rather than hidden:
 sxRandomBytes is a DETERMINISTIC counter stub (randomness quality is not
 under test, and a gate that draws real entropy cannot reproduce its own
@@ -47,7 +52,10 @@ TWO TIERS, so the gate is useful on a machine without the sibling binaries
      the shipped script rather than only re-derived beside it - plus the
      refusals (a tampered MAC, invalid unpadded UTF-8, an oversized
      plaintext).
-A missing library SKIPS tier 2 loudly; it never passes silently.
+A missing library SKIPS tier 2 loudly, naming the repository to clone; it
+never passes silently. With XTALK_REQUIRE_SIBLINGS=1 the skip is a FAILURE
+instead - for the lane that means to settle tier 2, where a skip and a pass
+exit 0 alike (the CROSSMEMBER_REQUIRE_ALL shape).
 
 MUTATION-TESTED the way the family law demands (root CLAUDE.md: exercise a
 gate the way the build runs it): tools/test-script-vectors.py seeds real
@@ -68,7 +76,47 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 MEMBER = os.path.dirname(HERE)
-SUITE = os.path.dirname(MEMBER)
+
+
+def sibling(name):
+    """Path of a sibling member's checkout (docs/MEMBER-REPO-SPLIT.md).
+
+    In the suite tree the siblings are the directories beside this member;
+    in a standalone checkout they are the sibling repositories cloned
+    beside it under their member names. Two overrides, checked in this
+    order: XTALK_SIBLING_<NAME> (one member, any path) and XTALK_SIBLINGS
+    (a directory holding them all). No sibling is ever searched for: an
+    absent one is reported by the gate that needs it, naming the
+    repository to clone."""
+    # A member is never its own sibling: its own name answers this checkout
+    # before any override is read, so XTALK_SIBLINGS cannot redirect a gate
+    # away from the tree running it (coinxt's wallet boot reuses riptide's
+    # runner, and that runner resolves coinxt by name).
+    if name == os.path.basename(MEMBER):
+        return MEMBER
+    one = os.environ.get("XTALK_SIBLING_" + name.upper().replace("-", "_"))
+    if one:
+        return one
+    return os.path.join(os.environ.get("XTALK_SIBLINGS")
+                        or os.path.dirname(MEMBER), name)
+
+
+# The repository behind each sibling this gate reaches for, by member
+# directory name, so an absent one is reported with the clone to run.
+SIBLING_REPOS = {
+    "coinxt": "https://github.com/SethMorrowSoftware/CoinXT",
+    "sodiumxt": "https://github.com/SethMorrowSoftware/SodiumXT",
+}
+
+
+def sibling_missing(name, path):
+    """One paragraph for an absent sibling file: the path looked for, the
+    member that owns it, the repository to clone and the two overrides."""
+    return ("%s is not present: it belongs to the %s member, which is not "
+            "beside this checkout. Clone %s beside this checkout as ../%s, "
+            "or point XTALK_SIBLING_%s / XTALK_SIBLINGS at it."
+            % (path, name, SIBLING_REPOS[name], name,
+               name.upper().replace("-", "_")))
 
 
 def _load(name, path):
@@ -83,8 +131,10 @@ sys.path.insert(0, HERE)
 import nostr_reference as R  # noqa: E402  (anchors itself at import)
 
 SCRIPT = os.path.join(MEMBER, "src", "nostrxt.livecodescript")
-COIN_SO = os.path.join(SUITE, "coinxt", "src", "code", "x86_64-linux", "coinxt.so")
-SODIUM_SO = os.path.join(SUITE, "sodiumxt", "src", "code", "x86_64-linux", "sodiumxt.so")
+COIN_SO = os.path.join(sibling("coinxt"), "src", "code", "x86_64-linux",
+                       "coinxt.so")
+SODIUM_SO = os.path.join(sibling("sodiumxt"), "src", "code", "x86_64-linux",
+                         "sodiumxt.so")
 
 
 def to_bytes(s):
@@ -550,17 +600,31 @@ def main(argv):
     check_padding(c, ip)
     check_hex_b64(c, ip)
 
-    if os.path.isfile(COIN_SO) and os.path.isfile(SODIUM_SO):
+    absent = [(name, path)
+              for name, path in (("coinxt", COIN_SO), ("sodiumxt", SODIUM_SO))
+              if not os.path.isfile(path)]
+    if not absent:
         wire_native(ctypes.CDLL(COIN_SO), ctypes.CDLL(SODIUM_SO))
         check_events(c, ip)
         check_nip44(c, ip)
         check_ws_accept(c, ip)
+    elif os.environ.get("XTALK_REQUIRE_SIBLINGS"):
+        # Same split, and the same env-var shape, as CROSSMEMBER_REQUIRE_ALL
+        # (tests/cross-member-test.py) and COINXT_REQUIRE_CROSSCHECK
+        # (coinxt/tools/coin-kat.py): a skip is right for a contributor whose
+        # checkout has no siblings beside it, and wrong for CI, where a skip
+        # and a pass both exit 0 and print almost the same thing. A lane that
+        # means to settle tier 2 sets XTALK_REQUIRE_SIBLINGS, and the skip is
+        # a failure there - one that still names the clone to run.
+        for name, path in absent:
+            print("check-script-vectors: " + sibling_missing(name, path))
+            c.ck("tier 2 ran (XTALK_REQUIRE_SIBLINGS is set, so a missing %s "
+                 "is a failure, not a skip)" % name, "absent", "present")
     else:
         print("check-script-vectors: SKIPPED tier 2 - the committed sibling "
-              "libraries are not present (expected ../coinxt and ../sodiumxt "
-              "x86_64-linux binaries beside this member; the suite tree has "
-              "them, a standalone checkout may not). Tier 1 still ran; the "
-              "composed paths were NOT executed here.")
+              "libraries are not all present. %s Tier 1 still ran; the "
+              "composed paths were NOT executed here."
+              % " ".join(sibling_missing(n, p) for n, p in absent))
 
     if c.failed:
         print(f"check-script-vectors: {c.failed} FAILURE(S) of {c.n}")
