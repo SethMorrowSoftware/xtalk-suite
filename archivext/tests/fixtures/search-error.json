@@ -1,3 +1,0 @@
-{
- "error": "org.apache.lucene.queryParser.ParseException: Cannot parse 'collection:(librivoxaudio) AND ((': Encountered \"<EOF>\""
-}
