@@ -1559,6 +1559,14 @@ sitting owes, in click order:
    - **The first play's `playStarted` line, or its absence** (5.8's open
      question), and any `playStarted from ... passed on` line, which would
      mean the message came for a player the stack had not yet claimed.
+   - **Press Run axSelfTest**: the 2026-09-21 run could not (engine notes
+     3.5, a function called as a command in the settings restore, fixed
+     the same day); copy its `ArchiveXT` line and any red line.
+   - **Search for a phrase in the Films family** (`scooby doo` timed out
+     twice at ten seconds on 2026-09-21, engine notes 6.10): the layer now
+     raises the engine's socket timeout to its own sixty seconds before
+     every load, so a slow query should come back or fail at sixty, never
+     at ten. Say which.
 5. **The http retry, which has never been run anywhere in this suite** - and
    which the 2026-09-20 run could not reach, because the engine refused every
    video AT ONCE (`could not create movie reference`) and the retry lived

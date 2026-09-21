@@ -216,6 +216,7 @@ local sAxReqNext            -- the next request handle
 local sAxReqs               -- sAxReqs[h] = the request record (kind, url, tag, ...)
 local sAxReqByUrl           -- sAxReqByUrl[url] = h, the correlation index
 local sAxStatusHooked       -- true once libURLSetStatusCallback points at axUrlStatus
+local sAxSocketTimeoutWas   -- the engine's socketTimeoutInterval before this layer raised it
 
 -- ==========================================================================
 -- Version, errors, capabilities, base URL.
@@ -4175,8 +4176,11 @@ end axSetCallback
 
 command axSetTimeout pSeconds
    -- Seconds before an outstanding request is reported as "timeout" and
-   -- forgotten (default 60; the live site took over 30 s on a broad search). A non-number or a value under 1 keeps the
-   -- current setting.
+   -- forgotten (default 60; the live site took over 30 s on a broad
+   -- search). A non-number or a value under 1 keeps the current setting.
+   -- The engine's own socket timeout is raised to match on the next
+   -- request (axRaiseSocketTimeout), because the Internet library gives
+   -- up first otherwise.
    if pSeconds is not a number then
       exit axSetTimeout
    end if
@@ -4185,6 +4189,45 @@ command axSetTimeout pSeconds
    end if
    put trunc(pSeconds) into sAxTimeout
 end axSetTimeout
+
+private command axRaiseSocketTimeout
+   -- THE INTERNET LIBRARY'S OWN CLOCK IS THE ENGINE'S socketTimeoutInterval,
+   -- ten seconds by default, and it runs out long before this layer's
+   -- watchdog: libURL reads its reply with `read from socket`, the engine
+   -- sends socketTimeout when nothing has arrived inside the interval,
+   -- and libURL answers that by giving the request up as status "timeout"
+   -- with "socket timeout <socket>" as the reason. OBSERVED 2026-09-21,
+   -- twice in a row on a text search sorted by downloads over every video
+   -- on the site (the query archive.org takes longest over), and the same
+   -- shape on 2026-09-20 (root engine notes 5.10): every "timeout" this
+   -- layer has ever reported was libURL's ten seconds, never its own
+   -- sixty. The dictionary says the interval is read every time a read
+   -- or write is issued, so it has to be raised BEFORE the load and left
+   -- raised while replies are pending - which is what onionxt and nostrxt
+   -- do before their own connects. It is raised, never lowered, to this
+   -- layer's timeout, and axShutdown puts back what it found. Global to
+   -- the process, like the status callback: a stack that co-loads a
+   -- socket library gets a longer idle tick on its sockets while this
+   -- layer is in use, and no library in this suite decides anything from
+   -- that tick's timing.
+   local tNow, tWant, tError
+   put sAxTimeout * 1000 into tWant
+   try
+      put the socketTimeoutInterval into tNow
+      if tNow is not a number then
+         exit axRaiseSocketTimeout
+      end if
+      if tNow >= tWant then
+         exit axRaiseSocketTimeout
+      end if
+      if sAxSocketTimeoutWas is empty then
+         put tNow into sAxSocketTimeoutWas
+      end if
+      set the socketTimeoutInterval to tWant
+   catch tError
+      -- an engine without the property: libURL keeps its own clock
+   end try
+end axRaiseSocketTimeout
 
 function axSettings
    -- EVERY PROCESS-WIDE SETTING OF THE FETCH LAYER, IN ONE ARRAY, so a
@@ -4257,7 +4300,24 @@ command axRestoreSettings pSettings
       end if
    end if
    if "baseUrl" is among the keys of pSettings then
-      axSetBaseUrl pSettings["baseUrl"]
+      -- WRITTEN DIRECTLY, like the four above, and for a second reason:
+      -- axSetBaseUrl is a FUNCTION, and the first draft called it here as
+      -- a command - `axSetBaseUrl pSettings["baseUrl"]` - which the engine
+      -- answers with "Handler: can't find handler" naming the function
+      -- (OBSERVED 2026-09-21: the harness died at its fetch-layer section
+      -- on every run, and the boot self-check beside it stayed green
+      -- because nothing at boot restores settings). The checker refuses
+      -- that spelling now. axSettings() hands out axBaseUrl(), which is
+      -- the default when nothing was set, so the default comes back as
+      -- "nothing set" rather than as an explicit copy of itself.
+      if axStrEq(pSettings["baseUrl"], kAxDefaultBase) then
+         put empty into sAxBase
+      else
+         put pSettings["baseUrl"] into sAxBase
+         if char -1 of sAxBase is "/" then
+            put char 1 to -2 of sAxBase into sAxBase
+         end if
+      end if
    end if
 end axRestoreSettings
 
@@ -4343,6 +4403,7 @@ private function axStartRequest pKind, pUrl, pTag
    put the seconds into tReq["started"]
    put tReq into sAxReqs[tHandle]
    put tHandle into sAxReqByUrl[pUrl]
+   axRaiseSocketTimeout
    -- No custom headers. The first live request (2026-09-15) set a
    -- User-Agent through libURLSetCustomHTTPHeaders and archive.org answered
    -- 400 Bad Request; that setter REPLACES the Internet library's default
@@ -4439,6 +4500,7 @@ function axDownload pUrl, pPath, pTag
       end if
    end if
    axHookStatus
+   axRaiseSocketTimeout
    add 1 to sAxReqNext
    put sAxReqNext into tHandle
    put "download" into tReq["kind"]
@@ -4501,9 +4563,18 @@ end axCancelAll
 
 command axShutdown
    -- Forget everything in flight, give the Internet library's status
-   -- callback back, and drop the owner. Safe to call twice.
+   -- callback back and the engine's socket timeout back, and drop the
+   -- owner. Safe to call twice.
+   local tError
    axCancelAll
    axUnhookStatus
+   if sAxSocketTimeoutWas is not empty then
+      try
+         set the socketTimeoutInterval to sAxSocketTimeoutWas
+      catch tError
+      end try
+      put empty into sAxSocketTimeoutWas
+   end if
    put empty into sAxOwner
 end axShutdown
 

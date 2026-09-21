@@ -479,6 +479,39 @@ before checking the path.
 
 ---
 
+### 3.5 A FUNCTION called in statement position is "Handler: can't find handler", naming the function
+
+**OBSERVED 2026-09-21** (OXT 9.6.3, Windows x86_64), twice, from archivext's
+harness:
+
+```
+Type    Handler: can't find handler
+Object  Untitled 1
+Line    axSetBaseUrl pSettings["baseUrl"]
+Hint    axSetBaseUrl
+```
+
+`axSetBaseUrl` exists - as a FUNCTION. A statement that starts with an
+identifier is a COMMAND call, so the engine looks for a command of that name,
+finds none, and reports the function's own name as the handler it cannot
+find. It is a RUN-time error on the first path that reaches the line, so a
+whole file compiles and runs green around it until that handler executes:
+the line was written the day after the previous engine run and no headless
+gate ever executed it, and the harness it sits in died at that section on
+every run after.
+
+**What it does NOT mean:** `foo(x)` in EXPRESSION position (`put foo(x) into
+t`, `if foo(x) then`, `get foo(x)`) is the right spelling of a function
+call; a COMMAND called bare is fine; and the mirror image - a command called
+with function syntax inside an expression - is a different error at the call
+site ("error in function handler", holde-em gotcha 7).
+
+**Held by:** the unified checker's rule 23 (`check-livecodescript.py`, every
+member's copy, with fixtures in `tools/test-checker.py`): a function
+declared in the file and called at the start of a statement is refused. It
+knows only the file's own functions, which is why the embedded demos are
+where a library's slip fires.
+
 ## 4. The FFI boundary (LCB <-> C)
 
 These are the marshalling bets the suite had to place before any engine existed.
@@ -1300,6 +1333,42 @@ the `unload` cancel actually freeing the URL; the async `item` kind) are in
 carries the legs.
 
 ---
+
+### 6.10 The Internet library gives a request up at the engine's `socketTimeoutInterval` - ten seconds by default - as status "timeout"
+
+**OBSERVED 2026-09-21** (OXT 9.6.3, Windows x86_64, libURL 1.2.0), twice in
+a row, on a text search sorted by downloads over every video on archive.org:
+
+```
+request 4 (gallery) failed: the URL library said timeout for
+https://archive.org/advancedsearch.php?q=...scooby+doo...&rows=192&page=1&output=json:
+socket timeout archive.org:443|6927 [headers of the last reply ... Content-Type: video/mp4 ...]
+```
+
+The `load URL ... with message` callback delivered status `timeout` with
+`libURLErrorData` reading `socket timeout <socket id>`, about ten seconds
+after the request went out - not the sixty of archivext's own watchdog, which
+never fired. That is the engine's `socketTimeoutInterval` (default 10000 ms):
+libURL reads its reply with `read from socket`, the engine sends
+`socketTimeout` when nothing has arrived inside the interval, and libURL
+answers that message by abandoning the URL. 5.10's timeout from 2026-09-20
+has the same text and the same explanation; the blocking call beside it was
+a coincidence this entry retires as the cause.
+
+The dictionary's entry says the interval is checked every time a `read from
+socket` or `write to socket` is issued, so a library that wants a longer
+wait for the Internet library's sockets raises the GLOBAL property before
+its load and leaves it raised while replies are pending - onionxt and
+nostrxt already set it before their own connects (20 s handshakes), and
+archivext now raises it to its own timeout before every load and restores
+it in `axShutdown`. What it costs: every other socket in the process gets a
+longer idle tick while a request is out (6.1: the message REPEATS at the
+interval), and nothing in this suite decides anything from that tick's
+timing. UNPROVEN until a slow search comes back through the raised interval.
+
+**The header block quoted with that failure was the download's**
+(`Content-Type: video/mp4`, the 1.39 MB test film fetched a minute earlier):
+6.9's last-reply rule, reading exactly as archivext's label says.
 
 ## 7. How to add to this file
 

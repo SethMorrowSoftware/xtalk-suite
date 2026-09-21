@@ -54,6 +54,25 @@ FIXTURES = [
      'library org.test.t\n\npublic handler tGo()\n   sPrepare()\nend handler\n\nend library\n',
      None),
 
+    # -- a FUNCTION called in statement position (archivext's axSetBaseUrl,
+    #    2026-09-21: "Handler: can't find handler" on every engine run) -----
+    ("function called as a statement fires",
+     "t.livecodescript",
+     'function tGetX\n   return 1\nend tGetX\non mouseUp\n   tGetX\nend mouseUp\n',
+     "called in STATEMENT position"),
+    ("function called as a statement with an argument fires",
+     "t.livecodescript",
+     'function tSetX pX\n   return true\nend tSetX\non mouseUp\n   tSetX tA["k"]\nend mouseUp\n',
+     "called in STATEMENT position"),
+    ("function called through get / put / if is legal",
+     "t.livecodescript",
+     'function tGetX\n   return 1\nend tGetX\non mouseUp\n   get tGetX()\n   put tGetX() into tY\n   if tGetX() is 1 then\n      put 2 into tY\n   end if\nend mouseUp\n',
+     None),
+    ("a command called bare is legal",
+     "t.livecodescript",
+     'command tDoX pX\n   put pX into tY\nend tDoX\non mouseUp\n   tDoX 1\nend mouseUp\n',
+     None),
+
     # -- switch (the sodiumxt-lineage gap that started the unification) ------
     ("switch/end switch balances in LCS",
      "t.livecodescript",

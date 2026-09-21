@@ -166,6 +166,19 @@ The checks, and the engine lesson each encodes:
       thirty times WITH commas inside quoted values
       (`constant kColBtnIdle = "44,48,58", kColBtnText = "255,255,255"`) -
       splitting naively would report those as malformed.
+  23. A locally-declared FUNCTION invoked in STATEMENT position - `axSetBaseUrl
+      tUrl` on a line of its own - .livecodescript only. A statement that
+      starts with an identifier is a COMMAND call, and a function is not a
+      command: the engine answers "Handler: can't find handler" with the
+      function's own name as the hint, at RUN time, on the first path that
+      reaches the line - so a read cannot see it and a headless gate never
+      executes it. The complement of check 16, found the same way: archivext's
+      harness died at its fetch-layer section on every engine run
+      (2026-09-21, `axSetBaseUrl pSettings["baseUrl"]` in a restore handler
+      written the day after the previous run). Write `get X(...)` or
+      `put X(...) into` a variable. Only functions declared IN THIS FILE are
+      known, which is why a demo that embeds its library is where a
+      library's own slip fires.
 
 One hold-em lineage check is deliberately NOT here, and the reason is
 recorded so it is not "rediscovered": the chunk-of-an-array-element refusal
@@ -1210,6 +1223,50 @@ def check_command_paren_calls(path, cleaned):
     return problems
 
 
+def check_function_statement_calls(path, cleaned):
+    """A locally-declared FUNCTION invoked in STATEMENT position (the
+    complement of check_command_paren_calls). A statement that starts with an
+    identifier is a command call; a function is not a command, and the engine
+    answers "Handler: can't find handler" naming the function at run time -
+    on the first path that reaches the line, which is why archivext's
+    `axSetBaseUrl pSettings["baseUrl"]` (2026-09-21) survived every headless
+    gate and killed the harness on every engine run. Only names declared as a
+    function in THIS file are known; a name declared as both (impossible in
+    one file, but cheap to exclude) is left alone."""
+    functions = set()
+    commands = set()
+    for _, line in cleaned:
+        hd = lcs_handler_decl(line.strip())
+        if hd is None:
+            continue
+        if hd[0] == "function":
+            functions.add(hd[1].lower())
+        elif hd[0] in ("command", "on"):
+            commands.add(hd[1].lower())
+    suspect = functions - commands
+    problems = []
+    if not suspect:
+        return problems
+    for lineno, line in cleaned:
+        s = line.strip()
+        if not s or lcs_handler_decl(s) is not None:
+            continue
+        m = re.match(r"^([A-Za-z_][A-Za-z0-9_]*)\b", s)
+        if m is None:
+            continue
+        name = m.group(1)
+        if name.lower() not in suspect:
+            continue
+        problems.append(Problem(path, lineno,
+                        "function `%s` is called in STATEMENT position - a "
+                        "statement that starts with an identifier is a "
+                        "command call, and the engine answers `Handler: "
+                        "can't find handler` naming the function at run "
+                        "time (write `get %s(...)`, or `put %s(...) into` "
+                        "a variable)" % (name, name, name)))
+    return problems
+
+
 def check_dynamic_property_names(path, cleaned):
     problems = []
     for lineno, line in cleaned:
@@ -1339,6 +1396,7 @@ def check_file(path):
         problems += check_declared_name_tokens(path, cleaned)
         problems += check_catch_declared(path, cleaned)
         problems += check_command_paren_calls(path, cleaned)
+        problems += check_function_statement_calls(path, cleaned)
         problems += check_dynamic_property_names(path, cleaned)
         problems += check_message_box_prose(path, cleaned)
         problems += check_undeclared_k_constants(path, cleaned)

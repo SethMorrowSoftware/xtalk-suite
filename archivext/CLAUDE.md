@@ -440,6 +440,40 @@ line and the harness's section split.
     logs the message even when it arrives for a player it has not
     claimed, so the next run's first-play line is the measurement.
 
+23. **A FUNCTION called in statement position is "Handler: can't find
+    handler", at run time, naming the function (OBSERVED 2026-09-21).**
+    `axRestoreSettings` did `axSetBaseUrl pSettings["baseUrl"]`, and
+    axSetBaseUrl is a function; a statement that starts with an identifier
+    is a COMMAND call, so the engine looked for a command of that name and
+    found none. Written 2026-09-20 in the settings-restore feature, the day
+    AFTER the last engine run, and reached by nothing headless: the vector
+    gate does not drive the fetch layer and the interpreter never executes
+    the harness - so `axSelfTest` died at its fetch-layer section on the
+    next engine, twice, while the boot self-check beside it stayed green
+    (nothing at boot restores settings). The restore writes the base URL
+    directly now, like the four settings above it, and the unified checker
+    gained rule 23 (a function called in statement position) with
+    fixtures - the complement of its rule 16, which already refused a
+    command called as a function. The general form is check 16's and the
+    root file's: a handler's KIND is part of its call, and only an engine
+    or a gate that knows the kind can see a mismatch.
+24. **The Internet library's clock is the engine's `socketTimeoutInterval`,
+    ten seconds, and it ran out first on every timeout this layer has ever
+    reported (OBSERVED 2026-09-21; root engine notes 6.10).** Two searches
+    in a row - a text query sorted by downloads over every video on the
+    site, the query archive.org takes longest over - came back as `the URL
+    library said timeout ... socket timeout archive.org:443|6927`, at
+    libURL's ten seconds, never at this layer's sixty: libURL reads its
+    reply with `read from socket`, the engine sends `socketTimeout` when
+    nothing has arrived inside the interval, and libURL gives the request
+    up. The 2026-09-20 timeout (notes 5.10) has the same shape. The layer
+    raises the interval to its own timeout before every load
+    (`axRaiseSocketTimeout`, never lowering it, restored by `axShutdown`),
+    which is what onionxt and nostrxt already do before their own
+    connects; the dictionary says the interval is read at every read, so
+    it has to be up before the load and stay up while replies are
+    pending. UNPROVEN until the next run repeats that search.
+
 ### 2026-09-20 - the SECOND demo, and the object nothing in this tree had ever used
 
 `examples/archive-gallery.livecodescript` is the same library driven the
@@ -953,6 +987,39 @@ wait for the next sitting (`docs/OXT-PASS-RUNBOOK.md` 4.10 names the lines
 to copy). The one thing the source could not settle - the lost first
 `playStarted` - is now something the next log answers rather than something
 the stack guesses about.
+
+### 2026-09-21, later - the gallery's third engine run: two green ladders, and two things the review had not seen
+
+The rebuilt gallery met the same engine (OXT 9.6.3, Windows x86_64)
+within the hour. **Boot self-check 26/26 GREEN** (36 named controls, 72
+tile controls, the four-pixel PNG taken and the non-picture refused, the
+disk cache at Documents/ArchiveXT/cache, the Internet library 1.2.0), a
+first search of 192 of 17,153,506 films, and the Live probe's four legs
+green again (180x124 and 1988x1367 into the image object). Then:
+
+- **The video ladder ran exactly as written, and cheaply.** A 1.39 MB
+  MPEG4 test film: refused at once (`could not create movie reference`),
+  the http retry refused at once - so the scheme is not the wall, which
+  is what that rung exists to say - the download (1.39 MB, not 408 MB),
+  the local file refused at once, `.mp4` noted as dead for the session,
+  and the file handed to the system's own player. Engine notes 5.9's
+  container verdict, confirmed a third time at a thousandth of the cost.
+  The player's locked rect and `agPlayerFit` were not exercised (nothing
+  opened); audio was not tried this run.
+- **`axSelfTest` could not run: gotcha 23**, a function called as a
+  command in the settings restore, which killed the harness at its
+  fetch-layer section before a single count printed. Fixed in the
+  library, and the unified checker refuses the spelling now, with
+  fixtures, in every member's copy.
+- **Two searches in a row timed out at TEN seconds: gotcha 24.** The
+  Internet library's own clock, not this layer's; the layer raises it
+  now. The header block quoted with the failure was the download's
+  (`Content-Type: video/mp4`), which is 6.9's last-reply rule reading
+  exactly as its label says.
+
+HONESTY: the boot, the image legs and the video ladder are OBSERVED; the
+harness fix and the socket timeout are UNPROVEN until the next run presses
+Run axSelfTest and repeats a slow search.
 
 ## Working rules for this member
 
