@@ -374,6 +374,72 @@ line and the harness's section split.
     success (the file write sets `the result` last), which is why
     `axDownloadSync` fetches, judges, then writes.
 
+20. **`byteToNum` of a CHARACTER throws when the character is wider than
+    one code unit (DOCUMENTED from the engine source, 2026-09-21; root
+    engine notes 2.8).** `MCStringsEvalByteToNum` answers only when the
+    argument's length in CODE UNITS is one and throws "argument is not a
+    single byte" otherwise - and a char is a grapheme on this engine
+    line, so an emoji, a flag, a skin tone or a decomposed accent is one
+    char and two or more units. The library handed every character of a
+    title, a subject, a file name and the search box to it, in
+    twenty-three helpers, and would have thrown out of `onArchive` on the
+    first emoji archive.org sent - which `axDispatch` swallows, so the
+    symptom is a search whose results silently never arrive, or a script
+    error dialog from the search box. The family interpreter models
+    byteToNum as a plain code point, which is why 2926 green headless
+    checks never saw it. `axCharCode` is the one place a character is
+    classified now (its byte value for one byte, 256 for anything wider);
+    `byteToNum(byte N of tData)` stays where the data is bytes. The vector
+    gate carries a four-byte character through every scalar tier (`WIDE`
+    in `check-script-vectors.py`) and the harness pins two answers through
+    the KAT (`kAxVecWide*`). Other members' `byteToNum(char ...)` sites
+    were looked at, not changed: coinxt's are over validated hex, base58
+    and bech32 text by construction, and one whitespace collapser takes
+    user text - that one is coinxt's to read.
+21. **The apps wrote three extension regexes, and the script had merged
+    them into one.** Found the same day by the wide-character vectors,
+    which were the first to try a non-alphanumeric tail and a leading dot.
+    The AudioBooks chapter stem and pretty name strip only `\.[a-z0-9]+$`;
+    the film club's `normalizeBaseName` strips `\.[^.]+$`, which keeps a
+    trailing dot and strips across a "/" ("dir.d/x" is "dir" - a quirk,
+    kept because the oracle ports the app verbatim); its `getCleanTitle`
+    strips `\.[^/.]+$`, which stops at a "/". Three helpers now
+    (`axStripAlnumExtension`, `axStripExtension`,
+    `axStripTitleExtension`), one per regex, and the vectors that tell
+    them apart are in the gate. Every fixture had passed through the
+    merged rule because no fixture name has such a tail: the general form
+    of gotcha 10 again - a fixture cannot see a rule it does not exercise.
+22. **A player with lockLocation false RESIZES ITSELF to its movie on
+    every prepare, and neither demo had locked it (DOCUMENTED from the
+    engine source, 2026-09-21; root engine notes 5.11).** `MCPlayer::resize`
+    centres the movie's natural pixel size on the old rect - a 1920-wide
+    film past both edges of an 1180-pixel window - and collapses an audio
+    stream to the 26-pixel controller bar; the dictionary's lockLocation
+    entry says so in one sentence, and the User Guide's "Lock size and
+    position" row says it again. Locked, the video is drawn into the rect
+    minus the bar, and on Windows STRETCHED to it (VMR9 with no aspect
+    mode), so the rect has to carry the movie's proportions: both demos
+    fit it from `the formattedWidth` / `the formattedHeight` once the
+    filename is set (0x0 for audio, which gets the bar alone along the
+    bottom of the stage with the title above it). Three neighbours from
+    the same reading, each now in the demos: `set` clears `the result`
+    before the filename setter runs, so the verdict read after it is this
+    call's; `playStarted` is sent SYNCHRONOUSLY from inside `start player`
+    and `playStopped` ONLY when the media ends (`stop player` and a
+    filename change send nothing - the message in `playstop` is commented
+    out, and the dictionary's note that a filename change sends one is
+    older than the code), so the gallery walks a concert on to its next
+    track from `playStopped`, guarded by the clock; and `stop player`
+    leaves the media open (the DirectShow graph and its connection) until
+    the filename is cleared, which Stop and Back do now. The Windows
+    volume scale is DECIBELS - 0..100 onto -70..0 dB, 7 dB a step of ten -
+    which is why the gallery's Vol buttons step by ten and not twenty.
+    What the source did NOT explain is the lost first `playStarted` of
+    engine notes 5.8: by the code it is sent on every play whose player
+    was paused, which a freshly prepared player always is. The gallery
+    logs the message even when it arrives for a player it has not
+    claimed, so the next run's first-play line is the measurement.
+
 ### 2026-09-20 - the SECOND demo, and the object nothing in this tree had ever used
 
 `examples/archive-gallery.livecodescript` is the same library driven the
@@ -836,6 +902,57 @@ moving the question into a build-time gate rather than admiring the boot
 check. And **`if there is no X then exit` deserves a second look every
 time**: it is the right shape for a control that may not exist yet, and it
 is indistinguishable from the shape for a control that never will.
+
+### 2026-09-21 - the review against the 9.6.3 dictionary and the engine source
+
+The member was read end to end against LiveCode Community 9.6.3, the
+release OXT forks: the dictionary (livecode/livecode at tag 9.6.3, 2095
+entries) and the User Guide (livecode-ide at the same tag, "Working with
+Media" for the player) fetched at the tag, and - wherever the dictionary was
+vague or, twice, older than the code - the engine source itself
+(player-platform.cpp, w32-ds-player.cpp, exec-interface-player.cpp,
+exec-strings.cpp, cmds.cpp). A mechanical cross-check of every property,
+command and function name in the library, both demos and the harness
+against the dictionary found nothing outside it; what the reading found is
+gotchas 20-22 above, root engine notes 2.8 and 5.11 carry the engine half,
+and this is what changed:
+
+- **The library never hands a character to `byteToNum` now** (gotcha 20):
+  `axCharCode`, forty-six call sites, a sixth portability discipline in the
+  header, the four-byte character `WIDE` through every scalar tier of the
+  vector gate, and `kAxVecWideQuery*` / `kAxVecWideTrack*` pinned through
+  the KAT for the harness. The gate went from 2926 to 3039 checks.
+- **Three extension helpers where there was one** (gotcha 21), with the
+  vectors that tell them apart.
+- **Both demos lock the player and fit its rect to the movie** (gotcha 22):
+  `agPlayerFit` / `adPlayerFit` letterbox a film above the controller bar
+  and give audio the bar alone with the title above it; Stop and Back
+  release the stream by clearing the filename; the redundant `set the
+  paused to false` after `start` is gone; the gallery's `playStopped`
+  walks a concert or a book on to its next entry (`agPlayNext`), guarded by
+  the clock, and its `playStarted` logs a message that arrives for a player
+  it has not claimed; both demos answer `playPaused` from the controller's
+  own button; Vol steps by ten; the player report prints `loadedTime` and
+  the movie's size. The explorer's stream and local-file
+  paths became ONE handler (`adPlayUrl`, the gallery's shape carried back)
+  with `adPlayerGone` and `adOpenOutside` as its two ends, and it gained
+  `playStarted` / `playStopped` handlers of its own.
+- **The suite's timer-pin gate learned the player's four messages** as a
+  delivery class (`tools/check-timer-stack-pin.py`, `PLAYER_MSGS`), pinned
+  by a fixture in `tools/test-timer-stack-pin.py`, because a handler the
+  engine delivers later has no defaultStack guarantee whichever object
+  sends it - the root file's own moral about the question a gate asks.
+- Docs: `docs/06-usage-guide.md`'s player snippet teaches the locked shape
+  and the release; `docs/07-open-questions.md` items 10 and 21 carry what
+  the source says; the runbook's gallery sitting says what to look for.
+
+**HONESTY.** Everything in this entry is SOURCE-READ, not engine-observed,
+and no label moved: the vector gate and the harness's two new lines are
+what hold the library half on every build, and the demos' player changes
+wait for the next sitting (`docs/OXT-PASS-RUNBOOK.md` 4.10 names the lines
+to copy). The one thing the source could not settle - the lost first
+`playStarted` - is now something the next log answers rather than something
+the stack guesses about.
 
 ## Working rules for this member
 

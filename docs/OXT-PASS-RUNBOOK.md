@@ -1491,8 +1491,12 @@ Download button):
    and a live LibriVox playlist through the callback path.
 4. Select a chapter, **Play**, wait ten seconds: the log says `the player
    opened the stream: duration N` or names the fallback (a download, then
-   the local file). Then **Stop**, then **Download**: progress in the status
-   line, then `downloaded: <path>`.
+   the local file). Since 2026-09-21 the player is locked and fitted (engine
+   notes 5.11): a chapter shows as a controller bar along the bottom of the
+   tracks table with the table still visible, a film hides the table and
+   sits letterboxed in its rect; `playStarted` and `playStopped` lines
+   print when the engine sends them. Then **Stop**, then **Download**:
+   progress in the status line, then `downloaded: <path>`.
 5. Live music family, search `grateful dead`, click a result, **Play** one
    track (the `audio-tracks` kind); Films family, `all_videos`, click a
    result (the `video` kind; MP4 in the player is the second media
@@ -1537,7 +1541,24 @@ sitting owes, in click order:
    - `the tracks` and `the mediaTypes` are printed. **This is the line that
      settles it**: it says whether an audio track was found at all.
    - Press **Vol +** and say whether anything changes. If it does, the answer
-     was loudness.
+     was loudness. The buttons step by TEN now: the Windows scale is
+     decibels, 7 dB a step, and anything under about 40 is inaudible
+     (engine notes 5.11).
+   - **The player keeps the stage now** (2026-09-21, engine notes 5.11: an
+     unlocked player resizes itself to its movie on every prepare, and both
+     demos had run unlocked): a film should sit letterboxed above its
+     controller bar with its own proportions - the Windows player stretches
+     to its rect, so say whether the picture looks right - and audio should
+     be a bar along the bottom of the stage with the title above it. The log
+     prints `movie WxH, drawn at WxH` for video.
+   - **When a track ends the next one should start on its own**: the log
+     prints `playStopped: currentTime N of M` and then `next: entry K of C`.
+     Say whether it did, and whether a `playStopped` line ever printed at
+     any OTHER moment - in the 9.6.3 source only the end of the media sends
+     one, and the walk-on is guarded by the clock in case an engine differs.
+   - **The first play's `playStarted` line, or its absence** (5.8's open
+     question), and any `playStarted from ... passed on` line, which would
+     mean the message came for a player the stack had not yet claimed.
 5. **The http retry, which has never been run anywhere in this suite** - and
    which the 2026-09-20 run could not reach, because the engine refused every
    video AT ONCE (`could not create movie reference`) and the retry lived

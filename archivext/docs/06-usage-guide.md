@@ -175,15 +175,32 @@ as the kind to let the item's mediatype decide.
 put sPlaylist["entries"][tLine]["url"] into tUrl       -- /download/... (redirects to a datanode)
 put sPlaylist["entries"][tLine]["direct"] into tDirect -- the datanode itself (axDirectUrl)
 
--- STREAM: hand the DIRECT url to a player object (created on demand). A
--- player that cannot open a stream throws nothing and plays nothing, so
--- ask it six seconds later: a duration of 0 means it did not open.
+-- STREAM: hand the DIRECT url to a player object (created on demand).
+-- LOCK ITS LOCATION FIRST: an unlocked player resizes itself to its movie
+-- on every prepare (a film to its own pixel size, audio to a 26-pixel
+-- controller strip; root engine notes 5.11), and the Windows player
+-- stretches its video to whatever rect it has, so give it a rect fitted
+-- to the movie's formattedWidth / formattedHeight (both known once the
+-- filename is set; both 0 for audio). `set the filename` leaves "could
+-- not create movie reference" in the result when the platform can tell
+-- at once; a player that opens nothing and says nothing reports a
+-- duration of 0 six seconds later, so ask it then as well.
 if there is not a player "adPlayer" then
    create player "adPlayer"
+   set the lockLocation of player "adPlayer" to true
 end if
+set the rect of player "adPlayer" to tStageRect
 set the filename of player "adPlayer" to tDirect
-start player "adPlayer"
+if the result is not empty then       -- refused at once: download it instead (below)
+   ...
+end if
+start player "adPlayer"                    -- sends playStarted; playStopped arrives when the media ENDS
 send "checkPlayer" to me in 6 seconds      -- the duration of player "adPlayer" > 0 ?
+
+-- STOP: `stop player` pauses and leaves the stream open; an empty
+-- filename is what releases it (the demos do both on Stop and on Back)
+stop player "adPlayer"
+set the filename of player "adPlayer" to empty
 
 -- DOWNLOAD: straight to disk, with progress, then play the file
 put specialFolderPath("documents") & "/ArchiveXT/" & tIdentifier into tFolder

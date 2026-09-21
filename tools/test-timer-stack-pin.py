@@ -16,8 +16,9 @@ WHY THIS FILE EXISTS
 
       - all THREE delivery classes are entries: `send ... to me in` (the plain
         and the computed spelling), `with message "X"`, the engine's own socket
-        messages, and a name handed to a library registrar (oxSetStreamCallback
-        / oxhRoute) - the last of which appears at NO call site;
+        messages and (2026-09-21) its player messages, and a name handed to a
+        library registrar (oxSetStreamCallback / oxhRoute) - the last of which
+        appears at NO call site;
       - each finding names the class that delivered the handler, and never
         claims a `send` for a handler the engine or a library delivers;
       - the closure is real (a hazard two calls deep is found) and a pinned
@@ -105,6 +106,10 @@ on socketError pSock, pErr
    faLog pErr
 end socketError
 
+on playStopped
+   faLog "the player finished"
+end playStopped
+
 on faWallTick
    set the defaultStack to the short name of this stack
    faLog "safe: pinned at the entry point"
@@ -155,6 +160,7 @@ EXPECTED = [
     ("faStream",    "registered as a library callback",        "reaches faServe -> faLog"),
     ("faServe",     "registered as a library callback",        "reaches faLog"),
     ("socketError", "engine socket message delivered by the ENGINE", "reaches faLog"),
+    ("playStopped", "engine player message delivered by the ENGINE", "reaches faLog"),
 ]
 # Delayed handlers that must NOT be reported: pinned at the entry, or only
 # reaching a hazard through a handler that pins (the wall).

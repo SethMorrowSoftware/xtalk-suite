@@ -361,6 +361,40 @@ scan over the keys is exact; only the subscript lookup folds.
 
 ---
 
+### 2.8 `byteToNum` of a CHARACTER throws when the character is wider than one code unit
+
+**DOCUMENTED, from the engine source rather than the reference (2026-09-21;
+not yet observed on a run).** `MCStringsEvalByteToNum` (exec-strings.cpp,
+9.6.3) answers the native byte value when its argument's length in CODE
+UNITS is exactly one, answers 0 for an empty argument, and otherwise throws
+`EE_BYTETONUM_BADSOURCE` - "byteToNum: argument is not a single byte". A
+`char` is a grapheme on this engine line, so `byteToNum(char N of tText)` is
+fine for every ASCII and Latin-1 character (one code unit; a character
+outside the native set answers "?" i.e. 63) and THROWS for an emoji, a flag,
+a skin tone, a decomposed accent - anything that is two or more UTF-16
+units. The dictionary's entry says "all bytes but the first are ignored",
+which describes the pre-7 engine and not this code.
+
+**What it cost.** archivext's pure layer handed every character of a title,
+a subject, a file name and the search box to `byteToNum` in twenty-three
+helpers, and would have thrown out of `onArchive` on the first emoji
+archive.org sent - and that library's dispatch SWALLOWS a throw in the app's
+handler, so the symptom would have been a search whose results silently
+never arrived. The family interpreter models the function as a plain code
+point, so 2926 headless checks were green over the path.
+
+**Rule:** classify a character by `textEncode(tChar, "UTF-8")`: one byte,
+`byteToNum` of that byte; more, it is not ASCII and no ASCII test should
+match it (archivext's `axCharCode`). `byteToNum(byte N of tData)` on data is
+exact and stays. **Not the same thing:** `charToNum` on a char, and
+`byteToNum` on a byte of `textEncode`d data, are both fine.
+
+**Held by:** archivext's vector gate (a four-byte character through every
+scalar tier) and two KAT-pinned harness lines. Nothing holds it elsewhere:
+coinxt's `byteToNum(char ...)` sites are over validated hex, base58 and
+bech32 text by construction, and one whitespace collapser there takes user
+text - worth that member's own reading.
+
 ## 3. Control flow
 
 ### 3.1 `repeat with i = A to B step N` does not honour the step
@@ -921,6 +955,73 @@ probes that block while an app's own requests are out.
 ---
 
 ---
+
+### 5.11 What the player object does, read in the 9.6.3 source
+
+**DOCUMENTED, from the engine source rather than the reference (2026-09-21;
+none of it yet observed on a run - the gallery and explorer demos are built
+on it and the next sitting is the measurement).** Files: player-platform.cpp
+(`MCPlayer`), exec-interface-player.cpp (the property setters),
+w32-ds-player.cpp (the Windows DirectShow player), cmds.cpp (`set`).
+
+- **An UNLOCKED player resizes itself to its movie on every prepare.**
+  `MCPlayer::resize` runs inside `prepare` (which `set the filename` calls)
+  and, when `lockLocation` is false, sets the rect to the movie's natural
+  pixel size centred on the old rect - or, when the movie has no video, to
+  a rect `CONTROLLER_HEIGHT` (26) pixels tall. So a 1920-wide film blows
+  past both edges of an 1180-pixel window and an MP3 collapses to a bare
+  controller strip. The dictionary's lockLocation entry says this in one
+  sentence and the User Guide's "Lock size and position" row says it again;
+  both archivext demos had run unlocked. Locked, the rect stays; the video
+  is drawn into the rect minus the 26-pixel bar (`getvideorect`), and on
+  Windows the VMR9 renderer STRETCHES it to that rect (no aspect-ratio
+  mode is set), so a stack has to fit the rect to the movie itself.
+  `the formattedWidth` / `the formattedHeight` of a player are the movie's
+  natural size once the filename is set (`getpreferredrect`), 0x0 for audio.
+- **`set` clears `the result` before the setter runs** (`MCSet::exec_ctxt`,
+  `SetTheResultToEmpty`), `prepare` sets "could not create movie reference"
+  on a refusal and clears the result on success, and `SetFileName` re-runs
+  the whole prepare whenever the new name is empty, differs, or resolves
+  (every URL and every absolute path resolves) - so the verdict read after
+  `set the filename` is this call's, on the first play and on a replay of
+  the same URL alike. `start player` sets nothing in the result.
+- **`playStarted` is synchronous and `playStopped` means the end.**
+  `playpause(False)` - what `start player` and `set the paused to false`
+  both call - sends `playStarted` from inside the command whenever the
+  player was paused when it ran, which a freshly prepared player always is
+  (`prepare` ends in `CS_PREPARED | CS_PAUSED`). The ONLY sender of
+  `playStopped` is `moviefinished`, as a delayed message, when the media
+  reaches its end; the send in `playstop` is commented out, so `stop
+  player` and a filename change send nothing (the dictionary's note that a
+  filename change sends one is older than the code), and the controller's
+  pause sends `playPaused`. **Not explained by the source:** 5.8's lost
+  first `playStarted` - by this code it is sent on every play.
+- **`stop player` leaves the media open.** `playstop` pauses the platform
+  player and detaches its view; the DirectShow graph (and its URL source's
+  connection) stays until `SetFileName("")` runs `prepare` with no name
+  and the platform player closes its file. A stack that wants a stream
+  released clears the filename.
+- **Windows: the URL goes to DirectShow unchanged, the volume is decibels,
+  `the tracks` is empty.** `OpenFile` hands the string to
+  `IGraphBuilder::AddSourceFilter`, so an https URL reaches the operating
+  system's own URL source filter and whether it opens is the OS's answer.
+  `percentToVolume` maps 0..100 linearly onto -7000..0 hundredths of a
+  decibel (-70 dB..0 dB): every ten points is 7 dB, 60 is -28 dB, and
+  anything under about 40 is inaudible on ordinary speakers - so a volume
+  control that steps by twenty reads as broken on its second press. The
+  player's own `loudness` is applied at prepare (`setloudness` acts only
+  once `CS_PREPARED`), so setting `the playLoudness of player` BEFORE the
+  filename is fine. DirectShow counts no tracks, so `the tracks` answers
+  empty there; `the status` (loading / playing / paused) is implemented for
+  every platform, not Mac-only as the dictionary says.
+- **`set the paused to false` after `start player` is the same call
+  twice** (`playpause(False)` both times); it cannot un-stick anything.
+
+**Held by:** nothing engine-side; archivext's demos are the carriers
+(`agPlayUrl` / `adPlayUrl` and their `*PlayerFit`), and
+`tools/check-timer-stack-pin.py` now treats the four player messages as a
+delivery class, so a handler for them that touches a control unqualified
+fails the build.
 
 ## 6. Sockets and processes
 

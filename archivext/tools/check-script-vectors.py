@@ -101,6 +101,14 @@ def fixture(name):
     return open(os.path.join(FIXTURES, name), encoding="utf-8").read()
 
 
+# A four-byte character (U+1F3B5, a musical note), spelled as an escape so
+# this file stays ASCII like everything beside it. It rides through every
+# scalar tier below because the engine's byteToNum THROWS on it and the
+# interpreter's does not, so a vector is the only thing that keeps the
+# library on the path that never asks (axCharCode).
+WIDE = "\U0001f3b5"
+
+
 # --------------------------------------------------------------------- tier 0
 def check_interp_model(c, ip):
     c.note("tier 0: the interpreter model this member leans on")
@@ -112,25 +120,34 @@ def check_interp_model(c, ip):
     c.ck("offset two-argument form", ev('offset("ca", "abcabc")'), 3)
     c.ck("the trailing-delimiter eat: items of 'a,b,'", ev('the number of items of "a,b,"'), 2)
     c.ck("chunk to -1", ev('char 3 to -1 of "abcdef"'), "cdef")
+    # THE MODEL THAT HID A THROW. The interpreter's byteToNum is a plain
+    # code point and never throws; the ENGINE's throws on a character that
+    # is more than one code unit (9.6.3, MCStringsEvalByteToNum), which is
+    # every emoji and every decomposed accent. The library therefore never
+    # hands a char to byteToNum any more (axCharCode); what this gate CAN
+    # hold is that the model it relies on instead - textEncode of one
+    # character - is honest about width on both sides.
+    c.ck("textEncode of a four-byte character is four bytes", ev('the number of bytes of textEncode("%s", "UTF-8")' % WIDE), 4)
+    c.ck("textEncode of an ASCII character is one byte", ev('the number of bytes of textEncode("a", "UTF-8")'), 1)
 
 
 # --------------------------------------------------------------------- tier 1
 def check_scalars(c, ip):
     c.note("tier 1: scalar rules against the oracle")
     call = ip.call
-    for text in ["a b#1.mp3", "-_.!~*'()", "/", "café ñ", "100%", "a+b"]:
+    for text in ["a b#1.mp3", "-_.!~*'()", "/", "café ñ", "100%", "a+b", WIDE + " x"]:
         c.ck(f"axUrlEncode {text!r}", call("axUrlEncode", [text]), REF.url_encode(text))
     for text in ["dir/one two.mp3", "a/b/c#d", "plain"]:
         c.ck(f"axUrlEncodePath {text!r}", call("axUrlEncodePath", [text]), REF.url_encode_path(text))
     for text in ['collection:(librivoxaudio) AND (a "b")', "*-._ x", "café", "[1 TO 2]"]:
         c.ck(f"axQueryEncode {text!r}", call("axQueryEncode", [text]), REF.query_encode(text))
-    for ident in ["pride_and_prejudice_librivox", "a.b-c_1", "", "../etc", "x y", "<script>", "-lead", "a" * 100, "a" * 101]:
+    for ident in ["pride_and_prejudice_librivox", "a.b-c_1", "", "../etc", "x y", "<script>", "-lead", "a" * 100, "a" * 101, WIDE + "abc", "abc" + WIDE]:
         c.ck(f"axIdentifierIsValid {ident[:20]!r}", call("axIdentifierIsValid", [ident]), REF.identifier_valid(ident))
-    for text in ["1977-05-08T00:00:00Z", "05/08/1977", "77-05-08", "12345", "", "c. 1900 (reprint 1950)"]:
+    for text in ["1977-05-08T00:00:00Z", "05/08/1977", "77-05-08", "12345", "", "c. 1900 (reprint 1950)", WIDE + "1977" + WIDE, "1977" + WIDE]:
         c.ck(f"axYearOf {text!r}", as_str(call("axYearOf", [text])), REF.year_of(text))
-    for text in ["1900", " 2024 ", "", "19", "abcd", "0999", "9999"]:
+    for text in ["1900", " 2024 ", "", "19", "abcd", "0999", "9999", WIDE, " " + WIDE + "1900 "]:
         c.ck(f"axNormalizeYear {text!r}", as_str(call("axNormalizeYear", [text])), REF.normalize_year(text))
-    for text in ["600.12", "12:34", "1:02:03", "1:02:03.5", "", "n/a", "abc", "0:00", "  45  ", "1:xx", "1e3"]:
+    for text in ["600.12", "12:34", "1:02:03", "1:02:03.5", "", "n/a", "abc", "0:00", "  45  ", "1:xx", "1e3", WIDE, "1:" + WIDE]:
         want = REF.duration_seconds(text)
         c.ck(f"axDurationSeconds {text!r}", as_str(call("axDurationSeconds", [text])),
              "" if want is None else REF.num_text(want))
@@ -138,16 +155,17 @@ def check_scalars(c, ip):
         c.ck(f"axFormatTime {sec!r}", call("axFormatTime", [sec]), REF.format_time(sec if sec != "" else None))
     for b in [80000000, 20000000, 1024, 1536, 0, -3, 1, 1023, 1048576, 5000000000, "x", ""]:
         c.ck(f"axFormatBytes {b!r}", call("axFormatBytes", [b]), REF.format_bytes(b if b != "" else None))
-    for text in ["Part10", "b_part2.ogg", "ABC", "x1y22z333"]:
+    for text in ["Part10", "b_part2.ogg", "ABC", "x1y22z333", "Part" + WIDE + "10", WIDE]:
         c.ck(f"axNaturalKey {text!r}", call("axNaturalKey", [text]), REF.natural_key(text))
     lines = ["b_part2.ogg", "b_part10.ogg", "b_part1.ogg", "A_part1.ogg", "b_Part1.ogg"]
     c.ck("axNaturalSort", call("axNaturalSort", ["\n".join(lines)]).split("\n"), REF.natural_sort(lines))
-    for t in ["01", "4/5", 7, "n/a", "", "track 12 of 20"]:
+    for t in ["01", "4/5", 7, "n/a", "", "track 12 of 20", WIDE + " 3", WIDE]:
         want = REF.track_number(t if t != "" else None)
         c.ck(f"axTrackNumber {t!r}", as_str(call("axTrackNumber", [t])), "" if want is None else str(want))
     for subj, mx in [("librivox; audiobooks; literature; ghost stories", 2), ("fiction\nFiction\npoetry", 2),
                      ("Fiction\nRomance\nAudiobook\nA very long subject name that exceeds twenty characters", 2),
-                     ("", 2), ("x" * 20, 2), ("a|b", 3), ("Audio Books; audio; History", 5)]:
+                     ("", 2), ("x" * 20, 2), ("a|b", 3), ("Audio Books; audio; History", 5),
+                     (WIDE + " music; jazz " + WIDE, 3), ("  " + WIDE + "  ", 2)]:
         c.ck(f"axSubjectTags {subj[:30]!r}", call("axSubjectTags", [subj, mx]).split("\n") if call("axSubjectTags", [subj, mx]) else [],
              REF.subject_tags(subj.split("\n") if subj else None, mx))
 
@@ -162,6 +180,9 @@ SANITIZE_VECTORS = [
     ("Dracula: Chapter 1", True), ("creator:austen AND title:emma", True), ("(a OR (b AND c))", False),
     ("NOT (a OR b)", False), ("a -b +c !d", False), ("moon rocket", False), ("café crème", False),
     ("x {1 TO 2}", True), ("x {1 TO", True), ("OR austen", False), ("austen NOT", False),
+    # wide characters: sanitized like any other word, never thrown on
+    (WIDE + " rocks", False), ("  Jack Straw " + WIDE + "  (live)  ", False), (WIDE, False),
+    ("(" + WIDE + " AND", False), ('"' + WIDE, False), ("title:" + WIDE + "~2", True), (WIDE + " -" + WIDE, False),
 ]
 
 
@@ -170,6 +191,12 @@ def check_sanitizer(c, ip):
     for text, mode in SANITIZE_VECTORS:
         c.ck(f"axQuerySanitize {text!r} field={mode}", ip.call("axQuerySanitize", [text, mode]), REF.sanitize(text, mode))
     c.ck("axQueryClause", ip.call("axQueryClause", ["collection", " Phish "]), "collection:(Phish)")
+    c.ck("axQueryClause wide", ip.call("axQueryClause", ["title", " " + WIDE + " "]), "title:(" + WIDE + ")")
+    c.ck("axQueryPhrase wide", ip.call("axQueryPhrase", ["creator", WIDE + ' "x"']), 'creator:("' + WIDE + ' x")')
+    c.ck("axCollapseSpaces wide", ip.call("axCollapseSpaces", ["  a  " + WIDE + "   b "]), "a " + WIDE + " b")
+    c.ck("axTrim wide", ip.call("axTrim", [" \t" + WIDE + " x " + WIDE + "\t "]), WIDE + " x " + WIDE)
+    c.ck("axUpperFirst wide", ip.call("axUpperFirst", [WIDE + "abc"]), WIDE + "abc")
+    c.ck("axLowerAscii wide", ip.call("axLowerAscii", ["AbC" + WIDE + "D"]), "abc" + WIDE + "d")
     c.ck("axQueryPhrase", ip.call("axQueryPhrase", ["creator", 'Jane "Austen"']), 'creator:("Jane Austen")')
     for f, t in [("1965", "1995"), ("1995", "1965"), ("", "1950"), ("1900", ""), ("", ""), ("19", "abcd")]:
         c.ck(f"axQueryYears {f!r} {t!r}", ip.call("axQueryYears", [f, t]), REF.query_years(f, t))
@@ -203,11 +230,17 @@ NAME_VECTORS = [
     "Night_of_the_Living_Dead.mp4.ia", "Plan9_h264.mp4", "Plan9_1080p.mkv", "Plan9-720p.webm", "Plan9.h.264.mp4",
     "Plan9_hd.mp4", "Plan9_sd_512kb.mp4", "Plan9.1280x720.mp4", "Plan9_854x480.mp4", "Plan9_640x360.mp4",
     "Plan9.mp4", "dir/sub/Plan9_512kb.mp4", "__init__.py", "", "A  B__C.mp3", "  ",
+    # wide characters, in every position a rule looks at
+    WIDE + "_vbr.mp3", "track_" + WIDE + "_64kb.mp3", WIDE + ".ogv", "Plan9_" + WIDE + "_h264.mp4", WIDE,
+    "dir/" + WIDE + "/x_512kb.mp4", "a." + WIDE, WIDE + "_1080p.mkv",
+    # the two extension rules the apps wrote differ, and only these tails show it
+    ".mp3", ".ogv", "x.mp3~", "a.b c", "x.MP3", "a.b/c", "dir.d/x", "x.", "x..mp3", "._x_vbr.mp3",
 ]
 
 TITLE_VECTORS = [
     "d1t01 - Bertha", "d1t01Bertha", "t05_Scarlet_Begonias", "D2T11 Playing In The Band", "t1", "d1t01",
     "Bertha", "  d1t01  -  Jack-Straw  ", "d10t99 x", "tea for two", "",
+    "d1t01 - " + WIDE + " Bertha", WIDE + "d1t01 x", "t" + WIDE + "1 x", WIDE,
 ]
 
 CLEAN_TITLE_VECTORS = [
@@ -217,6 +250,9 @@ CLEAN_TITLE_VECTORS = [
     ("   .mp4", "x"), ("", "Anything"), ("episode-02.mp4", ""), ("a.b.c.mp4", "a.b"),
     ("nightofthelivingdead.mp4", "Night of the Living Dead"), ("nightofthelivingdead_1968.mp4", "Night of the Living Dead"),
     ("dir/sub/x.mp4", "x"),
+    ("night_" + WIDE + "_512kb.mp4", "Night " + WIDE), (WIDE + ".mp4", "x"), ("x.mp4", WIDE + " title"),
+    ("nightofthelivingdead" + WIDE + ".mp4", "Night of the Living Dead"),
+    (".mp4", ""), ("x.mp4~", "x"), ("a.b c", ""),
 ]
 
 

@@ -129,6 +129,15 @@ script "ArchiveExplorer"
 --   5. Every script-level declaration sits at the top of this file, because
 --      OXT resolves them by lexical position (root CLAUDE.md, the
 --      106-declaration fold).
+--   6. No CHARACTER is ever handed to byteToNum. A char is a grapheme on
+--      this engine line and byteToNum throws on one that is more than a
+--      single code unit (an emoji, a flag, a decomposed accent - engine
+--      source 9.6.3, MCStringsEvalByteToNum), which archive.org titles and
+--      a search box both carry; every char-walking rule below classifies
+--      through axCharCode, which answers a value no ASCII test matches for
+--      anything wider than one byte. byteToNum stays for BYTES only (the
+--      encoders and the JSON reader walk textEncode'd data, where it is
+--      exact).
 --
 -- Conventions: public API axPascalCase; private helpers are `private` and
 -- also ax-prefixed (the cross-library gate holds every handler name in the
@@ -320,6 +329,35 @@ private function axIsAlphaByte pByte
    return false
 end axIsAlphaByte
 
+private function axCharCode pChar
+   -- The value this file classifies ONE CHARACTER by: its byte value when
+   -- the character is a single byte, and 256 - a value no ASCII test in
+   -- this file can match - for anything wider. Every char-walking rule
+   -- goes through here rather than through byteToNum, because byteToNum
+   -- THROWS on a character that is more than one code unit ("argument is
+   -- not a single byte": engine source 9.6.3, MCStringsEvalByteToNum,
+   -- which tests the code-unit length, not the byte count) and a char is
+   -- a grapheme on this engine line - an emoji, a flag, a skin tone, a
+   -- decomposed accent, anything outside the Basic Multilingual Plane is
+   -- one char and two or more code units. archive.org titles, subjects
+   -- and file names carry those, and so does whatever a reader types into
+   -- a search box, so a library that promises never to throw cannot hand
+   -- a char to byteToNum: the first draft did, in twenty-three helpers,
+   -- and every one of them would have thrown out of a callback the fetch
+   -- layer swallows - a search whose results silently never arrive.
+   -- The family interpreter models byteToNum as a plain code point and
+   -- never throws, which is why the vector gate could not see it; the
+   -- gate's tier 0 now states that model, and its wide-character vectors
+   -- drive this path on every build. A one-byte character answers exactly
+   -- what byteToNum answered, so nothing else in this file moved.
+   local tBytes
+   put textEncode(pChar, "UTF-8") into tBytes
+   if the number of bytes of tBytes is 1 then
+      return byteToNum(byte 1 of tBytes)
+   end if
+   return 256
+end axCharCode
+
 private function axIsDigits pText
    -- True for one or more ASCII digits and nothing else. The strict test
    -- this file uses instead of `is an integer`, which folds "1e3" and " 7 ".
@@ -329,7 +367,7 @@ private function axIsDigits pText
       return false
    end if
    repeat with tI = 1 to tCount
-      if not axIsDigitByte(byteToNum(char tI of pText)) then
+      if not axIsDigitByte(axCharCode(char tI of pText)) then
          return false
       end if
    end repeat
@@ -364,7 +402,7 @@ function axUpperFirst pText
    if pText is empty then
       return empty
    end if
-   put byteToNum(char 1 of pText) into tByte
+   put axCharCode(char 1 of pText) into tByte
    if tByte >= 97 then
       if tByte <= 122 then
          return numToChar(tByte - 32) & char 2 to -1 of pText
@@ -382,7 +420,7 @@ function axTrim pText
       if tText is empty then
          put true into tDone
       else
-         put byteToNum(char 1 of tText) into tByte
+         put axCharCode(char 1 of tText) into tByte
          if axIsSpaceByte(tByte) then
             put char 2 to -1 of tText into tText
          else
@@ -395,7 +433,7 @@ function axTrim pText
       if tText is empty then
          put true into tDone
       else
-         put byteToNum(char -1 of tText) into tByte
+         put axCharCode(char -1 of tText) into tByte
          if axIsSpaceByte(tByte) then
             put char 1 to -2 of tText into tText
          else
@@ -430,7 +468,7 @@ function axCollapseSpaces pText
    put false into tPending
    put the number of chars of pText into tCount
    repeat with tI = 1 to tCount
-      put byteToNum(char tI of pText) into tByte
+      put axCharCode(char tI of pText) into tByte
       if axIsSpaceByte(tByte) then
          put true into tPending
       else
@@ -452,10 +490,10 @@ private function axCharIn pChar, pSet
    -- punctuation, but the discipline is the same one coinxt's alphabet
    -- lookup pays for: compare byte values, never text.
    local tI, tCount, tByte
-   put byteToNum(pChar) into tByte
+   put axCharCode(pChar) into tByte
    put the number of chars of pSet into tCount
    repeat with tI = 1 to tCount
-      if byteToNum(char tI of pSet) is tByte then
+      if axCharCode(char tI of pSet) is tByte then
          return true
       end if
    end repeat
@@ -578,7 +616,7 @@ function axIdentifierIsValid pText
    end if
    repeat with tI = 1 to tCount
       put char tI of pText into tChar
-      put byteToNum(tChar) into tByte
+      put axCharCode(tChar) into tByte
       if axIsAlphaByte(tByte) then
          next repeat
       end if
@@ -604,7 +642,7 @@ function axYearOf pText
    put the number of chars of pText into tCount
    put 0 into tRun
    repeat with tI = 1 to tCount
-      put byteToNum(char tI of pText) into tByte
+      put axCharCode(char tI of pText) into tByte
       if axIsDigitByte(tByte) then
          add 1 to tRun
       else
@@ -682,7 +720,7 @@ private function axIsDecimal pText
    put 0 into tDots
    put 0 into tDigits
    repeat with tI = 1 to tCount
-      put byteToNum(char tI of pText) into tByte
+      put axCharCode(char tI of pText) into tByte
       if axIsDigitByte(tByte) then
          add 1 to tDigits
       else if tByte is 46 then
@@ -773,7 +811,7 @@ function axNaturalKey pText
    put empty into tOut
    put empty into tRun
    repeat with tI = 1 to tCount
-      put byteToNum(char tI of tLower) into tByte
+      put axCharCode(char tI of tLower) into tByte
       if axIsDigitByte(tByte) then
          put char tI of tLower after tRun
       else
@@ -857,7 +895,7 @@ function axTrackNumber pText
    put the number of chars of pText into tCount
    put empty into tRun
    repeat with tI = 1 to tCount
-      put byteToNum(char tI of pText) into tByte
+      put axCharCode(char tI of pText) into tByte
       if axIsDigitByte(tByte) then
          put char tI of pText after tRun
       else
@@ -972,11 +1010,11 @@ end axBlankChars
 
 private function axCountChar pText, pChar
    local tI, tCount, tN, tByte
-   put byteToNum(pChar) into tByte
+   put axCharCode(pChar) into tByte
    put the number of chars of pText into tCount
    put 0 into tN
    repeat with tI = 1 to tCount
-      if byteToNum(char tI of pText) is tByte then
+      if axCharCode(char tI of pText) is tByte then
          add 1 to tN
       end if
    end repeat
@@ -986,12 +1024,12 @@ end axCountChar
 private function axIsBalanced pText, pOpen, pClose
    -- Every pClose has a pOpen before it and the depth ends at zero.
    local tI, tCount, tDepth, tByte, tOpenByte, tCloseByte
-   put byteToNum(pOpen) into tOpenByte
-   put byteToNum(pClose) into tCloseByte
+   put axCharCode(pOpen) into tOpenByte
+   put axCharCode(pClose) into tCloseByte
    put the number of chars of pText into tCount
    put 0 into tDepth
    repeat with tI = 1 to tCount
-      put byteToNum(char tI of pText) into tByte
+      put axCharCode(char tI of pText) into tByte
       if tByte is tOpenByte then
          add 1 to tDepth
       else if tByte is tCloseByte then
@@ -1046,7 +1084,7 @@ private function axSplitSpaces pText
    put empty into tWord
    put empty into tOut
    repeat with tI = 1 to tCount
-      put byteToNum(char tI of pText) into tByte
+      put axCharCode(char tI of pText) into tByte
       if axIsSpaceByte(tByte) then
          if tWord is not empty then
             put tWord & return after tOut
@@ -1077,7 +1115,7 @@ private function axQueryTokens pText
       put the number of chars of tWord into tLen
       repeat with tJ = 1 to tLen
          put char tJ of tWord into tChar
-         put byteToNum(tChar) into tByte
+         put axCharCode(tChar) into tByte
          if tByte is 40 then
             put tChar after tPiece
             put tPiece & return after tOut
@@ -1105,14 +1143,14 @@ private function axIsOpenToken pTok
    if pTok is empty then
       return false
    end if
-   return byteToNum(char -1 of pTok) is 40
+   return axCharCode(char -1 of pTok) is 40
 end axIsOpenToken
 
 private function axIsCloseToken pTok
    if pTok is empty then
       return false
    end if
-   return byteToNum(char 1 of pTok) is 41
+   return axCharCode(char 1 of pTok) is 41
 end axIsCloseToken
 
 private function axIsOperator pTok
@@ -2277,14 +2315,14 @@ private function axJsonNumberOk pText
    put the number of chars of pText into tCount
    put 1 into tPos
    if tPos <= tCount then
-      if byteToNum(char tPos of pText) is 45 then
+      if axCharCode(char tPos of pText) is 45 then
          add 1 to tPos
       end if
    end if
    if tPos > tCount then
       return false
    end if
-   put byteToNum(char tPos of pText) into tByte
+   put axCharCode(char tPos of pText) into tByte
    if tByte is 48 then
       add 1 to tPos
    else
@@ -2292,7 +2330,7 @@ private function axJsonNumberOk pText
          return false
       end if
       repeat while tPos <= tCount
-         if axIsDigitByte(byteToNum(char tPos of pText)) then
+         if axIsDigitByte(axCharCode(char tPos of pText)) then
             add 1 to tPos
          else
             exit repeat
@@ -2300,11 +2338,11 @@ private function axJsonNumberOk pText
       end repeat
    end if
    if tPos <= tCount then
-      if byteToNum(char tPos of pText) is 46 then
+      if axCharCode(char tPos of pText) is 46 then
          add 1 to tPos
          put 0 into tDigits
          repeat while tPos <= tCount
-            if axIsDigitByte(byteToNum(char tPos of pText)) then
+            if axIsDigitByte(axCharCode(char tPos of pText)) then
                add 1 to tDigits
                add 1 to tPos
             else
@@ -2317,7 +2355,7 @@ private function axJsonNumberOk pText
       end if
    end if
    if tPos <= tCount then
-      put byteToNum(char tPos of pText) into tByte
+      put axCharCode(char tPos of pText) into tByte
       if tByte is 101 then
          add 1 to tPos
       else if tByte is 69 then
@@ -2326,7 +2364,7 @@ private function axJsonNumberOk pText
          return false
       end if
       if tPos <= tCount then
-         put byteToNum(char tPos of pText) into tByte
+         put axCharCode(char tPos of pText) into tByte
          if tByte is 43 then
             add 1 to tPos
          else if tByte is 45 then
@@ -2335,7 +2373,7 @@ private function axJsonNumberOk pText
       end if
       put 0 into tDigits
       repeat while tPos <= tCount
-         if axIsDigitByte(byteToNum(char tPos of pText)) then
+         if axIsDigitByte(axCharCode(char tPos of pText)) then
             add 1 to tDigits
             add 1 to tPos
          else
@@ -3022,7 +3060,7 @@ function axFileExtension pName
    put axLowerAscii(pName) into tLower
    put the number of chars of tLower into tCount
    repeat with tI = tCount down to 1
-      put byteToNum(char tI of tLower) into tByte
+      put axCharCode(char tI of tLower) into tByte
       if tByte is 46 then
          if tI is tCount then
             return empty
@@ -3037,15 +3075,45 @@ function axFileExtension pName
 end axFileExtension
 
 private function axStripExtension pName
-   -- The name without its final extension (any run of non-dot characters
-   -- after the last dot), or the name itself when there is none.
+   -- The film club's normalizeBaseName spelling of "extension off",
+   -- /\.[^.]+$/: everything from the last dot on, provided at least one
+   -- character follows it. Three edges the first draft got wrong, each
+   -- found on 2026-09-21 by the vector that first tried it: a name that
+   -- IS only an extension (".ogv") strips to nothing; a trailing dot
+   -- ("x.") is not an extension and stays; and a "/" inside the tail does
+   -- NOT protect it ("dir.d/x" becomes "dir"), which is a quirk of the
+   -- app and is kept because the oracle keeps it. The episode TITLE is
+   -- that app's other regex and takes axStripTitleExtension.
    local tI, tCount, tByte
    put the number of chars of pName into tCount
    repeat with tI = tCount down to 1
-      put byteToNum(char tI of pName) into tByte
+      put axCharCode(char tI of pName) into tByte
       if tByte is 46 then
-         if tI is 1 then
+         if tI is tCount then
             return pName
+         end if
+         if tI is 1 then
+            return empty
+         end if
+         return char 1 to (tI - 1) of pName
+      end if
+   end repeat
+   return pName
+end axStripExtension
+
+private function axStripTitleExtension pName
+   -- The film club's getCleanTitle spelling, /\.[^/.]+$/: as above, but
+   -- a "/" inside the tail means there is no extension to strip.
+   local tI, tCount, tByte
+   put the number of chars of pName into tCount
+   repeat with tI = tCount down to 1
+      put axCharCode(char tI of pName) into tByte
+      if tByte is 46 then
+         if tI is tCount then
+            return pName
+         end if
+         if tI is 1 then
+            return empty
          end if
          return char 1 to (tI - 1) of pName
       end if
@@ -3054,7 +3122,43 @@ private function axStripExtension pName
       end if
    end repeat
    return pName
-end axStripExtension
+end axStripTitleExtension
+
+private function axStripAlnumExtension pName
+   -- The AudioBooks spelling of "extension off" (/\.[a-z0-9]+$/i): only
+   -- when everything after the last dot is ASCII letters and digits.
+   -- "a.mp3" loses its tail; "a.b c", "x.mp3~" and a name ending in a
+   -- character no ASCII test matches keep theirs. The chapter stem and
+   -- the pretty name are that app's rules and take this one; the video
+   -- stem and the episode title are the film club's and take the looser
+   -- axStripExtension. The two agreed on every fixture and disagreed on
+   -- the first non-alphanumeric tail a vector tried (2026-09-21).
+   local tI, tCount, tByte, tTail
+   put the number of chars of pName into tCount
+   put 0 into tTail
+   repeat with tI = tCount down to 1
+      put axCharCode(char tI of pName) into tByte
+      if tByte is 46 then
+         if tTail is 0 then
+            return pName
+         end if
+         if tI is 1 then
+            return empty
+         end if
+         return char 1 to (tI - 1) of pName
+      end if
+      if axIsAlphaByte(tByte) then
+         add 1 to tTail
+         next repeat
+      end if
+      if axIsDigitByte(tByte) then
+         add 1 to tTail
+         next repeat
+      end if
+      return pName
+   end repeat
+   return pName
+end axStripAlnumExtension
 
 private function axEndsWithAny pText, pSuffixes
    -- Byte-exact ends-with over a comma list of suffixes (call with both
@@ -3246,11 +3350,11 @@ function axFileStem pName
    -- AudioBooks chapterStem): lower-cased, extension off, then one of the
    -- derivative suffixes _<1-3 digits>kb / _vbr / _orig / _original off.
    local tStem, tI, tCount, tByte, tLen
-   put axStripExtension(axLowerAscii(pName)) into tStem
+   put axStripAlnumExtension(axLowerAscii(pName)) into tStem
    put the number of chars of tStem into tCount
    if axEndsWithAny(tStem, "_vbr,_orig,_original") then
       repeat with tI = tCount down to 1
-         if byteToNum(char tI of tStem) is 95 then
+         if axCharCode(char tI of tStem) is 95 then
             return char 1 to (tI - 1) of tStem
          end if
       end repeat
@@ -3259,7 +3363,7 @@ function axFileStem pName
       -- _<1-3 digits>kb
       put 0 into tLen
       repeat with tI = (tCount - 2) down to 1
-         put byteToNum(char tI of tStem) into tByte
+         put axCharCode(char tI of tStem) into tByte
          if axIsDigitByte(tByte) then
             add 1 to tLen
             if tLen > 3 then
@@ -3292,10 +3396,10 @@ function axVideoStem pName
       -- [_.-]\d{3,4}p$
       put the number of chars of tStem into tCount
       if tCount > 4 then
-         if byteToNum(char tCount of tStem) is 112 then
+         if axCharCode(char tCount of tStem) is 112 then
             put 0 into tRun
             repeat with tI = (tCount - 1) down to 1
-               put byteToNum(char tI of tStem) into tByte
+               put axCharCode(char tI of tStem) into tByte
                if axIsDigitByte(tByte) then
                   add 1 to tRun
                else
@@ -3306,7 +3410,7 @@ function axVideoStem pName
                if tRun <= 4 then
                   put tCount - tRun - 1 into tI
                   if tI >= 1 then
-                     put byteToNum(char tI of tStem) into tSep
+                     put axCharCode(char tI of tStem) into tSep
                      if axCharIn(numToChar(tSep), "_.-") then
                         put char 1 to (tI - 1) of tStem into tStem
                      end if
@@ -3367,12 +3471,12 @@ function axPrettyName pName
    put pName into tStem
    put the number of chars of tStem into tCount
    repeat with tI = tCount down to 1
-      if byteToNum(char tI of tStem) is 47 then
+      if axCharCode(char tI of tStem) is 47 then
          put char (tI + 1) to tCount of tStem into tStem
          exit repeat
       end if
    end repeat
-   put axStripExtension(tStem) into tStem
+   put axStripAlnumExtension(tStem) into tStem
    put axLowerAscii(tStem) into tOut
    put the number of chars of tStem into tCount
    if axEndsWithAny(tOut, "_vbr") then
@@ -3380,7 +3484,7 @@ function axPrettyName pName
    else if axEndsWithAny(tOut, "kb") then
       put 0 into tLen
       repeat with tI = (tCount - 2) down to 1
-         put byteToNum(char tI of tStem) into tByte
+         put axCharCode(char tI of tStem) into tByte
          if axIsDigitByte(tByte) then
             add 1 to tLen
             if tLen > 3 then
@@ -3414,12 +3518,12 @@ function axTrackTitleClean pTitle
    put 1 into tPos
    -- optional d<digits>
    if tCount >= 2 then
-      put byteToNum(char 1 of axLowerAscii(char 1 of tText)) into tByte
+      put axCharCode(char 1 of axLowerAscii(char 1 of tText)) into tByte
       if tByte is 100 then
          put 0 into tDigits
          put 2 into tI
          repeat while tI <= tCount
-            if axIsDigitByte(byteToNum(char tI of tText)) then
+            if axIsDigitByte(axCharCode(char tI of tText)) then
                add 1 to tDigits
                add 1 to tI
             else
@@ -3433,12 +3537,12 @@ function axTrackTitleClean pTitle
    end if
    -- required t<digits>
    if tPos <= tCount then
-      put byteToNum(char 1 of axLowerAscii(char tPos of tText)) into tByte
+      put axCharCode(char 1 of axLowerAscii(char tPos of tText)) into tByte
       if tByte is 116 then
          put 0 into tDigits
          put tPos + 1 into tI
          repeat while tI <= tCount
-            if axIsDigitByte(byteToNum(char tI of tText)) then
+            if axIsDigitByte(axCharCode(char tI of tText)) then
                add 1 to tDigits
                add 1 to tI
             else
@@ -3447,7 +3551,7 @@ function axTrackTitleClean pTitle
          end repeat
          if tDigits > 0 then
             repeat while tI <= tCount
-               put byteToNum(char tI of tText) into tByte
+               put axCharCode(char tI of tText) into tByte
                if axIsSpaceByte(tByte) then
                   add 1 to tI
                else if axCharIn(numToChar(tByte), "._-") then
@@ -3473,12 +3577,12 @@ function axCleanTitle pName, pItemTitle
    if pName is empty then
       return "Untitled"
    end if
-   put axStripExtension(pName) into tTitle
+   put axStripTitleExtension(pName) into tTitle
    put empty into tId
    put axLowerAscii(pItemTitle) into tLower
    put the number of chars of tLower into tCount
    repeat with tI = 1 to tCount
-      put byteToNum(char tI of tLower) into tByte
+      put axCharCode(char tI of tLower) into tByte
       if axIsDigitByte(tByte) then
          put char tI of tLower after tId
       else if tByte >= 97 then
@@ -3582,12 +3686,12 @@ private function axSplitOn pText, pChar
    -- "|" into a ";" first, so pipes and semicolons both split a subject
    -- the way the app's /[;|]/ did).
    local tOut, tI, tCount, tByte, tSplit, tPiece
-   put byteToNum(pChar) into tSplit
+   put axCharCode(pChar) into tSplit
    put the number of chars of pText into tCount
    put empty into tOut
    put empty into tPiece
    repeat with tI = 1 to tCount
-      put byteToNum(char tI of pText) into tByte
+      put axCharCode(char tI of pText) into tByte
       if tByte is tSplit then
          put tPiece & return after tOut
          put empty into tPiece
@@ -4844,6 +4948,10 @@ constant kAxVecPresetBobWeirHex = "636f6c6c656374696f6e3a2865747265652920414e442
 constant kAxVecPresetPrelingerHex = "636f6c6c656374696f6e3a287072656c696e6765722920414e44206d65646961747970653a286d6f76696573204f5220766964656f204f522074656c65766973696f6e2920414e4420286d6f6f6e20726f636b657420746573742920414e4420286c6963656e736575726c3a22687474703a2f2f6372656174697665636f6d6d6f6e732e6f72672f7075626c6963646f6d61696e2f6d61726b2f312e302f22204f52206c6963656e736575726c3a2268747470733a2f2f6372656174697665636f6d6d6f6e732e6f72672f7075626c6963646f6d61696e2f6d61726b2f312e302f22204f52206c6963656e736575726c3a22687474703a2f2f6372656174697665636f6d6d6f6e732e6f72672f7075626c6963646f6d61696e2f2229"
 constant kAxVecPresetAuthor = "collection:(librivoxaudio) AND creator:(Jane Austen)"
 constant kAxVecPresetCollectionHex = "6d65646961747970653a2865747265652920414e4420636f6c6c656374696f6e3a2850686973682920414e4420796561723a5b3139393720544f20313939395d20414e4420736f757263653a28736f756e64626f617264204f5220736264204f5220227362642229"
+constant kAxVecWideQueryHex = "20204a61636b20537472617720f09f8eb52020286c697665292020"
+constant kAxVecWideQuerySafeHex = "4a61636b20537472617720f09f8eb520286c69766529"
+constant kAxVecWideTrackHex = "6431743031202d20f09f8eb520426572746861"
+constant kAxVecWideTrackCleanHex = "f09f8eb520426572746861"
 -- <<< KAT CONSTANTS END <<<
 
 -- ==========================================================================
@@ -5089,6 +5197,12 @@ end axtTestScalars
 private command axtTestSanitizer
    axtSection "query sanitizer"
    axtCheck axQuerySanitize("Title - Subtitle", false) is "Title Subtitle", "a bare dash is dropped"
+   -- A FOUR-BYTE CHARACTER, which byteToNum throws on (it is two code
+   -- units on this engine line) and which the library's first draft handed
+   -- to byteToNum for every character it walked. The expected answer is
+   -- the oracle's, pinned through the KAT; a throw here would be the
+   -- harness's own red line rather than a silently missing search result.
+   axtCheck axQuerySanitize(axtHex(kAxVecWideQueryHex), false) is axtHex(kAxVecWideQuerySafeHex), "a query with a four-byte character is sanitized, not thrown on"
    axtCheck axQuerySanitize("austen -", false) is "austen", "a trailing bare dash is dropped"
    axtCheck axQuerySanitize("+", false) is empty, "a lone plus is nothing"
    axtCheck axQuerySanitize("!", false) is empty, "a lone bang is nothing"
@@ -5483,6 +5597,7 @@ private command axtTestFileRules
    axtCheck axTrackTitleClean("d1t01 Scarlet_Begonias") is "Scarlet Begonias", "axTrackTitleClean strips d1t01"
    axtCheck axTrackTitleClean("T03-Fire_On_The_Mountain") is "Fire On The Mountain", "axTrackTitleClean strips t03 and a dash"
    axtCheck axTrackTitleClean("Plain Title") is "Plain Title", "axTrackTitleClean leaves a plain title"
+   axtCheck axTrackTitleClean(axtHex(kAxVecWideTrackHex)) is axtHex(kAxVecWideTrackCleanHex), "a title with a four-byte character is cleaned, not thrown on"
    axtCheck axTrackTitleClean(empty) is empty, "axTrackTitleClean of empty"
    axtCheck axCleanTitle("Show_E01.mp4", "Show") is "E01", "axCleanTitle drops the item title"
    axtCheck axCleanTitle("nightofthelivingdead.mp4", "Night of the Living Dead") is "Untitled", "axCleanTitle: nothing left is Untitled"
@@ -5678,6 +5793,10 @@ constant kAdUiVersion = "archive-explorer-kit2-3"
 constant kAdWinW = 1180
 constant kAdWinH = 630
 constant kAdPlayerName = "adPlayer"
+-- The player's controller bar is 26 pixels tall in this engine line
+-- (player-platform.cpp, CONTROLLER_HEIGHT); adPlayerFit adds it back
+-- under a rect fitted to the movie.
+constant kAdControllerH = 26
 
 local sAdFamily              -- the family id in play (etree / librivox / movies / any)
 local sAdPreset              -- the selected preset id
@@ -6753,39 +6872,192 @@ command adDoPlay
    if tUrl is empty then
       put tEntry["url"] into tUrl
    end if
+   adLog "play: " & tUrl & " (" & tEntry["format"] & ", " & axFormatBytes(tEntry["size"]) & ") on " & the platform & " " & the systemVersion
+   uiStatus "opening the stream in the engine's player (" & tEntry["title"] & ")...", "warn"
+   adPlayUrl tUrl, false
+end adDoPlay
+
+command adPlayUrl pUrl, pIsFile
+   -- HAND ONE URL OR PATH TO THE PLAYER - the stream and the downloaded
+   -- file through the same lines, so the ladder's last rung cannot drift
+   -- from its first (the gallery's agPlayUrl, carried back). Three things
+   -- the 9.6.3 engine source settled (root engine notes 5.11) are built
+   -- in: the player is LOCKED, because an unlocked one resizes itself to
+   -- its movie on every prepare - a film to its own pixel size, past the
+   -- panel and the window, an audio stream to a 26-pixel strip; its rect
+   -- is then fitted to the movie's proportions (adPlayerFit), because the
+   -- Windows player stretches its video to whatever rect it has; and the
+   -- state that says "this player is ours" goes up BEFORE the filename
+   -- is set, because playStarted is sent from inside `start player`.
+   local tName, tError, tWhy
+   set the defaultStack to the short name of this stack
    put kAdPlayerName into tName
    try
       if there is no player tName then
          create player
          set the name of the last player to tName
       end if
+      set the lockLocation of player tName to true
       set the rect of player tName to the rect of field "adTracks"
       set the showController of player tName to true
-      set the visible of field "adTracks" to false
       set the visible of player tName to true
-      set the filename of player tName to tUrl
+      put pUrl into sAdPlayUrl
+      set the filename of player tName to pUrl
       put the result into tWhy
-      adLog "play: " & tUrl & " (" & tEntry["format"] & ", " & axFormatBytes(tEntry["size"]) & ") on " & the platform & " " & the systemVersion
       if tWhy is not empty then
-         -- the platform player's SYNCHRONOUS verdict (DirectShow's
-         -- RenderFile, AVFoundation's typing) - "could not create movie
-         -- reference" is the usual text; no need to wait six seconds
-         adLog "the player refused the stream at once: " & tWhy & " - downloading the file and playing it from disk instead"
-         set the visible of player tName to false
-         set the visible of field "adTracks" to true
-         adDoDownload true
-         exit adDoPlay
+         -- the platform player's SYNCHRONOUS verdict (DirectShow's graph
+         -- build, AVFoundation's typing) - "could not create movie
+         -- reference" is the usual text; no need to wait six seconds.
+         -- `set` clears the result before the setter runs (9.6.3,
+         -- MCSet::exec_ctxt), so this is this call's verdict.
+         adLog "the player refused it at once: " & tWhy
+         put empty into sAdPlayUrl
+         adPlayerGone
+         if pIsFile is true then
+            adOpenOutside pUrl
+         else
+            adLog "downloading the file and playing it from disk instead"
+            adDoDownload true
+         end if
+         exit adPlayUrl
       end if
+      adPlayerFit tName
       start player tName
-      put tUrl into sAdPlayUrl
-      uiStatus "opening the stream in the engine's player (" & tEntry["title"] & ")...", "warn"
+      if pIsFile is true then
+         uiStatus "playing the downloaded file; Stop puts the list back", "ok"
+      end if
       adArmPlayCheck
    catch tError
-      adLog "player failed: " & tError & " - downloading the file instead"
-      set the visible of field "adTracks" to true
-      adDoDownload true
+      adLog "player failed: " & tError
+      put empty into sAdPlayUrl
+      adPlayerGone
+      if pIsFile is true then
+         adOpenOutside pUrl
+      else
+         adLog "downloading the file and playing it from disk instead"
+         adDoDownload true
+      end if
    end try
-end adDoPlay
+end adPlayUrl
+
+command adPlayerFit pName
+   -- The rect the movie deserves, read from `the formattedWidth` and
+   -- `the formattedHeight` once the filename is set (both 0 for audio).
+   -- Video: fitted inside the tracks table's rect above a controller bar,
+   -- the table hidden behind it. Audio: the bar alone along the bottom of
+   -- the table, which stays VISIBLE - a listener picks the next chapter
+   -- while this one plays.
+   local tW, tH, tError, tBox, tVideo, tSaved, tL, tT, tR, tB
+   put 0 into tW
+   put 0 into tH
+   try
+      put the formattedWidth of player pName into tW
+      put the formattedHeight of player pName into tH
+   catch tError
+      put 0 into tW
+      put 0 into tH
+   end try
+   if tW is not a number then
+      put 0 into tW
+   end if
+   if tH is not a number then
+      put 0 into tH
+   end if
+   put the rect of field "adTracks" into tBox
+   put the itemDelimiter into tSaved
+   set the itemDelimiter to comma
+   put item 1 of tBox into tL
+   put item 2 of tBox into tT
+   put item 3 of tBox into tR
+   put item 4 of tBox into tB
+   set the itemDelimiter to tSaved
+   if tW > 0 and tH > 0 then
+      put adFitRect(tW, tH, tL, tT, tR, tB - kAdControllerH) into tVideo
+      put the itemDelimiter into tSaved
+      set the itemDelimiter to comma
+      put item 1 of tVideo into tL
+      put item 2 of tVideo into tT
+      put item 3 of tVideo into tR
+      put item 4 of tVideo into tB
+      set the itemDelimiter to tSaved
+      set the rect of player pName to (tL & comma & tT & comma & tR & comma & (tB + kAdControllerH))
+      set the visible of field "adTracks" to false
+      adLog "      movie " & tW & "x" & tH & ", drawn at " & (tR - tL) & "x" & (tB - tT)
+      exit adPlayerFit
+   end if
+   set the rect of player pName to (tL & comma & (tB - kAdControllerH) & comma & tR & comma & tB)
+   set the visible of field "adTracks" to true
+end adPlayerFit
+
+function adFitRect pW, pH, pL, pT, pR, pB
+   -- A picture's rect inside a box: scaled down to fit, never up, and
+   -- centred (the gallery's agFitRect).
+   local tBoxW, tBoxH, tW, tH, tX, tY
+   put pR - pL into tBoxW
+   put pB - pT into tBoxH
+   put pW into tW
+   put pH into tH
+   if tW < 1 then
+      return pL & comma & pT & comma & pR & comma & pB
+   end if
+   if tH < 1 then
+      return pL & comma & pT & comma & pR & comma & pB
+   end if
+   if tW > tBoxW then
+      put trunc(tH * tBoxW / tW) into tH
+      put tBoxW into tW
+   end if
+   if tH > tBoxH then
+      put trunc(tW * tBoxH / tH) into tW
+      put tBoxH into tH
+   end if
+   if tW < 1 then
+      put 1 into tW
+   end if
+   if tH < 1 then
+      put 1 into tH
+   end if
+   put pL + ((tBoxW - tW) div 2) into tX
+   put pT + ((tBoxH - tH) div 2) into tY
+   return tX & comma & tY & comma & (tX + tW) & comma & (tY + tH)
+end adFitRect
+
+command adPlayerGone
+   -- The player out of the way and the table back, on every path that
+   -- gives up on it.
+   local tName, tError
+   put kAdPlayerName into tName
+   try
+      if there is a player tName then
+         set the visible of player tName to false
+      end if
+   catch tError
+   end try
+   if there is a field "adTracks" then
+      set the visible of field "adTracks" to true
+   end if
+end adPlayerGone
+
+command adOpenOutside pPath
+   -- The bottom of the ladder: a LOCAL file this engine's player would
+   -- not open goes to the system's own player, and never to another
+   -- download. `launch document` reports its own refusal in the result.
+   local tWhy, tError
+   try
+      launch document pPath
+      put the result into tWhy
+      if tWhy is empty then
+         adLog "handed to the system's own player: " & pPath
+         uiStatus "no in-window playback for this format on this engine; the file opened in the system player", "warn"
+      else
+         adLog "the system player refused it too: " & tWhy
+         uiStatus "no in-window playback on this engine, and the system player refused: " & tWhy, "bad"
+      end if
+   catch tError
+      adLog "could not hand it to the system either: " & tError
+      uiStatus "no in-window playback on this engine, and the system player refused: " & tError, "bad"
+   end try
+end adOpenOutside
 
 command adArmPlayCheck
    -- One pending check at a time: a second Play inside the six seconds
@@ -6868,17 +7140,7 @@ command adPlayCheck
    -- working player for the format (Linux builds have none at all), so
    -- hand the file to the system player and STOP - never download again
    adLog "the player reports duration 0 six seconds after start on the LOCAL file too, on " & the platform & ": no in-window playback for this format on this engine - opening it with the system player"
-   try
-      launch document tUrl
-      put the result into tError
-      if tError is empty then
-         uiStatus "no in-window playback on this engine; the file opened in the system player", "warn"
-      else
-         uiStatus "no in-window playback on this engine, and the system player refused: " & tError, "bad"
-      end if
-   catch tError
-      uiStatus "no in-window playback on this engine, and the system player refused: " & tError, "bad"
-   end try
+   adOpenOutside tUrl
 end adPlayCheck
 
 command adDoDownload pPlayAfter
@@ -6968,45 +7230,12 @@ command adDownloadFinished pPath
 end adDownloadFinished
 
 command adPlayLocal pPath
-   -- Play a file from disk in the same player: the path the engine's
-   -- media stack can always open, whatever it thinks of https streams.
-   local tName, tError, tWhy
+   -- Play a file from disk in the same player, through the same lines
+   -- as the stream: the path the engine's media stack can always open,
+   -- whatever it thinks of https streams.
    set the defaultStack to the short name of this stack
-   put kAdPlayerName into tName
-   try
-      if there is no player tName then
-         create player
-         set the name of the last player to tName
-      end if
-      set the rect of player tName to the rect of field "adTracks"
-      set the showController of player tName to true
-      set the visible of field "adTracks" to false
-      set the visible of player tName to true
-      set the filename of player tName to pPath
-      put the result into tWhy
-      adLog "play (local): " & pPath
-      if tWhy is not empty then
-         adLog "the player refused the local file at once: " & tWhy & " - opening it with the system player"
-         set the visible of player tName to false
-         set the visible of field "adTracks" to true
-         launch document pPath
-         uiStatus "no in-window playback for this format on this engine; the file opened in the system player", "warn"
-         exit adPlayLocal
-      end if
-      start player tName
-      put pPath into sAdPlayUrl
-      uiStatus "playing the downloaded file; Stop puts the list back", "ok"
-      adArmPlayCheck
-   catch tError
-      adLog "player failed on the local file: " & tError & " - opening it with the system player"
-      set the visible of field "adTracks" to true
-      try
-         launch document pPath
-         uiStatus "no in-window playback on this engine; the file opened in the system player", "warn"
-      catch tError
-         uiStatus "could not play or open the file: " & tError, "bad"
-      end try
-   end try
+   adLog "play (local): " & pPath
+   adPlayUrl pPath, true
 end adPlayLocal
 
 function adDownloadFolder pIdentifier
@@ -7113,6 +7342,12 @@ command adDoStopPlay
       if there is a player tName then
          stop player tName
          set the visible of player tName to false
+         -- and UNLOADED: `stop player` pauses and leaves the media open
+         -- (the DirectShow graph and its connection, the macOS player
+         -- item); an empty filename is what releases them (9.6.3,
+         -- MCPlayer::SetFileName), and sends no playStopped in this
+         -- engine line
+         set the filename of player tName to empty
       end if
    catch tError
    end try
@@ -7120,6 +7355,44 @@ command adDoStopPlay
       set the visible of field "adTracks" to true
    end if
 end adDoStopPlay
+
+on playStarted
+   -- The player's own word that it began, sent from inside `start
+   -- player` (9.6.3 source, MCPlayer::playpause); logged, and the
+   -- six-second check is left armed on purpose, because on 2026-09-20
+   -- this message arrived for streams nobody could hear (root engine
+   -- notes 5.8) and the check is what prints the properties that say why.
+   set the defaultStack to the short name of this stack
+   if sAdPlayUrl is empty then
+      pass playStarted
+   end if
+   adLog "playStarted: the player opened " & sAdPlayUrl
+end playStarted
+
+on playStopped
+   -- The media reached its end (the only sender of this message in the
+   -- 9.6.3 source is MCPlayer::moviefinished; `stop player` and a
+   -- filename change send nothing). The list comes back; the gallery
+   -- demo is the one that walks on to the next track.
+   set the defaultStack to the short name of this stack
+   if sAdPlayUrl is empty then
+      pass playStopped
+   end if
+   adLog "playStopped: the player reached the end of " & sAdPlayUrl
+   adDoStopPlay
+   uiStatus "finished; select another entry and press Play", "ok"
+end playStopped
+
+on playPaused
+   -- The controller's own pause button (9.6.3, MCPlayer::playpause), so
+   -- the status line stops saying "playing" over a stopped clock.
+   set the defaultStack to the short name of this stack
+   if sAdPlayUrl is empty then
+      pass playPaused
+   end if
+   adLog "playPaused: the controller paused it"
+   uiStatus "paused - press the controller's play button to resume", "warn"
+end playPaused
 
 -- ==========================================================================
 -- The fetch-layer callback: the whole contract in one handler. Reached

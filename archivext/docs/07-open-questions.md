@@ -118,7 +118,14 @@
     (item 12) and plays it from disk. The log now records the platform,
     the URL, the format and the duration the player reported - the next
     log will say WHICH of the three (the redirect, https in the player,
-    the format) was the wall.
+    the format) was the wall. **From the 9.6.3 source, 2026-09-21** (root
+    engine notes 5.11): both demos had run the player UNLOCKED, and an
+    unlocked player resizes itself to its movie on every prepare - a film
+    to its own pixel size past the window's edges, audio to a 26-pixel
+    controller strip - so what a reader saw over a silent MP3 was the
+    engine's own collapse, not a stack decision. Both demos lock the
+    player now and fit its rect to the movie; the next run says how that
+    looks.
 
 17. ~~Does an engine IMAGE object take bytes from a script at all?~~
     **ANSWERED 2026-09-20, live**: yes. The gallery's Live probe put the item
@@ -203,7 +210,13 @@
     not been exercised on any engine, because the 2026-09-20 run refused
     the h.264 files from DISK as well (engine notes 5.9), which rules the
     container in and leaves the scheme question untouched. The test that settles it is a video this engine
-    CAN play locally, streamed.
+    CAN play locally, streamed. **From the 9.6.3 source, 2026-09-21**: the
+    Windows player hands the URL string to DirectShow's
+    `IGraphBuilder::AddSourceFilter` unchanged (w32-ds-player.cpp), so an
+    https URL reaches the operating system's own URL source filter and
+    whether it opens is the OS's answer, not the engine's - and the MP3s
+    that played on 2026-09-20 were https, which makes the scheme an
+    unlikely wall for video too. The retry stays as the one-click proof.
 
 ## What is deliberately not built yet
 

@@ -90,6 +90,10 @@ constant kAxVecPresetBobWeirHex = "636f6c6c656374696f6e3a2865747265652920414e442
 constant kAxVecPresetPrelingerHex = "636f6c6c656374696f6e3a287072656c696e6765722920414e44206d65646961747970653a286d6f76696573204f5220766964656f204f522074656c65766973696f6e2920414e4420286d6f6f6e20726f636b657420746573742920414e4420286c6963656e736575726c3a22687474703a2f2f6372656174697665636f6d6d6f6e732e6f72672f7075626c6963646f6d61696e2f6d61726b2f312e302f22204f52206c6963656e736575726c3a2268747470733a2f2f6372656174697665636f6d6d6f6e732e6f72672f7075626c6963646f6d61696e2f6d61726b2f312e302f22204f52206c6963656e736575726c3a22687474703a2f2f6372656174697665636f6d6d6f6e732e6f72672f7075626c6963646f6d61696e2f2229"
 constant kAxVecPresetAuthor = "collection:(librivoxaudio) AND creator:(Jane Austen)"
 constant kAxVecPresetCollectionHex = "6d65646961747970653a2865747265652920414e4420636f6c6c656374696f6e3a2850686973682920414e4420796561723a5b3139393720544f20313939395d20414e4420736f757263653a28736f756e64626f617264204f5220736264204f5220227362642229"
+constant kAxVecWideQueryHex = "20204a61636b20537472617720f09f8eb52020286c697665292020"
+constant kAxVecWideQuerySafeHex = "4a61636b20537472617720f09f8eb520286c69766529"
+constant kAxVecWideTrackHex = "6431743031202d20f09f8eb520426572746861"
+constant kAxVecWideTrackCleanHex = "f09f8eb520426572746861"
 -- <<< KAT CONSTANTS END <<<
 
 -- ==========================================================================
@@ -335,6 +339,12 @@ end axtTestScalars
 private command axtTestSanitizer
    axtSection "query sanitizer"
    axtCheck axQuerySanitize("Title - Subtitle", false) is "Title Subtitle", "a bare dash is dropped"
+   -- A FOUR-BYTE CHARACTER, which byteToNum throws on (it is two code
+   -- units on this engine line) and which the library's first draft handed
+   -- to byteToNum for every character it walked. The expected answer is
+   -- the oracle's, pinned through the KAT; a throw here would be the
+   -- harness's own red line rather than a silently missing search result.
+   axtCheck axQuerySanitize(axtHex(kAxVecWideQueryHex), false) is axtHex(kAxVecWideQuerySafeHex), "a query with a four-byte character is sanitized, not thrown on"
    axtCheck axQuerySanitize("austen -", false) is "austen", "a trailing bare dash is dropped"
    axtCheck axQuerySanitize("+", false) is empty, "a lone plus is nothing"
    axtCheck axQuerySanitize("!", false) is empty, "a lone bang is nothing"
@@ -729,6 +739,7 @@ private command axtTestFileRules
    axtCheck axTrackTitleClean("d1t01 Scarlet_Begonias") is "Scarlet Begonias", "axTrackTitleClean strips d1t01"
    axtCheck axTrackTitleClean("T03-Fire_On_The_Mountain") is "Fire On The Mountain", "axTrackTitleClean strips t03 and a dash"
    axtCheck axTrackTitleClean("Plain Title") is "Plain Title", "axTrackTitleClean leaves a plain title"
+   axtCheck axTrackTitleClean(axtHex(kAxVecWideTrackHex)) is axtHex(kAxVecWideTrackCleanHex), "a title with a four-byte character is cleaned, not thrown on"
    axtCheck axTrackTitleClean(empty) is empty, "axTrackTitleClean of empty"
    axtCheck axCleanTitle("Show_E01.mp4", "Show") is "E01", "axCleanTitle drops the item title"
    axtCheck axCleanTitle("nightofthelivingdead.mp4", "Night of the Living Dead") is "Untitled", "axCleanTitle: nothing left is Untitled"

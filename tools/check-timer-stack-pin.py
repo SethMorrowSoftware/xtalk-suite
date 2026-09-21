@@ -28,7 +28,9 @@ WHAT IT CHECKS
       1. `send ... to me in ...`.
       2. Engine socket / URL callbacks - the name in `with message "X"` on a
          read/write/open socket or load URL, plus socketError / socketClosed /
-         socketTimeout where the file defines one.
+         socketTimeout where the file defines one - and, since 2026-09-21,
+         the player object's playStarted / playStopped / playPaused /
+         currentTimeChanged, which the engine delivers the same way.
       3. Library-dispatched callbacks - the names handed to oxSetStreamCallback
          / oxSetStatusCallback / oxSetPeerCallback / nxrSetCallback / oxhRoute,
          which onionxt's oxDispatch, nostr-relay's nxrDispatch and onion-httpd's
@@ -117,6 +119,13 @@ ARMED = re.compile(r'send\s+\(?\s*"(\w+)"[^\n]*?\bto\s+me\s+in\b')
 #    loop. Plus the three socket messages the engine delivers by name.
 WITHMSG = re.compile(r'with\s+message\s+\(?\s*"(\w+)"')
 SOCKET_MSGS = {"socketError", "socketClosed", "socketTimeout"}
+#    Plus the four messages a PLAYER object sends by name (added 2026-09-21
+#    with archivext's two player demos, the first stacks here to handle
+#    them): playStarted arrives from inside `start player` and playStopped
+#    from a message the engine queues when the media ends (9.6.3 source,
+#    MCPlayer::moviefinished), and either way the handler runs with no
+#    defaultStack guarantee - the same delivery class as the socket three.
+PLAYER_MSGS = {"playStarted", "playStopped", "playPaused", "currentTimeChanged"}
 
 # 2. LIBRARY-DISPATCHED CALLBACKS. An app hands a handler NAME to one of these
 #    registrars, and the library delivers it with `dispatch <variable>` from
@@ -214,6 +223,11 @@ def main(argv):
         for n in SOCKET_MSGS:
             if n in bodies:
                 entries.setdefault(n, "is an engine socket message delivered "
+                                      "by the ENGINE")
+        # and the player object's, the same way
+        for n in PLAYER_MSGS:
+            if n in bodies:
+                entries.setdefault(n, "is an engine player message delivered "
                                       "by the ENGINE")
         # one tokenise per body, intersected with the file's own handler names:
         # a name-by-name regex sweep is quadratic and this file walks a 36k-line

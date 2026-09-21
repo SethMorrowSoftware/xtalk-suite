@@ -133,6 +133,18 @@ def harness_vectors():
     out.append(("kAxVecPresetPrelingerHex", REF.preset_spec_query("movies", "prelinger", "moon: rocket (test)", "", "", ("publicdomain",)).encode("utf-8").hex()))
     out.append(("kAxVecPresetAuthor", REF.preset_spec_query("librivox", "Author_Search", "Jane Austen", "", "", ())))
     out.append(("kAxVecPresetCollectionHex", REF.preset_spec_query("etree", "Collection_Search", "Phish", "1997", "1999", ("soundboard",)).encode("utf-8").hex()))
+    # A FOUR-BYTE CHARACTER through the rules that walk characters. The
+    # engine's byteToNum throws on one (it is two code units), the family
+    # interpreter's does not, and the library's first draft handed every
+    # character of a title, a file name and a search box to byteToNum - so
+    # this is the one class of input no gate here had ever carried. U+1F3B5
+    # (a musical note) rides through the sanitizer and the tape finder's
+    # title cleaner; the harness checks both against the oracle's answer.
+    wide = "\U0001f3b5"
+    out.append(("kAxVecWideQueryHex", ("  Jack Straw " + wide + "  (live)  ").encode("utf-8").hex()))
+    out.append(("kAxVecWideQuerySafeHex", REF.sanitize("  Jack Straw " + wide + "  (live)  ", False).encode("utf-8").hex()))
+    out.append(("kAxVecWideTrackHex", ("d1t01 - " + wide + " Bertha").encode("utf-8").hex()))
+    out.append(("kAxVecWideTrackCleanHex", REF.track_title_clean("d1t01 - " + wide + " Bertha").encode("utf-8").hex()))
     # AN xTALK LITERAL CANNOT HOLD A DOUBLE QUOTE (there are no string
     # escapes in the dialect), so any value that carries one, a line break
     # or a non-ASCII byte is pinned as the hex of its UTF-8 bytes under a
