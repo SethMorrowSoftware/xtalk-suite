@@ -80,6 +80,7 @@ SCRIPT_LIBS = {
     "enetxt/examples/enet-helpers.livecodescript": ("en",),
     "datachannelxt/examples/datachannel-helpers.livecodescript": ("dc",),
     "coinxt/examples/wallet-core.livecodescript": ("cw",),
+    "archivext/src/archivext.livecodescript": ("ax",),
 }
 
 LCB_LIBS = {

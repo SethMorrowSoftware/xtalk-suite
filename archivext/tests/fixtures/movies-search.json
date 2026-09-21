@@ -1,0 +1,50 @@
+{
+ "responseHeader": {
+  "status": 0,
+  "QTime": 20,
+  "params": {
+   "query": "(mediatype:(movies OR video OR television) ...)",
+   "rows": "3",
+   "start": 0
+  }
+ },
+ "response": {
+  "numFound": 4021,
+  "start": 0,
+  "docs": [
+   {
+    "identifier": "night_of_the_living_dead",
+    "title": "Night of the Living Dead",
+    "creator": "George A. Romero",
+    "description": "Public domain horror classic.",
+    "date": "1968-10-01T00:00:00Z",
+    "downloads": 987654,
+    "runtime": "1:35:00",
+    "licenseurl": "http://creativecommons.org/publicdomain/mark/1.0/",
+    "subject": [
+     "Horror",
+     "Zombies",
+     "Public Domain"
+    ],
+    "mediatype": "movies"
+   },
+   {
+    "identifier": "prelinger",
+    "title": "Prelinger Archives",
+    "description": "Ephemeral films.",
+    "mediatype": "collection",
+    "num_items": 8000,
+    "downloads": 5
+   },
+   {
+    "identifier": "Show_Series_1955",
+    "title": "Show",
+    "creator": "Studio",
+    "date": "1955-01-01",
+    "downloads": 42,
+    "mediatype": "movies",
+    "subject": "test"
+   }
+  ]
+ }
+}

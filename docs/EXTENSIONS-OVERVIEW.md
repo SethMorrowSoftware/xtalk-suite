@@ -334,6 +334,76 @@ bundled third-party code; the crypto is CoinXT (`cxSha256`, BIP-340
   examples through an independent oracle, and every constant the harness
   pins re-derives by name on every build.
 
+## archivext — archive.org from xTalk, pure script (`ax*`)
+
+**Pure LiveCodeScript over the engine's Internet library** - no native
+code, no bundled third-party code, no other member required. Added
+2026-09-15, written from three shipped archive.org web apps (the Grateful
+Dead Tape Finder, the LibriVox AudioBooks app, Archive Film Club) so that
+their union becomes one library and one demo. 99 public handlers, all 99
+harness-exercised with zero exemptions.
+
+- **Search**: `advancedsearch.php` with a Lucene grammar as functions -
+  scopes, presets, year ranges, quick filters, a sort menu - and the one
+  user-input safety layer any of the three apps had, a sanitizer restated
+  over tokens (a Lucene parse error is an HTTP-200 body with a Solr stack
+  trace, which `axSearchParse` recognises). The search URL's bytes are
+  pinned to the AudioBooks app's own tests; the scrape API is there for
+  deep paging and untested against the site.
+- **Items and playlists**: `/metadata/<identifier>` parsed with every
+  scalar-or-array field as lines, and an accept / group / rank / derive /
+  order engine that turns a raw file list into a concert's set list
+  (etree), a book's chapters (LibriVox), a film's episodes with quality
+  variants (the Moving Image Archive), a text's readable formats, an image
+  set, or a plain file list. Every place the three apps disagreed is
+  recorded with the choice taken (`archivext/docs/03-items-files-and-playlists.md`).
+- **Catalogues as data**: 49 Live Music Archive band presets with year
+  ranges, 40 LibriVox categories, 26 film collections, ten mediatypes for
+  the generic family; `axPresetSpec` is each app's search-box logic in one
+  call.
+- **A fetch layer** over `load URL ... with message`: one handle per
+  request, correlation by URL, a per-request watchdog, a body cap, unload on
+  every path, a six-kind callback (`search` / `item` / `raw` / `progress` /
+  `file` / `error`), downloads straight to disk with progress and a stall
+  watchdog (`libURLDownloadToFile`, added 2026-09-16), and blocking
+  conveniences for the message box. Registered with the
+  timer-stack-pin gate so a callback that touches controls without pinning
+  the defaultStack fails the build.
+- **The demo** (`archivext/examples/archivext-demo.livecodescript`) is the
+  three apps in one 1180x630 window plus the generic family: kit v2, boot
+  self-check, the library and the member harness embedded, a player object
+  created on demand with `launch URL` as the fallback.
+- **Design**: the pure layer (everything up to the playlist engine) is
+  written inside the family interpreter's subset so that ALL of it executes
+  headlessly on every build (`archivext/tools/check-script-vectors.py`, 2920
+  checks on 2026-09-15) against `archivext/tools/archive_reference.py`, an
+  independent Python implementation written from the apps' JavaScript and
+  PHP and anchored at import to their published vectors; the harness
+  constants are derived by a KAT and re-derived by name on every push; a
+  seven-defect mutation drive proves the gate bites.
+- **Status**: first engine contact 2026-09-15 - the member harness ran on
+  the user's OXT engine at 357 passed / 2 failed / 0 skipped, the library
+  compiling whole; both reds fixed the same day (the JSON reader's by-key
+  array index met the engine's array-key case folding, engine notes 2.7,
+  and one wrong hand-written expectation); the re-run read 363/0/0, the
+  demo booted 11/11, and the first LIVE pass went green the same evening
+  from the demo's Live probe - a LibriVox search (200, numFound 101), a
+  real item's metadata (200, 196 KB, chunked) and the movies family's
+  cheap scope (200, 17 million hits), after the film club's full video
+  scope had drawn a 400 and a 30 s timeout. The next day the five-leg
+  probe and the demo's Search button closed four more: a live 412-file
+  list through the item parser and playlist engine (58 chapters), the
+  async `search` kind through the callback (four searches, three
+  families), and both documented error shapes refused by the shipped code.
+  Still owed: the suite-paste fold, the async `item` kind, the scrape API,
+  streaming.
+  The fixtures are SYNTHETIC (the site is unreachable from the build
+  sandbox); the fetch layer is the suite's first libURL engine record
+  (`docs/OXT-ENGINE-NOTES.md` 6.9), and whether libURL verifies
+  certificates is still the open TLS question (6.8 is the socket half).
+  The runbook's inventory row 36 and `archivext/docs/07-open-questions.md`
+  list what the remaining passes must answer.
+
 ## riptide — Riptide Social, the capstone app (`rs*`)
 
 **An app, not an extension**: the serverless social network of

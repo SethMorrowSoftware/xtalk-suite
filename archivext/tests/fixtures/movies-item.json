@@ -1,0 +1,200 @@
+{
+ "created": 1700000002,
+ "d1": "ia800200.us.archive.org",
+ "dir": "/5/items/Show_Series_1955",
+ "files": [
+  {
+   "name": "Show_E01_512kb.mp4",
+   "source": "derivative",
+   "original": "Show_E01.mp4",
+   "format": "512Kb MPEG4",
+   "size": "20000000",
+   "length": "600"
+  },
+  {
+   "name": "Show_E01.mp4",
+   "source": "original",
+   "format": "h.264",
+   "size": "80000000",
+   "length": "600",
+   "md5": "22222222222222222222222222222222"
+  },
+  {
+   "name": "Show_E01.ogv",
+   "source": "derivative",
+   "original": "Show_E01.mp4",
+   "format": "Ogg Video",
+   "size": "30000000",
+   "length": "600"
+  },
+  {
+   "name": "Show_E01.gif",
+   "source": "derivative",
+   "original": "Show_E01.mp4",
+   "format": "Animated GIF",
+   "size": "900000"
+  },
+  {
+   "name": "Show_E01.thumbs/Show_E01_000001.jpg",
+   "source": "derivative",
+   "original": "Show_E01.mp4",
+   "format": "Thumbnail",
+   "size": "5000"
+  },
+  {
+   "name": "Show_E02_512kb.mp4",
+   "source": "derivative",
+   "original": "Show_E02.mp4",
+   "format": "512Kb MPEG4",
+   "size": "20000000",
+   "length": "600"
+  },
+  {
+   "name": "Show_E02.mp4",
+   "source": "original",
+   "format": "h.264",
+   "size": "80000000",
+   "length": "600",
+   "md5": "22222222222222222222222222222222"
+  },
+  {
+   "name": "Show_E02.ogv",
+   "source": "derivative",
+   "original": "Show_E02.mp4",
+   "format": "Ogg Video",
+   "size": "30000000",
+   "length": "600"
+  },
+  {
+   "name": "Show_E02.gif",
+   "source": "derivative",
+   "original": "Show_E02.mp4",
+   "format": "Animated GIF",
+   "size": "900000"
+  },
+  {
+   "name": "Show_E02.thumbs/Show_E02_000001.jpg",
+   "source": "derivative",
+   "original": "Show_E02.mp4",
+   "format": "Thumbnail",
+   "size": "5000"
+  },
+  {
+   "name": "Show_E03_512kb.mp4",
+   "source": "derivative",
+   "original": "Show_E03.mp4",
+   "format": "512Kb MPEG4",
+   "size": "20000000",
+   "length": "600"
+  },
+  {
+   "name": "Show_E03.mp4",
+   "source": "original",
+   "format": "h.264",
+   "size": "80000000",
+   "length": "600",
+   "md5": "22222222222222222222222222222222"
+  },
+  {
+   "name": "Show_E03.ogv",
+   "source": "derivative",
+   "original": "Show_E03.mp4",
+   "format": "Ogg Video",
+   "size": "30000000",
+   "length": "600"
+  },
+  {
+   "name": "Show_E03.gif",
+   "source": "derivative",
+   "original": "Show_E03.mp4",
+   "format": "Animated GIF",
+   "size": "900000"
+  },
+  {
+   "name": "Show_E03.thumbs/Show_E03_000001.jpg",
+   "source": "derivative",
+   "original": "Show_E03.mp4",
+   "format": "Thumbnail",
+   "size": "5000"
+  },
+  {
+   "name": "Show_Series_1955_meta.xml",
+   "source": "original",
+   "format": "Metadata",
+   "size": "1200"
+  },
+  {
+   "name": "Show_Series_1955_files.xml",
+   "source": "original",
+   "format": "Metadata",
+   "size": "4000"
+  },
+  {
+   "name": "Show_Series_1955_archive.torrent",
+   "source": "metadata",
+   "format": "Archive BitTorrent",
+   "size": "8000"
+  },
+  {
+   "name": "__ia_thumb.jpg",
+   "source": "original",
+   "format": "Item Tile",
+   "size": "9000"
+  },
+  {
+   "name": "Show_E01.en.vtt",
+   "source": "original",
+   "format": "WebVTT",
+   "size": "20000"
+  },
+  {
+   "name": "Show_manifest.json",
+   "source": "original",
+   "format": "JSON",
+   "size": "200000"
+  },
+  {
+   "name": "Show_E02.mp4.ia",
+   "source": "derivative",
+   "original": "Show_E02.mp4",
+   "format": "h.264 IA",
+   "size": "150000"
+  },
+  {
+   "name": "tiny_placeholder.mp4",
+   "source": "original",
+   "format": "h.264",
+   "size": "50000"
+  }
+ ],
+ "files_count": 23,
+ "item_size": 400000000,
+ "metadata": {
+  "identifier": "Show_Series_1955",
+  "title": "Show",
+  "creator": "Studio",
+  "description": [
+   "<p>Paragraph 1. Lorem ipsum.</p>",
+   "<p>Paragraph 2.</p>"
+  ],
+  "date": "1955-01-01",
+  "subject": [
+   "test"
+  ],
+  "mediatype": "movies",
+  "collection": [
+   "classic_tv",
+   "movies"
+  ],
+  "runtime": "30:00",
+  "downloads": "42",
+  "avg_rating": "3.5",
+  "num_reviews": "2",
+  "language": "eng"
+ },
+ "server": "ia800200.us.archive.org",
+ "uniq": 3,
+ "workable_servers": [
+  "ia800200.us.archive.org"
+ ]
+}

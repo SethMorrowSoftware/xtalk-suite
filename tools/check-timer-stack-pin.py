@@ -124,8 +124,14 @@ SOCKET_MSGS = {"socketError", "socketClosed", "socketTimeout"}
 #    never appears at a call site at all. Take every quoted word on a
 #    registration line and keep the ones that name a handler in THIS file;
 #    "GET" and "/" filter themselves out by not being handler names.
+#    libURLSetStatusCallback and libURLDownloadToFile (added 2026-09-16 with
+#    archivext's download path) are the Internet library's own registrars:
+#    the quoted handler name is delivered later from libURL's socket
+#    callbacks, the same delivery class as `load URL ... with message`.
 REGISTRAR = re.compile(r'\b(?:oxSetStreamCallback|oxSetStatusCallback'
-                       r'|oxSetPeerCallback|nxrSetCallback|oxhRoute)\b[^\n]*')
+                       r'|oxSetPeerCallback|nxrSetCallback|oxhRoute'
+                       r'|axSetCallback|libURLSetStatusCallback'
+                       r'|libURLDownloadToFile)\b[^\n]*')
 QUOTED = re.compile(r'"(\w+)"')
 CTRL = re.compile(r'\b(field|button|graphic|image|scrollbar|player)\s+'
                   r'("[^"]*"|\w+)(?!\s+of\b)')

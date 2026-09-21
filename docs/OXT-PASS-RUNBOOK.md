@@ -534,6 +534,7 @@ kept as pointers so the same fact is never book-kept twice:
 | 33 | ~~**nostrxt as the TENTH folded harness, and the whole member's first engine contact**~~ **CLOSED 2026-08-24** (Windows x86_64, OXT 9.6.3): the fold COMPILED and `nx1nxSelfTest` reported **274 passed / 0 failed / 2 skipped**, the two skips being the `nxr*` relay sections that are not in the paste by design. Every interpreter-modeled engine-semantics pin held. Folded 2026-08-23; suite coverage went 724/742 to **829/843** with ZERO new exemptions, and is 847/861 today. Kept unstruck in the column below only so the next reader can see what the row asked for | that the fold COMPILES (one bad line takes the whole paste); that `nx1nxSelfTest` reports readably; then the sections themselves - the canonical serializer producing the oracle's exact bytes (event ids depend on it), the JSON parser's refusals, bech32/NIP-19 against the published examples, the NIP-44 schedule against the official vectors, the MAC-before-cipher order and the `sxChaCha20IetfXor` seam (round-tripping the official payload vector against an ABI-10 SodiumXT, asserting the fail-closed capability error against an older one - the branch the section takes IS a finding, record it), websocket framing math, and every fail-closed argument path. The signing sections need CoinXT installed (they SKIP otherwise, counted); the nxr* relay section SKIPS here BY DESIGN (the layer is not in the paste; its offline paths run in the demo). UTF-8 event C is a genuine engine question: it measures `textDecode` round-trip fidelity for non-BMP content, and a FAIL is a real finding about engine text handling, not noise | `nostrxt/CLAUDE.md`, the As-built notes; `nostrxt/README.md` ("the nx* core is ENGINE-PROVEN 2026-08-24"); the root `README.md` release-matrix row. This column used to quote a phrase from CLAUDE.md saying nothing in the member had met an engine; that phrasing was retired by the 2026-08-24 engine pass this row records, so the citation names the file rather than quoting text that no longer exists in it | S1 |
 | 34 | **the nostrxt live-relay RECEIVE leg** (`nostrxt/examples/nostrxt-demo.livecodescript`: subscribe, the EVENT/EOSE/CLOSED/NOTICE callbacks, NIP-42 auth). **Half of this row closed 2026-08-24**: the demo opened wss://nos.lol, handshook, signed a kind-1, published it and got its ok-true back - so connect/handshake/publish/confirm is done, and that run was also the suite's first `open secure socket` (now `docs/OXT-ENGINE-NOTES.md` **6.8**). What is left is everything INBOUND, plus two things the successful run could not measure: what the engine does with an INVALID certificate (it met an ordinary public host, so verification is unproven in BOTH directions - point it at a self-signed or expired host and record the answer), and how a TLS failure is delivered. Note the inversion: **ws:// is now the unproven form**, so a local relay (e.g. nostr-rs-relay on loopback) is no longer the safe warm-up - it is its own separate leg, with a NEW resource, a relay binary, the way S2 needs a tor binary | a REQ answered with EVENTs that VERIFY through the callback; EOSE; a NOTICE and a CLOSED observed; the NIP-42 challenge/auth round trip; then, separately, the bad-certificate observation recorded in `docs/OXT-ENGINE-NOTES.md` 6.8 WHATEVER it turns out to be | `nostrxt/src/nostr-relay.livecodescript`, the STATUS header and the narrowed VERIFY block at the `open secure socket` call; `nostrxt/docs/05-relay-client.md`; `nostrxt/docs/07-capabilities-required.md` gap #2 | one machine + a public wss relay (the proven path); + a local relay daemon for the ws:// leg; + a deliberately bad-certificate host for the TLS question |
 | 35 | **the riptide phase-8 Nostr CARD's engine boot** (`riptide/examples/riptide-social.livecodescript`, RE-LANDED 2026-08-29 after its first landing broke `openStack` on a real engine with `Chunk: no target found` and was reverted the same day). **HALF-CLOSED the same day, then re-opened by the v11 UI pass**: the maintainer ran the re-landed five-card stack on a real engine and reported it working, so the step-0 criterion (openStack completes with the card in place) was MET - a dated account with no platform detail or per-card itemization captured. LATER that day the v11 UI pass reworked every card's chrome (the five-tab bar, the column panels, the identity gate, the upgrade-in-place reset) - **and the v11 file's boot RAN on the engine the same day, pasted record in hand: 9 passed, 1 failed, 0 skipped, every capability true, all five cards built.** The one FAIL was the boot self-check's OWN defect, not the app's: unqualified `there is a field X` answers for the current card only (now engine notes **5.6** - this record is what settled it), so the sweep reported all 63 off-card controls missing from a stack where every one existed. `scMissing` walks every card with qualified `there is` since the same day (the carried block, re-carried to all adopters), so the remaining ask is one more paste: the boot record should read **10 passed, 0 failed** with the missing-list line gone red-free; the per-card offline behaviours below were never itemized and still stand. The re-land is restructured - `openStack` byte-identical to the engine-proven body, relay defaults painted inside the card builder, `nxrInit` lazy at Connect - and gated by `riptide/tools/check-demo-boot.py`, which BOOTS the shipped file headlessly through the family interpreter (embeds included, two capability profiles, every card clicked, the Nostr rail driven end to end). That models engine semantics; it is not an engine. Step 0 here is simply: paste the stack, reopen, and watch `openStack` complete - the five cards build, the status line paints, no error dialog. Then the Nostr card itself: with CoinXT installed, Create/unlock shows an `npub1...`; without a relay, Post reports "not sent"; Save/Load rounds the RIPTAPP1 store | `openStack` completes on a real engine with the phase-8 card in place - the exact criterion the first landing failed - then the card's own offline behaviours; the LIVE relay legs stay row 34's and the two-machine runbook's | `riptide/CLAUDE.md`, the re-land record; `riptide/examples/README.md`, the phase-8 entry ("verified statically + headless boot; needs an OXT pass") | S1 (it is the first minute of the riptide paste) |
+| 36 | **MOSTLY CLOSED 2026-09-15**: the member harness ran STANDALONE on the user's OXT engine at 357 passed / 2 failed / 0 skipped, the library compiling whole; both reds fixed the same day (`docs/OXT-ENGINE-NOTES.md` 2.7 - the engine folds array-key case - and one wrong hand-written expectation); the re-run read 363 / 0 / 0; the demo BOOTED (self-check 11/11, 47 controls); and the first LIVE legs went green from the demo's Live probe - a LibriVox search (200, numFound 101), a real item's metadata (200, 196,716 bytes, chunked) and the movies family's cheap scope (200, 17,098,672 hits), after the film club's full video scope drew a 400 and a 30 s timeout (engine notes 6.9). On 2026-09-16 the five-leg probe went green end to end (a live 412-file list through `axItemParse` / `axPlaylist` became 58 chapters; a Solr error inside an HTTP 200 and a missing item's `{}` were both refused by the shipped parsers) and the demo's Search button delivered the async `search` kind four times across three families. Still owed: the FOLD, the async `item` kind (click a result), the etree / video / document playlist kinds live, the scrape API, streaming, and TLS's certificate direction. Row kept for the record: **archivext as the ELEVENTH folded harness, and the whole member's first engine contact** (landed 2026-09-15: pure script over the engine's Internet library, the archive.org query / JSON / playlist layer of three shipped web apps; its whole pure layer has EXECUTED headlessly against an independent oracle, 2920 checks, but over SYNTHETIC fixtures - the site is unreachable from the build sandbox - and its `load URL ... with message` fetch layer has no engine record anywhere in this suite) | that the fold COMPILES (4200 new lines that have met only the interpreter's subset; the forms most likely to differ are listed in `archivext/docs/07-open-questions.md` item 1); that `ax1axSelfTest` reports readably - copy its `ArchiveXT` line and every red line verbatim into `archivext/CLAUDE.md`'s as-built record, and let the measured floor replace the placeholder floor 1 at the core's `stMergeReturned "ArchiveXT"` call site; that the demo boots green (its self-check names 46 controls, the preset table, the vector-derived search URL and the etree fixture as six tracks); then, WITH A NETWORK, the live legs: `axSearchSync` from the message box against a LibriVox query (does `numFound` / `docs` still arrive in the fixture shape, and does an unsanitized `austen AND` still come back HTTP 200 with a top-level `error`?), `axFetchItemSync "no_such_item_xyz"` refusing on a `{}` body, a real Grateful Dead show / LibriVox book / Prelinger film / Gutenberg text through every playlist kind, the scrape API (no source app used it), the demo's Play button streaming a download URL through the datanode redirect, and TLS in BOTH directions - `load URL "https://archive.org/..."` working, and the same call against a bad-certificate host FAILING - recorded in `docs/OXT-ENGINE-NOTES.md` 6.8 whatever the answer is | `archivext/CLAUDE.md` (the as-built record and every STATUS block it names); `archivext/README.md`'s Status section; `archivext/docs/04-fetch-layer.md`; the root `README.md` release-matrix row | S1 for the fold + the demo boot; the live legs need Internet access from the engine machine |
 
 ---
 
@@ -553,6 +554,7 @@ Committed binaries are uneven, and this decides what is even runnable tonight.
 | box2dxt | all five (`x86_64-linux`, `x86-linux`, `x86_64-win32`, `x86-win32`, `universal-mac`) + `MANIFEST.sha256` - the only member whose committed mac dylib is not knowingly ABI-stale, and it is a genuine two-architecture Mach-O (x86_64 + arm64). Since 2026-08-23 `tools/check-binary-freshness.py` READS this dylib on every gate run: 370 exports, byte-identical in both slices, matching the shim's 370 definitions and the `.lcb`'s 370 binds, with ABI 4 decoded from both slices' machine code - so the file is verified the way the ELF/PE binaries are. What is still true: **no Mac has ever loaded it**; that half needs an OXT pass on a Mac | n/a on Linux/Windows. On macOS it is the one member worth TRYING - `put b2Version()`, which the 2026-08-17 Windows preflight READ as 4 rather than inferring it - but treat a throw there as unproven-binary, not as a member bug; the rebuild is `box2dxt/docs/building.md` then `box2dxt/tools/package-extension.py` |
 | onionxt | n/a, pure LiveCodeScript | n/a |
 | coinxt | all five + `MANIFEST.sha256` - the first `universal-mac` dylib landed with release run 12 (2026-08-27), both slices driven through the published KAT vectors on the mac runner that built them | n/a - every platform ships |
+| archivext | n/a, pure LiveCodeScript (its network calls are the engine's Internet library) | n/a |
 
 **On Linux (x64 or x86) and on Windows (x64 or x86), every member's library is
 already in the repo** — the 2026-08-08 release run committed all four platforms for
@@ -1462,6 +1464,147 @@ gotcha 7, and `nostrxt/docs/05-relay-client.md`. The wss:// result - WHATEVER
 it is - goes to `docs/OXT-ENGINE-NOTES.md` section 6 as the suite's first TLS
 socket measurement.
 
+### 4.10 archivext (inventory item 36 - first engine contact 2026-09-15, standalone, and the first live legs the same evening; the gallery's own first run 2026-09-20, which settled the image object and sharpened the player question; the fold and the remaining live legs still owed)
+
+The standalone harness has run twice (357/2/0, both reds fixed the same day -
+engine notes 2.7 and `archivext/CLAUDE.md` gotchas 15-16 - then 363/0/0), the
+demo has booted (11/11), and the demo's Live probe has carried three live legs
+green (engine notes 6.9; `archivext/CLAUDE.md`'s as-built record has the
+numbers). The FOLDED run is still first-time; the five-leg probe and a Search in
+three families ran green on 2026-09-16 (the as-built record has the
+numbers). **The next pass, in click order, each step a log the docs can
+quote** (every step is the demo, `archivext/examples/archivext-demo.livecodescript`,
+pasted fresh - the demo changed on 2026-09-16 and the old paste has no
+Download button):
+
+1. Open the demo: the boot self-check (12 lines now; a `missing:` FAIL means
+   the stack was not rebuilt - the UI version constant bumps on every
+   control change).
+2. **Live probe**: ten legs. Legs 1-5 re-confirm; legs 6-8 are three
+   deliberately BAD certificates (`self-signed`, `expired`, `wrong.host` at
+   badssl.com) and each prints a verdict line - REFUSED means the Internet
+   library verifies that case, ANSWERED means it does not; leg 9 is the
+   scrape API's body shape; leg 10 a blocking download through the
+   `/download/` redirect. The three verdict lines go to `docs/OXT-ENGINE-NOTES.md`
+   beside 6.8 / 6.9 whatever they say.
+3. Audiobooks family, search `alice`, click a result: the async `item` kind
+   and a live LibriVox playlist through the callback path.
+4. Select a chapter, **Play**, wait ten seconds: the log says `the player
+   opened the stream: duration N` or names the fallback (a download, then
+   the local file). Then **Stop**, then **Download**: progress in the status
+   line, then `downloaded: <path>`.
+5. Live music family, search `grateful dead`, click a result, **Play** one
+   track (the `audio-tracks` kind); Films family, `all_videos`, click a
+   result (the `video` kind; MP4 in the player is the second media
+   question); Any family, preset `texts`, click a result (the `documents`
+   kind - nothing to play, the list is the leg).
+6. Last, the suite paste: `tests/suite-selftest.livecodescript` into a NEW
+   stack, run it, copy the `ArchiveXT` line and any red lines.
+
+**THE GALLERY IS A SECOND STACK AND A SEPARATE SITTING**
+(`archivext/examples/archive-gallery.livecodescript`, first engine run
+2026-09-20). That run settled the image object and opened a sharper question
+about the player; engine notes 5.7 and 5.8 are its record. What the NEXT
+sitting owes, in click order:
+
+1. Open it. Two boot lines are the whole image question and they now assert
+   BOTH directions: `an image object takes a picture this stack carries`
+   (a 98-byte PNG the file carries in hex, decoded by the stack's own
+   `agHexBytes` - the first run failed this one on the harness's UTF-8 text
+   decoder, not on the engine) and `and refuses bytes that are not a
+   picture`. The second is the new measurement: 5.7 records that a refusal
+   KEEPS the control's rect rather than answering zero, and this line is what
+   confirms the fix detects it.
+2. **Live probe**: four legs, all about the same question - a search in
+   `mediatype:(image)`, the item image service's bytes into an image object,
+   the item's `images` playlist, and a full picture's datanode URL into the
+   same object. Legs 2 and 4 came back `180x124` and `1988x1367` on the first
+   run; they re-confirm here.
+3. Press Search on the Images family. The grid is eight by three now and a
+   request brings back eight screens, so this is also the first measurement of
+   what the Internet library does with a queue: `kAgFetchMax` in flight, the
+   rest waiting. Step Next and Prev across a page boundary and watch the
+   cache line - the second visit to a screen should cost the site nothing.
+4. **THE PLAYER IS THE POINT OF THIS SITTING.** Click a concert, Play one
+   track, and read the two `player (...)` blocks the log now prints. The
+   first run opened three MP3 streams, reported a duration, fired
+   `playStarted`, advanced the clock six seconds and was SILENT. Three things
+   changed and each has a line in the log:
+   - `the playLoudness` is now set on the player AND on the engine before
+     every stream (it was never set at all), and the report prints what it
+     reads back - note 5.4 says that readback is not trustworthy, so it is
+     printed and never decided from.
+   - `the tracks` and `the mediaTypes` are printed. **This is the line that
+     settles it**: it says whether an audio track was found at all.
+   - Press **Vol +** and say whether anything changes. If it does, the answer
+     was loudness.
+5. **The http retry, which has never been run anywhere in this suite** - and
+   which the 2026-09-20 run could not reach, because the engine refused every
+   video AT ONCE (`could not create movie reference`) and the retry lived
+   only on the six-second path. It runs FIRST now, from `agStreamFailed`,
+   on both ways of learning a stream failed. Play a FILM and read the order
+   in the log: the refusal, then the http retry, and only then a download.
+   The Windows media path is DirectShow, documented for http and not for
+   https, so if the retry opens the answer to "why will video not play" is a
+   scheme, and that goes to engine notes section 5 beside 5.8 and 5.9.
+   **Expect the retry to fail on that machine and the download to be
+   refused rather than spent**: the same engine refused an h.264 file from
+   DISK (5.9), so the container is ruled in, and the stack now remembers a
+   suffix a local file failed on and declines to download another one -
+   naming Download and Open page, which both still work. If a video DOES
+   play, say which container it was: that is the case the scheme question
+   needs.
+6. Press Play again on a track you have already downloaded: it should say
+   `already downloaded, so nothing is asked of the site` and play the local
+   copy. That separates a streaming problem from a playback problem, which is
+   the one thing the first run could not do.
+7. Press **Clear cache**, then re-run a search you have already done, and
+   check the cache counters move the way they should.
+
+**Two things about THIS sitting that the 2026-09-20 run turned into rules.**
+First: if the boot check says controls are missing, look for the line
+`the window was rebuilt on open` under it - the stack repairs a window drawn
+by an older paste of the script and re-measures, and a red line SURVIVING
+that repair is a real defect. Second: pressing **Run axSelfTest** used to
+leave the library configured for the harness (a 64 KB body cap, the
+harness's own callback), so every later reply in the app was refused as
+`larger than 65536 bytes`. The harness restores the host's settings now and
+both demos re-take their own afterwards - so run the tests in the MIDDLE of
+this sitting on purpose, and then search again: a search that works after
+the tests is the check that the fix holds.
+
+Write down, for engine notes 5.7, 5.8 and 5.9: whether a refusal is detected
+now, what `the tracks` says, whether the volume control changes anything,
+whether the http retry opens a stream https would not, and whether the second
+film was declined instead of downloaded.
+
+Unlike nostrxt this member's other half needs a NETWORK, so the pass splits
+cleanly. The folded run rides the
+suite paste: copy the `ArchiveXT` line of the per-member table and any red
+lines verbatim into `archivext/CLAUDE.md`'s as-built record, and let the
+measured skip count replace the placeholder floor 1 at the core's
+`stMergeReturned "ArchiveXT"` call site. Three things to write down:
+
+- Whether the fold COMPILED at all. This member has met only the family
+  interpreter's subset of the language; `archivext/docs/07-open-questions.md`
+  item 1 names the forms most likely to differ (`byteOffset` with a skip,
+  `sort lines of` over rank keys, `the keys of` on a nested array,
+  `replace "#" with quote`). A compile failure names none of them - it takes
+  the whole paste - so bisect by pasting `archivext/src/archivext.livecodescript`
+  alone first.
+- The fetch section's SKIP line (the Internet-library probe): its presence
+  or absence is the first record of whether this engine build has libURL.
+- The demo's boot self-check block, verbatim.
+
+The live legs are the demo's and the message box's: label flips live in
+`archivext/README.md`'s Status section, the STATUS block of
+`archivext/docs/01-archive-api-model.md` (the site's quirks, re-observed or
+corrected) and `archivext/docs/04-fetch-layer.md` (the fetch layer's first
+engine record). The working direction of TLS is recorded (`docs/OXT-ENGINE-NOTES.md`
+6.9, the suite's first libURL https measurement); what is left is the FAILING
+direction - a deliberately bad certificate - and that result, WHATEVER it is,
+goes beside 6.8 and 6.9.
+
 ## 5. Known traps
 
 These are all from the members' own hard-won notes. Each cost someone a debugging
@@ -1757,6 +1900,7 @@ PREREQ  <- one paste answers all but the last line: tests/preflight.livecodescri
        Box2Dxt .......... found ABI ______ vs expected ______ (the one READ number)
        OnionXT script layer present? ____   CoinXT script layer present? ____
        NostrXT script layer present? ____
+       ArchiveXT script layer present? ____
     The expected numbers are printed BY the table - `tools/build-preflight.py`
     reads them out of the six C shims and `--check` re-derives them on every
     push - so nothing here needs retyping when an ABI is bumped. A SKIP is not a

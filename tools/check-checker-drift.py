@@ -33,15 +33,19 @@ COPY_SETS = {
     "check-livecodescript.py": ["sodiumxt", "torrentxt", "enetxt",
                                 "datachannelxt", "onionxt", "coinxt",
                                 "riptide", "nocloud", "box2dxt",
-                                "holde-em", "nostrxt"],
+                                "holde-em", "nostrxt", "archivext"],
     "check-docs-style.py": ["sodiumxt", "onionxt", "coinxt", "riptide",
-                            "nostrxt"],
+                            "nostrxt", "archivext"],
     # ONE interpreter, two carriers (2026-08-23): the nostrxt execution gate
     # extended coinxt's lcs-interp.py IN ITS HOME (coinxt's 300-check gate is
     # the regression proof that the extension is additive) and carries a
     # byte-identical copy, the checker model exactly - so an interpreter
     # lesson learned in one member cannot quietly not apply to the other.
-    "lcs-interp.py": ["coinxt", "nostrxt"],
+    # archivext joined 2026-09-15 as the third carrier, with the ONE
+    # additive extension its JSON reader needed (offset/byteOffset with the
+    # engine's skip argument), made in coinxt's home copy and regression-run
+    # through both older gates before it was carried.
+    "lcs-interp.py": ["coinxt", "nostrxt", "archivext"],
 }
 
 # carried document name -> the members that must carry a byte-identical copy

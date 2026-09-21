@@ -537,7 +537,7 @@ and one functional hole.
     feel/facing/scale half is engine work — B.5.)
     — `box2dxt/docs/platformer-polish-plan.md` §3-§7, §9
 
-## B. Verification backlog (12)
+## B. Verification backlog (14)
 
 Built and statically verified; pending under the honesty convention.
 `docs/OXT-PASS-RUNBOOK.md` scripts nearly all of it.
@@ -636,6 +636,37 @@ Built and statically verified; pending under the honesty convention.
     duplicate-local-port refusal, oxGuessService's socket-id format,
     stale-socket-close tolerance, the topStack default callback owner.
     — `onionxt/src/onionxt.livecodescript:1018,1140,1713,1744`
+
+13. **archivext's first engine pass and first live pass** (medium; added
+    2026-09-15 with the member; MOSTLY CLOSED the same day - the standalone
+    harness ran on the user's OXT engine at 357/2/0 and both reds were fixed,
+    `docs/OXT-ENGINE-NOTES.md` 2.7; the re-run read 363/0/0; the demo booted
+    11/11; and the first live pass went green in three legs from the demo's
+    Live probe - a LibriVox search, a 196 KB metadata body, the movies
+    family's cheap scope - which made the fetch layer the suite's first
+    libURL engine record, 6.9; and on 2026-09-16 the five-leg probe and the
+    demo's Search button closed a live 412-file list through the parser and
+    playlist engine, the async `search` kind, and both documented error
+    shapes through the shipped code). Still owed: the fold (`ax1axSelfTest`,
+    an S1 paste), the async `item` kind (the demo's item panel), the other
+    three playlist kinds live, the scrape API, streaming, and TLS's
+    certificate direction (only a deliberately bad certificate can move
+    6.8 / 6.9).
+    — `docs/OXT-PASS-RUNBOOK.md` inventory row 36 and section 4.10;
+    `archivext/docs/07-open-questions.md`
+
+14. **The family interpreter does not fold array-key case, the engine does**
+    (small to change, wide to re-verify; found 2026-09-15). `tools/lcs-interp.py`
+    (three byte-identical copies) models an array as a Python dict, so
+    `tA["A"]` and `tA["a"]` are two elements in the model and one on the
+    engine (`docs/OXT-ENGINE-NOTES.md` 2.7). archivext's JSON reader shipped
+    on that model and met the engine red. Folding keys in the model (a
+    case-folded index that keeps the first spelling for `the keys of`) is
+    a small change; the cost is that every member's execution gate - coinxt,
+    nostrxt, riptide, holde-em, nocloud, archivext - runs on the new model and
+    each red it produces has to be READ, because it is either a latent
+    engine bug or a model artefact.
+    — `docs/OXT-ENGINE-NOTES.md` 2.7; `archivext/CLAUDE.md` gotcha 15
 
 ## C. Release and CI (9)
 

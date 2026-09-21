@@ -1,0 +1,83 @@
+{
+ "responseHeader": {
+  "status": 0,
+  "QTime": 12,
+  "params": {
+   "query": "collection:(librivoxaudio)",
+   "rows": "5",
+   "start": 0
+  }
+ },
+ "response": {
+  "numFound": 60,
+  "start": 0,
+  "docs": [
+   {
+    "identifier": "pride_prejudice_test",
+    "title": "Pride and \"Prejudice\" & Others",
+    "creator": [
+     "Jane Austen",
+     "Karen Savage"
+    ],
+    "year": "2006",
+    "date": "2006-01-02T00:00:00Z",
+    "language": [
+     "English",
+     "French"
+    ],
+    "runtime": "1:12:34",
+    "subject": [
+     "Romance",
+     "Audiobook",
+     "A very long subject name that exceeds twenty characters"
+    ]
+   },
+   {
+    "identifier": "book_2",
+    "title": "Evil <img src=x onerror=\"window.__xssTitle=1\"> Book",
+    "creator": "Mallory <b>Bold</b>",
+    "year": "2007",
+    "date": "2007-01-03T00:00:00Z",
+    "language": "English",
+    "runtime": "2:12:34",
+    "subject": [
+     "Fiction\"><img src=x onerror=\"window.__xssSubject=1\">"
+    ]
+   },
+   {
+    "identifier": "book_3",
+    "title": "Book 3",
+    "language": "English",
+    "subject": "single string subject"
+   },
+   {
+    "identifier": "book_4",
+    "title": "Book 4",
+    "creator": "Author 4",
+    "year": "2009",
+    "date": "2009-01-05T00:00:00Z",
+    "language": "English",
+    "runtime": "4:12:34",
+    "subject": [
+     "Poetry",
+     "Audiobook",
+     "A very long subject name that exceeds twenty characters"
+    ]
+   },
+   {
+    "identifier": "book_5",
+    "title": "Book 5",
+    "creator": "Author 5",
+    "year": "2010",
+    "date": "2010-01-06T00:00:00Z",
+    "language": "English",
+    "runtime": "5:12:34",
+    "subject": [
+     "Science fiction",
+     "Audiobook",
+     "A very long subject name that exceeds twenty characters"
+    ]
+   }
+  ]
+ }
+}

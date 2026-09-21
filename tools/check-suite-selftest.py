@@ -35,13 +35,13 @@ GEN = os.path.join(ROOT, "tests", "suite-selftest.livecodescript")
 PREFIXES = {"sx1": "sodiumxt", "ox1": "onionxt", "cx1": "coinxt",
             "bt1": "torrentxt", "en1": "enetxt", "dc1": "datachannelxt",
             "rs1": "riptide", "b21": "box2dxt", "he1": "holde-em",
-            "nx1": "nostrxt"}
+            "nx1": "nostrxt", "ax1": "archivext"}
 
 # What the core calls into each folded harness. If the generator ever renames or
 # drops one of these, the suite harness compiles and then does nothing.
 ENTRY_POINTS = ["sx1sxSelfTest", "ox1oxSelfTest", "cx1stRun", "bt1stRun",
                 "en1stRun", "dc1stRun", "rs1rsSelfTest", "b21stSelfTest",
-                "he1heSelfTest", "nx1nxSelfTest"]
+                "he1heSelfTest", "nx1nxSelfTest", "ax1axSelfTest"]
 COUNTED = ["cx1", "bt1", "en1", "dc1"]
 
 

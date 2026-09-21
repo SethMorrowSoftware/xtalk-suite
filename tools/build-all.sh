@@ -150,6 +150,12 @@ run_gates() {
     echo "== $m: tools/nostr-kat.py --check =="
     ( cd "$m" && python3 tools/nostr-kat.py --check )
   fi
+  # archivext's KAT is the same convention: --check re-derives every harness
+  # constant from the oracle + fixtures and compares it to the pasted one.
+  if [ -f "$m/tools/archive-kat.py" ]; then
+    echo "== $m: tools/archive-kat.py --check =="
+    ( cd "$m" && python3 tools/archive-kat.py --check )
+  fi
   # holde-em's pure-logic gates: the docs smart-quote scan, the table-layout
   # arithmetic, seven KAT mirrors of the game's pure handlers (evaluator,
   # betting/settlement, shuffle, crypto protocol, transcript fold, card
@@ -211,6 +217,16 @@ run_gates() {
   if [ -f "$m/tools/check-wallet-ui-version.py" ]; then
     echo "== $m: tools/check-wallet-ui-version.py =="
     ( cd "$m" && python3 tools/check-wallet-ui-version.py )
+  fi
+  # The same mechanism, and the same failure, one member over: archive-gallery
+  # skips its build when the stack already carries the stamp, and on
+  # 2026-09-20 an engine reported three buttons and fourteen tiles missing
+  # from a stack built by the previous paste. kAgUiVersion is derived from
+  # the builder's own text; agUiStamp() carries the geometry the text cannot
+  # show, and this gate asserts that half is still there.
+  if [ -f "$m/tools/check-gallery-ui-version.py" ]; then
+    echo "== $m: tools/check-gallery-ui-version.py =="
+    ( cd "$m" && python3 tools/check-gallery-ui-version.py )
   fi
   # A member's execution gate is believed only once it has been shown to
   # FAIL: where a member ships tools/test-script-vectors.py it edits one
@@ -576,7 +592,7 @@ fi
 # riptide, nocloud, and holde-em are not extensions but carry the same gate
 # shape (script checker, golden glob, vector gate, docs style), so they ride
 # the same loop.
-for m in sodiumxt torrentxt enetxt datachannelxt onionxt coinxt riptide nocloud box2dxt holde-em nostrxt; do
+for m in sodiumxt torrentxt enetxt datachannelxt onionxt coinxt riptide nocloud box2dxt holde-em nostrxt archivext; do
   [ -d "$m" ] || continue
   # the same skip the native loop applies - see SUITE_ONLY_MEMBERS above for
   # why the gate walk has to honour it too

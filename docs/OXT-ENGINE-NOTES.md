@@ -325,6 +325,42 @@ this entry.)
 
 ---
 
+### 2.7 Array KEYS fold case: `tA["A"]` and `tA["a"]` are ONE element
+**OBSERVED 2026-09-15** - archivext's first engine contact, the member harness
+(`axSelfTest`) on the user's OXT (platform and version not recorded; 357
+passed, 2 failed, 0 skipped). The JSON reader indexed an object's children by
+key in an array (`sAxJsonM[node][key]`), and the harness asserted
+
+    axtCheck axJsonType(tDoc, "A") is "missing", "keys are case-sensitive"
+
+against a document whose only key was `a`. The engine answered the `a` node:
+`"A" is among the keys of tArray` is TRUE when the stored key is `a`, and
+`tArray["A"]` reads that element. `the caseSensitive` defaults to false and it
+governs array KEYS as well as `is` / `contains` / `offset` - coinxt's
+discipline 3 records the comparison half of that rule; this is the container
+half. Cost: one red line, and a reader whose documented contract ("object keys
+looked up exactly") was false on the engine from the day it shipped.
+
+**Rule:** never use an array as an exact-string index. Keep the original keys
+in a numbered list and scan it with a byte-exact compare (archivext's
+`axJsonFindKey` over `axStrEq`; nostrxt's `nxStrEqExact`), or fold on purpose
+and say so where the array is declared. Numeric keys, and every numeric-indexed
+table in this tree, are unaffected.
+
+**Gate:** none can see it. The family interpreter (`tools/lcs-interp.py`)
+models an array as a Python dict, which is case-SENSITIVE, so the model passed
+the code the engine folded - the same shape as 2.6, a model binding found to be
+the model's. Recorded as a model gap rather than fixed the same day: folding
+keys in the interpreter touches every member's execution gate at once (holde-em,
+coinxt, riptide, nostrxt, nocloud, archivext), and each of those should be
+re-run and read when it lands (`docs/REMAINING-WORK.md`).
+
+**What it does NOT mean:** `the keys of` still answers the key's ORIGINAL
+spelling (the archivext reader lists `a` for a document whose key is `a`), so a
+scan over the keys is exact; only the subscript lookup folds.
+
+---
+
 ## 3. Control flow
 
 ### 3.1 `repeat with i = A to B step N` does not honour the step
@@ -365,6 +401,47 @@ are REQUIRED, same characters, opposite verdict; and LiveCode **Builder** allows
 engine-proven paths. "We do this everywhere" was true and irrelevant.
 
 **Gate:** `check_zero_arg_statement_calls`, `.livecodescript` only.
+
+---
+
+### 3.4 `Function: error in function handler` with the hint = the function's NAME means "no live handler in the message path"
+**DOCUMENTED 2026-09-15**, from the engine source (livecode `develop-9.6`
+`engine/src/exec-keywords.cpp`, `object.cpp`; the OXT engine branch's copies
+of the error tables are byte-identical), read after archivext's first
+engine report:
+
+    Type    Function: error in function handler
+    Object  Untitled 3
+    Line    axtCheck axVersion() begins with "ArchiveXT", "..."
+    Hint    axVersion
+
+That trace says exactly one thing: the CALLER evaluated `axVersion()`, the
+engine walked the message path, found no live handler of that name, and
+appended EE-0219 with the name as the hint. A runtime fault INSIDE the
+function would read differently - the inner error would be line 1 (the
+Type row), and the function's own stack would be the Object. Two
+mechanisms produce the trace, and the dialog cannot tell them apart: the
+library was never put in use (no `start using`, or the wrong stack), or the
+library WAS reached but its script is DEAD - scripts are parsed LAZILY, on
+the first message (`MCObject::parsescript`), and a parse failure marks the
+script dead, sends an unhandled `scriptParsingError`, and reports nothing in
+`the executionError`. `start using` is the eager exception: it parses on
+the spot and throws EE-0845 `start: script of specified stack won't
+compile`, so a library that reached the path THAT way is not dead. The
+header line of the IDE dialog carries only an icon and "executing at
+<time>" - a description there ("bad syntax") was a paraphrase, and the
+verbatim text is what to ask for.
+
+**Rule:** treat this pair as "not loaded" first. From the message box:
+`put the stacksInUse`; `put axVersion()` (a version string proves loaded AND
+parsed); `set the script of stack "x" to the script of stack "x"` then
+`put the result` (empty means it compiles; otherwise the parse error's
+number, line, column and token). archivext's next run, with the library in
+use, compiled whole and ran 357 checks (2.7).
+
+**What it does NOT mean:** a COMMAND called with `()` throws the same
+EE-0219 at the call site (holde-em gotcha 7), so check the callee's kind
+before checking the path.
 
 ---
 
@@ -651,6 +728,200 @@ and a bug when it means "anywhere in this stack".
 
 ---
 
+### 5.7 An IMAGE object takes fetched bytes, and a refusal keeps the rect it already had
+
+**OBSERVED** (OXT 9.6.3, Windows x86_64 NT 10.0, 2026-09-20; the primary
+record is the pasted log of `archivext/examples/archive-gallery.livecodescript`,
+the first stack in this tree to put fetched bytes into an image object from a
+script). Until this run, section 5 had NO image entry at all: box2dxt loads
+sprite sheets from FILES and the coinxt wallet paints a QR it built itself, so
+nothing here had ever asked what an image object does with bytes off the wire.
+
+What the run establishes, all through the one handler `agSetPicture`:
+
+- **`set the text of image X to <bytes>` takes a fetched JPEG.** The item
+  image service's 10,066-byte derivative came back as `180x124`, and a
+  1,180,947-byte full picture as `1988x1367`. The bytes came from the
+  Internet library through a script variable (`put URL ... into tBody`), so
+  the whole path - libURL, a script variable, the image object - is observed
+  end to end.
+- **`the width` and `the height`, read with `the lockLocation` false
+  immediately after the content is set, ARE the picture's natural size.** Both
+  numbers above are the pictures' own dimensions, not the control's rect.
+- **A REFUSAL KEEPS THE CONTROL EXACTLY AS IT WAS**, which is the half that
+  cost this run its one red line. The stack's boot check fed the image bytes
+  that were no longer a picture and asked the same question, and the answer
+  was `684x358` - which is precisely the rect the stack had set on that
+  control (`32,100,716,458`). It did not throw, it did not blank, and it did
+  not answer 0.
+
+**Why that matters beyond one demo.** The idiom this tree uses for "did the
+image take it?" is box2dxt's `b2kSheetSourceFromFile`: set the content, then
+refuse anything whose width is under two pixels. That works THERE because
+box2dxt puts its bytes into a control it has just CREATED, which has no rect
+yet, so a refusal leaves 0. On a control that already carries a rect the same
+test reads the rect back and reports a refusal as a picture six hundred pixels
+wide. The idiom is not wrong; its precondition was never written down.
+
+**Held by**: `agSetPicture` clears the content, forces the control to one
+pixel and unlocks its location BEFORE setting the bytes, so the measurement
+can only be the picture's; and the gallery's boot self-check asserts BOTH
+directions on every open - a carried four-pixel PNG must be taken, and bytes
+that are plainly not a picture must be refused. The second of those is what
+will measure the refusal shape on the next engine, rather than assuming it.
+
+**Not settled by this run**: what a refusal does to `the text of image` (was
+the old content kept, or blanked?), whether an image object throws for any
+input at all, and whether progressive JPEG decodes. WebP and AVIF are
+DOCUMENTED as unsupported in this engine line and were not tested.
+
+---
+
+### 5.8 A player can open a stream, report a duration, advance its clock, and be SILENT
+
+**OBSERVED** (OXT 9.6.3, Windows x86_64 NT 10.0, 2026-09-20, same log). Three
+MP3 streams from archive.org were handed to a player object as `https://`
+datanode URLs. All three opened: `set the filename` left `the result` empty,
+`the duration` came back non-zero, `playStarted` fired for two of them, and
+six seconds later `the currentTime` had advanced by almost exactly six
+seconds. The reader heard nothing.
+
+    play check: duration 10623320000, currentTime 60337007
+
+**The timeScale is implied and worth having**: 60,337,007 units at the
+six-second mark is 6.03 seconds at a timeScale of 10,000,000, i.e. 100-nanosecond
+units, and 10,623,320,000 is then 1,062 seconds - a plausible MP3 chapter.
+Treat that as INFERRED until a run prints `the timeScale` beside it, which the
+gallery now does.
+
+**What this means for every "did it play?" check in this tree.** The explorer
+demo and the gallery both decided playback from `the duration` being non-zero
+six seconds in, and `archivext/CLAUDE.md` gotcha 19 records the opposite
+failure - a player that opens nothing and says nothing. This run adds the
+mirror: **a player object's own properties cannot distinguish playing from
+running-and-silent.** A duration, a moving clock and a `playStarted` are all
+consistent with silence.
+
+**The suspect, and it is not confirmed.** Neither demo had ever set
+`the playLoudness`, on the player or on the engine, so both took whatever
+global value the IDE or another stack had left. 5.4 records that the property
+is a REQUEST rather than a register (Linux reads it back as a constant 0), so
+a stack that never sets it is a stack betting on somebody else's state. The
+gallery now sets it on the player and on the engine before every stream, gives
+the reader a volume control, and LOGS every property the player will answer -
+`the playLoudness`, `the paused`, `the playRate`, `the status`, `the
+mediaTypes` and `the tracks`, each read in its own try. `the tracks` is the
+line that will settle it: it says whether an audio track was found at all.
+
+**A second thing the log establishes, and it is a RULE rather than a
+symptom: the FIRST `playStarted` of a session is not seen; later ones are.**
+OBSERVED twice, on two separate runs (2026-09-20, morning and evening), and
+the first explanation was WRONG - which is why it is written out rather than
+quietly replaced.
+
+The stack set its "this player is mine" variable on the line AFTER
+`start player`, so the obvious reading was that the message is dispatched
+inside the `start player` call, before the next line runs, and that the later
+plays printed the line only because the first had left the variable set. That
+would make it note 5.3's shape one layer out: a message arriving before the
+code that was going to prepare for it. The ordering was changed - state up
+first, then `set the filename`, then `start player` - and **the next run
+showed exactly the same gap**: first play silent, second and third reported.
+
+So ordering was not the cause, or not the whole one. The remaining difference
+between play one and every later play is that play one also **created the
+player control** (the stack made it on demand, inside the same handler that
+then started it). That is the hypothesis now under test: the gallery creates
+the player at start, and if the next run still loses the first message, a
+script-side cause is ruled out as well.
+
+The rule that survives either way is worth keeping, because it costs nothing
+and the first version of it was right about what to do even though it was
+wrong about why: **establish the state a message will be judged against
+BEFORE issuing the command that can send it.**
+
+**Also unsettled, and the gallery now tests it in one click**: whether the
+platform player can open **https** at all. On Windows the media path is
+DirectShow, whose URL source filter is documented for http and not for https,
+and video in this run did not open at all while audio appeared to. The
+six-second check now retries the same datanode URL once over `http://` before
+falling back to a download, which is the cheapest discriminator available and
+has never been run.
+
+### 5.9 A player refuses an h.264 MP4 from a LOCAL FILE, with a verbatim reason
+
+**OBSERVED 2026-09-20, OXT 9.6.3 Windows x86_64.** Two films, streamed from
+archive.org's datanode hosts, were refused the moment they were handed over:
+
+```
+play: https://dn800208.us.archive.org/0/items/TheGhoul/TheGhoul_1933.mp4
+      (h.264, 408.79 MB, chose TheGhoul_1933.mp4) on Win32 NT 10.0
+the player refused the stream at once: could not create movie reference
+```
+
+`could not create movie reference` is what `set the filename of player` leaves
+in `the result`, which is the SYNCHRONOUS verdict note 5.8 says a player
+sometimes gives - so on this platform the refusal is immediate and named, not
+silent. What makes the entry worth having is the next rung: the stack then
+downloaded all 408 MB and tried the file from disk, and got
+
+```
+the player refused the downloaded file as well: could not create movie reference
+```
+
+**So the container is the wall, not the scheme and not the redirect.** The same
+sequence repeated for a 386 MB MPEG4. MP3 audio on the same machine in the same
+session opened, reported a duration and advanced its clock (5.8), so the player
+object works - it has no decoder for these files. Handing the downloaded file
+to `launch document` opened it outside, which is the one media path in this
+tree with a real engine record behind it (riptide, 2026-08-15).
+
+The practical rule, and what the gallery does now: **once a LOCAL file of a
+given container has been refused, no stream of that container can end
+differently on that engine**, so a second download of the same suffix is known
+waste and is refused with a sentence rather than spent. The http-scheme retry
+(5.8's open question) is still worth running, but it now runs BEFORE the
+download rather than after it, because the cheap discriminator is only cheap
+if it goes first.
+
+---
+
+### 5.10 A blocking `put URL` while an async `load URL` is in flight: the async one times out, and its error headers belong to the other request
+
+**OBSERVED 2026-09-20, same session, libURL 1.2.0.** A search was in flight
+through `load URL ... with message` when the stack's Live probe ran its
+blocking legs (`put URL` through the library's sync helpers). The async request
+never delivered; it ended at the layer's own 60-second watchdog:
+
+```
+request 1 (gallery) failed: the URL library said timeout for
+https://archive.org/advancedsearch.php?...&rows=192&page=1&output=json:
+socket timeout archive.org:443|6925 [headers: HTTP/1.1 200 OK | ... |
+Onion-Location: https://archive...onion/metadata/arkivkopia.se-digmus-mha-MILIF.007916 ]
+```
+
+Two things in one line. The socket did get a **200** and then stalled, and the
+headers quoted with the failure are **the other request's** - the
+`Onion-Location` names the `/metadata/` URL the blocking leg had just fetched,
+not the `advancedsearch.php` URL that failed. That is note 6.9's
+`libURLLastRHHeaders` rule biting in the place it is most misleading: a failure
+report is exactly when a reader trusts a header block, and the block belongs to
+whatever reply arrived LAST. A library that quotes headers in an error should
+say that it cannot prove they are the failing request's; archivext's error
+text says so in the sentence itself now ("headers of the last reply this
+process received, which may be another request's"), because a caveat that
+lives only in a doc is not read at the moment the header block is.
+
+Whether the blocking call CAUSED the timeout is UNEVIDENCED: one observation,
+with a large (192-row) response on the async side, and no run that puts the
+same async request in flight without a blocking call beside it. What is
+established is the pairing, which is enough to stop writing harnesses and
+probes that block while an app's own requests are out.
+
+---
+
+---
+
 ## 6. Sockets and processes
 
 ### 6.1 `socketTimeout` REPEATS while a read or write is pending
@@ -868,6 +1139,64 @@ of the two, which inverts the advice several documents used to give.
 **Gate:** none, and none is possible headlessly - this is an engine measurement.
 The narrowed question is carried in `nostrxt/docs/07-capabilities-required.md`
 gap #2 and flagged `VERIFY (on-engine)` at the call site.
+
+### 6.9 The Internet library (libURL) speaks https, delivers chunked bodies whole, and keeps the LAST reply's headers
+**OBSERVED 2026-09-15** (the user's OXT engine, libURL 1.2.0; platform not
+recorded), the suite's FIRST libURL record of any kind - before archivext,
+`load URL ... with message` appeared in two shipped stacks (nocloud's public-IP
+probe, coin-wallet's Esplora transport) and neither had run it. From
+archivext's demo, in one evening:
+
+- **`load URL "https://archive.org/..." with message` and `put URL "https://..."`
+  both work.** The async form reached the site and delivered its answer to
+  the message (a 400 first, then a watchdog timeout on the same broad query);
+  the blocking form then carried three HTTP 200s with real JSON bodies. Every
+  reply came back with `Server: nginx/1.31.3` and a `Strict-Transport-Security`
+  header, so the bytes were the live site's. Same caveat as 6.8, word for
+  word: a good host connecting is consistent with "verified" AND with
+  "verified nothing"; **nothing has offered libURL a bad certificate**, and only
+  that can say whether it checks one.
+- **A `Transfer-Encoding: chunked` body arrives whole**: 196,716 bytes of
+  item metadata through `put URL`, opening `{"alternate_locations":...` and
+  parsing as one JSON document. No `Content-Length` was present on any reply.
+- **`libURLLastRHHeaders()` answers the headers of the last reply RECEIVED,
+  not of the last request MADE.** After a request that got no answer (the
+  refused second load below), it still carried the previous reply's
+  `Onion-Location`, which names the URL it belongs to - a log that prints
+  headers beside a failure is quoting an earlier success unless it says so
+  (archivext's probe now labels them).
+- **libURL refuses a second load of a URL it is still loading**, with `the
+  result` reading `URL is currently loading` from the blocking form. A
+  `load URL` whose watchdog gave up on it is STILL loading in libURL, so the
+  next request for the same URL fails instantly and reads like a site
+  error. `unload URL` cancels it (DOCUMENTED, and archivext calls it on
+  timeout and before every load; the cancel itself has not been watched
+  work - the refusal was seen once, before the unload landed, and has not
+  recurred since).
+- **`libURLSetCustomHTTPHeaders` replaces the whole default header set**
+  (DOCUMENTED). The one request that used it drew the 400; every request
+  without it drew 200. INFERRED as the cause at best - the 400's query timed
+  out on its own once the header was gone, so the query may have been the
+  whole story. The rule archivext keeps (do not replace the defaults; the
+  `httpHeaders` property ADDS) stands on the reference, not on the run.
+- **The async success path delivers (OBSERVED 2026-09-16).** Four `load URL
+  ... with message "axUrlDone"` requests from the demo's Search button, across
+  three families, each reached the handler with the URL the engine hands back
+  matching the URL the request was made with, so correlation by URL, the
+  `cached` status read, `URL x` for the body and `unload URL` after it all
+  hold on a reply that ARRIVED - the previous day had shown only the error and
+  timeout arms. An empty result page came back as a normal reply.
+- **Not every archive.org query is cheap.** `mediatype:(movies OR video OR
+  television)` answered 17,098,672 hits inside a second; the same three
+  mediatypes OR-ed with 26 `identifier:` terms inside a `mediatype:collection`
+  clause got no answer in 30 s. That is the site, not the engine, and it is
+  here because a 30 s silence from `load URL` is indistinguishable from an
+  engine fault without a watchdog and a second, cheaper request.
+
+**Gate:** none possible headlessly. The narrowed questions (a bad certificate;
+the `unload` cancel actually freeing the URL; the async `item` kind) are in
+`archivext/docs/07-open-questions.md` items 6 and 9 and the demo's Live probe
+carries the legs.
 
 ---
 

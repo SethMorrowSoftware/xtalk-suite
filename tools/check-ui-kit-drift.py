@@ -55,6 +55,8 @@ ADOPTERS = [
     os.path.join("nocloud", "src", "nocloudquickshare.livecodescript"),
     os.path.join("tests", "suite-closing-pass.livecodescript"),
     os.path.join("nostrxt", "examples", "nostrxt-demo.livecodescript"),
+    os.path.join("archivext", "examples", "archivext-demo.livecodescript"),
+    os.path.join("archivext", "examples", "archive-gallery.livecodescript"),
 ]
 
 BEGIN = ("-- ==== SUITE UI KIT v2 BEGIN (verbatim copy; master: "

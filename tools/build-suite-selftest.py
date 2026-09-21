@@ -545,6 +545,17 @@ MEMBERS = [
         "onionxt layer also defines, so it is deliberately NOT in this "
         "paste - the onion-httpd precedent).",
     ),
+    Member(
+        "archive", "archivext/examples/archivext-tests.livecodescript", "ax1",
+        "axSelfTest", "ArchiveXT: the full ax* self-test",
+        "12 sections, all OFFLINE and deterministic: the encoders, the query "
+        "builder, the preset tables, the URL builders, the JSON reader, the "
+        "search/item parsers and the playlist engine, driven over fixtures "
+        "pinned as hex by tools/archive-kat.py. The fetch layer is exercised "
+        "through its refusal paths only - nothing is ever loaded from "
+        "archive.org in this paste. One SKIP when the engine has no Internet "
+        "library.",
+    ),
 ]
 
 
@@ -563,6 +574,14 @@ class Layer:
 # against src/onionxt.livecodescript only, and embedding an app nobody's test
 # calls would be dead weight in every paste.
 SCRIPT_LAYERS = [
+    Layer(
+        "archivext", "archivext/src/archivext.livecodescript",
+        "ArchiveXT script layer (the real library, embedded)",
+        "The whole ax* surface - ArchiveXT is pure LiveCodeScript over the "
+        "engine's URL library (load URL ... with message). Embedded so the "
+        "folded harness above tests the code it ships with; the fetch half "
+        "is present but never armed by the paste.",
+    ),
     Layer(
         "coinxt", "coinxt/src/coinxt.livecodescript",
         "CoinXT script layer (the real library, embedded)",

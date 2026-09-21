@@ -775,6 +775,23 @@ command pfProbeScriptLayers
       stAssert "NostrXT script layer answers a known vector", false
       pfNote "NostrXT script layer: nxHexEncode returned " & tHex & " where " & quote & "dead" & quote & " was expected"
    end if
+
+   put empty into tHex
+   try
+      -- A real vector once more: axUrlEncode of a space and a hash through
+      -- the archivext layer, the two bytes a wrong encoder gets wrong first.
+      put axUrlEncode("a b#1.mp3") into tHex
+   catch tError
+      put empty into tHex
+   end try
+   if tHex is "a%20b%231.mp3" then
+      stAssert "ArchiveXT script layer answers a known vector", true
+   else if tHex is empty then
+      stSkip "ArchiveXT script layer", "start using stack " & quote & "archivext" & quote & " - the suite paste embeds it, so this is not needed for that run"
+   else
+      stAssert "ArchiveXT script layer answers a known vector", false
+      pfNote "ArchiveXT script layer: axUrlEncode returned " & tHex & " where a%20b%231.mp3 was expected"
+   end if
 end pfProbeScriptLayers
 
 -- ---- the table ---------------------------------------------------------------
