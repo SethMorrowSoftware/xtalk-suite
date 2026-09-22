@@ -19,7 +19,7 @@ have to know that. Four gates read those paths by name
 | [api-reference.md](api-reference.md) | The `cx*` handlers that exist today, and nothing else. All 95 public handlers are documented, and `tools/check-doc-handlers.py` fails the build if that stops being true in either direction. This file also ships inside the packaged extension. |
 | [../SPEC.md](../SPEC.md) | The specification: what CoinXT is for, the phase boundaries, the naming rules, and the design decisions with their reasons. |
 | [../IMPLEMENTATION-PLAN.md](../IMPLEMENTATION-PLAN.md) | The phased build plan. Phases 1 through 5 are closed and engine-passed; this is the record of the order and why. |
-| [../MIGRATION.md](../MIGRATION.md) | What to change in an app when the ABI moves. |
+| [../MIGRATION.md](../MIGRATION.md) | Superseded: the pre-2026-09-22 procedure for moving CoinXT out of the suite. CoinXT is published from the suite instead, and the note says where that workflow lives. |
 | [../THIRD-PARTY-LICENSES.md](../THIRD-PARTY-LICENSES.md) | The per-file license map for the vendored trezor-crypto and libsecp256k1 code. |
 
 **Where else to look.** [`../README.md`](../README.md) is the member front door

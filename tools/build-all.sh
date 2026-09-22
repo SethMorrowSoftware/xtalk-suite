@@ -342,6 +342,19 @@ if [ -f tools/check-member-standalone.py ]; then
   echo "== suite: tools/check-member-standalone.py =="
   python3 tools/check-member-standalone.py
 fi
+# The publisher itself (tools/publish-members.py) writes to eleven
+# repositories that are not this one, from .github/workflows/
+# publish-members.yml, so this is where its promises are held: it replays
+# exactly the suite's trees, never writes a repository it was not told to
+# adopt, never force-pushes (a git shim injects the mid-publish race that is
+# the only place a force-push would bite), and refuses a member repository
+# with commits the suite never wrote or ported. It drives the tool's real
+# command line over throwaway file:// repositories - no network, a few
+# seconds - and each refusal is required to leave its repository untouched.
+if [ -f tools/test-publish-members.py ]; then
+  echo "== suite: tools/test-publish-members.py =="
+  python3 tools/test-publish-members.py
+fi
 
 # --- static gates for every member (always run) ---
 # riptide, nocloud, and holde-em are not extensions but carry the same gate

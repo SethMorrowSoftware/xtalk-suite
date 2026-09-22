@@ -419,16 +419,21 @@ The members are deliberately non-overlapping, so real apps mix them:
 Members build independently (each has its own `CMakeLists.txt` /
 `tools/`), and `tools/build-all.sh` walks them. **Each member owns its gate
 list** - `<member>/tools/run-gates.sh`, which the walker delegates to - and
-**each member is ready to be its own repository**: since 2026-09-21 every
-member directory carries the standalone kit (its own gate runner, a
-`.github/workflows/` DERIVED from the root lanes by
+**each member is published into its own repository**: development stays
+here, and since 2026-09-22 every change the suite's gates pass is replayed
+into each member's repository by `tools/publish-members.py` (run by
+`publish-members.yml`, below). For that to work from a member repository's
+first commit, every member directory carries the standalone kit (its own gate
+runner, a `.github/workflows/` DERIVED from the root lanes by
 `tools/sync-member-workflows.py`, a generated "Relationship to the xTalk
 suite" README section, `.gitignore`/`.gitattributes`/`LICENSE`, no link or
 tool that climbs out of the member), held as a property of the tree by
 `tools/check-member-standalone.py`. `docs/MEMBER-REPO-SPLIT.md` is the
-procedure, the sibling layout the cross-member gates expect, and the list of
-registries a departing member has to be removed from (archivext left on that
-date and taught it). CI is two layers, both at the repository root (GitHub
+model, the one-time setup, the everyday workflow (including how a
+contribution made in a member repository is ported back here), the sibling
+layout the cross-member gates expect, and the list of registries a departing
+member has to be removed from (archivext left on 2026-09-21 and taught it).
+CI is two layers, both at the repository root (GitHub
 Actions runs only root workflows, so the per-member `.github/` files are
 **inert in the monorepo** - and, being generated from the root lanes rather
 than snapshots of a pre-suite CI, no longer rot behind them):
@@ -487,6 +492,17 @@ than snapshots of a pre-suite CI, no longer rot behind them):
   manual `lipo` build remains equivalent; codesign + notarize exists nowhere
   yet (credentials CI does not hold; unsigned distribution accepted
   2026-08-23).
+
+- **`publish-members.yml`** — the one-way street to the member repositories
+  (decided 2026-09-22). When `suite gates` finishes green on `main` it runs
+  `tools/publish-members.py` over the commit it verified: each member's
+  repository receives the changes to its directory as fast-forward commits
+  stamped `Suite-Commit: <sha>`, never a force-push; a member whose native
+  lane is red on its last change is held back; a repository with commits the
+  suite did not write is refused until they are ported here
+  (`publish-members.py port`). It writes with the `XTALK_PUBLISH_TOKEN`
+  secret and only plans until that secret exists; adopting a repository the
+  suite has never written is a `workflow_dispatch` input, never automatic.
 
 See `CLAUDE.md` for the suite-level workflow and `docs/README.md` for the
 cross-cutting documents.

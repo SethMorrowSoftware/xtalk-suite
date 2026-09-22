@@ -211,11 +211,21 @@ the docs-style CI job, and they are not optional: curly quotes fail OXT compilat
 
 ## Relationship to the xTalk suite
 
-OnionXT is developed in the **xTalk suite** monorepo at https://github.com/SethMorrowSoftware/xtalk-suite, where it is the
-`onionxt/` member, and is published on its own at https://github.com/SethMorrowSoftware/OnionXT.
-The suite is the source of truth until the split is complete, and its
-`docs/MEMBER-REPO-SPLIT.md` records the procedure and each member's
-readiness; after the split, this repository is.
+OnionXT is developed in the **xTalk suite** monorepo at https://github.com/SethMorrowSoftware/xtalk-suite, as its
+`onionxt/` member, and PUBLISHED from there into this repository,
+https://github.com/SethMorrowSoftware/OnionXT: once a change lands on the suite's `main` and
+the suite's gates pass, the suite's `tools/publish-members.py` replays it
+here as a commit carrying a `Suite-Commit:` trailer that names the suite
+commit it came from. The suite is the source of truth; this repository is
+its published copy, one commit for each change to `onionxt/` that landed on
+the suite's `main`.
+
+**Contributing.** Please open issues and pull requests at the suite. A pull
+request opened here is not lost - the suite brings it home with
+`python3 tools/publish-members.py port onionxt --ref pull/<n>/head`, keeping its
+author - but a commit made here directly holds up the next publish until
+it has been ported, because publishing never overwrites work it did not
+write. The suite's `docs/MEMBER-REPO-SPLIT.md` is the whole workflow.
 
 **Suite-level paths cited from here.** This member's `CLAUDE.md` and
 `docs/` cite files that live at the suite root, not in this tree:
@@ -243,9 +253,9 @@ lines name the master) rather than editing inside the markers.
 - `tools/check-docs-style.py`, `tools/check-livecodescript.py`, `templates/CLAUDE.md`: byte-identical copies of the family's unified tooling, held identical across members by the suite's `tools/check-checker-drift.py` and fixture-tested there by `tools/test-checker.py`.
 
 **What other members carry from this one.** The suite embeds this
-member's script into the stacks below, verbatim; a change to the
-master here is not shipped until the suite re-runs
-`tools/sync-demo-embeds.py` and every carrier is re-run on an engine:
+member's script into the stacks below, verbatim; a change to it
+reaches them when the suite re-runs `tools/sync-demo-embeds.py`, and
+is not done until every carrier has been re-run on an engine:
 
 - `coinxt/examples/coin-wallet.livecodescript` in coinxt carries `src/onionxt.livecodescript`.
 - `holde-em/src/holdem.livecodescript` in holde-em carries `src/onionxt.livecodescript`.

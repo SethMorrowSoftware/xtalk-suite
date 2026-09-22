@@ -923,6 +923,49 @@ stalls permanently, revisit; until then the complexity has no buyer.
 
 ---
 
+## D-22. ~~Member repositories: does development move out, or does the suite publish into them?~~ DECIDED 2026-09-22: DEVELOP HERE, PUBLISH THERE
+
+**DECIDED 2026-09-22 (the owner, in so many words: "push these extensions to
+their own repos, but keep development here").** The suite stays the
+development repository for every member, and each member is PUBLISHED into
+its own repository automatically, after each change the suite's gates pass.
+The primary record is `docs/MEMBER-REPO-SPLIT.md` ("Publishing members into
+their own repositories"), which carries the model, the one-time setup and the
+everyday workflow; the mechanism is `tools/publish-members.py`, run by
+`.github/workflows/publish-members.yml` and held by
+`tools/test-publish-members.py` in the gate set.
+
+**Why it was the owner's:** the 2026-09-21 preparation left it open in so
+many words - "If the direction reverses - members develop in their own
+repositories and the suite pulls them in - the suite needs a `git subtree
+pull` per member ... that is an open decision, recorded in
+docs/OPEN-DECISIONS.md when it is taken" - and the answer decides where
+every future change is made, reviewed and gated.
+
+**Options, as they stood:**
+- **Move development out** (archivext's shape, 2026-09-21): each member
+  developed in its own repository, the suite pulling them in. Costs every
+  cross-member gate - carried-copy drift, embed freshness, one name per
+  library, the suite paste and its coverage ratchet - which can only run
+  where every member is present, and archivext's departure took thirteen
+  red gates to clean up.
+- **Develop here, export by hand** (the 2026-09-21 working answer): a
+  `git subtree split` pushed after each change. Refused by every pre-suite
+  repository on its first push (no shared history), and a procedure run by
+  hand after every merge is a procedure that stops being run.
+- **Develop here, publish automatically** (taken): a first-parent replay onto
+  each member repository's own history, fast-forward only, with a
+  `Suite-Commit:` trailer as the watermark, explicit adoption, divergence
+  refused until ported (`publish-members.py port`) or accepted.
+
+**What it asked of the owner, once:** create the two repositories that did
+not exist (enetxt, NostrXT), make the three private ones public (CoinXT,
+nocloud, hold-em), and store a fine-grained token with Contents and
+Workflows write access as `XTALK_PUBLISH_TOKEN`. Section 2 of the primary
+record is that checklist.
+
+---
+
 ## Checked and found already decided (no briefs; verified 2026-08-16)
 
 These were listed in or adjacent to REMAINING-WORK section E but turned out

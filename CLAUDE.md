@@ -16,7 +16,9 @@ LiveCodeScript over a local Tor daemon), consolidated into one repository so
 they release, version, and interoperate as a suite. This monorepo is the
 **source of truth**; the former standalone repositories (SodiumXT, OnionXT,
 dataChannelXT, and the TorrentXT repo that once vendored enetxt/ and
-datachannelxt/ as subfolders) become mirrors. Development happens here.
+datachannelxt/ as subfolders) become mirrors - since 2026-09-22 PUBLISHED from
+here, every member into its own repository, by `tools/publish-members.py`
+after the gates pass (docs/MEMBER-REPO-SPLIT.md). Development happens here.
 
 ```
 openxtalk-libraries/
@@ -58,6 +60,9 @@ openxtalk-libraries/
                        2026-09-21 GENERATED from these root lanes by
                        tools/sync-member-workflows.py rather than left as
                        pre-suite snapshots - see the split paragraph below)
+                       + publish-members (since 2026-09-22: every member
+                       published into its own repository once the gates
+                       pass on main; tools/publish-members.py)
   sodiumxt/  torrentxt/  enetxt/  datachannelxt/  onionxt/  coinxt/
   nostrxt/             the Nostr member, added 2026-08-23: pure LiveCodeScript
                        over coinxt (BIP-340, sha256, ECDH) and sodiumxt
@@ -520,6 +525,12 @@ fixture tests (`test-*.py`), four are generators and installers
 `install-release-binaries.py`) that WRITE the tree rather than judging it, and a
 glob would silently adopt whatever lands in the directory next. Read the script.
 The paragraphs above and below name only the gates whose WHY needs prose.
+(The "every one of the 33" was a dated count and it expired the way the
+sentence predicts: since 2026-09-21 `tools/` also holds a data module,
+`member-registry.py`, that nothing invokes because four tools import it, and
+since 2026-09-22 a publisher, `publish-members.py`, that only a workflow and
+its fixture test run. The glob stopped being accidentally right and nothing
+said so - which is the argument above, demonstrated.)
 
 It is assembled from `tests/suite-selftest.core.livecodescript` (hand-maintained:
 the UI, the probe, the runner, and the cross-member sections) plus **every
@@ -1058,6 +1069,42 @@ What a standalone repository CANNOT check is also written down rather than
 implied: the carried-block drift gates, embed freshness, cross-library name
 disjointness, the cross-member call gates and the suite paste's coverage
 ratchet run only here, and the README section each member carries says so.
+
+**And since 2026-09-22 each member is PUBLISHED there, from here** (D-22:
+"push these extensions to their own repos, but keep development here").
+Nothing moves; `tools/publish-members.py`, run by `publish-members.yml` when
+`suite gates` goes green on `main`, replays the first-parent commits that
+changed `<member>/` onto that member's repository, fast-forward only, each
+stamped `Suite-Commit: <sha>` - and that trailer, read back from the
+destination, is the publisher's ENTIRE state, so there is no stored watermark
+to drift. Adoption of a repository the suite has never written is an explicit
+dispatch input; a repository with commits the suite did not write is REFUSED
+until they are ported here (`publish-members.py port <member>`, which stamps
+`Mirror-Commit:` into the patch so a conflict resolved by hand keeps it) or
+accepted; a member whose native lane is red on its last change is held back.
+Three things about how it landed are worth carrying. **The procedure it
+replaced could never have run**: the 2026-09-21 document prescribed a
+`git subtree split` pushed to each pre-suite repository, and a split shares
+no history with those, so every push is refused and GitHub cannot even open
+it as a pull request - a procedure written down and never executed, which is
+this file's shipped-is-not-run lesson applied to prose. **The generated
+member CI would have failed on its first run** for five of eleven members: it
+checked each gate sibling out of that sibling's own repository, and three of
+those were private and two did not exist. The siblings now come from the
+suite itself (public), sparse-checked-out at the commit named by the member's
+newest `Suite-Commit:` trailer - the versions the suite's gates actually ran
+together. **And the promise that matters most survived every fixture
+`tools/test-publish-members.py` was first written with**: a mutation that made
+every push a force-push changed nothing they could see, because the publisher
+always builds on the head it has just fetched, so a forced push and a plain
+one are the same push - except when the repository moves between that fetch
+and the push. A fixture now injects exactly that race with a `git` shim on
+PATH, and the mutation fails it. A property is only tested where it can
+bite. (The same day's re-read found three more gaps the fixtures had not
+reached - an adoption that changes no tree never landing its watermark, a
+pull request that merged the default branch porting commits that were never
+its own, and a replay judged by one head and built on another - each now a
+fixture that fails when its fix is reverted.)
 
 ## Git / workflow
 
