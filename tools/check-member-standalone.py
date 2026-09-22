@@ -38,7 +38,11 @@ WHAT IT CHECKS, per member in tools/member-registry.py:
      shape (check-doc-anchors.py sat uninvoked for weeks; box2dxt's
      sync-embedded-kit.py --check was "in CI" in five places and in zero
      workflows), and a stale exemption is refused so a renamed file cannot
-     leave a permanent excuse behind.
+     leave a permanent excuse behind. "Named" means named in the runner's
+     CODE: until 2026-09-22 a mention in a comment counted, so a runner
+     whose only trace of a gate was "# check-x.py is retired" passed this
+     check about a gate it never ran - the very shape the check exists to
+     refuse, one level up. No member had that shape when it was closed.
   5. THE REGISTRY AND THE TREE AGREE. A member-shaped directory (CLAUDE.md +
      tools/check-livecodescript.py) that the registry does not list, or a
      registry row whose directory is gone, fails - the archivext lesson one
@@ -169,12 +173,25 @@ def check_tools_climb(mpath, m, problems):
                     "docs/MEMBER-REPO-SPLIT.md)" % (m.name, sub, f))
 
 
+def _code_of(script):
+    """The runner with its comments removed - whole-line comments and a
+    trailing ` # ...` - because a gate named only in a comment is a gate the
+    runner does not run. A `#` not preceded by whitespace (`${#arr[@]}`) is
+    shell, not a comment, and stays."""
+    out = []
+    for line in script.split("\n"):
+        if line.lstrip().startswith("#"):
+            continue
+        out.append(re.split(r"\s#", line, 1)[0])
+    return "\n".join(out)
+
+
 def check_gates_named(mpath, m, problems):
     rg = os.path.join(mpath, "tools", "run-gates.sh")
     if not os.path.isfile(rg):
         return   # already reported by check_kit
     with open(rg, encoding="utf-8", errors="replace") as fh:
-        script = fh.read()
+        script = _code_of(fh.read())
     # A runner may name a gate by GLOB - `for rel in tests/*golden*.py` is
     # the convention build-all.sh set, so a new golden is covered with no
     # edit - and a glob that matches the file counts as naming it.
