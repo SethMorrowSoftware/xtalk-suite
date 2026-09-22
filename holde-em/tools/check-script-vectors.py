@@ -26,6 +26,13 @@ section that quietly stops asserting must fail rather than print OK), and
 they are set from measured runs, so raising them is the normal edit after a
 harness grows.
 
+WHERE RIPTIDE IS is the sibling rule (docs/MEMBER-REPO-SPLIT.md), resolved by
+sibling() below: the directory beside this member in the suite tree, the
+repository cloned beside it as ../riptide in a standalone checkout, or
+wherever XTALK_SIBLING_RIPTIDE / XTALK_SIBLINGS point. The runner and its
+oracle are both needed before anything loads, so an absent riptide stops
+this gate first, with the clone to run.
+
 WHAT IT IS NOT. The interpreter, not the engine. Nothing here promotes a
 section out of "verified statically; needs an OXT pass"; the engine passes
 the member's CLAUDE.md records still stand and are still the record. What
@@ -90,10 +97,45 @@ import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 MEMBER = os.path.dirname(HERE)
-SUITE = os.path.dirname(MEMBER)
+
+
+def sibling(name):
+    """Path of a sibling member's checkout (docs/MEMBER-REPO-SPLIT.md).
+
+    In the suite tree the siblings are the directories beside this member;
+    in a standalone checkout they are the sibling repositories cloned
+    beside it under their member names. Two overrides, checked in this
+    order: XTALK_SIBLING_<NAME> (one member, any path) and XTALK_SIBLINGS
+    (a directory holding them all). No sibling is ever searched for: an
+    absent one is reported by the gate that needs it, naming the
+    repository to clone."""
+    # A member is never its own sibling: its own name answers this checkout
+    # before any override is read, so XTALK_SIBLINGS cannot redirect a gate
+    # away from the tree running it (coinxt's wallet boot reuses riptide's
+    # runner, and that runner resolves coinxt by name).
+    if name == os.path.basename(MEMBER):
+        return MEMBER
+    one = os.environ.get("XTALK_SIBLING_" + name.upper().replace("-", "_"))
+    if one:
+        return one
+    return os.path.join(os.environ.get("XTALK_SIBLINGS")
+                        or os.path.dirname(MEMBER), name)
+
+
 STACK = os.path.join(MEMBER, "src", "holdem.livecodescript")
-RUNNER = os.path.join(SUITE, "riptide", "tools", "check-demo-boot.py")
-ORACLE = os.path.join(SUITE, "riptide", "tools", "riptide_reference.py")
+RUNNER = os.path.join(sibling("riptide"), "tools", "check-demo-boot.py")
+ORACLE = os.path.join(sibling("riptide"), "tools", "riptide_reference.py")
+# Both are needed before anything else loads, so their absence is settled
+# here as one paragraph (stderr, exit 2: a setup problem, not a vector
+# failure) rather than as the traceback importlib would print.
+for _path in (RUNNER, ORACLE):
+    if not os.path.isfile(_path):
+        print("check-script-vectors: %s is not present: it belongs to the "
+              "riptide member, which is not beside this checkout. Clone "
+              "https://github.com/SethMorrowSoftware/RipTide beside this "
+              "checkout as ../riptide, or point XTALK_SIBLING_RIPTIDE / "
+              "XTALK_SIBLINGS at it." % _path, file=sys.stderr)
+        sys.exit(2)
 
 
 def _load(name, path):

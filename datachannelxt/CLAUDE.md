@@ -248,7 +248,7 @@ machinery but never leaves the host.
 ## LiveCodeScript / LCB / OXT gotchas (carried; OXT is stricter than LiveCode)
 
 > **Engine BEHAVIOUR - as opposed to the conventions below - is collected in
-> [`docs/OXT-ENGINE-NOTES.md`](../docs/OXT-ENGINE-NOTES.md)**, with the verbatim
+> [`docs/OXT-ENGINE-NOTES.md`](https://github.com/SethMorrowSoftware/xtalk-suite/blob/main/docs/OXT-ENGINE-NOTES.md)**, with the verbatim
 > symptom, what each one broke, and whether a gate now holds it. Keep
 > member-specific gotchas here; put anything the ENGINE does there, so there is
 > one authoritative list instead of six that drift.
@@ -299,7 +299,7 @@ machinery but never leaves the host.
    `dcLocalDescription(in pPeer as Integer)`: the dispatch landed in the
    getter with the event Array and threw "cannot convert value", and because
    the poll pump died silently the throw was read as a DRAIN failure for two
-   passes. See [`docs/OXT-ENGINE-NOTES.md`](../docs/OXT-ENGINE-NOTES.md) 6.7
+   passes. See [`docs/OXT-ENGINE-NOTES.md`](https://github.com/SethMorrowSoftware/xtalk-suite/blob/main/docs/OXT-ENGINE-NOTES.md) 6.7
    for the verbatim symptom and how long it hid. **When they collide, rename
    the EVENT, not the getter** - the getter is exercised by the harness and
    the event demonstrably was not, so the event is the side with nothing to

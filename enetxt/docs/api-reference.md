@@ -153,7 +153,7 @@ Budget: 60000. The record/event registry constants (`kField*`, `kEvent*`,
    that defect on its disconnect path - `enetDisconnect` emptied `sHost` one
    line after using it, and ENet delivers one disconnect per peer - and it
    killed the demo on an engine (OBSERVED 2026-08-18 on Linux;
-   [`docs/OXT-ENGINE-NOTES.md`](../../docs/OXT-ENGINE-NOTES.md) 6.4 in the
+   [`docs/OXT-ENGINE-NOTES.md`](https://github.com/SethMorrowSoftware/xtalk-suite/blob/main/docs/OXT-ENGINE-NOTES.md) 6.4 in the
    suite root is the dated entry). It guards now. The suite's
    repository-root `tools/check-lcb-call-types.py` checks this boundary
    argument by argument across the whole family, so a new unguarded handle

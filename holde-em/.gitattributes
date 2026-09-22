@@ -1,1 +1,6 @@
+# The vendored Kenney card atlases and the casino-audio WAVs are committed
+# media; git's diff/merge behaviour on them is pinned here rather than left to
+# its heuristics (the *.png line is the one this app carried into the suite;
+# *.wav is carried back from the suite root's .gitattributes).
 *.png binary
+*.wav binary

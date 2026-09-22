@@ -242,13 +242,8 @@ MEMBERS = [
     # which is what keeps this row exemption-free.
     ("nostrxt", "nx", ["nostrxt/src/nostrxt.livecodescript",
                        "nostrxt/src/nostr-relay.livecodescript"]),
-    # archivext is one pure-script file (2026-09-15): the ax* surface is the
-    # archive.org query/URL/JSON/playlist layer plus an async fetch layer
-    # over `load URL`. The folded harness names every public handler; the
-    # fetch handlers are reached through their refusal paths (no target, no
-    # URL, an unknown handle), so the row is exemption-free without a
-    # network.
-    ("archivext", "ax", ["archivext/src/archivext.livecodescript"]),
+    # archivext (the ax* archive.org layer) had a row here from 2026-09-15,
+    # exemption-free, until it left for its own repository on 2026-09-21.
     # THE TWO POLL DISPATCHERS ARE NOT HERE, AND A ROW WOULD LIE (2026-08-19).
     # enetxt/examples/enet-helpers.livecodescript and its datachannelxt twin are
     # SHIPPED libraries - the layer every demo drives and every doc teaches -
@@ -636,7 +631,7 @@ HOLDEM_WORKLIST = {
 EMBED_BEGIN_RE = re.compile(r'^-- >>> GENERATED EMBED: (.+) >>> --$')
 EMBED_END_RE = re.compile(r'^-- <<< GENERATED EMBED: (.+) <<< --$')
 REQUIRED_EMBEDS = {"coinxt script layer", "onionxt script layer",
-                   "box2dxt-kit script layer", "archivext script layer"}
+                   "box2dxt-kit script layer"}
 
 
 def cut_embedded_spans(text):

@@ -135,7 +135,6 @@ def _rxi(pattern):
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 MEMBER = os.path.dirname(HERE)
-SUITE = os.path.dirname(MEMBER)
 DEMO = os.path.join(MEMBER, "examples", "riptide-social.livecodescript")
 
 
@@ -1403,7 +1402,13 @@ def install_profile(profile):
                  "enlibraryversion", "cxsha3_256len", "btstartsession"):
         LCS.HASHES.pop(name, None)
     if profile == "FULL":
-        CSV.install_coin_natives()
+        if not CSV.install_coin_natives():
+            # FULL means every extension present. Without the committed
+            # CoinXT the Nostr checks below fail on an empty npub, which
+            # reads like an app defect; name the real cause first, in the
+            # vector gate's own words (the sibling to clone, the overrides).
+            print("check-demo-boot: " +
+                  CSV.sibling_missing("coinxt", CSV.COIN_SO))
         LCS.HASHES.update({
             "btlasterror": lambda a: "",
             "oxversion": lambda a: "OnionXT 1.0",

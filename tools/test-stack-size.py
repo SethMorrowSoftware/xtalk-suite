@@ -73,8 +73,10 @@ def main():
     # the three-apps-in-one explorer, one uiChrome call at 1180x630.
     # 51 since 2026-09-20: archivext/examples/archive-gallery.livecodescript,
     # the picture gallery, one uiChrome call at the same 1180x630.
-    if "51 stack window dimension" not in out:
-        print("test-stack-size: expected 51 measured dimensions, got:\n" + out)
+    # 49 since 2026-09-21: archivext left for its own repository, taking
+    # both of its stacks with it.
+    if "49 stack window dimension" not in out:
+        print("test-stack-size: expected 49 measured dimensions, got:\n" + out)
         return 1
 
     original = open(NOCLOUD, encoding="utf-8").read()

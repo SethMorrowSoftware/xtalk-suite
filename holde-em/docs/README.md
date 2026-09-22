@@ -20,6 +20,6 @@ bearing in a way an ordinary member's docs are not.
 | [../assets/cards/NOTICE.md](../assets/cards/NOTICE.md) · [../assets/sounds/NOTICE.md](../assets/sounds/NOTICE.md) | Attribution and licensing for the bundled card art and sound assets. |
 
 **Where else to look.** The suite-level index is
-[`../../docs/README.md`](../../docs/README.md); this app's entry in the
+[`../../docs/README.md`](https://github.com/SethMorrowSoftware/xtalk-suite/blob/main/docs/README.md); this app's entry in the
 cross-member catalogue is in
-[`../../docs/EXTENSIONS-OVERVIEW.md`](../../docs/EXTENSIONS-OVERVIEW.md).
+[`../../docs/EXTENSIONS-OVERVIEW.md`](https://github.com/SethMorrowSoftware/xtalk-suite/blob/main/docs/EXTENSIONS-OVERVIEW.md).

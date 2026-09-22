@@ -554,7 +554,6 @@ Committed binaries are uneven, and this decides what is even runnable tonight.
 | box2dxt | all five (`x86_64-linux`, `x86-linux`, `x86_64-win32`, `x86-win32`, `universal-mac`) + `MANIFEST.sha256` - the only member whose committed mac dylib is not knowingly ABI-stale, and it is a genuine two-architecture Mach-O (x86_64 + arm64). Since 2026-08-23 `tools/check-binary-freshness.py` READS this dylib on every gate run: 370 exports, byte-identical in both slices, matching the shim's 370 definitions and the `.lcb`'s 370 binds, with ABI 4 decoded from both slices' machine code - so the file is verified the way the ELF/PE binaries are. What is still true: **no Mac has ever loaded it**; that half needs an OXT pass on a Mac | n/a on Linux/Windows. On macOS it is the one member worth TRYING - `put b2Version()`, which the 2026-08-17 Windows preflight READ as 4 rather than inferring it - but treat a throw there as unproven-binary, not as a member bug; the rebuild is `box2dxt/docs/building.md` then `box2dxt/tools/package-extension.py` |
 | onionxt | n/a, pure LiveCodeScript | n/a |
 | coinxt | all five + `MANIFEST.sha256` - the first `universal-mac` dylib landed with release run 12 (2026-08-27), both slices driven through the published KAT vectors on the mac runner that built them | n/a - every platform ships |
-| archivext | n/a, pure LiveCodeScript (its network calls are the engine's Internet library) | n/a |
 
 **On Linux (x64 or x86) and on Windows (x64 or x86), every member's library is
 already in the repo** — the 2026-08-08 release run committed all four platforms for
@@ -1466,6 +1465,13 @@ socket measurement.
 
 ### 4.10 archivext (inventory item 36 - first engine contact 2026-09-15, standalone, and the first live legs the same evening; the gallery's own first run 2026-09-20, which settled the image object and sharpened the player question; the fold and the remaining live legs still owed)
 
+> **MOVED OUT 2026-09-21.** archivext left the suite for its own repository the
+> day after the gallery's first run, so nothing below can be re-run from this
+> tree: the demo paths do not resolve here, the suite paste no longer folds
+> `ax1axSelfTest`, and the preflight table no longer probes the ax* layer. The
+> section stays as the dated record of the passes it describes; the open legs
+> it names are that repository's to close.
+
 The standalone harness has run twice (357/2/0, both reds fixed the same day -
 engine notes 2.7 and `archivext/CLAUDE.md` gotchas 15-16 - then 363/0/0), the
 demo has booted (11/11), and the demo's Live probe has carried three live legs
@@ -1900,7 +1906,6 @@ PREREQ  <- one paste answers all but the last line: tests/preflight.livecodescri
        Box2Dxt .......... found ABI ______ vs expected ______ (the one READ number)
        OnionXT script layer present? ____   CoinXT script layer present? ____
        NostrXT script layer present? ____
-       ArchiveXT script layer present? ____
     The expected numbers are printed BY the table - `tools/build-preflight.py`
     reads them out of the six C shims and `--check` re-derives them on every
     push - so nothing here needs retyping when an ABI is bumped. A SKIP is not a

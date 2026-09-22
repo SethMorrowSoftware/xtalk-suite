@@ -31,4 +31,4 @@ statically; needs a live-relay pass".
 (install, a short example, the honest status). [`../CLAUDE.md`](../CLAUDE.md) is
 maintainer memory: the as-built record, the gotchas, and why each decision went
 the way it did. Suite-wide documents that span more than one member live in
-[`../../docs/`](../../docs/README.md), indexed there by kind.
+[`../../docs/`](https://github.com/SethMorrowSoftware/xtalk-suite/blob/main/docs/README.md), indexed there by kind.

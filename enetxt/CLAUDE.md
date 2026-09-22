@@ -30,7 +30,7 @@ the ENetXT member of the xtalk-suite monorepo (`enetxt/`).
 > counters), added that same day, are all runtime results now.
 > A fifth pass on 2026-08-18 finally put the LAN chat DEMO on an engine, on
 > ONE machine (Linux; the suite's
-> [`docs/OXT-ENGINE-NOTES.md`](../docs/OXT-ENGINE-NOTES.md) 6.4 is the dated
+> [`docs/OXT-ENGINE-NOTES.md`](https://github.com/SethMorrowSoftware/xtalk-suite/blob/main/docs/OXT-ENGINE-NOTES.md) 6.4 is the dated
 > entry, and the session's later Windows report there is datachannelxt's, not
 > this member's). It reported two defects in this demo, and fixing the first
 > did not end the hunt, which is why both are recorded here rather than only

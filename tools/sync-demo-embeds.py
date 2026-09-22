@@ -170,23 +170,11 @@ REGISTRY = {
     # back out (strip_spans on the holdem row, the coin-selftest precedent).
     "holde-em/src/holdem.livecodescript": [
         "onionxt/src/onionxt.livecodescript"],
-    # The archivext demo carries the library and its harness (the
-    # nostrxt-demo shape: the self-test button runs axSelfTest into the
-    # log, and the harness's pinned fixtures double as the boot
-    # self-check's vectors). Library first: the harness calls it. No socket
-    # handlers anywhere in this member - its network layer is the engine's
-    # Internet library (`load URL`), so nothing to drop.
-    "archivext/examples/archivext-demo.livecodescript": [
-        "archivext/src/archivext.livecodescript",
-        "archivext/examples/archivext-tests.livecodescript"],
-    # The gallery carries the same pair for the same reasons, and it needs
-    # the harness for a second one: its boot self-check drives the etree
-    # fixture through the playlist engine and decodes its own four-pixel
-    # PNG with the harness's axtHex, so the tests file is a DEPENDENCY here
-    # rather than only the Run-axSelfTest button's provider.
-    "archivext/examples/archive-gallery.livecodescript": [
-        "archivext/src/archivext.livecodescript",
-        "archivext/examples/archivext-tests.livecodescript"],
+    # archivext's two demos (each carrying the library and its harness, the
+    # nostrxt-demo shape) had rows here from 2026-09-15 until the member
+    # left for its own repository on 2026-09-21. A member that leaves takes
+    # its rows with it; a row whose demo is gone is a crash at line one of
+    # --check, which is how this tool reported the departure.
 }
 
 # Demos deliberately NOT embedded, each with the reason. An entry here is a

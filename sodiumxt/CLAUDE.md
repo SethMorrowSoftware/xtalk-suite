@@ -278,7 +278,7 @@ must NOT be round-tripped through script.
 ## LiveCodeScript / LCB / OXT gotchas (carried; OXT is stricter than LiveCode)
 
 > **Engine BEHAVIOUR - as opposed to the conventions below - is collected in
-> [`docs/OXT-ENGINE-NOTES.md`](../docs/OXT-ENGINE-NOTES.md)**, with the verbatim
+> [`docs/OXT-ENGINE-NOTES.md`](https://github.com/SethMorrowSoftware/xtalk-suite/blob/main/docs/OXT-ENGINE-NOTES.md)**, with the verbatim
 > symptom, what each one broke, and whether a gate now holds it. Keep
 > member-specific gotchas here; put anything the ENGINE does there, so there is
 > one authoritative list instead of six that drift.

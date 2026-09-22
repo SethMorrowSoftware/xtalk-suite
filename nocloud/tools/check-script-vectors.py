@@ -24,6 +24,12 @@ the mirror to its pinned vectors. So the chain is: vector -> mirror (golden),
 mirror -> script (here). A hand-copied expected value would be a third copy of
 the truth, which is this tree's recorded way for numbers to go stale.
 
+WHERE RIPTIDE IS is the sibling rule (docs/MEMBER-REPO-SPLIT.md), resolved by
+sibling() below: the directory beside this member in the suite tree, the
+repository cloned beside it as ../riptide in a standalone checkout, or
+wherever XTALK_SIBLING_RIPTIDE / XTALK_SIBLINGS point. An absent runner stops
+this gate before anything loads, with the clone to run.
+
 WHAT IT IS NOT. An approximation of the engine, not the engine. Nothing here
 promotes a handler out of "verified statically; needs an OXT pass" - what it
 settles is LOGIC, not parser behaviour. The interpreter's header carries the
@@ -83,10 +89,44 @@ import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 MEMBER = os.path.dirname(HERE)
-SUITE = os.path.dirname(MEMBER)
+
+
+def sibling(name):
+    """Path of a sibling member's checkout (docs/MEMBER-REPO-SPLIT.md).
+
+    In the suite tree the siblings are the directories beside this member;
+    in a standalone checkout they are the sibling repositories cloned
+    beside it under their member names. Two overrides, checked in this
+    order: XTALK_SIBLING_<NAME> (one member, any path) and XTALK_SIBLINGS
+    (a directory holding them all). No sibling is ever searched for: an
+    absent one is reported by the gate that needs it, naming the
+    repository to clone."""
+    # A member is never its own sibling: its own name answers this checkout
+    # before any override is read, so XTALK_SIBLINGS cannot redirect a gate
+    # away from the tree running it (coinxt's wallet boot reuses riptide's
+    # runner, and that runner resolves coinxt by name).
+    if name == os.path.basename(MEMBER):
+        return MEMBER
+    one = os.environ.get("XTALK_SIBLING_" + name.upper().replace("-", "_"))
+    if one:
+        return one
+    return os.path.join(os.environ.get("XTALK_SIBLINGS")
+                        or os.path.dirname(MEMBER), name)
+
+
 DEMO = os.path.join(MEMBER, "src", "nocloudquickshare.livecodescript")
 GOLDEN = os.path.join(MEMBER, "tests", "fileserver_golden.py")
-RUNNER = os.path.join(SUITE, "riptide", "tools", "check-demo-boot.py")
+RUNNER = os.path.join(sibling("riptide"), "tools", "check-demo-boot.py")
+# The runner is needed before anything else loads, so its absence is settled
+# here as one paragraph (stderr, exit 2: a setup problem, not a vector
+# failure) rather than as the traceback importlib would print.
+if not os.path.isfile(RUNNER):
+    print("check-script-vectors: %s is not present: it belongs to the riptide "
+          "member, which is not beside this checkout. Clone "
+          "https://github.com/SethMorrowSoftware/RipTide beside this checkout "
+          "as ../riptide, or point XTALK_SIBLING_RIPTIDE / XTALK_SIBLINGS at "
+          "it." % RUNNER, file=sys.stderr)
+    sys.exit(2)
 
 # The floor is a ratchet, not a target: a run that finds FEWER checks than this
 # is a run where a section silently stopped executing (a helper renamed, an

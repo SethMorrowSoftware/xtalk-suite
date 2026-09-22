@@ -186,7 +186,7 @@ first-run prompt at `spritesheets/`.
 
 ## Continuous integration
 
-In the monorepo, CI is the suite-root [`native-box2dxt.yml`](../../.github/workflows/native-box2dxt.yml):
+In the monorepo, CI is the suite-root [`native-box2dxt.yml`](https://github.com/SethMorrowSoftware/xtalk-suite/blob/main/.github/workflows/native-box2dxt.yml):
 a paths-scoped 5-target matrix that builds and tests on every push touching this
 member and uploads each library as an **artifact** (never a Release, never a
 commit — the suite convention). The member's own `build.yml` is kept for
