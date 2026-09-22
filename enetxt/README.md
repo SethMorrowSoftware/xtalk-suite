@@ -154,11 +154,21 @@ enetxt is MIT (matching the family). It statically links
 
 ## Relationship to the xTalk suite
 
-enetxt is developed in the **xTalk suite** monorepo at https://github.com/SethMorrowSoftware/xtalk-suite, where it is the
-`enetxt/` member, and is published on its own at https://github.com/SethMorrowSoftware/enetxt (a repository the split creates; until it exists, the member's only home is the suite).
-The suite is the source of truth until the split is complete, and its
-`docs/MEMBER-REPO-SPLIT.md` records the procedure and each member's
-readiness; after the split, this repository is.
+enetxt is developed in the **xTalk suite** monorepo at https://github.com/SethMorrowSoftware/xtalk-suite, as its
+`enetxt/` member, and PUBLISHED from there into this repository,
+https://github.com/SethMorrowSoftware/enetxt: once a change lands on the suite's `main` and
+the suite's gates pass, the suite's `tools/publish-members.py` replays it
+here as a commit carrying a `Suite-Commit:` trailer that names the suite
+commit it came from. The suite is the source of truth; this repository is
+its published copy, one commit for each change to `enetxt/` that landed on
+the suite's `main`.
+
+**Contributing.** Please open issues and pull requests at the suite. A pull
+request opened here is not lost - the suite brings it home with
+`python3 tools/publish-members.py port enetxt --ref pull/<n>/head`, keeping its
+author - but a commit made here directly holds up the next publish until
+it has been ported, because publishing never overwrites work it did not
+write. The suite's `docs/MEMBER-REPO-SPLIT.md` is the whole workflow.
 
 **Suite-level paths cited from here.** This member's `CLAUDE.md` and
 `docs/` cite files that live at the suite root, not in this tree:

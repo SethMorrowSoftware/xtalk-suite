@@ -136,11 +136,21 @@ repository and graduated into its own project.*
 
 ## Relationship to the xTalk suite
 
-No Cloud Quick Share is developed in the **xTalk suite** monorepo at https://github.com/SethMorrowSoftware/xtalk-suite, where it is the
-`nocloud/` member, and is published on its own at https://github.com/SethMorrowSoftware/nocloud.
-The suite is the source of truth until the split is complete, and its
-`docs/MEMBER-REPO-SPLIT.md` records the procedure and each member's
-readiness; after the split, this repository is.
+No Cloud Quick Share is developed in the **xTalk suite** monorepo at https://github.com/SethMorrowSoftware/xtalk-suite, as its
+`nocloud/` member, and PUBLISHED from there into this repository,
+https://github.com/SethMorrowSoftware/nocloud: once a change lands on the suite's `main` and
+the suite's gates pass, the suite's `tools/publish-members.py` replays it
+here as a commit carrying a `Suite-Commit:` trailer that names the suite
+commit it came from. The suite is the source of truth; this repository is
+its published copy, one commit for each change to `nocloud/` that landed on
+the suite's `main`.
+
+**Contributing.** Please open issues and pull requests at the suite. A pull
+request opened here is not lost - the suite brings it home with
+`python3 tools/publish-members.py port nocloud --ref pull/<n>/head`, keeping its
+author - but a commit made here directly holds up the next publish until
+it has been ported, because publishing never overwrites work it did not
+write. The suite's `docs/MEMBER-REPO-SPLIT.md` is the whole workflow.
 
 **Suite-level paths cited from here.** This member's `CLAUDE.md` and
 `docs/` cite files that live at the suite root, not in this tree:
@@ -162,7 +172,9 @@ reaches into these siblings, found as `../<name>` beside this checkout:
 Clone them beside this checkout under exactly those directory names
 (and keep this checkout named `nocloud`), or point `XTALK_SIBLINGS` at a
 directory holding them (`XTALK_SIBLING_<NAME>` for one). The generated
-`.github/workflows/gates.yml` does this in CI, and sets
+`.github/workflows/gates.yml` takes them from the suite itself, at the
+commit named by this repository's newest `Suite-Commit:` trailer - the
+versions the suite's gates ran with this tree - and sets
 `XTALK_REQUIRE_SIBLINGS=1` so a missing sibling fails the job rather
 than skipping its tier. Nothing the SHIPPED code needs is beside it: a
 demo that uses a sibling's library carries its own copy (below).

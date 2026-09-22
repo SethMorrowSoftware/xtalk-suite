@@ -1,0 +1,229 @@
+# publish-members.yml - every member published into its own repository, once
+# the suite's gates have passed on main.
+#
+# THE MODEL (decided 2026-09-22: docs/OPEN-DECISIONS.md D-22; the procedure
+# is docs/MEMBER-REPO-SPLIT.md). This monorepo stays the DEVELOPMENT
+# repository and each member ALSO lives in a repository of its own, named in
+# tools/member-registry.py. This workflow is the one-way street between the
+# two: tools/publish-members.py replays each change that landed on main's
+# first-parent line into the member repositories it touched, each published
+# commit stamped with the `Suite-Commit:` trailer that is the whole of the
+# publisher's state. The tool's docstring is the full contract; what matters
+# for reading this file is what it NEVER does:
+#   - force-push (every push is a fast-forward, and a repository that moved
+#     while it ran is refused, not overwritten);
+#   - write a repository the suite has never written - adoption is a
+#     dispatch input, never automatic;
+#   - overwrite commits made in a member repository directly - they are
+#     refused until ported (`publish-members.py port`) or explicitly accepted;
+#   - publish a commit that is not on main, whose suite gates did not pass,
+#     or whose member's own native lane is red on that member's last change.
+#
+# WHEN IT RUNS.
+#   - By itself, when a `suite gates` run on main finishes GREEN. The suite's
+#     gates are the verification every published tree has passed; the native
+#     lanes are checked here per member because they are paths-scoped and
+#     finish long before the gates (tens of minutes against hours).
+#   - By hand (Run workflow, on main): plan with dry_run (the default), adopt
+#     a repository the first time, or accept a divergence. A dispatched run
+#     that pushes requires a green `suite gates` run on the exact commit.
+#
+# WHAT IT NEEDS. One secret, XTALK_PUBLISH_TOKEN: a fine-grained personal
+# access token whose repository access is the eleven member repositories,
+# with Contents: read and write AND Workflows: read and write - the second
+# because every member carries a generated .github/workflows/, and GitHub
+# refuses a push that touches workflow files without it. Until the secret
+# exists every run is a DRY RUN that prints the plan, so this file can land
+# before the token does and the first thing it shows is what it would do.
+#
+# The token reaches git only through a credential helper that reads it from
+# the environment, so it is never on a command line, in a URL, or in a file.
+# actions/checkout runs with persist-credentials: false for the same reason
+# in reverse: its GITHUB_TOKEN (scoped to THIS repository) would otherwise be
+# sent as an Authorization header on every github.com request - the pushes
+# to the member repositories included - and override the helper.
+name: publish members
+
+on:
+  workflow_run:
+    workflows: ["suite gates"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      members:
+        description: "Members to publish, space-separated, or 'all'"
+        type: string
+        default: all
+      adopt:
+        description: "Members to ADOPT - the suite's first write into a repository it has never published to. Its own history is kept; its tree is replaced. Empty for none."
+        type: string
+        default: ""
+      accept_divergence:
+        description: "Members whose repository has commits the suite never wrote or ported, to publish over anyway. They stay in its history; the tree becomes the suite's. Empty for none."
+        type: string
+        default: ""
+      dry_run:
+        description: "Plan and report only - push nothing"
+        type: boolean
+        default: true
+
+# Read-only here: the member repositories are written with the secret above,
+# never with this workflow's own token, and `actions: read` is for looking up
+# the gate and lane results of the commit being published.
+permissions:
+  contents: read
+  actions: read
+
+# One publish at a time, never cancelled mid-push. A newer queued run
+# replaces an older queued one, which is right: it targets a newer main that
+# contains everything the older one would have published.
+concurrency:
+  group: publish-members
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: publish verified members to their own repositories
+    # The gates run must be GREEN, on main, in THIS repository, and started
+    # by a push or by hand - never a fork's pull request whose branch happens
+    # to be called main (workflow_run fires for those too, with secrets).
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.head_branch == 'main' &&
+       github.event.workflow_run.head_repository.full_name == github.repository &&
+       (github.event.workflow_run.event == 'push' ||
+        github.event.workflow_run.event == 'workflow_dispatch'))
+    runs-on: ubuntu-latest
+    # Up to an hour waiting on a native lane still running, plus the publish.
+    timeout-minutes: 120
+    # Every input reaches the scripts below through the environment, never
+    # by ${{ }} interpolation into a script body, so no input can inject.
+    env:
+      TARGET: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+      MEMBERS: ${{ github.event_name == 'workflow_dispatch' && inputs.members || 'all' }}
+      ADOPT: ${{ inputs.adopt }}
+      ACCEPT: ${{ inputs.accept_divergence }}
+      DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run && 'true' || 'false' }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Only main is published
+        if: github.event_name == 'workflow_dispatch' && github.ref != 'refs/heads/main'
+        run: |
+          echo "::error::run this workflow on main - only states main held are published"
+          exit 1
+
+      # The whole history: the first-parent line and every member
+      # repository's watermark are read from it (the tool refuses a shallow
+      # checkout), and origin/main is what the target is checked against.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TARGET }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      # workflow_run already proved this for its own event; a dispatch that
+      # will push has to prove it here.
+      - name: The suite's gates passed on this commit
+        if: github.event_name == 'workflow_dispatch' && env.DRY_RUN != 'true'
+        run: |
+          ok="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/suite-gates.yml/runs?head_sha=$TARGET&per_page=20" \
+                --jq '[.workflow_runs[] | select(.conclusion == "success")] | length')"
+          if [ "$ok" = 0 ]; then
+            echo "::error::no green 'suite gates' run for ${TARGET:0:12}. Publishing starts by itself when the gates pass on main; to publish this commit by hand, run 'suite gates' on main first."
+            exit 1
+          fi
+
+      # A member with a native lane is published only when that lane is
+      # green on the member's LAST CHANGE at or before the target - the
+      # commit whose tree is being published. Not on the target itself: the
+      # lanes are paths-scoped, so most targets have no run of most lanes.
+      #   success  -> publish
+      #   none     -> no run for that commit (a commit pushed by a workflow
+      #               token triggers no lanes) - publish on the gates, warn
+      #   running  -> wait, up to an hour (a dry run does not wait)
+      #   cancelled/skipped -> hold, quietly: the lanes cancel superseded runs
+      #               on main, so a newer commit's publish covers this one
+      #   anything else (failure, timed_out, ...) -> hold, and fail the run
+      - name: Hold back a member whose native lane is not green
+        id: lanes
+        run: |
+          set -euo pipefail
+          if [ -z "$MEMBERS" ] || [ "$MEMBERS" = all ]; then
+            MEMBERS="$(python3 tools/member-registry.py --names)"
+          fi
+          read -ra members <<< "$MEMBERS"
+          go=""; red=""
+          waits=60; [ "$DRY_RUN" = true ] && waits=1
+          for m in "${members[@]}"; do
+            lane=".github/workflows/native-$m.yml"
+            if [ ! -f "$lane" ]; then go="$go $m"; continue; fi
+            last="$(git log -1 --first-parent --format=%H "$TARGET" -- "$m/" "$lane")"
+            # No commit at all: an empty head_sha would match ANY run. The
+            # publisher refuses a member with no tree, so let it say so.
+            if [ -z "$last" ]; then go="$go $m"; continue; fi
+            state=none
+            for i in $(seq 1 "$waits"); do
+              state="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/native-$m.yml/runs?head_sha=$last&per_page=5" \
+                --jq '.workflow_runs[0] | if . == null then "none" elif .status != "completed" then "running" else .conclusion end')"
+              [ "$state" = running ] && [ "$i" -lt "$waits" ] || break
+              echo "native-$m on ${last:0:12} is still running - waiting ($i/$waits)"
+              sleep 60
+            done
+            case "$state" in
+              success) go="$go $m" ;;
+              none)    echo "::warning::native-$m has no run on ${last:0:12}, $m's last change - publishing on the suite gates alone"
+                       go="$go $m" ;;
+              running|cancelled|skipped)
+                       echo "::notice::native-$m on ${last:0:12} is $state - $m waits for a publish whose lane is green" ;;
+              *)       echo "::error::native-$m on ${last:0:12} concluded '$state' - $m is not published"
+                       red="$red $m" ;;
+            esac
+          done
+          echo "go=${go# }" >> "$GITHUB_OUTPUT"
+          echo "red=${red# }" >> "$GITHUB_OUTPUT"
+
+      - name: Publish
+        env:
+          GO: ${{ steps.lanes.outputs.go }}
+          XTALK_PUBLISH_TOKEN: ${{ secrets.XTALK_PUBLISH_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "$GO" ]; then
+            echo "nothing to publish: every selected member is held back above"
+            exit 0
+          fi
+          read -ra go <<< "$GO"
+          read -ra adopt <<< "$ADOPT"
+          read -ra accept <<< "$ACCEPT"
+          args=(publish --commit "$TARGET" --main origin/main --members "${go[@]}")
+          [ "${#adopt[@]}" -gt 0 ] && args+=(--adopt "${adopt[@]}")
+          [ "${#accept[@]}" -gt 0 ] && args+=(--accept-divergence "${accept[@]}")
+          if [ "$DRY_RUN" = true ]; then
+            args+=(--dry-run)
+          elif [ -z "$XTALK_PUBLISH_TOKEN" ]; then
+            echo "::notice::the XTALK_PUBLISH_TOKEN secret is not set, so publishing is not configured yet (docs/MEMBER-REPO-SPLIT.md) - this run only plans"
+            args+=(--dry-run)
+          else
+            # Answers github.com's credential request from the environment
+            # at the moment git asks; nothing is written but the helper. The
+            # single quotes are the point (SC2016): the token must expand
+            # when git runs the helper, not be baked into the config here.
+            # shellcheck disable=SC2016
+            git config --global credential.https://github.com.helper \
+              '!f() { test "$1" = get || exit 0; echo username=x-access-token; echo "password=${XTALK_PUBLISH_TOKEN}"; }; f'
+          fi
+          python3 tools/publish-members.py "${args[@]}"
+
+      - name: A red native lane fails the run
+        if: steps.lanes.outputs.red != ''
+        env:
+          RED: ${{ steps.lanes.outputs.red }}
+        run: |
+          echo "::error::not published because their native lane is red on their last change: $RED"
+          exit 1

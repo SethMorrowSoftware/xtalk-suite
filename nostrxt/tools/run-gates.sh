@@ -65,10 +65,17 @@ python3 tools/check-selftest-vectors.py --check
 # headlessly, so the family's interpreter (tools/lcs-interp.py) drives the
 # real shipped file against the published vectors - tier 1 alone, tier 2
 # with the sibling libraries (header). A gate is believed only once it has
-# been shown to FAIL, so the fixture driver runs FIRST: it edits one defect
-# at a time into a copy of the shipped script, drives the REAL gate over it
-# and requires a failure, then drives the untouched copy and requires OK. A
-# gate that has gone blind prints OK.
+# been shown to FAIL, so the fixture driver runs FIRST: it checks the real
+# tree is clean, then edits one defect at a time into the SHIPPED
+# src/nostrxt.livecodescript IN PLACE, drives the REAL gate over it,
+# requires a failure, and restores the file byte-identically (try/finally)
+# before the next. A gate that has gone blind prints OK. In place, unlike
+# holde-em's and nocloud's drivers, which mutate a temporary copy - so
+# nothing else may read this member's library while it runs: this script
+# is serial, and a parallel job over one checkout would read a mutated file
+# (it did once, and reported a serializer FAIL that was not there).
+# (This comment said "into a copy" until 2026-09-22; the driver's own
+# docstring had always said in place.)
 echo "== nostrxt: tools/test-script-vectors.py =="
 python3 tools/test-script-vectors.py
 echo "== nostrxt: tools/check-script-vectors.py =="

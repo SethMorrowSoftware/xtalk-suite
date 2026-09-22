@@ -154,8 +154,8 @@ def sibling(name):
 # directory name, so an absent one is reported with the clone to run.
 SIBLING_REPOS = {
     "coinxt": "https://github.com/SethMorrowSoftware/CoinXT",
-    "nostrxt": ("https://github.com/SethMorrowSoftware/NostrXT (the standalone "
-                "repository is being created; until then the member lives in "
+    "nostrxt": ("https://github.com/SethMorrowSoftware/NostrXT (published "
+                "from its nostrxt/ directory in "
                 "https://github.com/SethMorrowSoftware/xtalk-suite)"),
 }
 

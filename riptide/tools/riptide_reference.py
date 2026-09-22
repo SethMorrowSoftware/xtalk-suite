@@ -1011,8 +1011,8 @@ def _load_nostr_oracle():
     if not os.path.isfile(path):
         print("riptide_reference: %s is not present: it belongs to the "
               "nostrxt member, which is not beside this checkout. Clone "
-              "https://github.com/SethMorrowSoftware/NostrXT (the standalone "
-              "repository is being created; until then the member lives in "
+              "https://github.com/SethMorrowSoftware/NostrXT (published "
+              "from its nostrxt/ directory in "
               "https://github.com/SethMorrowSoftware/xtalk-suite) beside "
               "this checkout as ../nostrxt, or point XTALK_SIBLING_NOSTRXT / "
               "XTALK_SIBLINGS at it." % path, file=sys.stderr)

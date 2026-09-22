@@ -305,11 +305,21 @@ and they are not optional: curly quotes fail OXT compilation outright.
 
 ## Relationship to the xTalk suite
 
-NostrXT is developed in the **xTalk suite** monorepo at https://github.com/SethMorrowSoftware/xtalk-suite, where it is the
-`nostrxt/` member, and is published on its own at https://github.com/SethMorrowSoftware/NostrXT (a repository the split creates; until it exists, the member's only home is the suite).
-The suite is the source of truth until the split is complete, and its
-`docs/MEMBER-REPO-SPLIT.md` records the procedure and each member's
-readiness; after the split, this repository is.
+NostrXT is developed in the **xTalk suite** monorepo at https://github.com/SethMorrowSoftware/xtalk-suite, as its
+`nostrxt/` member, and PUBLISHED from there into this repository,
+https://github.com/SethMorrowSoftware/NostrXT: once a change lands on the suite's `main` and
+the suite's gates pass, the suite's `tools/publish-members.py` replays it
+here as a commit carrying a `Suite-Commit:` trailer that names the suite
+commit it came from. The suite is the source of truth; this repository is
+its published copy, one commit for each change to `nostrxt/` that landed on
+the suite's `main`.
+
+**Contributing.** Please open issues and pull requests at the suite. A pull
+request opened here is not lost - the suite brings it home with
+`python3 tools/publish-members.py port nostrxt --ref pull/<n>/head`, keeping its
+author - but a commit made here directly holds up the next publish until
+it has been ported, because publishing never overwrites work it did not
+write. The suite's `docs/MEMBER-REPO-SPLIT.md` is the whole workflow.
 
 **Suite-level paths cited from here.** This member's `CLAUDE.md` and
 `docs/` cite files that live at the suite root, not in this tree:
@@ -330,7 +340,9 @@ reaches into these siblings, found as `../<name>` beside this checkout:
 Clone them beside this checkout under exactly those directory names
 (and keep this checkout named `nostrxt`), or point `XTALK_SIBLINGS` at a
 directory holding them (`XTALK_SIBLING_<NAME>` for one). The generated
-`.github/workflows/gates.yml` does this in CI, and sets
+`.github/workflows/gates.yml` takes them from the suite itself, at the
+commit named by this repository's newest `Suite-Commit:` trailer - the
+versions the suite's gates ran with this tree - and sets
 `XTALK_REQUIRE_SIBLINGS=1` so a missing sibling fails the job rather
 than skipping its tier. Nothing the SHIPPED code needs is beside it: a
 demo that uses a sibling's library carries its own copy (below).
@@ -348,9 +360,9 @@ lines name the master) rather than editing inside the markers.
 - `tools/check-docs-style.py`, `tools/check-livecodescript.py`, `tools/lcs-interp.py`: byte-identical copies of the family's unified tooling, held identical across members by the suite's `tools/check-checker-drift.py` and fixture-tested there by `tools/test-checker.py`.
 
 **What other members carry from this one.** The suite embeds this
-member's script into the stacks below, verbatim; a change to the
-master here is not shipped until the suite re-runs
-`tools/sync-demo-embeds.py` and every carrier is re-run on an engine:
+member's script into the stacks below, verbatim; a change to it
+reaches them when the suite re-runs `tools/sync-demo-embeds.py`, and
+is not done until every carrier has been re-run on an engine:
 
 - `riptide/examples/riptide-social.livecodescript` in riptide carries `src/nostrxt.livecodescript`.
 - `riptide/examples/riptide-social.livecodescript` in riptide carries `src/nostr-relay.livecodescript`.

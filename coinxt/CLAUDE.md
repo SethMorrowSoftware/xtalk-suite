@@ -615,7 +615,9 @@ is a scope decision, recorded here rather than left as a silent omission.
 
 **Repo-prep - self-contained for the split (2026-07-07).** CoinXT no longer reaches outside its own
 directory for anything; it is ready to become the root of its own repository (the procedure and the
-post-split checklist are in [MIGRATION.md](MIGRATION.md)):
+post-split checklist were in [MIGRATION.md](MIGRATION.md), which is a SUPERSEDED note since
+2026-09-22: CoinXT is published from the suite into its own repository rather than moved out, the
+suite's `docs/MEMBER-REPO-SPLIT.md`):
 
 - The static gates (`tools/check-livecodescript.py`, `tools/check-docs-style.py`) are carried verbatim
   into `tools/`, alongside `tools/coin-kat.py`. Every `../` reference in the docs was retargeted.

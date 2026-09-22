@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """member-registry.py - the ONE table of what a suite member is.
 
-WHY THIS FILE EXISTS. Every member directory is on its way to being its own
-repository (docs/MEMBER-REPO-SPLIT.md), and three tools need the same facts
-about each one to prepare it: which repository it moves to, which siblings
-its gates reach into, whether it has a native build lane, and what kind of
-thing it is. Until 2026-09-21 those facts lived in prose (the root README's
-member table, each member's CLAUDE.md, the runbook) and in the heads of the
+WHY THIS FILE EXISTS. Every member is developed here and PUBLISHED into a
+repository of its own (docs/MEMBER-REPO-SPLIT.md; decided 2026-09-22), and
+four tools need the same facts about each one: which repository it is
+published to, which siblings its gates reach into, whether it has a native
+build lane, and what kind of thing it is. Until 2026-09-21 those facts
+lived in prose (the root README's member table, each member's CLAUDE.md,
+the runbook) and in the heads of the
 people who wrote them - which is the hand-copied-constant failure this
 tree's root CLAUDE.md records for ABI numbers and for coverage ratios. A
 generator that reads a table cannot disagree with another generator that
@@ -16,6 +17,8 @@ reads the same table, so the table is here and the generators import it:
     tools/sync-member-readmes.py     each README's "Relationship to the
                                      xTalk suite" section
     tools/check-member-standalone.py the readiness gate
+    tools/publish-members.py         the publisher: which repository each
+                                     member's verified trees are pushed to
 
 The registry is DATA, not a scanner: a member not listed here is a member
 the split tooling does not see, exactly as tools/sync-demo-embeds.py's
@@ -23,7 +26,8 @@ REGISTRY works. check-member-standalone.py refuses a member directory that
 is absent from this table and a table row whose directory is gone, so the
 two cannot drift apart silently - the archivext lesson, one level up.
 
-    python3 tools/member-registry.py      # prints the table
+    python3 tools/member-registry.py          # prints the table
+    python3 tools/member-registry.py --names  # just the names, for a shell
 
 Import it the way the rest of tools/ imports its neighbours (exec-load by
 path; there is no package here).
@@ -43,7 +47,7 @@ class Member(object):
     """One row. Every field is something a generator reads."""
 
     def __init__(self, name, title, kind, repo, native, siblings,
-                 repo_exists=True, mirror_note=""):
+                 mirror_note=""):
         self.name = name                # directory name == the sibling name
         self.title = title              # how the member spells itself
         self.kind = kind                # "extension" | "app"
@@ -56,11 +60,10 @@ class Member(object):
         # a demo that CARRIES a sibling's library needs nothing beside it,
         # because the copy is in the file (tools/sync-demo-embeds.py).
         self.siblings = list(siblings)
-        # Whether the target repository already exists (the pre-suite mirror
-        # it was folded in from, or a new one). False means the name is the
-        # one the split will create; the generated workflows use it either
-        # way, and the split checklist says to create it first.
-        self.repo_exists = repo_exists
+        # Where the repository came from, for a reader. Whether it EXISTS is
+        # deliberately not a field: a boolean kept by hand here went stale
+        # the day the two missing repositories were created (2026-09-22),
+        # and `python3 tools/publish-members.py status` observes it live.
         self.mirror_note = mirror_note
 
     @property
@@ -84,9 +87,10 @@ MEMBERS = [
            mirror_note="the pre-suite home (it once vendored enetxt/ and "
                        "datachannelxt/ as subfolders)"),
     Member("enetxt", "enetxt", "extension", OWNER + "/enetxt",
-           native=True, siblings=[], repo_exists=False,
+           native=True, siblings=[],
            mirror_note="never had a repository of its own - it grew inside "
-                       "TorrentXT's tree - so the split CREATES this one"),
+                       "TorrentXT's tree - so this one was created empty for "
+                       "the suite to publish into"),
     Member("datachannelxt", "DataChannelXT", "extension",
            OWNER + "/dataChannelXT", native=True, siblings=[],
            mirror_note="the pre-suite home"),
@@ -109,9 +113,9 @@ MEMBERS = [
            # tier 2 of tools/check-script-vectors.py executes the composed
            # paths against the COMMITTED coinxt and sodiumxt x86_64-linux
            # binaries; without them it skips that tier and says so.
-           siblings=["coinxt", "sodiumxt"], repo_exists=False,
-           mirror_note="born in the suite (2026-08-23), so the split "
-                       "CREATES this one"),
+           siblings=["coinxt", "sodiumxt"],
+           mirror_note="born in the suite (2026-08-23), so this one was "
+                       "created empty for the suite to publish into"),
     Member("riptide", "Riptide Social", "app", OWNER + "/RipTide",
            native=False,
            # check-script-vectors.py runs the shipped library through
@@ -151,16 +155,21 @@ def siblings_of(name):
     return [s for s in BY_NAME[name].siblings if s != name]
 
 
-def main():
+def main(argv=()):
+    # `--names`: the member names alone, space-separated, for a shell that
+    # needs the list (.github/workflows/publish-members.yml) without parsing
+    # the table below.
+    if "--names" in argv:
+        print(" ".join(m.name for m in MEMBERS))
+        return 0
     print("%-14s %-10s %-32s %-6s %s" % ("member", "kind", "repository",
                                           "native", "gate siblings"))
     for m in MEMBERS:
         sib = ", ".join(siblings_of(m.name)) or "-"
-        print("%-14s %-10s %-32s %-6s %s%s" % (
-            m.name, m.kind, m.repo, "yes" if m.native else "no", sib,
-            "" if m.repo_exists else "   (repository to be created)"))
+        print("%-14s %-10s %-32s %-6s %s" % (
+            m.name, m.kind, m.repo, "yes" if m.native else "no", sib))
     return 0
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(main(sys.argv[1:]))

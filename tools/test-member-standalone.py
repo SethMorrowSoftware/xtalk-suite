@@ -205,6 +205,38 @@ def _(base):
     return run(p, Row("alpha", False))
 
 
+@case("a gate named only in a comment fires", "never names")
+def _(base):
+    p = clean_member(base, "alpha")
+    write(os.path.join(p, "tools", "check-retired.py"), "# a gate\n")
+    write(os.path.join(p, "tools", "run-gates.sh"),
+          "#!/usr/bin/env bash\n# check-retired.py is retired\n"
+          "python3 tools/check-livecodescript.py\n"
+          "python3 tools/check-thing.py\n", executable=True)
+    return run(p, Row("alpha", False))
+
+
+@case("a gate named only in a trailing comment fires", "never names")
+def _(base):
+    p = clean_member(base, "alpha")
+    write(os.path.join(p, "tools", "check-retired.py"), "# a gate\n")
+    write(os.path.join(p, "tools", "run-gates.sh"),
+          "#!/usr/bin/env bash\npython3 tools/check-livecodescript.py\n"
+          "python3 tools/check-thing.py  # replaced check-retired.py\n",
+          executable=True)
+    return run(p, Row("alpha", False))
+
+
+@case("shell's ${#arr[@]} is not mistaken for a comment", None)
+def _(base):
+    p = clean_member(base, "alpha")
+    write(os.path.join(p, "tools", "run-gates.sh"),
+          "#!/usr/bin/env bash\npython3 tools/check-livecodescript.py\n"
+          "[ ${#a[@]} -ge 0 ] && python3 tools/check-thing.py\n",
+          executable=True)
+    return run(p, Row("alpha", False))
+
+
 @case("a non-gate tool (package-extension.py) is not demanded", None)
 def _(base):
     p = clean_member(base, "alpha")

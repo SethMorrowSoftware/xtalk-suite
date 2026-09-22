@@ -78,7 +78,7 @@ CoinXT/
   THIRD-PARTY-LICENSES.md   the vendored subset is NOT all MIT (BSD-3-Clause SHA-2, public-domain
                             RIPEMD-160, CC0 BLAKE, separately-held MIT Groestl). Ships with the
                             committed binaries because one of those binds binary redistribution
-  MIGRATION.md              how to split CoinXT into its own repository (delete after the move)
+  MIGRATION.md              superseded split procedure: CoinXT is published from the suite instead
   templates/
     CLAUDE.md               the portable xTalk/LiveCode/LCB lesson book (ALL the family's generic
                             engine lessons; copy it to the root of any NEW xTalk project)
@@ -376,10 +376,10 @@ library, not just in CoinXT.
 CoinXT is a self-contained member: it does not depend on OnionXT (the two compose at the documentation
 level only), and everything it needs (the static gates, the CI workflow, the portable engine-lesson
 book, the vendored sources and their manifest) lives inside this directory. The **xtalk-suite monorepo
-is now the source of truth** (see the root `CLAUDE.md`): development happens here and the former
-standalone repositories are mirrors. CoinXT remains structured so it *could* be split out again if
-ever needed - the procedure is retained in [MIGRATION.md](MIGRATION.md) as history - but that is not
-the current plan.
+is now the source of truth** (see the root `CLAUDE.md`): development happens here, and since
+2026-09-22 every change the suite's gates pass is published from here into CoinXT's own repository
+(the section at the end of this file). [MIGRATION.md](MIGRATION.md) records the move out that was
+considered instead, and why it is not the plan.
 
 ## A note on handling money
 
@@ -398,11 +398,21 @@ parentheses). Comment the *why*, densely. Enforced by the carried `check-livecod
 
 ## Relationship to the xTalk suite
 
-CoinXT is developed in the **xTalk suite** monorepo at https://github.com/SethMorrowSoftware/xtalk-suite, where it is the
-`coinxt/` member, and is published on its own at https://github.com/SethMorrowSoftware/CoinXT.
-The suite is the source of truth until the split is complete, and its
-`docs/MEMBER-REPO-SPLIT.md` records the procedure and each member's
-readiness; after the split, this repository is.
+CoinXT is developed in the **xTalk suite** monorepo at https://github.com/SethMorrowSoftware/xtalk-suite, as its
+`coinxt/` member, and PUBLISHED from there into this repository,
+https://github.com/SethMorrowSoftware/CoinXT: once a change lands on the suite's `main` and
+the suite's gates pass, the suite's `tools/publish-members.py` replays it
+here as a commit carrying a `Suite-Commit:` trailer that names the suite
+commit it came from. The suite is the source of truth; this repository is
+its published copy, one commit for each change to `coinxt/` that landed on
+the suite's `main`.
+
+**Contributing.** Please open issues and pull requests at the suite. A pull
+request opened here is not lost - the suite brings it home with
+`python3 tools/publish-members.py port coinxt --ref pull/<n>/head`, keeping its
+author - but a commit made here directly holds up the next publish until
+it has been ported, because publishing never overwrites work it did not
+write. The suite's `docs/MEMBER-REPO-SPLIT.md` is the whole workflow.
 
 **Suite-level paths cited from here.** This member's `CLAUDE.md` and
 `docs/` cite files that live at the suite root, not in this tree:
@@ -423,7 +433,9 @@ reaches into these siblings, found as `../<name>` beside this checkout:
 Clone them beside this checkout under exactly those directory names
 (and keep this checkout named `coinxt`), or point `XTALK_SIBLINGS` at a
 directory holding them (`XTALK_SIBLING_<NAME>` for one). The generated
-`.github/workflows/gates.yml` does this in CI, and sets
+`.github/workflows/gates.yml` takes them from the suite itself, at the
+commit named by this repository's newest `Suite-Commit:` trailer - the
+versions the suite's gates ran with this tree - and sets
 `XTALK_REQUIRE_SIBLINGS=1` so a missing sibling fails the job rather
 than skipping its tier. Nothing the SHIPPED code needs is beside it: a
 demo that uses a sibling's library carries its own copy (below).

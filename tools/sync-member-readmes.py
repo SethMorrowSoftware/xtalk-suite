@@ -2,10 +2,12 @@
 """sync-member-readmes.py - the "Relationship to the xTalk suite" section of
 every member README, DERIVED from the registries rather than written once.
 
-WHY THIS EXISTS. Each member directory is on its way to being its own
-repository (docs/MEMBER-REPO-SPLIT.md). A reader arriving at that repository
-needs four things its README did not say on 2026-09-21: where the member is
-developed and where its suite-level citations (`docs/OXT-ENGINE-NOTES.md`,
+WHY THIS EXISTS. Each member is published into a repository of its own
+(tools/publish-members.py; docs/MEMBER-REPO-SPLIT.md). A reader arriving at
+that repository needs four things its README did not say on 2026-09-21:
+where the member is developed (the suite, permanently, since the 2026-09-22
+decision - so also how a contribution made there comes home) and where its
+suite-level citations (`docs/OXT-ENGINE-NOTES.md`,
 `tools/build-all.sh`, `../coinxt/...`) resolve; which SIBLING members its
 gates need beside it and how to point them there; which CARRIED COPIES it
 holds (the UI kit, the boot self-check, the harness scaffold, sibling
@@ -109,16 +111,24 @@ def section(m):
     w("")
     w("## Relationship to the xTalk suite")
     w("")
-    repo_note = ("" if m.repo_exists else
-                 " (a repository the split creates; until it exists, the "
-                 "member's only home is the suite)")
-    w("%s is developed in the **xTalk suite** monorepo at %s, where it is the"
+    w("%s is developed in the **xTalk suite** monorepo at %s, as its"
       % (m.title, REG.SUITE_URL))
-    w("`%s/` member, and is published on its own at https://github.com/%s%s."
-      % (m.name, m.repo, repo_note))
-    w("The suite is the source of truth until the split is complete, and its")
-    w("`docs/MEMBER-REPO-SPLIT.md` records the procedure and each member's")
-    w("readiness; after the split, this repository is.")
+    w("`%s/` member, and PUBLISHED from there into this repository," % m.name)
+    w("https://github.com/%s: once a change lands on the suite's `main` and"
+      % m.repo)
+    w("the suite's gates pass, the suite's `tools/publish-members.py` replays it")
+    w("here as a commit carrying a `Suite-Commit:` trailer that names the suite")
+    w("commit it came from. The suite is the source of truth; this repository is")
+    w("its published copy, one commit for each change to `%s/` that landed on" % m.name)
+    w("the suite's `main`.")
+    w("")
+    w("**Contributing.** Please open issues and pull requests at the suite. A pull")
+    w("request opened here is not lost - the suite brings it home with")
+    w("`python3 tools/publish-members.py port %s --ref pull/<n>/head`, keeping its"
+      % m.name)
+    w("author - but a commit made here directly holds up the next publish until")
+    w("it has been ported, because publishing never overwrites work it did not")
+    w("write. The suite's `docs/MEMBER-REPO-SPLIT.md` is the whole workflow.")
     w("")
     w("**Suite-level paths cited from here.** This member's `CLAUDE.md` and")
     w("`docs/` cite files that live at the suite root, not in this tree:")
@@ -144,7 +154,9 @@ def section(m):
         w("(and keep this checkout named `%s`), or point `XTALK_SIBLINGS` at a"
           % m.name)
         w("directory holding them (`XTALK_SIBLING_<NAME>` for one). The generated")
-        w("`.github/workflows/gates.yml` does this in CI, and sets")
+        w("`.github/workflows/gates.yml` takes them from the suite itself, at the")
+        w("commit named by this repository's newest `Suite-Commit:` trailer - the")
+        w("versions the suite's gates ran with this tree - and sets")
         w("`XTALK_REQUIRE_SIBLINGS=1` so a missing sibling fails the job rather")
         w("than skipping its tier. Nothing the SHIPPED code needs is beside it: a")
         w("demo that uses a sibling's library carries its own copy (below).")
@@ -223,9 +235,9 @@ def section(m):
                 provided.append((demo, _strip(p, m)))
     if provided:
         w("**What other members carry from this one.** The suite embeds this")
-        w("member's script into the stacks below, verbatim; a change to the")
-        w("master here is not shipped until the suite re-runs")
-        w("`tools/sync-demo-embeds.py` and every carrier is re-run on an engine:")
+        w("member's script into the stacks below, verbatim; a change to it")
+        w("reaches them when the suite re-runs `tools/sync-demo-embeds.py`, and")
+        w("is not done until every carrier has been re-run on an engine:")
         w("")
         for demo, p in provided:
             w("- `%s` in %s carries `%s`." % (demo, demo.split("/")[0], p)
