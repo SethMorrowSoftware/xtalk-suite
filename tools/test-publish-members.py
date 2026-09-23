@@ -50,7 +50,8 @@ class Env(object):
                      "[user]\n\tname = Fixture\n\temail = fixture@example.invalid\n")
         self.env = dict(os.environ, GIT_CONFIG_GLOBAL=cfg, GIT_CONFIG_NOSYSTEM="1",
                         GIT_TERMINAL_PROMPT="0")
-        for k in ("GITHUB_STEP_SUMMARY", "XTALK_PUBLISH_URL_TEMPLATE",
+        for k in ("GITHUB_STEP_SUMMARY", "GITHUB_ACTIONS",
+                  "XTALK_PUBLISH_URL_TEMPLATE",
                   "GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL", "GIT_COMMITTER_NAME",
                   "GIT_COMMITTER_EMAIL", "GIT_DIR", "GIT_WORK_TREE"):
             self.env.pop(k, None)
@@ -144,6 +145,26 @@ def race(e, bare, trigger, name):
                  % (trigger, racer, racer, real, racer, real))
     os.chmod(os.path.join(fakebin, "git"), 0o755)
     return sha, fakebin + os.pathsep + e.env["PATH"]
+
+
+def refuse(e, name, verb, text):
+    """A `git` shim that fails every `git <verb>` the way GitHub fails it -
+    `text` on stderr, exit 128 - and hands everything else to the real git.
+    file:// repositories cannot refuse credentials, so this is how the
+    fixtures meet a token that may not push, read, or touch workflow files.
+    Returns the PATH that puts the shim first."""
+    real = shutil.which("git")
+    fakebin = os.path.join(e.tmp, name + "-bin")
+    os.makedirs(fakebin)
+    msg = os.path.join(fakebin, "stderr.txt")
+    with open(msg, "w") as fh:
+        fh.write(text)
+    with open(os.path.join(fakebin, "git"), "w") as fh:
+        fh.write('#!/bin/sh\nfor a in "$@"; do\n'
+                 '  if [ "$a" = %s ]; then cat "%s" >&2; exit 128; fi\n'
+                 'done\nexec "%s" "$@"\n' % (verb, msg, real))
+    os.chmod(os.path.join(fakebin, "git"), 0o755)
+    return fakebin + os.pathsep + e.env["PATH"]
 
 
 def build_suite(e):
@@ -395,8 +416,9 @@ def scenario(e):
     os.chmod(hook, 0o755)
     before = e.head(sod)
     rc, out = e.tool("publish", "--members", "sodiumxt")
-    check("a push the repository rejects is reported as refused",
-          rc == 1 and "refused" in out and e.head(sod) == before, out)
+    check("a push the repository rejects is refused by its cause - here a "
+          "protected branch - and moves nothing",
+          rc == 1 and "branch protection" in out and e.head(sod) == before, out)
     os.remove(hook)
 
     # THE RACE, which is the only place a force-push would do harm: the
@@ -410,7 +432,8 @@ def scenario(e):
     rc, out = e.tool("publish", "--members", "sodiumxt", env={"PATH": path})
     check("a repository that moves mid-publish refuses the push and keeps "
           "the commit that moved it - nothing is ever force-pushed",
-          rc == 1 and "refused" in out and e.head(sod) == raced, (rc, out))
+          rc == 1 and "moved while this ran" in out and e.head(sod) == raced,
+          (rc, out))
 
     # The other window: a push landing between the publisher's look at the
     # repository (ls-remote) and its fetch. The publisher must judge the
@@ -431,6 +454,84 @@ def scenario(e):
           "what it is - a commit the suite never wrote - on the head fetched",
           rc == 1 and "never wrote and never ported" in out
           and raced2[:12] in out and e.head(frm) == raced2, (rc, out))
+
+    # --- the credentials, which a plan that only reads cannot test -------
+    # 2026-09-23: a plan run read every repository (public: no token
+    # needed), looked healthy, and the adoption after it was refused eleven
+    # times by a token that could push nowhere - under a message blaming a
+    # race. These are that day's refusals, in GitHub's own words.
+    ck = os.path.join(e.tmp, "mirrors-creds")
+    os.makedirs(ck)
+    ckm = e.bare("sodiumxt", base=ck)
+    rc, out = e.tool("status", "--members", "sodiumxt", "--check-push",
+                     mirrors=ck)
+    check("--check-push over credentials that may push leaves the plan as "
+          "it was (an empty repository included)",
+          rc == 0 and "not adopted" in out and e.head(ckm) is None, out)
+    e.tool("publish", "--members", "sodiumxt", "--adopt", "sodiumxt",
+           mirrors=ck)
+    e.write("sodiumxt/src/f.txt", "f\n")
+    e.commit("sodiumxt: add f")
+    before = e.head(ckm)
+    path = refuse(e, "denied", "push",
+                  "remote: Permission to SethMorrowSoftware/SodiumXT.git denied "
+                  "to SethMorrowSoftware.\nfatal: unable to access "
+                  "'https://github.com/SethMorrowSoftware/SodiumXT.git/': The "
+                  "requested URL returned error: 403\n")
+    rc, out = e.tool("status", "--members", "sodiumxt", "--check-push",
+                     mirrors=ck, env={"PATH": path})
+    check("a plan run with --check-push refuses a member its credentials may "
+          "not push to, and names the token's settings - before anything is "
+          "adopted", rc == 1 and "dry-run push" in out
+          and "may not push to" in out and "Contents and Workflows" in out
+          and e.head(ckm) == before, out)
+    rc, out = e.tool("publish", "--members", "sodiumxt", mirrors=ck,
+                     env={"PATH": path})
+    check("a real push refused for want of permission says so, and not that "
+          "the repository moved", rc == 1 and "may not push to" in out
+          and "moved while this ran" not in out and e.head(ckm) == before, out)
+    path = refuse(e, "noworkflow", "push",
+                  "To https://github.com/SethMorrowSoftware/SodiumXT.git\n"
+                  "!\trefs/heads/main:refs/heads/main\t[remote rejected] "
+                  "(refusing to allow a Personal Access Token to create or "
+                  "update workflow `.github/workflows/gates.yml` without "
+                  "`workflow` scope)\nDone\n")
+    rc, out = e.tool("publish", "--members", "sodiumxt", mirrors=ck,
+                     env={"PATH": path})
+    check("a push refused over workflow files names the Workflows permission",
+          rc == 1 and "Workflows: Read and write" in out
+          and e.head(ckm) == before, out)
+    path = refuse(e, "noread", "ls-remote",
+                  "remote: Write access to repository not granted.\nfatal: "
+                  "unable to access 'https://github.com/SethMorrowSoftware/"
+                  "SodiumXT.git/': The requested URL returned error: 403\n")
+    rc, out = e.tool("status", "--members", "sodiumxt", mirrors=ck,
+                     env={"PATH": path})
+    check("a read refused to credentials that were offered is a refusal that "
+          "names the token, not 'unreachable'", rc == 1
+          and "may not read" in out and "unreachable" not in out, out)
+    rc, out = e.tool("publish", "--members", "sodiumxt", "--check-push",
+                     mirrors=ck)
+    check("... and once the credentials may push, --check-push publishes as "
+          "before", rc == 0 and "published" in out and e.head(ckm) != before
+          and e.trailers(ckm)[0] == e.git(e.suite, "rev-parse", "main"),
+          (rc, out))
+
+    # A Re-run replays a run's event with its inputs, so a run that did not
+    # adopt never will; in Actions the tool says how to start one that does.
+    gh = os.path.join(e.tmp, "mirrors-gh")
+    os.makedirs(gh)
+    e.bare("sodiumxt", base=gh)
+    summ = os.path.join(e.tmp, "step-summary.md")
+    rc, out = e.tool("publish", "--members", "sodiumxt", "--dry-run",
+                     mirrors=gh, env={"GITHUB_ACTIONS": "true",
+                                      "GITHUB_STEP_SUMMARY": summ})
+    told = open(summ).read() if os.path.exists(summ) else ""
+    check("in Actions, a member waiting to be adopted gets the step that "
+          "adopts it, in the Run workflow form's words, in the log and the "
+          "summary", rc == 0 and "::notice::" in out
+          and "Members to ADOPT set to `sodiumxt`" in out
+          and "Members to ADOPT set to `sodiumxt`" in told, (out, told))
 
     shallow = os.path.join(e.tmp, "shallow")
     e.sh(["git", "clone", "-q", "--depth", "2", "file://" + e.suite, shallow])
