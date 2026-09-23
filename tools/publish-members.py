@@ -77,14 +77,25 @@ request there.
 Credentials are git's: the workflow configures a credential helper that
 answers with the XTALK_PUBLISH_TOKEN secret, so no token is ever on a
 command line or in a URL, and a local run uses whatever git already has.
+--check-push asks every reachable repository whether those credentials may
+PUSH to it - a dry-run push, which GitHub answers at its first request and
+which sends nothing - and refuses the member when they may not. The workflow
+passes it whenever the secret exists, dry runs included, because reading a
+public repository needs no credentials at all: a plan run that only reads
+cannot tell a working token from a useless one. That is not a hypothetical.
+The first real adoption (2026-09-23) was refused eleven times over by a token
+that could read everything and push nowhere, after a plan run that had
+looked entirely healthy.
 Mirror refs are fetched into a private bare cache (by default
 <git-common-dir>/xtalk-publish, borrowing the suite's objects through
 alternates), so a status run leaves no refs in the suite repository.
 
 Exit 0 = every selected member is published, up to date, or reported as not
 yet adopted/created; 1 = at least one member was refused (divergence, a
-watermark main does not contain, a rejected push, a missing member tree),
-each named above the exit. tools/test-publish-members.py drives this file's
+watermark main does not contain, a rejected push, a missing member tree,
+credentials that were offered and refused), each named above the exit, a
+refused push by its cause: credentials, workflow files, branch protection,
+or a repository that moved. tools/test-publish-members.py drives this file's
 real command line over throwaway repositories, one case per refusal.
 """
 
@@ -122,6 +133,41 @@ MERGE_RE = re.compile(r"^Merge pull request #(\d+) from (\S+)\s*$")
 SQUASH_RE = re.compile(r"^(.*\S)\s+\(#(\d+)\)$")
 LIST_CAP = 40
 FIELD = "\x00"
+
+# Why a push was refused, in the words git and GitHub use for each cause.
+# Credentials that may not push at all are turned away at the FIRST request
+# ("The requested URL returned error: 403"), before anything is sent - which
+# is what makes push_access's dry run a real test of them - while workflow
+# files and branch protection are judged against the pack, on a real push
+# ("[remote rejected] (...)"). Until these existed every refusal read "did
+# the repository move while this ran?", which is what the first real
+# adoption (2026-09-23) printed eleven times over a token that could not
+# push anywhere.
+PUSH_CAUSES = (
+    (re.compile(r"without .?workflow.? scope|to create or update workflow", re.I),
+     "{repo} refused it because it changes .github/workflows/ files: "
+     "XTALK_PUBLISH_TOKEN needs Workflows: Read and write"),
+    (re.compile(r"protected branch|GH006|GH013|rule violation|verified signature",
+                re.I),
+     "{repo}'s branch protection or ruleset on {branch} refused it - the "
+     "publisher pushes directly and does not sign: let the token's owner "
+     "bypass it, or lift it (docs/MEMBER-REPO-SPLIT.md)"),
+    (re.compile(r"returned error: 40[13]\b|permission to \S+ denied|not granted"
+                r"|authentication failed|could not read username"
+                r"|invalid username or password", re.I),
+     "the credentials in use may not push to {repo}: in the workflow that is "
+     "XTALK_PUBLISH_TOKEN, which needs {repo} in its repository access with "
+     "Contents and Workflows both Read and write"),
+    (re.compile(r"\(fetch first\)|non-fast-forward|\(stale info\)", re.I),
+     "{repo} moved while this ran - nothing is ever force-pushed, so the next "
+     "run replays onto its new head"),
+)
+# A read refused to credentials that WERE offered. No credentials get a 401
+# (git: "could not read Username"), which GitHub also answers for a missing
+# repository, so that stays "unreachable"; a 403 means a token that does not
+# cover this repository, which is a configuration to fix, not a state.
+READ_DENIED = re.compile(r"returned error: 403\b|not granted"
+                         r"|permission to \S+ denied", re.I)
 
 
 class Failure(Exception):
@@ -371,6 +417,7 @@ class Ctx(object):
     def __init__(self, args):
         self.suite = Git(worktree=args.suite)
         self.url_template = args.url_template
+        self.check_push = getattr(args, "check_push", False)
         self.target = None
         self.cache = None
 
@@ -445,6 +492,10 @@ def publish_one(ctx, m, adopt, accept, dry_run):
                       % (m.name, ctx.target[:12]))
     branch, head, err = probe(url)
     if err is not None:
+        if READ_DENIED.search(err):
+            raise Failure("the credentials in use may not read %s: add it to "
+                          "XTALK_PUBLISH_TOKEN's repository access, or make it "
+                          "public (%s)" % (m.repo, err))
         if m.name in adopt:
             raise Failure("cannot reach %s: %s" % (m.repo, err))
         # GitHub answers a private repository and a missing one alike, so
@@ -467,6 +518,13 @@ def publish_one(ctx, m, adopt, accept, dry_run):
         head = ctx.cache("rev-parse", ref).strip()
         wm = watermark(ctx.cache, ref)
         head_tree = ctx.cache("rev-parse", head + "^{tree}").strip()
+    # Before anything else is judged: a plan whose every push will be refused
+    # is not a plan, and a member that has nothing to publish today will have
+    # something tomorrow, when an expired token should already be red.
+    if ctx.check_push:
+        why = push_access(ctx, m, url, branch, head)
+        if why:
+            raise Failure(why)
 
     if wm is None:
         chain = adoption_chain(ctx, m, head_tree)
@@ -579,6 +637,33 @@ def _changes(ctx, m, chain, start_tree):
             yield c
 
 
+def push_problem(text, m, branch):
+    for rx, why in PUSH_CAUSES:
+        if rx.search(text or ""):
+            return why.format(repo=m.repo, branch=branch)
+    return "%s turned it away" % m.repo
+
+
+def push_access(ctx, m, url, branch, head):
+    """None when the credentials in use may push to the repository, else
+    why not. A DRY-RUN push: git asks for the receive-pack advertisement,
+    which GitHub serves only to credentials allowed to push, then sends
+    nothing and moves nothing. The source is the repository's own head (an
+    "Everything up-to-date"), or for an empty repository the target commit,
+    whose pack a dry run never builds. What it cannot see is a missing
+    Workflows permission - GitHub judges that against the pack, on a real
+    push - so push_problem names that one when a real push meets it."""
+    src = head or ctx.target
+    p = run(["git", "--git-dir=" + ctx.cache.gitdir, "push", "--dry-run",
+             "--porcelain", url, "%s:refs/heads/%s" % (src, branch)],
+            env=NET_ENV, check=False)
+    if p.returncode == 0:
+        return None
+    text = p.stderr + p.stdout
+    return "a dry-run push, which writes nothing, was refused: %s (%s)" % (
+        push_problem(text, m, branch), _tail(text))
+
+
 def _finish(ctx, r, url, branch, head, new, made, dry_run, prefix):
     if not made:
         return r.set("up to date", "holds %s's %s/" % (ctx.target[:12], r.m.name))
@@ -589,9 +674,9 @@ def _finish(ctx, r, url, branch, head, new, made, dry_run, prefix):
     p = run(["git", "--git-dir=" + ctx.cache.gitdir, "push", "--porcelain",
              url, "%s:refs/heads/%s" % (new, branch)], env=NET_ENV, check=False)
     if p.returncode != 0:
-        raise Failure("push to %s refused (fast-forward only; did the "
-                      "repository move while this ran?): %s"
-                      % (r.m.repo, _tail(p.stderr + p.stdout)))
+        text = p.stderr + p.stdout
+        raise Failure("push refused: %s (%s)"
+                      % (push_problem(text, r.m, branch), _tail(text)))
     ctx.cache("update-ref", "refs/mirrors/" + r.m.name, new)
     r.new_head = new
     return r.set("published", "%s%d commit(s), %s" % (prefix, len(made), span))
@@ -676,7 +761,22 @@ def cmd_publish(args, dry_run):
         results.append(r)
         print("  %-14s %-32s %-8s %-14s %s" % (m.name, m.repo, r.branch,
                                                r.state, r.detail))
-    summary(ctx, results, dry_run)
+    notes = []
+    waiting = [r.m.name for r in results if r.state == "not adopted"]
+    if waiting and os.environ.get("GITHUB_ACTIONS") == "true":
+        # No run adopts by itself, and Re-run replays the same event with the
+        # same (empty) inputs - which is how the first adoption attempt,
+        # 2026-09-23, published nothing and read like a fault. The way
+        # forward is a run started by hand, so say it in that form's words
+        # rather than as a command-line flag.
+        notes.append("Adopting is never automatic, and re-running a run does not "
+                     "change its inputs. To adopt: Actions > publish members > "
+                     "Run workflow, on main, with Members to ADOPT set to `%s` "
+                     "and \"Plan and report only\" unticked."
+                     % " ".join(waiting))
+    for note in notes:
+        print("::notice::" + note)
+    summary(ctx, results, dry_run, notes)
     bad = [r for r in results if r.failed]
     if bad:
         print("publish-members: %d member(s) refused: %s"
@@ -685,7 +785,7 @@ def cmd_publish(args, dry_run):
     return 0
 
 
-def summary(ctx, results, dry_run):
+def summary(ctx, results, dry_run, notes=()):
     path = os.environ.get("GITHUB_STEP_SUMMARY")
     if not path:
         return
@@ -698,6 +798,7 @@ def summary(ctx, results, dry_run):
         rows.append("| %s | [%s](%s) | %s | %s | %s |" % (
             r.m.name, r.m.repo, r.m.url, r.branch,
             ("**%s**" % r.state) if r.failed else r.state, detail))
+    rows += [""] + list(notes)
     with open(path, "a", encoding="utf-8") as fh:
         fh.write("\n".join(rows) + "\n")
 
@@ -804,6 +905,9 @@ def main(argv):
                        "the suite may write for the first time")
         p.add_argument("--accept-divergence", nargs="*", help="members whose "
                        "unported commits may be replaced by the suite's tree")
+        p.add_argument("--check-push", action="store_true", help="refuse any "
+                       "member whose repository the credentials in use may not "
+                       "push to (a dry-run push, which writes nothing)")
         if name == "publish":
             p.add_argument("--dry-run", action="store_true",
                            help="plan and report; push nothing")

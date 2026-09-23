@@ -35,6 +35,9 @@
 # refuses a push that touches workflow files without it. Until the secret
 # exists every run is a DRY RUN that prints the plan, so this file can land
 # before the token does and the first thing it shows is what it would do.
+# Once it exists, every run - a dry run too - asks each repository whether
+# the token may push there, and a member it may not is refused by name, so
+# the plan run is also the token's test.
 #
 # The token reaches git only through a credential helper that reads it from
 # the environment, so it is never on a command line, in a URL, or in a file.
@@ -204,12 +207,7 @@ jobs:
           args=(publish --commit "$TARGET" --main origin/main --members "${go[@]}")
           [ "${#adopt[@]}" -gt 0 ] && args+=(--adopt "${adopt[@]}")
           [ "${#accept[@]}" -gt 0 ] && args+=(--accept-divergence "${accept[@]}")
-          if [ "$DRY_RUN" = true ]; then
-            args+=(--dry-run)
-          elif [ -z "$XTALK_PUBLISH_TOKEN" ]; then
-            echo "::notice::the XTALK_PUBLISH_TOKEN secret is not set, so publishing is not configured yet (docs/MEMBER-REPO-SPLIT.md) - this run only plans"
-            args+=(--dry-run)
-          else
+          if [ -n "$XTALK_PUBLISH_TOKEN" ]; then
             # Answers github.com's credential request from the environment
             # at the moment git asks; nothing is written but the helper. The
             # single quotes are the point (SC2016): the token must expand
@@ -217,6 +215,19 @@ jobs:
             # shellcheck disable=SC2016
             git config --global credential.https://github.com.helper \
               '!f() { test "$1" = get || exit 0; echo username=x-access-token; echo "password=${XTALK_PUBLISH_TOKEN}"; }; f'
+            # A DRY RUN uses the token too, and asks every repository whether
+            # it may push (a dry-run push, which sends nothing). Reading a
+            # public repository needs no token, so a plan that only reads
+            # cannot tell a working token from a useless one - the first
+            # real adoption, 2026-09-23, was refused eleven times by a token
+            # whose plan run had looked healthy.
+            args+=(--check-push)
+          elif [ "$DRY_RUN" != true ]; then
+            echo "::notice::the XTALK_PUBLISH_TOKEN secret is not set, so publishing is not configured yet (docs/MEMBER-REPO-SPLIT.md) - this run only plans"
+            DRY_RUN=true
+          fi
+          if [ "$DRY_RUN" = true ]; then
+            args+=(--dry-run)
           fi
           python3 tools/publish-members.py "${args[@]}"
 

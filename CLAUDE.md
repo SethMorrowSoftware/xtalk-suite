@@ -1106,6 +1106,23 @@ pull request that merged the default branch porting commits that were never
 its own, and a replay judged by one head and built on another - each now a
 fixture that fails when its fix is reverted.)
 
+**The first real adoption, 2026-09-23, was refused on all eleven, and
+nothing before it could have said so.** The token could read everything and
+push nowhere. The plan run had looked healthy because every repository was
+public, and reading a public repository needs no token at all, so the plan
+never used it. Every refusal then blamed a race: "did the repository move
+while this ran?". Both halves are fixed. `--check-push` asks each repository
+whether the credentials may push, with a dry-run push. GitHub answers that at
+its first request and nothing is sent. The workflow passes it whenever the
+secret exists, dry runs included. A refused push is now named by its cause:
+credentials, workflow files, branch protection, or a repository that moved.
+The same morning showed the other trap: **Re-run** on an automatic run
+replays its empty inputs, so it can never adopt. In Actions the tool now
+spells out the Run workflow form that does. The general form is the one this
+file keeps meeting. A check that cannot use the thing it is checking will
+pass whatever that thing is. So a dry run must still EXERCISE the
+credentials, even though it must not SPEND them.
+
 ## Git / workflow
 
 Develop on a per-task branch; commit there; open a **draft PR** if none exists.

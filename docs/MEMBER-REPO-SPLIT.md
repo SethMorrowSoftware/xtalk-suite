@@ -89,8 +89,10 @@ its output does not depend on which git version ran it.
    Settings > Developer settings > Personal access tokens > Fine-grained
    tokens > Generate new token), resource owner
    `SethMorrowSoftware`, repository access "only select repositories": the
-   eleven in section 5. Permissions: **Contents: Read and write** and
-   **Workflows: Read and write**. The second is not optional: every member
+   eleven in section 5 ("Public repositories" is READ-ONLY access, and every
+   push is refused). Permissions: **Contents: Read and write** and
+   **Workflows: Read and write** - a permission starts at Read-only when it
+   is added, so set both. The second is not optional: every member
    carries a generated `.github/workflows/`, and GitHub refuses any push that
    touches a workflow file without it - the first publish fails on it, not
    gradually. Give it an expiry and put the date in a calendar; an expired
@@ -104,11 +106,22 @@ its output does not depend on which git version ran it.
    workflow, on `main`, with the defaults (`members: all`, `dry_run: true`).
    The run's summary is a table with one row per member: `not adopted` and
    how many commits adopting would replay, or `unreachable` if a repository
-   is still missing or private.
-6. **Adopt.** Run it again with `adopt` naming the members (space-separated,
-   or the same list as `members`) and `dry_run` unticked. One at a time is a
-   perfectly good way to start. What adoption does to each repository is in
-   the next paragraph; read it once.
+   is still missing or private. Once the secret exists this run also TESTS
+   it: every repository is asked whether the token may push there (a
+   dry-run push, which writes nothing), and one it may not is refused with
+   what to change. Reading a public repository needs no token, so without
+   that question a plan cannot tell a working token from a useless one -
+   which is how the first adoption, 2026-09-23, met eleven refusals after a
+   plan that had looked healthy.
+6. **Adopt.** Start a new run by hand, with `adopt` naming the members and
+   `dry_run` unticked. **Re-run** on an earlier run does not do this: it
+   replays that run with its own inputs, and the automatic runs have none,
+   so it adopts nothing (also 2026-09-23). The names are the suite's
+   directory names, space-separated - `holde-em`, `datachannelxt` - not the
+   repositories' (`hold-em`, `dataChannelXT`); a name the registry does not
+   know is refused before anything runs. One at a time is a perfectly good
+   way to start. What adoption does to each repository is in the next
+   paragraph; read it once.
 7. **Nothing else.** From then on every green `suite gates` run on `main`
    publishes by itself. Re-run step 5 whenever you want the current table.
 
@@ -262,9 +275,21 @@ others were published anyway. The reasons, and the answer to each:
   which stay in that repository's history.
 - *"native-<member> ... concluded 'failure'"* - that member's own lane is red
   on its last change. Fix it in the suite; the next green publish carries it.
-- *"push ... refused"* - the repository moved while the run was going (or a
-  protection rule refused the push). The next run recomputes from what is
-  there; nothing was overwritten.
+- *"push refused: ..."* - the rest of the sentence names the cause, and
+  nothing was overwritten in any of them:
+  - *"the credentials in use may not push to ..."* (or *"may not read"*, or
+    *"a dry-run push ... was refused"*) - the token. It needs that
+    repository in its repository access ("Only select repositories"; the
+    "Public repositories" choice is read-only) with **Contents** and
+    **Workflows** both Read and write. Edit the token; the secret does not
+    change. This is what the first real adoption met, 2026-09-23, on all
+    eleven.
+  - *"... changes .github/workflows/ files"* - the token has Contents but
+    not Workflows.
+  - *"... branch protection or ruleset ..."* - the repository refuses direct
+    or unsigned pushes to its default branch (section 2, last paragraph).
+  - *"... moved while this ran"* - somebody pushed while the run was going.
+    The next run recomputes from what is there.
 - *"its last publish came from X, which main at Y does not contain"* - `main`
   was rewritten under a published commit. That is a decision to take by hand,
   not a thing to automate: stop and look.
