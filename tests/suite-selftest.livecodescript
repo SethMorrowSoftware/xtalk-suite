@@ -22978,6 +22978,29 @@ command bt1stRun
    bt1stAssert "btDhtGetImmutable accepts the target (async)", (btDhtGetImmutable(bt1sSession, bt1tTarget) is 0)
    bt1stAssert "btDhtPutMutable signs + queues", (btDhtPutMutable(bt1sSession, bt1tKey["publicKey"], bt1tKey["secretKey"], "", textEncode("v1", "UTF-8")) is 0)
    bt1stAssert "btDhtGetMutable accepts the key (async)", (btDhtGetMutable(bt1sSession, bt1tKey["publicKey"], "") is 0)
+   -- THE SIZE BOUNDARY, through the binding (added 2026-09-24). BEP44 caps the
+   -- BENCODED value at 1000 bytes and these two puts bencode for you, so the
+   -- raw cap is 996 ("996:" + 996 = 1000); the shim has refused 1000 raw
+   -- bytes only since 2026-09-08 (the committed binaries carry that from the
+   -- 2026-09-12 dispatch). Nothing held the boundary: the smoke test refused
+   -- only 1001, which the old cap refused too. A boundary is pinned by the
+   -- PAIR, so on a binary older than that dispatch the two 997 rows FAIL,
+   -- which is the point. The refusal legs never reach the network; the
+   -- 996-byte puts go to the DHT exactly like the short values above.
+   local bt1tAt996, bt1tOver997, bt1tBigTarget
+   put empty into bt1tAt996
+   repeat 996 times
+      put "x" after bt1tAt996
+   end repeat
+   put bt1tAt996 & "x" into bt1tOver997
+   put btDhtPutImmutable(bt1sSession, textEncode(bt1tAt996, "UTF-8")) into bt1tBigTarget
+   bt1stAssert "btDhtPutImmutable takes 996 raw bytes (1000 bencoded)", (the number of chars of bt1tBigTarget is 40)
+   btClearError
+   put btDhtPutImmutable(bt1sSession, textEncode(bt1tOver997, "UTF-8")) into bt1tBigTarget
+   bt1stAssert "btDhtPutImmutable refuses 997 raw bytes (1001 bencoded)", (bt1tBigTarget is empty)
+   bt1stAssert "...and btLastError names the 996 cap", (btLastError() contains "996")
+   bt1stAssert "btDhtPutMutable takes 996 raw bytes", (btDhtPutMutable(bt1sSession, bt1tKey["publicKey"], bt1tKey["secretKey"], "", textEncode(bt1tAt996, "UTF-8")) is 0)
+   bt1stAssert "btDhtPutMutable refuses 997 raw bytes (-3)", (btDhtPutMutable(bt1sSession, bt1tKey["publicKey"], bt1tKey["secretKey"], "", textEncode(bt1tOver997, "UTF-8")) is -3)
 
    bt1stSection "signed puts, rendezvous, NAT mapping, rp1 (the v9-v11 surface)"
    -- btDhtBep44SignBuf hands back the EXACT bytes libtorrent signs, so a

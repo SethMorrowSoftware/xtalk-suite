@@ -488,7 +488,10 @@ LAN chat demo) and 39.
 
 ### 4.4 torrentxt
 
-A pass is `torrent-selftest` green at 101 checks, specifically the signed-puts
+A pass is `torrent-selftest` green at 106 checks (101 until the 2026-09-24 BEP44
+size-boundary rows: 996 raw bytes accepted and 997 refused by `btDhtPutImmutable`
+and `btDhtPutMutable`, which FAIL on a binary older than the 2026-09-12 dispatch,
+so a red row there names the binary, not the harness), specifically the signed-puts
 section: `btDhtBep44SignBuf` determinism, `btDhtPutSigned`, `btDhtGetPeers`,
 `btAddInfohash`, `btMapPort` / `btUnmapPort` handling "no mapper", and
 `btRp1Enable` / `btRp1SetToken` / `btRp1Send` / `btRp1Poll` handling "no peer".
