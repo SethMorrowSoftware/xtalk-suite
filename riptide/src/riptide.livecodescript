@@ -1,10 +1,11 @@
 script "RiptideSocial"
--- riptide.livecodescript - Riptide Social, phases 1-4 + 6 + 7: the identity
+-- riptide.livecodescript - Riptide Social, phases 1-4 and 6-8: the identity
 -- foundation, the pure-compute feed layer, the live feed layer, the media
--- layer, the DM layer, the LAN mesh admission + sync layer, and the
--- anonymous persona layer, as a pure-LiveCodeScript library over the
--- installed suite extensions (docs/RIPTIDE-SOCIAL-SPEC.md sections 3-9).
--- Phase 5 (live sessions) adds no library surface: its SDP offer/answer
+-- layer, the DM layer, the LAN mesh admission + sync layer, the anonymous
+-- persona layer, and the Nostr reach layer (the key, the RSN1 bridge, the
+-- RIPTAPP1 sealed app state), as a pure-LiveCodeScript library over the
+-- installed suite extensions (docs/RIPTIDE-SOCIAL-SPEC.md sections 3-9 and
+-- 8A). Phase 5 (live sessions) adds no library surface: its SDP offer/answer
 -- ride the phase-4 DM message kinds "O"/"A" over the existing
 -- secretstream, and its spec-6.2 typing lane is a second dc channel the
 -- demo opens - both demo wiring.
@@ -21,9 +22,15 @@ script "RiptideSocial"
 -- The phase-3 MEDIA layer (rsMediaCreate / rsMediaFetch / rsMediaStatus,
 -- 2026-08-14) CLOSED 2026-08-15 on TWO machines (recorded in
 -- riptide/CLAUDE.md): a follower fetched and PLAYED an attached video
--- through the demo stack, the phase-3 done-criterion met - the one
--- unmeasured nuance is playback starting visibly MID-download, which a
--- fast complete transfer can mimic. The phase-4 DM layer (rsDm* /
+-- through the demo stack, the phase-3 done-criterion met. Playback
+-- starting MID-download was then MEASURED, and came out NEGATIVE: on two
+-- machines on 2026-08-27 the demo unlocked Play on file EXISTENCE, which
+-- libtorrent satisfies at metadata time with a hollow file, so the player
+-- got about 0% real data. Fixed in the demo the same day
+-- (raMediaFrontReady: Play waits for 5% of the file's CONTIGUOUS front,
+-- judged from rsMediaStatus); the faststart re-run that would show it
+-- starting below 100% is owed (docs/two-machine-runbook.md, "The phase-3
+-- faststart re-run"). The phase-4 DM layer (rsDm* /
 -- rsBuildPrekey / rsBuildIntro, 2026-08-14) closed the SAME day, same
 -- record: two machines exchanged authenticated encrypted DMs with no
 -- server, chat both ways - the sealed RSI1 intro, the deterministic-role
@@ -44,8 +51,20 @@ script "RiptideSocial"
 -- chunked-post rail (rsChunkPostText / rsPublishChunkedPost /
 -- rsIngestBlob / rsAssembleChunkText / rsPostTextCapacity, backlog A2),
 -- the BTXO receive-path stream machine (rsBtxoStreamStep, A3), and the
--- piece-deadline streaming plan (rsMediaStreamPlan, B7) - are verified
--- statically and vector-pinned headlessly; none has an engine pass yet.
+-- piece-deadline streaming plan (rsMediaStreamPlan, B7) - were written
+-- verified-statically and vector-pinned headlessly, and their COMPUTE
+-- halves ran engine-green on 2026-08-24 (OXT 9.6.3, Windows x86_64: the
+-- suite paste at 2373/0/3, riptide 391/391, the kind-C rail and the BTXO
+-- receive path included; riptide/CLAUDE.md's ledger). For
+-- rsMediaStreamPlan that run covers its two refusal checks (a dead and a
+-- bogus handle), the only ones its harness section has. The LIVE halves
+-- keep their labels: a kind-C post walked by a second machine, BTXO over
+-- a real Tor stream, deadlines on a playing fetch. The phase-8 layer
+-- (built 2026-08-29) is verified statically and executed headlessly
+-- (tools/check-script-vectors.py); it needs an OXT + live-relay pass
+-- (riptide/CLAUDE.md's status). The harness sections added after
+-- 2026-08-24 (Nostr, app state, the watermarks, the u64 bound, the
+-- 996-byte cap) have not run on an engine yet.
 --
 -- WHAT THIS LAYER OWNS
 --   - the master seed and the RIPTKEY1 sealed key file (Argon2id + secretbox,
@@ -140,6 +159,14 @@ script "RiptideSocial"
 --     existing rsDmOpenIntro verify-then-parse under the persona's own
 --     subkeys). The APP owns the oxh* routes and every stream; nothing
 --     here does I/O, so all three are testable offline.
+--   - the phase-8 Nostr REACH layer (2026-08-29, spec section 8A; its own
+--     section below says what it owns and what it refuses to): the
+--     subkey-4 Nostr key through the bounded validity ladder, the RSN1
+--     identity bridge signed by BOTH keys (build, verify, the DHT publish
+--     and ingest under its own salt, the kind-30078 event round trip), the
+--     `r`-tag magnet media convention, and the RIPTAPP1 sealed app-state
+--     envelope (subkey 5). The Nostr protocol itself is NostrXT's, called
+--     through nx*/nxr* and never re-implemented.
 --
 -- EXTENSION DEPENDENCIES (probed, never assumed; rsProbeCapabilities):
 --   SodiumXT  HARD  the trust root; without it this library refuses to work.
@@ -204,6 +231,14 @@ script "RiptideSocial"
 --     "riptide-lan-s" || the whole record body, kind byte included
 --   BTXO header: magic(4) ver(1) flags(1) nameLen(u16 BE) name total(u64)
 --   BTXO data frame: len(u32 BE) bytes; the stream ends on a zero-len frame
+--   RSN1 bridge (phase 8): magic(4) handle(64 ascii hex) nostrPub(64 ascii
+--     hex) seq(u64 BE) timestamp(u64 BE) edSig(64) schnorrSig(64); exactly
+--     276 bytes. Both sigs cover "riptide-nostr-b" || the 148-byte body:
+--     ed25519 over those bytes, BIP-340 over their SHA-256
+--   RIPTAPP1 app state (phase 8): "RIPTAPP1" "S" sxSecretBox(UTF-8 state,
+--     subkey-5 key); the plaintext caps at 1048576 bytes and must
+--     round-trip as UTF-8. The state TEXT is the app's, not a wire format,
+--     and no golden pins these bytes (the box's nonce is random)
 --   Onion serving (spec 8.2/8.3, HTTP bodies over the persona's onion):
 --     GET / -> the anon feed page, deterministic UTF-8 HTML (rsAnonFeedPage)
 --     GET /prekey -> the persona's RSK1 record as 264 lowercase hex chars
@@ -2991,7 +3026,11 @@ end rsLanSyncSigOk
 -- draftLen(u16 BE) draft sig(64). The draft is ABSOLUTE state (the whole
 -- current text, empty meaning cleared), and the per-device seq is what
 -- lets a receiver refuse a replayed or reordered draft: apply only a seq
--- strictly above the last one applied for that device.
+-- strictly above the last one applied for that device. "That device" is
+-- the signed name compared by its BYTES, so "Phone" and "phone" are two
+-- devices - and an xTalk array FOLDS the case of its keys (the suite's
+-- engine note 2.7), so a receiver must not index per-device state by the
+-- name string itself; the demo keys by the name's hex (raLanDevKey).
 function rsLanBuildDraft pName, pSeq, pDraftText, pMaster
    local tName, tDraft, tOut, tSig
    put textEncode(pName, "UTF-8") into tName

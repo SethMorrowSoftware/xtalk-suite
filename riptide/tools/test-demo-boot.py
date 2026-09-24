@@ -18,6 +18,13 @@ The seeded defects, and what each stands in for:
      `Chunk`-class error at openStack, the second 2026-08-29 failure shape.
   4. A registered control whose builder line is gone - the world-level
      control check.
+  5. The LAN receive state keyed by the raw device NAME again (2026-09-24)
+     - the pre-fix keying, under which the engine's array-key case fold
+     (root engine note 2.7) merged devices "Phone" and "phone" into one
+     replay slot. Not from 2026-08-29's class: this one is here because
+     the model's own arrays do not fold, so the boot's LAN drive is the
+     only thing that can see it, and a check nobody has watched fail is
+     the blind-gate shape this file exists to rule out.
 """
 import os
 import re
@@ -63,6 +70,10 @@ def main():
         ("a control that is registered but never built is caught",
          'uiButton "raNxCopyNpub", "Copy", "476,78,592,102"\n',
          "\n"),
+        ("LAN state keyed by the raw device name folds case-variants "
+         "together",
+         "   return tHex\nend raLanDevKey\n",
+         "   return pName\nend raLanDevKey\n"),
     ]
 
     failed = 0

@@ -46,6 +46,114 @@ to chase a non-bug:
    order to the zero target, and every line reads `authorSig VERIFIED`,
    with no record bytes copied between the machines by hand.
 
+## The feed additions - long posts, the profile name, the watermarks
+
+Built after the feed's two-machine passes, and never driven through this
+stack on an engine: the kind-C rail's COMPUTE half ran engine-green in the
+2026-08-24 suite paste, and the rest is pinned headlessly only. Setup as for
+the feed: A and B on DIFFERENT identities, both unlocked with a TorrentXT
+session, B following A by pasting A's handle and clicking `Fetch feed`.
+
+1. **The kind-C long post (backlog A2, 2026-08-23).** On A, paste about
+   2,000 characters of plain text into the compose field and `Post`. Text
+   over the direct budget (876 bytes of UTF-8 with no attachment pending,
+   836 with one; the demo asks `rsPostTextCapacity`, never a copied number)
+   is stored as content-addressed chunks of 996 bytes plus one signed post
+   naming them. Expected on A: the feed list gains `seq N (chunked): <your
+   text>` and `  -> <40-hex target>`, and the status line reads
+   `Posted, and the signed head republished at seq N.` A short post right
+   after must read `seq N+1: <text>`, with no `(chunked)`. On B, `Fetch
+   feed`: after `head VERIFIED for <A's name> (seq N+1)` the long post
+   shows first as
+   `post K [t=<time>] authorSig VERIFIED: (chunked, P part(s) - fetching the text...)`
+   (P is its byte count over 996, rounded up) and then, once every part
+   has arrived and verified by its content address,
+   `post K (chunked) full text VERIFIED: <the text>`, character for
+   character what A posted. Parts are fetched one DHT lookup at a time, so
+   allow a few lookups' worth of time. The failure this exists to catch is
+   the pre-A2 shape: a post shown VERIFIED with BLANK text. A part that
+   never comes prints `chunk <target> did not arrive in time; post K keeps
+   its (chunked) placeholder.`; Fetch again, and report it if it repeats.
+   With two long posts in one walk, the older may print `(another chunked
+   post is still reassembling; this one keeps its placeholder - Fetch
+   again for its text)`: one reassembly at a time is the design.
+2. **A character across a chunk boundary.** Repeat step 1 with a long
+   text in a script that encodes as multi-byte UTF-8 (a pasted paragraph
+   of Greek, Cyrillic or CJK, over about 1,000 characters). The split is by
+   BYTE, so a character can straddle two chunks, and only the reassembled
+   whole is ever decoded. Expected on B: the full text identical to A's,
+   with no replacement characters. The harness pinned this split on the
+   engine 2026-08-24; this is the same property through the DHT and a
+   second machine.
+3. **The cap refuses, never truncates.** On A, paste more than 15,936
+   bytes (16 chunks of 996; about 16,000 characters of plain text) and
+   `Post`. Expected: the status line reads `rsPublishChunkedPost refused:
+   rsChunkPostText: the text is over 15936 UTF-8 bytes (16 chunks of 996);
+   refusing, not truncating`, the feed list is unchanged, and so is the
+   seq (the next post takes the number this one would have had). Nothing
+   was stored: every chunk is computed and signed before the session is
+   touched.
+4. **The profile name (spec 4.1's profileMeta, read back since
+   2026-08-23).** On A, set `display name:` to a short name with an
+   accented letter or an emoji in it, well under 64 BYTES (the demo's own
+   check counts characters, so a long run of emoji can reach the library's
+   byte cap and a `rsBuildHead refused:` status instead; report it if you
+   hit it), and post anything. On B, `Fetch feed`. Expected, beside the
+   head line: `profile name (spec 4.1, content-verified): <the name>`,
+   identical to A's field. The name blob is fetched on its own, verified
+   by its content address and round-tripped as UTF-8, so a mangled accent
+   is a finding. Then:
+   - On B's Messages card, `Start DM` to A's handle: the inbox log shows
+     `head verified; fetching their prekey record...` and the same
+     `profile name (spec 4.1, content-verified): <the name>` line.
+   - On A, change the name and post again: B's next Fetch shows the NEW
+     name (the blob is content-addressed, so a rename mints a new target).
+   - On A, clear the display name and post again: B's next Fetch prints
+     `no profile-name blob published (the head carries the none target).`
+     instead of a name.
+   Report these verbatim rather than retrying until they go away: `the
+   profile-name blob did not arrive in time; showing the head's own
+   name.` and any `profile-name blob REFUSED (...)` line.
+5. **The reader watermark survives a restart (2026-09-08/09).** B remembers,
+   per author, the highest head seq it has accepted, and `rsIngestHead`
+   refuses a strictly OLDER head: the rollback defence, which is only as
+   good as that number surviving a relaunch. It lives in B's sealed app
+   state (`RIPTAPP1`): `riptide-state.dat` in the `Riptide-media` folder
+   under B's documents folder.
+   - On A, post once more (seq M). On B, `Fetch feed` until `head
+     VERIFIED for <A's name> (seq M)`. Change nothing else, then wait three
+     seconds (the save is debounced by 2 s) or click `Lock` (which flushes
+     it). Expected: `riptide-state.dat` on B has a modification time after
+     the Fetch. A head that raises the watermark writes the file on its
+     own; until 2026-09-09 it marked nothing dirty, so unless something
+     else changed in the session the new value died at quit.
+   - Quit OXT on B completely (`Lock` is not a restart), relaunch, open
+     the stack and `Unlock` with the same key file. With the stack in
+     front, run in the message box (B's own key-file path, which is
+     `raKeyPath()` if you kept the default, and its demo passphrase):
+
+         put rsOpenAppState(url ("binfile:" & raMediaFolder() & "/riptide-state.dat"), rsOpenMasterSeed(url ("binfile:" & "<key file path>"), "<passphrase>"))
+
+     Expected: the state text, first line `RIPTSTATE1`, with a line
+     `headseen`, a tab, A's 64-hex handle, a tab, and M. That line is the
+     watermark this unlock just loaded for A. An empty answer means the
+     path or passphrase is wrong (`put rsLastError()` says which).
+   - The refusal half, a validly signed OLDER head arriving after the
+     restart, cannot be staged on demand: DHT nodes refuse a lower-seq put,
+     so a stale head only reaches you from a node that missed the update.
+     The harness asserts the refusal and `tools/check-demo-boot.py`
+     round-trips the watermark and checks that only a newer head marks the
+     state dirty; this step is the persistence they depend on.
+   - Caution: the state file is one per MACHINE, not one per identity,
+     and a state that did not open is not protected from the next save.
+     Unlocking a DIFFERENT identity on B and then changing anything saves
+     that identity's state over B's own, watermarks included - and
+     unlocking alone is enough if that identity has a published head,
+     because recovering its own head raises a watermark and marks the
+     state dirty. Run this step before the phase-6 stranger test or phase
+     8's step 8 on the same machine, or copy `riptide-state.dat` aside
+     first, and report it if you see it happen.
+
 ## Phase 5 - the call
 
 Needs: an open DM conversation (phase 4 flow), datachannelxt on both.
@@ -110,6 +218,14 @@ bump, so a mixed pair silently fails admission.
    riptide on A without Leave: within ~5 s B's list must show
    `<A's name>  [quiet]` (presence is re-asserted every second and
    expires, so a dead device cannot paint as live).
+   The link-stats suffix (B4, 2026-08-23): a device you are linked to
+   DIRECTLY ends its row with `  rtt N ms, loss P%`, read from enet's own
+   peer statistics (`enPeerStatus`) as the panel repaints. So on A, B's
+   row reads like `<B's name>  [typing]  rtt 3 ms, loss 0%`, and on B, A's
+   row the same way. Expect a small N on one LAN and 0% on a quiet one;
+   report the numbers you saw. On a live mesh, a direct row with NO
+   suffix (`enPeerStatus` answered nothing for a live peer) or with
+   `(rtt/loss readout needs enetxt)` is a finding.
 6. Feed seq over the mesh: with a published feed (seq N > 0) on A, both
    admitted, B must log `feed seq N adopted from <A's name>` if B's own
    seq is behind - the two-devices-never-conflict half of channel 0.
@@ -142,7 +258,11 @@ bump, so a mixed pair silently fails admission.
      must report `to 2 admitted device(s)`.
    - On B: the device list must show A AND C, two rows, each with its
      own `[typing]` / `[quiet]` marker. One row, or C's presence
-     replacing A's row, is the failure this step exists to catch.
+     replacing A's row, is the failure this step exists to catch. A's row
+     carries the `rtt ... loss ...` suffix and C's must NOT: C reaches B
+     relayed over A's link, and link stats printed under C's name would be
+     A's numbers (step 5's suffix; the relayed row stays bare by design).
+     On A, B's and C's rows each carry their own.
    - Type on C. B must log `draft from <C's name> seq N applied` and
      render that draft labeled with C's NAME - not with A's, and not
      replacing A's draft block. Then type on A and C at the same time:
@@ -154,6 +274,16 @@ bump, so a mixed pair silently fails admission.
      log).
    - Media: offer a file from C. B must show the offer attributed to
      C's name, and A must relay it rather than swallow it.
+   - The case-fold check (2026-09-24, decision C6 in `CLAUDE.md`): give C
+     a device name that differs from A's ONLY in letter case (A `Laptop`,
+     C `laptop`; `Leave` and re-`Join` C after renaming it) and repeat the
+     typing bullet above. B must still show two rows and two draft blocks,
+     each converging on its own. Until 2026-09-24 the demo keyed this
+     state by the name string, and the engine folds the case of array
+     keys (the suite's engine note 2.7), so the two devices shared one
+     slot and the one whose clock-seeded counter was lower was dropped
+     without a log line. `tools/check-demo-boot.py` pins it headlessly;
+     this is the engine half.
    - Then close C (no `Leave`): within about 5 s B must mark C
      `[quiet]` while A's row stays live. Now `Leave` on A: B loses ALL
      rows, C's included, which is correct - B had no link but the host.
@@ -280,7 +410,11 @@ became a dependency, which is the one thing the design forbids.
    follows and relay list must come back, and the timeline must be
    empty (it is a live view, not a store). Then unlock with a DIFFERENT
    key file and confirm the state does NOT open, silently and without
-   overwriting anything - the log says so and the app starts empty.
+   overwriting anything - the log says so and the app starts empty. Copy
+   `riptide-state.dat` aside first and compare it a few seconds later: if
+   that identity has a published head, recovering it marks the state dirty
+   and the next save may overwrite the first identity's file (the feed
+   additions' step 5 caution) - report what you see.
 9. **The guard.** On the Anon card, confirm the live guard panel shows
    `nostr` REFUSED for the anon persona. This is a read of the same
    function the relay dial asserts through, so a disagreement between

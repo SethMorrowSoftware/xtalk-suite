@@ -352,7 +352,10 @@ wire-compatible and is exploitable. Every record is **absolute state**, never a 
 and reorder are neutralized by apply semantics, not by the wire:
 drafts and handoffs apply only at a strictly higher per-**device** seq
 (keyed by the signed name, not the transport peer - a host relays
-verified records verbatim, so one link can carry many devices), feed
+verified records verbatim, so one link can carry many devices; the name
+compares by its BYTES, so two names differing only in letter case are two
+devices, and a runtime whose maps fold key case, as xTalk arrays do, keys
+by a case-stable form such as the name's hex), feed
 state applies as max, presence at a strictly higher tick. Counters
 SHOULD seed from the clock so restarts stay monotonic. `M` is a
 pointer: the bytes ride the section-4.3 media rail; bulk never crosses

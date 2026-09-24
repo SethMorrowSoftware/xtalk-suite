@@ -15,10 +15,13 @@ disagreed twice and the MIRROR was wrong both times (fs_leaf and parse_head,
 see their docstrings), which is the reason a mirror alone was never enough.
 
 Mirrors these LiveCodeScript handlers, grouped by surface. This index is the
-AUTHORITATIVE list (CONTRIBUTING.md points here instead of keeping its own
-copy: by 2026-08-15 both enumerations had drifted stale - the guide's table
-named 16 rows, this docstring 13, while the file defined 33 mirrors). A new
-mirror is not done until it is listed here, next to its group.
+AUTHORITATIVE list: nocloud's CLAUDE.md (rule 12, the new-helper recipe)
+points here instead of keeping its own copy, because by 2026-08-15 the two
+enumerations had drifted stale - the contributor guide's table named 16 rows,
+this docstring 13, while the file defined 33 mirrors. (That guide,
+CONTRIBUTING.md, was folded into CLAUDE.md and deleted in the 2026-09 docs
+consolidation; the rule came with it.) A new mirror is not done until it is
+listed here, next to its group.
 
 Static file serving (both transports):
   qsFsParseRange  -> parse_range()      (RFC 7233 single-range; 416 on out-of-range)
