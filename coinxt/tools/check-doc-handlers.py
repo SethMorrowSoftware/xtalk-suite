@@ -107,8 +107,6 @@ API_REFERENCE = os.path.join(ROOT, "docs", "api-reference.md")
 DOC_FILES = [
     "README.md",
     "SPEC.md",
-    "IMPLEMENTATION-PLAN.md",
-    "MIGRATION.md",
     "CLAUDE.md",
     os.path.join("templates", "CLAUDE.md"),
 ]
@@ -124,17 +122,6 @@ CX_TOKEN = re.compile(r"\bcx[A-Za-z0-9_]+")
 # Keep the reason specific enough that the next reader can decide whether it is
 # still true without re-deriving it.
 NOT_A_HANDLER = {
-    "cxSeckeyValidate": (
-        "corrected", "cxSeckeyIsValid",
-        "A name SPEC.md section 4 carried for about a year and that has never "
-        "existed anywhere in the tree; sections 5.1 and 8 always spelled the "
-        "shipped handler correctly. Corrected 2026-08-17, and the AS BUILT "
-        "paragraph that records the fix quotes the dead name on purpose, so "
-        "somebody who hit `handler not found` after copying it can still find "
-        "the correction by searching for what they typed. This is the defect "
-        "that caused this gate to be written."),
-
-
     "cxPascalCase": (
         "convention", None,
         "SPEC.md's house-style line, 'Public API cxPascalCase; C ABI "
@@ -148,49 +135,30 @@ NOT_A_HANDLER = {
         "recorded 2026-08-17 in SPEC.md section 1 (with README.md and "
         "docs/api-reference.md agreeing): the vendored sha3.c implements it, "
         "but exporting it costs a cnx_ export, an .lcb wrapper, an ABI bump "
-        "and a four-platform binary refresh under suite rule 5, and neither "
+        "and a five-platform binary refresh under suite rule 5, and neither "
         "chain, no caller and no suite member needs SHA3-512. The docs name it "
         "in sentences whose content is that it is a `handler not found`. When "
         "a real caller appears, ship it in a native release pass - and this "
         "entry goes stale the moment it does, which is the point."),
 
-    # The BIP-32 accessor sketch. SPEC.md section 5.1 and IMPLEMENTATION-PLAN.md
-    # phase 4 both name these three in the SAME sentence as the thing that
-    # replaced them, so the prose is not wrong; it is a record of a design
-    # decision. replaced_by pins that record to the tree: rename cxHdFromSeed
-    # and this justification stops being checkable, so the gate says so.
+    # The BIP-32 accessor sketch. SPEC.md section 6 names these three in the
+    # SAME sentence as the thing that replaced them, so the prose is not wrong;
+    # it is a record of a design decision. replaced_by pins that record to the
+    # tree: rename cxHdFromSeed and this justification stops being checkable,
+    # so the gate says so.
     "cxHdSeckey": (
         "superseded-design", "cxHdFromSeed",
         "A BIP-32 accessor sketched in the spec and NOT built. The node is an "
         "ARRAY read by name (seckey / pubkey / chaincode / depth / index / "
         "parentfp) in exactly the order BIP-32 serializes, which is what makes "
-        "cxXprv a concatenation rather than a translation. Both documents say "
-        "so where they name it."),
+        "cxXprv a concatenation rather than a translation. SPEC.md section 6 "
+        "says so where it names it."),
     "cxHdPubkey": (
         "superseded-design", "cxHdFromSeed",
         "The public half of the same sketched accessor set. See cxHdSeckey."),
     "cxHdChainCode": (
         "superseded-design", "cxHdFromSeed",
         "The chaincode half of the same sketched accessor set. See cxHdSeckey."),
-
-    # IMPLEMENTATION-PLAN.md is a DATED record, and the suite convention keeps
-    # dated records in their original spelling rather than rewriting history.
-    # Both of these are named in phase text that itself says the names settled
-    # differently, so an exemption is the honest treatment and a doc edit would
-    # not be.
-    "cxBech32Encode": (
-        "superseded-design", "cxBech32EncodeValues",
-        "IMPLEMENTATION-PLAN.md phase 3 writes the pair as "
-        "'cxBech32Encode/Decode'. The shipped names carry a Values suffix, "
-        "because the handlers move 5-bit DATA VALUES as a comma list rather "
-        "than bytes, and the plan is a dated record."),
-    "cxRlpEncode": (
-        "superseded-design", "cxRlpEncodeBytes",
-        "IMPLEMENTATION-PLAN.md phase 3 writes 'cxRlpEncode/Decode'. RLP "
-        "shipped as two encoders, cxRlpEncodeBytes and cxRlpEncodeList, "
-        "because a string and a list are different RLP prefixes and one "
-        "handler could not tell an empty list from an empty string. Dated "
-        "record; cxRlpDecode did keep its planned name."),
 }
 
 CATEGORIES = ("convention", "deferred", "superseded-design", "corrected")

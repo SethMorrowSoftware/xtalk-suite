@@ -2,9 +2,10 @@
 
 Host Tor onion services from an OXT app, with no web server, no hosting, and no
 port forwarding. It serves HTTP over an onion using **OnionXT's own accept loop**
-via the `src/onion-httpd.livecodescript` module (`oxh*`) - it depends on nothing
-but OnionXT and that module (no engine-shipped HTTPD Library), so it runs wherever
-OnionXT runs.
+via the `src/onion-httpd.livecodescript` module (`oxh*`). It depends on nothing
+but OnionXT and that module: the engine's HTTPD Library is not present on every
+OpenXTalk engine (`httpdStart` raised "handler not found" on one), so this runs
+wherever OnionXT runs.
 
 ```
 Tor  --(onion:80)-->  OnionXT accept loop (loopback-guarded, proven)
@@ -48,46 +49,32 @@ pick a folder, and open the printed `http://<address>.onion/` in Tor Browser.
 
 A request array carries `__method`, `__path`, `__query`, `__body`, and the
 lowercased request headers. The module handles request framing (buffer until the
-head and any `Content-Length` body arrive), a folder-URL redirect so relative
-links resolve, the exact-`Content-Length` response, and the clean close.
+head and any `Content-Length` body arrive; a request head over 256 KB,
+`kOxhMaxRequest`, is refused), a folder-URL redirect so relative links resolve,
+the exact-`Content-Length` response, and the clean close.
 
 ## Two ways to use this
 
-- **As libraries (best for a real project):** `start using` both
-  `src/onionxt.livecodescript` and `src/onion-httpd.livecodescript`, and build your
-  app on top (`spike.livecodescript` is one such app). The library sources are the
-  single source of truth.
-- **As one paste-and-run stack (best for quick testing):** `spike.livecodescript`
-  ITSELF carries both libraries, embedded between the sentinels that
-  `tools/sync-demo-embeds.py` owns - paste it into one mainstack's stack script and
-  it self-builds its UI, with no `start using` wiring. Edit the sources under
-  `src/` and re-run that tool; never edit inside the sentinels. (Before
-  2026-08-17 this was a separate generated `standalone.livecodescript`; the suite
-  tool embeds in place instead, so there is one file to open, not two.)
-
-## How to run
-
-**Paste-and-run (fastest):**
-1. New mainstack -> Object menu -> Stack Script -> paste all of
-   `spike.livecodescript` -> Apply.
-2. tor with the **control port enabled** (OnionXT README Troubleshooting).
-3. Reopen the stack (so `preOpenStack` builds the UI), then **Start** ->
-   **Share Folder** -> open the printed `.onion` in **Tor Browser**.
-
-**Libraries (what a real app does):**
-1. Put **both** `src/onionxt.livecodescript` and `src/onion-httpd.livecodescript`
-   in the message path (`start using` them).
-2. Use `spike.livecodescript` as a reference, not as the stack script - pasting it
-   whole while the libraries are also loaded defines the same handlers twice, which
-   OXT refuses at compile time. Copy the parts you want, or delete the embedded
-   region between the sentinels first.
-3. tor with the control port enabled; **Start**, **Share Folder**, open the `.onion`.
+- **One paste-and-run stack (fastest):** `spike.livecodescript` carries both
+  libraries between the sentinels `tools/sync-demo-embeds.py` owns (edit `src/` and
+  re-run that tool; never edit inside the sentinels). New mainstack -> Object menu
+  -> Stack Script -> paste all of it -> Apply; have tor with the **control port
+  enabled** (OnionXT README Troubleshooting); reopen the stack so `preOpenStack`
+  builds the UI; then **Start** -> **Share Folder** -> open the printed `.onion`
+  in **Tor Browser**.
+- **As libraries (what a real app does):** `start using` both
+  `src/onionxt.livecodescript` and `src/onion-httpd.livecodescript` and build on
+  top. Use the spike as a reference, not as the stack script: pasting it whole
+  while the libraries are loaded defines the same handlers twice, which OXT refuses
+  at compile time. Copy the parts you want, or delete the embedded region first.
 
 ## Status / notes
 
 - **Confirmed on-engine:** hosting a folder as a browsable file share (with the
   auto directory listing), a static site, and dynamic routes all render in Tor
-  Browser, both as libraries and as the single paste-and-run stack.
+  Browser, both as libraries and as the single paste-and-run stack. The spike's
+  UI moved onto the suite kit 2026-08-14, so the stack as a whole is verified
+  statically and needs an OXT re-pass.
 - **Large files:** a file is read into memory and sent in one response - right for
   documents, images, and modest archives; streaming and HTTP Range (resumable /
   seekable) downloads are a later addition, so multi-GB files are not ideal over
@@ -95,7 +82,7 @@ links resolve, the exact-`Content-Length` response, and the clean close.
 - **Receiving files (upload)** is a separate feature: the module parses POST bodies
   (`__body`), but a real upload endpoint needs a multipart route handler that
   writes to disk - straightforward to add when you want two-way transfer.
-- Single-threaded and blocking, like OnionXT itself: right for a lightweight
-  self-hosting appliance, not a high-traffic server.
+- OnionXT is callback-driven, but a served file is read whole in one blocking
+  step: right for a lightweight self-hosting appliance, not a high-traffic server.
 - If the local forward port (8090) reports `cannot listen ...`, change `kLocalPort`
   to a free one (same Windows reserved-port note as the main demo).

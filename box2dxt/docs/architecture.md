@@ -15,11 +15,11 @@ How the pieces fit, why the shim exists, and how to extend the binding.
 
 ```
   your xTalk script
-        │  b2k…  (pixels, degrees, screen coords)
+        │  b2k...  (pixels, degrees, screen coords)
   ┌─────▼──────────────────────────────────┐
   │ box2dxt-kit.livecodescript  (the Kit)   │  pure xTalk; owns world + loop
   └─────┬──────────────────────────────────┘
-        │  b2…   (metres, radians, handles)
+        │  b2...   (metres, radians, handles)
   ┌─────▼──────────────────────────────────┐
   │ box2dxt.lcb  (xTalk Builder extension)  │  foreign handlers + public wrappers
   └─────┬──────────────────────────────────┘
@@ -34,31 +34,32 @@ How the pieces fit, why the shim exists, and how to extend the binding.
   functions prefixed `b2lc_*`. This library **ships bundled inside the extension**,
   in `src/code/<arch>-<platform>/box2dxt.{so,dll,dylib}` (bare token, no `lib`
   prefix; platform-ids `x86_64-linux`, `x86-linux`, `x86_64-win32`, `x86-win32`,
-  `universal-mac` — architecture first, Windows `-win32` for both bitnesses).
-  Those libraries are committed and pinned by `MANIFEST.sha256` (the suite's
-  `native-box2dxt.yml` builds and tests them as CI artifacts);
-  `tools/package-extension.py` refreshes the tree from a newer build.
+  `universal-mac` - architecture first, Windows `-win32` for both bitnesses).
+  Those libraries are committed and pinned by `MANIFEST.sha256` (the Linux and
+  Windows ones from the suite's `release-binaries.yml` dispatch; the
+  `universal-mac` dylib is the pre-fold build carried in by the 2026-08-14
+  fold, unchanged since and not yet loaded on a Mac); `tools/package-extension.py`
+  refreshes the tree from a newer build.
 - **`src/box2dxt.lcb`** is the xTalk Builder (LCB) extension. It declares
   `private foreign handler` bindings to the `b2lc_*` symbols
-  (`binds to "c:box2dxt>b2lc_…!cdecl"`) and wraps each in a friendly public
-  `b2…` handler that scripts call directly. The engine resolves the
-  `c:box2dxt>` library through **`the revLibraryMapping`** — a name→path table the
+  (`binds to "c:box2dxt>b2lc_...!cdecl"`) and wraps each in a friendly public
+  `b2...` handler that scripts call directly. The engine resolves the
+  `c:box2dxt>` library through **`the revLibraryMapping`** - a name→path table the
   IDE populates by scanning the extension's `code/<arch>-<platform>/` folder when
   the extension is installed, so the right library loads automatically per
-  platform with no loose file to place. (The old "drop the `.so` on a search
-  path / `sudo cp /usr/lib` / `LD_LIBRARY_PATH`" approach was a workaround for not
-  packaging the library into the extension.) For quick dev without packaging, the
-  Kit's `b2kEnsureNativeLib` seeds the same `revLibraryMapping["box2dxt"]` entry
-  from a `box2dxt.{so,dll,dylib}` sitting next to a saved stack.
-- **`src/box2dxt-kit.livecodescript`** is optional pure-xTalk sugar (`b2k…`) on
-  top of the `b2…` API.
+  platform with no loose file, `sudo` or `LD_LIBRARY_PATH`. For quick dev without
+  packaging, the Kit's `b2kEnsureNativeLib` seeds the same
+  `revLibraryMapping["box2dxt"]` entry from a `box2dxt.{so,dll,dylib}` sitting
+  next to a saved stack.
+- **`src/box2dxt-kit.livecodescript`** is optional pure-xTalk sugar (`b2k...`) on
+  top of the `b2...` API.
 
 ## Why a C shim
 
 Box2D v3 is already C, so why not bind to it directly? Two reasons:
 
 1. **Identifiers are structs passed by value.** Box2D v3 ids (`b2WorldId`,
-   `b2BodyId`, …) are small structs. The LCB FFI is happiest with plain scalars
+   `b2BodyId`, ...) are small structs. The LCB FFI is happiest with plain scalars
    and pointers, and there is no 64-bit integer foreign type. The shim stores
    every Box2D id in a handle table and hands the script a **positive 32-bit int**
    instead (`0` = null/invalid). Treat handles as opaque tokens.
@@ -66,7 +67,7 @@ Box2D v3 is already C, so why not bind to it directly? Two reasons:
    (xTalk numbers are doubles); the shim casts to/from Box2D's `float`. Every
    boolean crosses as `int` (`0`/`1`).
 
-The shim also flattens array-ish APIs into call sequences the FFI can express —
+The shim also flattens array-ish APIs into call sequences the FFI can express -
 for example, polygons are built with `b2PolyBegin()` / `b2PolyAddPoint(x, y)` /
 `b2AddPolygon(...)` instead of marshalling a vertex array.
 
@@ -75,17 +76,15 @@ for example, polygons are built with `b2PolyBegin()` / `b2PolyAddPoint(x, y)` /
 Box2D v3 ids carry a **generation counter**, so the engine can tell a live id
 from a stale one. The shim validates every handle with the generation-checked
 `b2*_IsValid()` before use. The result: calling any handler with a stale,
-destroyed, or never-created handle is a **harmless no-op** — getters return `0`,
-actions do nothing — instead of crashing the engine.
+destroyed, or never-created handle is a **harmless no-op** - getters return `0`,
+actions do nothing - instead of crashing the engine.
 
 The integer handle of each body/shape is also stored in its Box2D `userData`, so
 queries, ray casts, and contact events can hand a handle *back* to the script.
 
-> Handles are **generation-tagged**: each one packs a small generation counter
-> above its table slot, bumped every time the slot is freed. So even after the
-> slot is recycled by a new object, your stale handle stays dead (no-op) instead
-> of silently addressing the new occupant. Still drop references on destroy —
-> that's what keeps the tables small.
+> Handles are **generation-tagged**: each packs a generation counter above its
+> table slot, bumped when the slot is freed, so a stale handle stays dead (no-op)
+> even after the slot is recycled. Still drop references on destroy.
 
 ## Coordinate systems
 
@@ -93,13 +92,13 @@ Box2D works in **MKS units** (metres, kilograms, seconds) with **Y pointing up**
 OpenXTalk screens use **pixels** with **Y pointing down**. Conversion happens
 only at draw time:
 
-- The core `b2…` API is pure metres/radians — *you* convert.
+- The core `b2...` API is pure metres/radians - *you* convert.
 - The Kit does the conversion for you: it keeps a pixels-per-metre scale
   (default 40) and an origin, and flips Y so screen-space "down" maps to
   world-space "down".
 
-Keep moving objects roughly 0.1–10 m (≈ 4–400 px at the default scale). Drive the
-simulation from a **fixed timestep** — the Kit and demo accumulate real elapsed
+Keep moving objects roughly 0.1-10 m (≈ 4-400 px at the default scale). Drive the
+simulation from a **fixed timestep** - the Kit and demo accumulate real elapsed
 time and step in 1/60 s chunks; variable steps make the solver jittery and
 non-deterministic.
 
@@ -118,17 +117,17 @@ changes** so the `.lcb` and native library can't silently drift apart.
 
 Exposing more of Box2D is mechanical. To add a handler:
 
-1. **C shim (`src/box2d_lc.c`)** — add a `LC_API … b2lc_yourthing(…)` function
+1. **C shim (`src/box2d_lc.c`)** - add a `LC_API ... b2lc_yourthing(...)` function
    that calls the Box2D API. Store/look up any ids in the existing handle tables,
    and validate inputs with the relevant `b2*_IsValid`.
-2. **Extension (`src/box2dxt.lcb`)** — add a matching
-   `private foreign handler … binds to "c:box2dxt>b2lc_yourthing!cdecl"`, then a
-   `public handler b2YourThing(…)` wrapper that calls it (and tolerates `0`
+2. **Extension (`src/box2dxt.lcb`)** - add a matching
+   `private foreign handler ... binds to "c:box2dxt>b2lc_yourthing!cdecl"`, then a
+   `public handler b2YourThing(...)` wrapper that calls it (and tolerates `0`
    handles like the rest).
-3. **Check that the two sides agree** — run `python3 tools/check-lcb-signatures.py`.
-   It holds every `binds to "c:box2dxt>…!cdecl"` declaration against the `LC_API`
+3. **Check that the two sides agree** - run `python3 tools/check-lcb-signatures.py`.
+   It holds every `binds to "c:box2dxt>...!cdecl"` declaration against the `LC_API`
    definition it names (return type, arity, per-parameter type), both directions,
-   and it runs in the per-member gate walk and therefore in CI — so a mismatch
+   and it runs in `tools/run-gates.sh` and therefore in CI - so a mismatch
    fails the build rather than shipping. Nothing else can catch that drift: the
    engine resolves the symbol by NAME and then calls it with whatever the
    declaration says, so a `CInt` promised where the shim returns `double` neither
@@ -144,23 +143,23 @@ Exposing more of Box2D is mechanical. To add a handler:
 
 Add a smoke-test assertion in `tests/smoke_test.c` for anything non-trivial so CI
 exercises it on every platform, and write the new handler up in
-[api-reference.md](api-reference.md) in the same change — no gate holds that page
-to the binding, and it is 160 handlers behind today (measured 2026-08-26), which
-is what skipping this step accumulates into.
+[api-reference.md](api-reference.md) in the same change - no gate holds that page
+to the binding, and it named only 216 of 376 handlers when measured on
+2026-08-26, which is what skipping this step accumulates into.
 
 As of ABI `3` the binding already covers the full Box2D v3.1 **live-object**
 surface. The newer additions reuse a few shared shim patterns worth knowing when
 you extend further:
 
 - A **shape-def "pending overrides"** struct lets the existing shape creators gain
-  sensors / filters / event-flags / materials without new variants — set options
+  sensors / filters / event-flags / materials without new variants - set options
   with `b2lc_shapedef_*`, and `fill_shape_def` applies them to the next shape then
   resets (one-shot, like the polygon vertex builder).
 - A **chains handle table** (the same `DEFINE_TABLE` macro) plus a point-cloud
   builder mirrors the polygon path.
 - **Queries** are callback-based upstream; the shim runs them with a small C
   callback that pushes hits into one **shared result buffer**, then exposes a
-  count + indexed getters — the same idea as the ray/contact stashes.
+  count + indexed getters - the same idea as the ray/contact stashes.
 - **Sensor / hit / body-move events** reuse the growable snapshot pattern of the
   contact events.
 
@@ -168,5 +167,8 @@ What stays **intentionally unwrapped**: pre-solve / custom-filter / friction /
 restitution callbacks (there is no safe way to call back into xTalk mid-step over
 the LCB FFI), and Box2D's standalone math / geometry / TOI / manifold helpers
 (they operate on raw structs, which xTalk handles itself). Filter category/mask
-bits are exposed as **32-bit** (xTalk doubles carry 32 unsigned bits cleanly), so
-scripts get 32 collision layers rather than Box2D's full 64.
+bits cross as doubles, exact only to 2^53, so the shim accepts values up to
+2^53-1 (`LC_FILTER_BITS_MAX`) and ignores the whole call otherwise - including
+the 2^64-1 a default mask reads back as. xTalk's `bitAnd`/`bitOr` are 32-bit, so
+the Kit clamps mask round-trips to 4294967295 and names 31 layers plus its
+reserved `oneway` bit 2^31.

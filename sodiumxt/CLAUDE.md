@@ -1,375 +1,226 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working in the SodiumXT
-member of the xtalk-suite monorepo (`sodiumxt/`).
-
-> **Read `docs/archive/implementation-plan.md` first.** It is the full spec (the engine
-> decision, the C ABI design, the phased plan, the test strategy, the risk register). This
-> file is the operational as-built record and the hard-won-lesson list, in the same spirit
-> as the `CLAUDE.md` files in our sibling extensions Box2Dxt, ShowControl, and TorrentXT.
-> Most of the FFI and OXT/LCB lessons below were paid for in full while building TorrentXT;
-> they are copied here so we do not pay for them twice.
+Guidance for Claude Code in the SodiumXT member of the xtalk-suite monorepo (`sodiumxt/`).
+Where anything else disagrees, the code, `docs/api-reference.md` and this file win; the
+original design plan is in git history, and what still matters from it is below.
 
 ## What this is
 
-**SodiumXT** opens **modern cryptography** to OpenXTalk (OXT) / the xTalk family (also
-LiveCode 9.6.3+): authenticated encryption, password hashing (Argon2id), streaming AEAD
-for big files, public-key boxes and ed25519 signatures, hashing, and a real CSPRNG, all
-from xTalk.
+**SodiumXT** brings modern cryptography to OpenXTalk (OXT) and LiveCode 9.6.3+:
+authenticated encryption, Argon2id, streaming AEAD for big files, X25519 boxes, ed25519
+signatures, BLAKE2b, ristretto255 group arithmetic and a real CSPRNG. Layers: libsodium
+(ISC, static-linked; pinned 1.0.20, vcpkg's on Windows) -> the C shim `src/sodium_shim.c` (exports `sxt_*`,
+marshals bytes, adds no cryptography) -> ONE library `sodiumxt.{so,dll,dylib}` -> the LCB
+binding `src/sodium.lcb` (library `org.openxtalk.library.sodium`, public `sx*`) -> the
+examples. 73 public `sx*` handlers over 124 `sxt_*` exports, at **ABI 10**
+(`SXT_ABI_VERSION` in `src/sodium_shim.h` equals `kSXTABIVersion` in `src/sodium.lcb`).
 
-It is a binding to **libsodium** (C, ISC license), wrapped behind a flat `extern "C"` shim
-(libsodium is already C, so the shim is thin: it is a marshaling layer, not a translation
-layer), with a thin LCB layer on top:
+- `src/` - shim, binding, `code/` (bundled libraries + `MANIFEST.sha256`), `vendor/` (SHA3).
+- `tests/sodium_smoke_test.c` - KATs, round trips, tamper, wrong-key and firewall checks.
+- `examples/` - the kit-look demo and the `sxSelfTest()` harness.
+- `tools/` - `run-gates.sh` (the gate list), `check-livecodescript.py`,
+  `check-docs-style.py`, `package-extension.py`.
+- `docs/` - getting-started, api-reference, recipes, security, building.
 
-```
-libsodium (ISC) - portable, audited, NaCl lineage; pure compute, no threads, no I/O of its own
-   |- C shim     src/sodium_shim.c   ->  sodiumxt.{so,dll,dylib}  (ABI symbols: sxt_*)
-        |- LCB binding  src/sodium.lcb        (library org.openxtalk.library.sodium; public sx*)
-             |- examples        examples/{sodium-demo, sodium-tests}.livecodescript
-```
+The library ships under `src/code/<arch>-<platform>/sodiumxt.*` (bare token, no `lib`
+prefix; ids architecture first, `-win32` for both Windows bitnesses); the engine resolves
+`c:sodiumxt>` through `the revLibraryMapping`, with no loose library, `sudo`, `/usr/lib`,
+`LD_LIBRARY_PATH` or rename.
 
-The native library ships **bundled inside the extension** under
-`src/code/<arch>-<platform>/sodiumxt.{so,dll,dylib}` (bare token, no `lib` prefix;
-platform-ids `x86_64-linux` / `x86-linux` / `x86_64-win32` / `x86-win32` / `universal-mac`,
-**architecture first**, Windows `-win32` for both bitnesses). Installing the packaged
-extension makes the engine resolve the `c:sodiumxt>` binding via `the revLibraryMapping`
-automatically: no loose library, no `sudo`, no `/usr/lib`, no `LD_LIBRARY_PATH`, no rename.
-
-**The committed binaries are NOT all at the same ABI, and that asymmetry is a live
-footgun, so it is written down here rather than left to be discovered.** The `.lcb` and the
-native library ship together in one package, and `sPrepare()` compares
-`_sxt_abi_version()` against `kSXTABIVersion` on EVERY `sx*` call. So a package whose
-`.lcb` says 7 and whose binary says 6 does not degrade gracefully: it throws
-`"SodiumXT ABI mismatch ... Reinstall the packaged extension."` from the FIRST call, which
-takes out the whole SodiumXT section AND every member that composes it (riptide entirely,
-onionxt's SAFECOOKIE / deterministic-onion / offline-address paths). Repackaging from a
-tree whose binary for YOUR platform is stale is exactly how that mixed package gets built.
-
-| platform id | ABI | note |
-|---|---|---|
-| `x86_64-linux` | **10** | rebuilt 2026-08-23 with the ABI-10 raw ChaCha20 xor; ctest + the ASan/UBSan lane green on this exact build, and the freshness gate's loader leg confirmed the committed binary answers 10 |
-| `x86_64-win32` | **10** | mingw64 cross-build 2026-08-23 per the PROVEN fallback recipe below (driven through the member CMake this time, plus `-static-libgcc` - the note in the recipe paragraph); the three checks pass (124/124 `sxt_*` exports matching the Linux build, `sxt_abi_version` disassembles to `mov $0xa,%eax`, imports only KERNEL32/ADVAPI32/msvcrt, zero leaked `crypto_*`/`sodium_*`); EXECUTED 2026-08-24 on a real Windows x64 engine (OXT 9.6.3): the ABI-10 preflight accepted it and the full 106-check harness ran green in the suite paste, the 7-check raw-ChaCha20 section included - the same proof arc as the 2026-08-11 DLL's 2026-08-12 pass |
-| `x86-linux` | **10** | rebuilt 2026-08-23 with the native workflow's `-m32` recipe; its 32-bit smoke test ran green on this host |
-| `x86-win32` | **10** | mingw32 cross-build 2026-08-23, same recipe and checks as the x64 row (`_sxt_abi_version` disassembles to `mov $0xa,%eax` under the 32-bit underscore decoration) |
-| `universal-mac` | **10** | refreshed by release run 12 (2026-08-27), the first dispatch to reach its commit stage: a genuinely universal dylib (both slices cross-compiled in one pass, `lipo -archs` asserted at birth, arm64 tested natively and x86_64 under Rosetta 2), and the freshness gate decodes 10 from BOTH slices' `sxt_abi_version`. This row read `6 | STALE, now FOUR ABIs behind` from the hand-lipo'd 2026-08-08 build until that run - the gate's MAC_KNOWN_STALE allowance parsed its number out of this very row, and deleting the allowance is part of the same change that rewrites it |
-
-The paragraph that stood here described the honest options while the mac row was four
-ABIs stale ("do not repackage" / "run the older ABI-6 package end to end" / "dispatch
-release-binaries.yml"). Release run 12 took the third option on 2026-08-27, so it no
-longer applies: the tree packages clean at ABI 10 on every platform, mac included. Mac
-execution evidence is still the dispatch's own (arm64 ctest native, x86_64 under
-Rosetta 2); no OXT engine has loaded the dylib yet - that leg stays with the runbook.
-The next `release-binaries.yml` dispatch re-commits all four non-mac rows from the
-canonical lanes (vcpkg + NMake on real Windows runners), which supersedes the mingw
-cross-builds the same way run 31551536144 superseded the 2026-08-11 one.
-
-**The `x86_64-win32` binary is a mingw64 cross-build, and that is a toolchain CHANGE worth
-knowing.** The CMake path for Windows links the libsodium that **vcpkg** provides under
-MSVC, and the previously committed DLL was built that way. The 2026-08-11 rebuild had no
-MSVC available, so libsodium 1.0.20 was cross-configured with
-`--host=x86_64-w64-mingw32 --enable-static --disable-shared` (from the tarball already
-cached in `build/`, sha256 re-verified against the pinned value) and the shim was linked
-against it with `-DSODIUM_STATIC`. Three things were checked rather than assumed, because a
-crypto binary nobody can execute here deserves more than "it compiled": the export table is
-**byte-identical to the known-good ABI-7 Linux build (107/107 `sxt_*` names, no more and no
-fewer)**; `sxt_abi_version` disassembles to `mov $0x7,%eax ; ret`; and the import table
-names only `KERNEL32` / `ADVAPI32` / `msvcrt`, so there is no libgcc or winpthread runtime
-to ship alongside it. Nothing from the static libsodium archive is re-exported (0 leaked
-`sodium_*` / `crypto_*` / `randombytes_*`), which is what `--exclude-libs,ALL` plus the
-explicit `__declspec(dllexport)` on `SXT_API` is there to guarantee.
-**EXECUTED 2026-08-12: the mingw64 DLL loaded on a real Windows x64 engine and the full
-harness ran green** - 71/71 SodiumXT checks including the FIPS 202 SHA3-256 vectors and the
-Argon2id known-answer vector, plus every composing member (riptide 89/89 hard-depends on
-it). So a mingw64 cross-build is a PROVEN fallback path for this member when no MSVC is
-available. The committed row has since been refreshed by `release-binaries.yml` run
-31551536144 with its own build, verified by `tools/install-release-binaries.py` and the
-full gate set; the mingw episode stands as the record that the fallback works.
-**The 2026-08-23 ABI-10 rebuild drove the SAME fallback through the member CMake instead
-of by hand** (`-DCMAKE_SYSTEM_NAME=Windows -DCMAKE_C_COMPILER=x86_64-w64-mingw32-gcc
-"-DSODIUMXT_LIBSODIUM_CONFIGURE_EXTRA=--host=x86_64-w64-mingw32"` and the i686 twins,
-tests OFF since the .exe cannot run here), and learned one thing the hand-built episode
-never met: the CMake-linked DLL imported `libgcc_s_seh-1.dll` / `libgcc_s_dw2-1.dll`
-until `-DCMAKE_SHARED_LINKER_FLAGS=-static-libgcc` was added - the import-table check
-above is what caught it, which is why that check exists. Both DLLs then pass all three
-checks; the platform table rows carry the details.
-
-**THE COMMITTED BINARIES ARE EXECUTED IN CI NOW, NOT ONLY INSPECTED (2026-08-16).**
-Until this date every lane in `native-sodiumxt.yml` built fresh from source and asked
-whether THAT was correct; the blobs under `src/code/` - the ones an OXT user actually
-binds against - were verified only by their export list and their hash. That hole was
-worth closing here before anywhere else, because ABI 8/9 added the ristretto255 and
-DLEQ surface that holde-em's Level 2 deal binds to, and nothing had ever executed the
-committed copies of it. The `pack` job now dlopen()s the committed `.so` BEFORE the
-build overwrites it and drives the published **RFC 9496 Appendix A.1** encodings of
-[1]B, [2]B and [3]B, then the group law, general `scalarmult` against
-`scalarmult_base`, the ABI 9 batch crossing against the single one, and a refused bad
-point. The expected ABI is READ FROM `src/sodium_shim.h`, never a literal (coinxt's
-lane carried a literal and the 4 -> 5 bump turned it red for no reason but the
-workflow file). Linux `.so` lanes only: `universal-mac` is not driven HERE because
-this job runs on a Linux host that cannot dlopen a Mach-O - not, since release run 12
-(2026-08-27), because the dylib is stale. The mac dylib's own drive-through lives in
-release-binaries.yml's mac lane, which runs both slices' tests on the runner that
-builds them, and the freshness gate decodes the ABI from both slices on every push.
-
-The C ABI is **engine-agnostic**: if we ever swap libsodium for monocypher (single-file,
-smaller), the same `sxt_*` surface is reproduced and the LCB layer is untouched.
-
-The prefixes here (`sxt_` C ABI, `sx*` public LCB, `sodiumxt` token) mirror TorrentXT's
-(`btx_`, `bt*`, `torrentxt`). They are conventions, not law; if you rename them, rename
-them everywhere in one pass and keep the `binds to "c:sodiumxt>sxt_..."` strings in step.
-
-## How SodiumXT differs from TorrentXT (read this before you assume)
-
-TorrentXT wrapped a C++ engine that owns network and disk threads. SodiumXT wraps a C
-library that owns **nothing**: no threads, no sockets, no files of its own, no callbacks.
-That flips three of TorrentXT's defining rules. Do not cargo-cult them.
-
-1. **No background threads, no alert queue, no polling.** Every `sxt_*` call is synchronous,
-   one-shot, bytes-in/bytes-out. There is no session to start or stop, no `btPoll`, no
-   `send ... in N milliseconds` dispatcher. The whole poll-drain architecture is GONE.
-2. **Payload DOES cross the FFI here. That is the entire job.** TorrentXT's rule 3 ("payload
-   never crosses the FFI into script") is INVERTED: SodiumXT exists to take bytes from
-   script, transform them, and hand them back. So the new rule is **mind the size** (see the
-   performance playbook): a small `Data` round-trips in one call; a large file uses the
-   **streaming (secretstream) API and the C-side file helpers** so the plaintext and the
-   ciphertext are never both fully resident in script memory.
-3. **No C++ exception firewall is needed** (libsodium is C and does not throw). It is
-   replaced by a **length-and-pointer firewall**: a wrong length or a short buffer in C is a
-   memory-corruption bug, not a thrown exception, so every entry point validates the
-   caller's buffer and refuses to read or write past it.
+**Unlike TorrentXT (do not cargo-cult):** no threads, alert queue, polling or session
+(every `sxt_*` call is synchronous bytes-in/bytes-out); payload DOES cross the FFI, so big
+files go through secretstream and the C-side file helpers; and there is no C++ exception
+firewall (libsodium is C), only the length-and-pointer firewall of rule 1.
 
 ## The rules that make this safe
 
-1. **Validate every length and pointer at the boundary; never touch memory past the
-   caller's buffer.** An out buffer that is too small returns `-needed` (negative required
-   size), never a partial write past the end. A null pointer or a bad handle is a defined
-   no-op / error code, never a crash. This is the C analogue of TorrentXT's exception
-   firewall, asserted by a smoke test that feeds short buffers and bad handles to every
-   entry point.
-2. **`sodium_init()` exactly once, before anything else.** Call it at first use (guarded by
-   a static flag) and check its return. Until it has run, the CSPRNG and the runtime CPU
-   feature detection are not ready. It is safe to call again; it is not safe to skip.
-3. **Never reuse a nonce with the same key.** For these ciphers a repeated nonce is
-   catastrophic (it leaks plaintext relationships and can destroy authenticity). The API
-   surface is designed so misuse is hard: one-shot calls **generate a fresh random nonce and
-   prepend it** to the ciphertext; file and stream encryption use **secretstream**, which
-   derives per-chunk nonces internally from a random header. Do not expose a "bring your own
-   nonce" entry point without a very loud reason. THE LOUD REASON WAS GIVEN ONCE (2026-08-23):
-   `sxChaCha20IetfXor`, the ABI 10 building block for NIP-44, whose nonce is an HKDF slice
-   derived inside the consuming construction, never caller-chosen in anger. The written
-   argument lives in `docs/security.md` and at the declaration in `src/sodium_shim.h`; the
-   rule stands for everything else.
-4. **Authenticate everything. Compare in constant time.** Use the AEAD / `_easy` / `secretbox`
-   / `secretstream` forms (which carry a Poly1305 tag), never a raw unauthenticated stream
-   cipher - with the SAME single written exception as rule 3: `sxChaCha20IetfXor` is raw and
-   unauthenticated by design, because its named consumer (NIP-44 v2) authenticates one layer
-   up with HMAC-SHA256 per its published spec and an AEAD would break interop; the argued
-   containment is in `docs/security.md`. Verify tags and password hashes with
-   `sodium_memcmp` / the library's own verify
-   calls; **never** compare a MAC, tag, or hash in script with `is` (that is a timing leak).
-5. **Zero secret material when you are done with it (C-side), and be honest about what you
-   cannot protect.** Use `sodium_memzero` on transient key/scratch buffers in the shim. Be
-   honest in the docs that a key living in a LiveCode `Data` cannot be `mlock`ed or reliably
-   zeroed by us; secure-memory guarantees stop at the FFI line.
+The shim cites these by number; keep the numbering.
 
-## Commands
+1. **Validate every length and pointer at the boundary.** A too-small out buffer returns
+   `-needed`, never a partial write; a null pointer or bad handle is a defined no-op or
+   error, never a crash. The smoke test feeds short buffers and bad handles to every entry.
+2. **`sodium_init()` exactly once, first**, behind a static guard (`ensure_init()`); until
+   it runs the CSPRNG and CPU feature detection are not ready. Safe to repeat, not to skip.
+3. **Never reuse a nonce with a key.** One-shot calls draw a fresh random nonce and prepend
+   it; secretstream derives per-chunk nonces from a random header. No bring-your-own-nonce
+   entry without a very loud reason, given ONCE (2026-08-23): `sxChaCha20IetfXor` (ABI 10),
+   the NIP-44 building block whose nonce is an HKDF slice derived inside the construction.
+   The argument is in `docs/security.md` and at its declaration in `src/sodium_shim.h`.
+4. **Authenticate everything; compare in constant time.** AEAD, `_easy`, secretbox and
+   secretstream, never a raw stream cipher, with the same single exception
+   (`sxChaCha20IetfXor`: NIP-44 v2 authenticates one layer up with HMAC-SHA256, and an AEAD
+   would break interop; a construction over it verifies its MAC BEFORE the cipher runs).
+   Compare tags with `sodium_memcmp` or libsodium's verify calls, never `is` (timing leak).
+5. **Zero secrets C-side, and be honest about the rest.** `sodium_memzero` transient key
+   and scratch buffers. A key in a LiveCode `Data` cannot be `mlock`ed or reliably zeroed:
+   secure-memory guarantees stop at the FFI line.
 
-**Native shim + C tests** (the layer with the automated suite):
-```sh
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DSODIUMXT_BUILD_TESTS=ON
-cmake --build build --config Release
-ctest --test-dir build --output-on-failure        # sodium_smoke_test.c (incl. known-answer tests)
-```
-CMake acquires libsodium at a **pinned version** and static-links it into ONE shared library
-named with the **bare token** `sodiumxt` (`PREFIX ""`, `OUTPUT_NAME sodiumxt`). See
-`docs/building.md`.
+## Working rules
 
-**Always build the shim under sanitizers while iterating** (use **gcc**; clang's ASan
-runtime is not installed in this environment). A crypto binding is exactly where an
-off-by-one in buffer sizing hides, so ASan is not optional:
-```sh
-gcc -std=c11 -Wall -Wextra -fsanitize=address,undefined -fno-sanitize-recover=all \
-  -isystem <libsodium-include> \
-  src/sodium_shim.c tests/sodium_smoke_test.c <link libsodium> -o /tmp/sx && /tmp/sx
-```
-Treat libsodium headers as **system headers** (`-isystem`) so their warnings do not pollute
-our `-Wall -Wextra` (our code stays warning-clean; `/W3` on MSVC).
+6. **Script is done when `python3 tools/check-livecodescript.py` passes** (the family's
+   unified checker; fix it in every copy at once), and stays "verified statically; needs an
+   OXT pass" until an engine runs it.
+7. **A shim change is done when `sodium_smoke_test.c` passes under ASan/UBSan**; an ABI
+   change bumps `SXT_ABI_VERSION` and `kSXTABIVersion` together.
+8. **A native-library change is done when the binary AND its `MANIFEST.sha256` entry are
+   refreshed in one change**, by `tools/package-extension.py` or the suite's hand-dispatched
+   `release-binaries.yml`. `native-sodiumxt.yml` never commits (it fires on every push).
+9. **Naming:** `t`/`p`/`s`/`k` prefixes; public `sxPascalCase`; C ABI `sxt_snake_case`. A
+   prefix rename is one pass that keeps the `binds to "c:sodiumxt>sxt_..."` strings in step.
+10. **No em dashes, en dashes or curly quotes** in any `.md` here (`tools/check-docs-style.py`).
+11. **Engine behaviour goes to the suite's `docs/OXT-ENGINE-NOTES.md`**
+    (https://github.com/SethMorrowSoftware/xtalk-suite/blob/main/docs/OXT-ENGINE-NOTES.md).
+12. Comment the why, densely. Per-task branch and a draft PR; never push to `main` unasked.
 
-**Static gates for the script layer.** OXT is a GUI runtime: there is **no headless way to
-compile or run `.lcb` / `.livecodescript`**. Catch what is statically catchable first by
-**running the UNIFIED family checker** - one implementation carrying the union of both
-pre-2026-08-12 lineages' checks, byte-identical in every member that ships one (this
-member's old copy was the defective side of that drift: it did not know `switch` /
-`end switch`, so it read `end switch` as closing a handler). `tools/check-checker-drift.py`
-fails the build on any divergence and `tools/test-checker.py` fixture-tests every rule in
-every copy, so a checker fix has to land in ALL copies in one change, never in this one
-alone:
-```sh
-python3 tools/check-livecodescript.py
-```
-It checks every `.lcb` and example for smart/curly quotes, handler balance, control-structure
-and `unsafe` balance, constant-declared-before-use, and the prefixed-token-shadow trap (rule
-2 below). **Do not claim runtime behaviour you cannot observe:** say "verified statically;
-needs an OXT pass" and let the user confirm.
+## FFI / C-ABI conventions
 
-## FFI / C-ABI conventions (the gold, carried verbatim from Box2Dxt + ShowControl + TorrentXT)
+The most expensive lessons in the family. Change nothing here without a very good reason.
 
-This section is the single most expensive thing we learned. Change nothing here without a
-very good reason.
-
-- **Byte buffers cross as `Pointer` + `CInt` length. An LCB `Data` does NOT auto-bridge to a
-  `void*`.** This cost a runtime `expected type pointer` error in TorrentXT. The Language
-  Reference is explicit: "No automatic bridging from Data or String to Pointer exists"; a
-  `Data` marshals as an opaque `MCDataRef`. So, matching the proven htmltidy / HIDAPI /
-  TorrentXT bindings:
-  - An **out** buffer (the shim fills it: ciphertext, derived key, signature, random bytes)
-    is a raw block from the engine `<builtin>` `MCMemoryAllocate`, passed as a real
-    `Pointer`. The shim returns **bytes written**, or **`-needed`** if the block was too
-    small; the LCB layer then re-allocates and retries, and copies the written bytes back
-    with `MCDataCreateWithBytes`.
-  - An **in** buffer (plaintext, key, nonce, the .enc on the way back) passes
-    `MCDataGetBytePtr(theData)` (the read-only pointer to the Data's own bytes) plus its
-    length.
-  - A `<builtin>` handler resolves by its **name** matching the engine symbol, so those
-    handlers carry **no leading `_`** (renaming them breaks the bind). Our own foreign
-    handlers keep the `_sxt_*` private-name convention.
-- **There is no 64-bit foreign int.** Lengths and counts that can exceed 2^31 (file sizes,
-  `opslimit`, `memlimit`) cross as **decimal `ZStringUTF8`** strings, parsed in the shim.
-- **Reals cross as `double`, booleans as `int` (0/1).** Exported C ABI symbols keep the
-  stable `sxt_` prefix; never rename them once shipped (the `.lcb` `binds to "c:sodiumxt>..."`
-  strings reference them).
-- **Never return a library-owned `const char*`** of unknown lifetime. Fill a caller buffer,
-  or return a defined-lifetime static the engine copies immediately. Return `""`, never
-  `NULL`, on a bad handle / error.
-- **Short strings cross as `ZStringUTF8`** (hex, base64, the password hash string, error
-  text, the library version).
-- **Bump `SXT_ABI_VERSION`** on any ABI change; the `.lcb` `checkABI()` throws a clear error
-  on skew instead of corrupting memory on first use.
-- **Expose every length constant from the shim** (`sxt_secretbox_keybytes()`,
-  `sxt_secretbox_noncebytes()`, `sxt_pwhash_saltbytes()`, ...). The LCB layer must NOT
-  hardcode 24/32/16; libsodium is allowed to change them across versions, and a hardcoded
-  length is a buffer overflow waiting to happen.
+- **An LCB `Data` does NOT auto-bridge to `void*`** ("No automatic bridging from Data or
+  String to Pointer exists"; it cost TorrentXT an `expected type pointer`). OUT buffer: a
+  `<builtin>` `MCMemoryAllocate` block passed as `Pointer`; the shim returns bytes written
+  or `-needed`; the LCB reallocates, retries once, copies back with
+  `MCDataCreateWithBytes`. IN buffer: `MCDataGetBytePtr(theData)` plus its length.
+  `<builtin>` handlers resolve by NAME (no leading `_`); our foreign handlers keep `_sxt_*`.
+- **Error returns** (also in `sodium_shim.h`): `>= 0` bytes written; between `SXT_ERR_BASE`
+  and 0, too small, need `-ret`, nothing written; `<= SXT_ERR_BASE` a hard error with text
+  in the thread-local `sxt_last_error()` (`sxLastError()`). `SXT_MAX_BUFFER` (2000000000)
+  caps an in-memory buffer; never widen it without moving `SXT_ERR_BASE` in lockstep.
+- **There is no 64-bit foreign int**: `opslimit`, `memlimit` and file sizes cross as
+  decimal `ZStringUTF8`. Reals are `double`, booleans `int` 0/1, short strings `ZStringUTF8`.
+- **Never return a library-owned `const char*`** of unknown lifetime: fill a caller buffer.
+  Return `""`, never `NULL`, on error. Never rename a shipped `sxt_` symbol.
+- **Bump `SXT_ABI_VERSION` on any ABI change**, with `kSXTABIVersion`, so the private
+  `sPrepare()` guard throws a clear error on skew instead of corrupting memory.
+- **Expose every length constant from the shim** (`sxt_secretbox_keybytes()` ...); the LCB
+  never hardcodes 24/32/16.
 
 ## Handles for the stateful primitives
 
-Most of libsodium is stateless (one call, no object). A few primitives are **multi-step and
-hold state** across calls: `crypto_secretstream_*` (the streaming AEAD), multipart
-`crypto_generichash_*`, and multipart `crypto_sign_*`. Their state structs are opaque and
-must NOT be round-tripped through script.
+secretstream, multipart generichash and multipart sign keep their state C-side, in a
+generation-tagged handle table (positive 32-bit ints, `0` invalid), so a stale handle is a
+harmless no-op or error. The free (`sxFreeStream`, `sxFreeHash`) is explicit, idempotent
+and zeroes the state. There is no LCB unload hook: apps free what they open (`closeStack`).
 
-- Keep the state struct **C-side**, in a **generation-tagged handle table** (positive 32-bit
-  ints, `0` = invalid), exactly like TorrentXT's session/torrent tables. Script holds only
-  the handle int; a stale or recycled handle is a **harmless no-op / error**, never a crash.
-- Provide an explicit free (`sxFreeStream`, etc.) and call it; there is **no deterministic
-  LCB unload hook**, so document that the app must free what it opens (e.g. on `closeStack`),
-  make free **idempotent**, and zero the state on free.
+## Gotchas and traps
 
-## C-engine gotchas (vs our C++ TorrentXT shim)
+1. **The ABI-mismatch footgun.** Symptom: `"SodiumXT ABI mismatch: the native sodiumxt
+   library does not match this extension. Reinstall the packaged extension."` from the
+   FIRST `sx*` call. Cause: `sPrepare()` compares `_sxt_abi_version()` with `kSXTABIVersion`
+   on every call, and the package's `.lcb` and binary disagree (built from a tree whose
+   binary for that platform was stale). It takes out the SodiumXT section and every
+   composer: riptide entirely; onionxt's SAFECOOKIE, deterministic-onion and offline-address
+   paths. Fix: repackage from the current tree.
+2. **Smart quotes fail compilation, comments included** (suite engine note 1.4).
+3. **A prefixed name spelled like a token IS the token** (`tExt` is `text`; engine note 1.5).
+4. **Constants are literal and declared before first use** (engine note 1.3).
+5. **LCB: `unsafe` around each foreign call; declarations at a handler's TOP**
+   (suite engine notes section 4).
+6. **`itemDelimiter` / `lineDelimiter` are global state** (engine note 2.3): set before use.
+7. **Commands report via `the result`, functions return**; `is a <type>` accepts only
+   number, integer, boolean, point, rect, date and color (no `is a string`).
+8. **Crypto in script:** `sxRandomBytes`, never `random()`; `sxMemEqual`, never `is`/`=`;
+   `textEncode(...,"UTF-8")` a passphrase so it derives the same key everywhere.
+9. **A plain CMake build re-bundles `x86_64-linux/sodiumxt.so`** with different bytes, so the
+   MANIFEST gate fails until you `git checkout` it or refresh binary and manifest together.
 
-1. **No exceptions to firewall** (libsodium is C). The firewall is the length/pointer
-   validation above, asserted by a smoke test.
-2. **No deterministic unload hook.** Mostly fine because we are mostly stateless; the
-   exception is open stream/hash states (free them, above).
-3. **`sodium_init()` once** (rule 2). Wrap it in the shim behind a static guard so every
-   public entry can call `ensure_init()` cheaply.
-4. **Constant-time and zeroing are behaviours, not decorations.** `sodium_memcmp`,
-   `sodium_memzero`. A "tidy-up later" attitude here is a security bug.
+## Performance and crypto correctness
 
-## LiveCodeScript / LCB / OXT gotchas (carried; OXT is stricter than LiveCode)
+- One FFI round trip per logical operation (the `-needed` retry adds at most one); reuse a
+  persistent out-buffer in hot paths. Anything that does not fit in memory twice uses
+  `sxEncryptFile` / `sxDecryptFile` / `sxHashFile`, so the bytes never enter a `Data`.
+- The crypto blocks the one interpreted thread: the INTERACTIVE/MODERATE/SENSITIVE preset
+  is the latency knob; keep status updates at or below about 4 Hz.
+- Passwords: Argon2id, never a fast hash; store opslimit, memlimit and salt with the
+  ciphertext (or use `pwhash_str`) so the cost can rise later. Reject a tag failure as
+  "wrong key or tampered", never garbage; secretstream's FINAL tag makes truncation
+  detectable, which hand-rolled chunk framing does not.
 
-> **Engine BEHAVIOUR - as opposed to the conventions below - is collected in
-> [`docs/OXT-ENGINE-NOTES.md`](https://github.com/SethMorrowSoftware/xtalk-suite/blob/main/docs/OXT-ENGINE-NOTES.md)**, with the verbatim
-> symptom, what each one broke, and whether a gate now holds it. Keep
-> member-specific gotchas here; put anything the ENGINE does there, so there is
-> one authoritative list instead of six that drift.
+## Design decisions (from the original plan)
 
+- **libsodium**: hard-to-misuse primitives, C ABI, audited NaCl lineage, ISC. Rejected
+  OpenSSL EVP (heavy, easy to misuse), Tink/BoringSSL (too heavy) and monocypher (no
+  Argon2id `pwhash_str`, hex/base64 or secretstream). The C ABI is engine-agnostic:
+  monocypher or raw OpenSSL could replace libsodium behind `sxt_*` without touching the LCB.
+- **KATs are mandatory**: round trips hide byte mangling (mangled-then-unmangled still
+  matches). Negative tests: tamper fails, short buffer returns `-needed`, stale handle is a
+  clean no-op, wrong-length key is a clean error.
+- Settled: prefix `sx*`, library id `org.openxtalk.library.sodium`, URL-safe base64 without
+  padding, `sxSeal` exposed, multi-value returns through out parameters. SHA3-256 (ABI 7)
+  is vendored from trezor-crypto (`src/vendor/VENDOR.md`) because libsodium has none.
 
-1. **No smart/curly quotes** (U+201C/201D/2018/2019) anywhere, even in a comment or string:
-   they fail OXT compilation. ASCII `"` and `'` only. The static checker enforces zero.
-2. **Avoid names whose stem shadows an engine token** even when prefixed. The nastiest case
-   is a prefixed name whose *full spelling* IS a reserved token: `tExt` (t + "Ext") is
-   literally `t-e-x-t` = `text`, so xTalk evaluates it as the `text` keyword, not a variable.
-   It compiles and silently misbehaves. The checker flags any `t/p/s/k`-prefixed name that
-   lowercases to a reserved word; use a different stem (e.g. `tSuffix`).
-3. **Prefix conventions:** `t` handler-local, `p` parameter, `s` script/module-local, `k`
-   constant. Public API `sxPascalCase`; C ABI `sxt_snake_case`.
-4. **Constants must be literal** and declared **before first use** (OXT resolves them by
-   lexical position; a forward reference silently evaluates to nothing).
-5. **`unsafe ... end unsafe` brackets every foreign call** in LCB; keep all declarations at
-   the **top** of a handler (a nested `local` has broken whole-script compilation).
-6. **Commands report via `the result`; functions return a value.** Match the API shapes in
-   the plan / api-reference.
-7. **`itemDelimiter` / `lineDelimiter` are global mutable state**: set them immediately
-   before use.
-8. **`is a <type>` only accepts** number / integer / boolean / point / rect / date / color.
-   There is **no `is a string`**. To sniff bytes, check length / content, not a type.
-9. **Crypto-specific script rules:**
-   - The CSPRNG is `sxRandomBytes` (libsodium `randombytes_buf`). **Never** use `random()`
-     for anything that needs to be unguessable.
-   - Compare secrets with `sxMemEqual` (constant-time), **never** `is` / `=`.
-   - A passphrase crosses as a `ZStringUTF8` and is `textEncode(...,"UTF-8")`d before
-     hashing; pin the encoding so the same passphrase derives the same key on every machine.
+## Committed binaries
 
-## The single-threaded performance playbook (earned in OXT, adapted for "payload crosses")
+| platform id | ABI | built from | engine record |
+|---|---|---|---|
+| `x86_64-linux` | **10** | release run 12 (2026-08-27), pinned 1.0.20 source | none recorded for this build; Linux last recorded at ABI 9 (2026-08-18) |
+| `x86-linux` | **10** | release run 12, pinned 1.0.20 source (`-m32`) | none recorded |
+| `x86_64-win32` | **10** | MSVC + vcpkg libsodium 1.0.22 (D-08); last re-committed 2026-09-12 | needs its Windows engine pass (runbook row 23); the 2026-08-24 106/106 ran on a mingw DLL that no longer ships |
+| `x86-win32` | **10** | as the x64 row | needs its Windows engine pass (runbook row 23; a 32-bit OXT) |
+| `universal-mac` | **10** | release run 12, pinned 1.0.20 source; both slices in one pass, `lipo -archs` asserted, arm64 tested natively, x86_64 under Rosetta 2 | no OXT load recorded |
 
-OXT runs script, the FFI, and rendering on ONE interpreted thread. Here payload crosses the
-FFI, so the costs are: **(1) FFI round-trips, (2) copying big `Data` blocks, (3) interpreter
-ops.** The rules:
+The suite's `tools/build-preflight.py` parses the `universal-mac` row and needs exactly one;
+`tools/check-binary-freshness.py` decodes ABI 10 from every row, both mac slices included.
+`sxVersion()` reports libsodium 1.0.22 on the Windows DLLs and 1.0.20 elsewhere.
 
-- **One FFI round-trip per logical operation.** Encrypt a buffer in one call, not one call
-  per 16 bytes. The out-buffer retry (`-needed` then re-allocate) costs at most one extra
-  call.
-- **For anything that does not comfortably fit in memory twice, do NOT pull it through
-  script.** Use the **C-side file helpers** (`sxEncryptFile path -> path`,
-  `sxDecryptFile`) built on secretstream: libsodium reads the file, encrypts chunk by chunk,
-  and writes the output, and the bytes **never enter a LiveCode `Data` at all**. This is the
-  direct lesson from TorrentXT's chunked-file code, done properly: there, script hand-rolled
-  4 MiB chunks and AES-CBC framing; here the loop lives in C and the cipher carries its own
-  per-chunk auth and ordering.
-- **Reuse a persistent out-buffer** in any hot path; rebuilding an N-byte `Data` every call
-  is O(N) interpreter work.
-- **The crypto is blocking** (pure compute, no threads). A big `crypto_pwhash` (Argon2id at
-  SENSITIVE limits) or a large file can pause the UI for a noticeable beat. Document it as a
-  cost, offer the INTERACTIVE/MODERATE/SENSITIVE preset as the latency knob, and keep
-  status-text updates at <= ~4 Hz.
+**CI executes the committed library (since 2026-08-16).** The build-matrix step "Execute
+the COMMITTED library's ristretto vectors" in `native-sodiumxt.yml` dlopen()s the committed
+Linux `.so` BEFORE the build overwrites it: RFC 9496 A.1 [1]B/[2]B/[3]B, the group law,
+scalarmult against scalarmult_base, batch against single, a refused bad point. It reads the
+expected ABI from `src/sodium_shim.h`, never a literal (coinxt's literal turned its lane red
+at a 4 -> 5 bump). Linux only; the mac dylib is driven in `release-binaries.yml`'s mac lane.
 
-## Crypto correctness rules (the part a binding most easily gets wrong)
+**The proven mingw fallback when no MSVC is available** (71/71 on 2026-08-12 with an ABI-7
+DLL; 106/106 on 2026-08-24 with an ABI-10 DLL): member CMake with
+`-DCMAKE_SYSTEM_NAME=Windows -DCMAKE_C_COMPILER=x86_64-w64-mingw32-gcc
+"-DSODIUMXT_LIBSODIUM_CONFIGURE_EXTRA=--host=x86_64-w64-mingw32"
+-DCMAKE_SHARED_LINKER_FLAGS=-static-libgcc` (`i686-w64-mingw32` twins for x86), tests OFF;
+without `-static-libgcc` the DLL imports `libgcc_s_seh-1.dll` / `libgcc_s_dw2-1.dll`. By
+hand: libsodium `--host=... --enable-static --disable-shared`, shim with `-DSODIUM_STATIC`.
+A DLL nobody can run here passes three checks: (1) exports match the Linux build exactly
+(124/124 `sxt_*`); (2) `sxt_abi_version` disassembles to `mov $imm,%eax ; ret` (32-bit:
+`_sxt_abi_version`); (3) imports are only KERNEL32, ADVAPI32 and msvcrt (it caught libgcc).
+`--exclude-libs,ALL` plus `__declspec(dllexport)` on `SXT_API` keep libsodium from leaking.
 
-- **Nonce: never reuse one with a key.** Prefer the APIs that manage nonces for you
-  (one-shot prepend, or secretstream). Rule 3, restated because it is the one that bites.
-- **KDF: Argon2id via `crypto_pwhash`, never a fast hash, for passwords.** Store the
-  `opslimit` / `memlimit` / salt alongside the ciphertext (or use `crypto_pwhash_str`, which
-  packs them into its output) so you can re-derive and so you can raise the cost later
-  without breaking old data.
-- **AEAD over plain ciphers.** Always carry the Poly1305 tag; reject on tag failure and tell
-  the caller "wrong key or tampered", never silently return garbage. (`sxChaCha20IetfXor` is
-  the one argued exception - rule 4 above - and anything composed over it must verify its
-  own MAC BEFORE running the cipher, the way NIP-44 does.)
-- **secretstream for files**: it gives per-chunk authentication, ordering, and a FINAL tag
-  that makes **truncation detectable** (a cut-off file fails to verify). Hand-rolled chunk
-  framing does not get this for free.
-- **Random via the CSPRNG only**; salts, nonces, and keys come from `randombytes_buf`.
-- **Zero and constant-time** as above.
+## Engine evidence ledger
 
-## Git / workflow
+| Date | Engine / platform | What ran | Result |
+|---|---|---|---|
+| pre-suite (undated; `src/sodium.lcb` header) | OXT, Windows x64 | `sxSelfTest()`, core surface | 35/35 |
+| 2026-08-08 | OXT, suite paste, all members | the suite sampler: headline paths and cross-member seams | green; `sxSignSeedToExpandedKey`'s expanded key equals libtorrent's DHT secret key from the same seed |
+| 2026-08-10 | OXT, suite paste (folded) | the complete `sxSelfTest()` | 68/68, twice |
+| 2026-08-12 | OXT, Windows x64, mingw64 ABI-7 DLL | `sxSelfTest()` incl. FIPS 202 SHA3-256 and the Argon2id KAT | 71/71; riptide 89/89 over it |
+| 2026-08-15 | C, ASan/UBSan | ristretto255 ABI 8/9 KATs vs an independent RFC 9496 reference (`holde-em/tools/protocol-kat.py`) | green |
+| 2026-08-16 | CI, no engine | committed Linux `.so` first executed (the step above) | in every Linux lane since |
+| 2026-08-17 | OXT 9.6.3, Windows x86_64, NT 10.0, ABI 9 | suite paste (preflight: SodiumXT LOADED at 9) | sodiumxt 99 green incl. ristretto ABI 8+9 and the batch naming index 2 of 3; paste 1,836 folded, 0 failed, 7 skipped |
+| 2026-08-18 | OXT, Linux, ABI 9 | suite paste | sodiumxt green, ristretto included (the one failure was box2dxt's) |
+| 2026-08-20 | OXT, Windows | suite paste, sodiumxt inside it | 1981 passed / 0 failed / 1 skipped |
+| 2026-08-23 | C, ASan/UBSan | ABI 10 ChaCha20 KATs | green; three implementations agree on RFC 8439 vectors |
+| 2026-08-24 | OXT 9.6.3, Windows x86_64, mingw64 ABI-10 DLL (since replaced) | suite paste (preflight accepted ABI 10) | `sxSelfTest()` 106/106 incl. 7-check ChaCha20; paste 2,373 / 0 / 3 skipped |
+| 2026-08-27 | CI, no engine | `release-binaries.yml` run 12 (GitHub run 33025459610, cec1e85) | all five rows at ABI 10; mac universal, both slices tested |
+| 2026-08-27 | OXT, two-machine session (platform and package not recorded) | suite paste | 2440 passed / 2 failed / 3 skipped; every folded member green, sodiumxt included (both failures were the live loopbacks, UDP to 127.0.0.1 blocked on that machine) |
+| 2026-08-27, 2026-09-12 | CI, no engine | runs 33100007529 (b9e1c1b) and 34657390798 (421bab3) | Windows DLLs re-committed (MSVC + vcpkg, 1.0.22); the 09-12 pair ships |
 
-- Develop on the per-task branch (e.g. `claude/...`); commit there, open a **draft PR** if
-  none exists. Do not push to `main` without explicit permission.
-- A `.lcb` change is only "done" once `tools/check-livecodescript.py` passes; a shim change
-  is only "done" once `sodium_smoke_test.c` passes under ASan/UBSan and (for an ABI change)
-  `SXT_ABI_VERSION` + `checkABI()` are bumped together.
-- A native-library change is only "done" once `tools/package-extension.py` has refreshed the
-  committed `src/code/<arch>-<platform>/` binary **and** its `src/code/MANIFEST.sha256` entry
-  **in the same change** (the script does both; the suite CI gates fail if a committed blob is
-  unlisted or does not match its recorded SHA256). The root `native sodiumxt` workflow rebuilds
-  and tests the full 5-platform matrix and uploads each library as an artifact, and never
-  commits one; the committing path is the root `release-binaries.yml`, dispatched by hand,
-  which installs through `tools/install-release-binaries.py`, refreshes `MANIFEST.sha256`,
-  runs the gate set and commits (`commit_mode`: `branch` / `pr` / `none`) - the way the
-  platform table above records the rows being re-committed. Either route, committing a
-  refreshed binary stays a deliberate human step: by hand it belongs in the same change as
-  the shim edit, and by workflow the human step is pressing "Run workflow".
-- **No em-dashes** in committed prose or docs (house style). Use hyphens, commas, colons,
-  parentheses.
-- **Match the surrounding style:** this codebase, like its siblings, comments the *why*,
-  densely. Mirror that.
+## Status
+
+The whole `sx*` surface is engine-proven through ABI 10 (every section, ChaCha20 included,
+green on Windows x64 2026-08-24; ristretto also on Linux 2026-08-18). The current BINARIES
+are not: no record names any of the five committed builds (the shipped Windows DLLs of
+2026-09-12 postdate every engine record; the 2026-08-27 paste did not record its platform
+or package). The demo's UI (unified onto the suite kit 2026-08-14) is "verified
+statically; needs an OXT re-pass". Open work is tracked in the suite's docs/WORK-PLAN.md.
+
+## Build and gates
+
+```sh
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DSODIUMXT_BUILD_TESTS=ON
+cmake --build build --config Release
+ctest --test-dir build --output-on-failure     # sodium_smoke_test.c, KATs included
+bash tools/run-gates.sh                        # this member's gate list (what CI runs)
+# iterate the shim under sanitizers with gcc (clang's ASan runtime is not installed);
+# -isystem keeps libsodium's warnings out of our -Wall -Wextra (/W3 on MSVC):
+gcc -std=c11 -Wall -Wextra -fsanitize=address,undefined -fno-sanitize-recover=all \
+  -Isrc -isystem <libsodium-include> \
+  src/sodium_shim.c tests/sodium_smoke_test.c <path-to>/libsodium.a -o /tmp/sx && /tmp/sx
+```
+Windows/MSVC commands, the pin and packaging: `docs/building.md`.

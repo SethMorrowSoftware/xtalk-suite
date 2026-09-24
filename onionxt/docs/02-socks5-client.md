@@ -59,8 +59,8 @@ Client sends:
   `abcdefghijklmnopqrstuvwxyz234567...onion`.
 - `PORT` is the 2-byte big-endian virtual port of the service (for example 80 -> `0x00 0x50`).
 
-`binaryEncode` sketch (verify on-engine): build the fixed head, append `numToByte(length of tHost)`,
-append the host bytes, append the two port bytes big-endian. Build the port **by hand** as
+Building it: the fixed head, then `numToByte(length of tHost)`, then the host bytes, then the two port
+bytes big-endian. Build the port **by hand** as
 `numToByte(tPort div 256) & numToByte(tPort mod 256)`: do NOT use `binaryEncode("S", tPort)`, whose
 `S` is a **host-order** short and is wrong on a little-endian machine. The network-order code is
 `binaryEncode("n", tPort)` if you prefer a format string, but the hand-built two bytes make the wire
@@ -111,8 +111,8 @@ Standard RFC 1928 codes plus Tor's onion-specific extensions (the ones a user ac
 
 The `0xF*` band is where "you dialed a dead or wrong onion" shows up; give those human messages, not a
 raw code. `0xF0..0xF5` are Tor proposal 304; `0xF6` (bad address) and `0xF7` (introduction timed out)
-were added later in Tor's `socks5_status.h`, so treat the band as open-ended and map an unknown `0xF*`
-to a generic "onion request failed" rather than rejecting it.
+were added later in Tor's `socks5_status.h`, so treat the band as open-ended: OnionXT maps any unknown
+code to a generic `SOCKS request failed (REP 0x..)` rather than rejecting it.
 
 **These extended codes only appear when the `SocksPort` has the `ExtendedErrors` flag set.** Without
 that flag, Tor collapses onion failures onto the standard `0x01` (general failure) or `0x04` (host

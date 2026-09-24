@@ -1,543 +1,242 @@
-# CLAUDE.md
+# CLAUDE.md - OnionXT
 
-This file guides Claude Code (claude.ai/code) when working in the OnionXT member of the
-xtalk-suite monorepo (`onionxt/`).
-
-> **Read the docs first.** [docs/00-overview.md](docs/00-overview.md) (architecture),
-> [docs/01-threat-model.md](docs/01-threat-model.md) (what Tor does and does not promise),
-> [docs/02-socks5-client.md](docs/02-socks5-client.md) and [docs/03-control-port.md](docs/03-control-port.md)
-> (the two wire protocols, byte for byte), and [docs/04-onion-rendezvous.md](docs/04-onion-rendezvous.md)
-> (the onion-address-is-a-public-key idea) are the source of truth for WHAT OnionXT is.
-> [IMPLEMENTATION-PLAN.md](IMPLEMENTATION-PLAN.md) is the phased HOW. This file is the operational
-> as-built record and the hard-won-lesson list, in the same spirit as the `CLAUDE.md` files in our
-> suite siblings TorrentXT, SodiumXT, and Box2Dxt (folded home 2026-08-14; the lineage began
-> there and in the still-external ShowControl). Most of the OXT/LCB and
-> FFI lessons below were paid for in full while building those; they are carried here so we do not
-> pay for them twice. The socket-I/O lessons are the new ones and are called out as such.
-
-House style: no em-dashes (hyphens, commas, colons, parentheses). ASCII only in `.lcb` /
-`.livecodescript`, even in comments and strings. Comment the *why*, densely; match the surrounding
-style.
+Guidance for Claude Code in the OnionXT member of the xtalk-suite monorepo. The numbered docs say WHAT
+OnionXT is (docs/02-03 the wire protocols byte for byte, docs/04 the address-is-a-key idea, docs/05 the
+API); this file holds the rules, gotchas, as-built decisions and engine evidence. Family-wide engine
+behaviour is the suite's `docs/OXT-ENGINE-NOTES.md`, cited below as "engine note N.N".
 
 ## What this is
 
-**OnionXT** is a Tor transport and rendezvous layer for OpenXTalk (OXT) / the xTalk family. It lets an
-xTalk app (1) dial any TCP endpoint anonymously through Tor's SOCKS5 proxy, and (2) create and reach
-**v3 onion services**, whose address is itself an ed25519 public key, giving serverless,
-self-authenticating, IP-anonymous rendezvous. It talks to a **locally-running tor daemon**; it does
-not embed, reimplement, or (by default) ship Tor.
+**OnionXT** is a Tor transport and rendezvous layer for OpenXTalk (OXT): dial any TCP endpoint
+anonymously through Tor's SOCKS5 proxy, and create and reach **v3 onion services**, whose address is an
+ed25519 public key (serverless, self-authenticating, IP-anonymous rendezvous). It talks to a **locally
+running tor daemon** (SOCKS `127.0.0.1:9050`, control `127.0.0.1:9051`; Tor Browser is SOCKS `9150` with
+no control port by default) and does not embed, reimplement or by default ship Tor.
+
+- **Pure LiveCodeScript.** `open socket`, `read from socket`, `write to socket` and `accept connections`
+  are engine COMMANDS, not LCB calls. A native helper comes only after an engine pass shows script too
+  slow; none has been needed.
+- **Unlike SodiumXT**, OnionXT owns long-lived network state (streams, a control connection, published
+  services, an accept loop) and is asynchronous and event-driven: TorrentXT's never-block discipline.
+- **Unlike TorrentXT**, it wraps no C engine, so there is normally no FFI line to firewall.
+- **A transport, not a protocol.** The app (or a protocol above the `oxTransport*` seam) owns the payload
+  and its encryption; all crypto is composed from SodiumXT (`sx*`).
 
 ```
-tor daemon (running separately)
-   127.0.0.1:9050  SOCKS5 proxy   ->  outbound: OnionXT dials a .onion or a clearnet host
-   127.0.0.1:9051  control port   ->  inbound:  OnionXT publishes an onion service, reads events
-      |
-OnionXT (public ox*)   src/onionxt.livecodescript
-   |- SOCKS5 client        engine socket I/O, RFC 1928 + Tor SOCKS extensions
-   |- control-port client  engine socket I/O, the Tor control protocol (line-based text)
-   |- local accept loop    Tor forwards inbound onion connections to a loopback port we accept on
-        |- composes SodiumXT (sx*) for ed25519 identity, deterministic onion keys, payload sealing
-        |- exposes a pluggable transport seam (oxTransport*) any higher-layer protocol can use
+src/onionxt.livecodescript      the library, public ox* (SOCKS5, control port, services, seam)
+src/onion-httpd.livecodescript  HTTP hosting over the accept loop, public oxh*
+examples/                       onionxt-demo, onionxt-tests (offline oxSelfTest), onion-httpd/,
+                                socks-dial/, onion-roundtrip/
+docs/                           01-08 and 10; file names and numbers are cited, keep them
+tools/                          run-gates.sh and the four gates it runs
+templates/CLAUDE.md             the portable family template, byte-identical with coinxt's copy
 ```
 
-The core is **livecodescript**, not LCB and not C, because the pieces it needs (`open socket`,
-`read from socket`, `write to socket`, `accept connections on port`) are LiveCode Script engine
-commands, not LCB library calls. An optional thin LCB or C helper is justified only for pure-compute
-work that script does badly (fast binary framing, base32, an ed25519 key expansion), and only after
-an on-engine pass shows script is too slow or too awkward. Default to script; reach for native last.
+## Rules
 
-## How OnionXT differs from its siblings (read this before you assume)
+Rules 1-5 are cited by number from the source, the tests, `tools/onion-kat.py` and the docs.
 
-OnionXT inherits differently from each sibling. Do not cargo-cult any of them wholesale.
+1. **Add no cryptography. Compose SodiumXT (ABI >= 6).** ed25519 identity, the onion-key expansion
+   (`sxSignSeedToExpandedKey`), SAFECOOKIE HMAC (`sxHmacSha256`) and every protected payload byte are
+   `sx*` calls. A missing primitive is an upstream SodiumXT feature landed first (its own ABI bump and
+   tests), never a hand-rolled hash here: SHA3-256 shipped that way (ABI 7, `sxSha3_256`, 2026-08-11).
+2. **Trust the onion address, verify the daemon, distrust the network.** A v3 address IS the ed25519
+   key (docs/04): pin it as the contact's identity. The local tor daemon is TRUSTED (it sees SOCKS
+   targets and any key it generates); say so loudly. The network beyond Tor is untrusted.
+3. **Never leak the payload or the target outside Tor.** ATYP=3 for every target so Tor resolves it;
+   never a local DNS lookup; never a direct socket to a peer "to save a hop".
+4. **Fail closed on every wire error.** A non-zero REP, a control `5xx`, a short read or a closed
+   socket returns a clean error and tears the resource down; never fall back to an unproxied or
+   unauthenticated path.
+5. **Own the lifecycle.** Every socket, `ADD_ONION` and listener has an idempotent close / `DEL_ONION` /
+   `close socket`. OXT has no unload hook, so the app frees what it opens (on `closeStack`).
+6. **Honesty.** OXT cannot compile `.livecodescript` headlessly: anything not seen on an engine is
+   "verified statically; needs an OXT pass + a live-Tor pass". A handshake works only once it has shaken
+   hands with a real tor. Never present Tor as total anonymity (docs/01).
+7. **House style.** No em/en dashes or curly quotes in any `.md` (`tools/check-docs-style.py`); ASCII
+   only in `.lcb` / `.livecodescript`, comments and strings included (curly quotes fail OXT
+   compilation). Comment the why, densely.
+8. **The library is carried.** `src/onionxt.livecodescript` is embedded verbatim in the suite paste
+   (`python3 tools/build-suite-selftest.py`) and in every stack `tools/sync-demo-embeds.py` registers
+   (the README's generated section lists all eight). An edit needs both regenerations and is not done
+   until every carrier has been re-run on an engine.
+9. **Done means.** A script change: `bash tools/run-gates.sh` passes and it has had (or is flagged as
+   needing) an engine pass against a real tor. A transport change: a two-instance onion round trip works
+   on an engine. Per-task branch, draft PR, no push to `main` without permission.
 
-1. **Unlike SodiumXT, OnionXT does no cryptography and is not one-shot.** SodiumXT is bytes in,
-   bytes out, no state, no I/O. OnionXT owns **long-lived network state**: open SOCKS streams, a
-   persistent control-port connection, published onion services, and an accept loop. Its whole job is
-   I/O. Crypto is delegated to SodiumXT (rule 1 below).
-2. **Unlike SodiumXT, OnionXT is asynchronous and event-driven, like TorrentXT.** Sockets connect,
-   read, and accept on their own schedule; the control port pushes unsolicited `650` event lines.
-   So TorrentXT's discipline comes BACK: never block the one interpreter thread on the network, drive
-   everything by socket callbacks (`with message`), and treat the flow as a state machine, not a
-   straight line of blocking calls (see "The asynchronous, event-driven model" below).
-3. **Unlike TorrentXT, OnionXT wraps no C engine and (by default) no C at all.** TorrentXT wrapped
-   libtorrent behind a C++ shim. OnionXT wraps two simple wire protocols spoken over ordinary engine
-   sockets. There is usually no FFI line to firewall. The FFI section below is carried for the day a
-   helper shim is justified, and is explicitly gated on "if and only if you add a shim."
-4. **OnionXT is a transport, not a protocol suite.** A higher-layer protocol defines envelopes,
-   ratchets, and channels. OnionXT just moves bytes anonymously and provides an address. It has no
-   opinion about what those bytes are; the app (or the protocol layered on top) owns the payload and
-   its encryption.
+## The asynchronous, event-driven model
 
-## The rules that make this safe and correct
-
-1. **Add no cryptography. Compose SodiumXT (ABI >= 6).** ed25519 identity keys, the deterministic
-   onion-key expansion (`sxSignSeedToExpandedKey`), SAFECOOKIE HMAC (`sxHmacSha256`), and every
-   protected payload byte are SodiumXT calls (`sx*`). There is no OnionXT cipher, KDF, or signature.
-   When a primitive was missing (SHA3-256 for the offline v3 address checksum, doc 08 gap #2) it was
-   an upstream SodiumXT feature request, never a hand-rolled hash here - and that is how it shipped
-   (SodiumXT ABI 7, `sxSha3_256`, 2026-08-11).
-2. **Trust the onion address, verify the daemon, distrust the network.** A v3 onion address is an
-   ed25519 public key (doc 04): connecting to it authenticates the far end for free, so treat the
-   address as the contact's identity and pin it. The **local tor daemon is trusted** (it sees your
-   SOCKS targets and your onion keys if you let it generate them); document that boundary loudly. The
-   network beyond Tor is fully untrusted and sees only onion-routed ciphertext.
-3. **Never leak the payload or the target outside Tor.** Dial `.onion` and clearnet hosts through the
-   SOCKS proxy using **ATYP=3 (domain name)** so Tor resolves names (never do a local DNS lookup for a
-   target: that is a DNS leak, and for a `.onion` it is meaningless). Do not open a direct socket to a
-   peer "to save a hop"; that defeats the entire point.
-4. **Fail closed on every wire error.** A SOCKS reply with a non-zero REP field, a control-port `5xx`,
-   a short read, or a closed socket is an error that returns cleanly to the caller and tears down the
-   stream, never a silent fallback to an unproxied or unauthenticated path.
-5. **Own the lifecycle.** Every opened socket, every published onion service (`ADD_ONION`), and every
-   accept listener must have an explicit, idempotent close/`DEL_ONION`/`close socket`. There is no
-   deterministic unload hook in OXT, so document that the app frees what it opens (for example on
-   `closeStack`), and make every teardown safe to call twice.
-
-## Commands
-
-**Static gate for the script layer** (the only automated safety net; OXT has no headless compile):
-```sh
-python3 tools/check-livecodescript.py
-```
-Carried verbatim from SodiumXT/TorrentXT. It checks every `.lcb` and `.livecodescript` for
-smart/curly quotes and em/en dashes, handler / `if` / `repeat` / `unsafe` / `try` balance,
-constants-declared-before-use, the prefixed-token-shadow trap (`tExt` == `text`), and the
-`put ... into ... after` malformation. A script change is only "done" once this passes.
-
-**There is no headless way to compile or run `.livecodescript` on OXT.** So say **"designed and
-statically reasoned; needs an on-engine pass"** and let the user confirm on the engine. Do not claim
-a socket handshake "works" until it has actually shaken hands with a real tor daemon.
-
-**Manual on-engine bring-up needs a tor daemon.** The cheapest is Tor Browser (SOCKS on
-`127.0.0.1:9150`) or a system `tor` (SOCKS `9050`, control `9051`). The control port must be enabled
-and an auth method configured in `torrc` (see doc 03). Document the exact `torrc` lines in the
-example so a tester can reproduce.
-
-**If, and only if, OnionXT grows its own C shim**, build it under gcc ASan + UBSan exactly as
-SodiumXT does, treat any third-party headers as system headers (`-isystem`) so their warnings do not
-pollute `-Wall -Wextra`, and bump an ABI version + a `checkABI()` guard on every ABI change.
-
-## Socket and engine I/O gotchas (the NEW hard-won lessons; verify each on-engine)
-
-> **Engine BEHAVIOUR - as opposed to the conventions here - is collected in
-> [`docs/OXT-ENGINE-NOTES.md`](https://github.com/SethMorrowSoftware/xtalk-suite/blob/main/docs/OXT-ENGINE-NOTES.md)**, with the verbatim
-> symptom, what each one broke, and the gate (if any) that now holds it. Keep
-> member-specific gotchas in this file; put anything the ENGINE does there, so
-> there is one authoritative list instead of ten that drift.
-
-These are OnionXT's own territory, not carried from a sibling, so treat every one as a hypothesis to
-confirm on the engine and record the result here as it is learned.
-
-1. **Binary, not text.** SOCKS5 is a binary protocol. Read and write with byte discipline: build
-   requests with `numToByte` / `binaryEncode`, parse replies with `byteToNum` / `binaryDecode`, and
-   index with `byte x to y of`. Never use `char`, `line`, or `word` on socket data (they are
-   Unicode- and delimiter-aware and will mangle bytes). Keep `the useUnicode` / encoding assumptions
-   out of the socket path entirely.
-2. **Blocking reads freeze the UI; use callback reads.** `read from socket s for N` (no `with
-   message`) blocks the single interpreter thread until N bytes arrive or it times out. That is
-   acceptable only in a short, bounded handshake with a timeout set, and never on the moment-to-moment
-   UI path. Prefer `read from socket s for N with message gotBytes` so the read is asynchronous and
-   the engine calls `gotBytes` when the bytes are ready. Model the SOCKS handshake and the control
-   protocol as **state machines** driven by those callbacks (this is TorrentXT's poll/drain lesson,
-   re-inherited).
-3. **A socket read can return short; frame every message by length.** Reassemble until you have the
-   exact number of bytes the protocol says the next field is. SOCKS replies are mostly fixed-size
-   until the variable BND.ADDR; the control protocol is line-delimited (`\r\n`), so read until CRLF
-   and remember that a `250-` prefix means "more lines follow" and `250 ` (space) means "last line".
-4. **`open socket` is asynchronous too.** Use `open socket to "127.0.0.1:9050" with message
-   socketReady`; do not assume the socket is usable on the next line. A connection failure arrives as
-   a `socketError` message, not a thrown error. Wire both.
-5. **Inbound onion traffic needs a local listener.** After `ADD_ONION ... Port=<virt>,127.0.0.1:<local>`,
-   Tor forwards connections that reach your onion's virtual port to `127.0.0.1:<local>`. Your app must
-   already be running `accept connections on <local> with message onPeer` so those forwarded
-   connections are answered. Bind the listener to loopback only; never `0.0.0.0`.
-6. **Loopback only, always.** The SOCKS proxy, the control port, and the onion-forward target are all
-   `127.0.0.1`. Binding or connecting any of them to a routable interface leaks or exposes. Hardcode
-   loopback and make the ports configurable but loopback-locked.
-7. **Timeouts and teardown are mandatory.** Set `the socketTimeoutInterval` (or an explicit timer)
-   around every handshake; a tor daemon that is still bootstrapping will accept the TCP connection and
-   then stall. On any timeout, `close socket` and surface a clean error.
-8. **`socketError`, closed peers, and half-open states are normal, not exceptional.** Handle a peer
-   that vanishes mid-handshake as an ordinary path, not a crash. Every `open`/`accept` gets a matching
-   error handler and a matching `close`.
-
-## The SOCKS5 dial path (doc 02 is the byte-level spec)
-
-- Greet with `05 01 00` (version 5, one method, no-auth). Expect `05 00` back. If the server picks a
-  method other than `00`, fail closed (Tor's SOCKS does not need auth on loopback).
-- CONNECT request: `05 01 00 03 <len> <host-bytes> <port-hi> <port-lo>`. ATYP `03` = domain name; put
-  the full `<base32>.onion` (or clearnet hostname) as the host so **Tor** resolves it. Port is 2 bytes
-  big-endian.
-- Reply: `05 REP 00 ATYP BND.ADDR BND.PORT`. `REP == 00` is success and the socket is now a tunnel;
-  anything else is failure. Map Tor's SOCKS extended errors (0xF0..0xF6: onion descriptor invalid,
-  introduction failed, rendezvous failed, missing client auth, bad onion address, etc.) to clear
-  messages, because those are the ones a user will actually hit.
-- After success, the socket carries whatever bytes you write. OnionXT does not encrypt them; that is
-  SodiumXT's job one layer up.
-
-## The control-port path (doc 03 is the command-level spec)
-
-- Connect to the control port, then **authenticate before anything else** or every command returns
-  `514 Authentication required`. Support the three methods in priority order: NULL (`AUTHENTICATE`),
-  SAFECOOKIE / COOKIE (read the cookie file named by `GETINFO`/`PROTOCOLINFO`, send the hex), and
-  HashedControlPassword (`AUTHENTICATE "password"`). Detect which the daemon offers with
-  `PROTOCOLINFO 1` before authenticating.
-- Create an ephemeral onion service with `ADD_ONION NEW:ED25519-V3 Port=<virt>,127.0.0.1:<local>`.
-  The reply gives `ServiceID=<56-char-base32>` (the address minus `.onion`) and, unless you pass
-  `Flags=DiscardPK`, `PrivateKey=ED25519-V3:<base64>`. Persist the private key if the address must
-  survive a restart, or derive it deterministically (doc 04) so it is reproducible from a seed.
-- `Flags=Detach` keeps the service alive after the control connection closes; without it, the service
-  dies with the connection (which is often what you want for a short session).
-- `DEL_ONION <ServiceID>` removes a service. `SETEVENTS <classes>` subscribes to async `650` events
-  (`CIRC`, `STREAM`, `HS_DESC`, `STATUS_CLIENT` for bootstrap). Read `650` lines the same way as
-  command replies but route them to the event state machine, not to the pending-command continuation.
-- The protocol is CRLF-line-based text, so it is far friendlier than SOCKS: still frame by CRLF, and
-  still remember the `250-` (continues) vs `250 ` (final) distinction.
-
-## FFI / C-ABI conventions (carried verbatim; applies ONLY if you add a shim)
-
-OnionXT v1 has no foreign handlers, so you will rarely touch this. But if you add a helper shim (fast
-binary framing, base32, ed25519 key expansion, or launching a bundled tor), these rules are law. This
-is the single most expensive thing the family has learned. Change nothing here without a very good
-reason.
-
-- **Byte buffers cross as `Pointer` + `CInt` length. An LCB `Data` does NOT auto-bridge to a `void*`.**
-  The Language Reference is explicit: "No automatic bridging from Data or String to Pointer exists"; a
-  `Data` marshals as an opaque `MCDataRef`. So an **out** buffer is a raw block from the engine
-  `<builtin>` `MCMemoryAllocate`, passed as a real `Pointer`; the shim returns bytes written, or
-  `-needed` (negative required size) if the block was too small, and the LCB layer re-allocates,
-  retries, and copies back with `MCDataCreateWithBytes`. An **in** buffer passes
-  `MCDataGetBytePtr(theData)` plus its length. `<builtin>` handlers resolve by **name**, so they carry
-  no leading underscore; our own foreign decls keep a private-name convention.
-- **`MCMemoryAllocate`'s size is C `size_t`, so it marshals as `UIntSize`, NOT `CUInt`.** A 4-byte int
-  into an 8-byte size slot on a 64-bit build corrupts the heap. `UIntSize` is what the proven
-  htmltidy / TorrentXT / SodiumXT bindings use.
-- **There is no 64-bit foreign int.** Values that can exceed 2^31 cross as decimal `ZStringUTF8`
-  strings, parsed in the shim.
-- **Reals cross as `double`, booleans as `int` (0/1).** Exported C ABI symbols keep a stable prefix
-  (`onx_`); never rename one once shipped (the `.lcb` `binds to` strings reference it by name; a
-  rename is a silent bind failure at load).
-- **Never RETURN a bridged C string** (`ZStringUTF8` / `NativeCString`) from a foreign handler: the
-  engine adopts the returned pointer and later `free()`s it, so a static or library-owned return is
-  `free()`-on-static, heap corruption on the first call. Fill a caller buffer and return length /
-  `-needed` instead.
-- **Pass a null pointer only through an `optional Pointer`** parameter; a plain `Pointer` rejects
-  `nothing`.
-- **Bump the ABI version on any ABI change**, and have the `.lcb` `checkABI()` throw a clear
-  "reinstall the extension" error on skew instead of corrupting memory on first use. Expose every
-  length constant from the shim as a function; never hardcode a size in LCB.
-- **`textEncode` / `textDecode` are NOT available to an LCB module** (they are livecodescript only), so
-  bytes cross as `Data` and a String is built from filled bytes with `MCStringCreateWithBytes`. Keep
-  text<->Data conversion in the livecodescript layer.
+- **Never block the interpreter thread on the network.** Script, rendering and FFI share ONE thread.
+  Every protocol is a state machine driven by `open socket` / `read from socket` / `accept connections`
+  `... with message`; no busy-wait, no `wait ... with messages` loop where a callback would do.
+- **Keep status updates at <= ~4 Hz** (`kOxStatusThrottle` = 250 ms): coalesce event floods.
+- **Bootstrapping is slow and user-visible.** A cold tor takes tens of seconds, a descriptor seconds
+  more: surface `STATUS_CLIENT` / `GETINFO status/bootstrap-phase` and `HS_DESC` progress.
 
 ## Handles and long-lived state
 
-- **Script-side state is the norm here.** A published onion service, an open control connection, and a
-  live SOCKS stream are all tracked in script-local tables keyed by a small integer or the socket id
-  the engine returns. A stale or closed id must be a clean no-op / error, never a crash. Provide an
-  explicit, idempotent free for each (`oxCloseStream`, `oxRemoveService`, `oxDisconnectControl`), and
-  free what you open (there is no deterministic LCB unload hook), for example on `closeStack`.
-- **If any of this ever moves into a C shim**, use a generation-tagged handle table exactly as
-  SodiumXT's secretstream / multipart-hash tables do: positive 32-bit ints, `0` invalid, a stale or
-  recycled handle a clean error, with an explicit idempotent free. Do not round-trip a raw pointer or
-  an opaque struct through script.
+State lives in script-local tables keyed by a small integer handle or the engine's socket id. A stale
+id is a clean no-op or error, never a crash. Idempotent frees: `oxCloseStream`, `oxRemoveService`,
+`oxDisconnectControl`, `oxShutdown`. If state ever moves into C, use a generation-tagged handle table as
+SodiumXT does, never a raw pointer.
 
-## The asynchronous, event-driven model (re-inherited from TorrentXT)
+## Socket and engine I/O gotchas ("socket gotcha N"; 1-4 and 8 are engine-confirmed)
 
-OXT runs script, the FFI, and rendering on ONE interpreted thread, and the network does not wait for
-it. Therefore:
+1. **Binary, not text.** `numToByte` / `binaryEncode` to build, `byteToNum` / `binaryDecode` to parse,
+   `byte x to y of` to index; never `char` / `line` / `word` on socket data.
+2. **A `read ... for N` without `with message` blocks the one thread.** Use callback reads.
+3. **Reads return short; frame by length.** Control lines are CRLF: `250-` continues, `250 ` is final.
+4. **`open socket` is asynchronous**; a failure arrives as a `socketError` message, not a throw.
+5. **Inbound needs the loopback listener first**: `accept connections on port <local> with message ...`
+   running before (or with) `ADD_ONION ... Port=<virt>,127.0.0.1:<local>`.
+6. **Loopback only, always.** SOCKS, control and the forward target are `127.0.0.1`; ports configurable.
+7. **Timeouts are mandatory.** A bootstrapping tor accepts TCP and then stalls; bound every handshake
+   (`socketTimeout` repeats while a read is pending: engine note 6.1).
+8. **`socketError`, closed peers and half-open states are normal paths**; every `open` / `accept` gets
+   an error handler and a matching `close`.
 
-- **Never block the interpreter thread on the network.** A SOCKS handshake, a control command, an
-  onion-descriptor publication, and a peer connection are all asynchronous. Model each protocol as a
-  state machine driven by `open socket ... with message`, `read from socket ... with message`, and
-  `accept connections on ... with message`. Do not busy-wait, and do not `wait ... with messages` in a
-  loop where a callback would do.
-- **Keep status updates at <= ~4 Hz.** Bootstrap progress, circuit build, and descriptor upload can
-  each fire many events; coalesce them before touching a field, exactly as SodiumXT's performance
-  playbook warns for its blocking crypto.
-- **Bootstrapping is slow and user-visible.** A cold tor daemon can take tens of seconds to reach
-  100% bootstrap, and an onion service takes seconds more to publish its descriptor before it is
-  reachable. Surface this as explicit progress (read `STATUS_CLIENT`/`GETINFO status/bootstrap-phase`
-  and `HS_DESC`), never as a frozen UI.
+## LiveCodeScript / OXT gotchas (cited as "gotcha N")
 
-## LiveCodeScript / LCB / OXT gotchas (carried; OXT is stricter than LiveCode)
+1. No curly quotes anywhere, even in a comment (engine note 1.4).
+2. **Prefixed-token shadow**: `tExt` IS `text`, `tOp` IS `top` (engine note 1.5); use `tSender`,
+   `tReplyOp`.
+3. Prefixes `t`/`p`/`s`/`k`; public `oxPascalCase`; a C ABI `onx_snake_case` (`oxt_` reads as "OXT").
+4. Constants are literal and declared before first use (engine note 1.3).
+5. LCB only: `unsafe` around every foreign call, declarations at handler top.
+6. Commands report via `the result`; functions return a value.
+7. **`itemDelimiter` / `lineDelimiter` are global mutable state** (engine note 2.3): set
+   `the lineDelimiter to crlf` where the control protocol is parsed, and restore it.
+8. `is a` accepts only number / integer / boolean / point / rect / date / color.
+9. A script compiles as a unit: an error at an unrelated line means a compile error elsewhere.
+10. **Socket ids are the engine's**: store and reuse them verbatim; never rebuild one (engine note 6.2).
+11. `bitAnd` / `bitOr` / `bitXor` are operators, not functions.
+12. `^`, `div` and `mod` inside a compound expression are rejected by some OXT parsers ("double binary
+    operator"), which is why base32 routes through `oxIntDiv` / `oxIntMod` / `oxPow2`.
+13. `binaryDecode` fills an out variable and returns a count.
+14. `accept connections on port N with message "name"` needs `port` and a quoted message name.
+15. Private handlers are unreachable through `with message`, `send` or `dispatch`: callbacks are public.
 
-1. **No smart/curly quotes** (U+201C/201D/2018/2019) anywhere, even in a comment or string: they fail
-   OXT compilation. ASCII `"` and `'` only. The static checker enforces zero.
-2. **Avoid names whose stem shadows an engine token even when prefixed.** The nastiest case is a
-   prefixed name whose full spelling IS a reserved token: `tExt` (t + "Ext") is literally `text`, so
-   xTalk evaluates it as the keyword, not a variable. It compiles and silently misbehaves. The checker
-   flags any `t/p/s/k`-prefixed name that lowercases to a reserved word; use a different stem. (Watch
-   `tSend`: `send` is a reserved command; use `tSender`.)
-3. **Prefix conventions:** `t` handler-local, `p` parameter, `s` script/module-local, `k` constant.
-   Public API `oxPascalCase`; C ABI (if any) `onx_snake_case`. The public `ox` stem is deliberate: it
-   avoids `oxt_`, which would read as "OpenXTalk" (OXT) and confuse, and it is not a reserved word.
-4. **Constants must be literal and declared before first use** (OXT resolves a constant by lexical
-   position; a forward reference silently evaluates to nothing).
-5. **`unsafe ... end unsafe` brackets every foreign call** in LCB; keep all declarations at the **top**
-   of a handler (a nested `local` has broken whole-script compilation). Irrelevant to the pure-script
-   core, but law the moment a shim appears.
-6. **Commands report via `the result`; functions return a value.** Match the API shapes in doc 05: a
-   dial that must report success/failure and yield a socket is a command reporting through `the
-   result` plus an out variable, or a function returning a small record; pick one shape and hold it.
-7. **`itemDelimiter` / `lineDelimiter` are global mutable state**: set them immediately before use.
-   The control protocol is CRLF-delimited; set `the lineDelimiter to crlf` right where you parse, and
-   restore it, because other code assumes `lf`.
-8. **`is a <type>` only accepts** number / integer / boolean / point / rect / date / color. There is
-   no `is a string`. To sniff bytes, check length / content, not a type.
-9. **A whole `.livecodescript` compiles as a unit:** a syntax error in one handler breaks the whole
-   script, and the engine may report it at the first line it tries to run. When "it broke" at an
-   unrelated line, suspect a compile error elsewhere in the same script, and re-run the static gate.
-10. **Socket ids are the engine's, not yours.** `open socket to host` and `accept connections`
-    identify sockets by their host:port string (and a numeric suffix for multiples). Store the exact id
-    the engine hands you and use it verbatim in `read` / `write` / `close`; do not reconstruct it.
+## Protocol traps (docs/02 and docs/03 are the specs)
 
-## Protocol correctness rules (the part a transport most easily gets wrong)
+- CONNECT uses ATYP `03` with the full `<56>.onion`; the port is built by hand, big-endian
+  (`numToByte(p div 256) & numToByte(p mod 256)`), because `binaryEncode "S"` is host order.
+- REP `0xF0`-`0xF7` appear only with `ExtendedErrors` on the SocksPort; map `0x01` / `0x04` too.
+- `PROTOCOLINFO 1` before auth; SAFECOOKIE > COOKIE > NULL > HASHEDPASSWORD. The `AUTHCHALLENGE` reply
+  is ONE final `250 ` line: a parser waiting for a later `250 OK` hangs.
+- `ADD_ONION ED25519-V3:` takes the 64-byte EXPANDED key in standard padded base64 (`base64Encode`), not
+  `sxBin2Base64`. `Flags=Detach` by default. `650` events are demuxed by status code.
 
-- **Byte-exact framing.** One wrong length prefix, one big- vs little-endian port, or one `char`
-  instead of `byte` and the handshake silently corrupts. Build and parse against doc 02 / doc 03 field
-  by field, and put the fixed byte strings in a comment next to the code.
-- **Resolve names in Tor, never locally.** ATYP=3 for every target. A local `hostNameToAddress` on a
-  target is a deanonymizing DNS leak; for a `.onion` it cannot even succeed.
-- **Authenticate the control port before the first command**, and prefer SAFECOOKIE over a plaintext
-  password. Treat the cookie file path from `PROTOCOLINFO` as authoritative; do not guess it.
-- **Verify or pin the onion address.** Connecting to a v3 onion authenticates the far end to its
-  ed25519 key; the remaining risk is connecting to the *wrong* address, so pin the contact's address
-  (or bind it to a SodiumXT signature) exactly as any secure-messaging layer verifies keys at first
-  contact.
-- **Negative paths are the tests.** A bad address -> SOCKS REP failure surfaced; a stalled daemon ->
-  timeout and clean teardown; a wrong control cookie -> auth failure, not a hang; a duplicate close ->
-  no-op. Write these before the happy path.
-- **Never present Tor as a total anonymity guarantee.** Traffic correlation, a hostile local daemon,
-  guard discovery, and descriptor-timing metadata remain; ship them labeled (doc 01, doc 09).
+## Bring-up traps (each cost an engine round)
 
-## As-built notes (v1 implementation)
+- **Empty response after a reconnect**: an ephemeral service dies with its control connection while
+  its descriptor lingers ~3 h ("Unable to find any hidden service associated identity key"). Fix:
+  `Flags=Detach` by default; teardown still `DEL_ONION`s.
+- **An onion forwarding to a dead port**: `accept connections` reports a bind failure ONLY in `the
+  result` (Windows 10013 from Hyper-V / WSL2 / Docker reserved ranges, 10048 in use). Fix:
+  `oxStartService` fails closed; change the local port, keep virtual port 80.
+- **A dead tunnel reported as sent**: `write to socket` sets `the result` on failure, and `oxWrite`
+  discarded it until 2026-09-09 (93 call sites and nocloud's onion send pump never saw a failure). Now
+  captured on the next line; verified statically, needs an OXT pass.
+- **A bootstrap bar stuck at 0**: `STATUS_CLIENT BOOTSTRAP` fires only WHILE bootstrapping. Fix: query
+  `GETINFO status/bootstrap-phase` once on connect.
+- **Control refused (10061)**: tor opens no control port unless asked; Tor Browser exposes none.
+- **Callbacks are DELAYED handlers** with no defaultStack guarantee (engine note 5.3). Pin at the entry
+  (`set the defaultStack to the short name of this stack`); the suite's `tools/check-timer-stack-pin.py`
+  holds it (its 2026-09-09 widening found 6 unpinned chains here, 18 in stacks carrying OnionXT).
+- **Swallowing a socket message is a HANG**: `socketError` / `socketClosed` / `socketTimeout` are the
+  engine's names, so a stack defining one must `pass` sockets that are not its own (docs/10 section 2).
+  OnionXT's own three pass foreign sockets since 2026-08-23 (held by the suite's
+  `tools/check-cross-library-names.py`); since 2026-08-24 their logic is `oxSocketError` /
+  `oxSocketClosed` / `oxSocketTimeout` ("true" when consumed, "false" if foreign) and
+  `tools/sync-demo-embeds.py` drops the thin `on socket*` wrappers per (app, library) pair.
+- **The self-test runs inside the demo**: `testConfigurationSetters` restores the dispatch setters to
+  the demo's own (owner `me`, status `onStatus`, no peer callback); ports reset and live state is torn
+  down (runbook trap 5.6).
 
-The library is implemented in one file, `src/onionxt.livecodescript`, and has now RUN ON A REAL OXT
-ENGINE against a live tor daemon (and Tor Browser). The core socket behaviours below are confirmed
-on-engine; the one path not yet exercised is the optional Mode B tor launch (still `VERIFY:` in the
-source). Keep recording on-engine results here as they are learned (that is what this section is for).
+## FFI / C-ABI conventions (only if a shim is ever added)
 
-Design decisions worth knowing before you touch the code:
+Prefix `onx_`. Bytes cross as `Pointer` + `CInt` length (LCB `Data` does not auto-bridge; the
+`MCMemoryAllocate` size is `UIntSize`); no 64-bit foreign int (decimal `ZStringUTF8`); never RETURN a
+bridged C string; null only via `optional Pointer`; never rename an export; ABI bump + `checkABI()`
+throwing "reinstall"; gcc ASan + UBSan, headers `-isystem`, binary + `MANIFEST.sha256` in one change.
 
-- **Everything is a handle plus a callback.** `oxDial` / `oxCreateService` / `oxCreateServiceFromSeed`
-  return an integer handle through `the result` immediately and complete asynchronously; the app learns
-  the outcome through the status / stream / peer callbacks (signatures in doc 05 and the file header).
-  A command that yields a handle returns the integer on success or an `"OnionXT: ..."` string on
-  failure, so callers test `the result is an integer`. Inbound (accepted) and outbound (dialed) streams
-  are unified into the same tables, so `oxWrite` / `oxCloseStream` / the `"data"` event work identically.
-- **The control port is a single-in-flight pipeline.** One command at a time, the rest queued; a
-  continuation (run when a reply completes) enqueues the next command while the old label is still in
-  flight, and `oxCtlLine` then clears the label and drains the queue. `650` event lines are demuxed from
-  command replies by their leading status code. `itemDelimiter` is saved and restored around every use.
-- **Crypto is composed, never hand-rolled. OnionXT requires SodiumXT ABI >= 6** for the
-  deterministic-onion and SAFECOOKIE paths (the SOCKS dial path, Tor-generated onions, and
-  COOKIE/NULL/HASHEDPASSWORD auth need no SodiumXT). Each `sx*` primitive is called DIRECTLY and wrapped
-  in `try/catch`: an absent handler raises a catchable execution error, so a missing primitive degrades
-  to a clear `"needs SodiumXT sxXxx"` error (or a safe fallback, e.g. SAFECOOKIE -> COOKIE) and the
-  return value comes back unambiguously (this replaced an earlier `dispatch function` approach whose
-  `it`/`the result` semantics were murky). ABI 6 SHIPPED gaps #1 (`sxSignSeedToExpandedKey`) and #3
-  (`sxHmacSha256`); ABI 7 SHIPPED gap #2 (`sxSha3_256`, the offline checksum), so no gap remains.
-  base32 and the base64 encode are pure byte ops; the ed25519 scalar clamp lives inside SodiumXT's
-  expansion helper.
-- **base32 keeps its bit-buffer small, and uses no `^`/`div`/`mod`.** The accumulator is masked to its
-  pending bits each step so a 35-byte address never builds a 280-bit integer (precision loss past 2^53).
-  It routes integer division/modulo through `oxIntDiv`/`oxIntMod` and powers through `oxPow2` (some OXT
-  parsers reject `^` in a compound expression). The KAT in `tools/onion-kat.py` pins the answers.
+## As-built notes: design decisions
+
+- **A handle plus a callback.** `oxDial` / `oxCreateService` / `oxCreateServiceFromSeed` return an
+  integer handle through `the result` (or an `"OnionXT: ..."` string: test `the result is an integer`)
+  and complete through the callbacks. Inbound and dialed streams share one table.
+- **The control port is a single-in-flight pipeline**: a continuation enqueues the next command while
+  the old label is in flight; `oxCtlLine` clears the label and drains the queue.
+- **`sx*` calls are made directly inside `try/catch`**, degrading to "needs SodiumXT sxXxx" or a safe
+  fallback (SAFECOOKIE -> COOKIE); this replaced a `dispatch function` approach with murky semantics.
+- **base32 masks its accumulator** each step, so a 35-byte address never builds a 280-bit integer
+  (exact only to 2^53: engine note 2.4); `tools/onion-kat.py` pins it.
+- **`oxPublishService` is publish-only**: `ADD_ONION` without the socket, an `external` teardown guard;
+  the external server must enforce loopback.
+- **`oxhUnroute`** exists for the demo's live swap between `oxhRoute "/"` and `oxhServeFiles` at the
+  SAME onion. onion-httpd lists folders with `the files` / `the folders`; `the detailedFiles` is a
+  compile-time "bad factor" on OXT.
+- **The loopback guard parses by SHAPE**: `oxHostOfSocket` drops `|name`, unbrackets, else takes
+  everything up to the LAST colon; an empty host is a REFUSAL, printed with the raw id.
+- **Coverage**: the suite's `tools/check-suite-coverage.py` prints this member's ratio. Its exemptions
+  are the 11 engine socket callbacks (docs/05) plus `oxLaunchTor`, `oxStopTor` and `oxTransportDial`.
+  From the four wrong ones deleted 2026-08-20: an exemption describes what the WRAPPER needs.
+
+## Engine evidence ledger
+
+| Date | Engine / platform | What ran | Result |
+|---|---|---|---|
+| pre-suite, undated | Windows, OXT, live system tor and Tor Browser | bring-up: SOCKS dial, SAFECOOKIE, GETINFO / SETEVENTS, `ADD_ONION` publish -> serve -> remove, Tor-forwarded accept, streams both ways, bootstrap and `HS_DESC`; `oxh*` site, file share and routes in Tor Browser; the demo's Service-tab swap and About self-test | confirmed; engine facts 1-7 below |
+| 2026-08-08 | OXT, suite paste | daemon-free paths: `oxVersion`, `oxPublicKeyFromAddress` (byte-exact), `oxIsValidAddress` negatives, `oxTransportInfo` | green; capability flags honest (`offlineAddress` false before ABI 7) |
+| 2026-08-10 | OXT, suite paste, twice (the re-run with the real `src/` embedded) | `oxSelfTest()` folded | 40/0 both times, 3 SHA3 skips by design |
+| 2026-08-12 | Windows x64, SodiumXT ABI 7, suite paste | `oxSelfTest()` folded | 43/0: torproject and DuckDuckGo onions re-encoded byte-exactly, tamper refused, `offlineAddress` true |
+| 2026-08-17 | Windows x86_64, NT 10.0, OXT 9.6.3, suite paste | `oxSelfTest()` folded, incl. section 10 (loopback guard) | 61/0; the guard refuses an empty host; all eight socket-id fixtures parse |
+| 2026-08-20 | Windows, suite paste whole run (1981/0/1) | `oxSelfTest()` folded | 61 passed; its 1 skip printed inline and merged |
+| 2026-08-27 | two-machine session, suite paste (2440/2/3) | `oxSelfTest()` folded; holde-em, which embeds onionxt, at 667/0 | every folded member green (the 2 fails were live loopbacks, environment); holde-em's onionxt embed compiled |
+| 2026-09-02 | coin-wallet (carries onionxt), engine log | Esplora over Tor: `oxDial` to a v3 onion `:80`, 147 circuits, testnet broadcast `7978bdd2...`; later a v2 onion | green; one real `SOCKS handshake timed out` failed closed and was retried; the v2 onion got "general SOCKS server failure" (OnionXT's REP `0x01` mapping), failed closed |
+| 2026-09-03 | coin-wallet, engine logs 6-12 | Electrum over Tor (v3 onion, port 143): 173 dials, then one kept stream per sync; Esplora over one HTTP/1.1 stream; the autotest over Electrum on Tor | green; autotest 41 passed, 0 failed, 4 skipped in 248 s |
 
 Confirmed on-engine (promoted from `VERIFY:`):
 
-1. `read ... until crlf` returns the trailing CRLF; `oxStripLineEnd` removes it. Control auth / GETINFO /
-   events all parse correctly.
-2. `read ... for N with message` delivers exactly N raw bytes on a binary socket (the SOCKS handshake).
-3. The no-quantifier `read ... with message oxStreamData` streams available bytes as they arrive and does
-   NOT block to EOF - a dialed SOCKS tunnel and an inbound onion HTTP request both deliver chunk by chunk.
-4. `accept connections on port` accepts Tor-forwarded loopback connections. **The rest of this line
-   was corrected 2026-08-17 and the correction is the lesson.** It used to claim the guard "accepts
-   every loopback spelling (`127.x` / `::1` / `localhost` / empty)". Measured against the code rather
-   than against the guard's own comment: `oxHostOfSocket` split the socket id on ":" and took item 1,
-   so on any IPv6-shaped id it handed the guard an EMPTY string - the `::1` and `[::1]` branches were
-   unreachable by construction (item 1 of a string containing a colon cannot contain one), and
-   "`[::1]`" itself parsed to "`[`" and was REFUSED. What the on-engine pass actually confirmed was
-   the `empty` branch, which accepted whatever it could not parse. That is a fail-OPEN default on the
-   one guard that decides whether an unauthenticated peer reaches the stream tables:
-   "`::ffff:203.0.113.9:1234`" is a routable peer in IPv4-mapped form, and item 1 of it is empty too.
-   The parser is shape-based now (drop the `|name` suffix, unbracket a bracketed group, else take
-   everything up to the LAST colon), the guard reads `::1` / `::ffff:127.x` for the first time, and an
-   empty host is a REFUSAL with the raw id printed beside it. Verified statically and pinned by seven
-   socket-id fixtures in `examples/onionxt-tests.livecodescript` section 10; needs an OXT pass. The
-   general lesson is the family's own: a comment describing a branch is not evidence the branch runs,
-   and "confirmed on-engine" for an accept path only ever confirmed the branch that ran.
-5. Publish -> serve -> remove works; `oxRemoveService` / `oxShutdown` close the listener and DEL_ONION.
-6. `dispatch ... to <owner>` resolves app callbacks (onStatus / onPeer / onStreamData) and the `sx*`
-   primitives (SAFECOOKIE composes `sxHmacSha256`); an absent handler is a clean miss.
-7. `socketError` reaches the library and is surfaced / failed-closed (e.g. 10061 refused, 10013 listen
-   denied); `socketClosed` cleans up. (The `socketTimeout`-repeats detail stays the documented
-   assumption; no stalled-handshake case was forced.)
-
-Also confirmed on-engine: the **hosting layer** `src/onion-httpd.livecodescript` (public `oxh*`). It
-serves HTTP over an onion on OnionXT's accept loop (the composition path, via the new publish-only
-`oxPublishService` that ADD_ONIONs without OnionXT taking the socket, plus its `external` teardown guard).
-A full static site, a browsable file share (`oxhServeFiles` auto-generates a directory listing from
-`the files` / `the folders` - NOT `the detailedFiles`, which is a compile-time "bad factor" on OXT), and
-dynamic routes all render in Tor Browser. The **main tabbed demo** (`examples/onionxt-demo.livecodescript`)
-now composes this layer for its Service tab too: "Serve page" registers a `/` route (`oxhRoute`) that
-replies with the editable HTML, and "Share folder" drops that route (`oxhUnroute`) and calls
-`oxhServeFiles`, so the two modes switch live at the SAME onion with no republish (the demo's own inline
-serving was retired). `oxhUnroute` was added for exactly this runtime route swap. It ships two ways: as
-libraries (`start using` onionxt + onion-httpd) for a real project, and as paste-and-run demos that CARRY
-those libraries. **Superseded 2026-08-17:** `tools/build-standalone.py` used to emit two GENERATED twins
-(`examples/onion-httpd/standalone.livecodescript` and `examples/onionxt-demo-standalone.livecodescript`)
-alongside their sources. The suite-wide `tools/sync-demo-embeds.py` does that job for every member's demos
-now, embedding between sentinels IN the demo rather than beside it - so there is ONE `onionxt-demo` and ONE
-`spike`, each self-contained, and the twins and the tool that built them are gone. Same contract either
-way: sources are the single source of truth, `--check` fails on drift, and a name collision refuses the
-write instead of being merged.
-
-Also confirmed on-engine 2026-08-08, by the suite selftest (`tests/suite-selftest.livecodescript` at
-the repository root, green): the **daemon-free compute paths**, run alongside all five other members.
-`oxVersion` reports; `oxPublicKeyFromAddress` recovers a 32-byte ed25519 key and its base32 decode is
-byte-exact against the expected key; `oxIsValidAddress` rejects an empty address, a short one, a
-version-0 one, and one carrying a non-base32 character; and `oxTransportInfo` returns a populated array
-naming the transport. The **capability advertisement is honest at runtime**, which matters because it is
-what apps branch on: with SodiumXT present, SAFECOOKIE auth and deterministic `.onion` keys
-(`sxSignSeedToExpandedKey`) both advertise TRUE, and offline `.onion` checksums still advertise FALSE -
-docs/08 gap #2, observed rather than assumed.
-
-And on 2026-08-10, the WHOLE of `oxSelfTest()` ran on-engine, twice in one day, folded into that same
-suite harness: 40 checks green, zero failures, including the configuration-setters section described
-below, the fail-closed argument validation, the unknown-handle misses, and the idempotent teardown.
-Since the embed (same day), the harness carries `src/onionxt.livecodescript` itself in the paste, so
-those runs exercised this member's real shipped code, not a copy.
-
-On 2026-08-12 (Windows x64, SodiumXT ABI 7 installed) `oxSelfTest()` ran again, now 43 checks, zero
-failures: SodiumXT shipping `sxSha3_256` turned the three offline-address skips into real checks -
-the torproject and DuckDuckGo onions re-encoded byte-exactly, a tampered address was refused, and
-`offlineAddress` advertised true, closing docs/08 gap #2 on an ABI-7 engine.
-
-**OnionXT is the only member with untested public handlers, and the reasons are now
-written down rather than assumed (2026-08-09).** `tools/check-suite-coverage.py` (suite
-root) measures how much of each member's public surface the pasteable suite harness
-actually calls. Every other member is at 100%; OnionXT is at 34/48 (that gate's own row,
-re-run 2026-08-26; it read 27/45 the day this section was written), and the shortfall is
-not laziness - fourteen of its handlers genuinely cannot run in an offline paste-into-a-stack
-harness, split into two kinds that the gate names individually:
-
-- **Eleven engine socket callbacks** (`oxCtlOpened`, `oxCtlLine`, `oxCtlDeadline`,
-  `oxSocksOpened`, `oxSocksMethod`, `oxSocksReplyHead`/`Len`/`Done`, `oxStreamData`,
-  `oxStreamDeadline`, `oxPeerAccepted`). The ENGINE calls these, with a socket id it
-  minted. A harness cannot mint one, and driving them with a synthetic id would not
-  exercise the real path - it would corrupt the state of whatever socket shared the id.
-- **Three that need a live tor daemon** (`oxLaunchTor`, `oxStopTor`, `oxTransportDial`).
-  This is the second half of this member's standing honesty convention, "verified
-  statically; needs an OXT pass + a live-Tor pass", made machine-readable. It read SEVEN
-  when this section was written, and the other four went away by being WRONG rather than
-  by being closed: `oxPublishService` opens no socket and starts no process (it needs an
-  authenticated STATE, not a daemon), and `oxTransportListen`/`Send`/`Recv` are one-line
-  wrappers over `oxCreateServiceFromSeed` / `oxWrite` / `oxSetStreamCallback`, all three
-  of which this harness had been testing offline for months under the wrapped name. The
-  exemption described what the WRAPPED handler does with a live stream, not what the
-  wrapper needs in order to be exercised. All four were deleted from the gate on
-  2026-08-20, with that reasoning kept in its comment, and each now has a fail-closed
-  check by its own name in `examples/onionxt-tests.livecodescript`.
-
-**Six that were in neither category got a section.** The `oxSet*` configuration setters
-had no coverage at all, so a rename or a deletion would have been invisible to every gate
-in the repo. `testConfigurationSetters` now proves what is provable offline - the handler
-exists under its documented name, accepts its argument, is idempotent, and does not
-disturb `oxIsReady` / `oxIsControlAuthenticated` / `oxBootstrapProgress` - and says
-plainly in its own header that whether a set port is the port Tor is DIALLED on stays a
-live-Tor claim, because every reader of those locals (`effectiveSocksPort` and friends) is
-private.
-
-**Writing it surfaced a bug the test itself would have caused, which is the part worth
-remembering.** The first version restored every setter to `empty` on the way out. That is
-correct for the ports and the password, and wrong for the three dispatch setters: this file is
-embedded into `examples/onionxt-demo.livecodescript` (by `tools/build-standalone.py` when this was
-written; by `tools/sync-demo-embeds.py` since 2026-08-17, into the demo itself rather than into a
-generated twin - the hazard is identical and so is the fix),
-whose About tab runs `oxSelfTest` inside the running demo - and the demo sets its callback
-owner and status handler ONCE, in `preOpenStack`. Clearing them would have left an
-already-open demo with no status dispatch at all, silently, until it was reopened. A test
-that breaks the app it ships inside is worse than the gap it closed. The dispatch setters
-are therefore RESTORED to exactly the demo's own configuration (owner `me`, status
-`onStatus`, no peer callback - `oxhServe` installs `oxhPeer` when it publishes), and the
-runbook's trap 5.6 now warns that the ports really do reset.
+1. `read ... until crlf` returns the trailing CRLF; `oxStripLineEnd` removes it.
+2. `read ... for N with message` delivers exactly N raw bytes on a binary socket.
+3. A no-quantifier `read ... with message` streams chunks as they arrive, not to EOF.
+4. `accept connections on port` accepts Tor-forwarded loopback connections. That record confirmed
+   only the branch that ran: the pre-2026-08-17 parse gave every IPv6-shaped id an EMPTY host, which
+   the guard ACCEPTED (fail-open: `::ffff:203.0.113.9:1234` is routable). The shape parser and its
+   eight fixtures ran green 2026-08-17; the raw id a live accept hands `oxPeerAccepted` is still to be
+   recorded (engine note 6.2). A comment describing a branch is not evidence the branch runs.
+5. Publish -> serve -> remove; `oxRemoveService` / `oxShutdown` close the listener and `DEL_ONION`.
+6. `dispatch ... to <owner>` resolves app callbacks and `sx*` primitives; a missing one is a clean miss.
+7. `socketError` reaches the library and fails closed (10061, 10013); `socketClosed` cleans up. A real
+   stalled handshake failed closed in the 2026-09-02 coin-wallet log, which cannot say which "SOCKS
+   handshake timed out" path fired (the `oxStreamDeadline` watchdog or `oxSocketTimeout`).
 
 Still `VERIFY:` (not yet exercised):
 
-8. `the processId` / `open process` for the optional Mode B tor launch (the default is assume-running).
+8. Mode B: `oxLaunchTor` / `oxStopTor`, `open process`, the `oxProcessId` accessor,
+   `__OwningControllerProcess` (engine note 6.3).
+9. The four inline hypotheses (runbook B.12): a second service on an in-use local port refused; the
+   accepted-socket id format; a stale `close socket` tolerated; the topStack as default callback owner.
+10. An OnionXT-to-OnionXT onion dial and the two-instance sealed round trip (`examples/onion-roundtrip`).
+11. The 2026-08-23 foreign-socket `pass` lines and the 2026-08-24 wrapper split, on a live socket.
+12. The 2026-09-09 `oxWrite` result capture and callback pins.
+13. The live negatives: wrong cookie, stalled daemon, peer vanishing mid-handshake, a descriptor that
+    never publishes, and an `ExtendedErrors` `0xF*` REP for a well-formed v3 onion that does not exist.
+    (The bad-onion leg with a mapped REP `0x01` on a retired v2 onion failed closed on an engine on
+    2026-09-02: the coin-wallet ledger row.)
 
-New hard-won lessons from bring-up (each cost a real debugging round; mirrored in the README/docs
-troubleshooting):
+## Status
 
-- **An ephemeral `ADD_ONION` service dies with its control connection.** A transient control-socket drop
-  (or a reconnect) un-publishes it while its descriptor lingers in the DHT ~3h, so a later visit hits
-  `Unable to find any hidden service associated identity key` at rendezvous (an empty response). OnionXT
-  now passes `Flags=Detach` by default; teardown still `DEL_ONION`s it.
-- **`accept connections on port` sets `the result` on a bind failure - check it.** A reserved or blocked
-  local port (Windows `Error 10013` WSAEACCES: Hyper-V / WSL2 / Docker reserve TCP ranges; `10048` is
-  in-use) otherwise silently produces an onion whose traffic Tor forwards to a dead port. `oxStartService`
-  now fails closed with the error; pick another local port (keep the virtual port 80).
-- **`write ... to socket` sets `the result` on failure too, and `oxWrite` threw it away until
-  2026-09-09.** A bare `return empty` after the write overwrote the engine's error
-  unconditionally, so a dead tunnel was reported to every caller as a successful send - the
-  inverse of docs/05's contract ("every wire error fails closed") - and the 93 call sites across
-  the suite that branch on that return were dead code on the failure path. The most reachable
-  victim was the onion send pump, which paces on exactly this return: a receiver aborting
-  mid-transfer left the sender writing into a dead socket instead of aborting the serve. The
-  result is captured on the very next line, the one-statement discipline `open socket` already
-  gets here. Verified statically; needs an OXT pass (a write into a stream the far side has
-  closed is the probe).
-- **A handler OnionXT DISPATCHES - the stream, status and peer callbacks an app registers - is a
-  DELAYED handler**: it runs from inside a socket callback with no defaultStack guarantee, so an
-  unqualified control reference in it resolves against whatever stack is in front (root engine
-  notes 5.3). The suite's `tools/check-timer-stack-pin.py` held this for `send ... in` from
-  2026-08-17 and only learned the other two delivery classes on 2026-09-09, when it found and
-  pinned six such chains in this member's demos and eighteen more across the stacks that carry
-  OnionXT. Pin at the callback's entry: `set the defaultStack to the short name of this stack`.
-- **`STATUS_CLIENT BOOTSTRAP` events only fire WHILE bootstrapping.** Connecting to a tor already at 100%
-  delivers none, so a UI seeded at 0 stays there. Query `GETINFO status/bootstrap-phase` once on connect
-  to seed it, then let the events update it.
-- **The control port must be enabled explicitly** (`ControlPort` + an auth method in `torrc`): tor opens
-  SOCKS by default but no control port, and Tor Browser exposes none. A refused connect is `Error 10061`.
-- **An app that defines `socketError` / `socketClosed` / `socketTimeout` must `pass` the ones that are
-  not its own** (documented 2026-08-17 in docs/05 and docs/10, cross-referenced from docs/08). Those
-  three names are the ENGINE's, not ours, so they are the one part of this library's surface an app can
-  intercept by accident - and swallowing one costs nothing visible: the failed dial never reports, the
-  closed stream never delivers `closed`, the stalled handshake never times out. **The symptom is a
-  HANG, not an error**, which is why no gate in this repo can see it and why it earns a rule instead of
-  a footnote. Two shipping apps in the suite re-derived the same guard independently
-  (`nocloud/src/nocloudquickshare.livecodescript`, `torrentxt/examples/torrent-quickshare.livecodescript`:
-  act only on our own sockets, `pass` the rest), which is the family's usual signal that something
-  belongs in the tree's written rules rather than in each app's head. The exact message-path ordering
-  is the engine's and is recorded as those two apps found it: verified statically; needs an OXT pass.
-  **CLOSED FOR THE LIBRARY ITSELF 2026-08-23: OnionXT's own three handlers now `pass` a socket
-  that is not theirs.** They used to swallow it (fall through to `end` with no pass), which made
-  OnionXT the one library that broke the rule it documents: co-loaded with a second socket
-  library (nostrxt's relay layer became the first), whichever sat earlier in the message path
-  starved the other of its socket events - the same silent hang, now between LIBRARIES. Found
-  and held by the suite's `tools/check-cross-library-names.py` (its pass-discipline check, with
-  a mutation fixture that strips a `pass` and expects the gate to fire). The own-socket branches
-  are untouched and keep their engine evidence; the new pass lines are verified statically and
-  need an OXT re-pass.
+The live-Tor core and `oxh*` hosting are engine-proven (ledger above). The offline `oxSelfTest()` ran
+green folded into every dated suite pass above from 2026-08-10, and `tools/onion-kat.py` pins the
+pure-compute paths headlessly. Static only ("verified statically; needs an OXT pass + a live-Tor
+pass"): items 8-13, and the demo and spike as whole stacks since their 2026-08-14 move onto the suite
+UI kit. Open work is tracked in the suite's `docs/WORK-PLAN.md`.
 
-## Git / workflow
+## Build and gates
 
-- Develop on a per-task branch (e.g. `claude/...`); commit there, open a **draft PR** if none exists.
-  Do not push to `main` without explicit permission.
-- A `.livecodescript` / `.lcb` change is "done" once `tools/check-livecodescript.py` passes and it has
-  had (or is clearly flagged as needing) an on-engine pass against a real tor daemon. A transport
-  change is "done" once a two-instance onion round-trip (instance A publishes a service, instance B
-  dials it through SOCKS, a sealed payload makes the trip and back) works on the engine.
-- In the suite monorepo, `src/onionxt.livecodescript` is also EMBEDDED verbatim in the generated
-  `tests/suite-selftest.livecodescript` (one paste carries the whole ox* surface, no `start using`
-  step). An edit to it therefore additionally requires `python3 tools/build-suite-selftest.py` at the
-  suite root; the gate set's `--check` fails the build otherwise.
-- A change that adds or touches a C shim bumps its ABI version and `checkABI()` in the same change, and
-  if it bundles a native binary, refreshes the committed binary and a `MANIFEST.sha256` in the same
-  change (the SodiumXT model).
-- A change that needs a new SodiumXT primitive (doc 08) is split: the upstream SodiumXT feature lands
-  first (with its own ABI bump and tests), then OnionXT composes it.
-- **No em-dashes** in committed prose or docs (house style). Use hyphens, commas, colons, parentheses.
-- **Match the surrounding style:** comment the *why*, densely, as the siblings do.
+`bash tools/run-gates.sh` (what CI and the suite's `build-all.sh --gates` run): the unified static gate
+`tools/check-livecodescript.py`, `tools/check-docs-style.py`, `tools/onion-kat.py --check` (base32,
+address, seed-expansion and HMAC KATs) and `tools/check-selftest-vectors.py --check` (re-derives every
+vector hand-copied into the harness). Nothing compiles. Engine bring-up: docs/07, docs/10 section 1.

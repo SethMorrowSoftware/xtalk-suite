@@ -1,14 +1,15 @@
 # 10 - Usage Guide (for any OXT / LiveCode app)
 
-OnionXT is useful to any OpenXTalk / LiveCode app that wants an anonymous socket or a serverless,
-self-authenticating inbound address. This is the from-zero guide: how to load the
-library, point it at a tor daemon, dial out, publish an onion service, handle the callbacks, compose
-SodiumXT for the parts OnionXT deliberately does not do, and read the honesty caveats.
+For any OpenXTalk / LiveCode app that wants an anonymous socket or a serverless, self-authenticating
+inbound address: start tor, load the library, dial out, publish an onion service, handle the callbacks,
+compose SodiumXT for what OnionXT deliberately does not do, and read the honesty caveats.
 
-> OnionXT has run on a real OXT engine against a live tor daemon: dialing, control-port SAFECOOKIE auth,
-> publishing a v3 onion, serving an inbound request (viewable in Tor Browser), and bootstrap are all
-> confirmed. The optional Mode B tor launch is the one path not yet exercised. If something misbehaves,
-> the [Troubleshooting](../README.md#troubleshooting) section covers the failure modes seen during bring-up.
+> The paths this guide uses (dialing, SAFECOOKIE auth, publishing a v3 onion, serving an inbound
+> request in Tor Browser, bootstrap) have run on a real OXT engine against a live tor daemon. What is
+> still "verified statically; needs an OXT pass + a live-Tor pass" (the optional Mode B launch, an
+> OnionXT-to-OnionXT dial, most live negative paths, and a few later changes) is listed in the evidence
+> ledger in [CLAUDE.md](../CLAUDE.md). If something misbehaves, the
+> [Troubleshooting](../README.md#troubleshooting) section covers the failure modes seen during bring-up.
 
 ## 1. Start a tor daemon
 
@@ -28,9 +29,8 @@ CookieAuthentication 1
 **The key distinction:** tor opens the **SOCKS** port by default, but it does **not** open a **control**
 port unless you ask for one. So dialing out (section 3) works against a stock tor with zero config, while
 publishing an onion service and reading bootstrap/events (section 4) need the control port enabled first.
-A refused control connection surfaces as a clear error (on Windows, `Error 10061`, `WSAECONNREFUSED`);
-it means nothing is listening on that port, i.e. the control port is not enabled or you have the wrong
-port number.
+A refused control connection (on Windows, `Error 10061`, `WSAECONNREFUSED`) means nothing is listening
+there: the control port is not enabled, or the port number is wrong.
 
 ### Enabling the control port
 
@@ -68,9 +68,9 @@ start using stack "onionxt"          -- if you wrap the script in a stack
 -- or insert the script of the library into the back / a library stack
 ```
 
-If you also want deterministic onion addresses, SAFECOOKIE control auth, or offline address validation,
-load **SodiumXT** the same way (**ABI >= 6** for the deterministic-onion and SAFECOOKIE paths): OnionXT
-composes its `sx*` primitives and degrades to a clear error when one is missing (see section 7). Tell OnionXT which object your callbacks live in:
+For deterministic onion addresses, SAFECOOKIE control auth or offline address validation, load
+**SodiumXT** too (**ABI >= 6**; ABI 7 for offline validation): OnionXT composes its `sx*` primitives
+and degrades to a clear error when one is missing (section 7). Tell OnionXT where your callbacks live:
 
 ```
 oxSetCallbackOwner the long id of me
@@ -81,13 +81,12 @@ app's stack.)
 
 ### If your stack handles `socketError` / `socketClosed` / `socketTimeout`, forward them
 
-This is the one OnionXT integration mistake whose symptom is a **hang, not an error**, so it is worth
-the paragraph. OnionXT handles the three engine socket messages itself (see
-[doc 05](05-api-reference.md), "Handlers the ENGINE calls"): `socketError` fails the owning stream
-closed, `socketClosed` delivers `closed` to your stream callback, `socketTimeout` tears down a stalled
-handshake. If your own stack script defines one of those names and does not forward it, it can swallow
-the message before OnionXT's copy runs - and nothing errors. The dial that failed never reports, the
-closed stream never delivers `closed`, the stalled handshake never times out, and the app just waits.
+This is the one OnionXT integration mistake whose symptom is a **hang, not an error**. OnionXT handles
+the three engine socket messages itself ([doc 05](05-api-reference.md), "Handlers the ENGINE calls"):
+`socketError` fails the owning stream closed, `socketClosed` delivers `closed` to your stream callback,
+`socketTimeout` tears down a stalled handshake. If your stack script defines one of those names and
+does not forward it, it can swallow the message before OnionXT's copy runs, and nothing errors: the
+failed dial never reports, the closed stream never delivers `closed`, and the app just waits.
 
 If your app opens sockets of its own (a LAN HTTP server, say), handle only your own and pass the rest:
 
@@ -104,20 +103,17 @@ end socketClosed
 ```
 
 and the same shape for `socketError pSocketID, pError` and `socketTimeout pSocketID`. Two shipping
-apps in this suite arrived at exactly this guard independently
-(`nocloud/src/nocloudquickshare.livecodescript`, `torrentxt/examples/torrent-quickshare.livecodescript`),
-which is why it is written down here rather than left to be rediscovered a third time. The precise
-message-path ordering that decides which script sees a socket message first is the engine's:
-**verified statically; needs an OXT pass** to state exactly. Forwarding is safe either way - an
-unhandled `pass` costs nothing - so pass unless the socket is provably yours.
+apps in this suite (nocloud and torrentxt's torrent-quickshare) arrived at this guard independently.
+The precise message-path ordering is the engine's (**verified statically; needs an OXT pass** to state
+exactly), but forwarding is safe either way: an unhandled `pass` costs nothing.
 
 **If you EMBED OnionXT rather than `start using` it, there is nothing to pass TO.** That is the shape
-`tools/sync-demo-embeds.py` builds, and what `nocloud/src/nocloudquickshare.livecodescript` has done
-since 2026-08-24: an embed builds exactly ONE script, these three names are the engine's, and no
-script can define a name twice. So OnionXT keeps its logic behind names of its own - `oxSocketError`,
-`oxSocketClosed`, `oxSocketTimeout`, each answering one question, *was that socket mine, and did I
-handle it?* - the embed drops its three thin wrappers, and your handler calls the named function
-exactly where it would otherwise have passed:
+`tools/sync-demo-embeds.py` builds (nocloud's `nocloudquickshare.livecodescript` is one): an embed
+builds exactly ONE script, these three names are the engine's, and no script can define a name twice.
+So OnionXT keeps its logic behind names of its own - `oxSocketError`, `oxSocketClosed`,
+`oxSocketTimeout`, each answering one question, *was that socket mine, and did I handle it?* - the
+embed drops its three thin wrappers, and your handler calls the named function exactly where it would
+otherwise have passed:
 
 ```
 on socketClosed pSocketID
@@ -274,7 +270,7 @@ hand-rolling a hash.
 
 - **Tor is not total anonymity.** It defends the network path against a non-global adversary. Traffic
   correlation by a global passive adversary, a compromised local tor daemon, and descriptor/activity
-  timing all remain (docs/01, docs/09). Say "IP-anonymous against a non-global adversary," not
+  timing all remain (docs/01). Say "IP-anonymous against a non-global adversary," not
   "untraceable."
 - **The address authenticates the key, not the person.** Reaching `<56>.onion` proves you reached the
   holder of that ed25519 key, but if you were tricked into using the wrong address, Tor faithfully
@@ -293,8 +289,8 @@ hand-rolling a hash.
 | stream | `pStream, pEvent, pData` | `open` / `data` / `closed` / `error` on a dialed or inbound stream |
 | peer   | `pStream, pService, pPeerAddr` | a remote peer connected to a published service |
 
-Commands that yield a handle (`oxDial`, `oxCreateService`, `oxCreateServiceFromSeed`) report the integer
-handle through `the result` on success, or a human-readable `"OnionXT: ..."` string on failure; test
-`the result is an integer`. Other commands report empty on success or an error string on failure. Every
-wire error fails closed and tears the resource down; there is no silent fallback to an unproxied or
-unauthenticated path.
+Commands that yield a handle (`oxDial`, `oxCreateService`, `oxCreateServiceFromSeed`,
+`oxPublishService`) report the integer handle through `the result` on success, or a human-readable
+`"OnionXT: ..."` string on failure; test `the result is an integer`. Other commands report empty on
+success or an error string on failure. Every wire error fails closed and tears the resource down; there
+is no silent fallback to an unproxied or unauthenticated path.

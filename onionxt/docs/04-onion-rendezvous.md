@@ -60,12 +60,13 @@ RH = h[32:64]                   # the nonce prefix
 expanded_secret = a || RH       # 64 bytes; base64 this for ADD_ONION ED25519-V3:
 ```
 
-The `base64` here is **standard RFC 4648 base64 with padding** (the `+`/`/` alphabet, not URL-safe): 64
-bytes encode to 88 characters ending in `==`. Tor emits its own `PrivateKey=ED25519-V3:<blob>` the same
-way, and accepts your bring-your-own key with or without padding; strip any whitespace before sending
-it. This is confirmed verbatim by the control-spec: the `ED25519-V3` blob is "the Base64 encoding of the
-concatenation of the 32-byte ed25519 secret scalar in little-endian and the 32-byte ed25519 PRF secret"
-(the clamped scalar `a` and the prefix `RH`), explicitly not a seed and not libsodium's `seed || pubkey`.
+**The base64 is standard RFC 4648 base64 with `+`/`/` and `=` padding**: 64 bytes encode to 88
+characters ending in `==`. The engine's `base64Encode` does exactly this (strip any line-wrap
+whitespace); do **not** use SodiumXT's `sxBin2Base64`, which emits *url-safe, unpadded* base64 that tor
+rejects. Tor emits its own `PrivateKey=ED25519-V3:<blob>` the same way. The control-spec confirms the
+layout verbatim: the blob is "the Base64 encoding of the concatenation of the 32-byte ed25519 secret
+scalar in little-endian and the 32-byte ed25519 PRF secret" (the clamped `a` and the prefix `RH`),
+explicitly not a seed and not libsodium's `seed || pubkey`.
 
 This is the format Tor's own tools and the `stem` library produce, and getting it wrong is the classic
 deterministic-onion bug (the address comes out different, or ADD_ONION rejects the key). Two ways to
@@ -73,29 +74,22 @@ get it right:
 
 1. **Let Tor generate the key** (`NEW:ED25519-V3`) and persist the returned `PrivateKey`. Simplest;
    the address is then random, not seed-derived. Fine when reproducibility is not required (`oxCreateService`).
-2. **Compute the expansion via SodiumXT.** This is now a one-liner: SodiumXT ABI 6 ships
-   `sxSignSeedToExpandedKey(pSeed)`, which does the SHA-512 + clamp above internally and returns the
-   64-byte expanded key. `oxCreateServiceFromSeed` composes it directly (doc 08 gap #1, SHIPPED). Never
-   hand-roll SHA-512 in script; that would violate "compose SodiumXT, add no crypto" (CLAUDE.md rule 1).
-
-**base64 for `ADD_ONION` (do not get this wrong either):** encode the 64-byte expanded key as
-**standard RFC 4648 base64 with `+`/`/` and `=` padding** (the engine's `base64Encode` does exactly
-this; strip any line-wrap whitespace). Do **not** use SodiumXT's `sxBin2Base64`, which emits *url-safe,
-unpadded* base64 that tor rejects. (SHA-512(seed) known-answer for seed = `0x42` x 32 is pinned in
-`tools/onion-kat.py`.)
+2. **Compute the expansion via SodiumXT.** SodiumXT ABI 6's `sxSignSeedToExpandedKey(pSeed)` does the
+   SHA-512 + clamp above internally and returns the 64-byte expanded key; `oxCreateServiceFromSeed`
+   composes it directly (doc 08 gap #1). Never hand-roll SHA-512 in script; that would violate
+   "compose SodiumXT, add no crypto" (CLAUDE.md rule 1). The SHA-512(seed) known answer for seed =
+   `0x42` x 32 is pinned in `tools/onion-kat.py`.
 
 ## The checksum and base32
 
-- The address **checksum** needs SHA3-256, which libsodium does not provide - SodiumXT ABI 7 now
-  ships it as `sxSha3_256` from a vendored FIPS-202 implementation (doc 08 gap #2, SHIPPED
-  2026-08-11), so `oxAddressFromPublicKey` emits real addresses and `oxIsValidAddress` verifies
-  checksums when the installed SodiumXT is ABI 7+. Against an older SodiumXT the old posture still
-  holds: get your own address from `ADD_ONION`'s `ServiceID` (Tor computes it), trust the
-  connect-time descriptor-signature check rather than a local checksum verify, and the two handlers
-  return a clear capability error / do structural-only validation.
-- **base32** here is RFC 4648 lowercase without padding. It is pure byte manipulation; implement it in
-  script (or a thin LCB helper if the on-engine pass shows it is a hot path). No crypto, no upstream
-  dependency.
+- The address **checksum** needs SHA3-256, which libsodium does not provide: SodiumXT ABI 7 ships it
+  as `sxSha3_256` from a vendored FIPS-202 implementation (doc 08 gap #2, 2026-08-11), so
+  `oxAddressFromPublicKey` emits real addresses and `oxIsValidAddress` verifies checksums when the
+  installed SodiumXT is ABI 7+. Against an older SodiumXT: get your own address from `ADD_ONION`'s
+  `ServiceID` (Tor computes it), trust the connect-time descriptor-signature check rather than a local
+  checksum verify, and the two handlers return a clear capability error / do structural-only validation.
+- **base32** here is RFC 4648 lowercase without padding: pure byte manipulation in script, no crypto,
+  no upstream dependency.
 
 ## Client authorization (optional, stronger rendezvous)
 
@@ -103,8 +97,9 @@ v3 onion services support **client authorization**: the service is only reachabl
 configured x25519 key, and its descriptor is encrypted to those clients. This turns the onion into a
 private rendezvous that even someone who learns the address cannot reach. It composes SodiumXT x25519
 keys (`sxKeyExchangeKeypair` / from-seed) and is configured via `ADD_ONION`'s `ClientAuthV3=` and the
-matching client-side key. Treat it as a Phase 6+ enhancement: it upgrades rung-3 resistance (an
-attacker who phishes the address still cannot connect) at the cost of a key-distribution step.
+matching client-side key. It would upgrade rung-3 resistance (an attacker who phishes the address still
+cannot connect) at the cost of a key-distribution step. **OnionXT does not implement it**: it is part
+of the deferred v2 menu (doc 01, "The deliberate v1 defaults").
 
 ## Summary of the mapping
 
@@ -114,4 +109,4 @@ attacker who phishes the address still cannot connect) at the cost of a key-dist
 | seed -> expanded onion key  | SodiumXT `sxSignSeedToExpandedKey` (ABI 6) -> `ADD_ONION ED25519-V3:` |
 | pubkey <-> `.onion` address | OnionXT base32 (+ SHA3-256 checksum via SodiumXT ABI 7, doc 08 gap #2, shipped) |
 | address authenticates key   | Tor's descriptor-signature check at connect time         |
-| private rendezvous          | v3 client authorization (SodiumXT x25519), optional      |
+| private rendezvous          | v3 client authorization (SodiumXT x25519), not implemented |

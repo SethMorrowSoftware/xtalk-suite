@@ -1,16 +1,29 @@
 # Building SodiumXT
 
-This documents the heavy part (acquiring and building libsodium) and the day to
-day loop (sanitizers, the static gate, packaging). For the design and the phased
-plan see `docs/archive/implementation-plan.md`; for the hard-won lessons see
+The heavy part (acquiring and building libsodium) and the day-to-day loop (sanitizers,
+the static gate, packaging), for contributors. The rules a change must keep are in
 `CLAUDE.md`.
 
-House style: no em-dashes (hyphens, commas, colons, parentheses instead).
+## Layout
+
+- `src/sodium_shim.{c,h}` - the C shim: a thin marshaling layer over libsodium, exporting
+  the stable `sxt_*` ABI.
+- `src/sodium.lcb` - the LiveCode Builder binding that presents the public `sx*` handlers.
+- `src/code/<arch>-<platform>/` - the bundled native libraries, plus `MANIFEST.sha256`
+  (their recorded SHA256s).
+- `src/vendor/` - the vendored trezor-crypto SHA3 sources (`src/vendor/VENDOR.md`).
+- `tests/sodium_smoke_test.c` - the C suite: known-answer tests, round trips, and the
+  tamper / wrong-key / firewall checks.
+- `tools/` - `run-gates.sh` (the member gate list CI runs), `check-livecodescript.py`
+  (the script static gate), `check-docs-style.py` (no em/en dashes or curly quotes in any
+  `.md` here), `package-extension.py`.
+- `examples/` - the demo stack and the xTalk self-test.
+- `docs/` - the user documentation.
 
 ## What gets built
 
-ONE shared library, statically linking a pinned libsodium, named with the bare
-token `sodiumxt` (no `lib` prefix):
+ONE shared library, statically linking a pinned libsodium, named with the bare token
+`sodiumxt` (`PREFIX ""`, `OUTPUT_NAME sodiumxt`, no `lib` prefix):
 
 ```
 src/sodium_shim.c  +  libsodium (static, pinned)  ->  sodiumxt.{so,dll,dylib}
@@ -18,13 +31,13 @@ src/sodium_shim.c  +  libsodium (static, pinned)  ->  sodiumxt.{so,dll,dylib}
 
 The bare token matters: the packaged extension ships this binary under
 `src/code/<arch>-<platform>/sodiumxt.{so,dll,dylib}`, and the engine resolves
-`c:sodiumxt>sxt_*` against it via `the revLibraryMapping`. No loose library, no
-`sudo`, no `LD_LIBRARY_PATH`, no rename.
+`c:sodiumxt>sxt_*` against it via `the revLibraryMapping`. No loose library, no `sudo`,
+no `LD_LIBRARY_PATH`, no rename.
 
 ## The pinned libsodium
 
-libsodium is pinned in `CMakeLists.txt` and acquired by CMake at build time with
-an integrity check:
+libsodium is pinned in `CMakeLists.txt` and acquired by CMake at build time with an
+integrity check:
 
 | | |
 |---|---|
@@ -32,31 +45,36 @@ an integrity check:
 | url | `https://github.com/jedisct1/libsodium/releases/download/1.0.20-RELEASE/libsodium-1.0.20.tar.gz` |
 | sha256 | `ebb65ef6ca439333c2bb41a0c1990587288da07f6c7fd07cb3a18cc18d30ce19` |
 
-Re-pinning is a two-file change in one commit: the three `SODIUMXT_LIBSODIUM_*`
-values in `CMakeLists.txt` AND the `SXT_PINNED_SODIUM` string in
-`tests/sodium_smoke_test.c` (the smoke test asserts the linked version, so a
-silent drift fails loudly). libsodium's own build is autotools; on Linux and
-macOS CMake drives `./configure --enable-static --disable-shared --with-pic`
-through `ExternalProject`, then imports the resulting `libsodium.a`.
+Re-pinning is a two-file change in one commit: the three `SODIUMXT_LIBSODIUM_*` values
+(version, URL, SHA256) in `CMakeLists.txt` AND the `SXT_PINNED_SODIUM` string in
+`tests/sodium_smoke_test.c`. The smoke test asserts only that the linked libsodium is on
+the 1.0.x line and PRINTS the linked version beside the pin; the functional KATs are what
+catch a real drift. libsodium's own build is autotools: on Linux and macOS CMake drives
+`./configure --enable-static --disable-shared --with-pic` through `ExternalProject`, then
+imports the resulting `libsodium.a`.
 
-> Windows / MSVC links libsodium from **vcpkg** instead of building the pinned
-> source: install `libsodium:<triplet>-static` and pass the vcpkg toolchain (see
-> "Build and test (Windows)" below). The CI matrix builds all five platforms.
+**Windows is the exception, by decision.** Windows / MSVC links the libsodium **vcpkg**
+provides (`libsodium:<triplet>-static`) instead of building the pinned source, so it is
+not covered by the SHA256 pin; the committed Windows DLLs carry libsodium 1.0.22.
+Decided 2026-08-27 (owner-delegated, decision D-08): this KAT-guarded state is the
+recorded choice, not an oversight. The known-answer tests (BLAKE2b, Argon2id, ed25519,
+KDF) gate every build, and the release lane drives the published vectors on a real
+Windows runner before any DLL is bundled, so a pin would add maintenance without adding
+a check. To hold Windows to an exact libsodium, pin a vcpkg baseline (a `vcpkg.json` with
+a `builtin-baseline`) or build the pinned source (the mingw recipe in `CLAUDE.md`).
 
 ## Where the built library lands
 
-A plain `cmake --build` now copies the freshly built library into the bundle
-location the packaged extension reads:
+A plain `cmake --build` copies the freshly built library into the bundle location the
+packaged extension reads, `src/code/<arch>-<platform>/sodiumxt.{so,dll,dylib}`, so the
+engine can resolve `c:sodiumxt>` with no extra step. The platform id is detected
+automatically (architecture first; Windows is `-win32` for both bitnesses; macOS files
+under `universal-mac`); override it for a cross build with `-DSODIUMXT_PLATFORM_ID=<id>`,
+or turn the copy off with `-DSODIUMXT_PLACE_IN_SRC=OFF`.
 
-```
-src/code/<arch>-<platform>/sodiumxt.{so,dll,dylib}
-```
-
-so the engine can resolve `c:sodiumxt>` with no extra step. The platform id is
-detected automatically (architecture-first; Windows is `-win32` for both
-bitnesses; macOS files under `universal-mac`); override it for a cross build with
-`-DSODIUMXT_PLATFORM_ID=<id>`, or turn the copy off with
-`-DSODIUMXT_PLACE_IN_SRC=OFF`.
+This also means a plain build makes the committed `x86_64-linux` binary differ, so the
+MANIFEST gate fails until you `git checkout` it (nothing changed) or refresh binary and
+manifest together (the change was intentional).
 
 ## Build and test (Linux, macOS)
 
@@ -67,13 +85,13 @@ ctest --test-dir build --output-on-failure        # sodium_smoke_test (KATs + ro
 # -> build also wrote src/code/<arch>-<platform>/sodiumxt.{so,dylib}
 ```
 
-The first build downloads and compiles libsodium (a couple of minutes); later
-builds reuse it.
+The first build downloads and compiles libsodium (a couple of minutes); later builds reuse
+it.
 
 ## Build and test (Windows / MSVC)
 
-Windows links libsodium from vcpkg. From a Developer PowerShell (so `cl.exe` is
-on PATH), with `VCPKG_INSTALLATION_ROOT` set to your vcpkg checkout:
+From a Developer PowerShell (so `cl.exe` is on PATH), with `VCPKG_INSTALLATION_ROOT` set to
+your vcpkg checkout:
 
 ```powershell
 vcpkg install libsodium:x64-windows-static          # or x86-windows-static for 32-bit
@@ -89,18 +107,17 @@ ctest --test-dir build --output-on-failure
 # -> build also wrote src\code\x86_64-win32\sodiumxt.dll
 ```
 
-The `NMake Makefiles` generator avoids the Visual Studio generator's VS-instance
-detection (which can fail on minimal runners) and gives a native `cl.exe` for the
-architecture of the Developer shell you launched. Use the `x86-windows-static`
-triplet from a 32-bit Developer shell to produce the `x86-win32` `.dll`.
+The `NMake Makefiles` generator avoids the Visual Studio generator's VS-instance detection
+(which can fail on minimal runners) and gives a native `cl.exe` for the architecture of the
+Developer shell you launched. Use the `x86-windows-static` triplet from a 32-bit Developer
+shell to produce the `x86-win32` `.dll`. With no MSVC at hand, `CLAUDE.md` has the proven
+mingw cross-build recipe and the three checks a cross-built DLL must pass.
 
 ## Always iterate under the sanitizers
 
-A crypto binding is exactly where an off-by-one in buffer sizing hides, so ASan
-and UBSan are part of the suite, not an afterthought. Use gcc: clang's ASan
-runtime is not installed in the CI environment.
-
-Through CMake:
+A crypto binding is exactly where an off-by-one in buffer sizing hides, so ASan and UBSan
+are part of the loop, not an afterthought. Use gcc: clang's ASan runtime is not installed
+in this environment.
 
 ```sh
 cmake -S . -B build-asan -DSODIUMXT_BUILD_TESTS=ON -DSODIUMXT_SANITIZE=ON
@@ -108,8 +125,8 @@ cmake --build build-asan
 ctest --test-dir build-asan --output-on-failure
 ```
 
-Or the direct one-liner (libsodium headers treated as system headers with
-`-isystem`, so their warnings never pollute our warning-clean `-Wall -Wextra`):
+Or the direct one-liner (libsodium headers as system headers with `-isystem`, so their
+warnings never pollute our warning-clean `-Wall -Wextra`):
 
 ```sh
 gcc -std=c11 -Wall -Wextra -fsanitize=address,undefined -fno-sanitize-recover=all \
@@ -124,91 +141,57 @@ OXT is a GUI runtime: there is no headless way to compile or run `.lcb` or
 
 ```sh
 python3 tools/check-livecodescript.py
+bash tools/run-gates.sh        # the whole member gate list: static gate, docs style, manifest
 ```
 
-It checks smart/curly quotes and dashes, handler / `if` / `repeat` / `unsafe`
-balance, constant-declared-before-use, and the prefixed-token-shadow trap. A
-green run means "verified statically; still needs an OXT pass" - do not claim
-runtime behaviour of the `.lcb` you cannot observe here.
+The checker covers smart/curly quotes and dashes, handler / `if` / `repeat` / `unsafe`
+balance, constant-declared-before-use, and the prefixed-token-shadow trap. A green run
+means "verified statically; still needs an OXT pass" - do not claim runtime behaviour of
+the `.lcb` you cannot observe here.
 
-## Packaging the native library
+## Packaging and committing the native library
 
-`cmake --build` already copies the library into
-`src/code/<arch>-<platform>/sodiumxt.{so,dll,dylib}` (see "Where the built
-library lands"), so after a build it is in place. To track it in the repo for
-your platform, in the same change as the native edit:
-
-```sh
-git add src/code/<arch>-<platform>/sodiumxt.*
-```
-
-If you have a build tree you do not want to reconfigure (or want to copy from a
-build dir that did not run the post-build step, e.g. one built with
-`-DSODIUMXT_PLACE_IN_SRC=OFF`), do the same copy explicitly:
+After a build the library is already in place (see "Where the built library lands"). To
+copy from a build tree that did not run the post-build step (for example one built with
+`-DSODIUMXT_PLACE_IN_SRC=OFF`):
 
 ```sh
 python3 tools/package-extension.py --build-dir build
-# -> src/code/<arch>-<platform>/sodiumxt.{so,dll,dylib}
+# -> src/code/<arch>-<platform>/sodiumxt.{so,dll,dylib}, and a refreshed MANIFEST.sha256
 ```
 
-Platform ids are architecture-first, and Windows is `-win32` for both bitnesses:
-`x86_64-linux`, `x86-linux`, `x86_64-win32`, `x86-win32`, `universal-mac`. CI
-builds and tests the full matrix; the build (and the script) handle the one
-platform you are on.
+`src/code/MANIFEST.sha256` is a plain `sha256sum` list of every committed native blob.
+`tools/run-gates.sh` checks it (`cd src/code && sha256sum -c MANIFEST.sha256`), and that
+script runs both in the suite's `suite-gates.yml` (via `tools/build-all.sh --gates`) and in
+this member's own `.github/workflows/gates.yml`, so a committed `sodiumxt.*` that is
+unlisted or does not match fails the build. The manifest is an integrity record, not a
+source-provenance proof.
 
-`package-extension.py` also refreshes `src/code/MANIFEST.sha256`, a plain
-`sha256sum` list of every committed native blob. The suite CI (the root
-`suite-gates.yml`, via `tools/build-all.sh --gates`) recomputes those hashes on
-every push and fails if a committed `sodiumxt.*` is unlisted or does not match,
-so a binary cannot be swapped or corrupted without the manifest being updated in
-the same change; the member's own `verify-binaries` job does the same when
-SodiumXT is worked on in isolation (member workflows are inert inside the
-monorepo). Verify locally with `cd src/code && sha256sum -c MANIFEST.sha256`.
-The manifest is an integrity record, not a source-provenance proof: the shipped
-binaries are rebuilt from the pinned libsodium by the root CI's
-`native sodiumxt` workflow, which builds and tests all five platforms and
-publishes each as a downloadable artifact. That workflow does NOT commit them -
-it fires on every push, so a commit step there would land binaries nobody asked
-for on somebody else's change; a maintainer downloads the artifact and commits it
-alongside the change that motivated it. The other path, and now the usual one, is
-the root `release-binaries.yml`: a manual `workflow_dispatch` that rebuilds every
-platform it can, installs each library through
-`tools/install-release-binaries.py` (which checks the filename against the
-member, and the object format and architecture against the directory the library
-claims), refreshes the manifests, runs the whole gate set, and commits
-(`commit_mode`: `branch` / `pr` / `none`). That still satisfies suite rule 5,
-whose point is that a committed binary traces to a human decision - here the
-decision is the person pressing "Run workflow". It has already committed this
-member's rows once (run 31551536144, itself superseded by the 2026-08-23 ABI-10
-cross-builds); `CLAUDE.md`'s platform table records what each committed row was
-actually built from, and the `universal-mac` row is waiting on the first mac
-dispatch of that workflow. Build from source yourself when you need end-to-end
-assurance.
+Two routes commit a binary, and both keep committing a deliberate human step:
 
-## A note on the pinned libsodium
+- **By hand**, in the same change as the native edit: build (or run
+  `tools/package-extension.py`) and commit the binary with its manifest entry.
+- **The suite's `release-binaries.yml`**, the usual route: a manual `workflow_dispatch`
+  that rebuilds every platform, installs each library through
+  `tools/install-release-binaries.py` (filename against member, object format and
+  architecture against directory), refreshes the manifests, runs the gate set and commits
+  (`commit_mode`: `branch` / `pr` / `none`). Pressing "Run workflow" is the human decision.
+  All five committed rows came this way (release run 12, 2026-08-27; the Windows DLLs twice
+  more, last on 2026-09-12); `CLAUDE.md`'s table records what each row was built from.
 
-The Linux and macOS builds fetch libsodium by exact version and check it against
-the `SODIUMXT_LIBSODIUM_SHA256` pin in `CMakeLists.txt` before building. The
-Windows build links the libsodium supplied by vcpkg, which follows the same
-libsodium 1.0.x line but is not covered by that SHA256 pin; the known-answer
-tests (BLAKE2b, Argon2id, ed25519, KDF) run on every platform and are the guard
-against a constant or behaviour drift there. If you need the Windows binary held
-to an exact libsodium, pin the vcpkg baseline (a `vcpkg.json` manifest with a
-`builtin-baseline`) or build the pinned source on Windows too. Decided
-2026-08-27 (owner-delegated, brief D-08): the KAT-guarded status quo is the
-recorded state, not an oversight - the KATs gate every build and the release
-lane drives the published vectors on a real Windows runner before any DLL is
-bundled, so a pin would add maintenance without adding a check. The committed
-DLLs are in any case mingw cross-builds of the SHA256-pinned source (the
-CLAUDE.md fallback recipe), which moots the vcpkg question for what ships.
+The `native sodiumxt` workflow (`native-sodiumxt.yml` in the suite, `native.yml` here)
+builds and tests all five platforms and uploads artifacts, but NEVER commits: it fires on
+every push, so a commit step would land binaries on somebody else's change. Build from
+source yourself when you need end-to-end assurance.
 
 ## What "done" means
 
-- A `.lcb` change is done once `tools/check-livecodescript.py` passes.
-- A shim change is done once `sodium_smoke_test` passes under ASan/UBSan, and
-  (for an ABI change) `SXT_ABI_VERSION` and the `.lcb` `kSXTABIVersion` are
-  bumped together.
-- A native-library change is done once `tools/package-extension.py` has
-  refreshed the committed `src/code/<arch>-<platform>/` binary AND the
-  `src/code/MANIFEST.sha256` entry in the same change (the script does both;
-  `verify-binaries` in CI enforces the manifest).
+- A `.lcb` / `.livecodescript` change is done once `tools/check-livecodescript.py` passes
+  (and is "verified statically" until it has had an on-engine pass).
+- A shim change is done once `sodium_smoke_test` passes under ASan/UBSan, and (for an ABI
+  change) `SXT_ABI_VERSION` and the `.lcb` `kSXTABIVersion` are bumped together.
+- A native-library change is done once the committed `src/code/<arch>-<platform>/` binary
+  AND its `src/code/MANIFEST.sha256` entry are refreshed in the same change.
+
+House style: comment the *why*, matching the density of the surrounding code; ASCII only
+in `.lcb` / `.livecodescript`; no em dashes in committed prose.

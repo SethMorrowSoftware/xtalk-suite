@@ -1,194 +1,142 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working in
-the ENetXT member of the xtalk-suite monorepo (`enetxt/`).
+Guidance for Claude Code in the ENetXT member of the xtalk-suite monorepo (`enetxt/`). Where
+anything disagrees, the code, `docs/api-reference.md` and this file win; `docs/architecture.md`
+is the design authority.
 
-> **Phase 1 complete (the full binding).** The plan is the suite's
-> `docs/NEXT-EXTENSIONS-PLAN.md` Part III ("ENet — real-time, step 1");
-> milestones 0–3 are built: the full `enx_` ABI (v2), the LCB layer
-> (`org.openxtalk.library.enet`, public `en*`), helpers, the LAN chat demo,
-> the OXT selftest, all static gates, CI, and the four committed
-> Linux/Windows binaries (macOS: a `release-binaries.yml` mac lane builds the universal dylib since 2026-08-23; until a dispatch runs it, the committed one is still the manual build).
-> The OXT runtime pass happened 2026-08-07: `tests/enet-selftest.livecodescript`
-> runs green in OXT — all tests pass. That retires the `MCStringEncode`
-> first-runtime-use flag from the pre-pass audit (the selftest's `enSendText`
-> legs exercise that bind). A second engine pass on 2026-08-08 (the suite
-> selftest, green) added the cross-member evidence: enetxt carried a
-> SodiumXT-sealed ciphertext over a live loopback and delivered it
-> byte-for-byte, `enSend` **refused** 60001 bytes with `-4` rather than
-> truncating, accepted a payload at exactly the 60000-byte budget, and ENet
-> reassembled all 60000 bytes into ONE message — the fragmentation contract,
-> observed rather than reasoned. A third pass on 2026-08-10 (the suite selftest
-> with this member's synchronous half folded in, 21 checks green, twice in one
-> day) retired the isolated teardown section added after the 2026-08-07 pass:
-> `enDisconnectNow`, `enResetPeer`, `enSetPeerTimeout` and `enSetHostBandwidth`
-> all returned 0 against a live client host on a real engine. A fourth pass
-> on 2026-08-13 closed the async loopback itself: the member selftest ran
-> STANDALONE, green end to end — the live `enHostStatus` pair (while
-> connected, and counting zero peers after the disconnect) and the
-> `enPeerStatus` statistics half (rtt, packetLoss, the packet/byte
-> counters), added that same day, are all runtime results now.
-> A fifth pass on 2026-08-18 finally put the LAN chat DEMO on an engine, on
-> ONE machine (Linux; the suite's
-> [`docs/OXT-ENGINE-NOTES.md`](https://github.com/SethMorrowSoftware/xtalk-suite/blob/main/docs/OXT-ENGINE-NOTES.md) 6.4 is the dated
-> entry, and the session's later Windows report there is datachannelxt's, not
-> this member's). It reported two defects in this demo, and fixing the first
-> did not end the hunt, which is why both are recorded here rather than only
-> the one that finished it. (1) `enHostDestroy sHost` on the disconnect path,
-> declared `in pHost as Integer`, handed EMPTY by the second
-> `enetDisconnect` - ENet delivers one per peer and a failed connect makes one
-> of its own - which is a throw, not a no-op: it killed the poll chain and
-> left the demo silently dead (6.4). The same file already guarded `sHost` in
-> ten other places, and this was the one path that did not. (2) `the number of
-> keys of sPeers` does not parse at all - `keys` is not a chunk, so the engine
-> reads `keys of sPeers` as an OBJECT expression (1.7, filed that day as
-> 1.5b). Two
-> occurrences in this file, the join log in `enetConnect` and the dashboard in
-> `ecDashOnce`, both rewritten to `the number of lines of the keys of sPeers`,
-> the spelling that already had engine evidence behind it. The once-a-second
-> "Chunk: error in object expression" was credited to the UI kit's `uiStatus`
-> first, and the defaultStack pin that went into the kit master for it is a
-> real hardening resting on documented resolution semantics - but an argument
-> is evaluated in the CALLER and never reaches the handler it is passed to, so
-> (2) is what had been throwing all along, and 5.3 is classed DOCUMENTED
-> rather than OBSERVED for exactly that reason. The pin lives in the suite's
-> `tools/ui-kit.livecodescript` and was re-carried byte-identical, never
-> patched into this demo. The poll pump gained a guarded DRAIN as well as a
-> guarded dispatch in the same session, plus `enPollLastError()` /
-> `enPollClearError`, which the demo surfaces in its own log. At the end of
-> that session the maintainer reported single-machine host/join chat working.
-> Still un-exercised: the LAN chat demo between two real MACHINES - the demo
-> is a single-machine engine pass 2026-08-18, and the two-machine leg needs an
-> OXT pass.
+## What this is
 
-## As-built note, 2026-08-24: the internet chat demo
+**enetxt** binds ENet v1.3.18 (MIT, reliable UDP) for OXT: ENet (static, PIC) -> the C++ shim
+`src/enet_shim.cpp` (exports `enx_*`, **ABI 2**: `ENX_ABI_VERSION` in `src/enx_abi.h` equals
+`kABIVersion` in `src/enet.lcb`) -> ONE library `enetxt.{so,dll,dylib}` (bare token) -> the LCB
+binding `src/enet.lcb` (`org.openxtalk.library.enet`, 23 public `en*` over 22 bound `enx_*`)
+-> the pump `examples/enet-helpers.livecodescript`. The full binding is built.
+Layout: `src/` (shim, headers, `enx_handle_table.h` carried verbatim, `enetxt.map`, `enet.lcb`,
+`code/` with `MANIFEST.sha256`); `tests/` (smoke, handle and golden tests, the OXT harness);
+`examples/` (helpers, two chats); `tools/` (`run-gates.sh` and its gates,
+`package-extension.py`); `docs/`.
 
-`examples/enet-internet-chat.livecodescript` is the LAN chat's sibling with
-one job: prove ENet across the REAL internet, on screen. ENet has no NAT
-traversal of its own, so the demo composes the suite for the missing half:
-the HOST runs a TorrentXT session whose only jobs are `btMapPort(session,
-port, port, FALSE)` - FALSE is load-bearing, ENet is UDP and a TCP mapping
-tests green at the router while every packet drops - and public-IP discovery
-(the `externalIp` event, which rides real DHT traffic, hence the bootstrap
-nodes). The invite is ip:port; the joiner needs only enetxt. The proof is
-fail-honest: the pill goes INTERNET LIVE only when the remote address is
-outside RFC 1918/loopback/link-local (the classifier's truth table is pinned
-in the boot self-check), so a same-LAN run cannot masquerade as the internet
-claim. Both poll dispatchers are co-embedded (the 2026-08-23 script-local
-rename is what makes that legal). Verified statically; needs a two-machine,
-two-network OXT pass - the leg the stack exists to close. Carrier-gated like
-every demo: ui-kit, selfcheck, embeds, launcher, stack-size, timer-pin.
+## The rules
 
-## enx_disconnect leaked the handle from every pre-connect state (2026-09-09)
+The shim cites these by number; keep the numbering.
 
-`enx_disconnect`'s own comment said the handle retires when OUR E_DISCONNECT is
-drained. That is true from exactly TWO states, and the code trusted it from all
-of them.
+1. **Never call script from a foreign thread - here, PUMP OR NOTHING.** ENet has no threads,
+   so nothing connects, sends or receives unless `enet_host_service` runs. `enx_poll` loops
+   `enet_host_service(host, &e, 0)` until 0 each tick; its cadence is the latency floor
+   (16-33 ms for real-time feel).
+2. **The exception firewall.** Every `enx_*` body runs inside `ENX_GUARD_*` (`src/enx_abi.h`):
+   one declaration per line inside a guard body (the macro-comma trap), and no preprocessor
+   directive inside one (gcc tolerates it, MSVC rejects it with C2121; hoist into a helper).
+3. **Payload crosses by design, but ENet is not for files** (bulk is TorrentXT's).
+   `enet_packet_create` COPIES in (never NO_ALLOCATE); after a successful `enet_peer_send` the
+   host owns the packet, but a REFUSED send leaves it ours - destroy it; on receive copy the
+   bytes out THEN `enet_packet_destroy`, before the drain returns. Never hand script a pointer
+   into ENet memory.
+4. **A shim change is done when `enet_smoke_test` is green under ASan/UBSan** (gcc; clang's
+   runtimes are not installed here). A native-library change refreshes the committed binary
+   (`tools/package-extension.py`) AND its `MANIFEST.sha256` line in one change; the suite's
+   hand-dispatched `release-binaries.yml` does both; `native-enetxt.yml` never commits.
+5. **Registries are APPEND-ONLY; an ABI change bumps `ENX_ABI_VERSION` and `kABIVersion`
+   together** (`tools/check-record-registry.py` proves the `.lcb` mirror).
+6. **Script is done when `tools/check-livecodescript.py` passes**, and stays "verified
+   statically; needs an OXT pass" until an engine runs it. Kit fixes go in the suite master
+   `tools/ui-kit.livecodescript`, never a demo; edit `enet-helpers` and re-run the suite's
+   `tools/sync-demo-embeds.py`, never inside the sentinels.
 
-Read out of enet 1.3.18 `peer.c` rather than recalled: `enet_peer_disconnect`
-returns having done NOTHING when the peer is DISCONNECTING / DISCONNECTED /
-ACKNOWLEDGING_DISCONNECT / ZOMBIE; it queues the acknowledged command and moves
-to DISCONNECTING only from CONNECTED or DISCONNECT_LATER; and from every other
-state it takes the else branch - `enet_host_flush` + `enet_peer_reset` - which
-queues no event and leaves the peer DISCONNECTED.
+## As built
 
-CONNECTING is exactly where `enx_connect` leaves a peer. So an app that gives up
-while the UI still says "connecting" and calls `enDisconnect` got no event, no
-retire, and a slot nobody frees, with the ENet-side backlink still pointing at
-it. A dashboard that lets a user cancel and retry leaks one handle per attempt.
+- ENet via FetchContent, headers SYSTEM; `CMAKE_POSITION_INDEPENDENT_CODE ON` must sit BEFORE
+  FetchContent (non-PIC static ENet cannot link into the shared lib; ld only says "bad
+  value"). `ENETXT_SANITIZE` is the GLOBAL sanitizer knob, injected before FetchContent so
+  ENet is instrumented; "address" is the lane that matters; NO TSan lane (threadless).
+- `enet_initialize`/`deinitialize` are process-global: the shim refcounts them and the FINAL
+  `enDeinitialize` destroys every surviving host. Many hosts per process are fine
+  (torrentxt's one-session rule does not apply).
+- **Lossless partial drain**: an event that no longer fits the caller buffer goes into the
+  host's ONE-SLOT STASH and the pump STOPS; the rest stay inside ENet and the stash goes
+  first next poll. Lossless and ordered at ANY buffer size (the smoke test's keyhole
+  scenario), with no bounded queue, because WE decide when events materialize.
+- **Handles**: born in `enx_connect` (outgoing) or at the drain that writes an incoming peer's
+  E_CONNECT (the event carries the newborn handle); the int rides `ENetPeer.data` as a
+  backlink; retired when E_DISCONNECT drains, or at once on `disconnect_now`/`reset`.
+- 60000-byte budget both ways: sends over it return -4; oversized inbound drops WHOLE with an
+  E_ERROR event.
+- Registries (`src/enx_record.h`): 15 field ids, 4 event codes, 10 peer states
+  (static_asserted against ENetPeerState, whose real spelling is
+  `ENET_PEER_STATE_ACKNOWLEDGING_DISCONNECT`), 3 send flags as OUR enum 0 reliable /
+  1 unreliable / 2 unsequenced (ENet's raw bits would make the safe default a magic number).
+- Only `enx_*` is exported (22 bound + the `enx_selftest_throw` firewall hook): `src/enetxt.map`
+  for GNU ld/lld, and a derived `-exported_symbols_list` for ld64, which has no
+  `--version-script` (2026-08-26; release run 10 measured 70 leaked ENet names). Committed
+  copies are `strip --strip-unneeded`.
+- The helper pump guards BOTH the `enPoll` drain and each dispatch and records the first
+  failure in `enPollLastError()` (cleared only by bare `enPollClearError`).
 
-The fix tests the POST-call state, which is why it sits after the call rather
-than before: DISCONNECTED means either the peer was reset here or the call was a
-no-op on an already-dead peer, and both mean nothing is owed. Anything else
-still owes an event and the drain retires it there. `retire_peer` is idempotent,
-so racing the drain is harmless.
+## Gotchas and traps
 
-Compile-verified against ENet v1.3.18 (the tag CMakeLists pins), `-Wall
--Wextra`, no warnings. The committed binaries do NOT carry it yet -
-`docs/REMAINING-WORK.md` C.0.
+1. **`enx_disconnect` leaked the handle from every pre-connect state** (fixed 2026-09-09,
+   `23a2914`). Per enet 1.3.18 `peer.c`, `enet_peer_disconnect` does NOTHING from
+   DISCONNECTING / DISCONNECTED / ACKNOWLEDGING_DISCONNECT / ZOMBIE, moves to DISCONNECTING
+   only from CONNECTED or DISCONNECT_LATER, and from every other state (CONNECTING included,
+   where `enx_connect` leaves a peer) does `enet_host_flush` + `enet_peer_reset`, queuing no
+   event and leaving the peer DISCONNECTED. So the fix tests the POST-call state: DISCONNECTED
+   owes nothing, retire now; anything else owes an event and the drain retires it.
+   `retire_peer` is idempotent, so racing the drain is harmless.
+2. **An EMPTY handle into `enHostDestroy` (`in pHost as Integer`) THROWS** and silently kills
+   the poll chain (suite engine note 6.4). Guard every handle-clearing path; the suite's
+   `tools/check-lcb-call-types.py` checks the boundary.
+3. **`the number of keys of X` does not parse**: write `the number of lines of the keys of X`
+   (engine note 1.7).
+4. **The kit defaultStack pin (engine note 5.3) did not fix that dashboard throw**: an
+   argument is evaluated in the CALLER and never reaches the pinned handler (why 5.3 is
+   classed DOCUMENTED, not OBSERVED).
+5. **Helper script-locals carry the member stem** (`sEnPolling`, `sEnPollTarget`,
+   `sEnPollInterval`, `sEnPollNote`, renamed 2026-08-23): datachannel's helpers declared the
+   same four, and two libraries sharing a column-0 name cannot be co-embedded (engine note
+   1.6); the suite's `tools/check-cross-library-names.py` holds them disjoint.
+6. **`enet-internet-chat`**: ENet has no NAT traversal, so the HOST runs a TorrentXT session
+   only for `btMapPort(session, port, port, FALSE)` (FALSE is load-bearing: a TCP mapping
+   tests green while every UDP packet drops) and public-IP discovery via `externalIp` (rides
+   DHT traffic, hence the bootstrap nodes). Invite is ip:port; a joiner needs only enetxt;
+   both poll dispatchers are co-embedded. The pill reads INTERNET LIVE only for a remote
+   outside RFC 1918 / loopback / link-local (truth table in the boot self-check). On ONE
+   network it cannot connect: most routers refuse to hairpin the public-IP invite
+   (engine-reported 2026-08-27; the watchdog's cause 5).
 
-## The rules that carry over unchanged
+## Engine evidence ledger
 
-1. **Never call script from a foreign thread** — trivially satisfied here:
-   ENet has NO internal threads. The flip side is the binding's defining
-   property: **pump or nothing.** Nothing connects, sends, or receives unless
-   `enet_host_service` is called; the `enPoll` drain (each tick: loop
-   `enet_host_service(host, &e, 0)` until 0) is the transport's heartbeat and
-   its cadence is the latency floor (16–33 ms for real-time feel).
-2. **The exception firewall** — every `enx_*` entry point body runs inside
-   `ENX_GUARD_*` (see `src/enx_abi.h`). Two sibling lessons are baked into the
-   macros' comment and MUST be kept: one declaration per line inside a guard
-   body (the macro-comma trap), and no preprocessor directive inside a guard
-   body (gcc tolerates it, MSVC rejects it — C2121; hoist into a helper).
-3. **Payload crosses here by design** (packets ARE messages: game state,
-   control) but ENet is not for files — bulk belongs to TorrentXT. Packet
-   ownership: `enet_packet_create` copies in; after `enet_peer_send` the host
-   owns the packet; on RECEIVE copy the bytes out THEN `enet_packet_destroy`
-   — never hand script a pointer into ENet-owned memory (the smoke test models
-   this copy-then-destroy shape).
+| Date | Engine / platform | What ran | Result |
+|---|---|---|---|
+| 2026-08-07 | OXT (platform not recorded) | `tests/enet-selftest.livecodescript` | green, all tests; retired the `MCStringEncode` first-runtime-use flag (the `enSendText` legs exercise it) |
+| 2026-08-08 | OXT, suite paste | cross-member leg and the budget | a SodiumXT-sealed ciphertext crossed a live ENet loopback byte-for-byte; `enSend` refused 60001 bytes with -4, accepted 60000, and ENet reassembled all 60000 into ONE message |
+| 2026-08-10 | OXT, suite paste (folded) | sync half incl. the isolated teardown section | 21/21, twice; `enDisconnectNow`, `enResetPeer`, `enSetPeerTimeout`, `enSetHostBandwidth` returned 0 on a live client host |
+| 2026-08-13 | OXT (platform not recorded) | `enet-selftest` standalone, async loopback | green end to end: live `enHostStatus` pair (connected, then zero peers), `enPeerStatus` rtt / packetLoss / counters, echo / broadcast / binary, graceful close |
+| 2026-08-17 | OXT 9.6.3, Windows x86_64, NT 10.0 | suite paste (preflight: enetxt LOADED at ABI 2) | enetxt 21/21 folded; paste 1,836 folded / 0 failed / 7 skipped |
+| 2026-08-18 | OXT, Linux, ONE machine | `examples/enet-lan-chat.livecodescript`, first run | gotchas 2 and 3 found and fixed; maintainer reported single-machine host/join chat working after the fixes (environment not captured) |
+| 2026-08-20 | OXT, Windows | suite paste, whole run | 1981 / 0 / 1; enetxt 34 folded (21 plus, by count, the 13 helper-section assertions); the core's ENet loopback delivered, 60000 budget checked, hosts released |
+| 2026-08-24 | OXT 9.6.3, Windows x86_64, NT 10.0 | suite paste | 2,373 / 0 / 3 deliberate skips (enetxt's own count not recorded) |
+| 2026-08-27 | CI, no engine | `release-binaries.yml` run 12 (`cec1e85`) | first `universal-mac` dylib committed (both slices); all five platforms pinned |
+| 2026-08-27 | OXT, two-machine session (platform not recorded) | suite paste; `enet-internet-chat` on one network | 2440 / 2 / 3, every folded member green (the renamed helper locals ran folded); the 2 failures were the core's loopbacks on a machine blocking UDP to 127.0.0.1 (environment: the suite runbook's trap 5.5); internet chat correctly could not connect (gotcha 6) |
+| 2026-09-12 | CI, no engine | `release-binaries.yml` run 34657390798 (`421bab3`) | every platform rebuilt from a tree containing `23a2914`; the x86_64 `.so` disassembly shows the gotcha-1 retire path |
 
-## As-built facts (Phase 1)
+## Status
 
-- Dependency pinned: ENet v1.3.18 (MIT) via FetchContent; headers are SYSTEM
-  headers; `CMAKE_POSITION_INDEPENDENT_CODE ON` sits BEFORE FetchContent (a
-  non-PIC static archive cannot link into the shared lib; ld only says "bad
-  value"). One shared library, bare token `enetxt`.
-- `ENETXT_SANITIZE` is the family's GLOBAL sanitizer knob (injected before
-  FetchContent so ENet is instrumented too). "address" is the lane that
-  matters; ENet is threadless so there is NO TSan lane, on purpose.
-- `enet_initialize`/`enet_deinitialize` are process-global; the shim
-  refcounts them, and the FINAL deinitialize destroys every surviving host
-  (many HOSTS per process are fine — the torrentxt single-session rule does
-  NOT apply here).
-- **THE LOSSLESS PARTIAL DRAIN** (this binding's one novel structure):
-  enx_poll encodes serviced events into the caller buffer; one that no longer
-  fits goes into the host's ONE-SLOT STASH and the pump STOPS — unserviced
-  events stay inside ENet, the stash goes first next poll. Lossless and
-  ordered at ANY buffer size (pinned by the smoke test's keyhole scenario);
-  no bounded queue or overflow accounting needed because WE decide when
-  events materialize.
-- **Handle lifecycle**: born in enx_connect (outgoing) or at the drain that
-  writes an incoming peer's E_CONNECT (the announcing event carries the
-  newborn handle); the int handle rides ENetPeer.data as a backlink; retired
-  when E_DISCONNECT drains (polite) or immediately on disconnect_now/reset
-  (ENet defines those as locally event-less).
-- **Packet ownership** (ENet's contract, kept everywhere): create COPIES
-  bytes in (never NO_ALLOCATE); after a successful send the host owns the
-  packet (but a REFUSED enet_peer_send leaves it ours — destroy it); on
-  receive, copy out THEN destroy before the drain returns.
-- The 60000-byte budget is enforced both ways: sends refuse with -4;
-  oversized inbound drops WHOLE with an E_ERROR event.
-- Registries (enx_record.h): 15 field ids, 4 event codes, 10 peer states
-  (static_asserted to mirror ENetPeerState — NOTE the real enum spells it
-  ENET_PEER_STATE_ACKNOWLEDGING_DISCONNECT), 3 send flags (OUR enum: 0
-  reliable / 1 unreliable / 2 unsequenced — ENet's raw bits would make the
-  safe default a magic number). APPEND-ONLY; adding one bumps the ABI.
+The whole `en*` surface is engine-proven (standalone async 2026-08-13; folded through
+2026-08-27). No engine has loaded the 2026-09-12 binaries, and the gotcha-1 fix is
+compile-verified with no smoke-test block driving it. Still un-exercised: the LAN chat demo
+between two real machines (closing-pass leg B), `enet-internet-chat` across two networks
+(verified statically; needs a two-machine, two-network OXT pass), a standalone async re-run
+on the current binaries, and any Mac engine load. Open work: the suite's docs/WORK-PLAN.md.
 
-## Building
+## Build and gates
 
 ```sh
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DENETXT_BUILD_TESTS=ON
 cmake --build build --parallel && ctest --test-dir build --output-on-failure
 cmake -S . -B build-asan -DENETXT_BUILD_TESTS=ON -DENETXT_SANITIZE=address
 cmake --build build-asan --parallel && ./build-asan/enet_smoke_test
+bash tools/run-gates.sh     # this member's gate list (what CI runs)
 ```
 
-gcc for the sanitizer lane (clang's runtimes are not installed in this
-environment). A shim change is "done" only with the smoke test green under
-ASan/UBSan.
-
-## As-built note, 2026-08-23: the poll dispatcher's script-locals carry the member stem
-
-`examples/enet-helpers.livecodescript` renamed its four script-locals
-(`sPolling` and friends became `sEnPolling` / `sEnPollTarget` /
-`sEnPollInterval` / `sEnPollNote`), because the datachannel helper layer
-declared the SAME four names and two libraries sharing a column-0 name can
-never be co-embedded into one paste-and-run file - `sPolling` is the exact
-name that already reached an engine once as a demo-vs-helper collision
-(root `docs/OXT-ENGINE-NOTES.md` 1.6). Behavior-neutral standalone
-(script-locals are file-scoped) and no carrier reads them directly
-(measured: every demo and the selftest go through the `enPoll*` handlers),
-but the embedded copies changed, so every carrier was regenerated and the
-rename is verified statically pending the next OXT re-pass. The suite's
-`tools/check-cross-library-names.py` now holds all library names disjoint
-so this class cannot recur.
+Windows, the universal mac build and packaging: `docs/building.md`. Engine behaviour goes in
+the suite's docs/OXT-ENGINE-NOTES.md. Comment the why, densely; per-task branch, draft PR.

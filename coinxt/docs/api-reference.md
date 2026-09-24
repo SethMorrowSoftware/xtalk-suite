@@ -1,89 +1,34 @@
 # CoinXT API Reference
 
-**The `cx*` handlers that exist today, and nothing else.**
+**Every shipped `cx*` handler, and nothing else.** [../SPEC.md](../SPEC.md) is the design and the
+contract; this file is what you can call today, handler by handler.
 
-CoinXT is being built in phases (see [../IMPLEMENTATION-PLAN.md](../IMPLEMENTATION-PLAN.md)).
-[../SPEC.md](../SPEC.md) describes the *whole designed* API. This file is the opposite
-document: it lists only what is shipped, so you can tell at a glance what you can actually
-call. Hashes, the secp256k1 curve, the encodings and addresses (WIF included since
-2026-08-15), HD wallets and mnemonics, (phase 5) transaction building and (ABI 6, 2026-08-16)
-BIP-340 Schnorr with the BIP-341 Taproot tweak are all shipped. Nothing in SPEC.md is deferred
-any more except SHA3-512 and SLIP-39.
-
-> **Status.** **Ninety-four** public handlers exist across two layers (the count
-> `tools/check-doc-handlers.py` prints): **43** in the `.lcb` extension (hashes, the curve,
-> the BIP-32 tweaks, the BIP-39 wordlist, and the BIP-340 / BIP-341 surface) and **51** in
-> `src/coinxt.livecodescript` (encodings, addresses, mnemonics, HD derivation, the phase-5
-> transaction builders, the Taproot address path, and the 2026-08-23 BIP-341 sighash and
-> script-path helpers).
-> The two load differently - see the phase-3 section.
+> **Status.** **95** public handlers across two layers: **44** in the `.lcb` extension (hashes, the
+> curve, the BIP-32 tweaks, the BIP-39 wordlist, BIP-340 / BIP-341 and point addition) and **51** in
+> `src/coinxt.livecodescript` (encodings, addresses, WIF, mnemonics, HD derivation, the transaction
+> builders, the Taproot address path, the BIP-341 sighash and script-path helpers). The two load
+> differently; see the phase-3 section. The native library is at **ABI 7**.
 >
-> **Phase 5 (transaction building) is ENGINE-PASSED (2026-08-12).** The Bitcoin path reproduces
-> the BIP-143 native-P2WPKH worked example byte for byte in `tools/coin_reference.py`, and the
-> Ethereum paths reproduce the EIP-155 specification example and a self-consistent EIP-1559
-> typed transaction. Since 2026-08-11 all thirteen handlers are also driven THROUGH THE SCRIPT
-> by `tools/check-script-vectors.py` (251 checks) against those same vectors, with the encoders
-> fed the oracle's own deterministic signatures - the same headless-execution net phases 3 and
-> 4 carry. That net immediately caught a defect no static gate could: `cxBtcTxEncode` refused
-> to assemble the reference transaction outright, because its trailing empty scriptSig (input 1
-> is segwit) collapses under the engine's one-trailing-delimiter chunk rule and tripped a strict
-> parallel-list guard; it was fixed and pinned, and the 2026-08-12 engine run (Windows x64,
-> 230/230 in the folded suite harness) confirmed it: the whole signed transaction matched
-> BIP-143 byte for byte on a real engine, with both new refusals firing as designed.
+> **Engine record** (the dated detail is in [../CLAUDE.md](../CLAUDE.md), "As-built notes"): the hash
+> surface 2026-08-08; phases 2-4, 207/207, 2026-08-10; phase 5 (transactions), 230/230, Windows x64,
+> 2026-08-12; WIF, the ABI 5 wipe binding and the ABI 6 BIP-340 / BIP-341 surface, 278/278, Windows
+> x86_64, OXT 9.6.3, 2026-08-17; the BIP-341 sighash and script-path handlers, 290/290, Windows x86_64,
+> OXT 9.6.3, 2026-08-24. Every handler except `cxPubkeyCombine` (ABI 7, 2026-09-10) has run green on an
+> engine; `cxPubkeyCombine` is verified statically and headlessly and needs an OXT pass.
 >
-> **The independent-decoder bar is now MET (2026-08-12).** A FRESH native-P2WPKH transaction
-> - new key, new amount, a prevout and destination this repo has never pinned - was built
-> end to end by `src/coinxt.livecodescript` (its sighash, DER, varint, witness and
-> serialization, driven through `tools/lcs-interp.py`) and handed to **python-bitcointx 1.1.5**
-> (the maintained python-bitcoinlib fork, a full consensus-shaped script interpreter over
-> libsecp256k1). It deserialized the script's bytes, ran `VerifyScript` under
-> `SCRIPT_VERIFY_WITNESS`, and confirmed the signature against its own independently-computed
-> BIP-143 sighash; a flipped signature byte and a +1-satoshi wrong amount were both rejected,
-> so the verdict is not vacuous. `tools/verify-independent-decoder.py` is that acceptance run
-> (not a CI gate - it needs the pip packages python-bitcointx + coincurve, so it SKIPS loudly
-> without them). **Extended 2026-08-13 to all four shipped families**: a fresh legacy P2PKH
-> spend passes the same consensus evaluation (python-bitcointx's own legacy sighash included,
-> with a tampered-output negative control), and fresh EIP-155 and EIP-1559 transactions
-> (chain id 137, wei values above 2^53) are accepted by **eth-account** - the recovery
-> library web3.py itself uses - which recovers the exact sender from the script-built bytes,
-> an independent RLP decode confirming every field; 31 checks, a negative control firing in
-> every family. **The last bar is a live testnet broadcast**; until then "broadcastable" stays
-> unclaimed, but transactions CoinXT builds are now known to be accepted by code we did not
-> write, in every family it ships.
+> **Independent acceptance** (2026-08-12/13, `tools/verify-independent-decoder.py`, a manual run):
+> fresh legacy P2PKH, native P2WPKH, EIP-155 and EIP-1559 transactions built by the shipped script
+> were accepted by **python-bitcointx 1.1.5** and **eth-account 0.13.7**, 31 checks with a negative
+> control in every family. **Broadcast:** Bitcoin testnet accepted spends the CoinXT Wallet built
+> over these handlers: a legacy spend over `cxBtcSighashLegacy` / `cxBtcTxEncode` (2026-09-02, txid
+> `7978bdd2c097c929cae2ab00084d4454b68b1d054a3f2d53fc7b51b70551e4d5`), another spend on 2026-09-03,
+> and a taproot script-path reveal over `cxBtcSighashTaproot` / `cxSchnorrSign` (2026-09-03). No
+> EIP-155 or EIP-1559 transaction has been broadcast.
 >
-> **Every phase has now run on a real engine.** *Phase 1, the hash surface,* was closed by an
-> engine pass on **2026-08-08**: the binding loaded and returned its pinned vectors byte-exact.
-> *Phases 2, 3 and 4* were closed on **2026-08-10**: the member harness ran folded into the
-> suite selftest (`tests/suite-selftest.livecodescript` at the repository root), 205/206 on the
-> first pass and **207/207** on the same-day re-run. The one red line was a genuine engine
-> parser difference no gate had modelled - `cxHdDerivePath` of `"m/"` returned its node
-> unchanged because the engine counts one trailing delimiter out of existence - fixed the same
-> day, and the refusal observed green in the re-run. *Phase 5* was closed on **2026-08-12**
-> (Windows x64): the folded harness ran the whole surface at **230/230**, transactions included.
-> The two WIF handlers (2026-08-15) closed their own gap on **2026-08-17** (coinxt 278/278,
-> Windows x86_64) - this note said "never yet on an engine" for a week after that run.
-> The native side remains cross-verified on
-> every push: CoinXT reproduces four published RFC 6979 signatures byte for byte, a CoinXT
-> signature verifies in the independent Python `ecdsa` library, and recovery round-trips to
-> the signer.
->
-> **BIP-340 / BIP-341 shipped at ABI 6 on 2026-08-16**, over a SECOND vendored library
-> (upstream bitcoin-core/secp256k1 - trezor-crypto's plain-C tree has no BIP-340; the rule
-> change is recorded in SPEC.md section 2.1). The ABI-6 surface ran green on-engine
-> **2026-08-17** (coinxt 278/278: all 19 BIP-340 vectors including the 10 negatives, and the
-> BIP-341 wallet vectors), and the 2026-08-23 script-layer additions (the BIP-341 sighash
-> builder and script-path helpers) ran green on **2026-08-24** (coinxt 290/290).
->
-> **Not shipped, and now decided rather than merely noted (2026-08-17):** `cxSha3_512` is
-> **deferred** and SPEC.md section 1 no longer advertises it. Calling it is still a
-> `handler not found`; what changed is that "ship it or strike it" is no longer an open question -
-> the full decision, its cost (an ABI bump plus a four-platform binary refresh) and the condition
-> for revisiting it are in that section. SLIP-39 remains a later phase.
->
-> Nothing else in this file is in that position: every one of the 95 shipped `cx*` handlers is
-> documented here, and `tools/check-doc-handlers.py` holds both directions - a shipped handler that
-> never reaches this page, and a `cx*` name in these docs that no handler defines, each fail the
-> build.
+> **Not shipped, by decision:** `cxSha3_512` is DEFERRED (SPEC.md section 1 has the cost and the
+> condition for revisiting), so calling it is a `handler not found`. SLIP-39 is not planned (the
+> suite's D-15). `tools/check-doc-handlers.py` holds this page complete in both directions: a shipped
+> handler missing here, or a `cx*` name in the docs that no handler defines, fails the build.
 
 ## Before anything else
 
@@ -110,8 +55,9 @@ extension is not installed or did not load.
 - **Synchronous and stateless.** CoinXT does no I/O, holds no handles, starts no threads, and
   has nothing to close. There is no session, no poll, no teardown. Re-entrancy is not a
   concern.
-- **Deterministic.** Same input, same output, on every platform. That is what makes every
-  path known-answer testable, and `tools/coin-kat.py` tests all of them.
+- **Deterministic.** Same input, same output, on every platform, with one deliberate
+  exception: `cxSchnorrSign` with an empty aux draws fresh randomness (below). That is what
+  makes every path known-answer testable, and `tools/coin-kat.py` tests all of them.
 - **Errors throw.** A failure raises a string beginning `"CoinXT:"` and naming the handler.
   There is no error-code return and no partial result. Catch with `try ... catch tError`.
 - **Every call re-checks the ABI.** Each handler begins by verifying the loaded library
@@ -133,7 +79,7 @@ extension is not installed or did not load.
 cxCheckABI
 ```
 
-A command. Returns nothing. Throws if the loaded native library does not report ABI 6, with
+A command. Returns nothing. Throws if the loaded native library does not report ABI 7, with
 an error telling the user to reinstall the packaged extension. Silence is the pass.
 
 You rarely need to call it explicitly, because every other handler performs the same check
@@ -183,8 +129,8 @@ put cxHmacSha256(tKey, textEncode("Hi There", "utf-8")) into tMac
 ```
 
 **Do not compare a MAC with `is` or `=`.** That is a timing leak. CoinXT does not ship a
-constant-time compare in phase 1; compose SodiumXT's `sxMemEqual` if it is installed, and if
-it is not, treat the comparison as a known weakness rather than pretending otherwise.
+constant-time compare; compose SodiumXT's `sxMemEqual` if it is installed, and if it is not,
+treat the comparison as a known weakness rather than pretending otherwise.
 
 ## Key derivation
 
@@ -216,8 +162,8 @@ the 64-byte answer. That is a property of the construction, and the self-test pi
 
 ## The secp256k1 curve
 
-Everything in this section is phase 2. **CoinXT is a calculator, not a wallet:** it holds a
-private key for the microseconds of one call and keeps nothing. Storage, backup, and
+**CoinXT is a calculator, not a wallet:** it holds a private key for the microseconds of one
+call and keeps nothing. Storage, backup, and
 confirm-before-sign are your application's job.
 
 ### `cxNewSeckey(pEntropy)` / `cxSeckeyIsValid(pSeckey)`
@@ -320,11 +266,8 @@ a mainnet P2PKH address starts with a `1`.
 
 Wallet Import Format: Base58Check over `version || 32-byte key || optional
 0x01 compressed marker`, version `0x80` on mainnet and `0xEF` on testnet.
-Shipped 2026-08-15; **ENGINE-PROVEN 2026-08-17** (coinxt 278/278, Windows
-x86_64) and reconfirmed in the 2026-08-24 run's 290/290. Both directions plus
-the refusals are also executed headlessly by `tools/check-script-vectors.py`,
-against oracle-derived vectors anchored to the Bitcoin wiki's published worked
-example.
+Both directions and the refusals are pinned to the Bitcoin wiki's published
+worked example (engine-proven 2026-08-17).
 
 | Handler | Takes | Returns |
 |---|---|---|
@@ -390,12 +333,8 @@ lose money:
   handing this handler a raw internal key produces a valid-looking address nobody can
   spend from. **If you hold an internal key, call `cxBtcAddressP2TRFromInternal`. If you
   are not sure which you hold, you hold an internal key.**
-  Why two handlers rather than an optional second argument: an absent xTalk parameter is
-  indistinguishable from an empty one, so a single handler could not tell "encode this
-  output key" from "tweak this internal key with no script tree" - and those two readings
-  of the same 32 bytes give different addresses, one of them unspendable. Changing what
-  `cxBtcAddressP2TR` means would have silently turned every existing correct call into a
-  DOUBLE tweak, which is the same failure with no way to notice it.
+  Two handlers rather than an optional argument because an absent xTalk parameter equals
+  an empty one (SPEC.md section 6 has the whole argument).
 - **`cxEthAddressIsChecksummed` returns `false` for an all-lowercase address.**
   Such an address carries no checksum at all, and reporting it as valid would
   quietly retire the protection EIP-55 exists to give.
@@ -512,16 +451,13 @@ the decoded human intent first - a blind signer is a footgun. Repeated fields
 (a transaction's inputs and outputs) cross as **comma-separated lists of hex**,
 one item per input or output, the same convention the RLP and bech32 layers use.
 
-> **Engine-passed 2026-08-12 (230/230, Windows x64), executed headlessly on every
-> push, and verified against `tools/coin_reference.py`.** The reference model
-> reproduces the BIP-143 native-P2WPKH worked example, the EIP-155 spec example
-> and a self-consistent EIP-1559 transaction; `tools/check-script-vectors.py`
-> drives all thirteen handlers THROUGH THE script against those vectors (the
-> encoders fed the oracle's own deterministic signatures); and the engine run
-> reproduced the BIP-143 signed transaction byte for byte. An independent
-> decoder now accepts fresh transactions in all four families (see the status
-> block at the top); nothing here is called broadcastable until a testnet
-> node accepts one too.
+> **Engine-passed 2026-08-12 (230/230, Windows x64) and executed headlessly on
+> every push** against the BIP-143 worked example, the EIP-155 specification
+> example and a self-consistent EIP-1559 transaction; the engine run reproduced
+> the BIP-143 signed transaction byte for byte. Independent libraries accept
+> fresh transactions in all four families, and Bitcoin testnet accepted spends
+> built here (see the status block at the top); no Ethereum transaction has
+> been broadcast.
 
 > **A note on the list convention, learned by running it.** A repeated field
 > whose LAST entry is empty (e.g. `scriptSigs` = `[sig, ""]` for a legacy input
@@ -582,15 +518,13 @@ compact `r`/`s` from `cxSignRecoverable`.
 
 ## BIP-340 Schnorr and BIP-341 Taproot (ABI 6)
 
-New on 2026-08-16, over a SECOND vendored native library (upstream bitcoin-core/secp256k1;
-see [../SPEC.md](../SPEC.md) section 2.1 for why there are now two). **This section is
-ENGINE-VERIFIED 2026-08-16** - it ran green on a real engine hours after it shipped, all
-19 published BIP-340 vectors (10 of them negative) and all 14 BIP-341 wallet vectors
-driven through the binding inside the 278-check member harness
-(`tests/coin-selftest.livecodescript`, entry point `stRun`) folded into the suite paste.
-It is additionally executed headlessly on every build against BIP-340's and BIP-341's own
-published vector files. What is still NOT here: a BIP-341 sighash builder. CoinXT signs a
-sighash it is handed and cannot compute one.
+Shipped 2026-08-16 over a SECOND vendored native library (upstream bitcoin-core/secp256k1;
+[../SPEC.md](../SPEC.md) section 2.1 says why there are two). **Engine-proven 2026-08-17**
+(coinxt 278/278: all 19 published BIP-340 vectors, 10 of them negative, and all 14 BIP-341
+wallet vectors, through the binding), and executed headlessly on every build against
+BIP-340's and BIP-341's own vector files. The BIP-341 sighash builder and the script-path
+helpers further down are pure script over this surface (2026-08-23, engine-proven
+2026-08-24).
 
 ### `cxXOnlyPubkey(pSeckey)`
 
@@ -676,11 +610,10 @@ OXT pass (a one-argument `Data` in, 33 bytes out - the simplest shape this bindi
 
 ### `cxBtcSighashTaproot(pVersion, pOutpoints, pSequences, pAmountsSat, pScriptPubkeys, pOutputs, pIndex, pLocktime, pSighashType, pTapleafHex)`
 
-> The section that stood here was headed "What is NOT here, and you will need it to
-> spend". It is here now (2026-08-23, pure script over the ABI 6 surface), pinned to
-> the published bitcoin/bips wallet vectors - all seven keyPathSpending sighashes and
-> all six script trees - through `tools/check-script-vectors.py`, and ENGINE-PROVEN
-> 2026-08-24 (Windows x86_64: all 12 harness checks green in coinxt's 290/290).
+> Pure script over the ABI 6 surface (2026-08-23), pinned to the published
+> bitcoin/bips wallet vectors (all seven keyPathSpending sighashes, all six script
+> trees) through `tools/check-script-vectors.py`; engine-proven 2026-08-24 (all 12
+> harness checks green in coinxt's 290/290).
 
 The BIP-341 signature message (`SigMsg`) digest for 1-based input `pIndex`, returned
 as `Data` like the other two sighash builders. Unlike BIP-143 it commits to **every**
@@ -693,8 +626,7 @@ serialized-outputs list in the `cxBtcOutput` shape.
   0x83. `0x80` alone is refused (it is not a type), and SIGHASH_SINGLE with no
   matching output is refused (invalid under BIP-341, where pre-Taproot it silently
   signed the number 1). This is also where the segwit builder's SIGHASH_ALL-only
-  refusal was pointing: the variants now exist HERE, each pinned to a published
-  vector.
+  refusal points: the variants exist HERE, each pinned to a published vector.
 - **`pTapleafHex` chooses the path**: empty for key-path; the 64-hex leaf hash from
   `cxTapLeafHash` for script-path spending (key_version 0, codeseparator position
   `0xffffffff` - the no-OP_CODESEPARATOR case, which is the only one this builder
@@ -819,20 +751,17 @@ end try
 ## Secret hygiene, honestly
 
 CoinXT zeroes its own scratch buffers in C, and since **ABI 5 (2026-08-16)** the binding
-layer wipes its raw out-buffers too. Every block `src/coinxt.lcb` allocates for a result
-used to be freed unwiped (the file said so rather than hiding it); it is now wiped through a
-new shim export, `cnx_memzero(ptr, len)` - a wrap of the vendored trezor-crypto `memzero.c`,
-the platform wipe a compiler cannot elide - before every `MCMemoryDeallocate`, on the
-success path and on both error paths. That covers the outputs that are genuinely key
-material (the `cxPbkdf2HmacSha512` seed, the `cxHmacSha512` output BIP-32 splits into a
-child-key tweak and a chaincode, the `cxSeckeyTweakAdd` child private key, the `cxEcdh`
-shared point) and, deliberately, every other out-buffer as well: classifying "secret enough
-to wipe" per handler is a judgment that fails open when it is wrong. `cnx_memzero` is
-internal to the binding - there is no public `cx*` wrapper, because a script `Data` cannot
-be wiped in place and a handler that pretended otherwise would only invite false
-confidence. The wipe contract is executed by the native gates (the ASan self-test and
-`coin-kat.py`, including against the committed Linux x86_64 library); the `.lcb` call sites
-that route through it are verified statically and await an OXT pass.
+wipes every block `src/coinxt.lcb` allocates for a result through `cnx_memzero(ptr, len)` (a
+wrap of the vendored trezor-crypto `memzero.c`, a wipe a compiler cannot elide) before every
+`MCMemoryDeallocate`, on the success path and on both error paths. That covers the outputs
+that are genuinely key material (the `cxPbkdf2HmacSha512` seed, the `cxHmacSha512` block
+BIP-32 splits into a tweak and a chaincode, the `cxSeckeyTweakAdd` child key, the `cxEcdh`
+point) and, deliberately, every other out-buffer: classifying "secret enough to wipe" per
+handler fails open when it is wrong. There is no public `cx*` wrapper, because a script
+`Data` cannot be wiped in place. The native gates (the ASan self-test and `coin-kat.py`,
+including against the committed Linux x86_64 library) execute the wipe; the `.lcb` call
+sites ran on an engine in the 2026-08-17 pass (the bind resolved and every wiping handler
+returned its vectors), and only the native gates can observe that the bytes are zeroed.
 
 What none of that can protect is the `Data` CoinXT hands back.
 
@@ -856,7 +785,8 @@ backup, and confirm-before-sign belong to the app.
 
 ## See also
 
-- [../SPEC.md](../SPEC.md) - what CoinXT is designed to become, in full.
-- [../IMPLEMENTATION-PLAN.md](../IMPLEMENTATION-PLAN.md) - the phase order and each phase's bar.
-- [../CLAUDE.md](../CLAUDE.md) - the as-built record and the FFI conventions.
+- [../SPEC.md](../SPEC.md) - the design, the ABI contract and the byte-exact formats.
+- [../CLAUDE.md](../CLAUDE.md) - the rules, the traps and the dated engine evidence.
 - [../README.md](../README.md) - install, gates, status.
+- [getting-started.md](getting-started.md) - the from-zero path; [wallet.md](wallet.md) - the wallet
+  built on this API.

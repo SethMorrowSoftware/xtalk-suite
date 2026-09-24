@@ -37,7 +37,7 @@ SOURCES = [
     os.path.join(MEMBER, "src", "nostr-relay.livecodescript"),
 ]
 # The harness defines real names the docs may cite (nxSelfTest above all),
-# but its surface is documented in README/the plan, not the api-reference,
+# but its surface is documented in the README, not the api-reference,
 # so it feeds the KNOWN set only - never the must-be-documented set.
 EXTRA_KNOWN_SOURCES = [
     os.path.join(MEMBER, "examples", "nostrxt-tests.livecodescript"),
@@ -46,7 +46,6 @@ API_REFERENCE = os.path.join(MEMBER, "docs", "06-api-reference.md")
 DOC_FILES = [
     os.path.join(MEMBER, "README.md"),
     os.path.join(MEMBER, "CLAUDE.md"),
-    os.path.join(MEMBER, "IMPLEMENTATION-PLAN.md"),
 ] + sorted(
     os.path.join(MEMBER, "docs", f)
     for f in os.listdir(os.path.join(MEMBER, "docs")) if f.endswith(".md"))

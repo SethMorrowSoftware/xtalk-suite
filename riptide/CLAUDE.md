@@ -1,1280 +1,367 @@
 # CLAUDE.md - riptide/
 
-Guidance for Claude Code when working in this directory. Read
-`../docs/RIPTIDE-SOCIAL-SPEC.md` FIRST: it is the full design (the five
-rails, the identity architecture, the security model, the phased roadmap),
-and this directory implements it phase by phase. This file records only
-what is operational and riptide-specific. The root `CLAUDE.md` and the
-member files it points to still apply; when they conflict, this file wins
+Guidance for Claude Code in this directory. Read the suite's `docs/RIPTIDE-SOCIAL-SPEC.md` FIRST: it
+is the design (the rails, the identity architecture, the security model, the phased roadmap), and
+this directory implements it phase by phase. The bytes are normative in the suite's
+`docs/RIPTIDE-PROTOCOL.md`. The root `CLAUDE.md` still applies; where they conflict, this file wins
 inside `riptide/`.
 
+> **Engine BEHAVIOUR** - as opposed to the conventions here - is collected in
+> [`docs/OXT-ENGINE-NOTES.md`](https://github.com/SethMorrowSoftware/xtalk-suite/blob/main/docs/OXT-ENGINE-NOTES.md).
+> Keep riptide-specific gotchas here; put anything the ENGINE does there.
 
-> **Engine BEHAVIOUR - as opposed to the conventions here - is collected in
-> [`docs/OXT-ENGINE-NOTES.md`](https://github.com/SethMorrowSoftware/xtalk-suite/blob/main/docs/OXT-ENGINE-NOTES.md)**, with the verbatim
-> symptom, what each one broke, and the gate (if any) that now holds it. Keep
-> member-specific gotchas in this file; put anything the ENGINE does there, so
-> there is one authoritative list instead of ten that drift.
+## 1. What this is
 
-## What this is
+The suite's capstone app, pure LiveCodeScript over the installed extension surfaces. It is
+structured like a member so the suite's gates walk it, but it is an APP: nothing here is compiled,
+nothing adds native surface, and `rs*` never becomes a library other members may call. Library
+0.12.0 (`kRsVersion`), 106 public `rs*` handlers; the suite's `tools/check-suite-coverage.py` prints
+the current coverage row (106/106 when last run) and is the authority over any copied number.
 
-The suite capstone app, pure LiveCodeScript over the installed extension
-surfaces. It is deliberately structured like a member (src/, tests/,
-tools/, docs/) so the repository's gate machinery walks it unchanged, but
-it is an APP, not an extension: nothing here is compiled, nothing here
-adds native surface, and `rs*` never becomes a library other members may
-call.
+| Path | Holds |
+|---|---|
+| `src/riptide.livecodescript` | the `rs*` library; the byte-exact wire layouts are documented at its top |
+| `examples/riptide-social.livecodescript` | the five-card app (Feed, Messages + Call, Devices, Anon, Nostr); carries its libraries between embed sentinels |
+| `tests/` | the harness `riptide-selftest.livecodescript` (`rsSelfTest()`, folded into the suite paste) and `riptide_golden_test.py` |
+| `tools/` | the oracle `riptide_reference.py`, `emit-kx-anchor.py`, the vector, execution and boot gates, `export-protocol-vectors.py`, the family checker and docs-style copies, `run-gates.sh` |
+| `docs/` | `docs/api-reference.md`, `docs/two-machine-runbook.md`, and the GENERATED `docs/protocol-vectors.json` |
 
-**All EIGHT spec phases are BUILT, and phases 1-4 are DONE on two
-machines, done-criteria included** (library 0.12.0; the riptide row of
-tools/check-suite-coverage.py reads 106/106 with nothing untestable -
-run the gate for the current number rather than trusting this sentence,
-which is the hand-copied-count failure this tree records everywhere
-else):
+## 2. The rules that bind this directory
 
-- **Phases 1-2 (identity + the live feed): DONE.** Engine-passed
-  2026-08-12; the two-machine propagation criterion closed 2026-08-13
-  (see rule 8).
-- **Phase 3 (media): DONE 2026-08-15**, two machines - a follower fetched
-  and played an attached video, which necessarily exercised head publish
-  -> fetch -> chain walk -> authorSig verify -> media info-hash -> swarm
-  join -> playback. The mid-download nuance (playback visibly below 100%)
-  was MEASURED 2026-08-27 and came back NEGATIVE as then wired: the Play
-  mood unlocked on file-EXISTENCE, which libtorrent satisfies at metadata
-  time with a hollow allocated file, so clicking handed the player ~0%
-  real data ("streaming does not work" while feed + complete media worked
-  fully - the exact report). Fixed the same day: raMediaFrontReady floors
-  Play on rsMediaStatus's fileProgress (the CONTIGUOUS front, the
-  library's own contract) at 5%, both the feed and LAN-handoff paths, and
-  the launch messages carry the honest limit - a non-faststart video
-  keeps its index at the tail and cannot start early whatever the fetch
-  order. The runbook's re-run step scripts the criterion with a faststart
-  file named as the required input.
-- **Phase 4 (DMs): DONE 2026-08-15**, two machines, chat both ways - the
-  sealed RSI1 intro, the deterministic-role crypto_kx session, and the
-  pairwise secretstream over rp1 all carried real traffic with no server.
-- **Phase 5 (live sessions): BUILT, awaiting its pass.** No library
-  surface (SDP rides the phase-4 O/A kinds); the demo wiring landed
-  2026-08-15 - a Call button on the Messages card, one-blob non-trickle
-  signalling (ship the local SDP when dcGatheringState hits complete),
-  libdatachannel auto-negotiation on both legs, a visible CONNECTED/via
-  line, teardown on hang-up/Lock/close, the mandatory BARE dcCleanup at
-  quit. STUN only, no TURN, deliberately - a symmetric-NAT pair fails
-  visibly instead of relaying silently. **The spec-6.2 TYPING LANE is
-  built too** (2026-08-15, closing remaining-work A.8): a second dc
-  channel (unordered, maxRetransmits 0) opened at call setup, absolute
-  "1"/"0" state debounced on the poll timer - demo wiring only, no
-  library surface (the DTLS session the DM-signalled SDP authenticated
-  scopes it; see the sync-payload as-built section below).
-- **Phase 6 (LAN mesh): BUILT, awaiting its pass.** The `rsLan*`
-  admission layer plus the RSL1 "W" WELCOME (2026-08-15, mutual auth:
-  the host signs over the joiner's own response signature, so the joiner
-  verifies the host shares the master and gets its positive verdict;
-  golden-pinned, rogue-host and cross-handshake-replay refusals in the
-  harness). The admission COMPUTE ran engine-green in the suite selftest
-  2026-08-15. **The SYNC PAYLOAD landed later the same day** (closing
-  remaining-work A.7): three new RSL1 record kinds over the admitted
-  mesh - "D" draft sync, "F" feed-seq/read-receipt state, "P"
-  presence/typing - signed under the shared LAN key with a distinct
-  domain, golden-pinned, refusals harness-proven offline, plus the
-  demo's Devices-card wiring (a debounced draft field, per-device
-  presence, verified drafts rendered with their origin, strangers
-  refused and logged; the receive state was keyed by the enet PEER until
-  2026-08-17 - see the C6 record below). **Channel 2 SETTLED 2026-08-16**: bulk media
-  handoff is a fourth RSL1 kind, "M", on CHANNEL 0 - a signed POINTER
-  (info-hash + file name + size) at the phase-3 torrent path - and
-  channel 2 stays reserved, dark (the decision record below). **The SYNC
-  PAYLOAD's compute half ran engine-green 2026-08-20** (Windows, in the
-  suite paste, riptide 338/0/2): the "D"/"F"/"P"/"M" record bytes against
-  their goldens, every stranger/tamper/truncation refusal, and the three
-  malformed-UTF-8 checks that came back RED on 2026-08-15 - all now
-  "refused, not thrown". So this layer is no longer "verified
-  statically". What remains is the live two-machine mesh pass - the full
-  draft-appears done-criterion plus the media handoff.
-- **Phase 7 (anon persona): BUILT, awaiting OXT + live-Tor.** The
-  `rsAnon*` layer, BTXO framing, and `rsPersonaAllows` (the pure-policy
-  §9.3 guard, the app's highest-severity invariant) - compute engine-green
-  2026-08-15. The sealed anon-DM CRYPTO (spec 8.3) closed the same day
-  via `rsAnonDmSeed` (subkey 200+n), and its ONION TRANSPORT is now
-  BUILT too (2026-08-15, later the same day): the pure serving seams
-  (`rsAnonFeedPage` / `rsAnonPrekeyBody` / `rsAnonAcceptDm`,
-  golden-pinned, harness-proven offline) plus the demo's onion-httpd
-  wiring (the / page, GET /prekey, POST /dm). **The serving seams' compute
-  half ran engine-green 2026-08-20** (Windows, in the suite paste): the
-  anon feed page byte-for-byte with its entries HTML-escaped, the GET
-  /prekey body decoding to a prekey that verifies under the ANON handle,
-  and `rsAnonAcceptDm` accepting the hex-posted sealed intro plus all five
-  of its refusal legs. Not "verified statically" any more; the live
-  done-criterion remains (a persona reachable and served over Tor with
-  zero `bt*` calls in a trace), and the harness's two anon-service SKIPs
-  are exactly that leg.
+Code comments cite these numbers; keep them.
 
-- **Phase 8 (the Nostr bridge, spec 8A): BUILT 2026-08-29, and the first
-  riptide layer whose compute half is EXECUTED rather than only
-  re-derived.** The `rsNostr*` rail (subkey 4 through a bounded
-  secp256k1 validity ladder), the doubly-signed RSN1 identity bridge
-  published to both the DHT and relays, the kind-1 media convention, and
-  the RIPTAPP1 app-state store. `nostr` joins rsPersonaAllows, refused
-  for the anon persona. The app CARD failed at `openStack` on a real
-  engine on its first landing (`Chunk: no target found`) and was REVERTED
-  the same day - and then RE-LANDED, also the same day, together with the
-  thing whose absence caused the failure: tools/check-demo-boot.py, a
-  headless BOOT RUNNER that executes the shipped stack's whole openStack
-  chain, card builders, kit, self-check, navigation clicks and a scripted
-  identity-plus-Nostr session through the family's interpreter over a
-  modeled engine world. The re-land keeps openStack BYTE-IDENTICAL to the
-  engine-proven version (verified mechanically): the relay defaults land
-  inside the card builder (the raKeyPath precedent) and nxrInit registers
-  lazily at the first Connect click, so the boot path carries no new work
-  at all. See the reverted-card record and the boot-runner section below.
-
-What remains, in one line: the live passes for 5 (the call + typing
-lane), 6 (the mesh, through the draft-appears criterion), 7 (tor,
-now including its built 8.2/8.3 serving) and 8 (a real relay) - all
-scripted in docs/two-machine-runbook.md.
-
-## rsIngestHead had no reader watermark, and headseq was written but never read (2026-09-08)
-
-One defect with two ends, found by a read-through of the DHT rail.
-
-**The rollback hole.** `rsIngestHead` verified handle, salt, seq self-agreement
-and the BEP44 signature, and then returned the head. Every one of those checks
-is about ONE record in isolation, and every one of them PASSES on a head the
-author really signed - just an old one. So a DHT node, or anyone replaying a
-captured put, could serve a stale-but-valid head forever and roll a reader back
-to a superseded follow list, profile and post chain. The comment that stood
-there deferred the question ("the app's replay protection reads the one true
-seq") and no app implemented one. That is the shape worth remembering: **a
-deferral written in a comment is not a design, it is an open defect with a
-polite name.**
-
-The fix is a required third parameter, not an optional one. `rsIngestHead` now
-takes the reader's watermark and REFUSES an empty or insane value rather than
-treating it as "no watermark", so a caller that has not been taught about this
-gets a loud failure instead of the silent rollback that shipped. A reader with
-no prior head says so by passing 0, which is an affirmative statement rather
-than an omission. Equal seq is accepted (a refresh is not a rollback); only a
-strictly older head is refused. Two DIFFERENT values at the SAME seq is author
-equivocation, needs the author's own key, and is a different threat this layer
-does not pretend to detect.
-
-This is apply-semantics, not a wire change: no byte of RSH1 moves and no magic
-bumps. It brings the head rail in line with the rule `docs/RIPTIDE-PROTOCOL.md`
-section 6 has stated for the LAN rail since it was written ("replay and reorder
-are neutralized by apply semantics, not by the wire"), which is why the protocol
-doc gained the rule in section 4.1 rather than a new version.
-
-**The bridge rail was left behind, and closed on 2026-09-10.** The head fix
-added the required watermark to `rsIngestHead` and left `rsIngestBridge` -
-the SAME three-layer ingest, one salt over - without one; the API reference
-was corrected the next day to say so ("a caller wanting rollback protection
-on the bridge rail must keep its own high-water mark"). That sentence is the
-deferral-in-a-comment shape this section names, one rail over: a replaying
-DHT node could serve a stale-but-valid bridge and point a reader at a
-superseded Nostr key. `rsIngestBridge` now takes the same required `pMinSeq`
-with the same contract (empty refused, 0 affirmative, equal accepted,
-strictly older refused), the harness pins it in both directions, and
-`docs/RIPTIDE-PROTOCOL.md` 8.1 states it as normative. No app in this tree
-ingests a foreign bridge yet, so no app changed. Verified statically; the
-harness section runs on an engine.
-
-**The other end: a write with no reader.** `raAppSave` had emitted `headseq`
-since it was written and `raAppLoad`'s switch had no case for it, so our own
-head sequence was persisted on every save and read back never. Nothing in the
-tree could see that: it is not a parse error, not a name any checker can miss,
-and not a vector anything pins. It is now covered by a round-trip check in
-`tools/check-demo-boot.py`, mutation-proved by deleting the load case and
-watching exactly that check fail. **The general lesson is cheap to apply: any
-value worth persisting is worth round-tripping in a test, because a dead write
-is invisible to every other kind of gate.**
-
-**And every u64 field could be silently rounded (2026-09-08).**
-`rsReadBEu64` computed `hi * 2^32 + lo` with no bound, so any of the ten
-fields declared u64 on the wire - seq, timestamps, feedSeq, readUpTo, tick,
-fileSize - came back ROUNDED once the value passed 2^53, on records parsed
-BEFORE any signature is checked. It now returns empty past the bound and all
-ten call sites refuse the record. The head rail was already fails-closed by
-accident (rsIngestHead bounds the BEP44 seq below 2^53, and a rounded value
-cannot equal something under it); the other nine were not.
-
-Proven headlessly, both directions, through riptide's own runner against the
-real shipped script: 2^53 parses and returns exactly 2^53, 2^53+1 and an
-all-ones u64 are refused. And the mutation test is the interesting part -
-with the bound removed, coinxt's newly-clamped lcs-interp raises Imprecise at
-9007199254740993 and names the site. The two fixes compound: the interpreter
-clamp is what makes this class visible headlessly at all.
-
-**And the caps were four bytes too generous.** `kRsMaxRecord` was 1000, but
-BEP44's 1000 is on the BENCODED value `<len>:<bytes>` (`rsBencodeBytes`), so a
-1000-byte record went out as 1005 and was refused by every node - silently.
-996 is the largest raw value that fits. Nothing that ever worked is lost: a
-record of 997..1000 raw bytes was never storable, so the only change is that the
-refusal now happens on the writer's own machine. Two derived numbers moved with
-it and were overstatements for the same reason: a post's text capacity (876, not
-880) and the 16-chunk content ceiling (15,936 bytes, not 16,000).
-
-## The rules that bind this directory
-
-1. **The oracle comes first.** `tools/riptide_reference.py` was written
-   before the script layer and anchors to vectors from OUTSIDE this
-   directory (sodiumxt C KATs, the cross-project BEP44 conformance vector,
-   a real published onion). Any new derived value gets its oracle
-   derivation and its golden pin BEFORE the script implementation; a
-   vector captured from the script's own output proves nothing.
-2. **One set of bytes, three holders.** Every golden vector lives in the
-   oracle (derivation), `tests/riptide_golden_test.py` (inline literal),
-   and the harness constants (`tests/riptide-selftest.livecodescript`).
-   `tools/check-selftest-vectors.py` re-derives the harness copy with an
-   honest coverage count: it FAILS on a constant that is neither
-   re-derived nor listed as an input with a written reason, and on a
-   stale input entry. Never hand-edit a golden constant; regenerate from
+1. **The oracle comes first.** `tools/riptide_reference.py` anchors to vectors from OUTSIDE this
+   directory (the sodiumxt C KATs, the cross-project BEP44 conformance vector, a real published
+   onion). A new derived value gets its oracle derivation and golden pin BEFORE the script
+   implementation; a vector captured from the script's own output proves nothing.
+2. **One set of bytes, three holders**: the oracle, `tests/riptide_golden_test.py` and the harness
+   constants in `tests/riptide-selftest.livecodescript`. `tools/check-selftest-vectors.py` FAILS on
+   a constant that is neither re-derived nor listed as an input with a written reason, and on a
+   stale input entry. Never hand-edit a golden; regenerate from
    `python3 tools/riptide_reference.py`.
-3. **Wire formats bump their magic.** `RIPTKEY1`, `RSH1`, `RSP1`, `RSN1`,
-   `RIPTAPP1`: any
-   framing change mints a new magic and updates both build and parse plus
-   all three vector holders in one change. Never a silent fix.
-   **Since 2026-08-29 the wire is also a PUBLISHED PROTOCOL**
-   (`docs/RIPTIDE-PROTOCOL.md` at the suite root, normative to the byte,
-   with `docs/protocol-vectors.json` as its machine-readable conformance
-   bundle) - so a framing change now also updates the spec's section and
-   regenerates the bundle (`python3 tools/export-protocol-vectors.py`;
-   its `--check` in the gate set re-executes every vector and fails on a
-   stale committed copy, so forgetting is a red build, not a drift).
-4. **Caps refuse, never truncate**, on build AND parse, and a parse is
-   strict to the byte (exact total length; trailing bytes are refused).
-5. **Every foreign call sits in a try.** sx*/cx*/ox* failures throw;
-   no rs* handler may ever throw. Functions return empty (or false) on
-   failure and record the reason for `rsLastError()`.
-6. **Probe, never assume** (`rsProbeCapabilities`). SodiumXT is the one
-   hard dependency. A missing optional extension disables exactly its
-   feature with a clear "install org.openxtalk.library.X" story and
-   never regresses another (the spec's section 3.4 matrix).
-7a. **The script now EXECUTES too** (2026-08-29):
-   `python3 tools/check-script-vectors.py` drives the shipped
-   `src/riptide.livecodescript` through the family's headless interpreter
-   against the real committed CoinXT. It settles LOGIC, not parser
-   behaviour, so it promotes nothing out of "verified statically" - but a
-   change to any pure handler is not done until it passes, and its
-   source rewrites are asserted so it cannot go quietly blind.
-7. **The static gate is law**: `python3 tools/check-livecodescript.py`
-   (the onionxt/coinxt lineage; it walks this whole directory). The
-   repo-wide `tools/check-handler-calls.py` knows the `rs` prefix, so
-   every `rs*` call site is checked for existence and arity too. House
-   style for prose, declared here because this member carries the gate:
-   no em-dashes (hyphens, commas, colons, parentheses) and no curly
-   quotes, enforced by `python3 tools/check-docs-style.py` (byte-identical
-   with sodiumxt, onionxt and coinxt under `check-checker-drift.py`).
-8. **The honesty convention.** "Verified statically; needs an OXT pass"
-   until a recorded run says otherwise; anonymity claims additionally
-   need a live-Tor pass. Flip labels only on a recorded engine result,
-   members first, root README last (the runbook's rule). **Phases 1 and 2 had
-   that pass on 2026-08-12**, folded into the suite harness: 133/133, 0
-   skipped, every probe true including hasSha3. The sealed key file, KDF tree,
-   identity -> handle -> onion, RSH1/RSP1 formats, post chain, phase-2 puts,
-   accepted lookups, and synthetic ingest verifiers all ran green on a real
-   engine. **The full phase-2 done-criterion closed 2026-08-13**: the
-   maintainer ran `examples/riptide-social.livecodescript` on TWO machines -
-   identities created on both sides, feeds published and received in BOTH
-   directions through the real DHT. The stack renders a post only after
-   `rsIngestHead`/`rsIngestPost` verify it, so a received feed is a verified
-   chain walk; this was also the first run to drive REAL btPoll DHT events
-   into the ingest verifiers (previously synthetic-only). Result text and
-   environments were not captured with the report; the record is the
-   maintainer's account, dated. The phase-3 media layer followed the same
-   arc: built 2026-08-14, then **PASSED on two machines 2026-08-15** (a
-   follower fetched and played an attached video); the one nuance still
-   unmeasured is playback starting visibly mid-download, which the runbook
-   scripts.
+3. **Wire formats bump their magic**: `RIPTKEY1`, `RSH1`, `RSP1`, `RSK1`, `RSI1`, `RSM1`, `RSL1`,
+   `RSN1`, `RIPTAPP1`. A framing change mints a new magic and updates build + parse, all three
+   holders, its section of the suite's `docs/RIPTIDE-PROTOCOL.md`, and `docs/protocol-vectors.json`
+   (`python3 tools/export-protocol-vectors.py`, whose `--check` re-executes every vector in the gate
+   set). Never a silent fix.
+4. **Caps refuse, never truncate**, on build AND parse; a parse is strict to the byte (exact total
+   length, trailing bytes refused).
+5. **Every foreign call sits in a try** (`sx*`/`cx*`/`ox*`/`bt*`/`nx*`) and no `rs*` handler may
+   throw: return empty (or false) and record the reason for `rsLastError()`.
+6. **Probe, never assume** (`rsProbeCapabilities`). SodiumXT is the one hard dependency. A missing
+   optional extension disables exactly its feature with an "install org.openxtalk.library.X" message
+   and never regresses another (spec section 3.4).
+7. **The static gate is law.** `python3 tools/check-livecodescript.py` (the family's unified
+   checker) walks this directory; the suite's `tools/check-handler-calls.py` checks every `rs*`
+   call's existence and arity. House style: no em/en dashes or curly quotes in any `.md` or
+   `.livecodescript` here (`python3 tools/check-docs-style.py`).
+   - **7a. The library EXECUTES too.** `python3 tools/check-script-vectors.py` drives the SHIPPED
+     `src/riptide.livecodescript` through the family interpreter (`../nostrxt/tools/lcs-interp.py`)
+     against the real committed CoinXT; before it, only the static checker read the library, and a
+     checker cannot tell whether a handler computes the right bytes. It settles LOGIC, not parser
+     behaviour, so it promotes nothing out of "verified statically"; a pure-handler change is not
+     done until it passes. Its source rewrites are asserted (trap 13).
+   - **7b. DO NOT land UI changes in this app without a way to RUN them.**
+     `tools/check-demo-boot.py` boots the shipped stack headlessly under two capability profiles
+     (SodiumXT-only, full install), after `tools/test-demo-boot.py`'s seeded-defect fixtures. It
+     models the engine; it is not the engine. Born 2026-08-29, when a card passed every gate and
+     broke the app at `openStack`.
+8. **The honesty convention.** "Verified statically; needs an OXT pass" until a recorded run says
+   otherwise; anonymity claims also need a live-Tor pass, the Nostr rail a live-relay pass. Flip
+   labels only on a recorded engine result, members first, root README last.
 
-## Things learned building phase 1 (do not relearn)
+## 3. Decisions (do not re-litigate)
 
-- **The KDF context is 8 bytes exactly** (`crypto_kdf_CONTEXTBYTES`):
-  `"riptide"` + one NUL, built by `rsKdfContext()` at runtime because an
-  xTalk constant cannot hold a NUL byte. sxKdfDerive's subkey id is a
-  DECIMAL STRING, and its semantics are BLAKE2b with the id as LE64 salt
-  and the context as the personal field (pinned against the sodiumxt C
-  KAT at oracle import).
-- **The onion self-computation has two SHA3 providers, sx first.**
-  Building phase 1 surfaced the gap (sodiumxt had no SHA-3; riptide
-  composed coinxt's `cxSha3_256`), and closing it properly meant shipping
-  `sxSha3_256` in SodiumXT ABI 7 (2026-08-11) rather than leaving the
-  trust root without its own hash. `rsSha3` tries `sxSha3_256` then
-  `cxSha3_256`; both are the same vendored FIPS-202 code, and the golden
-  vectors pin the output, not the provider. The verify direction
-  (`rsVerifyOnionClaim`, via `oxPublicKeyFromAddress`) needs no SHA-3.
-  onionxt's `oxAddressFromPublicKey` now works against SodiumXT ABI 7+,
-  but riptide keeps its own assembly (probe-gated, dual-provider) so the
-  app degrades one provider at a time instead of all at once.
-- **The handle equals btDhtKeypair's publicKey** for the same seed
-  (tests/cross-member-test.py pins sodiumxt and libtorrent to one
-  derivation), which is why phase 1 derives it via
-  `sxSignKeypairFromSeed` only and the identity secret never enters
-  torrentxt.
-- **The static gate does not follow `\` continuations in `if` headers.**
-  An `if` whose condition wraps across a continuation line is read as an
-  unterminated opener. Hoist the condition into a local instead.
-- **Immutable DHT targets are re-derivable offline**: target = SHA-1 of
-  the bencoded value, and the engine has `sha1Digest`, so the harness
-  proves the post chain's targets without a session.
-- **binaryEncode("n"/"N"/"NN") is the family's big-endian discipline**
-  (the BTXO pattern); u64 splits via `div`/`mod 4294967296`. The base32
-  encoder masks its accumulator to the pending bits each step (the
-  onionxt discipline) so nothing outgrows exact double precision.
+**Identity and records.**
+- KDF context: exactly 8 bytes, `"riptide"` + NUL, built by `rsKdfContext()` at runtime (a constant
+  cannot hold a NUL). The `sxKdfDerive` subkey id is a DECIMAL STRING; BLAKE2b with the id as LE64
+  salt and the context as the personal field, pinned to the sodiumxt C KAT.
+- Subkeys: 1 identity ed25519; 2 DM crypto_kx; 3 LAN; 4 Nostr (via the ladder); 5 `RIPTAPP1` seal;
+  100+n anon ed25519; 200+n anon DM kx. One seed never feeds two cipher schemes (why 2 is not 1, and
+  200+n is not 100+n).
+- SHA-3 for the onion: `rsSha3` tries `sxSha3_256` (SodiumXT ABI 7, shipped 2026-08-11 because
+  riptide needed it) then `cxSha3_256`; the goldens pin output, not provider, and riptide's own
+  onion assembly degrades one provider at a time. `rsVerifyOnionClaim` needs no SHA-3.
+- The handle equals `btDhtKeypair`'s publicKey for the same seed (the suite's
+  `tests/cross-member-test.py` pins it), so the identity derives via `sxSignKeypairFromSeed` and its
+  secret never enters torrentxt.
+- Immutable DHT target = SHA-1 of the bencoded value (`sha1Digest` lets the harness prove post-chain
+  targets offline). `binaryEncode` n/N/NN is big-endian; u64 splits via `div`/`mod 4294967296`; the
+  base32 encoder masks its accumulator each step.
+- `kRsMaxRecord` = 996, because BEP44's 1000 applies to the BENCODED value `<len>:<bytes>`. Derived:
+  post text capacity 876 (556 with 8 media) and the kind-C ceiling 15,936 bytes (16 chunks), pinned
+  headlessly in check-script-vectors because engine-only assertions derived from a constant rot
+  silently (six did at 1000 -> 996).
+- Kind-C rail (A2, 2026-08-23): chunks split by BYTE, so only the CONCATENATION is UTF-8-validated;
+  `rsPublishChunkedPost` signs BEFORE touching the session; `rsAssembleChunkText` re-hashes every
+  part. The demo walker BRANCHES ON KIND (a kind-C post once rendered as verified with blank text).
 
-## Things decided building phase 2 (do not re-litigate)
+**Phase 2, the live feed.**
+- The library never owns a session (one TorrentXT session per process, polled by the app). Every
+  live handler takes `pSession` and validates every OTHER input first, so refusals run, and are
+  tested, with no torrentxt.
+- One seq, one source: `rsPublishHead` reads the BEP44 seq from the head's own bytes; `rsIngestHead`
+  refuses a BEP44 seq that disagrees with the embedded one.
+- `rsBep44SignBuf` rebuilds the BEP44 buffer in pure script (byte-identical to `btDhtBep44SignBuf`).
+  Ingest re-verifies the signature in SodiumXT and recomputes content addresses (trust arithmetic,
+  not the transport; it also backstops case-folding `is` on the salt). `rsPublishImmutable` refuses
+  a libtorrent target that differs from its own recomputation.
+- Rollback defence (heads 2026-09-08, bridge 2026-09-10): `rsIngestHead` and `rsIngestBridge` take a
+  REQUIRED `pMinSeq`, because a validly-signed OLD record passes every other check. Empty or insane
+  is refused, 0 is the affirmative "never seen", equal is accepted, strictly older refused; same-seq
+  equivocation is out of scope. Apply semantics, no wire change (protocol 4.1, 8.1). No app in this
+  tree ingests a foreign bridge yet. A deferral written in a comment is not a design, it is an open
+  defect with a polite name.
+- The harness's session starts into a temporary, commits only on success and is never stopped; the
+  suite generator aliases the folded copy to the core's session (`@CORESESSION@`), since a second
+  `btStartSession` is refused and the live section would SKIP green.
 
-- **The library never owns a session.** TorrentXT allows one per process
-  and the APP's dispatcher polls it, so every live handler takes
-  `pSession` and validates every OTHER input first - which is what lets
-  the refusal paths run (and be tested) with no torrentxt installed.
-- **One seq, one source of truth.** `rsPublishHead` reads the BEP44 seq
-  out of the head's own bytes (`rsParseHead`) rather than taking a second
-  argument that could skew, and `rsIngestHead` refuses an event whose
-  BEP44 seq disagrees with the embedded one.
-- **The canonical BEP44 buffer is rebuilt in pure script**
-  (`rsBep44SignBuf`) rather than borrowed from `btDhtBep44SignBuf`, so
-  ingest verification works with no torrentxt; the suite harness
-  cross-checks the two implementations and `btDhtPutSigned` accepting the
-  script-assembled buffer's signature is the deeper proof (libtorrent
-  re-verifies before queueing).
-- **Ingest trusts arithmetic, not the transport.** libtorrent already
-  verifies a mutable item's signature on receipt; `rsIngestHead` verifies
-  it AGAIN in SodiumXT, and `rsIngestPost` recomputes the content address
-  before believing a byte. Where a string compare could fold case (`is`
-  on the salt), the rebuilt-canonical-buffer signature check backstops it
-  fail-closed.
-- **`rsPublishImmutable` compares libtorrent's returned target against
-  its own recomputation** and refuses a mismatch loudly - two SHA-1s over
-  one bencoded value disagreeing means someone is not hashing what they
-  claim, and shrugging would publish unfindable posts.
-- **The harness's session acquisition mirrors torrent-selftest's**: start
-  into a temporary, commit only on success, never stop it at the end, and
-  `tools/build-suite-selftest.py` carries a riptide rewrite that aliases
-  the folded copy to the core's session (the bt1 pattern; a second
-  btStartSession would be refused and the live section would SKIP green).
+**Phase 3, media.**
+- Attachments are SINGLE FILES: a trackerless torrent `btCreateTorrent(path, 0, 0, "")` seeded in
+  place (save path = the file's parent); the info-hash is returned, `btFindTorrent` recovers the
+  handle. `rsMediaFetch` finds before it adds and sets sequential on both paths (a failed
+  `btSetSequentialDownload` fails the call but keeps the torrent).
+- `rsMediaStatus` takes the TORRENT handle; its file fields are empty until metadata. File existence
+  is NOT playability (a hollow file exists at metadata time, measured 2026-08-27): Play needs
+  `raMediaFrontReady`, 5% of the CONTIGUOUS front, on the feed and LAN-handoff paths. A
+  non-faststart video cannot start early (the recorded limit).
+- The harness clock-salts its payload (a crashed run leaves its torrent seeded) and removes its
+  torrent; no golden pins a torrent hash. The demo seeds at POST (`raPost`); a seeding refusal
+  ABORTS the post.
+- `rsMediaStreamPlan` (B7) is separate from the fetch (`btAddMagnet` has no piece table): from
+  `metadataReceived`, the front 8 pieces get deadlines 1 s apart; refusals are non-fatal, including
+  without `btSetPieceDeadline`.
 
-## Things decided building phase 3 (do not re-litigate)
+**Phase 4, DMs.**
+- Intros seal to the PREKEY (a crypto_kx public published as `RSK1`, signed by the identity, named
+  by the head's `prekeyTarget`), never to the ed25519 handle; `rsVerifyPrekey` before sealing. A
+  recorded delta from spec 5.1.
+- kx is anchored by `tools/emit-kx-anchor.py` (a REAL libsodium via ctypes). The lexically smaller
+  lowercase-hex handle is the kx CLIENT; "my tx is your rx" is asserted from both ends.
+- The recipient handle sits INSIDE the signed intro (third-party replay dies); the sender handle
+  derives from the signing seed (a sender/signer mismatch is inexpressible). Frame and message kinds
+  compare by BYTE, never `is`. Intro freshness (+-600 s) is the app's policy.
+- The demo authenticates a peer by ciphertext the session accepts (the first failed pull drops it),
+  runs ONE conversation at a time, and frees streams on every death path with `sxFreeStream` (no
+  unload hook).
+- D15 (2026-08-17): hang-up and Lock push one FINAL-tag message (`raDmPushClose`, a FILLER body
+  never rendered; no other send sets final). The receiver prints "closed the conversation" and drops
+  the peer. Verified statically; needs an OXT pass (never run on an engine).
 
-- **Media attachments are SINGLE FILES.** `rsMediaCreate` refuses anything
-  that is not a file: a photo or a video has one obvious thing to play,
-  a folder does not, and folder shares are a file-sharing app's job
-  (quickshare). The torrent is TRACKERLESS (`btCreateTorrent(path, 0, 0,
-  "")`) - DHT-only, like everything else riptide does.
-- **Seed in place; return the hash, not the handle.** The seed's save path
-  is the file's own parent folder, so libtorrent finds the payload where
-  it already sits and no copy is made. The function returns the 40-hex
-  info-hash because that is what posts carry and what followers fetch;
-  `btFindTorrent(pSession, tHash)` recovers the handle whenever the app
-  wants one, which is also exactly how `rsMediaFetch` is idempotent.
-- **`rsMediaFetch` finds before it adds.** A re-click, a restart's
-  re-fetch, or fetching your own seed all land on the `btFindTorrent`
-  path and return the live handle instead of a duplicate-add error - and
-  the sequential flag is applied on BOTH paths, because the caller asked
-  for playback now, not only on first contact. A failed
-  `btSetSequentialDownload` fails the call but deliberately leaves the
-  torrent added: download progress is never thrown away over a flag, and
-  the retry lands on the find path and re-applies.
-- **`rsMediaStatus` takes the torrent handle, not the session.** The
-  snapshot is per-torrent (`btTorrentStatus` + the first file's on-disk
-  path and per-file progress from `btFileList`); demanding a session
-  argument it never used would be dishonest API. filePath/fileSize/
-  fileProgress stay empty until metadata arrives, so "filePath is empty"
-  doubles as the not-openable-yet probe; with a sequential fetch the file
-  is openable long before completion, which IS the mid-download play.
-- **The harness salts its payload with the clock.** A crashed run leaves
-  its torrent in the never-stopped session; fixed payload bytes would make
-  the next run's add collide with that leftover. Time-salted bytes give
-  every run a fresh info-hash, and the section removes its torrent at the
-  end (`btRemoveTorrent`, keep files) so a clean run leaves a clean
-  session. No golden vector pins the hash - a torrent's info dict embeds
-  the file name and piece hashes, and pinning that is a torrent-format
-  oracle this repo does not need.
-- **The demo attaches at click, seeds at POST.** The picker only records
-  the path; `rsMediaCreate` runs inside `raPost`, where the session is
-  guaranteed, and a refusal ABORTS the post - a published post must never
-  name a hash nobody can fetch. The strip's one button is two-mooded
-  (Fetch until the on-disk file exists for the field's hash, then Play)
-  and hands the file to the system player mid-download on purpose.
+**Phase 5, the call.**
+- No library surface: SDP rides the DM kinds "O"/"A", one blob, sent once `dcGatheringState` is
+  complete (non-trickle). STUN only, no TURN, by design (a symmetric-NAT pair fails visibly).
+  Teardown on hang-up/Lock/close; the mandatory BARE `dcCleanup` at quit.
+- Typing lane (spec 6.2, A.8):
+  `dcCreateChannelEx(peer, "riptide-typing", "", true, 0, -1, false, -1)` is created BEFORE
+  gathering so both channels ride one offer; absolute "1"/"0" state re-sent on a cadence with a
+  local expiry; the callee routes channels BY LABEL. A lane refusal is non-fatal.
+- B3 (2026-08-17): `raPollDelay` picks the pump tier every tick, never latched: about 33 ms while a
+  dc call or enet mesh is live, about 250 ms otherwise (spec 10.1). `raExpire`, `raMediaPaint`,
+  `raLanMediaPaint` and `raLanPaintDevices` stay behind a `kPaintMs` gate at 4 Hz. Verified
+  statically; needs an OXT pass (never run on an engine).
 
-## Things decided building phase 4 (do not re-litigate)
+**Phase 6, the LAN mesh.**
+- Admission rides channel-0 MESSAGES (the `enConnect` rider is a u32 protocol tag, checked first).
+  All your devices derive ONE LAN ed25519 keypair from subkey 3: it proves "I hold the master", and
+  is NOT a per-device identity. The demo holds the master seed while unlocked.
+- Domains are PREFIX-FREE 13-byte tags (trap 8): "riptide-lan-a" || nonce || name (admission),
+  "riptide-lan-w" || responseSig || hostName (welcome), "riptide-lan-s" over the whole record, kind
+  byte inside (sync). Nonces are fresh (`sxRandomBytes`); 0x5a*32 is the golden's only, and a stale
+  response is asserted refused.
+- NO per-handshake binder (the welcome verifies; it exchanges no key), so the hub relays records
+  verbatim. Replay dies by apply semantics: strictly-increasing per-device draft seq, max-applied
+  feed/read state, strictly-increasing presence tick. Every record is ABSOLUTE state.
+- Presence is sent UNSEQUENCED (enet flag 2), a recorded delta from the spec (its tick makes it
+  reorder-proof). Counters seed from `the seconds`. Sends go per-admitted-peer, never `enBroadcast`
+  (a pre-drop stranger would get plaintext). Authenticated, NOT encrypted (the Devices footer says
+  so). Drafts converge at about 1/s; an over-cap draft adopts state; NO read receipts.
+- C6 (2026-08-17): receive state is keyed by DEVICE NAME (`tRec["name"]`, read after the verdict),
+  never by enet peer: a joiner gets the whole hub-and-spoke mesh over ONE peer, and peer keying
+  silently dropped records, mislabelled drafts and hid devices. `sLanPeerNames` drives disconnect
+  drops. Two nodes never run the relay; the runbook's phase-6 step 8 is the third-device test.
+  Verified statically; needs an OXT pass (never run on an engine).
+- Channel 2 (2026-08-16): the media handoff is RSL1 "M", a signed channel-0 POINTER
+  (info-hash + name + size) at the torrent rail; channel 2 stays dark (enet's 60000-byte budget).
+  Strict lowercase hash, zeros refused. Honest limit: the bytes ride the torrent rail (the swarm
+  sees your IP; an offline LAN may not find it). The offer is one slot and outlives the mesh.
+- B4 (2026-08-23): "rtt N ms, loss P%" only on DIRECTLY-linked devices (`enPeerStatus`); a relayed
+  device's row stays bare.
 
-- **Intros seal to the PREKEY, not the handle.** `sxSeal` takes a
-  curve25519 public key; the ed25519 handle is not one, and sodiumxt
-  ships no conversion handler. So first contact needs the recipient's
-  crypto_kx public - which is exactly what the head's `prekeyTarget`
-  publishes, as an RSK1 record SIGNED by the identity key. The seal
-  target is therefore provable before anything is sealed to it
-  (`rsVerifyPrekey`), and a swapped prekey is a refusal, not a readable
-  first message. This is a deliberate delta from the spec section 5.1
-  sketch, recorded there too.
-- **kx facts are anchored, not remembered.** `tools/emit-kx-anchor.py`
-  loads a REAL libsodium via ctypes and prints what crypto_kx returns for
-  the oracle's fixed inputs; the oracle's pure-Python X25519/crypto_kx
-  self-checks against that output (provenance in both files). A crypto
-  constant typed from memory is exactly what rule 1 exists to refuse.
-- **Roles are decided by handle order.** The lexically smaller handle
-  (lowercase hex = raw byte order, the roomId discipline) is the kx
-  CLIENT. Both sides derive the same session with no negotiation, and
-  `my tx is your rx` is asserted from BOTH ends in the harness.
-- **The recipient handle lives INSIDE the signed intro.** Replaying a
-  sealed intro to a third party dies on the recipient check, and a
-  sender/signer mismatch cannot be expressed because `rsBuildIntro`
-  derives the sender handle from the signing seed rather than taking it
-  as an argument.
-- **Frame and message kinds compare by BYTE, not by `is`.** `is` folds
-  case, and an unsigned transport frame gets no signature backstop, so
-  "i" is refused where "I" is meant (the coinxt canonical-form lesson,
-  applied at build AND parse).
-- **The demo authenticates peers by what only they can do.** A bystander
-  in the inbox swarm can see sealed intros (it cannot open them) and can
-  even send a fake stream header; what it can NEVER do is produce a
-  ciphertext the derived session accepts, so the first failed pull drops
-  the peer. The compose box binds to a peer at channel-open and unbinds
-  on that failure. ONE conversation at a time, loudly documented - the
-  library supports many; the demo optimizes for a two-machine pass.
-- **Streams are freed everywhere they can die** (sodiumxt has no unload
-  hook): per-peer teardown, lock, and closeStack all run the idempotent
-  `sxFreeStream` path.
+**Phase 7, the anon persona.**
+- `rsPersonaAllows(pIsAnon, pTransport)` is pure policy: anon ONLY `onion`, public anything BUT
+  `onion`, unknown refused for both. Nine transports:
+  `onion,dht,torrent,rp1,enet,dc,feed,media,nostr`. The harness asserts the full truth table and the
+  Anon card's guard panel is a live read; every transport branch routes through it.
+- `rsAnonOnion` is offline-derivable and inverts back to the anon handle. BTXO (Model C) is reused
+  from quickshare; `rsBtxoStreamStep` (A3, 2026-08-23) is the single-step receiver, caps ported from
+  nocloud (name 1024, refused from the first 8 bytes; total 8 GiB; frame 65536).
+- Sealed anon DMs (spec 8.3) add one handler, `rsAnonDmSeed` (subkey 200+n); the rest composes
+  phase 4. The persona prekey is served over its ONION, never the DHT, and refuses the PUBLIC handle
+  as author; the public identity cannot open persona mail.
+- 8.2/8.3 serving: the library builds payloads (`rsAnonFeedPage`, `rsAnonPrekeyBody`,
+  `rsAnonAcceptDm`); the demo owns the `oxh*` routes, wiring
+  `oxSetPeerCallback "oxhPeer"` + `rsAnonCreateService` itself (`oxhServe` would mint a Tor key,
+  wrong for a persona). GET `/prekey`: 264 hex chars. POST `/dm`: EXACTLY 632 (48 + 268 bytes, x2),
+  refused before decode, one 400 "refused" for every failure. The feed page is a golden-pinned,
+  HTML-escaped wire format from its own entries field, never the public feed. Handlers reply from
+  locals built at publish time (they run from socket callbacks). Publish is two-step when tor is
+  cold. The REPLY rail is deliberately unbuilt.
+- A.9 profileMeta: publish (the display name's UTF-8 bytes, refusal non-fatal) and, since
+  2026-08-23, the reader (`rsIngestBlob`, 1..64 bytes, a UTF-8 round trip in `raProfileLine`). D14:
+  the spec 9.3 attestation was corrected, not built as runtime checks.
 
-## Things decided building phase 6 (do not re-litigate)
+**Phase 8, the Nostr rail.**
+- REACH, never a dependency: nothing in phase 8 sits on the path of phases 1-7. `hasNostr`,
+  `canNostrSign` and `hasNostrRelay` fail separately; the boot self-check SKIPs the rail with an
+  install line.
+- The protocol is composed from `nx*`/`nxr*`, never re-implemented; riptide owns only the key, the
+  bridge and the media convention (kind-1 notes with `r`-tag magnet URIs).
+- The key is subkey 4 through a validity LADDER (SHA-256 re-hash, at most 8 rungs, then refuse);
+  `rsNostrSeckeyFrom` takes a CANDIDATE so the untakeable branch is provable (all-zeros and the
+  group order n are pinned).
+- `RSN1` (276 bytes) is signed TWICE over one preimage (ed25519, and BIP-340 over its SHA-256),
+  domain "riptide-nostr-b", magic inside the signed span; `rsNostrBridgeFromEvent` requires the
+  record's nostrPub to BE the event author (the republish gate). A new rail gets a new SALT
+  ("riptide-nostr"), never a new `RSH1` field. Publishing the bridge is always a click; nothing
+  dials on open; NIP-42 is never auto-answered; inbound media is a click-only pointer.
+- Nostr DMs are a SCOPE CUT: NIP-04 needs AES (absent from the suite); NIP-17 needs an ephemeral-key
+  layer and a metadata analysis not yet done. `RIPTAPP1` is sealed under subkey 5 because a follow
+  list IS the social graph (1 MiB cap, UTF-8 round-tripped).
+- `rsPublishBridge` checks the seed/handle match ABOVE the session check: below it the check runs
+  only where torrentxt is installed, and an assertion there passes for the wrong reason.
 
-- **The admission proof is a MESSAGE, not connect data.** enet's
-  `enConnect` rider is a u32 (a protocol tag), not a byte buffer, so the
-  RSL1 challenge/response ride channel-0 messages. The rider still earns
-  its keep: the host refuses a wrong protocol tag before spending a
-  challenge on it.
-- **One shared keypair, not per-device identity.** All your devices
-  derive the SAME ed25519 keypair from the LAN subkey, so the signature
-  proves "I hold the master," which is exactly the device-mesh trust
-  question. It is deliberately NOT a per-device identity - that would be
-  a different feature (and a different spec).
-- **The signature binds the nonce AND the name.** `"riptide-lan-a" ||
-  nonce || name`: the nonce (fresh per challenge, from `sxRandomBytes`)
-  stops a replayed response, and the name stops a captured signature
-  being re-presented under a different device name. The harness proves
-  both - a response verifies against its own nonce/name and fails against
-  a different one.
-- **The nonce anchor is fixed for the golden only.** The oracle pins a
-  `0x5a * 32` nonce so the challenge and its signature are reproducible;
-  a real host always uses `sxRandomBytes`, and "a fresh nonce refuses a
-  stale response" is a harness check, not just a comment.
-- **The demo retains the master while unlocked.** The LAN and anon rails
-  need subkeys the identity/DM seeds cannot give, so the stack keeps the
-  master seed in memory between unlock and Lock/close (the spec's
-  one-keyring pattern), cleared on both. The honesty caveat about
-  unlocked engine memory already covers it.
+**The demo (the v11 UI, 2026-08-29).**
+- A five-tab bar on every card (`raNavBar`/`raNavMark`; hilite script-managed, autoHilite off,
+  re-asserted after every `go`; buttons share names across cards). Two `uiPanel` columns
+  ("8,54,598,568" / "602,54,1192,568") created FIRST. `raGateIdentity` is affordance, not
+  enforcement. The status line is the identity chip. `returnInField` acts only in one-line fields.
+- A `kRaUiVersion` bump runs `raBuildReset` (deletes what `kRaScControls` + `kRaScRetired` name)
+  before the builders; the registry constant sits ABOVE the kit block (lexical-position resolution).
+- Watermarks persist (2026-09-09): the demo keeps `sHeadSeen` (handle -> highest accepted seq) in
+  `RIPTAPP1`, and `raHeadAccepted` MUST call `raAppMark`, because `raAppSave` runs only when
+  `sAppDirty`. check-demo-boot pins "a newer head marks dirty, a stale one does not".
 
-## Things decided building the phase-6 sync payload + A.8 typing (2026-08-15; do not re-litigate)
+## 4. Traps
 
-- **Sync records sign under the SHARED LAN KEY with a distinct domain,
-  and there is deliberately NO per-handshake session binder.** The
-  design question was "what key material does the welcome leave each
-  side?", and the honest answer is NONE that is fresh: the welcome is
-  mutual signature VERIFICATION, not a key exchange, so the only secret
-  both sides hold afterwards is the master-derived LAN ed25519 keypair
-  itself. Deriving a per-handshake MAC key from that seed would feed
-  one seed to two cipher schemes (the exact reason subkey 2 is separate
-  from subkey 1), and binding records to a handshake would break the
-  hub-and-spoke RELAY - a record the host forwards verbatim must verify
-  identically at every admitted peer. So: ed25519 under the shared key,
-  domain "riptide-lan-s" (admission signs "riptide-lan-a", the welcome
-  "riptide-lan-w"), over the WHOLE record body with the kind byte
-  inside the signed span. Replay is neutralized where it matters by
-  each record's APPLY semantics - drafts by strictly-increasing
-  per-device seq, feed/read state by max-apply, presence by
-  strictly-increasing tick - plus admission gating at the transport.
-- **Every record is ABSOLUTE state, never a delta.** The draft record
-  carries the whole current text (empty = cleared), feed state carries
-  the latest seq, presence carries the current flag - so any record can
-  be dropped, duplicated, or reordered and the next one repairs it.
-  That is what makes channel 1's flag-2 send honest, and it is also why
-  the demo re-asserts presence every second instead of sending edges.
-- **Presence is sent UNSEQUENCED (flag 2), a recorded delta from the
-  spec's "unreliable-sequenced".** The record carries its own monotonic
-  tick, so it is reorder-proof without enet's sequencing; taking flag
-  1's sequencing would only mask ordering bugs the record must survive
-  anyway. The spec's section-7 as-built note records the same delta.
-- **The counters seed from the clock, not zero.** A leave-and-rejoin
-  (or restart) must keep a device's seq/tick moving strictly forward
-  past anything a receiver applied for an earlier session; `the
-  seconds` gives that for free (the phase-3 clock-salt precedent). The
-  receiver additionally drops a device's tracking when the LINK that fed
-  it goes away, so even a clock step backwards only costs a stale-looking
-  first record. (Written as "drops per-peer tracking with the enet peer",
-  which is what the demo did and was the C6 defect; the state is keyed by
-  DEVICE now and the link only says which entries to drop.)
-- **Sync sends go per-admitted-peer, never enBroadcast.** A broadcast
-  would also reach a connected-but-unadmitted stranger in its pre-drop
-  window, and drafts are plaintext. The host relays verified records to
-  the other admitted peers (bytes intact - the no-binder choice is what
-  makes that sound); a two-device pass never exercises the relay, but
-  it keeps a three-device mesh from silently not syncing. **That last
-  clause was half true and the half it got wrong cost a defect** - the
-  host relayed correctly, but until 2026-08-17 the RECEIVER keyed every
-  relayed record by the enet peer it arrived over, which on a joiner is
-  one peer for the whole mesh. See the C6 record below.
-- **Authenticated, NOT encrypted, and the UI says so.** A LAN observer
-  reads draft plaintext; the spec's section 7 is admission-only by
-  design, and encrypting would need a new traffic subkey (a future spec
-  row, not a quiet addition). The Devices-card footer carries the
-  caveat.
-- **Draft edits debounce on the poll timer and CONVERGE.** The tick
-  compares the field against the last state actually broadcast and
-  re-sends until they match (at most ~1/s), so intermediate states may
-  be skipped but the final state cannot be lost - and a refused build
-  (an over-cap draft) adopts the state to avoid logging every tick,
-  retrying on the next edit.
-- **The demo publishes NO read receipts.** The record carries the
-  receipt half (library-complete, harness-covered); the demo's
-  one-conversation DM rail keeps no read state to publish, so it sends
-  the none spelling and logs any receipt it receives. Inventing read
-  semantics for the demo would have been dishonest wiring.
-- **A.8 disposition: BUILT, as demo wiring on the dc call.** Spec 6.2's
-  typing lane is genuinely separate from the LAN rail's (section 7
-  channel 1 covers your OWN devices; 6.2 covers the two call peers),
-  and the call plumbing made it modest: a second channel via
-  `dcCreateChannelEx(peer, "riptide-typing", "", true, 0, -1, false,
-  -1)` created before gathering so both channels ride the one offer,
-  absolute "1"/"0" state re-sent on a cadence, a local expiry so a
-  dropped "0" cannot stick, and the callee routing incoming channels BY
-  LABEL (arrival order is not a protocol). No library surface and no
-  record format: the DTLS session the DM-signalled SDP authenticated
-  already scopes and authenticates the lane, and a one-byte absolute
-  state has nothing to parse. A lane refusal is non-fatal - the call
-  continues without it, logged.
+1. **The demo is the LEAST-verified surface**: the suite selftest never opens it, and only
+   check-demo-boot (a model) executes it. With no engine-proven example of a construct in the tree,
+   say so in the label.
+2. **Card navigation (OXT report 2026-08-15, 48 sites).** `go card "X" of me`,
+   `field ... of card ... of me` and `card 1 of me` are WRONG, and the checker passes them: use
+   `go to card "X"`, plain `field "X" of card "Y"`, and `set the name of this card to ...` right
+   after `create card`. `send "raPoll" to me in N milliseconds` is correct.
+3. **The pump runs from every card**, so EVERY control reference is card-qualified and
+   existence-guarded (the `raFeedNote`/`raDmLog`/`raAnonLog` pattern); bare card-1 references in
+   `raExpire`/`raMediaPaint` once killed the pump off-card (the 2026-08-14 review). Socket-callback
+   route handlers too.
+4. **`textDecode(x, "UTF-8")` is LOSSY (OBSERVED 2026-08-15).** It returns replacement characters
+   and does not throw, so six parsers' try guards were inert. Validate with `rsBytesAreUtf8`:
+   decode, re-encode, require identical bytes (an inner try stays for an engine that does throw).
+5. **Delimiter leaks.** C10 (2026-08-17): `rsMediaCreate` left `itemDelimiter` "/" on 7 exits;
+   restore around the NARROWEST span, not per exit (`rsAnonFeedPage`'s `lineDelimiter` too).
+   `raAttach` (2026-08-14) and `rsPersonaAllows` (2026-08-29, benign only because comma is the
+   default) leaked it as well. The demo's defensive re-set in `raHandleEvent` STAYS.
+6. **A non-literal `constant kX = "a" & return & "b"`** kills compilation of the whole one-unit
+   script (suite engine note 1.3; family checker check 22).
+7. **`Chunk: no target found` at `openStack` (the first phase-8 card, 2026-08-29) was never
+   diagnosed.** Ruled out by inspection: kit-call arity, `there is a card`, chunk-of-object
+   expressions, engine note 1.7, `the target`, foreign calls outside a try. Suspects:
+   `repeat for each key` over still-UNSET `sAppRelays`/`sNxRelayHandle`, and
+   `nxrInit the long id of me` in `openStack` (NostrXT's demo calls it from `preOpenStack`). The
+   re-land sidestepped it: `openStack` is byte-identical to the engine-proven fc1eeae body, relay
+   defaults paint inside `raBuildNostrCard`, and `nxrInit` is lazy at the first Connect.
+8. **Raw-concat signature domains must be PREFIX-FREE, not merely distinct (2026-09-09).**
+   "riptide-lan" was a prefix of "riptide-lan-s", so a peer-chosen nonce starting "-s" made an
+   admission signature byte-identical to a sync-record signature; check-script-vectors now checks
+   every ordered pair for startswith (the Nostr salt/domain relation is harmless: the salt is
+   length-delimited bencode). The `RSL1` magic did not bump, so pre- and post-2026-09-09 devices
+   silently fail admission with each other.
+9. **u64 bound.** `rsReadBEu64` returns empty past 2^53 and ALL THIRTEEN call sites refuse the
+   record (f0c31e3 found `rsBtxoParseHeader`'s total and `rsParseBridge`'s seq and timestamp
+   missed). The BTXO miss INVERTED the 8 GiB cap, since `empty > 8589934592` is false: a failure
+   value changed from a wrong number to empty makes downstream `>` guards never fire, so a partial
+   sweep is worse than none. check-script-vectors holds a monotonic table (1 KiB and exactly 8 GiB
+   accepted; 8 GiB+1, 2^53, 2^53+1, 2^64-1 refused).
+10. **A dead write is invisible to every other gate** (2026-09-08): `raAppSave` emitted `headseq`
+    and `raAppLoad` never read it; check-demo-boot round-trips it now. Any value worth persisting is
+    worth round-tripping in a test.
+11. **The static gate does not follow `\` continuations in `if` headers** (read as an unterminated
+    opener). Hoist the condition into a local.
+12. **Two Checker classes with DIFFERENT signatures**: check-script-vectors' `ck(label, got, want)`
+    versus check-demo-boot's `(label, ok_boolean, detail)`. The wrong shape passes VACUOUSLY
+    (2026-09-09).
+13. **check-script-vectors rewrites three spellings** outside the interpreter's subset
+    (`the number of X in Y`, the one-line `if ... then STMT`, binaryEncode/div/mod); each is named,
+    counted and must fire. A wrong ANSWER earns a fix to the shared interpreter, a missing SPELLING
+    a rewrite. Its 2026-08-29 first-run findings (negative chunk ranges in the interpreter, the
+    oracle's `_verify_ed25519` crash on a tampered R, the `rsPersonaAllows` leak) were mostly the
+    tool's own: suspect the probe first.
+14. **check-demo-boot.py is also driven by coinxt's, nocloud's and holde-em's gates**: on any path a
+    boot walks, use the compiled-regex helpers `_rxi`/`_rx` (2026-09-11). Model fidelity: `the name`
+    of a control is type-prefixed (`button "x"`); only `the short name` is bare (2026-08-31).
+15. **The demo carries TWO socket libraries** (onionxt, nostrxt's relay layer). The embed tool drops
+    both libraries' `socketError`/`socketClosed`/`socketTimeout` wrappers; the demo's own three call
+    `oxSocketError`/`nxrSocketError` (and kin), then `pass`. Keep that `pass`: swallowing a socket
+    message another library waits for is a HANG no gate sees.
 
-## Things decided settling channel 2 - the media handoff (2026-08-16; do not re-litigate)
+## 5. Engine evidence ledger
 
-- **Channel 2 gets NO new wire; the handoff is a channel-0 POINTER.**
-  The question was "does bulk media handoff need a chunked channel-2
-  lane, or a record that points at the media rail riptide already
-  has?", and the tree's own laws answer it. enet's 60000-byte packet
-  budget is the suite's message/bulk seam ("when a payload stops being
-  a message it becomes a torrent" - enetxt's README), and a draft's
-  media - a photo, a video - essentially never fits it. A chunked enet
-  lane would reimplement libtorrent's per-piece integrity, resume, and
-  backpressure with none of its proof, while the phase-3 machinery
-  (rsMediaCreate seeds in place; rsMediaFetch finds-before-adds and
-  co-seeds) is the ONE rail of this app already proven end to end on
-  two machines - on one LAN, near instantly, which is exactly the
-  handoff's shape. So: the RSL1 "M" record (channel 0, reliable) is a
-  signed pointer, and channel 2 stays RESERVED, dark, until a genuinely
-  sub-budget bulk case mints its own record kind (none exists today -
-  drafts already ride channel 0, capped at 4096).
-- **The info-hash is deliberately BOTH fields the design asked for.**
-  "Content hash" and "torrent linkage" are one value in the phase-3
-  design: the 40-hex v1 info-hash is the content address libtorrent
-  verifies piece-by-piece against (a receiver cannot be fed different
-  bytes than the hash names) AND what a magnet fetch takes. fileName
-  and fileSize ride along for the receiving UI only; the torrent's own
-  metadata is the authority once fetched.
-- **The record follows the sync discipline exactly, nothing new.** Same
-  shared LAN key, same "riptide-lan-s" domain, kind byte inside the
-  signed span (no cross-kind reads), absolute state (the device's
-  LATEST offer), the draft record's strictly-increasing per-device seq
-  as the replay guard - and a duplicate apply is harmless anyway,
-  because rsMediaFetch is idempotent. The wire hash is strict lowercase
-  (a validly SIGNED record with an uppercase hash is refused - the
-  coinxt canonical-form lesson, harness-proven), and the all-zeros hash
-  is refused at build and parse: a handoff must name real content.
-- **The honest limit is the transport's, and it is recorded, not
-  hidden.** The pointer record never leaves the LAN; the pointed-at
-  bytes ride the ORDINARY torrent rail - swarm peers see your IP, and
-  peer discovery is the DHT, so a fully offline LAN may not find its
-  swarm even though both devices sit on it. Said in the spec's
-  section-7 as-built note, the demo's Devices-card footer, and the
-  runbook's phase-6 step 7 (report it as the recorded limit, not a
-  defect).
-- **The demo's offer is one slot, and it outlives the mesh.** The
-  Devices card keeps the LATEST verified offer (the one-conversation
-  pattern); per-DEVICE seq tracking drops when the link that carried it
-  goes, but the offer and its watched fetch deliberately survive
-  Leave/disconnect - the swarm outlives the mesh, and a mid-download must
-  not lose its
-  Fetch button. The sender reads the true file size from its own seed's
-  metadata (rsMediaFetch on its own hash lands on the find path - no
-  download, no copy), and the receive path only REMEMBERS a verified
-  offer; fetching is the user's click.
+Newest last. "Maintainer's account" is a dated report with no result text or platform captured.
 
-## Things decided building phase 7 (do not re-litigate)
+| Date | Engine / platform | What ran | Result |
+|---|---|---|---|
+| 2026-08-12 | OXT, Windows x64; suite paste | riptide phase 1 (`rs1rsSelfTest`), then phases 1-2 | 89/89, then 133/133, 0 skipped, every probe true including hasSha3: the sealed key file, KDF tree, identity -> handle -> onion, `RSH1`/`RSP1`, the post chain, real-session puts, accepted lookups, the synthetic ingest verifiers |
+| 2026-08-13 | two machines (maintainer's account) | phase-2 propagation through the demo | PASS: identities on both sides, feeds both directions through the real DHT, every rendered post ingest-verified; the first real `btPoll` DHT events into the ingest verifiers |
+| 2026-08-15 | OXT, platform not recorded; suite paste | phase 4-7 compute: DM secretstream round trip, LAN admit/refuse, guard truth table, BTXO framing, the cross-member seam | green except 3 malformed-UTF-8 checks, which exposed the lossy `textDecode` (trap 4) |
+| 2026-08-15 | OXT (maintainer's report) | the demo's multi-card conversion | `... of me` card references rejected, 48 sites (trap 2); fixed the same day |
+| 2026-08-15 | two machines (maintainer's account) | phase 3 media; phase 4 DMs | PASS: a follower fetched and PLAYED an attached video "near instantly" (head publish -> fetch -> chain walk -> authorSig verify -> media info-hash -> swarm join -> playback); DMs both ways (sealed `RSI1` intro, deterministic-role crypto_kx, pairwise secretstream over rp1, no server). Reaching the Messages card confirmed the `go to card` fix |
+| 2026-08-20 | OXT, Windows; suite paste 1981/0/1 | riptide 0.9.0 compute additions | riptide 338 passed / 0 failed / 2 skipped: sync records D/F/P/M, the 8.2/8.3 serving seams (`rsAnonFeedPage`, `rsAnonPrekeyBody`, `rsAnonAcceptDm` + 5 refusal legs), all three `rsBytesAreUtf8` checks. The 2 skips are the live-tor anon-service legs |
+| 2026-08-24 | OXT 9.6.3, Windows x86_64; suite paste 2373/0/3 | riptide including the 2026-08-23 batch | 391/391, including the kind-C chunked-post rail and the BTXO receive path (`rsBtxoStreamStep`) |
+| 2026-08-27 | two machines (maintainer's account) | phase-3 mid-download playback | MEASURED NEGATIVE as then wired: Play unlocked on file existence (a hollow file at metadata time), so the player got about 0% real data. Fixed the same day (`raMediaFrontReady`); a faststart re-run is owed |
+| 2026-08-29 | OXT (maintainer's account) | the first phase-8 card landing | FAIL: broke `openStack` for the whole app (`Chunk: no target found`, plus a non-literal-constant compile kill); reverted |
+| 2026-08-29 | OXT (maintainer's account) | the re-landed five-card stack | reported working: `openStack` completes with the Nostr card in place |
+| 2026-08-29 | OXT (maintainer's pasted record) | the v11 UI boot self-check | 9 passed / 1 failed / 0 skipped, all five cards built, every capability true. The FAIL was the carried self-check's own cross-card `there is` defect (suite engine note 5.6; this record is its primary evidence), fixed in the master the same day |
 
-- **The guard is a PURE FUNCTION, and it is the crown jewel.**
-  `rsPersonaAllows(pIsAnon, pTransport)` is the spec-9.3 invariant made
-  code: anon may use only `onion`, public may use anything but `onion`,
-  and an unknown transport is refused for BOTH (fail-closed - a typo must
-  never read as allowed). It has no I/O, so its FULL truth table is
-  asserted in the harness, and the demo's guard panel is a LIVE read of
-  it, so what the user sees can never drift from what the library
-  enforces. Every transport branch the app adds must route through it.
-- **The anon onion is offline-derivable and self-authenticating.**
-  `rsAnonOnion(master, n)` = the v3 onion of `anon_seed(master, n)`'s
-  ed25519 public, which equals `oxCreateServiceFromSeed(anon_seed)`'s
-  address; the golden test pins that the onion inverts back to the anon
-  handle. So a follower who has the .onion has verified the key by
-  reaching it.
-- **BTXO is reused, not reinvented.** The anon file transfer uses the
-  Model C `BTXO` framing (magic/ver/flags/nameLen/name/total header,
-  u32-length data frames, zero-length terminator) - the same convention
-  the quickshare onion transfer speaks - so the framing is a shared
-  cross-project contract, golden-pinned here.
-- **The sealed anon-DM route: the CRYPTO layer is CLOSED (2026-08-15);
-  the transport remains.** The deferral was real - `sxSeal` takes a
-  curve25519 key, the persona identity is ed25519 - and the fix was the
-  predicted one, and it cost exactly ONE new handler: `rsAnonDmSeed`
-  (subkey 200+n, a spec-registry row added with its rationale - one seed
-  never feeds two cipher schemes, the same reason subkey 2 is separate
-  from subkey 1). Everything else composes from phase 4 unchanged:
-  `rsBuildPrekey(kxPub, rsAnonSeed(...))` is the persona's prekey,
-  `rsBuildIntro` addressed to the anon handle seals to it via
-  `rsDmSealIntro`, and `rsDmOpenIntro(sealed, anonHandle,
-  rsAnonDmSeed(...))` opens it. Golden-pinned (the kx public re-derived by
-  the vector gate) and harness-proven end to end, including the two
-  unlinkability refusals: the persona's prekey refuses the PUBLIC handle
-  as author, and the public identity cannot open the persona's mail. The
-  persona's prekey is served over its ONION, never the DHT (the 9.3
-  guard); that serving is now built - see the 8.2/8.3 entry below.
+Caveats that travel with the ledger:
+- The 2026-09-09 tag change (trap 8) re-pinned the admission response and welcome goldens, so the
+  engine-green admission and welcome BYTES are superseded; the sync-record goldens ("riptide-lan-s")
+  are unchanged.
+- Harness sections added after 2026-08-24 (Nostr, app state, the watermarks, the u64 bound, the 996
+  cap) are static + headless only.
+- Headless on 2026-09-23: check-script-vectors 84 checks (1 skip), check-demo-boot 44 checks. Run
+  the gates for current counts.
 
-## Things decided building the 8.2/8.3 onion serving (2026-08-15; do not re-litigate)
+## 6. Status
 
-- **The library builds payloads; the demo owns the routes.** Three pure
-  seams (`rsAnonFeedPage`, `rsAnonPrekeyBody`, `rsAnonAcceptDm`) with no
-  I/O, so the harness proves them offline; the demo registers the
-  onion-httpd routes (`oxhInit`/`oxhRoute`/`oxhReply`) and composes
-  `oxSetPeerCallback "oxhPeer"` with `rsAnonCreateService` - onion-httpd's
-  own `oxhServe` calls `oxCreateService` (a TOR-generated key), which is
-  the wrong key for a persona whose address IS its identity, so the demo
-  wires the peer callback itself and creates the service FROM SEED.
-- **HTTP bodies are HEX TEXT, both directions.** The RSK1 record and the
-  sealed RSI1 intro are binary; hex survives every HTTP client untouched,
-  is copy-pasteable through Tor Browser, and gives the /dm gate an exact
-  spelling to refuse against. GET /prekey returns 264 lowercase hex
-  chars; POST /dm accepts EXACTLY 632 (48 seal bytes + the 268-byte
-  intro, times two) - strict to the char, a trailing newline is a
-  refusal, the caps-refuse discipline on an HTTP body.
-- **Refuse before decode, and one reply for every refusal.**
-  `rsAnonAcceptDm` gates length and per-byte lowercase hex BEFORE
-  `sxHex2Bin`, then hands the blob to the EXISTING `rsDmOpenIntro`
-  (verify-then-parse); the demo's route answers every refusal - bad hex,
-  bad seal, wrong recipient, stale timestamp - with the same 400
-  "refused", so the route is not an oracle for a prober. Freshness stays
-  the app's policy (the same +-600 s window as the rp1 inbox).
-- **The feed page is a WIRE FORMAT, not a template.** Deterministic HTML
-  from (title, entries), entries HTML-escaped (the oxhHtmlEscape
-  algorithm, mirrored in the oracle) so a crafted entry cannot inject
-  markup, golden-pinned byte-for-byte - a look change edits the builder
-  and re-pins deliberately. The demo's page content comes from a
-  dedicated Anon-card entries field, NEVER from the public feed
-  (cross-posting is the spec-8.4 operator mistake that links personas).
-- **The route handlers reply from script locals**, built once at publish
-  time - never from a field read at request time. They run from ENGINE
-  socket callbacks (off raPoll's try, on whatever card is open), so field
-  writes go through the guarded raAnonLog and every oxh reply sits in a
-  try (the multi-card lesson applied to a new event source).
-- **Publish is a two-step state machine when tor is cold.** ADD_ONION
-  needs an authenticated control port and `oxConnectControl` is async, so
-  the first Publish + serve may only kick off the connect;
-  `raAnonStatus` ("control authenticated") re-enters raAnonPublish,
-  whose guards make the re-entry idempotent. Fail closed, never a
-  blocking wait.
-- **The REPLY rail is deliberately unbuilt.** onion-httpd closes each
-  stream after its reply (Connection: close), so "the persona replies
-  over the same accepted stream" (spec 8.3) would need a persistent
-  onion-stream session layer this pass does not add. An accepted intro
-  is logged with its PROVEN sender on the Anon card and echoed to the
-  Messages card; answering means a public-side DM to that sender. Saying
-  so in the UI beats a half-built session.
-- **A.9 rode along: the head's profileMeta is now populated.** raPost
-  publishes the display name's UTF-8 bytes as an immutable item (spec
-  4.1's display-name blob) and names its target in the head -
-  content-addressed, so republishing the same name is idempotent, and a
-  refusal is NON-fatal (the head carries the none target and the reason
-  lands in the feed log). The library needed no change.
+All eight spec phases are built; phases 1-4 are done on two machines. These are the labels the
+suite's `docs/OXT-PASS-RUNBOOK.md` rows flip; open work lives in the suite's `docs/WORK-PLAN.md`.
 
-## The phase 4-7 adversarial review (2026-08-14)
+| Phase | Label |
+|---|---|
+| 1-2, identity + live feed | DONE: engine 2026-08-12, two machines 2026-08-13 |
+| 3, media | DONE 2026-08-15, two machines. Mid-download playback measured negative 2026-08-27 and fixed; the faststart re-run is owed |
+| 4, DMs | DONE 2026-08-15, two machines; the D15 clean close (2026-08-17) post-dates that pass and has not run |
+| 5, the call + typing lane | built, never run. Verified statically; needs an OXT pass |
+| 6, LAN mesh | compute engine-green 2026-08-20, admission and welcome bytes re-pinned since (caveat above). Owed: the live mesh (draft-appears criterion, media handoff, third device) |
+| 7, anon persona + 8.2/8.3 serving | compute engine-green 2026-08-15 and 2026-08-20; needs an OXT + live-Tor pass. The harness's 2 anon-service SKIPs are exactly that leg |
+| 8, Nostr bridge + `RIPTAPP1` (built 2026-08-29) | library verified statically and executed headlessly (rule 7a); needs an OXT + live-relay pass. The v11 label: verified statically + headless boot + an engine boot record with one since-fixed check defect; needs an OXT re-pass, whose boot record should read 10 passed / 0 failed |
 
-After building phases 4-7, a five-lens adversarial review (crypto
-correctness, wire-parse safety, dialect laws, demo state machines, gate
-integrity) ran over the new code. The crypto came back CLEAN and that is
-worth recording: the pure-Python X25519/crypto_kx matches libsodium's
-construction exactly (checked byte-for-byte against a real libsodium via
-emit-kx-anchor.py), the new ed25519 verify accepts/rejects correctly on
-every tested path, the role rule makes both peers agree, rsDmSessionKeys
-passes the kx keys in libsodium's order on both branches, and the intro's
-recipient-binding + the LAN nonce/name binding make replay and
-cross-identity reuse structurally impossible. Five real defects surfaced
-in the surrounding code, all now fixed with regression coverage:
+## 7. Gates and suite integration
 
-- **Never-throw violated in three parsers.** rsLanParseChallenge,
-  rsLanParseResponse, and rsBtxoParseHeader decoded an attacker-controlled
-  UTF-8 name field OUTSIDE a try, so malformed bytes THREW instead of
-  returning empty (rule 5) - a LAN peer or BTXO sender could crash the
-  admission/parse path. Wrapped each in a try like the phase-1/3/4 parsers
-  already do; the harness now feeds each an invalid-UTF-8 name and asserts
-  a clean refusal.
-- **The multi-card demo turned two feed painters into pump-killers.**
-  raExpire and raMediaPaint write card-1 status fields with BARE
-  references and run OUTSIDE raPoll's try; before phase 4 there was one
-  card so they always resolved, but the new Messages/Devices/Anon cards
-  meant a deadline or a media tick firing while off-card threw "no such
-  object" out of raPoll and PERMANENTLY stopped the pump (DHT + rp1 +
-  enet). Added raFeedNote (card-1-qualified + existence-guarded, the
-  raDmLog pattern) and routed every pump-reachable feed write through it,
-  including raHandleEvent's walk-status writes (which had stalled the feed
-  walk off-card).
-- **The guard's "full truth table" omitted two of its own transports.**
-  rsPersonaAllows knows eight transports; the harness and the demo panel
-  asserted only six, leaving feed and media - the two an anon persona most
-  needs kept off - unproven. A future edit letting an anon persona onto
-  either would have leaked it to the clearnet DHT/torrent rails while
-  rsSelfTest stayed green. Both cells are asserted now, and the live guard
-  panel iterates all eight.
-- **itemDelimiter left as "/".** raAttach set it for the leaf name and
-  never restored it; the pump's raHandleEvent then read comma-joined media
-  lists under the wrong delimiter. Restored to comma after use and set
-  before the item read.
+`bash tools/run-gates.sh` is the ONE gate list (the suite's `build-all.sh` delegates to it): the
+static gate, docs style, the `tests/*golden*.py` glob, `check-selftest-vectors.py`,
+`check-script-vectors.py`, `test-demo-boot.py` then `check-demo-boot.py` (minutes),
+`export-protocol-vectors.py --check`. A missing `../nostrxt` (`lcs-interp.py`, `nostr_reference.py`)
+FAILS the gates; a missing `../coinxt` skips tier 2 unless `XTALK_REQUIRE_SIBLINGS=1`.
 
-The lesson is the multi-card one: adding cards silently widened the blast
-radius of every bare card-1 reference in the older single-card handlers.
-A pump that runs from every card must treat EVERY control reference as
-cross-card - qualify and guard, always.
-
-## The first engine pass of phases 4-7 (2026-08-15): textDecode does NOT throw
-
-The suite selftest ran on a real OXT engine, and the phase 4-7 surface came
-back GREEN except three checks - a huge result: the DM secretstream round
-trip (my tx key's ciphertext decrypts under the peer's rx key, the FINAL
-tag survives), the LAN admit/refuse under the shared master, the anon guard
-truth table, the BTXO framing, and the whole cross-member seam all passed on
-the engine, so the phase 4-7 COMPUTE/CRYPTO paths are engine-verified now,
-not merely static. The live two-machine done-criteria (a real DM exchange, a
-device joining the mesh, an onion reachable over Tor) still need two boxes.
-
-The three failures were the malformed-UTF-8 refusal checks added in the
-review pass, and they exposed a FALSE PREMISE the whole library carried:
-six parsers guarded their name/text decode with a `try`, commented "textDecode
-throws on malformed UTF-8." **It does not.** On OXT textDecode(...,"UTF-8")
-is LOSSY: it decodes invalid bytes to replacement characters and returns a
-non-empty string, so every one of those try blocks was INERT and the parsers
-would have handed back a mangled name where they meant to refuse. The three
-phase-6/7 parsers were the only ones with a test that fed malformed bytes,
-so they were the only ones that showed red - the three authenticated parsers
-(rsParseHead/rsParsePost/rsDmParseMessage) were silently broken the same way.
-
-The fix is `rsBytesAreUtf8`: validity by ROUND TRIP - decode, re-encode, and
-require the bytes to reproduce exactly (only valid UTF-8 does), with an inner
-try kept as belt-and-suspenders for any engine that does throw. All six sites
-use it now. This is the canonical "shipped is not run" lesson in its purest
-form: the "textDecode throws" comment was an attestation no test had ever
-exercised, it was wrong, and the first inputs that touched the path found it.
-Whenever you must reject malformed UTF-8 in this family, round-trip it - never
-trust a decode to throw.
-
-## THE DEMO STACK IS THE LEAST-VERIFIED SURFACE HERE (read before editing it)
-
-`examples/riptide-social.livecodescript` is **not** covered by any harness.
-The suite selftest exercises `src/riptide.livecodescript` (the library) and
-is what went green on the engine; it never opens the demo, never builds a
-card, never dispatches a `mouseUp`. So EVERY line of the demo has only ever
-been seen by `check-livecodescript.py`, which validates balance, quoting and
-the token traps - NOT whether an object-reference or navigation form is
-something the engine accepts.
-
-That gap has now produced its own bug, reported from an engine 2026-08-15:
-the phase 4-7 multi-card conversion wrote card navigation and cross-card
-references as **`... of me`** - `go card "raMessages" of me`,
-`field "raDmLog" of card "raMessages" of me`, `card 1 of me` - 48 sites in
-all. **That form is wrong for LiveCodeScript** and the checker passed every
-one. The canonical forms are used now: `go to card "raMessages"` /
-`go to card 1` for navigation, plain `field "X" of card "Y"` for a control on
-another card of the same stack (no qualifier is needed - it is one stack),
-and `set the name of this card to "..."` right after `create card` (the new
-card is already current). The `send "raPoll" to me in <n> milliseconds` form
-is UNCHANGED and correct - that is a message target, engine-proven in
-torrent-rp1-chat, and a different construct entirely.
-
-Two things follow, and they are the operational point:
-
-1. **There was no in-repo precedent to copy, and that should have been the
-   warning.** Every other demo in this family is a SINGLE card, so the repo
-   contained no proven multi-card navigation idiom; `grep` for `go card`
-   returns only `go stack` (a different command). Writing a form the tree has
-   never executed, in a file no harness runs, is how this landed. When you
-   need a construct the suite has no engine-proven example of, say so in the
-   honesty label rather than letting a green checker imply it was verified.
-2. **PHASE 3 IS DONE: the two-machine media pass happened 2026-08-15.** After
-   the `of me` fix the demo ran ON TWO MACHINES and a follower fetched and
-   PLAYED an attached video, near instantly. That is the phase-3
-   done-criterion met, and it closes the last of the phase 1-3 criteria. It
-   also means far more than the media layer was exercised end to end on real
-   hardware, because a follower cannot reach a video any other way: machine
-   A published a head and a media-bearing post to the DHT, machine B fetched
-   that head, walked the chain, VERIFIED the authorSig, surfaced the media
-   info-hash from the verified post, joined the author's swarm and played
-   what came back. Phases 1-3 of the app - identity, the live feed, and
-   media - are now engine-proven across two machines through the real UI,
-   not just through the harness.
-
-   Two things this specifically does NOT settle, both worth keeping honest:
-   - **"Near instantly" was not distinguished from "mid-download."** The
-     criterion's spirit is sequential playback starting before the file is
-     complete; a fast small transfer looks the same from outside. Treat the
-     mid-download nuance as plausible but unmeasured.
-   - ~~The media strip lives on card 1, so this may not have exercised the
-     multi-card navigation.~~ **RESOLVED the same day: PHASE 4 IS DONE TOO.**
-     Two machines exchanged DMs, chat working BOTH WAYS - the sealed RSI1
-     intro, the deterministic-role crypto_kx session, and the pairwise
-     secretstream over rp1 all carrying real traffic with no server. Since
-     the Messages card had to be reached to do it, that also CONFIRMS the
-     `go to card` navigation fix on a real engine. The Devices and Anon
-     cards are built by the same `raBuild` pass and use the same navigation
-     and reference forms, so the syntax class is settled; what remains
-     unexercised there is their own flows, not their spelling.
-
-## The 2026-08-17 pre-engine-pass sweep (do not re-litigate)
-
-Four fixes ahead of the phase 5/6/7 passes. All FOUR are demo or library
-edits with no wire-format change, no new golden vector, and no new public
-`rs*` handler; all are verified statically and need the OXT pass.
-
-- **C6: the LAN sync state was keyed by the enet PEER, not by the signing
-  DEVICE - and the runbook could not have found it.** `raLanSyncReceive`
-  keyed all six of its per-device arrays by `pPeer`. On a HOST that is
-  accidentally right (one link per device); on a JOINER it is wrong for
-  every device but the host, because the mesh is hub-and-spoke and the
-  host RELAYS verified records, so a joiner's whole mesh arrives over ONE
-  peer id. Three consequences, in rising order of how badly they read on
-  an engine: interleaved seq/tick counters from different devices fought
-  over one slot and the monotonic guard dropped most of them through a
-  path that is a DELIBERATE SILENT EXIT, so nothing was logged; the drafts
-  panel labelled every relayed draft with the HOST's name, because it
-  looked the label up in `sLanDevices[peer]`; and the devices panel
-  iterated `sLanDevices`, so on a joiner OTHER DEVICES NEVER APPEARED AT
-  ALL. The library had stated the correct contract since the day it was
-  written - `rsLanBuildDraft`'s own comment says "apply only a seq
-  strictly above the last one applied FOR THAT DEVICE" - so the demo was
-  violating a contract its own library spells out. The fix keys the six
-  arrays by `tRec["name"]`, which is INSIDE the signed span and read only
-  after the signature verdict; the painters label and iterate by device;
-  and a new `sLanPeerNames` (peer -> set of names) is what a disconnect
-  drops by, because one link can legitimately carry many devices. Keying
-  by name is not a per-device IDENTITY claim - all your devices share one
-  LAN keypair, so any admitted device can sign any name - and that is the
-  recorded threat model (your own devices), not a hole the keying opens.
-  **The process lesson is the one worth keeping: the two-machine runbook
-  had exactly ONE non-host device, so the S3 session as scripted could
-  not reach the relay at all.** A THIRD-DEVICE step is now step 8 of the
-  phase-6 section, and it names the failure it is looking for rather than
-  only the success. When a design has a hub-and-spoke shape, a two-node
-  test plan is not a small-sample version of it - it is a different
-  topology that never runs the code.
-- **C10: `rsMediaCreate` leaked `itemDelimiter` as "/" for the rest of
-  the session.** A PUBLIC handler set it and none of its seven exits
-  restored it; six of those exits are refusals. The demo had already met
-  the symptom twice and patched it at the call sites, one patch quoting
-  what it looked like from outside - "leaving it as / made item 1 return
-  the whole list" - which is exactly how a delimiter leak reports on an
-  engine pass: as a mystery about the media list, never as a delimiter.
-  Fixed at the source, and fixed by restoring around the NARROWEST span
-  (the path split) rather than at each exit, because a restore per exit
-  is a line the next refusal path forgets. `rsAnonFeedPage`'s
-  `lineDelimiter` got the same save/restore for uniformity, and its
-  comment says plainly that it sets the ENGINE DEFAULT, so that one is
-  discipline and not a second live bug fixed. The demo's defensive
-  re-set in `raHandleEvent` deliberately STAYS - the pump reaches that
-  item read from any card after any handler, and one line is cheaper
-  than trusting every caller in a file no harness runs - but its comment
-  now names the library fix instead of blaming an unnamed earlier
-  handler.
-- **B3: the pump ran phases 5 and 6 at 7.5x their designed interval.**
-  The spec's section 10.1 always named two tiers, ~33 ms while a live
-  dc/enet session is active and ~250 ms otherwise; only the slow one
-  existed. Phases 5 and 6 are the main events of the next engine session
-  and BOTH ARE JUDGED BY FEEL - a call connecting, a typing indicator
-  appearing - so a whole slot could have gone to chasing sluggishness
-  that was a constant in this file. `raPollDelay` picks the tier on every
-  tick (never latched, so hanging up drops straight back to the cheap
-  tier). The half that needed care is the UI: a straight fast tier would
-  have taken `raExpire`/`raMediaPaint`/`raLanMediaPaint` from 4 Hz to
-  30 Hz, which is a NEW performance defect and not a fix, so they sit
-  behind a `kPaintMs` gate - and `raLanPaintDevices`, which used to hang
-  off the end of `raLanSyncTick`, moved onto that same gate for the same
-  reason. Everything else on the fast path was already cadence-gated
-  (`raDmTypingTick`, the draft debounce, the presence interval), which is
-  why the tier change is small.
-- **D15: a DM hang-up was silence, not a close.** `raDmTeardown` freed
-  the secretstream handles and pushed nothing, so the far side kept
-  showing `-- channel open with ... --` forever. libsodium's FINAL tag is
-  the clean-close signal and the spec names `sxIsFinalTag` for exactly
-  this, so `raDmPushClose` pushes one last message with final true before
-  the free, and the receive path prints `closed the conversation` and
-  drops the peer on a final tag. Two things are deliberate: the body is
-  FILLER and is never parsed or rendered (the TAG is the message, but
-  `rsDmMessageBody` refuses an empty body so something must ride along),
-  and the FINAL tag belongs to exactly ONE caller - every ordinary send
-  keeps final false, because spending it ends the stream. `sxIsFinalTag`
-  was already exercised by the harness, so the gap was only ever in
-  `src/` and `examples/`; a reconnect mints fresh streams, so the old
-  symptom was silence and never a false auth failure. Do not overstate
-  it in the changelog.
-
-## The 2026-08-23 headless batch (A2 / A3 / B4 / B7 / A.9 / D14; do not re-litigate)
-
-Six backlog items closed headlessly (library 0.10.0 -> 0.11.0, seven new
-public handlers). WRITTEN as verified-statically; the COMPUTE halves ran green
-on-engine **2026-08-24** (Windows x86_64: riptide folded at **391/391** in the
-suite paste, the phase-2b kind-C rail and the phase-7b BTXO receive path
-included). The live halves (a second machine, a tor daemon, real transports)
-keep their stricter labels at each site.
-
-- **A2, the kind-C chunked-post rail - PINNED FIRST, then built.** Kind C
-  was the only unpinned riptide wire format; the oracle now derives
-  chunk1Target/chunk2Target/postC/postCTarget (real chunk texts whose
-  concatenation is the post's full text, plus a media attachment BEHIND
-  the chunk list so the kind-C tail parse is pinned), held in all three
-  holders per rule 2 - after this there is nothing left to pin in the
-  record layer. Then the rail: rsChunkPostText (full 996-byte chunks by
-  BYTE - a boundary may split a UTF-8 sequence, which is why the
-  reassembly validates the CONCATENATION, never a chunk alone),
-  rsPostTextCapacity (the D-or-C arithmetic as API, so the demo never
-  hand-copies 880), rsPublishChunkedPost (compute and sign BEFORE the
-  session is touched; a mid-publish failure strands only harmless
-  content-addressed orphans), rsIngestBlob (content addressing is what
-  extends the authorSig from the named targets to fetched bytes), and
-  rsAssembleChunkText (re-hash every part, then one UTF-8 round-trip
-  decode of the whole). The demo's walker now BRANCHES ON KIND - before
-  this it rendered tPost["text"] unconditionally, so a kind-C post
-  displayed as a verified post with BLANK text, the worst failure shape
-  because authorSig passes - rendering an honest placeholder, walking the
-  parts one immutable await at a time beside the chain walk (one
-  reassembly at a time, the one-conversation precedent), and printing the
-  full text under the post's own number; raPost auto-chunks over the
-  capacity. Expiry and refusal keep the placeholder and say why.
-- **A3, the BTXO receive path.** rsBtxoStreamStep is the pure
-  length-prefix stream state machine (the builders existed; no reader
-  could find a boundary). Single-step by design: accumulate, step, act,
-  delete `used` bytes, repeat - which is what lets the harness prove
-  reassembly at EVERY byte boundary offline, plus concatenated frames and
-  each hostile-input refusal. The caps are PORTED from nocloud's working
-  receiver (name 1024 - refused from the first 8 bytes, before the name
-  is ever buffered; total 8 GiB; frame 65536), not re-derived. It reuses
-  rsBtxoParseHeader for the strict header parse rather than restating it.
-- **B4** - the Devices panel appends a live `rtt N ms, loss P%` suffix
-  per DIRECTLY-LINKED device from enPeerStatus (stats are a LINK
-  property; a relayed device's row stays bare on purpose - printing the
-  host's numbers under its name would lie). Probe-guarded and
-  try-wrapped; a stale peer's `{}` degrades to nothing.
-- **B7** - rsMediaStreamPlan, a SEPARATE handler from rsMediaFetch on
-  purpose (the fetch is btAddMagnet: no metadata, no piece table, so a
-  deadline at fetch time would name pieces that do not exist). The demo
-  arms it from the metadataReceived event on either watched fetch; the
-  front 8 pieces get spaced deadlines as a playback PRIMER. Refusals are
-  non-fatal everywhere - the fetch stays sequential - including on a
-  torrentxt predating btSetPieceDeadline.
-- **A.9** - the profileMeta READER (the publish half landed 2026-08-15).
-  Fetching a foreign head - the feed walk or Start DM - now also fetches
-  its profileMeta target and prints the display name once
-  content-verified (rsIngestBlob, then 1..64 bytes and a UTF-8 ROUND
-  TRIP, because textDecode is lossy - the demo cannot reach the library's
-  private rsBytesAreUtf8, so the idiom is restated at raProfileLine).
-  Absent, refused, or late all degrade honestly to the head's own name.
-- **D14** - the spec 9.3 attestation corrected AS AN ATTESTATION, not
-  built as a runtime fix (the backlog is explicit: no active-persona
-  state exists in the demo, and 16 more guard calls would be 16
-  compile-time constants that can never refuse). The sentence now states
-  what is asserted where: the full truth table in the harness, the live
-  guard panel, and the demo's two real persona decisions.
-- **D.1 (riptide half)** - the stale labels synced to the recorded
-  2026-08-20 Windows run (riptide 338/0/2 in the suite paste): the src
-  header and the demo scope block no longer call the 8.2/8.3 serving
-  seams "verified statically" - their COMPUTE half is engine-green; what
-  remains is the live-Tor leg (and, for the demo, its own route wiring).
-
-## Things decided building phase 8, the Nostr rail (2026-08-29; do not re-litigate)
-
-- **THE RAIL IS REACH, AND IT IS NOT ALLOWED TO BECOME A DEPENDENCY.**
-  Every other rail here is sovereign and that is the thesis; what none of
-  them has is an audience. Nostr buys one, at the price of somebody
-  else's server. So the rule the whole design hangs off is: nothing in
-  phase 8 sits on the path of phases 1-7. With no CoinXT, no NostrXT
-  loaded, or every relay down, this is exactly the app it was at phase 7,
-  and the boot self-check SKIPs the rail with an install line rather than
-  failing. That is why the probe splits into THREE rows (`hasNostr`,
-  `canNostrSign`, `hasNostrRelay`): the three fail separately, and each
-  disables a different feature.
-- **The protocol is composed, never re-implemented.** The canonical NIP-01
-  serializer, BIP-340, NIP-19 and the relay socket machine are `nx*`/`nxr*`
-  calls. This member owns exactly three things: the key, the bridge, and
-  the media convention. The temptation to "just build the event JSON here"
-  is the same one nostrxt's own CLAUDE.md refuses - one wrong escape byte
-  changes every event id forever - and it is refused for the same reason.
-- **Subkey 4, through a LADDER, and the ladder takes a CANDIDATE.** A KDF
-  output is 32 uniform bytes; a secp256k1 key must be in 1..n-1, and the
-  gap is ~2^-128 wide. That tiny gap is what makes the rule easy to get
-  wrong: whatever goes there can never be observed running. Re-hash with
-  SHA-256, at most 8 rungs, then refuse - bounded, no new dependency, and
-  a refusal rather than a weaker key. Exposing it as `rsNostrSeckeyFrom`
-  (of a candidate, not of a master) is what makes the untakeable branch
-  provable: the all-zeros candidate and the group order n both step
-  forward, both are golden-pinned, and both run in the harness.
-- **The bridge is signed TWICE because neither key can sign for the
-  other.** One signature is not a linkage, it is an accusation: any holder
-  of that one key could make it about a stranger's other key. Both
-  signatures over one preimage make it a two-sided statement and either
-  half alone is worthless. The domain tag `"riptide-nostr-b"` keeps it out
-  of the LAN rail's namespace and the magic sits INSIDE the signed span,
-  so no cross-kind read is expressible.
-- **The republish gate is the whole reason the reader exists.** Anyone can
-  copy somebody else's bridge into their own signed event; nothing stops
-  that and nothing should try. `rsNostrBridgeFromEvent` requires the
-  record's nostrPub to BE the event's author, so a copy verifies as the
-  ORIGINAL author's bridge and never as the republisher's. Harness-proven
-  in both directions: a stranger CAN sign such an event, and reading it
-  back refuses.
-- **A new rail gets a new SALT, never a new field.** The bridge rides
-  BEP44 at `"riptide-nostr"` rather than gaining a slot in RSH1, whose
-  magic would then have to bump and take all three vector holders and the
-  demo with it (rule 3). Cheap here, and the precedent worth keeping.
-- **Publishing the bridge is the linking act, so it is always a click.**
-  Not a consequence of connecting, not of posting. The UI says in those
-  words that it is public and cannot be unpublished. Same discipline
-  elsewhere on the card: nothing dials on open (default relays are TEXT in
-  a field), NIP-42 auth is never answered automatically (it would name
-  this identity to the relay), and inbound media is a POINTER the user
-  clicks rather than a fetch that joins a swarm and shows their IP.
-- **Nostr DMs are a SCOPE CUT with a reason, not a gap.** NIP-04 is
-  deprecated and needs AES, which exists nowhere in this suite and never
-  will; NIP-17 gift wrap needs an ephemeral-key layer and a metadata
-  analysis this pass has not done. Riptide already has a DM rail that
-  answers to nobody. A half-built encrypted rail beside it would be worse
-  than none.
-- **The app-state store is SEALED, and the reason is not that a follow
-  list is secret.** It is that a follow list IS the social graph - who you
-  read, which relays you talk to, which npub is yours - which is exactly
-  what spec 8.4 says the anon persona must stay unlinked from. Plaintext
-  beside a sealed key file would put the interesting half of the threat
-  model on disk. Subkey 5, its own row, never a signing key.
-- **rsPublishBridge validates the seed/handle match ABOVE the session
-  check**, per the phase-2 rule this file already records. A check below
-  the session gate can only ever be reached on a machine that has
-  torrentxt, which is where a harness assertion quietly starts passing for
-  the wrong reason - and it did, for exactly one edit, until the assertion
-  was written and looked at.
-
-## The phase-8 CARD was reverted (2026-08-29) - and RE-LANDED the same day, behind a runner
-
-The revert record below stands as written; what closed it is recorded
-here, in the direction the doc-status gate requires. The card is BACK as
-of later that day, restructured so that every one of the three untried
-boot additions the revert identified is GONE: openStack is byte-identical
-to the engine-proven fc1eeae version (proved mechanically at re-land, not
-eyeballed), the relay-defaults paint moved inside raBuildNostrCard as a
-plain `put ... into field` (the raKeyPath precedent, engine-proven), and
-nxrInit registers lazily on the first Connect click. The re-land shipped
-WITH tools/check-demo-boot.py in the gate set - the runner the rule below
-demanded - which boots the shipped file under two capability profiles,
-drives the Nostr card's own click paths over real libsecp256k1, and
-mutation-proves itself with the exact defect classes that shipped that
-morning. Still "verified statically + headless boot; needs an OXT pass":
-the model is not the engine, and the runbook's phase-8 section is the
-step that settles it.
-
-**The re-land MET an engine the same day (2026-08-29), and it worked.**
-The maintainer ran the re-landed five-card stack on a real engine and
-reported it working ("this now works great") - so the exact criterion the
-first landing failed, openStack completing with the phase-8 card in
-place, is MET, and the boot runner's model has its first point of
-engine agreement. The record is the maintainer's account, dated, with no
-platform detail captured (the phase-2 precedent). The detailed per-card
-offline behaviours of runbook row 35 were not itemized in that report;
-the row carries the annotation. Later the same day the v11 UI pass
-(below) reworked every card's chrome, so the CURRENT file's label is
-back to "verified statically + headless boot; needs an OXT re-pass" -
-the arc rule 8 prescribes.
-
-## The v11 UI pass (2026-08-29; the decisions, do not re-litigate)
-
-The first UI pass taken as an APP rather than a demo, made feasible by
-the boot runner (38 checks, both profiles, including these changes) plus
-the same-day engine agreement above. What changed and why:
-
-- **One five-tab bar on every card** (raNavBar/raNavMark) replaced the
-  hub-and-spoke raGo* buttons: any card is one click from any other,
-  and the current tab is held down. The hilite is SCRIPT-managed
-  (autoHilite off, the kit's checkbox discipline) and re-asserted after
-  every `go`, because an autoHilite flash would clear the "you are
-  here" state on the first click. The five buttons share names across
-  cards - legal, and what lets one `raNavMark` run unqualified against
-  whatever card is current.
-- **The kit's uiPanel finally used here**: two column panels per card
-  ("8,54,598,568" / "602,54,1192,568"), created FIRST in each builder so
-  they sit behind their controls. This is the piece of the family card
-  look riptide never adopted.
-- **The identity gate (raGateIdentity) is AFFORDANCE, not enforcement**:
-  fifteen buttons that cannot work without an unlocked seed start
-  disabled and enable on unlock, so a new user's first click cannot be a
-  refusal - but every handler KEEPS its own guard, because returnInField
-  and rebuilt cards can still reach them. Qualified + try-wrapped per
-  the multi-card rule; wired at raBuild, raIdentityReady, raLock.
-- **The status line doubles as the identity chip**: "Ready. Create or
-  unlock..." at boot, "Unlocked as 1a2b3c4d... " on unlock, "Locked:
-  ..." on lock - one glance from any card answers "who am I right now".
-- **Empty-state guidance in every log/list surface**, phrased to stay
-  true forever where the surface appends (a log's birth line) and to be
-  replaced where painters own the content (raTheirFeed clears at fetch;
-  the follows painter overwrites).
-- **returnInField acts in one-line entry fields only** - passphrase,
-  handle, media hash, DM target and message, LAN host, follow target.
-  Multi-line fields keep Return as newline via the default `pass`.
-- **kRaUiVersion bumps run raBuildReset first** (the upgrade path): the
-  builders are create-if-missing, so pasting a newer script over a stack
-  an older version built would otherwise create the panels ON TOP of
-  every existing control (a white sheet over the card) and leave retired
-  raGo* buttons lingering clickable-dead. The reset walks every card and
-  deletes what kRaScControls + kRaScRetired name, then the builders run
-  as on a fresh paste. The registry constant moved ABOVE the kit block
-  for this (lexical-position resolution); the boot runner plants a
-  legacy button + an old version stamp and proves the shed.
-
-Every item is executed by the boot runner - and **the v11 boot MET the
-engine the same day (2026-08-29)**: the maintainer pasted the reworked
-file and sent back the boot self-check record itself - 9 passed, 1
-failed, 0 skipped, all five cards built, every capability true. The one
-FAIL was the CHECK's own defect, and it settled the open question this
-member's boot runner had carried since it was written: unqualified
-`there is a field X` answers for the CURRENT CARD only (engine notes
-5.6, with this record as the primary evidence), so scMissing reported
-all 63 off-card controls missing from a stack where every one existed.
-Fixed the same day in the carried master (`scMissing` walks every card
-with qualified `there is`; re-carried to all 14 adopters), and the boot
-runner's model - whose reading the engine CONFIRMED - now asserts the
-self-check reports zero failures instead of printing it as an open
-question. What remains for the v11 chrome is one more paste: the record
-should read 10 passed, 0 failed. Label: verified statically + headless
-boot + an engine boot record with one since-fixed check defect; the
-post-fix re-paste is the step that closes it.
-
-The rsNostr* library rail shipped. The Nostr card did not: written the same
-day, it failed on a real engine at `openStack` with `Chunk: no target
-found` - **the whole app, not just the new card** - and was reverted the
-same day. `examples/riptide-social.livecodescript` is byte-for-byte the
-phase-1-through-7 app again, apart from the embedded library, which carries
-the new rail unused.
-
-THREE failures, in the order they were found, because the shape is the
-lesson:
-
-1. **A non-literal `constant`.** `constant kX = "a" & return & "b"` does not
-   compile, and a .livecodescript is ONE unit, so it took every handler in
-   the file with it: no UI at all, no error to point at. Fixed, and the
-   family checker gained check 22 so it cannot recur.
-2. **The gate gap that let it ship.** The checker knew constants must be
-   declared before use and spelled with `=`, and looked at the VALUE not at
-   all. It shipped through a green gate set, five commits and a self-review.
-3. **`Chunk: no target found` at openStack - STILL UNDIAGNOSED.** Ruled out
-   by inspection: kit-call arity, `there is a card` (engine-proven in the
-   three older builders), chunk-of-object expressions, the
-   `the number of keys of` misuse of engine notes 1.7, `the target` (used at
-   exactly one site, inside `on mouseUp`), and foreign calls outside a try.
-   Not ruled out, and the standing suspects for whoever picks this up: the
-   `repeat for each key` walks over `sAppRelays` / `sNxRelayHandle` while
-   they are still UNSET rather than empty arrays, and `nxrInit the long id
-   of me` in `openStack` where NostrXT's own demo calls it from
-   `preOpenStack`.
-
-**The operational rule this pays for: DO NOT re-land the card without a way
-to run it.** Every one of the three failures was invisible to every gate in
-this repo, because no gate here executes a stack script. The library rail is
-different in kind - `tools/check-script-vectors.py` executes it - and that
-is exactly why the library half survived this and the UI half did not. A
-re-land wants either an engine in the loop for each attempt, or a headless
-way to build the cards, and guessing from a green gate set is what produced
-this section.
-
-## The phase-8 execution gate, and the three defects it found (2026-08-29)
-
-riptide could not EXECUTE at all before this change. The only thing that had
-ever read `src/riptide.livecodescript` was `check-livecodescript.py`, which
-validates balance, quoting and the token traps and cannot tell whether a
-handler computes the right bytes - the gap this member's own notes call its
-most expensive class of bug. `tools/check-script-vectors.py` closes it the way
-CoinXT and NostrXT each closed theirs: it runs the SHIPPED file through the
-family's headless interpreter against the REAL committed `coinxt.so`, so the
-phase-8 signatures under test are genuine BIP-340 over genuine libsecp256k1,
-compared against an independent oracle.
-
-It found three defects on its first run, and **not one of them was in the
-shipped rail** - which is the part worth remembering, because a new tool's
-first findings are the ones most likely to be the tool's own (nostrxt paid for
-that lesson and wrote it down: suspect the probe first, with evidence).
-
-- **The INTERPRETER clamped negative chunk ranges** instead of counting from
-  the end, so `char -3 to -1 of "abcdef"` was "abcde" - wrong at both ends,
-  silently. Latent rather than active: neither coinxt's nor nostrxt's source
-  uses the form, so no gate had ever read a wrong answer from it. It surfaced
-  on `byte 10 to -1 of pFileBytes`, the idiom rsOpenMasterSeed has used since
-  phase 1. Fixed in both copies, with both dependent members' gates re-run.
-- **The ORACLE crashed on a tampered signature**: `_verify_ed25519`
-  decompressed the signature's R point without the not-a-point guard its
-  public-key path already had, so a corrupted signature raised TypeError
-  instead of answering False. Every earlier negative test had tampered with
-  the MESSAGE, never the signature, so nothing had ever reached that line.
-- **`rsPersonaAllows` leaked the itemDelimiter** - the C10 defect, in the one
-  handler where it reads worst: the demo's Anon card paints the guard panel by
-  calling it nine times in a row, so a card repaint silently reset the
-  delimiter under whatever the pump did next. It survived the 2026-08-17 sweep
-  that found the other one because comma IS the engine default, so it is
-  benign until it is not.
-
-**The rewrites are the part to understand before touching this gate.** riptide
-uses three spellings outside the interpreter's modelled subset (`the number of
-X in Y`, the one-line `if ... then STMT`, and binaryEncode/div/mod), so the
-gate rewrites them into forms the interpreter models. Each rewrite is NAMED and
-COUNTED and must match at least once or the gate FAILS - a rewrite that
-silently stops applying would leave the gate testing a file nobody ships, which
-is this tree's own recurring failure shape. The line between what got FIXED in
-the interpreter and what gets REWRITTEN here is deliberate: a wrong ANSWER
-earns a change to shared drift-gated tooling; three missing SPELLINGS do not.
-
-## The runner's regexes are compiled once (2026-09-11; a speed change, not a rules change)
-
-`tools/check-demo-boot.py` is the runner three members' gates drive (riptide's
-own boot, coinxt's wallet boot and its eight fixture boots, nocloud's and
-holde-em's execution gates), and a profile of coinxt's wallet boot put a third
-of its runtime in `re.match(pattern, s, re.I)` resolving the same inline
-patterns through `re`'s cache half a billion times. Every two-argument and
-`re.I`-flagged `re.match` / `fullmatch` / `search` here now reads
-`_rxi(pattern).match(s)` (or `_rx` without the flag): the pattern stays inline
-where the code is, compiled once and looked up by its literal. Same for the
-family's `lcs-interp.py` underneath (both copies) and coinxt's wallet gate.
-Nothing the runner accepts or refuses changed; the A/B and the gates that
-prove it are in `coinxt/CLAUDE.md`'s 2026-09-11 "CI clock" entry. A new
-`re.match` written here with a literal pattern works exactly as before and
-simply pays the old price - use the helpers on any path a boot walks.
-
-## Suite integration status
-
-- `tools/build-all.sh` runs riptide's gates in the member loop (script
-  gate, `tests/*golden*.py` glob, vector gate, docs style) and runs
-  riptide's script checker over the root `tests/` scripts.
-- `tools/check-handler-calls.py` carries the `rs` prefix.
-- The suite selftest FOLDS riptide in (since 2026-08-11): the harness as
-  the seventh `Member` (prefix `rs1`, entry `rsSelfTest`, run LAST, merged
-  via `stMergeReturned` - which is why the report's first line must stay
-  exactly "N passed, M failed" with the skip count on its own line), and
-  the library as the third embedded script layer. `check-suite-selftest.py`
-  and `check-suite-coverage.py` both know riptide, so a new public `rs*`
-  handler the harness does not call FAILS the coverage gate - close the
-  gap in tests/riptide-selftest.livecodescript and regenerate. A
-  script-layer or harness edit here is not done until
-  `python3 tools/build-suite-selftest.py` has rebuilt the suite paste.
-  `examples/riptide-social.livecodescript` carries three libraries
-  verbatim between the sentinels `tools/sync-demo-embeds.py` (at the
-  suite root) owns - `src/riptide.livecodescript` plus OnionXT's
-  `onionxt` and `onion-httpd` layers, so the demo pastes and runs with
-  no `start using` step, and nobody edits inside the sentinels. A
-  `src/riptide.livecodescript` edit is therefore not done until
-  `python3 tools/sync-demo-embeds.py` has been re-run at the suite root
-  either. That copy is NOT cut back out of the suite paste (the riptide
-  row has no `strip_spans`); the demo is simply never folded. Riptide's
-  own `tools/` does not carry the sync tool, so this drift is invisible
-  to the member gates and surfaces only as `--check` failing the suite
-  build.
+In the suite, beyond this member's gates:
+- **The fold**: the harness folds as member `riptide` (prefix `rs1`, entry `rsSelfTest`, merged via
+  `stMergeReturned`), so its report's first line must stay exactly "N passed, M failed", the skip
+  count on its own line. The library embeds verbatim as a script layer; the coverage gate fails on
+  an unexercised public `rs*`. A script-layer or harness edit is not done until
+  `python3 tools/build-suite-selftest.py` has rebuilt the paste.
+- **The demo's embeds**: five libraries via the suite's `tools/sync-demo-embeds.py`, in the order
+  nostrxt, nostr-relay, riptide, onionxt, onion-httpd (never edit inside the sentinels). A `src/`
+  edit is not done until it has been re-run at the suite root; riptide's own tools cannot see that
+  drift. The demo is never folded into the paste.

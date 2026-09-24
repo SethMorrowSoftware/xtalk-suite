@@ -1,187 +1,94 @@
 # Riptide Social
 
-The suite's capstone app, being built: a serverless social application
-composed entirely from the installed OpenXTalk suite extensions, per the
-design in `../docs/RIPTIDE-SOCIAL-SPEC.md`. No server, no account, no
-hosting bill: your identity is an ed25519 key you hold, following someone
-is knowing their key, and reaching them is verifying them.
+The suite's capstone app: a serverless social application composed entirely from the
+installed OpenXTalk suite extensions, per the design in the suite's
+[`docs/RIPTIDE-SOCIAL-SPEC.md`](https://github.com/SethMorrowSoftware/xtalk-suite/blob/main/docs/RIPTIDE-SOCIAL-SPEC.md).
+No server, no account, no hosting bill: your identity is an ed25519 key you hold,
+following someone is knowing their key, and reaching them is verifying them.
 
-> **Documentation:** [`docs/README.md`](docs/README.md) indexes this app's pages, and points at the capstone specification, which lives at suite level in [`../docs/RIPTIDE-SOCIAL-SPEC.md`](https://github.com/SethMorrowSoftware/xtalk-suite/blob/main/docs/RIPTIDE-SOCIAL-SPEC.md).
+## Status
 
-## Status: phases 1-8 BUILT with their UI (the phase-8 card re-landed behind a boot runner); phases 1-4 DONE on two machines
+All eight spec phases are built with their UI, and phases 1-4 are done on two machines.
+Anything not listed as done is "verified statically; needs an OXT pass" (plus a live-Tor
+pass for the anon persona and a live-relay pass for Nostr).
 
-> **Honesty convention.** **Phases 1-2 ENGINE-PASSED 2026-08-12** (folded
-> into the suite harness), their two-machine propagation criterion closed
-> 2026-08-13. **Phases 3 and 4 closed on two machines 2026-08-15**: a
-> follower fetched and PLAYED an attached video (which necessarily walked
-> head publish -> fetch -> chain walk -> authorSig verify -> media
-> info-hash -> swarm join -> playback), and two identities exchanged
-> encrypted DMs, chat both ways, with no server (the sealed RSI1 intro,
-> the deterministic-role crypto_kx session, and the pairwise secretstream
-> over rp1 all carrying real traffic). The same day the whole phase 4-7
-> COMPUTE surface ran green in the suite selftest on a real engine.
-> **Phase 5 is BUILT and verified statically; phases 6-7 are BUILT with
-> their COMPUTE halves ENGINE-GREEN 2026-08-20** (Windows, in the suite
-> paste, riptide 338/0/2), and every live pass is still pending: the dc
-> call with its spec-6.2 typing lane (phase 5), the LAN mesh with its
-> mutual welcome AND its sync payload - drafts, feed seq, presence over
-> the admitted mesh (phase 6, built 2026-08-15), plus the channel-2
-> decision settled 2026-08-16 (media handoff as a signed channel-0
-> pointer at the torrent rail; channel 2 reserved, dark) - and the anon
-> persona over live Tor (phase 7), whose 8.2/8.3 serving seams ran in
-> that same 2026-08-20 pass. **Phase 8, the Nostr bridge, is BUILT
-> 2026-08-29**, and its compute half is stronger than "verified
-> statically" without reaching "engine-passed": `tools/check-script-vectors.py`
-> EXECUTES the shipped library against the real committed CoinXT through
-> the family's headless interpreter, so the bridge bytes, both
-> signatures, the event ids and the media round trip are checked as
-> executed behaviour against an independent oracle. That settles LOGIC
-> and not parser behaviour, so the label stands: needs an OXT + a
-> live-relay pass. `docs/two-machine-runbook.md` scripts what remains.
->
-> The flagship stack is `examples/riptide-social.livecodescript` (on the
-> suite UI kit): FIVE cards - Feed (identity, publish, the verified chain
-> walk, the media strip), Messages (DMs + the Call button), Devices (the
-> LAN mesh), Anon (the persona and the live guard panel), and Nostr (the
-> phase-8 bridge). The Nostr card's first landing on 2026-08-29 broke
-> `openStack` on a real engine with `Chunk: no target found` and was
-> reverted the same day - then RE-LANDED that same day, restructured so
-> `openStack` is byte-identical to the engine-proven body and every new
-> boot-time step is gone or lazy, and gated by
-> `tools/check-demo-boot.py`, which EXECUTES the shipped stack's boot
-> headlessly (the gap both breakages walked through: no gate ran a stack
-> script). The re-land then MET an engine that same day - the maintainer
-> ran the five-card stack and reported it working, closing the criterion
-> the first landing failed - after which the v11 UI pass (the five-tab
-> bar, the column-panel card look, identity-gated buttons, the
-> upgrade-in-place rebuild) reworked every card's chrome AND booted on
-> the engine that same day: the pasted boot record read 9 passed / 1
-> failed, the one FAIL being the boot self-check's own cross-card defect
-> (engine notes 5.6 - unqualified `there is` answers for the current
-> card only), fixed the same day in the carried block. One more paste
-> should read 10 passed, 0 failed; that re-check is what remains.
-> The rsNostr* LIBRARY rail is executed
-> by `tools/check-script-vectors.py`. A post
-> renders only after `rsIngestHead`/`rsIngestPost` verify it, so a
-> received feed IS a verified walk. `examples/README.md` carries the run
-> procedures; run records are the maintainer's dated accounts.
+- **Phases 1-2** (identity, the live feed): engine-passed 2026-08-12 in the suite paste
+  (133/133); two-machine propagation closed 2026-08-13.
+- **Phases 3-4** (media, DMs): done on two machines 2026-08-15 - a follower fetched and
+  PLAYED an attached video, and two identities exchanged encrypted DMs both ways with no
+  server.
+- **Phases 4-7, compute**: green in the suite paste on an engine 2026-08-15, 2026-08-20
+  (riptide 338/0/2) and 2026-08-24 (391/391, including the kind-C rail and the BTXO
+  receive path; phase 6's admission and welcome bytes re-pinned 2026-09-09 since).
+  Phase 5 (the call) is built and never run; the live legs of phases 6-7 (the LAN
+  mesh, the anon persona over Tor) are owed.
+- **Phase 8** (the Nostr bridge, built 2026-08-29): the library is executed headlessly
+  against the real committed CoinXT by `tools/check-script-vectors.py`, which settles
+  logic, not parser behaviour. The card's boot was reported working on an engine
+  2026-08-29, and the v11 UI boot read 9 passed / 1 failed, the one FAIL a since-fixed
+  defect in the carried self-check. Needs an OXT + live-relay pass.
 
-What ships today, per the spec's phased roadmap (section 10.3):
+A post renders only after `rsIngestHead`/`rsIngestPost` verify it, so a received feed IS
+a verified walk. `CLAUDE.md` holds the dated evidence ledger.
 
-- **`src/riptide.livecodescript`**, a pure-script library:
-  - the master seed and the `RIPTKEY1` sealed key file (Argon2id +
-    secretbox, the family's `BTXPREF1` convention with riptide's magic)
-  - the KDF subkey tree: one 32-byte master derives the identity, DM,
-    LAN, and anonymous-persona subkeys (`sxKdfDerive`, context
-    `"riptide\0"`)
-  - identity to handle (64-hex ed25519 public key) to `.onion` address,
-    both directions
-  - the rendezvous derivations: `inboxId` and `roomId`
-  - the `RSH1` feed-head and `RSP1` post-record wire formats: build,
-    strict parse, and author-signature verification, with the
-    tamper-evident post chain
-  - **the media layer (phase 3)**: attach a file as a trackerless torrent
-    seeded in place (`rsMediaCreate`), fetch-and-co-seed sequentially
-    (`rsMediaFetch`), and the status snapshot a player paints from
-  - **the DM layer (phase 4)**: crypto_kx prekeys as signed `RSK1`
-    records, sealed `RSI1` intros bound to one recipient, `RSM1` rp1
-    frames, deterministic-role sessions, and the inbox-swarm join +
-    framed send; the message kinds `O`/`A` carry phase-5 SDP over the
-    same encrypted rail
-  - **the LAN mesh admission (phase 6)**: the shared-master keypair and
-    the three-leg RSL1 challenge/response/WELCOME handshake (mutual auth
-    - a stranger on your Wi-Fi cannot join, and a rogue host cannot fake
-    being yours)
-  - **the phase-6 sync records** (2026-08-15): the payload past admission,
-    per spec section 7's channel discipline - draft sync (channel 0:
-    absolute draft text with a monotonic per-device seq), feed-seq /
-    read-receipt state (channel 0, applied as max so two devices never
-    publish a conflicting head), and presence/typing (channel 1,
-    unreliable-unsequenced, safely droppable absolute state). All signed
-    under the shared LAN key with a distinct domain tag,
-    verify-then-parse on every inbound record; authenticated, not
-    encrypted (the LAN sees draft plaintext, said loudly in the UI)
-  - **the phase-6 media handoff** (2026-08-16, the channel-2 decision):
-    spec section 7's bulk media lane, settled as a fourth signed record
-    kind on channel 0 - a small POINTER (info-hash + file name + size)
-    at the phase-3 torrent path, because media essentially never fits
-    enet's 60000-byte packet budget and bulk over that seam is a
-    torrent in this suite. Channel 2 itself stays reserved, dark; the
-    pointed-at bytes ride the ordinary torrent rail (swarm visibility
-    and DHT discovery, recorded honestly)
-  - **the anon persona (phase 7)**: onion-only identities
-    (`rsAnonHandle`/`rsAnonOnion`), the sealed-DM prekey subkey
-    (`rsAnonDmSeed`, spec 8.3), BTXO framing, and `rsPersonaAllows` - the
-    section-9.3 deanonymization guard every transport branch routes
-    through
-  - **the 8.2/8.3 onion serving seams** (2026-08-15): `rsAnonFeedPage`
-    (the persona's feed page as deterministic, golden-pinned HTML - a
-    wire format, entries escaped), `rsAnonPrekeyBody` (the signed RSK1
-    prekey record as hex text for the GET `/prekey` route), and
-    `rsAnonAcceptDm` (the POST `/dm` body: strict-hex refusal BEFORE any
-    decode, then the existing seal-open verify-then-parse under the
-    persona's own subkeys). The demo registers the onion-httpd routes;
-    the library stays pure
-  - **the kind-C chunked-post rail and the streaming seams**
-    (2026-08-23): a post whose text outgrows the 996-byte RSP1 direct
-    layout splits into immutable chunks named in order
-    (`rsChunkPostText` / `rsPublishChunkedPost`, with
-    `rsPostTextCapacity` publishing the D-or-C boundary so no caller
-    ever hand-copies 876), and reassembly re-hashes every part against
-    its own content address before a byte is believed (`rsIngestBlob` /
-    `rsAssembleChunkText`, which names the first missing chunk rather
-    than guessing). Alongside them the BTXO receive-path stream machine
-    (`rsBtxoStreamStep`) and the piece-deadline media plan
-    (`rsMediaStreamPlan`). Verified statically and vector-pinned; needs
-    an OXT pass.
-  - **the phase-2 live feed layer**: `rsPublishHead` signs the canonical
-    BEP44 buffer with SodiumXT and stores it with `btDhtPutSigned` (the
-    identity secret never enters libtorrent, and libtorrent re-verifies
-    the signature before queueing); `rsPublishPost` / `rsPublishImmutable`
-    store content-addressed items whose returned target is recomputed and
-    compared; `rsRequestHead` / `rsRequestImmutable` issue the async
-    lookups; and `rsIngestHead` / `rsIngestPost` verify each drained
-    `dhtMutableItem` / `dhtImmutableItem` event (BEP44 signature under
-    the followed handle, content address, author signature) before the
-    app believes a byte of it. The library never starts, stops, or polls
-    a session - the app owns the one session per process.
-- **`tests/riptide-selftest.livecodescript`**, the harness: call
-  `rsSelfTest()` on an engine with the extensions installed. It is also
-  folded into the suite-wide paste (`tests/suite-selftest.livecodescript`
-  at the repository root) along with the library itself, so one paste
-  exercises riptide with the rest of the suite. No network is awaited:
-  the live-feed section drives real puts and lookups against a local
-  session (skipping honestly without torrentxt); everything else is
-  fully offline.
-- **`tests/riptide_golden_test.py`** and **`tools/riptide_reference.py`**:
-  the pure-Python oracle and the golden test that pins every vector.
-  The oracle anchors to vectors from OUTSIDE this directory: the sodiumxt
-  C KATs, torrentxt's cross-project BEP44 conformance vector, and a real
-  published v3 onion address.
-- **`tools/check-selftest-vectors.py`**: re-derives every golden constant
-  in the harness from the oracle, with an honest coverage count.
+## What ships
 
-Run the offline gates from this directory:
+- **`examples/riptide-social.livecodescript`**, the app, on the suite UI kit: FIVE
+  cards - Feed (identity, publish, the verified chain walk, the media strip), Messages
+  (DMs + the Call button), Devices (the LAN mesh), Anon (the persona and the live guard
+  panel), and Nostr (the phase-8 bridge). `tools/check-demo-boot.py` boots it
+  headlessly; `examples/README.md` is its run guide.
+- **`src/riptide.livecodescript`**, the pure-script `rs*` library, one line per rail:
+  - identity: the master seed and the `RIPTKEY1` sealed key file (Argon2id + secretbox);
+    the KDF subkey tree (`sxKdfDerive`, context `"riptide\0"`); handle (a 64-hex ed25519
+    public key) <-> `.onion` both ways; the rendezvous ids `inboxId` and `roomId`;
+  - the feed: `RSH1` heads and `RSP1` posts with the tamper-evident chain, the kind-C
+    chunked rail for long posts, and the live BEP44 layer (publish, lookup,
+    verify-on-ingest; the library never owns the session);
+  - media: a trackerless torrent seeded in place, a sequential fetch, a piece-deadline
+    plan;
+  - DMs: `RSK1` prekeys, `RSI1` sealed intros, `RSM1` rp1 frames, secretstream; the
+    `O`/`A` kinds carry phase-5 SDP;
+  - the LAN mesh: the `RSL1` three-leg admission (challenge, response, welcome), sync
+    records D/F/P and the media-handoff pointer M - authenticated, not encrypted;
+  - the anon persona: onion-only identities, `rsAnonDmSeed`, BTXO with the
+    `rsBtxoStreamStep` receiver, `rsPersonaAllows` (the guard every transport branch
+    routes through), and the 8.2/8.3 onion serving seams;
+  - Nostr: the `RSN1` identity bridge and the sealed `RIPTAPP1` app-state store.
+- **`tests/riptide-selftest.livecodescript`**, the harness: call `rsSelfTest()` on an
+  engine with the extensions installed; it is also folded into the suite paste with the
+  library. No network is awaited: the live-feed section drives a local session (skipping
+  honestly without torrentxt), and everything else is offline.
+- **`tools/riptide_reference.py`**, the oracle, anchored to vectors from OUTSIDE this
+  directory (the sodiumxt C KATs, torrentxt's cross-project BEP44 conformance vector, a
+  real published v3 onion); `tests/riptide_golden_test.py` pins it and
+  `tools/check-selftest-vectors.py` re-derives every golden constant in the harness
+  from it; the others are inputs, each listed with a reason, and the gate prints the
+  split.
+
+## Gates
+
+Run from this directory:
 
 ```sh
+bash tools/run-gates.sh                     # the full list: what CI runs
 python3 tools/check-livecodescript.py       # the static script gate
 python3 tools/check-docs-style.py           # the house prose gate
 python3 tests/riptide_golden_test.py        # the byte-for-byte goldens
 python3 tools/check-selftest-vectors.py     # harness constants vs oracle
 ```
 
-All four also run in `tools/build-all.sh --gates` at the repository root.
+`run-gates.sh` also runs the execution gates (`check-script-vectors.py`, then
+`test-demo-boot.py` and `check-demo-boot.py`) and `export-protocol-vectors.py --check`.
 The prose gate is the one an edit to these pages trips: every `.md` and
-`.livecodescript` here carries plain hyphens and straight quotes only,
-never em/en dashes or curly quotes.
+`.livecodescript` here uses plain hyphens and straight quotes only.
 
 ## Extension dependencies
 
-Riptide probes, never assumes (`rsProbeCapabilities()`); a missing
-extension disables exactly its feature, with a clear message, and never
-another one.
+Riptide probes, never assumes (`rsProbeCapabilities()`): a missing extension disables
+exactly its feature, with a clear message, and never another one.
 
-| Extension | Need | Role today (phases 1-8) |
+| Extension | Need | Role (phases 1-8) |
 |---|---|---|
 | SodiumXT | required | the trust root: KDF, sealing, signing, hashing, crypto_kx, secretstream; at ABI 7 also the preferred SHA3 provider. Also seals the `RIPTAPP1` app-state store |
 | coinxt | optional | two unrelated jobs: `cxSha3_256` is the fallback SHA3 provider for the offline `.onion` self-computation, and secp256k1 + BIP-340 + SHA-256 are what the phase-8 Nostr rail signs with. Without it the Nostr card disables itself with an install line and nothing else changes |
@@ -191,38 +98,35 @@ another one.
 | enetxt | optional | the phase-6 LAN device mesh (the admission handshake rides enet channel 0) |
 | datachannelxt | optional | the phase-5 call (a direct data channel, signalled over the DM rail) |
 
-A note on the onion address, because it is the one place the composition
-was subtle: libsodium has no SHA-3, so onionxt's `oxAddressFromPublicKey`
-spent its first months as a registered known-missing gap
-(`onionxt/docs/08`, gap 2), and riptide originally closed it by composing
-coinxt's `cxSha3_256`. Building riptide phase 1 made offline address
-emission a real need, and that is what got `sxSha3_256` shipped in
-SodiumXT ABI 7 (2026-08-11) - the gap is now closed upstream, onionxt's
-own address functions work, and `rsOnionFromPublicKey` prefers
-`sxSha3_256` with `cxSha3_256` kept as the fallback. Without either
-provider it still degrades to a clear error (the address remains
-available from `oxServiceAddress` after publishing, via tor itself). The
-security-relevant VERIFY direction, `rsVerifyOnionClaim`, needs no SHA-3
-at all and works with onionxt alone.
+The onion address: `rsOnionFromPublicKey` prefers `sxSha3_256` (SodiumXT ABI 7,
+2026-08-11) with `cxSha3_256` as the fallback. Without either it degrades to a clear
+error, and the address is still available from `oxServiceAddress` after publishing. The
+security-relevant verify direction, `rsVerifyOnionClaim`, needs no SHA-3 and works with
+onionxt alone.
 
 ## What remains
 
-The live passes, scripted in `docs/two-machine-runbook.md`: the phase-5
-call (watch for the CONNECTED/via line, ideally `typ srflx` across two
-networks, and the spec-6.2 typing lane built 2026-08-15), the phase-6
-mesh (mutual admitted verdicts on both sides, then the full
-done-criterion: a draft typed on one device appearing on the other with
-a stranger refused - the sync payload is BUILT as of 2026-08-15, its
-compute half engine-green 2026-08-20), phase 7 over a live tor daemon -
-which now includes spec 8.3's onion transport (the feed page, `/prekey`,
-and the POST `/dm` sealed-intro drop are BUILT as of 2026-08-15, library
-seams plus the demo's onion-httpd wiring; their compute half ran
-engine-green 2026-08-20 in the suite paste, and the live-Tor pass is what
-remains) - and phase 3's mid-download nuance (playback visibly below
-100%). One piece of the anon rail is deliberately unbuilt: the
-persona's REPLY over an onion stream (answering an accepted intro means
-a public-side DM to the proven sender). Labels flip only on a dated
-engine report, per the honesty convention.
+The live passes, scripted in `docs/two-machine-runbook.md`: phase 5 (the call and its
+typing lane, ideally `typ srflx` across two networks), phase 6 (the mesh through the
+draft-appears criterion, plus the third-device step), phase 7 over a live tor daemon
+(including the 8.2/8.3 serving), and phase 8 against a real relay. Also owed: the
+phase-4 DM clean close (2026-08-17, never run), the phase-3 faststart re-run
+(mid-download playback was measured negative 2026-08-27 and fixed the same day), and
+the phase-8 boot re-paste, which should read 10 passed / 0 failed. The persona's onion
+REPLY rail is deliberately unbuilt: answering an accepted intro means a public-side DM
+to the proven sender. Labels flip only on a dated engine report; the suite's
+`docs/WORK-PLAN.md` tracks the open items.
+
+## Documentation
+
+| Document | What it is |
+|---|---|
+| [docs/api-reference.md](docs/api-reference.md) | the public `rs*` surface of the library: 106 handlers at 0.12.0, phases 1-8 |
+| [docs/two-machine-runbook.md](docs/two-machine-runbook.md) | how to drive the app on real OXT machines, phase by phase, with the log lines each step expects |
+| [docs/protocol-vectors.json](docs/protocol-vectors.json) | GENERATED: the Riptide Protocol conformance bundle, 67 golden vectors (one fixed identity, every wire record, derivation and target) plus 31 refusal vectors, for implementations in any language. Its prose half is the suite's [`docs/RIPTIDE-PROTOCOL.md`](https://github.com/SethMorrowSoftware/xtalk-suite/blob/main/docs/RIPTIDE-PROTOCOL.md). Regenerate with `python3 tools/export-protocol-vectors.py`, whose `--check` re-executes the bundle in the gate set; never edit it by hand |
+| [examples/README.md](examples/README.md) | the run guide for the app stack |
+| [CLAUDE.md](CLAUDE.md) | maintainer memory: the rules, the decisions, the traps, the evidence ledger |
+| [RIPTIDE-SOCIAL-SPEC.md](https://github.com/SethMorrowSoftware/xtalk-suite/blob/main/docs/RIPTIDE-SOCIAL-SPEC.md) | the capstone design, at suite level: the identity seed, the signed BEP44 feed with co-seeded torrent media, the rp1 and secretstream DMs, WebRTC live sessions, enet LAN device sync, the onion-only persona, and the Nostr rail |
 
 <!-- ==== SUITE RELATIONSHIP BEGIN (generated by tools/sync-member-readmes.py in the xTalk suite from tools/member-registry.py and the carried-copy registries; do not edit inside the markers) ==== -->
 

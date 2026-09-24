@@ -1,666 +1,382 @@
-# Riptide Social — a serverless social app on the five-extension xTalk stack
+# Riptide Social - a serverless social app on the xTalk suite
 
-> A capstone concept spec: one app, composed entirely from installed OXT
-> extensions, that has a public feed, private DMs, live calls, same-LAN device
-> sync, and an optional fully-anonymous persona — **with no server, no account,
-> no hosting bill, and no company in the middle.** Your identity is an ed25519
-> key you hold; following someone is knowing their key; reaching them is
-> verifying them.
+> **No server, no account, no hosting bill, no company in the middle.** Your
+> identity is an ed25519 key you hold; following someone is knowing their key;
+> reaching them is verifying them. One app - a public feed with media, DMs,
+> live calls, same-LAN device sync, an anonymous persona and reach into Nostr -
+> in pure script over the suite members (section 11).
 >
-> **Honesty scope.** This is **demo-script-level design work only** — it adds
-> **zero** changes to any compiled extension. Everything here composes the
-> *existing* public surfaces of SodiumXT (`sx*`), TorrentXT (`bt*`), OnionXT
-> (`ox*`/`oxh*`), dataChannelXT (`dc*`), and enetxt (`en*`). Every handler,
-> salt, and byte budget cited below is grounded in those repos' current
-> sources and api-references (see §11 for the provenance table). The app is
-> BUILT and partly PROVEN: phases 1-4 have run on two machines (see the
-> §10.3 annotations for the dated records); phases 5-7 are built and
-> statically verified, their live passes pending. The convention stays the
-> family's — **"verified statically; needs an OXT pass"** for anything
-> §10.3 does not mark DONE. Never claim a runtime behaviour this document
-> has not measured.
-
----
+> The **design authority**: rails, rules, security model, roadmap, decisions.
+> Bytes are normative in `docs/RIPTIDE-PROTOCOL.md`, "the protocol" below,
+> which wins on bytes. The implementation is `riptide/src/riptide.livecodescript`
+> (the `rs*` library) plus `riptide/examples/riptide-social.livecodescript`;
+> `riptide/CLAUDE.md` holds the as-built decisions and dated evidence. Code
+> cites sections by number, so the numbering is stable. **Status:** all eight
+> phases built, 1-4 done on two machines, the live passes of 5-8 open (section
+> 10.3); anything not marked DONE there is "verified statically; needs an OXT
+> pass" ("+ live-Tor pass" for anonymity, "+ live-relay pass" for Nostr).
 
 ## 1. Scope & decision
 
-Build **Riptide Social** as a single OXT stack (or a small stack set) that
-`start using`s five installed extensions and wires them together in script.
-The decision this spec commits to is the **identity-first** architecture: one
-Argon2id-protected master seed deterministically derives *every* key the app
-uses, so the same unlock reconstructs your feed-signing key, your onion
-address, your DM keys, and your LAN device key — and the public half of the
-one identity key **is** your handle.
+Riptide Social is ONE OXT stack wiring the installed members together in
+script. It commits to an **identity-first** architecture: one Argon2id-sealed
+master seed derives every key the app uses, so one unlock reconstructs the
+feed key, the onion address, the DM keys, the LAN key and the Nostr key - and
+the public half of the one identity key IS your handle. Each member owns a
+corner the others cannot serve honestly:
 
-The five extensions are not interchangeable; each owns a corner of the problem
-that the others cannot serve honestly:
-
-| Extension | Corner it owns | Why not another |
+| Member | Corner it owns | Why not another |
 |---|---|---|
 | **SodiumXT** `sx*` | Identity, signing, sealing, stream crypto, KDF, Argon2id | The trust root; no transport does crypto |
-| **TorrentXT** `bt*` | Public rendezvous (BEP44 signed DHT), bulk media, serverless DM transport (rp1) | Onion can't carry a UDP DHT; enet/dc aren't many-to-many |
-| **OnionXT** `ox*` | IP-metadata privacy, self-authenticating `.onion` addresses, HTTP-over-onion | Tor is the only member that hides the network path |
-| **dataChannelXT** `dc*` | Live 1:1 across NATs, browser-interoperable, per-channel reliability | Torrent latency is seconds; enet needs a reachable IP |
-| **enetxt** `en*` | Same-venue realtime at game cadence (your own devices on a LAN) | dc's ICE handshake is overkill on a LAN; torrent/onion too slow |
+| **TorrentXT** `bt*` | Public rendezvous (BEP44 signed DHT), bulk media, serverless DM transport (rp1) | Onion cannot carry a UDP DHT; enet/dc are not many-to-many |
+| **OnionXT** `ox*`/`oxh*` | IP-metadata privacy, self-authenticating `.onion` addresses, HTTP over an onion | Tor is the only member that hides the network path |
+| **dataChannelXT** `dc*` | Live 1:1 across NATs, per-channel reliability | Torrent latency is seconds; enet needs a reachable IP |
+| **enetxt** `en*` | Same-venue realtime at game cadence (your own devices on a LAN) | dc's ICE handshake is overkill on a LAN; torrent/onion are too slow |
+| **CoinXT** `cx*` (rail 6) | secp256k1 and BIP-340 for the Nostr key | No other member does secp256k1 |
+| **NostrXT** `nx*`/`nxr*` (rail 6) | The Nostr protocol: NIP-01 events, NIP-19, relay sockets | Reach: an audience that already exists |
 
-The unifying idea: **transports are chosen by reachability and metadata cost,
-identity is chosen once.** §2 fixes the rules; §3 builds the identity
-foundation; §4–§8 are the five rails; §9 is the security/honesty model; the
-rest is roadmap, provenance, and open decisions.
-
----
+The unifying idea: **transports are chosen by reachability and metadata cost;
+identity is chosen once.**
 
 ## 2. Ground rules carried from the family
 
-1. **The single-thread playbook.** OXT runs script, every FFI, and rendering on
-   one interpreted thread. One FFI round-trip per poll; reuse persistent
-   buffers in hot paths; one clock read per pass; UI text at ≤4 Hz and only on
-   change. Each extension is drained by its own poll (`btPoll`/`btRp1Poll`,
-   `dcPoll`, `enPoll`, and OnionXT's stream/peer callbacks) — Riptide runs **one
-   dispatcher** that services all of them per tick (§8).
-2. **OXT compiler footguns.** ASCII quotes only; `k`/`p`/`s`/`t` prefixes;
-   constants literal and declared before first use; all `local`s at the top of
-   a handler; `unsafe … end unsafe` around foreign calls in any `.lcb` helper.
-   The static gate `riptide/tools/check-livecodescript.py` runs on every script edit.
-3. **Fail-closed capability probes.** Every optional dependency is probed
-   **once** at startup into a script-local boolean, mirroring the existing
-   `sCanEncrypt` pattern in the torrent demos. A missing extension disables
-   exactly its feature with a clear "install org.openxtalk.library.X" message
-   and **never regresses another feature** (§3.4).
-4. **The honesty convention.** Anything not observed on a real engine is
-   "verified statically; needs an OXT pass." Anonymity claims get the stricter
-   label "needs an OXT + live-Tor pass."
-5. **One wire format per rail, versioned by a magic.** Each rail below fixes a
-   4-byte magic and a framing; a golden test pins the bytes (§10.2). Bump the
-   magic (and both ends) on any framing change — never "fix" it silently later.
+1. **One thread, one dispatcher**: one FFI round trip per poll, one clock read
+   per pass, UI repaint at <= 4 Hz and only on change; ONE dispatcher drains
+   every member's poll per tick (section 10.1).
+2. **The static gate is law**: `riptide/tools/check-livecodescript.py` on every
+   script edit.
+3. **Fail-closed capability probes** (section 3.4): a missing member disables
+   exactly its feature, with a clear message, and never regresses another.
+4. **The honesty convention**: "verified statically; needs an OXT pass", with
+   "+ live-Tor pass" for anonymity and "+ live-relay pass" for relays.
+5. **One wire format per record, versioned by a magic** and pinned by golden
+   vectors: a framing change mints a new magic on both ends, never a silent
+   fix; a new rail gets a new salt or record, never a new field.
 
----
-
-## 3. The identity foundation — one seed, the whole keyring
+## 3. The identity foundation - one seed, the whole keyring
 
 ### 3.1 The master seed and the unlock
 
-Riptide's root secret is a **32-byte master seed**, generated once with
-`sxRandomBytes(32)` and stored **sealed at rest**: a passphrase runs through
-`sxPwHash` (Argon2id, `sxPwMemInteractive()` opslimit `"2"` — the family's
-KDF parameters, identical to the QuickShare/Channels prefs files) to derive a
-wrapping key, and the seed is stored as `sxSecretBox(masterSeed, wrapKey)` with
-its 16-byte salt beside it. Unlock = read salt, re-derive wrap key, `sxSecretBoxOpen`.
-Wrong passphrase fails the Poly1305 tag — it does not silently mis-decrypt.
-This is exactly the sealed-prefs convention already shipping (`kPrefMagic`
-`"BTXPREF1"`); Riptide reuses it verbatim with its own magic `"RIPTKEY1"`.
+The root secret is a **32-byte master seed** from `sxRandomBytes(32)`, sealed
+at rest as `RIPTKEY1` (97 bytes; protocol 2.4): `sxPwHash` (Argon2id,
+`sxPwMemInteractive()`, opslimit 2 - the family's sealed-prefs parameters)
+turns the passphrase and a fresh 16-byte salt into a wrap key for
+`sxSecretBox`. A wrong passphrase fails the Poly1305 tag, never mis-decrypts.
 
 ### 3.2 The KDF subkey tree
 
-Every other key derives from the master with **`sxKdfDerive(master, subkeyId,
-context, subkeyLen)`** (libsodium BLAKE2b KDF). The context is the 8-byte
-ASCII string `"riptide\0"` throughout; subkeys are numbered by role. This is
-the whole tree:
+Every other key is `sxKdfDerive(master, subkeyId, "riptide\0", 32)`
+(libsodium's BLAKE2b KDF, an 8-byte context). One seed never feeds two cipher
+schemes, so every new use takes a new row (protocol section 2 is normative):
 
-| Subkey | Role | Consumer | Output |
-|---|---|---|---|
-| `1` | **Public identity** ed25519 seed (32 B) | `btDhtKeypair` **and** `oxCreateServiceFromSeed` | your handle + feed key + public `.onion` |
-| `2` | **DM key-exchange** X25519 seed (32 B) | `sxKeyExchangeKeypairFromSeed` | pairwise DM session keys |
-| `3` | **LAN device** pre-shared key (32 B) | enet join auth (§7) | admits only your own devices |
-| `4` | **Nostr** secp256k1 secret key (32 B) | `cxXOnlyPubkey` / `cxSchnorrSign` | your npub and every Nostr event you sign (§8A) *(added 2026-08-29 with the rail-6 build)* |
-| `5` | **App-state sealing** key (32 B) | `sxSecretBox` | the `RIPTAPP1` store: follows, relays, counters (§8A.4) *(added 2026-08-29)* |
-| `100 + n` | **Anonymous persona** *n* ed25519 seed (32 B) | `oxCreateServiceFromSeed` only | an onion-only, unlinkable identity (§8) |
-| `200 + n` | **Anonymous persona** *n* DM key-exchange X25519 seed (32 B) | `sxKeyExchangeKeypairFromSeed` | the persona's sealed-DM prekey (§8.3) - a separate subkey for the same reason `2` is separate from `1`: one seed never feeds two cipher schemes *(added 2026-08-15 with the §8.3 build)* |
+| Subkey | Role | Consumer |
+|---|---|---|
+| `1` | public identity ed25519 seed | `btDhtKeypair` AND `oxCreateServiceFromSeed`: handle, feed key, public `.onion` |
+| `2` | DM crypto_kx seed | the signed prekey and pairwise session keys (section 5) |
+| `3` | shared LAN-mesh ed25519 seed | RSL1 admission and sync signatures; every device of one identity derives the SAME key (section 7) |
+| `4` | Nostr secp256k1 key candidate | `cxXOnlyPubkey` / `cxSchnorrSign` via the ladder below (section 8A) |
+| `5` | app-state sealing key | the `RIPTAPP1` store (section 8A.4) |
+| `100 + n` | anon persona n ed25519 seed | `oxCreateServiceFromSeed` only (section 8) |
+| `200 + n` | anon persona n DM kx seed | the persona's sealed-DM prekey (section 8.3) |
 
-Subkey `4` carries one wrinkle the others do not, and it is worth stating
-because it is the only place in this tree where a KDF output is not directly
-usable. A KDF output is 32 uniform bytes; a secp256k1 secret key must lie in
-`1..n-1`, and the two are not the same set. The gap is about 2^-128 wide, so
-no real master seed will ever land in it - which is precisely what makes the
-rule easy to get wrong, since whatever goes there can never be observed
-running. Riptide re-hashes the candidate with SHA-256 and retries, at most 8
-rungs, then refuses: bounded so it cannot spin, no new dependency (the rail
-needs CoinXT anyway), and a refusal rather than a weaker key. It is exposed
-as a function OF A CANDIDATE (`rsNostrSeckeyFrom`) rather than of a master,
-so the untakeable branch is testable: the all-zeros candidate and the group
-order `n` both step forward, and both are pinned as golden vectors.
-
-The load-bearing subtlety that makes the whole app cohere is in subkey `1`.
+**The subkey-4 ladder.** A secp256k1 secret must lie in `1..n-1`; a KDF output
+is 32 uniform bytes. The gap is about 2^-128 wide, so no real master lands in
+it - which is why the rule is easy to get wrong. Riptide re-hashes with
+SHA-256, at most 8 rungs, then refuses (bounded, no new dependency, never a
+weaker key). `rsNostrSeckeyFrom` takes a CANDIDATE, not a master, so the
+untakeable branch is testable: the all-zeros candidate and the group order `n`
+both step forward, and both are pinned golden vectors.
 
 ### 3.3 Why "reaching you is verifying you" is literally true
 
-A v3 onion address **is** an ed25519 public key in base32 (OnionXT's
-`oxAddressFromPublicKey` / `oxPublicKeyFromAddress` are a pure, offline
-bijection). A BEP44 mutable DHT item is signed by an ed25519 key, and
-`btDhtKeypair(seed)` derives that key **deterministically** from a 32-byte
-seed. Both derivations are standard ed25519 over the same seed — OnionXT builds
-its service key from the seed via SodiumXT's `sxSignSeedToExpandedKey`, which
-preserves the public point.
+A v3 onion address IS an ed25519 public key in base32 (`oxAddressFromPublicKey`
+/ `oxPublicKeyFromAddress` are a pure offline bijection), BEP44 signs with
+ed25519, and OnionXT builds its service key from a seed via
+`sxSignSeedToExpandedKey`, which preserves the public point. Subkey 1 feeds
+both, so `oxAddressFromPublicKey(btDhtKeypair(idSeed)["publicKey"])` is your
+`.onion` and the handle and the onion are the SAME identity: a follower
+computes it locally and Tor proves the far end holds the key - no certificate,
+no directory, no hijackable key exchange. The identity secret **never crosses
+into libtorrent** (4.2).
 
-Therefore, if the **same** subkey-`1` seed feeds both:
+### 3.4 The capability matrix
 
-```
-handlePub  = btDhtKeypair(idSeed)["publicKey"]         -- 64-hex ed25519 public key
-onionAddr  = oxAddressFromPublicKey(hexToBytes(handlePub))   -- <56-char>.onion
-```
+`rsProbeCapabilities()` probes each member once, each in its own `try`:
 
-…then `onionAddr` and `handlePub` are the **same identity**. A follower who
-knows your handle (the 64-hex key) can compute your `.onion` with a local,
-CA-free function and, on connecting, Tor cryptographically proves the far end
-holds that key. No certificate, no directory, no key-exchange step a
-man-in-the-middle can hijack. **Your public feed and your private inbox are
-provably the same person, and anyone can check it with arithmetic.**
+| Key | Probe | If false |
+|---|---|---|
+| `canCrypto` | a real `sxSecretBox` round trip | **Hard requirement** (the trust root): the app says so and refuses identity. OnionXT itself also requires SodiumXT ABI >= 6 |
+| `hasTorrent` | `btLastError()` answers | no public feed, media or rp1 DMs; identity still works |
+| `hasOnion` | `oxVersion()` non-empty | no anon persona; the public app is untouched |
+| `hasDataChannel` | `dcLibraryVersion()` non-empty | no calls; DMs stay text over rp1 |
+| `hasEnet` | `enLibraryVersion()` non-empty | no LAN device mesh |
+| `hasCoin`, `canNostrSign`, `hasNostr`, `hasNostrRelay` | `cxSha3_256Len()`; `nxKeyPublic` of a fixed scalar; an `nxHexEncode` round trip; `nxrVersion()` | no rail 6, or (relay layer only missing) its compute without relay I/O |
+| `hasSha3` | `rsSha3` gives 32 bytes (`sxSha3_256`, else `cxSha3_256`) | no offline `.onion` spelling |
 
-The DM secret key **never crosses an FFI into libtorrent**: feed items are
-signed with `btDhtBep44SignBuf` + `sxSignDetached` + `btDhtPutSigned` (the
-external-signing path — §4.2), so the identity key lives only in the SodiumXT/
-KDF layer.
+Tor readiness is NOT a startup probe (bootstrap is live): a publish that finds
+the control port unauthenticated connects and resumes from the status callback.
 
-### 3.4 The five-way capability matrix
+## 4. Rail 1 - the public feed (TorrentXT BEP44 + bulk)
 
-Probe each extension once at startup, each into its own script-local, each in a
-`try`:
+A signed, mutable DHT pointer names an immutable, content-addressed post
+history; followers co-seed the media; nothing is hosted (protocol section 4).
 
-| Local | True when | Probe | If false |
-|---|---|---|---|
-| `sCanCrypto` | SodiumXT present | `sxVersion()` non-empty | **Hard requirement** — Riptide cannot run without its trust root; show installer and stop |
-| `sHasTorrent` | TorrentXT present | `btStartSession` returns > 0 | No public feed, media, or rp1 DMs; anon-only mode still works |
-| `sHasOnion` | OnionXT present | `oxVersion()` non-empty | No anon persona, no onion mirror; public app fully works |
-| `sHasDataChannel` | dataChannelXT present | `dcLibraryVersion()` non-empty | Live calls fall back to rp1 text DMs |
-| `sHasEnet` | enetxt present | `enLibraryVersion()` non-empty | LAN device sync disabled; cloud/manual sync only |
+### 4.1 The head - one signed RSH1 record
 
-`sTorReady` is a **separate, live** boolean (Tor bootstrap is not a one-shot):
-the OnionXT status callback writes it, and any dial/publish re-checks
-`oxIsReady()` at the moment of use (the Model C two-stage probe). SodiumXT is
-the only hard dependency because it is the trust root **and** OnionXT itself
-requires SodiumXT ABI ≥ 6.
-
----
-
-## 4. Rail 1 — the public feed (TorrentXT BEP44 + bulk)
-
-Your feed is a **signed, mutable pointer** in the DHT that names an
-**immutable, content-addressed** post history, with media carried as torrents
-your followers co-seed. Nothing is hosted.
-
-### 4.1 The head — one signed 1000-byte record
-
-BEP44 mutable values are capped at **1..1000 bytes**, so the head is a
-*pointer*, never the content. Publish it under your identity key at a fixed
-salt `"riptide-head"`:
-
-```
-RSH1 | seq | displayNameLen + displayName | latestPostTarget(40-hex)
-     | prekeyTarget(40-hex) | onionAddr(optional) | profileMetaTarget(40-hex)
-```
-
-`latestPostTarget` is the 40-hex DHT target of your newest post record;
-`prekeyTarget` names your published X25519 prekey bundle (§6.1);
-`profileMetaTarget` names an immutable blob with your avatar info-hash and bio.
-The whole record stays under 1000 bytes because every field is a hash or a
-short string. Followers read it with `btDhtGetMutable(session, yourPubKey,
-"riptide-head")` and get back `value` + `seq` + `signature` + `authoritative`.
+BEP44 caps a mutable value at 1000 bytes of the BENCODED value, so the head is
+a pointer whose raw record MUST be at most 996 bytes. Published under the
+identity key at salt `"riptide-head"`, it names a display name, the newest
+post, the signed prekey (5.1), an optional onion address, and a
+`profileMetaTarget`: an immutable item holding the display name's raw UTF-8
+(1..64 bytes), brought under the head's signature by content addressing.
+Followers fetch with `btDhtGetMutable(session, handle, "riptide-head")`. Head
+ingest is **monotone per handle** (normative since 2026-09-08): a reader keeps
+and persists the highest seq it accepted, refuses a lower one and accepts an
+equal one, so a replaying DHT node cannot roll it back to a stale head.
 
 ### 4.2 Signing without leaking the key
 
-Sign the head in the crypto layer, not in libtorrent:
+`btDhtBep44SignBuf("riptide-head", seq, v)` builds BEP44's canonical buffer,
+`sxSignDetached` signs it with the identity key inside SodiumXT, and
+`btDhtPutSigned` stores it after the native layer verifies the signature (a
+bad one returns `-3` locally instead of vanishing on the network). `seq` is
+the author's monotonic counter, persisted in `RIPTAPP1`; each re-put is a
+version every follower's next fetch sees.
 
-```
-buf = btDhtBep44SignBuf("riptide-head", seq, bencodedValue)   -- exact BEP44 canonical bytes
-sig = sxSignDetached(buf, identitySecretKey)                  -- ed25519, key stays in sodium
-btDhtPutSigned session, handlePub, "riptide-head", seq, bencodedValue, sig
-```
+### 4.3 Posts - a tamper-evident hash chain
 
-The native layer **verifies** `sig` against `handlePub` before storing (a bad
-signature returns `-3` locally instead of vanishing on the network), and the
-identity secret never crosses into libtorrent. `seq` is a monotonic counter
-persisted next to the master seed; re-putting publishes a new version and every
-follower's next poll sees it.
+Each post is an immutable `RSP1` item (1..996 bytes): timestamp,
+`prevPostTarget`, the text (kind `D` inline, or kind `C` naming 1..16 chunk
+items for a long post), up to 8 media info-hashes, and `authorSig` over
+everything before it. `prevPostTarget` makes the feed a tamper-evident linked
+list walked back from the head, and a post stays verifiable out of DHT
+context. A reader verifies the signature and recomputes every content address
+before rendering anything.
 
-### 4.3 Posts — a tamper-evident hash chain
+### 4.4 Media - followers are the CDN
 
-Each post is an **immutable** DHT item (`btDhtPutImmutable`, 1..1000 bytes,
-returns its 40-hex target) — or, when the text exceeds 1000 bytes, a small run
-of immutable chunks named by a chunk-list record, exactly the reassembly
-pattern the DHT-chat demo already ships (`DXC1`: a head that is either direct
-or a list of chunk targets). Each post record carries:
+An attachment is a single file seeded in place as a trackerless v1 torrent
+(`rsMediaCreate`); its info-hash rides in the post. Followers fetch by magnet,
+sequentially, with deadlines on the front pieces (`rsMediaFetch`,
+`rsMediaStreamPlan`), and keep seeding, so popular media gets faster as it
+spreads. Play unlocks on the contiguous downloaded front (at least 5%), never
+on file existence; a non-faststart video keeps its index at the tail and
+cannot start early whatever the fetch order. **Followers-only sealed media is
+NOT built; it is deferred to its own spec** (the sketch: seal with
+`sxEncryptFile`, carry the per-file key in the post). Today every attachment
+is public to anyone holding its info-hash.
 
-```
-RSP1 | timestamp | prevPostTarget(40-hex) | textTarget | mediaInfoHashes[] | authorSig
-```
+## 5. Rail 2 - DMs (TorrentXT rp1 + SodiumXT secretstream)
 
-`prevPostTarget` chains each post to the one before it, so the feed is a
-**tamper-evident linked list**: a follower walks back from `latestPostTarget`,
-and any altered post breaks the chain and its `authorSig`. `authorSig` is
-`sxSignDetached` over the record so individual posts are verifiable even out of
-DHT context (e.g. when relayed).
+DMs ride **rp1**, TorrentXT's BEP10 peer-wire extension, between peers in a
+**phantom swarm** (no tracker, no server, no content), under `sxSecretStream`.
 
-### 4.4 Media — followers are the CDN
+### 5.1 First contact - the inbox rendezvous
 
-Attach a photo or video by building a torrent for it and putting its info-hash
-in the post's `mediaInfoHashes`:
-
-```
-tTorrent = btCreateTorrent(mediaPath, 0, 0, "")   -- 0 = auto piece size, "" = trackerless/DHT-only
--- you seed it (btAddTorrentFile), followers btAddTorrentFile/btAddMagnet to fetch,
--- then keep seeding: organic, self-scaling distribution with no origin server.
-```
-
-A viral post's media gets *faster* as more followers co-seed it — the opposite
-of a hosted CDN's cost curve. Large media can seed **sequentially with piece
-deadlines** (`btSetSequentialDownload` / `btSetPieceDeadline`) so a video
-starts playing before it finishes. Optionally seal media at rest for
-followers-only feeds with `sxEncryptFile` (streaming, authenticated) and carry
-the per-file key in the post record — the Channels demo's exact
-encrypted-release pattern (the swarm only ever sees the `.enc`).
-
----
-
-## 5. Rail 2 — DMs (TorrentXT rp1 + SodiumXT secretstream)
-
-Direct messages ride **rp1**, TorrentXT's custom BEP10 peer-wire extension that
-moves opaque bytes between two peers who meet in a **phantom swarm** — no
-tracker, no server, no content. SodiumXT's `sxSecretStream` layers
-authenticated encryption on top, exactly the layering the rp1-chat demo header
-describes ("Riptide layers its crypto — SodiumXT `sxSecretStream` — on top of
-this same `btRp1Send`/`rp1Message` channel").
-
-### 5.1 First contact — the inbox rendezvous
-
-Anyone can reach you at a **deterministic inbox swarm** derived from your public
-key, which you also advertise in your feed head:
-
-```
-inboxId = sxBin2Hex(sxHash(handlePubBytes & "riptide-inbox", 20))   -- 40-hex phantom-swarm id
-```
-
-You `btAddInfohash(session, inboxId, "inbox")` and `btDhtAnnounce` at it; a
-sender joins the same swarm, the DHT introduces the peers, and rp1 handshakes.
-The first message is **sealed to your key** with `sxSeal(intro, handlePubBytes)`
-(anonymous-sender sealed box) carrying the sender's own handle + an ephemeral
-X25519 public and a signed challenge — so you learn who it is, they prove it
-with `sxSignDetached`, and no eavesdropper on the swarm learns the contents.
+Anyone reaches you at a deterministic **inbox swarm**,
+`BLAKE2b-20(handlePub || "riptide-inbox")` as 40 hex (`rsInboxId`, joined with
+`btAddInfohash`). The first message is an `RSI1` intro (268 bytes: sender
+handle, sender kx public, recipient handle, timestamp, signature) **sealed to
+the recipient's VERIFIED `RSK1` prekey**, never to the raw handle: `sxSeal`
+needs a curve25519 key, and a prekey signed by the identity key makes the seal
+target provable. The recipient handle inside the signed body binds the intro
+to one inbox, so a replay to a third party is refused; recipients also apply a
+freshness window. Outbound: fetch the head, verify the prekey, join their
+inbox swarm, send the intro and a stream header to each rp1-capable peer; a
+bystander never produces ciphertext the session accepts, so it drops out.
 
 ### 5.2 The pairwise session
 
-Once both sides know each other's identity and X25519 prekeys (from each
-other's feed `prekeyTarget`), they derive a **shared session** with
-`sxKeyExchangeClient` / `sxKeyExchangeServer` (returns distinct rx/tx keys),
-then move to a **pairwise room** so first-contact traffic never mixes with an
-ongoing conversation:
+The lexically smaller handle is the `crypto_kx` client, so both sides derive
+the same session with no negotiation (my tx is your rx). The library also
+derives a golden-pinned pairwise room, `rsRoomId` =
+`BLAKE2b-20(sortedConcat(pkA, pkB) || sessionSalt)`; the reference app keeps
+its one conversation in the recipient's inbox swarm. Each direction is its own
+secretstream: the header first, then one `sxSecretStreamPush` per `btRp1Send`
+(60000-byte cap); a hang-up sends one message with the FINAL tag
+(`sxIsFinalTag`). Message kinds: `T` text, `O`/`A` SDP for rail 3.
+`btRp1SetToken` is NOT used: a peer authenticates by producing ciphertext the
+session accepts. rp1's <= 1 s per-peer tick suits text and is the trigger to
+escalate to rail 3.
 
-```
-roomId = sxBin2Hex(sxHash(sortedConcat(pkA, pkB) & sessionSalt, 20))
-```
-
-Each direction runs a `sxSecretStream`: `sxSecretStreamInitPush(txKey)` yields a
-header sent as the first rp1 message; every subsequent message is
-`sxSecretStreamPush(handle, plaintext, "", false)` and delivered by a single
-`btRp1Send` (payloads cap at 60000 bytes — a DM is far smaller). The receiver
-runs `sxSecretStreamInitPull(rxKey, header)` then `sxSecretStreamPull` per
-message, checking `sxIsFinalTag` for session close. `btRp1SetToken` publishes a
-signed recognition token in the extended handshake so a reconnecting peer is
-re-authenticated before the first `rp1Message`. Latency is rp1's ≤1 s
-per-peer tick — fine for text, and the trigger to escalate to Rail 3 when the
-conversation wants to be live.
-
----
-
-## 6. Rail 3 — live 1:1 sessions (dataChannelXT)
-
-When a DM becomes a call, a live-typing session, or a fast file drop, escalate
-to a **WebRTC data channel** — real NAT traversal (ICE), browser-interoperable,
-with per-channel reliability knobs.
+## 6. Rail 3 - live 1:1 sessions (dataChannelXT)
 
 ### 6.1 Signalling over the rail you already have
 
-The DHT-chat demo signals SDP through a **DHT dead-drop** (offer/answer under
-salts `"wx-o"`/`"wx-a"`, compressed and chunked because an SDP with candidates
-exceeds the 1000-byte BEP44 cap). Riptide keeps that as the **cold-start**
-path, but when a secretstream DM (Rail 2) is already open it has something the
-demo lacks: **a live authenticated channel.** So the SDP offer/answer travel as
-ordinary secretstream messages over rp1 — no DHT round-trip, no dead-drop
-latency, and the signalling inherits the DM's authentication for free. Prekey
-exchange already happened, so there is no unauthenticated-SDP window.
+SDP offer and answer ride the open DM secretstream as kinds `O`/`A`, inheriting
+its authentication: no unauthenticated-SDP window, no dead-drop latency. One
+blob, non-trickle (shipped when gathering completes), negotiated
+automatically. The no-prior-contact cold start (dht-chat's DHT dead-drop) is
+deliberately unbuilt: the phase-4 secretstream IS the warm channel.
 
 ### 6.2 The session
 
 ```
-peer  = dcCreatePeer("stun:stun.l.google.com:19302")   -- the demo's default ICE server
-dcSetLocalDescription peer, "offer"                     -- gather; dcLocalDescription -> send over rp1
--- remote SDP arrives over rp1 -> dcSetRemoteDescription peer, sdp, "answer"
-chat  = dcCreateChannel(peer, "riptide/live")
+peer   = dcCreatePeer("stun:stun.l.google.com:19302")   -- STUN only, no TURN
+chat   = dcCreateChannel(peer, "riptide-call")
+typing = dcCreateChannelEx(peer, "riptide-typing", "", true, 0, -1, false, -1)
 ```
 
-Use `dcCreateChannelEx` to pick the reliability that fits the sub-stream:
-ordered-reliable for a shared document, **unordered + `maxRetransmits 0`** for
-cursor/typing presence you overwrite constantly, a separate channel for a file
-drop with `dcBufferedAmount` + `dcSetBufferedLowThreshold` backpressure so a
-large transfer never starves the interactive channel. `dcPoll` drains state and
-inbound messages in the shared dispatcher. When the live session ends, the
-conversation falls back to the persistent rp1 DM.
+No TURN by design: a symmetric-NAT pair fails visibly rather than relaying
+silently. The typing lane (unordered, `maxRetransmits 0`) is created BEFORE ICE
+gathering so both channels ride one offer; the callee routes channels BY
+LABEL, never arrival order. Both sides send ABSOLUTE state (`"1"`/`"0"`),
+debounced, re-asserted every second, and expired locally so a dropped `"0"`
+cannot stick; the DTLS session the DM-signalled SDP authenticated scopes the
+lane. After the call the rp1 DM carries on. Verified statically; needs the
+two-network call pass.
 
-*(As built, 2026-08-15: the typing lane exists - demo wiring, no library
-surface. At call setup the caller opens a second channel,
-`dcCreateChannelEx(peer, "riptide-typing", "", true, 0, -1, false, -1)` -
-exactly this section's unordered + maxRetransmits-0 mode - created before
-ICE gathering so both channels ride the one offer; the callee routes its
-incoming channels BY LABEL, never arrival order. Both sides send ABSOLUTE
-state ("1" typing, "0" not), debounced on the poll timer and re-asserted
-every second while the call lives, and each side expires the far state
-locally so a dropped "0" cannot stick - droppable by construction, per
-this section's design. No record format is needed: the DTLS session the
-DM-signalled SDP authenticated already scopes and authenticates the lane.
-This lane is the CALL peers' typing indicator; the LAN device mesh has
-its own, separately, as a signed section-7 channel-1 record. Verified
-statically; needs the two-machine call pass.)*
+## 7. Rail 4 - same-LAN device sync (enetxt)
 
----
+Your own devices sync at wire speed on a LAN, within ONE identity, never
+follower-facing - the one rail where sub-frame latency matters and ICE would
+be pure overhead (protocol section 6). One device hosts with
+`enHostCreateServer("", 27099, 32, 3, 0, 0)` (every interface, port 27099, a
+small peer cap, three channels); the others `enConnect`.
 
-## 7. Rail 4 — same-LAN device sync (enetxt)
+**Admission** is `RSL1` challenge / response / welcome: a fresh nonce (`C`),
+the joiner's signature over it with the shared subkey-3 key (`R`), and the
+host's signature over the joiner's response signature (`W`). It is MUTUAL: a
+stranger on the same cafe Wi-Fi cannot join, and a rogue host cannot pass as
+yours. The `enConnect` rider is a u32 protocol tag only. The LAN domain tags
+are prefix-free since 2026-09-09.
 
-Your own devices — phone, laptop, studio machine — sync at **wire speed on a
-LAN** without any of them touching the internet, using enet's reliable UDP.
-This rail is **device-to-device within one identity**, never follower-facing.
+**Sync records** are signed under the same key over `"riptide-lan-s"` + the
+whole body, verified before parsing, and refused from unadmitted peers:
+`D` draft (channel 0: the whole draft as absolute state, <= 4096 bytes,
+refuse-not-truncate, applied at a strictly higher per-device seq); `F` feed
+state (channel 0: the feed seq applied as MAX, so two devices never publish a
+conflicting head, plus a read receipt); `P` presence/typing (channel 1, sent
+UNSEQUENCED, enet flag 2 - its own tick makes it reorder-proof); `M` media
+handoff (channel 0: a signed POINTER - info-hash, name, size - whose bytes
+ride the rail-1 torrent path). **Channel 2 is RESERVED and dark**: a chunked
+channel-2 protocol was rejected because it would reimplement libtorrent's
+per-piece integrity, resume and backpressure without their proof.
 
-One device hosts (`enHostCreateServer("", 27099, 8, 3, 0, 0)` — the demo's
-port, a small peer cap, three channels); the others `enConnect` to it. Admission
-is gated by the **subkey-3 LAN pre-shared key**: the `enConnect` data rider plus
-a first-message challenge signed under a key both devices can only derive from
-the shared master seed, so a stranger on the same café Wi-Fi cannot join your
-device mesh. Channels split by traffic shape:
+**Honest limits, surfaced in the UI:** records are authenticated, NOT
+encrypted (the LAN carries draft plaintext; encryption would need a new
+traffic subkey); a pointed-at torrent shows your IP to swarm peers; a fully
+offline LAN may not find its swarm, since discovery is the DHT. The live mesh
+is verified statically; needs the two-machine pass.
 
-- **Channel 0, reliable** — keyring updates, new-post drafts, the monotonic feed
-  `seq` (so two devices never publish a conflicting head), read receipts.
-- **Channel 1, unreliable-sequenced** — presence and "typing on my phone"
-  indicators you overwrite every tick; drops are harmless.
-- **Channel 2, reliable** — bulk local handoff (a draft's media) below the
-  60000-byte packet budget; larger goes to a torrent even on the LAN.
+## 8. Rail 5 - the anonymous persona (OnionXT, Model C)
 
-`enPeerStatus` gives RTT and loss for a live "your devices" panel. This is the
-one rail where sub-frame latency actually matters and where dc's ICE handshake
-would be pure overhead — the devices already share a network and a secret.
-
-*(As built, 2026-08-15: the sync payload landed as three RSL1 record kinds
-over the ADMITTED mesh - "D" draft sync (channel 0, reliable: the whole
-current draft text as absolute state, empty meaning cleared, capped at
-4096 bytes refuse-not-truncate, with a monotonic per-device seq and the
-sender device name), "F" feed-seq/read-receipt state (channel 0: feedSeq
-applied as MAX so two devices never publish a conflicting head, plus an
-optional read-receipt peer/timestamp pair, also max-applied), and "P"
-presence/typing (channel 1: absolute state with a monotonic per-device
-tick). Two deliberate deltas from this section's sketch, both recorded in
-riptide/CLAUDE.md. First, presence is sent unreliable-UNSEQUENCED (enet
-flag 2), not unreliable-sequenced: the record's own tick makes it
-reorder-proof, so transport sequencing would only mask what the record
-must survive anyway. Second, the records are SIGNED rather than riding
-the admission bare: the same shared LAN key as the admission, with a
-distinct domain tag "riptide-lan-s" over the whole body, kind byte
-included - the welcome leaves no fresh session secret (it is mutual
-signature verification), so the records sign under the one key both
-sides hold, and replay is neutralized by each record's monotonic/
-absolute apply semantics instead of a per-handshake binder (which would
-break a host relaying a record verbatim to the other admitted devices).
-Verify-then-parse on every inbound record, refusals distinct; records
-from unadmitted peers are refused outright. Honest limit, surfaced in
-the UI: authenticated, NOT encrypted - the LAN carries draft plaintext;
-this section's design is admission-only, and encryption would need a new
-traffic subkey.)*
-
-*(As built, 2026-08-16 - the channel-2 decision. Bulk media handoff is
-SETTLED as a fourth RSL1 kind, "M", on CHANNEL 0: a small signed POINTER
-- the 40-hex v1 info-hash (which in the phase-3 design is both the
-content address libtorrent verifies piece-by-piece and the torrent
-linkage a magnet fetch takes), the file's leaf name and size for the
-receiving UI, a monotonic per-device seq, the same shared-LAN-key
-signature under the "riptide-lan-s" domain as the other sync records.
-The BYTES ride the phase-3 torrent path (rsMediaCreate seeds in place on
-the sender; rsMediaFetch fetches sequentially and co-seeds on the
-receiver) - the one rail of this app already proven end to end on two
-machines, on one LAN, near instantly. Channel 2 itself stays RESERVED,
-dark, deliberately: this section's own sketch caps a channel-2 packet at
-the 60000-byte budget and sends anything larger to a torrent even on the
-LAN, and a draft's media - a photo, a video - essentially never fits the
-budget, so the sub-budget lane has no real payload today (drafts already
-ride channel 0, capped at 4096). A chunked channel-2 protocol was
-considered and rejected: it would reimplement libtorrent's per-piece
-integrity, resume, and backpressure with none of its proof. The channel
-stays allocated so both sides already agree if a genuinely sub-budget
-bulk case ever mints its own record kind. Two honest limits, recorded
-and surfaced in the demo's footer: the pointer record never leaves the
-LAN, but the pointed-at bytes ride the ORDINARY torrent rail - swarm
-peers see your IP, and peer discovery is the DHT, so a fully offline LAN
-may not find its swarm even though both devices sit on it (the exact
-transfer shape the phase-3 pass measured). Verified statically; needs
-the two-machine pass.)*
-
----
-
-## 8. Rail 5 — the anonymous persona (OnionXT, Model C)
-
-An anonymous persona is a **separate ed25519 identity** (a subkey-`100+n` seed)
-that lives **only** as an onion service and **never touches the DHT, a torrent,
-or rp1.** This is the Model C invariant, applied to a social identity.
+A separate ed25519 identity (subkey `100+n`) that lives ONLY as an onion
+service. One persona ships (index 0; section 12).
 
 ### 8.1 Why it must be onion-only
 
-The BitTorrent DHT is **UDP** and rp1 is a **clearnet peer-wire** connection —
-neither can ride a Tor circuit, which carries TCP streams. If an "anonymous"
-persona published a BEP44 head or announced a swarm, it would emit its IP to
-every DHT node and peer it touched, and — worse — its published ed25519 key
-would let anyone compute the link between its onion and its DHT presence. So the
-anon persona calls **none** of `btDhtPutMutable` / `btDhtGetMutable` /
-`btDhtPutImmutable` / `btAddMagnet` / `btAddTorrentFile` / `btCreateTorrent` /
-`btDhtAnnounce` / `btRp1*`. Everything it does rides an OnionXT TCP stream. §9.3
-owns the guard set that enforces this at every branch point; a violation is a
-deanonymization bug, not a cosmetic one.
+The DHT is UDP and rp1 a clearnet peer-wire connection; neither rides Tor, so
+a persona that published a head or announced a swarm would leak its IP and
+link its key to its DHT presence. It therefore calls none of
+`btDhtPutMutable`, `btDhtGetMutable`, `btDhtPutImmutable`, `btAddMagnet`,
+`btAddTorrentFile`, `btCreateTorrent`, `btDhtAnnounce` or `btRp1*`, and opens
+no dc, enet or Nostr channel: a violation is a deanonymization bug (9.3).
 
-### 8.2 The anon feed — HTTP over an onion
+### 8.2 The anon feed - HTTP over an onion
 
-The persona publishes its feed by **serving it over its own onion** with
-onion-httpd:
+The service is created FROM SEED (`rsAnonCreateService` ->
+`oxCreateServiceFromSeed`), so the address stays the persona's identity; the
+app does NOT call `oxhServe` (it creates a Tor-generated key) but wires
+`oxSetPeerCallback "oxhPeer"` and the onion-httpd routes itself. `GET /`
+serves `rsAnonFeedPage`, one deterministic, golden-pinned HTML page with every
+entry HTML-escaped - pinned bytes make the feed a wire format, not a
+restylable `oxhServeFiles` folder. `GET /prekey` serves the persona's `RSK1`
+as 264 hex chars; `POST /dm` is 8.3. The `.onion` travels out of band as a
+contact card, never via the DHT, and browsing it proves the follower reached
+the key-holder. Serving over HTTP is slower and non-scaling next to a swarm,
+the honest cost of anonymity. The live serving is verified statically; needs
+an OXT + live-Tor pass.
 
-```
-oxCreateServiceFromSeed anonSeed, 80, localPort   -- the .onion IS the persona's pubkey
-oxhServe 80, localPort
-oxhServeFiles feedFolder                            -- static feed + media, browsable in Tor Browser
-oxhRoute "POST", "/dm", "riptideAnonDm"            -- an inbound message route
-```
+### 8.3 Anon DMs - sealed over a Tor stream
 
-Followers reach `oxServiceAddress(service)` — a `<56-char>.onion` shared
-out-of-band as a contact card or QR (never posted to the DHT). Browsing it
-proves they reached the key-holder. Media is served as ordinary files over the
-same onion, not as torrents — slower and non-scaling, the honest cost of
-anonymity.
-
-*(As built, 2026-08-15: the serving landed with two deliberate deltas from
-this sketch. The feed page is a LIBRARY seam, `rsAnonFeedPage` - one
-deterministic, golden-pinned HTML page built from typed entries with every
-entry HTML-escaped - rather than an `oxhServeFiles` folder; a persona's
-feed is authored in the app, and pinning the page bytes makes the served
-feed a wire format instead of a restylable template. And the demo does NOT
-call `oxhServe`, because `oxhServe` creates a TOR-generated key: it wires
-`oxSetPeerCallback "oxhPeer"` itself and creates the service from seed via
-`rsAnonCreateService`, so the address stays the persona's identity.
-Verified statically; needs an OXT + live-Tor pass. As-built record:
-`riptide/CLAUDE.md`.)*
-
-### 8.3 Anon DMs — sealed over a Tor stream
-
-A follower sends the persona a DM by dialing its onion and posting to `/dm`; the
-body is `sxSeal(message, anonPub)` so even a malicious `oxhRoute` handler cannot
-attribute the sender, and the persona replies over the same accepted stream
-(`oxSetPeerCallback` / `oxPeerAccepted`). File transfers use the Model C `BTXO`
-framed-chunk protocol (HEADER + length-prefixed DATA frames + zero-length
-terminator) over the stream. No swarm, no IP, on either side.
-
-*(As built, 2026-08-15: the seal target is the persona's PREKEY, not the raw
-`anonPub` - the phase-4 delta carried through: `sxSeal` takes a curve25519
-key, so GET `/prekey` serves the persona's signed RSK1 record (subkey-200+n
-kx public, signed by the subkey-100+n anon identity) as 264 hex chars, the
-sender verifies it against the very onion it dialed, and the POST `/dm`
-body is the sealed RSI1 intro as EXACTLY 632 strict lowercase hex chars -
-refused before any decode, then `rsAnonAcceptDm` runs the existing
-seal-open verify-then-parse, and every refusal gets one identical reply.
-One piece is deliberately unbuilt: the persona does NOT reply over the
-accepted stream - onion-httpd answers and closes each request, so the
-reply rail would be a persistent onion-stream session layer; an accepted
-intro surfaces its PROVEN sender and answering means a public-side DM.
-Verified statically; needs an OXT + live-Tor pass.)*
+A follower fetches `/prekey` and verifies it against the very onion it dialed
+(subkey `200+n`'s kx public, signed by the subkey-`100+n` persona identity),
+then POSTs the sealed `RSI1` intro to `/dm` as EXACTLY 632 lowercase hex
+chars. Anything else is refused before any decode; `rsAnonAcceptDm` runs the
+seal-open, verify-then-parse path, and every refusal gets one identical reply
+so the route is not an oracle. The phase-4 records compose unchanged, the
+public identity cannot open the persona's mail, and neither side shows a
+swarm or an IP. **Reply over the stream is deliberately unbuilt**: onion-httpd
+answers and closes each request, so an accepted intro surfaces its PROVEN
+sender and answering is a public-side DM. Bulk transfer uses Model C `BTXO`
+framing, which the library builds and parses (`rsBtxoStreamStep`); the app
+does not yet wire an anon file transfer. The live leg is verified statically;
+needs an OXT + live-Tor pass.
 
 ### 8.4 One unlock, two unlinkable identities
 
-Both the public and anon identities derive from the **same master seed**, so a
-single Argon2id unlock reconstructs your whole keyring — but their public keys
-are **distinct KDF subkeys**, and the anon key's public half **never appears in
-any public record.** To an outside observer the two are cryptographically
-unlinkable. The honest caveats (§9) are real and must be surfaced in the UI:
-cross-posting content, correlated timing, or a global passive adversary doing
-traffic analysis can still link them. The tool removes the *easy* links; it
-cannot remove the operator's mistakes or defeat a global observer.
-
----
+One unlock reconstructs both identities, but their public keys are distinct
+KDF subkeys and the persona's never appears in a public record, so they are
+cryptographically unlinkable. The caveats are surfaced in the UI:
+cross-posting, correlated timing or a global passive adversary can still link
+them - the tool removes the easy links, not the operator's mistakes.
 
 ## 8A. Rail 6 - reach, over Nostr (NostrXT)
 
-*(Added 2026-08-29. The first rail this spec gained after its original five,
-and the only one that talks to somebody else's servers.)*
-
 ### 8A.1 Why a sixth rail, and why it is not a dependency
 
-The five rails above are sovereign: the DHT feed, rp1 DMs, the LAN mesh and
-the onion persona all work with no server anywhere, which is the whole thesis.
-What none of them has is **reach**. A riptide handle is meaningless to anyone
-who does not run riptide, so the app's answer to "where is everybody?" was, for
-seven phases, "bring them with you."
-
-Nostr is the opposite trade and an honest one to offer: somebody else's relays,
-an IP they can see, and an audience already there. So this rail is deliberately
-a **bridge and never a dependency**. Nothing in it is on the path of any other
-rail. With no CoinXT installed, no NostrXT loaded, or every relay in the world
-down, riptide is exactly the app it was at phase 7. That is not a fallback
-story bolted on afterwards; it is the reason the rail is allowed to exist.
-
-The division of labour is the family's standing law - **compose, never
-reinvent**. NostrXT owns the protocol: the canonical NIP-01 serialization,
-BIP-340 signing, NIP-19 entities, filters, and the relay socket machine, all
-reached through `nx*` / `nxr*`. Riptide owns exactly three things:
-
-1. **The key** (§8A.2), so one unlock still reconstructs the whole keyring.
-2. **The bridge** (§8A.3), so the two identities can be tied together in a way
-   a third party can check.
-3. **The media convention** (§8A.5), so a post keeps its attachments across the
-   boundary.
+Added 2026-08-29, the only rail that talks to somebody else's servers (bytes:
+protocol section 8). The five rails are sovereign and give no **reach**: a
+riptide handle means nothing to someone who does not run riptide. Nostr is
+the opposite, honest trade - somebody else's relays, an IP they can see, an
+audience already there. So the rail is a **bridge, never a dependency**: none
+of it sits on another rail's path, and with no CoinXT, no NostrXT or no relay
+reachable, riptide is exactly the phase-7 app. NostrXT owns the protocol
+(NIP-01 serialization, BIP-340, NIP-19, filters, relay sockets); riptide owns
+the key (8A.2), the bridge (8A.3) and the media convention (8A.5).
 
 ### 8A.2 The identity: one more subkey, no new secret to keep
 
-Subkey `4` through the validity ladder of §3.2. The point is the identity-first
-decision applied one rail further: there is no separate Nostr key to back up,
-because the master seed already reconstructs it. An `nsec` can be **exported**
-for use in another Nostr client - a deliberate, separately-named act, because
-handing out key material should read as what it is at the call site.
-
-The public halves and the secret have different doors on purpose:
-`rsNostrKeys` returns only the pubkey and the npub, so an app can paint them
-anywhere without deciding whether the array is safe to log, and
-`rsNostrSignEvent` derives the secret, signs, and drops it, so ordinary
-publishing never holds it in a caller's variable.
+Subkey 4 through the 3.2 ladder: no separate Nostr key to back up. The doors
+differ on purpose: `rsNostrKeys` returns only the pubkey and npub,
+`rsNostrSignEvent` derives the secret, signs and drops it, and `nsec` export
+is a separately named act (`rsNostrExportSeckey`).
 
 ### 8A.3 The bridge: a linkage BOTH keys signed
 
-A riptide handle is ed25519; an npub is secp256k1. Neither key can sign for the
-other. So a claim carrying only one signature is a claim **any holder of that
-one key can make about somebody else's other key** - which is not a linkage,
-it is an accusation. The `RSN1` record is therefore signed twice over one
-preimage:
+Neither an ed25519 handle nor a secp256k1 npub can sign for the other, so a
+one-signature claim is an accusation any key-holder could make about a
+stranger's other key. `RSN1` (276 bytes) is signed by BOTH over one preimage,
+`"riptide-nostr-b"` + the 148-byte body (magic inside; the domain keeps it out
+of the LAN rail's namespace): ed25519 over the preimage, BIP-340 over its
+SHA-256. It is published to the **DHT** (BEP44 mutable, identity key, salt
+`"riptide-nostr"` - a new salt, never a new `RSH1` field) and to **relays**
+(NIP-78 kind `30078`, `d` tag `"riptide.bridge"`, the record as hex;
+replaceable, because a bridge is current state). Anyone can copy a bridge, so
+the reader requires the record's `nostrPub` to BE the event's author: a copy
+verifies as the original author's linkage, never the republisher's. DHT
+bridge ingest is monotone per handle, like head ingest. **Publishing the
+bridge links the two identities in public and cannot be unpublished**, so it
+is always an explicit click, never a side effect, and the UI says so.
 
-```
-RSN1 | handle(64 hex) | nostrPub(64 hex) | seq(u64) | timestamp(u64)
-     | edSig(64) | schnorrSig(64)                        -- 276 bytes exactly
-```
+### 8A.4 Persistence: the RIPTAPP1 store
 
-The signed span is the first 148 bytes prefixed by the domain tag
-`"riptide-nostr-b"`. The magic is INSIDE it, so a signature minted for this
-record can never be read as a signature for another kind, and the domain keeps
-it out of the LAN rail's namespace (the `"riptide-lan-s"` discipline). The
-ed25519 half signs the preimage bytes; the BIP-340 half signs SHA-256 of them,
-because `cxSchnorrSign` takes a 32-byte digest.
-
-It is published **both ways**, so it is findable from either side:
-
-- **To the DHT**, as a BEP44 mutable item under the identity key at its own
-  salt `"riptide-nostr"`. A new rail gets a new salt, never a new field in
-  `RSH1`, whose magic would then have to bump (§2 rule 5).
-- **To relays**, as a NIP-78 parameterized-replaceable event (kind `30078`,
-  `d` tag `"riptide.bridge"`, content the record as lowercase hex).
-  Replaceable is the right shape: a bridge is current state, not history.
-
-The attack this shape exists to stop is the obvious one. Anyone can copy
-somebody else's bridge record into their own signed event; nothing prevents it
-and nothing should try. What the reader does instead is require the record's
-`nostrPub` to BE the event's author, so a copied bridge verifies as **the
-original author's** and never as the republisher's.
-
-**Publishing the bridge is the act that links the two identities in public,
-and it cannot be unpublished.** It is therefore always an explicit click,
-never a consequence of connecting or posting, and the UI says so in those
-words.
-
-### 8A.4 Persistence: the `RIPTAPP1` store
-
-Rail 6 is also where this app stopped being a session. Follows, relay lists and
-counters now survive a restart in a sealed store under subkey `5`.
-
-Sealed rather than plain, and the reason is not that a follow list is secret
-the way a key is. It is that a follow list IS the social graph - who you read,
-which relays you talk to, which npub is yours - and that is the exact material
-§8.4 says an anon persona must stay unlinked from. Leaving it in the clear
-beside a sealed key file would put the interesting half of the threat model on
-disk in plaintext. The library fixes the envelope (magic, cap, UTF-8 round
-trip) and the app owns the format inside it, because what belongs in app state
-is an app question and a wire format here would freeze it.
+Follows, relay lists, counters and seq watermarks survive a restart in a store
+sealed under subkey 5 (`rsSealAppState` / `rsOpenAppState`) - sealed because a
+follow list IS the social graph, the exact material 8.4 says a persona must
+stay unlinked from. The library fixes the envelope (magic, cap, UTF-8 round
+trip); the app owns the format inside it.
 
 ### 8A.5 Media across the boundary
 
-A riptide attachment is a torrent info-hash. On the Nostr wire it rides as an
-`r` tag carrying `magnet:?xt=urn:btih:<40 hex>` - `r` because a reference is
-what it IS, and an ordinary Nostr client renders it as a link a person can act
-on. The bytes still ride the phase-3 torrent rail; the tag is a POINTER,
-exactly as the §7 channel-0 handoff record is.
-
-The receive direction is strict in both senses: an `r` tag that is not a magnet
-URI is somebody else's link and is skipped, and a client **never fetches
-automatically**. Joining a swarm shows the machine's IP to its peers, so the
-fetch stays the user's click on the Feed card.
+An attachment rides a note as an `r` tag, `magnet:?xt=urn:btih:<40 hex>`
+(ordinary clients render a link); the bytes still ride rail 1, like the
+section-7 `M` pointer. Inbound, a non-magnet `r` tag is skipped, and nothing
+is fetched automatically: joining a swarm shows the IP, so it is a click.
 
 ### 8A.6 What this rail deliberately does NOT do
 
-**Nostr DMs are not built.** NIP-04 is deprecated and needs AES, which exists
-nowhere in this suite and never will (libsodium does not ship CBC). NIP-17
-gift wrap needs an ephemeral-key layer and a metadata analysis this pass has
-not done. Riptide already has a DM rail that answers to nobody (§5), and a
-half-built encrypted rail beside it would be worse than none. This is a scope
-cut with a reason, not a gap to be quietly filled later.
-
-**NIP-42 relay auth is never answered automatically.** Answering it tells that
-relay who you are. It is logged and left to the user.
-
-**No relay is dialled on open.** Default relays are offered as text in a field;
-connecting is a click. An app that phones a stranger's server the moment it
-opens has made a privacy decision on the user's behalf.
-
-*(The app card described in 8A.4's UI terms was
-built on 2026-08-29, failed at `openStack` on a real engine with
-`Chunk: no target found`, and was REVERTED the same day - then RE-LANDED
-the same day, restructured so `openStack` is byte-identical to the
-engine-proven body and gated by `riptide/tools/check-demo-boot.py`, which
-boots the shipped stack headlessly; the record is in `riptide/CLAUDE.md`.
-The card's own label: verified statically + headless boot; needs an OXT
-pass.
-
-Verified statically, and EXECUTED headlessly: `riptide/tools/check-script-vectors.py`
-runs the shipped script against the real committed CoinXT through the family's
-interpreter, so the signatures under test are genuine BIP-340 over genuine
-libsecp256k1, compared against an independent oracle. That settles LOGIC, not
-parser behaviour: the label stays "verified statically; needs an OXT + a
-live-relay pass." As-built record: `riptide/CLAUDE.md`.)*
-
----
+**Nostr DMs**: NIP-04 is deprecated and needs AES, which this suite lacks
+(libsodium ships no CBC); NIP-17 needs an ephemeral-key layer and a metadata
+analysis not yet done; section 5 already answers to nobody, and a half-built
+encrypted rail beside it would be worse than none. **Automatic NIP-42 auth**:
+answering tells the relay who you are, so it is logged and left to the user.
+**Dialling on open**: default relays are offered as text and connecting is a
+click; phoning a stranger's server on open is a privacy decision made for the
+user. **Packaging:** the app embeds two socket libraries (OnionXT, NostrXT's
+relay layer), so it defines `socketError` / `socketClosed` / `socketTimeout`
+itself and calls both libraries' named functions - the first such stack.
 
 ## 9. Security model & honesty
 
@@ -668,343 +384,136 @@ live-relay pass." As-built record: `riptide/CLAUDE.md`.)*
 
 | Layer | Provides | Does **not** provide |
 |---|---|---|
-| SodiumXT | Confidentiality, integrity, authenticity; wrong key/tamper is *rejected* | Metadata privacy; forward secrecy beyond secretstream rekey |
-| BEP44 signing | Authenticated, sequence-ordered feed; tamper-evident post chain | Confidentiality (public feeds are public); deletion (DHT is append-until-expiry) |
-| rp1 phantom swarm | Serverless peer rendezvous and transport | IP privacy — both peers learn each other's address |
+| SodiumXT | Confidentiality, integrity, authenticity; a wrong key or tamper is *rejected* | Metadata privacy; forward secrecy beyond secretstream rekey |
+| BEP44 signing | An authenticated, sequence-ordered feed; a tamper-evident post chain | Confidentiality (public feeds are public); deletion (the DHT is append-until-expiry) |
+| rp1 phantom swarm | Serverless peer rendezvous and transport | IP privacy - both peers learn each other's address |
 | dataChannel | NAT-traversed P2P, DTLS-encrypted transport | Hiding IPs (ICE reveals them); anonymity |
-| enet LAN | Device-mesh speed and simplicity | Anything off the LAN; internet reachability |
-| OnionXT | IP-metadata privacy; CA-free self-authenticating address | Defence against a global passive adversary or a compromised local tor |
-| Nostr relays (§8A) | Reach: an audience that already exists, and durable storage of your public events on servers you do not run | Anything at all. A relay sees your IP, every event you publish, and the timing of both; it can drop your events, lie by omission, or keep them after you delete. Signatures are what make its copy trustworthy, not the relay |
+| enet LAN | Device-mesh speed and simplicity; signed records | Anything off the LAN; confidentiality (signed, not encrypted) |
+| OnionXT | IP-metadata privacy; a CA-free self-authenticating address | Defence against a global passive adversary or a compromised local tor |
+| Nostr relays (8A) | Reach: an existing audience, and durable storage of your public events on servers you do not run | Anything at all. A relay sees your IP, every event you publish and the timing of both; it can drop events, lie by omission, or keep them after you delete. Signatures make its copy trustworthy, not the relay |
 
 ### 9.2 Tor hides the route, SodiumXT hides the contents
 
-The two compose without overlap: OnionXT ensures the **network** never learns
-who talks to whom; SodiumXT ensures the **contents** are unreadable and
-unforgeable even to a malicious relay or onion route handler. Neither is a
-substitute for the other — an onion stream still seals its payload; a sealed
-DM over rp1 still leaks both IPs.
+OnionXT keeps the **network** from learning who talks to whom; SodiumXT keeps
+the **contents** unreadable and unforgeable even to a malicious relay or route
+handler. Neither substitutes for the other: an onion stream still seals its
+payload, and a sealed DM over rp1 still leaks both IPs.
 
 ### 9.3 The deanonymization guard
 
-The single rule that keeps the "anonymous" label honest: **an anon-persona code
-path calls no `bt*` DHT/torrent/rp1 handler, no Nostr relay, and a
-public-persona path never routes through the anon onion.**
+**An anon-persona path calls no `bt*` DHT/torrent/rp1 handler, no dc or enet
+channel and no Nostr relay; a public-persona path never serves through the
+persona's onion.** The enforcement point is
+`rsPersonaAllows(isAnon, transport)`, a pure fail-closed policy over nine
+transports (`onion`, `dht`, `torrent`, `rp1`, `enet`, `dc`, `feed`, `media`,
+`nostr`, joined 2026-08-29): the persona gets `onion` only, the public
+identity everything but `onion`, and an unknown transport refuses for BOTH.
+The folded suite harness asserts the full truth table cell by cell (inference
+is how the 2026-08-14 review found `feed` and `media` unproven), and the Anon
+card paints it live from the function, so the UI cannot drift from the code.
 
-*(`nostr` joined the guard's vocabulary 2026-08-29 with rail 6, and it is the
-transport the guard most obviously exists for: a relay is a clearnet websocket
-to somebody else's server, which sees the IP, the events and their timing, and
-where NIP-42 auth would name the identity outright. The existing rule already
-refused it - an anon persona gets `onion` and nothing else - but the cell is
-now asserted in its own right rather than inferred from the rule's shape,
-because "the rule implies it" is how a truth table ends up with two of its own
-transports unproven, which is exactly what the 2026-08-14 review found for
-`feed` and `media`. The app asserts it at a real branch point: the relay dial
-refuses unless `rsPersonaAllows(false, "nostr")` passes.)* As built (attestation corrected
-2026-08-23): the enforcement point is `rsPersonaAllows(isAnon, transport)`, a
-pure fail-closed policy function - an unknown transport refuses for BOTH
-personas - whose full truth table (all nine transports since `nostr` joined
-2026-08-29, both personas, plus the unknown-transport refusal) is asserted by
-the folded suite harness, and
-which the demo's Anon card paints as a LIVE panel read straight from the
-function, so what the user sees cannot drift from what the code enforces. The
-demo asserts it at its two real persona decisions - the dc call dials only if
-`rsPersonaAllows(false, "dc")` passes, and the anon publish serves only if
-`rsPersonaAllows(true, "onion")` does; its other 16 transport call sites sit
-on compile-time public-persona paths with no active-persona state to branch
-on, so a guard call at each would be a constant that can never refuse - and
-the sentence that stood here, claiming the transport selectors assert at
-EVERY send/publish branch, overstated what is built. The normative rule
-stands: an app that adds persona state must route every new transport branch
-through the guard, failing closed (refuse + visible message) rather than
-silently falling back to a clearnet path. This
-mirrors the Model C §7 guard set and is the highest-severity invariant in the
-app.
+The app asserts it at its real branch points - the dc call
+(`rsPersonaAllows(false, "dc")`), the anon publish (`(true, "onion")`), the
+relay dial (`(false, "nostr")`); its other transport call sites (16 at the
+corrected 2026-08-23 count) are compile-time public-persona paths, where a
+guard call would be a constant. **Normative:** anything that adds persona
+state routes every new transport branch through the guard, failing closed
+with a visible message, never falling back to clearnet. This mirrors the
+Model C guard set (`docs/ONIONXT-INTEGRATION-PLAN.md` section 7) and is the
+app's highest-severity invariant.
 
 ### 9.4 The trust boundary and the honest limits
 
-- **The local tor daemon is trusted.** OnionXT assumes a tor reachable on the
-  loopback SOCKS/control ports; a compromised local daemon defeats the anonymity
-  regardless of the crypto. Bundling/launching tor is the optional OnionXT
-  lifecycle layer, never a requirement.
-- **A global passive adversary** doing traffic correlation across Tor is out of
-  scope — as it is for Tor itself.
-- **Every anonymity claim in the UI** must read "needs an OXT + live-Tor pass"
+- **The local tor daemon is trusted**; a compromised one defeats the anonymity
+  whatever the crypto. Launching tor is OnionXT's optional lifecycle layer,
+  never a requirement.
+- **A global passive adversary** is out of scope, as it is for Tor itself.
+- **Every anonymity claim in the UI** reads "needs an OXT + live-Tor pass"
   until measured on a real engine against a real daemon.
-
----
 
 ## 10. Event loop, testing, and roadmap
 
 ### 10.1 One dispatcher, never block
 
-A single `on riptideTick` fires on a timer and, in order, drains: `btPoll` +
-`btRp1Poll` (session events, feed puts, DM messages), `dcPoll` (live-session
-state/data), `enPoll` (LAN mesh), and lets OnionXT's stream/peer callbacks run.
-It hoists one `the milliseconds` read, repaints UI at ≤4 Hz on change, and
-**never blocks** — every transport is async, every long operation is a state
-machine advanced one tick at a time (the DHT-chat and Model C demos are the
-templates). Tick cadence is the app's one latency/CPU knob: ~33 ms while a live
-dc/enet session is active, ~250 ms–1 s when only the feed and DMs are live.
+The app's one timer handler, `raPoll`, drains `btPoll` + `btRp1Poll`, `enPoll`
+with the LAN sync tick, and `dcPoll` with the SDP ship and typing tick, each in
+its own `try` so one bad drain never kills the chain; OnionXT and the relay
+arrive as engine socket callbacks. A 250 ms paint tier repaints panels,
+expires deadlines, and runs the debounced app-state save and relay watchdog.
+Long operations are state machines advanced one tick at a time. Cadence: ~33
+ms while a dc call or the enet mesh is live (both pump-or-nothing), 250 ms
+otherwise (the design allowed up to 1 s).
 
 ### 10.2 What is testable without an engine
 
-- **Static gate** on every script edit (`check-livecodescript.py`).
-- **Pure-compute golden vectors**, runnable anywhere, for the parts that must
-  match byte-for-byte across versions and peers: the KDF subkey tree (fixed
-  master → fixed subkeys), the `RSH1`/`RSP1` head/post framing, the `inboxId`/
-  `roomId` derivations, the identity→onion mapping
-  (`oxAddressFromPublicKey(btDhtKeypair(seed).publicKey)` == the seed's onion),
-  and the `BTXO` anon-file framing. Pin them the way `onion-kat.py` and
-  `record_golden_test.py` pin their formats.
-- **On-engine VERIFY register** for everything else: the numbers a real engine
-  and a real daemon must confirm (feed propagation latency, rp1 handshake time,
-  dc connect success behind two NATs, enet LAN RTT, onion publish + inbound).
+The static gate on every script edit. **Golden vectors** for everything that
+must match byte-for-byte (the KDF tree, identity -> onion, every record,
+`inboxId`/`roomId`, BEP44 buffers and targets, the subkey-4 ladder, Nostr
+event ids, `BTXO`), held in the oracle `riptide/tools/riptide_reference.py`
+(crypto_kx anchored to a real libsodium by `emit-kx-anchor.py`) and exported
+with refusal vectors as `riptide/docs/protocol-vectors.json`. **Execution**:
+`riptide/tools/check-script-vectors.py` runs the shipped library through the
+family's headless interpreter against the committed CoinXT, and
+`riptide/tools/check-demo-boot.py` boots the shipped stack headlessly (two
+capability profiles, every card) - both settle logic, not the engine's parser.
+The rest is the **on-engine VERIFY list** (feed propagation latency, rp1
+handshake time, dc connect behind two NATs, enet LAN RTT, onion publish and
+inbound, relay behaviour), scripted in `riptide/docs/two-machine-runbook.md`.
 
-### 10.3 Phased roadmap (each phase ends on an OXT pass)
+### 10.3 Phased roadmap and status
 
-1. **Identity + unlock** — master seed, Argon2id seal, KDF tree, the five-way
-   probe, the identity→onion golden. *Done when* two runs from the same
-   passphrase reconstruct the same handle and `.onion`. **DONE 2026-08-12**
-   *(engine-passed with the phase-2 run; the reconstruct criterion is also
-   re-proven every time a second machine unlocks the same key file, as the
-   LAN mesh setup does).*
-2. **Public feed read/write** — head sign/put/get, post chain, one follower sees
-   another's post. *Done when* a second machine walks the chain and verifies
-   every `authorSig`. *(Met 2026-08-13: `riptide/examples/riptide-social.livecodescript`
-   on two machines, feeds exchanged both directions; the as-built record is
-   `riptide/CLAUDE.md`.)*
-3. **Media** — create/seed/co-seed a photo and a sequential video. *Done when* a
-   follower plays a video mid-download. **DONE 2026-08-15** *(built 2026-08-14:
-   `rsMediaCreate`/`rsMediaFetch`/`rsMediaStatus` in the library, the media
-   strip in `riptide/examples/riptide-social.livecodescript`, harness coverage
-   in the suite self-test; the TWO-MACHINE pass followed on 2026-08-15 - a
-   follower on the second machine fetched and played an attached video, near
-   instantly, which necessarily exercised head publish -> head fetch -> chain
-   walk -> authorSig verify -> media info-hash -> swarm join -> playback. Not
-   distinguished in the report: mid-download start vs a fast complete
-   transfer. As-built decisions: `riptide/CLAUDE.md`.)*
-4. **DMs** — inbox rendezvous, sealed intro, pairwise secretstream over rp1.
-   *Done when* two machines exchange authenticated encrypted DMs with no server.
-   **DONE 2026-08-15** *(two machines, chat working both ways - the sealed RSI1
-   intro, the deterministic-role crypto_kx session, and the pairwise
-   secretstream over rp1 all carried real traffic between two identities with
-   no server anywhere; it also confirmed the multi-card `go to card`
-   navigation, since the Messages card had to be reached to do it.)*
-   *(Built 2026-08-14: the `rsDm*` layer - kx prekeys as signed RSK1 records
-   named by the head's `prekeyTarget`, RSI1 sealed intros bound to one
-   recipient, RSM1 rp1 frames, deterministic kx roles - plus the Messages
-   card in the demo and full harness coverage; crypto_kx is anchored against
-   a real libsodium via `riptide/tools/emit-kx-anchor.py`. One deliberate
-   delta from this section's sketch: the intro seals to the recipient's
-   VERIFIED prekey, not to the ed25519 handle - `sxSeal` takes a curve25519
-   key, and a signed prekey record makes the seal target provable. The
-   compute paths ran GREEN on a real engine 2026-08-15 (the suite selftest -
-   the kx session agreement and the DM secretstream round trip among them),
-   and the two-machine pass above closed the same day. As-built:
-   `riptide/CLAUDE.md`.)*
-5. **Live sessions** — rp1-signalled dc call + typing presence, DHT-dead-drop
-   cold start. *Done when* a call connects across two networks. *(Library-ready
-   2026-08-14: SDP offer/answer ride the phase-4 DM message kinds `O`/`A` over
-   the existing secretstream, so no new library surface is needed. The demo
-   call wiring is BUILT 2026-08-15 - a Call button on the Messages card,
-   one-blob non-trickle signalling over the encrypted DM rail, auto-negotiated
-   offer/answer, and a direct dc channel with a visible connected/via line;
-   STUN only, no TURN, by design. TYPING PRESENCE is BUILT too (later the
-   same day): the section-6.2 lane as a second dc channel - unordered,
-   maxRetransmits 0 - carrying absolute "1"/"0" state, debounced on the
-   poll timer with a local expiry so a dropped "0" cannot stick; demo
-   wiring only, no library surface (the 6.2 as-built note has the
-   details). Statically verified; the done-criterion needs its
-   two-network pass - `riptide/docs/two-machine-runbook.md` is the
-   script. The DHT-dead-drop cold start stays deliberately unbuilt: phase 4's
-   secretstream IS the warm channel, and the no-prior-contact case remains
-   dht-chat's design.)*
-6. **LAN sync** — enet device mesh with subkey-3 admission. *Done when* a draft
-   written on one device appears on another with a stranger refused. *(Built
-   2026-08-14: the `rsLan*` admission layer - the shared-master ed25519 keypair
-   every device derives, and an RSL1 challenge/response a stranger cannot sign -
-   plus the Devices card in the demo and full offline harness coverage; the
-   enConnect rider is a u32 protocol tag, so the proof is a first message, not
-   connect data. The admission compute ran GREEN on a real engine 2026-08-15
-   (the suite selftest - admit under the shared master, refuse a stranger).
-   Same day the handshake gained its third leg: an RSL1 "W" WELCOME the host
-   signs over the joiner's own response signature, making the admission
-   MUTUAL - the joiner now verifies the host shares the master too, and gets
-   the positive signal it previously never got. Golden-pinned and
-   harness-covered (rogue host refused, cross-handshake replay refused).
-   THE SYNC PAYLOAD itself is BUILT as of later that day: the section-7
-   channel discipline as three signed RSL1 record kinds - draft sync,
-   feed-seq/read-receipt state, presence/typing - golden-pinned with
-   refusals harness-proven offline, plus the demo's Devices-card wiring
-   (a draft field debounced on the poll timer, incoming drafts rendered
-   with their origin device, per-peer presence, strangers refused and
-   logged), so the done-criterion is now REACHABLE: the two-machine pass
-   is all that remains - `riptide/docs/two-machine-runbook.md` is the
-   script (type on A, see it on B, stranger refused). As-built details
-   and the authentication choice: the section-7 as-built note and
-   `riptide/CLAUDE.md`.)*
-7. **Anon persona** — onion feed via onion-httpd, sealed anon DMs, the §9.3
-   guard. *Done when* a persona is reachable and browsable over Tor with **zero**
-   `bt*` calls provable in a trace. Needs an OXT + live-Tor pass. *(Built
-   2026-08-14: the `rsAnon*` layer - the onion-only persona derivation (handle
-   and .onion, offline-derivable and golden-pinned), the probe-gated onion
-   service wrapper, and the BTXO framed-chunk protocol - plus `rsPersonaAllows`,
-   the pure-policy §9.3 guard whose full truth table is asserted in the harness,
-   plus the demo's Anon card with a live guard panel. The guard truth table,
-   the offline onion derivation, and the BTXO framing ran GREEN on a real
-   engine 2026-08-15 (the suite selftest); the done-criterion still needs an
-   OXT + live-Tor pass. The sealed anon-DM CRYPTO layer (§8.3) closed
-   2026-08-15: subkey `200+n` (the registry row in §3.2) gives each persona
-   its own kx prekey seed, and the whole phase-4 record machinery composes
-   unchanged - `rsBuildPrekey` signed by the ANON identity is the persona's
-   prekey (served over its onion, NEVER the DHT - the guard),
-   `rsBuildIntro`/`rsDmSealIntro` address and seal to it, and
-   `rsDmOpenIntro` with `rsAnonDmSeed` opens it; golden-pinned and
-   harness-proven end to end, including that the public identity cannot
-   open the persona's mail. The 8.2/8.3 TRANSPORT followed the same day:
-   the pure serving seams (`rsAnonFeedPage` / `rsAnonPrekeyBody` /
-   `rsAnonAcceptDm`, golden-pinned, refusals harness-proven offline) plus
-   the demo's onion-httpd wiring - the feed page at `/`, the signed
-   prekey at `/prekey`, the POST `/dm` sealed-intro drop, with the
-   persona's onion still created FROM SEED. The reply-over-the-stream
-   half of 8.3 is deliberately unbuilt (see the 8.3 as-built note).
-   Verified statically; the live-Tor pass is the milestone that remains.
-   As-built: `riptide/CLAUDE.md`.)*
-8. **Nostr reach** - the §8A rail: subkey-4 identity, the doubly-signed `RSN1`
-   bridge published to both the DHT and relays, kind-1 notes carrying riptide
-   media as magnet `r` tags, and the `RIPTAPP1` store that finally lets
-   follows and counters survive a restart. *Done when* a note posted here is
-   read by an ordinary Nostr client, a note from a followed npub appears in
-   riptide's timeline, and a third party resolves the bridge in BOTH
-   directions (handle to npub off the DHT, npub to handle off a relay).
-   *(LIBRARY built 2026-08-29; the app CARD was built, broke `openStack`
-   on a real engine, was REVERTED the same day - and RE-LANDED the same
-   day behind `riptide/tools/check-demo-boot.py`, the headless boot gate,
-   with `openStack` byte-identical to the engine-proven body. The rail is
-   reachable from the UI again; the done-criterion above still needs its
-   live pass.
-   The compute half is not merely static: riptide gained
-   `tools/check-script-vectors.py`, which executes the SHIPPED script against
-   the real committed CoinXT through the family's headless interpreter - so
-   the bridge bytes, both signatures, the event ids and the media round trip
-   are checked as EXECUTED behaviour against an independent oracle rather
-   than only re-derived beside it. What that settles is logic, not parser
-   behaviour, so the label stays "verified statically; needs an OXT + a
-   live-relay pass". Deliberately unbuilt, with reasons in §8A.6: Nostr DMs,
-   automatic NIP-42 auth, and dialling anything on open. As-built:
-   `riptide/CLAUDE.md`.)*
+Each phase ends on an OXT pass. Dated records: `riptide/CLAUDE.md`; open legs:
+`docs/OXT-PASS-RUNBOOK.md` and `docs/WORK-PLAN.md`.
 
----
+| Phase | Done when | Status |
+|---|---|---|
+| 1. Identity + unlock | two runs from one passphrase reconstruct the same handle and `.onion` | **DONE 2026-08-12**: engine-passed on Windows x64, 89/89; re-proven whenever a second machine unlocks the same key file |
+| 2. Public feed | a second machine walks the chain and verifies every `authorSig` | **DONE 2026-08-13**: two machines, feeds both directions (live-feed compute ran green 2026-08-12, 133/133) |
+| 3. Media | a follower plays a video mid-download | **DONE 2026-08-15**, two machines: a follower fetched and played an attached video, mid-download start not distinguished from a fast full transfer. Measured 2026-08-27: negative as then wired (Play unlocked on file existence); fixed the same day (the contiguous-front floor). Open: the faststart re-run |
+| 4. DMs | two machines exchange authenticated encrypted DMs with no server | **DONE 2026-08-15**: two machines, both ways |
+| 5. Live sessions (call + typing lane) | a call connects across two networks | **BUILT 2026-08-15**; verified statically. Open: the two-network pass |
+| 6. LAN sync | a draft written on one device appears on another, a stranger refused | **BUILT** 2026-08-14 to 08-16. Compute ran green on an engine 2026-08-15 (admission) and 2026-08-20 (sync records). The admission preimage changed 2026-09-09, so admission on the current bytes is verified statically; needs an OXT pass. Open: the two-machine mesh pass |
+| 7. Anon persona | reachable and browsable over Tor with zero `bt*` calls provable in a trace | **BUILT** 2026-08-14 to 08-15. Compute ran green on an engine 2026-08-15 (guard, onion derivation, BTXO) and 2026-08-20 (serving seams). Open: needs an OXT + live-Tor pass |
+| 8. Nostr reach | a note read by an ordinary Nostr client; a followed npub's note in the timeline; a third party resolves the bridge in BOTH directions | **BUILT 2026-08-29**; compute EXECUTED headlessly against the committed CoinXT (logic, not parsing). The card broke `openStack` on an engine that day (`Chunk: no target found`), was reverted, and was re-landed the same day with `openStack` byte-identical to the engine-proven body behind `check-demo-boot.py`; the re-land was reported working on an engine the same day, and the v11 boot then read 9 passed / 1 failed, the failure the self-check's own defect (suite engine note 5.6), since fixed. Open: the boot re-paste, the in-app bridge reader, an OXT + live-relay pass |
 
-## 11. API surface — what exists vs. what's assumed
+The folded riptide harness is the standing compute record: in the suite paste
+on an engine 2026-08-15 (phases 4-7 green bar three malformed-UTF-8 refusals,
+which showed `textDecode` does not throw; fixed), green 2026-08-20 on Windows
+(338 passed / 0 failed / 2 skipped, the live anon-service legs) and green
+2026-08-24 on Windows x86_64 (391/391, incl. the kind-C post and BTXO receive).
+Sections added since (Nostr, app state, watermarks, the u64 bound, the
+996-byte cap) are verified statically; needs an OXT pass.
 
-**Zero compiled-extension changes.** Every handler this spec composes already
-exists in a shipping surface. Provenance:
+## 11. API surface - what exists vs. what is assumed
 
-- **SodiumXT** `sxRandomBytes` `sxPwHash` `sxPwMemInteractive` `sxSecretBox`/`Open`
-  `sxKdfDerive` `sxSignKeypairFromSeed` `sxSignDetached`/`sxSignVerifyDetached`
-  `sxKeyExchangeKeypairFromSeed` `sxKeyExchangeClient`/`Server` `sxSeal`/`sxSealOpen`
-  `sxSecretStreamInitPush`/`Push`/`InitPull`/`Pull`/`IsFinalTag`/`Rekey`
-  `sxEncryptFile`/`Decrypt` `sxHash` `sxBin2Hex` `sxSignSeedToExpandedKey` — all in
-  `sodiumxt/src/*.lcb` `public handler` surface.
-- **TorrentXT** `btDhtKeypair` `btDhtPutMutable`/`GetMutable` `btDhtPutImmutable`/
-  `GetImmutable` `btDhtBep44SignBuf` `btDhtPutSigned` `btDhtAnnounce` `btAddInfohash`
-  `btRp1Enable`/`SetToken`/`Send`/`Poll` `btCreateTorrent` `btAddTorrentFile`/`Magnet`
-  `btSetSequentialDownload` `btSetPieceDeadline` `btPoll` — all in `torrentxt/docs/api-reference.md`.
-- **OnionXT** `oxVersion` `oxIsReady` `oxCreateServiceFromSeed` `oxServiceAddress`
-  `oxAddressFromPublicKey`/`oxPublicKeyFromAddress`/`oxIsValidAddress` `oxDial`/`oxWrite`/
-  `oxCloseStream` `oxSetPeerCallback`/`oxPeerAccepted` `oxSetStatusCallback`; onion-httpd
-  `oxhServe`/`oxhServeFiles`/`oxhRoute`/`oxhReply`/`oxhSetRoot` — all in
-  `onionxt/src/*.livecodescript`.
-- **dataChannelXT** `dcCreatePeer` `dcSetLocalDescription`/`dcSetRemoteDescription`
-  `dcLocalDescription` `dcCreateChannel`/`dcCreateChannelEx` `dcSendData`/`dcSendText`
-  `dcBufferedAmount`/`dcSetBufferedLowThreshold` `dcPoll` — all in `datachannelxt/src/*.lcb`.
-- **enetxt** `enHostCreateServer`/`Client` `enConnect` `enSendText`/`enBroadcastText`
-  `enPeerStatus` `enPoll` `enLibraryVersion` `enDeinitialize` — all in `enetxt/src/enet.lcb`.
-- **CoinXT** (rail 6) `cxSeckeyIsValid` `cxSha256` `cxXOnlyPubkey` `cxSchnorrSign`/`cxSchnorrVerify`
-  — all in `coinxt/src/coinxt.lcb`'s `public handler` surface.
-- **NostrXT** (rail 6) `nxKeyPublic` `nxNpubEncode`/`nxNpubDecode` `nxEventBuild`/`nxEventSign`/
-  `nxEventVerify` `nxEventToJson`/`nxEventFromJson` `nxEventSerialize` `nxTagValues`/`nxTagFirst`
-  `nxFilterBuild` `nxIsHex` `nxHexEncode` `nxLastError`; relay `nxrInit` `nxrConnect`/`nxrDisconnect`/
-  `nxrShutdown` `nxrSetCallback` `nxrSubscribe` `nxrPublish` `nxrVersion` and the three named socket
-  functions `nxrSocketError`/`nxrSocketClosed`/`nxrSocketTimeout` — all in
-  `nostrxt/src/nostrxt.livecodescript` and `nostrxt/src/nostr-relay.livecodescript`.
-
-**A note on rail 6 and the "zero compiled-extension changes" claim above.**
-It still holds, and the two members rail 6 adds were both already shipping
-when it was written: CoinXT and NostrXT are members of this monorepo, not new
-compiled surface, and NostrXT is itself pure LiveCodeScript. What DID change
-in the app is packaging rather than API: `riptide-social` now embeds two
-libraries that each define the engine's `socketError` / `socketClosed` /
-`socketTimeout`, so it defines those three itself and calls both libraries'
-named functions in turn. That is the family's socket split, used here for the
-first time by a stack carrying two socket libraries at once.
-
-**Correction to the ONIONXT integration plan.** That plan (correctly, at its
-writing) treats the `ox*` surface as "presumed, must be confirmed against the
-real ABI." OnionXT itself is further along than that plan assumed. (This
-sentence used to say "the real OnionXT repo", from when OnionXT was a separate
-repository; it is now the `onionxt/` member of this monorepo, which is the
-source of truth.) Phases 1-7 are built in pure
-LiveCodeScript and have had an **on-engine pass against a live tor daemon**
-(SOCKS dial, SAFECOOKIE control auth, v3 onion publish, an inbound HTTP request
-viewed in Tor Browser, bootstrap). Every `ox*` name this spec uses is confirmed
-present. Deltas from the plan's guesses: there is **no** `oxSendFile`/`oxWriteFile`
-(files ride the `BTXO` framing over `oxWrite`); there **are** extra affordances
-(`oxSetCallbackOwner`, `oxServiceIsReady`, the `oxTransport*` seam, the full
-`oxh*` HTTP layer). The plan's VERIFY register for the `ox*` ABI can largely be
-retired — though the *behavioural* numbers still need their own OXT + live-Tor
-pass.
-
-**No new compiled surface is proposed.** If a future version wants, say, feed
-deletion or forward-secret group DMs, those are new specs — explicit non-goals
-here.
-
----
+**Zero compiled-extension changes.** Riptide composes existing public handlers
+only (`sx*`, `bt*`, `ox*`/`oxh*`, `dc*`, `en*`, `cx*`, `nx*`/`nxr*`);
+`tools/check-handler-calls.py` proves every cross-member call names a real
+handler. The one member change it prompted is optional to it: SodiumXT ABI 7
+shipped `sxSha3_256` (2026-08-11) after phase 1 found no SHA-3 in the trust
+root, and `rsSha3` falls back to CoinXT's `cxSha3_256`. No member calls `rs*`.
+**Non-goals**, each a new spec: feed deletion (the DHT is append-until-expiry),
+forward-secret group DMs, followers-only sealed media (4.4), Nostr DMs (8A.6).
 
 ## 12. Open decisions for the owner
 
-> **ANNOTATED 2026-08-17.** Four of these five were settled BY CONSTRUCTION while
-> the phases were built, and this section went on presenting all five as open —
-> so an owner reading it was invited to decide four things that were already
-> decided in code. Each annotation below names the artefact, so the claim can be
-> checked rather than believed. Only decision 4 is genuinely open; it is brief
-> **D-06** in `docs/OPEN-DECISIONS.md`.
+All five decisions this section posed are settled (`docs/OPEN-DECISIONS.md`).
 
-1. **One stack or a stack set?** The five rails are separable; a single stack is
-   simplest to install, a set (feed / messenger / anon) mirrors how people
-   actually use the parts. Recommendation: one stack, rails behind tabs, so the
-   shared dispatcher and keyring live in one script.
-   **As built: ONE stack** — `riptide/examples/riptide-social.livecodescript` is
-   the only demo stack in the member, rails behind tabs, one dispatcher.
-2. **Anon persona count.** Subkey `100+n` allows many; the UI/threat story is
-   simpler with exactly one. Recommendation: ship one, keep the derivation
-   ready for more.
-   **As built: exactly as recommended** — the library takes a persona index
-   (`rsAnonSeed`/`rsAnonHandle`/`rsAnonOnion`, subkey `100+n`, with the sealed-DM
-   kx seed separately at `200+n`), and the demo passes literal `0` at every one
-   of its call sites. Many are derivable; one ships.
-3. **Prekey rotation.** One-time prekeys (X3DH-style) versus a single long-term
-   X25519 prekey. Recommendation: long-term prekey for v1 (simpler, in the head),
-   rotation as a later spec.
-   **As built: the long-term prekey** — `rsBuildPrekey` / `rsParsePrekey` /
-   `rsVerifyPrekey`, advertised in the head; the word "rotation" appears nowhere
-   in `riptide/src/riptide.livecodescript`.
-4. **Feed retention.** BEP44 items expire unless republished; how aggressively
-   does a follower re-seed a followee's head to keep it alive? Recommendation: a
-   follower republishes heads it follows on the DHT-channels demo's cadence.
-   **DECIDED 2026-08-27 (owner-delegated, brief D-06): a follower does NOT
-   republish followed heads — the as-built behaviour is the decision, and the
-   recommendation above is overruled.** Privacy-first: republishing amplifies
-   retention of someone else's content without their consent, and a feed going
-   quiet when its author is offline is a visible, explainable failure, while
-   content outliving its author's delete is neither. Revisitable only as an
-   explicit per-follow opt-in, never a default.
-5. **Which demo to build first.** This spec's phase 1–2 (identity + public feed)
-   is the smallest end-to-end slice that shows the thesis. Recommendation: build
-   through phase 4 (DMs) as the first shippable milestone; it exercises four of
-   the five extensions and needs no tor daemon.
-   **As built: overtaken** — the build went past the recommended phase-4
-   milestone and through phase 7, so the question no longer has an answer to
-   give. Kept rather than struck, because the recommendation was followed and
-   then exceeded, which is a different thing from being ignored.
+1. **One stack or a stack set?** ONE stack,
+   `riptide/examples/riptide-social.livecodescript`: rails behind tabs, one
+   dispatcher and one keyring in one script.
+2. **Anon persona count.** Exactly one ships (index `0` at every call site);
+   many are derivable (subkeys `100+n` / `200+n`).
+3. **Prekey rotation.** A single long-term prekey (`rsBuildPrekey` /
+   `rsVerifyPrekey`, advertised in the head); rotation would be a later spec.
+4. **Feed retention. DECIDED 2026-08-27 (D-06, owner-delegated): a follower
+   does NOT republish followed heads.** Privacy-first: republishing amplifies
+   retention of someone else's content without consent; a feed going quiet
+   while its author is offline is a visible, explainable failure, content
+   outliving its author's delete is neither. Revisitable only as an explicit
+   per-follow opt-in, never a default. Retention is the author's own re-put.
+5. **Which demo first?** Overtaken: the build went through phase 8.
+
+Raised since, not decided here (`docs/WORK-PLAN.md`): whether the 2026-09-09
+LAN tag change should have minted a new `RSL1` magic (section 2, rule 5), the
+author's own-head refresh cadence while online, and an in-app bridge reader.

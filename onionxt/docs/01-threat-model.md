@@ -38,11 +38,13 @@ Ship these labeled for exactly what they are; do not let the UI imply otherwise.
 
 1. **Traffic-correlation / global passive adversary.** Out of scope, as for Tor itself. Padding and
    cover traffic (for example a fixed-cadence heartbeat and `sxPad`) raise the cost but do not close it.
+   This limit is likely permanent.
 2. **A compromised local tor daemon.** OnionXT trusts the daemon on loopback. That daemon sees your
    SOCKS targets, and if it generates your onion key it sees that key. A malicious or subverted local
    Tor is game over. Mitigate by deriving onion keys yourself from a SodiumXT seed and passing them in
    (doc 04), so at least the identity key never originates in the daemon, and by trusting only a daemon
-   you control.
+   you control. OnionXT does not try to detect a subverted daemon (binary verification in Mode B,
+   control-protocol sanity checks); how much to invest there is part of the deferred v2 menu below.
 3. **Endpoint compromise.** If the app's device is compromised, anonymity is moot. Out of scope.
 4. **Connecting to the wrong onion.** The address authenticates the key, not the person. If an attacker
    convinces you to use *their* `.onion`, Tor faithfully connects you to the attacker. Address
@@ -50,7 +52,8 @@ Ship these labeled for exactly what they are; do not let the UI imply otherwise.
    app's responsibility, exactly as any secure-messaging layer verifies keys at first contact.
 5. **Descriptor and timing metadata.** Publishing an onion descriptor reveals timing to the hash-ring
    directories; connection timing reveals when you are online. Onion services reduce, but do not
-   eliminate, "when is this identity active" metadata.
+   eliminate, "when is this identity active" metadata. Epoch-scoped rotating addresses would help
+   unlinkability at a republish cost; the right cadence is unsettled (below).
 6. **Payload confidentiality and integrity.** OnionXT does not encrypt anything. The bytes it carries
    are protected only if the app sealed them with SodiumXT. Tor's onion layers protect the *path*, not
    an application-level "the recipient is who I think and the message is intact" property; that is
@@ -66,10 +69,28 @@ Ship these labeled for exactly what they are; do not let the UI imply otherwise.
 - **The onion address is identity.** Treat a contact's `.onion` as their public key: pin it, and bind
   it to a SodiumXT signature when you can, so a swapped address is detected.
 
+## The deliberate v1 defaults
+
+Each design question below was answered with a shipped default rather than left open. The suite
+deferred the whole v2 menu (decision D-13, 2026-08-27) and decided document-install for the tor
+daemon (decision D-07, 2026-08-27); both are recorded in the suite's `docs/OPEN-DECISIONS.md`
+(https://github.com/SethMorrowSoftware/xtalk-suite/blob/main/docs/OPEN-DECISIONS.md). Each default
+stands until a real consumer hits its limit; the question is then resolved in docs and code in the
+same change, and presented as unsolved until it is.
+
+| Question | v1 default |
+|---|---|
+| Epoch-scoped rotating onions (unlinkability vs seconds of unreachability per republish) | No rotation. Cadence would be a per-channel policy if built. |
+| v3 client authorization (unreachable without an x25519 key, at the cost of distributing it) | Not implemented (doc 04). If built, off by default with a per-channel opt-in for high-sensitivity contacts. |
+| A length-prefixed framing helper | None: streams are byte-transparent and the app frames. |
+| Multiplexing logical streams over one socket | None: one socket per stream. |
+| Detecting a subverted local tor | None (non-protection 2 above). |
+| Who supplies the daemon | Document-install (doc 07, D-07); Mode B launch stays optional. |
+
 ## The honesty rules (carried from the family)
 
-- Never present an open problem as solved. Traffic correlation, local-daemon trust, and descriptor
-  metadata are tracked in [09-open-questions.md](09-open-questions.md); ship them labeled.
+- Never present an open problem as solved. Traffic correlation, local-daemon trust and descriptor
+  metadata are permanent limits here; ship them labeled.
 - State the non-goals to the user in plain language, not buried in a spec.
 - "Anonymous" in the UI means "IP-anonymous against a non-global adversary via Tor," not "untraceable."
   Say the honest version.

@@ -1,101 +1,49 @@
-# 08 - Capabilities Required (Upstream Gaps)
+# 08 - Capabilities Required
 
-OnionXT composes SodiumXT for all cryptography (CLAUDE.md rule 1) and the OXT engine for all socket
-I/O. This is the honest list of the narrow crypto primitives it wants. The family rule holds: a needed
-crypto primitive is an **upstream SodiumXT feature request landed first**, never a hand-rolled hash in
-OnionXT.
+OnionXT composes SodiumXT for all cryptography (CLAUDE.md rule 1): a needed primitive is an **upstream
+SodiumXT feature landed first**, never a hand-rolled hash here. All three it needed have shipped.
 
-**Status as of SodiumXT ABI 7:** all three gaps are now **SHIPPED and composed**. Gaps #1 (ed25519
-seed -> expanded key, `sxSignSeedToExpandedKey`) and #3 (HMAC-SHA256, `sxHmacSha256`) shipped in ABI 6
-- deterministic-from-seed onions and SAFECOOKIE control auth work. Gap #2 (SHA3-256, offline address
-checksum) shipped in **ABI 7** (`sxSha3_256`, 2026-08-11), so `oxAddressFromPublicKey` now emits a real
-address and `oxIsValidAddress` verifies checksums offline. OnionXT therefore requires **SodiumXT ABI
->= 6** for the deterministic-onion and SAFECOOKIE paths and **ABI >= 7** for offline address
-emission/validation; the SOCKS dial path, Tor-generated onions, and COOKIE/NULL/HASHEDPASSWORD auth
-need no SodiumXT at all, and against a pre-ABI-7 SodiumXT the address layer degrades to structural-only
-checks (no upstream gap remains).
+## SodiumXT gaps (all shipped)
 
-## SodiumXT gaps
+### 1. ed25519 seed -> expanded key (deterministic onion services) - SodiumXT ABI 6
 
-### 1. ed25519 seed -> expanded key (for deterministic onion services) - SHIPPED (SodiumXT ABI 6)
+`sxSignSeedToExpandedKey(pSeed)` returns the 64-byte expanded key (`SHA-512(seed)`, clamped, `a || RH`)
+that `ADD_ONION ED25519-V3:` wants (doc 04); its public key matches `sxSignKeypairFromSeed(pSeed)`.
+Composed in `oxExpandedKeyFromSeed` / `oxCreateServiceFromSeed`; the seed `0x42` x 32 known answer is
+pinned in `tools/onion-kat.py`.
 
-**Status: SHIPPED.** SodiumXT ABI 6 provides `sxSignSeedToExpandedKey(pSeed as Data) returns Data`: a
-32-byte seed becomes the 64-byte expanded ed25519 secret key (`SHA-512(seed)` with the scalar clamp,
-`a || RH`), done inside SodiumXT. OnionXT composes it directly in `oxExpandedKeyFromSeed` and
-`oxCreateServiceFromSeed`; the old script-side SHA-512 + clamp fallback is gone. Known-answer vector
-(seed = `0x42` x 32) pinned in `tools/onion-kat.py` and exercised by `examples/onionxt-tests.livecodescript`.
+### 2. SHA3-256 (the v3 address checksum) - SodiumXT ABI 7, 2026-08-11
 
-- **Needed by:** `oxCreateServiceFromSeed` and any reproducible-address flow (doc 04). `ADD_ONION
-  ED25519-V3:<key>` wants the 64-byte expanded ed25519 secret key (`SHA-512(seed)`, clamped, split into
-  scalar `a` and prefix `RH`), not libsodium's `seed || pubkey` secret key. `sxSignSeedToExpandedKey`
-  yields exactly that, and its public key matches `sxSignKeypairFromSeed(pSeed)`, so the `.onion`
-  address and the app's signing identity stay consistent.
+`sxSha3_256(pData)` (FIPS 202) serves the checksum `SHA3-256(".onion checksum" || PUBKEY ||
+VERSION)[:2]` for `oxAddressFromPublicKey` and `oxIsValidAddress`. libsodium has no SHA-3, so SodiumXT
+vendors RHash's MIT SHA3 via trezor-crypto, byte-identical to coinxt's (provenance in
+`sodiumxt/src/vendor/VENDOR.md`; vectors in `sodiumxt/tests/sodium_smoke_test.c` and sodium-tests).
+**Confirmed on an engine 2026-08-12** (Windows x64, ABI 7, harness 43/43): torproject.org's and
+DuckDuckGo's onions re-encoded byte-exactly, a tampered address refused, `offlineAddress` true. Against
+an older SodiumXT the address layer degrades to structural checks (doc 04).
 
-### 2. SHA3-256 (for the v3 onion address checksum) - SHIPPED (SodiumXT ABI 7)
+### 3. HMAC-SHA256 (SAFECOOKIE control auth) - SodiumXT ABI 6
 
-**Status: SHIPPED (2026-08-11).** SodiumXT ABI 7 provides `sxSha3_256(pData as Data) returns Data`
-(32 bytes, NIST FIPS 202). libsodium's stable API has no SHA-3, so SodiumXT serves this one
-primitive from a vendored implementation (RHash's MIT SHA3 via trezor-crypto, byte-identical to the
-copy coinxt already bundles; provenance in `sodiumxt/src/vendor/VENDOR.md`) - option (a) below, taken
-once the riptide capstone made offline address emission a real need rather than a nicety. OnionXT's
-`oxSha3_256` composes it unchanged: `oxAddressFromPublicKey` now emits real addresses and
-`oxIsValidAddress` verifies checksums when the installed SodiumXT is ABI 7+, and both still degrade
-exactly as before (capability error / structural-only) against an older SodiumXT. The FIPS 202
-vectors and the torproject.org onion-checksum composition vector are pinned in
-`sodiumxt/tests/sodium_smoke_test.c` (ASan/UBSan) and `sodiumxt/examples/sodium-tests.livecodescript`;
-the address round-trip and tamper checks in `examples/onionxt-tests.livecodescript` that used to skip
-now run wherever `oxTransportInfo()["offlineAddress"]` reports true. **The composed script path is
-CONFIRMED ON-ENGINE (2026-08-12, Windows x64, SodiumXT ABI 7 installed):** `oxAddressFromPublicKey`
-re-encoded torproject.org's and DuckDuckGo's real onion addresses byte-exactly from their recovered
-public keys, a tampered address failed checksum validation, and `oxTransportInfo()["offlineAddress"]`
-advertised true - the full 43/43 member harness green.
+`sxHmacSha256(pKey, pMessage)` computes the SAFECOOKIE server and client hashes over
+`Cookie || ClientNonce || ServerNonce` with the two verbatim control-spec key strings; `SERVERHASH` is
+checked in constant time with `sxMemEqual` (doc 03). RFC 4231 Test Case 2 is pinned in
+`tools/onion-kat.py`. COOKIE auth (plain hex over loopback) is the fallback without it.
 
-- **Needed by:** `oxAddressFromPublicKey` (to emit a correct 2-byte checksum) and `oxIsValidAddress`
-  (to validate a pasted address offline). The checksum is `SHA3-256(".onion checksum" || PUBKEY ||
-  VERSION)[:2]`.
-- **The options considered while it was deferred**, kept for the record:
-  a. Add `sxSha3_256` to SodiumXT from a tiny vetted implementation (what shipped; the suite already
-     trusted the identical vendored code in coinxt).
-  b. Defer: get your own address from `ADD_ONION`'s `ServiceID` (Tor computes the checksum), and rely
-     on Tor's connect-time descriptor-signature check to authenticate a peer's address rather than a
-     local checksum verify. base32 decode still recovers the peer's public key without SHA3. (This
-     remains the behaviour against a pre-ABI-7 SodiumXT.)
-- **Recommendation:** defer (b) for v1; the checksum is a nicety, not a security dependency (the
-  descriptor signature is the real authentication). Add (a) only if offline address emission/validation
-  becomes a real need.
+## What needs which SodiumXT
 
-### 3. HMAC-SHA256 (for SAFECOOKIE control auth) - SHIPPED (SodiumXT ABI 6)
+| Path | Needs | `oxTransportInfo()` flag |
+|---|---|---|
+| SOCKS dial, Tor-generated onions, COOKIE / NULL / HASHEDPASSWORD auth | no SodiumXT | |
+| SAFECOOKIE auth | `sxHmacSha256` + `sxRandomBytes` (ABI >= 6) | `safeCookieAuth` |
+| Deterministic onions from a seed | `sxSignSeedToExpandedKey` (ABI >= 6) | `deterministicOnion` |
+| Offline address emission and checksum validation | `sxSha3_256` (ABI >= 7) | `offlineAddress` |
 
-**Status: SHIPPED.** SodiumXT ABI 6 provides `sxHmacSha256(pKey as Data, pMessage as Data) returns
-Data` (32-byte MAC). OnionXT's SAFECOOKIE flow (doc 03) composes it directly: verify `SERVERHASH` with
-`sxMemEqual` (constant time), then send the controller-to-server hash. COOKIE auth (plain hex over
-loopback) remains a fine fallback when SAFECOOKIE prerequisites are absent. Known-answer vector
-(RFC 4231 Test Case 2) pinned in `tools/onion-kat.py`.
+## Engine capabilities relied on
 
-- **Needed by:** the preferred SAFECOOKIE control-auth method (doc 03), which verifies a server hash
-  and computes a client hash, both HMAC-SHA256 over the cookie and nonces. The two HMAC key strings are
-  the verbatim Tor control-spec constants; the message is `Cookie || ClientNonce || ServerNonce`.
-
-## Engine capabilities to confirm (not gaps, but Phase 0 unknowns)
-
-These are assumed to exist in OXT (they exist in LiveCode); confirm and record the exact behaviour in
-Phase 0, because the whole core rests on them:
-
-- Asynchronous sockets: `open socket ... with message`, `read from socket ... for N with message`,
-  `write to socket`, `accept connections on <port> with message`, `close socket`, the `socketError` /
-  `socketClosed` / `socketTimeout` messages, and `the socketTimeoutInterval`. Those three messages are
-  the engine's own, not `ox*` handlers OnionXT named, so an app stack that defines one of them and
-  does not `pass` it can swallow OnionXT's copy - a hang, not an error. The rule and the pattern are
-  in [doc 10 section 2](10-usage-guide.md); what each does is in
-  [doc 05](05-api-reference.md), "Handlers the ENGINE calls".
-- Binary discipline: byte-exact `read`/`write`, `byte x to y of`, `numToByte`, `byteToNum`,
-  `binaryEncode`, `binaryDecode`, with no Unicode reinterpretation on the socket path.
-- Reading a file's raw bytes (the control cookie): `open file ... for binary read` / `url
-  ("binfile:...")`.
-- For Mode B lifecycle (doc 07): `open process` / shelling out to launch and signal a child tor.
-
-## Not needed from anyone
-
-- No new BitTorrent capability (that is TorrentXT's domain, not OnionXT's).
-- No Tor-side change: OnionXT uses stock SOCKS5 and the stock control protocol against an unmodified
-  tor daemon.
+Asynchronous sockets, the engine's `socketError` and `socketClosed` messages, byte-exact binary I/O
+and binfile reads of the control cookie are engine-confirmed (CLAUDE.md evidence ledger, confirmed
+items 1-7). `socketTimeout`, including its repeat while a read or write is pending, is DOCUMENTED only
+(the suite's engine note 6.1) and not yet observed, and so is `open process`, used only by the optional
+Mode B launch (doc 07). All three socket messages are the engine's names, so an app must `pass` the
+ones that are not its own (doc 10 section 2). Nothing is needed from BitTorrent or from Tor itself
+(stock SOCKS5 and control protocol against an unmodified tor).

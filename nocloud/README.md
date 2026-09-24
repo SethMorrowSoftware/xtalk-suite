@@ -1,6 +1,6 @@
 # No Cloud Quick Share
 
-**Send any file to anyone. No cloud, no account, no size limit — it goes straight
+**Send any file to anyone. No cloud, no account, no size limit - it goes straight
 from your device to theirs.**
 
 No Cloud Quick Share is a tiny peer-to-peer file-sharing app: drag a file onto the
@@ -10,19 +10,17 @@ middle, nothing is uploaded anywhere first, and there is no size cap. It is one
 self-contained [OpenXTalk](https://openxtalk.org) / xTalk stack built on the
 BitTorrent DHT, with optional Tor anonymity and end-to-end encryption.
 
-> **"No cloud" is not the same as "anonymous," and not the same as "encrypted."**
-> Which protections you get depends on how you share. Please read
-> **[docs/what-it-hides.md](docs/what-it-hides.md)** — the honest page — before
-> sending anything sensitive.
-
-> **Documentation:** [`docs/README.md`](docs/README.md) indexes every page for this app. If you are deciding whether to trust it, start with [`docs/what-it-hides.md`](docs/what-it-hides.md) — that is the honest page.
+> **"No cloud" is not the same as "anonymous", and not the same as "encrypted".**
+> Which protections you get depends on how you share. If you are deciding whether to
+> trust it, read **[docs/what-it-hides.md](docs/what-it-hides.md)** - the honest page -
+> before sending anything sensitive.
 
 ## Three ways to share
 
 | Method | What it is | Your IP hidden? | Encrypted? | Recipient needs the app? |
 |---|---|---|---|---|
 | **Share code** | Plain BitTorrent over the DHT. The code *is* the file's content-address. Resumes if interrupted. | No | Optional (passphrase) | Yes |
-| **Web link** | A plain `http://` link that opens in any browser. Serve a file, a folder, or a whole website. | No | No | No — any browser |
+| **Web link** | A plain `http://` link that opens in any browser. Serve a file, a folder, or a whole website. | No | No | No - any browser |
 | **Private / Tor** | The bytes ride a Tor onion; both IP addresses are hidden and no torrent is created. | **Yes** | Optional (passphrase) | Single file: yes; folder/browser: no |
 
 Any file can be locked with a **passphrase** (optional, needs SodiumXT): the network
@@ -34,23 +32,16 @@ before anything downloads.
 1. **Install [OpenXTalk](https://openxtalk.org) (OXT).** (It also runs in LiveCode
    9.6.3+, but OXT is the target.)
 2. **Install the extensions** via `Tools > Extension Manager`:
-   - **TorrentXT** — `org.openxtalk.library.torrent` — **required**.
-   - *(optional)* **SodiumXT** — `org.openxtalk.library.sodium` — for the passphrase
-     encryption and the LAN web editor.
-   The app detects each and **fails closed with a clear message** when one is missing;
-   every other feature still works.
+   - **TorrentXT** - `org.openxtalk.library.torrent` - **required**.
+   - *(optional)* **SodiumXT** - `org.openxtalk.library.sodium` - for the passphrase
+     encryption, the LAN web editor and the Private / Tor path.
 
-   *(nothing to install)* **OnionXT** is CARRIED INSIDE this app since
-   2026-08-24 - `src/nocloudquickshare.livecodescript` embeds
-   `../onionxt/src/onionxt.livecodescript` verbatim between the sentinels
-   `tools/sync-demo-embeds.py` owns, so the `start using stack "onionxt"` step this
-   list used to carry is GONE and the Tor path is there the moment you paste the
-   script. (Only the `ox*` layer is carried: Quick Share never calls the `oxh*` one,
-   because it ships its own HTTP server.) What the Private / Tor path still needs
-   from you is a local **Tor daemon** with its control port enabled; without one it
-   fails closed the same way the two above do. Never edit inside the sentinels -
-   change `../onionxt/src/onionxt.livecodescript` and re-run that tool.
-3. **Run the app** (it builds its own UI — no manual layout):
+   **OnionXT needs no install:** it is carried inside the app's script since
+   2026-08-24. The Private / Tor path also needs a local **Tor daemon** with its
+   control port enabled (system tor, or Tor Browser running). The app detects each
+   piece and **fails closed with a clear message** when one is missing; every other
+   feature still works.
+3. **Run the app** (it builds its own UI - no manual layout):
    1. `File > New Mainstack` (a one-card stack).
    2. `Object > Stack Script`.
    3. Open [`src/nocloudquickshare.livecodescript`](src/nocloudquickshare.livecodescript),
@@ -61,69 +52,86 @@ before anything downloads.
 
 ## How it works
 
-Two proven technologies, no central server:
-
-- **The DHT** (a giant shared address book) remembers *where* things are. The share
-  code is the file's info-hash, so the DHT can introduce the two machines with no
-  tracker and no server.
-- **BitTorrent** moves the actual bytes directly between the two computers.
+The **DHT** (a giant shared address book) introduces the two machines: the share code
+is the file's info-hash, so no tracker and no server are needed. **BitTorrent** then
+moves the bytes directly between the two computers.
 
 For the **web link** path, the app runs a small streaming HTTP server (with automatic
-router port-opening via UPnP/NAT-PMP) so any browser can download — a single file, a
+router port-opening via UPnP/NAT-PMP) so any browser can download - a single file, a
 browsable folder, or a whole static website (SPA routing, HTTP Range, a live
 `/_qs/info` backend route). For the **Tor** path, the bytes travel over an OnionXT
 onion stream so neither side learns the other's address.
 
-The sending window must stay open until the transfer finishes — the file lives only
+The sending window must stay open until the transfer finishes - the file lives only
 on your machine, never on a server. That is the privacy feature *and* the one
 operational limit (there is no "upload and walk away").
 
 ## Requirements
 
-| Extension | Library id | Required? | Provides |
+| Component | Library id | Required? | Provides |
 |---|---|---|---|
 | **TorrentXT** | `org.openxtalk.library.torrent` | **Yes** | the session, DHT, BitTorrent, magnets, UPnP |
-| **SodiumXT** | `org.openxtalk.library.sodium` | No | passphrase encryption (Argon2id + secretstream); LAN editor password |
-| **OnionXT** + local Tor | — | No | the Private / Tor path (needs SodiumXT too) |
-| Internet library (libURL) | — | No | public-IP lookup for the web link (try-guarded) |
+| **SodiumXT** | `org.openxtalk.library.sodium` | No | passphrase encryption (Argon2id + secretstream); the LAN editor password; the Private / Tor path needs it too |
+| A local **Tor daemon** | - | No | the Private / Tor path (OnionXT itself is carried in the script) |
+| Internet library (libURL) | - | No | the public-IP lookup for the web link (try-guarded) |
+| JSON library | - | No | custom routes from a shared folder's `.qsroutes.json` |
 
 ## The bundled web app
 
 [`webapp/`](webapp/) is a self-contained single-page app you can drop into a served
-folder to demonstrate hosting a real website over a web link or a Tor page. It stages
-a whole little internet from one folder — an image **gallery**, a **streaming cinema**
-(a procedural short film that seeks over HTTP Range, in WebM *and* MP4), a **music**
-page with a playlist player, a **storefront** with a cart and real `?dl` forced-download
-delivery, a **blog** with shareable deep links, a service worker, a PWA manifest, and
-the live `/_qs/info` backend route. See [docs/webapp.md](docs/webapp.md).
+folder to demonstrate hosting a real website over a web link or a Tor page: an image
+**gallery**, a **streaming cinema** (a procedural short film that seeks over HTTP
+Range, in WebM *and* MP4), a **music** page, a **storefront** with real `?dl`
+forced-download delivery, a **blog** with shareable deep links, a service worker, a
+PWA manifest, and the live `/_qs/info` backend route. See [docs/webapp.md](docs/webapp.md).
 
 ## Building a standalone
 
 The app is standalone-ready (self-building UI, clean shutdown on quit, per-user save
-folder). Include the TorrentXT extension (required) and SodiumXT (optional) in the
-standalone builder. **OnionXT is not an extension** and cannot be ticked there -
-see the note above; it no longer needs to be, because the stack script already
-CARRIES it, so a standalone gets the Tor path for free (a local Tor daemon on the
-user's machine is still a runtime requirement). See [docs/building-a-standalone.md](docs/building-a-standalone.md).
+folder). Tick TorrentXT (required) and SodiumXT (optional) in the standalone builder;
+OnionXT is not an extension and needs no ticking, because the script carries it. See
+[docs/building-a-standalone.md](docs/building-a-standalone.md).
 
-## Development
+## Status
 
-There is **no headless way to compile or run** a `.livecodescript`, so the automated
-safety net is two static gates — run both before every change:
+The app's runtime behaviour is "verified statically; needs an OXT pass" until the
+engine pass in [docs/oxt-pass-checklist.md](docs/oxt-pass-checklist.md) is walked; no
+dated engine pass of this stack is recorded yet.
 
-```sh
-python3 tools/check-livecodescript.py     # lints the stack script
-python3 tests/fileserver_golden.py        # pins the pure-logic HTTP/util helpers
-```
+## Documentation
 
-Then do a manual **OXT pass** (paste the script into a stack, close+reopen, exercise
-it). See **[CONTRIBUTING.md](CONTRIBUTING.md)** for the workflow and
-**[CLAUDE.md](CLAUDE.md)** for the full engineering playbook and the hard-won
-OpenXTalk-runtime lessons. Report issues privately per **[SECURITY.md](SECURITY.md)**.
+| Document | What it is |
+|---|---|
+| [docs/what-it-hides.md](docs/what-it-hides.md) | The honest page: what each share path hides, and what it does not. |
+| [docs/user-routes.md](docs/user-routes.md) | Custom HTTP endpoints for a shared folder, declared in a `.qsroutes.json` file. |
+| [docs/webapp.md](docs/webapp.md) | The `webapp/` demo: what it shows, how the host serves it, how to edit it. |
+| [docs/building-a-standalone.md](docs/building-a-standalone.md) | Packaging the app with the standalone builder. |
+| [docs/http-server-deep-dive.md](docs/http-server-deep-dive.md) | The embedded HTTP host: architecture, contracts and design decisions. |
+| [docs/oxt-pass-checklist.md](docs/oxt-pass-checklist.md) | The engine pass the app owes, and its own record sheet. |
+| [CLAUDE.md](CLAUDE.md) | Maintainer and contributor guide: rules, traps, the evidence ledger, the definition of done. |
+| [SECURITY.md](SECURITY.md) | How to report a vulnerability, and the security model. |
+| [site/README.md](site/README.md) | The product landing page (static files, no build step). |
+
+Suite-wide documents live in the xTalk suite's
+[docs/](https://github.com/SethMorrowSoftware/xtalk-suite/blob/main/docs/README.md).
+
+## Development and contributing
+
+`bash tools/run-gates.sh` runs the three gates: the static script checker, the
+file-server golden (`tests/fileserver_golden.py`, Python mirrors of the pure helpers)
+and the execution gate (`tools/check-script-vectors.py`, which runs the shipped
+script's pure helpers headlessly against those mirrors, after its own fixture test).
+None of them is the engine, so a change still needs a manual **OXT pass** (paste the
+script into a stack, close + reopen, exercise it) before anyone calls it working.
+
+To contribute: read [CLAUDE.md](CLAUDE.md) first (the rules, the recipe for a new
+pure-logic helper, the definition of done); open issues and pull requests at the
+suite (below); say "verified statically; needs an OXT pass" for anything you did not
+watch run; and report vulnerabilities privately per [SECURITY.md](SECURITY.md).
 
 ## License
 
-MIT — see [LICENSE](LICENSE). Built on the OpenXTalk extension family (TorrentXT /
+MIT - see [LICENSE](LICENSE). Built on the OpenXTalk extension family (TorrentXT /
 SodiumXT / OnionXT), which wrap libtorrent-rasterbar (BSD-3), libsodium (ISC), and
 Boost (Boost Software License) under their own permissive terms.
 

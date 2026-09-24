@@ -1,36 +1,36 @@
 # Riptide API reference
 
-The public `rs*` surface of `src/riptide.livecodescript` (library 0.12.0,
-phases 1-8 plus the 8.2/8.3 onion serving seams, the phase-6 sync
-records with the media handoff, the kind-C chunked-post rail, the BTXO
-receive-path stream machine, the media streaming plan, and - since
-2026-08-29 - the rail-6 Nostr bridge and the `RIPTAPP1` app-state store).
-Pure LiveCodeScript over the installed suite extensions; the
-byte-exact wire layouts are documented at the top of the library and
-pinned by the oracle (`tools/riptide_reference.py`), the golden test, and
-the harness constants, with `tools/check-selftest-vectors.py` holding the
-three in agreement. The magic is the version: `RSH1`, `RSP1`, `RSK1`,
-`RSI1`, `RSM1`, `RSL1`, `RIPTKEY1` change by minting a successor, never by
-silent fix.
+The public `rs*` surface of `src/riptide.livecodescript`: library 0.12.0,
+106 handlers, phases 1-8 (identity and the feed, media, DMs, the LAN mesh
+with its sync records and media handoff, the anon persona with its onion
+serving seams, the Nostr bridge and the `RIPTAPP1` app-state store). Pure
+LiveCodeScript over the installed suite extensions; the byte-exact wire
+layouts are documented at the top of the library and pinned by the oracle
+(`tools/riptide_reference.py`), the golden test, and the harness
+constants, with `tools/check-selftest-vectors.py` holding the three in
+agreement. The magic is the version: `RIPTKEY1`, `RSH1`, `RSP1`, `RSK1`,
+`RSI1`, `RSM1`, `RSL1`, `RSN1`, `RIPTAPP1` change by minting a successor,
+never by silent fix.
 
-> **Engine evidence.** Phases 1-2 ENGINE-PASSED 2026-08-12 (133/133 folded
-> into the suite harness); the propagation half closed 2026-08-13 (two
-> machines, feeds both directions, every rendered post ingest-verified).
-> Phase 3 (media) and phase 4 (DMs chatting both ways) passed on two
-> machines 2026-08-15, the same day the whole phase 4-7 COMPUTE surface ran
-> green in the suite selftest. The phase-6 sync records' and 8.2/8.3
-> serving seams' COMPUTE halves ran engine-green 2026-08-20 (Windows, in
-> the suite paste; label synced 2026-08-23); the live legs - the phase-5
-> call, the two-machine mesh, and anything over a real tor - remain, and
-> `docs/two-machine-runbook.md` scripts each. The 2026-08-23 handlers
-> (the kind-C rail, `rsBtxoStreamStep`, `rsMediaStreamPlan`) are verified
-> statically and vector-pinned; none has an engine pass yet.
+> **Engine evidence** (the dated ledger is in `CLAUDE.md`). Phases 1-2
+> engine-passed 2026-08-12 (133/133 in the suite paste), with two-machine
+> propagation 2026-08-13; phases 3-4 passed on two machines 2026-08-15. The
+> compute halves of phases 4-7, through the 2026-08-23 additions (the
+> kind-C rail, `rsBtxoStreamStep`, `rsMediaStreamPlan`), ran green on an
+> engine in the suite paste, last on 2026-08-24 (Windows x86_64, riptide
+> 391/391). The live legs - the phase-5 call, the two-machine mesh,
+> anything over a real tor or a real relay - remain, and
+> `docs/two-machine-runbook.md` scripts each. Added after 2026-08-24 and
+> static + headless only: the Nostr bridge, the app-state store, the
+> required `pMinSeq` watermarks, the u64 bound, the 996-byte record cap,
+> and the 2026-09-09 LAN admission tag (`riptide-lan-a`), so the
+> engine-green admission and welcome bytes are superseded.
 
 ## Conventions
 
 - **Nothing here throws.** A failure returns `empty` (or `false`) and
-  `rsLastError()` says why. Every foreign `sx*`/`bt*`/`ox*` call is
-  guarded, so a missing extension degrades to a clear message.
+  `rsLastError()` says why. Every foreign `sx*`/`cx*`/`ox*`/`bt*`/`nx*`
+  call is guarded, so a missing extension degrades to a clear message.
 - **Bytes are `Data`; hex crosses as lowercase strings.** A "handle" is a
   64-hex ed25519 public key; a "target" is 40 hex (a DHT target or torrent
   info-hash); the all-zeros target means "none", and building records with
@@ -50,7 +50,7 @@ silent fix.
 |---|---|---|
 | `rsVersion()` | String | names the library, version, and built phases |
 | `rsLastError()` | String | the last refusal's reason; "" if none |
-| `rsProbeCapabilities()` | Array | booleans: `canCrypto` (SodiumXT, a real round-trip probe), `hasTorrent`, `hasOnion`, `hasDataChannel`, `hasEnet`, `hasCoin`, plus derived `hasSha3` (either provider answered a real call); probed once, cached |
+| `rsProbeCapabilities()` | Array | booleans: `canCrypto` (SodiumXT, a real round-trip probe), `hasTorrent`, `hasOnion`, `hasDataChannel`, `hasEnet`, `hasCoin`; the phase-8 trio, which fail separately: `hasNostr` (the `nx*` core, a real round trip), `canNostrSign` (the core reaches secp256k1 through CoinXT) and `hasNostrRelay` (the `nxr*` relay layer is loaded); plus derived `hasSha3` (either provider answered a real call). Probed once, cached |
 | `rsHeadSalt()` | String | `"riptide-head"`, the fixed BEP44 salt of a feed head |
 | `rsZeroTarget()` | String | the 40-zeros "none" target |
 
@@ -114,11 +114,10 @@ TorrentXT allows one session per process; the app starts it
 stops, or polls one. Every input is validated before the handle is
 touched, so the refusal paths work - and are tested - without torrentxt.
 Fetches are asynchronous: true means the lookup was accepted, and the
-value arrives later through the app's poll loop as a `dhtMutableItem` /
-`dhtImmutableItem` event for the matching ingest verifier. Nothing is
-believed on arrival: ingest re-verifies the BEP44 signature (heads), the
-content address (posts), and the author signature (posts) in SodiumXT, so
-trust never rests on the transport.
+value arrives through the app's poll loop as a `dhtMutableItem` /
+`dhtImmutableItem` event for the matching ingest verifier, which
+re-verifies the BEP44 signature (heads), the content address and the
+author signature (posts) in SodiumXT: trust never rests on the transport.
 
 | Handler | Returns | Notes |
 |---|---|---|
@@ -187,7 +186,10 @@ over rp1 in your inbox swarm; both sides derive one kx session
 Three RSL1 legs over enet channel 0, all pure crypto (testable offline):
 the host's challenge, the joiner's response (proves the joiner holds the
 master), and the host's welcome (proves the host BACK, bound to this
-handshake by the joiner's own response signature - mutual auth).
+handshake by the joiner's own response signature - mutual auth). The
+signed preimages changed on 2026-09-09 (prefix-free tags) without an
+`RSL1` magic bump, so every device in a mesh must run a build from after
+that date: a mixed pair silently fails admission.
 
 | Handler | Returns | Notes |
 |---|---|---|
@@ -201,37 +203,29 @@ handshake by the joiner's own response signature - mutual auth).
 | `rsLanParseWelcome(pBytes)` | Array | `name`, `signature` |
 | `rsLanVerifyWelcome(pWelcomeBytes, pMyResponseBytes, pMaster)` | String | the HOST's device name, or empty (a rogue host, a cross-handshake replay, tamper) |
 
-## LAN sync records (phase 6, added 2026-08-15)
+## LAN sync records (phase 6)
 
-The payload past admission, per spec section 7's channel discipline:
-drafts and feed state on channel 0 reliable, presence/typing on channel 1
-unreliable-unsequenced. Every record is signed under the SAME shared LAN
-key as the admission with the distinct domain `"riptide-lan-s"` over the
-whole record body, kind byte included (the welcome establishes no fresh
-session secret - it is mutual signature verification - so the records
-sign under the one key both sides already hold; replay is neutralized by
-each record's monotonic/absolute apply semantics, not a per-handshake
-binder, which is what lets a host relay a record verbatim). The verifiers
-are verify-then-parse: structure to the byte, then the signature, then -
-and only then - the fields. Authenticated, NOT encrypted: the LAN sees
-draft plaintext. Device names are cooperative labels among your own
-devices, not identities (all of them share the one keypair).
+The payload past admission, per spec section 7: drafts and feed state on
+channel 0 reliable, presence/typing on channel 1 unreliable-unsequenced.
+Every record is signed under the SAME shared LAN key as the admission,
+with the domain `"riptide-lan-s"` over the whole body, kind byte included.
+The welcome leaves no fresh session secret, so replay is neutralized by
+each record's monotonic/absolute apply semantics rather than a
+per-handshake binder, which is what lets a host relay a record verbatim.
+The verifiers are verify-then-parse (structure to the byte, the
+signature, and only then the fields). Authenticated, NOT encrypted: the
+LAN sees draft plaintext. Device names are cooperative labels among your
+own devices, not identities (all of them share the one keypair).
 
-**The channel-2 decision (2026-08-16).** Spec section 7's bulk media
-handoff is a fourth record kind, `"M"`, on CHANNEL 0 - a small signed
-POINTER at the phase-3 torrent path - and channel 2 stays reserved,
-dark. A draft's media essentially never fits enet's 60000-byte packet
-budget, and the suite's seam law (enetxt) is that a payload over it
-stops being a message and becomes a torrent; a chunked enet lane would
-reimplement libtorrent's per-piece integrity, resume, and backpressure
-with none of its proof, where `rsMediaCreate`/`rsMediaFetch` are already
-two-machine proven. The 40-hex v1 info-hash is deliberately BOTH fields
-the record needs: the content address libtorrent verifies piece-by-piece
-against and the torrent linkage a magnet fetch takes. Honest limit: the
-sync records never touch the internet, but the pointed-at BYTES ride the
-ordinary torrent rail - swarm peers see your IP and peer discovery is
-the DHT (the same properties the phase-3 pass measured, on one LAN, near
-instantly).
+**The channel-2 decision.** Spec section 7's bulk media handoff is a
+fourth record kind, `"M"`, on CHANNEL 0 - a small signed POINTER at the
+phase-3 torrent path - and channel 2 stays reserved, dark: media never
+fits enet's 60000-byte packet budget, and over that seam a payload
+becomes a torrent. The 40-hex v1 info-hash is both the content address
+libtorrent verifies against and the torrent linkage a magnet fetch takes.
+Honest limit: the sync records never touch the internet, but the
+pointed-at BYTES ride the ordinary torrent rail (swarm peers see your IP;
+peer discovery is the DHT).
 
 | Handler | Returns | Notes |
 |---|---|---|
@@ -256,7 +250,7 @@ instantly).
 | `rsBtxoParseHeader(pBytes)` | Array | `name`, `total`, `flags` |
 | `rsBtxoDataFrame(pPayload)` | Data | u32-BE length + bytes (non-empty) |
 | `rsBtxoTerminator()` | Data | the 4-byte zero-length end-of-stream frame |
-| `rsBtxoStreamStep(pBuffer, pPhase)` | Array | the RECEIVE path (2026-08-23): the pure single-step stream state machine - the app accumulates bytes, calls with phase `"header"`/`"body"`, acts on `status` (`need`/`header`/`frame`/`end`/`refused`) and deletes `used` bytes from the front. Caps ported from nocloud's working receiver (name 1024, refused before the name is buffered; total 8 GiB; frame 65536); `refused` means abort, and rsLastError() says why |
+| `rsBtxoStreamStep(pBuffer, pPhase)` | Array | the RECEIVE path: the pure single-step stream state machine - the app accumulates bytes, calls with phase `"header"`/`"body"`, acts on `status` (`need`/`header`/`frame`/`end`/`refused`) and deletes `used` bytes from the front. Caps ported from nocloud's working receiver (name 1024, refused before the name is buffered; total 8 GiB; frame 65536); `refused` means abort, and rsLastError() says why |
 
 Sealed DMs TO a persona (spec 8.3) are the phase-4 machinery composed with
 the anon subkeys - no separate crypto handlers: `rsBuildPrekey(kxPub,
@@ -265,11 +259,14 @@ the DHT - the guard), `rsBuildIntro` addressed to the anon handle seals to
 it via `rsDmSealIntro`, and the persona opens with
 `rsDmOpenIntro(sealed, anonHandle, rsAnonDmSeed(...))`.
 
-## The onion serving seams (spec 8.2/8.3, added 2026-08-15)
+## The onion serving seams (spec 8.2/8.3)
 
 Pure payload builders and the acceptance path for the persona's
 onion-httpd routes; the APP registers the `oxh*` routes and owns every
-stream. Verified statically; needs an OXT + live-Tor pass.
+stream. The compute ran green on an engine 2026-08-20 (Windows, in the
+suite paste: the page bytes, the `/prekey` body, `rsAnonAcceptDm`'s accept
+and all five refusal legs); serving over a live tor needs an OXT +
+live-Tor pass.
 
 | Handler | Returns | Notes |
 |---|---|---|
@@ -277,7 +274,7 @@ stream. Verified statically; needs an OXT + live-Tor pass.
 | `rsAnonPrekeyBody(pMaster, pIndex)` | String | the GET `/prekey` response body: persona n's RSK1 prekey record (subkey-200+n kx public, signed by the subkey-100+n anon identity) as 264 lowercase hex chars of text. A follower decodes and MUST verify: `rsVerifyPrekey(decoded, anonHandle)` |
 | `rsAnonAcceptDm(pBody, pMaster, pIndex)` | Array | accept a POST `/dm` body: EXACTLY 632 strict lowercase hex chars (the 48-byte seal + the 268-byte RSI1 intro, times two), refused BEFORE any decode on length or a non-hex byte; then the existing `rsDmOpenIntro` verify-then-parse under the persona's subkeys. Returns the verified intro array or empty - one refusal for every failure mode (the route must not be an oracle). Freshness stays the app's policy |
 
-## Rail 6: the Nostr bridge (spec 8A, added 2026-08-29)
+## Rail 6: the Nostr bridge (spec 8A)
 
 Reach, never a dependency: with no CoinXT, no NostrXT, or every relay down,
 every other rail here behaves exactly as it did at phase 7. The protocol
@@ -303,9 +300,9 @@ behaviour. Needs an OXT + a live-relay pass.
 | `rsNostrBridgeFromEvent(pEventJson)` | Array | the inbound half, four gates in order: structure, the event's own BIP-340 signature, the kind and `d` tag, then both bridge signatures with the event's OWN author pinned as the expected Nostr key. That last gate is what makes a republished copy of somebody else's bridge verify as THEIRS and never as the republisher's |
 | `rsPublishBridge(pSession, pBridgeBytes, pIdentitySeed)` | Boolean | BEP44 put under the identity key at salt `"riptide-nostr"` - a new rail gets a new salt, never a new field in `RSH1`. Validates the record AND that the seed is the handle the bridge names BEFORE touching the session, so both refusals run with no torrentxt installed |
 | `rsRequestBridge(pSession, pHandleHex)` | Boolean | async lookup at that salt; the value arrives as a `dhtMutableItem` event for `rsIngestBridge` |
-| `rsIngestBridge(pEvent, pExpectedHandleHex, pMinSeq)` | Array | the same handle/salt/signature/embedded-seq discipline `rsIngestHead` applies, INCLUDING the required reader watermark since 2026-09-10 (`pMinSeq` is the highest bridge seq already accepted for this handle, `0` for a handle never seen; an omitted or non-numeric value is refused, a strictly older bridge is refused, an equal seq is accepted - this row used to say the bridge rail took no watermark and left rollback protection to the caller, which was the same deferral the head fix removed), and then the FULL `rsVerifyBridge` on top - because this record carries a second signature libtorrent knows nothing about |
+| `rsIngestBridge(pEvent, pExpectedHandleHex, pMinSeq)` | Array | the same handle/salt/signature/embedded-seq discipline `rsIngestHead` applies, INCLUDING the required reader watermark (`pMinSeq` is the highest bridge seq already accepted for this handle, `0` for a handle never seen; an omitted or non-numeric value is refused, a strictly older bridge is refused, an equal seq is accepted), and then the FULL `rsVerifyBridge` on top - because this record carries a second signature libtorrent knows nothing about |
 
-## The app-state store (spec 8A.4, added 2026-08-29)
+## The app-state store (spec 8A.4)
 
 The library fixes the envelope; the app owns the format inside it, because
 what belongs in app state is an app question and a wire format here would

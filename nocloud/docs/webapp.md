@@ -9,18 +9,13 @@ a cart and real digital delivery, a **blog** with shareable deep links, and a li
 **backend** call. Point Quick Share at this folder, share it over Tor or a direct web
 link, open the address, and you are looking at the demo.
 
-Read this after `../README.md`: it explains what the demo is, how the host serves it,
-and the design constraints (relative paths, single-segment routes) that let the same
-folder work over both transports.
-
 ## What it is
 
 A dependency-free SPA - plain HTML/CSS/JS, **no build step, no framework, no CDN, no
 external fonts** - that makes **no network calls other than to the serving folder
 itself**. Every media asset is generated rather than sourced (a procedural short film,
-synthesized music, hand-written SVG), so the folder is fully self-hosted in spirit as
-well as in mechanics: it runs unchanged offline, over Tor, and under a strict CSP.
-The tabs (`Home`, `Gallery`, `Theater`, `Music`, `Store`, `Blog`, `Backend`, `About`,
+synthesized music, hand-written SVG); it runs unchanged offline, over Tor, and under a
+strict CSP. The tabs (`Home`, `Gallery`, `Theater`, `Music`, `Store`, `Blog`, `Backend`, `About`,
 plus a nav-hidden `checkout`) are real client-side routes, each wired to specific host
 capabilities.
 
@@ -37,7 +32,7 @@ capabilities.
 | **Client-side state** | **Store** | the cart lives in `localStorage` (with an in-page fallback), so it survives refreshes without the server keeping any state |
 | **Live backend route** | **Backend** tab + startup | `GET /_qs/info` is answered by the stack script (`qsHttpRoute` -> `qsHttpReply`); the tab auto-calls it and pretty-prints the JSON, and startup uses its `mode` field for the transport badge. The tab also fires `OPTIONS /` (the `Allow` header) and surfaces the response headers |
 | **User-declared routes** (`.qsroutes.json`) | **Backend** tab, second card | the folder ships its own `.qsroutes.json` with six demo endpoints; the tab live-calls `GET /api/echo?msg=...`, a `{{...}}`-templated route that reflects the query value back escaped - declared in the folder, not in LiveCode. See "The routes the host provides" below and `user-routes.md` |
-| **Conditional GET** (weak ETag / `304`) | every file request on a revisit | file responses carry `ETag: W/"size-seed-generation"` (`qsHttpWeakETag`) + `Cache-Control: no-cache`, so the browser revalidates each load and a matching `If-None-Match` is answered `304` with no body *(verified statically + golden-pinned; needs an OXT pass)* |
+| **Conditional GET** (weak ETag / `304`) | every file request on a revisit | file responses carry `ETag: W/"size-seed-generation"` (`qsHttpWeakETag`) + `Cache-Control: no-cache`, so the browser revalidates each load and a matching `If-None-Match` is answered `304` with no body (see the routes list below) |
 | **Raster + vector images** | **Gallery** | eight `.svg` pieces + one `.png`, list fetched from `data.json`, keyboard-navigable lightbox with raw/download links |
 | **Service worker (secure context)** | **About** tab | `sw.js` registers only when `window.isSecureContext` - proving a Tor `.onion` counts as secure while plain public http does not |
 | **PWA manifest** | `site.webmanifest` | installable app metadata, icon, `standalone` display, relative `start_url`/`scope` |
@@ -46,11 +41,13 @@ capabilities.
 
 ## How the host serves it
 
-Quick Share is an OpenXTalk stack (`../src/nocloudquickshare.livecodescript`) that runs
-a small streaming HTTP host. Serving the demo is entirely a runtime action - nothing is
-compiled or copied:
+The app runs a small streaming HTTP host; serving the demo is a runtime action, with
+nothing compiled or copied:
 
-1. Open `nocloudquickshare.livecodescript` in OpenXTalk and run it.
+1. Run the app the way `../README.md`'s Quick start says: `File > New Mainstack`,
+   `Object > Stack Script`, paste all of `../src/nocloudquickshare.livecodescript`, apply,
+   then close and reopen the window. (Opening the `.livecodescript` file directly loads
+   the script without building the window.)
 2. Drag **this `webapp` folder** onto the drop area (or use the Choose a folder button).
 3. Share it:
    - **Over Tor** - the app is served at the onion root, `http://<addr>.onion/`. Tor
@@ -60,10 +57,8 @@ compiled or copied:
      `http://<ip>:<port>/<token>/` and opens in any browser.
 4. *(Optional)* enable the LAN-only **web editing** option and set a password. Then either
    append **`/_edit`** to the link for the raw file editor, or click **Admin** in the
-   demo's own footer for the friendly **site-admin panel** (see below). The service worker
-   deliberately does no caching, and every editor write bumps the host's ETag generation,
-   so edits made through the editor show up immediately (the honest caveat for
-   out-of-band disk edits is in the Editing notes below).
+   demo's own footer for the friendly **site-admin panel** (below). Edits made through the
+   editor show up immediately (the out-of-band caveat is in the Editing notes).
 
 ### The admin panel (the live editor, with a face)
 
@@ -117,16 +112,16 @@ host's LAN-only editor API - no second server, no cloud:
   like a static file), and a `/go/gallery` redirect (re-based onto the `/<token>/` mount
   over a web link). No code runs, `/_qs` and `/_edit` stay reserved, and the dotfile
   itself is never served or listed. The full model, its guards and its limits are
-  `user-routes.md`; the golden pins the guard logic. *(Verified statically +
-  golden-pinned; needs an OXT pass - `oxt-pass-checklist.md` is that pass's script.)*
+  `user-routes.md`; the golden pins the guard logic.
 - **Conditional GET (weak ETag -> `304`).** Every file response - static assets and
   `.qsroutes.json` `file` routes alike - carries `ETag: W/"size-seed-generation"`
   (`qsHttpWeakETag`) plus `Cache-Control: no-cache`, and a full-file request with a
   matching `If-None-Match` is answered `304 Not Modified` with no body (a `Range:`
   request always gets bytes, never a `304`). Non-file answers (`/_qs/*`, user-route
   bodies, listings) are sent with no validator, so they are regenerated every request.
-  This is what makes browser caching safe for the demo; the freshness caveat is in the
-  Editing notes below. *(Verified statically + golden-pinned; needs an OXT pass.)*
+
+The user routes and conditional GET are verified statically + golden-pinned; they need
+an OXT pass, and `oxt-pass-checklist.md` is that pass's script.
 
 ## The two design constraints
 
@@ -137,15 +132,13 @@ rule is why the *same untouched folder* works both at the root (`/`, over Tor) a
 under `/<token>/` (over a web link) with **no `<base>` tag and no rebuild**. The
 manifest follows suit: `start_url` and `scope` are `./`.
 
-**2. Single-segment routes.** A consequence of rule 1: a nested route path like
-`blog/my-post` would change the document's base directory when loaded directly, so the
-shell's relative `app.js`/`app.css` would resolve to `blog/app.js` - a dotted path
-that gets a real 404 instead of the SPA fallback, leaving an unstyled dead page. So
-every route is one segment (`store`, `checkout`, ...) and deep links into content ride
-the **query string** (`blog?post=my-post`), which is invisible to path resolution and
-therefore refresh-safe at any mount point. If you add pages, keep paths relative
-(`assets/foo.svg`, not `/assets/foo.svg`) and routes flat, or you will break the
-web-link (token-prefixed) case.
+**2. Single-segment routes.** A consequence of rule 1: a nested route like
+`blog/my-post` would move the document's base directory when loaded directly, so the
+shell's relative `app.js` would resolve to `blog/app.js` - a dotted path that gets a real
+404 instead of the SPA fallback. So every route is one segment (`store`, `checkout`, ...)
+and deep links ride the **query string** (`blog?post=my-post`), which is refresh-safe at
+any mount point. If you add pages, keep paths relative (`assets/foo.svg`, not
+`/assets/foo.svg`) and routes flat, or you will break the web-link case.
 
 ## Files
 
@@ -170,8 +163,11 @@ assets/
   film.mp4          the same film, H.264+AAC with +faststart (moov atom up front)
   film-poster.jpg   poster frame (image/jpeg)
   loop.webm         10 s seamless ambient loop (VP9, ~29 KB)
-  chime.wav         a short tone (audio/wav; the Music page's interlude)
-  music/*.mp3       three procedurally composed tracks (audio/mpeg)
+  chime.wav         a short tone (audio/wav): the first Range demo, now an interlude
+  music/            three procedurally composed tracks (audio/mpeg):
+    first-light.mp3   the ambient title theme
+    packet-rain.mp3   pluck arpeggios
+    harbor.mp3        slow pads + deep bass
   store/
     art-pack.zip    the 8 gallery SVGs zipped (application/zip; a real product download)
     prod-*.svg      product thumbnails
@@ -179,17 +175,12 @@ assets/
 
 ## Editing notes for contributors
 
-- **Keep every path relative and every route single-segment** (see above) - the two
-  most important rules.
-- **`sw.js` must stay cache-free.** It has no `fetch` handler on purpose, so the worker
-  itself can never mask a live edit - but since the host grew conditional GET, that is
-  only half the freshness story. The server tags every file response with a weak ETag
-  (`W/"size-seed-generation"`, `qsHttpWeakETag` in the stack) plus `Cache-Control:
-  no-cache`, so the *browser's* cache revalidates on every load: an edit through
-  `/_edit` bumps the generation and always shows up immediately, while an out-of-band
-  disk edit that keeps the byte size unchanged leaves the ETag intact and revalidates
-  `304`-stale until the app is relaunched (a fresh per-launch seed). Do not add caching
-  without a very good reason.
+- **Keep every path relative and every route single-segment** (see above).
+- **`sw.js` must stay cache-free.** It has no `fetch` handler, so the worker can never
+  mask a live edit; freshness rides the host's weak ETag (above). An edit through
+  `/_edit` bumps the generation and shows up at once; an out-of-band disk edit that keeps
+  the byte size leaves the ETag intact and revalidates `304`-stale until the app is
+  relaunched (a fresh per-launch seed). Do not add caching without a very good reason.
 - **The demo must degrade gracefully in a plain static preview** (opened as files, or
   from a non-Quick Share server): the Backend tab and transport badge already fail
   closed with a clear message when `/_qs/info` is unreachable, and the JSON-driven tabs

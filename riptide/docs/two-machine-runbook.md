@@ -1,18 +1,10 @@
 # The two-machine runbook
 
-How to drive `examples/riptide-social.livecodescript` on two OXT machines,
-phase by phase, and what each result proves. Written after the first passes
-(2026-08-15) so the next tester does not need the chat scrollback that
-produced them. Paste results back into the tracker; the honesty labels in
-the spec and CLAUDE.md move only on a dated report.
-
-Status going in: phases 1-4 are DONE on two machines (feed + follow
-2026-08-13; media, and DMs chatting both ways, 2026-08-15). Phase 5 (the
-call, now with the spec-6.2 typing lane) and phase 6 (the LAN mesh:
-welcome round AND the sync payload - drafts, feed seq, presence) are
-wired, with phase 6's sync-payload compute half engine-green 2026-08-20
-in the suite paste, but neither has ever run on two machines; phase 7
-needs a tor daemon.
+How to drive `examples/riptide-social.livecodescript` on real OXT machines,
+phase by phase, and what each result proves. Record results in the suite's
+`docs/OXT-PASS-RUNBOOK.md`; the honesty labels in the spec, `README.md` and
+`CLAUDE.md` move only on a dated report. Which phases are done and which
+legs are owed is in `README.md`'s status.
 
 ## Setup, once per machine
 
@@ -23,14 +15,15 @@ needs a tor daemon.
    only a tor daemon.
 2. Open `examples/riptide-social.livecodescript`, paste it into a new
    one-card mainstack's stack script, apply, close and reopen (or launch
-   it from `start-here.livecodescript`, which performs that ritual for
-   you). Nothing else to wire: since the demo-embed pass the stack
-   CARRIES the riptide, onionxt and onion-httpd script libraries between
-   its sentinel lines, so opening `riptide/src/riptide.livecodescript`
-   and `start using` it as well - which this step used to ask for -
-   only loads a second copy of every rs* handler.
-3. Firewalls: torrent/DHT traffic for phases 2-4; UDP 27099 for the LAN
-   mesh; the dc call uses ephemeral UDP via STUN.
+   it from the suite's `start-here.livecodescript`, which performs that
+   ritual for you). Nothing else to wire: the stack CARRIES five script
+   libraries between its sentinel lines (nostrxt core and relay, riptide,
+   onionxt, onion-httpd), so also putting `riptide/src/riptide.livecodescript`
+   in use only loads a second copy of every rs* handler.
+3. Firewalls: torrent/DHT traffic for phases 2-4; UDP 27099 inbound on the
+   mesh host; the dc call uses ephemeral UDP via STUN.
+4. One TorrentXT session per process: close every other torrent stack
+   first, and restart OXT before any re-paste of this script.
 
 Identity setup differs per phase, and getting it wrong is the easiest way
 to chase a non-bug:
@@ -40,7 +33,20 @@ to chase a non-bug:
 | Feed / media / DMs / call | identity 1 | a DIFFERENT identity 2 |
 | LAN mesh | identity 1 | the SAME identity 1 (copy the key file, same passphrase) |
 
-## Phase 5 - the call (NEVER RUN; the next pass's main event)
+## Phases 1-2 - identity and the feed (regression)
+
+1. One machine (half of phase 2): create an identity, post twice, paste
+   your own handle into the follow field and Fetch. The head and both posts
+   come back through the real DHT with every signature verdict shown. That
+   proves the event loop and the walk, not propagation between machines.
+2. Two machines (the phase-2 done-criterion): on A create an identity, post
+   two or three times and stay online (the session keeps the records
+   seeded). On B skip identity (follow needs none), paste A's 64-hex
+   handle, Fetch. Done when B shows the head VERIFIED, every post walked in
+   order to the zero target, and every line reads `authorSig VERIFIED`,
+   with no record bytes copied between the machines by hand.
+
+## Phase 5 - the call
 
 Needs: an open DM conversation (phase 4 flow), datachannelxt on both.
 
@@ -73,10 +79,12 @@ Needs: an open DM conversation (phase 4 flow), datachannelxt on both.
    fail visibly (STUN only, no TURN relay, by design - spec section 6);
    the call dies on Lock or close.
 
-## Phase 6 - the LAN mesh (never run; welcome + sync payload + media handoff + the three-device relay)
+## Phase 6 - the LAN mesh (welcome, sync payload, media handoff, the three-device relay)
 
 Needs: BOTH machines unlocked with the SAME master (see the table), same
-LAN, UDP 27099 allowed.
+LAN, UDP 27099 allowed, and EVERY device on a build from after 2026-09-09:
+the admission and welcome signatures changed then without an `RSL1` magic
+bump, so a mixed pair silently fails admission.
 
 1. A: Devices card, set a device name, `Host`. Note A's LAN IP.
 2. B: Devices card, set a different device name, type A's IP, `Join`.
@@ -87,7 +95,7 @@ LAN, UDP 27099 allowed.
    now get a positive, authenticated verdict; if the joiner instead
    logs `the host FAILED to prove itself`, the "host" is not your device
    and the demo leaves the mesh.
-4. THE DONE-CRITERION (new, the sync payload): on A, type into the
+4. THE DONE-CRITERION (the sync payload): on A, type into the
    "My draft" field on the Devices card. Within about a second B must
    log `draft from <A's name> seq N applied` and render the draft text
    under "Drafts from your other devices", labeled with A's name and
@@ -105,27 +113,26 @@ LAN, UDP 27099 allowed.
 6. Feed seq over the mesh: with a published feed (seq N > 0) on A, both
    admitted, B must log `feed seq N adopted from <A's name>` if B's own
    seq is behind - the two-devices-never-conflict half of channel 0.
-7. The media handoff (the channel-2 decision, added 2026-08-16: a
-   signed channel-0 POINTER; the bytes ride the phase-3 torrent rail,
-   and channel 2 stays dark). Both machines unlocked so their torrent
-   sessions are up. On A, section 5 of the Devices card: `Send
-   media...`, pick a small photo or video. Expected on A:
+7. The media handoff (a signed channel-0 POINTER; the bytes ride the
+   phase-3 torrent rail, and channel 2 stays dark). Both machines
+   unlocked so their torrent sessions are up. On A, section 5 of the
+   Devices card: `Send media...`, pick a small photo or video. Expected
+   on A:
    `offered "<file>" (<size> bytes) to 1 admitted device(s)`; on B:
    `media offer from "<A's name>": <file> (<size> bytes)` and the offer
    line fills in with the file, size, sender, and hash. On B click
    `Fetch + play`: the handoff progress line must climb (on one LAN,
    near instantly - the phase-3 pass's own shape) and the button must
-   flip to `Play now` the moment the on-disk file exists; click it and
-   the file must open in the system player. Report whether playback
-   was mid-download or after completion, same nuance as phase 3. If
-   the swarm never connects, note it with the network's shape: peer
-   discovery is the DHT, so a LAN with no internet route may not find
-   its swarm even though both devices sit on it - report that as the
-   recorded honest limit, not a defect.
-8. THE THIRD-DEVICE STEP (added 2026-08-17; this runbook structurally
-   could not reach the relay before it, and a real defect was hiding
-   there). Everything above uses ONE non-host device, so every record B
-   applies arrives from A over B's only link. The mesh is hub-and-spoke:
+   flip to `Play now` once the first 5% of the file's contiguous front is
+   on disk (`raMediaFrontReady`); click it and the file must open in the
+   system player. Report whether playback was mid-download or after
+   completion, as for phase 3. If the swarm never connects, note it with
+   the network's shape: peer discovery is the DHT, so a LAN with no
+   internet route may not find its swarm even though both devices sit on
+   it - report that as the recorded honest limit, not a defect.
+8. THE THIRD-DEVICE STEP (the only step that runs the relay). Everything
+   above uses ONE non-host device, so every record B applies arrives
+   from A over B's only link. The mesh is hub-and-spoke:
    the host RELAYS each verified record to its other admitted peers, so
    a joiner's view of a THIRD device arrives over the SAME peer id as
    the host's own records. Bring up C on the same master and the same
@@ -174,10 +181,10 @@ LAN, UDP 27099 allowed.
 
 ## Phase 7 - the anon persona (needs tor; single machine is enough)
 
-The serving is BUILT as of 2026-08-15 (the 8.2 feed page, the 8.3
-/prekey and POST /dm routes - library seams plus the demo's onion-httpd
-wiring). Its COMPUTE half ran engine-green 2026-08-20 in the suite
-paste; this pass flips the remaining LIVE half of the label.
+The serving is built (the 8.2 feed page, the 8.3 /prekey and POST /dm
+routes - library seams plus the demo's onion-httpd wiring), and its
+COMPUTE half ran engine-green 2026-08-20 in the suite paste; this pass
+flips the remaining LIVE half of the label.
 
 1. Run a tor daemon with the control port enabled (see
    `onionxt/docs/03-control-port.md` for the torrc lines). Both onionxt
@@ -213,7 +220,7 @@ paste; this pass flips the remaining LIVE half of the label.
    curl's `--data` must carry the hex EXACTLY (a trailing newline is a
    refusal - the strict 632-char gate).
 
-## Phase 8 - the Nostr rail (never run; ONE machine is enough, plus a real relay)
+## Phase 8 - the Nostr rail (ONE machine is enough, plus a real relay)
 
 Unlike every other section here this one needs no second machine: the
 "other side" is the public Nostr network, and a second client can be a
@@ -257,10 +264,13 @@ became a dependency, which is the one thing the design forbids.
    - **npub to handle**: fetch the kind-30078 event from a relay (any
      client can) and confirm its content decodes to a 276-byte record
      naming your riptide handle.
-   - **handle to npub**: this direction needs a riptide build, so it is
-     the one part of this step that wants machine B - fetch the bridge
-     off the DHT at salt `riptide-nostr` under the handle.
-   Report BOTH, and report if either half fails while the other works.
+   - **handle to npub**: BLOCKED from the UI. It means fetching the
+     bridge off the DHT at salt `riptide-nostr` under the handle, and the
+     app has no caller of `rsRequestBridge` / `rsIngestBridge` /
+     `rsNostrBridgeFromEvent` yet (the suite work plan carries the
+     reader). Until it has, report this half as not run.
+   Report what ran, and report if either half fails while the other
+   works.
 7. **The republish refusal.** The one adversarial check, and it needs no
    network: it is asserted in the suite paste. Confirm the two harness
    lines pass - a stranger CAN sign an event carrying your bridge, and
@@ -281,38 +291,32 @@ became a dependency, which is the one thing the design forbids.
 - The pump-survives-navigation check: start a Fetch or media download on
   the Feed card, visit every other card, come back; the pump must still
   be live.
-- Phase 3's mid-download nuance was MEASURED 2026-08-27 (two machines) and
-  it did NOT start mid-download as then wired: the Play mood unlocked on
-  file-EXISTENCE, which libtorrent satisfies at metadata time with a
-  hollow allocated file, so the system player got ~0% real data - "the
-  feed and media work fully, streaming does not" was the exact report.
-  Fixed the same day (raMediaFrontReady: Play unlocks once the first 5%
-  of the file's CONTIGUOUS front is on disk; both the feed and the LAN
-  handoff paths). Re-run the leg on the fixed stack: attach a LARGE video
-  on A, fetch on B, wait for the "Play now" mood, and confirm playback
-  starts while the progress line is visibly below 100%. USE A FASTSTART
-  VIDEO (ffmpeg -movflags +faststart, or any web-optimized mp4): a
-  non-faststart file keeps its index at the TAIL, and no player can start
-  it early whatever the fetch order - that case playing only at 100% is
-  the recorded limit, not a defect.
-- The DM clean close (new 2026-08-17, never run): with a conversation
-  open both ways, `Lock` on A. B must print
-  `-- <A's short handle> closed the conversation --` and stop showing the
-  channel as open. Before this the far side simply went quiet and kept
-  its `channel open with ...` line forever, which reads as a hang rather
-  than a hang-up. The signal is the secretstream FINAL tag, so it is
-  one-shot: A cannot send again on that stream, which is correct - a
-  re-dial mints fresh streams. Report it if B shows nothing, and report
-  separately if B shows a stray chat line (the close rides a filler body
-  that must never be rendered).
-- The tick tiers (new 2026-08-17, never run): the pump now runs at ~33 ms
-  while a dc call or an enet mesh is live and ~250 ms otherwise, which is
-  the cadence the spec's section 10.1 always specified and NOT what
-  phases 5 and 6 were ever driven at. Judge the call and the typing
-  indicators for feel at that cadence, and watch CPU on the slower of the
-  two machines while a call and a mesh are up together - the UI painters
-  are deliberately still gated to 4 Hz, so a busy CPU with a smooth
-  window means the transport tier, not the painters.
+- The phase-3 faststart re-run. Mid-download playback was MEASURED
+  negative 2026-08-27 (Play unlocked on file existence, which libtorrent
+  satisfies at metadata time with a hollow file) and fixed the same day
+  (`raMediaFrontReady`: Play unlocks once the first 5% of the file's
+  CONTIGUOUS front is on disk, on the feed and LAN handoff paths). Attach
+  a LARGE video on A, fetch on B, wait for "Play now", and confirm
+  playback starts while the progress line is visibly below 100%. USE A
+  FASTSTART VIDEO (ffmpeg -movflags +faststart, or any web-optimized
+  mp4): a non-faststart file keeps its index at the TAIL, and that case
+  playing only at 100% is the recorded limit, not a defect.
+- The DM clean close (2026-08-17, never run): with a conversation open
+  both ways, `Lock` on A. B must print
+  `-- <A's short handle> closed the conversation --` and stop
+  showing the channel as open (without it the far side keeps its
+  `channel open with ...` line forever, which reads as a hang rather than
+  a hang-up). The signal is the secretstream FINAL tag, so it is one-shot:
+  A cannot send again on that stream, which is correct - a re-dial mints
+  fresh streams. Report it if B shows nothing, and report separately if B
+  shows a stray chat line (the close rides a filler body that must never
+  be rendered).
+- The tick tiers (2026-08-17, never run): the pump runs at ~33 ms while
+  a dc call or an enet mesh is live and ~250 ms otherwise (spec section
+  10.1). Judge the call and the typing indicators for feel at that cadence, and watch CPU on the
+  slower machine while a call and a mesh are up together - the UI
+  painters stay gated to 4 Hz, so a busy CPU with a smooth window means
+  the transport tier, not the painters.
 - The suite selftest paste (`tests/suite-selftest.livecodescript`) on any
   machine whose extensions changed.
 

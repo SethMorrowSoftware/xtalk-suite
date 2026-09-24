@@ -1,72 +1,40 @@
 # Suite documentation
 
-Cross-cutting documents that span more than one member live here. Documents
-about a single extension live in that member's own `<member>/docs/`, and each
-member now carries its own `docs/README.md` index.
+Documents that span more than one member live here. A document about one member lives in that
+member's `docs/`, indexed by the Documentation table of the member's own `README.md`, because every
+member is also published as a repository of its own. The root [README.md](../README.md) is the
+front door; the root [CLAUDE.md](../CLAUDE.md) is the working guide (rules, gates, generators).
 
 ## Which file do I want?
 
 | If you are about to... | Read |
 |---|---|
-| sit down at an engine | [OXT-PASS-RUNBOOK.md](OXT-PASS-RUNBOOK.md), then [OXT-ENGINE-NOTES.md](OXT-ENGINE-NOTES.md) |
-| find out what an extension does | [EXTENSIONS-OVERVIEW.md](EXTENSIONS-OVERVIEW.md), then that member's `docs/README.md` |
-| pick up open work | [REMAINING-WORK.md](REMAINING-WORK.md) |
-| see, member by member, what each extension still needs in code and on an engine | [EXTENSION-WORK-PLAN-2026-09-23.md](EXTENSION-WORK-PLAN-2026-09-23.md) (a dated snapshot; check an item against the tree before acting) |
-| make a call only the owner can make | [OPEN-DECISIONS.md](OPEN-DECISIONS.md) |
-| wrap a new native library for OXT | [NEXT-EXTENSIONS-PLAN.md](NEXT-EXTENSIONS-PLAN.md) Part I |
-| weigh building a blockchain or ledger here | [BLOCKCHAIN-FEASIBILITY-2026-09-08.md](BLOCKCHAIN-FEASIBILITY-2026-09-08.md) |
-| work on the anonymous transport | [anon-transport.md](anon-transport.md), then [ONIONXT-INTEGRATION-PLAN.md](ONIONXT-INTEGRATION-PLAN.md) |
-| publish a member to its own repository, port a change made there back here, or delete a member from this tree | [MEMBER-REPO-SPLIT.md](MEMBER-REPO-SPLIT.md) |
+| sit down at an OXT engine | [OXT-PASS-RUNBOOK.md](OXT-PASS-RUNBOOK.md), then [OXT-ENGINE-NOTES.md](OXT-ENGINE-NOTES.md) |
+| pick up open work, in code or on an engine | [WORK-PLAN.md](WORK-PLAN.md) |
+| make, or look up, a call only the owner can make | [OPEN-DECISIONS.md](OPEN-DECISIONS.md) |
+| wrap a new native library for OXT | [BINDING-PLAYBOOK.md](BINDING-PLAYBOOK.md) |
+| work on the anonymous (Tor) transport of QuickShare or DHT Channels | [ONIONXT-INTEGRATION-PLAN.md](ONIONXT-INTEGRATION-PLAN.md) |
+| publish a member, port a change made in its repository back here, or add or remove a member | [MEMBER-REPO-SPLIT.md](MEMBER-REPO-SPLIT.md) |
+| build on Riptide, or interoperate with it | [RIPTIDE-SOCIAL-SPEC.md](RIPTIDE-SOCIAL-SPEC.md) (design), [RIPTIDE-PROTOCOL.md](RIPTIDE-PROTOCOL.md) (bytes) |
+| find out what an extension does | the root [README.md](../README.md), then that member's `README.md` |
+| learn the suite's rules, gates and generators | the root [CLAUDE.md](../CLAUDE.md) |
 
-## The three KINDS, and why the column exists
+## The documents
 
-This folder had grown to fifteen documents of which several are point-in-time
-audits, and nothing on the page said which was which. A reader met a 43KB file
-whose contents had largely been built weeks ago with the same weight as the
-runbook. **Every row below is now typed**, and the type is the first thing to
-read:
+- [OXT-PASS-RUNBOOK.md](OXT-PASS-RUNBOOK.md): how to run an engine session and what is still owed on one - the session plan, the open inventory with each row's green criterion and the labels it flips, install order and the exact `torrc`, what to record, the known traps, the tick sheet, and the closed engine record (section 8).
+- [OXT-ENGINE-NOTES.md](OXT-ENGINE-NOTES.md): what the OXT engine actually does, each behaviour with its verbatim symptom, rule and gate, classed OBSERVED, INFERRED, DOCUMENTED or UNEVIDENCED and numbered stably because the tree cites it ("engine note 5.5").
+- [WORK-PLAN.md](WORK-PLAN.md): the one live list of open work, per member and suite-wide - coding work, engine work (which session, what green looks like, which labels flip) and owner calls.
+- [OPEN-DECISIONS.md](OPEN-DECISIONS.md): the owner decision log, D-01 onward, one row per decision (outcome, date, where it is recorded), plus the brief of any decision still open.
+- [MEMBER-REPO-SPLIT.md](MEMBER-REPO-SPLIT.md): publishing every member into its own repository while development stays here (live since 2026-09-23) - the model, setup, porting a change back, the sibling layout, and what a departing member must be removed from.
+- [BINDING-PLAYBOOK.md](BINDING-PLAYBOOK.md): wrapping a native C/C++ library for OXT the way the native members do - the house pattern, the three rules, the FFI contract, handles and records, threading, toolchain traps, the definition of done.
+- [ONIONXT-INTEGRATION-PLAN.md](ONIONXT-INTEGRATION-PLAN.md), titled "Model C - the anonymous transport": the optional Tor onion path of QuickShare and DHT Channels (design, threat model, onboarding, the VERIFY register, decisions); code cites its section numbers.
+- [RIPTIDE-SOCIAL-SPEC.md](RIPTIDE-SOCIAL-SPEC.md): the design authority for Riptide Social - rails, rules, the security model, the phase roadmap with dated status, decisions; code cites its section numbers.
+- [RIPTIDE-PROTOCOL.md](RIPTIDE-PROTOCOL.md): the implementation-neutral wire specification, normative for the bytes, with a conformance bundle (`riptide/docs/protocol-vectors.json`) re-executed on every push.
 
-- **LIVE** — maintained, and the authority on its subject. If it disagrees with
-  the tree, that is a bug in the document and it should be fixed.
-- **RECORD** — a design document or plan that is still the authority for *why*
-  something is shaped the way it is, and that carries dated "As built" notes.
-  Current for design, historical for status.
-- **SNAPSHOT** — a dated point-in-time audit. Correct on its compile date and
-  **decaying from that day on**. Strike items as they close and re-audit rather
-  than trusting it. A snapshot is never evidence that something is still open.
+One capstone spec lives in its member: [holde-em/holdem-spec.md](../holde-em/holdem-spec.md), the
+design of serverless Texas Hold'em.
 
-| Document | Kind | Scope | What it is |
-|---|---|---|---|
-| [OXT-PASS-RUNBOOK.md](OXT-PASS-RUNBOOK.md) | LIVE | whole suite | The operational runbook for an engine session: what is unproven and why, the install order and the exact Tor `torrc`, the run order shortest-feedback-first, what to record and which honesty labels each result flips, the known traps. Read before sitting down at an engine. Its opening "sparse-access session plan" is dated 2026-08-15; the numbered sections below it are the live part. |
-| [OXT-ENGINE-NOTES.md](OXT-ENGINE-NOTES.md) | LIVE | whole suite | What the ENGINE actually does: every OXT behaviour that cost this project something, with the symptom verbatim, what it broke, and the gate (if any) that now holds it. Each entry marked OBSERVED / INFERRED / DOCUMENTED / UNEVIDENCED, because the class is the point. Read before an engine session and add to it after one. |
-| [EXTENSIONS-OVERVIEW.md](EXTENSIONS-OVERVIEW.md) | LIVE | whole suite | The per-member catalogue: one section per extension and per app — what it wraps, what it enables, committed platforms, honest status. Covers all nine extensions and all three apps. Each member's own docs remain the authority. |
-| [MEMBER-REPO-SPLIT.md](MEMBER-REPO-SPLIT.md) | LIVE | whole suite | Publishing every member into its own repository while development stays here (decided 2026-09-22, OPEN-DECISIONS D-22): the model (`tools/publish-members.py`, run by `publish-members.yml`: a first-parent replay stamped `Suite-Commit:`, fast-forward only, adoption explicit, divergence refused until ported), the one-time setup (repositories, visibility, the `XTALK_PUBLISH_TOKEN` secret), the everyday workflow and porting a contribution back, what "ready" means and the gate that holds it (`tools/check-member-standalone.py`), the sibling layout the cross-member gates expect (`../<name>`, `XTALK_SIBLINGS`), the registries a departing member must be removed from (learned from archivext, 2026-09-21), and what a member repository cannot check on its own. |
-| [REMAINING-WORK.md](REMAINING-WORK.md) | LIVE | whole suite | The consolidated punch list: every open phase, deferred item, pending verification pass, release gap and owner decision, each item source-cited. Compiled 2026-08-15 and maintained since by striking items in place — check an item against the tree before spending an engine minute on it. |
-| [OPEN-DECISIONS.md](OPEN-DECISIONS.md) | LIVE | whole suite | The owner decision briefs: every open owner call as a five-minute brief (stable ID, the question, why it is the owner's, evidence, options with real costs, what is blocked, an advisory recommendation), most-blocking first. An index of briefs, not the ledger: a decision taken is recorded at its primary source. Citations are migrating from `file:line` to a file plus a quoted ANCHOR PHRASE; `python3 tools/check-doc-anchors.py` re-resolves the anchored ones and reports how many bare citations it deliberately did not check. **That migration is early — as of 2026-08-26 the gate re-resolves 14 anchors against 647 bare citations it deliberately does not check — so treat an un-anchored `file:line` as a hint, not a fact. Run the gate for the current split rather than trusting this sentence.** |
-| [NEXT-EXTENSIONS-PLAN.md](NEXT-EXTENSIONS-PLAN.md) | RECORD | whole suite | Two documents in one, and worth knowing which half you are in. **Part I is LIVE**: the reusable OXT/LiveCode engine playbook for wrapping a native library — the three rules, the `.livecodescript` and `.lcb` gotchas, the FFI marshalling contract, handles and the record codec, lifecycle and threading, the toolchain traps. **Parts II-V are executed history**: the per-library plans that produced sodiumxt, enetxt and datachannelxt. |
-| [ONIONXT-INTEGRATION-PLAN.md](ONIONXT-INTEGRATION-PLAN.md) | RECORD | torrentxt + onionxt + sodiumxt | Model C, the optional Tor onion transport for QuickShare and DHT-Channels: file bytes travel peer-to-peer over an onion circuit, hiding both IPs, while BitTorrent/DHT stay the public default. Still the design authority; its phase sections carry dated "As built" blockquotes, and the remaining gates are live pending items waiting on a two-machine live-Tor pass. |
-| [RIPTIDE-PROTOCOL.md](RIPTIDE-PROTOCOL.md) | LIVE | whole suite | The Riptide Protocol as an implementation-neutral wire specification, extracted 2026-08-29 so an implementation in ANY language can interoperate: the subkey registry, every record format byte-by-byte with its signature preimage and domain tag, the transport mappings (BEP44 salts, rp1, enet channels, onion serving, the NIP-78 bridge), refusal rules, and the magic-bump versioning law. Ships with a machine-readable conformance bundle, [`riptide/docs/protocol-vectors.json`](../riptide/docs/protocol-vectors.json), regenerated from the oracle and re-executed on every push (`riptide/tools/export-protocol-vectors.py --check`). Normative for the bytes; the app spec below stays the design authority for behaviour. |
-| [RIPTIDE-SOCIAL-SPEC.md](RIPTIDE-SOCIAL-SPEC.md) | RECORD | five extensions | The capstone concept: a serverless social app composed from sodiumxt + torrentxt + onionxt + enetxt + datachannelxt — one Argon2id-sealed identity seed, a signed BEP44 feed with co-seeded torrent media, rp1 + secretstream DMs, WebRTC live sessions, enet LAN device sync, and an onion-only anonymous persona. Built at [`riptide/`](../riptide/); phases 1-4 two-machine-proven. |
-| [holde-em spec](../holde-em/holdem-spec.md) | RECORD | torrentxt + sodiumxt + box2dxt | The second capstone: serverless online no-limit Texas Hold'em — players meet over the BitTorrent DHT, every action lives in a signed hash-chained transcript, and the deal tops out at a ristretto255 mental-poker shuffle. Built through Phase 2 at [`holde-em/`](../holde-em/); the spec and plan live in the member. |
-| [anon-transport.md](anon-transport.md) | LIVE | torrentxt + onionxt + sodiumxt | Model C for the suite user: what the anonymous path hides (both IPs, the payload, the name), what it does not (Tor use, timing/volume, the local daemon), and how the built QuickShare path works. Built and statically verified; the behavioural two-machine Tor run is pending (runbook item 5). |
-| [anon-transport-threat-model.md](anon-transport-threat-model.md) | LIVE | torrentxt + onionxt + sodiumxt | The Model C threat model by adversary tier — wire observer, malicious peer, hostile relay, third-party DHT observers, GPA out of scope — with the plan's residual-risk caveats carried and the section-14 wording decisions stated as open. |
-| [anon-transport-onboarding.md](anon-transport-onboarding.md) | LIVE | torrentxt + onionxt + sodiumxt | Fresh user, two machines, zero to an anonymous transfer: the Tor daemon per platform, the extension prerequisites, the QuickShare walkthrough, and a fail-closed troubleshooting table. Verified statically; its Phase 4 exit — a fresh user completing it per OS — has not happened. |
-| [EXTENSION-WORK-PLAN-2026-09-23.md](EXTENSION-WORK-PLAN-2026-09-23.md) | SNAPSHOT | every member | A per-member re-audit of the whole tree, compiled 2026-09-23: for each of the eight extensions and three apps, the coding work (with size and what blocks it) and the engine work (what to run, on which session type, what green looks like, which labels flip), plus doc fixes. Its section 1 holds the suite-wide findings the per-kind lists had not recorded. The committed Windows DLLs ship libsodium 1.0.22 and libtorrent 2.1.1, not the pinned versions the docs name. The Linux glibc floors run from 2.14 to 2.38 (datachannelxt cannot load on Ubuntu 22.04). The 2026-09-12 binaries have never been loaded by an engine. Member publishing went live on 2026-09-23. REMAINING-WORK C.0, C.3 and C.5 have closed. It ends with a recommended order. Organised per member, where REMAINING-WORK is organised by kind of work; it does not replace that punch list or the runbook. |
-| [SODIUM-TORRENT-CHANNELS-BRAINSTORM.md](SODIUM-TORRENT-CHANNELS-BRAINSTORM.md) | SNAPSHOT | sodiumxt + torrentxt | An ideas document, labelled brainstorm and not a spec: secure communication channels piggybacking on the BitTorrent network, secured with SodiumXT. Parts of it have since been built; OPEN-DECISIONS D-20 is the standing question of whether to promote anything further from it. |
-| [HEADLESS-BACKLOG-2026-08-17.md](HEADLESS-BACKLOG-2026-08-17.md) | SNAPSHOT | whole suite | What was buildable with no engine, tor daemon, second machine, platform box or owner decision, compiled 2026-08-17 from an eight-domain survey (95 candidates, 41 items). Its own banners record what closed on the day and on 2026-08-23. **Much of the rest has closed since without being struck** — spot-checked 2026-08-26, its section D doc-truth items D3-D15 are mostly done. Take open work from REMAINING-WORK.md; read this one for the reasoning behind an item, not for its status. |
-| [BLOCKCHAIN-FEASIBILITY-2026-09-08.md](BLOCKCHAIN-FEASIBILITY-2026-09-08.md) | SNAPSHOT | whole suite | Research, not a plan: what it would entail to build a blockchain from this suite. A ten-area survey, a ten-subsystem gap analysis, six candidate architectures scored by four judge lenses, and an adversarial verification pass that corrected six of the survey's own claims. Its conclusion is that the strongest answers here are not chains, and its most reusable output was the defect list in section 3 - **every item of which was fixed on 2026-09-09** (PR #132), so that section now reads as the reasoning behind a change rather than as open work; a banner at the top of the document strikes each one. Two things about that are worth knowing before trusting the rest of it: acting on the list uncovered three further defects it had NOT found (an inverted ceiling, a wider-than-reported cap bug, and an unbounded accumulator in coinxt's shipped wallet), and a later adversarial sweep over the same tree found three more the survey missed entirely, two of them signature-level. What still stands unchanged is the measurement gap in section 6 and the storage findings (no atomic write, no database). **Nothing in it has been built, and every capacity figure in it is arithmetic rather than a measurement.** |
-
-**Reading order for someone new to the suite:** the root [`README.md`](../README.md)
-(what the nine extensions and three apps are, and how they compose) →
-[EXTENSIONS-OVERVIEW.md](EXTENSIONS-OVERVIEW.md) (each member's capabilities at
-a glance) → [NEXT-EXTENSIONS-PLAN.md](NEXT-EXTENSIONS-PLAN.md) Part I (how a
-binding is built here) → [RIPTIDE-SOCIAL-SPEC.md](RIPTIDE-SOCIAL-SPEC.md) (what
-they build together). Then dive into any member's own `docs/README.md`.
-
-> **Path caveat (swept 2026-08-15).** These documents were consolidated
-> verbatim from the standalone repositories, and the tracked path-rewrite pass
-> has now run over them: a present-tense cross-reference into a member spells
-> the member prefix (`torrentxt/examples/…`, `coinxt/tools/…`). Dated records
-> and quoted member accounts deliberately keep their original
-> member-root-relative spellings; resolve those under the member their
-> context names.
+Every open item in these documents is a claim about the tree on the day it was written: check it
+against the tree before spending an engine minute on it. Dated records and quoted member accounts
+keep their original member-root-relative path spellings; resolve those under the member their
+context names.

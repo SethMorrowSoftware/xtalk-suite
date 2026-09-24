@@ -1,454 +1,259 @@
 # OXT-ENGINE-NOTES.md - what the engine actually does
 
-**Every entry here is a fact about the OpenXTalk engine that cost this project
-something to learn.** Not style, not convention, not what the language reference
-says: observed behaviour, with how we found out and what it broke.
-
-The suite exists because OXT has no headless way to compile or run
-`.livecodescript` or `.lcb`. Every gate in this tree is a stand-in for a
-compiler we cannot run, and this file is the list of things no stand-in
-predicted. It is the most expensive knowledge the project owns, because most of
-it was paid for in engine sessions - the one resource that does not scale.
+Every entry is a fact about the OpenXTalk engine that cost this project
+something to learn: the symptom verbatim, what it broke, the rule, and the gate
+(if any) that holds it. OXT cannot compile or run `.livecodescript` or `.lcb`
+headlessly, so every gate here stands in for a compiler; this file lists what
+no stand-in predicted. Entry NUMBERS are stable and cited across the tree
+("engine notes 5.3"): never renumber, merge or delete one; a resolved entry
+stays as a stub (6.6).
 
 ## THE EVIDENCE RULE
 
 Each entry carries a class, and the class is the point:
 
-- **OBSERVED** - seen on a real engine, on a dated run. This is knowledge.
-- **INFERRED** - derived from an observed failure but not directly seen. Usable,
-  and explicitly weaker.
-- **DOCUMENTED** - from the LiveCode/OXT language reference, never confirmed
-  here. Treat as a claim, not a fact: this tree has been wrong about a
-  documented behaviour before.
-- **UNEVIDENCED** - a rule this tree keeps for HYGIENE, with no engine
-  observation and no reference behind it. The weakest class, added 2026-08-19
-  because entry 1.1 needed it and the other three all lied about it: its
-  observed failure was later re-attributed to a different mechanism (1.6), so
-  OBSERVED was gone; INFERRED requires an observed failure to derive from, and
-  there was no longer one; and nobody has checked whether the reference says
-  anything, so DOCUMENTED would be a second guess dressed as a citation. An
-  entry sits here when the RULE is worth keeping on its own argument and the
-  ENGINE BEHAVIOUR is simply unknown.
+- **OBSERVED** - seen on a real engine, on a dated run.
+- **INFERRED** - derived from an observed failure, not directly seen; weaker.
+- **DOCUMENTED** - from the LiveCode/OXT reference (or engine source), never
+  confirmed here. A claim, not a fact.
+- **UNEVIDENCED** (added 2026-08-19) - a rule kept for HYGIENE, with no engine
+  observation and no reference behind it.
 
-**Do not promote an entry between classes without a dated run.** An unexecuted
-line is not evidence in either direction - that is the "shipped is not run"
-lesson the root `CLAUDE.md` records, and it applies to this file first.
-
-**A note on the dates in this file, because one session produced two of them.**
-Entries are dated by the COMMIT that recorded them, which is UTC. The debugging
-session that produced 1.7, 5.3, 6.4, 6.5 and 6.7 ran across UTC midnight - its
-commits are stamped 2026-08-18 20:54 through 2026-08-19 01:27 - so entries from
-one continuous evening carry both dates. That is not two sessions and not a
-contradiction; it is the clock the commits use. When an entry's date matters,
-correlate it with the commit hash the entry names rather than with another
-entry's date.
-
----
+**Do not promote an entry between classes without a dated run**; an unexecuted
+line is not evidence in either direction. **Dates** are those of the COMMIT
+that recorded an entry (UTC): the session behind 1.7, 5.3, 6.4, 6.5 and 6.7 ran
+2026-08-18 20:54 to 2026-08-19 01:27 UTC, so one evening carries both dates.
+6.8 is the exception, dated by the run.
 
 ## 1. Parsing and scope
 
-### 1.1 A second `script "Name"` line silently breaks declaration scope
-**UNEVIDENCED** (filed OBSERVED 2026-08-17, then INFERRED, until the note below). A demo whose
-stack script contained its own `script "EnetLanChat"` on line 1 and an embedded
-library's `script "enetHelpers"` 200 lines down threw, from a handler 700 lines
-below both:
-
-```
-Chunk: error in object expression
-uiStatus "Hosting on port" && kEcPort && "-" && the number of keys of sPeers ...
-```
-
-`local sPeers` was declared plainly above that handler. The second script-name
-line put everything after it outside the scope the first file's declarations
-were in, so `sPeers` resolved as an undeclared name (see 2.1), and
-`the number of keys of` a *string* is a chunk expression against a non-object.
-
-**SUPERSEDED 2026-08-19 - the symptom above was not this.** The quoted error was
-traced on 2026-08-18 to the ARGUMENT SPELLING, not to scope: `keys` is not a
-chunk, so `the number of keys of X` fails whether or not X is declared (1.7,
-commit 61c14ea). The header had already been stripped from this demo in
-`b9fa4b3` - at that commit `enetxt/examples/enet-lan-chat.livecodescript` has
-exactly one `script "..."` line and the dashboard still reads
-`the number of keys of sPeers` - and the same error on the same line recurred
-afterwards, cleared only by the rewrite to
-`the number of lines of the keys of X`. The companion attribution made at the
-time, that datachannel-dht-chat's `sPolling` compile error had the same cause,
-was superseded by 1.6 (commit `de91770`): that error was a duplicate
-`local sPolling`, which survived the header strip and was still present at both
-declaration sites afterwards. So nothing observable changed when the second
-script line came off, and no dated run distinguishes this mechanism from the
-spelling bug. That is why the class is not OBSERVED - and because the
-failure it was inferred from was later attributed elsewhere, the inference rests
-on nothing observed either, which is what UNEVIDENCED exists to say out loud. Only a deliberate run would settle it, and that
-run would get its own date.
-
-**The rule survives on hygiene, not on knowledge, and it should be read that
-way.** A `script "..."` line is a stack-NAME marker, meaningful only when the
-file IS its own stack. Inside an embedded fragment it names a stack that is not
-there, so it is wrong whatever the engine does with it. That argument needs no
-engine pass, which is exactly why the gate stays: the strip is correct on
-structure alone, and this entry no longer claims to know what happens if you
-skip it.
-
-**Rule:** exactly one `script "..."` line per script, and it is the first line.
-When concatenating sources, strip the header from every part but the first.
-**Gate:** `tools/sync-demo-embeds.py` strips it and asserts none survived.
+### 1.1 A second `script "Name"` line inside an assembled script
+**UNEVIDENCED** (filed OBSERVED 2026-08-17, then INFERRED; reclassified
+2026-08-19). It was blamed for enet-lan-chat's
+`Chunk: error in object expression` (a demo with its own `script "EnetLanChat"`
+and an embedded `script "enetHelpers"`), which was really the argument spelling
+(1.7, commit 61c14ea); the companion `sPolling` error was a duplicate
+declaration (1.6, commit de91770). No dated run separates the two mechanisms.
+**Rule:** exactly one `script "..."` line per script, as its first line; strip
+it from every embedded part. It stands on structure alone: a script-name line
+inside a fragment names a stack that is not there.
+**Gate:** `tools/sync-demo-embeds.py` strips it (`strip_script_header`) and
+asserts none survived.
 
 ### 1.2 Script-level declarations resolve by LEXICAL POSITION
-**OBSERVED** on the folded-harness engine passes (the second engine error of
-that sequence; the root `CLAUDE.md` records the finding but not a date, so none
-is asserted here). `add pPassed to sPassed` died with
-`add: error in source expression` because the handler doing the arithmetic sat
-about a thousand lines ABOVE the `local` it read. Declared is not in scope:
-only the first question is visible to a grep, and 106 declarations were below
-their first reader.
-
-**Rule:** a script-level `local`/`constant` must appear above every handler that
-reads it. Generators must hoist. **Gate:** `tools/check-suite-selftest.py`.
+**OBSERVED** on the folded-harness engine passes (the root record carries no
+date, so none is asserted). `add pPassed to sPassed` in `stMergeCounted` died
+with `add: error in source expression`: the handler sat about a thousand lines
+ABOVE the `local` it read, so the name was undeclared there (2.1); 106 folded
+declarations were below their first reader. Declared is not in scope.
+**Rule:** a script-level `local`/`constant` sits above every handler that reads
+it; generators hoist. **Gate:** `tools/check-suite-selftest.py`.
 
 ### 1.3 Constants must be literal, and declared before first use
-**OBSERVED** (same class of failure as 1.2). A forward-referenced constant
-evaluates to nothing rather than erroring.
-**Gate:** `check_constants_before_use`, both dialects.
+**OBSERVED** (the 1.2 failure class). A forward-referenced constant evaluates
+to nothing rather than erroring. **Gate:** `check_constants_before_use`, both
+dialects.
 
 ### 1.4 Smart quotes fail compilation anywhere, including comments
-**OBSERVED.** U+201C/201D/2018/2019 break the compile even inside a comment or a
-string. ASCII `"` and `'` only. **Gate:** the static checker enforces zero.
+**OBSERVED.** U+201C/201D/2018/2019 break the compile even inside a comment or
+a string. ASCII `"` and `'` only. **Gate:** the static checker enforces zero.
 
 ### 1.5 A prefixed name whose full spelling IS a reserved token is the token
-**OBSERVED.** `tExt` (a `t`-prefixed name for "extension") lowercases to `text`,
-so xTalk evaluates the keyword, not your variable. It compiles and silently
-misbehaves. **Gate:** the `k`/`p`/`s`/`t` shadow-trap check.
+**OBSERVED.** `tExt` (a `t`-prefixed "extension") lowercases to `text`, the
+keyword: it compiles and silently misbehaves. **Gate:** the `k`/`p`/`s`/`t`
+shadow-trap check.
 
 ### 1.6 Two script-level declarations of one name is a HARD compile error
-**OBSERVED 2026-08-18**, on `datachannel-dht-chat` after it was made
+**OBSERVED 2026-08-18**, on `datachannel-dht-chat` once it was made
 self-contained:
 
-```
-stack "Untitled 1": compilation error at line 291 (local: name shadows
-another variable or constant) near "sPolling", char 1
-```
+    stack "Untitled 1": compilation error at line 291 (local: name shadows
+    another variable or constant) near "sPolling", char 1
 
-The demo declared `local sPolling` for its own timer, and so did
-`datachannel-helpers` for the dc poll chain. Before the embed those were two
-`local`s in two different STACKS and nothing collided; carrying the helper into
-the demo put both in one script. Two genuinely different flags, one name.
-
-This is the useful counterpart to 2.1: a *missing* declaration is silent and
-produces a plausible wrong answer, while a *duplicate* one is loud and stops
-the compile at paste time. Loud is better, but it still costs an engine pass to
-find, which is why it is gated rather than left to the engine.
-
-**Rule:** when any script is assembled from more than one source - an embed, a
-fold, a paste - the union of column-0 `local`/`constant` names must be unique.
+The demo and the embedded `datachannel-helpers` each declared `local sPolling`
+(two different flags), and the embed put both in one script. The counterpart
+to 2.1: a missing declaration is silent, a duplicate stops the compile at paste
+time.
+**Rule:** when a script is assembled from more than one source (an embed, a
+fold, a paste), the union of column-0 `local`/`constant` names must be unique.
 Rename at the source; never merge two declarations.
-**Gate:** `tools/sync-demo-embeds.py` refuses to write a colliding embed, and
-`tools/build-suite-selftest.py` prefixes every folded name for the same reason.
-Both gates are only as good as their name parser - see the note in
-`tools/test-demo-embeds.py` about the version of this one that could not see a
-declaration carrying a trailing comment, which is how the error above reached
-an engine at all.
+**Gate:** `tools/sync-demo-embeds.py` refuses a colliding embed,
+`tools/build-suite-selftest.py` prefixes every folded name, and
+`tools/test-demo-embeds.py` pins the trailing-comment blind spot that let this
+one reach an engine (`tools/check-cross-library-names.py` holds the library
+corpus disjoint).
 
 ### 1.7 `the number of keys of X` does not parse
-**OBSERVED 2026-08-18.** enet-lan-chat's dashboard, once a second:
+**OBSERVED 2026-08-18** (filed as `1.5b`, the number commit 61c14ea cites;
+renumbered 2026-08-19). enet-lan-chat's once-a-second dashboard:
 
-```
-Chunk: error in object expression
-Line: uiStatus "Hosting on port" && kEcPort && "-" && the number of keys of sPeers && "peer(s)", "ok"
-```
+    Chunk: error in object expression
+    Line: uiStatus "Hosting on port" && kEcPort && "-" && the number of keys of sPeers && "peer(s)", "ok"
 
-`keys` is not a CHUNK, so `the number of keys of sPeers` is not a count - the
-engine reads `keys of sPeers` as an OBJECT expression and fails to resolve it.
-The correct spelling is `the number of lines of the keys of sPeers`.
-
-**Why this survived so long, and why it is filed as a lesson rather than a
-typo.** BOTH spellings were in the tree at once. Measured at the commit that
-fixed it, the correct one was in fifteen files - eight distinct sources once the
-box2dxt Kit's line and its six carried copies are counted once and the generated
-`tests/suite-selftest.livecodescript` is set aside - and three of those files are
-harnesses that have run green on an engine; the broken one was in nine places
-across three demos, every one of them on a path no engine run had ever reached.
-Nothing distinguished them to a reader, and nothing checked them. That shape -
-two idioms for one job, one carrying evidence and one not - is worth looking for
-deliberately, because the tree cannot tell you which is which and a green gate
-will not either.
-
-**Gate:** the unified `check-livecodescript.py` antipattern set, fixture-tested
-in `tools/test-checker.py` against both spellings.
-
-(Filed as `1.5b` on the day it was written, which is the number commit `61c14ea`
-cites. Renumbered to 1.7 on 2026-08-19 so section 1 ascends: a letter suffix is
-for an entry that must sit BEFORE a later-numbered neighbour, and this one has
-no such constraint. 1.6 keeps its number, because `de91770` cites it.)
-
----
+`keys` is not a CHUNK, so the engine reads `keys of sPeers` as an OBJECT
+expression and fails. Correct: `the number of lines of the keys of sPeers`.
+Both spellings coexisted: the correct one in 15 files (three of them
+engine-green harnesses), the broken one in 9 places across 3 demos no run had
+reached. **Lesson:** two idioms for one job, one with evidence and one without,
+are worth hunting for deliberately.
+**Gate:** the unified `check-livecodescript.py` antipattern set,
+fixture-tested in `tools/test-checker.py` against both spellings.
 
 ## 2. Evaluation
 
 ### 2.1 An undeclared name evaluates to the literal text of its own name
-**OBSERVED, repeatedly, and this is the single most expensive behaviour in this
-file.** It does not error. `sPeers` becomes the string `"sPeers"`, and the
-failure surfaces far downstream wearing someone else's clothes:
-
-- as `add "cx1sPassed" to sPassed` -> "error in source expression" (1.2);
-- as a digest compared against the string `"cx1kBip39Mnemonic"` -> a tidy FAIL
-  that reads like a real library defect.
-
-**The inverse does NOT hold, and a third bullet here asserted that it did.** It
-read `the number of keys of "sPeers"` -> `Chunk: error in object expression`,
-offered as a demonstration of this behaviour. It is not one: that expression
-fails identically with a properly declared array, because `keys` is not a chunk
-(1.7). A chunk or object error says only that something in the expression did
-not resolve; it is not by itself evidence of an undeclared name, and reading it
-as one is what sent this tree after the wrong mechanism, twice, for two days
-(1.1). The bullet is gone rather than re-pointed - 2.1 keeps its OBSERVED class
-on the two above, which are independently evidenced.
-
-**Rule:** every name declared, always. There is no compiler to catch this and
-the runtime will not either. **Gate:** several, including the undeclared-constant
-and catch-variable checks.
+**OBSERVED**, repeatedly; the single most expensive behaviour in this file. No
+error: `sPeers` becomes the string `"sPeers"`, and the failure surfaces far
+downstream in someone else's clothes - as `add "cx1sPassed" to sPassed` ->
+`error in source expression` (1.2), or as a digest compared against the string
+`"cx1kBip39Mnemonic"` -> a tidy FAIL that reads like a real library defect.
+**Does NOT mean** that a chunk or object error is evidence of an undeclared name:
+1.7 fails identically on a declared array, and reading it as this sent the tree
+after the wrong mechanism (1.1).
+**Rule:** declare every name. **Gate:** several, including the
+undeclared-constant and catch-variable checks.
 
 ### 2.2 The engine ignores ONE trailing delimiter when counting items
-**OBSERVED 2026-08-10 - the single red line of that pass.**
-`cxHdDerivePath(tNode, "m/")` returned the node unchanged instead of throwing:
-`the number of items of "m/"` is 1, not 2, so the malformed path looked like a
-bare `m`. A fail-OPEN in a derivation path, found only because a human read the
-one red line in an otherwise green run.
-
-**Rule:** never infer "there is no trailing empty component" from an item count.
-Check the string.
+**OBSERVED 2026-08-10**, the single red line of that pass.
+`the number of items of "m/"` is 1, so `cxHdDerivePath(tNode, "m/")` returned
+the node unchanged instead of throwing: a fail-OPEN in a derivation path.
+**Rule:** never infer "no trailing empty component" from an item count; check the string.
 
 ### 2.3 `itemDelimiter` and `lineDelimiter` are global mutable state
 **OBSERVED** (several times, in shipped code). A handler that sets one and
-returns without restoring it corrupts every parse that follows, in unrelated
-code, until something else sets it. The observed symptom is always the same
-shape: "item 1 returned the whole list".
-
-**Rule:** save, set, restore - around the NARROWEST span that needs it.
+returns without restoring it corrupts every later parse in unrelated code; the
+symptom is always "item 1 returned the whole list". **Rule:** save, set,
+restore, around the NARROWEST span that needs it.
 
 ### 2.4 Every number is an IEEE double, so integers are exact only to 2^53
-**DOCUMENTED**, and deliberately not stronger: LiveCode documents its numeric
-model, this tree has acted on it since coinxt was written
-(`coinxt/src/coinxt.livecodescript`: "a 320-bit base58 payload is NEVER held as
-one number ... which is why this file has no bignum"), and **nobody has yet run
-a 2^53 probe on OXT**. Promoting this to OBSERVED needs one dated run, and it is
-a five-minute probe - written out, with its discriminating outcomes, as
-`docs/OXT-PASS-RUNBOOK.md` S1 row P (2026-09-10).
-
-The consequence: an integer accumulator is exact while |v| <= 9007199254740992
-and silently ROUNDS above it. `byteToNum` over eight bytes is the shape that
-bites - 2^64-1 is not representable, so an 8-byte little-endian read answers
-1.8446744073709552e+19 and every comparison against it is then wrong. There is
-no error, no overflow flag and no exception; the script simply continues with a
-different number. This is the same class as 2.1 (an undeclared name evaluates to
-its own spelling): the engine's failure mode is a plausible wrong answer, not a
-stop.
-
-**What made it worth an entry** (2026-09-08): the tree's only headless execution
-path did not model it. `coinxt/tools/lcs-interp.py` ran arithmetic at python's
-ARBITRARY precision, so the 8-byte read that rounds on an engine returned
-18446744073709551615 exactly in the interpreter. That is LOOSER than the engine,
-the one direction that file's own contract forbids, and it meant wide-integer
-code could pass the static checker AND every headless vector AND still be wrong
-on an engine. The interpreter now refuses any integer past the exact range
-rather than emulating the rounding, so the gate names the site instead of
-inheriting the engine's silence. Refusing is stricter than the engine, which is
-allowed; the engine carries on and tells nobody.
-
-**Rule:** never accumulate a value past 2^53. Split it - bytes, hex, or decimal
-digits - which is the no-big-integer discipline coinxt already writes down.
-Bound every wide decoder at its parse site rather than after the arithmetic,
-because after it there is nothing left to detect.
+**DOCUMENTED** (LiveCode's numeric model; runbook row P is the five-minute
+probe that would promote it, and it has not run on OXT). An accumulator is
+exact while |v| <= 9007199254740992 and silently ROUNDS above: an 8-byte
+`byteToNum` of 2^64-1 answers `1.8446744073709552e+19`, with no error and no
+flag - the 2.1 class, a plausible wrong answer. Since 2026-09-08 the family
+interpreter (`coinxt/tools/lcs-interp.py`, byte-identical in `nostrxt/tools/`)
+REFUSES any integer past the exact range; before that it computed at Python's
+arbitrary precision, looser than the engine.
+**Rule:** never accumulate past 2^53. Split into bytes, hex or decimal digits
+(coinxt's no-bignum discipline), and bound every wide decoder at its parse
+site, because after the arithmetic nothing is left to detect.
 
 ### 2.5 `and` and `or` evaluate BOTH operands - there is no short-circuit
-**DOCUMENTED for the evaluation rule itself; the two CONSEQUENCES below differ
-in class and the difference is the whole entry.** No engine run has been made
-that isolates the rule (the probe that would, in both directions, is
-`docs/OXT-PASS-RUNBOOK.md` S1 row P), but coinxt has now hit it at eight separate sites and
-`tools/lcs-interp.py` models it explicitly (`p_or` computes the right operand
-unconditionally), so it is the working assumption throughout the tree.
-
-A type guard therefore CANNOT sit in the same expression as the thing it
-guards. `if X is not an integer or X < 1` runs `X < 1` even when X is not an
-integer, and `if not isDigits(X) or X + 0 < 1` runs `X + 0` even when the digit
-test already said no.
-
-**What happens next depends on what the second operand does, and the two are
-not the same severity:**
-
-- **A COMPARISON folds to a TEXT comparison.** `X < 1` on non-numeric X does
-  not error on the engine - it compares as text and answers something. A wrong
-  answer, silently, which is the harder one to notice. (This is also where the
-  interpreter is STRICTER than the engine: it refuses, so the gate reports a
-  failure the engine would not have.)
-- **ARITHMETIC IS A HARD ERROR.** `X + 0` on non-numeric X is the same class as
-  `add "cx1sPassed" to sPassed` in 2.1 - "error in source expression",
-  OBSERVED. In a library whose contract is never to throw, that is an uncaught
-  engine error reaching the app, on the thread that also draws the UI.
-
-Found in nostrxt on 2026-09-09 at three sites written as
-`if not nxIsDigits(X) or X + 0 <op> ...`, one of them (`nxJsonPathNode`)
-reachable straight from relay bytes - so a single malformed message from a
-hostile relay was an uncaught throw. coinxt's own record (`coinxt/CLAUDE.md`)
-has the same shape five times over, twice written by someone who had just
-finished documenting the previous one.
-
-**Rule:** nest the guard. `if not guard(X) then refuse` as its own `if`, then
-the arithmetic or comparison in a second `if`. Never rely on the left operand
-to protect the right one - nothing does.
-
----
+**DOCUMENTED** for the rule itself (runbook row P(b) is the probe that would
+promote or disprove it); the family interpreter models it (`p_or` evaluates the
+right operand unconditionally) and coinxt had hit it at eight sites. A type
+guard cannot share an expression with what it guards; the damage depends on the
+second operand. A **COMPARISON** (`X < 1`, X non-numeric) silently folds to a
+TEXT comparison and answers something (the interpreter refuses: stricter).
+**ARITHMETIC** (`X + 0`) is a hard `error in source expression` (the 2.1 class,
+OBSERVED): in a never-throw library, an uncaught error in the app. Found in
+nostrxt on 2026-09-09 at three sites of the form
+`if not nxIsDigits(X) or X + 0 <op> ...`, one (`nxJsonPathNode`) reachable from
+relay bytes, so one malformed relay message was an uncaught throw; coinxt's
+record has the same shape five times (trap 21 of `coinxt/CLAUDE.md` names the
+guard predicates it uses now).
+**Rule:** nest the guard: `if not guard(X) then refuse` as its own `if`, then
+the arithmetic or comparison.
 
 ### 2.6 `the number of <chunks> of X & Y` counts X alone - the target is a factor
-**OBSERVED, by way of a harness assertion that passed on two engines.**
-holde-em's netplay section asserts
+**OBSERVED**, via a holde-em netplay assertion green on two engine runs:
 
     the number of lines of tOutboxTxt & "/" & char 1 to 3 of line 1 of tOutboxTxt
 
-against `"1/r!" & tab`, and that line was green in the suite paste on 2026-08-20
-(Windows x86_64, holde-em 543/0) and again on 2026-08-24 (584/0). So `&` after
-the count's target is NOT folded into the target: the count is taken of
-`tOutboxTxt` and the rest is concatenated onto the number - the everyday
-LiveCode idiom `put the number of lines of tList & " lines"`. Arithmetic after
-the target (`the number of chars of X + 1`) has no engine record either way
-and is assumed to bind the same way (a factor, then the operator outside).
-
-Why it is written down: the family's interpreter modelled the OPPOSITE until
-2026-09-11 - it parsed the target at the concatenation tier, so `& "/"` was
-folded in and the count came out as the count of the whole string. holde-em's
-execution gate read `2` where the engine had read `1/r!`, which is how the
-model's binding was found to be the model's. The "chunk-binding trap" sites
-coinxt and nocloud rewrote to locals in September were findings of that model,
-not of an engine; the rewrites are harmless either way and stay. (The FIELD
-NAME form, `field "x" & tKind`, is a different construct and is not settled by
-this entry.)
-
----
+equals `"1/r!" & tab` in the suite paste on 2026-08-20 (Windows x86_64,
+holde-em 543/0) and 2026-08-24 (584/0). The count binds to `tOutboxTxt` and the
+rest is concatenated onto the number, the everyday
+`put the number of lines of tList & " lines"`. It broke the model, not the
+engine: the family interpreter bound the other way until 2026-09-11 (holde-em's
+execution gate read `2` where the engine read `1/r!`); the September
+"chunk-binding trap" rewrites in coinxt and nocloud were findings of that
+model, harmless, and stay.
+**Not settled:** arithmetic after the target (`the number of chars of X + 1`,
+assumed to bind the same way) and the field-name form `field "x" & tKind`.
 
 ### 2.7 Array KEYS fold case: `tA["A"]` and `tA["a"]` are ONE element
-**OBSERVED 2026-09-15** - archivext's first engine contact, the member harness
-(`axSelfTest`) on the user's OXT (platform and version not recorded; 357
-passed, 2 failed, 0 skipped). The JSON reader indexed an object's children by
-key in an array (`sAxJsonM[node][key]`), and the harness asserted
+**OBSERVED 2026-09-15**: archivext's member harness (`axSelfTest`) on the
+user's OXT (platform and version not recorded; 357 passed, 2 failed, 0 skipped;
+363/0/0 after the fixes; archivext left for its own repository on 2026-09-21,
+the record stays here). The assertion
 
     axtCheck axJsonType(tDoc, "A") is "missing", "keys are case-sensitive"
 
-against a document whose only key was `a`. The engine answered the `a` node:
-`"A" is among the keys of tArray` is TRUE when the stored key is `a`, and
-`tArray["A"]` reads that element. `the caseSensitive` defaults to false and it
-governs array KEYS as well as `is` / `contains` / `offset` - coinxt's
-discipline 3 records the comparison half of that rule; this is the container
-half. Cost: one red line, and a reader whose documented contract ("object keys
-looked up exactly") was false on the engine from the day it shipped.
-
+against a document whose only key was `a` answered the `a` node:
+`"A" is among the keys of tArray` is true and `tArray["A"]` reads it.
+`the caseSensitive` (default false) governs array KEYS as well as `is` /
+`contains` / `offset` (coinxt's disciplines record the comparison half). It
+broke a JSON reader whose "keys looked up exactly" contract was false from the
+day it shipped.
 **Rule:** never use an array as an exact-string index. Keep the original keys
-in a numbered list and scan it with a byte-exact compare (archivext's
-`axJsonFindKey` over `axStrEq`; nostrxt's `nxStrEqExact`), or fold on purpose
-and say so where the array is declared. Numeric keys, and every numeric-indexed
-table in this tree, are unaffected.
-
-**Gate:** none can see it. The family interpreter (`tools/lcs-interp.py`)
-models an array as a Python dict, which is case-SENSITIVE, so the model passed
-the code the engine folded - the same shape as 2.6, a model binding found to be
-the model's. Recorded as a model gap rather than fixed the same day: folding
-keys in the interpreter touches every member's execution gate at once (holde-em,
-coinxt, riptide, nostrxt, nocloud, archivext), and each of those should be
-re-run and read when it lands (`docs/REMAINING-WORK.md`).
-
-**What it does NOT mean:** `the keys of` still answers the key's ORIGINAL
-spelling (the archivext reader lists `a` for a document whose key is `a`), so a
-scan over the keys is exact; only the subscript lookup folds.
-
----
+in a numbered list and compare byte-exact (nostrxt's `nxStrEqExact`), or fold
+on purpose and say so where the array is declared. Numeric keys are unaffected.
+**Gate:** none. The family interpreter's arrays are Python dicts
+(case-SENSITIVE), so it passes code the engine folds: an open model gap in the
+`coinxt/` and `nostrxt/` interpreter copies, tracked in the suite's
+docs/WORK-PLAN.md; riptide's LAN keys are a concrete case.
+**Does NOT mean:** `the keys of` still returns each key's ORIGINAL spelling, so
+a scan over the keys is exact; only the subscript lookup folds.
 
 ## 3. Control flow
 
 ### 3.1 `repeat with i = A to B step N` does not honour the step
-**OBSERVED** by an operator at an engine, after every gate in the repo went
-green. (The checker records the finding and its cost but not a date; none is
-asserted here.) `i` walked one at a time. In `cxHexDecode` that made the final pass read
-one character past the pairs, get empty, and throw "not a hex digit" over VALID
-input - the library accusing the caller's data of corruption in the exact words
-it reserves for real corruption.
-
-**Rule:** use `repeat while` with an explicit `add N to i`.
-**Gate:** `check_engine_hostile_constructs`. There was exactly ONE occurrence in
-the whole suite, which is why it had never been in front of an engine: **a
-construct nobody else uses is a construct nobody else has proved.**
+**OBSERVED** by an operator at an engine after every gate was green (the
+checker's record carries no date). `i` walked one at a time, so `cxHexDecode`
+read one character past the pairs and threw `not a hex digit` over VALID input.
+**Rule:** `repeat while` with an explicit `add N to i`.
+**Gate:** `check_engine_hostile_constructs`. It was the only occurrence in the
+suite: a construct nobody else uses is a construct nobody else has proved.
 
 ### 3.2 `throw` from inside a `catch` block does not reach the caller
 **OBSERVED**, same run as 3.1. The handler falls through and returns whatever
-its result variable holds - usually empty. Nine `itemDelimiter` guards did this,
-and one was `cxMnemonicValidate`, whose inner reaches `return false` only via
-its own catch: **a mistyped seed phrase was reported VALID.**
-
+its result variable holds. Nine `itemDelimiter` guards did this; one was
+`cxMnemonicValidate`, so a MISTYPED seed phrase was reported VALID.
 **Rule:** capture the error in a local, close the `try`, throw after `end try`.
-**`return` inside a catch is FINE and engine-proven** (onionxt's
-`oxSodiumHasSha3` does it on a path that same run exercised) - only `throw` is
-affected.
+**Does NOT mean:** `return` inside a catch is FINE and engine-proven (onionxt's
+`oxSodiumHasSha3`, same run). **Gate:** `check_engine_hostile_constructs`.
 
 ### 3.3 A zero-argument call in STATEMENT position must be written bare
-**OBSERVED 2026-08-09**, and it took a 4,400-line paste with it. A statement
-starting with an identifier parses as a COMMAND, so `dcCleanup()` hands it the
-expression `()`, which is not an expression. `.livecodescript` compiles as one
-unit, so one line killed the whole file.
-
-What makes it worth carrying is why it was invisible: the ONE-argument spelling
-`dcFreePeer(sPeerA)` is correct, so the broken line looked identical to the
-working one beside it; in EXPRESSION position (`dcCleanup() is 0`) the parens
-are REQUIRED, same characters, opposite verdict; and LiveCode **Builder** allows
-`sPrepare()` as a statement, which the `.lcb` files do ~90 times on
-engine-proven paths. "We do this everywhere" was true and irrelevant.
-
+**OBSERVED 2026-08-09.** A statement starting with an identifier parses as a
+COMMAND, so `dcCleanup()` hands it the expression `()`, which is not one; a
+`.livecodescript` compiles as one unit, so that line killed the whole
+4,400-line suite paste. **Does NOT mean:** the one-argument
+`dcFreePeer(sPeerA)` is correct; in EXPRESSION position (`dcCleanup() is 0`)
+the parens are REQUIRED; LiveCode Builder allows `sPrepare()` as a statement
+(~90 times in the `.lcb` files, engine-proven).
 **Gate:** `check_zero_arg_statement_calls`, `.livecodescript` only.
-
----
 
 ### 3.4 `Function: error in function handler` with the hint = the function's NAME means "no live handler in the message path"
 **DOCUMENTED 2026-09-15**, from the engine source (livecode `develop-9.6`
-`engine/src/exec-keywords.cpp`, `object.cpp`; the OXT engine branch's copies
-of the error tables are byte-identical), read after archivext's first
-engine report:
+`engine/src/exec-keywords.cpp`, `object.cpp`; OXT's error tables are
+byte-identical), read after archivext's first engine report:
 
     Type    Function: error in function handler
     Object  Untitled 3
     Line    axtCheck axVersion() begins with "ArchiveXT", "..."
     Hint    axVersion
 
-That trace says exactly one thing: the CALLER evaluated `axVersion()`, the
-engine walked the message path, found no live handler of that name, and
-appended EE-0219 with the name as the hint. A runtime fault INSIDE the
-function would read differently - the inner error would be line 1 (the
-Type row), and the function's own stack would be the Object. Two
-mechanisms produce the trace, and the dialog cannot tell them apart: the
-library was never put in use (no `start using`, or the wrong stack), or the
-library WAS reached but its script is DEAD - scripts are parsed LAZILY, on
-the first message (`MCObject::parsescript`), and a parse failure marks the
-script dead, sends an unhandled `scriptParsingError`, and reports nothing in
-`the executionError`. `start using` is the eager exception: it parses on
-the spot and throws EE-0845 `start: script of specified stack won't
-compile`, so a library that reached the path THAT way is not dead. The
-header line of the IDE dialog carries only an icon and "executing at
-<time>" - a description there ("bad syntax") was a paraphrase, and the
-verbatim text is what to ask for.
-
-**Rule:** treat this pair as "not loaded" first. From the message box:
-`put the stacksInUse`; `put axVersion()` (a version string proves loaded AND
-parsed); `set the script of stack "x" to the script of stack "x"` then
-`put the result` (empty means it compiles; otherwise the parse error's
-number, line, column and token). archivext's next run, with the library in
-use, compiled whole and ran 357 checks (2.7).
-
-**What it does NOT mean:** a COMMAND called with `()` throws the same
-EE-0219 at the call site (holde-em gotcha 7), so check the callee's kind
-before checking the path.
-
----
+The engine found no live handler named `axVersion` on the message path and
+appended EE-0219 with the name as the hint (a fault INSIDE the function would
+show its own error first). The dialog cannot separate two causes: the library
+was never put in use, or its script is DEAD - scripts parse lazily on first
+message (`MCObject::parsescript`), and a parse failure sends an unhandled
+`scriptParsingError` with nothing in `the executionError`. `start using` parses
+eagerly and throws EE-0845 `start: script of specified stack won't compile`.
+**Rule:** treat it as "not loaded" first: `put the stacksInUse`;
+`put <lib>Version()` (a string proves loaded AND parsed);
+`set the script of stack "x" to the script of stack "x"` then `put the result`
+(empty means it compiles, else the parse error's number, line, column, token).
+Ask for the dialog's verbatim text ("bad syntax" was a paraphrase). archivext's
+next run, library in use, compiled whole and ran 357 checks (2.7).
+**Does NOT mean:** a COMMAND called with `()` throws the same EE-0219 at the
+call site (holde-em's `heProbeSodium()`, v0.10.x; the unified checker's check
+16 flags it), so check the callee's kind first.
 
 ## 4. The FFI boundary (LCB <-> C)
 
-These are the marshalling bets the suite had to place before any engine existed.
-All are **OBSERVED**; the dates are when each was first proven.
+Marshalling bets placed before any engine existed; all **OBSERVED**, dated by
+first proof.
 
 | Behaviour | First proven | Note |
 |---|---|---|
@@ -456,765 +261,370 @@ All are **OBSERVED**; the dates are when each was first proven.
 | `MCDataGetBytePtr` marshals an EMPTY `Data` through a plain `Pointer` | 2026-08-08 | for an empty INPUT |
 | A C `int` flag marshals (33 vs 65 came back distinct) | 2026-08-10 | |
 | `Boolean` returns work in both directions | 2026-08-10 | `cxVerify` answered true and false |
-| An EMPTY `Data` reaches the shim as length 0 in an **OPTIONAL argument** slot | **2026-08-17** | proven for an empty INPUT in 2026-08-08, never for an optional argument until this run |
+| An EMPTY `Data` reaches the shim as length 0 in an **OPTIONAL argument** slot | **2026-08-17** | an empty INPUT was proven 2026-08-08; an optional argument only on this run |
 | A three-argument foreign call shape marshals | 2026-08-17 | `cxSchnorrSign` |
 | An array return reads back by name | 2026-08-17 | `cxTaprootTweak` |
 
 **Rule for `.lcb`:** every foreign call inside `unsafe ... end unsafe`, and all
-declarations at the TOP of the handler - a nested `local` has broken whole-script
-compilation.
-
----
+declarations at the TOP of the handler - a nested `local` has broken
+whole-script compilation.
 
 ## 5. Controls and the UI
 
 ### 5.1 A polygon graphic does not resize by setting its height
-**OBSERVED 2026-08-17, box2dxt engine run 5.** A polygon graphic's rect is
-DERIVED from its points, so `b2kPlayerDuckSet`'s "resize the control, then
-reshape" rebuilt the physics capsule at FULL height every time. The player
-wedged against a wall while every existing assert passed, because they read the
-bookkeeping variable (`sPlayHalfH`) rather than measuring the control.
-
-A second effect compounded it: the drawer's re-point pads the rect by the pen
-margin, so each rebuild grew the control by 2px (measured 50 -> 52 -> 54).
-
-**Rule:** re-point a polygon to resize it. Capture canonical dimensions BEFORE
-the first draw pads the rect, and never re-read a padded rect as truth.
-**Lesson beyond the bug:** an assertion that reads your own bookkeeping is not a
-measurement.
+**OBSERVED 2026-08-17** (box2dxt engine run 5). A polygon's rect is DERIVED
+from its points, so `b2kPlayerDuckSet` ("resize the control, then reshape")
+rebuilt the physics capsule at FULL height: the player wedged against a wall
+while every assert passed, because they read `sPlayHalfH`, not the control. The
+re-point also pads the rect by the pen margin, +2px per rebuild (50, 52, 54).
+**Rule:** re-point a polygon to resize it; capture canonical dimensions BEFORE
+the first draw pads the rect. **Lesson:** an assertion that reads your own
+bookkeeping is not a measurement.
 
 ### 5.2 Window lifetime hooks differ by stack shape
 **OBSERVED.** box2dxt's games hang their window off the CARD hooks
-(`openCard`/`closeCard`) rather than the stack ones, and tear down via
-`b2kTeardown` from `closeCard`. A tree-wide audit that greps for `on closeStack`
-will report them as having no teardown, wrongly - which happened on 2026-08-17.
+(`openCard`/`closeCard`, `b2kTeardown` from `closeCard`), so a grep for
+`on closeStack` wrongly reports them without teardown (it did on 2026-08-17).
 
 ### 5.3 An unqualified control resolves against THE DEFAULTSTACK
-**DOCUMENTED** (filed OBSERVED 2026-08-18 until the correction below).
-enet-lan-chat's once-a-second dashboard threw, from inside the UI kit's
-`uiStatus`:
-
-```
-Chunk: error in object expression        (Hint: ecDashOnce, REPEATEDLY)
-```
-
-**CORRECTED 2026-08-19.** This throw was traced the same session to the ARGUMENT
-evaluated at the `ecDashOnce` call site - `the number of keys of sPeers`, entry
-1.7 - which is evaluated in the CALLER and so never reached `uiStatus`. The
-commit that fixed it says so in as many words, and the pin landed one commit
-earlier without stopping it. This entry has no dated engine observation behind
-it. DOCUMENTED is therefore the honest class: the resolution rule below is
-documented `defaultStack` behaviour, not something this tree has watched fail.
-It is not INFERRED either - INFERRED needs an observed failure to derive from,
-and the only failure ever offered here belongs to another entry.
-
-`put pText into field "uiStatus"` resolves `field "uiStatus"` against **the
-defaultStack**, not against the stack whose script is running. Inside
-`openStack` those are the same object, which is why every demo's STARTUP status
-line has always worked and why this had never been seen. A handler arriving
-from `send ... in` has no such guarantee: with another stack in front, the
-write lands on the wrong stack or resolves to nothing.
-
-**The quiet half is a CONDITIONAL, and this entry used to state it as an
-outcome.** It said datachannel-dht-chat had the same fault and never threw,
-because it guards with `if there is a field "uiStatus"` - two outcomes of one
-mechanism. Neither half of that holds. dht-chat never carried the broken
-argument, so it had no fault to hide; and the guard credited to the kit was not
-in the kit, because before `db0f9e3` the master's `uiStatus` had no existence
-check at all (`git show 1dad0e1:tools/ui-kit.livecodescript`). The guard is
-dht-chat's OWN wrapper `wxSetStatus`, in
-`datachannelxt/examples/datachannel-dht-chat.livecodescript`, which calls into
-the kit only `if there is a field "uiStatus"`. What survives is the shape of the
-hazard, in the tense it belongs in: a guarded call site WOULD fail silently if
-the defaultStack diverged - the status line simply stops updating, on the exact
-path a person is least likely to report. A guard would convert this bug from
-loud to invisible, which is an argument for a gate rather than for more guards.
-
-**Rule:** a handler that can arrive from a delayed message must pin the stack
-before touching an unqualified control:
-
-```
-set the defaultStack to the short name of this stack
-```
-
-**Gate:** `tools/check-timer-stack-pin.py` - every `send ... to me in` target,
-and everything REACHABLE from it: a closure over the handlers defined in the
-same file, plus the ui* kit master, stopping at any handler that already pins
-(below a pin the defaultStack is set, so following through would name a hazard
-that cannot happen). 75 delayed handlers across 26 files today.
-
-**WIDENED 2026-08-20, and the widening is the point.** Until then it asked one
-question - "does this armed handler call an unpinned ui* handler?" - which is a
-check for the bug already found, since the ui-kit fix had closed exactly that
-hop. It knew about ONE carried block and never asked the same question about
-anything else, including the other one: the suite core's `stPump` is armed by
-`send "stPump" to me in 33 milliseconds` and calls `stShow`, which writes
-`field "stResults"` unqualified; the gate read stPump's own body, found no
-control reference, checked the kit list, and passed. As a closure it found **40
-unpinned timer chains across 15 files** - every demo's own log / refresh /
-status helper, reached from its poll or dashboard tick. All 33 distinct
-handlers are pinned now, at the timer entry point, which is where the ambiguity
-starts and where one line covers everything downstream.
-
-Those 40 are STATIC findings, like the three (`pfCardFadeStep`,
-`sgCardFadeStep`, `heBetSliderFromThumb`) the narrower gate had found before
-them - not observed failures. Nothing above argues against the pin: it is
-cheap, harmless, and defensible on documented engine semantics. Only the
-evidence label changed. Putting this entry back at OBSERVED costs one
-deliberate run - open a second stack in front and let a `send ... in` handler
-write an unqualified `field "uiStatus"` - and that run gets its own date.
-
-**A near miss worth recording, because it is how this entry could have gone
-wrong a second time.** On 2026-08-20 two Windows pastes of the suite harness
-ended mid-CROSS-section, and a first-tick throw in `stShow` fitted the evidence
-exactly: the report would freeze at precisely the last synchronous render,
-which is what both looked like. That diagnosis was written up as fact and was
-wrong - the third run, same build, completed 1981/0/1 through both loopbacks,
-teardown and the summary; the first two were copied before the async half
-finished. A mechanism that explains the symptom is not an observation of it,
-which is the same distinction the 2026-08-19 correction above turns on.
+**DOCUMENTED** (filed OBSERVED 2026-08-18, corrected 2026-08-19). The throw it
+was filed on, `Chunk: error in object expression` (Hint: `ecDashOnce`,
+REPEATEDLY), was 1.7's argument, evaluated in the CALLER before `uiStatus` was
+reached (the pin landed a commit earlier and did not stop it). No dated engine
+observation stands behind this entry; the rule is documented behaviour.
+`put pText into field "uiStatus"` resolves against the defaultStack, not the
+stack whose script is running. Inside `openStack` those coincide (why every
+startup status line worked); a handler arriving by DELAYED DELIVERY
+(`send ... in`, an engine socket or URL callback, a library dispatch) has no
+such guarantee. With another stack in front the write lands elsewhere or
+resolves to nothing, and a guarded site (`if there is a field "uiStatus"`)
+would fail SILENTLY.
+**Rule:** pin the stack at the delayed entry point:
+`set the defaultStack to the short name of this stack`.
+**Gate:** `tools/check-timer-stack-pin.py`, a closure over same-file handlers
+plus the ui* kit master that stops at any handler already pinning (since
+2026-08-20: 40 unpinned chains in 15 files, all pinned at their entry points).
+Since 2026-09-09 its entry set covers all three delivery classes: `send ... in`
+targets, engine socket/URL callbacks (`with message "X"`, `socketError` /
+`socketClosed` / `socketTimeout`) and library-dispatched callbacks
+(`oxSetStreamCallback`, `nxrSetCallback`, `oxhRoute` and friends), 24 more
+chains in 9 files. 298 delayed handlers across 37 files on 2026-09-23 (it
+prints the live count); `tools/test-timer-stack-pin.py` (2026-09-10) refuses a
+scan that finds nothing. **To promote:** one deliberate run (a second stack in
+front, a `send ... in` handler writing an unqualified field), with its own date.
+**Near miss, 2026-08-20:** two Windows suite pastes ending mid-CROSS-section
+were diagnosed as an `stShow` first-tick throw; the third run, same build,
+completed 1981/0/1 (the first two were early copies). A mechanism that explains
+a symptom is not an observation of it.
 
 ### 5.4 `the playLoudness` does not read back exactly on every platform
-**OBSERVED 2026-08-18 on LINUX.** box2dxt's harness did
+**OBSERVED**, on box2dxt's harness:
 
-```
-b2kSoundVolume 73        -- set the playLoudness to round(clamp(73,0,100))
-stAssert "playLoudness readback", (the playLoudness is 73)
-```
-
-and the assertion was FALSE. The identical check had been green on Windows
-x86_64 (NT 10.0, OXT 9.6.3) the day before. **What the value actually was is
-not known** - the check reported nothing but its own name, so a scarce engine
-session yielded "some number is not 73". The harness now probes two points and
-prints both, so the next pass on any platform reports the scale instead of
-re-asking; do not promote a mechanism into this entry until it does.
-
-**ANSWERED, BOTH PLATFORMS.** The two-point probe was written to make the next
-pass report the scale instead of re-asking, and it did.
-
-| Platform | asked 24 | asked 73 | verdict |
+| Run | Asked | Read back | Verdict |
 |---|---|---|---|
-| Win32 (2026-08-20, harness v30) | 24 | 73 | EXACT |
-| Linux (2026-08-21, harness v30) | **0** | **0** | **write-only: readback is a constant 0** |
+| Windows x86_64 (NT 10.0, OXT 9.6.3), 2026-08-17 | 73 | 73 | the exactness assert green |
+| Linux, 2026-08-18 (harness v29) | 73 | not 73 (the assert printed no value) | FAIL |
+| Win32, 2026-08-20 (harness v30) | 24, 73 | 24, 73 | EXACT |
+| Linux, 2026-08-21 (harness v30) | 24, 73 | **0, 0** | write-only: a constant 0 |
 
-So the mechanism is no longer unknown. On Linux `the playLoudness` does not
-report what was written to it at all - not a different scale, not rounding: a
-constant. The 2026-08-18 failure was never "some number is not 73"; it was
-**zero**, and one line of probe output settled what a whole engine session could
-not.
-
-**IT ALSO KILLED THE ASSERTION THAT REPLACED THE FIRST ONE, which is the part
-worth carrying.** v30 stopped asserting exactness and asserted ORDER instead -
-a high write must read back above a low one - reasoning that this still catches
-an engine that ignores writes. Linux ignores writes here, is not broken, and the
-Kit never reads the value back, so v30 went red on a healthy platform. The
-replacement assertion was better than the original and still wrong, for the same
-underlying reason: it treated a readback as a channel. **v31 asserts only that
-the property is READABLE and reports the rest.** A check that fails on a healthy
-engine is worse than no check - the next reader has to re-derive that it is
-noise, and the run stops being trustworthy at a glance.
-
-**Rule:** `playLoudness` is a request, not a register. Set it and move on; do
-not read it back and compare against what you wrote, and do not compute from it.
-**Not even the ordering** - that was this entry's rule until 2026-08-21, and
-Linux disproved it. There is NO property of the readback to rely on; treat the
-write as fire-and-forget.
-
-**The wider lesson is about assertions, not audio.** Every other check in that
-section names the value it saw - `(got 200)`, `(hScroll 1120)`, `(owner:
-b2kcam_view)` - and this one did not, which is exactly the check that went red
-on a platform nobody had run before. An assertion's failure message is the
-whole product of an engine pass. Write it as though the run costs a day,
-because it does.
+It broke v29's exactness assert on Linux, then v30's replacement ORDER assert
+(a high write reads back above a low one) on a healthy Linux engine.
+**Rule:** `playLoudness` is a REQUEST, not a register: set it and move on, and
+never compare against or compute from the readback, not even its ordering (v31
+asserts only that it is READABLE). **Lesson:** every assertion must print the
+value it saw; a check that fails on a healthy engine is worse than none.
 
 ### 5.5 A script-only stack file opened from disk does not build its GUI
-
-**OBSERVED** (OXT, 2026-08-14; the primary record is the dated maintainer note
-in `start-here.livecodescript`'s own header). A `.livecodescript` file is TEXT.
-`File > Open Stack` on one - or `go` to the file - loads the script and stops
-there: **going to the file does not produce a built window**. A demo that
-builds its whole UI in `preOpenStack` / `openStack` therefore looks broken
-rather than unopened, and the engine says nothing at all, which is what makes
-this expensive - the reader concludes the DEMO is defective and stops.
-
-**What works** is the ritual `OXT-PASS-RUNBOOK.md` 3.1 spells out, and it is
-the only shape any engine pass in this tree has ever used: `File > New
-Mainstack`, `Object > Stack Script`, paste the whole file, Apply, then CLOSE
-and REOPEN the window. `start-here.livecodescript`'s Open button automates
-exactly that - create a host stack, park it CLOSED, set its script, `go` to
-it (the close-and-reopen half is load-bearing; the second block of this note
-is the expensive proof) - which is why
-the launcher can open a demo that the reader could not have opened by
-double-clicking the same file.
-
-**What it does NOT mean.** Getting a script-only file into the MESSAGE PATH is
-fine and is how the pure-script layers are wired by hand: load it and
-`start using stack "<name>"`, expecting no window, because there is none to
-build (`onionxt/docs/10-usage-guide.md` section 2 is the worked example). Same
-for the two function-shaped harnesses - `put sxSelfTest()`, `put oxSelfTest()`
-from the message box. The rule is about the GUI BUILD, not about loading a
-script.
-
-**What it cost.** Nothing in an engine session: it cost the front door. The
-suite's own entry point taught the wrong ritual on both ends - `README.md`
-step 3 said to open `start-here.livecodescript` with `File > Open Stack`, and
-that file's header said the same thing FOUR LINES ABOVE the paragraph
-documenting this exact behaviour and implementing the workaround. A first-time
-reader following the README got a launcher that never built its window, from
-the one file whose entire job is making the demos easy to run. Corrected
-2026-08-27 in `README.md`, `CLAUDE.md`, `start-here.livecodescript` (header
-and its `slProbe` status line), `datachannelxt/README.md`, and four demo
-headers that offered "open it as a stack" as an alternative to pasting.
-
-**No gate holds this**, and it is prose in the places a reader starts from, so
-it can drift back silently. The cheap check is a grep for `Open Stack` and
-`as a stack` across `*.md` and `*.livecodescript`; what it should find is the
-library case above and box2dxt's `dist/INSTALL.md`, which opens a real
-`.oxtstack` binary stack and is not this rule.
-
-**`create` OPENS the stack it makes, so a later `go` to it is a raise that
-fires no open messages at all** - OBSERVED (OXT, 2026-08-27) through the
-launcher, over two engine reports, and this paragraph's first version drew
-the WRONG conclusion from the first report; the correction is kept in place
-of it rather than beside it because the wrong model lived here for under an
-hour. Round one: none of the six box2dxt games (card hooks only, no
-openStack) launched, while every stack-hook demo did, and the old
-empty-card nudge's `send "openStack"` was an execution error on the games -
-which killed the launch handler before the reveal, so their windows stayed
-invisible. That round was read here as "the ritual delivers stack messages
-but not card ones". Round two falsified it: with the nudge made throw-proof
-(dispatch) and widened to all four messages, the games' windows opened and
-stayed EMPTY, and closing and reopening one BY HAND built it. So no open
-message had ever fired from the launcher's `go` at all - the host stack was
-already open from the `create` - and the stack-hook demos had only ever
-been built by the nudge's hand-dispatch, which works aimed at a STACK and
-reached nothing aimed at a card: `dispatch "openCard" to card 1 of stack X`
-ran no handler, while the same dispatch `to stack X` runs its script's
-(the second observation this note carries). The launcher now parks a
-freshly prepared stack CLOSED - while still scriptless, so no handler can
-run - and `go invisible`s it: a genuine open, the engine fires the full
-preOpen/open sequence for both lifecycle families itself, and the
-hand-nudge (dispatched, stack-targeted, defaultStack pinned per 5.3)
-remains only as the belt. The close-then-reopen half is exactly the
-maintainer's observed repair, automated; `go invisible stack` as a spelling
-rides the same needs-an-OXT-pass label as the launcher around it.
+**OBSERVED 2026-08-14** (OXT; primary record: the dated maintainer note in
+`start-here.livecodescript`'s header). A `.livecodescript` file is TEXT:
+`File > Open Stack` on it, or `go` to the file, loads the script and silently
+builds no window, so a demo looks broken rather than unopened (`README.md` and
+the launcher's own header taught `File > Open Stack` until 2026-08-27).
+**What works:** runbook section 3.1's ritual, the only shape any engine pass
+here has used - `File > New Mainstack`, `Object > Stack Script`, paste, Apply,
+then CLOSE and REOPEN; `start-here.livecodescript`'s Open button automates it.
+**OBSERVED 2026-08-27** (two launcher reports): **`create` OPENS the stack it
+makes, so a later `go` to it is a raise that fires no open messages** (the
+reopen is the load-bearing half of the ritual). Round one: the launcher's
+empty-card nudge did `send "openStack"`, and on the six box2dxt games (card
+hooks only, no `openStack` handler) that send was an EXECUTION ERROR, which
+killed the launch handler before the reveal, so their windows stayed
+invisible. Round two, with the nudge DISPATCHED (`dispatch` does not error on
+a message nobody handles), the games opened as EMPTY windows that built only
+after a close and reopen by hand: the launcher's `go` had never fired an open
+message, and the stack-hook demos had only ever been built by the nudge's
+hand-dispatch. Also observed: `dispatch "openCard" to card 1 of stack X` ran
+no handler while a dispatch `to stack X` runs its script's. The launcher now
+parks a freshly created, still-scriptless stack CLOSED, sets its script and
+`go invisible`s it (a genuine open, so the engine fires preOpen/open for both
+lifecycle families); a stack-targeted nudge (5.3 pin), dispatched and never
+sent, stays as the belt. The `go invisible stack` spelling rides the
+launcher's "needs an OXT pass" label.
+**Does NOT mean:** loading a script-only file into the MESSAGE PATH is fine
+(`start using stack "<name>"`, no window expected; `onionxt/docs/10-usage-guide.md`
+is the worked example), as are `put sxSelfTest()` / `put oxSelfTest()`.
+**Gate:** none. Grep for `Open Stack` and `as a stack` in `*.md` and
+`*.livecodescript`; the legitimate hits are the library case and box2dxt's
+`dist/INSTALL.md` (a real binary `.oxtstack`).
 
 ### 5.6 Unqualified `there is a <control>` answers for the CURRENT CARD only
-
-**OBSERVED** (OXT, 2026-08-29; the primary record is riptide-social's pasted
-boot self-check, quoted in `docs/OXT-PASS-RUNBOOK.md` row 35's annotation). On
-a green five-card boot of `riptide/examples/riptide-social.livecodescript` -
-"all five cards were built" PASS, every rail probing true - the self-check's
-control sweep reported **all 63 controls that live on cards 2-5 as missing**,
-and none of card 1's, because `raScRun` runs with card 1 current:
+**OBSERVED 2026-08-29** (OXT). On a green five-card boot of
+`riptide/examples/riptide-social.livecodescript` (v11: all five cards built,
+every capability true), the boot self-check printed
 
     FAIL  all 98 controls this script names exist (missing: raAnonEntries,...)
 
-So `there is a field "x"` / `there is a button "x"` / `there is a graphic "x"`
-with no card qualifier is a question about the current card of the
-defaultStack, NOT about the stack. This was the modeled reading in
-`riptide/tools/check-demo-boot.py` (its header carried it as an unsettled
-question until this record settled it), and it is the same resolution family
-as 5.3 - the qualifier rule there is about WHICH STACK, this one is about
-WHICH CARD.
-
-**Held by**: the carried demo-selfcheck block's `scMissing` walks every card
-of the stack with card-qualified `there is` since 2026-08-29 (master
-`tools/demo-selfcheck.livecodescript`, re-carried to every adopter); on a
-single-card demo the walk is one card, exactly the old behaviour. Any OTHER
-unqualified `there is a <control>` on a multi-card stack remains a per-site
-judgement: it is correct when the answer is genuinely about the current card,
-and a bug when it means "anywhere in this stack".
-
----
+reporting all 63 controls on cards 2-5 missing, because `raScRun` runs with
+card 1 current (primary record: the v11 boot record in `riptide/CLAUDE.md`, 9
+passed, 1 failed, 0 skipped). With no card qualifier, `there is a field "x"`
+(or button, graphic) asks about the current card of the defaultStack: 5.3 is
+WHICH STACK, this is WHICH CARD.
+**Held by:** the carried demo-selfcheck block's `scMissing` (master
+`tools/demo-selfcheck.livecodescript`) walks every card with card-qualified
+`there is` since 2026-08-29. Any other unqualified `there is` on a multi-card
+stack is a per-site judgement: right for the current card, a bug for
+"anywhere in this stack".
 
 ### 5.7 An IMAGE object takes fetched bytes, and a refusal keeps the rect it already had
+**OBSERVED 2026-09-20** (OXT 9.6.3, Windows x86_64 NT 10.0), from the pasted
+log of archivext's gallery demo (`archivext/examples/archive-gallery.livecodescript`,
+now in the archivext repository), all through its handler `agSetPicture`:
 
-**OBSERVED** (OXT 9.6.3, Windows x86_64 NT 10.0, 2026-09-20; the primary
-record is the pasted log of `archivext/examples/archive-gallery.livecodescript`,
-the first stack in this tree to put fetched bytes into an image object from a
-script). Until this run, section 5 had NO image entry at all: box2dxt loads
-sprite sheets from FILES and the coinxt wallet paints a QR it built itself, so
-nothing here had ever asked what an image object does with bytes off the wire.
+- **`set the text of image X to <bytes>` takes a fetched JPEG**: 10,066 bytes
+  came back `180x124`, 1,180,947 bytes `1988x1367` (libURL, a script variable
+  and the image object, end to end). `the width`/`the height`, read with
+  `the lockLocation` false right after, are the picture's natural size.
+- **A REFUSAL KEEPS THE CONTROL EXACTLY AS IT WAS**: non-picture bytes answered
+  `684x358`, the control's own rect (`32,100,716,458`) - no throw, no blank, no
+  0. The run's one red line. So box2dxt's `b2kSheetSourceFromFile`
+  width-under-2 test is valid only on a freshly CREATED control (no rect yet).
 
-What the run establishes, all through the one handler `agSetPicture`:
-
-- **`set the text of image X to <bytes>` takes a fetched JPEG.** The item
-  image service's 10,066-byte derivative came back as `180x124`, and a
-  1,180,947-byte full picture as `1988x1367`. The bytes came from the
-  Internet library through a script variable (`put URL ... into tBody`), so
-  the whole path - libURL, a script variable, the image object - is observed
-  end to end.
-- **`the width` and `the height`, read with `the lockLocation` false
-  immediately after the content is set, ARE the picture's natural size.** Both
-  numbers above are the pictures' own dimensions, not the control's rect.
-- **A REFUSAL KEEPS THE CONTROL EXACTLY AS IT WAS**, which is the half that
-  cost this run its one red line. The stack's boot check fed the image bytes
-  that were no longer a picture and asked the same question, and the answer
-  was `684x358` - which is precisely the rect the stack had set on that
-  control (`32,100,716,458`). It did not throw, it did not blank, and it did
-  not answer 0.
-
-**Why that matters beyond one demo.** The idiom this tree uses for "did the
-image take it?" is box2dxt's `b2kSheetSourceFromFile`: set the content, then
-refuse anything whose width is under two pixels. That works THERE because
-box2dxt puts its bytes into a control it has just CREATED, which has no rect
-yet, so a refusal leaves 0. On a control that already carries a rect the same
-test reads the rect back and reports a refusal as a picture six hundred pixels
-wide. The idiom is not wrong; its precondition was never written down.
-
-**Held by**: `agSetPicture` clears the content, forces the control to one
-pixel and unlocks its location BEFORE setting the bytes, so the measurement
-can only be the picture's; and the gallery's boot self-check asserts BOTH
-directions on every open - a carried four-pixel PNG must be taken, and bytes
-that are plainly not a picture must be refused. The second of those is what
-will measure the refusal shape on the next engine, rather than assuming it.
-
-**Not settled by this run**: what a refusal does to `the text of image` (was
-the old content kept, or blanked?), whether an image object throws for any
-input at all, and whether progressive JPEG decodes. WebP and AVIF are
-DOCUMENTED as unsupported in this engine line and were not tested.
-
----
+**Rule / fix idiom:** clear the content, force the control to 1px and unlock
+its location BEFORE setting the bytes; assert both directions (a known
+four-pixel PNG taken, non-picture bytes refused).
+**Not settled:** what a refusal does to `the text of image`, whether an image
+ever throws, progressive JPEG. WebP and AVIF are DOCUMENTED unsupported.
 
 ### 5.8 A player can open a stream, report a duration, advance its clock, and be SILENT
-
-**OBSERVED** (OXT 9.6.3, Windows x86_64 NT 10.0, 2026-09-20, same log). Three
-MP3 streams from archive.org were handed to a player object as `https://`
-datanode URLs. All three opened: `set the filename` left `the result` empty,
-`the duration` came back non-zero, `playStarted` fired for two of them, and
-six seconds later `the currentTime` had advanced by almost exactly six
-seconds. The reader heard nothing.
+**OBSERVED 2026-09-20** (OXT 9.6.3, Windows x86_64 NT 10.0, the same gallery
+log). Three archive.org MP3 streams handed to a player as `https://` URLs all
+opened (`set the filename` left `the result` empty, non-zero `the duration`,
+`playStarted` for two, `the currentTime` up ~6 s after 6 s). Nothing was heard.
 
     play check: duration 10623320000, currentTime 60337007
 
-**The timeScale is implied and worth having**: 60,337,007 units at the
-six-second mark is 6.03 seconds at a timeScale of 10,000,000, i.e. 100-nanosecond
-units, and 10,623,320,000 is then 1,062 seconds - a plausible MP3 chapter.
-Treat that as INFERRED until a run prints `the timeScale` beside it, which the
-gallery now does.
-
-**What this means for every "did it play?" check in this tree.** The explorer
-demo and the gallery both decided playback from `the duration` being non-zero
-six seconds in, and `archivext/CLAUDE.md` gotcha 19 records the opposite
-failure - a player that opens nothing and says nothing. This run adds the
-mirror: **a player object's own properties cannot distinguish playing from
-running-and-silent.** A duration, a moving clock and a `playStarted` are all
-consistent with silence.
-
-**The suspect, and it is not confirmed.** Neither demo had ever set
-`the playLoudness`, on the player or on the engine, so both took whatever
-global value the IDE or another stack had left. 5.4 records that the property
-is a REQUEST rather than a register (Linux reads it back as a constant 0), so
-a stack that never sets it is a stack betting on somebody else's state. The
-gallery now sets it on the player and on the engine before every stream, gives
-the reader a volume control, and LOGS every property the player will answer -
-`the playLoudness`, `the paused`, `the playRate`, `the status`, `the
-mediaTypes` and `the tracks`, each read in its own try. `the tracks` is the
-line that will settle it: it says whether an audio track was found at all.
-
-**A second thing the log establishes, and it is a RULE rather than a
-symptom: the FIRST `playStarted` of a session is not seen; later ones are.**
-OBSERVED twice, on two separate runs (2026-09-20, morning and evening), and
-the first explanation was WRONG - which is why it is written out rather than
-quietly replaced.
-
-The stack set its "this player is mine" variable on the line AFTER
-`start player`, so the obvious reading was that the message is dispatched
-inside the `start player` call, before the next line runs, and that the later
-plays printed the line only because the first had left the variable set. That
-would make it note 5.3's shape one layer out: a message arriving before the
-code that was going to prepare for it. The ordering was changed - state up
-first, then `set the filename`, then `start player` - and **the next run
-showed exactly the same gap**: first play silent, second and third reported.
-
-So ordering was not the cause, or not the whole one. The remaining difference
-between play one and every later play is that play one also **created the
-player control** (the stack made it on demand, inside the same handler that
-then started it). That is the hypothesis now under test: the gallery creates
-the player at start, and if the next run still loses the first message, a
-script-side cause is ruled out as well.
-
-The rule that survives either way is worth keeping, because it costs nothing
-and the first version of it was right about what to do even though it was
-wrong about why: **establish the state a message will be judged against
-BEFORE issuing the command that can send it.**
-
-**Also unsettled, and the gallery now tests it in one click**: whether the
-platform player can open **https** at all. On Windows the media path is
-DirectShow, whose URL source filter is documented for http and not for https,
-and video in this run did not open at all while audio appeared to. The
-six-second check now retries the same datanode URL once over `http://` before
-falling back to a download, which is the cheapest discriminator available and
-has never been run.
+A timeScale of 10,000,000 (100 ns units, a 1,062 s chapter) is INFERRED until
+a run prints `the timeScale` beside it. **Rule:** a player's own properties
+cannot distinguish playing from running-and-silent. The suspect, UNCONFIRMED:
+neither demo ever set `the playLoudness` (5.4).
+**Second observation (twice, morning and evening 2026-09-20): the FIRST
+`playStarted` of a session is not seen; later ones are.** Setting the "this
+player is mine" state before `start player` did not change it; the remaining
+hypothesis is that play one also CREATED the player in the same handler. Rule
+either way: **establish the state a message will be judged against BEFORE
+issuing the command that can send it.**
+**Unsettled** (now the archivext repository's): whether the player opens
+`https` at all (Windows' DirectShow URL source is documented for http only);
+the http retry has never run.
 
 ### 5.9 A player refuses an h.264 MP4 from a LOCAL FILE, with a verbatim reason
+**OBSERVED 2026-09-20** (OXT 9.6.3, Windows x86_64):
 
-**OBSERVED 2026-09-20, OXT 9.6.3 Windows x86_64.** Two films, streamed from
-archive.org's datanode hosts, were refused the moment they were handed over:
-
-```
-play: https://dn800208.us.archive.org/0/items/TheGhoul/TheGhoul_1933.mp4
-      (h.264, 408.79 MB, chose TheGhoul_1933.mp4) on Win32 NT 10.0
-the player refused the stream at once: could not create movie reference
-```
+    play: https://dn800208.us.archive.org/0/items/TheGhoul/TheGhoul_1933.mp4
+          (h.264, 408.79 MB, chose TheGhoul_1933.mp4) on Win32 NT 10.0
+    the player refused the stream at once: could not create movie reference
+    the player refused the downloaded file as well: could not create movie reference
 
 `could not create movie reference` is what `set the filename of player` leaves
-in `the result`, which is the SYNCHRONOUS verdict note 5.8 says a player
-sometimes gives - so on this platform the refusal is immediate and named, not
-silent. What makes the entry worth having is the next rung: the stack then
-downloaded all 408 MB and tried the file from disk, and got
-
-```
-the player refused the downloaded file as well: could not create movie reference
-```
-
-**So the container is the wall, not the scheme and not the redirect.** The same
-sequence repeated for a 386 MB MPEG4. MP3 audio on the same machine in the same
-session opened, reported a duration and advanced its clock (5.8), so the player
-object works - it has no decoder for these files. Handing the downloaded file
-to `launch document` opened it outside, which is the one media path in this
-tree with a real engine record behind it (riptide, 2026-08-15).
-
-The practical rule, and what the gallery does now: **once a LOCAL file of a
-given container has been refused, no stream of that container can end
-differently on that engine**, so a second download of the same suffix is known
-waste and is refused with a sentence rather than spent. The http-scheme retry
-(5.8's open question) is still worth running, but it now runs BEFORE the
-download rather than after it, because the cheap discriminator is only cheap
-if it goes first.
-
----
+in `the result`: a synchronous, named refusal; the same for a 386 MB MPEG4. MP3
+opened in the same session (5.8), so the CONTAINER is the wall, not the scheme
+or the redirect; it cost a 408 MB download to learn. `launch document` opened
+the file outside, the one media path with an older engine record (riptide,
+2026-08-15).
+**Rule:** once a LOCAL file of a container has been refused, never download
+another of that suffix; run any cheap discriminator (the http retry) first.
 
 ### 5.10 A blocking `put URL` while an async `load URL` is in flight: the async one times out, and its error headers belong to the other request
+**OBSERVED 2026-09-20** (same session, libURL 1.2.0). An async `load URL`
+search was in flight when the Live probe ran blocking `put URL` legs; it ended
+at the 60 s watchdog:
 
-**OBSERVED 2026-09-20, same session, libURL 1.2.0.** A search was in flight
-through `load URL ... with message` when the stack's Live probe ran its
-blocking legs (`put URL` through the library's sync helpers). The async request
-never delivered; it ended at the layer's own 60-second watchdog:
+    request 1 (gallery) failed: the URL library said timeout for
+    https://archive.org/advancedsearch.php?...&rows=192&page=1&output=json:
+    socket timeout archive.org:443|6925 [headers: HTTP/1.1 200 OK | ... |
+    Onion-Location: https://archive...onion/metadata/arkivkopia.se-digmus-mha-MILIF.007916 ]
 
-```
-request 1 (gallery) failed: the URL library said timeout for
-https://archive.org/advancedsearch.php?...&rows=192&page=1&output=json:
-socket timeout archive.org:443|6925 [headers: HTTP/1.1 200 OK | ... |
-Onion-Location: https://archive...onion/metadata/arkivkopia.se-digmus-mha-MILIF.007916 ]
-```
-
-Two things in one line. The socket did get a **200** and then stalled, and the
-headers quoted with the failure are **the other request's** - the
-`Onion-Location` names the `/metadata/` URL the blocking leg had just fetched,
-not the `advancedsearch.php` URL that failed. That is note 6.9's
-`libURLLastRHHeaders` rule biting in the place it is most misleading: a failure
-report is exactly when a reader trusts a header block, and the block belongs to
-whatever reply arrived LAST. A library that quotes headers in an error should
-say that it cannot prove they are the failing request's; archivext's error
-text says so in the sentence itself now ("headers of the last reply this
-process received, which may be another request's"), because a caveat that
-lives only in a doc is not read at the moment the header block is.
-
-Whether the blocking call CAUSED the timeout is UNEVIDENCED: one observation,
-with a large (192-row) response on the async side, and no run that puts the
-same async request in flight without a blocking call beside it. What is
-established is the pairing, which is enough to stop writing harnesses and
-probes that block while an app's own requests are out.
-
----
-
----
+The socket got a **200** and then stalled, and the quoted headers are **the
+other request's** (the `Onion-Location` names the `/metadata/` URL the blocking
+leg had fetched): 6.9's `libURLLastRHHeaders` rule, at the moment a reader most
+trusts a header block. Causation is **UNEVIDENCED** (one observation, a large
+192-row async response, no control run).
+**Rule:** do not block while an app's own requests are out; an error that
+quotes headers must say, in its own text, that they may be another request's.
 
 ## 6. Sockets and processes
 
 ### 6.1 `socketTimeout` REPEATS while a read or write is pending
-**DOCUMENTED** (LiveCode reference) and relied on in shipped code: it is only
-fatal during a handshake. On a connected stream it is just an idle read and must
-be ignored, or a working connection tears itself down.
+**DOCUMENTED** (LiveCode reference), relied on in shipped code: fatal only in a
+handshake; on a connected stream it is an idle read and must be ignored, or a
+working connection tears itself down.
 
 ### 6.2 An engine socket id is not a parseable address
-**OBSERVED 2026-08-17** (offline fixtures; the live inbound path is still
-pending an S2 pass). Splitting a socket id on `:` and taking item 1 yields
-EMPTY for a bare IPv6 id like `::1:54321`, and a loopback guard that treats an
-empty host as loopback then FAILS OPEN. Parse by shape: strip a bracketed
-group first, else take everything up to the LAST colon.
+**OBSERVED 2026-08-17** (offline fixtures, green in that day's suite pass on
+Windows x86_64, OXT 9.6.3; the live inbound half is still owed, an S2 onionxt
+leg recording a raw accepted socket id). Splitting on `:` and taking item 1
+yields EMPTY for a bare IPv6 id like `::1:54321`, and a loopback guard that
+treats an empty host as loopback FAILS OPEN.
+**Rule:** parse by shape: a bracketed group first, else up to the LAST colon.
 
 ### 6.3 A launched child process needs `__OwningControllerProcess` to die with you
 **DOCUMENTED**, used by `oxLaunchTor` so a spawned tor exits with the app. The
-launch path itself has never run on an engine - it is the one remaining VERIFY
-in onionxt, scheduled as runbook S2 item 2. **See runbook trap 5.3.1** - that
-is `docs/OXT-PASS-RUNBOOK.md`, not a subsection of this file's 5.3 - it defaults
-to the same ports a system tor already holds.
+launch path has never run on an engine: one of onionxt's open VERIFY items
+(item 8 of the still-VERIFY list in `onionxt/CLAUDE.md`; runbook row 4;
+`tests/suite-closing-pass.livecodescript` leg F). It defaults
+to the ports a system tor holds: runbook trap 5.3.1 (not this file's 5.3).
 
 ### 6.4 An EMPTY value into a typed `.lcb` parameter is "type conversion error"
-**OBSERVED 2026-08-18 on Linux**, twice, from two different demos.
+**OBSERVED 2026-08-18** (Linux), twice, from two different demos: LCB refusing
+a value that will not convert to a declared parameter type. Every public
+`.lcb` handler declares its types and none has an optional parameter (630 when
+filed; the gate prints today's count). In `enet-lan-chat`:
 
-`"type conversion error"` is **LiveCode Builder's** error for a value that will
-not convert to a declared parameter type. Every public `.lcb` handler in this
-suite declares its parameter types and **none of the 630 has an optional
-parameter**, so every one of them is a place a script can hand the engine
-something it must refuse - at runtime, on a GUI engine, in front of a person.
+    enHostDestroy sHost          -- enHostDestroy(in pHost as Integer)
+    put empty into sHost         -- ...one line later
 
-The confirmed instance is `enet-lan-chat`:
-
-```
-enHostDestroy sHost          -- enHostDestroy(in pHost as Integer)
-put empty into sHost         -- ...one line later
-```
-
-`enetDisconnect` empties the handle it just used, so the SECOND disconnect
-(ENet delivers one per peer, and a failed connect produces one of its own)
-passed **empty** to an `Integer` parameter. Not a no-op - a throw, which killed
-the poll chain and left the demo silently dead. The same file guards `sHost`
-this way in ten other places.
-
-**Rule:** empty is not a value for `Integer`, `Real`, `Number` or `Boolean`.
-Guard any handle before passing it, especially on a teardown path, and
-especially in a harness - an uncaught throw at teardown costs the WHOLE run,
-not the section.
-
-**Gate:** `tools/check-lcb-call-types.py` checks the script-to-`.lcb` boundary
-argument by argument - arity, emptied handles, and event keys the module's own
-`_fieldKey` cannot return. It found the defect above plus eight teardown paths
-where a setup that never ran would have turned a clean skip into a dead run.
+ENet delivers a disconnect per peer (and one for a failed connect), so the
+SECOND disconnect passed empty to an `Integer`: a throw, not a no-op, which
+killed the poll chain and left the demo silently dead.
+**Rule:** empty is not an `Integer`, `Real`, `Number` or `Boolean`: guard every
+handle, above all on teardown and in harnesses (a throw costs the WHOLE run).
+**Gate:** `tools/check-lcb-call-types.py` (arity, emptied handles, event keys
+`_fieldKey` cannot return); it found this plus eight teardown paths that would
+have turned a clean skip into a dead run.
 
 ### 6.5 An LCB error's LINE NUMBER resolves against the source tree on disk
-**OBSERVED 2026-08-18.** An LCB failure reports like this:
+**OBSERVED 2026-08-18.**
 
-```
-LCB Error   cannot convert value
-LCB File    .../datachannelxt/src/datachannel.lcb
-LCB Line    234
-```
+    LCB Error   cannot convert value
+    LCB File    .../datachannelxt/src/datachannel.lcb
+    LCB Line    234
 
-The line is read from the **source file the IDE can see**, which is not
-necessarily the source the **installed extension was compiled from**. Ten
-lines of drift between two checkouts (this file's 234 and 244) moves this
-report from `if sDrainCap < pNeed then` to `if not tOk then` - two different
-statements, two different bugs, one identical error text.
-
-**Rule:** before reasoning from an LCB line number, confirm the installed
-extension was packaged from the checkout being read. A behaviour visible in the
-run is the cheapest proof - `dcSendText refuses an embedded NUL with -3` only
-passes on a build carrying `kErrInvalidArg`.
-
-**How this entry was written is itself the caution.** It first asserted that
-this tree's two branches DID differ by nine lines there, and that was wrong: it
-came from diffing against a stale `origin/main` fetched before the branch was
-merged. Re-fetched, the file is byte-identical on both, and line 234 is
-unambiguous. A cached remote ref is a stale source too.
+The line is read from the source the IDE can see, not necessarily the source
+the installed extension was compiled from; ten lines of drift (234 vs 244)
+moves this report from `if sDrainCap < pNeed then` to `if not tOk then`.
+**Rule:** confirm the installed extension was packaged from the checkout being
+read before reasoning from its line numbers; a visible behaviour is the cheap
+proof (`dcSendText` refusing an embedded NUL with -3 needs the `kErrInvalidArg`
+build). A stale cached remote ref (`origin/main`) misled this entry's first
+draft.
 
 ### 6.6 RESOLVED by 6.7: the datachannel poll failure
-**OBSERVED 2026-08-18 on Linux**, hosting a chat in
-`datachannelxt/examples/datachannel-dht-chat.livecodescript`. 6.4 explains
-the ENet demo's failure completely; this one is NOT yet explained, because
-the gate that found the ENet defect reports the datachannel demo clean.
+**OBSERVED 2026-08-18** (Linux, hosting a chat in
+`datachannelxt/examples/datachannel-dht-chat.livecodescript`; a second report
+from Windows):
 
-**Narrowed 2026-08-18 (second report, Windows):** the throw is not in the
-dispatch at all - it is inside `dcPoll`, in `_ensureDrain`, before any handler
-is reached. The first wrap guarded only the dispatch, because the dispatch line
-was what the first report named; guarding only the half you have been shown is
-how one diagnostic costs two passes. Both the drain and the dispatch are
-guarded now, in the ENet pump as well. What is still unknown is WHICH value
-will not convert, and 6.5 is why the line number alone cannot settle it:
-
-```
-execution error at line 178 (call: type conversion error), char 1
-```
+    execution error at line 178 (call: type conversion error), char 1
 
 Line 178 is the poll dispatcher's `dispatch tName to sPollTarget with tEvent`.
-
-**This entry names a symptom, not a cause, and it is filed that way on
-purpose.** Three different bugs produce exactly this line - the dispatch
-itself refusing its arguments, the target no longer resolving, or a THROW
-inside a handler the dispatch reached - and the message distinguishes none of
-them. The obvious suspect is already ruled out: `dispatch <name> to <obj> with
-<array>` is engine-proven elsewhere in this suite, where `onion-httpd` routes
-an array of parsed headers that way and serves real pages through Tor.
-
-Do not promote this entry to a mechanism until a run reports one. The
-dispatcher in `datachannel-helpers.livecodescript` now isolates each event,
-keeps the timer chain alive, and records the first failure with the event's
-name for `dcPollLastError()`; both demos that carry it surface that line in
-their own log. The next occurrence should arrive with the event named.
-
-**CLOSED 2026-08-18 by 6.7, and the narrowing above did not hold.** The next
-occurrence arrived with the event named, exactly as this entry asked: the pump
-reports a drain failure and a dispatch failure distinctly
-(`dcPoll failed on drain #N` versus `dispatch of <name> failed`), and what the
-run printed was the DISPATCH form. So the drain completed, and the throw was the
-dispatch - not `_ensureDrain`. Read the paragraphs above as the reasoning of the
-day rather than as findings: the instruction not to promote a mechanism was
-satisfied by 6.7, and the `_ensureDrain` location was an inference from an LCB
-line number, superseded by an observation. Why the second report named
-`datachannel.lcb` line 234 - which is `if sDrainCap < pNeed then` on this tree,
-and where no revision of that file has ever placed `dcLocalDescription` - is
-still not established, and is left here as an unexplained observation rather
-than promoted into a second mechanism.
-
-**The general rule this is the second example of in two days** (see 5.4): an
-engine session's entire output is its error messages. A bare statement plus a
-phrase costs another session; a message that names the value, the target and
-the operation usually costs none.
+Three causes produce that line indistinguishably (the dispatch refusing its
+arguments, the target no longer resolving, a throw inside the handler it
+reached). The pump now reports `dcPoll failed on drain #N` and
+`dispatch of <name> failed` distinctly; the next run printed the DISPATCH form,
+which 6.7 explains. Why the Windows report named `datachannel.lcb` line 234
+(`if sDrainCap < pNeed then`) stays unexplained.
+**Rule:** an engine session's whole output is its error messages: name the
+value, the target and the operation (see also 5.4).
 
 ### 6.7 An event name and a handler name share ONE namespace
-**OBSERVED 2026-08-18, and it closes 6.6.** The demo's own log, once the poll
-pump was made to report instead of die:
+**OBSERVED 2026-08-18**, closing 6.6:
 
-```
-Event dispatch problem: dispatch of dcLocalDescription failed: 899,258,1
-```
+    Event dispatch problem: dispatch of dcLocalDescription failed: 899,258,1
 
-Line 258 is `dispatch tName to tTarget with tEvent`. The demo defines no
-`on dcLocalDescription` - but **DataChannelXT exports one**:
-`dcLocalDescription(in pPeer as Integer)`, the getter for the current local
-SDP. xTalk resolves a dispatched message exactly like a call, through the same
-single namespace, so the dispatch reached the LIBRARY handler and handed it the
-event Array where it wanted an Integer.
-
-**The part worth carrying is how long it hid.** An unhandled dispatch is not an
-error, so a colliding name looks exactly like "no handler here" until the
-colliding handler happens to be strict about its arguments.
-`datachannel-loopback` shipped `on dcLocalDescription` from the day it was
-written and it **never fired once**; `docs/getting-started.md` taught the same
-shape; and the suite harness stayed green throughout because it compares
-`tEvent["name"]` in an if/else and never dispatches at all. Every layer agreed,
-and every layer was testing something else.
-
-**Rule:** a dispatched event name may never equal a public handler name in the
-module that emits it. When they collide, rename the EVENT - the getter is
-exercised, the event demonstrably is not.
-**Gate:** `tools/check-lcb-call-types.py` check 4, over every `_eventName`
-return in every module, with the historical case pinned in its test.
+DataChannelXT exports the getter `dcLocalDescription(in pPeer as Integer)`; a
+dispatched message resolves exactly like a call, so dispatching the EVENT
+reached the getter with the event Array. An unhandled dispatch is not an error,
+so it hid: `datachannel-loopback`'s `on dcLocalDescription` never fired once,
+`datachannelxt/docs/getting-started.md` taught the same shape, and the suite
+harness stayed green because it compares `tEvent["name"]` and never dispatches.
+**Rule:** a dispatched event name must never equal a public handler name in the
+emitting module; when they collide, rename the EVENT. **Gate:**
+`tools/check-lcb-call-types.py` check 4, over every module's `_eventName`, the
+historical case pinned in `tools/test-lcb-call-types.py`.
 
 ### 6.8 `open secure socket` works, and that is NOT the same as "TLS verifies"
-**OBSERVED 2026-08-24** (Windows x86_64, OXT 9.6.3), the suite's FIRST secure
-socket of any kind. (Dated by the RUN, not by the commit that recorded it a day
-later - the rest of the tree calls this "the 2026-08-24 pass" and an entry that
-disagreed with every file citing it would be worse than the small exception. See
-the note on dates above.) `nostrxt/src/nostr-relay.livecodescript`'s `nxrConnect`
-ran its secure branch against a public Nostr relay:
+**OBSERVED 2026-08-24** (Windows x86_64, OXT 9.6.3; dated by the RUN, not the
+commit a day later), the suite's first secure socket.
+`nostrxt/src/nostr-relay.livecodescript`'s `nxrConnect` secure branch against a
+public Nostr relay:
 
-```
-connecting to wss://nos.lol (handle 1)
-relay 1: open
-identity ready: npub154kp062...
-signed event 33f9b9a3...
-nxEventVerify: the event verifies
-published a4a3fe9d...
-ok a4a3fe9d...: true
-```
-(The maintainer's report, elided only where it carried key material.)
+    connecting to wss://nos.lol (handle 1)
+    relay 1: open
+    identity ready: npub154kp062... / signed event 33f9b9a3...
+    nxEventVerify: the event verifies / published a4a3fe9d... / ok a4a3fe9d...: true
 
-What that settles, and it is worth having because the form was a total unknown
-the day before: `open secure socket to <host:port> with message <name>` EXISTS,
-connects asynchronously and fires its message the way the plain form does; and
-the persistent no-quantifier `read from socket ... with message` plus
-`write to socket` carry a real byte stream over it - enough for an RFC 6455
-upgrade, masked client frames, and the relay's replies read back chunk by chunk.
-Before this, `open secure socket` appeared in no other member and this file had
-no TLS entry at all.
-
-**What it does NOT mean, which is the whole reason this entry is worded the way
-it is.** Nobody offered this engine a certificate they had any reason to doubt,
-and that is the only honest way to put it: calling the peer certificate "valid"
-would be circular, since whether it was checked is precisely the open question -
-if the engine verifies nothing, a bad certificate would have connected too. A
-connection succeeding against an ordinary public host is equally consistent with
-"the engine verified the chain" and with "the engine verified nothing"; the two
-hypotheses predict the identical observation, so this run cannot separate them.
-**Nothing has yet deliberately offered this engine a bad certificate.**
-
-Still unmeasured: whether an invalid or
-self-signed certificate is refused, against which root store, whether the
-HOSTNAME is checked, what `the sslCertificates` does here, whether SNI is sent
-(shared-hosting relays need it), which TLS versions negotiate, and how a TLS
-failure is delivered - the code assumes a `socketError` message, as with the
-plain form, and nothing failed, so that assumption is still untested.
-
-Do not promote this entry on the strength of another successful connection to a
-good host; only a deliberately bad certificate can move it. Until then, treat
-any code that would be unsafe under "no verification" as unsafe.
-
-**Related, and mildly counter-intuitive:** the ws:// (plain) branch of the same
-handler has still never run. The secure path is currently the better-evidenced
-of the two, which inverts the advice several documents used to give.
-**Gate:** none, and none is possible headlessly - this is an engine measurement.
-The narrowed question is carried in `nostrxt/docs/07-capabilities-required.md`
-gap #2 and flagged `VERIFY (on-engine)` at the call site.
+Settled: `open secure socket to <host:port> with message <name>` exists,
+connects asynchronously and fires its message like the plain form; persistent
+`read from socket ... with message` plus `write to socket` carry an RFC 6455
+byte stream over it.
+**Does NOT mean TLS verifies.** Success against a good host is consistent with
+both "verified the chain" and "verified nothing", and no bad certificate has
+been offered. Unmeasured: refusal of an invalid or self-signed certificate, the
+root store, the hostname check, `the sslCertificates`, SNI, TLS versions, and
+how a failure is delivered (`socketError` is assumed). Treat code that would be
+unsafe under "no verification" as unsafe. The plain `ws://` branch of the same
+handler has never run. **Gate:** none possible headlessly; only a deliberately
+bad certificate can move this entry (`nostrxt/docs/07-capabilities-required.md`
+gap #2; `VERIFY (on-engine)` at the call site).
 
 ### 6.9 The Internet library (libURL) speaks https, delivers chunked bodies whole, and keeps the LAST reply's headers
-**OBSERVED 2026-09-15** (the user's OXT engine, libURL 1.2.0; platform not
-recorded), the suite's FIRST libURL record of any kind - before archivext,
-`load URL ... with message` appeared in two shipped stacks (nocloud's public-IP
-probe, coin-wallet's Esplora transport) and neither had run it. From
-archivext's demo, in one evening:
+**OBSERVED 2026-09-15/16** (the user's OXT engine, libURL 1.2.0; platform not
+recorded), from archivext's demo (now in its own repository). Not the suite's
+first libURL contact: coinxt's wallet recorded its Esplora-over-clearnet
+transport (`load URL ... with message`, https to blockstream.info) on an
+engine on 2026-09-02, as a reported testnet receive and then firing on both
+chains in a pasted log (`coinxt/CLAUDE.md`, the 2026-09-02 entries). What the
+archivext runs add:
 
-- **`load URL "https://archive.org/..." with message` and `put URL "https://..."`
-  both work.** The async form reached the site and delivered its answer to
-  the message (a 400 first, then a watchdog timeout on the same broad query);
-  the blocking form then carried three HTTP 200s with real JSON bodies. Every
-  reply came back with `Server: nginx/1.31.3` and a `Strict-Transport-Security`
-  header, so the bytes were the live site's. Same caveat as 6.8, word for
-  word: a good host connecting is consistent with "verified" AND with
-  "verified nothing"; **nothing has offered libURL a bad certificate**, and only
-  that can say whether it checks one.
-- **A `Transfer-Encoding: chunked` body arrives whole**: 196,716 bytes of
-  item metadata through `put URL`, opening `{"alternate_locations":...` and
-  parsing as one JSON document. No `Content-Length` was present on any reply.
-- **`libURLLastRHHeaders()` answers the headers of the last reply RECEIVED,
-  not of the last request MADE.** After a request that got no answer (the
-  refused second load below), it still carried the previous reply's
-  `Onion-Location`, which names the URL it belongs to - a log that prints
-  headers beside a failure is quoting an earlier success unless it says so
-  (archivext's probe now labels them).
-- **libURL refuses a second load of a URL it is still loading**, with `the
-  result` reading `URL is currently loading` from the blocking form. A
-  `load URL` whose watchdog gave up on it is STILL loading in libURL, so the
-  next request for the same URL fails instantly and reads like a site
-  error. `unload URL` cancels it (DOCUMENTED, and archivext calls it on
-  timeout and before every load; the cancel itself has not been watched
-  work - the refusal was seen once, before the unload landed, and has not
-  recurred since).
+- **`load URL "https://..." with message` and `put URL "https://..."` both
+  work** (async: a 400, then a watchdog timeout on one broad query; blocking:
+  three HTTP 200s with real JSON, each with `Server: nginx/1.31.3` and
+  `Strict-Transport-Security`). The 6.8 caveat applies: no bad certificate has
+  been offered to libURL.
+- **A `Transfer-Encoding: chunked` body arrives whole**: 196,716 bytes through
+  `put URL`, one JSON document; no reply carried `Content-Length`.
+- **`libURLLastRHHeaders()` is the last reply RECEIVED, not the last request
+  MADE**: after an unanswered request it still carried the previous reply's
+  `Onion-Location`, so headers beside a failure quote an earlier success (5.10).
+- **A second load of a URL still loading is refused** (`the result`:
+  `URL is currently loading`); a load whose watchdog gave up is STILL loading,
+  so the next request fails instantly and reads like a site error.
+  `unload URL` cancels it (DOCUMENTED; the refusal was seen once, before the
+  unload landed).
 - **`libURLSetCustomHTTPHeaders` replaces the whole default header set**
-  (DOCUMENTED). The one request that used it drew the 400; every request
-  without it drew 200. INFERRED as the cause at best - the 400's query timed
-  out on its own once the header was gone, so the query may have been the
-  whole story. The rule archivext keeps (do not replace the defaults; the
-  `httpHeaders` property ADDS) stands on the reference, not on the run.
-- **The async success path delivers (OBSERVED 2026-09-16).** Four `load URL
-  ... with message "axUrlDone"` requests from the demo's Search button, across
-  three families, each reached the handler with the URL the engine hands back
-  matching the URL the request was made with, so correlation by URL, the
-  `cached` status read, `URL x` for the body and `unload URL` after it all
-  hold on a reply that ARRIVED - the previous day had shown only the error and
-  timeout arms. An empty result page came back as a normal reply.
-- **Not every archive.org query is cheap.** `mediatype:(movies OR video OR
-  television)` answered 17,098,672 hits inside a second; the same three
-  mediatypes OR-ed with 26 `identifier:` terms inside a `mediatype:collection`
-  clause got no answer in 30 s. That is the site, not the engine, and it is
-  here because a 30 s silence from `load URL` is indistinguishable from an
-  engine fault without a watchdog and a second, cheaper request.
+  (DOCUMENTED); `httpHeaders` ADDS. The one request using it drew the 400,
+  INFERRED as the cause at best (the query also timed out without it).
+- **The async success path delivers (2026-09-16)**: four
+  `load URL ... with message "axUrlDone"` requests across three families each
+  reached the handler with the URL matching its request, so correlation by URL,
+  the `cached` status, `URL x` for the body and `unload URL` after it held on a
+  reply that ARRIVED; an empty result page came back as a normal reply.
+- **Some archive.org queries answer in under a second** (17,098,672 hits for
+  `mediatype:(movies OR video OR television)`) **and others go silent for 30
+  s** (the same OR-ed with 26 `identifier:` terms in a `mediatype:collection`
+  clause). That is the site, but a 30 s silence looks like an engine fault
+  without a watchdog and a cheaper second request.
 
 **Gate:** none possible headlessly. The narrowed questions (a bad certificate;
-the `unload` cancel actually freeing the URL; the async `item` kind) are in
-`archivext/docs/07-open-questions.md` items 6 and 9 and the demo's Live probe
-carries the legs.
-
----
+`unload` freeing the URL; the async `item` kind) moved with archivext.
 
 ## 7. How to add to this file
 
-When an engine run teaches you something:
-
-1. **Write the symptom verbatim**, including the error text. The symptom is what
-   the next person will search for; our own entries were found that way.
-2. **Say what it cost.** "Took a 4,400-line paste" and "reported a valid seed
-   phrase as invalid" are why these entries get read.
-3. **Mark the evidence class honestly.** If you inferred it, say INFERRED.
-4. **Name the gate** if one now holds it, so a reader knows whether they are
-   protected or merely warned.
-5. **Record what it does NOT mean.** Half the entries above have a neighbouring
-   construct that is fine (`return` in a catch, the one-argument call form), and
-   omitting that turns a rule into superstition.
-
-Member-specific gotchas stay in that member's `CLAUDE.md`. This file is for
-behaviour of the ENGINE, which is the same everywhere and therefore worth one
-authoritative list.
+Add an entry with the next free number in its section (never reuse or
+renumber one), carrying: (1) **the symptom verbatim**, error text included - it
+is what the next person searches for; (2) **what it cost** or broke; (3) **an
+honest evidence class** with the run's date; (4) **the gate** that holds it,
+if any, so a reader knows whether they are protected or merely warned; (5)
+**what it does NOT mean** - the neighbouring construct that is fine (`return`
+in a catch, the one-argument call form); omitting it turns a rule into
+superstition. Member-specific gotchas stay in that member's `CLAUDE.md`; this
+file is for behaviour of the ENGINE, which is the same everywhere.

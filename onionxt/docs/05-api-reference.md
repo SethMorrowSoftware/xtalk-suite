@@ -1,12 +1,10 @@
 # 05 - Public API Reference (`ox*`)
 
-The public surface OnionXT exposes to an app (or to a higher-layer protocol built on top of it). Shapes
-follow the family convention: **commands report status through `the result`** (and yield handles through
-out-style conventions), **functions return a value**. All are livecodescript handlers in the v1 core.
-This surface is implemented in `src/onionxt.livecodescript`; the core paths (SOCKS dial, control
-auth, onion publish/serve/remove, the accept loop) are confirmed on-engine against a live tor
-daemon (see CLAUDE.md "As-built notes"). The one path not yet exercised is the optional Mode B
-tor launch (`oxLaunchTor` / `oxStopTor`), still flagged VERIFY in the source.
+The public surface OnionXT exposes to an app (or to a higher-layer protocol built on top of it), all
+livecodescript handlers in `src/onionxt.livecodescript`. **Commands report through `the result`**
+(handle-yielding commands report the handle there); **functions return a value**. Which paths are
+engine-proven and which are still "verified statically; needs an OXT pass + a live-Tor pass" is the
+evidence ledger in CLAUDE.md.
 
 Naming: public `oxPascalCase`. Handles are small integers or the engine's socket ids; a stale handle
 is a clean error, never a crash. Every open has a matching idempotent close.
@@ -18,7 +16,9 @@ is a clean error, never a crash. Every open has a matching idempotent close.
 | `oxSetSocksPort pPort` | command | Set the loopback SOCKS port (default 9050; Tor Browser 9150). |
 | `oxSetControlPort pPort` | command | Set the loopback control port (default 9051; Tor Browser 9151). |
 | `oxSetControlPassword pPassword` | command | Store the password used when the daemon offers HASHEDPASSWORD auth (doc 03 step 2). Only needed for that auth method. |
-| `oxSetCallbackOwner pObjectLongId` | command | Name the object whose script holds the app callbacks (onStatus / onPeer / onStreamData). If unset, callbacks dispatch to the topStack; setting it explicitly removes any ambiguity. |
+| `oxSetCallbackOwner pObjectLongId` | command | Name the object whose script holds the app callbacks. If unset, callbacks dispatch to the topStack; set it explicitly (`the long id of me`). |
+| `oxSetStatusCallback pHandlerName` | command | Register the status callback: control state, bootstrap %, service address / ready, notices, coalesced to <= ~4 Hz. |
+| `oxSetPeerCallback pHandlerName` | command | Register the handler called when a peer connects to a published service (delivers a new inbound stream handle). |
 | `oxVersion()` | function | OnionXT version string, and (once connected) the tor version from `GETINFO version`. |
 
 Host is always `127.0.0.1`; it is not configurable (loopback-locked, CLAUDE.md socket gotcha 6).
@@ -27,40 +27,35 @@ Host is always `127.0.0.1`; it is not configurable (loopback-locked, CLAUDE.md s
 
 | Handler | Kind | Purpose |
 |---|---|---|
-| `oxConnectControl` | command | Open + authenticate the control connection (PROTOCOLINFO, then the best auth method). Reports success/failure in `the result`. |
+| `oxConnectControl` | command | Open and authenticate the control connection asynchronously (PROTOCOLINFO, then the best auth method); the outcome arrives as `control` status (`authenticated`, or `authfailed: ...` / `error: ...`). Reports an error at once only if a connection is already open. |
 | `oxDisconnectControl` | command | Close the control connection. Idempotent. |
 | `oxIsControlAuthenticated()` | function | True once the control connection has authenticated. |
 | `oxBootstrapProgress()` | function | 0..100 from `STATUS_CLIENT` / `GETINFO status/bootstrap-phase`. |
 | `oxIsReady()` | function | True once the daemon is bootstrapped to 100 AND the control connection is authenticated. Per-service readiness (descriptor uploaded) is `oxServiceIsReady` / the `serviceReady` status event. |
 
-The app sets a callback (for example `oxSetStatusCallback pHandlerName`) to receive coalesced
-bootstrap / event updates at <= ~4 Hz.
-
 ## Outbound: dialing
 
 | Handler | Kind | Purpose |
 |---|---|---|
-| `oxDial pHost, pPort` | command | SOCKS5 CONNECT (ATYP=3) to `pHost:pPort` through Tor. Reports a stream handle in `the result`, or a mapped SOCKS error. `pHost` is a `.onion` or clearnet name; it is resolved in Tor, never locally. |
-| `oxWrite pStream, pData` | command | Write `Data` (already sealed by the app) to the stream. |
+| `oxDial pHost, pPort` | command | SOCKS5 CONNECT (ATYP=3) to `pHost:pPort` through Tor. Reports a stream handle in `the result` at once, or an argument error; a SOCKS failure arrives later as the stream's `error` event. `pHost` is resolved in Tor, never locally. |
+| `oxWrite pStream, pData` | command | Write `Data` (already sealed by the app) to a connected stream. Reports empty, or an error string when the stream is not open or the engine's write fails (the write result is read since 2026-09-09; verified statically, needs an OXT pass). |
 | `oxSetStreamCallback pStream, pHandlerName` | command | Register the handler the engine-side read loop calls with inbound `Data` on this stream. |
 | `oxStreamState pStream` | function | The stream's current state string (`"unknown"` for a stale or never-opened handle). |
 | `oxCloseStream pStream` | command | Close and forget the stream. Idempotent. |
 
-Reads are asynchronous: OnionXT reads the tunneled socket `with message` and hands each chunk of
-`Data` to the registered stream callback. The app reassembles application-level frames (OnionXT does
-not know the app's framing).
+Reads are asynchronous: each inbound chunk reaches the stream callback as a `data` event, and the app
+reassembles its own frames.
 
 ## Inbound: onion services
 
 | Handler | Kind | Purpose |
 |---|---|---|
-| `oxCreateService pVirtualPort, pLocalPort` | command | `ADD_ONION NEW:ED25519-V3` mapping `pVirtualPort` -> `127.0.0.1:pLocalPort`, after ensuring a loopback listener is accepting on `pLocalPort`. Reports the full `<56>.onion` address and a service handle. |
+| `oxCreateService pVirtualPort, pLocalPort` | command | Start the loopback listener on `pLocalPort`, then `ADD_ONION NEW:ED25519-V3 Flags=Detach` mapping `pVirtualPort` -> `127.0.0.1:pLocalPort`. Reports a service handle; the `<56>.onion` address arrives with the `service` status event (and `oxServiceAddress`). |
 | `oxCreateServiceFromSeed pSeed, pVirtualPort, pLocalPort` | command | As above, but deterministic: composes SodiumXT `sxSignSeedToExpandedKey` (ABI >= 6) to turn the 32-byte `pSeed` into the ED25519-V3 expanded key, so the same seed always yields the same `.onion`. |
-| `oxPublishService pVirtualPort, pLocalPort` | command | Publish-only: `ADD_ONION` maps `pVirtualPort` -> `127.0.0.1:pLocalPort` but OnionXT does NOT start an accept loop, so an EXTERNAL server (e.g. LiveCode's built-in HTTPD Library) can own that port. Teardown `DEL_ONION`s but leaves that socket alone. The external server must enforce loopback itself (reject non-127.0.0.1 peers). |
+| `oxPublishService pVirtualPort, pLocalPort` | command | Publish-only: `ADD_ONION` maps `pVirtualPort` -> `127.0.0.1:pLocalPort` but OnionXT starts no accept loop, so an EXTERNAL server can own that port. Teardown `DEL_ONION`s and leaves that socket alone. The external server must enforce loopback itself. |
 | `oxRemoveService pService` | command | `DEL_ONION` and stop the listener (a listener OnionXT owns; a publish-only service has none). Idempotent. |
 | `oxServiceAddress pService` | function | The `.onion` address of a published service. |
 | `oxServiceIsReady pService` | function | True once that service's descriptor is uploaded (the `serviceReady` status event has fired for it). |
-| `oxSetPeerCallback pHandlerName` | command | Register the handler called when a peer connects to a published service (delivers a new inbound stream handle). |
 
 ## Address helpers (pure, no network)
 
@@ -78,8 +73,8 @@ handler and reports the same way:
 
 | Handler | Kind | Purpose |
 |---|---|---|
-| `oxTransportInfo()` | function | A small record describing this transport (name, whether it is connected, whether seed-derived offline addressing is available). |
-| `oxTransportDial pAddress, pPort` | command | Dial an address through the transport (wraps `oxDial`). |
+| `oxTransportInfo()` | function | An array: `transport` ("ox"), `version`, and the capability flags `safeCookieAuth`, `deterministicOnion`, `offlineAddress` (doc 10 section 7). |
+| `oxTransportDial pAddress, pPort` | command | Dial a full `.onion`, or a 32-byte ed25519 key / 64-hex string mapped to its address first (wraps `oxDial`; port defaults to 80). |
 | `oxTransportListen pSeed, pVirtualPort, pLocalPort` | command | Listen at a deterministic, seed-derived address (wraps `oxCreateServiceFromSeed`). |
 | `oxTransportSend pStream, pData` | command | Send bytes on a transport stream (wraps `oxWrite`). |
 | `oxTransportRecv pStream, pHandlerName` | command | Register where inbound bytes are delivered (wraps `oxSetStreamCallback`). |
@@ -90,37 +85,34 @@ handler and reports the same way:
 |---|---|---|
 | `oxShutdown` | command | Close every stream, remove every service, disconnect control. Idempotent; call it when the app closes (for example on `closeStack`) since OXT has no deterministic unload hook. |
 
-## Optional Mode B: launching tor (NOT the default; still needs its on-engine pass)
+## Optional Mode B: launching tor (not the default; not yet run on an engine)
 
-The recommended, tested base is Mode A: an already-running tor daemon. Mode B launches one for you
-and is still flagged `VERIFY:` in the source (not yet exercised on-engine):
+The recommended base is Mode A, an already-running daemon (doc 07). Mode B is flagged `VERIFY:` in the
+source:
 
 | Handler | Kind | Purpose |
 |---|---|---|
-| `oxLaunchTor pTorPath, pDataDir, pSocksPort, pControlPort` | command | Write a minimal torrc and `open process` a tor daemon with those ports. |
-| `oxStopTor` | command | Stop a tor launched by `oxLaunchTor`. |
+| `oxLaunchTor pTorPath, pDataDir, pSocksPort, pControlPort` | command | Write `<pDataDir>/onionxt-torrc` (the ports, default 9050 / 9051, cookie auth, `DataDirectory`, `__OwningControllerProcess`) and `open process` tor with `-f` it. Does not wait for bootstrap: poll `oxConnectControl` / `oxBootstrapProgress`. |
+| `oxStopTor` | command | Send `SIGNAL SHUTDOWN` if control is authenticated, then disconnect control (idempotent). |
 
 ## Callbacks the app implements
 
-| Callback | Delivered when |
-|---|---|
-| status callback | bootstrap progress, circuit/descriptor events (coalesced). |
-| stream callback (per dialed stream) | inbound `Data` arrives on that stream. |
-| peer callback (per service) | a remote peer connects to a published service; yields a new inbound stream handle to register a stream callback on. |
+| Callback | Signature | Delivered when |
+|---|---|---|
+| status | `pKind, pInfo` | `control` state, `bootstrap` 0..100, `ready`, `service` (the address), `serviceReady`, `notice`, raw `event` lines; coalesced |
+| stream | `pStream, pEvent, pData` | `open`, `data` (an inbound chunk), `closed`, or `error` (the stream is already torn down), on a dialed or inbound stream |
+| peer | `pStream, pService, pPeerAddr` | a remote peer reached a published service; register a stream callback on the fresh `pStream` |
 
 ## Handlers the ENGINE calls (in the script, not in the app-facing API)
 
-`src/onionxt.livecodescript` defines fourteen handlers that appear in none of the tables above and
-that an app must never call. They are documented here because "absent from the API reference" was, in
-practice, indistinguishable from "does not exist" - and the last three of them carry the one OnionXT
-integration hazard whose symptom is a **hang rather than an error** (see the rule below and
-[doc 10 section 2](10-usage-guide.md)).
+`src/onionxt.livecodescript` defines fourteen public handlers an app must never call: eleven callbacks
+and the three engine socket messages, which carry the one integration hazard whose symptom is a
+**hang rather than an error** (the rule below, and [doc 10 section 2](10-usage-guide.md)).
 
-**Eleven `ox*` callbacks OnionXT arms and the engine calls back.** Each is armed by the library itself
-(`open socket ... with message`, `read from socket ... with message`, `accept connections on ... with
-message`) or by a self-sent watchdog (`send ... to me in <timeout>`), and is called with the socket id
-the engine minted. The two watchdogs are the exception worth knowing: they are self-sent rather than
-engine-sent, and `oxStreamDeadline`'s argument is a STREAM HANDLE, not a socket id at all:
+**Eleven `ox*` callbacks OnionXT arms itself** (`open socket` / `read from socket` / `accept
+connections ... with message`, or a self-sent watchdog `send ... to me in <timeout>`), called with the
+socket id the engine minted. The two watchdogs are self-sent, and `oxStreamDeadline`'s argument is a
+STREAM HANDLE, not a socket id:
 
 | Handler | Armed by | Called when |
 |---|---|---|
@@ -136,19 +128,12 @@ engine-sent, and `oxStreamDeadline`'s argument is a STREAM HANDLE, not a socket 
 | `oxStreamDeadline pStream` | `send ... to me in` (watchdog; takes a STREAM HANDLE, not a socket id) | a dialed stream's handshake watchdog expires. |
 | `oxPeerAccepted pSocketID` | `accept connections on port ... with message` | Tor forwarded an inbound onion connection to the local listener; **enforces the loopback guard** before reading a byte. |
 
-Every one of them opens by testing its argument - against the live control socket, or as a key into
-the per-socket / per-stream tables - and exits on a miss, so calling one by hand is a clean no-op
-rather than a crash. It also exercises nothing: the leg past that test is `read from socket` /
-`write to socket` / `close socket` work on a socket the engine owns. That is also why the suite coverage
-gate (`tools/check-suite-coverage.py` at the suite root) carries exactly these eleven as written
-exemptions rather than counting them as untested.
+Each tests its argument first and exits on a miss, so calling one by hand is a clean no-op that
+exercises nothing, which is why the suite's coverage gate carries these eleven as written exemptions.
 
-**Three engine socket MESSAGES, whose names are the engine's and so carry no `ox` prefix.** These are
-sent to the message path, not to a handler OnionXT named, which is what makes them an integration
-concern rather than an implementation detail:
-
-Each is now a THIN WRAPPER over a named function (2026-08-24): it calls the named one, exits if that
-consumed the event, and otherwise passes.
+**Three engine socket MESSAGES**, whose names are the engine's (no `ox` prefix) and which reach the
+message path, not a handler OnionXT named. Each is a thin wrapper: it calls a named function, exits if
+that consumed the event, and otherwise passes.
 
 | Message | Named function | What OnionXT does with it |
 |---|---|---|
@@ -156,37 +141,31 @@ consumed the event, and otherwise passes.
 | `socketClosed pSocketID` | `oxSocketClosed pSocketID` | the far side closed cleanly; delivers `closed` to the stream's app callback and forgets it, or marks control disconnected. |
 | `socketTimeout pSocketID` | `oxSocketTimeout pSocketID` | REPEATS every `socketTimeoutInterval` while a read is pending, so it is fatal only during a handshake; a connected stream ignores it. |
 
-Each named function answers ONE question - *was that socket mine, and did I handle it?* - returning
-`"true"` when it consumed the event and `"false"` when the socket belongs to somebody else. An
-ordinary caller uses neither; they exist for an EMBEDDER. Because the three message names are the
-engine's, every socket library declares them, and no two copies can live in ONE script - which is
-exactly what a stack script that embeds this library builds, and is why OnionXT could previously only
-be reached through `start using` and a `pass`. With the logic behind a name of its own,
-`tools/sync-demo-embeds.py` drops the three wrappers for a registered (app, library) pair and the app
-calls `oxSocketError(...)` from its own handler precisely where it used to pass. Nothing of this
-library's logic is copied into the app, so nothing can go stale.
-`nocloud/src/nocloudquickshare.livecodescript` is the first app to carry OnionXT this way - its Tor
-path now ships with the script instead of needing a `start using` step. The split is **verified
-statically; the own-socket branches are unchanged and stay the engine-proven ones**, and the wrapper
-form needs a live-Tor re-pass.
+Each named function answers ONE question, *was that socket mine, and did I handle it?*, returning
+`"true"` when it consumed the event and `"false"` for somebody else's socket. They exist for an
+EMBEDDER: every socket library declares the three engine names and one script cannot define a name
+twice, so `tools/sync-demo-embeds.py` drops the three wrappers for a registered (app, library) pair and
+the app calls `oxSocketError(...)` etc. from its own handler exactly where it would pass. No logic is
+copied, so nothing goes stale; nocloud's `nocloudquickshare.livecodescript` was the first app to carry
+OnionXT this way. The split is **verified statically**; the own-socket branches are unchanged and keep
+their engine evidence, and the wrapper form needs a live-Tor re-pass.
 
 > **Integration rule: if your stack defines any of these three, it must `pass` the ones that are not
-> yours.** A stack script that handles `socketClosed` (or `socketError`, or `socketTimeout`) and does
-> not forward it can swallow the message before OnionXT's own copy runs. Nothing errors: the dial that
-> failed simply never reports, the stream that closed never delivers `closed`, the stalled handshake
-> never times out. The symptom is a hang, and no gate in this repo can see it. Two shipping apps in
-> the suite arrived at the same guard independently (`nocloud/src/nocloudquickshare.livecodescript`
-> and `torrentxt/examples/torrent-quickshare.livecodescript`, both: act only on our own sockets,
-> `pass` everything else); [doc 10 section 2](10-usage-guide.md) gives the pattern to copy. The exact
-> message-path ordering that decides which script sees the message first is the engine's, and is
-> recorded here as those two apps found it: **verified statically; needs an OXT pass** to state
-> precisely.
+> yours.** A handler that does not forward the message can swallow it before OnionXT's copy runs.
+> Nothing errors: the failed dial never reports, the closed stream never delivers `closed`, the
+> stalled handshake never times out. The symptom is a hang. nocloud and torrent-quickshare arrived at
+> the same guard independently (act only on your own sockets, `pass` everything else);
+> [doc 10 section 2](10-usage-guide.md) gives the pattern. The exact message-path ordering is the
+> engine's: **verified statically; needs an OXT pass** to state precisely.
 
 ## Error model
 
-- Commands set `the result` to empty on success, or to a clear, human-readable error string on
-  failure (mapped SOCKS REP codes, control `4xx`/`5xx`, timeouts, closed sockets). Never a raw numeric
-  code with no explanation.
+- Handle-yielding commands (`oxDial`, `oxCreateService`, `oxCreateServiceFromSeed`, `oxPublishService`,
+  the `oxTransportDial` / `oxTransportListen` wrappers, onion-httpd's `oxhServe`) report the handle;
+  test `the result is an integer`. Other commands report empty on success. Failure is a human-readable
+  `"OnionXT: ..."` string, never a bare numeric code.
+- Asynchronous failures (mapped SOCKS REP codes, control `4xx`/`5xx`, timeouts, closed sockets) arrive
+  through the stream `error` event or the status callback.
 - Every wire error fails closed and tears the resource down; there is no silent fallback to an
   unproxied or unauthenticated path (CLAUDE.md rule 4).
 

@@ -20,10 +20,9 @@ ability to dial a peer, and a byte pipe. OnionXT provides each:
 | send / recv bytes | `oxWrite` / the stream callback |
 | identity <-> address | the onion address IS the ed25519 public key (no separate key distribution) |
 
-The thin wrappers `oxTransportDial` and `oxTransportInfo` (doc 05) make this seam explicit: a caller
-dials a rendezvous address (a full `.onion`, or a 32-byte ed25519 key / 64-hex string that OnionXT maps
-to an address first), and queries which optional capabilities are available so it can negotiate and fall
-back visibly rather than silently.
+`oxTransportDial` takes a full `.onion` or a 32-byte ed25519 key / 64-hex string (mapped to its
+address first), and `oxTransportInfo` reports the optional capabilities so a caller can negotiate and
+fall back visibly (doc 05).
 
 ## Rendezvous mapping
 
@@ -37,6 +36,7 @@ back visibly rather than silently.
 - For unlinkable, rotating rendezvous, derive an **epoch-scoped** onion key from a shared secret and an
   epoch counter, so the address rotates and a passive observer cannot link epochs. This costs an
   onion-service republish per epoch; treat cadence as a tuning knob (descriptor publication is not free).
+  OnionXT v1 does not rotate by itself (doc 01, "The deliberate v1 defaults"); a protocol above can.
 
 ## What plugging in gains
 
@@ -51,11 +51,11 @@ back visibly rather than silently.
 - **Seal everything with SodiumXT (or your own crypto).** OnionXT does not encrypt. Tor protects the
   path; the message-level "right recipient, intact content, no replay" guarantees are the protocol's job.
 - **Not claim more than Tor gives.** Traffic correlation, local-daemon trust, and descriptor timing all
-  remain (doc 01, doc 09). Onion transport is a strong IP-metadata improvement, not anonymity against a
+  remain (doc 01). Onion transport is a strong IP-metadata improvement, not anonymity against a
   global passive adversary.
 - **Negotiate, not assume.** If more than one transport is available, advertise which each side speaks
   and negotiate; fall back cleanly when Tor is unavailable, and make the fallback visible (never silently
   downgrade anonymity). `oxTransportInfo` gives the caller the capability flags to make that decision.
 
-This is the composition principle OnionXT runs on: it adds a transport and a naming property, invents no
-crypto, and lets the layer above decide when to use it.
+The composition principle: OnionXT adds a transport and a naming property, invents no crypto, and lets
+the layer above decide when to use it.

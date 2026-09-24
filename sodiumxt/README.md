@@ -19,8 +19,6 @@ gives xTalk apps the cryptography people actually need today, behind a small, fr
 It wraps the audited libsodium library, so you can delete hand-rolled crypto and just call
 `sx*` instead.
 
-> **Documentation:** [`docs/README.md`](docs/README.md) indexes every page for this member (getting started, the full `sx*` API reference, recipes, the security model, and the contributor build notes).
-
 ## Why
 
 The stock `encrypt ... using "aes-256-cbc" with password ...` path in xTalk has a weak key
@@ -34,14 +32,11 @@ MAC, never a way to encrypt bytes - the argued exception in `docs/security.md`.)
 ## Requirements
 
 - OpenXTalk, or LiveCode 9.6.3+ (anything that loads LiveCode Builder extensions).
-- Desktop platforms: **Linux** (x86_64, x86), **Windows** (64- and 32-bit) and **macOS**
-  (universal, x86_64 + arm64) - **all five at ABI 10** since release run 12 (2026-08-27),
-  which replaced the mac dylib that had sat at ABI 6. The matching native library ships
-  bundled inside the extension; there is nothing to install separately, and no
-  `LD_LIBRARY_PATH` or `sudo` needed. (A package built from a pre-run-12 tree on macOS
-  throws `"SodiumXT ABI mismatch ... Reinstall the packaged extension."` from the FIRST
-  call - repackage from the current tree rather than debugging it.) The per-platform
-  table, with what each row was built from, is in `CLAUDE.md`.
+- **Linux** (x86_64, x86), **Windows** (64- and 32-bit) and **macOS** (universal, x86_64 +
+  arm64), all five at ABI 10. The native library ships inside the extension: nothing to
+  install separately, no `LD_LIBRARY_PATH` or `sudo`. A `"SodiumXT ABI mismatch ...
+  Reinstall the packaged extension."` error means the package was built from a stale tree;
+  repackage from the current one.
 
 ## Install
 
@@ -55,13 +50,12 @@ MAC, never a way to encrypt bytes - the argued exception in `docs/security.md`.)
    ```
    put sxVersion()
    -- e.g. SodiumXT 0.1.0 (libsodium 1.0.20)
-   -- (every committed binary reports the pinned 1.0.20 since the 2026-08-23
-   --  mingw cross-builds; the superseded vcpkg-built Windows DLLs reported 1.0.22)
+   -- (Linux and macOS report the pinned 1.0.20; the committed Windows DLLs are
+   --  MSVC + vcpkg builds and report 1.0.22)
    ```
 
-Once installed, the `sx*` handlers are in scope in your stacks. See
-[docs/getting-started.md](docs/getting-started.md) for the few conventions worth knowing
-before your first call.
+Once installed, the `sx*` handlers are in scope in your stacks; read
+[docs/getting-started.md](docs/getting-started.md) before your first call.
 
 ## Quick start: encrypt a message with a passphrase
 
@@ -83,21 +77,27 @@ instead of returning garbage - wrap it in `try ... catch`.
 
 ## Documentation
 
-- **[Getting started](docs/getting-started.md)** - install, load, the `Data` / `textEncode`
-  rules, and how errors are reported.
-- **[API reference](docs/api-reference.md)** - every `sx*` handler by category.
-- **[Recipes](docs/recipes.md)** - copy-paste solutions for common tasks (file encryption,
-  password storage, signing, public-key messaging, key exchange).
-- **[Security model](docs/security.md)** - what SodiumXT guarantees, and the handful of rules
-  to follow so you keep those guarantees.
+- **[Getting started](docs/getting-started.md)** - install and the few conventions worth
+  knowing before your first call. Read first.
+- **[API reference](docs/api-reference.md)** - every `sx*` signature and error convention.
+- **[Recipes](docs/recipes.md)** - copy-paste solutions: file encryption, password storage,
+  signing, public-key messaging, key exchange.
+- **[Security model](docs/security.md)** - what libsodium guarantees, what this binding adds
+  (nothing cryptographic, by design), and what an app is still responsible for. Read it
+  before shipping anything that protects a user.
+- **[Building](docs/building.md)** - for contributors: layout, libsodium, sanitizers, the
+  static gate, packaging. `CLAUDE.md` is maintainer memory: rules, traps, the committed
+  binaries and the engine evidence ledger.
+
+Suite-wide documents: https://github.com/SethMorrowSoftware/xtalk-suite/blob/main/docs/README.md
 
 ## Examples
 
 Two ready-to-run stacks are in [`examples/`](examples):
 
-- **`sodium-demo.livecodescript`** - an interactive, tabbed showcase: passphrase encryption
-  (with a live tamper-rejection demo), public-key messaging, signatures, hashing, and file
-  encryption, each with step-by-step guidance.
+- **`sodium-demo.livecodescript`** - an interactive, tabbed showcase with step-by-step
+  guidance: passphrase encryption (with live tamper rejection), public-key messaging,
+  signatures, hashing and file encryption, passphrase-derived identities, stream rekeying.
 - **`sodium-tests.livecodescript`** - a self-test: `put sxSelfTest()` runs every capability
   through round-trips, known-answer vectors, and tamper / wrong-key checks and returns a
   pass/fail report.
@@ -106,10 +106,9 @@ Two ready-to-run stacks are in [`examples/`](examples):
 
 SodiumXT is designed so the easy way is the safe way:
 
-- Nonces are handled for you (a fresh random nonce is generated and prepended, or derived
-  per chunk). The sealing API has no error-prone "bring your own nonce" entry point; the
-  one caller-supplied-nonce handler, `sxChaCha20IetfXor` (ABI 10), is a building block for
-  published constructions that derive their nonces internally - see the argued exception in
+- Nonces are handled for you (random and prepended, or derived per chunk). The one
+  caller-supplied-nonce handler, `sxChaCha20IetfXor` (ABI 10), is a building block for
+  published constructions that derive their own nonces; read the argued exception in
   `docs/security.md` before touching it.
 - Compare secrets with `sxMemEqual` (constant time), never with `is` or `=`.
 - Use `sxRandomBytes` / `sxRandomUniform` for anything that must be unguessable, never the
@@ -117,13 +116,11 @@ SodiumXT is designed so the easy way is the safe way:
 - Store the salt (and the cost settings) alongside a passphrase-derived ciphertext so you can
   re-derive and raise the cost later.
 
-The full model and the reasoning are in [docs/security.md](docs/security.md).
-
 ## Contributing / building from source
 
-Most users never need to build anything - the extension ships with prebuilt native libraries
-for every platform. If you want to build from source, change the C shim, or contribute, see
-[CONTRIBUTING.md](CONTRIBUTING.md) and [`docs/README.md`](docs/README.md).
+Most users never build anything: the extension ships prebuilt native libraries for every
+platform. To build from source, change the C shim, or contribute, start with
+[docs/building.md](docs/building.md).
 
 ## License
 
