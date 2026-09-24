@@ -31,8 +31,10 @@ script "xTalkSuiteSelfTest"
 -- legs 43/43. A later 2026-08-12 run of the current harness was green across
 -- all 617 folded checks: sodiumxt 71, onionxt 43, coinxt 230, torrentxt 96,
 -- enetxt sync 21, datachannelxt sync 23, and riptide phases 1-2 at 133.
--- What each run bought is recorded per member (each member's
--- README / CLAUDE.md and docs/OXT-PASS-RUNBOOK.md, the pass blockquotes).
+-- What each run bought is recorded per member: each member's CLAUDE.md
+-- evidence ledger, and docs/OXT-PASS-RUNBOOK.md section 8 (the closed engine
+-- record, which absorbed the runbook's per-pass blockquotes in the docs
+-- consolidation, 409ceee).
 -- Riptide's phase-2 single-engine work is therefore closed; only its
 -- two-machine propagation criterion remains under runbook item 6.
 --
@@ -50,12 +52,12 @@ script "xTalkSuiteSelfTest"
 -- about a dozen handlers per member and say so. It now carries EVERY member's
 -- own deep self-test as well, folded in whole by tools/build-suite-selftest.py:
 --
---   sodiumxt        sxSelfTest()      21 groups, the entire sx* surface
---   onionxt         oxSelfTest()      10 sections, all offline, and since
+--   sodiumxt        sxSelfTest()      24 groups, the entire sx* surface
+--   onionxt         oxSelfTest()      11 sections, all offline, and since
 --                                     2026-08-17 the only folded harness
 --                                     whose summary carries THREE counts:
 --                                     passed, failed and skipped
---   coinxt          its 28 sections    all five phases, ~300 checks
+--   coinxt          its 32 sections    all five phases, ~300 checks
 --   torrentxt       its full harness   sharing this file's single session
 --   enetxt          its SYNC half      lifecycle, stale handles, tuning
 --   datachannelxt   its SYNC half      lifecycle, the stale-handle surface
@@ -2226,7 +2228,7 @@ command stRunMemberHarnesses
    if sHaveRiptideScript then
       try
          -- floor 1: catastrophic only, not measured (see above)
-         stMergeReturned "Riptide Social (phases 1-2)", rs1rsSelfTest(), 1
+         stMergeReturned "Riptide Social (phases 1-8)", rs1rsSelfTest(), 1
       catch tError
          stSectionFailed "Riptide deep self-test", tError
       end try

@@ -6,10 +6,12 @@ script "suiteClosingPass"
 -- sessions are a checklist, not an expedition.
 --
 -- THE LEGS (and the runbook items they close):
---   A  DataChannel local async (single machine): the member harness's still
---      -static live halves - live dcSendText, dcBufferedAmount, gathering
---      state 2, selected candidate pair, the dcBufferedLow event, the
---      a=candidate/role pins.
+--   A  DataChannel local async (single machine): the member harness's live
+--      halves - live dcSendText, dcBufferedAmount, gathering state 2,
+--      selected candidate pair, the dcBufferedLow event, the a=candidate/role
+--      pins. CLOSED 2026-08-15 by the standalone datachannel-selftest's async
+--      loopback (runbook section 8), so a closing session skips it (runbook
+--      S3 item 1); it stays here as a one-machine smoke check.
 --   B  ENet chat between two machines (item 6, enetxt's last leg).
 --   C  Torrent seed/leech with a hash-verified payload, plus resume saved
 --      to DISK and re-added - across an OXT restart if you quit between
@@ -26,8 +28,12 @@ script "suiteClosingPass"
 --
 -- HONESTY (the suite convention): this stack is verified statically and
 -- needs its OXT passes - each PASS line below is the evidence to record.
--- Every handler it calls is individually engine-proven except the seven
--- live-Tor ones section F exists to close.
+-- Every handler it calls is individually engine-proven except the live-Tor
+-- ones section F exists to close: Mode B's oxLaunchTor / oxStopTor against a
+-- tor the library launched, and the onion echo's OnionXT-to-OnionXT dial
+-- through the oxTransport* seam (onionxt/CLAUDE.md, still-VERIFY items 8 and
+-- 10). This line said "the seven live-Tor ones" until 2026-09-24: a count
+-- nothing kept true, so it names them by the list that is kept instead.
 --
 -- SETUP, per machine: install sodiumxt + torrentxt + enetxt +
 -- datachannelxt (packaged). NOTHING ELSE TO WIRE - the ox* layer for section
@@ -2978,8 +2984,10 @@ command cpOnBtEvent pEvent
 end cpOnBtEvent
 
 -- ---- A: datachannel local async ---------------------------------------------
--- The member harness's still-static live halves, driven the same way its
--- async loopback drives them; a green A is the evidence those labels flip on.
+-- The member harness's live halves, driven the same way its async loopback
+-- drives them. Those labels flipped 2026-08-15 on the standalone harness's own
+-- loopback (runbook section 8), so a green A is now a smoke check, not the
+-- evidence a label waits on.
 command cpARun
    local tErr
    put empty into field "cpAOut"

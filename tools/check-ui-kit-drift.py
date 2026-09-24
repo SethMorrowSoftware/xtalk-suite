@@ -78,27 +78,28 @@ EXEMPT = {
     # box2dxt's stacks are GAMES: canvas worlds drawn by the member's own
     # b2k Kit (whose embedded copies have their own sync gate,
     # box2dxt/tools/sync-embedded-kit.py) - form chrome is not their UI
-    # language. Suite-kit chrome adoption is deliberate phase-2 work,
-    # recorded in box2dxt/CLAUDE.md.
+    # language. PERMANENT by owner decision D-18 (2026-08-27; box2dxt/CLAUDE.md
+    # section 10): converting would add a second 300-line block to every
+    # paste for no visual change. These reasons said "phase-2" until
+    # 2026-09-24, a deferral the decision had already closed.
     os.path.join("box2dxt", "examples", "box2dxt-demo.livecodescript"):
-        "game canvas on the member's own embedded Kit; suite-kit chrome is phase-2",
+        "game canvas on the member's own embedded Kit; permanent by D-18",
     os.path.join("box2dxt", "examples", "box2dxt-platformer.livecodescript"):
-        "game canvas on the member's own embedded Kit; suite-kit chrome is phase-2",
+        "game canvas on the member's own embedded Kit; permanent by D-18",
     os.path.join("box2dxt", "examples", "box2dxt-slingshot.livecodescript"):
-        "game canvas on the member's own embedded Kit; suite-kit chrome is phase-2",
+        "game canvas on the member's own embedded Kit; permanent by D-18",
     os.path.join("box2dxt", "examples", "box2dxt-contraption-builder.livecodescript"):
-        "game canvas on the member's own embedded Kit; suite-kit chrome is phase-2",
+        "game canvas on the member's own embedded Kit; permanent by D-18",
     os.path.join("box2dxt", "examples", "box2dxt-spike-gamekit.livecodescript"):
-        "game canvas on the member's own embedded Kit; suite-kit chrome is phase-2",
+        "game canvas on the member's own embedded Kit; permanent by D-18",
     os.path.join("box2dxt", "examples", "box2dxt-selftest.livecodescript"):
-        "box2dxt's harness predates the scaffold; scaffold adoption is phase-2",
+        "box2dxt's harness matches the kit by value, not by block; permanent by D-18",
     # holde-em's table is a game in the box2dxt mold: a canvas drawn by the
     # b2k Kit's sprites (cards) and bodies (chips), with the member's own
-    # dark-felt chrome. Suite-kit adoption is the same deliberate phase-2
-    # call the box2dxt games carry, recorded in holde-em/CLAUDE.md's fold
-    # record.
+    # dark-felt chrome. Permanent by the same decision the box2dxt games
+    # carry, D-18 (2026-08-27; holde-em/CLAUDE.md rule 9).
     os.path.join("holde-em", "src", "holdem.livecodescript"):
-        "game table on the b2k Kit; suite-kit chrome is phase-2",
+        "game table on the b2k Kit; permanent by D-18",
 }
 
 # The three spellings that mean "this file builds a window". Until the

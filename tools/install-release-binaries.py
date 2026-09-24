@@ -74,24 +74,33 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # reported as skipped, which is the right default - the bundle directory is
 # whatever the workflow or a human unzipped, not a trusted manifest.
 #
-# BOX2DXT JOINED 2026-08-17, and the token is VERIFICATION-ONLY. It does NOT put
-# box2dxt in a release lane and deliberately does not pre-empt the decision
-# box2dxt/CLAUDE.md reserves for the owner: its known-good Linux build runs
-# `docker run manylinux2014` INSIDE a stock runner (glibc floor 2.17), while
-# release-binaries.yml's cmake-members job uses the `container:` shape with
-# manylinux_2_28, so joining that matrix as-is would raise the member's glibc
-# floor - a real portability regression, and a call nobody should make as a
-# side effect of editing a Python tuple. Until that lane exists, nothing in CI
-# produces a box2dxt bundle and this token is inert there.
+# BOX2DXT JOINED 2026-08-17, and when it joined the token was VERIFICATION-ONLY:
+# it did not put box2dxt in a release lane, and deliberately did not pre-empt
+# the decision box2dxt/CLAUDE.md then reserved for the owner, because its
+# known-good Linux build ran `docker run manylinux2014` INSIDE a stock runner
+# (glibc floor 2.17) while release-binaries.yml's cmake-members job used the
+# `container:` shape with manylinux_2_28, so joining that matrix as-is would
+# raise the member's glibc floor - a call nobody should make as a side effect
+# of editing a Python tuple.
 #
-# What it DOES buy is the hand-assembled path, which is the one people actually
-# use for a member with no lane: a locally built or unzipped box2dxt bundle used
-# to be routed to "not a native suite member" and then refused with "the bundle
-# contained no installable library", so the only way to land those five binaries
-# was to copy them in by hand - with none of the filename, object-format,
-# architecture or fat-Mach-O checks below run over them, and the manifest
-# refreshed by hand or not at all. That is exactly the failure mode suite rule 5
-# exists to prevent, so the fix is worth landing ahead of the YAML half.
+# THAT HAS SINCE HAPPENED, BY WORKFLOW RATHER than by this tuple: box2dxt has
+# had release-binaries.yml matrix rows since 2026-08-23, release run 12
+# (2026-08-27) built and committed its Linux and Windows libraries through
+# this file, and D-03 was closed "resolved by events" the same day. The
+# portability cost this comment predicted was real in part: that run's
+# x86-linux library needs glibc 2.34 where the docker-run build needed 2.17
+# (x86_64-linux still needs 2.17) - docs/OPEN-DECISIONS.md D-03 and the suite
+# work plan carry it. This paragraph described the lane as reserved until
+# 2026-09-24.
+#
+# What the token bought first, and still buys, is the hand-assembled path: a
+# locally built or unzipped box2dxt bundle used to be routed to "not a native
+# suite member" and then refused with "the bundle contained no installable
+# library", so the only way to land those five binaries was to copy them in by
+# hand - with none of the filename, object-format, architecture or fat-Mach-O
+# checks below run over them, and the manifest refreshed by hand or not at all.
+# That is exactly the failure mode suite rule 5 exists to prevent, which is why
+# the token landed six days ahead of the YAML half (2026-08-23).
 MEMBERS = ("sodiumxt", "torrentxt", "enetxt", "datachannelxt", "coinxt", "box2dxt")
 EXT_FOR = {"linux": "so", "win32": "dll", "mac": "dylib"}
 

@@ -31,8 +31,10 @@ script "xTalkSuiteSelfTest"
 -- legs 43/43. A later 2026-08-12 run of the current harness was green across
 -- all 617 folded checks: sodiumxt 71, onionxt 43, coinxt 230, torrentxt 96,
 -- enetxt sync 21, datachannelxt sync 23, and riptide phases 1-2 at 133.
--- What each run bought is recorded per member (each member's
--- README / CLAUDE.md and docs/OXT-PASS-RUNBOOK.md, the pass blockquotes).
+-- What each run bought is recorded per member: each member's CLAUDE.md
+-- evidence ledger, and docs/OXT-PASS-RUNBOOK.md section 8 (the closed engine
+-- record, which absorbed the runbook's per-pass blockquotes in the docs
+-- consolidation, 409ceee).
 -- Riptide's phase-2 single-engine work is therefore closed; only its
 -- two-machine propagation criterion remains under runbook item 6.
 --
@@ -50,12 +52,12 @@ script "xTalkSuiteSelfTest"
 -- about a dozen handlers per member and say so. It now carries EVERY member's
 -- own deep self-test as well, folded in whole by tools/build-suite-selftest.py:
 --
---   sodiumxt        sxSelfTest()      21 groups, the entire sx* surface
---   onionxt         oxSelfTest()      10 sections, all offline, and since
+--   sodiumxt        sxSelfTest()      24 groups, the entire sx* surface
+--   onionxt         oxSelfTest()      11 sections, all offline, and since
 --                                     2026-08-17 the only folded harness
 --                                     whose summary carries THREE counts:
 --                                     passed, failed and skipped
---   coinxt          its 28 sections    all five phases, ~300 checks
+--   coinxt          its 32 sections    all five phases, ~300 checks
 --   torrentxt       its full harness   sharing this file's single session
 --   enetxt          its SYNC half      lifecycle, stale handles, tuning
 --   datachannelxt   its SYNC half      lifecycle, the stale-handle surface
@@ -466,7 +468,7 @@ local b21gMsgEnters, b21gMsgContacts   -- message-path counters (vs polling)
 constant b21kStUIVersion = "1"
 constant b21kStHarnessV = "31"  -- bump on EVERY harness change: the report
 
--- ---- Riptide Social (phases 1-2): the rs* self-test ----
+-- ---- Riptide Social (phases 1-8): the rs* self-test ----
 constant rs1kRsGoldMasterHex = "4242424242424242424242424242424242424242424242424242424242424242"
 constant rs1kRsGoldConfSeedHex = "cac73f09a0478224974a525036ebd73f9727ac8932162eb7fcfb2821ad7eecc7"
 constant rs1kRsGoldRoomSalt = "golden-salt"
@@ -3074,7 +3076,7 @@ command stRunMemberHarnesses
    if sHaveRiptideScript then
       try
          -- floor 1: catastrophic only, not measured (see above)
-         stMergeReturned "Riptide Social (phases 1-2)", rs1rsSelfTest(), 1
+         stMergeReturned "Riptide Social (phases 1-8)", rs1rsSelfTest(), 1
       catch tError
          stSectionFailed "Riptide deep self-test", tError
       end try
@@ -12536,9 +12538,11 @@ end b2kDispatchSensors
 -- Riptide script layer (the real library, embedded)
 --
 -- The rs* surface of the capstone app - pure script over the installed
--- extensions, phase 1 (identity + the feed wire formats). Embedded so the
--- folded riptide harness tests the code it ships with, same as the coinxt
--- and onionxt layers.
+-- extensions, phases 1-8 (phase 5, the call, adds no library surface):
+-- identity and the feed wire formats, the live feed, media, DMs, the LAN
+-- mesh, the anon persona and the Nostr rail. Embedded so the folded riptide
+-- harness tests the code it ships with, same as the coinxt and onionxt
+-- layers.
 --
 -- GENERATED from riptide/src/riptide.livecodescript by
 -- tools/build-suite-selftest.py. DO NOT EDIT HERE - edit that file and
@@ -19809,8 +19813,9 @@ end nxRelayInfoParse
 -- ==========================================================================
 -- SodiumXT: the full sx* self-test
 --
--- 21 groups: encoding, hashing, secretbox, AEAD, pwhash, KDF, secretstream,
--- signing, box, seal, key exchange, padding.
+-- 24 groups: encoding, hashing (BLAKE2b, SHA3-256), secretbox, AEAD, pwhash,
+-- KDF, secretstream, signing, box, seal, key exchange, padding, ristretto255
+-- (ABI 8 and 9) and the raw ChaCha20 xor (ABI 10).
 --
 -- GENERATED from sodiumxt/examples/sodium-tests.livecodescript by
 -- tools/build-suite-selftest.py. DO NOT EDIT HERE - edit that file and
@@ -20655,7 +20660,7 @@ end sx1testDiagnostics
 -- ==========================================================================
 -- OnionXT: the full ox* self-test
 --
--- 10 groups, all OFFLINE - no Tor daemon is started or contacted. The
+-- 11 groups, all OFFLINE - no Tor daemon is started or contacted. The
 -- live-Tor paths stay in onionxt's own demo.
 --
 -- GENERATED from onionxt/examples/onionxt-tests.livecodescript by
@@ -21166,8 +21171,9 @@ end ox1testZeroSeed
 -- ==========================================================================
 -- CoinXT: the full cx* self-test
 --
--- 28 sections across all four phases: hashes, the secp256k1 curve, the
--- encoders and addresses, BIP-39/32/44, and the fail-closed regressions.
+-- 32 sections across all five phases: hashes, the secp256k1 curve, the
+-- encoders and addresses, BIP-340 Schnorr and BIP-341 Taproot, BIP-39/32/44,
+-- transactions, and the fail-closed regressions.
 --
 -- GENERATED from coinxt/tests/coin-selftest.livecodescript by
 -- tools/build-suite-selftest.py. DO NOT EDIT HERE - edit that file and
@@ -26424,7 +26430,7 @@ end b21stTestKitPlayerApi
 
 
 -- ==========================================================================
--- Riptide Social (phases 1-2): the rs* self-test
+-- Riptide Social (phases 1-8): the rs* self-test
 --
 -- The capstone app's harness: the KDF subkey tree, identity to handle to
 -- onion, the RIPTKEY1 key file, the RSH1/RSP1 framings, the post chain, and

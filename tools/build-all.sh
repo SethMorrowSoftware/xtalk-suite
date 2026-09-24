@@ -238,8 +238,9 @@ fi
 # three times, so a fix landing in one copy leaves the other two members'
 # stale-handle rule quietly weaker, and the symptom arrives on an engine as a
 # touch of a recycled slot. Scoped to the handle table ALONE: the record codecs
-# genuinely diverge per library, and docs/OPEN-DECISIONS.md D-14 stays open over
-# every block this does not name.
+# genuinely diverge per library. docs/OPEN-DECISIONS.md D-14 RETIRED the wider
+# oxtkit/ extraction on 2026-08-27, because this gate already holds the one
+# property it would have bought; nothing else in the shims is compared.
 if [ -f tools/check-shim-scaffold-drift.py ]; then
   echo "== suite: tools/check-shim-scaffold-drift.py =="
   python3 tools/check-shim-scaffold-drift.py

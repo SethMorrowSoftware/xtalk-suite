@@ -6,19 +6,21 @@ SCOPE FIRST, BECAUSE THE SCOPE IS THE POINT. This compares exactly one block:
 `<pfx>_handle_table.h` in torrentxt, enetxt and datachannelxt. It says nothing
 about the record codecs, the exception-firewall macros, the out-buffer helpers
 or the poll-drain queues, and it must not be read as saying anything about
-them. `docs/OPEN-DECISIONS.md` D-14 is an OPEN OWNER DECISION over that wider
-scaffolding, with three live options - execute the `oxtkit/` extraction, retire
-the plan item, or add a read-only cross-member report - and this file is
-carefully none of them:
+them. `docs/OPEN-DECISIONS.md` D-14 was the owner decision over that wider
+scaffolding, and it is DECIDED: RETIRE (2026-08-27; the record is
+docs/BINDING-PLAYBOOK.md section 6). No `oxtkit/` extraction will happen, and
+the reason given is this file: the one property an extraction would have
+bought - the three C++ handle tables never drifting - is held here, by a gate,
+without moving any code. The decision is to be revisited only if an eighth
+native wrap is planned.
 
-  * it moves no code, so "execute now" is exactly as available as it was;
-  * it declares nothing un-unifiable and nothing worth unifying, so "retire"
-    stays open, now with one measured fact on the record instead of an
-    estimate;
-  * it IS a gate rather than a report, but over the ONE block that was already
-    measured identical - a strict subset of the middle path's
-    "genuinely-identical blocks", with no opinion on any block it does not
-    name.
+This docstring called D-14 open, with three live options (execute the
+extraction, retire the plan item, add a read-only cross-member report), for a
+month after the retire landed; the decision log itself recorded that it had
+"not been written through in code". What stays true from that framing is the
+scope: this file moves no code, declares no other block un-unifiable or worth
+unifying, and is a gate over the ONE block that was measured identical, with
+no opinion on any block it does not name.
 
 D-14's reasoning says verbatim that the shim scaffolding "must NOT be
 byte-identical ... so byte-unification is not even the right goal". Re-measured
@@ -123,28 +125,30 @@ CARRIERS = [
 # Native scaffolding this gate deliberately does NOT compare, with the reason
 # for each. This list is documentation with a job: it is what keeps a reader
 # (or a later agent) from mistaking a green line here for a claim about the
-# whole shim layer, and it is where the D-14 options stay open. Nothing here is
-# checked - measurements are dated because they will age.
+# whole shim layer. D-14 retired the extraction (2026-08-27), so none of these
+# is waiting on a unification; each is here because it is not one
+# implementation, or was never measured. Nothing here is checked -
+# measurements are dated because they will age.
 NOT_COMPARED = {
     "the record codecs (btx_record.h / enx_record.h / dcx_record.h)":
         "three different field registries - 275 / 198 / 202 normalised code "
         "lines measured 2026-08-17. Genuinely divergent per library, and each "
         "already has a vertical gate of its own "
         "(<member>/tools/check-record-registry.py holds its enums to the "
-        ".lcb's constants). D-14 open.",
+        ".lcb's constants). D-14 retired the extraction (2026-08-27).",
     "sodiumxt's stream handle table (src/sodium_shim.c)":
         "a different implementation, not a copy: C rather than a C++ "
         "template, a fixed slot array rather than a vector, a 14-bit "
         "generation over a 1-BASED slot index rather than 15 bits over a "
-        "0-based one. Comparing it would mean unifying it first, which is "
-        "D-14's 'execute' option and not this gate's call.",
+        "0-based one. Comparing it would mean unifying it first, which was "
+        "D-14's 'execute' option, and D-14 retired it (2026-08-27).",
     "box2dxt's DEFINE_PTR_TABLE (src/box2d_lc.c)":
         "the ancestor of the three C++ tables and also not a copy: a C macro "
         "over realloc'd parallel arrays. Same reason as sodiumxt's.",
     "the exception firewall, out-buffer helpers and poll-drain queues":
-        "not measured. D-14 names them as extraction candidates and its "
-        "'execute / retire / report' options all remain open over them; this "
-        "gate takes no position it has not measured.",
+        "not measured. D-14 named them as extraction candidates and then "
+        "retired the extraction (2026-08-27); this gate takes no position it "
+        "has not measured.",
 }
 
 # A normalised body must still LOOK like the handle table, or three identical
@@ -366,7 +370,7 @@ def main(argv):
                              total - code))
     print("    scope: the handle table ONLY. %d other native block(s) are "
           "deliberately not compared (see NOT_COMPARED); docs/OPEN-DECISIONS.md"
-          " D-14 stays open over all of them." % len(NOT_COMPARED))
+          " D-14 retired their extraction (2026-08-27)." % len(NOT_COMPARED))
     return 0
 
 
