@@ -1,421 +1,242 @@
-# CLAUDE.md
+# CLAUDE.md - No Cloud Quick Share (`nocloud/`)
 
-Guidance for Claude Code (claude.ai/code) and human contributors working in the
-**nocloud member of the xtalk-suite monorepo** (`nocloud/`). **These instructions
-override default behavior; follow them exactly.**
+Guidance for Claude Code (claude.ai/code) and human contributors. **Inside `nocloud/`
+this file wins over the suite root `CLAUDE.md`.** Paths are relative to this member's
+root, which holds in the suite tree and in the repository this member is published
+into. Engine BEHAVIOUR lives in the suite's
+[`docs/OXT-ENGINE-NOTES.md`](https://github.com/SethMorrowSoftware/xtalk-suite/blob/main/docs/OXT-ENGINE-NOTES.md):
+cite it by note number, and keep only this app's own traps here.
 
-This is the operational as-built record and the hard-won-lesson list for **No Cloud
-Quick Share**, in the same spirit as the `CLAUDE.md` files in the sibling OpenXTalk
-extensions it is built on (TorrentXT, SodiumXT, OnionXT, and their
-ancestors Box2Dxt and ShowControl). Most rules below were earned at the cost of a
-runtime error, a crash, or a silent misbehavior — several of them in this app.
+## 1. What this is
 
-> **Folded into the monorepo 2026-08-13.** This directory was copied verbatim
-> (via `git archive`, tracked files only) from the standalone repository, which
-> becomes a mirror; development happens here now, like every other member. Two
-> things changed in the fold and one holds going forward: (1)
-> `tools/check-livecodescript.py` was REPLACED with the suite's unified checker
-> (this copy predated the 2026-08-12 unification; the union checker is stricter,
-> and the app passed it clean on first contact), and the copy is now held
-> byte-identical by the suite's `tools/check-checker-drift.py` and
-> fixture-tested by `tools/test-checker.py` - never edit it here alone. (2) The
-> suite's `tools/build-all.sh` runs this member's gates (checker +
-> `tests/fileserver_golden.py`) in its member loop, and the suite-level
-> `tools/check-handler-calls.py` and `tools/check-stack-size.py` (the 720p
-> budget: stacks fit 1200 x 640 - this app's two-column dashboard already did)
-> now walk this directory on every push. Where this file and the suite root
-> `CLAUDE.md` conflict, this file wins inside `nocloud/`; paths in the docs
-> below may still read as if this were its own repo root (the suite's standing
-> consolidation-debt caveat).
->
-> **Kit adoption (2026-08-14).** The suite UI kit's v2 "card look" was
-> ABSORBED FROM THIS APP (its tokens, panels, soft shadows, measured labels,
-> platform mono and pill are the kit's now), and this stack adopts the kit in
-> return: the carried block sits above the lifecycle handlers, the duplicate
-> `kClr*` tokens are gone (only genuinely local ones remain - the drop-zone
-> palette, `kClrAccent` "active blue"), `qsLabel`/`qsGfx`/`qsPanel`/`qsCap`/
-> `qsButton`/`qsMonoFont`/`qsCopyFlash*` became the kit's `uiWrap`/`uiGfx`/
-> `uiPanel`/`uiCap`/`uiButton`/`uiMonoFont`/`uiCopyFlash*`, `qsField`/
-> `qsList`/`qsHdr` are thin wrappers, the Tor chip is the kit's `uiPill`
-> driven by `qsOnionPill` exactly as before, and the kit's ONE status line is
-> parked in the bottom-left strip where the connection state has always
-> lived. Deliberately NOT carried: `uiFooter` - this is an APP, not a demo;
-> the packed dashboard has no footer row, and its honesty surfaces are the
-> per-share `qsSharing` copy, the `/_qs/transparency` route, and the header's
-> HONESTY block. The 2026-08-14 fix pass also closed the audit's list: the
-> six `if not sCwActive` sites (a runtime type error on the empty default)
-> are `is not "true"` now, both crypto prologues are try-guarded like the
-> receive side always was, and a second control-connect failure reaches the
-> Activity log instead of only the pill. A note for the doc-vs-code question
-> the audit raised: LCB public handlers are callable in BOTH command and
-> function form from LiveCodeScript, so this file's function-form
-> `btCreateTorrent(...)` and torrentxt's documented command form are the same
-> call - coinxt's engine passes proved the function form against `.lcb`
-> handlers long ago.
-
-## What this is
-
-**No Cloud Quick Share** is peer-to-peer file sharing with **no server, no account,
-and no size limit**, delivered as a **single OpenXTalk (OXT) / xTalk stack script**
-plus a small bundled static web app. Drop a file, get a short code, send the code;
-the file transfers straight from your machine to your friend's. Three ways to share,
-chosen in the UI:
-
-- **Share code** — plain BitTorrent over the DHT (the code *is* the file's
-  content-address / info-hash; your IP is visible to peers).
-- **Private / Tor** — the bytes ride a Tor onion stream, both IPs hidden, no torrent
-  created.
-- **Web link** — a plain browser link, no app needed on the other end.
-
-Any file can be encrypted end-to-end with an optional passphrase. See
-`docs/what-it-hides.md` for the precise, honest transport/privacy model — read it
-before touching anything that touches the wire.
+**No Cloud Quick Share** is peer-to-peer file sharing with no server, no account and no
+size limit: a shipped APP (not an extension), one OpenXTalk stack script plus a sample
+web app. Three share paths: **Share code** (BitTorrent over the DHT; the code is the
+info-hash; your IP is visible to peers), **Private / Tor** (an onion stream; both IPs
+hidden; no torrent) and **Web link** (any browser). A passphrase adds end-to-end
+encryption. Read `docs/what-it-hides.md` before touching anything on the wire. It began
+as a TorrentXT demo and was folded into the suite from its own repository on 2026-08-13.
 
 ```
-src/nocloudquickshare.livecodescript   the whole app: self-building UI, the 3
-                                        transports, the HTTP + Tor servers, the
-                                        optional LAN web editor, the poll loop
-webapp/                                 a bundled static SPA you can serve over a
-                                        web link or a Tor page (demonstrates the
-                                        static host + the /_qs/info live route)
-tools/check-livecodescript.py           the static linter (the first gate)
-tests/fileserver_golden.py              the pure-logic golden (the second: the
-                                        Python MIRRORS, pinned to vectors)
-tools/check-script-vectors.py           the execution gate (the third, 2026-09-11:
-                                        the SHIPPED SCRIPT driven on the golden's
-                                        inputs, held to the mirrors' answers)
-tools/test-script-vectors.py            proves the third gate can fail
-docs/                                   README (the index), what-it-hides,
-                                        user-routes, webapp, building-a-standalone,
-                                        http-server-deep-dive, oxt-pass-checklist
+src/     nocloudquickshare.livecodescript: the whole app (self-building UI, three
+         transports, HTTP + Tor servers, LAN web editor, poll loop)
+webapp/  the sample SPA to serve over a web link or Tor (docs/webapp.md)
+site/    the product landing page: static files, no build step (site/README.md)
+tools/   run-gates.sh (THE gate list), check-livecodescript.py (the suite's unified
+         checker), check-script-vectors.py (execution gate) + test-script-vectors.py
+tests/   fileserver_golden.py: Python mirrors of the pure helpers, pinned to vectors
+docs/    what-it-hides, user-routes, webapp, building-a-standalone, http-server-deep-dive
+         (the HTTP host's contracts), oxt-pass-checklist (the engine pass owed)
 ```
 
-## The stack it sits on (dependencies)
-
-The app is a **binding consumer**: it calls into prebuilt OXT extensions. It does
-**not** build any native code — there is nothing to compile in this repo.
-
-| Extension | Library id | Handlers | Required? | Without it |
+| Dependency | Library id | Handlers | Required? | Without it |
 |---|---|---|---|---|
-| **TorrentXT** | `org.openxtalk.library.torrent` | `bt*` | **REQUIRED** | no session; the app cannot run |
-| **SodiumXT** | `org.openxtalk.library.sodium` | `sx*` | optional | no passphrase encryption, no LAN-editor password, no Tor (see below) — everything else works |
-| **OnionXT** | (Tor onion transport) | `ox*` | optional | no "Private / Tor" path; the other two work. Needs SodiumXT **and** a local Tor daemon |
-| Internet library (libURL) | — | `load URL` | optional | only the public-IP lookup on the web-link path; harmless if absent (try-guarded) |
+| TorrentXT | `org.openxtalk.library.torrent` | `bt*` | **required** | no session: nothing is shared or downloaded (gotcha 8) |
+| SodiumXT | `org.openxtalk.library.sodium` | `sx*` | optional | no passphrase encryption, no LAN-editor password, no Tor path |
+| OnionXT | none: carried in the script since 2026-08-24 | `ox*` | nothing to install | the Tor path also needs SodiumXT and a local tor daemon (system tor: control 9051 / SOCKS 9050; Tor Browser: 9151 / 9150) |
+| libURL | - | `load URL` | optional | only the try-guarded public-IP lookup (web link) |
+| JSON library | - | `JSONToArray` | optional | no `.qsroutes.json` routes (a standalone must tick it) |
 
-**The fail-closed rule (non-negotiable).** Every optional-extension call site is
-guarded. The app probes each dependency **once** at startup into a script-local
-boolean and never calls a guarded handler outside its guard or a `try`:
+OnionXT rides between the suite's `tools/sync-demo-embeds.py` sentinels. Only `ox*` is
+carried, never `oxh*` (the app ships its own HTTP server). Never edit inside the
+sentinels: change `../onionxt/src/onionxt.livecodescript` and re-run that tool.
 
-- `qsCanEncrypt()` → `sCanEncrypt` — a guarded `sxSecretBox`/`sxSecretBoxOpen`
-  round-trip. Gates every `sx*` call.
-- `qsHasOnion()` → `sHasOnion` — requires `sCanEncrypt` first (OnionXT depends on
-  SodiumXT), then a guarded `oxVersion()`. Gates every `ox*` call.
-- `sTorReady` / `qsOnionReadyNow()` (`oxIsReady()`) — the Tor daemon's **live**
-  bootstrap state, cached by a callback but **re-checked at the moment of use**.
-  Never trust the cached live flag for a go/no-go decision.
+## 2. Rules for working here
 
-When a dependency is missing the affected feature reports a clear "install
-org.openxtalk.library.sodium" / "install OnionXT + a local Tor daemon" message and
-**every other feature keeps working**. This is the pattern SodiumXT taught the
-family; do not break it.
+1. **Fail closed, probed once.** Each dependency is probed ONCE at startup into a script
+   local; no guarded handler is called outside its guard or a `try`. `qsCanEncrypt()`
+   sets `sCanEncrypt` by a guarded `sxSecretBox`/`sxSecretBoxOpen` round trip and gates
+   every `sx*` call. `qsHasOnion()` sets `sHasOnion`, requires `sCanEncrypt`, then a
+   guarded `oxVersion()`, and gates every `ox*` call. `sTorReady` / `qsOnionReadyNow()`
+   (`oxIsReady()`, true only at 100% bootstrap) is RE-CHECKED at the moment of use. A
+   missing piece gets a clear install message and every other feature keeps working.
+2. **Never call an extension handler from an engine thread** (BitTorrent events are
+   poll-drained by `btPoll` in `qsPollOnce` every 250 ms; OnionXT stream callbacks, the one
+   supported exception, are marshalled onto the interpreter thread), and **payload never
+   crosses the FFI into script** (the Tor path moves bytes through script only by
+   fixed-slice streaming, one bounded frame per pump). Why: suite rules 1 and 3.
+3. **Wrap every `sx*`/`ox*` call, clipboard read and file op in `try`**, and every `bt*`
+   call that can meet an absent TorrentXT (gotcha 8). Why: one throw takes the stack down.
+4. **Socket messages dispatch, they never swallow.** `socketError` / `socketClosed` /
+   `socketTimeout` handle OUR clearweb sockets first (`sCwServed`), then ask the embedded
+   OnionXT (`oxSocketError` / `oxSocketClosed` / `oxSocketTimeout`: "was that socket
+   mine, and did I handle it?"), then `pass`. The suite's `sync-demo-embeds.py` drops
+   OnionXT's thin wrappers via `DROP_HANDLERS`, keyed by the (app, library) pair. Why: a
+   swallowing socket handler is a silent hang. The OnionXT branches need a live-Tor pass.
+5. **Encryption is SodiumXT, never OXT's `encrypt using "aes-256-cbc"`.** Argon2id via
+   `sxPwHash` (opslimit `"2"` + `sxPwMemInteractive()`); files via `sxEncryptFile`
+   (`crypto_secretstream`; truncation detected); tokens and verifiers via `sxSecretBox`.
+   KDF parameters must match on both ends: change both AND bump the wire marker. Why: a
+   one-sided change breaks every transfer silently.
+6. **Every wire format has a versioned marker:** `BTXQS1:` (encrypted share code),
+   `BTXTOR1:` (Tor code), `BTXQSVERIFY` (passphrase authenticator), `BTXEDIT1` (editor
+   login verifier); `BTXENC2:` is torrentxt's `torrent-dht-channels`. A new format gets a
+   versioned prefix pinned in the golden, and old readers reject an unknown prefix
+   cleanly. Verify the passphrase up front, before any ciphertext downloads.
+7. **`qsEditSafePath` and `qsEditIsLocal` gate a path that WRITES TO DISK** and must be
+   reachable only from the LAN. Change them with real care, in lockstep with their
+   golden mirrors. Why: they are the editor's whole security boundary.
+8. **Any generated-layout change bumps `kQsUiVersion`** (now `"ncqs-kit2-1"`), or a saved
+   stack keeps its old controls. `kQsAppVersion` (`"1.0.0"`) is the release string (title
+   bar, startup log, `/_qs/info` `version`); the `Server:` header carries no version.
+9. **Carried blocks change in the suite, never here** (masters: the suite's
+   `tools/ui-kit.livecodescript` and `tools/demo-selfcheck.livecodescript`, drift-gated).
+   The kit's v2 card look was absorbed FROM this app, which adopted it on 2026-08-14:
+   `qsLabel`/`qsGfx`/`qsPanel`/`qsCap`/`qsButton`/`qsMonoFont`/`qsCopyFlash*` became
+   `uiWrap`/`uiGfx`/`uiPanel`/`uiCap`/`uiButton`/`uiMonoFont`/`uiCopyFlash*`; `qsField`/
+   `qsList`/`qsHdr` are thin wrappers; the Tor chip is `uiPill` via `qsOnionPill`; the kit
+   status line sits in the bottom-left strip; only the drop-zone palette and `kClrAccent`
+   stay local. `uiFooter` is not carried: the honesty surfaces are the per-share
+   `qsSharing` copy, `/_qs/transparency` and the header HONESTY block. `qsScRun` (the boot
+   self-check) checks the 49 controls in `kQsScControls`.
+10. **`tools/check-livecodescript.py` is the suite's unified checker**, byte-identical in
+    every member (held by the suite's `tools/check-checker-drift.py`, fixture-tested by
+    `tools/test-checker.py`). Never edit it here alone.
+11. **Single-thread performance:** costs run interpreter ops, then FFI round trips, then
+    redraws. One FFI round trip per poll (`btTorrentStatus` returns the whole Array);
+    repaint at 4 Hz or less and only on change (`sLastXferRows`; dashboard 1 Hz), since a
+    mid-drag repaint can make an OS drop fail; one clock read per pass. The HTTP servers
+    stream one bounded slice per write completion (clearweb `kCwChunk` 256 KiB; Tor
+    `kOnionChunk` 64 KiB paced by `kOnionPumpTick` 15 ms), each slice reopened, seeked,
+    read and closed so concurrent downloads never share a cursor.
+12. **Every pure-logic helper is mirrored AND driven.** (1) Keep its pure core separable
+    from I/O. (2) Add a mirror named after it in `tests/fileserver_golden.py` and LIST IT
+    in the docstring index, the one authoritative mirror list (hand-kept copies had
+    drifted to 16, 13 and 33 entries by 2026-08-15). (3) Reproduce xTalk exactly:
+    `item N` is 1-based and empty past the end; `is an integer` rejects decimals;
+    `urlDecode` turns `+` into a space (`unquote_plus`); `the round of` rounds half AWAY
+    from zero; one trailing item delimiter is ignored (suite engine note 2.2). (4) Write
+    table-driven edge cases. (5) Get the golden green. (6) Add the same inputs to
+    `tools/check-script-vectors.py`'s drive and get it green. (7) Spot-check a couple on
+    the engine during the OXT pass. An all-I/O handler has nothing to mirror.
+13. **New interpreter spellings go in riptide's shared runner**, with their engine rule
+    (`../riptide/tools/check-demo-boot.py`: `DemoExpr` / `DemoInterp` /
+    `install_engine_functions`; since 2026-09-11, when holde-em became their second
+    writer). This gate keeps only its write interception (`class NcInterp`). Never edit
+    `lcs-interp.py` from here.
+14. **Honesty.** Claim only "verified statically; needs an OXT pass" for anything not
+    observed on a running engine; never write "fixed the server hang" unless you watched
+    it in the IDE. PR text separates what was OBSERVED in OXT from what was verified
+    statically. The golden and the execution gate settle LOGIC, not parser behaviour.
+15. **Definition of done:** `bash tools/run-gates.sh` passes; the suite gates pass
+    (`tools/build-all.sh --gates` at the suite root); the checker was not edited here
+    alone; new pure helpers are mirrored, indexed and driven; `kQsUiVersion` is bumped on
+    any layout change; an OXT pass was done (paste into the stack script, close + reopen,
+    exercise the change); new comments explain the why, densely. Work on a per-task
+    branch, open a draft PR, and never push to `main` without permission.
 
-## The three safety rules (inherited, and why they still bind here)
+## 3. Gotchas and traps
 
-Even though this is the script layer, the discipline the underlying extensions were
-built on is what keeps the app stable:
+Gotchas 1-10 keep their numbers: the suite work plan cites gotcha 8.
 
-1. **Never call an extension handler from a foreign (engine) thread.** Inbound
-   BitTorrent events ride TorrentXT's alert queue, which we **poll-drain on a timer**
-   (`btPoll` in `qsPollOnce`, every 250 ms). No engine callback ever runs app script.
-   OnionXT stream callbacks are the one exception the extension explicitly supports —
-   and they are still marshalled onto the interpreter thread.
-2. **Payload never crosses the FFI into script.** TorrentXT moves gigabytes engine ⇄
-   disk on its own threads; the app only issues tiny commands and polls small status
-   records. If you ever find yourself putting piece/file bytes into a LiveCode `Data`,
-   you have taken a wrong turn. (The Tor path *does* move bytes through script, and
-   honors the rule by **fixed-slice streaming** — one bounded frame per pump, never
-   the whole file in memory.)
-3. **The engine already firewalls exceptions;** don't defeat it. TorrentXT wraps every
-   `btx_*` entry in `try/catch(...)`. On the script side, wrap anything that can throw
-   (every `sx*`/`ox*` call, clipboard reads, file ops) in a `try` so one failure never
-   takes the stack down.
+1. **Pure ASCII only**, even in comments: a curly quote fails compilation (engine note 1.4).
+2. **Reserved-word stem shadowing:** `tExt` = `text`, `sSort` = `sort`, `pPut` = `put`
+   evaluate as keywords, silently. Use multi-word stems like `tSuffix` (engine note 1.5).
+3. **Prefixes:** `t` local, `p` parameter, `s` script-local, `k` constant; public
+   handlers are `qsPascalCase` (namespace `qs*`).
+4. **Constants are literal and declared before first use** (lexical position; a forward
+   reference is empty); the `kClr*` and protocol `k*` block is at the top (notes 1.2, 1.3).
+5. **Declare every `local` at the top of a handler:** a nested one has broken
+   whole-script compilation in this family.
+6. **Commands report via `the result`; functions return:** `btAddMagnet` is a command
+   (`put the result into tH`); `btTorrentStatus(tH)` is a function.
+7. **`itemDelimiter` / `lineDelimiter` are global state:** set them right before use, as
+   the code does before splitting a `BTXQS1:`/`BTXTOR1:` code (engine note 2.3).
+8. **A `bt*` call outside a `try` with TorrentXT absent is an uncaught engine error.** With
+   the library missing or ABI-skewed (recorded symptom: "can't find handler" on
+   `btRp1Enable`), `btStartSession` raised out of `qsStart` AND `openStack` until
+   2026-09-09: a built-but-dead window behind a raw engine dialog. It is guarded now, and
+   the catch deliberately skips the session-refused branch, which opens with
+   `btLastError()` and would throw again. Verified statically; the probe is
+   `docs/oxt-pass-checklist.md` section 8.
+9. **Engine and library callbacks are delayed handlers: pin the defaultStack at their
+   entry** (engine note 5.3). Socket/URL `with message` handlers, the `socket*` messages
+   and the callbacks handed to OnionXT have no defaultStack guarantee; eight here were
+   pinned 2026-09-09, and the suite's `tools/check-timer-stack-pin.py` (fixture
+   `tools/test-timer-stack-pin.py`) holds all three delivery classes.
+10. **`and` / `or` evaluate BOTH operands**, so a type guard cannot share an expression
+    with the comparison it guards (engine note 2.5). `qsHttpReqLength` and `qsHttpDate`
+    were nested 2026-09-11; the port guards and row formatters keep the shape on values
+    only ever compared. `X + 0` on a non-number is a hard engine error; none is written.
+11. **A script recompile sends `openStack` but NOT `preOpenStack`**, so a UI built only in
+    `preOpenStack` is missing (`Chunk: no such object` at `field "qsXfers"`). Now
+    `preOpenStack` builds the UI, `qsStart` calls the idempotent `qsBuild` first, and every
+    timer refresh exits when the field is missing.
+12. **Never guess font metrics.** `uiWrap` FITS a field to its `formattedHeight` with the
+    top pinned (never grow-only: band-title and badge centering read that height), and
+    only when `formattedHeight > 0`, or an early blank measurement collapses every label.
+13. **`set the margins` needs the 4-item form** (`"6,6,6,6"`); one number is ignored.
+14. **Chrome is graphics** (roundRect / rectangle) created BEFORE the controls on them, for
+    z-order; `dropShadow` goes in a `try`; `qsClearGeneratedUI` deletes graphics too.
+15. **`does not contain` is not valid xTalk:** write `not (X contains Y)`.
+16. **Quote a `send` parameter that can hold `:`** (a clearweb socket id is `"ip:port"`):
+    `send ("qsCwWatchdog " & quote & pSocketID & quote) to me in ...`. Numeric OnionXT
+    handles are fine unquoted.
+17. **Read the clipboard inside `try`** (it fails transiently on Windows). Offer each value
+    once (`sClipSuggested`), never overwrite input, never offer own codes (`qsIsOwnCode`).
+18. **A standalone quits via `shutdownRequest` with no guaranteed `closeStack`.** Both call
+    the idempotent `qsStop` (session pause, flush resume, join; Tor service and web
+    listener torn down; temp `.enc` files deleted). No teardown only on `closeStack`.
+19. **LCB public handlers work in BOTH command and function form:** `btCreateTorrent(...)`
+    is torrentxt's documented command (coinxt's engine passes proved the function form).
+20. **A mirror can only be checked against what its author believed.** The execution
+    gate's first run (2026-09-11) found two MIRROR defects: `fs_leaf` pinned `("dir/", "")`
+    but the engine ignores ONE trailing delimiter, so the leaf is `"dir"` (engine note 2.2;
+    fixed, `"dir//"` added); `parse_head` had a `__resource` field the script never sets and
+    lacked the `__version` `qsCwServe` reads for the keep-alive default. The gate compares
+    the WHOLE map (an unset key reads as empty), which caught both.
 
-## App-layer OXT runtime lessons (THIS APP — earned the hard way)
+## 4. Engine evidence ledger
 
-> **Engine BEHAVIOUR - as opposed to the conventions here - is collected in
-> [`docs/OXT-ENGINE-NOTES.md`](https://github.com/SethMorrowSoftware/xtalk-suite/blob/main/docs/OXT-ENGINE-NOTES.md)**, with the verbatim
-> symptom, what each one broke, and the gate (if any) that now holds it. Keep
-> member-specific gotchas in this file; put anything the ENGINE does there, so
-> there is one authoritative list instead of ten that drift.
+No dated engine pass of this stack is recorded in this tree. Gotchas 11-18 came from
+undated pre-fold passes of the standalone app; the 2026-08-14 kit adoption re-opened the
+whole stack. The dated rows are STATIC records, each waiting on the checklist.
 
-These are the bugs the app hit on real OpenXTalk passes. They are not catchable by
-the static gate; they are the reason "verified statically; needs an OXT pass" is a
-rule and not a hedge.
+| Date | Engine / platform | What ran | Result |
+|---|---|---|---|
+| undated, pre-fold | OXT (the standalone repository) | the app's own passes | gave gotchas 11-18; re-opened 2026-08-14 |
+| 2026-08-13 | none (static) | fold into the suite under the unified checker | clean on first contact |
+| 2026-08-14 | none (static) | kit adoption + audit fixes: six `if not sCwActive` became `is not "true"`; both crypto prologues try-guarded; a second control-connect failure reaches the Activity log | the whole stack needs an OXT re-pass |
+| 2026-08-15 | none (static + golden) | `qsHttpFileHead` (one file head for both transports); `qsMountLocation` redirect re-prefix | green; checklist sections 1, 4 |
+| 2026-08-16 | none (static + golden) | `:param` user routes | green; checklist section 1a |
+| 2026-08-17 | none (static + golden) | HEAD reaches the GET route; the Tor text reply stops sending a HEAD body; `qsHttpReservedPath` | green; checklist section 4 |
+| 2026-08-24 | none (static) | OnionXT embedded, with the socket split | OnionXT branches need a live-Tor re-pass |
+| 2026-09-09 | none (static) | eight delayed handlers pinned; `btStartSession` guarded | checklist section 8 is its pass |
+| 2026-09-11 | family interpreter, not the engine | `tools/check-script-vectors.py` on the golden's inputs | 435 checks green; the fixture test catches 4 of 4 seeded defects (dotfile guard false; FIRST Content-Length kept; `..` admitted; Tor HEAD body sent) |
 
-1. **Build the UI in a place that survives a script recompile.** OXT sends
-   `openStack` — **but NOT `preOpenStack`** — when the stack *script* is recompiled
-   (the "paste THIS into the stack script" flow every user follows first). If the UI
-   is built only in `preOpenStack`, a recompile starts the session and the poll/
-   refresh loops against a UI **that was never built**, and the first refresh tick
-   dereferences a missing field (`Chunk: no such object` at `field "qsXfers"`). The
-   fix, in place: `preOpenStack` builds it (flash-free on a real open) **and** `qsStart`
-   calls `qsBuild` first (the guaranteed build on the recompile path). `qsBuild` is
-   idempotent (early-exits when the version matches and the controls exist), so the
-   second call is a no-op. **Belt-and-suspenders:** every timer-driven refresh handler
-   bails if its list field doesn't exist yet (`if there is no field "qsXfers" then
-   exit`).
+Decisions that bind this app (the suite's docs/OPEN-DECISIONS.md), all 2026-08-27: **D-09**
+the Tor path stays close-per-response; **D-02** the HTTP-host endpoint menu waits for the
+first external user report; **D-10** spend an engine minute on the cheap single-file mtime
+probe (checklist section 4; not yet run); **D-11** the anon path warns above 256 MiB
+(`kAnonSizeWarn`), never auto-downgrades; **D-07** tor stays a documented user install.
 
-2. **Never GUESS font metrics — measure, and FIT the field to the text.** Hand-sized
-   label rects clip text on Windows (different line metrics). The label helper
-   (the kit's `uiWrap`, which absorbed the old `qsLabel` in the 2026-08-14
-   adoption) sets the field's height to its own `the formattedHeight` (top pinned),
-   so the field exactly holds its text. This does double duty: it prevents clipping,
-   **and** it makes `the height of field` equal the *text* height — which the band-
-   title and step-badge centering (`set the top to (midline - height/2)`) depend on.
-   - A **grow-only** variant (only enlarge, never shrink) is WRONG here: it leaves the
-     field at its taller rect height and the centering places text too high. Fit, don't
-     grow.
-   - **Guard it:** only resize when `the formattedHeight > 0`. A blank measurement is
-     possible before the window is fully realized; setting height to 0 would collapse
-     every label to nothing (a blank UI). If the measurement is unusable, keep the rect.
+## 5. Status
 
-3. **`set the margins` needs the 4-item form on OXT.** `set the margins of field X
-   to 0` (a single number) is silently ignored; use `"6,6,6,6"`. This was the original
-   cause of clipped labels before the measured-fit approach replaced margin fiddling.
+Every runtime behaviour here is "verified statically; needs an OXT pass"; the gates are
+green. The owed pass is `docs/oxt-pass-checklist.md` (69 items, none ticked; the boot
+record should read "all 49 controls"), the suite runbook's row 22: web-link half in
+session S1 (row S), Tor half in S2 (item 7). The source's VERIFY markers say what each
+engine-dependent line still needs. Suite engine note 6.9 (OBSERVED 2026-09-15, on
+another member's demo) shows libURL speaking https; this app's public-IP probe has not
+been run. Open work is tracked in the suite's docs/WORK-PLAN.md.
 
-4. **Chrome is graphics, not styled fields.** Cards, the title band, the Tor status
-   chip, and section dividers are `graphic` objects (roundRect / rectangle), created
-   **before** the controls that sit on them so they stay behind in z-order. A soft
-   `dropShadow` is applied inside a `try` (an older engine without graphic effects just
-   skips it; the hairline border still separates the card). `qsClearGeneratedUI` must
-   delete **graphics** as well as fields and buttons on a version-rebuild.
+## 6. Build and gates
 
-5. **`does not contain` is not valid xTalk.** The parser errors on `does`. Negate with
-   `not (X contains Y)` (or `X is not among …`). The static checker flags this class.
+No native code. `bash tools/run-gates.sh` (from anywhere) is the list CI runs: the static
+checker; every `tests/*golden*.py`; `tools/test-script-vectors.py` BEFORE
+`tools/check-script-vectors.py --check` (a gate gone blind prints OK). The golden holds the
+mirrors to vectors and the execution gate holds the SHIPPED script to the mirrors (vector,
+mirror, script: no expected value typed twice). The suite's `build-all.sh` delegates to
+this script; its `check-member-standalone.py` refuses a gate file the script does not
+name. The execution gate imports `../riptide/tools/check-demo-boot.py` (`DemoInterp`),
+which loads nostrxt's interpreter and the committed coinxt, so its siblings are riptide,
+nostrxt and coinxt (`../<name>`, or `XTALK_SIBLINGS` / `XTALK_SIBLING_<NAME>`). An absent
+riptide exits 2 (a setup failure, not a vector failure); `XTALK_REQUIRE_SIBLINGS=1` in CI
+turns sibling skips into failures. It does not drive `qsFsServePath`, `qsCwServe`,
+`qsFileSizeSeek`'s file I/O or the `{{now}}` clock; its docstring says why.
 
-6. **Quote a `send` parameter that can hold a `:`.** A clearweb socket id is
-   `"ip:port"`; `send ("qsCwWatchdog " & quote & pSocketID & quote) to me in …` — an
-   unquoted id re-parses as an expression and syntax-errors. Numeric handles (OnionXT
-   streams) are fine unquoted.
-
-7. **Read the clipboard inside a `try`.** It can fail transiently on Windows when
-   another app holds it. The clipboard auto-detect offers each value **once**
-   (`sClipSuggested`), never overwrites user input, and never suggests the app's own
-   outbound codes (`qsIsOwnCode`).
-
-8. **Self-building UI + version discipline.** `qsBuild` regenerates the whole UI when
-   `the uUiVersion of this stack` differs from `kQsUiVersion`. **Any change to the
-   generated layout MUST bump `kQsUiVersion`**, or a *saved* stack keeps its old
-   controls and never picks up the change. The user-facing release string is a separate
-   constant, `kQsAppVersion` (shown in the title bar, the startup log, and the HTTP
-   `Server:` header).
-
-9. **Clean shutdown on every exit path.** A standalone quits via `shutdownRequest`
-   **without** a guaranteed `closeStack`. Both call `qsStop` (idempotent), which stops
-   the session (pause → flush resume → join), tears down the Tor service and the web
-   listener, and deletes temp `.enc` files. Don't add a teardown that only runs on
-   `closeStack`.
-
-## The optional-extension / encryption discipline (SodiumXT)
-
-Encryption is **SodiumXT (libsodium)**, never OXT's built-in `encrypt using
-"aes-256-cbc"`. The flow: a passphrase derives a key with **Argon2id** (`sxPwHash`),
-files are sealed with **`sxEncryptFile`** (streaming `crypto_secretstream`,
-authenticated — truncation is detected on decrypt), and small tokens/verifiers with
-**`sxSecretBox`**.
-
-- **KDF params must be identical on both ends** or the keys differ: **opslimit `"2"`
-  + `sxPwMemInteractive()`**. Change them on one side only and every transfer breaks
-  silently. If you change them, change both and **bump the on-wire format marker**.
-- **Versioned format markers.** Encrypted share codes are `BTXQS1:` (code path) and
-  `BTXTOR1:` (Tor path); the channels sibling uses `BTXENC2:`. A new wire/at-rest
-  format gets a versioned magic prefix, is pinned in the golden, and old readers must
-  reject an unknown prefix cleanly (not mis-parse it). Data written by an incompatible
-  format must not silently open.
-- **Verify the passphrase up front.** A small authenticator rides in the code, so a
-  wrong passphrase is caught *before* any ciphertext is downloaded.
-
-## The single-threaded performance playbook
-
-OXT runs script, the FFI, and rendering on **one interpreted thread**. Costs, in
-order: **(1) interpreter ops, (2) FFI round-trips, (3) property-set redraws.**
-
-- **One FFI round-trip per poll.** `btPoll` drains all events in one call; a
-  `btTorrentStatus(tH)` returns the whole status `Array`. Never one FFI call per event
-  or per field.
-- **Repaint the UI at ≤ ~4 Hz and only on change.** The transfers list retypes only
-  when its text actually changed (`sLastXferRows`); the dashboard loop runs at 1 Hz.
-  An every-frame field relayout+redraw is the biggest avoidable cost — and a mid-drag
-  repaint can even compete with OS drop delivery and make a drop intermittently fail.
-- **One clock read per pass.** Hoist `the milliseconds` out of loops.
-- **The HTTP servers stream.** A multi-GB download is served one bounded slice per
-  write-completion (clearweb 256 KiB, Tor 64 KiB) with natural backpressure — the file
-  is never read whole into memory, and each slice reopens/seeks/reads/closes so
-  concurrent downloads never share a cursor.
-
-## LiveCodeScript / OXT gotchas (OXT is stricter than LiveCode)
-
-1. **Pure ASCII only** — no smart/curly quotes (U+2018/2019/201C/201D) anywhere, even
-   in a comment. They fail OXT compilation. The checker enforces zero.
-2. **Reserved-word stem shadowing.** A prefixed name whose full spelling is a reserved
-   token (`tExt` = `text`) is evaluated as the keyword, not your variable — it compiles
-   and misbehaves silently. Use distinctive multi-word stems. The checker flags this.
-3. **Prefixes:** `t` handler-local, `p` parameter, `s` script-local, `k` constant;
-   public helpers `qsPascalCase` here (the app's namespace is `qs*`).
-4. **Constants: literal and declared before first use.** OXT resolves them by lexical
-   position; a forward reference silently evaluates to nothing. The `kClr*` design
-   tokens and the `k*` protocol constants are declared in one block up top.
-5. **Declare all `local`s at the top of a handler.** A nested `local` has broken
-   whole-script compilation in this family before.
-6. **Commands report via `the result`; functions return a value.** e.g. `btAddMagnet`
-   is a command → `put the result into tH`; `btTorrentStatus(tH)` reads as a function.
-7. **`itemDelimiter` / `lineDelimiter` are global mutable state** — set them
-   immediately before use (the code sets `the itemDelimiter to ":"` right before
-   splitting a `BTXQS1:`/`BTXTOR1:` code).
-8. **A `bt*` call outside a `try`, with TorrentXT absent, is an uncaught engine error
-   that unwinds `openStack`.** `btStartSession` is a TorrentXT handler, not an engine
-   command; with `org.openxtalk.library.torrent` missing (or an ABI-skewed build that
-   does not export it - the recorded symptom is "can't find handler" on `btRp1Enable`)
-   the engine raises, and until 2026-09-09 that took `qsStart` AND `openStack` with
-   it: no status line, no sync method, no onion pill, no poll arms, no boot self-check
-   record - a built-but-dead window behind a raw engine dialog. The call is guarded
-   now, and the catch deliberately does NOT fall through to the session-refused branch,
-   because that branch opens with `btLastError()`, another `bt*` handler that would
-   throw a second time from inside the recovery. Verified statically; the probe is
-   "launch with TorrentXT not installed" (`docs/oxt-pass-checklist.md` section 8).
-9. **Engine and library callbacks are DELAYED handlers - pin the defaultStack at their
-   entry.** `with message "X"` on a socket read/write or URL load, the engine's own
-   `socketError` / `socketClosed` / `socketTimeout`, and the stream/status/peer
-   callbacks handed to OnionXT all run later, from the engine's loop, with no
-   defaultStack guarantee (root `docs/OXT-ENGINE-NOTES.md` 5.3). Eight such handlers
-   here reached `qsLog` or the status line unqualified and were pinned 2026-09-09; the
-   suite's `tools/check-timer-stack-pin.py` holds all three delivery classes since
-   that day, and a fixture test (`tools/test-timer-stack-pin.py`) holds the gate.
-10. **`and` / `or` evaluate BOTH operands, so a type guard cannot share an expression
-   with the comparison it guards** (root `docs/OXT-ENGINE-NOTES.md` 2.5).
-   `if tLen is not an integer or tLen < 0` runs `tLen < 0` on "abc" - which the engine
-   answers by comparing as TEXT (harmless there: the `or` is already true) and the
-   family's interpreter REFUSES, so the guard could not be driven headlessly until it
-   was nested. Two sites were nested 2026-09-11 (`qsHttpReqLength`, `qsHttpDate`);
-   the port guards and the transfer-row formatters carry the same shape on values
-   that are only ever compared, and are left as they are. The arithmetic form of the
-   same trap (`X + 0` on a non-number) IS a hard engine error, and none is written here.
-
-## Testing: the three gates + the OXT pass
-
-There is **no headless way to compile a `.livecodescript` on the engine** - but since
-2026-09-11 there IS a headless way to RUN this one's pure helpers (the family's
-interpreter, the same tool coinxt, nostrxt and riptide drive their script layers
-through), so the sentence that stood here until then, "there is no headless way to
-compile or run", was true of the engine and no longer true of the tree. The automated
-safety net is three things, and all three must pass before any change is "done":
-
-```sh
-python3 tools/check-livecodescript.py     # the linter (smart quotes, handler/block
-                                          # balance, constant-before-use, stem shadowing,
-                                          # invalid operators like `does not contain`)
-python3 tests/fileserver_golden.py        # pins the pure-logic MIRRORS: HTTP range
-                                          # parse, MIME, request framing, the editor
-                                          # path-confinement (qsEditSafePath), dotfile
-                                          # guard, filename sanitiser, rate/ETA format
-python3 tools/check-script-vectors.py     # drives the SHIPPED SCRIPT on the golden's
-                                          # own inputs and requires the mirror's answer
-                                          # (435 checks; the count is the gate's, not
-                                          # this file's); tools/test-script-vectors.py
-                                          # proves it can fail and runs first in CI
-```
-
-The golden proves the mirror is right; the execution gate proves the script agrees
-with the mirror; the chain is vector -> mirror -> script, with no expected value ever
-typed twice. What the third gate settles is LOGIC, not parser behaviour: nothing it
-runs is promoted out of "verified statically; needs an OXT pass". The handlers it
-deliberately does NOT drive are listed in its docstring with the reason each time
-(the two serving commands, the file-size probe's real file I/O, the clock token).
-
-Then do a **manual OXT pass**: open OpenXTalk, make a one-card stack, paste the script
-into the stack script, close+reopen, exercise it. **Claim only "verified statically;
-needs an OXT pass" for anything you could not observe on a running engine.** This is
-the through-line of the whole extension family: *never claim runtime behavior you
-cannot observe.* When you add a helper with a pure-logic core, **mirror it in the
-golden** so it can never silently drift - and **add its inputs to the execution
-gate's drive**, so the mirror and the script are held to each other rather than
-each to its author's reading of the other.
-
-## Standalone packaging
-
-The app is standalone-ready:
-
-- The UI self-builds every launch (nothing needs to persist in the stackfile).
-- Downloads land in `Documents/No Cloud Quick Share` on every platform.
-- In the standalone builder: include **org.openxtalk.library.torrent** (required)
-  and **org.openxtalk.library.sodium** (SodiumXT) for the optional encryption — it
-  fails closed when absent. **OnionXT is NOT tickable** — pure LiveCodeScript, with
-  no packaged extension and no `org.openxtalk.*` id — and no longer needs to be:
-  since 2026-08-24 the stack script CARRIES `onionxt/src/onionxt.livecodescript`
-  verbatim between the `tools/sync-demo-embeds.py` sentinels, so the Tor path ships
-  with the script. It still needs SodiumXT, and at runtime a **local Tor daemon** on
-  the user's machine. Include the **Internet library** for the (try-guarded)
-  public-IP lookup. No other inclusions, externals, or native resources are needed.
-  See `docs/building-a-standalone.md`.
-
-## Git / workflow
-
-- Develop on a per-task branch (`claude/...` or a feature name); open a **draft PR**;
-  don't push to `main` without explicit permission.
-- A change is only "done" once `tools/check-livecodescript.py`,
-  `tests/fileserver_golden.py` **and** `tools/check-script-vectors.py` pass, and any
-  layout change has bumped `kQsUiVersion`.
-- Match the surrounding style: this codebase comments the **why**, densely — mirror it.
-- Do not claim a runtime fix works until it has had an OXT pass; say what was verified
-  statically and what still needs the engine.
-
-## 2026-09-11 - the execution gate, and what it found on its first run
-
-Until this date the member's whole correctness net was the golden: a Python MIRROR of
-each security- and framing-critical helper, pinned to vectors. The golden proved the
-mirror; nothing proved the script. Every other member with a script layer had closed
-that gap with a gate that drives the shipped file through the family's interpreter
-(`lcs-interp.py`; coinxt's, nostrxt's, riptide's and the wallet's), and this file still
-said "there is no headless way to compile or run a `.livecodescript`" - true of the
-engine, and no longer true of the tree.
-
-**`tools/check-script-vectors.py` loads the shipped script through riptide's
-stack-shaped runner, calls every helper the golden mirrors on the golden's own inputs,
-and requires the mirror's answer** - 435 checks, the inputs listed once, no expected
-value typed. The spellings this app writes beyond the shared subset (`repeat for each
-char`, a bare `repeat`, `delete char N of`, `the last item of`, `the round of`, `the
-number of bytes IN`, `^`, text ordering under `<`, toUpper / toLower / urlDecode /
-byteOffset) were modelled in a subclass inside the gate first, by the precedent the
-wallet gate set: a form only one member writes does not earn a change that rides on
-four other members' gates. holde-em became the second writer the same day, so they
-live in riptide's shared runner now (`DemoExpr` / `DemoInterp` /
-`install_engine_functions`), and the gate keeps only its write interception - the
-docstring says so. `tools/test-script-vectors.py` edits
-four defects into a copy - the dotfile guard answering false, the head parser keeping
-the FIRST Content-Length, the confinement admitting `..`, the Tor reply sending a body
-for HEAD - and requires the gate to name each; `build-all.sh` runs it before the gate.
-
-**It found four things, and the two that matter were in the MIRROR, not the script.**
-
-- `fs_leaf` said, in its own docstring, that LiveCode's `the last item` of `"a/b/"` is
-  empty, and pinned `("dir/", "")` on that claim. The engine ignores ONE trailing
-  delimiter when it counts and fetches items (root engine notes 2.2 - the `"m/"` lesson
-  coinxt paid an engine pass for), so `the last item of "dir/"` is `"dir"`, which is what
-  the script answers. **The mirror had pinned a rule the engine does not have**, and the
-  golden was green about it for four weeks because a mirror can only be checked against
-  what its author believed. Corrected, with `"dir//"` added to pin the other half.
-- `parse_head` carried a `__resource` field the script has never set (the golden even
-  checked its value), and lacked the `__version` the script sets and `qsCwServe` reads for the
-  keep-alive default. Found because the gate compares the WHOLE
-  map, not the four keys the golden reads: a mirror that invents a field passes every
-  check written against the mirror. The one rule the comparison applies is the
-  engine's: an unset key reads as empty, so `__query` absent and `__query` empty are
-  the same map.
-- Two guards of the shape gotcha 10 above describes (`is not an integer or X < 0`) were
-  nested so the interpreter could drive them; same answer on the engine either way.
-
-**What this does not settle.** It is the interpreter, not the engine; every helper
-it drives keeps its honesty label. The serving commands, the file-size probe and the
-clock token are not driven, and the gate's docstring says why for each. The pass this
-member owes (`docs/oxt-pass-checklist.md`) is unchanged by it.
-
+Suite gates also walk this member: `check-handler-calls`, `check-stack-size` (the 720p
+budget of 1200 x 640; this window is 1100 x 640), ui-kit and demo-selfcheck drift, the
+timer-stack-pin closure, `check-lcb-call-types`, `sync-demo-embeds --check`. The list is
+the `== suite: tools/...` block in the suite's `tools/build-all.sh` (run
+`tools/build-all.sh --gates` there). Packaging: `docs/building-a-standalone.md`.

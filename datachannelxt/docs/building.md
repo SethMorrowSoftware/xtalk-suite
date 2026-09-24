@@ -1,7 +1,7 @@
 # Building the DataChannelXT native library
 
-The native layer is ONE shared library — the C++ shim statically linking
-libdatachannel and its vendored dependency stack — named with the **bare token**
+The native layer is ONE shared library - the C++ shim statically linking
+libdatachannel and its vendored dependency stack - named with the **bare token**
 `datachannelxt` (`datachannelxt.so` / `.dll` / `.dylib`, never `lib`-prefixed)
 so the LCB `c:datachannelxt>` binding resolves.
 
@@ -9,16 +9,19 @@ so the LCB `c:datachannelxt>` binding resolves.
 
 | Piece | Role | How it is acquired |
 |---|---|---|
-| libdatachannel (pinned tag, see CMakeLists) | WebRTC data channels | CMake FetchContent, submodules included |
+| libdatachannel (pinned tag v0.24.5, `DATACHANNELXT_LIBDATACHANNEL_TAG` in CMakeLists) | WebRTC data channels | CMake FetchContent, submodules included |
 | libjuice (vendored submodule) | ICE / STUN / TURN | built by libdatachannel's CMake |
 | usrsctp (vendored submodule) | SCTP | built by libdatachannel's CMake |
 | plog (vendored submodule) | logging (quieted at init) | header-only |
 | OpenSSL 3 | DTLS | the SYSTEM library per OS (below) |
 
-`NO_MEDIA=ON` (no libsrtp — Phase 1 is data channels only) and `NO_WEBSOCKET=ON`
+`NO_MEDIA=ON` (no libsrtp: Phase 1 is data channels only) and `NO_WEBSOCKET=ON`
 trim the build. Everything static-links into our one library except OpenSSL,
-which stays a dynamic dependency — present on every Linux target, Homebrew on
-macOS, vcpkg-static on Windows (where it IS linked in).
+which stays a dynamic dependency on Linux (the system `libssl.so.3`), and is linked
+in statically on Windows (vcpkg's unpinned port: the committed DLLs carry OpenSSL
+3.6.4) and in the shipped universal mac dylib (the release lane's SHA-pinned 3.5.4,
+built per arch); the per-member mac lane links Homebrew's instead. Versions read
+from the committed binaries 2026-09-23.
 
 Unlike TorrentXT's Boost+libtorrent ordeal, the whole stack builds in minutes.
 
@@ -36,13 +39,13 @@ vcpkg `openssl:<triplet>-static` + the vcpkg toolchain file).
 
 The smoke test opens a REAL in-process loopback (ICE over the host's own
 addresses, DTLS, SCTP), so it needs a machine that can send UDP to itself. An
-IPv6-less container logs `juice: UDP socket creation failed, errno=97` first —
-harmless; it proceeds over IPv4.
+IPv6-less container logs `juice: UDP socket creation failed, errno=97` first;
+that is harmless, and it proceeds over IPv4.
 
 ## The sanitizer lanes (the real gates)
 
 `DATACHANNELXT_SANITIZE` is a STRING (`""` | `address` | `thread`) and applies
-to the WHOLE build — the flags are injected before FetchContent so
+to the WHOLE build: the flags are injected before FetchContent so
 libdatachannel/libjuice/usrsctp are instrumented too. That is not optional
 tidiness: TSan must see both sides of every synchronization, and an
 uninstrumented dependency would false-positive on its internal atomics.
@@ -75,17 +78,25 @@ suppressed.
 | `x86-linux` | the same under `-m32` against `libssl-dev:i386` |
 | `x86_64-win32` | MSVC + vcpkg `openssl:x64-windows-static`, static CRT (/MT), generated .def |
 | `x86-win32` | as above with `x86-windows-static` + `-A Win32` (the .def matters here) |
-| `universal-mac` | the per-member lane proves the HOST arch (arm64, Homebrew OpenSSL); the shipped universal (arm64;x86_64) dylib is `release-binaries.yml`'s `mac-lipo` job since 2026-08-23 (per-arch pinned static OpenSSL, both slices tested, `lipo -create`; unsigned - codesign + notarize needs Apple credentials no lane holds). Manually: build each slice with its own SINGLE arch (`-DCMAKE_OSX_ARCHITECTURES=arm64`, then `=x86_64`, each against a matching static OpenSSL) and `lipo -create` the pair - one value per slice, never both, because two fat inputs share architectures and `lipo -create` refuses duplicates |
+| `universal-mac` | the per-member lane proves the HOST arch only (arm64, Homebrew OpenSSL) and its dylib is never shipped; the committed universal (arm64;x86_64) dylib comes from `release-binaries.yml`'s `mac-lipo` job (per-arch pinned static OpenSSL, both slices tested, `lipo -create`; unsigned - codesign + notarize needs Apple credentials no lane holds), first committed 2026-08-27 and rebuilt 2026-09-12. Manually: build each slice with its own SINGLE arch (`-DCMAKE_OSX_ARCHITECTURES=arm64`, then `=x86_64`, each against a matching static OpenSSL) and `lipo -create` the pair - one value per slice, never both, because two fat inputs share architectures and `lipo -create` refuses duplicates. The suite's installer refuses a thin Mach-O under `universal-mac` |
 
-In the xtalk-suite monorepo, CI is the root `.github/workflows/native-datachannelxt.yml`
-(the member's own `build.yml` is kept for isolated development but is inert
-here — GitHub runs only root workflows). It builds the matrix on every
-datachannelxt touch, runs ctest and the sanitizer lanes, and uploads each
-library as an ARTIFACT; it never commits one. Committed binaries under
-`src/code/<arch>-<platform>/` trace to a human decision — a maintainer
-installing an artifact, or the suite's manual `release-binaries.yml` assembly
-(the macOS lane's Homebrew-linked dylib is deliberately never shipped either
-way; see the workflow's header comment).
+**The Linux glibc floor.** Both committed Linux libraries require glibc 2.38
+or newer (the highest `GLIBC_` symbol version, measured 2026-09-23 with
+`objdump -T`; it comes from C23 `__isoc23_strtol` and friends, `arc4random` and
+`_dl_find_object`), so they do not load on Ubuntu 22.04 (2.35), Debian 12 (2.36)
+or RHEL 9 (2.34). Building those rows in a manylinux container, as torrentxt's
+x86_64 row does, would lower it; no suite floor is chosen yet.
+
+**CI.** In the suite monorepo, CI is the root
+`.github/workflows/native-datachannelxt.yml`: it builds the matrix on every
+datachannelxt touch, runs ctest and both sanitizer lanes, and uploads each
+library as an ARTIFACT; it never commits one. This member's own
+`.github/workflows/native.yml` and `gates.yml` are GENERATED from that root lane
+by the suite's `tools/sync-member-workflows.py`: they are the live CI of the
+published member repository and inert inside the suite (GitHub runs only root
+workflows there). Committed binaries under `src/code/<arch>-<platform>/` trace
+to a human decision: a maintainer installing an artifact, or the suite's
+manually dispatched `release-binaries.yml` assembly.
 
 ## Packaging into the extension tree
 
@@ -101,8 +112,8 @@ change.
 
 ## Windows note: the generated .def
 
-32-bit MSVC cdecl name-decoration can confuse the engine's by-name export
+32-bit MSVC cdecl name decoration can confuse the engine's by-name export
 lookup, so CMake generates `datachannelxt.def` listing the exact undecorated
 `dcx_*` names (harmless on x64, required on x86). The list lives in
-CMakeLists.txt and must gain a line whenever `dcx_abi.h` gains a symbol — the
+CMakeLists.txt and must gain a line whenever `dcx_abi.h` gains a symbol; the
 ABI bump discipline covers it.

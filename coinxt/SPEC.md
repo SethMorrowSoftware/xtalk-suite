@@ -1,567 +1,309 @@
 # CoinXT - Specification
 
 **CoinXT** is a Bitcoin and Ethereum cryptography layer for OpenXTalk (OXT) / the xTalk family. It wraps
-**trezor-crypto** (the C crypto core of the Trezor hardware wallet) behind a thin, stable C ABI and a
-livecodescript API, so an xTalk app can generate keys, derive HD wallets from a mnemonic, build and
-encode addresses, and sign and verify for both chains, without shipping a browser plugin, a node, or a
-cloud wallet service.
+**trezor-crypto** (the C crypto core of the Trezor hardware wallet) and **bitcoin-core/secp256k1**
+behind a thin, stable C ABI and a livecodescript API, so an xTalk app can generate keys, derive HD
+wallets from a mnemonic, build addresses, and build, sign and verify transactions for both chains,
+without a browser plugin, a node, or a cloud wallet service.
 
 House style: no em-dashes (hyphens, commas, colons, parentheses). ASCII only in `.lcb` /
 `.livecodescript`. Comment the *why*, densely. Public API `cxPascalCase`; C ABI `cnx_snake_case`.
 
-> This is a design spec, not an implementation; the as-built status is tracked in
-> [CLAUDE.md](CLAUDE.md)'s as-built notes (phases 1-4 - hashes, the secp256k1 curve, encodings and
-> addresses, HD wallets - are built and engine-passed; phase 5, transaction building, is built,
-> executed headlessly, model-verified, engine-passed 2026-08-12, and independently accepted in
-> all four transaction families 2026-08-13 (python-bitcointx + eth-account), with a live
-> testnet broadcast the one open bar; phase 6, packaging/demo, is partly done; **Schnorr /
-> Taproot is BUILT as of 2026-08-16 (ABI 6) and is no longer deferred** - see section 2's
-> recorded rule change). Where the as-built code and this document disagree, the code and CLAUDE.md
-> win, and the disagreement is
-> marked inline below rather than quietly reconciled. It is the source of
-> truth for WHAT CoinXT is and the contract each layer must meet; the phased HOW is in
-> [IMPLEMENTATION-PLAN.md](IMPLEMENTATION-PLAN.md), and the hard-won FFI/LCB rules are in
-> [CLAUDE.md](CLAUDE.md).
+The source of truth for WHAT CoinXT is and the contract each layer meets. The shipped handlers are
+[docs/api-reference.md](docs/api-reference.md); the FFI rules and dated evidence are [CLAUDE.md](CLAUDE.md).
 
 ## 1. What CoinXT is (and is NOT)
 
-CoinXT provides the **primitives** a wallet or a dapp client is built from. It is not a wallet, not a
-node, and not a broadcaster.
+CoinXT provides the **primitives** a wallet or a dapp client is built from. It **is**:
 
-It **is**:
-- secp256k1 elliptic-curve operations: keypairs, ECDSA (RFC 6979 deterministic), **recoverable** ECDSA
-  (the `v` recovery id Ethereum needs), public-key recovery (`ecrecover`), ECDH, and Schnorr / BIP-340.
+- secp256k1: keypairs, ECDSA (RFC 6979 deterministic), **recoverable** ECDSA (Ethereum's `v`),
+  public-key recovery (`ecrecover`), ECDH, point addition, and BIP-340 Schnorr with the BIP-341 tweak.
 - The hashes both chains need: SHA-256, SHA-512, SHA3-256, **Keccak-256** (Ethereum's non-NIST
   padding), RIPEMD-160, plus HMAC and PBKDF2-HMAC-SHA512.
-  > **AS BUILT: SHA3-512 IS DEFERRED, and that open call is CLOSED as of 2026-08-17.** This bullet
-  > read "SHA3-256/512" with a note saying no `cnx_sha3_512` / `cxSha3_512` exists and that "ship it
-  > or strike it is an open call". Neither half of that call was taken for a year, so it is taken
-  > here: **deferred, not struck**, and the line above no longer advertises 512 as provided.
-  >
-  > *Deferred rather than struck*, because the primitive is not missing - the vendored `sha3.c` at
-  > the pinned commit implements SHA3-512 and it is already compiled into every shipped binary. What
-  > is missing is only the two wrappers, so recording the design keeps a real fact ("one export
-  > away") that striking the line would throw away.
-  >
-  > *Deferred rather than shipped*, because shipping it is not a documentation change and must not
-  > be smuggled in as one. It needs a `cnx_sha3_512` export plus its length accessor, `.lcb`
-  > wrappers, an ABI bump in `CNX_ABI_VERSION` AND `kABIVersion`, and - suite rule 5 - the committed
-  > `src/code/<arch>-<platform>/` binary refreshed for all four platforms in the same change, with
-  > the Windows pair meeting this member's execution bar. That is a native release pass. Against
-  > that cost the demand is zero: neither chain uses SHA3-512 (Bitcoin is SHA-256/RIPEMD-160,
-  > Ethereum is Keccak-256), nothing in the suite calls it, and callers who want the NIST padding
-  > already have `cxSha3_256`. Rule 1's principle applies to surface as much as to code - do not
-  > widen the audited native boundary for a caller who does not exist.
-  >
-  > *The condition for revisiting*, written down so this does not become an open call again: a
-  > concrete caller. Ship it in a native release pass with the ABI bump, or leave it deferred.
-  > `tools/check-doc-handlers.py` carries `cxSha3_512` as a `deferred` exemption naming this
-  > paragraph, and will fail the build the day the handler actually ships with the exemption still
-  > in place - so the decision cannot rot in either direction.
-- HD wallets: BIP-32 derivation, BIP-39 mnemonics (and SLIP-39 in a later phase).
-- Address and serialization formats: Base58Check, Bech32 / Bech32m (SegWit v0 / v1), hex, RLP, xprv/xpub,
-  WIF, and the EIP-55 mixed-case Ethereum checksum.
+- HD wallets: BIP-32 derivation and BIP-39 mnemonics.
+- Formats: Base58Check, Bech32 / Bech32m (SegWit v0 / v1), hex, RLP, xprv/xpub, WIF, EIP-55.
+- Transaction builders: Bitcoin legacy, BIP-143 and BIP-341 sighashes and serialization; Ethereum
+  EIP-155 and EIP-1559.
+
+**Decided NOT to ship, each with the condition for revisiting it:**
+
+- **SHA3-512 is DEFERRED** (2026-08-17; the suite's D-16 reaffirmed it 2026-08-27). The vendored
+  `sha3.c` implements it and it is compiled into every binary; shipping it costs a `cnx_sha3_512` export
+  and length accessor, `.lcb` wrappers, an ABI bump and a five-platform binary refresh (suite rule 5), and
+  no chain, caller or member needs it (callers who want NIST padding have `cxSha3_256`). Ship it only for
+  a concrete caller, with the next planned ABI bump. Until then `cxSha3_512` is a `handler not found`,
+  and `tools/check-doc-handlers.py` carries a `deferred` entry that fails the day it ships.
+- **SLIP-39 is NOT planned** (the suite's D-15, 2026-08-27): revisit only with a named consumer, bundled
+  with an ABI bump.
 
 It is **NOT**:
+
 - A key manager or a wallet UI. The app owns key storage, backup, and the confirm-before-sign UX.
 - A network layer. CoinXT never touches a peer, a node, or an RPC endpoint. It produces signed bytes;
   the app broadcasts them (optionally over Tor via OnionXT, doc-level composition only).
 - A source of consensus truth. It does not validate a chain, a UTXO set, or a nonce. It signs what it is
-  told to sign; the app is responsible for constructing the correct sighash / transaction.
-- New cryptography. Every curve op and hash is upstream, audited code; CoinXT adds no cipher of its
-  own (the same rule SodiumXT and OnionXT hold).
-  > **AS BUILT, and this sentence CHANGED on 2026-08-16.** It used to read "Every curve op and hash
-  > is trezor-crypto's". It now says "upstream", because there are two upstreams: trezor-crypto and
-  > bitcoin-core/secp256k1. The rule that matters is unchanged and is the one stated second - CoinXT
-  > adds no cryptography of its own - and section 2 records what changed, why, and what it costs.
+  told to sign; the app constructs the transaction.
+- New cryptography. Every curve op and hash is upstream, audited code; CoinXT adds no cipher of its own
+  (the rule SodiumXT and OnionXT hold). Section 2 says which upstream.
 
 ## 2. Why trezor-crypto, and the license
 
-[trezor-firmware `crypto/`](https://github.com/trezor/trezor-firmware/tree/main/crypto) (the standalone
-`trezor-crypto` repo is deprecated in favour of the monorepo) is **MIT-licensed**, plain **C**, has **no
-external dependencies**, and is designed to compile into a constrained target. It bundles a copy of
-`secp256k1` (also MIT). That combination is exactly what the family's FFI pattern wants: a self-contained
-C library with a buffer-in / buffer-out API and a permissive license we can vendor and redistribute.
-
-It is the crypto core of a shipping hardware wallet, so the curve and hash code is battle-tested and
-maintained. CoinXT vendors a **subset** of its `.c` files (the curve, the hashes, BIP-32/39, base58,
-bech32) plus a small shim, and builds one shared library per platform. No autotools, no submodule tree,
-no libtorrent-scale build matrix.
+[trezor-firmware `crypto/`](https://github.com/trezor/trezor-firmware/tree/main/crypto) is
+**MIT-licensed**, plain **C**, has **no external dependencies**, and compiles into constrained targets:
+exactly the self-contained, buffer-in / buffer-out, permissively licensed library the family's FFI
+pattern can vendor and redistribute. It is the crypto core of a shipping hardware wallet. CoinXT vendors a
+**subset** of its files plus a small shim and builds one shared library per platform, with no autotools
+and no submodule. The file list, the pin, and why the curve half is a closure rather than a pick-list are
+in [native/vendor/VENDOR.md](native/vendor/VENDOR.md).
 
 ### 2.1 A SECOND library, and the rule change that admitted it (decided 2026-08-16)
 
-**What the rule was.** Section 1 said "Every curve op and hash is trezor-crypto's; CoinXT adds no
-cipher of its own", and this section's argument for trezor-crypto was that it is one MIT,
-dependency-free, plain-C tree that the family's FFI pattern can vendor whole. One library, one
-audit surface, one pin. CLAUDE.md rule 1 stated the operational form: "A missing primitive is a new
-vendored file or an upstream request, never a hand-rolled curve op or hash here."
+**The rule was** "every curve op and hash is trezor-crypto's". **It is now** "no cryptography of our
+own; two upstreams that do not overlap": trezor-crypto, and **bitcoin-core/secp256k1** (MIT, pinned at
+`439278a649d3099d62dde966a76dc04aaca7ccb3`). trezor-crypto keeps every hash, ECDSA, recoverable ECDSA,
+recovery, ECDH and the two BIP-32 curve steps. libsecp256k1 owns BIP-340 Schnorr, x-only keys, the
+BIP-341 tweak and point addition, reached through six `cnx_` entry points (`cnx_schnorr_sign`,
+`cnx_schnorr_verify`, `cnx_xonly_pubkey_from_seckey`, `cnx_taproot_tweak_pubkey`,
+`cnx_taproot_tweak_seckey`, and since ABI 7 `cnx_pubkey_combine`).
 
-**What the rule is now.** CoinXT adds no cryptography of its own, and composes **two** upstream
-libraries: trezor-crypto, and **bitcoin-core/secp256k1** (upstream libsecp256k1, MIT, pinned at
-`439278a649d3099d62dde966a76dc04aaca7ccb3`). The two do not overlap. trezor-crypto keeps every
-hash, ECDSA, recoverable ECDSA, recovery, ECDH and the two BIP-32 curve steps. libsecp256k1 owns
-BIP-340 Schnorr, x-only public keys and the BIP-341 Taproot tweak, and is reached only through the
-five `cnx_` entry points that need it.
+**Why.** trezor-crypto's plain-C tree has **no BIP-340**; it reaches Schnorr only through
+`zkp_bip340.c`, which needs the bundled `secp256k1-zkp` and its own build system, an order of magnitude
+more vendoring for extras (adaptor signatures, rangeproofs) CoinXT does not use. The other option was
+writing BIP-340 by hand, and **hand-rolling a signature scheme is exactly what rule 1 forbids**, so the
+second library is the rule obeyed, not waived. Upstream libsecp256k1 is also what Bitcoin Core ships.
 
-**Why.** trezor-crypto's plain-C tree has **no BIP-340 implementation at all**. It reaches Schnorr
-only through `zkp_bip340.c`, which requires the bundled `secp256k1-zkp` library and that library's
-own build system - a vendoring an order of magnitude larger than everything CoinXT had, for a
-fork whose extra value (adaptor signatures, rangeproofs) is irrelevant here. So the choice was
-between a second audited library and writing BIP-340 by hand in this repository. **Hand-rolling a
-signature scheme is precisely what rule 1 exists to prevent**, which is why the rule bends here
-rather than breaks: the second library is the rule being obeyed, not waived. Upstream
-libsecp256k1 is also what Bitcoin Core itself ships, which makes it the least surprising possible
-answer to "whose Schnorr is this".
+**The audit surface it added:** 58 vendored files, 3.13 MB of source (one generated table,
+`precomputed_ecmult.c`, is 2.30 MB), compiled as three translation units (`secp256k1.c`, which includes
+the rest, and the two tables), every file blob-verified against the pin and hashed in
+`native/MANIFEST.sha256`; only the `schnorrsig` and `extrakeys` modules enabled (`ecdh`, `recovery`,
+`musig`, `ellswift` and `silentpayments` are neither compiled nor vendored); one long-lived object, a
+file-static `secp256k1_context` created on first use, re-randomized before every secret-key operation,
+never exposed and never freed; one entry point that is not a pure function of its inputs (section 4);
+and simpler licensing, MIT throughout, one entry in [THIRD-PARTY-LICENSES.md](THIRD-PARTY-LICENSES.md).
 
-**What the new audit surface is**, stated plainly so nobody has to measure it later:
+**The BIP-341 script layer on top** (2026-08-23; engine-proven 2026-08-24 in coinxt's 290/290):
+`cxBtcSighashTaproot` (every base type, the three ANYONECANPAY forms, the tapleaf extension, epoch 0x00),
+`cxTapLeafHash`, `cxTapBranchHash` and `cxTapControlBlock`. Bounds: no OP_CODESEPARATOR (the extension
+always writes position 0xffffffff) and no annex; tree ASSEMBLY above one fold is the app's loop over
+`cxTapBranchHash`; the builder returns a digest and is not a signer.
 
-- **58 vendored files, 3.13 MB of source**, of which one generated table (`precomputed_ecmult.c`)
-  is 2.30 MB. Three translation units compile: `secp256k1.c` (which `#include`s the rest),
-  and the two precomputed tables. Every file is blob-verified against the pinned commit's tree and
-  hashed in `native/MANIFEST.sha256`. The file list, the pin's provenance and the
-  `ECMULT_WINDOW_SIZE` decision are in [`native/vendor/VENDOR.md`](native/vendor/VENDOR.md).
-- **Only two modules are enabled** (`schnorrsig`, `extrakeys`). `ecdh`, `recovery`, `musig`,
-  `ellswift` and `silentpayments` are not compiled and their sources are not vendored.
-- **One long-lived object appears in a shim that previously had none**: a file-static
-  `secp256k1_context`, created on first use and re-randomized before every secret-key operation.
-  That is real state in a member whose architecture section says it holds none, so it is called out
-  here as well as in `native/coinxt.c`: it is process-lifetime, immutable from script, never
-  exposed, and never freed.
-- **One entry point is no longer a pure function of its inputs.** `cnx_schnorr_sign` with an ABSENT
-  aux_rand draws fresh OS randomness (see section 4's amendment). Supplying the aux restores
-  determinism, which is what every vector does.
-- **Licensing gets simpler, not harder**: libsecp256k1 is MIT throughout with no third-party
-  sub-licenses, so it is one row in the suite `LICENSE` and one entry in
-  [THIRD-PARTY-LICENSES.md](THIRD-PARTY-LICENSES.md), against trezor-crypto's six exceptions.
-
-**What this did NOT deliver at ABI 6, and what closed on 2026-08-23.** The paragraph that stood
-here named two gaps, and both are now script-layer handlers over the ABI 6 surface, exactly the
-"additive script-layer work, not another vendoring" it predicted. The BIP-341 sighash builder is
-`cxBtcSighashTaproot` (the full `SigMsg`: every base type plus the three ANYONECANPAY forms, the
-tapleaf extension for script-path signing, epoch 0x00 included). Script-path spending's byte work
-is `cxTapLeafHash`, `cxTapBranchHash` and `cxTapControlBlock`, so leaf hashes, the sorted branch
-fold and control blocks are built in script and the merkle root no longer has to cross the API as
-opaque bytes an app computed elsewhere. Three bounds still hold, stated so nobody plans around
-them: there is no OP_CODESEPARATOR support (the extension always writes position 0xffffffff) and
-no annex; tree ASSEMBLY above one fold - choosing a shape and accumulating the path - stays the
-app's loop over `cxTapBranchHash`; and the builder is a builder, not a signer - it returns the
-32-byte digest and the app hands that to `cxSchnorrSign` with the tweaked key, per rule 3's
-signing split. All of it is verified statically and vector-pinned headlessly (the published
-bitcoin/bips wallet vectors, all seven sighashes and all six trees, through
-`tools/check-script-vectors.py`); ENGINE-PROVEN 2026-08-24 (Windows x86_64,
-OXT 9.6.3: all 12 BIP-341 harness checks green in coinxt's 290/290, both
-sighash paths and the refusals included).
-
-**What is NOT changed.** No cryptography is implemented in CoinXT. No operation moved from one
-library to the other. Nothing is reimplemented against both. A future maintainer moving an
-operation across that line is making an interoperability decision, not a refactor.
+No operation moved between the libraries and nothing is implemented against both; moving one across
+that line is an interoperability decision, not a refactor.
 
 ## 3. Architecture: what is C and what is script
-
-The split follows OnionXT's precedent (base32 and address<->key mapping are pure byte work done in
-livecodescript; only the true crypto is native). Keep the native surface as small as the security goal
-allows.
 
 ```
 app (livecodescript)
    |
 CoinXT public API (cx*)   src/coinxt.livecodescript
-   |- ENCODINGS in script (pure byte work, no secrets-critical math):
-   |     hex, Base58Check, Bech32 / Bech32m, RLP, xprv/xpub framing, WIF,
-   |     EIP-55 checksum, address composition (P2PKH / P2WPKH / P2TR / eth)
+   |- ENCODINGS in script (pure byte work): hex, Base58Check, Bech32/Bech32m, RLP, WIF, EIP-55,
+   |     addresses, BIP-32 HMAC/serialization/path parse, BIP-39 words, tx serialization, sighashes
    |- FFI seam (unsafe ... end unsafe), one .lcb module
-   |
-CoinXT C shim (cnx_)   native/coinxt.c   + vendored trezor-crypto subset
-   |- CURVE + HASHES in C (constant-time-sensitive, must be the audited code):
-         secp256k1 keypair / ECDSA / recoverable / recover / ECDH / Schnorr,
-         SHA-256/512, SHA3, Keccak-256, RIPEMD-160, HMAC, PBKDF2, BIP-32 node math,
-         BIP-39 mnemonic-to-seed
+CoinXT C shim (cnx_)   native/coinxt.c  + vendored trezor-crypto and libsecp256k1 subsets
+   |- CURVE + HASHES in C (constant-time-sensitive, must be the audited code): keypair, ECDSA,
+         recoverable, recover, ECDH, point sum, Schnorr, SHA-2, SHA3-256, Keccak-256, RIPEMD-160,
+         HMAC, PBKDF2, the BIP-32 tweaks, the BIP-39 wordlist as data
 ```
 
-**Rule of thumb:** anything that touches a private key or a curve point is C (audited trezor-crypto).
-Anything that is checksummed byte-shuffling with no secret-dependent branch is livecodescript, pinned by
-a KAT. This keeps the trusted native surface minimal and puts the formatting where it is easy to read,
-diff, and test.
+**Rule of thumb** (OnionXT's precedent): anything that touches a private key or a curve point is C;
+checksummed byte-shuffling with no secret-dependent branch is livecodescript, pinned by a KAT.
 
 ## 4. Determinism and entropy (a load-bearing design decision)
 
-**CoinXT is deterministic: every operation is a pure function of its inputs, so every operation is
-known-answer testable.** trezor-crypto signs with RFC 6979 (deterministic ECDSA), so signing needs no
-randomness. The only place randomness is inherent is *fresh key material*, and CoinXT does not generate
-it internally:
+**Every operation is a pure function of its inputs, so every operation is known-answer testable**, with
+one deliberate exception below. Signing is RFC 6979 and needs no randomness. Fresh key material is the
+caller's: a private key is any valid 32-byte scalar (`cxSeckeyIsValid` checks the range), and the entropy
+comes from a real CSPRNG, naturally **SodiumXT's `sxRandomBytes`** (as OnionXT derives onion keys from a
+SodiumXT seed) or OS entropy the app obtained itself. CoinXT never invents the randomness your keys
+depend on. Two facts qualify "no ambient RNG in the shim"; neither is nonce generation or can weaken a key:
 
-- A private key is any valid 32-byte scalar. `cxSeckeyIsValid` checks range; a seed / mnemonic / entropy
-  is supplied by the caller.
-  > **AS BUILT (name corrected 2026-08-17).** This line said `cxSeckeyValidate`, which has never
-  > existed - the shipped handler is `cxSeckeyIsValid` (`.lcb`, returns a Boolean rather than
-  > throwing, which is what makes it usable for a range CHECK). Section 5.1 and section 8 already
-  > spelled it correctly, so the wrong name was in exactly one place: a reader who copied it out of
-  > this paragraph got `handler not found`. `tools/check-doc-handlers.py` now refuses any `cx*` name
-  > in these docs that no handler defines, so a name that only exists in prose cannot come back.
-- The caller brings entropy from a real CSPRNG. The natural source in this family is **SodiumXT's
-  `sxRandomBytes`** (compose it), exactly as OnionXT derives onion keys from a SodiumXT seed. An app
-  without SodiumXT passes OS entropy it obtained itself.
-
-This means: no ambient RNG in the shim to get wrong, no non-reproducible outputs, and the whole surface
-is pinned by vectors in `tools/coin-kat.py`. It also keeps the trust story honest: CoinXT never invents
-the randomness your keys depend on; you hand it in and can audit where it came from.
-
-> **AS BUILT: two amendments, both of them corrections to the paragraph above.**
->
-> 1. **"No ambient RNG in the shim" was wrong from phase 2** and is corrected at length in
->    `native/coinxt.c` and CLAUDE.md: `vendor/ecdsa.c` draws OS entropy on EVERY scalar multiply as
->    a side-channel countermeasure, and it cancels algebraically, which is why the signatures stay
->    KAT-pinnable. ABI 6 adds one more consumer of the same source, for the same reason: the
->    libsecp256k1 context is re-randomized before every secret-key operation, which is upstream's
->    own recommendation. Neither is nonce generation and neither can weaken a key.
-> 2. **"No non-reproducible outputs" now has exactly ONE exception**, and it is deliberate.
->    `cnx_schnorr_sign` with an ABSENT aux_rand (a zero-length buffer) draws 32 fresh bytes from the
->    OS rather than substituting the all-zero aux that upstream's NULL would mean, because a library
->    that silently picks the least-protected option when the caller says nothing is the fail-open
->    shape this member refuses. BIP-340's nonce is `hash(aux XOR key, P, msg)`, so it is
->    deterministic in (key, message) even at aux = 0 and a bad aux draw can never repeat a nonce
->    across different messages: randomness there only ADDS protection. **Supply the 32-byte aux and
->    the signature is a pure function of its inputs again**, which is what the BIP-340 vectors
->    specify and what `tools/coin-kat.py` pins byte for byte. The KAT also asserts the other
->    direction - two absent-aux signatures must DIFFER, both must verify, and neither may equal the
->    zero-aux one - because "it was quietly passed through as NULL" and "it drew randomness" produce
->    identical-looking green runs otherwise.
+1. **Side-channel blinding.** `vendor/ecdsa.c` draws OS entropy on every scalar multiply and it cancels
+   algebraically, which is why the signatures stay KAT-pinnable; the libsecp256k1 context is
+   re-randomized before every secret-key operation, upstream's own recommendation.
+2. **The ONE non-reproducible output.** `cnx_schnorr_sign` with an ABSENT aux (zero-length) draws 32 OS
+   bytes rather than the all-zero aux upstream's NULL would mean: silently picking the least-protected
+   option when the caller says nothing is the fail-open shape this member refuses. BIP-340's nonce is
+   `hash(aux XOR key, P, msg)`, deterministic in (key, message) even at aux = 0, so the randomness only
+   adds protection. **Supply the 32-byte aux and the signature is reproducible**, as the vectors specify.
+   `tools/coin-kat.py` asserts both directions: the vectors byte for byte, and two absent-aux signatures
+   that differ, both verify, and neither equals the zero-aux one.
 
 ## 5. The C ABI contract (`cnx_`)
 
-Carried verbatim from the family's FFI law (see [CLAUDE.md](CLAUDE.md) and the SodiumXT / TorrentXT
-bindings). The shim is intentionally tiny; these are its shapes.
+Carried from the family's FFI law ([CLAUDE.md](CLAUDE.md); the SodiumXT / TorrentXT bindings).
 
-- **Every function returns an `int` status**: `0` = ok, negative = a stable error code
-  (`CNX_ERR_BADLEN`, `CNX_ERR_BADKEY`, `CNX_ERR_BADSIG`, `CNX_ERR_RANGE`, `CNX_ERR_INTERNAL`, ...). No
-  human strings cross the ABI; the livecodescript layer maps codes to messages.
-- **Byte buffers cross as `Pointer` + a `UIntSize` length.** An LCB `Data` does NOT auto-bridge to
-  `void*`. An **in** buffer passes `MCDataGetBytePtr` + length; an **out** buffer is an engine
-  `MCMemoryAllocate` block passed as a real `Pointer`.
-  > **As built, correcting this section's original text.** This bullet used to say `CInt` length and to
-  > describe a `-needed` re-allocate-and-retry protocol. Both were wrong for CoinXT and are corrected
-  > here rather than left to mislead. Lengths are C `size_t`, so they marshal as `UIntSize` (a 4-byte
-  > int into an 8-byte slot corrupts the heap - the very rule stated three bullets down). And there is
-  > no `-needed` path: that is SodiumXT's protocol, whose shim returns bytes-written-or-negative-size.
-  > A `cnx_` entry point returns a STATUS and writes a fixed size it reports itself (`cnx_*_len`), or
-  > exactly the output length the caller asked for, so the binding allocates exactly that and copies
-  > exactly that back. There is no retry path to get wrong.
-- **Never RETURN a bridged C string.** Fill a caller buffer; return length. A returned static/owned
-  pointer is `free()`-on-static on the first call.
-- **Sizes are `size_t` -> `UIntSize`, not `CUInt`.** A 4-byte int into an 8-byte slot corrupts the heap.
-- **Every length is a function, never a hardcoded LCB constant:** `cnx_seckey_len()` = 32,
-  `cnx_pubkey_len_compressed()` = 33, `cnx_pubkey_len_uncompressed()` = 65, `cnx_ecdsa_sig_len()` = 64,
-  `cnx_recoverable_sig_len()` = 65, `cnx_schnorr_sig_len()` = 64, `cnx_xonly_pubkey_len()` = 32,
-  `cnx_taproot_output_len()` = 33 (AS BUILT: the x-only output key plus a parity byte),
-  `cnx_keccak256_len()` = 32, `cnx_sha256_len()` = 32, `cnx_ripemd160_len()` = 20, `cnx_seed_len()` = 64,
-  `cnx_chaincode_len()` = 32.
-- **`cnx_abi_version()`** returns an int; the `.lcb` `cxCheckABI()` throws "reinstall CoinXT" on skew
-  before any call that could corrupt memory.
-- **Exported symbols keep the stable `cnx_` prefix and are never renamed once shipped** (the `.lcb`
-  `binds to` strings reference them by name; a rename is a silent bind failure at load).
-- **`textEncode` / `textDecode` are livecodescript-only**, so text<->Data conversion stays in the script
-  layer; the shim sees only `Data`.
+- **Every function returns an `int` status**: `0` ok, or a stable negative code never renumbered:
+  `CNX_ERR_NULL` -1, `BADLEN` -2, `RANGE` -3, `BADKEY` -4, `BADSIG` -5, `ENTROPY` -6, `BADDIGEST` -7,
+  `INTERNAL` -8. No human strings cross the ABI; the `.lcb` layer maps codes to messages.
+- **Buffers cross as `Pointer` + `UIntSize`.** A `Data` does not auto-bridge to `void*`: an in-buffer
+  passes `MCDataGetBytePtr` + length, an out-buffer is an `MCMemoryAllocate` block. Lengths are C
+  `size_t`, so `UIntSize`, never `CUInt` (a 4-byte int into an 8-byte slot corrupts the heap).
+- **No `-needed` retry protocol** (that is SodiumXT's): a `cnx_` function writes a fixed size it reports
+  itself, or exactly the output length asked for, so the binding allocates and copies exactly that.
+- **Never RETURN a bridged C string.** A returned static/owned pointer is `free()`-on-static.
+- **Every length is a function, never a hardcoded LCB constant**: seventeen `cnx_*_len()` accessors
+  (tabled in docs/api-reference.md, "Length accessors").
+- **`cnx_abi_version()`**: the `.lcb` `cxCheckABI` throws "reinstall CoinXT" on skew, and every handler
+  re-checks it before any call that could corrupt memory.
+- **The `cnx_` prefix is stable forever**: `binds to` strings name the symbols, so a rename is a silent
+  bind failure at load. Every bump so far has been additive; the version moves on ANY ABI change.
+- **`textEncode` / `textDecode` are livecodescript-only**: text conversion stays in script; the shim
+  sees only `Data`.
 
 ### 5.1 The native function surface (the whole wrap)
 
-Small on purpose. Grouped; each takes/returns fixed-size buffers per section 5.
+**44 exports at ABI 7**, all buffer-in / buffer-out, all deterministic except the aux-less signing path
+of section 4. Every buffer is pointer + `size_t` (lengths elided below).
 
 ```
-Curve (secp256k1):
-  cnx_seckey_verify(sk32) -> int
-  cnx_pubkey_from_seckey(sk32, compressed, out_pub) -> int          // 33 or 65 bytes
-  cnx_pubkey_decompress(pub, out65) -> int
-  cnx_ecdsa_sign(sk32, hash32, out_sig64) -> int                    // RFC 6979
-  cnx_ecdsa_verify(pub, hash32, sig64) -> int
-  cnx_ecdsa_sign_recoverable(sk32, hash32, out_sig65) -> int        // Ethereum: 64 + recid
-  cnx_ecdsa_recover(sig65, hash32, out_pub65) -> int                // ecrecover
-  cnx_ecdh(sk32, pub, out65) -> int      // AS BUILT: the raw point 0x04||X||Y,
-                                         // not 32 bytes. Sketched here as out32
-                                         // assuming the X coordinate; the shim
-                                         // reports what upstream writes rather
-                                         // than truncating for the caller, who
-                                         // must apply their protocol's KDF.
-  // BIP-340 / BIP-341 - AS BUILT at ABI 6 (2026-08-16), over upstream
-  // libsecp256k1 rather than trezor-crypto (section 2.1). Every buffer is
-  // pointer + size_t, like everything else here; the two OPTIONAL inputs are
-  // carried BY LENGTH (0 = absent) rather than by a null sentinel.
-  cnx_schnorr_sign(sk, sklen, msg, msglen, aux, auxlen, sig, siglen) -> int
-      // msglen MUST be 32: sign the digest the app hands you, never a blob it
-      // has not decoded (CLAUDE.md rule 3, the same rule cnx_ecdsa_sign obeys).
-      // auxlen 0 = draw fresh OS randomness; auxlen 32 = use exactly these
-      // bytes, and the signature is then reproducible. NEVER an all-zero aux.
-  cnx_schnorr_verify(xonly32, xonlylen, msg, msglen, sig, siglen) -> int
-      // ANY msglen: BIP-340 has admitted arbitrary-length messages since 2022
-      // and its vector file carries 0, 1, 17 and 100 bytes, so a verifier that
-      // required 32 would reject VALID signatures. An x-only key that is not on
-      // the curve is CNX_ERR_BADSIG, i.e. "does not verify" - BIP-340's own
-      // vectors 5 and 14 expect FALSE there, not an error.
-  cnx_xonly_pubkey_from_seckey(sk, sklen, out32, outlen) -> int
-      // AS BUILT, renamed from this section's sketched cnx_xonly_from_seckey,
-      // and with NO out_parity: the parity of an INTERNAL key is not something
-      // any caller here needs (the keypair machinery handles the negations),
-      // and an unused out-parameter is a shape to get wrong for nothing.
-  cnx_taproot_tweak_pubkey(internal32, ilen, root, rootlen, out33, outlen) -> int
-  cnx_taproot_tweak_seckey(sk, sklen, root, rootlen, out32, outlen) -> int
-      // BIP-341: Q = P + int(hash_TapTweak(bytes(P) || merkle_root))G, and the
-      // private key for Q. rootlen 0 is the KEY-PATH-ONLY case, where the spec
-      // hashes the EMPTY BYTE STRING - which is NOT 32 zero bytes, and getting
-      // that wrong produces a valid-looking unspendable address. A consensus
-      // rule, so it is carried by length and not by a sentinel value.
-      // tweak_pubkey writes a 33-byte RECORD: the x-only output key then one
-      // parity byte, the same convention cnx_ecdsa_sign_recoverable already
-      // uses for its recovery id.
-  cnx_schnorr_sig_len() = 64 / cnx_xonly_pubkey_len() = 32
-  cnx_taproot_output_len() = 33
+Curve (trezor-crypto):
+  cnx_seckey_verify(sk)                        cnx_pubkey_from_seckey(sk, compressed, out33|65)
+  cnx_pubkey_decompress(pub, out65)            cnx_ecdsa_sign(sk, digest32, out_sig64)   // RFC 6979
+  cnx_ecdsa_verify(pub, digest32, sig64)       cnx_ecdsa_sign_recoverable(sk, digest32, out65)
+  cnx_ecdsa_recover(sig65, digest32, out65)    cnx_ecdh(sk, pub, out65)
+  // cnx_ecdh writes the raw point 0x04||X||Y, not the 32-byte X the first sketch assumed:
+  // the caller applies its protocol's KDF.
 
-Hashes:
-  cnx_sha256(in, len, out32) / cnx_sha512(in, len, out64)
-  cnx_sha3_256(in, len, out32)          // NIST FIPS-202 (also closes OnionXT gap #2)
-  cnx_keccak256(in, len, out32)         // Ethereum padding (0x01), NOT NIST (0x06)
-  cnx_ripemd160(in, len, out20)
-  cnx_hmac_sha256(key, klen, msg, mlen, out32) / cnx_hmac_sha512(...out64)
-  cnx_pbkdf2_hmac_sha512(pw, plen, salt, slen, iters, out, outlen) -> int
+libsecp256k1 (section 2.1); optional inputs are carried BY LENGTH (0 = absent), never by sentinel:
+  cnx_schnorr_sign(sk, msg, aux, out_sig64)    // msglen MUST be 32 (rule 3); auxlen 0 = fresh OS
+                                               // randomness, 32 = reproducible; never all-zero aux
+  cnx_schnorr_verify(xonly32, msg, sig64)      // ANY msglen (the vectors carry 0/1/17/100 bytes); an
+                                               // off-curve key is BADSIG, i.e. false (vectors 5, 14)
+  cnx_xonly_pubkey_from_seckey(sk, out32)      // no parity output: no caller needs it
+  cnx_taproot_tweak_pubkey(internal32, root, out33)   // x-only output key || one parity byte
+  cnx_taproot_tweak_seckey(sk, root, out32)
+      // Q = P + int(hash_TapTweak(bytes(P) || merkle_root))G. rootlen 0 is KEY-PATH-ONLY and
+      // hashes the EMPTY string, NOT 32 zero bytes (the wrong one is a valid-looking unspendable
+      // address).
+  cnx_pubkey_combine(keys33xN, out33)          // ABI 7: sums the whole set at once, so an
+                                               // intermediate infinity is fine and only a FINAL
+                                               // infinity is refused (a BIP-352 vector)
 
-HD (BIP-32) - AS BUILT, and smaller than this section originally sketched. Only the
-              two operations that ARE curve arithmetic cross the ABI; the node itself
-              never does, so there is no opaque blob format and no handle table:
-  cnx_seckey_tweak_add(sk, sklen, tweak, tlen, out32, outlen) -> int   // ki = IL + kpar mod n
-  cnx_pubkey_tweak_add(pub, plen, tweak, tlen, out33, outlen) -> int   // Ki = point(IL) + Kpar
-  // The HMAC-SHA512, the 78-byte serialization, the path parse and the node record
-  // are all script (src/coinxt.livecodescript). Upstream's bip32.c was deliberately
-  // NOT vendored: it is written against every curve trezor supports and would have
-  // pulled in curves.c, nist256p1, ed25519-donna and the Cardano variants for these
-  // two operations. See native/vendor/VENDOR.md.
+Hashes: cnx_sha256, cnx_sha512, cnx_ripemd160, cnx_hmac_sha256, cnx_hmac_sha512,
+  cnx_sha3_256 (NIST 0x06 padding; closes OnionXT's gap #2), cnx_keccak256 (Ethereum 0x01, NOT NIST),
+  cnx_pbkdf2_hmac_sha512(pw, salt, iterations, out, outlen)
 
-Mnemonic (BIP-39) - AS BUILT. cnx_bip39_seed was not needed: it is PBKDF2-HMAC-SHA512,
-              which the hash surface above already exports, so cxMnemonicToSeed composes
-              it. What the shim supplies instead is the normative wordlist as DATA:
-  cnx_bip39_wordlist(out, outlen) -> int      // 2048 fixed-width 8-byte slots, space padded
-  cnx_bip39_wordlist_len(void) -> size_t      // 16384
-  // entropy<->words and the checksum word live in script (pure bytes + a SHA-256 call)
+HD (BIP-32): only the two operations that ARE curve arithmetic; the node never crosses the ABI:
+  cnx_seckey_tweak_add(sk, tweak, out32)       // ki = IL + kpar mod n
+  cnx_pubkey_tweak_add(pub, tweak, out33)      // Ki = point(IL) + Kpar
+  // HMAC-SHA512, the 78-byte serialization and the path parse are script. Upstream's bip32.c is
+  // NOT vendored: it would pull in curves.c, nist256p1, ed25519-donna and the Cardano variants.
 
-Secret hygiene - AS BUILT, ABI 5 (2026-08-16), not in the original sketch:
-  cnx_memzero(buf, len) -> int    // a status-returning wrap of vendored memzero.c (a wipe
-                                  // the compiler cannot elide). INTERNAL to the binding:
-                                  // src/coinxt.lcb wipes every raw out-buffer through it
-                                  // before MCMemoryDeallocate. Deliberately no cx* wrapper
-                                  // (a script Data cannot be wiped in place; section 8's
-                                  // honest limit stands).
+BIP-39: cnx_bip39_wordlist(out)   // 2048 fixed 8-byte slots, space padded (16384 bytes). No
+  // cnx_bip39_seed: the seed is PBKDF2, which cxMnemonicToSeed composes; words live in script.
+
+Secret hygiene (ABI 5): cnx_memzero(buf, len)   // wraps vendored memzero.c; INTERNAL to the .lcb,
+  // which wipes every raw out-buffer before freeing it. No cx* wrapper: a script Data cannot be wiped.
+
+Plus cnx_abi_version and the seventeen cnx_*_len accessors. Everything else is livecodescript.
 ```
-
-That is the entire native surface: 43 exports as built (roughly 25 when this section was written;
-the growth is the eight ABI-6 additions above plus the length accessors every group carries), all
-buffer-in / buffer-out, and all deterministic except the one aux-less signing path section 4 names.
-Everything else in CoinXT is livecodescript.
 
 ## 6. The livecodescript API (`cx*`)
 
-Shapes follow the family convention: functions return a value; commands report through `the result`. A
-value that can fail returns a `"CoinXT: ..."` string on failure, so callers test the type / prefix.
-Bytes are `Data`; text (addresses, mnemonics, hex) is a String built in the script layer.
+[docs/api-reference.md](docs/api-reference.md) is the complete handler list (95: 44 `.lcb`, 51 script),
+held complete in both directions by `tools/check-doc-handlers.py`. The contract every handler meets:
 
-```
-Keys and signatures:
-  cxNewSeckey(pEntropy32)                 -> 32-byte seckey (validates; pEntropy from sxRandomBytes)
-  cxPublicKey(pSeckey, pCompressed)       -> 33/65-byte pubkey
-  cxSign(pSeckey, pHash32)                -> 64-byte ECDSA signature (RFC 6979)
-  cxVerify(pPubkey, pHash32, pSig)        -> boolean
-  cxSignRecoverable(pSeckey, pHash32)     -> 65-byte signature (r||s||v)      [Ethereum]
-  cxRecover(pSig65, pHash32)              -> 65-byte pubkey                    [ecrecover]
-  cxEcdh(pSeckey, pPubkey)                -> 32-byte shared secret
-  cxSchnorrSign(pSeckey, pMessage32, pAuxRand)  -> 64-byte BIP-340 signature  [AS BUILT]
-  cxSchnorrVerify(pXOnlyPubkey, pMessage, pSig) -> boolean
-  cxXOnlyPubkey(pSeckey)                        -> 32-byte x-only public key
-  cxTaprootTweakPubkey(pInternalKey, pMerkleRoot) -> 33 bytes (output key || parity)
-  cxTaprootTweakSeckey(pSeckey, pMerkleRoot)      -> the spending private key
-  cxSchnorrSignatureLen / cxXOnlyPubkeyLen / cxTaprootOutputLen
-
-  pAuxRand and pMerkleRoot are EMPTY when absent. Empty aux means "draw fresh OS
-  randomness" (section 4), and an empty merkle root is BIP-341's empty byte
-  string, i.e. a key-path-only output - NOT 32 zero bytes. The script layer adds
-  cxTaprootTweak(pInternalKey, pMerkleRoot), which returns the same tweak as a
-  named array (outputKey / parity), and cxBtcAddressP2TRFromInternal, below.
-
-Hashes (thin over the shim; Data in, Data out):
-  cxSha256, cxSha512, cxSha3_256, cxKeccak256, cxRipemd160,
-  cxHash160 (RIPEMD160(SHA256(x))), cxHash256 (SHA256(SHA256(x))),
-  cxHmacSha256, cxHmacSha512, cxPbkdf2HmacSha512
-
-HD wallets (BIP-32) - AS BUILT. The node is an ARRAY read by name, and its fields are
-                      exactly what BIP-32 serializes in the order it serializes them
-                      (seckey, pubkey, chaincode, depth, index, parentfp), so cxXprv is
-                      a concatenation rather than a translation. That replaced the
-                      cxHdSeckey / cxHdPubkey / cxHdChainCode accessors sketched here.
-  cxHdFromSeed(pSeed)                     -> node
-  cxHdDeriveChild(pNode, pIndex)          -> node   (one step; pIndex is the full child number)
-  cxHdDerivePath(pNode, "m/44'/0'/0'/0/0") -> node   (parses the path, loops cxHdDeriveChild)
-  cxHdNeuter(pNode)                       -> node   (the watch-only form; no private key)
-  cxXprv(pNode) / cxXpub(pNode)           -> Base58Check strings   (framed in script)
-
-Mnemonics (BIP-39) - AS BUILT:
-  cxMnemonicFromEntropy(pEntropy)         -> space-joined words   (checksum word computed in script)
-  cxMnemonicToEntropy(pWords)             -> entropy; throws on a bad checksum
-  cxMnemonicToSeed(pWords, pPassphrase)   -> 64-byte seed
-  cxMnemonicValidate(pWords)              -> boolean
-  cxMnemonicNormalize(pText)              -> trimmed, single-spaced   (NOT Unicode NFKD; see below)
-
-  A NON-ASCII PASSPHRASE IS THE CALLER'S TO NORMALIZE. BIP-39 specifies NFKD over the
-  mnemonic and the passphrase; for the English wordlist that is a no-op because every
-  word is ASCII, but a passphrase with accents or full-width characters must be
-  NFKD-normalized before cxMnemonicToSeed or the seed will not match another wallet.
-  cxMnemonicToSeed also does NOT verify the checksum, because BIP-39 defines the seed
-  for any string - call cxMnemonicValidate first on anything a human typed.
-
-Encodings (PURE SCRIPT, pinned by KAT) -- AS SHIPPED (this block was updated to the
-built signatures; the original design sketch differed, see api-reference.md):
-  cxHexEncode / cxHexDecode
-  cxBase58CheckEncode(pPayload) / cxBase58CheckDecode(pText)               (the caller prepends the
-                                                                           version byte; fails closed)
-  cxBech32EncodeValues(pHrp, pValues, pSpec) / cxBech32DecodeValues(pText) (Bech32 and Bech32m, 5-bit
-                                                                           value lists), plus the
-                                                                           address-level
-                                                                           cxSegwitAddressEncode(pHrp,
-                                                                           pVersion, pProgram) /
-                                                                           cxSegwitAddressDecode(pHrp,
-                                                                           pAddress)
-  cxRlpEncodeBytes(pData) / cxRlpEncodeList(pEncodedItems) / cxRlpDecode(pData)   [built piecewise; xTalk
-                                                                           has no nested-list literal]
-  cxWifEncode(pSeckeyHex, pNetwork, pCompressed) / cxWifDecode(pWif)       (AS BUILT 2026-08-15: this
-                                                                           spec only ever NAMED WIF, so
-                                                                           the signatures are as-built
-                                                                           decisions. The key crosses as
-                                                                           64 HEX CHARACTERS both ways -
-                                                                           WIF is the paste format - the
-                                                                           network is "mainnet"/"testnet"
-                                                                           for versions 0x80/0xEF, decode
-                                                                           returns an array (seckey /
-                                                                           network / compressed), and
-                                                                           BOTH directions range-check
-                                                                           the scalar via cxSeckeyIsValid
-                                                                           on top of the section-7
-                                                                           refusals)
-
-Addresses (compose the above) -- one argument each, mainnet:
-  cxBtcAddressP2PKH(pPubkey)              -> Base58Check(0x00 || hash160(pubkey))
-  cxBtcAddressP2WPKH(pPubkey)             -> Bech32("bc", 0, hash160(pubkey))
-  cxBtcAddressP2TR(pOutputKey)            -> Bech32m("bc", 1, output-key); does NOT tweak
-  cxBtcAddressP2TRFromInternal(pInternalKey, pMerkleRoot)
-                                          -> AS BUILT (ABI 6): the full BIP-341 path,
-                                             tweak included. This is the one almost every
-                                             caller wants. It is a SEPARATE handler rather
-                                             than an argument to cxBtcAddressP2TR because
-                                             an absent xTalk parameter is indistinguishable
-                                             from an empty one, so an optional merkle root
-                                             could not tell "encode this output key" from
-                                             "tweak this internal key with no script tree"
-                                             - and those two readings of the same 32 bytes
-                                             give different addresses, one unspendable.
-                                             cxBtcAddressP2TR's meaning is UNCHANGED and
-                                             stays unchanged: making it tweak would turn
-                                             every existing correct call into a double
-                                             tweak, silently.
-  cxEthAddress(pPubkey)                   -> "0x" + EIP-55( keccak256(pub65[2..65])[13..32] )
-  cxEthAddressChecksum(pAddress)          -> EIP-55 mixed-case form; verify on input
-```
+- **Functions return a value; every failure THROWS** `"CoinXT: <handler>: ..."`, with no error-code
+  return and no partial result. A question routinely answered "no" returns a Boolean instead
+  (`cxSeckeyIsValid`, `cxVerify`, `cxSchnorrVerify`, `cxMnemonicValidate`, `cxEthAddressIsChecksummed`).
+- **Bytes are `Data`**; text (addresses, mnemonics, hex, WIF) is a String. Wei-scale Ethereum values
+  cross as minimal big-endian hex, because they exceed exact-integer range.
+- **The HD node is an ARRAY read by name**, with the fields BIP-32 serializes in the order it serializes
+  them (`seckey`, `pubkey`, `chaincode`, `depth`, `index`, `parentfp`), so `cxXprv` is a concatenation,
+  not a translation. That replaced the `cxHdSeckey` / `cxHdPubkey` / `cxHdChainCode` accessors this
+  section first sketched.
+- **An empty `pAuxRand` or `pMerkleRoot` means absent** (fresh randomness; a key-path-only output).
+- **`cxBtcAddressP2TR` never tweaks**; `cxBtcAddressP2TRFromInternal` is a SEPARATE handler because an
+  absent xTalk parameter equals an empty one, so an optional root could not tell "encode this output key"
+  from "tweak this internal key with no script tree", and those give different addresses, one
+  unspendable. Making the old handler tweak would have silently double-tweaked every correct call.
+- **A WIF key crosses as 64 hex characters** both ways (WIF is the paste format); decode returns an array
+  (`seckey`, `network`, `compressed`), and both directions range-check via `cxSeckeyIsValid`.
+- **A non-ASCII passphrase is the caller's to NFKD-normalize** (`cxMnemonicNormalize` only trims and
+  single-spaces). `cxMnemonicToSeed` does not verify the checksum (BIP-39 defines a seed for any
+  string): call `cxMnemonicValidate` first on anything a human typed.
+- **Repeated transaction fields cross as comma lists read by index**; RLP is built piecewise
+  (`cxRlpEncodeBytes` / `cxRlpEncodeList`) because xTalk has no nested-list literal.
 
 ## 7. Formats CoinXT must get byte-exact (the spec inside the spec)
 
-Each of these is a place a wallet silently loses money if a byte is wrong, so each is pinned by a public
-test vector (section 9). Implement against the standard, not from memory.
+Each is a place a wallet silently loses money if a byte is wrong, so each is pinned by a public vector
+(section 9). Implement against the standard, not from memory.
 
-- **secp256k1 / RFC 6979**: deterministic-`k` ECDSA; a signature must be reproducible and low-`s`
-  (BIP-62 canonical) for Bitcoin. Ethereum wants the recovery id and low-`s` (EIP-2).
+- **secp256k1 / RFC 6979**: deterministic `k`; reproducible, low-`s` (BIP-62) for Bitcoin; Ethereum
+  wants the recovery id and low-`s` (EIP-2).
 - **Keccak-256 vs SHA3-256**: Ethereum uses Keccak with the ORIGINAL `0x01` padding, not FIPS-202's
   `0x06`. Two different functions; never alias them.
-- **Ethereum address**: `keccak256(uncompressed_pubkey_without_0x04_prefix)`, take the last 20 bytes,
-  render lowercase hex with `0x`, then apply the **EIP-55** checksum (uppercase a hex nibble where the
-  matching nibble of `keccak256(lowercase_address)` is >= 8). Verify the checksum on any address the app
-  accepts.
-- **Base58Check**: `base58( payload || first4(sha256(sha256(version||payload))) )`. Decode must recompute
-  and compare the 4-byte checksum and fail closed.
-- **WIF** (AS BUILT 2026-08-15; this bullet was missing while the format was only named above):
-  Base58Check over `version || 32-byte private key || optional 0x01 compressed marker`, version 0x80
-  mainnet / 0xEF testnet. Decode fails closed on a bad checksum, a payload that is not 33 or 34 bytes,
-  an unknown version byte, a trailing byte that is not 0x01, and a scalar of zero or >= the group
-  order; the marker is surfaced explicitly because compressed and uncompressed keys pay different
-  addresses. Pinned to the Bitcoin wiki's published worked example.
-- **Bech32 / Bech32m**: the two differ only by the polymod constant (1 vs 0x2bc830a3). SegWit v0 uses
-  Bech32; v1+ (Taproot) uses Bech32m. The HRP, the witness-version byte, and the 5-bit squashing must all
-  be exact, and the checksum verified on decode.
+- **Ethereum address**: `keccak256(uncompressed_pubkey_without_0x04)`, last 20 bytes, lowercase hex with
+  `0x`, then **EIP-55** (uppercase a nibble where the matching nibble of `keccak256(lowercase_address)`
+  is >= 8). Verify the checksum on any address the app accepts.
+- **Base58Check**: `base58( payload || first4(sha256(sha256(version||payload))) )`; decode recomputes
+  and compares the checksum and fails closed.
+- **WIF**: Base58Check over `version || 32-byte key || optional 0x01 marker`, 0x80 mainnet / 0xEF
+  testnet. Decode fails closed on a bad checksum, a payload that is not 33 or 34 bytes, an unknown
+  version, a trailing byte that is not 0x01, and a scalar of zero or >= the group order. The marker is
+  surfaced because compressed and uncompressed keys pay different addresses. Pinned to the Bitcoin
+  wiki's worked example.
+- **Bech32 / Bech32m**: they differ only by the polymod constant (1 vs 0x2bc830a3). SegWit v0 uses
+  Bech32, v1+ Bech32m. The HRP, the witness version and the 5-bit squashing must be exact, and the
+  checksum verified on decode.
 - **BIP-32**: `I = HMAC-SHA512(chaincode, data)`; `IL` tweaks the key, `IR` is the new chaincode;
-  hardened indices (>= 0x80000000) use the private key, non-hardened use the public key. xprv/xpub is a
-  Base58Check blob with the version bytes for main/test net.
-- **BIP-39**: entropy (128-256 bits) + a checksum of `first (entropy_bits/32)` bits of `sha256(entropy)`
-  -> 11-bit word indices into the 2048-word list; seed = `PBKDF2-HMAC-SHA512(mnemonic, "mnemonic" +
-  passphrase, 2048, 64)`. The wordlist is data, shipped and hashed.
-- **RLP**: the recursive length-prefix encoding Ethereum transactions use; single bytes < 0x80 are
-  literal, else a length-of-length scheme. Pure bytes; pin the yellow-paper examples.
+  hardened indices (>= 0x80000000) use the private key. xprv/xpub is Base58Check with per-network
+  version bytes.
+- **BIP-39**: 128-256 bits of entropy + the first `entropy_bits/32` bits of `sha256(entropy)` -> 11-bit
+  indices into the 2048-word list; seed = `PBKDF2-HMAC-SHA512(mnemonic, "mnemonic" + passphrase, 2048,
+  64)`. The wordlist is data, shipped and hashed.
+- **RLP**: single bytes < 0x80 are literal, else a length-of-length scheme; decode rejects the
+  non-canonical forms.
 
 ## 8. Security model and honesty rules
 
-1. **Add no cryptography. Wrap trezor-crypto.** Every curve op, hash, and KDF is upstream, audited code.
-   A missing primitive is an upstream request or a new vendored file, never a hand-rolled scalar mult or
-   hash here. (The family's first rule; it counts double for money.)
-2. **The app owns key custody.** CoinXT holds a key only for the microseconds of an operation. The app is
-   responsible for where seeds and seckeys are stored, how they are backed up, and for a
-   confirm-before-sign step. Document the boundary loudly.
-3. **Secret hygiene across the FFI.** Private keys, seeds, and chaincodes cross as `Data` / `Pointer`,
-   are `memzero`ed in the shim after use, and are NEVER returned as a bridged C string. Since ABI 5 the
-   `.lcb` binding also wipes every raw out-buffer it allocates (through `cnx_memzero`) before freeing
-   it, so a freed engine block never re-enters the allocator still holding key material. The
-   livecodescript layer clears its own key variables (`put empty into tSeckey`) as soon as it is done.
-   Note the honest limit: OXT script variables are not locked memory, so a seed in script can be paged;
-   treat the desktop as the trust boundary and say so.
-4. **Fail closed on every malformed input.** A bad checksum (Base58Check / Bech32 / EIP-55), an
-   out-of-range scalar, a wrong-length buffer, a non-canonical signature: clean error, never a
-   wrong-but-plausible key or address. Verify every checksum on decode.
-5. **Sign only what the app constructed.** CoinXT signs a 32-byte hash; it does not build your sighash or
-   your transaction preimage for you in phase 1 (that is phases 4-5, and even then the app confirms the
-   decoded human-readable intent). A blind signer is a footgun; make the caller pass the exact digest.
-6. **Constant-time is upstream's job, within limits.** We rely on trezor-crypto's side-channel hardening;
-   we do not add timing-variable branches on secret data in the shim, and we do the secret-free formatting
-   (base58/bech32) in script where timing does not matter. Note that a general-purpose desktop is not a
-   side-channel-hardened environment; do not market CoinXT as hardware-wallet-grade isolation.
-7. **Mainnet vs testnet is explicit.** Version bytes and HRPs are parameters, never guessed; the default
-   is spelled out at each call site.
+1. **Add no cryptography. Wrap an audited upstream.** Every curve op, hash, and KDF is trezor-crypto's or
+   libsecp256k1's (section 2.1). A missing primitive is an upstream request or a new vendored file, never
+   a hand-rolled scalar mult or hash. (The family's first rule; it counts double for money.)
+2. **The app owns key custody.** CoinXT holds a key only for the microseconds of an operation. Storage,
+   backup and a confirm-before-sign step are the app's. Document the boundary loudly.
+3. **Secret hygiene across the FFI.** Keys, seeds, and chaincodes cross as `Data` / `Pointer`, are
+   `memzero`ed in the shim after use, and are NEVER returned as a bridged C string. Since ABI 5 the
+   `.lcb` also wipes every raw out-buffer through `cnx_memzero` before freeing it. The script layer clears
+   its key variables (`put empty into tSeckey`) as soon as it is done. The honest limit: OXT script
+   variables are not locked memory and can be paged; the desktop is the trust boundary, and we say so.
+4. **Fail closed on every malformed input.** A bad checksum, an out-of-range scalar, a wrong-length
+   buffer, a non-canonical signature: a clean error, never a wrong-but-plausible key or address.
+5. **Sign only what the app constructed.** The signing handlers take a 32-byte digest; the transaction
+   builders compute it from fields the app supplied, and the app still confirms the decoded human intent
+   before signing. A blind signer is a footgun.
+6. **Constant-time is upstream's job, within limits.** No timing-variable branches on secret data in the
+   shim; the secret-free formatting is in script where timing does not matter. A desktop is not a
+   side-channel-hardened environment; never market CoinXT as hardware-wallet-grade isolation.
+7. **Mainnet vs testnet is explicit.** Version bytes and HRPs are parameters, never guessed.
 
 ## 9. Testing and conformance
 
-Pin every deterministic path with public known-answer vectors in `tools/coin-kat.py` (the OnionXT
-`onion-kat.py` model: self-checking, runs in CI, cross-checked against an independent implementation
-before pinning). Sources:
+Every deterministic path is pinned to public known-answer vectors in `tools/coin-kat.py` (the OnionXT
+`onion-kat.py` model: self-checking, in CI, cross-checked against an independent implementation before
+pinning), and the script layer is driven through the same vectors by `tools/check-script-vectors.py`.
+Nothing is generated by the library under test. Sources: RFC 6979 and a signature verified by the
+independent Python `ecdsa` library; all 19 BIP-340 vectors (ten NEGATIVE); all 7 `scriptPubKey` and all 7
+`keyPathSpending` cases of BIP-341's wallet vectors, walked private key -> internal key -> tweaked key ->
+the published witness signature, plus its sighash and script-tree cases; `keccak256("")` =
+`c5d2460186f7...`, `sha3_256("")`, RIPEMD-160, HMAC-SHA512 and PBKDF2 vectors; the EIP-55 examples;
+BIP-32 vectors 1-3; the Trezor BIP-39 vectors; BIP-173 / BIP-350 valid AND invalid strings; the RLP
+yellow-paper examples; the BIP-143 worked example, the EIP-155 specification example and a
+self-consistent EIP-1559 transaction.
 
-- **secp256k1 / ECDSA**: RFC 6979 test vectors; a fixed privkey -> pubkey; a signed digest -> exact
-  signature; `ecrecover` round-trip; a Schnorr vector from the BIP-340 test file.
-  > **AS BUILT, and stronger than "a vector":** the whole of BIP-340's official `test-vectors.csv`
-  > runs, all 19 cases in order, **ten of them NEGATIVE** (the public key off the curve, has_even_y(R)
-  > false, a negated message, a negated s, two infinity cases, an x that is not on the curve, r equal
-  > to the field size, s equal to the group order, and a public key past the field size). BIP-341's
-  > `wallet-test-vectors.json` runs too: all 7 `scriptPubKey` cases and all 7 `keyPathSpending`
-  > inputs, the latter walked private key -> internal x-only key -> tweaked private key -> the
-  > 64-byte witness signature the specification publishes. Both files are transcribed at the top of
-  > `tools/coin-kat.py` with their source URLs; nothing is generated by the library under test.
-- **Hashes**: `keccak256("")` = `c5d2460186f7...`, `sha3_256("")`, a RIPEMD-160 vector, an HMAC-SHA512
-  vector, a PBKDF2-HMAC-SHA512 vector.
-- **Ethereum address + EIP-55**: the canonical checksum examples from EIP-55.
-- **BIP-32**: the official BIP-32 test vectors (seed -> xprv/xpub and derived paths).
-- **BIP-39**: the Trezor BIP-39 vectors (entropy -> mnemonic -> seed).
-- **Base58Check / Bech32 / Bech32m**: the BIP-173 / BIP-350 test vectors, valid and INVALID (a corrupt
-  checksum must be rejected).
-- **RLP**: the yellow-paper / EIP examples.
-
-The curve and hash correctness is trezor-crypto's (its own test suite); CoinXT's KATs prove the *wrap*
-and the *script-side encodings*, end to end from the `cx*` API. The wire behaviour that needs a real
-chain (broadcast, confirmation) is out of scope and belongs to whatever app composes CoinXT.
+The curve and hash correctness is upstream's; CoinXT's KATs prove the *wrap* and the *script-side
+encodings*, end to end from the `cx*` API. Acceptance by code we did not write is
+`tools/verify-independent-decoder.py` (python-bitcointx and eth-account, a manual run). Behaviour that
+needs a real chain (broadcast, confirmation) belongs to the app that composes CoinXT.
 
 ## 10. Composition with the rest of the family
 
-- **SodiumXT** supplies the entropy (`sxRandomBytes`) for fresh keys, and its `sxMemZero` / secure-buffer
-  discipline is the model for secret hygiene. CoinXT does not duplicate libsodium; the hashes it needs
-  (Keccak, RIPEMD-160, SHA-3) are ones libsodium does not have, which is why they come from trezor-crypto.
-- **OnionXT** is the natural transport for anything CoinXT-signed that must reach a node privately: build
-  and sign a transaction with CoinXT, then broadcast it through Tor with OnionXT so the submitting IP is
-  not linked to the address. This is a documentation-level composition; neither library depends on the
-  other.
-- The offline SHA3-256 that OnionXT deferred (its gap #2) is provided here as `cnx_sha3_256`, so an app
-  that loads CoinXT can hand OnionXT an offline v3-address checksum if it ever wants one.
+- **SodiumXT** supplies the entropy (`sxRandomBytes`) for fresh keys, and its `sxMemZero` discipline is
+  the model for secret hygiene. CoinXT does not duplicate libsodium: the hashes it needs (Keccak,
+  RIPEMD-160, SHA-3) are ones libsodium lacks, which is why they come from trezor-crypto.
+- **OnionXT** is the natural transport for anything CoinXT-signed that must reach a node privately:
+  sign with CoinXT, broadcast through Tor with OnionXT, so the submitting IP is not linked to the address.
+  A documentation-level composition; neither library depends on the other.
+- **OnionXT's deferred offline SHA3-256** (its gap #2) is `cnx_sha3_256` here, for an offline
+  v3-address checksum.

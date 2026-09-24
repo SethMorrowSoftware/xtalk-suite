@@ -1,4 +1,4 @@
-# 00 - Overview and Architecture
+# 00 - Overview, Protocol and Trust Model
 
 ## The one-sentence version
 
@@ -7,34 +7,109 @@ signed events across interchangeable websocket relays, by composing the suite's 
 (CoinXT's BIP-340, SodiumXT's randomness) under a pure-script protocol layer that owns exactly
 the byte shuffling family law allows it to own.
 
-## What Nostr is
+Nostr in one line: a keypair IS an identity, a signed event is the ONLY object, and relays are
+dumb, untrusted stores reached over websockets - so every guarantee the system offers comes from
+the signature on the event, and none comes from the relay. (Status lives in the README's "Gates
+and status"; this page is the model.)
 
-Nostr is a deliberately small protocol built from three ideas:
+## Keys are identity
 
-1. **Events signed with BIP-340 over secp256k1.** The unit of everything is an event: a small
-   record (pubkey, timestamp, kind, tags, content) whose id is the SHA-256 of a canonical JSON
-   serialization and whose signature is a BIP-340 Schnorr signature over that id. An event is
-   therefore self-verifying anywhere, forever: anyone holding it can recompute the id and check
-   the signature with no server's help. That is the same signature scheme Bitcoin's Taproot
-   uses - which is why CoinXT already had it, and why NostrXT exists as a thin layer rather
-   than a crypto project (`02-nip01-events.md`).
-2. **Relays as dumb websocket stores.** A relay accepts events, stores them, and answers
-   subscriptions (filters) over a plain websocket. It has no authority: it cannot forge an
-   event (it holds no keys), and it cannot silently alter one (the id and signature would
-   break). Clients talk to several at once and treat them as interchangeable - a relay that
-   censors or dies is replaced by changing a URL (`01-protocol-model.md`,
-   `05-relay-client.md`).
-3. **Clients own identity.** The user's identity IS a secp256k1 keypair, held by the client,
-   shown to humans as bech32 entities (`npub...`, `nsec...`; `03-nip19-entities.md`). No
-   account, no registration, no recovery service - which is both the point and the sharp edge:
-   the app decides how the secret key lives at rest, and NostrXT deliberately is not a key
-   vault.
+There are no accounts, no registration, and no recovery. An identity is an x-only secp256k1
+public key: 32 bytes, 64 lowercase hex on this API. The matching secret key signs every event
+that identity will ever publish. NostrXT mints and validates keys by composition, never itself:
+`nxKeyGenerate` draws bytes from SodiumXT's `sxRandomBytes` and validates them with CoinXT's
+`cxSeckeyIsValid`; `nxKeyPublic` is CoinXT's `cxXOnlyPubkey`.
 
-Encrypted DMs ride the same event stream as NIP-44 payloads (`04-nip44-payloads.md`). The
-honest caveat these docs carried at first writing - the raw ChaCha20 cipher was the single
-primitive the suite was missing - CLOSED on 2026-08-23 when SodiumXT shipped it as ABI 10's
-`sxChaCha20IetfXor`; encrypt/decrypt still fail closed, by design, on an installed SodiumXT
-older than that (`07-capabilities-required.md`).
+For humans, keys wear a bech32 coat (`03-nip19-entities.md`): `npub1...` is the display form of
+a public key, `nsec1...` of a secret key. The coats are display encodings of the same 32 bytes.
+Two consequences, both enforced in code:
+
+- **Losing the secret key is losing the identity, and leaking it is total.** There is no
+  revocation. `nxUriEncode` therefore REFUSES to wrap an nsec in a shareable `nostr:` URI,
+  because a secret key in a URI is a secret key in somebody's chat log. The app decides how the
+  key lives at rest; NostrXT deliberately is not a key vault.
+- **Key equality is the only identity check.** A display name (kind 0 metadata) is a claim
+  anyone can make; a NIP-05 identifier (`nxNip05Verify`) is a DNS-trust attestation, useful and
+  spoofable at the DNS layer. The pubkey is the identity.
+
+## Events are the only object
+
+Everything - a note, a profile, a contact list, a deletion request, an encrypted DM envelope -
+is one record shape: `{id, pubkey, created_at, kind, tags, content, sig}` (an xTalk array here;
+the exact shape is in `02-nip01-events.md`). The `id` is the SHA-256 of a canonical
+serialization of the other fields, and the `sig` is a BIP-340 Schnorr signature by `pubkey` over
+that id - the same scheme Bitcoin's Taproot uses, which is why CoinXT already had it. So an
+event is **self-authenticating**: anyone holding it can recompute the id and verify the
+signature with no server's help, and no relay, cache, mirror or forwarder can alter a field
+without detection. That property only works if it is USED:
+
+> **Verify, then trust (this member's rule 2).** `nxEventVerify` recomputes the id from the
+> fields AND verifies the signature over it; only a true from that function makes an inbound
+> event worth believing. The relay layer enforces this by default: `nxrConnect`ed relays
+> deliver an event to the app only after verification, and a failing event arrives as the
+> `"invalid"` callback with the reason, never as an `"event"` (`05-relay-client.md`). An app
+> that turns verification off with `nxrSetVerify` owns that decision, eyes open.
+
+## Relays are untrusted stores
+
+A relay is a websocket server that accepts signed events and answers subscriptions (filters).
+That is the entire job description. Clients publish to and read from several relays precisely
+because no single relay is trusted or load-bearing; a relay that censors or dies is replaced by
+changing a URL.
+
+What a relay CAN do to you, all of it undetectable from any single response:
+
+- **Drop** your events, or anyone's. The `OK` message tells you a relay's verdict on your own
+  publish; nothing tells you what it later serves to others.
+- **Delay** delivery, reorder history, or serve stale views.
+- **Lie by omission.** A relay answering with fewer events than it holds is indistinguishable
+  from one that never had them. `EOSE` means "I am done answering", not "that was everything".
+- **Replay across relays.** Any event it has seen can be forwarded anywhere, forever. Deletion
+  (kind 5, `nxDeleteBuild`) is a REQUEST that other relays may honour or ignore.
+- **Log your IP, and your interests.** Your REQ filters tell the relay exactly which pubkeys
+  and kinds you care about, tied to your connection metadata. This is the privacy floor of the
+  protocol, and no payload encryption raises it.
+
+What a relay CANNOT do: **forge a signed event.** It cannot mint an event from your pubkey,
+alter one of yours, or backdate a field without breaking the signature - provided the client
+verifies (an unverifying client grants a relay all of these powers).
+
+## The metadata realities (what NIP-44 itself documents)
+
+Encrypting `content` with NIP-44 (`04-nip44-payloads.md`) protects exactly the payload bytes,
+and the NIP says so. Carried here so the UI never overpromises:
+
+- `created_at`, `kind`, `tags` and both parties' pubkeys stay public on the event: who talks to
+  whom, and when, is visible to every relay that carries the envelope.
+- **No forward secrecy.** The conversation key is static per pair of keys; a future compromise
+  of either secret key decrypts every past payload.
+- No deniability and no post-compromise security: NIP-44 is an encryption format, not a
+  messaging protocol.
+
+## Where Tor fits
+
+Two different problems, two different tools:
+
+- **wss:// hides content from the wire, not interest from the relay.** TLS stops a network
+  observer reading events and filters in flight; the relay still sees your IP, filters and
+  publishes. (The 2026-08-24 live run proved the wss:// CHANNEL comes up, not that the
+  certificate behind it was checked; `05-relay-client.md`.)
+- **A .onion relay over OnionXT is the anonymity path.** The relay layer's transport is
+  ordinary engine sockets, the substrate OnionXT's SOCKS client speaks, so a future composition
+  would dial a relay's onion address through OnionXT's transport seam and the relay never learns
+  your IP. That closes the "log your IP" row above; the "log your interests" row it can only
+  pseudonymize (the filters are now tied to a circuit instead of an address). It is a planned
+  composition, not shipped code, and it inherits OnionXT's threat model
+  (`onionxt/docs/01-threat-model.md`), traffic correlation out of scope included.
+
+## The trust boundaries
+
+- **Trusted:** your secret key handling, the CoinXT and SodiumXT crypto this member composes,
+  and the local process.
+- **Verified, then trusted:** every event, from anywhere - `nxEventVerify` is the border
+  checkpoint.
+- **Untrusted:** every relay, every payload before its MAC verifies, the network, and every
+  claim (names, NIP-05, profile fields) that is not a key.
 
 ## The architecture: two files, and why the split is load-bearing
 
@@ -49,98 +124,53 @@ older than that (`07-capabilities-required.md`).
    NIP-19, NIP-44 schedule + MAC,           relay messages, callbacks, teardown;
    filters, wire messages, ws math          defines socketError/Closed/Timeout
       |                                        |
-      |  composes                              |  ws://  `open socket` (the idioms
-      v                                        |         OnionXT proved on-engine)
-   CoinXT (cx*, ABI >= 6): sha256,             |  wss:// `open secure socket`
-     Schnorr sign/verify, x-only keys,         |         (live 2026-08-24; cert
-     ECDH, HMAC - the HARD dependency          |         checks still unmeasured)
+      |  composes                              |  wss:// `open secure socket`
+      v                                        |    (live 2026-08-24; certificate
+   CoinXT (cx*, ABI >= 6): sha256,             |    checks unmeasured)
+     Schnorr sign/verify, x-only keys,         |  ws://  `open socket` (OnionXT's
+     ECDH, HMAC - the HARD dependency          |    idioms; never run in this file)
                                                v
    SodiumXT (sx*): randomness,              Nostr relays
-     constant-time compare - soft
+     constant-time compare, the
+     NIP-44 cipher - soft
 ```
-
-The split is not a tidiness preference; both halves are load-bearing:
 
 - **The core does no I/O and holds no connection state**, so it is testable offline and
   deterministic, and it embeds verbatim in the suite's pasteable self-test
-  (`tests/suite-selftest.livecodescript` at the repository root) exactly as the other
-  pure-script libraries do.
-- **The relay layer defines the engine's `socketError` / `socketClosed` / `socketTimeout`
-  handlers** - it must, to fail its own connections closed - and those three names are shared
-  by every socket user in a process. The suite paste already embeds OnionXT's layer, which
-  defines the same three, and the suite generator refuses (as it must) an assembly that
-  defines one handler twice. So the relay layer stays OUT of the paste, ships in the demo
-  embed instead, and its offline paths are exercised by harness sections that SKIP in the
-  paste - the same precedent as OnionXT's `onion-httpd` layer. The relay layer acts only on
-  its own socket ids and passes those messages otherwise, so it coexists with any other
-  socket library in the same app.
+  (`tests/suite-selftest.livecodescript` at the suite root) like the other pure-script
+  libraries.
+- **The relay layer defines the engine's `socketError` / `socketClosed` / `socketTimeout`** - it
+  must, to fail its own connections closed - and those three names are shared by every socket
+  user in a process. The suite paste already embeds OnionXT's layer, which defines the same
+  three, and the generator refuses an assembly that defines one handler twice. So the relay
+  layer stays OUT of the paste and ships in the demo embed (the precedent is OnionXT's
+  `onion-httpd` layer); its offline paths run as harness sections that SKIP in the paste. It
+  acts only on its own socket ids and passes the rest, and each message is a thin wrapper over a
+  named function an embedder can call instead (`06-api-reference.md`), so it coexists with any
+  other socket library in one app.
 
-The relay layer composes the core (url parsing, handshake and accept derivation, frame
-codec, message build/parse, event verification) and owns only sockets, buffers and handles.
-Load the core first.
+The relay layer composes the core (url parsing, handshake and accept derivation, frame codec,
+message build/parse, event verification) and owns only sockets, buffers and handles. Load the
+core first.
 
 ## What composes what
 
 - **CoinXT (hard, ABI >= 6):** `cxSha256` (event ids), `cxSchnorrSign` / `cxSchnorrVerify`
-  (BIP-340 signatures), `cxXOnlyPubkey` (the Nostr pubkey), `cxEcdh` and `cxHmacSha256` (the
-  NIP-44 key schedule and MAC), `cxSeckeyIsValid` (key validation). Without CoinXT, every
-  path that needs these fails closed with a capability error naming the handler; nothing
-  degrades silently.
+  (BIP-340), `cxXOnlyPubkey` (the Nostr pubkey), `cxEcdh` and `cxHmacSha256` (the NIP-44 key
+  schedule and MAC), `cxSeckeyIsValid`. Without CoinXT every path that needs these fails closed
+  with a capability error naming the handler; nothing degrades silently.
 - **SodiumXT (soft):** `sxRandomBytes` (key and nonce generation - key generation refuses
-  outright without it) and `sxMemEqual` (constant-time compare, with a pure-script
-  accumulate-loop standing in when absent). Plus the once-requested primitive,
-  `sxChaCha20IetfXor`, which shipped upstream in SodiumXT ABI 10 on 2026-08-23
-  (`07-capabilities-required.md`); an installed SodiumXT older than that still
-  makes NIP-44 fail closed, by design.
-- **bech32 is implemented in this member, not borrowed from CoinXT**, for a reason worth
-  knowing: CoinXT's copy enforces BIP-173's 90-character cap (correct for its Bitcoin
-  callers) and keeps its 8-to-5 bit converters private, while NIP-19 waives the cap for TLV
-  entities. NostrXT enforces NIP-19's 5000-character SHOULD instead, and the KAT pins full
-  BIP-173 conformance INCLUDING asserting the deliberate over-90 deviation as a deviation
-  (`03-nip19-entities.md`).
-- **OnionXT (future, by composition):** relays are just websocket endpoints, so a `.onion`
-  relay reached over OnionXT's transport seam is a planned composition path, not a rewrite -
-  and a hedge against the open wss:// question (`08-open-questions.md`).
+  outright without it), `sxMemEqual` (constant-time compare, with a pure-script accumulate loop
+  standing in when absent), and `sxChaCha20IetfXor`, the NIP-44 cipher, shipped upstream in
+  SodiumXT ABI 10 on 2026-08-23 (`07-capabilities-required.md` gap #1). An installed SodiumXT
+  older than that makes NIP-44 fail closed, by design.
+- **bech32 is implemented in this member, not borrowed from CoinXT:** CoinXT's copy enforces
+  BIP-173's 90-character cap and keeps its bit converters private, while NIP-19 waives the cap
+  for TLV entities (`03-nip19-entities.md`).
+- **OnionXT (a future composition):** a `.onion` relay over OnionXT's transport seam is a
+  composition at that seam, not a rewrite of the relay layer (it needs a transport seam in
+  `nxrConnect`); `07-capabilities-required.md` records it as a scope decision.
 
-Dependencies are probed, never assumed: `nxProbeCapabilities()` round-trips each extension
-once (a real hash, a real random byte) and caches the answer; a missing extension disables
-exactly its feature and never another.
-
-## Honesty status
-
-**The nx* core is engine-proven 2026-08-24** (Windows x86_64, OXT 9.6.3; 274 passed,
-0 failed, 2 deliberate skips in the suite paste). **The relay layer is split:** the
-demo opened a live relay the same day (wss://nos.lol - handshake, publish, ok-true),
-so connect/handshake/publish/confirm is live-proven; the REQ/subscribe receive leg,
-the NIP-42 auth exchange and every ws:// path keep "verified statically; needs a
-live-relay pass". What is
-machine-verified headlessly on every build: `tools/nostr-kat.py` sweeps the full published
-BIP-340, NIP-44 v2, BIP-173 and NIP-19 vector sets through the independent oracle
-`tools/nostr_reference.py`, and `tools/check-selftest-vectors.py` re-derives every constant
-the member harness pins, by name, both directions. The open engine questions are collected in
-`08-open-questions.md` - wss:// is no longer the largest of them, since the form itself
-now has a live run behind it and what remains there is the certificate half - and the
-source carries a `VERIFY (on-engine)` label at every point where an engine behaviour is
-assumed rather than measured.
-
-## Reading order
-
-1. This overview.
-2. `01-protocol-model.md` - events, relays, filters and subscriptions: the protocol as one
-   coherent model, before any bytes.
-3. `02-nip01-events.md` - the canonical serialization (exactly seven escapes, and why owning
-   the serializer is what makes ids right), ids, signatures, the event array shape.
-4. `03-nip19-entities.md` - bech32 and the npub/nsec/note/TLV entities, and the deliberate
-   length-cap deviation.
-5. `04-nip44-payloads.md` - the v2 payload byte for byte: conversation key, message keys,
-   padding, MAC-before-cipher, and the cipher seam.
-6. `05-relay-client.md` - the nxr* state machine, the callback contract, and
-   verify-before-deliver.
-7. `06-api-reference.md` - the public nx* / nxr* surface, handler by handler.
-8. `07-capabilities-required.md` - the capability ledger: the one crypto gap this
-   member opened with (`sxChaCha20IetfXor`, CLOSED 2026-08-23 as SodiumXT ABI 10),
-   the documented tension with SodiumXT's own rules and where the loud reason
-   landed, and the one engine unknown that remains (TLS).
-9. `08-open-questions.md` - the honest to-do list: the engine pass, the live-relay pass,
-   wss://, onion relays, NIP-17.
-10. `09-usage-guide.md` - from zero to a signed event on a relay, for any OXT app.
+Dependencies are probed, never assumed: `nxProbeCapabilities()` round-trips each extension once
+(a real hash, a real random byte) and caches the answer; a missing extension disables exactly
+its feature and never another.

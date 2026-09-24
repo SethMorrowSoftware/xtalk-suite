@@ -1,38 +1,19 @@
 # Getting started with DataChannelXT
 
 This walks from install to a working two-machine connection. If you want the
-zero-setup proof first, skip to **The loopback demo** — it needs no second
-machine and no signaling infrastructure. If you want the headline act — two
-machines chatting across the internet with no server — that is section 6.
+zero-setup proof first, skip to section 5, **The loopback demo**: it needs no second
+machine and no signaling infrastructure. The headline act, two machines chatting across the
+internet with no server, is section 6.
 
-> **Honesty note (the suite convention):** the native pipeline is proven by the
-> C++ smoke test under sanitizers, and on **2026-08-08** the `.lcb` binding was
-> observed loading and working on a real OXT engine — the suite selftest ran
-> green, negotiating a live loopback and round-tripping a payload byte-for-byte.
-> Every public `dc*` handler has now been called on one — the
-> **2026-08-10** suite pass folded the member harness's synchronous half in,
-> and the **2026-08-15** standalone run closed the async loopback too. That run
-> is what it covered, not the file as it stands: the assertions added to
-> `tests/datachannel-selftest.livecodescript` since it - the exact-code
-> stale-handle checks, the embedded-NUL refusal and its last-error clearing,
-> and the skip-on-failed-setup teardown branch - are **verified statically;
-> needs an OXT pass** on a build carrying `kErrInvalidArg`.
->
-> The demos this guide walks through are now SPLIT evidence, and the split is
-> exactly where a second machine begins. Section 6's
-> `datachannel-dht-chat.livecodescript` HAS been run on a real engine -
-> **2026-08-18**, on Linux and again on Windows, one machine hosting a chat -
-> and three things surfaced there that no gate had caught: the duplicate
-> `local sPolling` the embed introduced, which stopped the compile outright
-> (engine notes 1.6); a poll pump that died on a bad event instead of naming
-> it, which is why the next failure cost two passes (6.6); and the cause that
-> was hiding behind it - an event name and a public handler name sharing one
-> xTalk namespace, so the `dcLocalDescription` event dispatched into the
-> LIBRARY getter of the same name and had never fired once (6.7). All three
-> are fixed and gated; the verbatim engine output is in the suite's
-> [`docs/OXT-ENGINE-NOTES.md`](https://github.com/SethMorrowSoftware/xtalk-suite/blob/main/docs/OXT-ENGINE-NOTES.md), sections 1.6,
-> 6.6 and 6.7. What has NO recorded run: the loopback demo of section 5, and
-> section 6's own two-machine flow. Treat those steps as designed behaviour.
+**Status.** The binding is engine-proven (every public `dc*` handler; the async loopback
+ran green standalone 2026-08-15). Section 6's `datachannel-dht-chat` ran on one machine on
+Linux and on Windows on 2026-08-18, which is where the suite's engine notes 1.6, 6.6 and
+6.7 were found (section 3 says why the event is `dcLocalDescriptionReady`), and a
+DHT-signalled chat was reported working between two machines on one LAN on 2026-08-27
+(the report did not name its stack: the dht-chat demo or closing-pass leg E). The
+loopback demo of section 5 and section 6's own two-machine flow have no recorded engine
+run: treat those steps as designed behaviour. The dated record is in
+[../CLAUDE.md](../CLAUDE.md).
 
 ## 1. Install the extension
 
@@ -41,11 +22,11 @@ DataChannelXT is a standard OXT extension package: the LCB module
 native library bundled per platform under `code/<arch>-<platform>/
 datachannelxt.{so,dll,dylib}`. Install it through the OXT Extension Manager
 like any other extension; the engine then resolves the `c:datachannelxt>`
-binding automatically via `the revLibraryMapping` — no loose files, no `sudo`,
-no `LD_LIBRARY_PATH`.
+binding automatically via `the revLibraryMapping`: no loose files, no `sudo`,
+no `LD_LIBRARY_PATH`. The Linux libraries need glibc 2.38 or newer.
 
 Also put `examples/datachannel-helpers.livecodescript` where your app can
-`start using` it — it is the poll dispatcher every app wants.
+`start using` it: it is the poll dispatcher every app wants.
 
 ## 2. The three habits every app needs
 
@@ -60,26 +41,25 @@ end openStack
 
 on closeStack
    dcStopPolling
-   -- BARE, not dcCleanup(): a zero-argument call in STATEMENT position parses
-   -- as a command whose argument is `()`, and `()` is not an expression, so
-   -- the parenthesised spelling does not compile - and a .livecodescript
-   -- compiles as ONE unit, so it takes the whole stack script with it.
-   -- dcStopPolling on the line above is the same idiom. The parens are
-   -- required only in EXPRESSION position, as in `dcCleanup() is 0`.
+   -- BARE, not dcCleanup(): a zero-argument call in STATEMENT position parses as
+   -- a command whose argument `()` is not an expression, and that one line fails
+   -- the whole script's compile (dcStopPolling above is the same idiom). Parens
+   -- belong only in EXPRESSION position, as in `dcCleanup() is 0`.
    dcCleanup     -- MANDATORY: there is no automatic unload hook; skipping this
                  -- leaks the native worker threads at quit
 end closeStack
 ```
 
 Everything the engine wants to tell you arrives as messages dispatched by the
-helpers (`dcMessage`, `dcChannelOpen`, ... — full list in the api-reference).
+helpers (`dcMessage`, `dcChannelOpen`, ...; the full list is in
+[api-reference.md](api-reference.md)).
 
 ## 3. The WebRTC shape: signaling is yours
 
 Two peers cannot meet out of thin air. WebRTC's contract: each side produces a
 **description** (an SDP blob) and **candidates** (ways to reach it), and YOU
-carry those between the peers over any channel that already exists — a
-TorrentXT DHT rendezvous (serverless!), a chat, a copy/paste, a web service.
+carry those between the peers over any channel that already exists: a
+TorrentXT DHT rendezvous (serverless), a chat, a copy/paste, a web service.
 After that, the peers talk directly.
 
 With DataChannelXT the artifacts arrive as events, so a complete signaling
@@ -103,6 +83,11 @@ end dcLocalCandidate
 --   dcAddRemoteCandidate sPeer, tCandidate, tMid
 ```
 
+Why `dcLocalDescriptionReady` and not `dcLocalDescription`: xTalk has ONE message
+namespace, and `dcLocalDescription(pPeer)` is a public getter. An event of that name
+is delivered to the getter, never to your handler (it threw "cannot convert value"
+on an engine, the suite's engine note 6.7), so the event was renamed on 2026-08-18.
+
 ```livecodescript
 -- ANSWERER (machine B)
 put dcCreatePeer("stun:stun.l.google.com:19302") into sPeer
@@ -119,7 +104,7 @@ Both sides then get:
 
 ```livecodescript
 on dcChannelOpen pEvent
-   dcSendText(pEvent["channel"], "hello!")
+   put dcSendText(pEvent["channel"], "hello!") into tResult   -- 0, or a negative code
 end dcChannelOpen
 
 on dcMessage pEvent
@@ -131,7 +116,7 @@ on dcMessage pEvent
 end dcMessage
 ```
 
-### Copy/paste (non-trickle) signaling — great for a first two-machine test
+### Copy/paste (non-trickle) signaling: good for a first two-machine test
 
 Shipping every candidate separately ("trickle") connects fastest, but you can
 also wait for gathering to finish and ship ONE blob each way:
@@ -146,17 +131,17 @@ end dcGatheringStateChange
 ```
 
 On the far side, `dcSetRemoteDescription` with that blob is the ONLY call
-needed — no candidate shipping at all. Two humans with a chat window can
+needed; no candidates are shipped at all. Two humans with a chat window can
 bootstrap a connection this way.
 
 ## 4. STUN and TURN
 
-- `dcCreatePeer("")` — no servers: works on one machine or a LAN.
+- `dcCreatePeer("")`: no servers; works on one machine or a LAN.
 - A **STUN** line (`stun:stun.l.google.com:19302`) lets peers behind ordinary
   home NATs discover their public addresses; most pairs connect directly.
 - A **TURN** line (`turn:user:pass@turn.example.com:3478?transport=udp`) adds a
   relay for the hostile-NAT minority. TURN relays your traffic, so it needs
-  credentials — which ride inside the URI and live in ordinary memory (the
+  credentials, which ride inside the URI and live in ordinary memory (the
   usual scripting-secret caveat).
 
 One server per line in the `dcCreatePeer` argument.
@@ -166,10 +151,12 @@ One server per line in the `dcCreatePeer` argument.
 `examples/datachannel-loopback.livecodescript` runs both peers in one stack and
 does its "signaling" in four script lines. It is ONE paste-and-run file - the
 poll dispatcher is carried inside it, so there is no helpers stack to put in
-use first. Open it, click **Connect**, watch the states go
-`connecting -> connected`, then chat between the two panes. Its
-`dcLocalDescriptionReady`/`dcLocalCandidate` handlers are the template for real
-signaling: replace "hand it to the other local peer" with "transmit it".
+use first. Paste it into a new stack's script and reopen the stack (opening the
+file itself from disk builds no window: the suite's engine note 5.5), click
+**Connect**, watch the states go `connecting -> connected`, then chat between
+the two panes. Its `dcLocalDescriptionReady`/`dcLocalCandidate` handlers are
+the template for real signaling: replace "hand it to the other local peer"
+with "transmit it".
 
 ## 6. The flagship demo: DHT-signalled chat (two machines, no server)
 
@@ -178,19 +165,19 @@ section 3 with the human removed: **TorrentXT's DHT carries the blobs.** One
 side clicks **Host a room** and sends the room code to the other, who pastes
 it and clicks **Join**; the offer and answer travel as signed BEP44 mutable
 items, ICE punches the NATs, and the chat itself is a direct DTLS data
-channel — no server of yours anywhere, ever.
+channel, with no server of yours anywhere. Open it the same way as section 5.
 
 Worth stealing from it even if you never run it:
 
 - **The room code is a keypair.** `btDhtKeypair` is deterministic on a 64-hex
-  seed, so handing someone the seed hands them the same signing keypair — a
+  seed, so handing someone the seed hands them the same signing keypair: a
   shared write-capability for one DHT mailbox, minted fresh per room.
 - **Non-trickle over a slow channel.** A DHT round-trip is seconds, so the
   demo ships ONE blob per side (wait for `dcGatheringStateChange` == 2), never
   a candidate trickle.
 - **The 1000-byte BEP44 budget.** Blobs are compressed and, when still too
   big, split across content-addressed immutable items listed in the mutable
-  head — see the wire-format comment at the top of the script.
+  head (the wire-format comment at the top of the script has the details).
 - **Nonce-paired offer/answer.** DHT items linger for hours; a nonce echoed
   from offer to answer is what lets "Reconnect" reuse a room code safely.
 
@@ -199,12 +186,13 @@ demo fails closed with an install message when absent).
 
 ## 7. Where to go next
 
-- `docs/api-reference.md` — every handler, event, key, and constant.
-- The runtime self-test (`tests/datachannel-selftest.livecodescript`) — paste
-  into a stack script to verify the installed binding end to end.
-- Talking to a **browser**: the far side is standard WebRTC —
-  `new RTCPeerConnection()`, `pc.ondatachannel`, the same SDP/candidate dance
-  over your signaling; text arrives as strings, `dcSendData` as `ArrayBuffer`.
-- **Bulk transfer**: the per-message budget is 60 000 bytes by design. Chunk
+- [api-reference.md](api-reference.md): every handler, event, key, and constant.
+- The runtime self-test (`tests/datachannel-selftest.livecodescript`): paste
+  it into a stack script to verify the installed binding end to end.
+- Talking to a **browser**: the far side is standard WebRTC,
+  `new RTCPeerConnection()` and `pc.ondatachannel`, with the same SDP/candidate
+  dance over your signaling; text arrives as strings, `dcSendData` as
+  `ArrayBuffer`.
+- **Bulk transfer**: the per-message budget is 60000 bytes by design. Chunk
   small files over the channel if you must, but the family's answer to bulk is
-  TorrentXT — use the data channel for control and presence.
+  TorrentXT; use the data channel for control and presence.

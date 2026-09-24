@@ -7,18 +7,16 @@ what that gets you and the few rules you must follow to keep it.
 
 ## What you get
 
-- **Authenticated encryption everywhere.** Every cipher carries an authentication tag, so a
-  wrong key, a corrupted byte, or deliberate tampering is *detected and rejected* (the call
-  throws) rather than decrypting to garbage. This is the main upgrade over the stock
-  `encrypt ... using "aes-256-cbc"` path, which is unauthenticated.
+- **Authenticated encryption everywhere a cipher seals.** Every sealing cipher carries an
+  authentication tag, so a wrong key, a corrupted byte, or deliberate tampering is
+  *detected and rejected* (the call throws) rather than decrypting to garbage: the main
+  upgrade over the stock `encrypt ... using "aes-256-cbc"` path, which is unauthenticated.
 - **Strong, memory-hard password hashing.** Passphrases are run through Argon2id, which is
   expensive to brute-force, not a fast hash.
-- **Misuse-resistant nonces.** For everything that seals bytes, you never supply a nonce.
-  One-shot ciphers generate a fresh random nonce and prepend it; the streaming cipher derives
-  per-chunk nonces from a random header. Nonce reuse - the classic catastrophic mistake - is
-  designed out of the sealing API. The single caller-supplied-nonce entry point on the whole
-  surface is `sxChaCha20IetfXor`, a building block for published constructions that derive
-  their nonces internally; its argued exception is below.
+- **Misuse-resistant nonces.** For everything that seals bytes, you never supply a nonce:
+  one-shot ciphers generate a fresh random nonce and prepend it, and the streaming cipher
+  derives per-chunk nonces from a random header, so nonce reuse is designed out. The single
+  caller-supplied-nonce entry point is `sxChaCha20IetfXor`, argued below.
 - **A real CSPRNG.** `sxRandomBytes` and `sxRandomUniform` come from the operating system
   cryptographic random source.
 
@@ -32,8 +30,12 @@ what that gets you and the few rules you must follow to keep it.
 | Password hashing / key derivation (`sxPwHash`) | Argon2id |
 | Public-key encryption (`sxBox`, `sxSeal`) | X25519 + XSalsa20-Poly1305 |
 | Signatures (`sxSign*`) | ed25519 |
+| Expanded ed25519 key for Tor v3 onion services (`sxSignSeedToExpandedKey`) | SHA-512(seed), clamped |
 | Hashing (`sxHash`, `sxHashFile`) | BLAKE2b |
+| Keyed MAC (`sxHmacSha256`) | HMAC-SHA256 |
+| SHA-3 (`sxSha3_256`, for the v3 `.onion` checksum) | SHA3-256, vendored trezor-crypto / RHash (libsodium has no SHA-3) |
 | Key derivation / exchange | BLAKE2b KDF / X25519 (crypto_kx) |
+| Prime-order group arithmetic (`sxRistretto*`, ABI 8/9) | ristretto255 (RFC 9496) |
 | Raw stream xor for MAC-carrying constructions (`sxChaCha20IetfXor`) | ChaCha20-IETF (RFC 8439), unauthenticated by design - see the exception below |
 
 ## Rules you must follow
@@ -66,13 +68,11 @@ above intact.
 
 libsodium can lock and wipe its own secret buffers, but once a key crosses into a LiveCode
 `Data` value it lives in the engine's managed memory. SodiumXT **cannot** reliably lock that
-memory against swapping, or guarantee it is zeroed when you are done - the engine may copy or
-retain it. Secure-memory guarantees stop at the boundary between libsodium and the script. In
-practice this means: minimize how long keys live in script variables, do not write them to disk
-or logs, and rely on the operating system's protections. For the highest-value secrets, keep
-the sensitive operation (for example whole-file encryption) on the C side via `sxEncryptFile` /
-`sxDecryptFile`, where the key is used and dropped without round-tripping through script any
-more than necessary.
+memory against swapping, or guarantee it is zeroed - the engine may copy or retain it.
+Secure-memory guarantees stop at the boundary between libsodium and the script. So:
+minimize how long keys live in script variables, keep them off disk and out of logs, and
+for the highest-value secrets keep the whole operation C-side (`sxEncryptFile` /
+`sxDecryptFile`), where the key is used and dropped without round-tripping through script.
 
 ## What SodiumXT deliberately does not expose
 
@@ -82,8 +82,10 @@ To keep misuse hard, some libsodium features are intentionally omitted:
   argued exception, `sxChaCha20IetfXor`, below. Everything that SEALS bytes here
   authenticates.
 - **Bring-your-own-nonce variants of the sealing API.** Nonces are managed for you.
-- **Raw scalar multiplication / unhashed Diffie-Hellman**, and other low-level primitives that
-  are easy to hold wrong.
+- **Raw X25519 scalar multiplication / unhashed Diffie-Hellman** (`crypto_scalarmult`),
+  and other low-level primitives that are easy to hold wrong. (The ristretto255 group
+  arithmetic of ABI 8/9 IS exposed, as thin wraps for holde-em's mental-poker and DLEQ
+  constructions.)
 
 If you have a concrete need for one of these, that is a discussion for an issue, not something
 to work around with hand-rolled crypto next to SodiumXT.
@@ -93,9 +95,8 @@ to work around with hand-rolled crypto next to SodiumXT.
 This member's own rules say never a raw unauthenticated stream cipher and never a
 bring-your-own-nonce entry point without a very loud reason. `sxChaCha20IetfXor` (RFC 8439
 ChaCha20: 32-byte key, 12-byte nonce, initial counter 0, length-preserving, its own inverse)
-is BOTH, and it shipped anyway. This section is the loud reason, argued rather than waved
-through, because the request that owed it
-(`nostrxt/docs/07-capabilities-required.md`) named exactly what had to be established:
+is BOTH, and it shipped anyway. This is the loud reason, point by point as the request that
+owed it (NostrXT's `nostrxt/docs/07-capabilities-required.md`) asked:
 
 1. **The nonce discipline lives in the construction, not the caller.** In the named
    consumer - the NIP-44 v2 encrypted-payload construction - the 12-byte ChaCha20 nonce is
@@ -122,29 +123,24 @@ through, because the request that owed it
    you are holding it wrong, and the right tool is one line up this paragraph.
 
 The precedent is `sxSha3_256` (ABI 7): a sibling-requested primitive, argued in the
-requester's capability ledger, shipped as a thin wrap of audited code. The evidence
-standard is the house one: C KATs under ASan/UBSan cross-checked against an independent
-RFC 8439 implementation (three implementations agree on the pinned vectors), verified
-statically on the script side and then **OBSERVED ON AN ENGINE 2026-08-24** (Windows
-x86_64, OXT 9.6.3, reporting ABI 10): the 7-check raw-ChaCha20 section ran green inside
-the full 106-check `sxSelfTest()`, folded into the suite paste. This sentence said "still
-needs an OXT pass" until 2026-08-26, which by then denied a dated run.
+requester's capability ledger, shipped as a thin wrap of audited code. The evidence is
+the house standard: C KATs under ASan/UBSan cross-checked against an independent RFC 8439
+implementation (three implementations agree on the pinned vectors), then **observed on
+an engine 2026-08-24** (Windows x86_64, OXT 9.6.3, ABI 10): the 7-check raw-ChaCha20
+section green inside the 106-check `sxSelfTest()`, folded into the suite paste.
 
 ## Provenance and reporting
 
-SodiumXT statically links a pinned release of libsodium, so the cryptography you run is the
-upstream audited code, unmodified. On the Linux and macOS builds that release is fetched by exact
-version and verified against a pinned SHA256 before it is compiled - and since the 2026-08-23
-mingw cross-builds the COMMITTED Windows DLLs are built the same way, from the same pinned
-tarball (the release workflow's own Windows lanes instead link the libsodium vcpkg provides,
-held to the same 1.0.x line rather than the SHA256 pin; a dispatch of that workflow supersedes
-the mingw pair, as `CLAUDE.md`'s platform table records). Every platform must pass the same
-known-answer tests (BLAKE2b, Argon2id, ed25519,
-KDF) before its binary ships, which is the functional guard against any drift. The committed native
-binaries under `src/code/` carry a `MANIFEST.sha256` that the suite CI verifies on every push,
-and the root `native sodiumxt` workflow rebuilds and tests all five platforms from the pinned
-source. For the strongest assurance you can build from source yourself (see
-`docs/building.md`).
+SodiumXT statically links upstream libsodium, unmodified, so the cryptography you run is
+the audited code. The Linux and macOS builds fetch libsodium 1.0.20 by exact version and
+verify it against a pinned SHA256 before compiling. The committed Windows DLLs are MSVC
+builds linking the libsodium vcpkg provides (1.0.22 in the DLLs committed 2026-08-27 and
+2026-09-12): held to the 1.0.x line rather than to the SHA256 pin. That was accepted by
+decision D-08 (2026-08-27), because every platform must pass the same known-answer tests
+(BLAKE2b, Argon2id, ed25519, KDF) before its binary ships, and the release lane drives
+them on a real Windows runner before any DLL is bundled. The committed binaries under
+`src/code/` carry a `MANIFEST.sha256` that the gates verify on every push. For the
+strongest assurance, build from source yourself (see `docs/building.md`).
 
 If you believe you have found a security issue in SodiumXT's binding layer, report it privately to
 the maintainer rather than opening a public issue. Vulnerabilities in libsodium itself should go to

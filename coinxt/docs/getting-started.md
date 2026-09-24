@@ -109,11 +109,14 @@ build handlers and the transactions section of
 - **Backups are words on paper.** The mnemonic is the wallet. If your app
   generates one, make the user record it offline before anything else, and
   never store it in a field, a file, or a preference in the clear.
-- **Broadcastable is a claim about the outside world.** CoinXT's transaction
+- **Broadcastable is a claim about the outside world.** All four transaction
   families are independently accepted (python-bitcointx and eth-account, see
-  the status block in api-reference.md), but a live testnet broadcast is
-  still the one unclaimed bar. Test your app's transactions against a node
-  you run before real value touches them.
+  the status block in api-reference.md), and Bitcoin transactions built over
+  `cxBtcSighashLegacy` / `cxBtcTxEncode` were accepted on testnet from the
+  CoinXT Wallet (2026-09-02, txid
+  `7978bdd2c097c929cae2ab00084d4454b68b1d054a3f2d53fc7b51b70551e4d5`). No
+  Ethereum transaction has been broadcast. Test your app's transactions
+  against a node you run before real value touches them.
 
 ## Where the depth lives
 

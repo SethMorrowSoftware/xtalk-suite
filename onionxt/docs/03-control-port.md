@@ -20,8 +20,6 @@ CookieAuthentication 1
 # HashedControlPassword 16:....
 ```
 
-Document these exact lines in the example so a tester reproduces the environment.
-
 ## Line framing
 
 - Send each command as one line terminated by CRLF (`\r\n`). Set `the lineDelimiter to crlf` right
@@ -82,12 +80,12 @@ Send exactly one of these, matching the chosen method:
 - **HASHEDPASSWORD**: `AUTHENTICATE "<password>"` (the password quoted; the daemon stores only its
   hash).
 
-Expect `250 OK`. `515` means the credential was wrong; `514` means you skipped auth. SAFECOOKIE's
-HMAC-SHA256 is now available (SodiumXT `sxHmacSha256`, ABI 6, doc 08 gap #3 SHIPPED), so OnionXT
-implements SAFECOOKIE directly: it composes `sxHmacSha256` with the two Tor key strings and checks
-`SERVERHASH` in constant time via `sxMemEqual`. COOKIE auth (plain hex over loopback) remains a fine
-fallback when SodiumXT is not loaded, and NULL/HASHEDPASSWORD need no HMAC at all. OnionXT prefers
-SAFECOOKIE > COOKIE > NULL > HASHEDPASSWORD and degrades past any method whose prerequisite is missing.
+Expect `250 OK`. `515` means the credential was wrong; `514` means you skipped auth. OnionXT
+implements SAFECOOKIE directly: it composes SodiumXT `sxHmacSha256` (ABI 6, doc 08 gap #3) with the two
+Tor key strings and checks `SERVERHASH` in constant time via `sxMemEqual`. COOKIE auth (plain hex over
+loopback) is the fallback when SodiumXT is not loaded, and NULL/HASHEDPASSWORD need no HMAC at all.
+OnionXT prefers SAFECOOKIE > COOKIE > NULL > HASHEDPASSWORD and degrades past any method whose
+prerequisite is missing.
 
 ## Step 3: publish an onion service (ADD_ONION)
 
@@ -118,13 +116,11 @@ ADD_ONION ED25519-V3:<base64 expanded key> Port=80,127.0.0.1:8080
 ```
 
 Useful flags: `Flags=Detach` (service outlives the control connection), `Flags=DiscardPK` (do not
-return the key). Without `Detach`, the service dies when the control connection closes - but its
-descriptor lingers in the DHT for ~3 hours, so a client that already fetched the descriptor still tries
-to connect and the service-side tor logs `Unable to find any hidden service associated identity key ...
-on rendezvous circuit` (an empty response to the visitor). Because a transient control-socket drop then
-silently un-publishes the onion, **OnionXT passes `Flags=Detach` by default** so a published service
-survives a reconnect; `oxRemoveService` / `oxShutdown` `DEL_ONION` it explicitly on teardown (a hard
-crash leaves it registered until `DEL_ONION` or a tor restart).
+return the key). Without `Detach` the service dies with the control connection while its descriptor
+lingers ~3 hours, so a visitor gets an empty response and the service-side tor logs `Unable to find
+any hidden service associated identity key ... on rendezvous circuit`. **OnionXT passes `Flags=Detach`
+by default** so a service survives a control-socket drop; `oxRemoveService` / `oxShutdown` `DEL_ONION`
+it on teardown (a hard crash leaves it registered until `DEL_ONION` or a tor restart).
 
 Remove a service: `DEL_ONION <ServiceID>` (the `ServiceID`, without `.onion`) -> `250 OK`; `512` on a
 bad argument count, `552` if the `ServiceID` is unknown or was not created on this control connection
@@ -137,11 +133,10 @@ Before or immediately after `ADD_ONION`, the app must be accepting on the loopba
 can forward inbound onion connections:
 
 ```
-accept connections on 8080 with message onPeer   -- bind loopback only
+accept connections on port 8080 with message "onPeer"   -- no bind address: refuse non-loopback peers
 ```
 
-Ordering matters: if the descriptor publishes and a peer connects before the listener exists, the
-connection is refused. Start the listener first (CLAUDE.md socket gotcha 5).
+If a peer connects before the listener exists, the connection is refused (CLAUDE.md socket gotcha 5).
 
 ## Step 5: events and bootstrap (SETEVENTS)
 

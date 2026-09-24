@@ -16,10 +16,10 @@ for "no value / stale handle".
 | Handler | Returns | Notes |
 |---|---|---|
 | `dcInit()` | Integer | optional warm-up (logger + DTLS certificate); idempotent; throws on ABI skew |
-| `dcCleanup()` | Integer | frees EVERY peer/channel, joins native threads; **mandatory before quit** (e.g. `closeStack`); idempotent |
+| `dcCleanup()` | Integer | frees EVERY peer/channel, joins native threads; **mandatory before quit** (e.g. `closeStack`); idempotent; as a statement write it BARE (`dcCleanup`) |
 | `dcLibraryVersion()` | String | e.g. `libdatachannel v0.24.5` |
 | `dcLastError()` | String | module-static last error, "" if none |
-| `dcClearError()` | — | command-style; clears it |
+| `dcClearError()` | - | command-style; clears it |
 
 ## Peer connections
 
@@ -27,19 +27,19 @@ for "no value / stale handle".
 |---|---|---|
 | `dcCreatePeer(pIceServers)` | Integer | one ICE server URI per line, "" for none; auto-negotiation ON |
 | `dcClosePeer(pPeer)` | Integer | polite close; handle stays inspectable |
-| `dcFreePeer(pPeer)` | — | close + destroy peer AND its channels; idempotent |
+| `dcFreePeer(pPeer)` | - | close + destroy peer AND its channels; idempotent |
 | `dcSetLocalDescription(pPeer, pType)` | Integer | manual renegotiation only; pType "offer"/"answer"/"" |
 | `dcSetRemoteDescription(pPeer, pSdp, pType)` | Integer | apply the far side's description |
 | `dcAddRemoteCandidate(pPeer, pCandidate, pMid)` | Integer | apply one far-side candidate; pMid may be "" |
-| `dcLocalDescription(pPeer)` | String | the current local SDP ("" if none). After gathering completes it CONTAINS the candidates — the one-blob (non-trickle) signaling artifact |
+| `dcLocalDescription(pPeer)` | String | the current local SDP ("" if none). After gathering completes it CONTAINS the candidates: the one-blob (non-trickle) signaling artifact |
 | `dcLocalDescriptionType(pPeer)` | String | "offer" / "answer" / "" |
 | `dcPeerState(pPeer)` | Integer | kPeerState* (below); -1 stale |
 | `dcGatheringState(pPeer)` | Integer | kGathering*; -1 stale |
-| `dcSelectedCandidatePair(pPeer)` | Array | keys `localCandidate`, `remoteCandidate`; {} until selected. `typ host/srflx` = direct, `typ relay` = TURN |
+| `dcSelectedCandidatePair(pPeer)` | Array | keys `localCandidate`, `remoteCandidate`; an empty array until selected. `typ host/srflx` = direct, `typ relay` = TURN |
 
 ICE server URI forms: `stun:host:port`,
 `turn:user:pass@host:port?transport=udp` (credentials are secrets in ordinary
-memory — the usual caveat).
+memory, the usual caveat).
 
 ## Data channels
 
@@ -48,21 +48,21 @@ memory — the usual caveat).
 | `dcCreateChannel(pPeer, pLabel)` | Integer | reliable + ordered; first channel triggers the offer; usable after its `dcChannelOpen` |
 | `dcCreateChannelEx(pPeer, pLabel, pProtocol, pUnordered, pMaxRetransmits, pMaxLifetimeMs, pNegotiated, pStreamId)` | Integer | reliability + negotiation options, below |
 | `dcCloseChannel(pChannel)` | Integer | polite close (both sides see `dcChannelClosed`) |
-| `dcFreeChannel(pChannel)` | — | close + destroy; idempotent |
-| `dcSendText(pChannel, pText)` | Integer | TEXT message (browser: string); **-3 if `pText` carries an embedded NUL** — refused in the binding, see below |
+| `dcFreeChannel(pChannel)` | - | close + destroy; idempotent |
+| `dcSendText(pChannel, pText)` | Integer | TEXT message (browser: string); **-3 if `pText` carries an embedded NUL**, refused in the binding (see below) |
 | `dcSendData(pChannel, pData)` | Integer | BINARY message (browser: ArrayBuffer); empty Data legal |
 | `dcChannelLabel(pChannel)` | String | |
 | `dcChannelProtocol(pChannel)` | String | subprotocol, "" if none |
 | `dcChannelStreamId(pChannel)` | Integer | SCTP stream id; -1 stale/unassigned |
 | `dcChannelIsOpen(pChannel)` | Boolean | |
-| `dcChannelPeer(pChannel)` | Integer | owning peer handle (0 stale) — dispatch helper |
+| `dcChannelPeer(pChannel)` | Integer | owning peer handle (0 stale); a dispatch helper |
 | `dcChannelMaxMessage(pChannel)` | Integer | NEGOTIATED per-message cap; sends must satisfy it AND kMaxMessage |
 | `dcBufferedAmount(pChannel)` | Integer | bytes queued to send; -1 stale |
 | `dcSetBufferedLowThreshold(pChannel, pAmount)` | Integer | arms the `dcBufferedLow` event |
 
 `dcCreateChannelEx` options: `pUnordered` true allows out-of-order delivery;
 `pMaxRetransmits >= 0` OR `pMaxLifetimeMs >= 0` (at most one) makes the channel
-unreliable (bounded retransmission count / time) — the real-time modes;
+unreliable (bounded retransmission count / time): the real-time modes;
 `pNegotiated` true means BOTH sides create the channel out-of-band with the
 SAME `pStreamId` (0..65534) and no in-band open handshake is sent; `pStreamId`
 -1 = automatic.
@@ -73,7 +73,7 @@ negotiation); a misbehaving remote's oversized message is dropped whole with a
 `dcChannelError` event. Bulk belongs to TorrentXT.
 
 **The embedded-NUL refusal:** `dcSendText` returns -3 for a `pText` containing
-a NUL character, and it is the LCB binding that refuses — before the FFI, not
+a NUL character, and it is the LCB binding that refuses, before the FFI, not
 in the shim. Text crosses as `ZStringUTF8`, so `dcx_send_text` receives a
 `const char *` and measures it with `strlen`: an embedded NUL has by then
 BECOME the terminator. The shim would send the head of the string as if it were
@@ -83,7 +83,8 @@ the -4 check as well. It cannot detect what it can no longer see, so the
 binding answers first. `dcLastError()` is deliberately EMPTY for this one: the
 call never reached the shim, so the shim has nothing to say about it. Send
 bytes with `dcSendData`, which carries an explicit length and round-tripped an
-embedded NUL byte-for-byte on the 2026-08-15 engine pass.
+embedded NUL byte-for-byte on the 2026-08-15 engine pass. The refusal itself, and
+its empty `dcLastError()`, ran green on an engine on 2026-08-17.
 
 **Backpressure:** send until `dcBufferedAmount(chan)` exceeds your high-water
 mark, stop, resume on `dcBufferedLow`. Do not blast a slow channel.
@@ -92,7 +93,7 @@ mark, stop, resume on `dcBufferedLow`. Do not blast a slow channel.
 
 | Handler | Returns | Notes |
 |---|---|---|
-| `dcPoll()` | List | drains EVERY pending event in one FFI round-trip; call on a timer (16-33 ms real-time, 100+ ms chat) — or use the helpers' `dcStartPolling` |
+| `dcPoll()` | List | drains EVERY pending event in one FFI round-trip; call on a timer (16-33 ms real-time, 100+ ms chat), or use the helpers' `dcStartPolling` |
 
 Each element is an Array with `code` (numeric), `name` (the semantic message
 name below), `peer`, `channel` (0 when absent), plus event-specific keys.
@@ -120,40 +121,33 @@ name below), `peer`, `channel` (0 when absent), plus event-specific keys.
 > Integer and receives the event array - so the app's handler is never
 > reached and the engine reports "cannot convert value". The event was
 > renamed 2026-08-18 because the event is the side that had never worked.
-> The suite gate `../tools/check-lcb-call-types.py` (run from the suite root
-> by `tools/build-all.sh --gates`, not a member tool) refuses any future
-> collision.
+> The suite gate `tools/check-lcb-call-types.py` (run from the suite root by
+> `tools/build-all.sh --gates`, not a member tool) refuses any future collision.
 
 The helpers also fire a catch-all `dataChannelEvent` for every event, and
 provide `dcStartPolling target, intervalMs` / `dcStopPolling`, plus the sugar
 `dcStateName(n)`, `dcGatheringName(n)`, `dcFormatBytes(n)`. `dcStartPolling` is
-safe to call again while polling — it re-points the target and interval, and
+safe to call again while polling: it re-points the target and interval, and
 does NOT arm a second timer chain (a second chain would not duplicate events,
 since each pass drains the whole queue, but it would double the drain rate for
 the life of the app).
 
 **The poll pump's diagnostic pair: `dcPollLastError()` / `dcPollClearError`.**
-The pump no longer takes the timer chain down on a bad drain, a bad dispatch,
-or a poll target that stopped resolving - it isolates each event, keeps
-rescheduling, and records a note instead. The note is the FIRST such fault
-since the last clear rather than the most recent, because the first one carries
-the clean cause and the rest are usually the same bug repeating at the poll
-rate. Each kind says which it was: a drain failure carries a drain counter, so
-an early failure and a four-hundredth-drain failure are told apart (they are
-different bugs - only a later drain can reach the grow-and-retry path); a
-dispatch failure names the event in flight, which is what finally identified
-the `dcLocalDescription` collision; and a target that no longer resolves says
-it fell back to this card. `dcPollLastError()` returns that note and is empty
-while healthy; `dcPollClearError` resets it, which is how an app reports each
-distinct failure once instead of repeating one line at the poll rate. Note that
-`dcStartPolling` does NOT clear the note - only `dcPollClearError` does - so a
-note survives a stop/start. The helpers deliberately never print it: printing
-from a library into an app it knows nothing about is how a diagnostic becomes a
-nuisance, so the note is read, not shown, and the app decides where it goes.
-This is what turns "the demo went quiet" into a line a maintainer can act on.
-The guards landed 2026-08-18, AFTER the Linux pass whose report motivated them,
-and no failure branch has itself been observed: **verified statically; needs an
-OXT pass**.
+The pump does not take the timer chain down on a bad drain, a bad dispatch, or a
+poll target that stopped resolving: it isolates each event, keeps rescheduling,
+and records a note. The note is the FIRST such fault since the last clear (the
+first carries the clean cause; the rest are usually the same bug repeating at the
+poll rate). A drain failure carries a drain counter (an early failure and a
+four-hundredth-drain failure are different bugs - only a later drain reaches the
+grow-and-retry path); a dispatch failure names the event in flight (which is what
+identified the `dcLocalDescription` collision); a target that no longer resolves
+says it fell back to this card. `dcPollLastError()` returns the note and is empty
+while healthy; `dcPollClearError` resets it, so an app reports each distinct
+failure once. `dcStartPolling` does NOT clear it, so a note survives a stop/start.
+The helpers never print it: the app reads it and decides where it goes. The
+guards landed 2026-08-18, after the Linux pass whose report motivated them, and no
+failure branch has itself been observed: **verified statically; needs an OXT
+pass**.
 
 ## Constants (mirrored from the native registries; checker-enforced)
 
@@ -166,13 +160,15 @@ Budget: `kMaxMessage` 60000. The record/event registry constants (`kField*`,
 
 ## The rules an app must respect
 
-1. **Call `dcCleanup()` at quit** — no automatic unload hook exists.
-2. **Poll** — nothing is delivered without `dcPoll` (the helpers do it for you).
+1. **Call `dcCleanup` at quit**: no automatic unload hook exists. In statement
+   position write it BARE (`dcCleanup`); `dcCleanup()` as a statement does not
+   compile, and the parens belong only in expression position (`dcCleanup() is 0`).
+2. **Poll**: nothing is delivered without `dcPoll` (the helpers do it for you).
    The interval is a latency knob, never a correctness knob; the native queue
    buffers (bounded) between drains.
-3. **Signaling is yours** — carry descriptions/candidates between peers over
+3. **Signaling is yours**: carry descriptions/candidates between peers over
    any channel you have; the events/setters above are the whole contract.
 4. **A channel is usable only between its `dcChannelOpen` and `dcChannelClosed`.**
 5. Handles are cheap ints; stale ones are harmless (getters return ""/0/-1,
-   actions return -2) — but events for handles you freed are dropped, so free
+   actions return -2), but events for handles you freed are dropped, so free
    only when you are done listening.

@@ -1,238 +1,202 @@
-# 07 - Capabilities Required (Upstream Gaps)
+# 07 - Capabilities, Limits and Open Questions
 
-NostrXT composes CoinXT for every hash, signature and curve operation and SodiumXT
-for randomness and constant-time compare (CLAUDE.md rule 1), and the OXT engine for
-all socket I/O. This is the honest ledger of what it still needs from upstream. The
-family's split-the-change law holds throughout: a missing primitive is an **upstream
-feature request landed first** (with its own ABI bump and tests), then composed here
-- never a hand-rolled cipher, hash or curve op in this member. OnionXT's
-`docs/08-capabilities-required.md` is the model and the precedent: all three of its
-gaps shipped upstream and were composed, which is the trajectory this file expected
-for its one crypto gap - and the trajectory it then followed (closed 2026-08-23,
-below).
+NostrXT composes CoinXT for every hash, signature and curve operation, SodiumXT for randomness,
+constant-time compare and the NIP-44 cipher (CLAUDE.md rule 1), and the OXT engine for all
+socket I/O. This is the ledger of what it needs from each, what the engine still owes it, and
+the scope limits it holds on purpose. The family's split-the-change law holds throughout: a
+missing primitive is an **upstream feature landed first** (its own ABI bump and tests), then
+composed here - never a hand-rolled cipher, hash or curve op in this member. OnionXT's
+`docs/08-capabilities-required.md` was the precedent: all three of its gaps shipped upstream and
+were composed, and this member's one crypto gap followed the same path.
 
-**Status as of 2026-08-23 (updated the same day v0.1.0 shipped):** ZERO crypto gaps
-and ONE engine unknown (TLS sockets, nobody's extension). The one crypto gap this
-ledger opened with - the NIP-44 cipher - shipped upstream the same day, as SodiumXT
-ABI 10's `sxChaCha20IetfXor` (the record below). Everything else NostrXT needs
-already existed: CoinXT ABI 6 carries `cxSha256`, `cxSchnorrSign`,
-`cxSchnorrVerify`, `cxXOnlyPubkey`, `cxEcdh`, `cxHmacSha256` and `cxSeckeyIsValid`;
-SodiumXT carries `sxRandomBytes` and `sxMemEqual`.
+The gap labels are stable citations (the shipped capability error names this file; the relay
+source cites "docs/07 gap #2"). This file also carries what the retired open-questions page
+(docs/08, deleted 2026-09-23) held; each such item says which question it was.
+
+**Status:** ZERO crypto gaps and ONE engine unknown with a security half (TLS, gap #2), plus two
+smaller engine unknowns. CoinXT ABI 6 supplies `cxSha256`, `cxSchnorrSign`, `cxSchnorrVerify`,
+`cxXOnlyPubkey`, `cxEcdh`, `cxHmacSha256` and `cxSeckeyIsValid`; SodiumXT supplies
+`sxRandomBytes`, `sxMemEqual` and, since ABI 10, `sxChaCha20IetfXor`.
 
 ## SodiumXT gaps
 
-### 1. `sxChaCha20IetfXor` (raw IETF ChaCha20) - SHIPPED (SodiumXT ABI 10, 2026-08-23)
+### Gap #1. `sxChaCha20IetfXor` (raw IETF ChaCha20) - SHIPPED (SodiumXT ABI 10, 2026-08-23)
 
-**Status: CLOSED, the way OnionXT's three gaps closed.** Shipped upstream as
-SodiumXT ABI 10 with its own C KATs (green under ASan/UBSan, cross-checked against
-an independent RFC 8439 reference - three implementations agree on the pinned
-vectors), a probe-guarded section in SodiumXT's own harness, and the written loud
-reason this ledger owed (it landed in `sodiumxt/docs/security.md`; see below).
-NostrXT's seam needed NO code change - the try-guarded call, both probes and the
-harness's round-trip branch flipped live, exactly as designed. The complete
-NIP-44 path sweeps the official encrypt/decrypt vectors headlessly, and since
-2026-08-24 it has ALSO run on a real engine: that pass (Windows x86_64, OXT
-9.6.3) carried the member harness inside the suite paste at 274/274, NIP-44
-sections included, against a SodiumXT whose own ABI 10 ChaCha20 section ran
-green the same day - so the end-to-end encrypt/decrypt path is engine-proven,
-not merely composed. What that pass did NOT cover is anything relay-facing: sending
-a NIP-44 payload as a real event to a relay and reading one back keeps "verified
-statically; needs a live-relay pass" (`04-nip44-payloads.md`). On an installed
-SodiumXT older than ABI 10 the seam still fails closed with the capability error,
-by design - the paragraphs below describe that path in the present tense because
-it remains a real deployment state, not a historical one.
-
-**Exactly what was requested (and shipped, signature for signature):**
+**Closed.** What was requested, and shipped signature for signature:
 
 ```
 sxChaCha20IetfXor(pKey as Data, pNonce as Data, pData as Data) returns Data
 ```
 
-- RFC 8439 ChaCha20 (the IETF variant): 32-byte key, **12-byte nonce**, initial
-  block **counter 0**.
-- An UNAUTHENTICATED stream xor: bytes in, the same number of bytes out, and the
-  operation is its own inverse (encrypt and decrypt are the same call).
-- libsodium already ships exactly this as `crypto_stream_chacha20_ietf_xor`, so the
-  upstream change is a thin wrap of audited code, not new cryptography - the same
-  shape as OnionXT's `sxSha3_256` request, which shipped. (And so it went: the
-  shipped `sxt_chacha20_ietf_xor` is that thin wrap, with the shim's standard
-  length/pointer firewall around it and the 32/12 length getters beside it.)
+RFC 8439 ChaCha20 (the IETF variant): 32-byte key, **12-byte nonce**, initial block **counter
+0**; an UNAUTHENTICATED stream xor, its own inverse. It is a thin wrap of libsodium's audited
+`crypto_stream_chacha20_ietf_xor` (the shim's `sxt_chacha20_ietf_xor`, with 32/12 length getters
+beside it), the same shape as OnionXT's `sxSha3_256`. It shipped with C KATs green under
+ASan/UBSan, cross-checked against this member's oracle (RFC 8439 ChaCha20) and the pinned
+libsodium tarball's own expectations - three implementations agreeing. NostrXT's seam needed no
+code change. The complete NIP-44 path is engine-proven 2026-08-24 (Windows x86_64, OXT 9.6.3,
+274/274 in the suite paste); relay-borne NIP-44 events keep "verified statically; needs a
+live-relay pass".
 
-**Why NIP-44 needs the UNAUTHENTICATED stream, stated plainly because it looks like
-a mistake until it is stated:** NIP-44 v2 does not use Poly1305. Its authentication
-is **HMAC-SHA256 over nonce||ciphertext**, keyed by the third slice of the
-HKDF-expand output, verified BEFORE the cipher runs on decrypt - that is the
-published construction the official vector set pins, byte for byte. An AEAD
-(`crypto_aead_chacha20poly1305_ietf_*`) would produce payloads no other Nostr client
-can read: sixteen tag bytes in the wrong place and a MAC the spec does not define.
-Conformance requires the raw stream; the authentication NIP-44 requires is already
-composed here from CoinXT's `cxHmacSha256`.
+**Why NIP-44 needs the UNAUTHENTICATED stream.** NIP-44 v2 does not use Poly1305: its
+authentication is HMAC-SHA256 over nonce||ciphertext, keyed by the third HKDF-expand slice and
+verified BEFORE the cipher runs. An AEAD (`crypto_aead_chacha20poly1305_ietf_*`) would produce
+payloads no other Nostr client can read. Conformance requires the raw stream; the MAC is composed
+here from CoinXT's `cxHmacSha256`.
 
-**The documented tension with SodiumXT's own rules, and what the loud reason must
-argue.** SodiumXT's CLAUDE.md rule 3 says "do not expose a bring-your-own-nonce
-entry point without a very loud reason" and rule 4 says "never a raw unauthenticated
-stream cipher". This request is BOTH, so proposing it upstream owed a written loud
-reason in SodiumXT's own docs. THAT DEBT IS PAID: the argument below is now written,
-point for point, in `sodiumxt/docs/security.md` ("The one argued exception"), at the
-declaration in `sodiumxt/src/sodium_shim.h`, and as dated exceptions inside rules 3
-and 4 themselves. It had to argue, at minimum:
+**The loud reason.** The primitive crosses SodiumXT's rule 3 (no bring-your-own-nonce entry
+point) and rule 4 (no raw unauthenticated stream cipher), so it owed a written reason, and that
+reason now lives in `sodiumxt/docs/security.md` ("The one argued exception"), at the declaration
+in `sodiumxt/src/sodium_shim.h`, and as dated exceptions inside SodiumXT's rules 3 and 4:
 
-- **The nonce discipline lives in the construction, not the caller.** The 12-byte
-  ChaCha20 nonce handed to this primitive is never chosen by an app: it is the
-  second slice of HKDF-expand over a fresh 32-byte per-message random nonce
-  (`sxRandomBytes`, drawn inside `nxNip44Encrypt`). Nonce reuse would require
-  an HKDF collision, not a caller mistake.
-- **Authentication is provided one layer up, per a published specification.** The
-  payload is MACed (HMAC-SHA256, nonce||ciphertext) and the MAC is verified before
-  the cipher ever runs - the property SodiumXT's rule 4 exists to guarantee is
-  held, just not by Poly1305.
-- **The alternative is worse by the family's stronger rule.** Without the upstream
-  primitive, the only path to NIP-44 conformance is hand-rolling ChaCha20 in this
-  member - exactly what rule 1 (add no cryptography) forbids. A raw-stream export
-  wrapping libsodium's audited implementation is the rules being obeyed at the
-  family level, not waived.
-- **Containment.** The export should be documented in SodiumXT as a
-  building-block for composed, spec-pinned constructions that carry their own MAC
-  (NIP-44 is the named consumer), not as a sealing API - so nobody mistakes it for
-  `sxSecretboxEasy`.
+- **Nonce discipline lives in the construction, not the caller.** The 12-byte ChaCha nonce is
+  never chosen by an app: it is an HKDF-expand slice over a fresh 32-byte random nonce drawn
+  inside `nxNip44Encrypt`. Reuse would take an HKDF collision, not a caller mistake.
+- **Authentication is one layer up, per a published specification**, and verified before the
+  cipher runs - the property rule 4 exists to guarantee, held without Poly1305.
+- **The alternative is worse by the stronger rule.** Without the primitive, NIP-44 would need a
+  hand-rolled ChaCha20 here, which rule 1 forbids.
+- **Containment.** It is documented as a building block for spec-pinned constructions that carry
+  their own MAC (NIP-44 is the named consumer), not as a sealing API.
 
-**What fails closed on a pre-ABI-10 install, and the exact error.** `nxNip44Encrypt`
-and `nxNip44Decrypt` return empty with `nxLastError()` reading:
+**The fail-closed path on an older install.** `nxNip44Encrypt` and `nxNip44Decrypt` return empty
+with `nxLastError()` reading exactly:
 
 ```
 nxNip44 needs SodiumXT sxChaCha20IetfXor (shipped in SodiumXT ABI 10; the installed SodiumXT predates it - docs/07-capabilities-required.md)
 ```
 
-(Until 2026-08-23 the parenthetical read "not yet shipped upstream"; the remedy
-now is upgrading the installed SodiumXT package to ABI 10 or later.)
-
-`nxProbeCapabilities()` reports `canNip44Cipher` false (cached per session), and
-`nxNip44HasCipher()` answers false (a live probe, so an upgraded SodiumXT is noticed
-without restarting). Everything BEFORE the cipher seam works and is pinned by
-`tools/nostr-kat.py` against the full official vector set today:
-`nxNip44ConversationKey` (the official conversation-key vectors, valid and invalid),
-`nxNip44MessageKeys` (the message-key vectors), `nxNip44PaddedLen` (the complete
-calc_padded_len pair table), the payload structure refusals (version byte, length
-floors, base64 strictness), and - the part worth underlining - **the
-MAC-before-cipher order is provable today**: the member harness tampers inside the
-ciphertext region of the official payload vector and asserts the refusal happens at
-the MAC, before any cipher runs.
-
-**How the harness self-upgrades - designed before the ship, true after it.** The
-seam section of `examples/nostrxt-tests.livecodescript` branches on
-`nxNip44HasCipher()` at run time: while the probe is false (an installed SodiumXT
-older than ABI 10) it asserts the fail-closed path (the untampered official vector
-reaches the cipher and refuses, naming `sxChaCha20IetfXor`); against a current
-package the SAME harness, unchanged, asserts that the official encrypt_decrypt
-vector decrypts to its published plaintext and re-encrypts byte-identically under
-the fixed vector nonce. The oracle (`tools/nostr_reference.py`) has carried its own
-RFC 8439 ChaCha20 since day one and sweeps the full encrypt/decrypt vector set
-headlessly, so the pinned constants the round-trip branch exercises were derived
-and gate-checked before the primitive existed - and the SodiumXT side reused that
-same oracle to derive ITS smoke-test KATs, which is what makes the two members'
-evidence independent of libsodium agreeing with itself.
+`nxProbeCapabilities()` reports `canNip44Cipher` false (cached per session) and
+`nxNip44HasCipher()` answers false (a live probe, so an upgrade is noticed without restarting).
+Everything before the seam - conversation key, message keys, padding, the payload refusals and
+the MAC-before-cipher order - works and is vector-pinned on any install. The harness's seam
+section branches on `nxNip44HasCipher()` at run time: the fail-closed assertion on an older
+package, the official encrypt_decrypt vector decrypting and re-encrypting byte-identically on a
+current one.
 
 ## Engine capabilities to confirm (not extension gaps)
 
-### 2. TLS / `open secure socket` - an ENGINE unknown, now HALF measured
+### Gap #2. TLS / `open secure socket` - HALF measured; the open half is the security half
 
-**Status: PARTLY ANSWERED 2026-08-24, and the unanswered half is the one that
-matters for security.** Real-world Nostr relays are almost all `wss://`. The relay
-layer writes the secure path (`open secure socket to host:port with message ...` in
-`nxrConnect`), and on 2026-08-24 that line ran: the demo connected to wss://nos.lol
-on Windows/OXT 9.6.3, completed the websocket handshake, published a signed event
-and read the relay's ok-true back. It was this suite's first exercised secure
-socket, and root `docs/OXT-ENGINE-NOTES.md` **6.8** records it. `open secure socket`
-still appears in no other member.
+Real-world Nostr relays are almost all `wss://`, and `nxrConnect` writes the secure path. On
+2026-08-24 it ran: the demo connected to wss://nos.lol on Windows/OXT 9.6.3, completed the
+websocket handshake, published a signed event and read the relay's ok-true back. So
+`open secure socket ... with message` exists, connects asynchronously, fires its message, and
+carries `read from socket ... with message` / `write to socket` for a full websocket exchange
+(the suite's `docs/OXT-ENGINE-NOTES.md` 6.8). `open secure socket` appears in no other member.
 
-The next engine session must record the rest in the same place, whatever the
-answers are. The first bullet is answered; the others are not, and the second is
-the reason this gap stays OPEN rather than closing:
+Still open, which is why this gap stays open (formerly 08 question 3 as well):
 
-- ~~Does `open secure socket ... with message` exist on OXT at all, and does it
-  connect to a public relay?~~ **ANSWERED 2026-08-24: yes to both**, and
-  `read from socket ... with message` / `write to socket` carried a full websocket
-  exchange over it.
-- **Certificate verification behaviour** - STILL OPEN, and note what the run above
-  does and does not say: it reached an ordinary public host, so a
-  connection succeeding is consistent BOTH with verification working and with there
-  being no verification at all. Nothing has yet offered this engine a bad
-  certificate. Is the peer certificate verified, against which root store, and is
-  the HOSTNAME checked? What does `the sslCertificates` do here? An unverified TLS
-  socket that connects anyway would be a fail-open this layer must then guard, and
-  we still cannot know which until someone points it at a deliberately bad cert.
-- **SNI**: is the server name sent? Shared-hosting relays will refuse the handshake
-  or serve the wrong certificate without it.
-- **Failure delivery**: does a refused or failed TLS handshake arrive as a
-  `socketError` message (the plain-socket behaviour the layer assumes), or some
-  other way, and with what error text?
-- TLS versions accepted. (The second half of this bullet is answered:
-  `read from socket ... with message` and `write to socket` DID behave the
-  same over the secure socket on 2026-08-24 - short reads reassembled by the
-  framing layer, a full handshake and publish carried. Backpressure on a
-  large write is untested there, but it is untested on the plain form too,
-  so it is question 4 in `08-open-questions.md`, not a TLS question.)
+- **Certificate verification.** That run reached an ordinary public host, so it is equally
+  consistent with verification working and with none happening. No bad certificate has been
+  offered. Is the peer certificate verified, against which root store, is the HOSTNAME checked,
+  and what does `the sslCertificates` do here? An unverified socket that connects anyway would
+  be a fail-open this layer must then guard.
+- **SNI**: is the server name sent? Shared-hosting relays refuse or serve the wrong certificate
+  without it.
+- **Failure delivery**: does a refused TLS handshake arrive as a `socketError` message (the
+  plain-socket behaviour the layer assumes), or some other way, and with what text?
+- **TLS versions** accepted.
 
-The composition hedge stands on its own merits rather than as a workaround now: a
-`.onion` relay over OnionXT's transport seam needs no TLS at all, because Tor
-provides the authenticated encrypted channel and the onion address IS the key
-(`00-overview.md`, `08-open-questions.md`). What HAS quietly inverted is the
-fallback advice: ws:// used to be "the engine-idiom-proven path" to fall back to,
-and after 2026-08-24 it is the form with no live run of its own while wss:// has
-one.
+Record the answers in engine note 6.8 whatever they are. The fallback advice has inverted: ws://
+is now the form with no live run of its own, so it is not the safer starting point. A `.onion`
+relay over OnionXT needs no TLS at all (Tor provides the authenticated channel and the onion
+address IS the key), but that is a design choice about anonymity (below), not a hedge.
 
-## Non-gaps: things that look missing and are deliberate
+### Other engine unknowns
 
-### AES-256-CBC / NIP-04 - a scope decision, not a gap
+- **`base64Encode`'s raw emission** (formerly 08 question 1). Every wire format here is
+  single-line, so `nxB64Encode` strips both CR and LF unconditionally - correct whether the
+  engine wraps with CRLF, LF or not at all. The STRIP is proven correct in effect by the
+  2026-08-24 pass (the NIP-44 payload vectors and the RFC 6455 accept both ran green); whether
+  `base64Encode` wraps, with which bytes and at what width is unrecorded, a one-line message-box
+  observation. The source keeps `VERIFY (on-engine)` at that site until then.
+- **Socket write backpressure** (formerly 08 question 4). The relay layer writes whole frames
+  with `write to socket`; the frame cap is megabytes. Whether a large write blocks the
+  interpreter until the OS buffer drains, queues, or partially writes is unmeasured anywhere in
+  the suite (OnionXT never pushed writes that size). If it blocks, big publishes need chunking or
+  a ceiling below the protocol cap; measure, then record it in the engine notes.
+- The engine-global `socketTimeoutInterval` and the close-handshake ordering are
+  `05-relay-client.md` VERIFY items 5 and 8.
+- Settled 2026-08-24 (formerly 08 question 2): the `textDecode` UTF-8 round trip of non-BMP
+  content is faithful on Windows x86_64 / OXT 9.6.3 (harness event C: a euro sign and a
+  four-byte emoji, id pinned). Scoped to that engine, platform and those two codepoints; the
+  fixture bytes stay constants and the harness stays pure ASCII so a future FAIL is a finding.
 
-NIP-04 (the legacy encrypted-DM kind 4) is **out of scope**, decided, with reasons:
+## Non-gaps and scope decisions
 
-- **No AES exists anywhere in this suite**, and libsodium will never provide CBC -
-  unauthenticated CBC is precisely the construction libsodium exists to refuse to
-  carry, so there is no upstream to request it from that the family trusts.
-- **NIP-04 is superseded by NIP-44** and deprecated by the protocol's own docs: no
-  MAC (malleable ciphertext), no padding scheme (message lengths leak), and the
-  ecosystem's clients have moved. Implementing it would mean adding a weaker
-  construction the family would then have to carry forever.
-- The cost is stated honestly: NostrXT cannot decrypt legacy kind-4 DMs, and will
-  not. An app that must read them needs a different tool.
+### AES-256-CBC / NIP-04 - out of scope, decided
+
+- **No AES exists anywhere in this suite**, and libsodium will never provide CBC - unauthenticated
+  CBC is precisely what libsodium exists to refuse to carry.
+- **NIP-04 is superseded by NIP-44** and deprecated by the protocol's own docs: no MAC (malleable
+  ciphertext), no padding (lengths leak). Implementing it would add a weaker construction the
+  family would then carry forever.
+- The cost, stated: NostrXT cannot decrypt legacy kind-4 DMs, and will not. An app that must
+  read them needs a different tool.
 
 ### bech32 upstreaming into CoinXT - considered and declined
 
-The obvious tidy move - "CoinXT already has engine-proven bech32, use it" - was
-weighed and declined, and the reasons are worth keeping because the question will
-recur:
+- CoinXT's bech32 **enforces BIP-173's 90-character cap in both directions**, which is CORRECT
+  for its Bitcoin callers, and keeps its 8-to-5 bit converters private. NIP-19 waives the cap
+  for TLV entities (an nprofile with a few relay hints is routinely past 90).
+- Widening a money library's validation for a sibling loosens checks for CoinXT's OWN callers,
+  and threading a cap parameter through an engine-proven, vector-pinned layer spends CoinXT's
+  engine evidence on NostrXT's problem.
+- bech32 is checksummed byte shuffling with no secret-dependent branch, so rule 1 does not force
+  it upstream. NostrXT carries its own, uncapped, with NIP-19's 5000-character SHOULD enforced
+  and the over-90 deviation asserted by the KAT (`03-nip19-entities.md`).
 
-- CoinXT's bech32 **enforces BIP-173's 90-character cap in both directions**, which
-  is CORRECT for its Bitcoin callers, and keeps its 8-to-5 bit converters private.
-  NIP-19 waives the cap for TLV entities (an nprofile with a few relay hints is
-  routinely past 90) and wants a 5000-character SHOULD instead.
-- Widening a money library's validation for a sibling's convenience loosens checks
-  for CoinXT's OWN callers; threading a cap parameter through an engine-proven,
-  vector-pinned layer is an interop-visible change to serve exactly one consumer.
-  Either direction spends CoinXT's hard-won engine evidence on NostrXT's problem.
-- bech32 is checksummed byte shuffling with no secret-dependent branch - exactly
-  what family law allows a member to own in script. It is not cryptography, so
-  rule 1 does not force it upstream.
+### Hand-rolled digests - forbidden, not missing
 
-So NostrXT carries its own bech32/bech32m, uncapped, with NIP-19's 5000-character
-SHOULD enforced instead - and `tools/nostr-kat.py` pins full BIP-173 conformance
-INCLUDING asserting the deliberate over-90 deviation as a deviation, so it can never
-drift silently (`03-nip19-entities.md`).
+Event ids are CoinXT's `cxSha256`, the NIP-44 schedule and MAC are `cxHmacSha256`, and the
+websocket accept uses the ENGINE's own `sha1Digest` - the one engine-proven builtin hash in this
+tree, which riptide relies on. A future need (say SHA-512 for some NIP) is an upstream request.
 
-### Hand-rolled SHA-256 (or any digest) - forbidden, not missing
+### What the protocol layer does not do yet, and why (formerly 08 questions 5 and 6)
 
-Every hash NostrXT uses is composed: event ids are CoinXT's `cxSha256`, the NIP-44
-schedule and MAC are CoinXT's `cxHmacSha256`, and the websocket accept derivation
-uses the ENGINE's own `sha1Digest` - the one engine-proven builtin hash in this
-tree, which riptide already relies on. There is no NostrXT digest, and per rule 1
-there never will be; a future need (say SHA-512 for some NIP) is an upstream request
-to CoinXT or SodiumXT, exactly like the cipher above.
+Each addition lands with published vectors pinned first where vectors exist, or is declined with
+reasons; the work itself is tracked in the suite's docs/WORK-PLAN.md.
+
+- **NIP-44 extended length.** Plaintext over 65535 bytes refuses until upstream publishes vectors
+  for the sketched 6-byte prefix (`04-nip44-payloads.md`, step 4).
+- **NIP-17 / NIP-59 (private DMs via gift wrap)** is what users will ask for first. Its blockers
+  are cleared (the cipher shipped 2026-08-23; the NIP-44 sections ran green on an engine
+  2026-08-24); what remains is design, with the published vectors pinned first. The building
+  blocks exist: the kind builders, the complete NIP-44, `nxrSendRaw` for wrapped kinds. NIP-59
+  would be its own composable layer.
+- **NIP-65 outbox routing.** Kind 10002 is built and parsed (`nxRelayListBuild` /
+  `nxRelayListParse`); the ROUTING STRATEGY (read from the author's write relays, write to the
+  recipient's read relays, with what fallback and cap) is policy, and belongs above the library
+  or in a pool layer, not inside the relay client.
+- **A relay pool.** Today one handle is one relay and the app multiplexes. A pool (dial several,
+  deduplicate by id, per-relay subscription state, reconnect policy; when is an event "seen",
+  which relay's EOSE ends a query) is policy v0.1 does not guess. If it comes, it is a THIRD file
+  composing `nxr*` (the onion-httpd-over-`ox*` shape), so the relay client stays a transport.
+- **`.onion` relays** over OnionXT's transport seam: a composition at that seam, not a fork of
+  the relay layer, and it needs a transport seam in `nxrConnect`. It is the anonymity path
+  (`00-overview.md`, "Where Tor fits").
+- NIP-42 and NIP-13 are done; anything beyond rides `nxrSendRaw` until it earns handlers.
+
+## Measure before optimizing (formerly 08 questions 7 and 8)
+
+The family's native-last law (proven in OnionXT): default to script, and reach for native only
+after an engine pass shows script is too slow.
+
+- **Byte-loop JSON parsing.** `nxRelayParse` / `nxEventFromJson` walk every byte in interpreted
+  script: nothing for chat-sized events, unmeasured for a 100 KB kind-30023 article or a fat
+  contact list. The remedy ladder: parse less (verbatim slicing already avoids re-serializing),
+  then a narrow native helper requested upstream - never a borrowed engine JSON library, for the
+  canonical-bytes reason (`06-api-reference.md`, "What is deliberately NOT here").
+- **Arithmetic byte-xor in frame masking.** RFC 6455 masking xors every outbound payload byte,
+  and `nxByteXor` uses an 8-iteration div/mod loop because the portable-arithmetic discipline
+  forbids `bitXor` (operator portability has bitten the family): about eight divisions per byte,
+  millions on a megabyte frame. A 256x256 lookup table is the candidate fix; inbound server
+  frames are unmasked and already skip it. Do not optimize until an engine shows a stall; the
+  harness pins the masked-frame bytes as the regression net.
 
 ## Not needed from anyone
 
-- No new CoinXT capability: ABI 6's BIP-340 / x-only / ECDH / HMAC surface is
-  everything NIP-01 and the NIP-44 key schedule require.
-- No engine change beyond the TLS measurement above: ws:// rides the same
-  `open socket` / `read ... with message` idioms OnionXT proved on-engine.
-- No relay-side anything: NostrXT speaks stock NIP-01 to unmodified relays.
+No new CoinXT capability (ABI 6's BIP-340 / x-only / ECDH / HMAC surface covers NIP-01 and the
+NIP-44 key schedule), no engine change beyond the measurements above, and no relay-side
+anything: NostrXT speaks stock NIP-01 to unmodified relays.

@@ -3,9 +3,8 @@
 The complete `sx*` handler surface (library `org.openxtalk.library.sodium`), as called from
 LiveCode Script.
 
-New to SodiumXT? Start with [getting-started.md](getting-started.md) for setup and the calling
-conventions, then [recipes.md](recipes.md) for end-to-end examples and
-[security.md](security.md) for the rules that keep your data safe.
+New to SodiumXT? Start with [getting-started.md](getting-started.md), then
+[recipes.md](recipes.md) and [security.md](security.md).
 
 ## Conventions you need before calling anything
 
@@ -26,12 +25,10 @@ conventions, then [recipes.md](recipes.md) for end-to-end examples and
   native message is also available via `sxLastError()`.
 - **Never compare secrets with `is` / `=`.** Use `sxMemEqual` (constant time).
 - **Never reuse a nonce with a key.** The one-shot calls draw and prepend a random
-  nonce for you; secretstream derives per-chunk nonces from a random header. The
-  sealing API has no bring-your-own-nonce entry point, by design. The ONE
-  caller-supplied-nonce handler on the surface is `sxChaCha20IetfXor` (ABI 10), a
-  building block for published constructions that derive their nonces internally
-  and carry their own MAC - its argued exception is in `security.md`, and it is
-  not a sealing API.
+  nonce; secretstream derives per-chunk nonces from a random header. The ONE
+  caller-supplied-nonce handler is `sxChaCha20IetfXor` (ABI 10), a building block for
+  published constructions that derive their own nonces and carry their own MAC, not
+  a sealing API (its argued exception is in `security.md`).
 
 ## Init and diagnostics
 
@@ -68,19 +65,14 @@ BLAKE2b. The default digest length is 32 bytes; the valid range is 16..64.
 
 ### ristretto255 (ABI 8 - the mental-poker group surface)
 
-The prime-order group holde-em's deal ladder needs (its IMPLEMENTATION-PLAN.md,
-Workstream U): thin wrappers over libsodium's `crypto_core_ristretto255_*`, no
-new cryptography. Points and scalars are 32-byte `Data`; the from-hash input is
-one 64-byte digest - `sxHash(tData, 64)` (BLAKE2b-512) produces it, which is why
-the plan's conditional "sxHash512" needed no new handler. Batch multiplication
-and point add/sub were the plan's recorded Phase 5 follow-ons; they shipped as
-the ABI 9 subsection below (2026-08-15). The C layer's KATs (cross-checked
-against an independent RFC 9496 reference in holde-em/tools/protocol-kat.py)
-ran green under ASan/UBSan 2026-08-15, and the script surface is **OBSERVED ON AN ENGINE 2026-08-17** (Windows x86_64, NT 10.0, OXT 9.6.3, reporting ABI 9) and again 2026-08-18 (Linux), both times folded into the suite paste.
-**This paragraph said "NOT yet observed on an engine" until 2026-08-19**, which
-by then denied two dated runs - the direction of drift the honesty convention
-does not tolerate, because a stale "needs a pass" costs somebody a pass. The
-harness section still SKIPs cleanly on a pre-ABI-8 package.
+The prime-order group holde-em's mental-poker deal needs: thin wrappers over
+libsodium's `crypto_core_ristretto255_*`, no new cryptography. Points and scalars
+are 32-byte `Data`; the from-hash input is one 64-byte digest, which
+`sxHash(tData, 64)` (BLAKE2b-512) produces. Evidence: C KATs cross-checked against
+an independent RFC 9496 reference (`holde-em/tools/protocol-kat.py`), green under
+ASan/UBSan 2026-08-15; **observed on an engine 2026-08-17** (Windows x86_64, NT 10.0,
+OXT 9.6.3, ABI 9) and 2026-08-18 (Linux), folded into the suite paste. The harness
+section SKIPs cleanly on a pre-ABI-8 package.
 
 | Handler | Returns | Notes |
 |---|---|---|
@@ -92,20 +84,17 @@ harness section still SKIPs cleanly on a pre-ABI-8 package.
 
 ### ristretto255 DLEQ/batch follow-ons (ABI 9)
 
-The recorded Phase 5 follow-ons from holde-em's plan, shipped 2026-08-15: point
-add/sub and base-point multiplication (the algebra a Chaum-Pedersen DLEQ proof
-computes with), the batch call that collapses the deal's 52-point shuffle-mask
-step into ONE FFI crossing (the 4f deal-time budget lever), and scalar add/mul
-mod L (the proof's response arithmetic). Same discipline as the ABI 8 section:
-thin wrappers over `crypto_core_ristretto255_*` /
-`crypto_scalarmult_ristretto255_*`, no new cryptography, vectors pinned from
-the built libsodium and re-derived by the independent RFC 9496 reference (the
-base-mult of 7 additionally equals RFC 9496's own small-multiples entry B[7]).
-Every handler below is **OBSERVED ON AN ENGINE 2026-08-17** (Windows x86_64, NT 10.0, OXT 9.6.3, reporting ABI 9) and again 2026-08-18 (Linux), both times folded into the suite paste - the run reported ABI 9, so this
-subsection executed rather than SKIPping, and it included the failure the batch
-API exists to get right: one bad point fails the whole call, naming index 2 of
-3. The harness still probes this subsection separately, so an ABI-8 package
-SKIPs only these checks and still runs the ABI-8 half.
+Shipped 2026-08-15: point add/sub and base-point multiplication (the algebra a
+Chaum-Pedersen DLEQ proof computes with), the batch call that collapses the deal's
+52-point shuffle-mask step into ONE FFI crossing, and scalar add/mul mod L (the
+proof's response arithmetic). Same discipline as ABI 8: thin wrappers over
+`crypto_core_ristretto255_*` / `crypto_scalarmult_ristretto255_*`, vectors pinned
+from the built libsodium and re-derived by the independent RFC 9496 reference (the
+base-mult of 7 also equals RFC 9496's small-multiples entry B[7]). **Observed on an
+engine 2026-08-17** (Windows x86_64, NT 10.0, OXT 9.6.3, ABI 9) and 2026-08-18
+(Linux), including the failure the batch API exists to get right: one bad point
+fails the whole call, naming index 2 of 3. The harness probes this subsection
+separately, so an ABI-8 package SKIPs only these checks.
 
 | Handler | Returns | Notes |
 |---|---|---|
@@ -120,23 +109,18 @@ SKIPs only these checks and still runs the ABI-8 half.
 
 The one deliberately UNAUTHENTICATED handler on this surface, shipped 2026-08-23 on the
 argued exception in `security.md` (read it before calling this). It exists so a sibling
-extension can compose a published construction that carries its own MAC - NostrXT's NIP-44
-v2 is the named consumer (`nostrxt/docs/07-capabilities-required.md` is the request that
-owed the argument). It is NOT a sealing API: to encrypt bytes, use `sxSecretBox` /
-`sxAeadEncrypt` / secretstream above. The C layer's KATs (cross-checked against an
-independent RFC 8439 reference; three implementations agree on the pinned vectors) ran
-green under ASan/UBSan 2026-08-23, and the script surface is **OBSERVED ON AN ENGINE
-2026-08-24** (Windows x86_64, OXT 9.6.3, reporting ABI 10): the 7-check raw-ChaCha20
-section ran green inside the full 106-check `sxSelfTest()`, folded into the suite paste.
-**This paragraph said "needs an OXT pass" until 2026-08-26**, which by then denied a dated
-run - the direction of drift the honesty convention does not tolerate, because a stale
-"needs a pass" costs somebody a pass. The harness section still SKIPs cleanly on a
-pre-ABI-10 package, and the committed `universal-mac` dylib is one (it reports ABI 6, so
-this handler does not exist there yet).
+extension can compose a published construction that carries its own MAC; NostrXT's NIP-44
+v2 is the named consumer. It is NOT a sealing API: to encrypt bytes, use `sxSecretBox` /
+`sxAeadEncrypt` / secretstream above. Evidence: C KATs cross-checked against an
+independent RFC 8439 reference (three implementations agree on the pinned vectors), green
+under ASan/UBSan 2026-08-23; **observed on an engine 2026-08-24** (Windows x86_64, OXT
+9.6.3, ABI 10): the 7-check raw-ChaCha20 section green inside the 106-check
+`sxSelfTest()`, folded into the suite paste. Every committed binary is at ABI 10; the
+harness section SKIPs cleanly on an older package.
 
 | Handler | Returns | Notes |
 |---|---|---|
-| `sxChaCha20IetfXor(pKey, pNonce, pData)` | `Data` | `pData` XOR the RFC 8439 ChaCha20 keystream: 32-byte key, 12-byte nonce, initial block counter 0. Length-preserving and its own inverse (the same call encrypts and decrypts). Throws on any other key or nonce length; an empty `pData` returns empty. UNAUTHENTICATED: the caller's construction must MAC the result (NIP-44 uses HMAC-SHA256 over nonce||ciphertext, verified before decrypting) and must derive the nonce inside the construction (NIP-44's is an HKDF slice over a fresh random per-message nonce), never accept one from outside. |
+| `sxChaCha20IetfXor(pKey, pNonce, pData)` | `Data` | `pData` XOR the RFC 8439 ChaCha20 keystream: 32-byte key, 12-byte nonce, initial block counter 0. Length-preserving and its own inverse (the same call encrypts and decrypts). Throws on any other key or nonce length; an empty `pData` returns empty. UNAUTHENTICATED: the caller's construction must MAC the result (NIP-44 uses HMAC-SHA256 over nonce\|\|ciphertext, verified before decrypting) and must derive the nonce inside the construction (NIP-44's is an HKDF slice over a fresh random per-message nonce), never accept one from outside. |
 
 ### Multipart hash (data assembled incrementally)
 
@@ -266,20 +250,13 @@ server's tx and vice versa. rx is for receiving, tx for sending.
 - `examples/sodium-tests.livecodescript` - `put sxSelfTest()` exercises the whole
   public handler surface (round trips, known-answer vectors, tamper and wrong-key checks),
   including the attached signature form, seed-derived keypairs, keyed hashing, and the
-  diagnostics/preset accessors. **The whole of it is now a runtime result**: on 2026-08-10
-  the complete `sxSelfTest()` ran green on a real engine - 68 checks, zero failures, twice
-  in one day - folded into the suite harness (`tests/suite-selftest.livecodescript` at the
-  repository root), which carries this member's own self-test verbatim. That retires the
-  old caveat that the recorded pass predated the newer sections. The ABI-7 additions
-  (`sxSha3_256` and its FIPS 202 vectors, 71 checks total) had their pass on **2026-08-12**,
-  on Windows x64 - so nothing in this file below ABI 8 is "verified statically" any more
-  (and since **2026-08-17** the ristretto255 sections - ABI 8 and the ABI-9 DLEQ/batch
-  follow-ons, both added 2026-08-15 - are no longer the exception they used to be:
-  they ran on Windows x86_64 at ABI 9, and again on Linux 2026-08-18. This
-  parenthesis claimed "no `sxRistretto*` handler has run on an engine yet" until
-  2026-08-19, two runs after it stopped being true). The 2026-08-08 suite pass
-  had already proven the cross-member half from the outside: `sxSignSeedToExpandedKey`'s
-  64-byte expanded key equals, on-engine, the DHT secret key libtorrent derives from the
-  same seed.
-- `examples/sodium-demo.livecodescript` - an interactive, tabbed showcase (Secret Key, Public
-  Key, Signatures, Hash & Files, About), with a "Run the full self-test" button on the About tab.
+  diagnostics/preset accessors. It is folded into the suite harness
+  (`tests/suite-selftest.livecodescript` at the suite root). Engine record: 68/68 on
+  2026-08-10 (twice), 71/71 on 2026-08-12 (Windows x64, ABI 7 incl. SHA3), the ristretto
+  sections 2026-08-17/18, and 106/106 on 2026-08-24 (Windows x86_64, ABI 10). On
+  2026-08-08 the suite pass also showed, on-engine, that `sxSignSeedToExpandedKey`'s
+  64-byte expanded key equals the DHT secret key libtorrent derives from the same seed.
+  The full ledger is in `CLAUDE.md`.
+- `examples/sodium-demo.livecodescript` - an interactive showcase with seven tabs (Secret
+  Key, Public Key, Signatures, Hash/Files, Identity, Rekey, About), with a "Run the full
+  self-test" button on the About tab.

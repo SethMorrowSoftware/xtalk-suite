@@ -18,6 +18,11 @@ anything.
 * [What it does](#what-it-does)
 * [The network, and the shape it was forced into](#the-network-and-the-shape-it-was-forced-into)
 * [What is proven and what is not](#what-is-proven-and-what-is-not)
+* [Updating from main](#updating-from-main)
+* [Signed messages, fee bumps and the broadcast memory](#signed-messages-fee-bumps-and-the-broadcast-memory)
+* [Bitcoin Core as a backend, and the Node screen](#bitcoin-core-as-a-backend-and-the-node-screen)
+* [Silent payments](#silent-payments)
+* [Runes, inscriptions, timelocks, Lightning invoices, testnet4 and labels](#runes-inscriptions-timelocks-lightning-invoices-testnet4-and-labels)
 * [Custody, said plainly](#custody-said-plainly)
 * [The engine API](#the-engine-api)
 * [Running it](#running-it)
@@ -26,12 +31,12 @@ anything.
 
 | File | What it is |
 |---|---|
-| `examples/wallet-core.livecodescript` | The engine. Prefix `cw`. Pure functions over CoinXT: scripts, addresses, extended keys, amounts, sizes, fees, coin selection, sighash dispatch, witness shapes, PSBT, signed messages, payment URIs, output descriptors, transaction decoding, JSON and QR. |
-| `examples/coin-wallet.livecodescript` | The wallet. Prefix `wa`. Ten screens, the key custody, the wallet file, the network, and the window. Carries CoinXT, the engine above, and OnionXT, so it is one file to paste. |
+| `examples/wallet-core.livecodescript` | The engine. Prefix `cw`. Pure functions over CoinXT: scripts, addresses, extended keys, amounts, sizes, fees, coin selection, sighash dispatch, witness shapes, PSBT, signed messages, payment URIs, output descriptors, transaction decoding, silent payments, Runes, inscriptions, BOLT11, JSON and QR. |
+| `examples/coin-wallet.livecodescript` | The wallet. Prefix `wa`. Thirteen screens, the key custody, the wallet file, the network, and the window. Carries CoinXT, the engine above, and OnionXT, so it is one file to paste. |
 
-The engine ships under `examples/` rather than `src/` for the reason
-`enetxt/examples/enet-helpers.livecodescript` does: it is a library a demo
-carries, not part of the extension's published surface. Everything in it is
+The engine ships under `examples/` rather than `src/` because it is a library a
+demo carries, not part of the extension's published surface (the same reason
+`enetxt/examples/enet-helpers.livecodescript` lives there). Everything in it is
 composed from `cx*` calls and nothing is added to what CoinXT installs.
 
 Three properties of the engine are deliberate and each one buys something.
@@ -43,34 +48,37 @@ stale.
 
 **No `item` and no `line` chunks.** Lists are arrays, keyed `1..n` with an `n`
 count. `the itemDelimiter` and `the lineDelimiter` are global mutable state in
-this engine family, and this member's own `CLAUDE.md` records nine handlers
-that a hostile delimiter turned into wrong ANSWERS rather than errors: a valid
-seed phrase reported invalid, an address built from the wrong bytes. CoinXT
-answered that with a save/set/use/restore wrapper around every affected handler.
-Not reading those chunks at all is the stronger answer, and it was available
-here only because this layer was written after the lesson instead of before it.
+this engine family, and this member's `CLAUDE.md` records nine CoinXT handlers
+that a hostile delimiter turned into wrong ANSWERS rather than errors. CoinXT
+answered that with a save/set/use/restore wrapper; not reading those chunks at
+all is the stronger answer, available here because this layer was written after
+the lesson.
 
 **No UI and no I/O.** That is what lets the vector gate run it.
 
 ## What it does
 
+The wallet has thirteen screens (`kWaScreenCount`): Wallet, Receive, Addresses,
+Send, Coins, History, Ordinals, Vault, Tools, Network, Node, Log and Settings.
+
 **Wallet kinds.** A new seed (24 words, entropy from SodiumXT and no fallback),
-a restored seed with an optional BIP-39 passphrase, watch-only from an account
+a restored seed with an optional BIP-39 passphrase (an Electrum-format seed is
+recognised and opened), watch-only from an account
 `xpub`/`ypub`/`zpub`/`tpub`/`upub`/`vpub`, a single imported WIF key, or an
 m-of-n P2WSH multisig from cosigner account keys.
 
 **The seed this wallet starts with is PUBLIC.** It opens holding BIP-39's
-published test mnemonic so every screen has something true to show without you
-inventing a seed first. Those twelve words are printed in the specification, so
-anyone can derive the same private keys and spend anything sent to them. Mainnet
-is not blocked - that is deliberate - but the wallet says so on the Wallet
-screen, at the top of Receive above the address itself, and on Send. Generate or
-restore a seed of your own before you accept a single real coin.
+published test mnemonic so every screen has something true to show. Those
+twelve words are printed in the specification, so anyone can derive the same
+private keys and spend anything sent to them. Mainnet is not blocked - that is
+a decision - but the wallet says so on the Wallet screen, at the top of Receive
+above the address itself, and on Send. Generate or restore a seed of your own
+before you accept a single real coin.
 
-**Networks.** mainnet, testnet, signet and regtest, each with its own base58
-version bytes, bech32 HRP and extended-key versions. A network change drops the
-address and balance state rather than showing addresses from one chain beside
-balances from another.
+**Networks.** mainnet, testnet, testnet4, signet and regtest, each with its own
+base58 version bytes, bech32 HRP and extended-key versions. A network change
+drops the address and balance state rather than showing addresses from one
+chain beside balances from another.
 
 **Script types.** Legacy P2PKH (BIP-44), nested SegWit P2SH-P2WPKH (BIP-49),
 native SegWit P2WPKH (BIP-84), Taproot P2TR key-path (BIP-86), and P2WSH
@@ -78,94 +86,81 @@ multisig (BIP-48, with BIP-67 key ordering so every cosigner independently
 derives the same address).
 
 **Receive.** The next unused address, a BIP-21 URI carrying an optional amount,
-label and message, and a scannable QR code of that URI. The QR is byte mode at
-error level M, versions 1 to 15, rendered as an uncompressed BMP into an image
-control.
+label and message, and a scannable QR code of that URI (byte mode, error level
+M, versions 1 to 15, rendered as an uncompressed BMP into an image control). A
+seed wallet also shows its BIP-352 silent-payment address, with a copy button.
 
 **Addresses.** Both chains to a gap-limit window, with per-address labels, use,
 balance, and an explicit "derive twenty more" that says what going past the gap
-limit costs. Since 2026-09-03 the window also extends itself when it has to: an
-inscription commit, a timelock, a change output or a reveal that finds every
-address of its chain used derives a further window first and says so in the
-log, rather than sending you to this screen. Seen on the engine in the twelfth
-log (2026-09-03, 21:54 EDT): the change chain extended while a child spend was
-built, and the receive chain on the twenty-seventh timelock of a run that used
-every base address before it.
-
-**Ordinals** (a screen of its own since 2026-09-04). A content type with three
-quick picks, a body, a line that prices the reveal as you type, and two
-numbered buttons: 1 prepares the commit address (and saves the recipe with
-the wallet), 2 signs the reveal once that address holds a coin. A table lists
-every inscription this wallet prepared with its state - unfunded, funded
-(press 2), revealed - and a box on the right reads any transaction's
-inscription or runestone. Every control carries a tooltip.
-
-**Vault** (the same day). A block height, or +1 day / week / month / year
-from the tip, a line saying how far away that is, and Prepare, which makes
-the CLTV address and saves its recipe. A table lists every vault address
-with its state read from the tip - locked with the blocks to go, or
-UNLOCKED - and what it holds. Locked coins are left out of every spend;
-unlocked ones are spent from Send with the locktime raised automatically.
+limit costs. The window also extends itself when it has to: an inscription
+commit, a timelock, a change output or a reveal that finds every address of its
+chain used derives a further window first and says so in the log.
 
 **Send.** One payment or many, amounts in BTC, mBTC or satoshi, `MAX`, a fee
 rate in sat/vB with a plain-language description of what that rate means, four
 coin-selection strategies plus manual coin control, opt-in RBF, a locktime, and
 a review panel that shows every output in full, the fee, the change address and
 which coins are being spent, before anything is signed. It can also stop at an
-unsigned PSBT. Since 2026-09-04 a line reading `note: some text` (or
-`data: hex`) adds one OP_RETURN output of value 0 carrying those bytes - a note
-to the chain - sized, selected for, reviewed, signed and fee-bumped like any
-other output; one per transaction, because a second is what most nodes refuse
-to relay, and anything over eighty bytes is warned about for the same reason.
-Inspect reads such outputs back as text, and reads an Ordinals inscription
-(content type, size, body) out of any witness that carries one. A BIP-352
-silent payment address (`sp1...`, `tsp1...`) goes on a line like any other
-since the same day; its taproot output is derived from the coins chosen to
-fund it, so it is signed here, never as a PSBT (the section below).
+unsigned PSBT. A line reading `note: some text` (or `data: hex`) adds one
+OP_RETURN output of value 0 carrying those bytes; one per transaction, because a
+second is what most nodes refuse to relay, and anything over eighty bytes is
+warned about for the same reason. A BIP-352 silent payment address (`sp1...`,
+`tsp1...`) goes on a line like any other.
 
 **Coins.** The UTXO set with freeze and thaw, ticking for manual selection, and
-a hand-entry path so an offline wallet can be told what it owns.
+a hand-entry path so an offline wallet can be told what it owns. Spent-but-
+unconfirmed coins show as `SPT`, time-locked ones as `LCK`.
 
 **History.** Transactions with confirmations, amounts and fees, a full decode of
-any of them (Inspect asks the backend for the raw bytes it does not hold and
-paints the decode when they arrive), and a BIP-125 fee bump that BUILDS the
-replacement: same inputs,
-same payments, the extra fee out of the change, signed and printed line by line
-and not broadcast. It can do that for a spend this window signed, because
-signing records what the spend was made of - an input's value is committed to by
-BIP-143 and is not carried in the raw transaction. For a transaction made in an
-earlier session it prints the arithmetic and says plainly why it cannot build
-one.
+any of them (Inspect asks the backend for raw bytes it does not hold and paints
+the decode when they arrive), and a fee bump (below). For a transaction made in
+an earlier session it prints the arithmetic and says plainly why it cannot build
+a replacement: signing records what a spend was made of, and an input's value is
+committed to by BIP-143 but not carried in the raw transaction.
 
-**Tools.** Sign and verify a message in the 2011 Bitcoin format, load, sign,
-combine and finalize a PSBT, inspect anything you paste (a raw transaction, a
-PSBT, an extended key, a WIF, an address or a URI), decode a bare script from
-hex, validate an address or an extended key on EVERY chain rather than only this
-one, convert entropy to a mnemonic and a mnemonic back to entropy (with the
-master fingerprint with and without a BIP-39 passphrase), mint a single key,
-derive at an arbitrary path, sweep a private key, and export descriptors and
-account keys.
+**Ordinals.** A content type with three quick picks, a body, a line that prices
+the reveal as you type, and two numbered buttons: 1 prepares the commit address
+(and saves the recipe with the wallet), 2 signs the reveal once that address
+holds a coin. A table lists every inscription this wallet prepared with its
+state (unfunded, funded, revealed), and a box reads any transaction's
+inscription or runestone.
 
-**A right-click anywhere** opens a menu for the screen you are on. Every item on
-it routes to the same handler the screen's own buttons route to, so an item can
-only ever mean what a button means. `popup` and `menuPick` are documented
-LiveCode, but no stack in this suite has opened a menu on a real engine yet: if
-the engine declines, the right-click does nothing and the wallet is otherwise
-exactly as it was.
+**Vault.** A block height, or +1 day / week / month / year from the tip, a line
+saying how far away that is, and Prepare, which makes the CLTV address and saves
+its recipe. A table lists every vault address with its state read from the tip
+(locked with the blocks to go, or UNLOCKED) and what it holds.
 
-**Settings.** The wallet file and its password, the display unit, the gap limit,
-and the honesty record.
+**Tools.** Sign and verify a message, load, sign, combine and finalize a PSBT,
+inspect anything you paste (a raw transaction, a PSBT, an extended key, a WIF,
+an address, a URI, a BOLT11 invoice), decode a bare script from hex, validate
+an address or an extended key on EVERY chain, convert entropy to a mnemonic and
+back (with the master fingerprint with and without a passphrase), mint a single
+key, derive at an arbitrary path, sweep a private key, export descriptors and
+account keys, inscribe, lock, and ask a Bitcoin Core node for a second opinion.
+
+**Network, Node, Log, Settings.** The backend and its hosts (next section); a
+Bitcoin Core node's status, fees, mempool and sandbox; the log; the wallet file
+and its password, the display unit, the gap limit, BIP-329 labels, Update from
+main, and the honesty record.
+
+**A right-click anywhere** opens a menu for the screen you are on. Every item
+routes to the same handler the screen's own buttons route to, so an item can
+only ever mean what a button means.
 
 ## The network, and the shape it was forced into
 
-There are four transports and the differences between them are real.
+There are eight backend choices and the differences between them are real.
 
-| Transport | How | What it costs you |
+| Backend | How | What it costs you |
 |---|---|---|
-| Esplora over Tor | A `.onion` mirror over plain HTTP through OnionXT's SOCKS client | The server learns which addresses are asked about together. Nobody else learns anything. |
-| Electrum over Tor | A `.onion` server, JSON-RPC over the same circuit | The same, except the server is asked about SCRIPT HASHES rather than addresses. |
-| Esplora over clearnet | The engine's own `load URL` | The server learns your addresses AND your IP; on `http://` so does everyone in between. |
-| Offline | Nothing | Nothing. Everything except Broadcast still works. |
+| `esplora-tor` | A `.onion` Esplora mirror over plain HTTP/1.1 through OnionXT's SOCKS client, one kept stream per sync | The server learns which addresses are asked about together. Nobody else learns anything. |
+| `electrum-tor` | A `.onion` Electrum server, JSON-RPC over the same kind of circuit, batched | The same, except the server is asked about SCRIPT HASHES rather than addresses. |
+| `esplora-clear` | The engine's own `load URL` | The server learns your addresses AND your IP; on `http://` so does everyone in between. `load URL` is a GET, so it cannot broadcast (refused by name) and sees no status code. |
+| `electrum-clear` | A TCP socket to an Electrum server, batched | Addresses (as script hashes) and your IP. |
+| `core-rpc` | Your own Bitcoin Core node, JSON-RPC over HTTP | Nothing leaves your machines. Needs a node. |
+| `core-tor` | The same POST to your node published as a hidden service | The circuit is the encryption; there is no default onion. |
+| `core-cli` | `bitcoin-cli` through `shell()` | Zero configuration if `bitcoin-cli` already works; blocks the window while it runs. |
+| `offline` | Nothing | Nothing. Everything except Broadcast still works. |
 
 **HTTPS over Tor is not on that list because it cannot be.** An already-open
 socket cannot be upgraded to TLS in this engine, and `open secure socket` talks
@@ -174,644 +169,369 @@ endpoint over plain HTTP is the correct shape here, not a compromise: the
 circuit is the encryption and the authentication.
 
 **Which chain a backend carries is not a detail.** Esplora serves each chain
-under its own root - `/api` for mainnet, `/testnet/api`, `/signet/api` - and the
-wallet builds that root from the network it is on. It did not always: every
-request went to the mainnet index, so a funded testnet address reported no
-coins, which is the wrong-but-plausible answer this member exists to refuse. The
-two failure modes are not equally visible, which is why there is now a guard as
-well as a fix. Esplora answers an address off its chain with a 400, and only the
-Tor transports read an HTTP status - `load URL` hands the callback a body and no
-code. An Electrum server is worse: asked about a script hash from another chain
-it answers with an empty list, a well-formed "this address has never been used",
-so a testnet wallet on a mainnet server reports itself synced, green and empty.
-The wallet now refuses a backend that does not carry the selected chain, before
-it builds a request, and says which host to change. Regtest has no public
-backend at all, so it is refused against every built-in host and needs your own.
+under its own root (`/api`, `/testnet/api`, `/signet/api`, and `/testnet4` on
+mempool.space), and the wallet builds the root from the network it is on. An
+Electrum server is worse: asked about a script hash from another chain it
+answers with an empty list, a well-formed "this address has never been used",
+so a testnet wallet on a mainnet server would report itself synced and empty.
+The wallet refuses a backend that does not carry the selected chain before it
+builds a request, and says which host to change. Blockstream's onion Electrum
+server selects the chain by port (110 mainnet, 143 testnet). Regtest has no
+public backend, so it is refused against every built-in host.
 
-The clearnet option is offered with what it costs written on the screen rather
-than assumed away. This suite has never measured what the engine does about TLS
-certificates (`docs/OXT-ENGINE-NOTES.md` 6.8), so `https://` here carries no
-claim about verification.
+The clearnet options are offered with what they cost written on the screen.
+This suite has never measured what the engine does about TLS certificates (the
+suite's docs/OXT-ENGINE-NOTES.md 6.8), so `https://` here carries no claim about
+verification.
 
 `socketError`, `socketClosed` and `socketTimeout` are the engine's names and a
-script may define each exactly once. The wallet carries OnionXT, so the wallet
-defines all three and hands each event to OnionXT's named function first, then
-passes. `tools/sync-demo-embeds.py`'s `DROP_HANDLERS`, keyed by (app, provider)
-pair, drops OnionXT's own wrappers from the embed and asserts that both halves
-of that arrangement are present.
+script may define each exactly once. The wallet carries OnionXT, so it defines
+all three and hands each event to OnionXT's named function first.
+`tools/sync-demo-embeds.py`'s `DROP_HANDLERS`, keyed by (app, provider) pair,
+drops OnionXT's own wrappers from the embed and asserts both halves.
 
 ## What is proven and what is not
 
-There are three layers here and each has its own answer, so they are separated
-rather than averaged.
+Three layers, each with its own answer.
 
 **The engine layer is RUN.** `tools/check-wallet-vectors.py` drives the shipped
 `wallet-core.livecodescript` through `tools/lcs-interp.py` against
 `tools/wallet_reference.py`, an independent implementation anchored at import to
-the published BIP vectors, with the real native CoinXT library supplying every
-hash and every signature. Among its checks: the BIP-44, BIP-49, BIP-84 and
-BIP-86 first receive addresses for the public test mnemonic; BIP-49's and
-BIP-84's own account `ypub` and `zpub`; every address in both directions on two
-networks; Bitcoin Core's two published descriptor checksums; the classic 226 and
-141 virtual sizes; the 546/540/330/294 dust thresholds derived from Core's own
-branch; and complete signed transactions on all five spend paths,
-byte-identical to the independent implementation's. Run it for the count; a
-number written here would be true on the day it was typed and quietly wrong
-afterwards.
+the published vectors, with the real native CoinXT library supplying every hash
+and signature. Among its checks: the BIP-44/49/84/86 first receive addresses for
+the test mnemonic; BIP-49's and BIP-84's own account `ypub` and `zpub`; every
+address in both directions on two networks; Bitcoin Core's descriptor
+checksums; the 226 and 141 virtual sizes; the 546/540/330/294 dust thresholds;
+complete signed transactions on all five spend paths; BIP-322's published
+vectors; the BIP-352 sending and receiving vectors
+(`tests/bip352-sending-vectors.json`, `tests/bip352-receiving-vectors.json`);
+the Runes reference cases; and every example in the BOLT11 specification
+(`tests/bolt11-vectors.json`). Run it for the count.
 
-**And it is run TWICE, under two comparison rules.** `the caseSensitive`
-defaults to FALSE on OXT, which makes `is` and `offset()` case-INSENSITIVE;
-`lcs-interp.py` models both case-SENSITIVELY and says so. So the whole vector
-set runs a second time with those two folded to the engine's rule, and the same
-answers are required. That tier is not decoration: it is there because the
-first version of this layer had **two real defects of exactly that shape** - a
-descriptor checksum that came out wrong for every descriptor containing a
-letter (Core's input alphabet carries `abcdefgh` at position 18 and `ABCDEFGH`
-at 82, so a folded `offset()` returns the wrong twin), and a multisig account
-key serialized with the single-signature `zpub` version because the stems `"z"`
-and `"Z"` were told apart with `is`. Both were green under 414 checks, because
-every one of those checks ran under the rule the engine does not use.
+**And it is run TWICE.** `the caseSensitive` defaults to FALSE on OXT, which
+makes `is` and `offset()` case-INSENSITIVE, while `lcs-interp.py` models them
+case-sensitively. So the whole set runs a second time with those two folded to
+the engine's rule, and the same answers are required. The tier exists because
+the first version of this layer had two defects of exactly that shape, green
+under 414 checks: a descriptor checksum wrong for every descriptor containing a
+letter (Core's alphabet carries `abcdefgh` at position 18 and `ABCDEFGH` at 82,
+so a folded `offset()` returns the wrong twin), and a multisig account key
+serialized as `zpub` instead of `Zpub` because the stems were told apart with
+`is`.
 
 **The stack layer is BOOTED.** `tools/check-wallet-boot.py` opens the shipped
 `coin-wallet.livecodescript` headlessly - `preOpenStack`, `openStack`, the
 queued self-check tick - over riptide's engine object model (imported, not
-copied) with the COMMITTED `coinxt.so` underneath, and then drives it: every
-navigation button through the real click router, the show/hide sweep checked
-control by control across all ten screens, a real spend built and signed and
-decoded by the oracle, the same spend exported as a PSBT and round-tripped
-through the Tools screen, a message signed and verified (and refused for a
-case-mangled Base58 address), a fee bump built and decoded by the oracle and
-checked against BIP-125 rules 1 to 4, every item of every screen's context menu
-walked through the router, and the wallet file sealed, re-opened, and refused
-after one flipped bit. SodiumXT is modelled there and each model is
-declared in the gate; OnionXT answers its version probe and nothing else,
-because a gate that dialled a real onion would be a gate that fails when the
-network does.
+copied) with the COMMITTED `coinxt.so` underneath, then drives it: every
+navigation button through the real click router, the show/hide sweep across all
+thirteen screens, a spend built, signed and decoded by the oracle, a PSBT round
+trip, messages signed and verified, fee bumps checked against BIP-125, every
+context-menu item, the wallet file sealed, re-opened and refused after one
+flipped bit, and every backend through modelled sockets, Tor streams and a
+modelled shell. SodiumXT is modelled and declared in the gate; OnionXT answers
+its version probe and nothing else. `tools/test-wallet-boot.py` seeds real
+defects into copies and requires the gate to fail on each.
 
-CoinXT itself has had two on-engine passes (2026-08-10 and 2026-08-12), so the
-cryptography under all of that is engine-observed.
+**The library has five engine passes** (2026-08-08 through 2026-08-24, the last
+at 290/290), so the cryptography under the wallet is engine-observed except
+`cxPubkeyCombine`, which the silent-payment receiver uses (ABI 7; needs an OXT
+pass).
 
-**Not proven.** None of this is an OXT pass. What the two gates settle is that
-the code RUNS and what it computes; an interpreter is an approximation of the
-engine and never the engine, and where they disagree the engine is right.
+An interpreter is an approximation of the engine and never the engine; where
+they disagree the engine is right. What the gates settle is that the code RUNS
+and what it computes.
 
-**THE FIRST ENGINE RUN OF THE WALLET ARRIVED 2026-09-01**, as a pasted log
-rather than a harness report, and it settled two things the gates could not.
-The Electrum-over-clearnet transport spoke to a real server
-(electrum.blockstream.info:50001, mainnet, the demonstration wallet): every
-request from `headers.subscribe` through 40 addresses of `listunspent` and
-`get_history` was answered on one persistent socket, each reply correlated by
-id, a 16 KB history included. That flipped the label on one of the four
-transports. **The next day (2026-09-02) the person running it reported creating
-a testnet wallet and RECEIVING coins at it over both clearnet transports**, which
-flips Esplora-over-clearnet as well - a receive is a sync that found the coin -
-and is the first coin this wallet has ever held on any chain. The two Tor
-transports have still not spoken to a backend from here. The same run is why a
-fresh sync is now forty-two requests rather than eighty-two: history is asked of
-every address, and unspent outputs only of the addresses whose history says
-there are any. And the same log carried twenty-seven identical
-"does not pass its BIP-39 checksum" lines, which is the defect record in
-`coinxt/CLAUDE.md` for that date: a failed Open committed the bad phrase as
-wallet state and every later click re-validated it. Fixed the same day, with
-the specific reason on screen (which word, how many words, or that the phrase
-is an Electrum seed - which the wallet now opens).
-Everything in `docs/OXT-ENGINE-NOTES.md` that the interpreter models
-differently is invisible to both, the case rule above excepted. A green boot
-here does not mean a window appeared. The three network transports have never
-spoken to a real backend from here until 2026-09-01, when Electrum over
-clearnet did, and 2026-09-02, when a testnet receive over both clearnet
-transports was reported (above). Later on 2026-09-02 a second pasted log
-closed two more: **Esplora over Tor** dialled the onion mirror through
-OnionXT's SOCKS client on a real engine and answered every request kind (tip,
-fees, history, unspent outputs) over 147 circuits, and **the wallet's first
-broadcast** went out over that transport - a 226 vB legacy spend, txid
-`7978bdd2c097c929cae2ab00084d4454b68b1d054a3f2d53fc7b51b70551e4d5`, accepted by the mirror and seen spent by
-the sync that followed. Electrum over Tor was the one transport that had still
-not spoken to a backend from here, and the 2026-09-02 log said why: the
-built-in address was `explorernuoc63nb.onion`, a sixteen-character VERSION-2
-onion that the Tor network stopped resolving in 2021, and the daemon answered
-every dial of it with "general SOCKS server failure" - the same words a failed
-circuit gets, so the wallet retried it once, as designed, and failed again.
-The constant is Blockstream's version-3 onion now (the same address the
-Esplora mirror uses, with the chain selected by port: 110 mainnet, 143 testnet),
-the wallet refuses a v2 shape by name before it dials, and **on 2026-09-03 the
-transport ran** - the sixth engine log: port 143 on testnet, a full sync of the
-test seed (tip, fees, forty histories, unspent outputs), a second wallet
-synced, and a broadcast, txid
-`9bab6640f2bbe01f96a95ffdeca3e96881f1819e677348562ef8bf87da6b719a`, seen spent
-by the sync that followed. Mainnet on port 110 is still the operator's
-published table and nothing more. That log also dialled a fresh Tor stream for
-every one of its 173 requests, so the stream is now kept open for the whole
-sync the way the clearnet socket is - and the seventh log, later the same day,
-ran two full syncs down one stream each, with a header the server pushed on
-the idle stream between them logged and ignored. Esplora over Tor opened
-a stream per request in that log, by design (HTTP/1.0 with Connection: close,
-so there was no chunked-transfer decoder to get wrong); later the same day it
-was moved to HTTP/1.1 keep-alive with a reply decoder (Content-Length,
-chunked, Connection: close, and a fallback to close-delimited reading for a
-reply with no framing), so both Tor transports run a sync down one stream -
-**seen in the eighth log**, later the same day: a whole Esplora sync of
-fifty-one requests down one Tor stream on HTTP/1.1. The same log saw both of
-Blockstream's Electrum servers, onion and clearnet, take JSON-RPC BATCHES: an
-Electrum sync sends its histories, and then its unspent-output requests, as
-arrays of requests in one line, and a sync of fifty-one requests was five
-round trips. A server that refuses a batch is asked with half as many on the
-next line, and half again on the next refusal, down to one at a time (since
-2026-09-03, after an onion server closed the connection on a batch of 22 and
-the sync fell to 41 single Tor round trips; seen working on the engine the
-same evening: the batch of 22 refused, then every line of 11 answered, a
-sync of 41 requests in eight round trips); a member's own error counts as
-that member's failure only, and a member
-the server leaves unanswered is asked again alone. After that log the tip and
-the fee estimate ride in the first batch too (three round trips for a fresh
-sync), which has not run on an engine; nor has the same day's other trimming
-(a tip under thirty seconds old and a fee estimate under ten minutes old are
-not asked for again, which every sync in that log defeated by changing the
-backend first; the screen is repainted once a second during a sync rather
-than on every reply; the next request leaves the moment a reply lands rather
-than on the next 250 ms tick).
-Until the 2026-09-02 log, no transaction this wallet built had been broadcast to any
-network, so "this would confirm" is a claim nobody has tested.
+### Engine evidence
+
+Pasted logs from one person's engine (platform not recorded), on testnet unless
+stated. Each row is condensed; the full record is `CLAUDE.md`, "The wallet on an
+engine".
+
+| Date | What ran | Result |
+|---|---|---|
+| 2026-09-01 | electrum-clear, MAINNET, `electrum.blockstream.info:50001`, the demonstration wallet | a full sync on one persistent socket, replies correlated by id, a 16 KB history. The same log's 27 repeated BIP-39 lines exposed a failed Open committing a bad phrase (fixed that day) |
+| 2026-09-02 | REPORTED, no log: a testnet receive over both clearnet transports | the first coin held; recorded as reported, no more |
+| 2026-09-02, second log | esplora-tor, 147 circuits; electrum-clear's reshaped sync (42 requests) | **the first broadcast**, over esplora-tor: a 226 vB legacy spend, txid `7978bdd2c097c929cae2ab00084d4454b68b1d054a3f2d53fc7b51b70551e4d5`, seen spent by the next sync |
+| 2026-09-02, fourth log | a fresh open, boot self-check green | esplora-clear, esplora-tor and electrum-clear all fire on both chains |
+| 2026-09-02, fifth log | electrum-tor against the retired v2 onion; the right-click menu | "general SOCKS server failure" and the retry-once seen working; the menu opened on an engine and acted on the previously selected row (fixed; the fix has not run on an engine) |
+| 2026-09-03, sixth log | **electrum-tor**, Blockstream's v3 onion, port 143 | a full sync, a second wallet, and a broadcast, txid `9bab6640f2bbe01f96a95ffdeca3e96881f1819e677348562ef8bf87da6b719a`, seen spent |
+| 2026-09-03, seventh log | electrum-tor with kept streams | two full syncs, one stream each; a header pushed on the idle stream logged and ignored |
+| 2026-09-03, eighth log | esplora-tor on HTTP/1.1; Electrum batches | 51 requests down one Tor stream; both Blockstream Electrum servers take JSON-RPC batches (51 requests in five round trips) |
+| 2026-09-03 evening | autotest chain phase, electrum-tor | an onion server refused a batch of 22 and the halving answered every line of 11 (41 requests in eight round trips) |
+| 2026-09-03 19:42 EDT, tenth log | the autotest's chain phase, p2pkh wallet, electrum-tor | 41 passed / 0 failed / 4 skipped: an OP_RETURN note and its RBF bump (voiding the note's coins), a silent-payment send and an inscription commit built on the replacement's change and accepted, the reveal accepted (inscription `f002bfb2bde8ff4354c89ca590291bea96416ed6e2e5797c0e863b9be79bc0eei0`), the vault paid and its coin withheld, every acceptance reserved at queue time |
+| 2026-09-03 20:30 EDT, eleventh log | the second autotest | a refused broadcast released its coin with the node's reason (`mempool-script-verify-flag-failed`); a bump refused naming the queued child; a change-less sweep bumped by a CPFP child priced from the spend record, accepted |
+| 2026-09-03 21:54 EDT, twelfth log | the second autotest on the wallet as fixed by it | 14/14, nothing skipped: the same three again, both address windows extending themselves, and every queued transaction (the CPFP pair included) accepted by the network afterwards |
+
+### What has not run on an engine or a node
+
+- Everything added from 2026-09-04: the Ordinals and Vault screens as screens,
+  testnet4 and BIP-329 labels, BIP-322, Runes, BOLT11, silent-payment
+  receiving (and `cxPubkeyCombine` under it), the Bitcoin Core backends (no node
+  has been met at all), and the 2026-09-10 audit fixes.
+- Update from main's swap itself.
+- Electrum on the mainnet onion (port 110).
+- The right-click menu's row-selection fix and its three corrected items.
+- The stale-answer skip (a fresh tip or fee estimate is not asked for again),
+  the paint and pump timing, and the tip and fee estimate riding in the first
+  batch.
+- The backend un-marking a coin it still lists, and Esplora's 400 body reaching
+  the log.
+- A vault release after its height; CPFP on a transaction this wallet did not
+  build; an Electrum-format seed opening real coins.
+- A native P2WPKH broadcast. No Ethereum transaction and no mainnet spend has
+  been broadcast.
 
 ## Updating from main
 
-Since 2026-09-04 the Settings screen has an **Update from main** button, and
-every right-click menu ends with the same item. It fetches this file - the
-raw text of `coinxt/examples/coin-wallet.livecodescript` at the tip of the
-repository's `main` branch, one `get URL` of a fixed address - reads it, and
-offers it: the version it declares, its size and its SHA-256 next to the
-running version. Nothing replaces the script until Update is pressed. The
-reading refuses, with the reason, anything that does not begin the way this
-script begins, is too short to be a whole wallet or too long to be this one,
-declares no version, or lacks the handler that brings the wallet back after
-the swap; and it refuses a copy identical to the running script as already
-current.
+The Settings screen has an **Update from main** button, and every right-click
+menu ends with the same item. It fetches the raw text of
+`coinxt/examples/coin-wallet.livecodescript` at the tip of the repository's
+`main` branch (one `get URL` of a fixed address), reads it, and offers it: the
+version it declares, its size and its SHA-256 next to the running version.
+Nothing replaces the script until Update is pressed. The reading refuses, with
+the reason, anything that does not begin the way this script begins, is under
+half or over three times the running script's size, declares no version, lacks
+`waUpdateRestore`, `preOpenStack` or `openStack`, or is identical to the running
+script.
 
-On Update the wallet as the wallet file would hold it, plus the Network
-settings and the screen, is parked in a stack property; the network is
-stopped; the stack's script is replaced; and `preOpenStack` and `openStack`
-are sent to the new script, whose boot reads the carry back, clears it, and
-says what version it came from. The log stays, because the log is a field
-and fields are not rebuilt. A script that does not compile on the engine
-leaves everything as it was and says so. The carry is cleared on close as
-well, so a swap that never came back cannot leave a seed on a saved stack.
+On Update the wallet (as the wallet file would hold it), the Network settings
+and the screen are parked in a stack property; the network is stopped; the
+stack's script is replaced; and `preOpenStack` and `openStack` are sent to the
+new script, whose boot reads the carry back, clears it, and says what version
+it came from. A script that does not compile leaves everything as it was. The
+carry is cleared on close as well, so a swap that never came back cannot leave
+a seed on a saved stack.
 
-**What that trusts, said plainly.** Whoever can write to `main` can put code
-in front of your keys, and so can anyone who can answer for
-`raw.githubusercontent.com` if the engine's TLS is not doing its job (this
-suite has not measured that; see the engine notes). The version and the
-SHA-256 in the offer are there so a person can compare them with the commit
-they expect before pressing Update. Everything around the swap - the check,
-the carry, the restore, the button and the menu route - is gated headlessly;
-the swap itself (`set the script of this stack` from inside one of that
-script's own handlers) is engine work and has not run on an engine.
+**What that trusts, said plainly.** Whoever can write to `main` can put code in
+front of your keys, and so can anyone who can answer for
+`raw.githubusercontent.com` if the engine's TLS is not doing its job (this suite
+has not measured that). The version and SHA-256 in the offer are there so a
+person can compare them with the commit they expect before pressing Update. The
+check, the carry, the restore, the button and the menu route are gated
+headlessly; the swap itself (`set the script of this stack` from inside one of
+that script's own handlers) is engine work and has not run on an engine.
 
-## Signed messages, in both formats
+## Signed messages, fee bumps and the broadcast memory
 
-The Tools screen signs in the 2011 format (the header that names the key's
-shape, the one Electrum and every explorer read) for legacy, nested and
-native SegWit addresses, and since 2026-09-04 in **BIP-322** as well: always
-for taproot, which the 2011 format cannot express, and for native SegWit
-when the box beside Verify is ticked. BIP-322 proves an address by SPENDING
-it - a virtual transaction pays the message's tagged hash to the address, a
-second one spends that output to OP_RETURN, and the signature is the second
-one's witness, base64 - so a verifier checks it the way a node would. Verify
-reads the format off the signature (the 2011 form is exactly 65 bytes; a
-witness stack never is). The vector gate holds the BIP's published message
-hashes, to_spend txids and signatures for its test key, and both shapes
-against the reference byte for byte. Not run on an engine.
+**Signed messages.** Tools signs in the 2011 format (the header that names the
+key's shape, read by Electrum and every explorer) for legacy, nested and native
+SegWit addresses, and in **BIP-322**: always for taproot, which the 2011 format
+cannot express, and for native SegWit when the box beside Verify is ticked.
+BIP-322 proves an address by SPENDING it: a virtual transaction pays the
+message's tagged hash to the address, a second spends that output to OP_RETURN,
+and the signature is the second one's witness, base64. Verify reads the format
+off the signature (the 2011 form is exactly 65 bytes; a witness stack never is).
+The vector gate holds the BIP's published message hashes, to_spend txids and
+signatures.
 
-## Child pays for parent
+**Replace by fee.** For a spend this window signed, with the opt-in and some
+change, Bump BUILDS the BIP-125 replacement: same inputs, same payments, the
+extra fee out of the change, signed and printed line by line, not broadcast.
 
-The History screen's Bump button replaces a transaction when it can (BIP-125,
-for a spend this wallet built with the opt-in and some change). Since
-2026-09-04 it does the other thing when it cannot: for a transaction this
-wallet did not build - a stuck incoming payment, typically - or one built
-without the opt-in or without change, if this wallet holds an unconfirmed
-output of it, Bump builds a CHILD that spends that output back to the
-wallet's next change address at a fee covering the parent's bytes as well as
-its own at the Send screen's rate. A miner takes the pair as a package. The
-parent's size comes from its bytes (fetched like Inspect fetches them, or
-from the weight Esplora reports); its fee is known only where the backend
-says it, and when it is not the child pays for both sizes in full and says
-so. The child signals RBF so a rate that proves too low can be raised. Not
-run on an engine.
+**Child pays for parent.** For a transaction this wallet did not build (a stuck
+incoming payment), or one built without the opt-in or without change, if this
+wallet holds an unconfirmed output of it, Bump builds a CHILD that spends that
+output back to the next change address at a fee covering the parent's bytes as
+well as its own at the Send screen's rate. The parent's size comes from its
+bytes (fetched like Inspect fetches them, or from the weight Esplora reports);
+its fee is known only where the backend says it, and when it is not the child
+pays for both sizes in full and says so. For the wallet's own transactions the
+size and fee come from the spend record, with no request. The child signals RBF.
+On a Core backend the mempool card supplies the whole unconfirmed ancestor
+package, so a bump prices the package exactly.
 
-For a transaction this wallet built itself, the size and the fee come from
-the spend record and no bytes are asked for: the 2026-09-03 engine run
-pressed Bump on the wallet's own note transaction and was told to press it
-again when the server's copy arrived. Seen working on the engine the same
-evening (the eleventh log): a change-less sweep bumped by a child at once,
-no round trip, the pair priced at the asked rate, and the child accepted.
+**The broadcast memory.** A transaction this wallet hands to the network is its
+own word about its coins, from the moment the broadcast is QUEUED: the inputs are
+marked (`SPT`), a marked coin is not offered to the selector or to a CPFP bump
+and is not counted in the balance, and every output that comes back to this
+wallet is listed at 0 confirmations and counted as pending, so a second spend a
+moment later has the change to draw on and reuses nothing. A broadcast the
+backend refuses for good (after one retry) hands the coins back and drops the
+outputs it added, quoting the backend's REASON (the Tor Esplora reader holds a
+non-2xx status until the body arrives, so the log says
+`400 Bad Request: bad-txns-inputs-missingorspent` rather than a status line). A
+replacement re-marks the inputs with its own txid and drops the coins added from
+the transaction it replaced. Bump refuses to replace a transaction whose output
+a queued or broadcast spend of this wallet already uses, and names that child.
+The memory is subordinate to the backend: a coin the backend still lists as
+unspent loses its mark and is offered again, with a log line naming the
+transaction that was supposed to have spent it. Nothing is saved; the marks live
+for the session, like the spend records.
 
-## What the wallet remembers about a broadcast
+## Bitcoin Core as a backend, and the Node screen
 
-A transaction this wallet hands to the network is its own word about its
-coins, and since 2026-09-03 it acts on it from the moment the broadcast is
-QUEUED, before the next sync and before any server answers. The inputs the
-transaction spends are marked (the Coins screen shows them as `SPT`), and a
-marked coin is not offered to the selector, not offered to a
-child-pays-for-parent bump, and not counted in the balance. Every output
-that comes back to this wallet - the change, usually - is listed as a coin
-at 0 confirmations and counted as pending, so a second spend a moment later
-has the change to draw on and reuses nothing. A broadcast the backend
-refuses for good (after its one retry) hands the coins back and drops the
-outputs it had added, with a log line saying so. The reason is two engine
-runs on 2026-09-03: in the first, a silent payment and, a minute later, the
-funding of an inscription commit spent the same input, because the coin
-list was still the last sync's; in the second, with marks made only on
-acceptance, both were built on a change output while the fee bump that
-voided it was still queued behind Tor, and both were refused by every node.
+The design, the capability map, what is deliberately out of scope and the risks
+a real node must settle are [bitcoin-core-plan.md](bitcoin-core-plan.md). What is
+built:
 
-For the same reason, Bump refuses to replace a transaction whose output a
-queued or broadcast spend of this wallet already uses: the replacement makes
-different outputs, so that child would spend a coin that never exists. The
-refusal names the child and says to bump that one instead, or wait for the
-parent to confirm.
+**The node is spoken to over JSON-RPC 1.0 on plain HTTP**, one POST per request
+down a socket kept open between requests (Core drops a quiet client after thirty
+seconds; the next request connects again and nothing is counted). The host is
+127.0.0.1 and the port follows the chain by Core's own table (8332, 18332, 48332
+for testnet4, 38332, 18443 for regtest), both editable. Credentials are the
+cookie file the running node writes, read at EVERY request because it changes
+when the node restarts (the path is filled in for the chain and the platform),
+or `rpcuser:rpcpassword`, which wins when both are filled. A node that is not on
+this machine gets the credentials only if you tick the box for it, because Core's
+RPC is unencrypted; an SSH tunnel to 127.0.0.1 is the better answer. The log
+line for a request is the method and its size, never the headers, and the wallet
+file never carries the credentials.
 
-RUN ON AN ENGINE 2026-09-03 (the tenth engine log, 19:42 EDT, testnet over
-Electrum on Tor): the autotest's whole chain phase went green, 41 passed
-and 0 failed in 248 seconds. The note's fee bump was accepted and voided the
-note's coins ("replaces ..."), the silent payment and the commit funding
-were built on the replacement's change and accepted, the commit coin was
-seen at 0 confirmations the moment its funding was queued and the reveal
-was signed and accepted on top of it (inscription
-f002bfb2bde8ff4354c89ca590291bea96416ed6e2e5797c0e863b9be79bc0eei0), and
-the vault was paid from the same memory; every acceptance logged "its coin(s)
-were reserved when it was queued". Not exercised in that run, and still
-unproven on an engine: the release of a refused broadcast, the bump refusal
-above, and a refusal's body reaching the log.
+**The chain is asked, not assumed.** The first request of a sync to an unknown
+node is `getblockchaininfo`; a node on another chain is refused with both names
+in the sentence, the queue emptied, and the refusal held until the network or the
+host moves. The same answer gives the tip, whether the node is pruned or still in
+its initial block download (balances from a node still downloading are
+provisional), and how far behind its headers it is.
 
-The memory is subordinate to the backend. The next sync of an address
-replaces the coins at that address with what the backend lists, and a coin
-the backend still lists as unspent loses its mark and is offered again,
-with a log line naming the transaction that was supposed to have spent it.
-And a refused broadcast quotes the backend's REASON: the Tor Esplora reader
-holds a non-2xx status line until the body has arrived, so the log says
-"400 Bad Request: bad-txns-inputs-missingorspent" rather than the status
-line and two headers, which is all the 2026-09-03 evening log had to offer.
-A replacement (an RBF bump) re-marks the inputs with its own txid and drops
-the coins that had been added from the transaction it replaced. Nothing is
-saved: the marks live for the session, like the spend records. Of this
-paragraph, the replacement's re-marking and voiding were seen on the engine
-in the tenth log (above), and the ELEVENTH (2026-09-03, 20:30 EDT, the
-second autotest) saw a broadcast the server refused hand its coin back with
-the balance returning to the sat and the node's reason in the log
-(mempool-script-verify-flag-failed), a parent refused a bump because a
-queued child spent its output, and a change-less parent bumped by a child
-priced from the record, all on Electrum over Tor. The TWELFTH (2026-09-03,
-21:54 EDT, the same script on the wallet as fixed by it) ran fourteen of
-fourteen with nothing skipped: the same three again, and every transaction
-the script queued behind the broken one - the parent, the child on its
-output, the change-less sweep and the child paying for it - accepted by the
-network afterwards, so the child-pays-for-parent pair is a real one on
-testnet. Still not run on an engine: the backend un-marking a coin it still
-lists, and a refusal's 400 body reaching the log on Esplora.
+**The scan tier** needs nothing set up on the node: a sync is three requests
+however many addresses there are (the chain, `estimatesmartfee` for six blocks,
+and ONE `scantxoutset` over an `addr()` entry for every address, leaves
+included), which is what makes a pruned node enough. A scan reads the chain and
+not the mempool, so a payment on its way to you is invisible until it confirms,
+and it has no history; both are written on the screen. A coin this wallet spent
+and the node still lists stays marked spent, because a scan is not mempool
+evidence either way.
 
-## Bitcoin Core as a backend
+**The watch tier** asks the node to keep a wallet of its own for your
+addresses, named `coinxt-<master fingerprint>` so two accounts on one node never
+share one, created blank with private keys DISABLED: the node can never be asked
+to sign. A sync is then what that wallet has found, mempool included, with
+history from `listtransactions`. It costs one rescan when created, from the
+first-used date: an earlier date is safe and slow, a later one silently loses
+history, so an empty box means the genesis block and the wallet never guesses (a
+seed generated here records its own birth). When the address window grows past
+what the node was given, the next sync re-imports first.
 
-Since 2026-09-04 the Network screen has a sixth choice: **Bitcoin Core, your
-own node, over RPC**. It is [the plan's](bitcoin-core-plan.md) phase 1 with
-the scan half of phase 2, and it works like this. The node is spoken to over
-JSON-RPC 1.0 on plain HTTP, one POST per request down a socket the wallet
-keeps open between requests (Core drops a quiet client after thirty seconds;
-the next request connects again and nothing is counted). The host is 127.0.0.1
-and the port follows the chain by Core's own table (8332, 18332, 48332 for
-testnet4, 38332, 18443 for regtest), both editable. Two ways in: the cookie
-file the running node writes, read at EVERY request because it changes when
-the node restarts (the path is filled in for the chain and the platform, and
-editable), or `rpcuser:rpcpassword`, which wins when both boxes are filled. A
-node that is not on this machine gets the credentials only if you tick the
-box for it, because Core's RPC is unencrypted; an SSH tunnel to 127.0.0.1 is
-the better answer.
+**A broadcast is `sendrawtransaction`**, and a refusal comes back as the node's
+own words with its RPC code (-26 policy, -25 and -27 missing inputs and
+already-in-chain, -28 still starting, -5 not found), released to the coins like
+any refusal. HTTP 401, 403 and 404 are mapped to sentences naming the cookie,
+`rpcallowip` and the wallet path.
 
-**The chain is asked, not assumed.** The first request of every sync whose
-node is not yet known is `getblockchaininfo`, and a node on another chain is
-refused with both names in the sentence, the queue behind it emptied, and the
-refusal held on the Network screen until the network or the host moves. The
-same answer gives the tip, whether the node is pruned or still in its initial
-block download (said in the log and under the state line; balances from a
-node still downloading are provisional), and the headers it is behind.
+**Three ways to reach the same node.** `core-rpc` is the socket above.
+`core-tor` sends the identical POST down a Tor stream to a node you have
+published as a hidden service (no default onion, and no credentials tick, since
+the circuit is the encryption). `core-cli` runs `bitcoin-cli` instead: no host,
+port, cookie or password to type. It blocks the window while the program runs,
+so its requests go when you press a button and never on the poll timer. Every
+command is built from the `kWaCoreMethods` allowlist and never for keys or
+coins; on POSIX a single-quoted argument carries a JSON payload untouched, and
+on Windows a structured argument is refused with `core-rpc` named as the remedy.
 
-**A sync is three requests however many addresses there are:** the chain, the
-fee estimate (`estimatesmartfee` for six blocks, on the same ceiling as every
-other backend's), and ONE `scantxoutset` over an `addr()` entry for every
-address of the wallet, leaves included. That is what makes a pruned node
-enough. What a scan cannot see is written on the screen and in the log: it
-reads the chain and not the mempool, so a payment on its way to you is
-invisible until it confirms; the wallet's own unconfirmed change is kept by
-the wallet's broadcast memory until a scan lists it; a coin this wallet spent
-and the node still lists (the spend not yet confirmed) stays marked spent,
-because a scan is not evidence either way; and there is no history, so the
-History screen shows only what this wallet did itself and a spent-out
-address counts as unused until the watch tier lands. A scan of a mainnet
-UTXO set takes tens of seconds and gets its own deadline.
+**The Node screen** shows the node's host, credentials in use, reported chain
+against the wallet's, blocks and headers, pruning or initial download, version
+and peer count; its fee estimates for 1, 6 and 144 blocks, each with a button
+that writes it into Send; the watch-tier controls; a **mempool card** for a
+selected history row (size, fee, ancestors, descendants, age, replaceability)
+and **Test**, which asks `testmempoolaccept` whether the node WOULD accept the
+last signed transaction and sends nothing; and on regtest only a **sandbox**:
+Start makes a node in a directory beside the wallet file and waits for it, Mine
+pays six blocks to this wallet's first address, Reorg throws the tip away, mines
+a longer chain and reconsiders the old block, and Stop stops it without deleting
+anything. The sandbox's `bitcoind` / `bitcoin-cli` commands are refused by name
+on every other chain before any program runs. On Tools, **Ask the node** sends an
+address to `validateaddress`, a descriptor to `getdescriptorinfo` and a PSBT to
+`analyzepsbt`: a cross-check and never an authority; the node is never given a
+key.
 
-**A broadcast is `sendrawtransaction`**, and a refusal comes back as the
-node's own words with its RPC code (-26 for a policy rejection, -25 and -27
-for missing inputs and already-in-chain, -28 for a node still starting,
--5 for not found), released to the coins the way an Electrum refusal is. HTTP
-401, 403 and 404 are mapped to sentences naming the cookie, `rpcallowip` and
-the wallet path. The log line for a request is the method and its size, never
-the headers, and the wallet file never carries the credentials; Update from
-main carries them across the swap with the other Network settings.
+Not run against a node: all of this is driven headlessly by
+`tools/check-wallet-boot.py` through a modelled socket, Tor stream and shell,
+against fixtures of the node's reply shapes, with the request bytes and command
+lines asserted.
 
-**Three ways to reach the same node.** `Bitcoin Core (RPC)` is the socket
-above. `Core over Tor` sends the identical POST down a Tor stream to a node
-you have published as a hidden service, which is the honest way to use a
-node at home from somewhere else; there is no default onion, because there
-is no such thing as a public Bitcoin Core one, and the credentials tick is
-not asked for there because the circuit is the encryption. `Core via
-bitcoin-cli` runs the program instead of opening a connection: if
-`bitcoin-cli getblockchaininfo` works in your terminal it works here, with
-no host, port, cookie or password to type. That last one blocks the window
-while the program runs, so its requests go when you press a button and
-never on the poll timer, and an argument this wallet cannot quote safely
-for your shell is refused rather than escaped. On POSIX a single-quoted
-argument carries a JSON payload untouched; on Windows a structured argument
-is refused with the RPC choice named as the remedy.
+## Silent payments
 
-## The Node screen
+**Sending.** An `sp1...` / `tsp1...` address is two public keys, not a script:
+the output that receives the coins is a taproot output derived from the private
+keys of the coins funding the transaction and its smallest outpoint, so paying
+the same address twice lands on two unrelated outputs. The parser gives the line
+a taproot kind (all the sizer and dust rule need), coin selection runs as usual,
+and only then, with the inputs known, is the output derived (a taproot input's
+key is the tweaked one, negated to even y) and its script written into the
+payment. It is refused as a PSBT, from a watch-only wallet (there is no script
+to hand a signer) and from a multisig wallet (P2WSH inputs take no part in the
+BIP). The derivation is staged so the vector gate holds each step to the BIP's
+sending vectors: the address decode under BIP-352's 1023-character bech32m
+waiver, the input key sum in hex mod n (the native tweak-add refuses a zero
+intermediate, and one vector is exactly that), the input hash, the shared
+secret, the outputs with their per-scan-key counter, and the three refusals (no
+eligible input, a zero key sum, more than 2323 outputs to one scan key; K_max is
+counted first). Paying one from a mainnet wallet is real money to an address
+only the payee can find; test on testnet first.
 
-A thirteenth screen, and everything on it is about a node.
+**Receiving.** A receiver holds a scan key and a spend key (BIP-352's
+`m/352'/coin'/0'/1'/0` and `.../0'/0`) and, for every transaction it is given,
+repeats what a sender computed and asks whether `B_spend + t_k * G` is one of its
+taproot outputs. The sum of the input public keys is ABI 7's `cxPubkeyCombine`,
+summed over the whole set at once. `cwSpInputPubkey` is the reference's
+`get_pubkey_from_input`; `cwSpPubkeySum`, `cwSpScan`, `cwSpLabelTweak` and
+`cwSpReceiveAddress` are the rest. A found output's private key is
+`b_spend + tweak` and it signs UNTWEAKED (`cwSignKeyPath`). Every stage is held
+to all 29 of the BIP's receiving cases on both the script and the oracle; the
+K_max case alone is proven by the oracle and checked in the script as a source
+shape (millions of interpreted iterations otherwise).
 
-**What the node is.** Its host, which credentials are in use, the chain it
-reported against the chain this wallet is on, its blocks and headers,
-whether it is pruned or still in its initial block download, its version and
-peer count. Ask the node fetches all of that plus three fee estimates.
+The wallet does NOT scan the chain: finding a payment needs the script each input
+spends, which a raw transaction does not carry, and no backend here publishes a
+tweak index. It scans a transaction it is HANDED: paste it on Tools and press
+Inspect, and a SILENT PAYMENT CHECK line follows the report; the wallet asks the
+backend for each input's parent transaction (the fee bump's own request, on
+every backend), keeps at most 64 parents so a second Inspect scans at once, and
+runs the scan when the last one lands. Offline, paste the script each input
+spends under the transaction, one per line in input order. A found output joins
+the address list at its own taproot address and is written to the wallet file
+as an `sp` line. Labels are not used on the receiving side.
 
-**What it says fees are.** One, six and a hundred and forty-four blocks,
-each with a button that writes it into the Send screen. Every other backend
-answers one estimate, which this wallet reads as both of its rates; a node
-answers as many as it is asked, so a real one-block estimate is never
-overwritten by the six-block one.
+## Runes, inscriptions, timelocks, Lightning invoices, testnet4 and labels
 
-**A watch-only wallet in the node.** The scan tier needs nothing set up and
-cannot see the mempool. The watch tier asks the node to keep a wallet of its
-own for your addresses, named for this wallet's master fingerprint so two
-accounts on one node never share one, with private keys DISABLED and created
-blank: the node is given addresses to watch and can never be asked to sign.
-Then a sync is what that wallet has found, mempool included, with history
-from `listtransactions`. It costs one rescan when it is created, which is
-what the first-used box is for: a date earlier than the wallet's first use
-is safe and slow, a later one silently loses history, so an empty box means
-the genesis block and this wallet never guesses. A seed generated here
-records its own birth. When the address window grows past what the node was
-given, the next sync re-imports before it asks anything, because a wallet
-watching some of its addresses reports a balance missing the rest.
+**Runes, read only.** Inspect reads a runestone (the OP_RETURN OP_13 output):
+the etching with its name (spacers as dots), symbol, divisibility, premine and
+open-mint terms; the mint; the pointer; every edict; and the CENOTAPH verdict
+with its flaws, applying the rules in the specification's order, because a
+malformed runestone burns the runes it touches. The numbers are 128-bit, so they
+stay decimal strings and never meet a double. No etching, minting or balances,
+which need an indexer. The vector gate holds the reader to the reference
+implementation's own test cases.
 
-**The mempool.** For a selected history row, what the node holds: size, fee,
-ancestors, descendants, how long it has been there and whether it opted in
-to replacement. That lookup also writes the numbers a fee bump needs onto
-the history row, and they are better numbers than any other backend's: a
-child pays for the whole unconfirmed ANCESTOR package, which is what a node
-reports, where Esplora gives the parent alone and Electrum gives neither. So
-a Bump on a Core backend prices the package exactly instead of paying in
-full for an unknown fee. Beside it, Test asks `testmempoolaccept` whether the
-node WOULD accept the transaction the Send screen last signed, which is the
-cheapest way there is to find out that a fee is too low, and sends nothing.
+**Inscriptions, by commit and reveal.** With `inscribe: text/plain; hello` (or
+`inscribehex: <type>; <hex>`) in the Tools box, or on the Ordinals screen,
+Inscribe prepares the commit: a taproot output whose single hidden leaf is the
+ord envelope (`<key> OP_CHECKSIG OP_FALSE OP_IF "ord" <type> <body> OP_ENDIF`,
+pushes of at most 520 bytes) keyed by the next unused receive key; the commit
+address joins the wallet's list and the recipe is saved with the wallet. Once
+the coin is seen, Inscribe signs the reveal: one input spent through the leaf,
+one output to the next receive address, which is frozen from the moment the
+reveal is signed so no ordinary spend can hand the inscribed sat to a miner or a
+payee. The leaf hash uses a real compact size, because CoinXT's `cxTapLeafHash`
+stops at 252 bytes and an inscription is exactly the script that exceeds it.
 
-**A regtest sandbox.** On regtest only, and refused by name on every other
-chain before any program is run: Start makes a node in a directory beside
-the wallet file and waits for it to answer, Mine pays six blocks to this
-wallet's first address, Reorg throws the tip away, mines a longer chain and
-reconsiders the old block, and Stop asks the node to stop without deleting
-anything. It is the only part of this wallet that starts a program rather
-than talking to one, and the reason it exists is that a chain of your own
-makes every screen here exercisable without a faucet and without waiting
-ten minutes for a block.
+**Coins locked until a block.** `lock: <height>` (or the Vault screen) prepares an
+address whose only leaf is `<height> OP_CHECKLOCKTIMEVERIFY OP_DROP
+<receive key> OP_CHECKSIG` under the NUMS point as internal key, so there is no
+key-path spend around it. The Coins screen marks such a coin `LCK`; below the
+height it is withheld from selection, and from the height on Send spends it with
+the locktime raised automatically and said so in the review.
 
-**A second opinion, on Tools.** Ask the node reads the box on the Tools
-screen and asks the node about it: an address goes to `validateaddress`, a
-descriptor to `getdescriptorinfo`, a PSBT to `analyzepsbt`, and the answer
-lands in the Result panel beside everything else Tools prints. It is a
-cross-check and never an authority - an address this wallet built, a
-descriptor it exported and a PSBT it signed, read back by the implementation
-everybody else's wallet is checked against. Nothing it says changes what the
-wallet does, and the node is never given a key.
+**Lightning invoices, read out.** Inspect and Validate read a BOLT11 invoice:
+the network, the amount (in millisatoshi and the wallet's unit), the payee node
+key recovered from the signature, the description or its hash, the payment
+hash, issue and expiry, the final CLTV, an on-chain fallback address (which this
+wallet can pay), route hints, feature bits and metadata. It refuses what the
+specification calls invalid, naming the reason. A BIP-21 URI with a
+`lightning=` parameter is read as both halves. This wallet holds no channels and
+cannot pay an invoice, and says so.
 
-Not run against a node: everything above is driven headlessly by
-`tools/check-wallet-boot.py` through a modelled socket, a modelled Tor
-stream and a modelled shell, against fixtures of the node's reply shapes,
-with the request bytes and the command lines asserted. The framing on a real
-node, the cookie on a real platform, a real rescan and the sandbox are the
-plan's phase 0 on the maintainer's machine. What is not built at all: `verifymessage`
-(the 2011 format only, which this wallet verifies itself), JSON-RPC batching
-for Core, and a Node screen card for the sandbox's own mining address rather
-than this wallet's first one.
+**Testnet4.** A different chain with testnet3's bytes everywhere, so the
+backend is the only thing that tells them apart: Blockstream's mirrors index
+testnet3 and are refused for it by name, with mempool.space (`/testnet4`)
+offered; the built-in Electrum servers are refused too.
 
-## Silent payments, the sending side
-
-Since 2026-09-04 the Pay-to box takes a **BIP-352 silent payment address**
-(`sp1...` on mainnet, `tsp1...` on the test networks) on a line like any
-other. Such an address is two public keys, not a script: the output that
-actually receives the coins is a taproot output derived from the private
-keys of the coins that fund the transaction and its smallest outpoint, so
-paying the same address twice lands on two unrelated outputs and only the
-payee's scan key can find either. That shape decides what the wallet does.
-The parser keeps the two keys and gives the line a taproot kind, which is
-all the sizer and the dust rule need; coin selection runs as usual; and
-only then, with the inputs known, is the output derived (a taproot input's
-key is the tweaked one, negated to even y as the BIP says) and its script
-written into the payment. The review names the derived address, and Inspect
-shows a plain taproot output, because that is all the chain ever sees. It is
-refused where it cannot be honest: as a PSBT and from a watch-only wallet
-(there is no script to hand a signer, only a derivation only the key holder
-can repeat), and from a multisig wallet, whose P2WSH inputs take no part in
-the BIP at all. The Tools inspector explains one instead of showing a
-scriptPubKey it does not have.
-
-The derivation is wallet-core's, staged so the vector gate can hold each
-step to the BIP's published sending vectors (`tests/bip352-sending-vectors.json`,
-the published file's sending half): the address decode under the BIP's own
-1023-character waiver on bech32m, the input key sum done in hex mod n (the
-native tweak-add refuses a zero intermediate, and one of the BIP's vectors
-is exactly that), the input hash over the smallest outpoint, the shared
-secret, and the outputs with their per-scan-key counter, including the
-three refusals - no eligible input, a zero key sum, and more than 2323
-outputs to one scan key. Which inputs take part is the receiver's rule, and
-the oracle implements that side of it too, checked against the vectors'
-own input lists. Not run on an engine.
-
-## Silent payments, the receiving side
-
-Since 2026-09-10 `wallet-core` has the other half. A receiver holds a scan
-key and a spend key (BIP-352's `m/352'/coin'/0'/1'/0` and `.../0'/0`),
-publishes them as its address, and for every transaction it sees repeats
-what a sender computed: the sum of the eligible input public keys, the input
-hash over the smallest outpoint, the shared secret, and then `k = 0, 1, 2...`
-asking whether `B_spend + t_k * G` is one of the transaction's taproot
-outputs. The sum is point addition, the one curve operation coinxt had never
-exposed, and it is ABI 7's `cxPubkeyCombine` - summed over the whole set at
-once, so the BIP's "intermediate sum is infinity, final sum is not" vector is
-accepted and a final infinity is a skip. `cwSpInputPubkey` is the reference's
-`get_pubkey_from_input` (the malleated-P2PKH window scan, nested P2WPKH
-through its redeem script, the annex dropped and the NUMS-point control
-block skipped on taproot); `cwSpPubkeySum`, `cwSpScan`, `cwSpLabelTweak` and
-`cwSpReceiveAddress` are the rest, labels included. A found output's private
-key is `b_spend + tweak` and it signs UNTWEAKED - the output is that key, not
-a BIP-341 tweak of it.
-
-Every stage is held to the BIP's own receiving vectors
-(`tests/bip352-receiving-vectors.json`, the published file's receiving half,
-all 29 cases: the addresses, plain and labeled; which input contributes a key;
-the sum, the input hash and the shared secret against the published values;
-the outputs found and their tweaks; and the published BIP-340 signature from
-the recovered key) on both the shipped script and the oracle. The one case
-the script is not driven through is K_max - 2324 outputs walked up to 2323
-times is millions of interpreted iterations - so the oracle proves that
-count and the script's cap is checked as a source shape.
-
-**What the wallet does with it.** A seed wallet derives its scan and spend
-keys beside the account (`waDeriveAccount`, at BIP-352's own hardened
-branches, so the address is per seed and not per account), the Receive
-screen prints the address under the derivation and a button copies it, and
-the keys go wherever the seed goes (`waDropSeed`, `closeStack`). The wallet
-does NOT scan the chain: finding a payment needs the script each input of
-the paying transaction spends, which a raw transaction does not carry, and
-none of the backends here publishes the per-transaction tweak index a light
-client would use. What it does is scan a transaction it is HANDED. Paste
-the transaction on Tools and press Inspect: under the RAW TRANSACTION
-report comes a SILENT PAYMENT CHECK line, and (since 2026-09-11) the wallet
-asks the backend for the transaction each input spends - the same
-raw-transaction request the fee bump uses, on every backend - reads the
-prevout scripts out of those, and runs the scan when the last one lands,
-repainting the result box and saying so on the status line and in the log.
-The parents are kept (`sWaSpParents`, dropped whole past 64) so a second
-Inspect scans at once. Offline, the line says what to paste instead: the
-script each input spends under the transaction, one per line in input
-order, which is the 2026-09-10 shape and still works everywhere. A
-transaction with no taproot output gets no line (a silent payment can only
-be one), and a coinbase is refused without a request. Every output that is
-a silent payment to this wallet is reported, added to the address list at
-its own taproot address (so sync watches it like any address and never
-offers it as "next unused") and written to the wallet file as an `sp` line
-so a reopen keeps it. Spending one goes through `waSignSpend`'s own branch:
-the key is `b_spend + tweak` and it signs UNTWEAKED (`cwSignKeyPath`),
-because the output is that key and not a BIP-341 tweak of it. Labels are
-not used on the receiving side; the calculator supports them and the wallet
-publishes one address. The boot gate drives all of it - the keys against
-the oracle's derivation, the address on screen and on the clipboard, a
-transaction the oracle builds to pay it: pasted alone, the offline note,
-then the parent asked for by its real txid and delivered as Electrum would,
-the scan running on arrival, a second Inspect served from the held parent,
-a coinbase and a non-taproot transaction each left alone; then the same
-transaction with its script pasted under it, found again and remembered
-through a file round trip; and a coin on the found output signed and
-VERIFIED by the oracle against the output key. Not run on an engine.
-
-## Runes, read only
-
-Since 2026-09-04 Inspect reads a **runestone** - the Runes protocol's
-OP_RETURN OP_13 output - and prints what it says under the output: the
-etching with its name (spacers as dots, since the source cannot carry the
-bullet), symbol, divisibility, premine and open-mint terms; the mint; the
-pointer; every edict as rune id, amount and destination output; and the
-CENOTAPH verdict with its flaws, because a malformed runestone burns the
-runes it touches and a reader that stayed quiet about that would be lying by
-omission. The numbers are 128-bit, so wallet-core keeps them as decimal
-strings and never lets one near a double: LEB128 decoding, the delta-encoded
-edict ids, the modified-base-26 name and the amount display are all digit
-loops. Read only is the whole of it - no etching, no minting, no balances,
-which need an indexer that has seen every block since the protocol began.
-The vector gate holds the reader to the reference implementation's own test
-cases (names from `A` to the 2^128 - 1 edge, the spacer and divisibility
-tables, the all-tags etching, the specification's delta-encoding example,
-and each cenotaph rule by name). Not run on an engine.
-
-## Inscriptions, by commit and reveal
-
-Since 2026-09-04 the Tools screen inscribes. The protocol has two steps and
-so does the button: with `inscribe: text/plain; hello` (or `inscribehex:
-<type>; <hex>`) in the paste box, Inscribe prepares the **commit** - a
-taproot output whose single hidden leaf is the ord envelope
-(`<key> OP_CHECKSIG OP_FALSE OP_IF "ord" <type> <body> OP_ENDIF`) keyed by
-the next unused receive key; the commit address joins the wallet's own
-address list so sync watches it, the recipe is saved with the wallet so a
-reopen rebuilds it, and the report says how much to fund it with. Once the
-coin is seen, Inscribe with the box empty signs the **reveal**: one input
-spent through the leaf (the witness is the Schnorr signature by the internal
-key, the leaf script and the control block), one output to the next receive
-address, which receives the first sat and with it the inscription - and
-that output is frozen on the Coins screen from the moment the reveal is
-signed, so no ordinary spend can hand the inscribed sat to a miner as fee
-or to a payee who never asked; unfreeze it when you mean to move the
-inscription. Inspect on the reveal reads the envelope back out of its
-witness, which is the loop this wallet could already close from the other
-end. The pieces are
-wallet-core's: a leaf hash with a real compact size (coinxt's stops at 252
-bytes, and an inscription body is exactly the script that exceeds it), the
-envelope in pushes of at most 520 bytes, the commit (tweak by the leaf,
-control block, script), the script-path sighash and the witness. The vector
-gate holds each to the oracle, the boot gate drives both presses and
-rebuilds the reveal's signature from the same key byte for byte. A commit
-coin spent any other way is still spendable - waSignSpend signs any coin of
-this wallet through its leaf - but the reveal builder is the intended path,
-and a silent payment funded from one tweaks by the leaf as BIP-352 requires.
-Not run on an engine.
-
-## Coins locked until a block
-
-The same one-leaf machinery, turned the other way, is a vault. Since
-2026-09-04 `lock: <height>` in the Tools paste box and the Lock button
-prepare an address whose only leaf is `<height> OP_CHECKLOCKTIMEVERIFY
-OP_DROP <receive key> OP_CHECKSIG` under the NUMS point as internal key -
-so there is no key-path spend to go around it, and whatever is paid there
-cannot move before that block, not by this wallet and not by anyone holding
-its seed, because consensus refuses the only script that releases it. The
-address joins the wallet's list and the recipe is saved with the wallet,
-like an inscription commit. The Coins screen marks such a coin `LCK`; while
-the tip is below the height it is withheld from selection (a transaction
-every node would reject is not a spend), and from the height on the Send
-screen spends it like any other coin: it raises the locktime itself, says
-so in the review, and signs through the leaf. The boot gate drives the
-button, plants a coin, checks the withholding on both sides of the height,
-and rebuilds the release's signature from the same key. Not run on an
-engine.
-
-## Lightning invoices, read out
-
-Since 2026-09-04 Inspect and Validate read a **BOLT11 Lightning invoice**
-and say what it asks before anyone pays it somewhere else: the network, the
-amount (the invoice's unit is bitcoin with a multiplier letter; the wallet
-prints millisatoshi and the whole-satoshi part in its own unit), the payee's
-node key recovered from the signature, the description or its hash, the
-payment hash, when it was issued and when it expires, the final CLTV, the
-on-chain fallback address if it carries one (which this wallet CAN pay),
-route hints hop by hop, feature bits and payment metadata. It refuses what
-the specification calls invalid, naming the reason: a bad checksum or
-mixed case, a bad amount or multiplier, sub-millisatoshi precision, an
-unknown required feature bit, a missing payment hash, secret or
-description, a signature that does not recover, or one that disagrees with
-the node key the invoice names. The reader is wallet-core's: the long
-bech32 decoder from the silent-payment work, the 5-bit field walk, and
-coinxt's signature recovery. The vector gate holds every field of every
-example in the specification (`tests/bolt11-vectors.json`) and each of its
-invalid examples. A BIP-21 URI that carries a `lightning=` parameter - the
-unified QR most Lightning wallets now show - is read as both halves, the
-on-chain address and amount with the invoice beneath, and one with no
-address at all is read as the invoice alone. This wallet holds no channels
-and cannot pay an invoice; it says so on the same screen. Not run on an
-engine.
-
-## Testnet4, and labels that travel
-
-Since 2026-09-04 the Wallet screen offers **testnet4** beside testnet. It is
-a different chain with testnet3's bytes everywhere (prefixes, WIF, extended
-keys, coin type), so the backend is the only thing that tells them apart:
-Blockstream's mirrors index testnet3 and are refused for it by name, with
-`mempool.space` - the built-in second Esplora host, which serves `/testnet4`
-- offered as the remedy; the built-in Electrum servers are refused too.
-Testnet3 is being retired, so this is where new test coins will come from.
-Not run on an engine, nor against mempool.space's testnet4 index.
-
-The Settings screen exports and imports labels in **BIP-329**, one JSON
-object per line, the format Sparrow, Bitcoin Core and the rest read. Address
-labels go out as `addr` records; frozen coins as `output` records with
-`spendable: false`; both come back, and the record types this wallet keeps
-no home for (tx, input, pubkey, xpub) are counted and skipped, never
-refused. The file sits beside the wallet file, named for it. The gate drives
-the round trip, the BIP's own example lines, and the refusals.
+**BIP-329 labels.** Settings exports and imports one JSON object per line:
+address labels as `addr` records, frozen coins as `output` records with
+`spendable: false`. Record types this wallet has no home for (tx, input,
+pubkey, xpub) are counted and skipped, never refused. The file sits beside the
+wallet file.
 
 ## Custody, said plainly
 
@@ -830,27 +550,32 @@ password field that does nothing is worse than no password field at all.
 
 `wallet-core.livecodescript` is a library like any other in this suite: it can
 be `start using`-ed, or embedded, and its public handlers all carry the `cw`
-prefix (`tools/check-cross-library-names.py` holds that, and holds every one of
-its names disjoint from every other library in the suite). The groups are:
+prefix (the suite's `tools/check-cross-library-names.py` holds every name
+disjoint from every other library). The groups are:
 
 | Group | Handlers |
 |---|---|
 | Networks | `cwNetworks`, `cwNetHrp`, `cwNetP2pkhVersion`, `cwNetP2shVersion`, `cwNetWifVersion`, `cwNetCoinType`, `cwXKeyVersion` |
 | Script types | `cwScriptTypes`, `cwTypePurpose`, `cwTypeStem` |
-| Scripts | `cwPush`, `cwScriptP2pkh`, `cwScriptP2sh`, `cwScriptP2wpkh`, `cwScriptP2wsh`, `cwScriptP2tr`, `cwRedeemP2shP2wpkh`, `cwScriptP2shP2wpkh`, `cwMultisigScript`, `cwScriptKind`, `cwScriptAsm` |
+| Scripts | `cwPush`, `cwPushLen`, `cwScriptNum`, `cwScriptP2pkh`, `cwScriptP2sh`, `cwScriptP2wpkh`, `cwScriptP2wsh`, `cwScriptP2tr`, `cwRedeemP2shP2wpkh`, `cwScriptP2shP2wpkh`, `cwMultisigScript`, `cwScriptKind`, `cwScriptAsm`, `cwScriptItems`, `cwScriptCheck`, `cwOpReturnScript`, `cwOpReturnData` |
 | Addresses | `cwAddressForScript`, `cwScriptForAddress`, `cwAddressKind`, `cwAddressIsValid`, `cwAddressProblem`, `cwElectrumScripthash` |
 | Derivation | `cwParsePath`, `cwFormatPath`, `cwAccountPath`, `cwFingerprint`, `cwXKeyEncode`, `cwXKeyDecode`, `cwXKeyIsPrivate`, `cwXKeyRespell`, `cwAccountXKey`, `cwChainNode`, `cwAddressAt`, `cwMultisigAddressAt` |
-| Amounts | `cwSatToBtc`, `cwBtcToSat`, `cwFormatAmount`, `cwParseAmount` |
-| Size and fees | `cwVarIntLen`, `cwInputBaseBytes`, `cwInputWitnessBytes`, `cwOutputBytes`, `cwEstimateVsize`, `cwSimpleInputs`, `cwFeeFor`, `cwDustThreshold`, `cwRbfMinFee`, `cwFeeRateLabel` |
+| Amounts | `cwSatToBtc`, `cwBtcToSat`, `cwFormatAmount`, `cwParseAmount`, `cwExpandExponent` |
+| Size and fees | `cwVarIntLen`, `cwInputBaseBytes`, `cwInputWitnessBytes`, `cwOutputBytes`, `cwEstimateVsize`, `cwSimpleInputs`, `cwTapscriptInputVsize`, `cwFeeFor`, `cwDustThreshold`, `cwRbfMinFee`, `cwFeeRateLabel` |
 | Coin selection | `cwSelectCoins` |
-| Transactions | `cwTxInput`, `cwTxOutput`, `cwOutpointsHex`, `cwSequencesList`, `cwOutputsHex`, `cwSighash`, `cwSighashTaproot`, `cwSignInput`, `cwSignTaproot`, `cwSignMultisig`, `cwMultisigKeys`, `cwWitnessBytes`, `cwCompressPubkey`, `cwTxSerialize`, `cwTxid`, `cwTxDecode` |
+| Transactions | `cwTxInput`, `cwTxOutput`, `cwOutpointsHex`, `cwSequencesList`, `cwOutputsHex`, `cwSighash`, `cwSighashTaproot`, `cwSignInput`, `cwSignTaproot`, `cwSignKeyPath`, `cwSignMultisig`, `cwMultisigKeys`, `cwWitnessBytes`, `cwWitnessStackEncode`, `cwWitnessStackDecode`, `cwCompressPubkey`, `cwDerToCompact`, `cwTxSerialize`, `cwTxid`, `cwTxDecode` |
+| Taproot script path | `cwTapLeafHash`, `cwTapCommit`, `cwTapscriptSighash`, `cwSignTapscript`, `cwScalarAdd`, `cwScalarNegate`, `cwInscriptionScript`, `cwTimelockScript` |
 | PSBT | `cwPsbtCreate`, `cwPsbtParse`, `cwPsbtEmit`, `cwPsbtSign`, `cwPsbtFinalize`, `cwPsbtCombine`, `cwPsbtSummary`, `cwPsbtFind`, `cwPsbtFindAll`, `cwPsbtInputAmount`, `cwPsbtInputScript`, `cwPsbtInputType`, `cwPathBytes`, `cwPathFromBytes`, `cwPsbtUnsignedTx` |
-| Messages | `cwMsgDigest`, `cwMsgSign`, `cwMsgVerify` |
+| Messages | `cwMsgDigest`, `cwMsgSign`, `cwMsgVerify`, `cwBip322Hash`, `cwBip322ToSpendTxid`, `cwBip322Digest`, `cwBip322Sign`, `cwBip322Verify` |
+| Silent payments | `cwSpIsAddress`, `cwSpHrp`, `cwSpDecode`, `cwSpEncode`, `cwSpPath`, `cwSpEligible`, `cwSpInputSum`, `cwSpInputHash`, `cwSpSharedSecret`, `cwSpOutputs`, `cwSpSend`, `cwSpInputPubkey`, `cwSpPubkeySum`, `cwSpScan`, `cwSpLabelTweak`, `cwSpLabeledSpend`, `cwSpReceiveAddress` |
+| Runes | `cwRunestoneDecode`, `cwRunestonePayload`, `cwRunestoneIntegers`, `cwRuneName`, `cwRuneSpaced`, `cwRuneAmountText`, `cwLeb128Decode`, `cwLeb128Encode` |
+| Decimal strings | `cwDecAdd`, `cwDecSub1`, `cwDecMulAdd`, `cwDecDivMod`, `cwDecCompare`, `cwDecCheck` |
+| Lightning | `cwBolt11IsInvoice`, `cwBolt11Prefix`, `cwBolt11Decode`, `cwBolt11AmountMsat`, `cwBech32DecodeLong`, `cwBech32EncodeLong`, `cwHexToBits`, `cwBitsToHex` |
 | URIs | `cwUriParse`, `cwUriBuild`, `cwPercentEncode`, `cwPercentDecode` |
 | Descriptors | `cwDescriptorChecksum`, `cwDescriptor`, `cwDescriptorMultisig` |
 | JSON | `cwJsonParse`, `cwJsonType`, `cwJsonCount`, `cwJsonAt`, `cwJsonMember`, `cwJsonKeys`, `cwJsonText`, `cwJsonPath`, `cwJsonGet`, `cwJsonEscape`, `cwJsonString2` |
 | QR | `cwQrVersionFor`, `cwQrCodewords`, `cwQrMatrix`, `cwQrText`, `cwQrBmp` |
-| Lists and bytes | `cwCharIndex`, `cwSameBytes`, `cwListNew`, `cwListAdd`, `cwListCount`, `cwLeBytes`, `cwBeBytes`, `cwLeRead`, `cwBeRead`, `cwReverseBytes`, `cwHexIsClean`, `cwHexCompare`, `cwSortHexList`, `cwLower`, `cwUpper`, `cwTrim`, `cwB64Encode`, `cwB64Decode`, `cwStripWhitespace`, `cwVarIntHex`, `cwHexListHas`, `cwSigsList`, `cwWifInfo`, `cwMnemonicStrength`, `cwMnemonicWordCount`, `cwVersion` |
+| Lists and bytes | `cwCharIndex`, `cwSameBytes`, `cwListNew`, `cwListAdd`, `cwListCount`, `cwLeBytes`, `cwBeBytes`, `cwLeRead`, `cwBeRead`, `cwReverseBytes`, `cwHexIsClean`, `cwHexCompare`, `cwSortHexList`, `cwLower`, `cwUpper`, `cwTrim`, `cwB64Encode`, `cwB64Decode`, `cwStripWhitespace`, `cwVarIntHex`, `cwHexListHas`, `cwSigsList`, `cwWifInfo`, `cwMnemonicStrength`, `cwMnemonicWordCount`, `cwUnixDate`, `cwVersion` |
 
 Errors are thrown strings beginning `wallet-core: `, matching CoinXT's own
 convention. Two handlers answer a question instead of throwing, for the same
@@ -863,10 +588,8 @@ caseSensitive`, which defaults to FALSE, so both fold case - and Base58,
 Bitcoin Core's descriptor alphabet and WIF are all case-SIGNIFICANT. Anywhere
 this layer looks a character up in an alphabet whose two cases sit at different
 positions, or binds a signature to a particular address string, it uses these
-instead. CoinXT's own header calls that the single most dangerous line in its
-file; this layer had to learn it a second time, and
-`tools/check-wallet-vectors.py` now re-runs every vector under the engine's
-rule so it cannot be forgotten a third.
+instead. `tools/check-wallet-vectors.py` re-runs every vector under the engine's
+rule so it cannot be forgotten.
 
 ## Running it
 
@@ -882,12 +605,12 @@ The packaged extensions do the rest:
   Generate is disabled (there is no entropy source here fit to make a key from,
   and there is deliberately no fallback) and the wallet file cannot be
   encrypted.
-* **a tor daemon** is optional, and only the two Tor transports want it.
+* **a tor daemon** is optional, and only the Tor backends want it.
+* **Bitcoin Core** 26 or later is optional, and only the Core backends want it.
 
 The wallet opens on testnet with BIP-39's public test mnemonic already in the
-seed box, so every screen has something true to show before you type anything.
-That phrase's funds are burned by design. Do not type one that guards real coins
-into this stack.
+seed box. That phrase's funds are burned by design. Do not type one that guards
+real coins into this stack.
 
 Run the vector gate with:
 
@@ -898,39 +621,39 @@ cd coinxt && python3 tools/check-wallet-vectors.py
 It builds the native shim from `native/coinxt.c`, so it needs a C compiler; with
 none, it runs the constant checks and says loudly that it skipped the rest.
 
-## The next engine pass, and what each step proves
+### The next engine pass, shortest feedback first
 
-Everything dated 2026-09-04 above says "not run on an engine". The order
-below is shortest feedback first; each line names the honesty label it
-flips when it comes back clean.
+Each step names what green looks like. The legs the 2026-09-03 logs already
+closed (the silent-payment send, an inscription commit and reveal through the
+autotest, the vault paid and its coin withheld) are left out. Silent-payment
+receiving and the Bitcoin Core backends are separate sessions (the suite work
+plan's coinxt engine rows).
 
-1. **Boot, and the log.** Open the stack; the boot self-check prints its
-   own record. Green flips nothing new but is the precondition for all of it.
-2. **Tools, paste box.** Paste any `lnbc...` invoice and press Inspect: the
-   payee node key, amount and fields. Then a mainnet transaction id known
-   to carry a runestone (any Runes etching or transfer; block 840,000
-   onward) with a backend chosen on Network, press Inspect, and read the
-   runestone under its OP_RETURN output. Both flip their sections' labels.
-3. **Tools, `inscribe: text/plain; hello` and Inscribe.** The commit
-   address appears and joins the Addresses screen; save the wallet, reopen
-   it, and the commit is still there (the recipe line). Flips the commit
-   half of the inscription section. Funding it on signet or testnet4 and
-   pressing Inscribe again with the box empty, then Broadcast, is the reveal
-   half - an explorer that reads inscriptions will show it at `<txid>i0`.
-4. **Tools, `lock: <height a few blocks ahead>` and Lock.** Pay the address
-   from the Send screen; the Coins screen shows `LCK`; before the height a
-   MAX spend leaves it out, after the height a manual spend of it signs with
-   the raised locktime, and a node accepts the broadcast. Flips the timelock
-   section.
-5. **Send, a `tsp1...` line.** Any silent payment address for the network
-   (a wallet that supports BIP-352 receiving can give one); Preview shows
-   the derived `tb1p...` output, Sign, Broadcast, and the receiving wallet
-   finds it. Flips the silent-payment section. Paying one from a mainnet
-   wallet is real money to an address only the payee can find; test first.
-6. **Tools, BIP-322.** Sign with a taproot wallet's first address and verify
-   the result in Bitcoin Core's `verifymessage` or Sparrow. Flips the
-   signed-messages section.
+1. **Boot.** Open the stack; the boot self-check prints its own record with no
+   FAIL line. It flips nothing new, but everything below depends on it.
+2. **Tools, Inspect.** Paste any `lnbc...` invoice: the payee node key, the
+   amount and the fields are read out. Then, with a mainnet backend chosen on
+   Network, a transaction id known to carry a runestone (any Runes etching or
+   transfer; block 840,000 onward): the runestone is read under its OP_RETURN
+   output. Flips BOLT11 and Runes.
+3. **Ordinals screen.** Type `hello` as text and press "1. Prepare the commit
+   address": the commit address joins Addresses. Save the wallet and reopen
+   it: the commit and its recipe are still there. Fund it on signet or
+   testnet4, press "2. Sign the reveal", then Broadcast: an explorer that reads
+   inscriptions shows it at `<txid>i0`. Flips the screen and the saved recipe.
+4. **Vault screen.** Prepare the locked address for a height a few blocks
+   ahead and pay it from Send; Coins shows `LCK`. Before the height a MAX
+   spend leaves it out; after the height a manual spend of it signs with the
+   raised locktime, and a node accepts the broadcast. Flips the release after the height (the
+   autotest skipped it).
+5. **Tools, BIP-322.** Sign with a taproot wallet's first address and verify the
+   result in Bitcoin Core's `verifymessage` or in Sparrow. Flips signed
+   messages (the autotest skipped it on a p2pkh wallet).
+6. **Testnet4 and labels.** Choose testnet4 with mempool.space's `/testnet4`
+   backend and sync; export BIP-329 labels on Settings and import the file into
+   a fresh open: the address labels and frozen coins come back. Flips testnet4
+   and BIP-329.
 
-What comes back from an engine goes into the section it belongs to, dated,
-and into `CLAUDE.md` - the convention the rest of this file follows.
-
+Every other line of "What has not run on an engine or a node" above flips when
+a pasted log shows it once. What comes back from an engine goes into
+`CLAUDE.md`'s evidence ledger, dated, and that list shrinks by the line.

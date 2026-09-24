@@ -1,166 +1,77 @@
 # Riptide examples
 
-One stack so far: `riptide-social.livecodescript`, the phase-1-through-8
-flagship on FIVE cards: Feed (identity via the RIPTKEY1-sealed seed, a
-public feed of signed posts + a signed BEP44 head over the real DHT, the
-verified follow walk, and the media strip), Messages (encrypted DMs + the
-phase-5 Call button), Devices (the phase-6 LAN mesh), Anon (the
-phase-7 persona with its live guard panel), and Nostr (the phase-8
-bridge). The Nostr card's first landing was REVERTED on 2026-08-29 and
-RE-LANDED the same day behind a headless boot gate - see the phase-8
-entry below. It is built on the suite UI
-kit (the block between the marker lines is carried verbatim from
-`tools/ui-kit.livecodescript` at the suite root; do not edit it here).
+One stack: `riptide-social.livecodescript`, the phase-1-through-8 app on FIVE
+cards - Feed (identity via the `RIPTKEY1`-sealed seed, signed posts and a signed
+BEP44 head over the real DHT, the verified follow walk, the media strip),
+Messages (encrypted DMs and the phase-5 Call button), Devices (the phase-6 LAN
+mesh), Anon (the phase-7 persona with its live guard panel), and Nostr (the
+phase-8 bridge). It is built on the suite UI kit; the block between the kit's
+marker lines is carried verbatim from the suite's `tools/ui-kit.livecodescript`,
+so do not edit it here.
 
-Status, by phase (each a maintainer's dated account):
-- Phases 1-2 (feed + follow): PASSED on two machines 2026-08-13, feeds
-  both directions through the real DHT; the library underneath
-  engine-passed 2026-08-12 (133/133).
-- Phase 3 (media): PASSED on two machines 2026-08-15 - a follower fetched
-  and played an attached video (mid-download start not yet distinguished
-  from a fast complete transfer).
-- Phase 4 (DMs): PASSED on two machines 2026-08-15, chat both ways, no
-  server.
-- Phase 5 (the call): BUILT, verified statically, never run. Phases 6
-  (the mesh) and 7 (anon over Tor): BUILT, their COMPUTE halves
-  engine-green 2026-08-20 (Windows, in the suite paste); the live legs
-  have never run - `../docs/two-machine-runbook.md` is the script.
-  Phase 5 now includes the spec-6.2 typing lane (2026-08-15): a second,
-  deliberately lossy dc channel showing "the far side is typing..."
-  during a call. Phase 6 now includes the SYNC PAYLOAD (2026-08-15):
-  the Devices card's draft field broadcasts signed channel-0 records to
-  every admitted device (debounced, absolute state), incoming drafts
-  render with their origin device and seq, channel-1 presence shows
-  [typing]/[quiet] per peer, and a stranger's record is refused and
-  logged - the phase-6 done-criterion (a draft typed on one device
-  appears on another with a stranger refused) is now reachable. And
-  since 2026-08-16 the MEDIA HANDOFF (the channel-2 decision): Send
-  media... seeds the picked file in place and offers it to every
-  admitted device as a signed channel-0 pointer (info-hash + name +
-  size); the receiving device's Fetch + play pulls the bytes over the
-  phase-3 torrent rail, playable mid-download. Channel 2 itself stays
-  reserved, dark - media never fits enet's 60000-byte budget, and bulk
-  over that seam is a torrent in this suite.
-  Phase 7 now includes the 8.2/8.3 onion SERVING (2026-08-15): Publish +
-  serve registers onion-httpd routes for the feed page at `/`, the signed
-  prekey at `/prekey`, and a POST `/dm` sealed-intro drop; it needs a tor
-  daemon with the control port enabled.
-- Phase 8 (the Nostr bridge, 2026-08-29): the LIBRARY rail is built and
-  its compute half is EXECUTED headlessly against the real committed
-  coinxt (`../tools/check-script-vectors.py`) - more than "verified
-  statically", less than an engine pass, since it settles logic and not
-  parser behaviour. The CARD's first landing was written the same
-  day, and on a real engine it failed at `openStack` with
-  `Chunk: no target found` - the whole app, not just the new card. It was
-  REVERTED rather than left in place or patched on a guess. Two defects
-  were found and fixed on the way (a non-literal `constant`, which does
-  not compile and therefore took the entire stack script down; and the
-  gate gap that let it ship - now check 22 in the family checker); the
-  third failure was never pinned to a line, because at that point this
-  repo had no way to execute a stack script headlessly. **RE-LANDED the
-  same day (2026-08-29), restructured to remove that whole class**:
-  `openStack` is byte-identical to the engine-proven body (proven
-  mechanically, not by eye), the relay defaults paint inside the card
-  builder via the same pattern the proven cards use, the relay socket
-  library initializes lazily at Connect rather than at boot - and the
-  repo now HAS a way to execute a stack script headlessly:
-  `../tools/check-demo-boot.py` boots this shipped file (embeds included)
-  through the family interpreter under two capability profiles, clicks
-  through every card, and drives the Nostr rail end to end; it is in the
-  gate set with mutation fixtures (`../tools/test-demo-boot.py`) seeded
-  from both real 2026-08-29 failures. The re-land then MET an engine the
-  same day: the maintainer ran the five-card stack and reported it
-  working, so the criterion the first landing failed is closed. The v11
-  UI pass later that day (below) reworked the chrome, so the current
-  file's label is: verified statically + headless boot; needs an OXT
-  re-pass.
-  Nostr DMs are separately and deliberately NOT built (spec 8A.6): NIP-04
-  needs AES, which this suite does not have, and NIP-17 gift wrap needs
-  work this pass did not do - riptide's own DM rail already answers to
-  nobody.
+## Status, by phase
 
-## The v11 look (2026-08-29): an app, not a demo
+`../CLAUDE.md` holds the dated evidence ledger.
 
-The same day the phase-8 card re-landed, the whole stack got its first
-UI pass taken as an APPLICATION, executed end to end by the boot gate
-(40 checks, both capability profiles) - and BOOTED ON THE ENGINE that
-same day: the maintainer pasted the v11 file and sent back its boot
-record, 9 passed and 1 failed, where the one FAIL was the boot
-self-check's own cross-card defect (engine notes 5.6, found by exactly
-that record and fixed the same day - the next paste should read 10
-passed, 0 failed):
+- Phases 1-2 (feed + follow): PASSED on two machines 2026-08-13, feeds both
+  directions through the real DHT; the library engine-passed 2026-08-12
+  (133/133).
+- Phase 3 (media): PASSED on two machines 2026-08-15. Mid-download playback was
+  measured negative 2026-08-27 and fixed the same day; the faststart re-run is
+  owed.
+- Phase 4 (DMs): PASSED on two machines 2026-08-15, chat both ways, no server.
+- Phase 5 (the call and its typing lane): built, never run.
+- Phases 6 (the mesh) and 7 (anon over Tor, with the 8.2/8.3 onion serving):
+  compute engine-green 2026-08-20 in the suite paste (phase 6's admission and
+  welcome bytes were re-pinned 2026-09-09 since); the live legs are owed.
+- Phase 8 (the Nostr bridge): the library is executed headlessly against the
+  real committed CoinXT (`../tools/check-script-vectors.py`). The card's label:
+  verified statically + headless boot; needs an OXT re-pass. (Its re-landed boot
+  ran on an engine 2026-08-29, and the v11 boot read 9 passed / 1 failed on a
+  since-fixed self-check defect; the re-paste should read 10 passed / 0 failed.)
+  Nostr DMs are deliberately NOT built (spec 8A.6): NIP-04 needs AES, which the
+  suite does not have, and NIP-17 gift wrap needs work not yet done.
 
-- **Five tabs in the title band of every card** (Feed, Messages,
-  Devices, Anon, Nostr), the current one held down - any card is one
-  click from any other, replacing the old back-to-Feed hub.
-- **The family card look, completed**: two white column panels per card
-  behind the controls (the kit's uiPanel, which this stack had never
-  adopted).
-- **Buttons that need an unlocked identity start disabled** and enable
-  on unlock - affordance only; every handler keeps its own refusal
-  guard. The status line doubles as the identity chip: it names who is
-  unlocked, from any card.
-- **Return acts in one-line entry fields** (passphrase, handle, media
-  hash, DM target/message, LAN host, follow target); multi-line compose
-  fields keep Return as a newline.
-- **Empty surfaces say what they are for** instead of opening blank.
-- **Pasting a newer script over a stack an older version built now
-  rebuilds cleanly**: the version bump sheds the old furniture first, so
-  an upgrade-in-place looks like a fresh paste instead of stacking new
-  chrome on top of old controls.
+`../docs/two-machine-runbook.md` scripts every phase with its expected log
+lines.
+
+## The v11 look
+
+- Five tabs in the title band of every card, the current one held down; any card
+  is one click from any other.
+- Two white column panels per card behind the controls (the kit's family card
+  look).
+- Buttons that need an unlocked identity start disabled and enable on
+  unlock - affordance only, every handler keeps its refusal guard. The status
+  line names who is unlocked, from any card.
+- Return acts in one-line entry fields; multi-line compose fields keep Return as
+  a newline. Empty surfaces say what they are for.
+- Pasting a newer script over a stack an older version built rebuilds cleanly:
+  the version bump sheds the old furniture first.
 
 ## Setup
 
 1. Install the packaged extensions: sodiumxt (required everywhere), torrentxt
-   (required for publish/fetch and for the phase-3 media rail),
-   datachannelxt (required for the phase-5 call) and enetxt (required for the
-   phase-6 LAN mesh). The body of this stack calls `dcCreatePeer` and
-   `enHostCreate` directly, so phases 5 and 6 are dark without those two.
+   (publish, fetch and the phase-3 media rail), datachannelxt (the phase-5 call)
+   and enetxt (the phase-6 LAN mesh). The stack calls `dcCreatePeer` and
+   `enHostCreate` directly, so phases 5 and 6 are dark without those two. CoinXT
+   powers the Nostr card; without it only that card refuses.
 2. Nothing to wire: this stack CARRIES `nostrxt` (core + relay layer),
-   `riptide`, `onionxt` and `onion-httpd`
-   embedded between the sentinels that `tools/sync-demo-embeds.py` (at the
-   suite root) owns, so there is no `start using` step and no second stack to
-   open beside it. Putting `riptide` in the message path as well - which this
-   step used to ask for - only loads a second copy of every rs* handler, which
-   is the stale-in-memory-library hazard the embed exists to remove. Edit the
-   sources under `../src/`, `nostrxt/src/` and `onionxt/src/`, never inside
-   the sentinels. CoinXT (installed as an extension) powers the Nostr card;
-   without it that one card reports the refusal and the other four rails are
-   untouched.
-
-   Carrying TWO socket libraries at once is what the suite's 2026-08-24
-   socket SPLIT exists for, and this stack is its first exerciser: the
-   embed tool DROPS both libraries' thin
-   `socketError`/`socketClosed`/`socketTimeout` wrappers (the
-   `DROP_HANDLERS` pair rows) and this stack's own three handlers call
-   `oxSocketError`/`nxrSocketError` (and kin) in turn, then `pass`. Keep
-   that final `pass`: a stack that swallows a socket message another
-   library was waiting for produces a HANG rather than an error, and no
-   gate here can see it.
+   `riptide`, `onionxt` and `onion-httpd` between the sentinels the suite's
+   `tools/sync-demo-embeds.py` owns, so there is no `start using` step. Putting
+   `riptide` in use as well loads a second copy of every rs* handler. Edit the
+   sources (`../src/`, and the nostrxt and onionxt members' `src/`), never
+   inside the sentinels.
 3. Paste the stack script into a new one-card stack, apply, close, reopen.
-4. One TorrentXT session per process: close every other torrent-flavoured
-   stack first, and restart OXT before any re-paste of this script.
+4. One TorrentXT session per process: close every other torrent stack first, and
+   restart OXT before any re-paste of this script.
 
-## The single-machine run (half of phase 2, honestly labeled)
+This is the first stack carrying TWO socket libraries. The embed tool DROPS both
+libraries' thin `socketError`/`socketClosed`/`socketTimeout` wrappers (its
+`DROP_HANDLERS` pair rows), and this stack's own three handlers call
+`oxSocketError`/`nxrSocketError` (and kin) in turn, then `pass`. Keep that final
+`pass`: a stack that swallows a socket message another library was waiting for
+produces a HANG rather than an error, and no gate can see it.
 
-Create an identity, post twice, then paste your own handle into the follow
-field and Fetch: the head and both posts come back through the real DHT and
-every signature verdict shows. That proves the event loop and the walk; it
-does NOT prove propagation between machines.
-
-## The two-machine run (the phase-2 done-criterion - MET 2026-08-13)
-
-- Machine A: create an identity, post two or three times, stay online (the
-  session keeps the records seeded while it runs).
-- Machine B: open the same stack, skip identity (follow needs none), paste
-  A's 64-hex handle, Fetch.
-- Done when B's feed shows the head VERIFIED, every post walked in order to
-  the zero target, and every line reads authorSig VERIFIED - with no record
-  bytes copied between the machines by hand.
-
-Record the result in the suite's `../../docs/OXT-PASS-RUNBOOK.md` (the
-repository-root docs/, not riptide's; the demo row and item 6).
-The phase 3-7 flows (media, DMs, the call, the LAN mesh, the anon persona)
-are all IN this stack now; `../docs/two-machine-runbook.md` scripts their
-per-phase tests and expected log lines, and the suite's
-`../../docs/RIPTIDE-SOCIAL-SPEC.md` is the design they implement.
+Record results in the suite's `docs/OXT-PASS-RUNBOOK.md` (the suite's docs, not
+riptide's).

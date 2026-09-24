@@ -1,26 +1,25 @@
-# Box2Dxt API Reference (`b2…`)
+# Box2Dxt API Reference (`b2...`)
 
 This is the low-level binding exposed by `src/box2dxt.lcb`. It mirrors the
 Box2D v3 surface closely, but it is **not exhaustive**: the extension defines 376
-public `b2…` handlers and this page names 216 of them (measured 2026-08-26, by
-comparing the names written here against the `public handler b2…` lines in the
-source — no gate holds that ratio, so read it as of that date). The joint
+public `b2...` handlers and this page names 216 of them (measured 2026-08-26
+against the `public handler b2...` lines; no gate holds that ratio). The joint
 families arrive with their constructors and a setter or two; most of their
-accessors — `b2Distance…`, `b2Motor…`, `b2Mouse…`, `b2Weld…`, `b2Revolute…`,
-`b2Prismatic…`, `b2Wheel…` — are absent, as are 34 of the 61 `b2Shape…`
-handlers and the `b2LoadNativeLib…` trio. `src/box2dxt.lcb` is the source of
+accessors - `b2Distance...`, `b2Motor...`, `b2Mouse...`, `b2Weld...`, `b2Revolute...`,
+`b2Prismatic...`, `b2Wheel...` - are absent, as are 34 of the 61 `b2Shape...`
+handlers and the `b2LoadNativeLib...` trio. `src/box2dxt.lcb` is the source of
 truth; read the signature there for anything you cannot find here. For everyday
-work, the higher-level [Kit (`b2k…`)](kit-reference.md) is usually easier — reach
+work, the higher-level [Kit (`b2k...`)](kit-reference.md) is usually easier - reach
 for these handlers when you need something the Kit doesn't expose.
 
 **Conventions**
 
 - Handles are integers; **`0` is invalid**. Every handler tolerates a stale or
-  `0` handle (getters return `0`, actions do nothing) — the C shim validates ids.
+  `0` handle (getters return `0`, actions do nothing) - the C shim validates ids.
 - Distances are **metres**, angles are **radians**. Convert to pixels/degrees at
   draw time.
 - Body type codes: `0` static, `1` kinematic, `2` dynamic.
-- `b2Version()` → int returns the shim ABI version (currently `4`) — call it once
+- `b2Version()` → int returns the shim ABI version (currently `4`) - call it once
   as a load/version check that the extension and native library are in sync.
 
 - [World](#world)
@@ -75,8 +74,8 @@ shape, so `b2ContactsUpdate` works out of the box.
 | `b2AddBox(body, halfW, halfH, density, friction, restitution)` | Box fixture. |
 | `b2AddCircle(body, cx, cy, radius, density, friction, restitution)` | Circle fixture. |
 | `b2AddCapsule(body, x1, y1, x2, y2, radius, density, friction, restitution)` | Capsule fixture. |
-| `b2AddSegment(body, x1, y1, x2, y2, friction, restitution)` | Line edge (best on static bodies). **Two-sided** — bodies collide with it from either side regardless of point order (confirmed empirically, Game Kit Phase 0 spike). For one-sided platforms/terrain use a **chain**: chain segments are the one-sided primitive. |
-| `b2PolyBegin()` → `b2PolyAddPoint(x, y)` … → `b2AddPolygon(body, density, friction, restitution)` | Build a convex polygon (≤ 8 points) without marshalling arrays. |
+| `b2AddSegment(body, x1, y1, x2, y2, friction, restitution)` | Line edge (best on static bodies). **Two-sided** - bodies collide with it from either side regardless of point order (confirmed empirically in the Game Kit's 2026-06-10 OXT spike). For one-sided platforms/terrain use a **chain**: chain segments are the one-sided primitive. |
+| `b2PolyBegin()` → `b2PolyAddPoint(x, y)` ... → `b2AddPolygon(body, density, friction, restitution)` | Build a convex polygon (≤ 8 points) without marshalling arrays. |
 | `b2DestroyShape(shape)` | Remove a shape. |
 | `b2SetShapeFriction` / `b2SetShapeRestitution` / `b2SetShapeDensity` | Edit material at runtime. |
 | `b2ShapeBody(shape)` → body | The body a shape belongs to. |
@@ -110,7 +109,7 @@ shape, so `b2ContactsUpdate` works out of the box.
 | `b2CastRayClosest(world, x1, y1, x2, y2)` → bool | Cast a ray; returns true on hit. Then read the result: |
 | `b2RayBody()` → body / `b2RayShape()` → shape | What was hit. |
 | `b2RayX()` / `b2RayY()` / `b2RayNormalX()` / `b2RayNormalY()` / `b2RayFraction()` | Hit point, surface normal, and fraction along the ray. |
-| `b2BodyAtPoint(world, x, y)` → body | The body whose shape covers a world point (`0` if none) — handy for click-picking. |
+| `b2BodyAtPoint(world, x, y)` → body | The body whose shape covers a world point (`0` if none) - handy for click-picking. |
 
 ## Contact events
 
@@ -128,14 +127,14 @@ the two body handles for each (indices are **1-based**).
 ## Shape-def builder (sensors, filtering, event flags)
 
 Set any of these **before** creating a shape (`b2AddBox`/`Circle`/`Capsule`/
-`Polygon`/`b2CreateChain`); they apply to the **next** shape only, then reset —
+`Polygon`/`b2CreateChain`); they apply to the **next** shape only, then reset -
 just like the polygon vertex builder. This adds sensors, collision filters, and
 per-event flags to every existing creator without new variants.
 
 | Handler | Purpose |
 |---------|---------|
 | `b2ShapeDefSensor(flag)` | Make the next shape a non-solid **sensor** (overlap events, no collision). |
-| `b2ShapeDefFilter(category, mask, group)` | Collision filter for the next shape (category/mask are 32-bit). |
+| `b2ShapeDefFilter(category, mask, group)` | Collision filter for the next shape (category/mask up to 2^53-1; an out-of-range value makes the shim ignore the call). |
 | `b2ShapeDefEnableContactEvents(flag)` / `b2ShapeDefEnableSensorEvents(flag)` / `b2ShapeDefEnableHitEvents(flag)` / `b2ShapeDefEnablePreSolveEvents(flag)` | Per-event flags for the next shape. |
 | `b2ShapeDefMaterialId(id)` | User material id for the next shape. |
 | `b2ShapeDefReset()` | Clear any pending options explicitly. |
@@ -155,7 +154,7 @@ per-event flags to every existing creator without new variants.
 | `b2WorldProfileUpdate(world)` → `b2WorldProfileStep/Pairs/Collide/Solve/Refit/Sensors()` | Per-step timing (ms). |
 | `b2WorldCountersUpdate(world)` → `b2WorldBodyCount/ShapeCount/ContactCount/JointCount/IslandCount()` | World object counts. |
 
-## Body — transforms, mass, enumeration
+## Body - transforms, mass, enumeration
 
 | Handler | Purpose |
 |---------|---------|
@@ -170,35 +169,35 @@ per-event flags to every existing creator without new variants.
 | `b2BodyAABBUpdate(body)` → `b2AABBLowerX/LowerY/UpperX/UpperY()` | Body AABB. |
 | `b2BodyShapeCount(body)` → `b2BodyShapeAt(i)` · `b2BodyJointCount(body)` → `b2BodyJointAt(i)` | Enumerate a body's shapes / joints (1-based). |
 
-## Shape — filter, geometry, material, queries
+## Shape - filter, geometry, material, queries
 
 | Handler | Purpose |
 |---------|---------|
 | `b2ShapeType` · `b2ShapeIsSensor` · `b2ShapeDensity/Friction/Restitution` · `b2ShapeMaterialId` / `b2SetShapeMaterialId` | Read type / material. |
-| `b2SetShapeFilter(shape, category, mask, group)` · `b2ShapeFilterCategory/Mask/Group(shape)` | Collision filtering (32-bit bits). |
-| `b2ShapeEnableSensorEvents` / `…Contact…` / `…Hit…` / `…PreSolve…` + the matching `…EventsEnabled` getters | Per-shape event flags. |
-| `b2ShapeCircleUpdate/Capsule…/Segment…/PolygonUpdate(shape)` + their `…X/Y/Radius/VertexX/VertexY` readers | Read a shape's geometry. |
-| `b2SetShapeCircle/Capsule/Segment(shape, …)` · `b2SetShapePolygon(shape)` (uses the vertex builder) | Replace a shape's geometry in place. |
+| `b2SetShapeFilter(shape, category, mask, group)` · `b2ShapeFilterCategory/Mask/Group(shape)` | Collision filtering. The setter accepts bits up to 2^53-1 and ignores the whole call otherwise; a default mask reads back as 2^64-1, so clamp before writing it back (xTalk's `bitAnd`/`bitOr` are 32-bit anyway). |
+| `b2ShapeEnableSensorEvents` / `...Contact...` / `...Hit...` / `...PreSolve...` + the matching `...EventsEnabled` getters | Per-shape event flags. |
+| `b2ShapeCircleUpdate/Capsule.../Segment.../PolygonUpdate(shape)` + their `...X/Y/Radius/VertexX/VertexY` readers | Read a shape's geometry. |
+| `b2SetShapeCircle/Capsule/Segment(shape, ...)` · `b2SetShapePolygon(shape)` (uses the vertex builder) | Replace a shape's geometry in place. |
 | `b2ShapeRayCast(shape, x1, y1, x2, y2)` → `b2ShapeRayX/Y/NormalX/NormalY/Fraction()` | Ray cast against one shape. |
-| `b2ShapeAABBUpdate` (→ `b2AABB…`) · `b2ShapeClosestPointX/Y` · `b2ShapeMassDataUpdate` (→ `b2MassData…`) | Bounds / closest point / mass. |
+| `b2ShapeAABBUpdate` (→ `b2AABB...`) · `b2ShapeClosestPointX/Y` · `b2ShapeMassDataUpdate` (→ `b2MassData...`) | Bounds / closest point / mass. |
 | `b2ShapeSensorCapacity` · `b2ShapeSensorOverlapsUpdate(shape)` → `b2ShapeSensorOverlapCount()` / `b2ShapeSensorOverlapAt(i)` | Poll shapes overlapping a sensor. |
 
 ## Chains (smooth terrain)
 
 | Handler | Purpose |
 |---------|---------|
-| `b2ChainBegin()` → `b2ChainAddPoint(x, y)` … → `b2CreateChain(body, loop, friction, restitution)` → chain | Build a chain (≥ 4 points; loop closes it). A non-loop chain's first & last points are ghost vertices (n points → n−3 collidable segments). |
+| `b2ChainBegin()` → `b2ChainAddPoint(x, y)` ... → `b2CreateChain(body, loop, friction, restitution)` → chain | Build a chain (≥ 4 points; loop closes it). A non-loop chain's first & last points are ghost vertices (n points → n-3 collidable segments). |
 | `b2DestroyChain(chain)` · `b2ChainIsValid(chain)` | Lifetime. |
 | `b2SetChainFriction/Restitution` + getters · `b2ChainSegmentCount(chain)` → `b2ChainSegmentAt(i)` | Tune / enumerate segments. |
 
-## Joints — generic, new types, full per-joint control
+## Joints - generic, new types, full per-joint control
 
 | Handler | Purpose |
 |---------|---------|
 | `b2JointType` · `b2JointBodyA/B` · `b2JointLocalAnchorAX/AY/BX/BY` · `b2JointCollideConnected` / `b2SetJointCollideConnected` · `b2JointConstraintForceX/Y` · `b2JointConstraintTorque` · `b2JointWakeBodies` | Generic joint surface (constraint force/torque is handy for breakable joints). |
-| `b2MotorJoint(world, bodyA, bodyB, offsetX, offsetY, angularOffset, maxForce, maxTorque, correction, collide)` + `b2MotorSet/Get…` | **Motor joint** — drive bodyB to an offset pose from bodyA. |
-| `b2FilterJoint(world, bodyA, bodyB)` | **Filter joint** — disable collision between exactly these two bodies. |
-| `b2Revolute…` / `b2Prismatic…` / `b2Distance…` / `b2Weld…` / `b2Wheel…` / `b2Mouse…` | The **complete** per-joint get/set surface for all six existing joint types: spring enable/hertz/damping, limit enable/lower/upper, motor enable/speed/force\|torque, and readouts (angle, translation, speed, current length, reference angle, target). |
+| `b2MotorJoint(world, bodyA, bodyB, offsetX, offsetY, angularOffset, maxForce, maxTorque, correction, collide)` + `b2MotorSet/Get...` | **Motor joint** - drive bodyB to an offset pose from bodyA. |
+| `b2FilterJoint(world, bodyA, bodyB)` | **Filter joint** - disable collision between exactly these two bodies. |
+| `b2Revolute...` / `b2Prismatic...` / `b2Distance...` / `b2Weld...` / `b2Wheel...` / `b2Mouse...` | The **complete** per-joint get/set surface for all six existing joint types: spring enable/hertz/damping, limit enable/lower/upper, motor enable/speed/force\|torque, and readouts (angle, translation, speed, current length, reference angle, target). |
 
 ## World queries (overlap / ray-cast-all / shape-cast)
 
@@ -213,18 +212,18 @@ single-result use.)
 | `b2ShapeCast(world, radius, dx, dy)` | Sweep a proxy (built from the vertex builder) and gather hits. |
 | `b2QueryCount()` · `b2QueryBody(i)` / `b2QueryShape(i)` · `b2QueryX/Y(i)` · `b2QueryNormalX/Y(i)` · `b2QueryFraction(i)` | Read the shared result rows. |
 
-## Events — hit, sensor, body-move
+## Events - hit, sensor, body-move
 
 | Handler | Purpose |
 |---------|---------|
 | `b2ContactHitCount()` · `b2ContactHitBodyA/B(i)` · `b2ContactHitX/Y(i)` · `b2ContactHitNormalX/Y(i)` · `b2ContactHitSpeed(i)` | **Hit** events (snapshotted by `b2ContactsUpdate`; needs hit events enabled). |
 | `b2SensorsUpdate(world)` → `b2SensorBeginCount/EndCount()` · `b2SensorBeginSensorShape/VisitorShape(i)` · `b2SensorEndSensorShape/VisitorShape(i)` | **Sensor** events (shape handles; both shapes need sensor events). |
-| `b2BodiesUpdate(world)` → `b2BodyMoveCount()` · `b2BodyMoveBody(i)` · `b2BodyMoveX/Y/Angle(i)` · `b2BodyMoveFellAsleep(i)` | **Body-move** events — read every moved transform in one call (efficient bulk sync). |
+| `b2BodiesUpdate(world)` → `b2BodyMoveCount()` · `b2BodyMoveBody(i)` · `b2BodyMoveX/Y/Angle(i)` · `b2BodyMoveFellAsleep(i)` | **Body-move** events - read every moved transform in one call (efficient bulk sync). |
 
 ## Notes and gotchas
 
 **Units.** Box2D is tuned for **MKS units**; keep moving objects roughly
-0.1–10 m and apply a pixels-per-metre scale only at draw time (the demo uses 40
+0.1-10 m and apply a pixels-per-metre scale only at draw time (the demo uses 40
 and flips Y, since the sim's Y points up while the screen's points down).
 
 **Fixed timestep.** Drive `b2Step` from a **fixed timestep** (the demo
@@ -243,10 +242,9 @@ the bottleneck. At that scale, draw into a single image/graphic, or move
 rendering into an LCB widget canvas, rather than one control per body.
 
 **Extending the binding.** See [architecture.md](architecture.md#extending-the-binding)
-for the step-by-step recipe (add a `b2lc_*` C function, a `foreign handler`, and
-a public wrapper; bump `LC_ABI_VERSION`; rebuild). As of ABI `3` the binding
+for the step-by-step recipe. As of ABI `3` the binding
 covers the full Box2D v3.1 **live-object** surface (chains, sensors, filtering,
 hit & body-move events, shape casts, motor/filter joints, world tuning, mass
-data, …). What's intentionally **not** wrapped: pre-solve / custom-filter
+data, ...). What's intentionally **not** wrapped: pre-solve / custom-filter
 callbacks (no safe way to call back into xTalk mid-step) and Box2D's standalone
 math/geometry/TOI helpers (they operate on raw structs, not world objects).

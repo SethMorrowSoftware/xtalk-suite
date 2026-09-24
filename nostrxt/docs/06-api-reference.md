@@ -1,16 +1,9 @@
 # 06 - Public API Reference (`nx*` and `nxr*`)
 
-> **Status: the `nx*` core is ENGINE-PROVEN 2026-08-24** (Windows x86_64, OXT
-> 9.6.3; 274 passed, 0 failed, 2 deliberate skips, both of them the relay layer,
-> which is not in the suite paste by design). The `nxr*` relay surface is SPLIT:
-> `nxrConnect` through publish and the relay's ok-confirm are LIVE-PROVEN the same
-> day against wss://nos.lol; the REQ/subscribe receive leg, the NIP-42 auth
-> exchange and every ws:// path keep **"verified statically; needs a live-relay
-> pass"**. What IS machine-verified on every build: `tools/nostr-kat.py` sweeps the
-> full published BIP-340, NIP-44 v2, BIP-173 and NIP-19 vector sets through the
-> independent oracle `tools/nostr_reference.py`, and `tools/check-selftest-vectors.py`
-> re-derives every constant the member harness pins, by name, in both directions.
-> Claim nothing beyond that.
+> **Status:** the `nx*` core is ENGINE-PROVEN 2026-08-24 (Windows x86_64, OXT 9.6.3). The
+> `nxr*` surface is split: `nxrConnect` through publish and the relay's ok-confirm are
+> LIVE-PROVEN the same day against wss://nos.lol; the receive leg, the NIP-42 exchange and every
+> ws:// path keep "verified statically; needs a live-relay pass" (`05-relay-client.md`).
 
 The public surface of both files, handler by handler: the pure-compute core
 (`src/nostrxt.livecodescript`, `nx*`) and the relay client
@@ -70,7 +63,7 @@ answer for the session, and a missing extension disables exactly its feature.
 Hex is the API's currency: lowercase out, either case in, anything else refuses.
 `nxB64Encode` strips the line breaks the engine's `base64Encode` may wrap with,
 because every wire format here (NIP-44 payloads, `Sec-WebSocket-Key`) is single-line
-- the exact wrap behaviour is an on-engine VERIFY (`08-open-questions.md`).
+- the raw emission is still an on-engine VERIFY (`07-capabilities-required.md`).
 
 | Handler | Kind | Purpose |
 |---|---|---|
@@ -191,20 +184,16 @@ return-delimited lines.
 
 ## NIP-44 v2 encrypted payloads
 
-Every step is vector-pinned by the KAT, the cipher call included since 2026-08-23:
-family law says a missing primitive is an upstream feature request, never a
-hand-rolled cipher here, and the request shipped as SodiumXT ABI 10's
-`sxChaCha20IetfXor` (`07-capabilities-required.md` is the closed record). On an
+Every step is vector-pinned by the KAT, the cipher call included: it is SodiumXT ABI
+10's `sxChaCha20IetfXor` (2026-08-23; `07-capabilities-required.md` gap #1). On an
 installed SodiumXT older than ABI 10, `nxNip44Encrypt(...)` / `nxNip44Decrypt(...)`
 fail closed with a capability error naming it; the conversation key, message keys,
 padding and the MAC path work either way. On decrypt the MAC verifies BEFORE the
-cipher runs, over
-nonce||ciphertext, compared constant-time - the member harness proves that order now,
-cipher or no cipher.
+cipher runs, over nonce||ciphertext, compared constant-time (`04-nip44-payloads.md`).
 
 Plaintext is 1 to 65535 bytes, fail closed: the published vectors pin the u16 length
 prefix only (65536 and up is an invalid length there), and the newer spec text's
-extended 6-byte prefix has no vectors yet (`08-open-questions.md`).
+extended 6-byte prefix has no vectors yet (`04-nip44-payloads.md`, step 4).
 
 | Handler | Kind | Purpose |
 |---|---|---|
@@ -290,7 +279,7 @@ relay to be in the `"open"` state and says so otherwise.
 
 | Handler | Kind | Purpose |
 |---|---|---|
-| `nxrConnect pUrl` | command | Open a relay (`ws://` today; `wss://` written but engine-unproven, `07-capabilities-required.md`). Returns the integer handle in `the result`; a handshake watchdog fails a stalled connection closed. |
+| `nxrConnect pUrl` | command | Open a relay, `wss://` or `ws://` (wss:// ran live 2026-08-24 with certificate checks unmeasured, `07-capabilities-required.md` gap #2; ws:// has never run). Returns the integer handle in `the result`; a handshake watchdog fails a stalled connection closed. |
 | `nxrSubscribe pRelay, pSubId, pFiltersJson` | command | Send a REQ (one filter object per line, the `nxClientReq(...)` shape) and remember the subscription. |
 | `nxrUnsubscribe pRelay, pSubId` | command | Send a CLOSE and forget the subscription. |
 | `nxrPublish pRelay, pEvent` | command | Send a SIGNED event; the relay's verdict arrives as the `"ok"` callback keyed by the event id. |
@@ -382,7 +371,8 @@ name of its own, an embedder drops the three wrappers (`tools/sync-demo-embeds.p
 does it, per registered demo-and-provider pair) and calls `nxrSocketError(...)` from
 its own handler exactly where it would otherwise `pass` - so this layer's logic is
 never copied and cannot go stale. OnionXT carries the identical split
-(`oxSocketError` and friends); nocloud is the first app to use it.
+(`oxSocketError` and friends); riptide-social is the app that embeds both layers
+this way in one script, and nocloud and coin-wallet use OnionXT's.
 
 > **Integration rule: if your stack defines any of these three messages, it must
 > `pass` the ones that are not its own.** Those three names are shared by every
@@ -390,9 +380,8 @@ never copied and cannot go stale. OnionXT carries the identical split
 > it can swallow another library's copy before it runs. Nothing errors: the failed
 > dial never reports, the closed stream never delivers, the stalled handshake never
 > times out. **The symptom is a HANG, and no gate in this repo can see it.** This is
-> the family's standing socket rule - two shipping apps re-derived it independently
-> before it was written down - and it is the reason this file stays out of the suite
-> paste (the embedded OnionXT layer defines the same three names). The relay layer
+> the family's standing socket rule, and it is the reason this file stays out of the
+> suite paste (the embedded OnionXT layer defines the same three names). The relay layer
 > holds up its own end: it acts only on its own socket ids and passes everything
 > else, so it coexists with OnionXT or any other socket library in the same app.
 
@@ -416,14 +405,11 @@ Everything hex is LOWERCASE on this API; binary never crosses it.
 
 ## Error model
 
-- **Core `nx*`:** functions never throw. Failure returns empty (or `false`), and
-  `nxLastError()` carries a human-readable reason that names the handler and the
-  refusal (`"nxHexDecode: hex text has odd length"`,
-  `"nxEventVerify: the signature does not verify"`).
-- **Relay `nxr*`:** commands set `the result` to empty on success or to a
-  `"NostrXT relay: ..."` string on refusal; handle-yielding commands return the
-  integer handle, so callers test `the result is an integer`. Wire errors
-  additionally tear the relay down and surface through the `"error"` callback.
+The two conventions are at the top of this page ("The shape every handler shares"). A core
+reason names the handler and the refusal (`"nxHexDecode: hex text has odd length"`,
+`"nxEventVerify: the signature does not verify"`); a relay wire error also tears the relay down
+and surfaces through the `"error"` callback.
+
 - **Capability errors are a named shape, not a generic failure.** A missing
   extension produces a reason naming exactly the handler it needs, so an app can
   branch on the probe rather than parse the string:
@@ -440,10 +426,10 @@ Everything hex is LOWERCASE on this API; binary never crosses it.
   The full reasoning is in `07-capabilities-required.md`, under "Non-gaps".
 - **No key storage.** Keys cross this API as hex strings and live wherever the app
   puts them; NostrXT is not a vault, and OXT script variables are not locked memory.
-  The honest limit is documented, not papered over (`01-protocol-model.md`).
+  The honest limit is documented, not papered over (`00-overview.md`).
 - **No relay pool management yet.** One handle is one relay; multi-relay strategy
-  (outbox routing, deduplication across relays) is an open protocol-scope question
-  (`08-open-questions.md`), deliberately not guessed at in v0.1.
+  (outbox routing, deduplication across relays) is a protocol-scope decision
+  (`07-capabilities-required.md`), deliberately not guessed at in v0.1.
 - **No engine JSON dependency.** The core parses and emits its own JSON over UTF-8
   bytes, because NIP-01's canonical form and stock JSON encoders disagree about
   control characters, and because depending on an engine JSON library would put the

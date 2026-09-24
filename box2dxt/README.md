@@ -3,9 +3,9 @@
 [![build](https://github.com/SethMorrowSoftware/xtalk-suite/actions/workflows/native-box2dxt.yml/badge.svg)](https://github.com/SethMorrowSoftware/xtalk-suite/actions/workflows/native-box2dxt.yml)
 
 **Real 2D physics for OpenXTalk and the xTalk family.** Box2Dxt packages the
-[Box2D v3.1.0](https://box2d.org) engine — the one behind countless games — as a
-drop-in module for **OpenXTalk (OXT)**, compatible with **LiveCode 9.6.3+**.
-You write plain xTalk; your controls fall, roll, bounce, hinge, and collide.
+[Box2D v3.1.0](https://box2d.org) engine as a drop-in extension for
+**OpenXTalk (OXT)**, compatible with **LiveCode 9.6.3+**. You write plain xTalk;
+your controls fall, roll, bounce, hinge and collide.
 
 ```livecodescript
 on openCard
@@ -21,74 +21,78 @@ on mouseUp   ; b2kRelease ; end mouseUp
 
 ```
 Box2D v3.1.0 (fetched by CMake)
-   └─ C shim          src/box2d_lc.c              → libbox2dxt.{so,dylib,dll}
-        └─ LCB binding  src/box2dxt.lcb            → raw  b2*  API (metres, radians)
-             └─ the Kit  src/box2dxt-kit.livecodescript → friendly b2k* API
-                          (pixels, degrees, control-backed bodies, render loop)
-                  └─ examples/*.livecodescript     → self-contained demo stacks
+  -> C shim        src/box2d_lc.c                  -> libbox2dxt.{so,dylib,dll}
+  -> LCB binding   src/box2dxt.lcb                 -> raw b2* API (metres, radians)
+  -> the Kit       src/box2dxt-kit.livecodescript  -> friendly b2k* API
+                   (pixels, degrees, control-backed bodies, render loop)
+  -> examples/*.livecodescript                     -> self-contained demo stacks
 ```
 
-- **The Kit (`b2k…`)** is what most users call: screen pixels, degrees, bodies
-  bound to LiveCode controls, an animation loop that moves them for you.
-- **The extension (`b2…`)** is the full Box2D v3.1 surface — 370+ handlers
-  covering bodies, shapes, joints, chains, sensors, queries, ray casts, contact
-  events, and world tuning — in metres and radians.
+- **The Kit (`b2k...`)** is what most users call: pixels, degrees, bodies bound
+  to LiveCode controls and a loop that moves them, plus a game layer (keyboard
+  input, sprites, a platformer controller, a scrolling camera, sound).
+- **The extension (`b2...`)** is the Box2D v3.1 surface (376 handlers: bodies,
+  shapes, joints, chains, sensors, queries, ray casts, events) in metres/radians.
 - **Safety by design:** every handle is validated and generation-tagged in the
   C shim. Stale or invalid handles are harmless no-ops, never crashes.
 
 ## Quick start
 
 1. **Install the extension:** open [`src/box2dxt.lcb`](src/box2dxt.lcb) in OXT's
-   Extension Builder and click **Package** → install the resulting `box2dxt.lce`.
-   The native library for your platform is bundled inside
-   (`src/code/<arch>-<platform>/`), so it loads automatically — no separate
-   download, no rename, no `sudo`, no `/usr/lib`.
+   Extension Builder, click **Package**, and install the resulting `box2dxt.lce`.
+   The native library is bundled inside (`src/code/<arch>-<platform>/`) and loads
+   automatically: no separate download, no rename, no `sudo`, no `/usr/lib`.
 2. **Sanity check:** `put b2Version()` in the Message Box should print `4`.
 3. **Run a demo:** paste all of
    [`examples/box2dxt-demo.livecodescript`](examples/box2dxt-demo.livecodescript)
-   into a stack script and reopen the card — six interactive scenes, from a
-   Newton's cradle to a drivable car. Or try the flagship
-   [contraption builder](examples/box2dxt-contraption-builder.livecodescript):
-   a full build-and-run physics sandbox with fans, magnets, lasers, bombs,
-   motors, and save/load. Game-minded? The
-   [platformer showcase](examples/box2dxt-platformer.livecodescript) is the
-   Game Kit pushed hard — seven scrolling levels (grass, ice, haunted, desert,
-   cavern, and a vertical stone keep) with a full player controller (run,
-   double-jump, wall-jump, dash, duck, climb, swim, drop-through, platform-carry),
-   a bestiary (bats, a mimic, piranhas, a ghost, a kickable snail shell, rising
-   lava/goo serpents, crushers, spinners, and more), joints (rope bridge, boulder,
-   exploding barrel), collectibles (coin tiers, gems, a hidden star), a forgiving
-   five-heart health model, a boot title screen with character select, biome-illustrated
-   transition cards that mask every level load, an art HUD,
-   spritesheets, and synthesized audio — and the
-   [slingshot](examples/box2dxt-slingshot.livecodescript) is pure physics
-   joy: catapult cannonballs into toppling towers, angry-birds style
-   (three levels, ballistic aim preview, zero assets). And the
-   [self-test harness](examples/box2dxt-selftest.livecodescript) proves the
-   whole Kit on *your* machine in one click — deterministic assertions
-   from physics events to player feel (run it on any new platform first).
+   into a stack script and reopen the card.
 
-The step-by-step version (with troubleshooting) is in
-[**docs/getting-started.md**](docs/getting-started.md).
+The step-by-step version (with troubleshooting) is
+[docs/getting-started.md](docs/getting-started.md).
+
+## Examples
+
+Each is one file that embeds a copy of the Kit: paste it into a stack script.
+
+- [**Demo**](examples/box2dxt-demo.livecodescript) - six interactive scenes,
+  from a Newton's cradle to a drivable car and a ray-cast lidar.
+- [**Contraption builder**](examples/box2dxt-contraption-builder.livecodescript) -
+  the flagship physics sandbox: fans, magnets, lasers, bombs, motors, save/load.
+- [**Platformer**](examples/box2dxt-platformer.livecodescript) - the Game Kit
+  pushed hard: seven scrolling levels (Green Hills to the vertical Stone Keep),
+  a full player controller (run, double-jump, wall-jump, dash, duck, climb,
+  swim, drop-through, platform carry), a bestiary (bats, a mimic, piranhas, a
+  ghost, a kickable snail shell, rising serpents, crushers, spinners), joints,
+  coin tiers, gems and a hidden star, five-heart health, a title screen with
+  character select, transition cards, an art HUD and synthesized audio.
+- [**Slingshot**](examples/box2dxt-slingshot.livecodescript) - catapult
+  cannonballs into toppling towers (three levels, aim preview, zero assets).
+- [**Self-test harness**](examples/box2dxt-selftest.livecodescript) - proves the
+  whole Kit on *your* machine in one click; run it first on any new platform.
+- [**Game Kit spike**](examples/box2dxt-spike-gamekit.livecodescript) - the
+  hardware-acceptance checks (keyboard, sprites, camera, performance).
 
 ## Documentation
 
-[`docs/README.md`](docs/README.md) is the full index, grouped by audience (the
-Kit, the raw binding, and the plans/records). The short version:
+**Most people want the Kit:** start at [getting-started.md](docs/getting-started.md),
+then [kit-guide.md](docs/kit-guide.md), the longest doc and the one most need.
 
 | Doc | What's in it |
 |-----|--------------|
-| [Getting started](docs/getting-started.md) | Zero to a draggable scene, plus troubleshooting. |
-| [Kit guide](docs/kit-guide.md) | The friendly `b2k…` layer, taught start to finish. |
-| [Kit reference](docs/kit-reference.md) | The `b2k…` handlers, one line each. **Incomplete: 242 of the Kit's 313** (measured 2026-08-26); most of the gap is internal helpers, but a few real entry points are missing too (`b2kPlayerDuckSet`, `b2kPlayerTick`, `b2kSyncAll`, `b2kEnsureNativeLib`). |
-| [API reference](docs/api-reference.md) | The raw `b2…` extension surface. **Incomplete: 216 of 376 public handlers** (measured 2026-08-26, by name against `src/box2dxt.lcb`); the gap is mostly joint accessors. |
-| [Architecture](docs/architecture.md) | The three layers, handles, units, the ABI. |
-| [Building](docs/building.md) | Compile the native library yourself with CMake. |
-| [Platformer polish plan](docs/platformer-polish-plan.md) | The plan to take the 7-level demo to its final form (transitions, feel, scenes). |
-| [Asset expansion plan](docs/archive/asset-expansion-plan.md) | The as-built record of how the demo grew to seven levels (Phases A–G). |
+| **The Kit** | |
+| [Getting started](docs/getting-started.md) | Zero to a draggable scene, plus troubleshooting. Assumes no physics knowledge. |
+| [Kit guide](docs/kit-guide.md) | The friendly `b2k...` layer taught start to finish: bodies, joints, events, sensors, input, sprites, the player controller, the camera, sound, a whole-game pattern. |
+| [Kit reference](docs/kit-reference.md) | The `b2k...` handlers as quick-lookup tables. **Incomplete: 242 of the Kit's 313** (measured 2026-08-26); most of the gap is internal helpers, but a few real entry points are missing (`b2kPlayerDuckSet`, `b2kPlayerTick`, `b2kSyncAll`, `b2kEnsureNativeLib`). |
+| **The raw binding** | |
+| [API reference](docs/api-reference.md) | The low-level `b2...` extension surface. **Incomplete: 216 of 376 public handlers** (measured 2026-08-26, by name against `src/box2dxt.lcb`); the gap is mostly joint accessors. |
+| [Architecture](docs/architecture.md) | The three layers, handles, units, the ABI, and how to extend the binding. |
+| [Building](docs/building.md) | Compile the native library yourself, package a release zip. Most users can skip it: the per-platform binaries are committed. |
+| **Maintainers** | |
+| [CLAUDE.md](CLAUDE.md) | Maintainer memory: the rules, the numbered OXT gotchas, the performance playbook, the engine evidence ledger. |
+| [CHANGELOG.md](CHANGELOG.md) | Release history. |
 
-(Pre-implementation planning docs — the Game Kit design spec and the asset-intake
-plan — are archived under [`docs/archive/`](docs/archive/) for history.)
+Suite-wide documents live in the xTalk suite's
+[docs index](https://github.com/SethMorrowSoftware/xtalk-suite/blob/main/docs/README.md).
 
 ## Building from source
 
@@ -98,30 +102,31 @@ cmake --build build --config Release
 ctest --test-dir build --output-on-failure
 ```
 
-CMake fetches Box2D v3.1.0 automatically. CI builds and smoke-tests Linux
-(x86-64 and i686, glibc 2.17 floor), macOS (universal), and Windows (x64 and
-x86) on every push; see [docs/building.md](docs/building.md).
+CMake fetches Box2D v3.1.0 automatically. The suite's CI builds and
+smoke-tests Linux (x86-64 and i686, manylinux2014), macOS (universal) and
+Windows (x64 and x86) on every push; see [docs/building.md](docs/building.md).
+The committed Linux and Windows libraries come from the suite's
+`release-binaries.yml` dispatch (Linux 2026-08-27, Windows DLLs 2026-09-12):
+the x86-64 Linux one keeps the glibc 2.17 floor, but the 32-bit `x86-linux` one
+(built on a stock Ubuntu 24.04 runner) requires glibc 2.34. The `universal-mac`
+dylib is the pre-fold build carried in by the 2026-08-14 fold and unchanged
+since; no Mac has loaded it.
 
 ## Contributing
 
-The three layers and their conventions are in
-[docs/architecture.md](docs/architecture.md); the build is in
-[docs/building.md](docs/building.md). The Kit is the single source of truth —
-after editing `src/box2dxt-kit.livecodescript`, re-sync the embedded copies
-with `python3 tools/sync-embedded-kit.py`. Four static gates run on every change
-(and in CI): `python3 tools/check-livecodescript.py` (the script layer),
-`python3 tools/sync-embedded-kit.py --check` (embedded-Kit drift),
-`python3 tools/check-lcb-signatures.py` (every `binds to "c:box2dxt>…!cdecl"`
-declaration against the C definition it names — return type, arity, per-parameter
-type) and `python3 tools/package-extension.py --check` (no empty platform slot
-under `src/code/`). `python3 tools/audit-platformer.py` runs beside them in the
-same walk but is **advisory**: it prints the platformer's level-geometry findings
-and never exits non-zero, so what it actually holds is that the auditor can still
-parse the demo it audits.
+The Kit is the single source of truth: after editing
+`src/box2dxt-kit.livecodescript`, run `python3 tools/sync-embedded-kit.py` and
+commit the re-synced examples in the same change. `bash tools/run-gates.sh`
+runs this member's gates, the same script CI runs: the script checker,
+embedded-Kit drift (`sync-embedded-kit.py --check`), the FFI signature gate
+(`check-lcb-signatures.py`), `package-extension.py --check` (no empty platform
+slot) and the `src/code/MANIFEST.sha256` check. `audit-platformer.py` runs
+beside them but is **advisory** (it prints findings and never exits non-zero).
+Maintainer rules: [CLAUDE.md](CLAUDE.md).
 
 ## License
 
-[MIT](LICENSE) — Box2D itself is also MIT, © Erin Catto.
+[MIT](LICENSE). Box2D itself is also MIT, (c) Erin Catto.
 
 <!-- ==== SUITE RELATIONSHIP BEGIN (generated by tools/sync-member-readmes.py in the xTalk suite from tools/member-registry.py and the carried-copy registries; do not edit inside the markers) ==== -->
 
