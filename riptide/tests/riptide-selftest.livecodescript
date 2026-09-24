@@ -228,12 +228,42 @@ end rstFlipByte
 --------------------------------------------------------------------------
 
 private command rstSectionCapabilities pCaps
+   local tWant, tGot, tDelim
    rstSection "capabilities + version"
    rstCheck (rsVersion() contains "Riptide"), "rsVersion names the library"
    rstCheck (pCaps["canCrypto"] is true or pCaps["canCrypto"] is false), \
          "probe reports canCrypto as a boolean"
-   rstCheck (the number of lines in the keys of pCaps is 7), \
-         "probe reports six extensions plus the derived hasSha3"
+   -- The EXACT key set, sorted, never a count (2026-09-24). This line used
+   -- to assert "7 keys: six extensions plus the derived hasSha3". Phase 8
+   -- (d9277c3, 2026-08-29) gave rsProbeCapabilities three more - hasNostr,
+   -- hasNostrRelay, canNostrSign - and nothing noticed the count go stale,
+   -- because this harness runs only on an engine and it did not meet one
+   -- between phase 8 and the suite paste of 2026-09-24, which reported it
+   -- as a FAIL. A count also passes a key renamed or swapped for another;
+   -- the list cannot, and on a failure the log shows what the probe
+   -- returned. A new capability edits the literal below AND the log lines.
+   -- The sort is case-blind by default and these names order the same
+   -- either way. A trailing return, should an engine's `the keys` end with
+   -- one, is list formatting and not a key, so it is dropped before the
+   -- compare (a line COUNT ignores it, engine notes 2.2; a string does not).
+   -- `sort lines` reads the lineDelimiter, which is saved, set and restored
+   -- around the one line that needs it (engine notes 2.3).
+   put "canCrypto,canNostrSign,hasCoin,hasDataChannel,hasEnet," & \
+         "hasNostr,hasNostrRelay,hasOnion,hasSha3,hasTorrent" into tWant
+   put the keys of pCaps into tGot
+   if the last char of tGot is return then
+      delete the last char of tGot
+   end if
+   put the lineDelimiter into tDelim
+   set the lineDelimiter to return
+   sort lines of tGot
+   set the lineDelimiter to tDelim
+   replace return with comma in tGot
+   rstCheck (tGot is tWant), \
+         "probe reports exactly its ten keys (" & tWant & ")"
+   if tGot is not tWant then
+      put "      the probe returned:" && tGot & return after sLog
+   end if
    put "      canCrypto=" & pCaps["canCrypto"] & \
          " hasTorrent=" & pCaps["hasTorrent"] & \
          " hasOnion=" & pCaps["hasOnion"] & return after sLog
@@ -241,6 +271,9 @@ private command rstSectionCapabilities pCaps
          " hasEnet=" & pCaps["hasEnet"] & \
          " hasCoin=" & pCaps["hasCoin"] & \
          " hasSha3=" & pCaps["hasSha3"] & return after sLog
+   put "      hasNostr=" & pCaps["hasNostr"] & \
+         " hasNostrRelay=" & pCaps["hasNostrRelay"] & \
+         " canNostrSign=" & pCaps["canNostrSign"] & return after sLog
 end rstSectionCapabilities
 
 private command rstSectionKdfTree
@@ -375,7 +408,7 @@ private command rstSectionKeyFile
 end rstSectionKeyFile
 
 private command rstSectionHead
-   local tHead, tParsed, tRebuilt, tUpper, tBig, tBigParsed, rstI
+   local tHead, tParsed, tRebuilt, tUpper, tBig, tBigParsed, tSeq53, rstI
    rstSection "RSH1 - the feed head"
    put rsBuildHead(kRsGoldHeadSeq, kRsGoldHeadName, kRsGoldPost2Target, \
          kRsGoldPrekeyTarget, kRsGoldOnion, kRsGoldProfileTarget) into tHead
@@ -425,11 +458,49 @@ private command rstSectionHead
    put rsParseHead(tBig) into tBigParsed
    rstCheck (tBigParsed is not empty), \
          "a seq of exactly 2^53 still parses (it IS representable)"
-   rstCheck (tBigParsed["seq"] is 9007199254740992), \
-         "and comes back as exactly 2^53, not a rounded neighbour"
+   -- Exactness is judged on the two u32 HALVES (2026-09-24), not by
+   -- `tBigParsed["seq"] is 9007199254740992` as it was: that is an equality
+   -- at magnitude 2^53, where a rounded neighbour differs by only 1 or 2,
+   -- and a relative comparison tolerance (one suspected cause of the
+   -- 2^53 + 1 failure just below) would answer true for the neighbour too.
+   -- The check could not see the one thing its label claims. The halves are
+   -- exact integers below 2^32, and any neighbour moves the low half off 0.
+   -- Guarded, so an empty parse is a plain FAIL, never arithmetic on empty.
+   if tBigParsed is not empty then
+      put tBigParsed["seq"] into tSeq53
+      rstCheck (tSeq53 div 4294967296 is 2097152 and \
+            tSeq53 mod 4294967296 is 0), \
+            "and comes back as exactly 2^53, not a rounded neighbour"
+   else
+      rstCheck false, "and comes back as exactly 2^53, not a rounded neighbour"
+   end if
+   -- The next check FAILED on 2026-09-24 (OXT, Win32, the suite paste):
+   -- the engine accepted 2^53 + 1 through the old quotient bound in
+   -- rsReadBEu64, whose comment has the story. The bound is decided on the
+   -- halves now; verified statically; needs an OXT re-pass.
    put numToByte(1) into byte 12 of tBig
    rstCheck (rsParseHead(tBig) is empty), \
          "a seq of 2^53 + 1 is REFUSED (the first unrepresentable value)"
+   -- DIAGNOSTIC, not a check (2026-09-24). That failure is OBSERVED; its
+   -- cause is INFERRED. These four comparisons are all true in pure IEEE,
+   -- and each candidate rule answers them differently, so the next run's
+   -- log settles which rule this engine applies. Probes 2 to 4 divide
+   -- integers below 2^53 by powers of two, so their operands are exact
+   -- doubles; probe 1 only has to differ from 1 by about 1e-7. Predicted
+   -- readings (checked against Python models of each rule):
+   --   IEEE, no tolerance              true,true,true,true
+   --   absolute tolerance 1e-6         false,false,false,false
+   --   relative, 1 x DBL_EPSILON       true,true,false,false
+   --   relative, 2+ x DBL_EPSILON      true,false,false,false
+   --   round trip, 15 sig. digits      true,false,false,true
+   -- The third is the failing bound itself: hi = 2^21, lo = 1.
+   put "      numeric compare probe (diagnostic; IEEE reads" && \
+         "true,true,true,true):" && \
+         (1 + 1 / 10000000 > 1) & "," & \
+         (1 + 1 / 2251799813685248 > 1) & "," & \
+         (2097152 > (9007199254740992 - 1) / 4294967296) & "," & \
+         (1 + 23 / 4503599627370496 > 1 + 22 / 4503599627370496) & \
+         return after sLog
    put tHead into tBig
    repeat with rstI = 5 to 12
       put numToByte(255) into byte rstI of tBig

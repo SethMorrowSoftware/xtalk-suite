@@ -9667,11 +9667,45 @@ private function rsReadBEu64 pBytes
    -- answer rather than a rounded one. EVERY call site checks for empty and
    -- refuses the record; that is what makes this safe rather than merely
    -- different.
+   --
+   -- THE BOUND IS DECIDED ON THE TWO u32 HALVES (2026-09-24): hi * 2^32 + lo
+   -- is at most 2^53 exactly when hi < 2^21 (2097152), or hi = 2^21 and
+   -- lo = 0. Each half is built from four bytes, so both are exact integers
+   -- below 2^32, and every comparison below is between integers that differ
+   -- by at least 1 at that modest magnitude. No rounding rule and no
+   -- comparison tolerance an engine could plausibly apply changes its answer.
+   --
+   -- It used to be `if tHi > (9007199254740992 - tLo) / 4294967296`, and on
+   -- 2026-09-24 (OXT, Win32, the suite paste's riptide fold) that line
+   -- ACCEPTED a seq of 2^53 + 1: the harness check "a seq of 2^53 + 1 is
+   -- REFUSED" failed (OBSERVED). For hi = 2^21, lo = 1 the right side is
+   -- 2097151.99999999977, which pure IEEE puts below 2097152, so the family
+   -- interpreter (Python floats) refused and every headless gate stayed
+   -- green. But the two sides differ by about 2.3e-10, a relative 1.1e-16,
+   -- and the engine did not answer that comparison the way IEEE does. WHY is
+   -- INFERRED, not observed: a numeric comparison tolerance (LiveCode is
+   -- widely reported to answer (0.1 + 0.2) = 0.3 as true) or a round trip
+   -- through about 15 significant digits would each explain it, and nothing
+   -- yet tells an absolute tolerance from a relative one. So the rule is the
+   -- one that holds under every such explanation: decide a bound on a wide
+   -- integer by comparing exact integers that differ by at least 1 at a
+   -- modest magnitude - never against a quotient, and never on a difference
+   -- smaller than any plausible tolerance. tools/check-script-vectors.py
+   -- replays this bound under three comparison models, after proving that
+   -- each of them accepts 2^53 + 1 through the old line as the engine did.
+   -- Plain nested ifs, no compound `and`: both operands of one always
+   -- evaluate (engine notes 2.5). Harmless here, but the habit costs less
+   -- than the audit.
    local tHi, tLo
    put rsReadBEu32(byte 1 to 4 of pBytes) into tHi
    put rsReadBEu32(byte 5 to 8 of pBytes) into tLo
-   if tHi > (9007199254740992 - tLo) / 4294967296 then
+   if tHi > 2097152 then
       return empty
+   end if
+   if tHi is 2097152 then
+      if tLo is not 0 then
+         return empty
+      end if
    end if
    return tHi * 4294967296 + tLo
 end rsReadBEu64
