@@ -595,7 +595,7 @@ Tick results HERE, by `#`, with the date, platform and what ran (runbook rows 5 
 | #26 | the SodiumXT dependency and floor | CLOSED 2026-09-23: required even for plaintext; ABI >= 6, ABI 7 for offline checksums |
 | codec KATs | the address codec on known onions | CLOSED 2026-08-12: engine-green, `oxSelfTest()` 43/43, Windows x64, SodiumXT ABI 7 |
 | #27 offline | one seed, one ed25519 key in libtorrent and libsodium | CLOSED: engine-green in the suite paste's CROSS section 2026-08-08; native in CI since 2026-08-17 (1.1) |
-| #30 | the pill / toggle rects do not overlap the header controls | OPEN, rides runbook row 37 (the demo re-open fleet): record it when `torrent-quickshare` is re-opened. The `qsTorPill` rect (`430,8,612,32`) is unchanged; the kit-v2 restyle moved the toggle and tagline; `check-stack-size.py` checks the window size only |
+| #30 | the pill / toggle rects do not overlap the header controls | OPEN, rides runbook row 37 (the demo re-open fleet), whose `torrent-quickshare` criterion names it since 2026-09-24: record it when `torrent-quickshare` is re-opened. The `qsTorPill` rect (`430,8,612,32`) is unchanged; the kit-v2 restyle moved the toggle and tagline; `check-stack-size.py` checks the window size only |
 | #17 | backward compatibility: a pre-Model-C QuickShare rejects a `BTXTOR1:` code cleanly (5.2); an old saved Channels stack defaults `uFollowAnon` empty (6.2, built) | OPEN for the QuickShare half: static, answerable from the pre-2026-08-15 `qsGetFile` in git history |
 | #27 live | `oxServiceAddress == chChannelOnionAddr(pub)` on a real service | OPEN: rides #32; settles D-04 |
 | concurrent services | N services live at once; a second service on the same local port refused | OPEN |

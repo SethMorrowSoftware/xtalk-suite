@@ -49,6 +49,17 @@ jobs:
   gates:
     name: static gates + golden vectors (all members)
     runs-on: ubuntu-latest
+    # A CEILING WE CHOSE, not GitHub's six-hour default (added 2026-09-24).
+    # On 2026-09-11 a run of this job was cancelled at exactly 6h00m, and
+    # it only came back under the ceiling because the wallet gates were
+    # made concurrent and their regexes compiled. The fifteen completed runs
+    # from 2026-09-21 to 09-24 took 1h22m to 2h43m wall-clock for the whole
+    # workflow, so 240 is about 1.5x the worst of them: a hang or a gate
+    # that has quietly doubled ends here two hours sooner, and says so, and
+    # a normal run never meets it. When real gate work pushes the step
+    # toward it, raise the number in the same change and re-measure - never
+    # delete it, which hands the ceiling back to a limit nobody picked.
+    timeout-minutes: 240
     steps:
       - uses: actions/checkout@v4
 
