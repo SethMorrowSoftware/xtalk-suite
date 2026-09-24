@@ -127,7 +127,9 @@ C++ engine (the shim cites these by number):
    hid three more removals. If the FetchContent pin or apt/brew roll to 2.1, run the smoke
    test's create-torrent leg first.
 6. **The poll interval is a latency/CPU knob only WITHIN the queue caps.** libtorrent's alert
-   queue (`alert_queue_size`, 1000 by default) DROPS alerts when it fills between drains;
+   queue (`alert_queue_size`, 2000 by default in libtorrent 2.0 - settings_pack.cpp, 2.0.10;
+   this line and the shim comment in `btx_pop_alerts` said 1000, which was 1.2's, corrected
+   here 2026-09-24, the shim comment at its next native change) DROPS alerts when it fills between drains;
    since 2026-09-10 `btx_pop_alerts` counts `alerts_dropped_alert` (its bitset names dropped
    TYPES, not a count). The rp1 inbound queue (fed from network threads; `btx_rp1_poll` drains
    at most `kDrainCap`, 65536 bytes, per call: about 262 KB/s at 250 ms) was UNBOUNDED until
@@ -140,12 +142,37 @@ C++ engine (the shim cites these by number):
    drain - ..."; full text in `docs/api-reference.md`). Alert codes (`A_RP1_QUEUE_OVERFLOW` + an alerts-dropped code)
    wait for **ABI 12**: the suite's `check-binary-freshness.py` decodes `btx_abi_version()`
    from every committed library, so the bump must land with a release dispatch of all five.
+   Pinned since 2026-09-24: `tests/rp1_queue_test.cpp` holds both rp1 caps (it compiles the
+   shim source in: nothing exported can feed that queue, and a test hook is a shim change);
+   the smoke test forces a real libtorrent overflow (`alert_queue_size` = 1) and requires the
+   report, then silence once nothing drops. Its first draft lowered the limit under a queue
+   already holding four alerts, and libtorrent dropped the REPORT of the drop too:
+   `alerts_dropped_alert` is admitted only while `queue.size() / 4 < limit`.
 7. **BEP44 caps the BENCODED value at 1000 bytes.** `btx_dht_put_immutable` and
    `btx_dht_put_mutable` bencode internally, so they cap RAW input at `kBep44MaxRawValue` = 996
    ("996:" is 4 bytes; fixed 2026-09-08). `btx_dht_put_signed` (value emitted verbatim as
    `preformatted_type`) and `btx_dht_bep44_signbuf` (value appended after `1:v`) take
    ALREADY-BENCODED bytes, so their 1000 cap is correct and must stay. Every node refuses an
-   over-size put silently; riptide's `kRsMaxRecord` had the same bug and is fixed too.
+   over-size put silently; riptide's `kRsMaxRecord` had the same bug and is fixed too. Pinned
+   at the boundaries since 2026-09-24 (the old row refused only 1001, which the pre-fix cap
+   refused too): 996 in / 997 out in the smoke test and the script harness, 1000 in / 1001
+   out for the two already-bencoded paths.
+
+**FOUND 2026-09-24: libtorrent 2.0.x accepts a non-hex 40-character btih.** Its
+`magnet_uri.cpp` ignores `from_hex`'s result for a 40-character `urn:btih:` (2.0.10, 2.0.11;
+2.1.1 checks it), so `btx_add_magnet` ADDS a torrent for whatever `from_hex` wrote before the
+bad digit: "btxtor1:..." becomes info-hash b000...0 and announces for nothing. The Linux and
+mac binaries link 2.0.11, the Windows DLLs 2.1.1, so one string is refused on Windows only.
+Reachable through any 40-character non-hex code in Quick Share's bare-hash path (`qsGetFile`
+checks the length, not the hex) and through a pre-Model-C Quick Share fed a `BTXTOR1:` code cut
+to exactly 40 characters (ONIONXT-INTEGRATION-PLAN register #17). The fix is a hex check in
+`btx_add_magnet` before `parse_magnet_uri`, a native change that waits for a release dispatch;
+`test_pre_model_c_btxtor1_magnet` pins today's answer per libtorrent version.
+
+The 2026-09-24 native rows in gotchas 6 and 7 and this finding are native results: gcc
+ASan/UBSan on Linux x86_64 against apt libtorrent 2.0.10, all four ctests green, each fix's
+rows mutation-checked against a deliberately broken shim that was then restored. None is an
+engine result; the harness's 996/997 rows are verified statically; needs an OXT pass.
 
 Script layer:
 
@@ -244,8 +271,8 @@ in the suite's docs/WORK-PLAN.md.
 ```sh
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DTORRENTXT_BUILD_TESTS=ON
 cmake --build build --config Release
-ctest --test-dir build --output-on-failure   # record_handle_test, torrent_smoke_test, rp1_integration_test
-bash tools/run-gates.sh                      # checker, tests/*golden*.py, record registry, MANIFEST
+ctest --test-dir build --output-on-failure   # record_handle_test, torrent_smoke_test, rp1_integration_test, rp1_queue_test
+bash tools/run-gates.sh                      # checker, tests/*golden*.py, the Model C execution gate, record registry, MANIFEST
 g++ -std=c++17 -Wall -Wextra -fsanitize=address,undefined -fno-sanitize-recover=all \
   -isystem <libtorrent-include> -isystem <boost-include> \
   src/torrent_shim.cpp tests/torrent_smoke_test.cpp <link libtorrent + boost> -o /tmp/tt && /tmp/tt
@@ -253,5 +280,9 @@ g++ -std=c++17 -Wall -Wextra -fsanitize=address,undefined -fno-sanitize-recover=
 
 FetchContent pins libtorrent `GIT_TAG v2.0.11` and needs Boost >= 1.70; the output is ONE
 shared library named with the bare token (`PREFIX ""`, `OUTPUT_NAME torrentxt`). Keep the shim
-warning-clean (`/W3` on MSVC). OXT cannot compile `.lcb` or `.livecodescript` headlessly.
-`docs/building.md` has the options, floors and CI.
+warning-clean (`/W3` on MSVC). OXT cannot compile `.lcb` or `.livecodescript` headlessly, but
+since 2026-09-24 `tools/check-script-vectors.py` RUNS the demos' Model C receive paths (the
+BTXO receivers, `qsKeyOpensVerifier`, `qsReceiveOnion`'s parse, the Channels feed seal)
+through riptide's runner against `tests/onion_frame_golden.py`'s mirrors and the committed
+SodiumXT; it settles logic, not parser behaviour, so it upgrades no honesty label. Its
+siblings are riptide, nostrxt and sodiumxt. `docs/building.md` has the options, floors and CI.

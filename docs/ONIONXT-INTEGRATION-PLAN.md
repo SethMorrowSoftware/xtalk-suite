@@ -320,7 +320,9 @@ bytes (plaintext, or `BTXENC2:` + secretbox), at most `kOnionFeedCap`, repeatabl
   DHT tick.
 - **Nonce discipline (M9):** every push RE-SEALS through `chFeedValue`, never a cached nonce and ciphertext,
   and `sxSecretBox` draws a fresh random nonce per call (sodiumxt's contract), so no keystream is reused. The KAT
-  the design asked for (two seals of one value differ and each opens) is not in the tree yet.
+  the design asked for (two seals of one value differ and each opens) is in the tree since 2026-09-24, executed
+  headlessly on the committed SodiumXT by `torrentxt/tools/check-script-vectors.py` through the shipped
+  `chFeedValue`, `chReadFeed` and `chOnionPushFeed` (12.2); verified statically; needs an OXT pass.
 - **Follow** (`chOnionFollowFetch`): not ready means a placeholder; dial the derived address (or `svc=`); send a
   BTXC FEED request on stream-ready; feed each BTXF value through the UNCHANGED `chReadFeed` (plaintext /
   `LOCKED` / `BADPASS`). Passphrase, BEP44 signature and empty-feed handling are unchanged; only the byte source
@@ -575,10 +577,26 @@ field alone.
 total above 4 GiB; full-stream reassembly of a multi-frame payload (fed whole); the empty file; the
 oversized-frame rejection; both `BTXTOR1` layouts; `qsSafeLeaf` against traversal and injection shapes; BTXC and
 BTXF byte for byte, with incremental arrival, cap boundaries and version / magic refusals; `chSafeLeaf` on its own
-rows and in agreement with `qsSafeLeaf`. **Asked for and not pinned yet:** BTXO split-buffer reassembly (the
-header and a data frame each cut across two reads; the design called it critical), a truncated `BTXTOR1:` code
-refused cleanly, the `nameLen` / `totalLen` cap rejections as golden rows, `qsKeyOpensVerifier` refusing a wrong
-passphrase, and nonce freshness (M9).
+rows and in agreement with `qsSafeLeaf`. **Pinned 2026-09-24** (what this paragraph listed as asked for and not
+pinned): the receiver is now mirrored ONE READ AT A TIME, and BTXO split-buffer reassembly is pinned - the header
+cut in half, a DATA payload cut in half, a frame length cut in half, every two-read cut of a small stream, one
+byte at a time - each saving exactly what the whole stream saves, with the buffer bounded; the `nameLen` cap
+(1024 in, 1025 and 65535 refused from the 8-byte prologue alone) and the `totalLen` cap (8 GiB in, 8 GiB + 1
+refused from the header alone); the byte-count finish and both downgrade refusals; `qsKeyOpensVerifier`
+refusing a wrong passphrase's Argon2id key, a tampered and a truncated verifier, over a pure-Python
+XSalsa20-Poly1305 anchored to NaCl's published secretbox vector; and every truncation of a locked `BTXTOR1:`
+code. `torrentxt/tools/check-script-vectors.py` RUNS the shipped handlers (`qsOnionRecvData`,
+`chOnionRecvData`, `qsKeyOpensVerifier`, `qsReceiveOnion`, `chFeedValue` / `chReadFeed` / `chOnionPushFeed`)
+headlessly against those mirrors, on the committed SodiumXT for the crypto, and carries the **nonce-freshness
+KAT (M9)**: two seals of one feed under one key differ in their nonces and each opens, and a second push
+re-seals. That settles logic, not parser behaviour: every one of these handlers is still "verified statically;
+needs an OXT pass". **Found writing the truncation rows, pinned as found:** a truncated LOCKED code that keeps a
+valid address but loses its verifier - the 56-character core alone (`oxIsValidAddress` strips `.onion`), or any
+cut from the end of the address to the colon before the verifier - is not refused up front. `qsReceiveOnion`
+offers it as a plaintext code ("not encrypted ... Download anyway") and, if the user accepts, dials with no key;
+the encrypted header is then refused ("encrypted but the code had no passphrase"), so nothing is saved, but the
+refusal comes after a network dial and a prompt that misdescribes the share. A cut inside the verifier is refused
+before any dial, though its message blames the passphrase.
 
 ### 12.3 The on-engine VERIFY register
 
@@ -596,7 +614,7 @@ Tick results HERE, by `#`, with the date, platform and what ran (runbook rows 5 
 | codec KATs | the address codec on known onions | CLOSED 2026-08-12: engine-green, `oxSelfTest()` 43/43, Windows x64, SodiumXT ABI 7 |
 | #27 offline | one seed, one ed25519 key in libtorrent and libsodium | CLOSED: engine-green in the suite paste's CROSS section 2026-08-08; native in CI since 2026-08-17 (1.1) |
 | #30 | the pill / toggle rects do not overlap the header controls | OPEN, rides runbook row 37 (the demo re-open fleet): record it when `torrent-quickshare` is re-opened. The `qsTorPill` rect (`430,8,612,32`) is unchanged; the kit-v2 restyle moved the toggle and tagline; `check-stack-size.py` checks the window size only |
-| #17 | backward compatibility: a pre-Model-C QuickShare rejects a `BTXTOR1:` code cleanly (5.2); an old saved Channels stack defaults `uFollowAnon` empty (6.2, built) | OPEN for the QuickShare half: static, answerable from the pre-2026-08-15 `qsGetFile` in git history |
+| #17 | backward compatibility: a pre-Model-C QuickShare rejects a `BTXTOR1:` code cleanly (5.2); an old saved Channels stack defaults `uFollowAnon` empty (6.2, built) | ANSWERED STATICALLY 2026-09-24 for the QuickShare half, with one hole. The last QuickShare before Model C is TorrentXT's `examples/torrent-quickshare.livecodescript` at `05dc02f` (2026-06-29; unchanged at `50218ef`, the parent of `7414dfe`, which added Model C on 2026-07-02 - the "pre-2026-08-15" date is the Channels one; blob `e43cfdd`, read from https://github.com/SethMorrowSoftware/TorrentXT). Its `qsGetFile` hands `btAddMagnet` only a code of exactly 40 or 64 characters, and a whole `BTXTOR1:` code is at least 77, so every whole code is refused with "That does not look like a share code" before any network. The hole: a code cut to exactly 64 characters is refused by libtorrent's magnet parser, but one cut to exactly 40 is ADDED as info-hash b000...0 by libtorrent 2.0.x, which ignores `from_hex`'s failure (the Linux and mac builds; 2.1.1 on Windows refuses it). Pinned in `torrentxt/tests/onion_frame_golden.py` (the #17 rows) and natively in `torrentxt/tests/torrent_smoke_test.cpp` (`test_pre_model_c_btxtor1_magnet`); the same gap takes any 40-character non-hex code in today's bare-hash path (torrentxt `CLAUDE.md`) |
 | #27 live | `oxServiceAddress == chChannelOnionAddr(pub)` on a real service | OPEN: rides #32; settles D-04 |
 | concurrent services | N services live at once; a second service on the same local port refused | OPEN |
 | #28 | throughput in MB/s on two machines | OPEN: quote no number until measured |
