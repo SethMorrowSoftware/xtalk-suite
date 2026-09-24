@@ -52,7 +52,10 @@ supposed to do: that a box2dxt bundle installs at all (it did not, until
 installed, that a thin Mach-O and a wrong architecture and a wrong filename are
 each REFUSED, and that both manifest legs below - refreshed and CREATED - do what
 their message says, driven against a temporary ROOT so the real tree is never
-written. The accept case deliberately reads the member's real committed files
+written. Since 2026-09-24 it also pins the three per-library verdicts, "(new)",
+"(unchanged)" and "(REPLACES the committed one)": release-binaries.yml copies
+them into the release commit, the only durable record that a byte-identical
+rebuild happened at all. The accept case deliberately reads the member's real committed files
 instead of synthesising them, because a synthetic ELF would prove only that the
 parser parses. This repo's standing lesson is that SHIPPED IS NOT RUN: a claim
 that can be pinned by executing the code should not be left as a comment.
@@ -74,24 +77,33 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # reported as skipped, which is the right default - the bundle directory is
 # whatever the workflow or a human unzipped, not a trusted manifest.
 #
-# BOX2DXT JOINED 2026-08-17, and the token is VERIFICATION-ONLY. It does NOT put
-# box2dxt in a release lane and deliberately does not pre-empt the decision
-# box2dxt/CLAUDE.md reserves for the owner: its known-good Linux build runs
-# `docker run manylinux2014` INSIDE a stock runner (glibc floor 2.17), while
-# release-binaries.yml's cmake-members job uses the `container:` shape with
-# manylinux_2_28, so joining that matrix as-is would raise the member's glibc
-# floor - a real portability regression, and a call nobody should make as a
-# side effect of editing a Python tuple. Until that lane exists, nothing in CI
-# produces a box2dxt bundle and this token is inert there.
+# BOX2DXT JOINED 2026-08-17, and when it joined the token was VERIFICATION-ONLY:
+# it did not put box2dxt in a release lane, and deliberately did not pre-empt
+# the decision box2dxt/CLAUDE.md then reserved for the owner, because its
+# known-good Linux build ran `docker run manylinux2014` INSIDE a stock runner
+# (glibc floor 2.17) while release-binaries.yml's cmake-members job used the
+# `container:` shape with manylinux_2_28, so joining that matrix as-is would
+# raise the member's glibc floor - a call nobody should make as a side effect
+# of editing a Python tuple.
 #
-# What it DOES buy is the hand-assembled path, which is the one people actually
-# use for a member with no lane: a locally built or unzipped box2dxt bundle used
-# to be routed to "not a native suite member" and then refused with "the bundle
-# contained no installable library", so the only way to land those five binaries
-# was to copy them in by hand - with none of the filename, object-format,
-# architecture or fat-Mach-O checks below run over them, and the manifest
-# refreshed by hand or not at all. That is exactly the failure mode suite rule 5
-# exists to prevent, so the fix is worth landing ahead of the YAML half.
+# THAT HAS SINCE HAPPENED, BY WORKFLOW RATHER than by this tuple: box2dxt has
+# had release-binaries.yml matrix rows since 2026-08-23, release run 12
+# (2026-08-27) built and committed its Linux and Windows libraries through
+# this file, and D-03 was closed "resolved by events" the same day. The
+# portability cost this comment predicted was real in part: that run's
+# x86-linux library needs glibc 2.34 where the docker-run build needed 2.17
+# (x86_64-linux still needs 2.17) - docs/OPEN-DECISIONS.md D-03 and the suite
+# work plan carry it. This paragraph described the lane as reserved until
+# 2026-09-24.
+#
+# What the token bought first, and still buys, is the hand-assembled path: a
+# locally built or unzipped box2dxt bundle used to be routed to "not a native
+# suite member" and then refused with "the bundle contained no installable
+# library", so the only way to land those five binaries was to copy them in by
+# hand - with none of the filename, object-format, architecture or fat-Mach-O
+# checks below run over them, and the manifest refreshed by hand or not at all.
+# That is exactly the failure mode suite rule 5 exists to prevent, which is why
+# the token landed six days ahead of the YAML half (2026-08-23).
 MEMBERS = ("sodiumxt", "torrentxt", "enetxt", "datachannelxt", "coinxt", "box2dxt")
 EXT_FOR = {"linux": "so", "win32": "dll", "mac": "dylib"}
 
@@ -558,6 +570,15 @@ def selftest():
             check("a first install CREATES the member's manifest, and says so",
                   rc == 0 and "CREATED (new integrity coverage" in out
                   and os.path.exists(created), out)
+            # THE THREE VERDICT STRINGS ARE A CONTRACT (2026-09-24):
+            # release-binaries.yml's Commit step greps "(new)", "(unchanged)"
+            # and "(REPLACES the committed one)" out of this output and puts
+            # them in the release commit's message, because a byte-identical
+            # rebuild changes no file and so leaves no other durable trace.
+            # A reword here would not fail that step; it would silently empty
+            # the paragraph. Each of the three is pinned below.
+            check("  ...reporting every library it landed as (new)",
+                  out.count("(new)") == staged, out)
             body = []
             if os.path.exists(created):
                 with open(created, encoding="utf-8") as fh:
@@ -571,6 +592,22 @@ def selftest():
                   out)
             check("  ...reporting the now-identical libraries unchanged",
                   out.count("(unchanged)") == staged, out)
+            # One library rebuilt differently: append a byte to its bundle
+            # copy (the header the format checks read is untouched), and that
+            # one - only that one - must read as a replacement.
+            changed = None
+            for dirpath, _dirs, files in os.walk(os.path.join(bundle, "box2dxt")):
+                for fn in sorted(files):
+                    changed = os.path.join(dirpath, fn)
+                    break
+                if changed:
+                    break
+            with open(changed, "ab") as fh:
+                fh.write(b"\0")
+            rc, out = _capture([bundle])
+            check("a rebuilt library is reported (REPLACES the committed one)",
+                  rc == 0 and out.count("(REPLACES the committed one)") == 1
+                  and out.count("(unchanged)") == staged - 1, out)
         finally:
             ROOT = saved_root
     finally:

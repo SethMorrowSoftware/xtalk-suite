@@ -164,9 +164,10 @@ The suite's `tools/build-preflight.py` parses the `universal-mac` row and needs 
 `sxVersion()` reports libsodium 1.0.22 on the Windows DLLs and 1.0.20 elsewhere.
 
 **CI executes the committed library (since 2026-08-16).** The build-matrix step "Execute
-the COMMITTED library's ristretto vectors" in `native-sodiumxt.yml` dlopen()s the committed
-Linux `.so` BEFORE the build overwrites it: RFC 9496 A.1 [1]B/[2]B/[3]B, the group law,
-scalarmult against scalarmult_base, batch against single, a refused bad point. It reads the
+the COMMITTED library's ristretto and ChaCha20 vectors" in `native-sodiumxt.yml` dlopen()s
+the committed Linux `.so` BEFORE the build overwrites it: RFC 9496 A.1 [1]B/[2]B/[3]B, the
+group law, scalarmult against scalarmult_base, batch against single, a refused bad point,
+and (since 2026-09-24) the RFC 8439 A.2 #1 ChaCha20 keystream and its inverse. It reads the
 expected ABI from `src/sodium_shim.h`, never a literal (coinxt's literal turned its lane red
 at a 4 -> 5 bump). Linux only; the mac dylib is driven in `release-binaries.yml`'s mac lane.
 

@@ -20,14 +20,15 @@ CookieAuthentication 1
 
 For Tor Browser use `9150` / `9151` and enable the control port and cookie auth in its config. Load both
 `onionxt.livecodescript` and `sodiumxt` into the message path, and set a shared key both instances hold
-(in a real app it comes from a key agreement or a pinned contact, never a hardcode). The script writes
-to fields named `myAddress` and `state` that it does not create: build them on the host card first.
+(in a real app it comes from a key agreement or a pinned contact, never a hardcode). `startServiceA`
+builds the two fields role A writes, `myAddress` and `state`, on the host card if they are missing
+(since 2026-09-24; before that they had to be made by hand).
 
 ## Run
 
 1. In instance A, call `startServiceA`. The stack title shows the bootstrap percent. Read the address
    from the `myAddress` field once the `"service"` status fires. Wait for `"serviceReady"` (the
-   descriptor must upload first) before giving B the address.
+   `state` field then reads `reachable`: the descriptor must upload first) before giving B the address.
 2. In instance B, call `dialServiceB` with A's address. B seals `"ping"`, dials, and on `"open"` sends
    it; A opens it, seals `"pong:ping"`, and sends it back; B shows the reply.
 

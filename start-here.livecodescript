@@ -77,17 +77,23 @@ script "SuiteStartHere"
 -- THE TORRENT SESSION CARD (2026-08-27). The family's sharpest trap is
 -- ONE torrent session per process: a second SESSION stack fails its
 -- btStartSession while the first is open. Every session-holding stack in
--- this registry has a closeStack teardown that calls btStopSession (all
--- thirteen verified), so CLOSING the open one frees the session - which
--- is exactly what the card's button does: it finds the open
+-- this registry has a closeStack teardown that calls btStopSession, so
+-- CLOSING the open one frees the session. (Checked statically, 2026-09-24:
+-- all 12 registry rows whose note carries the SESSION marker, the
+-- preflight's included, reach btStopSession from closeStack directly or one
+-- call deep. The 2026-08-27 text said "all thirteen verified", a count the
+-- registry never matched: it had 12 SESSION rows then too, at 7d5ad8b.)
+-- Closing is exactly what the card's button does: it finds the open
 -- session-holding stacks by name and closes them, letting each run its
 -- own teardown. What it cannot fix, and says so: a stack that CRASHED
 -- past its teardown leaks the session inside the shim, and only an OXT
 -- restart clears that (the .lcb exposes no session discovery on
 -- purpose - handles are capabilities, not an enumerable table).
 --
--- THE BOOT SELF-CHECK (2026-08-27): this stack is the fourteenth adopter
--- of tools/demo-selfcheck.livecodescript, so opening it produces a
+-- THE BOOT SELF-CHECK (2026-08-27): this stack was the fourteenth stack to
+-- adopt tools/demo-selfcheck.livecodescript, an ordinal of that date and not
+-- a count (tools/check-demo-selfcheck-drift.py prints how many adopters there
+-- are today), so opening it produces a
 -- citable record in the log (controls exist, the registry parses, the
 -- files resolve, the session index built) instead of a human judgement.
 
@@ -712,7 +718,7 @@ function slRegistry
    put "box2dxt/examples/box2dxt-slingshot.livecodescript||the box2dxt extension||Knock the towers down: projectile physics, star ratings, level progression." & return after tR
    put "box2dxt/examples/box2dxt-contraption-builder.livecodescript||the box2dxt extension||Build machines from parts (motors, ropes, magnets, thrusters...), then hit PLAY and watch the physics run them." & return after tR
    put "box2dxt/examples/box2dxt-spike-gamekit.livecodescript||the box2dxt extension||The game-Kit capability spike: timers, keyboard, sprites, rays, camera - one button per probe." & return after tR
-   put "box2dxt/examples/box2dxt-selftest.livecodescript||the box2dxt extension||box2dxt's own harness: the b2* binding surface exercised end to end." & return after tR
+   put "box2dxt/examples/box2dxt-selftest.livecodescript||the box2dxt extension||box2dxt's own harness: the b2k Kit driven deterministically (a paused world stepped by hand, scripted keys), asserting the behaviours the games rely on." & return after tR
    put "holde-em/src/holdem.livecodescript||nothing to play hotseat; box2dxt for card art, sodiumxt for the committed deal, + torrentxt for online tables; a local tor daemon for onion tables|Save the stack next to holde-em/assets/ for the Kenney card art; a pasted stack falls back to drawn cards. SESSION when online. Self-contained: carries onionxt.|Serverless Texas Hold'em: hotseat now, online tables over the DHT or Tor, signed hash-chained transcripts, an auditable committed shuffle - Riptide's sibling capstone." & return after tR
    put "tests/preflight.livecodescript||every extension you have (absent ones SKIP, not fail)|GENERATED from the C shims' ABI macros. Nothing to install first, no start-using step. It TAKES the one torrent session and gives it straight back, so run it BEFORE any SESSION stack in this OXT launch.|Answers the pass's first question - can this machine run it at all? - in the first minute: one table of LOADED/ABSENT rows, each extension's own ABI guard doing the checking." & return after tR
    put "tests/suite-selftest.livecodescript||every extension you have (absent ones SKIP, not fail)|SESSION: starts the one torrent session. GENERATED from the member harnesses.|The whole suite's self-test in one window: TEN folded harnesses - the seven extension members (nostrxt joined 2026-08-23) plus riptide, box2dxt and holde-em - over the core's own cross-member sections. The 2026-08-17 Windows pass ran 1,836 folded member checks with zero failures and 7 skips; the core's sections run on top of that. Copy-results button for the pass record." & return after tR
@@ -1073,8 +1079,9 @@ end slSessRefresh
 -- slOpenSelected's automatic sweep before a SESSION launch, which passes
 -- the target's own name so a relaunch never closes the window it is about
 -- to raise. Closing a stack fires ITS closeStack, and every SESSION stack
--- in this registry tears its session down there (btStopSession; all
--- thirteen verified 2026-08-27) - so this frees the session without this
+-- in this registry tears its session down there (btStopSession; all 12
+-- SESSION rows checked statically 2026-09-24, see the header) - so this
+-- frees the session without this
 -- launcher touching bt* at all. The one case it cannot reach is a stack
 -- that CRASHED past its teardown: the session leaks inside the shim, no
 -- public handler can find it, and the honest advice is an OXT restart -

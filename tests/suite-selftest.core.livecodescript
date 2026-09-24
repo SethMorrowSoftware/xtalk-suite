@@ -31,31 +31,37 @@ script "xTalkSuiteSelfTest"
 -- legs 43/43. A later 2026-08-12 run of the current harness was green across
 -- all 617 folded checks: sodiumxt 71, onionxt 43, coinxt 230, torrentxt 96,
 -- enetxt sync 21, datachannelxt sync 23, and riptide phases 1-2 at 133.
--- What each run bought is recorded per member (each member's
--- README / CLAUDE.md and docs/OXT-PASS-RUNBOOK.md, the pass blockquotes).
+-- What each run bought is recorded per member: each member's CLAUDE.md
+-- evidence ledger, and docs/OXT-PASS-RUNBOOK.md section 8 (the closed engine
+-- record, which absorbed the runbook's per-pass blockquotes in the docs
+-- consolidation, 409ceee).
 -- Riptide's phase-2 single-engine work is therefore closed; only its
 -- two-machine propagation criterion remains under runbook item 6.
 --
--- WHAT HAS NOT RUN ON AN ENGINE (2026-08-17): the skip channel through
--- stMergeReturned, the third count in stSummaryCounts, and stMergeFloor with
--- it. The rule was exercised against every member's real summary spelling and
--- against mutations of them by a hand port of the parse, which is what a
--- headless environment can do and no more - verified statically; needs an OXT
--- pass. The one number it puts at risk is onionxt's floor of 41: too high, and
--- a green run reports one extra FAIL line naming the member and printing what
--- it attempted, which is the failure mode this file chooses on purpose over an
--- uncaught error.
+-- THE SKIP CHANNEL (2026-08-17): stMergeReturned's third count, read by
+-- stSummaryCounts, and stMergeFloor with it. Written against every member's
+-- real summary spelling and mutations of them by a hand port of the parse, it
+-- then RAN on 2026-08-20 (Windows, 1981/0/1): onionxt's one skip was printed
+-- inline and merged into that run's total (onionxt/CLAUDE.md's evidence
+-- ledger). What has never fired on an engine is stMergeFloor's REFUSAL branch.
+-- The one number that puts at risk is onionxt's floor, re-derived to 51 on
+-- 2026-09-24 beside its call site below (verified statically; needs an OXT
+-- pass): too high, and a green run reports one extra FAIL line naming the
+-- member and printing what it attempted, which is the failure mode this file
+-- chooses on purpose over an uncaught error.
 --
 -- THIS IS NO LONGER A SAMPLER, AND THAT IS THE BIG CHANGE. It used to drive
 -- about a dozen handlers per member and say so. It now carries EVERY member's
 -- own deep self-test as well, folded in whole by tools/build-suite-selftest.py:
 --
---   sodiumxt        sxSelfTest()      21 groups, the entire sx* surface
---   onionxt         oxSelfTest()      10 sections, all offline, and since
---                                     2026-08-17 the only folded harness
---                                     whose summary carries THREE counts:
---                                     passed, failed and skipped
---   coinxt          its 28 sections    all five phases, ~300 checks
+--   sodiumxt        sxSelfTest()      24 groups, the entire sx* surface
+--   onionxt         oxSelfTest()      12 sections, all offline; on
+--                                     2026-08-17 the first folded harness
+--                                     whose summary carried THREE counts
+--                                     (passed, failed, skipped); riptide,
+--                                     nostrxt and holde-em carry the skip
+--                                     count too now
+--   coinxt          its 32 sections    all five phases, ~300 checks
 --   torrentxt       its full harness   sharing this file's single session
 --   enetxt          its SYNC half      lifecycle, stale handles, tuning
 --   datachannelxt   its SYNC half      lifecycle, the stale-handle surface
@@ -2061,6 +2067,7 @@ end stRepeatByte
 
 command stRunMemberHarnesses
    local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
+   local tNxReport, tNxCaps, tNxFloor -- NostrXT's probe-selected floor (its call site)
    stSection "deep per-member self-tests (each member's own harness, folded in)"
    stNote "Each of these is the SAME harness that member ships standalone."
    stNote "A failure here means the same thing it would mean there."
@@ -2073,13 +2080,16 @@ command stRunMemberHarnesses
    --
    -- THE THIRD ARGUMENT TO stMergeReturned IS A FLOOR: the fewest items that
    -- member can attempt in any environment it supports (checks + skips). Read
-   -- stMergeFloor for what it does and does not catch. Only ONE of the five is
+   -- stMergeFloor for what it does and does not catch. TWO of the six are
    -- measured today:
    --
-   --   OnionXT   41, derived section by section at its call site below. It is
+   --   OnionXT   51, derived section by section at its call site below. It is
    --             the member whose harness can degrade the furthest (its skips
    --             span a third of its items), which is why it was measured
    --             first and why the skip channel exists at all.
+   --   NostrXT   278 with CoinXT, 253 without (2026-09-24), chosen by the
+   --             member's OWN cached capability probe, the one its harness
+   --             branches on; derived and justified at its call site below.
    --   the four  1, the CATASTROPHIC floor, and it is not a measured minimum.
    --   others    What it refuses is a harness that attempted NOTHING and still
    --             read green, because zero failures is zero failures. Measuring
@@ -2105,19 +2115,20 @@ command stRunMemberHarnesses
 
    if sHaveOnion then
       try
-         -- THE FLOOR IS 41, and the arithmetic is here because a number with
+         -- THE FLOOR IS 51, and the arithmetic is here because a number with
          -- no derivation beside it is a number nobody dares to change - which
          -- is how a ratchet quietly becomes a decoration. onionxt's harness
-         -- runs ten sections; SEVEN of them can bail out, and since 2026-08-17
-         -- every bail-out counts as one skip. Attempted = checks + skips, per
-         -- section, worst case:
+         -- runs twelve sections; nine of them can bail out, and since
+         -- 2026-08-17 every bail-out counts as one skip. Attempted = checks +
+         -- skips, per section, worst case:
          --    1 version and capabilities     6   unconditional
          --    2 initial state                1   3 checks, or 1 skip when this
          --                                       session is already authed
-         --    3 fail-closed arguments        4   3 unconditional, + 2 pre-auth
+         --    3 fail-closed arguments        6   5 unconditional, + 4 pre-auth
          --                                       checks or 1 skip
-         --    4 unknown handles              5   unconditional
-         --    5 idempotent teardown          2   unconditional
+         --    4 unknown handles             10   unconditional
+         --    5 idempotent teardown          3   2 unconditional, + oxStopTor:
+         --                                       1 check, or 1 skip if authed
          --    6 address round-trip           6   2 addresses x (2 + 1 either
          --                                       way: re-encode or skip)
          --    7 address negative paths       4   3, + 1 either way
@@ -2126,19 +2137,37 @@ command stRunMemberHarnesses
          --   10 loopback guard               1   18 checks, or 1 skip where
          --                                       oxHostOfSocket is not in this
          --                                       script
+         --   11 oxh* HTTP helpers            1   27 checks, or 1 skip where
+         --                                       onion-httpd is not in this
+         --                                       script (THIS paste: it is not)
+         --   12 SOCKS timeout reasons        1   3 checks, or 1 skip where
+         --                                       the library is not in this
+         --                                       script
          --                                  --
-         --                                  41
-         -- Its best case is 61, and THIS paste normally sees 58-61: section
-         -- 10's probe resolves here because the generator embeds the library
-         -- into this same script, which is the whole reason that section is
-         -- testable at all. The floor is deliberately the environment-proof 41
-         -- rather than the paste-expected 58: a floor that can false-fail an
-         -- engine session is worth less than a floor that catches less, and
-         -- the degraded case is no longer invisible anyway - it arrives as 8
-         -- skips on the summary line. Cross-check on the arithmetic: onionxt's
-         -- CLAUDE.md records a 2026-08-12 engine run at 43 checks, and
-         -- sections 1-9 at their best case are exactly 43.
-         stMergeReturned "OnionXT", ox1oxSelfTest(), 41
+         --                                  51
+         -- THIS paste normally attempts 70-75: sections 10 and 12 resolve here
+         -- because the generator embeds the library into this same script,
+         -- section 11 is one skip because it does not embed onion-httpd, and
+         -- an already-authenticated session trades sections 2 and 3's seven
+         -- checks for two skips. The floor is deliberately the
+         -- environment-proof 51 rather than the paste-expected 70: a floor that
+         -- can false-fail an engine session is worth less than a floor that
+         -- catches less, and the degraded case is no longer invisible anyway -
+         -- it arrives as up to 11 skips on the summary line.
+         --
+         -- RE-DERIVED 2026-09-24. This read 41 over ten sections until then,
+         -- and 41 had gone stale without going WRONG: section 3 grew two
+         -- pre-auth checks and section 4 five unconditional ones (2026-08-20,
+         -- 2026-08-24), and section 11 arrived, all without the floor moving -
+         -- a floor below the true minimum still passes, so nothing said so.
+         -- Cross-check on the arithmetic: onionxt's CLAUDE.md records a
+         -- 2026-08-12 engine run at 43 checks, which was sections 1-9 at their
+         -- best case then, and 2026-08-17's 61, which was those 43 plus section
+         -- 10's 18; sections 1-9 read 53 at best today, those 43 plus the 7
+         -- above plus 2026-09-24's three (oxTransportDial and oxLaunchTor in
+         -- section 3, oxStopTor in section 5). Verified statically; needs an
+         -- OXT pass.
+         stMergeReturned "OnionXT", ox1oxSelfTest(), 51
       catch tError
          stSectionFailed "OnionXT deep self-test", tError
       end try
@@ -2226,7 +2255,7 @@ command stRunMemberHarnesses
    if sHaveRiptideScript then
       try
          -- floor 1: catastrophic only, not measured (see above)
-         stMergeReturned "Riptide Social (phases 1-2)", rs1rsSelfTest(), 1
+         stMergeReturned "Riptide Social (phases 1-8)", rs1rsSelfTest(), 1
       catch tError
          stSectionFailed "Riptide deep self-test", tError
       end try
@@ -2243,9 +2272,72 @@ command stRunMemberHarnesses
    -- (nostrxt/CLAUDE.md, the two-file split).
    if sHaveNostrScript then
       try
-         -- floor 1: catastrophic only, not measured (the riptide precedent;
-         -- a first engine pass will give this member its measured floor)
-         stMergeReturned "NostrXT", nx1nxSelfTest(), 1
+         -- THE FLOOR IS 278 WITH COINXT AND 253 WITHOUT, and it is the first
+         -- floor here chosen by a probe, because this is the first harness
+         -- whose every item-count branch hangs off one probe the core can
+         -- read. Attempted = passed + failed + skipped (stMergeReturned);
+         -- a skip counts as ONE item, and a section that bails out emits a
+         -- fixed number of skips rather than one per check it did not run.
+         --
+         -- THE DATED RECORD: 2026-08-24, Windows x86_64, OXT 9.6.3, this
+         -- paste with CoinXT and SodiumXT ABI 10 installed: 274 passed, 0
+         -- failed, 2 skipped = 276 attempted (nostrxt/CLAUDE.md, the ledger).
+         -- Counted by hand section by section it is exactly that: 274 checks,
+         -- and the 2 skips are section 17 (the nxr* relay layer, which is
+         -- never in this paste, so it is 2 skips here in every environment).
+         -- 2026-09-24 added 3 unconditional checks (the 2026-09-09 fix's
+         -- pins in sections 4 and 14), so that configuration now attempts
+         -- 279. What moves the count, and nothing else does (every other
+         -- nxtCheck runs in every environment; pass or fail, it counts):
+         --    CoinXT absent   section 6: 2 skips for its 19 or 17; section
+         --                    9: 2 skips for its 8; section 11: 1 skip for
+         --                    its 4 or 5 post-probe checks      -> 253
+         --    SodiumXT absent section 6: 1 skip for 3 key-generation checks
+         --                    (-2); no cipher, so section 11 takes the
+         --                    fail-closed branch, 3 checks for 2 (+1)
+         --    SodiumXT < 10   section 11's 3-check branch only (+1)
+         -- So with CoinXT the count is 278 (no SodiumXT), 279 (the record's
+         -- configuration) or 280 (a pre-ABI-10 SodiumXT); without it, 253
+         -- whatever SodiumXT is. Measured, not only added up: the real
+         -- harness was run through the family interpreter
+         -- (nostrxt/tools/lcs-interp.py) in all six combinations, over the
+         -- committed sibling binaries, and printed exactly these totals (its
+         -- one FAIL in every run, "nxUnixNow is after the fixture era", is
+         -- the interpreter's fixed deterministic clock, not a defect, and a
+         -- FAIL counts as attempted all the same). That settles the
+         -- COUNTING, which is logic; the floor itself has not met an
+         -- engine: verified statically; needs an OXT pass.
+         --
+         -- WHY TWO NUMBERS, when OnionXT's one environment-proof 41 sits
+         -- under its paste-expected 58. A single number must be <= 253 to
+         -- spare a CoinXT-less engine, and 253 is 26 items under the record's
+         -- 279 - the whole of section 12 could vanish from a fully equipped
+         -- run and still read green, which is the silent shrink a floor is
+         -- for. OnionXT could not do better: its skips follow runtime state
+         -- (an authed session, a daemon) that nothing here can read. This
+         -- harness branches on ONE cached answer, nxProbeCapabilities()'s
+         -- hasCoin, which it reads first thing; the embedded core is
+         -- unprefixed, so the call below returns that SAME cached array -
+         -- read after the harness has run, so the floor keys on the answer
+         -- the harness actually branched on and cannot disagree with it.
+         -- Taking the minimum across the SodiumXT cases keeps it
+         -- environment-proof within each branch: a green run in ANY
+         -- supported install meets it, and a run in the record's
+         -- configuration that lost 2 or more items does not (3 on a
+         -- pre-ABI-10 SodiumXT; 1 without SodiumXT, or without CoinXT).
+         --
+         -- A HARNESS EDIT THAT REMOVES A CHECK MUST RE-DERIVE THIS, in the
+         -- same change; adding one only widens the margin. Nothing gates it
+         -- headlessly: one interpreted run of the whole harness took 15 to
+         -- 35 minutes per environment on the machine that measured it.
+         put nx1nxSelfTest() into tNxReport
+         put nxProbeCapabilities() into tNxCaps
+         if tNxCaps["hasCoin"] is true then
+            put 278 into tNxFloor
+         else
+            put 253 into tNxFloor
+         end if
+         stMergeReturned "NostrXT", tNxReport, tNxFloor
       catch tError
          stSectionFailed "NostrXT deep self-test", tError
       end try

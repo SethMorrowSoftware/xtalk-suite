@@ -44,7 +44,7 @@ project(DataChannelXT
     LANGUAGES C CXX)   # C: usrsctp/libjuice ride in the same static build
 
 # ----------------------------------------------------------------- options ----
-option(DATACHANNELXT_BUILD_TESTS "Build the ctest suite (record_handle_test + datachannel_smoke_test)" OFF)
+option(DATACHANNELXT_BUILD_TESTS "Build the ctest suite (record_handle_test + datachannel_smoke_test + orphan_channel_test)" OFF)
 option(DATACHANNELXT_USE_SYSTEM_LIBDATACHANNEL "find_package(LibDataChannel) instead of FetchContent (vcpkg / system install)" OFF)
 set(DATACHANNELXT_SANITIZE "" CACHE STRING
     "Sanitizer lane: \"\" (off), \"address\" (ASan+UBSan), or \"thread\" (TSan). Applied to the WHOLE build including dependencies.")
@@ -424,5 +424,55 @@ if(DATACHANNELXT_BUILD_TESTS)
             ENVIRONMENT "UBSAN_OPTIONS=halt_on_error=1;ASAN_OPTIONS=halt_on_error=1")
     elseif(EXISTS "${_smoke_src}")
         message(STATUS "DataChannelXT: smoke test present but the shim library is not — skipping.")
+    endif()
+
+    # (c) orphan_channel_test — cb_data_channel's two orphan exits (the peer
+    #     already freed; the handle table full), which no public call reaches
+    #     on demand. It links `datachannelxt_seams`: the SAME shim source built
+    #     with DCX_TEST_SEAMS, a second library rather than a flag on the real
+    #     one, because the release lanes build WITH tests on and ship the
+    #     `datachannelxt` target - a seam compiled into it would reach every
+    #     user and change the export table check-binary-freshness.py holds
+    #     against the committed binaries. The packager matches the bare-token
+    #     name exactly, so this file is never picked up as the shipped one.
+    #     Linked exactly like the real target (same flags, version script and
+    #     mac export list) so the seams are the only difference.
+    set(_orphan_src "${CMAKE_CURRENT_SOURCE_DIR}/tests/orphan_channel_test.cpp")
+    if(EXISTS "${_orphan_src}" AND TARGET datachannelxt)
+        add_library(datachannelxt_seams SHARED "${DATACHANNELXT_SHIM_SRC}")
+        set_target_properties(datachannelxt_seams PROPERTIES
+            PREFIX ""
+            OUTPUT_NAME "datachannelxt_seams"
+            NO_SONAME ON
+            C_VISIBILITY_PRESET hidden
+            CXX_VISIBILITY_PRESET hidden)
+        target_include_directories(datachannelxt_seams PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+        target_compile_definitions(datachannelxt_seams
+            PRIVATE DCX_LIBDATACHANNEL_VERSION="${DATACHANNELXT_LIBDATACHANNEL_TAG}"
+            PUBLIC  DCX_TEST_SEAMS=1)   # PUBLIC: the test sees the seam declarations
+        target_link_libraries(datachannelxt_seams PRIVATE
+            datachannelxt::libdatachannel datachannelxt_flags datachannelxt_link)
+        if(_dc_incs)
+            target_include_directories(datachannelxt_seams SYSTEM PRIVATE ${_dc_incs})
+        endif()
+        if(DCX_HAVE_VERSION_SCRIPT AND UNIX AND NOT APPLE
+           AND NOT DATACHANNELXT_USE_SYSTEM_LIBDATACHANNEL)
+            target_link_options(datachannelxt_seams PRIVATE
+                                "-Wl,--version-script=${_dcx_version_script}")
+        endif()
+        datachannelxt_apple_export_list(datachannelxt_seams "${_dcx_version_script}")
+
+        add_executable(orphan_channel_test "${_orphan_src}")
+        target_include_directories(orphan_channel_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+        target_link_libraries(orphan_channel_test PRIVATE
+            datachannelxt_seams datachannelxt_flags datachannelxt_link)
+        if(UNIX AND NOT APPLE)
+            set_target_properties(orphan_channel_test PROPERTIES
+                BUILD_RPATH "$<TARGET_FILE_DIR:datachannelxt_seams>")
+        endif()
+        add_test(NAME orphan_channel_test COMMAND orphan_channel_test)
+        set_tests_properties(orphan_channel_test PROPERTIES
+            TIMEOUT 180
+            ENVIRONMENT "UBSAN_OPTIONS=halt_on_error=1;ASAN_OPTIONS=halt_on_error=1")
     endif()
 endif()

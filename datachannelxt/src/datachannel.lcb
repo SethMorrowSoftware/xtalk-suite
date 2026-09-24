@@ -814,12 +814,12 @@ public handler dcSendText(in pChannel as Integer, in pText as String) returns In
    -- whatever it would hand the shim, we hand it nothing. Binary belongs in
    -- dcSendData, which carries an explicit length and delivered an embedded
    -- NUL byte-for-byte on the 2026-08-15 engine pass.
-   -- Two consequences worth stating rather than discovering. This check runs
-   -- BEFORE the shim's handle check, so a stale handle carrying a NUL answers
-   -- -3, not -2 - the argument is wrong whichever channel it was aimed at.
-   -- And the shim never sees the call, so it has no last-error to offer:
-   -- clear the previous one instead of letting dcLastError answer for an
-   -- unrelated failure. Verified statically; needs an OXT pass.
+   -- Two consequences, both OBSERVED on the 2026-08-17 Windows suite paste.
+   -- This check runs BEFORE the shim's handle check, so a stale handle
+   -- carrying a NUL answers -3, not -2 (the argument is wrong whichever
+   -- channel it was aimed at). And the shim never sees the call, so it has
+   -- no last-error to offer: clear the previous one instead of letting
+   -- dcLastError answer for an unrelated failure.
    if _hasNulByte(pText) then
       unsafe
          _dcx_clear_error()

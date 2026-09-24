@@ -5,9 +5,11 @@
  * (src/sodium.lcb, public sx*) and libsodium. It adds NO crypto logic of its
  * own: it validates lengths and pointers at the boundary, calls libsodium, and
  * reports bytes-written or a defined error code. See CLAUDE.md ("FFI / C-ABI
- * conventions") and docs/development/implementation-plan.md (section 3) for the
- * full rationale; the operative parts are restated here so a reader of the
- * header alone cannot misuse the contract.
+ * conventions" and "Design decisions") for the full rationale; the original
+ * implementation plan those sections condense was retired on 2026-09-23 and
+ * survives only in git history (docs/archive/implementation-plan.md). The
+ * operative parts are restated here so a reader of the header alone cannot
+ * misuse the contract.
  *
  * Full surface: init/version/randomness; BLAKE2b hashing (one-shot, keyed,
  * multipart, and whole-file) + hex/base64 + constant-time compare; secretbox
@@ -215,7 +217,9 @@ SXT_API int SXT_CALL sxt_secretbox_noncebytes(void);
 SXT_API int SXT_CALL sxt_secretbox_macbytes(void);
 
 /*
- * Encrypt msg under key. Output is nonce || ciphertext || MAC: the shim draws a
+ * Encrypt msg under key. Output is nonce || MAC || ciphertext (libsodium's
+ * combined mode writes the 16-byte MAC FIRST; this said "ciphertext || MAC"
+ * until 2026-09-24, which no caller relied on): the shim draws a
  * fresh random nonce and PREPENDS it, so the caller never handles a nonce
  * (CLAUDE.md rule 3, the misuse-resistant shape). Output length is
  * noncebytes + msglen + macbytes. key must be exactly keybytes.

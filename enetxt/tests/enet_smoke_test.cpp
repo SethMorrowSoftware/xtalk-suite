@@ -10,7 +10,8 @@
  * (supersedes tests/enet_spike_test.cpp), plus the Phase 1 contracts:
  * handle safety everywhere, the 60000-byte budget refused loudly, the
  * lossless partial drain (tiny buffer -> -needed -> stash -> order preserved),
- * and event-time handle birth/retirement. */
+ * event-time handle birth/retirement, and CALL-time retirement of a peer
+ * disconnected while still CONNECTING (the 2026-09-09 fix, no event owed). */
 
 #include "../src/enx_abi.h"
 #include "../src/enx_record.h"
@@ -103,6 +104,25 @@ static bool parse_drain(const uint8_t *buf, size_t len, int count,
         out.push_back(ev);
     }
     return true;
+}
+
+/* A peer's F_EN_STATE via enx_peer_status, or -1 when the handle answers with
+ * no record (the shim's "gone" answer for a retired handle). */
+static long long peer_state_of(int peer) {
+    uint8_t buf[512];
+    const int n = enx_peer_status(peer, buf, sizeof buf);
+    if (n <= 0) {
+        return -1;
+    }
+    enx::RecordReader rr(buf, static_cast<size_t>(n));
+    std::vector<enx::Field> fields;
+    if (!rr.read_record(fields)) {
+        return -1;
+    }
+    for (const enx::Field &fl : fields) {
+        if (fl.id == enx::F_EN_STATE) return fl.as_int();
+    }
+    return -1;
 }
 
 /* Poll one host into `sink`, asserting the framing parses. Returns the count. */
@@ -388,6 +408,81 @@ int main() {
               "disconnect_now retires the handle immediately");
         CHECK(enx_reset_peer(p2) == ENX_ERR_STALE,
               "reset on the retired handle is STALE");
+    }
+
+    /* ---- a polite disconnect while CONNECTING retires at once -------------- */
+    /* The 2026-09-09 fix (23a2914; enetxt/CLAUDE.md gotcha 1), which until this
+     * block was compile-verified only: the polite path above starts from
+     * CONNECTED, the one state where ENet DOES owe an E_DISCONNECT. From
+     * CONNECTING - exactly where enx_connect leaves a peer - enet 1.3.18's
+     * enet_peer_disconnect takes its else branch (enet_host_flush +
+     * enet_peer_reset), queues NO event and leaves the peer DISCONNECTED, so
+     * before the fix the handle waited forever for a drain that never came.
+     *
+     * A DEAD port (nothing binds 27098; the server above is on 27099) and NO
+     * poll between connect and disconnect keep the peer in CONNECTING, which
+     * the precondition check proves rather than assumes: without it a peer
+     * that had somehow reached CONNECTED would take the polite path, and the
+     * block would pass for the wrong reason.
+     *
+     * A ONE-peer host makes the cost visible. ENet's reset frees its slot
+     * either way, so the retry below lands on the SAME ENetPeer; before the
+     * fix the cancelled handle still pointed at it, and a stale handle then
+     * addressed the retry's live connection - the exact outcome suite rule 4
+     * exists to make impossible, not merely a leaked table slot. Reverting
+     * the fix fails the retired-at-once, STALE and no-alias checks here. */
+    {
+        const int lone = enx_host_create_client(1, 1, 0, 0);
+        CHECK(lone > 0, "one-peer client host for the CONNECTING path");
+        const int pc = enx_connect(lone, "127.0.0.1", 27098, 1, 0);
+        CHECK(pc > 0, "connect to a dead port returns a handle");
+        CHECK(peer_state_of(pc) == enx::EPS_CONNECTING,
+              "precondition: the peer is CONNECTING (1), not CONNECTED");
+
+        CHECK(enx_disconnect(pc, 11) == ENX_OK,
+              "enx_disconnect while CONNECTING is OK");
+        uint8_t buf[256];
+        CHECK(enx_peer_status(pc, buf, sizeof buf) == 0,
+              "CONNECTING disconnect retires the handle at the call");
+        CHECK(enx_reset_peer(pc) == ENX_ERR_STALE,
+              "reset on the CONNECTING-retired handle is STALE");
+        CHECK(enx_disconnect(pc, 11) == ENX_ERR_STALE,
+              "a second disconnect on it is STALE, not a second retire");
+
+        /* Nothing is owed: ENet queued no event for a peer it reset, so the
+         * drain has nothing to deliver (and nothing naming the old handle). */
+        int owed = 0;
+        for (int i = 0; i < 20; ++i) {
+            std::vector<Ev> evs;
+            drain_into(lone, evs);
+            owed += static_cast<int>(evs.size());
+            std::this_thread::sleep_for(std::chrono::milliseconds(2));
+        }
+        CHECK(owed == 0, "no event follows a CONNECTING disconnect");
+
+        /* Cancel-and-retry, the dashboard shape the leak was costed on: each
+         * retry reuses the host's one ENet slot and gets a NEW handle, and the
+         * cancelled handle must not alias the retry's live peer. */
+        int prev = pc;
+        bool allRetired = true;
+        bool noAlias = true;
+        for (int i = 0; i < 3; ++i) {
+            const int retry = enx_connect(lone, "127.0.0.1", 27098, 1, 0);
+            CHECK(retry > 0 && retry != prev,
+                  "a retry on the one-slot host gets a fresh handle");
+            if (enx_peer_status(prev, buf, sizeof buf) != 0 ||
+                enx_send(prev, 0, "x", 1, enx::SF_RELIABLE) != ENX_ERR_STALE) {
+                noAlias = false;
+            }
+            CHECK(enx_disconnect(retry, 0) == ENX_OK, "cancel the retry");
+            if (enx_peer_status(retry, buf, sizeof buf) != 0) {
+                allRetired = false;
+            }
+            prev = retry;
+        }
+        CHECK(noAlias, "a cancelled handle never addresses the retry's peer");
+        CHECK(allRetired, "every cancelled retry retired at the call");
+        CHECK(enx_host_destroy(lone) == ENX_OK, "one-peer host destroyed");
     }
 
     /* ---- teardown ---------------------------------------------------------- */

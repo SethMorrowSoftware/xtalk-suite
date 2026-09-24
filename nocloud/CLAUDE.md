@@ -203,6 +203,7 @@ whole stack. The dated rows are STATIC records, each waiting on the checklist.
 | 2026-08-24 | none (static) | OnionXT embedded, with the socket split | OnionXT branches need a live-Tor re-pass |
 | 2026-09-09 | none (static) | eight delayed handlers pinned; `btStartSession` guarded | checklist section 8 is its pass |
 | 2026-09-11 | family interpreter, not the engine | `tools/check-script-vectors.py` on the golden's inputs | 435 checks green; the fixture test catches 4 of 4 seeded defects (dotfile guard false; FIRST Content-Length kept; `..` admitted; Tor HEAD body sent) |
+| 2026-09-24 | none (static) | the OnionXT wording the 2026-08-24 embed made wrong: the header's builder list, `qsCapabilityLine`'s "OnionXT not in the message path", two `qsLog` lines advising an OnionXT install, the Tor chip's "extension not installed", two stale comments; one reason sentence, `qsOnionOffReason` | checklist section 8's "Without SodiumXT" line is its pass |
 
 Decisions that bind this app (the suite's docs/OPEN-DECISIONS.md), all 2026-08-27: **D-09**
 the Tor path stays close-per-response; **D-02** the HTTP-host endpoint menu waits for the

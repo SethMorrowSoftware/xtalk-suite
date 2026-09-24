@@ -143,10 +143,11 @@ script "coinXTWallet"
 -- file, stop; it is in the wrong layer.
 --
 -- ==========================================================================
--- STATUS: ENGINE-PASSED, twice. This block used to read "NEEDS AN OXT PASS";
--- the passes landed 2026-08-10 (the folded suite harness, coinxt section
--- 207/207) and 2026-08-12 (Windows x64, 230/230, phase 5 included), both
--- recorded in CLAUDE.md's as-built notes.
+-- STATUS: ENGINE-PASSED. This block used to read "NEEDS AN OXT PASS"; the
+-- first passes landed 2026-08-10 (the folded suite harness, coinxt section
+-- 207/207) and 2026-08-12 (Windows x64, 230/230, phase 5 included), and the
+-- later ones run through 2026-08-24 (Windows x86_64, 290/290), all recorded
+-- in CLAUDE.md's as-built notes.
 --
 -- OXT cannot compile or run a .livecodescript headlessly, so historically a
 -- file like this would ship never having run. Three things stood behind it
@@ -175,11 +176,11 @@ script "coinXTWallet"
 --   * tests/coin-selftest.livecodescript drives every handler below against the
 --     same vectors, so ONE paste on a real engine settles the rest.
 --
--- That engine run has happened (the two passes above), so the closing line
+-- That engine run has happened (the passes above), so the closing line
 -- that stood here - "the LOGIC is observed, the ENGINE BEHAVIOUR is not" -
 -- no longer holds: both are observed for this layer. What stays open is
--- narrower and is phase 5's alone: a live testnet broadcast is still owed
--- before any "broadcastable" claim (see the phase-5 STATUS block below).
+-- narrower and is phase 5's alone: a live broadcast for the transaction
+-- families that have none on record (see the phase-5 STATUS block below).
 -- ==========================================================================
 --
 -- THE THREE PORTABILITY DISCIPLINES this file follows, each paid for already
@@ -2360,8 +2361,22 @@ end cxWifDecode
 -- phase included), and INDEPENDENTLY ACCEPTED 2026-08-12, extended to all
 -- four transaction families 2026-08-13 - fresh transactions built end to
 -- end through THIS file and accepted by python-bitcointx / eth-account
--- (tools/verify-independent-decoder.py). The one bar left: a live testnet
--- broadcast is still owed, so "broadcastable" stays unclaimed until then.
+-- (tools/verify-independent-decoder.py). The last bar, a LIVE BROADCAST, is
+-- met for one family and open for three. CLAUDE.md's "The wallet on an
+-- engine" records it: on 2026-09-02 examples/coin-wallet.livecodescript,
+-- whose wallet-core builds every Bitcoin spend through THIS file's
+-- cxBtcSighashLegacy / cxBtcSighashSegwit / cxBtcSighashTaproot and
+-- cxBtcTxEncode, made the "FIRST BROADCAST, esplora-tor: txid
+-- 7978bdd2c097c929cae2ab00084d4454b68b1d054a3f2d53fc7b51b70551e4d5, 226 vB,
+-- one legacy input, RBF, 10000 sat plus 181973 sat change (a self-payment);
+-- the reference decoder's txid equals the logged one" on testnet, and the
+-- 2026-09-03 logs record more accepted testnet spends. So legacy P2PKH is
+-- broadcast-proven. Still owed (the suite's docs/WORK-PLAN.md): a native
+-- P2WPKH broadcast, which no log records, and any EIP-155 or EIP-1559
+-- broadcast, which has never been made - "broadcastable" is claimed for
+-- none of those three until each has its own. (This paragraph said a live
+-- testnet broadcast was still owed until 2026-09-24, three weeks after the
+-- first one.)
 --
 -- This is still the SCRIPT layer, so it composes the primitives and NEVER
 -- touches a private key or a curve point: signing is the app calling cxSign /
@@ -3227,11 +3242,30 @@ end cxHexOfInt
 -- HONESTY (the suite convention). Every handler here is verified statically
 -- (tools/check-livecodescript.py) and by the vector gate above, which settles
 -- LOGIC and not parser behaviour: an interpreter is an approximation of the
--- engine, never the engine. NOTHING HERE HAS RUN ON AN OXT ENGINE YET, and
--- that stays true until an engine pass is recorded in coinxt/CLAUDE.md. The
--- cryptography underneath it HAS - CoinXT's own passes of 2026-08-10 and
--- 2026-08-12 - so a failure here is most likely this file's arithmetic, not
--- the library's.
+-- engine, never the engine. THIS FILE HAS RUN ON AN OXT ENGINE, carried inside
+-- examples/coin-wallet.livecodescript: coinxt/CLAUDE.md's "The wallet on an
+-- engine" ledger holds the logs of 2026-08-31 to 2026-09-03 (platform not
+-- recorded; testnet unless stated). In its words, among them: 2026-09-02, the
+-- "FIRST BROADCAST, esplora-tor: txid
+-- 7978bdd2c097c929cae2ab00084d4454b68b1d054a3f2d53fc7b51b70551e4d5, 226 vB,
+-- one legacy input, RBF, 10000 sat plus 181973 sat change (a self-payment);
+-- the reference decoder's txid equals the logged one"; the fourth log, "fresh
+-- open: boot self-check 27 green"; and 2026-09-03 19:42 EDT, the tenth log's
+-- autotest, "41 passed / 0 failed / 4 skipped in 248 s", in which "the
+-- silent-payment send and the commit funding built on the replacement's change
+-- and accepted" and "the reveal accepted". Until 2026-09-24 this paragraph
+-- said nothing here had run on an engine, which understated those records.
+-- What the logs did NOT reach, as that file's Status lists it for this layer:
+-- testnet4, BIP-322 (the tenth log skipped it on a p2pkh wallet), Runes,
+-- BOLT11, silent-payment RECEIVING, and every fix dated after the logs (the
+-- 2^53 parse refusal of 2026-09-08, the 2026-09-10 audit fixes) - verified
+-- statically and headlessly; needs an OXT pass. Read the list by what ran,
+-- not by the section dates below: several sections are headed 2026-09-04
+-- although git dates their commits 2026-09-03, and two of them, the
+-- silent-payment SEND and the inscription, ran in the tenth log. The
+-- cryptography underneath HAS its own record - CoinXT's library passes, most
+-- recently 290/290 on 2026-08-24 (Windows x86_64) - so a failure here is most
+-- likely this file's arithmetic, not the library's.
 --
 -- CUSTODY, said plainly, because this layer is one call away from a signature:
 -- OXT script variables are not locked memory and can be paged to disk. A seed
@@ -11494,12 +11528,29 @@ end cwFeeRateLabel
 -- ed25519 scalar clamp are pure byte manipulation.
 --
 -- STATUS: implemented AND run on a real OXT engine against a live tor daemon.
--- The core paths are confirmed on-engine: dialing through the SOCKS proxy, the
--- control-port connect + SAFECOOKIE auth, GETINFO / SETEVENTS, publishing a v3
--- onion service, accepting an inbound (Tor-forwarded) connection, streaming data
--- both ways, and bootstrap/HS_DESC events. The only path NOT yet exercised is the
--- optional Mode B (launching a bundled tor via `open process`), still flagged
--- "VERIFY:" below. The pure-compute paths are pinned by tools/onion-kat.py.
+-- The core paths are confirmed on-engine (onionxt/CLAUDE.md, the evidence
+-- ledger): dialing through the SOCKS proxy, the control-port connect +
+-- SAFECOOKIE auth, GETINFO / SETEVENTS, publishing a v3 onion service,
+-- accepting an inbound (Tor-forwarded) connection, streaming data both ways,
+-- and bootstrap/HS_DESC events. The offline surface runs inside every dated
+-- suite paste from 2026-08-10 (oxSelfTest), and the pure-compute paths are
+-- pinned by tools/onion-kat.py.
+--
+-- NOT yet exercised on an engine, each "verified statically; needs an OXT
+-- pass + a live-Tor pass" (the still-VERIFY list in onionxt/CLAUDE.md, which
+-- is the authority; this is its index): the optional Mode B launch
+-- (oxLaunchTor / oxStopTor over `open process`, including the 2026-09-24
+-- result checks); an OnionXT-to-OnionXT onion dial and the two-instance round
+-- trip; the raw socket id a live accept hands oxPeerAccepted; the 2026-08-23
+-- foreign-socket `pass` lines and the 2026-08-24 socket-message split on a
+-- live socket; the 2026-09-09 oxWrite result capture and callback pins; the
+-- four inline hypotheses (runbook B.12); and the live negative paths (a wrong
+-- cookie, a stalled daemon, a peer vanishing mid-handshake, and which of the
+-- two SOCKS timeout paths fires - distinguishable since 2026-09-24).
+-- Until 2026-09-24 this header said "the only path NOT yet exercised is the
+-- optional Mode B", which was true at bring-up and understated everything
+-- added since; a carried header is read in every stack that embeds this file
+-- and in the suite paste, so it lists rather than summarises.
 --
 -- Conventions (see CLAUDE.md): public API oxPascalCase; locals t..., params
 -- p..., script-locals s..., constants k...; SOCKS5 is BINARY (byte / numToByte /
@@ -12343,9 +12394,40 @@ command oxStreamDeadline pStream
    local tState
    put sStreams[pStream]["state"] into tState
    if tState is not "connected" and tState is not "closed" then
-      oxStreamFail pStream, "SOCKS handshake timed out"
+      oxStreamFail pStream, oxSocksTimeoutReason("deadline", tState)
    end if
 end oxStreamDeadline
+
+private function oxSocksTimeoutReason pWhich, pStage
+   -- TWO PATHS TIME A HANDSHAKE OUT, AND UNTIL 2026-09-24 THEY SAID THE SAME
+   -- WORDS. oxStreamDeadline above is OnionXT's own watchdog, armed by oxDial
+   -- for exactly kOxHandshakeTimeout ms; oxSocketTimeout below is the ENGINE's
+   -- socketTimeout message, which fires on the engine-global
+   -- socketTimeoutInterval (oxDial sets it, but so may any co-loaded library
+   -- that opens a socket after it). Both reported "SOCKS handshake timed out",
+   -- so the one real stall on record - the 2026-09-02 coin-wallet log, which
+   -- failed closed and retried - cannot say which of them fired, and engine
+   -- note 6.1 (socketTimeout REPEATS while a read is pending) stays
+   -- DOCUMENTED for want of exactly that observation.
+   --
+   -- So the reason now names the PATH and the STAGE the stream stalled in.
+   -- The stage is worth more than it looks: "connecting" means the TCP connect
+   -- to the SOCKS port never completed, "greeting" that the port accepted but
+   -- never answered the method negotiation (a stalled or not-yet-bootstrapped
+   -- tor), and "replyhead" that tor took the CONNECT and never reported back
+   -- (the circuit or the onion rendezvous is what stalled).
+   --
+   -- THE PREFIX IS KEPT VERBATIM. Every reason still begins with "SOCKS
+   -- handshake timed out", so a log search or an app that matched the old
+   -- words still matches; only the parenthesis is new. Verified statically;
+   -- needs an OXT pass + a live-Tor pass (a forced stall, runbook row 44).
+   if pWhich is "deadline" then
+      return "SOCKS handshake timed out (OnionXT deadline of " & kOxHandshakeTimeout & \
+            " ms passed, stalled at stage " & pStage & ")"
+   end if
+   return "SOCKS handshake timed out (engine socketTimeout fired, stalled at stage " & \
+         pStage & ")"
+end oxSocksTimeoutReason
 
 private command oxStreamFail pStream, pError
    -- Fail closed: report the error to the app, then close and forget the stream.
@@ -13075,7 +13157,9 @@ function oxSocketTimeout pSocketID
    if tHandle is not empty then
       put sStreams[tHandle]["state"] into tState
       if tState is not "connected" then
-         oxStreamFail tHandle, "SOCKS handshake timed out"
+         -- A different reason from oxStreamDeadline's on purpose: see
+         -- oxSocksTimeoutReason for why the two paths must be told apart.
+         oxStreamFail tHandle, oxSocksTimeoutReason("socketTimeout", tState)
       end if
       return "true"
    end if
@@ -13101,12 +13185,38 @@ end oxSocketTimeout
 command oxLaunchTor pTorPath, pDataDir, pSocksPort, pControlPort
    -- Write a minimal torrc into pDataDir and launch pTorPath against it, so tor
    -- exits with the app (__OwningControllerProcess) and uses cookie auth. Returns
-   -- empty on a clean launch attempt, or an error string. The caller then polls
-   -- oxConnectControl / oxBootstrapProgress; this does not wait for bootstrap.
+   -- empty once the torrc is written AND `open process` has accepted the command
+   -- line, or an "OnionXT: ..." error string (docs/05's command contract). The
+   -- caller then polls oxConnectControl / oxBootstrapProgress; this does not wait
+   -- for bootstrap, and an empty result does NOT mean tor is up - only that the
+   -- engine started what it was given (tor can still exit on a bad torrc or a
+   -- port already in use: runbook trap 5.3.1).
+   --
+   -- BOTH RESULTS ARE READ, AND UNTIL 2026-09-24 NEITHER WAS. The torrc write
+   -- and `open process` report a failure through `the result` (the engine's
+   -- command convention; not yet observed for these two on OXT), and this
+   -- handler ignored both and returned empty unconditionally - so a data
+   -- directory that did not exist, or a read-only one, came back as a clean
+   -- launch, and so did any launch failure the engine reported; closing-pass
+   -- leg F's first PASS line ("torrc written, process started") claimed more
+   -- than the code had checked. Each is now captured on the very next line
+   -- (any intervening statement can clear `the result`: the oxWrite
+   -- discipline) and fails closed with a reason that names what failed. Both
+   -- sit inside try/catch as well, because a platform with no process support
+   -- may THROW rather than set the result, and a library command must answer
+   -- with a string either way. What this cannot promise: that a WRONG tor path
+   -- is reported here at all - an engine that forks and then execs may learn
+   -- of it only when the child dies, after this has returned. Leg F records
+   -- what OXT does. Verified statically; needs an OXT pass + a live-Tor pass.
+   --
+   -- The two empty-argument refusals come FIRST, before anything touches disk
+   -- or changes state, which is what lets the offline harness call
+   -- `oxLaunchTor empty, empty, empty, empty` by name (onionxt-tests section 3)
+   -- instead of carrying a coverage exemption for it.
    if pTorPath is empty or pDataDir is empty then
       return "OnionXT: oxLaunchTor needs a tor binary path and a data directory"
    end if
-   local tSocks, tControl, tTorrc, tRcPath
+   local tSocks, tControl, tTorrc, tRcPath, tLogPath, tWriteErr, tLaunchErr, tError
    if pSocksPort is empty then
       put kOxSocksPortDefault into tSocks
    else
@@ -13123,10 +13233,34 @@ command oxLaunchTor pTorPath, pDataDir, pSocksPort, pControlPort
    put "DataDirectory " & pDataDir & oxCrlf() after tTorrc
    -- Tie tor's lifetime to this process where the platform supports it.
    put "__OwningControllerProcess " & oxProcessId() & oxCrlf() after tTorrc
+   -- TOR'S LOG GOES TO A FILE, NOT TO THE PIPE (2026-09-24). The process is
+   -- opened `for read` and nothing ever reads it, and tor's default is notice
+   -- logging to stdout - so a long-running child writing into a pipe nobody
+   -- drains could fill the pipe buffer and block inside its next log write
+   -- (inferred from how pipes behave, not observed here). tor's own manual
+   -- (tor(1), under --hush) documents that console logging stops once the
+   -- torrc says to log somewhere else, so this line moves the steady stream to
+   -- a file; only the few lines tor prints before it has read this torrc
+   -- still reach the pipe.
+   -- The side benefit is the one leg F wanted: tor's own "Bootstrapped 100%"
+   -- line is now readable in <pDataDir>/onionxt-tor.log, which OnionXT still
+   -- does not read for you. Unquoted, like DataDirectory above, so a path with
+   -- a space rides the same assumption that line always has (inferred from
+   -- tor's config parser taking the rest of the line; needs the leg F run).
+   put pDataDir & "/onionxt-tor.log" into tLogPath
+   put "Log notice file " & tLogPath & oxCrlf() after tTorrc
    put pDataDir & "/onionxt-torrc" into tRcPath
-   put tTorrc into url ("binfile:" & tRcPath)
-   oxSetSocksPort tSocks
-   oxSetControlPort tControl
+   try
+      put tTorrc into url ("binfile:" & tRcPath)
+      put the result into tWriteErr
+   catch tError
+      put "the write threw:" && tError into tWriteErr
+   end try
+   if tWriteErr is not empty then
+      -- Nothing has changed yet: the ports are still the caller's, no process
+      -- exists. A missing or read-only data directory lands here.
+      return "OnionXT: oxLaunchTor could not write the torrc" && tRcPath & ":" && tWriteErr
+   end if
    -- open process is platform-specific; launch tor detached with -f <torrc>.
    -- QUOTE BOTH PATHS. The command line is split on whitespace, so an unquoted
    -- "C:/Program Files/Tor/tor.exe" arrives as the two arguments "C:/Program"
@@ -13135,7 +13269,23 @@ command oxLaunchTor pTorPath, pDataDir, pSocksPort, pControlPort
    -- normal case on Windows and macOS, not an edge case. The same applies to
    -- the torrc path, which is derived from pDataDir.
    -- VERIFY: process launch and teardown on your target OXT build.
-   open process (quote & pTorPath & quote & " -f " & quote & tRcPath & quote) for read
+   try
+      open process (quote & pTorPath & quote & " -f " & quote & tRcPath & quote) for read
+      put the result into tLaunchErr
+   catch tError
+      put "open process threw:" && tError into tLaunchErr
+   end try
+   if tLaunchErr is not empty then
+      -- The torrc stays on disk (Mode B cleans up nothing yet: docs/07), but
+      -- the library's ports are NOT re-pointed at a tor that never started.
+      return "OnionXT: oxLaunchTor could not start" && pTorPath & ":" && tLaunchErr
+   end if
+   -- Re-point the rest of the API at the launched tor only now that a launch
+   -- was accepted. Until 2026-09-24 these two ran BEFORE `open process`, so a
+   -- failed launch still left every later oxDial / oxConnectControl aimed at
+   -- ports nothing was listening on.
+   oxSetSocksPort tSocks
+   oxSetControlPort tControl
    return empty
 end oxLaunchTor
 
@@ -27529,12 +27679,14 @@ function waAboutText
    put "  pump-at-once changes; and the three menu items that now do what" & return after tOut
    put "  they say (copy the selected address, sign a message with it," & return after tOut
    put "  copy the selected outpoint)." & return after tOut
-   put "  BITCOIN CORE AS A BACKEND (Network screen, 2026-09-04) has not met" & return after tOut
-   put "  a node: the HTTP framing, the cookie and rpcauth credentials, the" & return after tOut
-   put "  chain guard, the fee estimate, the UTXO-set scan and the broadcast" & return after tOut
-   put "  are each driven headlessly against fixtures of the node's replies" & return after tOut
-   put "  and nothing more. Scan tier only: no history and no mempool from" & return after tOut
-   put "  the node (docs/bitcoin-core-plan.md is the rest)." & return & return after tOut
+   put "  BITCOIN CORE AS A BACKEND (Network and Node screens, 2026-09-04)" & return after tOut
+   put "  has not met a node: the HTTP framing, the cookie and rpcauth" & return after tOut
+   put "  credentials, the chain guard, the fee estimate, BOTH sync tiers" & return after tOut
+   put "  (the scan tier's UTXO-set scan, with no history or mempool, and" & return after tOut
+   put "  the watch tier's watch-only wallet on the node, which has both)," & return after tOut
+   put "  the regtest sandbox and the broadcast are each driven headlessly" & return after tOut
+   put "  against fixtures of the node's replies and nothing more. What is" & return after tOut
+   put "  left of the design is in docs/bitcoin-core-plan.md." & return & return after tOut
    put "WHERE THE NEW THINGS ARE (2026-09-02 to 2026-09-04)" & return after tOut
    put "  Send: a line " & quote & "note: text" & quote & " or " & quote & "data: hex" & quote & " writes" & return after tOut
    put "  an OP_RETURN output; a line paying an sp1.../tsp1... address is a" & return after tOut

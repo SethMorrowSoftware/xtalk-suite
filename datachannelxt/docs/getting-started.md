@@ -192,7 +192,8 @@ demo fails closed with an install message when absent).
 - Talking to a **browser**: the far side is standard WebRTC,
   `new RTCPeerConnection()` and `pc.ondatachannel`, with the same SDP/candidate
   dance over your signaling; text arrives as strings, `dcSendData` as
-  `ArrayBuffer`.
+  `ArrayBuffer`. [browser-interop.md](browser-interop.md) has a ready-made page
+  and OXT script that do this with copy/paste signaling.
 - **Bulk transfer**: the per-message budget is 60000 bytes by design. Chunk
   small files over the channel if you must, but the family's answer to bulk is
   TorrentXT; use the data channel for control and presence.

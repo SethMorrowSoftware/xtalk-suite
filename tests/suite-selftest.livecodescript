@@ -31,31 +31,37 @@ script "xTalkSuiteSelfTest"
 -- legs 43/43. A later 2026-08-12 run of the current harness was green across
 -- all 617 folded checks: sodiumxt 71, onionxt 43, coinxt 230, torrentxt 96,
 -- enetxt sync 21, datachannelxt sync 23, and riptide phases 1-2 at 133.
--- What each run bought is recorded per member (each member's
--- README / CLAUDE.md and docs/OXT-PASS-RUNBOOK.md, the pass blockquotes).
+-- What each run bought is recorded per member: each member's CLAUDE.md
+-- evidence ledger, and docs/OXT-PASS-RUNBOOK.md section 8 (the closed engine
+-- record, which absorbed the runbook's per-pass blockquotes in the docs
+-- consolidation, 409ceee).
 -- Riptide's phase-2 single-engine work is therefore closed; only its
 -- two-machine propagation criterion remains under runbook item 6.
 --
--- WHAT HAS NOT RUN ON AN ENGINE (2026-08-17): the skip channel through
--- stMergeReturned, the third count in stSummaryCounts, and stMergeFloor with
--- it. The rule was exercised against every member's real summary spelling and
--- against mutations of them by a hand port of the parse, which is what a
--- headless environment can do and no more - verified statically; needs an OXT
--- pass. The one number it puts at risk is onionxt's floor of 41: too high, and
--- a green run reports one extra FAIL line naming the member and printing what
--- it attempted, which is the failure mode this file chooses on purpose over an
--- uncaught error.
+-- THE SKIP CHANNEL (2026-08-17): stMergeReturned's third count, read by
+-- stSummaryCounts, and stMergeFloor with it. Written against every member's
+-- real summary spelling and mutations of them by a hand port of the parse, it
+-- then RAN on 2026-08-20 (Windows, 1981/0/1): onionxt's one skip was printed
+-- inline and merged into that run's total (onionxt/CLAUDE.md's evidence
+-- ledger). What has never fired on an engine is stMergeFloor's REFUSAL branch.
+-- The one number that puts at risk is onionxt's floor, re-derived to 51 on
+-- 2026-09-24 beside its call site below (verified statically; needs an OXT
+-- pass): too high, and a green run reports one extra FAIL line naming the
+-- member and printing what it attempted, which is the failure mode this file
+-- chooses on purpose over an uncaught error.
 --
 -- THIS IS NO LONGER A SAMPLER, AND THAT IS THE BIG CHANGE. It used to drive
 -- about a dozen handlers per member and say so. It now carries EVERY member's
 -- own deep self-test as well, folded in whole by tools/build-suite-selftest.py:
 --
---   sodiumxt        sxSelfTest()      21 groups, the entire sx* surface
---   onionxt         oxSelfTest()      10 sections, all offline, and since
---                                     2026-08-17 the only folded harness
---                                     whose summary carries THREE counts:
---                                     passed, failed and skipped
---   coinxt          its 28 sections    all five phases, ~300 checks
+--   sodiumxt        sxSelfTest()      24 groups, the entire sx* surface
+--   onionxt         oxSelfTest()      12 sections, all offline; on
+--                                     2026-08-17 the first folded harness
+--                                     whose summary carried THREE counts
+--                                     (passed, failed, skipped); riptide,
+--                                     nostrxt and holde-em carry the skip
+--                                     count too now
+--   coinxt          its 32 sections    all five phases, ~300 checks
 --   torrentxt       its full harness   sharing this file's single session
 --   enetxt          its SYNC half      lifecycle, stale handles, tuning
 --   datachannelxt   its SYNC half      lifecycle, the stale-handle surface
@@ -464,9 +470,9 @@ local dc1sStRunDone           -- "true" once the run finished (drives the color)
 local b21gRep, b21gPass, b21gFail, b21gFellCount, b21gRunning
 local b21gMsgEnters, b21gMsgContacts   -- message-path counters (vs polling)
 constant b21kStUIVersion = "1"
-constant b21kStHarnessV = "31"  -- bump on EVERY harness change: the report
+constant b21kStHarnessV = "32"  -- bump on EVERY harness change: the report
 
--- ---- Riptide Social (phases 1-2): the rs* self-test ----
+-- ---- Riptide Social (phases 1-8): the rs* self-test ----
 constant rs1kRsGoldMasterHex = "4242424242424242424242424242424242424242424242424242424242424242"
 constant rs1kRsGoldConfSeedHex = "cac73f09a0478224974a525036ebd73f9727ac8932162eb7fcfb2821ad7eecc7"
 constant rs1kRsGoldRoomSalt = "golden-salt"
@@ -564,7 +570,7 @@ local rs1sRsTestSession
 
 -- ---- holde-em: the full he* self-test ----
 constant he1kHeVersion = "0.25.3"
-constant he1kHeHarnessV = "44"
+constant he1kHeHarnessV = "45"
 constant he1kUIVersion = "15"
 constant he1kHeRankChars = "23456789TJQKA"
 constant he1kHeSuitChars = "cdhs"
@@ -2909,6 +2915,7 @@ end stRepeatByte
 
 command stRunMemberHarnesses
    local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
+   local tNxReport, tNxCaps, tNxFloor -- NostrXT's probe-selected floor (its call site)
    stSection "deep per-member self-tests (each member's own harness, folded in)"
    stNote "Each of these is the SAME harness that member ships standalone."
    stNote "A failure here means the same thing it would mean there."
@@ -2921,13 +2928,16 @@ command stRunMemberHarnesses
    --
    -- THE THIRD ARGUMENT TO stMergeReturned IS A FLOOR: the fewest items that
    -- member can attempt in any environment it supports (checks + skips). Read
-   -- stMergeFloor for what it does and does not catch. Only ONE of the five is
+   -- stMergeFloor for what it does and does not catch. TWO of the six are
    -- measured today:
    --
-   --   OnionXT   41, derived section by section at its call site below. It is
+   --   OnionXT   51, derived section by section at its call site below. It is
    --             the member whose harness can degrade the furthest (its skips
    --             span a third of its items), which is why it was measured
    --             first and why the skip channel exists at all.
+   --   NostrXT   278 with CoinXT, 253 without (2026-09-24), chosen by the
+   --             member's OWN cached capability probe, the one its harness
+   --             branches on; derived and justified at its call site below.
    --   the four  1, the CATASTROPHIC floor, and it is not a measured minimum.
    --   others    What it refuses is a harness that attempted NOTHING and still
    --             read green, because zero failures is zero failures. Measuring
@@ -2953,19 +2963,20 @@ command stRunMemberHarnesses
 
    if sHaveOnion then
       try
-         -- THE FLOOR IS 41, and the arithmetic is here because a number with
+         -- THE FLOOR IS 51, and the arithmetic is here because a number with
          -- no derivation beside it is a number nobody dares to change - which
          -- is how a ratchet quietly becomes a decoration. onionxt's harness
-         -- runs ten sections; SEVEN of them can bail out, and since 2026-08-17
-         -- every bail-out counts as one skip. Attempted = checks + skips, per
-         -- section, worst case:
+         -- runs twelve sections; nine of them can bail out, and since
+         -- 2026-08-17 every bail-out counts as one skip. Attempted = checks +
+         -- skips, per section, worst case:
          --    1 version and capabilities     6   unconditional
          --    2 initial state                1   3 checks, or 1 skip when this
          --                                       session is already authed
-         --    3 fail-closed arguments        4   3 unconditional, + 2 pre-auth
+         --    3 fail-closed arguments        6   5 unconditional, + 4 pre-auth
          --                                       checks or 1 skip
-         --    4 unknown handles              5   unconditional
-         --    5 idempotent teardown          2   unconditional
+         --    4 unknown handles             10   unconditional
+         --    5 idempotent teardown          3   2 unconditional, + oxStopTor:
+         --                                       1 check, or 1 skip if authed
          --    6 address round-trip           6   2 addresses x (2 + 1 either
          --                                       way: re-encode or skip)
          --    7 address negative paths       4   3, + 1 either way
@@ -2974,19 +2985,37 @@ command stRunMemberHarnesses
          --   10 loopback guard               1   18 checks, or 1 skip where
          --                                       oxHostOfSocket is not in this
          --                                       script
+         --   11 oxh* HTTP helpers            1   27 checks, or 1 skip where
+         --                                       onion-httpd is not in this
+         --                                       script (THIS paste: it is not)
+         --   12 SOCKS timeout reasons        1   3 checks, or 1 skip where
+         --                                       the library is not in this
+         --                                       script
          --                                  --
-         --                                  41
-         -- Its best case is 61, and THIS paste normally sees 58-61: section
-         -- 10's probe resolves here because the generator embeds the library
-         -- into this same script, which is the whole reason that section is
-         -- testable at all. The floor is deliberately the environment-proof 41
-         -- rather than the paste-expected 58: a floor that can false-fail an
-         -- engine session is worth less than a floor that catches less, and
-         -- the degraded case is no longer invisible anyway - it arrives as 8
-         -- skips on the summary line. Cross-check on the arithmetic: onionxt's
-         -- CLAUDE.md records a 2026-08-12 engine run at 43 checks, and
-         -- sections 1-9 at their best case are exactly 43.
-         stMergeReturned "OnionXT", ox1oxSelfTest(), 41
+         --                                  51
+         -- THIS paste normally attempts 70-75: sections 10 and 12 resolve here
+         -- because the generator embeds the library into this same script,
+         -- section 11 is one skip because it does not embed onion-httpd, and
+         -- an already-authenticated session trades sections 2 and 3's seven
+         -- checks for two skips. The floor is deliberately the
+         -- environment-proof 51 rather than the paste-expected 70: a floor that
+         -- can false-fail an engine session is worth less than a floor that
+         -- catches less, and the degraded case is no longer invisible anyway -
+         -- it arrives as up to 11 skips on the summary line.
+         --
+         -- RE-DERIVED 2026-09-24. This read 41 over ten sections until then,
+         -- and 41 had gone stale without going WRONG: section 3 grew two
+         -- pre-auth checks and section 4 five unconditional ones (2026-08-20,
+         -- 2026-08-24), and section 11 arrived, all without the floor moving -
+         -- a floor below the true minimum still passes, so nothing said so.
+         -- Cross-check on the arithmetic: onionxt's CLAUDE.md records a
+         -- 2026-08-12 engine run at 43 checks, which was sections 1-9 at their
+         -- best case then, and 2026-08-17's 61, which was those 43 plus section
+         -- 10's 18; sections 1-9 read 53 at best today, those 43 plus the 7
+         -- above plus 2026-09-24's three (oxTransportDial and oxLaunchTor in
+         -- section 3, oxStopTor in section 5). Verified statically; needs an
+         -- OXT pass.
+         stMergeReturned "OnionXT", ox1oxSelfTest(), 51
       catch tError
          stSectionFailed "OnionXT deep self-test", tError
       end try
@@ -3074,7 +3103,7 @@ command stRunMemberHarnesses
    if sHaveRiptideScript then
       try
          -- floor 1: catastrophic only, not measured (see above)
-         stMergeReturned "Riptide Social (phases 1-2)", rs1rsSelfTest(), 1
+         stMergeReturned "Riptide Social (phases 1-8)", rs1rsSelfTest(), 1
       catch tError
          stSectionFailed "Riptide deep self-test", tError
       end try
@@ -3091,9 +3120,72 @@ command stRunMemberHarnesses
    -- (nostrxt/CLAUDE.md, the two-file split).
    if sHaveNostrScript then
       try
-         -- floor 1: catastrophic only, not measured (the riptide precedent;
-         -- a first engine pass will give this member its measured floor)
-         stMergeReturned "NostrXT", nx1nxSelfTest(), 1
+         -- THE FLOOR IS 278 WITH COINXT AND 253 WITHOUT, and it is the first
+         -- floor here chosen by a probe, because this is the first harness
+         -- whose every item-count branch hangs off one probe the core can
+         -- read. Attempted = passed + failed + skipped (stMergeReturned);
+         -- a skip counts as ONE item, and a section that bails out emits a
+         -- fixed number of skips rather than one per check it did not run.
+         --
+         -- THE DATED RECORD: 2026-08-24, Windows x86_64, OXT 9.6.3, this
+         -- paste with CoinXT and SodiumXT ABI 10 installed: 274 passed, 0
+         -- failed, 2 skipped = 276 attempted (nostrxt/CLAUDE.md, the ledger).
+         -- Counted by hand section by section it is exactly that: 274 checks,
+         -- and the 2 skips are section 17 (the nxr* relay layer, which is
+         -- never in this paste, so it is 2 skips here in every environment).
+         -- 2026-09-24 added 3 unconditional checks (the 2026-09-09 fix's
+         -- pins in sections 4 and 14), so that configuration now attempts
+         -- 279. What moves the count, and nothing else does (every other
+         -- nxtCheck runs in every environment; pass or fail, it counts):
+         --    CoinXT absent   section 6: 2 skips for its 19 or 17; section
+         --                    9: 2 skips for its 8; section 11: 1 skip for
+         --                    its 4 or 5 post-probe checks      -> 253
+         --    SodiumXT absent section 6: 1 skip for 3 key-generation checks
+         --                    (-2); no cipher, so section 11 takes the
+         --                    fail-closed branch, 3 checks for 2 (+1)
+         --    SodiumXT < 10   section 11's 3-check branch only (+1)
+         -- So with CoinXT the count is 278 (no SodiumXT), 279 (the record's
+         -- configuration) or 280 (a pre-ABI-10 SodiumXT); without it, 253
+         -- whatever SodiumXT is. Measured, not only added up: the real
+         -- harness was run through the family interpreter
+         -- (nostrxt/tools/lcs-interp.py) in all six combinations, over the
+         -- committed sibling binaries, and printed exactly these totals (its
+         -- one FAIL in every run, "nxUnixNow is after the fixture era", is
+         -- the interpreter's fixed deterministic clock, not a defect, and a
+         -- FAIL counts as attempted all the same). That settles the
+         -- COUNTING, which is logic; the floor itself has not met an
+         -- engine: verified statically; needs an OXT pass.
+         --
+         -- WHY TWO NUMBERS, when OnionXT's one environment-proof 41 sits
+         -- under its paste-expected 58. A single number must be <= 253 to
+         -- spare a CoinXT-less engine, and 253 is 26 items under the record's
+         -- 279 - the whole of section 12 could vanish from a fully equipped
+         -- run and still read green, which is the silent shrink a floor is
+         -- for. OnionXT could not do better: its skips follow runtime state
+         -- (an authed session, a daemon) that nothing here can read. This
+         -- harness branches on ONE cached answer, nxProbeCapabilities()'s
+         -- hasCoin, which it reads first thing; the embedded core is
+         -- unprefixed, so the call below returns that SAME cached array -
+         -- read after the harness has run, so the floor keys on the answer
+         -- the harness actually branched on and cannot disagree with it.
+         -- Taking the minimum across the SodiumXT cases keeps it
+         -- environment-proof within each branch: a green run in ANY
+         -- supported install meets it, and a run in the record's
+         -- configuration that lost 2 or more items does not (3 on a
+         -- pre-ABI-10 SodiumXT; 1 without SodiumXT, or without CoinXT).
+         --
+         -- A HARNESS EDIT THAT REMOVES A CHECK MUST RE-DERIVE THIS, in the
+         -- same change; adding one only widens the margin. Nothing gates it
+         -- headlessly: one interpreted run of the whole harness took 15 to
+         -- 35 minutes per environment on the machine that measured it.
+         put nx1nxSelfTest() into tNxReport
+         put nxProbeCapabilities() into tNxCaps
+         if tNxCaps["hasCoin"] is true then
+            put 278 into tNxFloor
+         else
+            put 253 into tNxFloor
+         end if
+         stMergeReturned "NostrXT", tNxReport, tNxFloor
       catch tError
          stSectionFailed "NostrXT deep self-test", tError
       end try
@@ -6571,9 +6663,40 @@ command oxStreamDeadline pStream
    local tState
    put sStreams[pStream]["state"] into tState
    if tState is not "connected" and tState is not "closed" then
-      oxStreamFail pStream, "SOCKS handshake timed out"
+      oxStreamFail pStream, oxSocksTimeoutReason("deadline", tState)
    end if
 end oxStreamDeadline
+
+private function oxSocksTimeoutReason pWhich, pStage
+   -- TWO PATHS TIME A HANDSHAKE OUT, AND UNTIL 2026-09-24 THEY SAID THE SAME
+   -- WORDS. oxStreamDeadline above is OnionXT's own watchdog, armed by oxDial
+   -- for exactly kOxHandshakeTimeout ms; oxSocketTimeout below is the ENGINE's
+   -- socketTimeout message, which fires on the engine-global
+   -- socketTimeoutInterval (oxDial sets it, but so may any co-loaded library
+   -- that opens a socket after it). Both reported "SOCKS handshake timed out",
+   -- so the one real stall on record - the 2026-09-02 coin-wallet log, which
+   -- failed closed and retried - cannot say which of them fired, and engine
+   -- note 6.1 (socketTimeout REPEATS while a read is pending) stays
+   -- DOCUMENTED for want of exactly that observation.
+   --
+   -- So the reason now names the PATH and the STAGE the stream stalled in.
+   -- The stage is worth more than it looks: "connecting" means the TCP connect
+   -- to the SOCKS port never completed, "greeting" that the port accepted but
+   -- never answered the method negotiation (a stalled or not-yet-bootstrapped
+   -- tor), and "replyhead" that tor took the CONNECT and never reported back
+   -- (the circuit or the onion rendezvous is what stalled).
+   --
+   -- THE PREFIX IS KEPT VERBATIM. Every reason still begins with "SOCKS
+   -- handshake timed out", so a log search or an app that matched the old
+   -- words still matches; only the parenthesis is new. Verified statically;
+   -- needs an OXT pass + a live-Tor pass (a forced stall, runbook row 44).
+   if pWhich is "deadline" then
+      return "SOCKS handshake timed out (OnionXT deadline of " & kOxHandshakeTimeout & \
+            " ms passed, stalled at stage " & pStage & ")"
+   end if
+   return "SOCKS handshake timed out (engine socketTimeout fired, stalled at stage " & \
+         pStage & ")"
+end oxSocksTimeoutReason
 
 private command oxStreamFail pStream, pError
    -- Fail closed: report the error to the app, then close and forget the stream.
@@ -7271,7 +7394,9 @@ function oxSocketTimeout pSocketID
    if tHandle is not empty then
       put sStreams[tHandle]["state"] into tState
       if tState is not "connected" then
-         oxStreamFail tHandle, "SOCKS handshake timed out"
+         -- A different reason from oxStreamDeadline's on purpose: see
+         -- oxSocksTimeoutReason for why the two paths must be told apart.
+         oxStreamFail tHandle, oxSocksTimeoutReason("socketTimeout", tState)
       end if
       return "true"
    end if
@@ -7298,12 +7423,38 @@ end socketTimeout
 command oxLaunchTor pTorPath, pDataDir, pSocksPort, pControlPort
    -- Write a minimal torrc into pDataDir and launch pTorPath against it, so tor
    -- exits with the app (__OwningControllerProcess) and uses cookie auth. Returns
-   -- empty on a clean launch attempt, or an error string. The caller then polls
-   -- oxConnectControl / oxBootstrapProgress; this does not wait for bootstrap.
+   -- empty once the torrc is written AND `open process` has accepted the command
+   -- line, or an "OnionXT: ..." error string (docs/05's command contract). The
+   -- caller then polls oxConnectControl / oxBootstrapProgress; this does not wait
+   -- for bootstrap, and an empty result does NOT mean tor is up - only that the
+   -- engine started what it was given (tor can still exit on a bad torrc or a
+   -- port already in use: runbook trap 5.3.1).
+   --
+   -- BOTH RESULTS ARE READ, AND UNTIL 2026-09-24 NEITHER WAS. The torrc write
+   -- and `open process` report a failure through `the result` (the engine's
+   -- command convention; not yet observed for these two on OXT), and this
+   -- handler ignored both and returned empty unconditionally - so a data
+   -- directory that did not exist, or a read-only one, came back as a clean
+   -- launch, and so did any launch failure the engine reported; closing-pass
+   -- leg F's first PASS line ("torrc written, process started") claimed more
+   -- than the code had checked. Each is now captured on the very next line
+   -- (any intervening statement can clear `the result`: the oxWrite
+   -- discipline) and fails closed with a reason that names what failed. Both
+   -- sit inside try/catch as well, because a platform with no process support
+   -- may THROW rather than set the result, and a library command must answer
+   -- with a string either way. What this cannot promise: that a WRONG tor path
+   -- is reported here at all - an engine that forks and then execs may learn
+   -- of it only when the child dies, after this has returned. Leg F records
+   -- what OXT does. Verified statically; needs an OXT pass + a live-Tor pass.
+   --
+   -- The two empty-argument refusals come FIRST, before anything touches disk
+   -- or changes state, which is what lets the offline harness call
+   -- `oxLaunchTor empty, empty, empty, empty` by name (onionxt-tests section 3)
+   -- instead of carrying a coverage exemption for it.
    if pTorPath is empty or pDataDir is empty then
       return "OnionXT: oxLaunchTor needs a tor binary path and a data directory"
    end if
-   local tSocks, tControl, tTorrc, tRcPath
+   local tSocks, tControl, tTorrc, tRcPath, tLogPath, tWriteErr, tLaunchErr, tError
    if pSocksPort is empty then
       put kOxSocksPortDefault into tSocks
    else
@@ -7320,10 +7471,34 @@ command oxLaunchTor pTorPath, pDataDir, pSocksPort, pControlPort
    put "DataDirectory " & pDataDir & oxCrlf() after tTorrc
    -- Tie tor's lifetime to this process where the platform supports it.
    put "__OwningControllerProcess " & oxProcessId() & oxCrlf() after tTorrc
+   -- TOR'S LOG GOES TO A FILE, NOT TO THE PIPE (2026-09-24). The process is
+   -- opened `for read` and nothing ever reads it, and tor's default is notice
+   -- logging to stdout - so a long-running child writing into a pipe nobody
+   -- drains could fill the pipe buffer and block inside its next log write
+   -- (inferred from how pipes behave, not observed here). tor's own manual
+   -- (tor(1), under --hush) documents that console logging stops once the
+   -- torrc says to log somewhere else, so this line moves the steady stream to
+   -- a file; only the few lines tor prints before it has read this torrc
+   -- still reach the pipe.
+   -- The side benefit is the one leg F wanted: tor's own "Bootstrapped 100%"
+   -- line is now readable in <pDataDir>/onionxt-tor.log, which OnionXT still
+   -- does not read for you. Unquoted, like DataDirectory above, so a path with
+   -- a space rides the same assumption that line always has (inferred from
+   -- tor's config parser taking the rest of the line; needs the leg F run).
+   put pDataDir & "/onionxt-tor.log" into tLogPath
+   put "Log notice file " & tLogPath & oxCrlf() after tTorrc
    put pDataDir & "/onionxt-torrc" into tRcPath
-   put tTorrc into url ("binfile:" & tRcPath)
-   oxSetSocksPort tSocks
-   oxSetControlPort tControl
+   try
+      put tTorrc into url ("binfile:" & tRcPath)
+      put the result into tWriteErr
+   catch tError
+      put "the write threw:" && tError into tWriteErr
+   end try
+   if tWriteErr is not empty then
+      -- Nothing has changed yet: the ports are still the caller's, no process
+      -- exists. A missing or read-only data directory lands here.
+      return "OnionXT: oxLaunchTor could not write the torrc" && tRcPath & ":" && tWriteErr
+   end if
    -- open process is platform-specific; launch tor detached with -f <torrc>.
    -- QUOTE BOTH PATHS. The command line is split on whitespace, so an unquoted
    -- "C:/Program Files/Tor/tor.exe" arrives as the two arguments "C:/Program"
@@ -7332,7 +7507,23 @@ command oxLaunchTor pTorPath, pDataDir, pSocksPort, pControlPort
    -- normal case on Windows and macOS, not an edge case. The same applies to
    -- the torrc path, which is derived from pDataDir.
    -- VERIFY: process launch and teardown on your target OXT build.
-   open process (quote & pTorPath & quote & " -f " & quote & tRcPath & quote) for read
+   try
+      open process (quote & pTorPath & quote & " -f " & quote & tRcPath & quote) for read
+      put the result into tLaunchErr
+   catch tError
+      put "open process threw:" && tError into tLaunchErr
+   end try
+   if tLaunchErr is not empty then
+      -- The torrc stays on disk (Mode B cleans up nothing yet: docs/07), but
+      -- the library's ports are NOT re-pointed at a tor that never started.
+      return "OnionXT: oxLaunchTor could not start" && pTorPath & ":" && tLaunchErr
+   end if
+   -- Re-point the rest of the API at the launched tor only now that a launch
+   -- was accepted. Until 2026-09-24 these two ran BEFORE `open process`, so a
+   -- failed launch still left every later oxDial / oxConnectControl aimed at
+   -- ports nothing was listening on.
+   oxSetSocksPort tSocks
+   oxSetControlPort tControl
    return empty
 end oxLaunchTor
 
@@ -12536,9 +12727,11 @@ end b2kDispatchSensors
 -- Riptide script layer (the real library, embedded)
 --
 -- The rs* surface of the capstone app - pure script over the installed
--- extensions, phase 1 (identity + the feed wire formats). Embedded so the
--- folded riptide harness tests the code it ships with, same as the coinxt
--- and onionxt layers.
+-- extensions, phases 1-8 (phase 5, the call, adds no library surface):
+-- identity and the feed wire formats, the live feed, media, DMs, the LAN
+-- mesh, the anon persona and the Nostr rail. Embedded so the folded riptide
+-- harness tests the code it ships with, same as the coinxt and onionxt
+-- layers.
 --
 -- GENERATED from riptide/src/riptide.livecodescript by
 -- tools/build-suite-selftest.py. DO NOT EDIT HERE - edit that file and
@@ -19809,8 +20002,9 @@ end nxRelayInfoParse
 -- ==========================================================================
 -- SodiumXT: the full sx* self-test
 --
--- 21 groups: encoding, hashing, secretbox, AEAD, pwhash, KDF, secretstream,
--- signing, box, seal, key exchange, padding.
+-- 24 groups: encoding, hashing (BLAKE2b, SHA3-256), secretbox, AEAD, pwhash,
+-- KDF, secretstream, signing, box, seal, key exchange, padding, ristretto255
+-- (ABI 8 and 9) and the raw ChaCha20 xor (ABI 10).
 --
 -- GENERATED from sodiumxt/examples/sodium-tests.livecodescript by
 -- tools/build-suite-selftest.py. DO NOT EDIT HERE - edit that file and
@@ -20655,7 +20849,7 @@ end sx1testDiagnostics
 -- ==========================================================================
 -- OnionXT: the full ox* self-test
 --
--- 10 groups, all OFFLINE - no Tor daemon is started or contacted. The
+-- 12 sections, all OFFLINE - no Tor daemon is started or contacted. The
 -- live-Tor paths stay in onionxt's own demo.
 --
 -- GENERATED from onionxt/examples/onionxt-tests.livecodescript by
@@ -20682,6 +20876,7 @@ function ox1oxSelfTest
    ox1testConfigurationSetters
    ox1testLoopbackGuard
    ox1testHttpdHelpers
+   ox1testSocksTimeoutReasons
 
    local ox1tSummary
    -- THE SHAPE OF THIS LINE IS A CONTRACT with the suite core's
@@ -20761,6 +20956,31 @@ private command ox1testFailClosedArguments
    oxDial "example.onion", 99999
    put the result into ox1tResult
    ox1oxCheck (ox1tResult begins with "OnionXT:"), "oxDial rejects a port outside 1..65535"
+
+   -- THE TWO LIVE-DAEMON NAMES WHOSE REFUSAL NEEDS NO DAEMON (2026-09-24).
+   -- Both were exempted from the suite coverage ratchet as "live-daemon",
+   -- which described their LIVE leg; each has a refusal that comes before any
+   -- I/O, and that is what these reach.
+   --
+   -- oxTransportDial with an EMPTY address: it is not a .onion and not a
+   -- 32-byte key or 64 hex chars, so it falls through to oxDial, whose
+   -- empty-host check refuses before a handle is allocated or `open socket`
+   -- runs. NEVER pass a non-empty non-onion host here - that is a clearnet
+   -- name oxDial would really dial through whatever SOCKS port is configured.
+   oxTransportDial empty
+   put the result into ox1tResult
+   ox1oxCheck (ox1tResult begins with "OnionXT:"), \
+      "oxTransportDial refuses an empty address before dialing (it wraps oxDial) [" & ox1tResult & "]"
+
+   -- oxLaunchTor with no tor path and no data directory: refused on its first
+   -- line, before the torrc is written, before `open process`, and before the
+   -- configured ports are touched - so this is safe inside the running demo
+   -- too. Empty on purpose for BOTH: given a real tor path, a regression past
+   -- the guard would write a torrc and START that binary from a test run.
+   oxLaunchTor empty, empty, empty, empty
+   put the result into ox1tResult
+   ox1oxCheck (ox1tResult begins with "OnionXT:"), \
+      "oxLaunchTor refuses empty arguments before touching disk [" & ox1tResult & "]"
 
    -- These two prove the pre-auth fail-closed guard specifically, so they are
    -- only meaningful while nothing has authenticated yet in this session (see
@@ -20874,6 +21094,31 @@ private command ox1testIdempotentTeardown
    end try
    ox1oxCheck ox1tOk, "double close / remove / disconnect / shutdown never throws"
    ox1oxCheck (not oxIsControlAuthenticated()), "control is disconnected after teardown"
+
+   -- oxStopTor WHILE UNAUTHENTICATED IS THE SAME IDEMPOTENT DISCONNECT
+   -- (2026-09-24). It was a coverage exemption ("live-daemon: stops a real tor
+   -- process"), which is its AUTHENTICATED leg: that one sends SIGNAL SHUTDOWN
+   -- down the control connection, and a harness that reached it inside the
+   -- running demo would shut down the user's own tor. So the call sits HERE,
+   -- after the teardown above has already disconnected control, and it is
+   -- guarded anyway: nothing can authenticate between those lines (no message
+   -- is delivered mid-handler), but a guard costs one line and a future edit
+   -- that moves this check above the teardown must meet a skip, not a
+   -- shutdown. One item either way, so the core's floor arithmetic is fixed.
+   if oxIsControlAuthenticated() then
+      ox1oxSkip "oxStopTor is only called unauthenticated here; this session " & \
+         "is authenticated, and the authenticated leg shuts tor down"
+   else
+      put true into ox1tOk
+      try
+         oxStopTor
+         oxStopTor
+      catch ox1tError
+         put false into ox1tOk
+      end try
+      ox1oxCheck (ox1tOk and not oxIsControlAuthenticated()), \
+         "oxStopTor while unauthenticated is the idempotent disconnect (twice, no throw)"
+   end if
 end ox1testIdempotentTeardown
 
 private command ox1testAddressRoundTrip
@@ -21142,6 +21387,27 @@ private command ox1testOneSocketID pSocketID, pExpectHost, pExpectLoopback, pLab
       pLabel & ": loopback verdict is " & pExpectLoopback
 end ox1testOneSocketID
 
+private command ox1testSocksTimeoutReasons
+   ox1oxSection "SOCKS handshake timeouts: two paths, two reasons"
+   local ox1tDeadline, ox1tEngine, ox1tError
+   try
+      put oxSocksTimeoutReason("deadline", "replyhead") into ox1tDeadline
+      put oxSocksTimeoutReason("socketTimeout", "replyhead") into ox1tEngine
+   catch ox1tError
+      ox1oxSkip "oxSocksTimeoutReason is private to onionxt.livecodescript; " & \
+         "run the demo standalone or the suite paste, where the harness and " & \
+         "the library are one script"
+      exit ox1testSocksTimeoutReasons
+   end try
+   ox1oxCheck (ox1tDeadline is not ox1tEngine), \
+      "the watchdog and socketTimeout reasons differ: [" & ox1tDeadline & "] vs [" & ox1tEngine & "]"
+   ox1oxCheck ((ox1tDeadline begins with "SOCKS handshake timed out") and \
+         (ox1tEngine begins with "SOCKS handshake timed out")), \
+      "both keep the old SOCKS handshake timed out prefix"
+   ox1oxCheck ((ox1tDeadline contains "replyhead") and (ox1tEngine contains "replyhead")), \
+      "both name the stage the stream stalled in"
+end ox1testSocksTimeoutReasons
+
 private function ox1testHex pData
    -- binaryDecode is a function that fills its output var; `get` discards the count.
    local ox1tHex
@@ -21166,8 +21432,9 @@ end ox1testZeroSeed
 -- ==========================================================================
 -- CoinXT: the full cx* self-test
 --
--- 28 sections across all four phases: hashes, the secp256k1 curve, the
--- encoders and addresses, BIP-39/32/44, and the fail-closed regressions.
+-- 32 sections across all five phases: hashes, the secp256k1 curve, the
+-- encoders and addresses, BIP-340 Schnorr and BIP-341 Taproot, BIP-39/32/44,
+-- transactions, and the fail-closed regressions.
 --
 -- GENERATED from coinxt/tests/coin-selftest.livecodescript by
 -- tools/build-suite-selftest.py. DO NOT EDIT HERE - edit that file and
@@ -22711,6 +22978,29 @@ command bt1stRun
    bt1stAssert "btDhtGetImmutable accepts the target (async)", (btDhtGetImmutable(bt1sSession, bt1tTarget) is 0)
    bt1stAssert "btDhtPutMutable signs + queues", (btDhtPutMutable(bt1sSession, bt1tKey["publicKey"], bt1tKey["secretKey"], "", textEncode("v1", "UTF-8")) is 0)
    bt1stAssert "btDhtGetMutable accepts the key (async)", (btDhtGetMutable(bt1sSession, bt1tKey["publicKey"], "") is 0)
+   -- THE SIZE BOUNDARY, through the binding (added 2026-09-24). BEP44 caps the
+   -- BENCODED value at 1000 bytes and these two puts bencode for you, so the
+   -- raw cap is 996 ("996:" + 996 = 1000); the shim has refused 1000 raw
+   -- bytes only since 2026-09-08 (the committed binaries carry that from the
+   -- 2026-09-12 dispatch). Nothing held the boundary: the smoke test refused
+   -- only 1001, which the old cap refused too. A boundary is pinned by the
+   -- PAIR, so on a binary older than that dispatch the two 997 rows FAIL,
+   -- which is the point. The refusal legs never reach the network; the
+   -- 996-byte puts go to the DHT exactly like the short values above.
+   local bt1tAt996, bt1tOver997, bt1tBigTarget
+   put empty into bt1tAt996
+   repeat 996 times
+      put "x" after bt1tAt996
+   end repeat
+   put bt1tAt996 & "x" into bt1tOver997
+   put btDhtPutImmutable(bt1sSession, textEncode(bt1tAt996, "UTF-8")) into bt1tBigTarget
+   bt1stAssert "btDhtPutImmutable takes 996 raw bytes (1000 bencoded)", (the number of chars of bt1tBigTarget is 40)
+   btClearError
+   put btDhtPutImmutable(bt1sSession, textEncode(bt1tOver997, "UTF-8")) into bt1tBigTarget
+   bt1stAssert "btDhtPutImmutable refuses 997 raw bytes (1001 bencoded)", (bt1tBigTarget is empty)
+   bt1stAssert "...and btLastError names the 996 cap", (btLastError() contains "996")
+   bt1stAssert "btDhtPutMutable takes 996 raw bytes", (btDhtPutMutable(bt1sSession, bt1tKey["publicKey"], bt1tKey["secretKey"], "", textEncode(bt1tAt996, "UTF-8")) is 0)
+   bt1stAssert "btDhtPutMutable refuses 997 raw bytes (-3)", (btDhtPutMutable(bt1sSession, bt1tKey["publicKey"], bt1tKey["secretKey"], "", textEncode(bt1tOver997, "UTF-8")) is -3)
 
    bt1stSection "signed puts, rendezvous, NAT mapping, rp1 (the v9-v11 surface)"
    -- btDhtBep44SignBuf hands back the EXACT bytes libtorrent signs, so a
@@ -24222,6 +24512,7 @@ command b21stRunAll
    b21stRun "b21stTestDuckReshape"
    b21stRun "b21stTestDuckFilter"
    b21stRun "b21stTestPlayerHelpers"
+   b21stRun "b21stTestCallerDelimiter"
    b21stRun "b21stTestTeardown"
    -- the Kit API coverage sections (see the banner below b21stTestTeardown)
    b21stRun "b21stTestKitHelpers"
@@ -25481,11 +25772,14 @@ command b21stTestDuckReshape
       b2kStepOnce
       if b21stX(b21tRef) > 360 then exit repeat
    end repeat
-   -- STILL OPEN after four engine runs (x stalls ~269, short of the
-   -- ceiling's edge at 300, at ~35 px/s net against a 110 px/s crawl
-   -- target): nothing in the geometry blocks it there, so the next run
-   -- must say what the controller thinks it is doing at the stall --
-   -- self-diagnose rather than re-report one number.
+   -- FIXED at v28. Four engine runs stalled at x ~269, short of the
+   -- ceiling's edge at 300, and the instrumentation below is what convicted
+   -- the cause on run 5 (state duck, halfH 13, vx -1: a body against a
+   -- wall): OXT does not resize a polygon graphic by a height-set (engine
+   -- note 5.1), so the "shrunk" capsule was rebuilt at full height every
+   -- time. b2kReshape now takes explicit dims; this line passed at v29 on
+   -- Windows (2026-08-17) and Linux (2026-08-18). The self-diagnosing name
+   -- stays: if it ever reddens again, it says what the controller saw.
    set the itemDelimiter to comma
    put round(item 1 of b2kVelocity(b21tRef)) into b21tVx
    b21stAssert "crawled under the low ceiling (x " & round(b21stX(b21tRef)) & " > 350; state " \
@@ -25638,6 +25932,195 @@ command b21stTestSheetPersist
    if there is an image "st_sheetsrc" then delete image "st_sheetsrc"
    if there is an image "st_sheetsrc2" then delete image "st_sheetsrc2"
 end b21stTestSheetPersist
+
+command b21stTestCallerDelimiter
+   local b21tBox, b21tBall, b21tCap, b21tPoly, b21tA, b21tB, b21tJ, b21tErr, b21tPos, b21tM0, b21tPts0
+   local b21tWx, b21tWy, b21tIn, b21tBack
+   b21stNewWorld "caller delimiter: the Kit parses x,y under a caller's tab (v32)"
+   -- THE ATTACH FAMILY: every control is built under comma, attached under tab
+   create graphic "st_dlbox"
+   set the style of it to "rectangle"
+   set the rect of it to 100, 100, 140, 140
+   put the long id of graphic "st_dlbox" into b21tBox
+   put empty into b21tErr
+   set the itemDelimiter to tab
+   try
+      b2kAddBox b21tBox
+   catch b21tErr
+   end try
+   put the itemDelimiter into b21tBack   -- what a Kit call hands back (observed below)
+   set the itemDelimiter to comma
+   b21stAssert "b2kAddBox under a caller's tab registers a body" & b21stThrewNote(b21tErr), \
+         (b21tErr is empty and b2kBodyOf(b21tBox) is not empty)
+   -- not just "did not throw": x and y were parsed APART, so the body sits
+   -- at the control's loc (under the bug, item 1 was the whole "x,y")
+   put b2kPosition(b21tBox) into b21tPos
+   b21stAssert "...and puts it at the control's loc 120,120 (body at " & b21tPos & ")", \
+         (abs(item 1 of b21tPos - 120) < 1 and abs(item 2 of b21tPos - 120) < 1)
+   create graphic "st_dlball"
+   set the style of it to "oval"
+   set the rect of it to 200, 100, 240, 140
+   put the long id of graphic "st_dlball" into b21tBall
+   put empty into b21tErr
+   set the itemDelimiter to tab
+   try
+      b2kAddBall b21tBall
+   catch b21tErr
+   end try
+   set the itemDelimiter to comma
+   b21stAssert "b2kAddBall under a caller's tab registers a body" & b21stThrewNote(b21tErr), \
+         (b21tErr is empty and b2kBodyOf(b21tBall) is not empty)
+   create graphic "st_dlcap"
+   set the style of it to "rectangle"
+   set the rect of it to 300, 100, 380, 140
+   put the long id of graphic "st_dlcap" into b21tCap
+   put empty into b21tErr
+   set the itemDelimiter to tab
+   try
+      b2kAddCapsule b21tCap
+   catch b21tErr
+   end try
+   set the itemDelimiter to comma
+   b21stAssert "b2kAddCapsule under a caller's tab registers a body" & b21stThrewNote(b21tErr), \
+         (b21tErr is empty and b2kBodyOf(b21tCap) is not empty)
+   -- the polygon path parses every POINT, not just the loc
+   create graphic "st_dlpoly"
+   set the style of it to "polygon"
+   set the points of it to "400,100" & cr & "440,100" & cr & "420,140" & cr & "400,100"
+   put the long id of graphic "st_dlpoly" into b21tPoly
+   put empty into b21tErr
+   set the itemDelimiter to tab
+   try
+      b2kAddPolygon b21tPoly
+   catch b21tErr
+   end try
+   set the itemDelimiter to comma
+   b21stAssert "b2kAddPolygon under a caller's tab registers a body" & b21stThrewNote(b21tErr), \
+         (b21tErr is empty and b2kBodyOf(b21tPoly) is not empty)
+   -- RESHAPE: only its "poly" case parses (the others take numbers), so grow
+   -- the triangle's outline 2x under comma and re-fit it under tab. Twice the
+   -- side is four times the area at the same density; a reshape that threw
+   -- or refused keeps the old shape and the old mass.
+   put b2kMass(b21tPoly) into b21tM0
+   set the points of b21tPoly to "400,100" & cr & "480,100" & cr & "440,180" & cr & "400,100"
+   put empty into b21tErr
+   set the itemDelimiter to tab
+   try
+      b2kReshape b21tPoly, "poly"
+   catch b21tErr
+   end try
+   set the itemDelimiter to comma
+   b21stAssert "b2kReshape poly under a caller's tab re-fits the outline (mass " \
+         & b21tM0 & " -> " & b2kMass(b21tPoly) & ", ~4x)" & b21stThrewNote(b21tErr), \
+         (b21tErr is empty and b21tM0 > 0 and b2kMass(b21tPoly) > b21tM0 * 2)
+   -- DRAWPOLY: the renderer every dynamic graphic body goes through. Ask for
+   -- a pose the draw cache has never seen, so it must re-point the outline.
+   put the points of b21tBox into b21tPts0
+   put b2kToWorldX(300) into b21tWx
+   put b2kToWorldY(300) into b21tWy
+   put empty into b21tErr
+   set the itemDelimiter to tab
+   try
+      b2kDrawPoly b21tBox, b21tWx, b21tWy, 0.5
+   catch b21tErr
+   end try
+   set the itemDelimiter to comma
+   b21stAssert "b2kDrawPoly under a caller's tab re-points the outline (" \
+         & the number of lines of the points of b21tBox & " points)" & b21stThrewNote(b21tErr), \
+         (b21tErr is empty and the points of b21tBox is not b21tPts0)
+   -- THE JOINT FAMILY: bodies spawned under comma, joined under tab. Each
+   -- builds local anchors as "x,y" and splits them into a typed .lcb call,
+   -- which is where the unfixed form threw.
+   b2kSpawnBox 500, 300, 60, 12
+   put the result into b21tA
+   put empty into b21tErr
+   put empty into b21tJ
+   set the itemDelimiter to tab
+   try
+      b2kHinge b21tA, empty, 500, 300
+      put the result into b21tJ
+   catch b21tErr
+   end try
+   set the itemDelimiter to comma
+   b21stAssert "b2kHinge under a caller's tab returns a joint (" & b21tJ & ")" & b21stThrewNote(b21tErr), \
+         (b21tErr is empty and b21tJ > 0)
+   b2kSpawnBox 600, 200, 30, 30
+   put the result into b21tA
+   b2kSpawnBox 640, 200, 30, 30
+   put the result into b21tB
+   put empty into b21tErr
+   put empty into b21tJ
+   set the itemDelimiter to tab
+   try
+      b2kWeld b21tA, b21tB
+      put the result into b21tJ
+   catch b21tErr
+   end try
+   set the itemDelimiter to comma
+   b21stAssert "b2kWeld under a caller's tab returns a joint (" & b21tJ & ")" & b21stThrewNote(b21tErr), \
+         (b21tErr is empty and b21tJ > 0)
+   b2kSpawnBox 700, 300, 30, 30
+   put the result into b21tA
+   put empty into b21tErr
+   put empty into b21tJ
+   set the itemDelimiter to tab
+   try
+      b2kSlider b21tA, empty, 90
+      put the result into b21tJ
+   catch b21tErr
+   end try
+   set the itemDelimiter to comma
+   b21stAssert "b2kSlider under a caller's tab returns a joint (" & b21tJ & ")" & b21stThrewNote(b21tErr), \
+         (b21tErr is empty and b21tJ > 0)
+   b2kSpawnBox 300, 400, 80, 20
+   put the result into b21tA
+   b2kSpawnBall 300, 430, 20
+   put the result into b21tB
+   put empty into b21tErr
+   put empty into b21tJ
+   set the itemDelimiter to tab
+   try
+      b2kWheel b21tA, b21tB, 300, 430, 0
+      put the result into b21tJ
+   catch b21tErr
+   end try
+   set the itemDelimiter to comma
+   b21stAssert "b2kWheel under a caller's tab returns a joint (" & b21tJ & ")" & b21stThrewNote(b21tErr), \
+         (b21tErr is empty and b21tJ > 0)
+   -- OBSERVATIONS from here down, printed either way, never assertions.
+   set the itemDelimiter to tab
+   put b21stDelimSeen() into b21tIn
+   set the itemDelimiter to comma
+   if b21tIn is tab then
+      b21stOut "        a caller's tab REACHES a called handler on " & the platform & \
+            ": the lines above exercised the 2026-09-09 fix"
+   else
+      b21stOut "        a caller's tab does NOT reach a called handler on " & the platform & \
+            " (it saw " & b21stDelimName(b21tIn) & "): the lines above passed without exercising the fix"
+   end if
+   if b21tBack is comma then
+      b21stOut "        a Kit call's own set-to-comma reaches back to its caller on " & \
+            the platform & " (tab in, comma out)"
+   else
+      b21stOut "        a Kit call left its caller's delimiter alone on " & the platform & \
+            " (tab in, " & b21stDelimName(b21tBack) & " out)"
+   end if
+end b21stTestCallerDelimiter
+
+function b21stThrewNote pErr
+   if pErr is empty then return empty
+   return " (threw: " & line 1 of pErr & ")"
+end b21stThrewNote
+
+function b21stDelimSeen
+   return the itemDelimiter
+end b21stDelimSeen
+
+function b21stDelimName pDelim
+   if pDelim is tab then return "tab"
+   if pDelim is comma then return "comma"
+   return quote & pDelim & quote
+end b21stDelimName
 
 command b21stTestKitHelpers
    local b21tVerts, b21tBytes, b21tWav, b21tXml, b21tProf
@@ -26424,7 +26907,7 @@ end b21stTestKitPlayerApi
 
 
 -- ==========================================================================
--- Riptide Social (phases 1-2): the rs* self-test
+-- Riptide Social (phases 1-8): the rs* self-test
 --
 -- The capstone app's harness: the KDF subkey tree, identity to handle to
 -- onion, the RIPTKEY1 key file, the RSH1/RSP1 framings, the post chain, and
@@ -32787,13 +33270,16 @@ command he1heNetSeatLateJoiners
    -- v0.24.0 (F7): "has joined" is a HISTORICAL fact and was the only test --
    -- so a departed peer was seated as a ghost. Current liveness is now
    -- required (he1heNetPubIsLive, which carries what each transport can prove).
-   -- OPEN DECISION, deliberately not invented here: a SPECTATOR (spec 4's
-   -- read-only role) is still indistinguishable from a player at this point.
-   -- The admission token has a role field, but every client this build can
-   -- talk to sends "player" in it, so refusing on role would refuse real
-   -- players; declaring spectator intent needs a wire/UI decision, and this
-   -- change was scoped to introduce none. Recorded in CLAUDE.md and
-   -- IMPLEMENTATION-PLAN.md.
+   -- SPECTATORS ARE DEFERRED (the owner, 2026-08-16: "we do not need
+   -- spectators at this point"; holde-em/CLAUDE.md, spec 4 and the suite's
+   -- docs/OPEN-DECISIONS.md record it). So a spectator (spec 4's read-only
+   -- role) is indistinguishable from a player here, BY DECISION rather than
+   -- as an open question: the admission token has a role field, but every
+   -- client this build can talk to sends "player" in it, so refusing on
+   -- role would refuse real players, and a joiner at a table with a free
+   -- seat is seated at the next boundary with no way to decline. Picking
+   -- spectators back up needs a wire/UI decision (a role a joiner can
+   -- choose, or a sit-request the host answers), not a fix in this loop.
    local he1tPubHex, he1tPubsTxt, he1tSeatNum, he1tMaxSeats
    if he1gGame["isHost"] is not "true" then
       exit he1heNetSeatLateJoiners
@@ -38808,6 +39294,7 @@ command he1heTestRunAllSections
    he1heRunSection "he1heTestHelpersRun"
    he1heRunSection "he1heTestLeafRun"
    he1heRunSection "he1heTestLeafRun2"
+   he1heRunSection "he1heTestLeafRun3"
    he1heRunSection "he1heProbeSodium"
 end he1heTestRunAllSections
 
@@ -40471,8 +40958,16 @@ command he1heTestLevel2VoidRun
    -- the Python twins pinned from the independent reference, so a green
    -- run pins engine, xTalk, and reference to one attribution answer.
    -- SKIPs without SodiumXT; the machine half SKIPs below ABI 8; the DLEQ
-   -- half SKIPs by name below ABI 9 (the sx* DLEQ calls have never run on
-   -- an engine -- this section IS their first-contact harness).
+   -- half SKIPs by name below ABI 9. This section WAS the sx* DLEQ calls'
+   -- first-contact harness, and that contact is on record: the 2026-08-17
+   -- suite paste (Windows x86_64, NT 10.0, OXT 9.6.3; 538/0 folded at
+   -- v0.24.4 / h41) closed runbook rows 26 (the five bots attributed; 4d
+   -- by inference from the member total) and 27 (a wrong unmask refused
+   -- instantly and named) here, and the 2026-08-24 paste (584/0 at
+   -- v0.25.0 / h42) ran the DLEQ proof and refusal legs green again
+   -- (holde-em/CLAUDE.md's ledger; the runbook's section 8). It is
+   -- regression cover now; a SKIP of the DLEQ half on a later run means
+   -- the loaded SodiumXT is below ABI 9, not that the calls are untried.
    local he1tSeedsA, he1tCommitsA, he1tTableData, he1tKeyData, he1tDeckList, he1tDealA, he1tStackA
    local he1tBase, he1tD1, he1tD2, he1tD3, he1tPipe1, he1tSh1, he1tC0, he1tV1, he1tV2, he1tV3
    local he1tH0, he1tW1, he1tW2, he1tBad2, he1tBad3, he1tRevTxt, he1tStA, he1tCardTxt, he1tHoleTxt
@@ -41821,6 +42316,151 @@ command he1heTestLeafRun2
    put he1tSaved into he1gGame
 end he1heTestLeafRun2
 
+command he1heTestLeafRun3
+   -- 24: THIRD TRANCHE of the coverage worklist's no-test category
+   -- (2026-09-24), CONSENSUS-CRITICAL FIRST, the order the suite's work
+   -- plan gives: the betting engine's own leaves (every client folds every
+   -- wire through them, so a wrong chip here is a wrong chip everywhere and
+   -- the replay audit re-derives it clean); the v0.24.0 liveness fixes no
+   -- test NAMED although netsim reaches them (he1heNetEngineFold's
+   -- foldApplied record, he1heNetTimeoutRearm's bounded retry,
+   -- he1heNetTurnClockStart's replayed-clock flag, he1heNetTimeoutMiss's
+   -- transcript-derived sit-out); and the Level 2 helpers' PURE branches,
+   -- the refusals that return before any sx* call, so they run on every
+   -- engine and in the headless gate alike (the ristretto halves stay
+   -- sections 16 and 19's). SHALLOW ON PURPOSE, the section-22 precedent:
+   -- a value pin per branch. Same selection rule: pure functions and
+   -- he1gGame-only handlers on a SYNTHETIC he1gGame saved and restored around
+   -- the block (he1gHudDirty too, which the folds mark). Nothing here arms a
+   -- timer, touches a control, plays a sound or crosses an FFI: the folds
+   -- below are blind posts, never an `act`, because an act's accepted path
+   -- plays its verb's sound. he1heHandSettle is NOT here, deliberately, though
+   -- the plan names it: it ends by sending he1heNextHandTick, which DEALS A
+   -- HAND, and a harness must never arm that (this file's CLAUDE.md, the
+   -- fold contract).
+   local he1tSaved, he1tHudSaved, he1tS, he1tV, he1tStacksA, he1tTxt, he1tI
+   put return & "-- 24. Leaf tranche 3: consensus-critical leaves (shallow)" & return after he1gRpt
+   set the itemDelimiter to comma
+
+   -- the betting engine's leaves, on a REAL heads-up hand state from
+   -- he1heBetNewHand (seat 1 is the button and so the small blind, spec 8.1)
+   put 1000 into he1tStacksA[1]
+   put 1000 into he1tStacksA[3]
+   put he1heBetNewHand(10, 20, 0, he1tStacksA, "1,3", 1) into he1tS
+   put he1heBetPay(he1tS, 3, 40) into he1tS
+   he1heTAssert "leaf3: he1heBetPay takes the chips from behind", he1tS["stackBy"][3], 960
+   he1heTAssert "leaf3: he1heBetPay puts them on the street", he1tS["streetBy"][3], 40
+   he1heTAssert "leaf3: he1heBetPay counts them into the hand", he1tS["handBy"][3], 40
+   he1heTAssert "leaf3: he1heBetPay with chips behind is not all-in", he1tS["allinBy"][3], "false"
+   put he1heBetPay(he1tS, 3, 960) into he1tS
+   he1heTAssert "leaf3: he1heBetPay to zero behind flags all-in", he1tS["allinBy"][3], "true"
+   he1heTAssert "leaf3: ...with the whole stack in the hand", he1tS["handBy"][3], 1000
+   put he1heBetPayDead(he1tS, 1, 5) into he1tS
+   he1heTAssert "leaf3: he1heBetPayDead goes into the hand", he1tS["handBy"][1], 5
+   he1heTAssert "leaf3: he1heBetPayDead never into the street bet", he1tS["streetBy"][1], 0
+   he1heTAssert "leaf3: he1heBetPayDead comes from behind", he1tS["stackBy"][1], 995
+   he1heTAssert "leaf3: he1heBetLiveCount skips the all-in seat", he1heBetLiveCount(he1tS), 1
+   put "true" into he1tS["foldedBy"][1]
+   he1heTAssert "leaf3: he1heBetInHandList drops the folded seat", he1heBetInHandList(he1tS), "3"
+   he1heTAssert "leaf3: he1heBetLiveCount of folded plus all-in is 0", he1heBetLiveCount(he1tS), 0
+   -- who still owes action: a bigger bet to face, or no act since it
+   put he1heBetNewHand(10, 20, 0, he1tStacksA, "1,3", 1) into he1tS
+   put 20 into he1tS["betCur"]
+   put 10 into he1tS["streetBy"][1]
+   put 20 into he1tS["streetBy"][3]
+   put "true" into he1tS["actedBy"][3]
+   he1heTAssert "leaf3: he1heBetSeatPending when facing a bigger bet", he1heBetSeatPending(he1tS, 1), true
+   he1heTAssert "leaf3: he1heBetSeatPending not after matching and acting", he1heBetSeatPending(he1tS, 3), false
+   he1heTAssert "leaf3: he1heBetNextPending finds the seat that owes", he1heBetNextPending(he1tS, 3), 1
+   put 20 into he1tS["streetBy"][1]
+   put "true" into he1tS["actedBy"][1]
+   he1heTAssert "leaf3: he1heBetNextPending of a closed round is 0", he1heBetNextPending(he1tS, 3), 0
+   put 10 into he1tS["streetBy"][1]
+   put "false" into he1tS["actedBy"][1]
+   put "true" into he1tS["allinBy"][1]
+   he1heTAssert "leaf3: he1heBetSeatPending never for an all-in seat", he1heBetSeatPending(he1tS, 1), false
+
+   -- the Level 2 helpers' pure branches: chain order, the void latch,
+   -- and the two refusals that return BEFORE the ristretto probe
+   he1heTAssert "leaf3: he1heL2ChainOrder drops the hole slot's owner", he1heL2ChainOrder(4, 2), "1,3,4"
+   he1heTAssert "leaf3: he1heL2ChainOrder of a board slot is every position", he1heL2ChainOrder(3, 0), "1,2,3"
+   he1heTAssert "leaf3: he1heL2ChainOrder of a lone owner is empty", he1heL2ChainOrder(1, 1), empty
+   put "shuffle" into he1tV["phase"]
+   put he1heL2VoidMark(he1tV, 2, "void:dup-point") into he1tV
+   he1heTAssert "leaf3: he1heL2VoidMark latches the phase", he1tV["phase"], "void"
+   he1heTAssert "leaf3: he1heL2VoidMark names the position", he1tV["named"], 2
+   he1heTAssert "leaf3: he1heL2VoidMark keeps the reason", he1tV["why"], "void:dup-point"
+   he1heTAssert "leaf3: he1heL2VoidMark marks the last record void", he1tV["last"], "void"
+   he1heTAssert "leaf3: he1heL2CardPointHex refuses card 0", he1heL2CardPointHex(0), "void:card-range"
+   he1heTAssert "leaf3: he1heL2CardPointHex refuses card 53", he1heL2CardPointHex(53), "void:card-range"
+   he1heTAssert "leaf3: he1heL2CardPointHex refuses a non-integer", he1heL2CardPointHex(2.5), "void:card-range"
+   he1heTAssert "leaf3: he1heL2PointOkHex refuses a short point", he1heL2PointOkHex("abcd"), "void:point-format"
+   put empty into he1tTxt
+   repeat with he1tI = 1 to 32
+      put "zz" after he1tTxt
+   end repeat
+   he1heTAssert "leaf3: he1heL2PointOkHex refuses 64 non-hex chars", he1heL2PointOkHex(he1tTxt), "void:point-format"
+
+   -- the liveness folds, on a SYNTHETIC he1gGame (the section-22 pattern)
+   put he1gGame into he1tSaved
+   put he1gHudDirty into he1tHudSaved
+   put empty into he1gGame
+   -- he1heNetTurnClockStart: the clock restarts, the latch clears, and the
+   -- REPLAYED flag follows catchUpTo (v0.24.0 F2: a waiver keyed on the
+   -- clock, so it dies with its turn)
+   put "true" into he1gGame["timeoutSent"]
+   put 12 into he1gGame["catchUpTo"]
+   he1heNetTurnClockStart
+   he1heTAssert "leaf3: he1heNetTurnClockStart clears the timeout latch", he1gGame["timeoutSent"], "false"
+   he1heTAssert "leaf3: he1heNetTurnClockStart in catch-up marks the clock replayed", he1gGame["turnStale"], "true"
+   he1heTAssert "leaf3: he1heNetTurnClockStart stamps the clock", he1gGame["turnStartMs"] is a number, true
+   put empty into he1gGame["catchUpTo"]
+   he1heNetTurnClockStart
+   he1heTAssert "leaf3: he1heNetTurnClockStart live is not replayed", he1gGame["turnStale"], "false"
+   -- he1heNetTimeoutRearm: a REFUSED timeout restarts the interval rather
+   -- than leaving the latch set for good (v0.24.0 F3, the silent stall)
+   put "true" into he1gGame["timeoutSent"]
+   put 0 into he1gGame["turnStartMs"]
+   he1heNetTimeoutRearm
+   he1heTAssert "leaf3: he1heNetTimeoutRearm clears the latch", he1gGame["timeoutSent"], "false"
+   he1heTAssert "leaf3: he1heNetTimeoutRearm restarts the interval", he1gGame["turnStartMs"] > 0, true
+   -- he1heNetTimeoutMiss: consecutive misses sit a seat out at the signed
+   -- cfg's count (default he1kHeDefaultMisses), transcript-derived consensus
+   he1heNetTimeoutMiss 4
+   he1heTAssert "leaf3: he1heNetTimeoutMiss counts a miss", he1gGame["missCntBy"][4], 1
+   he1heTAssert "leaf3: ...one miss does not sit the seat out", he1gGame["sitOutBy"][4] is "true", false
+   he1heNetTimeoutMiss 4
+   he1heTAssert "leaf3: he1heNetTimeoutMiss sits out at the default count", he1gGame["sitOutBy"][4], "true"
+   he1heTContains "leaf3: ...and says so in the net log", he1gGame["netLog"], "sits out after 2 missed turns"
+   put "miss=3" into he1gGame["cfgBody"]
+   he1heNetTimeoutMiss 5
+   he1heNetTimeoutMiss 5
+   he1heTAssert "leaf3: he1heNetTimeoutMiss follows a signed miss=3", he1gGame["sitOutBy"][5] is "true", false
+   he1heNetTimeoutMiss 5
+   he1heTAssert "leaf3: ...and sits out at the third", he1gGame["sitOutBy"][5], "true"
+   -- he1heNetEngineFold: the outcome is RECORDED (foldApplied) on both paths,
+   -- because three callers write consensus state around a fold that can
+   -- refuse (v0.24.0 F4/F5); and an applied fold re-aims the act clock
+   put empty into he1gGame
+   put 7 into he1gGame["handNum"]
+   put "hand" into he1gGame["phase"]
+   put he1heBetNewHand(10, 20, 0, he1tStacksA, "1,3", 1) into he1gGame["state"]
+   he1heNetEngineFold "bidSB", 3, 10
+   he1heTAssert "leaf3: he1heNetEngineFold records a REFUSED fold", he1gGame["foldApplied"], "false"
+   he1heTContains "leaf3: ...logs the engine's reason", he1gGame["netLog"], "engine-rejected bidSB bidSB-wrong-seat"
+   he1heTAssert "leaf3: ...and moves no consensus state", he1gGame["state"]["stackBy"][3], 1000
+   he1heNetEngineFold "bidSB", 1, 10
+   he1heTAssert "leaf3: he1heNetEngineFold records an APPLIED fold", he1gGame["foldApplied"], "true"
+   he1heTAssert "leaf3: ...and commits the engine's state", he1gGame["state"]["stackBy"][1], 990
+   he1heTAssert "leaf3: ...a blinds-phase fold aims no act clock", he1gGame["turnKey"], empty
+   he1heNetEngineFold "bidBB", 3, 20
+   he1heTAssert "leaf3: he1heNetEngineFold on the big blind opens the action", he1gGame["state"]["toAct"], 1
+   he1heTAssert "leaf3: ...and the turn key carries hand AND street (v0.24.3)", he1gGame["turnKey"], "act,1,0,7-preflop"
+   he1heTAssert "leaf3: ...on a freshly started live clock", he1gGame["timeoutSent"], "false"
+   put he1tSaved into he1gGame
+   put he1tHudSaved into he1gHudDirty
+end he1heTestLeafRun3
+
 function he1heTIdxOf pNamesTxt
    local he1tOut, he1tNameTxt, he1tNames
    set the itemDelimiter to comma
@@ -42686,7 +43326,7 @@ private command nx1nxtTestJsonEscape
 end nx1nxtTestJsonEscape
 
 private command nx1nxtTestJsonParse
-   local nx1tJson, nx1tDeep, nx1tI
+   local nx1tJson, nx1tDeep, nx1tI, nx1tArrJson, nx1tGot, nx1tError, nx1tSavedDelim, nx1tAfterDelim
    nx1nxtSection "json parser"
    put "{" & quote & "a" & quote & ":[1,2,{" & quote & "b" & quote & ":" & quote & "x" & quote & "}],  " & quote & "c" & quote & ":true," & quote & "d" & quote & ":null}" into nx1tJson
    nx1nxtCheck nxJsonType(nx1tJson, empty) is "object", "root object types"
@@ -42715,6 +43355,37 @@ private command nx1nxtTestJsonParse
    nx1nxtCheck nxJsonType("{" & quote & "a" & quote & ":1," & quote & "a" & quote & ":2}", empty) is "missing", "duplicate object keys refuse (the first-wins/last-wins desync)"
    nx1nxtCheck nxJsonType("{" & quote & "NAME" & quote & ":1}", "name") is "missing", "object keys are case-sensitive (is folds; the walk must not)"
    nx1nxtCheck nxJsonType("[1,2,3]", "2.0") is "missing", "array paths are digit runs, not numeric folds"
+   -- THE 2026-09-09 REFUSAL, here so an engine pass runs it: until now only
+   -- tools/check-script-vectors.py did, headlessly. The array step's guard
+   -- used to be ONE chain, `not nxIsDigits(tStep) or tStep + 0 < 1 ...`,
+   -- and `or` evaluates BOTH operands (suite engine note 2.5), so a step
+   -- like "abc" reached `tStep + 0`: a HARD engine error, not a refusal,
+   -- raised from relay bytes through nxMetadataParse. So the call sits in a
+   -- try. On a regressed library a bare nx1nxtCheck would not print FAIL - it
+   -- would THROW out of this whole harness and take every later line with
+   -- it; caught, the regression is one FAIL line and the report survives.
+   --
+   -- The same call pins the other half of that fix: the early-out now
+   -- restores the itemDelimiter, which is "/" at that point and global
+   -- state (suite engine note 2.3). It reads the DELIMITER, not a second
+   -- nxJsonGet: the walk saves whatever delimiter it finds and sets "/"
+   -- itself, so a second call answers "x" even after a leak (the headless
+   -- gate's first version of this check did exactly that and stayed green
+   -- with the restore deleted). The sentinel is not comma, so a restore to
+   -- a hard-coded comma fails as well.
+   put "{" & quote & "a" & quote & ":[" & quote & "x" & quote & "," & quote & "y" & quote & "]}" into nx1tArrJson
+   put the itemDelimiter into nx1tSavedDelim
+   set the itemDelimiter to "|"
+   put "not run" into nx1tGot
+   try
+      put nxJsonGet(nx1tArrJson, "a/abc") into nx1tGot
+   catch nx1tError
+      put "THREW: " & nx1tError into nx1tGot
+   end try
+   put the itemDelimiter into nx1tAfterDelim
+   set the itemDelimiter to nx1tSavedDelim
+   nx1nxtCheck nx1tGot is empty, "a non-numeric array step refuses, never a hard error (2026-09-09: or evaluates both operands)"
+   nx1nxtCheck nx1tAfterDelim is "|", "and that refusal restores the itemDelimiter (2026-09-09)"
    put empty into nx1tDeep
    repeat with nx1tI = 1 to 70
       put "[" after nx1tDeep
@@ -43142,7 +43813,7 @@ private command nx1nxtTestRelayMessages
 end nx1nxtTestRelayMessages
 
 private command nx1nxtTestWsPure
-   local nx1tParsed, nx1tRequest, nx1tFrame, nx1tDecoded, nx1tBuffer
+   local nx1tParsed, nx1tRequest, nx1tFrame, nx1tDecoded, nx1tBuffer, nx1tGot, nx1tError
    nx1nxtSection "websocket helpers (RFC 6455, pure half)"
    put nxWsUrlParse("ws://relay.example.com") into nx1tParsed
    nx1nxtCheck nx1tParsed["host"] is "relay.example.com", "ws url: host"
@@ -43156,6 +43827,16 @@ private command nx1nxtTestWsPure
    nx1nxtCheck nxWsUrlParse("http://x.io") is empty, "an http url refuses"
    nx1nxtCheck nxWsUrlParse("ws://") is empty, "an empty host refuses"
    nx1nxtCheck nxWsUrlParse("ws://h:99999") is empty, "an out-of-range port refuses"
+   -- The 2026-09-09 refusal, the same `or` rule as the JSON path step in
+   -- section 4 and caught the same way: a non-numeric port reached
+   -- `tPortText + 0` and was a hard engine error, not this refusal.
+   put "not run" into nx1tGot
+   try
+      put nxWsUrlParse("wss://h:abc/") into nx1tGot
+   catch nx1tError
+      put "THREW: " & nx1tError into nx1tGot
+   end try
+   nx1nxtCheck nx1tGot is empty, "a non-numeric port refuses, never a hard error (2026-09-09)"
    nx1nxtCheck nxWsUrlParse("ws://a b") is empty, "whitespace refuses"
    put nxWsHandshakeRequest("r.io", 80, "/", nx1kNxVecWsKey, false) into nx1tRequest
    nx1nxtCheck nx1tRequest begins with "GET / HTTP/1.1", "the request line"

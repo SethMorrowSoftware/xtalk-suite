@@ -57,9 +57,9 @@ them into the unified report. That is the only coupling.
 
 WHAT IS FOLDED IN, AND WHAT IS DELIBERATELY NOT. Three members are pure,
 offline and synchronous, so they fold in whole:
-  sodiumxt   sxSelfTest()   21 groups
-  onionxt    oxSelfTest()    10 groups, all offline (no Tor daemon needed)
-  coinxt     stRun          28 sections
+  sodiumxt   sxSelfTest()   24 groups (2026-09-24; count its sxSection calls)
+  onionxt    oxSelfTest()    12 sections, all offline (no Tor daemon needed)
+  coinxt     stRun          32 sections
 box2dxt joined them 2026-08-16 and is the odd one, because its harness is a
 paste-and-run STACK rather than a test file: it carries a verbatim copy of the
 b2k Kit between sentinels (its own tools/sync-embedded-kit.py owns that
@@ -223,20 +223,22 @@ MEMBERS = [
     Member(
         "sodium", "sodiumxt/examples/sodium-tests.livecodescript", "sx1",
         "sxSelfTest", "SodiumXT: the full sx* self-test",
-        "21 groups: encoding, hashing, secretbox, AEAD, pwhash, KDF, "
-        "secretstream, signing, box, seal, key exchange, padding.",
+        "24 groups: encoding, hashing (BLAKE2b, SHA3-256), secretbox, AEAD, "
+        "pwhash, KDF, secretstream, signing, box, seal, key exchange, padding, "
+        "ristretto255 (ABI 8 and 9) and the raw ChaCha20 xor (ABI 10).",
     ),
     Member(
         "onion", "onionxt/examples/onionxt-tests.livecodescript", "ox1",
         "oxSelfTest", "OnionXT: the full ox* self-test",
-        "10 groups, all OFFLINE - no Tor daemon is started or contacted. "
+        "12 sections, all OFFLINE - no Tor daemon is started or contacted. "
         "The live-Tor paths stay in onionxt's own demo.",
     ),
     Member(
         "coin", "coinxt/tests/coin-selftest.livecodescript", "cx1",
         "stRun", "CoinXT: the full cx* self-test",
-        "28 sections across all four phases: hashes, the secp256k1 curve, the "
-        "encoders and addresses, BIP-39/32/44, and the fail-closed regressions.",
+        "32 sections across all five phases: hashes, the secp256k1 curve, the "
+        "encoders and addresses, BIP-340 Schnorr and BIP-341 Taproot, "
+        "BIP-39/32/44, transactions, and the fail-closed regressions.",
         # THE SECOND HARNESS THAT CARRIES ITS OWN LIBRARY (2026-08-17), and the
         # cut is the same one box2dxt needs for its Kit. coin-selftest embeds
         # coinxt/src/coinxt.livecodescript so it can be pasted and run on its
@@ -366,7 +368,7 @@ MEMBERS = [
     ),
     Member(
         "riptide", "riptide/tests/riptide-selftest.livecodescript", "rs1",
-        "rsSelfTest", "Riptide Social (phases 1-2): the rs* self-test",
+        "rsSelfTest", "Riptide Social (phases 1-8): the rs* self-test",
         "The capstone app's harness: the KDF subkey tree, identity to handle "
         "to onion, the RIPTKEY1 key file, the RSH1/RSP1 framings, the post "
         "chain, and the phase-2 live feed layer (BEP44 buffers, ingest "
@@ -595,7 +597,9 @@ SCRIPT_LAYERS = [
         "riptide", "riptide/src/riptide.livecodescript",
         "Riptide script layer (the real library, embedded)",
         "The rs* surface of the capstone app - pure script over the installed "
-        "extensions, phase 1 (identity + the feed wire formats). Embedded so "
+        "extensions, phases 1-8 (phase 5, the call, adds no library surface): "
+        "identity and the feed wire formats, the live feed, media, DMs, the "
+        "LAN mesh, the anon persona and the Nostr rail. Embedded so "
         "the folded riptide harness tests the code it ships with, same as the "
         "coinxt and onionxt layers.",
     ),

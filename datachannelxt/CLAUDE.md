@@ -25,10 +25,12 @@ The library ships bundled under `src/code/<arch>-<platform>/datachannelxt.{so,dl
 `x86-win32`, `universal-mac`; all five committed and pinned in `src/code/MANIFEST.sha256`).
 
 Layout: `src/` (shim, `dcx_abi.h`, `dcx_record.h` registries, `dcx_handle_table.h`,
-`datachannelxt.map` export filter, the `.lcb`, `code/`); `tests/` (C++ smoke and handle tests,
-record golden, TSan suppressions, the OXT harness `datachannel-selftest.livecodescript`);
-`examples/` (helpers, `datachannel-loopback`, the flagship `datachannel-dht-chat`); `tools/`
-(`run-gates.sh` and its gates, `package-extension.py`); `docs/` (the four references).
+`datachannelxt.map` export filter, the `.lcb`, `code/`); `tests/` (C++ smoke, orphan-channel
+and handle tests, record golden, TSan suppressions, the OXT harness
+`datachannel-selftest.livecodescript`, and the browser-interop pair `browser-peer.html` +
+`datachannel-browser-peer.livecodescript`); `examples/` (helpers, `datachannel-loopback`, the
+flagship `datachannel-dht-chat`); `tools/` (`run-gates.sh` and its gates,
+`package-extension.py`); `docs/` (the four references and `browser-interop.md`).
 
 ## Rules
 
@@ -105,7 +107,11 @@ Code comments cite rules 1-3 by number; keep them.
   pin the same literal bytes.
 - **Exports**: only `dcx_*` (plus the C++-mangled `dcx::test::*` smoke-test hooks):
   `src/datachannelxt.map` for GNU ld/lld, an `-exported_symbols_list` derived from it for
-  ld64, and a generated `.def` of undecorated names for MSVC.
+  ld64, and a generated `.def` of undecorated names for MSVC. The `dcx::test::seam_*` hooks
+  and the state behind them compile only under `DCX_TEST_SEAMS`, into the test-only
+  `datachannelxt_seams` library (CMakeLists, test build); the shipped `datachannelxt` never
+  has them, so its export table and ABI do not move. A seam makes ONE real condition true at
+  the point the production code tests it; add one only for a path no public call can reach.
 - **Adding a handler**: `dcx_*` in the shim (validate the handle; `DCX_GUARD_*`; rules 4-5)
   -> `private foreign handler` + public `dc*` wrapper -> check the public name collides with
   no name `_eventName` can return, and a new EVENT name with no public `dc*` handler (script
@@ -166,7 +172,11 @@ Code comments cite rules 1-3 by number; keep them.
    self-deadlock), so both exits hand the id to `orphan_channel` -> `g_orphanChans` ->
    `reap_orphan_channels` on the script thread, as `dcx_channel_new` / `_ex` already delete on
    a `register_channel` failure. `orphan_channel` takes `g_mu` itself, so at the first exit it
-   must run after the peer-lookup block has released it.
+   must run after the peer-lookup block has released it. Driven since 2026-09-24 by
+   `tests/orphan_channel_test.cpp` (the seam build above): each exit parks exactly one rtc id,
+   the next `dcx_poll` deletes it, and the far end sees `E_CHANNEL_CLOSED`. Green under
+   ASan/UBSan and TSan; reverting either exit to a bare return fails it, because the far
+   channel then never closes.
 
 ### Script (LCS / LCB)
 
@@ -220,8 +230,9 @@ Numbered as cited elsewhere in the suite (the suite's `tools/check-lcb-signature
     (engine note 6.5, observed on `datachannel.lcb` 2026-08-18): confirm the installed
     extension came from the checkout you are reading before trusting a line number.
 15. **Opening a demo file from disk builds no window** (engine note 5.5): paste it into a
-    stack script and reopen the stack. The headers of `datachannel-loopback` ("builds its UI
-    on first open") and `datachannel-dht-chat` still teach the old way.
+    stack script and reopen the stack. The headers of `datachannel-loopback` and
+    `datachannel-dht-chat` taught opening the file itself until 2026-09-24; both now teach
+    paste-and-reopen, as the docs do.
 
 ## Engine evidence ledger
 
@@ -239,15 +250,20 @@ Numbered as cited elsewhere in the suite (the suite's `tools/check-lcb-signature
 | 2026-08-27 | CI, no engine | `release-binaries.yml` run 12 (`cec1e85`), two-slice-lipo job | first `universal-mac` dylib committed (both slices built and tested); all five platforms pinned |
 | 2026-08-27 | OXT, two-machine session (platform not recorded) | suite paste; a DHT-signalled WebRTC chat | paste 2440 / 2 / 3, every folded member green; the 2 failures were the core's live loopbacks stalling on a machine blocking UDP to 127.0.0.1 (environment). Same evening the maintainer reported "the DHT-signalled WebRTC chat WORKS (real machines, one LAN)"; which stack (the dht-chat demo or closing-pass leg E) and the selected-pair type were not recorded |
 | 2026-09-12 | CI, no engine | `release-binaries.yml` run 34657390798 (`421bab3`) | every platform rebuilt from a tree containing `23a2914` (C++ gotcha 7) |
+| 2026-09-24 | headless Chromium 141.0.7390.37, Linux x86_64; no engine | `tests/browser-peer.html` against itself, and against the committed `x86_64-linux` library through the `dcx_*` C ABI (a scratch ctypes driver, in both roles) | the page's three checks green; `dcx_send_text` arrived as a string and `dcx_send_data` as an ArrayBuffer, byte-exact; the page's string and ArrayBuffer arrived as TEXT and PAYLOAD events; selected pair host / `prflx` (the browser hid its host address behind an mDNS name). Not the `.lcb`, not an engine: `docs/browser-interop.md` |
 
 ## Status
 
 The whole `dc*` surface is engine-proven (standalone async loopback 2026-08-15; folded
 through 2026-08-27), and the flagship demo ran on one machine on Linux and Windows
-(2026-08-18). No engine has loaded the 2026-09-12 binaries or any `universal-mac` dylib, and
-C++ gotcha 7 is compile-verified with no smoke-test block driving it. The pump's failure
-branches (`dcPollLastError`) are verified statically; needs an OXT pass.
-Still open for this member: browser interop (a real Chrome/Firefox peer), a call across two
+(2026-08-18). No engine has loaded the 2026-09-12 binaries or any `universal-mac` dylib.
+C++ gotcha 7's two exits are driven natively by `tests/orphan_channel_test.cpp` (2026-09-24,
+ASan/UBSan and TSan), not by an engine. The pump's failure branches (`dcPollLastError`) are
+verified statically; needs an OXT pass.
+Still open for this member: browser interop on an engine (the browser page and the OXT half
+exist, with the procedure in `docs/browser-interop.md`; the page ran against the committed
+library in headless Chromium on 2026-09-24, and the OXT script is verified statically; needs
+an OXT pass), a call across two
 networks with real NAT traversal (a `srflx`/`prflx` selected pair; loopback never leaves the
 host), a two-machine run recorded against the dht-chat demo by name (the 2026-08-27 one-LAN
 report does not name its stack), any engine record for

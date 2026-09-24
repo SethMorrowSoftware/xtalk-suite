@@ -8,6 +8,107 @@ message box (interactive -- report panel, clipboard, msg) and heSelfTest()
 (quiet -- returns the report as a value and touches nothing). No second
 stack, no required extensions to be playable.
 
+v0.25.3 -- THE LOBBY OVERLAY ENDS WHEN THE FIRST HAND BEGINS (2026-08-27).
+NO WIRE CHANGED -- not a byte. kHeVersion 0.25.2 -> 0.25.3; kHeHarnessV
+stays 43 here (44 since 2026-09-10 and 45 since 2026-09-24, below);
+kUIVersion stays 15 (no chrome moved: the overlay's controls are the same
+ones, it is dismissed sooner).
+  * THE ONE REAL DEFECT OF THE 2026-08-27 TWO-MACHINE 2d CONTACT. Players
+    joined, the host's Start folded the sit wires and handStart, and the
+    hand dealt and played UNDERNEATH the lobby overlay -- which nothing
+    ever dismissed. Its only exit is Leave, and Leave stops the
+    transport, so the table read as "the game is not starting". No
+    headless run could see it: the overlay's controls do not exist in a
+    paste, so every heLobby call there is a guarded no-op, which is
+    exactly why the netsim and netplay sections were green over the same
+    wires. The handStart fold calls heLobbyHide now (every seat folds
+    handStart, the host its own emission included, so one line dismisses
+    the overlay everywhere at the same wire); heLobbySetVisible pins and
+    RESTORES the itemDelimiter (gotcha 5), because it runs mid-fold now
+    and a clobbered global delimiter would corrupt the caller's resumed
+    parse; and heNetStartGame's refusals also land in the lobby's own net
+    feed, because the status line sits UNDER the overlay the host is
+    looking at and a refused Start read as silence. Verified statically;
+    the 2d re-run on v0.25.3 is what closes it.
+  * LATER CHANGES SHIPPED UNDER THIS SAME kHeVersion (it was not bumped
+    for them, because none changed a wire or the game; the harness version
+    was, twice, because assert sites were added - CLAUDE.md rule 5),
+    recorded here so the changelog does not stop short of the file it
+    heads:
+    - 2026-09-09, WIRE ARITY. A wire is EXACTLY ten tab fields. The
+      sender signs items 1-6 and the host 1-9, but heNetApplyWire hashes
+      the WHOLE raw line into the transcript chain, so an appended field
+      was unsigned text that still moved one victim's chain head -- and
+      that fork never heals (the next genuine wire's prev no longer
+      binds, and every replayed wire is at or below the advanced seq).
+      heEnvWireParse carries the arity out of the parse (measured while
+      the tab delimiter is still in hand), and heEnvVerify drops any line
+      that is not ten fields, before any hex decode, and any line whose
+      last char is a tab: the engine ignores ONE trailing delimiter when
+      counting (root docs/OXT-ENGINE-NOTES.md 2.2), so W & tab still
+      counts ten. A legal wire ends in a 128-hex host signature, so no
+      legal wire changed and protocol-kat's pins were untouched. Four
+      harness checks pin both directions (the untouched wire still
+      verifies; an appended field, an appended EMPTY field and a
+      nine-field line are dropped). The ten-field rule is normative in
+      holdem-spec.md.
+    - 2026-09-10: kHeHarnessV 43 -> 44 for those four assert sites,
+      which had landed under v43 without a bump (the "two totals under
+      one version" ambiguity CLAUDE.md records for v41). The next engine
+      run RECORDS the v44 total rather than matching 667.
+    - 2026-09-11: heBetApply's non-numeric wager refusal is NESTED. Both
+      operands of `or` are evaluated (engine note 2.5), so the one-line
+      `is not a number or is not trunc(...)` ran trunc("abc"); nested,
+      the refusal answers the same whichever way the engine treats that
+      call. Found by the headless execution gate
+      (tools/check-script-vectors.py, the family interpreter through
+      riptide's runner -- logic, not the engine, and no label moves).
+    - 2026-09-24, SECTION 24 ADDED (heTestLeafRun3), kHeHarnessV 44 -> 45:
+      the third tranche of the suite coverage gate's no-test worklist, 14
+      handlers out of it (102 -> 88), consensus-critical first as the
+      suite's work plan orders it: the betting engine's leaves (heBetPay,
+      heBetPayDead, heBetLiveCount, heBetInHandList, heBetSeatPending,
+      heBetNextPending); the v0.24.0 liveness fixes netsim reached but no
+      test named (heNetEngineFold's foldApplied record on both paths and
+      its hand-and-street turn key, heNetTimeoutRearm, heNetTurnClockStart's
+      replayed-clock flag, heNetTimeoutMiss's sit-out at the signed miss
+      count); and the Level 2 helpers' pure branches (heL2ChainOrder,
+      heL2VoidMark, and the refusals heL2CardPointHex and heL2PointOkHex
+      make before any sx* call). Shallow on purpose, like 22 and 23; 50
+      assertions, every one run headlessly and each of eight seeded
+      defects caught by it. heHandSettle stays on the worklist: it ends by
+      sending heNextHandTick, which deals a hand. No wire, KAT or game
+      change; heProbeSodium is the 25th entry in heTestRunAllSections now.
+    Verified statically; needs an OXT pass: the overlay fix, the v45
+    total, the four wire-arity checks and section 24 (none has met an
+    engine; the next run RECORDS the v45 total rather than matching 667).
+
+v0.25.2 -- HOLDE-EM CARRIES ONIONXT: ONION TABLES WITH NO `start using`
+STEP (2026-08-27). NO WIRE CHANGED -- not a byte. kHeVersion 0.25.1 ->
+0.25.2; kHeHarnessV stays 43 (no harness-semantic change; protocol-kat's
+132 pins untouched); kUIVersion stays 15.
+  * onionxt/src/onionxt.livecodescript is EMBEDDED between the
+    tools/sync-demo-embeds.py sentinels, just below this block comment,
+    so an onion table needs only the tor daemon: the one wiring step left
+    in an otherwise paste-and-run stack, which a newcomer met as a
+    refusal message. The embed carries NO DROP_HANDLERS entry, on
+    purpose: this stack defines no socket handlers of its own, so
+    OnionXT's `on socket` wrappers must ride along or its sockets have
+    nothing listening. The collision check passed clean on first contact.
+  * The suite fold CUTS the embedded span (strip_spans on the holdem
+    row): the paste already carries the layer once, verbatim, and a
+    prefixed second copy would be dead code whose socket handlers the
+    engine never dispatches to.
+  * The four onion refusal messages name a DAMAGED EMBED instead of a
+    missing load (the old "start using onionxt" advice pointed at a step
+    that no longer exists). heHasOnion stays a live probe: false still
+    fails closed, it now means the carried copy is damaged.
+  * ENGINE RECORD (holde-em/CLAUDE.md's ledger; the runbook's section 8):
+    the same evening's suite paste, two machines on one LAN, platform not
+    recorded, ran this version folded at harness 43: 667/0, the FIRST
+    engine run of the onionxt-carrying file. The live-tor legs stay the
+    2f exit.
+
 v0.25.1 -- LEAF TRANCHE 2 (2026-08-27). NO WIRE CHANGED -- not a byte.
 kHeVersion 0.25.0 -> 0.25.1, kHeHarnessV 42 -> 43 (a new section, so a
 stale paste identifies itself); kUIVersion stays 15 (no chrome moved).
@@ -35,7 +136,14 @@ NOTE: THIS FILE's sxRistretto* calls have not run on an engine (the
 exports themselves are engine-observed: sodiumxt's ABI-9 records,
 2026-08-17 Windows and 2026-08-18 Linux, the batch call included with its
 index-naming failure path - so the pass this member owes is its own
-caller, not the library).
+caller, not the library). (CORRECTED 2026-09-24, and left standing above
+as written: that NOTE understated its own date. The 2026-08-17 suite paste
+-- Windows x86_64, NT 10.0, OXT 9.6.3, this harness folded at v0.24.4 /
+h41, 538/0 -- had already closed runbook rows 15 and 27, running this
+file's per-point Level 2 calls and its DLEQ legs. What was genuinely new
+here was the batch CALL SITE below, and the 2026-08-24 paste ran it:
+584/0 at v0.25.0 / h42, the batch path byte-for-byte equal to the
+per-point fallback. Both records are holde-em/CLAUDE.md's ledger.)
   * heL2MaskDeckHex grew a BATCH FAST PATH (plan 4f's batch handler,
     pulled forward ahead of 4f's measure-first order -- the headless
     backlog's A1): on SodiumXT ABI 9, gated on the same cached
@@ -52,8 +160,11 @@ caller, not the library).
     section 16 pins the other half: batch and loop agree byte-for-byte
     on the fixed KAT deck (deterministic scalars, no randomness), and a
     corrupted point still voids with its output position. The wrong
-    "52 crossings" figures in this handler's comment and in
-    IMPLEMENTATION-PLAN 4f are corrected in the same change.
+    "52 crossings" figures in this handler's comment and in the member's
+    implementation plan (its 4f) are corrected in the same change. (That
+    plan was deleted 2026-09-24, when the suite's docs/WORK-PLAN.md
+    replaced every member plan; git history keeps it, and the open 4f
+    work is that list's now.)
   * SECTION 22 ADDED (heTestLeafRun): the first tranche of the suite
     coverage gate's no-test worklist -- the nine pure leaves its own
     comment names as the place to start (heRank5, heCardRankVal,
@@ -257,7 +368,9 @@ live legs are unchanged and still owed.
     at stream death) plus a last-heard stamp (the only signal rp1 has -- it
     surfaces no disconnect event). OPEN: telling a SPECTATOR from a player
     still needs a wire/UI decision and none was invented here (recorded in
-    CLAUDE.md / IMPLEMENTATION-PLAN.md).
+    CLAUDE.md and the member plan then; the owner DEFERRED spectators the
+    same day, 2026-08-16, and that deferral is what CLAUDE.md, the spec and
+    the suite's docs/WORK-PLAN.md record now).
   * THE PLATE'S STATUS OUTRANKS ITS STOPWATCH (heSeatFaceLabel, now pure
     and pinned). A sitting-out seat whose turn came up painted "0s" --
     which is exactly what heNetTurnLimitSecs returns FOR a sitting-out
@@ -1123,12 +1236,29 @@ needs an OXT pass.
 -- ed25519 scalar clamp are pure byte manipulation.
 --
 -- STATUS: implemented AND run on a real OXT engine against a live tor daemon.
--- The core paths are confirmed on-engine: dialing through the SOCKS proxy, the
--- control-port connect + SAFECOOKIE auth, GETINFO / SETEVENTS, publishing a v3
--- onion service, accepting an inbound (Tor-forwarded) connection, streaming data
--- both ways, and bootstrap/HS_DESC events. The only path NOT yet exercised is the
--- optional Mode B (launching a bundled tor via `open process`), still flagged
--- "VERIFY:" below. The pure-compute paths are pinned by tools/onion-kat.py.
+-- The core paths are confirmed on-engine (onionxt/CLAUDE.md, the evidence
+-- ledger): dialing through the SOCKS proxy, the control-port connect +
+-- SAFECOOKIE auth, GETINFO / SETEVENTS, publishing a v3 onion service,
+-- accepting an inbound (Tor-forwarded) connection, streaming data both ways,
+-- and bootstrap/HS_DESC events. The offline surface runs inside every dated
+-- suite paste from 2026-08-10 (oxSelfTest), and the pure-compute paths are
+-- pinned by tools/onion-kat.py.
+--
+-- NOT yet exercised on an engine, each "verified statically; needs an OXT
+-- pass + a live-Tor pass" (the still-VERIFY list in onionxt/CLAUDE.md, which
+-- is the authority; this is its index): the optional Mode B launch
+-- (oxLaunchTor / oxStopTor over `open process`, including the 2026-09-24
+-- result checks); an OnionXT-to-OnionXT onion dial and the two-instance round
+-- trip; the raw socket id a live accept hands oxPeerAccepted; the 2026-08-23
+-- foreign-socket `pass` lines and the 2026-08-24 socket-message split on a
+-- live socket; the 2026-09-09 oxWrite result capture and callback pins; the
+-- four inline hypotheses (runbook B.12); and the live negative paths (a wrong
+-- cookie, a stalled daemon, a peer vanishing mid-handshake, and which of the
+-- two SOCKS timeout paths fires - distinguishable since 2026-09-24).
+-- Until 2026-09-24 this header said "the only path NOT yet exercised is the
+-- optional Mode B", which was true at bring-up and understated everything
+-- added since; a carried header is read in every stack that embeds this file
+-- and in the suite paste, so it lists rather than summarises.
 --
 -- Conventions (see CLAUDE.md): public API oxPascalCase; locals t..., params
 -- p..., script-locals s..., constants k...; SOCKS5 is BINARY (byte / numToByte /
@@ -1972,9 +2102,40 @@ command oxStreamDeadline pStream
    local tState
    put sStreams[pStream]["state"] into tState
    if tState is not "connected" and tState is not "closed" then
-      oxStreamFail pStream, "SOCKS handshake timed out"
+      oxStreamFail pStream, oxSocksTimeoutReason("deadline", tState)
    end if
 end oxStreamDeadline
+
+private function oxSocksTimeoutReason pWhich, pStage
+   -- TWO PATHS TIME A HANDSHAKE OUT, AND UNTIL 2026-09-24 THEY SAID THE SAME
+   -- WORDS. oxStreamDeadline above is OnionXT's own watchdog, armed by oxDial
+   -- for exactly kOxHandshakeTimeout ms; oxSocketTimeout below is the ENGINE's
+   -- socketTimeout message, which fires on the engine-global
+   -- socketTimeoutInterval (oxDial sets it, but so may any co-loaded library
+   -- that opens a socket after it). Both reported "SOCKS handshake timed out",
+   -- so the one real stall on record - the 2026-09-02 coin-wallet log, which
+   -- failed closed and retried - cannot say which of them fired, and engine
+   -- note 6.1 (socketTimeout REPEATS while a read is pending) stays
+   -- DOCUMENTED for want of exactly that observation.
+   --
+   -- So the reason now names the PATH and the STAGE the stream stalled in.
+   -- The stage is worth more than it looks: "connecting" means the TCP connect
+   -- to the SOCKS port never completed, "greeting" that the port accepted but
+   -- never answered the method negotiation (a stalled or not-yet-bootstrapped
+   -- tor), and "replyhead" that tor took the CONNECT and never reported back
+   -- (the circuit or the onion rendezvous is what stalled).
+   --
+   -- THE PREFIX IS KEPT VERBATIM. Every reason still begins with "SOCKS
+   -- handshake timed out", so a log search or an app that matched the old
+   -- words still matches; only the parenthesis is new. Verified statically;
+   -- needs an OXT pass + a live-Tor pass (a forced stall, runbook row 44).
+   if pWhich is "deadline" then
+      return "SOCKS handshake timed out (OnionXT deadline of " & kOxHandshakeTimeout & \
+            " ms passed, stalled at stage " & pStage & ")"
+   end if
+   return "SOCKS handshake timed out (engine socketTimeout fired, stalled at stage " & \
+         pStage & ")"
+end oxSocksTimeoutReason
 
 private command oxStreamFail pStream, pError
    -- Fail closed: report the error to the app, then close and forget the stream.
@@ -2722,7 +2883,9 @@ function oxSocketTimeout pSocketID
    if tHandle is not empty then
       put sStreams[tHandle]["state"] into tState
       if tState is not "connected" then
-         oxStreamFail tHandle, "SOCKS handshake timed out"
+         -- A different reason from oxStreamDeadline's on purpose: see
+         -- oxSocksTimeoutReason for why the two paths must be told apart.
+         oxStreamFail tHandle, oxSocksTimeoutReason("socketTimeout", tState)
       end if
       return "true"
    end if
@@ -2755,12 +2918,38 @@ end socketTimeout
 command oxLaunchTor pTorPath, pDataDir, pSocksPort, pControlPort
    -- Write a minimal torrc into pDataDir and launch pTorPath against it, so tor
    -- exits with the app (__OwningControllerProcess) and uses cookie auth. Returns
-   -- empty on a clean launch attempt, or an error string. The caller then polls
-   -- oxConnectControl / oxBootstrapProgress; this does not wait for bootstrap.
+   -- empty once the torrc is written AND `open process` has accepted the command
+   -- line, or an "OnionXT: ..." error string (docs/05's command contract). The
+   -- caller then polls oxConnectControl / oxBootstrapProgress; this does not wait
+   -- for bootstrap, and an empty result does NOT mean tor is up - only that the
+   -- engine started what it was given (tor can still exit on a bad torrc or a
+   -- port already in use: runbook trap 5.3.1).
+   --
+   -- BOTH RESULTS ARE READ, AND UNTIL 2026-09-24 NEITHER WAS. The torrc write
+   -- and `open process` report a failure through `the result` (the engine's
+   -- command convention; not yet observed for these two on OXT), and this
+   -- handler ignored both and returned empty unconditionally - so a data
+   -- directory that did not exist, or a read-only one, came back as a clean
+   -- launch, and so did any launch failure the engine reported; closing-pass
+   -- leg F's first PASS line ("torrc written, process started") claimed more
+   -- than the code had checked. Each is now captured on the very next line
+   -- (any intervening statement can clear `the result`: the oxWrite
+   -- discipline) and fails closed with a reason that names what failed. Both
+   -- sit inside try/catch as well, because a platform with no process support
+   -- may THROW rather than set the result, and a library command must answer
+   -- with a string either way. What this cannot promise: that a WRONG tor path
+   -- is reported here at all - an engine that forks and then execs may learn
+   -- of it only when the child dies, after this has returned. Leg F records
+   -- what OXT does. Verified statically; needs an OXT pass + a live-Tor pass.
+   --
+   -- The two empty-argument refusals come FIRST, before anything touches disk
+   -- or changes state, which is what lets the offline harness call
+   -- `oxLaunchTor empty, empty, empty, empty` by name (onionxt-tests section 3)
+   -- instead of carrying a coverage exemption for it.
    if pTorPath is empty or pDataDir is empty then
       return "OnionXT: oxLaunchTor needs a tor binary path and a data directory"
    end if
-   local tSocks, tControl, tTorrc, tRcPath
+   local tSocks, tControl, tTorrc, tRcPath, tLogPath, tWriteErr, tLaunchErr, tError
    if pSocksPort is empty then
       put kOxSocksPortDefault into tSocks
    else
@@ -2777,10 +2966,34 @@ command oxLaunchTor pTorPath, pDataDir, pSocksPort, pControlPort
    put "DataDirectory " & pDataDir & oxCrlf() after tTorrc
    -- Tie tor's lifetime to this process where the platform supports it.
    put "__OwningControllerProcess " & oxProcessId() & oxCrlf() after tTorrc
+   -- TOR'S LOG GOES TO A FILE, NOT TO THE PIPE (2026-09-24). The process is
+   -- opened `for read` and nothing ever reads it, and tor's default is notice
+   -- logging to stdout - so a long-running child writing into a pipe nobody
+   -- drains could fill the pipe buffer and block inside its next log write
+   -- (inferred from how pipes behave, not observed here). tor's own manual
+   -- (tor(1), under --hush) documents that console logging stops once the
+   -- torrc says to log somewhere else, so this line moves the steady stream to
+   -- a file; only the few lines tor prints before it has read this torrc
+   -- still reach the pipe.
+   -- The side benefit is the one leg F wanted: tor's own "Bootstrapped 100%"
+   -- line is now readable in <pDataDir>/onionxt-tor.log, which OnionXT still
+   -- does not read for you. Unquoted, like DataDirectory above, so a path with
+   -- a space rides the same assumption that line always has (inferred from
+   -- tor's config parser taking the rest of the line; needs the leg F run).
+   put pDataDir & "/onionxt-tor.log" into tLogPath
+   put "Log notice file " & tLogPath & oxCrlf() after tTorrc
    put pDataDir & "/onionxt-torrc" into tRcPath
-   put tTorrc into url ("binfile:" & tRcPath)
-   oxSetSocksPort tSocks
-   oxSetControlPort tControl
+   try
+      put tTorrc into url ("binfile:" & tRcPath)
+      put the result into tWriteErr
+   catch tError
+      put "the write threw:" && tError into tWriteErr
+   end try
+   if tWriteErr is not empty then
+      -- Nothing has changed yet: the ports are still the caller's, no process
+      -- exists. A missing or read-only data directory lands here.
+      return "OnionXT: oxLaunchTor could not write the torrc" && tRcPath & ":" && tWriteErr
+   end if
    -- open process is platform-specific; launch tor detached with -f <torrc>.
    -- QUOTE BOTH PATHS. The command line is split on whitespace, so an unquoted
    -- "C:/Program Files/Tor/tor.exe" arrives as the two arguments "C:/Program"
@@ -2789,7 +3002,23 @@ command oxLaunchTor pTorPath, pDataDir, pSocksPort, pControlPort
    -- normal case on Windows and macOS, not an edge case. The same applies to
    -- the torrc path, which is derived from pDataDir.
    -- VERIFY: process launch and teardown on your target OXT build.
-   open process (quote & pTorPath & quote & " -f " & quote & tRcPath & quote) for read
+   try
+      open process (quote & pTorPath & quote & " -f " & quote & tRcPath & quote) for read
+      put the result into tLaunchErr
+   catch tError
+      put "open process threw:" && tError into tLaunchErr
+   end try
+   if tLaunchErr is not empty then
+      -- The torrc stays on disk (Mode B cleans up nothing yet: docs/07), but
+      -- the library's ports are NOT re-pointed at a tor that never started.
+      return "OnionXT: oxLaunchTor could not start" && pTorPath & ":" && tLaunchErr
+   end if
+   -- Re-point the rest of the API at the launched tor only now that a launch
+   -- was accepted. Until 2026-09-24 these two ran BEFORE `open process`, so a
+   -- failed launch still left every later oxDial / oxConnectControl aimed at
+   -- ports nothing was listening on.
+   oxSetSocksPort tSocks
+   oxSetControlPort tControl
    return empty
 end oxLaunchTor
 
@@ -3252,7 +3481,7 @@ end oxProcessId
 --------------------------------------------------------------------------
 
 constant kHeVersion = "0.25.3"
-constant kHeHarnessV = "44"
+constant kHeHarnessV = "45"
 constant kUIVersion = "15"
 
 -- card contract (mirrored in tools/evaluator-kat.py): index 1..52,
@@ -4517,9 +4746,13 @@ end heAuditDealLog
 -- Twinned line for line by the l2_* mirrors in tools/protocol-kat.py,
 -- which the file's INDEPENDENT RFC 9496 ristretto reference drives: the
 -- pinned values hold this section and the reference together, and
--- heTestLevel2Run re-checks the same constants on-engine. Everything
--- below: verified statically; needs an OXT pass (the sx* call shapes above
--- all).
+-- heTestLevel2Run re-checks the same constants on-engine, and has: the
+-- 2026-08-17 suite paste (Windows x86_64, NT 10.0, OXT 9.6.3; this harness
+-- folded at v0.24.4 / h41, 538/0) closed runbook row 15 -- the sx* call
+-- shapes this section assumes, and its pinned l2_* values, on an engine
+-- (holde-em/CLAUDE.md's ledger). This label read "verified statically;
+-- needs an OXT pass (the sx* call shapes above all)" until 2026-09-24.
+-- What stays owed is the played-hand wiring and the 4f budget above.
 --------------------------------------------------------------------------
 
 function heL2HasRistretto
@@ -4950,8 +5183,19 @@ end heL2RevealUnmaskHex
 -- refusal is a distinct "void:..." string; attribution is DIRECT
 -- (named=pos) when the offending record is itself publicly refusable and
 -- DEFERRED (named=0 -> heL2VoidAudit) when only the reveals can say whose
--- step lied. Verified statically; needs an OXT pass (the ABI-9 sx* call
--- shapes have never run on an engine).
+-- step lied.
+--
+-- ENGINE-PROVEN, folded into the suite paste (holde-em/CLAUDE.md's ledger;
+-- the runbook's section 8). The 2026-08-17 paste (Windows x86_64, NT 10.0,
+-- OXT 9.6.3; this harness at v0.24.4 / h41, 538/0) closed runbook rows 15
+-- and 27: the ABI-9 sx* call shapes below ran, and a wrong unmask was
+-- refused INSTANTLY and named, with no audit round. The 2026-08-24 paste
+-- (Windows x86_64, OXT 9.6.3; v0.25.0 / h42, 584/0) ran the DLEQ proof and
+-- refusal legs green again, beside the batch mask path. This label read
+-- "the ABI-9 sx* call shapes have never run on an engine" until
+-- 2026-09-24, which understated both records. Still owed, and not by this
+-- block: nothing wires the machine to a PLAYED hand yet (Level 2 play and
+-- 4f are open work), so no engine has run it over a live wire.
 --------------------------------------------------------------------------
 
 function heL2HasDleq
@@ -8337,13 +8581,16 @@ command heNetSeatLateJoiners
    -- v0.24.0 (F7): "has joined" is a HISTORICAL fact and was the only test --
    -- so a departed peer was seated as a ghost. Current liveness is now
    -- required (heNetPubIsLive, which carries what each transport can prove).
-   -- OPEN DECISION, deliberately not invented here: a SPECTATOR (spec 4's
-   -- read-only role) is still indistinguishable from a player at this point.
-   -- The admission token has a role field, but every client this build can
-   -- talk to sends "player" in it, so refusing on role would refuse real
-   -- players; declaring spectator intent needs a wire/UI decision, and this
-   -- change was scoped to introduce none. Recorded in CLAUDE.md and
-   -- IMPLEMENTATION-PLAN.md.
+   -- SPECTATORS ARE DEFERRED (the owner, 2026-08-16: "we do not need
+   -- spectators at this point"; holde-em/CLAUDE.md, spec 4 and the suite's
+   -- docs/OPEN-DECISIONS.md record it). So a spectator (spec 4's read-only
+   -- role) is indistinguishable from a player here, BY DECISION rather than
+   -- as an open question: the admission token has a role field, but every
+   -- client this build can talk to sends "player" in it, so refusing on
+   -- role would refuse real players, and a joiner at a table with a free
+   -- seat is seated at the next boundary with no way to decline. Picking
+   -- spectators back up needs a wire/UI decision (a role a joiner can
+   -- choose, or a sit-request the host answers), not a fix in this loop.
    local tPubHex, tPubsTxt, tSeatNum, tMaxSeats
    if gGame["isHost"] is not "true" then
       exit heNetSeatLateJoiners
@@ -14727,6 +14974,7 @@ command heTestRunAllSections
    heRunSection "heTestHelpersRun"
    heRunSection "heTestLeafRun"
    heRunSection "heTestLeafRun2"
+   heRunSection "heTestLeafRun3"
    heRunSection "heProbeSodium"
 end heTestRunAllSections
 
@@ -16375,8 +16623,16 @@ command heTestLevel2VoidRun
    -- the Python twins pinned from the independent reference, so a green
    -- run pins engine, xTalk, and reference to one attribution answer.
    -- SKIPs without SodiumXT; the machine half SKIPs below ABI 8; the DLEQ
-   -- half SKIPs by name below ABI 9 (the sx* DLEQ calls have never run on
-   -- an engine -- this section IS their first-contact harness).
+   -- half SKIPs by name below ABI 9. This section WAS the sx* DLEQ calls'
+   -- first-contact harness, and that contact is on record: the 2026-08-17
+   -- suite paste (Windows x86_64, NT 10.0, OXT 9.6.3; 538/0 folded at
+   -- v0.24.4 / h41) closed runbook rows 26 (the five bots attributed; 4d
+   -- by inference from the member total) and 27 (a wrong unmask refused
+   -- instantly and named) here, and the 2026-08-24 paste (584/0 at
+   -- v0.25.0 / h42) ran the DLEQ proof and refusal legs green again
+   -- (holde-em/CLAUDE.md's ledger; the runbook's section 8). It is
+   -- regression cover now; a SKIP of the DLEQ half on a later run means
+   -- the loaded SodiumXT is below ABI 9, not that the calls are untried.
    local tSeedsA, tCommitsA, tTableData, tKeyData, tDeckList, tDealA, tStackA
    local tBase, tD1, tD2, tD3, tPipe1, tSh1, tC0, tV1, tV2, tV3
    local tH0, tW1, tW2, tBad2, tBad3, tRevTxt, tStA, tCardTxt, tHoleTxt
@@ -17724,6 +17980,151 @@ command heTestLeafRun2
    heTContains "leaf2: ...carrying the wire type", gGame["log"], "handStart"
    put tSaved into gGame
 end heTestLeafRun2
+
+command heTestLeafRun3
+   -- 24: THIRD TRANCHE of the coverage worklist's no-test category
+   -- (2026-09-24), CONSENSUS-CRITICAL FIRST, the order the suite's work
+   -- plan gives: the betting engine's own leaves (every client folds every
+   -- wire through them, so a wrong chip here is a wrong chip everywhere and
+   -- the replay audit re-derives it clean); the v0.24.0 liveness fixes no
+   -- test NAMED although netsim reaches them (heNetEngineFold's
+   -- foldApplied record, heNetTimeoutRearm's bounded retry,
+   -- heNetTurnClockStart's replayed-clock flag, heNetTimeoutMiss's
+   -- transcript-derived sit-out); and the Level 2 helpers' PURE branches,
+   -- the refusals that return before any sx* call, so they run on every
+   -- engine and in the headless gate alike (the ristretto halves stay
+   -- sections 16 and 19's). SHALLOW ON PURPOSE, the section-22 precedent:
+   -- a value pin per branch. Same selection rule: pure functions and
+   -- gGame-only handlers on a SYNTHETIC gGame saved and restored around
+   -- the block (gHudDirty too, which the folds mark). Nothing here arms a
+   -- timer, touches a control, plays a sound or crosses an FFI: the folds
+   -- below are blind posts, never an `act`, because an act's accepted path
+   -- plays its verb's sound. heHandSettle is NOT here, deliberately, though
+   -- the plan names it: it ends by sending heNextHandTick, which DEALS A
+   -- HAND, and a harness must never arm that (this file's CLAUDE.md, the
+   -- fold contract).
+   local tSaved, tHudSaved, tS, tV, tStacksA, tTxt, tI
+   put return & "-- 24. Leaf tranche 3: consensus-critical leaves (shallow)" & return after gRpt
+   set the itemDelimiter to comma
+
+   -- the betting engine's leaves, on a REAL heads-up hand state from
+   -- heBetNewHand (seat 1 is the button and so the small blind, spec 8.1)
+   put 1000 into tStacksA[1]
+   put 1000 into tStacksA[3]
+   put heBetNewHand(10, 20, 0, tStacksA, "1,3", 1) into tS
+   put heBetPay(tS, 3, 40) into tS
+   heTAssert "leaf3: heBetPay takes the chips from behind", tS["stackBy"][3], 960
+   heTAssert "leaf3: heBetPay puts them on the street", tS["streetBy"][3], 40
+   heTAssert "leaf3: heBetPay counts them into the hand", tS["handBy"][3], 40
+   heTAssert "leaf3: heBetPay with chips behind is not all-in", tS["allinBy"][3], "false"
+   put heBetPay(tS, 3, 960) into tS
+   heTAssert "leaf3: heBetPay to zero behind flags all-in", tS["allinBy"][3], "true"
+   heTAssert "leaf3: ...with the whole stack in the hand", tS["handBy"][3], 1000
+   put heBetPayDead(tS, 1, 5) into tS
+   heTAssert "leaf3: heBetPayDead goes into the hand", tS["handBy"][1], 5
+   heTAssert "leaf3: heBetPayDead never into the street bet", tS["streetBy"][1], 0
+   heTAssert "leaf3: heBetPayDead comes from behind", tS["stackBy"][1], 995
+   heTAssert "leaf3: heBetLiveCount skips the all-in seat", heBetLiveCount(tS), 1
+   put "true" into tS["foldedBy"][1]
+   heTAssert "leaf3: heBetInHandList drops the folded seat", heBetInHandList(tS), "3"
+   heTAssert "leaf3: heBetLiveCount of folded plus all-in is 0", heBetLiveCount(tS), 0
+   -- who still owes action: a bigger bet to face, or no act since it
+   put heBetNewHand(10, 20, 0, tStacksA, "1,3", 1) into tS
+   put 20 into tS["betCur"]
+   put 10 into tS["streetBy"][1]
+   put 20 into tS["streetBy"][3]
+   put "true" into tS["actedBy"][3]
+   heTAssert "leaf3: heBetSeatPending when facing a bigger bet", heBetSeatPending(tS, 1), true
+   heTAssert "leaf3: heBetSeatPending not after matching and acting", heBetSeatPending(tS, 3), false
+   heTAssert "leaf3: heBetNextPending finds the seat that owes", heBetNextPending(tS, 3), 1
+   put 20 into tS["streetBy"][1]
+   put "true" into tS["actedBy"][1]
+   heTAssert "leaf3: heBetNextPending of a closed round is 0", heBetNextPending(tS, 3), 0
+   put 10 into tS["streetBy"][1]
+   put "false" into tS["actedBy"][1]
+   put "true" into tS["allinBy"][1]
+   heTAssert "leaf3: heBetSeatPending never for an all-in seat", heBetSeatPending(tS, 1), false
+
+   -- the Level 2 helpers' pure branches: chain order, the void latch,
+   -- and the two refusals that return BEFORE the ristretto probe
+   heTAssert "leaf3: heL2ChainOrder drops the hole slot's owner", heL2ChainOrder(4, 2), "1,3,4"
+   heTAssert "leaf3: heL2ChainOrder of a board slot is every position", heL2ChainOrder(3, 0), "1,2,3"
+   heTAssert "leaf3: heL2ChainOrder of a lone owner is empty", heL2ChainOrder(1, 1), empty
+   put "shuffle" into tV["phase"]
+   put heL2VoidMark(tV, 2, "void:dup-point") into tV
+   heTAssert "leaf3: heL2VoidMark latches the phase", tV["phase"], "void"
+   heTAssert "leaf3: heL2VoidMark names the position", tV["named"], 2
+   heTAssert "leaf3: heL2VoidMark keeps the reason", tV["why"], "void:dup-point"
+   heTAssert "leaf3: heL2VoidMark marks the last record void", tV["last"], "void"
+   heTAssert "leaf3: heL2CardPointHex refuses card 0", heL2CardPointHex(0), "void:card-range"
+   heTAssert "leaf3: heL2CardPointHex refuses card 53", heL2CardPointHex(53), "void:card-range"
+   heTAssert "leaf3: heL2CardPointHex refuses a non-integer", heL2CardPointHex(2.5), "void:card-range"
+   heTAssert "leaf3: heL2PointOkHex refuses a short point", heL2PointOkHex("abcd"), "void:point-format"
+   put empty into tTxt
+   repeat with tI = 1 to 32
+      put "zz" after tTxt
+   end repeat
+   heTAssert "leaf3: heL2PointOkHex refuses 64 non-hex chars", heL2PointOkHex(tTxt), "void:point-format"
+
+   -- the liveness folds, on a SYNTHETIC gGame (the section-22 pattern)
+   put gGame into tSaved
+   put gHudDirty into tHudSaved
+   put empty into gGame
+   -- heNetTurnClockStart: the clock restarts, the latch clears, and the
+   -- REPLAYED flag follows catchUpTo (v0.24.0 F2: a waiver keyed on the
+   -- clock, so it dies with its turn)
+   put "true" into gGame["timeoutSent"]
+   put 12 into gGame["catchUpTo"]
+   heNetTurnClockStart
+   heTAssert "leaf3: heNetTurnClockStart clears the timeout latch", gGame["timeoutSent"], "false"
+   heTAssert "leaf3: heNetTurnClockStart in catch-up marks the clock replayed", gGame["turnStale"], "true"
+   heTAssert "leaf3: heNetTurnClockStart stamps the clock", gGame["turnStartMs"] is a number, true
+   put empty into gGame["catchUpTo"]
+   heNetTurnClockStart
+   heTAssert "leaf3: heNetTurnClockStart live is not replayed", gGame["turnStale"], "false"
+   -- heNetTimeoutRearm: a REFUSED timeout restarts the interval rather
+   -- than leaving the latch set for good (v0.24.0 F3, the silent stall)
+   put "true" into gGame["timeoutSent"]
+   put 0 into gGame["turnStartMs"]
+   heNetTimeoutRearm
+   heTAssert "leaf3: heNetTimeoutRearm clears the latch", gGame["timeoutSent"], "false"
+   heTAssert "leaf3: heNetTimeoutRearm restarts the interval", gGame["turnStartMs"] > 0, true
+   -- heNetTimeoutMiss: consecutive misses sit a seat out at the signed
+   -- cfg's count (default kHeDefaultMisses), transcript-derived consensus
+   heNetTimeoutMiss 4
+   heTAssert "leaf3: heNetTimeoutMiss counts a miss", gGame["missCntBy"][4], 1
+   heTAssert "leaf3: ...one miss does not sit the seat out", gGame["sitOutBy"][4] is "true", false
+   heNetTimeoutMiss 4
+   heTAssert "leaf3: heNetTimeoutMiss sits out at the default count", gGame["sitOutBy"][4], "true"
+   heTContains "leaf3: ...and says so in the net log", gGame["netLog"], "sits out after 2 missed turns"
+   put "miss=3" into gGame["cfgBody"]
+   heNetTimeoutMiss 5
+   heNetTimeoutMiss 5
+   heTAssert "leaf3: heNetTimeoutMiss follows a signed miss=3", gGame["sitOutBy"][5] is "true", false
+   heNetTimeoutMiss 5
+   heTAssert "leaf3: ...and sits out at the third", gGame["sitOutBy"][5], "true"
+   -- heNetEngineFold: the outcome is RECORDED (foldApplied) on both paths,
+   -- because three callers write consensus state around a fold that can
+   -- refuse (v0.24.0 F4/F5); and an applied fold re-aims the act clock
+   put empty into gGame
+   put 7 into gGame["handNum"]
+   put "hand" into gGame["phase"]
+   put heBetNewHand(10, 20, 0, tStacksA, "1,3", 1) into gGame["state"]
+   heNetEngineFold "bidSB", 3, 10
+   heTAssert "leaf3: heNetEngineFold records a REFUSED fold", gGame["foldApplied"], "false"
+   heTContains "leaf3: ...logs the engine's reason", gGame["netLog"], "engine-rejected bidSB bidSB-wrong-seat"
+   heTAssert "leaf3: ...and moves no consensus state", gGame["state"]["stackBy"][3], 1000
+   heNetEngineFold "bidSB", 1, 10
+   heTAssert "leaf3: heNetEngineFold records an APPLIED fold", gGame["foldApplied"], "true"
+   heTAssert "leaf3: ...and commits the engine's state", gGame["state"]["stackBy"][1], 990
+   heTAssert "leaf3: ...a blinds-phase fold aims no act clock", gGame["turnKey"], empty
+   heNetEngineFold "bidBB", 3, 20
+   heTAssert "leaf3: heNetEngineFold on the big blind opens the action", gGame["state"]["toAct"], 1
+   heTAssert "leaf3: ...and the turn key carries hand AND street (v0.24.3)", gGame["turnKey"], "act,1,0,7-preflop"
+   heTAssert "leaf3: ...on a freshly started live clock", gGame["timeoutSent"], "false"
+   put tSaved into gGame
+   put tHudSaved into gHudDirty
+end heTestLeafRun3
 
 function heTIdxOf pNamesTxt
    local tOut, tNameTxt, tNames

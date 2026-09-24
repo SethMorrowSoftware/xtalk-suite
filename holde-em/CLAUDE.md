@@ -16,7 +16,7 @@ ONE paste-and-run stack, `src/holdem.livecodescript`, holds the game, its
 self-test harness, the diagnostics `heProbeSodium` / `heProbeTorrent` /
 `heProbeKit` / `heProbeSounds`, and the carried onionxt layer between
 `tools/sync-demo-embeds.py` sentinels. Current: `kHeVersion` 0.25.3,
-`kHeHarnessV` 44, `kUIVersion` 15.
+`kHeHarnessV` 45, `kUIVersion` 15.
 
 `holdem-spec.md` is the contract. Where code differs, the code wins and the
 spec is updated. Because chips may someday carry value, read spec 2 (threat
@@ -59,8 +59,9 @@ assets/cards/, assets/sounds/  vendored Kenney CC0 art and audio (see each NOTIC
    point. Bump `kHeHarnessV` on every engine-behaviour change AND whenever
    assert sites are added (v0.24.5 added five sites without a bump, so "v41"
    names two totals; v43 -> v44 on 2026-09-10 covered the four wire-arity
-   sites). Call sites are not checks (at v40, 374 sites reported 507 checks):
-   the next engine run RECORDS the v44 total rather than matching 667.
+   sites, v44 -> v45 on 2026-09-24 section 24's). Call sites are not checks
+   (at v40, 374 sites reported 507 checks): the next engine run RECORDS the
+   v45 total rather than matching 667.
    `kHeHarnessV` is printed in the report header so a stale paste identifies
    itself. Asserts are self-diagnosing: print what was observed against what
    was expected, never a bare FAIL, and write first-contact tests to debug
@@ -191,7 +192,7 @@ itself is catalogued in the suite's
   line that is not ten fields, before decode, and refuses a last char that is a
   tab, because the engine ignores one trailing delimiter when counting (engine
   note 2.2). A legal wire ends in a 128-hex host signature. Four harness checks
-  pin both directions; they have not yet met an engine (the v44 run owes them).
+  pin both directions; they have not yet met an engine (the v45 run owes them).
 - **Both operands are evaluated (engine note 2.5).** `heBetApply`'s refusal
   `X is not a number or X is not trunc(X)` evaluated `trunc("abc")`; it is
   nested now. Whether `trunc` of a non-number throws on the engine is
@@ -337,12 +338,13 @@ and bet chip. `tools/check-table-layout.py` re-derives all 159 control rects
 clipboard and `msg`, ending `==== n pass, m fail, k skip ====`. `heSelfTest()`
 is quiet: it returns the report with the first line `n passed, m failed`
 (riptide's `rsSelfTest` shape), builds no control, never touches the clipboard,
-and sweeps pending `heNet*` sends. Both drive `heTestRunAllSections`, 24
+and sweeps pending `heNet*` sends. Both drive `heTestRunAllSections`, 25
 sections in run order: 1 Evaluator, 2 Betting, 3 Ante, 4 Level, 5 Legal,
 6 Schedule, 7 Shuffle, 8 Fold, 9 Crypto, 10 Receipt, 11 Deal, 12 DealOrder,
 13 Lobby, 14 NetSim, 15 NetPlay, 16 Level2, 17 Onion, 18 Oracle, 19 Level2Void
-(the 4e bots), 20 Liveness, 21 Helpers, 22 Leaf, 23 Leaf2, 24 `heProbeSodium`
-(which ends with a bare `put tRpt`, so it writes `msg`; deliberate, harmless).
+(the 4e bots), 20 Liveness, 21 Helpers, 22 Leaf, 23 Leaf2, 24 Leaf3 (the
+consensus-critical leaves, 2026-09-24), 25 `heProbeSodium` (which ends with a
+bare `put tRpt`, so it writes `msg`; deliberate, harmless).
 The 5 member skips are the live legs (tor table, three-machine oracle round,
 onion-hosted oracle, live timed table, tor redial), printed on a second line
 `stMergeReturned` does not parse, so the suite skip total excludes them.
@@ -396,7 +398,7 @@ shipped stack's `heTestRunAllSections` through riptide's runner (siblings
 nostrxt and coinxt; resolved by `sibling()` / `XTALK_SIBLINGS`). SodiumXT is
 modelled: BLAKE2b, ed25519 and X25519 are faithful; the sealed box is a MODEL;
 ristretto255 is NOT modelled, so the L2 sections skip through the harness's own
-probe. 23 sections run with zero FAIL, a pass floor and an exact skip count per
+probe. 24 sections run with zero FAIL, a pass floor and an exact skip count per
 section; outside it are `heTestNetPlay`'s real-TorrentXT leg and
 `heProbeSodium`. `tools/test-script-vectors.py` seeds a mis-ranked straight
 flush, a vanishing odd chip and a never-swapping shuffle, and runs first so a
@@ -422,7 +424,9 @@ closing on a stray `*/` once swallowed 2,200 lines and turned the row a false
 green at 66/260. Read the numbers from the gate; on 2026-09-23 it printed
 158/330 exercised and a 172 gap (20 live-transport, 9 engine-media, 41
 host-window, 102 no-test), with the harness region at 53 handlers (50
-reachable, 3 interactive).
+reachable, 3 interactive). Section 24 (2026-09-24) took 14 from no-test,
+consensus-critical first; `heHandSettle` stays there because it ends by
+sending `heNextHandTick`, which deals a hand, and no harness may arm that.
 
 ## 6. Engine evidence ledger
 
@@ -441,8 +445,8 @@ reachable, 3 interactive).
 Engine-proven, folded into the suite paste: every harness section's headless
 slice, including Level 2 compute, the batch mask step, void-and-audit, the five
 cheater bots and DLEQ (latest 667/0 at v0.25.2/h43, 2026-08-27). Verified
-statically; needs an OXT pass: the v0.25.3 overlay fix, the v44 total (the
-wire-arity checks), everything visual and timed (the 720p layout eye, the
+statically; needs an OXT pass: the v0.25.3 overlay fix, the v45 total (the
+wire-arity checks and section 24), everything visual and timed (the 720p layout eye, the
 Phase 1 6-seat session), and every live multi-machine leg (2d re-run, 2e timed
 session, 2f two-machine tor + redial, the Phase 3 three-machine oracle round).
 Level 2 is not yet wired into played hands. Row 14 (the deal-path re-pass) can

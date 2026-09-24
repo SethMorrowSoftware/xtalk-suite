@@ -6,7 +6,8 @@ The native library ships bundled INSIDE the extension under
     src/code/<arch>-<platform>/sodiumxt.{so,dll,dylib}
 with the bare token name (no "lib" prefix). Installing the packaged extension
 then lets the engine resolve "c:sodiumxt>" via the revLibraryMapping with no
-loose library, no sudo, no LD_LIBRARY_PATH. (See CLAUDE.md and the plan.)
+loose library, no sudo, no LD_LIBRARY_PATH. (See CLAUDE.md, "Committed
+binaries".)
 
 Workflow rule (CLAUDE.md): a native-library change is only "done" once this
 script has refreshed the committed binary IN THE SAME CHANGE. CI rebuilds and

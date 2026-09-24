@@ -68,7 +68,8 @@ script "nostrxt"
 --     2026-08-23; docs/07): the NIP-44 cipher. On an installed SodiumXT
 --     older than ABI 10 nxNip44Encrypt/Decrypt still fail closed with a
 --     clear capability error, by design; with ABI 10+ the full construction
---     runs and is vector-pinned headlessly (it still needs an OXT pass).
+--     runs, is vector-pinned headlessly, and RAN ON AN ENGINE 2026-08-24
+--     (the STATUS above; what exactly ran is at the NIP-44 section below).
 
 -- ==========================================================================
 -- Constants. Declared before first use (OXT resolves a constant by lexical
@@ -2596,7 +2597,19 @@ end nxUriDecode
 -- shipped as SodiumXT ABI 10's sxChaCha20IetfXor (docs/07). On an installed
 -- SodiumXT older than ABI 10, nxNip44Encrypt/Decrypt still fail closed with
 -- a clear capability error; the key schedule, padding and MAC work either
--- way. The complete path is engine-unproven (needs an OXT pass).
+-- way. ENGINE-PROVEN 2026-08-24 (Windows x86_64, OXT 9.6.3, the member
+-- harness folded into the suite paste, 274/0/2), and exactly this much ran:
+-- the official conversation-key and message-key vectors, all 24 official
+-- padded-length pairs, the refusals that precede the cipher (the MAC is
+-- checked before any cipher runs), and one official encrypt_decrypt vector
+-- (a 1-byte plaintext at a pinned nonce) decrypted, then re-encrypted byte
+-- for byte, through the real SodiumXT ABI-10 cipher. Do not read that
+-- record as covering more: multi-block and non-ASCII plaintexts and the
+-- oversized refusal have run HEADLESSLY only (tools/check-script-vectors.py
+-- executes this file over the committed sibling binaries), the official
+-- invalid-payload rows go through the oracle, not this file
+-- (tools/nostr-kat.py), and an encrypt with a FRESH nonce (pNonceHex empty)
+-- has run nowhere.
 -- ==========================================================================
 
 function nxNip44ConversationKey pSeckeyHex, pPubkeyHex

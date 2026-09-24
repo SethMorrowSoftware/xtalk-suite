@@ -50,11 +50,30 @@ script "walletCore"
 -- HONESTY (the suite convention). Every handler here is verified statically
 -- (tools/check-livecodescript.py) and by the vector gate above, which settles
 -- LOGIC and not parser behaviour: an interpreter is an approximation of the
--- engine, never the engine. NOTHING HERE HAS RUN ON AN OXT ENGINE YET, and
--- that stays true until an engine pass is recorded in coinxt/CLAUDE.md. The
--- cryptography underneath it HAS - CoinXT's own passes of 2026-08-10 and
--- 2026-08-12 - so a failure here is most likely this file's arithmetic, not
--- the library's.
+-- engine, never the engine. THIS FILE HAS RUN ON AN OXT ENGINE, carried inside
+-- examples/coin-wallet.livecodescript: coinxt/CLAUDE.md's "The wallet on an
+-- engine" ledger holds the logs of 2026-08-31 to 2026-09-03 (platform not
+-- recorded; testnet unless stated). In its words, among them: 2026-09-02, the
+-- "FIRST BROADCAST, esplora-tor: txid
+-- 7978bdd2c097c929cae2ab00084d4454b68b1d054a3f2d53fc7b51b70551e4d5, 226 vB,
+-- one legacy input, RBF, 10000 sat plus 181973 sat change (a self-payment);
+-- the reference decoder's txid equals the logged one"; the fourth log, "fresh
+-- open: boot self-check 27 green"; and 2026-09-03 19:42 EDT, the tenth log's
+-- autotest, "41 passed / 0 failed / 4 skipped in 248 s", in which "the
+-- silent-payment send and the commit funding built on the replacement's change
+-- and accepted" and "the reveal accepted". Until 2026-09-24 this paragraph
+-- said nothing here had run on an engine, which understated those records.
+-- What the logs did NOT reach, as that file's Status lists it for this layer:
+-- testnet4, BIP-322 (the tenth log skipped it on a p2pkh wallet), Runes,
+-- BOLT11, silent-payment RECEIVING, and every fix dated after the logs (the
+-- 2^53 parse refusal of 2026-09-08, the 2026-09-10 audit fixes) - verified
+-- statically and headlessly; needs an OXT pass. Read the list by what ran,
+-- not by the section dates below: several sections are headed 2026-09-04
+-- although git dates their commits 2026-09-03, and two of them, the
+-- silent-payment SEND and the inscription, ran in the tenth log. The
+-- cryptography underneath HAS its own record - CoinXT's library passes, most
+-- recently 290/290 on 2026-08-24 (Windows x86_64) - so a failure here is most
+-- likely this file's arithmetic, not the library's.
 --
 -- CUSTODY, said plainly, because this layer is one call away from a signature:
 -- OXT script variables are not locked memory and can be paged to disk. A seed

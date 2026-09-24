@@ -181,6 +181,15 @@ Code comments cite these numbers; keep them.
   silently dropped records, mislabelled drafts and hid devices. `sLanPeerNames` drives disconnect
   drops. Two nodes never run the relay; the runbook's phase-6 step 8 is the third-device test.
   Verified statically; needs an OXT pass (never run on an engine).
+- C6's key is the name's lowercase HEX (`raLanDevKey`, 2026-09-24), never the name string: the
+  engine folds array-key case (suite engine note 2.7), so "Phone" and "phone", two devices on the
+  wire, shared one seq slot and the lower clock-seeded counter was silently dropped. Lowercasing
+  on purpose would merge them the same way; hex is one-to-one on the bytes and spelled in one
+  case. `sLanPeerLabel` keeps the name for display. check-demo-boot drives both names through
+  `raLanSyncReceive` and checks every per-device key set against the fold (the model's dicts do
+  not fold, so "both applied" alone passed the old code); test-demo-boot seeds the old keying
+  back. Verified statically + headless; needs an OXT pass (runbook phase-6 step 8's case-fold
+  bullet).
 - Channel 2 (2026-08-16): the media handoff is RSL1 "M", a signed channel-0 POINTER
   (info-hash + name + size) at the torrent rail; channel 2 stays dark (enet's 60000-byte budget).
   Strict lowercase hash, zeros refused. Honest limit: the bytes ride the torrent rail (the swarm
@@ -300,6 +309,10 @@ Code comments cite these numbers; keep them.
 14. **check-demo-boot.py is also driven by coinxt's, nocloud's and holde-em's gates**: on any path a
     boot walks, use the compiled-regex helpers `_rxi`/`_rx` (2026-09-11). Model fidelity: `the name`
     of a control is type-prefixed (`button "x"`); only `the short name` is bare (2026-08-31).
+    `put ... into URL` answers through `the result` (2026-09-24): empty when the write landed, and the
+    planted text, with nothing written, for a path in `World.url_write_refuse` (coinxt's save guards
+    are held that way). An unplanted missing parent folder is still CREATED, which is looser than the
+    engine; a gate that needs that refusal plants it.
 15. **The demo carries TWO socket libraries** (onionxt, nostrxt's relay layer). The embed tool drops
     both libraries' `socketError`/`socketClosed`/`socketTimeout` wrappers; the demo's own three call
     `oxSocketError`/`nxrSocketError` (and kin), then `pass`. Keep that `pass`: swallowing a socket

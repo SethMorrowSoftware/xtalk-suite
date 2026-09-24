@@ -57,6 +57,21 @@ discovered:
     measurement is guarded for that.
   - `go to card` to a missing card sets `the result` and stays put; a chunk
     write into a missing control THROWS - both the engine's behaviours.
+  - `put X into URL "binfile:..."` ANSWERS THROUGH `the result` (2026-09-24):
+    empty on a write that landed, and, for a path a gate has planted in
+    World.url_write_refuse, the planted text with NOTHING written - the way
+    the engine reports a full disk or a read-only volume: as a value, never
+    a throw (the premise every write guard in the family is written on; no
+    engine note records the exact text, so the model plants the gate's text
+    rather than guessing the engine's). An UNPLANTED missing parent folder
+    is still created, not refused - looser than the engine, named at the
+    site. Until then
+    the model raised on its own refusals and never set `the result` at all,
+    so coinxt's waSaveWallet guard - "a write that failed is not a backup" -
+    had no way to be seen firing, and a check on it could never fail.
+    Planted refusals only: a refusal the MODEL raises (an unmodelled scheme,
+    a path outside the sandbox) still raises, because that is the model
+    refusing a construct, not the engine refusing a write.
   - Timers do not exist: `send ... in N milliseconds` queues, and queued
     messages are delivered in order after the driving handler returns, each
     advancing the modeled clock. A handler that re-arms itself is delivered
@@ -208,6 +223,11 @@ class World:
         self.ms = LCS.SECONDS[0] * 1000
         self.sandbox = sandbox
         self.log = []                   # what the model DID (diagnostics)
+        # PLANTED WRITE REFUSALS (2026-09-24): absolute path -> the text
+        # `the result` answers when a `put ... into URL` targets it. Empty by
+        # default, so no boot sees a refusal it did not plant; a gate that
+        # plants one removes it again (see DemoInterp.url_write).
+        self.url_write_refuse = {}
 
     # -- cards -------------------------------------------------------------
     def card_named(self, name):
@@ -386,8 +406,10 @@ class DemoExpr(LCS._Expr):
                         "expected keys/items/lines `of` in %r" % self.s
                     target = self.p_concat()
                     if word == "keys":
+                        # through the base's key fold (engine notes 2.7),
+                        # never python's exact-spelling `in`
                         hit = (isinstance(target, dict)
-                               and str(LCS._disp(v)) in target)
+                               and LCS._arr_has(target, str(LCS._disp(v))))
                     else:
                         delim = (LCS.ITEM_DELIMITER[0] if word == "items"
                                  else LCS.LINE_DELIMITER[0])
@@ -786,9 +808,30 @@ class DemoInterp(LCS.Interp):
         path = m.group(1)
         if not self.world.path_ok(path):
             raise Thrown("url: path outside the sandbox " + path)
+        # A PLANTED REFUSAL IS A VALUE, NOT A THROW (see the header): the
+        # script goes on to its next line with `the result` set and the file
+        # untouched - which is exactly the state a write guard exists to
+        # read. Looked up by the absolute path, so a gate plants it with the
+        # same path it typed into the stack. Nothing is written, not even a
+        # truncated file: a refused write that left an empty file behind
+        # would let a check on "no file" pass for the wrong reason.
+        refused = self.world.url_write_refuse.get(os.path.abspath(path))
+        if refused is not None:
+            self.world.log.append("url write refused (planted): " + path)
+            self.world.result = str(refused)
+            return
+        # LOOSER THAN THE ENGINE, KNOWINGLY, and left standing: a missing
+        # parent folder is CREATED here, where the engine's write is expected
+        # to refuse (unevidenced in this tree - no engine note records it).
+        # Changing it would move every boot that writes under a folder it
+        # never made; a gate that needs the refusal plants it above.
         os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, "wb") as fh:
             fh.write(str(data).encode("latin-1"))
+        # and a write that landed leaves `the result` EMPTY, as the engine's
+        # does, so a stale value from an earlier command (a missing card's
+        # "No such card") can never read as this write's refusal
+        self.world.result = ""
 
     def deliver_sends(self, rounds=6):
         """Deliver queued `send ... in N ms` messages. Bounded: a message
@@ -841,7 +884,9 @@ class DemoInterp(LCS.Interp):
         # base, which models `item` alone). The engine iterates a SNAPSHOT
         # of the container, so the list is built before the first pass.
         # char and word joined 2026-09-11 (nocloud's sanitisers, holde-em's
-        # evaluator harness), element the same day (holde-em).
+        # evaluator harness), element the same day (holde-em). A key comes
+        # back in its STORED spelling, the first one written (the base's
+        # key fold, engine notes 2.7), exactly as `the keys of` answers it.
         m = _rxi(r'repeat\s+for\s+each\s+(key|element|line|char|word)'
                      r'\s+(\w+)\s+in\s+(.+)$').match(line)
         if m:
@@ -969,12 +1014,16 @@ class DemoInterp(LCS.Interp):
         # ---- split VAR by A [and B]: the container becomes an array. With
         # one delimiter the keys are 1..n; with two, each A-part is split at
         # its first B into key and value (holde-em's wire bodies, 2026-09-11)
+        # and stored through the base's key fold (engine notes 2.7): "a=1&A=2"
+        # is ONE element, spelled "a", holding "2". That the later part wins
+        # the value is modelled (it is what a store in that order does), not
+        # observed; the fold itself is the observed rule.
         m = _rxi(r'split\s+(\w+)\s+by\s+(.+?)(?:\s+and\s+(.+))?$').match(line)
         if m:
             tgt = m.group(1)
             s = str(LCS._disp(self.eval_expr(tgt, env)))
             a = str(LCS._disp(self.eval_expr(m.group(2), env)))
-            out = {}
+            out = LCS.LcsArray()
             if s != "":
                 parts = s.split(a) if a else [s]
                 if m.group(3) is None:
@@ -984,7 +1033,7 @@ class DemoInterp(LCS.Interp):
                     b = str(LCS._disp(self.eval_expr(m.group(3), env)))
                     for part in parts:
                         k, _sep, val = part.partition(b)
-                        out[k] = val
+                        LCS._arr_set(out, k, val)
             self.assign(tgt, out, env)
             return i + 1
 
@@ -1035,15 +1084,12 @@ class DemoInterp(LCS.Interp):
             ctl.props["visible"] = m.group(1).lower() == "show"
             return i + 1
 
-        # ---- engine globals the script sets around strict compares
-        m = _rxi(r'set\s+the\s+caseSensitive\s+to\s+(.+)$').match(line)
-        if m:
-            # tracked only: the base interpreter's `is` is already
-            # case-SENSITIVE (its named divergence), so both settings are
-            # modeled by the stricter behaviour
-            world.stack_props["casesensitive"] = self.eval_expr(m.group(1),
-                                                                env)
-            return i + 1
+        # ---- `set the caseSensitive to X` is the BASE's since 2026-09-24:
+        # it governs array KEYS there (engine notes 2.7; a local property,
+        # reset per handler call), and `is` keeps its case-sensitive named
+        # divergence. Until then this runner swallowed the statement into a
+        # stack property nothing read, which was harmless only while no key
+        # folded.
 
         # ---- set the <prop> of <obj> / defaultStack / clipboard
         m = _rxi(r'set\s+the\s+defaultStack\s+to\s+(.+)$').match(line)
@@ -1126,14 +1172,20 @@ class DemoInterp(LCS.Interp):
             world.current().controls.remove(ctl)
             return i + 1
 
-        # ---- delete variable (array-element teardown)
-        m = _rxi(r'delete\s+variable\s+(\w+)\[(.+)\]$').match(line)
+        # ---- delete variable (array-element teardown), a subscript CHAIN of
+        # any depth (nostr-relay's `delete variable sNxrRelays[pRelay]["subs"]
+        # [pSubId]`, which the old one-bracket regex read as ONE key named
+        # `pRelay]["subs"][pSubId`), each step through the base's key fold
+        # (engine notes 2.7). A missing element at any depth is a no-op.
+        m = _rxi(r'delete\s+variable\s+(\w+\s*\[.+\])$').match(line)
         if m:
-            name = m.group(1).lower()
-            key = str(LCS._disp(self.eval_expr(m.group(2), env)))
+            name, keys = self.subscript_chain(m.group(1), env)
             store = env if name in env else self.globals
-            if isinstance(store.get(name), dict):
-                store[name].pop(key, None)
+            node = store.get(name)
+            for k in keys[:-1]:
+                node = LCS._arr_get(node, k) if isinstance(node, dict) else ""
+            if isinstance(node, dict):
+                LCS._arr_del(node, keys[-1])
             return i + 1
 
         # ---- pass <message> (the model does not re-dispatch)
@@ -1198,6 +1250,11 @@ class DemoInterp(LCS.Interp):
             # CATCHABLE script error on the engine, and the capability
             # probes depend on that. Only convert clean call shapes; a
             # genuinely unmodeled construct stays a loud harness failure.
+            # The array commands this model does not have (union, intersect,
+            # combine, split in a form the branch above does not match) are
+            # named here since 2026-09-24: before, `union tA with tB` inside
+            # a try became a caught "can't find handler" and the rest of the
+            # handler ran on an array nobody had merged.
             m = _rx(r'^([A-Za-z]\w*)(\s+.*)?$').match(line)
             if (m and "unsupported statement" in str(e)
                     and m.group(1).lower() not in self.handlers
@@ -1207,7 +1264,8 @@ class DemoInterp(LCS.Interp):
                                      r'go|send|local|constant|global|throw|'
                                      r'pass|hide|show|lock|unlock|sort|'
                                      r'replace|multiply|subtract|divide|'
-                                     r'wait|answer|ask|do)$').match(m.group(1))):
+                                     r'wait|answer|ask|do|union|intersect|'
+                                     r'combine|split)$').match(m.group(1))):
                 raise Thrown("Handler: can't find handler: " + m.group(1))
             raise
 
@@ -1684,6 +1742,7 @@ def boot(c, path, profile, drive=True):
                      "%s: %s" % (type(exc).__name__, exc))
             ip.deliver_sends()
             drive_nostr(c, ip, world, profile)
+            drive_lan_keys(c, ip, world, profile)
             try:
                 ip.call("raLock", [])
                 c.ck("[%s] raLock tears down cleanly" % profile, True)
@@ -1854,12 +1913,264 @@ def drive_nostr(c, ip, world, profile):
              False, "%s: %s" % (type(exc).__name__, exc))
 
 
+def _fold_distinct(keys):
+    """True when no two of these array keys are ONE element on the engine.
+    Engine note 2.7 (root docs/OXT-ENGINE-NOTES.md, OBSERVED 2026-09-15):
+    array keys fold case while `the caseSensitive` is false. This model's
+    arrays are Python dicts, which do not fold, so asking the MODEL whether
+    two keys collided answers "no" for the very keys the engine merges;
+    asking the key SET the script produced is what sees it here."""
+    keys = [str(k) for k in keys]
+    return len(set(k.lower() for k in keys)) == len(keys)
+
+
+def drive_lan_keys(c, ip, world, profile):
+    """C6's per-device keying under the engine's array-key fold (fixed
+    2026-09-24; riptide/CLAUDE.md, the decision after C6).
+
+    WHY THIS EXISTS. raLanSyncReceive keeps per-DEVICE state (the draft
+    seq, the draft, the presence tick, the handoff seq; riptide/CLAUDE.md
+    decision C6), and it keyed those arrays by the device NAME STRING. The
+    engine folds case on array keys, so devices "Phone" and "phone" - two
+    devices on the wire, where a name is compared by its bytes - shared one
+    slot, and since each device seeds its counter from its own clock, the
+    lower one was dropped by the replay guard's deliberately SILENT exit.
+    The demo now keys by raLanDevKey (the name's lowercase hex). A plain
+    "both drafts applied" check cannot see the old defect in this model
+    (dicts do not fold), so there are two halves: the drafts must both
+    APPLY (what the engine, or a folding model, breaks), and every
+    per-device array's key SET must stay distinct under the fold (what this
+    model sees today). test-demo-boot.py seeds the old keying back in and
+    requires this drive to fire.
+
+    It drives the receive handler directly with records the SHIPPED
+    library signs under the unlocked master: admission and enet are not
+    what is under test (they need two engines). A joiner's view - one
+    admitted peer that every device's record arrives over, the C6 shape -
+    and not the server, so nothing is relayed onward (enSend is not
+    modelled). Everything it sets is restored before raLock runs."""
+    seed = ip.globals.get("smasterseed", "")
+    if not seed:
+        c.ck("[%s] LAN keys: an unlocked master to sign the records with"
+             % profile, False, "sMasterSeed is empty after raCreate")
+        return
+    peer = "7"
+    per_device = ("slanpeerseq", "slanpeerdraft", "slanpeertick",
+                  "slanpeertyping", "slanpeerseen", "slanpeerlabel",
+                  "slanpeermediaseq")
+    saved = dict((k, ip.globals.get(k, "")) for k in
+                 ("slandevices", "slanhost", "slanisserver"))
+
+    def signed(builder, *args):
+        out = ip.call(builder, list(args) + [seed])
+        if not out:
+            raise RuntimeError("%s refused: %s"
+                               % (builder, ip.call("rsLastError", [])))
+        return out
+
+    def receive(kind, record):
+        ip.call("raLanSyncReceive", [peer, kind, record])
+
+    def content(name):
+        # the two LAN painters write `set the text of field ...`, which this
+        # model keeps as the `text` PROPERTY (a `put ... into field` is the
+        # control's content) - read what the painters wrote
+        ctl = world.anywhere(name)
+        if ctl is None:
+            return ""
+        return str(ctl.props.get("text", ctl.content))
+
+    try:
+        ip.globals["slandevices"] = {peer: "hub"}
+        ip.globals["slanhost"] = 1          # any non-empty handle: rows paint
+        ip.globals["slanisserver"] = ""
+        ip.call("raLanSyncReset", [])
+
+        # The UPPER-case device holds the HIGHER counter, so under a folded
+        # key the lower-case device's first draft is the one the silent
+        # replay path would swallow.
+        receive("D", signed("rsLanBuildDraft", "Phone", 1000,
+                            "draft typed on Phone"))
+        receive("D", signed("rsLanBuildDraft", "phone", 900,
+                            "draft typed on phone"))
+        text = content("raLanDrafts")
+        c.ck("[%s] LAN: two devices whose names differ only by case each "
+             "get their draft applied and labelled" % profile,
+             "-- Phone (seq 1000) --" in text
+             and "draft typed on Phone" in text
+             and "-- phone (seq 900) --" in text
+             and "draft typed on phone" in text, repr(text[:300]))
+
+        # and the replay guard still holds, per device: a stale seq for one,
+        # an equal seq for the other
+        receive("D", signed("rsLanBuildDraft", "phone", 899,
+                            "a STALE phone draft"))
+        receive("D", signed("rsLanBuildDraft", "Phone", 1000,
+                            "a REPLAYED Phone seq"))
+        text = content("raLanDrafts")
+        c.ck("[%s] LAN: the replay guard still refuses a stale or equal seq "
+             "for that device" % profile,
+             "STALE" not in text and "REPLAYED" not in text,
+             repr(text[:300]))
+
+        # presence (the lower tick again on the lower-case device) paints a
+        # row per device; the handoff keeps a replay counter per device
+        receive("P", signed("rsLanBuildPresence", "Phone", "true", 50))
+        receive("P", signed("rsLanBuildPresence", "phone", "false", 40))
+        rows = content("raLanDevices").split("\n")
+        c.ck("[%s] LAN: the Devices panel paints a row for each "
+             "case-variant device" % profile,
+             any(r.startswith("Phone  [typing]") for r in rows)
+             and any(r == "phone" for r in rows), repr(rows))
+        receive("M", signed("rsLanBuildHandoff", "Phone", 10, "ab" * 20,
+                            "a.mp4", 1000))
+        receive("M", signed("rsLanBuildHandoff", "phone", 5, "cd" * 20,
+                            "b.mp4", 2000))
+        c.ck("[%s] LAN: a media offer from each case-variant device is "
+             "applied" % profile,
+             str(ip.globals.get("slanmediafrom", "")) == "phone"
+             and str(ip.globals.get("slanmediahash", "")) == "cd" * 20,
+             "from %r hash %r" % (ip.globals.get("slanmediafrom"),
+                                  ip.globals.get("slanmediahash")))
+
+        bad = []
+        for name in per_device:
+            arr = ip.globals.get(name, "")
+            if isinstance(arr, dict) and not _fold_distinct(arr):
+                bad.append("%s %r" % (name, sorted(arr)))
+        links = ip.globals.get("slanpeernames", "")
+        if isinstance(links, dict):
+            for link, arr in links.items():
+                if isinstance(arr, dict) and not _fold_distinct(arr):
+                    bad.append("slanpeernames[%s] %r" % (link, sorted(arr)))
+        seqs = ip.globals.get("slanpeerseq", "")
+        c.ck("[%s] LAN: every per-device array keeps the two devices apart "
+             "under the engine's case fold (engine note 2.7)" % profile,
+             not bad and isinstance(seqs, dict) and len(seqs) == 2,
+             "; ".join(bad) or repr(seqs))
+
+        # the disconnect half drops what the link fed us: both devices
+        ip.call("raLanDropPeerNames", [peer])
+        ip.call("raLanPaintDrafts", [])
+        left = [n for n in per_device
+                if isinstance(ip.globals.get(n), dict) and ip.globals.get(n)]
+        c.ck("[%s] LAN: a disconnect drops both case-variant devices' state"
+             % profile,
+             not left and content("raLanDrafts").startswith("No drafts"),
+             "left: %s; drafts %r" % (", ".join(left),
+                                     content("raLanDrafts")[:80]))
+    except Exception as exc:                            # noqa: BLE001
+        c.ck("[%s] LAN: case-variant device names key apart" % profile,
+             False, "%s: %s" % (type(exc).__name__, exc))
+    finally:
+        for k, v in saved.items():
+            ip.globals[k] = v
+        try:
+            ip.call("raLanSyncReset", [])
+        except Exception:                               # noqa: BLE001
+            pass
+
+
+# The array forms THIS runner adds to the base, pinned against the base's
+# key fold (lcs-interp.py header; engine notes 2.7). The base's own fold is
+# pinned in coinxt's check-script-vectors tier 0; these are the four places
+# the runner touched an array itself, each once a plain-dict operation that
+# would have kept testing the case-sensitive world after the base moved.
+_RUNNER_MODEL_SRC = """
+function rmSplitPairs
+   local tA
+   put "a=1&A=2" into tA
+   split tA by "&" and "="
+   return (the keys of tA) & "|" & tA["a"]
+end rmSplitPairs
+function rmDeleteChain
+   local tA
+   put 1 into tA["X"]["y"]
+   put 2 into tA["X"]["z"]
+   delete variable tA["x"]["Y"]
+   return the keys of tA["X"]
+end rmDeleteChain
+function rmEachKey
+   local tA, tK, tOut
+   put 1 into tA["Dev"]
+   put 2 into tA["DEV"]
+   repeat for each key tK in tA
+      put tK & "=" & tA[tK] & ";" after tOut
+   end repeat
+   return tOut
+end rmEachKey
+function rmAmong
+   local tA
+   put 1 into tA["phone"]
+   return "Phone" is among the keys of tA
+end rmAmong
+function rmSensitive
+   local tA
+   set the caseSensitive to true
+   put 1 into tA["phone"]
+   put 2 into tA["Phone"]
+   return the keys of tA
+end rmSensitive
+function rmUnion
+   local tA, tB, tErr
+   put 1 into tA["a"]
+   put 2 into tB["b"]
+   try
+      union tA with tB
+   catch tErr
+      return "caught"
+   end try
+   return "ran"
+end rmUnion
+"""
+
+
+def check_runner_model(c):
+    """The runner's own array statements under the key fold, and a refusal:
+    an array command the model does not have must stop the run, never turn
+    into a caught `can't find handler`."""
+    sandbox = tempfile.mkdtemp(prefix="riptide-model-")
+    try:
+        ip = DemoInterp(_RUNNER_MODEL_SRC, World(sandbox))
+
+        def run(name):
+            return ip.call(name, [])
+
+        got = run("rmSplitPairs")
+        c.ck("[MODEL] split by A and B folds keys: one element, first "
+             "spelling, the later value", got == "a|2", repr(got))
+        got = run("rmDeleteChain")
+        c.ck("[MODEL] delete variable walks a subscript chain, folded",
+             got == "z", repr(got))
+        got = run("rmEachKey")
+        c.ck("[MODEL] repeat for each key yields the stored spelling once",
+             got == "Dev=2;", repr(got))
+        got = run("rmAmong")
+        c.ck("[MODEL] is among the keys of folds in the runner's comparator",
+             got is True, repr(got))
+        got = run("rmSensitive")
+        c.ck("[MODEL] set the caseSensitive reaches the base (keys exact)",
+             got == "phone\nPhone", repr(got))
+        try:
+            got = run("rmUnion")
+            c.ck("[MODEL] an unmodelled array command stops the run",
+                 False, "the handler answered %r" % (got,))
+        except Thrown as exc:
+            c.ck("[MODEL] an unmodelled array command stops the run",
+                 False, "it became a catchable script error: %s" % exc)
+        except Exception:                                # noqa: BLE001
+            c.ck("[MODEL] an unmodelled array command stops the run", True)
+    finally:
+        shutil.rmtree(sandbox, ignore_errors=True)
+
+
 def main(argv):
     terse = "--check" in argv
     path = DEMO
     if "--file" in argv:
         path = argv[argv.index("--file") + 1]
     c = Checker(terse)
+    check_runner_model(c)
     for profile in ("MIN", "FULL"):
         c.note("profile %s" % profile)
         boot(c, path, profile)

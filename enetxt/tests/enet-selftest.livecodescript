@@ -21,9 +21,16 @@ script "enetSelfTest"
 -- engine, green end to end - the live enHostStatus pair (connected, then
 -- zero peers after the disconnect), the enPeerStatus statistics (rtt,
 -- packetLoss, the packet/byte counters), the echo/broadcast/binary round
--- trips, and the graceful close. Nothing in this file is verified
--- statically any more; the member's one remaining un-exercised surface is
--- the LAN chat demo between two real machines (suite runbook, item 6).
+-- trips, and the graceful close. Each section of this file has run green on
+-- an engine at least once (the helper section folded from 2026-08-20, below).
+-- The async half has changed since its one standalone run (the harness
+-- scaffold 2026-08-14, the timer pins 2026-08-20, the helper-local rename
+-- 2026-08-23) and the binaries were rebuilt 2026-09-12, so a standalone
+-- re-run is owed (suite runbook 4.3). What the member still owes an engine
+-- beyond that lies outside this file: enet-lan-chat between two real
+-- machines (suite runbook row 6, session S3 item 6; the closing pass's leg B
+-- is a separate enet leg, S3 item 1) and enet-internet-chat across two
+-- networks (row 39).
 --
 -- HOW TO USE: open OXT, make a one-card stack, paste THIS into the STACK
 -- script (Object > Stack Script), then close+reopen. It builds its own UI,
@@ -39,10 +46,16 @@ script "enetSelfTest"
 -- byte-exact compares under caseSensitive, and zero-argument calls BARE in
 -- statement position.
 
--- STATUS: the SYNC half last ran GREEN in the 2026-08-17 engine pass (Windows x86_64, NT 10.0, OXT 9.6.3) - 21/21, folded into
--- tests/suite-selftest.livecodescript. The ASYNC loopback is deliberately
--- NOT folded (two state machines in one process race for the event
--- handlers) and is verified by running this file on its own.
+-- STATUS: the SYNC half ran GREEN folded into tests/suite-selftest.livecodescript
+-- at every recorded pass from 2026-08-10 on: 21/21 on 2026-08-17 (OXT 9.6.3,
+-- Windows x86_64, NT 10.0); 34 on 2026-08-20 (Windows: the 21 plus, by count,
+-- the 13 helper-section assertions); a whole paste with no failure on
+-- 2026-08-24 (enetxt's own count not recorded); and green again on
+-- 2026-08-27, the renamed helper locals included (that paste's two failures
+-- were the core's loopbacks on a machine blocking UDP to 127.0.0.1). The
+-- ASYNC loopback is deliberately NOT folded (two state machines in one
+-- process race for the event handlers); it last ran standalone, green, on
+-- 2026-08-13.
 
 -- >>> BEGIN EMBEDDED LIBRARIES (tools/sync-demo-embeds.py) >>>
 -- Pasted from the sources below so this demo runs with NO `start

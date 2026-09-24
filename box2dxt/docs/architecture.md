@@ -37,8 +37,9 @@ How the pieces fit, why the shim exists, and how to extend the binding.
   `universal-mac` - architecture first, Windows `-win32` for both bitnesses).
   Those libraries are committed and pinned by `MANIFEST.sha256` (the Linux and
   Windows ones from the suite's `release-binaries.yml` dispatch; the
-  `universal-mac` dylib is the pre-fold build carried in by the 2026-08-14
-  fold, unchanged since and not yet loaded on a Mac); `tools/package-extension.py`
+  `universal-mac` dylib is byte-identical to what that dispatch builds - the
+  2026-08-27 and 2026-09-12 runs both rebuilt it and found it unchanged - and
+  has not yet been loaded on a Mac); `tools/package-extension.py`
   refreshes the tree from a newer build.
 - **`src/box2dxt.lcb`** is the xTalk Builder (LCB) extension. It declares
   `private foreign handler` bindings to the `b2lc_*` symbols
@@ -143,9 +144,10 @@ Exposing more of Box2D is mechanical. To add a handler:
 
 Add a smoke-test assertion in `tests/smoke_test.c` for anything non-trivial so CI
 exercises it on every platform, and write the new handler up in
-[api-reference.md](api-reference.md) in the same change - no gate holds that page
-to the binding, and it named only 216 of 376 handlers when measured on
-2026-08-26, which is what skipping this step accumulates into.
+[api-reference.md](api-reference.md) in the same change. `tools/check-reference-docs.py`
+(in `tools/run-gates.sh` since 2026-09-24) fails until you do: before it existed
+the page had drifted to 216 of 376 handlers, which is what skipping this step
+accumulates into.
 
 As of ABI `3` the binding already covers the full Box2D v3.1 **live-object**
 surface. The newer additions reuse a few shared shim patterns worth knowing when

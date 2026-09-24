@@ -269,12 +269,14 @@ Symptom -> cause -> fix. Engine behaviour gets one line and its engine note.
     wallet's local-variable rewrites stay). `and` / `or` evaluate BOTH operands (engine note 2.5; a comparison against
     a non-number compares as text, `+ 0` on one is a hard error): use `waWholeAtLeast` / `waWholeInRange` /
     `waNumAtLeast` / `waIsDigits` / `waIsInt` - a lesson repeated after being written down three times is a missing
-    function. `the name` of a control is type-prefixed. `is` against an array compares as an array. NOT modelled:
-    `round()`, `repeat for each line`, array-key case folding (engine note 2.7, an open gap). `ip.call` reaches natives
+    function. `the name` of a control is type-prefixed. `is` against an array compares as an array. Array KEYS fold
+    case (engine note 2.7; modelled since 2026-09-24, the first spelling written is kept, tier 0 of
+    `check-script-vectors.py` pins it). NOT modelled: `round()`, `repeat for each line`. `ip.call` reaches natives
     only through script. Hot paths use `_rx` / `_rxi`.
-22. **caseSensitive is modelled case-SENSITIVELY**, so `check-wallet-vectors.py` runs every vector twice, the second
-    time with `is` and `offset()` folded. `contains`, `begins with`, `ends with` and `sort` are NOT folded; putting one
-    on case-significant data needs a new tier, not a quiet widening.
+22. **`is` is modelled case-SENSITIVELY whatever `the caseSensitive` says** (the property reaches array keys only,
+    as a per-handler local), so `check-wallet-vectors.py` runs every vector twice, the second time with `is` and
+    `offset()` folded. `contains`, `begins with`, `ends with` and `sort` are NOT folded; putting one on
+    case-significant data needs a new tier, not a quiet widening.
 23. **When a mutation survives, suspect the probe first, but check**: twice the probe was wrong (wrong direction; half
     a defect reverted), once the check was (an "it threw" assertion over a shim that refuses the same input).
 24. **Reproduce, then fix: correct the model first**, see the engine's failure headlessly on the unmodified code, then
@@ -351,8 +353,11 @@ Symptom -> cause -> fix. Engine behaviour gets one line and its engine note.
     carrying `%0A` / `%09` could replace the account key with a payer's (demonstrated end to end 2026-09-01).
 50. **The watch-only box refuses private keys** through `cwXKeyIsPrivate` (an xprv there was stored as public).
 51. **`waDropSeed` drops the account xprv and the derived address list** (every record carries its private key).
-52. **`waSaveWallet` checks the write result, and that check has NO regression test** (the boot model's `url_write`
-    raises instead of setting `the result`, so a test could not fail).
+52. **`waSaveWallet` checks the write result on both branches, and both guards are held** (2026-09-24). Until then the
+    boot model's `url_write` raised instead of setting `the result`, so a test could not fail. riptide's runner now
+    answers a write through `the result` (empty when it landed; the planted text, nothing written, for a path in
+    `world.url_write_refuse`), `check-wallet-boot.py` drives Save into a planted refusal on the sealed and the
+    unencrypted branch, and `test-wallet-boot.py` removes each guard in turn and requires the gate to fail.
 53. **Mainnet with the published test seed is allowed BY DECISION**; `waPublicSeedWarning` is recomputed every repaint.
 54. **Every PSBT signing branch checks the script it is about to unlock** (the p2wsh branch did not, 2026-09-01: anyone
     could get a signature over a preimage of their choosing). Multisig keys parse strictly; SIGHASH 0 and 1 are honoured

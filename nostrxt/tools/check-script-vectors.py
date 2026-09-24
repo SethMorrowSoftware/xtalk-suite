@@ -194,6 +194,19 @@ def check_interp_model(c, ip):
          ev("the keys of t", t={"b": 1, "a": 2}), "b\na")
     c.ck("`is among the keys of` answers on keys, not values",
          ev('"a" is among the keys of t', t={"a": ""}), True)
+    # The engine FOLDS array-key case (root engine notes 2.7, OBSERVED
+    # 2026-09-15), and since 2026-09-24 so does the interpreter: this
+    # member's p-tag dedup in nxReplyBuild (`tValueText is not among the keys
+    # of tSeen`) accepts hex of either case (nxIsHex), so a pubkey repeated
+    # in capitals is a DUPLICATE on the engine and the model has to say so
+    # too. The full fold fixture lives beside the interpreter's home,
+    # coinxt's check-script-vectors.
+    c.ck("an array key matches whatever its case (the engine's fold)",
+         ev('"AB" is among the keys of t', t=LCS._copy({"ab": 1})), True)
+    c.ck("a folded read answers the stored element",
+         ev('t["AB"]', t=LCS._copy({"ab": 1})), 1)
+    c.ck("the keys of keeps the stored (first) spelling",
+         ev("the keys of t", t=LCS._copy({"ab": 1})), "ab")
     c.ck("`the seconds` is the fixed deterministic epoch",
          ev("the seconds"), LCS.SECONDS[0])
     c.ck('the engine number fold: "1e3" IS an integer here, as on OXT',
@@ -580,9 +593,26 @@ def check_or_evaluation(c, ip):
     # The itemDelimiter is "/" inside nxJsonPathNode and is GLOBAL mutable
     # state, so the new early-out must restore it. If it did not, a later
     # comma-delimited read would see "/" and quietly return the whole string.
-    ip.call("nxJsonGet", ['{"a":["x","y"]}', "a/abc"])
-    c.ck("the itemDelimiter survives the refusal path",
-         ip.call("nxJsonGet", ['{"a":["x","y"]}', "a/1"]), "x")
+    #
+    # READ THE DELIMITER ITSELF (2026-09-24). This check's first version
+    # asked a SECOND nxJsonGet for "a/1" after the refusal and wanted "x" -
+    # but the walk saves whatever delimiter it finds and sets "/" itself, so
+    # that call answers "x" whether or not the first one leaked. Deleting the
+    # early-out's restore left the whole section at 9 checks, 0 failed, with
+    # the modelled delimiter still "/" afterwards: a blind check, printing OK
+    # over the exact defect its label names. The sentinel is not the default
+    # comma, so a restore to a hard-coded comma fails too, and
+    # tools/test-script-vectors.py now seeds the deleted restore and requires
+    # this gate to fail on it.
+    LCS.ITEM_DELIMITER[0] = "|"
+    try:
+        ip.call("nxJsonGet", ['{"a":["x","y"]}', "a/abc"])
+        after = LCS.ITEM_DELIMITER[0]
+    except Exception as exc:                           # noqa: BLE001
+        after = "raised %s" % type(exc).__name__
+    finally:
+        LCS.ITEM_DELIMITER[0] = ","
+    c.ck("the itemDelimiter survives the refusal path", after, "|")
 
 
 def main(argv):

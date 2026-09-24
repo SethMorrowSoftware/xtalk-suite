@@ -53,8 +53,11 @@ script "DataChannelDhtChat"
 -- nothing crashes when one is missing.
 --
 -- HOW TO RUN IT (two machines, ideally on different networks):
---   1. Install both extensions on both machines. Open this one script as a
---      stack - it builds its UI on first open.
+--   1. Install both extensions on both machines. On each, paste THIS file
+--      into a stack script and close and reopen the stack - opening the file
+--      itself builds no window (the suite's engine note 5.5). The dc
+--      dispatcher is embedded and the bt loop inlined, so there is nothing
+--      else to load.
 --   2. Machine A clicks "Host a room", waits for "offer published", and sends
 --      the room code to machine B (chat, email, carrier pigeon).
 --   3. Machine B pastes the code and clicks Join. Watch the status walk:

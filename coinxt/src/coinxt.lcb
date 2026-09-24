@@ -325,10 +325,13 @@ private foreign handler _cnx_bip39_wordlist_len() returns UIntSize binds to "c:c
 -- this file on shapes an engine has already run: cxKeccak256("") proved on
 -- 2026-08-08 that an EMPTY Data marshals through a plain Pointer slot (the
 -- engine may pass null, and every shim entry accepts null with length 0), so
--- an empty Data is already the family's way of saying "absent". `optional
--- Pointer` is legal LCB and CLAUDE.md names it for exactly this case, but it
--- has never been exercised on an engine in this suite and a money library is
--- the wrong place to find out.
+-- an empty Data is already the family's way of saying "absent", and the
+-- 2026-08-17 pass (Windows x86_64, OXT 9.6.3, coinxt 278/278) ran one in an
+-- OPTIONAL slot of exactly this kind. `optional Pointer` is legal LCB, and
+-- CLAUDE.md once named it for this case; it now says the opposite - absent
+-- optional inputs cross as an empty Data read by LENGTH, and `optional
+-- Pointer`, never exercised on an engine in this suite, is not to be used. A
+-- money library is the wrong place to find out what it does.
 --
 -- cnx_taproot_tweak_pubkey writes a 33-byte RECORD, not a 32-byte key: the
 -- x-only output key followed by one parity byte. That is this member's

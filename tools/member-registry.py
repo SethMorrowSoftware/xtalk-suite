@@ -83,7 +83,13 @@ MEMBERS = [
            native=True, siblings=[],
            mirror_note="the pre-suite home"),
     Member("torrentxt", "TorrentXT", "extension", OWNER + "/TorrentXT",
-           native=True, siblings=[],
+           native=True,
+           # tools/check-script-vectors.py (2026-09-24) runs the Model C
+           # handlers of both demos through riptide's runner, which loads
+           # nostrxt's interpreter at import; its tier 2 calls the committed
+           # sodiumxt binary. (The runner's coinxt binary is optional and
+           # this gate never asks for it.)
+           siblings=["riptide", "nostrxt", "sodiumxt"],
            mirror_note="the pre-suite home (it once vendored enetxt/ and "
                        "datachannelxt/ as subfolders)"),
     Member("enetxt", "enetxt", "extension", OWNER + "/enetxt",

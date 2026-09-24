@@ -13,11 +13,13 @@ script "DataChannelLoopback"
 -- `dcAddRemoteCandidate` calls with "send it to the far machine somehow"
 -- (TorrentXT DHT rendezvous, a paste, anything) and the rest is identical.
 --
--- HOW TO USE: put this script and the DataChannelXT extension in place, then:
---     (nothing - the poll dispatcher is embedded in this file)
---     go stack "DataChannelLoopback"           -- builds its UI on first open
--- Click "Connect", watch the states walk to connected + open, then type in
--- either pane's field and press Return.
+-- HOW TO USE: install the DataChannelXT extension. Paste THIS file into a
+-- stack script (File > New Mainstack, Object > Stack Script, Apply) and
+-- close and reopen the stack - opening the file itself builds no window (the
+-- suite's engine note 5.5). The poll dispatcher is embedded in this file
+-- already, so there is nothing else to load. Click "Connect", watch the
+-- states walk to connected + open, then type in either pane's field and
+-- press Return.
 --
 -- HONESTY (the suite convention): the binding and an in-process loopback are
 -- engine-proven (the suite harness drives its own, green 2026-08-12), but

@@ -4,8 +4,10 @@ script "NostrDemo"
 -- WHAT THIS IS. A single stack that exercises the whole member the way an
 -- app would: generate or import an identity and see its npub, compose and
 -- sign a text note (and watch it verify), decode any NIP-19 entity, connect
--- to a relay over ws:// or wss://, subscribe to recent notes, publish, and
--- run the member's full offline self-test into the log. It CARRIES the
+-- to a relay over ws:// or wss://, subscribe to recent notes, publish,
+-- answer a relay's NIP-42 challenge, unsubscribe, send one raw message (to
+-- provoke a CLOSED on purpose), and run the member's full offline
+-- self-test into the log. It CARRIES the
 -- nostrxt core, the relay layer and the member harness verbatim between the
 -- embed sentinels below (tools/sync-demo-embeds.py owns that region), so
 -- there is nothing to `start using` first. The CoinXT and SodiumXT
@@ -34,10 +36,19 @@ script "NostrDemo"
 -- the relay's ok-true came back for its id. What is STILL unrun, and still
 -- the runbook's to close: the receive side (subscribe, the EVENT/EOSE/
 -- CLOSED/NOTICE callbacks), NIP-42 auth, every ws:// path, and the TLS
--- question the successful run could not answer - it met a VALID certificate,
--- so whether a bad one would be refused is unmeasured in both directions
--- (root docs/OXT-ENGINE-NOTES.md 6.8). The pure-compute answers it shows are
--- pinned by tools/nostr-kat.py.
+-- question the successful run could not answer. It reached an ordinary
+-- public host, whose certificate an engine that verifies and an engine that
+-- verifies NOTHING would both have accepted - so the run says nothing about
+-- verification, and whether a bad certificate would be refused is
+-- unmeasured in both directions (root docs/OXT-ENGINE-NOTES.md 6.8, which
+-- is why this line no longer calls that certificate "valid": nothing here
+-- checked it). The pure-compute answers it shows are pinned by
+-- tools/nostr-kat.py.
+--
+-- THE ROW-34 CONTROLS (2026-09-24): Unsubscribe, Answer auth and Send raw
+-- make the runbook's NIP-42 and CLOSED legs button work instead of message
+-- box work. They were added after the 2026-08-24 run and have met no
+-- engine: verified statically; needs an OXT pass + a live-relay pass.
 --
 -- THE LOOK. This stack adopts the suite UI kit v2 verbatim (the marked
 -- block below); the kit block is never edited here - a look change edits
@@ -122,7 +133,8 @@ script "NostrDemo"
 --     2026-08-23; docs/07): the NIP-44 cipher. On an installed SodiumXT
 --     older than ABI 10 nxNip44Encrypt/Decrypt still fail closed with a
 --     clear capability error, by design; with ABI 10+ the full construction
---     runs and is vector-pinned headlessly (it still needs an OXT pass).
+--     runs, is vector-pinned headlessly, and RAN ON AN ENGINE 2026-08-24
+--     (the STATUS above; what exactly ran is at the NIP-44 section below).
 
 -- ==========================================================================
 -- Constants. Declared before first use (OXT resolves a constant by lexical
@@ -2650,7 +2662,19 @@ end nxUriDecode
 -- shipped as SodiumXT ABI 10's sxChaCha20IetfXor (docs/07). On an installed
 -- SodiumXT older than ABI 10, nxNip44Encrypt/Decrypt still fail closed with
 -- a clear capability error; the key schedule, padding and MAC work either
--- way. The complete path is engine-unproven (needs an OXT pass).
+-- way. ENGINE-PROVEN 2026-08-24 (Windows x86_64, OXT 9.6.3, the member
+-- harness folded into the suite paste, 274/0/2), and exactly this much ran:
+-- the official conversation-key and message-key vectors, all 24 official
+-- padded-length pairs, the refusals that precede the cipher (the MAC is
+-- checked before any cipher runs), and one official encrypt_decrypt vector
+-- (a 1-byte plaintext at a pinned nonce) decrypted, then re-encrypted byte
+-- for byte, through the real SodiumXT ABI-10 cipher. Do not read that
+-- record as covering more: multi-block and non-ASCII plaintexts and the
+-- oversized refusal have run HEADLESSLY only (tools/check-script-vectors.py
+-- executes this file over the committed sibling binaries), the official
+-- invalid-payload rows go through the oracle, not this file
+-- (tools/nostr-kat.py), and an encrypt with a FRESH nonce (pNonceHex empty)
+-- has run nowhere.
 -- ==========================================================================
 
 function nxNip44ConversationKey pSeckeyHex, pPubkeyHex
@@ -4639,7 +4663,14 @@ end socketTimeout
 -- deliberately not embedded there (it defines the engine's socket
 -- messages; see src/nostr-relay.livecodescript's header).
 --
--- STATUS: verified statically; needs an OXT pass. Every pinned constant
+-- STATUS, split. Sections 1-16 RAN ON AN ENGINE 2026-08-24 (Windows
+-- x86_64, OXT 9.6.3, folded into the suite paste): 274 passed, 0 failed,
+-- 2 skipped - the 2 are section 17, absent from the paste by design.
+-- Section 17 (the relay layer, offline) has no engine run anywhere; the
+-- demo's "Run nxSelfTest" button is where it runs. The three pins of the
+-- 2026-09-09 fix (two refusals and a delimiter restore, in sections 4 and
+-- 14) were added 2026-09-24, after that run. Section 17 and those three:
+-- verified statically; needs an OXT pass. Every pinned constant
 -- below is DERIVED by tools/nostr-kat.py from the published BIP-340,
 -- NIP-44, BIP-173 and NIP-19 vector sets or from the member's own oracle
 -- fixtures, and tools/check-selftest-vectors.py re-derives each one BY
@@ -4872,7 +4903,7 @@ end nxtTestJsonEscape
 -- ==========================================================================
 
 private command nxtTestJsonParse
-   local tJson, tDeep, tI
+   local tJson, tDeep, tI, tArrJson, tGot, tError, tSavedDelim, tAfterDelim
    nxtSection "json parser"
    put "{" & quote & "a" & quote & ":[1,2,{" & quote & "b" & quote & ":" & quote & "x" & quote & "}],  " & quote & "c" & quote & ":true," & quote & "d" & quote & ":null}" into tJson
    nxtCheck nxJsonType(tJson, empty) is "object", "root object types"
@@ -4901,6 +4932,37 @@ private command nxtTestJsonParse
    nxtCheck nxJsonType("{" & quote & "a" & quote & ":1," & quote & "a" & quote & ":2}", empty) is "missing", "duplicate object keys refuse (the first-wins/last-wins desync)"
    nxtCheck nxJsonType("{" & quote & "NAME" & quote & ":1}", "name") is "missing", "object keys are case-sensitive (is folds; the walk must not)"
    nxtCheck nxJsonType("[1,2,3]", "2.0") is "missing", "array paths are digit runs, not numeric folds"
+   -- THE 2026-09-09 REFUSAL, here so an engine pass runs it: until now only
+   -- tools/check-script-vectors.py did, headlessly. The array step's guard
+   -- used to be ONE chain, `not nxIsDigits(tStep) or tStep + 0 < 1 ...`,
+   -- and `or` evaluates BOTH operands (suite engine note 2.5), so a step
+   -- like "abc" reached `tStep + 0`: a HARD engine error, not a refusal,
+   -- raised from relay bytes through nxMetadataParse. So the call sits in a
+   -- try. On a regressed library a bare nxtCheck would not print FAIL - it
+   -- would THROW out of this whole harness and take every later line with
+   -- it; caught, the regression is one FAIL line and the report survives.
+   --
+   -- The same call pins the other half of that fix: the early-out now
+   -- restores the itemDelimiter, which is "/" at that point and global
+   -- state (suite engine note 2.3). It reads the DELIMITER, not a second
+   -- nxJsonGet: the walk saves whatever delimiter it finds and sets "/"
+   -- itself, so a second call answers "x" even after a leak (the headless
+   -- gate's first version of this check did exactly that and stayed green
+   -- with the restore deleted). The sentinel is not comma, so a restore to
+   -- a hard-coded comma fails as well.
+   put "{" & quote & "a" & quote & ":[" & quote & "x" & quote & "," & quote & "y" & quote & "]}" into tArrJson
+   put the itemDelimiter into tSavedDelim
+   set the itemDelimiter to "|"
+   put "not run" into tGot
+   try
+      put nxJsonGet(tArrJson, "a/abc") into tGot
+   catch tError
+      put "THREW: " & tError into tGot
+   end try
+   put the itemDelimiter into tAfterDelim
+   set the itemDelimiter to tSavedDelim
+   nxtCheck tGot is empty, "a non-numeric array step refuses, never a hard error (2026-09-09: or evaluates both operands)"
+   nxtCheck tAfterDelim is "|", "and that refusal restores the itemDelimiter (2026-09-09)"
    put empty into tDeep
    repeat with tI = 1 to 70
       put "[" after tDeep
@@ -5373,7 +5435,7 @@ end nxtTestRelayMessages
 -- ==========================================================================
 
 private command nxtTestWsPure
-   local tParsed, tRequest, tFrame, tDecoded, tBuffer
+   local tParsed, tRequest, tFrame, tDecoded, tBuffer, tGot, tError
    nxtSection "websocket helpers (RFC 6455, pure half)"
    put nxWsUrlParse("ws://relay.example.com") into tParsed
    nxtCheck tParsed["host"] is "relay.example.com", "ws url: host"
@@ -5387,6 +5449,16 @@ private command nxtTestWsPure
    nxtCheck nxWsUrlParse("http://x.io") is empty, "an http url refuses"
    nxtCheck nxWsUrlParse("ws://") is empty, "an empty host refuses"
    nxtCheck nxWsUrlParse("ws://h:99999") is empty, "an out-of-range port refuses"
+   -- The 2026-09-09 refusal, the same `or` rule as the JSON path step in
+   -- section 4 and caught the same way: a non-numeric port reached
+   -- `tPortText + 0` and was a hard engine error, not this refusal.
+   put "not run" into tGot
+   try
+      put nxWsUrlParse("wss://h:abc/") into tGot
+   catch tError
+      put "THREW: " & tError into tGot
+   end try
+   nxtCheck tGot is empty, "a non-numeric port refuses, never a hard error (2026-09-09)"
    nxtCheck nxWsUrlParse("ws://a b") is empty, "whitespace refuses"
    put nxWsHandshakeRequest("r.io", 80, "/", kNxVecWsKey, false) into tRequest
    nxtCheck tRequest begins with "GET / HTTP/1.1", "the request line"
@@ -5618,7 +5690,9 @@ end nxtTestRelayLayerOffline
 -- ==========================================================================
 
 -- Bumped whenever the generated UI changes so a saved stack rebuilds.
-constant kNdUiVersion = "nostrdemo-kit2-1"
+-- kit2-2 (2026-09-24): the row-34 controls (Unsubscribe, Answer auth, the
+-- raw line and Send raw) and the relay caption and footer rewritten.
+constant kNdUiVersion = "nostrdemo-kit2-2"
 constant kNdWinW = 980
 constant kNdWinH = 620
 
@@ -6115,6 +6189,15 @@ on mouseUp
       case "ndPublish"
          ndDoPublish
          break
+      case "ndUnsub"
+         ndDoUnsubscribe
+         break
+      case "ndAuth"
+         ndDoAuth
+         break
+      case "ndRawSend"
+         ndDoSendRaw
+         break
       case "ndTests"
          ndDoSelfTest
          break
@@ -6170,9 +6253,20 @@ command ndBuild
    uiButton "ndDisconnect", "Close", "898,78,952,100"
    uiButton "ndSub", "Subscribe (kind 1)", "506,106,646,128"
    uiButton "ndPublish", "Publish note", "650,106,760,128"
-   uiCap "ndRelayNote", "ws:// uses the proven socket idioms; wss:// is engine-unproven", "506,134,952,148"
-   uiArea "ndLog", "506,152,952,522"
-   uiFooter "This stack demonstrates NostrXT. It signs with CoinXT and randomizes with SodiumXT; it stores nothing, uploads nothing on its own, and holds keys in memory only. Verified statically; needs an OXT pass + a live-relay pass.", "16,538,964,600"
+   -- The row-34 controls (runbook: NIP-42 and a provoked CLOSED). Unsubscribe
+   -- closes the demo's own nd-notes subscription; Answer auth signs the
+   -- relay's most recent NIP-42 challenge; the raw line goes out as ONE text
+   -- frame, verbatim, preset to a request an auth-demanding relay refuses.
+   uiButton "ndUnsub", "Unsubscribe", "764,106,856,128"
+   uiButton "ndAuth", "Answer auth", "860,106,952,128"
+   uiInput "ndRaw", "506,134,866,156"
+   uiButton "ndRawSend", "Send raw", "872,134,952,156"
+   -- Three lines of room for a two-line caption: uiCap fits the height to
+   -- the measured text with the top pinned, so a platform whose font wraps
+   -- it once more must still land above the log.
+   uiCap "ndRelayNote", "Answer auth signs the NIP-42 challenge (the relay learns who you are). Send raw sends the line above verbatim; the preset draws CLOSED auth-required: from an auth relay.", "506,160,952,200"
+   uiArea "ndLog", "506,204,952,522"
+   uiFooter "This stack demonstrates NostrXT. It signs with CoinXT and randomizes with SodiumXT; it stores nothing, uploads nothing on its own, and holds keys in memory only. Engine-run 2026-08-24: the boot check, a wss:// connect and publish. The receive side, NIP-42, ws:// and the Unsubscribe / Answer auth / Send raw buttons: verified statically; needs an OXT pass + a live-relay pass.", "16,538,964,600"
    set the uNdUiVersion of this stack to kNdUiVersion
    unlock screen
 end ndBuild
@@ -6193,6 +6287,7 @@ command ndStart
    put tCaps["hasCoin"] into sNdHaveCoin
    put tCaps["hasSodium"] into sNdHaveSodium
    put "ws://127.0.0.1:7777" into field "ndUrl"
+   put ndRawPreset() into field "ndRaw"
    if sNdHaveCoin is not true then
       ndLog "CoinXT is not installed: ids, signing and NIP-44 will refuse with capability errors."
       uiStatus "CoinXT missing - crypto paths disabled (fail closed)", "warn"
@@ -6428,6 +6523,127 @@ command ndDoPublish
    uiStatus "published - awaiting the relay's verdict", "wait"
 end ndDoPublish
 
+-- --------------------------------------------------------------------------
+-- The row-34 controls (2026-09-24). Before these, runbook row 34's NIP-42
+-- and CLOSED legs were message-box work: the auth callback only logged the
+-- recipe. Each handler below is that recipe on a button, composed from the
+-- same public calls an app would make, so the engine pass that drives them
+-- exercises the library, not demo glue. None has met an engine: verified
+-- statically; needs an OXT pass + a live-relay pass. Each reads `the result`
+-- into a local at once, because the next command (uiStatus) can reset it.
+-- --------------------------------------------------------------------------
+
+command ndDoUnsubscribe
+   -- CLOSE the demo's own subscription. NIP-01 gives the client's CLOSE no
+   -- reply, so silence is the correct answer here; a relay-side CLOSED is a
+   -- different message, the one Send raw's preset provokes.
+   local tWhy
+   set the defaultStack to the short name of this stack
+   if sNdRelay is empty then
+      uiStatus "connect to a relay first", "warn"
+      exit ndDoUnsubscribe
+   end if
+   nxrUnsubscribe sNdRelay, "nd-notes"
+   put the result into tWhy
+   if tWhy is not empty then
+      uiStatus tWhy, "bad"
+      ndLog tWhy
+      exit ndDoUnsubscribe
+   end if
+   ndLog "CLOSE nd-notes (no reply is due; events for it should stop)"
+   uiStatus "unsubscribed from nd-notes", "ok"
+end ndDoUnsubscribe
+
+command ndDoAuth
+   -- Answer the relay's most recent NIP-42 challenge BY HAND, on purpose:
+   -- authenticating tells the relay which key is connected, so this demo
+   -- never does it unasked. The chain is the relay layer's own callback
+   -- contract: nxrChallenge (the challenge the relay last sent), nxAuthBuild
+   -- (kind 22242, relay and challenge tags), nxEventSign, nxrAuth. The
+   -- verdict comes back through onRelay as "ok <id>: true" (or false and a
+   -- reason) for the id logged below - the line runbook row 34 records.
+   local tChallenge, tEvent, tSigned, tWhy
+   set the defaultStack to the short name of this stack
+   if sNdRelay is empty then
+      uiStatus "connect to a relay first", "warn"
+      exit ndDoAuth
+   end if
+   if sNdSeckey is empty then
+      uiStatus "no identity yet - generate or import a key first", "warn"
+      exit ndDoAuth
+   end if
+   put nxrChallenge(sNdRelay) into tChallenge
+   if tChallenge is empty then
+      uiStatus "this relay has sent no AUTH challenge yet", "warn"
+      ndLog "no NIP-42 challenge from relay " & sNdRelay & " yet (a relay sends one on connect, or when a request needs auth)"
+      exit ndDoAuth
+   end if
+   put nxAuthBuild(nxrUrl(sNdRelay), tChallenge, empty) into tEvent
+   if tEvent is empty then
+      uiStatus "auth event refused: " & nxLastError(), "bad"
+      exit ndDoAuth
+   end if
+   put nxEventSign(tEvent, sNdSeckey, empty) into tSigned
+   if tSigned is empty then
+      uiStatus "signing failed: " & nxLastError(), "bad"
+      ndLog "nxEventSign: " & nxLastError()
+      exit ndDoAuth
+   end if
+   nxrAuth sNdRelay, tSigned
+   put the result into tWhy
+   if tWhy is not empty then
+      uiStatus tWhy, "bad"
+      ndLog tWhy
+      exit ndDoAuth
+   end if
+   ndLog "AUTH sent: kind 22242 " & tSigned["id"] & " for challenge " & tChallenge & " (watch for ok " & tSigned["id"] & ": true)"
+   uiStatus "auth sent - awaiting the relay's verdict", "wait"
+end ndDoAuth
+
+command ndDoSendRaw
+   -- One text frame, verbatim (nxrSendRaw: the caller owns the JSON). This
+   -- is how a CLOSED is provoked on purpose: the preset asks for kind-4 DMs,
+   -- NIP-42's own example of what a relay may refuse until the client
+   -- authenticates, and the refusal arrives through onRelay as "subscription
+   -- nd-raw closed by the relay: auth-required: ...". A line that is not a
+   -- JSON array is sent too - it is the easy way to draw a NOTICE, the other
+   -- relay message row 34 wants seen - and the log says which was sent.
+   -- Whatever comes back takes the normal callback path, verification on.
+   local tText, tWhy
+   set the defaultStack to the short name of this stack
+   if sNdRelay is empty then
+      uiStatus "connect to a relay first", "warn"
+      exit ndDoSendRaw
+   end if
+   put field "ndRaw" into tText
+   if tText is empty then
+      uiStatus "type a message to send first", "warn"
+      exit ndDoSendRaw
+   end if
+   nxrSendRaw sNdRelay, tText
+   put the result into tWhy
+   if tWhy is not empty then
+      uiStatus tWhy, "bad"
+      ndLog tWhy
+      exit ndDoSendRaw
+   end if
+   if nxJsonType(tText, empty) is "array" then
+      ndLog "raw sent: " & tText
+   else
+      ndLog "raw sent (NOT a JSON array; a relay usually answers with a NOTICE): " & tText
+   end if
+   uiStatus "raw message sent - watch the log", "ok"
+end ndDoSendRaw
+
+function ndRawPreset
+   -- ["REQ","nd-raw",{"kinds":[4],"limit":1}], built from quoted pieces
+   -- because the family checker refuses a brace outside a string literal
+   -- (nostrxt gotcha 3). A relay that serves DMs only to an authenticated
+   -- client answers it with CLOSED "auth-required: ..."; one that does not
+   -- answers EOSE, and that difference is itself worth recording.
+   return "[" & quote & "REQ" & quote & "," & quote & "nd-raw" & quote & ",{" & quote & "kinds" & quote & ":[4]," & quote & "limit" & quote & ":1}]"
+end ndRawPreset
+
 on onRelay pRelay, pKind, pArgOne, pArgTwo
    -- The whole nxr* callback contract in one switch. Reached from socket
    -- callbacks and the relay watchdog, so the defaultStack is pinned FIRST
@@ -6458,7 +6674,9 @@ on onRelay pRelay, pKind, pArgOne, pArgTwo
          ndLog "notice: " & pArgOne
          break
       case "auth"
-         ndLog "auth challenge: " & pArgOne & " (answer with nxAuthBuild + nxEventSign + nxrAuth)"
+         -- Logged, never answered here: Answer auth (ndDoAuth) is the
+         -- deliberate act, because authenticating identifies the key.
+         ndLog "auth challenge: " & pArgOne & " (press Answer auth to sign and send the kind-22242 reply)"
          break
       case "error"
          ndLog "relay " & pRelay & " error: " & pArgOne
@@ -6686,13 +6904,13 @@ end scFinish
 -- the world - pure answers and boot state only.
 -- ==========================================================================
 
-constant kNdScControls = "ndCodecCap,ndCodecNote,ndCodecPanel,ndConnect,ndContent,ndDecode,ndDerive,ndDisconnect,ndEncode,ndEntity,ndGen,ndKeysCap,ndKeysNote,ndKeysPanel,ndLog,ndNoteCap,ndNoteNote,ndNotePanel,ndNpub,ndNpubCap,ndNsec,ndNsecCap,ndPublish,ndRelayCap,ndRelayNote,ndRelayPanel,ndSign,ndSub,ndTests,ndToolsCap,ndToolsPanel,ndUrl,uiFooter,uiStatus,uiTitle"
+constant kNdScControls = "ndAuth,ndCodecCap,ndCodecNote,ndCodecPanel,ndConnect,ndContent,ndDecode,ndDerive,ndDisconnect,ndEncode,ndEntity,ndGen,ndKeysCap,ndKeysNote,ndKeysPanel,ndLog,ndNoteCap,ndNoteNote,ndNotePanel,ndNpub,ndNpubCap,ndNsec,ndNsecCap,ndPublish,ndRaw,ndRawSend,ndRelayCap,ndRelayNote,ndRelayPanel,ndSign,ndSub,ndTests,ndToolsCap,ndToolsPanel,ndUnsub,ndUrl,uiFooter,uiStatus,uiTitle"
 
 command ndScRun
    local tMissing
    scBegin "ndLog"
    put scMissing(kNdScControls) into tMissing
-   scAssert "all 35 controls this script names exist (missing: " & scShow(tMissing) & ")", tMissing is empty
+   scAssert "all 39 controls this script names exist (missing: " & scShow(tMissing) & ")", tMissing is empty
    scAssert "no relay handle at boot", sNdRelay is empty
    scAssert "the relay table is empty at boot", nxrOpenRelays() is empty
    scAssert "nxVersion reports the member", nxVersion() begins with "NostrXT"

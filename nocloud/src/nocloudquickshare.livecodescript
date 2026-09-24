@@ -9,7 +9,10 @@ script "No Cloud Quick Share"
 -- code to a friend; they paste it in and the file transfers straight from your
 -- machine to theirs. No server, no upload, no size limit - it is plain
 -- peer-to-peer BitTorrent with the DHT finding the peers, wrapped in a one-card
--- stack. Built on the TorrentXT / SodiumXT / OnionXT OpenXTalk extensions.
+-- stack. Built on the TorrentXT and SodiumXT OpenXTalk extensions, plus OnionXT
+-- for the Tor path - which is pure script and rides INSIDE this stack script
+-- (embedded between the sentinel lines below since 2026-08-24), so it is
+-- never something to install.
 --
 -- HOW TO USE: open OXT, make a one-card stack, paste THIS into the STACK script
 -- (Object > Stack Script), then close+reopen. It builds its own UI and starts a
@@ -21,12 +24,19 @@ script "No Cloud Quick Share"
 -- is caught by shutdownRequest so the session always shuts down properly. In
 -- the standalone builder: (1) include the org.openxtalk.library.torrent
 -- extension - plus org.openxtalk.library.sodium (SodiumXT) for the passphrase
--- features and OnionXT for the Tor features; both are OPTIONAL and the app
--- fails closed with a clear message when they are absent; (2) include the
--- Internet library (libURL) - used only for the public-IP lookup on the web
--- link path, and harmless if left out (the lookup is try-guarded); (3) no
--- other inclusions, externals, or resources are needed. Downloads land in
--- Documents/No Cloud Quick Share on every platform.
+-- features, the LAN editor password and the Tor path; SodiumXT is OPTIONAL and
+-- the app fails closed with a clear message when it is absent. OnionXT is NOT
+-- in the builder and needs no ticking: it is not a packaged extension, and
+-- this script carries it, so the Tor path ships with the stack. What the Tor
+-- path still needs at runtime is SodiumXT plus a LOCAL Tor daemon on the
+-- user's machine (system tor, or Tor Browser running) - a user install, not
+-- a builder inclusion; (2) include the Internet library (libURL) - used only
+-- for the public-IP lookup on the web link path, and harmless if left out
+-- (the lookup is try-guarded); (3) include the JSON Library if end-users
+-- should add their own endpoints with a .qsroutes.json (without it that one
+-- feature is off and everything else works; docs/building-a-standalone.md);
+-- (4) no other inclusions, externals, or resources are needed. Downloads
+-- land in Documents/No Cloud Quick Share on every platform.
 --
 -- THE DEMO (two machines, both running this stack):
 --   1. On machine A, drag a file onto the drop area (or click it to choose one).
@@ -88,12 +98,29 @@ script "No Cloud Quick Share"
 -- ed25519 scalar clamp are pure byte manipulation.
 --
 -- STATUS: implemented AND run on a real OXT engine against a live tor daemon.
--- The core paths are confirmed on-engine: dialing through the SOCKS proxy, the
--- control-port connect + SAFECOOKIE auth, GETINFO / SETEVENTS, publishing a v3
--- onion service, accepting an inbound (Tor-forwarded) connection, streaming data
--- both ways, and bootstrap/HS_DESC events. The only path NOT yet exercised is the
--- optional Mode B (launching a bundled tor via `open process`), still flagged
--- "VERIFY:" below. The pure-compute paths are pinned by tools/onion-kat.py.
+-- The core paths are confirmed on-engine (onionxt/CLAUDE.md, the evidence
+-- ledger): dialing through the SOCKS proxy, the control-port connect +
+-- SAFECOOKIE auth, GETINFO / SETEVENTS, publishing a v3 onion service,
+-- accepting an inbound (Tor-forwarded) connection, streaming data both ways,
+-- and bootstrap/HS_DESC events. The offline surface runs inside every dated
+-- suite paste from 2026-08-10 (oxSelfTest), and the pure-compute paths are
+-- pinned by tools/onion-kat.py.
+--
+-- NOT yet exercised on an engine, each "verified statically; needs an OXT
+-- pass + a live-Tor pass" (the still-VERIFY list in onionxt/CLAUDE.md, which
+-- is the authority; this is its index): the optional Mode B launch
+-- (oxLaunchTor / oxStopTor over `open process`, including the 2026-09-24
+-- result checks); an OnionXT-to-OnionXT onion dial and the two-instance round
+-- trip; the raw socket id a live accept hands oxPeerAccepted; the 2026-08-23
+-- foreign-socket `pass` lines and the 2026-08-24 socket-message split on a
+-- live socket; the 2026-09-09 oxWrite result capture and callback pins; the
+-- four inline hypotheses (runbook B.12); and the live negative paths (a wrong
+-- cookie, a stalled daemon, a peer vanishing mid-handshake, and which of the
+-- two SOCKS timeout paths fires - distinguishable since 2026-09-24).
+-- Until 2026-09-24 this header said "the only path NOT yet exercised is the
+-- optional Mode B", which was true at bring-up and understated everything
+-- added since; a carried header is read in every stack that embeds this file
+-- and in the suite paste, so it lists rather than summarises.
 --
 -- Conventions (see CLAUDE.md): public API oxPascalCase; locals t..., params
 -- p..., script-locals s..., constants k...; SOCKS5 is BINARY (byte / numToByte /
@@ -937,9 +964,40 @@ command oxStreamDeadline pStream
    local tState
    put sStreams[pStream]["state"] into tState
    if tState is not "connected" and tState is not "closed" then
-      oxStreamFail pStream, "SOCKS handshake timed out"
+      oxStreamFail pStream, oxSocksTimeoutReason("deadline", tState)
    end if
 end oxStreamDeadline
+
+private function oxSocksTimeoutReason pWhich, pStage
+   -- TWO PATHS TIME A HANDSHAKE OUT, AND UNTIL 2026-09-24 THEY SAID THE SAME
+   -- WORDS. oxStreamDeadline above is OnionXT's own watchdog, armed by oxDial
+   -- for exactly kOxHandshakeTimeout ms; oxSocketTimeout below is the ENGINE's
+   -- socketTimeout message, which fires on the engine-global
+   -- socketTimeoutInterval (oxDial sets it, but so may any co-loaded library
+   -- that opens a socket after it). Both reported "SOCKS handshake timed out",
+   -- so the one real stall on record - the 2026-09-02 coin-wallet log, which
+   -- failed closed and retried - cannot say which of them fired, and engine
+   -- note 6.1 (socketTimeout REPEATS while a read is pending) stays
+   -- DOCUMENTED for want of exactly that observation.
+   --
+   -- So the reason now names the PATH and the STAGE the stream stalled in.
+   -- The stage is worth more than it looks: "connecting" means the TCP connect
+   -- to the SOCKS port never completed, "greeting" that the port accepted but
+   -- never answered the method negotiation (a stalled or not-yet-bootstrapped
+   -- tor), and "replyhead" that tor took the CONNECT and never reported back
+   -- (the circuit or the onion rendezvous is what stalled).
+   --
+   -- THE PREFIX IS KEPT VERBATIM. Every reason still begins with "SOCKS
+   -- handshake timed out", so a log search or an app that matched the old
+   -- words still matches; only the parenthesis is new. Verified statically;
+   -- needs an OXT pass + a live-Tor pass (a forced stall, runbook row 44).
+   if pWhich is "deadline" then
+      return "SOCKS handshake timed out (OnionXT deadline of " & kOxHandshakeTimeout & \
+            " ms passed, stalled at stage " & pStage & ")"
+   end if
+   return "SOCKS handshake timed out (engine socketTimeout fired, stalled at stage " & \
+         pStage & ")"
+end oxSocksTimeoutReason
 
 private command oxStreamFail pStream, pError
    -- Fail closed: report the error to the app, then close and forget the stream.
@@ -1669,7 +1727,9 @@ function oxSocketTimeout pSocketID
    if tHandle is not empty then
       put sStreams[tHandle]["state"] into tState
       if tState is not "connected" then
-         oxStreamFail tHandle, "SOCKS handshake timed out"
+         -- A different reason from oxStreamDeadline's on purpose: see
+         -- oxSocksTimeoutReason for why the two paths must be told apart.
+         oxStreamFail tHandle, oxSocksTimeoutReason("socketTimeout", tState)
       end if
       return "true"
    end if
@@ -1695,12 +1755,38 @@ end oxSocketTimeout
 command oxLaunchTor pTorPath, pDataDir, pSocksPort, pControlPort
    -- Write a minimal torrc into pDataDir and launch pTorPath against it, so tor
    -- exits with the app (__OwningControllerProcess) and uses cookie auth. Returns
-   -- empty on a clean launch attempt, or an error string. The caller then polls
-   -- oxConnectControl / oxBootstrapProgress; this does not wait for bootstrap.
+   -- empty once the torrc is written AND `open process` has accepted the command
+   -- line, or an "OnionXT: ..." error string (docs/05's command contract). The
+   -- caller then polls oxConnectControl / oxBootstrapProgress; this does not wait
+   -- for bootstrap, and an empty result does NOT mean tor is up - only that the
+   -- engine started what it was given (tor can still exit on a bad torrc or a
+   -- port already in use: runbook trap 5.3.1).
+   --
+   -- BOTH RESULTS ARE READ, AND UNTIL 2026-09-24 NEITHER WAS. The torrc write
+   -- and `open process` report a failure through `the result` (the engine's
+   -- command convention; not yet observed for these two on OXT), and this
+   -- handler ignored both and returned empty unconditionally - so a data
+   -- directory that did not exist, or a read-only one, came back as a clean
+   -- launch, and so did any launch failure the engine reported; closing-pass
+   -- leg F's first PASS line ("torrc written, process started") claimed more
+   -- than the code had checked. Each is now captured on the very next line
+   -- (any intervening statement can clear `the result`: the oxWrite
+   -- discipline) and fails closed with a reason that names what failed. Both
+   -- sit inside try/catch as well, because a platform with no process support
+   -- may THROW rather than set the result, and a library command must answer
+   -- with a string either way. What this cannot promise: that a WRONG tor path
+   -- is reported here at all - an engine that forks and then execs may learn
+   -- of it only when the child dies, after this has returned. Leg F records
+   -- what OXT does. Verified statically; needs an OXT pass + a live-Tor pass.
+   --
+   -- The two empty-argument refusals come FIRST, before anything touches disk
+   -- or changes state, which is what lets the offline harness call
+   -- `oxLaunchTor empty, empty, empty, empty` by name (onionxt-tests section 3)
+   -- instead of carrying a coverage exemption for it.
    if pTorPath is empty or pDataDir is empty then
       return "OnionXT: oxLaunchTor needs a tor binary path and a data directory"
    end if
-   local tSocks, tControl, tTorrc, tRcPath
+   local tSocks, tControl, tTorrc, tRcPath, tLogPath, tWriteErr, tLaunchErr, tError
    if pSocksPort is empty then
       put kOxSocksPortDefault into tSocks
    else
@@ -1717,10 +1803,34 @@ command oxLaunchTor pTorPath, pDataDir, pSocksPort, pControlPort
    put "DataDirectory " & pDataDir & oxCrlf() after tTorrc
    -- Tie tor's lifetime to this process where the platform supports it.
    put "__OwningControllerProcess " & oxProcessId() & oxCrlf() after tTorrc
+   -- TOR'S LOG GOES TO A FILE, NOT TO THE PIPE (2026-09-24). The process is
+   -- opened `for read` and nothing ever reads it, and tor's default is notice
+   -- logging to stdout - so a long-running child writing into a pipe nobody
+   -- drains could fill the pipe buffer and block inside its next log write
+   -- (inferred from how pipes behave, not observed here). tor's own manual
+   -- (tor(1), under --hush) documents that console logging stops once the
+   -- torrc says to log somewhere else, so this line moves the steady stream to
+   -- a file; only the few lines tor prints before it has read this torrc
+   -- still reach the pipe.
+   -- The side benefit is the one leg F wanted: tor's own "Bootstrapped 100%"
+   -- line is now readable in <pDataDir>/onionxt-tor.log, which OnionXT still
+   -- does not read for you. Unquoted, like DataDirectory above, so a path with
+   -- a space rides the same assumption that line always has (inferred from
+   -- tor's config parser taking the rest of the line; needs the leg F run).
+   put pDataDir & "/onionxt-tor.log" into tLogPath
+   put "Log notice file " & tLogPath & oxCrlf() after tTorrc
    put pDataDir & "/onionxt-torrc" into tRcPath
-   put tTorrc into url ("binfile:" & tRcPath)
-   oxSetSocksPort tSocks
-   oxSetControlPort tControl
+   try
+      put tTorrc into url ("binfile:" & tRcPath)
+      put the result into tWriteErr
+   catch tError
+      put "the write threw:" && tError into tWriteErr
+   end try
+   if tWriteErr is not empty then
+      -- Nothing has changed yet: the ports are still the caller's, no process
+      -- exists. A missing or read-only data directory lands here.
+      return "OnionXT: oxLaunchTor could not write the torrc" && tRcPath & ":" && tWriteErr
+   end if
    -- open process is platform-specific; launch tor detached with -f <torrc>.
    -- QUOTE BOTH PATHS. The command line is split on whitespace, so an unquoted
    -- "C:/Program Files/Tor/tor.exe" arrives as the two arguments "C:/Program"
@@ -1729,7 +1839,23 @@ command oxLaunchTor pTorPath, pDataDir, pSocksPort, pControlPort
    -- normal case on Windows and macOS, not an edge case. The same applies to
    -- the torrc path, which is derived from pDataDir.
    -- VERIFY: process launch and teardown on your target OXT build.
-   open process (quote & pTorPath & quote & " -f " & quote & tRcPath & quote) for read
+   try
+      open process (quote & pTorPath & quote & " -f " & quote & tRcPath & quote) for read
+      put the result into tLaunchErr
+   catch tError
+      put "open process threw:" && tError into tLaunchErr
+   end try
+   if tLaunchErr is not empty then
+      -- The torrc stays on disk (Mode B cleans up nothing yet: docs/07), but
+      -- the library's ports are NOT re-pointed at a tor that never started.
+      return "OnionXT: oxLaunchTor could not start" && pTorPath & ":" && tLaunchErr
+   end if
+   -- Re-point the rest of the API at the launched tor only now that a launch
+   -- was accepted. Until 2026-09-24 these two ran BEFORE `open process`, so a
+   -- failed launch still left every later oxDial / oxConnectControl aimed at
+   -- ports nothing was listening on.
+   oxSetSocksPort tSocks
+   oxSetControlPort tControl
    return empty
 end oxLaunchTor
 
@@ -2226,7 +2352,7 @@ local sStallWarned      -- array: torrent handle -> "true" once the one-time log
 -- OnionXT (optional Tor anonymity, Model C). When the Tor toggle is on, a file's
 -- bytes travel over an OnionXT onion stream (both IPs hidden) and NO torrent is
 -- created. All of this is inert unless sHasOnion. See the ox* wiring below.
-local sHasOnion         -- "true" if OnionXT loads AND SodiumXT works (probed once)
+local sHasOnion         -- "true" if the embedded OnionXT answers AND SodiumXT works (probed once)
 local sTorReady         -- "true" if Tor is bootstrapped + ready (LIVE cache; re-checked at use)
 local sTorSend          -- "true" while the "Send privately over Tor" toggle is armed
 local sWebServe         -- "true" while the "Also offer a Tor Browser download link" checkbox is on
@@ -2344,10 +2470,12 @@ constant kQsVerify = "BTXQSVERIFY"
 
 -- ---- OnionXT (optional Tor anonymity) constants ------------------------------
 -- Model C: with the Tor toggle on, the file's bytes ride an OnionXT onion stream
--- (both IPs hidden) and NO torrent is created. Requires the OnionXT extension +
--- SodiumXT + a LOCAL Tor daemon. Every ox* call is against OnionXT's published
--- ABI; verified statically here, needs an on-engine OXT pass with a running Tor
--- daemon (the project convention - see CLAUDE.md and docs/what-it-hides.md).
+-- (both IPs hidden) and NO torrent is created. Requires SodiumXT + a LOCAL Tor
+-- daemon; OnionXT itself is carried in this script (the embed above, since
+-- 2026-08-24), so it is never the missing piece. Every ox* call is against
+-- OnionXT's public API; verified statically here, needs an on-engine OXT pass
+-- with a running Tor daemon (the project convention - see CLAUDE.md and
+-- docs/what-it-hides.md).
 constant kTorCodePrefix = "BTXTOR1:"   -- marks an anonymous (Tor) share code
 constant kOnionMagic = "BTXO"          -- 4 ASCII bytes: file-stream frame sync + go request
 constant kOnionVer = 1                 -- stream protocol version
@@ -3542,6 +3670,12 @@ command qsStart
       qsOnionStart
    else
       qsOnionPill
+      -- the pill is a short chip, so the how-to-fix goes to the Activity log.
+      -- The SodiumXT case is already said by the encryption line just below;
+      -- the carried-copy case would otherwise be said nowhere.
+      if sCanEncrypt is "true" then
+         qsLog "Private / Tor is OFF:" && qsOnionOffReason()
+      end if
    end if
    if sCanEncrypt then
       qsLog "No Cloud Quick Share " & kQsAppVersion & " ready. Drag a file to share it, or paste a code to download. Tip: type a passphrase first to ENCRYPT a file end-to-end."
@@ -3694,7 +3828,7 @@ command qsShareFile pPath
    -- onion stream and NO torrent is created (mutual-exclusion invariant, section 3).
    if sTorSend is "true" then
       if not sHasOnion then
-         qsLog "Turn off 'Send privately over Tor', or install OnionXT + SodiumXT + a local Tor daemon."
+         qsLog "Turn off 'Send privately over Tor', or fix this first:" && qsOnionOffReason()
          exit qsShareFile
       end if
       if not qsOnionReadyNow() then
@@ -3961,7 +4095,7 @@ command qsGetFile
       put item 3 of tRest into tB64Salt
       put item 4 of tRest into tB64Verify
       put toLower(tHash) into tHash
-      if the number of chars of tHash is not 40 and the number of chars of tHash is not 64 then
+      if (the number of chars of tHash is not 40 and the number of chars of tHash is not 64) or not qsIsHex(tHash) then
          qsLog "That locked code looks damaged (bad hash)."
          exit qsGetFile
       end if
@@ -4004,7 +4138,7 @@ command qsGetFile
          put tCode into tMag
       else
          put toLower(tCode) into tCode
-         if the number of chars of tCode is not 40 and the number of chars of tCode is not 64 then
+         if (the number of chars of tCode is not 40 and the number of chars of tCode is not 64) or not qsIsHex(tCode) then
             qsLog "That does not look like a share code (it should be 40 characters)."
             exit qsGetFile
          end if
@@ -4019,6 +4153,25 @@ command qsGetFile
       qsLog "Downloading to" && qsSaveFolder() & ". Watch the Transfers list - your friend must be online."
    end if
 end qsGetFile
+
+-- True when pText is non-empty and every char is 0-9 or a-f (callers lowercase
+-- first). A share code used to be checked for LENGTH only, and libtorrent 2.0.x's
+-- magnet parser ignores from_hex's failure (2.1.1 checks it), so on the Linux and mac
+-- builds a 40-character non-hex code made btAddMagnet join a garbage swarm instead of
+-- refusing (found 2026-09-24 while pinning register #17). Verified statically; needs
+-- an OXT pass.
+function qsIsHex pText
+   local tI
+   if pText is empty then
+      return false
+   end if
+   repeat with tI = 1 to the number of chars of pText
+      if offset(char tI of pText, "0123456789abcdef") is 0 then
+         return false
+      end if
+   end repeat
+   return true
+end qsIsHex
 
 -- ---- transfers view + events -------------------------------------------------
 command qsRefreshXfers
@@ -4772,10 +4925,17 @@ function qsCapabilityLine
    else
       put "SodiumXT NO (" & qsEncryptAdvice() & ")" into tOut
    end if
+   -- OnionXT is CARRIED in this script since 2026-08-24, so "not in the
+   -- message path" (this line's old wording) can no longer be the reason:
+   -- the Tor path is off because SodiumXT is, or because the carried copy
+   -- did not answer (qsOnionOffReason's two cases, shortened for one line;
+   -- the SodiumXT half above uses the same truthiness, so the two agree).
    if sHasOnion then
-      put tOut & ", OnionXT OK" into tOut
+      put tOut & ", OnionXT OK (carried in this script)" into tOut
+   else if sCanEncrypt then
+      put tOut & ", OnionXT carried but did not answer (re-paste the whole script)" into tOut
    else
-      put tOut & ", OnionXT not in the message path" into tOut
+      put tOut & ", Tor path off (needs SodiumXT; OnionXT is carried in this script)" into tOut
    end if
    if sHasJson then
       return tOut & ", JSON OK"
@@ -4896,15 +5056,21 @@ end qsMaybeDecryptFinished
 -- ==== OnionXT: optional Tor anonymity (Model C) ==============================
 -- The whole block below is inert unless sHasOnion. It NEVER touches libtorrent:
 -- an anonymous transfer creates no torrent and makes no DHT call (the mutual-
--- exclusion invariant). Every ox* handler is OnionXT's published ABI; this is
--- verified statically (tools/check-livecodescript.py) and NEEDS an on-engine OXT
--- pass with a running Tor daemon before any runtime claim (see CLAUDE.md, the
--- "VERIFY on the OXT pass" discipline).
+-- exclusion invariant). Every ox* handler is the public API of the OnionXT
+-- copy embedded above (pure script since 2026-08-24, so there is no extension
+-- to load and no ABI to match); this is verified statically
+-- (tools/check-livecodescript.py) and NEEDS an on-engine OXT pass with a
+-- running Tor daemon before any runtime claim (see CLAUDE.md, the "VERIFY on
+-- the OXT pass" discipline).
 
--- Is OnionXT installed AND SodiumXT working? OnionXT depends on SodiumXT, so both
--- must be present for any anonymous transfer (even a plaintext one). A guarded
--- oxVersion() probe, mirroring qsCanEncrypt. VERIFY: oxVersion resolves only when
--- the OnionXT extension is loaded.
+-- Does the embedded OnionXT answer, AND is SodiumXT working? OnionXT depends on
+-- SodiumXT, so both must hold for any anonymous transfer (even a plaintext one).
+-- A guarded oxVersion() probe, mirroring qsCanEncrypt. oxVersion is defined in
+-- this very script, so the try can only fire on a copy of the script that lost
+-- its embed (a hand-trimmed paste, say) - which is what the probe is still
+-- for: that case must fail closed with a re-paste message (qsOnionOffReason),
+-- not throw from the first ox* call. A running tor daemon is NOT probed here;
+-- the pill and qsOnionReadyNow re-check that live, at the moment of use.
 function qsHasOnion
    local tV, tErr
    if not sCanEncrypt then
@@ -4917,6 +5083,30 @@ function qsHasOnion
    end try
    return (tV is not empty)
 end qsHasOnion
+
+-- WHY the Tor path is off, as the one sentence every site uses (the
+-- qsEncryptAdvice discipline: advice that cannot contradict itself across the
+-- log lines). Since 2026-08-24 OnionXT is CARRIED in this script, so "install
+-- OnionXT" - what two log lines here said until 2026-09-24, beside a Tor chip
+-- reading "extension not installed" - is never the answer, and telling a user
+-- to install something they already have is the failure qsEncryptAdvice was
+-- written to stop. With sHasOnion false the path is off
+-- because SodiumXT is (qsEncryptAdvice names missing versus ABI-skewed), or
+-- because the carried copy did not answer. The tor DAEMON is not this
+-- function's case: it is a separate, live condition (the pill's "Tor: not
+-- running"), though the SodiumXT sentence names it so a user fixes both in
+-- one go. Only meaningful after the startup probes; before them it says so.
+-- Verified statically; needs an OXT pass (checklist section 8's "Without
+-- SodiumXT" line is where it shows).
+function qsOnionOffReason
+   if sCanEncrypt is "false" then
+      return "the Tor path needs SodiumXT and a running local Tor daemon (OnionXT itself is carried in this script)." && qsEncryptAdvice()
+   end if
+   if sCanEncrypt is "true" then
+      return "the OnionXT copy carried in this script did not answer - re-paste the WHOLE script into the stack script, then close and reopen."
+   end if
+   return "startup has not finished its capability probes yet."
+end qsOnionOffReason
 
 -- Live, authoritative Tor readiness, re-read at the moment of use (never trust the
 -- cached sTorReady for a go/no-go). oxIsReady() is true only at 100% bootstrap.
@@ -5051,7 +5241,10 @@ command qsOnionPill
       -- before the session, and an unprobed state says so rather than
       -- accusing an extension that is installed and working.
       if sCanEncrypt then
-         put "Tor: extension not installed" into tState
+         -- NOT "extension not installed" (the pre-2026-08-24 wording): OnionXT
+         -- is carried in this script, so SodiumXT-working-but-no-Tor means
+         -- the carried copy did not answer. The log has the full sentence.
+         put "Tor: re-paste script" into tState
       else if sCanEncrypt is "false" then
          put "Tor: needs SodiumXT" into tState
       else
@@ -5829,11 +6022,11 @@ command qsOnionServeHttp pStream
    put word 1 of tReq into tMethod
    put word 2 of tReq into tPath
    if sActiveShare["enc"] is kFlagEnc then
-      qsOnionHttpText pStream, "200 OK", "text/html; charset=utf-8", qsHtmlEncrypted()
+      qsOnionHttpText pStream, "200 OK", "text/html; charset=utf-8", qsHtmlEncrypted(), tMethod
       exit qsOnionServeHttp
    end if
    if sActiveShare["web"] is not "true" then
-      qsOnionHttpText pStream, "403 Forbidden", "text/html; charset=utf-8", qsHtmlDisabled()
+      qsOnionHttpText pStream, "403 Forbidden", "text/html; charset=utf-8", qsHtmlDisabled(), tMethod
       exit qsOnionServeHttp
    end if
    if tPath is "/download" then
@@ -5874,23 +6067,35 @@ command qsOnionServeHttp pStream
       exit qsOnionServeHttp
    end if
    if tPath is "/" then
-      qsOnionHttpText pStream, "200 OK", "text/html; charset=utf-8", qsHtmlIndex()
+      qsOnionHttpText pStream, "200 OK", "text/html; charset=utf-8", qsHtmlIndex(), tMethod
       exit qsOnionServeHttp
    end if
-   qsOnionHttpText pStream, "404 Not Found", "text/plain; charset=utf-8", "Not found."
+   qsOnionHttpText pStream, "404 Not Found", "text/plain; charset=utf-8", "Not found.", tMethod
 end qsOnionServeHttp
 
 -- Send a small text/html HTTP response and close (used for the index, the
 -- encrypted notice, and 404s - never for the file body).
-command qsOnionHttpText pStream, pStatus, pType, pBody
-   local tData, tHead, tCrlf
+command qsOnionHttpText pStream, pStatus, pType, pBody, pMethod
+   local tData, tHead, tCrlf, tBody
    put (numToChar(13) & numToChar(10)) into tCrlf
    put textEncode(pBody, "UTF-8") into tData
    put ("HTTP/1.1 " & pStatus & tCrlf & "Content-Type: " & pType & tCrlf & \
       "Content-Length: " & (the number of bytes in tData) & tCrlf) into tHead
    put qsHttpExtraHeaders() after tHead
    put ("Connection: close" & tCrlf & tCrlf) after tHead
-   oxWrite pStream, (textEncode(tHead, "UTF-8") & tData)
+   -- A HEAD gets the head only (2026-09-24). The 2026-08-17 HEAD fixes reached the
+   -- file-server routes but not this single-file Tor page path: the index, the
+   -- encrypted notice, the web-download-off page and the 404 all sent their body to
+   -- a HEAD. Content-Length still states the GET body's size, as RFC 9110 allows.
+   -- pMethod is the request line's first word, passed by qsOnionServeHttp; the
+   -- same fix landed in torrentxt's torrent-quickshare copy the same day.
+   -- Verified statically; needs an OXT + live-Tor pass.
+   if pMethod is "HEAD" then
+      put empty into tBody
+   else
+      put tData into tBody
+   end if
+   oxWrite pStream, (textEncode(tHead, "UTF-8") & tBody)
    oxCloseStream pStream
    qsOnionServeCleanup pStream
 end qsOnionHttpText
@@ -7758,10 +7963,12 @@ command qsEditWriteRoute pConn, pRequest
    -- a save may target a folder that does not exist yet (e.g. assets/uploads/...):
    -- create the missing parent levels first, so uploads can organise themselves
    qsEditEnsureFolders qsEditServedRoot(), tRel
-   -- REPLACE the file wholesale. `open file ... for binary write` does NOT truncate in
-   -- this engine (it overwrites from offset 0 and leaves any longer tail in place), so
-   -- saving a SHORTER file would otherwise keep stale trailing bytes. Delete first - the
-   -- same guard qsEncryptFile uses - so the saved bytes are exactly the new content.
+   -- REPLACE the file wholesale, without leaning on what `open file ... for binary
+   -- write` does to a longer existing file. Until 2026-09-24 this comment said it does
+   -- NOT truncate here (overwriting from offset 0 and keeping any longer tail); the
+   -- LiveCode reference and engine source say it DOES, and no run has settled it on OXT
+   -- (engine note 6.14). Delete first - the same guard qsEncryptFile uses - which is
+   -- right under both readings, so the saved bytes are exactly the new content.
    if there is a file tDisk then
       delete file tDisk
    end if
@@ -9699,7 +9906,7 @@ end qsCwIpReply
 command qsReceiveOnion pCode
    local tRest, tOnion, tB64, tB64Salt, tB64Verify, tName, tPass, tSalt, tKey, tStream, tErr
    if not sHasOnion then
-      qsLog "This is a private Tor share, but OnionXT (or SodiumXT) is not installed - ask your friend to share it normally, or install OnionXT + SodiumXT + Tor."
+      qsLog "This is a private Tor share, but" && qsOnionOffReason() && "Or ask your friend to share it normally."
       exit qsReceiveOnion
    end if
    put char ((the number of chars of kTorCodePrefix) + 1) to -1 of pCode into tRest

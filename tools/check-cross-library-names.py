@@ -79,6 +79,12 @@ SCRIPT_LIBS = {
     "nostrxt/src/nostr-relay.livecodescript": ("nxr",),
     "enetxt/examples/enet-helpers.livecodescript": ("en",),
     "datachannelxt/examples/datachannel-helpers.livecodescript": ("dc",),
+    # torrent-helpers joined 2026-09-24. enet-internet-chat has co-embedded it
+    # beside enet-helpers since that demo gained its router mapping, and
+    # tools/sync-demo-embeds.py justifies that co-embed by pointing HERE ("the
+    # two layers' names are held disjoint by check-cross-library-names") - while
+    # this corpus never listed it, so the claim held by luck, not by a gate.
+    "torrentxt/examples/torrent-helpers.livecodescript": ("bt",),
     "coinxt/examples/wallet-core.livecodescript": ("cw",),
 }
 

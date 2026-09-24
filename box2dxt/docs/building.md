@@ -188,6 +188,8 @@ committed Linux and Windows libraries come from the suite's manual
 `release-binaries.yml` dispatch (Linux libraries last rebuilt 2026-08-27,
 Windows DLLs 2026-09-12): x86-64 Linux keeps the glibc 2.17 floor, but the
 32-bit `x86-linux` library, built on a stock Ubuntu 24.04 multilib runner,
-requires glibc 2.34. The `universal-mac` dylib is the pre-fold build carried in
-by the 2026-08-14 fold and unchanged since; no Mac has loaded it. This member's
+requires glibc 2.34. The `universal-mac` dylib is byte-identical to what the
+dispatch builds: the 2026-08-27 and 2026-09-12 runs both rebuilt it, and the
+installer reported it unchanged, so it has no commit of its own after the
+2026-08-14 fold. No Mac has loaded it. This member's
 `.github/workflows/` are generated from the suite's lanes.

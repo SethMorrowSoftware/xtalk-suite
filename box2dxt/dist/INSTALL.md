@@ -56,16 +56,23 @@ press Enter. You should see **`4`**. If not, see *Troubleshooting*.
 ## Step 2 · Open the platformer
 
 Open **`NewPlateformerDemo.oxtstack`** (File → Open Stack…, or double-click it).
-The game builds itself and starts immediately.
+The game builds its window and boots to a **title screen**; nothing plays until
+you start it from there.
 
-- **First run** asks you to locate a spritesheet folder — choose the
-  **`spritesheets/`** folder in this package. After you **save** the stack the
-  art is remembered (and cached), so it loads instantly every time after.
-- **Controls:** **arrows / WASD** move · **Space** jump (press again in mid-air
-  to **double-jump**, or off a wall to **wall-jump**) · **SHIFT / X** dash ·
-  **↓** duck · **R** restart · **M** mute. Grab every coin (the flag turns gold)
-  and touch the flag to advance — there are seven levels (and **1–5** picks your
-  hero skin).
+- **First run** asks you to locate a spritesheet folder (the title screen loads
+  the art so it can show your hero) — choose the **`spritesheets/`** folder in
+  this package. After you **save** the stack the art is remembered (and cached),
+  so it loads instantly every time after. Cancel plays with built-in placeholder
+  shapes.
+- **On the title screen:** **1–5** picks your hero skin (the title is the only
+  place to choose; number keys do nothing during play) · **Space** or **Return**
+  starts level 1 · **M** mutes.
+- **Controls in play:** **arrows / WASD** move · **Space** jump (press again in
+  mid-air to **double-jump**, or off a wall to **wall-jump**) · **SHIFT / X**
+  dash · **↓** duck (**↓ + Space** drops through a one-way platform) · **↑ / ↓**
+  climb ladders · the **mouse** drags the crate · **R** restarts the level ·
+  **ESC** pauses and lists the controls · **M** mute. Grab every coin (the flag
+  turns gold) and touch the flag to advance — there are seven levels.
 
 That's it. Enjoy the physics.
 

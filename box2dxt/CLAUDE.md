@@ -84,7 +84,10 @@ doc map) - `dist/INSTALL.md` (packed by `make-release.py`) - `.github/workflows/
 5. **Adding a raw handler:** validating `b2lc_*` in the shim -> `foreign
    handler` + public `b2*` wrapper -> bump `LC_ABI_VERSION` if the ABI changed
    -> a `tests/smoke_test.c` assertion -> `check-lcb-signatures.py` -> an entry
-   in `docs/api-reference.md` (no gate holds that page). Shim stays
+   in `docs/api-reference.md` (a new public Kit handler: `docs/kit-reference.md`).
+   `tools/check-reference-docs.py` refuses a public handler either page never
+   names, and a name a page keeps after it is gone (since 2026-09-24, when both
+   pages were completed: they had fallen to 216/376 and 242/313). Shim stays
    warning-clean (`-Wall -Wextra`, `/W3` on MSVC).
 6. **Stale handles never crash.** Every public handler tolerates a stale or 0
    handle and an empty control ref (getters return 0 or empty, actions no-op).
@@ -115,7 +118,9 @@ doc map) - `dist/INSTALL.md` (packed by `make-release.py`) - `.github/workflows/
    delimiter around the narrowest span. **When that span makes OUTWARD calls,
    collect -> restore -> call** (`fireEmitter`/`fireTarget`,
    `refreshImagePanel`/`makeAction`); a restore at the end looks fixed and
-   leaves the bug. Needs an OXT pass.
+   leaves the bug. Harness v32's `stTestCallerDelimiter` drives all ten under a
+   caller's tab and prints whether a caller's delimiter reaches a called
+   handler on that engine at all. Needs an OXT pass.
 6. **Constants must be literals**; derive computed values at runtime.
 7. **Command vs function.** A Kit COMMAND reports through `the result`
    (`b2kSpawnBox ...` then `put the result into tCtrl`); `get b2kSpawnBall(...)`
@@ -364,12 +369,15 @@ save-keys unique per kind; selection is non-destructive (`uSelFg`/`uSelLine`).
 
 ## 10. The self-test harness and the suite fold
 
-`examples/box2dxt-selftest.livecodescript`, **`kStHarnessV` 31**: 376
-`stAssert` call sites in 51 test handlers (374 execute in a green run), driving
+`examples/box2dxt-selftest.livecodescript`, **`kStHarnessV` 32**: 387
+`stAssert` call sites in 52 test handlers (385 execute in a green run), driving
 the real Kit (paused world, `b2kStepOnce` hand-stepping, `b2kInputInject`
-keys). The first 38 handlers are BEHAVIOUR tests; the 13 added at v23 are
+keys). The first 39 handlers are BEHAVIOUR tests; the 13 added at v23 are
 shallow "Kit API coverage" sections, and a handler that earns a real lesson
-graduates out. The 2026-09-09 Kit change left it at 31, against rule 2.
+graduates out. The 2026-09-09 Kit change left it at 31, against rule 2; v32
+(2026-09-24) is its assertion, `stTestCallerDelimiter` (11 lines, all ten fixed
+handlers under a caller's tab, plus two printed observations). No engine has
+run v32 or v31: record the total a pass prints rather than matching 385.
 
 It is the EIGHTH member folded into the suite paste (2026-08-16):
 
@@ -461,13 +469,17 @@ v29, v30 and v31 totals are not comparable. Kit defects the runs found (fixed):
 ## 13. Status
 
 Engine-proven: the Kit through harness v30 (section 12) and the pre-fold games
-on Win32 (June 2026); v31 has no per-member record. The five game stacks (demo,
+on Win32 (June 2026); v31 has no per-member record, and v32 (2026-09-24, the
+delimiter-fix assertions) is verified statically and needs an OXT pass. The five game stacks (demo,
 platformer, slingshot, contraption builder, spike-gamekit) have not been re-run
 on an engine since the 2026-08-14 fold touched nearly every script (as of
 2026-09-23). The 2026-09-09 delimiter fix and the card-fade pins: verified
 statically; need an OXT pass. The committed `universal-mac` dylib (ABI 4, arm64
-+ x86_64) has not been loaded by an engine, and is still the pre-fold build the
-2026-08-14 fold carried in (no release run has replaced it). The suite's `release-binaries.yml`
++ x86_64) has not been loaded by an engine. It is byte-identical to what the
+release lane builds: runs 33025459610 (2026-08-27) and 34657390798 (2026-09-12)
+both built, verified and installed it, and the installer reported it
+`(unchanged)` (a sha256 match; the shim and `CMakeLists.txt` have not changed
+since the fold), which is why git shows only the fold's commit for it. The suite's `release-binaries.yml`
 has box2dxt rows since 2026-08-23: run 12 committed the Linux libraries
 2026-08-27 (resolving D-03), the Windows DLLs again 2026-09-12. That `x86-linux`
 library requires GLIBC_2.34 (stock ubuntu-24.04 multilib), `x86_64-linux` only
@@ -485,7 +497,8 @@ bash tools/run-gates.sh                           # the member's own gate list (
 `run-gates.sh` (member-owned since 2026-09-21; the suite's `build-all.sh`
 delegates to it) runs fail-fast: `check-livecodescript.py`;
 `sync-embedded-kit.py --check` (embed freshness, which the checker does NOT
-cover); `check-lcb-signatures.py`; `audit-platformer.py` (ADVISORY: never exits
+cover); `check-lcb-signatures.py`; `check-reference-docs.py` (both reference
+pages name every public handler, and nothing stale); `audit-platformer.py` (ADVISORY: never exits
 non-zero, so it holds only that it still parses the platformer);
 `package-extension.py --check` (no empty platform slot); `sha256sum -c
 src/code/MANIFEST.sha256`.

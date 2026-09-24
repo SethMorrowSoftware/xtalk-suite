@@ -25,10 +25,17 @@
 -- 2026-08-17/18 (Windows x86_64 at ABI 9, then Linux; the "no sxRistretto*
 -- handler has run on an engine yet" sentence that stood here was corrected
 -- 2026-08-23, four days after docs/api-reference.md corrected its own copy
--- of the same stale claim). The ONE surface with no engine run today is the
--- ABI 10 raw ChaCha20 xor (added 2026-08-23; its C KATs are green under
--- ASan/UBSan and cross-checked against an independent RFC 8439 reference) -
--- that section is verified statically and needs an OXT pass. The conventions below were settled
+-- of the same stale claim). The ABI 10 raw ChaCha20 xor (added 2026-08-23;
+-- its C KATs are green under ASan/UBSan and cross-checked against an
+-- independent RFC 8439 reference) joined them on-engine 2026-08-24: the
+-- suite paste's sxSelfTest() ran 106/106 on Windows x86_64 with its 7-check
+-- ChaCha20 section (CLAUDE.md's evidence ledger). This paragraph called it
+-- "the ONE surface with no engine run today" until 2026-09-24, a month after
+-- that record: an understated label is as wrong as an overstated one. What is
+-- still owed is PLATFORM cover, not surface cover - the 2026-08-24 run loaded
+-- a mingw DLL that no longer ships, so the shipped MSVC DLLs, the mac dylib
+-- and Linux at ABI 10 have no engine record (CLAUDE.md's platform table).
+-- The conventions below were settled
 -- against a real OXT compile and a crash audit; they are recorded so they are
 -- not relearned:
 --   * an LCB library is a bracketed block: it must end with `end library`;
@@ -699,7 +706,8 @@ end handler
 -- ==========================================================================
 
 -- secretbox: the shim generates and prepends a random nonce; output is
--- nonce || ciphertext || mac. Open returns an error on a wrong key or tampering.
+-- nonce || mac || ciphertext (libsodium's combined mode puts the MAC first).
+-- Open returns an error on a wrong key or tampering.
 public handler sxSecretBox(in pMessage as Data, in pKey as Data) returns Data
    variable tOut as Pointer
    variable tMsgPtr as Pointer

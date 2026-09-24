@@ -70,7 +70,7 @@ dead-button rule.
 
 ## Status
 
-**v0.25.3 (harness 44).** The folded harness is engine-green: latest **667/0** at
+**v0.25.3 (harness 45).** The folded harness is engine-green: latest **667/0** at
 v0.25.2/h43 on 2026-08-27 (in the suite paste; platform not recorded), the same evening
 as the first two-machine 2d contact. [CLAUDE.md](CLAUDE.md) carries the full evidence
 ledger.

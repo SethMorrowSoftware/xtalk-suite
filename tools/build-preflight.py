@@ -4,15 +4,22 @@ engine preflight: "can this machine run the pass at all?", answered in the first
 minute of an engine session, in one screenshot.
 
 WHY THIS EXISTS
-    docs/OXT-PASS-RUNBOOK.md's PREREQ block is five hand-typed probes a tester
-    runs one at a time in the message box, writing each result on a line with a
-    blank after it. That is fine when engine time is plentiful; it is the wrong
-    shape now that it is sparse (the runbook's own sparse-access plan budgets S1
-    at SIXTY MINUTES). And the failure it is supposed to catch is not
-    hypothetical: sodiumxt's committed `universal-mac` dylib is at ABI 6 against
-    a binding that demands 10 with strict equality, so on a Mac every sodiumxt
-    check - and everything downstream of it, which is most of the suite - is
-    blocked. Discovered by hand, that costs the first quarter of the session.
+    docs/OXT-PASS-RUNBOOK.md used to open with a PREREQ block of five
+    hand-typed probes a tester ran one at a time in the message box, writing
+    each result on a line with a blank after it. That is fine when engine time
+    is plentiful and the wrong shape when it is sparse, and it is sparse: the
+    runbook budgets all of S1 at about 3-4 hours today (sixty minutes when this
+    was written), with this paste as its item 0 (about five minutes), and the
+    PREREQ block is gone (the 2026-09-23 docs consolidation). The failure it
+    exists to catch was not hypothetical either: when this was written,
+    sodiumxt's committed `universal-mac` dylib was at ABI 6 against a binding
+    that demanded more with strict equality, so on a Mac every sodiumxt check -
+    and everything downstream of it, which is most of the suite - was blocked,
+    and discovered by hand that costs the first quarter of a session. Release
+    run 12 (2026-08-27) rebuilt that dylib at the binding's own ABI 10, so the
+    skew is now the shape of a STALE PACKAGE (one built before that run), which
+    is why the mac note below compares the recorded number rather than
+    assuming it is behind (mac_recorded_abi).
 
 WHAT IS GENERATED, AND WHY IT IS GENERATED RATHER THAN WRITTEN
     Six numbers. The expected ABI of each native member is a C macro in that

@@ -165,8 +165,8 @@ later without breaking old data.
 
 ## Secret-key authenticated encryption
 
-A random nonce is generated and **prepended** for you; output is `nonce ||
-ciphertext || MAC`. Open throws on a wrong key or any tampering (it never returns
+A random nonce is generated and **prepended** for you; output is `nonce || MAC
+|| ciphertext` (libsodium's combined mode puts the 16-byte MAC first). Open throws on a wrong key or any tampering (it never returns
 garbage).
 
 | Handler | Returns | Notes |

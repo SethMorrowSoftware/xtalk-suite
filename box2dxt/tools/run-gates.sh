@@ -47,6 +47,17 @@ python3 tools/sync-embedded-kit.py --check
 echo "== box2dxt: tools/check-lcb-signatures.py =="
 python3 tools/check-lcb-signatures.py
 
+# The two reference pages against the two sources, both directions: every
+# public b2... handler in src/box2dxt.lcb is named in docs/api-reference.md,
+# every public b2k... handler in the Kit in docs/kit-reference.md, and every
+# b2 name either page mentions still exists. Added 2026-09-24 when both pages
+# were completed; before that the api page's own intro said "no gate holds
+# that ratio", and it had fallen to 216 of 376. It proves itself on
+# in-memory mutations first, so a scanner gone blind fails instead of
+# printing OK.
+echo "== box2dxt: tools/check-reference-docs.py =="
+python3 tools/check-reference-docs.py
+
 # The platformer's level geometry. Read what this one IS before reading a
 # green run as an endorsement: its own docstring calls the findings ADVISORY
 # and "not a CI gate" - some beats deliberately sit a coin in an enemy's

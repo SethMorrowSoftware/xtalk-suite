@@ -82,9 +82,9 @@ then [kit-guide.md](docs/kit-guide.md), the longest doc and the one most need.
 | **The Kit** | |
 | [Getting started](docs/getting-started.md) | Zero to a draggable scene, plus troubleshooting. Assumes no physics knowledge. |
 | [Kit guide](docs/kit-guide.md) | The friendly `b2k...` layer taught start to finish: bodies, joints, events, sensors, input, sprites, the player controller, the camera, sound, a whole-game pattern. |
-| [Kit reference](docs/kit-reference.md) | The `b2k...` handlers as quick-lookup tables. **Incomplete: 242 of the Kit's 313** (measured 2026-08-26); most of the gap is internal helpers, but a few real entry points are missing (`b2kPlayerDuckSet`, `b2kPlayerTick`, `b2kSyncAll`, `b2kEnsureNativeLib`). |
+| [Kit reference](docs/kit-reference.md) | The `b2k...` handlers as quick-lookup tables: all 313, the internal helpers gathered at the end (complete since 2026-09-24; `tools/check-reference-docs.py` holds it). |
 | **The raw binding** | |
-| [API reference](docs/api-reference.md) | The low-level `b2...` extension surface. **Incomplete: 216 of 376 public handlers** (measured 2026-08-26, by name against `src/box2dxt.lcb`); the gap is mostly joint accessors. |
+| [API reference](docs/api-reference.md) | The low-level `b2...` extension surface: all 376 public handlers, including every per-joint accessor (complete since 2026-09-24; `tools/check-reference-docs.py` holds it). |
 | [Architecture](docs/architecture.md) | The three layers, handles, units, the ABI, and how to extend the binding. |
 | [Building](docs/building.md) | Compile the native library yourself, package a release zip. Most users can skip it: the per-platform binaries are committed. |
 | **Maintainers** | |
@@ -109,8 +109,9 @@ The committed Linux and Windows libraries come from the suite's
 `release-binaries.yml` dispatch (Linux 2026-08-27, Windows DLLs 2026-09-12):
 the x86-64 Linux one keeps the glibc 2.17 floor, but the 32-bit `x86-linux` one
 (built on a stock Ubuntu 24.04 runner) requires glibc 2.34. The `universal-mac`
-dylib is the pre-fold build carried in by the 2026-08-14 fold and unchanged
-since; no Mac has loaded it.
+dylib is byte-identical to what both release dispatches built (2026-08-27 and
+2026-09-12: the installer reported it unchanged, so git shows no commit for
+it); no Mac has loaded it.
 
 ## Contributing
 
@@ -119,8 +120,9 @@ The Kit is the single source of truth: after editing
 commit the re-synced examples in the same change. `bash tools/run-gates.sh`
 runs this member's gates, the same script CI runs: the script checker,
 embedded-Kit drift (`sync-embedded-kit.py --check`), the FFI signature gate
-(`check-lcb-signatures.py`), `package-extension.py --check` (no empty platform
-slot) and the `src/code/MANIFEST.sha256` check. `audit-platformer.py` runs
+(`check-lcb-signatures.py`), the reference-page gate (`check-reference-docs.py`:
+every public handler named in `docs/`), `package-extension.py --check` (no
+empty platform slot) and the `src/code/MANIFEST.sha256` check. `audit-platformer.py` runs
 beside them but is **advisory** (it prints findings and never exits non-zero).
 Maintainer rules: [CLAUDE.md](CLAUDE.md).
 

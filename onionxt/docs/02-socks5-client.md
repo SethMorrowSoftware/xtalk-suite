@@ -138,6 +138,15 @@ Set `the socketTimeoutInterval` (or an explicit timer) around the handshake: a b
 will accept the TCP connection and then stall, and a silent stall is the worst failure. On timeout,
 `close socket` and surface a clean error.
 
+OnionXT does both: `oxDial` sets the interval and arms its own watchdog (`oxStreamDeadline`, after
+`kOxHandshakeTimeout`), and whichever fires first fails the stream closed. Since 2026-09-24 the
+stream's `error` reason says which one it was and the state the handshake stalled in, after the
+unchanged prefix `SOCKS handshake timed out`: `(OnionXT deadline of <ms> ms passed, stalled at stage
+<state>)` for the watchdog, `(engine socketTimeout fired, stalled at stage <state>)` for the engine's
+message. `connecting` means the SOCKS port never accepted, `greeting` that it accepted and never
+answered, `replyhead` that tor took the CONNECT and never reported back. Verified statically; needs an
+OXT pass + a live-Tor pass (a forced stall).
+
 ## What OnionXT does and does not do here
 
 - It **does** open the tunnel and hand back a raw byte stream.

@@ -30,12 +30,17 @@ script "dataChannelSelfTest"
 -- pins among them are all dated runtime results now. A green re-run needs
 -- no label work.
 --
--- ADDED 2026-08-17, and NOT observed: the four stale-handle ACTION checks now
--- assert the exact -2 instead of `< 0`, an oversize dcSendText pins the shim's
--- handle-before-size classification order, and dcSendText's embedded-NUL
--- refusal - the one refusal the .lcb has to make because the shim cannot see
--- a NUL that has become its terminator - is checked here for the first time.
--- Those five legs are verified statically; they need an OXT pass.
+-- ADDED 2026-08-17, and OBSERVED the same day: the four stale-handle ACTION
+-- checks assert the exact -2 instead of `< 0`, an oversize dcSendText pins
+-- the shim's handle-before-size classification order, and dcSendText's
+-- embedded-NUL refusal - the one refusal the .lcb has to make because the
+-- shim cannot see a NUL that has become its terminator - is checked with the
+-- shim last-error it must clear. All of it ran green folded in the
+-- 2026-08-17 suite paste (OXT 9.6.3, Windows x86_64: 1836 folded, 0 failed,
+-- datachannelxt 26). The record names the NUL refusal at -3, its cleared
+-- last-error and the exact -2 codes; the oversize leg is not named in it, but
+-- it is the third assertion that sweep added (23 + 3 = 26) and the paste
+-- failed nothing, so it ran green too.
 --
 -- HOW TO USE: open OXT, make a one-card stack, paste THIS into the STACK
 -- script (Object > Stack Script), then close+reopen. It builds its own UI,
