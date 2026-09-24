@@ -75,8 +75,11 @@ def main():
     # the picture gallery, one uiChrome call at the same 1180x630.
     # 49 since 2026-09-21: archivext left for its own repository, taking
     # both of its stacks with it.
-    if "49 stack window dimension" not in out:
-        print("test-stack-size: expected 49 measured dimensions, got:\n" + out)
+    # 50 since 2026-09-24: tests/suite-selftest.core.livecodescript adopted
+    # the kit (D-23), so its uiChrome call now sizes the suite paste's board
+    # at kStWidth x kStHeight beside the scaffold's own sizing lines.
+    if "50 stack window dimension" not in out:
+        print("test-stack-size: expected 50 measured dimensions, got:\n" + out)
         return 1
 
     original = open(NOCLOUD, encoding="utf-8").read()
