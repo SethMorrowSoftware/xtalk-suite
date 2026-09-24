@@ -3236,7 +3236,7 @@ command chAddTips
    set the tooltip of button "chRemoveXfer" to "Remove the selected transfer; you choose whether to delete its files."
    set the tooltip of button "chOpenFolder" to "Open the selected transfer's download folder in your file manager."
    set the tooltip of field "chFiles" to "Files inside the selected transfer, with live per-file progress."
-   set the tooltip of field "chPinText" to "Type any short text (up to 1000 bytes) to pin to the network."
+   set the tooltip of field "chPinText" to "Type any short text (up to 996 bytes) to pin to the network."
    set the tooltip of button "chPin" to "PUBLIC: store the text, unencrypted, on the open DHT - sent from your real IP, never over Tor, even when a channel is anonymous - and get back a short code. Anyone with the code can read it."
    set the tooltip of button "chPinCopy" to "Copy the share code to the clipboard."
    set the tooltip of field "chFetchCode" to "Paste a 40-character drop code to fetch its text back."
@@ -4852,8 +4852,12 @@ command chPin
       chLog "Type some text to pin first."
       exit chPin
    end if
-   if the number of bytes in tData > 1000 then
-      chLog "Too big to pin:" && (the number of bytes in tData) && "bytes (max 1000)."
+   -- 996, not 1000: BEP44 caps the BENCODED value at 1000 bytes and the shim bencodes
+   -- internally ("996:" is four bytes), so since 2026-09-08 btDhtPutImmutable refuses
+   -- raw input over 996 (torrentxt/CLAUDE.md gotcha 7). This read 1000 until
+   -- 2026-09-24, so text of 997-1000 bytes passed here and then failed as "Pin failed".
+   if the number of bytes in tData > 996 then
+      chLog "Too big to pin:" && (the number of bytes in tData) && "bytes (max 996)."
       exit chPin
    end if
    put btDhtPutImmutable(sSession, tData) into tTarget
@@ -7124,19 +7128,25 @@ function chCountReleases pFeed
 end chCountReleases
 
 function chFmtBytes pBytes
-   local tUnits, tVal, tI
+   local tUnits, tVal, tI, tOldDelim, tUnit
    if pBytes is empty or pBytes is not a number then
       return "0 B"
    end if
    put "B,KiB,MiB,GiB,TiB" into tUnits
-   set the itemDelimiter to comma
    put pBytes into tVal
    put 1 into tI
+   -- Save and restore the itemDelimiter around the one span that reads items: it is
+   -- engine-global (engine note 2.3), so the bare `set ... to comma` this function had
+   -- until 2026-09-24 clobbered any caller mid-parse with another delimiter.
+   put the itemDelimiter into tOldDelim
+   set the itemDelimiter to comma
    repeat while tVal >= 1024 and tI < the number of items of tUnits
       put tVal / 1024 into tVal
       add 1 to tI
    end repeat
-   return (the round of (tVal * 10) / 10) && (item tI of tUnits)
+   put item tI of tUnits into tUnit
+   set the itemDelimiter to tOldDelim
+   return (the round of (tVal * 10) / 10) && tUnit
 end chFmtBytes
 
 function chTrunc pText, pLen

@@ -141,6 +141,12 @@ local sEditSession      -- the current valid edit-session token (random hex), or
 -- the most engine-dependent code here (flagged VERIFY at each site).
 local sWebShare         -- "true" while the "Share via web link" toggle is armed
 local sCwActive         -- "true" while a clearweb share is live
+-- sCwActive is EMPTY until the first share starts (nothing initialises it), so every
+-- guard reads `is not "true"`, never `not sCwActive`: `not` of an empty value is not a
+-- boolean, and whether the engine throws on it is unrecorded. qsStop runs qsStopClearweb
+-- BEFORE btStopSession, so a throw there would have skipped the session teardown for
+-- anyone who closed the demo without ever sharing a web link. nocloud made the same
+-- change at all its sites on 2026-08-14 (6471f5f); this copy caught up 2026-09-24.
 local sCwKind           -- "file" or "folder"
 local sCwRoot           -- the shared folder (no trailing slash), for a folder share
 local sCwFilePath       -- the shared file's full path, for a file share
@@ -1490,19 +1496,25 @@ function qsBar pPct
 end qsBar
 
 function qsBytes pBytes
-   local tUnits, tVal, tI
+   local tUnits, tVal, tI, tOldDelim, tUnit
    if pBytes is empty or pBytes is not a number then
       return "0 B"
    end if
    put "B,KiB,MiB,GiB,TiB" into tUnits
-   set the itemDelimiter to comma
    put pBytes into tVal
    put 1 into tI
+   -- Save and restore the itemDelimiter around the one span that reads items: it is
+   -- engine-global (engine note 2.3), so the bare `set ... to comma` this function had
+   -- until 2026-09-24 clobbered any caller mid-parse with another delimiter.
+   put the itemDelimiter into tOldDelim
+   set the itemDelimiter to comma
    repeat while tVal >= 1024 and tI < the number of items of tUnits
       put tVal / 1024 into tVal
       add 1 to tI
    end repeat
-   return (the round of (tVal * 10) / 10) && (item tI of tUnits)
+   put item tI of tUnits into tUnit
+   set the itemDelimiter to tOldDelim
+   return (the round of (tVal * 10) / 10) && tUnit
 end qsBytes
 
 function qsTrunc pText, pLen
@@ -4064,7 +4076,7 @@ end qsStartClearweb
 
 command qsStopClearweb
    local tK, tErr, tRc
-   if not sCwActive then
+   if sCwActive is not "true" then
       exit qsStopClearweb
    end if
    qsCwSafeClose sCwPort        -- VERIFY: closing the port-id socket stops accepting
@@ -4092,7 +4104,7 @@ end qsStopClearweb
 -- A browser connected. Stream the request in (`read ... with message`, re-armed per
 -- delivery - OnionXT's proven pattern) and answer once the header block arrives.
 command qsCwAccept pSocketID
-   if not sCwActive then
+   if sCwActive is not "true" then
       qsCwSafeClose pSocketID
       exit qsCwAccept
    end if
@@ -4461,7 +4473,7 @@ end qsLanIp
 -- the primary, and the local-network link. Both are copyable (qsCopy / qsWebCopy).
 command qsCwShowLinks
    local tPath, tLan, tWan
-   if not sCwActive then
+   if sCwActive is not "true" then
       exit qsCwShowLinks
    end if
    if sCwKind is "folder" then
@@ -4501,7 +4513,7 @@ end qsCwShowLinks
 -- NAT), or still detecting the public IP.
 command qsCwStatusText
    local tMsg
-   if not sCwActive then
+   if sCwActive is not "true" then
       exit qsCwStatusText
    end if
    if sCwExtIp is not empty and not qsIsPrivateIp(sCwExtIp) then
@@ -4582,7 +4594,7 @@ command qsCwIpReply pUrl, pStatus
       unload URL pUrl
    catch tErr
    end try
-   if not sCwActive then
+   if sCwActive is not "true" then
       exit qsCwIpReply
    end if
    -- validate it really looks like an IPv4 (reject an HTML error page etc.)
