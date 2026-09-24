@@ -227,10 +227,13 @@ Remove the member, in the same change as its directory, from:
 - `tools/test-stack-size.py`'s expected dimension count; the
   `tools/check-cross-library-names.py` corpus;
 - `start-here.livecodescript`'s launcher rows (`check-launcher-registry.py`);
-- `tools/check-suite-coverage.py`'s row and `REQUIRED_EMBEDS`;
-  `tools/check-suite-selftest.py` `PREFIXES` and `ENTRY_POINTS`;
-- `tools/build-suite-selftest.py` `Member(...)`/`Layer(...)` rows (regenerate,
-  and edit the core's probe and deep-self-test sections);
+- `tools/check-suite-coverage.py`'s row and `REQUIRED_EMBEDS`
+  (`tools/check-suite-selftest.py` derives its member tables from the
+  generator's rows since 2026-09-24, so it has none to edit);
+- `tools/build-suite-selftest.py` `Member(...)`/`Layer(...)` rows or its
+  `NO_HARNESS` entry (regenerate, and edit the core's probe and deep-self-test
+  sections and its board constants `kSuKeys`, `kSuNames` and `kSuNoHarness`,
+  which `check-suite-selftest.py` check 17 holds to the registry);
   `tools/build-preflight.py`'s probe (regenerate);
 - `tools/sync-demo-embeds.py` `REGISTRY` rows (a copy carried elsewhere stays as
   a snapshot, noted in the carrier's README); `tools/build-all.sh`'s member loop;
