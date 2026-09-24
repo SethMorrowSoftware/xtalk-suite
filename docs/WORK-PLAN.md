@@ -41,8 +41,8 @@ result. Every "engine-proven" below quotes a dated record already in the tree.
 |---|---|---|---|---|
 | sodiumxt | `sxSelfTest()` 106/106, Windows x64, 2026-08-24 (on a mingw DLL that no longer ships) | only optional: the unbound length accessors | Windows re-proof of the MSVC DLLs (both bitnesses); first Mac load; Linux at ABI 10; the demo | S1, S5 |
 | torrentxt | harness 101/101, Windows, 2026-08-17, 08-20 and 08-24; suite paste green 2026-08-27 (platform not recorded) | ABI 12 alert codes; Windows libtorrent pin; boundary tests; a route-key golden mirror | first contact with the 2026-09-12 binaries; demo re-opens; Tor toggle and #31-#33; closing-pass C/D; a real swarm | S1-S5, NET |
-| enetxt | folded 34, 2026-08-20; async loopback 2026-08-13 | smoke block for the 2026-09-09 fix; stale headers | standalone selftest; leg B and the LAN chat on two machines; internet chat; Mac | S1, S3, 2NET, S5 |
-| datachannelxt | folded 39, 2026-08-20; standalone async loopback 2026-08-15 | browser-peer page; orphan-channel smoke block; stale headers | loopback demo (no record at all); leg E; two-network call; browser interop; Mac | S1, S3, 2NET, S5 |
+| enetxt | folded 34, 2026-08-20; async loopback 2026-08-13 | only optional: the freshness gate's Windows DLL ABI read | standalone selftest; leg B and the LAN chat on two machines; internet chat; Mac | S1, S3, 2NET, S5 |
+| datachannelxt | folded 39, 2026-08-20; standalone async loopback 2026-08-15 | owner calls only: the Windows OpenSSL pin and notice; the legacy shim removal | loopback demo (no record at all); leg E; two-network call; browser interop; Mac | S1, S3, 2NET, S5 |
 | onionxt | offline self-test 61/0, Windows, 2026-08-17; the live-Tor core from the early bring-up | `oxLaunchTor` result checks; 3 exemptions retirable offline; roundtrip fields | Mode B (leg F); the B.12 probes; negative paths; the round trip | S1, S2, S4 |
 | coinxt | 290/290, Windows x64, 2026-08-24; wallet logs to 2026-09-03 | D-17; per-push Windows/mac CI; Core residue; gap limit | row Q (ABI 7, silent payments); demo; broadcast; the wallet's post-2026-09-04 surface; Core regtest | S1, S2, NET, S5 |
 | nostrxt | core 274/0/2 and relay SEND live, both 2026-08-24 | placeholder floor; 2026-09-09 refusals into the harness; NIP-42 demo controls | relay receive, NIP-42, `ws://`, a bad certificate, forced negatives | S1, NET, a local relay |
@@ -263,8 +263,6 @@ manual dispatch (rule 5); the harness scaffold's non-adoption of the UI kit (D-1
 
 | # | Work | Why | Size | Blocked by |
 |---|---|---|---|---|
-| 1 | A smoke-test block for the 2026-09-09 fix: connect to a dead port, call `enx_disconnect` while CONNECTING, expect `enx_peer_status == 0` and `enx_reset_peer == ENX_ERR_STALE` | The fix is compile-verified only; the smoke test covers only the polite path from CONNECTED | S | none |
-| 2 | Headers: `tests/enet-selftest.livecodescript`'s STATUS says the sync half last ran 21/21 on 2026-08-17 (2026-08-20 ran 34, 2026-08-27 was green too); `examples/enet-lan-chat.livecodescript` omits its 2026-08-18 run and calls leg B "item 6". Then re-run `build-suite-selftest.py` and `sync-demo-embeds.py` | Understated evidence | S | none |
 | 3 | *(optional)* Teach `tools/check-binary-freshness.py` to read the ABI from the Windows DLLs (it SKIPs them today for enetxt, datachannelxt and torrentxt) | Closes a gap in rule 5's automated half | S-M | none |
 
 **Engine.**
@@ -293,10 +291,6 @@ manual dispatch (rule 5); the harness scaffold's non-adoption of the UI kit (D-1
 
 | # | Work | Why | Size | Blocked by |
 |---|---|---|---|---|
-| 1 | **A browser-peer harness:** a static page with copy/paste signalling, and a runbook procedure | Row 40's browser half cannot run without it | M | none |
-| 2 | A smoke-test block that drives `cb_data_channel`'s two orphan exits (the peer already freed; the handle table full) through `orphan_channel` and `reap_orphan_channels` | The 2026-09-09 fix is compile-verified only | M | none |
-| 3 | Fix the open instructions contradicted by engine note 5.5, which teach opening the file itself: `datachannel-loopback.livecodescript` ("builds its UI on first open", after `go stack`) and `datachannel-dht-chat.livecodescript` ("builds its UI on first open", after "Open this one script as a stack"); the docs already teach paste-and-reopen | The next passes open both stacks | S | none |
-| 4 | Relabel the legs observed 2026-08-17 (the NUL refusal, its last-error clearing, the exact -2 codes): `tests/datachannel-selftest.livecodescript` lines 33-38 and `src/datachannel.lcb` near line 822; then `build-suite-selftest.py` | Understated labels | S | none |
 | 5 | *(optional)* Remove the legacy `dcLocalDescription` transition shim (script gotcha 11) once no supported build emits the old event | The cleanup its own comment schedules | S | owner |
 | 6 | Pin Windows OpenSSL, or record the acceptance as D-08 did for libsodium | Windows and mac ship different OpenSSL versions | S + dispatch | owner |
 | 7 | Correct `datachannelxt/THIRD-PARTY-LICENSES.md`'s "OpenSSL is NOT bundled": the Windows DLLs (3.6.4) and the mac dylib (3.5.4) link it statically; add the Apache-2.0 notice | Binary redistribution obligation | S | owner (legal) |
@@ -309,7 +303,7 @@ manual dispatch (rule 5); the harness scaffold's non-adoption of the UI kit (D-1
 | 2 | `datachannel-selftest` standalone on the 2026-09-12 binaries (Windows; Linux with glibc 2.38 or newer), recording which library loaded | S1 item 6 | - (runbook 4.2) | green, no trailer |
 | 3 | Closing-pass leg E, and `datachannel-dht-chat` on two machines recorded BY NAME (the 2026-08-27 one-LAN report does not say whether the demo or leg E ran; its getting-started section 6 flow has no recorded run either) | S3 items 1, 6 | 6 | OPEN across machines; the record names the stack, both platforms and the selected ICE pair type |
 | 4 | Leg E or the DHT chat across two networks | 2NET | 40 | a `srflx` / `prflx` pair (record `relay` honestly if both NATs force TURN) |
-| 5 | Browser interop, after coding #1 | S1 + a browser | 40 | the channel opens; text arrives as a string, `dcSendData` as an ArrayBuffer |
+| 5 | Browser interop: `datachannelxt/docs/browser-interop.md` (the page and its OXT half landed 2026-09-24; the page was exercised in headless Chromium against the committed `.so` through its C ABI, which proves neither the `.lcb` binding nor an engine) | S1 + a browser | 40 | the channel opens; text arrives as a string, `dcSendData` as an ArrayBuffer |
 | 6 | Suite paste on a Mac | S5 | 24 | the dc sections green on the two-slice-lipo dylib |
 
 ### 2.5 onionxt
