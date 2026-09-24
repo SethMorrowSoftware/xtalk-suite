@@ -754,9 +754,11 @@ def strip_comments(text, what="the harness"):
     tests/suite-selftest.livecodescript (the fold emits handler blocks only, so
     a header changelog never reaches it) and zero times in every source glob in
     MEMBERS. The upgrade changes no number in the table above; it is what makes
-    the holde-em row honest. It also brings this function into step with its
-    twin in tools/check-suite-selftest.py, which grew the same handling for the
-    same file - two tools that read one source must read it identically.
+    the holde-em row honest. It also brings this function into step with the
+    generator's strip_comments in tools/build-suite-selftest.py (which
+    tools/check-suite-selftest.py now imports rather than keeping a twin), which
+    grew the same handling for the same file - two tools that read one source
+    must read it identically.
     """
     out, in_block = [], False
     for raw in text.split("\n"):

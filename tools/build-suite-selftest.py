@@ -449,7 +449,8 @@ MEMBERS = [
             # won over the core's forever after - and the core stops THE
             # session and takes a new one on EVERY run (stCleanup, then the
             # probe). From the second run in one launch (Run all, or a
-            # member's own Run) Riptide's DM and live-feed sections therefore
+            # member's own Run) all four of Riptide's sections that acquire it
+            # (the chunked-post store, DMs, the live feed and media) therefore
             # talked to a stopped session. The whole acquire body is replaced
             # now, the head included, so the cache is refreshed from the core
             # every time it is read.

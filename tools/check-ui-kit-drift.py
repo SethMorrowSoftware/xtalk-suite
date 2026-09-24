@@ -118,7 +118,7 @@ EXEMPT = {
     # holde-em's table is a game in the box2dxt mold: a canvas drawn by the
     # b2k Kit's sprites (cards) and bodies (chips), with the member's own
     # dark-felt chrome. Permanent by the same decision the box2dxt games
-    # carry, D-18 (2026-08-27; holde-em/CLAUDE.md rule 9).
+    # carry, D-18 (2026-08-27; holde-em/CLAUDE.md rule 10).
     os.path.join("holde-em", "src", "holdem.livecodescript"):
         "game table on the b2k Kit; permanent by D-18",
 }

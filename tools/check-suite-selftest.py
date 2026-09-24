@@ -1097,24 +1097,24 @@ def main(argv):
             if keys is not None and x not in keys:
                 fail("17", f"kSuNoHarness names {x!r}, which is not a row in "
                            f"kSuKeys")
-        # A TRIPWIRE, found while writing this check: the core compares a row
-        # key to kSuNoHarness with `is` (suIsRunKey, suPaintRows,
-        # suRowControls, suBuildAll, suSummaryNotes), which is right only
-        # while the constant names ONE member. A second NO_HARNESS member
-        # would make both rows equal to neither - each would get a Run
-        # button, a pill and a tally that counts nothing, and read "nothing
-        # ran" on an engine. Quiet while every comparison stays `is`-shaped
-        # and the list stays one long; it fires the day either changes alone.
+        # kSuNoHarness IS A LIST, so it must be ASKED as one. Found while
+        # writing this check: the core compared a row key to it with `is` at
+        # five sites (suIsRunKey, suPaintRows, suRowControls, suBuildAll,
+        # suSummaryNotes), which is right only while the constant names ONE
+        # member - a second NO_HARNESS member would equal neither row, and
+        # each would get a Run button, a pill and a tally that counts nothing
+        # (reading "nothing ran" on an engine). The core now asks through
+        # suNoHarness (`is among the items of`, the delimiter restored), and
+        # this refuses the `is` form OUTRIGHT rather than only once the list
+        # grows: a tripwire that waits for the second member fires in the
+        # same commit that adds it, which is one commit too late to be cheap.
         eq = [i + 1 for i in own_rows
               if re.search(r'\bis\s+(?:not\s+)?kSuNoHarness\b', core_blank[i], re.I)]
-        if len(noh) > 1 and eq:
-            fail("17", f"kSuNoHarness names {len(noh)} members, but the core "
-                       f"compares a row key to it with `is` ({core_rel} lines "
-                       f"{', '.join(map(str, eq))}), which matches only a "
-                       f"one-item list: those rows would each get a Run "
-                       f"button and a pill that counts nothing. Compare with "
-                       f"`is among the items of` (restoring the itemDelimiter) "
-                       f"first.")
+        if eq:
+            fail("17", f"the core compares a row key to kSuNoHarness with `is` "
+                       f"({core_rel} lines {', '.join(map(str, eq))}); it is a "
+                       f"list, and `is` matches only a one-item list. Ask "
+                       f"suNoHarness(key) instead.")
     runner = by_name.get("strunmemberharnesses", [])
     runner_text = "\n".join("\n".join(core_view[a + 1:b]) for a, b in runner)
     if not runner:

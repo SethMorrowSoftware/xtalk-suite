@@ -1355,11 +1355,26 @@ function suIsRunKey pKey
    set the itemDelimiter to comma
    put (pKey is among the items of tKeys) into tOk
    set the itemDelimiter to tOld
-   if pKey is kSuNoHarness then
+   if suNoHarness(pKey) then
       return false
    end if
    return tOk
 end suIsRunKey
+
+-- A member with no in-engine harness: a row with a caption instead of a pill
+-- and a Run. kSuNoHarness is a LIST, so it is asked as one - `is` would match
+-- only while the list happened to hold a single name, and a second such
+-- member would then get a Run button and a pill that counts nothing
+-- (check-suite-selftest.py check 17 refuses the `is` form outright).
+function suNoHarness pKey
+   local tList, tOld, tHit
+   put kSuNoHarness into tList
+   put the itemDelimiter into tOld
+   set the itemDelimiter to comma
+   put (pKey is among the items of tList) into tHit
+   set the itemDelimiter to tOld
+   return tHit
+end suNoHarness
 
 -- Empty (the scaffold's parameterless Run all) and anything unknown mean
 -- everything; a row's key means that row.
@@ -1608,7 +1623,7 @@ command suPaintRows
    set the itemDelimiter to comma
    repeat with tI = 1 to the number of items of tKeys
       put item tI of tKeys into tKey
-      if tKey is not kSuNoHarness then
+      if not suNoHarness(tKey) then
          put kSuRowTop + kSuRowStep * (tI - 1) into tTop
          put suRowState(tKey, false) into tState
          uiPill ("suPill" & tKey), (line 2 of tState), ("200," & (tTop + 7) & ",296," & (tTop + 27)), (line 1 of tState)
@@ -1629,17 +1644,20 @@ end suPaintRows
 -- Every row control, by its computed name, for the boot self-check (the
 -- derived kSuScControls list cannot see a name built from a key).
 function suRowControls
-   local tKeys, tKey, tOut
+   local tKeys, tKey, tOut, tOld
    put kSuKeys into tKeys
    put empty into tOut
+   put the itemDelimiter into tOld
+   set the itemDelimiter to comma
    repeat for each item tKey in tKeys
       put "suName" & tKey & comma after tOut
-      if tKey is kSuNoHarness then
+      if suNoHarness(tKey) then
          put "suNote" & tKey & comma after tOut
       else
          put "suPill" & tKey & comma & "suPill" & tKey & "Bg" & comma & "suCount" & tKey & comma & "suRun" & tKey & comma & "suShow" & tKey & comma after tOut
       end if
    end repeat
+   set the itemDelimiter to tOld
    return char 1 to -2 of tOut
 end suRowControls
 
@@ -1736,7 +1754,7 @@ command suBuildAll
       put kSuRowTop + kSuRowStep * (tI - 1) into tTop
       uiLabel ("suName" & tKey), (item tI of tNames), ("20," & (tTop + 7) & ",196," & (tTop + 27)), 12
       set the textStyle of field ("suName" & tKey) to "bold"
-      if tKey is kSuNoHarness then
+      if suNoHarness(tKey) then
          put "200," & (tTop + 6) & ",488," & (tTop + 30) into tRect
          uiCap ("suNote" & tKey), "no in-engine harness: its tests run headlessly in the gates", tRect
       else
@@ -2163,7 +2181,7 @@ command suSummaryNotes
    set the itemDelimiter to comma
    repeat with tI = 1 to the number of items of tKeys
       put item tI of tKeys into tKey
-      if tKey is kSuNoHarness then
+      if suNoHarness(tKey) then
          stNote "  " & suPad(item tI of tNames, 24) & "    -     -     -  no in-engine harness"
       else
          put suNum(sSuP[tKey]) into tP

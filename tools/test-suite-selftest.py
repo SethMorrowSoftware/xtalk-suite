@@ -125,6 +125,8 @@ C_NAMES = "Riptide Social,No Cloud Quick Share"
 C_KEYS = "riptide,nocloud,holde-em,cross"
 C_NX_SCOPE = 'if suInScope("nostrxt") then'
 C_NOHARNESS = 'constant kSuNoHarness = "nocloud"'
+# the one suNoHarness ask inside suRowControls (the loop with "suNote" & tKey)
+C_NOHARNESS_ASK = '      if suNoHarness(tKey) then\n         put "suNote" & tKey & comma after tOut'
 
 
 def handler(name, *body):
@@ -285,10 +287,16 @@ CASES = [
     ("17: a registry member missing from kSuKeys",
      "both", lambda t: swap(t, C_KEYS, "riptide,holde-em,cross", "kSuKeys"),
      {"17"}, "kSuKeys is"),
-    ("17: a second no-harness row while the core still compares with `is`",
+    ("17: a row key compared to the kSuNoHarness LIST with `is`",
+     "core", lambda t: swap(t, C_NOHARNESS_ASK,
+                            C_NOHARNESS_ASK.replace("if suNoHarness(tKey) then",
+                                                    "if tKey is kSuNoHarness then"),
+                            "suRowControls' suNoHarness ask"),
+     {"17"}, "compares a row key to kSuNoHarness with `is`"),
+    ("17: kSuNoHarness names a member the generator's NO_HARNESS does not",
      "both", lambda t: swap(t, C_NOHARNESS, 'constant kSuNoHarness = "nocloud,riptide"',
                             "kSuNoHarness"),
-     {"17"}, "compares a row key to it with `is`"),
+     {"17"}, "kSuNoHarness is"),
     ("17: a member's scope test spelled with the wrong key",
      "core", lambda t: swap(t, C_NX_SCOPE, 'if suInScope("nostr") then', "nostrxt scope"),
      {"17"}, 'no `if suInScope("nostrxt")`'),
