@@ -114,8 +114,10 @@ QuickShare adds `kTorCodePrefix = "BTXTOR1:"` and `kQsVerify = "BTXQSVERIFY"`. C
 - **Ports:** `oxConnectControl` tries 9051, then 9151 exactly once (the Tor Browser pair), SOCKS set to match
   (9050 / 9150). Loopback 127.0.0.1 only: a remote control port hands full deanonymization to that host. No
   custom ports. The ephemeral loopback port is `20000 + random(40000)` (`chPickPort`; the same in QuickShare).
-- **Mobile is unsupported.** The design gives it a distinct "not available on this device" reason; neither demo
-  checks the platform, so a mobile engine fails closed through the "no daemon" state.
+- **Mobile is unsupported**, with its own fail-closed reason (built 2026-09-24; until then a mobile engine landed in
+  "no daemon"). Both demos check `the platform` (`iphone` / `android`) first (`qsOnionOnMobile` /
+  `chOnionOnMobile`): no `ox*` call is made, the pill reads `Tor: not on this device`, and every refusal names the
+  device rather than a missing daemon or extension. Verified statically; needs an OXT pass on a mobile engine.
 - **Start** (tail of `qsStart` / `chStart`, only when `sHasOnion`): ports, callbacks, connect 9051 then 9151; never
   block on bootstrap. On the first ready transition Channels calls `chOnionBringUpServices` (6.3). **Stop**
   (BEFORE `btStopSession`): close streams, remove services, disconnect, delete temps; idempotent.
@@ -124,6 +126,7 @@ The pill (`qsTorPill` / `chTor`), repainted only by `<pfx>OnionPill`:
 
 | Pill | Meaning |
 |---|---|
+| `Tor: not on this device` | a phone or tablet (`the platform` is `iphone` or `android`); toggle disabled |
 | `Tor: no extension` / `Tor: needs SodiumXT` | OnionXT not in the message path / SodiumXT missing; toggle disabled |
 | `Tor: no daemon` | no control port authenticated on 9051 or 9151; toggle disabled |
 | `Tor: connecting NN%` | bootstrapping; toggle enabled, actions refused until ready |
@@ -149,8 +152,11 @@ again before the final move. The header name is a display label plus a sanitized
 
 **Bounded buffers:** reject `len > kOnionChunk`, `nameLen > kOnionMaxName` and `totalLen > kOnionMaxTotal`
 BEFORE appending or allocating (`0xFFFFFFFF` is an immediate abort and close), and drain and compact the buffer
-every call so it holds at most one chunk plus a partial frame. The design also asks for a free-disk pre-check
-against `totalLen` (2x when encrypted); neither receiver performs one as of 2026-09-23 (no `diskSpace` call).
+every call so it holds at most one chunk plus a partial frame. **Free disk** is checked before the temp opens
+(`qsOnionDiskShortfall` / `chOnionDiskShortfall`, built 2026-09-24): `diskSpace()` on the temp's disk and on the
+save folder's, each against `totalLen` (2x when encrypted), failing closed with a readable reason. A disk that
+cannot be measured is not a refusal; the write-failure abort stays the backstop. Verified statically; needs an
+OXT + live-Tor pass (`diskSpace()` has no engine record in the suite yet).
 
 **Integrity is layered:** the circuit's own; with `kFlagEnc`, `crypto_secretstream`'s per-chunk authentication
 and final tag (truncation is caught on decrypt); for plaintext, the `totalLen` check. **The plaintext path does
@@ -292,7 +298,9 @@ ABI 7 (`sxSha3_256`); on an older SodiumXT anon is DISABLED, never shipped with 
 - **`chSetAnon`** (modeled on `chSetPrivacy`) refuses without `sHasOnion` or `sOnionIdentityOk`, explains, then
   offers On / Off / Cancel. **Turning ON is a HARD BLOCK while any clearnet magnet release or live `sMineHashes`
   seed exists:** it offers one-click removal (`btRemoveTorrent` each) and never warns-and-proceeds. ON brings the
-  service up; OFF withdraws it and re-announces the feed on the DHT (see 7.3). Anon is whole-channel.
+  service up; OFF withdraws it and re-announces the feed on the DHT, and **turning OFF is the same hard block while
+  any `onion:` release is listed** (one-click removal of those releases and their serve entries; 7.3). Anon is
+  whole-channel.
 
 ### 6.3 Per-channel service lifecycle (publisher)
 
@@ -312,10 +320,11 @@ bytes (plaintext, or `BTXENC2:` + secretbox), at most `kOnionFeedCap`, repeatabl
 - **Serve** (`chOnionPeer` -> `chOnionServeStream` -> `chOnionServeRequest`). FEED: a BTXF reply, and the stream
   is **subscribed**: capped at 32 per channel, oldest evicted, de-duped by handle, pruned on close AND on each
   push. FILE: the serve map (6.5), streamed over BTXO with re-open-per-read (3.3 step 6b); a missing entry gets a
-  zero-total BTXO header (named "unavailable", or the stored name) and an immediate terminator. The design asked
-  for the follower to show "release not currently available"; that message is not built. Found statically
-  2026-09-23, open: a plaintext follower saves a zero-byte file under that name and logs success, and an encrypted
-  one raises the downgrade alarm.
+  zero-total BTXO header (named "unavailable", or the stored name) and an immediate terminator, which the
+  follower's `chOnionRecvData` reads as "release not currently available" BEFORE its downgrade test, with an
+  `onion n/a` row (built 2026-09-24; found statically 2026-09-23, when a plaintext follower saved a zero-byte file
+  and logged success and an encrypted one raised the downgrade alarm). `chOnionPublishFile` refuses an empty file,
+  so a real release never sends that shape. Verified statically; needs an OXT + live-Tor pass.
 - **Push on change:** `chOnionPushFeed` writes a fresh BTXF frame to every subscriber: real-time, not the 60 s
   DHT tick.
 - **Nonce discipline (M9):** every push RE-SEALS through `chFeedValue`, never a cached nonce and ciphertext,
@@ -370,9 +379,10 @@ anon does not. `anon + pass` reuses every crypto handler untouched (`chFeedValue
 
 **Quick drop** (`chPin` / `chFetchCode`, over `btDhtPutImmutable` / `btDhtGetImmutable`) is clearnet by design and
 outside the invariant: it must stay visibly labelled public and never render under an anon badge (a guard of the
-original 7.3 design). Found statically 2026-09-23, open: its section title reads "Quick drop - paste text, get a code
-anyone can fetch back" and the `chPin` tooltip "Store the text on the DHT"; neither says public, or that the text
-leaves from your IP.
+original 7.3 design). Found statically 2026-09-23 unlabelled; since 2026-09-24 its section title reads "Quick drop
+(PUBLIC, not anonymous) - text goes on the open DHT from your IP; anyone with the code can read it", and the
+`chPin` / `chFetchBtn` tooltips and the help text say the same. Its behaviour is unchanged; the labels need an OXT
+re-pass.
 
 The 6.5 download fork completes the set (the code cites it as "6.5 / 6.7 guard 3"). A silent mix, an anon feed
 entry carrying a `magnet:` locator, is structurally impossible: `chOnionPublishFile` writes only `onion:<relId>`,
@@ -449,15 +459,16 @@ info-hash and read the real IP off the DHT or tracker. So anon and clearnet are 
 enforced at branch points rather than requested of the user. **As built:** QuickShare's anon branch returns
 before any torrent call, and a `BTXTOR1:` code only ever reaches `oxDial`; LSD announces only torrents, so it
 cannot leak an anon file. Channels enforces the seven 6.7 branch points; its Quick drop stays outside them,
-labelled public (6.7).
+labelled public (6.7). Channels also refuses to flip anon either way while releases of the other kind are listed
+(the original design's guard 5): ON while a magnet release exists (6.2), and, since 2026-09-24, OFF while an
+`onion:` release exists, because `chSetAnon` OFF re-announces the whole feed on the DHT and would have made the
+anon releases' titles DHT-visible (plaintext unless the channel has a passphrase). Both offer one-click removal;
+the OFF half is verified statically; needs an OXT + live-Tor pass (#31).
 
 **Designed but not built** (found statically 2026-09-23; open):
 
 - QuickShare: re-dropping a file already shared anonymously, with the toggle off, seeds it publicly with no
   confirmation. The design asked for an explicit "yes, also seed this publicly" that visibly drops the badge.
-- Channels: turning anon OFF is not refused while `onion:` releases exist. `chSetAnon` OFF re-announces the
-  whole feed on the DHT, so the titles of the anon releases (plaintext unless the channel has a passphrase)
-  become DHT-visible.
 
 ### 7.4 Composing with SodiumXT
 
@@ -600,9 +611,9 @@ Tick results HERE, by `#`, with the date, platform and what ran (runbook rows 5 
 | #27 live | `oxServiceAddress == chChannelOnionAddr(pub)` on a real service | OPEN: rides #32; settles D-04 |
 | concurrent services | N services live at once; a second service on the same local port refused | OPEN |
 | #28 | throughput in MB/s on two machines | OPEN: quote no number until measured |
-| #31 | Channels single machine (S2): Anonymous ON drives `chTor` to "Tor: ready" and brings up the service; OFF leaves every clearnet channel bit-for-bit unchanged; tor absent shows the fail-closed messages and public channels are untouched; `chVerifyOnionIdentity` passes offline; the pill and `chAnon` fit the unchanged 1180x640 window | OPEN |
+| #31 | Channels single machine (S2): Anonymous ON drives `chTor` to "Tor: ready" and brings up the service; OFF is refused while an `onion:` release is listed (removal offered; built 2026-09-24) and otherwise leaves every clearnet channel bit-for-bit unchanged; tor absent shows the fail-closed messages and public channels are untouched; `chVerifyOnionIdentity` passes offline; the pill and `chAnon` fit the unchanged 1180x640 window | OPEN |
 | #32 | Channels feed (S4): A publishes an anon channel; B follows by the CARD only and pulls the signed feed over the onion with the DHT OFF for that channel; releases list; the BEP44 signature verifies; the live `oxServiceAddress == chChannelOnionAddr(pub)` compare holds (else `svc=` is the source of truth and the derivability claim drops); an old 2-field card recovers through the `chDashOnce` onion retry | OPEN |
-| #33 | Channels files (S4): B downloads a release entirely over the onion (swarm and DHT off), sha256-identical; an encrypted release auto-decrypts; the row shows the teal `Onion` source; a capture shows ZERO swarm/DHT traffic for that file on both ends; a publisher restart prunes stranded relIds (`chPruneStrandedAnon`) | OPEN |
+| #33 | Channels files (S4): B downloads a release entirely over the onion (swarm and DHT off), sha256-identical; an encrypted release auto-decrypts; the row shows the teal `Onion` source; a capture shows ZERO swarm/DHT traffic for that file on both ends; a publisher restart prunes stranded relIds (`chPruneStrandedAnon`), and a follower asking for a relId the publisher no longer serves sees "not currently available" (built 2026-09-24), not a zero-byte file or a downgrade alarm | OPEN |
 
 ### 12.4 The Phase 1 gate - the two-machine pass
 
@@ -667,12 +678,13 @@ working, and nothing marked anonymous is ever quietly sent over the public swarm
 | pill `Tor: no extension` or `Tor: needs SodiumXT`, toggle disabled; a pasted `BTXTOR1:` code refused with an install hint | 13.2 incomplete on this machine (SodiumXT missing reads distinctly from "no Tor") | install sodiumxt; `start using` onionxt |
 | pill `Tor: no daemon`; log "No Tor control port answered on 127.0.0.1:9051 or 9151 (reason) - start Tor (or Tor Browser) and reopen this stack to use the private-send features." | no tor running, tor with the control port off (the stock default), or relying on Tor Browser | 13.1: add `ControlPort 9051` + `CookieAuthentication 1`, restart tor, look for the "Opening Control listener" line, reopen the stack |
 | `Tor: no daemon` although tor runs with `ControlPort 9051` | authentication failing, commonly the app cannot read tor's cookie file | Linux: add the user to `debian-tor` and log in again; check the torrc says `CookieAuthentication 1` |
-| `Tor: no daemon` on a phone or tablet | mobile is unsupported (the design's distinct "not available on this device" reason is not built, 3.2) | use a desktop |
+| `Tor: not on this device` on a phone or tablet | mobile is unsupported (3.2; this state was "no daemon" until 2026-09-24) | use a desktop |
 | `Tor: no daemon` with a custom ControlPort in the torrc | the demos probe exactly 9051, then 9151 | move tor to the standard pair |
 | `Tor: connecting NN%` and "Tor is still connecting - watch the pill, then drop the file again." | bootstrap incomplete: a firewall, a captive portal, a network that blocks Tor | fix the network; watch tor's log. The action is refused now and retried by you; nothing is queued or sent on clearnet |
 | "Tor could not publish the private address in time. Make sure the pill says 'ready', then try again." (after 90 s) | the descriptor did not upload (weak connectivity; clock skew is a classic culprit) | check the clock, let tor settle, drop the file again; the half-built service was cleaned up |
 | B: "The sender went offline before the transfer finished. Try the code again." | A closed the window, A re-dropped a file (a new code replaces the old), B's circuit is not built yet, or a side went offline mid-transfer (a failed dial arrives as an async stream error; its text is not shown) | A re-shares, keeps the window open and sends the NEW code; B retries after a moment; anon transfers restart from byte 0 |
 | B: "The private (Tor) download stalled - closing it. Try the code again." | a stalled circuit (the idle watchdog fired) | retry from the code |
+| B: "Not enough free disk space for this transfer: it needs about ..." | the free-disk pre-check (3.3): the file, or twice it when encrypted, does not fit on the temp or save disk | free space and retry the code; nothing was downloaded |
 | "This share was supposed to be encrypted but arrived unencrypted - do not trust it." | the downgrade refusal: the code promised encryption, the stream claimed plaintext | do not trust the file; re-share; if it recurs, treat the path between you as hostile |
 | the link to tor fails although the network is fine | a local firewall filtering loopback | allow OXT and tor on localhost 9050 / 9051 (9150 / 9151) |
 

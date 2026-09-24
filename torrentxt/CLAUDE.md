@@ -137,7 +137,10 @@ C++ engine (the shim cites these by number):
    `enqueue_locked`, and `drain` releases budget with the same `cost()` enqueue charged. Both
    overflows are reported through `btLastError()` at the end of the drain ("rp1: N inbound
    event(s) shed - ..." and "alerts: libtorrent dropped alerts of N type(s) since the last
-   drain - ..."; full text in `docs/api-reference.md`). Alert codes (`A_RP1_QUEUE_OVERFLOW` + an alerts-dropped code)
+   drain - ..."; full text in `docs/api-reference.md`). That channel is sticky (a clean drain
+   never clears it), so the helper stack clears it before each drain and reads it after, and
+   hands a non-empty read to the target as a `torrentPollWarning` event (since 2026-09-24;
+   verified statically; needs an OXT pass). Alert codes (`A_RP1_QUEUE_OVERFLOW` + an alerts-dropped code)
    wait for **ABI 12**: the suite's `check-binary-freshness.py` decodes `btx_abi_version()`
    from every committed library, so the bump must land with a release dispatch of all five.
 7. **BEP44 caps the BENCODED value at 1000 bytes.** `btx_dht_put_immutable` and
@@ -197,8 +200,11 @@ public key; Quick Share uses a random salt carried in the share code.
 `nocloud/src/nocloudquickshare.livecodescript` was spun out of it and folded back at `nocloud/`
 on 2026-08-13. Measured 2026-08-17: 148 `qs*` handlers here, 229 in nocloud, 144 shared; the
 demo-only four are `qsBar`, `qsBrowseFile`, `qsToggleTor`, `qsToggleWebShare`. A fix in one
-does not reach the other, so weigh every nocloud fix for this demo (nocloud's 2026-08-17
-HEAD-method route fix is one not yet ported).
+does not reach the other, so weigh every nocloud fix for this demo, and every fix here for
+nocloud. nocloud's 2026-08-17 HEAD fixes (`qsRouteLookupKey`; no body on a HEAD text reply)
+were ported here 2026-09-24, verified statically; needs an OXT pass. The port found one more
+HEAD body in the single-file Tor web path (`qsOnionHttpText`), fixed here and still present
+in nocloud's copy.
 
 ## Engine evidence ledger
 
@@ -217,10 +223,10 @@ HEAD-method route fix is one not yet ported).
 | 2026-08-27 | not recorded | suite paste, 2440 passed / 2 failed / 3 skipped | every folded member green, torrentxt included; the 2 failures were the live loopbacks stalling on blocked loopback UDP (environment). Which torrentxt binaries were loaded is not recorded |
 | 2026-08-27 | two machines, one LAN (maintainer report, live) | rp1 chat; the DHT-signalled WebRTC chat (datachannelxt over this member's DHT) | both reported WORKING; no PASS lines were captured |
 
-Apart from that rp1 chat report, the demos have no dated engine record in this tree: three
-demo headers cite "demo passes recorded in torrentxt/CLAUDE.md", and this ledger holds
-harness and transport rows only. Each demo's UI carries "UI unified 2026-08-14; needs an OXT
-re-pass".
+Apart from that rp1 chat report, the demos have no dated engine record in this tree; this
+ledger holds harness and transport rows only, and since 2026-09-24 the three demo headers
+that cited "demo passes recorded in torrentxt/CLAUDE.md" say so instead. Each demo's UI
+carries "UI unified 2026-08-14; needs an OXT re-pass".
 
 ## Status
 
