@@ -580,9 +580,26 @@ def check_or_evaluation(c, ip):
     # The itemDelimiter is "/" inside nxJsonPathNode and is GLOBAL mutable
     # state, so the new early-out must restore it. If it did not, a later
     # comma-delimited read would see "/" and quietly return the whole string.
-    ip.call("nxJsonGet", ['{"a":["x","y"]}', "a/abc"])
-    c.ck("the itemDelimiter survives the refusal path",
-         ip.call("nxJsonGet", ['{"a":["x","y"]}', "a/1"]), "x")
+    #
+    # READ THE DELIMITER ITSELF (2026-09-24). This check's first version
+    # asked a SECOND nxJsonGet for "a/1" after the refusal and wanted "x" -
+    # but the walk saves whatever delimiter it finds and sets "/" itself, so
+    # that call answers "x" whether or not the first one leaked. Deleting the
+    # early-out's restore left the whole section at 9 checks, 0 failed, with
+    # the modelled delimiter still "/" afterwards: a blind check, printing OK
+    # over the exact defect its label names. The sentinel is not the default
+    # comma, so a restore to a hard-coded comma fails too, and
+    # tools/test-script-vectors.py now seeds the deleted restore and requires
+    # this gate to fail on it.
+    LCS.ITEM_DELIMITER[0] = "|"
+    try:
+        ip.call("nxJsonGet", ['{"a":["x","y"]}', "a/abc"])
+        after = LCS.ITEM_DELIMITER[0]
+    except Exception as exc:                           # noqa: BLE001
+        after = "raised %s" % type(exc).__name__
+    finally:
+        LCS.ITEM_DELIMITER[0] = ","
+    c.ck("the itemDelimiter survives the refusal path", after, "|")
 
 
 def main(argv):

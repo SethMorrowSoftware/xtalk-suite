@@ -10,11 +10,19 @@ class into the SHIPPED src/nostrxt.livecodescript in place, runs the gate the
 way build-all does, and restores the file byte-identically - try/finally -
 before the next case.
 
-The four defect classes, one per layer the gate covers:
+The five defect classes, one per layer the gate covers:
   1. a serializer escape dropped (\\n emitted raw)      -> the id preimage moves
   2. the bech32 charset transposed (two digits swapped) -> every entity moves
   3. the NIP-44 padding rounded one byte high           -> every payload moves
   4. the MAC compare short-circuited to true            -> tampering accepted
+  5. the JSON walk's refusal forgets its delimiter      -> every later `item`
+     restore (2026-09-24)                                  parses on "/"
+
+Case 5 is here because the gate's check for it was BLIND until 2026-09-24:
+it asked a second nxJsonGet for an answer, which comes out right whether or
+not the first call leaked "/" (check-script-vectors.py's or-evaluation
+section records how). A check nobody has seen fail is a check nobody has
+seen work - that is this file's whole premise, and case 5 is it paying out.
 
 Each mutation reconstructs a defect FAITHFULLY (an edit a human could make),
 not a syntax error - a gate that only catches files that fail to parse would
@@ -89,6 +97,14 @@ def main():
         ("a short-circuited MAC compare is caught",
          "if not nxCtEqualHex(nxHexEncode(tExpected), nxHexEncode(tMac)) then",
          "if false then"),
+        # 5. drop the delimiter restore from the 2026-09-09 early-out in
+        # nxJsonPathNode: the refusal still happens, the answer is still
+        # empty, and "/" is left as the process-wide itemDelimiter - the
+        # quiet half of that fix, and the one a refusal-only check misses.
+        ("a forgotten delimiter restore on the JSON refusal is caught",
+         "         if not nxIsDigits(tStep) then\n"
+         "            set the itemDelimiter to tSavedDelim\n",
+         "         if not nxIsDigits(tStep) then\n"),
     ]
     for label, old, new in cases:
         try:
@@ -105,7 +121,8 @@ def main():
     if not all_ok:
         print("test-script-vectors: FAILURES above")
         return 1
-    print("test-script-vectors: all 4 mutations caught, tree restored")
+    print("test-script-vectors: all %d mutations caught, tree restored"
+          % len(cases))
     return 0
 
 

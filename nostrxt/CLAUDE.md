@@ -160,6 +160,7 @@ runbook points at this heading); engine behaviour also goes in the suite's engin
 | 2026-08-24 | Windows x86_64, OXT 9.6.3 | the folded harness in the suite paste (`nx1nxSelfTest`; the whole paste ran 2,373 / 0 / 3) | **274 passed, 0 failed, 2 skipped** (both relay sections, absent by design). NIP-44 official vectors decrypted and re-encrypted through the real ABI 10 cipher; every interpreter-modelled engine pin held (the 1e3 fold, the trailing-delimiter eat, case-folding `is`, the base64 leniency traps); event C's non-BMP `textDecode` round trip (euro sign + 4-byte emoji) is faithful; the `nxB64Encode` strip is correct in effect, the raw `base64Encode` emission was not recorded |
 | 2026-08-24 | Windows x86_64, OXT 9.6.3 | `examples/nostrxt-demo.livecodescript`, first open, then its live leg to wss://nos.lol | boot self-check 9/9; relay open, identity derived, kind-1 signed, verified, published, ok-true for its id. The suite's first `open secure socket` (engine note 6.8) |
 | 2026-09-09 | none (headless) | the `or` no-short-circuit fix (gotcha 8), three sites | `tools/check-script-vectors.py` 81 -> 90 checks; the refusals are not in the member harness yet, so no engine pass has run them |
+| 2026-09-24 | none (headless; lcs-interp.py over the committed coinxt and sodiumxt binaries) | the 2026-09-09 fix pinned in `examples/nostrxt-tests.livecodescript` (3 checks, sections 4 and 14, each call in a try so a regression is a FAIL line, not a throw); the whole harness counted in all six CoinXT / SodiumXT combinations to set the suite paste's floor; the demo's row-34 buttons (Unsubscribe, Answer auth, Send raw) | attempted 279 in the 2026-08-24 configuration (its 276 plus the 3 pins; the unpinned harness measured 276, the dated record exactly), 278 without SodiumXT, 280 on a pre-ABI-10 SodiumXT, 253 without CoinXT, the 3 pins passing in all six (the one FAIL per run is the interpreter's fixed clock under "nxUnixNow is after the fixture era"): the suite core's floor is 278 with CoinXT and 253 without, keyed on this member's cached probe. The vector gate's delimiter-survival check was BLIND (still green with the restore deleted, because it asked a second `nxJsonGet`, which re-saves the leaked "/"); it now reads the delimiter against a non-comma sentinel, and `tools/test-script-vectors.py` seeds that defect as its 5th mutation. The three pins, the floor and the three buttons: verified statically; needs an OXT pass (the buttons + a live-relay pass) |
 
 ## Status
 
@@ -167,8 +168,11 @@ The nx* core, NIP-44 included, is **engine-proven 2026-08-24**; the relay connec
 publish / ok path is **live-proven 2026-08-24** (both in the ledger). The receive leg (REQ,
 EVENT, EOSE, CLOSED, NOTICE), NIP-42, every ws:// path and the offline relay harness sections
 (they SKIP in the paste; the demo's test button that runs them has no recorded engine run) keep
-"verified statically; needs an OXT pass + a live-relay pass". Bad-certificate TLS behaviour is
-unmeasured (gotcha 7); the 2026-09-09 fix is headless only. Open work: the suite's docs/WORK-PLAN.md.
+"verified statically; needs an OXT pass + a live-relay pass"; the demo's Answer auth, Unsubscribe
+and Send raw buttons (2026-09-24) make the NIP-42 and CLOSED legs button work, and have not run
+either. Bad-certificate TLS behaviour is unmeasured (gotcha 7); the 2026-09-09 fix is headless
+only, but its pins are in the member harness since 2026-09-24, so the next paste runs them. Open
+work: the suite's docs/WORK-PLAN.md.
 
 ## Build and gates
 

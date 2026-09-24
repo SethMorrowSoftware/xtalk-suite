@@ -2909,6 +2909,7 @@ end stRepeatByte
 
 command stRunMemberHarnesses
    local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
+   local tNxReport, tNxCaps, tNxFloor -- NostrXT's probe-selected floor (its call site)
    stSection "deep per-member self-tests (each member's own harness, folded in)"
    stNote "Each of these is the SAME harness that member ships standalone."
    stNote "A failure here means the same thing it would mean there."
@@ -2921,13 +2922,16 @@ command stRunMemberHarnesses
    --
    -- THE THIRD ARGUMENT TO stMergeReturned IS A FLOOR: the fewest items that
    -- member can attempt in any environment it supports (checks + skips). Read
-   -- stMergeFloor for what it does and does not catch. Only ONE of the five is
+   -- stMergeFloor for what it does and does not catch. TWO of the six are
    -- measured today:
    --
    --   OnionXT   41, derived section by section at its call site below. It is
    --             the member whose harness can degrade the furthest (its skips
    --             span a third of its items), which is why it was measured
    --             first and why the skip channel exists at all.
+   --   NostrXT   278 with CoinXT, 253 without (2026-09-24), chosen by the
+   --             member's OWN cached capability probe, the one its harness
+   --             branches on; derived and justified at its call site below.
    --   the four  1, the CATASTROPHIC floor, and it is not a measured minimum.
    --   others    What it refuses is a harness that attempted NOTHING and still
    --             read green, because zero failures is zero failures. Measuring
@@ -3091,9 +3095,72 @@ command stRunMemberHarnesses
    -- (nostrxt/CLAUDE.md, the two-file split).
    if sHaveNostrScript then
       try
-         -- floor 1: catastrophic only, not measured (the riptide precedent;
-         -- a first engine pass will give this member its measured floor)
-         stMergeReturned "NostrXT", nx1nxSelfTest(), 1
+         -- THE FLOOR IS 278 WITH COINXT AND 253 WITHOUT, and it is the first
+         -- floor here chosen by a probe, because this is the first harness
+         -- whose every item-count branch hangs off one probe the core can
+         -- read. Attempted = passed + failed + skipped (stMergeReturned);
+         -- a skip counts as ONE item, and a section that bails out emits a
+         -- fixed number of skips rather than one per check it did not run.
+         --
+         -- THE DATED RECORD: 2026-08-24, Windows x86_64, OXT 9.6.3, this
+         -- paste with CoinXT and SodiumXT ABI 10 installed: 274 passed, 0
+         -- failed, 2 skipped = 276 attempted (nostrxt/CLAUDE.md, the ledger).
+         -- Counted by hand section by section it is exactly that: 274 checks,
+         -- and the 2 skips are section 17 (the nxr* relay layer, which is
+         -- never in this paste, so it is 2 skips here in every environment).
+         -- 2026-09-24 added 3 unconditional checks (the 2026-09-09 fix's
+         -- pins in sections 4 and 14), so that configuration now attempts
+         -- 279. What moves the count, and nothing else does (every other
+         -- nxtCheck runs in every environment; pass or fail, it counts):
+         --    CoinXT absent   section 6: 2 skips for its 19 or 17; section
+         --                    9: 2 skips for its 8; section 11: 1 skip for
+         --                    its 4 or 5 post-probe checks      -> 253
+         --    SodiumXT absent section 6: 1 skip for 3 key-generation checks
+         --                    (-2); no cipher, so section 11 takes the
+         --                    fail-closed branch, 3 checks for 2 (+1)
+         --    SodiumXT < 10   section 11's 3-check branch only (+1)
+         -- So with CoinXT the count is 278 (no SodiumXT), 279 (the record's
+         -- configuration) or 280 (a pre-ABI-10 SodiumXT); without it, 253
+         -- whatever SodiumXT is. Measured, not only added up: the real
+         -- harness was run through the family interpreter
+         -- (nostrxt/tools/lcs-interp.py) in all six combinations, over the
+         -- committed sibling binaries, and printed exactly these totals (its
+         -- one FAIL in every run, "nxUnixNow is after the fixture era", is
+         -- the interpreter's fixed deterministic clock, not a defect, and a
+         -- FAIL counts as attempted all the same). That settles the
+         -- COUNTING, which is logic; the floor itself has not met an
+         -- engine: verified statically; needs an OXT pass.
+         --
+         -- WHY TWO NUMBERS, when OnionXT's one environment-proof 41 sits
+         -- under its paste-expected 58. A single number must be <= 253 to
+         -- spare a CoinXT-less engine, and 253 is 26 items under the record's
+         -- 279 - the whole of section 12 could vanish from a fully equipped
+         -- run and still read green, which is the silent shrink a floor is
+         -- for. OnionXT could not do better: its skips follow runtime state
+         -- (an authed session, a daemon) that nothing here can read. This
+         -- harness branches on ONE cached answer, nxProbeCapabilities()'s
+         -- hasCoin, which it reads first thing; the embedded core is
+         -- unprefixed, so the call below returns that SAME cached array -
+         -- read after the harness has run, so the floor keys on the answer
+         -- the harness actually branched on and cannot disagree with it.
+         -- Taking the minimum across the SodiumXT cases keeps it
+         -- environment-proof within each branch: a green run in ANY
+         -- supported install meets it, and a run in the record's
+         -- configuration that lost 2 or more items does not (3 on a
+         -- pre-ABI-10 SodiumXT; 1 without SodiumXT, or without CoinXT).
+         --
+         -- A HARNESS EDIT THAT REMOVES A CHECK MUST RE-DERIVE THIS, in the
+         -- same change; adding one only widens the margin. Nothing gates it
+         -- headlessly: one interpreted run of the whole harness took 15 to
+         -- 35 minutes per environment on the machine that measured it.
+         put nx1nxSelfTest() into tNxReport
+         put nxProbeCapabilities() into tNxCaps
+         if tNxCaps["hasCoin"] is true then
+            put 278 into tNxFloor
+         else
+            put 253 into tNxFloor
+         end if
+         stMergeReturned "NostrXT", tNxReport, tNxFloor
       catch tError
          stSectionFailed "NostrXT deep self-test", tError
       end try
@@ -42686,7 +42753,7 @@ private command nx1nxtTestJsonEscape
 end nx1nxtTestJsonEscape
 
 private command nx1nxtTestJsonParse
-   local nx1tJson, nx1tDeep, nx1tI
+   local nx1tJson, nx1tDeep, nx1tI, nx1tArrJson, nx1tGot, nx1tError, nx1tSavedDelim, nx1tAfterDelim
    nx1nxtSection "json parser"
    put "{" & quote & "a" & quote & ":[1,2,{" & quote & "b" & quote & ":" & quote & "x" & quote & "}],  " & quote & "c" & quote & ":true," & quote & "d" & quote & ":null}" into nx1tJson
    nx1nxtCheck nxJsonType(nx1tJson, empty) is "object", "root object types"
@@ -42715,6 +42782,37 @@ private command nx1nxtTestJsonParse
    nx1nxtCheck nxJsonType("{" & quote & "a" & quote & ":1," & quote & "a" & quote & ":2}", empty) is "missing", "duplicate object keys refuse (the first-wins/last-wins desync)"
    nx1nxtCheck nxJsonType("{" & quote & "NAME" & quote & ":1}", "name") is "missing", "object keys are case-sensitive (is folds; the walk must not)"
    nx1nxtCheck nxJsonType("[1,2,3]", "2.0") is "missing", "array paths are digit runs, not numeric folds"
+   -- THE 2026-09-09 REFUSAL, here so an engine pass runs it: until now only
+   -- tools/check-script-vectors.py did, headlessly. The array step's guard
+   -- used to be ONE chain, `not nxIsDigits(tStep) or tStep + 0 < 1 ...`,
+   -- and `or` evaluates BOTH operands (suite engine note 2.5), so a step
+   -- like "abc" reached `tStep + 0`: a HARD engine error, not a refusal,
+   -- raised from relay bytes through nxMetadataParse. So the call sits in a
+   -- try. On a regressed library a bare nx1nxtCheck would not print FAIL - it
+   -- would THROW out of this whole harness and take every later line with
+   -- it; caught, the regression is one FAIL line and the report survives.
+   --
+   -- The same call pins the other half of that fix: the early-out now
+   -- restores the itemDelimiter, which is "/" at that point and global
+   -- state (suite engine note 2.3). It reads the DELIMITER, not a second
+   -- nxJsonGet: the walk saves whatever delimiter it finds and sets "/"
+   -- itself, so a second call answers "x" even after a leak (the headless
+   -- gate's first version of this check did exactly that and stayed green
+   -- with the restore deleted). The sentinel is not comma, so a restore to
+   -- a hard-coded comma fails as well.
+   put "{" & quote & "a" & quote & ":[" & quote & "x" & quote & "," & quote & "y" & quote & "]}" into nx1tArrJson
+   put the itemDelimiter into nx1tSavedDelim
+   set the itemDelimiter to "|"
+   put "not run" into nx1tGot
+   try
+      put nxJsonGet(nx1tArrJson, "a/abc") into nx1tGot
+   catch nx1tError
+      put "THREW: " & nx1tError into nx1tGot
+   end try
+   put the itemDelimiter into nx1tAfterDelim
+   set the itemDelimiter to nx1tSavedDelim
+   nx1nxtCheck nx1tGot is empty, "a non-numeric array step refuses, never a hard error (2026-09-09: or evaluates both operands)"
+   nx1nxtCheck nx1tAfterDelim is "|", "and that refusal restores the itemDelimiter (2026-09-09)"
    put empty into nx1tDeep
    repeat with nx1tI = 1 to 70
       put "[" after nx1tDeep
@@ -43142,7 +43240,7 @@ private command nx1nxtTestRelayMessages
 end nx1nxtTestRelayMessages
 
 private command nx1nxtTestWsPure
-   local nx1tParsed, nx1tRequest, nx1tFrame, nx1tDecoded, nx1tBuffer
+   local nx1tParsed, nx1tRequest, nx1tFrame, nx1tDecoded, nx1tBuffer, nx1tGot, nx1tError
    nx1nxtSection "websocket helpers (RFC 6455, pure half)"
    put nxWsUrlParse("ws://relay.example.com") into nx1tParsed
    nx1nxtCheck nx1tParsed["host"] is "relay.example.com", "ws url: host"
@@ -43156,6 +43254,16 @@ private command nx1nxtTestWsPure
    nx1nxtCheck nxWsUrlParse("http://x.io") is empty, "an http url refuses"
    nx1nxtCheck nxWsUrlParse("ws://") is empty, "an empty host refuses"
    nx1nxtCheck nxWsUrlParse("ws://h:99999") is empty, "an out-of-range port refuses"
+   -- The 2026-09-09 refusal, the same `or` rule as the JSON path step in
+   -- section 4 and caught the same way: a non-numeric port reached
+   -- `tPortText + 0` and was a hard engine error, not this refusal.
+   put "not run" into nx1tGot
+   try
+      put nxWsUrlParse("wss://h:abc/") into nx1tGot
+   catch nx1tError
+      put "THREW: " & nx1tError into nx1tGot
+   end try
+   nx1nxtCheck nx1tGot is empty, "a non-numeric port refuses, never a hard error (2026-09-09)"
    nx1nxtCheck nxWsUrlParse("ws://a b") is empty, "whitespace refuses"
    put nxWsHandshakeRequest("r.io", 80, "/", nx1kNxVecWsKey, false) into nx1tRequest
    nx1nxtCheck nx1tRequest begins with "GET / HTTP/1.1", "the request line"
