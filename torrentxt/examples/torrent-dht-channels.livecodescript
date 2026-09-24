@@ -5199,8 +5199,8 @@ function chCapabilityLine
 end chCapabilityLine
 
 -- The bytes to publish for a feed: plaintext UTF-8 when public; marker+secretbox
--- when the channel has a passphrase (the secretbox output is nonce || ciphertext
--- || MAC, a fresh random nonce each publish). Returns EMPTY for a private channel
+-- when the channel has a passphrase (the secretbox output is nonce || MAC ||
+-- ciphertext, a fresh random nonce each publish). Returns EMPTY for a private channel
 -- we cannot encrypt, so the caller refuses to publish in the clear (fail-closed).
 function chFeedValue pFeed, pPass, pPubHex
    local tBox, tErr

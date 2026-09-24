@@ -217,7 +217,9 @@ SXT_API int SXT_CALL sxt_secretbox_noncebytes(void);
 SXT_API int SXT_CALL sxt_secretbox_macbytes(void);
 
 /*
- * Encrypt msg under key. Output is nonce || ciphertext || MAC: the shim draws a
+ * Encrypt msg under key. Output is nonce || MAC || ciphertext (libsodium's
+ * combined mode writes the 16-byte MAC FIRST; this said "ciphertext || MAC"
+ * until 2026-09-24, which no caller relied on): the shim draws a
  * fresh random nonce and PREPENDS it, so the caller never handles a nonce
  * (CLAUDE.md rule 3, the misuse-resistant shape). Output length is
  * noncebytes + msglen + macbytes. key must be exactly keybytes.

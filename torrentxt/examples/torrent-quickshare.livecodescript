@@ -1245,7 +1245,7 @@ command qsGetFile
       put item 3 of tRest into tB64Salt
       put item 4 of tRest into tB64Verify
       put toLower(tHash) into tHash
-      if the number of chars of tHash is not 40 and the number of chars of tHash is not 64 then
+      if (the number of chars of tHash is not 40 and the number of chars of tHash is not 64) or not qsIsHex(tHash) then
          qsLog "That locked code looks damaged (bad hash)."
          exit qsGetFile
       end if
@@ -1291,7 +1291,7 @@ command qsGetFile
          put tCode into tMag
       else
          put toLower(tCode) into tCode
-         if the number of chars of tCode is not 40 and the number of chars of tCode is not 64 then
+         if (the number of chars of tCode is not 40 and the number of chars of tCode is not 64) or not qsIsHex(tCode) then
             qsLog "That does not look like a share code (it should be 40 characters)."
             exit qsGetFile
          end if
@@ -1309,6 +1309,25 @@ command qsGetFile
       qsLog "Downloading to" && qsSaveFolder() & ". Watch the Transfers list - your friend must be online."
    end if
 end qsGetFile
+
+-- True when pText is non-empty and every char is 0-9 or a-f (callers lowercase
+-- first). A share code used to be checked for LENGTH only, and libtorrent 2.0.x's
+-- magnet parser ignores from_hex's failure (2.1.1 checks it), so on the Linux and mac
+-- builds a 40-character non-hex code made btAddMagnet join a garbage swarm instead of
+-- refusing (found 2026-09-24 while pinning register #17). Verified statically; needs
+-- an OXT pass.
+function qsIsHex pText
+   local tI
+   if pText is empty then
+      return false
+   end if
+   repeat with tI = 1 to the number of chars of pText
+      if offset(char tI of pText, "0123456789abcdef") is 0 then
+         return false
+      end if
+   end repeat
+   return true
+end qsIsHex
 
 -- ---- transfers view + events -------------------------------------------------
 command qsRefreshXfers

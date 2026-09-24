@@ -502,7 +502,8 @@ SXT_API int SXT_CALL sxt_secretbox(unsigned char *out, int cap,
         return SXT_ERR_BADARG;
     }
     /* Fresh random nonce, written into the first noncebytes of out, then the
-     * ciphertext+MAC after it. The nonce is public; the key never moves. */
+     * MAC+ciphertext after it (crypto_secretbox_easy's combined mode writes the
+     * MAC first). The nonce is public; the key never moves. */
     randombytes_buf(out, (size_t)noncebytes);
     if (crypto_secretbox_easy(out + noncebytes, msg, (unsigned long long)msglen,
                               out, key) != 0) {

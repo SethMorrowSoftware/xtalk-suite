@@ -706,7 +706,8 @@ end handler
 -- ==========================================================================
 
 -- secretbox: the shim generates and prepends a random nonce; output is
--- nonce || ciphertext || mac. Open returns an error on a wrong key or tampering.
+-- nonce || mac || ciphertext (libsodium's combined mode puts the MAC first).
+-- Open returns an error on a wrong key or tampering.
 public handler sxSecretBox(in pMessage as Data, in pKey as Data) returns Data
    variable tOut as Pointer
    variable tMsgPtr as Pointer
