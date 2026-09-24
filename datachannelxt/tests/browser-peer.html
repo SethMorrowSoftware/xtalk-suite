@@ -1,0 +1,533 @@
+<!DOCTYPE html>
+<!--
+  browser-peer.html - the BROWSER half of DataChannelXT's browser-interop leg
+  (suite runbook row 40; procedure: docs/browser-interop.md).
+
+  WHAT IT IS: one static, self-contained page (no external script, style or
+  font; it works from file://) that plays a plain-JavaScript RTCPeerConnection
+  against an OXT stack running tests/datachannel-browser-peer.livecodescript.
+  Signaling is COPY/PASTE, in the one-blob NON-TRICKLE shape this member's own
+  demos exchange: wait for ICE gathering to complete, then ship the local
+  description (which by then CONTAINS every candidate) as ONE blob, never a
+  candidate trickle. The blob is
+
+      <type> LF <sdp>          e.g. "offer\nv=0\r\no=- ..."
+
+  which is datachannel-dht-chat's signaling body without its DHT-only nonce
+  (that nonce pairs an answer to an offer across a mailbox that lingers for
+  hours; a live paste needs no pairing). The OXT side builds it from
+  dcLocalDescriptionType and dcLocalDescription, and splits a pasted blob at
+  its first line break for dcSetRemoteDescription.
+
+  WHAT IT CHECKS, the row-40 criteria, on the side only a browser can see:
+    1. the channel opens;
+    2. dcSendText arrives as a JavaScript STRING (the SCTP "WebRTC String"
+       PPID: dcx_send_text hands libdatachannel a negative size on purpose,
+       datachannelxt CLAUDE.md C++ gotcha 4);
+    3. dcSendData arrives as an ArrayBuffer, byte-exact (binaryType is set to
+       "arraybuffer" explicitly; the browser's own default is recorded).
+  A text that arrives as binary, or bytes that arrive as a string, is a FAIL,
+  not a pending. "Send test pair" drives the other direction for the OXT
+  side's own checks.
+
+  HONESTY (the suite convention): this page has NOT met DataChannelXT on an
+  engine. What ran, 2026-09-24, is headless Chromium via Playwright: two
+  copies of this page signalling each other through the same copy/paste
+  blobs, and this page against the committed x86_64-linux datachannelxt.so
+  driven through its dcx_* C ABI by a scratch ctypes driver (not the .lcb
+  binding, not an engine). So the page's JavaScript and its blob format are
+  exercised; the OXT leg is verified statically; needs an OXT pass.
+
+  ASCII only, like every file in this family that a person might paste.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DataChannelXT browser peer</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --panel: #ffffff; --ink: #1d232b; --muted: #5d6875;
+    --line: #d8dde3; --accent: #2458c6; --ok: #1f7a3a; --bad: #b3261e;
+    --wait: #8a6d00; --mono-bg: #eef1f4;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14171b; --panel: #1c2026; --ink: #e4e7eb; --muted: #9aa4af;
+      --line: #313843; --accent: #7aa2f7; --ok: #5fcf80; --bad: #ff7b72;
+      --wait: #e3b341; --mono-bg: #11151a;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  main { max-width: 980px; margin: 0 auto; padding: 20px 16px 40px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  h2 { font-size: 16px; margin: 0 0 10px; }
+  p { margin: 6px 0; }
+  .sub { color: var(--muted); margin: 0 0 16px; }
+  .panel {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+    padding: 14px 16px; margin: 0 0 14px;
+  }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  @media (max-width: 760px) { .grid { grid-template-columns: 1fr; } }
+  textarea, input[type=text] {
+    width: 100%; font: 12px/1.35 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    background: var(--mono-bg); color: var(--ink); border: 1px solid var(--line);
+    border-radius: 6px; padding: 8px;
+  }
+  textarea { min-height: 150px; resize: vertical; }
+  #ice { min-height: 44px; }
+  button {
+    font: inherit; padding: 6px 12px; margin: 8px 8px 0 0; border-radius: 6px;
+    border: 1px solid var(--line); background: var(--panel); color: var(--ink);
+    cursor: pointer;
+  }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button:disabled { opacity: .5; cursor: default; }
+  .checks { list-style: none; padding: 0; margin: 0; }
+  .checks li { display: flex; gap: 10px; align-items: baseline; padding: 4px 0; }
+  .badge {
+    flex: 0 0 64px; text-align: center; font-weight: 600; font-size: 12px;
+    border-radius: 4px; padding: 1px 0; border: 1px solid currentColor;
+  }
+  .pending, .check { color: var(--wait); } .pass { color: var(--ok); } .fail { color: var(--bad); }
+  .detail { color: var(--muted); font-size: 13px; }
+  #state { font-weight: 600; }
+  #log {
+    min-height: 180px; max-height: 360px; overflow: auto; white-space: pre-wrap;
+    background: var(--mono-bg); border: 1px solid var(--line); border-radius: 6px;
+    padding: 8px; font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>DataChannelXT browser peer</h1>
+  <p class="sub">The browser half of runbook row 40. Signaling is copy/paste, one
+  blob each way (<code>type</code>, a line break, then the SDP with its candidates).
+  Procedure: <code>datachannelxt/docs/browser-interop.md</code>.
+  Status: <span id="state">idle</span></p>
+
+  <div class="panel">
+    <h2>Checks</h2>
+    <ul class="checks" id="checks"></ul>
+  </div>
+
+  <div class="grid">
+    <div class="panel">
+      <h2>1. Paste the OXT blob here</h2>
+      <p class="detail">An <b>offer</b> (the main path: OXT ran <code>bpOffer</code>) makes this
+      page answer. An <b>answer</b> completes an offer this page made.</p>
+      <textarea id="remote" spellcheck="false" placeholder="offer&#10;v=0&#10;..."></textarea>
+      <button class="primary" id="apply">Apply remote blob</button>
+      <button id="offer">Or: make an offer here</button>
+    </div>
+    <div class="panel">
+      <h2>2. Copy this blob back to OXT</h2>
+      <p class="detail">Appears once ICE gathering completes (non-trickle), then
+      <code>bpAccept</code> or <code>bpAnswer</code> reads it from the clipboard.</p>
+      <textarea id="local" spellcheck="false" readonly placeholder="(nothing yet)"></textarea>
+      <button id="copyLocal" disabled>Copy blob</button>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>3. Talk</h2>
+    <button class="primary" id="sendPair" disabled>Send test pair to OXT</button>
+    <input type="text" id="free" placeholder="free text" style="max-width:320px">
+    <button id="sendFree" disabled>Send text</button>
+    <button id="copyResults">Copy results</button>
+    <button id="reset">Reset</button>
+    <p class="detail">The test pair is the string <code>hello from the browser</code>
+    and the bytes <code>ff fe 80 7f 01 00</code> as an ArrayBuffer; the OXT script
+    checks that one arrives as text and the other as a payload.</p>
+  </div>
+
+  <div class="panel">
+    <h2>ICE servers (optional)</h2>
+    <p class="detail">One per line, the same forms as <code>dcCreatePeer</code>:
+    <code>stun:host:port</code>, <code>turn:user:pass@host:port?transport=udp</code>.
+    Leave empty on one machine or a LAN, as the runbook does.</p>
+    <textarea id="ice" spellcheck="false"></textarea>
+  </div>
+
+  <div class="panel">
+    <h2>Log</h2>
+    <div id="log"></div>
+  </div>
+</main>
+
+<script>
+"use strict";
+
+/* The OXT script's payloads (tests/datachannel-browser-peer.livecodescript,
+ * kBpText and bpBytes) and this page's own (sent back by "Send test pair").
+ * Kept in step by hand; a right-KIND message with the wrong content shows as
+ * CHECK ("arrived, but not the runbook's value"), never as a pass, so drift
+ * between the two files is loud rather than silent. */
+const EXPECT_TEXT = "hello from OXT";
+const EXPECT_BYTES = [0x00, 0x01, 0x7f, 0x80, 0xfe, 0xff];
+const PAIR_TEXT = "hello from the browser";
+const PAIR_BYTES = [0xff, 0xfe, 0x80, 0x7f, 0x01, 0x00];
+const PAGE_VERSION = "1";
+const GATHER_TIMEOUT_MS = 15000;
+
+const $ = (id) => document.getElementById(id);
+const t0 = Date.now();
+
+let pc = null;
+let channel = null;
+let role = "";              /* "answerer" (OXT offered) or "offerer" */
+let defaultBinaryType = "";
+let selectedPair = "";
+const received = [];         /* {kind, len, show} per message, for the record */
+const sent = [];
+
+const checks = {
+  open:   { label: "the data channel opens", state: "pending", detail: "" },
+  text:   { label: "dcSendText arrives as a string", state: "pending", detail: "" },
+  binary: { label: "dcSendData arrives as an ArrayBuffer", state: "pending", detail: "" },
+};
+
+function log(line) {
+  const s = ((Date.now() - t0) / 1000).toFixed(2).padStart(7) + "  " + line;
+  const el = $("log");
+  el.textContent += s + "\n";
+  el.scrollTop = el.scrollHeight;
+}
+
+function setState(s) { $("state").textContent = s; }
+
+function paintChecks() {
+  const ul = $("checks");
+  ul.textContent = "";
+  for (const key of Object.keys(checks)) {
+    const c = checks[key];
+    const li = document.createElement("li");
+    li.dataset.check = key;
+    li.dataset.state = c.state;
+    const b = document.createElement("span");
+    b.className = "badge " + c.state;
+    b.textContent = c.state.toUpperCase();
+    const l = document.createElement("span");
+    l.textContent = c.label;
+    const d = document.createElement("span");
+    d.className = "detail";
+    d.textContent = c.detail;
+    li.append(b, l, d);
+    ul.append(li);
+  }
+}
+
+/* A check that has FAILED stays failed: a later good message does not repaint
+ * an earlier bad one green (the harness rule that a report must not look
+ * finished, or fine, when it is not). */
+function mark(key, state, detail) {
+  const c = checks[key];
+  if (c.state === "fail") return;
+  c.state = state;
+  c.detail = detail || "";
+  paintChecks();
+}
+
+function hex(bytes) {
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join(" ");
+}
+
+function sameBytes(a, b) {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
+}
+
+/* dcCreatePeer's ICE lines -> RTCIceServer objects. libdatachannel takes TURN
+ * credentials inside the URI; a browser wants them as separate fields. */
+function iceServers() {
+  const out = [];
+  for (const raw of $("ice").value.split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line) continue;
+    const m = /^(turns?):([^:@\/]+):([^@]+)@(.+)$/.exec(line);
+    if (m) out.push({ urls: m[1] + ":" + m[4], username: m[2], credential: m[3] });
+    else out.push({ urls: line });
+  }
+  return out;
+}
+
+/* Parse "<type> LF <sdp>". Line endings are normalised to CRLF because a
+ * clipboard round trip through OXT may hand back bare LFs. A blob with no type
+ * line (it starts at "v=0") gets the type this page is waiting for. */
+function parseBlob(text, expectType) {
+  const lines = text.replace(/^\s+/, "").split(/\r?\n/);
+  let type = lines[0].trim().toLowerCase();
+  let body = lines.slice(1);
+  if (type.startsWith("v=")) {
+    type = expectType;
+    body = lines;
+  }
+  if (type !== "offer" && type !== "answer") {
+    throw new Error("the first line must be offer or answer, not: " + lines[0].slice(0, 40));
+  }
+  const sdp = body.map((l) => l.replace(/\s+$/, "")).filter((l) => l.length).join("\r\n") + "\r\n";
+  if (!sdp.startsWith("v=0")) throw new Error("no SDP after the type line (expected v=0)");
+  return { type, sdp };
+}
+
+function blobOf(desc) {
+  return desc.type + "\n" + desc.sdp;
+}
+
+function waitForGathering() {
+  return new Promise((resolve) => {
+    if (pc.iceGatheringState === "complete") return resolve(true);
+    const timer = setTimeout(() => resolve(false), GATHER_TIMEOUT_MS);
+    pc.addEventListener("icegatheringstatechange", () => {
+      if (pc.iceGatheringState === "complete") {
+        clearTimeout(timer);
+        resolve(true);
+      }
+    });
+  });
+}
+
+async function publishLocal() {
+  setState("gathering candidates");
+  const complete = await waitForGathering();
+  if (!complete) log("WARNING: gathering did not complete in " + GATHER_TIMEOUT_MS + " ms; shipping what exists");
+  const blob = blobOf(pc.localDescription);
+  const cands = (pc.localDescription.sdp.match(/^a=candidate:/gm) || []).length;
+  $("local").value = blob;
+  $("copyLocal").disabled = false;
+  log("local " + pc.localDescription.type + " ready: " + cands + " candidate(s) inside, " + blob.length + " chars");
+  setState(role === "answerer" ? "answer ready: copy it back to OXT, then run bpAccept"
+                               : "offer ready: copy it to OXT and run bpAnswer");
+}
+
+function newPeer() {
+  pc = new RTCPeerConnection({ iceServers: iceServers() });
+  pc.addEventListener("signalingstatechange", () => log("signaling: " + pc.signalingState));
+  pc.addEventListener("icegatheringstatechange", () => log("gathering: " + pc.iceGatheringState));
+  pc.addEventListener("iceconnectionstatechange", () => log("ice: " + pc.iceConnectionState));
+  pc.addEventListener("connectionstatechange", () => {
+    log("connection: " + pc.connectionState);
+    if (pc.connectionState === "connected") readSelectedPair();
+    if (pc.connectionState === "failed") {
+      setState("connection FAILED");
+      if (checks.open.state === "pending") mark("open", "fail", "the connection failed before the channel opened");
+    }
+  });
+  pc.addEventListener("datachannel", (e) => {
+    log("incoming channel: label=" + JSON.stringify(e.channel.label) + " protocol=" + JSON.stringify(e.channel.protocol));
+    wireChannel(e.channel);
+  });
+}
+
+function wireChannel(ch) {
+  channel = ch;
+  defaultBinaryType = ch.binaryType;
+  ch.binaryType = "arraybuffer";
+  log("channel binaryType: browser default " + JSON.stringify(defaultBinaryType) + ", set to \"arraybuffer\"");
+  ch.addEventListener("open", () => {
+    log("channel OPEN: label=" + JSON.stringify(ch.label) + " id=" + ch.id + " ordered=" + ch.ordered);
+    mark("open", "pass", "label " + JSON.stringify(ch.label));
+    setState("channel open");
+    $("sendPair").disabled = false;
+    $("sendFree").disabled = false;
+  });
+  ch.addEventListener("close", () => {
+    log("channel closed");
+    setState("channel closed");
+    $("sendPair").disabled = true;
+    $("sendFree").disabled = true;
+  });
+  ch.addEventListener("error", (e) => log("channel error: " + ((e.error && e.error.message) || "unknown")));
+  ch.addEventListener("message", (e) => classify(e.data));
+}
+
+/* The heart of the page: what KIND of JavaScript value each message is. */
+function classify(data) {
+  const expectText = new TextEncoder().encode(EXPECT_TEXT);
+  if (typeof data === "string") {
+    received.push({ kind: "string", len: data.length, show: JSON.stringify(data) });
+    log("RECV string (" + data.length + " chars): " + JSON.stringify(data));
+    if (data === EXPECT_TEXT) {
+      mark("text", "pass", "a string, exactly " + JSON.stringify(EXPECT_TEXT));
+    } else if (data.length === EXPECT_BYTES.length &&
+               sameBytes(Array.from(data, (c) => c.charCodeAt(0)), EXPECT_BYTES)) {
+      mark("binary", "fail", "the dcSendData bytes arrived as a STRING");
+    } else if (checks.text.state !== "pass") {
+      mark("text", "check", "a string arrived, but not the runbook's text: " + JSON.stringify(data).slice(0, 60));
+    }
+    return;
+  }
+  if (data instanceof ArrayBuffer) {
+    const bytes = new Uint8Array(data);
+    received.push({ kind: "ArrayBuffer", len: bytes.length, show: hex(bytes) });
+    log("RECV ArrayBuffer (" + bytes.length + " bytes): " + hex(bytes));
+    if (sameBytes(bytes, EXPECT_BYTES)) {
+      mark("binary", "pass", "an ArrayBuffer, exactly " + hex(bytes));
+    } else if (sameBytes(bytes, expectText)) {
+      mark("text", "fail", "the dcSendText text arrived as an ArrayBuffer (binary PPID)");
+    } else if (checks.binary.state !== "pass") {
+      mark("binary", "check", "an ArrayBuffer arrived, but not the runbook's bytes: " + hex(bytes).slice(0, 60));
+    }
+    return;
+  }
+  /* binaryType is "arraybuffer", so a Blob here means the browser ignored it. */
+  const kind = (data && data.constructor && data.constructor.name) || typeof data;
+  received.push({ kind: kind, len: data && data.size, show: "" });
+  log("RECV " + kind + " (not a string, not an ArrayBuffer)");
+  mark("binary", "fail", "a binary message arrived as " + kind + ", not ArrayBuffer");
+}
+
+async function readSelectedPair() {
+  try {
+    const stats = await pc.getStats();
+    let pair = null;
+    stats.forEach((s) => {
+      if (s.type === "transport" && s.selectedCandidatePairId) pair = stats.get(s.selectedCandidatePairId);
+    });
+    if (!pair) {
+      stats.forEach((s) => {
+        if (!pair && s.type === "candidate-pair" && s.nominated && s.state === "succeeded") pair = s;
+      });
+    }
+    if (!pair) { log("selected pair: not reported by this browser"); return; }
+    const l = stats.get(pair.localCandidateId) || {};
+    const r = stats.get(pair.remoteCandidateId) || {};
+    const one = (c) => (c.candidateType || "?") + " " + (c.protocol || "?") + " " +
+                       (c.address || c.ip || "?") + ":" + (c.port || "?");
+    selectedPair = "local " + one(l) + " / remote " + one(r);
+    log("selected pair: " + selectedPair);
+  } catch (err) {
+    log("selected pair: getStats failed: " + err.message);
+  }
+}
+
+async function applyRemote() {
+  const text = $("remote").value;
+  if (!text.trim()) { log("paste the OXT blob first"); return; }
+  let desc;
+  try {
+    desc = parseBlob(text, role === "offerer" ? "answer" : "offer");
+  } catch (err) {
+    log("REFUSED the pasted blob: " + err.message);
+    return;
+  }
+  try {
+    if (desc.type === "offer") {
+      if (pc) { log("a session exists; press Reset before applying a new offer"); return; }
+      role = "answerer";
+      newPeer();
+      await pc.setRemoteDescription(desc);
+      log("applied the OXT offer (" + (desc.sdp.match(/^a=candidate:/gm) || []).length + " candidate(s) inside)");
+      await pc.setLocalDescription(await pc.createAnswer());
+      await publishLocal();
+    } else {
+      if (!pc || role !== "offerer") { log("an answer only completes an offer this page made"); return; }
+      await pc.setRemoteDescription(desc);
+      log("applied the OXT answer (" + (desc.sdp.match(/^a=candidate:/gm) || []).length + " candidate(s) inside)");
+      setState("connecting");
+    }
+  } catch (err) {
+    log("setRemoteDescription failed: " + err.message);
+    setState("signaling FAILED");
+  }
+}
+
+async function makeOffer() {
+  if (pc) { log("a session exists; press Reset first"); return; }
+  role = "offerer";
+  newPeer();
+  wireChannel(pc.createDataChannel("browser-interop"));
+  await pc.setLocalDescription(await pc.createOffer());
+  await publishLocal();
+}
+
+function send(value, label) {
+  if (!channel || channel.readyState !== "open") { log("no open channel"); return; }
+  channel.send(value);
+  sent.push(label);
+  log("SENT " + label);
+}
+
+function sendPair() {
+  send(PAIR_TEXT, "string " + JSON.stringify(PAIR_TEXT));
+  send(new Uint8Array(PAIR_BYTES).buffer, "ArrayBuffer " + hex(PAIR_BYTES));
+}
+
+function results() {
+  const done = Object.values(checks).every((c) => c.state === "pass");
+  const out = [];
+  out.push("DataChannelXT browser peer v" + PAGE_VERSION + " - " + new Date().toISOString());
+  out.push("browser: " + navigator.userAgent);
+  out.push("role: " + (role || "none") + "; binaryType default " + JSON.stringify(defaultBinaryType));
+  out.push("selected pair: " + (selectedPair || "not read"));
+  for (const key of Object.keys(checks)) {
+    const c = checks[key];
+    out.push(c.state.toUpperCase() + "  " + c.label + (c.detail ? " - " + c.detail : ""));
+  }
+  for (const r of received) out.push("received " + r.kind + " (" + r.len + "): " + r.show);
+  for (const s of sent) out.push("sent " + s);
+  /* The suite harness convention: say so when a report is unfinished, because
+   * one that simply stops reads exactly like one that ended. */
+  if (!done) out.push("RUN NOT FINISHED");
+  return out.join("\n");
+}
+
+async function copyText(text, what) {
+  try {
+    await navigator.clipboard.writeText(text);
+    log(what + " copied to the clipboard");
+  } catch (err) {
+    log("clipboard refused (" + err.message + "); select the text and copy it by hand");
+  }
+}
+
+function reset() {
+  if (channel) try { channel.close(); } catch (e) { /* already closed */ }
+  if (pc) try { pc.close(); } catch (e) { /* already closed */ }
+  pc = null; channel = null; role = ""; selectedPair = ""; defaultBinaryType = "";
+  received.length = 0; sent.length = 0;
+  for (const key of Object.keys(checks)) { checks[key].state = "pending"; checks[key].detail = ""; }
+  $("local").value = ""; $("copyLocal").disabled = true;
+  $("sendPair").disabled = true; $("sendFree").disabled = true;
+  paintChecks();
+  setState("idle");
+  log("reset");
+}
+
+$("apply").addEventListener("click", applyRemote);
+$("offer").addEventListener("click", makeOffer);
+$("copyLocal").addEventListener("click", () => copyText($("local").value, "local blob"));
+$("sendPair").addEventListener("click", sendPair);
+$("sendFree").addEventListener("click", () => {
+  const v = $("free").value;
+  if (v) send(v, "string " + JSON.stringify(v));
+});
+$("copyResults").addEventListener("click", () => {
+  const text = results();
+  log("results:\n" + text);
+  copyText(text, "results");
+});
+$("reset").addEventListener("click", reset);
+
+/* The automation seam: the Playwright check reads these, a person never needs
+ * them. They expose state; they add no behaviour a button does not have. */
+window.bp = { applyRemote, makeOffer, sendPair, results, checks, received };
+
+paintChecks();
+if (typeof RTCPeerConnection === "undefined") {
+  setState("this browser has no RTCPeerConnection");
+  log("RTCPeerConnection is not available here; use a current Chrome, Edge or Firefox");
+} else {
+  log("ready: paste the OXT offer, or make an offer here");
+}
+</script>
+</body>
+</html>

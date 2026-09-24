@@ -42,6 +42,14 @@ addresses, DTLS, SCTP), so it needs a machine that can send UDP to itself. An
 IPv6-less container logs `juice: UDP socket creation failed, errno=97` first;
 that is harmless, and it proceeds over IPv4.
 
+ctest runs three tests: `record_handle_test`, `datachannel_smoke_test` and
+`orphan_channel_test`. The third drives the remote-channel callback's two orphan
+exits, which no public call can reach on demand. It links `datachannelxt_seams`,
+a second, test-only build of the same shim compiled with `DCX_TEST_SEAMS`. The
+shipped `datachannelxt` library is built without the seams, so its exports and
+ABI are unchanged. `tools/package-extension.py` matches the bare-token file name
+exactly, so it never packages the seam library.
+
 ## The sanitizer lanes (the real gates)
 
 `DATACHANNELXT_SANITIZE` is a STRING (`""` | `address` | `thread`) and applies

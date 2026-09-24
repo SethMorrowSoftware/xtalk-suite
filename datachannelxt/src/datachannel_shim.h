@@ -60,6 +60,32 @@ DCX_API long long dropped_count(void);
  * are compile-time constants documented in docs/architecture.md. */
 DCX_API void set_queue_caps(int maxEvents, long long maxBytes);
 
+#ifdef DCX_TEST_SEAMS
+/* ------------------------------------------------------------- test seams
+ *
+ * Defined ONLY in the test-only `datachannelxt_seams` library (built from this
+ * same shim with DCX_TEST_SEAMS; CMakeLists), never in the shipped
+ * `datachannelxt`, so neither its exports nor its ABI change. They reach
+ * cb_data_channel's two orphan exits (C++ gotcha 7), which no public call can
+ * reach on demand; tests/orphan_channel_test.cpp drives them. */
+
+/* The next `n` remote-initiated channels find their peer already freed. */
+DCX_API void seam_forget_next_peer(int n);
+
+/* The next `n` remote-initiated channels find the handle table full
+ * (register_channel's early return; channels this side creates are not
+ * counted). */
+DCX_API void seam_refuse_next_inbound(int n);
+
+/* Orphaned rtc channel ids parked for reap_orphan_channels (the next dcx_poll
+ * or dcx_cleanup), and the i-th of them (0 when out of range). */
+DCX_API int seam_orphans_pending(void);
+DCX_API int seam_pending_orphan(int i);
+
+/* 1 while libdatachannel still holds rtc channel id `rtcId`, else 0. */
+DCX_API int seam_rtc_channel_alive(int rtcId);
+#endif /* DCX_TEST_SEAMS */
+
 }  // namespace test
 }  // namespace dcx
 
