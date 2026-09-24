@@ -2,9 +2,10 @@
 
 An **owner decision** is a call the tree cannot make for itself: product scope, a supply-chain or
 assurance level, a user-facing claim, taste, or a resource only the owner holds (engine time,
-hardware, accounts, a person's eye). Each one has a stable ID. D-01 to D-22 are taken; the next call
-to be briefed takes D-23, and no ID is ever reused or renumbered, because code and docs cite them
-(D-14 from `tools/check-shim-scaffold-drift.py`, D-22 from `tools/publish-members.py`).
+hardware, accounts, a person's eye). Each one has a stable ID. D-01 to D-23 are taken; the next call
+to be briefed takes D-24, and no ID is ever reused or renumbered, because code and docs cite them
+(D-14 from `tools/check-shim-scaffold-drift.py`, D-22 from `tools/publish-members.py`, D-23 from
+`tests/suite-selftest.core.livecodescript` and the tools that build and gate it).
 
 1. **The ledger rule.** A decision is recorded at its PRIMARY source - the spec, plan section or
    member doc it governs - in the same change that acts on it. This file indexes those records and
@@ -12,9 +13,10 @@ to be briefed takes D-23, and no ID is ever reused or renumbered, because code a
    write it at its source and cut its row here to one line.
 2. **Recommendations are advisory.** A brief's recommendation is the suite's reasoning, stated so it
    can be disagreed with. No document may cite one as a resolution.
-3. **Provenance.** D-01 and D-22 are in the owner's own words. D-02, D-03 and D-05 to D-21 were
-   decided on 2026-08-27 under owner delegation (the open calls, to be decided for fastest shipping
-   with fullest coverage; commit `a8a486c`), not one by one by the owner.
+3. **Provenance.** D-01, D-22 and D-23 are in the owner's own words (D-23's are a request and the
+   option the owner picked when asked how to meet it, both quoted in its row). D-02, D-03 and D-05
+   to D-21 were decided on 2026-08-27 under owner delegation (the open calls, to be decided for
+   fastest shipping with fullest coverage; commit `a8a486c`), not one by one by the owner.
 4. **Cite by anchor, not by line.** A citation is a file plus a quoted phrase that moves with the
    thing it names; `tools/check-doc-anchors.py` (in the gate set) fails when an anchor stops
    resolving. Line numbers in this tree go stale within a day.
@@ -80,11 +82,12 @@ wording. That needs no decision: section 14 already says no UI publishes the str
 | D-15 | coinxt SLIP-39: schedule it, or strike "later"? | **Not planned.** BIP-39 serves every suite consumer. Revisit only with a named consumer, bundled with a planned ABI bump. | 2026-08-27 | `coinxt/SPEC.md` section 1; `coinxt/README.md`; `coinxt/docs/api-reference.md` (applied 2026-09-23) |
 | D-16 | coinxt SHA3-512: ship it or strike it? | **The 2026-08-17 deferral stands.** Ship only for a concrete consumer, bundled with the next planned ABI bump. | 2026-08-27 | `coinxt/SPEC.md` section 1 |
 | D-17 | coinxt independent-decoder acceptance (python-bitcointx + eth-account): give it a CI lane? | **Manual and release-driven; no CI lane.** **Its premise is false.** The decision's reason, "The release lane already runs it before any binary is bundled", does not describe the tree: no workflow invokes `coinxt/tools/verify-independent-decoder.py`, and its last recorded run is 2026-08-13. A re-open candidate (below). | 2026-08-27 | `coinxt/CLAUDE.md`, "Independent acceptance" |
-| D-18 | box2dxt's games and selftest, and holde-em's table: convert them to the suite kit chrome and scaffold, or make the exemptions permanent? | **Permanent.** The games are drawn by box2dxt's Kit, and the selftest matches the kit by value; converting would add a second 300-line block to every paste for no visual change. Written through in `tools/check-ui-kit-drift.py`'s exemption reasons 2026-09-24. | 2026-08-27 | `box2dxt/CLAUDE.md` section 10; `holde-em/CLAUDE.md` rule 9 |
+| D-18 | box2dxt's games and selftest, and holde-em's table: convert them to the suite kit chrome and scaffold, or make the exemptions permanent? | **Permanent.** The games are drawn by box2dxt's Kit, and the selftest matches the kit by value; converting would add a second 300-line block to every paste for no visual change. Written through in `tools/check-ui-kit-drift.py`'s exemption reasons 2026-09-24. The four member harness windows match the kit by value on the same reasoning; the suite paste adopted the kit under D-23. | 2026-08-27 | `box2dxt/CLAUDE.md` section 10; `holde-em/CLAUDE.md` ("The ui-kit gate EXEMPTS this stack"), rule 10 |
 | D-19 | box2dxt roadmap: schedule anything, or let the recorded triggers stand? | **Schedule nothing; the triggers stand.** `b2kScene*` and `b2kFoe` get promoted when a second game consumes them. Parallax waits on transparent overlay art. Wave 8 builder cross-pollination, streamed music, multi-player keying and the snake-audit extension stay parked. | 2026-08-27 | `box2dxt/CLAUDE.md` section 8 |
 | D-20 | The channels brainstorm: promote anything further, including two flagged SodiumXT helpers? | **Promote nothing.** That covers the ed25519-to-X25519 conversion, which is an ABI bump worth making only if a consumer must encrypt to a signing-only key it cannot exchange prekeys with. It also covers k-of-n secret sharing: libsodium has no Shamir, and adding one would breach the no-new-cryptography rule. | 2026-08-27 | This file, "Research concluded" below (the brainstorm was deleted 2026-09-23) |
 | D-21 | Hold'em: build a betting-blind oracle daemon, or keep the recorded no-stake property? | **No daemon.** A standing daemon would reintroduce a trusted server. As built, the oracle is the relay host, and the no-stake property holds. Revisit only if Level 2 stalls permanently. | 2026-08-27 | `holde-em/holdem-spec.md` section 7.2 |
 | D-22 | Member repositories: does development move out, or does the suite publish into them? | **Develop here, publish there** (owner: "push these extensions to their own repos, but keep development here"). Publishing is a first-parent replay, fast-forward only, with a `Suite-Commit:` trailer as the only watermark. Adoption is explicit, and divergence is refused until it is ported or accepted. Two options were rejected. Moving development out would lose every cross-member gate (archivext's departure turned thirteen gates red). A hand-run `git subtree split` was refused by every pre-suite repository, which share no history with it. The first adoption published all eleven members 2026-09-23. | 2026-09-22 (owner) | `docs/MEMBER-REPO-SPLIT.md`; `tools/publish-members.py` |
+| D-23 | The suite paste: keep the harness look, or adopt the demos' card look and boot self-check, with controls per member? | **Adopt, in the paste only** (owner: "can you create a single livecodescript self building stack (like our demos), that will test every extension in the suite from a single stack, assuming that the current version of each extension is installed? this should be comprehensive, and follow strict LIVECODE SCRIPT conventions."; asked how, the owner chose "Upgrade the existing paste (Recommended)"). The paste stays the one generated stack, and the member harnesses stay authoritative for their own surfaces. It now carries UI kit v2 and the demo boot self-check: one row per `tools/member-registry.py` member (a pill, its counts, a Run for that member alone, Show; nocloud, with no in-engine harness, gets a caption), a results filter, Run all and Copy results. The core keeps the harness scaffold verbatim for its report plumbing: the kit builds the scaffold's four report controls under their own names, so the counters, the RUN NOT FINISHED trailer and Copy results run the code the dated engine records ran. The four member harness windows (the enetxt, datachannelxt, torrentxt and coinxt selftests) keep matching the kit by value, on D-18's reasoning: a second carried block would buy no visual change. The board is verified statically; needs an OXT pass (runbook row 48). | 2026-09-24 (owner) | `tests/suite-selftest.core.livecodescript` ("THE BOARD (D-23)"): its header and THE BOARD section; the adopter lists of `tools/check-ui-kit-drift.py` ("since D-23") and `tools/check-demo-selfcheck-drift.py` ("since D-23") |
 
 **Other recorded decisions**, taken outside this numbering:
 

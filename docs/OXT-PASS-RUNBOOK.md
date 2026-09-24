@@ -54,7 +54,7 @@ those builds, not about the script.
 | # | Run | Expect / record | ~min |
 |---|---|---|---|
 | 0 | `tests/preflight.livecodescript` (3.2) | six LOADED; Box2Dxt found 4 | 5 |
-| 1 | `tests/suite-selftest.livecodescript` | RECORD every member total (below), do not match it; wait for `summary` (4.1.1); row 31 | 30 |
+| 1 | `tests/suite-selftest.livecodescript`, then its board (3.1) | RECORD every member total (below; the summary prints them per row), do not match it; wait for `summary` (4.1.1); row 31. Then row 48 in the same launch: the board, a second Run all, three rows' Run, each filter | 45 |
 | P | engine-notes probes, message box | row P | 5 |
 | Q | coinxt ABI 7 + silent-payment receive | row Q (its wallet half needs NET) | 20 |
 | 3 | `riptide-social`, then `torrent-quickshare` and `torrent-dht-channels`, one fresh launch each | rows 35, 37 | 20 |
@@ -197,7 +197,7 @@ and are never reused. Every dated result also becomes one row in the member's
 | 23 | sodiumxt's Windows DLLs: MSVC builds with libsodium 1.0.22, committed 2026-09-12 (the 2026-08-24 x64 proof ran on a mingw DLL that no longer ships) | S5 | On `x86_64-win32` AND `x86-win32`: LOADED at ABI 10; the full SodiumXT section (106) green, including SHA3, ristretto and the ABI-10 ChaCha20 xor; `put sxVersion()` shows `libsodium 1.0.22`. A 64-bit-only day proves only `x86_64-win32` | the Windows rows of `sodiumxt/CLAUDE.md`'s committed-binaries table; the root README's 32-bit note |
 | 24 | the first Mac engine load (the builds closed 2026-08-27) | S5 | No OXT engine has loaded any of the six universal dylibs. Green: the preflight shows six LOADED, the suite paste's member sections run, `put b2Version()` returns 4; arm64, and Intel if available; record the first-load / Gatekeeper behaviour (2.1) | each native member's mac line; 2.1 |
 | 28 | holde-em 2e liveness, a timed multi-machine session | S3 item 5 | a seat times out on wall clocks; the time-bank arms once per hand; two misses sit a seat out; a late joiner is seated at a hand boundary with identical fold state; a dial failure mid-redial still lets the election conclude; a parked table resumes when a seat returns; also attempt the recorded KNOWN EDGE | the 2e status in `holde-em/CLAUDE.md` |
-| 31 | box2dxt's folded total | S1 item 1 | RECORD the v32 total, do not match it (v29 read 374, v30 375, v31 expected 374 and has no record of its own, v32 expects 385: different harnesses). v32's `stTestCallerDelimiter` (the 2026-09-09 Kit delimiter fix) prints two observation lines: whether a caller's tab reaches a called handler, and whether a Kit call's comma reaches back to its caller. Copy both: they settle the scope of engine note 2.3, and if the first says NOT, that section passed without exercising the fix. `b2kFell` / `b2kSensorEnter` / `b2kContact` are dispatched by literal name: zero events means the fold's prefixing is wrong, not the dispatcher. On Linux the `playLoudness` line is an observation, not a verdict (engine note 5.4) | the STATUS of `box2dxt/examples/box2dxt-selftest.livecodescript`; `box2dxt/CLAUDE.md` |
+| 31 | box2dxt's folded total | S1 item 1 | RECORD the v32 total, do not match it (v29 read 374, v30 375, v31 expected 374 and has no record of its own, v32 expects 385: different harnesses). v32's `stTestCallerDelimiter` (the 2026-09-09 Kit delimiter fix) prints two observation lines: whether a caller's tab reaches a called handler, and whether a Kit call's comma reaches back to its caller. Copy both: they settle the scope of engine note 2.3, and if the first says NOT, that section passed without exercising the fix. `b2kFell` / `b2kSensorEnter` / `b2kContact` are dispatched by literal name: zero events means the fold's prefixing is wrong, not the dispatcher. On Linux the `playLoudness` line is an observation, not a verdict (engine note 5.4). Since D-23 the paste's window is 1200 wide, not 760: the harness centres its world on that card and two camera checks scroll against it, so this is also the first total at that width (row 48) | the STATUS of `box2dxt/examples/box2dxt-selftest.livecodescript`; `box2dxt/CLAUDE.md` |
 | 34 | nostrxt's live relay, the inbound half (the send half closed 2026-08-24) | NET; a local relay for `ws://` | From `nostrxt/examples/nostrxt-demo.livecodescript` with CoinXT and SodiumXT: a REQ answered with EVENTs that VERIFY through the callback (no `REFUSED`), then EOSE; a NOTICE and a CLOSED observed; NIP-42 (`ok <id>: true` for the kind-22242 event, a `closed` reason starting `auth-required:`; the demo's buttons drive it since 2026-09-24, verified statically: Answer auth signs the latest challenge, Send raw's preset kind-4 REQ is the `auth-required:` probe and a non-JSON line draws a NOTICE, Unsubscribe sends CLOSE); a deliberately BAD certificate (self-signed, expired or wrong-host): a `socketError` means refused, reaching "the server did not upgrade" means it fails OPEN; record it in engine note 6.8 WHATEVER it is. `ws://` is now the unproven form: its own leg against nostr-rs-relay or strfry on loopback | the STATUS header and the VERIFY at the `open secure socket` call in `nostrxt/src/nostr-relay.livecodescript`; `nostrxt/docs/05-relay-client.md`; `nostrxt/docs/07-capabilities-required.md` |
 | 35 | riptide's phase-8 boot re-paste | S1 item 3 | The v11 boot ran 2026-08-29 at 9 passed / 1 failed; the FAIL was the self-check's own card-scope defect (engine note 5.6), fixed in the carried `scMissing`. Owed: one fresh paste reading **10 passed / 0 failed**; then the Nostr card offline: with CoinXT, Create/unlock shows `npub1...`; with no relay, Post reports "not sent"; Save/Load round-trips the RIPTAPP1 store. The re-land's `openStack` is byte-identical to the engine-proven body, and `riptide/tools/check-demo-boot.py` boots it headlessly (a model, not an engine) | `riptide/CLAUDE.md`'s v11 label; `riptide/examples/README.md`'s phase-8 label |
 | 37 | the demo re-open fleet: restyled 2026-08-14 and re-carried since, so each stack needs a fresh open (its handler-logic evidence stands) | S1 items 3, 5; one fresh launch each | Copy the boot self-check block, or record a human judgement for a non-adopter. `start-here.livecodescript` (the launcher, itself an adopter; pasted into a stack saved in the repo root, per its header): self-check green and its LOADED line naming the installed extensions. `torrent-quickshare`, `torrent-dht-channels`, `torrent-client`, `torrent-rp1-chat`: self-check green, the card look, no error dialog on open or close; in `torrent-quickshare`, also look at the header: the Tor pill (`qsTorPill`, `430,8,612,32`) and the two transport toggles (`qsTorToggle`, `qsWebShareToggle`) do not overlap the title (`uiTitle`) or the tagline (`qsTagline`), which closes register #30 (no gate can: `check-stack-size.py` checks the window size only). `onionxt-demo` with NO tor: its probes FAIL CLOSED (that is the pass), then the About tab's `oxSelfTest` green; the onion-httpd spike builds. `datachannel-loopback` (no engine record of its own yet): Connect gives connected + open on both sides, chat in both panes. `coinxt-demo` (no self-check): the test mnemonic's published BIP-84 / BIP-44 / ETH addresses, sign/verify, the P2WPKH and EIP-1559 transactions decode. `sodium-demo` (no self-check): all 7 tabs build, the About self-test green, the tamper case rejected. `nostrxt-demo`'s `ndTests` button ("Run nxSelfTest"): the "relay layer, offline paths" section, including `nxrSocketError` disowning a foreign socket, which SKIPs in the paste and has no engine record anywhere: 17 sections, 0 failed, 0 skipped. With one machine, a two-machine demo is recorded as "UI built, session started, no second peer available" | each stack header's re-pass label; the member's ledger; register #30 in ONIONXT-INTEGRATION-PLAN.md 12.3 (the quickshare header overlap) |
@@ -211,6 +211,7 @@ and are never reused. Every dated result also becomes one row in the member's
 | 45 | torrentxt on a real swarm | NET; S1 per platform | A legal ISO magnet through to `torrentFinished` with a hash match; `btMoveStorage` actually moving and `btRemoveTorrent` actually deleting (`btMoveStorage`'s stale-id refusal is engine-proven, 2026-08-17; `btRemoveTorrent` has no refusal check, only the non-delete teardown call); a packaged fresh install per platform | `torrentxt/CLAUDE.md` |
 | 46 | nocloud checklist sections 7-8 | S1 + a standalone build | 7, the webapp over a web link: Theater/Music `206`, `?dl` `.wav`, `pushState` reload/paste/Back, the `file://` fallback. 8: fail-closed launches without SodiumXT and without TorrentXT, each after an uninstall and a fresh launch (the TorrentXT-absent guard of 2026-09-09: window built, a "No transport" status line, no engine dialog); a clean shutdown via a standalone's Cmd-Q | the checklist's tallies |
 | 47 | platform rows with no engine record | S5 (32-bit engines where they exist) | `x86-win32` for torrentxt and coinxt (coinxt's 32-bit DLL has never executed, even in CI) and sodiumxt (row 23); `x86-linux` for sodiumxt and torrentxt; the first Windows run of libtorrent 2.1.1. Green: the preflight LOADED and the member's sections green on that row, bitness recorded | the platform tables in each member's README and `CLAUDE.md` |
+| 48 | the suite board's first engine run (D-23, 2026-09-24: the paste wears the demos' card look, 3.1) | S1 item 1, in the same launch as row 31 | The window builds at 1200x640 with every row: one per `tools/member-registry.py` member plus the cross-member row, nocloud's a caption with no Run. The **Boot check** view is green, and the summary carries its boot note (`boot self-check: N passed, 0 failed, ...`). After **Run all**, every pill reads OK, or `absent` for what is not installed (`unavailable` for torrentxt), and the summary says the rows account for every counted check. Then **Run** on sodiumxt; on torrentxt TWICE (the second run must take a fresh session: its pill reads OK, not `unavailable`); on enetxt (its loopback: the pill reads `running...`, then OK). A SECOND **Run all** in the same launch: riptide's four session sections (chunked-post store, DM, live feed, media) green, which is the fold's stale-session fix (work plan 3.1 engine #10). Each filter: All, Failures, Skips, Boot check, and a row's Show. Record whether a row's Run button stays hilited during its run, and whether the press arms the run at all: the design acts on a button-1 `mouseDown`, which no engine has delivered to this board (the fallback is one line in the scaffold master's `mouseUp`). Record box2dxt's total at the new 1200 width (row 31; it was 760). **Copy results** unchanged: the counts line, a blank line, then the whole report, whatever the filter shows | THE BOARD section's "NOT RUN ON AN ENGINE" paragraph and the board's footer, in `tests/suite-selftest.core.livecodescript` ("THE BOARD (D-23)") (then regenerate the paste); D-23's label in `docs/OPEN-DECISIONS.md`; the board bullet of the root `CLAUDE.md`; the suite paste's row in `start-here.livecodescript`'s registry |
 
 ---
 
@@ -343,6 +344,21 @@ Every selftest and demo is a single stack script that builds its own UI:
    (sessions flushed, hosts destroyed, `dcCleanup` / `enDeinitialize` /
    `btStopSession`).
 
+**The suite paste's window is a board** (D-23, 2026-09-24; "verified statically;
+needs an OXT pass", row 48). It still builds itself and runs everything on open
+(step 4). Down the left, one row per member of `tools/member-registry.py` plus a
+cross-member row: a pill (`OK`, `N FAILED`, `skipped`, `absent`, `unavailable` for
+torrentxt, `running...` while a loopback is live, `not run` outside the run's
+scope; a finished row that counted nothing reads `nothing ran`, a defect), its
+pass / fail / skip counts, **Run** (that member alone, end to end: the probe, its
+sections, teardown and a summary) and **Show** (only the lines its row counted).
+nocloud's row is a caption: its tests run headlessly in the gates. Across the top,
+**Run all** (the old Re-run: everything, and the only run that is the suite
+record) and **Copy results**. Over the report, **All**, **Failures**, **Skips** and
+**Boot check** (the window's own boot self-check, never counted in the totals).
+The filters change only what the pane shows; Copy results always copies the whole
+report (4.1). A row's Run is refused while a run is live (5.1.1).
+
 **Never `File > Open Stack` a `.livecodescript` file:** a script-only stack opened
 from disk does not build its GUI (engine note 5.5). Two harnesses are functions:
 put the script where its handlers are in scope (a stack script, or a script-only
@@ -365,7 +381,8 @@ defect it saves a session over. It ran green on its first outing, 2026-08-17.
 folded harnesses (sodiumxt, onionxt, coinxt, torrentxt, the sync halves of enetxt
 and datachannelxt, nostrxt, riptide, box2dxt with the b2k Kit, holde-em) plus the
 embedded script layers (coinxt, onionxt, riptide, the b2k Kit, nostrxt); an
-absent member SKIPs. By design it does NOT fold the ENet/DataChannel async
+absent member SKIPs. Since D-23 its window is the board described in 3.1, with a
+Run per member. By design it does NOT fold the ENet/DataChannel async
 loopbacks (S1 item 6) or holde-em's live game (unreachable by
 `tools/check-suite-selftest.py` check 7d; S1 items 2 and 4). It is BREADTH; the
 per-member harnesses are depth. ONE compile error takes the whole paste down
@@ -387,10 +404,14 @@ regions the same way (`tools/sync-demo-embeds.py`,
 `box2dxt/tools/sync-embedded-kit.py`). Three ways: (1) `git pull`; (2) the
 `suite-selftest` artifact of any `suite gates` CI run (the paste, the coverage
 report and this runbook; needs a GitHub login); (3) let OXT fetch it, from the
-message box, then close and reopen the stack (3.1):
+message box, then close and reopen the stack (3.1). The line names the stack
+`xTalkSuiteSelfTest`: the name the script's own first line declares, and the one
+`start-here.livecodescript` gives the stack it builds, which is how the launcher
+recognises the paste as the open session holder. Name your one-card stack that
+first (or put its own name in the quotes):
 
 ```
-set the script of stack "SuiteSelfTest" to \
+set the script of stack "xTalkSuiteSelfTest" to \
    URL "https://raw.githubusercontent.com/SethMorrowSoftware/xtalk-suite/main/tests/suite-selftest.livecodescript"
 ```
 
@@ -437,8 +458,12 @@ torrentxt, enetxt and datachannelxt on each machine) and takes THE torrent sessi
 - **Demos:** select the boot self-check block in the demo's log and copy it.
 - **The suite paste, the preflight and the self-building selftests:** click
   **Copy results**: line 1 is `passed / failed / skipped / total`, a blank line,
-  then every per-check line. On an older paste whose first copied line is not a
-  count, click the selftest window so it is the default stack and run:
+  then every per-check line. On the suite paste it copies the whole report
+  whatever the filter shows, and **the record is a Run all, copied after its
+  summary** (4.1.1). A row's Run makes a one-member report that says `Scope:` at
+  its top and again in its summary: it is never the record. On an older paste
+  whose first copied line is not a count, click the selftest window so it is the
+  default stack and run:
 
   ```
   set the clipboardData["text"] to (the text of field "stSummary" of this stack) & \
@@ -454,11 +479,13 @@ DLL/`.so` row). A result with no environment cannot become a claim.
 
 #### 4.1.1 Wait for the `summary` section
 
-The suite paste (and enetxt's and datachannelxt's own harnesses) ends with two
-live loopbacks on a 33 ms timer chain with a 40-second deadline (`kStDeadlineMs`).
-The report re-renders every tick, so mid-run it simply STOPS growing and reads
-like a hang. Until `stReportDone` it ends with this trailer, which `Copy results`
-carries and announces:
+The suite paste's Run all (and enetxt's and datachannelxt's own harnesses) ends
+with two live loopbacks on a 33 ms timer chain with a 40-second deadline
+(`kStDeadlineMs`). A row's Run starts only the loopback its scope uses (enetxt's,
+datachannelxt's, or both for the cross-member row); every other row reaches its
+teardown and summary on the next tick. The report re-renders every tick, so
+mid-run it simply STOPS growing and reads like a hang. Until `stReportDone` it
+ends with this trailer, which `Copy results` carries and announces:
 
 ```
       RUN NOT FINISHED - this is NOT the end of the report.
@@ -470,6 +497,13 @@ carries and announces:
 green Windows run was copied early and ended inside `CROSS: the 60000-byte budget
 both transports share`. The async half is the last ~27 checks and the only part
 that takes wall-clock time.
+
+Since D-23 the suite paste's window boot self-check sits just above the summary,
+uncounted, every line prefixed `[boot] `. The summary then prints the scope, each
+row's passed / failed / skipped (copy those for the tick sheet rather than reading
+the pills), a line saying the rows account for every counted check (a FAIL only
+when they do not), and the boot verdict; the status line reads `Finished (...)` at
+the same moment.
 
 ### 4.2 datachannelxt
 
@@ -578,9 +612,12 @@ Each of these has already cost someone a debugging round.
 
 Close every other torrent-flavoured stack before `torrent-selftest` (its header
 says so) and run one demo per OXT instance; for a two-party test use two machines,
-not two windows. The suite paste holds THE session until its window closes, so
-close it before `torrent-selftest`. It fails soft the other way: if the session is
-taken, its torrent sections SKIP with a note.
+not two windows. The suite paste holds THE session for the length of a run: its
+probe takes it and its teardown releases it (the teardown section asserts
+`btStopSession released THE session`), so a paste whose run has finished holds
+none. Close its window before `torrent-selftest` all the same: a Run all or a
+row's Run started while another stack holds the session cannot take it. It fails
+soft that way: its torrent sections SKIP with a note.
 
 #### 5.1.1 RESTART OXT BEFORE EVERY torrent-bearing PASTE
 
@@ -603,10 +640,13 @@ under it. So:
 1. **Quit and relaunch OXT before every paste** of the suite paste,
    `torrent-selftest` or any torrent-bearing stack: "I edited the script" means
    "I restart the engine". The other members tolerate a re-paste.
-2. **Within one launch, re-run only with the Re-run button**, or by closing and
-   reopening the window (both run `stCleanup`).
-3. **If a run dies with an error dialog, click Re-run BEFORE you touch the
-   script.**
+2. **Within one launch, re-run only from the window:** the Re-run button (on the
+   suite paste, **Run all** or a row's **Run**), or by closing and reopening the
+   window. Each runs `stCleanup` first. A row's Run is refused while a run is
+   live (the status line says so): wait for the summary, or press Run all, which
+   stops everything and starts over.
+3. **If a run dies with an error dialog, click Re-run (Run all on the suite
+   paste) BEFORE you touch the script.**
 
 TorrentXT's absence also silently drops `CROSS: one seed, one identity` and
 `CROSS: SodiumXT signs a BEP44 item TorrentXT accepts`; it cost the 2026-08-09
@@ -711,9 +751,10 @@ time:
    and for Tor the daemon and ports.
 
 Then: rule out the machine (5.5) and a second session (5.1); re-run once with the
-Re-run button (non-reproduction is itself a finding); and classify it as a bind
-failure ("would not load", "handler not found") or a behaviour failure ("ran and
-returned the wrong bytes"), which route to different fixes.
+Re-run button (Run all on the suite paste; non-reproduction is itself a finding);
+and classify it as a bind failure ("would not load", "handler not found") or a
+behaviour failure ("ran and returned the wrong bytes"), which route to different
+fixes.
 
 **ABI skew:** if handlers resolve but behave nonsensically, check that library and
 binding are one ABI. The guards: `_checkABI()` (torrentxt, enetxt,
@@ -740,6 +781,10 @@ S1 [ ] 0 preflight ____/____/____ sxVersion ______ layers: ox ___ cx ___ nx ___
    [ ] 1 suite paste ____/____/____ (summary reached ___)  sodiumxt ___
          torrentxt ___ onionxt ___ coinxt ___ enetxt ___ dc ___ nostrxt ___
          riptide ___ box2dxt v32 [31] ___ holde-em v0.25.3/45 ___
+         board [48]: 1200x640, every row ___ Boot check green ___ pills ___
+         Run: sodiumxt ___ torrentxt, twice ___ enetxt running... -> OK ___
+         second Run all: riptide's session sections ___ filters ___ Copy ___
+         a pressed Run stays hilited? ___ the press arms the run? ___
    [ ] P 2^53 + 1 printed as ______  `or` with arithmetic: ERROR / printed ____
    [ ] Q cxPubkeyCombine x6 ___ tsp1 ___ Inspect FOUND: ___ sp line ___
    [ ] 3 riptide boot [35] ____/____/____ npub ___ "not sent" ___ RIPTAPP1 ___

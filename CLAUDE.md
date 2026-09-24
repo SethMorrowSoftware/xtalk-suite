@@ -95,15 +95,18 @@ riptide, nocloud and holde-em RUN the shipped script headlessly (`check-script-v
 boot runners). They settle logic, not parser behaviour, so they upgrade no honesty label.
 
 - **UI kit.** The gate also refuses any window-building stack that neither adopts nor carries a
-  written exemption (box2dxt's games and holde-em's table, permanent by D-18; harnesses match the
-  look by value). Stacks converted 2026-08-14 say "UI unified 2026-08-14; needs an OXT re-pass".
+  written exemption (box2dxt's games and holde-em's table, permanent by D-18). The four member
+  harness windows match the kit by value, on D-18's reasoning; the suite paste adopts the kit and
+  the boot self-check (D-23). Stacks converted 2026-08-14 say "UI unified 2026-08-14; needs an OXT
+  re-pass".
 - **Boot self-check.** The block owns counters, PASS/FAIL/SKIP lines, the completeness trailer and
   the delayed-write probe; a demo owns its assertions, one run handler and one line in `openStack`
   or `preOpenStack`, and the gate refuses one that never calls `scBegin`. `scMissing` walks EVERY
   card with a qualified `there is` (engine note 5.6) and asks about images: the types a demo builds
   are not the types the kit builds. Control lists are DERIVED from each source. Fail LOUD, pass
   QUIET: `scFinish` paints the status line only on failure.
-- **Harness scaffold** (enetxt, datachannelxt, torrentxt, coinxt selftests and the suite core).
+- **Harness scaffold** (enetxt, datachannelxt, torrentxt, coinxt selftests and the suite core,
+  which keeps it for its report and builds its window with the kit instead of `stBuild`).
   Every render appends `RUN NOT FINISHED` until `stReportDone`, and Copy results carries it: with a
   deadline of about 40 s, "it looks finished" is the normal state of a run that is not.
 - **Demo embeds.** The embed goes ABOVE the demo's own code (below its `script "..."` line and
@@ -182,6 +185,17 @@ member harnesses with every name PREFIXED (sodiumxt `sx1`, onionxt `ox1`, coinxt
 their real names: coinxt, onionxt, the b2k Kit, riptide and the nostrxt core. (The embeds exist
 because a harness once ran against a stale in-memory library and reported failures already fixed.)
 
+- **The board (D-23).** The paste wears the demos' look: one row per `tools/member-registry.py`
+  member plus a cross-member row (a pill, its counts, a scoped **Run**, **Show**), a results filter
+  and the boot self-check. nocloud's row is a caption: the generator's `NO_HARNESS`, and it refuses
+  a registry member with neither a harness nor such a reason. A row's Run is a subsequence of Run
+  all, never a reordering, and every block tallies into its row. The kit builds the scaffold's four report controls under their own
+  names, so the report plumbing is the engine-run code. Held by `check-suite-selftest.py` checks
+  6b, 7 (hardened), 10b, 13b, 14, 15, 16a and 17 (fixtures `test-suite-selftest.py` and
+  `test-build-suite-selftest.py`), the drift fixtures `test-ui-kit-drift.py` and
+  `test-harness-scaffold-drift.py`, and `check-suite-ui-boot.py` (fixture `test-suite-ui-boot.py`),
+  which drives the board's logic through the family interpreter in an all-absent profile and
+  upgrades no label. Verified statically; needs an OXT pass (runbook row 48).
 - **A script-layer edit is done only when every carrier is regenerated** (`build-suite-selftest.py`
   AND `sync-demo-embeds.py`). The carrier sets overlap without either containing the other: the
   b2k Kit is in the paste and no demo; `onionxt/src/onion-httpd.livecodescript` is in demos only.
@@ -194,13 +208,18 @@ because a harness once ran against a stale in-memory library and reported failur
   undeclared one evaluates to its own spelling (2.1), so a fold that left 106 declarations below
   their first reader died on `add "cx1sPassed" to sPassed`. `split_handlers` collects every
   top-level non-handler line; `assert_no_declaration_dropped` guards only a column-0 declaration
-  written inside a handler body.
+  written inside a handler body. Since D-23 the core's own carried blocks sit below its first
+  handler, so the generator hoists their column-0 declarations too and refuses a hand-written late
+  or continued one. The paste's copies of the three blocks are therefore not byte copies: the
+  drift gates skip it by exact path (`GENERATED_CARRIERS`), and `--check` pins it to the core.
 - **The `GENERATED EMBED` sentinels are a contract** with `check-suite-coverage.py`, which CUTS
   those spans before scanning (a library naming its own API is not a test; uncut, it once read a
   fake 309/309) and FAILS on a harness with none. The generator refuses any name defined twice.
 - **Not folded, on purpose:** the enetxt and datachannelxt async loopbacks (the core drives its own
   on both transports; two state machines would race). torrentxt's `btStartSession` is rewritten to
-  reuse the core's session (one per process). `en1stCleanup`/`dc1stCleanup` call
+  reuse the core's session (one per process), and riptide's `rstAcquireSession` to read the core's
+  handle on every call and never start one (a cached handle went stale on every run after the
+  first; check 6b). `en1stCleanup`/`dc1stCleanup` call
   `enDeinitialize`/`dcCleanup` and must stay unreachable; `check-suite-selftest.py` enforces it.
 - **box2dxt's fold**, each mechanism asserting its inputs exist: `strip_spans` cuts the harness's
   carried Kit (embedded once, from `src/`); `drop_extra` drops `openCard`, `closeCard` and
