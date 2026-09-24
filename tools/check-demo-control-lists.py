@@ -64,7 +64,14 @@ KIT = os.path.join(ROOT, "tools", "ui-kit.livecodescript")
 
 SPANS = [(">>> BEGIN EMBEDDED LIBRARIES", "<<< END EMBEDDED LIBRARIES"),
          ("==== SUITE UI KIT v2 BEGIN", "==== SUITE UI KIT v2 END"),
-         ("==== DEMO SELF-CHECK v1 BEGIN", "==== DEMO SELF-CHECK v1 END")]
+         ("==== DEMO SELF-CHECK v1 BEGIN", "==== DEMO SELF-CHECK v1 END"),
+         # The suite core (an adopter since D-23) also carries the harness
+         # scaffold, whose stBuild names stTitle and friends. The core never
+         # calls stBuild - the board builds the scaffold's four report
+         # controls itself - so reading the block would put a control nothing
+         # builds (stTitle) on the self-check's list and print a FAIL on
+         # every open.
+         ("==== SUITE HARNESS SCAFFOLD v1 BEGIN", "==== SUITE HARNESS SCAFFOLD v1 END")]
 
 # A NAME THE DEMO ONLY EVER REFERENCES IS A CONTROL NOTHING BUILDS, and that
 # is invisible from inside the demo: the painters in this family all guard

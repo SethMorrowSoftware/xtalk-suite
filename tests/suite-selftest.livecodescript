@@ -1,8 +1,10 @@
 script "xTalkSuiteSelfTest"
 
 -- suite-selftest.livecodescript - ONE self-building RUNTIME harness that drives
--- ALL SIX xTalk Suite members in a single OXT process and reports PASS / FAIL /
--- SKIP per check.
+-- every xTalk Suite member with an in-engine harness - ten of the eleven in
+-- tools/member-registry.py; nocloud's tests run headlessly in the gates - in a
+-- single OXT process, and reports PASS / FAIL / SKIP per check on a board with
+-- one row per member (the demos' card look since D-23; see THE BOARD below).
 --
 -- WHY THIS FILE EXISTS. Every member already ships a deep per-member selftest
 -- (torrentxt/tests, enetxt/tests, datachannelxt/tests, ...) and those stay
@@ -71,15 +73,20 @@ script "xTalkSuiteSelfTest"
 --                                     BUILDS graphics on this card, wipes
 --                                     them, and tears its world down before
 --                                     returning (added 2026-08-16)
---   riptide         rsSelfTest()      run LAST: identity, wire formats, and
---                                     the phase-2 live feed layer, which
---                                     also shares this file's session
+--   riptide         rsSelfTest()      identity, wire formats, and the
+--                                     phase-2 live feed layer, which also
+--                                     shares this file's session
+--   nostrxt         nxSelfTest()      17 offline sections; signing SKIPs
+--                                     without CoinXT (added 2026-08-23)
+--   holde-em        heSelfTest()      run LAST: the whole game, prefixed,
+--                                     through its QUIET entry point (added
+--                                     2026-08-16)
 --
--- AND IT CARRIES THE FOUR PURE-SCRIPT LIBRARIES THEMSELVES. coinxt's script
+-- AND IT CARRIES THE FIVE PURE-SCRIPT LIBRARIES THEMSELVES. coinxt's script
 -- layer (encoders, addresses, the HD wallet walk), onionxt's entire ox*
--- surface, riptide's rs* layer and box2dxt's b2k Kit are LiveCodeScript, and
--- the first two used to be a separate setup step - `start using stack` x2
--- before pasting.
+-- surface, riptide's rs* layer, box2dxt's b2k Kit and the nostrxt core are
+-- LiveCodeScript, and the first two used to be a separate setup step - `start
+-- using stack` x2 before pasting.
 -- Embedded, that step is gone, and so is the failure mode it carried: the
 -- 2026-08-10 re-run pasted a fresh harness into an engine whose in-memory
 -- coinxt stack predated a parser fix, and got two red lines that read as
@@ -125,8 +132,20 @@ script "xTalkSuiteSelfTest"
 --
 -- HOW TO USE: open OXT, make a one-card stack, paste THIS into the STACK script
 -- (Object > Stack Script), then close and reopen the stack. It builds its own
--- UI, probes for each member, runs everything it can, and shows the list. Use
--- "Copy results" to put the run on the clipboard and paste it back verbatim.
+-- window, probes for each member, runs everything it can, and shows the
+-- report. Wait for the SUMMARY section at the bottom, then use "Copy results"
+-- to put the run on the clipboard and paste it back verbatim.
+--
+-- THE BOARD (D-23). The window is the demos' card look at 1200 x 640: one row
+-- per member on the left (a pill - OK, FAILED, skipped, absent, not run - its
+-- pass / fail / skip counts, and two buttons), the report on the right, and
+-- a boot self-check of the window itself. "Run all" re-runs everything and
+-- is the suite RECORD. A row's "Run" re-runs that ONE member end to end
+-- (probe, its sections, teardown, summary) and replaces the report, which
+-- then says "Scope:" at its top and bottom - a one-member report is never the
+-- record. "Show" and the filter buttons (All, Failures, Skips, Boot check)
+-- change only what the right-hand pane shows; Copy results always copies the
+-- whole report, whatever is showing.
 --
 -- RUN IT STANDALONE. TorrentXT allows only ONE session per process, so close
 -- any other TorrentXT stack (client, demo, torrent-selftest) first - otherwise
@@ -141,7 +160,10 @@ script "xTalkSuiteSelfTest"
 -- section still runs, and any cross-member check that needs the absent member
 -- skips with a reason instead of failing.
 --
--- NON-DESTRUCTIVE. Nothing here writes a file, moves storage, deletes a
+-- NON-DESTRUCTIVE. Nothing here writes outside the temporary folder: the
+-- folded SodiumXT, TorrentXT, Box2Dxt and Riptide harnesses write their own
+-- scratch files there (TorrentXT and Riptide fall back to Documents where an
+-- engine reports no temporary folder), and nothing moves storage, deletes a
 -- torrent, or touches a Tor control port. The DHT puts are queued into the
 -- ordinary public DHT exactly as any client would; nothing else leaves the box
 -- except loopback UDP to 127.0.0.1.
@@ -189,8 +211,36 @@ constant kStSctpFloor = 16384
 constant kStDeadlineMs = 40000
 
 constant kStTitle = "xTalk Suite - End-to-End Self-Test"
-constant kStWidth = 760
+-- 1200 x 640 is the demos' window (the UI kit's rule 6: the whole window fits
+-- a 720p display). The width matters to exactly one folded harness: box2dxt
+-- centres its world on this card (sOriginX is half the card's width) and two
+-- of its camera checks scroll a 3000-px level. Both still hold at 1200 with
+-- room to spare - hScroll 900 against a floor of 800, and 300 against 100
+-- (box2dxt-selftest's stTestCamScrolledWrite and stTestKitCameraApi) - and
+-- the height, which sets its origin and kill floor, is unchanged. Verified by
+-- arithmetic; needs an OXT pass (runbook row 48 records box2dxt's total).
+constant kStWidth = 1200
 constant kStHeight = 640
+
+-- ---- the board (D-23; see THE BOARD below the carried blocks) ---------------
+-- The build stamp: a stack built by an older paste (the scaffold's window, or
+-- an earlier board) is cleared and rebuilt once; a current one only repaints.
+constant kSuUiVersion = "suite-board-1"
+-- One row per tools/member-registry.py member, IN ITS ORDER AND ITS SPELLING,
+-- then the cross-member row. check-suite-selftest.py holds all three lists to
+-- the registry, so a new member cannot be missing from the board.
+constant kSuKeys = "sodiumxt,torrentxt,enetxt,datachannelxt,box2dxt,coinxt,onionxt,nostrxt,riptide,nocloud,holde-em,cross"
+constant kSuNames = "SodiumXT,TorrentXT,enetxt,DataChannelXT,Box2Dxt,CoinXT,OnionXT,NostrXT,Riptide Social,No Cloud Quick Share,holde-em,Cross-member + teardown"
+-- The members with no in-engine harness (tools/build-suite-selftest.py's
+-- NO_HARNESS): a row with a caption, and no pill or Run.
+constant kSuNoHarness = "nocloud"
+-- Row geometry: the first row's top, and the pitch.
+constant kSuRowTop = 136
+constant kSuRowStep = 34
+-- Every control this script names, DERIVED by tools/check-demo-control-lists.py
+-- (--write regenerates it; the gate fails a stale copy). The boot self-check
+-- asserts each one exists.
+constant kSuScControls = "stCopy,stRerun,stResults,stSummary,suBootLog,suFilterAll,suFilterBoot,suFilterFail,suFilterSkip,suHeadCounts,suHeadRun,suHeadStatus,suMembersCap,suPanMembers,suPanResults,suSecMembers,suSecResults,suView,suViewCap,uiFooter,uiStatus,uiTitle"
 
 -- ---- state -------------------------------------------------------------------
 -- "true" while the async phases are still live. Spelled sAsyncRunning rather
@@ -237,6 +287,16 @@ local sDcBigSize, sDcBigWant
 
 local sDeadline            -- the async phases' drop-dead time (ms clock)
 
+-- the board (D-23)
+local sSuScope             -- what the report covers: "all" or one kSuKeys item (empty before the first run)
+local sSuFilter            -- the right-hand view: "all", "fail", "skip", "boot" or "m:<key>"
+local sSuP, sSuF, sSuS     -- per-row passed / failed / skipped (arrays keyed by kSuKeys items)
+local sSuSpan              -- per-row report spans: lines of "from to" into sResultText
+local sSuMarkKey, sSuMarkP, sSuMarkF, sSuMarkS, sSuMarkLen -- the open tally (suTallyOpen)
+local sSuViewLen           -- the length of sResultText when a filtered view last rendered
+local sSuPainted           -- the loopback phases the rows last showed
+local sSuArmed             -- a row's Run, armed and not yet started (suArmRun)
+
 -- Every FOLDED member's script locals and constants are hoisted to here, above
 -- the first handler, by tools/build-suite-selftest.py - and so are the two
 -- EMBEDDED script layers' (coinxt's and onionxt's), for the same reason.
@@ -256,6 +316,27 @@ local sDeadline            -- the async phases' drop-dead time (ms clock)
 -- broke the invariant, by putting one file's declarations after another file's
 -- readers. check-suite-selftest.py now fails if any declaration lands below the
 -- first handler.
+-- ---- the core's carried-block declarations (hoisted by tools/build-suite-selftest.py) ----
+constant kUiBg = "240,242,246"
+constant kUiCard = "255,255,255"
+constant kUiCardLine = "225,229,236"
+constant kUiAccent = "44,90,160"
+constant kUiAccentText = "255,255,255"
+constant kUiAccentSub = "199,216,241"
+constant kUiInk = "28,34,46"
+constant kUiInkSoft = "95,104,118"
+constant kUiMuted = "138,146,158"
+constant kUiOk = "23,128,63"
+constant kUiWarn = "150,110,40"
+constant kUiBad = "176,58,46"
+constant kUiFieldLine = "203,210,222"
+constant kUiCodeBg = "244,246,250"
+constant kUiCodeLine = "210,217,229"
+constant kScProbe = "self-check: delayed write reached the status line"
+local sScLines          -- the whole block, kept so a Copy button has something
+local sScPassed, sScFailed, sScSkipped
+local sScLogField       -- the adopting demo's own log field, set by scBegin
+
 -- ---- SodiumXT: the full sx* self-test ----
 local sx1sLog
 local sx1sPass
@@ -1372,35 +1453,1784 @@ on mouseUp
 end mouseUp
 -- ==== SUITE HARNESS SCAFFOLD v1 END ====
 
+-- ---- the demos' look (carried; D-23) -----------------------------------------
+-- The UI kit and the boot self-check, carried verbatim like the scaffold above.
+-- Their script-level declarations sit above their own handlers here, as in
+-- every carrier; the GENERATED paste hoists them above its first handler
+-- (tools/build-suite-selftest.py), because there the scaffold's handlers come
+-- first and check-suite-selftest.py's check 10 wants every declaration above
+-- all of them.
+-- ==== SUITE UI KIT v2 BEGIN (verbatim copy; master: tools/ui-kit.livecodescript; gate: tools/check-ui-kit-drift.py) ====
+-- The family look as one carried block: the kit owns colors, chrome, and
+-- control construction; the adopting demo owns layout (explicit rects) and
+-- logic. Builders are idempotent (create-if-missing), so a rebuild on
+-- reopen is safe. Do not edit this block in place: change the master and
+-- re-carry it.
+-- (this block's script-level declarations are hoisted above the first handler by tools/build-suite-selftest.py; engine note 1.2)
+
+-- The platform's own terminal face for codes, keys, tables and logs, so
+-- the monospace surfaces look native instead of typewriter-Courier. A
+-- missing face substitutes the engine default - a soft, safe failure.
+function uiMonoFont
+   if the platform is "MacOS" then
+      return "Menlo"
+   else if the platform is "Win32" then
+      return "Consolas"
+   end if
+   return "DejaVu Sans Mono"
+end uiMonoFont
+
+-- The window chrome every adopter shares: stack size, page ground, the
+-- title band, and the one status line under it (write it with uiStatus).
+-- pBandH is optional (default 30); a taller band leaves room for an
+-- adopter's tagline or status pill, placed by the adopter.
+command uiChrome pTitle, pWidth, pHeight, pBandH
+   local tFH
+   if pBandH is empty then
+      put 30 into pBandH
+   end if
+   set the width of this stack to pWidth
+   set the height of this stack to pHeight
+   set the backgroundColor of this card to kUiBg
+   set the title of this stack to pTitle
+   uiGfx "uiBand", "0,0," & pWidth & "," & pBandH
+   set the style of graphic "uiBand" to "rectangle"
+   set the filled of graphic "uiBand" to true
+   set the backgroundColor of graphic "uiBand" to kUiAccent
+   set the lineSize of graphic "uiBand" to 0
+   uiLabel "uiTitle", "  " & pTitle, "0,0," & pWidth & "," & pBandH, 15
+   set the foregroundColor of field "uiTitle" to kUiAccentText
+   set the textStyle of field "uiTitle" to "bold"
+   -- center the title on the band midline by MEASURED height (never guess
+   -- font metrics - the family's OXT passes clipped hand-sized labels)
+   put the formattedHeight of field "uiTitle" into tFH
+   if tFH > 0 and tFH < pBandH then
+      set the height of field "uiTitle" to tFH
+      set the top of field "uiTitle" to ((pBandH - tFH) div 2)
+   end if
+   uiLabel "uiStatus", empty, "16," & (pBandH + 4) & "," & (pWidth - 16) & "," & (pBandH + 22), 11
+end uiChrome
+
+-- The status line, colored by what it reports: "ok", "warn", "bad", or
+-- anything else for neutral/muted. Demos route probe results through this
+-- so a stack that cannot run says so in red, at the top, immediately.
+command uiStatus pText, pKind
+   -- PIN THE STACK, THEN CHECK THE FIELD EXISTS. Both halves were missing and
+   -- both are load-bearing on a TIMER-driven call.
+   --
+   -- An unqualified `field "uiStatus"` resolves against the DEFAULTSTACK, not
+   -- against the stack whose script is running. Inside openStack those are the
+   -- same thing, which is why every demo's startup status line always worked.
+   -- A handler arriving from `send ... in` has no such guarantee: with a second
+   -- stack in front, the write lands in the wrong stack or resolves to nothing.
+   --
+   -- THE PIN RESTS ON THE DOCUMENTED RESOLUTION RULE, NOT ON A THROW WE SAW.
+   -- This comment used to cite enet-lan-chat's once-a-second dashboard throwing
+   -- "Chunk: error in object expression" REPEATEDLY on 2026-08-18, and dht-chat
+   -- hiding the same fault behind a guard. Neither half held up: that throw was
+   -- the ARGUMENT at the call site (`the number of keys of sPeers`, which does
+   -- not parse - OXT-ENGINE-NOTES 1.7) and never reached uiStatus at all, and
+   -- the guard credited to the kit was dht-chat's own wxSetStatus wrapper - the
+   -- master had no existence check until the same commit that added this pin.
+   -- What a guarded call site WOULD do if the defaultStack diverged is fail
+   -- silently, which is the argument for a gate rather than for more guards.
+   -- See OXT-ENGINE-NOTES 5.3, now classed DOCUMENTED.
+   --
+   -- The pin is holde-em's idiom, engine-proven there, and its comment names
+   -- this exact hazard. The existence check stays as well: a demo may call the
+   -- status line before its chrome is built, and a cosmetic line must never
+   -- take down a poll chain.
+   set the defaultStack to the short name of this stack
+   if there is no field "uiStatus" then
+      exit uiStatus
+   end if
+   put pText into field "uiStatus"
+   if pKind is "ok" then
+      set the foregroundColor of field "uiStatus" to kUiOk
+   else if pKind is "warn" then
+      set the foregroundColor of field "uiStatus" to kUiWarn
+   else if pKind is "bad" then
+      set the foregroundColor of field "uiStatus" to kUiBad
+   else
+      set the foregroundColor of field "uiStatus" to kUiInkSoft
+   end if
+end uiStatus
+
+-- A static caption at a FIXED rect (idempotent, borderless, transparent).
+-- Use uiWrap instead when the text may wrap or the exact height matters.
+command uiLabel pName, pText, pRect, pSize
+   if there is no field pName then
+      create field
+      set the name of the last field to pName
+   end if
+   set the rect of field pName to pRect
+   set the lockText of field pName to true
+   set the borderWidth of field pName to 0
+   set the opaque of field pName to false
+   set the threeD of field pName to false
+   set the textSize of field pName to pSize
+   set the foregroundColor of field pName to kUiInk
+   put pText into field pName
+end uiLabel
+
+-- A caption FIT to its measured text height (top pinned). The fit does
+-- double duty: it prevents clipping (hand-sized rects clipped text on a
+-- real Windows pass), and it makes `the height of field` equal the TEXT
+-- height, which midline centering relies on. GUARD: only resize on a sane
+-- measurement - a 0/blank formattedHeight (possible before the window is
+-- fully realized) would collapse the label. Empty labels are skipped
+-- (they receive their text later).
+command uiWrap pName, pText, pRect, pSize
+   local tOldDelim, tTop, tFH
+   uiLabel pName, pText, pRect, pSize
+   if pText is not empty then
+      put the itemDelimiter into tOldDelim
+      set the itemDelimiter to comma
+      put item 2 of pRect into tTop
+      set the itemDelimiter to tOldDelim
+      put the formattedHeight of field pName into tFH
+      if tFH > 0 then
+         set the height of field pName to tFH
+         set the top of field pName to tTop
+      end if
+   end if
+end uiWrap
+
+-- A small, muted caption (hints, toggle descriptions, empty states).
+command uiCap pName, pText, pRect
+   uiWrap pName, pText, pRect, 10
+   set the foregroundColor of field pName to kUiMuted
+end uiCap
+
+-- A numbered bold section header with a hairline divider placed below the
+-- label's ACTUAL (fit-to-text) bottom, so it tracks the real header
+-- height on any platform's line metrics.
+command uiSection pName, pText, pRect
+   local tOldDelim, tL, tR, tB
+   uiWrap pName, pText, pRect, 13
+   set the textStyle of field pName to "bold"
+   put the itemDelimiter into tOldDelim
+   set the itemDelimiter to comma
+   put item 1 of pRect into tL
+   put item 3 of pRect into tR
+   set the itemDelimiter to tOldDelim
+   put the bottom of field pName into tB
+   uiGfx (pName & "Line"), (tL & comma & (tB + 1) & comma & tR & comma & (tB + 2))
+   set the style of graphic (pName & "Line") to "rectangle"
+   set the filled of graphic (pName & "Line") to true
+   set the backgroundColor of graphic (pName & "Line") to kUiCardLine
+   set the lineSize of graphic (pName & "Line") to 0
+end uiSection
+
+-- A one-line entry field, mono and flat ("modern input" chrome instead of
+-- the engine's sunken-3D default), because hex, addresses and paths are
+-- what this suite's demos edit.
+command uiInput pName, pRect
+   if there is no field pName then
+      create field
+      set the name of the last field to pName
+   end if
+   set the rect of field pName to pRect
+   set the lockText of field pName to false
+   set the traversalOn of field pName to true
+   set the threeD of field pName to false
+   set the borderWidth of field pName to 1
+   set the borderColor of field pName to kUiFieldLine
+   set the opaque of field pName to true
+   set the backgroundColor of field pName to kUiCard
+   -- 4-item margins form ONLY: OXT ignored the single-number form on a
+   -- real engine pass
+   set the margins of field pName to "6,6,6,6"
+   set the textSize of field pName to 11
+   set the textFont of field pName to uiMonoFont()
+end uiInput
+
+-- A read-only output/log area: mono, flat, scrolling, hairline-bordered.
+command uiArea pName, pRect
+   if there is no field pName then
+      create field
+      set the name of the last field to pName
+   end if
+   set the rect of field pName to pRect
+   set the lockText of field pName to true
+   set the traversalOn of field pName to false
+   set the threeD of field pName to false
+   set the borderWidth of field pName to 1
+   set the borderColor of field pName to kUiCardLine
+   set the opaque of field pName to true
+   set the backgroundColor of field pName to kUiCard
+   set the margins of field pName to "6,6,6,6"
+   set the vScrollbar of field pName to true
+   set the textSize of field pName to 10
+   set the textFont of field pName to uiMonoFont()
+end uiArea
+
+-- A row-selectable table: uiArea plus list behavior and tab stops
+-- ("230,340"-style comma lists). Pair it with a uiLabel header carrying
+-- the same tabStops, set by the adopter.
+command uiTable pName, pRect, pTabStops
+   uiArea pName, pRect
+   set the listBehavior of field pName to true
+   if pTabStops is not empty then
+      set the tabStops of field pName to pTabStops
+   end if
+end uiTable
+
+command uiButton pName, pLabel, pRect
+   if there is no button pName then
+      create button
+      set the name of the last button to pName
+   end if
+   set the rect of button pName to pRect
+   set the label of button pName to pLabel
+end uiButton
+
+-- A script-managed checkbox: autoHilite OFF because the family drives
+-- toggle state from script locals (a mode the environment cannot honour
+-- must never stay silently armed - the quickshare pill lesson), so the
+-- hilite is set explicitly by the adopter's state machine.
+command uiCheckbox pName, pLabel, pRect
+   uiButton pName, pLabel, pRect
+   set the style of button pName to "checkbox"
+   set the autoHilite of button pName to false
+end uiCheckbox
+
+-- Create-or-reuse a named graphic: the chrome layer (cards, pills,
+-- dividers, drop targets). Created BEFORE the controls that sit on it, so
+-- it stays behind them in z-order. roundRect + antialiased by default;
+-- callers restyle.
+command uiGfx pName, pRect
+   if there is no graphic pName then
+      create graphic
+      set the name of the last graphic to pName
+   end if
+   set the rect of graphic pName to pRect
+   set the style of graphic pName to "roundRect"
+   set the antialiased of graphic pName to true
+end uiGfx
+
+-- A dashboard card: a rounded, hairline-bordered, softly shadowed panel
+-- placed BEHIND a group of controls. It only groups visually; clicks on
+-- it fall through to the adopter's `default: pass mouseUp`.
+command uiPanel pName, pRect
+   local tShadow, tErr
+   uiGfx pName, pRect
+   set the roundRadius of graphic pName to 14
+   set the filled of graphic pName to true
+   set the backgroundColor of graphic pName to kUiCard
+   set the lineSize of graphic pName to 1
+   -- a graphic strokes its outline in the foregroundColor; borderColor is
+   -- set too so whichever the engine honours, the hairline lands
+   set the foregroundColor of graphic pName to kUiCardLine
+   set the borderColor of graphic pName to kUiCardLine
+   -- soft drop shadow is an LC-9-era feature, so it is a PURE
+   -- enhancement: an engine without it just skips it (the try) and the
+   -- hairline still separates the card from the page
+   try
+      put "90,98,114" into tShadow["color"]
+      put 30 into tShadow["opacity"]
+      put 10 into tShadow["size"]
+      put 0 into tShadow["spread"]
+      put 2 into tShadow["distance"]
+      put 90 into tShadow["angle"]
+      set the dropShadow of graphic pName to tShadow
+   catch tErr
+   end try
+end uiPanel
+
+-- A status pill: rounded chip + centered label, colored by state kind -
+-- "ok" green, "wait" amber, "bad" red, anything else the muted on-band
+-- blue. The adopter repaints it from ONE place so its handlers cannot
+-- disagree about the colors (the nocloud Tor-pill discipline).
+command uiPill pName, pText, pRect, pKind
+   local tOldDelim, tTop, tBot, tFH
+   put the itemDelimiter into tOldDelim
+   set the itemDelimiter to comma
+   put item 2 of pRect into tTop
+   put item 4 of pRect into tBot
+   set the itemDelimiter to tOldDelim
+   uiGfx (pName & "Bg"), pRect
+   set the roundRadius of graphic (pName & "Bg") to (tBot - tTop)
+   set the filled of graphic (pName & "Bg") to true
+   set the lineSize of graphic (pName & "Bg") to 0
+   if pKind is "ok" then
+      set the backgroundColor of graphic (pName & "Bg") to "205,240,214"
+   else if pKind is "wait" then
+      set the backgroundColor of graphic (pName & "Bg") to "250,240,199"
+   else if pKind is "bad" then
+      set the backgroundColor of graphic (pName & "Bg") to "243,215,213"
+   else
+      set the backgroundColor of graphic (pName & "Bg") to "31,64,116"
+   end if
+   uiLabel pName, pText, pRect, 10
+   set the textAlign of field pName to "center"
+   if pKind is "ok" then
+      set the foregroundColor of field pName to "22,101,52"
+   else if pKind is "wait" then
+      set the foregroundColor of field pName to "133,98,14"
+   else if pKind is "bad" then
+      set the foregroundColor of field pName to "135,44,38"
+   else
+      set the foregroundColor of field pName to kUiAccentSub
+   end if
+   -- center the label on the chip midline by measured height
+   put the formattedHeight of field pName into tFH
+   if tFH > 0 and tFH < (tBot - tTop) then
+      set the height of field pName to tFH
+      set the top of field pName to (tTop + ((tBot - tTop - tFH) div 2))
+   end if
+end uiPill
+
+-- Click-to-copy feedback: flash the button's label to "Copied!" for
+-- 1200 ms, then restore the real label (stashed in uRealLabel).
+command uiCopyFlash pBtn
+   if there is no button pBtn then
+      exit uiCopyFlash
+   end if
+   if the uRealLabel of button pBtn is empty then
+      set the uRealLabel of button pBtn to the label of button pBtn
+   end if
+   set the label of button pBtn to "Copied!"
+   send ("uiCopyFlashReset" && quote & pBtn & quote) to me in 1200 milliseconds
+end uiCopyFlash
+
+command uiCopyFlashReset pBtn
+   -- Pinned for the same reason uiStatus is: this one arrives 1200ms later by
+   -- `send`, so the defaultStack is whatever is current THEN, not the stack
+   -- that flashed the button. Its existence guard means the failure is silent
+   -- rather than loud - the label just never comes back, or comes back on
+   -- another stack's button - which is why it needed finding rather than
+   -- reporting itself.
+   set the defaultStack to the short name of this stack
+   if there is no button pBtn then
+      exit uiCopyFlashReset
+   end if
+   if the uRealLabel of button pBtn is not empty then
+      set the label of button pBtn to the uRealLabel of button pBtn
+   end if
+end uiCopyFlashReset
+
+-- The honesty/custody footer every demo carries: what the stack is, what
+-- it is not, and its engine-evidence state.
+command uiFooter pText, pRect
+   uiWrap "uiFooter", pText, pRect, 11
+   set the textStyle of field "uiFooter" to "italic"
+   set the foregroundColor of field "uiFooter" to kUiMuted
+end uiFooter
+-- ---- contextual menus -------------------------------------------------------
+--
+-- A RIGHT-CLICK MENU, as one hidden popup button per menu.
+--
+-- The engine's contextual menu is a BUTTON whose style is "menu" and whose
+-- menuMode is "popup": its text is the item list, one per line, `popup`
+-- shows it at a point, and choosing an item sends `menuPick` with the item's
+-- LABEL. The button needs no script - with no handler of its own the message
+-- walks the hierarchy and arrives at the card and then the stack, which is
+-- where an adopter's router already lives.
+--
+-- OPT-IN, AND THAT IS DELIBERATE. This block is carried byte-identical by
+-- every demo in the suite, so a kit that BUILT a menu would change eighteen
+-- stacks to serve one. Nothing here runs unless an adopter calls
+-- uiContextMenu, and a demo that never does is unchanged in behaviour.
+--
+-- NONE OF THIS HAS RUN ON AN ENGINE. `popup`, `menuMode` and `menuPick` are
+-- documented LiveCode and OpenXTalk is a fork of it, but this suite has never
+-- exercised a menu and the headless runners model no mouse button at all - so
+-- an adopter's right-click handler belongs in a `try`, and losing the menu
+-- must never cost the ordinary click. uiPopupMenu answers whether it worked
+-- rather than throwing, so the caller can decide.
+
+command uiContextMenu pName, pItems
+   -- One hidden popup button, created once and refilled on every call so a
+   -- menu can change with the screen it belongs to. The rect is small and
+   -- inside the window because a stack's controls are measured by
+   -- tools/check-stack-size.py whether they are visible or not.
+   if there is no button pName then
+      -- THE KIT'S OWN IDIOM, and not `create button pName`. Every other
+      -- builder in this block creates the control unnamed and then names the
+      -- last one, which is the spelling the family's headless runners model
+      -- and the one every adopter has already been through an engine with.
+      create button
+      set the name of the last button to pName
+   end if
+   set the style of button pName to "menu"
+   set the menuMode of button pName to "popup"
+   set the text of button pName to pItems
+   set the rect of button pName to "2,2,18,18"
+   set the visible of button pName to false
+end uiContextMenu
+
+function uiPopupMenu pName
+   -- WHICH menu, recorded before it opens. menuPick carries the item's label
+   -- and nothing else, so an adopter with two menus would otherwise have to
+   -- keep every label in the stack globally unique - a constraint that is
+   -- invisible until the day two screens both want "Copy".
+   --
+   -- Answers true or false rather than throwing: on an engine without popup
+   -- menus the right thing is for the click to do nothing, not for the
+   -- adopter's mouseDown to die.
+   local tError
+   if there is no button pName then
+      return false
+   end if
+   set the uUiMenu of this stack to pName
+   try
+      popup button pName at the clickLoc
+   catch tError
+      set the uUiMenu of this stack to empty
+      return false
+   end try
+   return true
+end uiPopupMenu
+
+function uiMenuSource
+   -- The name of the menu the last menuPick came from.
+   return the uUiMenu of this stack
+end uiMenuSource
+
+-- ==== SUITE UI KIT v2 END ====
+
+-- ==== DEMO SELF-CHECK v1 BEGIN (verbatim copy; master: tools/demo-selfcheck.livecodescript; gate: tools/check-demo-selfcheck-drift.py) ====
+-- The sentinel is a CONSTANT so the probe compares against one spelling; a
+-- literal repeated at the write and the read is a check that can pass while
+-- disagreeing with itself.
+-- (this block's script-level declarations are hoisted above the first handler by tools/build-suite-selftest.py; engine note 1.2)
+
+command scBegin pLogField
+   put pLogField into sScLogField
+   put empty into sScLines
+   put 0 into sScPassed
+   put 0 into sScFailed
+   put 0 into sScSkipped
+   scLine "== boot self-check (nothing is hosted, connected, or bound) =="
+end scBegin
+
+-- Each line is LOGGED as it is made, not accumulated and flushed at the end.
+-- The first draft did both - a flush after the synchronous half and another
+-- after the probe - which printed every synchronous line twice.
+command scLine pText
+   put pText & return after sScLines
+   -- pin the stack: scFinish reaches here from a `send ... in` tick, and the
+   -- field is named unqualified (OXT-ENGINE-NOTES 5.3)
+   set the defaultStack to the short name of this stack
+   if sScLogField is empty or there is no field sScLogField then
+      exit scLine
+   end if
+   put pText & return after field sScLogField
+   set the vscroll of field sScLogField to the formattedHeight of field sScLogField
+end scLine
+
+command scAssert pName, pOk
+   if pOk then
+      add 1 to sScPassed
+      scLine "PASS  " & pName
+   else
+      add 1 to sScFailed
+      scLine "FAIL  " & pName
+   end if
+end scAssert
+
+-- SKIP, never FAIL, for an absent extension: a missing member is an
+-- environment, and only a present-and-broken member is a defect.
+command scSkip pName, pReason
+   add 1 to sScSkipped
+   scLine "SKIP  " & pName & " (" & pReason & ")"
+end scSkip
+
+-- An empty value prints as nothing, which reads as a missing check rather than
+-- an answer of empty; every observed value in a self-check goes through here.
+-- This is the playLoudness lesson (OXT-ENGINE-NOTES 5.4) as a helper: a check
+-- that reports only its own name costs a whole engine pass to diagnose.
+function scShow pValue
+   if pValue is empty then
+      return "empty"
+   end if
+   return pValue
+end scShow
+
+-- Returns the comma-list of control names in pList that do not exist, or empty.
+-- The adopter passes EVERY control name its own script references, derived from
+-- the source rather than hand-picked: a missing control is not cosmetic, it is
+-- the "Chunk: error in object expression" class, and finding it at boot beats
+-- finding it when somebody clicks.
+function scMissing pList
+   local tName, tMissing, tC, tFound
+   set the defaultStack to the short name of this stack
+   repeat for each item tName in pList
+      -- ALL FOUR CONTROL TYPES. The kit builds fields (uiLabel/uiWrap/uiCap/
+      -- uiSection/uiInput/uiArea/uiTable), buttons (uiButton/uiCheckbox) AND
+      -- GRAPHICS (uiGfx/uiPanel/uiPill). The first version of this asked only
+      -- about fields and buttons, so every uiPill a demo builds - the Tor
+      -- pills in both Quick Shares, for one - reported as a missing control on
+      -- a stack where it exists.
+      --
+      -- AND IMAGES (2026-08-31), for the same reason one step further out. A
+      -- demo may build a control the KIT does not: coinxt's wallet paints a
+      -- QR into an image, which is the only way a BMP this family builds
+      -- becomes something a phone can read. Registered and built, it reported
+      -- as missing - found by coinxt/tools/check-wallet-boot.py, which boots
+      -- the stack headlessly, so this one cost no engine time. The lesson is
+      -- the one this block already carries twice: the list of types a demo
+      -- can build is not the list of types the KIT builds.
+      --
+      -- AND EVERY CARD (2026-08-29). Unqualified `there is a field X` answers
+      -- for the CURRENT card only (engine notes 5.6) - OBSERVED when
+      -- riptide's five-card boot reported all 63 off-card controls missing
+      -- from a stack where every one existed. A single-card demo walks its
+      -- one card here, exactly the old behaviour.
+      put false into tFound
+      repeat with tC = 1 to the number of cards of this stack
+         if there is a field tName of card tC \
+               or there is a button tName of card tC \
+               or there is a graphic tName of card tC \
+               or there is an image tName of card tC then
+            put true into tFound
+            exit repeat
+         end if
+      end repeat
+      if not tFound then
+         put tName & comma after tMissing
+      end if
+   end repeat
+   if tMissing is empty then
+      return empty
+   end if
+   return char 1 to -2 of tMissing
+end scMissing
+
+-- Call LAST in <pfx>ScRun. It arms the probe below; 400ms lands it before the
+-- usual 800ms dashboard tick, so nothing races for the status line.
+--
+-- SAY THAT THE REPORT IS UNFINISHED, for the reason the suite harness carries a
+-- RUN NOT FINISHED trailer: a report that simply stops reads exactly like a
+-- report that ended, and the difference cost that harness a round trip on
+-- 2026-08-19. One line is cheaper than the ambiguity.
+command scArmProbe
+   scLine "      ...one delayed-write check still to come; the count line " \
+         & "below it is the end of the block"
+   send "scTickProbe" to me in 400 milliseconds
+end scArmProbe
+
+-- THE ONE CHECK THAT NEEDS A TIMER.
+--
+-- OXT-ENGINE-NOTES 5.3 says an unqualified control reference inside a delayed
+-- handler resolves against THE DEFAULTSTACK, not the stack whose script is
+-- running - and that entry is classed DOCUMENTED, not OBSERVED, because this
+-- tree has never actually watched the unpinned form fail. It also names the run
+-- that would settle it: open a second stack in front and let a `send ... in`
+-- handler write an unqualified field.
+--
+-- So this probe READS the defaultStack before pinning and PRINTS what it found.
+-- On an ordinary run that line is context. On a run with another window in front
+-- it is the measurement 5.3 is missing, taken for free and at no risk, because
+-- the pin lands immediately afterwards and the write is verified.
+command scTickProbe
+   local tWas, tPrev, tPrevColor, tGot, tErr
+   put the defaultStack into tWas
+   set the defaultStack to the short name of this stack
+   if there is no field "uiStatus" then
+      scSkip "a delayed handler writes the status line", "the chrome is not built"
+      scFinish
+      exit scTickProbe
+   end if
+   -- RESTORE THE COLOUR TOO, not just the text. uiStatus takes a KIND, and
+   -- handing it back "ok" would repaint a "bad" line green - so a stack whose
+   -- extension is missing would end this probe claiming to be fine.
+   put field "uiStatus" into tPrev
+   put the foregroundColor of field "uiStatus" into tPrevColor
+   try
+      uiStatus kScProbe, empty
+      put field "uiStatus" into tGot
+   catch tErr
+      put "THREW:" && tErr into tGot
+   end try
+   uiStatus tPrev, empty
+   set the foregroundColor of field "uiStatus" to tPrevColor
+   scAssert "a delayed handler writes the status line " \
+         & "(defaultStack on entry: " & scShow(tWas) & ")", (tGot is kScProbe)
+   scFinish
+end scTickProbe
+
+command scFinish
+   scLine "      " & sScPassed & " passed, " & sScFailed & " failed, " \
+         & sScSkipped & " skipped - select this block and copy it into the " \
+         & "OXT pass record"
+   if sScFailed is 0 then
+      scLine "      boot self-check GREEN (this is the single-machine claim; " \
+            & "the live legs are the runbook's)"
+      exit scFinish
+   end if
+   scLine "      boot self-check has FAILURES above - report them before " \
+         & "running any live leg"
+   -- ONLY ON FAILURE does this touch the status line, and the asymmetry is
+   -- deliberate. Green, the demo's own "Ready ..." line is the more useful
+   -- thing to be reading and the detail is in the log a few lines up. Red, the
+   -- log may be on a tab nobody has clicked - so the one surface a person is
+   -- certainly looking at has to say so. Fail loud, pass quiet.
+   uiStatus "Boot self-check: " & sScFailed & " FAILED (see the log)", "bad"
+end scFinish
+-- ==== DEMO SELF-CHECK v1 END ====
+
+-- ==============================================================================
+-- THE BOARD (D-23): the demos' card look, one row per member
+-- ==============================================================================
+-- WHAT CHANGED, AND WHAT DID NOT. Until D-23 this paste built the harness
+-- scaffold's plain window (stBuild). It now wears the demos' look: the UI kit
+-- above builds a 1200 x 640 card with one row per tools/member-registry.py
+-- member (a status pill, its pass / fail / skip counts, Run and Show), a
+-- results pane with a filter (All, Failures, Skips, Boot check, and one
+-- member's lines), Run all and Copy results; and the demo boot self-check
+-- above checks that window every time it opens.
+--
+-- THE REPORT DID NOT CHANGE, and that is the design rather than a leftover.
+-- The scaffold's accounting (stAssert and friends), stReportText's RUN NOT
+-- FINISHED trailer, stShow, stPaint, stCopyResults, closeStack and the mouseUp
+-- that routes Re-run and Copy all run exactly as they did on the engine
+-- records (2026-08-20 to 2026-08-27), because the kit builds the four controls
+-- the scaffold writes UNDER THE SCAFFOLD'S OWN NAMES - stSummary, stResults,
+-- stCopy, stRerun - so every one of those handlers finds what it always found.
+-- "Run all" is the old Re-run button with a new label. stBuild and its three
+-- makers stay in the carried block and are never called: a carried block is
+-- carried whole, and its master still builds the four member harness windows.
+--
+-- NOT RUN ON AN ENGINE. The window, the rows, per-member Run, the filter and
+-- the boot self-check are verified statically, plus a headless UI boot
+-- (tools/check-suite-ui-boot.py) that settles their LOGIC and nothing about
+-- rendering or message delivery; needs an OXT pass (OXT-PASS-RUNBOOK row 48).
+-- The checks the run makes are the ones the dated records ran.
+
 -- ---- lifecycle ---------------------------------------------------------------
+-- BUILD, CLEAN, RUN, CHECK - in that order, on every open.
+--
+-- stCleanup FIRST, and unconditionally. On a first open there is nothing to
+-- free and every call in it is guarded (enDeinitialize is refcount-guarded in
+-- the shim; the rest sit in a try), so it costs nothing. On the runbook's
+-- re-entry escape hatch - `send "openStack" to this stack` (OXT-PASS-RUNBOOK
+-- 5.2) on a stack that may be mid-run - it is what stops the old pump and
+-- releases the old run's transports and session before the new run takes
+-- them. stRun also releases the session it finds, so this is belt and braces
+-- for the session and the only brace for the ENet hosts and WebRTC peers.
+--
+-- suScRun LAST: the boot self-check reads what the build and the run left
+-- behind (the demo contract), and it only READS - it takes nothing.
 on openStack
-   stBuild
+   suBuild
+   stCleanup
    stRun
+   suScRun
 end openStack
 
+-- THE BOARD'S BUTTONS. The scaffold's mouseUp (carried, engine-proven) routes
+-- Run all and Copy results; everything the board adds routes HERE, on the
+-- press, so the carried block needs no hook. Three rules, each with a reason:
+--   * BUTTON 1 ONLY. A right-click passes on untouched. coin-wallet's
+--     stack-level mouseDown is the engine-run precedent (2026-09-02) for a
+--     mouseDown that passes everything it does not own.
+--   * BUTTONS ONLY. A press on a field, a pill or a panel passes on.
+--   * NO RUN INSIDE THE PRESS. A row's Run only ARMS one pinned tick
+--     (suArmRun); the run starts 33 ms later from a timer, the shape the pump
+--     has always had, so no member run ever executes inside a mouse handler
+--     with the button held down. A filter press is only a repaint.
+-- If an engine disagrees about acting on the press (runbook row 48 records
+-- it), the fallback is one line in the scaffold master's mouseUp: dispatch
+-- the target's name to this stack from its default branch.
+on mouseDown pWhich
+   local tName
+   if pWhich is not 1 then
+      pass mouseDown
+   end if
+   if word 1 of the name of the target is not "button" then
+      pass mouseDown
+   end if
+   put the short name of the target into tName
+   if tName begins with "suRun" then
+      suArmRun (char 6 to -1 of tName)
+   else if tName begins with "suShow" then
+      suSetFilter ("m:" & char 7 to -1 of tName)
+   else if tName begins with "suFilter" then
+      suSetFilter (char 9 to -1 of tName)
+   else
+      pass mouseDown
+   end if
+end mouseDown
 
+-- ARM ONE ROW'S RUN: validate the key, refuse while a run is live, and start
+-- the run from a pinned 33 ms tick rather than inside the click.
+--
+-- WHY REFUSE rather than restart. A row's Run replaces the whole report, and a
+-- live run is mid-pump with transports open. Throwing a run away is what Run
+-- all is for - it has always stopped everything first, and it is the
+-- runbook's documented recovery (5.1.1) - so a second row press during a run
+-- is far more likely a mis-press than a request, and it says so and waits.
+command suArmRun pKey
+   set the defaultStack to the short name of this stack
+   if not suIsRunKey(pKey) then
+      exit suArmRun
+   end if
+   if sAsyncRunning is "true" or sSuArmed is not empty then
+      uiStatus "A run is still going: wait for its summary line, or press Run all to restart everything.", "warn"
+      exit suArmRun
+   end if
+   put toLower(pKey) into sSuArmed
+   uiStatus "Starting" && suTitleOf(sSuArmed) & ": the synchronous checks run first and the window waits for them.", empty
+   send "suRunTick" to me in 33 milliseconds
+end suArmRun
 
+-- The armed run, from its tick. PINNED FIRST (engine note 5.3): everything it
+-- reaches writes controls by unqualified name, and a `send ... in` handler
+-- resolves those against the defaultStack, not against this stack.
+command suRunTick
+   local tKey
+   set the defaultStack to the short name of this stack
+   put sSuArmed into tKey
+   put empty into sSuArmed
+   if tKey is empty then
+      exit suRunTick
+   end if
+   stCleanup
+   stRun tKey
+end suRunTick
 
+-- ---- scope: what one run covers ---------------------------------------------
+-- A scoped run is a SUBSEQUENCE of Run all, never a reordering of it: every
+-- section keeps its place relative to the others, so the ordering invariants
+-- the run depends on (the probe first; the deep harnesses before the seal and
+-- the loopback starts; holde-em's timer sweep before the loopbacks arm; the
+-- ENet start before the budget section) hold in every scope by construction.
 
+-- A key a row's Run may carry: one of kSuKeys, and not a member with no
+-- in-engine harness.
+function suIsRunKey pKey
+   local tKeys, tOld, tOk
+   put kSuKeys into tKeys
+   put the itemDelimiter into tOld
+   set the itemDelimiter to comma
+   put (pKey is among the items of tKeys) into tOk
+   set the itemDelimiter to tOld
+   if pKey is kSuNoHarness then
+      return false
+   end if
+   return tOk
+end suIsRunKey
 
+-- Empty (the scaffold's parameterless Run all) and anything unknown mean
+-- everything; a row's key means that row.
+command suScopeSet pScope
+   put "all" into sSuScope
+   if suIsRunKey(pScope) then
+      put toLower(pScope) into sSuScope
+   end if
+end suScopeSet
 
+function suInScope pKey
+   return (sSuScope is "all") or (sSuScope is pKey)
+end suInScope
 
+-- The two transports each run one live loopback; the cross row runs both.
+function suUsesEnet
+   return suInScope("enetxt") or suInScope("cross")
+end suUsesEnet
 
+function suUsesDc
+   return suInScope("datachannelxt") or suInScope("cross")
+end suUsesDc
 
+function suTitleOf pKey
+   local tKeys, tNames, tOld, tI, tTitle
+   put kSuKeys into tKeys
+   put kSuNames into tNames
+   put pKey into tTitle
+   put the itemDelimiter into tOld
+   set the itemDelimiter to comma
+   repeat with tI = 1 to the number of items of tKeys
+      if item tI of tKeys is pKey then
+         put item tI of tNames into tTitle
+      end if
+   end repeat
+   set the itemDelimiter to tOld
+   return tTitle
+end suTitleOf
 
+function suScopeLabel
+   if sSuScope is "all" then
+      return "all members (Run all)"
+   end if
+   return suTitleOf(sSuScope) && "only"
+end suScopeLabel
 
+-- ---- tallies: what each row counted -----------------------------------------
+-- SNAPSHOT DELTAS AROUND EACH BLOCK, never counters inside member code: the
+-- member harnesses stay exactly as they ship. suTallyOpen notes the scaffold's
+-- three counters and the report's length; suTallyClose adds the differences to
+-- the row and records which report lines the block wrote, which is what a
+-- member's Show view prints. In Run all a block counts to its own row; in a
+-- one-member run EVERYTHING counts to that member's row, the probe and the
+-- teardown included, because that row is the run.
+--
+-- Keys are kSuKeys' lowercase spellings: array keys fold case (engine note
+-- 2.7), so one spelling everywhere keeps the question from arising.
+command suTallyReset
+   local tKeys, tKey, tOld
+   put empty into sSuP
+   put empty into sSuF
+   put empty into sSuS
+   put empty into sSuSpan
+   put kSuKeys into tKeys
+   put the itemDelimiter into tOld
+   set the itemDelimiter to comma
+   repeat for each item tKey in tKeys
+      put 0 into sSuP[tKey]
+      put 0 into sSuF[tKey]
+      put 0 into sSuS[tKey]
+      put empty into sSuSpan[tKey]
+   end repeat
+   set the itemDelimiter to tOld
+   put empty into sSuMarkKey
+   put -1 into sSuViewLen
+end suTallyReset
 
+command suTallyOpen pKey
+   -- A mark still open means a block threw past its own close; attribute what
+   -- it counted before starting the next, so nothing is dropped.
+   if sSuMarkKey is not empty then
+      suTallyClose
+   end if
+   if sSuScope is "all" then
+      put pKey into sSuMarkKey
+   else
+      put sSuScope into sSuMarkKey
+   end if
+   put sPassed into sSuMarkP
+   put sFailed into sSuMarkF
+   put sSkipped into sSuMarkS
+   put the length of sResultText into sSuMarkLen
+end suTallyOpen
+
+command suTallyClose
+   local tKey, tOk, tFrom, tTo
+   put sSuMarkKey into tKey
+   put empty into sSuMarkKey
+   if tKey is empty then
+      exit suTallyClose
+   end if
+   -- VALIDATE BEFORE ADDING (stMergeCounted's lesson): an `add` on a
+   -- non-number is an uncaught engine error that takes the whole run, and
+   -- this runs inside the pump. Built as one value, because OXT does not
+   -- short-circuit `and` (engine note 2.5).
+   put (sPassed is a number and sFailed is a number and sSkipped is a number and sSuMarkP is a number and sSuMarkF is a number and sSuMarkS is a number) into tOk
+   if tOk is false then
+      exit suTallyClose
+   end if
+   add (sPassed - sSuMarkP) to sSuP[tKey]
+   add (sFailed - sSuMarkF) to sSuF[tKey]
+   add (sSkipped - sSuMarkS) to sSuS[tKey]
+   -- The span, only when the block wrote something: a pump tick with no
+   -- events writes nothing, and this keeps that case free of a line count.
+   if the length of sResultText > sSuMarkLen then
+      put (the number of lines of (char 1 to sSuMarkLen of sResultText)) + 1 into tFrom
+      put the number of lines of sResultText into tTo
+      suSpanAdd tKey, tFrom, tTo
+   end if
+end suTallyClose
+
+-- One row's report spans, as lines of "from to"; a span that starts where the
+-- last one ended extends it, so a transport's many pump ticks read as one.
+command suSpanAdd pKey, pFrom, pTo
+   local tList, tN, tLast
+   put sSuSpan[pKey] into tList
+   put the number of lines of tList into tN
+   if tN > 0 then
+      put line tN of tList into tLast
+      if (word 2 of tLast) + 1 >= pFrom then
+         put (word 1 of tLast) && pTo into line tN of tList
+         put tList into sSuSpan[pKey]
+         exit suSpanAdd
+      end if
+   end if
+   put pFrom && pTo & return after tList
+   put tList into sSuSpan[pKey]
+end suSpanAdd
+
+function suNum pValue
+   if pValue is a number then
+      return pValue
+   end if
+   return 0
+end suNum
+
+-- ---- the rows ----------------------------------------------------------------
+-- A row's pill, as two lines: the kit's pill kind, then the pill's text. Only
+-- "ok", "wait" and "bad" are used; any other kind paints the kit's navy, which
+-- is meant for the title band. pFinal says the run is over for this question
+-- (the summary asks before sStRunDone is set).
+function suRowState pKey, pFinal
+   local tP, tF, tS
+   if not suInScope(pKey) then
+      return "wait" & return & "not run"
+   end if
+   put suNum(sSuP[pKey]) into tP
+   put suNum(sSuF[pKey]) into tF
+   put suNum(sSuS[pKey]) into tS
+   if pFinal is not true then
+      if sAsyncRunning is "true" then
+         if suLive(pKey) then
+            return "wait" & return & "running..."
+         end if
+      end if
+   end if
+   if tF > 0 then
+      return "bad" & return & tF && "FAILED"
+   end if
+   if tP > 0 then
+      return "ok" & return & "OK"
+   end if
+   if tS > 0 then
+      if suPresent(pKey) then
+         return "wait" & return & "skipped"
+      end if
+      if pKey is "torrentxt" then
+         -- the probe cannot tell "not installed" from "a session is already
+         -- live in this process"; the member's Show view carries the reason
+         return "wait" & return & "unavailable"
+      end if
+      return "wait" & return & "absent"
+   end if
+   -- A FINISHED row that counted nothing is a defect, not a quiet one: every
+   -- block this file runs ends in a PASS, a FAIL or a SKIP, so 0/0/0 means a
+   -- block ran outside its tally or not at all.
+   if pFinal is true or sStRunDone is "true" then
+      return "bad" & return & "nothing ran"
+   end if
+   return "wait" & return & "waiting"
+end suRowState
+
+-- Still on the wire: only the transports, and the cross row that owns both.
+function suLive pKey
+   if pKey is "enetxt" then
+      return not stEnDone()
+   end if
+   if pKey is "datachannelxt" then
+      return not stDcDone()
+   end if
+   if pKey is "cross" then
+      return not (stEnDone() and stDcDone())
+   end if
+   return false
+end suLive
+
+-- Was the member there to test? The probe's own flags; a member whose SKIPs
+-- mean "not installed" reads "absent", one whose SKIPs are its own reads
+-- "skipped". holde-em and the cross row have nothing to probe.
+function suPresent pKey
+   switch pKey
+      case "sodiumxt"
+         return sHaveSodium is true
+      case "torrentxt"
+         return sHaveTorrent is true
+      case "enetxt"
+         return sHaveEnet is true
+      case "datachannelxt"
+         return sHaveDc is true
+      case "box2dxt"
+         return sHaveBox2d is true
+      case "coinxt"
+         return (sHaveCoin is true) and (sHaveCoinScript is true)
+      case "onionxt"
+         return sHaveOnion is true
+      case "nostrxt"
+         return sHaveNostrScript is true
+      case "riptide"
+         return sHaveRiptideScript is true
+   end switch
+   return true
+end suPresent
+
+-- ONE PAINTER FOR EVERY ROW, so no two handlers can disagree about a pill (the
+-- discipline the kit's uiPill asks for). It repaints the same names at the
+-- same rects every time, pins first (it is reached from the pump's timer), and
+-- does nothing before the board exists.
+command suPaintRows
+   local tKeys, tKey, tI, tOld, tTop, tState, tCounts
+   set the defaultStack to the short name of this stack
+   if there is no field "suView" then
+      exit suPaintRows
+   end if
+   put kSuKeys into tKeys
+   put the itemDelimiter into tOld
+   set the itemDelimiter to comma
+   repeat with tI = 1 to the number of items of tKeys
+      put item tI of tKeys into tKey
+      if tKey is not kSuNoHarness then
+         put kSuRowTop + kSuRowStep * (tI - 1) into tTop
+         put suRowState(tKey, false) into tState
+         uiPill ("suPill" & tKey), (line 2 of tState), ("200," & (tTop + 7) & ",296," & (tTop + 27)), (line 1 of tState)
+         if suInScope(tKey) then
+            put suNum(sSuP[tKey]) && "/" && suNum(sSuF[tKey]) && "/" && suNum(sSuS[tKey]) into tCounts
+         else
+            put "-" into tCounts
+         end if
+         uiLabel ("suCount" & tKey), tCounts, ("300," & (tTop + 9) & ",376," & (tTop + 25)), 10
+         set the textFont of field ("suCount" & tKey) to uiMonoFont()
+         set the foregroundColor of field ("suCount" & tKey) to kUiInkSoft
+      end if
+   end repeat
+   set the itemDelimiter to tOld
+   put sPhaseEn & "/" & sPhaseDc into sSuPainted
+end suPaintRows
+
+-- Every row control, by its computed name, for the boot self-check (the
+-- derived kSuScControls list cannot see a name built from a key).
+function suRowControls
+   local tKeys, tKey, tOut
+   put kSuKeys into tKeys
+   put empty into tOut
+   repeat for each item tKey in tKeys
+      put "suName" & tKey & comma after tOut
+      if tKey is kSuNoHarness then
+         put "suNote" & tKey & comma after tOut
+      else
+         put "suPill" & tKey & comma & "suPill" & tKey & "Bg" & comma & "suCount" & tKey & comma & "suRun" & tKey & comma & "suShow" & tKey & comma after tOut
+      end if
+   end repeat
+   return char 1 to -2 of tOut
+end suRowControls
+
+-- ---- the window ----------------------------------------------------------------
+-- Built once and STAMPED (uSuUiVersion): a reopen with the current board only
+-- repaints, and a stack an OLDER paste built - the scaffold's 760-wide window,
+-- or an earlier board - is cleared and rebuilt, which is riptide-social's and
+-- the Quick Shares' upgrade path. The build runs under lock screen with the
+-- unlock in the catch too (coin-wallet's trap 41: a throw between lock and
+-- unlock is how a script error becomes a frozen engine).
+command suBuild
+   local tError
+   set the defaultStack to the short name of this stack
+   if the uSuUiVersion of this stack is kSuUiVersion then
+      if there is a field "suView" then
+         suPaintRows
+         suSetFilter sSuFilter
+         exit suBuild
+      end if
+   end if
+   lock screen
+   try
+      suBuildAll
+   catch tError
+      unlock screen
+      answer "The self-test could not build its window:" & return & return & tError & return & return & "The run still goes ahead, but there is no window to read it in. Report this with the text above: the paste may be damaged."
+      exit suBuild
+   end try
+   unlock screen
+   set the uSuUiVersion of this stack to kSuUiVersion
+   suPaintRows
+   suSetFilter "all"
+end suBuild
+
+-- Clear what an older build left, by NAME: the scaffold's own window (the
+-- names below, compared as a list rather than written as control references,
+-- so the self-check's derived list never mistakes them for controls this
+-- script needs) and every board or kit control. This is box2dxt's engine-run
+-- restart-loop delete (its stWipe; 2026-08-17 and 2026-08-20), which never
+-- trusts a control number across a deletion.
+command suBuildReset
+   local tAgain, tI, tName, tRetired, tOld, tHit
+   put "stTitle,stSummary,stCopy,stRerun,stResults" into tRetired
+   put the itemDelimiter into tOld
+   set the itemDelimiter to comma
+   put true into tAgain
+   repeat while tAgain
+      put false into tAgain
+      repeat with tI = 1 to the number of controls of this card
+         put the short name of control tI of this card into tName
+         put (tName is among the items of tRetired) into tHit
+         if char 1 to 2 of tName is "su" or char 1 to 2 of tName is "ui" then
+            put true into tHit
+         end if
+         if tHit then
+            delete control tI of this card
+            put true into tAgain
+            exit repeat
+         end if
+      end repeat
+   end repeat
+   set the itemDelimiter to tOld
+end suBuildReset
+
+-- THE LAYOUT, at 1200 x 640 (the kit's rule 6: the whole window fits 720p).
+-- Panels first so they sit behind everything (kit rule 1). The four scaffold
+-- controls keep the scaffold's names; everything the board adds is su*, and
+-- nothing is named st_*, b2k* or he*, the prefixes box2dxt's and holde-em's
+-- folded harnesses own on this same card.
+command suBuildAll
+   local tKeys, tNames, tKey, tI, tOld, tTop, tRect
+   suBuildReset
+   uiChrome kStTitle, kStWidth, kStHeight
+   uiPanel "suPanMembers", "8,88,500," & (kStHeight - 8)
+   uiPanel "suPanResults", "508,88," & (kStWidth - 8) & "," & (kStHeight - 8)
+
+   -- the header row: the scaffold's controls, under the scaffold's names
+   uiLabel "stSummary", "No run yet.", "16,58," & (kStWidth - 260) & ",80", 13
+   set the textStyle of field "stSummary" to "bold"
+   uiButton "stRerun", "Run all", (kStWidth - 248) & ",56," & (kStWidth - 140) & ",80"
+   uiButton "stCopy", "Copy results", (kStWidth - 132) & ",56," & (kStWidth - 16) & ",80"
+
+   -- 1. the members, one row each, in tools/member-registry.py's order
+   uiSection "suSecMembers", "1.  Members: one row per extension and app", "20,96,488,114"
+   uiCap "suHeadStatus", "status", "200,118,296,132"
+   uiCap "suHeadCounts", "pass / fail / skip", "300,118,378,132"
+   uiCap "suHeadRun", "this member", "380,118,488,132"
+   put kSuKeys into tKeys
+   put kSuNames into tNames
+   put the itemDelimiter into tOld
+   set the itemDelimiter to comma
+   repeat with tI = 1 to the number of items of tKeys
+      put item tI of tKeys into tKey
+      put kSuRowTop + kSuRowStep * (tI - 1) into tTop
+      uiLabel ("suName" & tKey), (item tI of tNames), ("20," & (tTop + 7) & ",196," & (tTop + 27)), 12
+      set the textStyle of field ("suName" & tKey) to "bold"
+      if tKey is kSuNoHarness then
+         put "200," & (tTop + 6) & ",488," & (tTop + 30) into tRect
+         uiCap ("suNote" & tKey), "no in-engine harness: its tests run headlessly in the gates", tRect
+      else
+         uiButton ("suRun" & tKey), "Run", ("380," & (tTop + 5) & ",432," & (tTop + 29))
+         uiButton ("suShow" & tKey), "Show", ("436," & (tTop + 5) & ",488," & (tTop + 29))
+      end if
+   end repeat
+   set the itemDelimiter to tOld
+   uiCap "suMembersCap", "Run re-runs ONE member end to end (probe, its sections, teardown, summary) and replaces the report; Show lists only its lines. Run all is the suite record.", "20,546,488,580"
+   uiFooter "Every member's own self-test plus the cross-member seams, in one process. This board is verified statically plus a headless UI boot; needs an OXT pass (D-23).", "20,588,488,628"
+
+   -- 2. the results: three fields on one rect, exactly one visible
+   uiSection "suSecResults", "2.  Results", "520,96,760,114"
+   uiButton "suFilterAll", "All", "872,94,924,118"
+   uiButton "suFilterFail", "Failures", "930,94,1010,118"
+   uiButton "suFilterSkip", "Skips", "1016,94,1076,118"
+   uiButton "suFilterBoot", "Boot check", "1082,94,1180,118"
+   set the autoHilite of button "suFilterAll" to false
+   set the autoHilite of button "suFilterFail" to false
+   set the autoHilite of button "suFilterSkip" to false
+   set the autoHilite of button "suFilterBoot" to false
+   uiCap "suViewCap", "All: the whole report.", "520,122,1180,138"
+   uiArea "stResults", "520,142," & (kStWidth - 20) & "," & (kStHeight - 18)
+   uiArea "suView", "520,142," & (kStWidth - 20) & "," & (kStHeight - 18)
+   uiArea "suBootLog", "520,142," & (kStWidth - 20) & "," & (kStHeight - 18)
+end suBuildAll
+
+-- ---- the results views --------------------------------------------------------
+-- ALL is the scaffold's own stResults, rewritten every tick by stShow and
+-- painted by stPaint exactly as before - and it is always what Copy copies.
+-- FAILURES, SKIPS and ONE MEMBER are composed into suView, which is shown in
+-- stResults' place while stShow keeps writing the hidden original, so nothing
+-- fights over a field. BOOT CHECK shows the self-check's own log.
+command suSetFilter pWhich
+   local tWhich
+   set the defaultStack to the short name of this stack
+   put toLower(pWhich) into tWhich
+   if tWhich is not "fail" and tWhich is not "skip" and tWhich is not "boot" then
+      if tWhich begins with "m:" then
+         if not suIsRunKey(char 3 to -1 of tWhich) then
+            put "all" into tWhich
+         end if
+      else
+         put "all" into tWhich
+      end if
+   end if
+   put tWhich into sSuFilter
+   if there is no field "suView" then
+      exit suSetFilter
+   end if
+   set the hilite of button "suFilterAll" to (tWhich is "all")
+   set the hilite of button "suFilterFail" to (tWhich is "fail")
+   set the hilite of button "suFilterSkip" to (tWhich is "skip")
+   set the hilite of button "suFilterBoot" to (tWhich is "boot")
+   put -1 into sSuViewLen
+   set the vScroll of field "suView" to 0
+   suRenderView
+end suSetFilter
+
+-- Render the current view. Pinned (the pump reaches it), contained (a view
+-- that cannot render must never cost a run), and under lock screen with the
+-- unlock outside the try, so the unlock always runs.
+command suRenderView
+   local tText, tCap, tScroll, tError
+   set the defaultStack to the short name of this stack
+   if there is no field "suView" then
+      exit suRenderView
+   end if
+   lock screen
+   try
+      if sSuFilter is "fail" or sSuFilter is "skip" or sSuFilter begins with "m:" then
+         put the vScroll of field "suView" into tScroll
+         put suViewText(sSuFilter) into tText
+         put tText into field "suView"
+         suPaintView
+         set the vScroll of field "suView" to tScroll
+         set the visible of field "stResults" to false
+         set the visible of field "suBootLog" to false
+         set the visible of field "suView" to true
+         if sSuFilter is "fail" then
+            put "Failures: each FAIL line under the section it sits in. Copy results still copies the whole report." into tCap
+         else if sSuFilter is "skip" then
+            put "Skips: each SKIP line under the section it sits in. Copy results still copies the whole report." into tCap
+         else
+            put suTitleOf(char 3 to -1 of sSuFilter) & ": only the lines its row counted. Copy results still copies the whole report." into tCap
+         end if
+      else if sSuFilter is "boot" then
+         set the visible of field "stResults" to false
+         set the visible of field "suView" to false
+         set the visible of field "suBootLog" to true
+         put "Boot check: this window's own self-check, run on open. Not counted in the totals; the report carries it just above its summary." into tCap
+      else
+         set the visible of field "suView" to false
+         set the visible of field "suBootLog" to false
+         set the visible of field "stResults" to true
+         put "All: the whole report, exactly what Copy results copies." into tCap
+      end if
+   catch tError
+      put "This view could not render (" & tError & "); All still shows the whole report." into tCap
+   end try
+   put the length of sResultText into sSuViewLen
+   uiCap "suViewCap", tCap, "520,122,1180,138"
+   unlock screen
+end suRenderView
+
+function suViewText pFilter
+   if pFilter is "fail" then
+      return suKindText("fail")
+   end if
+   if pFilter is "skip" then
+      return suKindText("skip")
+   end if
+   return suMemberText(char 3 to -1 of pFilter)
+end suViewText
+
+-- One kind of line, each under the section header and member-report divider it
+-- sits in, with up to three indented note lines that follow it (a FAIL's
+-- "it raised:" is usually the next line). Read from sResultText, and ended
+-- with the scaffold's own trailer while the run is unfinished.
+function suKindText pKind
+   local tSrc, tLine, tKind, tHead, tSub, tHeadShown, tSubShown, tNotes, tN, tOut, tHeadLine
+   put sResultText into tSrc
+   put empty into tHead
+   put empty into tSub
+   put 0 into tNotes
+   put 0 into tN
+   put empty into tOut
+   repeat for each line tLine in tSrc
+      put suLineKind(tLine) into tKind
+      if tKind is "head" then
+         put tLine into tHead
+         put empty into tSub
+         put false into tHeadShown
+         put false into tSubShown
+         put 0 into tNotes
+      else if tKind is "sub" or tKind is "marker" then
+         put tLine into tSub
+         put false into tSubShown
+         put 0 into tNotes
+      else if tKind is pKind then
+         if tHeadShown is not true then
+            if tHead is not empty then
+               put return & tHead & return after tOut
+            end if
+            put true into tHeadShown
+         end if
+         if tSubShown is not true then
+            if tSub is not empty then
+               put tSub & return after tOut
+            end if
+            put true into tSubShown
+         end if
+         put tLine & return after tOut
+         add 1 to tN
+         put 3 into tNotes
+      else if tNotes > 0 then
+         if tKind is "other" and char 1 of tLine is space then
+            put tLine & return after tOut
+            subtract 1 from tNotes
+         else
+            put 0 into tNotes
+         end if
+      end if
+   end repeat
+   if pKind is "fail" then
+      put "Failures:" && tN && "FAIL line(s) in the report." into tHeadLine
+      if tN is 0 then
+         put tHeadLine && "Nothing failed." into tHeadLine
+      end if
+   else
+      put "Skips:" && tN && "SKIP line(s) in the report." into tHeadLine
+      if tN is 0 then
+         put tHeadLine && "Nothing skipped." into tHeadLine
+      end if
+   end if
+   return tHeadLine & return & tOut & suTrailer()
+end suKindText
+
+-- One member's lines: the spans its row counted.
+function suMemberText pKey
+   local tTitle, tList, tSrc, tLine, tOut
+   put suTitleOf(pKey) into tTitle
+   if not suInScope(pKey) then
+      return tTitle && "was not in this run's scope (" & suScopeLabel() & ")." & return & "Press Run on its row, or Run all." & return
+   end if
+   put sSuSpan[pKey] into tList
+   put sResultText into tSrc
+   put empty into tOut
+   repeat for each line tLine in tList
+      put (line (word 1 of tLine) to (word 2 of tLine) of tSrc) & return after tOut
+   end repeat
+   return tTitle & ":" && suNum(sSuP[pKey]) && "passed," && suNum(sSuF[pKey]) && "failed," && suNum(sSuS[pKey]) && "skipped, in the lines below." & return & tOut & suTrailer()
+end suMemberText
+
+-- The scaffold's own RUN NOT FINISHED trailer, taken from stReportText rather
+-- than copied, so a filtered view of an unfinished run says so in the same
+-- words the whole report does.
+function suTrailer
+   local tFull
+   if sStRunDone is "true" then
+      return empty
+   end if
+   put stReportText() into tFull
+   return char ((the length of sResultText) + 1) to -1 of tFull
+end suTrailer
+
+-- WHAT A LINE IS, by its FIRST WORD, case-sensitively. Every folded format
+-- reads right this way: the scaffold's unindented `PASS` / `FAIL` / `SKIP`,
+-- the returned reports' indented `  ok` / `  FAIL` / `  skip`, onionxt's and
+-- nostrxt's `  --   (skipped: ...)`, section headers `== x ==`, member
+-- sub-sections `-- x`, and the `---- X report ----` dividers. `begins with`
+-- (stPaint's test) cannot see an indented FAIL, which is why the whole
+-- report is repainted by this after it finishes (suPaintResults). The
+-- caseSensitive property is restored explicitly: engine notes 2.3 and 2.7
+-- disagree about whether a local property survives its handler, and this
+-- code does not need to find out.
+function suLineKind pLine
+   local tW1, tKind, tWas
+   put word 1 of pLine into tW1
+   put the caseSensitive into tWas
+   set the caseSensitive to true
+   put "other" into tKind
+   if tW1 is "FAIL" then
+      put "fail" into tKind
+   else if tW1 is "PASS" or tW1 is "ok" then
+      put "pass" into tKind
+   else if tW1 is "SKIP" or tW1 is "skip" then
+      put "skip" into tKind
+   else if tW1 is "==" then
+      put "head" into tKind
+   else if tW1 is "----" then
+      put "marker" into tKind
+   else if tW1 is "--" then
+      if word 2 of pLine begins with "(skipped" then
+         put "skip" into tKind
+      else
+         put "sub" into tKind
+      end if
+   end if
+   set the caseSensitive to tWas
+   return tKind
+end suLineKind
+
+-- Paint a composed view by line kind: stPaint's per-line idiom (engine-run on
+-- every record since 2026-08-20), muted first and then only the lines that
+-- carry a meaning, so a long view costs one pass.
+command suPaintView
+   local tText, tLine, tI, tKind, tError
+   set the defaultStack to the short name of this stack
+   if there is no field "suView" then
+      exit suPaintView
+   end if
+   put field "suView" into tText
+   set the foregroundColor of field "suView" to kUiMuted
+   put 0 into tI
+   try
+      repeat for each line tLine in tText
+         add 1 to tI
+         put suLineKind(tLine) into tKind
+         if tKind is "fail" then
+            set the foregroundColor of line tI of field "suView" to kUiBad
+         else if tKind is "pass" then
+            set the foregroundColor of line tI of field "suView" to kUiOk
+         else if tKind is "skip" then
+            set the foregroundColor of line tI of field "suView" to kUiWarn
+         else if tKind is "head" then
+            set the foregroundColor of line tI of field "suView" to kUiAccent
+         end if
+      end repeat
+   catch tError
+   end try
+end suPaintView
+
+-- The whole report, repainted by FIRST WORD once the run is over. stPaint
+-- (carried) paints by `begins with`, so a member's indented `  FAIL` stays
+-- muted in the All view; the carried block cannot change without re-carrying
+-- four published member harnesses, so the paste corrects its own view here.
+-- Only the lines stPaint could not have painted right are touched.
+command suPaintResults
+   local tText, tLine, tI, tKind, tError
+   set the defaultStack to the short name of this stack
+   if there is no field "stResults" then
+      exit suPaintResults
+   end if
+   put field "stResults" into tText
+   put 0 into tI
+   lock screen
+   try
+      repeat for each line tLine in tText
+         add 1 to tI
+         if char 1 of tLine is space or char 1 of tLine is "=" then
+            put suLineKind(tLine) into tKind
+            if tKind is "fail" then
+               set the foregroundColor of line tI of field "stResults" to kUiBad
+            else if tKind is "pass" then
+               set the foregroundColor of line tI of field "stResults" to kUiOk
+            else if tKind is "skip" then
+               set the foregroundColor of line tI of field "stResults" to kUiWarn
+            else if tKind is "head" then
+               set the foregroundColor of line tI of field "stResults" to kUiAccent
+            end if
+         end if
+      end repeat
+   catch tError
+   end try
+   unlock screen
+end suPaintResults
+
+-- ---- the run's two ends --------------------------------------------------------
+-- The start of a run: the summary line back to neutral (stShow colours it only
+-- when a run finishes, so a new run would otherwise start in the last one's
+-- red or green).
+command suRunStarting
+   set the defaultStack to the short name of this stack
+   if there is a field "stSummary" then
+      set the foregroundColor of field "stSummary" to kUiInk
+   end if
+end suRunStarting
+
+-- The end of the synchronous half, just before the pump is armed. This is the
+-- first moment anything painted becomes visible (the handler is about to
+-- return; engine-observed on 2026-08-19, when a run copied mid-pump ended at
+-- the last synchronous section), so the rows and the view are painted here.
+-- CONTAINED: the `send "stPump"` after it is the only route to teardown.
+command suSyncDone
+   local tError, tNote
+   try
+      suPaintRows
+      suRenderView
+      if suUsesEnet() or suUsesDc() then
+         put "the live loopbacks are still running" into tNote
+      else
+         put "the teardown and the summary follow on the next tick" into tNote
+      end if
+      uiStatus "Running (" & suScopeLabel() & "): the synchronous checks are done;" && tNote & ". Wait for the summary line before you copy.", empty
+   catch tError
+      -- a paint must never cost a run; the report is assembled in a variable
+   end try
+end suSyncDone
+
+-- One pump tick's paint, before the pump's re-arm and in a try of its own: the
+-- rows when a transport's phase moved, and a filtered view when the report
+-- grew. Nothing repaints on a tick that changed nothing, and a paint that
+-- throws costs only the paint (suAfterDone repaints everything at the end).
+command suPumpPaint
+   local tError
+   try
+      suPumpPaintNow
+   catch tError
+   end try
+end suPumpPaint
+
+command suPumpPaintNow
+   if (sPhaseEn & "/" & sPhaseDc) is not sSuPainted then
+      suPaintRows
+   end if
+   if sSuFilter is "fail" or sSuFilter is "skip" or sSuFilter begins with "m:" then
+      if the length of sResultText is not sSuViewLen then
+         suRenderView
+      end if
+   end if
+end suPumpPaintNow
+
+-- The window's boot self-check, appended to the report UNCOUNTED, just above
+-- the summary: Copy results then carries the window's record too (runbook row
+-- 37 asks for the boot block), while the totals stay the run's alone. Each
+-- line is prefixed, so no boot line ever reads as a run's PASS or FAIL - not
+-- to a person, and not to the Failures view.
+command suBootIntoReport
+   local tLine
+   if sScLines is empty then
+      exit suBootIntoReport
+   end if
+   stSection "boot self-check (this window's own, run on open; NOT counted in the totals)"
+   repeat for each line tLine in sScLines
+      stNote "[boot] " & tLine
+   end repeat
+end suBootIntoReport
+
+-- Is the self-check's one delayed check still queued? `the pendingMessages`
+-- lines are id,time,message,object (stCancelPump's idiom).
+function suBootPending
+   local tPending, tLine, tOld, tFound
+   put the pendingMessages into tPending
+   put false into tFound
+   put the itemDelimiter into tOld
+   set the itemDelimiter to comma
+   repeat for each line tLine in tPending
+      if item 3 of tLine is "scTickProbe" then
+         put true into tFound
+      end if
+   end repeat
+   set the itemDelimiter to tOld
+   return tFound
+end suBootPending
+
+-- The summary section's own lines: the scope, what the report is, the board as
+-- text (so the tick sheet's member totals are COPIED, not transcribed from a
+-- screenshot), the board check, and the boot verdict.
+--
+-- THE BOARD CHECK: every counted check belongs to exactly one row, so the rows
+-- must add up to the totals. It prints a note when they do and FAILs only when
+-- they do not - so a green run's totals stay comparable with every dated
+-- record taken before the board existed, and a tally lost to a block that ran
+-- outside suTallyOpen / suTallyClose is a red line on an engine, not a quietly
+-- wrong pill.
+command suSummaryNotes
+   local tKeys, tNames, tKey, tI, tOld, tState, tP, tF, tS, tSumP, tSumF, tSumS, tOk
+   stNote "Scope:" && suScopeLabel() & "."
+   if sSuScope is not "all" then
+      stNote "A one-member run is NOT the suite record. The record is a Run all,"
+      stNote "copied after its summary; this report covers the scope above only."
+   end if
+   stNote "Each member's deep self-test above is the harness it ships standalone,"
+   stNote "folded in by tools/build-suite-selftest.py; the ENet and DataChannel"
+   stNote "live loopbacks are this file's own. Paste these numbers back."
+   stNote "per member (passed / failed / skipped; the rows on the left):"
+   put 0 into tSumP
+   put 0 into tSumF
+   put 0 into tSumS
+   put kSuKeys into tKeys
+   put kSuNames into tNames
+   put the itemDelimiter into tOld
+   set the itemDelimiter to comma
+   repeat with tI = 1 to the number of items of tKeys
+      put item tI of tKeys into tKey
+      if tKey is kSuNoHarness then
+         stNote "  " & suPad(item tI of tNames, 24) & "    -     -     -  no in-engine harness"
+      else
+         put suNum(sSuP[tKey]) into tP
+         put suNum(sSuF[tKey]) into tF
+         put suNum(sSuS[tKey]) into tS
+         add tP to tSumP
+         add tF to tSumF
+         add tS to tSumS
+         put suRowState(tKey, true) into tState
+         if suInScope(tKey) then
+            stNote "  " & suPad(item tI of tNames, 24) & suPadLeft(tP, 5) & suPadLeft(tF, 6) & suPadLeft(tS, 6) & "  " & (line 2 of tState)
+         else
+            stNote "  " & suPad(item tI of tNames, 24) & "    -     -     -  not run"
+         end if
+      end if
+   end repeat
+   set the itemDelimiter to tOld
+   put (tSumP is sPassed and tSumF is sFailed and tSumS is sSkipped) into tOk
+   if tOk then
+      stNote "the rows account for every counted check (" & tSumP & " / " & tSumF & " / " & tSumS & ")"
+   else
+      suTallyOpen "cross"
+      stAssert "the rows account for every counted check", false
+      stNote "the rows add up to" && tSumP & " / " & tSumF & " / " & tSumS & "; the totals are" && sPassed & " / " & sFailed & " / " & sSkipped
+      stNote "a block ran outside suTallyOpen / suTallyClose; the pills are wrong, the totals are not"
+      suTallyClose
+   end if
+   if sScLines is empty then
+      stNote "boot self-check: has not run in this window"
+   else if suBootPending() then
+      stNote "boot self-check: its one delayed check had not fired yet; see the Boot check view"
+   else
+      stNote "boot self-check:" && sScPassed && "passed," && sScFailed && "failed," && sScSkipped && "skipped (the Boot check view has it whole)"
+   end if
+end suSummaryNotes
+
+function suPad pText, pWidth
+   local tOut
+   put pText into tOut
+   repeat while (the number of chars of tOut) < pWidth
+      put space after tOut
+   end repeat
+   return tOut
+end suPad
+
+function suPadLeft pText, pWidth
+   local tOut
+   put pText into tOut
+   repeat while (the number of chars of tOut) < pWidth
+      put space before tOut
+   end repeat
+   return tOut
+end suPadLeft
+
+-- After stReportDone: the report repainted by first word, the rows and the
+-- view final, and the status line. Contained - stFinish runs from the pump's
+-- tick, and by now the run is complete; a paint that throws must not bring an
+-- error dialog down on a finished, correct report.
+command suAfterDone
+   local tError
+   set the defaultStack to the short name of this stack
+   try
+      suPaintResults
+      suPaintRows
+      suRenderView
+      suStatusFinal
+   catch tError
+      uiStatus "The run finished, but the board could not repaint (" & tError & "). The report is complete: Copy results.", "warn"
+   end try
+end suAfterDone
+
+-- THE ONE STATUS LINE (kit rule 2), composed from the run's verdict and the
+-- boot check's. Fail loud: a boot failure keeps the line red even over a
+-- green run, and scFinish paints its own red line if it runs after this.
+command suStatusFinal
+   local tText, tKind
+   put "Finished (" & suScopeLabel() & "):" && sPassed && "passed," && sFailed && "failed," && sSkipped && "skipped." into tText
+   put "ok" into tKind
+   if sFailed is not a number then
+      put "bad" into tKind
+   else if sFailed > 0 then
+      put "bad" into tKind
+      put tText && "Press Failures to list them." into tText
+   end if
+   if sSuScope is not "all" then
+      put tText && "One member only: the suite record is Run all." into tText
+   end if
+   if sScFailed is a number then
+      if sScFailed > 0 then
+         put "bad" into tKind
+         put tText && "Boot self-check:" && sScFailed && "FAILED (see Boot check)." into tText
+      end if
+   end if
+   uiStatus tText, tKind
+end suStatusFinal
+
+-- ---- the boot self-check (the demo contract; the block above does the rest) ---
+-- Non-destructive: it reads the window and the probe's answers and takes
+-- nothing. The run has already started (openStack runs it first), so the
+-- checks below are about THIS window and THIS run's start, not a demo's idle
+-- state. The log field is emptied first: a reopen must not stack a second
+-- block under the first (coin-wallet's waScFresh lesson, 2026-09-02).
+command suScRun
+   local tMissing
+   set the defaultStack to the short name of this stack
+   if there is a field "suBootLog" then
+      put empty into field "suBootLog"
+   end if
+   scBegin "suBootLog"
+   put scMissing(kSuScControls) into tMissing
+   scAssert "all 22 controls this script names exist" & suMissingNote(tMissing), tMissing is empty
+   put scMissing(suRowControls()) into tMissing
+   scAssert "every member row is built (" & suRowCount() & " rows, each with its controls)" & suMissingNote(tMissing), tMissing is empty
+   scAssert "the window is" && kStWidth && "x" && kStHeight && "(saw" && the width of this stack && "x" && the height of this stack & ")", suWindowSized()
+   scAssert "the last member row sits above the members caption", suLastRowFits()
+   scAssert "the board is stamped" && kSuUiVersion && "(saw" && scShow(the uSuUiVersion of this stack) & ")", the uSuUiVersion of this stack is kSuUiVersion
+   scAssert "the run started before this check (running:" && scShow(sAsyncRunning) & ", finished:" && scShow(sStRunDone) & ")", suRunStarted()
+   scAssert "the probe answered present or absent for every member", suProbeAnswered()
+   scAssert "exactly one results view is showing", suVisibleViews() is 1
+   scArmProbe
+end suScRun
+
+function suMissingNote pMissing
+   if pMissing is empty then
+      return empty
+   end if
+   return " (missing: " & pMissing & ")"
+end suMissingNote
+
+function suRowCount
+   local tKeys, tOld, tN
+   put kSuKeys into tKeys
+   put the itemDelimiter into tOld
+   set the itemDelimiter to comma
+   put the number of items of tKeys into tN
+   set the itemDelimiter to tOld
+   return tN
+end suRowCount
+
+function suWindowSized
+   return (the width of this stack is kStWidth) and (the height of this stack is kStHeight)
+end suWindowSized
+
+-- A thirteenth member must fail HERE, before an engine session, rather than
+-- draw its row over the caption: the last row's name field ends above it.
+function suLastRowFits
+   local tKeys, tOld, tLast
+   put kSuKeys into tKeys
+   put the itemDelimiter into tOld
+   set the itemDelimiter to comma
+   put item -1 of tKeys into tLast
+   set the itemDelimiter to tOld
+   if there is no field ("suName" & tLast) then
+      return false
+   end if
+   if there is no field "suMembersCap" then
+      return false
+   end if
+   return the bottom of field ("suName" & tLast) < the top of field "suMembersCap"
+end suLastRowFits
+
+function suRunStarted
+   return (sAsyncRunning is "true") or (sStRunDone is "true")
+end suRunStarted
+
+function suIsBool pValue
+   return (pValue is true) or (pValue is false)
+end suIsBool
+
+function suProbeAnswered
+   return suIsBool(sHaveSodium) and suIsBool(sHaveTorrent) and suIsBool(sHaveEnet) and suIsBool(sHaveDc) and suIsBool(sHaveOnion) and suIsBool(sHaveCoin) and suIsBool(sHaveCoinScript) and suIsBool(sHaveRiptideScript) and suIsBool(sHaveNostrScript) and suIsBool(sHaveBox2d)
+end suProbeAnswered
+
+function suVisibleViews
+   local tN
+   put 0 into tN
+   if there is a field "stResults" then
+      if the visible of field "stResults" then
+         add 1 to tN
+      end if
+   end if
+   if there is a field "suView" then
+      if the visible of field "suView" then
+         add 1 to tN
+      end if
+   end if
+   if there is a field "suBootLog" then
+      if the visible of field "suBootLog" then
+         add 1 to tN
+      end if
+   end if
+   return tN
+end suVisibleViews
 
 -- ---- the run -----------------------------------------------------------------
-command stRun
+-- pScope is empty for everything (the scaffold's Run all calls this with no
+-- argument, and openStack does too) or one kSuKeys item for a row's Run. A
+-- scoped run is a SUBSEQUENCE of this handler's order, never a reordering:
+-- each block below runs only when suInScope says so, and each is wrapped in a
+-- tally (suTallyOpen / suTallyClose) so the board knows which row it counted.
+command stRun pScope
    local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    -- Belt and braces: a run that was interrupted (an engine error mid-pump)
    -- can leave a pump armed even though stCleanup never ran.
    stCancelPump
    stResetCounters
+   suScopeSet pScope
+   suTallyReset
+   suRunStarting
    put "true" into sAsyncRunning
    put empty into sPhaseEn
    put empty into sPhaseDc
+   -- The render latch is per RUN: left set, a second run's pump would never
+   -- report a render that throws.
+   put empty into sRenderNoted
    -- RELEASE THE SESSION BEFORE FORGETTING IT. This line used to be a bare
    -- `put 0 into sSession`, and that is how an engine pass loses the whole
    -- TorrentXT surface for the rest of the launch. The one-session latch lives
@@ -1434,6 +3264,7 @@ command stRun
 
    put "xTalk Suite end-to-end self-test" & return into sResultText
    put "First green engine pass recorded 2026-08-08; this run re-confirms it here." & return after sResultText
+   put "Scope: " & suScopeLabel() & return after sResultText
 
    -- EVERY synchronous section is contained. A section that throws - a
    -- mis-declared foreign handler, an unexpected native error, an API that has
@@ -1449,31 +3280,51 @@ command stRun
    -- per-member probe inside already carries its own try, so this catches only
    -- the scaffolding between them, and every sHave* flag a half-finished probe
    -- leaves behind is read from inside a try, so a stale one costs a FAIL line.
+   -- THE PROBE RUNS IN EVERY SCOPE: it sets every sHave* flag the sections
+   -- read, and it is the statement that takes THE session.
+   suTallyOpen "cross"
    try
       stProbe
    catch tError
       stSectionFailed "extension probe", tError
    end try
-   try
-      stSodiumSection
-   catch tError
-      stSectionFailed "SodiumXT", tError
-   end try
-   try
-      stTorrentSection
-   catch tError
-      stSectionFailed "TorrentXT", tError
-   end try
-   try
-      stOnionSection
-   catch tError
-      stSectionFailed "OnionXT", tError
-   end try
-   try
-      stCoinSection
-   catch tError
-      stSectionFailed "CoinXT", tError
-   end try
+   suTallyClose
+   if suInScope("sodiumxt") then
+      suTallyOpen "sodiumxt"
+      try
+         stSodiumSection
+      catch tError
+         stSectionFailed "SodiumXT", tError
+      end try
+      suTallyClose
+   end if
+   if suInScope("torrentxt") then
+      suTallyOpen "torrentxt"
+      try
+         stTorrentSection
+      catch tError
+         stSectionFailed "TorrentXT", tError
+      end try
+      suTallyClose
+   end if
+   if suInScope("onionxt") then
+      suTallyOpen "onionxt"
+      try
+         stOnionSection
+      catch tError
+         stSectionFailed "OnionXT", tError
+      end try
+      suTallyClose
+   end if
+   if suInScope("coinxt") then
+      suTallyOpen "coinxt"
+      try
+         stCoinSection
+      catch tError
+         stSectionFailed "CoinXT", tError
+      end try
+      suTallyClose
+   end if
    -- THE DEEP PER-MEMBER HARNESSES. Everything above is the suite's own
    -- sampler; this is each member's WHOLE self-test, folded in verbatim by
    -- tools/build-suite-selftest.py and namespaced so five harnesses that all
@@ -1511,43 +3362,78 @@ command stRun
    try
       stRunMemberHarnesses
    catch tError
+      suTallyOpen "cross"
       stSectionFailed "deep per-member self-tests", tError
+      suTallyClose
    end try
-   try
-      stCrossIdentitySection
-   catch tError
-      stSectionFailed "cross: one identity", tError
-   end try
-   try
-      stCrossBep44Section
-   catch tError
-      stSectionFailed "cross: BEP44 signing", tError
-   end try
-   try
-      stSealPayload
-   catch tError
-      stSectionFailed "cross: sealed payload", tError
-   end try
-   try
-      stStartEnetLoopback
-   catch tError
-      stSectionFailed "enetxt loopback start", tError
-      put "failed" into sPhaseEn
-   end try
-   try
-      stStartDcLoopback
-   catch tError
-      stSectionFailed "datachannelxt loopback start", tError
-      put "failed" into sPhaseDc
-   end try
-   try
-      stCrossBudgetSection
-   catch tError
-      stSectionFailed "cross: 60000-byte budget", tError
-   end try
+   if suInScope("cross") then
+      suTallyOpen "cross"
+      try
+         stCrossIdentitySection
+      catch tError
+         stSectionFailed "cross: one identity", tError
+      end try
+      suTallyClose
+      suTallyOpen "cross"
+      try
+         stCrossBep44Section
+      catch tError
+         stSectionFailed "cross: BEP44 signing", tError
+      end try
+      suTallyClose
+   end if
+   -- The seal serves both loopbacks, so it runs wherever either does; the
+   -- transports' own rows, the cross row, and Run all.
+   if suUsesEnet() or suUsesDc() then
+      suTallyOpen "cross"
+      try
+         stSealPayload
+      catch tError
+         stSectionFailed "cross: sealed payload", tError
+      end try
+      suTallyClose
+   end if
+   -- A loopback out of this run's scope is "skip" from the start, so the pump
+   -- treats it as finished and the teardown leaves its library alone.
+   if suUsesEnet() then
+      suTallyOpen "enetxt"
+      try
+         stStartEnetLoopback
+      catch tError
+         stSectionFailed "enetxt loopback start", tError
+         put "failed" into sPhaseEn
+      end try
+      suTallyClose
+   else
+      put "skip" into sPhaseEn
+   end if
+   if suUsesDc() then
+      suTallyOpen "datachannelxt"
+      try
+         stStartDcLoopback
+      catch tError
+         stSectionFailed "datachannelxt loopback start", tError
+         put "failed" into sPhaseDc
+      end try
+      suTallyClose
+   else
+      put "skip" into sPhaseDc
+   end if
+   -- The budget's ENet half needs the ENet loopback's live peer, so it runs
+   -- where that does (its DataChannel half runs inside the DC loopback).
+   if suUsesEnet() then
+      suTallyOpen "cross"
+      try
+         stCrossBudgetSection
+      catch tError
+         stSectionFailed "cross: 60000-byte budget", tError
+      end try
+      suTallyClose
+   end if
 
    put the milliseconds + kStDeadlineMs into sDeadline
    stShow
+   suSyncDone
    send "stPump" to me in 33 milliseconds
 end stRun
 
@@ -1891,7 +3777,7 @@ command stOnionSection
 
    stSection "OnionXT: pure-compute address paths (no Tor daemon touched)"
    if not sHaveOnion then
-      stSkip "OnionXT surface", "start using stack " & quote & "onionxt" & quote
+      stSkip "OnionXT surface", "the embedded onionxt layer did not answer its probe; the paste is damaged"
       exit stOnionSection
    end if
 
@@ -2193,7 +4079,7 @@ command stCrossOnionSection
    stSection "CROSS: OnionXT advertises its real SodiumXT-backed capabilities"
    if not sHaveOnion then
       stSkip "OnionXT capability negotiation", \
-            "start using stack " & quote & "onionxt" & quote
+            "the embedded onionxt layer did not answer its probe; the paste is damaged"
       exit stCrossOnionSection
    end if
 
@@ -2281,7 +4167,9 @@ command stCrossBudgetSection
       stAssert "enSend refuses 60001 bytes with -4 (never truncates)", \
             enSend(sEnClientPeer, 0, tOver, 0) is -4
    end if
-   if not sHaveDc then
+   if not suUsesDc() then
+      stNote "the datachannelxt half is not in this run's scope"
+   else if not sHaveDc then
       stSkip "datachannelxt refuses 60001 bytes", \
             "install org.openxtalk.library.datachannel"
    else
@@ -2607,6 +4495,11 @@ end stCheckSealed
 command stPump
    local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tEvents, tEvent
+   -- PINNED FIRST (engine note 5.3). This handler arrives by `send ... in`, and
+   -- since D-23 it paints the board's rows and views as well as the report;
+   -- every one of those names a control unqualified, so the defaultStack is
+   -- set once here rather than trusted painter by painter.
+   set the defaultStack to the short name of this stack
    if sAsyncRunning is not "true" then
       exit stPump
    end if
@@ -2617,6 +4510,7 @@ command stPump
    -- libtorrent session would all leak until the maintainer closed the stack.
    -- Marking the phase "failed" lets the run converge and tear down properly.
    if not stEnDone() then
+      suTallyOpen "enetxt"
       try
          put enPoll(sEnServer) into tEvents
          repeat for each element tEvent in tEvents
@@ -2632,9 +4526,11 @@ command stPump
          stNote "it raised:" && tError
          put "failed" into sPhaseEn
       end try
+      suTallyClose
    end if
 
    if not stDcDone() then
+      suTallyOpen "datachannelxt"
       try
          put dcPoll() into tEvents
          repeat for each element tEvent in tEvents
@@ -2646,6 +4542,7 @@ command stPump
          stNote "it raised:" && tError
          put "failed" into sPhaseDc
       end try
+      suTallyClose
    end if
 
    if stEnDone() and stDcDone() then
@@ -2657,14 +4554,18 @@ command stPump
    -- the section that hung and finish everything else.
    if the milliseconds > sDeadline then
       if not stEnDone() then
+         suTallyOpen "enetxt"
          stAssert "enet loopback finished before the deadline", false
          stNote "stalled in phase" && sPhaseEn & "; UDP to 127.0.0.1 may be blocked"
          put "failed" into sPhaseEn
+         suTallyClose
       end if
       if not stDcDone() then
+         suTallyOpen "datachannelxt"
          stAssert "datachannel loopback finished before the deadline", false
          stNote "stalled in phase" && sPhaseDc & "; UDP to this machine may be blocked"
          put "failed" into sPhaseDc
+         suTallyClose
       end if
       stFinish
       exit stPump
@@ -2694,12 +4595,17 @@ command stPump
    catch tError
       if sRenderNoted is not "true" then
          put "true" into sRenderNoted
+         suTallyOpen "cross"
          stAssert "the report rendered from the pump", false
          stNote "it raised:" && tError
          stNote "the run continues; the report is assembled in a variable and"
          stNote "does not depend on the field it failed to write"
+         suTallyClose
       end if
    end try
+   -- The board's paint, contained on its own (suPumpPaint swallows its own
+   -- throw) so it can neither break the chain nor be mistaken for the report.
+   suPumpPaint
    send "stPump" to me in 33 milliseconds
 end stPump
 
@@ -2709,34 +4615,48 @@ command stFinish
    -- Run last: OnionXT's capability advertisement is pure compute, but reading
    -- it here keeps the whole cross-member story in one block at the end of the
    -- report, next to the transports it describes.
-   try
-      stCrossOnionSection
-   catch tError
-      stSectionFailed "cross: OnionXT capabilities", tError
-   end try
+   -- It is OnionXT's capability advertisement checked against SodiumXT, so it
+   -- belongs to OnionXT's own row as much as to the cross row.
+   if suInScope("onionxt") or suInScope("cross") then
+      suTallyOpen "cross"
+      try
+         stCrossOnionSection
+      catch tError
+         stSectionFailed "cross: OnionXT capabilities", tError
+      end try
+      suTallyClose
+   end if
 
    -- Teardown is contained too, but it is the ONE thing that must be attempted
    -- no matter what came before: stCleanup on closeStack is the safety net if a
    -- handle survives this.
+   suTallyOpen "cross"
    try
       stTeardown
    catch tError
       stSectionFailed "teardown", tError
    end try
+   suTallyClose
 
+   -- The window's boot record goes in just ABOVE the summary, uncounted, so
+   -- the summary stays the report's last section (the runbook's contract).
+   suBootIntoReport
    stSection "summary"
-   stNote "This is a sampler, not a full per-member selftest: it drives the"
-   stNote "headline paths and the cross-member seams. Each member has a deeper"
-   stNote "harness that still needs its own engine run. Paste these numbers back."
+   suSummaryNotes
    put empty into sAsyncRunning
    stReportDone
+   suAfterDone
 end stFinish
 
 -- Everything this file opened gets closed, in dependency order, each guarded so
 -- one absent member cannot stop the rest from being released.
 command stTeardown
    stSection "teardown (nothing may outlive the run)"
-   if sHaveDc then
+   -- A transport this run's SCOPE never started is not asserted on: a
+   -- SodiumXT-only run must not report dcCleanup or enDeinitialize for a
+   -- library it never initialised. stCleanup still frees everything, bare and
+   -- guarded, exactly as before.
+   if sHaveDc and suUsesDc() then
       if sDcChanA is not empty and sDcChanA > 0 then
          dcCloseChannel sDcChanA
          dcFreeChannel sDcChanA
@@ -2757,7 +4677,7 @@ command stTeardown
    put empty into sDcPeerA
    put empty into sDcPeerB
 
-   if sHaveEnet then
+   if sHaveEnet and suUsesEnet() then
       if sEnServer is not empty and sEnServer > 0 then
          stAssert "enHostDestroy(server) returns 0", enHostDestroy(sEnServer) is 0
       end if
@@ -2848,15 +4768,26 @@ end stCleanup
 -- `sAsyncRunning is "true"` guard, both would drive the same phase machine, and every
 -- assertion would be counted twice - a silently wrong report, which is worse
 -- than no report. `the pendingMessages` lines are id,time,message,object.
+--
+-- EVERY TIMER THIS FILE ARMS is cancelled here: the pump, and a row's armed
+-- Run (suRunTick), whose run would otherwise start on top of the one Run all
+-- just began. check-suite-selftest.py holds the two lists together. The
+-- carried blocks' own timers are not the core's to cancel: the self-check's
+-- one delayed probe restores what it touches, and the kit's copy flash is not
+-- used here. The item delimiter is restored (engine note 2.3): this runs
+-- inside stRun, above sections that split items of their own.
 command stCancelPump
-   local tPending, tLine
+   local tPending, tLine, tOld
    put the pendingMessages into tPending
+   put the itemDelimiter into tOld
    set the itemDelimiter to comma
    repeat for each line tLine in tPending
-      if item 3 of tLine is "stPump" then
+      if item 3 of tLine is "stPump" or item 3 of tLine is "suRunTick" then
          cancel (item 1 of tLine)
       end if
    end repeat
+   set the itemDelimiter to tOld
+   put empty into sSuArmed
 end stCancelPump
 
 -- Count a bridged list WITHOUT `the number of elements` (the sibling selftests
@@ -2916,9 +4847,13 @@ end stRepeatByte
 command stRunMemberHarnesses
    local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tNxReport, tNxCaps, tNxFloor -- NostrXT's probe-selected floor (its call site)
-   stSection "deep per-member self-tests (each member's own harness, folded in)"
-   stNote "Each of these is the SAME harness that member ships standalone."
-   stNote "A failure here means the same thing it would mean there."
+   -- The header is the run's, not a member's (no tally is open), and a
+   -- cross-only run folds no member, so it prints nothing here.
+   if sSuScope is not "cross" then
+      stSection "deep per-member self-tests (each member's own harness, folded in)"
+      stNote "Each of these is the SAME harness that member ships standalone."
+      stNote "A failure here means the same thing it would mean there."
+   end if
 
    -- SodiumXT, OnionXT, Box2Dxt, Riptide and holde-em return their report as a
    -- string; CoinXT, TorrentXT, ENetXT and DataChannelXT accumulate into their
@@ -2928,8 +4863,8 @@ command stRunMemberHarnesses
    --
    -- THE THIRD ARGUMENT TO stMergeReturned IS A FLOOR: the fewest items that
    -- member can attempt in any environment it supports (checks + skips). Read
-   -- stMergeFloor for what it does and does not catch. TWO of the six are
-   -- measured today:
+   -- stMergeFloor for what it does and does not catch. TWO of the six
+   -- returned-report members are measured today:
    --
    --   OnionXT   51, derived section by section at its call site below. It is
    --             the member whose harness can degrade the furthest (its skips
@@ -2950,127 +4885,151 @@ command stRunMemberHarnesses
    --             has already paid once for a gate that reported the constants
    --             it had PARSED as the ones it had CHECKED. So the four carry
    --             the honest floor and say so, and measuring them is open work.
-   if sHaveSodium then
-      try
-         -- floor 1: catastrophic only, not measured (see above)
-         stMergeReturned "SodiumXT", sx1sxSelfTest(), 1
-      catch tError
-         stSectionFailed "SodiumXT deep self-test", tError
-      end try
-   else
-      stSkip "SodiumXT deep self-test", "install org.openxtalk.library.sodium"
+   if suInScope("sodiumxt") then
+      suTallyOpen "sodiumxt"
+      if sHaveSodium then
+         try
+            -- floor 1: catastrophic only, not measured (see above)
+            stMergeReturned "SodiumXT", sx1sxSelfTest(), 1
+         catch tError
+            stSectionFailed "SodiumXT deep self-test", tError
+         end try
+      else
+         stSkip "SodiumXT deep self-test", "install org.openxtalk.library.sodium"
+      end if
+      suTallyClose
    end if
 
-   if sHaveOnion then
-      try
-         -- THE FLOOR IS 51, and the arithmetic is here because a number with
-         -- no derivation beside it is a number nobody dares to change - which
-         -- is how a ratchet quietly becomes a decoration. onionxt's harness
-         -- runs twelve sections; nine of them can bail out, and since
-         -- 2026-08-17 every bail-out counts as one skip. Attempted = checks +
-         -- skips, per section, worst case:
-         --    1 version and capabilities     6   unconditional
-         --    2 initial state                1   3 checks, or 1 skip when this
-         --                                       session is already authed
-         --    3 fail-closed arguments        6   5 unconditional, + 4 pre-auth
-         --                                       checks or 1 skip
-         --    4 unknown handles             10   unconditional
-         --    5 idempotent teardown          3   2 unconditional, + oxStopTor:
-         --                                       1 check, or 1 skip if authed
-         --    6 address round-trip           6   2 addresses x (2 + 1 either
-         --                                       way: re-encode or skip)
-         --    7 address negative paths       4   3, + 1 either way
-         --    8 SodiumXT ABI-6 composition   2   2 x (check or skip)
-         --    9 configuration setters       10   unconditional
-         --   10 loopback guard               1   18 checks, or 1 skip where
-         --                                       oxHostOfSocket is not in this
-         --                                       script
-         --   11 oxh* HTTP helpers            1   27 checks, or 1 skip where
-         --                                       onion-httpd is not in this
-         --                                       script (THIS paste: it is not)
-         --   12 SOCKS timeout reasons        1   3 checks, or 1 skip where
-         --                                       the library is not in this
-         --                                       script
-         --                                  --
-         --                                  51
-         -- THIS paste normally attempts 70-75: sections 10 and 12 resolve here
-         -- because the generator embeds the library into this same script,
-         -- section 11 is one skip because it does not embed onion-httpd, and
-         -- an already-authenticated session trades sections 2 and 3's seven
-         -- checks for two skips. The floor is deliberately the
-         -- environment-proof 51 rather than the paste-expected 70: a floor that
-         -- can false-fail an engine session is worth less than a floor that
-         -- catches less, and the degraded case is no longer invisible anyway -
-         -- it arrives as up to 11 skips on the summary line.
-         --
-         -- RE-DERIVED 2026-09-24. This read 41 over ten sections until then,
-         -- and 41 had gone stale without going WRONG: section 3 grew two
-         -- pre-auth checks and section 4 five unconditional ones (2026-08-20,
-         -- 2026-08-24), and section 11 arrived, all without the floor moving -
-         -- a floor below the true minimum still passes, so nothing said so.
-         -- Cross-check on the arithmetic: onionxt's CLAUDE.md records a
-         -- 2026-08-12 engine run at 43 checks, which was sections 1-9 at their
-         -- best case then, and 2026-08-17's 61, which was those 43 plus section
-         -- 10's 18; sections 1-9 read 53 at best today, those 43 plus the 7
-         -- above plus 2026-09-24's three (oxTransportDial and oxLaunchTor in
-         -- section 3, oxStopTor in section 5). Verified statically; needs an
-         -- OXT pass.
-         stMergeReturned "OnionXT", ox1oxSelfTest(), 51
-      catch tError
-         stSectionFailed "OnionXT deep self-test", tError
-      end try
-   else
-      stSkip "OnionXT deep self-test", "install org.openxtalk.library.onion"
+   if suInScope("onionxt") then
+      suTallyOpen "onionxt"
+      if sHaveOnion then
+         try
+            -- THE FLOOR IS 51, and the arithmetic is here because a number with
+            -- no derivation beside it is a number nobody dares to change - which
+            -- is how a ratchet quietly becomes a decoration. onionxt's harness
+            -- runs twelve sections; nine of them can bail out, and since
+            -- 2026-08-17 every bail-out counts as one skip. Attempted = checks +
+            -- skips, per section, worst case:
+            --    1 version and capabilities     6   unconditional
+            --    2 initial state                1   3 checks, or 1 skip when this
+            --                                       session is already authed
+            --    3 fail-closed arguments        6   5 unconditional, + 4 pre-auth
+            --                                       checks or 1 skip
+            --    4 unknown handles             10   unconditional
+            --    5 idempotent teardown          3   2 unconditional, + oxStopTor:
+            --                                       1 check, or 1 skip if authed
+            --    6 address round-trip           6   2 addresses x (2 + 1 either
+            --                                       way: re-encode or skip)
+            --    7 address negative paths       4   3, + 1 either way
+            --    8 SodiumXT ABI-6 composition   2   2 x (check or skip)
+            --    9 configuration setters       10   unconditional
+            --   10 loopback guard               1   18 checks, or 1 skip where
+            --                                       oxHostOfSocket is not in this
+            --                                       script
+            --   11 oxh* HTTP helpers            1   27 checks, or 1 skip where
+            --                                       onion-httpd is not in this
+            --                                       script (THIS paste: it is not)
+            --   12 SOCKS timeout reasons        1   3 checks, or 1 skip where
+            --                                       the library is not in this
+            --                                       script
+            --                                  --
+            --                                  51
+            -- THIS paste normally attempts 70-75: sections 10 and 12 resolve here
+            -- because the generator embeds the library into this same script,
+            -- section 11 is one skip because it does not embed onion-httpd, and
+            -- an already-authenticated session trades sections 2 and 3's seven
+            -- checks for two skips. The floor is deliberately the
+            -- environment-proof 51 rather than the paste-expected 70: a floor that
+            -- can false-fail an engine session is worth less than a floor that
+            -- catches less, and the degraded case is no longer invisible anyway -
+            -- it arrives as up to 11 skips on the summary line.
+            --
+            -- RE-DERIVED 2026-09-24. This read 41 over ten sections until then,
+            -- and 41 had gone stale without going WRONG: section 3 grew two
+            -- pre-auth checks and section 4 five unconditional ones (2026-08-20,
+            -- 2026-08-24), and section 11 arrived, all without the floor moving -
+            -- a floor below the true minimum still passes, so nothing said so.
+            -- Cross-check on the arithmetic: onionxt's CLAUDE.md records a
+            -- 2026-08-12 engine run at 43 checks, which was sections 1-9 at their
+            -- best case then, and 2026-08-17's 61, which was those 43 plus section
+            -- 10's 18; sections 1-9 read 53 at best today, those 43 plus the 7
+            -- above plus 2026-09-24's three (oxTransportDial and oxLaunchTor in
+            -- section 3, oxStopTor in section 5). Verified statically; needs an
+            -- OXT pass.
+            stMergeReturned "OnionXT", ox1oxSelfTest(), 51
+         catch tError
+            stSectionFailed "OnionXT deep self-test", tError
+         end try
+      else
+         stSkip "OnionXT deep self-test", "the embedded onionxt layer did not answer its probe; the paste is damaged"
+      end if
+      suTallyClose
    end if
 
    -- BOTH pieces, because ten of the folded sections call the script layer and
    -- would report FAIL rather than SKIP without it (see stProbe).
-   if sHaveCoin and sHaveCoinScript then
-      try
-         cx1stRun
-         stMergeCounted "CoinXT", cx1sResultText, cx1sPassed, cx1sFailed, cx1sTotal, cx1sSkipped
-      catch tError
-         stSectionFailed "CoinXT deep self-test", tError
-      end try
-   else if sHaveCoin then
-      stSkip "CoinXT deep self-test", "the extension is loaded but its SCRIPT layer is not:" && \
-            "start using stack " & quote & "coinxt" & quote & \
-            " - 10 of its 27 sections need it"
-   else
-      stSkip "CoinXT deep self-test", "install org.openxtalk.library.coin"
+   if suInScope("coinxt") then
+      suTallyOpen "coinxt"
+      if sHaveCoin and sHaveCoinScript then
+         try
+            cx1stRun
+            stMergeCounted "CoinXT", cx1sResultText, cx1sPassed, cx1sFailed, cx1sTotal, cx1sSkipped
+         catch tError
+            stSectionFailed "CoinXT deep self-test", tError
+         end try
+      else if sHaveCoin then
+         stSkip "CoinXT deep self-test", "the extension is loaded but the embedded script" && \
+               "layer did not answer its probe (the paste is damaged); its script-layer" && \
+               "sections need it"
+      else
+         stSkip "CoinXT deep self-test", "install org.openxtalk.library.coin"
+      end if
+      suTallyClose
    end if
 
-   if sHaveTorrent then
-      try
-         bt1stRun
-         stMergeCounted "TorrentXT", bt1sResultText, bt1sPassed, bt1sFailed, bt1sTotal, bt1sSkipped
-      catch tError
-         stSectionFailed "TorrentXT deep self-test", tError
-      end try
-   else
-      stSkip "TorrentXT deep self-test", sTorrentNote
+   if suInScope("torrentxt") then
+      suTallyOpen "torrentxt"
+      if sHaveTorrent then
+         try
+            bt1stRun
+            stMergeCounted "TorrentXT", bt1sResultText, bt1sPassed, bt1sFailed, bt1sTotal, bt1sSkipped
+         catch tError
+            stSectionFailed "TorrentXT deep self-test", tError
+         end try
+      else
+         stSkip "TorrentXT deep self-test", sTorrentNote
+      end if
+      suTallyClose
    end if
 
-   if sHaveEnet then
-      try
-         en1stRun
-         stMergeCounted "ENetXT (sync half)", en1sResultText, en1sPassed, en1sFailed, en1sTotal, en1sSkipped
-      catch tError
-         stSectionFailed "ENetXT deep self-test", tError
-      end try
-   else
-      stSkip "ENetXT deep self-test", "install org.openxtalk.library.enet"
+   if suInScope("enetxt") then
+      suTallyOpen "enetxt"
+      if sHaveEnet then
+         try
+            en1stRun
+            stMergeCounted "ENetXT (sync half)", en1sResultText, en1sPassed, en1sFailed, en1sTotal, en1sSkipped
+         catch tError
+            stSectionFailed "ENetXT deep self-test", tError
+         end try
+      else
+         stSkip "ENetXT deep self-test", "install org.openxtalk.library.enet"
+      end if
+      suTallyClose
    end if
 
-   if sHaveDc then
-      try
-         dc1stRun
-         stMergeCounted "DataChannelXT (sync half)", dc1sResultText, dc1sPassed, dc1sFailed, dc1sTotal, dc1sSkipped
-      catch tError
-         stSectionFailed "DataChannelXT deep self-test", tError
-      end try
-   else
-      stSkip "DataChannelXT deep self-test", "install org.openxtalk.library.datachannel"
+   if suInScope("datachannelxt") then
+      suTallyOpen "datachannelxt"
+      if sHaveDc then
+         try
+            dc1stRun
+            stMergeCounted "DataChannelXT (sync half)", dc1sResultText, dc1sPassed, dc1sFailed, dc1sTotal, dc1sSkipped
+         catch tError
+            stSectionFailed "DataChannelXT deep self-test", tError
+         end try
+      else
+         stSkip "DataChannelXT deep self-test", "install org.openxtalk.library.datachannel"
+      end if
+      suTallyClose
    end if
 
    -- BOX2DXT RUNS AFTER THE TRANSPORTS AND BEFORE RIPTIDE, and unlike every
@@ -3078,21 +5037,26 @@ command stRunMemberHarnesses
    -- graphics and images (all named st_*), drives them through a real physics
    -- world, and wipes them again. That is exactly what it does standalone; the
    -- only difference here is whose card it is. Its own stWipe deletes controls
-   -- by the "st_" prefix, which none of this harness's window controls carry
-   -- (stTitle, stSummary, stResults, stCopy, stRerun - no underscore), and its
+   -- by the "st_" and "b2k" prefixes, which none of this harness's window
+   -- controls carry (stSummary, stResults, stCopy, stRerun and the board's su*
+   -- and ui* controls; D-23), and its
    -- last act is b2kStop + b2kTeardown, which bump the Kit's generation tag so
    -- any frame message still queued from its worlds is a no-op. It therefore
    -- has to finish BEFORE the cross-member loopbacks below arm their pump.
-   if sHaveBox2d then
-      try
-         -- floor 1: catastrophic only, not measured (see above)
-         stMergeReturned "Box2Dxt", b21stSelfTest(), 1
-      catch tError
-         stSectionFailed "Box2Dxt deep self-test", tError
-      end try
-   else
-      stSkip "Box2Dxt deep self-test", "install org.openxtalk.box2dxt (the b2k " & \
-            "Kit is embedded in this paste, but the physics is native)"
+   if suInScope("box2dxt") then
+      suTallyOpen "box2dxt"
+      if sHaveBox2d then
+         try
+            -- floor 1: catastrophic only, not measured (see above)
+            stMergeReturned "Box2Dxt", b21stSelfTest(), 1
+         catch tError
+            stSectionFailed "Box2Dxt deep self-test", tError
+         end try
+      else
+         stSkip "Box2Dxt deep self-test", "install org.openxtalk.box2dxt (the b2k " & \
+               "Kit is embedded in this paste, but the physics is native)"
+      end if
+      suTallyClose
    end if
 
    -- Riptide is an APP layer over the extensions above, so it runs after them:
@@ -3100,16 +5064,20 @@ command stRunMemberHarnesses
    -- harness handles a missing optional extension itself (sections SKIP), and
    -- refuses cleanly without SodiumXT, so the only gate here is the embedded
    -- layer being present at all.
-   if sHaveRiptideScript then
-      try
-         -- floor 1: catastrophic only, not measured (see above)
-         stMergeReturned "Riptide Social (phases 1-8)", rs1rsSelfTest(), 1
-      catch tError
-         stSectionFailed "Riptide deep self-test", tError
-      end try
-   else
-      stSkip "Riptide deep self-test", \
-            "the riptide script layer is not present; the paste is damaged"
+   if suInScope("riptide") then
+      suTallyOpen "riptide"
+      if sHaveRiptideScript then
+         try
+            -- floor 1: catastrophic only, not measured (see above)
+            stMergeReturned "Riptide Social (phases 1-8)", rs1rsSelfTest(), 1
+         catch tError
+            stSectionFailed "Riptide deep self-test", tError
+         end try
+      else
+         stSkip "Riptide deep self-test", \
+               "the riptide script layer is not present; the paste is damaged"
+      end if
+      suTallyClose
    end if
 
    -- NostrXT is another protocol layer over the extensions: its harness
@@ -3118,80 +5086,84 @@ command stRunMemberHarnesses
    -- layer defines the engine's socket handlers, which the embedded onionxt
    -- layer already defines, so it is deliberately not in this paste
    -- (nostrxt/CLAUDE.md, the two-file split).
-   if sHaveNostrScript then
-      try
-         -- THE FLOOR IS 278 WITH COINXT AND 253 WITHOUT, and it is the first
-         -- floor here chosen by a probe, because this is the first harness
-         -- whose every item-count branch hangs off one probe the core can
-         -- read. Attempted = passed + failed + skipped (stMergeReturned);
-         -- a skip counts as ONE item, and a section that bails out emits a
-         -- fixed number of skips rather than one per check it did not run.
-         --
-         -- THE DATED RECORD: 2026-08-24, Windows x86_64, OXT 9.6.3, this
-         -- paste with CoinXT and SodiumXT ABI 10 installed: 274 passed, 0
-         -- failed, 2 skipped = 276 attempted (nostrxt/CLAUDE.md, the ledger).
-         -- Counted by hand section by section it is exactly that: 274 checks,
-         -- and the 2 skips are section 17 (the nxr* relay layer, which is
-         -- never in this paste, so it is 2 skips here in every environment).
-         -- 2026-09-24 added 3 unconditional checks (the 2026-09-09 fix's
-         -- pins in sections 4 and 14), so that configuration now attempts
-         -- 279. What moves the count, and nothing else does (every other
-         -- nxtCheck runs in every environment; pass or fail, it counts):
-         --    CoinXT absent   section 6: 2 skips for its 19 or 17; section
-         --                    9: 2 skips for its 8; section 11: 1 skip for
-         --                    its 4 or 5 post-probe checks      -> 253
-         --    SodiumXT absent section 6: 1 skip for 3 key-generation checks
-         --                    (-2); no cipher, so section 11 takes the
-         --                    fail-closed branch, 3 checks for 2 (+1)
-         --    SodiumXT < 10   section 11's 3-check branch only (+1)
-         -- So with CoinXT the count is 278 (no SodiumXT), 279 (the record's
-         -- configuration) or 280 (a pre-ABI-10 SodiumXT); without it, 253
-         -- whatever SodiumXT is. Measured, not only added up: the real
-         -- harness was run through the family interpreter
-         -- (nostrxt/tools/lcs-interp.py) in all six combinations, over the
-         -- committed sibling binaries, and printed exactly these totals (its
-         -- one FAIL in every run, "nxUnixNow is after the fixture era", is
-         -- the interpreter's fixed deterministic clock, not a defect, and a
-         -- FAIL counts as attempted all the same). That settles the
-         -- COUNTING, which is logic; the floor itself has not met an
-         -- engine: verified statically; needs an OXT pass.
-         --
-         -- WHY TWO NUMBERS, when OnionXT's one environment-proof 41 sits
-         -- under its paste-expected 58. A single number must be <= 253 to
-         -- spare a CoinXT-less engine, and 253 is 26 items under the record's
-         -- 279 - the whole of section 12 could vanish from a fully equipped
-         -- run and still read green, which is the silent shrink a floor is
-         -- for. OnionXT could not do better: its skips follow runtime state
-         -- (an authed session, a daemon) that nothing here can read. This
-         -- harness branches on ONE cached answer, nxProbeCapabilities()'s
-         -- hasCoin, which it reads first thing; the embedded core is
-         -- unprefixed, so the call below returns that SAME cached array -
-         -- read after the harness has run, so the floor keys on the answer
-         -- the harness actually branched on and cannot disagree with it.
-         -- Taking the minimum across the SodiumXT cases keeps it
-         -- environment-proof within each branch: a green run in ANY
-         -- supported install meets it, and a run in the record's
-         -- configuration that lost 2 or more items does not (3 on a
-         -- pre-ABI-10 SodiumXT; 1 without SodiumXT, or without CoinXT).
-         --
-         -- A HARNESS EDIT THAT REMOVES A CHECK MUST RE-DERIVE THIS, in the
-         -- same change; adding one only widens the margin. Nothing gates it
-         -- headlessly: one interpreted run of the whole harness took 15 to
-         -- 35 minutes per environment on the machine that measured it.
-         put nx1nxSelfTest() into tNxReport
-         put nxProbeCapabilities() into tNxCaps
-         if tNxCaps["hasCoin"] is true then
-            put 278 into tNxFloor
-         else
-            put 253 into tNxFloor
-         end if
-         stMergeReturned "NostrXT", tNxReport, tNxFloor
-      catch tError
-         stSectionFailed "NostrXT deep self-test", tError
-      end try
-   else
-      stSkip "NostrXT deep self-test", \
-            "the nostrxt script layer is not present; the paste is damaged"
+   if suInScope("nostrxt") then
+      suTallyOpen "nostrxt"
+      if sHaveNostrScript then
+         try
+            -- THE FLOOR IS 278 WITH COINXT AND 253 WITHOUT, and it is the first
+            -- floor here chosen by a probe, because this is the first harness
+            -- whose every item-count branch hangs off one probe the core can
+            -- read. Attempted = passed + failed + skipped (stMergeReturned);
+            -- a skip counts as ONE item, and a section that bails out emits a
+            -- fixed number of skips rather than one per check it did not run.
+            --
+            -- THE DATED RECORD: 2026-08-24, Windows x86_64, OXT 9.6.3, this
+            -- paste with CoinXT and SodiumXT ABI 10 installed: 274 passed, 0
+            -- failed, 2 skipped = 276 attempted (nostrxt/CLAUDE.md, the ledger).
+            -- Counted by hand section by section it is exactly that: 274 checks,
+            -- and the 2 skips are section 17 (the nxr* relay layer, which is
+            -- never in this paste, so it is 2 skips here in every environment).
+            -- 2026-09-24 added 3 unconditional checks (the 2026-09-09 fix's
+            -- pins in sections 4 and 14), so that configuration now attempts
+            -- 279. What moves the count, and nothing else does (every other
+            -- nxtCheck runs in every environment; pass or fail, it counts):
+            --    CoinXT absent   section 6: 2 skips for its 19 or 17; section
+            --                    9: 2 skips for its 8; section 11: 1 skip for
+            --                    its 4 or 5 post-probe checks      -> 253
+            --    SodiumXT absent section 6: 1 skip for 3 key-generation checks
+            --                    (-2); no cipher, so section 11 takes the
+            --                    fail-closed branch, 3 checks for 2 (+1)
+            --    SodiumXT < 10   section 11's 3-check branch only (+1)
+            -- So with CoinXT the count is 278 (no SodiumXT), 279 (the record's
+            -- configuration) or 280 (a pre-ABI-10 SodiumXT); without it, 253
+            -- whatever SodiumXT is. Measured, not only added up: the real
+            -- harness was run through the family interpreter
+            -- (nostrxt/tools/lcs-interp.py) in all six combinations, over the
+            -- committed sibling binaries, and printed exactly these totals (its
+            -- one FAIL in every run, "nxUnixNow is after the fixture era", is
+            -- the interpreter's fixed deterministic clock, not a defect, and a
+            -- FAIL counts as attempted all the same). That settles the
+            -- COUNTING, which is logic; the floor itself has not met an
+            -- engine: verified statically; needs an OXT pass.
+            --
+            -- WHY TWO NUMBERS, when OnionXT's one environment-proof 51 sits
+            -- under its paste-expected 70. A single number must be <= 253 to
+            -- spare a CoinXT-less engine, and 253 is 26 items under the record's
+            -- 279 - the whole of section 12 could vanish from a fully equipped
+            -- run and still read green, which is the silent shrink a floor is
+            -- for. OnionXT could not do better: its skips follow runtime state
+            -- (an authed session, a daemon) that nothing here can read. This
+            -- harness branches on ONE cached answer, nxProbeCapabilities()'s
+            -- hasCoin, which it reads first thing; the embedded core is
+            -- unprefixed, so the call below returns that SAME cached array -
+            -- read after the harness has run, so the floor keys on the answer
+            -- the harness actually branched on and cannot disagree with it.
+            -- Taking the minimum across the SodiumXT cases keeps it
+            -- environment-proof within each branch: a green run in ANY
+            -- supported install meets it, and a run in the record's
+            -- configuration that lost 2 or more items does not (3 on a
+            -- pre-ABI-10 SodiumXT; 1 without SodiumXT, or without CoinXT).
+            --
+            -- A HARNESS EDIT THAT REMOVES A CHECK MUST RE-DERIVE THIS, in the
+            -- same change; adding one only widens the margin. Nothing gates it
+            -- headlessly: one interpreted run of the whole harness took 15 to
+            -- 35 minutes per environment on the machine that measured it.
+            put nx1nxSelfTest() into tNxReport
+            put nxProbeCapabilities() into tNxCaps
+            if tNxCaps["hasCoin"] is true then
+               put 278 into tNxFloor
+            else
+               put 253 into tNxFloor
+            end if
+            stMergeReturned "NostrXT", tNxReport, tNxFloor
+         catch tError
+            stSectionFailed "NostrXT deep self-test", tError
+         end try
+      else
+         stSkip "NostrXT deep self-test", \
+               "the nostrxt script layer is not present; the paste is damaged"
+      end if
+      suTallyClose
    end if
 
    -- HOLDE-EM RUNS LAST, and unlike every other member there is nothing to
@@ -3219,12 +5191,16 @@ command stRunMemberHarnesses
    -- writes to msg, and its "==== n pass, m fail, k skip ====" summary is a
    -- line stSummaryCounts refuses on purpose (measured 2026-08-17: the string
    -- carries the skip count too - this comment quoted it a field short).
-   try
-      -- floor 1: catastrophic only, not measured (see above)
-      stMergeReturned "holde-em (hotseat + online + Level 2)", he1heSelfTest(), 1
-   catch tError
-      stSectionFailed "holde-em deep self-test", tError
-   end try
+   if suInScope("holde-em") then
+      suTallyOpen "holde-em"
+      try
+         -- floor 1: catastrophic only, not measured (see above)
+         stMergeReturned "holde-em (hotseat + online + Level 2)", he1heSelfTest(), 1
+      catch tError
+         stSectionFailed "holde-em deep self-test", tError
+      end try
+      suTallyClose
+   end if
 end stRunMemberHarnesses
 
 -- Strip the punctuation a report hangs off its words, so "PASSED:" and
@@ -3587,10 +5563,11 @@ end stMergeCounted
 
 
 -- ==========================================================================
--- THE TWO PURE-SCRIPT LIBRARIES THEMSELVES, embedded by
+-- THE FIVE PURE-SCRIPT LIBRARIES THEMSELVES (coinxt, onionxt, the b2k
+-- Kit, riptide and the nostrxt core), embedded by
 -- tools/build-suite-selftest.py so that one paste carries the code its
--- tests test. These used to be a separate setup step (`start using
--- stack` x2), and that step cost an engine pass on 2026-08-10: a fresh
+-- tests test. The first two used to be a separate setup step (`start
+-- using stack` x2), and that step cost an engine pass on 2026-08-10: a fresh
 -- harness ran against a stale in-memory coinxt stack and reported the
 -- two failures its parser fix had already closed. Embedded, the harness
 -- and the library are built from one tree and cannot skew.
@@ -28673,28 +30650,18 @@ end rs1rstSectionDm
 
 private function rs1rstAcquireSession
    local rs1tNew, rs1tErr
-   if rs1sRsTestSession is not empty and rs1sRsTestSession > 0 then
+   -- GENERATED (tools/build-suite-selftest.py): THE SUITE CORE OWNS THE
+   -- SESSION. TorrentXT allows exactly one per process, the core opens it
+   -- in its probe and stops it at teardown, and it takes a NEW one on every
+   -- run - so a handle cached here by an earlier run is dead. Read the
+   -- core's handle on every call, and never start one: a session started
+   -- here is one nothing in this paste would ever stop. Zero means SKIP.
+   if sSession > 0 then
+      put sSession into rs1sRsTestSession
       return rs1sRsTestSession
    end if
-   -- GENERATED (tools/build-suite-selftest.py): TorrentXT allows exactly
-   -- ONE session per process and the suite core already opened it during
-   -- its probe. Alias the core's handle instead of asking for a second -
-   -- the ask would be refused, and this member's live-feed section would
-   -- SKIP while looking perfectly green.
-   if sSession > 0 then
-      put sSession into rs1tNew
-   else
-      try
-         put btStartSession() into rs1tNew
-      catch rs1tErr
-         put 0 into rs1tNew
-      end try
-   end if
-   if rs1tNew is not empty and rs1tNew > 0 then
-      put rs1tNew into rs1sRsTestSession
-   end if
-   if rs1sRsTestSession is empty or rs1sRsTestSession <= 0 then return 0
-   return rs1sRsTestSession
+   put 0 into rs1sRsTestSession
+   return 0
 end rs1rstAcquireSession
 
 private command rs1rstSectionLiveFeed pCaps

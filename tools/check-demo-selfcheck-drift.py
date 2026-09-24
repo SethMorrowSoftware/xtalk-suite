@@ -74,6 +74,21 @@ ADOPTERS = {
                  "nostrxt-demo.livecodescript"): "nd",
     os.path.join("coinxt", "examples",
                  "coin-wallet.livecodescript"): "wa",
+    # the suite paste's hand-written half, since D-23 (2026-09-24)
+    os.path.join("tests", "suite-selftest.core.livecodescript"): "su",
+}
+
+# GENERATED CARRIERS, skipped BY EXACT PATH and never by content. The suite
+# paste carries the core's copy of this block, but tools/build-suite-selftest.py
+# writes it and hoists the block's declarations above the paste's first
+# handler, so it is deliberately NOT byte-identical to the master; its --check
+# pins it to the core, whose copy this gate checks. The same table is in all
+# three carried-block drift gates, at module level so each fixture can prove
+# the skip is load-bearing and path-exact.
+GENERATED_CARRIERS = {
+    os.path.join("tests", "suite-selftest.livecodescript"):
+        "generated from the core by tools/build-suite-selftest.py, which hoists "
+        "its carried blocks' declarations; --check pins it to the core",
 }
 
 BEGIN = ("-- ==== DEMO SELF-CHECK v1 BEGIN (verbatim copy; master: "
@@ -180,6 +195,8 @@ def main():
                                  recursive=True)):
         rel = os.path.relpath(path, ROOT)
         if rel == MASTER or rel in ADOPTERS or rel.startswith(".git"):
+            continue
+        if rel in GENERATED_CARRIERS:
             continue
         head = open(path, encoding="utf-8", errors="replace").read(4000)
         if GENERATED in head:

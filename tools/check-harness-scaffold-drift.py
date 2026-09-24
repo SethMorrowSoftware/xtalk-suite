@@ -41,6 +41,23 @@ BEGIN = ("-- ==== SUITE HARNESS SCAFFOLD v1 BEGIN (verbatim copy; master: "
 END = "-- ==== SUITE HARNESS SCAFFOLD v1 END ===="
 
 
+# GENERATED CARRIERS, skipped BY EXACT PATH and never by content. The suite
+# paste carries the core's copy of this block, but it is not a copy anyone
+# edits: tools/build-suite-selftest.py writes it from the core (whose copy
+# this gate checks) and hoists the carried blocks' declarations above its
+# first handler, so it is deliberately NOT byte-identical to the master, and
+# `build-suite-selftest.py --check` pins it to the source instead. The same
+# table is in all three carried-block drift gates (ui-kit, demo-selfcheck,
+# this one), at module level so each gate's fixture can prove the skip is
+# load-bearing and path-exact - a byte copy of the paste anywhere else in
+# tests/ must still be flagged as an unregistered carrier.
+GENERATED_CARRIERS = {
+    os.path.join("tests", "suite-selftest.livecodescript"):
+        "generated from the core by tools/build-suite-selftest.py, which hoists "
+        "its carried blocks' declarations; --check pins it to the core",
+}
+
+
 def extract(path):
     text = open(os.path.join(ROOT, path), encoding="utf-8").read()
     lines = text.split("\n")
@@ -61,15 +78,13 @@ def main():
         print("check-harness-scaffold-drift: FAILED - %s" % err)
         return 1
 
-    # the generated fold carries the core's copy plus prefixed member copies
-    # (multiple markers by construction); build-suite-selftest.py --check pins
-    # it to the checked sources, so it is skipped by exact path here
-    generated = {os.path.join("tests", "suite-selftest.livecodescript")}
+    # the generated paste carries the core's copy (see GENERATED_CARRIERS);
+    # build-suite-selftest.py --check pins it to the checked source
     carriers = []
     for pattern in ("*/tests/*.livecodescript", "tests/*.livecodescript"):
         for path in sorted(glob.glob(os.path.join(ROOT, pattern))):
             rel = os.path.relpath(path, ROOT)
-            if rel in generated:
+            if rel in GENERATED_CARRIERS:
                 continue
             text = open(path, encoding="utf-8").read()
             if "GENERATED - do not edit" in text[:4000]:
