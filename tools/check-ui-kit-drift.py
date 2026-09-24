@@ -23,6 +23,13 @@ Four failure modes, all fatal:
     what makes "every demo is a kit adopter" a property of the tree rather
     than of one cleanup pass - the fleet was unified once (2026-08-14) and
     without this check the next demo would fork the look again.
+
+The suite paste's hand-written half, tests/suite-selftest.core.livecodescript,
+is an ADOPTER since D-23 (2026-09-24) - it left EXEMPT that day - and the
+GENERATED paste built from it is skipped by exact path through
+GENERATED_CARRIERS, never by content. tools/test-ui-kit-drift.py proves each
+of those fires: drift in the core, a byte copy of the paste planted elsewhere,
+the table emptied, the core re-exempted, the core unregistered.
 """
 
 import glob
@@ -155,10 +162,11 @@ def main():
 
     # every stack that CARRIES the marker must be registered - member examples
     # (subdirectories included), app sources, and the suite-level stacks in
-    # root tests/ alike. Generated files (the folded suite harness) inherit their
-    # source part's block and are checked at the SOURCE, so a generated carrier is
-    # skipped rather than registered - its freshness gate
-    # (build-suite-selftest.py --check) already pins it to the checked source.
+    # root tests/ alike. The generated suite paste inherits the core's block and
+    # is checked at the SOURCE - the core is a registered adopter (D-23) - so the
+    # paste is skipped by exact path through GENERATED_CARRIERS rather than
+    # registered; its freshness gate (build-suite-selftest.py --check) pins it to
+    # the core. A byte copy of it under any other name is still a carrier.
     # A demo's EMBEDDED region is the same case: sync-demo-embeds.py --check pins
     # it to the provider, and the provider is registered in its own right.
     carriers = []

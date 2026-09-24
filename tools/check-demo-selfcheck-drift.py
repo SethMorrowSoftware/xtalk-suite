@@ -30,7 +30,10 @@ Four failure modes, all fatal:
     actually be, and "is this string in the file" is almost never that place.
 
 Generated files are skipped: they are pinned to their sources by their own
---check.
+--check. The suite paste's hand-written core is an adopter since D-23
+(2026-09-24, prefix "su"); the GENERATED paste built from it is skipped by
+exact path through GENERATED_CARRIERS, never by content.
+tools/test-demo-selfcheck-drift.py proves both halves fire.
 """
 
 import glob

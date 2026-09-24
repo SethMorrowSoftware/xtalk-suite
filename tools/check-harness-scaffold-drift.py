@@ -13,9 +13,12 @@ outcome / per-line paint each living in only one copy.
 Three failure modes, all fatal: a registered adopter whose block differs
 from the master; a file carrying the BEGIN marker that is not registered
 (adoption must be deliberate); a registered adopter with no marker. The
-GENERATED suite harness carries the core's copy (plus prefixed member
-copies) and is pinned to its sources by build-suite-selftest.py --check,
-so generated files are skipped here.
+GENERATED suite paste carries the core's copy, markers and all (the member
+harnesses' copies are folded in prefixed, without markers), and is pinned to
+its sources by build-suite-selftest.py --check, so it is skipped here by
+exact path through GENERATED_CARRIERS, never by content.
+tools/test-harness-scaffold-drift.py proves the skip is load-bearing and
+path-exact, and that drift in the core's copy is caught.
 """
 
 import glob

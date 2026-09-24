@@ -37,9 +37,12 @@ THE TWO RULES THAT FIX BOTH, and why they are derived rather than listed
 
 PARSING, same three cuts as everywhere else in this family
     Comments are cut with a string-state-aware scanner (a `--` inside a literal
-    is not a comment); the three carried spans are cut so only the demo's own
-    code is read; and the scan reads literals, so the noise-stripper that blanks
-    them is the wrong tool - root CLAUDE.md records that lesson three times.
+    is not a comment); the carried spans (embedded libraries, the kit, the
+    self-check and - for the suite core - the harness scaffold) are cut so only
+    the demo's own code is read, and test-demo-selfcheck-drift.py proves the
+    scaffold cut is load-bearing; and the scan reads literals, so the
+    noise-stripper that blanks them is the wrong tool - root CLAUDE.md records
+    that lesson three times.
 
 USAGE
     python3 tools/check-demo-control-lists.py            # gate
