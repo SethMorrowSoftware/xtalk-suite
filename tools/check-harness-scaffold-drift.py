@@ -47,17 +47,22 @@ END = "-- ==== SUITE HARNESS SCAFFOLD v1 END ===="
 # GENERATED CARRIERS, skipped BY EXACT PATH and never by content. The suite
 # paste carries the core's copy of this block, but it is not a copy anyone
 # edits: tools/build-suite-selftest.py writes it from the core (whose copy
-# this gate checks) and hoists the carried blocks' declarations above its
-# first handler, so it is deliberately NOT byte-identical to the master, and
-# `build-suite-selftest.py --check` pins it to the source instead. The same
-# table is in all three carried-block drift gates (ui-kit, demo-selfcheck,
-# this one), at module level so each gate's fixture can prove the skip is
-# load-bearing and path-exact - a byte copy of the paste anywhere else in
-# tests/ must still be flagged as an unregistered carrier.
+# this gate checks), and `build-suite-selftest.py --check` pins it to that
+# source. Unlike the paste's kit and self-check copies, which the generator's
+# declaration hoist makes differ from their masters, this copy is
+# byte-identical to the master today (measured 2026-09-24): the block's three
+# `local` lines sit above the core's first handler, the block's own
+# stMonoFont, so the hoist takes nothing out of this span. That is layout,
+# not a contract - a declaration added lower in the master would be hoisted
+# and the copy would differ - so the paste is skipped, not registered. The
+# same table is in all three carried-block drift gates (ui-kit,
+# demo-selfcheck, this one), at module level so each gate's fixture can prove
+# the skip is load-bearing and path-exact - a byte copy of the paste anywhere
+# else in tests/ must still be flagged as an unregistered carrier.
 GENERATED_CARRIERS = {
     os.path.join("tests", "suite-selftest.livecodescript"):
-        "generated from the core by tools/build-suite-selftest.py, which hoists "
-        "its carried blocks' declarations; --check pins it to the core",
+        "generated from the core by tools/build-suite-selftest.py; --check "
+        "pins it to the core, whose copy this gate checks",
 }
 
 
