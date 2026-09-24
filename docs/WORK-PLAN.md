@@ -43,7 +43,7 @@ result. Every "engine-proven" below quotes a dated record already in the tree.
 | torrentxt | harness 101/101, Windows, 2026-08-17, 08-20 and 08-24; suite paste green 2026-08-27 (platform not recorded) | ABI 12 alert codes; Windows libtorrent pin; boundary tests; a route-key golden mirror | first contact with the 2026-09-12 binaries; demo re-opens; Tor toggle and #31-#33; closing-pass C/D; a real swarm | S1-S5, NET |
 | enetxt | folded 34, 2026-08-20; async loopback 2026-08-13 | only optional: the freshness gate's Windows DLL ABI read | standalone selftest; leg B and the LAN chat on two machines; internet chat; Mac | S1, S3, 2NET, S5 |
 | datachannelxt | folded 39, 2026-08-20; standalone async loopback 2026-08-15 | owner calls only: the Windows OpenSSL pin and notice; the legacy shim removal | loopback demo (no record at all); leg E; two-network call; browser interop; Mac | S1, S3, 2NET, S5 |
-| onionxt | offline self-test 61/0, Windows, 2026-08-17; the live-Tor core from the early bring-up | `oxLaunchTor` result checks; 3 exemptions retirable offline; roundtrip fields | Mode B (leg F); the B.12 probes; negative paths; the round trip | S1, S2, S4 |
+| onionxt | offline self-test 61/0, Windows, 2026-08-17; the live-Tor core from the early bring-up | Mode B's lifecycle (after leg F) | Mode B (leg F); the B.12 probes; negative paths; the round trip | S1, S2, S4 |
 | coinxt | 290/290, Windows x64, 2026-08-24; wallet logs to 2026-09-03 | D-17; per-push Windows/mac CI; Core residue; gap limit | row Q (ABI 7, silent payments); demo; broadcast; the wallet's post-2026-09-04 surface; Core regtest | S1, S2, NET, S5 |
 | nostrxt | core 274/0/2 and relay SEND live, both 2026-08-24 | owner scope only: phase 9 (NIP-17/59, the outbox, `.onion` relays) | relay receive, NIP-42, `ws://`, a bad certificate, forced negatives | S1, NET, a local relay |
 | box2dxt | harness v30 375/0 Windows 2026-08-20, 374/1 Linux 2026-08-21 | x86-linux glibc regression; platformer polish | the v32 total; the five games; R1; first Mac load; feel pass | S1, S5, PERSON |
@@ -51,8 +51,8 @@ result. Every "engine-proven" below quotes a dated record already in the tree.
 | nocloud | no dated pass of this stack in the tree | mtime ETag after D-10; the D-02 menu (deferred) | the 69-item checklist, web-link and Tor halves; sections 7-8 | S1, S2 |
 | holde-em | 667/0 folded, 2026-08-27 (v0.25.2) | **Level 2 not wired into play**; animations; 102 untested handlers | the v44 total; Phase 1 exit; 2d/2e/2f on real machines; the oracle round | S1-S4, 3M, PERSON |
 
-Suite coverage on 2026-09-23: **864/878** public handlers exercised by the suite
-harness; the 14 exemptions are all onionxt's. holde-em's advisory row reads 158/330
+Suite coverage on 2026-09-24: **867/878** public handlers exercised by the suite
+harness; the 11 exemptions are all onionxt's (engine socket callbacks and watchdogs). holde-em's advisory row reads 158/330
 and box2dxt's raw `b2*` row 131/376, each with an armed floor. Run
 `python3 tools/check-suite-coverage.py` rather than trusting these numbers.
 
@@ -308,8 +308,9 @@ manual dispatch (rule 5); the harness scaffold's non-adoption of the UI kit (D-1
 
 ### 2.5 onionxt
 
-- Pure script; coverage 34/48 (11 engine socket events plus 3 live-daemon exemptions:
-  `oxLaunchTor`, `oxStopTor`, `oxTransportDial`).
+- Pure script; coverage 37/48 (the 11 exemptions are engine socket callbacks and
+  watchdogs; the 3 live-daemon ones retired 2026-09-24 to harness calls on their
+  refusal paths).
 - The **live-Tor core is engine-proven** from the early bring-up (before 2026-08-08),
   `oxh*` hosting included; the offline self-test ran 61/0 on 2026-08-17 (Windows);
   coinxt's wallet logs show `oxDial` reaching third-party v3 onions (2026-09-02/03).
@@ -321,13 +322,7 @@ manual dispatch (rule 5); the harness scaffold's non-adoption of the UI kit (D-1
 
 | # | Work | Why | Size | Blocked by |
 |---|---|---|---|---|
-| 1 | **`oxLaunchTor` never checks whether the launch worked:** it ignores `the result` of the torrc write and of `open process ... for read`, and returns empty. The pipe is also never read, so tor's notice logging could fill it and block the child (inferred). Check both results; add `Log notice file` to the generated torrc, or drain the pipe | Leg F's first PASS line claims more than the code checks | S | none |
 | 2 | Mode B's lifecycle: no stdout capture, no `close process`, no torrc or DataDirectory cleanup, fixed ports, and `oxStopTor` cannot stop a child whose control connection never authenticated. `onionxt/docs/07-tor-lifecycle.md` now describes the code as it is; decide whether to implement these | A lifecycle the docs once promised | S-M | after leg F (D-07 keeps Mode B optional) |
-| 3 | **Retire the 3 live-daemon exemptions offline:** the harness calls `oxLaunchTor ""` (refused before touching disk), `oxStopTor` unauthenticated (the idempotent disconnect) and `oxTransportDial ""` (refused before `open socket`), never a non-empty non-onion host. Delete the rows in `tools/check-suite-coverage.py` ("oxTransportDial") and rebuild the paste | Coverage 37/48; the exemptions stop standing in for an evening | S | none |
-| 4 | Make the two "SOCKS handshake timed out" paths (the stream deadline and `oxSocketTimeout`) distinguishable | The 2026-09-02 log cannot say which fired; Engine #4 then observes `socketTimeout` itself | S | none |
-| 5 | `onionxt/examples/onion-roundtrip/roundtrip-example.livecodescript` writes to fields `myAddress` and `state` that nothing creates: build them in the script | Row 44's round trip needs it | S | none |
-| 6 | Code-comment truth-sync, then re-carry: the `src/onionxt.livecodescript` STATUS header ("The only path NOT yet exercised is the optional Mode B" understates what is open); `examples/onionxt-tests.livecodescript`'s header (the skip counting ran 2026-08-20; it cites the deleted IMPLEMENTATION-PLAN phase 4 and "CLAUDE.md's on-engine VERIFY checklist"); `tools/onion-kat.py`'s "doc 09 (item 11)" (docs/09 is merged into docs/01) | Stale claims carried into demos and the paste | S | none |
-| 7 | `onionxt/templates/CLAUDE.md` and its byte-identical coinxt copy say the checker has "twelve check families" (20) with dangling else as "family 13" (20), and describe the timer-pin gate's entry set as `send ... to me in` only (widened 2026-09-09). Edit both copies together | The template teaches an old gate | S | none |
 
 **Engine.**
 

@@ -55,10 +55,12 @@ script "xTalkSuiteSelfTest"
 -- own deep self-test as well, folded in whole by tools/build-suite-selftest.py:
 --
 --   sodiumxt        sxSelfTest()      24 groups, the entire sx* surface
---   onionxt         oxSelfTest()      12 sections, all offline, and since
---                                     2026-08-17 the only folded harness
---                                     whose summary carries THREE counts:
---                                     passed, failed and skipped
+--   onionxt         oxSelfTest()      12 sections, all offline; on
+--                                     2026-08-17 the first folded harness
+--                                     whose summary carried THREE counts
+--                                     (passed, failed, skipped); riptide,
+--                                     nostrxt and holde-em carry the skip
+--                                     count too now
 --   coinxt          its 32 sections    all five phases, ~300 checks
 --   torrentxt       its full harness   sharing this file's single session
 --   enetxt          its SYNC half      lifecycle, stale handles, tuning
