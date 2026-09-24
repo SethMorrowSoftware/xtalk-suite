@@ -137,6 +137,12 @@ LAW here, not carried-for-later. Change nothing without a very good reason.
   var), index with `byte x to y of`. Never `char` / `line` / `word` on binary.
 - **No `^`, `div`, `mod`, `bitAnd`, `bitOr` or `bitXor`**: arithmetic helpers, including the 31-bit `cxBitXor` the
   bech32 checksum needs. Mask every accumulator well below 2^53 (engine note 2.4).
+- **Decide a wide integer's bound on small exact integers, never against a quotient** (2026-09-24; the numeric model
+  is engine note 2.4): OXT (Win32, the suite paste) ACCEPTED 2^53 + 1 through riptide's
+  `tHi > (9007199254740992 - tLo) / 4294967296`, adjacent doubles that IEEE and `lcs-interp.py` both order
+  (OBSERVED; the tolerance or ~15-digit round trip behind it is INFERRED). `cwLeRead` / `cwBeRead` had the form, safe
+  only under an absolute tolerance, and now decide 2^53 as 32 times 2^48 on the bytes; `check-wallet-vectors.py`
+  tier 4 runs the bound under each candidate rule. Verified statically; needs an OXT pass.
 - Base58 is long division over the byte array (nothing exceeds 58 * 255), not a bit repack.
 - **Look up alphabet characters by BYTE VALUE with `cxCharIndex`, never `offset()` or `is`**: `the caseSensitive`
   defaults to false, and in Base58 `a` and `A` are different digits - the file's "most dangerous line".
@@ -488,10 +494,11 @@ a timelock payment (2026-09-01 to 09-03, testnet). Bitcoin spends over the `cx*`
 testnet; a native-P2WPKH broadcast is not recorded, and no EIP-155 / EIP-1559 transaction has been broadcast. Verified
 statically; needs an OXT pass: `cxPubkeyCombine` (ABI 7) and every binary built since 2026-09-10; the wallet surface
 added from 2026-09-04 (the Ordinals and Vault screens, testnet4, BIP-329, BIP-322, silent-payment receiving, Runes,
-BOLT11, the Core backends, the 2026-09-10 fixes); and what the logs did not reach (the update swap, mainnet Electrum on
-port 110, the stale-answer skip, paint/pump timing, the mixed tip+fees batch, the three corrected menu items, the
-backend un-marking a coin, Esplora's 400 body in the log, CPFP on a foreign transaction, an Electrum-format seed
-opening real coins, a vault release after its height). Open work is in the suite's docs/WORK-PLAN.md.
+BOLT11, the Core backends, the 2026-09-10 fixes, the 2026-09-24 byte-level 2^53 bound in `cwLeRead` / `cwBeRead`);
+and what the logs did not reach (the update swap, mainnet Electrum on port 110, the stale-answer skip, paint/pump
+timing, the mixed tip+fees batch, the three corrected menu items, the backend un-marking a coin, Esplora's 400 body in
+the log, CPFP on a foreign transaction, an Electrum-format seed opening real coins, a vault release after its height).
+Open work is in the suite's docs/WORK-PLAN.md.
 
 ## Commands
 

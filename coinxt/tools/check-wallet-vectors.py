@@ -58,9 +58,17 @@ and the run reports which. A gate that prints the number of constants it
 PARSED as the number it CHECKED is the failure this tree has already paid
 for once (coinxt's own check-selftest-vectors.py, 2026-08-13).
 
+THE COMPARISON RULE IS NOT ASSUMED (tier 4, 2026-09-24). An OXT run accepted
+2^53 + 1 through a guard every tool here refuses it with, because the engine
+did not order two adjacent doubles the way IEEE does. So the wide-integer
+bound vectors run again under each candidate rule (a relative tolerance, a
+15-digit round trip, an absolute 1e-6) and must not move under any of them.
+
 Usage:
   python3 tools/check-wallet-vectors.py            # per-check detail
   python3 tools/check-wallet-vectors.py --check    # terse (the gate set)
+  python3 tools/check-wallet-vectors.py --check --all-comparison-rules
+                                    # tier 4 over the WHOLE set (by hand)
 """
 import ctypes
 import importlib.util
@@ -69,6 +77,7 @@ import re
 import subprocess
 import sys
 import tempfile
+import types
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 MEMBER = os.path.dirname(HERE)
@@ -1523,6 +1532,97 @@ def check_script_framing(c, ip):
         c.true("%s still disassembles to something" % label, asm != "")
 
 
+def check_wide_reads(c, ip):
+    """cwLeRead and cwBeRead at the 2^53 bound, and two readers a person
+    reaches through them.
+
+    Every integer up to 2^53 is a double exactly, so the readers ANSWER to
+    2^53 inclusive and REFUSE from 2^53 + 1, the first value an engine double
+    cannot hold (engine note 2.4). Both directions in one change (trap 16): a
+    bound that refuses 2^53 itself is the same defect with the sign flipped.
+    Each value is read at its own width AND wider, with a zero byte or two
+    above it, because the rule now decides on which BYTE carries what (2^53
+    is 0x20 followed by six zero bytes) and a rank miscounted by one would
+    pass at any single width. Until 2026-09-24 no vector reached either edge: the
+    quotient guard these replaced was proven only by the interpreter's own
+    2^53 stop, never by a refusal the script made at the bound.
+
+    Every call goes through read(), which turns a refusal into its text and
+    the interpreter's 2^53 stop into a plain answer, so one bad vector cannot
+    end the run: tier 4 re-runs this whole function under each candidate
+    engine comparison rule and needs to see EVERY vector that moved.
+    """
+    call = ip.call
+    c.note("\nwide integers: the 2^53 bound at the parse site")
+    top = 2 ** 53
+
+    def read(name, args):
+        try:
+            return call(name, args)
+        except LCS.Thrown as thrown:
+            return "refused: %s" % thrown.msg
+        except LCS.Imprecise:
+            return "let past 2^53 (the interpreter's stop fired)"
+
+    def widths(n):
+        return sorted({max(1, (n.bit_length() + 7) // 8), 8, 9})
+
+    for n in (0, 1, 255, 256, 2 ** 32, 2 ** 48 - 1, 2 ** 48, top - 256,
+              top - 255, top - 1, top):
+        for w in widths(n):
+            c.ck("cwLeRead answers %d from %d bytes" % (n, w),
+                 read("cwLeRead", [to_str(n.to_bytes(w, "little"))]), n)
+            c.ck("cwBeRead answers %d from %d bytes" % (n, w),
+                 read("cwBeRead", [to_str(n.to_bytes(w, "big"))]), n)
+    c.ck("an empty field reads as 0, little-endian", read("cwLeRead", [""]), 0)
+    c.ck("an empty field reads as 0, big-endian", read("cwBeRead", [""]), 0)
+    # REFUSED, with the text each reader has thrown since 2026-09-08: 2^53 + 1
+    # and its neighbours (a set byte BELOW an 0x20 at 2^48), 0x21 at 2^48, a
+    # set byte at 2^56 and at 2^64, and a whole field of 0xff.
+    def refusal(name):
+        return "refused: %s: the value is over 2^53 and cannot be held " \
+            "exactly" % name
+
+    for n in (top + 1, top + 2, top + 255, top + 256, 33 * 2 ** 48,
+              2 ** 56 - 1, 2 ** 56, 2 ** 64 - 1, 2 ** 64, 2 ** 72 - 1):
+        for w in widths(n):
+            if n >= 256 ** w:
+                continue
+            for name, order in (("cwLeRead", "little"), ("cwBeRead", "big")):
+                c.ck("%s refuses %d from %d bytes" % (name, n, w),
+                     read(name, [to_str(n.to_bytes(w, order))]), refusal(name))
+
+    # THROUGH THE READERS A PERSON REACHES (trap 25). A fetched transaction's
+    # output value and a PSBT's witness-UTXO amount are both eight bytes of
+    # somebody else's choosing; the second is what BIP-143 signs over. Each
+    # refusal is pinned by the reader's own text, so a transaction refused
+    # for some OTHER reason cannot pass for this one.
+    spk = bytes.fromhex("0014" + "75" * 20)
+    ins = [("aa" * 32, 0, 0xFFFFFFFD)]
+    at_top = REF.tx_serialize(2, ins, [(top, spk)], 0, [b""], None).hex()
+    got = read("cwTxDecode", [at_top])
+    if isinstance(got, dict):
+        c.ck("cwTxDecode reads an output of exactly 2^53",
+             unlst(got["outputs"])[0]["value"], top)
+        c.ck("and its txid is the oracle's", got["txid"],
+             REF.tx_decode(bytes.fromhex(at_top))["txid"])
+    else:
+        c.ck("cwTxDecode reads an output of exactly 2^53", got, "a decode")
+    past = REF.tx_serialize(2, ins, [(top + 1, spk)], 0, [b""], None).hex()
+    c.ck("cwTxDecode refuses an output of 2^53 + 1 rather than rounding it",
+         read("cwTxDecode", [past]), refusal("cwLeRead"))
+
+    def utxo(value):
+        return lst([{"type": 1, "key": "",
+                     "value": value.to_bytes(8, "little").hex() + "16"
+                     + spk.hex()}])
+
+    c.ck("cwPsbtInputAmount reads a witness UTXO of exactly 2^53",
+         read("cwPsbtInputAmount", [utxo(top)]), top)
+    c.ck("cwPsbtInputAmount refuses a witness UTXO of 2^53 + 1",
+         read("cwPsbtInputAmount", [utxo(top + 1)]), refusal("cwLeRead"))
+
+
 def check_messages(c, ip):
     call = ip.call
     c.note("\nsigned messages, URIs and descriptors")
@@ -2577,6 +2677,232 @@ def check_case_folding_fires(c, ip):
     c.ck("and the real model is restored afterwards", LCS._eq("Z", "z"), False)
 
 
+# ---------------------------------------------------- tier 4: comparison rules
+#
+# THE ENGINE DID NOT ORDER TWO NUMBERS THE WAY IEEE DOES, and what it does
+# instead is not known. OBSERVED 2026-09-24 (OXT, Win32, riptide's fold in the
+# suite paste): riptide's rsReadBEu64 guarded a u64 with
+#     if tHi > (9007199254740992 - tLo) / 4294967296 then return empty
+# and for hi = 2^21, lo = 1 - the value 2^53 + 1 - IEEE answers 2097152 >
+# 2097151.99999999977 TRUE and refuses, while the engine ACCEPTED the record.
+# Python and tools/lcs-interp.py both answer as IEEE does, so every headless
+# gate was green over it. The operands are ADJACENT doubles, one ulp (2^-53 of
+# their size) apart. Why the engine called them equal is INFERRED, not
+# observed: a comparison tolerance, absolute or relative (xTalk engines are
+# widely reported to answer (0.1 + 0.2) = 0.3 as true), or a round trip
+# through about 15 significant digits.
+#
+# wallet-core's cwLeRead and cwBeRead had the same quotient form, one byte at
+# a time. At their edge the comparison was 35184372088832 against
+# 35184372088831.99609375: adjacent doubles again, but 0.0039 apart. So that
+# guard held under an ABSOLUTE tolerance smaller than the gap (1e-6, say) and
+# failed under a RELATIVE one, which swallows one ulp at any size, or a
+# 15-digit round trip, which spells the quotient 35184372088832. Whether the
+# shipped guard worked depended on a rule nobody here can name.
+#
+# So this tier names no rule. The boundary vectors (check_wide_reads) run once
+# per CANDIDATE below and must give the SAME answers under every one: the
+# question the build asks is "does this bound's answer depend on which
+# plausible comparison rule the engine has?", and for a bound on a wide
+# integer the answer has to be no. A candidate is not a claim about the
+# engine; an engine observation that fits none of them is a new row.
+#
+# SCOPE, deliberately: the wide-integer vectors, not the whole set. The swap
+# below reaches every comparison the interpreter makes, so a full re-run is
+# one flag away (--all-comparison-rules) and was run by hand on 2026-09-24;
+# the gate carries the part whose answer must never move, at a cost of
+# seconds rather than one more full pass of the slowest vector gate here.
+#
+# HOW A RULE IS SWAPPED WITHOUT TOUCHING THE INTERPRETER (byte-identical with
+# nostrxt's copy, and loaded by riptide's runner). The ordering operators live
+# inline in _Expr.p_cmp and `is` in _eq, and both coerce what they compare
+# through the module-level _n. Each is rebuilt from its own code object over a
+# COPY of the module's globals in which _n answers a float whose comparisons
+# follow the candidate - so exactly the numbers being COMPARED change, while
+# arithmetic, chunks, loop bounds and every handler an operand calls run on
+# the real _n. check_tolerance_fires proves the swap reaches both operators
+# before any vector trusts it, and that the real rule comes back.
+
+_DBL_EPSILON = 2.0 ** -52
+
+
+def _same_relative(a, b):
+    """Equal within DBL_EPSILON of the larger operand: one ulp, at any size."""
+    return abs(a - b) <= _DBL_EPSILON * max(abs(a), abs(b))
+
+
+def _same_digits15(a, b):
+    """Equal once each is spelled in 15 significant digits and read back."""
+    return float("%.15g" % a) == float("%.15g" % b)
+
+
+def _same_absolute(a, b):
+    """Equal within a fixed 1e-6, whatever the magnitude."""
+    return abs(a - b) < 1e-6
+
+
+# (the candidate, its test for "equal", and what wallet-core's OLD quotient
+# guard did with 2^53 + 1 under it - recorded as executable fact, below)
+TOLERANCE_MODELS = (
+    ("a relative tolerance (DBL_EPSILON of the larger operand)",
+     _same_relative, "let through"),
+    ("a round trip through 15 significant digits", _same_digits15,
+     "let through"),
+    ("an absolute tolerance of 1e-6", _same_absolute, "refused"),
+)
+
+
+def _tolerant_compare(same):
+    """Make the interpreter's `<`, `<=`, `>`, `>=`, `<>` and `is` answer two
+    NUMBERS as `same` says, returning what to call to put them back."""
+    real_p_cmp = LCS._Expr.p_cmp
+    real_eq = LCS._eq
+    real_n = LCS._n
+
+    class Tolerant(float):
+        __slots__ = ()
+        __hash__ = float.__hash__
+
+        def __eq__(self, other):
+            return same(float(self), float(other))
+
+        def __ne__(self, other):
+            return not same(float(self), float(other))
+
+        def __lt__(self, other):
+            return (not same(float(self), float(other))
+                    and float(self) < float(other))
+
+        def __le__(self, other):
+            return same(float(self), float(other)) or float(self) < float(other)
+
+        def __gt__(self, other):
+            return (not same(float(self), float(other))
+                    and float(self) > float(other))
+
+        def __ge__(self, other):
+            return same(float(self), float(other)) or float(self) > float(other)
+
+    def tolerant_n(v):
+        return Tolerant(real_n(v))
+
+    scope = dict(vars(LCS))
+    scope["_n"] = tolerant_n
+    tolerant_eq = types.FunctionType(real_eq.__code__, scope, real_eq.__name__)
+    scope["_eq"] = tolerant_eq
+    LCS._Expr.p_cmp = types.FunctionType(real_p_cmp.__code__, scope,
+                                         real_p_cmp.__name__)
+    LCS._eq = tolerant_eq
+
+    def restore():
+        LCS._Expr.p_cmp = real_p_cmp
+        LCS._eq = real_eq
+    return restore
+
+
+# THE TWO QUOTIENT GUARDS, as they shipped: riptide's (OBSERVED to accept
+# 2^53 + 1 on the engine) and wallet-core's cwLeRead as it stood until
+# 2026-09-24. A fixture, never shipped: it is how this tier proves it can see
+# the class it exists for.
+_QUOTIENT_GUARDS = """
+function oldRiptideU64 pHi, pLo
+   if pHi > (9007199254740992 - pLo) / 4294967296 then
+      return empty
+   end if
+   return pHi * 4294967296 + pLo
+end oldRiptideU64
+
+function oldCwLeRead pBytes
+   local tValue, tI, tCount, tByte
+   put the number of bytes of pBytes into tCount
+   put 0 into tValue
+   repeat with tI = tCount down to 1
+      put byteToNum(byte tI of pBytes) into tByte
+      if tValue > (9007199254740992 - tByte) / 256 then
+         throw "cwLeRead: the value is over 2^53 and cannot be held exactly"
+      end if
+      put tValue * 256 + tByte into tValue
+   end repeat
+   return tValue
+end oldCwLeRead
+"""
+
+
+def _guard_answer(fn):
+    """What a guard did with 2^53 + 1: refused it, or let it through to the
+    multiply - where the interpreter's 2^53 stop names it, and an engine
+    would have rounded it with no error."""
+    try:
+        got = fn()
+    except LCS.Thrown:
+        return "refused"
+    except LCS.Imprecise:
+        return "let through"
+    if got == "":
+        return "refused"
+    return "answered %r" % (got,)
+
+
+def check_tolerance_fires(c):
+    """MUTATION, in the shape this tier needs. Every candidate must reproduce
+    the ENGINE's answer on riptide's guard - the one observation there is -
+    and the exact rule must not, or the tier models nothing. The same run
+    pins which candidates broke wallet-core's old guard, so the paragraph
+    above is checked rather than believed."""
+    fixture = LCS.Interp(_QUOTIENT_GUARDS)
+    past = to_str((2 ** 53 + 1).to_bytes(8, "little"))
+
+    def answers():
+        # the two guards (`>`), and `is` over riptide's pair: the swap must
+        # reach the ordering operators AND _eq, or a vector could pass
+        # under a rule the tier never applied
+        return (_guard_answer(lambda: fixture.call("oldRiptideU64", [2 ** 21, 1])),
+                _guard_answer(lambda: fixture.call("oldCwLeRead", [past])),
+                fixture.eval_expr("2097152 is (9007199254740992 - 1) / 4294967296",
+                                  {}))
+
+    c.ck("exact IEEE refuses 2^53 + 1 at both quotient guards and tells the "
+         "pair apart (the engine ACCEPTED riptide's on 2026-09-24: the "
+         "disagreement this tier is for)",
+         answers(), ("refused", "refused", False))
+    for label, same, old_cw in TOLERANCE_MODELS:
+        restore = _tolerant_compare(same)
+        try:
+            got = answers()
+        finally:
+            restore()
+        c.ck("under %s, riptide's guard lets 2^53 + 1 through as the engine "
+             "did and `is` calls the pair equal; wallet-core's old guard: %s"
+             % (label, old_cw), got, ("let through", old_cw, True))
+    c.ck("and the exact rule is restored afterwards", answers(),
+         ("refused", "refused", False))
+
+
+def check_tolerance_models(c, ip, run):
+    """Re-run `run` under every candidate rule. Failures are reported against
+    THIS tier, naming the rule that moved them, and in the terse output the
+    build reads (see check_case_folded for why)."""
+    for label, same, _old in TOLERANCE_MODELS:
+        inner = Checker(True)
+        restore = _tolerant_compare(same)
+        try:
+            run(inner, ip)
+        except Exception as exc:                                # noqa: BLE001
+            inner.problems.append("the run stopped: %s: %s"
+                                  % (type(exc).__name__, exc))
+        finally:
+            restore()
+        detail = ""
+        if inner.problems:
+            detail = "\n      the vectors that moved:\n      " + \
+                "\n      ".join(p.replace("\n", "\n  ") for p in inner.problems[:8])
+            if len(inner.problems) > 8:
+                detail += "\n      ... and %d more" % (len(inner.problems) - 8)
+        c.ck("every vector gives the SAME answer under %s (%d re-run)%s"
+             % (label, inner.count, detail),
+             "%d differing" % len(inner.problems), "0 differing")
+
+
 def main(argv):
     terse = "--check" in argv[1:]
     c = Checker(terse)
@@ -2628,12 +2954,21 @@ def main(argv):
                 check_odds(ck, interp)
                 check_audit_2026_09_01(ck, interp)
                 check_script_framing(ck, interp)
+                check_wide_reads(ck, interp)
 
             run_all(c, ip)
             c.note("re-running the whole set with `is` and `offset()` folded "
                    "to the engine's default")
             check_case_folding_fires(c, ip)
             check_case_folded(c, ip, run_all)
+            # tier 4: the wide-integer vectors under each candidate engine
+            # comparison rule, or with --all-comparison-rules the whole set
+            # (by hand: a full pass per candidate - see the tier's header)
+            every = "--all-comparison-rules" in argv[1:]
+            c.note("re-running %s under each candidate engine comparison rule"
+                   % ("the whole set" if every else "the wide-integer vectors"))
+            check_tolerance_fires(c)
+            check_tolerance_models(c, ip, run_all if every else check_wide_reads)
 
     if c.problems:
         print("check-wallet-vectors: FAILED")
