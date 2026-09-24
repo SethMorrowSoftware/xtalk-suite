@@ -570,7 +570,7 @@ local rs1sRsTestSession
 
 -- ---- holde-em: the full he* self-test ----
 constant he1kHeVersion = "0.25.3"
-constant he1kHeHarnessV = "44"
+constant he1kHeHarnessV = "45"
 constant he1kUIVersion = "15"
 constant he1kHeRankChars = "23456789TJQKA"
 constant he1kHeSuitChars = "cdhs"
@@ -33270,13 +33270,16 @@ command he1heNetSeatLateJoiners
    -- v0.24.0 (F7): "has joined" is a HISTORICAL fact and was the only test --
    -- so a departed peer was seated as a ghost. Current liveness is now
    -- required (he1heNetPubIsLive, which carries what each transport can prove).
-   -- OPEN DECISION, deliberately not invented here: a SPECTATOR (spec 4's
-   -- read-only role) is still indistinguishable from a player at this point.
-   -- The admission token has a role field, but every client this build can
-   -- talk to sends "player" in it, so refusing on role would refuse real
-   -- players; declaring spectator intent needs a wire/UI decision, and this
-   -- change was scoped to introduce none. Recorded in CLAUDE.md and
-   -- IMPLEMENTATION-PLAN.md.
+   -- SPECTATORS ARE DEFERRED (the owner, 2026-08-16: "we do not need
+   -- spectators at this point"; holde-em/CLAUDE.md, spec 4 and the suite's
+   -- docs/OPEN-DECISIONS.md record it). So a spectator (spec 4's read-only
+   -- role) is indistinguishable from a player here, BY DECISION rather than
+   -- as an open question: the admission token has a role field, but every
+   -- client this build can talk to sends "player" in it, so refusing on
+   -- role would refuse real players, and a joiner at a table with a free
+   -- seat is seated at the next boundary with no way to decline. Picking
+   -- spectators back up needs a wire/UI decision (a role a joiner can
+   -- choose, or a sit-request the host answers), not a fix in this loop.
    local he1tPubHex, he1tPubsTxt, he1tSeatNum, he1tMaxSeats
    if he1gGame["isHost"] is not "true" then
       exit he1heNetSeatLateJoiners
@@ -39291,6 +39294,7 @@ command he1heTestRunAllSections
    he1heRunSection "he1heTestHelpersRun"
    he1heRunSection "he1heTestLeafRun"
    he1heRunSection "he1heTestLeafRun2"
+   he1heRunSection "he1heTestLeafRun3"
    he1heRunSection "he1heProbeSodium"
 end he1heTestRunAllSections
 
@@ -40954,8 +40958,16 @@ command he1heTestLevel2VoidRun
    -- the Python twins pinned from the independent reference, so a green
    -- run pins engine, xTalk, and reference to one attribution answer.
    -- SKIPs without SodiumXT; the machine half SKIPs below ABI 8; the DLEQ
-   -- half SKIPs by name below ABI 9 (the sx* DLEQ calls have never run on
-   -- an engine -- this section IS their first-contact harness).
+   -- half SKIPs by name below ABI 9. This section WAS the sx* DLEQ calls'
+   -- first-contact harness, and that contact is on record: the 2026-08-17
+   -- suite paste (Windows x86_64, NT 10.0, OXT 9.6.3; 538/0 folded at
+   -- v0.24.4 / h41) closed runbook rows 26 (the five bots attributed; 4d
+   -- by inference from the member total) and 27 (a wrong unmask refused
+   -- instantly and named) here, and the 2026-08-24 paste (584/0 at
+   -- v0.25.0 / h42) ran the DLEQ proof and refusal legs green again
+   -- (holde-em/CLAUDE.md's ledger; the runbook's section 8). It is
+   -- regression cover now; a SKIP of the DLEQ half on a later run means
+   -- the loaded SodiumXT is below ABI 9, not that the calls are untried.
    local he1tSeedsA, he1tCommitsA, he1tTableData, he1tKeyData, he1tDeckList, he1tDealA, he1tStackA
    local he1tBase, he1tD1, he1tD2, he1tD3, he1tPipe1, he1tSh1, he1tC0, he1tV1, he1tV2, he1tV3
    local he1tH0, he1tW1, he1tW2, he1tBad2, he1tBad3, he1tRevTxt, he1tStA, he1tCardTxt, he1tHoleTxt
@@ -42303,6 +42315,151 @@ command he1heTestLeafRun2
    he1heTContains "leaf2: ...carrying the wire type", he1gGame["log"], "handStart"
    put he1tSaved into he1gGame
 end he1heTestLeafRun2
+
+command he1heTestLeafRun3
+   -- 24: THIRD TRANCHE of the coverage worklist's no-test category
+   -- (2026-09-24), CONSENSUS-CRITICAL FIRST, the order the suite's work
+   -- plan gives: the betting engine's own leaves (every client folds every
+   -- wire through them, so a wrong chip here is a wrong chip everywhere and
+   -- the replay audit re-derives it clean); the v0.24.0 liveness fixes no
+   -- test NAMED although netsim reaches them (he1heNetEngineFold's
+   -- foldApplied record, he1heNetTimeoutRearm's bounded retry,
+   -- he1heNetTurnClockStart's replayed-clock flag, he1heNetTimeoutMiss's
+   -- transcript-derived sit-out); and the Level 2 helpers' PURE branches,
+   -- the refusals that return before any sx* call, so they run on every
+   -- engine and in the headless gate alike (the ristretto halves stay
+   -- sections 16 and 19's). SHALLOW ON PURPOSE, the section-22 precedent:
+   -- a value pin per branch. Same selection rule: pure functions and
+   -- he1gGame-only handlers on a SYNTHETIC he1gGame saved and restored around
+   -- the block (he1gHudDirty too, which the folds mark). Nothing here arms a
+   -- timer, touches a control, plays a sound or crosses an FFI: the folds
+   -- below are blind posts, never an `act`, because an act's accepted path
+   -- plays its verb's sound. he1heHandSettle is NOT here, deliberately, though
+   -- the plan names it: it ends by sending he1heNextHandTick, which DEALS A
+   -- HAND, and a harness must never arm that (this file's CLAUDE.md, the
+   -- fold contract).
+   local he1tSaved, he1tHudSaved, he1tS, he1tV, he1tStacksA, he1tTxt, he1tI
+   put return & "-- 24. Leaf tranche 3: consensus-critical leaves (shallow)" & return after he1gRpt
+   set the itemDelimiter to comma
+
+   -- the betting engine's leaves, on a REAL heads-up hand state from
+   -- he1heBetNewHand (seat 1 is the button and so the small blind, spec 8.1)
+   put 1000 into he1tStacksA[1]
+   put 1000 into he1tStacksA[3]
+   put he1heBetNewHand(10, 20, 0, he1tStacksA, "1,3", 1) into he1tS
+   put he1heBetPay(he1tS, 3, 40) into he1tS
+   he1heTAssert "leaf3: he1heBetPay takes the chips from behind", he1tS["stackBy"][3], 960
+   he1heTAssert "leaf3: he1heBetPay puts them on the street", he1tS["streetBy"][3], 40
+   he1heTAssert "leaf3: he1heBetPay counts them into the hand", he1tS["handBy"][3], 40
+   he1heTAssert "leaf3: he1heBetPay with chips behind is not all-in", he1tS["allinBy"][3], "false"
+   put he1heBetPay(he1tS, 3, 960) into he1tS
+   he1heTAssert "leaf3: he1heBetPay to zero behind flags all-in", he1tS["allinBy"][3], "true"
+   he1heTAssert "leaf3: ...with the whole stack in the hand", he1tS["handBy"][3], 1000
+   put he1heBetPayDead(he1tS, 1, 5) into he1tS
+   he1heTAssert "leaf3: he1heBetPayDead goes into the hand", he1tS["handBy"][1], 5
+   he1heTAssert "leaf3: he1heBetPayDead never into the street bet", he1tS["streetBy"][1], 0
+   he1heTAssert "leaf3: he1heBetPayDead comes from behind", he1tS["stackBy"][1], 995
+   he1heTAssert "leaf3: he1heBetLiveCount skips the all-in seat", he1heBetLiveCount(he1tS), 1
+   put "true" into he1tS["foldedBy"][1]
+   he1heTAssert "leaf3: he1heBetInHandList drops the folded seat", he1heBetInHandList(he1tS), "3"
+   he1heTAssert "leaf3: he1heBetLiveCount of folded plus all-in is 0", he1heBetLiveCount(he1tS), 0
+   -- who still owes action: a bigger bet to face, or no act since it
+   put he1heBetNewHand(10, 20, 0, he1tStacksA, "1,3", 1) into he1tS
+   put 20 into he1tS["betCur"]
+   put 10 into he1tS["streetBy"][1]
+   put 20 into he1tS["streetBy"][3]
+   put "true" into he1tS["actedBy"][3]
+   he1heTAssert "leaf3: he1heBetSeatPending when facing a bigger bet", he1heBetSeatPending(he1tS, 1), true
+   he1heTAssert "leaf3: he1heBetSeatPending not after matching and acting", he1heBetSeatPending(he1tS, 3), false
+   he1heTAssert "leaf3: he1heBetNextPending finds the seat that owes", he1heBetNextPending(he1tS, 3), 1
+   put 20 into he1tS["streetBy"][1]
+   put "true" into he1tS["actedBy"][1]
+   he1heTAssert "leaf3: he1heBetNextPending of a closed round is 0", he1heBetNextPending(he1tS, 3), 0
+   put 10 into he1tS["streetBy"][1]
+   put "false" into he1tS["actedBy"][1]
+   put "true" into he1tS["allinBy"][1]
+   he1heTAssert "leaf3: he1heBetSeatPending never for an all-in seat", he1heBetSeatPending(he1tS, 1), false
+
+   -- the Level 2 helpers' pure branches: chain order, the void latch,
+   -- and the two refusals that return BEFORE the ristretto probe
+   he1heTAssert "leaf3: he1heL2ChainOrder drops the hole slot's owner", he1heL2ChainOrder(4, 2), "1,3,4"
+   he1heTAssert "leaf3: he1heL2ChainOrder of a board slot is every position", he1heL2ChainOrder(3, 0), "1,2,3"
+   he1heTAssert "leaf3: he1heL2ChainOrder of a lone owner is empty", he1heL2ChainOrder(1, 1), empty
+   put "shuffle" into he1tV["phase"]
+   put he1heL2VoidMark(he1tV, 2, "void:dup-point") into he1tV
+   he1heTAssert "leaf3: he1heL2VoidMark latches the phase", he1tV["phase"], "void"
+   he1heTAssert "leaf3: he1heL2VoidMark names the position", he1tV["named"], 2
+   he1heTAssert "leaf3: he1heL2VoidMark keeps the reason", he1tV["why"], "void:dup-point"
+   he1heTAssert "leaf3: he1heL2VoidMark marks the last record void", he1tV["last"], "void"
+   he1heTAssert "leaf3: he1heL2CardPointHex refuses card 0", he1heL2CardPointHex(0), "void:card-range"
+   he1heTAssert "leaf3: he1heL2CardPointHex refuses card 53", he1heL2CardPointHex(53), "void:card-range"
+   he1heTAssert "leaf3: he1heL2CardPointHex refuses a non-integer", he1heL2CardPointHex(2.5), "void:card-range"
+   he1heTAssert "leaf3: he1heL2PointOkHex refuses a short point", he1heL2PointOkHex("abcd"), "void:point-format"
+   put empty into he1tTxt
+   repeat with he1tI = 1 to 32
+      put "zz" after he1tTxt
+   end repeat
+   he1heTAssert "leaf3: he1heL2PointOkHex refuses 64 non-hex chars", he1heL2PointOkHex(he1tTxt), "void:point-format"
+
+   -- the liveness folds, on a SYNTHETIC he1gGame (the section-22 pattern)
+   put he1gGame into he1tSaved
+   put he1gHudDirty into he1tHudSaved
+   put empty into he1gGame
+   -- he1heNetTurnClockStart: the clock restarts, the latch clears, and the
+   -- REPLAYED flag follows catchUpTo (v0.24.0 F2: a waiver keyed on the
+   -- clock, so it dies with its turn)
+   put "true" into he1gGame["timeoutSent"]
+   put 12 into he1gGame["catchUpTo"]
+   he1heNetTurnClockStart
+   he1heTAssert "leaf3: he1heNetTurnClockStart clears the timeout latch", he1gGame["timeoutSent"], "false"
+   he1heTAssert "leaf3: he1heNetTurnClockStart in catch-up marks the clock replayed", he1gGame["turnStale"], "true"
+   he1heTAssert "leaf3: he1heNetTurnClockStart stamps the clock", he1gGame["turnStartMs"] is a number, true
+   put empty into he1gGame["catchUpTo"]
+   he1heNetTurnClockStart
+   he1heTAssert "leaf3: he1heNetTurnClockStart live is not replayed", he1gGame["turnStale"], "false"
+   -- he1heNetTimeoutRearm: a REFUSED timeout restarts the interval rather
+   -- than leaving the latch set for good (v0.24.0 F3, the silent stall)
+   put "true" into he1gGame["timeoutSent"]
+   put 0 into he1gGame["turnStartMs"]
+   he1heNetTimeoutRearm
+   he1heTAssert "leaf3: he1heNetTimeoutRearm clears the latch", he1gGame["timeoutSent"], "false"
+   he1heTAssert "leaf3: he1heNetTimeoutRearm restarts the interval", he1gGame["turnStartMs"] > 0, true
+   -- he1heNetTimeoutMiss: consecutive misses sit a seat out at the signed
+   -- cfg's count (default he1kHeDefaultMisses), transcript-derived consensus
+   he1heNetTimeoutMiss 4
+   he1heTAssert "leaf3: he1heNetTimeoutMiss counts a miss", he1gGame["missCntBy"][4], 1
+   he1heTAssert "leaf3: ...one miss does not sit the seat out", he1gGame["sitOutBy"][4] is "true", false
+   he1heNetTimeoutMiss 4
+   he1heTAssert "leaf3: he1heNetTimeoutMiss sits out at the default count", he1gGame["sitOutBy"][4], "true"
+   he1heTContains "leaf3: ...and says so in the net log", he1gGame["netLog"], "sits out after 2 missed turns"
+   put "miss=3" into he1gGame["cfgBody"]
+   he1heNetTimeoutMiss 5
+   he1heNetTimeoutMiss 5
+   he1heTAssert "leaf3: he1heNetTimeoutMiss follows a signed miss=3", he1gGame["sitOutBy"][5] is "true", false
+   he1heNetTimeoutMiss 5
+   he1heTAssert "leaf3: ...and sits out at the third", he1gGame["sitOutBy"][5], "true"
+   -- he1heNetEngineFold: the outcome is RECORDED (foldApplied) on both paths,
+   -- because three callers write consensus state around a fold that can
+   -- refuse (v0.24.0 F4/F5); and an applied fold re-aims the act clock
+   put empty into he1gGame
+   put 7 into he1gGame["handNum"]
+   put "hand" into he1gGame["phase"]
+   put he1heBetNewHand(10, 20, 0, he1tStacksA, "1,3", 1) into he1gGame["state"]
+   he1heNetEngineFold "bidSB", 3, 10
+   he1heTAssert "leaf3: he1heNetEngineFold records a REFUSED fold", he1gGame["foldApplied"], "false"
+   he1heTContains "leaf3: ...logs the engine's reason", he1gGame["netLog"], "engine-rejected bidSB bidSB-wrong-seat"
+   he1heTAssert "leaf3: ...and moves no consensus state", he1gGame["state"]["stackBy"][3], 1000
+   he1heNetEngineFold "bidSB", 1, 10
+   he1heTAssert "leaf3: he1heNetEngineFold records an APPLIED fold", he1gGame["foldApplied"], "true"
+   he1heTAssert "leaf3: ...and commits the engine's state", he1gGame["state"]["stackBy"][1], 990
+   he1heTAssert "leaf3: ...a blinds-phase fold aims no act clock", he1gGame["turnKey"], empty
+   he1heNetEngineFold "bidBB", 3, 20
+   he1heTAssert "leaf3: he1heNetEngineFold on the big blind opens the action", he1gGame["state"]["toAct"], 1
+   he1heTAssert "leaf3: ...and the turn key carries hand AND street (v0.24.3)", he1gGame["turnKey"], "act,1,0,7-preflop"
+   he1heTAssert "leaf3: ...on a freshly started live clock", he1gGame["timeoutSent"], "false"
+   put he1tSaved into he1gGame
+   put he1tHudSaved into he1gHudDirty
+end he1heTestLeafRun3
 
 function he1heTIdxOf pNamesTxt
    local he1tOut, he1tNameTxt, he1tNames

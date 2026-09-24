@@ -309,6 +309,10 @@ Code comments cite these numbers; keep them.
 14. **check-demo-boot.py is also driven by coinxt's, nocloud's and holde-em's gates**: on any path a
     boot walks, use the compiled-regex helpers `_rxi`/`_rx` (2026-09-11). Model fidelity: `the name`
     of a control is type-prefixed (`button "x"`); only `the short name` is bare (2026-08-31).
+    `put ... into URL` answers through `the result` (2026-09-24): empty when the write landed, and the
+    planted text, with nothing written, for a path in `World.url_write_refuse` (coinxt's save guards
+    are held that way). An unplanted missing parent folder is still CREATED, which is looser than the
+    engine; a gate that needs that refusal plants it.
 15. **The demo carries TWO socket libraries** (onionxt, nostrxt's relay layer). The embed tool drops
     both libraries' `socketError`/`socketClosed`/`socketTimeout` wrappers; the demo's own three call
     `oxSocketError`/`nxrSocketError` (and kin), then `pass`. Keep that `pass`: swallowing a socket

@@ -351,8 +351,11 @@ Symptom -> cause -> fix. Engine behaviour gets one line and its engine note.
     carrying `%0A` / `%09` could replace the account key with a payer's (demonstrated end to end 2026-09-01).
 50. **The watch-only box refuses private keys** through `cwXKeyIsPrivate` (an xprv there was stored as public).
 51. **`waDropSeed` drops the account xprv and the derived address list** (every record carries its private key).
-52. **`waSaveWallet` checks the write result, and that check has NO regression test** (the boot model's `url_write`
-    raises instead of setting `the result`, so a test could not fail).
+52. **`waSaveWallet` checks the write result on both branches, and both guards are held** (2026-09-24). Until then the
+    boot model's `url_write` raised instead of setting `the result`, so a test could not fail. riptide's runner now
+    answers a write through `the result` (empty when it landed; the planted text, nothing written, for a path in
+    `world.url_write_refuse`), `check-wallet-boot.py` drives Save into a planted refusal on the sealed and the
+    unencrypted branch, and `test-wallet-boot.py` removes each guard in turn and requires the gate to fail.
 53. **Mainnet with the published test seed is allowed BY DECISION**; `waPublicSeedWarning` is recomputed every repaint.
 54. **Every PSBT signing branch checks the script it is about to unlock** (the p2wsh branch did not, 2026-09-01: anyone
     could get a signature over a preimage of their choosing). Multisig keys parse strictly; SIGHASH 0 and 1 are honoured

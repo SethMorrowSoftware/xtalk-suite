@@ -49,6 +49,11 @@ The seeded defects, and what each stands in for:
      was WRONG about (it answered the short name for `the name of`, so the
      router silently passed every click), and therefore the one this gate
      most needs to be able to see.
+  6-7. The mainnet Esplora root for every network, and the chain guard
+     waved through (each commented at its entry below).
+  8-9. waSaveWallet not reading its write's result, on the sealed branch and
+     on the unencrypted one (2026-09-24): the gate plants a refused write
+     through riptide's runner and must see each branch report it.
 """
 
 import os
@@ -120,6 +125,19 @@ FIXTURES = [
     ("the chain guard answering that every backend serves every chain",
      "function waBackendChainWhy\n",
      "function waBackendChainWhy\n   return empty\n"),
+    # THE WRITE GUARDS, one fixture per branch (2026-09-24). waSaveWallet's
+    # own comment is the reason: a write that failed and is reported as
+    # "Saved" is the one place in the wallet where being wrong costs the
+    # seed, and until riptide's runner answered a write through `the result`
+    # this gate had no way to make one fail. Each fixture restores the
+    # shipped defect - the write's result never read - on ONE branch, so
+    # each of the gate's two refusal checks is shown to fire on its own.
+    ("the sealed save reading no write result",
+     "   put the result into tError\n   put empty into tPassword\n",
+     "   put empty into tError\n   put empty into tPassword\n"),
+    ("the unencrypted save reading no write result",
+     "      put the result into tError\n      put empty into tPlain\n",
+     "      put empty into tError\n      put empty into tPlain\n"),
 ]
 
 

@@ -598,31 +598,34 @@ HOLDEM_WORKLIST = {
     # heU32BEData, heHexId) plus heHandStart - the measured literal-vs-call
     # gap, exercised on its refusal guards only because past them it deals a
     # hand - are out of this list because a section now names each with real
-    # assertions.
+    # assertions. The third tranche (2026-09-24, heTestLeafRun3, section 24)
+    # took fourteen more, consensus-critical first: the betting engine's
+    # leaves, the v0.24.0 liveness fixes (heNetEngineFold, heNetTimeoutRearm,
+    # heNetTurnClockStart, heNetTimeoutMiss) and the Level 2 helpers' pure
+    # branches. heHandSettle stays here although it is consensus code: it
+    # ends by sending heNextHandTick, which deals a hand, and no harness may
+    # arm that.
     "no-test": (
         "NO REASON - a pure or near-pure handler a section could name today, "
         "and none does. This is the debt, not an exemption",
         ["heActionDo", "heApplyCfg", "heApplyLevel", "heAuditDealLog",
          "heBetAfterAction", "heBetCloseStreet", "heBetFirstInHandAfter",
-         "heBetInHandList", "heBetLiveCount", "heBetNextPending", "heBetPay",
-         "heBetPayDead", "heBetSeatPending", "heCancelPacedSteps", "heCfgBody", "heCfgDefaults", "heCfgEnsure",
+         "heCancelPacedSteps", "heCfgBody", "heCfgDefaults", "heCfgEnsure",
          "heDealBoard", "heEngineDo", "heEnvBodyText", "heFreshPrngState", "heHandSettle",
          "heHistHide", "heHistShow",
          "heHudMark", "heHudTick", "heIdentitySeedHex",
-         "heIdentitySetup", "heL2CardPointHex", "heL2ChainOrder", "heL2PointOkHex",
-         "heL2VoidMark", "heLevel0Deck", "heLobbyHide", "heLobbyShow",
+         "heIdentitySetup", "heLevel0Deck", "heLobbyHide", "heLobbyShow",
          "heNetApplySettle", "heNetAuditHand",
          "heNetBroadcast", "heNetBufferWire", "heNetComputeSettleTxt",
          "heNetContribPosOk", "heNetDealFromSeeds",
          "heNetDealerBoard", "heNetDealerDeal", "heNetDealerPubHex",
-         "heNetDrainBuffer", "heNetEngineFold", "heNetFoldGameWire",
+         "heNetDrainBuffer", "heNetFoldGameWire",
          "heNetGameReact", "heNetHandReset", "heNetHandSeedHex",
          "heNetHostLost", "heNetMyContribPos", "heNetOnHandshake",
          "heNetOnRp1", "heNetOnionHello", "heNetOnionRedialGiveup",
          "heNetOracleDeal", "heNetParkHotseat", "heNetPubIsLive",
          "heNetRequestSync", "heNetRevealedDealA", "heNetSendToHost", "heNetSendWireTo", "heNetShowBoard",
-         "heNetShowSeat", "heNetShowdownShow", "heNetTimeoutMiss",
-         "heNetTimeoutRearm", "heNetTurnClockStart", "heNetWeDeal", "heNetXlatFlush", "heNetXlatFrom", "heNextHandTick",
+         "heNetShowSeat", "heNetShowdownShow", "heNetWeDeal", "heNetXlatFlush", "heNetXlatFrom", "heNextHandTick",
          "heQuickAmount", "heReactToNotes",
          "heReadableErr", "heRevealStep", "heRosterHasKey", "heRunoutStep", "heScheduleReveal", "heScheduleRunout",
          "heScheduleShowdown", "heSeatAvatarPick", "heSettingsHide", "heSettingsIntervalLabel", "heSettingsLevelLabel",

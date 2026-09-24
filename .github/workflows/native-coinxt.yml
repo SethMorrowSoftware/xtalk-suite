@@ -8,11 +8,14 @@
 #     run (it compiles the shim from source in a temp dir and drives it through
 #     ctypes), so the vectors were covered - but "the vectors are right" and "the
 #     code is memory-clean" are different claims, and only the first had a gate.
-#  2. coinxt/.github/workflows/ci.yml is inert here (GitHub Actions reads only
-#     the repository root in a monorepo). That file stays for when the member is
-#     developed in isolation; this is the copy that fires. Its duplicated static
-#     gates are dropped here, because suite-gates.yml already runs them for every
-#     member on every push - only the compiler work belongs in this file.
+#  2. It is the ONE copy of coinxt's native lane. GitHub Actions reads only the
+#     repository root in a monorepo, so this is the file that fires here, and the
+#     member's own coinxt/.github/workflows/native.yml is GENERATED from it by
+#     tools/sync-member-workflows.py for the published CoinXT repository (the
+#     pre-suite member ci.yml it replaced was deleted 2026-09-21). The static
+#     gates are not duplicated here, because suite-gates.yml already runs them
+#     for every member on every push - only the compiler work belongs in this
+#     file.
 #
 # WHAT IT DOES NOT DO: it does not commit binaries. Same rule as every other
 # native-*.yml here - a native change refreshes its committed library in the same
@@ -20,21 +23,32 @@
 # commits deliberately. check-binary-freshness.py (in the always-on gates) is
 # what makes forgetting that a build failure rather than a runtime surprise.
 #
-# LINUX ONLY, on purpose, and this is a scope statement rather than a limit
-# anyone should be happy with. The other four members reach five platforms
-# through CMake; coinxt builds with a POSIX sh script driving `cc`, and each
-# missing platform needs real work rather than a matrix row:
+# LINUX ONLY PER PUSH, and that is a scope statement about THIS file, not about
+# which platforms coinxt reaches. The other four members reach five platforms
+# through CMake; coinxt builds with a POSIX sh script driving `cc`, and its
+# Windows and mac libraries are built - and executed - by the manual
+# release-binaries.yml dispatch, not here:
 #
-#   * WINDOWS needs an MSYS2/MinGW toolchain AND a different export mechanism -
-#     src/coinxt.map is GNU ld syntax, so MSVC would want a .def file.
-#   * MACOS needs both slices lipo'd into one universal binary (a single-arch
-#     dylib filed under `universal-mac` would be a lie about what it is), and
-#     Mach-O ignores a version script, so it needs -exported_symbols_list to get
-#     the same narrow surface. Neither has been tried.
+#   * WINDOWS: both DLLs are cross-compiled from Linux with MinGW, the export
+#     surface narrowed by a .def that build.sh generates (a GNU version script
+#     is silently ignored for PE, which fails open). The x86_64 DLL is driven
+#     through the published vectors on a real Windows runner before it is
+#     bundled (release-binaries.yml's kat-windows job); the x86-win32 DLL has
+#     never executed anywhere, because that step is x86_64 only.
+#   * MACOS: one universal dylib, built in one pass on macos-15 with a
+#     two-arch CC and -exported_symbols_list (Mach-O ignores a version
+#     script), both slices driven through the vectors on the same runner -
+#     arm64 natively, x86_64 under Rosetta. The first shipped in release run 12
+#     (2026-08-27); every committed coinxt binary today comes from the
+#     2026-09-12 dispatch (run 34657390798), and no engine has loaded those.
 #
-# Adding a lane that has never been run, to claim a platform, is exactly what the
-# suite's honesty convention exists to prevent. These are named here as open work
-# (see coinxt/IMPLEMENTATION-PLAN.md phase 6), not quietly omitted.
+# What is open is PER-PUSH coverage of those platforms: a Windows lane (MinGW
+# plus the KATs on a Windows runner, including a 32-bit Python for the x86 DLL)
+# and a mac lane here, or a recorded decision that dispatch-only is permanent.
+# That is an owner call, tracked in the suite's docs/WORK-PLAN.md (coinxt's
+# section), not something to settle by adding a lane nobody has run: claiming a
+# platform with an unexercised lane is exactly what the suite's honesty
+# convention exists to prevent.
 name: native coinxt
 
 on:

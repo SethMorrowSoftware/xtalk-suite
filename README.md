@@ -105,7 +105,7 @@ holds every dated record); open work is in [docs/WORK-PLAN.md](docs/WORK-PLAN.md
 | coinxt | 5 platforms, ABI 7 | library 290/290 at ABI 6 incl. BIP-341, Windows x86_64, 2026-08-24; the wallet's engine logs, 2026-09-01 to 09-03: all four public transports, testnet broadcasts, RBF, CPFP, an inscription | `cxPubkeyCombine` (ABI 7) and silent-payment receive; the wallet surface added since 2026-09-04; a native-P2WPKH and any Ethereum broadcast; the x86-win32 DLL |
 | riptide | app | phases 1-4 done on two machines, 2026-08-13 and 2026-08-15; harness 391/391, Windows x86_64, 2026-08-24 | live passes of phases 5-8; the faststart re-run; the boot re-paste |
 | nocloud | app | no dated engine pass in this tree (its pre-fold passes are undated); gates green, including a headless execution gate | the 69-item OXT checklist, web-link and Tor halves |
-| holde-em | app | folded harness 667/0 at v0.25.2, 2026-08-27 | the v44 total; a six-seat hotseat session; the multi-machine exits; Level 2 is not yet wired into played hands |
+| holde-em | app | folded harness 667/0 at v0.25.2, 2026-08-27 | the v45 total; a six-seat hotseat session; the multi-machine exits; Level 2 is not yet wired into played hands |
 
 **Platform gaps, suite-wide.** Every native member's current binaries come from the 2026-09-12
 release dispatch (commit 421bab3), and no engine has loaded those builds yet. No OXT engine has

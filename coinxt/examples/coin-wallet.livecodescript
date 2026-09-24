@@ -143,10 +143,11 @@ script "coinXTWallet"
 -- file, stop; it is in the wrong layer.
 --
 -- ==========================================================================
--- STATUS: ENGINE-PASSED, twice. This block used to read "NEEDS AN OXT PASS";
--- the passes landed 2026-08-10 (the folded suite harness, coinxt section
--- 207/207) and 2026-08-12 (Windows x64, 230/230, phase 5 included), both
--- recorded in CLAUDE.md's as-built notes.
+-- STATUS: ENGINE-PASSED. This block used to read "NEEDS AN OXT PASS"; the
+-- first passes landed 2026-08-10 (the folded suite harness, coinxt section
+-- 207/207) and 2026-08-12 (Windows x64, 230/230, phase 5 included), and the
+-- later ones run through 2026-08-24 (Windows x86_64, 290/290), all recorded
+-- in CLAUDE.md's as-built notes.
 --
 -- OXT cannot compile or run a .livecodescript headlessly, so historically a
 -- file like this would ship never having run. Three things stood behind it
@@ -175,11 +176,11 @@ script "coinXTWallet"
 --   * tests/coin-selftest.livecodescript drives every handler below against the
 --     same vectors, so ONE paste on a real engine settles the rest.
 --
--- That engine run has happened (the two passes above), so the closing line
+-- That engine run has happened (the passes above), so the closing line
 -- that stood here - "the LOGIC is observed, the ENGINE BEHAVIOUR is not" -
 -- no longer holds: both are observed for this layer. What stays open is
--- narrower and is phase 5's alone: a live testnet broadcast is still owed
--- before any "broadcastable" claim (see the phase-5 STATUS block below).
+-- narrower and is phase 5's alone: a live broadcast for the transaction
+-- families that have none on record (see the phase-5 STATUS block below).
 -- ==========================================================================
 --
 -- THE THREE PORTABILITY DISCIPLINES this file follows, each paid for already
@@ -2360,8 +2361,22 @@ end cxWifDecode
 -- phase included), and INDEPENDENTLY ACCEPTED 2026-08-12, extended to all
 -- four transaction families 2026-08-13 - fresh transactions built end to
 -- end through THIS file and accepted by python-bitcointx / eth-account
--- (tools/verify-independent-decoder.py). The one bar left: a live testnet
--- broadcast is still owed, so "broadcastable" stays unclaimed until then.
+-- (tools/verify-independent-decoder.py). The last bar, a LIVE BROADCAST, is
+-- met for one family and open for three. CLAUDE.md's "The wallet on an
+-- engine" records it: on 2026-09-02 examples/coin-wallet.livecodescript,
+-- whose wallet-core builds every Bitcoin spend through THIS file's
+-- cxBtcSighashLegacy / cxBtcSighashSegwit / cxBtcSighashTaproot and
+-- cxBtcTxEncode, made the "FIRST BROADCAST, esplora-tor: txid
+-- 7978bdd2c097c929cae2ab00084d4454b68b1d054a3f2d53fc7b51b70551e4d5, 226 vB,
+-- one legacy input, RBF, 10000 sat plus 181973 sat change (a self-payment);
+-- the reference decoder's txid equals the logged one" on testnet, and the
+-- 2026-09-03 logs record more accepted testnet spends. So legacy P2PKH is
+-- broadcast-proven. Still owed (the suite's docs/WORK-PLAN.md): a native
+-- P2WPKH broadcast, which no log records, and any EIP-155 or EIP-1559
+-- broadcast, which has never been made - "broadcastable" is claimed for
+-- none of those three until each has its own. (This paragraph said a live
+-- testnet broadcast was still owed until 2026-09-24, three weeks after the
+-- first one.)
 --
 -- This is still the SCRIPT layer, so it composes the primitives and NEVER
 -- touches a private key or a curve point: signing is the app calling cxSign /
@@ -3227,11 +3242,30 @@ end cxHexOfInt
 -- HONESTY (the suite convention). Every handler here is verified statically
 -- (tools/check-livecodescript.py) and by the vector gate above, which settles
 -- LOGIC and not parser behaviour: an interpreter is an approximation of the
--- engine, never the engine. NOTHING HERE HAS RUN ON AN OXT ENGINE YET, and
--- that stays true until an engine pass is recorded in coinxt/CLAUDE.md. The
--- cryptography underneath it HAS - CoinXT's own passes of 2026-08-10 and
--- 2026-08-12 - so a failure here is most likely this file's arithmetic, not
--- the library's.
+-- engine, never the engine. THIS FILE HAS RUN ON AN OXT ENGINE, carried inside
+-- examples/coin-wallet.livecodescript: coinxt/CLAUDE.md's "The wallet on an
+-- engine" ledger holds the logs of 2026-08-31 to 2026-09-03 (platform not
+-- recorded; testnet unless stated). In its words, among them: 2026-09-02, the
+-- "FIRST BROADCAST, esplora-tor: txid
+-- 7978bdd2c097c929cae2ab00084d4454b68b1d054a3f2d53fc7b51b70551e4d5, 226 vB,
+-- one legacy input, RBF, 10000 sat plus 181973 sat change (a self-payment);
+-- the reference decoder's txid equals the logged one"; the fourth log, "fresh
+-- open: boot self-check 27 green"; and 2026-09-03 19:42 EDT, the tenth log's
+-- autotest, "41 passed / 0 failed / 4 skipped in 248 s", in which "the
+-- silent-payment send and the commit funding built on the replacement's change
+-- and accepted" and "the reveal accepted". Until 2026-09-24 this paragraph
+-- said nothing here had run on an engine, which understated those records.
+-- What the logs did NOT reach, as that file's Status lists it for this layer:
+-- testnet4, BIP-322 (the tenth log skipped it on a p2pkh wallet), Runes,
+-- BOLT11, silent-payment RECEIVING, and every fix dated after the logs (the
+-- 2^53 parse refusal of 2026-09-08, the 2026-09-10 audit fixes) - verified
+-- statically and headlessly; needs an OXT pass. Read the list by what ran,
+-- not by the section dates below: several sections are headed 2026-09-04
+-- although git dates their commits 2026-09-03, and two of them, the
+-- silent-payment SEND and the inscription, ran in the tenth log. The
+-- cryptography underneath HAS its own record - CoinXT's library passes, most
+-- recently 290/290 on 2026-08-24 (Windows x86_64) - so a failure here is most
+-- likely this file's arithmetic, not the library's.
 --
 -- CUSTODY, said plainly, because this layer is one call away from a signature:
 -- OXT script variables are not locked memory and can be paged to disk. A seed
@@ -27645,12 +27679,14 @@ function waAboutText
    put "  pump-at-once changes; and the three menu items that now do what" & return after tOut
    put "  they say (copy the selected address, sign a message with it," & return after tOut
    put "  copy the selected outpoint)." & return after tOut
-   put "  BITCOIN CORE AS A BACKEND (Network screen, 2026-09-04) has not met" & return after tOut
-   put "  a node: the HTTP framing, the cookie and rpcauth credentials, the" & return after tOut
-   put "  chain guard, the fee estimate, the UTXO-set scan and the broadcast" & return after tOut
-   put "  are each driven headlessly against fixtures of the node's replies" & return after tOut
-   put "  and nothing more. Scan tier only: no history and no mempool from" & return after tOut
-   put "  the node (docs/bitcoin-core-plan.md is the rest)." & return & return after tOut
+   put "  BITCOIN CORE AS A BACKEND (Network and Node screens, 2026-09-04)" & return after tOut
+   put "  has not met a node: the HTTP framing, the cookie and rpcauth" & return after tOut
+   put "  credentials, the chain guard, the fee estimate, BOTH sync tiers" & return after tOut
+   put "  (the scan tier's UTXO-set scan, with no history or mempool, and" & return after tOut
+   put "  the watch tier's watch-only wallet on the node, which has both)," & return after tOut
+   put "  the regtest sandbox and the broadcast are each driven headlessly" & return after tOut
+   put "  against fixtures of the node's replies and nothing more. What is" & return after tOut
+   put "  left of the design is in docs/bitcoin-core-plan.md." & return & return after tOut
    put "WHERE THE NEW THINGS ARE (2026-09-02 to 2026-09-04)" & return after tOut
    put "  Send: a line " & quote & "note: text" & quote & " or " & quote & "data: hex" & quote & " writes" & return after tOut
    put "  an OP_RETURN output; a line paying an sp1.../tsp1... address is a" & return after tOut

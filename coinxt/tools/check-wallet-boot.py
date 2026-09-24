@@ -2283,6 +2283,40 @@ def drive(c, ip, world, sandbox):
     # the default does not carry is what makes the round trip observable.
     click(ip, world, "nv_st")
     ip.globals["swalabel"] = "Boot gate wallet"
+
+    # A WRITE THAT FAILED IS NOT A BACKUP (2026-09-24). Each of waSaveWallet's
+    # two branches reads `the result` after its `put ... into URL` and turns a
+    # refusal into a throw, so a full disk or a read-only volume is never
+    # reported as "Saved". Until today nothing here could SEE that guard:
+    # riptide's runner raised on its own refusals and never set `the result`
+    # for a write, so a check on the guard could not fail (CLAUDE.md trap 52).
+    # The runner now answers a write through `the result`, and a path planted
+    # in world.url_write_refuse is refused the way the engine refuses one - a
+    # value, nothing written - so both guards are driven through the real
+    # Save button. The reason text is the gate's own, not the engine's (no
+    # engine note records that), and is asserted only as "carried through".
+    # tools/test-wallet-boot.py removes each guard in turn and requires this
+    # block to fail, because a check that only ever sees a refusal cannot be
+    # told from one that has stopped looking.
+    refused = os.path.join(sandbox, "refused.dat")
+    reason = "disk full (planted by check-wallet-boot)"
+    world.url_write_refuse[os.path.abspath(refused)] = reason
+    try:
+        for branch, password in (("sealed", "boot-gate-passphrase"), ("plain", "")):
+            put_field("st_path", refused)
+            put_field("st_password", password)
+            click(ip, world, "st_save")
+            status = _fld(world, "uiStatus")
+            c.ck("a refused %s write says NOTHING has been saved, and why" % branch,
+                 "NOTHING has been saved" in status and reason in status,
+                 repr(status[:200]))
+            c.ck("and leaves no file behind (%s)" % branch, not os.path.exists(refused),
+                 refused)
+            c.eq("and the password still leaves the screen (%s)" % branch,
+                 _fld(world, "st_password"), "")
+    finally:
+        world.url_write_refuse.pop(os.path.abspath(refused), None)
+
     path = os.path.join(sandbox, "boot.dat")
     put_field("st_path", path)
     put_field("st_password", "boot-gate-passphrase")
