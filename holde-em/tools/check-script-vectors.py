@@ -151,7 +151,8 @@ RR = _load("he_riptide_reference", ORACLE)
 Thrown = LCS.Thrown
 
 # (section, minimum passes, exact skips). The pass floors are the counts
-# measured on 2026-09-11 (stack 0.25.3, harness v44); raise them when the
+# measured on 2026-09-11 (stack 0.25.3, harness v44), plus section 24's,
+# measured when it landed on 2026-09-24 (harness v45); raise them when the
 # harness grows. A skip count is EXACT: a section that skips more than it
 # did is a section that stopped running something.
 SECTIONS = [
@@ -178,6 +179,7 @@ SECTIONS = [
     ("heTestHelpersRun", 28, 1),
     ("heTestLeafRun", 39, 0),
     ("heTestLeafRun2", 83, 0),
+    ("heTestLeafRun3", 50, 0),          # every leg pure or gGame-only: nothing skips
 ]
 TOTAL_FLOOR = 600
 

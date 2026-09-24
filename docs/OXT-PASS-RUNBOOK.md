@@ -59,7 +59,7 @@ those builds, not about the script.
 | Q | coinxt ABI 7 + silent-payment receive | row Q (its wallet half needs NET) | 20 |
 | 3 | `riptide-social`, then `torrent-quickshare` and `torrent-dht-channels`, one fresh launch each | rows 35, 37 | 20 |
 | 2 | `holde-em/src/holdem.livecodescript` standalone, then `heRunSelftest` in the message box | ends `==== N pass, 0 fail, M skip ====` and `RESULT: green`; row 14 | 15 |
-| 4 | holde-em hotseat in item 2's launch: 2-3 hands, blinds to showdown, a side pot if you can | hands complete, no error dialog; the header names `kHeVersion` **0.25.3**, harness **44**. Stretch: row 42's 6-seat exit | 15 |
+| 4 | holde-em hotseat in item 2's launch: 2-3 hands, blinds to showdown, a side pot if you can | hands complete, no error dialog; the header names `kHeVersion` **0.25.3**, harness **45**. Stretch: row 42's 6-seat exit | 15 |
 | 5 | the remaining demo re-opens, one fresh launch each | rows 37, 38 | 60 |
 | 6 | standalone `enet-selftest`, then `datachannel-selftest` | green, no `RUN NOT FINISHED` trailer (4.2, 4.3) | 10 |
 | S | `nocloud/src/nocloudquickshare.livecodescript`, then its checklist's web-link half | row 22; row 46 if time allows | 75 |
@@ -68,7 +68,7 @@ Item 1's last records, to record against rather than match: sodiumxt 106,
 torrentxt 101, onionxt 61, coinxt 290 (before ABI 7's six new lines), enetxt 34
 and datachannelxt 39 (sync halves), nostrxt 274/0/2, riptide 0 failed with 2
 skips (the live anon-service legs; 391/0 on 2026-08-24), box2dxt at harness v31 (374 expected), holde-em at
-v0.25.3 / harness 44 with 0 failed and 5 live-transport skips. Whole paste:
+v0.25.3 / harness 45 with 0 failed and 5 live-transport skips. Whole paste:
 2,373/0/3 (2026-08-24), 2440/2/3 (2026-08-27, both failures environmental). A new
 total is not a regression by itself; a red line is.
 
@@ -728,7 +728,7 @@ S1 [ ] 0 preflight ____/____/____ sxVersion ______ layers: ox ___ cx ___ nx ___
          enetxt ___ DataChannelXT ___ CoinXT ___  Box2Dxt found ___ vs ___
    [ ] 1 suite paste ____/____/____ (summary reached ___)  sodiumxt ___
          torrentxt ___ onionxt ___ coinxt ___ enetxt ___ dc ___ nostrxt ___
-         riptide ___ box2dxt v31 [31] ___ holde-em v0.25.3/44 ___
+         riptide ___ box2dxt v31 [31] ___ holde-em v0.25.3/45 ___
    [ ] P 2^53 + 1 printed as ______  `or` with arithmetic: ERROR / printed ____
    [ ] Q cxPubkeyCombine x6 ___ tsp1 ___ Inspect FOUND: ___ sp line ___
    [ ] 3 riptide boot [35] ____/____/____ npub ___ "not sent" ___ RIPTAPP1 ___
