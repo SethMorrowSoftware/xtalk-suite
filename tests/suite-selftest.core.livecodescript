@@ -47,10 +47,12 @@ script "xTalkSuiteSelfTest"
 -- inline and merged into that run's total (onionxt/CLAUDE.md's evidence
 -- ledger). What has never fired on an engine is stMergeFloor's REFUSAL branch.
 -- The one number that puts at risk is onionxt's floor, re-derived to 51 on
--- 2026-09-24 beside its call site below (verified statically; needs an OXT
--- pass): too high, and a green run reports one extra FAIL line naming the
--- member and printing what it attempted, which is the failure mode this file
--- chooses on purpose over an uncaught error.
+-- 2026-09-24 beside its call site below: too high, and a green run reports one
+-- extra FAIL line naming the member and printing what it attempted, which is
+-- the failure mode this file chooses on purpose over an uncaught error. It met
+-- an engine the same day (Windows, the D-23 board's first run, 2620/5/3):
+-- onionxt attempted 75 against 51 and nostrxt 279 against 278, both floors
+-- PASSED, and the refusal branch still has not fired.
 --
 -- THIS IS NO LONGER A SAMPLER, AND THAT IS THE BIG CHANGE. It used to drive
 -- about a dozen handlers per member and say so. It now carries EVERY member's
@@ -217,8 +219,10 @@ constant kStTitle = "xTalk Suite - End-to-End Self-Test"
 -- of its camera checks scroll a 3000-px level. Both still hold at 1200 with
 -- room to spare - hScroll 900 against a floor of 800, and 300 against 100
 -- (box2dxt-selftest's stTestCamScrolledWrite and stTestKitCameraApi) - and
--- the height, which sets its origin and kill floor, is unchanged. Verified by
--- arithmetic; needs an OXT pass (runbook row 48 records box2dxt's total).
+-- the height, which sets its origin and kill floor, is unchanged. Worked out by
+-- arithmetic first, then OBSERVED on 2026-09-24 (Windows, the board's first
+-- engine run): box2dxt's harness went 385/0 on this 1200-wide card, reporting
+-- "the viewport scrolled (hScroll 900)" and the world-px write landing on 1500.
 constant kStWidth = 1200
 constant kStHeight = 640
 
@@ -1241,11 +1245,18 @@ end scFinish
 -- makers stay in the carried block and are never called: a carried block is
 -- carried whole, and its master still builds the four member harness windows.
 --
--- NOT RUN ON AN ENGINE. The window, the rows, per-member Run, the filter and
--- the boot self-check are verified statically, plus a headless UI boot
--- (tools/check-suite-ui-boot.py) that settles their LOGIC and nothing about
--- rendering or message delivery; needs an OXT pass (OXT-PASS-RUNBOOK row 48).
--- The checks the run makes are the ones the dated records ran.
+-- FIRST ENGINE RUN 2026-09-24 (Windows, the paste as of 9aa62c8), and it is
+-- worth being exact about what it covered, because a report is text and some
+-- of this board is not. RAN: the build at 1200 x 640 with every row (the boot
+-- self-check, 9 passed, 0 failed, including its delayed write), openStack's
+-- Run all end to end, the tallies (the summary's check that the rows add up to
+-- the totals held at 2620 / 5 / 3), the boot block above the summary, and Copy
+-- results. NOT SHOWN BY THAT REPORT, so still verified statically; needs an OXT
+-- pass (OXT-PASS-RUNBOOK row 48): a row's Run (the button-1 press arming a
+-- tick), Show, the filter buttons and their views, and how the pills looked.
+-- The headless UI boot (tools/check-suite-ui-boot.py) settles their LOGIC and
+-- nothing about rendering or message delivery. The checks the run makes are
+-- the ones the dated records ran.
 
 -- ---- lifecycle ---------------------------------------------------------------
 -- BUILD, CLEAN, RUN, CHECK - in that order, on every open.
@@ -1764,7 +1775,7 @@ command suBuildAll
    end repeat
    set the itemDelimiter to tOld
    uiCap "suMembersCap", "Run re-runs ONE member end to end (probe, its sections, teardown, summary) and replaces the report; Show lists only its lines. Run all is the suite record.", "20,546,488,580"
-   uiFooter "Every member's own self-test plus the cross-member seams, in one process. This board is verified statically plus a headless UI boot; needs an OXT pass (D-23).", "20,588,488,628"
+   uiFooter "Every member's own self-test plus the cross-member seams, in one process. Run all ran on an engine 2026-09-24; Run, Show and the filters need an OXT pass (D-23).", "20,588,488,628"
 
    -- 2. the results: three fields on one rect, exactly one visible
    uiSection "suSecResults", "2.  Results", "520,96,760,114"
@@ -4120,8 +4131,10 @@ command stRunMemberHarnesses
             -- best case then, and 2026-08-17's 61, which was those 43 plus section
             -- 10's 18; sections 1-9 read 53 at best today, those 43 plus the 7
             -- above plus 2026-09-24's three (oxTransportDial and oxLaunchTor in
-            -- section 3, oxStopTor in section 5). Verified statically; needs an
-            -- OXT pass.
+            -- section 3, oxStopTor in section 5). FIRST ENGINE RUN 2026-09-24
+            -- (Windows, the D-23 board): 74 passed, 0 failed, 1 skipped = 75
+            -- attempted against 51 - the top of the paste-expected range, as
+            -- predicted for a session that ran sections 2 and 3 pre-auth.
             stMergeReturned "OnionXT", ox1oxSelfTest(), 51
          catch tError
             stSectionFailed "OnionXT deep self-test", tError
@@ -4289,8 +4302,11 @@ command stRunMemberHarnesses
             -- one FAIL in every run, "nxUnixNow is after the fixture era", is
             -- the interpreter's fixed deterministic clock, not a defect, and a
             -- FAIL counts as attempted all the same). That settles the
-            -- COUNTING, which is logic; the floor itself has not met an
-            -- engine: verified statically; needs an OXT pass.
+            -- COUNTING, which is logic. The floor itself first met an engine
+            -- on 2026-09-24 (Windows, the D-23 board, CoinXT and SodiumXT ABI
+            -- 10 present): 277 passed, 0 failed, 2 skipped = 279 attempted,
+            -- exactly the count predicted above for that configuration, and
+            -- the 278 floor PASSED.
             --
             -- WHY TWO NUMBERS, when OnionXT's one environment-proof 51 sits
             -- under its paste-expected 70. A single number must be <= 253 to
