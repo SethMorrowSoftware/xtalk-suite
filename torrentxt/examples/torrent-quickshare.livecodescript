@@ -3140,10 +3140,12 @@ command qsEditWriteRoute pConn, pRequest
       qsHttpReply pConn, 413, "text/plain; charset=utf-8", "That file is too large to save through the editor."
       exit qsEditWriteRoute
    end if
-   -- REPLACE the file wholesale. `open file ... for binary write` does NOT truncate in
-   -- this engine (it overwrites from offset 0 and leaves any longer tail in place), so
-   -- saving a SHORTER file would otherwise keep stale trailing bytes. Delete first - the
-   -- same guard qsEncryptFile uses - so the saved bytes are exactly the new content.
+   -- REPLACE the file wholesale, without leaning on what `open file ... for binary
+   -- write` does to a longer existing file. Until 2026-09-24 this comment said it does
+   -- NOT truncate here (overwriting from offset 0 and keeping any longer tail); the
+   -- LiveCode reference and engine source say it DOES, and no run has settled it on OXT
+   -- (engine note 6.14). Delete first - the same guard qsEncryptFile uses - which is
+   -- right under both readings, so the saved bytes are exactly the new content.
    if there is a file tDisk then
       delete file tDisk
    end if

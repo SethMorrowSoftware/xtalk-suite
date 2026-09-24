@@ -99,6 +99,29 @@ are worth hunting for deliberately.
 **Gate:** the unified `check-livecodescript.py` antipattern set,
 fixture-tested in `tools/test-checker.py` against both spellings.
 
+### 1.8 `the detailedFiles` is a compile-time "bad factor"
+**OBSERVED, undated**: the family's living-gotcha log (`onionxt/templates/CLAUDE.md` section 16, byte-identical in `coinxt/templates/`), whose seed entries are "confirmed on-engine in the family" from before the suite existed; this tree has carried them since its assembly (327235a, 2026-08-07) and no run date survives, so none is asserted. Promoted here 2026-09-24. A line reading `the detailedFiles` fails to
+compile with a "bad factor" error: OXT does not accept it as a factor (the
+log calls it a LiveCode/OXT divergence; no LiveCode run is recorded here).
+**Rule:** use `the files` (and `the folders`) and fetch any per-file detail
+separately. **Gate:** none (no tree file uses it).
+**Does NOT mean:** `the files` and `the folders` are fine.
+
+### 1.9 A bitwise call `bitAnd(x, y)`, or `^` inside a compound expression, is "double binary operator"
+**OBSERVED, undated**: the family's living-gotcha log (`onionxt/templates/CLAUDE.md` section 16, byte-identical in `coinxt/templates/`), whose seed entries are "confirmed on-engine in the family" from before the suite existed; this tree has carried them since its assembly (327235a, 2026-08-07) and no run date survives, so none is asserted. Promoted here 2026-09-24; the call form was hit again as holde-em's H7
+(`bitXor` threw at v0.4.1, in that repository's pre-fold passes, recorded in
+`holde-em/CLAUDE.md`). `bitAnd` / `bitOr` / `bitXor` / `bitNot` are OPERATORS
+in LiveCodeScript, so the function-call spelling reads as two operators in a
+row; `2 ^ n` inside a larger expression drew the same "double binary operator"
+(or "bad expression") on some parsers.
+**Rule:** `x bitAnd y`; factor a power into its own statement or a `pow2(n)`
+helper. **Gate:** the unified checker's check 13 refuses the two-argument call
+form (fixture-tested in `tools/test-checker.py`); nothing gates `^`.
+**Does NOT mean:** the OPERATOR form is fine and engine-passed across box2dxt,
+nocloud, torrentxt and sodiumxt's examples (`a bitXor b`,
+`tM bitAnd (bitNot 255)`); holde-em's no-bitwise-at-all rule is that member's
+own law.
+
 ## 2. Evaluation
 
 ### 2.1 An undeclared name evaluates to the literal text of its own name
@@ -195,6 +218,30 @@ docs/WORK-PLAN.md; riptide's LAN keys are a concrete case.
 **Does NOT mean:** `the keys of` still returns each key's ORIGINAL spelling, so
 a scan over the keys is exact; only the subscript lookup folds.
 
+### 2.8 `textDecode(x, "UTF-8")` is LOSSY and does not throw
+**OBSERVED 2026-08-15** (a suite paste, platform not recorded; commit
+1d8a39b): riptide's phase 4-7 compute ran green except three checks that fed
+malformed UTF-8 to a name parser. Six parsers guarded their decode with a
+`try` commented "textDecode throws on malformed UTF-8"; it returned
+replacement characters and a non-empty string instead, so every one of those
+guards was inert and the three authenticated parsers would have handed back a
+mangled name where they meant to refuse. Recorded as riptide's trap 4
+(`riptide/CLAUDE.md` ("is LOSSY (OBSERVED 2026-08-15)")); promoted here
+2026-09-24.
+**Rule:** validate by ROUND TRIP - decode, re-encode, require identical bytes
+(riptide's `rsBytesAreUtf8`); keep an inner `try` only for an engine that does
+throw. **Gate:** none static; riptide's harness feeds the malformed vectors.
+**Does NOT mean:** valid UTF-8 round-trips exactly; only the refusal is
+missing.
+
+### 2.9 `binaryDecode` returns a COUNT, not the decoded value
+**OBSERVED, undated**: the family's living-gotcha log (`onionxt/templates/CLAUDE.md` section 16, byte-identical in `coinxt/templates/`), whose seed entries are "confirmed on-engine in the family" from before the suite existed; this tree has carried them since its assembly (327235a, 2026-08-07) and no run date survives, so none is asserted. Promoted here 2026-09-24. `binaryDecode(...)` "returned" a number where
+the decoded bytes were expected: it FILLS its output variables and returns how
+many it filled (`binaryEncode` is the function that returns data).
+**Rule:** `get binaryDecode("H*", pData, tHex)`, then read `tHex`. **Gate:**
+none.
+**Does NOT mean:** `binaryEncode` returns its result like any function.
+
 ## 3. Control flow
 
 ### 3.1 `repeat with i = A to B step N` does not honour the step
@@ -249,6 +296,16 @@ next run, library in use, compiled whole and ran 357 checks (2.7).
 **Does NOT mean:** a COMMAND called with `()` throws the same EE-0219 at the
 call site (holde-em's `heProbeSodium()`, v0.10.x; the unified checker's check
 16 flags it), so check the callee's kind first.
+
+### 3.5 A PRIVATE handler is unreachable through `with message`, `send` and `dispatch`
+**OBSERVED, undated**: the family's living-gotcha log (`onionxt/templates/CLAUDE.md` section 16, byte-identical in `coinxt/templates/`), whose seed entries are "confirmed on-engine in the family" from before the suite existed; this tree has carried them since its assembly (327235a, 2026-08-07) and no run date survives, so none is asserted. Promoted here 2026-09-24. A socket or app callback handler silently never
+fired: it was `private`, and the message path (`... with message "x"`,
+`send "x" to ...`, `dispatch "x" to ...`) delivers only to public handlers.
+Nothing errors; the callback just never arrives.
+**Rule:** every `with message` / `send` / `dispatch` target is a PUBLIC
+handler (quote its name). **Gate:** none checks visibility at the target.
+**Does NOT mean:** a private handler called DIRECTLY by name from the same
+script is fine.
 
 ## 4. The FFI boundary (LCB <-> C)
 
@@ -462,6 +519,34 @@ trusts a header block. Causation is **UNEVIDENCED** (one observation, a large
 **Rule:** do not block while an app's own requests are out; an error that
 quotes headers must say, in its own text, that they may be another request's.
 
+### 5.11 `go card "X" of me`, `field ... of card ... of me` and `card 1 of me` are rejected
+**OBSERVED 2026-08-15** (a maintainer's report from an engine, commit
+36ee117; the error text was not recorded): riptide's multi-card demo
+conversion wrote card navigation and cross-card references as `... of me` at
+48 sites, and the engine refused them. Recorded as riptide's trap 2
+(`riptide/CLAUDE.md` ("Card navigation (OXT report 2026-08-15, 48 sites)"));
+promoted here 2026-09-24. Every other demo in the family was single-card, so
+the tree held no engine-proven multi-card idiom to copy.
+**Rule:** `go to card "X"` / `go to card 1`; plain `field "X" of card "Y"`
+inside one stack; `set the name of this card to ...` right after
+`create card`. **Gate:** none - the checker passed all 48 sites, and no rule
+was added because nothing could execute one (commit 36ee117 says why).
+**Does NOT mean:** `send "raPoll" to me in N milliseconds` is correct and
+engine-proven (a message target, not an object reference).
+
+### 5.12 A comma in `textFont` means `fontname,language`
+**OBSERVED, undated**: the family's living-gotcha log (`onionxt/templates/CLAUDE.md` section 16, byte-identical in `coinxt/templates/`), whose seed entries are "confirmed on-engine in the family" from before the suite existed; this tree has carried them since its assembly (327235a, 2026-08-07) and no run date survives, so none is asserted. Promoted here 2026-09-24. A monospace field rendered in the default
+proportional font: `set the textFont` read a CSS-style comma list as a font
+name plus a Unicode language tag.
+**Rule:** one font name, e.g. `"Courier"`. **Gate:** none.
+
+### 5.13 A field's `backgroundColor` shows only when the field is opaque
+**OBSERVED, undated**: the family's living-gotcha log (`onionxt/templates/CLAUDE.md` section 16, byte-identical in `coinxt/templates/`), whose seed entries are "confirmed on-engine in the family" from before the suite existed; this tree has carried them since its assembly (327235a, 2026-08-07) and no run date survives, so none is asserted. Promoted here 2026-09-24. Setting a field's `backgroundColor` appeared to
+do nothing: the field was not opaque.
+**Rule:** `set the opaque of field "x" to true` before relying on its fill.
+**Gate:** none; the UI kit master (`tools/ui-kit.livecodescript`) sets it
+where it fills a field.
+
 ## 6. Sockets and processes
 
 ### 6.1 `socketTimeout` REPEATS while a read or write is pending
@@ -616,6 +701,77 @@ archivext runs add:
 
 **Gate:** none possible headlessly. The narrowed questions (a bad certificate;
 `unload` freeing the URL; the async `item` kind) moved with archivext.
+
+### 6.10 `read from socket ... until crlf` returns the CRLF with the data
+**OBSERVED, undated**: the family's living-gotcha log (`onionxt/templates/CLAUDE.md` section 16, byte-identical in `coinxt/templates/`), whose seed entries are "confirmed on-engine in the family" from before the suite existed; this tree has carried them since its assembly (327235a, 2026-08-07) and no run date survives, so none is asserted. Promoted here 2026-09-24. A line read with `until crlf` failed equality
+and suffix comparisons that looked obviously correct: the engine returns the
+delimiter as part of the data.
+**Rule:** strip the line ending before parsing (one shared helper).
+**Gate:** none.
+
+### 6.11 A `read from socket` with no quantifier STREAMS
+**OBSERVED, undated**: the family's living-gotcha log (`onionxt/templates/CLAUDE.md` section 16, byte-identical in `coinxt/templates/`), whose seed entries are "confirmed on-engine in the family" from before the suite existed; this tree has carried them since its assembly (327235a, 2026-08-07) and no run date survives, so none is asserted. Promoted here 2026-09-24. `read from socket s with message "x"` with no
+`until` / `for` delivers whatever bytes are available, chunk by chunk, as they
+arrive; it does NOT wait for the peer to close.
+**Rule:** treat it as a streaming read and frame by length or delimiter
+yourself. **Gate:** none.
+
+### 6.12 A failed `accept connections` bind shows ONLY in `the result`
+**OBSERVED, undated**: the family's living-gotcha log (`onionxt/templates/CLAUDE.md` section 16, byte-identical in `coinxt/templates/`), whose seed entries are "confirmed on-engine in the family" from before the suite existed; this tree has carried them since its assembly (327235a, 2026-08-07) and no run date survives, so none is asserted. Promoted here 2026-09-24. A local listener "worked" (nothing thrown) and
+every connection to it died; behind an onion service, every visit returned an
+empty response. The bind had failed (Windows 10013 WSAEACCES, a port range
+reserved under Hyper-V / WSL2 / Docker; 10048 WSAEADDRINUSE, in use) and said
+so only in `the result`, which was never read.
+**Rule:** read `the result` immediately after `accept connections on port N
+with message "x"` and fail closed with a reason that lets the user pick
+another port. **Gate:** none.
+
+### 6.13 A refused connection on Windows arrives as "Error 10061 on socket" through `socketError`
+**OBSERVED, undated**: the family's living-gotcha log (`onionxt/templates/CLAUDE.md` section 16, byte-identical in `coinxt/templates/`), whose seed entries are "confirmed on-engine in the family" from before the suite existed; this tree has carried them since its assembly (327235a, 2026-08-07) and no run date survives, so none is asserted. Promoted here 2026-09-24; onionxt's ledger lists `socketError` reaching
+the library and failing closed on 10061 and 10013 among its confirmed engine
+facts (`onionxt/CLAUDE.md`, item 7). WSAECONNREFUSED: nothing listens on
+that port.
+**Rule:** an environment condition (service not running, wrong port) handled
+on the `socketError` path: surface it cleanly, never treat it as a crash.
+**Gate:** none. The engine owns the `socketError` name (the root CLAUDE.md's
+engine socket names).
+
+### 6.14 `open file ... for write` TRUNCATES, per the reference and the engine source; the tree has said it does not
+**DOCUMENTED 2026-09-24**, against a claim the tree carries as fact. The
+LiveCode dictionary (`docs/dictionary/command/open-file.lcdoc`, livecode
+`develop`) says write mode "replaces the file's contents from the starting
+point to the end of the file" and warns that LiveCode "will erase them even if
+you do not write to the file after opening it". The engine source agrees:
+`engine/src/dsklnx.cpp` and `dskmac.cpp` open write mode with
+`fopen(path, IO_WRITE_MODE)`, which is `"wb"` / `"w"` (C truncates to length
+zero), and `dskw32.cpp` maps `kMCOpenFileModeWrite` to `CREATE_ALWAYS`
+(Windows truncates an existing file). OXT's own file layer was not read; it
+forks LiveCode 9.6.
+The OPPOSITE claim - "`open file ... for binary write` does NOT truncate in
+this engine (it overwrites from offset 0 and leaves any longer tail in
+place)" - stands in two save paths' comments (`qsEditWriteRoute` in
+`nocloud/src/nocloudquickshare.livecodescript` and
+`torrentxt/examples/torrent-quickshare.livecodescript`) and was repeated in
+OPEN-DECISIONS' blockchain summary. It is **UNEVIDENCED**: no dated run, no
+reference; it arrived with the suite's assembly (327235a, 2026-08-07) from a
+pre-suite repository. nocloud's own append route calls the same write route
+the one that "creates/truncates". The house safe-write it motivated,
+delete-then-recreate, is correct under either reading, which is why nothing
+has broken.
+**Rule:** do not rely on either behaviour for correctness. Delete first (the
+house form) or, better, write a sibling temporary file and `rename` it over the
+target, and read `the result` after each step. Neither in-place form is
+crash-safe: a process that dies between the open and the last write leaves an
+empty (truncating) or missing (delete-first) file either way; only the rename
+form keeps the old bytes until the new ones are whole.
+**Gate:** none. **Probe** (runbook S1, the work plan's optional measurements):
+write 10 bytes to a scratch file, `open file f for binary write`, write 3
+bytes, `close file f`, then `put the number of bytes of URL ("binfile:" & f)`:
+3 means the reference holds (promote this entry to OBSERVED and correct the two
+comments), 10 means the tree's claim holds for this engine (record it here as
+a divergence).
+**Does NOT mean:** `for update` (`"r+b"`, no truncation: writes land at the
+position and keep the bytes beyond them) or `for append` (writes at the end).
 
 ## 7. How to add to this file
 

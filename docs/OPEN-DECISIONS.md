@@ -226,8 +226,10 @@ history).**
   - no `fsync`, `fdatasync` or `FlushFileBuffers` in any `.c`, `.cpp`, `.h` or `.livecodescript`,
     and no atomic replace (`rename file` appears at three sites, one download helper's copies, and no
     state-writing path uses it);
-  - `open file ... for binary write` does not truncate (it overwrites from offset 0 and keeps any
-    longer tail), so the house safe-write is delete-then-recreate, which widens the crash window;
+  - the house safe-write is delete-then-recreate, motivated by the claim that `open file ... for
+    binary write` does not truncate. That claim is UNEVIDENCED, and the LiveCode reference and
+    engine source say the opposite (engine note 6.14, 2026-09-24); delete-first is right under both
+    readings, and neither in-place form is crash-safe, so the durability finding stands;
   - so persistence is best-effort. The report named a small native `fsync` + atomic-replace export
     from an existing shim as the one change that would move that label, a D-NN-shaped call;
   - the restart-and-read-back check is open (runbook row 6, closing-pass leg C in S3: resume
