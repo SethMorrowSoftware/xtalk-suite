@@ -105,7 +105,7 @@ Suite-wide documents: https://github.com/SethMorrowSoftware/xtalk-suite/blob/mai
 
 `tests/enet_smoke_test.cpp` drives the ENTIRE exported ABI over a live one-process loopback
 (connect data, echo, broadcast, byte-exact payloads, the keyhole partial drain, handle
-retirement, teardown) under **ASan+UBSan with ENet itself instrumented**; the record golden
+retirement, a disconnect while still connecting, teardown) under **ASan+UBSan with ENet itself instrumented**; the record golden
 and `record_handle_test` pin the wire format. `bash tools/run-gates.sh` runs the static
 gates: the family's unified, byte-identical `check-livecodescript.py`,
 `check-record-registry.py` (registries, ABI and budget in sync), the golden, the manifest.
