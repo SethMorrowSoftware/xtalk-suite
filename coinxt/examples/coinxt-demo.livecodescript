@@ -79,10 +79,11 @@ script "coinXTDemo"
 -- file, stop; it is in the wrong layer.
 --
 -- ==========================================================================
--- STATUS: ENGINE-PASSED, twice. This block used to read "NEEDS AN OXT PASS";
--- the passes landed 2026-08-10 (the folded suite harness, coinxt section
--- 207/207) and 2026-08-12 (Windows x64, 230/230, phase 5 included), both
--- recorded in CLAUDE.md's as-built notes.
+-- STATUS: ENGINE-PASSED. This block used to read "NEEDS AN OXT PASS"; the
+-- first passes landed 2026-08-10 (the folded suite harness, coinxt section
+-- 207/207) and 2026-08-12 (Windows x64, 230/230, phase 5 included), and the
+-- later ones run through 2026-08-24 (Windows x86_64, 290/290), all recorded
+-- in CLAUDE.md's as-built notes.
 --
 -- OXT cannot compile or run a .livecodescript headlessly, so historically a
 -- file like this would ship never having run. Three things stood behind it
@@ -111,11 +112,11 @@ script "coinXTDemo"
 --   * tests/coin-selftest.livecodescript drives every handler below against the
 --     same vectors, so ONE paste on a real engine settles the rest.
 --
--- That engine run has happened (the two passes above), so the closing line
+-- That engine run has happened (the passes above), so the closing line
 -- that stood here - "the LOGIC is observed, the ENGINE BEHAVIOUR is not" -
 -- no longer holds: both are observed for this layer. What stays open is
--- narrower and is phase 5's alone: a live testnet broadcast is still owed
--- before any "broadcastable" claim (see the phase-5 STATUS block below).
+-- narrower and is phase 5's alone: a live broadcast for the transaction
+-- families that have none on record (see the phase-5 STATUS block below).
 -- ==========================================================================
 --
 -- THE THREE PORTABILITY DISCIPLINES this file follows, each paid for already
@@ -2296,8 +2297,22 @@ end cxWifDecode
 -- phase included), and INDEPENDENTLY ACCEPTED 2026-08-12, extended to all
 -- four transaction families 2026-08-13 - fresh transactions built end to
 -- end through THIS file and accepted by python-bitcointx / eth-account
--- (tools/verify-independent-decoder.py). The one bar left: a live testnet
--- broadcast is still owed, so "broadcastable" stays unclaimed until then.
+-- (tools/verify-independent-decoder.py). The last bar, a LIVE BROADCAST, is
+-- met for one family and open for three. CLAUDE.md's "The wallet on an
+-- engine" records it: on 2026-09-02 examples/coin-wallet.livecodescript,
+-- whose wallet-core builds every Bitcoin spend through THIS file's
+-- cxBtcSighashLegacy / cxBtcSighashSegwit / cxBtcSighashTaproot and
+-- cxBtcTxEncode, made the "FIRST BROADCAST, esplora-tor: txid
+-- 7978bdd2c097c929cae2ab00084d4454b68b1d054a3f2d53fc7b51b70551e4d5, 226 vB,
+-- one legacy input, RBF, 10000 sat plus 181973 sat change (a self-payment);
+-- the reference decoder's txid equals the logged one" on testnet, and the
+-- 2026-09-03 logs record more accepted testnet spends. So legacy P2PKH is
+-- broadcast-proven. Still owed (the suite's docs/WORK-PLAN.md): a native
+-- P2WPKH broadcast, which no log records, and any EIP-155 or EIP-1559
+-- broadcast, which has never been made - "broadcastable" is claimed for
+-- none of those three until each has its own. (This paragraph said a live
+-- testnet broadcast was still owed until 2026-09-24, three weeks after the
+-- first one.)
 --
 -- This is still the SCRIPT layer, so it composes the primitives and NEVER
 -- touches a private key or a curve point: signing is the app calling cxSign /

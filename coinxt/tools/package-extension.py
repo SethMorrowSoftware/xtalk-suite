@@ -65,9 +65,12 @@ PLATFORM_SUFFIX = {
 }
 VALID_PLATFORM_IDS = sorted(PLATFORM_SUFFIX)
 
-# The 35 entry points src/coinxt.map narrows the library down to (ABI 5). A
-# library that does not export all of them will fail to bind at load, silently,
-# which is why this is checked here rather than discovered on a user's machine.
+# The entry points src/coinxt.map narrows the library down to: 44 at ABI 7
+# (2026-09-10, cnx_pubkey_combine). This comment said "35 (ABI 5)" through
+# ABIs 6 and 7 while the list below grew, so trust the list's length over any
+# number written here. A library that does not export all of them will fail to
+# bind at load, silently, which is why this is checked here rather than
+# discovered on a user's machine.
 # Keep this list equal to the cnx_* definitions in native/coinxt.c; the
 # freshness gate (tools/check-binary-freshness.py) derives the same set from
 # the source and holds the committed ELF libraries to it. That gate reads ELF
@@ -235,8 +238,9 @@ def read_pe_exports(path):
     export_rva, export_size = u32(dir_off), u32(dir_off + 4)
     if export_rva == 0 or export_size == 0:
         # A real, checkable answer and not an error: this DLL exports nothing.
-        # The caller then reports all 35 names missing and refuses, which is
-        # the correct verdict for a library that would bind none of them.
+        # The caller then reports every expected name missing and refuses,
+        # which is the correct verdict for a library that would bind none of
+        # them.
         return set()
 
     # RVA -> file offset needs the section table: an RVA is an offset into the
