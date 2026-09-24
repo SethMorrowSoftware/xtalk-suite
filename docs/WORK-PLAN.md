@@ -9,7 +9,10 @@ against the tree first. The same day a headless pass (suite PR #144) closed most
 the rows blocked by nothing, deleting each here as it landed, and added the rows its
 work turned up (torrentxt #18-#20, box2dxt #10-#11, riptide #8, nocloud #6). The
 suite paste's card look (owner decision D-23, 2026-09-24) added suite-wide #13-#14,
-suite engine #8 and riptide engine #10.
+suite engine #8 and riptide engine #10. That paste's first engine run, the same day
+(Windows, 2620/5/3; runbook section 8), closed box2dxt coding #10 and the Windows
+halves of box2dxt engine #1 and suite engine #1, ran part of suite engine #8, and
+added suite-wide #15, suite engine #9 and riptide engine #11.
 
 Where the rest lives: each engine leg's full green criterion, and the labels it flips,
 is its numbered row in [OXT-PASS-RUNBOOK.md](OXT-PASS-RUNBOOK.md) section 1.2 (this
@@ -43,17 +46,17 @@ result. Every "engine-proven" below quotes a dated record already in the tree.
 
 | Member | Latest dated engine record | Headless work open | Engine work open | Needs |
 |---|---|---|---|---|
-| sodiumxt | `sxSelfTest()` 106/106, Windows x64, 2026-08-24 (on a mingw DLL that no longer ships) | only optional: the unbound length accessors | Windows re-proof of the MSVC DLLs (both bitnesses); first Mac load; Linux at ABI 10; the demo | S1, S5 |
-| torrentxt | harness 101/101, Windows, 2026-08-17, 08-20 and 08-24; suite paste green 2026-08-27 (platform not recorded) | ABI 12 alert codes; Windows libtorrent pin; the shim's btih hex check; a route-key golden mirror | first contact with the 2026-09-12 binaries; demo re-opens; Tor toggle and #31-#33; closing-pass C/D; a real swarm | S1-S5, NET |
-| enetxt | folded 34, 2026-08-20; async loopback 2026-08-13 | only optional: the freshness gate's Windows DLL ABI read | standalone selftest; leg B and the LAN chat on two machines; internet chat; Mac | S1, S3, 2NET, S5 |
-| datachannelxt | folded 39, 2026-08-20; standalone async loopback 2026-08-15 | owner calls only: the Windows OpenSSL pin and notice; the legacy shim removal | loopback demo (no record at all); leg E; two-network call; browser interop; Mac | S1, S3, 2NET, S5 |
-| onionxt | offline self-test 61/0, Windows, 2026-08-17; the live-Tor core from the early bring-up | Mode B's lifecycle (after leg F) | Mode B (leg F); the B.12 probes; negative paths; the round trip | S1, S2, S4 |
-| coinxt | 290/290, Windows x64, 2026-08-24; wallet logs to 2026-09-03 | D-17; per-push Windows/mac CI; Core residue; gap limit | row Q (ABI 7, silent payments); demo; broadcast; the wallet's post-2026-09-04 surface; Core regtest | S1, S2, NET, S5 |
-| nostrxt | core 274/0/2 and relay SEND live, both 2026-08-24 | owner scope only: phase 9 (NIP-17/59, the outbox, `.onion` relays) | relay receive, NIP-42, `ws://`, a bad certificate, forced negatives | S1, NET, a local relay |
-| box2dxt | harness v30 375/0 Windows 2026-08-20, 374/1 Linux 2026-08-21 | x86-linux glibc regression; platformer polish; three shim defects (dispatch); the Kit's delimiter restore (after v32's answer) | the v32 total, at the paste's new 1200 width; the five games; R1; first Mac load; feel pass | S1, S5, PERSON |
-| riptide | phases 1-4 on two machines (to 2026-08-15); compute of 6-7, 391/0, 2026-08-24; phase-8 boot 2026-08-29 | bridge reader; RSL1 magic; own-head refresh; per-identity app state | row 35; the paste's second Run all (row 48); phases 5, 6, 7 live; phase 8 live; faststart re-run | S1-S4, NET |
+| sodiumxt | `sxSelfTest()` 106/106 in the suite paste, Windows, 2026-09-24 (which DLL was installed was not recorded; 2026-08-24's was a mingw DLL that no longer ships) | only optional: the unbound length accessors | Windows re-proof of the MSVC DLLs (both bitnesses); first Mac load; Linux at ABI 10; the demo | S1, S5 |
+| torrentxt | harness 106/106 in the suite paste, Windows, 2026-09-24 (the 996-byte caps included; which build was installed was not recorded); 101/101 on 2026-08-17, 08-20 and 08-24 | ABI 12 alert codes; Windows libtorrent pin; the shim's btih hex check; a route-key golden mirror | first contact with the 2026-09-12 binaries; demo re-opens; Tor toggle and #31-#33; closing-pass C/D; a real swarm | S1-S5, NET |
+| enetxt | folded 34/34, Windows, 2026-09-24 (the paste's live loopback stalled, 5.5); async loopback 2026-08-13 | only optional: the freshness gate's Windows DLL ABI read | standalone selftest; leg B and the LAN chat on two machines; internet chat; Mac | S1, S3, 2NET, S5 |
+| datachannelxt | folded 39/39, Windows, 2026-09-24 (the paste's live loopback stalled, 5.5); standalone async loopback 2026-08-15 | owner calls only: the Windows OpenSSL pin and notice; the legacy shim removal | loopback demo (no record at all); leg E; two-network call; browser interop; Mac | S1, S3, 2NET, S5 |
+| onionxt | offline self-test 74/0/1 in the suite paste, Windows, 2026-09-24 (its floor held: 75 against 51); the live-Tor core from the early bring-up | Mode B's lifecycle (after leg F) | Mode B (leg F); the B.12 probes; negative paths; the round trip | S1, S2, S4 |
+| coinxt | 296/296 in the suite paste, Windows, 2026-09-24; wallet logs to 2026-09-03 | D-17; per-push Windows/mac CI; Core residue; gap limit | row Q (ABI 7, silent payments); demo; broadcast; the wallet's post-2026-09-04 surface; Core regtest | S1, S2, NET, S5 |
+| nostrxt | core 277/0/2 in the suite paste, Windows, 2026-09-24 (its floor held: 279 against 278); relay SEND live 2026-08-24 | owner scope only: phase 9 (NIP-17/59, the outbox, `.onion` relays) | relay receive, NIP-42, `ws://`, a bad certificate, forced negatives | S1, NET, a local relay |
+| box2dxt | harness v32 385/0 Windows 2026-09-24, on the paste's 1200-wide card; v30 374/1 Linux 2026-08-21 | x86-linux glibc regression; platformer polish; three shim defects (dispatch) | the v32 total on Linux; the five games; R1; first Mac load; feel pass | S1, S5, PERSON |
+| riptide | phases 1-4 on two machines (to 2026-08-15); 487/2/2 in the suite paste, Windows, 2026-09-24 (both FAILs fixed statically since: engine #11); phase-8 boot 2026-08-29 | bridge reader; RSL1 magic; own-head refresh; per-identity app state | row 35; the paste's second Run all and the two fixes (row 48); phases 5, 6, 7 live; phase 8 live; faststart re-run | S1-S4, NET |
 | nocloud | no dated pass of this stack in the tree | route-table case; mtime ETag after D-10; the D-02 menu (deferred) | the 69-item checklist, web-link and Tor halves; sections 7-8 | S1, S2 |
-| holde-em | 667/0 folded, 2026-08-27 (v0.25.2) | **Level 2 not wired into play**; animations; 88 untested handlers | the v45 total; Phase 1 exit; 2d/2e/2f on real machines; the oracle round | S1-S4, 3M, PERSON |
+| holde-em | 721/0 folded, Windows, 2026-09-24 (v0.25.3, harness v45; 5 live-leg skips) | **Level 2 not wired into play**; animations; 88 untested handlers | Phase 1 exit; 2d/2e/2f on real machines; the oracle round | S1-S4, 3M, PERSON |
 
 Suite coverage on 2026-09-24: **867/878** public handlers exercised by the suite
 harness; the 11 exemptions are all onionxt's (engine socket callbacks and watchdogs). holde-em's advisory row reads 172/330
@@ -152,20 +155,22 @@ keeping the scaffold for its report.
 | 9 | Draft PR #138 (archivext reviewed against the 9.6.3 dictionary) targets a member that left this tree on 2026-09-21; it was still open and conflicted on 2026-09-23. Move it to the archivext repository or close it | A dead PR against this tree | S | owner |
 | 12 | *(optional)* Pay down bare citations: `tools/check-doc-anchors.py` re-resolves anchored citations only and counts the rest as unverified | A line number is a fact about today's file | S-M | none |
 | 13 | **Harness scaffold v2: `stPaint` paints by FIRST WORD**, as the suite core's `suLineKind` does (case-sensitive `FAIL`, `PASS`/`ok`, `SKIP`/`skip`, section headers), with a fixture for the note lines a first-word rule could misread. Carry it just before the four member harness windows' next engine re-pass, so one session proves the new block in all four; the suite paste repaints its own view after each run meanwhile (`suPaintResults`), which v2 would retire | The carried `stPaint` tests `begins with`, so a returned member report's indented `  FAIL` stays muted in the paste's All view. A master change re-carries into four published member harnesses, the preflight and the core, and relabels every window it touches | S | engine (rides the harness windows' next re-pass) |
+| 15 | Re-word the premise "the itemDelimiter is global mutable state" where the tree states it as a fact (about twenty sites: member `CLAUDE.md` gotchas, code comments in onionxt, coinxt, datachannelxt, torrentxt and holde-em, coinxt's wallet docs, and the carried templates' gotcha 5, byte-identical in `onionxt/templates/` and `coinxt/templates/`) to engine note 2.3's settled answer: handler-LOCAL on Windows (OBSERVED 2026-09-24, both directions), the dictionary's claim everywhere. Keep every save, set, restore: it still guards the rest of the handler that sets the delimiter | A stated fact the engine contradicted on its first run of the probe; the practice it justifies is still right, so nothing is wrong except the reason | S-M | none |
 | 14 | *(pre-engine)* A `--full` profile for `tools/check-suite-ui-boot.py`: deliver `openStack` to the whole generated paste with every member folded, through the family interpreter (native members absent, so their sections SKIP; the pure-script layers, the tallies, teardown and the summary run), as the step before an engine session rather than a per-push gate | The all-absent profile settles the board's logic only; a whole-paste run would show a fold-level fault (a section that throws, rows that do not add up to the totals) in minutes rather than in an engine session. It settles logic, not parsing, and upgrades no label | M-L | none |
 
 ### 1.3 Engine work (suite-level)
 
 | # | Run | Where | Row | Green (in brief) |
 |---|---|---|---|---|
-| 1 | `tests/preflight.livecodescript`, then `tests/suite-selftest.livecodescript`, on Windows and then Linux (glibc 2.38 or newer); quit and relaunch OXT before every torrent-bearing paste (trap 5.1.1) | S1 items 0-1 | 31 and the member rows | every member LOADED at its ABI; RECORD each member total (the runbook lists the last ones), do not match it |
+| 1 | `tests/preflight.livecodescript`, then `tests/suite-selftest.livecodescript`, on Windows and then Linux (glibc 2.38 or newer); quit and relaunch OXT before every torrent-bearing paste (trap 5.1.1). The Windows paste ran 2026-09-24 (2620/5/3, runbook section 8); the Windows preflight and both on Linux are owed, and a record should say which binaries were installed | S1 items 0-1 | the member rows | every member LOADED at its ABI; RECORD each member total (the runbook lists the last ones), do not match it |
 | 2 | Engine-notes probes: the 2^53 line and the `or` probe | S1 | P | notes 2.4 and 2.5 promoted to OBSERVED with the exact text, or 2.5 rewritten |
 | 3 | Other engine-notes probes: 5.3 (a second stack in front, and a `send ... in` handler writing an unqualified field: record where the write lands); 2.6 (`the number of chars of X + 1`, and `field "x" & tKind`); optionally 1.1 (a second `script "..."` line mid-file with a declared local read below it) | S1 | - | each note promoted with a date, or left DOCUMENTED / UNEVIDENCED |
 | 4 | The demo re-open fleet, including `start-here.livecodescript`: open one card-hook box2dxt game and one stack-hook demo from the launcher and record whether each builds on first open (its `go invisible stack` / parked-closed create path, engine note 5.5) | S1 items 3, 5 | 37, 38 | per row; this is the largest engine item |
 | 5 | Platform rows: Windows 64- and 32-bit, Linux 32-bit, and the first Mac load of all six dylibs | S5 | 23, 24, 47 | preflight LOADED and the member sections green on that row, bitness recorded |
 | 6 | *(optional)* Cheap measurements nothing schedules: FFI-crossing cost and interpreter op rate; whether `byte N of X` on a 60,000-byte Data is O(1) or O(N); `seek to N in file` (a standing nocloud VERIFY) and `rename file` semantics; whether `open file ... for binary write` truncates an existing longer file (engine note 6.14 gives the four-line probe: the reference and engine source say it does, the tree's comments said it does not); whether OXT exposes SQLite through revDB | S1 | - | numbers recorded in engine notes; 6.14 promoted to OBSERVED with a date, or rewritten as a divergence |
 | 7 | Model C Phase 4 exit: a FRESH user on each of macOS, Windows and Linux, following only section 13 of [ONIONXT-INTEGRATION-PLAN.md](ONIONXT-INTEGRATION-PLAN.md), completes a two-machine anonymous transfer | S4 on each OS + PERSON | - | all three done; the phase does not close before |
-| 8 | The suite board's first engine run (D-23): the paste's window, its rows, a row's Run, the filters and the boot self-check, in item 1's launch | S1 item 1 | 48 | the window builds at 1200x640 with every row; the Boot check view green and the summary's boot note; the pills after Run all; Run on sodiumxt, on torrentxt twice and on enetxt; riptide green on a second Run all (3.1 engine #10); each filter; whether a pressed Run stays hilited and whether the press arms the run; box2dxt's total at 1200 wide; Copy results unchanged |
+| 8 | The suite board's first engine run (D-23), in item 1's launch. PARTLY RUN 2026-09-24 (Windows): the build at 1200x640 with every row, the boot self-check green (9/0/0) with its summary note, Run all with the rows accounting for every check, box2dxt at 1200 wide, Copy results unchanged. What a text report cannot show is still owed | S1 item 1 | 48 | the pills' look after Run all; Run on sodiumxt, on torrentxt twice and on enetxt; riptide green on a second Run all (3.1 engine #10, #11); each filter and a row's Show; whether a pressed Run stays hilited and whether the press arms the run |
+| 9 | Tell the machine from the paste: on the machine where the paste's two loopbacks stalled (2026-08-27 and 2026-09-24, both in the same phases), run the standalone `enetxt/tests/enet-selftest.livecodescript` and `datachannelxt/examples/datachannel-loopback.livecodescript` | S1 | - (runbook 5.5) | both stall: record an environment note (blocked UDP to 127.0.0.1) and leave the paste alone; both complete: the paste's loopbacks are at fault, a defect to root-cause |
 
 ### 1.4 Owner calls this plan waits on
 
@@ -419,7 +424,11 @@ keeping the scaffold for its report.
   enters all 370 LC_API exports under ASan/UBSan. Risk R1 has Win32 verdicts only
   (2026-06-10).
 - Harness v32 (2026-09-24) drives the ten 2026-09-09 delimiter-fixed Kit handlers
-  under a caller's tab; 385 expected in a green run, unobserved. Both references name
+  under a caller's tab; it ran 385/0 on Windows on 2026-09-24, on the suite paste's
+  1200-wide card, and its two lines answered engine note 2.3 there: a caller's tab
+  does not reach a called handler, and a Kit call leaves its caller's delimiter
+  alone. That closed coding #10 (restore the ten handlers' delimiter only if a
+  callee's comma leaked back: it did not). Both references name
   every handler (376/376 raw, 313/313 Kit), held by `tools/check-reference-docs.py`.
 
 **Coding.**
@@ -430,7 +439,6 @@ keeping the scaffold for its report.
 | 4 | Platformer polish that can be done in the tree: the dev level-picker behind the debug toggle, or styled as intentional; sweep unused handlers and the dead camera-fallback paths; extend `tools/audit-platformer.py` to the vertical L7; check the win-screen summary (time, falls, gems, stars, coin score, hero, a "flawless run" callout); retune `pfMakeCoin`'s coin-tier thresholds if wanted | The code half of the polish plan | M | none |
 | 5 | The raw `b2*` script ratchet: 245 handlers named by no script | Blind assertions against a foreign-bound API would mostly be test bugs | L | engine |
 | 8 | Point `box2dxt/README.md`'s build badge at the member repository's own `native.yml` once that lane has run | It still points at the suite lane | S | the first member-repository run |
-| 10 | The ten 2026-09-09 Kit handlers set `itemDelimiter` to comma and never restore it (`box2dxt/src/box2dxt-kit.livecodescript`, e.g. `b2kAddBox`). Harmless if the property is handler-local, as the LiveCode dictionary says; a leak into callers if it is global, as engine note 2.3 records. Restore them if harness v32's second observation shows a callee's comma leaking back (note 2.3's counterpoint) | Found statically 2026-09-24 | S | engine (v32's answer) |
 | 11 | Native shim defects found statically 2026-09-24, each a shim change that needs its binaries rebuilt by a dispatch (rule 5): the per-type joint accessors (`src/box2d_lc.c` near 1610-1712) check that the handle is live, not the joint's type, so a wrong-type joint reaches Box2D, and `b2lc_joint_type` answers 0 for both a distance joint and a stale handle; `b2lc_shape_polygon_update` on a non-polygon zeroes the count but keeps the previous radius; the committed Linux `.so` files carry SONAME `libbox2dxt.so` (`BOX2DXT_BARE_SONAME` is OFF), so `b2LoadNativeLib` / `b2LoadNativeLibHere` cannot preload them. All three are documented in `box2dxt/docs/api-reference.md` | Wrong answers a script cannot tell apart | S + dispatch | dispatch |
 
 Parked by D-19 (2026-08-27, "triggers stand"), not scheduled: Wave 8 builder
@@ -442,7 +450,7 @@ extension, true multi-layer parallax (waits on transparent overlay art).
 
 | # | Run | Where | Row | Green (in brief) |
 |---|---|---|---|---|
-| 1 | Suite paste on Windows **and** Linux | S1 item 1 | 31, 48 | RECORD the v32 total (385 expected), the first at the paste's 1200 width (760 before D-23; the harness centres its world on that card, and two camera checks scroll against it); Linux prints `playLoudness` as a note; the v32 section's two observations (does a caller's tab reach a called handler; does a Kit call's comma leak back) |
+| 1 | Suite paste on Linux (Windows ran 2026-09-24: v32 385/0 at the paste's 1200 width, runbook row 31 closed) | S1 item 1 | 48 | RECORD the v32 total; `playLoudness` prints as a note; the v32 section's two observations on Linux (a caller's tab reaching a called handler, or a Kit call's comma leaking back, would re-open engine note 2.3 for that platform) |
 | 2 | The five games from `start-here.livecodescript`: `box2dxt-demo`, `-platformer`, `-slingshot`, `-contraption-builder`, `-spike-gamekit` | S1 item 5 (Windows, Linux) | 38 | each builds on FIRST open; the contraption Images panel does not throw; the platformer card fade reveals the level and the L7 camera works; slingshot's own list passes |
 | 3 | Risk R1: `box2dxt-spike-gamekit` on Linux and a Mac, recording the S1-S12 verdicts | S1 + S5 | 38 | the verdicts |
 | 4 | First Mac load: install the `.lce`, `put b2Version()` returns 4, then the paste section and the spike | S5 | 24 | as named |
@@ -490,6 +498,7 @@ extension, true multi-layer parallax (waits on transparent overlay art).
 | 8 | The phase-3 faststart re-run | S3 item 7 | 41 | playback starts while visibly below 100% |
 | 9 | *(optional, low priority)* Diagnose the first phase-8 card's `Chunk: no target found` at `openStack` (2026-08-29), re-introducing the suspects one at a time: `repeat for each key` over the unset `sAppRelays` / `sNxRelayHandle`, and `nxrInit the long id of me` in `openStack` | S1 | - | the cause named (the re-landed `openStack` is byte-identical to the engine-proven body, so nothing waits on it) |
 | 10 | The paste's stale-session fix (D-23's fold rewrite of `rstAcquireSession`): a SECOND Run all in one launch, TorrentXT installed. Before it, the fold cached the core's handle from the first run, and the core takes a new session every run, so each later run in the launch drove a stopped one; the first run passes either way | S1 item 1 | 48 | the four sections that take the session (chunked-post store, DM, live feed, media) green on the second run, not only the first |
+| 11 | The two FAILs of the 2026-09-24 paste run, fixed statically the same day, on an engine: the harness's capability check now names the probe's ten keys (it counted seven, stale since phase 8), and `rsReadBEu64` decides its 2^53 bound on the two u32 halves, so 2^53 + 1 is refused (engine note 2.10: the old quotient-form bound let it through on the engine while every headless gate was green) | S1 item 1 | 48 | riptide 0 failed in the paste; the "2^53 + 1 is REFUSED" check green |
 
 ### 3.2 nocloud
 
@@ -601,10 +610,10 @@ Advisory, like the recommendations in OPEN-DECISIONS: a route, not a decision.
 3. **The engine sessions, in the runbook's order:** S1 first (Windows, then Linux with
    glibc 2.38 or newer; about 3-4 hours), then S2-S5 as resources allow, and the NET,
    2NET and 3M legs on their own. Record totals rather than matching them. S1 item 1
-   now includes the suite board's first run (runbook row 48, D-23), and S1
-   settles two questions the 2026-09-24 pass left in the engine notes: 2.3's scope
-   (box2dxt v32 prints whether a caller's delimiter crosses a handler call) and 6.14
-   (whether `open file ... for binary write` truncates; a four-line probe).
+   now includes the half of the suite board's first run (runbook row 48, D-23)
+   that a text report cannot show; the 2026-09-24 run settled engine note 2.3 for
+   Windows (box2dxt v32), and S1 still settles 6.14 (whether `open file ... for
+   binary write` truncates; a four-line probe) and 2.3 for Linux.
 4. **What only a person can close:** D-04's wording and the owner calls; the box2dxt
    scenery and feel pass; holde-em's Phase 5 review and soak; the Model C Phase 4 exit
    on each OS.

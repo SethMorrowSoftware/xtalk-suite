@@ -143,6 +143,10 @@ the node unchanged instead of throwing: a fail-OPEN in a derivation path.
 **Rule:** never infer "no trailing empty component" from an item count; check the string.
 
 ### 2.3 `itemDelimiter` and `lineDelimiter` are global mutable state
+**Superseded in part, OBSERVED 2026-09-24 (Windows; read the counterpoint
+and its settlement below first):** on that engine both delimiters are
+HANDLER-LOCAL in both directions. The rule stands; the title's cross-handler
+claim does not, and the number is kept because the tree cites it.
 **OBSERVED** (several times, in shipped code). A handler that sets one and
 returns without restoring it corrupts every later parse in unrelated code; the
 symptom is always "item 1 returned the whole list". **Rule:** save, set,
@@ -160,6 +164,26 @@ tab reaches a called handler, and whether a callee's comma leaks back - so its
 first engine run settles it: record the answer here, and reclassify this entry
 only then. The rule holds under both readings, which is why nothing changes
 until it does.
+**Settled for Windows, OBSERVED 2026-09-24** (the D-23 suite paste's first
+run, box2dxt harness v32 folded in, 385/0; runbook section 8): both halves
+printed the dictionary's answer. "a caller's tab does NOT reach a called
+handler on Win32 (it saw comma)", and "a Kit call left its caller's delimiter
+alone on Win32 (tab in, tab out)". So on that engine a delimiter set in one
+handler is invisible to the handlers it calls and cannot leak back out of
+them: the title's "global" is WRONG there, and this entry's undated
+observations can only have been the leak that both readings share - a
+delimiter left set for the rest of ONE handler, reaching a later parse in the
+same handler. Linux and macOS have not run the probe; it is one engine build
+on one platform, and the dictionary's claim is platform-independent, so the
+expectation is the same answer everywhere, not yet the evidence.
+**What changes:** the reason, not the rule. Save, set, restore still guards
+the rest of the handler that set the delimiter, which is where every
+remaining hazard lives, and it costs nothing where it is redundant. What no
+longer holds is "an unrestored delimiter corrupts its caller" - many member
+comments and the carried templates' gotcha still say it, and that wording is
+open work (WORK-PLAN suite-wide), not a defect: nothing that restores a
+delimiter is wrong for doing so. **Does NOT mean:** a handler may leave a
+delimiter set and then parse something else itself.
 
 ### 2.4 Every number is an IEEE double, so integers are exact only to 2^53
 **DOCUMENTED** (LiveCode's numeric model; runbook row P is the five-minute
@@ -172,7 +196,9 @@ REFUSES any integer past the exact range; before that it computed at Python's
 arbitrary precision, looser than the engine.
 **Rule:** never accumulate past 2^53. Split into bytes, hex or decimal digits
 (coinxt's no-bignum discipline), and bound every wide decoder at its parse
-site, because after the arithmetic nothing is left to detect.
+site, because after the arithmetic nothing is left to detect - and decide
+that bound on exact integers, not against a quotient: on 2026-09-24 an engine
+let 2^53 + 1 through a quotient-form bound that IEEE arithmetic refuses (2.10).
 
 ### 2.5 `and` and `or` evaluate BOTH operands - there is no short-circuit
 **DOCUMENTED** for the rule itself (runbook row P(b) is the probe that would
@@ -262,6 +288,38 @@ many it filled (`binaryEncode` is the function that returns data).
 **Rule:** `get binaryDecode("H*", pData, tHex)`, then read `tHex`. **Gate:**
 none.
 **Does NOT mean:** `binaryEncode` returns its result like any function.
+
+### 2.10 A comparison of two nearly-equal numbers is not decided the IEEE way: a bound checked against a QUOTIENT lets the value through
+**OBSERVED 2026-09-24** (Windows, the D-23 suite paste's first run; runbook
+section 8): riptide's `rsReadBEu64` refused a u64 past 2^53 with
+`if tHi > (9007199254740992 - tLo) / 4294967296 then return empty`. For the
+first unrepresentable value, 2^53 + 1 (`tHi` = 2097152, `tLo` = 1), IEEE
+double arithmetic answers `2097152 > 2097151.99999999976716935...` TRUE, and
+so did the family interpreter, so every headless gate was green. On the engine
+the record PARSED, and the harness check "a seq of 2^53 + 1 is REFUSED (the
+first unrepresentable value)" went red while its neighbours (2^53 itself
+parses, and comes back exact; an all-ones u64 is refused) passed. The two
+operands differ by about 2.3e-10: 1.1e-16 of their size.
+**INFERRED, not observed: the mechanism.** Either the engine compares numbers
+with a tolerance, or an operand passed through a string form of about 15
+significant digits on the way; nothing in the run separates the two, and it
+cannot say whether a tolerance would be absolute or relative to the operands'
+size. That matters: coinxt's wallet decoders bounded their accumulators the
+same way (`tValue > (9007199254740992 - tByte) / 256`), where the margin is
+0.0039 at 3.5e13 - comfortably outside an absolute tolerance, and exactly as
+thin (1.1e-16 of the size) as riptide's under a relative one.
+**Rule:** decide a bound with exact INTEGERS that differ by at least 1 at a
+modest magnitude - compare the two u32 halves, or the leading bytes - and
+never against a quotient, a product past 2^53, or any value whose verdict
+hangs on a sub-integer difference. A bound that only works in exact
+arithmetic is a bound the engine may not enforce. Both sites were rewritten
+that way on 2026-09-24 (verified statically; needs an OXT pass).
+**Gate:** riptide's harness checks the u64 bound from both sides (2^53 parses,
+2^53 + 1 is refused), which is how an engine run caught it; nothing headless
+can, while the interpreter decides comparisons the IEEE way.
+**Does NOT mean:** integer arithmetic below 2^53 is inexact (it is exact:
+2.4), or that comparing two clearly different numbers is unreliable; only a
+verdict that rests on a difference far below 1 is.
 
 ## 3. Control flow
 
