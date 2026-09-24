@@ -5,7 +5,9 @@ Last re-audited 2026-09-23: every member was reviewed against its own tree (code
 tests, committed binaries, git history) at `e3d2496`, and the list was refreshed the
 same day, after the docs consolidation closed its doc-fix items. The open items that
 consolidation's review and repair passes found were added 2026-09-24, each checked
-against the tree first.
+against the tree first. The same day a headless pass (suite PR #144) closed most of
+the rows blocked by nothing, deleting each here as it landed, and added the rows its
+work turned up (torrentxt #18-#20, box2dxt #10-#11, riptide #8, nocloud #6).
 
 Where the rest lives: each engine leg's full green criterion, and the labels it flips,
 is its numbered row in [OXT-PASS-RUNBOOK.md](OXT-PASS-RUNBOOK.md) section 1.2 (this
@@ -46,9 +48,9 @@ result. Every "engine-proven" below quotes a dated record already in the tree.
 | onionxt | offline self-test 61/0, Windows, 2026-08-17; the live-Tor core from the early bring-up | Mode B's lifecycle (after leg F) | Mode B (leg F); the B.12 probes; negative paths; the round trip | S1, S2, S4 |
 | coinxt | 290/290, Windows x64, 2026-08-24; wallet logs to 2026-09-03 | D-17; per-push Windows/mac CI; Core residue; gap limit | row Q (ABI 7, silent payments); demo; broadcast; the wallet's post-2026-09-04 surface; Core regtest | S1, S2, NET, S5 |
 | nostrxt | core 274/0/2 and relay SEND live, both 2026-08-24 | owner scope only: phase 9 (NIP-17/59, the outbox, `.onion` relays) | relay receive, NIP-42, `ws://`, a bad certificate, forced negatives | S1, NET, a local relay |
-| box2dxt | harness v30 375/0 Windows 2026-08-20, 374/1 Linux 2026-08-21 | x86-linux glibc regression; platformer polish | the v32 total; the five games; R1; first Mac load; feel pass | S1, S5, PERSON |
+| box2dxt | harness v30 375/0 Windows 2026-08-20, 374/1 Linux 2026-08-21 | x86-linux glibc regression; platformer polish; three shim defects (dispatch); the Kit's delimiter restore (after v32's answer) | the v32 total; the five games; R1; first Mac load; feel pass | S1, S5, PERSON |
 | riptide | phases 1-4 on two machines (to 2026-08-15); compute of 6-7, 391/0, 2026-08-24; phase-8 boot 2026-08-29 | bridge reader; RSL1 magic; own-head refresh; per-identity app state | row 35; phases 5, 6, 7 live; phase 8 live; faststart re-run | S1-S4, NET |
-| nocloud | no dated pass of this stack in the tree | mtime ETag after D-10; the D-02 menu (deferred) | the 69-item checklist, web-link and Tor halves; sections 7-8 | S1, S2 |
+| nocloud | no dated pass of this stack in the tree | route-table case; mtime ETag after D-10; the D-02 menu (deferred) | the 69-item checklist, web-link and Tor halves; sections 7-8 | S1, S2 |
 | holde-em | 667/0 folded, 2026-08-27 (v0.25.2) | **Level 2 not wired into play**; animations; 88 untested handlers | the v45 total; Phase 1 exit; 2d/2e/2f on real machines; the oracle round | S1-S4, 3M, PERSON |
 
 Suite coverage on 2026-09-24: **867/878** public handlers exercised by the suite
@@ -572,20 +574,25 @@ decision (a role a joiner can choose, or a sit-request the host answers).
 
 Advisory, like the recommendations in OPEN-DECISIONS: a route, not a decision.
 
-1. **Headless first: the small fixes that let the next engine run observe more** (each
-   S, blocked by nothing): box2dxt harness v32; nostrxt's 2026-09-09 refusals and its
-   measured floor; onionxt's three exemptions retired, `oxLaunchTor`'s result checks
-   and the roundtrip fields; torrentxt's boundary tests and the quickshare HEAD port;
-   the enetxt and datachannelxt smoke blocks; riptide's LAN `caseSensitive`; nostrxt's
-   NIP-42 controls; the stale-text rows. Regenerate the paste, the preflight and the
-   demo embeds once, at the end.
+1. **Headless first.** The 2026-09-24 pass closed the short list that stood here
+   (box2dxt v32, nostrxt's floor and pins, onionxt's exemptions and launch checks,
+   torrentxt's boundary tests and HEAD port, the enetxt and datachannelxt smoke
+   blocks, riptide's LAN keys, the stale-text rows). Left with no blocker: torrentxt
+   #18 (the route-key golden mirror); nocloud #6 (route case) and the optional #4 boot
+   gate; holde-em #3 (more leaf tranches), #10 (the admission list) and the L-sized #1
+   (Level 2 in played hands); coinxt #3 (the Core residue); box2dxt #4 (platformer
+   polish); and the optional rows. Regenerate the paste, the preflight and the demo
+   embeds once, at the end of any batch.
 2. **Release-lane decisions, then one dispatch:** the Windows pins and the glibc floor
    decided, torrentxt ABI 12 landed in the same change,
    `release-binaries.yml` dispatched once, so the engine session proves one coherent set. Proving today's
    binaries first and dispatching after is equally honest; mixing the two wastes a pass.
 3. **The engine sessions, in the runbook's order:** S1 first (Windows, then Linux with
    glibc 2.38 or newer; about 3-4 hours), then S2-S5 as resources allow, and the NET,
-   2NET and 3M legs on their own. Record totals rather than matching them.
+   2NET and 3M legs on their own. Record totals rather than matching them. S1 also
+   settles two questions the 2026-09-24 pass left in the engine notes: 2.3's scope
+   (box2dxt v32 prints whether a caller's delimiter crosses a handler call) and 6.14
+   (whether `open file ... for binary write` truncates; a four-line probe).
 4. **What only a person can close:** D-04's wording and the owner calls; the box2dxt
    scenery and feel pass; holde-em's Phase 5 review and soak; the Model C Phase 4 exit
    on each OS.
