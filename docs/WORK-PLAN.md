@@ -32,12 +32,14 @@ result. Every "engine-proven" below quotes a dated record already in the tree.
   PERSON a human judgement (a review, a feel pass).
 - Each member has a **Coding** table (work in this tree) and an **Engine** table (a
   run). The engine table's Row column is the runbook row; `-` means no row exists yet.
+- **Numbers are stable.** A closed row is deleted and its number is never reused, so
+  a table can have gaps: rows cite each other ("1.2 #2", "2.8 coding #9").
 
 ## At a glance
 
 | Member | Latest dated engine record | Headless work open | Engine work open | Needs |
 |---|---|---|---|---|
-| sodiumxt | `sxSelfTest()` 106/106, Windows x64, 2026-08-24 (on a mingw DLL that no longer ships) | understated ChaCha20 labels; a stale CI comment | Windows re-proof of the MSVC DLLs (both bitnesses); first Mac load; Linux at ABI 10; the demo | S1, S5 |
+| sodiumxt | `sxSelfTest()` 106/106, Windows x64, 2026-08-24 (on a mingw DLL that no longer ships) | only optional: the unbound length accessors | Windows re-proof of the MSVC DLLs (both bitnesses); first Mac load; Linux at ABI 10; the demo | S1, S5 |
 | torrentxt | harness 101/101, Windows, 2026-08-17, 08-20 and 08-24; suite paste green 2026-08-27 (platform not recorded) | ABI 12 alert codes; Windows libtorrent pin; boundary tests; quickshare HEAD; Model C guard gaps | first contact with the 2026-09-12 binaries; demo re-opens; Tor toggle and #31-#33; closing-pass C/D; a real swarm | S1-S5, NET |
 | enetxt | folded 34, 2026-08-20; async loopback 2026-08-13 | smoke block for the 2026-09-09 fix; stale headers | standalone selftest; leg B and the LAN chat on two machines; internet chat; Mac | S1, S3, 2NET, S5 |
 | datachannelxt | folded 39, 2026-08-20; standalone async loopback 2026-08-15 | browser-peer page; orphan-channel smoke block; stale headers | loopback demo (no record at all); leg E; two-network call; browser interop; Mac | S1, S3, 2NET, S5 |
@@ -109,14 +111,14 @@ torrentxt.
 `.livecodescript` file in the tree calls `fsync`, `fdatasync` or `FlushFileBuffers`.
 The tree has no atomic replace either: `rename file` appears only in one
 download-completion helper, copied three times (nocloud, `torrent-quickshare`,
-`torrent-dht-channels`), and no state-writing path uses it. `open file ... for binary
-write` does not truncate a longer existing file: the 2026-09-08 blockchain research
-says so (summarised in OPEN-DECISIONS), and so do code comments in
-`nocloud/src/nocloudquickshare.livecodescript` and
-`torrentxt/examples/torrent-quickshare.livecodescript`, but the engine notes have no
-entry for it (1.2 #11). So the house safe-write is delete-then-recreate, which widens
-the crash window. The research found no recorded run that restarted a process and read
-its own state back. The first run scheduled to do that is torrentxt closing-pass leg C,
+`torrent-dht-channels`), and no state-writing path uses it. The house safe-write is
+delete-then-recreate, motivated by a claim the tree carried as fact, that `open file
+... for binary write` does not truncate a longer file; engine note 6.14 (2026-09-24)
+files that claim as UNEVIDENCED, because the LiveCode reference and engine source say
+write mode DOES truncate. Delete-first is right under both readings, and neither
+in-place form is crash-safe: only write-to-temp plus `rename` keeps the old bytes until
+the new ones are whole. The research found no recorded run that restarted a process
+and read its own state back. The first run scheduled to do that is torrentxt closing-pass leg C,
 which resumes across an OXT restart (2.2 Engine #4).
 
 **Publishing is live.** `publish-members.yml` run 3, attempt 2, adopted and published
@@ -134,49 +136,11 @@ manual dispatch (rule 5); the harness scaffold's non-adoption of the UI kit (D-1
 |---|---|---|---|---|
 | 1 | **Choose a suite Linux glibc floor.** Move each Linux release row into a manylinux container (as torrentxt's x86_64 row and box2dxt's per-push lane already do), or publish every measured floor (sodiumxt states none). Add a check to `tools/install-release-binaries.py` that refuses a floor above the stated one | Section 1.1: two members cannot load on current LTS distributions, and box2dxt's x86 floor regressed silently | M | owner, then dispatch |
 | 2 | **Fold array-key case in the family interpreter.** `coinxt/tools/lcs-interp.py` and its byte-identical `nostrxt/tools/lcs-interp.py` model an array as a case-sensitive dict; the engine folds key case (engine note 2.7, OBSERVED 2026-09-15). Add a case-folded index that keeps the first spelling for `the keys of`, then re-run every execution gate that uses the interpreter (coinxt, nostrxt, riptide, holde-em, nocloud) and READ each new red: a latent engine bug, or a model artefact | Every interpreter-driven gate passes code the engine would run differently; riptide's LAN keys (3.1 #3) are a concrete case | S to change, M to triage | none |
-| 3 | **Stale text in suite-root tools and code** (no behaviour change; rebuild the paste and the preflight after): see the list below | A reader, or a generated file, inherits each one | S | none |
 | 4 | **Supply-chain hygiene.** SHA-pin the 54 `uses:` lines in `.github/workflows` (none is pinned today); add a root SECURITY.md with a disclosure contact (only nocloud has one); add a gate that checks coinxt's vendored trezor-crypto and libsecp256k1 against the commits `coinxt/native/vendor/VENDOR.md` names. No member has had an external security review | Standing gaps found by the 2026-09-08 blockchain research, re-verified 2026-09-23 | M | owner |
-| 5 | **Promote OBSERVED engine lessons that live only in member files into engine notes**, as new numbers (never renumber): from riptide, `textDecode(x, "UTF-8")` is lossy and does not throw (2026-08-15), and `go card "X" of me`, `field ... of card ... of me` and `card 1 of me` are rejected (2026-08-15, 48 sites; riptide traps 2 and 4). From the carried `onionxt/templates/CLAUDE.md` gotcha log (byte-identical in coinxt): `the detailedFiles` is a compile-time bad factor; `read ... until crlf` returns the CRLF; a read with no quantifier streams; an accept bind failure shows only in the result (10013/10048); private handlers are unreachable through `with message`, `send` and `dispatch`; a comma in `textFont` means fontname,language; a field must be opaque to fill; `bitAnd`/`^` give "double binary operator"; `binaryDecode` returns a count; Windows 10061 arrives through `socketError` | The engine notes are the authoritative list; a lesson outside it is found only by the member that learned it | S | none |
 | 6 | macOS Gatekeeper/quarantine guidance for the unsigned universal dylibs, written from the first Mac session's record (runbook 2.1 and row 24 ask it to record the first-load behaviour and remedy) | None exists; unsigned distribution was accepted 2026-08-23 | S | engine |
-| 7 | Give `suite-gates.yml`'s `gates` job a `timeout-minutes`, or keep watching its gates step in the run history. Only the cross-member job sets one (120), so GitHub's 6-hour default is the ceiling: a run was cancelled at exactly 6h00m on 2026-09-11, before concurrent wallet gates and compiled regexes brought the step to 2h15m / 2h32m | The next hour of serial gate work meets the ceiling again | S | none |
 | 8 | Publishing follow-ups: watch each member repository's first generated `gates.yml` / `native.yml` run and record the result; put the `XTALK_PUBLISH_TOKEN` expiry in a calendar (rotation steps: MEMBER-REPO-SPLIT section 2) | This session's GitHub scope cannot see the member repositories' runs; the token is the owner's | S | owner |
 | 9 | Draft PR #138 (archivext reviewed against the 9.6.3 dictionary) targets a member that left this tree on 2026-09-21; it was still open and conflicted on 2026-09-23. Move it to the archivext repository or close it | A dead PR against this tree | S | owner |
-| 10 | Runbook row 37 (the demo re-open fleet): add to `torrent-quickshare`'s criteria "the Tor pill (`qsTorPill`, `430,8,612,32`) and the two transport toggles do not overlap the title or tagline", so that re-opening it closes register #30 ([ONIONXT-INTEGRATION-PLAN.md](ONIONXT-INTEGRATION-PLAN.md) 12.3, re-opened from a wrong CLOSED label). 2.2 Engine #2 names it already | #30 rides row 37, and the row's criteria do not say so; the result needs an engine | S | none |
-| 11 | Add an engine-notes entry, at a new number, for "`open file ... for binary write` does not truncate: it overwrites from offset 0 and leaves any longer tail; the fix is delete-then-recreate, the house safe-write". Class it by its real source and never OBSERVED yet: the tree carries it only in two undated code comments (`torrentxt/examples/torrent-quickshare.livecodescript` near line 3143, `nocloud/src/nocloudquickshare.livecodescript` near line 7761) and OPEN-DECISIONS' blockchain summary, so DOCUMENTED if the LiveCode reference states it, UNEVIDENCED if not. 1.3 #6 probes it | The engine notes are the authoritative list, and two save paths rely on this behaviour (1.1, state writes) | S | none |
 | 12 | *(optional)* Pay down bare citations: `tools/check-doc-anchors.py` re-resolves anchored citations only and counts the rest as unverified | A line number is a fact about today's file | S-M | none |
-
-The stale text for #3:
-- `tests/suite-closing-pass.livecodescript` header: "except the seven live-Tor ones"
-  (three live-daemon exemptions remain), and section A's "still-static" (leg A closed
-  2026-08-15).
-- `tools/build-preflight.py` docstring: a PREREQ of "five hand-typed probes", S1 at
-  "SIXTY MINUTES" (now about 3-4 h), sodiumxt's mac dylib "at ABI 6" (ABI 10 since
-  2026-08-27). Regenerate `tests/preflight.livecodescript`.
-- `tests/suite-selftest.core.livecodescript`: near line 35 it cites the runbook's
-  "pass blockquotes" (now runbook section 8 and the member ledgers); the onionxt floor
-  comment counts ten sections (eleven, with `oxh*`); riptide is titled "Riptide Social
-  (phases 1-2)" here and in `tools/build-suite-selftest.py` (it covers phases 1-8).
-- D-14 called open in `tools/check-shim-scaffold-drift.py` and a `tools/build-all.sh`
-  comment (RETIRE, 2026-08-27); "phase-2" exemption reasons in
-  `tools/check-ui-kit-drift.py` (D-18 made them permanent); `tools/install-release-binaries.py`
-  says box2dxt's release lane is reserved (rows since 2026-08-23; D-03 resolved).
-- `tools/check-docs-style.py` says four members declare the no-dash rule (nostrxt is
-  a fifth); all five byte-identical copies change together.
-- `tools/build-suite-selftest.py`: sodiumxt's member label says "21 groups" (lines 60
-  and 226; mirrored in `tests/suite-selftest.core.livecodescript` line 53), and
-  `sodiumxt/examples/sodium-tests.livecodescript` has 24 `sxSection` groups today:
-  re-count or drop the number. The riptide layer note (near line 598) says "phase 1
-  (identity + the feed wire formats)"; the embedded library spans phases 1-8 (phase 5
-  adds no library surface).
-- `start-here.livecodescript` header: "all thirteen verified" (near lines 81 and 1077)
-  counts the session-holding stacks whose closeStack teardown was checked, but 12
-  registry rows carry the SESSION marker today (the preflight's among them, and it was
-  12 when the text landed): re-count and say what was verified, or drop the number.
-  "the fourteenth adopter" (near lines 89 and 1369) is the 2026-08-27 adoption ordinal,
-  not a count (`tools/check-demo-selfcheck-drift.py` prints 15 adopters): keep it only
-  as a dated ordinal. Keep the header ASCII, edit outside the carried kit and self-check
-  blocks, and never put "GENERATED - do not edit" in the file's first 4000 characters
-  (the kit and scaffold drift gates skip such a file).
 
 ### 1.3 Engine work (suite-level)
 
@@ -187,7 +151,7 @@ The stale text for #3:
 | 3 | Other engine-notes probes: 5.3 (a second stack in front, and a `send ... in` handler writing an unqualified field: record where the write lands); 2.6 (`the number of chars of X + 1`, and `field "x" & tKind`); optionally 1.1 (a second `script "..."` line mid-file with a declared local read below it) | S1 | - | each note promoted with a date, or left DOCUMENTED / UNEVIDENCED |
 | 4 | The demo re-open fleet, including `start-here.livecodescript`: open one card-hook box2dxt game and one stack-hook demo from the launcher and record whether each builds on first open (its `go invisible stack` / parked-closed create path, engine note 5.5) | S1 items 3, 5 | 37, 38 | per row; this is the largest engine item |
 | 5 | Platform rows: Windows 64- and 32-bit, Linux 32-bit, and the first Mac load of all six dylibs (box2dxt's after 2.8 coding #9 replaces its pre-fold build) | S5 | 23, 24, 47 | preflight LOADED and the member sections green on that row, bitness recorded |
-| 6 | *(optional)* Cheap measurements nothing schedules: FFI-crossing cost and interpreter op rate; whether `byte N of X` on a 60,000-byte Data is O(1) or O(N); `seek to N in file` (a standing nocloud VERIFY) and `rename file` semantics; whether `open file ... for binary write` truncates an existing longer file (the nocloud and quickshare save paths assume it does not; 1.2 #11); whether OXT exposes SQLite through revDB | S1 | - | numbers recorded in engine notes; the truncation answer recorded against the 1.2 #11 entry, promoted to OBSERVED with a date |
+| 6 | *(optional)* Cheap measurements nothing schedules: FFI-crossing cost and interpreter op rate; whether `byte N of X` on a 60,000-byte Data is O(1) or O(N); `seek to N in file` (a standing nocloud VERIFY) and `rename file` semantics; whether `open file ... for binary write` truncates an existing longer file (engine note 6.14 gives the four-line probe: the reference and engine source say it does, the tree's comments said it does not); whether OXT exposes SQLite through revDB | S1 | - | numbers recorded in engine notes; 6.14 promoted to OBSERVED with a date, or rewritten as a divergence |
 | 7 | Model C Phase 4 exit: a FRESH user on each of macOS, Windows and Linux, following only section 13 of [ONIONXT-INTEGRATION-PLAN.md](ONIONXT-INTEGRATION-PLAN.md), completes a two-machine anonymous transfer | S4 on each OS + PERSON | - | all three done; the phase does not close before |
 
 ### 1.4 Owner calls this plan waits on
@@ -221,10 +185,6 @@ The stale text for #3:
 
 | # | Work | Why | Size | Blocked by |
 |---|---|---|---|---|
-| 1 | Flip the understated ChaCha20 labels: `sodiumxt/src/sodium.lcb` ("The ONE surface with no engine run today") and `sodiumxt/examples/sodium-tests.livecodescript` lines 27-31 (which contradict its line 18); then `python3 tools/build-suite-selftest.py` | The 2026-08-24 run covered ChaCha20; the status gate cannot see a scoped claim | S | none |
-| 2 | `native-sodiumxt.yml` still calls the mac dylib "a hand-made lipo build still recorded at ABI 6" (false since release run 12, 2026-08-27); then `tools/sync-member-workflows.py` | The generated member workflow inherits it | S | none |
-| 3 | Code comments pointing at docs that never existed or are gone: `CMakeLists.txt` and `src/sodium_shim.h` cite "docs/development/implementation-plan.md"; `tests/sodium_smoke_test.c` cites "docs/development/building.md" (really `sodiumxt/docs/building.md`); `tools/package-extension.py` says "(See CLAUDE.md and the plan.)" | Dangling pointers in a published repository; any edit here runs the native lane | S | none |
-| 4 | *(optional)* Add the RFC 8439 ChaCha20 vector to CI's "Execute the COMMITTED library's ristretto vectors" step | Execution cover for the ABI-10 surface | S | none |
 | 5 | *(optional)* Bind the shim length accessors the `.lcb` does not expose (`sxt_secretbox_keybytes`, `sxt_aead_keybytes`, `sxt_kdf_*` ...); only `sxPwSaltBytes` is public, so callers hard-code 32. No ABI bump | API completeness; adds engine-pass debt | S-M | none |
 | 6 | If anyone knows it, record which platform and which sodiumxt package the 2026-08-27 two-machine suite paste (2440/2/3) loaded: if it was a run-12 build, it is the first engine record for a committed sodiumxt binary | The record names no platform | S | owner |
 
@@ -285,7 +245,7 @@ The stale text for #3:
 | # | Run | Where | Row | Green (in brief) |
 |---|---|---|---|---|
 | 1 | Suite paste on Windows **and** Linux | S1 item 1 | 47 (first Windows libtorrent 2.1) | 101/0; the first contact with the 2026-09-12 binaries and with `load_torrent_buffer` on Windows |
-| 2 | Re-opens: `torrent-quickshare`, `torrent-dht-channels`, `torrent-client`, `torrent-rp1-chat` | S1 items 3, 5 | 37 | boot self-check green, the card look; in `torrent-quickshare`, the Tor pill (`qsTorPill`, `430,8,612,32`) and the two transport toggles do not overlap the title or tagline, which closes register #30 (ONIONXT-INTEGRATION-PLAN 12.3; 1.2 #10) |
+| 2 | Re-opens: `torrent-quickshare`, `torrent-dht-channels`, `torrent-client`, `torrent-rp1-chat` | S1 items 3, 5 | 37 | boot self-check green, the card look; in `torrent-quickshare`, the Tor pill (`qsTorPill`, `430,8,612,32`) and the two transport toggles do not overlap the title or tagline, which closes register #30 (ONIONXT-INTEGRATION-PLAN 12.3; row 37 names it) |
 | 3 | Quick Share with the Tor toggle ON; #31 (Anonymous ON / OFF / tor absent) | S2 items 3, 4 | 5, 21 | a share code with no torrent and no DHT call; #31's three behaviours |
 | 4 | Closing-pass legs C (seed/leech hash-verified, resume across an OXT restart) and D (rp1 chat); `torrent-dht-channels` and `torrent-rp1-chat` on two machines | S3 items 1, 6 | 6 | each leg's PASS lines |
 | 5 | #32, #33 and the Model C gate (plan 12.4); measure throughput in MB/s for register #28 in the same session | S4 | 21, 5 | the feed over the onion with the DHT off; a sha256-identical download; a capture with no swarm/DHT traffic; **settles D-04** |
