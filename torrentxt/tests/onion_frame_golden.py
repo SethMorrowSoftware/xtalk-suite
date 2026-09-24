@@ -16,7 +16,7 @@ Mirrors these LiveCodeScript handlers (examples/torrent-quickshare.livecodescrip
   qsMakeTorCode                       -> make_tor_code()
   qsSafeLeaf                          -> safe_leaf()
 
-Since 2026-08-23 (docs/HEADLESS-BACKLOG-2026-08-17.md item A4) it also pins the
+Since 2026-08-23 it also pins BTXC/BTXF, the
 Channels layer of examples/torrent-dht-channels.livecodescript: the section-6.4
 BTXC request and BTXF feed frame, byte for byte per the normative table in
 docs/ONIONXT-INTEGRATION-PLAN.md section 12.2, plus that demo's own chSafeLeaf
