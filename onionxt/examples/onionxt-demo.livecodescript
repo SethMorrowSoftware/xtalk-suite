@@ -67,12 +67,29 @@
 -- ed25519 scalar clamp are pure byte manipulation.
 --
 -- STATUS: implemented AND run on a real OXT engine against a live tor daemon.
--- The core paths are confirmed on-engine: dialing through the SOCKS proxy, the
--- control-port connect + SAFECOOKIE auth, GETINFO / SETEVENTS, publishing a v3
--- onion service, accepting an inbound (Tor-forwarded) connection, streaming data
--- both ways, and bootstrap/HS_DESC events. The only path NOT yet exercised is the
--- optional Mode B (launching a bundled tor via `open process`), still flagged
--- "VERIFY:" below. The pure-compute paths are pinned by tools/onion-kat.py.
+-- The core paths are confirmed on-engine (onionxt/CLAUDE.md, the evidence
+-- ledger): dialing through the SOCKS proxy, the control-port connect +
+-- SAFECOOKIE auth, GETINFO / SETEVENTS, publishing a v3 onion service,
+-- accepting an inbound (Tor-forwarded) connection, streaming data both ways,
+-- and bootstrap/HS_DESC events. The offline surface runs inside every dated
+-- suite paste from 2026-08-10 (oxSelfTest), and the pure-compute paths are
+-- pinned by tools/onion-kat.py.
+--
+-- NOT yet exercised on an engine, each "verified statically; needs an OXT
+-- pass + a live-Tor pass" (the still-VERIFY list in onionxt/CLAUDE.md, which
+-- is the authority; this is its index): the optional Mode B launch
+-- (oxLaunchTor / oxStopTor over `open process`, including the 2026-09-24
+-- result checks); an OnionXT-to-OnionXT onion dial and the two-instance round
+-- trip; the raw socket id a live accept hands oxPeerAccepted; the 2026-08-23
+-- foreign-socket `pass` lines and the 2026-08-24 socket-message split on a
+-- live socket; the 2026-09-09 oxWrite result capture and callback pins; the
+-- four inline hypotheses (runbook B.12); and the live negative paths (a wrong
+-- cookie, a stalled daemon, a peer vanishing mid-handshake, and which of the
+-- two SOCKS timeout paths fires - distinguishable since 2026-09-24).
+-- Until 2026-09-24 this header said "the only path NOT yet exercised is the
+-- optional Mode B", which was true at bring-up and understated everything
+-- added since; a carried header is read in every stack that embeds this file
+-- and in the suite paste, so it lists rather than summarises.
 --
 -- Conventions (see CLAUDE.md): public API oxPascalCase; locals t..., params
 -- p..., script-locals s..., constants k...; SOCKS5 is BINARY (byte / numToByte /
@@ -916,9 +933,40 @@ command oxStreamDeadline pStream
    local tState
    put sStreams[pStream]["state"] into tState
    if tState is not "connected" and tState is not "closed" then
-      oxStreamFail pStream, "SOCKS handshake timed out"
+      oxStreamFail pStream, oxSocksTimeoutReason("deadline", tState)
    end if
 end oxStreamDeadline
+
+private function oxSocksTimeoutReason pWhich, pStage
+   -- TWO PATHS TIME A HANDSHAKE OUT, AND UNTIL 2026-09-24 THEY SAID THE SAME
+   -- WORDS. oxStreamDeadline above is OnionXT's own watchdog, armed by oxDial
+   -- for exactly kOxHandshakeTimeout ms; oxSocketTimeout below is the ENGINE's
+   -- socketTimeout message, which fires on the engine-global
+   -- socketTimeoutInterval (oxDial sets it, but so may any co-loaded library
+   -- that opens a socket after it). Both reported "SOCKS handshake timed out",
+   -- so the one real stall on record - the 2026-09-02 coin-wallet log, which
+   -- failed closed and retried - cannot say which of them fired, and engine
+   -- note 6.1 (socketTimeout REPEATS while a read is pending) stays
+   -- DOCUMENTED for want of exactly that observation.
+   --
+   -- So the reason now names the PATH and the STAGE the stream stalled in.
+   -- The stage is worth more than it looks: "connecting" means the TCP connect
+   -- to the SOCKS port never completed, "greeting" that the port accepted but
+   -- never answered the method negotiation (a stalled or not-yet-bootstrapped
+   -- tor), and "replyhead" that tor took the CONNECT and never reported back
+   -- (the circuit or the onion rendezvous is what stalled).
+   --
+   -- THE PREFIX IS KEPT VERBATIM. Every reason still begins with "SOCKS
+   -- handshake timed out", so a log search or an app that matched the old
+   -- words still matches; only the parenthesis is new. Verified statically;
+   -- needs an OXT pass + a live-Tor pass (a forced stall, runbook row 44).
+   if pWhich is "deadline" then
+      return "SOCKS handshake timed out (OnionXT deadline of " & kOxHandshakeTimeout & \
+            " ms passed, stalled at stage " & pStage & ")"
+   end if
+   return "SOCKS handshake timed out (engine socketTimeout fired, stalled at stage " & \
+         pStage & ")"
+end oxSocksTimeoutReason
 
 private command oxStreamFail pStream, pError
    -- Fail closed: report the error to the app, then close and forget the stream.
@@ -1666,7 +1714,9 @@ function oxSocketTimeout pSocketID
    if tHandle is not empty then
       put sStreams[tHandle]["state"] into tState
       if tState is not "connected" then
-         oxStreamFail tHandle, "SOCKS handshake timed out"
+         -- A different reason from oxStreamDeadline's on purpose: see
+         -- oxSocksTimeoutReason for why the two paths must be told apart.
+         oxStreamFail tHandle, oxSocksTimeoutReason("socketTimeout", tState)
       end if
       return "true"
    end if
@@ -1699,12 +1749,38 @@ end socketTimeout
 command oxLaunchTor pTorPath, pDataDir, pSocksPort, pControlPort
    -- Write a minimal torrc into pDataDir and launch pTorPath against it, so tor
    -- exits with the app (__OwningControllerProcess) and uses cookie auth. Returns
-   -- empty on a clean launch attempt, or an error string. The caller then polls
-   -- oxConnectControl / oxBootstrapProgress; this does not wait for bootstrap.
+   -- empty once the torrc is written AND `open process` has accepted the command
+   -- line, or an "OnionXT: ..." error string (docs/05's command contract). The
+   -- caller then polls oxConnectControl / oxBootstrapProgress; this does not wait
+   -- for bootstrap, and an empty result does NOT mean tor is up - only that the
+   -- engine started what it was given (tor can still exit on a bad torrc or a
+   -- port already in use: runbook trap 5.3.1).
+   --
+   -- BOTH RESULTS ARE READ, AND UNTIL 2026-09-24 NEITHER WAS. The torrc write
+   -- and `open process` report a failure through `the result` (the engine's
+   -- command convention; not yet observed for these two on OXT), and this
+   -- handler ignored both and returned empty unconditionally - so a data
+   -- directory that did not exist, or a read-only one, came back as a clean
+   -- launch, and so did any launch failure the engine reported; closing-pass
+   -- leg F's first PASS line ("torrc written, process started") claimed more
+   -- than the code had checked. Each is now captured on the very next line
+   -- (any intervening statement can clear `the result`: the oxWrite
+   -- discipline) and fails closed with a reason that names what failed. Both
+   -- sit inside try/catch as well, because a platform with no process support
+   -- may THROW rather than set the result, and a library command must answer
+   -- with a string either way. What this cannot promise: that a WRONG tor path
+   -- is reported here at all - an engine that forks and then execs may learn
+   -- of it only when the child dies, after this has returned. Leg F records
+   -- what OXT does. Verified statically; needs an OXT pass + a live-Tor pass.
+   --
+   -- The two empty-argument refusals come FIRST, before anything touches disk
+   -- or changes state, which is what lets the offline harness call
+   -- `oxLaunchTor empty, empty, empty, empty` by name (onionxt-tests section 3)
+   -- instead of carrying a coverage exemption for it.
    if pTorPath is empty or pDataDir is empty then
       return "OnionXT: oxLaunchTor needs a tor binary path and a data directory"
    end if
-   local tSocks, tControl, tTorrc, tRcPath
+   local tSocks, tControl, tTorrc, tRcPath, tLogPath, tWriteErr, tLaunchErr, tError
    if pSocksPort is empty then
       put kOxSocksPortDefault into tSocks
    else
@@ -1721,10 +1797,34 @@ command oxLaunchTor pTorPath, pDataDir, pSocksPort, pControlPort
    put "DataDirectory " & pDataDir & oxCrlf() after tTorrc
    -- Tie tor's lifetime to this process where the platform supports it.
    put "__OwningControllerProcess " & oxProcessId() & oxCrlf() after tTorrc
+   -- TOR'S LOG GOES TO A FILE, NOT TO THE PIPE (2026-09-24). The process is
+   -- opened `for read` and nothing ever reads it, and tor's default is notice
+   -- logging to stdout - so a long-running child writing into a pipe nobody
+   -- drains could fill the pipe buffer and block inside its next log write
+   -- (inferred from how pipes behave, not observed here). tor's own manual
+   -- (tor(1), under --hush) documents that console logging stops once the
+   -- torrc says to log somewhere else, so this line moves the steady stream to
+   -- a file; only the few lines tor prints before it has read this torrc
+   -- still reach the pipe.
+   -- The side benefit is the one leg F wanted: tor's own "Bootstrapped 100%"
+   -- line is now readable in <pDataDir>/onionxt-tor.log, which OnionXT still
+   -- does not read for you. Unquoted, like DataDirectory above, so a path with
+   -- a space rides the same assumption that line always has (inferred from
+   -- tor's config parser taking the rest of the line; needs the leg F run).
+   put pDataDir & "/onionxt-tor.log" into tLogPath
+   put "Log notice file " & tLogPath & oxCrlf() after tTorrc
    put pDataDir & "/onionxt-torrc" into tRcPath
-   put tTorrc into url ("binfile:" & tRcPath)
-   oxSetSocksPort tSocks
-   oxSetControlPort tControl
+   try
+      put tTorrc into url ("binfile:" & tRcPath)
+      put the result into tWriteErr
+   catch tError
+      put "the write threw:" && tError into tWriteErr
+   end try
+   if tWriteErr is not empty then
+      -- Nothing has changed yet: the ports are still the caller's, no process
+      -- exists. A missing or read-only data directory lands here.
+      return "OnionXT: oxLaunchTor could not write the torrc" && tRcPath & ":" && tWriteErr
+   end if
    -- open process is platform-specific; launch tor detached with -f <torrc>.
    -- QUOTE BOTH PATHS. The command line is split on whitespace, so an unquoted
    -- "C:/Program Files/Tor/tor.exe" arrives as the two arguments "C:/Program"
@@ -1733,7 +1833,23 @@ command oxLaunchTor pTorPath, pDataDir, pSocksPort, pControlPort
    -- normal case on Windows and macOS, not an edge case. The same applies to
    -- the torrc path, which is derived from pDataDir.
    -- VERIFY: process launch and teardown on your target OXT build.
-   open process (quote & pTorPath & quote & " -f " & quote & tRcPath & quote) for read
+   try
+      open process (quote & pTorPath & quote & " -f " & quote & tRcPath & quote) for read
+      put the result into tLaunchErr
+   catch tError
+      put "open process threw:" && tError into tLaunchErr
+   end try
+   if tLaunchErr is not empty then
+      -- The torrc stays on disk (Mode B cleans up nothing yet: docs/07), but
+      -- the library's ports are NOT re-pointed at a tor that never started.
+      return "OnionXT: oxLaunchTor could not start" && pTorPath & ":" && tLaunchErr
+   end if
+   -- Re-point the rest of the API at the launched tor only now that a launch
+   -- was accepted. Until 2026-09-24 these two ran BEFORE `open process`, so a
+   -- failed launch still left every later oxDial / oxConnectControl aimed at
+   -- ports nothing was listening on.
+   oxSetSocksPort tSocks
+   oxSetControlPort tControl
    return empty
 end oxLaunchTor
 
@@ -2733,14 +2849,32 @@ end oxhHtmlEscape
 --      skipped (not failed) otherwise. Needs SodiumXT ABI >= 6, not a tor daemon;
 --   5. the inbound loopback guard's socket-id parse and verdict (section 10),
 --      which is pure string work on the ids the engine hands oxPeerAccepted, so
---      it is testable offline even though the accept path itself is not.
+--      it is testable offline even though the accept path itself is not;
+--   6. the oxh* HTTP layer's pure helpers (section 11, where onion-httpd is in
+--      the same script) and the two SOCKS timeout reasons (section 12, where
+--      the library is), both private, both probed and skipped elsewhere.
 -- The actual wire handshakes (SOCKS5 dial, control auth, ADD_ONION) are an
 -- on-engine / integration concern: run examples/onionxt-demo.livecodescript or
--- examples/onion-roundtrip against a real tor daemon for those (see
--- IMPLEMENTATION-PLAN.md phase 4 and CLAUDE.md's on-engine VERIFY checklist).
+-- examples/onion-roundtrip against a real tor daemon for those (the still-VERIFY
+-- list in onionxt/CLAUDE.md's engine evidence ledger names each one, and the
+-- suite's docs/WORK-PLAN.md schedules them). This file used to point at an
+-- IMPLEMENTATION-PLAN.md phase 4 and "CLAUDE.md's on-engine VERIFY checklist";
+-- the first was deleted in the 2026-09-24 docs consolidation and the second
+-- is that still-VERIFY list.
 --
--- HOW MUCH OF IT ACTUALLY RAN IS PART OF THE REPORT (2026-08-17). Seven of the
--- sections above can bail out when the environment cannot support them, and
+-- THE THREE LIVE-DAEMON NAMES ARE CALLED HERE TOO (2026-09-24), each on its
+-- fail-closed path and never on the path that talks to tor: oxLaunchTor with
+-- empty arguments (refused before anything touches disk), oxTransportDial with
+-- an empty address (refused inside oxDial before `open socket`), and oxStopTor
+-- while unauthenticated (the idempotent disconnect; it sends SIGNAL SHUTDOWN
+-- only to an AUTHENTICATED control connection, which is why that check is
+-- guarded, see section 5). They were the suite coverage ratchet's last three
+-- "live-daemon" exemptions, and an exemption describes what the handler's LIVE
+-- leg needs, not whether its refusal can be reached by name.
+--
+-- HOW MUCH OF IT ACTUALLY RAN IS PART OF THE REPORT (2026-08-17). Several of
+-- the sections above can bail out when the environment cannot support them
+-- (the suite core's floor arithmetic lists which, section by section), and
 -- every one of those bail-outs is now a COUNTED skip (oxSkip below), reported
 -- as a third number on the summary line: "n passed, m failed, k skipped". It
 -- used to be a line in the log and nothing else, which meant the one line a
@@ -2762,14 +2896,20 @@ end oxhHtmlEscape
 -- tear down whatever is currently open.
 --
 -- STATUS: confirmed on-engine: the About-tab self-test run (via the bundled
--- standalone) executes this harness on a real engine (CLAUDE.md as-built
--- notes). Everything here is pure script with no socket I/O of its own, so
--- the risk surface is much smaller than the library itself. The 2026-08-17
--- skip counting - sSkip, oxSkip, and the third number on the summary line -
--- has NOT run on an engine: verified statically; needs an OXT pass. What an
--- engine would settle is one thing this repo cannot check headlessly: that
--- the summary line still reads as a summary to the suite core, which is why
--- the parse rule is quoted in full beside the line that builds it.
+-- standalone) executes this harness on a real engine (onionxt/CLAUDE.md's
+-- evidence ledger, the bring-up row). Everything here is pure script with no
+-- socket I/O of its own, so the risk surface is much smaller than the library
+-- itself. The 2026-08-17 skip counting - sSkip, oxSkip, and the third number
+-- on the summary line - RAN on 2026-08-20 (Windows, the whole suite paste at
+-- 1981/0/1: 61 passed, and its one skip printed inline and merged by the core;
+-- the same ledger), which settled the one thing this repo cannot check
+-- headlessly: that the summary line still reads as a summary to the suite
+-- core. The parse rule stays quoted in full beside the line that builds it,
+-- because that record holds only while the line keeps its shape. The folded
+-- harness ran green again on 2026-08-27 (two-machine session; onionxt's own
+-- count not recorded). The checks added 2026-09-24 - the three live-daemon
+-- names on their refusal paths and section 12 - have NOT run on an engine:
+-- verified statically; needs an OXT pass.
 
 -- Two real, published v3 onion addresses, the same vectors pinned in
 -- tools/onion-kat.py, so the Python KAT and this livecodescript suite agree.
@@ -2802,6 +2942,7 @@ function oxSelfTest
    testConfigurationSetters
    testLoopbackGuard
    testHttpdHelpers
+   testSocksTimeoutReasons
 
    local tSummary
    -- THE SHAPE OF THIS LINE IS A CONTRACT with the suite core's
@@ -2923,6 +3064,31 @@ private command testFailClosedArguments
    oxDial "example.onion", 99999
    put the result into tResult
    oxCheck (tResult begins with "OnionXT:"), "oxDial rejects a port outside 1..65535"
+
+   -- THE TWO LIVE-DAEMON NAMES WHOSE REFUSAL NEEDS NO DAEMON (2026-09-24).
+   -- Both were exempted from the suite coverage ratchet as "live-daemon",
+   -- which described their LIVE leg; each has a refusal that comes before any
+   -- I/O, and that is what these reach.
+   --
+   -- oxTransportDial with an EMPTY address: it is not a .onion and not a
+   -- 32-byte key or 64 hex chars, so it falls through to oxDial, whose
+   -- empty-host check refuses before a handle is allocated or `open socket`
+   -- runs. NEVER pass a non-empty non-onion host here - that is a clearnet
+   -- name oxDial would really dial through whatever SOCKS port is configured.
+   oxTransportDial empty
+   put the result into tResult
+   oxCheck (tResult begins with "OnionXT:"), \
+      "oxTransportDial refuses an empty address before dialing (it wraps oxDial) [" & tResult & "]"
+
+   -- oxLaunchTor with no tor path and no data directory: refused on its first
+   -- line, before the torrc is written, before `open process`, and before the
+   -- configured ports are touched - so this is safe inside the running demo
+   -- too. Empty on purpose for BOTH: given a real tor path, a regression past
+   -- the guard would write a torrc and START that binary from a test run.
+   oxLaunchTor empty, empty, empty, empty
+   put the result into tResult
+   oxCheck (tResult begins with "OnionXT:"), \
+      "oxLaunchTor refuses empty arguments before touching disk [" & tResult & "]"
 
    -- These two prove the pre-auth fail-closed guard specifically, so they are
    -- only meaningful while nothing has authenticated yet in this session (see
@@ -3047,6 +3213,31 @@ private command testIdempotentTeardown
    end try
    oxCheck tOk, "double close / remove / disconnect / shutdown never throws"
    oxCheck (not oxIsControlAuthenticated()), "control is disconnected after teardown"
+
+   -- oxStopTor WHILE UNAUTHENTICATED IS THE SAME IDEMPOTENT DISCONNECT
+   -- (2026-09-24). It was a coverage exemption ("live-daemon: stops a real tor
+   -- process"), which is its AUTHENTICATED leg: that one sends SIGNAL SHUTDOWN
+   -- down the control connection, and a harness that reached it inside the
+   -- running demo would shut down the user's own tor. So the call sits HERE,
+   -- after the teardown above has already disconnected control, and it is
+   -- guarded anyway: nothing can authenticate between those lines (no message
+   -- is delivered mid-handler), but a guard costs one line and a future edit
+   -- that moves this check above the teardown must meet a skip, not a
+   -- shutdown. One item either way, so the core's floor arithmetic is fixed.
+   if oxIsControlAuthenticated() then
+      oxSkip "oxStopTor is only called unauthenticated here; this session " & \
+         "is authenticated, and the authenticated leg shuts tor down"
+   else
+      put true into tOk
+      try
+         oxStopTor
+         oxStopTor
+      catch tError
+         put false into tOk
+      end try
+      oxCheck (tOk and not oxIsControlAuthenticated()), \
+         "oxStopTor while unauthenticated is the idempotent disconnect (twice, no throw)"
+   end if
 end testIdempotentTeardown
 
 -- ==========================================================================
@@ -3406,6 +3597,48 @@ private command testOneSocketID pSocketID, pExpectHost, pExpectLoopback, pLabel
    oxCheck (oxHostIsLoopback(tHost) is pExpectLoopback), \
       pLabel & ": loopback verdict is " & pExpectLoopback
 end testOneSocketID
+
+-- ==========================================================================
+-- Section 12: the two SOCKS handshake timeouts say which one fired
+-- (2026-09-24).
+--
+-- A dialed stream can time out two ways: OnionXT's own watchdog
+-- (oxStreamDeadline, kOxHandshakeTimeout after oxDial) or the engine's
+-- socketTimeout message (oxSocketTimeout). Both used to report the identical
+-- "SOCKS handshake timed out", so the one real stall on record (the
+-- 2026-09-02 coin-wallet log) cannot say which path caught it, and engine
+-- note 6.1 stays DOCUMENTED for want of that observation. Both now build their
+-- reason through oxSocksTimeoutReason, which names the path and the stage.
+--
+-- Neither path is reachable offline - each needs a stream whose socket only
+-- oxDial's `open socket` creates - so this pins the REASON, which is where the
+-- distinction lives: different for the two paths, the old prefix kept for any
+-- log search that matched it, the stage named. oxSocksTimeoutReason is private
+-- to onionxt.livecodescript, so it resolves only where the harness and the
+-- library are one script (the demo and the suite paste), exactly like section
+-- 10's probe; elsewhere this is one counted skip.
+-- ==========================================================================
+
+private command testSocksTimeoutReasons
+   oxSection "SOCKS handshake timeouts: two paths, two reasons"
+   local tDeadline, tEngine, tError
+   try
+      put oxSocksTimeoutReason("deadline", "replyhead") into tDeadline
+      put oxSocksTimeoutReason("socketTimeout", "replyhead") into tEngine
+   catch tError
+      oxSkip "oxSocksTimeoutReason is private to onionxt.livecodescript; " & \
+         "run the demo standalone or the suite paste, where the harness and " & \
+         "the library are one script"
+      exit testSocksTimeoutReasons
+   end try
+   oxCheck (tDeadline is not tEngine), \
+      "the watchdog and socketTimeout reasons differ: [" & tDeadline & "] vs [" & tEngine & "]"
+   oxCheck ((tDeadline begins with "SOCKS handshake timed out") and \
+         (tEngine begins with "SOCKS handshake timed out")), \
+      "both keep the old SOCKS handshake timed out prefix"
+   oxCheck ((tDeadline contains "replyhead") and (tEngine contains "replyhead")), \
+      "both name the stage the stream stalled in"
+end testSocksTimeoutReasons
 
 -- ==========================================================================
 -- Small local helpers (test glue only).

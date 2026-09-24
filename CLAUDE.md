@@ -224,8 +224,9 @@ because a harness once ran against a stale in-memory library and reported failur
 `tools/check-suite-coverage.py` is a ratchet: every public handler of every member must be named in
 the scanned view of the paste (comments stripped, embedded spans cut, string literals blanked except
 on `do`/`dispatch`/`send`/`stThrows` lines). It fails on a new unexercised handler AND on a stale
-excuse. The only exemptions are onionxt's (engine socket callbacks and watchdogs; live-tor legs),
-each with a written reason. It counts "called by name", not "tested well"; depth is each member's
+excuse. The only exemptions are onionxt's engine socket callbacks and watchdogs, each with a
+written reason (its three live-daemon ones retired 2026-09-24 to harness calls on their refusal
+paths). It counts "called by name", not "tested well"; depth is each member's
 vector gates. Run it for the ratio; never copy the ratio into prose. Two advisory rows sit outside
 the ratchet, each with an armed floor (a new gap, a promoted or a stale entry fails):
 

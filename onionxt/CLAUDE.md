@@ -179,8 +179,19 @@ throwing "reinstall"; gcc ASan + UBSan, headers `-isystem`, binary + `MANIFEST.s
 - **The loopback guard parses by SHAPE**: `oxHostOfSocket` drops `|name`, unbrackets, else takes
   everything up to the LAST colon; an empty host is a REFUSAL, printed with the raw id.
 - **Coverage**: the suite's `tools/check-suite-coverage.py` prints this member's ratio. Its exemptions
-  are the 11 engine socket callbacks (docs/05) plus `oxLaunchTor`, `oxStopTor` and `oxTransportDial`.
-  From the four wrong ones deleted 2026-08-20: an exemption describes what the WRAPPER needs.
+  are the 11 engine socket callbacks and watchdogs (docs/05), and nothing else. From the four wrong
+  ones deleted 2026-08-20: an exemption describes what the WRAPPER needs. The last three "live-daemon"
+  ones (`oxLaunchTor`, `oxStopTor`, `oxTransportDial`) went 2026-09-24: each has a refusal before any
+  I/O, which the harness now calls by name (empty arguments; an empty address; unauthenticated, and
+  guarded so it can never reach the `SIGNAL SHUTDOWN` leg). Never hand `oxTransportDial` a non-empty
+  non-onion host in a test: that dials for real.
+- **Mode B checks its launch (2026-09-24)**: `oxLaunchTor` reads `the result` of the torrc write and of
+  `open process`, returns an `"OnionXT: ..."` reason on either, and re-points the ports only after an
+  accepted launch; the torrc sends tor's log to `<pDataDir>/onionxt-tor.log` so the unread pipe is not
+  where tor writes (docs/07). Verified statically; needs an OXT pass + a live-Tor pass.
+- **The two SOCKS timeouts are told apart (2026-09-24)**: `oxStreamDeadline` and `oxSocketTimeout`
+  build their reason through `oxSocksTimeoutReason`, same `SOCKS handshake timed out` prefix, then the
+  path and the stalled stage (docs/02); harness section 12 pins the difference.
 
 ## Engine evidence ledger
 
@@ -210,19 +221,23 @@ Confirmed on-engine (promoted from `VERIFY:`):
 6. `dispatch ... to <owner>` resolves app callbacks and `sx*` primitives; a missing one is a clean miss.
 7. `socketError` reaches the library and fails closed (10061, 10013); `socketClosed` cleans up. A real
    stalled handshake failed closed in the 2026-09-02 coin-wallet log, which cannot say which "SOCKS
-   handshake timed out" path fired (the `oxStreamDeadline` watchdog or `oxSocketTimeout`).
+   handshake timed out" path fired (the `oxStreamDeadline` watchdog or `oxSocketTimeout`). The two
+   reasons differ since 2026-09-24, so the next stall on record will say (item 13).
 
 Still `VERIFY:` (not yet exercised):
 
 8. Mode B: `oxLaunchTor` / `oxStopTor`, `open process`, the `oxProcessId` accessor,
-   `__OwningControllerProcess` (engine note 6.3).
+   `__OwningControllerProcess` (engine note 6.3); since 2026-09-24 also the torrc-write and
+   `open process` result checks (what `the result` holds on success and on failure) and the
+   `Log notice file` line (the log appears and the pipe stays quiet).
 9. The four inline hypotheses (runbook B.12): a second service on an in-use local port refused; the
    accepted-socket id format; a stale `close socket` tolerated; the topStack as default callback owner.
 10. An OnionXT-to-OnionXT onion dial and the two-instance sealed round trip (`examples/onion-roundtrip`).
 11. The 2026-08-23 foreign-socket `pass` lines and the 2026-08-24 wrapper split, on a live socket.
 12. The 2026-09-09 `oxWrite` result capture and callback pins.
-13. The live negatives: wrong cookie, stalled daemon, peer vanishing mid-handshake, a descriptor that
-    never publishes, and an `ExtendedErrors` `0xF*` REP for a well-formed v3 onion that does not exist.
+13. The live negatives: wrong cookie, stalled daemon (and which of the two timeout reasons it
+    reports), peer vanishing mid-handshake, a descriptor that never publishes, and an `ExtendedErrors`
+    `0xF*` REP for a well-formed v3 onion that does not exist.
     (The bad-onion leg with a mapped REP `0x01` on a retired v2 onion failed closed on an engine on
     2026-09-02: the coin-wallet ledger row.)
 
@@ -230,7 +245,9 @@ Still `VERIFY:` (not yet exercised):
 
 The live-Tor core and `oxh*` hosting are engine-proven (ledger above). The offline `oxSelfTest()` ran
 green folded into every dated suite pass above from 2026-08-10, and `tools/onion-kat.py` pins the
-pure-compute paths headlessly. Static only ("verified statically; needs an OXT pass + a live-Tor
+pure-compute paths headlessly. The harness's 2026-09-24 additions (the three live-daemon names on
+their refusal paths, section 12's timeout reasons) have not run on an engine: verified statically;
+needs an OXT pass. Static only ("verified statically; needs an OXT pass + a live-Tor
 pass"): items 8-13, and the demo and spike as whole stacks since their 2026-08-14 move onto the suite
 UI kit. Open work is tracked in the suite's `docs/WORK-PLAN.md`.
 

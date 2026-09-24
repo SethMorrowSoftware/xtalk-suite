@@ -33,19 +33,37 @@ clear "start Tor / install Tor" message rather than failing obscurely.
 
 `oxLaunchTor pTorPath, pDataDir, pSocksPort, pControlPort` does exactly this, and no more:
 
-1. Writes `<pDataDir>/onionxt-torrc` with `SocksPort`, `ControlPort` (default 9050 / 9051; pass other
+1. Refuses an empty tor path or data directory before touching anything.
+2. Writes `<pDataDir>/onionxt-torrc` with `SocksPort`, `ControlPort` (default 9050 / 9051; pass other
    ports, for example 9250 / 9251, beside a running system tor), `CookieAuthentication 1`,
-   `DataDirectory <pDataDir>` and `__OwningControllerProcess <pid>` so tor exits with the app (suite
-   engine note 6.3).
-2. Runs `open process` on `"<tor>" -f "<torrc>"` for read, both paths quoted because spaces in
-   "Program Files" or "Application Support" are normal.
-3. Returns without waiting for bootstrap; the caller polls `oxConnectControl` / `oxBootstrapProgress`.
+   `DataDirectory <pDataDir>`, `__OwningControllerProcess <pid>` so tor exits with the app (suite
+   engine note 6.3), and `Log notice file <pDataDir>/onionxt-tor.log`. If the write reports a failure
+   (a missing or read-only directory), it returns an `"OnionXT: ..."` reason and stops.
+3. Runs `open process` on `"<tor>" -f "<torrc>"` for read, both paths quoted because spaces in
+   "Program Files" or "Application Support" are normal. If `open process` reports a failure, it
+   returns an `"OnionXT: ..."` reason and stops.
+4. Only then points OnionXT's SOCKS and control ports at the launched tor, and returns empty without
+   waiting for bootstrap; the caller polls `oxConnectControl` / `oxBootstrapProgress`. An empty result
+   means the engine started the process, not that tor is up: tor can still exit on a port already in
+   use.
 
 `oxStopTor` sends `SIGNAL SHUTDOWN` over the control port only if control is authenticated, then
-disconnects. As written, the results of the torrc write and of `open process` are not checked, the
-process pipe is never read (tor's own stdout, including its `Bootstrapped 100%` line, is not visible
-through OnionXT), and the torrc and `DataDirectory` are not cleaned up. All of Mode B is labelled
-"verified statically; needs an OXT pass + a live-Tor pass".
+disconnects.
+
+What changed on 2026-09-24, and what did not. Until then the results of the torrc write and of
+`open process` were not checked (a torrc that could not be written came back as a clean launch), and
+the ports were set before the launch. Whether a wrong tor path is reported at launch at all is the
+engine's call: one that forks and then execs may learn of it only when the child exits, after
+`oxLaunchTor` has returned. Leg F records what OXT does.
+
+Tor logs to stdout by default, and the process pipe is opened for read and never read, so a
+long-running tor could in principle fill the pipe and block (inferred, not observed); the `Log` line
+moves tor's notices to the file once tor has read its torrc, so only its first few startup lines
+still reach the pipe. That file is also where tor's own `Bootstrapped 100%` line can be read;
+OnionXT itself still reads neither the pipe nor the log. Still absent: `close process`, any cleanup of
+the torrc, the log or the `DataDirectory`, and a way for `oxStopTor` to stop a child whose control
+connection never authenticated. All of Mode B, the 2026-09-24 checks included, is labelled "verified
+statically; needs an OXT pass + a live-Tor pass".
 
 Bundling a tor binary is a licensing and size decision (BSD-3, large, per platform, with an update
 duty), carries the Tor Project's naming and packaging expectations (never imply endorsement), and does

@@ -25,7 +25,8 @@
 > `onionxt/templates/CLAUDE.md` and `coinxt/templates/CLAUDE.md`), and the suite gate
 > `tools/check-checker-drift.py` FAILS the build if the copies differ. Edit one copy and copy it
 > byte-identically to the others in the same change; never patch one copy alone.
-> **Last synced to the family's lessons: 2026-08-18.**
+> **Last synced to the family's lessons: 2026-08-18.** Section 3's check list and the timer-pin gate's
+> entry set (sections 11 and 16) were re-synced to the gates themselves on 2026-09-24.
 
 House style: no em-dashes (use hyphens, commas, colons, parentheses). ASCII only in `.lcb` /
 `.livecodescript`, even in comments and strings. Comment the *why*, densely; match the surrounding
@@ -92,7 +93,10 @@ in dispatchers, and would have hidden a real one). The copies are unified now; t
 CURRENT copy TOGETHER WITH `tools/test-checker.py` and its fixtures** - the fixtures are what keep a
 rule honest when you extend it (an attestation must become a committed fixture, section 1).
 
-Its twelve check families, and the engine lesson each encodes:
+Its twenty-two checks, and the engine lesson each encodes. The numbers are the checker's own (its
+docstring lists them, and that docstring is the authority: count there, not here). Checks 13-21 came
+from the hold-em lineage in the 2026-08-15 checker union, 22 from riptide's blank-window stack; this
+list read "twelve check families" until 2026-09-24, which was the pre-union count:
 
 1. **ASCII only.** Smart/curly quotes (U+2018/2019/201C/201D) fail OXT compilation outright; en/em
    dashes break house style; any other non-ASCII byte is reported, and a non-UTF-8 file is refused.
@@ -122,6 +126,31 @@ Its twelve check families, and the engine lesson each encodes:
 11. **LCS-only checks:** braces (LCB array literals leaking into script) and subscripting a
     function result (`f(x)["k"]` does not parse).
 12. **`put X into Y after Z`** malformation (a `put` takes `into` OR `after`/`before`, never both).
+13. **A bitwise operator called as a function with two arguments** (`bitXor(a, b)`, `.livecodescript`
+    only). `bitAnd` / `bitOr` / `bitXor` / `bitNot` are OPERATORS here (section 6); the call form threw
+    at runtime on holde-em's first engine pass. The operator form (`a bitXor b`) is fine.
+14. **A declared local or parameter whose FULL name is an engine token** (`local tAb` is the `tab`
+    constant; a parameter named `id`), `.livecodescript` only: the declaration-site half of check 6.
+15. **A `catch` variable the catch body REFERENCES but nothing declares** (`.livecodescript` only).
+    On strict OXT the reference throws a second error the moment the catch fires, masking the real
+    failure as an opaque "error in function handler". Binding alone is engine-proven safe.
+16. **A locally defined COMMAND called with function syntax** `X(...)` in an expression
+    (`.livecodescript` only): it throws at the call site and the body never runs. A command
+    STATEMENT with a parenthesised first argument (`doFoo (x), y`) is legal and not flagged.
+17. **A parenthesised dynamic property name**, `the (expr) of obj` (`.livecodescript` only). Property
+    names are compile-time tokens; hold the data in ONE property indexed by line or item.
+18. **`the message box` used as a container in code** (`.livecodescript` only): the token is `msg`.
+19. **A `k`-prefixed constant used but NEVER declared** (`.livecodescript` only), the other half of
+    check 4: the undeclared name evaluates to its own spelling and throws far downstream.
+20. **The dangling else** (`.livecodescript` only): a bare `else` directly after a single-line
+    `if ... then <stmt>` binds to that `if` (section 5 item 2).
+21. **A backslash outside every string literal that is not a line continuation** (`.livecodescript`
+    only). xTalk has no string escapes, so a C-style `\"` ends the string and strands the rest; the
+    legal one-backslash string `"\"` never fires it.
+22. **A `constant` whose value is not a literal** (`.livecodescript` only): `constant kX = "a" &
+    return` does not compile, and since a script compiles as a unit that one line opens the stack as
+    a blank window with no error to point at (section 1). The comma-separated multi-declaration form,
+    commas inside quoted values included, is legal.
 
 It is a lexer-level checker, not a compiler: it errs toward NOT raising false positives, so passing
 it is necessary, never sufficient.
@@ -399,11 +428,20 @@ still apply to any control you create beside it:
   That is the argument for the pin and for a gate over it, and it holds on documented `defaultStack`
   resolution alone: this family has not yet watched the unpinned form fail on a dated run (see the
   log entry in section 16, filed 2026-08-18 and reclassed 2026-08-19), and the pin is cheap and
-  harmless either way. GATE: `tools/check-timer-stack-pin.py` - every `send ... to me in` target
-  and everything REACHABLE from it: a closure over the handlers in the same file plus the shared
-  kit, stopping at any handler that already pins. Widened from a one-hop kit check on 2026-08-20,
-  which found 40 unpinned timer chains across 15 files - every demo's own log/refresh helper,
-  reached from its poll tick. Pin at the timer ENTRY POINT: one line there covers the closure.
+  harmless either way. GATE: `tools/check-timer-stack-pin.py` - every handler that arrives by
+  DELAYED DELIVERY, and everything REACHABLE from it: a closure over the handlers in the same file
+  plus the shared kit, stopping at any handler that already pins. Its entries are three delivery
+  classes: `send ... to me in` targets; engine socket and URL callbacks (the name in
+  `with message "X"` on `open` / `read` / `write` socket or `load URL`, plus `socketError` /
+  `socketClosed` / `socketTimeout` where a file defines them); and library-dispatched callbacks,
+  the handler names handed to a registrar (`oxSetStreamCallback`, `oxSetStatusCallback`,
+  `oxSetPeerCallback`, `nxrSetCallback`, `oxhRoute`, libURL's status and download callbacks, and
+  friends), which the library delivers with `dispatch <variable>` so the name appears at no call
+  site a closure could follow. Widened twice: from a one-hop kit check on 2026-08-20 (40 unpinned
+  timer chains across 15 files - every demo's own log/refresh helper, reached from its poll tick),
+  and from `send ... to me in` alone on 2026-09-09 (24 more chains in 9 files, inbound socket
+  handlers above all). The rule is about DELIVERY, not about `send`. Pin at the ENTRY POINT: one
+  line there covers the closure.
 - **A single `mouseUp` router + a "prefix:role" naming scheme** dispatches every click: parse
   `the short name of the target`, split on the delimiter, route by prefix. Disabled controls never reach
   it.
@@ -638,10 +676,13 @@ Seed entries (confirmed on-engine in the family; keep them, add to them):
            NOT reach for `if there is a field "..."` instead: the guard turns a loud chunk error
            into a status line that quietly stops updating, on the path a person is least likely to
            report. Making a bug invisible is not fixing it.
-  GATE:    `tools/check-timer-stack-pin.py` - every `send ... to me in` target and everything
-           REACHABLE from it (same-file closure + the shared kit, stopping at any handler that
-           already pins). A one-hop check is a check for the bug you already found: widening it
-           on 2026-08-20 turned up 40 unpinned chains across 15 files.
+  GATE:    `tools/check-timer-stack-pin.py` - every handler that arrives by delayed delivery
+           (`send ... to me in` targets, engine socket / URL `with message` callbacks and the
+           three socket messages, and handler names handed to a library's callback registrar)
+           and everything REACHABLE from it (same-file closure + the shared kit, stopping at any
+           handler that already pins). A one-hop check is a check for the bug you already found:
+           widening it on 2026-08-20 turned up 40 unpinned chains across 15 files, and widening
+           its entries past `send` on 2026-09-09 turned up 24 more in 9 files.
 - SYMPTOM: `type conversion error` at runtime, on a GUI engine, in front of a person - in one case
            killing a poll chain and leaving the app silently dead rather than reporting anything.
   CAUSE:   confirmed on-engine (2026-08-18, on Linux): EMPTY is not a value for a DECLARED `.lcb`
@@ -695,5 +736,6 @@ Seed entries (confirmed on-engine in the family; keep them, add to them):
            the same edit (an `if` grown an alternative) produced it twice.
   FIX:     never write a bare `else` under a single-line `if`. Either put the first branch's
            statement on its own line under a block `if`, or keep both branches single-line.
-  GATE:    the unified checker's dangling-else check (family 13 since 2026-08-15, folded in from
-           holde-em's lineage) flags the broken pairing, in every member's copy.
+  GATE:    the unified checker's dangling-else check (check 20 in its docstring since 2026-08-15,
+           folded in from holde-em's lineage; this entry called it "family 13" until 2026-09-24)
+           flags the broken pairing, in every member's copy.
