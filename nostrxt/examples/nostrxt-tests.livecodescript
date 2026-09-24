@@ -11,7 +11,14 @@ script "nostrxt-tests"
 -- deliberately not embedded there (it defines the engine's socket
 -- messages; see src/nostr-relay.livecodescript's header).
 --
--- STATUS: verified statically; needs an OXT pass. Every pinned constant
+-- STATUS, split. Sections 1-16 RAN ON AN ENGINE 2026-08-24 (Windows
+-- x86_64, OXT 9.6.3, folded into the suite paste): 274 passed, 0 failed,
+-- 2 skipped - the 2 are section 17, absent from the paste by design.
+-- Section 17 (the relay layer, offline) has no engine run anywhere; the
+-- demo's "Run nxSelfTest" button is where it runs. The three pins of the
+-- 2026-09-09 fix (two refusals and a delimiter restore, in sections 4 and
+-- 14) were added 2026-09-24, after that run. Section 17 and those three:
+-- verified statically; needs an OXT pass. Every pinned constant
 -- below is DERIVED by tools/nostr-kat.py from the published BIP-340,
 -- NIP-44, BIP-173 and NIP-19 vector sets or from the member's own oracle
 -- fixtures, and tools/check-selftest-vectors.py re-derives each one BY
@@ -244,7 +251,7 @@ end nxtTestJsonEscape
 -- ==========================================================================
 
 private command nxtTestJsonParse
-   local tJson, tDeep, tI
+   local tJson, tDeep, tI, tArrJson, tGot, tError, tSavedDelim, tAfterDelim
    nxtSection "json parser"
    put "{" & quote & "a" & quote & ":[1,2,{" & quote & "b" & quote & ":" & quote & "x" & quote & "}],  " & quote & "c" & quote & ":true," & quote & "d" & quote & ":null}" into tJson
    nxtCheck nxJsonType(tJson, empty) is "object", "root object types"
@@ -273,6 +280,37 @@ private command nxtTestJsonParse
    nxtCheck nxJsonType("{" & quote & "a" & quote & ":1," & quote & "a" & quote & ":2}", empty) is "missing", "duplicate object keys refuse (the first-wins/last-wins desync)"
    nxtCheck nxJsonType("{" & quote & "NAME" & quote & ":1}", "name") is "missing", "object keys are case-sensitive (is folds; the walk must not)"
    nxtCheck nxJsonType("[1,2,3]", "2.0") is "missing", "array paths are digit runs, not numeric folds"
+   -- THE 2026-09-09 REFUSAL, here so an engine pass runs it: until now only
+   -- tools/check-script-vectors.py did, headlessly. The array step's guard
+   -- used to be ONE chain, `not nxIsDigits(tStep) or tStep + 0 < 1 ...`,
+   -- and `or` evaluates BOTH operands (suite engine note 2.5), so a step
+   -- like "abc" reached `tStep + 0`: a HARD engine error, not a refusal,
+   -- raised from relay bytes through nxMetadataParse. So the call sits in a
+   -- try. On a regressed library a bare nxtCheck would not print FAIL - it
+   -- would THROW out of this whole harness and take every later line with
+   -- it; caught, the regression is one FAIL line and the report survives.
+   --
+   -- The same call pins the other half of that fix: the early-out now
+   -- restores the itemDelimiter, which is "/" at that point and global
+   -- state (suite engine note 2.3). It reads the DELIMITER, not a second
+   -- nxJsonGet: the walk saves whatever delimiter it finds and sets "/"
+   -- itself, so a second call answers "x" even after a leak (the headless
+   -- gate's first version of this check did exactly that and stayed green
+   -- with the restore deleted). The sentinel is not comma, so a restore to
+   -- a hard-coded comma fails as well.
+   put "{" & quote & "a" & quote & ":[" & quote & "x" & quote & "," & quote & "y" & quote & "]}" into tArrJson
+   put the itemDelimiter into tSavedDelim
+   set the itemDelimiter to "|"
+   put "not run" into tGot
+   try
+      put nxJsonGet(tArrJson, "a/abc") into tGot
+   catch tError
+      put "THREW: " & tError into tGot
+   end try
+   put the itemDelimiter into tAfterDelim
+   set the itemDelimiter to tSavedDelim
+   nxtCheck tGot is empty, "a non-numeric array step refuses, never a hard error (2026-09-09: or evaluates both operands)"
+   nxtCheck tAfterDelim is "|", "and that refusal restores the itemDelimiter (2026-09-09)"
    put empty into tDeep
    repeat with tI = 1 to 70
       put "[" after tDeep
@@ -745,7 +783,7 @@ end nxtTestRelayMessages
 -- ==========================================================================
 
 private command nxtTestWsPure
-   local tParsed, tRequest, tFrame, tDecoded, tBuffer
+   local tParsed, tRequest, tFrame, tDecoded, tBuffer, tGot, tError
    nxtSection "websocket helpers (RFC 6455, pure half)"
    put nxWsUrlParse("ws://relay.example.com") into tParsed
    nxtCheck tParsed["host"] is "relay.example.com", "ws url: host"
@@ -759,6 +797,16 @@ private command nxtTestWsPure
    nxtCheck nxWsUrlParse("http://x.io") is empty, "an http url refuses"
    nxtCheck nxWsUrlParse("ws://") is empty, "an empty host refuses"
    nxtCheck nxWsUrlParse("ws://h:99999") is empty, "an out-of-range port refuses"
+   -- The 2026-09-09 refusal, the same `or` rule as the JSON path step in
+   -- section 4 and caught the same way: a non-numeric port reached
+   -- `tPortText + 0` and was a hard engine error, not this refusal.
+   put "not run" into tGot
+   try
+      put nxWsUrlParse("wss://h:abc/") into tGot
+   catch tError
+      put "THREW: " & tError into tGot
+   end try
+   nxtCheck tGot is empty, "a non-numeric port refuses, never a hard error (2026-09-09)"
    nxtCheck nxWsUrlParse("ws://a b") is empty, "whitespace refuses"
    put nxWsHandshakeRequest("r.io", 80, "/", kNxVecWsKey, false) into tRequest
    nxtCheck tRequest begins with "GET / HTTP/1.1", "the request line"
