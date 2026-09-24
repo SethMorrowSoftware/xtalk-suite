@@ -1,14 +1,19 @@
 -- =====================================================================
 -- box2dxt-spike-gamekit.livecodescript  /  Game Kit Phase 0 runtime spike
 --
--- PURPOSE: answer the "(verify in OXT)" questions in docs/archive/game-engine-spec.md
--- on real OXT hardware BEFORE any Game Kit module is built. See plan.md
--- Phase 0 for the S0-S10 test table this implements.
+-- PURPOSE: answer, on real OXT hardware, the runtime questions the Game Kit
+-- rested on BEFORE any Kit module was built (Phase 0), and stay on as the
+-- hardware-acceptance harness for each new platform. The S0-S12 table this
+-- implements, with its Win32 verdicts, is section 4 of this member's
+-- CLAUDE.md. (This header used to send you to plan.md and
+-- docs/archive/game-engine-spec.md for an S0-S10 table. Both are retired;
+-- the spike itself grew S11, the command-call syntax probe, and S12, icon
+-- buttons against scroll-group sprites; S2 rides the S1 button.)
 --
 -- HOW TO RUN
 --   1. In OXT, make a new stack. Put this whole file into the STACK script.
---   2. Make sure the box2dxt extension is loaded (S7-S10 need it; S0-S6 run
---      without it). Close and reopen the stack.
+--   2. Make sure the box2dxt extension is loaded (S7-S12 need it and SKIP
+--      without it; S0-S6 run without it). Close and reopen the stack.
 --   3. Click the test buttons top to bottom. Follow the STATUS box; some
 --      tests judge themselves, some ask your eyes. Press STOP between tests.
 --   4. When done, click "Copy report" and paste the report back to the
@@ -18,10 +23,15 @@
 -- file is throwaway scaffolding - it is not an example of Kit style.
 -- =====================================================================
 
--- STATUS: verified statically; NEEDS AN OXT PASS. box2dxt's selftest runs
--- inside the suite paste, but this GAME does not - no session has confirmed
--- its window builds or that it plays. It had no runbook tick-sheet row at
--- all until 2026-08-17, which is why: nothing ever asked anyone to open it.
+-- STATUS: four Win32 OXT passes ran this spike (v1-v4, 2026-06-10) and closed
+-- Phase 0; the verdicts are in the CLAUDE.md table. What no session has done
+-- is open it SINCE the 2026-08-14 fold: the fold's 720p trim (700 to 640)
+-- and the checker sweeps after it touched this file's own code, and its
+-- embedded Kit has been re-synced through every Kit change since, up to the
+-- 2026-09-09 delimiter fix. So this copy is verified statically and needs
+-- an OXT re-pass. Linux and macOS have never run it: their S1-S12 verdicts
+-- are risk R1, still open.
+-- box2dxt's selftest runs inside the suite paste; this stack does not.
 local gSpikeGen, gSpikeTest, gExtOK, gEnvDone, gReportN
 local gProbeN, gProbeLast, gProbeSum, gProbeMax
 local gS1MaxChord, gS1Seen, gS1RawDown, gS1RawUp

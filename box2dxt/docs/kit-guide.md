@@ -1258,9 +1258,10 @@ A few things that trip up LiveCode/OpenXTalk users specifically:
 ## 23. API index
 
 The `b2k...` handlers a game reaches for, grouped - 252 of the Kit's 313 (measured
-2026-08-26); the rest are internal helpers plus a handful of entry points nobody
-has written up yet, and `src/box2dxt-kit.livecodescript` is the source of truth
-for those. `[f]` marks a **function** (returns a value - call it with `()` /
+2026-08-26). The rest are the Kit's internal helpers and the player controller's
+own steps; [`kit-reference.md`](kit-reference.md) names all 313 (its gate,
+`tools/check-reference-docs.py`, keeps it that way), and
+`src/box2dxt-kit.livecodescript` is the source of truth. `[f]` marks a **function** (returns a value - call it with `()` /
 `get` / `put`); everything else is a **command** (a statement). Optional
 arguments are in `[...]`.
 

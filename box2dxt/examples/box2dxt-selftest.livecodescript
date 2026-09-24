@@ -53,14 +53,27 @@
 -- assertion than v29 for that reason (375 where v29 had 374). v31 takes one
 -- back OUT - 374 - because the 2026-08-21 Linux pass showed the ordering half
 -- was asserting a property Linux does not provide and the Kit does not use
--- (readback is a constant 0 there). No two of v29, v30 and v31 are comparable.
--- Neither the v30 Windows total nor the v30 Linux
--- total has been observed yet: both need a pass.
+-- (readback is a constant 0 there). No two of v29, v30, v31 and v32 are
+-- comparable.
+--
+-- The v30 totals WERE observed (this member's CLAUDE.md ledger; this paragraph
+-- said otherwise until 2026-09-24): 375/0 on Windows x86_64, 2026-08-20, and
+-- 374/1 on Linux, 2026-08-21 - the one red the playLoudness readback that v31
+-- demoted to an observation. v31 (374 expected) has no record of its own: the
+-- 2026-08-24 Windows whole-paste pass had zero failures suite-wide, but did not
+-- capture this harness's count, so v31 green is an inference.
+--
+-- v32 (2026-09-24) adds stTestCallerDelimiter, 11 assertions for the
+-- 2026-09-09 Kit delimiter fix (51ac525, which changed ten Kit handlers and
+-- left this constant at 31, against the member's rule 2). 385 expected in a
+-- green run, from 387 stAssert call sites (two if/else pairs execute one line
+-- each). No engine has run v32: verified statically; needs an OXT pass.
+-- Record the total the pass prints rather than matching this one.
 local gRep, gPass, gFail, gFellCount, gRunning
 local gMsgEnters, gMsgContacts   -- message-path counters (vs polling)
 
 constant kStUIVersion = "1"
-constant kStHarnessV = "31"  -- bump on EVERY harness change: the report
+constant kStHarnessV = "32"  -- bump on EVERY harness change: the report
                              -- header prints it, so a stale paste is
                              -- visible at a glance
 
@@ -175,6 +188,7 @@ command stRunAll
    stRun "stTestDuckReshape"
    stRun "stTestDuckFilter"
    stRun "stTestPlayerHelpers"
+   stRun "stTestCallerDelimiter"
    stRun "stTestTeardown"
    -- the Kit API coverage sections (see the banner below stTestTeardown)
    stRun "stTestKitHelpers"
@@ -1518,11 +1532,14 @@ command stTestDuckReshape
       b2kStepOnce
       if stX(tRef) > 360 then exit repeat
    end repeat
-   -- STILL OPEN after four engine runs (x stalls ~269, short of the
-   -- ceiling's edge at 300, at ~35 px/s net against a 110 px/s crawl
-   -- target): nothing in the geometry blocks it there, so the next run
-   -- must say what the controller thinks it is doing at the stall --
-   -- self-diagnose rather than re-report one number.
+   -- FIXED at v28. Four engine runs stalled at x ~269, short of the
+   -- ceiling's edge at 300, and the instrumentation below is what convicted
+   -- the cause on run 5 (state duck, halfH 13, vx -1: a body against a
+   -- wall): OXT does not resize a polygon graphic by a height-set (engine
+   -- note 5.1), so the "shrunk" capsule was rebuilt at full height every
+   -- time. b2kReshape now takes explicit dims; this line passed at v29 on
+   -- Windows (2026-08-17) and Linux (2026-08-18). The self-diagnosing name
+   -- stays: if it ever reddens again, it says what the controller saw.
    set the itemDelimiter to comma
    put round(item 1 of b2kVelocity(tRef)) into tVx
    stAssert "crawled under the low ceiling (x " & round(stX(tRef)) & " > 350; state " \
@@ -1698,6 +1715,225 @@ command stTestSheetPersist
    if there is an image "st_sheetsrc" then delete image "st_sheetsrc"
    if there is an image "st_sheetsrc2" then delete image "st_sheetsrc2"
 end stTestSheetPersist
+
+-- v32: a CALLER'S itemDelimiter must not reach the Kit's own parsing.
+--
+-- The 2026-09-09 fix (51ac525) made ten public Kit handlers set comma before
+-- they read an "x,y": b2kAddBox, b2kAddBall, b2kAddCapsule, b2kAddPolygon,
+-- b2kReshape, b2kHinge, b2kWeld, b2kSlider, b2kWheel and b2kDrawPoly. Before
+-- it, a caller that had set tab - the contraption builder's Images panel did,
+-- one call chain deep - made `item 1 of the loc` answer the whole "512,246",
+-- and that string went into arithmetic or a Number-typed .lcb parameter: a
+-- hard throw (engine note 6.4), not a wrong number. The fix shipped with no
+-- assertion and left kStHarnessV at 31, against rule 2; this section is both.
+-- All ten are driven, because each carries its own copy of the one line.
+--
+-- Each call runs under a tab set IMMEDIATELY before it (the Kit's own
+-- set-to-comma may come back to us, so a tab set once would cover only the
+-- first call), inside its own try, and comma is restored the moment it
+-- returns: the borrow is the narrowest span (engine note 2.3), and a throw
+-- here must not leave tab set for every later section. A throw is that
+-- line's FAIL with the error in its name (stThrewNote), which is rule 3.
+--
+-- Two OBSERVATIONS close the section, printed either way and never
+-- asserted. First, whether a caller's delimiter reaches a CALLED handler on
+-- this engine at all: if it does not, the lines above pass without
+-- exercising the fix, and the report says so instead of claiming coverage
+-- it did not get. Second, whether the Kit's set-to-comma reaches back to
+-- the caller: the ten handlers set and never restore, which is harmless to
+-- a caller that sets its delimiter right before parsing (gotcha 5) and a
+-- trap for one that sets it once and then calls into the Kit mid-loop.
+command stTestCallerDelimiter
+   local tBox, tBall, tCap, tPoly, tA, tB, tJ, tErr, tPos, tM0, tPts0
+   local tWx, tWy, tIn, tBack
+   stNewWorld "caller delimiter: the Kit parses x,y under a caller's tab (v32)"
+   -- THE ATTACH FAMILY: every control is built under comma, attached under tab
+   create graphic "st_dlbox"
+   set the style of it to "rectangle"
+   set the rect of it to 100, 100, 140, 140
+   put the long id of graphic "st_dlbox" into tBox
+   put empty into tErr
+   set the itemDelimiter to tab
+   try
+      b2kAddBox tBox
+   catch tErr
+   end try
+   put the itemDelimiter into tBack   -- what a Kit call hands back (observed below)
+   set the itemDelimiter to comma
+   stAssert "b2kAddBox under a caller's tab registers a body" & stThrewNote(tErr), \
+         (tErr is empty and b2kBodyOf(tBox) is not empty)
+   -- not just "did not throw": x and y were parsed APART, so the body sits
+   -- at the control's loc (under the bug, item 1 was the whole "x,y")
+   put b2kPosition(tBox) into tPos
+   stAssert "...and puts it at the control's loc 120,120 (body at " & tPos & ")", \
+         (abs(item 1 of tPos - 120) < 1 and abs(item 2 of tPos - 120) < 1)
+   create graphic "st_dlball"
+   set the style of it to "oval"
+   set the rect of it to 200, 100, 240, 140
+   put the long id of graphic "st_dlball" into tBall
+   put empty into tErr
+   set the itemDelimiter to tab
+   try
+      b2kAddBall tBall
+   catch tErr
+   end try
+   set the itemDelimiter to comma
+   stAssert "b2kAddBall under a caller's tab registers a body" & stThrewNote(tErr), \
+         (tErr is empty and b2kBodyOf(tBall) is not empty)
+   create graphic "st_dlcap"
+   set the style of it to "rectangle"
+   set the rect of it to 300, 100, 380, 140
+   put the long id of graphic "st_dlcap" into tCap
+   put empty into tErr
+   set the itemDelimiter to tab
+   try
+      b2kAddCapsule tCap
+   catch tErr
+   end try
+   set the itemDelimiter to comma
+   stAssert "b2kAddCapsule under a caller's tab registers a body" & stThrewNote(tErr), \
+         (tErr is empty and b2kBodyOf(tCap) is not empty)
+   -- the polygon path parses every POINT, not just the loc
+   create graphic "st_dlpoly"
+   set the style of it to "polygon"
+   set the points of it to "400,100" & cr & "440,100" & cr & "420,140" & cr & "400,100"
+   put the long id of graphic "st_dlpoly" into tPoly
+   put empty into tErr
+   set the itemDelimiter to tab
+   try
+      b2kAddPolygon tPoly
+   catch tErr
+   end try
+   set the itemDelimiter to comma
+   stAssert "b2kAddPolygon under a caller's tab registers a body" & stThrewNote(tErr), \
+         (tErr is empty and b2kBodyOf(tPoly) is not empty)
+   -- RESHAPE: only its "poly" case parses (the others take numbers), so grow
+   -- the triangle's outline 2x under comma and re-fit it under tab. Twice the
+   -- side is four times the area at the same density; a reshape that threw
+   -- or refused keeps the old shape and the old mass.
+   put b2kMass(tPoly) into tM0
+   set the points of tPoly to "400,100" & cr & "480,100" & cr & "440,180" & cr & "400,100"
+   put empty into tErr
+   set the itemDelimiter to tab
+   try
+      b2kReshape tPoly, "poly"
+   catch tErr
+   end try
+   set the itemDelimiter to comma
+   stAssert "b2kReshape poly under a caller's tab re-fits the outline (mass " \
+         & tM0 & " -> " & b2kMass(tPoly) & ", ~4x)" & stThrewNote(tErr), \
+         (tErr is empty and tM0 > 0 and b2kMass(tPoly) > tM0 * 2)
+   -- DRAWPOLY: the renderer every dynamic graphic body goes through. Ask for
+   -- a pose the draw cache has never seen, so it must re-point the outline.
+   put the points of tBox into tPts0
+   put b2kToWorldX(300) into tWx
+   put b2kToWorldY(300) into tWy
+   put empty into tErr
+   set the itemDelimiter to tab
+   try
+      b2kDrawPoly tBox, tWx, tWy, 0.5
+   catch tErr
+   end try
+   set the itemDelimiter to comma
+   stAssert "b2kDrawPoly under a caller's tab re-points the outline (" \
+         & the number of lines of the points of tBox & " points)" & stThrewNote(tErr), \
+         (tErr is empty and the points of tBox is not tPts0)
+   -- THE JOINT FAMILY: bodies spawned under comma, joined under tab. Each
+   -- builds local anchors as "x,y" and splits them into a typed .lcb call,
+   -- which is where the unfixed form threw.
+   b2kSpawnBox 500, 300, 60, 12
+   put the result into tA
+   put empty into tErr
+   put empty into tJ
+   set the itemDelimiter to tab
+   try
+      b2kHinge tA, empty, 500, 300
+      put the result into tJ
+   catch tErr
+   end try
+   set the itemDelimiter to comma
+   stAssert "b2kHinge under a caller's tab returns a joint (" & tJ & ")" & stThrewNote(tErr), \
+         (tErr is empty and tJ > 0)
+   b2kSpawnBox 600, 200, 30, 30
+   put the result into tA
+   b2kSpawnBox 640, 200, 30, 30
+   put the result into tB
+   put empty into tErr
+   put empty into tJ
+   set the itemDelimiter to tab
+   try
+      b2kWeld tA, tB
+      put the result into tJ
+   catch tErr
+   end try
+   set the itemDelimiter to comma
+   stAssert "b2kWeld under a caller's tab returns a joint (" & tJ & ")" & stThrewNote(tErr), \
+         (tErr is empty and tJ > 0)
+   b2kSpawnBox 700, 300, 30, 30
+   put the result into tA
+   put empty into tErr
+   put empty into tJ
+   set the itemDelimiter to tab
+   try
+      b2kSlider tA, empty, 90
+      put the result into tJ
+   catch tErr
+   end try
+   set the itemDelimiter to comma
+   stAssert "b2kSlider under a caller's tab returns a joint (" & tJ & ")" & stThrewNote(tErr), \
+         (tErr is empty and tJ > 0)
+   b2kSpawnBox 300, 400, 80, 20
+   put the result into tA
+   b2kSpawnBall 300, 430, 20
+   put the result into tB
+   put empty into tErr
+   put empty into tJ
+   set the itemDelimiter to tab
+   try
+      b2kWheel tA, tB, 300, 430, 0
+      put the result into tJ
+   catch tErr
+   end try
+   set the itemDelimiter to comma
+   stAssert "b2kWheel under a caller's tab returns a joint (" & tJ & ")" & stThrewNote(tErr), \
+         (tErr is empty and tJ > 0)
+   -- OBSERVATIONS from here down, printed either way, never assertions.
+   set the itemDelimiter to tab
+   put stDelimSeen() into tIn
+   set the itemDelimiter to comma
+   if tIn is tab then
+      stOut "        a caller's tab REACHES a called handler on " & the platform & \
+            ": the lines above exercised the 2026-09-09 fix"
+   else
+      stOut "        a caller's tab does NOT reach a called handler on " & the platform & \
+            " (it saw " & stDelimName(tIn) & "): the lines above passed without exercising the fix"
+   end if
+   if tBack is comma then
+      stOut "        a Kit call's own set-to-comma reaches back to its caller on " & \
+            the platform & " (tab in, comma out)"
+   else
+      stOut "        a Kit call left its caller's delimiter alone on " & the platform & \
+            " (tab in, " & stDelimName(tBack) & " out)"
+   end if
+end stTestCallerDelimiter
+
+-- The suffix a guarded call's assertion carries: empty when the call returned,
+-- " (threw: <first line>)" when it threw, so a red line names its own cause.
+function stThrewNote pErr
+   if pErr is empty then return empty
+   return " (threw: " & line 1 of pErr & ")"
+end stThrewNote
+
+-- What a CALLED handler sees as the itemDelimiter: the first observation above.
+function stDelimSeen
+   return the itemDelimiter
+end stDelimSeen
+
+function stDelimName pDelim
+   if pDelim is tab then return "tab"
+   if pDelim is comma then return "comma"
+   return quote & pDelim & quote
+end stDelimName
 
 
 -- =====================================================================

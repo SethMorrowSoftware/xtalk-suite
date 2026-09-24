@@ -8,6 +8,46 @@ The native shim's ABI is tracked separately by `b2Version()` (currently `4`).
 
 ## [Unreleased]
 
+- `examples/box2dxt-selftest` **v32** (2026-09-24): `stTestCallerDelimiter`
+  drives all ten handlers of the 2026-09-09 delimiter fix under a caller's
+  tab (11 assertions; 385 expected in a green run), and prints whether a
+  caller's delimiter reaches a called handler on that engine at all - if it
+  does not, the section says it passed without exercising the fix. Verified
+  statically; needs an OXT pass.
+- **The reference pages are complete** (2026-09-24): `docs/api-reference.md`
+  names all 376 public `b2...` handlers (every per-joint accessor, the shape
+  geometry readers, the Linux loader trio) and `docs/kit-reference.md` all 313
+  `b2k...` handlers (the player controller's own steps, and the Kit's
+  internals in a section of their own). The new gate
+  `tools/check-reference-docs.py` holds both. Two old errors went with the
+  rewrite: `b2DistanceLength` is the REST length, and sounds SURVIVE
+  `b2kTeardown`.
+- `dist/INSTALL.md` describes the boot title screen (hero select 1-5 lives
+  there only) and the full control set; the spike's and the self-test's
+  headers no longer cite deleted design docs or state records the ledger
+  contradicts.
+
+- **Committed Windows DLLs rebuilt by the suite's `release-binaries.yml`**
+  (2026-09-12, run 34657390798 from `0f17ab5`, commit `421bab3`). The Linux
+  libraries and the `universal-mac` dylib were rebuilt too and came out
+  byte-identical to the committed ones (the installer reported them
+  `(unchanged)`), so git shows no change for them. Not yet loaded by an engine.
+- **Kit: ten handlers no longer assume the caller's `itemDelimiter`**
+  (2026-09-09, `51ac525`). `b2kAddBox`, `b2kAddBall`, `b2kAddCapsule`,
+  `b2kAddPolygon`, `b2kReshape`, `b2kHinge`, `b2kWeld`, `b2kSlider`,
+  `b2kWheel` and `b2kDrawPoly` now set comma before they read an `"x,y"`.
+  Under a caller's tab, `item 1 of the loc` was the whole `"512,246"`, a hard
+  throw rather than a wrong number; the contraption builder's Images panel
+  reached it one call chain deep. Eight contraption-builder handlers that
+  leaked a borrowed delimiter (`serializeText`, `refreshImagePanel`,
+  `fireEmitter` among them) now restore it around the narrowest span.
+  Verified statically; needs an OXT pass. The self-test assertion for it came
+  with harness v32 (2026-09-24).
+- **Committed Linux and Windows libraries from the first release dispatch to
+  land** (2026-08-27, run 33025459610 from `6ac064c`, commit `cec1e85`).
+  `x86_64-linux` keeps the glibc 2.17 floor; `x86-linux`, built on a stock
+  Ubuntu 24.04 multilib runner, now requires glibc 2.34. The `universal-mac`
+  dylib was rebuilt byte-identical (reported `(unchanged)`).
 - **`tests/smoke_test.c`: the world/joint/query/chain/event-register sweep**
   (2026-08-23). The 176 exports the 2026-08-17 measurement left dark - the
   world, joint, query, mouse, chain and contact/sensor-register families - are
@@ -23,6 +63,20 @@ The native shim's ABI is tracked separately by `b2Version()` (currently `4`).
   itself, and the L7 verify list still pointed at "slice 3" for the multi-key/
   switch puzzles that shipped into L2 (the `docs/REMAINING-WORK.md` item 1
   class: labels flip both ways).
+- `examples/box2dxt-selftest` **v31** (2026-08-21): the `playLoudness`
+  check asserts only that the property is READABLE and prints what it read
+  (exact / ordered but not exact / does not track). Linux reads it back as a
+  constant 0 whatever is written, so v30's ordering assertion went red on a
+  healthy platform; nothing in the Kit reads the value back. 374 expected.
+- **Platformer and slingshot: delayed handlers pin the defaultStack**
+  (2026-08-19 `pfCardFadeStep` and `sgCardFadeStep`; 2026-08-20
+  `sgNextLevel`). A handler arriving by `send ... in` resolves unqualified
+  controls against whatever stack is in front, so the card fade could write
+  to the wrong stack or to nothing. Found by the suite's
+  `tools/check-timer-stack-pin.py`; verified statically, needs an OXT pass.
+- `examples/box2dxt-selftest` **v30** (2026-08-18): the exact `playLoudness`
+  readback (the one red of the 2026-08-18 Linux pass, 373/1 at v29) became a
+  two-point ordered probe that prints its values. 375 expected.
 - **Kit: `b2kPlayerDuckSet` / `b2kPlayerStandUp` no longer drop the shape's
   collision filter** (2026-08-17). `b2kReshape` resetting the material AND the
   filter is documented contract, and a hand-written reshape gets to re-apply
@@ -38,6 +92,21 @@ The native shim's ABI is tracked separately by `b2Version()` (currently `4`).
 - `examples/box2dxt-selftest` **v29**: `stTestDuckFilter`, a duck/stand filter
   round-trip staged as one fall over three obstacles, so the resting y names
   which of category, mask or group was lost.
+- **Kit: `b2kReshape` takes optional explicit pixel dims**, `b2kReshape
+  pControl, pShape, pW, pH` (2026-08-17, harness v28). OXT does not resize a
+  polygon graphic by a height-set, so the player's duck rebuilt the capsule at
+  full height and the crawl wedged under a low ceiling; and re-reading a
+  redrawn rect grew it 2 px per rebuild. `b2kPlayerAttach` now captures the
+  capsule's dims before the first draw, and duck and stand-up rebuild from
+  them. The crawl assertion went green at v29 (Windows 2026-08-17, Linux
+  2026-08-18).
+- **Kit: the filter-mask clamp** (2026-08-17, harness v27). Box2D's default
+  mask reads back as 2^64-1, above the shim's 2^53-1 guard, so
+  `b2SetShapeFilter` refused the whole call silently whenever a wrapper passed
+  that readback straight back in. `b2kSetCategory`, `b2kSetMask` and
+  `b2kSetCollisionGroup` now clamp every readback they write back to
+  4294967295 (`b2kSetCollisionGroup` had been a no-op for every body whose
+  mask was never lowered). `b2kNoCollide` was never affected.
 - **`tests/smoke_test.c`: the body + shape accessor sweep** (2026-08-17). 134
   `LC_API` exports that had never been executed - the whole `b2lc_body_*` and
   `b2lc_shape_*` surface plus the AABB, mass-data, polygon-builder and
@@ -54,6 +123,21 @@ The native shim's ABI is tracked separately by `b2Version()` (currently `4`).
   `tools/build-all.sh`. [Corrected: it was wired into `tools/build-all.sh`'s
   `run_gates` in this same 2026-08-17 change; the sentence was wrong when
   written.]
+- **Kit: every sprite entry point no-ops on an empty ref** (2026-08-16,
+  harness v25 and v26). `b2kSpritePlay` (v25), then `b2kSpriteFlipH`,
+  `b2kSpriteStop`, `b2kSpriteSetFrame`, `b2kSpriteFPS`, `b2kSpriteOnFinish`,
+  `b2kSpriteBind`, `b2kSpriteUnbind` and `b2kSpriteMoveTo` (v26):
+  `b2kPlayerShowState`'s facing latch fires on its first call, so a player
+  with no art bound reached a deref of empty and threw.
+- **Kit: all eight event-buffer readers are count-guarded** (2026-08-16,
+  harness v25). `b2kEventsReset` zeroes the counts and leaves the entry
+  arrays, so an out-of-range index answered the STALE control from the last
+  real event; it now answers empty.
+- `examples/box2dxt-selftest` **v23-v25** (2026-08-16): folded into the suite's
+  generated self-test (v23), with 13 shallow "Kit API coverage" sections that
+  name all 313 public `b2k*` handlers; v24 and v25 corrected test bugs the
+  first engine runs exposed (half-extents are the control's real size,
+  `b2kRayHit` returns the hit control or empty, `b2kImpulse` is y-DOWN).
 - Folded into the xtalk-suite monorepo (2026-08-14): the unified suite checker
   replaced the local copy (an ~1550-violation ASCII sweep followed, including 29
   real `repeat ... step` loop bugs in the platformer, rewritten), all five

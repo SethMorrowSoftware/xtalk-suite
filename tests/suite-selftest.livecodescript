@@ -464,7 +464,7 @@ local dc1sStRunDone           -- "true" once the run finished (drives the color)
 local b21gRep, b21gPass, b21gFail, b21gFellCount, b21gRunning
 local b21gMsgEnters, b21gMsgContacts   -- message-path counters (vs polling)
 constant b21kStUIVersion = "1"
-constant b21kStHarnessV = "31"  -- bump on EVERY harness change: the report
+constant b21kStHarnessV = "32"  -- bump on EVERY harness change: the report
 
 -- ---- Riptide Social (phases 1-2): the rs* self-test ----
 constant rs1kRsGoldMasterHex = "4242424242424242424242424242424242424242424242424242424242424242"
@@ -24222,6 +24222,7 @@ command b21stRunAll
    b21stRun "b21stTestDuckReshape"
    b21stRun "b21stTestDuckFilter"
    b21stRun "b21stTestPlayerHelpers"
+   b21stRun "b21stTestCallerDelimiter"
    b21stRun "b21stTestTeardown"
    -- the Kit API coverage sections (see the banner below b21stTestTeardown)
    b21stRun "b21stTestKitHelpers"
@@ -25481,11 +25482,14 @@ command b21stTestDuckReshape
       b2kStepOnce
       if b21stX(b21tRef) > 360 then exit repeat
    end repeat
-   -- STILL OPEN after four engine runs (x stalls ~269, short of the
-   -- ceiling's edge at 300, at ~35 px/s net against a 110 px/s crawl
-   -- target): nothing in the geometry blocks it there, so the next run
-   -- must say what the controller thinks it is doing at the stall --
-   -- self-diagnose rather than re-report one number.
+   -- FIXED at v28. Four engine runs stalled at x ~269, short of the
+   -- ceiling's edge at 300, and the instrumentation below is what convicted
+   -- the cause on run 5 (state duck, halfH 13, vx -1: a body against a
+   -- wall): OXT does not resize a polygon graphic by a height-set (engine
+   -- note 5.1), so the "shrunk" capsule was rebuilt at full height every
+   -- time. b2kReshape now takes explicit dims; this line passed at v29 on
+   -- Windows (2026-08-17) and Linux (2026-08-18). The self-diagnosing name
+   -- stays: if it ever reddens again, it says what the controller saw.
    set the itemDelimiter to comma
    put round(item 1 of b2kVelocity(b21tRef)) into b21tVx
    b21stAssert "crawled under the low ceiling (x " & round(b21stX(b21tRef)) & " > 350; state " \
@@ -25638,6 +25642,195 @@ command b21stTestSheetPersist
    if there is an image "st_sheetsrc" then delete image "st_sheetsrc"
    if there is an image "st_sheetsrc2" then delete image "st_sheetsrc2"
 end b21stTestSheetPersist
+
+command b21stTestCallerDelimiter
+   local b21tBox, b21tBall, b21tCap, b21tPoly, b21tA, b21tB, b21tJ, b21tErr, b21tPos, b21tM0, b21tPts0
+   local b21tWx, b21tWy, b21tIn, b21tBack
+   b21stNewWorld "caller delimiter: the Kit parses x,y under a caller's tab (v32)"
+   -- THE ATTACH FAMILY: every control is built under comma, attached under tab
+   create graphic "st_dlbox"
+   set the style of it to "rectangle"
+   set the rect of it to 100, 100, 140, 140
+   put the long id of graphic "st_dlbox" into b21tBox
+   put empty into b21tErr
+   set the itemDelimiter to tab
+   try
+      b2kAddBox b21tBox
+   catch b21tErr
+   end try
+   put the itemDelimiter into b21tBack   -- what a Kit call hands back (observed below)
+   set the itemDelimiter to comma
+   b21stAssert "b2kAddBox under a caller's tab registers a body" & b21stThrewNote(b21tErr), \
+         (b21tErr is empty and b2kBodyOf(b21tBox) is not empty)
+   -- not just "did not throw": x and y were parsed APART, so the body sits
+   -- at the control's loc (under the bug, item 1 was the whole "x,y")
+   put b2kPosition(b21tBox) into b21tPos
+   b21stAssert "...and puts it at the control's loc 120,120 (body at " & b21tPos & ")", \
+         (abs(item 1 of b21tPos - 120) < 1 and abs(item 2 of b21tPos - 120) < 1)
+   create graphic "st_dlball"
+   set the style of it to "oval"
+   set the rect of it to 200, 100, 240, 140
+   put the long id of graphic "st_dlball" into b21tBall
+   put empty into b21tErr
+   set the itemDelimiter to tab
+   try
+      b2kAddBall b21tBall
+   catch b21tErr
+   end try
+   set the itemDelimiter to comma
+   b21stAssert "b2kAddBall under a caller's tab registers a body" & b21stThrewNote(b21tErr), \
+         (b21tErr is empty and b2kBodyOf(b21tBall) is not empty)
+   create graphic "st_dlcap"
+   set the style of it to "rectangle"
+   set the rect of it to 300, 100, 380, 140
+   put the long id of graphic "st_dlcap" into b21tCap
+   put empty into b21tErr
+   set the itemDelimiter to tab
+   try
+      b2kAddCapsule b21tCap
+   catch b21tErr
+   end try
+   set the itemDelimiter to comma
+   b21stAssert "b2kAddCapsule under a caller's tab registers a body" & b21stThrewNote(b21tErr), \
+         (b21tErr is empty and b2kBodyOf(b21tCap) is not empty)
+   -- the polygon path parses every POINT, not just the loc
+   create graphic "st_dlpoly"
+   set the style of it to "polygon"
+   set the points of it to "400,100" & cr & "440,100" & cr & "420,140" & cr & "400,100"
+   put the long id of graphic "st_dlpoly" into b21tPoly
+   put empty into b21tErr
+   set the itemDelimiter to tab
+   try
+      b2kAddPolygon b21tPoly
+   catch b21tErr
+   end try
+   set the itemDelimiter to comma
+   b21stAssert "b2kAddPolygon under a caller's tab registers a body" & b21stThrewNote(b21tErr), \
+         (b21tErr is empty and b2kBodyOf(b21tPoly) is not empty)
+   -- RESHAPE: only its "poly" case parses (the others take numbers), so grow
+   -- the triangle's outline 2x under comma and re-fit it under tab. Twice the
+   -- side is four times the area at the same density; a reshape that threw
+   -- or refused keeps the old shape and the old mass.
+   put b2kMass(b21tPoly) into b21tM0
+   set the points of b21tPoly to "400,100" & cr & "480,100" & cr & "440,180" & cr & "400,100"
+   put empty into b21tErr
+   set the itemDelimiter to tab
+   try
+      b2kReshape b21tPoly, "poly"
+   catch b21tErr
+   end try
+   set the itemDelimiter to comma
+   b21stAssert "b2kReshape poly under a caller's tab re-fits the outline (mass " \
+         & b21tM0 & " -> " & b2kMass(b21tPoly) & ", ~4x)" & b21stThrewNote(b21tErr), \
+         (b21tErr is empty and b21tM0 > 0 and b2kMass(b21tPoly) > b21tM0 * 2)
+   -- DRAWPOLY: the renderer every dynamic graphic body goes through. Ask for
+   -- a pose the draw cache has never seen, so it must re-point the outline.
+   put the points of b21tBox into b21tPts0
+   put b2kToWorldX(300) into b21tWx
+   put b2kToWorldY(300) into b21tWy
+   put empty into b21tErr
+   set the itemDelimiter to tab
+   try
+      b2kDrawPoly b21tBox, b21tWx, b21tWy, 0.5
+   catch b21tErr
+   end try
+   set the itemDelimiter to comma
+   b21stAssert "b2kDrawPoly under a caller's tab re-points the outline (" \
+         & the number of lines of the points of b21tBox & " points)" & b21stThrewNote(b21tErr), \
+         (b21tErr is empty and the points of b21tBox is not b21tPts0)
+   -- THE JOINT FAMILY: bodies spawned under comma, joined under tab. Each
+   -- builds local anchors as "x,y" and splits them into a typed .lcb call,
+   -- which is where the unfixed form threw.
+   b2kSpawnBox 500, 300, 60, 12
+   put the result into b21tA
+   put empty into b21tErr
+   put empty into b21tJ
+   set the itemDelimiter to tab
+   try
+      b2kHinge b21tA, empty, 500, 300
+      put the result into b21tJ
+   catch b21tErr
+   end try
+   set the itemDelimiter to comma
+   b21stAssert "b2kHinge under a caller's tab returns a joint (" & b21tJ & ")" & b21stThrewNote(b21tErr), \
+         (b21tErr is empty and b21tJ > 0)
+   b2kSpawnBox 600, 200, 30, 30
+   put the result into b21tA
+   b2kSpawnBox 640, 200, 30, 30
+   put the result into b21tB
+   put empty into b21tErr
+   put empty into b21tJ
+   set the itemDelimiter to tab
+   try
+      b2kWeld b21tA, b21tB
+      put the result into b21tJ
+   catch b21tErr
+   end try
+   set the itemDelimiter to comma
+   b21stAssert "b2kWeld under a caller's tab returns a joint (" & b21tJ & ")" & b21stThrewNote(b21tErr), \
+         (b21tErr is empty and b21tJ > 0)
+   b2kSpawnBox 700, 300, 30, 30
+   put the result into b21tA
+   put empty into b21tErr
+   put empty into b21tJ
+   set the itemDelimiter to tab
+   try
+      b2kSlider b21tA, empty, 90
+      put the result into b21tJ
+   catch b21tErr
+   end try
+   set the itemDelimiter to comma
+   b21stAssert "b2kSlider under a caller's tab returns a joint (" & b21tJ & ")" & b21stThrewNote(b21tErr), \
+         (b21tErr is empty and b21tJ > 0)
+   b2kSpawnBox 300, 400, 80, 20
+   put the result into b21tA
+   b2kSpawnBall 300, 430, 20
+   put the result into b21tB
+   put empty into b21tErr
+   put empty into b21tJ
+   set the itemDelimiter to tab
+   try
+      b2kWheel b21tA, b21tB, 300, 430, 0
+      put the result into b21tJ
+   catch b21tErr
+   end try
+   set the itemDelimiter to comma
+   b21stAssert "b2kWheel under a caller's tab returns a joint (" & b21tJ & ")" & b21stThrewNote(b21tErr), \
+         (b21tErr is empty and b21tJ > 0)
+   -- OBSERVATIONS from here down, printed either way, never assertions.
+   set the itemDelimiter to tab
+   put b21stDelimSeen() into b21tIn
+   set the itemDelimiter to comma
+   if b21tIn is tab then
+      b21stOut "        a caller's tab REACHES a called handler on " & the platform & \
+            ": the lines above exercised the 2026-09-09 fix"
+   else
+      b21stOut "        a caller's tab does NOT reach a called handler on " & the platform & \
+            " (it saw " & b21stDelimName(b21tIn) & "): the lines above passed without exercising the fix"
+   end if
+   if b21tBack is comma then
+      b21stOut "        a Kit call's own set-to-comma reaches back to its caller on " & \
+            the platform & " (tab in, comma out)"
+   else
+      b21stOut "        a Kit call left its caller's delimiter alone on " & the platform & \
+            " (tab in, " & b21stDelimName(b21tBack) & " out)"
+   end if
+end b21stTestCallerDelimiter
+
+function b21stThrewNote pErr
+   if pErr is empty then return empty
+   return " (threw: " & line 1 of pErr & ")"
+end b21stThrewNote
+
+function b21stDelimSeen
+   return the itemDelimiter
+end b21stDelimSeen
+
+function b21stDelimName pDelim
+   if pDelim is tab then return "tab"
+   if pDelim is comma then return "comma"
+   return quote & pDelim & quote
+end b21stDelimName
 
 command b21stTestKitHelpers
    local b21tVerts, b21tBytes, b21tWav, b21tXml, b21tProf
