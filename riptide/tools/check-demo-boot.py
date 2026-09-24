@@ -57,6 +57,21 @@ discovered:
     measurement is guarded for that.
   - `go to card` to a missing card sets `the result` and stays put; a chunk
     write into a missing control THROWS - both the engine's behaviours.
+  - `put X into URL "binfile:..."` ANSWERS THROUGH `the result` (2026-09-24):
+    empty on a write that landed, and, for a path a gate has planted in
+    World.url_write_refuse, the planted text with NOTHING written - the way
+    the engine reports a full disk or a read-only volume: as a value, never
+    a throw (the premise every write guard in the family is written on; no
+    engine note records the exact text, so the model plants the gate's text
+    rather than guessing the engine's). An UNPLANTED missing parent folder
+    is still created, not refused - looser than the engine, named at the
+    site. Until then
+    the model raised on its own refusals and never set `the result` at all,
+    so coinxt's waSaveWallet guard - "a write that failed is not a backup" -
+    had no way to be seen firing, and a check on it could never fail.
+    Planted refusals only: a refusal the MODEL raises (an unmodelled scheme,
+    a path outside the sandbox) still raises, because that is the model
+    refusing a construct, not the engine refusing a write.
   - Timers do not exist: `send ... in N milliseconds` queues, and queued
     messages are delivered in order after the driving handler returns, each
     advancing the modeled clock. A handler that re-arms itself is delivered
@@ -208,6 +223,11 @@ class World:
         self.ms = LCS.SECONDS[0] * 1000
         self.sandbox = sandbox
         self.log = []                   # what the model DID (diagnostics)
+        # PLANTED WRITE REFUSALS (2026-09-24): absolute path -> the text
+        # `the result` answers when a `put ... into URL` targets it. Empty by
+        # default, so no boot sees a refusal it did not plant; a gate that
+        # plants one removes it again (see DemoInterp.url_write).
+        self.url_write_refuse = {}
 
     # -- cards -------------------------------------------------------------
     def card_named(self, name):
@@ -786,9 +806,30 @@ class DemoInterp(LCS.Interp):
         path = m.group(1)
         if not self.world.path_ok(path):
             raise Thrown("url: path outside the sandbox " + path)
+        # A PLANTED REFUSAL IS A VALUE, NOT A THROW (see the header): the
+        # script goes on to its next line with `the result` set and the file
+        # untouched - which is exactly the state a write guard exists to
+        # read. Looked up by the absolute path, so a gate plants it with the
+        # same path it typed into the stack. Nothing is written, not even a
+        # truncated file: a refused write that left an empty file behind
+        # would let a check on "no file" pass for the wrong reason.
+        refused = self.world.url_write_refuse.get(os.path.abspath(path))
+        if refused is not None:
+            self.world.log.append("url write refused (planted): " + path)
+            self.world.result = str(refused)
+            return
+        # LOOSER THAN THE ENGINE, KNOWINGLY, and left standing: a missing
+        # parent folder is CREATED here, where the engine's write is expected
+        # to refuse (unevidenced in this tree - no engine note records it).
+        # Changing it would move every boot that writes under a folder it
+        # never made; a gate that needs the refusal plants it above.
         os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, "wb") as fh:
             fh.write(str(data).encode("latin-1"))
+        # and a write that landed leaves `the result` EMPTY, as the engine's
+        # does, so a stale value from an earlier command (a missing card's
+        # "No such card") can never read as this write's refusal
+        self.world.result = ""
 
     def deliver_sends(self, rounds=6):
         """Deliver queued `send ... in N ms` messages. Bounded: a message
