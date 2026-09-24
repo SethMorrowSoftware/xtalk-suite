@@ -14,6 +14,12 @@ stack and `start using` it). It requires the `box2dxt` extension loaded
 > the Kit start-to-finish with runnable examples. This page is the quick-lookup
 > reference.
 
+This page names every one of the Kit's 313 public `b2k...` handlers (completed
+2026-09-24; `tools/check-reference-docs.py`, in this member's
+`tools/run-gates.sh`, fails when one is missing). The ones the Kit runs on your
+behalf - the loop, the renderer, the event plumbing - are gathered at the end
+under [Internals](#internals-the-kit-calls-these-for-you).
+
 - [60-second start](#60-second-start)
 - [World & loop](#world--loop)
 - [Configuration](#configuration)
@@ -34,6 +40,7 @@ stack and `start using` it). It requires the `box2dxt` extension loaded
 - [Chains & terrain](#chains--terrain)
 - [Region & ray queries](#region--ray-queries)
 - [Motors & tuning](#motors--tuning)
+- [Internals](#internals-the-kit-calls-these-for-you)
 - [Tips](#tips)
 
 ---
@@ -81,6 +88,8 @@ b2kStart
 | `b2kClear` | Remove all bodies/controls the Kit created, keep the world. |
 | `b2kTeardown` | Stop and destroy the world and all Kit state. |
 | `b2kVersion()` | Native shim ABI version (`4`) - a load / in-sync check from Kit-only code. |
+| `b2kEnsureNativeLib` | If the native library sits beside the SAVED stack under its bare name (`box2dxt.dll` / `.dylib` / `.so`, by platform), point `the revLibraryMapping["box2dxt"]` at it, so the `c:box2dxt>` bindings resolve with no install and no system folder; otherwise leave the engine's own search alone. An unsaved stack is a quiet no-op. Scripts that use the raw `b2...` layer without the Kit can call it too, before their first `b2...` call. |
+| `b2kSync` / `b2kSyncAll` | Redraw every awake, non-static Kit body's control by hand, under one screen lock (the two are the same). For a stopped or paused world - an editor after spawning or moving things - where no step emits the move events the running loop draws from. |
 
 ## Configuration
 
@@ -94,6 +103,7 @@ b2kStart
 | `b2kFrameTarget obj` | Object that receives an `on b2kFrame` message once per simulated frame. |
 | `b2kEnableSleeping flag` | Toggle island sleeping (saves CPU when bodies rest). |
 | `b2kEnableContinuous flag` | Toggle continuous collision (CCD) for the world. |
+| `b2kToWorldX(px)` / `b2kToWorldY(px)` → metres · `b2kToScreenX(m)` / `b2kToScreenY(m)` → px | Convert between screen pixels (y down) and Box2D metres (y up) at the current scale and origin, for mixing Kit code with raw `b2...` calls. The `ToWorld` pair returns `0` before `b2kSetup`. |
 
 ## Attach & spawn
 
@@ -240,6 +250,7 @@ shifted and unshifted), or raw keycodes.
 | Handler | Purpose |
 |---------|---------|
 | `b2kInputOn` / `b2kInputOff` | Arm / disarm the per-frame keyboard sample. `b2kInputOn` installs starter bindings: axis `moveX` (left,a / right,d), axis `moveY` (up,w / down,s), action `jump` (space). |
+| `b2kInputIsOn()` | True while the sample is armed. |
 | `b2kInputInject keys` / `b2kInputInjectOff` | Replace the keyboard with a **scripted** key set (friendly names or codes; empty = nothing held) until turned off. Deterministic input for the self-test harness, input replays, and cutscene "ghost" players - edges fall out of the normal frame diff exactly as with real keys. |
 | `b2kKeyIsDown(key)` | Key currently held. |
 | `b2kKeyPressed(key)` / `b2kKeyReleased(key)` | True only on the frame the key went down / came up. |
@@ -305,6 +316,7 @@ ghost sprites frozen on their last frame).
 | `b2kSpriteMoveTo spr, x, y` | Move any sprite/control to a **world** position, camera-correct - use this instead of `set the loc` for hand-animated paths (patrols, hovering). |
 | `b2kSpriteBind spr, bodyCtrl [,dx, dy]` / `b2kSpriteUnbind spr` | Pin the sprite to another control's position each frame - the standard "art bigger than the collision shape" pattern: an invisible control owns the body, the sprite follows it. |
 | `b2kSpriteRemove spr` | Remove the sprite (and its body, if it has one). |
+| `b2kSheetEnsureIcon sheet, frame` / `b2kSheetEnsureFlip sheet, frame` | Slice a frame's image (or its mirrored copy) NOW rather than on first display. Pre-warm frames that first appear mid-game: a lazy slice costs a visible hitch (~250 ms per frame name in the platformer). Cached, so a second call is free; the flip falls back to the unmirrored frame if this engine's flip throws. |
 
 ```
 b2kSheetLoadAtlas "chars", tFolder & "/spritesheet-characters-default.png"
@@ -389,6 +401,24 @@ showcase is the **platformer example**.
 | `b2kPlayerControl flag` | `false` = the controller only observes (state/ground/facing stay fresh) and writes neither velocity nor animations - cutscenes, hit poses, scripted deaths. The `maxFall` clamp stays live. `true` re-asserts the state animation. An **explicit call (either way) cancels a knockback in flight** - your respawn flow takes the body over cleanly, and no mercy window is granted. |
 | `b2kPlayer()` / `b2kPlayerSprite()` | The player control / the art control the controller animates. |
 | `b2kPlayerRemove` | Tear down the controller (tuning included). The body and sprite remain yours - remove them with `b2kRemove` / `b2kSpriteRemove`. |
+| `b2kPlayerDefault(key)` | The shipped default for a tuning key (the tables below), empty for a key the controller does not know. |
+
+The controller's own steps are callable too. The loop (and `b2kStepOnce`)
+runs `b2kPlayerTick` every frame and the tick runs the rest; the self-test
+drives them by hand. The `body` argument is the player's raw body handle,
+`b2kBodyOf(b2kPlayer())`.
+
+| Handler | Purpose |
+|---------|---------|
+| `b2kPlayerTick` | One frame of the controller, run after the input sample; exits at once when there is no player. |
+| `b2kPlayerDuckSet flag` / `b2kPlayerStandUp` | The crawl's two halves. `true` rebuilds the capsule at `duckScale` × its standing height, feet planted, carrying the shape's collision filter across the rebuild (friction and bounce are re-set to the controller's 0.08 / 0); `false` stands up only when a ray finds headroom. `b2kPlayerStandUp` restores the standing capsule whenever the player is ducked (`b2kPlayerRespawn` uses it). Both are no-ops while `duckScale` is 1 or more, which is the default. |
+| `b2kPlayerProbe body, vy` / `b2kPlayerWallProbe body, axis` | The ground and wall probes. Three short down-rays set the grounded state (skipped while the controller's own jump still rises, `vy < 0`); one side-ray toward `axis` (the facing when `axis` is 0) looks for a near-vertical wall, whose result has no public reader. |
+| `b2kPlayerClimbStart body` / `b2kPlayerClimbEnd body` · `b2kPlayerSwimStart body` / `b2kPlayerSwimEnd body` · `b2kPlayerDashStart body` / `b2kPlayerDashEnd body` | The gravity-parking pairs. Each Start saves the body's gravity scale and writes its own (0 to climb or dash, `swimGravity` to swim); each End puts back what its Start saved. A repeated Start, or an End with no Start, is a no-op. |
+| `b2kPlayerDropStart` / `b2kPlayerDropRestore` | Open / close the drop-through window: take the reserved one-way layer bit (2^31) out of the player's collision mask, clamping a default mask to 32 bits first, then put the saved mask back. |
+| `b2kPlayerShowState now, vx` | Drive the art's animation and facing from the current state (the tick passes its sim clock and vx). |
+| `b2kPlayerResolveArt` | Re-find the control the controller animates: the player itself if it is a sprite, else the first sprite bound to it. `b2kPlayerSprite()` reads the answer. |
+| `b2kPlayerTuneCache` | Copy the tuning knobs into the tick's flat variables. `b2kPlayerSet` calls it, so a knob takes effect on the next frame. |
+| `b2kPlayerForget full` | Drop the controller's state, first ending a climb, swim, dash or drop in progress so the body gets its gravity and mask back. `true` (teardown, `b2kPlayerRemove`) also drops the tuning; `false` (`b2kClear`) keeps it. Ladder zones go either way. |
 
 **Tuning keys** (`b2kPlayerSet`), with defaults for a 32×48 px player at
 scale 40: `moveSpeed` 220 px/s · `accel` 1800 px/s² · `airAccel` 1100 px/s² ·
@@ -464,6 +494,8 @@ infinite-distance parallax backdrop. Level coordinates should start at 0,0.
 | `b2kCamStatus()` | Empty = healthy; otherwise why the camera degraded (group/scroll failures). Check it after `b2kCamOn` and fall back gracefully. |
 | `b2kCamLocSemantics()` | `"visual"` or `"content"` - which grouped-loc coordinate model the startup probe detected. Diagnostic; the Kit compensates automatically. |
 | `b2kCamMouseX()` / `b2kCamMouseY()` | The mouse in **world** pixels - use for `b2kGrab`, click-picking, spawning at the pointer. (The Kit's own drag already uses them.) |
+| `b2kCamShiftX(ctrl)` / `b2kCamShiftY(ctrl)` | The scroll to subtract when WRITING a position for a control inside the viewport, on an engine whose grouped locs are visual (`b2kCamLocSemantics()` is `"visual"`); `0` otherwise, and for a control outside the viewport. `b2kSpriteMoveTo` and the renderer apply it for you. |
+| `b2kCamTick` / `b2kCamApply` | The loop's camera step: chase the followed control (eased, but snapped when the target would leave the view), then clamp to the bounds, add the shake and write the scroll (skipped when unchanged). |
 
 ```
 b2kCamOn
@@ -483,9 +515,10 @@ new play cuts the previous); that's the classic LC limit, and short retro
 SFX suit it. `b2kToneMake` **synthesizes** a clip in pure script (8-bit mono
 WAV, square or sine, a comma list of note frequencies with a per-note
 decay), so a self-contained stack ships sound with zero files. Sounds are
-assets like sheets: `b2kTeardown` wipes them (names are stable, so
-re-making replaces rather than accumulates). Failures degrade to *silence*,
-never errors - the first play that throws trips a dead-flag.
+assets that SURVIVE `b2kTeardown` (clips are tiny and resets must stay
+snappy); names are stable, so re-making replaces rather than accumulates, and
+`b2kSoundsWipe` is the explicit purge. Failures degrade to *silence*, never
+errors - the first play that throws trips a dead-flag.
 
 | Handler | Purpose |
 |---------|---------|
@@ -496,6 +529,10 @@ never errors - the first play that throws trips a dead-flag.
 | `b2kSoundMute flag` / `b2kSoundMuted()` | Swallow play calls - a user preference that survives `b2kTeardown`. |
 | `b2kSoundVolume pct` | The engine-**global** `playLoudness` (0-100) - it affects every stack's audio, so expose it, don't hardcode it. |
 | `b2kSoundIsLoaded(name)` / `b2kSoundStatus()` | Loaded check / empty = healthy, else the most recent reason audio degraded. |
+| `b2kSoundsWipe` | Stop playback and delete every Kit-made audioClip (the `b2ksnd_` prefix, a dead session's included); the dead-flag resets, the mute preference survives. |
+| `b2kToneBytes(freq, ms, volPct, shape)` → bytes | The synthesizer under `b2kToneMake`: one note as raw 8-bit unsigned mono samples at 22050 Hz with a linear decay. `freq` 0 or below is a rest; `shape` `"sine"`, anything else square. |
+| `b2kWavWrap(bytes)` → WAV | Wrap such samples in a 44-byte RIFF/WAV header. |
+| `b2kLE16(n)` / `b2kLE32(n)` | The little-endian 2- and 4-byte packers that header uses. |
 
 ```
 b2kToneMake "coin", "1319,1760", 36          -- a two-note blip
@@ -621,6 +658,73 @@ is in the other's mask (and no shared negative group forbids it).
 | `b2kSetRestitutionThreshold px/s` · `b2kSetContactTuning hz, damp, pushPx` · `b2kSetJointTuning hz, damp` · `b2kSetMaxSpeed px/s` · `b2kEnableWarmStarting flag` | World solver tuning. |
 | `b2kProfile()` | `"totalStep,collide,solve"` ms for the last step (a perf HUD). |
 | `b2kAwakeBodyCount()` | Awake dynamic bodies (native count). |
+
+## Internals (the Kit calls these for you)
+
+The Kit declares no command private, so these are callable like everything
+above, but the loop, the builders and the renderer already call them at the
+right moment; a game rarely should. They are listed so a search finds them.
+The comments above each one in `src/box2dxt-kit.livecodescript` are the full
+contract.
+
+**Loop and sync**
+
+| Handler | Purpose |
+|---------|---------|
+| `on b2kStep gen` | The loop's timer message. It advances the fixed 1/60 s accumulator (capped at 0.2 s of backlog), harvests each step's events, syncs bodies, dispatches, sends `b2kFrame`, all under one screen lock, then reschedules itself with its OWN generation. A stale generation exits, so a rebuild never clones the loop. Start the loop with `b2kStart`, never by sending this. |
+| `b2kSyncBodies` / `b2kSyncAllBodies` | Lock-free body sync (the caller holds the screen lock): the fast path reads Box2D's move events, the full scan walks every awake, non-static body. `b2kSync` wraps the full scan in a lock. |
+| `b2kPruneDeadRefs list` | Forget controls that vanished (one per line): destroy their bodies and drop every table entry, as `b2kRemove` would. |
+| `b2kResetTables` | Empty the Kit's control and body tables (`b2kSetup`, `b2kTeardown`). |
+| `b2kRegister ctrl, body, isStatic` | Record a control/body pair in those tables; the `b2kAdd...` family calls it. |
+| `b2kEdge wx1, wy1, wx2, wy2` | A static segment in WORLD metres: what `b2kWall` builds after converting its pixels. With no world it is a quiet no-op. |
+
+**Drawing**
+
+| Handler | Purpose |
+|---------|---------|
+| `b2kDrawBody ctrl, wx, wy, wa` | Place a control at a body pose (metres, radians) by its render kind - polygon outline, ball, rotated image or plain loc - skipping the write when the pose has not changed. |
+| `b2kDrawPoly ctrl, wx, wy, wa` / `b2kDrawBall ctrl, wx, wy` / `b2kDrawImage ctrl, wx, wy, wa` | The three renderers `b2kDrawBody` chooses from: re-point a polygon graphic from its stored outline, set a ball's rect from its radius, move and rotate an image (whole degrees; the image keeps its design size). |
+| `b2kCorner(wx, wy, lx, ly, c, s)` → "x,y" | One outline corner: a local offset in metres, rotated by a precomputed cosine and sine, placed at the body position, in rounded screen pixels. |
+| `b2kCapsuleVerts(halfLength, radius, horizontal)` → lines | The 18-point local outline (metres, two 9-point caps) the Kit draws a capsule graphic with. Drawing only: the collision shape is a true capsule. |
+
+**Events**
+
+| Handler | Purpose |
+|---------|---------|
+| `b2kEventsReset` | Zero the frame's event counts before it steps. The entry arrays stay, which is why every event reader checks the count. |
+| `b2kHarvestEvents` | After each fixed step, append that step's contact and sensor events to the frame buffers (Box2D keeps only the last step's). |
+| `b2kDispatchContacts` / `b2kDispatchSensors` | Send the buffered events to the contact target as `b2kContact` / `b2kEndContact` and `b2kSensorEnter` / `b2kSensorExit`, in step order. No target, no messages. |
+
+**Helpers**
+
+| Handler | Purpose |
+|---------|---------|
+| `b2kNumberOr(value, default)` | `value` when it is a number, else `default`. |
+| `b2kClamp(value, lo, hi)` | Clamp into [lo, hi]; a non-number becomes `lo`. |
+| `b2kLocalAnchor(body, wx, wy)` → "lx,ly" | A world point in a raw body's local frame (metres), for building joints. |
+| `b2kQueryToControls(count)` | The last raw query's rows as Kit controls, one per line; a row with no Kit control is skipped. |
+
+**Input**
+
+| Handler | Purpose |
+|---------|---------|
+| `b2kInputTick` | The per-frame sample of `the keysDown` (or the injected set): this frame's keys become next frame's "previous", and the edges fall out of the difference. A no-op while input is off. |
+| `b2kKeyInSet(set, key)` / `b2kCodesInSet(set, codes)` | Is any code for `key` (or any of the raw `codes`) in a comma-wrapped key set? An empty set answers false. |
+| `b2kKeyListCodes(keyList)` | Every keycode a comma list of key names maps to. |
+
+**Sprites and sheets**
+
+| Handler | Purpose |
+|---------|---------|
+| `b2kSpriteShowFrame spr, frame` | Point a sprite's icon at a frame, honouring its facing; skips the set when it already shows it. |
+| `b2kSpritesTick` | The per-frame sprite service: bound sprites follow their control, playing animations advance on wall-clock time, vanished sprites are forgotten. It walks only the live (bound or playing) sprites. |
+| `b2kSpriteForget spr` / `b2kSpritesClear` | Drop one sprite's registry entries once its control is gone / remove every live sprite (the `b2kClear` and `b2kTeardown` path). |
+| `b2kSpriteSweepOrphans keepAssets` | Delete Kit-named controls a PREVIOUS session left behind (a reopened stack resets script state, not controls): dead viewports and sprite buttons always, the sheet images too unless `keepAssets` is true. |
+| `b2kSheetForget name` | Forget one sheet: its regions, animations, sliced and mirrored frame images, and a source image the Kit loaded itself. |
+| `b2kSheetSourceFromFile(name, path)` → image | Load an image file as CONTENT into a hidden, Kit-owned source image, adopting one already decoded from the same path when sheets persist. Empty on failure. |
+| `b2kSheetGridRegions name, fw, fh, count, margin, spacing` | Register numbered grid regions over the current source image; a frame size below 1 registers none. |
+| `b2kSheetKeyIndex(sheet, frame)` / `b2kSheetSliceSig(sheet)` | A frame's stable 1-based position in its sheet (0 when absent), and the sheet's provenance stamp (source and scale). Together they let a saved stack reuse a slice only when it was baked from the same art at the same scale. |
+| `b2kXmlAttr(line, attr)` | One `attr="value"` out of an XML tag line, empty when absent (the atlas loader's parser). |
 
 ## Tips
 

@@ -52,7 +52,10 @@ supposed to do: that a box2dxt bundle installs at all (it did not, until
 installed, that a thin Mach-O and a wrong architecture and a wrong filename are
 each REFUSED, and that both manifest legs below - refreshed and CREATED - do what
 their message says, driven against a temporary ROOT so the real tree is never
-written. The accept case deliberately reads the member's real committed files
+written. Since 2026-09-24 it also pins the three per-library verdicts, "(new)",
+"(unchanged)" and "(REPLACES the committed one)": release-binaries.yml copies
+them into the release commit, the only durable record that a byte-identical
+rebuild happened at all. The accept case deliberately reads the member's real committed files
 instead of synthesising them, because a synthetic ELF would prove only that the
 parser parses. This repo's standing lesson is that SHIPPED IS NOT RUN: a claim
 that can be pinned by executing the code should not be left as a comment.
@@ -567,6 +570,15 @@ def selftest():
             check("a first install CREATES the member's manifest, and says so",
                   rc == 0 and "CREATED (new integrity coverage" in out
                   and os.path.exists(created), out)
+            # THE THREE VERDICT STRINGS ARE A CONTRACT (2026-09-24):
+            # release-binaries.yml's Commit step greps "(new)", "(unchanged)"
+            # and "(REPLACES the committed one)" out of this output and puts
+            # them in the release commit's message, because a byte-identical
+            # rebuild changes no file and so leaves no other durable trace.
+            # A reword here would not fail that step; it would silently empty
+            # the paragraph. Each of the three is pinned below.
+            check("  ...reporting every library it landed as (new)",
+                  out.count("(new)") == staged, out)
             body = []
             if os.path.exists(created):
                 with open(created, encoding="utf-8") as fh:
@@ -580,6 +592,22 @@ def selftest():
                   out)
             check("  ...reporting the now-identical libraries unchanged",
                   out.count("(unchanged)") == staged, out)
+            # One library rebuilt differently: append a byte to its bundle
+            # copy (the header the format checks read is untouched), and that
+            # one - only that one - must read as a replacement.
+            changed = None
+            for dirpath, _dirs, files in os.walk(os.path.join(bundle, "box2dxt")):
+                for fn in sorted(files):
+                    changed = os.path.join(dirpath, fn)
+                    break
+                if changed:
+                    break
+            with open(changed, "ab") as fh:
+                fh.write(b"\0")
+            rc, out = _capture([bundle])
+            check("a rebuilt library is reported (REPLACES the committed one)",
+                  rc == 0 and out.count("(REPLACES the committed one)") == 1
+                  and out.count("(unchanged)") == staged - 1, out)
         finally:
             ROOT = saved_root
     finally:

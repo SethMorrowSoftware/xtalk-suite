@@ -1044,8 +1044,16 @@ jobs:
       # machine's arch), and coinxt's export surface. It refuses to write
       # anything at all if any file fails, so a bad artifact cannot land a
       # partial update.
+      #
+      # Its output is KEPT (tee, with pipefail so the installer's exit status
+      # still decides the step): the Commit step below copies the per-library
+      # verdicts into the commit message. See the note there for why.
       - name: Verify, then install into each extension
-        run: python3 tools/install-release-binaries.py "$RUNNER_TEMP/release-bundle"
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/install-release-binaries.py "$RUNNER_TEMP/release-bundle" \
+            | tee "$RUNNER_TEMP/install-verdicts.txt"
 
       # Proof the tree is still coherent AFTER the write: the MANIFEST.sha256
       # files the installer just refreshed, coinxt's binary-freshness gate
@@ -1106,10 +1114,31 @@ jobs:
           fi
           echo "changed=true" >> "$GITHUB_OUTPUT"
           git diff --cached --stat
-          git commit \
+          # THE VERDICTS GO INTO THE COMMIT, because git can only record a
+          # CHANGE. A library rebuilt byte-for-byte (the installer prints
+          # "(unchanged)") leaves no trace in the tree, and the one place that
+          # said so was this job's log, which Actions expires. That silence
+          # was misread: box2dxt's universal-mac dylib has one commit (the
+          # 2026-08-14 fold), so a 2026-09 audit concluded that no release
+          # run had ever replaced it and asked which stage dropped it. None
+          # did. Runs 33025459610 and 34657390798 both built, verified and
+          # installed it; their logs say "box2dxt/universal-mac/box2dxt.dylib
+          # (unchanged)", a sha256 match, because the shim and its build had
+          # not changed since the fold and Apple's linker is deterministic.
+          # With the verdicts in the message, "built and identical" is on
+          # the record next to "built and replaced".
+          verdicts=$(grep -E '\((unchanged|new|REPLACES the committed one)\)$' \
+                       "$RUNNER_TEMP/install-verdicts.txt" | sed 's/^ *//' || true)
+          set -- \
             -m "Refresh the committed native libraries from a release build" \
             -m "Built by .github/workflows/release-binaries.yml, run ${{ github.run_id }}, from ${{ github.sha }}." \
             -m "Every library was verified by tools/install-release-binaries.py before it was written: filename against the member, object format and architecture against the directory it claims, and coinxt's export surface. The full static gate set, including each MANIFEST.sha256 and coinxt's binary-freshness check, passed over the result."
+          if [ -n "$verdicts" ]; then
+            set -- "$@" \
+              -m "The installer's verdict for every library this run built (unchanged = rebuilt byte-identical, so git shows no change for it):" \
+              -m "$verdicts"
+          fi
+          git commit "$@"
 
       # Push with rebase-and-retry: another push can land between our checkout and
       # this step, and losing that race would mean re-running 24 build jobs.
