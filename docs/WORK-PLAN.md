@@ -45,7 +45,7 @@ result. Every "engine-proven" below quotes a dated record already in the tree.
 | datachannelxt | folded 39, 2026-08-20; standalone async loopback 2026-08-15 | owner calls only: the Windows OpenSSL pin and notice; the legacy shim removal | loopback demo (no record at all); leg E; two-network call; browser interop; Mac | S1, S3, 2NET, S5 |
 | onionxt | offline self-test 61/0, Windows, 2026-08-17; the live-Tor core from the early bring-up | `oxLaunchTor` result checks; 3 exemptions retirable offline; roundtrip fields | Mode B (leg F); the B.12 probes; negative paths; the round trip | S1, S2, S4 |
 | coinxt | 290/290, Windows x64, 2026-08-24; wallet logs to 2026-09-03 | D-17; per-push Windows/mac CI; Core residue; gap limit | row Q (ABI 7, silent payments); demo; broadcast; the wallet's post-2026-09-04 surface; Core regtest | S1, S2, NET, S5 |
-| nostrxt | core 274/0/2 and relay SEND live, both 2026-08-24 | placeholder floor; 2026-09-09 refusals into the harness; NIP-42 demo controls | relay receive, NIP-42, `ws://`, a bad certificate, forced negatives | S1, NET, a local relay |
+| nostrxt | core 274/0/2 and relay SEND live, both 2026-08-24 | owner scope only: phase 9 (NIP-17/59, the outbox, `.onion` relays) | relay receive, NIP-42, `ws://`, a bad certificate, forced negatives | S1, NET, a local relay |
 | box2dxt | harness v30 375/0 Windows 2026-08-20, 374/1 Linux 2026-08-21 | x86-linux glibc regression; platformer polish | the v32 total; the five games; R1; first Mac load; feel pass | S1, S5, PERSON |
 | riptide | phases 1-4 on two machines (to 2026-08-15); compute of 6-7, 391/0, 2026-08-24; phase-8 boot 2026-08-29 | bridge reader; RSL1 magic; own-head refresh; per-identity app state | row 35; phases 5, 6, 7 live; phase 8 live; faststart re-run | S1-S4, NET |
 | nocloud | no dated pass of this stack in the tree | mtime ETag after D-10; the D-02 menu (deferred) | the 69-item checklist, web-link and Tor halves; sections 7-8 | S1, S2 |
@@ -389,10 +389,6 @@ manual dispatch (rule 5); the harness scaffold's non-adoption of the UI kit (D-1
 
 | # | Work | Why | Size | Blocked by |
 |---|---|---|---|---|
-| 1 | Replace the placeholder floor 1 at the core's NostrXT merge site (`tests/suite-selftest.core.livecodescript` ("a first engine pass will give this member its measured floor")) with the measured floor; audit the CoinXT-absent and SodiumXT-absent skip branches first (the member attempted 276 items on 2026-08-24) | The floor is how the paste notices a member silently doing less | S | none |
-| 2 | Pin the 2026-09-09 refusals (`wss://h:abc/`, `a/abc`, `itemDelimiter` survival) in `nostrxt/examples/nostrxt-tests.livecodescript`, then regenerate the carriers (the paste, the demo, riptide) | Only the headless gate checks them today | S | none |
-| 3 | Make row 34 drivable from the demo: a button that answers a NIP-42 challenge (it only logs `nostrxt/examples/nostrxt-demo.livecodescript` ("answer with nxAuthBuild + nxEventSign + nxrAuth")), plus Unsubscribe and raw-send controls to provoke a CLOSED | Otherwise the auth round trip is message-box work | S | none |
-| 4 | Code-comment truth-sync, then re-carry: `src/nostrxt.livecodescript` says NIP-44 "still needs an OXT pass" at two sites (it ran 2026-08-24); the demo header calls the certificate "VALID" (engine note 6.8 calls that circular) | Stale claims carried into the paste and riptide | S | none |
 | 5 | Phase 9 scope: NIP-17 private DMs over NIP-59 gift wrap (the cipher and NIP-44 blockers cleared 2026-08-23/24; pin the published vectors first); NIP-59 as its own layer; NIP-65 outbox routing and a relay pool as a third file over `nxr*`; `.onion` relays over OnionXT (needs a transport seam in `nxrConnect`); NIP-44's extended length (blocked on upstream vectors). Each lands with vectors or is declined with a reason | Scope, not debt | M-L | owner |
 
 **Engine.**
@@ -400,7 +396,7 @@ manual dispatch (rule 5); the harness scaffold's non-adoption of the UI kit (D-1
 | # | Run | Where | Row | Green (in brief) |
 |---|---|---|---|---|
 | 1 | **The receive leg** from `nostrxt-demo`: Connect, Subscribe (kind 1) | NET (CoinXT + SodiumXT installed) | 34 | EVENTs that verify with no `REFUSED`, then EOSE |
-| 2 | NIP-42 plus CLOSED and NOTICE (after coding #3), recording the ok/closed reason texts real relays send (docs/05 VERIFY item 9) | a relay that demands auth | 34 | `ok <id>: true` for the kind-22242 event; a `closed` reason starting `auth-required:` |
+| 2 | NIP-42 plus CLOSED and NOTICE (the demo's Answer auth, Unsubscribe and Send raw controls, 2026-09-24), recording the ok/closed reason texts real relays send (docs/05 VERIFY item 9) | a relay that demands auth | 34 | `ok <id>: true` for the kind-22242 event; a `closed` reason starting `auth-required:` |
 | 3 | The `ws://` leg against nostr-rs-relay or strfry on loopback | a local relay | 34 | open, publish ok, subscribe returns the event, a ping answered, a clean teardown |
 | 4 | **A bad certificate** (self-signed, expired or wrong host); in the same session record whether SNI is sent, which TLS versions negotiate, and how a TLS failure is delivered | NET | 34 | a `socketError` means refused; "the server did not upgrade" means it fails OPEN. Record it in engine note 6.8 whatever it is |
 | 5 | Forced negatives: a non-websocket server (fail closed at the 101 check), a handshake timeout (the 20 s watchdog), a mid-session close | NET or a local server | - (add to 34) | each fails closed with a reason |
