@@ -194,6 +194,19 @@ def check_interp_model(c, ip):
          ev("the keys of t", t={"b": 1, "a": 2}), "b\na")
     c.ck("`is among the keys of` answers on keys, not values",
          ev('"a" is among the keys of t', t={"a": ""}), True)
+    # The engine FOLDS array-key case (root engine notes 2.7, OBSERVED
+    # 2026-09-15), and since 2026-09-24 so does the interpreter: this
+    # member's p-tag dedup in nxReplyBuild (`tValueText is not among the keys
+    # of tSeen`) accepts hex of either case (nxIsHex), so a pubkey repeated
+    # in capitals is a DUPLICATE on the engine and the model has to say so
+    # too. The full fold fixture lives beside the interpreter's home,
+    # coinxt's check-script-vectors.
+    c.ck("an array key matches whatever its case (the engine's fold)",
+         ev('"AB" is among the keys of t', t=LCS._copy({"ab": 1})), True)
+    c.ck("a folded read answers the stored element",
+         ev('t["AB"]', t=LCS._copy({"ab": 1})), 1)
+    c.ck("the keys of keeps the stored (first) spelling",
+         ev("the keys of t", t=LCS._copy({"ab": 1})), "ab")
     c.ck("`the seconds` is the fixed deterministic epoch",
          ev("the seconds"), LCS.SECONDS[0])
     c.ck('the engine number fold: "1e3" IS an integer here, as on OXT',

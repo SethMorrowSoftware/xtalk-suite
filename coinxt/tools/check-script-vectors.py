@@ -113,6 +113,166 @@ def check_interp_model(c):
     c.ck("the empty string has zero items", ev('the number of items of ""'), 0)
     c.ck('there is no empty second item of "m,"', ev('item 2 of "m,"'), "")
     c.ck("lines follow the same rule", ev("the number of lines of t", t="a\n"), 1)
+    check_interp_key_fold(c)
+
+
+# The key-fold fixture script: each handler is one question the engine
+# answered (or the model had to choose), and check_interp_key_fold names
+# which. Written as HANDLERS, not bare expressions, because two of the
+# questions are about what a `set` does across a handler boundary.
+_KEY_FOLD_SRC = """
+function kfWriteReadOther
+   local tA
+   put 1 into tA["a"]
+   return tA["A"]
+end kfWriteReadOther
+function kfAmongOther
+   local tA
+   put 1 into tA["a"]
+   return "A" is among the keys of tA
+end kfAmongOther
+function kfNotAmong
+   local tA
+   put 1 into tA["a"]
+   return "b" is not among the keys of tA
+end kfNotAmong
+function kfKeysOriginal
+   local tA
+   put 1 into tA["MixedCase"]
+   return the keys of tA
+end kfKeysOriginal
+function kfSecondSpellingWrite
+   local tA
+   put 1 into tA["a"]
+   put 2 into tA["A"]
+   return the keys of tA
+end kfSecondSpellingWrite
+function kfSecondSpellingValue
+   local tA
+   put 1 into tA["a"]
+   put 2 into tA["A"]
+   return tA["a"]
+end kfSecondSpellingValue
+function kfNested
+   local tA
+   put "x" into tA["Name"]["Inner"]
+   put "y" into tA["NAME"]["inner"]
+   return tA["name"]["INNER"]
+end kfNested
+function kfNestedKeys
+   local tA
+   put "x" into tA["Name"]["Inner"]
+   put "y" into tA["NAME"]["inner"]
+   return the keys of tA["name"]
+end kfNestedKeys
+function kfCopyKeepsFold
+   local tA, tB
+   put 1 into tA["Key"]
+   put tA into tB
+   return tB["KEY"]
+end kfCopyKeepsFold
+function kfArrayIsArray
+   local tA, tB
+   put 1 into tA["k"]
+   put 1 into tB["K"]
+   return tA is tB
+end kfArrayIsArray
+function kfDefault
+   return the caseSensitive
+end kfDefault
+function kfSensitiveKeys
+   local tA
+   set the caseSensitive to true
+   put 1 into tA["a"]
+   put 2 into tA["A"]
+   return the keys of tA
+end kfSensitiveKeys
+function kfSensitiveRead
+   local tA
+   set the caseSensitive to true
+   put 1 into tA["a"]
+   return tA["A"] & "|" & ("A" is among the keys of tA)
+end kfSensitiveRead
+function kfSensitiveCaller
+   set the caseSensitive to true
+   return kfDefault() & "|" & the caseSensitive
+end kfSensitiveCaller
+function kfSetter
+   set the caseSensitive to true
+   return "set"
+end kfSetter
+function kfSetterLeaks
+   local tA, tIgnored
+   put kfSetter() into tIgnored
+   put 1 into tA["a"]
+   return tA["A"]
+end kfSetterLeaks
+"""
+
+
+def check_interp_key_fold(c):
+    """Pin the ARRAY-KEY FOLD (tools/lcs-interp.py header, 2026-09-24) to the
+    engine's observed answers, and name the modelled choices as choices.
+
+    Until 2026-09-24 the interpreter's arrays were case-sensitive Python dicts
+    and the engine's are not (docs/OXT-ENGINE-NOTES.md 2.7, OBSERVED
+    2026-09-15): `tA["A"]` read the element stored as `a` on the engine and
+    read empty here, so no execution gate could see two keys collide. No
+    script vector would notice the model regressing - this member's layer
+    keys no array by case-significant text - so the rule is pinned here,
+    directly, like the chunk rule above."""
+    c.note("tier 0: the interpreter's array-key fold (engine notes 2.7)")
+    ip = LCS.Interp(_KEY_FOLD_SRC)
+
+    def run(handler):
+        return ip.call(handler, [])
+
+    def ev(expr, **env):
+        return LCS._Expr(ip, dict(env)).parse(expr)
+
+    # OBSERVED 2026-09-15 (note 2.7): with the default caseSensitive a key
+    # matches whatever its case, for a read and for `is among the keys of`,
+    # and `the keys of` answers the ORIGINAL spelling.
+    c.ck("OBSERVED: tA[\"A\"] reads the element stored as \"a\"",
+         run("kfWriteReadOther"), 1)
+    c.ck("OBSERVED: \"A\" is among the keys of an array keyed \"a\"",
+         run("kfAmongOther"), True)
+    c.ck("a key that folds onto nothing is still not among the keys",
+         run("kfNotAmong"), True)
+    c.ck("OBSERVED: the keys of answers the original spelling",
+         run("kfKeysOriginal"), "MixedCase")
+    # MODELLED (the header says so): a second spelling lands on the SAME
+    # element, replacing its value, and the FIRST spelling is kept.
+    c.ck("MODELLED: a write in another case is the same element (one key)",
+         run("kfSecondSpellingWrite"), "a")
+    c.ck("MODELLED: ... and it replaces the value",
+         run("kfSecondSpellingValue"), 2)
+    c.ck("the fold holds at every depth of a subscript chain",
+         run("kfNested"), "y")
+    c.ck("... one inner element, under its first spelling",
+         run("kfNestedKeys"), "Inner")
+    c.ck("an array copied across a binding keeps its fold",
+         run("kfCopyKeepsFold"), 1)
+    c.ck("array `is` array compares keys folded", run("kfArrayIsArray"), True)
+    # A plain dict a Python driver hands in folds too (no index; a scan).
+    c.ck("a driver's plain dict folds on read", ev('t["KEY"]', t={"key": "v"}),
+         "v")
+    c.ck("a driver's plain dict folds for `is among the keys of`",
+         ev('"KEY" is among the keys of t', t={"key": "v"}), True)
+    # ASSUMED (header): caseSensitive governs keys, and it is a LOCAL
+    # property - false at every handler entry, the caller's value restored
+    # on return, so a callee's `set` cannot leak out to its caller.
+    c.ck("the caseSensitive defaults to false", run("kfDefault"), False)
+    c.ck("ASSUMED: caseSensitive true keeps two spellings apart",
+         run("kfSensitiveKeys"), "a\nA")
+    c.ck("ASSUMED: ... and a lookup must then match the spelling",
+         run("kfSensitiveRead"), "|false")
+    c.ck("ASSUMED: a callee starts at false; the caller's true survives it",
+         run("kfSensitiveCaller"), "false|true")
+    c.ck("ASSUMED: a callee's `set the caseSensitive` does not leak out",
+         run("kfSetterLeaks"), 1)
+    c.ck("and nothing is left set once the handlers return",
+         LCS.CASE_SENSITIVE[0], False)
 
 
 # --------------------------------------------------------------------- tier 1

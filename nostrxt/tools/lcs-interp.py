@@ -62,7 +62,8 @@ THE NAMED DIVERGENCES GREW WITH IT, same contract as the `is` note above
     own gotcha 4), because the shipped script GUARDS against that fold with
     digit-run checks and a stricter model here would test the guard against a
     world where the hazard does not exist.
-  - `the keys of` returns keys in INSERTION order, one per line. The engine
+  - `the keys of` returns keys in INSERTION order, one per line, each in the
+    spelling it was FIRST stored under (see the key fold below). The engine
     documents no order at all, so any script that needs one must sort - the
     shipped files do (`sort lines of`) - and a script that silently relied on
     an order would pass here and misbehave on an engine. Stricter would be
@@ -91,6 +92,58 @@ THE NAMED DIVERGENCES GREW WITH IT, same contract as the `is` note above
     the engine-proven corpus and the MODEL was the bug. Suspect the probe
     first.) _disp still refuses to stringify an array in every string
     context (concatenation, chunks, contains) - the coinxt lesson stands.
+
+AND ARRAY KEYS FOLD CASE, ADDED 2026-09-24 (docs/OXT-ENGINE-NOTES.md 2.7,
+OBSERVED 2026-09-15). Until this date an array was a Python dict and a key was
+looked up by its exact spelling, so `tA["A"]` and `tA["a"]` were two elements
+here and ONE on the engine: archivext's JSON reader shipped on that model with
+a "keys looked up exactly" contract and met the engine red. That was LOOSER
+than the engine in the one way the contract forbids - two keys differing only
+in case never collided here, so a collision the engine really has could not
+be seen by any execution gate - and it was not a stricter-is-fine divergence
+like `is`, because the model gave a DIFFERENT answer, not a more cautious one.
+Arrays are LcsArray now (a dict with a case-folded index beside it) and every
+array operation the interpreter models goes through the _arr_* helpers below:
+a subscript read, a subscript write at any depth, `is [not] among the keys
+of`, array `is` array, and the deep copy at every binding (riptide's runner
+routes `repeat for each key|element`, `split ... by`, and `delete variable`
+through the same helpers). What is modelled, and on what evidence:
+  - OBSERVED (note 2.7): with `the caseSensitive` false, a lookup, a write
+    and `is among the keys of` all match a key whatever its case.
+  - OBSERVED (note 2.7, "Does NOT mean"): `the keys of` answers each key's
+    ORIGINAL spelling. WHICH spelling survives when two are written is the
+    MODELLED choice, not an observation: the FIRST one stored keeps its
+    spelling and later writes in another case replace only the value (the
+    note's one document held a single spelling, so it cannot say).
+  - ASSUMED, not observed with the property TRUE: `the caseSensitive`
+    governs keys - note 2.7 states it, but only the default (false) was on
+    the engine that day - so `set the caseSensitive to true` makes keys
+    exact here. The property is modelled for array KEYS ONLY: `is`,
+    `contains`, `offset` and the rest keep the named case-SENSITIVE
+    divergences above. Its SCOPE is also an assumption, the LOCAL property
+    the LiveCode dictionary documents ("reset to false when the current
+    handler finishes executing"): every handler call starts at false and
+    the caller's value comes back when the callee returns. That is a
+    different scope from the delimiters, which this file holds as global
+    state on note 2.3's own evidence; nothing in the tree has observed the
+    scope of caseSensitive either way, and riptide's three painters set it
+    true without ever resetting it, so a global model would let one painter
+    silently turn every later array in a boot back into exact-spelling keys,
+    the very gap this closes. Local is the scope under which a collision
+    stays visible.
+  - Two spellings can only coexist if written under caseSensitive true; a
+    folded lookup then answers the EXACT spelling if present, else the first
+    stored. Modelled; nothing in the corpus writes that shape.
+  - The fold is Python's str.lower() per code point: exact for ASCII, which
+    is every key the corpus writes on purpose. Beyond ASCII the engine's rule
+    (a native table for native strings, Unicode folding for the rest) is
+    unmeasured.
+  - NOT modelled and still refused loudly, as before: `union`, `intersect`,
+    `combine`, arrayEncode/arrayDecode, `the number of elements`, and
+    `the number of keys of` (which does not even parse on an engine, note
+    1.7). A Python caller (a gate's driver) still sees plain dict semantics
+    on an LcsArray - `in`, `[]` and `.get` match spellings exactly - and a
+    plain dict a driver hands in folds like any other array, through a scan.
 
 AND A CHUNK STORE, ADDED 2026-09-11, for the same reason as the negative
 range: `put X into item N of VAR` fell through to the plain-name assignment
@@ -202,14 +255,232 @@ def split_outside_strings(line, words):
     return None
 
 
+# `the caseSensitive`, as modelled state: FALSE is the engine default, and it
+# is what makes array keys fold (engine notes 2.7). A LOCAL property - Interp.
+# call resets it at every handler entry and restores the caller's value on
+# the way out; see the header for why that scope, and that it is assumed.
+CASE_SENSITIVE = [False]
+
+_MISS = object()
+
+
+def _fold(key):
+    """The spelling a key is INDEXED under when case folds (see the header:
+    exact for ASCII, str.lower() beyond it). A non-string key - only ever in
+    a dict a Python driver built - is its own fold."""
+    return key.lower() if isinstance(key, str) else key
+
+
+class LcsArray(dict):
+    """An xTalk ARRAY: a dict keyed by each key's STORED spelling (the first
+    one written, which is what `the keys of` answers), plus `_ix`, a map from
+    the folded spelling to that stored one. Every mutator a Python caller can
+    reach keeps the index true, because a stale index is a SILENT miss - a
+    key that exists answering empty - which is exactly the looser-than-engine
+    failure this class exists to end.
+
+    The interpreter never reads or writes one through `[]` or `in`: those keep
+    the plain dict contract (exact spellings) for the Python drivers that set
+    up and inspect interpreter state, and the folding lives in the _arr_*
+    helpers, which accept a plain dict too. `_mixed` is set once two stored
+    spellings share a fold (possible only under caseSensitive true); until
+    then a delete never has to rescan."""
+    __slots__ = ("_ix", "_mixed")
+
+    def __init__(self, *args, **kw):
+        dict.__init__(self, *args, **kw)
+        self._reindex()
+
+    def _reindex(self):
+        ix, mixed = {}, False
+        for k in dict.keys(self):
+            f = _fold(k)
+            if f in ix:
+                mixed = True
+            else:
+                ix[f] = k
+        self._ix, self._mixed = ix, mixed
+
+    def _noted(self, k):
+        f = _fold(k)
+        was = self._ix.get(f, _MISS)
+        if was is _MISS:
+            self._ix[f] = k
+        elif was != k:
+            self._mixed = True
+
+    def _forgot(self, k):
+        f = _fold(k)
+        if self._ix.get(f, _MISS) != k:
+            return
+        del self._ix[f]
+        if self._mixed:
+            for other in dict.keys(self):
+                if _fold(other) == f:
+                    self._ix[f] = other
+                    break
+
+    def __setitem__(self, k, v):
+        if not dict.__contains__(self, k):
+            self._noted(k)
+        dict.__setitem__(self, k, v)
+
+    def __delitem__(self, k):
+        dict.__delitem__(self, k)
+        self._forgot(k)
+
+    def pop(self, k, *default):
+        if dict.__contains__(self, k):
+            v = dict.pop(self, k)
+            self._forgot(k)
+            return v
+        return dict.pop(self, k, *default)
+
+    def popitem(self):
+        k, v = dict.popitem(self)
+        self._forgot(k)
+        return k, v
+
+    def setdefault(self, k, default=None):
+        if not dict.__contains__(self, k):
+            self[k] = default
+        return dict.__getitem__(self, k)
+
+    def update(self, *args, **kw):
+        for k, v in dict(*args, **kw).items():
+            self[k] = v
+
+    def __ior__(self, other):
+        self.update(other)
+        return self
+
+    def clear(self):
+        dict.clear(self)
+        self._ix, self._mixed = {}, False
+
+    def copy(self):
+        out = LcsArray.__new__(LcsArray)
+        dict.__init__(out, self)
+        out._ix, out._mixed = dict(self._ix), self._mixed
+        return out
+
+    __copy__ = copy
+
+    def __deepcopy__(self, memo):
+        # a gate snapshots ip.globals with copy.deepcopy; the generic path
+        # would rebuild the dict through __setitem__ AFTER restoring the
+        # slots, which works, but spelling it out keeps the index an exact
+        # copy rather than a re-derivation
+        import copy as _cp
+        out = LcsArray.__new__(LcsArray)
+        memo[id(self)] = out
+        dict.__init__(out, ((k, _cp.deepcopy(v, memo))
+                            for k, v in dict.items(self)))
+        out._ix, out._mixed = dict(self._ix), self._mixed
+        return out
+
+
+def _arr_folded(arr, key):
+    """The STORED spelling of the element `key` folds onto, or None. Used only
+    after an exact-spelling miss, and only while case folds."""
+    f = _fold(key)
+    if isinstance(arr, LcsArray):
+        return arr._ix.get(f)
+    for k in arr:
+        # a plain dict a Python driver handed in: no index, so scan (these
+        # are small, and every binding copies them into an LcsArray anyway)
+        if _fold(k) == f:
+            return k
+    return None
+
+
+def _arr_key(arr, key):
+    """The stored spelling that `arr[key]` addresses on the engine, or None.
+    The exact spelling wins when present (it can differ from the folded
+    answer only when two spellings coexist, a caseSensitive-true shape)."""
+    if dict.__contains__(arr, key):
+        return key
+    if CASE_SENSITIVE[0]:
+        return None
+    return _arr_folded(arr, key)
+
+
+def _arr_get(arr, key):
+    """`arr[key]` as a VALUE: the element, or empty when there is none (the
+    engine's behaviour for a missing key)."""
+    v = dict.get(arr, key, _MISS)
+    if v is not _MISS:
+        return v
+    if CASE_SENSITIVE[0]:
+        return ""
+    k = _arr_folded(arr, key)
+    return "" if k is None else dict.__getitem__(arr, k)
+
+
+def _arr_has(arr, key):
+    """`key is among the keys of arr`."""
+    return _arr_key(arr, key) is not None
+
+
+def _arr_set(arr, key, value):
+    """`put value into arr[key]`: an element that folds onto an existing key
+    REPLACES that element's value and keeps its first spelling (the modelled
+    choice, header); only a new element is stored under this spelling."""
+    k = _arr_key(arr, key)
+    if k is None:
+        arr[key] = value            # LcsArray.__setitem__ indexes the spelling
+    else:
+        dict.__setitem__(arr, k, value)
+
+
+def _arr_del(arr, key):
+    """`delete variable arr[key]`: removes the element the key folds onto; a
+    missing key is a no-op, as on the engine."""
+    k = _arr_key(arr, key)
+    if k is not None:
+        del arr[k]
+
+
+def _arr_eq(a, b):
+    """Two arrays compare equal when every key of one addresses an equal
+    element of the other under the CURRENT case rule (so {"a": 1} is {"A": 1}
+    by default). Leaves compare as python values, exactly as the plain dict
+    `==` this replaces did - a change to leaf comparison would be a second
+    model change, and this one is about keys."""
+    if len(a) != len(b):
+        return False
+    for k, v in dict.items(a):
+        kb = _arr_key(b, k)
+        if kb is None:
+            return False
+        w = dict.__getitem__(b, kb)
+        if isinstance(v, dict) or isinstance(w, dict):
+            if not (isinstance(v, dict) and isinstance(w, dict)
+                    and _arr_eq(v, w)):
+                return False
+        elif v != w:
+            return False
+    return True
+
+
 def _copy(v):
     """xTalk ARRAYS ARE VALUES, not references: `put tA into tB` copies, and a
     later write through tB leaves tA alone. Python dicts are references, so
     every place a value crosses a binding - assignment, argument, return -
     copies. Without this, cxHdNeuter (`put pNode into tNode`, then blank the
     private key) would silently blank the CALLER's node and the interpreter
-    would model a bug the engine does not have."""
-    return {k: _copy(x) for k, x in v.items()} if isinstance(v, dict) else v
+    would model a bug the engine does not have. The copy is an LcsArray
+    whatever went in, so a plain dict a Python driver planted is indexed from
+    its first binding on; an LcsArray's index is copied, not re-derived."""
+    if not isinstance(v, dict):
+        return v
+    out = LcsArray.__new__(LcsArray)
+    dict.__init__(out, {k: _copy(x) for k, x in dict.items(v)})
+    if isinstance(v, LcsArray):
+        out._ix, out._mixed = dict(v._ix), v._mixed
+    else:
+        out._reindex()
+    return out
 
 
 # The engine holds every number as an IEEE double, so an INTEGER is exact only
@@ -360,10 +631,17 @@ class Interp:
         env = {}
         for idx, p in enumerate(params):
             env[p.lower()] = _copy(args[idx]) if idx < len(args) else ""
+        # `the caseSensitive` is a LOCAL property (assumed; header): the
+        # callee starts at the engine default, and whatever it sets does not
+        # outlive it - the finally covers a throw and every _Return alike.
+        was_cs = CASE_SENSITIVE[0]
+        CASE_SENSITIVE[0] = False
         try:
             self._exec(body, env)
         except _Return as r:
             return r.value
+        finally:
+            CASE_SENSITIVE[0] = was_cs
         return ""
 
     def _exec(self, body, env):
@@ -574,6 +852,13 @@ class Interp:
         if m:
             LINE_DELIMITER[0] = str(_disp(self.eval_expr(m.group(1), env)))
             return i + 1
+        # `set the caseSensitive to X` - modelled for array KEYS only, and
+        # local to the running handler (Interp.call restores it); `is` and
+        # its kin keep their named case-sensitive divergence either way.
+        m = _rxi(r'set\s+the\s+caseSensitive\s+to\s+(.+)$').match(line)
+        if m:
+            CASE_SENSITIVE[0] = self.truth(self.eval_expr(m.group(1), env))
+            return i + 1
         # `sort lines of VAR` - ascending, case-insensitive (the engine
         # default), which is all the corpus asks of it (canonicalising a key
         # list before iteration). International collation is NOT modelled;
@@ -652,6 +937,40 @@ class Interp:
             return i + 1
         raise SyntaxError(f"unsupported statement: {line!r}")
 
+    def subscript_chain(self, target, env):
+        """`name[k1][k2]...` -> (lowercased name, [evaluated keys]), or None
+        when `target` does not start with a subscripted name.
+
+        A bracket CHAIN (`tTags[tI][tJ]`, any depth), each key itself a full
+        expression, scanned with depth counting so a subscripted key
+        (`tA[tB[1]]`) cannot split the chain in the wrong place. Shared by
+        assign and by riptide's runner's `delete variable`, so a write and a
+        delete address an element the same way."""
+        m = _rx(r'^(\w+)\s*\[').match(target)
+        if not m:
+            return None
+        name = m.group(1).lower()
+        keys, i = [], len(m.group(1))
+        while i < len(target) and target[i] in " \t":
+            i += 1
+        while i < len(target) and target[i] == "[":
+            depth, j = 1, i + 1
+            while j < len(target) and depth:
+                if target[j] == "[":
+                    depth += 1
+                elif target[j] == "]":
+                    depth -= 1
+                j += 1
+            if depth:
+                raise SyntaxError(f"unbalanced subscript in {target!r}")
+            keys.append(str(_disp(self.eval_expr(target[i + 1:j - 1], env))))
+            i = j
+            while i < len(target) and target[i] in " \t":
+                i += 1
+        if i != len(target):
+            raise SyntaxError(f"cannot assign to {target!r}")
+        return name, keys
+
     def assign(self, target, value, env):
         # A CHUNK STORE: `put X into item|line|char|byte N of CONTAINER`.
         # Until 2026-09-11 this fell through to the plain-name branch below
@@ -676,41 +995,24 @@ class Interp:
             cur = str(_disp(self.eval_expr(container, env)))
             self.assign(container, _chunk_store(unit, n, cur, str(_disp(value))), env)
             return
-        m = _rx(r'^(\w+)\s*\[').match(target)
-        if m:
-            # A bracket CHAIN (`tTags[tI][tJ]`, any depth), each key itself a
-            # full expression, scanned with depth counting so a subscripted
-            # key (`tA[tB[1]]`) cannot split the chain in the wrong place.
-            name = m.group(1).lower()
-            keys, i = [], len(m.group(1))
-            while i < len(target) and target[i] in " \t":
-                i += 1
-            while i < len(target) and target[i] == "[":
-                depth, j = 1, i + 1
-                while j < len(target) and depth:
-                    if target[j] == "[":
-                        depth += 1
-                    elif target[j] == "]":
-                        depth -= 1
-                    j += 1
-                if depth:
-                    raise SyntaxError(f"unbalanced subscript in {target!r}")
-                keys.append(str(_disp(self.eval_expr(target[i + 1:j - 1], env))))
-                i = j
-                while i < len(target) and target[i] in " \t":
-                    i += 1
-            if i != len(target):
-                raise SyntaxError(f"cannot assign to {target!r}")
+        chain = self.subscript_chain(target, env)
+        if chain:
+            # Each step addresses its element through the key fold (engine
+            # notes 2.7): `put 1 into tA["X"]["y"]` lands in the element an
+            # earlier `tA["x"]["Y"]` created, under that first spelling.
+            name, keys = chain
             store = (self.globals if (name not in env and name in self.globals)
                      else env)
             if not isinstance(store.get(name), dict):
-                store[name] = {}
+                store[name] = LcsArray()
             node = store[name]
             for k in keys[:-1]:
-                if not isinstance(node.get(k), dict):
-                    node[k] = {}
-                node = node[k]
-            node[keys[-1]] = _copy(value)
+                child = _arr_get(node, k)
+                if not isinstance(child, dict):
+                    child = LcsArray()
+                    _arr_set(node, k, child)
+                node = child
+            _arr_set(node, keys[-1], _copy(value))
             return
         low = target.strip().lower()
         if not _rx(r'^[a-z_]\w*$').match(low):
@@ -827,7 +1129,9 @@ class _Expr:
                     assert self.kw("the") and self.kw("keys") and self.kw("of"), \
                         f"expected `the keys of` in {self.s!r}"
                     target = self.p_concat()
-                    hit = isinstance(target, dict) and str(_disp(v)) in target
+                    # folded, as the engine answers it (engine notes 2.7)
+                    hit = (isinstance(target, dict)
+                           and _arr_has(target, str(_disp(v))))
                     v = (not hit) if neg else hit
                     continue
                 save2 = self.i
@@ -934,9 +1238,14 @@ class _Expr:
                 # the wall clock (a gate that reads real time is a gate whose
                 # failures cannot be reproduced).
                 return SECONDS[0]
+            if self.kw("casesensitive"):
+                return CASE_SENSITIVE[0]
             if self.kw("keys"):
                 # `the keys of EXPR`: one key per line, INSERTION order (the
-                # engine documents no order; see the named divergences above).
+                # engine documents no order; see the named divergences above),
+                # each in its STORED spelling - the first one written, since
+                # a later write in another case lands on the same element
+                # (engine notes 2.7; which spelling survives is modelled).
                 assert self.kw("of"), f"expected `of` in {self.s!r}"
                 target = self.p_concat()
                 if not isinstance(target, dict):
@@ -1002,7 +1311,9 @@ class _Expr:
         self.ws()
         if self.i < len(self.s) and self.s[self.i] == "[":
             # a bracket CHAIN: each step reads one key; a missing key or a
-            # non-array node answers empty, the engine's behaviour.
+            # non-array node answers empty, the engine's behaviour. The
+            # exact-spelling hit is inlined (the hottest read in a boot); a
+            # miss goes through the fold (engine notes 2.7) in _arr_get.
             v = self.env.get(low, self.ip.globals.get(low, {}))
             while self.i < len(self.s) and self.s[self.i] == "[":
                 self.i += 1
@@ -1010,7 +1321,11 @@ class _Expr:
                 self.ws()
                 assert self.s[self.i] == "]"
                 self.i += 1
-                v = v.get(key, "") if isinstance(v, dict) else ""
+                if isinstance(v, dict):
+                    got = dict.get(v, key, _MISS)
+                    v = _arr_get(v, key) if got is _MISS else got
+                else:
+                    v = ""
                 self.ws()
             return v
         if self.i < len(self.s) and self.s[self.i] == "(":
@@ -1056,7 +1371,7 @@ def _disp(v):
 def _eq(a, b):
     if isinstance(a, dict) or isinstance(b, dict):
         if isinstance(a, dict) and isinstance(b, dict):
-            return a == b
+            return _arr_eq(a, b)            # keys fold (engine notes 2.7)
         arr, other = (a, b) if isinstance(a, dict) else (b, a)
         return len(arr) == 0 and str(_disp(other)) == ""
     if isinstance(a, bool) or isinstance(b, bool):

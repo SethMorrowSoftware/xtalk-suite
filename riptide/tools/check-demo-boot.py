@@ -406,8 +406,10 @@ class DemoExpr(LCS._Expr):
                         "expected keys/items/lines `of` in %r" % self.s
                     target = self.p_concat()
                     if word == "keys":
+                        # through the base's key fold (engine notes 2.7),
+                        # never python's exact-spelling `in`
                         hit = (isinstance(target, dict)
-                               and str(LCS._disp(v)) in target)
+                               and LCS._arr_has(target, str(LCS._disp(v))))
                     else:
                         delim = (LCS.ITEM_DELIMITER[0] if word == "items"
                                  else LCS.LINE_DELIMITER[0])
@@ -882,7 +884,9 @@ class DemoInterp(LCS.Interp):
         # base, which models `item` alone). The engine iterates a SNAPSHOT
         # of the container, so the list is built before the first pass.
         # char and word joined 2026-09-11 (nocloud's sanitisers, holde-em's
-        # evaluator harness), element the same day (holde-em).
+        # evaluator harness), element the same day (holde-em). A key comes
+        # back in its STORED spelling, the first one written (the base's
+        # key fold, engine notes 2.7), exactly as `the keys of` answers it.
         m = _rxi(r'repeat\s+for\s+each\s+(key|element|line|char|word)'
                      r'\s+(\w+)\s+in\s+(.+)$').match(line)
         if m:
@@ -1010,12 +1014,16 @@ class DemoInterp(LCS.Interp):
         # ---- split VAR by A [and B]: the container becomes an array. With
         # one delimiter the keys are 1..n; with two, each A-part is split at
         # its first B into key and value (holde-em's wire bodies, 2026-09-11)
+        # and stored through the base's key fold (engine notes 2.7): "a=1&A=2"
+        # is ONE element, spelled "a", holding "2". That the later part wins
+        # the value is modelled (it is what a store in that order does), not
+        # observed; the fold itself is the observed rule.
         m = _rxi(r'split\s+(\w+)\s+by\s+(.+?)(?:\s+and\s+(.+))?$').match(line)
         if m:
             tgt = m.group(1)
             s = str(LCS._disp(self.eval_expr(tgt, env)))
             a = str(LCS._disp(self.eval_expr(m.group(2), env)))
-            out = {}
+            out = LCS.LcsArray()
             if s != "":
                 parts = s.split(a) if a else [s]
                 if m.group(3) is None:
@@ -1025,7 +1033,7 @@ class DemoInterp(LCS.Interp):
                     b = str(LCS._disp(self.eval_expr(m.group(3), env)))
                     for part in parts:
                         k, _sep, val = part.partition(b)
-                        out[k] = val
+                        LCS._arr_set(out, k, val)
             self.assign(tgt, out, env)
             return i + 1
 
@@ -1076,15 +1084,12 @@ class DemoInterp(LCS.Interp):
             ctl.props["visible"] = m.group(1).lower() == "show"
             return i + 1
 
-        # ---- engine globals the script sets around strict compares
-        m = _rxi(r'set\s+the\s+caseSensitive\s+to\s+(.+)$').match(line)
-        if m:
-            # tracked only: the base interpreter's `is` is already
-            # case-SENSITIVE (its named divergence), so both settings are
-            # modeled by the stricter behaviour
-            world.stack_props["casesensitive"] = self.eval_expr(m.group(1),
-                                                                env)
-            return i + 1
+        # ---- `set the caseSensitive to X` is the BASE's since 2026-09-24:
+        # it governs array KEYS there (engine notes 2.7; a local property,
+        # reset per handler call), and `is` keeps its case-sensitive named
+        # divergence. Until then this runner swallowed the statement into a
+        # stack property nothing read, which was harmless only while no key
+        # folded.
 
         # ---- set the <prop> of <obj> / defaultStack / clipboard
         m = _rxi(r'set\s+the\s+defaultStack\s+to\s+(.+)$').match(line)
@@ -1167,14 +1172,20 @@ class DemoInterp(LCS.Interp):
             world.current().controls.remove(ctl)
             return i + 1
 
-        # ---- delete variable (array-element teardown)
-        m = _rxi(r'delete\s+variable\s+(\w+)\[(.+)\]$').match(line)
+        # ---- delete variable (array-element teardown), a subscript CHAIN of
+        # any depth (nostr-relay's `delete variable sNxrRelays[pRelay]["subs"]
+        # [pSubId]`, which the old one-bracket regex read as ONE key named
+        # `pRelay]["subs"][pSubId`), each step through the base's key fold
+        # (engine notes 2.7). A missing element at any depth is a no-op.
+        m = _rxi(r'delete\s+variable\s+(\w+\s*\[.+\])$').match(line)
         if m:
-            name = m.group(1).lower()
-            key = str(LCS._disp(self.eval_expr(m.group(2), env)))
+            name, keys = self.subscript_chain(m.group(1), env)
             store = env if name in env else self.globals
-            if isinstance(store.get(name), dict):
-                store[name].pop(key, None)
+            node = store.get(name)
+            for k in keys[:-1]:
+                node = LCS._arr_get(node, k) if isinstance(node, dict) else ""
+            if isinstance(node, dict):
+                LCS._arr_del(node, keys[-1])
             return i + 1
 
         # ---- pass <message> (the model does not re-dispatch)
@@ -1239,6 +1250,11 @@ class DemoInterp(LCS.Interp):
             # CATCHABLE script error on the engine, and the capability
             # probes depend on that. Only convert clean call shapes; a
             # genuinely unmodeled construct stays a loud harness failure.
+            # The array commands this model does not have (union, intersect,
+            # combine, split in a form the branch above does not match) are
+            # named here since 2026-09-24: before, `union tA with tB` inside
+            # a try became a caught "can't find handler" and the rest of the
+            # handler ran on an array nobody had merged.
             m = _rx(r'^([A-Za-z]\w*)(\s+.*)?$').match(line)
             if (m and "unsupported statement" in str(e)
                     and m.group(1).lower() not in self.handlers
@@ -1248,7 +1264,8 @@ class DemoInterp(LCS.Interp):
                                      r'go|send|local|constant|global|throw|'
                                      r'pass|hide|show|lock|unlock|sort|'
                                      r'replace|multiply|subtract|divide|'
-                                     r'wait|answer|ask|do)$').match(m.group(1))):
+                                     r'wait|answer|ask|do|union|intersect|'
+                                     r'combine|split)$').match(m.group(1))):
                 raise Thrown("Handler: can't find handler: " + m.group(1))
             raise
 
@@ -2054,12 +2071,106 @@ def drive_lan_keys(c, ip, world, profile):
             pass
 
 
+# The array forms THIS runner adds to the base, pinned against the base's
+# key fold (lcs-interp.py header; engine notes 2.7). The base's own fold is
+# pinned in coinxt's check-script-vectors tier 0; these are the four places
+# the runner touched an array itself, each once a plain-dict operation that
+# would have kept testing the case-sensitive world after the base moved.
+_RUNNER_MODEL_SRC = """
+function rmSplitPairs
+   local tA
+   put "a=1&A=2" into tA
+   split tA by "&" and "="
+   return (the keys of tA) & "|" & tA["a"]
+end rmSplitPairs
+function rmDeleteChain
+   local tA
+   put 1 into tA["X"]["y"]
+   put 2 into tA["X"]["z"]
+   delete variable tA["x"]["Y"]
+   return the keys of tA["X"]
+end rmDeleteChain
+function rmEachKey
+   local tA, tK, tOut
+   put 1 into tA["Dev"]
+   put 2 into tA["DEV"]
+   repeat for each key tK in tA
+      put tK & "=" & tA[tK] & ";" after tOut
+   end repeat
+   return tOut
+end rmEachKey
+function rmAmong
+   local tA
+   put 1 into tA["phone"]
+   return "Phone" is among the keys of tA
+end rmAmong
+function rmSensitive
+   local tA
+   set the caseSensitive to true
+   put 1 into tA["phone"]
+   put 2 into tA["Phone"]
+   return the keys of tA
+end rmSensitive
+function rmUnion
+   local tA, tB, tErr
+   put 1 into tA["a"]
+   put 2 into tB["b"]
+   try
+      union tA with tB
+   catch tErr
+      return "caught"
+   end try
+   return "ran"
+end rmUnion
+"""
+
+
+def check_runner_model(c):
+    """The runner's own array statements under the key fold, and a refusal:
+    an array command the model does not have must stop the run, never turn
+    into a caught `can't find handler`."""
+    sandbox = tempfile.mkdtemp(prefix="riptide-model-")
+    try:
+        ip = DemoInterp(_RUNNER_MODEL_SRC, World(sandbox))
+
+        def run(name):
+            return ip.call(name, [])
+
+        got = run("rmSplitPairs")
+        c.ck("[MODEL] split by A and B folds keys: one element, first "
+             "spelling, the later value", got == "a|2", repr(got))
+        got = run("rmDeleteChain")
+        c.ck("[MODEL] delete variable walks a subscript chain, folded",
+             got == "z", repr(got))
+        got = run("rmEachKey")
+        c.ck("[MODEL] repeat for each key yields the stored spelling once",
+             got == "Dev=2;", repr(got))
+        got = run("rmAmong")
+        c.ck("[MODEL] is among the keys of folds in the runner's comparator",
+             got is True, repr(got))
+        got = run("rmSensitive")
+        c.ck("[MODEL] set the caseSensitive reaches the base (keys exact)",
+             got == "phone\nPhone", repr(got))
+        try:
+            got = run("rmUnion")
+            c.ck("[MODEL] an unmodelled array command stops the run",
+                 False, "the handler answered %r" % (got,))
+        except Thrown as exc:
+            c.ck("[MODEL] an unmodelled array command stops the run",
+                 False, "it became a catchable script error: %s" % exc)
+        except Exception:                                # noqa: BLE001
+            c.ck("[MODEL] an unmodelled array command stops the run", True)
+    finally:
+        shutil.rmtree(sandbox, ignore_errors=True)
+
+
 def main(argv):
     terse = "--check" in argv
     path = DEMO
     if "--file" in argv:
         path = argv[argv.index("--file") + 1]
     c = Checker(terse)
+    check_runner_model(c)
     for profile in ("MIN", "FULL"):
         c.note("profile %s" % profile)
         boot(c, path, profile)

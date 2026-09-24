@@ -224,12 +224,18 @@ day it shipped.
 **Rule:** never use an array as an exact-string index. Keep the original keys
 in a numbered list and compare byte-exact (nostrxt's `nxStrEqExact`), or fold
 on purpose and say so where the array is declared. Numeric keys are unaffected.
-**Gate:** none. The family interpreter's arrays are Python dicts
-(case-SENSITIVE), so it passes code the engine folds: an open model gap in the
-`coinxt/` and `nostrxt/` interpreter copies, tracked in the suite's
-docs/WORK-PLAN.md. riptide's LAN keys were a concrete case until 2026-09-24,
-when its demo re-keyed per-device state by the name's UTF-8 bytes in hex, a
-key no fold can merge (`raLanDevKey`).
+**Gate:** the model, since 2026-09-24. The family interpreter
+(`coinxt/tools/lcs-interp.py`, twinned in `nostrxt/`) folds keys too, so every
+execution gate runs on this rule, pinned in tier 0 of coinxt's
+`check-script-vectors.py`. Its two choices are the model's, not observations:
+the FIRST spelling written is the one kept, and `the caseSensitive` is a LOCAL
+property (the LiveCode dictionary's scope) governing keys only. A model gate
+sees a collision only where a vector drives two spellings. riptide's LAN keys
+were the concrete case: driven through the folded model on 2026-09-24, the
+pre-fix demo dropped a draft from "phone" after one from "Phone" as a replay,
+silently. The same day its demo re-keyed per-device state by the name's UTF-8
+bytes in hex (`raLanDevKey`), a key no fold can merge, and `check-demo-boot`'s
+`drive_lan_keys` drives both spellings.
 **Does NOT mean:** `the keys of` still returns each key's ORIGINAL spelling, so
 a scan over the keys is exact; only the subscript lookup folds.
 
