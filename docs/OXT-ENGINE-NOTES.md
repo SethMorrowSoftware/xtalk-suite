@@ -227,7 +227,9 @@ on purpose and say so where the array is declared. Numeric keys are unaffected.
 **Gate:** none. The family interpreter's arrays are Python dicts
 (case-SENSITIVE), so it passes code the engine folds: an open model gap in the
 `coinxt/` and `nostrxt/` interpreter copies, tracked in the suite's
-docs/WORK-PLAN.md; riptide's LAN keys are a concrete case.
+docs/WORK-PLAN.md. riptide's LAN keys were a concrete case until 2026-09-24,
+when its demo re-keyed per-device state by the name's UTF-8 bytes in hex, a
+key no fold can merge (`raLanDevKey`).
 **Does NOT mean:** `the keys of` still returns each key's ORIGINAL spelling, so
 a scan over the keys is exact; only the subscript lookup folds.
 

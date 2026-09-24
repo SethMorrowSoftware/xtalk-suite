@@ -14611,7 +14611,11 @@ command raPost
       exit raPost
    end if
    put field "raName" into tName
-   if the number of chars of tName > kNameMax then
+   -- BYTES of UTF-8, not chars: rsBuildHead caps the encoded name at 64 bytes, so
+   -- until 2026-09-24 a name of at most 64 characters but over 64 bytes (any run of
+   -- multi-byte characters) passed this check and then came back as a bare
+   -- "rsBuildHead refused:" instead of this message.
+   if the number of bytes in textEncode(tName, "UTF-8") > kNameMax then
       uiStatus "The display name is over the 64-byte head budget; shorten it.", "warn"
       exit raPost
    end if

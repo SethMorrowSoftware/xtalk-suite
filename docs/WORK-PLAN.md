@@ -47,8 +47,8 @@ result. Every "engine-proven" below quotes a dated record already in the tree.
 | coinxt | 290/290, Windows x64, 2026-08-24; wallet logs to 2026-09-03 | D-17; per-push Windows/mac CI; Core residue; gap limit | row Q (ABI 7, silent payments); demo; broadcast; the wallet's post-2026-09-04 surface; Core regtest | S1, S2, NET, S5 |
 | nostrxt | core 274/0/2 and relay SEND live, both 2026-08-24 | placeholder floor; 2026-09-09 refusals into the harness; NIP-42 demo controls | relay receive, NIP-42, `ws://`, a bad certificate, forced negatives | S1, NET, a local relay |
 | box2dxt | harness v30 375/0 Windows 2026-08-20, 374/1 Linux 2026-08-21 | x86-linux glibc regression; platformer polish | the v32 total; the five games; R1; first Mac load; feel pass | S1, S5, PERSON |
-| riptide | phases 1-4 on two machines (to 2026-08-15); compute of 6-7, 391/0, 2026-08-24; phase-8 boot 2026-08-29 | bridge reader; RSL1 magic; LAN key case; own-head refresh | row 35; phases 5, 6, 7 live; phase 8 live; faststart re-run | S1-S4, NET |
-| nocloud | no dated pass of this stack in the tree | OnionXT wording in the source; mtime ETag after D-10; the D-02 menu (deferred) | the 69-item checklist, web-link and Tor halves; sections 7-8 | S1, S2 |
+| riptide | phases 1-4 on two machines (to 2026-08-15); compute of 6-7, 391/0, 2026-08-24; phase-8 boot 2026-08-29 | bridge reader; RSL1 magic; own-head refresh; per-identity app state | row 35; phases 5, 6, 7 live; phase 8 live; faststart re-run | S1-S4, NET |
+| nocloud | no dated pass of this stack in the tree | mtime ETag after D-10; the D-02 menu (deferred) | the 69-item checklist, web-link and Tor halves; sections 7-8 | S1, S2 |
 | holde-em | 667/0 folded, 2026-08-27 (v0.25.2) | **Level 2 not wired into play**; animations; 102 untested handlers | the v44 total; Phase 1 exit; 2d/2e/2f on real machines; the oracle round | S1-S4, 3M, PERSON |
 
 Suite coverage on 2026-09-23: **864/878** public handlers exercised by the suite
@@ -464,8 +464,8 @@ extension, true multi-layer parallax (waits on transparent overlay art).
 ### 3.1 riptide
 
 - Library 0.12.0: 106 `rs*` handlers, coverage 106/106. The five-card demo embeds
-  nostrxt (core and relay), riptide, onionxt and onion-httpd; `check-demo-boot` runs
-  44 checks over two capability profiles.
+  nostrxt (core and relay), riptide, onionxt and onion-httpd; `check-demo-boot` boots it
+  headlessly over two capability profiles (it prints its own count).
 - Records: phases 1-2 two machines 2026-08-13, phases 3-4 2026-08-15; mid-download
   playback measured NEGATIVE 2026-08-27 and fixed that day (`raMediaFrontReady`);
   phases 6-7 compute engine-green to 2026-08-24 (391/0); phase 8's v11 boot 9/1 on
@@ -480,11 +480,9 @@ extension, true multi-layer parallax (waits on transparent overlay art).
 |---|---|---|---|---|
 | 1 | **A bridge reader in the app:** `rsRequestBridge`, `rsIngestBridge` and `rsNostrBridgeFromEvent` have no app caller. Persist its `pMinSeq` watermark in RIPTAPP1 as `sHeadSeen` is | Phase 8's done-criterion needs the bridge resolved in BOTH directions; the runbook's phase-8 step 6 is blocked until it exists | M | owner (scope) |
 | 2 | **Decide RSL1's magic** after the 2026-09-09 tag change: rule 3 says a framing change mints a new magic, and the preimage changed without one, so pre- and post-2026-09-09 devices silently fail admission with each other | Protocol hygiene; it dictates the phase-6 setup | S | owner |
-| 3 | LAN state may collide by case: `raLanSyncReceive` keys `sLanPeerSeq`, `Tick` and `Draft` by `tRec["name"]` without `caseSensitive`, and the engine folds array-key case (engine note 2.7). Inferred, not observed | The silent-drop shape of decision C6 | S | none |
 | 4 | Own-head refresh while online: the demo re-puts its BEP44 head only on post, BEP44 items expire, and D-06 rules out follower republish, so the author's own re-put is the only retention | Feeds go dark | S-M | owner (cadence) |
-| 5 | Scripts in `riptide/docs/two-machine-runbook.md` for the post-2026-08-23 features: the kind-C long post, the profileMeta reader, the `rtt/loss` suffix, watermark persistence across a restart | Built and unscheduled | S | none |
 | 6 | Scope calls: the pairwise room (`rsRoomId`, spec 5.2) is library-only, so wire it or record that for good; an anon file transfer over the onion (`rsBtxo*`, spec 8.3) has no app caller (M to build); followers-only sealed media (spec 4.4) is deferred and would need its own spec and record format (L) | Library surface the app does not use | S-L | owner (scope) |
-| 7 | Stale text, then re-carry: `src/riptide.livecodescript`'s header (and the demo's embedded copy) says "phases 1-4 + 6 + 7", calls mid-download playback "the one unmeasured nuance", and says the 2026-08-23 additions have no engine pass (their compute ran 2026-08-24); the demo header's mid-download line; a demo comment before the FINAL-tag hang-up push cites "the spec's section 5.3" (it is 5.2) | Stale claims carried into the paste | S | none |
+| 8 | One app-state file per machine, not per identity: `raAppSave` seals the current identity's state over the one `RIPTAPP1` file (`riptide/examples/riptide-social.livecodescript`, the app-state path near 17312), and recovering your own head marks the state dirty, so unlocking a SECOND identity with a published head can overwrite the first identity's follows and watermarks. Key the file by identity, or refuse to save over another identity's file. Found statically 2026-09-24; the two-machine runbook's phase 8 step 8 now asks the tester to watch for it | Silent loss of a user's follow list | S-M | owner (file layout) |
 
 **Engine.**
 
@@ -515,8 +513,6 @@ extension, true multi-layer parallax (waits on transparent overlay art).
 
 | # | Work | Why | Size | Blocked by |
 |---|---|---|---|---|
-| 1 | Fix the OnionXT wording the 2026-08-24 embed made wrong: the source header still lists OnionXT as an optional extension for standalone builders; `qsCapabilityLine` prints `nocloud/src/nocloudquickshare.livecodescript` ("OnionXT not in the message path"); two `qsLog` lines advise installing OnionXT; two stale VERIFY comments | Users get install advice for something they already have | S | none |
-| 2 | `tests/fileserver_golden.py`'s docstring says "CONTRIBUTING.md points here" (merged into `CLAUDE.md` and deleted 2026-09-23) | A dangling pointer | S | none |
 | 3 | After the D-10 probe: build a restart-stable mtime ETag plus `Last-Modified` / `If-Modified-Since` with golden mirrors, or record "design confirmed" in the deep-dive's section 1.5, in D-10 and in `webapp/sw.js`'s header | Closes the one decided-but-unrun question | S-M | engine |
 | 4 | *(optional)* A headless boot gate on riptide's `check-demo-boot.py` pattern | Would exercise the TorrentXT-absent guard and the 49-control boot record without an engine; coinxt, riptide and holde-em have one | M | none |
 | 5 | The HTTP-host endpoint menu, listed below | Recorded roadmap; the deep-dive carries the questions that order it, not the menu itself | L | D-02 (deferred until the first external user report) |

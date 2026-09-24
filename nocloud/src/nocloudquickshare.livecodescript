@@ -5887,11 +5887,11 @@ command qsOnionServeHttp pStream
    put word 1 of tReq into tMethod
    put word 2 of tReq into tPath
    if sActiveShare["enc"] is kFlagEnc then
-      qsOnionHttpText pStream, "200 OK", "text/html; charset=utf-8", qsHtmlEncrypted()
+      qsOnionHttpText pStream, "200 OK", "text/html; charset=utf-8", qsHtmlEncrypted(), tMethod
       exit qsOnionServeHttp
    end if
    if sActiveShare["web"] is not "true" then
-      qsOnionHttpText pStream, "403 Forbidden", "text/html; charset=utf-8", qsHtmlDisabled()
+      qsOnionHttpText pStream, "403 Forbidden", "text/html; charset=utf-8", qsHtmlDisabled(), tMethod
       exit qsOnionServeHttp
    end if
    if tPath is "/download" then
@@ -5932,23 +5932,35 @@ command qsOnionServeHttp pStream
       exit qsOnionServeHttp
    end if
    if tPath is "/" then
-      qsOnionHttpText pStream, "200 OK", "text/html; charset=utf-8", qsHtmlIndex()
+      qsOnionHttpText pStream, "200 OK", "text/html; charset=utf-8", qsHtmlIndex(), tMethod
       exit qsOnionServeHttp
    end if
-   qsOnionHttpText pStream, "404 Not Found", "text/plain; charset=utf-8", "Not found."
+   qsOnionHttpText pStream, "404 Not Found", "text/plain; charset=utf-8", "Not found.", tMethod
 end qsOnionServeHttp
 
 -- Send a small text/html HTTP response and close (used for the index, the
 -- encrypted notice, and 404s - never for the file body).
-command qsOnionHttpText pStream, pStatus, pType, pBody
-   local tData, tHead, tCrlf
+command qsOnionHttpText pStream, pStatus, pType, pBody, pMethod
+   local tData, tHead, tCrlf, tBody
    put (numToChar(13) & numToChar(10)) into tCrlf
    put textEncode(pBody, "UTF-8") into tData
    put ("HTTP/1.1 " & pStatus & tCrlf & "Content-Type: " & pType & tCrlf & \
       "Content-Length: " & (the number of bytes in tData) & tCrlf) into tHead
    put qsHttpExtraHeaders() after tHead
    put ("Connection: close" & tCrlf & tCrlf) after tHead
-   oxWrite pStream, (textEncode(tHead, "UTF-8") & tData)
+   -- A HEAD gets the head only (2026-09-24). The 2026-08-17 HEAD fixes reached the
+   -- file-server routes but not this single-file Tor page path: the index, the
+   -- encrypted notice, the web-download-off page and the 404 all sent their body to
+   -- a HEAD. Content-Length still states the GET body's size, as RFC 9110 allows.
+   -- pMethod is the request line's first word, passed by qsOnionServeHttp; the
+   -- same fix landed in torrentxt's torrent-quickshare copy the same day.
+   -- Verified statically; needs an OXT + live-Tor pass.
+   if pMethod is "HEAD" then
+      put empty into tBody
+   else
+      put tData into tBody
+   end if
+   oxWrite pStream, (textEncode(tHead, "UTF-8") & tBody)
    oxCloseStream pStream
    qsOnionServeCleanup pStream
 end qsOnionHttpText
