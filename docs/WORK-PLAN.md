@@ -33,7 +33,7 @@ result. Every "engine-proven" below quotes a dated record already in the tree.
 - Each member has a **Coding** table (work in this tree) and an **Engine** table (a
   run). The engine table's Row column is the runbook row; `-` means no row exists yet.
 - **Numbers are stable.** A closed row is deleted and its number is never reused, so
-  a table can have gaps: rows cite each other ("1.2 #2", "2.8 coding #9").
+  a table can have gaps: rows cite each other ("1.2 #2", "2.2 coding #3").
 
 ## At a glance
 
@@ -46,7 +46,7 @@ result. Every "engine-proven" below quotes a dated record already in the tree.
 | onionxt | offline self-test 61/0, Windows, 2026-08-17; the live-Tor core from the early bring-up | `oxLaunchTor` result checks; 3 exemptions retirable offline; roundtrip fields | Mode B (leg F); the B.12 probes; negative paths; the round trip | S1, S2, S4 |
 | coinxt | 290/290, Windows x64, 2026-08-24; wallet logs to 2026-09-03 | D-17; per-push Windows/mac CI; Core residue; gap limit | row Q (ABI 7, silent payments); demo; broadcast; the wallet's post-2026-09-04 surface; Core regtest | S1, S2, NET, S5 |
 | nostrxt | core 274/0/2 and relay SEND live, both 2026-08-24 | placeholder floor; 2026-09-09 refusals into the harness; NIP-42 demo controls | relay receive, NIP-42, `ws://`, a bad certificate, forced negatives | S1, NET, a local relay |
-| box2dxt | harness v30 375/0 Windows 2026-08-20, 374/1 Linux 2026-08-21 | harness v32; the pre-fold mac dylib; x86-linux glibc regression; reference docs | v31/v32 totals; the five games; R1; first Mac load; feel pass | S1, S5, PERSON |
+| box2dxt | harness v30 375/0 Windows 2026-08-20, 374/1 Linux 2026-08-21 | x86-linux glibc regression; platformer polish | the v32 total; the five games; R1; first Mac load; feel pass | S1, S5, PERSON |
 | riptide | phases 1-4 on two machines (to 2026-08-15); compute of 6-7, 391/0, 2026-08-24; phase-8 boot 2026-08-29 | bridge reader; RSL1 magic; LAN key case; own-head refresh | row 35; phases 5, 6, 7 live; phase 8 live; faststart re-run | S1-S4, NET |
 | nocloud | no dated pass of this stack in the tree | OnionXT wording in the source; mtime ETag after D-10; the D-02 menu (deferred) | the 69-item checklist, web-link and Tor halves; sections 7-8 | S1, S2 |
 | holde-em | 667/0 folded, 2026-08-27 (v0.25.2) | **Level 2 not wired into play**; animations; 102 untested handlers | the v44 total; Phase 1 exit; 2d/2e/2f on real machines; the oracle round | S1-S4, 3M, PERSON |
@@ -67,9 +67,12 @@ and box2dxt's raw `b2*` row 131/376, each with an armed floor. Run
 replaced every Windows DLL (all six members, both bitnesses) and the Linux and mac
 libraries of torrentxt, enetxt, datachannelxt and coinxt. It left sodiumxt's Linux and
 mac files and box2dxt's Linux files unchanged: those are still the release run 12 files
-(`cec1e85`, 2026-08-27). box2dxt's universal-mac dylib is older still: GitHub's
-history shows one commit for it, the 2026-08-14 fold (`6070585`; a shallow clone
-shows its boundary commit instead), see 2.8 coding #9. No native source has changed
+(`cec1e85`, 2026-08-27). box2dxt's universal-mac dylib shows one commit in git, the
+2026-08-14 fold (`6070585`), but it is not a stale build: both release runs built,
+verified and installed it, and each installer log says "(unchanged)", a sha256 match
+(the shim and its build have not changed since the fold; runs 33025459610 and
+34657390798, read 2026-09-24). Git records only changes, so since 2026-09-24 the
+release commit's message carries the installer's per-library verdicts. No native source has changed
 since `421bab3`. The latest dated engine records predate it: the 2026-08-24 paste, the
 2026-08-27 two-machine paste and holde-em fold, the 2026-08-29 riptide boot, and the
 2026-08-31 to 09-03 coin-wallet logs. The 2026-08-27 paste (2440/2/3) does not record
@@ -102,8 +105,8 @@ Debian 12 (2.36) or RHEL 9 (2.34)**, nor can torrentxt's 32-bit build. The S1 Li
 machine needs glibc 2.38 or newer to load all six members.
 
 **Platform rows with no engine record** (runbook rows 23, 24, 47): universal-mac for
-all six members (CI built and tested five of the dylibs; box2dxt's is the pre-fold
-build); x86-win32 for sodiumxt, torrentxt and coinxt (whose 32-bit DLL has not
+all six members (CI built and tested every dylib; box2dxt's was rebuilt
+byte-identical by both release runs, see above); x86-win32 for sodiumxt, torrentxt and coinxt (whose 32-bit DLL has not
 executed even in CI: its Windows KAT step is x86_64 only); x86-linux for sodiumxt and
 torrentxt.
 
@@ -150,7 +153,7 @@ manual dispatch (rule 5); the harness scaffold's non-adoption of the UI kit (D-1
 | 2 | Engine-notes probes: the 2^53 line and the `or` probe | S1 | P | notes 2.4 and 2.5 promoted to OBSERVED with the exact text, or 2.5 rewritten |
 | 3 | Other engine-notes probes: 5.3 (a second stack in front, and a `send ... in` handler writing an unqualified field: record where the write lands); 2.6 (`the number of chars of X + 1`, and `field "x" & tKind`); optionally 1.1 (a second `script "..."` line mid-file with a declared local read below it) | S1 | - | each note promoted with a date, or left DOCUMENTED / UNEVIDENCED |
 | 4 | The demo re-open fleet, including `start-here.livecodescript`: open one card-hook box2dxt game and one stack-hook demo from the launcher and record whether each builds on first open (its `go invisible stack` / parked-closed create path, engine note 5.5) | S1 items 3, 5 | 37, 38 | per row; this is the largest engine item |
-| 5 | Platform rows: Windows 64- and 32-bit, Linux 32-bit, and the first Mac load of all six dylibs (box2dxt's after 2.8 coding #9 replaces its pre-fold build) | S5 | 23, 24, 47 | preflight LOADED and the member sections green on that row, bitness recorded |
+| 5 | Platform rows: Windows 64- and 32-bit, Linux 32-bit, and the first Mac load of all six dylibs | S5 | 23, 24, 47 | preflight LOADED and the member sections green on that row, bitness recorded |
 | 6 | *(optional)* Cheap measurements nothing schedules: FFI-crossing cost and interpreter op rate; whether `byte N of X` on a 60,000-byte Data is O(1) or O(N); `seek to N in file` (a standing nocloud VERIFY) and `rename file` semantics; whether `open file ... for binary write` truncates an existing longer file (engine note 6.14 gives the four-line probe: the reference and engine source say it does, the tree's comments said it does not); whether OXT exposes SQLite through revDB | S1 | - | numbers recorded in engine notes; 6.14 promoted to OBSERVED with a date, or rewritten as a divergence |
 | 7 | Model C Phase 4 exit: a FRESH user on each of macOS, Windows and Linux, following only section 13 of [ONIONXT-INTEGRATION-PLAN.md](ONIONXT-INTEGRATION-PLAN.md), completes a two-machine anonymous transfer | S4 on each OS + PERSON | - | all three done; the phase does not close before |
 
@@ -420,22 +423,23 @@ manual dispatch (rule 5); the harness scaffold's non-adoption of the UI kit (D-1
   is `playLoudness` readback, engine note 5.4). v31 (374 expected) has no record of its
   own: the 2026-08-24 paste's zero failures make it green by inference only.
 - Five platforms committed; the universal-mac dylib (ABI 4) has never been loaded by an
-  engine, and is still the pre-fold build the 2026-08-14 fold carried in (coding #9). CI's smoke test enters all 370 LC_API exports under ASan/UBSan. Risk R1 has
-  Win32 verdicts only (2026-06-10).
+  engine. It was rebuilt byte-identical by both release runs (1.1). CI's smoke test
+  enters all 370 LC_API exports under ASan/UBSan. Risk R1 has Win32 verdicts only
+  (2026-06-10).
+- Harness v32 (2026-09-24) drives the ten 2026-09-09 delimiter-fixed Kit handlers
+  under a caller's tab; 385 expected in a green run, unobserved. Both references name
+  every handler (376/376 raw, 313/313 Kit), held by `tools/check-reference-docs.py`.
 
 **Coding.**
 
 | # | Work | Why | Size | Blocked by |
 |---|---|---|---|---|
-| 1 | **Harness assertion and a bump to v32** for the 2026-09-09 Kit delimiter fix (`51ac525` changed ten Kit handlers and left `kStHarnessV` at 31): drive a tab-delimited call through `b2kAddBox` / `b2kHinge`, bump per `box2dxt/examples/box2dxt-selftest.livecodescript` ("bump on EVERY harness change"), re-sync the embeds and rebuild the paste | The member's own rule; the fix has no engine-facing test | S | none |
 | 2 | **The x86-linux glibc regression, 2.17 to 2.34:** build that release row in a `manylinux2014_i686` container (as `native-box2dxt.yml` already does), or publish the floor | A silent portability regression | M | dispatch; revisit D-03 |
-| 3 | Complete the reference docs: `box2dxt/docs/api-reference.md` named 216 of 376 handlers on 2026-08-26 (most joint accessors, 34 of 61 `b2Shape*`, the `b2LoadNativeLib*` trio); `box2dxt/docs/kit-reference.md` 242 of 313 (missing `b2kPlayerDuckSet`, `b2kPlayerTick`, `b2kSyncAll`, `b2kEnsureNativeLib`) | The README's own "incomplete" note | M | none |
 | 4 | Platformer polish that can be done in the tree: the dev level-picker behind the debug toggle, or styled as intentional; sweep unused handlers and the dead camera-fallback paths; extend `tools/audit-platformer.py` to the vertical L7; check the win-screen summary (time, falls, gems, stars, coin score, hero, a "flawless run" callout); retune `pfMakeCoin`'s coin-tier thresholds if wanted | The code half of the polish plan | M | none |
 | 5 | The raw `b2*` script ratchet: 245 handlers named by no script | Blind assertions against a foreign-bound API would mostly be test bugs | L | engine |
-| 6 | Stale code comments, paired with #1's regeneration: `box2dxt-spike-gamekit`'s header cites deleted design docs and an S0-S10 table (it implements S0-S12; the table is in `box2dxt/CLAUDE.md` section 4) and says no session confirmed its window (four Win32 passes, 2026-06-10); the selftest header says neither v30 total was observed, and calls the crawl stall "STILL OPEN" (fixed at v28); `start-here.livecodescript`'s launcher row says the selftest exercises "the b2* binding surface" (it drives the Kit) | Stale claims in shipped stacks | S | none |
-| 7 | `box2dxt/dist/INSTALL.md` predates the title screen (the game boots to a TITLE screen, and hero select 1-5 exists only there); `box2dxt/CHANGELOG.md` [Unreleased] lacks v25-v31 (empty-ref no-ops, count-guarded readers, the filter-mask clamp, `b2kReshape` dims, the playLoudness rewrites), the 2026-09-09 delimiter fix and the card-fade pins | Both ship to users | S | none |
 | 8 | Point `box2dxt/README.md`'s build badge at the member repository's own `native.yml` once that lane has run | It still points at the suite lane | S | the first member-repository run |
-| 9 | **Replace the pre-fold universal-mac dylib before the first Mac load (Engine #4).** GitHub's history shows one commit for `box2dxt/src/code/universal-mac/box2dxt.dylib`, `6070585`, the 2026-08-14 fold. `release-binaries.yml` has had a box2dxt universal-mac row (`-DBOX2D_AVX2=OFF`) since 2026-08-23, yet release run 12 (`cec1e85`, 2026-08-27) refreshed only box2dxt's Linux and Windows libraries (its MANIFEST line for the dylib is unchanged), and `421bab3` (2026-09-12) only the DLLs. Find out which stage left it out (installer, bundle or commit step), fix it, and let the next dispatch replace it | The first Mac load should test a dispatch-built binary, not the one the fold carried in | S | dispatch (no engine needed) |
+| 10 | The ten 2026-09-09 Kit handlers set `itemDelimiter` to comma and never restore it (`box2dxt/src/box2dxt-kit.livecodescript`, e.g. `b2kAddBox`). Harmless if the property is handler-local, as the LiveCode dictionary says; a leak into callers if it is global, as engine note 2.3 records. Restore them if harness v32's second observation shows a callee's comma leaking back (note 2.3's counterpoint) | Found statically 2026-09-24 | S | engine (v32's answer) |
+| 11 | Native shim defects found statically 2026-09-24, each a shim change that needs its binaries rebuilt by a dispatch (rule 5): the per-type joint accessors (`src/box2d_lc.c` near 1610-1712) check that the handle is live, not the joint's type, so a wrong-type joint reaches Box2D, and `b2lc_joint_type` answers 0 for both a distance joint and a stale handle; `b2lc_shape_polygon_update` on a non-polygon zeroes the count but keeps the previous radius; the committed Linux `.so` files carry SONAME `libbox2dxt.so` (`BOX2DXT_BARE_SONAME` is OFF), so `b2LoadNativeLib` / `b2LoadNativeLibHere` cannot preload them. All three are documented in `box2dxt/docs/api-reference.md` | Wrong answers a script cannot tell apart | S + dispatch | dispatch |
 
 Parked by D-19 (2026-08-27, "triggers stand"), not scheduled: Wave 8 builder
 cross-pollination, `b2kScene*` and enemy-pattern promotion (when a second game needs
@@ -446,10 +450,10 @@ extension, true multi-layer parallax (waits on transparent overlay art).
 
 | # | Run | Where | Row | Green (in brief) |
 |---|---|---|---|---|
-| 1 | Suite paste on Windows **and** Linux | S1 item 1 | 31 | RECORD the v31 (or v32) total; Linux prints `playLoudness` as a note |
+| 1 | Suite paste on Windows **and** Linux | S1 item 1 | 31 | RECORD the v32 total (385 expected); Linux prints `playLoudness` as a note; the v32 section's two observations (does a caller's tab reach a called handler; does a Kit call's comma leak back) |
 | 2 | The five games from `start-here.livecodescript`: `box2dxt-demo`, `-platformer`, `-slingshot`, `-contraption-builder`, `-spike-gamekit` | S1 item 5 (Windows, Linux) | 38 | each builds on FIRST open; the contraption Images panel does not throw; the platformer card fade reveals the level and the L7 camera works; slingshot's own list passes |
 | 3 | Risk R1: `box2dxt-spike-gamekit` on Linux and a Mac, recording the S1-S12 verdicts | S1 + S5 | 38 | the verdicts |
-| 4 | First Mac load (after coding #9): install the `.lce`, `put b2Version()` returns 4, then the paste section and the spike | S5 | 24 | as named |
+| 4 | First Mac load: install the `.lce`, `put b2Version()` returns 4, then the paste section and the spike | S5 | 24 | as named |
 | 5 | The platformer polish pass with the owner: facing and scale clean on every sprite in all 7 levels (hitbox vs art, bind offsets, HUD scale, the heart/portrait row); feel locked (move and jump speeds, coyote/buffer/jump-cut, air and wall jumps, dash, springs, swimming, lifts, conveyors); fair hazard timing and an intentional L1-to-L7 ramp; scenery placed by eye; consistent particles; every action audibly cued, nothing doubled; an accurate pause/help overlay; the first 30 s need no unexplained move; transition-card cosmetics and light card text on L6/L7; the parallax seam; each hero skin clean across idle/walk/jump/duck/climb | S1 + PERSON | - | the owner's sign-off |
 | 6 | A fresh-machine package run: build with `tools/make-release.py`, install on a clean machine, play end to end | S1 (a clean machine) | - | installs and runs |
 
@@ -598,8 +602,8 @@ Advisory, like the recommendations in OPEN-DECISIONS: a route, not a decision.
    NIP-42 controls; the stale-text rows. Regenerate the paste, the preflight and the
    demo embeds once, at the end.
 2. **Release-lane decisions, then one dispatch:** the Windows pins and the glibc floor
-   decided, torrentxt ABI 12 landed in the same change, the stage that skips box2dxt's
-   mac dylib found (2.8 coding #9), `release-binaries.yml` dispatched once, so the engine session proves one coherent set. Proving today's
+   decided, torrentxt ABI 12 landed in the same change,
+   `release-binaries.yml` dispatched once, so the engine session proves one coherent set. Proving today's
    binaries first and dispatching after is equally honest; mixing the two wastes a pass.
 3. **The engine sessions, in the runbook's order:** S1 first (Windows, then Linux with
    glibc 2.38 or newer; about 3-4 hours), then S2-S5 as resources allow, and the NET,

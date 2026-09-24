@@ -147,6 +147,19 @@ the node unchanged instead of throwing: a fail-OPEN in a derivation path.
 returns without restoring it corrupts every later parse in unrelated code; the
 symptom is always "item 1 returned the whole list". **Rule:** save, set,
 restore, around the NARROWEST span that needs it.
+**Counterpoint, DOCUMENTED (added 2026-09-24):** the LiveCode dictionary
+(`docs/dictionary/property/itemDelimiter.lcdoc`, livecode `develop`) says the
+opposite of this entry's title: `itemDelimiter` "is a local property", "reset
+to comma when the current handler finishes executing", and "setting it in one
+handler does not affect its value in other handlers it calls". This entry's
+observations are undated and name no handler pair, so they may have been a
+delimiter left set for the REST of one handler, which both readings agree is a
+leak. Neither side has a dated run that separates them. box2dxt's harness v32
+(`stTestCallerDelimiter`, 2026-09-24) prints both halves - whether a caller's
+tab reaches a called handler, and whether a callee's comma leaks back - so its
+first engine run settles it: record the answer here, and reclassify this entry
+only then. The rule holds under both readings, which is why nothing changes
+until it does.
 
 ### 2.4 Every number is an IEEE double, so integers are exact only to 2^53
 **DOCUMENTED** (LiveCode's numeric model; runbook row P is the five-minute
