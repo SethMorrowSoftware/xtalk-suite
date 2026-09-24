@@ -49,10 +49,10 @@ result. Every "engine-proven" below quotes a dated record already in the tree.
 | box2dxt | harness v30 375/0 Windows 2026-08-20, 374/1 Linux 2026-08-21 | x86-linux glibc regression; platformer polish | the v32 total; the five games; R1; first Mac load; feel pass | S1, S5, PERSON |
 | riptide | phases 1-4 on two machines (to 2026-08-15); compute of 6-7, 391/0, 2026-08-24; phase-8 boot 2026-08-29 | bridge reader; RSL1 magic; own-head refresh; per-identity app state | row 35; phases 5, 6, 7 live; phase 8 live; faststart re-run | S1-S4, NET |
 | nocloud | no dated pass of this stack in the tree | mtime ETag after D-10; the D-02 menu (deferred) | the 69-item checklist, web-link and Tor halves; sections 7-8 | S1, S2 |
-| holde-em | 667/0 folded, 2026-08-27 (v0.25.2) | **Level 2 not wired into play**; animations; 102 untested handlers | the v44 total; Phase 1 exit; 2d/2e/2f on real machines; the oracle round | S1-S4, 3M, PERSON |
+| holde-em | 667/0 folded, 2026-08-27 (v0.25.2) | **Level 2 not wired into play**; animations; 88 untested handlers | the v45 total; Phase 1 exit; 2d/2e/2f on real machines; the oracle round | S1-S4, 3M, PERSON |
 
 Suite coverage on 2026-09-24: **867/878** public handlers exercised by the suite
-harness; the 11 exemptions are all onionxt's (engine socket callbacks and watchdogs). holde-em's advisory row reads 158/330
+harness; the 11 exemptions are all onionxt's (engine socket callbacks and watchdogs). holde-em's advisory row reads 172/330
 and box2dxt's raw `b2*` row 131/376, each with an armed floor. Run
 `python3 tools/check-suite-coverage.py` rather than trusting these numbers.
 
@@ -353,8 +353,6 @@ manual dispatch (rule 5); the harness scaffold's non-adoption of the UI kit (D-1
 | 2 | Per-push CI is Linux only: add Windows lanes (a MinGW build and KATs on a Windows runner, including a 32-bit Python for the x86 DLL) and a mac lane, or record that dispatch-only is permanent | The x86-win32 DLL has never executed anywhere | M | owner |
 | 3 | The rest of the Core plan: a `verifymessage` second opinion on the 2011-format signed message (allowlisted in `kWaCoreMethods`, called by nothing); JSON-RPC batching for the Core backends (one POST per request today); a Node-screen card for the regtest sandbox's own mining address (Mine pays the wallet's first address) | Named as left in `coinxt/docs/bitcoin-core-plan.md` | M | none |
 | 4 | Restoring past the gap limit: a sync never extends the address window (windows extend on demand since 2026-09-03, a sync does not), so a restored wallet whose whole window is used can miss funds | Funds a restore cannot see | M | owner (it changes what a sync is) |
-| 5 | `waSaveWallet`'s write-result guard has no regression check: the boot model's `url_write` (riptide's shared boot runner) raises instead of setting `the result`, so a check could never fail. Model a failing write | A guard nobody can see fail | S | none (touches riptide's shared runner) |
-| 6 | Stale code and UI text: `native-coinxt.yml` says Windows and mac were never tried and cites the deleted IMPLEMENTATION-PLAN (rerun `sync-member-workflows.py`); `tools/package-extension.py` says "35 entry points (ABI 5)" (44 at ABI 7); the `examples/wallet-core.livecodescript` header and coin-wallet's carried copy still deny any engine record (the ledger has 2026-08-31 to 09-03); `waAboutText` says Core is "Scan tier only" (the watch tier was built 2026-09-04); `src/coinxt.livecodescript`'s phase-5 STATUS says a live testnet broadcast is owed; `src/coinxt.lcb` near line 329 cites `CLAUDE.md` for `optional Pointer`, which it now says not to use. Re-carry with `sync-demo-embeds.py` (the wallet gates take hours) | Stale claims carried into demos and the paste | S | none |
 | 7 | Chain inclusion: the wallet verifies no inclusion proof (no `get_merkle`, `gettxoutproof` or `getblockheader` in any script), so "confirmed" is the backend's word | A trust gap stated by the 2026-09-08 research, still true | M-L | owner (scope) |
 
 **Engine.**
@@ -529,9 +527,10 @@ The deferred menu (D-02; the five questions at the end of
 
 ### 3.3 holde-em
 
-- **v0.25.3, harness 44**, carrying onionxt. Built: the Phase 1 hotseat; 2d, 2e, 2f;
+- **v0.25.3, harness 45**, carrying onionxt. Built: the Phase 1 hotseat; 2d, 2e, 2f;
   the Phase 3 oracle; 4a-4e Level 2 compute with void-and-audit; Phase 5 DLEQ; 4f's
-  batch mask step. Coverage 158/330 game handlers, **102 with no test** (floor armed).
+  batch mask step. Coverage 172/330 game handlers, **88 with no test** (floor armed;
+  the third leaf tranche, section 24, named 14 more on 2026-09-24).
 - Folded records to **667/0 (2026-08-27, v0.25.2, harness 43)**. Played by a person:
   three hotseat hands (2026-08-17), and a first two-machine 2d contact (2026-08-27)
   where the hand dealt under the lobby overlay (v0.25.3 fixes it, statically).
@@ -542,8 +541,7 @@ The deferred menu (D-02; the five questions at the end of
 |---|---|---|---|---|
 | 1 | **Wire Level 2 into played hands.** The dealLevel gate refuses anything but 0 and 1 (`holde-em/src/holdem.livecodescript` ("unsupported deal level")). Needed: `shuffleStep` / `unmaskStep` on the wire, a `level=2` / `dleq=1` table config, the orchestration, a netsim section | The 4d machine it drives is pure and engine-green, but nothing plays on Level 2; it blocks 4f and the Phase 4 exit | L | none |
 | 2 | The Phase 1d / spec 11 animations: deal slides with a ~70 ms stagger; the squash-flip through `b2kSpriteOnFinish`; one-impulse `b2kForce` chip tosses; a `b2kSpriteMoveTo` pot push | Specified and unbuilt | M | engine (a tuning eye) |
-| 3 | **A third leaf tranche over the 102 untested handlers**, consensus-critical first: `heNetEngineFold`, `heNetTimeoutRearm`, `heNetTurnClockStart`, `heHandSettle`, `heBetPay`, the `heL2*` point helpers | Consensus code no test names | M | none |
-| 4 | Source comments: the "OPEN DECISION ... SPECTATOR" comment (spectators were deferred 2026-08-16; it is mirrored into the paste, so rebuild it) and two citations of the deleted IMPLEMENTATION-PLAN in the header; the header changelog stops at v0.25.1. Two comments still say the DLEQ calls never ran: the banner above `heL2HasDleq` (near line 4954, "the ABI-9 sx* call shapes have never run on an engine") and the section comment near line 16378 ("this section IS their first-contact harness", mirrored into the paste). Runbook rows 15 and 27 closed that on 2026-08-17 (Windows x86_64, OXT 9.6.3: 538/0 folded, a wrong unmask refused instantly and named), and the 2026-08-24 paste (584/0) ran the DLEQ proof and refusal legs green: relabel both to cite those records, leave the v0.22.0 changelog entry (a dated version record), then `python3 tools/build-suite-selftest.py` | Stale text in the shipped stack and the paste; the DLEQ pair understates engine evidence | S | none |
+| 3 | **More leaf tranches over the 88 untested handlers.** Section 24 (2026-09-24) named 14 consensus leaves (`heNetEngineFold`, `heNetTimeoutRearm`, `heNetTurnClockStart`, the `heBet*` leaves, `heL2ChainOrder`, `heL2VoidMark` and two `heL2*` point refusals). Still owed first: `heHandSettle`, which a harness cannot call as it stands because it sends `heNextHandTick`, which deals a hand (a seam, or a test of its pieces), and the rest of the `heL2*` point helpers | Consensus code no test names | M | none |
 | 5 | BEP44 profiles and play-money standings (spec 3/5/8.3): the `btDht*` BEP44 calls have 0 call sites | Build it or strike it from the spec | M | owner |
 | 6 | Seven to nine seats (a spec 1 goal; the build is 2-6) | Build it or strike it | M | owner |
 | 7 | The optional direct-TCP upgrade lane (pairwise `btMapPort` plus engine sockets, for sub-100 ms actions; 0 call sites) | Build it or strike it | M | owner |
@@ -558,7 +556,7 @@ decision (a role a joiner can choose, or a sit-request the host answers).
 
 | # | Run | Where | Row | Green (in brief) |
 |---|---|---|---|---|
-| 1 | Suite paste, then the standalone stack with `heRunSelftest`, then 2-3 hotseat hands | S1 items 1, 2, 4 | 14 | v0.25.3 / harness 44, 0 failed, 5 skips; RECORD the total rather than matching 667; the first run of the four 2026-09-09 wire-arity checks and of the nested `heBetApply` trunc guard (whether `trunc` of a non-number throws is unrecorded) |
+| 1 | Suite paste, then the standalone stack with `heRunSelftest`, then 2-3 hotseat hands | S1 items 1, 2, 4 | 14 | v0.25.3 / harness 45, 0 failed, 5 skips; RECORD the total rather than matching 667; the first run of the four 2026-09-09 wire-arity checks and of the nested `heBetApply` trunc guard (whether `trunc` of a non-number throws is unrecorded) |
 | 2 | Phase 1 exit: a full 6-seat hotseat session with side pots and all 17 cards on screen, plus the confirming eye on the 720p layout | S1 + PERSON | 42 | as named |
 | 3 | 2f bring-up | S2 item 6 | 20 | the Tor pill's states; the invite `<64hex>@<56base32>.onion`; the derived address equals `oxServiceAddress` |
 | 4 | 2d re-run and the Phase 2 exit: a 6-seat table over rp1 across at least 3 machines on real home networks (extra instances fill seats); a mid-hand disconnect that reconnects and resumes; tampered and replayed envelopes provably dropped; receipts matching on every seat | S3 item 4 (3+ seats) | 18 | as named |
