@@ -9,7 +9,10 @@ script "No Cloud Quick Share"
 -- code to a friend; they paste it in and the file transfers straight from your
 -- machine to theirs. No server, no upload, no size limit - it is plain
 -- peer-to-peer BitTorrent with the DHT finding the peers, wrapped in a one-card
--- stack. Built on the TorrentXT / SodiumXT / OnionXT OpenXTalk extensions.
+-- stack. Built on the TorrentXT and SodiumXT OpenXTalk extensions, plus OnionXT
+-- for the Tor path - which is pure script and rides INSIDE this stack script
+-- (embedded between the sentinel lines below since 2026-08-24), so it is
+-- never something to install.
 --
 -- HOW TO USE: open OXT, make a one-card stack, paste THIS into the STACK script
 -- (Object > Stack Script), then close+reopen. It builds its own UI and starts a
@@ -21,12 +24,19 @@ script "No Cloud Quick Share"
 -- is caught by shutdownRequest so the session always shuts down properly. In
 -- the standalone builder: (1) include the org.openxtalk.library.torrent
 -- extension - plus org.openxtalk.library.sodium (SodiumXT) for the passphrase
--- features and OnionXT for the Tor features; both are OPTIONAL and the app
--- fails closed with a clear message when they are absent; (2) include the
--- Internet library (libURL) - used only for the public-IP lookup on the web
--- link path, and harmless if left out (the lookup is try-guarded); (3) no
--- other inclusions, externals, or resources are needed. Downloads land in
--- Documents/No Cloud Quick Share on every platform.
+-- features, the LAN editor password and the Tor path; SodiumXT is OPTIONAL and
+-- the app fails closed with a clear message when it is absent. OnionXT is NOT
+-- in the builder and needs no ticking: it is not a packaged extension, and
+-- this script carries it, so the Tor path ships with the stack. What the Tor
+-- path still needs at runtime is SodiumXT plus a LOCAL Tor daemon on the
+-- user's machine (system tor, or Tor Browser running) - a user install, not
+-- a builder inclusion; (2) include the Internet library (libURL) - used only
+-- for the public-IP lookup on the web link path, and harmless if left out
+-- (the lookup is try-guarded); (3) include the JSON Library if end-users
+-- should add their own endpoints with a .qsroutes.json (without it that one
+-- feature is off and everything else works; docs/building-a-standalone.md);
+-- (4) no other inclusions, externals, or resources are needed. Downloads
+-- land in Documents/No Cloud Quick Share on every platform.
 --
 -- THE DEMO (two machines, both running this stack):
 --   1. On machine A, drag a file onto the drop area (or click it to choose one).
@@ -2226,7 +2236,7 @@ local sStallWarned      -- array: torrent handle -> "true" once the one-time log
 -- OnionXT (optional Tor anonymity, Model C). When the Tor toggle is on, a file's
 -- bytes travel over an OnionXT onion stream (both IPs hidden) and NO torrent is
 -- created. All of this is inert unless sHasOnion. See the ox* wiring below.
-local sHasOnion         -- "true" if OnionXT loads AND SodiumXT works (probed once)
+local sHasOnion         -- "true" if the embedded OnionXT answers AND SodiumXT works (probed once)
 local sTorReady         -- "true" if Tor is bootstrapped + ready (LIVE cache; re-checked at use)
 local sTorSend          -- "true" while the "Send privately over Tor" toggle is armed
 local sWebServe         -- "true" while the "Also offer a Tor Browser download link" checkbox is on
@@ -2344,10 +2354,12 @@ constant kQsVerify = "BTXQSVERIFY"
 
 -- ---- OnionXT (optional Tor anonymity) constants ------------------------------
 -- Model C: with the Tor toggle on, the file's bytes ride an OnionXT onion stream
--- (both IPs hidden) and NO torrent is created. Requires the OnionXT extension +
--- SodiumXT + a LOCAL Tor daemon. Every ox* call is against OnionXT's published
--- ABI; verified statically here, needs an on-engine OXT pass with a running Tor
--- daemon (the project convention - see CLAUDE.md and docs/what-it-hides.md).
+-- (both IPs hidden) and NO torrent is created. Requires SodiumXT + a LOCAL Tor
+-- daemon; OnionXT itself is carried in this script (the embed above, since
+-- 2026-08-24), so it is never the missing piece. Every ox* call is against
+-- OnionXT's public API; verified statically here, needs an on-engine OXT pass
+-- with a running Tor daemon (the project convention - see CLAUDE.md and
+-- docs/what-it-hides.md).
 constant kTorCodePrefix = "BTXTOR1:"   -- marks an anonymous (Tor) share code
 constant kOnionMagic = "BTXO"          -- 4 ASCII bytes: file-stream frame sync + go request
 constant kOnionVer = 1                 -- stream protocol version
@@ -3542,6 +3554,12 @@ command qsStart
       qsOnionStart
    else
       qsOnionPill
+      -- the pill is a short chip, so the how-to-fix goes to the Activity log.
+      -- The SodiumXT case is already said by the encryption line just below;
+      -- the carried-copy case would otherwise be said nowhere.
+      if sCanEncrypt is "true" then
+         qsLog "Private / Tor is OFF:" && qsOnionOffReason()
+      end if
    end if
    if sCanEncrypt then
       qsLog "No Cloud Quick Share " & kQsAppVersion & " ready. Drag a file to share it, or paste a code to download. Tip: type a passphrase first to ENCRYPT a file end-to-end."
@@ -3694,7 +3712,7 @@ command qsShareFile pPath
    -- onion stream and NO torrent is created (mutual-exclusion invariant, section 3).
    if sTorSend is "true" then
       if not sHasOnion then
-         qsLog "Turn off 'Send privately over Tor', or install OnionXT + SodiumXT + a local Tor daemon."
+         qsLog "Turn off 'Send privately over Tor', or fix this first:" && qsOnionOffReason()
          exit qsShareFile
       end if
       if not qsOnionReadyNow() then
@@ -4772,10 +4790,17 @@ function qsCapabilityLine
    else
       put "SodiumXT NO (" & qsEncryptAdvice() & ")" into tOut
    end if
+   -- OnionXT is CARRIED in this script since 2026-08-24, so "not in the
+   -- message path" (this line's old wording) can no longer be the reason:
+   -- the Tor path is off because SodiumXT is, or because the carried copy
+   -- did not answer (qsOnionOffReason's two cases, shortened for one line;
+   -- the SodiumXT half above uses the same truthiness, so the two agree).
    if sHasOnion then
-      put tOut & ", OnionXT OK" into tOut
+      put tOut & ", OnionXT OK (carried in this script)" into tOut
+   else if sCanEncrypt then
+      put tOut & ", OnionXT carried but did not answer (re-paste the whole script)" into tOut
    else
-      put tOut & ", OnionXT not in the message path" into tOut
+      put tOut & ", Tor path off (needs SodiumXT; OnionXT is carried in this script)" into tOut
    end if
    if sHasJson then
       return tOut & ", JSON OK"
@@ -4896,15 +4921,21 @@ end qsMaybeDecryptFinished
 -- ==== OnionXT: optional Tor anonymity (Model C) ==============================
 -- The whole block below is inert unless sHasOnion. It NEVER touches libtorrent:
 -- an anonymous transfer creates no torrent and makes no DHT call (the mutual-
--- exclusion invariant). Every ox* handler is OnionXT's published ABI; this is
--- verified statically (tools/check-livecodescript.py) and NEEDS an on-engine OXT
--- pass with a running Tor daemon before any runtime claim (see CLAUDE.md, the
--- "VERIFY on the OXT pass" discipline).
+-- exclusion invariant). Every ox* handler is the public API of the OnionXT
+-- copy embedded above (pure script since 2026-08-24, so there is no extension
+-- to load and no ABI to match); this is verified statically
+-- (tools/check-livecodescript.py) and NEEDS an on-engine OXT pass with a
+-- running Tor daemon before any runtime claim (see CLAUDE.md, the "VERIFY on
+-- the OXT pass" discipline).
 
--- Is OnionXT installed AND SodiumXT working? OnionXT depends on SodiumXT, so both
--- must be present for any anonymous transfer (even a plaintext one). A guarded
--- oxVersion() probe, mirroring qsCanEncrypt. VERIFY: oxVersion resolves only when
--- the OnionXT extension is loaded.
+-- Does the embedded OnionXT answer, AND is SodiumXT working? OnionXT depends on
+-- SodiumXT, so both must hold for any anonymous transfer (even a plaintext one).
+-- A guarded oxVersion() probe, mirroring qsCanEncrypt. oxVersion is defined in
+-- this very script, so the try can only fire on a copy of the script that lost
+-- its embed (a hand-trimmed paste, say) - which is what the probe is still
+-- for: that case must fail closed with a re-paste message (qsOnionOffReason),
+-- not throw from the first ox* call. A running tor daemon is NOT probed here;
+-- the pill and qsOnionReadyNow re-check that live, at the moment of use.
 function qsHasOnion
    local tV, tErr
    if not sCanEncrypt then
@@ -4917,6 +4948,30 @@ function qsHasOnion
    end try
    return (tV is not empty)
 end qsHasOnion
+
+-- WHY the Tor path is off, as the one sentence every site uses (the
+-- qsEncryptAdvice discipline: advice that cannot contradict itself across the
+-- log lines). Since 2026-08-24 OnionXT is CARRIED in this script, so "install
+-- OnionXT" - what two log lines here said until 2026-09-24, beside a Tor chip
+-- reading "extension not installed" - is never the answer, and telling a user
+-- to install something they already have is the failure qsEncryptAdvice was
+-- written to stop. With sHasOnion false the path is off
+-- because SodiumXT is (qsEncryptAdvice names missing versus ABI-skewed), or
+-- because the carried copy did not answer. The tor DAEMON is not this
+-- function's case: it is a separate, live condition (the pill's "Tor: not
+-- running"), though the SodiumXT sentence names it so a user fixes both in
+-- one go. Only meaningful after the startup probes; before them it says so.
+-- Verified statically; needs an OXT pass (checklist section 8's "Without
+-- SodiumXT" line is where it shows).
+function qsOnionOffReason
+   if sCanEncrypt is "false" then
+      return "the Tor path needs SodiumXT and a running local Tor daemon (OnionXT itself is carried in this script)." && qsEncryptAdvice()
+   end if
+   if sCanEncrypt is "true" then
+      return "the OnionXT copy carried in this script did not answer - re-paste the WHOLE script into the stack script, then close and reopen."
+   end if
+   return "startup has not finished its capability probes yet."
+end qsOnionOffReason
 
 -- Live, authoritative Tor readiness, re-read at the moment of use (never trust the
 -- cached sTorReady for a go/no-go). oxIsReady() is true only at 100% bootstrap.
@@ -5051,7 +5106,10 @@ command qsOnionPill
       -- before the session, and an unprobed state says so rather than
       -- accusing an extension that is installed and working.
       if sCanEncrypt then
-         put "Tor: extension not installed" into tState
+         -- NOT "extension not installed" (the pre-2026-08-24 wording): OnionXT
+         -- is carried in this script, so SodiumXT-working-but-no-Tor means
+         -- the carried copy did not answer. The log has the full sentence.
+         put "Tor: re-paste script" into tState
       else if sCanEncrypt is "false" then
          put "Tor: needs SodiumXT" into tState
       else
@@ -9699,7 +9757,7 @@ end qsCwIpReply
 command qsReceiveOnion pCode
    local tRest, tOnion, tB64, tB64Salt, tB64Verify, tName, tPass, tSalt, tKey, tStream, tErr
    if not sHasOnion then
-      qsLog "This is a private Tor share, but OnionXT (or SodiumXT) is not installed - ask your friend to share it normally, or install OnionXT + SodiumXT + Tor."
+      qsLog "This is a private Tor share, but" && qsOnionOffReason() && "Or ask your friend to share it normally."
       exit qsReceiveOnion
    end if
    put char ((the number of chars of kTorCodePrefix) + 1) to -1 of pCode into tRest
