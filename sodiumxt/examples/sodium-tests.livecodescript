@@ -25,11 +25,14 @@
 -- 2026-08-18 (Linux) - the "not yet run on an engine" claim that stood here
 -- about it was corrected 2026-08-23, the third stale copy of that sentence
 -- fixed that day (docs/api-reference.md corrected its own 2026-08-19,
--- src/sodium.lcb's the same day as this one). The ONE section with no engine
--- run today is testChaCha20 (the ABI 10 raw stream xor added 2026-08-23):
--- verified statically (tools/check-livecodescript.py), vectors pinned against
--- the C KATs and the independent RFC 8439 reference, still waiting on an OXT
--- pass.
+-- src/sodium.lcb's the same day as this one). testChaCha20 (the ABI 10 raw
+-- stream xor added 2026-08-23, its vectors pinned against the C KATs and the
+-- independent RFC 8439 reference) ran green in that 2026-08-24 paste, all 7
+-- checks, on Windows x86_64; the "ONE section with no engine run today"
+-- sentence that stood here after that run contradicted the line above it and
+-- was corrected 2026-09-24. Owed now is platform cover only: that DLL was a
+-- mingw build that no longer ships, so the MSVC DLLs, the mac dylib and Linux
+-- at ABI 10 each still need a run (CLAUDE.md's platform table).
 
 local sLog
 local sPass
