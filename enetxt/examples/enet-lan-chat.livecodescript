@@ -28,10 +28,16 @@ script "EnetLanChat"
 --      27099) and clicks Join. Chat.
 --
 -- HONESTY (the suite convention): every en* call here is individually
--- engine-proven (member selftest green through 2026-08-13), but this stack
--- has not run BETWEEN TWO REAL MACHINES, and its UI was unified onto the
--- suite kit 2026-08-14 - so the stack as a whole is verified statically and
--- needs an OXT pass (the two-machine leg is the closing pass's item 6).
+-- engine-proven (the member selftest standalone on 2026-08-13, folded in the
+-- suite paste through 2026-08-27). THIS stack ran once, on ONE Linux machine,
+-- on 2026-08-18, after the kit restyle of 2026-08-14: that first run found
+-- the empty-handle throw and the `number of keys` parse failure (enetxt
+-- CLAUDE.md gotchas 2 and 3), and after the fixes the maintainer reported
+-- host and join chatting on that one machine (environment not captured). It
+-- has not run BETWEEN TWO REAL MACHINES: that leg is suite runbook row 6,
+-- session S3 item 6, and until it runs the two-machine behaviour is verified
+-- statically; needs an OXT pass. (The closing pass's leg B, S3 item 1, is a
+-- different enet leg, in tests/suite-closing-pass.livecodescript.)
 --
 -- THE LOOK is the suite UI kit, carried verbatim between the marker lines
 -- (master: tools/ui-kit.livecodescript; the drift gate holds every copy
@@ -819,7 +825,7 @@ command ecBuild
          "Chat relays through the host IN THE CLEAR on your LAN - this is a" \
          & " transport demo, not a private messenger. Every en* handler is" \
          & " engine-proven; the two-machine run of THIS stack is the leg" \
-         & " still open (runbook item 6).", \
+         & " still open (runbook row 6).", \
          "16,552,544,596"
    set the uEcUiVersion of this stack to kEcUiVersion
    unlock screen

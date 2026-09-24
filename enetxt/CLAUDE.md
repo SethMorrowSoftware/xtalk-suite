@@ -81,7 +81,11 @@ The shim cites these by number; keep the numbering.
    where `enx_connect` leaves a peer) does `enet_host_flush` + `enet_peer_reset`, queuing no
    event and leaving the peer DISCONNECTED. So the fix tests the POST-call state: DISCONNECTED
    owes nothing, retire now; anything else owes an event and the drain retires it.
-   `retire_peer` is idempotent, so racing the drain is harmless.
+   `retire_peer` is idempotent, so racing the drain is harmless. Driven since 2026-09-24 by
+   `enet_smoke_test`'s CONNECTING block: a dead port, no poll, the precondition that the
+   peer really is CONNECTING, then the retire at the call, `ENX_ERR_STALE`, no event, and
+   cancel-and-retry on a one-peer host where a leaked handle would have aliased the retry's
+   live peer. Green under ASan/UBSan; reverting the fix fails four of its checks.
 2. **An EMPTY handle into `enHostDestroy` (`in pHost as Integer`) THROWS** and silently kills
    the poll chain (suite engine note 6.4). Guard every handle-clearing path; the suite's
    `tools/check-lcb-call-types.py` checks the boundary.
@@ -122,9 +126,10 @@ The shim cites these by number; keep the numbering.
 ## Status
 
 The whole `en*` surface is engine-proven (standalone async 2026-08-13; folded through
-2026-08-27). No engine has loaded the 2026-09-12 binaries, and the gotcha-1 fix is
-compile-verified with no smoke-test block driving it. Still un-exercised: the LAN chat demo
-between two real machines (closing-pass leg B), `enet-internet-chat` across two networks
+2026-08-27). No engine has loaded the 2026-09-12 binaries. The gotcha-1 fix is driven
+natively by the smoke test (2026-09-24, ASan/UBSan), not by an engine. Still un-exercised:
+the LAN chat demo between two real machines (runbook row 6, S3 item 6), the closing pass's
+separate enet leg B (S3 item 1), `enet-internet-chat` across two networks
 (verified statically; needs a two-machine, two-network OXT pass), a standalone async re-run
 on the current binaries, and any Mac engine load. Open work: the suite's docs/WORK-PLAN.md.
 

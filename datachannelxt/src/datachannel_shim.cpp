@@ -169,6 +169,37 @@ std::unordered_map<int, int> g_peerLastGathering;  /* guarded by g_mu */
  * reap_orphan_channels() does the actual delete from the script thread. */
 std::vector<int> g_orphanChans;   /* guarded by g_mu */
 
+#ifdef DCX_TEST_SEAMS
+/* TEST SEAMS - compiled ONLY into the test-only `datachannelxt_seams` library
+ * (CMakeLists, DATACHANNELXT_BUILD_TESTS), never into the shipped
+ * `datachannelxt` target, so the committed binaries, their export table and
+ * the ABI are untouched by them.
+ *
+ * WHY THEY EXIST: cb_data_channel's two orphan exits (C++ gotcha 7, fixed
+ * 2026-09-09) cannot be reached deterministically through the public ABI.
+ * "The peer already freed" is a race between a libdatachannel thread and a
+ * dcx_peer_free on the script thread; "the handle table full" needs 65536 live
+ * channels. Each seam makes ONE real condition true on demand, at the exact
+ * point the production code tests it, and changes nothing else:
+ *   g_seamForgetPeer  - the next N inbound-channel peer lookups miss, exactly
+ *                       as they miss once dcx_peer_free erased the mapping;
+ *   g_seamRefuseInbound - the next N INBOUND register_channel calls (the
+ *                       callback's; announceIncoming) take the early return a
+ *                       full alloc() takes, before any mapping or callback.
+ * Why inbound-only rather than a cap on the whole table (the first draft):
+ * over an in-process loopback, B's rtc thread can register the inbound twin of
+ * A's new channel BEFORE dcx_channel_new registers A's own - the DCEP open is
+ * on the wire as soon as rtcCreateDataChannel returns - so a cap refused
+ * whichever of the two came second, and the test failed about one run in
+ * four. Counting only the callback's registrations makes the exit it drives
+ * deterministic; what the callback sees, a 0 from register_channel, is the
+ * same either way.
+ * Both guarded by g_mu (the callback reads them on an rtc thread). The
+ * driving test is tests/orphan_channel_test.cpp. */
+int g_seamForgetPeer = 0;      /* guarded by g_mu */
+int g_seamRefuseInbound = 0;   /* guarded by g_mu */
+#endif
+
 /* The bounded inbound queue (the safety valve — see dcx_abi.h §drain). The
  * caps are far beyond what a polling app ever queues (a 30 ms poll drains
  * thousands of events per second); they exist so an app that STOPS polling
@@ -390,6 +421,14 @@ int register_channel(int dcId, int peerHandle, bool announceIncoming,
         ChannelState cs;
         cs.rtcId = dcId;
         cs.peerHandle = peerHandle;
+#ifdef DCX_TEST_SEAMS
+        /* The table-full seam: the same early return a full alloc() takes,
+         * before any mapping or callback exists (see g_seamRefuseInbound). */
+        if (announceIncoming && g_seamRefuseInbound > 0) {
+            --g_seamRefuseInbound;
+            return 0;
+        }
+#endif
         h = g_channels.alloc(cs);
         if (h == 0) return 0;
         g_rtcChanToHandle[dcId] = h;
@@ -495,6 +534,14 @@ void cb_data_channel(int pc, int dc, void *) {
         {
             std::lock_guard<std::mutex> lock(g_mu);
             peerH = peer_handle_for_rtc_locked(pc);
+#ifdef DCX_TEST_SEAMS
+            /* The peer-already-freed seam: miss the lookup as a completed
+             * dcx_peer_free would have (see g_seamForgetPeer). */
+            if (g_seamForgetPeer > 0) {
+                --g_seamForgetPeer;
+                peerH = 0;
+            }
+#endif
         }
         /* The peer went away before we could claim this channel. libdatachannel
          * has ALREADY created it and holds it in its own map with an open SCTP
@@ -1357,6 +1404,39 @@ DCX_API void set_queue_caps(int maxEvents, long long maxBytes) {
     g_maxQueueBytes  = (maxBytes > 0) ? static_cast<size_t>(maxBytes)
                                       : kDefaultMaxQueueBytes;
 }
+
+#ifdef DCX_TEST_SEAMS
+/* The seam hooks (see g_seamForgetPeer / g_seamRefuseInbound). Only the test-only
+ * `datachannelxt_seams` library defines them; the shipped library has no such
+ * symbol, which is why they are declared under the same #ifdef in the header. */
+DCX_API void seam_forget_next_peer(int n) {
+    std::lock_guard<std::mutex> lock(g_mu);
+    g_seamForgetPeer = (n > 0) ? n : 0;
+}
+
+DCX_API void seam_refuse_next_inbound(int n) {
+    std::lock_guard<std::mutex> lock(g_mu);
+    g_seamRefuseInbound = (n > 0) ? n : 0;
+}
+
+DCX_API int seam_orphans_pending(void) {
+    std::lock_guard<std::mutex> lock(g_mu);
+    return static_cast<int>(g_orphanChans.size());
+}
+
+DCX_API int seam_pending_orphan(int i) {
+    std::lock_guard<std::mutex> lock(g_mu);
+    if (i < 0 || static_cast<size_t>(i) >= g_orphanChans.size()) return 0;
+    return g_orphanChans[static_cast<size_t>(i)];
+}
+
+/* Does libdatachannel still hold this rtc id? Its ids are a monotonic counter,
+ * never reused, so "gone" after a reap means OUR delete removed it. A cheap rtc
+ * getter, called with g_mu NOT held (rule 4). */
+DCX_API int seam_rtc_channel_alive(int rtcId) {
+    return rtcGetDataChannelLabel(rtcId, nullptr, 0) >= 0 ? 1 : 0;
+}
+#endif
 
 }  // namespace test
 }  // namespace dcx

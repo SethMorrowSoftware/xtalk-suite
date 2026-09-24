@@ -94,6 +94,11 @@ The demos carry `datachannel-helpers` between sentinels owned by the suite's
   readout. Needs TorrentXT installed too (probed at startup; fails closed).
 - **`tests/datachannel-selftest.livecodescript`** - verifies an installed extension end to
   end: the synchronous surface, a live loopback, message round-trips, teardown.
+- **`tests/browser-peer.html` + `tests/datachannel-browser-peer.livecodescript`** - the
+  browser-interop pair: a static page (plain JavaScript `RTCPeerConnection`) and a
+  message-box-driven OXT script, signaling by copy/paste. They check that `dcSendText`
+  arrives in a browser as a string and `dcSendData` as an ArrayBuffer, and the reverse.
+  Procedure: [docs/browser-interop.md](docs/browser-interop.md).
 
 Every demo builds its own UI idempotently, treats the poll interval as a latency knob, and
 calls `dcCleanup` on `closeStack`, written bare (a zero-argument call in statement position
@@ -110,7 +115,8 @@ one machine on Linux and Windows on 2026-08-18, which surfaced engine notes 1.6,
 working between two machines on one LAN on 2026-08-27 (which stack ran was not recorded).
 Still open: the loopback demo (no engine record), a two-machine run recorded against the
 dht-chat demo by name, a call across two networks with real NAT traversal, and browser
-interop.
+interop on an engine (the page and the OXT half exist; the page has run only headlessly,
+2026-09-24, against the committed library through its C ABI).
 `CLAUDE.md` carries the dated ledger.
 
 ## Install
@@ -135,6 +141,7 @@ native worker threads at quit.
 | [docs/api-reference.md](docs/api-reference.md) | All 31 public `dc*` handlers, events, error codes, constants and the app rules. |
 | [docs/architecture.md](docs/architecture.md) | How libdatachannel's worker threads and OXT's single thread share a process safely: the bounded queue, the lock discipline, handles, the codec. |
 | [docs/building.md](docs/building.md) | Building on all five targets, the ASan and TSan lanes, packaging and CI. |
+| [docs/browser-interop.md](docs/browser-interop.md) | The browser leg: the page, the OXT half, the copy/paste blob format, the procedure and what has run. |
 | [CLAUDE.md](CLAUDE.md) | Maintainer memory: rules, gotchas, the engine evidence ledger. |
 | [THIRD-PARTY-LICENSES.md](THIRD-PARTY-LICENSES.md) | License texts for libdatachannel, libjuice, usrsctp and plog. |
 
@@ -146,7 +153,9 @@ Suite-wide documents: https://github.com/SethMorrowSoftware/xtalk-suite/blob/mai
 shuttle, echo) through the exported ABI, and CI runs it three ways: Release, **ASan+UBSan
 across the whole dependency stack**, and **ThreadSanitizer** across the same (this is the
 family's one binding with true cross-thread callbacks; TSan is the gate that proves the
-queue). `bash tools/run-gates.sh` runs the static gates without a native build: the unified
+queue). `tests/orphan_channel_test.cpp` rides the same lanes. It drives the two orphan exits
+of the remote-channel callback against `datachannelxt_seams`, a test-only build of the same
+shim that is never shipped. `bash tools/run-gates.sh` runs the static gates without a native build: the unified
 `check-livecodescript.py`, the record golden, `check-record-registry.py` and the manifest.
 Build commands and the sanitizer lanes: [docs/building.md](docs/building.md).
 
