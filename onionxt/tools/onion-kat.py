@@ -5,11 +5,15 @@ onion-kat.py - known-answer vectors for OnionXT's pure-compute paths.
 OnionXT itself adds NO cryptography (CLAUDE.md rule 1): the ed25519 identity is a
 SodiumXT call and the SHA-512 / SHA3-256 primitives are SodiumXT features (docs/08).
 This tool is a *reference cross-check*, not a second implementation that ships. It
-exists to answer the conformance question doc 09 (item 11) raises: the determinism
-claim "seed -> .onion" has a known answer worth pinning, so an OXT implementer can
-validate the livecodescript base32 and the address<->key mapping against fixed
-vectors, and a SodiumXT implementer can confirm the seed->ed25519 pubkey and the
-seed->expanded-key steps against libsodium.
+exists to answer a conformance question: what is OnionXT's conformance vector? The
+determinism claim "seed -> .onion" has a known answer worth pinning, so an OXT
+implementer can validate the livecodescript base32 and the address<->key mapping
+against fixed vectors, and a SodiumXT implementer can confirm the seed->ed25519
+pubkey and the seed->expanded-key steps against libsodium. (The question was item 11
+of docs/09-open-questions.md, which the 2026-09-24 docs consolidation deleted; its
+design defaults now live in docs/01, and the question is stated here in full
+because a citation into a deleted file answers nothing. The SOCKS and control wire
+behaviour stays an on-engine, live-Tor question: no vector can pin it.)
 
 What it pins:
   1. base32 (RFC 4648 lowercase, no padding) encode/decode round-trips - the exact

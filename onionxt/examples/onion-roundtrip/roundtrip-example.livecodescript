@@ -7,6 +7,14 @@
 --
 -- sSharedKey stands in for a key both sides hold (from key agreement or a pinned
 -- contact in a real app, never a hardcode). The exact sx* API is SodiumXT's.
+--
+-- Role A shows its state in two fields, "myAddress" and "state", and
+-- startServiceA BUILDS them on the host card if they are missing (2026-09-24).
+-- Until then this script wrote into both and nothing created either, so the
+-- first status callback on a fresh stack would have died on a missing field,
+-- and the README told the operator to build them by hand first. Verified
+-- statically; needs an OXT pass + a live-Tor pass (the round trip itself,
+-- onionxt/CLAUDE.md still-VERIFY item 10).
 
 local sService
 local sStream
@@ -15,6 +23,8 @@ local sSharedKey
 -- ===================== Role A: publish and accept ==========================
 
 on startServiceA
+   rtBuildFields
+   put "connecting to Tor" into field "state"
    put demoSharedKey() into sSharedKey
    oxSetControlPort 9051                 -- 9151 for Tor Browser
    oxSetCallbackOwner the long id of me
@@ -87,7 +97,35 @@ on onClientStream pStream, pEvent, pData
    end if
 end onClientStream
 
--- ===================== shared demo helper ==================================
+-- ===================== shared demo helpers =================================
+
+private command rtBuildFields
+   -- The two fields onStatusA writes. Idempotent: each is created only if it
+   -- is not already on the card, then (re)placed, so calling startServiceA
+   -- twice, or on a card that already has them, changes nothing but their
+   -- position. The harness scaffold's stMakeLabel shape: create, then name
+   -- `the last field` (tools/harness-scaffold.livecodescript).
+   --
+   -- PIN FIRST. `create field` and an unqualified `field "x"` both resolve
+   -- against THE DEFAULTSTACK (engine note 5.3), and startServiceA is typed
+   -- into the message box or sent from a button, so pin to the stack whose
+   -- script this is before building anything - the same line onStatusA
+   -- carries. `there is no field` asks about the CURRENT card only (engine
+   -- note 5.6), which is the card these fields belong on.
+   set the defaultStack to the short name of this stack
+   rtMakeField "myAddress", "20,20,620,44"
+   rtMakeField "state", "20,52,620,76"
+end rtBuildFields
+
+private command rtMakeField pName, pRect
+   if there is no field pName then
+      create field
+      set the name of the last field to pName
+   end if
+   -- Left UNLOCKED on purpose: the operator selects and copies the 62-char
+   -- address out of "myAddress" to hand it to instance B.
+   set the rect of field pName to pRect
+end rtMakeField
 
 private function demoSharedKey
    -- A placeholder shared key: 32 bytes (the secretbox key size), derived by

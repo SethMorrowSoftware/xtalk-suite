@@ -92,7 +92,7 @@ source:
 
 | Handler | Kind | Purpose |
 |---|---|---|
-| `oxLaunchTor pTorPath, pDataDir, pSocksPort, pControlPort` | command | Write `<pDataDir>/onionxt-torrc` (the ports, default 9050 / 9051, cookie auth, `DataDirectory`, `__OwningControllerProcess`) and `open process` tor with `-f` it. Does not wait for bootstrap: poll `oxConnectControl` / `oxBootstrapProgress`. |
+| `oxLaunchTor pTorPath, pDataDir, pSocksPort, pControlPort` | command | Write `<pDataDir>/onionxt-torrc` (the ports, default 9050 / 9051, cookie auth, `DataDirectory`, `__OwningControllerProcess`, and tor's log to `<pDataDir>/onionxt-tor.log`) and `open process` tor with `-f` it. `the result` is an `"OnionXT: ..."` reason if either argument is empty, the torrc write fails or `open process` reports a failure; the SOCKS and control ports are pointed at the launched tor only after a launch is accepted. Does not wait for bootstrap: poll `oxConnectControl` / `oxBootstrapProgress`. |
 | `oxStopTor` | command | Send `SIGNAL SHUTDOWN` if control is authenticated, then disconnect control (idempotent). |
 
 ## Callbacks the app implements

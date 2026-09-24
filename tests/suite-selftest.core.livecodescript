@@ -38,22 +38,24 @@ script "xTalkSuiteSelfTest"
 -- Riptide's phase-2 single-engine work is therefore closed; only its
 -- two-machine propagation criterion remains under runbook item 6.
 --
--- WHAT HAS NOT RUN ON AN ENGINE (2026-08-17): the skip channel through
--- stMergeReturned, the third count in stSummaryCounts, and stMergeFloor with
--- it. The rule was exercised against every member's real summary spelling and
--- against mutations of them by a hand port of the parse, which is what a
--- headless environment can do and no more - verified statically; needs an OXT
--- pass. The one number it puts at risk is onionxt's floor of 41: too high, and
--- a green run reports one extra FAIL line naming the member and printing what
--- it attempted, which is the failure mode this file chooses on purpose over an
--- uncaught error.
+-- THE SKIP CHANNEL (2026-08-17): stMergeReturned's third count, read by
+-- stSummaryCounts, and stMergeFloor with it. Written against every member's
+-- real summary spelling and mutations of them by a hand port of the parse, it
+-- then RAN on 2026-08-20 (Windows, 1981/0/1): onionxt's one skip was printed
+-- inline and merged into that run's total (onionxt/CLAUDE.md's evidence
+-- ledger). What has never fired on an engine is stMergeFloor's REFUSAL branch.
+-- The one number that puts at risk is onionxt's floor, re-derived to 51 on
+-- 2026-09-24 beside its call site below (verified statically; needs an OXT
+-- pass): too high, and a green run reports one extra FAIL line naming the
+-- member and printing what it attempted, which is the failure mode this file
+-- chooses on purpose over an uncaught error.
 --
 -- THIS IS NO LONGER A SAMPLER, AND THAT IS THE BIG CHANGE. It used to drive
 -- about a dozen handlers per member and say so. It now carries EVERY member's
 -- own deep self-test as well, folded in whole by tools/build-suite-selftest.py:
 --
 --   sodiumxt        sxSelfTest()      24 groups, the entire sx* surface
---   onionxt         oxSelfTest()      11 sections, all offline, and since
+--   onionxt         oxSelfTest()      12 sections, all offline, and since
 --                                     2026-08-17 the only folded harness
 --                                     whose summary carries THREE counts:
 --                                     passed, failed and skipped
@@ -2079,7 +2081,7 @@ command stRunMemberHarnesses
    -- stMergeFloor for what it does and does not catch. TWO of the six are
    -- measured today:
    --
-   --   OnionXT   41, derived section by section at its call site below. It is
+   --   OnionXT   51, derived section by section at its call site below. It is
    --             the member whose harness can degrade the furthest (its skips
    --             span a third of its items), which is why it was measured
    --             first and why the skip channel exists at all.
@@ -2111,19 +2113,20 @@ command stRunMemberHarnesses
 
    if sHaveOnion then
       try
-         -- THE FLOOR IS 41, and the arithmetic is here because a number with
+         -- THE FLOOR IS 51, and the arithmetic is here because a number with
          -- no derivation beside it is a number nobody dares to change - which
          -- is how a ratchet quietly becomes a decoration. onionxt's harness
-         -- runs ten sections; SEVEN of them can bail out, and since 2026-08-17
-         -- every bail-out counts as one skip. Attempted = checks + skips, per
-         -- section, worst case:
+         -- runs twelve sections; nine of them can bail out, and since
+         -- 2026-08-17 every bail-out counts as one skip. Attempted = checks +
+         -- skips, per section, worst case:
          --    1 version and capabilities     6   unconditional
          --    2 initial state                1   3 checks, or 1 skip when this
          --                                       session is already authed
-         --    3 fail-closed arguments        4   3 unconditional, + 2 pre-auth
+         --    3 fail-closed arguments        6   5 unconditional, + 4 pre-auth
          --                                       checks or 1 skip
-         --    4 unknown handles              5   unconditional
-         --    5 idempotent teardown          2   unconditional
+         --    4 unknown handles             10   unconditional
+         --    5 idempotent teardown          3   2 unconditional, + oxStopTor:
+         --                                       1 check, or 1 skip if authed
          --    6 address round-trip           6   2 addresses x (2 + 1 either
          --                                       way: re-encode or skip)
          --    7 address negative paths       4   3, + 1 either way
@@ -2132,19 +2135,37 @@ command stRunMemberHarnesses
          --   10 loopback guard               1   18 checks, or 1 skip where
          --                                       oxHostOfSocket is not in this
          --                                       script
+         --   11 oxh* HTTP helpers            1   27 checks, or 1 skip where
+         --                                       onion-httpd is not in this
+         --                                       script (THIS paste: it is not)
+         --   12 SOCKS timeout reasons        1   3 checks, or 1 skip where
+         --                                       the library is not in this
+         --                                       script
          --                                  --
-         --                                  41
-         -- Its best case is 61, and THIS paste normally sees 58-61: section
-         -- 10's probe resolves here because the generator embeds the library
-         -- into this same script, which is the whole reason that section is
-         -- testable at all. The floor is deliberately the environment-proof 41
-         -- rather than the paste-expected 58: a floor that can false-fail an
-         -- engine session is worth less than a floor that catches less, and
-         -- the degraded case is no longer invisible anyway - it arrives as 8
-         -- skips on the summary line. Cross-check on the arithmetic: onionxt's
-         -- CLAUDE.md records a 2026-08-12 engine run at 43 checks, and
-         -- sections 1-9 at their best case are exactly 43.
-         stMergeReturned "OnionXT", ox1oxSelfTest(), 41
+         --                                  51
+         -- THIS paste normally attempts 70-75: sections 10 and 12 resolve here
+         -- because the generator embeds the library into this same script,
+         -- section 11 is one skip because it does not embed onion-httpd, and
+         -- an already-authenticated session trades sections 2 and 3's seven
+         -- checks for two skips. The floor is deliberately the
+         -- environment-proof 51 rather than the paste-expected 70: a floor that
+         -- can false-fail an engine session is worth less than a floor that
+         -- catches less, and the degraded case is no longer invisible anyway -
+         -- it arrives as up to 11 skips on the summary line.
+         --
+         -- RE-DERIVED 2026-09-24. This read 41 over ten sections until then,
+         -- and 41 had gone stale without going WRONG: section 3 grew two
+         -- pre-auth checks and section 4 five unconditional ones (2026-08-20,
+         -- 2026-08-24), and section 11 arrived, all without the floor moving -
+         -- a floor below the true minimum still passes, so nothing said so.
+         -- Cross-check on the arithmetic: onionxt's CLAUDE.md records a
+         -- 2026-08-12 engine run at 43 checks, which was sections 1-9 at their
+         -- best case then, and 2026-08-17's 61, which was those 43 plus section
+         -- 10's 18; sections 1-9 read 53 at best today, those 43 plus the 7
+         -- above plus 2026-09-24's three (oxTransportDial and oxLaunchTor in
+         -- section 3, oxStopTor in section 5). Verified statically; needs an
+         -- OXT pass.
+         stMergeReturned "OnionXT", ox1oxSelfTest(), 51
       catch tError
          stSectionFailed "OnionXT deep self-test", tError
       end try
