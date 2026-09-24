@@ -181,6 +181,15 @@ Code comments cite these numbers; keep them.
   silently dropped records, mislabelled drafts and hid devices. `sLanPeerNames` drives disconnect
   drops. Two nodes never run the relay; the runbook's phase-6 step 8 is the third-device test.
   Verified statically; needs an OXT pass (never run on an engine).
+- C6's key is the name's lowercase HEX (`raLanDevKey`, 2026-09-24), never the name string: the
+  engine folds array-key case (suite engine note 2.7), so "Phone" and "phone", two devices on the
+  wire, shared one seq slot and the lower clock-seeded counter was silently dropped. Lowercasing
+  on purpose would merge them the same way; hex is one-to-one on the bytes and spelled in one
+  case. `sLanPeerLabel` keeps the name for display. check-demo-boot drives both names through
+  `raLanSyncReceive` and checks every per-device key set against the fold (the model's dicts do
+  not fold, so "both applied" alone passed the old code); test-demo-boot seeds the old keying
+  back. Verified statically + headless; needs an OXT pass (runbook phase-6 step 8's case-fold
+  bullet).
 - Channel 2 (2026-08-16): the media handoff is RSL1 "M", a signed channel-0 POINTER
   (info-hash + name + size) at the torrent rail; channel 2 stays dark (enet's 60000-byte budget).
   Strict lowercase hash, zeros refused. Honest limit: the bytes ride the torrent rail (the swarm

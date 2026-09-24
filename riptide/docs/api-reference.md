@@ -215,7 +215,11 @@ per-handshake binder, which is what lets a host relay a record verbatim.
 The verifiers are verify-then-parse (structure to the byte, the
 signature, and only then the fields). Authenticated, NOT encrypted: the
 LAN sees draft plaintext. Device names are cooperative labels among your
-own devices, not identities (all of them share the one keypair).
+own devices, not identities (all of them share the one keypair). A
+receiver keeps its per-device seq by the name's BYTES, so "Phone" and
+"phone" are two devices; an xTalk array folds the case of its keys, so
+keying that state by the name string merges them and silently drops the
+lower counter. The demo keys by the name's hex (`raLanDevKey`, 2026-09-24).
 
 **The channel-2 decision.** Spec section 7's bulk media handoff is a
 fourth record kind, `"M"`, on CHANNEL 0 - a small signed POINTER at the

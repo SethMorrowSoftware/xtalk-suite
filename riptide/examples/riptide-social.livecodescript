@@ -1,10 +1,10 @@
 script "riptideSocialApp"
 
 -- riptide-social.livecodescript - the Riptide Social flagship stack, phases
--- 1-7: one identity, one public feed, one follow, media over torrents,
--- serverless encrypted DMs plus the call, the LAN device mesh, and the
--- anonymous persona, on four self-building cards (Feed, Messages, Devices,
--- Anon).
+-- 1-8: one identity, one public feed, one follow, media over torrents,
+-- serverless encrypted DMs plus the call, the LAN device mesh, the
+-- anonymous persona, and reach over Nostr, on five self-building cards
+-- (Feed, Messages, Devices, Anon, Nostr).
 --
 -- WHAT IT WALKS (RIPTIDE-SOCIAL-SPEC.md sections 10.3 phases 1-3): create or
 -- unlock the Argon2id-sealed master seed (RIPTKEY1, a 97-byte file the APP
@@ -37,8 +37,15 @@ script "riptideSocialApp"
 -- a media-bearing post to the DHT; machine B fetched that head, walked the
 -- chain, VERIFIED the authorSig, surfaced the media info-hash from the
 -- verified post, joined A's swarm, and played what came back. Phases 1-3
--- through the real UI, not the harness. (Not distinguished in the report:
--- whether playback began MID-download or after a fast complete transfer.)
+-- through the real UI, not the harness. That report did not say whether
+-- playback began MID-download or after a fast complete transfer, so that
+-- was measured on its own, on two machines on 2026-08-27, and came out
+-- NEGATIVE as then wired: Play unlocked on file EXISTENCE, which libtorrent
+-- satisfies at metadata time with a hollow file, so the player got about
+-- 0% real data. Fixed the same day (raMediaFrontReady: Play waits for 5%
+-- of the file's CONTIGUOUS front, on the feed and LAN-handoff paths); the
+-- faststart re-run that would show playback starting below 100% is owed
+-- (docs/two-machine-runbook.md).
 --
 -- PHASE 4 IS DONE TOO (2026-08-15, TWO MACHINES): chat worked BOTH WAYS -
 -- the sealed RSI1 intro, the deterministic-role crypto_kx session, and the
@@ -61,11 +68,14 @@ script "riptideSocialApp"
 -- MUTUAL - plus, since 2026-08-15, the SYNC PAYLOAD over the admitted
 -- mesh: a draft field debounced on the poll timer and broadcast as
 -- signed channel-0 records, feed-seq claims applied as max, and
--- channel-1 presence/typing per peer, every inbound record
--- verify-then-apply with strangers refused and logged), and the ANON
--- card (phase 7, needs tor). The navigation and reference forms are the
--- ones the Feed and Messages cards proved; what has never run is these
--- flows themselves.
+-- channel-1 presence/typing per device, every inbound record
+-- verify-then-apply with strangers refused and logged), the ANON card
+-- (phase 7, needs tor), and the NOSTR card's relay flows (phase 8, built
+-- 2026-08-29: the five-card stack's boot was reported working on an
+-- engine that day - riptide/CLAUDE.md's ledger - but publishing, the
+-- follow timeline and the bridge have never met a relay from this
+-- stack). The navigation and reference forms are the ones the Feed and
+-- Messages cards proved; what has never run is these flows themselves.
 --
 -- SETUP: install sodiumxt (REQUIRED - identity cannot exist without it) and
 -- torrentxt (required for publish/fetch; identity still works without), then
@@ -4703,12 +4713,13 @@ function nxrSocketTimeout pSocketID
 end nxrSocketTimeout
 
 -- ---- riptide/src/riptide.livecodescript ----
--- riptide.livecodescript - Riptide Social, phases 1-4 + 6 + 7: the identity
+-- riptide.livecodescript - Riptide Social, phases 1-4 and 6-8: the identity
 -- foundation, the pure-compute feed layer, the live feed layer, the media
--- layer, the DM layer, the LAN mesh admission + sync layer, and the
--- anonymous persona layer, as a pure-LiveCodeScript library over the
--- installed suite extensions (docs/RIPTIDE-SOCIAL-SPEC.md sections 3-9).
--- Phase 5 (live sessions) adds no library surface: its SDP offer/answer
+-- layer, the DM layer, the LAN mesh admission + sync layer, the anonymous
+-- persona layer, and the Nostr reach layer (the key, the RSN1 bridge, the
+-- RIPTAPP1 sealed app state), as a pure-LiveCodeScript library over the
+-- installed suite extensions (docs/RIPTIDE-SOCIAL-SPEC.md sections 3-9 and
+-- 8A). Phase 5 (live sessions) adds no library surface: its SDP offer/answer
 -- ride the phase-4 DM message kinds "O"/"A" over the existing
 -- secretstream, and its spec-6.2 typing lane is a second dc channel the
 -- demo opens - both demo wiring.
@@ -4725,9 +4736,15 @@ end nxrSocketTimeout
 -- The phase-3 MEDIA layer (rsMediaCreate / rsMediaFetch / rsMediaStatus,
 -- 2026-08-14) CLOSED 2026-08-15 on TWO machines (recorded in
 -- riptide/CLAUDE.md): a follower fetched and PLAYED an attached video
--- through the demo stack, the phase-3 done-criterion met - the one
--- unmeasured nuance is playback starting visibly MID-download, which a
--- fast complete transfer can mimic. The phase-4 DM layer (rsDm* /
+-- through the demo stack, the phase-3 done-criterion met. Playback
+-- starting MID-download was then MEASURED, and came out NEGATIVE: on two
+-- machines on 2026-08-27 the demo unlocked Play on file EXISTENCE, which
+-- libtorrent satisfies at metadata time with a hollow file, so the player
+-- got about 0% real data. Fixed in the demo the same day
+-- (raMediaFrontReady: Play waits for 5% of the file's CONTIGUOUS front,
+-- judged from rsMediaStatus); the faststart re-run that would show it
+-- starting below 100% is owed (docs/two-machine-runbook.md, "The phase-3
+-- faststart re-run"). The phase-4 DM layer (rsDm* /
 -- rsBuildPrekey / rsBuildIntro, 2026-08-14) closed the SAME day, same
 -- record: two machines exchanged authenticated encrypted DMs with no
 -- server, chat both ways - the sealed RSI1 intro, the deterministic-role
@@ -4748,8 +4765,20 @@ end nxrSocketTimeout
 -- chunked-post rail (rsChunkPostText / rsPublishChunkedPost /
 -- rsIngestBlob / rsAssembleChunkText / rsPostTextCapacity, backlog A2),
 -- the BTXO receive-path stream machine (rsBtxoStreamStep, A3), and the
--- piece-deadline streaming plan (rsMediaStreamPlan, B7) - are verified
--- statically and vector-pinned headlessly; none has an engine pass yet.
+-- piece-deadline streaming plan (rsMediaStreamPlan, B7) - were written
+-- verified-statically and vector-pinned headlessly, and their COMPUTE
+-- halves ran engine-green on 2026-08-24 (OXT 9.6.3, Windows x86_64: the
+-- suite paste at 2373/0/3, riptide 391/391, the kind-C rail and the BTXO
+-- receive path included; riptide/CLAUDE.md's ledger). For
+-- rsMediaStreamPlan that run covers its two refusal checks (a dead and a
+-- bogus handle), the only ones its harness section has. The LIVE halves
+-- keep their labels: a kind-C post walked by a second machine, BTXO over
+-- a real Tor stream, deadlines on a playing fetch. The phase-8 layer
+-- (built 2026-08-29) is verified statically and executed headlessly
+-- (tools/check-script-vectors.py); it needs an OXT + live-relay pass
+-- (riptide/CLAUDE.md's status). The harness sections added after
+-- 2026-08-24 (Nostr, app state, the watermarks, the u64 bound, the
+-- 996-byte cap) have not run on an engine yet.
 --
 -- WHAT THIS LAYER OWNS
 --   - the master seed and the RIPTKEY1 sealed key file (Argon2id + secretbox,
@@ -4844,6 +4873,14 @@ end nxrSocketTimeout
 --     existing rsDmOpenIntro verify-then-parse under the persona's own
 --     subkeys). The APP owns the oxh* routes and every stream; nothing
 --     here does I/O, so all three are testable offline.
+--   - the phase-8 Nostr REACH layer (2026-08-29, spec section 8A; its own
+--     section below says what it owns and what it refuses to): the
+--     subkey-4 Nostr key through the bounded validity ladder, the RSN1
+--     identity bridge signed by BOTH keys (build, verify, the DHT publish
+--     and ingest under its own salt, the kind-30078 event round trip), the
+--     `r`-tag magnet media convention, and the RIPTAPP1 sealed app-state
+--     envelope (subkey 5). The Nostr protocol itself is NostrXT's, called
+--     through nx*/nxr* and never re-implemented.
 --
 -- EXTENSION DEPENDENCIES (probed, never assumed; rsProbeCapabilities):
 --   SodiumXT  HARD  the trust root; without it this library refuses to work.
@@ -4908,6 +4945,14 @@ end nxrSocketTimeout
 --     "riptide-lan-s" || the whole record body, kind byte included
 --   BTXO header: magic(4) ver(1) flags(1) nameLen(u16 BE) name total(u64)
 --   BTXO data frame: len(u32 BE) bytes; the stream ends on a zero-len frame
+--   RSN1 bridge (phase 8): magic(4) handle(64 ascii hex) nostrPub(64 ascii
+--     hex) seq(u64 BE) timestamp(u64 BE) edSig(64) schnorrSig(64); exactly
+--     276 bytes. Both sigs cover "riptide-nostr-b" || the 148-byte body:
+--     ed25519 over those bytes, BIP-340 over their SHA-256
+--   RIPTAPP1 app state (phase 8): "RIPTAPP1" "S" sxSecretBox(UTF-8 state,
+--     subkey-5 key); the plaintext caps at 1048576 bytes and must
+--     round-trip as UTF-8. The state TEXT is the app's, not a wire format,
+--     and no golden pins these bytes (the box's nonce is random)
 --   Onion serving (spec 8.2/8.3, HTTP bodies over the persona's onion):
 --     GET / -> the anon feed page, deterministic UTF-8 HTML (rsAnonFeedPage)
 --     GET /prekey -> the persona's RSK1 record as 264 lowercase hex chars
@@ -7695,7 +7740,11 @@ end rsLanSyncSigOk
 -- draftLen(u16 BE) draft sig(64). The draft is ABSOLUTE state (the whole
 -- current text, empty meaning cleared), and the per-device seq is what
 -- lets a receiver refuse a replayed or reordered draft: apply only a seq
--- strictly above the last one applied for that device.
+-- strictly above the last one applied for that device. "That device" is
+-- the signed name compared by its BYTES, so "Phone" and "phone" are two
+-- devices - and an xTalk array FOLDS the case of its keys (the suite's
+-- engine note 2.7), so a receiver must not index per-device state by the
+-- name string itself; the demo keys by the name's hex (raLanDevKey).
 function rsLanBuildDraft pName, pSeq, pDraftText, pMaster
    local tName, tDraft, tOut, tSig
    put textEncode(pName, "UTF-8") into tName
@@ -12898,6 +12947,19 @@ local sLanInit         -- "true" once enInitialize succeeded (teardown guard)
 -- IDENTITY - all your devices derive ONE LAN keypair, so any admitted
 -- device can sign any name - but that is the recorded threat model (these
 -- are your own devices), not a hole this keying opens.
+--
+-- ...and the KEY is the name's case-stable HEX (raLanDevKey), never the
+-- name string itself (2026-09-24). The engine FOLDS CASE ON ARRAY KEYS
+-- (engine note 2.7, OBSERVED 2026-09-15: `tA["A"]` and `tA["a"]` are ONE
+-- element while `the caseSensitive` is false, its default), so keyed by
+-- the raw name, devices "Phone" and "phone" - two devices on the wire,
+-- where the name is compared by its BYTES everywhere else - shared one seq
+-- slot, and whichever clock-seeded counter was lower was dropped by the
+-- silent path above: C6's own failure shape, one fold later. Setting
+-- `the caseSensitive` in every handler that touches these arrays would
+-- also work, until the first handler that forgot it; a key no fold can
+-- merge needs no discipline at the use sites. The name itself is kept for
+-- display in sLanPeerLabel.
 local sLanSeq          -- my draft seq (monotonic per device)
 local sLanTick         -- my presence tick (monotonic per device)
 local sLanDraftLast    -- the draft text last BROADCAST (convergence compare)
@@ -12906,21 +12968,22 @@ local sLanDraftNextOk  -- ms gate: the earliest next draft broadcast
 local sLanPresenceAt   -- ms of my last presence broadcast
 local sLanTypingUntil  -- ms deadline while my draft edits count as typing
 local sLanFeedLast     -- the feed seq last broadcast (send only on change)
-local sLanPeerSeq      -- device name -> highest draft seq applied
-local sLanPeerDraft    -- device name -> that device's latest draft text
-local sLanPeerTick     -- device name -> highest presence tick applied
-local sLanPeerTyping   -- device name -> "true" while that device is typing
-local sLanPeerSeen     -- device name -> ms of its last applied presence
--- ...and the one thing that still has to be per PEER: which device names
+local sLanPeerSeq      -- device key -> highest draft seq applied
+local sLanPeerDraft    -- device key -> that device's latest draft text
+local sLanPeerTick     -- device key -> highest presence tick applied
+local sLanPeerTyping   -- device key -> "true" while that device is typing
+local sLanPeerSeen     -- device key -> ms of its last applied presence
+local sLanPeerLabel    -- device key -> the device NAME as signed (display)
+-- ...and the one thing that still has to be per PEER: which devices
 -- reached us over which enet link, so a disconnect drops exactly the state
 -- that link fed us (on a host that is the one device it admitted; on a
 -- joiner the host's link fed us every relayed device, and losing the host
--- loses all of them). Nested array, name -> "true", the set-of-names idiom
-local sLanPeerNames    -- peer id -> array of device names it contributed
+-- loses all of them). Nested array, device key -> "true", the set idiom
+local sLanPeerNames    -- peer id -> array of device keys it contributed
 -- the channel-0 media handoff (the channel-2 decision: a signed POINTER
 -- at the phase-3 torrent path; the offer outlives the mesh because the
 -- swarm does - only the per-device replay tracking dies with its link)
-local sLanPeerMediaSeq -- device name -> highest handoff seq applied
+local sLanPeerMediaSeq -- device key -> highest handoff seq applied
 local sLanMediaHash    -- the latest verified offer's 40-hex info-hash
 local sLanMediaName    -- ...its file leaf name (display only)
 local sLanMediaSize    -- ...its claimed size in bytes (display only)
@@ -13241,8 +13304,9 @@ command raBuildFeedCard
          into field "raTheirFeed"
 
    -- the phase-3 media strip: a walked post auto-fills the hash; Fetch
-   -- joins the swarm sequentially, and the button becomes Play the moment
-   -- the on-disk file is openable (mid-download, by design)
+   -- joins the swarm sequentially, and the button becomes Play once the
+   -- file's contiguous FRONT is on disk (raMediaFrontReady - mid-download
+   -- by design; file existence alone was the 2026-08-27 negative)
    uiLabel "raMediaL", "media hash:", "608,514,694,532", 11
    uiInput "raMediaHash", "698,514,1050,534"
    uiButton "raMediaGet", "Fetch + play", "1056,510,1184,534"
@@ -13873,7 +13937,7 @@ end raClearKeys
 -- The clean-close half of the secretstream, and the reason the far side
 -- no longer sits under "-- channel open with ... --" forever after we hang
 -- up. libsodium's FINAL tag IS the "this stream ended" signal (the spec's
--- section 5.3 names sxIsFinalTag for exactly this), so one last push with
+-- section 5.2 names sxIsFinalTag for exactly this), so one last push with
 -- final true turns a hang-up into a protocol event instead of silence.
 -- Two properties worth stating because both are load-bearing: the body is
 -- FILLER - the tag carries the meaning and the far side never renders it,
@@ -14845,7 +14909,7 @@ command raHandleRp1 pEvent
                   raDmDropPeer tPeer
                   break
                end try
-               -- the FINAL tag is the far side's clean close (spec 5.3):
+               -- the FINAL tag is the far side's clean close (spec 5.2):
                -- a hang-up is a protocol event, not silence. The body it
                -- rides is filler by construction (raDmPushClose), so it is
                -- deliberately NOT parsed or rendered - the close line IS
@@ -15659,6 +15723,7 @@ private command raLanSyncReset
    put empty into sLanPeerTick
    put empty into sLanPeerTyping
    put empty into sLanPeerSeen
+   put empty into sLanPeerLabel
    put empty into sLanPeerNames
    -- the media handoff: per-device replay tracking resets with the mesh
    -- (a new mesh may be a different set of devices); the OFFER itself and
@@ -15668,16 +15733,48 @@ private command raLanSyncReset
    raLanPaintDrafts
 end raLanSyncReset
 
+-- The case-stable array key for a device NAME: the lowercase hex of its
+-- UTF-8 bytes (2026-09-24; the declarations above say why the name
+-- itself cannot be the key). Not a lowercased name either: folding on
+-- purpose merges "Phone" and "phone" exactly as the engine's array fold
+-- does, and they are two devices - the wire compares the name by its
+-- bytes, and each device seeds its own counter from its own clock, so a
+-- merged slot silently drops whichever is lower. Hex is one-to-one on the
+-- bytes and spelled in ONE case, so no fold can merge two keys, whatever
+-- `the caseSensitive` is in the handler doing the lookup. sxBin2Hex is the
+-- library's own route to hex (rsBinToHexString, on the identity path the
+-- 2026-08-12 engine pass ran), and SodiumXT has already verified the
+-- record by the time anything is keyed; the try only keeps a throw out
+-- of the pump. EMPTY means "cannot key it", and every caller refuses the
+-- record then: one empty slot for everything would be the collision
+-- again, for every device at once. Verified statically + headless
+-- (check-demo-boot drives two names differing only by case); needs an
+-- OXT pass.
+private function raLanDevKey pName
+   local tHex, tErr
+   if pName is empty then
+      return empty
+   end if
+   try
+      put textDecode(sxBin2Hex(textEncode(pName, "UTF-8")), "ASCII") \
+            into tHex
+   catch tErr
+      return empty
+   end try
+   return tHex
+end raLanDevKey
+
 -- Remember that this LINK carried this device, so a disconnect can drop
 -- exactly the state it fed us. Called on every APPLIED record (a refused
--- one must leave no trace). Names are a nested set, never a delimited
--- list: a device name is arbitrary UTF-8 up to the library's cap and may
--- legitimately contain a return, which would corrupt a line list.
-private command raLanNoteName pPeer, pName
-   if pName is empty then
+-- one must leave no trace), with the device's raLanDevKey. A nested set,
+-- never a delimited list: a device name is arbitrary UTF-8 up to the
+-- library's cap and may legitimately contain a return, which would
+-- corrupt a line list (the hex key cannot, but the set idiom stays).
+private command raLanNoteName pPeer, pKey
+   if pKey is empty then
       exit raLanNoteName
    end if
-   put "true" into sLanPeerNames[pPeer][pName]
+   put "true" into sLanPeerNames[pPeer][pKey]
 end raLanNoteName
 
 -- The disconnect half: forget every device this link contributed. On a
@@ -15705,6 +15802,7 @@ private command raLanDropPeerNames pPeer
       delete variable sLanPeerTick[tDev]
       delete variable sLanPeerTyping[tDev]
       delete variable sLanPeerSeen[tDev]
+      delete variable sLanPeerLabel[tDev]
       delete variable sLanPeerMediaSeq[tDev]
    end repeat
 end raLanDropPeerNames
@@ -15827,6 +15925,9 @@ end raLanSyncTick
 -- master is even verified), then the library's verify-then-parse (a bad
 -- signature IS the stranger case the runbook watches for), then the
 -- monotonic apply (a replay or reorder is a silent no-op, not an error).
+-- Every per-device slot is keyed by raLanDevKey(name), never by the name
+-- string (the declarations say why); the NAME is what the log and the
+-- panels show, the key is only ever an array index.
 command raLanSyncReceive pPeer, pKind, pBytes
    local tRec, tLast, tDev
    if sLanDevices[pPeer] is empty then
@@ -15846,7 +15947,12 @@ command raLanSyncReceive pPeer, pKind, pBytes
       -- and which the library's contract names ("a seq strictly above the
       -- last one applied FOR THAT DEVICE"). The peer is only the LINK it
       -- came over, and on a joiner that link is the host for every device.
-      put tRec["name"] into tDev
+      put raLanDevKey(tRec["name"]) into tDev
+      if tDev is empty then
+         raLanLog "draft from" && tRec["name"] && \
+               "refused: its device name could not be keyed"
+         exit raLanSyncReceive
+      end if
       put sLanPeerSeq[tDev] into tLast
       if tLast is empty then
          put -1 into tLast
@@ -15855,9 +15961,10 @@ command raLanSyncReceive pPeer, pKind, pBytes
          exit raLanSyncReceive
       end if
       raLanNoteName pPeer, tDev
+      put tRec["name"] into sLanPeerLabel[tDev]
       put tRec["seq"] into sLanPeerSeq[tDev]
       put tRec["draft"] into sLanPeerDraft[tDev]
-      raLanLog "draft from" && tDev && "seq" && tRec["seq"] && \
+      raLanLog "draft from" && tRec["name"] && "seq" && tRec["seq"] && \
             "applied"
       raLanPaintDrafts
       raLanRelay pPeer, pKind, pBytes
@@ -15891,7 +15998,12 @@ command raLanSyncReceive pPeer, pKind, pBytes
       -- by device, not by link: presence is what the Devices panel paints
       -- from, so keyed by peer a joiner's relayed devices would overwrite
       -- the host's row instead of getting one of their own
-      put tRec["name"] into tDev
+      put raLanDevKey(tRec["name"]) into tDev
+      if tDev is empty then
+         raLanLog "presence from" && tRec["name"] && \
+               "refused: its device name could not be keyed"
+         exit raLanSyncReceive
+      end if
       put sLanPeerTick[tDev] into tLast
       if tLast is empty then
          put -1 into tLast
@@ -15900,6 +16012,7 @@ command raLanSyncReceive pPeer, pKind, pBytes
          exit raLanSyncReceive
       end if
       raLanNoteName pPeer, tDev
+      put tRec["name"] into sLanPeerLabel[tDev]
       put tRec["tick"] into sLanPeerTick[tDev]
       if tRec["typing"] is true then
          put "true" into sLanPeerTyping[tDev]
@@ -15922,7 +16035,12 @@ command raLanSyncReceive pPeer, pKind, pBytes
       -- the handoff shares the draft record's per-device seq space, so it
       -- keys the same way (two devices offering media over one relaying
       -- host must not share one replay counter)
-      put tRec["name"] into tDev
+      put raLanDevKey(tRec["name"]) into tDev
+      if tDev is empty then
+         raLanLog "media offer from" && tRec["name"] && \
+               "refused: its device name could not be keyed"
+         exit raLanSyncReceive
+      end if
       put sLanPeerMediaSeq[tDev] into tLast
       if tLast is empty then
          put -1 into tLast
@@ -15931,12 +16049,13 @@ command raLanSyncReceive pPeer, pKind, pBytes
          exit raLanSyncReceive
       end if
       raLanNoteName pPeer, tDev
+      put tRec["name"] into sLanPeerLabel[tDev]
       put tRec["seq"] into sLanPeerMediaSeq[tDev]
       put tRec["infoHash"] into sLanMediaHash
       put tRec["fileName"] into sLanMediaName
       put tRec["fileSize"] into sLanMediaSize
-      put tDev into sLanMediaFrom
-      raLanLog "media offer from" && quote & tDev & quote & ":" && \
+      put tRec["name"] into sLanMediaFrom
+      raLanLog "media offer from" && quote & tRec["name"] & quote & ":" && \
             tRec["fileName"] && "(" & tRec["fileSize"] && "bytes) -" && \
             "Fetch + play below pulls it over the torrent rail."
       raLanPaintMediaOffer
@@ -15956,11 +16075,12 @@ command raLanPaintDrafts
       put "No drafts from your other devices yet." into tRows
    else
       put empty into tRows
-      -- label from the key, which IS the device: looking the name up in
-      -- sLanDevices would label every relayed draft with the HOST's name
-      -- on a joiner, because that is the only peer a joiner ever has
+      -- label from the device's OWN signed name (sLanPeerLabel, by the
+      -- same key): looking the name up in sLanDevices would label every
+      -- relayed draft with the HOST's name on a joiner, because that is the
+      -- only peer a joiner ever has. The key is hex, never shown.
       repeat for each key tDev in sLanPeerDraft
-         put "--" && tDev && "(seq" && \
+         put "--" && sLanPeerLabel[tDev] && "(seq" && \
                sLanPeerSeq[tDev] & ") --" & return & \
                sLanPeerDraft[tDev] & return after tRows
       end repeat
@@ -15988,6 +16108,9 @@ command raLanPaintDevices
    if there is no field "raLanDevices" of card "raDevices" then
       exit raLanPaintDevices
    end if
+   -- the raLanPaintDrafts rule: a row whose only change is letter case
+   -- (two devices "Phone" and "phone") must still repaint the panel
+   set the caseSensitive to true
    if sLanHost is empty then
       put "Not on a mesh. Host this device, or Join another by its LAN IP." into tRows
    else
@@ -15995,13 +16118,18 @@ command raLanPaintDevices
       -- plus every name we have applied presence from. Painting from
       -- sLanDevices alone showed exactly ONE row on a joiner - the host -
       -- because a joiner's only peer IS the host and every other device
-      -- reaches it relayed, under that same peer id
+      -- reaches it relayed, under that same peer id. The set is keyed by
+      -- raLanDevKey like every per-device slot (the declarations say why)
+      -- and holds the NAME to paint.
       put empty into tSet
       repeat for each key tPeer in sLanDevices
-         put "true" into tSet[sLanDevices[tPeer]]
+         put raLanDevKey(sLanDevices[tPeer]) into tDev
+         if tDev is not empty then
+            put sLanDevices[tPeer] into tSet[tDev]
+         end if
       end repeat
       repeat for each key tDev in sLanPeerSeen
-         put "true" into tSet[tDev]
+         put sLanPeerLabel[tDev] into tSet[tDev]
       end repeat
       if the number of lines of the keys of tSet is 0 then
          if sLanIsServer is "true" then
@@ -16012,7 +16140,7 @@ command raLanPaintDevices
       else
          put the milliseconds into tNow
          put empty into tRows
-         -- B4 (2026-08-23): reverse the DIRECT links (peer -> name) so a
+         -- B4 (2026-08-23): reverse the DIRECT links (peer -> key) so a
          -- device with its own enet link carries the spec :360-362 live
          -- RTT/loss readout. Stats are a LINK property, so a RELAYED
          -- device's row stays bare on purpose - on a joiner its traffic
@@ -16020,14 +16148,17 @@ command raLanPaintDevices
          -- another device's name would be a lie.
          put empty into tLink
          repeat for each key tPeer in sLanDevices
-            put tPeer into tLink[sLanDevices[tPeer]]
+            put raLanDevKey(sLanDevices[tPeer]) into tDev
+            if tDev is not empty then
+               put tPeer into tLink[tDev]
+            end if
          end repeat
          -- deliberately unsorted: sorting would mean `the keys`, a
          -- RETURN-delimited list, and a device name is arbitrary UTF-8 to
          -- the library's cap - the one place a name carrying a return
          -- could garble the panel. Key order is stable for a given set.
          repeat for each key tDev in tSet
-            put tDev into tRow
+            put tSet[tDev] into tRow
             -- the channel-1 presence lane: [typing] while fresh, [quiet]
             -- once its cadence has gone silent (a crashed or wedged device
             -- must not paint as live forever). A directly-admitted device
@@ -16152,7 +16283,9 @@ command raLanSendMedia
 end raLanSendMedia
 
 -- One button, two moods (the media strip's discipline): Fetch until the
--- offered hash's on-disk file exists, then Play - mid-download by design.
+-- offered hash's file has its contiguous FRONT on disk (raMediaFrontReady;
+-- existence alone was the 2026-08-27 negative), then Play - mid-download
+-- by design.
 command raLanMediaGet
    local tHash, tH, tS, tPlayable, tWaitingFront
    if sLanMediaHash is empty then
@@ -17424,9 +17557,10 @@ end raNxTeardown
 -- ---- phase 3: the media strip ------------------------------------------------
 -- One button, two moods. While the watched item is not yet openable the
 -- click is Fetch: join the swarm for the hash in the field, sequentially
--- (pieces arrive front-first), and start watching. Once the on-disk file
--- exists for THAT hash the click is Play: hand the file to the system
--- player - mid-download on purpose, which is the phase-3 done-criterion.
+-- (pieces arrive front-first), and start watching. Once THAT hash's file
+-- has its contiguous front on disk (raMediaFrontReady; its mere existence
+-- was the 2026-08-27 negative) the click is Play: hand the file to the
+-- system player - mid-download on purpose, the phase-3 done-criterion.
 -- Fetching your OWN hash lands on the library's find path and plays the
 -- original file instantly (the seeder's copy is already complete).
 command raMediaGet
