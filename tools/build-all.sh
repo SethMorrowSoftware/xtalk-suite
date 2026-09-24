@@ -589,6 +589,24 @@ if [ -f tools/check-suite-coverage.py ]; then
   echo "== suite: tools/check-suite-coverage.py =="
   python3 tools/check-suite-coverage.py --check
 fi
+
+# --- suite-level: and the board RUNS -----------------------------------------
+# The three gates above prove the paste is current, structurally sound and
+# reaches the suite; none executes a line of it. The board (D-23) is booted
+# headlessly through riptide's stack runner in an all-absent profile and
+# driven through its real routes (a row's Run, Show, the filters, Copy, a
+# close mid-run, the boot self-check). It settles LOGIC only - no rendering,
+# parsing or message delivery - so it upgrades no honesty label. The fixture
+# runs FIRST: each case seeds one defect into a scratch copy of the paste and
+# requires the gate to fail on the check that names it.
+if [ -f tools/test-suite-ui-boot.py ]; then
+  echo "== suite: tools/test-suite-ui-boot.py =="
+  python3 tools/test-suite-ui-boot.py
+fi
+if [ -f tools/check-suite-ui-boot.py ]; then
+  echo "== suite: tools/check-suite-ui-boot.py =="
+  python3 tools/check-suite-ui-boot.py
+fi
 # tools/install-release-binaries.py is the one piece of code standing between a
 # freshly built artifact and a committed binary, and until now NOTHING ran it
 # except release-binaries.yml - the gates were silent about the tool whose whole
