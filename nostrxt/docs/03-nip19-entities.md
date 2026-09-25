@@ -1,9 +1,10 @@
 # 03 - NIP-19 Entities: bech32 for Humans
 
 > STATUS: engine-proven 2026-08-24 with the rest of the `nx*` core (Windows x86_64,
-> OXT 9.6.3). The bech32 layer is also pinned headlessly by `tools/nostr-kat.py`, which
-> sweeps the BIP-173 strings and the NIP-19 examples through the independent oracle and
-> asserts the one deliberate BIP-173 deviation ON PURPOSE (below).
+> OXT 9.6.3), and again 2026-09-24 (Windows, the engine reports Win32). The bech32 layer is
+> also pinned headlessly by `tools/nostr-kat.py`, which sweeps the BIP-173 strings and the
+> NIP-19 examples through the independent oracle and asserts the one deliberate BIP-173
+> deviation ON PURPOSE (below).
 
 Hex keys and ids are the protocol's native currency; bech32 entities are their
 human coat: typo-detecting (a BCH checksum that, at BIP-173's lengths, catches any

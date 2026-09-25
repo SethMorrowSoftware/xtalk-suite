@@ -203,8 +203,8 @@ the suite's `docs/OXT-ENGINE-NOTES.md`, and the labels in the source move with t
    whether it disturbs another library's sockets in the same app is unmeasured - assume it does,
    and note that OnionXT sets the same property around its own handshakes.
 6. `base64Encode`'s exact line-wrap behaviour: `nxB64Encode` strips both break bytes, and that
-   strip is proven correct in effect (2026-08-24); the raw emission is unrecorded
-   (`07-capabilities-required.md`).
+   strip is proven correct in effect (2026-08-24, again 2026-09-24); the raw emission is
+   unrecorded (`07-capabilities-required.md`).
 7. `sha1Digest` produces the RFC accept value on-engine - ANSWERED 2026-08-24:
    `nxrProcessHandshake` compares the relay's echo byte-exactly against `nxWsAcceptFor` and
    fails the connect on a mismatch, so reaching OPEN against wss://nos.lol is that derivation

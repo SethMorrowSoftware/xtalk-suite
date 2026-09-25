@@ -1,9 +1,10 @@
 # 02 - NIP-01 Events, Byte for Byte
 
 > STATUS: engine-proven 2026-08-24 with the rest of the `nx*` core (Windows x86_64,
-> OXT 9.6.3). Every byte-level claim here is also pinned headlessly: `tools/nostr-kat.py`
-> derives the fixture serializations, ids and signatures through the independent oracle,
-> and `tools/check-selftest-vectors.py` re-derives every constant the harness pins.
+> OXT 9.6.3), and again 2026-09-24 (Windows, the engine reports Win32). Every byte-level
+> claim here is also pinned headlessly: `tools/nostr-kat.py` derives the fixture
+> serializations, ids and signatures through the independent oracle, and
+> `tools/check-selftest-vectors.py` re-derives every constant the harness pins.
 
 This is the one wire format where "close enough" produces a wrong answer that LOOKS
 right: a serialization that differs by one byte yields a well-formed, plausible,

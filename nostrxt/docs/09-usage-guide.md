@@ -1,9 +1,9 @@
 # 09 - Usage Guide: From Zero to a Signed Event on a Relay
 
-> STATUS: the core-only recipes are engine-proven 2026-08-24 (Windows x86_64, OXT 9.6.3);
-> connect, handshake, publish and ok-confirm are live-proven the same day against wss://nos.lol.
-> The last section says exactly which recipes still carry "verified statically; needs a
-> live-relay pass".
+> STATUS: the core-only recipes are engine-proven 2026-08-24 (Windows x86_64, OXT 9.6.3) and
+> again 2026-09-24 (Windows, the engine reports Win32); connect, handshake, publish and
+> ok-confirm are live-proven 2026-08-24 against wss://nos.lol. The last section says exactly
+> which recipes still carry "verified statically; needs a live-relay pass".
 
 Task-oriented recipes, in the order an app grows. Each one states which extensions
 it needs; the two error conventions (core functions return empty and record for
@@ -443,8 +443,9 @@ a fresh `nxrConnect` if you want it back.
 
 Everything above that calls only the `nx*` core - recipes 0 through 5, plus 9 and 10 - is
 **engine-proven 2026-08-24** (Windows x86_64, OXT 9.6.3; 274 passed, 0 failed, 2 deliberate
-skips in the suite paste, both of them the relay layer). Of the relay recipes, connect,
-handshake, publish and the relay's ok-confirm are **LIVE-PROVEN the same day** against
+skips in the suite paste, both of them the relay layer) and again **2026-09-24** (Windows, the
+engine reports Win32; 277 passed, 0 failed, the same 2 skips). Of the relay recipes, connect,
+handshake, publish and the relay's ok-confirm are **LIVE-PROVEN 2026-08-24** against
 wss://nos.lol; the half of recipe 6 that subscribes and reads events back, the NIP-42 answer in
 recipe 8, the teardown in recipe 11 and every ws:// path keep **"verified statically; needs a
 live-relay pass"**. The wss:// run met an ordinary public host, so whether a bad certificate

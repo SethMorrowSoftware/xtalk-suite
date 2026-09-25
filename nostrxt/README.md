@@ -161,16 +161,18 @@ subscription end to end.
 **The nx* core is ENGINE-PROVEN 2026-08-24** (Windows x86_64, OXT 9.6.3:
 274 passed, 0 failed, 2 deliberate skips in the suite paste - both skips are
 the relay layer, which is not in the paste by design), the complete NIP-44
-path through the real SodiumXT ABI 10 cipher included. **The relay layer's
-connect / handshake / publish / confirm path is LIVE-PROVEN 2026-08-24**: the
-demo's boot self-check ran 9/9 green, then it opened a real TLS websocket to
-wss://nos.lol, signed a kind-1 note, published it and received the relay's
-ok-true for its id. Still "verified statically; needs a live-relay pass": the
-REQ/subscribe receive leg, the NIP-42 auth exchange, and every ws:// path
-(the proven run was secure). That run met an ordinary public host, so
-whether the engine refuses a bad certificate is unmeasured in both
-directions (the suite's `docs/OXT-ENGINE-NOTES.md` 6.8). The source carries a
-`VERIFY (on-engine)` label wherever an engine behaviour is assumed.
+path through the real SodiumXT ABI 10 cipher included, **and again
+2026-09-24** (Windows, the engine reports Win32: 277 passed, 0 failed, the
+same 2 skips), the pins of the 2026-09-09 parser fixes included. **The relay
+layer's connect / handshake / publish / confirm path is LIVE-PROVEN
+2026-08-24**: the demo's boot self-check ran 9/9 green, then it opened a real
+TLS websocket to wss://nos.lol, signed a kind-1 note, published it and
+received the relay's ok-true for its id. Still "verified statically; needs a
+live-relay pass": the REQ/subscribe receive leg, the NIP-42 auth exchange,
+and every ws:// path (the proven run was secure). That run met an ordinary
+public host, so whether the engine refuses a bad certificate is unmeasured in
+both directions (the suite's `docs/OXT-ENGINE-NOTES.md` 6.8). The source
+carries a `VERIFY (on-engine)` label wherever an engine behaviour is assumed.
 
 What IS machine-verified, headlessly, on every build (`bash tools/run-gates.sh`):
 

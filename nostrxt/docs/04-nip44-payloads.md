@@ -2,9 +2,10 @@
 
 > STATUS: COMPLETE since 2026-08-23 (the raw ChaCha20 cipher shipped upstream as SodiumXT ABI
 > 10's `sxChaCha20IetfXor`) and engine-proven 2026-08-24 with the rest of the `nx*` core
-> (Windows x86_64, OXT 9.6.3). On an installed SodiumXT older than ABI 10, encrypt/decrypt fail
-> closed by design (step 5). Relay-borne NIP-44 events (send one to a relay, read one back) keep
-> "verified statically; needs a live-relay pass".
+> (Windows x86_64, OXT 9.6.3), and again 2026-09-24 (Windows, the engine reports Win32). On an
+> installed SodiumXT older than ABI 10, encrypt/decrypt fail closed by design (step 5).
+> Relay-borne NIP-44 events (send one to a relay, read one back) keep "verified statically;
+> needs a live-relay pass".
 
 NIP-44 v2 is the encrypted-payload format that supersedes NIP-04: a versioned, padded,
 authenticated construction whose keys derive from a static ECDH between two Nostr identities.
@@ -135,8 +136,13 @@ over the committed CoinXT and SodiumXT binaries. On an engine:
 | Version byte, size floors, `#` flag, base64 strictness | the refusal checks |
 | The ChaCha20 keystream, end-to-end encrypt/decrypt | the official vector decrypts and re-encrypts byte-identically against a current SodiumXT; the fail-closed error against an older one |
 
-All of it ran green on 2026-08-24 (Windows x86_64, OXT 9.6.3) inside the suite paste, against a
-SodiumXT whose own ABI 10 ChaCha20 section ran green the same day.
+Every row ran green on 2026-08-24 (Windows x86_64, OXT 9.6.3) inside the suite paste, against a
+SodiumXT whose own ABI 10 ChaCha20 section ran green the same day, and again on 2026-09-24
+(Windows, the engine reports Win32), SodiumXT's ABI 10 ChaCha20 checks green in the same paste.
+Both engines had ABI 10, so the last row ran its current-SodiumXT half; the other half, the
+fail-closed error against an older SodiumXT, has run only headlessly: the family interpreter's
+count of the whole harness in every CoinXT / SodiumXT configuration (2026-09-24, in the ledger
+in `CLAUDE.md`).
 
 ## The limitations NIP-44 itself documents
 

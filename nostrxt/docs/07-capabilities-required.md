@@ -35,8 +35,8 @@ beside it), the same shape as OnionXT's `sxSha3_256`. It shipped with C KATs gre
 ASan/UBSan, cross-checked against this member's oracle (RFC 8439 ChaCha20) and the pinned
 libsodium tarball's own expectations - three implementations agreeing. NostrXT's seam needed no
 code change. The complete NIP-44 path is engine-proven 2026-08-24 (Windows x86_64, OXT 9.6.3,
-274/274 in the suite paste); relay-borne NIP-44 events keep "verified statically; needs a
-live-relay pass".
+274/274 in the suite paste) and again 2026-09-24 (Windows, the engine reports Win32, 277/277);
+relay-borne NIP-44 events keep "verified statically; needs a live-relay pass".
 
 **Why NIP-44 needs the UNAUTHENTICATED stream.** NIP-44 v2 does not use Poly1305: its
 authentication is HMAC-SHA256 over nonce||ciphertext, keyed by the third HKDF-expand slice and
@@ -108,9 +108,9 @@ address IS the key), but that is a design choice about anonymity (below), not a 
 - **`base64Encode`'s raw emission** (formerly 08 question 1). Every wire format here is
   single-line, so `nxB64Encode` strips both CR and LF unconditionally - correct whether the
   engine wraps with CRLF, LF or not at all. The STRIP is proven correct in effect by the
-  2026-08-24 pass (the NIP-44 payload vectors and the RFC 6455 accept both ran green); whether
-  `base64Encode` wraps, with which bytes and at what width is unrecorded, a one-line message-box
-  observation. The source keeps `VERIFY (on-engine)` at that site until then.
+  2026-08-24 pass and again by the 2026-09-24 one (the NIP-44 payload vectors and the RFC 6455
+  accept both ran green); whether `base64Encode` wraps, with which bytes and at what width is
+  unrecorded, a one-line message-box observation. The source keeps `VERIFY (on-engine)` at that site until then.
 - **Socket write backpressure** (formerly 08 question 4). The relay layer writes whole frames
   with `write to socket`; the frame cap is megabytes. Whether a large write blocks the
   interpreter until the OS buffer drains, queues, or partially writes is unmeasured anywhere in
@@ -120,7 +120,8 @@ address IS the key), but that is a design choice about anonymity (below), not a 
   `05-relay-client.md` VERIFY items 5 and 8.
 - Settled 2026-08-24 (formerly 08 question 2): the `textDecode` UTF-8 round trip of non-BMP
   content is faithful on Windows x86_64 / OXT 9.6.3 (harness event C: a euro sign and a
-  four-byte emoji, id pinned). Scoped to that engine, platform and those two codepoints; the
+  four-byte emoji, id pinned), and held again 2026-09-24 (Windows, the engine reports Win32, its
+  OXT version not recorded). Scoped to those Windows engines and those two codepoints; the
   fixture bytes stay constants and the harness stays pure ASCII so a future FAIL is a finding.
 
 ## Non-gaps and scope decisions
