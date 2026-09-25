@@ -18396,11 +18396,45 @@ private function rsReadBEu64 pBytes
    -- answer rather than a rounded one. EVERY call site checks for empty and
    -- refuses the record; that is what makes this safe rather than merely
    -- different.
+   --
+   -- THE BOUND IS DECIDED ON THE TWO u32 HALVES (2026-09-24): hi * 2^32 + lo
+   -- is at most 2^53 exactly when hi < 2^21 (2097152), or hi = 2^21 and
+   -- lo = 0. Each half is built from four bytes, so both are exact integers
+   -- below 2^32, and every comparison below is between integers that differ
+   -- by at least 1 at that modest magnitude. No rounding rule and no
+   -- comparison tolerance an engine could plausibly apply changes its answer.
+   --
+   -- It used to be `if tHi > (9007199254740992 - tLo) / 4294967296`, and on
+   -- 2026-09-24 (OXT, Win32, the suite paste's riptide fold) that line
+   -- ACCEPTED a seq of 2^53 + 1: the harness check "a seq of 2^53 + 1 is
+   -- REFUSED" failed (OBSERVED). For hi = 2^21, lo = 1 the right side is
+   -- 2097151.99999999977, which pure IEEE puts below 2097152, so the family
+   -- interpreter (Python floats) refused and every headless gate stayed
+   -- green. But the two sides differ by about 2.3e-10, a relative 1.1e-16,
+   -- and the engine did not answer that comparison the way IEEE does. WHY is
+   -- INFERRED, not observed: a numeric comparison tolerance (LiveCode is
+   -- widely reported to answer (0.1 + 0.2) = 0.3 as true) or a round trip
+   -- through about 15 significant digits would each explain it, and nothing
+   -- yet tells an absolute tolerance from a relative one. So the rule is the
+   -- one that holds under every such explanation: decide a bound on a wide
+   -- integer by comparing exact integers that differ by at least 1 at a
+   -- modest magnitude - never against a quotient, and never on a difference
+   -- smaller than any plausible tolerance. tools/check-script-vectors.py
+   -- replays this bound under three comparison models, after proving that
+   -- each of them accepts 2^53 + 1 through the old line as the engine did.
+   -- Plain nested ifs, no compound `and`: both operands of one always
+   -- evaluate (engine notes 2.5). Harmless here, but the habit costs less
+   -- than the audit.
    local tHi, tLo
    put rsReadBEu32(byte 1 to 4 of pBytes) into tHi
    put rsReadBEu32(byte 5 to 8 of pBytes) into tLo
-   if tHi > (9007199254740992 - tLo) / 4294967296 then
+   if tHi > 2097152 then
       return empty
+   end if
+   if tHi is 2097152 then
+      if tLo is not 0 then
+         return empty
+      end if
    end if
    return tHi * 4294967296 + tLo
 end rsReadBEu64
@@ -29015,12 +29049,42 @@ private function rs1rstFlipByte pData, pIndex
 end rs1rstFlipByte
 
 private command rs1rstSectionCapabilities pCaps
+   local rs1tWant, rs1tGot, rs1tDelim
    rs1rstSection "capabilities + version"
    rs1rstCheck (rsVersion() contains "Riptide"), "rsVersion names the library"
    rs1rstCheck (pCaps["canCrypto"] is true or pCaps["canCrypto"] is false), \
          "probe reports canCrypto as a boolean"
-   rs1rstCheck (the number of lines in the keys of pCaps is 7), \
-         "probe reports six extensions plus the derived hasSha3"
+   -- The EXACT key set, sorted, never a count (2026-09-24). This line used
+   -- to assert "7 keys: six extensions plus the derived hasSha3". Phase 8
+   -- (d9277c3, 2026-08-29) gave rsProbeCapabilities three more - hasNostr,
+   -- hasNostrRelay, canNostrSign - and nothing noticed the count go stale,
+   -- because this harness runs only on an engine and it did not meet one
+   -- between phase 8 and the suite paste of 2026-09-24, which reported it
+   -- as a FAIL. A count also passes a key renamed or swapped for another;
+   -- the list cannot, and on a failure the log shows what the probe
+   -- returned. A new capability edits the literal below AND the log lines.
+   -- The sort is case-blind by default and these names order the same
+   -- either way. A trailing return, should an engine's `the keys` end with
+   -- one, is list formatting and not a key, so it is dropped before the
+   -- compare (a line COUNT ignores it, engine notes 2.2; a string does not).
+   -- `sort lines` reads the lineDelimiter, which is saved, set and restored
+   -- around the one line that needs it (engine notes 2.3).
+   put "canCrypto,canNostrSign,hasCoin,hasDataChannel,hasEnet," & \
+         "hasNostr,hasNostrRelay,hasOnion,hasSha3,hasTorrent" into rs1tWant
+   put the keys of pCaps into rs1tGot
+   if the last char of rs1tGot is return then
+      delete the last char of rs1tGot
+   end if
+   put the lineDelimiter into rs1tDelim
+   set the lineDelimiter to return
+   sort lines of rs1tGot
+   set the lineDelimiter to rs1tDelim
+   replace return with comma in rs1tGot
+   rs1rstCheck (rs1tGot is rs1tWant), \
+         "probe reports exactly its ten keys (" & rs1tWant & ")"
+   if rs1tGot is not rs1tWant then
+      put "      the probe returned:" && rs1tGot & return after rs1sLog
+   end if
    put "      canCrypto=" & pCaps["canCrypto"] & \
          " hasTorrent=" & pCaps["hasTorrent"] & \
          " hasOnion=" & pCaps["hasOnion"] & return after rs1sLog
@@ -29028,6 +29092,9 @@ private command rs1rstSectionCapabilities pCaps
          " hasEnet=" & pCaps["hasEnet"] & \
          " hasCoin=" & pCaps["hasCoin"] & \
          " hasSha3=" & pCaps["hasSha3"] & return after rs1sLog
+   put "      hasNostr=" & pCaps["hasNostr"] & \
+         " hasNostrRelay=" & pCaps["hasNostrRelay"] & \
+         " canNostrSign=" & pCaps["canNostrSign"] & return after rs1sLog
 end rs1rstSectionCapabilities
 
 private command rs1rstSectionKdfTree
@@ -29162,7 +29229,7 @@ private command rs1rstSectionKeyFile
 end rs1rstSectionKeyFile
 
 private command rs1rstSectionHead
-   local rs1tHead, rs1tParsed, rs1tRebuilt, rs1tUpper, rs1tBig, rs1tBigParsed, rs1rstI
+   local rs1tHead, rs1tParsed, rs1tRebuilt, rs1tUpper, rs1tBig, rs1tBigParsed, rs1tSeq53, rs1rstI
    rs1rstSection "RSH1 - the feed head"
    put rsBuildHead(rs1kRsGoldHeadSeq, rs1kRsGoldHeadName, rs1kRsGoldPost2Target, \
          rs1kRsGoldPrekeyTarget, rs1kRsGoldOnion, rs1kRsGoldProfileTarget) into rs1tHead
@@ -29212,11 +29279,49 @@ private command rs1rstSectionHead
    put rsParseHead(rs1tBig) into rs1tBigParsed
    rs1rstCheck (rs1tBigParsed is not empty), \
          "a seq of exactly 2^53 still parses (it IS representable)"
-   rs1rstCheck (rs1tBigParsed["seq"] is 9007199254740992), \
-         "and comes back as exactly 2^53, not a rounded neighbour"
+   -- Exactness is judged on the two u32 HALVES (2026-09-24), not by
+   -- `rs1tBigParsed["seq"] is 9007199254740992` as it was: that is an equality
+   -- at magnitude 2^53, where a rounded neighbour differs by only 1 or 2,
+   -- and a relative comparison tolerance (one suspected cause of the
+   -- 2^53 + 1 failure just below) would answer true for the neighbour too.
+   -- The check could not see the one thing its label claims. The halves are
+   -- exact integers below 2^32, and any neighbour moves the low half off 0.
+   -- Guarded, so an empty parse is a plain FAIL, never arithmetic on empty.
+   if rs1tBigParsed is not empty then
+      put rs1tBigParsed["seq"] into rs1tSeq53
+      rs1rstCheck (rs1tSeq53 div 4294967296 is 2097152 and \
+            rs1tSeq53 mod 4294967296 is 0), \
+            "and comes back as exactly 2^53, not a rounded neighbour"
+   else
+      rs1rstCheck false, "and comes back as exactly 2^53, not a rounded neighbour"
+   end if
+   -- The next check FAILED on 2026-09-24 (OXT, Win32, the suite paste):
+   -- the engine accepted 2^53 + 1 through the old quotient bound in
+   -- rsReadBEu64, whose comment has the story. The bound is decided on the
+   -- halves now; verified statically; needs an OXT re-pass.
    put numToByte(1) into byte 12 of rs1tBig
    rs1rstCheck (rsParseHead(rs1tBig) is empty), \
          "a seq of 2^53 + 1 is REFUSED (the first unrepresentable value)"
+   -- DIAGNOSTIC, not a check (2026-09-24). That failure is OBSERVED; its
+   -- cause is INFERRED. These four comparisons are all true in pure IEEE,
+   -- and each candidate rule answers them differently, so the next run's
+   -- log settles which rule this engine applies. Probes 2 to 4 divide
+   -- integers below 2^53 by powers of two, so their operands are exact
+   -- doubles; probe 1 only has to differ from 1 by about 1e-7. Predicted
+   -- readings (checked against Python models of each rule):
+   --   IEEE, no tolerance              true,true,true,true
+   --   absolute tolerance 1e-6         false,false,false,false
+   --   relative, 1 x DBL_EPSILON       true,true,false,false
+   --   relative, 2+ x DBL_EPSILON      true,false,false,false
+   --   round trip, 15 sig. digits      true,false,false,true
+   -- The third is the failing bound itself: hi = 2^21, lo = 1.
+   put "      numeric compare probe (diagnostic; IEEE reads" && \
+         "true,true,true,true):" && \
+         (1 + 1 / 10000000 > 1) & "," & \
+         (1 + 1 / 2251799813685248 > 1) & "," & \
+         (2097152 > (9007199254740992 - 1) / 4294967296) & "," & \
+         (1 + 23 / 4503599627370496 > 1 + 22 / 4503599627370496) & \
+         return after rs1sLog
    put rs1tHead into rs1tBig
    repeat with rs1rstI = 5 to 12
       put numToByte(255) into byte rs1rstI of rs1tBig
