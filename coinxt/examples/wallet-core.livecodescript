@@ -73,8 +73,9 @@ script "walletCore"
 -- commits 2026-09-03, and two of them, the silent-payment SEND and the
 -- inscription, ran in the tenth log. The
 -- cryptography underneath HAS its own record - CoinXT's library passes, most
--- recently 290/290 on 2026-08-24 (Windows x86_64) - so a failure here is most
--- likely this file's arithmetic, not the library's.
+-- recently 296/296 on 2026-09-24 (the suite paste on Windows, ABI 7's
+-- cxPubkeyCombine included) - so a failure here is most likely this file's
+-- arithmetic, not the library's.
 --
 -- CUSTODY, said plainly, because this layer is one call away from a signature:
 -- OXT script variables are not locked memory and can be paged to disk. A seed

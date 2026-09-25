@@ -431,6 +431,7 @@ The script layer's 51: phase 3 encodings (19), phase 4 HD (11), phase 5 transact
 | 2026-08-17 | Windows x86_64, NT 10.0, OXT 9.6.3 | suite paste (1,836 folded checks, 0 failed, 7 skips) | coinxt 278/278 at ABI 6: WIF (14 checks; an xprv refused on payload length), the `cnx_memzero` bind, BIP-340 vector 1 byte for byte, cases 5 (an off-curve key answers false) and 6 (odd R), three tamper negatives, fresh-aux signatures that differ and both verify (the full 19, 10 negative, run headless in `coin-kat.py`), the BIP-341 wallet vectors, `cxBtcAddressP2TR` still not tweaking, an empty `Data` in an OPTIONAL slot, a three-argument foreign call, an array return by name |
 | 2026-08-20 | Windows | suite paste, whole run | 1981 passed / 0 failed / 1 skipped overall; coinxt's own count not recorded |
 | 2026-08-24 | Windows x86_64, OXT 9.6.3 | suite paste (2373/0/3) | coinxt 290/290, including the 12-check BIP-341 section: both sighash paths, the `0xfa` leaf, the sorted fold, the control block, every refusal |
+| 2026-09-24 | Windows (the engine reports Win32; the bitness not recorded), the 2026-09-12 release DLL at ABI 7 (its first engine load, the maintainer's account) | the D-23 suite paste (2620/5/3; none of the five failures was coinxt's) | coinxt 296/296 and the core's two samplers 11/11. ABI 7's first engine run: the "secp256k1 keys" section's six `cxPubkeyCombine` checks (G + G is 2G, one key is itself, the intermediate-infinity sum G + (-G) + 2G, and three refusals: the point at infinity, a length not a multiple of 33, an empty set), the first `Data`-of-many-keys shape this binding marshalled. `cxCheckABI` passed against the shipped binary; every section through phase 5 green |
 
 ### Independent acceptance (manual-only by D-17)
 
@@ -488,11 +489,13 @@ hot `re.match` in the interpreter, riptide's runner and `check-wallet-boot.py` c
 
 ## Status
 
-Engine-proven: the whole library surface through ABI 6 (94 handlers; 290/290 on 2026-08-24, Windows x86_64) and, in the
+Engine-proven: the whole library surface through ABI 7 (all 95 handlers; 296/296 on 2026-09-24 in the suite paste, on the
+2026-09-12 Windows DLL, whose first engine load that was; 290/290 at ABI 6 on 2026-08-24, Windows x86_64) and, in the
 wallet, all four public transports, broadcast, RBF, CPFP, an OP_RETURN note, a silent-payment send, an inscription and
 a timelock payment (2026-09-01 to 09-03, testnet). Bitcoin spends over the `cx*` sighash and encoder were accepted on
 testnet; a native-P2WPKH broadcast is not recorded, and no EIP-155 / EIP-1559 transaction has been broadcast. Verified
-statically; needs an OXT pass: `cxPubkeyCombine` (ABI 7) and every binary built since 2026-09-10; the wallet surface
+statically; needs an OXT pass: every ABI 7 binary but the one Windows DLL that loaded on 2026-09-24 (its bitness was not
+recorded, so the `x86-win32` DLL may still never have executed); the wallet surface
 added from 2026-09-04 (the Ordinals and Vault screens, testnet4, BIP-329, BIP-322, silent-payment receiving, Runes,
 BOLT11, the Core backends, the 2026-09-10 fixes, the 2026-09-24 byte-level 2^53 bound in `cwLeRead` / `cwBeRead`);
 and what the logs did not reach (the update swap, mainnet Electrum on port 110, the stale-answer skip, paint/pump
