@@ -185,6 +185,13 @@ Gotchas 1-10 keep their numbers: the suite work plan cites gotcha 8.
     fixed, `"dir//"` added); `parse_head` had a `__resource` field the script never sets and
     lacked the `__version` `qsCwServe` reads for the keep-alive default. The gate compares
     the WHOLE map (an unset key reads as empty), which caught both.
+21. **A token, hash or nonce never meets bare `is`.** `is` compares two operands that
+    both parse as numbers AS NUMBERS (C `strtod`, no range check; the suite's engine note
+    2.11, from the engine source, not yet observed): a hex token shaped digits-`e`-digits
+    overflows to +inf, and so do `1e999` and `inf` in a request, so `qsCwServe`'s capability
+    gate let `/1e999/` in on about one share in 1.2 million until it compared
+    `("t" & tTok)` with `("t" & sCwToken)` (2026-09-25; verified statically; needs an OXT
+    pass). Prefix a letter to both sides, or compare byte by byte.
 
 ## 4. Engine evidence ledger
 

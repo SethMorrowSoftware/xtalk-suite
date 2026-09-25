@@ -1641,7 +1641,13 @@ command wxApplyOffer pNonce, pKind, pSdp
    if pKind is not "offer" then
       exit wxApplyOffer
    end if
-   if pNonce is sSeenOfferNonce then
+   -- Nonces are compared as TEXT, a letter on each side: bare `is` compares
+   -- two number-like operands as NUMBERS (suite engine note 2.11, from the
+   -- engine source; not yet observed), and an 8-hex nonce that reads as
+   -- digits-e-digits overflows to +inf, so two DIFFERENT such nonces (about
+   -- 1 in 120 each) compared equal: a fresh offer dropped as answered, a
+   -- stale answer applied (2026-09-25). The wire format is unchanged.
+   if ("n" & pNonce) is ("n" & sSeenOfferNonce) then
       exit wxApplyOffer -- already answered this exact offer
    end if
    -- a NEW offer while an old peer lingers = the host reconnected; follow it
@@ -1677,10 +1683,11 @@ command wxApplyAnswer pNonce, pKind, pSdp
    if pKind is not "answer" then
       exit wxApplyAnswer
    end if
-   if pNonce is not sNonce then
+   -- as TEXT, a letter on each side (wxApplyOffer has why)
+   if ("n" & pNonce) is not ("n" & sNonce) then
       exit wxApplyAnswer -- an answer to a previous offer (stale run); ignore
    end if
-   if pNonce is sSeenAnswerNonce then
+   if ("n" & pNonce) is ("n" & sSeenAnswerNonce) then
       exit wxApplyAnswer -- already applied
    end if
    put pNonce into sSeenAnswerNonce

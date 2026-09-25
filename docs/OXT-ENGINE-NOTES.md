@@ -401,25 +401,31 @@ whose preimage the attacker grinds needs about 2^41 tries. coinxt met the idea
 first as a hazard, never as a failure: its "discipline 3" moved the
 Base58Check checksum off `is` ("has not been observed to collide on this
 surface") and its harness compares hex with `("h" & pA) is ("h" & pB)`.
-**What it puts at risk** (a read-only sweep, 2026-09-25; costs computed, not
-demonstrated): holde-em's audit compares a seed commitment that came off the
-wire with `is not` against the hash of the revealed seed, so a dealer who
-commits a number-like value and holds seeds whose hashes are number-like too
-passes the audit with whichever seed it likes; quickshare's capability gate
-(`if tTok is not sCwToken`, 32 hex characters, nocloud and torrentxt's
-torrent-quickshare) admits `/1e999/` on the one session in about 1.2 million
-whose token overflows. The sites and their state are in docs/WORK-PLAN.md
-(suite-wide #18).
+**What it put at risk, and the fixes** (a read-only sweep, 2026-09-25; the
+costs computed, not demonstrated). holde-em's audit compared a seed commitment
+that came off the wire with `is not` against the hash of the revealed seed, so
+a dealer who committed a number-like value and held seeds whose hashes were
+number-like too passed the audit with whichever seed it liked; its chain-head
+checks had the same shape. quickshare's capability gate
+(`if tTok is not sCwToken`, 32 hex characters, in nocloud and in torrentxt's
+torrent-quickshare) admitted `/1e999/` on the one share in about 1.2 million
+whose token overflows, and datachannel-dht-chat's 8-hex answer nonces
+overflowed about 1 time in 120 each. The quickshare gates and the DHT chat's
+nonce checks were fixed the same day by prefixing a letter at the comparison
+(verified statically; needs an OXT pass); holde-em's sites are open work
+(docs/WORK-PLAN.md suite-wide #18).
 **Rule:** never compare a hex digest, a token, a key or any identifier with
-bare `is`, `is not`, `=` or `<>`. Prefix a letter to both sides under
-`set the caseSensitive to true` (no number parse accepts `h1e5`), or compare
-byte by byte (coinxt's `cxCompareBytes`, nostrxt's `nxCtEqualHex`). riptide's
-"compare kinds by BYTE, never `is`" is the same rule, met from the case side.
-**Gate:** none yet. The family interpreter's `_eq` treats only
-`-?\d+(\.\d+)?` as a number, so it reads every exponent-form pair as text and
-no headless gate sees this class. riptide's harness prints
-`"1e999" is "2e999"` and `"1e5" is "100000"` in its third probe line
-(2026-09-25), which reads the parse on the next run.
+bare `is`, `is not`, `=` or `<>`. Prefix a letter to both sides (no number
+parse accepts `h1e5`), adding `set the caseSensitive to true` where case is
+part of the value (hex digits are not, so a hex compare may fold case), or
+compare byte by byte (coinxt's `cxCompareBytes`, nostrxt's `nxCtEqualHex`).
+riptide's "compare kinds by BYTE, never `is`" is the same rule, met from the
+case side.
+**Gate:** none yet (docs/WORK-PLAN.md suite-wide #18 proposes a static rule,
+#19 an interpreter that knows the parse). The family interpreter's `_eq`
+treats only `-?\d+(\.\d+)?` as a number, so it reads every exponent-form
+pair as text and no headless gate sees this class. riptide's harness prints `"1e999" is "2e999"` and `"1e5" is "100000"` in its
+third probe line (2026-09-25), which reads the parse on the next run.
 
 ## 3. Control flow
 

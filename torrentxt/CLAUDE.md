@@ -233,7 +233,11 @@ does not reach the other, so weigh every nocloud fix for this demo, and every fi
 nocloud. nocloud's 2026-08-17 HEAD fixes (`qsRouteLookupKey`; no body on a HEAD text reply)
 were ported here 2026-09-24, verified statically; needs an OXT pass. The port found one more
 HEAD body in the single-file Tor web path (`qsOnionHttpText`), fixed here and still present
-in nocloud's copy.
+in nocloud's copy. The capability gate in `qsCwServe` was fixed in BOTH copies on 2026-09-25:
+it compares `("t" & tTok)` with `("t" & sCwToken)`, because bare `is` compares two
+number-like texts as numbers and a hex token shaped digits-`e`-digits overflows to +inf, as
+`1e999` in a request does (the suite's engine note 2.11, from the engine source; verified
+statically; needs an OXT pass).
 
 ## Engine evidence ledger
 
