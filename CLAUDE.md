@@ -195,7 +195,9 @@ because a harness once ran against a stale in-memory library and reported failur
   `test-build-suite-selftest.py`), the drift fixtures `test-ui-kit-drift.py` and
   `test-harness-scaffold-drift.py`, and `check-suite-ui-boot.py` (fixture `test-suite-ui-boot.py`),
   which drives the board's logic through the family interpreter in an all-absent profile and
-  upgrades no label. Verified statically; needs an OXT pass (runbook row 48).
+  upgrades no label. Run all has run on an engine (2026-09-24: the build, the boot self-check,
+  the rows adding up to the totals, Copy results; runbook section 8); a row's Run, Show and the
+  filters are verified statically; needs an OXT pass (runbook row 48).
 - **A script-layer edit is done only when every carrier is regenerated** (`build-suite-selftest.py`
   AND `sync-demo-embeds.py`). The carrier sets overlap without either containing the other: the
   b2k Kit is in the paste and no demo; `onionxt/src/onion-httpd.livecodescript` is in demos only.
