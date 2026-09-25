@@ -427,7 +427,10 @@ hand's own range, and binds every per-hand wire to the open hand. Verified
 statically; needs an OXT pass.
 **Rule:** never compare a hex digest, a token, a key or any identifier with
 bare `is`, `is not`, `=` or `<>`. Prefix a letter to both sides (no number
-parse accepts `h1e5`), adding `set the caseSensitive to true` where case is
+parse accepts `h1e5`; not `0x`, which starts a base-16 number, and `n` or `i`
+only before hex, since `"n" & "an"` spells NaN, which equals nothing, itself
+included, and `"i" & "nf"` spells +inf: both read from the source above,
+not observed), adding `set the caseSensitive to true` where case is
 part of the value (hex digits are not: `heHexEq` lowercases both sides), or
 compare byte by byte (coinxt's `cxCompareBytes`, nostrxt's `nxCtEqualHex`).
 riptide's "compare kinds by BYTE, never `is`" is the same rule, met from the
@@ -445,7 +448,20 @@ because `MCLogicCompareTo` takes the same number path, so a hex sort key
 orders some pairs as numbers and the rest as text. One hex-shaped side is
 enough: 11 of holde-em's 40 fixed comparisons had a plain-named partner, and
 a both-sides rule passes all of them. The suffix list was measured over the
-tree (`Key`, `Id` and `Sig` stayed out: every site they added named no hex).
+tree. `Key`, `Id`, `Sig` and `Handle` stayed out because nearly every site
+they add names no hex (cache, route and tab keys, JSON-RPC and icon ids, FFI
+integer handles), though `Key` and `Handle` add a few that do, riptide's
+head-key check `tEventKey is not tHandle` first: those are known misses.
+`Target` reads under equality only, where it is riptide's 40-hex DHT target,
+because under the ordering operators it is box2dxt's numeric set-point; a
+call ending in `Target` (`rsImmutableTarget`) counts there too. A chunk is
+judged by its container whatever its index (`char -8 to -1 of tHash`, `char
+tOff + 1 to tOff + 64 of tData`), and the prefix that keeps a side on the
+text path must be a letter no number STARTS with: `"0x" & tHex` is a base-16
+number (`MCU_strtol`, which checks no overflow at that base, so a 64-hex
+digest wraps to its low 32 bits and two digests agreeing there compare
+equal), so the check refuses it. Those three came from the same day's
+adversarial review, each with a planted mutant it kills.
 Its first run found sites the read-only sweep had missed, and the ones
 outside files other work was changing that day were fixed the same way:
 quickshare's edit-session gate in nocloud and in torrent-quickshare (on a
@@ -453,11 +469,15 @@ session whose 48-hex token overflows, an `x-edit-token: 1e999` header would
 have passed the WRITE gate), datachannel-dht-chat's DHT key filter,
 torrentxt's own-key, info-hash and cross-library key checks, riptide-social's
 own-key and info-hash checks, and harness asserts in five members' harnesses
-and in the suite's core and closing pass. Verified statically; needs an OXT
-pass. The sites in holde-em's harness, riptide's library and the coinxt
-wallet were left to the work changing those files (docs/WORK-PLAN.md). It is
-a NAME heuristic: it narrows the class and cannot close it. A hex value in a
-plain-named variable passes; so does every caller of a helper that compares
+and in the suite's core and closing pass; `Target` then found riptide-social's
+await-slot routing, zero-target tests and prekey content-address check, and
+three riptide harness asserts. Verified statically; needs an OXT pass. The
+sites in holde-em's harness, riptide's library (its content-address checks
+among them) and the coinxt wallet were left to the work changing those files
+(docs/WORK-PLAN.md). It is a NAME heuristic: it narrows the class and cannot
+close it. A hex value in a plain-named variable passes (riptide's
+`tComputed is not tExpected`, the blob content-address check); so does every
+caller of a helper that compares
 its arguments with bare `is` (holde-em's `heTAssert`); and so does a
 NUMBER-LIKE literal, exempt with every literal: the wallet's script-type
 tests compare `char 1 to 4 of tHex is "0014"`, and by this note's parse

@@ -29316,7 +29316,9 @@ private command rs1rstSectionHead
          "profile-meta target round-trips"
    put rsBuildHead(0, "n", empty, empty, empty, empty) into rs1tRebuilt
    put rsParseHead(rs1tRebuilt) into rs1tParsed
-   rs1rstCheck (rs1tParsed["latestPostTarget"] is rsZeroTarget()), \
+   -- targets compare as TEXT, a letter on each side (suite engine note
+   -- 2.11: bare `is` reads two number-like texts as numbers)
+   rs1rstCheck (("h" & rs1tParsed["latestPostTarget"]) is ("h" & rsZeroTarget())), \
          "an empty target normalizes to the zero target"
    rs1rstCheck (rs1tParsed["onionAddr"] is empty), \
          "an empty onion address round-trips as empty"
@@ -29702,7 +29704,7 @@ private command rs1rstSectionChunked pCaps
    end repeat
    put rsBuildPostChunked(rs1kRsGoldTs3, empty, rs1tTargets, empty, rs1tSeed) \
          into rs1tPost
-   rs1rstCheck (rs1tTarget is rsImmutableTarget(rs1tPost)), \
+   rs1rstCheck (("h" & rs1tTarget) is ("h" & rsImmutableTarget(rs1tPost))), \
          "the stored kind-C target equals the offline recomputation"
 end rs1rstSectionChunked
 
@@ -29860,7 +29862,7 @@ private command rs1rstSectionIngest
    put rsIngestPost(rs1tPostEvent, rs1tPost["prevPostTarget"], rs1kRsGoldHandle) \
          into rs1tPost
    rs1rstCheck (rs1tPost is not empty), "walking the chain link ingests post 1"
-   rs1rstCheck (rs1tPost["prevPostTarget"] is rsZeroTarget()), \
+   rs1rstCheck (("h" & rs1tPost["prevPostTarget"]) is ("h" & rsZeroTarget())), \
          "whose prev is the zero target - the chain ends"
    rs1rstCheck (rsIngestPost(rs1tPostEvent, rs1kRsGoldPost2Target, rs1kRsGoldHandle) \
          is empty), "an event answering a different target is refused"

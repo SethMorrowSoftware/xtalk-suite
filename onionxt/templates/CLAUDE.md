@@ -158,11 +158,13 @@ which was the pre-union count:
     overflow to +inf and compare equal, and a 64-zero head `is` "0" (the suite's engine note 2.11,
     from the engine source). It fires when ONE operand is hex-shaped by name (a name ending `Hex`,
     `Token`, `Tok`, `Nonce`, `Commit`, `Digest`, `Hash`, `Pub`, `Pubkey`, `PublicKey`, `SecretKey` or
-    `Txid`, measured over the suite's tree; a literal array key named that way; a call ending in
-    `Hex`) and the other is not `empty`, a literal, a constant or a number. The fix it accepts is a
-    letter on each side, `("h" & a) is ("h" & b)`, or a byte/hex-equality helper. A name heuristic
-    narrows the class and cannot close it: a hex value in a plain-named variable passes, and a
-    number-like literal is exempt with every literal (by the same parse, "14e0" is "0014").
+    `Txid`, and under equality `Target`, measured over the suite's tree; a literal array key named
+    that way; a call ending in `Hex`; a chunk of any of these, whatever its index) and the other is
+    not `empty`, a literal, a constant or a number. The fix it accepts is a letter on each side,
+    `("h" & a) is ("h" & b)`, or a byte/hex-equality helper; `0x` is not such a letter (it starts a
+    base-16 number). A name heuristic narrows the class and cannot close it: a hex value in a
+    plain-named variable passes, and a number-like literal is exempt with every literal (by the
+    same parse, "14e0" is "0014").
 
 It is a lexer-level checker, not a compiler: it errs toward NOT raising false positives, so passing
 it is necessary, never sufficient.

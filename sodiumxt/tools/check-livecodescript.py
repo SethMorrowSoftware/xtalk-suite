@@ -178,34 +178,48 @@ The checks, and the engine lesson each encodes:
       pairs as numbers and the rest as text. Fires when ONE operand is
       hex-shaped BY NAME and the other is hex-shaped or opaque (a variable,
       an element, a call): a variable, parameter or literal array key whose
-      name ends in one of HEX_NAME_SUFFIXES, an element of an array named
-      that way (`pSeedsHexA[i]`, `pCommitsA[i]`), a call to a function
-      whose name ends in `Hex` (`heSeedCommitHex(x)`, `stHex(x)`), a chunk
-      of one (`char 1 to 8 of tHex`), or `toLower`/`toUpper` of one. ONE
-      hex-shaped side is enough because that is where the bugs were: 11 of
-      the 40 holde-em comparisons fixed on 2026-09-25 compared a hex value
-      with a plain-named one (`tA["from"] is not pFromPubHex`, `tElected is
+      name ends in one of HEX_NAME_SUFFIXES (or, under equality only, in
+      HEX_NAME_EQ_SUFFIXES: riptide's `Target`), an element of an array
+      named that way (`pSeedsHexA[i]`, `pCommitsA[i]`), a call to a
+      function whose name ends in `Hex` (`heSeedCommitHex(x)`, `stHex(x)`;
+      under equality also `Target`, `rsImmutableTarget(x)`), a chunk of one
+      (`char 1 to 8 of tHex`, `char -8 to -1 of tHash`, `char tOff + 1 to
+      tOff + 64 of tData`: an index may be arithmetic, the chunk is judged
+      by its container), or `toLower`/`toUpper` of one. ONE hex-shaped side
+      is enough because that is where the bugs were: 11 of the 40 holde-em
+      comparisons fixed on 2026-09-25 compared a hex value with a
+      plain-named one (`tA["from"] is not pFromPubHex`, `tElected is
       gGame["idPubHex"]`), and a both-sides rule passes every one of them
       (tools/test-checker.py carries all 45 fixed lines of that day).
-      NOT fired: `empty`, a string or number literal, a `k` constant (a
-      literal too), a numeric expression (arithmetic, `the number of`,
-      `length(...)`), and an operand carrying a literal no number parse
-      accepts - the letter prefix `("t" & tTok) is ("t" & sCwToken)` that
-      the fixes use - since then both sides stay on the TEXT path. A
+      NOT fired: `empty`, a string or number literal (and literals joined),
+      a `k` constant (a literal too), a numeric expression (arithmetic,
+      `the number of`, `length(...)`), and a concatenation whose FIRST
+      piece is a literal that no number starts with, or with any literal
+      piece holding a character no number-like text contains - the letter
+      prefix `("t" & tTok) is ("t" & sCwToken)` the fixes use - since then
+      both sides stay on the TEXT path. "A letter" is not the rule: "0x"
+      starts a base-16 number (MCU_strtol, and a 64-hex digest wraps to its
+      low 32 bits), so a 0x prefix is refused (_CMP_NOT_NUMBER_CHAR has the
+      whole reason, and the inf/nan letters it still lets through). A
       comparison inside a helper (heHexEq, stSameHex, cxCompareBytes,
       nxCtEqualHex) has no bare operator at the call site, so it never
       fires; the helper's own body compares prefixed text. The suffix list
-      was MEASURED over the tree (2026-09-25): `Key`, `Id` and `Sig` are
-      out because every site they added was a cache key, a keyboard key, a
-      JSON-RPC or icon id, or a sheet-load signature, none of them hex;
+      was MEASURED over the tree (2026-09-25): `Key`, `Id`, `Sig` and
+      `Handle` are out because nearly every site they added names no hex
+      (cache, keyboard, route and tab keys, JSON-RPC and icon ids, a
+      sheet-load signature, FFI integer handles), though `Key` and `Handle`
+      also add a few that do (riptide's head-key check `tEventKey is not
+      tHandle`; HEX_NAME_SUFFIXES names them): those pass, as known misses.
       `Pub`, `Pubkey`, `PublicKey`, `SecretKey` and `Txid` are in because
-      every site they added compared a key or txid. A name heuristic
-      NARROWS the class and cannot close it: a hex value in a plain-named
-      variable compared with another plain-named one passes, and a
-      NUMBER-LIKE literal is exempt with every literal (`char 1 to 4 of
-      tHex is "0014"` passes, though by the same parse "14e0" is "0014").
-      The family interpreter is the other half (docs/WORK-PLAN.md
-      suite-wide #19).
+      every site they added compared a key or txid; `Target` is in under
+      equality only, where it is riptide's DHT target, because under the
+      ordering operators it is box2dxt's numeric set-point. A name
+      heuristic NARROWS the class and cannot close it: a hex value in a
+      plain-named variable compared with another plain-named one passes
+      (riptide's `tComputed is not tExpected`), and a NUMBER-LIKE literal
+      is exempt with every literal (`char 1 to 4 of tHex is "0014"` passes,
+      though by the same parse "14e0" is "0014"). The family interpreter is
+      the other half (docs/WORK-PLAN.md suite-wide #19).
 
 One hold-em lineage check is deliberately NOT here, and the reason is
 recorded so it is not "rediscovered": the chunk-of-an-array-element refusal
@@ -1367,16 +1381,30 @@ def check_stray_backslash(path, cleaned):
 
 # Name endings that carry hex (or key bytes) in this tree. MEASURED, not
 # guessed (2026-09-25, every comparison in every .livecodescript): each word
-# here found only real hex comparisons; `Key`, `Id` and `Sig` were measured
-# and left out because every site they added was a cache/keyboard key, a
-# JSON-RPC or icon id, or a sheet-load signature (MUST-PASS fixtures in
-# tools/test-checker.py keep them out). A name is hex-shaped when it IS one
-# of these (first letter either case: `txid`, `publicKey`) or ENDS in one at
-# a camel boundary (`sCwToken`, `pFromPubHex`, `infoHash`, `nostrPub`); a
-# literal key is judged by its last `-`/`_`-separated part (`x-edit-token`).
+# here found only real hex comparisons. `Key`, `Id`, `Sig` and `Handle`
+# were measured and left out because nearly every site they added names no
+# hex - a cache, keyboard, route or UI-tab key, a JSON-RPC or icon id, a
+# sheet-load signature, an FFI integer handle (suite rule 4) - and a rule
+# that cries wolf that often is a rule people learn to prefix blindly
+# (MUST-PASS fixtures in tools/test-checker.py keep them out). They are NOT
+# all clean: `Key` also adds riptide's head check `tEventKey is not tHandle`
+# (64-hex keys, the head's authenticity) and torrent-dht-channels' unfollow
+# `tLine is not tKey`, and `Handle` riptide's identity-handle compares;
+# those are this heuristic's known misses (docs/WORK-PLAN.md), not proof
+# the class is empty there. A name is hex-shaped when it IS one of these
+# (first letter either case: `txid`, `publicKey`) or ENDS in one at a camel
+# boundary (`sCwToken`, `pFromPubHex`, `infoHash`, `nostrPub`); a literal
+# key is judged by its last `-`/`_`-separated part (`x-edit-token`).
 HEX_NAME_SUFFIXES = ("Hex", "Token", "Tok", "Nonce", "Commit", "Digest",
                      "Hash", "Pub", "Pubkey", "PubKey", "PublicKey",
                      "SecretKey", "Txid")
+# Endings that carry hex under EQUALITY only (`is`, `is not`, `=`, `<>`).
+# `Target` is riptide's DHT target (40 hex: `tEventTarget is not tExpected`,
+# `pEvent["target"] is sWalkNext`, a head's `prekeyTarget` against the zero
+# target) and box2dxt's numeric movement set-point (`tVX < tTarget`);
+# measured 2026-09-25, every equality site it adds is the first and every
+# ordering site the second, so the ordering operators do not read it.
+HEX_NAME_EQ_SUFFIXES = ("Target",)
 
 _CMP_TOKEN = re.compile(
     r'"[^"]*"?|[A-Za-z_][A-Za-z0-9_]*|\d+(?:\.\d+)?(?:[eE][-+]?\d+)?'
@@ -1418,14 +1446,31 @@ _CMP_SAFE_TOKENS = {
     "empty", "true", "false", "quote", "space", "tab", "return", "cr", "lf",
     "crlf", "linefeed", "comma", "null", "colon", "slash", "backslash",
     "up", "down", "formfeed", "zero", "pi"}
+# A literal piece of a concatenation keeps it off the number path when it
+# is the FIRST piece and starts (after blanks) with a character no number
+# starts with - anything but a digit, a point or a sign - or, in any place,
+# when it holds a character no NUMBER-LIKE text contains. "Any letter" is
+# not that rule: the engine's integer parse reads "0x" + hex digits in base
+# 16 (MCU_strtol, with no overflow check at that base, so a 64-hex digest
+# wraps to its low 32 bits and two digests agreeing there compare EQUAL),
+# and strtod reads hex floats ("0x1p4"), so after a leading 0 the letters
+# x, p and a-f spell numbers as surely as digits, e, a point and a sign do
+# (libfoundation foundation-typeconvert.cpp, livecode develop-9.6; the same
+# parse engine note 2.11 cites). The letters of "inf", "infinity" and "nan"
+# (strtod reads those too) stay accepted, because the fixes' own prefixes
+# are among them ("n", "t"): "n" & a value that supplies "an" spells NaN,
+# which equals nothing, itself included, and "i" & "nf" spells +inf. No
+# hex value supplies either, so a letter prefix is sound for a value this
+# check calls hex by its name, and only while the name tells the truth.
+_CMP_NOT_NUMBER_CHAR = re.compile(r"[^0-9a-fA-FxXpP.+\- \t]")
 
 
-def _cmp_name_is_hex(name):
+def _cmp_name_is_hex(name, suffixes=HEX_NAME_SUFFIXES):
     parts = [p for p in re.split(r"[^A-Za-z0-9_]+", name) if p]
     if not parts:
         return False
     name = parts[-1]
-    for suf in HEX_NAME_SUFFIXES:
+    for suf in suffixes:
         if name == suf or name == suf[0].lower() + suf[1:]:
             return True
         if len(name) > len(suf) and name.endswith(suf):
@@ -1467,23 +1512,30 @@ def _cmp_find_operators(toks):
         i += 1
 
 
-def _cmp_atom_start(toks, k):
-    """Index where the atom ENDING at toks[k] starts (a paren or bracket
-    group is one atom), or -1."""
-    if k < 0:
-        return -1
-    if toks[k] not in (")", "]"):
-        return k
-    depth = 0
+def _cmp_to_is_chunk_range(toks, j):
+    """Is the `to` at toks[j] the range word of a chunk (`char A to B of X`)?
+    Walks left over the range's start, which may be signed or arithmetic
+    (`char -8 to -1 of X`, `char tOff + 1 to tOff + 64 of X`), to a chunk
+    word; any statement word, or a `to` / `in` / `of` of something else
+    (`set the hilite of btn 1 to ...`), says it is not. A paren or bracket
+    group is one atom."""
+    depth, k = 0, j - 1
     while k >= 0:
-        if toks[k] in (")", "]"):
+        t = toks[k]
+        tl = t.lower()
+        if t in (")", "]"):
             depth += 1
-        elif toks[k] in ("(", "["):
-            depth -= 1
+        elif t in ("(", "["):
             if depth == 0:
-                return k
+                return False
+            depth -= 1
+        elif depth == 0:
+            if tl in _CMP_CHUNK:
+                return True
+            if tl in _CMP_LEFT_STOP or tl in ("to", "in", "of"):
+                return False
         k -= 1
-    return -1
+    return False
 
 
 def _cmp_left_operand(toks, start):
@@ -1501,11 +1553,9 @@ def _cmp_left_operand(toks, start):
             if tl == "to" or tl == "in":
                 # inside a chunk (`char 1 to N of X`, `char (a) to (b) of X`,
                 # `the number of chars in X`) the word does not end the operand
-                a = _cmp_atom_start(toks, j - 1)
                 if tl == "in" and j > 0 and toks[j - 1].lower() in _CMP_CHUNK:
                     pass
-                elif tl == "to" and a > 0 and \
-                        toks[a - 1].lower() in _CMP_CHUNK:
+                elif tl == "to" and _cmp_to_is_chunk_range(toks, j):
                     pass
                 else:
                     break
@@ -1579,7 +1629,7 @@ def _cmp_strip_parens(toks):
     return toks
 
 
-def _cmp_operand_kind(toks, consts):
+def _cmp_operand_kind(toks, consts, suffixes=HEX_NAME_SUFFIXES):
     """'hex' (hex-shaped by name), 'safe' (can never meet the number path
     as an identifier: empty, a literal, a number, a letter-prefixed text, a
     numeric expression) or 'opaque' (anything else). `consts` holds the
@@ -1600,12 +1650,46 @@ def _cmp_operand_kind(toks, consts):
             return "safe"  # a constant is a literal (check 22)
     pieces = _cmp_split(toks, ("&", "&&"))
     if len(pieces) > 1:
-        for p in pieces:
-            if len(p) == 1 and p[0].startswith('"') and \
-                    re.search(r"[^0-9eE.+\- \t]", p[0].strip('"')):
-                return "safe"  # a letter or separator: never a number
-        kinds = [_cmp_operand_kind(p, consts) for p in pieces]
-        return "hex" if "hex" in kinds else "opaque"
+        for n, p in enumerate(pieces):
+            if len(p) == 1 and p[0].startswith('"'):
+                lit = p[0].strip('"')
+                head = lit.lstrip(" \t")
+                if n == 0 and head and head[0] not in "0123456789.+-":
+                    return "safe"  # nothing number-like starts so
+                if _CMP_NOT_NUMBER_CHAR.search(lit):
+                    return "safe"  # a letter no number spells
+        kinds = [_cmp_operand_kind(p, consts, suffixes) for p in pieces]
+        if "hex" in kinds:
+            return "hex"
+        # literals and numbers joined are a literal, exempt as one is
+        return "safe" if all(k == "safe" for k in kinds) else "opaque"
+    if low[0] == "number" or low[:2] in (["the", "number"],
+                                         ["the", "length"]):
+        return "safe"
+    # a chunk of X is shaped like X: judge the container after the last
+    # depth-0 `of` / `in`. This comes BEFORE the arithmetic scan below,
+    # because a chunk's index may be signed or arithmetic (`char -8 to -1
+    # of tHash`, `char tOff + 1 to tOff + 64 of tData`) and that does not
+    # make the chunk a number; arithmetic on the chunk's RESULT (`word 1 of
+    # tHex * 2`: the container is a factor) lands in the container, which
+    # the recursive call judges as arithmetic.
+    first = 0
+    if low[0] == "the" and len(low) > 2 and low[1] in _CMP_ORDINAL:
+        first = 2  # `the last char of X`
+    elif low[0] in _CMP_ORDINAL and len(low) > 1:
+        first = 1
+    if low[first] in _CMP_CHUNK:
+        depth, cut = 0, None
+        for i, t in enumerate(toks):
+            if t in ("(", "["):
+                depth += 1
+            elif t in (")", "]"):
+                depth -= 1
+            elif depth == 0 and low[i] in ("of", "in"):
+                cut = i
+        if cut is None:
+            return "opaque"
+        return _cmp_operand_kind(toks[cut + 1:], consts, suffixes)
     depth = 0
     for i, t in enumerate(toks):
         if t in ("(", "["):
@@ -1616,23 +1700,6 @@ def _cmp_operand_kind(toks, consts):
                              low[i] in ("div", "mod") or
                              (t == "-" and i > 0)):
             return "safe"  # arithmetic: a number compared as a number
-    if low[0] == "number" or low[:2] in (["the", "number"],
-                                         ["the", "length"]):
-        return "safe"
-    first = 1 if low[0] in _CMP_ORDINAL and len(low) > 1 else 0
-    if low[first] in _CMP_CHUNK:
-        # a chunk of X is shaped like X: judge the container after the
-        # last depth-0 `of` / `in`
-        depth, cut = 0, None
-        for i, t in enumerate(toks):
-            if t in ("(", "["):
-                depth += 1
-            elif t in (")", "]"):
-                depth -= 1
-            elif depth == 0 and low[i] in ("of", "in"):
-                cut = i
-        return _cmp_operand_kind(toks[cut + 1:], consts) if cut is not None \
-            else "opaque"
     if _CMP_IDENT.match(toks[0]) and len(toks) >= 3 and toks[1] == "(" and \
             toks[-1] == ")" and _cmp_strip_parens(toks[1:]) != toks[1:]:
         name = toks[0]
@@ -1640,11 +1707,17 @@ def _cmp_operand_kind(toks, consts):
             return "safe"
         if low[0] in _CMP_CASE_FNS:
             args = _cmp_split(toks[2:-1], (",",))
-            return _cmp_operand_kind(args[0], consts) if len(args) == 1 \
-                else "opaque"
-        if len(name) > 3 and name.endswith("Hex") and \
-                (name[-4].islower() or name[-4].isdigit()):
-            return "hex"
+            if len(args) != 1:
+                return "opaque"
+            return _cmp_operand_kind(args[0], consts, suffixes)
+        # a call ending in `Hex` returns hex; under equality so does one
+        # ending in `Target` (riptide's rsImmutableTarget, rsZeroTarget)
+        for suf in ("Hex",) + tuple(s for s in suffixes
+                                    if s in HEX_NAME_EQ_SUFFIXES):
+            if len(name) > len(suf) and name.endswith(suf) and \
+                    (name[-len(suf) - 1].islower() or
+                     name[-len(suf) - 1].isdigit()):
+                return "hex"
         return "opaque"
     if _CMP_IDENT.match(toks[0]) and (len(toks) == 1 or toks[1] == "["):
         subs, cur, depth = [], [], 0
@@ -1661,10 +1734,12 @@ def _cmp_operand_kind(toks, consts):
                     continue
             cur.append(t)
         if not subs:
-            return "hex" if _cmp_name_is_hex(toks[0]) else "opaque"
+            return "hex" if _cmp_name_is_hex(toks[0], suffixes) \
+                else "opaque"
         last = subs[-1]
         if len(last) == 1 and last[0].startswith('"'):
-            return "hex" if _cmp_name_is_hex(last[0].strip('"')) else "opaque"
+            return "hex" if _cmp_name_is_hex(last[0].strip('"'), suffixes) \
+                else "opaque"
         # an element by computed index: the array's own name says what it
         # holds, less the family's `A` array marker and a plural `s`
         base = toks[0]
@@ -1672,7 +1747,7 @@ def _cmp_operand_kind(toks, consts):
             base = base[:-1]
         if base.endswith("s"):
             base = base[:-1]
-        return "hex" if _cmp_name_is_hex(base) else "opaque"
+        return "hex" if _cmp_name_is_hex(base, suffixes) else "opaque"
     return "opaque"
 
 
@@ -1697,8 +1772,11 @@ def check_hex_bare_compare(path, kept):
         for start, end, op in _cmp_find_operators(toks):
             left = _cmp_left_operand(toks, start)
             right = _cmp_right_operand(toks, end)
-            kl = _cmp_operand_kind(left, consts)
-            kr = _cmp_operand_kind(right, consts)
+            # `Target` is hex only under equality (HEX_NAME_EQ_SUFFIXES)
+            suffixes = HEX_NAME_SUFFIXES if op in _CMP_ORDERING \
+                else HEX_NAME_SUFFIXES + HEX_NAME_EQ_SUFFIXES
+            kl = _cmp_operand_kind(left, consts, suffixes)
+            kr = _cmp_operand_kind(right, consts, suffixes)
             if "hex" not in (kl, kr) or "safe" in (kl, kr):
                 continue
             problems.append(Problem(path, lineno,
