@@ -12,8 +12,10 @@ The native shim's ABI is tracked separately by `b2Version()` (currently `4`).
   drives all ten handlers of the 2026-09-09 delimiter fix under a caller's
   tab (11 assertions; 385 expected in a green run), and prints whether a
   caller's delimiter reaches a called handler on that engine at all - if it
-  does not, the section says it passed without exercising the fix. Verified
-  statically; needs an OXT pass.
+  does not, the section says it passed without exercising the fix. First run
+  the same day, on Win32 in the suite paste: 385/0, and a caller's tab does
+  NOT reach a called handler there, so the section said exactly that
+  (CLAUDE.md section 12).
 - **The reference pages are complete** (2026-09-24): `docs/api-reference.md`
   names all 376 public `b2...` handlers (every per-joint accessor, the shape
   geometry readers, the Linux loader trio) and `docs/kit-reference.md` all 313
@@ -40,9 +42,13 @@ The native shim's ABI is tracked separately by `b2Version()` (currently `4`).
   throw rather than a wrong number; the contraption builder's Images panel
   reached it one call chain deep. Eight contraption-builder handlers that
   leaked a borrowed delimiter (`serializeText`, `refreshImagePanel`,
-  `fireEmitter` among them) now restore it around the narrowest span.
-  Verified statically; needs an OXT pass. The self-test assertion for it came
-  with harness v32 (2026-09-24).
+  `fireEmitter` among them) now restore it around the narrowest span. The
+  trigger was found statically. The self-test assertion for it came with
+  harness v32 (2026-09-24), which passed on Win32 that day without
+  exercising the fix: there a caller's tab does not reach a called handler,
+  so that trigger could not have fired (CLAUDE.md gotcha 5). The fix on
+  Linux and macOS, and the eight builder restores: verified statically;
+  needs an OXT pass.
 - **Committed Linux and Windows libraries from the first release dispatch to
   land** (2026-08-27, run 33025459610 from `6ac064c`, commit `cec1e85`).
   `x86_64-linux` keeps the glibc 2.17 floor; `x86-linux`, built on a stock

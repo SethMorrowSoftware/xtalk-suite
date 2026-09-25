@@ -43,8 +43,11 @@
 --      report it with the line's numbers.
 -- =====================================================================
 
--- STATUS: GREEN on Windows x86_64 (NT 10.0, OXT 9.6.3) in the 2026-08-17 pass -
--- 374/374 at harness v29, folded into tests/suite-selftest.livecodescript.
+-- STATUS: GREEN at harness v32 in the 2026-09-24 pass - 385/385 on OXT on
+-- Win32 (version, OS build and bitness not recorded), folded into the D-23
+-- suite paste and run on its 1200-wide card (this stack's own window is 860).
+-- Earlier: 374/374 at v29 on Windows x86_64 (NT 10.0, OXT 9.6.3) in the
+-- 2026-08-17 pass, folded into tests/suite-selftest.livecodescript.
 --
 -- 2026-08-18, LINUX, harness v29: 373 passed, 1 FAILED. The single failure was
 -- "playLoudness readback", and it was the HARNESS being wrong about the engine,
@@ -67,8 +70,12 @@
 -- 2026-09-09 Kit delimiter fix (51ac525, which changed ten Kit handlers and
 -- left this constant at 31, against the member's rule 2). 385 expected in a
 -- green run, from 387 stAssert call sites (two if/else pairs execute one line
--- each). No engine has run v32: verified statically; needs an OXT pass.
--- Record the total the pass prints rather than matching this one.
+-- each). Its first run (Win32, 2026-09-24) printed exactly 385 and both
+-- observations: a caller's tab does NOT reach a called handler (it saw
+-- comma), and a Kit call left its caller's delimiter alone (tab in, tab out),
+-- so on Win32 that section passed without exercising the fix. Linux and
+-- macOS have not run v32: record the total a pass prints rather than
+-- matching this one.
 local gRep, gPass, gFail, gFellCount, gRunning
 local gMsgEnters, gMsgContacts   -- message-path counters (vs polling)
 

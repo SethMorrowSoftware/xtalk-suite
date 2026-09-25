@@ -107,20 +107,27 @@ doc map) - `dist/INSTALL.md` (packed by `make-release.py`) - `.github/workflows/
 4. **Only the block `if` takes `end if`**; `\` continues a line. Balance
    counters false-positive on a continued `if ... then \` and a multi-line
    `else if` - verify by eye, do not "fix" valid code.
-5. **`itemDelimiter` / `lineDelimiter` are global mutable state** (engine note
-   2.3): set the delimiter immediately before parsing. 2026-09-09 (`51ac525`):
+5. **`itemDelimiter` / `lineDelimiter` are mutable state** (engine note 2.3):
+   set the delimiter immediately before parsing. 2026-09-09 (`51ac525`):
    `b2kAddBox`, `b2kAddBall`, `b2kAddCapsule`, `b2kAddPolygon`, `b2kReshape`,
    `b2kHinge`, `b2kWeld`, `b2kSlider`, `b2kWheel`, `b2kDrawPoly` now set comma
    first - under a tab, `item 1 of "512,246"` is the whole string, a hard throw
    into a Number-typed `.lcb` parameter (engine note 6.4); the contraption
-   builder's Images panel reached it. Eight contraption-builder handlers
-   (`serializeText`, `refreshImagePanel` among them) now restore a borrowed
-   delimiter around the narrowest span. **When that span makes OUTWARD calls,
-   collect -> restore -> call** (`fireEmitter`/`fireTarget`,
-   `refreshImagePanel`/`makeAction`); a restore at the end looks fixed and
-   leaves the bug. Harness v32's `stTestCallerDelimiter` drives all ten under a
-   caller's tab and prints whether a caller's delimiter reaches a called
-   handler on that engine at all. Needs an OXT pass.
+   builder's Images panel reached it (a static finding). Eight
+   contraption-builder handlers (`serializeText`, `refreshImagePanel` among
+   them) now restore a borrowed delimiter around the narrowest span. **When
+   that span makes OUTWARD calls, collect -> restore -> call**
+   (`fireEmitter`/`fireTarget`, `refreshImagePanel`/`makeAction`); a restore
+   at the end looks fixed and leaves the bug. Harness v32's
+   `stTestCallerDelimiter` drives all ten under a caller's tab and prints
+   whether a caller's delimiter reaches a called handler on that engine at
+   all. **Win32, 2026-09-24 (section 12): it does not** ("it saw comma"), and
+   a Kit call left its caller's tab alone ("tab in, tab out"): the
+   itemDelimiter crossed a handler call in neither direction, the LiveCode
+   dictionary's handler-local reading (engine note 2.3's counterpoint). So on
+   Win32 the ten passed WITHOUT exercising the fix (the harness says so), and
+   no cross-call leak this entry guards against, the Images panel's included,
+   could have fired there. Linux and macOS: needs an OXT pass.
 6. **Constants must be literals**; derive computed values at runtime.
 7. **Command vs function.** A Kit COMMAND reports through `the result`
    (`b2kSpawnBox ...` then `put the result into tCtrl`); `get b2kSpawnBall(...)`
@@ -376,8 +383,10 @@ keys). The first 39 handlers are BEHAVIOUR tests; the 13 added at v23 are
 shallow "Kit API coverage" sections, and a handler that earns a real lesson
 graduates out. The 2026-09-09 Kit change left it at 31, against rule 2; v32
 (2026-09-24) is its assertion, `stTestCallerDelimiter` (11 lines, all ten fixed
-handlers under a caller's tab, plus two printed observations). No engine has
-run v32 or v31: record the total a pass prints rather than matching 385.
+handlers under a caller's tab, plus two printed observations). v32 ran 385/0
+on Win32 the same day (section 12), its first run on a card wider than its own
+860 window; v31 never had a count of its own. Record the total a pass prints
+rather than matching 385.
 
 It is the EIGHTH member folded into the suite paste (2026-08-16):
 
@@ -446,8 +455,9 @@ Pre-fold: the user's own OXT passes; post-fold: the suite paste. Passed/failed.
 | 2026-08-20 | Windows x86_64 | v30 | **375/0**; `playLoudness` reads back EXACT on Win32 (24->24, 73->73) |
 | 2026-08-21 | Linux | v30 | 374/1: `playLoudness` reads a constant 0 (24->0, 73->0); v31 demotes it to a printed three-way observation (exact / ordered-not-exact / does-not-track), expectation 374 |
 | 2026-08-24 | Windows x86_64, OXT 9.6.3 | whole suite paste (harness v31 by date) | 2,373/0 with 3 skips suite-wide; box2dxt's own count not captured, so v31 green is an inference |
+| 2026-09-24 | OXT, Win32 (version, OS build and bitness not recorded) | the D-23 suite paste (built at `9aa62c8`; this member's fold and Kit identical to `6401e43`'s), harness v32, on the board's 1200-wide card (860 standalone, 760 in the old paste) | **385/0**, no skips (board row 387/0/0: the core adds its zero-failures and floor lines). At 1200 wide the camera held: hScroll 900, a world-px write lands at 1500. `playLoudness` exact (24->24, 73->73); `revLibraryMapping` hook available. v32's observations: a caller's tab does NOT reach a called handler (it saw comma), and a Kit call left its caller's delimiter alone (tab in, tab out), so the ten passed without exercising the fix (gotcha 5) |
 
-v29, v30 and v31 totals are not comparable. Kit defects the runs found (fixed):
+v29, v30, v31 and v32 totals are not comparable. Kit defects the runs found (fixed):
 
 - **v25/v26:** `b2kSpritePlay` and every sprite entry point (FlipH, Stop,
   SetFrame, FPS, OnFinish, Bind, Unbind, MoveTo) no-op on an empty ref
@@ -468,12 +478,15 @@ v29, v30 and v31 totals are not comparable. Kit defects the runs found (fixed):
 
 ## 13. Status
 
-Engine-proven: the Kit through harness v30 (section 12) and the pre-fold games
-on Win32 (June 2026); v31 has no per-member record, and v32 (2026-09-24, the
-delimiter-fix assertions) is verified statically and needs an OXT pass. The five game stacks (demo,
+Engine-proven: the Kit through harness v32 on Win32 (385/0, 2026-09-24) and
+through v30 on Linux (section 12), and the pre-fold games on Win32 (June 2026);
+v31 has no per-member record. The five game stacks (demo,
 platformer, slingshot, contraption builder, spike-gamekit) have not been re-run
 on an engine since the 2026-08-14 fold touched nearly every script (as of
-2026-09-23). The 2026-09-09 delimiter fix and the card-fade pins: verified
+2026-09-23). The 2026-09-09 delimiter fix: its ten Kit handlers passed v32
+under a caller's tab on Win32, where a caller's tab does not reach a called
+handler, so no engine has yet exercised the fix itself (gotcha 5). The fix on
+Linux and macOS, the builder's eight restores and the card-fade pins: verified
 statically; need an OXT pass. The committed `universal-mac` dylib (ABI 4, arm64
 + x86_64) has not been loaded by an engine. It is byte-identical to what the
 release lane builds: runs 33025459610 (2026-08-27) and 34657390798 (2026-09-12)
