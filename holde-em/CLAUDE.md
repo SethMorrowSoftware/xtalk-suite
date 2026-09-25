@@ -60,8 +60,10 @@ assets/cards/, assets/sounds/  vendored Kenney CC0 art and audio (see each NOTIC
    assert sites are added (v0.24.5 added five sites without a bump, so "v41"
    names two totals; v43 -> v44 on 2026-09-10 covered the four wire-arity
    sites, v44 -> v45 on 2026-09-24 section 24's). Call sites are not checks
-   (at v40, 374 sites reported 507 checks): the next engine run RECORDS the
-   v45 total rather than matching 667.
+   (at v40, 374 sites reported 507 checks), so an engine run RECORDS a new
+   total rather than matching the last: the first v45 total, 2026-09-24, was
+   721 passed with every extension present, plus the 5 live-leg skips
+   (the ledger).
    `kHeHarnessV` is printed in the report header so a stale paste identifies
    itself. Asserts are self-diagnosing: print what was observed against what
    was expected, never a bare FAIL, and write first-contact tests to debug
@@ -192,11 +194,13 @@ itself is catalogued in the suite's
   line that is not ten fields, before decode, and refuses a last char that is a
   tab, because the engine ignores one trailing delimiter when counting (engine
   note 2.2). A legal wire ends in a 128-hex host signature. Four harness checks
-  pin both directions; they have not yet met an engine (the v45 run owes them).
+  (harness section 9) pin both directions; their first engine run,
+  2026-09-24, was green (the ledger).
 - **Both operands are evaluated (engine note 2.5).** `heBetApply`'s refusal
   `X is not a number or X is not trunc(X)` evaluated `trunc("abc")`; it is
-  nested now. Whether `trunc` of a non-number throws on the engine is
-  unrecorded.
+  nested now, and the nested form ran green on the engine on 2026-09-24
+  (harness section 5's non-numeric raise). Whether `trunc` of a non-number
+  throws on the engine is unrecorded.
 - **KNOWN EDGE (recorded, not engineered away).** A timeout drained from the
   REORDER BUFFER can be early-refused by the client that just learned of the
   turn: fail-visible, disputed at the settle, healed by reconnect.
@@ -439,14 +443,17 @@ sending `heNextHandTick`, which deals a hand, and no harness may arm that.
 | 2026-08-20 | Windows x86_64, suite paste | folded harness v0.24.5 / h41 | **543/0/5**, every section green |
 | 2026-08-24 | Windows x86_64, suite paste | folded harness v0.25.0 / h42 | **584/0**; the batch mask path equal to the per-point fallback byte for byte; the DLEQ proof and refusal legs green |
 | 2026-08-27 | OXT, two machines, one LAN (platform not recorded) | suite paste 2440/2/3 (the 2 were the live loopbacks, environment); folded holde-em v0.25.2 / h43 | **667/0**, the FIRST engine run of the onionxt-carrying file. The first two-machine 2d contact joined and dealt, but underneath the lobby overlay; v0.25.3 fixes that (statically) |
+| 2026-09-24 | Windows (the engine reports Win32; OXT version and OS build not recorded), suite paste | the D-23 board's first run, 2620/5/3 (built from 9aa62c8; the stack as at 6401e43); folded holde-em v0.25.3 / h45 through `heSelfTest` | **721/0**, the v45 total: all 24 sections green (the four wire-arity checks in section 9 and section 24 for the first time; 16 and 19 whole on SodiumXT ABI 10), `heProbeSodium` ok. The 5 skips, the live legs (tor table, three-machine oracle round, onion-hosted oracle, live timed table, tor redial), print on their own line, unmerged: the board row read 723/0/0 (the core adds its zero-failure and floor asserts). None of the paste's 5 failures was this member's |
 
 ## 7. Status
 
 Engine-proven, folded into the suite paste: every harness section's headless
-slice, including Level 2 compute, the batch mask step, void-and-audit, the five
-cheater bots and DLEQ (latest 667/0 at v0.25.2/h43, 2026-08-27). Verified
-statically; needs an OXT pass: the v0.25.3 overlay fix, the v45 total (the
-wire-arity checks and section 24), everything visual and timed (the 720p layout eye, the
+slice at v0.25.3 / h45, including the wire-arity checks, section 24, Level 2
+compute, the batch mask step, void-and-audit, the five cheater bots and DLEQ
+(latest 721/0, Windows, 2026-09-24; the five live legs skip by name). Verified
+statically; needs an OXT pass: the v0.25.3 overlay fix (its fold-time
+`heLobbyHide` has run only as the guarded no-op a paste makes it; the dismissal
+itself is the 2d re-run's), everything visual and timed (the 720p layout eye, the
 Phase 1 6-seat session), and every live multi-machine leg (2d re-run, 2e timed
 session, 2f two-machine tor + redial, the Phase 3 three-machine oracle round).
 Level 2 is not yet wired into played hands. Row 14 (the deal-path re-pass) can

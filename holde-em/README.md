@@ -70,10 +70,10 @@ dead-button rule.
 
 ## Status
 
-**v0.25.3 (harness 45).** The folded harness is engine-green: latest **667/0** at
-v0.25.2/h43 on 2026-08-27 (in the suite paste; platform not recorded), the same evening
-as the first two-machine 2d contact. [CLAUDE.md](CLAUDE.md) carries the full evidence
-ledger.
+**v0.25.3 (harness 45).** The folded harness is engine-green at this version: latest
+**721/0** on 2026-09-24 (in the suite paste, Windows), every section green, with the five
+live legs skipped by name; the first two-machine 2d contact was 2026-08-27, at v0.25.2.
+[CLAUDE.md](CLAUDE.md) carries the full evidence ledger.
 Anything visual, timed or multi-machine is "verified statically; needs an OXT pass"
 until a person confirms it. **Honestly: no played hand deals on Level 2 yet.** The
 wiring and the 4f deal-time check are open, and the Phase 5 hostile review and soak are

@@ -79,9 +79,17 @@ ones, it is dismissed sooner).
       defects caught by it. heHandSettle stays on the worklist: it ends by
       sending heNextHandTick, which deals a hand. No wire, KAT or game
       change; heProbeSodium is the 25th entry in heTestRunAllSections now.
-    Verified statically; needs an OXT pass: the overlay fix, the v45
-    total, the four wire-arity checks and section 24 (none has met an
-    engine; the next run RECORDS the v45 total rather than matching 667).
+    Verified statically; needs an OXT pass: the overlay fix (its fold-time
+    heLobbyHide has run only as the guarded no-op a paste makes it; the
+    dismissal itself is the 2d re-run's). This line also named the v45
+    total, the four wire-arity checks and section 24 ("none has met an
+    engine") until the record below.
+  * ENGINE RECORD (holde-em/CLAUDE.md's ledger; the runbook's section 8):
+    the 2026-09-24 suite paste (the D-23 board's first run), on Windows
+    (the engine reports Win32; OXT version not recorded), ran this version
+    folded at harness 45: 721/0, every section green, the four wire-arity
+    checks and section 24 on their first engine run, the five live legs
+    SKIPped by name. No run is recorded at harness 44.
 
 v0.25.2 -- HOLDE-EM CARRIES ONIONXT: ONION TABLES WITH NO `start using`
 STEP (2026-08-27). NO WIRE CHANGED -- not a byte. kHeVersion 0.25.1 ->
