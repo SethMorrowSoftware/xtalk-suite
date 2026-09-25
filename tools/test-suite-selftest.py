@@ -121,6 +121,10 @@ P_EN_INIT_CORE = "   put suEnInit() into tInit\n"
 P_EN_DEINIT_CALL = "      put enDeinitialize() into tR\n"
 P_EN_FOLD = '   en1stAssert "enInitialize returns 0", suEnInit() is 0\n'
 P_DC_FOLD = '   dc1stAssert "dcInit returns 0", suDcInit() is 0\n'
+# An engine socket message the embedded onionxt layer handles (check 18's
+# widened roots), and the count's one declaration (its initialiser rule).
+P_SOCKET_CLOSED = "on socketClosed pSocketID\n"
+P_EN_HELD_DECL = "local sSuEnHeld\n"
 # The core: suArmRun's one timer, the nostrxt call, the harness marker, the
 # last results field suBuildAll builds, the cancel list, the summary's first
 # note, the three board constants and one member's scope test.
@@ -244,7 +248,30 @@ CASES = [
      {"18"}, "stCleanup calls enDeinitialize"),
     ("18: a count written outside its four handlers",
      "paste", lambda t: after(t, P_CLEANUP, "   put 0 into sSuEnHeld\n", "stCleanup"),
-     {"18"}, "stCleanup writes sSuEnHeld"),
+     {"18"}, "stCleanup names sSuEnHeld"),
+    # Four the first cut of check 18 PASSED (review, 2026-09-25): three write
+    # forms its list of writes did not have, and a release in an engine
+    # message handler its four roots did not reach.
+    ("18: put 1 BEFORE a count (0 becomes 10: ten releases)",
+     "paste", lambda t: after(t, P_CLEANUP, "   put 1 before sSuEnHeld\n", "stCleanup"),
+     {"18"}, "stCleanup names sSuEnHeld"),
+    ("18: a count as a repeat-with loop variable",
+     "paste", lambda t: after(t, P_CLEANUP,
+                              "   repeat with sSuDcHeld = 1 to 2\n   end repeat\n",
+                              "stCleanup"),
+     {"18"}, "stCleanup names sSuDcHeld"),
+    ("18: a count declared with an initial value (a hold never taken)",
+     "both", lambda t: swap(t, P_EN_HELD_DECL, "local sSuEnHeld = 3\n", "declaration"),
+     {"18"}, "sSuEnHeld is named outside every handler"),
+    ("18: a bare enDeinitialize in the engine's socketClosed message",
+     "paste", lambda t: after(t, P_SOCKET_CLOSED, "   enDeinitialize\n", "socketClosed"),
+     {"18"}, "socketClosed calls enDeinitialize"),
+    ("18 NEGATIVE: the two counts named in a comment and a report label",
+     "paste", lambda t: after(t, P_CLEANUP,
+                              "   -- sSuEnHeld and sSuDcHeld are the four handlers' alone\n"
+                              '   stNote "sSuEnHeld counts; sSuDcHeld flags"\n',
+                              "stCleanup"),
+     set(), "check-suite-selftest: OK"),
     ("18: the release no longer calls the library (routing would check nothing)",
      "paste", lambda t: swap(t, P_EN_DEINIT_CALL, "      put 0 into tR\n", "suEnRelease"),
      {"18"}, "suEnRelease does not call enDeinitialize"),

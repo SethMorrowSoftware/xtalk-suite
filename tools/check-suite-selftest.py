@@ -86,6 +86,13 @@ COUNTED = [m.prefix for m in BUILD.MEMBERS if m.shape == "counted"]
 # them).
 EVENTS = ("openStack", "mouseDown", "mouseUp", "closeStack")
 
+# The engine's socket messages (root CLAUDE.md, "Engine socket names";
+# check-cross-library-names.py ENGINE_MESSAGES): delivered to the paste by the
+# engine whenever a socket the embedded onionxt layer opened errors, closes or
+# times out. Check 18 roots its closure at these as well as at EVENTS and
+# every other `on` handler.
+ENGINE_MESSAGES = ("socketError", "socketClosed", "socketTimeout")
+
 # The one statement check 15 requires first in every timer the core arms.
 PIN = "set the defaultstack to the short name of this stack"
 
@@ -1150,17 +1157,29 @@ def main(argv):
     # can reach may call one of the four library handlers except its wrapper,
     # and nothing but the four wrappers may write a count.
     #
-    # Reachability is the paste-wide closure from what the engine delivers
-    # (openStack, mouseDown, mouseUp, closeStack), with an edge for every
-    # defined handler's name in a reachable body, comments stripped and string
-    # literals KEPT - so a timer (`send "x" to me in ...`), a `do`, a dispatch
-    # and holde-em's `do pName` off a literal are edges too. It over-
-    # approximates, which is the safe direction for "unreachable": what it
-    # calls unreachable (the folded harnesses' cut teardowns, which still call
-    # enDeinitialize and dcCleanup bare) cannot be named by anything that
-    # runs. A CALL is the name in the literal-BLANKED view (a word in a test
-    # label is not a call), or inside a literal on a do / send / dispatch /
-    # call line or in value(...), which is how a string becomes one.
+    # Reachability is the paste-wide closure from what the engine delivers,
+    # with an edge for every defined handler's name in a reachable body,
+    # comments stripped and string literals KEPT - so a timer (`send "x" to
+    # me in ...`), a `do`, a dispatch and holde-em's `do pName` off a literal
+    # are edges too. It over-approximates, which is the safe direction for
+    # "unreachable": what it calls unreachable (the folded harnesses' cut
+    # teardowns, which still call enDeinitialize and dcCleanup bare) cannot be
+    # named by anything that runs. A CALL is the name in the literal-BLANKED
+    # view (a word in a test label is not a call), or inside a literal on a
+    # do / send / dispatch / call line or in value(...), which is how a string
+    # becomes one.
+    #
+    # THE ROOTS are every MESSAGE handler, not only the four board events
+    # (review, 2026-09-25). The first cut rooted the closure at openStack,
+    # mouseDown, mouseUp and closeStack alone, so the engine's socket
+    # messages - socketError, socketClosed, socketTimeout, which the embedded
+    # onionxt layer handles in this very paste - were "unreachable", and a
+    # bare enDeinitialize planted in `on socketClosed` passed this check and
+    # the boot drive alike. The engine delivers a message to whatever `on`
+    # handler bears its name, and a send, dispatch or callback whose name
+    # this scan cannot read delivers one too; the socket names are rooted
+    # whatever keyword defines them. The dead folded callers stay dead: they
+    # are all `command`s nothing names.
     holds = (("enInitialize", "suEnInit"), ("enDeinitialize", "suEnRelease"),
              ("dcInit", "suDcInit"), ("dcCleanup", "suDcRelease"))
     counts = ("sSuEnHeld", "sSuDcHeld")
@@ -1173,7 +1192,11 @@ def main(argv):
     for name, a, b in paste_spans:
         paste_by_name.setdefault(name.lower(), []).append((a, b))
     paste_blank = [blank_literals(ln) for ln in lines_bare]
-    reach18 = {e.lower() for e in EVENTS if e.lower() in paste_by_name}
+    roots18 = {e.lower() for e in EVENTS + ENGINE_MESSAGES}
+    for name, a, _b in paste_spans:
+        if re.match(r'^on\s', lines_bare[a], re.I):
+            roots18.add(name.lower())
+    reach18 = {r for r in roots18 if r in paste_by_name}
     frontier = list(reach18)
     while frontier:
         name = frontier.pop()
@@ -1230,21 +1253,46 @@ def main(argv):
                        f"routing half is checking nothing for {lib}")
     dead18 = sorted({name for lib, _ in holds for name, a, b in paste_spans
                      if name.lower() not in reach18 and lib_calls(lib, a, b)})
+    # THE COUNTS ARE NAMED ONLY BY THEIR FOUR HANDLERS, and outside every
+    # handler only by a bare declaration. The first cut listed the ways to
+    # WRITE a variable (into, add/subtract/multiply/divide, delete) and missed
+    # three that LiveCode has (review, 2026-09-25): `put 1 before sSuEnHeld`
+    # turns a count of 0 into 10 and so ten releases, `put ... after` and
+    # `repeat with sSuEnHeld = ...` rewrite it too, and each passed. A list of
+    # write forms is a list of the ones somebody thought of, so this asks
+    # the question that has no forms: no code outside the four handlers names
+    # a count at all (a read has no use either: the four handlers are the
+    # only place a hold is decided). A comment or a report label may still
+    # name one; a literal on a do / send / dispatch / value line may not, the
+    # same rule as a call. Outside a handler the one allowed line is the
+    # declaration, with no initialiser: `local sSuEnHeld = 3` would be a hold
+    # the paste never took.
     for var in counts:
-        write = re.compile(r'\binto\s+' + var + r'\b'
-                           r'|\b(?:add|subtract|multiply|divide)\b.*\b' + var + r'\b'
-                           r'|\bdelete\s+(?:local\s+|variable\s+)?' + var + r'\b',
-                           re.I)
+        word = re.compile(r'\b' + var + r'\b', re.I)
+        inside_handler = set()
         for name, a, b in paste_spans:
+            inside_handler.update(range(a, b + 1))
             if name.lower() in wrappers:
                 continue
             for i in range(a + 1, b):
-                if write.search(paste_blank[i]):
-                    fail("18", f"{name} writes {var} "
+                if word.search(paste_blank[i]) or (
+                        word.search(lines_bare[i])
+                        and stringy.search(paste_blank[i])):
+                    fail("18", f"{name} names {var} "
                                f"({raw_lines[i].strip()!r}, line {i + 1}). "
                                f"Only the four hold handlers may: a count "
-                               f"written anywhere else is a release of holds "
+                               f"touched anywhere else is a release of holds "
                                f"this paste never took, or a hold it forgets")
+        decl = re.compile(r'^\s*local\s+[\w\s,]*$', re.I)
+        for i, ln in enumerate(lines_bare):
+            if i in inside_handler or not word.search(paste_blank[i]):
+                continue
+            if not decl.match(paste_blank[i]):
+                fail("18", f"{var} is named outside every handler other than "
+                           f"by a bare `local` declaration "
+                           f"({raw_lines[i].strip()!r}, line {i + 1}); a "
+                           f"declared initial value is a hold the paste "
+                           f"never took")
 
     if problems:
         print("check-suite-selftest: FAILED")
