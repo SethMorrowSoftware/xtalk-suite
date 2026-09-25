@@ -95,24 +95,25 @@ holds every dated record); open work is in [docs/WORK-PLAN.md](docs/WORK-PLAN.md
 
 | Member | Committed binaries | Latest dated engine record | Still open |
 |---|---|---|---|
-| sodiumxt | 5 platforms, ABI 10 | full `sxSelfTest()` 106/106 incl. ChaCha20 in the suite paste, Windows, 2026-09-24, on the shipped MSVC DLL (the 2026-09-12 build's first engine load; the bitness was not recorded) | the MSVC DLL of the other bitness; a first Mac load; the demo re-pass |
-| torrentxt | 5 platforms, ABI 11 | harness 106/106 in the suite paste, Windows, 2026-09-24: the 2026-09-12 build's first engine load and the first libtorrent 2.1 run on Windows (the 996-byte BEP44 caps included); rp1 chat reported working across two machines on one LAN, 2026-08-27 | the 2026-09-12 Linux build; demo re-opens; the Tor paths; two-machine seed/leech and resume; a real public swarm |
+| sodiumxt | 5 platforms, ABI 10 | full `sxSelfTest()` 106/106 incl. ChaCha20 in the suite paste, Windows, 2026-09-24, on a shipped MSVC DLL by the maintainer's account (the 2026-09-12 build's first engine load; the bitness was not recorded) | the MSVC DLL of the other bitness; a first Mac load; the demo re-pass |
+| torrentxt | 5 platforms, ABI 11 | harness 106/106 in the suite paste, Windows, 2026-09-24: the 2026-09-12 build's first engine load by the maintainer's account, and the first recorded libtorrent 2.1 run on Windows (the 996-byte BEP44 caps included); rp1 chat reported working across two machines on one LAN, 2026-08-27 | the 2026-09-12 Linux build; demo re-opens; the Tor paths; two-machine seed/leech and resume; a real public swarm |
 | enetxt | 5 platforms, ABI 2 | folded 34 checks green in the suite paste, Windows, 2026-09-24, on the 2026-09-12 DLL (the paste's live loopback stalled, runbook 5.5); standalone async loopback, 2026-08-13 | an async loopback on the 2026-09-12 builds; LAN chat between two machines; internet chat across two networks |
 | datachannelxt | 5 platforms, ABI 1 | folded 39 checks green in the suite paste, Windows, 2026-09-24, on the 2026-09-12 DLL (the paste's live loopback stalled, runbook 5.5); standalone async loopback, 2026-08-15; a DHT-signalled chat reported working across two machines on one LAN, 2026-08-27 | an async loopback on the 2026-09-12 builds; browser interop; a call across two networks; the loopback demo |
 | onionxt | pure script | live-Tor core and `oxh*` hosting at bring-up (pre-suite, undated); offline self-test 74/0/1 in the suite paste, Windows, 2026-09-24; Esplora and Electrum over Tor from the coin wallet, 2026-09-02 and 09-03 | launching tor from the library (Mode B); four inline probes; an OnionXT-to-OnionXT round trip; live negative paths |
 | nostrxt | pure script | core 277/0/2 in the suite paste, Windows, 2026-09-24 (the NIP-44 cipher round trip included); relay connect, publish and ok-confirm live against wss://nos.lol, 2026-08-24 | the relay receive leg; NIP-42; `ws://`; bad-certificate TLS (engine note 6.8) |
 | box2dxt | 5 platforms, ABI 4 | Kit harness v32: 385/0 in the suite paste, Windows, 2026-09-24, on the 2026-09-12 DLL and the paste's 1200-wide card; v30 374/1 Linux, 2026-08-21 (the red is `playLoudness` readback, engine note 5.4) | the harness v32 total on Linux; the five game stacks since the 2026-08-14 fold; risk R1 on Linux and macOS |
-| coinxt | 5 platforms, ABI 7 | library 296/296 at ABI 7 in the suite paste, Windows, 2026-09-24, on the 2026-09-12 DLL (the six `cxPubkeyCombine` checks included); 290/290 at ABI 6, 2026-08-24; the wallet's engine logs, 2026-09-01 to 09-03: all four public transports, testnet broadcasts, RBF, CPFP, an inscription | silent-payment receive; the wallet surface added since 2026-09-04; a native-P2WPKH and any Ethereum broadcast; the x86-win32 DLL |
-| riptide | app | phases 1-4 done on two machines, 2026-08-13 and 2026-08-15; harness 487/2/2 in the suite paste, Windows, 2026-09-24 (both FAILs fixed statically since: a stale capability count, and a u64 bound the engine let through, engine note 2.10) | live passes of phases 5-8; the faststart re-run; the boot re-paste |
+| coinxt | 5 platforms, ABI 7 | library 296/296 at ABI 7 in the suite paste, Windows, 2026-09-24, on the 2026-09-12 DLL (the six `cxPubkeyCombine` checks included); 290/290 at ABI 6, 2026-08-24; the wallet's engine logs, 2026-09-01 to 09-03: all four public transports, testnet broadcasts, RBF, CPFP, an inscription | silent-payment receive; the wallet surface added since 2026-09-04; a native-P2WPKH and any Ethereum broadcast; a run that names its Windows DLL's bitness |
+| riptide | app | phases 1-4 done on two machines, 2026-08-13 and 2026-08-15; harness 489/0/2 in the suite paste, Windows, 2026-09-24 (the day's second run; its first read 487/2/2: a stale capability count, and a u64 bound the engine let through, engine note 2.10; both fixed and green that evening) | live passes of phases 5-8; the faststart re-run; the boot re-paste |
 | nocloud | app | no dated engine pass in this tree (its pre-fold passes are undated); gates green, including a headless execution gate | the 69-item OXT checklist, web-link and Tor halves |
 | holde-em | app | folded harness 721/0 at v0.25.3 (harness v45), Windows, 2026-09-24 | a six-seat hotseat session; the multi-machine exits; Level 2 is not yet wired into played hands |
 
 **Platform gaps, suite-wide.** Every native member's current binaries come from the 2026-09-12
 release dispatch (commit 421bab3). Their Windows builds first met an engine on 2026-09-24, in the
-suite paste (the bitness was not recorded; every earlier Windows record here was x86_64); no
-engine has loaded the Linux builds yet. No OXT engine has loaded any `universal-mac` dylib. The 32-bit rows lack engine records: sodiumxt, torrentxt and
-coinxt on x86-win32 (coinxt's 32-bit DLL has not executed anywhere, even in CI), sodiumxt and
-torrentxt on x86-linux. The Windows DLLs carry libsodium 1.0.22 (accepted, D-08) and libtorrent
+suite paste, by the maintainer's account (the bitness was not recorded); no engine has loaded the
+Linux builds yet. No OXT engine has loaded any `universal-mac` dylib. No record names a 32-bit
+engine: sodiumxt, torrentxt and coinxt on x86-win32 (coinxt's 32-bit DLL may never have executed
+anywhere: CI's Windows KAT step is x86_64 only, and the 2026-09-24 run's bitness is unknown), and
+sodiumxt and torrentxt on x86-linux. The Windows DLLs carry libsodium 1.0.22 (accepted, D-08) and libtorrent
 2.1.1 rather than the 1.0.20 and 2.0.11 the other platforms pin. Linux floors vary: both
 datachannelxt builds and torrentxt's 32-bit build need glibc 2.38, box2dxt's 32-bit build 2.34.
 The macOS dylibs are universal (arm64 + x86_64) and unsigned.

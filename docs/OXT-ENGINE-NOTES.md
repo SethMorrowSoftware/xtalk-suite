@@ -144,9 +144,10 @@ the node unchanged instead of throwing: a fail-OPEN in a derivation path.
 
 ### 2.3 `itemDelimiter` and `lineDelimiter` are global mutable state
 **Superseded in part, OBSERVED 2026-09-24 (Windows; read the counterpoint
-and its settlement below first):** on that engine both delimiters are
-HANDLER-LOCAL in both directions. The rule stands; the title's cross-handler
-claim does not, and the number is kept because the tree cites it.
+and its settlement below first):** on that engine the itemDelimiter is
+HANDLER-LOCAL in both directions (the lineDelimiter was not probed). The rule
+stands; the title's cross-handler claim does not, for the itemDelimiter, and
+the number is kept because the tree cites it.
 **OBSERVED** (several times, in shipped code). A handler that sets one and
 returns without restoring it corrupts every later parse in unrelated code; the
 symptom is always "item 1 returned the whole list". **Rule:** save, set,
@@ -168,10 +169,12 @@ until it does.
 run, box2dxt harness v32 folded in, 385/0; runbook section 8): both halves
 printed the dictionary's answer. "a caller's tab does NOT reach a called
 handler on Win32 (it saw comma)", and "a Kit call left its caller's delimiter
-alone on Win32 (tab in, tab out)". So on that engine a delimiter set in one
-handler is invisible to the handlers it calls and cannot leak back out of
-them: the title's "global" is WRONG there, and this entry's undated
-observations can only have been the leak that both readings share - a
+alone on Win32 (tab in, tab out)". So on that engine an itemDelimiter set in
+one handler is invisible to the handlers it calls and cannot leak back out of
+them: the title's "global" is WRONG there for the itemDelimiter. The probe
+reads only `the itemDelimiter`; the lineDelimiter, which the dictionary
+describes the same way, was not probed. This entry's undated observations
+(platforms unknown) were most likely the leak that both readings share - a
 delimiter left set for the rest of ONE handler, reaching a later parse in the
 same handler. Linux and macOS have not run the probe; it is one engine build
 on one platform, and the dictionary's claim is platform-independent, so the
@@ -300,31 +303,48 @@ the record PARSED, and the harness check "a seq of 2^53 + 1 is REFUSED (the
 first unrepresentable value)" went red while its neighbours (2^53 itself
 parses, and comes back exact; an all-ones u64 is refused) passed. The two
 operands differ by about 2.3e-10: 1.1e-16 of their size.
-**INFERRED, not observed: the mechanism.** Either the engine compares numbers
-with a tolerance, or an operand passed through a string form of about 15
-significant digits on the way; nothing in the run separates the two, and it
-cannot say whether a tolerance would be absolute or relative to the operands'
-size. That matters: coinxt's wallet decoders bounded their accumulators the
-same way (`tValue > (9007199254740992 - tByte) / 256`), where the margin is
-0.0039 at 3.5e13 - comfortably outside an absolute tolerance, and exactly as
-thin (1.1e-16 of the size) as riptide's under a relative one.
+**OBSERVED 2026-09-24, the second run (a fresh stack, the paste regenerated at
+21aaa61): the comparison treats nearly-equal numbers as equal.** The fixed harness prints
+four probes that pure IEEE answers `true,true,true,true`, and the engine read
+`true,false,false,false`: `1 + 1e-7 > 1` true, but `1 + 2^-51 > 1` false,
+`2097152 > (2^53 - 1) / 2^32` false (the old bound itself) and
+`1 + 23 * 2^-52 > 1 + 22 * 2^-52` false. The three that read false compare exact
+doubles, so it is how the engine decides a comparison, not its arithmetic. The
+same run bounds it from above:
+nostrxt's "since excludes older events" rests on `1700000000 < 1700000001`, and
+it passed.
+**INFERRED, still open: which rule.** Python models of three families fit both
+readings: a RELATIVE tolerance from 2 DBL_EPSILON up to 5.9e-10 of the operands'
+size, an ABSOLUTE one from 2^-32 (about 2.3e-10) up to 1e-7, or a DECIMAL round
+trip at 10 to 14 or at 16 significant digits. They are not equally harmless: under
+an absolute rule `1e-10 > 0` is false, and every small positive quantity compares
+equal to zero. The harness's second probe line (2026-09-25: `1e-10 > 0`,
+`2^30 + 2^-21 > 2^30`, and the smallest step the engine tells apart at 1 and at 8)
+gives each family a different reading, and settles the rule on the next run.
+coinxt's wallet decoders bounded their accumulators the same way as riptide
+(`tValue > (9007199254740992 - tByte) / 256`): a margin of 0.0039 at 3.5e13, safe
+from an absolute tolerance and exactly as thin as riptide's under a relative one.
 **Rule:** decide a bound with exact INTEGERS that differ by at least 1 at a
 modest magnitude - compare the two u32 halves, or the leading bytes - and
 never against a quotient, a product past 2^53, or any value whose verdict
 hangs on a sub-integer difference. A bound that only works in exact
 arithmetic is a bound the engine may not enforce. Both sites were rewritten
-that way on 2026-09-24 (verified statically; needs an OXT pass).
+that way on 2026-09-24: riptide's refused 2^53 + 1 on the engine in the second
+run; coinxt's (the wallet, which the paste does not carry) is verified
+statically; needs an OXT pass.
 **Gate:** riptide's harness checks the u64 bound from both sides (2^53 parses,
-2^53 + 1 is refused), which is how an engine run caught it, and since the fix it
-prints a diagnostic that tells the candidate mechanisms apart on the next run.
-Headlessly, the interpreter itself compares the IEEE way, so two gates replay
-the bounds under three CANDIDATE engine rules (a relative DBL_EPSILON
-tolerance, an absolute 1e-6 one, a 15-significant-digit round trip), each
-first proven to reproduce the engine's accept through the old line:
+2^53 + 1 is refused), which is how an engine run caught it, and it prints the two
+probe lines above. Headlessly, the interpreter itself compares the IEEE way, so
+two gates replay the bounds under three CANDIDATE engine rules (a relative
+DBL_EPSILON tolerance, an absolute 1e-6 one, a 15-significant-digit round trip),
+each first proven to reproduce the engine's accept through the old line:
 `riptide/tools/check-script-vectors.py` (tier 1c, plus a static scan refusing
 a library comparison against a quotient) and `coinxt/tools/check-wallet-vectors.py`
-(tier 4). They settle the rewritten bounds' LOGIC under each candidate; which
-rule the engine really has stays open.
+(tier 4). The second run rules out each of those three as the engine's EXACT
+rule (a 1-DBL_EPSILON tolerance reads probe 2 true, an absolute 1e-6 one reads
+probe 1 false, a 15-digit round trip reads probe 4 true), though each still
+reproduces the accept the fixtures need. They settle the rewritten bounds' LOGIC;
+when the next run names the rule, the models should become it.
 **Does NOT mean:** integer arithmetic below 2^53 is inexact (it is exact:
 2.4), or that comparing two clearly different numbers is unreliable; only a
 verdict that rests on a difference far below 1 is.

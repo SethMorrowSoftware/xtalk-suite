@@ -123,8 +123,9 @@ work plan.
 **Suite-wide**
 
 - **Windows upstream pins.** torrentxt's Windows DLLs carry libtorrent 2.1.1 (vcpkg's unpinned port)
-  against 2.0.11 on Linux and mac; it ran green on an engine on 2026-09-24 (106/106 in the suite
-  paste), which informs the call without making it. datachannelxt's carry OpenSSL 3.6.4 (vcpkg's classic port) against
+  against 2.0.11 on Linux and mac; it ran green on an engine on 2026-09-24 by the maintainer's
+  account (106/106 in the suite paste; the report prints no library version), which informs the
+  call without making it. datachannelxt's carry OpenSSL 3.6.4 (vcpkg's classic port) against
   a pinned 3.5.4 on mac. Pin each one, or accept it the way D-08 accepted sodiumxt's 1.0.22.
 - **A suite Linux glibc floor.** The committed floors run from 2.14 to 2.38. datachannelxt (both rows)
   and torrentxt's `x86-linux` need 2.38, so they cannot load on Ubuntu 22.04, Debian 12 or RHEL 9.
@@ -136,7 +137,8 @@ work plan.
   owner-reviewed.
 - **32-bit engines.** Arrange a 32-bit Windows OXT and a 32-bit Linux OXT for the `x86-win32` and
   `x86-linux` rows (runbook rows 23 and 47), or accept those rows as CI-only. coinxt's `x86-win32` DLL
-  has never executed anywhere.
+  may never have executed anywhere (CI's Windows KAT step is x86_64 only, and the 2026-09-24 engine
+  run did not record its bitness).
 - **coinxt per-push Windows/mac CI** (with a 32-bit Python for the x86 DLL), or a written "dispatch-only
   is permanent".
 - **Supply-chain hygiene**, found by the 2026-09-08 research and re-verified 2026-09-23. Decide which

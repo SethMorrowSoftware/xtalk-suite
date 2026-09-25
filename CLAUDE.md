@@ -314,7 +314,8 @@ worse than no gate, because it answers the question nobody asks twice.
   builds first met an engine on 2026-09-24: the D-23 suite paste loaded all six and ran every
   member's sections (runbook section 8; the bitness was not recorded). No engine has loaded the
   Linux or mac builds yet. The Windows DLLs carry libsodium 1.0.22 (D-08) and libtorrent 2.1.1,
-  not the versions pinned for the other platforms, and that run exercised both.
+  not the versions pinned for the other platforms, and that run exercised both by the maintainer's
+  account (the report prints no library version).
 
 ## Member repositories and publishing
 

@@ -66,13 +66,14 @@ about the script.
 | 6 | standalone `enet-selftest`, then `datachannel-selftest` | green, no `RUN NOT FINISHED` trailer (4.2, 4.3) | 10 |
 | S | `nocloud/src/nocloudquickshare.livecodescript`, then its checklist's web-link half | row 22; row 46 if time allows | 75 |
 
-Item 1's last records, to record against rather than match: sodiumxt 106,
-torrentxt 101, onionxt 61, coinxt 290 (before ABI 7's six new lines), enetxt 34
-and datachannelxt 39 (sync halves), nostrxt 274/0/2, riptide 0 failed with 2
-skips (the live anon-service legs; 391/0 on 2026-08-24), box2dxt at harness v32 (385 expected; v31's 374 was never recorded on its own), holde-em at
-v0.25.3 / harness 45 with 0 failed and 5 live-transport skips. Whole paste:
-2,373/0/3 (2026-08-24), 2440/2/3 (2026-08-27, both failures environmental). A new
-total is not a regression by itself; a red line is.
+Item 1's last records (2026-09-24, Windows; section 8), to record against rather
+than match: sodiumxt 106, torrentxt 106, onionxt 74/0/1, coinxt 296, enetxt 34
+and datachannelxt 39 (sync halves), nostrxt 277/0/2, riptide 489/0/2 (the skips
+are the live anon-service legs), box2dxt 385/0 at harness v32, holde-em 721/0 at
+v0.25.3 / harness 45 with 5 live-transport skips. Whole paste: 2620/5/3 (that
+day's first run) and 2623/2/3 (its second, with riptide's two fixes); both runs'
+loopbacks stalled, suspected environment (5.5). A new total is not a regression
+by itself; a red line is.
 
 ### S2 - one machine plus tor (~3 h with setup)
 
@@ -212,7 +213,7 @@ and are never reused. Every dated result also becomes one row in the member's
 | 45 | torrentxt on a real swarm | NET; S1 per platform | A legal ISO magnet through to `torrentFinished` with a hash match; `btMoveStorage` actually moving and `btRemoveTorrent` actually deleting (`btMoveStorage`'s stale-id refusal is engine-proven, 2026-08-17; `btRemoveTorrent` has no refusal check, only the non-delete teardown call); a packaged fresh install per platform | `torrentxt/CLAUDE.md` |
 | 46 | nocloud checklist sections 7-8 | S1 + a standalone build | 7, the webapp over a web link: Theater/Music `206`, `?dl` `.wav`, `pushState` reload/paste/Back, the `file://` fallback. 8: fail-closed launches without SodiumXT and without TorrentXT, each after an uninstall and a fresh launch (the TorrentXT-absent guard of 2026-09-09: window built, a "No transport" status line, no engine dialog); a clean shutdown via a standalone's Cmd-Q | the checklist's tallies |
 | 47 | platform rows with no engine record | S5 (32-bit engines where they exist) | `x86-win32` for torrentxt and coinxt (coinxt's 32-bit DLL may never have executed, even in CI: the 2026-09-24 Windows run did not record its bitness) and sodiumxt (row 23); `x86-linux` for sodiumxt and torrentxt. Green: the preflight LOADED and the member's sections green on that row, bitness recorded | the platform tables in each member's README and `CLAUDE.md` |
-| 48 | the suite board's first engine run (D-23: the paste wears the demos' card look, 3.1); PARTLY RUN 2026-09-24 (section 8) | S1 item 1 | RAN 2026-09-24 (Windows): the window built at 1200x640 with every row (the boot self-check green, 9/0/0, its delayed write included, and its note in the summary); **Run all** end to end, with the summary saying the rows account for every counted check (2620/5/3); box2dxt's total at 1200 wide (385/0; row 31, closed); **Copy results** unchanged (the counts line, a blank line, then the whole report). OWED, because a text report cannot show them: the pills' look after Run all (OK, or `absent` for what is not installed, `unavailable` for torrentxt); **Run** on sodiumxt; on torrentxt TWICE (the second run must take a fresh session: its pill reads OK, not `unavailable`); on enetxt (its loopback: the pill reads `running...`, then OK, on a machine where UDP to 127.0.0.1 is not blocked, 5.5); a SECOND **Run all** in the same launch: riptide's four session sections (chunked-post store, DM, live feed, media) green, which is the fold's stale-session fix (work plan 3.1 engine #10), and riptide at 0 failed once its two 2026-09-24 fixes are in the paste; each filter: All, Failures, Skips, Boot check, and a row's Show. Record whether a row's Run button stays hilited during its run, and whether the press arms the run at all: the design acts on a button-1 `mouseDown`, which no engine has delivered to this board (the fallback is one line in the scaffold master's `mouseUp`) | THE BOARD section's "FIRST ENGINE RUN" paragraph and the board's footer, in `tests/suite-selftest.core.livecodescript` ("THE BOARD (D-23)") (then regenerate the paste); D-23's label in `docs/OPEN-DECISIONS.md`; the board bullet of the root `CLAUDE.md`; the suite paste's row in `start-here.livecodescript`'s registry |
+| 48 | the suite board's first engine run (D-23: the paste wears the demos' card look, 3.1); PARTLY RUN 2026-09-24 (section 8) | S1 item 1 | RAN 2026-09-24 (Windows): the window built at 1200x640 with every row (the boot self-check green, 9/0/0, its delayed write included, and its note in the summary); **Run all** end to end, with the summary saying the rows account for every counted check (2620/5/3); box2dxt's total at 1200 wide (385/0; row 31, closed); **Copy results** unchanged (the counts line, a blank line, then the whole report). OWED, because a text report cannot show them: the pills' look after Run all (OK, or `absent` for what is not installed, `unavailable` for torrentxt); **Run** on sodiumxt; on torrentxt TWICE (the second run must take a fresh session: its pill reads OK, not `unavailable`); on enetxt (its loopback: the pill reads `running...`, then OK, on a machine where UDP to 127.0.0.1 is not blocked, 5.5); a SECOND **Run all** in the same launch: riptide's four session sections (chunked-post store, DM, live feed, media) green, which is the fold's stale-session fix (work plan 3.1 engine #10; riptide's two 2026-09-24 fixes ran green that evening, 489/0/2, but in a fresh stack, so not on a second Run all); each filter: All, Failures, Skips, Boot check, and a row's Show. Record whether a row's Run button stays hilited during its run, and whether the press arms the run at all: the design acts on a button-1 `mouseDown`, which no engine has delivered to this board (the fallback is one line in the scaffold master's `mouseUp`) | THE BOARD section's "FIRST ENGINE RUN" paragraph and the board's footer, in `tests/suite-selftest.core.livecodescript` ("THE BOARD (D-23)") (then regenerate the paste); D-23's label in `docs/OPEN-DECISIONS.md`; the board bullet of the root `CLAUDE.md`; the suite paste's row in `start-here.livecodescript`'s registry |
 
 ---
 
@@ -239,9 +240,10 @@ riptide and the apps are pure script.
 - **Windows.** The DLLs carry different upstream versions from Linux and mac:
   sodiumxt's are MSVC builds with libsodium 1.0.22 (D-08) and torrentxt's carry
   libtorrent 2.1.1 from vcpkg, against the pinned 1.0.20 and 2.0.11 elsewhere.
-  Both ran on 2026-09-24 (section 8: sodiumxt 106/106, torrentxt 106/106); the
-  bitness of that run was not recorded, so each Windows row's own record waits
-  on a run that names it.
+  Both loaded on 2026-09-24 by the maintainer's account (section 8: sodiumxt
+  106/106, torrentxt 106/106; the report prints no library version). The bitness
+  of that run was not recorded, so each Windows row's own record waits on a run
+  that names it.
 - **Linux glibc floors** (the highest `GLIBC_` version each committed `.so`
   needs, from `objdump -T`). An S1 Linux machine needs 2.38+ to load all six;
   Ubuntu 22.04 (2.35), Debian 12 (2.36) and RHEL 9 (2.34) cannot load
@@ -349,8 +351,9 @@ Every selftest and demo is a single stack script that builds its own UI:
    (sessions flushed, hosts destroyed, `dcCleanup` / `enDeinitialize` /
    `btStopSession`).
 
-**The suite paste's window is a board** (D-23, 2026-09-24; "verified statically;
-needs an OXT pass", row 48). It still builds itself and runs everything on open
+**The suite paste's window is a board** (D-23, 2026-09-24). Its build, boot check,
+Run all and Copy results ran on an engine on 2026-09-24. A row's Run, Show, the
+filters and the pills' look are "verified statically; needs an OXT pass" (row 48). It still builds itself and runs everything on open
 (step 4). Down the left, one row per member of `tools/member-registry.py` plus a
 cross-member row: a pill (`OK`, `N FAILED`, `skipped`, `absent`, `unavailable` for
 torrentxt, `running...` while a loopback is live, `not run` outside the run's
@@ -538,9 +541,10 @@ It deliberately does NOT prove async DHT/tracker results, a real rp1 exchange, o
 the positive paths of `btMoveStorage` and `btRemoveTorrent`-with-delete (row 45):
 do not record those as passed. Copy the full `stResults`. The 2026-09-12
 binaries' first green run on Windows (2026-09-24, in the suite paste, 106/106)
-was also the first engine run of libtorrent 2.1.1 there and of
-`load_torrent_buffer` (both `btAddTorrentFile` forms); a Linux run is the next
-first contact.
+was also the first RECORDED engine run of libtorrent 2.1.1 there and of
+`load_torrent_buffer` (both `btAddTorrentFile` forms). The Windows DLLs have
+carried 2.1.1 since 2026-08-27, and that day's paste recorded neither its platform
+nor its binaries. A Linux run is the next first contact.
 
 ### 4.5 sodiumxt
 
@@ -901,7 +905,8 @@ results carried no platform.
 | 2026-08-29 | not recorded | `riptide-social` re-land, then the v11 boot | the re-land reported working (maintainer's account); the v11 boot read 9 passed / 1 failed / 0 skipped, every capability true, all five cards built; the FAIL was the self-check reporting all 63 off-card controls missing (engine note 5.6), fixed in the carried block |
 | 2026-09-01 to 09-03 | not recorded, testnet | `coin-wallet` | engine logs in `coinxt/CLAUDE.md`; a testnet spend, txid `7978bdd2c097c929cae2ab00084d4454b68b1d054a3f2d53fc7b51b70551e4d5`, accepted by the Esplora onion mirror over Tor (2026-09-02); Electrum over Tor (2026-09-03) |
 | 2026-09-15 to 09-20 | the maintainer's engine | archivext (row 36) | first contact: harness 357/2/0, then 363/0/0; demo boot 11/11; live legs and a gallery run. The member left for its own repository 2026-09-21; its records are engine notes 2.7, 3.4, 5.7-5.10 and 6.9 |
-| 2026-09-24 | Windows (the engine reports Win32), the 2026-09-12 release binaries (the maintainer's account: their first engine load); the OXT build and the bitness not recorded | suite paste, the D-23 board's first run (built from 9aa62c8) | 2620/5/3 (2628), every extension present. The board: built at 1200x640 with every row, the boot self-check 9/0/0 (its delayed write included), Run all end to end, the rows accounting for every counted check, the boot block above the summary, Copy results (row 48, in part). Folded: sodiumxt 106 (ABI-10 ChaCha20 again green), onionxt 74/0/1 (75 attempted against its floor of 51), coinxt 296, torrentxt 106 (the 996-byte BEP44 caps), enetxt sync 34, dc sync 39, box2dxt 385 (v32) on the 1200-wide card (hScroll 900; its two delimiter lines settle engine note 2.3 for Windows: handler-local both ways; closed row 31), riptide 487/2/2, nostrxt 277/0/2 (279 attempted against 278, the count its floor predicted), holde-em 721/0 (v0.25.3, harness v45; 5 live-leg skips on its own line). The 5 failures: both loopbacks stalled (enet in `connecting`, dc in `opening`) exactly as on 2026-08-27 (5.5: suspected environment, not yet tested apart); riptide's stale seven-key capability count (the probe has returned ten since phase 8) and its u64 bound accepting 2^53 + 1 (engine note 2.10), both fixed statically since; and riptide's merge line |
+| 2026-09-24 | Windows (the engine reports Win32), the 2026-09-12 release binaries (the maintainer's account: their first engine load); the OXT build and the bitness not recorded | suite paste, the D-23 board's first run (built from 9aa62c8) | 2620/5/3 (2628), every extension present. The board: built at 1200x640 with every row, the boot self-check 9/0/0 (its delayed write included), Run all end to end, the rows accounting for every counted check, the boot block above the summary, Copy results (row 48, in part). Folded: sodiumxt 106 (ABI-10 ChaCha20 again green), onionxt 74/0/1 (75 attempted against its floor of 51), coinxt 296, torrentxt 106 (the 996-byte BEP44 caps), enetxt sync 34, dc sync 39, box2dxt 385 (v32) on the 1200-wide card (hScroll 900; its two delimiter lines settle engine note 2.3's itemDelimiter half for Windows: handler-local both ways, the lineDelimiter not probed; closed row 31), riptide 487/2/2, nostrxt 277/0/2 (279 attempted against 278, the count its floor predicted), holde-em 721/0 (v0.25.3, harness v45; 5 live-leg skips on its own line). The 5 failures: both loopbacks stalled (enet in `connecting`, dc in `opening`), as both loopbacks did on 2026-08-27, whose phases and machine were not recorded (5.5: suspected environment, not yet tested apart); riptide's stale seven-key capability count (the probe has returned ten since phase 8) and its u64 bound accepting 2^53 + 1 (engine note 2.10), both fixed statically since; and riptide's merge line |
+| 2026-09-24 (the second run: 8:41 PM local, the first 6:46 PM) | as the first run: Windows, the same binaries (the maintainer's account); a fresh stack | the suite paste regenerated at 21aaa61 (riptide's two fixes) | 2623/2/3 (2628). Line for line the first run's report, bar riptide: 489/0/2, "probe reports exactly its ten keys" and "a seq of 2^53 + 1 is REFUSED" both green (work plan riptide engine #2 and #11 closed), and its probe line read `true,false,false,false` where IEEE reads `true,true,true,true`: the engine answers nearly-equal numbers as equal (engine note 2.10, which records the rules still in play). The 2 failures: both loopbacks stalled again, in the same phases. A fresh stack, so not the second Run all in one launch that row 48 owes |
 
 **Closed row numbers** (never reused; member docs and dated records cite some
 of them): 1, 2, 3 (2026-08-08/10); 7, 8, 9, 10 (2026-08-12); 11, 12, 15, 25, 26,

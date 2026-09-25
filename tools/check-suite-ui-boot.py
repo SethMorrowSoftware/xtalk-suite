@@ -8,9 +8,10 @@ WHY THIS EXISTS
 D-23 (2026-09-24) gave the GENERATED suite paste the demos' card look: a
 1200 x 640 board with one row per member, a scoped Run per row, a filtered
 results pane and the demo boot self-check - the su* handlers of
-tests/suite-selftest.core.livecodescript, which no engine has run. The static
-gates prove the text reads the way a checker reads it; nothing proved it
-RUNS. That is this tree's most expensive recorded failure shape (root
+tests/suite-selftest.core.livecodescript, which no engine had run when this
+gate was written (Run all first ran on one on 2026-09-24; a row's Run, Show
+and the filters still have not). The static gates prove the text reads the
+way a checker reads it; nothing proved it RUNS. That is this tree's most expensive recorded failure shape (root
 CLAUDE.md: shipped is not run; riptide's phase-8 card broke openStack twice
 through a green gate set), so the board gets what every other window-building
 script with an execution gate here has.
@@ -167,8 +168,9 @@ the release are OXT-PASS-RUNBOOK row 48), `is` FOLDING CASE (the interpreter's
 suLineKind is invisible here), the four SLOW_SCOPES and Run all, and EVERY
 PRESENT-EXTENSION PATH: with every native absent no loopback opens, no session
 is taken and no member harness runs. It settles LOGIC. It upgrades no honesty
-label: the board stays "verified statically plus a headless UI boot; needs an
-OXT pass" (D-23).
+label: what the 2026-09-24 engine runs did not show (a row's Run, Show, the
+filters, the pills' look) stays "verified statically plus a headless UI boot;
+needs an OXT pass" (D-23, runbook row 48).
 
 Usage:
   python3 tools/check-suite-ui-boot.py                 # the gate (fast tier)

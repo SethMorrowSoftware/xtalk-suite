@@ -122,20 +122,20 @@ The shim cites these by number; keep the numbering.
 | 2026-08-27 | CI, no engine | `release-binaries.yml` run 12 (`cec1e85`) | first `universal-mac` dylib committed (both slices); all five platforms pinned |
 | 2026-08-27 | OXT, two-machine session (platform not recorded) | suite paste; `enet-internet-chat` on one network | 2440 / 2 / 3, every folded member green (the renamed helper locals ran folded); the 2 failures were the core's loopbacks on a machine blocking UDP to 127.0.0.1 (environment: the suite runbook's trap 5.5); internet chat correctly could not connect (gotcha 6) |
 | 2026-09-12 | CI, no engine | `release-binaries.yml` run 34657390798 (`421bab3`) | every platform rebuilt from a tree containing `23a2914`; the x86_64 `.so` disassembly shows the gotcha-1 retire path |
-| 2026-09-24 | OXT, Windows (the engine reports Win32), a 2026-09-12 DLL by the maintainer's account (its first engine load); OXT version, OS build and bitness not recorded | the D-23 suite paste (built from `9aa62c8`; this member as at `6401e43`) | 2620 / 5 / 3; enetxt 34/34 folded (lifecycle, stale handles, the helper dispatcher, tuning + abrupt teardown), no skips; the core's loopback bound 127.0.0.1:27196 and took an `enConnect` handle (6/6), then stalled in `connecting` to the 40 s deadline, as datachannelxt's did in `opening`: the 2026-08-27 signature (the suite runbook's trap 5.5, suspected environment; UDP loopback not yet tested independently on that machine); `enSend` refused 60001 bytes with -4; `enHostDestroy` x2 and `enDeinitialize` returned 0; board row 41 / 1 / 0 (the 34, its merge line, the loopback's 6; the 1 is the deadline) |
+| 2026-09-24 | OXT, Windows (the engine reports Win32), a 2026-09-12 DLL by the maintainer's account (its first engine load); OXT version, OS build and bitness not recorded | the D-23 suite paste (built from `9aa62c8`; this member as at `6401e43`) | 2620 / 5 / 3; enetxt 34/34 folded (lifecycle, stale handles, the helper dispatcher, tuning + abrupt teardown), no skips; the core's loopback bound 127.0.0.1:27196 and took an `enConnect` handle (6/6), then stalled in `connecting` to the 40 s deadline, as datachannelxt's did in `opening`; both loopbacks also stalled on 2026-08-27, whose phases and machine were not recorded (the suite runbook's trap 5.5, suspected environment; UDP loopback not yet tested independently on this machine). The day's second run (8:41 PM) read the same, line for line; `enSend` refused 60001 bytes with -4; `enHostDestroy` x2 and `enDeinitialize` returned 0; board row 41 / 1 / 0 (the 34, its merge line, the loopback's 6; the 1 is the deadline) |
 
 ## Status
 
 The whole `en*` surface is engine-proven (standalone async 2026-08-13; the sync half folded
-through 2026-09-24, on Windows). The core's live loopback stalled in `connecting` on
-2026-08-27 and again on 2026-09-24 (suspected blocked UDP to 127.0.0.1, the suite runbook's
-trap 5.5; the 2026-09-24 machine is not yet tested independently). That paste ran on a
-2026-09-12 Windows DLL (the maintainer's account; its bitness not recorded), those binaries'
-first engine load, but their one shim change since 2026-08-27 (gotcha 1's fix) is on a path
-none of its checks reached: the fix is driven natively by the smoke test (2026-09-24,
-ASan/UBSan), not by an engine. Still un-exercised: the LAN chat demo between two real
-machines (runbook row 6, S3 item 6), the closing pass's separate enet leg B (S3 item 1),
-`enet-internet-chat` across two networks
+through 2026-09-24, on Windows). The core's live loopback stalled on 2026-08-27 (its phase
+not recorded) and in `connecting` in both of 2026-09-24's runs (suspected blocked UDP to
+127.0.0.1, the suite runbook's trap 5.5; the 2026-09-24 machine is not yet tested
+independently). That paste ran on a 2026-09-12 Windows DLL (the maintainer's account; its
+bitness not recorded), those binaries' first engine load, but their one shim change since
+2026-08-27 (gotcha 1's fix) is on a path none of its checks reached: the fix is driven
+natively by the smoke test (2026-09-24, ASan/UBSan), not by an engine. Still un-exercised:
+the LAN chat demo between two real machines (runbook row 6, S3 item 6), the closing pass's
+separate enet leg B (S3 item 1), `enet-internet-chat` across two networks
 (verified statically; needs a two-machine, two-network OXT pass), a standalone async re-run
 on the current binaries, and any Mac engine load. Open work: the suite's docs/WORK-PLAN.md.
 
