@@ -144,8 +144,10 @@ stream's `error` reason says which one it was and the state the handshake stalle
 unchanged prefix `SOCKS handshake timed out`: `(OnionXT deadline of <ms> ms passed, stalled at stage
 <state>)` for the watchdog, `(engine socketTimeout fired, stalled at stage <state>)` for the engine's
 message. `connecting` means the SOCKS port never accepted, `greeting` that it accepted and never
-answered, `replyhead` that tor took the CONNECT and never reported back. Verified statically; needs an
-OXT pass + a live-Tor pass (a forced stall).
+answered, `replyhead` that tor took the CONNECT and never reported back. The two reasons were built
+and told apart on an engine on 2026-09-24 (the member harness's section 12, in the suite paste); a
+stall reaching either path is verified statically and needs an OXT pass + a live-Tor pass (a forced
+stall).
 
 ## What OnionXT does and does not do here
 

@@ -2907,9 +2907,11 @@ end oxhHtmlEscape
 -- core. The parse rule stays quoted in full beside the line that builds it,
 -- because that record holds only while the line keeps its shape. The folded
 -- harness ran green again on 2026-08-27 (two-machine session; onionxt's own
--- count not recorded). The checks added 2026-09-24 - the three live-daemon
--- names on their refusal paths and section 12 - have NOT run on an engine:
--- verified statically; needs an OXT pass.
+-- count not recorded) and on 2026-09-24 (Windows, the suite paste: 74 passed,
+-- 0 failed, 1 skipped, the skip being section 11), the first recorded engine
+-- run of the checks added 2026-09-24 - the three live-daemon names on their
+-- refusal paths and section 12. What those stop short of (a launched tor, a
+-- real stall) is still onionxt/CLAUDE.md's VERIFY items 8 and 13.
 
 -- Two real, published v3 onion addresses, the same vectors pinned in
 -- tools/onion-kat.py, so the Python KAT and this livecodescript suite agree.

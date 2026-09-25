@@ -130,9 +130,10 @@ end socketClosed
 
 Each named function reports `"false"` for a socket that is not OnionXT's, so the trailing `pass` still
 reaches anything below you. See [doc 05](05-api-reference.md), "Three engine socket MESSAGES", for the
-contract and for which wrappers the embed drops. The split is **verified statically; the wrapper form
-needs an OXT pass + a live-Tor pass** - getting it wrong is a hang, not an error, which is why the
-false-for-a-foreign-socket half is pinned offline in this member's harness.
+contract and for which wrappers the embed drops. The split's false-for-a-foreign-socket half is
+pinned offline in this member's harness and ran green on an engine on 2026-09-24 (the suite paste);
+the rest is **verified statically, and the wrapper form needs an OXT pass + a live-Tor pass** -
+getting it wrong is a hang, not an error, which is why that half is pinned.
 
 ## 3. Dial a host through Tor (outbound)
 
