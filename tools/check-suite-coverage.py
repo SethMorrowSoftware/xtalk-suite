@@ -604,20 +604,23 @@ HOLDEM_WORKLIST = {
     # heNetTurnClockStart, heNetTimeoutMiss) and the Level 2 helpers' pure
     # branches. heHandSettle stays here although it is consensus code: it
     # ends by sending heNextHandTick, which deals a hand, and no harness may
-    # arm that.
+    # arm that. v0.25.6 (2026-09-25, holde-em WORK-PLAN coding #13-#15)
+    # retired heNetContribPosOk into the one sender predicate
+    # (heWireSenderOk, pinned in sections 15 and 21) and took heRosterHasKey
+    # (now pure) and heEnvBodyText off this list with pins of their own.
     "no-test": (
         "NO REASON - a pure or near-pure handler a section could name today, "
         "and none does. This is the debt, not an exemption",
         ["heActionDo", "heApplyCfg", "heApplyLevel", "heAuditDealLog",
          "heBetAfterAction", "heBetCloseStreet", "heBetFirstInHandAfter",
          "heCancelPacedSteps", "heCfgBody", "heCfgDefaults", "heCfgEnsure",
-         "heDealBoard", "heEngineDo", "heEnvBodyText", "heFreshPrngState", "heHandSettle",
+         "heDealBoard", "heEngineDo", "heFreshPrngState", "heHandSettle",
          "heHistHide", "heHistShow",
          "heHudMark", "heHudTick", "heIdentitySeedHex",
          "heIdentitySetup", "heLevel0Deck", "heLobbyHide", "heLobbyShow",
          "heNetApplySettle", "heNetAuditHand",
          "heNetBroadcast", "heNetBufferWire", "heNetComputeSettleTxt",
-         "heNetContribPosOk", "heNetDealFromSeeds",
+         "heNetDealFromSeeds",
          "heNetDealerBoard", "heNetDealerDeal", "heNetDealerPubHex",
          "heNetDrainBuffer", "heNetFoldGameWire",
          "heNetGameReact", "heNetHandReset", "heNetHandSeedHex",
@@ -627,7 +630,7 @@ HOLDEM_WORKLIST = {
          "heNetRequestSync", "heNetRevealedDealA", "heNetSendToHost", "heNetSendWireTo", "heNetShowBoard",
          "heNetShowSeat", "heNetShowdownShow", "heNetWeDeal", "heNetXlatFlush", "heNetXlatFrom", "heNextHandTick",
          "heQuickAmount", "heReactToNotes",
-         "heReadableErr", "heRevealStep", "heRosterHasKey", "heRunoutStep", "heScheduleReveal", "heScheduleRunout",
+         "heReadableErr", "heRevealStep", "heRunoutStep", "heScheduleReveal", "heScheduleRunout",
          "heScheduleShowdown", "heSeatAvatarPick", "heSettingsHide", "heSettingsIntervalLabel", "heSettingsLevelLabel",
          "heSettingsShow", "heSettingsSoundsLabel", "heSettingsSpeedLabel",
          "heSettleStep", "heSndFilesFor", "heSndReload", "heSndVerb",

@@ -15,8 +15,8 @@ v0.25.2 on 2026-08-27) and the Box2Dxt Kit (`b2k*`, optional presentation).
 ONE paste-and-run stack, `src/holdem.livecodescript`, holds the game, its
 self-test harness, the diagnostics `heProbeSodium` / `heProbeTorrent` /
 `heProbeKit` / `heProbeSounds`, and the carried onionxt layer between
-`tools/sync-demo-embeds.py` sentinels. Current: `kHeVersion` 0.25.5,
-`kHeHarnessV` 47, `kUIVersion` 15.
+`tools/sync-demo-embeds.py` sentinels. Current: `kHeVersion` 0.25.6,
+`kHeHarnessV` 48, `kUIVersion` 15.
 
 `holdem-spec.md` is the contract. Where code differs, the code wins and the
 spec is updated. Because chips may someday carry value, read spec 2 (threat
@@ -61,11 +61,13 @@ assets/cards/, assets/sounds/  vendored Kenney CC0 art and audio (see each NOTIC
    names two totals; v43 -> v44 on 2026-09-10 covered the four wire-arity
    sites, v44 -> v45 on 2026-09-24 section 24's, v45 -> v46 on 2026-09-25
    the seven heHexEq and near-integer pins, v46 -> v47 the same day the
-   23 canonical-index, hand-binding and audit-guard pins). Call sites
+   23 canonical-index, hand-binding and audit-guard pins, v47 -> v48 the
+   same day again for the v0.25.6 wire change and its 66 turn-binding,
+   sender-rule and sit-out-mark pins). Call sites
    are not checks (at v40, 374 sites reported 507 checks), so an engine run
    RECORDS a new total rather than matching the last: the first v45 total,
    2026-09-24, was 721 passed with every extension present, plus the 5
-   live-leg skips (the ledger); the next run records the v47 total.
+   live-leg skips (the ledger); the next run records the v48 total.
    `kHeHarnessV` is printed in the report header so a stale paste identifies
    itself. Asserts are self-diagnosing: print what was observed against what
    was expected, never a bare FAIL, and write first-contact tests to debug
@@ -220,8 +222,24 @@ itself is catalogued in the suite's
   (`heNetOccOfSeats`): the hand field is the sender's signed binding, and the
   per-hand seeds hash it. History's translation (`heNetLogToHotseat`) applies
   the same index and hand rules, so a wire the table dropped for THOSE reasons
-  never reaches it; sender authority is still not re-checked there. An act is
-  still replayable at a later turn of the SAME hand (no turn key).
+  never reaches it.
+- **Every self-signed wire names its moment, and one predicate names who may
+  send it (v0.25.6).** An act carries `turn=` (1 + the acts the hand has
+  APPLIED: `heBetApply` counts `actN`, one add per verb path after its last
+  refusal, `heBetTurnOf` reads it) and folds only at that turn
+  (`heActTurnOk`, live and in `heFoldTranscript`); a stand or sit-return
+  carries `n=`, the seat's next sit-out mark (`heSitMarkOk`, counted in
+  `gGame["sitMarkBy"]`), deliberately NOT the hand number, because an honest
+  stand is usually sent between hands. `heNetSendAction` appends both through
+  `heNetBoundBody`; never hand-build a body that skips it. Sender authority
+  is `heWireSenderOk` alone: the live fold calls it before any case acts
+  (with `heNetSenderCtx`), the live apply for cfg and roster, and History's
+  translation for every wire (with the context it walked to, the roster
+  through the now-pure `heRosterHasKey`, dealLevel through `heDealLevelOf`).
+  A new wire type or sender rule goes into that predicate, never into one
+  case, or the table and History drift apart again. An unseated sender is
+  one with no CANONICAL seat: `tFromSeat is 0` never matched an unseated
+  key's empty seat.
 - **Both operands are evaluated (engine note 2.5).** `heBetApply`'s refusal
   `X is not a number or X is not trunc(X)` evaluated `trunc("abc")`; it is
   nested now, and the nested form ran green on the engine on 2026-09-24
@@ -310,7 +328,8 @@ re-derives through it, so the void strings never change). Section 16 pins batch
 - The oracle is the host role minus the seat. `level=1` in the signed cfg is its
   only marker, and dealLevel carries `level=1,dealer=0`. Seams:
   `heNetDealerPubHex`, `heNetWeDeal`, `heNetContribCount`, `heNetMyContribPos`,
-  `heNetContribPosOk`. The oracle owns position dealCount+1, holds no seat,
+  and `heWireSenderOk`'s position rule (it retired `heNetContribPosOk` at
+  v0.25.6). The oracle owns position dealCount+1, holds no seat,
   stack or receipt signature, and its audit files as "oracle" (slot 0). An onion
   oracle's seed uses `kHeDomainOracle`, never `kHeDomainOnion`.
 - Oracle loss IS host loss, with one 60 s wire-silence watchdog.
@@ -479,9 +498,11 @@ Engine-proven, folded into the suite paste: every harness section's headless
 slice at v0.25.3 / h45, including the wire-arity checks, section 24, Level 2
 compute, the batch mask step, void-and-audit, the five cheater bots and DLEQ
 (latest 721/0, Windows, 2026-09-24; the five live legs skip by name). Verified
-statically; needs an OXT pass: the v0.25.5 canonical wire indices, walked
-counts, hand binding and audit guards, the v0.25.4 heHexEq and near-integer
-fixes, the v47 total (the v0.25.4 and v0.25.5 pins), the v0.25.3 overlay fix
+statically; needs an OXT pass: the v0.25.6 turn binding, sit-out marks and
+one sender predicate (live and in History), the v0.25.5 canonical wire
+indices, walked counts, hand binding and audit guards, the v0.25.4 heHexEq
+and near-integer fixes, the v48 total (the v0.25.4, v0.25.5 and v0.25.6
+pins), the v0.25.3 overlay fix
 (its fold-time `heLobbyHide` has run only as the guarded no-op a paste makes it;
 the dismissal itself is the 2d re-run's), everything visual and timed (the 720p
 layout eye, the Phase 1 6-seat session), and every live multi-machine leg (2d
@@ -502,7 +523,7 @@ python3 tools/check-script-vectors.py   # then the harness itself, headlessly
 
 `tools/run-gates.sh` is the one list: the static gate, `check-docs.py`,
 `check-table-layout.py`, the seven KATs (evaluator, betting, shuffle, protocol
-with 132 pinned values and all 22 wire types, fold, atlas, sounds),
+with 134 pinned values and all 22 wire types, fold, atlas, sounds),
 `logic-fuzz.py`, `test-script-vectors.py`, then `check-script-vectors.py
 --check`. Raise a section's floor in `check-script-vectors.py` when it grows.
 The OXT round trip: gates pass, the user pastes and runs the harness and/or

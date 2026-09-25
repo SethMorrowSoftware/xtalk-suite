@@ -185,10 +185,27 @@ Rules, each closing a specific hole:
   hold every seed before choosing its own, or replay a player's old `act` at its
   turn. And `handStart` hand numbers strictly increase at a table: each seat's seed
   derives from table and hand (7.1 step 1), so a repeated number repeats every seed.
-  History's translation applies both rules. **Not closed:** WITHIN one hand an `act`
-  carries no turn key, so the host could re-sequence a player's earlier signed act at
-  a later turn (two honest checks are byte-identical, so no content dedupe can tell
-  them apart). Binding an act to its turn changes wire bytes; it is not built.
+  History's translation applies both rules.
+- **An act names its turn** (normative since 2026-09-25, v0.25.6; a wire change). The
+  hand alone left a replay window WITHIN the hand: two honest checks are
+  byte-identical, so the host could re-sequence a player's earlier signed act at a
+  later turn and every client folded it as that player's move. Every `act` body, the
+  host's timeout included, carries `turn=<n>` inside the sender's signature, n being
+  1 + the acts the hand has APPLIED (a refused act moves nothing; bids and boards are
+  not turns). A receiver drops an act whose key is missing, not canonical or not the
+  open turn, and History replays an act only at its turn. The index is hand-wide, so
+  it already differs across streets; the street is not a second key.
+- **History re-checks every sender** (normative since 2026-09-25, v0.25.6). The
+  table's sender rules -- host-only `cfg`, `roster`, seat assignments, `handStart`,
+  `dealLevel`, `settle` and timeouts; the dealer's `holeDeliver` and `board`; a seat's
+  own `stand`, `sit` return, `show` and `muck`; a contributor's own position (the
+  oracle's is the last); seated-only acts, bids, receipts and ckpts; audits from a
+  seat or the dealing oracle; bodies from the host or a rostered key only -- are ONE
+  predicate, applied by the live fold and by History's translation alike, so a wire
+  the table refused never reaches the History fold or its deal audit. Before this, a
+  non-owner's commit read as that position's commitment in the audit (a false FAIL),
+  and a player-signed settle for a hand the table never settled read as verified (a
+  false PASS).
 
 Message vocabulary: `cfg join leave sit stand shuffleStep unmaskStep seedCommit
 seedSeal seedReveal holeDeliver board bid[SB/BB/Ante] act(fold|check|call|bet|raise|
@@ -201,10 +218,13 @@ Body schemas (all byte-pinned in `tools/protocol-kat.py`):
 
 - `cfg`: also carries the section-9 timer lengths `act=<s>,bank=<s>,miss=<n>`; unknown
   keys are ignored, so extensions are wire-compatible.
-- `join`: `box=<64hex>`, the sender's per-table session box pub. `stand`: `seat=N`
-  from the seat's own key (sit-out).
+- `join`: `box=<64hex>`, the sender's per-table session box pub. `stand`:
+  `seat=N,n=K` from the seat's own key (sit-out), K its next sit-out mark (section 8.1).
 - `sit` (host, one per seated player at game start): `seat=N,pub=<64hex>`. A `sit`
-  WITHOUT `pub=`, from the seat's own key, is a return from sit-out.
+  WITHOUT `pub=`, from the seat's own key, is a return from sit-out: `seat=N,n=K`, K
+  the seat's next sit-out mark.
+- `act` (the acting seat): `verb=<fold|check|call|bet|raise|allin>,amount=<a>,turn=<n>`,
+  n the turn the hand is waiting for (the rule above).
 - `handStart` (host): `seats=1|2|..,button=B`, at least two seats, strictly
   ascending, the button among them. `dealLevel` (host):
   `level=0,dealer=<seat>,count=N` (the dealer is the button seat's player; `count` is
@@ -229,9 +249,11 @@ Body schemas (all byte-pinned in `tools/protocol-kat.py`):
   `unmaskStep`: `pos=<P>,slot=<S>,val=<64hex>,proof=<192hex|empty>`, `slot` the deck
   position 1..52, `proof` the 7.4 field.
 - A **timeout** is not a new type: the HOST authors the existing `act` wire with
-  `verb=<check|fold>,amount=0,seat=<N>,timeout=1,bank=<1|0>` (or a `bid*` wire with
-  `amount=,seat=,timeout=1,bank=` for a pending forced post), folded as seat N's action
-  once every client has verified it (section 9).
+  `verb=<check|fold>,amount=0,seat=<N>,timeout=1,bank=<1|0>,turn=<n>` (or a `bid*`
+  wire with `amount=,seat=,timeout=1,bank=` for a pending forced post), folded as seat
+  N's action once every client has verified it (section 9). The timeout act is
+  turn-bound like any act: one rule for every act, and a timeout that lost the race to
+  the seat's own act for the same turn is refused by its key.
 
 ## 7. The deal protocol ladder
 
@@ -451,6 +473,18 @@ Deterministic no-limit hold'em over the transcript. The rules the implementation
   bank state is consensus. Forced posts time out the same way once the deal completes;
   an L0 deal stall deliberately has NO timeout prescription. Bank spend and miss count
   move only when the engine APPLIED the timeout; a refused timeout re-arms.
+- **Turns and sit-out marks** (v0.25.6, 2026-09-25; wire changes). The engine counts
+  the acts it applies in a hand; the turn it waits for is that count plus one, and
+  every act names it (section 6). A seat's `stand` and its `sit` return name the
+  seat's next SIT-OUT MARK, one past the marks the table has accepted for that seat,
+  counted by every client from the same wires. Without it a host could replay a
+  player's old signed stand, hands later, and sit it out everywhere (liveness
+  griefing: dealt out, turns timing out instantly). The mark is NOT the hand number:
+  a stand is usually sent between hands, where the open hand is the one just
+  finished, so an honest stand crossing the next `handStart` would be refused, and
+  within one hand the same stand would still replay after the seat's own return. A
+  per-seat counter is monotonic, spans hands, and names each stand-or-return once: a
+  replay carries a spent mark, a double press repeats a mark, and both are refused.
 
 ### 8.2 Hand evaluator
 
@@ -497,7 +531,8 @@ value layer must consume receipts and nothing but receipts** (section 13).
   could check), the transcript-derived bank state, and the deadline passed on the
   CLIENT's own clock within 5 s of jitter (not the +-600 s window: no timestamp crosses
   the wire), waived for a historical wire and for a turn whose clock started during a
-  catch-up replay. `miss=` consecutive timeouts, or the seat's own `stand`, sit it out:
+  catch-up replay; it must name the open turn (section 6). `miss=` consecutive
+  timeouts, or the seat's own `stand` (bearing its next sit-out mark, 8.1), sit it out:
   dealt out at the next boundary, mid-hand turns timing out instantly (a pending blind
   included), back next hand on its own `sit` (no `pub=`). A table with fewer than 2 live
   seats but 2+ chip-holding seats WAITS. Late-join rides the same boundary: a present
@@ -629,6 +664,13 @@ apply. `README.md`'s phase table records what is built and what each exit still 
 - Read every wire index (position, seat, count, hand, seq) through `heCanonIdx`, key
   by what it returns, and COUNT by walking the range, never per message: `"03"` is
   the number 3 to `is` and a different array key (section 6; v0.25.5).
+- Bind every self-signed wire to the one moment it is for, INSIDE the signed body: an
+  act to its turn, a stand or sit return to the seat's next sit-out mark (sections 6
+  and 8.1; v0.25.6). Content a replay can re-use unchanged is content a host can
+  re-sequence.
+- State who may send each wire type ONCE (`heWireSenderOk`) and apply that one
+  predicate wherever wires are folded, the table and History alike (section 6;
+  v0.25.6): rules written twice drift.
 - All randomness from `sxRandomBytes` / `sxRandomUniform`; the engine `random()` never
   touches anything dealing- or key-related.
 - Every hash is domain-separated (`"HOLDEM-<PURPOSE>-v<N>|"` prefixes, versioned).

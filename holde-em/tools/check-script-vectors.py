@@ -173,26 +173,26 @@ Thrown = LCS.Thrown
 # running something.
 SECTIONS = [
     ("heTestEvaluatorRun", 28, 0),
-    ("heTestBettingRun", 68, 0),
+    ("heTestBettingRun", 91, 0),
     ("heTestAnteRun", 23, 0),
     ("heTestLevelRun", 12, 0),
     ("heTestLegalRun", 19, 0),
     ("heTestScheduleRun", 3, 0),
     ("heTestShuffleRun", 9, 0),
-    ("heTestFoldRun", 17, 0),
+    ("heTestFoldRun", 20, 0),
     ("heTestCryptoRun", 26, 0),
     ("heTestReceiptRun", 17, 0),
     ("heTestDealRun", 20, 0),
     ("heTestDealOrderRun", 5, 0),
     ("heTestLobbyRun", 10, 0),
     ("heTestNetSim", 20, 0),
-    ("heTestNetPlay", 60, 0),
+    ("heTestNetPlay", 68, 0),
     ("heTestLevel2Run", 0, 1),          # ristretto255 is not modelled: skips
     ("heTestOnionRun", 35, 1),          # the LIVE tor table skips by name
     ("heTestOracleRun", 32, 2),         # the LIVE three-machine round + the onion oracle
     ("heTestLevel2VoidRun", 2, 1),      # its ristretto (DLEQ) half skips
-    ("heTestLivenessRun", 84, 2),       # the LIVE timed table + the LIVE tor redial
-    ("heTestHelpersRun", 39, 1),
+    ("heTestLivenessRun", 88, 2),       # the LIVE timed table + the LIVE tor redial
+    ("heTestHelpersRun", 67, 1),
     ("heTestLeafRun", 39, 0),
     ("heTestLeafRun2", 83, 0),
     ("heTestLeafRun3", 50, 0),          # every leg pure or gGame-only: nothing skips

@@ -70,11 +70,13 @@ dead-button rule.
 
 ## Status
 
-**v0.25.5 (harness 47).** The folded harness is engine-green at v0.25.3 (harness 45): latest
+**v0.25.6 (harness 48).** The folded harness is engine-green at v0.25.3 (harness 45): latest
 **721/0** on 2026-09-24 (in the suite paste, Windows), every section green, with the five
-live legs skipped by name; v0.25.4's hex-compare and near-integer fixes and v0.25.5's
+live legs skipped by name; v0.25.4's hex-compare and near-integer fixes, v0.25.5's
 canonical wire indices (a position, seat, count or hand number is checked as text and
-counted by walking its range, and a per-hand wire must name the open hand) are verified
+counted by walking its range, and a per-hand wire must name the open hand) and v0.25.6's
+wire change (every act names its turn, every stand and sit-return the seat's next
+sit-out mark, and one sender predicate serves the table and History alike) are verified
 statically; needs an OXT pass. The first two-machine 2d contact was 2026-08-27, at v0.25.2.
 [CLAUDE.md](CLAUDE.md) carries the full evidence ledger.
 Anything visual, timed or multi-machine is "verified statically; needs an OXT pass"

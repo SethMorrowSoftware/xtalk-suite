@@ -1372,17 +1372,29 @@ def compute_all():
     # transcript-derived consensus, never a clock's guess. "stand" is a
     # seat's own signed sit-out; "sit" WITHOUT a pub= field is its return
     # (the host-assignment form keeps pub=, so the two forms never collide).
-    out["timeout_act_body"] = "verb=fold,amount=0,seat=3,timeout=1,bank=1"
+    # v0.25.6 (2026-09-25) BOUND each of them, inside the signed body, and
+    # these pins moved on purpose (a wire change; kHeHarnessV 47 -> 48):
+    #   * every act names its TURN, "turn=<n>", n = 1 + the acts the hand
+    #     has applied (heBetTurnOf / heActTurnOk; holde-em WORK-PLAN coding
+    #     #13) -- a host could otherwise re-sequence a player's earlier act,
+    #     byte-identical to a new one, at a later turn of the same hand. The
+    #     timeout here is the hand's first act, turn 1;
+    #   * a stand and a sit-return name the seat's next SIT-OUT MARK,
+    #     "n=<k>", k = 1 + the marks accepted for that seat (heSitMarkOk;
+    #     coding #15) -- an old stand replayed hands later could otherwise
+    #     sit the player out again. Seat 2's stand is its first mark, its
+    #     return the second.
+    out["timeout_act_body"] = "verb=fold,amount=0,seat=3,timeout=1,bank=1,turn=1"
     w10 = make_wire(1, TABLE, 1, HOST_SEED, "act", out["timeout_act_body"],
                     10, h9, HOST_SEED)
     h10 = chain_next(w10)
     out["timeout_head10"] = h10.hex()
-    out["stand_body"] = "seat=2"
+    out["stand_body"] = "seat=2,n=1"
     w11 = make_wire(1, TABLE, 1, ID_SEEDS[1], "stand", out["stand_body"],
                     11, h10, HOST_SEED)
     h11 = chain_next(w11)
     out["stand_head11"] = h11.hex()
-    out["sitback_body"] = "seat=2"
+    out["sitback_body"] = "seat=2,n=2"
     w12 = make_wire(1, TABLE, 1, ID_SEEDS[1], "sit", out["sitback_body"],
                     12, h11, HOST_SEED)
     h12 = chain_next(w12)
@@ -1466,7 +1478,18 @@ def compute_all():
     out["audit_body"] = "result=pass"
     w24 = make_wire(1, TABLE, 1, ID_SEEDS[1], "audit", out["audit_body"],
                     24, h23, HOST_SEED)
-    out["deal_wires_head24"] = chain_next(w24).hex()
+    h24 = chain_next(w24)
+    out["deal_wires_head24"] = h24.hex()
+    # a PLAYER's own act, as heNetBoundBody builds it (v0.25.6): the verb
+    # and amount the action buttons write, then ",turn=" and the turn the
+    # sender's folded state is waiting for -- here the hand's second act,
+    # after the timeout above took turn 1. The act type was pinned only by
+    # the host's timeout form; this pins the builder the buttons use.
+    # Pinned as the seq 25 extension: additive, no earlier pin moves.
+    out["act_body"] = "verb=check,amount=0,turn=2"
+    w25 = make_wire(1, TABLE, 1, ID_SEEDS[1], "act", out["act_body"],
+                    25, h24, HOST_SEED)
+    out["act_head25"] = chain_next(w25).hex()
     # the vocabulary itself, pinned: a type added to (or renamed in) the
     # dispatcher moves this value LOUDLY, beside the coverage assertion in
     # main() that requires the new type's wire
@@ -1901,15 +1924,18 @@ PINNED = {
  # extension: host-authored timeout act/bid (seat=/timeout=1/bank= on the
  # EXISTING wires, never a new kind), a seat's own stand (sit-out) and
  # pub-less sit (return), and the onion hello's compatible trailing-seq
- # trim mark for the auto-redial resync.
- "timeout_act_body": "verb=fold,amount=0,seat=3,timeout=1,bank=1",
- "timeout_head10": "bb5c70e38815d017dbcd3be3654fd8691fd2513bd816a5ab33659e1103fed694",
- "stand_body": "seat=2",
- "stand_head11": "fc854db9ed13c5dcaf7ae7455678c87b4a0e1a6286e88ad98dd61dbf173e8ef6",
- "sitback_body": "seat=2",
- "sitback_head12": "f69afd084f98085581135c43346641dea04f2937952becc641e9922709ea6cdc",
+ # trim mark for the auto-redial resync. v0.25.6 (2026-09-25) bound the
+ # act to its turn (turn=) and the stand and sit-return to the seat's
+ # sit-out mark (n=): these bodies, every head from 10 on, and head 24
+ # moved with it, re-derived by compute_all, not typed.
+ "timeout_act_body": "verb=fold,amount=0,seat=3,timeout=1,bank=1,turn=1",
+ "timeout_head10": "74cd646a06d2fdac421462b9070323ae9c91b42f1cc7e37c1fb89e710f442668",
+ "stand_body": "seat=2,n=1",
+ "stand_head11": "e035624243754a23926b656d025fa7ae3d91c184f1c18910fef2a51c9c9755f8",
+ "sitback_body": "seat=2,n=2",
+ "sitback_head12": "3e65a48a04975263f3480baf3889eea57b613bda6a07dfd9c4421abf23d42f85",
  "timeout_bid_body": "amount=2,seat=3,timeout=1,bank=1",
- "timeout_bid_head13": "6324a6371f62ec9819d0a53acace305c3faefd274efe5db87bf869e1b4a57fcd",
+ "timeout_bid_head13": "ebd7ecad18e549234e6a9f607a20788952ad1e1e3d83a3fe5b6124e80496f7d2",
  # the deal-delivery wires (backlog A6, 2026-08-23): bodies hand-built from
  # the shipped builders' documented formats, pinned as the seq 14..24
  # extension of the same transcript (additive; the sealed blobs are
@@ -1929,7 +1955,11 @@ PINNED = {
  "settle_body": "deltas=1:-4|2:8|3:-4",
  "receipt_body": "head=53ed9ccc64863dc05c1b76cd7953e19bba73895b8dd22ea00e6c9ff40f423cef,sig=6c2ae423fd05768c28b164893f566f910e79b9e9953b6efba941e6fc5d9c167cc0abe02aa39cc73d7b6b4e541e965e659dac1aae698d8e3c18dd9f1019a06008",
  "audit_body": "result=pass",
- "deal_wires_head24": "2ac5e70a472bd5e18903b062c8e742900a1589bce12701ecfa18dba188a71d42",
+ "deal_wires_head24": "3e9abb3ba8e9931b22f3820c56c1fe1eec36cbabdcf2ab8b0e2cc9cab9f0d39b",
+ # v0.25.6: a player's own act as heNetBoundBody builds it (turn-bound),
+ # the seq 25 extension chained from head 24 -- additive
+ "act_body": "verb=check,amount=0,turn=2",
+ "act_head25": "1357d979f18e529fd1dcc5b821792c68a0c38cb7195d95ec2a99203e2766d3b8",
  "wire_vocabulary": "act,audit,bidAnte,bidBB,bidSB,board,cfg,ckpt,dealLevel,handStart,holeDeliver,join,muck,receipt,roster,seedCommit,seedReveal,seedSeal,settle,show,sit,stand",
  "hello_trim_frame": "h\t833fed8ee30a882bd877555a9df260d4322224fa095513d84972a660e7ad6b10\tplayer\td02b1e826f4351264cd3a77a1580921495f9c7df5f0f29a370ebb5fdd69b9a1c5c1c9226ae2865919622a266df124ac755b57141a6d8a77e0eb8b6f7d89de208\t42",
  # spec 9 host election: the deterministic successor (lowest live pubkey)
@@ -2067,10 +2097,13 @@ def main():
         print('constant kKatMuckHead9 = "%s"' % got["muck_head9"])
         print('constant kKatTimeoutBody = "%s"' % got["timeout_act_body"])
         print('constant kKatTimeoutHead10 = "%s"' % got["timeout_head10"])
+        print('constant kKatStandBody = "%s"' % got["stand_body"])
         print('constant kKatStandHead11 = "%s"' % got["stand_head11"])
+        print('constant kKatSitBackBody = "%s"' % got["sitback_body"])
         print('constant kKatSitBackHead12 = "%s"' % got["sitback_head12"])
         print('constant kKatTimeoutBidBody = "%s"' % got["timeout_bid_body"])
         print('constant kKatTimeoutBidHead13 = "%s"' % got["timeout_bid_head13"])
+        print('constant kKatActBody = "%s"' % got["act_body"])
         # the hello frame carries tabs, so it travels as hex of its UTF-8
         # bytes (the kKatEnv0ContentHex convention)
         print('constant kKatHelloTrimHex = "%s"' % got["hello_trim_frame"].encode("utf-8").hex())

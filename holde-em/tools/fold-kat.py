@@ -106,6 +106,27 @@ def transcript(tamper=""):
     return L
 
 
+def transcript_turns(replay=False):
+    """The canned session ONLINE-shaped (v0.25.6; mirror of the harness's
+    heTKatTurnLog): each act carries the turn= key its sender signed. With
+    replay, seat 3's turn-8 check is REPLAYED at the river just ahead of its
+    real turn-10 bet -- legal there (it is seat 3's turn), so without the
+    turn binding the fold takes it and the real bet then fails out of turn."""
+    out, n, replay_row = [], 0, None
+    for hand, frm, typ, body in transcript():
+        if typ == "act":
+            n += 1
+            if replay and n == 10:
+                out.append(replay_row)
+            row = (hand, frm, typ, body + ",turn=%d" % n)
+            if n == 8:
+                replay_row = row
+            out.append(row)
+        else:
+            out.append((hand, frm, typ, body))
+    return out
+
+
 def ante_transcript():
     # 3-handed, ante 2 each, blinds 1/2. Everyone antes (dead money), then folds
     # to the BB. Commitments are 2 / 3 / 4 (nine chips), but the AWARDED POT IS
@@ -218,6 +239,12 @@ def independent_fold(tx):
         elif typ in ("bidAnte", "bidSB", "bidBB"):
             st = bk.apply_msg(st, typ, int(frm[4:]), int(d["amount"]))
         elif typ == "act":
+            # v0.25.6 (holde-em WORK-PLAN coding #13): an ONLINE act names its
+            # turn and replays only there (heActTurnOk, mirrored as
+            # bk.act_turn_ok) -- a re-sequenced earlier act is skipped, as
+            # the table refused it; a hotseat act carries no key
+            if d.get("turn", "") != "" and bk.act_turn_ok(d["turn"], st):
+                continue
             st = bk.apply_msg(st, "act", int(frm[4:]), d["verb"] + "," + d["amount"])
             if st["err"]:
                 errors.append("engine-rejected:" + st["err"])
@@ -494,6 +521,20 @@ def main():
     bad = independent_fold(transcript("badact"))
     contains("illegal action rejected on replay",
              " ".join(bad["errors"]), "engine-rejected")
+
+    # v0.25.6: turn-bound online acts fold as the hotseat session does, and
+    # an act re-sequenced at a later turn is skipped (the harness's section
+    # 8 pins, heTKatTurnLog)
+    tb = independent_fold(transcript_turns())
+    check("turns: acts carrying their turns fold to 442/394/364, no errors",
+          ("%d/%d/%d" % (tb["stacks"][1], tb["stacks"][2], tb["stacks"][3]), tb["errors"]),
+          ("442/394/364", []))
+    rp = independent_fold(transcript_turns(replay=True))
+    check("turns: an act replayed at a later turn is skipped, not folded",
+          ("%d/%d/%d" % (rp["stacks"][1], rp["stacks"][2], rp["stacks"][3]), rp["errors"]),
+          ("442/394/364", []))
+    contains("turns: ...and the hand still settles verified", rp["history"][0],
+             "settle-verified")
 
     # a truncated transcript (missing a board line before a contested settle)
     # is named and skipped, never a crash mid-audit
