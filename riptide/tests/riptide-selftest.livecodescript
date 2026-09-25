@@ -989,6 +989,11 @@ private command rstSectionIngest
    put 8 into tBad["seq"]
    rstCheck (rsIngestHead(tBad, kRsGoldHandle, 0) is empty), \
          "a seq disagreeing with the head's embedded seq is refused"
+   -- which gate answered (2026-09-25): the golden signature is over seq 7,
+   -- so this event would ALSO fail the signature check; the agreement check
+   -- runs first here, and this line keeps it the one that is tested
+   rstCheck (rsLastError() contains "disagree"), \
+         "by the seq agreement check, which runs before the signature"
    put tEvent into tBad
    put rstFlipByte(tBad["value"], 2) into tBad["value"]
    rstCheck (rsIngestHead(tBad, kRsGoldHandle, 0) is empty), \
@@ -1661,10 +1666,20 @@ private command rstNostrIngest pBridge
    put rsHeadSalt() into tBad["salt"]
    rstCheck (rsIngestBridge(tBad, kRsGoldHandle, 0) is empty), \
          "the HEAD salt is refused (one rail, one salt)"
+   -- RE-SIGNED at seq 2 (2026-09-25): the BEP44 signature covers the seq,
+   -- and rsIngestBridge checks the agreement LAST, after both signatures, so
+   -- this event with the golden signature left on it was refused by the
+   -- signature check and never reached the agreement check it names (with
+   -- that check deleted it still passed). The second check reads which gate
+   -- answered.
    put tEvent into tBad
    put 2 into tBad["seq"]
+   put rsBep44SignBuf("riptide-nostr", 2, tValue) into tBuf
+   put rstHex(sxSignDetached(tBuf, tKeys["secretKey"])) into tBad["signature"]
    rstCheck (rsIngestBridge(tBad, kRsGoldHandle, 0) is empty), \
          "a seq disagreeing with the bridge's embedded seq is refused"
+   rstCheck (rsLastError() contains "disagree"), \
+         "by the seq agreement check (the BEP44 layer is validly signed at seq 2)"
    put tEvent into tBad
    -- byte 150 is inside the ed25519 signature: the BEP44 layer still
    -- passes (its signature covers the bencoded value, which changed too)

@@ -29871,6 +29871,11 @@ private command rs1rstSectionIngest
    put 8 into rs1tBad["seq"]
    rs1rstCheck (rsIngestHead(rs1tBad, rs1kRsGoldHandle, 0) is empty), \
          "a seq disagreeing with the head's embedded seq is refused"
+   -- which gate answered (2026-09-25): the golden signature is over seq 7,
+   -- so this event would ALSO fail the signature check; the agreement check
+   -- runs first here, and this line keeps it the one that is tested
+   rs1rstCheck (rsLastError() contains "disagree"), \
+         "by the seq agreement check, which runs before the signature"
    put rs1tEvent into rs1tBad
    put rs1rstFlipByte(rs1tBad["value"], 2) into rs1tBad["value"]
    rs1rstCheck (rsIngestHead(rs1tBad, rs1kRsGoldHandle, 0) is empty), \
@@ -30507,10 +30512,20 @@ private command rs1rstNostrIngest pBridge
    put rsHeadSalt() into rs1tBad["salt"]
    rs1rstCheck (rsIngestBridge(rs1tBad, rs1kRsGoldHandle, 0) is empty), \
          "the HEAD salt is refused (one rail, one salt)"
+   -- RE-SIGNED at seq 2 (2026-09-25): the BEP44 signature covers the seq,
+   -- and rsIngestBridge checks the agreement LAST, after both signatures, so
+   -- this event with the golden signature left on it was refused by the
+   -- signature check and never reached the agreement check it names (with
+   -- that check deleted it still passed). The second check reads which gate
+   -- answered.
    put rs1tEvent into rs1tBad
    put 2 into rs1tBad["seq"]
+   put rsBep44SignBuf("riptide-nostr", 2, rs1tValue) into rs1tBuf
+   put rs1rstHex(sxSignDetached(rs1tBuf, rs1tKeys["secretKey"])) into rs1tBad["signature"]
    rs1rstCheck (rsIngestBridge(rs1tBad, rs1kRsGoldHandle, 0) is empty), \
          "a seq disagreeing with the bridge's embedded seq is refused"
+   rs1rstCheck (rsLastError() contains "disagree"), \
+         "by the seq agreement check (the BEP44 layer is validly signed at seq 2)"
    put rs1tEvent into rs1tBad
    -- byte 150 is inside the ed25519 signature: the BEP44 layer still
    -- passes (its signature covers the bencoded value, which changed too)

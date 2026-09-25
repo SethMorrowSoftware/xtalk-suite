@@ -51,7 +51,8 @@ comparison against a quotient in the library. Tier 1d (2026-09-25) does the
 same for ORDERING: rsSeqCompare, rsIsWireInt and the two ingest verifiers
 near 2^53, where the rule calls integers one apart equal, each after a
 seeded copy of the spelling that shipped has read right under IEEE and wrong
-under the engine's rule.
+under the engine's rule (the bridge's seq agreement with tier 2, since only
+a bridge that verifies over the real CoinXT reaches it).
 
 THE SOURCE REWRITES, AND WHY THEY ARE ASSERTED. riptide was written before
 this gate existed and uses three spellings outside the interpreter's
@@ -995,10 +996,12 @@ def check_no_quotient_comparisons(c, fail):
 # now orders through rsSeqCompare (the u32 halves) and bounds through
 # rsIsWireInt (the high half).
 #
-# WHAT. The comparison table, and the two ingest verifiers driven end to end
-# near 2^53 with heads and bridges the oracle signs, under IEEE and under
-# every ENGINE_MODELS model: the shipped library must read every row right
-# under all four.
+# WHAT. The comparison table, rsIngestHead driven end to end near 2^53 with
+# heads the oracle signs, and rsIngestBridge's rollback gate (a junk value:
+# that gate answers before any signature), under IEEE and under every
+# ENGINE_MODELS model: the shipped library must read every row right under
+# all four. The bridge's seq AGREEMENT needs a bridge that really verifies,
+# so it runs with tier 2 (check_seq_order_bridge, below).
 #
 # FIXTURE FIRST. Three seeded defects, each the spelling that shipped:
 #   A. rsSeqCompare answering with bare `<` and `>` (the naive helper);
@@ -1341,6 +1344,97 @@ def check_seq_order(c, ip, src, fail):
                  fired > 0, True)
 
 
+# --------------------------------------------------------------------------
+# tier 1d, the bridge's seq AGREEMENT (needs the real CoinXT)
+# --------------------------------------------------------------------------
+#
+# WHY SEPARATE. rsIngestBridge checks the embedded seq against the BEP44
+# seq LAST, after both signatures and rsVerifyBridge, so only a bridge that
+# really verifies reaches it - and rsVerifyBridge checks a BIP-340 signature,
+# which needs CoinXT. check_seq_order's bridge rows use a junk value and stop
+# at the rollback gate, so until this tier existed NOTHING executed the
+# agreement line: deleting its refusal left all 297 checks green (review,
+# 2026-09-25), and the folded harness's own "a seq disagreeing with the
+# bridge's embedded seq is refused" changed the seq WITHOUT re-signing, so
+# the BEP44 signature refused it first (the seq is inside the signed
+# buffer; the harness re-signs now). Runs where tier 2 runs; a lane that
+# sets XTALK_REQUIRE_SIBLINGS fails when it cannot.
+#
+# WHAT. A bridge the SHIPPED builder signs at embedded seq 2^53 - 2, offered
+# twice with an oracle-signed BEP44 layer: at seq 2^53 - 2 (it ingests,
+# exactly) and at 2^53 - 1 (an author-signed skew one apart, which must be
+# refused BY THE AGREEMENT CHECK). Fixture B's old `is not` must read both
+# right under IEEE and let the skew through under the engine's rule.
+
+def bridge_order_events(interp):
+    """(events, handle): the bridge rows' events, built and signed under
+    IEEE before any model is switched on."""
+    seed, handle = _order_identity()
+    rec = interp.call("rsBuildBridge", [T53 - 2, 1754870800, MASTER, AUX])
+    if not rec:
+        raise RuntimeError("rsBuildBridge refused seq 2^53-2: %s"
+                           % interp.call("rsLastError", []))
+    return {
+        "match": _mutable_event(interp, "riptide-nostr", T53 - 2, rec, seed,
+                                handle),
+        "skew": _mutable_event(interp, "riptide-nostr", T53 - 1, rec, seed,
+                               handle),
+    }, handle
+
+
+def bridge_order_rows(interp, events, handle):
+    """(key, label, got, want) for the bridge's seq agreement near 2^53. The
+    refusal row reads the error, so a refusal by any OTHER gate (the
+    signature, the rollback gate) does not pass for this one."""
+    rows = []
+    out = interp.call("rsIngestBridge", [events["match"], handle, T53 - 2])
+    rows.append(("bridge-match",
+                 "rsIngestBridge: a real bridge at 2^53-2 ingests at an "
+                 "equal watermark, its seq exact",
+                 isinstance(out, dict) and str(LCS._n(out["seq"])),
+                 str(T53 - 2)))
+    out = interp.call("rsIngestBridge", [events["skew"], handle, 0])
+    err = str(interp.call("rsLastError", []))
+    rows.append(("bridge-skew",
+                 "rsIngestBridge: a signed bridge whose embedded seq sits one "
+                 "below its BEP44 seq is refused BY THE AGREEMENT CHECK",
+                 [out in ("", {}), "disagree" in err], [True, True]))
+    return rows
+
+
+def check_seq_order_bridge(c, ip, src, fail):
+    c.note("tier 1d (bridge): the seq agreement near 2^53, over the real "
+           "committed CoinXT")
+    engine_name, engine_rule = ENGINE_MODELS[0]
+
+    old = LCS.Interp(seed_old_ingest(src, fail))
+    events, handle = bridge_order_events(old)
+    rows = bridge_order_rows(old, events, handle)
+    c.ck("fixture B (bridge): under IEEE the old `is not` reads both bridge "
+         "rows right (the rows it misreads, listed)",
+         [key for key, _l, got, w in rows if got != w], [])
+    with engine_model(engine_rule):
+        rows = bridge_order_rows(old, events, handle)
+    c.ck("fixture B (bridge): under %s the old `is not` lets the skewed "
+         "bridge through" % engine_name,
+         [key for key, _l, got, w in rows if got != w], ["bridge-skew"])
+
+    events, handle = bridge_order_events(ip)
+    for name, model in [("IEEE", None)] + ENGINE_MODELS:
+        if model is None:
+            rows = bridge_order_rows(ip, events, handle)
+            fired = None
+        else:
+            with engine_model(model) as hook:
+                rows = bridge_order_rows(ip, events, handle)
+            fired = hook.fired
+        for _key, label, g, w in rows:
+            c.ck("[%s] %s" % (name, label), g, w)
+        if fired is not None:
+            c.ck("[%s] the model reached the bridge's comparison sites"
+                 % name, fired > 0, True)
+
+
 def check_capacity_arithmetic(c, ip):
     """The numbers that MOVE when kRsMaxRecord moves, pinned headlessly.
 
@@ -1639,6 +1733,7 @@ def main(argv):
     check_capacity_arithmetic(c, ip)
     if install_coin_natives():
         check_composed(c, ip, V)
+        check_seq_order_bridge(c, ip, src, fail)
     elif os.environ.get("XTALK_REQUIRE_SIBLINGS"):
         # Same split, and the same env-var shape, as CROSSMEMBER_REQUIRE_ALL
         # (tests/cross-member-test.py) and COINXT_REQUIRE_CROSSCHECK

@@ -324,14 +324,21 @@ Code comments cite these numbers; keep them.
    answer that lets a record THROUGH, so an empty answer refuses. It compares VALUES ("0012" is
    12), as `is an integer` already did; every wire value reaching it is a number `rsReadBEu64` built
    or torrentxt's decimal text of a native integer. No spec change: the wire and the apply rules
-   are as they were. Held by check-script-vectors tier 1d (the table, both ingest verifiers end to
-   end near 2^53 and the top of the range, under IEEE and all three models, after three seeded
+   are as they were. A record at exactly 2^53, which the parsers accept and no builder emits, is
+   now dropped by the demo's LAN guards (outside the helper's domain: fail closed). Held by
+   check-script-vectors tier 1d (the table, `rsIngestHead` end to end near 2^53, `rsIngestBridge`'s
+   rollback gate, and the top of the range, under IEEE and all three models, after three seeded
    copies of the spellings that shipped each read right under IEEE and wrong under the engine's
-   rule), check-demo-boot's seq-order drive (the demo's seven ordering sites near 2^53 under
-   the engine's rule; test-demo-boot's fixture 6 seeds all the old spellings back and requires every
-   deciding check to fail), and the harness section "wire integers ordered exactly" plus two
-   top-of-range checks, which meet the engine on the next paste run. Verified statically +
-   headless; needs an OXT pass.
+   rule; `rsIngestBridge`'s seq AGREEMENT runs with tier 2, because only a bridge that verifies over
+   the real CoinXT reaches it), check-demo-boot's seq-order drive (the demo's seven ordering sites
+   near 2^53 under the engine's rule; test-demo-boot's fixture 6 seeds all the old spellings back
+   and requires every deciding check to fail), and the harness section "wire integers ordered
+   exactly" plus top-of-range checks in the BEP44, ingest and BTXO sections, which meet the engine
+   on the next paste run. The same review (2026-09-25) found that NO executing check reached the
+   bridge's agreement: deleting it left every gate green, and the harness's "a seq disagreeing
+   with the bridge's embedded seq" check changed the seq without re-signing, so the BEP44
+   signature refused it first. The harness now re-signs at the new seq and reads which gate
+   answered, for the head too. Verified statically + headless; needs an OXT pass.
 10. **A dead write is invisible to every other gate** (2026-09-08): `raAppSave` emitted `headseq`
     and `raAppLoad` never read it; check-demo-boot round-trips it now. Any value worth persisting is
     worth round-tripping in a test.
