@@ -15,8 +15,8 @@ v0.25.2 on 2026-08-27) and the Box2Dxt Kit (`b2k*`, optional presentation).
 ONE paste-and-run stack, `src/holdem.livecodescript`, holds the game, its
 self-test harness, the diagnostics `heProbeSodium` / `heProbeTorrent` /
 `heProbeKit` / `heProbeSounds`, and the carried onionxt layer between
-`tools/sync-demo-embeds.py` sentinels. Current: `kHeVersion` 0.25.3,
-`kHeHarnessV` 45, `kUIVersion` 15.
+`tools/sync-demo-embeds.py` sentinels. Current: `kHeVersion` 0.25.4,
+`kHeHarnessV` 46, `kUIVersion` 15.
 
 `holdem-spec.md` is the contract. Where code differs, the code wins and the
 spec is updated. Because chips may someday carry value, read spec 2 (threat
@@ -59,11 +59,12 @@ assets/cards/, assets/sounds/  vendored Kenney CC0 art and audio (see each NOTIC
    point. Bump `kHeHarnessV` on every engine-behaviour change AND whenever
    assert sites are added (v0.24.5 added five sites without a bump, so "v41"
    names two totals; v43 -> v44 on 2026-09-10 covered the four wire-arity
-   sites, v44 -> v45 on 2026-09-24 section 24's). Call sites are not checks
+   sites, v44 -> v45 on 2026-09-24 section 24's, v45 -> v46 on 2026-09-25
+   the seven heHexEq and near-integer pins). Call sites are not checks
    (at v40, 374 sites reported 507 checks), so an engine run RECORDS a new
    total rather than matching the last: the first v45 total, 2026-09-24, was
    721 passed with every extension present, plus the 5 live-leg skips
-   (the ledger).
+   (the ledger); the next run records the v46 total.
    `kHeHarnessV` is printed in the report header so a stale paste identifies
    itself. Asserts are self-diagnosing: print what was observed against what
    was expected, never a bare FAIL, and write first-contact tests to debug
@@ -196,6 +197,15 @@ itself is catalogued in the suite's
   note 2.2). A legal wire ends in a 128-hex host signature. Four harness checks
   (harness section 9) pin both directions; their first engine run,
   2026-09-24, was green (the ledger).
+- **Hex never meets bare `is` (v0.25.4; suite engine note 2.11).** `is`,
+  `is not`, `=` and `<>` compare two number-like texts as NUMBERS, so two
+  overflowing digests are both +inf and the 64-zero genesis head `is` "0";
+  `set the caseSensitive to true` does not help. Every digest, commitment,
+  head, key, signature or table id is compared with `heHexEq` (a letter
+  prefix, both sides lowercased). The headless gate sees a slip only for
+  all-digit pairs (the interpreter reads only `-?\d+(\.\d+)?` as a number),
+  which is why sections 9 and 21 pin the genesis head against "0". Its twin
+  from note 2.10: a whole-number test is `is an integer`, never `is trunc(x)`.
 - **Both operands are evaluated (engine note 2.5).** `heBetApply`'s refusal
   `X is not a number or X is not trunc(X)` evaluated `trunc("abc")`; it is
   nested now, and the nested form ran green on the engine on 2026-09-24
@@ -453,7 +463,8 @@ Engine-proven, folded into the suite paste: every harness section's headless
 slice at v0.25.3 / h45, including the wire-arity checks, section 24, Level 2
 compute, the batch mask step, void-and-audit, the five cheater bots and DLEQ
 (latest 721/0, Windows, 2026-09-24; the five live legs skip by name). Verified
-statically; needs an OXT pass: the v0.25.3 overlay fix (its fold-time
+statically; needs an OXT pass: the v0.25.4 heHexEq and near-integer fixes and
+the v46 total (the v0.25.4 pins), the v0.25.3 overlay fix (its fold-time
 `heLobbyHide` has run only as the guarded no-op a paste makes it; the dismissal
 itself is the 2d re-run's), everything visual and timed (the 720p layout eye, the
 Phase 1 6-seat session), and every live multi-machine leg (2d re-run, 2e timed

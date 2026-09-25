@@ -16,8 +16,9 @@ suite engine #8, and added suite-wide #15, suite engine #9 and riptide engine #1
 Its second run that evening (2623/2/3, riptide's two fixes in) closed riptide engine
 #2 and #11. The third (2623/2/10, the board review's fixes in) named the engine's
 comparison rule and closed suite engine #10; reading that rule in the engine source
-added suite-wide #18-#19, suite engine #11, coinxt #8 and riptide #9 (the sweep's
-quickshare and DHT-chat sites were fixed the same day; engine note 2.11).
+added suite-wide #18-#19, suite engine #11, coinxt #8 and riptide #9; the sites
+that reading found were fixed the same day (engine note 2.11; holde-em v0.25.4),
+and the holde-em fix turned up holde-em #11-#12.
 
 Where the rest lives: each engine leg's full green criterion, and the labels it flips,
 is its numbered row in [OXT-PASS-RUNBOOK.md](OXT-PASS-RUNBOOK.md) section 1.2 (this
@@ -61,7 +62,7 @@ result. Every "engine-proven" below quotes a dated record already in the tree.
 | box2dxt | harness v32 385/0 Windows 2026-09-24, on the 2026-09-12 DLL and the paste's 1200-wide card; v30 374/1 Linux 2026-08-21 | x86-linux glibc regression; platformer polish; three shim defects (dispatch) | the v32 total on Linux; the five games; R1; first Mac load; feel pass | S1, S5, PERSON |
 | riptide | phases 1-4 on two machines (to 2026-08-15); 489/0/2 in the suite paste, Windows, 2026-09-24 (the day's second and third runs; its first read 487/2/2, both FAILs fixed that day); phase-8 boot 2026-08-29 | bridge reader; RSL1 magic; own-head refresh; per-identity app state | row 35; the paste's second Run all (row 48); phases 5, 6, 7 live; phase 8 live; faststart re-run | S1-S4, NET |
 | nocloud | no dated pass of this stack in the tree | route-table case; mtime ETag after D-10; the D-02 menu (deferred) | the 69-item checklist, web-link and Tor halves; sections 7-8 | S1, S2 |
-| holde-em | 721/0 folded, Windows, 2026-09-24 (v0.25.3, harness v45; 5 live-leg skips, merged into the totals from the day's third run) | **Level 2 not wired into play**; animations; 88 untested handlers | Phase 1 exit; 2d/2e/2f on real machines; the oracle round | S1-S4, 3M, PERSON |
+| holde-em | 721/0 folded, Windows, 2026-09-24 (v0.25.3, harness v45; 5 live-leg skips, merged into the totals from the day's third run) | **position aliases stack a Level 0 deck (#11, HIGH)**; **Level 2 not wired into play**; animations; 88 untested handlers | Phase 1 exit; 2d/2e/2f on real machines; the oracle round | S1-S4, 3M, PERSON |
 
 Suite coverage on 2026-09-24: **867/878** public handlers exercised by the suite
 harness; the 11 exemptions are all onionxt's (engine socket callbacks and watchdogs). holde-em's advisory row reads 172/330
@@ -170,7 +171,7 @@ keeping the scaffold for its report.
 | 14 | *(pre-engine)* A `--full` profile for `tools/check-suite-ui-boot.py`: deliver `openStack` to the whole generated paste with every member folded, through the family interpreter (native members absent, so their sections SKIP; the pure-script layers, the tallies, teardown and the summary run), as the step before an engine session rather than a per-push gate | The all-absent profile settles the board's logic only; a whole-paste run would show a fold-level fault (a section that throws, rows that do not add up to the totals) in minutes rather than in an engine session. It settles logic, not parsing, and upgrades no label | M-L | none |
 | 16 | **The paste's cleanup is process-wide.** `stCleanup` calls `enDeinitialize` without counting the paste's own `enInitialize` calls, and `enx_deinitialize` (`enetxt/src/enet_shim.cpp`) destroys every live host when the count reaches 0, so opening the paste, or pressing Run all, ends any other open stack's ENet hosts (enet-selftest, the chat demos). Pair the paste's deinitialize with its own initialize, or refuse to run while another ENet user is open; check `dcCleanup` the same way | Found by review 2026-09-25, not observed. The core's header now says not to run the paste beside another ENet stack; the timer half of the same review (engine-wide cancels by name) was fixed that day | S-M | none |
 | 17 | **Derive the board's stamp from its build.** `kSuUiVersion` ("suite-board-1") is bumped by hand, and `suBuild` rebuilds only on a changed stamp, so a layout change to `suBuildAll` that forgets the bump leaves every re-pasted window as the last build drew it. Hold the stamp to a hash of `suBuildAll` and its helpers, as coinxt's `tools/check-wallet-ui-version.py` holds `kWaUiVersion` to its `waBuild*` handlers | Found by review 2026-09-25 beside the resized-window defect (fixed that day: the stamped path re-asserts 1200 x 640); nothing has gone wrong yet | S | none |
-| 18 | **Number-like text meets `is` in holde-em** (engine note 2.11): its seed-commit audit (`heAuditDeal`, `heAuditDealLog`, the seed reveal, `heNetDealerDeal`: a dealer who commits a number-like value and holds seeds whose hashes are number-like picks its deal after the fact) and its chain-head checks (`heEnvVerify`'s prev, the chain-head, receipt and checkpoint heads) compare hex with bare `is`. Compare through one letter-prefixed helper. Then a static rule: the family checker refuses a bare `is` / `is not` / `=` / `<>` between two hex-shaped names (`...Hex`, `...Token`, `...Nonce`, `...Commit`), bar `empty` and literals, with each fixed site's OLD line as a fixture (the quickshare token gates in nocloud and torrentxt's torrent-quickshare, and datachannel-dht-chat's nonce checks, were fixed 2026-09-25 by a letter prefix) | Read in the engine source 2026-09-25 (a read-only sweep); not observed. coinxt already held its checksums to this rule ("discipline 3"); a name heuristic narrows the class rather than closing it, and the interpreter half is #19 | M | none |
+| 18 | **A static rule for engine note 2.11.** The family checker (`tools/check-livecodescript.py`, byte-identical in every carrier) could refuse a bare `is` / `is not` / `=` / `<>` whose two operands are both hex-shaped by name (`...Hex`, `...Token`, `...Nonce`, `...Commit`, a `...Hex(` call), bar `empty` and literals, with each of the 2026-09-25 fixes' OLD lines as a fixture: holde-em's seed-commit, chain-head and key checks (now `heHexEq`, v0.25.4), quickshare's token gates in nocloud and torrentxt's torrent-quickshare, and datachannel-dht-chat's nonce checks (now letter-prefixed) | A read-only sweep found those sites, and nothing stops the next one. A name heuristic misses a hex value in a plain-named variable, so it narrows the class rather than closing it; the interpreter half is #19 | S-M | none |
 | 19 | **Teach the family interpreter the engine's comparisons** (engine notes 2.10, 2.11): `coinxt/tools/lcs-interp.py` (twinned byte-identical in nostrxt) answers every comparison the IEEE way and reads exponent-form text as text, so no headless gate sees a verdict that rests on a gap inside 10 DBL_EPSILON or on number-like text. Model the engine's rule where it is safe to, and REFUSE (as it refuses integers past 2^53) where the engine and IEEE disagree, with fixtures from riptide's recorded probe readings; then measure every execution gate for what it newly refuses | The class caught riptide's u64 bound only on an engine; tiers 1c and 4 model the rule for two bounds, not for the tree | M | none |
 
 ### 1.3 Engine work (suite-level)
@@ -569,11 +570,13 @@ The deferred menu (D-02; the five questions at the end of
 
 ### 3.3 holde-em
 
-- **v0.25.3, harness 45**, carrying onionxt. Built: the Phase 1 hotseat; 2d, 2e, 2f;
+- **v0.25.4, harness 46**, carrying onionxt. Built: the Phase 1 hotseat; 2d, 2e, 2f;
   the Phase 3 oracle; 4a-4e Level 2 compute with void-and-audit; Phase 5 DLEQ; 4f's
   batch mask step. Coverage 172/330 game handlers, **88 with no test** (floor armed;
   the third leaf tranche, section 24, named 14 more on 2026-09-24).
-- Folded records to **667/0 (2026-08-27, v0.25.2, harness 43)**. Played by a person:
+- Folded records to **721/0 (2026-09-24, v0.25.3, harness 45, Windows)**, 5 live-leg skips
+  merged from that day's third run; 667/0 on 2026-08-27 (v0.25.2, harness 43). v0.25.4's
+  `heHexEq` and near-integer fixes are verified statically; needs an OXT pass. Played by a person:
   three hotseat hands (2026-08-17), and a first two-machine 2d contact (2026-08-27)
   where the hand dealt under the lobby overlay (v0.25.3 fixes it, statically).
 
@@ -590,6 +593,8 @@ The deferred menu (D-02; the five questions at the end of
 | 8 | Close runbook row 14 at inference strength, as row 26 was: section 11's "seeds XOR" and "full shuffled deck" assertions ran green in every folded run from 2026-08-17 on, and engine note 3.1 answers which stream the pre-fold runs dealt from | A leg the evidence already covers | S | owner |
 | 9 | `holde-em/assets/sounds/NOTICE.md`'s cardShuffle row reads as if the sound were wired "in the deal-animation increment"; the source leaves it unwired. A one-word fix in a frozen NOTICE file | Accuracy of a shipped notice | S | owner (explicit OK) |
 | 10 | **Table admission list and `cfg` co-signing** (spec 5, 6, 7.3, 9): an admitted-pubkey list (or an explicit open flag) in the host `cfg`, void/forfeit rules in `cfg`, and per-player co-signing of `cfg` before hand 1. Today every table is effectively open (any key whose token verifies is admitted: `heAdmitTokenVerify`) and `cfg` is host-authored only (`heLobbyCfgBody`; `heHostRelay` refuses a `cfg` from any other key). A consensus change: the protocol-kat pins move and `kHeHarnessV` bumps | Specified, not built; a player cannot bound who sits at the table or bind the host to the rules | M | none |
+| 11 | **HIGH: position aliases let a dealer stack a Level 0 deck** (found 2026-09-25 while fixing the hex compares). `heNetContribPosOk` compares a contribution's position as a NUMBER, so "03", "3.0" and "+3" pass as position 3 (checked headlessly; on the engine inferred from `MCU_strtol`, not observed), while the seedCommit, seedSeal and seedReveal folds store under the RAW key and count every alias. A dealer posts alias commits for its own position, honest clients seal their seeds to it once `commitN >= contribN`, and it opens them, grinds its own seed and commits that under "3", still empty; the audit reads integer keys only and passes. Spec 7.1's "the dealer's seed is committed first" breaks, and the Level 1 oracle can do the same. Accept only canonical digit-run positions, compared as text; key by the canonical number; count completed positions over 1..count; pins and a fold-kat mirror | A cheating dealer picks the deal after seeing every other seed | M | none |
+| 12 | `heAuditDeal` and `heAuditDealLog` hash log-supplied seeds through the FFI with no `heIsHex` guard, so a hand-edited transcript with a non-hex seed throws out of the History audit instead of naming the failure (house law H4) | Found beside #11; a local file, not the wire | S | none |
 
 Deferred by the owner on 2026-08-16: spectators. Picking them up needs a wire and UI
 decision (a role a joiner can choose, or a sit-request the host answers).
@@ -598,7 +603,7 @@ decision (a role a joiner can choose, or a sit-request the host answers).
 
 | # | Run | Where | Row | Green (in brief) |
 |---|---|---|---|---|
-| 1 | Suite paste, then the standalone stack with `heRunSelftest`, then 2-3 hotseat hands | S1 items 1, 2, 4 | 14 | v0.25.3 / harness 45, 0 failed, 5 skips; RECORD the total rather than matching 667; the first run of the four 2026-09-09 wire-arity checks and of the nested `heBetApply` trunc guard (whether `trunc` of a non-number throws is unrecorded) |
+| 1 | Suite paste, then the standalone stack with `heRunSelftest`, then 2-3 hotseat hands | S1 items 1, 2, 4 | 14 | v0.25.4 / harness 46, 0 failed, 5 skips; RECORD the total rather than matching 667; the first run of the four 2026-09-09 wire-arity checks and of the nested `heBetApply` trunc guard (whether `trunc` of a non-number throws is unrecorded) |
 | 2 | Phase 1 exit: a full 6-seat hotseat session with side pots and all 17 cards on screen, plus the confirming eye on the 720p layout | S1 + PERSON | 42 | as named |
 | 3 | 2f bring-up | S2 item 6 | 20 | the Tor pill's states; the invite `<64hex>@<56base32>.onion`; the derived address equals `oxServiceAddress` |
 | 4 | 2d re-run and the Phase 2 exit: a 6-seat table over rp1 across at least 3 machines on real home networks (extra instances fill seats); a mid-hand disconnect that reconnects and resumes; tampered and replayed envelopes provably dropped; receipts matching on every seat | S3 item 4 (3+ seats) | 18 | as named |

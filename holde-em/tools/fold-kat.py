@@ -215,7 +215,10 @@ def independent_fold(tx):
                 # mirrors heFoldTranscript's settle guard: a contested showdown
                 # needs 5 in-range board cards and a valid hole pair per
                 # unfolded seat -- a truncated or hand-edited transcript is
-                # named and skipped, never a crash mid-audit
+                # named and skipped, never a crash mid-audit. (heIsCardList's
+                # whole-number test is `is an integer` since v0.25.4, exact;
+                # card_index returns Python ints, so the range test is the
+                # whole mirror of it.)
                 bad = len(board) != 5 or not all(1 <= c <= 52 for c in board)
                 for s in inhand:
                     hp = holes.get(s, [])
@@ -311,7 +314,11 @@ def build_level0_transcript(tamper=""):
 
 def _audit_one_deal(table, hand, seeds, commits, count, occ, button, holes, board):
     for pos in range(1, count + 1):
-        if pk.seed_commit(bytes.fromhex(seeds[pos])).hex() != commits[pos]:
+        # heAuditDealLog compares through heHexEq since v0.25.4 (2026-09-25):
+        # a letter prefix and both sides lowercased, so TEXT, case-blind and
+        # never numbers (the suite's engine note 2.11). Lowercasing the
+        # transcript's side here is that rule, as protocol-kat's twins do.
+        if pk.seed_commit(bytes.fromhex(seeds[pos])).hex() != commits[pos].lower():
             return "fail:commit-mismatch-position-%d" % pos
     xr = pk.xor_seeds([bytes.fromhex(seeds[p]) for p in range(1, count + 1)])
     deck = pk.shuffle_from_stream(pk.stream_bytes(pk.stream_key(table, hand, xr), 16))

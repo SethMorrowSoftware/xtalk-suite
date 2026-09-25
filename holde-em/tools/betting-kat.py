@@ -772,12 +772,19 @@ def case_bad_amounts():
     check("bad-amount: fractional raise rejected", bad["err"], "act-bad-amount")
     bad = apply_msg(st, "act", 1, "raise,abc")
     check("bad-amount: non-numeric raise rejected", bad["err"], "act-bad-amount")
+    # a NEAR-integer too (2026-09-25, v0.25.4): heBetApply's old
+    # `is not trunc(...)` passed it on the engine, whose comparison calls
+    # numbers within 10 DBL_EPSILON equal (the suite's engine note 2.10);
+    # `is not an integer` refuses it there as IEEE does here
+    bad = apply_msg(st, "act", 1, "raise,57.0000000000001")
+    check("bad-amount: near-integer raise rejected", bad["err"], "act-bad-amount")
     st2 = apply_msg(st, "act", 1, "call,2")
     st2 = apply_msg(st2, "act", 2, "call,1")
     st2 = apply_msg(st2, "act", 3, "check,0")
     bad = apply_msg(st2, "act", st2["toAct"], "bet,2.5")
     check("bad-amount: fractional bet rejected", bad["err"], "act-bad-amount")
-    # a whole-valued decimal is trunc-equal on the engine and stays legal
+    # a whole-valued decimal `is an integer` on the engine (its parsed double
+    # equals its floor) and stays legal
     ok = apply_msg(st, "act", 1, "raise,4.0")
     check("bad-amount: whole-valued decimal accepted", ok["err"], "")
 

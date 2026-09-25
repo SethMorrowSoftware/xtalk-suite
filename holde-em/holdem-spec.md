@@ -593,6 +593,9 @@ apply. `README.md`'s phase table records what is built and what each exit still 
 ## 16. Security checklist (implementation laws, SodiumXT-doc style)
 
 - Compare secrets and MACs with `sxMemEqual`, never `is` / `=`.
+- Compare every PUBLIC hex value (a digest, commitment, head, key, signature or table id)
+  with `heHexEq`, never bare `is` / `=`: two number-like texts compare as numbers, so two
+  that overflow a double are equal (the suite's engine note 2.11; v0.25.4).
 - All randomness from `sxRandomBytes` / `sxRandomUniform`; the engine `random()` never
   touches anything dealing- or key-related.
 - Every hash is domain-separated (`"HOLDEM-<PURPOSE>-v<N>|"` prefixes, versioned).

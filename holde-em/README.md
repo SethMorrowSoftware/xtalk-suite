@@ -70,9 +70,10 @@ dead-button rule.
 
 ## Status
 
-**v0.25.3 (harness 45).** The folded harness is engine-green at this version: latest
+**v0.25.4 (harness 46).** The folded harness is engine-green at v0.25.3 (harness 45): latest
 **721/0** on 2026-09-24 (in the suite paste, Windows), every section green, with the five
-live legs skipped by name; the first two-machine 2d contact was 2026-08-27, at v0.25.2.
+live legs skipped by name; v0.25.4's hex-compare and near-integer fixes are verified
+statically; needs an OXT pass. The first two-machine 2d contact was 2026-08-27, at v0.25.2.
 [CLAUDE.md](CLAUDE.md) carries the full evidence ledger.
 Anything visual, timed or multi-machine is "verified statically; needs an OXT pass"
 until a person confirms it. **Honestly: no played hand deals on Level 2 yet.** The

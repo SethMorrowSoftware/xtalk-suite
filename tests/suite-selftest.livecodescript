@@ -658,8 +658,8 @@ local rs1sSkip
 local rs1sRsTestSession
 
 -- ---- holde-em: the full he* self-test ----
-constant he1kHeVersion = "0.25.3"
-constant he1kHeHarnessV = "45"
+constant he1kHeVersion = "0.25.4"
+constant he1kHeHarnessV = "46"
 constant he1kUIVersion = "15"
 constant he1kHeRankChars = "23456789TJQKA"
 constant he1kHeSuitChars = "cdhs"
@@ -31180,6 +31180,35 @@ function he1heIsHex pTxt, pLen
    return true
 end he1heIsHex
 
+function he1heHexEq pA, pB
+   -- THE equality for hex identifiers (2026-09-25): a digest, a seed
+   -- commitment, a chain or receipt head, a pubkey, a signature, a table
+   -- id. Bare `is` is NOT a text compare: it first tries to read BOTH
+   -- operands as numbers and, when both parse, compares the NUMBERS (root
+   -- docs/OXT-ENGINE-NOTES.md 2.11, DOCUMENTED from the engine source, not
+   -- yet observed here; 2.10 adds a relative tolerance on top). Lowercase
+   -- hex is number-like when it is all digits, or digits, one "e", digits,
+   -- and any two texts that overflow a double are both +inf: "1e" and 62
+   -- digits `is` "2e" and 62 digits, and the 64-zero genesis head `is` "0".
+   -- `set the caseSensitive to true` changes none of that; case matters
+   -- only on the text path, which two number-like operands never reach.
+   -- The attack, in one sentence: a dealer who commits a number-like value
+   -- and holds seeds whose commitments are number-like too (about 2^41
+   -- BLAKE2b tries each) passes the seed audit with whichever seed it
+   -- prefers, AFTER seeing everyone else's. The "h" in front keeps both
+   -- operands on the text path (no number parse accepts a leading letter).
+   -- Both are LOWERCASED because hex is case-blind (he1heIsHex admits either
+   -- case, and an honest peer's commit in either spelling must keep
+   -- passing), and lowercasing rather than leaning on the caseSensitive
+   -- default gives one answer on the engine and in the family interpreter,
+   -- which models `is` case-SENSITIVELY. Pure (H5), no FFI: safe on empty
+   -- or malformed input and inside an `or` chain whose operands all
+   -- evaluate (engine note 2.5); empty equals only empty.
+   -- THE RULE: a digest, commitment, head, key or signature never meets
+   -- bare `is`, `is not`, `=` or `<>` in this file. It meets he1heHexEq.
+   return ("h" & toLower(pA)) is ("h" & toLower(pB))
+end he1heHexEq
+
 function he1heSignDetachedD pMsgData, pSecData
    return sxSignDetached(pMsgData, pSecData)
 end he1heSignDetachedD
@@ -31497,7 +31526,10 @@ function he1heEnvVerify pWireLine, pFromPubHex, pHostPubHex, pExpectedPrevHex
    if he1tBodyHex is not empty and not he1heIsHex(he1tBodyHex, 0) then
       return "drop:malformed"
    end if
-   if pFromPubHex is not empty and he1tA["from"] is not pFromPubHex then
+   -- the key and head compares are he1heHexEq, never bare `is`: a number-like
+   -- prev would otherwise match a head it only EQUALS AS A NUMBER (the
+   -- 64-zero genesis head `is` "0"; he1heHexEq, engine note 2.11)
+   if pFromPubHex is not empty and not he1heHexEq(he1tA["from"], pFromPubHex) then
       return "drop:unknown-from"
    end if
    if not he1heVerifyDetached(he1heHex2BinD(he1tA["senderSig"]), \
@@ -31508,7 +31540,7 @@ function he1heEnvVerify pWireLine, pFromPubHex, pHostPubHex, pExpectedPrevHex
          textEncode(he1tA["envLine"], "utf-8"), he1heHex2BinD(pHostPubHex)) then
       return "drop:bad-host-sig"
    end if
-   if pExpectedPrevHex is not empty and he1tA["prev"] is not pExpectedPrevHex then
+   if pExpectedPrevHex is not empty and not he1heHexEq(he1tA["prev"], pExpectedPrevHex) then
       return "drop:chain-break"
    end if
    return "ok"
@@ -31667,8 +31699,11 @@ function he1heAuditDeal pTableData, pHandNum, pSeedsHexA, pCommitsA, pCount, pDe
    -- revealed seeds and name the FIRST failing step. Returns "pass"/"fail:..".
    local he1tSeatPos, he1tDeckList, he1tCheckA, he1tSeatNum
    set the itemDelimiter to comma
+   -- he1heHexEq, never bare `is` (engine note 2.11): the commitment came off
+   -- the wire shape-checked only, and a number-like commit would open to
+   -- any seed whose own commitment is number-like too (he1heHexEq's comment)
    repeat with he1tSeatPos = 1 to pCount
-      if he1heSeedCommitHex(pSeedsHexA[he1tSeatPos]) is not pCommitsA[he1tSeatPos] then
+      if not he1heHexEq(he1heSeedCommitHex(pSeedsHexA[he1tSeatPos]), pCommitsA[he1tSeatPos]) then
          return "fail:commit-mismatch-position-" & he1tSeatPos
       end if
    end repeat
@@ -31797,8 +31832,10 @@ function he1heAuditDealLog pTableHex, pHandNum, pSeedsHexA, pCommitsA, pCount, p
    -- revealed match. Returns "pass" or "fail:...".
    local he1tSeatPos, he1tDeckList, he1tCheckA, he1tSeatNum, he1tBoardN
    set the itemDelimiter to comma
+   -- he1heHexEq, never bare `is`: the same number-like commitment hole as
+   -- he1heAuditDeal's, read from a transcript anyone can hand you
    repeat with he1tSeatPos = 1 to pCount
-      if he1heSeedCommitHex(pSeedsHexA[he1tSeatPos]) is not pCommitsA[he1tSeatPos] then
+      if not he1heHexEq(he1heSeedCommitHex(pSeedsHexA[he1tSeatPos]), pCommitsA[he1tSeatPos]) then
          return "fail:commit-mismatch-position-" & he1tSeatPos
       end if
    end repeat
@@ -32081,14 +32118,14 @@ end he1heL2MaskDeckHex
 function he1heL2CardOfPointHex pPointHex, pBaseDeckList
    -- card index 1..52 of a point in the base table, 0 when absent. PURE
    -- text scan, no FFI, so table lookups can never throw on hostile input;
-   -- `is` compares case-insensitively, which the Python twin mirrors by
-   -- lowercasing both sides.
+   -- he1heHexEq lowercases both sides, exactly as the Python twin does, and
+   -- keeps a number-like point from matching by VALUE (engine note 2.11).
    local he1tIdx, he1tBaseHex
    set the itemDelimiter to comma
    put 0 into he1tIdx
    repeat for each item he1tBaseHex in pBaseDeckList
       add 1 to he1tIdx
-      if he1tBaseHex is pPointHex then
+      if he1heHexEq(he1tBaseHex, pPointHex) then
          return he1tIdx
       end if
    end repeat
@@ -32187,7 +32224,7 @@ function he1heL2RevealShuffleHex pInDeckList, pOutDeckList, pScalarHex, pPermLis
    repeat with he1tPos = 1 to 52
       put item he1tPos of pOutDeckList into he1tOutHex
       put item he1tPos of he1tRedoneList into he1tRedoneHex
-      if he1tRedoneHex is not he1tOutHex then
+      if not he1heHexEq(he1tRedoneHex, he1tOutHex) then
          return "void:shuffle-mismatch:" & he1tPos
       end if
    end repeat
@@ -32211,7 +32248,7 @@ function he1heL2RevealUnmaskHex pInHex, pOutHex, pScalarHex
    if not he1heIsHex(pOutHex, 64) then
       return "void:point-format"
    end if
-   if he1tRedoneHex is pOutHex then
+   if he1heHexEq(he1tRedoneHex, pOutHex) then
       return "ok"
    end if
    return "void:unmask-mismatch"
@@ -32397,7 +32434,10 @@ function he1heL2DleqVerify pCkHex, pP1Hex, pP2Hex, pProofHex
    catch he1tVfyErr
       return "void:no-dleq"
    end try
-   if he1tZRedHex is not he1tZHex then
+   -- every point and scalar compare below is he1heHexEq, never bare `is`: z
+   -- and (a1, a2) are the prover's to choose, so a value that compares
+   -- equal only AS A NUMBER must never close a check (engine note 2.11)
+   if not he1heHexEq(he1tZRedHex, he1tZHex) then
       return "void:scalar-format"
    end if
    try
@@ -32424,7 +32464,7 @@ function he1heL2DleqVerify pCkHex, pP1Hex, pP2Hex, pProofHex
    catch he1tVfyErr
       return "void:dleq-mismatch:1"
    end try
-   if he1tLhsHex is not he1tRhsHex then
+   if not he1heHexEq(he1tLhsHex, he1tRhsHex) then
       return "void:dleq-mismatch:1"
    end if
    try
@@ -32435,7 +32475,7 @@ function he1heL2DleqVerify pCkHex, pP1Hex, pP2Hex, pProofHex
    catch he1tVfyErr
       return "void:dleq-mismatch:2"
    end try
-   if he1tLhsHex is not he1tRhsHex then
+   if not he1heHexEq(he1tLhsHex, he1tRhsHex) then
       return "void:dleq-mismatch:2"
    end if
    return "ok"
@@ -32766,7 +32806,7 @@ function he1heL2VoidAudit pStateA, pRevealsText
       if he1tCkStored is not empty and he1heL2HasDleq() then
          -- (the KAT mirror always has the algebra; a pre-ABI-9 engine
          -- cannot compute k*B, so it skips the binding and still audits)
-         if he1heL2CommitKeyHex(he1tRkA[he1tPosI]) is not he1tCkStored then
+         if not he1heHexEq(he1heL2CommitKeyHex(he1tRkA[he1tPosI]), he1tCkStored) then
             return "named=" & he1tPosI & "|void:audit-ck-mismatch"
          end if
       end if
@@ -33567,7 +33607,7 @@ command he1heNetOnHandshake pPeer, pTokenData, pFromSeq
    if he1gGame["isHost"] is not "true" and he1tRoleTxt is "host" then
       if he1gGame["hostPubHex"] is empty then
          put he1tPubHex into he1gGame["hostPubHex"]
-      else if he1gGame["hostPubHex"] is not he1tPubHex then
+      else if not he1heHexEq(he1gGame["hostPubHex"], he1tPubHex) then
          -- copy the trusted host key out before chunking it (H6: never chunk an
          -- array element directly)
          put he1gGame["hostPubHex"] into he1tHostShort
@@ -33700,7 +33740,7 @@ command he1heHostRelay pPeer, pContentAndSig
    -- relay them for a non-host sender, so an admitted player cannot forge table
    -- config or roster through the relay (deep-dive transport). The host emits
    -- these from its own key (he1heNetSendAction uses he1gGame["idPubHex"]).
-   if (he1tTypeTxt is "cfg" or he1tTypeTxt is "roster") and he1tFromHex is not he1gGame["hostPubHex"] then
+   if (he1tTypeTxt is "cfg" or he1tTypeTxt is "roster") and not he1heHexEq(he1tFromHex, he1gGame["hostPubHex"]) then
       exit he1heHostRelay
    end if
    -- verify the sender actually signed this content (host cannot forge content)
@@ -33755,8 +33795,9 @@ command he1heNetIngestWire pWire
    -- fields sit inside the host-signed span, but a receiver still has to ENFORCE
    -- them: otherwise a host-signed wire for another table, or a downgraded envelope
    -- version, would be accepted onto our chain (deep-dive transport). A mismatch is
-   -- a hard drop, NOT a chain gap, so it never triggers a resync.
-   if he1tA["table"] is not he1gGame["tableIdHex"] then
+   -- a hard drop, NOT a chain gap, so it never triggers a resync. The table
+   -- id and the prev below are hex: he1heHexEq, never bare `is` (engine note 2.11).
+   if not he1heHexEq(he1tA["table"], he1gGame["tableIdHex"]) then
       put "drop:wrong-table " & char 1 to 24 of pWire & return after he1gGame["netLog"]
       he1heLobbyRefresh
       exit he1heNetIngestWire
@@ -33785,7 +33826,7 @@ command he1heNetIngestWire pWire
    end if
    -- he1tSeq is exactly lastSeq+1: it must chain onto our head, or the host's stream
    -- is inconsistent (should not happen) -- ask for a replay rather than wedge.
-   if he1tA["prev"] is not he1gGame["chainHeadHex"] then
+   if not he1heHexEq(he1tA["prev"], he1gGame["chainHeadHex"]) then
       put "drop:chain-break" && char 1 to 24 of pWire & return after he1gGame["netLog"]
       he1heNetRequestSync
       he1heLobbyRefresh
@@ -33832,7 +33873,7 @@ command he1heNetApplyWire pWire, pA
    -- ignore-the-body treatment a non-host cfg gets. In-order apply guarantees
    -- the roster wire admitting a sender lands before that sender's first
    -- relayed action, so an honest stream never trips this.
-   if he1tFromHex is not he1gGame["hostPubHex"] and not he1heRosterHasKey(he1tFromHex) then
+   if not he1heHexEq(he1tFromHex, he1gGame["hostPubHex"]) and not he1heRosterHasKey(he1tFromHex) then
       put "note   unrostered sender " & char 1 to 8 of he1tFromHex \
             & " -- body ignored (seq " & he1tSeqTxt & ")" & return after he1gGame["netLog"]
       exit he1heNetApplyWire
@@ -33843,7 +33884,7 @@ command he1heNetApplyWire pWire, pA
    -- so an admitted player cannot forge table config/roster by getting a
    -- content line relayed (the host relays any admitted sender's content).
    if he1tTypeTxt is "roster" or he1tTypeTxt is "cfg" then
-      if he1tFromHex is he1gGame["hostPubHex"] then
+      if he1heHexEq(he1tFromHex, he1gGame["hostPubHex"]) then
          if he1tTypeTxt is "roster" then
             put he1heEnvBodyText(he1tBodyHex) into he1gGame["rosterBody"]
          else
@@ -33890,7 +33931,7 @@ function he1heRosterHasKey pPubHex
       else
          put he1tItem into he1tPub
       end if
-      if he1tPub is pPubHex then
+      if he1heHexEq(he1tPub, pPubHex) then
          return true
       end if
    end repeat
@@ -33923,7 +33964,7 @@ command he1heNetDrainBuffer
       put empty into he1gGame["wireBuf"][he1tNext]
       subtract 1 from he1gGame["wireBufN"]
       put he1heEnvWireParse(he1tWire) into he1tA
-      if he1tA["prev"] is not he1gGame["chainHeadHex"] then
+      if not he1heHexEq(he1tA["prev"], he1gGame["chainHeadHex"]) then
          exit repeat   -- a buffered wire that no longer chains: leave it for replay
       end if
       he1heNetApplyWire he1tWire, he1tA
@@ -34125,7 +34166,7 @@ function he1heNetElectablePubs
    repeat for each item he1tSeatNum in he1tChipList
       if he1gGame["sitOutBy"][he1tSeatNum] is not "true" then
          put he1gGame["pubBySeat"][he1tSeatNum] into he1tPub
-         if he1tPub is not empty and he1tPub is not he1gGame["hostPubHex"] then
+         if he1tPub is not empty and not he1heHexEq(he1tPub, he1gGame["hostPubHex"]) then
             put he1tPub & return after he1tOut
          end if
       end if
@@ -34176,7 +34217,7 @@ command he1heNetHostLost pWhyTxt
    he1heDisableActions
    if he1tElected is empty then
       put "HOST LOST (" & pWhyTxt & ") -- no live seated player to elect. The table is over; stacks stand at the last receipt." into he1tMsgTxt
-   else if he1tElected is he1gGame["idPubHex"] then
+   else if he1heHexEq(he1tElected, he1gGame["idPubHex"]) then
       put "HOST LOST (" & pWhyTxt & ") -- the in-flight hand is void; stacks stand at the last receipt. YOU are the elected host (lowest live key): Create a table and share the new invite." into he1tMsgTxt
    else
       put "HOST LOST (" & pWhyTxt & ") -- the in-flight hand is void; stacks stand at the last receipt. Elected host: " & char 1 to 12 of he1tElected & " -- join its new invite when it re-hosts." into he1tMsgTxt
@@ -35106,7 +35147,7 @@ function he1heNetContribPosOk pPos, pFromSeat, pFromHex
    if pFromSeat > 0 then
       return (he1heNetSeatAtPos(pPos) is pFromSeat)
    end if
-   if he1heNetOracleDeal() and pFromHex is he1gGame["hostPubHex"] then
+   if he1heNetOracleDeal() and he1heHexEq(pFromHex, he1gGame["hostPubHex"]) then
       put he1gGame["oDeal"]["dealCount"] into he1tCount
       if he1tCount is a number and pPos is (he1tCount + 1) then
          return true
@@ -35477,7 +35518,7 @@ function he1heNetPubIsLive pPubHex
    -- (reconnecting re-stamps it), and the honest limit of what rp1 can prove.
    -- Verified statically; needs an OXT pass.
    local he1tSeenMs
-   if pPubHex is he1gGame["idPubHex"] then
+   if he1heHexEq(pPubHex, he1gGame["idPubHex"]) then
       return true   -- ourselves: the host running this check is present
    end if
    if he1gGame["peerByPub"][pPubHex] is empty then
@@ -35522,7 +35563,7 @@ command he1heNetSeatLateJoiners
    repeat for each key he1tPubHex in he1gGame["boxByPub"]
       if he1gGame["admittedA"][he1tPubHex] is "true" \
             and he1gGame["seatByPub"][he1tPubHex] is empty then
-         if he1gGame["oracleHost"] is "true" and he1tPubHex is he1gGame["idPubHex"] then
+         if he1gGame["oracleHost"] is "true" and he1heHexEq(he1tPubHex, he1gGame["idPubHex"]) then
             next repeat   -- the oracle never takes a seat
          end if
          if not he1heNetPubIsLive(he1tPubHex) then
@@ -35572,7 +35613,7 @@ command he1heNetStartGame
       if he1gGame["admittedA"][he1tPubHex] is "true" then
          -- Phase 3: the ORACLE hosts and deals but never takes a seat --
          -- its join still bound a session box (the seedSeals seal to it)
-         if he1gGame["oracleHost"] is "true" and he1tPubHex is he1gGame["idPubHex"] then
+         if he1gGame["oracleHost"] is "true" and he1heHexEq(he1tPubHex, he1gGame["idPubHex"]) then
             next repeat
          end if
          put he1tPubHex & return after he1tPubsTxt
@@ -35784,7 +35825,7 @@ command he1heNetFoldGameWire pTypeTxt, pFromHex, pBodyTxt, pHandTxt
             he1heHudMark
             break
          end if
-         if pFromHex is not he1gGame["hostPubHex"] then
+         if not he1heHexEq(pFromHex, he1gGame["hostPubHex"]) then
             put "drop   non-host sit ignored" & return after he1gGame["netLog"]
             break
          end if
@@ -35812,13 +35853,13 @@ command he1heNetFoldGameWire pTypeTxt, pFromHex, pBodyTxt, pHandTxt
             put he1tStackAmt into he1gGame["stacksBy"][he1tSeat]
          end if
          put "true" into he1gGame["gameOn"]
-         if he1tHex is he1gGame["idPubHex"] then
+         if he1heHexEq(he1tHex, he1gGame["idPubHex"]) then
             he1heUISetStatus "You are seated at seat " & he1tSeat & ". The game is starting."
          end if
          break
 
       case "handStart"
-         if pFromHex is not he1gGame["hostPubHex"] then
+         if not he1heHexEq(pFromHex, he1gGame["hostPubHex"]) then
             put "drop   non-host handStart ignored" & return after he1gGame["netLog"]
             break
          end if
@@ -35852,7 +35893,7 @@ command he1heNetFoldGameWire pTypeTxt, pFromHex, pBodyTxt, pHandTxt
          break
 
       case "dealLevel"
-         if pFromHex is not he1gGame["hostPubHex"] then
+         if not he1heHexEq(pFromHex, he1gGame["hostPubHex"]) then
             put "drop   non-host dealLevel ignored" & return after he1gGame["netLog"]
             break
          end if
@@ -35915,7 +35956,7 @@ command he1heNetFoldGameWire pTypeTxt, pFromHex, pBodyTxt, pHandTxt
          -- Phase 3: at level 1 the dealer key is the ORACLE's (host), no
          -- seat behind it -- he1heNetDealerPubHex names it either way
          put he1heNetDealerPubHex() into he1tDealerPub
-         if pFromHex is not he1tDealerPub then
+         if not he1heHexEq(pFromHex, he1tDealerPub) then
             put "drop   holeDeliver not from the dealer" & return after he1gGame["netLog"]
             break
          end if
@@ -35990,7 +36031,7 @@ command he1heNetFoldGameWire pTypeTxt, pFromHex, pBodyTxt, pHandTxt
          -- engine-rejects it visibly (wrong seat for the sender) and
          -- stalls where it always stalled -- never mis-folds.
          if he1tBodyA["timeout"] is "1" then
-            if pFromHex is not he1gGame["hostPubHex"] then
+            if not he1heHexEq(pFromHex, he1gGame["hostPubHex"]) then
                put "drop   non-host timeout ignored" & return after he1gGame["netLog"]
                break
             end if
@@ -36064,7 +36105,7 @@ command he1heNetFoldGameWire pTypeTxt, pFromHex, pBodyTxt, pHandTxt
          -- host's seat) and stalls visibly -- except a host self-timeout,
          -- which folds identically to a voluntary check/fold there.
          if he1tBodyA["timeout"] is "1" then
-            if pFromHex is not he1gGame["hostPubHex"] then
+            if not he1heHexEq(pFromHex, he1gGame["hostPubHex"]) then
                put "drop   non-host timeout ignored" & return after he1gGame["netLog"]
                break
             end if
@@ -36110,7 +36151,7 @@ command he1heNetFoldGameWire pTypeTxt, pFromHex, pBodyTxt, pHandTxt
 
       case "board"
          put he1heNetDealerPubHex() into he1tDealerPub
-         if pFromHex is not he1tDealerPub then
+         if not he1heHexEq(pFromHex, he1tDealerPub) then
             put "drop   board not from the dealer" & return after he1gGame["netLog"]
             break
          end if
@@ -36168,8 +36209,11 @@ command he1heNetFoldGameWire pTypeTxt, pFromHex, pBodyTxt, pHandTxt
             put "drop   bad seedReveal" & return after he1gGame["netLog"]
             break
          end if
-         -- the reveal must open the commitment made before the deal (spec 7.1)
-         if he1heSeedCommitHex(he1tHex) is not he1gGame["oDeal"]["commitsBy"][he1tPos] then
+         -- the reveal must open the commitment made before the deal (spec
+         -- 7.1) -- through he1heHexEq, never bare `is`: a number-like commit
+         -- would "open" to any seed whose commitment is number-like too
+         -- (engine note 2.11; the attack is in he1heHexEq's comment)
+         if not he1heHexEq(he1heSeedCommitHex(he1tHex), he1gGame["oDeal"]["commitsBy"][he1tPos]) then
             put "AUDIT  seedReveal pos " & he1tPos & " does not match its commit" & return after he1gGame["netLog"]
             break
          end if
@@ -36180,7 +36224,7 @@ command he1heNetFoldGameWire pTypeTxt, pFromHex, pBodyTxt, pHandTxt
          break
 
       case "settle"
-         if pFromHex is not he1gGame["hostPubHex"] then
+         if not he1heHexEq(pFromHex, he1gGame["hostPubHex"]) then
             put "drop   non-host settle ignored" & return after he1gGame["netLog"]
             break
          end if
@@ -36212,7 +36256,7 @@ command he1heNetFoldGameWire pTypeTxt, pFromHex, pBodyTxt, pHandTxt
          put he1tBodyA["head"] into he1tHeadHex
          put he1tBodyA["sig"] into he1tSigHex
          if not he1heIsHex(he1tHeadHex, 64) or not he1heIsHex(he1tSigHex, 128) \
-               or he1tHeadHex is not he1gGame["rcptHeadHex"] \
+               or not he1heHexEq(he1tHeadHex, he1gGame["rcptHeadHex"]) \
                or not he1heReceiptSigVerify(he1tSigHex, he1tHeadHex, pFromHex) then
             put "drop   bad receipt from seat " & he1tFromSeat & return after he1gGame["netLog"]
             break
@@ -36230,7 +36274,7 @@ command he1heNetFoldGameWire pTypeTxt, pFromHex, pBodyTxt, pHandTxt
       case "audit"
          -- Phase 3: the ORACLE audits too (it witnessed the whole deal it
          -- ran); its verdict files under contributor slot 0, logged by name
-         if he1tFromSeat is 0 and not (he1heNetOracleDeal() and pFromHex is he1gGame["hostPubHex"]) then
+         if he1tFromSeat is 0 and not (he1heNetOracleDeal() and he1heHexEq(pFromHex, he1gGame["hostPubHex"])) then
             put "drop   audit from an unseated key" & return after he1gGame["netLog"]
             break
          end if
@@ -36269,7 +36313,7 @@ command he1heNetFoldGameWire pTypeTxt, pFromHex, pBodyTxt, pHandTxt
             break
          end if
          put he1gGame["oDeal"]["ckptHeadBy"][he1tStreetName] into he1tCkptHead
-         if he1tCkptHead is not empty and he1tHeadHex is not he1tCkptHead then
+         if he1tCkptHead is not empty and not he1heHexEq(he1tHeadHex, he1tCkptHead) then
             put "CKPT-FORK seat " & he1tFromSeat & " signed a different " & he1tStreetName \
                   & " head -- host equivocation evidence" & return after he1gGame["netLog"]
             break
@@ -36600,7 +36644,7 @@ command he1heNetDealerDeal
    -- verify each against its commitment (a mismatch aborts the deal, named),
    -- derive the committed deck, and send each seat its two hole cards sealed
    -- to ITS session key (spec 7.1 steps 3-4)
-   local he1tPos, he1tCount, he1tSeedsA, he1tSealedHex, he1tSeedHex, he1tOpenErr, he1tBad
+   local he1tPos, he1tCount, he1tSeedsA, he1tSealedHex, he1tSeedHex, he1tOpenErr, he1tBad, he1tPosBad
    local he1tDealA, he1tOccList, he1tSeatNum, he1tHolePair, he1tPeerPubHex, he1tPeerBoxHex
    local he1tSealErr, he1tSealedOut
    set the itemDelimiter to comma
@@ -36617,8 +36661,20 @@ command he1heNetDealerDeal
       catch he1tOpenErr
          put empty into he1tSeedHex
       end try
-      if not he1heIsHex(he1tSeedHex, 64) \
-            or he1heSeedCommitHex(he1tSeedHex) is not he1gGame["oDeal"]["commitsBy"][he1tPos] then
+      -- NESTED, not one `or` (2026-09-25): both operands of `or` are
+      -- evaluated (engine note 2.5), and the old one-liner hashed the seed
+      -- even when it had just failed he1heIsHex -- through sxHex2Bin, which
+      -- throws on malformed input -- so a contributor that sealed garbage
+      -- threw out of the react pass instead of reaching this named abort
+      -- (H4). The commitment compare is he1heHexEq, never bare `is` (engine
+      -- note 2.11: a number-like commit opens to any number-like seed hash).
+      put "false" into he1tPosBad
+      if not he1heIsHex(he1tSeedHex, 64) then
+         put "true" into he1tPosBad
+      else if not he1heHexEq(he1heSeedCommitHex(he1tSeedHex), he1gGame["oDeal"]["commitsBy"][he1tPos]) then
+         put "true" into he1tPosBad
+      end if
+      if he1tPosBad is "true" then
          put "AUDIT  seal at pos " & he1tPos & " bad or commit-mismatched -- deal aborted" & return after he1gGame["netLog"]
          put "true" into he1tBad
       end if
@@ -37651,11 +37707,20 @@ function he1heBetApply pStateA, pMsgType, pSeatNum, pAmount
             -- trunc of a non-number throws is the runbook's S1 row P). Nested,
             -- the refusal is the same under either reading, and the section
             -- that pins it (he1heTestLegalRun) can run headlessly (2026-09-11).
+            -- `is not an integer`, not `is not trunc(...)` (2026-09-25): the
+            -- old test compared two NUMBERS, and the engine calls numbers
+            -- within 10 DBL_EPSILON of each other equal (root
+            -- docs/OXT-ENGINE-NOTES.md 2.10, from the engine source), so
+            -- "57.0000000000001" and "400.0000000000002" passed it there
+            -- while IEEE and the family interpreter refused them -- a
+            -- fractional wager into shared state that no headless gate
+            -- could see. `is an integer` is exact on the engine (the parsed
+            -- double == its floor) and in the interpreter alike.
             if he1tTargetAmt is not a number then
                put "act-bad-amount" into he1tStateA["err"]
                return he1tStateA
             end if
-            if he1tTargetAmt is not trunc(he1tTargetAmt) then
+            if he1tTargetAmt is not an integer then
                put "act-bad-amount" into he1tStateA["err"]
                return he1tStateA
             end if
@@ -37908,7 +37973,11 @@ function he1heIsCardList pListTxt, pCount
       if he1tItem is not a number then
          return false
       end if
-      if he1tItem is not trunc(he1tItem) or he1tItem < 1 or he1tItem > 52 then
+      -- `is not an integer`, exact, where `is not trunc(he1tItem)` let a
+      -- near-integer through the engine's comparison tolerance (engine note
+      -- 2.10; he1heBetApply's act-bad-amount comment, 2026-09-25). he1tItem is a
+      -- number by now, so the `or` evaluating every operand (2.5) is safe.
+      if he1tItem is not an integer or he1tItem < 1 or he1tItem > 52 then
          return false
       end if
    end repeat
@@ -39791,11 +39860,13 @@ command he1heSettingsApply
 end he1heSettingsApply
 
 function he1heSettingsNumOk pVal, pMin
-   -- a whole, non-negative number at least pMin
+   -- a whole, non-negative number at least pMin. `is not an integer` is
+   -- exact; `is not trunc(pVal)` passed a near-integer through the engine's
+   -- comparison tolerance (engine note 2.10; he1heBetApply, 2026-09-25)
    if pVal is not a number then
       return false
    end if
-   if pVal is not trunc(pVal) then
+   if pVal is not an integer then
       return false
    end if
    return pVal >= pMin
@@ -39863,7 +39934,7 @@ command he1heLobbyRefresh
       if he1tSeatRole is empty then
          put "player" into he1tSeatRole
       end if
-      if he1tKeyPub is he1gGame["idPubHex"] then
+      if he1heHexEq(he1tKeyPub, he1gGame["idPubHex"]) then
          put "* " after he1tRoster
       else
          put "  " after he1tRoster
@@ -41488,8 +41559,9 @@ function he1heSelfTest
    -- them: its board row said 0 skipped while this log listed 5.
    --
    -- The quiet entry point ran on an engine inside the suite paste
-   -- (2026-09-24, 721 passed); this three-count line is verified
-   -- statically; needs an OXT pass.
+   -- (2026-09-24, 721 passed), and so did this three-count line in that
+   -- day's third run: the board merged the five skips (its row read
+   -- 723 / 0 / 5; holde-em/CLAUDE.md's ledger).
    he1heTestRunAllSections
    -- leave no timer of ours running inside somebody else's paste
    he1heTestSweepNetTimers
@@ -42576,6 +42648,14 @@ command he1heTestCryptoRun
          he1heEnvVerify(he1tWire, he1heBin2HexS(he1tHostPub), he1heBin2HexS(he1tPub), he1kHeGenesisPrev), "drop:unknown-from"
    he1heTAssert "crypto: verify drops a chain break", \
          he1heEnvVerify(he1tWire, he1heBin2HexS(he1tPub), he1heBin2HexS(he1tPub), he1kKatChainHead6), "drop:chain-break"
+   -- ...and so is a prev that equals the genesis head only AS A NUMBER
+   -- (2026-09-25): "0" `is` the 64-zero head under bare `is` on the engine
+   -- AND in the headless interpreter (both read two short all-digit texts
+   -- as numbers), so this is the pin that sees he1heEnvVerify's prev check
+   -- slip back from he1heHexEq to bare `is` (root docs/OXT-ENGINE-NOTES.md 2.11)
+   put he1heWireBuild(he1tContent, he1tSec, 1, "0", he1tSec) into he1tTampered
+   he1heTAssert "crypto: verify drops a prev that is the genesis head only as a number", \
+         he1heEnvVerify(he1tTampered, he1heBin2HexS(he1tPub), he1heBin2HexS(he1tPub), he1kHeGenesisPrev), "drop:chain-break"
    -- H4: a malformed (non-hex) field must DROP cleanly, never throw out of the
    -- poll loop. Corrupt the from-key to non-hex and confirm the verdict.
    put he1tWire into he1tTampered
@@ -44113,7 +44193,7 @@ command he1heTestHelpersRun
    -- Everything here is values-in/values-out (H5) and needs no extension,
    -- so this section never SKIPs as a whole; the one branch that reaches a
    -- bt* call probes for it and SKIPs by name.
-   local he1tSaved, he1tRcTxt, he1tRcErr, he1tDelimTxt, he1tRectTxt
+   local he1tSaved, he1tRcTxt, he1tRcErr, he1tDelimTxt, he1tRectTxt, he1tHexA, he1tHexB
    put return & "-- 21. Pure helpers: leaf values nothing else pinned (shallow)" & return after he1gRpt
    set the itemDelimiter to comma
 
@@ -44150,6 +44230,30 @@ command he1heTestHelpersRun
          he1heSettingsNumOk(empty, 0), "false"
    he1heTAssert "helpers: he1heSettingsNumOk accepts zero at minimum zero", \
          he1heSettingsNumOk(0, 0), "true"
+
+   -- he1heHexEq (2026-09-25): THE compare for hex identifiers, because bare
+   -- `is` reads two number-like texts as NUMBERS (root
+   -- docs/OXT-ENGINE-NOTES.md 2.11, from the engine source; not yet
+   -- observed here). Each pin states the HELPER's answer, which the engine
+   -- and the family interpreter compute alike; the labels say what bare
+   -- `is` answers instead. The interpreter reads exponent forms as text, so
+   -- of the number-like pins only the genesis one fails headlessly if
+   -- he1heHexEq's body slips back to bare `is` (the case pin fails there too,
+   -- but only because the model's `is` is case-sensitive); the others are
+   -- the engine run's to tell apart. The first pair are valid 64-hex
+   -- (he1heIsHex admits both, so both pass a wire's shape check), and both
+   -- overflow a double to +inf.
+   put "1e" & "01234567890123456789012345678901234567890123456789012345678901" into he1tHexA
+   put "2e" & "01234567890123456789012345678901234567890123456789012345678901" into he1tHexB
+   he1heTAssert "helpers: he1heHexEq keeps two overflowing 64-hex texts apart (bare is: equal on the engine)", \
+         he1heHexEq(he1tHexA, he1tHexB) & "," & he1heIsHex(he1tHexA, 64) & "," & he1heIsHex(he1tHexB, 64), "false,true,true"
+   he1heTAssert "helpers: he1heHexEq keeps 1e5 and 100000 apart (bare is: equal on the engine)", \
+         he1heHexEq("1e5", "100000"), "false"
+   he1heTAssert "helpers: he1heHexEq keeps the 64-zero genesis head and 0 apart (bare is: equal everywhere)", \
+         he1heHexEq(he1kHeGenesisPrev, "0") & "," & he1heHexEq(he1kHeGenesisPrev, he1kHeGenesisPrev), "false,true"
+   he1heTAssert "helpers: he1heHexEq calls a hex text equal to itself", he1heHexEq(he1tHexA, he1tHexA), "true"
+   he1heTAssert "helpers: he1heHexEq is case-blind, as hex is (an honest commit in either case passes)", \
+         he1heHexEq(toUpper(he1kKatCommit1), he1kKatCommit1), "true"
 
    -- he1heHandByOf: what the HUD subtracts to show chips BEHIND. Its contract
    -- has a sharp edge -- at "between" the deltas are ALREADY in stacksBy, so
@@ -45193,6 +45297,13 @@ command he1heTestLegalRun
    put he1heTBlinds(he1tStateA) into he1tStateA
    put he1heTAct(he1tStateA, 1, "raise,4.5", "act-bad-amount", "legal: fractional raise rejected") into he1tStateA
    put he1heTAct(he1tStateA, 1, "raise,abc", "act-bad-amount", "legal: non-numeric raise rejected") into he1tStateA
+   -- a NEAR-integer too (2026-09-25): the old `is not trunc(...)` test let
+   -- this through on the engine, whose comparison calls numbers within 10
+   -- DBL_EPSILON of each other equal (root docs/OXT-ENGINE-NOTES.md 2.10);
+   -- IEEE and the headless run refused it either way, so only an engine
+   -- run of this line tells the two tests apart
+   put he1heTAct(he1tStateA, 1, "raise,57.0000000000001", "act-bad-amount", \
+         "legal: a near-integer raise (57.0000000000001) rejected") into he1tStateA
    put he1heTAct(he1tStateA, 1, "raise,4", empty, "legal: the integer raise still lands") into he1tStateA
 end he1heTestLegalRun
 
@@ -45246,7 +45357,9 @@ command he1heTestShuffleRun
       put he1heDrawInt(he1tDrawState, he1tRangeN) into he1tDrawPair
       put item 1 of he1tDrawPair into he1tDrawVal
       put item 2 of he1tDrawPair into he1tDrawState
-      if he1tDrawVal < 1 or he1tDrawVal > he1tRangeN or he1tDrawVal is not trunc(he1tDrawVal) then
+      -- `is not an integer` is exact on the engine; `is not trunc(...)`
+      -- would call a near-integer whole (engine note 2.10, 2026-09-25)
+      if he1tDrawVal < 1 or he1tDrawVal > he1tRangeN or he1tDrawVal is not an integer then
          add 1 to he1tOutOfRange
       end if
    end repeat

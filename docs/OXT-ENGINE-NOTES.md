@@ -410,21 +410,23 @@ checks had the same shape. quickshare's capability gate
 (`if tTok is not sCwToken`, 32 hex characters, in nocloud and in torrentxt's
 torrent-quickshare) admitted `/1e999/` on the one share in about 1.2 million
 whose token overflows, and datachannel-dht-chat's 8-hex answer nonces
-overflowed about 1 time in 120 each. The quickshare gates and the DHT chat's
-nonce checks were fixed the same day by prefixing a letter at the comparison
-(verified statically; needs an OXT pass); holde-em's sites are open work
-(docs/WORK-PLAN.md suite-wide #18).
+overflowed about 1 time in 120 each. All were fixed the same day: holde-em
+(v0.25.4, harness 46) compares every hex identifier through `heHexEq` (40
+sites; its 64-zero genesis head had compared equal to "0"), and the other two
+prefix a letter at the comparison. Verified statically; needs an OXT pass.
 **Rule:** never compare a hex digest, a token, a key or any identifier with
 bare `is`, `is not`, `=` or `<>`. Prefix a letter to both sides (no number
 parse accepts `h1e5`), adding `set the caseSensitive to true` where case is
-part of the value (hex digits are not, so a hex compare may fold case), or
+part of the value (hex digits are not: `heHexEq` lowercases both sides), or
 compare byte by byte (coinxt's `cxCompareBytes`, nostrxt's `nxCtEqualHex`).
 riptide's "compare kinds by BYTE, never `is`" is the same rule, met from the
 case side.
 **Gate:** none yet (docs/WORK-PLAN.md suite-wide #18 proposes a static rule,
 #19 an interpreter that knows the parse). The family interpreter's `_eq`
 treats only `-?\d+(\.\d+)?` as a number, so it reads every exponent-form
-pair as text and no headless gate sees this class. riptide's harness prints `"1e999" is "2e999"` and `"1e5" is "100000"` in its
+pair as text and no headless gate sees this class; holde-em's harness pins
+the genesis head against "0", the one number-like pair the interpreter does
+read as numbers. riptide's harness prints `"1e999" is "2e999"` and `"1e5" is "100000"` in its
 third probe line (2026-09-25), which reads the parse on the next run.
 
 ## 3. Control flow
