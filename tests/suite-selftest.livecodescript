@@ -3802,8 +3802,10 @@ command stTorrentSection
    stAssert "btDhtKeypair reports its 64-hex seed", \
          the number of chars of tKp["seed"] is 64
    put btDhtKeypair(tKp["seed"]) into tKp2
+   -- hex against hex compares as TEXT, a letter on each side (suite engine
+   -- note 2.11: bare `is` reads two number-like texts as numbers)
    stAssert "btDhtKeypair is deterministic from that seed", \
-         tKp2["publicKey"] is tKp["publicKey"]
+         ("h" & tKp2["publicKey"]) is ("h" & tKp["publicKey"])
 
    -- The alert drain has to survive being called; the events themselves arrive
    -- asynchronously and are not asserted here (that is the member selftest's job).
@@ -3857,7 +3859,9 @@ command stOnionSection
       put numToByte(0) after tZeroPub
    end repeat
    set the caseSensitive to true
-   stAssert "oxPublicKeyFromAddress decoded base32 byte-exactly", tPub is tZeroPub
+   -- a letter on each side keeps `is` on its text path (engine note 2.11)
+   stAssert "oxPublicKeyFromAddress decoded base32 byte-exactly", \
+         ("b" & tPub) is ("b" & tZeroPub)
    set the caseSensitive to false
 
    -- The fail-closed half: wrong length, a character outside the base32
@@ -3988,7 +3992,7 @@ command stCoinCurveSection
       -- ecrecover: the signature alone must yield the signer's key back.
       put cxRecover(cxSignRecoverable(tSeckey, tDigest), tDigest) into tRecovered
       stAssert "cxRecover returns the signing public key", \
-            stHex(tRecovered) is stHex(tPubU)
+            ("h" & stHex(tRecovered)) is ("h" & stHex(tPubU))
    catch tError
       stSectionFailed "CoinXT secp256k1", tError
    end try
@@ -4024,7 +4028,7 @@ command stCrossIdentitySection
 
    put btDhtKeypair(tSeedHex) into tKp
    stAssert "btDhtKeypair accepts the SodiumXT seed verbatim", \
-         tKp["seed"] is tSeedHex
+         ("h" & tKp["seed"]) is ("h" & tSeedHex)
    put btDhtKeypair(tSeedHex) into tKp
    stAssert "btDhtKeypair is deterministic on that seed (same key twice)", \
          the number of chars of tKp["publicKey"] is 64
@@ -4033,9 +4037,10 @@ command stCrossIdentitySection
    put textDecode(sxBin2Hex(tPub), "UTF-8") into tPubHex
    -- Both hex encoders emit lowercase, and `is` is case-insensitive by default,
    -- so this compare is deliberately left case-INsensitive: it is a comparison
-   -- of two hex TEXTS, not of secret bytes.
+   -- of two hex TEXTS, not of secret bytes - with a letter on each side, so
+   -- `is` stays on its TEXT path (engine note 2.11).
    stAssert "SodiumXT and libtorrent derive the SAME ed25519 public key", \
-         tPubHex is tKp["publicKey"]
+         ("h" & tPubHex) is ("h" & tKp["publicKey"])
 
    -- The two libraries disagree on how to SPELL the secret key, and the suite
    -- depends on knowing which is which: libsodium's is seed||publicKey (64
@@ -4054,7 +4059,7 @@ command stCrossIdentitySection
    else
       put textDecode(sxBin2Hex(tExpanded), "UTF-8") into tExpandedHex
       stAssert "libtorrent's DHT secret key IS SodiumXT's expanded key", \
-            tExpandedHex is tKp["secretKey"]
+            ("h" & tExpandedHex) is ("h" & tKp["secretKey"])
    end if
 
    -- The third leg of the claim: that same public key IS a v3 .onion address.
@@ -23264,7 +23269,9 @@ private command ox1testSodiumComposition
       put "90e7595fc89e52fdfddce9c6a43d74dbf6047025ee0462d2d172e8b6a2841d6ee" & \
           "da66ce2983f7ff7e47c49615220e78c25c775a040957316b7bafd5985450f90" into ox1tExpectExp
       put sxSignSeedToExpandedKey(ox1testRepeatByte(66, 32)) into ox1tExpanded
-      ox1oxCheck (ox1testHex(ox1tExpanded) is ox1tExpectExp), \
+      -- hex against hex compares as TEXT, a letter on each side (suite engine
+      -- note 2.11: bare `is` reads two number-like texts as numbers)
+      ox1oxCheck (("h" & ox1testHex(ox1tExpanded)) is ("h" & ox1tExpectExp)), \
          "sxSignSeedToExpandedKey(seed 0x42 x 32) matches the pinned expanded-key vector"
    else
       ox1oxSkip "sxSignSeedToExpandedKey needs SodiumXT ABI >= 6"
@@ -23275,7 +23282,7 @@ private command ox1testSodiumComposition
       local ox1tMac, ox1tExpectMac
       put "5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843" into ox1tExpectMac
       put sxHmacSha256(textEncode("Jefe", "UTF-8"), textEncode("what do ya want for nothing?", "UTF-8")) into ox1tMac
-      ox1oxCheck (ox1testHex(ox1tMac) is ox1tExpectMac), \
+      ox1oxCheck (("h" & ox1testHex(ox1tMac)) is ("h" & ox1tExpectMac)), \
          "sxHmacSha256 (RFC 4231 Test Case 2) matches the pinned HMAC vector"
    else
       ox1oxSkip "sxHmacSha256 needs SodiumXT ABI >= 6"
@@ -23691,7 +23698,7 @@ command cx1stRunKeccak
       -- a hashing failure - do not go looking in the vectors.
       cx1stAssert "cxKeccak256 of the empty input", cx1stHex(cxKeccak256(cx1stText(""))) is cx1kKeccakEmpty
       cx1stAssert "cxKeccak256 of abc", cx1stHex(cxKeccak256(cx1stText("abc"))) is cx1kKeccakAbc
-      cx1stAssert "cxKeccak256 is deterministic", cx1stHex(cxKeccak256(cx1stText("abc"))) is cx1stHex(cxKeccak256(cx1stText("abc")))
+      cx1stAssert "cxKeccak256 is deterministic", cx1stSameHex(cx1stHex(cxKeccak256(cx1stText("abc"))), cx1stHex(cxKeccak256(cx1stText("abc"))))
    catch cx1tError
       cx1stSectionFailed "Keccak-256", cx1tError
    end try
@@ -23708,8 +23715,8 @@ command cx1stRunSha3
       -- differ ONLY in a padding byte, so a shim that wires one to the other is
       -- a silent, plausible, totally wrong answer - and on Ethereum, a wrong
       -- address. Assert the difference explicitly, in both directions.
-      cx1stAssert "cxSha3_256 is NOT aliased to cxKeccak256", cx1stHex(cxSha3_256(cx1stText("abc"))) is not cx1stHex(cxKeccak256(cx1stText("abc")))
-      cx1stAssert "cxKeccak256 is NOT aliased to cxSha3_256", cx1stHex(cxKeccak256(cx1stText(""))) is not cx1stHex(cxSha3_256(cx1stText("")))
+      cx1stAssert "cxSha3_256 is NOT aliased to cxKeccak256", not cx1stSameHex(cx1stHex(cxSha3_256(cx1stText("abc"))), cx1stHex(cxKeccak256(cx1stText("abc"))))
+      cx1stAssert "cxKeccak256 is NOT aliased to cxSha3_256", not cx1stSameHex(cx1stHex(cxKeccak256(cx1stText(""))), cx1stHex(cxSha3_256(cx1stText(""))))
    catch cx1tError
       cx1stSectionFailed "SHA3-256", cx1tError
    end try
@@ -23762,7 +23769,7 @@ command cx1stRunHmac
       cx1stAssert "HMAC-SHA256 case 2", cx1stHex(cxHmacSha256(cx1tKey2, cx1tMsg2)) is cx1kHmac2Sha256
       cx1stAssert "HMAC-SHA512 case 2", cx1stHex(cxHmacSha512(cx1tKey2, cx1tMsg2)) is cx1kHmac2Sha512
       -- A MAC must depend on its key. Same message, different key, different tag.
-      cx1stAssert "HMAC-SHA256 depends on the key", cx1stHex(cxHmacSha256(cx1tKey1, cx1tMsg1)) is not cx1stHex(cxHmacSha256(cx1tKey2, cx1tMsg1))
+      cx1stAssert "HMAC-SHA256 depends on the key", not cx1stSameHex(cx1stHex(cxHmacSha256(cx1tKey1, cx1tMsg1)), cx1stHex(cxHmacSha256(cx1tKey2, cx1tMsg1)))
    catch cx1tError
       cx1stSectionFailed "HMAC", cx1tError
    end try
@@ -23821,7 +23828,7 @@ command cx1stRunIndependence
       -- stale or empty buffer would pass every fixed vector above by accident
       -- only if the vector were wrong too, but this catches a buffer that never
       -- gets the caller's bytes at all.
-      cx1stAssert "one changed input byte changes the digest", cx1stHex(cxKeccak256(cx1stText("abc"))) is not cx1stHex(cxKeccak256(cx1stText("abd")))
+      cx1stAssert "one changed input byte changes the digest", not cx1stSameHex(cx1stHex(cxKeccak256(cx1stText("abc"))), cx1stHex(cxKeccak256(cx1stText("abd"))))
    catch cx1tError
       cx1stSectionFailed "independence", cx1tError
    end try
@@ -23861,7 +23868,7 @@ command cx1stRunCurveKeys
       -- cxNewSeckey validates caller entropy and hands it back unchanged. The
       -- private key 1 is the generator G, which is why no vector table is
       -- needed here: this public key is the curve's own definition.
-      cx1stAssert "cxNewSeckey accepts a valid key", cx1stHex(cxNewSeckey(cx1tSk)) is cx1stHex(cx1tSk)
+      cx1stAssert "cxNewSeckey accepts a valid key", cx1stSameHex(cx1stHex(cxNewSeckey(cx1tSk)), cx1stHex(cx1tSk))
       cx1stAssert "cxSeckeyIsValid says true for a valid key", cxSeckeyIsValid(cx1tSk) is true
       put cxPublicKey(cx1tSk, true) into cx1tPubC
       put cxPublicKey(cx1tSk, false) into cx1tPubU
@@ -23871,8 +23878,8 @@ command cx1stRunCurveKeys
       -- int). If it were dropped, both calls would return the same length.
       cx1stAssert "the compressed key is 33 bytes", the number of bytes of cx1tPubC is 33
       cx1stAssert "the uncompressed key is 65 bytes", the number of bytes of cx1tPubU is 65
-      cx1stAssert "cxPubkeyDecompress rebuilds the uncompressed key", cx1stHex(cxPubkeyDecompress(cx1tPubC)) is cx1stHex(cx1tPubU)
-      cx1stAssert "cxPubkeyDecompress of an uncompressed key is a no-op", cx1stHex(cxPubkeyDecompress(cx1tPubU)) is cx1stHex(cx1tPubU)
+      cx1stAssert "cxPubkeyDecompress rebuilds the uncompressed key", cx1stSameHex(cx1stHex(cxPubkeyDecompress(cx1tPubC)), cx1stHex(cx1tPubU))
+      cx1stAssert "cxPubkeyDecompress of an uncompressed key is a no-op", cx1stSameHex(cx1stHex(cxPubkeyDecompress(cx1tPubU)), cx1stHex(cx1tPubU))
       -- The two ABI-4 tweak entry points. BIP-32 non-hardened derivation is
       -- built on the claim that tweaking the PRIVATE key and tweaking the
       -- PUBLIC key land on the same point; if they ever disagreed, an xpub
@@ -23880,10 +23887,10 @@ command cx1stRunCurveKeys
       -- nothing above this line would notice. 1 + 1 = 2 pins both to the
       -- curve's own second point rather than only to each other.
       put cxSeckeyTweakAdd(cx1tSk, cx1tSk) into cx1tTweaked
-      cx1stAssert "cxSeckeyTweakAdd of 1 by 1 is the scalar 2", cx1stHex(cx1tTweaked) is cx1stHex(cx1stRepeatByte(0, 31) & numToByte(2))
+      cx1stAssert "cxSeckeyTweakAdd of 1 by 1 is the scalar 2", cx1stSameHex(cx1stHex(cx1tTweaked), cx1stHex(cx1stRepeatByte(0, 31) & numToByte(2)))
       cx1stAssert "and its public key is 2G", cx1stHex(cxPublicKey(cx1tTweaked, true)) is cx1kPubTwoCompressed
       cx1stAssert "cxPubkeyTweakAdd of G by 1 is also 2G", cx1stHex(cxPubkeyTweakAdd(cx1tPubC, cx1tSk)) is cx1kPubTwoCompressed
-      cx1stAssert "so private and public tweaking agree", cx1stHex(cxPubkeyTweakAdd(cx1tPubC, cx1tSk)) is cx1stHex(cxPublicKey(cxSeckeyTweakAdd(cx1tSk, cx1tSk), true))
+      cx1stAssert "so private and public tweaking agree", cx1stSameHex(cx1stHex(cxPubkeyTweakAdd(cx1tPubC, cx1tSk)), cx1stHex(cxPublicKey(cxSeckeyTweakAdd(cx1tSk, cx1tSk), true)))
       -- Both refuse a ZERO tweak, where upstream's public entry point accepts
       -- it. Accepting on one path and refusing on the other is the
       -- interoperability bug this member exists to prevent, so the symmetry is
@@ -23923,7 +23930,7 @@ command cx1stRunCurveSign
       -- code draws fresh OS entropy for side-channel blinding on every call;
       -- that blinding cancels, and this is the check that says so from script.
       put cxSign(cx1tSk, cx1tDigest) into cx1tAgain
-      cx1stAssert "signing twice gives the same signature", cx1stHex(cx1tAgain) is cx1stHex(cx1tSig)
+      cx1stAssert "signing twice gives the same signature", cx1stSameHex(cx1stHex(cx1tAgain), cx1stHex(cx1tSig))
    catch cx1tError
       cx1stSectionFailed "ECDSA signing", cx1tError
    end try
@@ -23970,7 +23977,7 @@ command cx1stRunCurveRecover
       -- The whole point of recovery: get the signer back from the signature
       -- alone. Recovery ALSO succeeds for a wrong id and returns some other
       -- key, so comparing against the expected key is the real check.
-      cx1stAssert "cxRecover returns the signing public key", cx1stHex(cx1tRec) is cx1stHex(cx1tPubU)
+      cx1stAssert "cxRecover returns the signing public key", cx1stSameHex(cx1stHex(cx1tRec), cx1stHex(cx1tPubU))
       cx1stAssert "and that key is the published G", cx1stHex(cx1tRec) is cx1kPubOneUncompressed
    catch cx1tError
       cx1stSectionFailed "ecrecover", cx1tError
@@ -23988,13 +23995,13 @@ command cx1stRunCurveEcdh
       put cxPublicKey(cx1tB, true) into cx1tPubB
       put cxEcdh(cx1tA, cx1tPubB) into cx1tShared1
       put cxEcdh(cx1tB, cx1tPubA) into cx1tShared2
-      cx1stAssert "both sides derive the same point", cx1stHex(cx1tShared1) is cx1stHex(cx1tShared2)
+      cx1stAssert "both sides derive the same point", cx1stSameHex(cx1stHex(cx1tShared1), cx1stHex(cx1tShared2))
       cx1stAssert "the shared point is 65 bytes", the number of bytes of cx1tShared1 is cxEcdhLen()
       cx1stAssert "the shared point is in uncompressed form", byteToNum(byte 1 of cx1tShared1) is 4
       -- 1 * (2G) == 2G, so with these two keys the shared point is just the
       -- public key of the other side. That makes this leg checkable against a
       -- value already pinned above rather than against a new magic constant.
-      cx1stAssert "1 * 2G is 2G", cx1stHex(cx1tShared1) is cx1stHex(cxPublicKey(cx1tB, false))
+      cx1stAssert "1 * 2G is 2G", cx1stSameHex(cx1stHex(cx1tShared1), cx1stHex(cxPublicKey(cx1tB, false)))
    catch cx1tError
       cx1stSectionFailed "ECDH", cx1tError
    end try
@@ -24089,7 +24096,7 @@ command cx1stRunBase58
       -- other while both used the wrong hash would pass every round-trip below.
       cx1stAssert "cxHash256 of abc is the published double-SHA-256", cx1stHex(cxHash256(cx1stText("abc"))) is cx1kHash256Abc
       cx1stAssert "cxHash256 is 32 bytes", the number of bytes of cxHash256(cx1stText("")) is 32
-      cx1stAssert "and it is genuinely SHA-256 applied twice", cx1stHex(cxHash256(cx1stText("abc"))) is cx1stHex(cxSha256(cxSha256(cx1stText("abc"))))
+      cx1stAssert "and it is genuinely SHA-256 applied twice", cx1stSameHex(cx1stHex(cxHash256(cx1stText("abc"))), cx1stHex(cxSha256(cxSha256(cx1stText("abc")))))
       cx1stAssert "encodes the worked example", cxBase58CheckEncode(cx1tPayload) is cx1kBase58Address
       cx1stAssert "decodes it back", cxHexEncode(cxBase58CheckDecode(cx1kBase58Address)) is cx1stToLowerText(cx1kBase58Payload)
       -- The checksum is the entire point of the encoding: one flipped character
@@ -25055,7 +25062,9 @@ command bt1stRun
    bt1stAssert "btDhtKeypair secretKey is 128 hex", (the number of chars of bt1tKey["secretKey"] is 128)
    bt1stAssert "btDhtKeypair seed is 64 hex", (the number of chars of bt1tKey["seed"] is 64)
    put btDhtKeypair(bt1tKey["seed"]) into bt1tKey2
-   bt1stAssert "btDhtKeypair is deterministic from a seed", (bt1tKey2["publicKey"] is bt1tKey["publicKey"])
+   -- hex against hex compares as TEXT, a letter on each side (suite engine
+   -- note 2.11: bare `is` reads two number-like texts as numbers)
+   bt1stAssert "btDhtKeypair is deterministic from a seed", (("h" & bt1tKey2["publicKey"]) is ("h" & bt1tKey["publicKey"]))
    local bt1tTarget
    put btDhtPutImmutable(bt1sSession, textEncode("TorrentXT self-test value", "UTF-8")) into bt1tTarget
    bt1stAssert "btDhtPutImmutable returns a 40-hex target", (the number of chars of bt1tTarget is 40)
@@ -29254,7 +29263,9 @@ private command rs1rstSectionKeyFile
    put rsGenerateMasterSeed() into rs1tGenB
    rs1rstCheck (the number of bytes in rs1tGenA is 32), \
          "a generated master seed is 32 bytes"
-   rs1rstCheck (rs1rstHex(rs1tGenA) is not rs1rstHex(rs1tGenB)), \
+   -- hex against hex compares as TEXT, a letter on each side (suite engine
+   -- note 2.11: bare `is` reads two number-like texts as numbers)
+   rs1rstCheck (("h" & rs1rstHex(rs1tGenA)) is not ("h" & rs1rstHex(rs1tGenB))), \
          "two generated seeds differ (the CSPRNG is live)"
    put rs1rstBin(rs1kRsGoldMasterHex) into rs1tSeed
    put rsSealMasterSeed(rs1tSeed, "correct horse") into rs1tSealed
@@ -31066,7 +31077,7 @@ private command rs1rstSectionMedia pCaps
    rs1rstCheck (rs1tFound is rs1tH), "and it is the handle btFindTorrent names"
    put rsMediaStatus(rs1tH) into rs1tS
    rs1rstCheck (rs1tS is an array), "rsMediaStatus returns a snapshot"
-   rs1rstCheck (toLower(rs1tS["infoHashV1"]) is rs1tHash), \
+   rs1rstCheck (("h" & toLower(rs1tS["infoHashV1"])) is ("h" & rs1tHash)), \
          "whose info-hash is the created one"
    rs1rstCheck (rs1tS["name"] contains "riptide-media-selftest"), \
          "whose name is the attached file's"
@@ -46193,7 +46204,9 @@ private command nx1nxtTestJsonEscape
    nx1nxtSection "NIP-01 json escaping"
    put quote & "\" & numToChar(10) & numToChar(13) & tab & numToChar(8) & numToChar(12) into nx1tInput
    put "\" & quote & "\\\n\r\t\b\f" into nx1tExpected
-   nx1nxtCheck nx1nxtBytesHex(nxJsonEscape(nx1tInput)) is nx1nxtBytesHex(nx1tExpected), "the seven escapes, exactly"
+   -- hex against hex compares as TEXT, a letter on each side (suite engine
+   -- note 2.11: bare `is` reads two number-like texts as numbers)
+   nx1nxtCheck ("h" & nx1nxtBytesHex(nxJsonEscape(nx1tInput))) is ("h" & nx1nxtBytesHex(nx1tExpected)), "the seven escapes, exactly"
    nx1nxtCheck nxJsonEscape("plain text") is "plain text", "plain text passes through"
    nx1nxtCheck nx1nxtBytesHex(nxJsonEscape("a" & numToChar(1) & "b")) is "610162", "0x01 passes through VERBATIM (the rule json.dumps breaks)"
    nx1nxtCheck nxJsonEscape(empty) is empty, "empty in, empty out"

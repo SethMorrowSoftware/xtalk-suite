@@ -1497,7 +1497,11 @@ end wxBtPollOnce
 -- does not parse as a current blob is quietly ignored (stale runs, other
 -- people's noise, an empty not-found result).
 command wxOnMutableItem pEvent
-   if pEvent["publicKey"] is not sKeys["publicKey"] then
+   -- The keys are 64-hex TEXT, compared with a letter on each side: bare `is`
+   -- compares two number-like operands as NUMBERS (suite engine note 2.11),
+   -- so a key shaped digits-e-digits could match a different one. Found by
+   -- the family checker's check 23 (2026-09-25); verified statically.
+   if ("k" & pEvent["publicKey"]) is not ("k" & sKeys["publicKey"]) then
       exit wxOnMutableItem
    end if
    if sRole is "join" and pEvent["salt"] is kWxSaltOffer and sPhase is "fetch-offer" then

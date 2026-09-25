@@ -205,7 +205,11 @@ itself is catalogued in the suite's
   head, key, signature or table id is compared with `heHexEq` (a letter
   prefix, both sides lowercased). The headless gate sees a slip only for
   all-digit pairs (the interpreter reads only `-?\d+(\.\d+)?` as a number),
-  which is why sections 9 and 21 pin the genesis head against "0". Its twin
+  which is why sections 9 and 21 pin the genesis head against "0". Since
+  2026-09-25 the family checker's check 23 also refuses, statically, a bare
+  comparison with an operand NAMED like hex (`...Hex`, `...Pub`, a
+  `...Hex(` call); it cannot see through `heTAssert`, whose own bare `is`
+  compares whatever it is handed. Its twin
   from note 2.10: a whole-number test is `is an integer`, never `is trunc(x)`.
 - **A wire index is canonical TEXT, and a count is walked (v0.25.5).** `"03"`,
   `"3.0"`, `"+3"`, `" 3"` and `"3e0"` are the number 3 to `is`, `<` and a chunk

@@ -237,7 +237,11 @@ in nocloud's copy. The capability gate in `qsCwServe` was fixed in BOTH copies o
 it compares `("t" & tTok)` with `("t" & sCwToken)`, because bare `is` compares two
 number-like texts as numbers and a hex token shaped digits-`e`-digits overflows to +inf, as
 `1e999` in a request does (the suite's engine note 2.11, from the engine source; verified
-statically; needs an OXT pass).
+statically; needs an OXT pass). The family checker's check 23 then found the LAN editor's
+write gate (`qsEditAuthed`, the `x-edit-token` header) still on bare `is` in both copies, and
+own-key, info-hash and cross-library key compares in `torrent-dht-channels` and
+`torrent-client`; all took the same fix the same day (the cross-library key check compares
+bytes with `sxMemEqual`), verified statically; needs an OXT pass.
 
 ## Engine evidence ledger
 

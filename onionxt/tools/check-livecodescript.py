@@ -166,6 +166,46 @@ The checks, and the engine lesson each encodes:
       thirty times WITH commas inside quoted values
       (`constant kColBtnIdle = "44,48,58", kColBtnText = "255,255,255"`) -
       splitting naively would report those as malformed.
+  23. A hex digest, token, nonce, commitment, hash or public key meeting a
+      BARE comparison - `is`, `is not`, `=`, `<>`, `<`, `<=`, `>`, `>=` -
+      .livecodescript only (suite engine note 2.11, DOCUMENTED from the
+      engine source). The engine tries to read BOTH operands as numbers
+      first (C strtod, no range check) and compares NUMBERS when both parse:
+      a lowercase hex value that is all digits, or digits-e-digits, is
+      number-like, two that overflow are both +inf and compare EQUAL, and
+      a 64-zero head `is` "0". The ordering operators take the same path
+      (engine note 2.10's MCLogicCompareTo), so a hex sort key orders some
+      pairs as numbers and the rest as text. Fires when ONE operand is
+      hex-shaped BY NAME and the other is hex-shaped or opaque (a variable,
+      an element, a call): a variable, parameter or literal array key whose
+      name ends in one of HEX_NAME_SUFFIXES, an element of an array named
+      that way (`pSeedsHexA[i]`, `pCommitsA[i]`), a call to a function
+      whose name ends in `Hex` (`heSeedCommitHex(x)`, `stHex(x)`), a chunk
+      of one (`char 1 to 8 of tHex`), or `toLower`/`toUpper` of one. ONE
+      hex-shaped side is enough because that is where the bugs were: 11 of
+      the 40 holde-em comparisons fixed on 2026-09-25 compared a hex value
+      with a plain-named one (`tA["from"] is not pFromPubHex`, `tElected is
+      gGame["idPubHex"]`), and a both-sides rule passes every one of them
+      (tools/test-checker.py carries all 45 fixed lines of that day).
+      NOT fired: `empty`, a string or number literal, a `k` constant (a
+      literal too), a numeric expression (arithmetic, `the number of`,
+      `length(...)`), and an operand carrying a literal no number parse
+      accepts - the letter prefix `("t" & tTok) is ("t" & sCwToken)` that
+      the fixes use - since then both sides stay on the TEXT path. A
+      comparison inside a helper (heHexEq, stSameHex, cxCompareBytes,
+      nxCtEqualHex) has no bare operator at the call site, so it never
+      fires; the helper's own body compares prefixed text. The suffix list
+      was MEASURED over the tree (2026-09-25): `Key`, `Id` and `Sig` are
+      out because every site they added was a cache key, a keyboard key, a
+      JSON-RPC or icon id, or a sheet-load signature, none of them hex;
+      `Pub`, `Pubkey`, `PublicKey`, `SecretKey` and `Txid` are in because
+      every site they added compared a key or txid. A name heuristic
+      NARROWS the class and cannot close it: a hex value in a plain-named
+      variable compared with another plain-named one passes, and a
+      NUMBER-LIKE literal is exempt with every literal (`char 1 to 4 of
+      tHex is "0014"` passes, though by the same parse "14e0" is "0014").
+      The family interpreter is the other half (docs/WORK-PLAN.md
+      suite-wide #19).
 
 One hold-em lineage check is deliberately NOT here, and the reason is
 recorded so it is not "rediscovered": the chunk-of-an-array-element refusal
@@ -348,11 +388,16 @@ def find_banned_chars(path, text):
     return out
 
 
-def clean_logical_lines(path, text, line_comment_tokens):
+def clean_logical_lines(path, text, line_comment_tokens, keep_strings=False):
     """Yield (lineno, cleaned) with block comments, line comments and string
     CONTENTS neutralized, and backslash line-continuations merged. String
     bodies become spaces so keywords inside them are never seen; the
-    surrounding quotes are kept so quote balance can still be checked."""
+    surrounding quotes are kept so quote balance can still be checked.
+
+    keep_strings=True keeps string CONTENTS (comments are still cut, by the
+    same string-state-aware walk): check 23 must see a literal's first
+    character to tell the letter-prefixed fix `("t" & tTok)` from a bare
+    operand, and a blanked `"t"` reads exactly like a blanked `"0"`."""
     problems = []
     raw = text.split("\n")
 
@@ -385,7 +430,10 @@ def clean_logical_lines(path, text, line_comment_tokens):
                 j += 1
                 continue
             if in_string:
-                out.append(" " if line[j] != '"' else '"')
+                if keep_strings:
+                    out.append(line[j])
+                else:
+                    out.append(" " if line[j] != '"' else '"')
                 if line[j] == '"':
                     in_string = False
                 j += 1
@@ -1310,6 +1358,369 @@ def check_stray_backslash(path, cleaned):
     return problems
 
 
+# --- check 23: hex-shaped operands meeting a bare comparison (2026-09-25) ----
+# Engine note 2.11: `is` / `=` / `<` ... read BOTH operands as numbers first
+# and compare NUMBERS when both parse, so two hex values can compare equal
+# when their bytes differ. Runs on the KEPT-STRINGS view (comments cut by the
+# same string-state-aware scanner), because the fix it must accept is a
+# literal letter prefix and a blanked literal hides the letter.
+
+# Name endings that carry hex (or key bytes) in this tree. MEASURED, not
+# guessed (2026-09-25, every comparison in every .livecodescript): each word
+# here found only real hex comparisons; `Key`, `Id` and `Sig` were measured
+# and left out because every site they added was a cache/keyboard key, a
+# JSON-RPC or icon id, or a sheet-load signature (MUST-PASS fixtures in
+# tools/test-checker.py keep them out). A name is hex-shaped when it IS one
+# of these (first letter either case: `txid`, `publicKey`) or ENDS in one at
+# a camel boundary (`sCwToken`, `pFromPubHex`, `infoHash`, `nostrPub`); a
+# literal key is judged by its last `-`/`_`-separated part (`x-edit-token`).
+HEX_NAME_SUFFIXES = ("Hex", "Token", "Tok", "Nonce", "Commit", "Digest",
+                     "Hash", "Pub", "Pubkey", "PubKey", "PublicKey",
+                     "SecretKey", "Txid")
+
+_CMP_TOKEN = re.compile(
+    r'"[^"]*"?|[A-Za-z_][A-Za-z0-9_]*|\d+(?:\.\d+)?(?:[eE][-+]?\d+)?'
+    r'|<>|<=|>=|&&|[()\[\],&=<>+\-*/^]|\S')
+_CMP_IDENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+_CMP_ORDERING = ("<", ">", "<=", ">=")
+# the words that end an operand when met at paren depth 0, walking out from
+# the operator (`to` and `in` are special-cased: they also live INSIDE chunk
+# expressions - `char 1 to 8 of tHex`, `the number of chars in tHex`)
+_CMP_LEFT_STOP = {
+    "if", "then", "else", "and", "or", "not", "return", "put", "get",
+    "into", "after", "before", "while", "until", "case", "switch", "set",
+    "with", "is", "contains", "among", "exit", "pass", "answer", "throw",
+    "do", "send", "dispatch", "wait", "=", "<>", "<", ">", "<=", ">=", ","}
+_CMP_RIGHT_STOP = {
+    "then", "else", "and", "or", "into", "after", "before", "is",
+    "contains", "with", "for", "from", "=", "<>", "<", ">", "<=", ">=", ","}
+_CMP_CHUNK = {
+    "char", "chars", "character", "characters", "byte", "bytes", "word",
+    "words", "item", "items", "line", "lines", "token", "tokens",
+    "codepoint", "codepoints", "codeunit", "codeunits", "segment",
+    "segments", "trueword", "truewords", "paragraph", "paragraphs",
+    "sentence", "sentences", "element", "elements"}
+_CMP_ORDINAL = {"first", "second", "third", "last", "middle", "any"}
+# words that can START an expression, so a leading one is never a command name
+_CMP_EXPR_START = _CMP_CHUNK | _CMP_ORDINAL | {
+    "the", "not", "there", "number", "length", "value", "it", "me", "this",
+    "target", "empty", "true", "false", "field", "fld", "button", "btn",
+    "card", "cd", "stack", "image", "img", "graphic", "grc", "group", "grp",
+    "player", "scrollbar", "url", "msg"}
+# calls whose result is a NUMBER (compared as a number on purpose) and calls
+# that return their argument's text with only the case changed
+_CMP_NUMERIC_FNS = {
+    "length", "abs", "round", "trunc", "max", "min", "sum", "average",
+    "random", "offset", "itemoffset", "lineoffset", "wordoffset",
+    "byteoffset", "chartonum", "bytetonum", "nativechartonum", "codepointtonum"}
+_CMP_CASE_FNS = {"tolower", "toupper"}
+_CMP_SAFE_TOKENS = {
+    "empty", "true", "false", "quote", "space", "tab", "return", "cr", "lf",
+    "crlf", "linefeed", "comma", "null", "colon", "slash", "backslash",
+    "up", "down", "formfeed", "zero", "pi"}
+
+
+def _cmp_name_is_hex(name):
+    parts = [p for p in re.split(r"[^A-Za-z0-9_]+", name) if p]
+    if not parts:
+        return False
+    name = parts[-1]
+    for suf in HEX_NAME_SUFFIXES:
+        if name == suf or name == suf[0].lower() + suf[1:]:
+            return True
+        if len(name) > len(suf) and name.endswith(suf):
+            before = name[-len(suf) - 1]
+            if before.islower() or before.isdigit():
+                return True
+    return False
+
+
+def _cmp_find_operators(toks):
+    """Yield (start, end, spelling) for every comparison operator token run.
+    `there is`, `is [not] a/an` (type tests), `is [not] in/among/within`
+    (text containment) are not comparisons of two values."""
+    low = [t.lower() for t in toks]
+    i = 0
+    while i < len(toks):
+        t = low[i]
+        if t == "is":
+            if i > 0 and low[i - 1] == "there":
+                i += 1
+                continue
+            nxt = low[i + 1] if i + 1 < len(toks) else ""
+            if nxt == "not":
+                nn = low[i + 2] if i + 2 < len(toks) else ""
+                if nn in ("a", "an", "in", "among", "within"):
+                    i += 3
+                    continue
+                yield (i, i + 2, "is not")
+                i += 2
+                continue
+            if nxt in ("a", "an", "in", "among", "within"):
+                i += 2
+                continue
+            yield (i, i + 1, "is")
+            i += 1
+            continue
+        if t in ("=", "<>") or t in _CMP_ORDERING:
+            yield (i, i + 1, toks[i])
+        i += 1
+
+
+def _cmp_atom_start(toks, k):
+    """Index where the atom ENDING at toks[k] starts (a paren or bracket
+    group is one atom), or -1."""
+    if k < 0:
+        return -1
+    if toks[k] not in (")", "]"):
+        return k
+    depth = 0
+    while k >= 0:
+        if toks[k] in (")", "]"):
+            depth += 1
+        elif toks[k] in ("(", "["):
+            depth -= 1
+            if depth == 0:
+                return k
+        k -= 1
+    return -1
+
+
+def _cmp_left_operand(toks, start):
+    depth, out, j = 0, [], start - 1
+    while j >= 0:
+        t = toks[j]
+        tl = t.lower()
+        if t in (")", "]"):
+            depth += 1
+        elif t in ("(", "["):
+            if depth == 0:
+                break
+            depth -= 1
+        elif depth == 0:
+            if tl == "to" or tl == "in":
+                # inside a chunk (`char 1 to N of X`, `char (a) to (b) of X`,
+                # `the number of chars in X`) the word does not end the operand
+                a = _cmp_atom_start(toks, j - 1)
+                if tl == "in" and j > 0 and toks[j - 1].lower() in _CMP_CHUNK:
+                    pass
+                elif tl == "to" and a > 0 and \
+                        toks[a - 1].lower() in _CMP_CHUNK:
+                    pass
+                else:
+                    break
+            elif tl in _CMP_LEFT_STOP:
+                break
+        out.append(t)
+        j -= 1
+    out.reverse()
+    # a statement's command name juxtaposed with its first argument
+    # (`nxtCheck tA is tB, "label"`) is not part of the operand
+    if len(out) >= 2 and _CMP_IDENT.match(out[0]) and \
+            out[0].lower() not in _CMP_EXPR_START and \
+            (out[1].startswith('"') or _CMP_IDENT.match(out[1]) or
+             out[1][0].isdigit()) and \
+            out[1].lower() not in ("of", "in", "to", "div", "mod"):
+        out = out[1:]
+    return out
+
+
+def _cmp_right_operand(toks, end):
+    depth, out, j = 0, [], end
+    while j < len(toks):
+        t = toks[j]
+        tl = t.lower()
+        if t in ("(", "["):
+            depth += 1
+        elif t in (")", "]"):
+            if depth == 0:
+                break
+            depth -= 1
+        elif depth == 0:
+            if tl == "to" or tl == "in":
+                if not (out and (out[0].lower() in _CMP_CHUNK or
+                                 out[0].lower() in _CMP_ORDINAL or
+                                 out[0].lower() == "the")):
+                    break
+            elif tl in _CMP_RIGHT_STOP:
+                break
+        out.append(t)
+        j += 1
+    return out
+
+
+def _cmp_split(toks, seps):
+    parts, cur, depth = [], [], 0
+    for t in toks:
+        if t in ("(", "["):
+            depth += 1
+        elif t in (")", "]"):
+            depth -= 1
+        if depth == 0 and t in seps:
+            parts.append(cur)
+            cur = []
+            continue
+        cur.append(t)
+    parts.append(cur)
+    return parts
+
+
+def _cmp_strip_parens(toks):
+    while len(toks) >= 2 and toks[0] == "(" and toks[-1] == ")":
+        depth = 0
+        for i, t in enumerate(toks):
+            if t == "(":
+                depth += 1
+            elif t == ")":
+                depth -= 1
+                if depth == 0 and i != len(toks) - 1:
+                    return toks  # `(a) & (b)`: the parens are not outer
+        toks = toks[1:-1]
+    return toks
+
+
+def _cmp_operand_kind(toks, consts):
+    """'hex' (hex-shaped by name), 'safe' (can never meet the number path
+    as an identifier: empty, a literal, a number, a letter-prefixed text, a
+    numeric expression) or 'opaque' (anything else). `consts` holds the
+    names the file declares with `constant`: a constant is a literal, and
+    the suite paste's fold renames `kFoo` to `rs1kFoo`, so the declaration,
+    not the spelling, is what says so."""
+    toks = _cmp_strip_parens(list(toks))
+    if not toks:
+        return "safe"
+    low = [t.lower() for t in toks]
+    if toks[0] in ("-", "+"):
+        return "safe"  # a signed value (`-1`, `-tX`) is a number
+    if len(toks) == 1:
+        t = toks[0]
+        if t.startswith('"') or t[0].isdigit() or low[0] in _CMP_SAFE_TOKENS:
+            return "safe"
+        if t in consts or re.match(r"^k[A-Z]", t):
+            return "safe"  # a constant is a literal (check 22)
+    pieces = _cmp_split(toks, ("&", "&&"))
+    if len(pieces) > 1:
+        for p in pieces:
+            if len(p) == 1 and p[0].startswith('"') and \
+                    re.search(r"[^0-9eE.+\- \t]", p[0].strip('"')):
+                return "safe"  # a letter or separator: never a number
+        kinds = [_cmp_operand_kind(p, consts) for p in pieces]
+        return "hex" if "hex" in kinds else "opaque"
+    depth = 0
+    for i, t in enumerate(toks):
+        if t in ("(", "["):
+            depth += 1
+        elif t in (")", "]"):
+            depth -= 1
+        elif depth == 0 and (t in ("+", "*", "/", "^") or
+                             low[i] in ("div", "mod") or
+                             (t == "-" and i > 0)):
+            return "safe"  # arithmetic: a number compared as a number
+    if low[0] == "number" or low[:2] in (["the", "number"],
+                                         ["the", "length"]):
+        return "safe"
+    first = 1 if low[0] in _CMP_ORDINAL and len(low) > 1 else 0
+    if low[first] in _CMP_CHUNK:
+        # a chunk of X is shaped like X: judge the container after the
+        # last depth-0 `of` / `in`
+        depth, cut = 0, None
+        for i, t in enumerate(toks):
+            if t in ("(", "["):
+                depth += 1
+            elif t in (")", "]"):
+                depth -= 1
+            elif depth == 0 and low[i] in ("of", "in"):
+                cut = i
+        return _cmp_operand_kind(toks[cut + 1:], consts) if cut is not None \
+            else "opaque"
+    if _CMP_IDENT.match(toks[0]) and len(toks) >= 3 and toks[1] == "(" and \
+            toks[-1] == ")" and _cmp_strip_parens(toks[1:]) != toks[1:]:
+        name = toks[0]
+        if low[0] in _CMP_NUMERIC_FNS:
+            return "safe"
+        if low[0] in _CMP_CASE_FNS:
+            args = _cmp_split(toks[2:-1], (",",))
+            return _cmp_operand_kind(args[0], consts) if len(args) == 1 \
+                else "opaque"
+        if len(name) > 3 and name.endswith("Hex") and \
+                (name[-4].islower() or name[-4].isdigit()):
+            return "hex"
+        return "opaque"
+    if _CMP_IDENT.match(toks[0]) and (len(toks) == 1 or toks[1] == "["):
+        subs, cur, depth = [], [], 0
+        for t in toks[1:]:
+            if t == "[":
+                depth += 1
+                if depth == 1:
+                    cur = []
+                    continue
+            elif t == "]":
+                depth -= 1
+                if depth == 0:
+                    subs.append(cur)
+                    continue
+            cur.append(t)
+        if not subs:
+            return "hex" if _cmp_name_is_hex(toks[0]) else "opaque"
+        last = subs[-1]
+        if len(last) == 1 and last[0].startswith('"'):
+            return "hex" if _cmp_name_is_hex(last[0].strip('"')) else "opaque"
+        # an element by computed index: the array's own name says what it
+        # holds, less the family's `A` array marker and a plural `s`
+        base = toks[0]
+        if len(base) > 2 and base.endswith("A") and base[-2].islower():
+            base = base[:-1]
+        if base.endswith("s"):
+            base = base[:-1]
+        return "hex" if _cmp_name_is_hex(base) else "opaque"
+    return "opaque"
+
+
+def check_hex_bare_compare(path, kept):
+    """Check 23 (engine note 2.11): a hex-shaped operand meeting a bare
+    comparison. `kept` is the comment-stripped, continuation-merged view
+    with string CONTENTS kept (clean_logical_lines(keep_strings=True))."""
+    problems = []
+    consts = set()
+    for _, line in kept:
+        m = re.match(r"^\s*constant\s+(.+)$", line)
+        if m:
+            for part in _split_outside_quotes(m.group(1)):
+                if "=" in part:
+                    consts.add(part.split("=", 1)[0].strip())
+    for lineno, line in kept:
+        s = line.strip()
+        # `=` is an assignment in these, never a comparison
+        if re.match(r"(?i)^(constant|local|global|repeat\s+with)\b", s):
+            continue
+        toks = _CMP_TOKEN.findall(line)
+        for start, end, op in _cmp_find_operators(toks):
+            left = _cmp_left_operand(toks, start)
+            right = _cmp_right_operand(toks, end)
+            kl = _cmp_operand_kind(left, consts)
+            kr = _cmp_operand_kind(right, consts)
+            if "hex" not in (kl, kr) or "safe" in (kl, kr):
+                continue
+            problems.append(Problem(path, lineno,
+                            "`%s %s %s`: a hex digest, token, nonce, "
+                            "commitment or key meets a bare `%s`, which "
+                            "compares two number-like texts as NUMBERS "
+                            "(suite engine note 2.11): digits-e-digits "
+                            "overflows to +inf, so two different values "
+                            "compare equal. Compare TEXT with a letter on "
+                            "each side, `(\"h\" & a) %s (\"h\" & b)`, or "
+                            "through a hex/byte-equality helper (heHexEq, "
+                            "stSameHex, cxCompareBytes, nxCtEqualHex)"
+                            % (_cmp_show(left), op, _cmp_show(right), op,
+                               op)))
+    return problems
+
+
+def _cmp_show(toks):
+    text = re.sub(r"\s*([\[\]()])\s*", r"\1", " ".join(toks))
+    return text if len(text) <= 48 else text[:45] + "..."
+
+
 def check_file(path):
     with open(path, "rb") as f:
         raw = f.read()
@@ -1344,6 +1755,11 @@ def check_file(path):
         problems += check_undeclared_k_constants(path, cleaned)
         problems += check_dangling_else(path, cleaned)
         problems += check_stray_backslash(path, cleaned)
+        # check 23 needs literal CONTENTS (the letter-prefix fix), so it
+        # reads its own view; the scanner and its comment rules are shared
+        kept, _ = clean_logical_lines(path, text, line_comment_tokens,
+                                      keep_strings=True)
+        problems += check_hex_bare_compare(path, kept)
     else:
         problems += check_lcb_module(path, cleaned)
         problems += check_lcb_blocks(path, cleaned)

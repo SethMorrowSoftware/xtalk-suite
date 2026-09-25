@@ -241,7 +241,9 @@ private command nxtTestJsonEscape
    nxtSection "NIP-01 json escaping"
    put quote & "\" & numToChar(10) & numToChar(13) & tab & numToChar(8) & numToChar(12) into tInput
    put "\" & quote & "\\\n\r\t\b\f" into tExpected
-   nxtCheck nxtBytesHex(nxJsonEscape(tInput)) is nxtBytesHex(tExpected), "the seven escapes, exactly"
+   -- hex against hex compares as TEXT, a letter on each side (suite engine
+   -- note 2.11: bare `is` reads two number-like texts as numbers)
+   nxtCheck ("h" & nxtBytesHex(nxJsonEscape(tInput))) is ("h" & nxtBytesHex(tExpected)), "the seven escapes, exactly"
    nxtCheck nxJsonEscape("plain text") is "plain text", "plain text passes through"
    nxtCheck nxtBytesHex(nxJsonEscape("a" & numToChar(1) & "b")) is "610162", "0x01 passes through VERBATIM (the rule json.dumps breaks)"
    nxtCheck nxJsonEscape(empty) is empty, "empty in, empty out"

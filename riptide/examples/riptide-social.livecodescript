@@ -16475,7 +16475,9 @@ command raLanMediaGet
    if sLanMediaWatch is an integer and sLanMediaWatch > 0 then
       put rsMediaStatus(sLanMediaWatch) into tS
       if tS is an array then
-         if toLower(tS["infoHashV1"]) is tHash and \
+         -- the info-hash compares as TEXT, a letter on each side (suite
+         -- engine note 2.11: bare `is` reads number-like hex as a number)
+         if ("h" & toLower(tS["infoHashV1"])) is ("h" & tHash) and \
                tS["filePath"] is not empty then
             if there is a file tS["filePath"] then
                -- existence is not playability (raMediaFrontReady's story)
@@ -17341,7 +17343,9 @@ command raNxFollow
       raNxNote "not an npub or a 64-hex key:" && rsLastError()
       exit raNxFollow
    end if
-   if tHex is sNxPubkey then
+   -- as TEXT, a letter on each side (suite engine note 2.11): a pasted key
+   -- shaped digits-e-digits must not read as a number equal to ours
+   if ("h" & tHex) is ("h" & sNxPubkey) then
       raNxNote "that is your own key."
       exit raNxFollow
    end if
@@ -17752,7 +17756,8 @@ command raMediaGet
    if sMediaWatch is an integer and sMediaWatch > 0 then
       put rsMediaStatus(sMediaWatch) into tS
       if tS is an array then
-         if toLower(tS["infoHashV1"]) is tHash and tS["filePath"] is not empty then
+         -- the info-hash compares as TEXT, a letter on each side (engine note 2.11)
+         if ("h" & toLower(tS["infoHashV1"])) is ("h" & tHash) and tS["filePath"] is not empty then
             if there is a file tS["filePath"] then
                -- file-EXISTENCE is not playability: libtorrent allocates
                -- the file the moment metadata arrives, so this used to

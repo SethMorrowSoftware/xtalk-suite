@@ -3038,7 +3038,13 @@ function qsEditAuthed pConn, pRequest
    if sEditSession is empty then
       return false
    end if
-   return (pRequest["x-edit-token"] is sEditSession)
+   -- As TEXT, a letter on each side, exactly as qsCwServe's capability gate:
+   -- bare `is` compares two number-like texts as NUMBERS (suite engine note
+   -- 2.11), so on a session whose hex token reads as digits-e-digits and
+   -- overflows, an `x-edit-token: 1e999` header would have passed this WRITE
+   -- gate. Found by the family checker's check 23 (2026-09-25), which the
+   -- capability-gate sweep had missed; nocloud's twin took the same fix.
+   return (("t" & pRequest["x-edit-token"]) is ("t" & sEditSession))
 end qsEditAuthed
 
 -- Enable the editor with a login password. Derives an Argon2id key from the password +

@@ -403,7 +403,9 @@ private command rstSectionKeyFile
    put rsGenerateMasterSeed() into tGenB
    rstCheck (the number of bytes in tGenA is 32), \
          "a generated master seed is 32 bytes"
-   rstCheck (rstHex(tGenA) is not rstHex(tGenB)), \
+   -- hex against hex compares as TEXT, a letter on each side (suite engine
+   -- note 2.11: bare `is` reads two number-like texts as numbers)
+   rstCheck (("h" & rstHex(tGenA)) is not ("h" & rstHex(tGenB))), \
          "two generated seeds differ (the CSPRNG is live)"
    put rstBin(kRsGoldMasterHex) into tSeed
    put rsSealMasterSeed(tSeed, "correct horse") into tSealed
@@ -2295,7 +2297,7 @@ private command rstSectionMedia pCaps
    rstCheck (tFound is tH), "and it is the handle btFindTorrent names"
    put rsMediaStatus(tH) into tS
    rstCheck (tS is an array), "rsMediaStatus returns a snapshot"
-   rstCheck (toLower(tS["infoHashV1"]) is tHash), \
+   rstCheck (("h" & toLower(tS["infoHashV1"])) is ("h" & tHash)), \
          "whose info-hash is the created one"
    rstCheck (tS["name"] contains "riptide-media-selftest"), \
          "whose name is the attached file's"
