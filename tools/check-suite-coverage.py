@@ -607,7 +607,9 @@ HOLDEM_WORKLIST = {
     # arm that. v0.25.6 (2026-09-25, holde-em WORK-PLAN coding #13-#15)
     # retired heNetContribPosOk into the one sender predicate
     # (heWireSenderOk, pinned in sections 15 and 21) and took heRosterHasKey
-    # (now pure) and heEnvBodyText off this list with pins of their own.
+    # (now pure) and heEnvBodyText off this list with pins of their own; its
+    # review (the same day) took heNetOracleDeal, which section 15's
+    # History-agreement pin reads to prove the table kept the oracle dealing.
     "no-test": (
         "NO REASON - a pure or near-pure handler a section could name today, "
         "and none does. This is the debt, not an exemption",
@@ -626,7 +628,7 @@ HOLDEM_WORKLIST = {
          "heNetGameReact", "heNetHandReset", "heNetHandSeedHex",
          "heNetHostLost", "heNetMyContribPos", "heNetOnHandshake",
          "heNetOnRp1", "heNetOnionHello", "heNetOnionRedialGiveup",
-         "heNetOracleDeal", "heNetParkHotseat", "heNetPubIsLive",
+         "heNetParkHotseat", "heNetPubIsLive",
          "heNetRequestSync", "heNetRevealedDealA", "heNetSendToHost", "heNetSendWireTo", "heNetShowBoard",
          "heNetShowSeat", "heNetShowdownShow", "heNetWeDeal", "heNetXlatFlush", "heNetXlatFrom", "heNextHandTick",
          "heQuickAmount", "heReactToNotes",

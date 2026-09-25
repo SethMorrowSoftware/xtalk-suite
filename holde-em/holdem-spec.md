@@ -201,11 +201,17 @@ Rules, each closing a specific hole:
   own `stand`, `sit` return, `show` and `muck`; a contributor's own position (the
   oracle's is the last); seated-only acts, bids, receipts and ckpts; audits from a
   seat or the dealing oracle; bodies from the host or a rostered key only -- are ONE
-  predicate, applied by the live fold and by History's translation alike, so a wire
-  the table refused never reaches the History fold or its deal audit. Before this, a
-  non-owner's commit read as that position's commitment in the audit (a false FAIL),
-  and a player-signed settle for a hand the table never settled read as verified (a
-  false PASS).
+  predicate, applied by the live fold and by History's translation alike, over the
+  same context (the dealing key read per wire from the dealer seat, the oracle flag
+  only ever set within a hand), so a wire the table refused for its SENDER never
+  reaches the History fold or its deal audit. History also keeps what the table keeps
+  of the deal: a position's first commitment, and only a reveal that opens it. Before
+  this, a non-owner's commit, or an owner's second one, read as that position's
+  commitment in the audit (a false FAIL), and a player-signed settle for a hand the
+  table never settled read as verified (a false PASS). Not yet replayed: the board's
+  street order, the first settle that matches, a timeout's own checks (clock,
+  prescription, bank) and a timeout for an undealt seat (each a visible History FAIL or
+  error, never a false PASS on chips).
 
 Message vocabulary: `cfg join leave sit stand shuffleStep unmaskStep seedCommit
 seedSeal seedReveal holeDeliver board bid[SB/BB/Ante] act(fold|check|call|bet|raise|
@@ -670,7 +676,8 @@ apply. `README.md`'s phase table records what is built and what each exit still 
   re-sequence.
 - State who may send each wire type ONCE (`heWireSenderOk`) and apply that one
   predicate wherever wires are folded, the table and History alike (section 6;
-  v0.25.6): rules written twice drift.
+  v0.25.6): rules written twice drift. Derive the context it reads the way the table
+  derives it, wire by wire: a context rebuilt differently drifts just the same.
 - All randomness from `sxRandomBytes` / `sxRandomUniform`; the engine `random()` never
   touches anything dealing- or key-related.
 - Every hash is domain-separated (`"HOLDEM-<PURPOSE>-v<N>|"` prefixes, versioned).

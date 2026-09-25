@@ -62,8 +62,8 @@ assets/cards/, assets/sounds/  vendored Kenney CC0 art and audio (see each NOTIC
    sites, v44 -> v45 on 2026-09-24 section 24's, v45 -> v46 on 2026-09-25
    the seven heHexEq and near-integer pins, v46 -> v47 the same day the
    23 canonical-index, hand-binding and audit-guard pins, v47 -> v48 the
-   same day again for the v0.25.6 wire change and its 66 turn-binding,
-   sender-rule and sit-out-mark pins). Call sites
+   same day again for the v0.25.6 wire change and its 75 turn-binding,
+   sender-rule, sit-out-mark and History-agreement pins). Call sites
    are not checks (at v40, 374 sites reported 507 checks), so an engine run
    RECORDS a new total rather than matching the last: the first v45 total,
    2026-09-24, was 721 passed with every extension present, plus the 5
@@ -237,9 +237,18 @@ itself is catalogued in the suite's
   translation for every wire (with the context it walked to, the roster
   through the now-pure `heRosterHasKey`, dealLevel through `heDealLevelOf`).
   A new wire type or sender rule goes into that predicate, never into one
-  case, or the table and History drift apart again. An unseated sender is
-  one with no CANONICAL seat: `tFromSeat is 0` never matched an unseated
-  key's empty seat.
+  case, or the table and History drift apart again. The CONTEXT must drift
+  no more than the rules: History re-reads the dealing key per wire from
+  the dealer seat (as `heNetDealerPubHex` does) and only ever sets the
+  oracle flag within a hand (as the live dealLevel case does), and it
+  keeps a position's first commitment and only a reveal that opens it,
+  because the deal audit reads the LAST line per position (review fixes,
+  2026-09-25; section 15's "agree:" pins, section 18's oracle History).
+  The live refusals History still does not replay (board street order,
+  the first MATCHING settle, `heNetTimeoutOk`'s clock, prescription and
+  bank checks, a timeout for an undealt seat) are a WORK-PLAN row. An
+  unseated sender is one with no CANONICAL seat: `tFromSeat is 0` never
+  matched an unseated key's empty seat.
 - **Both operands are evaluated (engine note 2.5).** `heBetApply`'s refusal
   `X is not a number or X is not trunc(X)` evaluated `trunc("abc")`; it is
   nested now, and the nested form ran green on the engine on 2026-09-24
