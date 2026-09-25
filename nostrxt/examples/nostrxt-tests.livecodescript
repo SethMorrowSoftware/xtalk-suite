@@ -17,9 +17,10 @@ script "nostrxt-tests"
 -- ran again 2026-09-24 (Windows, the engine reports Win32; the D-23 suite
 -- paste): 277 passed, 0 failed, the same 2 skipped - the 274 plus the three
 -- pins of the 2026-09-09 fix added that day (two refusals and a delimiter
--- restore, in sections 4 and 14). Section 17 (the relay layer, offline)
--- has no engine run anywhere; the demo's "Run nxSelfTest" button is where
--- it runs. Section 17: verified statically; needs an OXT pass. Every
+-- restore, in sections 4 and 14) - and on 2026-09-25 (Linux, 64-bit, the
+-- suite paste): the same 277 passed, 0 failed, 2 skipped. Section 17 (the
+-- relay layer, offline) has no engine run anywhere; the demo's "Run
+-- nxSelfTest" button is where it runs. Section 17: verified statically; needs an OXT pass. Every
 -- pinned constant below is DERIVED by tools/nostr-kat.py from the
 -- published BIP-340, NIP-44, BIP-173 and NIP-19 vector sets or from the
 -- member's own oracle fixtures, and tools/check-selftest-vectors.py

@@ -87,8 +87,10 @@
 -- count not recorded) and on 2026-09-24 (Windows, the suite paste: 74 passed,
 -- 0 failed, 1 skipped, the skip being section 11), the first recorded engine
 -- run of the checks added 2026-09-24 - the three live-daemon names on their
--- refusal paths and section 12. What those stop short of (a launched tor, a
--- real stall) is still onionxt/CLAUDE.md's VERIFY items 8 and 13.
+-- refusal paths and section 12 - and on 2026-09-25 (Linux, the suite paste:
+-- the same 74 passed, 0 failed, 1 skipped). What those stop short of (a
+-- launched tor, a real stall) is still onionxt/CLAUDE.md's VERIFY items 8
+-- and 13.
 
 -- Two real, published v3 onion addresses, the same vectors pinned in
 -- tools/onion-kat.py, so the Python KAT and this livecodescript suite agree.

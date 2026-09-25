@@ -163,7 +163,8 @@ subscription end to end.
 the relay layer, which is not in the paste by design), the complete NIP-44
 path through the real SodiumXT ABI 10 cipher included, **and again
 2026-09-24** (Windows, the engine reports Win32: 277 passed, 0 failed, the
-same 2 skips), the pins of the 2026-09-09 parser fixes included. **The relay
+same 2 skips), the pins of the 2026-09-09 parser fixes included, **and on
+Linux 2026-09-25** (64-bit: the same 277 / 0 / 2). **The relay
 layer's connect / handshake / publish / confirm path is LIVE-PROVEN
 2026-08-24**: the demo's boot self-check ran 9/9 green, then it opened a real
 TLS websocket to wss://nos.lol, signed a kind-1 note, published it and
