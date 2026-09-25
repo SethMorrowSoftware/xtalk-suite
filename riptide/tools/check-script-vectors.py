@@ -47,7 +47,11 @@ one differently (a 2^53 + 1 seq accepted through a quotient bound this gate
 refused), so tier 1c replays the u64 bound under the engine's own comparison
 rule (named by that day's third run and the engine source; suite engine note
 2.10) and two ruled-out candidates kept as margin, and statically refuses any
-comparison against a quotient in the library.
+comparison against a quotient in the library. Tier 1d (2026-09-25) does the
+same for ORDERING: rsSeqCompare, rsIsWireInt and the two ingest verifiers
+near 2^53, where the rule calls integers one apart equal, each after a
+seeded copy of the spelling that shipped has read right under IEEE and wrong
+under the engine's rule.
 
 THE SOURCE REWRITES, AND WHY THEY ARE ASSERTED. riptide was written before
 this gate existed and uses three spellings outside the interpreter's
@@ -974,6 +978,369 @@ def check_no_quotient_comparisons(c, fail):
          quotient_comparisons(shipped), [])
 
 
+# --------------------------------------------------------------------------
+# tier 1d: wire integers ORDERED exactly (rsSeqCompare, 2026-09-25)
+# --------------------------------------------------------------------------
+#
+# WHY. Tier 1c settled a BOUND; this is the same engine rule meeting an
+# ORDER. Under the engine's comparison (10 DBL_EPSILON of the smaller; suite
+# engine note 2.10) two integers one apart compare EQUAL from
+# 450359962737050, and d apart from about d x 4.5e14. rsIngestHead's and
+# rsIngestBridge's rollback gates were `tSeq < pMinSeq`, their seq agreement
+# `is not`, and their sanity bounds `>= 9007199254740992`, all over wire
+# integers accepted up to 2^53 - 1: near 2^53 a head up to 19 OLDER than the
+# watermark passed the rollback gate, and the demo's LAN replay guards
+# dropped newer records. IEEE orders every one of those exactly, so this
+# interpreter, and every gate on it, could not see any of it. The library
+# now orders through rsSeqCompare (the u32 halves) and bounds through
+# rsIsWireInt (the high half).
+#
+# WHAT. The comparison table, and the two ingest verifiers driven end to end
+# near 2^53 with heads and bridges the oracle signs, under IEEE and under
+# every ENGINE_MODELS model: the shipped library must read every row right
+# under all four.
+#
+# FIXTURE FIRST. Three seeded defects, each the spelling that shipped:
+#   A. rsSeqCompare answering with bare `<` and `>` (the naive helper);
+#   B. the ingest verifiers' own old lines (`tSeq < pMinSeq`, and `is not`
+#      for the seq agreement) put back in place of the helper;
+#   C. rsIsWireInt's bound spelled against 2^53 itself (`>=`).
+# Each must read its rows RIGHT under IEEE (the reason no headless gate saw
+# it) and WRONG under the engine's rule (the reason it had to go). A model
+# that cannot see the defect that shipped cannot vouch for its fix. The
+# margin models are not required to catch them: an absolute 1e-6 tolerance
+# orders integers one apart exactly by construction.
+
+T53 = 2 ** 53
+
+# (a, b, the exact answer, label). The rows the engine's rule blurs are
+# marked by BLURRED_ROWS below; the rest pin the halves' own edges, small
+# values, equality, the decimal-text spelling an event seq arrives in, and
+# the domain's refusals (empty: what makes every caller fail closed).
+SEQ_ORDER_ROWS = [
+    (T53 - 1, T53 - 2, "above", "2^53-1 vs 2^53-2"),
+    (T53 - 2, T53 - 1, "below", "2^53-2 vs 2^53-1"),
+    (T53 - 1, T53 - 20, "above", "2^53-1 vs 2^53-20 (19 apart)"),
+    (T53 - 1, T53 - 21, "above", "2^53-1 vs 2^53-21 (20 apart)"),
+    (450359962737051, 450359962737050, "above",
+     "450359962737051 vs 450359962737050 (the first blurred pair)"),
+    (450359962737050, 450359962737051, "below",
+     "450359962737050 vs 450359962737051"),
+    (450359962737050, 450359962737049, "above",
+     "450359962737050 vs 450359962737049 (just below the blur)"),
+    (T53 - 1, T53 - 1, "equal", "2^53-1 vs itself"),
+    (450359962737050, 450359962737050, "equal", "450359962737050 vs itself"),
+    (4294967296, 4294967295, "above", "2^32 vs 2^32-1 (high halves differ)"),
+    (4294967297, 4294967296, "above", "2^32+1 vs 2^32 (low halves differ)"),
+    (7, 6, "above", "7 vs 6"),
+    (0, 1, "below", "0 vs 1"),
+    (0, 0, "equal", "0 vs 0"),
+    ("9007199254740991", "9007199254740990", "above",
+     "2^53-1 vs 2^53-2 as decimal TEXT (an event seq's spelling)"),
+    ("0012", 12, "equal", "the VALUE is compared: 0012 is 12"),
+    (T53, 0, "", "2^53 is outside the domain"),
+    (0, T53, "", "on either side"),
+    (-1, 0, "", "a negative operand"),
+    ("1.5", 1, "", "a fraction"),
+    ("seven", 0, "", "a non-number"),
+    ("", 0, "", "an empty operand"),
+]
+BLURRED_ROWS = ["2^53-1 vs 2^53-2", "2^53-2 vs 2^53-1",
+                "2^53-1 vs 2^53-20 (19 apart)",
+                "450359962737051 vs 450359962737050 (the first blurred pair)",
+                "450359962737050 vs 450359962737051",
+                "2^53-1 vs 2^53-2 as decimal TEXT (an event seq's spelling)"]
+
+# Seeded defect A: the helper with bare operators, domain check kept, so the
+# rows it gets wrong are the ORDER rows only.
+NAIVE_SEQ_COMPARE = "\n".join([
+    "function rsSeqCompare pA, pB",
+    "   if not rsIsWireInt(pA) then",
+    "      return empty",
+    "   end if",
+    "   if not rsIsWireInt(pB) then",
+    "      return empty",
+    "   end if",
+    "   if pA < pB then",
+    "      return \"below\"",
+    "   end if",
+    "   if pA > pB then",
+    "      return \"above\"",
+    "   end if",
+    "   return \"equal\"",
+    "end rsSeqCompare"])
+
+# Seeded defect C: the bound as every builder and verifier spelled it before
+# 2026-09-25.
+OLD_WIRE_INT = "\n".join([
+    "private function rsIsWireInt pValue",
+    "   if pValue is not an integer then",
+    "      return false",
+    "   end if",
+    "   if pValue < 0 then",
+    "      return false",
+    "   end if",
+    "   if pValue >= 9007199254740992 then",
+    "      return false",
+    "   end if",
+    "   return true",
+    "end rsIsWireInt"])
+
+# Seeded defect B: (the shipped text, the line it replaced), each of which
+# must match exactly once.
+OLD_INGEST_LINES = [
+    ('   put rsSeqCompare(tSeq, pMinSeq) into tOrder\n'
+     '   if tOrder is not "above" and tOrder is not "equal" then\n'
+     '      rsSetError "rsIngestHead: this head is older',
+     '   if tSeq < pMinSeq then\n'
+     '      rsSetError "rsIngestHead: this head is older'),
+    ('   if rsSeqCompare(tHead["seq"], tSeq) is not "equal" then',
+     '   if tHead["seq"] is not tSeq then'),
+    ('   put rsSeqCompare(tSeq, pMinSeq) into tOrder\n'
+     '   if tOrder is not "above" and tOrder is not "equal" then\n'
+     '      rsSetError "rsIngestBridge: this bridge is older',
+     '   if tSeq < pMinSeq then\n'
+     '      rsSetError "rsIngestBridge: this bridge is older'),
+    ('   if rsSeqCompare(tRec["seq"], tSeq) is not "equal" then',
+     '   if tRec["seq"] is not tSeq then'),
+]
+
+
+def _swap_handler(text, name, new, fail, private=False):
+    rx = re.compile(r'^%sfunction %s\b.*?^end %s$'
+                    % ("private " if private else "", name, name),
+                    re.M | re.S)
+    found = len(rx.findall(text))
+    if found != 1:
+        fail("tier 1d's fixture expects exactly ONE %s handler to seed, and "
+             "found %d; without it the models would be trusted untested"
+             % (name, found))
+    return rx.sub(lambda _m: new, text)
+
+
+def seed_naive_compare(text, fail):
+    return _swap_handler(text, "rsSeqCompare", NAIVE_SEQ_COMPARE, fail)
+
+
+def seed_old_wire_int(text, fail):
+    return _swap_handler(text, "rsIsWireInt", OLD_WIRE_INT, fail,
+                         private=True)
+
+
+def seed_old_ingest(text, fail):
+    for new, old in OLD_INGEST_LINES:
+        if text.count(new) != 1:
+            fail("tier 1d's fixture expects the shipped line %r exactly once "
+                 "and found it %d times; the seeded defect would be a file "
+                 "nobody shipped" % (new.split("\n")[-1][:60],
+                                     text.count(new)))
+        text = text.replace(new, old)
+    return text
+
+
+def seq_order_answers(interp):
+    """{label: rsSeqCompare's answer} over SEQ_ORDER_ROWS."""
+    return dict((label, str(interp.call("rsSeqCompare", [a, b])))
+                for a, b, _want, label in SEQ_ORDER_ROWS)
+
+
+def _order_identity():
+    seed = REF["identity_seed"](bytes([0x42] * 32))
+    return seed, REF["ed25519_publickey"](seed).hex()
+
+
+def _mutable_event(interp, salt, bep44_seq, value, seed, handle):
+    """A dhtMutableItem event, key for key what btPoll drains: VALUE signed
+    by the oracle at BEP44_SEQ under SALT. The seq crosses as decimal TEXT,
+    the way torrentxt decodes a native integer."""
+    buf = interp.call("rsBep44SignBuf",
+                      [salt, bep44_seq, interp.call("rsBencodeBytes", [value])])
+    if not buf:
+        raise RuntimeError("rsBep44SignBuf refused seq %d: %s"
+                           % (bep44_seq, interp.call("rsLastError", [])))
+    sig = REF["ed25519_sign"](to_bytes(buf), seed)
+    return {"publicKey": handle, "salt": salt, "seq": str(bep44_seq),
+            "value": value, "signature": sig.hex()}
+
+
+def ingest_events(interp):
+    """The events ingest_rows drives, near 2^53: built and signed under IEEE
+    by INTERP before any model is switched on (the builders are not what is
+    under test here; tier 1d's top-of-range rows are), so only the ingest
+    calls run under a model."""
+    seed, handle = _order_identity()
+
+    def head(seq):
+        out = interp.call("rsBuildHead", [seq, "n", "", "", "", ""])
+        if not out:
+            raise RuntimeError("rsBuildHead refused seq %d: %s"
+                               % (seq, interp.call("rsLastError", [])))
+        return out
+
+    events = {
+        "top-2": _mutable_event(interp, "riptide-head", T53 - 2,
+                                head(T53 - 2), seed, handle),
+        "top-20": _mutable_event(interp, "riptide-head", T53 - 20,
+                                 head(T53 - 20), seed, handle),
+        # author-signed, BEP44 seq one above the embedded seq
+        "skew": _mutable_event(interp, "riptide-head", T53 - 1,
+                               head(T53 - 2), seed, handle),
+        # a bridge event whose rollback gate must answer before any
+        # signature or parse: the value is junk on purpose
+        "bridge": {"publicKey": handle, "salt": "riptide-nostr",
+                   "seq": str(T53 - 2), "value": "junk",
+                   "signature": "00" * 64},
+    }
+    return events, handle
+
+
+def ingest_rows(interp, events, handle):
+    """(key, label, got, want) for rsIngestHead and rsIngestBridge near
+    2^53. A refusal row reads the error too, so a record refused by the
+    WRONG gate (a later signature check, say) does not pass for the right
+    one."""
+    rows = []
+
+    def ingest(name, event, watermark):
+        out = interp.call(name, [event, handle, watermark])
+        return out, str(interp.call("rsLastError", []))
+
+    out, err = ingest("rsIngestHead", events["top-2"], T53 - 1)
+    rows.append(("head-1-older",
+                 "rsIngestHead: a head ONE older than a 2^53-1 watermark is "
+                 "refused by the rollback gate",
+                 [out in ("", {}), "older" in err], [True, True]))
+    out, err = ingest("rsIngestHead", events["top-20"], T53 - 1)
+    rows.append(("head-19-older",
+                 "rsIngestHead: a head 19 older than a 2^53-1 watermark is "
+                 "refused by the rollback gate",
+                 [out in ("", {}), "older" in err], [True, True]))
+    out, _err = ingest("rsIngestHead", events["top-2"], T53 - 2)
+    rows.append(("head-refresh",
+                 "rsIngestHead: the SAME seq at 2^53-2 ingests (a refresh), "
+                 "its seq exact",
+                 isinstance(out, dict) and str(LCS._n(out["seq"])),
+                 str(T53 - 2)))
+    out, _err = ingest("rsIngestHead", events["top-2"], T53 - 3)
+    rows.append(("head-newer",
+                 "rsIngestHead: a head one NEWER than the watermark ingests",
+                 isinstance(out, dict), True))
+    out, err = ingest("rsIngestHead", events["skew"], 0)
+    rows.append(("head-skew",
+                 "rsIngestHead: a signed head whose embedded seq sits one "
+                 "below its BEP44 seq is refused as a disagreement",
+                 [out in ("", {}), "disagree" in err], [True, True]))
+    out, err = ingest("rsIngestBridge", events["bridge"], T53 - 1)
+    rows.append(("bridge-1-older",
+                 "rsIngestBridge: a bridge one older than a 2^53-1 "
+                 "watermark is refused by the ROLLBACK gate (before any "
+                 "signature)", [out in ("", {}), "older" in err],
+                 [True, True]))
+    out, err = ingest("rsIngestBridge", events["bridge"], T53 - 2)
+    rows.append(("bridge-equal",
+                 "rsIngestBridge: at an equal watermark the rollback gate "
+                 "passes it on (the junk value is refused later, for "
+                 "another reason)", "older" in err, False))
+    return rows
+
+
+def top_of_range_rows(interp):
+    """The bound at 2^53 - 1 through the builders and the BEP44 buffer:
+    accepted, exactly, and 2^53 refused."""
+    v = interp.call("rsBencodeBytes", ["hi"])
+    return [
+        ("rsBep44SignBuf: seq 2^53-1 is accepted",
+         bool(interp.call("rsBep44SignBuf", ["riptide-head", T53 - 1, v])),
+         True),
+        ("rsBep44SignBuf: seq 2^53 is refused",
+         bool(interp.call("rsBep44SignBuf", ["riptide-head", T53, v])),
+         False),
+        ("rsBuildHead: seq 2^53-1 builds",
+         bool(interp.call("rsBuildHead", [T53 - 1, "n", "", "", "", ""])),
+         True),
+        ("rsLanBuildDraft: seq 2^53-1 builds",
+         bool(interp.call("rsLanBuildDraft", ["dev", T53 - 1, "x", MASTER])),
+         True),
+        # the one builder that had NO upper bound before 2026-09-25: a total
+        # past 2^53 was split as a rounded double
+        ("rsBtxoHeader: total 2^53-1 builds",
+         bool(interp.call("rsBtxoHeader", ["x", T53 - 1, 0])), True),
+        ("rsBtxoHeader: total 2^53 is refused",
+         bool(interp.call("rsBtxoHeader", ["x", T53, 0])), False),
+    ]
+
+
+def check_seq_order(c, ip, src, fail):
+    c.note("tier 1d: wire integers ordered exactly (rsSeqCompare), under "
+           "IEEE and the engine's comparison rule")
+    want = dict((label, w) for _a, _b, w, label in SEQ_ORDER_ROWS)
+    engine_name, engine_rule = ENGINE_MODELS[0]
+
+    # A: the naive helper
+    naive = LCS.Interp(seed_naive_compare(src, fail))
+    c.ck("fixture A: under IEEE the naive `<`/`>` helper reads every row "
+         "right - why no headless gate could see the defect",
+         seq_order_answers(naive), want)
+    with engine_model(engine_rule):
+        got = seq_order_answers(naive)
+    c.ck("fixture A: under %s the naive helper calls exactly the blurred "
+         "rows EQUAL" % engine_name,
+         sorted(label for label in want if got[label] != want[label]),
+         sorted(BLURRED_ROWS))
+    c.ck("fixture A: ... and every one of them reads \"equal\"",
+         sorted(set(got[label] for label in BLURRED_ROWS)), ["equal"])
+
+    # B: the ingest verifiers' old lines
+    old = LCS.Interp(seed_old_ingest(src, fail))
+    events, handle = ingest_events(old)
+    rows = ingest_rows(old, events, handle)
+    c.ck("fixture B: under IEEE the old ingest lines read every ingest row "
+         "right (the rows they misread, listed)",
+         [key for key, _l, got, w in rows if got != w], [])
+    with engine_model(engine_rule):
+        rows = ingest_rows(old, events, handle)
+    c.ck("fixture B: under %s the old lines let both replayed heads, the "
+         "skewed head and the older bridge through" % engine_name,
+         [key for key, _l, got, w in rows if got != w],
+         ["head-1-older", "head-19-older", "head-skew", "bridge-1-older"])
+
+    # C: the bound against 2^53 itself
+    oldb = LCS.Interp(seed_old_wire_int(src, fail))
+    c.ck("fixture C: under IEEE the old `>=` bound accepts 2^53-1 at every "
+         "top-of-range row", [got for _l, got, _w in top_of_range_rows(oldb)],
+         [True, False, True, True, True, False])
+    with engine_model(engine_rule):
+        got = [g for _l, g, _w in top_of_range_rows(oldb)]
+    c.ck("fixture C: under %s it REFUSES 2^53-1 at every one (the engine "
+         "calls 2^53-1 and 2^53 equal)" % engine_name, got,
+         [False, False, False, False, False, False])
+
+    # the shipped library, under IEEE and every model
+    events, handle = ingest_events(ip)
+    for name, model in [("IEEE", None)] + ENGINE_MODELS:
+        if model is None:
+            got = seq_order_answers(ip)
+            rows = ingest_rows(ip, events, handle)
+            tops = top_of_range_rows(ip)
+            fired = None
+        else:
+            with engine_model(model) as hook:
+                got = seq_order_answers(ip)
+                rows = ingest_rows(ip, events, handle)
+                tops = top_of_range_rows(ip)
+            fired = hook.fired
+        for _a, _b, w, label in SEQ_ORDER_ROWS:
+            c.ck("[%s] rsSeqCompare %s -> %r" % (name, label, w),
+                 got[label], w)
+        for _key, label, g, w in rows:
+            c.ck("[%s] %s" % (name, label), g, w)
+        for label, g, w in tops:
+            c.ck("[%s] %s" % (name, label), g, w)
+        if fired is not None:
+            c.ck("[%s] the model reached the comparison sites" % name,
+                 fired > 0, True)
+
+
 def check_capacity_arithmetic(c, ip):
     """The numbers that MOVE when kRsMaxRecord moves, pinned headlessly.
 
@@ -1268,6 +1635,7 @@ def main(argv):
     check_u64_bound(c, ip)
     check_u64_engine_models(c, ip, src, fail)
     check_no_quotient_comparisons(c, fail)
+    check_seq_order(c, ip, src, fail)
     check_capacity_arithmetic(c, ip)
     if install_coin_natives():
         check_composed(c, ip, V)
