@@ -61,7 +61,7 @@ about the script.
 | Q | coinxt ABI 7 + silent-payment receive | row Q (its wallet half needs NET) | 20 |
 | 3 | `riptide-social`, then `torrent-quickshare` and `torrent-dht-channels`, one fresh launch each | rows 35, 37 | 20 |
 | 2 | `holde-em/src/holdem.livecodescript` standalone, then `heRunSelftest` in the message box | ends `==== N pass, 0 fail, M skip ====` and `RESULT: green`; row 14 | 15 |
-| 4 | holde-em hotseat in item 2's launch: 2-3 hands, blinds to showdown, a side pot if you can | hands complete, no error dialog; the header names `kHeVersion` **0.25.4**, harness **46**. Stretch: row 42's 6-seat exit | 15 |
+| 4 | holde-em hotseat in item 2's launch: 2-3 hands, blinds to showdown, a side pot if you can | hands complete, no error dialog; the header names `kHeVersion` **0.25.5**, harness **47**. Stretch: row 42's 6-seat exit | 15 |
 | 5 | the remaining demo re-opens, one fresh launch each | rows 37, 38 | 60 |
 | 6 | standalone `enet-selftest`, then `datachannel-selftest` | green, no `RUN NOT FINISHED` trailer (4.2, 4.3) | 10 |
 | S | `nocloud/src/nocloudquickshare.livecodescript`, then its checklist's web-link half | row 22; row 46 if time allows | 75 |
@@ -70,7 +70,7 @@ Item 1's last records (2026-09-24, Windows; section 8), to record against rather
 than match: sodiumxt 106, torrentxt 106, onionxt 74/0/1, coinxt 296, enetxt 34
 and datachannelxt 39 (sync halves), nostrxt 277/0/2, riptide 489/0/2 (the skips
 are the live anon-service legs), box2dxt 385/0 at harness v32, holde-em 721/0 at
-v0.25.3 / harness 45 with 5 live-transport skips (v0.25.4 / harness 46 since
+v0.25.3 / harness 45 with 5 live-transport skips (v0.25.5 / harness 47 since
 2026-09-25). Whole paste: 2620/5/3 (that day's first run), 2623/2/3 (its
 second, with riptide's two fixes) and 2623/2/10 (its third, the skips merged);
 all three runs' loopbacks stalled, suspected environment (5.5). A new total is not a regression
@@ -120,7 +120,7 @@ port, on the right machine:**
 | 1 | closing-pass legs B-E on both machines (leg A closed 2026-08-15: skip it) | 6 | 75 |
 | 2 | riptide phase 5: the call, then the typing lane | 16 | 35 |
 | 3 | riptide phase 6: welcome round, sync payload, stranger test | 17 | 35 |
-| 4 | holde-em 2d re-run on v0.25.4 | 18 | 40 |
+| 4 | holde-em 2d re-run on v0.25.5 | 18 | 40 |
 | 5 | holde-em 2e timed liveness session | 28 | 40 |
 | 6 | member demos on two machines: `enet-lan-chat`, `datachannel-dht-chat`, `torrent-dht-channels` / `torrent-rp1-chat` | 6 | 45 |
 | 7 | riptide's phase-3 faststart re-run and phase-6 steps 7-8 | 41 | 30 |
@@ -193,7 +193,7 @@ and are never reused. Every dated result also becomes one row in the member's
 | 14 | holde-em deal-path re-pass | S1 item 2 | The fold rewrote `heXorSeedsHex` (its ignored `repeat ... step 2`) and `heDeckFromStreamKey` (its throw-in-catch); green is those sections matching their KAT pins. Closable at inference strength, as row 26 was (work plan): section 11's "seeds XOR" and "full shuffled deck" assertions ran green in every folded run from 2026-08-17 on, and engine note 3.1 (OBSERVED: `step` is not honoured) answers which stream the pre-fold runs dealt from | the re-pass note on the two deal handlers in `holde-em/CLAUDE.md` |
 | 16 | riptide phase 5, the call and typing lane (script: the two-machine runbook's phase 5) | S3 item 2, across two networks | `CALL CONNECTED: direct peer-to-peer channel open` on both sides with a `via` line (`typ srflx` across two networks is the done-criterion); `the far side is typing...` appears and clears; hang-up leaves the DM alive | `riptide/CLAUDE.md`, phase 5 |
 | 17 | riptide phase 6, the LAN mesh | S3 item 3 | `ADMITTED - the host ... Mesh is mutual.`; `draft from <name> seq N applied` in BOTH directions, converging; `[typing]` then `[quiet]` on a kill; `feed seq N adopted`; `a peer FAILED admission (not your device)` for a stranger, with no record crossing. Steps 7-8: row 41 | `riptide/CLAUDE.md`, phase 6 |
-| 18 | holde-em 2d, online Level 0 over rp1, on v0.25.4 (v0.25.3's overlay fix and v0.25.4's hex compares) | S3 item 4 (3+ seats via extra instances) | several hands complete on every seat; receipts match; the audit verdicts land in the net feed; the lobby overlay is dismissed at handStart (the 2026-08-27 defect, fixed statically) | the 2d status in `holde-em/CLAUDE.md` |
+| 18 | holde-em 2d, online Level 0 over rp1, on v0.25.5 (v0.25.3's overlay fix, v0.25.4's hex compares, v0.25.5's canonical wire indices and hand binding) | S3 item 4 (3+ seats via extra instances) | several hands complete on every seat; receipts match; the audit verdicts land in the net feed; the lobby overlay is dismissed at handStart (the 2026-08-27 defect, fixed statically) | the 2d status in `holde-em/CLAUDE.md` |
 | 19 | riptide phase 7, the anon persona over Tor | S2 item 5 (serving); S4 item 4 (finishing) | Serving (two-machine runbook phase 7, steps 1-5): the anon feed page renders in Tor Browser; `/prekey` returns 264 hex and `rsVerifyPrekey` proves it; a curl POST to `/dm` answers `accepted`, and `refused` when mangled or replayed. Finishing: B builds a sealed intro with its PUBLIC identity and POSTs it to A's onion through tor; `accepted`, A's Anon card logs the PROVEN sender handle, and a trace shows zero `bt*` calls for the persona | `riptide/CLAUDE.md`, phase 7; the two-machine runbook's phase-7 intro |
 | 20 | holde-em 2f onion tables | S2 item 6 (bring-up); S4 item 5 (exit) | Bring-up: the lobby Tor pill walks its states; the invite prints as `<64hex>@<56base32>.onion`; the offline-derived address equals `oxServiceAddress` at publish. Exit: a multi-hand onion session joined by that invite, failures only where scripted, each fail-closed and readable; a real host-stream loss, redial and a trimmed resync | the 2f status in `holde-em/CLAUDE.md` |
 | 21 | Quick Share Channels anon, #31-#33 (the 12.3 register's numbering in `docs/ONIONXT-INTEGRATION-PLAN.md`; the criteria are carried here in full) | #31: S2 item 4; #32, #33: S4 items 1, 2 | **#31** (`torrent-dht-channels`): Anonymous ON drives the `chTor` pill to "Tor: ready" with the onion service up; OFF is refused while an `onion:` release is listed (removal offered; built 2026-09-24) and otherwise leaves every clearnet channel bit-for-bit unchanged; tor absent shows the fail-closed messages and public channels are untouched; `chVerifyOnionIdentity` passes offline; the `chTor` pill and `chAnon` button fit the unchanged 1180x640 window. **#32**: A publishes an anon channel; B follows by the CARD only; the signed feed arrives over the onion with the DHT OFF for that channel; releases list; the live `oxServiceAddress == chChannelOnionAddr(pub)` byte-compare holds (else `svc=` is the source of truth and the derivability claim drops, settling D-04); an old 2-field card recovers via the `chDashOnce` onion-retry. **#33**: B downloads a release entirely over the onion (swarm and DHT off); byte-identical (sha256); an encrypted release auto-decrypts; the transfers row shows the teal `Onion` source; a capture shows ZERO swarm/DHT traffic for that file on both ends; a publisher restart prunes the stranded relIds (`chPruneStrandedAnon`), and a follower asking for a relId the publisher no longer serves sees "not currently available" (built 2026-09-24), not a zero-byte file or a downgrade alarm | tick the register items themselves |
@@ -798,7 +798,7 @@ S1 [ ] 0 preflight ____/____/____ sxVersion ______ layers: ox ___ cx ___ nx ___
          enetxt ___ DataChannelXT ___ CoinXT ___  Box2Dxt found ___ vs ___
    [ ] 1 suite paste ____/____/____ (summary reached ___)  sodiumxt ___
          torrentxt ___ onionxt ___ coinxt ___ enetxt ___ dc ___ nostrxt ___
-         riptide ___ box2dxt v32 ___ holde-em v0.25.4/46 ___
+         riptide ___ box2dxt v32 ___ holde-em v0.25.5/47 ___
          board [48]: the pills look right after Run all ___
          Run: sodiumxt ___ torrentxt, twice ___ enetxt running... -> OK ___
          second Run all: riptide's session sections ___ filters ___ Copy ___
@@ -808,7 +808,7 @@ S1 [ ] 0 preflight ____/____/____ sxVersion ______ layers: ox ___ cx ___ nx ___
    [ ] 3 riptide boot [35] ____/____/____ npub ___ "not sent" ___ RIPTAPP1 ___
          [37] quickshare ___ dht-channels ___
    [ ] 2 heRunSelftest RESULT ______ deal sections [14] ___
-   [ ] 4 hotseat v0.25.4: hands ___ side pot ___ 6-seat exit [42] ___
+   [ ] 4 hotseat v0.25.5: hands ___ side pot ___ 6-seat exit [42] ___
    [ ] 5 [37] start-here ___ torrent-client ___ rp1-chat ___ onionxt-demo ___
          httpd spike ___ dc-loopback ___ coinxt-demo ___ sodium-demo ___
          nostrxt ndTests ___   [38] first open: demo ___ platformer ___

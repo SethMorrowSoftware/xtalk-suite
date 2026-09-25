@@ -414,6 +414,17 @@ overflowed about 1 time in 120 each. All were fixed the same day: holde-em
 (v0.25.4, harness 46) compares every hex identifier through `heHexEq` (40
 sites; its 64-zero genesis head had compared equal to "0"), and the other two
 prefix a letter at the comparison. Verified statically; needs an OXT pass.
+The same parse makes INDEX aliases, and an array key keeps the raw text:
+holde-em checked a wire position as a NUMBER but stored and counted it under
+its raw spelling, so "03", "3.0", "+3", " 3" and "3e0" were position 3 to the
+check and five new positions to the count, and a dealer could fake "every
+commitment is in" and grind its own seed after the others'. The interpreter
+reads the first three forms as numbers too, so that half was visible
+headlessly; the rest is inferred from `MCU_strtol` and `strtod`. v0.25.5
+(harness 47, 2026-09-25) accepts only canonical digit text for every wire
+index (`heCanonIdx`), keys and compares by it, walks its counts over the
+hand's own range, and binds every per-hand wire to the open hand. Verified
+statically; needs an OXT pass.
 **Rule:** never compare a hex digest, a token, a key or any identifier with
 bare `is`, `is not`, `=` or `<>`. Prefix a letter to both sides (no number
 parse accepts `h1e5`), adding `set the caseSensitive to true` where case is

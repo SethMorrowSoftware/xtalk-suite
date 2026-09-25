@@ -164,9 +164,11 @@ Thrown = LCS.Thrown
 
 # (section, minimum passes, exact skips). The pass floors are the counts
 # measured on 2026-09-11 (stack 0.25.3, harness v44), plus section 24's,
-# measured when it landed on 2026-09-24 (harness v45), and sections 5, 9
+# measured when it landed on 2026-09-24 (harness v45), sections 5, 9
 # and 21 raised on 2026-09-25 (stack 0.25.4, harness v46: the heHexEq and
-# near-integer pins); raise them when the harness grows. A skip count is
+# near-integer pins), and sections 11, 15 and 21 raised the same day (stack
+# 0.25.5, harness v47: the canonical-index, hand-binding and audit-guard
+# pins); raise them when the harness grows. A skip count is
 # EXACT: a section that skips more than it did is a section that stopped
 # running something.
 SECTIONS = [
@@ -180,17 +182,17 @@ SECTIONS = [
     ("heTestFoldRun", 17, 0),
     ("heTestCryptoRun", 26, 0),
     ("heTestReceiptRun", 17, 0),
-    ("heTestDealRun", 16, 0),
+    ("heTestDealRun", 20, 0),
     ("heTestDealOrderRun", 5, 0),
     ("heTestLobbyRun", 10, 0),
     ("heTestNetSim", 20, 0),
-    ("heTestNetPlay", 47, 0),
+    ("heTestNetPlay", 60, 0),
     ("heTestLevel2Run", 0, 1),          # ristretto255 is not modelled: skips
     ("heTestOnionRun", 35, 1),          # the LIVE tor table skips by name
     ("heTestOracleRun", 32, 2),         # the LIVE three-machine round + the onion oracle
     ("heTestLevel2VoidRun", 2, 1),      # its ristretto (DLEQ) half skips
     ("heTestLivenessRun", 84, 2),       # the LIVE timed table + the LIVE tor redial
-    ("heTestHelpersRun", 33, 1),
+    ("heTestHelpersRun", 39, 1),
     ("heTestLeafRun", 39, 0),
     ("heTestLeafRun2", 83, 0),
     ("heTestLeafRun3", 50, 0),          # every leg pure or gGame-only: nothing skips

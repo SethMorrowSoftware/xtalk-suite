@@ -18,7 +18,8 @@ Its second run that evening (2623/2/3, riptide's two fixes in) closed riptide en
 comparison rule and closed suite engine #10; reading that rule in the engine source
 added suite-wide #18-#19, suite engine #11, coinxt #8 and riptide #9; the sites
 that reading found were fixed the same day (engine note 2.11; holde-em v0.25.4),
-and the holde-em fix turned up holde-em #11-#12.
+and the holde-em fix turned up holde-em #11-#12, closed the same day at v0.25.5,
+whose own sweep added holde-em #13-#15.
 
 Where the rest lives: each engine leg's full green criterion, and the labels it flips,
 is its numbered row in [OXT-PASS-RUNBOOK.md](OXT-PASS-RUNBOOK.md) section 1.2 (this
@@ -62,7 +63,7 @@ result. Every "engine-proven" below quotes a dated record already in the tree.
 | box2dxt | harness v32 385/0 Windows 2026-09-24, on the 2026-09-12 DLL and the paste's 1200-wide card; v30 374/1 Linux 2026-08-21 | x86-linux glibc regression; platformer polish; three shim defects (dispatch) | the v32 total on Linux; the five games; R1; first Mac load; feel pass | S1, S5, PERSON |
 | riptide | phases 1-4 on two machines (to 2026-08-15); 489/0/2 in the suite paste, Windows, 2026-09-24 (the day's second and third runs; its first read 487/2/2, both FAILs fixed that day); phase-8 boot 2026-08-29 | bridge reader; RSL1 magic; own-head refresh; per-identity app state | row 35; the paste's second Run all (row 48); phases 5, 6, 7 live; phase 8 live; faststart re-run | S1-S4, NET |
 | nocloud | no dated pass of this stack in the tree | route-table case; mtime ETag after D-10; the D-02 menu (deferred) | the 69-item checklist, web-link and Tor halves; sections 7-8 | S1, S2 |
-| holde-em | 721/0 folded, Windows, 2026-09-24 (v0.25.3, harness v45; 5 live-leg skips, merged into the totals from the day's third run) | **position aliases stack a Level 0 deck (#11, HIGH)**; **Level 2 not wired into play**; animations; 88 untested handlers | Phase 1 exit; 2d/2e/2f on real machines; the oracle round | S1-S4, 3M, PERSON |
+| holde-em | 721/0 folded, Windows, 2026-09-24 (v0.25.3, harness v45; 5 live-leg skips, merged into the totals from the day's third run) | an `act` replayable within its hand (#13); **Level 2 not wired into play**; animations; 88 untested handlers | Phase 1 exit; 2d/2e/2f on real machines; the oracle round | S1-S4, 3M, PERSON |
 
 Suite coverage on 2026-09-24: **867/878** public handlers exercised by the suite
 harness; the 11 exemptions are all onionxt's (engine socket callbacks and watchdogs). holde-em's advisory row reads 172/330
@@ -570,13 +571,14 @@ The deferred menu (D-02; the five questions at the end of
 
 ### 3.3 holde-em
 
-- **v0.25.4, harness 46**, carrying onionxt. Built: the Phase 1 hotseat; 2d, 2e, 2f;
+- **v0.25.5, harness 47**, carrying onionxt. Built: the Phase 1 hotseat; 2d, 2e, 2f;
   the Phase 3 oracle; 4a-4e Level 2 compute with void-and-audit; Phase 5 DLEQ; 4f's
-  batch mask step. Coverage 172/330 game handlers, **88 with no test** (floor armed;
+  batch mask step. Coverage 177/335 game handlers, **88 with no test** (floor armed;
   the third leaf tranche, section 24, named 14 more on 2026-09-24).
 - Folded records to **721/0 (2026-09-24, v0.25.3, harness 45, Windows)**, 5 live-leg skips
   merged from that day's third run; 667/0 on 2026-08-27 (v0.25.2, harness 43). v0.25.4's
-  `heHexEq` and near-integer fixes are verified statically; needs an OXT pass. Played by a person:
+  `heHexEq` and near-integer fixes and v0.25.5's canonical wire indices (`heCanonIdx`), walked
+  counts and hand-bound wires are verified statically; needs an OXT pass. Played by a person:
   three hotseat hands (2026-08-17), and a first two-machine 2d contact (2026-08-27)
   where the hand dealt under the lobby overlay (v0.25.3 fixes it, statically).
 
@@ -593,8 +595,9 @@ The deferred menu (D-02; the five questions at the end of
 | 8 | Close runbook row 14 at inference strength, as row 26 was: section 11's "seeds XOR" and "full shuffled deck" assertions ran green in every folded run from 2026-08-17 on, and engine note 3.1 answers which stream the pre-fold runs dealt from | A leg the evidence already covers | S | owner |
 | 9 | `holde-em/assets/sounds/NOTICE.md`'s cardShuffle row reads as if the sound were wired "in the deal-animation increment"; the source leaves it unwired. A one-word fix in a frozen NOTICE file | Accuracy of a shipped notice | S | owner (explicit OK) |
 | 10 | **Table admission list and `cfg` co-signing** (spec 5, 6, 7.3, 9): an admitted-pubkey list (or an explicit open flag) in the host `cfg`, void/forfeit rules in `cfg`, and per-player co-signing of `cfg` before hand 1. Today every table is effectively open (any key whose token verifies is admitted: `heAdmitTokenVerify`) and `cfg` is host-authored only (`heLobbyCfgBody`; `heHostRelay` refuses a `cfg` from any other key). A consensus change: the protocol-kat pins move and `kHeHarnessV` bumps | Specified, not built; a player cannot bound who sits at the table or bind the host to the rules | M | none |
-| 11 | **HIGH: position aliases let a dealer stack a Level 0 deck** (found 2026-09-25 while fixing the hex compares). `heNetContribPosOk` compares a contribution's position as a NUMBER, so "03", "3.0" and "+3" pass as position 3 (checked headlessly; on the engine inferred from `MCU_strtol`, not observed), while the seedCommit, seedSeal and seedReveal folds store under the RAW key and count every alias. A dealer posts alias commits for its own position, honest clients seal their seeds to it once `commitN >= contribN`, and it opens them, grinds its own seed and commits that under "3", still empty; the audit reads integer keys only and passes. Spec 7.1's "the dealer's seed is committed first" breaks, and the Level 1 oracle can do the same. Accept only canonical digit-run positions, compared as text; key by the canonical number; count completed positions over 1..count; pins and a fold-kat mirror | A cheating dealer picks the deal after seeing every other seed | M | none |
-| 12 | `heAuditDeal` and `heAuditDealLog` hash log-supplied seeds through the FFI with no `heIsHex` guard, so a hand-edited transcript with a non-hex seed throws out of the History audit instead of naming the failure (house law H4) | Found beside #11; a local file, not the wire | S | none |
+| 13 | **An `act` can be replayed later in its own hand.** An act wire carries the hand (bound since v0.25.5) but no turn key, and two honest checks are byte-identical, so dedupe cannot tell a replay from a new act: a host can re-send a player's earlier signed act at a later turn of the same hand. Bind each act to its turn (street and action index) inside the signed body; a wire change, so protocol-kat's pins move and `kHeHarnessV` bumps. Spec section 6 records it as not closed | Found 2026-09-25 by the v0.25.5 sweep | M | none |
+| 14 | **History does not re-check senders.** `heNetLogToHotseat` translates every signed wire, including those the live fold dropped for authority reasons (a non-owner's commit or reveal, a non-host settle), and the audit then reads last-wins commits against first-wins holes. Usually that is a false History FAIL; with a colluding host it can be a false PASS for a hand the table refused to settle. Re-apply the ownership and host-only rules inside the translation | Pre-existing; found 2026-09-25 by the v0.25.5 sweep | S-M | none |
+| 15 | `stand` and `sit` are not hand-bound, so a host can replay an old stand to sit a player out (liveness griefing, not deal integrity). Bind them, or record the limit in spec 8 | Found 2026-09-25 by the v0.25.5 sweep | S | none |
 
 Deferred by the owner on 2026-08-16: spectators. Picking them up needs a wire and UI
 decision (a role a joiner can choose, or a sit-request the host answers).
@@ -603,7 +606,7 @@ decision (a role a joiner can choose, or a sit-request the host answers).
 
 | # | Run | Where | Row | Green (in brief) |
 |---|---|---|---|---|
-| 1 | Suite paste, then the standalone stack with `heRunSelftest`, then 2-3 hotseat hands | S1 items 1, 2, 4 | 14 | v0.25.4 / harness 46, 0 failed, 5 skips; RECORD the total rather than matching 667; the first run of the four 2026-09-09 wire-arity checks and of the nested `heBetApply` trunc guard (whether `trunc` of a non-number throws is unrecorded) |
+| 1 | Suite paste, then the standalone stack with `heRunSelftest`, then 2-3 hotseat hands | S1 items 1, 2, 4 | 14 | v0.25.5 / harness 47, 0 failed, 5 skips; RECORD the total rather than matching 667; the first run of the four 2026-09-09 wire-arity checks and of the nested `heBetApply` trunc guard (whether `trunc` of a non-number throws is unrecorded) |
 | 2 | Phase 1 exit: a full 6-seat hotseat session with side pots and all 17 cards on screen, plus the confirming eye on the 720p layout | S1 + PERSON | 42 | as named |
 | 3 | 2f bring-up | S2 item 6 | 20 | the Tor pill's states; the invite `<64hex>@<56base32>.onion`; the derived address equals `oxServiceAddress` |
 | 4 | 2d re-run and the Phase 2 exit: a 6-seat table over rp1 across at least 3 machines on real home networks (extra instances fill seats); a mid-hand disconnect that reconnects and resumes; tampered and replayed envelopes provably dropped; receipts matching on every seat | S3 item 4 (3+ seats) | 18 | as named |

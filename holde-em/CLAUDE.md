@@ -15,8 +15,8 @@ v0.25.2 on 2026-08-27) and the Box2Dxt Kit (`b2k*`, optional presentation).
 ONE paste-and-run stack, `src/holdem.livecodescript`, holds the game, its
 self-test harness, the diagnostics `heProbeSodium` / `heProbeTorrent` /
 `heProbeKit` / `heProbeSounds`, and the carried onionxt layer between
-`tools/sync-demo-embeds.py` sentinels. Current: `kHeVersion` 0.25.4,
-`kHeHarnessV` 46, `kUIVersion` 15.
+`tools/sync-demo-embeds.py` sentinels. Current: `kHeVersion` 0.25.5,
+`kHeHarnessV` 47, `kUIVersion` 15.
 
 `holdem-spec.md` is the contract. Where code differs, the code wins and the
 spec is updated. Because chips may someday carry value, read spec 2 (threat
@@ -60,11 +60,12 @@ assets/cards/, assets/sounds/  vendored Kenney CC0 art and audio (see each NOTIC
    assert sites are added (v0.24.5 added five sites without a bump, so "v41"
    names two totals; v43 -> v44 on 2026-09-10 covered the four wire-arity
    sites, v44 -> v45 on 2026-09-24 section 24's, v45 -> v46 on 2026-09-25
-   the seven heHexEq and near-integer pins). Call sites are not checks
-   (at v40, 374 sites reported 507 checks), so an engine run RECORDS a new
-   total rather than matching the last: the first v45 total, 2026-09-24, was
-   721 passed with every extension present, plus the 5 live-leg skips
-   (the ledger); the next run records the v46 total.
+   the seven heHexEq and near-integer pins, v46 -> v47 the same day the
+   23 canonical-index, hand-binding and audit-guard pins). Call sites
+   are not checks (at v40, 374 sites reported 507 checks), so an engine run
+   RECORDS a new total rather than matching the last: the first v45 total,
+   2026-09-24, was 721 passed with every extension present, plus the 5
+   live-leg skips (the ledger); the next run records the v47 total.
    `kHeHarnessV` is printed in the report header so a stale paste identifies
    itself. Asserts are self-diagnosing: print what was observed against what
    was expected, never a bare FAIL, and write first-contact tests to debug
@@ -206,6 +207,21 @@ itself is catalogued in the suite's
   all-digit pairs (the interpreter reads only `-?\d+(\.\d+)?` as a number),
   which is why sections 9 and 21 pin the genesis head against "0". Its twin
   from note 2.10: a whole-number test is `is an integer`, never `is trunc(x)`.
+- **A wire index is canonical TEXT, and a count is walked (v0.25.5).** `"03"`,
+  `"3.0"`, `"+3"`, `" 3"` and `"3e0"` are the number 3 to `is`, `<` and a chunk
+  index, but five different array keys, so a dealer's aliased commitments once
+  counted as the whole table's and let it choose its seed last. Every position,
+  seat, count, hand number and seq off a wire goes through `heCanonIdx` first;
+  keys are what it returns; two indices compare as `("n" & a) is ("n" & b)`;
+  an "all are in" count is walked over `1..count` or the dealt seats
+  (`heNetPosFilled`, `heNetSeatsFilled`), never incremented per message. A
+  per-hand wire (`kHeHandBoundTypes`) must carry the open hand, and handStart
+  numbers strictly increase (`gGame["handFolded"]`) over a legal seat list
+  (`heNetOccOfSeats`): the hand field is the sender's signed binding, and the
+  per-hand seeds hash it. History's translation (`heNetLogToHotseat`) applies
+  the same index and hand rules, so a wire the table dropped for THOSE reasons
+  never reaches it; sender authority is still not re-checked there. An act is
+  still replayable at a later turn of the SAME hand (no turn key).
 - **Both operands are evaluated (engine note 2.5).** `heBetApply`'s refusal
   `X is not a number or X is not trunc(X)` evaluated `trunc("abc")`; it is
   nested now, and the nested form ran green on the engine on 2026-09-24
@@ -463,12 +479,14 @@ Engine-proven, folded into the suite paste: every harness section's headless
 slice at v0.25.3 / h45, including the wire-arity checks, section 24, Level 2
 compute, the batch mask step, void-and-audit, the five cheater bots and DLEQ
 (latest 721/0, Windows, 2026-09-24; the five live legs skip by name). Verified
-statically; needs an OXT pass: the v0.25.4 heHexEq and near-integer fixes and
-the v46 total (the v0.25.4 pins), the v0.25.3 overlay fix (its fold-time
-`heLobbyHide` has run only as the guarded no-op a paste makes it; the dismissal
-itself is the 2d re-run's), everything visual and timed (the 720p layout eye, the
-Phase 1 6-seat session), and every live multi-machine leg (2d re-run, 2e timed
-session, 2f two-machine tor + redial, the Phase 3 three-machine oracle round).
+statically; needs an OXT pass: the v0.25.5 canonical wire indices, walked
+counts, hand binding and audit guards, the v0.25.4 heHexEq and near-integer
+fixes, the v47 total (the v0.25.4 and v0.25.5 pins), the v0.25.3 overlay fix
+(its fold-time `heLobbyHide` has run only as the guarded no-op a paste makes it;
+the dismissal itself is the 2d re-run's), everything visual and timed (the 720p
+layout eye, the Phase 1 6-seat session), and every live multi-machine leg (2d
+re-run, 2e timed session, 2f two-machine tor + redial, the Phase 3 three-machine
+oracle round).
 Level 2 is not yet wired into played hands. Row 14 (the deal-path re-pass) can
 close at inference strength: section 11's seeds-XOR and full-deck asserts have
 been green in every folded run since 2026-08-17, and engine note 3.1 is
