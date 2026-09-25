@@ -163,8 +163,12 @@ script "xTalkSuiteSelfTest"
 -- 2026-09-25; work plan suite-wide #16). It now gives back exactly the holds
 -- it took and no more: every enInitialize here is counted in sSuEnHeld
 -- (suEnInit, suEnRelease; THE PASTE'S HOLD, below). The reverse direction is
--- enetxt's own: enet-selftest's teardown gives back one hold more than it
--- took, so let its run finish before starting one here. DataChannelXT
+-- enetxt's own, and it is not the end of enet-selftest's RUN (its stFinish
+-- pairs the run's two enInitialize calls) but its stCleanup: on its close and
+-- on its Re-run it calls enDeinitialize once more, bare. So do not close
+-- enet-selftest or press its Re-run while a run here holds ENet (the enetxt
+-- row, the cross row, Run all): the cross row holds one, and would lose its
+-- loopback hosts. DataChannelXT
 -- is the one this cannot settle from script, so for it the old advice
 -- stands: dcCleanup is not counted at all (it frees EVERY peer and channel
 -- in the process) and its event queue is one per process, so a run that
