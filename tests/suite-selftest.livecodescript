@@ -153,7 +153,10 @@ script "xTalkSuiteSelfTest"
 -- any other TorrentXT stack (client, demo, torrent-selftest) first - otherwise
 -- the torrent sections SKIP with a note rather than fighting for the session.
 -- The enet loopback deliberately uses UDP port 27196, NOT the 27098 that
--- enet-selftest uses, so the two harnesses can coexist if both are open.
+-- enet-selftest uses, so the two never fight for a port - but do not run
+-- them at once: this paste's cleanup calls enDeinitialize, which acts on
+-- the whole process and would end the other window's ENet hosts (review,
+-- 2026-09-25; the suite's WORK-PLAN carries the fix).
 --
 -- MISSING EXTENSIONS SKIP, THEY NEVER FAIL. Each member is probed with one
 -- cheap guarded call inside try/catch (the family's fail-closed probe pattern,
@@ -256,7 +259,7 @@ constant kSuScControls = "stCopy,stRerun,stResults,stSummary,suBootLog,suFilterA
 -- hand-maintained file; renaming there would touch a shipped library and
 -- re-carry its six embedded copies for this file's convenience.
 local sAsyncRunning
--- Set once, the first time a render inside the pump throws. See stPump.
+-- Set once, the first time a render inside the pump throws. See suPump.
 local sRenderNoted
 
 -- probe results (one flag per member; "reason" strings carry the SKIP note)
@@ -1353,7 +1356,7 @@ command stShow
    -- has always rendered. This handler is ALSO called from an async pump, on a
    -- `send ... in` tick, where they are not: with another window in front the
    -- write would throw "Chunk: error in object expression", and in the suite
-   -- core that throw lands in stPump, which is where the timer re-arms.
+   -- core that throw lands in suPump, which is where the timer re-arms.
    -- PRECAUTIONARY, NOT DIAGNOSED. It was written on 2026-08-20 while chasing
    -- two engine reports that ended mid-CROSS-section, and that was the wrong
    -- cause: the third run, same build, completed 1981/0/1 through both
@@ -2536,6 +2539,19 @@ command suBuild
    set the defaultStack to the short name of this stack
    if the uSuUiVersion of this stack is kSuUiVersion then
       if there is a field "suView" then
+         -- A stamped window keeps what the last build drew, and that includes
+         -- its SIZE, which a person can change: a new mainstack is resizable,
+         -- and only suBuildAll's uiChrome ever set it. Reopened at another
+         -- size, the boot self-check's 1200 x 640 assertion went red over a
+         -- green run (review, 2026-09-25; found in the model, not on an
+         -- engine). The layout inside is fixed, so the size is re-asserted
+         -- here, the same two properties uiChrome sets.
+         if the width of this stack is not kStWidth then
+            set the width of this stack to kStWidth
+         end if
+         if the height of this stack is not kStHeight then
+            set the height of this stack to kStHeight
+         end if
          suPaintRows
          suSetFilter sSuFilter
          exit suBuild
@@ -2941,7 +2957,7 @@ end suRunStarting
 -- first moment anything painted becomes visible (the handler is about to
 -- return; engine-observed on 2026-08-19, when a run copied mid-pump ended at
 -- the last synchronous section), so the rows and the view are painted here.
--- CONTAINED: the `send "stPump"` after it is the only route to teardown.
+-- CONTAINED: the `send "suPump"` after it is the only route to teardown.
 command suSyncDone
    local tError, tNote
    try
@@ -2997,21 +3013,24 @@ command suBootIntoReport
    end repeat
 end suBootIntoReport
 
--- Is the self-check's one delayed check still queued? `the pendingMessages`
--- lines are id,time,message,object (stCancelPump's idiom).
+-- Is the self-check's one delayed check still to come? Read from the
+-- self-check's OWN record, not from `the pendingMessages`: that list is
+-- engine-wide, and every demo that carries the self-check arms its own
+-- "scTickProbe", so another open demo's probe used to read as this one's
+-- (review, 2026-09-25). The carried block writes its "still to come" line
+-- when it arms the probe (scArmProbe) and its count line when the probe
+-- has run (scFinish), so the probe is pending exactly while the first is in
+-- sScLines and the second is not.
 function suBootPending
-   local tPending, tLine, tOld, tFound
-   put the pendingMessages into tPending
-   put false into tFound
-   put the itemDelimiter into tOld
-   set the itemDelimiter to comma
-   repeat for each line tLine in tPending
-      if item 3 of tLine is "scTickProbe" then
-         put true into tFound
+   local tArmed, tDone
+   put ("one delayed-write check still to come" is in sScLines) into tArmed
+   put ("select this block and copy it into the" is in sScLines) into tDone
+   if tArmed then
+      if not tDone then
+         return true
       end if
-   end repeat
-   set the itemDelimiter to tOld
-   return tFound
+   end if
+   return false
 end suBootPending
 
 -- The summary section's own lines: the scope, what the report is, the board as
@@ -3292,7 +3311,10 @@ command stRun pScope
    put empty into sSealBox
 
    put "xTalk Suite end-to-end self-test" & return into sResultText
-   put "First green engine pass recorded 2026-08-08; this run re-confirms it here." & return after sResultText
+   -- This line is written BEFORE any check runs, so it must not claim the
+   -- run's outcome: it used to end "this run re-confirms it here", printed
+   -- atop a run with 5 failures on 2026-09-24 (records audit, 2026-09-25).
+   put "First green engine pass recorded 2026-08-08; the summary at the end says how this run went." & return after sResultText
    put "Scope: " & suScopeLabel() & return after sResultText
 
    -- EVERY synchronous section is contained. A section that throws - a
@@ -3304,7 +3326,7 @@ command stRun pScope
    -- stProbe is contained for the same reason as every section below, and one
    -- sharper one: it is the statement that TAKES the session. A throw anywhere
    -- after btStartSession returned - a later probe's scaffolding, a report line
-   -- - would strand a live session AND skip the `send "stPump"` at the bottom
+   -- - would strand a live session AND skip the `send "suPump"` at the bottom
    -- of this handler, which is the only route to stFinish and stTeardown. Each
    -- per-member probe inside already carries its own try, so this catches only
    -- the scaffolding between them, and every sHave* flag a half-finished probe
@@ -3373,7 +3395,7 @@ command stRun pScope
    -- of the six have unguarded prologues (bt1stRun clears the error and reads
    -- btLastError before its try begins), and stMergeCounted/stMergeReturned
    -- only validate counters they were actually handed. A throw here therefore
-   -- skipped everything below - including `send "stPump"`, which is what
+   -- skipped everything below - including `send "suPump"`, which is what
    -- eventually reaches stFinish and stTeardown - so the run ended with the
    -- libtorrent session, the ENet hosts and the WebRTC peers all still live and
    -- no summary printed. The session is the one that does not come back: see
@@ -3463,7 +3485,7 @@ command stRun pScope
    put the milliseconds + kStDeadlineMs into sDeadline
    stShow
    suSyncDone
-   send "stPump" to me in 33 milliseconds
+   send "suPump" to me in 33 milliseconds
 end stRun
 
 -- ---- the probe ---------------------------------------------------------------
@@ -4521,7 +4543,7 @@ end stCheckSealed
 -- ONE timer chain drives BOTH async members. It reschedules itself until every
 -- async phase is terminal or the deadline passes; it never blocks the
 -- interpreter, because nothing in this family may block the one script thread.
-command stPump
+command suPump
    local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tEvents, tEvent
    -- PINNED FIRST (engine note 5.3). This handler arrives by `send ... in`, and
@@ -4530,7 +4552,7 @@ command stPump
    -- set once here rather than trusted painter by painter.
    set the defaultStack to the short name of this stack
    if sAsyncRunning is not "true" then
-      exit stPump
+      exit suPump
    end if
 
    -- Contained for the same reason the synchronous sections are, and with one
@@ -4576,7 +4598,7 @@ command stPump
 
    if stEnDone() and stDcDone() then
       stFinish
-      exit stPump
+      exit suPump
    end if
 
    -- A stuck section must not take the run with it: record the failure against
@@ -4597,12 +4619,12 @@ command stPump
          suTallyClose
       end if
       stFinish
-      exit stPump
+      exit suPump
    end if
 
    -- THE RE-ARM IS THE ONE STATEMENT THAT MUST ALWAYS BE REACHED, and until
    -- 2026-08-20 the render above it was the only thing in this handler that
-   -- was not contained. The comment at the top of stPump already had the whole
+   -- was not contained. The comment at the top of suPump already had the whole
    -- argument - a throw out of the pump breaks the timer chain, so nothing
    -- ever reaches stFinish and the hosts, peers and libtorrent session leak -
    -- and it had been applied to the two poll blocks and not to this line.
@@ -4635,8 +4657,8 @@ command stPump
    -- The board's paint, contained on its own (suPumpPaint swallows its own
    -- throw) so it can neither break the chain nor be mistaken for the report.
    suPumpPaint
-   send "stPump" to me in 33 milliseconds
-end stPump
+   send "suPump" to me in 33 milliseconds
+end suPump
 
 -- ---- finish + teardown -------------------------------------------------------
 command stFinish
@@ -4805,13 +4827,24 @@ end stCleanup
 -- one delayed probe restores what it touches, and the kit's copy flash is not
 -- used here. The item delimiter is restored (engine note 2.3): this runs
 -- inside stRun, above sections that split items of their own.
+-- `the pendingMessages` lists EVERY pending message in the engine, not this
+-- stack's, so a cancel by name reaches any open stack that arms a message
+-- of that name. That is why the paste's two timers have paste-only names.
+-- Until 2026-09-25 the pump was "stPump", the name enet-selftest's and
+-- datachannel-selftest's own pumps still use, so opening this paste, or
+-- pressing Run all or a row's Run, cancelled a loopback running in either
+-- of those windows (neither cancels anything itself; review, 2026-09-25,
+-- not observed on an engine). A name, not a target filter: the
+-- target's spelling in that list has no engine record in this tree, and a
+-- filter that never matched would stop this handler cancelling its own
+-- pump.
 command stCancelPump
    local tPending, tLine, tOld
    put the pendingMessages into tPending
    put the itemDelimiter into tOld
    set the itemDelimiter to comma
    repeat for each line tLine in tPending
-      if item 3 of tLine is "stPump" or item 3 of tLine is "suRunTick" then
+      if item 3 of tLine is "suPump" or item 3 of tLine is "suRunTick" then
          cancel (item 1 of tLine)
       end if
    end repeat
@@ -5389,15 +5422,15 @@ end stSummaryCounts
 --             package predates ristretto255 (ABI 8)"` on each of its two ABI
 --             probes - so its skips are already inside its pass count and a
 --             third number here would count them twice.
---   Riptide   BOTH keep a real skip counter and BOTH park it on a SECOND
---   holde-em  line, worded as prose on purpose so this parser refuses it.
---             Their own comments say so and name the two-count rule as the
---             reason ("the skip count gets its own line"). So their skips are
---             printed and never merged - the same hole this change closes for
---             onionxt, in two more members. Widening the parser is what
---             unblocks them; moving their counts onto line 1 is an edit in
---             their own files, and until someone makes it their skips stay
---             visible-but-unmerged rather than silently zero.
+--   Riptide   BOTH keep a real skip counter, and until 2026-09-25 BOTH
+--   holde-em  parked it on a SECOND line, worded as prose on purpose so this
+--             parser refused it, so their skips were printed and never
+--             merged. The D-23 board made that a contradiction on screen: on
+--             2026-09-24 riptide's row read 0 skipped over a log listing 2,
+--             holde-em's 0 over 5, and the Skips view counted 10 SKIP lines
+--             against a summary of 3 (found by review, not by a gate). Both
+--             now put all three counts on line 1, an edit in their own files;
+--             widening the parser is what made that possible.
 -- The two-count form is therefore still first-class, not deprecated: no member
 -- is rewritten from here to suit this file, which would be backwards.
 --
@@ -29004,12 +29037,16 @@ function rs1rsSelfTest
    else
       rs1rstSkip "every crypto section: SodiumXT is not installed"
    end if
-   -- The first line is EXACTLY two counts + passed/failed and nothing else:
-   -- the suite core's stSummaryCounts treats any other word as prose, so the
-   -- skip count gets its own line (the sodiumxt/onionxt returned-report shape).
-   return rs1sPass && "passed," && rs1sFail && "failed" & return & \
-         rs1sSkip && "skipped (optional dependencies; see the log)" & return & \
-         "----------------------------------------" & return & rs1sLog
+   -- The first line is EXACTLY the three counts and their words, nothing
+   -- else: "P passed, F failed, S skipped", the form the suite core's
+   -- stSummaryCounts has read since 2026-08-17 (onionxt's shape). Any other
+   -- word makes a line prose, which the parser refuses. Until 2026-09-25 the
+   -- skip count sat on a second, prose line, under the older two-count rule,
+   -- so the suite paste printed riptide's skips and never merged them: its
+   -- board row and totals said 0 skipped while this log listed 2.
+   return rs1sPass && "passed," && rs1sFail && "failed," && rs1sSkip && "skipped" & \
+         return & "(the skips are optional dependencies; see the log)" & \
+         return & "----------------------------------------" & return & rs1sLog
 end rs1rsSelfTest
 
 private command rs1rstCheck pCondition, pLabel
@@ -41398,19 +41435,25 @@ function he1heSelfTest
    --     unreadable while its report was perfect. That exact failure cost the
    --     2026-08-09 engine pass two members; it is not a hypothetical.
    --
-   -- THE FIRST LINE IS THE CONTRACT: exactly two numbers plus "passed" and
-   -- "failed", in that order, and nothing else. One extra word and
-   -- stSummaryCounts reads the line as prose and refuses it (which is the
-   -- behaviour that makes the parse safe, not a bug to work around). So the
-   -- skip count gets its own line, and the run's banner stays below the
-   -- divider where it can never be mistaken for a summary.
+   -- THE FIRST LINE IS THE CONTRACT: exactly three numbers plus "passed",
+   -- "failed" and "skipped", in that order, and nothing else - the form the
+   -- core's stSummaryCounts has read since 2026-08-17. One extra word and it
+   -- reads the line as prose and refuses it (which is the behaviour that
+   -- makes the parse safe, not a bug to work around), so the explanation of
+   -- the skips gets its own line, and the run's banner stays below the
+   -- divider where it can never be mistaken for a summary. Until 2026-09-25
+   -- the first line carried only two counts and the skip count sat on that
+   -- prose line, so the suite paste printed these skips and never merged
+   -- them: its board row said 0 skipped while this log listed 5.
    --
-   -- Verified statically; needs an OXT pass.
+   -- The quiet entry point ran on an engine inside the suite paste
+   -- (2026-09-24, 721 passed); this three-count line is verified
+   -- statically; needs an OXT pass.
    he1heTestRunAllSections
    -- leave no timer of ours running inside somebody else's paste
    he1heTestSweepNetTimers
-   return he1gPassN && "passed," && he1gFailN && "failed" & return & \
-         he1gSkipN && "skipped (absent optional extensions and engine-only paths -- see the log)" \
+   return he1gPassN && "passed," && he1gFailN && "failed," && he1gSkipN && "skipped" \
+         & return & "(the skips are absent optional extensions and engine-only paths -- see the log)" \
          & return & "----------------------------------------" & return & he1gRpt
 end he1heSelfTest
 

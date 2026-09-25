@@ -200,7 +200,7 @@ def message_target(kept, blank, col, word):
     """For a `send`/`dispatch` statement at `col`: (target, literal?, delayed?).
 
     `target` is the first word of the message when it is a string literal
-    (`send "stPump" to me in 33 milliseconds` -> stPump), also when the literal
+    (`send "suPump" to me in 33 milliseconds` -> suPump), also when the literal
     opens a parenthesised expression (the kit's copy flash), which is how the
     engine will see it; `literal?` is True only for a BARE literal, the form
     check 14 accepts; `delayed?` says the statement arms a timer (`in <time>`

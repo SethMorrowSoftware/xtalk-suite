@@ -119,7 +119,7 @@ C_NX_CALL = "            put nx1nxSelfTest() into tNxReport\n"
 C_MARKER = "-- GENERATED MEMBER HARNESSES GO HERE --"
 C_LAST_AREA = ('   uiArea "suBootLog", "520,142," & (kStWidth - 20) & "," & '
                '(kStHeight - 18)\n')
-C_CANCEL = 'if item 3 of tLine is "stPump" or item 3 of tLine is "suRunTick" then'
+C_CANCEL = 'if item 3 of tLine is "suPump" or item 3 of tLine is "suRunTick" then'
 C_SCOPE_NOTE = '   stNote "Scope:" && suScopeLabel() & "."\n'
 C_NAMES = "Riptide Social,No Cloud Quick Share"
 C_KEYS = "riptide,nocloud,holde-em,cross"

@@ -173,12 +173,16 @@ function rsSelfTest
    else
       rstSkip "every crypto section: SodiumXT is not installed"
    end if
-   -- The first line is EXACTLY two counts + passed/failed and nothing else:
-   -- the suite core's stSummaryCounts treats any other word as prose, so the
-   -- skip count gets its own line (the sodiumxt/onionxt returned-report shape).
-   return sPass && "passed," && sFail && "failed" & return & \
-         sSkip && "skipped (optional dependencies; see the log)" & return & \
-         "----------------------------------------" & return & sLog
+   -- The first line is EXACTLY the three counts and their words, nothing
+   -- else: "P passed, F failed, S skipped", the form the suite core's
+   -- stSummaryCounts has read since 2026-08-17 (onionxt's shape). Any other
+   -- word makes a line prose, which the parser refuses. Until 2026-09-25 the
+   -- skip count sat on a second, prose line, under the older two-count rule,
+   -- so the suite paste printed riptide's skips and never merged them: its
+   -- board row and totals said 0 skipped while this log listed 2.
+   return sPass && "passed," && sFail && "failed," && sSkip && "skipped" & \
+         return & "(the skips are optional dependencies; see the log)" & \
+         return & "----------------------------------------" & return & sLog
 end rsSelfTest
 
 --------------------------------------------------------------------------

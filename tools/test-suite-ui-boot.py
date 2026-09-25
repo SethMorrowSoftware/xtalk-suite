@@ -39,7 +39,7 @@ THE DEFECTS, one per thing the gate is for
 
 And three that prove the gate's MODEL DELTAS are load-bearing:
 
-  f  stCancelPump cancels only stPump, so closing with a Run armed leaves
+  f  stCancelPump cancels only suPump, so closing with a Run armed leaves
      its tick queued (the pendingMessages and cancel deltas; without them the
      runner cannot run stCancelPump at all).
   g  the Failures button keeps autoHilite, so the engine clears its hilite
@@ -53,6 +53,19 @@ And three that prove the gate's MODEL DELTAS are load-bearing:
      delta off, the Failures-view check this fixture requires PASSES on the
      live render's colours; only the Skips and Show views, whose line numbers
      moved, still caught the mutant.
+
+And four for what a review found on 2026-09-25, each invisible to the gate
+until that day:
+
+  i  stCancelPump cancels "stPump" again: the name enet-selftest's and
+     datachannel-selftest's own pumps use, so a loopback running in either
+     window dies when the paste opens (the model's foreign timers).
+  j  suBootPending reads a fired probe as still pending (it used to read
+     `the pendingMessages`, where every demo's "scTickProbe" looks alike).
+  k  the stamped build no longer re-asserts 1200 x 640, so a window resized
+     and reopened turns the boot self-check red over a green run.
+  l  riptide's summary line goes back to two counts: its skips are printed
+     and never merged, and the Skips view disagrees with the summary.
 
 The mutants run concurrently, at most one gate run per core.
 
@@ -100,9 +113,9 @@ MUTANTS = [
     # decoration: without the delta the gate could not see the defect.
     ("f", "stCancelPump no longer cancels an armed Run's tick (the "
           "pendingMessages / cancel deltas)",
-     '      if item 3 of tLine is "stPump" or item 3 of tLine is "suRunTick" '
+     '      if item 3 of tLine is "suPump" or item 3 of tLine is "suRunTick" '
      'then',
-     '      if item 3 of tLine is "stPump" then',
+     '      if item 3 of tLine is "suPump" then',
      "closing with a Run armed cancels its tick and forgets it"),
     ("g", "the Failures button keeps the engine's autoHilite (the autohilite "
           "delta: a click would clear the view's mark)",
@@ -118,6 +131,38 @@ MUTANTS = [
      '            suPaintView\n'
      '         end if\n',
      "(finished) every line of the fail view is painted by its kind"),
+    # Four for the 2026-09-25 review's findings, each gated since that day.
+    ("i", "stCancelPump cancels the old pump name again, which is also "
+          "enet-selftest's and datachannel-selftest's (a foreign timer)",
+     '      if item 3 of tLine is "suPump" or item 3 of tLine is "suRunTick" '
+     'then',
+     '      if item 3 of tLine is "suPump" or item 3 of tLine is "suRunTick" '
+     'or item 3 of tLine is "stPump" then',
+     "stCancelPump leaves another stack's pump and probe queued"),
+    ("j", "suBootPending ignores the self-check's finished count line, so a "
+          "fired probe still reads as pending",
+     '      if not tDone then\n         return true\n',
+     '      if true then\n         return true\n',
+     "suBootPending does not read another demo's pending probe"),
+    ("k", "suBuild's stamped path no longer puts a resized window back",
+     '         if the width of this stack is not kStWidth then\n'
+     '            set the width of this stack to kStWidth\n'
+     '         end if\n'
+     '         if the height of this stack is not kStHeight then\n'
+     '            set the height of this stack to kStHeight\n'
+     '         end if\n',
+     '',
+     "a stamped build over a resized window puts it back"),
+    ("l", "riptide's summary goes back to two counts, its skip count on a "
+          "prose line the merge never reads",
+     '   return rs1sPass && "passed," && rs1sFail && "failed," && rs1sSkip '
+     '&& "skipped" & \\\n'
+     '         return & "(the skips are optional dependencies; see the log)" '
+     '& \\\n',
+     '   return rs1sPass && "passed," && rs1sFail && "failed" & \\\n'
+     '         return & rs1sSkip && "skipped (optional dependencies; see the '
+     'log)" & \\\n',
+     "the report's SKIP-kind lines are the totals' skipped count"),
 ]
 
 

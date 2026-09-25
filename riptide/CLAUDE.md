@@ -385,8 +385,9 @@ FAILS the gates; a missing `../coinxt` skips tier 2 unless `XTALK_REQUIRE_SIBLIN
 
 In the suite, beyond this member's gates:
 - **The fold**: the harness folds as member `riptide` (prefix `rs1`, entry `rsSelfTest`, merged via
-  `stMergeReturned`), so its report's first line must stay exactly "N passed, M failed", the skip
-  count on its own line. The library embeds verbatim as a script layer; the coverage gate fails on
+  `stMergeReturned`), so its report's first line must stay exactly "N passed, M failed, K
+  skipped" (since 2026-09-25: the skip count used to sit on a prose second line, which the merge
+  never counted). The library embeds verbatim as a script layer; the coverage gate fails on
   an unexercised public `rs*`. A script-layer or harness edit is not done until
   `python3 tools/build-suite-selftest.py` has rebuilt the paste.
 - **The demo's embeds**: five libraries via the suite's `tools/sync-demo-embeds.py`, in the order

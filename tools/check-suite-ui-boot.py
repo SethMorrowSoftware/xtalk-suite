@@ -43,10 +43,12 @@ order, in ONE window (a maintainer opens the stack once and keeps pressing):
                standing in for its Run all: the self-check is green, its
                delayed probe restores the status line, the Boot check view
                shows the block and the report carries it above the summary.
-  seven Runs   each FAST_SCOPES row through its own button: the Starting and
+  eight Runs   each FAST_SCOPES row through its own button: the Starting and
                Running status lines, the report's scope line, the summary
                last, the totals equal to the report's own PASS / FAIL / SKIP
-               lines, the row equal to the totals, every other row "not run",
+               lines plus what each returned report folded in (riptide's is
+               the fast tier's one), the row equal to the totals, every
+               other row "not run",
                this row's pill from EXPECTED_PILLS, every pill on one of the
                kit's three grounds, the board check's note, a Finished status
                line in the verdict's colour, every line painted by its kind,
@@ -89,19 +91,22 @@ and the probe's ten answers after the first run (EXPECTED_PROBE).
 
 THE FAST TIER, AND WHAT IS LEFT OUT OF IT
 -----------------------------------------
-Seven scopes run (FAST_SCOPES). The onionxt, nostrxt, riptide and holde-em
-scopes do not, and neither does Run all (openStack's call, and the stRerun
-mouseUp), because in this profile those run their members' FOLDED HARNESSES
-through the model, and what that tests is the harnesses, whose own execution
-gates own them - not the board. They are not slow here (measured 2026-09-24:
-onionxt 1.6 s, riptide 0.6 s), and each hits something the board does not
-need modelled: onionxt's harness prints FAIL lines on `the result` after a
-command (the runner never passes a command's `return` to its caller's `the
-result`), nostrxt's recurses past Python's stack limit in the model,
-holde-em's dispatches its sections with `do`, which the runner refuses, and
-riptide's prints a FAIL that is its own (SLOW_SCOPES). What those scopes share
-with the fast tier is the board code this gate covers; the "all" branch of
-the tallies is covered by the Run-all accounting scenario.
+Eight scopes run (FAST_SCOPES). The onionxt, nostrxt and holde-em scopes do
+not, and neither does Run all (openStack's call, and the stRerun mouseUp),
+because in this profile those run their members' FOLDED HARNESSES through the
+model, and what that tests is the harnesses, whose own execution gates own
+them - not the board. They are not slow here (onionxt 1.4 s), and each hits
+something the board does not need modelled: onionxt's harness prints FAIL
+lines on `the result` after a command (the runner never passes a command's
+`return` to its caller's `the result`), nostrxt's recurses past Python's stack
+limit in the model, and holde-em's dispatches its sections with `do`, which
+the runner refuses (SLOW_SCOPES). Each reason is RE-MEASURED on every run
+(scenario_slow_reasons, in a fresh interpreter per scope), so an excuse that
+outlives its reason fails the gate: riptide's did for a day. riptide's scope
+runs in the fast tier, the one that merges a RETURNED report (its no-SodiumXT
+branch), so the totals rule counts what a merge folds in. What the left-out
+scopes share with the fast tier is the board code this gate covers; the "all"
+branch of the tallies is covered by the Run-all accounting scenario.
 
 THE MODEL DELTAS, named and counted, and each must fire
 -------------------------------------------------------
@@ -165,7 +170,7 @@ OXT compiles - the static gates and an engine pass own that), MESSAGE DELIVERY
 front of the defaultStack pins, and mouseDown acting on the press rather than
 the release are OXT-PASS-RUNBOOK row 48), `is` FOLDING CASE (the interpreter's
 `is` is case-SENSITIVE whatever `the caseSensitive` says, so a case defect in
-suLineKind is invisible here), the four SLOW_SCOPES and Run all, and EVERY
+suLineKind is invisible here), the three SLOW_SCOPES and Run all, and EVERY
 PRESENT-EXTENSION PATH: with every native absent no loopback opens, no session
 is taken and no member harness runs. It settles LOGIC. It upgrades no honesty
 label: what the 2026-09-24 engine runs did not show (a row's Run, Show, the
@@ -242,21 +247,25 @@ Thrown = LCS.Thrown
 # The scopes this tier runs, in kSuKeys order: in this profile each member is
 # absent and nothing it runs is a member harness.
 FAST_SCOPES = ("sodiumxt", "torrentxt", "enetxt", "datachannelxt", "box2dxt",
-               "coinxt", "cross")
-# Left out, each with its MEASURED reason (2026-09-24, this profile). Checked
-# against kSuKeys, so a new member must be placed in one list or the other.
+               "coinxt", "riptide", "cross")
+# Left out, each with its MEASURED reason and the SIGNATURE that reason leaves
+# (2026-09-24, re-measured 2026-09-25, this profile): ("threw", the start of
+# the exception it raises) or ("fails", None: it finishes with FAIL lines).
+# Checked against kSuKeys, so a new member must be placed in one list or the
+# other, and scenario_slow_reasons RE-RUNS each one in a fresh interpreter
+# and fails the gate if its signature is gone: an excuse nobody re-checks
+# outlives its reason. riptide's did, from 8ea0f21 (the 7-key check it cited,
+# fixed) until a review found it on 2026-09-25; it is in the fast tier now.
 SLOW_SCOPES = {
-    "onionxt": "its folded harness runs (1.6 s) and prints FAIL lines (twelve "
-               "on 2026-09-24) on `the result` after a command, which the "
-               "runner does not model: the harness is onionxt's, not the "
-               "board",
-    "nostrxt": "its folded harness recurses past Python's stack limit in the "
-               "model before it finishes",
-    "riptide": "its folded harness runs (0.6 s, the no-SodiumXT branch) and "
-               "prints one FAIL of its own: it asserts 7 capability keys and "
-               "rsProbeCapabilities has returned 10 since phase 8",
-    "holde-em": "its folded harness dispatches its sections with `do pName`, "
-                "which the runner refuses",
+    "onionxt": ("its folded harness runs (1.4 s) and prints FAIL lines "
+                "(thirteen on 2026-09-25) on `the result` after a command, "
+                "which the runner does not model: the harness is onionxt's, "
+                "not the board", ("fails", None)),
+    "nostrxt": ("its folded harness recurses past Python's stack limit in "
+                "the model before it finishes", ("threw", "RecursionError")),
+    "holde-em": ("its folded harness dispatches its sections with "
+                 "`do pName`, which the runner refuses",
+                 ("threw", "SyntaxError: unsupported statement: 'do pName'")),
 }
 
 # THE PROBE'S ANSWERS IN THIS PROFILE, read back after the first run. The
@@ -343,7 +352,7 @@ BOARD_FAIL = "FAIL  the rows account for every counted check"
 OPEN_STACK = ("suBuild", "stCleanup", "stRun", "suScRun")
 
 # The paste's own timers: none may outlive a finished run.
-CORE_TIMERS = ("stPump", "suRunTick")
+CORE_TIMERS = ("suPump", "suRunTick")
 TIMER_BOUND = 60
 
 
@@ -377,6 +386,11 @@ class SuiteWorld(DB.World):
     def __init__(self, sandbox):
         super().__init__(sandbox)
         self.pending = []           # [id, due_ms, message text]
+        # Another open stack's timers: [id, due_ms, message, its long id].
+        # `the pendingMessages` is engine-wide, so the paste SEES these, and
+        # they are never delivered here; `cancel` can still remove them,
+        # which is exactly the defect scenario_foreign_timers watches for.
+        self.foreign = []
         self.next_msg_id = 3001
         self.answers = []
         self.passed = []            # message names, in the order passed
@@ -431,11 +445,13 @@ class SuiteInterp(DB.DemoInterp):
     def pending_text(self):
         world = self.world
         out = []
-        for mid, due, text in sorted(world.pending, key=lambda p: (p[1], p[0])):
+        rows = [(mid, due, text, 'stack "%s"' % world.stack_name)
+                for mid, due, text in world.pending]
+        rows += [tuple(f) for f in world.foreign]
+        for mid, due, text, target in sorted(rows, key=lambda p: (p[1], p[0])):
             words = text.split()
             out.append("%d,%.3f,%s,%s" % (mid, due / 1000.0,
-                                          words[0] if words else "",
-                                          'stack "%s"' % world.stack_name))
+                                          words[0] if words else "", target))
         return "\n".join(out)
 
     def pending_names(self):
@@ -513,9 +529,10 @@ class SuiteInterp(DB.DemoInterp):
             m = _rxi(r'cancel\s+(.+)$').match(line)
             if m:
                 mid = int(LCS._n(self.eval_expr(m.group(1), env)))
-                before = len(world.pending)
+                before = len(world.pending) + len(world.foreign)
                 world.pending = [p for p in world.pending if p[0] != mid]
-                if len(world.pending) < before:
+                world.foreign = [f for f in world.foreign if f[0] != mid]
+                if len(world.pending) + len(world.foreign) < before:
                     fire("cancel")
                 return i + 1
         elif w0 == "pass":
@@ -916,7 +933,7 @@ class Board:
 def check_no_timers(c, board, also=()):
     left = [n for n in board.ip.pending_names()
             if n in CORE_TIMERS or n in also or n.lower().startswith("he1")]
-    c.eq("no stPump, suRunTick or he1* message is left pending", left, [])
+    c.eq("no suPump, suRunTick or he1* message is left pending", left, [])
 
 
 def check_delimiters(c):
@@ -1039,6 +1056,20 @@ def scenario_build(c, board):
     c.ck("a second build (the current stamp) creates, deletes and moves "
          "nothing", after == before, "%d controls, then %d"
          % (len(before), len(after)))
+    # A person resizes the window (a new mainstack is resizable) and the
+    # stack is reopened: the stamped build must put the size back, or the
+    # boot self-check's 1200 x 640 line goes red over a green run (review,
+    # 2026-09-25).
+    world = board.world
+    world.stack_props["width"], world.stack_props["height"] = 1400, 700
+    try:
+        board.ip.call("suBuild", [])
+    except Exception as exc:                            # noqa: BLE001
+        return c.threw("suBuild over a resized window runs", exc)
+    c.eq("a stamped build over a resized window puts it back to %d x %d"
+         % (board.width, board.height),
+         (world.stack_props.get("width"), world.stack_props.get("height")),
+         (board.width, board.height))
     return True
 
 
@@ -1110,7 +1141,7 @@ def arm_and_start(c, board, key):
          str(ip.constants["kUiInk"]))
     return c.eq("the run's synchronous half ends live, its pump armed",
                 (board.g("sAsyncRunning"), ip.pending_names(),
-                 board.g("sSuArmed")), ("true", ["stPump"], ""))
+                 board.g("sSuArmed")), ("true", ["suPump"], ""))
 
 
 def finish(c, board, label="the pump runs to the finish"):
@@ -1119,6 +1150,37 @@ def finish(c, board, label="the pump runs to the finish"):
         return True
     except Exception as exc:                            # noqa: BLE001
         return c.threw(label, exc)
+
+
+FOLDED_NOTE = (r'^\s+(\d+) passed, (\d+) failed, (\d+) skipped, folded into '
+               r'the totals above$')
+REPORT_NOTE = r'^\s+---- .+ report ----$'
+SECTION_HEAD = r'^== .* ==$'
+
+
+def returned_merges(lines):
+    """Each returned-report merge in a finished report, as (folded, own):
+    the (P, F, S) stMergeReturned's note says it added to the totals, and the
+    PASS / FAIL / SKIP lines of the member's verbatim report (the lines after
+    its "---- <member> report ----" note, up to the next section header) that
+    are spelled the scaffold's way and so were counted as the core's own."""
+    out = []
+    for k, ln in enumerate(lines):
+        m = _rx(FOLDED_NOTE).match(ln)
+        if not m:
+            continue
+        folded = tuple(int(x) for x in m.groups())
+        j = k + 1
+        if j < len(lines) and _rx(REPORT_NOTE).match(lines[j]):
+            j += 1
+        own = [0, 0, 0]
+        while j < len(lines) and not _rx(SECTION_HEAD).match(lines[j]):
+            for i, pfx in enumerate(("PASS  ", "FAIL  ", "SKIP  ")):
+                if lines[j].startswith(pfx):
+                    own[i] += 1
+            j += 1
+        out.append((folded, tuple(own)))
+    return out
 
 
 def check_finished(c, board, scope, merged=None, boot_whole=True):
@@ -1165,8 +1227,17 @@ def check_finished(c, board, scope, merged=None, boot_whole=True):
     base = [sum(1 for ln in lines if ln.startswith(p))
             for p in ("PASS  ", "FAIL  ", "SKIP  ")]
     if merged is None:
-        c.eq("the totals are the report's own PASS / FAIL / SKIP lines",
-             got, tuple(base))
+        # The core's own lines, plus what each RETURNED report's merge says it
+        # folded in, less any line in that report spelled the scaffold's way
+        # (holde-em's PASS lines), which the plain count already took once.
+        # Until 2026-09-25 this was the core's lines alone, true only while no
+        # fast scope merged a report: riptide's did the moment a review moved
+        # it into the fast tier.
+        adj = returned_merges(lines)
+        c.eq("the totals are the report's own PASS / FAIL / SKIP lines plus "
+             "what each returned report folded in (%d merged)" % len(adj),
+             got, tuple(base[k] + sum(f[k] - o[k] for f, o in adj)
+                        for k in range(3)))
     else:
         verbatim, folded = merged
         own = [sum(1 for ln in verbatim if ln.startswith(p))
@@ -1175,6 +1246,14 @@ def check_finished(c, board, scope, merged=None, boot_whole=True):
              "folded in", got, tuple(base[k] - own[k] + folded[k]
                                      for k in range(3)))
     c.eq("sTotal is their sum", board.num("sTotal"), sum(got))
+    # The Skips view counts SKIP-kind lines; the summary prints the totals.
+    # They disagreed on the 2026-09-24 engine report (10 lines, 3 skipped:
+    # riptide's and holde-em's skip counts were printed and never merged),
+    # and this gate took both numbers from the same report lines, so it held
+    # the disagreement as correct. Found by review, 2026-09-25.
+    c.eq("the report's SKIP-kind lines are the totals' skipped count (the "
+         "Skips view and the summary agree)",
+         sum(1 for ln in lines if line_kind(ln) == "skip"), got[2])
     check_rows(c, board, scope, got, expected=merged is None)
     note = "the rows account for every counted check (%d / %d / %d)" % got
     c.ck("the summary carries the board check's note",
@@ -1287,7 +1366,7 @@ def scenario_boot(c, board):
     except Exception as exc:                            # noqa: BLE001
         return c.threw("suScRun runs", exc)
     c.eq("the run's pump and the self-check's one delayed probe are queued",
-         ip.pending_names(), ["stPump", "scTickProbe"])
+         ip.pending_names(), ["suPump", "scTickProbe"])
     if not finish(c, board, "the pump and the probe are delivered"):
         return False
     lines = _lines(board.report())
@@ -1331,6 +1410,34 @@ def scenario_boot(c, board):
 WARN_TEXT = "A run is still going"
 
 
+def scenario_foreign_timers(c, board):
+    """Another open harness's timers must survive this paste. The paste's
+    pump was "stPump" until 2026-09-25, the name enet-selftest's and
+    datachannel-selftest's pumps use, and stCancelPump cancels by name from
+    the engine-wide `the pendingMessages`; every demo arms its own
+    "scTickProbe", which suBootPending used to read as this board's."""
+    ip, world = board.ip, board.world
+    c.section("another stack's timers (enet-selftest's pump, a demo's probe)")
+    mid = world.next_msg_id
+    world.next_msg_id += 2
+    world.foreign = [[mid, world.ms + 5000, "stPump",
+                      'stack "enetSelfTest"'],
+                     [mid + 1, world.ms + 5000, "scTickProbe",
+                      'stack "sodiumDemo"']]
+    try:
+        ip.call("stCancelPump", [])
+        pending = ip.call("suBootPending", [])
+    except Exception as exc:                            # noqa: BLE001
+        world.foreign = []
+        return c.threw("stCancelPump and suBootPending run", exc)
+    c.eq("stCancelPump leaves another stack's pump and probe queued",
+         sorted(f[2] for f in world.foreign), ["scTickProbe", "stPump"])
+    c.eq("suBootPending does not read another demo's pending probe as this "
+         "board's (this board's has fired)", str(pending).lower(), "false")
+    world.foreign = []
+    return True
+
+
 def check_refused(c, board, key, want_pending, want_armed, when):
     ip, world = board.ip, board.world
     down, _up, err = press(ip, world, "suRun" + key)
@@ -1358,8 +1465,8 @@ def scenario_refusals(c, board):
     deliver_next(ip, world, only=("suRunTick",))
     c.eq("the armed run started, live", (board.g("sAsyncRunning"),
                                           ip.pending_names()),
-         ("true", ["stPump"]))
-    check_refused(c, board, "torrentxt", ["stPump"], "", "live")
+         ("true", ["suPump"]))
+    check_refused(c, board, "torrentxt", ["suPump"], "", "live")
     if finish(c, board):
         check_finished(c, board, "coinxt")
     return True
@@ -1439,9 +1546,11 @@ def scenario_close(c, board):
 # stRunMemberHarnesses merges a member. Each carries a FAIL (with an indented
 # note under it where the format has one), a pass and a skip in its own
 # spelling, and (P, F, S) is what the merge FOLDS INTO THE TOTALS by the
-# core's documented rules: a returned report's summary line (riptide's skip
-# count is prose on line 2, printed and never merged), a counted report's
-# counters.
+# core's documented rules: a returned report's summary line, a counted
+# report's counters. (Until 2026-09-25 riptide's and holde-em's skip counts
+# were prose on line 2, printed and never merged, and this list asserted
+# that as correct - (1, 1, 0) below - so the gate held the very disagreement
+# a review then found on the board: a row reading 0 skipped over SKIP lines.)
 SYNTHETIC = [
     # SodiumXT's shape: keyword-first summary as the LAST line
     ("returned", "Synthetic SodiumXT-shape report", "\n".join([
@@ -1460,17 +1569,17 @@ SYNTHETIC = [
         "      observed: synthetic onion detail",
         "  --   (skipped: synthetic onion: no tor daemon here)",
         "  ok   synthetic onion: a second pass"]), None, (2, 1, 1)),
-    # Riptide's (and holde-em's): two counts first, the skip count on its own
-    # prose line, `  skip` lines
+    # Riptide's (and holde-em's, since 2026-09-25): three counts first, a
+    # prose line saying what the skips are, `  skip` lines
     ("returned", "Synthetic Riptide-shape report", "\n".join([
-        "1 passed, 1 failed",
-        "1 skipped (optional dependencies; see the log)",
+        "1 passed, 1 failed, 1 skipped",
+        "(the skips are optional dependencies; see the log)",
         "----------------------------------------",
         "-- identity",
         "  ok   synthetic riptide: a check that passed",
         "  FAIL synthetic riptide: a tamper that verified",
         "  skip synthetic riptide: the live leg (no session)"]), None,
-     (1, 1, 0)),
+     (1, 1, 1)),
     # the counted members' (coinxt, torrentxt, enetxt, datachannelxt): the
     # scaffold's own unindented lines, the counters handed over separately
     ("counted", "Synthetic counted-shape report", "\n".join([
@@ -1863,6 +1972,50 @@ def scenario_rebuild(c, board):
 # the drive
 # ==========================================================================
 
+def slow_outcome(src, sandbox, key):
+    """Run one left-out scope in a FRESH interpreter (a scope that throws
+    leaves its board mid-run, so none is reused) and say how it ended:
+    ("threw", "Type: message"), ("fails", the FAIL lines) or ("clean", [])."""
+    world = SuiteWorld(tempfile.mkdtemp(dir=sandbox, prefix="slow-"))
+    ip = SuiteInterp(src, world)
+    install_engine_builtins(world)
+    ip.call("suBuild", [])
+    board = Board(ip, world)
+    try:
+        press(ip, world, "suRun" + key)
+        deliver_next(ip, world, only=("suRunTick",))
+        deliver_all(ip, world)
+    except Exception as exc:                            # noqa: BLE001
+        return ("threw", "%s: %s" % (type(exc).__name__, exc))
+    fails = [ln for ln in _lines(board.report())
+             if ln.lstrip().startswith("FAIL")]
+    return ("fails", fails) if fails else ("clean", [])
+
+
+def scenario_slow_reasons(c, src, sandbox):
+    """Each SLOW_SCOPES reason still holds, or the gate fails: a left-out
+    scope that now runs clean belongs in FAST_SCOPES."""
+    c.section("the left-out scopes' reasons, re-measured")
+    for key in sorted(SLOW_SCOPES):
+        reason, (kind, start) = SLOW_SCOPES[key]
+        try:
+            got_kind, detail = slow_outcome(src, sandbox, key)
+        except Exception as exc:                        # noqa: BLE001
+            c.threw("the %s scope's re-run set up" % key, exc)
+            continue
+        if got_kind == "clean":
+            c.ck("%s still fails in the model for its stated reason" % key,
+                 False, "it ran CLEAN: a stale excuse - move it to "
+                 "FAST_SCOPES (it was left out because %s)" % reason)
+        elif kind == "threw":
+            c.ck("%s still throws %s" % (key, start), got_kind == "threw"
+                 and str(detail).startswith(start),
+                 "%s: %s" % (got_kind, str(detail)[:200]))
+        else:
+            c.ck("%s still finishes with FAIL lines" % key,
+                 got_kind == "fails", "%s: %s" % (got_kind, detail[:2]))
+
+
 def main(argv):
     verbose = "--verbose" in argv
     path = PASTE
@@ -1898,7 +2051,8 @@ def main(argv):
             return finish_report(c, t0)
         board = Board(ip, world)
         for scenario in (scenario_build, scenario_routing, scenario_boot,
-                         scenario_runs, scenario_refusals, scenario_copy,
+                         scenario_runs, scenario_foreign_timers,
+                         scenario_refusals, scenario_copy,
                          scenario_close, scenario_views,
                          scenario_all_accounting, scenario_rebuild):
             try:
@@ -1907,6 +2061,7 @@ def main(argv):
                 c.threw("the scenario ran to its end", exc)
             check_no_timers(c, board)
             check_delimiters(c)
+        scenario_slow_reasons(c, src, sandbox)
         c.section("EXPECTED_MODEL_FAILS")
         c.eq("every EXPECTED_MODEL_FAILS entry was printed by some run (a "
              "stale entry is an excuse for a failure that is gone)",

@@ -14922,19 +14922,25 @@ function heSelfTest
    --     unreadable while its report was perfect. That exact failure cost the
    --     2026-08-09 engine pass two members; it is not a hypothetical.
    --
-   -- THE FIRST LINE IS THE CONTRACT: exactly two numbers plus "passed" and
-   -- "failed", in that order, and nothing else. One extra word and
-   -- stSummaryCounts reads the line as prose and refuses it (which is the
-   -- behaviour that makes the parse safe, not a bug to work around). So the
-   -- skip count gets its own line, and the run's banner stays below the
-   -- divider where it can never be mistaken for a summary.
+   -- THE FIRST LINE IS THE CONTRACT: exactly three numbers plus "passed",
+   -- "failed" and "skipped", in that order, and nothing else - the form the
+   -- core's stSummaryCounts has read since 2026-08-17. One extra word and it
+   -- reads the line as prose and refuses it (which is the behaviour that
+   -- makes the parse safe, not a bug to work around), so the explanation of
+   -- the skips gets its own line, and the run's banner stays below the
+   -- divider where it can never be mistaken for a summary. Until 2026-09-25
+   -- the first line carried only two counts and the skip count sat on that
+   -- prose line, so the suite paste printed these skips and never merged
+   -- them: its board row said 0 skipped while this log listed 5.
    --
-   -- Verified statically; needs an OXT pass.
+   -- The quiet entry point ran on an engine inside the suite paste
+   -- (2026-09-24, 721 passed); this three-count line is verified
+   -- statically; needs an OXT pass.
    heTestRunAllSections
    -- leave no timer of ours running inside somebody else's paste
    heTestSweepNetTimers
-   return gPassN && "passed," && gFailN && "failed" & return & \
-         gSkipN && "skipped (absent optional extensions and engine-only paths -- see the log)" \
+   return gPassN && "passed," && gFailN && "failed," && gSkipN && "skipped" \
+         & return & "(the skips are absent optional extensions and engine-only paths -- see the log)" \
          & return & "----------------------------------------" & return & gRpt
 end heSelfTest
 

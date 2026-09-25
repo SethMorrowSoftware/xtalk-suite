@@ -638,7 +638,7 @@ session (`live_session_count()` is a C++ test hook, not FFI), and the harness
 keeps the handle in a script local, so **re-pasting or editing the stack script**
 clears the local while the C-side session runs on, orphaned for the rest of that
 engine launch. (A run that throws no longer strands it: every synchronous section,
-folded harness and `stProbe` is contained, `stPump`'s poll blocks and render are
+folded harness and `stProbe` is contained, `suPump`'s poll blocks and render are
 each wrapped in try/catch so the run converges to teardown, and `stRun` releases
 the session before clearing the handle, so `send "openStack"` is safe.) The next
 run reports `TorrentXT: ABSENT - TorrentXT is installed but a session is already
