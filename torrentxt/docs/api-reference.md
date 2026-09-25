@@ -13,8 +13,8 @@ for the lifecycle you must follow; this file is the call-by-call contract.
 > leg only (2026-08-17); `btRemoveTorrent` only with deleteFiles=false - its delete path is
 > manual-only and has never run). The "Script-side helpers" section below is "verified
 > statically; needs an OXT pass". The 2026-09-24 run held the 996/997-byte boundary of
-> `btDhtPutImmutable` and `btDhtPutMutable`, which no build older than 2026-09-08 passes;
-> which DLL it loaded is not recorded (most likely the one committed 2026-09-12). The
+> `btDhtPutImmutable` and `btDhtPutMutable`, which no build older than 2026-09-08 passes,
+> on a DLL committed 2026-09-12 (the maintainer's account; its bitness not recorded). The
 > overflow reporting under `btPoll` and `btRp1Poll` has not fired on an engine: "verified
 > statically; needs an OXT pass". Every field id in `src/btx_record.h` is written by the
 > shim (audited 2026-08-15). The dated ledger is in `../CLAUDE.md`.

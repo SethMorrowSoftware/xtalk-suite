@@ -175,5 +175,5 @@ be tested, the rest is gated statically, and the engine pass closes the gap:
 | the binding on a real engine | `tests/torrent-selftest.livecodescript`, folded into the suite paste | an OXT pass: 106/106 on Windows, last counted 2026-09-24 |
 | end-to-end against a real swarm | a legal, checksummed torrent (e.g. a Linux ISO) verified against its published hash | manual; not yet run |
 
-The ledger of dated engine records, and what is still static (a recorded engine load of the
-binaries committed 2026-09-12, every non-Windows platform, the demos), is in `../CLAUDE.md`.
+The ledger of dated engine records, and what is still static (the Windows DLL of the other
+bitness, every non-Windows platform, the demos), is in `../CLAUDE.md`.

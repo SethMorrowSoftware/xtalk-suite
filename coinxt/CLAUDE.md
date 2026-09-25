@@ -455,8 +455,9 @@ brief says the release lane does; the work plan carries that).
 | 2026-09-10 | local, ABI 7 (commit `dca02b0`) | all five rebuilt here; the mac one cross-built (Zig + `ld64.lld`, trap 7) with exactly 44 `_cnx_*` names, verified by export trie, ABI constant and slices, not executed |
 | 2026-09-12 | release run 34657390798 (commit `421bab3`) | replaced all five at ABI 7 |
 
-CI executes the committed x86_64-linux library's vectors on every push (`native-coinxt.yml`). No engine has loaded
-the 2026-09-12 builds; the `x86-win32` DLL has never executed anywhere (CI's Windows KAT step is x86_64 only).
+CI executes the committed x86_64-linux library's vectors on every push (`native-coinxt.yml`). One 2026-09-12 Windows
+DLL loaded on an engine 2026-09-24 (the ledger above), its bitness not recorded, so the `x86-win32` DLL may still
+never have executed anywhere (CI's Windows KAT step is x86_64 only); no engine has loaded the Linux or mac builds.
 
 ### The wallet on an engine
 

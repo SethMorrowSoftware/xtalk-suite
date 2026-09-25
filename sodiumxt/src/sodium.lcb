@@ -33,11 +33,12 @@
 -- "the ONE surface with no engine run today" until 2026-09-24, a month after
 -- that record: an understated label is as wrong as an overstated one. The
 -- whole harness, ChaCha20 included, ran 106/106 again on Windows 2026-09-24
--- (the D-23 suite paste). What is still owed is PLATFORM cover, not surface
+-- (the D-23 suite paste, on one of the two shipped MSVC DLLs of 2026-09-12 by
+-- the maintainer's account). What is still owed is PLATFORM cover, not surface
 -- cover - the 2026-08-24 run loaded a mingw DLL that no longer ships, and the
--- 2026-09-24 run recorded neither sxVersion() nor bitness, so the shipped
--- MSVC DLLs, the mac dylib and Linux at ABI 10 have no engine record that
--- names them (CLAUDE.md's platform table).
+-- 2026-09-24 run recorded neither sxVersion() nor bitness, so neither MSVC
+-- DLL, nor the mac dylib, nor Linux at ABI 10 has an engine record that names
+-- it (CLAUDE.md's platform table).
 -- The conventions below were settled
 -- against a real OXT compile and a crash audit; they are recorded so they are
 -- not relearned:

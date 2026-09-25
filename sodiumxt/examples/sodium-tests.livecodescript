@@ -33,10 +33,11 @@
 -- checks, on Windows x86_64; the "ONE section with no engine run today"
 -- sentence that stood here after that run contradicted the line above it and
 -- was corrected 2026-09-24. All 7 ran green again in the 2026-09-24 D-23
--- suite paste on Windows (106/106). Owed now is platform cover only: the
--- 2026-08-24 DLL was a mingw build that no longer ships, and the 2026-09-24
--- run recorded neither sxVersion() nor bitness, so the MSVC DLLs, the mac
--- dylib and Linux at ABI 10 each still need a run that names its build
+-- suite paste on Windows (106/106), on one of the two shipped MSVC DLLs of
+-- 2026-09-12 (the maintainer's account). Owed now is platform cover only:
+-- the 2026-08-24 DLL was a mingw build that no longer ships, and the
+-- 2026-09-24 run recorded neither sxVersion() nor bitness, so each MSVC DLL,
+-- the mac dylib and Linux at ABI 10 still need a run that names its build
 -- (CLAUDE.md's platform table).
 
 local sLog

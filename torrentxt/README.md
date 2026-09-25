@@ -230,13 +230,13 @@ real engine** on Windows on 2026-08-17, 2026-08-20 and 2026-08-24, and **106/106
 session lifecycle and the signed-put refusal first observed 2026-08-08), so every public
 handler has executed on an engine. The two-machine rp1/DHT transport is evidenced through
 riptide (2026-08-13, 2026-08-15), and rp1 chat was reported working across two machines on
-one LAN on 2026-08-27. The 2026-09-24 run did not record which DLL it loaded, but its
-997-byte refusals pass on no build older than 2026-09-08, so the 996-byte BEP44 cap has run
-on an engine (most likely in the DLL committed 2026-09-12, with libtorrent 2.1). Still owed:
-a recorded engine load of the binaries committed 2026-09-12 and of libtorrent 2.1 on
-Windows; their rp1 queue cap and dropped-alert report under a real overflow; any Linux,
-32-bit Windows or macOS engine; and the demos' kit-unified UIs, Tor paths and remaining
-two-machine runs, which are "verified statically; needs an OXT pass". The dated ledger is in
+one LAN on 2026-08-27. The 2026-09-24 run loaded the binaries committed 2026-09-12 (the
+maintainer's account, and its 997-byte refusals pass on no build older than 2026-09-08):
+their first engine load, so the 996-byte BEP44 cap and libtorrent 2.1 have run on Windows;
+its bitness was not recorded. Still owed: those binaries' rp1 queue cap and dropped-alert
+report under a real overflow; the Windows DLL of the other bitness; any Linux or macOS
+engine; and the demos' kit-unified UIs, Tor paths and remaining two-machine runs, which are
+"verified statically; needs an OXT pass". The dated ledger is in
 [CLAUDE.md](CLAUDE.md). The visual dashboard widget was **decided out of v1 scope on
 2026-08-13**: a recorded decision, not a maturity gap.
 

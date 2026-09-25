@@ -48,8 +48,8 @@ script "torrentSelfTest"
 -- checked, since 2026-08-17) and btRemoveTorrent-with-delete (noted for a manual
 -- pass). A green run means the whole binding surface is wired.
 
--- STATUS: last run GREEN in the 2026-09-24 engine pass (Windows: the engine reported Win32; OXT version and OS
--- build unrecorded) - 106/106, folded into
+-- STATUS: last run GREEN in the 2026-09-24 engine pass (Windows: the engine reported Win32, a 2026-09-12 DLL
+-- by the maintainer's account; OXT version, OS build and bitness unrecorded) - 106/106, folded into
 -- tests/suite-selftest.livecodescript. One torrent session per process
 -- (runbook trap 5.1): close other torrent stacks before running it.
 constant kStTitle = "TorrentXT - API Self-Test"
