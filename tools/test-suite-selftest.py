@@ -111,6 +111,16 @@ P_RIPTIDE_OLD = ("   if rs1sRsTestSession is not empty and rs1sRsTestSession > 0
                  "   if rs1sRsTestSession is empty or rs1sRsTestSession <= 0 then return 0\n"
                  "   return rs1sRsTestSession\n"
                  "end rs1rstAcquireSession\n")
+# The paste's transport holds (check 18): the core's releases in stCleanup
+# and stTeardown, its loopback's counted init, the release's one library call,
+# and the two folds' rewritten inits.
+P_EN_REL_CLEAN = "      suEnRelease false\n"
+P_DC_REL_CLEAN = "      suDcRelease false\n"
+P_EN_REL_TEAR = "   suEnRelease true\n"
+P_EN_INIT_CORE = "   put suEnInit() into tInit\n"
+P_EN_DEINIT_CALL = "      put enDeinitialize() into tR\n"
+P_EN_FOLD = '   en1stAssert "enInitialize returns 0", suEnInit() is 0\n'
+P_DC_FOLD = '   dc1stAssert "dcInit returns 0", suDcInit() is 0\n'
 # The core: suArmRun's one timer, the nostrxt call, the harness marker, the
 # last results field suBuildAll builds, the cancel list, the summary's first
 # note, the three board constants and one member's scope test.
@@ -179,7 +189,7 @@ CASES = [
     # ---- 7: the folded teardowns stay unreachable, by any spelling ----
     ('7: do "en1stCleanup" in a core handler',
      "paste", lambda t: after(t, P_CLEANUP, '   do "en1stCleanup"\n', "stCleanup"),
-     {"7"}, "en1stCleanup is named outside"),
+     {"7", "18"}, "en1stCleanup is named outside"),
     ('7: dispatch "bt1stCleanup" in a core handler',
      "paste", lambda t: after(t, P_CLEANUP, '   dispatch "bt1stCleanup"\n', "stCleanup"),
      {"7"}, "bt1stCleanup is named outside"),
@@ -187,20 +197,62 @@ CASES = [
      "paste", lambda t: after(t, P_CLEANUP,
                               '   if sAsyncRunning is "never" then dc1stCleanup\n',
                               "stCleanup"),
-     {"7"}, "dc1stCleanup is named outside"),
+     {"7", "18"}, "dc1stCleanup is named outside"),
     ('7: value("en1stCleanup()")',
      "paste", lambda t: after(t, P_CLEANUP, '   get value("en1stCleanup()")\n',
                               "stCleanup"),
-     {"7"}, "en1stCleanup is named outside"),
+     {"7", "18"}, "en1stCleanup is named outside"),
     ('7: send "dc1stCleanup" as a timer',
      "paste", lambda t: after(t, P_CLEANUP,
                               '   send "dc1stCleanup" to me in 1 tick\n', "stCleanup"),
-     {"7"}, "dc1stCleanup is named outside"),
+     {"7", "18"}, "dc1stCleanup is named outside"),
     ("7 NEGATIVE: en1stCleanup and friends named only in comments",
      "paste", lambda t: after(t, P_CLEANUP,
                               "   -- en1stCleanup is never called from here\n"
                               "   /* bt1stCleanup, dc1stCleanup: prose */\n",
                               "stCleanup"),
+     set(), "check-suite-selftest: OK"),
+    # ---- 18: the paste gives back exactly the transport holds it took ----
+    # The first six are the pre-2026-09-25 code put back: the OLD stCleanup,
+    # stTeardown and loopback start, and each fold before the generator
+    # routed its two inits through the core.
+    ("18: stCleanup's bare enDeinitialize put back (the old core)",
+     "paste", lambda t: swap(t, P_EN_REL_CLEAN, "      enDeinitialize\n", "stCleanup"),
+     {"18"}, "stCleanup calls enDeinitialize"),
+    ("18: stTeardown's asserted enDeinitialize() put back (the old core)",
+     "paste", lambda t: swap(t, P_EN_REL_TEAR,
+                             '   stAssert "enDeinitialize returns 0", '
+                             'enDeinitialize() is 0\n', "stTeardown"),
+     {"18"}, "stTeardown calls enDeinitialize"),
+    ("18: stCleanup's bare dcCleanup put back (the old core)",
+     "paste", lambda t: swap(t, P_DC_REL_CLEAN, "      dcCleanup\n", "stCleanup"),
+     {"18"}, "stCleanup calls dcCleanup"),
+    ("18: the loopback's uncounted enInitialize put back (the old start)",
+     "paste", lambda t: swap(t, P_EN_INIT_CORE, "   put enInitialize() into tInit\n",
+                             "stStartEnetLoopback"),
+     {"18"}, "stStartEnetLoopback calls enInitialize"),
+    ("18: the enetxt fold's init not routed (the generator's rewrite undone)",
+     "paste", lambda t: swap(t, P_EN_FOLD, P_EN_FOLD.replace("suEnInit()", "enInitialize()"),
+                             "en1stRun"),
+     {"18"}, "en1stRun calls enInitialize"),
+    ("18: the datachannelxt fold's init not routed",
+     "paste", lambda t: swap(t, P_DC_FOLD, P_DC_FOLD.replace("suDcInit()", "dcInit()"),
+                             "dc1stRun"),
+     {"18"}, "dc1stRun calls dcInit"),
+    ('18: do "enDeinitialize", a string that becomes a call',
+     "paste", lambda t: after(t, P_CLEANUP, '   do "enDeinitialize"\n', "stCleanup"),
+     {"18"}, "stCleanup calls enDeinitialize"),
+    ("18: a count written outside its four handlers",
+     "paste", lambda t: after(t, P_CLEANUP, "   put 0 into sSuEnHeld\n", "stCleanup"),
+     {"18"}, "stCleanup writes sSuEnHeld"),
+    ("18: the release no longer calls the library (routing would check nothing)",
+     "paste", lambda t: swap(t, P_EN_DEINIT_CALL, "      put 0 into tR\n", "suEnRelease"),
+     {"18"}, "suEnRelease does not call enDeinitialize"),
+    ("18 NEGATIVE: the four library names in a comment and a report label",
+     "paste", lambda t: after(t, P_CLEANUP,
+                              "   -- enDeinitialize, dcCleanup, enInitialize, dcInit: prose\n"
+                              '   stNote "enDeinitialize and dcCleanup are paired with '
+                              'enInitialize and dcInit"\n', "stCleanup"),
      set(), "check-suite-selftest: OK"),
     # ---- 10 / 10b: declarations above the first handler, moved not lost ----
     ("10: constant kUiBg moved below the paste's first handler",

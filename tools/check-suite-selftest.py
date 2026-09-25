@@ -385,7 +385,12 @@ def main(argv):
     # ENet and DataChannel loopbacks for the cross-member sections, and either
     # teardown would pull the transport out from under them mid-run. Wiring one
     # of these up is the obvious-looking "fix" for a leak that does not exist -
-    # the sync halves destroy everything they create - so it is checked.
+    # the sync halves destroy every host and peer they create, and the two
+    # library holds each takes (its two enInitialize / dcInit calls) are
+    # counted by the core's suEnInit / suDcInit and given back by the core
+    # (check 18) - so it is checked. Since check 18 either name reached would
+    # also be a reachable enDeinitialize or dcCleanup outside the core's
+    # counted release, so both checks fire on it.
     # bt1stCleanup joined the list after an adversarial review noticed the
     # asymmetry, and it is the one of the three that would fail QUIETLY. It
     # calls btStopSession on bt1sSession, which the fold has made an alias for
@@ -1129,6 +1134,118 @@ def main(argv):
                        f"so {m.member}'s harness either never runs or runs in "
                        f"every scope")
 
+    # ---- 18. the paste gives back exactly the transport holds it took ------
+    # (work plan suite-wide #16, review 2026-09-25.) enInitialize and
+    # enDeinitialize act on the whole PROCESS: enetxt's shim refcounts them,
+    # and the deinitialize that takes the count to zero destroys every live
+    # host in the process, another open stack's included. dcCleanup is worse:
+    # not counted at all, it frees every peer and channel in the process. The
+    # paste called enDeinitialize on every open before any initialize, and
+    # dcCleanup likewise, so opening it could end another window's session.
+    # The core now takes and gives back every hold through four handlers -
+    # suEnInit / suEnRelease and suDcInit / suDcRelease - over two counts that
+    # only those four write, and tools/check-suite-ui-boot.py drives them over
+    # a modelled refcount another stack holds. What this adds is the ROUTING,
+    # which a drive only sees along the paths it drives: no handler the paste
+    # can reach may call one of the four library handlers except its wrapper,
+    # and nothing but the four wrappers may write a count.
+    #
+    # Reachability is the paste-wide closure from what the engine delivers
+    # (openStack, mouseDown, mouseUp, closeStack), with an edge for every
+    # defined handler's name in a reachable body, comments stripped and string
+    # literals KEPT - so a timer (`send "x" to me in ...`), a `do`, a dispatch
+    # and holde-em's `do pName` off a literal are edges too. It over-
+    # approximates, which is the safe direction for "unreachable": what it
+    # calls unreachable (the folded harnesses' cut teardowns, which still call
+    # enDeinitialize and dcCleanup bare) cannot be named by anything that
+    # runs. A CALL is the name in the literal-BLANKED view (a word in a test
+    # label is not a call), or inside a literal on a do / send / dispatch /
+    # call line or in value(...), which is how a string becomes one.
+    holds = (("enInitialize", "suEnInit"), ("enDeinitialize", "suEnRelease"),
+             ("dcInit", "suDcInit"), ("dcCleanup", "suDcRelease"))
+    counts = ("sSuEnHeld", "sSuDcHeld")
+    wrappers = {w.lower() for _, w in holds}
+    paste_spans, paste_open = handler_spans(lines_bare)
+    if paste_open is not None:
+        fail("18", f"{paste_rel}: handler {paste_open} never ends, so the "
+                   f"paste's call graph cannot be read")
+    paste_by_name = {}
+    for name, a, b in paste_spans:
+        paste_by_name.setdefault(name.lower(), []).append((a, b))
+    paste_blank = [blank_literals(ln) for ln in lines_bare]
+    reach18 = {e.lower() for e in EVENTS if e.lower() in paste_by_name}
+    frontier = list(reach18)
+    while frontier:
+        name = frontier.pop()
+        for a, b in paste_by_name.get(name, []):
+            for i in range(a + 1, b):
+                for tok in re.findall(r'\b(\w+)\b', lines_bare[i]):
+                    low = tok.lower()
+                    if low in paste_by_name and low not in reach18:
+                        reach18.add(low)
+                        frontier.append(low)
+    if not reach18:
+        fail("18", f"{paste_rel} defines none of {', '.join(EVENTS)}, so "
+                   f"nothing is reachable and this check is checking nothing")
+    stringy = re.compile(r'\b(?:do|send|dispatch|call)\b|\bvalue\s*\(', re.I)
+
+    def lib_calls(lib, a, b):
+        word = re.compile(r'\b' + lib + r'\b', re.I)
+        return [i for i in range(a + 1, b)
+                if word.search(paste_blank[i])
+                or (word.search(lines_bare[i]) and stringy.search(paste_blank[i]))]
+
+    for lib, wrapper in holds:
+        inside = 0
+        for name, a, b in paste_spans:
+            if name.lower() not in reach18:
+                continue
+            rows = lib_calls(lib, a, b)
+            if not rows:
+                continue
+            if name.lower() == wrapper.lower():
+                inside += len(rows)
+                continue
+            fail("18", f"{name} calls {lib} "
+                       f"({raw_lines[rows[0]].strip()!r}, line {rows[0] + 1}) "
+                       f"and the paste can reach it. {lib} acts on the "
+                       f"whole process, so the paste may call it only "
+                       f"through the core's {wrapper}, which counts the "
+                       f"holds this paste took; an uncounted "
+                       + ("initialize is a hold nothing gives back"
+                          if lib in ("enInitialize", "dcInit") else
+                          "release gives back a hold another open stack "
+                          "took, and ends its hosts or peers"))
+        n_def = len(paste_by_name.get(wrapper.lower(), []))
+        if n_def != 1:
+            fail("18", f"the core's {wrapper} is defined {n_def} time(s) in "
+                       f"{paste_rel}; the paste's hold on the transports rests "
+                       f"on exactly one")
+        elif wrapper.lower() not in reach18:
+            fail("18", f"{wrapper} is not reachable from the core's events, "
+                       f"so the paste never takes or gives back that hold "
+                       f"through it")
+        elif inside == 0:
+            fail("18", f"{wrapper} does not call {lib}, so this check's "
+                       f"routing half is checking nothing for {lib}")
+    dead18 = sorted({name for lib, _ in holds for name, a, b in paste_spans
+                     if name.lower() not in reach18 and lib_calls(lib, a, b)})
+    for var in counts:
+        write = re.compile(r'\binto\s+' + var + r'\b'
+                           r'|\b(?:add|subtract|multiply|divide)\b.*\b' + var + r'\b'
+                           r'|\bdelete\s+(?:local\s+|variable\s+)?' + var + r'\b',
+                           re.I)
+        for name, a, b in paste_spans:
+            if name.lower() in wrappers:
+                continue
+            for i in range(a + 1, b):
+                if write.search(paste_blank[i]):
+                    fail("18", f"{name} writes {var} "
+                               f"({raw_lines[i].strip()!r}, line {i + 1}). "
+                               f"Only the four hold handlers may: a count "
+                               f"written anywhere else is a release of holds "
+                               f"this paste never took, or a hold it forgets")
+
     if problems:
         print("check-suite-selftest: FAILED")
         for check, p in problems:
@@ -1143,7 +1260,11 @@ def main(argv):
             f"{len(events_here)} events and {len(set(armed_all))} timers, "
             f"{len(armed)} timer arm(s) cancelled and pinned, "
             f"{len(refs | built)} literal and {computed} computed control "
-            f"names clear, {len(reg_names)} registry rows on the board)")
+            f"names clear, {len(reg_names)} registry rows on the board; "
+            f"transport holds: {len(reach18)} of {len(paste_spans)} handlers "
+            f"reachable, the four library calls only through their counted "
+            f"wrappers, {len(dead18)} unreachable folded caller(s) left dead: "
+            f"{', '.join(dead18)})")
     return 0
 
 

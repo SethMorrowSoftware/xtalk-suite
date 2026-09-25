@@ -75,6 +75,21 @@ order, in ONE window (a maintainer opens the stack once and keeps pressing):
                retired controls and a stale board control, is swept and
                rebuilt; a foreign control (box2dxt's st_* prefix) survives;
                a scoped run drives the rebuilt window.
+  transport    LAST, in an interpreter of its own, and the one scenario that
+  holds        is not all-absent (work plan suite-wide #16): ENet and
+               DataChannelXT as modelled natives beside ANOTHER stack that
+               holds ENet once, with a live host, and has a live DataChannel
+               peer. Open, enetxt's Run, a re-entry mid-run (runbook 5.2),
+               cross's Run closed mid-run, a close at rest, a sodiumxt Run,
+               datachannelxt's Run and an enetxt Run whose every
+               enInitialize is refused. At each step the other stack's hold
+               and host survive, the paste gives back exactly the holds it
+               took (a refused one is none), and it never calls dcCleanup
+               without a hold of its own. The model (EnetModel, DcModel) is
+               each library's process-wide lifecycle as its shim keeps it and
+               nothing else: no event ever arrives, so each loopback waits for
+               its deadline, and the folded harnesses stop at their first
+               unmodelled call (after their two counted inits).
 
 THE PROFILE: ALL-ABSENT
 -----------------------
@@ -87,7 +102,10 @@ are present, because they are in the paste. Only ENGINE builtins the probe
 path reaches are installed: the runner's engine functions, sha1Digest
 (nxWsAcceptFor's digest) and the three big-endian packers the shared riptide
 rewrite writes for binaryEncode. The profile is asserted before anything runs,
-and the probe's ten answers after the first run (EXPECTED_PROBE).
+and the probe's ten answers after the first run (EXPECTED_PROBE). The one
+exception is the transport-holds scenario, which installs its two modelled
+libraries in its own interpreter after every other scenario has run and
+removes them before the gate reports.
 
 THE FAST TIER, AND WHAT IS LEFT OUT OF IT
 -----------------------------------------
@@ -156,6 +174,10 @@ and are asserted on here rather than counted.
   control-by-index   `the number of controls of this card`, `the short name of
                      control N of this card` and `delete control N of this
                      card`: suBuildReset's sweep of an older paste's window.
+  native-command     a modelled extension COMMAND in statement position
+                     (`enHostDestroy sEnServer`, a bare `enDeinitialize`)
+                     reaches the model; the base reaches a native only as a
+                     function. Fires only in the transport-holds scenario.
 
 REFUSED rather than modelled: a read of `the visible` of a control that never
 had it set (the engine says true, the runner would say empty; a check reading
@@ -172,7 +194,9 @@ the release are OXT-PASS-RUNBOOK row 48), `is` FOLDING CASE (the interpreter's
 `is` is case-SENSITIVE whatever `the caseSensitive` says, so a case defect in
 suLineKind is invisible here), the three SLOW_SCOPES and Run all, and EVERY
 PRESENT-EXTENSION PATH: with every native absent no loopback opens, no session
-is taken and no member harness runs. It settles LOGIC. It upgrades no honesty
+is taken and no member harness runs - bar the transport-holds scenario, whose
+two libraries are a refcount and a peer table and no more (no event arrives,
+no byte crosses). It settles LOGIC. It upgrades no honesty
 label: what the 2026-09-24 engine runs did not show (a row's Run, Show, the
 filters, the pills' look) stays "verified statically plus a headless UI boot;
 needs an OXT pass" (D-23, runbook row 48).
@@ -374,6 +398,7 @@ DELTAS = collections.OrderedDict([
     ("length-of", "the length of X"),
     ("effective-filename", "the effective filename of this stack is empty"),
     ("control-by-index", "controls of this card, by index"),
+    ("native-command", "a modelled extension command in statement position"),
 ])
 FIRED = collections.Counter()
 
@@ -394,6 +419,10 @@ class SuiteWorld(DB.World):
         self.next_msg_id = 3001
         self.answers = []
         self.passed = []            # message names, in the order passed
+        # The modelled extension COMMANDS a statement may call (lower-case
+        # names in LCS.HASHES). EMPTY in the all-absent profile; only
+        # scenario_transport_holds fills it, for its own interpreter.
+        self.native_commands = set()
 
 
 class SuiteExpr(DB.DemoExpr):
@@ -583,6 +612,14 @@ class SuiteInterp(DB.DemoInterp):
             if parts and _rxi(r'field\s+').match(parts[2].strip()):
                 self._put_field(parts, env)
                 return i + 1
+        elif w0 in world.native_commands:
+            # a modelled extension COMMAND in statement position (`enHostDestroy
+            # sEnServer`, a bare `enDeinitialize`): the base reaches natives
+            # only as functions, so without this a statement call would be a
+            # caught "can't find handler" and the model would never see it
+            LCS.HASHES[w0](self._args(line[len(head[0]):].strip(), env))
+            fire("native-command")
+            return i + 1
         elif w0 in self.handlers:
             # a statement-position handler call, its arguments parsed by THIS
             # class's expressions (the runner's own branch builds a DemoExpr,
@@ -1969,6 +2006,393 @@ def scenario_rebuild(c, board):
 
 
 # ==========================================================================
+# the transports' process-wide holds (work plan suite-wide #16)
+# ==========================================================================
+#
+# The ONE scenario that is not all-absent. ENet and DataChannelXT are
+# installed as modelled natives in a fresh interpreter of their own, after
+# every other scenario has run, and removed again before the gate reports:
+# the model is a model of each library's PROCESS-WIDE lifecycle and nothing
+# else (no events arrive, so each loopback waits for its deadline), which is
+# all the question needs. ANOTHER stack is open beside the paste: it holds
+# ENet once and has one live host, and it has one live DataChannel peer.
+
+ENX_ERR_NATIVE = -5         # enetxt/src/enx_abi.h: enet_initialize failed
+
+
+class EnetModel:
+    """enetxt's initialisation as its shim keeps it (enetxt/src/enet_shim.cpp,
+    enx_initialize / enx_deinitialize over g_init_count): an initialize adds
+    one hold (a FIRST one can fail, and then adds nothing); a deinitialize
+    takes one away, never below zero, and the one that reaches zero destroys
+    EVERY live host in the process, whichever stack made it. `other` holds
+    belong to the other stack, with one host of its own; every call this
+    interpreter makes is the paste's."""
+
+    def __init__(self, other=1, init_fails=False):
+        self.count = other
+        self.init_fails = init_fails
+        self.next = 0x10001
+        self.hosts = {}             # handle -> "other" | "paste"
+        if other:
+            self.hosts[self._mint()] = "other"
+        self.took = 0               # the paste's initializes that returned 0
+        self.gave = 0               # the paste's deinitializes
+        self.worst = 0              # the most the paste ever gave beyond what it took
+        self.attempts = 0           # host creations the paste asked for
+        self.other_host_lost = False
+
+    def _mint(self):
+        h = self.next
+        self.next += 1
+        return h
+
+    def initialize(self, a):
+        if self.count <= 0 and self.init_fails:
+            return ENX_ERR_NATIVE
+        self.count += 1
+        self.took += 1
+        return 0
+
+    def deinitialize(self, a):
+        self.gave += 1
+        self.worst = max(self.worst, self.gave - self.took)
+        if self.count <= 0:
+            return 0
+        self.count -= 1
+        if self.count == 0:
+            if "other" in self.hosts.values():
+                self.other_host_lost = True
+            self.hosts.clear()
+        return 0
+
+    def create(self, a):
+        self.attempts += 1
+        if self.count <= 0:
+            return 0                # "call enInitialize first"
+        h = self._mint()
+        self.hosts[h] = "paste"
+        return h
+
+    def connect(self, a):
+        return self._mint() if int(LCS._n(a[0])) in self.hosts else 0
+
+    def destroy(self, a):
+        self.hosts.pop(int(LCS._n(a[0])), None)
+        return 0
+
+    def paste_hosts(self):
+        return sorted(h for h, who in self.hosts.items() if who == "paste")
+
+
+class DcModel:
+    """datachannelxt's lifecycle as its shim keeps it (datachannelxt/src/
+    datachannel_shim.cpp, dcx_init / dcx_cleanup): dcInit is an idempotent
+    one-time init with NO count, and dcCleanup frees EVERY peer and channel
+    in the process however many dcInit calls came first. The other stack has
+    one live peer. What the paste can promise is to call dcCleanup only while
+    it holds an init of its own since its last dcCleanup; a call without one
+    is recorded."""
+
+    def __init__(self):
+        self.next = 0x20001
+        self.peers = {self._mint(): "other"}
+        self.channels = set()
+        self.holding = False        # a paste dcInit since its last dcCleanup
+        self.cleanups = 0
+        self.unpaired = 0           # dcCleanup calls made without a hold
+        self.other_peer_lost = False
+
+    def _mint(self):
+        h = self.next
+        self.next += 1
+        return h
+
+    def init(self, a):
+        self.holding = True
+        return 0
+
+    def cleanup(self, a):
+        self.cleanups += 1
+        if not self.holding:
+            self.unpaired += 1
+        self.holding = False
+        if "other" in self.peers.values():
+            self.other_peer_lost = True
+        self.peers.clear()
+        self.channels.clear()
+        return 0
+
+    def state(self, a):
+        return 0 if int(LCS._n(a[0])) in self.peers else -1
+
+    def create_peer(self, a):
+        h = self._mint()
+        self.peers[h] = "paste"
+        return h
+
+    def create_channel(self, a):
+        if int(LCS._n(a[0])) not in self.peers:
+            return 0
+        h = self._mint()
+        self.channels.add(h)
+        return h
+
+    def free_peer(self, a):
+        self.peers.pop(int(LCS._n(a[0])), None)
+        return 0
+
+    def free_channel(self, a):
+        self.channels.discard(int(LCS._n(a[0])))
+        return 0
+
+    def paste_peers(self):
+        return sorted(h for h, who in self.peers.items() if who == "paste")
+
+
+# The statement-position COMMANDS the paste calls on the two libraries. The
+# two releases are here because the pre-fix core called them bare, and the
+# fixture's planted old code must reach the model the way the engine would.
+TRANSPORT_COMMANDS = ("enhostdestroy", "endeinitialize", "dccleanup",
+                      "dcfreepeer", "dcfreechannel", "dcclosechannel")
+
+
+def install_transports(world, models):
+    """Install (or re-point) the modelled natives at models["en"] and
+    models["dc"], which a step may replace; returns the names installed so the
+    caller can remove every one."""
+    en = lambda name: (lambda a: getattr(models["en"], name)(a))   # noqa: E731
+    dc = lambda name: (lambda a: getattr(models["dc"], name)(a))   # noqa: E731
+    funcs = {
+        "enlibraryversion": lambda a: "enet 1.3.18",
+        "eninitialize": en("initialize"),
+        "endeinitialize": en("deinitialize"),
+        "enhostcreateserver": en("create"),
+        "enhostcreateclient": en("create"),
+        "enconnect": en("connect"),
+        "enhostdestroy": en("destroy"),
+        # no event ever arrives: the loopback waits for its deadline
+        "enpoll": lambda a: {},
+        "ensend": lambda a: -4 if len(str(LCS._disp(a[2]))) > 60000 else 0,
+        "endisconnect": lambda a: 0,
+        "dclibraryversion": lambda a: "libdatachannel v0.24.5",
+        "dcinit": dc("init"),
+        "dccleanup": dc("cleanup"),
+        "dcpeerstate": dc("state"),
+        "dccreatepeer": dc("create_peer"),
+        "dccreatechannel": dc("create_channel"),
+        "dcpoll": lambda a: {},
+        "dcfreepeer": dc("free_peer"),
+        "dcfreechannel": dc("free_channel"),
+        "dcclosechannel": lambda a: 0,
+    }
+    LCS.HASHES.update(funcs)
+    world.native_commands = set(TRANSPORT_COMMANDS)
+    return list(funcs)
+
+
+def check_other_intact(c, models, when, paste_hosts=0, dc_lost_ok=False):
+    """The other stack's side after `when`, and the paste's pairing: the
+    count it holds is untouched, its host alive, no deinitialize given back
+    beyond what the paste took, and no dcCleanup without a hold."""
+    en, dc = models["en"], models["dc"]
+    c.eq("%s: the other stack's ENet hold is intact and the paste holds "
+         "nothing (the count is back to 1)" % when, en.count, 1)
+    c.eq("%s: the paste never gave back an ENet hold it did not take" % when,
+         en.worst, 0)
+    c.ck("%s: the other stack's ENet host is alive" % when,
+         not en.other_host_lost)
+    c.eq("%s: the paste's own hosts are destroyed" % when,
+         len(en.paste_hosts()), paste_hosts)
+    c.eq("%s: no dcCleanup without a DataChannel hold of the paste's own"
+         % when, dc.unpaired, 0)
+    if not dc_lost_ok:
+        c.ck("%s: the other stack's DataChannel peer is alive" % when,
+             not dc.other_peer_lost)
+
+
+def drive_past_deadline(c, board, label):
+    """One live pump tick (nothing arrives), then the clock past the run's
+    deadline and every queued message delivered: the loopbacks FAIL on the
+    deadline, as on an engine with blocked loopback UDP (trap 5.5), and the
+    run reaches stFinish and stTeardown."""
+    ip, world = board.ip, board.world
+    try:
+        deliver_next(ip, world, only=("suPump",))
+        world.ms = max(world.ms, int(LCS._n(board.g("sDeadline"))) + 1)
+        deliver_all(ip, world)
+        return True
+    except Exception as exc:                            # noqa: BLE001
+        return c.threw(label, exc)
+
+
+def start_row(c, board, key):
+    """A row's Run through its button and its armed tick; True when the run
+    is live with its pump queued."""
+    ip, world = board.ip, board.world
+    _down, _up, err = press(ip, world, "suRun" + key)
+    if not c.ck("the %s Run press arms its tick" % key,
+                err is None and ip.pending_names() == ["suRunTick"],
+                err or repr(ip.pending_names())):
+        return False
+    try:
+        deliver_next(ip, world, only=("suRunTick",))
+    except Exception as exc:                            # noqa: BLE001
+        return c.threw("the %s run's tick runs" % key, exc)
+    return c.eq("the %s run is live, its pump queued" % key,
+                (board.g("sAsyncRunning"), ip.pending_names()),
+                ("true", ["suPump"]))
+
+
+def held(board):
+    return (int(LCS._n(board.g("sSuEnHeld"))), int(LCS._n(board.g("sSuDcHeld"))))
+
+
+def scenario_transport_holds(c, src, sandbox):
+    """Work plan suite-wide #16: open, a row's Run on each transport, a
+    re-entry mid-run, a close mid-run and a close at rest, with another
+    stack's ENet hold, host and DataChannel peer beside the paste. At every
+    step the other stack's hold is intact, and the paste gives back exactly
+    the holds it took (a refused initialize taken as none)."""
+    c.section("the transports' process-wide holds (another stack holds "
+              "ENet and a DataChannel peer)")
+    world = SuiteWorld(tempfile.mkdtemp(dir=sandbox, prefix="holds-"))
+    ip = SuiteInterp(src, world)
+    install_engine_builtins(world)
+    models = {"en": EnetModel(), "dc": DcModel()}
+    names = install_transports(world, models)
+    try:
+        # THE MODEL CAN FIRE. Two unpaired deinitializes against a hold of
+        # one take the other stack's host, and a dcCleanup without a hold is
+        # recorded: every "intact" check below is a check that could fail.
+        probe = EnetModel()
+        probe.deinitialize([])
+        probe.deinitialize([])
+        c.ck("[MODEL] an unpaired deinitialize ends the other stack's host",
+             probe.other_host_lost and probe.worst == 2 and probe.count == 0)
+        dprobe = DcModel()
+        dprobe.cleanup([])
+        c.ck("[MODEL] a dcCleanup without a hold is recorded and frees the "
+             "other stack's peer", dprobe.unpaired == 1
+             and dprobe.other_peer_lost)
+
+        ip.call("suBuild", [])
+        board = Board(ip, world)
+        # OPEN: openStack's order up to its run (suBuild, then stCleanup
+        # before anything was initialised); scenario_boot asserts the order
+        ip.call("stCleanup", [])
+        check_other_intact(c, models, "open (stCleanup before any run)")
+
+        # enetxt's row: the fold's two holds and the loopback's one
+        if not start_row(c, board, "enetxt"):
+            return False
+        en = models["en"]
+        c.eq("the enetxt run took three holds (the folded harness's two and "
+             "the loopback's one) and counts them",
+             (en.count, en.took, held(board)[0]), (4, 3, 3))
+        c.eq("the loopback made its two hosts under the paste's own hold",
+             len(en.paste_hosts()), 2)
+        if not drive_past_deadline(c, board, "the enetxt run finishes"):
+            return False
+        check_other_intact(c, models, "after an enetxt run")
+        c.eq("the run gave back exactly its three", (en.gave, held(board)[0]),
+             (3, 0))
+        lines = _lines(board.report())
+        c.ck("the teardown asserted the release, and passed",
+             "PASS  enDeinitialize returns 0" in lines,
+             [ln for ln in lines if "enDeinitialize" in ln])
+
+        # RE-ENTRY mid-run (runbook 5.2): openStack's first two steps on a
+        # live run, then the new run it starts (an enetxt run stands in for
+        # Run all, as in scenario_boot)
+        if not start_row(c, board, "enetxt"):
+            return False
+        c.eq("a second enetxt run holds three again", en.count, 4)
+        ip.call("suBuild", [])
+        ip.call("stCleanup", [])
+        c.eq("re-entry's stCleanup cancelled the live run's pump",
+             ip.pending_names(), [])
+        check_other_intact(c, models, "re-entry mid-run (suBuild, stCleanup)")
+        ip.call("stRun", ["enetxt"])
+        c.eq("the re-entered run holds three of its own", en.count, 4)
+        if not drive_past_deadline(c, board, "the re-entered run finishes"):
+            return False
+        check_other_intact(c, models, "after the re-entered run")
+
+        # the cross row: the loopback's hold only (its fold is enetxt's)
+        # and a DataChannel hold; CLOSED mid-run
+        if not start_row(c, board, "cross"):
+            return False
+        c.eq("the cross run holds ENet once and DataChannelXT once",
+             held(board), (1, 1))
+        dc = models["dc"]
+        try:
+            ip.call("closeStack", [])
+        except Exception as exc:                        # noqa: BLE001
+            return c.threw("closeStack mid-run runs", exc)
+        check_other_intact(c, models, "closeStack mid-run", dc_lost_ok=True)
+        c.eq("closing mid-run gave back both holds, dcCleanup once",
+             (held(board), dc.cleanups), ((0, 0), 1))
+        c.eq("and freed the paste's own peers", dc.paste_peers(), [])
+        # A DataChannel run STILL frees another stack's peers: dcCleanup is
+        # process-wide and uncounted in its shim, the residual the core's
+        # header names. Asserted so the model's DataChannel half is proven
+        # able to see a lost peer, which the steps above and below rely on.
+        c.ck("[RESIDUAL] a run that holds DataChannelXT still ends the other "
+             "stack's peer (dcCleanup is uncounted: close DataChannel stacks "
+             "first, the header says)", dc.other_peer_lost)
+
+        # CLOSE at rest, then a sodiumxt row, with the other peer back
+        models["dc"] = dc = DcModel()
+        try:
+            ip.call("closeStack", [])
+        except Exception as exc:                        # noqa: BLE001
+            return c.threw("closeStack at rest runs", exc)
+        check_other_intact(c, models, "closeStack at rest")
+        gave = en.gave
+        if not start_row(c, board, "sodiumxt") or not finish(c, board):
+            return False
+        check_other_intact(c, models, "after a sodiumxt run")
+        c.eq("a run that never touched a transport called neither release",
+             (en.gave - gave, dc.cleanups), (0, 0))
+
+        # datachannelxt's row: one dcCleanup, paired, for three dcInits
+        if not start_row(c, board, "datachannelxt"):
+            return False
+        c.eq("the datachannelxt run holds three (the fold's two, the "
+             "loopback's one)", held(board)[1], 3)
+        if not drive_past_deadline(c, board, "the datachannelxt run finishes"):
+            return False
+        check_other_intact(c, models, "after a datachannelxt run",
+                           dc_lost_ok=True)
+        c.eq("dcCleanup once, with the paste's own hold", (dc.cleanups,
+                                                           held(board)[1]),
+             (1, 0))
+
+        # A REFUSED initialize is no hold: nobody else holds ENet and the
+        # library cannot start, so every enInitialize fails
+        models["en"] = en = EnetModel(other=0, init_fails=True)
+        if not start_row(c, board, "enetxt"):
+            return False
+        c.eq("three refused enInitialize calls are counted as no hold",
+             (en.took, held(board)[0]), (0, 0))
+        c.eq("and the loopback stopped at the refusal: no host was attempted",
+             en.attempts, 0)
+        c.eq("the loopback reads failed, not a held port",
+             board.g("sPhaseEn"), "failed")
+        if not finish(c, board, "the refused run finishes"):
+            return False
+        c.eq("the paste gave back nothing it did not take", (en.gave,
+                                                             en.worst), (0, 0))
+        check_no_timers(c, board)
+        return True
+    finally:
+        for name in names:
+            LCS.HASHES.pop(name, None)
+        world.native_commands = set()
+
+
+# ==========================================================================
 # the drive
 # ==========================================================================
 
@@ -2062,6 +2486,13 @@ def main(argv):
             check_no_timers(c, board)
             check_delimiters(c)
         scenario_slow_reasons(c, src, sandbox)
+        # LAST, in an interpreter of its own: the one scenario with modelled
+        # natives, removed again before anything else reads LCS.HASHES
+        try:
+            scenario_transport_holds(c, src, sandbox)
+        except Exception as exc:                        # noqa: BLE001
+            c.threw("the transport-holds scenario ran to its end", exc)
+        check_delimiters(c)
         c.section("EXPECTED_MODEL_FAILS")
         c.eq("every EXPECTED_MODEL_FAILS entry was printed by some run (a "
              "stale entry is an excuse for a failure that is gone)",
@@ -2085,10 +2516,14 @@ def finish_report(c, t0):
     print("check-suite-ui-boot: OK (%d checks, %.1fs): the board built and "
           "rebuilt over an older window; %s ran through their rows' Run; the "
           "filters, Show, Copy, the refusals, a close mid-run and the boot "
-          "self-check held, all-absent profile. NOT RUN in this fast tier: "
+          "self-check held, all-absent profile; and beside another stack's "
+          "modelled ENet hold and DataChannel peer, open, row Runs, a "
+          "re-entry and closes gave back exactly the holds the paste took. "
+          "NOT RUN in this fast tier: "
           "the %s scopes and Run all (their folded harnesses, not the "
           "board). NOT SEEN: rendering, parsing, message delivery, "
-          "case-folding `is`, and every present-extension path. Logic only; "
+          "case-folding `is`, and every present-extension path bar the "
+          "two transports' holds. Logic only; "
           "needs an OXT pass." % (c.n, elapsed, ", ".join(FAST_SCOPES),
                                   ", ".join(sorted(SLOW_SCOPES))))
     return 0

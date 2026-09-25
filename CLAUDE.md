@@ -223,6 +223,11 @@ because a harness once ran against a stale in-memory library and reported failur
   handle on every call and never start one (a cached handle went stale on every run after the
   first; check 6b). `en1stCleanup`/`dc1stCleanup` call
   `enDeinitialize`/`dcCleanup` and must stay unreachable; `check-suite-selftest.py` enforces it.
+  Both libraries' init is PROCESS-wide (ENet's shim refcounts it and the release that reaches
+  zero destroys every host; `dcCleanup` frees every peer), so the paste takes and gives back its
+  holds only through the core's counted `suEnInit`/`suEnRelease` and `suDcInit`/`suDcRelease`,
+  the two folds' inits rewritten to them (work plan suite-wide #16). Check 18 refuses any reachable
+  call outside those four; `check-suite-ui-boot.py` drives them beside a modelled other stack.
 - **box2dxt's fold**, each mechanism asserting its inputs exist: `strip_spans` cuts the harness's
   carried Kit (embedded once, from `src/`); `drop_extra` drops `openCard`, `closeCard` and
   `buildStUI`; `keep_names` keeps `b2kFell`, `b2kSensorEnter` and `b2kContact` unprefixed, because
