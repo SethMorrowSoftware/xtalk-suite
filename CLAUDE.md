@@ -313,12 +313,13 @@ worse than no gate, because it answers the question nobody asks twice.
   allowlist `[a-z]+xt` that could not match box2dxt. Every native member's CURRENT binaries come
   from the 2026-09-12 dispatch (run 34657390798 from 0f17ab5, commit 421bab3). Their WINDOWS
   builds first met an engine on 2026-09-24: the D-23 suite paste loaded all six and ran every
-  member's sections (runbook section 8; the bitness was not recorded). On 2026-09-25 a Linux
-  engine ran the same paste green (2672/0/10) with a Linux build of all six loaded, but which
-  builds is not recorded (neither the bitness nor whether the committed `.so` files were
-  installed; torrentxt's enforced the 2026-09-08 BEP44 cap, so it was built from that source or
-  later, INFERRED). No engine has loaded the mac builds yet. The Windows DLLs carry libsodium
-  1.0.22 (D-08) and libtorrent 2.1.1, not the versions pinned for the other platforms, and the
+  member's sections (runbook section 8; the bitness was not recorded). Their `x86_64-linux`
+  builds (sodiumxt's and box2dxt's still run 12's) first met an engine on the record on
+  2026-09-25: the same paste ran green (2672/0/10) on 64-bit Kubuntu 24.04 with "the latest
+  builds", by the maintainer's account (torrentxt's 997-byte refusals agree: no committed Linux
+  build before 421bab3 carries that cap; the OXT build and library versions not recorded). No
+  engine has loaded the `x86-linux` or mac builds yet. The Windows DLLs carry libsodium 1.0.22
+  (D-08) and libtorrent 2.1.1, not the versions pinned for the other platforms, and the
   2026-09-24 run exercised both by the maintainer's account (the report prints no library
   version).
 

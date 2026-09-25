@@ -129,7 +129,7 @@ A standard OXT extension: the LCB module plus the native library under
 slices, first landed 2026-08-27 by the suite's `release-binaries.yml` two-slice-lipo job; all
 five rebuilt 2026-09-12). Both Linux libraries need glibc 2.38 or newer (measured
 2026-09-23): Ubuntu 22.04, Debian 12 and RHEL 9 cannot load them; the x86_64 one loaded on
-Kubuntu 24.04 (glibc 2.39) on 2026-09-25. Install through the
+2026-09-25 on Kubuntu 24.04 (by the maintainer's account; that release ships glibc 2.39). Install through the
 Extension Manager and the engine resolves `c:datachannelxt>`: no loose library, no `sudo`.
 
 One rule the app must follow: **call `dcCleanup` before quitting** (e.g. on `closeStack`),

@@ -282,8 +282,8 @@ host), a two-machine run recorded against the dht-chat demo by name (the 2026-08
 report does not name its stack), any engine record for
 `examples/datachannel-loopback.livecodescript`, and a Mac engine load. Both Linux libraries
 need glibc 2.38 or newer (measured 2026-09-23 with `objdump -T`); the x86_64 one loaded on
-Kubuntu 24.04, whose release ships 2.39. Open work is tracked in the suite's
-docs/WORK-PLAN.md.
+2026-09-25 on Kubuntu 24.04 by the maintainer's account, a release that ships 2.39 (the run
+did not print it). Open work is tracked in the suite's docs/WORK-PLAN.md.
 
 ## Build and gates
 

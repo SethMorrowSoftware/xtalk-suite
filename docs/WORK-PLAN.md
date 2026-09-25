@@ -19,13 +19,14 @@ comparison rule and closed suite engine #10; reading that rule in the engine sou
 added suite-wide #18-#19, suite engine #11, coinxt #8 and riptide #9; the sites
 that reading found were fixed the same day (engine note 2.11; holde-em v0.25.4),
 and the holde-em fix turned up holde-em #11-#12, closed the same day at v0.25.5,
-whose own sweep added holde-em #13-#15. A fourth run, the paste's first on Linux
-(2026-09-25, 2672/0/10, the paste as at `f1346e0` by its version lines; runbook
-section 8, which records neither the bitness nor the binaries), read riptide's third probe line
-exactly as the engine source predicts and closed suite engine #11; it closed
-box2dxt engine #1, ran the Linux paste half of suite engine #1 and more of #8,
-narrowed #9 (the paste's loopbacks completed there), and narrowed torrentxt
-engine #1, sodiumxt engine #3 and #4 and holde-em engine #1.
+whose own sweep added holde-em #13-#15. A fourth run, the D-23 paste's first on
+Linux (2026-09-25, 2672/0/10, the paste as at `f1346e0` by its version lines;
+runbook section 8; 64-bit Kubuntu 24.04 with the committed `x86_64-linux` builds
+by the maintainer's account), read riptide's third probe line exactly as the
+engine source predicts and closed suite engine #11; it closed box2dxt engine #1
+and, on that account of its bitness and builds, sodiumxt engine #3 and torrentxt
+engine #1; it ran the Linux paste half of suite engine #1 and more of #8, narrowed
+#9 (the paste's loopbacks completed there), and narrowed holde-em engine #1.
 
 Where the rest lives: each engine leg's full green criterion, and the labels it flips,
 is its numbered row in [OXT-PASS-RUNBOOK.md](OXT-PASS-RUNBOOK.md) section 1.2 (this
@@ -59,12 +60,12 @@ result. Every "engine-proven" below quotes a dated record already in the tree.
 
 | Member | Latest dated engine record | Headless work open | Engine work open | Needs |
 |---|---|---|---|---|
-| sodiumxt | `sxSelfTest()` 106/106 in the suite paste on Linux, 2026-09-25 (the ABI-10 ChaCha20 section's first recorded Linux run; the bitness and the build not recorded), and on Windows, 2026-09-24, on a shipped MSVC DLL by the maintainer's account (the 2026-09-12 build's first engine load; the bitness not recorded) | only optional: the unbound length accessors | the MSVC DLL of the other bitness; first Mac load; a Linux run that names its bitness; the demo | S1, S5 |
-| torrentxt | harness 106/106 in the suite paste on Linux, 2026-09-25 (the 996-byte caps included, so a library built from 2026-09-08 source or later, INFERRED; the bitness and the build not recorded), and on Windows, 2026-09-24: the 2026-09-12 build's first engine load by the maintainer's account, and libtorrent 2.1.1's first recorded Windows run; 101/101 on 2026-08-17, 08-20 and 08-24 | ABI 12 alert codes; Windows libtorrent pin; the shim's btih hex check; a route-key golden mirror | a Linux run that names its row and build; demo re-opens; Tor toggle and #31-#33; closing-pass C/D; a real swarm | S1-S5, NET |
-| enetxt | folded 34/34 and the paste's live loopback COMPLETED, Linux, 2026-09-25 (the build not recorded); folded 34/34 on the 2026-09-12 DLL, Windows, 2026-09-24 (the paste's loopback stalled there, 5.5); async loopback 2026-08-13 | only optional: the freshness gate's Windows DLL ABI read | standalone selftest; leg B and the LAN chat on two machines; internet chat; Mac | S1, S3, 2NET, S5 |
-| datachannelxt | folded 39/39 and the paste's live loopback COMPLETED, Linux, 2026-09-25 (the build not recorded); folded 39/39 on the 2026-09-12 DLL, Windows, 2026-09-24 (the paste's loopback stalled there, 5.5); standalone async loopback 2026-08-15 | owner calls only: the Windows OpenSSL pin and notice; the legacy shim removal | loopback demo (no record at all); leg E; two-network call; browser interop; Mac | S1, S3, 2NET, S5 |
+| sodiumxt | `sxSelfTest()` 106/106 in the suite paste on Linux, 2026-09-25, on the `x86_64-linux` file (run 12's) by the maintainer's account (the ABI-10 ChaCha20 section's first recorded Linux run), and on Windows, 2026-09-24, on a shipped MSVC DLL by the maintainer's account (the 2026-09-12 build's first engine load; the bitness not recorded) | only optional: the unbound length accessors | the MSVC DLL of the other bitness; first Mac load; 32-bit Linux; the demo | S1, S5 |
+| torrentxt | harness 106/106 in the suite paste on Linux, 2026-09-25, the 2026-09-12 `x86_64-linux` build's first engine load by the maintainer's account (the 996-byte caps included, which agree), and on Windows, 2026-09-24: the 2026-09-12 build's first engine load by the maintainer's account, and libtorrent 2.1.1's first recorded Windows run; 101/101 on 2026-08-17, 08-20 and 08-24 | ABI 12 alert codes; Windows libtorrent pin; the shim's btih hex check; a route-key golden mirror | 32-bit Linux (row 47); demo re-opens; Tor toggle and #31-#33; closing-pass C/D; a real swarm | S1-S5, NET |
+| enetxt | folded 34/34 and the paste's live loopback COMPLETED, Linux, 2026-09-25, on the 2026-09-12 `x86_64-linux` build by the maintainer's account; folded 34/34 on the 2026-09-12 DLL, Windows, 2026-09-24 (the paste's loopback stalled there, 5.5); async loopback 2026-08-13 | only optional: the freshness gate's Windows DLL ABI read | standalone selftest; leg B and the LAN chat on two machines; internet chat; Mac | S1, S3, 2NET, S5 |
+| datachannelxt | folded 39/39 and the paste's live loopback COMPLETED, Linux, 2026-09-25, on the 2026-09-12 `x86_64-linux` build by the maintainer's account; folded 39/39 on the 2026-09-12 DLL, Windows, 2026-09-24 (the paste's loopback stalled there, 5.5); standalone async loopback 2026-08-15 | owner calls only: the Windows OpenSSL pin and notice; the legacy shim removal | loopback demo (no record at all); leg E; two-network call; browser interop; Mac | S1, S3, 2NET, S5 |
 | onionxt | offline self-test 74/0/1 in the suite paste, Linux 2026-09-25 and Windows 2026-09-24 (its floor held both times: 75 against 51); the live-Tor core from the early bring-up | Mode B's lifecycle (after leg F) | Mode B (leg F); the B.12 probes; negative paths; the round trip | S1, S2, S4 |
-| coinxt | 296/296 in the suite paste, Linux 2026-09-25 (an ABI-7 library, the build not recorded) and Windows 2026-09-24 on the 2026-09-12 DLL (ABI 7's six `cxPubkeyCombine` checks included both times); wallet logs to 2026-09-03 | D-17; per-push Windows/mac CI; Core residue; gap limit | row Q's wallet half (silent payments); demo; broadcast; the wallet's post-2026-09-04 surface; Core regtest | S1, S2, NET, S5 |
+| coinxt | 296/296 in the suite paste, Linux 2026-09-25 (the 2026-09-12 `x86_64-linux` library by the maintainer's account, at ABI 7) and Windows 2026-09-24 on the 2026-09-12 DLL (ABI 7's six `cxPubkeyCombine` checks included both times); wallet logs to 2026-09-03 | D-17; per-push Windows/mac CI; Core residue; gap limit | row Q's wallet half (silent payments); demo; broadcast; the wallet's post-2026-09-04 surface; Core regtest | S1, S2, NET, S5 |
 | nostrxt | core 277/0/2 in the suite paste, Linux 2026-09-25 and Windows 2026-09-24 (its floor held both times: 279 against 278); relay SEND live 2026-08-24 | owner scope only: phase 9 (NIP-17/59, the outbox, `.onion` relays) | relay receive, NIP-42, `ws://`, a bad certificate, forced negatives | S1, NET, a local relay |
 | box2dxt | harness v32 385/0 in the suite paste on its 1200-wide card, Linux 2026-09-25 and Windows 2026-09-24 (on the 2026-09-12 DLL there); both runs' delimiter lines settle engine note 2.3's itemDelimiter half | x86-linux glibc regression; platformer polish; three shim defects (dispatch) | the five games; R1; first Mac load; feel pass | S1, S5, PERSON |
 | riptide | phases 1-4 on two machines (to 2026-08-15); 489/0/2 in the suite paste, Linux 2026-09-25 (its third probe line read the engine source's comparison rule, engine notes 2.10 and 2.11) and Windows 2026-09-24 (the day's second and third runs; its first read 487/2/2, both FAILs fixed that day); phase-8 boot 2026-08-29 | bridge reader; RSL1 magic; own-head refresh; per-identity app state | row 35; the paste's second Run all (row 48); phases 5, 6, 7 live; phase 8 live; faststart re-run | S1-S4, NET |
@@ -82,18 +83,17 @@ and box2dxt's raw `b2*` row 131/376, each with an armed floor. Run
 
 ### 1.1 Facts that shape the work
 
-**The 2026-09-12 binaries have one engine record by name: Windows, 2026-09-24.**
-The D-23 suite paste loaded all six native members from them and ran every member's
-sections (runbook section 8; the maintainer's account that the latest binaries were
-installed; the bitness was not recorded). **On 2026-09-25 a Linux engine ran the same
-paste with all six loaded** (2672/0/10, runbook section 8), but which Linux builds
-loaded is not recorded: neither the bitness nor whether the committed `.so` files
-(the 2026-09-12 set, bar sodiumxt's and box2dxt's run-12 files below) or local builds
-were installed. Two members narrow it, INFERRED: torrentxt enforced the 996-byte
-BEP44 cap, which entered the shim on 2026-09-08 (`aad430a`) and which among committed
-Linux builds only `421bab3`'s carry, so its library was built from that source or
-later; coinxt's `cxCheckABI` stayed silent, so its library answered ABI 7 (committed
-from `dca02b0`, 2026-09-10). No engine has loaded the mac builds.
+**The 2026-09-12 binaries have two engine records: Windows, 2026-09-24, and Linux
+x86_64, 2026-09-25.** The D-23 suite paste loaded all six native members from them
+and ran every member's sections, first on Windows (runbook section 8; the
+maintainer's account that the latest binaries were installed; the bitness was not
+recorded), then on Linux (2672/0/10; by the maintainer's account 64-bit Kubuntu
+24.04 with "the latest builds", read as the committed `x86_64-linux` files: the
+2026-09-12 set, bar sodiumxt's and box2dxt's run-12 files below). The report agrees
+where it can: torrentxt enforced the 996-byte BEP44 cap, which entered the shim on
+2026-09-08 (`aad430a`) and which among committed Linux builds only `421bab3`'s
+carry, and coinxt's `cxCheckABI` passed, so its library answered ABI 7. No engine
+has loaded the `x86-linux` or mac builds.
 `release-binaries.yml` run
 `34657390798` from `0f17ab5` was committed as `421bab3` on 2026-09-12. That commit
 replaced every Windows DLL (all six members, both bitnesses) and the Linux and mac
@@ -108,10 +108,10 @@ release commit's message carries the installer's per-library verdicts. No native
 since `421bab3`. Before 2026-09-24 the latest dated engine records predated it: the
 2026-08-24 paste, the 2026-08-27 two-machine paste and holde-em fold, the 2026-08-29
 riptide boot, and the 2026-08-31 to 09-03 coin-wallet logs (the 2026-08-27 paste,
-2440/2/3, does not record which platform or binaries it loaded). So a Linux run that
-names its bitness and says it installed the committed packages is the first record
-for that `.so` row, and a run that names its Windows bitness is the first record for
-that DLL row. Record which DLL or `.so` row loaded; a regression there is a finding
+2440/2/3, does not record which platform or binaries it loaded). So the 2026-09-25
+run is the first record for the `x86_64-linux` rows, a 32-bit Linux run will be the
+first for `x86-linux`, and a run that names its Windows bitness the first for that
+DLL row. Record which DLL or `.so` row loaded; a regression there is a finding
 about those builds.
 
 **Windows ships different upstream versions from Linux and mac.** sodiumxt's MSVC
@@ -138,14 +138,14 @@ The 2.38 floors come from C23 `__isoc23_strtol` and friends, `arc4random` and
 `_dl_find_object`. They mean **datachannelxt cannot load on Ubuntu 22.04 (2.35),
 Debian 12 (2.36) or RHEL 9 (2.34)**, nor can torrentxt's 32-bit build. The S1 Linux
 machine needs glibc 2.38 or newer to load all six members. The 2026-09-25 Linux
-machine loaded all six and did not record its glibc (2.38 or newer IF it ran the
-committed datachannelxt build: INFERRED, and the record does not say which it ran).
+machine, Kubuntu 24.04 by the maintainer's account (a release that ships glibc 2.39;
+the run did not print it), loaded all six.
 
 **Platform rows with no engine record** (runbook rows 23, 24, 47): universal-mac for
 all six members (CI built and tested every dylib; box2dxt's was rebuilt
 byte-identical by both release runs, see above); x86-win32 for sodiumxt, torrentxt and coinxt (whose 32-bit DLL has not
 executed even in CI: its Windows KAT step is x86_64 only); x86-linux for sodiumxt and
-torrentxt (the 2026-09-25 Linux run named no bitness, so it closes no row).
+torrentxt (the 2026-09-25 Linux run was 64-bit by the maintainer's account).
 
 **State writes are best-effort, not durable.** No `.c`, `.cpp`, `.h` or
 `.livecodescript` file in the tree calls `fsync`, `fdatasync` or `FlushFileBuffers`.
@@ -196,7 +196,7 @@ keeping the scaffold for its report.
 
 | # | Run | Where | Row | Green (in brief) |
 |---|---|---|---|---|
-| 1 | `tests/preflight.livecodescript`, then `tests/suite-selftest.livecodescript`, on Windows and then Linux (glibc 2.38 or newer); quit and relaunch OXT before every torrent-bearing paste (trap 5.1.1). Both pastes have run: Windows 2026-09-24 (2620/5/3) and Linux 2026-09-25 (2672/0/10; runbook section 8). Owed: the preflight on both platforms, and a paste record that says which binaries were installed and the bitness (neither record does; on Linux nothing names the build) | S1 items 0-1 | the member rows | every member LOADED at its ABI; RECORD each member total (the runbook lists the last ones), do not match it |
+| 1 | `tests/preflight.livecodescript`, then `tests/suite-selftest.livecodescript`, on Windows and then Linux (glibc 2.38 or newer); quit and relaunch OXT before every torrent-bearing paste (trap 5.1.1). Both pastes have run: Windows 2026-09-24 (2620/5/3) and Linux 2026-09-25 (2672/0/10; runbook section 8). Owed: the preflight on both platforms, and a Windows paste record that names its bitness (the Linux one does, by the maintainer's account) | S1 items 0-1 | the member rows | every member LOADED at its ABI; RECORD each member total (the runbook lists the last ones), do not match it |
 | 2 | Engine-notes probes: the 2^53 line and the `or` probe | S1 | P | notes 2.4 and 2.5 promoted to OBSERVED with the exact text, or 2.5 rewritten |
 | 3 | Other engine-notes probes: 5.3 (a second stack in front, and a `send ... in` handler writing an unqualified field: record where the write lands); 2.6 (`the number of chars of X + 1`, and `field "x" & tKind`); optionally 1.1 (a second `script "..."` line mid-file with a declared local read below it) | S1 | - | each note promoted with a date, or left DOCUMENTED / UNEVIDENCED |
 | 4 | The demo re-open fleet, including `start-here.livecodescript`: open one card-hook box2dxt game and one stack-hook demo from the launcher and record whether each builds on first open (its `go invisible stack` / parked-closed create path, engine note 5.5) | S1 items 3, 5 | 37, 38 | per row; this is the largest engine item |
@@ -230,13 +230,13 @@ keeping the scaffold for its report.
 - Windows DLLs: MSVC + vcpkg libsodium 1.0.22 (D-08); Linux/mac: pinned 1.0.20.
 - Latest records: 106/106 at ABI 10 in the suite paste on Linux, 2026-09-25, the
   7-check ChaCha20 section included: its first RECORDED Linux run (before it, Linux
-  was last recorded at ABI 9, 2026-08-18). Neither the bitness nor the build was
-  recorded, so no Linux row closes; the committed Linux files are still run 12's
-  (1.1), so IF the committed package was installed, that is what ran. On Windows,
-  106/106 in the suite paste, 2026-09-24, on a shipped MSVC DLL (the bitness not
-  recorded); earlier, 106/106 on 2026-08-24 on a mingw DLL since replaced. The
-  2026-08-27 paste (sodiumxt green, platform and package not recorded) may have
-  loaded the run-12 Linux build (coding #6).
+  was last recorded at ABI 9, 2026-08-18), on the `x86_64-linux` file (release run
+  12's, 1.1) by the maintainer's account (64-bit, "the latest builds"), which closed
+  engine #3; `put sxVersion()` was not recorded. On Windows, 106/106 in the suite
+  paste, 2026-09-24, on a shipped MSVC DLL (the bitness not recorded); earlier,
+  106/106 on 2026-08-24 on a mingw DLL since replaced. The 2026-08-27 paste
+  (sodiumxt green, platform and package not recorded) may have loaded the run-12
+  Linux build first (coding #6).
 
 **Coding.**
 
@@ -251,8 +251,7 @@ keeping the scaffold for its report.
 |---|---|---|---|---|
 | 1 | Preflight and suite paste (or `put sxSelfTest()`) on **both** Windows bitnesses | S5 | 23 | LOADED at 10; 106/0 with SHA3, ristretto and ChaCha20; `put sxVersion()` shows libsodium 1.0.22 |
 | 2 | The same on a Mac (arm64; Intel too if available) | S5 | 24 | 10 and 106/0 |
-| 3 | The same on Linux x86_64, recorded BY BITNESS. The 2026-09-25 Linux paste ran 106/0 with ChaCha20 (the first recorded ChaCha20 run on Linux) on one of the two Linux builds, but recorded neither the bitness nor the package | S1 item 1 | - | 106/0 on `x86_64-linux`, the bitness and `put sxVersion()` recorded (libsodium 1.0.20) |
-| 4 | The same on a 32-bit Linux engine (the 2026-09-25 Linux run may have been this row; its bitness was not recorded) | S5 | 47 | the first x86-linux record, its bitness named |
+| 4 | The same on a 32-bit Linux engine | S5 | 47 | the first x86-linux record |
 | 5 | `sodiumxt/examples/sodium-demo.livecodescript` | S1 item 5 | 37 | all 7 tabs build, the About self-test green, the tamper case rejected (no boot self-check: a human judgement) |
 
 ### 2.2 torrentxt
@@ -264,10 +263,11 @@ keeping the scaffold for its report.
   `alerts_dropped_alert` counting, reported through `btLastError()` until ABI 12:
   `torrentxt/src/torrent_shim.cpp` ("THE BOUNDED INBOUND QUEUE").
 - Latest records: harness 106/106 in the suite paste on Linux, 2026-09-25, the
-  996-byte caps and both `btAddTorrentFile` forms included, on a library built from
-  2026-09-08 source or later (INFERRED from the caps; the committed 2026-09-12 build
-  if the committed package was installed), its bitness, build and libtorrent version
-  not recorded. Harness 106/106 in the suite paste on Windows, 2026-09-24, on the
+  996-byte caps and both `btAddTorrentFile` forms included, on the 2026-09-12
+  `x86_64-linux` build by the maintainer's account (64-bit, "the latest builds"; the
+  caps agree, since no committed Linux build before `421bab3` carries them): its
+  first engine load, which closed engine #1; its libtorrent version was not printed
+  (the tree pins 2.0.11 for Linux). Harness 106/106 in the suite paste on Windows, 2026-09-24, on the
   2026-09-12 build by the maintainer's account (its first engine load, and
   libtorrent 2.1.1's and `load_torrent_buffer`'s first RECORDED Windows run, the
   2026-08-27 paste having recorded neither platform nor binaries; the 996-byte caps
@@ -302,7 +302,6 @@ keeping the scaffold for its report.
 
 | # | Run | Where | Row | Green (in brief) |
 |---|---|---|---|---|
-| 1 | A Linux suite paste that names its row and build. The Linux paste RAN 2026-09-25 (106/106, the 996-byte caps included, so a library built from 2026-09-08 source or later, INFERRED) but recorded neither the bitness nor whether the committed 2026-09-12 package was installed; Windows ran 2026-09-24 (106/106 on the 2026-09-12 build, libtorrent 2.1.1 and `load_torrent_buffer` included) | S1 item 1 | 47 | 106/0 on a named Linux row (`x86_64-linux` or `x86-linux`), the committed 2026-09-12 build recorded as installed |
 | 2 | Re-opens: `torrent-quickshare`, `torrent-dht-channels`, `torrent-client`, `torrent-rp1-chat` | S1 items 3, 5 | 37 | boot self-check green, the card look; in `torrent-quickshare`, the Tor pill (`qsTorPill`, `430,8,612,32`) and the two transport toggles do not overlap the title or tagline, which closes register #30 (ONIONXT-INTEGRATION-PLAN 12.3; row 37 names it) |
 | 3 | Quick Share with the Tor toggle ON; #31 (Anonymous ON / OFF / tor absent) | S2 items 3, 4 | 5, 21 | a share code with no torrent and no DHT call; #31's three behaviours |
 | 4 | Closing-pass legs C (seed/leech hash-verified, resume across an OXT restart) and D (rp1 chat); `torrent-dht-channels` and `torrent-rp1-chat` on two machines | S3 items 1, 6 | 6 | each leg's PASS lines |
@@ -318,7 +317,7 @@ keeping the scaffold for its report.
 - Latest records: the suite paste on Linux, 2026-09-25: folded 34/34 and the paste's
   own live loopback COMPLETED (127.0.0.1:27196: connect, the sealed ciphertext
   byte-for-byte, 60000 bytes reassembled into one message, a graceful disconnect),
-  on a build the record does not name; the Windows paste of 2026-09-24, folded 34/34
+  on the 2026-09-12 `x86_64-linux` build by the maintainer's account; the Windows paste of 2026-09-24, folded 34/34
   on the 2026-09-12 DLL with that loopback stalled (1.3 #9); standalone selftest
   2026-08-07; async loopback 2026-08-13; folded 34 on 2026-08-20; `enet-lan-chat`
   on one Linux machine 2026-08-18;
@@ -335,7 +334,7 @@ keeping the scaffold for its report.
 
 | # | Run | Where | Row | Green (in brief) |
 |---|---|---|---|---|
-| 1 | `enetxt/tests/enet-selftest.livecodescript` standalone | S1 item 6 | - (runbook 4.3) | no `RUN NOT FINISHED` trailer; the first async run of the member's own harness on the 2026-09-12 binaries (the suite paste loaded them first, 2026-09-24, and its loopback stalled: 1.3 #9; the paste's loopback completed on Linux 2026-09-25, on an unnamed build) and the first standalone async run since the `sEnPolling` rename |
+| 1 | `enetxt/tests/enet-selftest.livecodescript` standalone | S1 item 6 | - (runbook 4.3) | no `RUN NOT FINISHED` trailer; the first async run of the member's own harness on the 2026-09-12 binaries (the suite paste loaded them first, 2026-09-24, and its loopback stalled: 1.3 #9; the paste's loopback completed on Linux 2026-09-25, on the `x86_64-linux` build by the maintainer's account) and the first standalone async run since the `sEnPolling` rename |
 | 2 | Closing-pass leg B (inbound UDP 27300 on the Host) | S3 item 1 | 6 | "peer connected"; text and binary with a NUL echoed byte-exact; a graceful disconnect |
 | 3 | `enet-lan-chat` on two machines (UDP 27099) | S3 item 6 | 6 | joins and leaves announced; lines relayed through one `enBroadcast`; RTT on the dashboard |
 | 4 | `enet-internet-chat` across two networks | 2NET | 39 | INTERNET LIVE with a non-RFC-1918 remote |
@@ -349,8 +348,8 @@ keeping the scaffold for its report.
   Both Linux libraries need glibc 2.38 (1.1).
 - Latest records: the suite paste on Linux, 2026-09-25: folded 39/39 and the paste's
   own live loopback COMPLETED (negotiated, both ends open, SCTP at or above its
-  16 KiB floor, the large payload whole), on a build the record does not name (the
-  committed Linux builds need glibc 2.38); the Windows paste of 2026-09-24, folded
+  16 KiB floor, the large payload whole), on the 2026-09-12 `x86_64-linux` build by
+  the maintainer's account (it needs glibc 2.38; Kubuntu 24.04 ships 2.39); the Windows paste of 2026-09-24, folded
   39/39 on the 2026-09-12 DLL with that loopback stalled (1.3 #9); first live
   loopback 2026-08-08; standalone async loopback 2026-08-15; folded 39 on 2026-08-20; `datachannel-dht-chat` on one machine each on
   Linux and Windows 2026-08-18. On 2026-08-27 the maintainer reported a DHT-signalled
@@ -370,7 +369,7 @@ keeping the scaffold for its report.
 | # | Run | Where | Row | Green (in brief) |
 |---|---|---|---|---|
 | 1 | `datachannel-loopback`: **the only member demo with no engine record** | S1 item 5 | 37 | connected + open on both sides; chat in both panes; the boot self-check green |
-| 2 | `datachannel-selftest` standalone on the 2026-09-12 binaries (Windows; Linux with glibc 2.38 or newer), recording which library loaded. The paste's own loopback completed on Linux 2026-09-25 on an unnamed build and stalled on Windows 2026-09-24 (1.3 #9); the standalone harness's own async loopback has not run since 2026-08-15 | S1 item 6 | - (runbook 4.2) | green, no trailer |
+| 2 | `datachannel-selftest` standalone on the 2026-09-12 binaries (Windows; Linux with glibc 2.38 or newer), recording which library loaded. The paste's own loopback completed on Linux 2026-09-25 on the `x86_64-linux` build (the maintainer's account) and stalled on Windows 2026-09-24 (1.3 #9); the standalone harness's own async loopback has not run since 2026-08-15 | S1 item 6 | - (runbook 4.2) | green, no trailer |
 | 3 | Closing-pass leg E, and `datachannel-dht-chat` on two machines recorded BY NAME (the 2026-08-27 one-LAN report does not say whether the demo or leg E ran; its getting-started section 6 flow has no recorded run either) | S3 items 1, 6 | 6 | OPEN across machines; the record names the stack, both platforms and the selected ICE pair type |
 | 4 | Leg E or the DHT chat across two networks | 2NET | 40 | a `srflx` / `prflx` pair (record `relay` honestly if both NATs force TURN) |
 | 5 | Browser interop: `datachannelxt/docs/browser-interop.md` (the page and its OXT half landed 2026-09-24; the page was exercised in headless Chromium against the committed `.so` through its C ABI, which proves neither the `.lcb` binding nor an engine) | S1 + a browser | 40 | the channel opens; text arrives as a string, `dcSendData` as an ArrayBuffer |
@@ -412,9 +411,9 @@ keeping the scaffold for its report.
   the shim, the `.lcb` and all five binaries (2026-09-12).
 - Library: 296/296 in the suite paste, Windows, 2026-09-24, on the 2026-09-12 DLL:
   ABI 7's six `cxPubkeyCombine` checks ran green (its first engine run); again
-  296/296 on Linux, 2026-09-25 (`cxCheckABI` silent, so an ABI-7 library; the
-  bitness and build not recorded); 290/290 at ABI 6, Windows x64, 2026-08-24
-  (BIP-341).
+  296/296 on Linux, 2026-09-25, on the 2026-09-12 `x86_64-linux` library by the
+  maintainer's account (`cxCheckABI` passed: ABI 7); 290/290 at ABI 6, Windows x64,
+  2026-08-24 (BIP-341).
 - The wallet (`kWaVersion` 1.2.0, 13 screens) has engine logs from 2026-08-31 to
   2026-09-03: all four transports over clearnet and Tor, RBF, CPFP, a legacy broadcast
   (`7978bdd2...`, 2026-09-02), and in the tenth log the silent-payment send, an
@@ -689,8 +688,9 @@ Advisory, like the recommendations in OPEN-DECISIONS: a route, not a decision.
    that a text report cannot show; the 2026-09-24 and 2026-09-25 runs settled
    engine note 2.3's itemDelimiter half for Windows and Linux (box2dxt v32), and S1
    still settles 6.14 (whether `open file ... for binary write` truncates; a
-   four-line probe). A Linux S1 should now record what the 2026-09-25 run did not:
-   the bitness, the glibc and which package was installed.
+   four-line probe). A Linux S1 should record the bitness, the distribution and
+   the package as the 2026-09-25 account did, and what it did not: the OXT build and
+   `put sxVersion()`.
 4. **What only a person can close:** D-04's wording and the owner calls; the box2dxt
    scenery and feel pass; holde-em's Phase 5 review and soak; the Model C Phase 4 exit
    on each OS.

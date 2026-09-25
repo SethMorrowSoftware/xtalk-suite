@@ -180,10 +180,11 @@ same handler. macOS has not run the probe (Linux has, below); the
 dictionary's claim is platform-independent, so the expectation is the same
 answer everywhere, not yet the evidence.
 **Settled for Linux too, OBSERVED 2026-09-25** (the D-23 suite paste on a
-Linux engine, box2dxt harness v32 folded in, 385/0; runbook section 8; the
-distribution, bitness and OXT build not recorded): the same two lines, "a
-caller's tab does NOT reach a called handler on Linux (it saw comma)" and "a
-Kit call left its caller's delimiter alone on Linux (tab in, tab out)". Two
+Linux engine, box2dxt harness v32 folded in, 385/0; runbook section 8; 64-bit
+Kubuntu 24.04 by the maintainer's account, the OXT build not recorded): the
+same two lines, "a caller's tab does NOT reach a called handler on Linux (it
+saw comma)" and "a Kit call left its caller's delimiter alone on Linux (tab
+in, tab out)". Two
 platforms now read the dictionary's answer for the itemDelimiter, both
 directions; the lineDelimiter is still unprobed on any engine, and macOS has
 not run the probe.
@@ -346,12 +347,13 @@ run's accept. It governs every numeric `=`, `is`, `<>`, `is not`, `<`, `<=`,
 included (2.11). The maintainer's binary was not inspected, so the 10 was the
 source's until the Linux run below read it off an engine.
 **OBSERVED 2026-09-25, on Linux (the D-23 suite paste, the first run of the
-harness's third probe line; runbook section 8; the distribution, bitness and
-OXT build not recorded): the constant is 10 DBL_EPSILON, to the digit.** The
-first two probe lines read exactly as on Windows (`true,false,false,false` and
-`true,false,16,16`), and the third read
+harness's third probe line; runbook section 8; 64-bit Kubuntu 24.04 by the
+maintainer's account, the OXT build not recorded): the constant is 10
+DBL_EPSILON, to the digit.** The first two probe lines read exactly as on
+Windows (`true,false,false,false` and `true,false,16,16`), and the third read
 `true,true,false,true,false,true,true,false`, the engine source's predicted
-reading item for item (pure IEEE reads `false,true,true,true,true,true,false,false`):
+reading item for item (exact IEEE comparison would read items 3 to 8
+`true,true,true,true,false,false`):
 - items 7-8: `450359962737050 is 450359962737051` true, and
   `450359962737049 is 450359962737050` false. Under the source's form (the gap
   over the SMALLER operand), the constant lies above 1 / 450359962737050 and at
@@ -393,17 +395,18 @@ must be ORDERED exactly (a seq, an amount past 4.5e14) is compared on its
 halves too. A bound that only works in exact arithmetic is a bound the engine
 may not enforce. Both sites were rewritten that way on 2026-09-24: riptide's
 refused 2^53 + 1 on the engine in the second run, and again on Linux on
-2026-09-25; coinxt's (the wallet, which
-the paste does not carry) is verified statically; needs an OXT pass.
+2026-09-25; coinxt's (the wallet, which the paste does not carry) is verified
+statically; needs an OXT pass.
 **Gate:** riptide's harness checks the u64 bound from both sides (2^53 parses,
 2^53 + 1 is refused), which is how an engine run caught it, and prints the
 three probe lines above. Headlessly, the interpreter itself compares the IEEE
 way, so two gates replay the bounds under the ENGINE'S RULE and two candidates
 the probes ruled out, kept as margin (an absolute 1e-6 tolerance, a
 15-significant-digit round trip). Each model is first proven to reproduce the
-engine's accept through the old line, and the engine's rule to read the eight
-recorded probe answers through the interpreter while each margin model
-misreads one: `riptide/tools/check-script-vectors.py` (tier 1c, plus a static
+engine's accept through the old line, and the engine's rule to read the
+fourteen recorded numeric probe answers through the interpreter (the first two
+lines, and the third line's items 3 to 8; its items 1-2 are a text parse the
+interpreter does not model) while each margin model misreads one: `riptide/tools/check-script-vectors.py` (tier 1c, plus a static
 scan refusing a library comparison against a quotient) and
 `coinxt/tools/check-wallet-vectors.py` (tier 4). They settle the rewritten
 bounds' LOGIC. No gate yet refuses a comparison that falls INSIDE the
@@ -634,7 +637,7 @@ a symptom is not an observation of it.
 | Win32, 2026-08-20 (harness v30) | 24, 73 | 24, 73 | EXACT |
 | Linux, 2026-08-21 (harness v30) | 24, 73 | **0, 0** | write-only: a constant 0 |
 | Win32, 2026-09-24 (harness v32, the suite paste) | 24, 73 | 24, 73 | EXACT, printed as a note |
-| Linux, 2026-09-25 (harness v32, the suite paste; distribution and bitness not recorded) | 24, 73 | **0, 0** | write-only again, printed as a note: "readback does NOT track the write on Linux" |
+| Linux, 2026-09-25 (harness v32, the suite paste; 64-bit Kubuntu 24.04 by the maintainer's account) | 24, 73 | **0, 0** | write-only again, printed as a note: "readback does NOT track the write on Linux" |
 
 It broke v29's exactness assert on Linux, then v30's replacement ORDER assert
 (a high write reads back above a low one) on a healthy Linux engine. Since v31

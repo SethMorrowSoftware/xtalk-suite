@@ -59,7 +59,8 @@ script "enetSelfTest"
 -- whose core ENet loopback COMPLETED: connect, the sealed ciphertext, 60000
 -- bytes as one message, a graceful disconnect). The ASYNC loopback is
 -- deliberately NOT folded (two state machines in one process race for the
--- event handlers); THIS file's last ran standalone, green, on 2026-08-13.
+-- event handlers); THIS file's own last ran standalone, green, on
+-- 2026-08-13.
 
 -- >>> BEGIN EMBEDDED LIBRARIES (tools/sync-demo-embeds.py) >>>
 -- Pasted from the sources below so this demo runs with NO `start

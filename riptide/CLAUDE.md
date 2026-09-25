@@ -385,7 +385,7 @@ suite's `docs/OXT-PASS-RUNBOOK.md` rows flip; open work lives in the suite's `do
 | 4, DMs | DONE 2026-08-15, two machines; the D15 clean close (2026-08-17) post-dates that pass and has not run |
 | 5, the call + typing lane | built, never run. Verified statically; needs an OXT pass |
 | 6, LAN mesh | compute engine-green 2026-08-20, and again 2026-09-24 (Windows) and 2026-09-25 (Linux) with the admission and welcome bytes as re-pinned on 2026-09-09 (caveat above). Owed: the live mesh (draft-appears criterion, media handoff, third device) |
-| 7, anon persona + 8.2/8.3 serving | compute engine-green 2026-08-15 and 2026-08-20; needs an OXT + live-Tor pass. The harness's 2 anon-service SKIPs are exactly that leg |
+| 7, anon persona + 8.2/8.3 serving | compute engine-green 2026-08-15 and 2026-08-20, and again 2026-09-24 (Windows) and 2026-09-25 (Linux); needs an OXT + live-Tor pass. The harness's 2 anon-service SKIPs are exactly that leg |
 | 8, Nostr bridge + `RIPTAPP1` (built 2026-08-29) | offline compute engine-green 2026-09-24 (Windows) and 2026-09-25 (Linux) (the `RIPTAPP1` store and the Nostr rail's harness sections, in the suite paste); the relay half needs an OXT + live-relay pass. The v11 label: verified statically + headless boot + an engine boot record with one since-fixed check defect; needs an OXT re-pass, whose boot record should read 10 passed / 0 failed |
 
 ## 7. Gates and suite integration
