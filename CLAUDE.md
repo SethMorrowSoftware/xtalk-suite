@@ -308,9 +308,11 @@ worse than no gate, because it answers the question nobody asks twice.
 - **History.** Run 12 (2026-08-27) was the first dispatch to reach its commit stage; runs 5, 10 and
   11 died on a missing Perl module, 70 leaked ENet symbols in enetxt's mac dylib, and a commit
   allowlist `[a-z]+xt` that could not match box2dxt. Every native member's CURRENT binaries come
-  from the 2026-09-12 dispatch (run 34657390798 from 0f17ab5, commit 421bab3), and no engine has
-  loaded those builds yet. Their Windows DLLs carry libsodium 1.0.22 (D-08) and libtorrent 2.1.1,
-  not the versions pinned for the other platforms.
+  from the 2026-09-12 dispatch (run 34657390798 from 0f17ab5, commit 421bab3). Their WINDOWS
+  builds first met an engine on 2026-09-24: the D-23 suite paste loaded all six and ran every
+  member's sections (runbook section 8; the bitness was not recorded). No engine has loaded the
+  Linux or mac builds yet. The Windows DLLs carry libsodium 1.0.22 (D-08) and libtorrent 2.1.1,
+  not the versions pinned for the other platforms, and that run exercised both.
 
 ## Member repositories and publishing
 

@@ -123,7 +123,8 @@ work plan.
 **Suite-wide**
 
 - **Windows upstream pins.** torrentxt's Windows DLLs carry libtorrent 2.1.1 (vcpkg's unpinned port)
-  against 2.0.11 on Linux and mac. datachannelxt's carry OpenSSL 3.6.4 (vcpkg's classic port) against
+  against 2.0.11 on Linux and mac; it ran green on an engine on 2026-09-24 (106/106 in the suite
+  paste), which informs the call without making it. datachannelxt's carry OpenSSL 3.6.4 (vcpkg's classic port) against
   a pinned 3.5.4 on mac. Pin each one, or accept it the way D-08 accepted sodiumxt's 1.0.22.
 - **A suite Linux glibc floor.** The committed floors run from 2.14 to 2.38. datachannelxt (both rows)
   and torrentxt's `x86-linux` need 2.38, so they cannot load on Ubuntu 22.04, Debian 12 or RHEL 9.
