@@ -195,7 +195,10 @@ because a harness once ran against a stale in-memory library and reported failur
   `test-build-suite-selftest.py`), the drift fixtures `test-ui-kit-drift.py` and
   `test-harness-scaffold-drift.py`, and `check-suite-ui-boot.py` (fixture `test-suite-ui-boot.py`),
   which drives the board's logic through the family interpreter in an all-absent profile and
-  upgrades no label. Run all has run on an engine (2026-09-24: the build, the boot self-check,
+  upgrades no label. The build stamp `kSuUiVersion` is DERIVED, never bumped:
+  `check-suite-ui-version.py` (fixture `test-suite-ui-version.py`) holds it to a hash of the code
+  `suBuildAll` reaches and the constants it names; after a build change run it with `--fix`, then
+  regenerate. Run all has run on an engine (2026-09-24: the build, the boot self-check,
   the rows adding up to the totals, Copy results; runbook section 8); a row's Run, Show and the
   filters are verified statically; needs an OXT pass (runbook row 48).
 - **A script-layer edit is done only when every carrier is regenerated** (`build-suite-selftest.py`

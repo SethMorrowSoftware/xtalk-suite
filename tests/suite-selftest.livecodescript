@@ -251,7 +251,16 @@ constant kStHeight = 640
 -- ---- the board (D-23; see THE BOARD below the carried blocks) ---------------
 -- The build stamp: a stack built by an older paste (the scaffold's window, or
 -- an earlier board) is cleared and rebuilt once; a current one only repaints.
-constant kSuUiVersion = "suite-board-1"
+-- DERIVED, never bumped by hand (work plan suite-wide #17, 2026-09-25): the
+-- value is a hash of the CODE of suBuildAll, every handler it reaches (the
+-- carried kit's builders included) and every constant those name, and
+-- tools/check-suite-ui-version.py fails the build when it is stale. After any
+-- change to the board's build, run that tool with --fix, then regenerate the
+-- paste. It was "suite-board-1" from D-23 until then, bumped by hand - the
+-- hand-copied number that let coin-wallet's controls of 2026-09-02..04 never
+-- appear in a stack that already existed. The "suite-board-" prefix keeps the
+-- `is` in suBuild a TEXT compare (engine note 2.11).
+constant kSuUiVersion = "suite-board-a6bce2a8362a"
 -- One row per tools/member-registry.py member, IN ITS ORDER AND ITS SPELLING,
 -- then the cross-member row. check-suite-selftest.py holds all three lists to
 -- the registry, so a new member cannot be missing from the board.
