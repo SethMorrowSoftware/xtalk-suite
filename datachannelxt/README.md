@@ -109,7 +109,9 @@ does not compile with parentheses).
 The binding is engine-proven: first live loopback 2026-08-08; every one of the 31 public
 `dc*` handlers called by name 2026-08-10; the standalone self-test green end to end,
 async loopback included, 2026-08-15; the embedded-NUL refusal and exact stale-handle codes
-green 2026-08-17 (Windows); folded in the suite paste through 2026-09-24. The flagship ran on
+green 2026-08-17 (Windows); folded in the suite paste through 2026-09-25, when the paste's
+own live loopback also completed on Linux (negotiated, both ends open, SCTP at least 16 KiB,
+a cap-sized payload whole). The flagship ran on
 one machine on Linux and Windows on 2026-08-18, which surfaced engine notes 1.6, 6.6 and 6.7
 (why the event is `dcLocalDescriptionReady`), and a DHT-signalled WebRTC chat was reported
 working between two machines on one LAN on 2026-08-27 (which stack ran was not recorded).
@@ -126,7 +128,8 @@ A standard OXT extension: the LCB module plus the native library under
 (`x86_64-linux`, `x86-linux`, `x86_64-win32`, `x86-win32`, and `universal-mac` with both
 slices, first landed 2026-08-27 by the suite's `release-binaries.yml` two-slice-lipo job; all
 five rebuilt 2026-09-12). Both Linux libraries need glibc 2.38 or newer (measured
-2026-09-23): Ubuntu 22.04, Debian 12 and RHEL 9 cannot load them. Install through the
+2026-09-23): Ubuntu 22.04, Debian 12 and RHEL 9 cannot load them; the x86_64 one loaded on
+Kubuntu 24.04 (glibc 2.39) on 2026-09-25. Install through the
 Extension Manager and the engine resolves `c:datachannelxt>`: no loose library, no `sudo`.
 
 One rule the app must follow: **call `dcCleanup` before quitting** (e.g. on `closeStack`),

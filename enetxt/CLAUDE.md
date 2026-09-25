@@ -123,17 +123,23 @@ The shim cites these by number; keep the numbering.
 | 2026-08-27 | OXT, two-machine session (platform not recorded) | suite paste; `enet-internet-chat` on one network | 2440 / 2 / 3, every folded member green (the renamed helper locals ran folded); the 2 failures were the core's loopbacks on a machine blocking UDP to 127.0.0.1 (environment: the suite runbook's trap 5.5); internet chat correctly could not connect (gotcha 6) |
 | 2026-09-12 | CI, no engine | `release-binaries.yml` run 34657390798 (`421bab3`) | every platform rebuilt from a tree containing `23a2914`; the x86_64 `.so` disassembly shows the gotcha-1 retire path |
 | 2026-09-24 | OXT, Windows (the engine reports Win32), a 2026-09-12 DLL by the maintainer's account (its first engine load); OXT version, OS build and bitness not recorded | the D-23 suite paste (built from `9aa62c8`; this member as at `6401e43`) | 2620 / 5 / 3; enetxt 34/34 folded (lifecycle, stale handles, the helper dispatcher, tuning + abrupt teardown), no skips; the core's loopback bound 127.0.0.1:27196 and took an `enConnect` handle (6/6), then stalled in `connecting` to the 40 s deadline, as datachannelxt's did in `opening`; both loopbacks also stalled on 2026-08-27, whose phases and machine were not recorded (the suite runbook's trap 5.5, suspected environment; UDP loopback not yet tested independently on this machine). The day's second run (8:41 PM) read the same, line for line; `enSend` refused 60001 bytes with -4; `enHostDestroy` x2 and `enDeinitialize` returned 0; board row 41 / 1 / 0 (the 34, its merge line, the loopback's 6; the 1 is the deadline) |
+| 2026-09-25 | OXT, Linux (box2dxt's lines print `the platform` as Linux); by the maintainer's account 64-bit Kubuntu 24.04 with the latest committed builds, so the `x86_64-linux` file of `421bab3` (release run 34657390798, 2026-09-12); OXT build not recorded | the D-23 suite paste as regenerated at `f1346e0` (the tree at `cba3130`, PR #145; this member's folded code as on 2026-09-24, comments aside) | 2672 / 0 / 10; enetxt 34/34 folded, no skips (the same four sections); the core's live loopback COMPLETED on 127.0.0.1:27196: server bound, client created, an `enConnect` handle that the client's connect event names, the server seeing the connect data (7), the SodiumXT-sealed ciphertext delivered byte for byte and opened to the exact plaintext, 60001 bytes refused with -4 and a payload at the 60000-byte budget accepted and reassembled into ONE message, `enDisconnect` 0 and a graceful close (the server drained `enetDisconnect`); `enHostDestroy` x2 and `enDeinitialize` 0; board row 50/0/0. That `.so`'s first engine load, and the paste loopback's first recorded completion since 2026-08-20 (Windows; the 2026-08-24 paste's zero failures imply one more), after its stalls of 2026-08-27 and of all three 2026-09-24 runs (Windows, in `connecting`; the suite runbook's section 8 records the third). So the paste's loopback code completes on an engine, and the Windows stalls belong to that platform or machine (trap 5.5), which the standalone selftest there would tell apart. Gotcha 1's path (`enDisconnect` before connect) is not on this run's path: the loopback disconnects a connected peer, and the abrupt section uses `enDisconnectNow` and `enResetPeer` |
 
 ## Status
 
 The whole `en*` surface is engine-proven (standalone async 2026-08-13; the sync half folded
-through 2026-09-24, on Windows). The core's live loopback stalled on 2026-08-27 (its phase
-not recorded) and in `connecting` in both of 2026-09-24's runs (suspected blocked UDP to
-127.0.0.1, the suite runbook's trap 5.5; the 2026-09-24 machine is not yet tested
-independently). That paste ran on a 2026-09-12 Windows DLL (the maintainer's account; its
-bitness not recorded), those binaries' first engine load, but their one shim change since
-2026-08-27 (gotcha 1's fix) is on a path none of its checks reached: the fix is driven
-natively by the smoke test (2026-09-24, ASan/UBSan), not by an engine. Still un-exercised:
+through 2026-09-25, on Windows and then Linux). The core's live loopback stalled on
+2026-08-27 (its phase not recorded) and in `connecting` in all three of 2026-09-24's runs
+(Windows; suspected blocked UDP to 127.0.0.1, the suite runbook's trap 5.5; that machine is
+not yet tested independently), then COMPLETED on Linux x86_64 on 2026-09-25: connect, the
+sealed ciphertext, 60000 bytes reassembled into one message, a graceful disconnect. So the
+paste's loopback code works on an engine, and the Windows stall is that platform's or that
+machine's. The 2026-09-24 paste ran on a 2026-09-12 Windows DLL (the maintainer's account;
+its bitness not recorded) and the 2026-09-25 paste on the 2026-09-12 `x86_64-linux` file
+(the maintainer's account: 64-bit, the latest committed builds), each file's first engine
+load, but their one shim change since 2026-08-27 (gotcha 1's fix) is on a path none of their
+checks reached: the fix is driven natively by the smoke test (2026-09-24, ASan/UBSan), not by
+an engine. Still un-exercised:
 the LAN chat demo between two real machines (runbook row 6, S3 item 6), the closing pass's
 separate enet leg B (S3 item 1), `enet-internet-chat` across two networks
 (verified statically; needs a two-machine, two-network OXT pass), a standalone async re-run
