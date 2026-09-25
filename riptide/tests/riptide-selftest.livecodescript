@@ -13,8 +13,10 @@ script "RiptideSelfTest"
 -- and the media section seeds a local temp file and reads its status back,
 -- all skipping honestly when torrentxt is absent or a session cannot start.
 --
--- STATUS (honesty convention): the phase-1 and phase-2 sections had their OXT
--- pass on 2026-08-12 (133/133 via the folded suite harness, no skips). The
+-- STATUS (honesty convention): the whole harness runs on an engine folded in
+-- the suite paste, most recently 2026-09-24 (489 passed, 0 failed, 2 skipped:
+-- the live-tor legs; riptide/CLAUDE.md's ledger). Its first OXT pass was
+-- phases 1 and 2 on 2026-08-12 (133/133, no skips). The
 -- oracle still independently pins the phase-2 vectors
 -- (tools/riptide_reference.py, via tools/check-selftest-vectors.py, which
 -- re-derives every golden constant below).
@@ -223,6 +225,25 @@ private function rstFlipByte pData, pIndex
    return tOut
 end rstFlipByte
 
+-- A DIAGNOSTIC for suite engine note 2.10, never a check: the smallest
+-- power-of-two count of ulps k (1 to 2^30) for which this engine answers
+-- pBase + k ulps > pBase, or 0 if none does. pUlps is the number of ulps in
+-- one unit at pBase (2^52 at 1, 2^49 at 8), so every operand is an exact
+-- double and the only thing measured is the comparison rule. 2^30 ulps at 1
+-- is about 2.4e-7, past the 1e-7 the 2026-09-24 probe line showed this
+-- engine tells apart, so the ladder always ends on a real step.
+private function rstUlpLadder pBase, pUlps
+   local tStep
+   put 1 into tStep
+   repeat while tStep <= 1073741824
+      if pBase + tStep / pUlps > pBase then
+         return tStep
+      end if
+      multiply tStep by 2
+   end repeat
+   return 0
+end rstUlpLadder
+
 --------------------------------------------------------------------------
 -- sections
 --------------------------------------------------------------------------
@@ -239,7 +260,8 @@ private command rstSectionCapabilities pCaps
    -- hasNostrRelay, canNostrSign - and nothing noticed the count go stale,
    -- because this harness runs only on an engine and it did not meet one
    -- between phase 8 and the suite paste of 2026-09-24, which reported it
-   -- as a FAIL. A count also passes a key renamed or swapped for another;
+   -- as a FAIL (this exact-set check passed there on the day's second run).
+   -- A count also passes a key renamed or swapped for another;
    -- the list cannot, and on a failure the log shows what the probe
    -- returned. A new capability edits the literal below AND the log lines.
    -- The sort is case-blind by default and these names order the same
@@ -477,14 +499,14 @@ private command rstSectionHead
    -- The next check FAILED on 2026-09-24 (OXT, Win32, the suite paste):
    -- the engine accepted 2^53 + 1 through the old quotient bound in
    -- rsReadBEu64, whose comment has the story. The bound is decided on the
-   -- halves now; verified statically; needs an OXT re-pass.
+   -- halves now, and the check passed on the engine in that day's second
+   -- run (the paste regenerated at 21aaa61; riptide/CLAUDE.md's ledger).
    put numToByte(1) into byte 12 of tBig
    rstCheck (rsParseHead(tBig) is empty), \
          "a seq of 2^53 + 1 is REFUSED (the first unrepresentable value)"
    -- DIAGNOSTIC, not a check (2026-09-24). That failure is OBSERVED; its
    -- cause is INFERRED. These four comparisons are all true in pure IEEE,
-   -- and each candidate rule answers them differently, so the next run's
-   -- log settles which rule this engine applies. Probes 2 to 4 divide
+   -- and each candidate rule answers them differently. Probes 2 to 4 divide
    -- integers below 2^53 by powers of two, so their operands are exact
    -- doubles; probe 1 only has to differ from 1 by about 1e-7. Predicted
    -- readings (checked against Python models of each rule):
@@ -494,6 +516,16 @@ private command rstSectionHead
    --   relative, 2+ x DBL_EPSILON      true,false,false,false
    --   round trip, 15 sig. digits      true,false,false,true
    -- The third is the failing bound itself: hi = 2^21, lo = 1.
+   -- READ 2026-09-24 (the second run): true,false,false,false. So the engine
+   -- does answer nearly-equal numbers as equal (OBSERVED), but that reading
+   -- does not name the rule: the Python models fit it with a relative tolerance from 2
+   -- DBL_EPSILON to 1e-7, an ABSOLUTE one from 2^-32 (about 2.3e-10) to
+   -- 1e-7, or a decimal round trip at 8 to 14 or at 16 significant digits.
+   -- The table above listed only one of those families. nostrxt's "since
+   -- excludes older events" (1700000000 < 1700000001, green in the same
+   -- run) narrows two of them: a relative tolerance is under 5.9e-10, and a
+   -- round trip keeps 10 digits or more. The second probe line tells the
+   -- families apart.
    put "      numeric compare probe (diagnostic; IEEE reads" && \
          "true,true,true,true):" && \
          (1 + 1 / 10000000 > 1) & "," & \
@@ -501,6 +533,30 @@ private command rstSectionHead
          (2097152 > (9007199254740992 - 1) / 4294967296) & "," & \
          (1 + 23 / 4503599627370496 > 1 + 22 / 4503599627370496) & \
          return after sLog
+   -- DIAGNOSTIC 2, not a check (added 2026-09-25). Two answers and two
+   -- ladders (rstUlpLadder: the smallest power-of-two count of ulps K the
+   -- engine tells apart, at 1 and at 8, where one ulp is 8 times larger):
+   --   tiny    1e-10 > 0                 false only under an ABSOLUTE rule
+   --   big     2^30 + 2^-21 > 2^30       true only under an ABSOLUTE rule:
+   --                                     two ulps, 4.8e-7 apart but only
+   --                                     2 DBL_EPSILON of their size
+   --   K1, K8  a relative rule gives K1 = K8; an absolute rule or a decimal
+   --           round trip gives K8 = K1 / 8
+   -- Every operand stays below 2^53, so the family interpreter (which
+   -- refuses a wider integer) can run this line too. Predicted readings (the
+   -- same Python models, over what is left of each family's range):
+   --   relative, 2 eps to 5.9e-10      true,false,K,K          (K 4 to 2^22)
+   --   absolute, 2^-32 to 1e-7         false,true,K,K/8        (K 2^21 to 2^29)
+   --   round trip, 10 to 14 digits     true,false,K,K/8        (K 256 to 2^22)
+   --   round trip, 16 digits           true,false,4,1
+   -- K itself then measures the tolerance to within a factor of 2.
+   put "      numeric compare probe 2 (diagnostic; relative reads" && \
+         "true,false,K,K; absolute false,true,K,K/8; round trip" && \
+         "true,false,K,K/8):" && \
+         (1 / 10000000000 > 0) & "," & \
+         (1073741824 + 1 / 2097152 > 1073741824) & "," & \
+         rstUlpLadder(1, 4503599627370496) & "," & \
+         rstUlpLadder(8, 562949953421312) & return after sLog
    put tHead into tBig
    repeat with rstI = 5 to 12
       put numToByte(255) into byte rstI of tBig

@@ -60,11 +60,12 @@ script "RiptideSocial"
 -- bogus handle), the only ones its harness section has. The LIVE halves
 -- keep their labels: a kind-C post walked by a second machine, BTXO over
 -- a real Tor stream, deadlines on a playing fetch. The phase-8 layer
--- (built 2026-08-29) is verified statically and executed headlessly
--- (tools/check-script-vectors.py); it needs an OXT + live-relay pass
--- (riptide/CLAUDE.md's status). The harness sections added after
--- 2026-08-24 (Nostr, app state, the watermarks, the u64 bound, the
--- 996-byte cap) have not run on an engine yet.
+-- (built 2026-08-29) ran its offline compute engine-green on 2026-09-24:
+-- the harness sections added after 2026-08-24 (Nostr, app state, the
+-- watermarks, the u64 bound, the 996-byte cap) all met an engine in that
+-- day's suite paste, and after the day's two fixes the harness read 489
+-- passed, 0 failed, 2 skipped (the live-tor legs). Its relay half still
+-- needs an OXT + live-relay pass (riptide/CLAUDE.md's ledger and status).
 --
 -- WHAT THIS LAYER OWNS
 --   - the master seed and the RIPTKEY1 sealed key file (Argon2id + secretbox,
@@ -4946,7 +4947,9 @@ private function rsReadBEu64 pBytes
    -- lo = 0. Each half is built from four bytes, so both are exact integers
    -- below 2^32, and every comparison below is between integers that differ
    -- by at least 1 at that modest magnitude. No rounding rule and no
-   -- comparison tolerance an engine could plausibly apply changes its answer.
+   -- comparison tolerance an engine could plausibly apply changes its answer,
+   -- and on the engine it refused 2^53 + 1 (2026-09-24, the day's second
+   -- run of the suite paste).
    --
    -- It used to be `if tHi > (9007199254740992 - tLo) / 4294967296`, and on
    -- 2026-09-24 (OXT, Win32, the suite paste's riptide fold) that line
@@ -4955,13 +4958,14 @@ private function rsReadBEu64 pBytes
    -- 2097151.99999999977, which pure IEEE puts below 2097152, so the family
    -- interpreter (Python floats) refused and every headless gate stayed
    -- green. But the two sides differ by about 2.3e-10, a relative 1.1e-16,
-   -- and the engine did not answer that comparison the way IEEE does. WHY is
-   -- INFERRED, not observed: a numeric comparison tolerance (LiveCode is
-   -- widely reported to answer (0.1 + 0.2) = 0.3 as true) or a round trip
-   -- through about 15 significant digits would each explain it, and nothing
-   -- yet tells an absolute tolerance from a relative one. So the rule is the
-   -- one that holds under every such explanation: decide a bound on a wide
-   -- integer by comparing exact integers that differ by at least 1 at a
+   -- and the engine did not answer that comparison the way IEEE does. The
+   -- same day's second run showed WHY in part (the harness's probe line;
+   -- suite engine note 2.10): the engine answers nearly-equal numbers as
+   -- equal, and 1 + 2^-51 > 1 reads false on it. Whether by a relative or
+   -- absolute tolerance or a decimal round trip, that run could not tell; it
+   -- refused 2^53 + 1 through the halves bound that follows. So the rule is
+   -- the one that holds under every such explanation: decide a bound on a
+   -- wide integer by comparing exact integers that differ by at least 1 at a
    -- modest magnitude - never against a quotient, and never on a difference
    -- smaller than any plausible tolerance. tools/check-script-vectors.py
    -- replays this bound under three comparison models, after proving that

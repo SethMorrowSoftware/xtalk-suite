@@ -18402,7 +18402,9 @@ private function rsReadBEu64 pBytes
    -- lo = 0. Each half is built from four bytes, so both are exact integers
    -- below 2^32, and every comparison below is between integers that differ
    -- by at least 1 at that modest magnitude. No rounding rule and no
-   -- comparison tolerance an engine could plausibly apply changes its answer.
+   -- comparison tolerance an engine could plausibly apply changes its answer,
+   -- and on the engine it refused 2^53 + 1 (2026-09-24, the day's second
+   -- run of the suite paste).
    --
    -- It used to be `if tHi > (9007199254740992 - tLo) / 4294967296`, and on
    -- 2026-09-24 (OXT, Win32, the suite paste's riptide fold) that line
@@ -18411,13 +18413,14 @@ private function rsReadBEu64 pBytes
    -- 2097151.99999999977, which pure IEEE puts below 2097152, so the family
    -- interpreter (Python floats) refused and every headless gate stayed
    -- green. But the two sides differ by about 2.3e-10, a relative 1.1e-16,
-   -- and the engine did not answer that comparison the way IEEE does. WHY is
-   -- INFERRED, not observed: a numeric comparison tolerance (LiveCode is
-   -- widely reported to answer (0.1 + 0.2) = 0.3 as true) or a round trip
-   -- through about 15 significant digits would each explain it, and nothing
-   -- yet tells an absolute tolerance from a relative one. So the rule is the
-   -- one that holds under every such explanation: decide a bound on a wide
-   -- integer by comparing exact integers that differ by at least 1 at a
+   -- and the engine did not answer that comparison the way IEEE does. The
+   -- same day's second run showed WHY in part (the harness's probe line;
+   -- suite engine note 2.10): the engine answers nearly-equal numbers as
+   -- equal, and 1 + 2^-51 > 1 reads false on it. Whether by a relative or
+   -- absolute tolerance or a decimal round trip, that run could not tell; it
+   -- refused 2^53 + 1 through the halves bound that follows. So the rule is
+   -- the one that holds under every such explanation: decide a bound on a
+   -- wide integer by comparing exact integers that differ by at least 1 at a
    -- modest magnitude - never against a quotient, and never on a difference
    -- smaller than any plausible tolerance. tools/check-script-vectors.py
    -- replays this bound under three comparison models, after proving that
@@ -29048,6 +29051,18 @@ private function rs1rstFlipByte pData, pIndex
    return rs1tOut
 end rs1rstFlipByte
 
+private function rs1rstUlpLadder pBase, pUlps
+   local rs1tStep
+   put 1 into rs1tStep
+   repeat while rs1tStep <= 1073741824
+      if pBase + rs1tStep / pUlps > pBase then
+         return rs1tStep
+      end if
+      multiply rs1tStep by 2
+   end repeat
+   return 0
+end rs1rstUlpLadder
+
 private command rs1rstSectionCapabilities pCaps
    local rs1tWant, rs1tGot, rs1tDelim
    rs1rstSection "capabilities + version"
@@ -29060,7 +29075,8 @@ private command rs1rstSectionCapabilities pCaps
    -- hasNostrRelay, canNostrSign - and nothing noticed the count go stale,
    -- because this harness runs only on an engine and it did not meet one
    -- between phase 8 and the suite paste of 2026-09-24, which reported it
-   -- as a FAIL. A count also passes a key renamed or swapped for another;
+   -- as a FAIL (this exact-set check passed there on the day's second run).
+   -- A count also passes a key renamed or swapped for another;
    -- the list cannot, and on a failure the log shows what the probe
    -- returned. A new capability edits the literal below AND the log lines.
    -- The sort is case-blind by default and these names order the same
@@ -29298,14 +29314,14 @@ private command rs1rstSectionHead
    -- The next check FAILED on 2026-09-24 (OXT, Win32, the suite paste):
    -- the engine accepted 2^53 + 1 through the old quotient bound in
    -- rsReadBEu64, whose comment has the story. The bound is decided on the
-   -- halves now; verified statically; needs an OXT re-pass.
+   -- halves now, and the check passed on the engine in that day's second
+   -- run (the paste regenerated at 21aaa61; riptide/CLAUDE.md's ledger).
    put numToByte(1) into byte 12 of rs1tBig
    rs1rstCheck (rsParseHead(rs1tBig) is empty), \
          "a seq of 2^53 + 1 is REFUSED (the first unrepresentable value)"
    -- DIAGNOSTIC, not a check (2026-09-24). That failure is OBSERVED; its
    -- cause is INFERRED. These four comparisons are all true in pure IEEE,
-   -- and each candidate rule answers them differently, so the next run's
-   -- log settles which rule this engine applies. Probes 2 to 4 divide
+   -- and each candidate rule answers them differently. Probes 2 to 4 divide
    -- integers below 2^53 by powers of two, so their operands are exact
    -- doubles; probe 1 only has to differ from 1 by about 1e-7. Predicted
    -- readings (checked against Python models of each rule):
@@ -29315,6 +29331,16 @@ private command rs1rstSectionHead
    --   relative, 2+ x DBL_EPSILON      true,false,false,false
    --   round trip, 15 sig. digits      true,false,false,true
    -- The third is the failing bound itself: hi = 2^21, lo = 1.
+   -- READ 2026-09-24 (the second run): true,false,false,false. So the engine
+   -- does answer nearly-equal numbers as equal (OBSERVED), but that reading
+   -- does not name the rule: the Python models fit it with a relative tolerance from 2
+   -- DBL_EPSILON to 1e-7, an ABSOLUTE one from 2^-32 (about 2.3e-10) to
+   -- 1e-7, or a decimal round trip at 8 to 14 or at 16 significant digits.
+   -- The table above listed only one of those families. nostrxt's "since
+   -- excludes older events" (1700000000 < 1700000001, green in the same
+   -- run) narrows two of them: a relative tolerance is under 5.9e-10, and a
+   -- round trip keeps 10 digits or more. The second probe line tells the
+   -- families apart.
    put "      numeric compare probe (diagnostic; IEEE reads" && \
          "true,true,true,true):" && \
          (1 + 1 / 10000000 > 1) & "," & \
@@ -29322,6 +29348,30 @@ private command rs1rstSectionHead
          (2097152 > (9007199254740992 - 1) / 4294967296) & "," & \
          (1 + 23 / 4503599627370496 > 1 + 22 / 4503599627370496) & \
          return after rs1sLog
+   -- DIAGNOSTIC 2, not a check (added 2026-09-25). Two answers and two
+   -- ladders (rs1rstUlpLadder: the smallest power-of-two count of ulps K the
+   -- engine tells apart, at 1 and at 8, where one ulp is 8 times larger):
+   --   tiny    1e-10 > 0                 false only under an ABSOLUTE rule
+   --   big     2^30 + 2^-21 > 2^30       true only under an ABSOLUTE rule:
+   --                                     two ulps, 4.8e-7 apart but only
+   --                                     2 DBL_EPSILON of their size
+   --   K1, K8  a relative rule gives K1 = K8; an absolute rule or a decimal
+   --           round trip gives K8 = K1 / 8
+   -- Every operand stays below 2^53, so the family interpreter (which
+   -- refuses a wider integer) can run this line too. Predicted readings (the
+   -- same Python models, over what is left of each family's range):
+   --   relative, 2 eps to 5.9e-10      true,false,K,K          (K 4 to 2^22)
+   --   absolute, 2^-32 to 1e-7         false,true,K,K/8        (K 2^21 to 2^29)
+   --   round trip, 10 to 14 digits     true,false,K,K/8        (K 256 to 2^22)
+   --   round trip, 16 digits           true,false,4,1
+   -- K itself then measures the tolerance to within a factor of 2.
+   put "      numeric compare probe 2 (diagnostic; relative reads" && \
+         "true,false,K,K; absolute false,true,K,K/8; round trip" && \
+         "true,false,K,K/8):" && \
+         (1 / 10000000000 > 0) & "," & \
+         (1073741824 + 1 / 2097152 > 1073741824) & "," & \
+         rs1rstUlpLadder(1, 4503599627370496) & "," & \
+         rs1rstUlpLadder(8, 562949953421312) & return after rs1sLog
    put rs1tHead into rs1tBig
    repeat with rs1rstI = 5 to 12
       put numToByte(255) into byte rs1rstI of rs1tBig
