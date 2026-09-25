@@ -559,11 +559,20 @@ PAST_2P53 = ("NOT REFUSED: the bound let a value past 2^53 reach the "
              "arithmetic after it (an engine would carry on, rounded)")
 
 
+# What a row reads when the interpreter REFUSED the comparison deciding it
+# (LCS.Indistinct, since 2026-09-25): the engine's tolerant comparison
+# answers that pair differently from IEEE, so no answer here is the engine's.
+INDISTINCT = ("NOT ANSWERED: the interpreter refused a comparison the engine "
+              "answers differently from IEEE (LCS.Indistinct)")
+
+
 def u64_call(ip, name, args):
     try:
         return ip.call(name, args)
     except LCS.Imprecise:
         return PAST_2P53
+    except LCS.Indistinct:
+        return INDISTINCT
 
 
 def u64_parsed(out):
@@ -704,6 +713,18 @@ PROBE_READINGS = [
 ]
 
 
+def _probe_plain(interp):
+    """The PLAIN interpreter's answers to PROBE_READINGS: a value where it
+    answers, "refused" where it will not (LCS.Indistinct)."""
+    out = []
+    for expr, _want in PROBE_READINGS:
+        try:
+            out.append(str(LCS._disp(interp.eval_expr(expr, {}))))
+        except LCS.Indistinct:
+            out.append("refused")
+    return out
+
+
 def _probe_answers(interp):
     """The interpreter's answers to PROBE_READINGS, spelled as the engine
     printed them."""
@@ -831,10 +852,12 @@ def check_u64_engine_models(c, ip, src, fail):
            "two margin models")
     probe = LCS.Interp(PROBE_LADDER)
     want = [w for _expr, w in PROBE_READINGS]
-    c.ck("fixture: under IEEE the probes read true,true,true,true,true,true,"
-         "1,1 - the answers the engine did NOT give",
-         _probe_answers(probe),
-         ["true", "true", "true", "true", "true", "true", "1", "1"])
+    c.ck("fixture: the plain interpreter REFUSES each probe the engine read "
+         "differently from IEEE (IEEE reads true x6, 1, 1) and answers the "
+         "two it read the same - its refusal held to eight observations",
+         _probe_plain(probe),
+         ["true", "refused", "refused", "refused", "true", "refused",
+          "refused", "refused"])
     for index, (name, model) in enumerate(ENGINE_MODELS):
         with engine_model(model):
             got = _probe_answers(probe)
@@ -845,9 +868,14 @@ def check_u64_engine_models(c, ip, src, fail):
             c.ck("fixture: %s misreads at least one of them (margin, not "
                  "the rule)" % name, got != want, True)
     old = LCS.Interp(seed_old_bound(src, fail))
-    c.ck("fixture: under IEEE the pre-2026-09-24 bound REFUSES 2^53+1 "
-         "(head, BTXO total) - why every headless gate was green over it",
-         _refuses_2p53p1(old), [True, True])
+    head = u64_call(old, "rsParseHead",
+                    [u64_head_with_seq(b"\x00\x20" + b"\x00" * 5 + b"\x01")])
+    total = u64_call(old, "rsBtxoStreamStep",
+                     [u64_btxo_header(2 ** 53 + 1), "header"])
+    c.ck("fixture: the plain interpreter REFUSES to decide the "
+         "pre-2026-09-24 bound at 2^53+1 (head, BTXO total) - it answered "
+         "the IEEE way until 2026-09-25, which is why every headless gate "
+         "was green over it", [head, total], [INDISTINCT, INDISTINCT])
     for name, model in ENGINE_MODELS:
         with engine_model(model) as hook:
             got = _refuses_2p53p1(old)

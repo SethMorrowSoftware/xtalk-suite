@@ -165,6 +165,65 @@ defect could pass the static checker AND every headless vector AND still be
 wrong on an engine. See _exact(). The refusal is STRICTER than the engine,
 which is allowed and is the point - the engine carries on with a rounded number
 and tells nobody, and that is the failure this stop exists to make loud.
+
+AND A SECOND REFUSAL OF THAT KIND, ADDED 2026-09-25: a comparison of two
+numbers that the ENGINE answers differently from IEEE is REFUSED (Indistinct,
+not a Thrown either) instead of answered. OBSERVED 2026-09-24 (OXT, Win32, the
+suite paste's riptide fold; docs/OXT-ENGINE-NOTES.md 2.10): riptide's
+rsReadBEu64 guarded a u64 with `tHi > (9007199254740992 - tLo) / 4294967296`,
+and for hi = 2^21, lo = 1 - the value 2^53 + 1 - the engine ACCEPTED the
+record. IEEE answers 2097152 > 2097151.99999999977 TRUE, and so did this file,
+so every headless gate stayed green over a bound the engine does not enforce:
+the two sides differ by 2^-32, 1.1e-16 of their size.
+  The same day's second and third runs read riptide's two probe lines -
+true,false,false,false and true,false,16,16 - so the engine's comparison has
+a RELATIVE tolerance between 8 and 16 DBL_EPSILON (OBSERVED; engine note
+2.10). The constant inside that bracket is the engine SOURCE's (DOCUMENTED,
+read 2026-09-25; the maintainer's binary was not inspected): the numeric
+branch of engine/src/exec-logic.cpp's MCLogicIsEqualTo and MCLogicCompareTo,
+the code behind `is` / `=`, `<>` / `is not`, `<`, `<=`, `>` and `>=`, calls
+two numbers EQUAL when they differ by less than MC_EPSILON of the SMALLER
+magnitude, or by less than MC_EPSILON outright when that magnitude is itself
+below it, and engine/src/sysdefs.h defines MC_EPSILON as DBL_EPSILON * 10.0
+(2.2e-15). exec-logic.cpp is byte-identical, and sysdefs.h's definition the
+same, in OXT's own tree (github.com/OpenXTalk-org/OpenXTalk-Community-DPE,
+master) and in livecode `develop-9.6` and `develop`. That rule reproduces the
+first run's accept and all eight probe readings - and so does this file's
+refusal, which answers the two probes the engine read as IEEE does and
+refuses the six it read otherwise (coinxt's check-script-vectors.py tier 0
+holds it to them). The same source compares PLAINLY in a `repeat with` bound
+and in max() / min(), and `switch` matches its cases as TEXT, so those paths
+are left as they were.
+  The rule reaches past the probes. On the engine 0.1 + 0.2 is 0.3, 1e-20 is
+0, and two INTEGERS compare equal once the smaller passes 1 / MC_EPSILON
+(450359962737050, about 2^48.7) and they differ by less than MC_EPSILON of
+it: at 2^53, `>` cannot tell integers up to 19 apart. A numeric-looking
+string past 2^53 (and no longer than 384 characters, past which the engine
+reads no string as a number) is ROUNDED to a double before it is compared, so
+two different ones can be one number to `is` (engine note 2.11; see _eq,
+whose text answer for those was unconditional until this date).
+  REFUSED, not emulated, for the 2^53 stop's reasons: an emulated tolerance
+would make every gate agree, silently, with a constant that is DOCUMENTED and
+only bracketed by observation, where a refusal names the site to a person;
+and a verdict that hangs on a difference of a few ulps is far more often a
+defect in the SCRIPT than a design - an exact bound the engine does not
+enforce is the class the 2026-09-24 run found. The test is the source's own
+arithmetic, in doubles (_engine_equal), and _decided refuses only where the
+OPERATOR's answer parts from IEEE. Equal numbers, numbers the rule keeps
+apart, and a near pair on which the operator answers the same either way all
+answer exactly as before: riptide's old bound at 2^53 - 1 compared 2097151 >
+2097151.0000000002, a pair the engine calls equal, where `>` is false on
+both, and it still answers. Only this file's own numbers are judged (an int
+or a float, as _n makes them): a Python driver that substitutes a number type
+of its own, to replay a comparison under a candidate engine rule, owns that
+answer.
+  MEASURED before it landed (2026-09-25), over every gate that runs script
+through this file or riptide's runner - the run-gates.sh lists of coinxt,
+nostrxt, riptide, nocloud, holde-em and torrentxt - with the tree's bounds
+as they then stood. coinxt/CLAUDE.md trap 20 records what it refused, and
+what the two rules the finding proposed instead (an absolute 1e-6, or a
+tolerance applied without asking which operator) would have refused beside
+it.
 """
 import base64
 import re
@@ -208,6 +267,19 @@ class Imprecise(Exception):
     to swallow it. This is a statement about the TOOL's fidelity ("what you
     just computed would be a different number on an engine"), not a script
     error the script gets to handle."""
+
+
+class Indistinct(Exception):
+    """A comparison of two numbers that the ENGINE answers differently from
+    IEEE: they are unequal, but close enough that the engine's comparison
+    calls them equal (see _decided and the header), so the answer this file
+    would give is not the one an engine gives.
+
+    NOT a Thrown and NOT an Imprecise, on purpose. Not a Thrown for
+    Imprecise's reason (a script `try` must not swallow a statement about the
+    tool's fidelity); not an Imprecise because a driver that catches that one
+    reads it as "a value went past 2^53", and this is a different fact about
+    a different operation."""
 
 
 class Bytes(str):
@@ -542,6 +614,103 @@ def _n(v):
         return 0
     f = float(s)
     return _exact(int(f) if f == int(f) else f)
+
+
+# THE ENGINE'S COMPARISON, as its source writes it (the constant DOCUMENTED;
+# the tolerance RELATIVE and between 8 and 16 DBL_EPSILON, OBSERVED 2026-09-24;
+# the header's 2026-09-25 section has the record, and why a disagreement is
+# REFUSED rather than emulated). engine/src/exec-logic.cpp's MCLogicIsEqualTo
+# and MCLogicCompareTo - behind `is` / `=`, `<>` / `is not`, and `<`, `<=`,
+# `>`, `>=` - skip IEEE equality for two numbers and call them EQUAL when
+#     t_min = min(|l|, |r|)
+#     t_min <  MC_EPSILON:   |l - r|           < MC_EPSILON
+#     t_min >= MC_EPSILON:   |l - r| / t_min   < MC_EPSILON
+# with `#define MC_EPSILON (DBL_EPSILON * 10.0)` in engine/src/sysdefs.h.
+# _engine_equal is that arithmetic, in doubles, the way the C does it.
+_MC_EPSILON = 2.0 ** -52 * 10.0     # DBL_EPSILON * 10.0 = 2.220446049250313e-15
+
+# The engine's answer for each operator once it has called the pair EQUAL
+# (MCLogicCompareTo answers 0, and `>` is `order > 0`, `>=` is `order >= 0`,
+# ...). `is` stands for `=` as well; `is not` is p_cmp's negation of `is`.
+_ON_ENGINE_EQUAL = {"is": True, "<>": False, "<": False, ">": False,
+                    "<=": True, ">=": True}
+
+# The longest string the engine will read as a number: MCU_strtor8 in
+# libfoundation/src/foundation-typeconvert.cpp (`#define R8L 384`, the same
+# source reading) answers "not a number" for anything longer, so `is` falls
+# back to comparing TEXT - a 428-digit hex that happens to be all digits,
+# like holde-em's kKatEnv0ContentHex, is never a number there.
+_R8L = 384
+
+# The number types this file makes: _n answers an int or a float, and a bool
+# never reaches a numeric comparison. Checked as EXACT types, not with
+# isinstance: a Python driver that hands a comparison a number type of its
+# own (a gate replaying the comparison under a candidate engine rule, with a
+# float subclass or a wrapper that answers the six operators itself) has
+# taken the answer over, and this check must not second-guess it.
+_PLAIN_NUMBER = (int, float)
+
+
+def _engine_equal(a, b):
+    """True when the engine's comparison calls two numbers equal (above).
+    float() is exact here: an int that reaches a comparison came through
+    _exact, so it is at most 2^53."""
+    fa, fb = float(a), float(b)
+    if fa == fb:
+        return True
+    da, db = abs(fa), abs(fb)
+    t_min = da if da < db else db
+    if t_min < _MC_EPSILON:
+        return abs(fa - fb) < _MC_EPSILON
+    return abs(fa - fb) / t_min < _MC_EPSILON
+
+
+def _decided(a, b, op, where=None):
+    """Return quietly when the engine answers `a op b` as IEEE - and so this
+    file - does; REFUSE it (Indistinct) when it does not.
+
+    The two part only when a and b are unequal and the engine calls them
+    equal, and then only for an operator whose answer moves: `is` and `<>`
+    always, `>` and `<=` only when a > b in IEEE, `<` and `>=` only when
+    a < b - whatever the order, the engine's answer is _ON_ENGINE_EQUAL[op].
+    OPERATOR-AWARE on purpose, and the corpus shows why: riptide's old u64
+    bound compared 2097151 > 2097151.0000000002 for the VALID seq 2^53 - 1,
+    a pair the engine calls equal, where `>` is false either way and the
+    record parses on both. Refusing that line would refuse a verdict the
+    engine and this file share; at 2^53 + 1 the same line compared 2097152
+    > 2097151.9999999998, true here and false there, and that one is the
+    defect. `where` is the expression text when the caller has it, so the
+    refusal names its site."""
+    if type(a) not in _PLAIN_NUMBER or type(b) not in _PLAIN_NUMBER:
+        return
+    if a == b or not _engine_equal(a, b):
+        return
+    engine = _ON_ENGINE_EQUAL[op]
+    ieee = {"is": False, "<>": True, "<": a < b, ">": a > b, "<=": a <= b,
+            ">=": a >= b}[op]
+    if ieee == engine:
+        return
+    gap = abs(float(a) - float(b))
+    smaller = min(abs(float(a)), abs(float(b)))
+    if smaller < _MC_EPSILON:
+        how = ("the smaller is within MC_EPSILON (10 * DBL_EPSILON) of zero, "
+               "where the engine calls any two numbers less than MC_EPSILON "
+               "apart EQUAL")
+    else:
+        how = ("that is %.2g of the smaller, and the engine calls two numbers "
+               "EQUAL when they differ by less than MC_EPSILON (10 * "
+               "DBL_EPSILON) of the smaller" % (gap / smaller))
+    raise Indistinct(
+        "`%r %s %r`%s: the engine does not answer this comparison the IEEE "
+        "way. The two numbers differ by %r; %s (a relative tolerance, "
+        "OBSERVED on OXT 2026-09-24; its constant from "
+        "engine/src/exec-logic.cpp, DOCUMENTED; docs/OXT-ENGINE-NOTES.md "
+        "2.10). So on OXT this `%s` answers %s, where IEEE answers %s. Decide "
+        "a bound with exact integers that differ by at least 1 at a modest "
+        "magnitude (the u32 halves, the leading bytes), never against a "
+        "quotient."
+        % (a, op, b, (" in `%s`" % where) if where else "", gap, how, op,
+           str(engine).lower(), str(ieee).lower()))
 
 
 class Interp:
@@ -1154,7 +1323,14 @@ class _Expr:
                 if self.s[self.i:self.i + len(op)] == op:
                     self.i += len(op)
                     r = self.p_concat()
+                    # coerced HERE, in p_cmp's own frame: a gate that replays
+                    # comparisons under a candidate engine rule finds the
+                    # comparison sites by the function that calls _n
+                    # (riptide's u64 replay does, 2026-09-24)
                     a, b = _n(v), _n(r)
+                    # refused where the engine's tolerant comparison parts
+                    # from IEEE (the header, 2026-09-25); otherwise as before
+                    _decided(a, b, op, self.s)
                     v = {">=": a >= b, "<=": a <= b, ">": a > b, "<": a < b,
                          "<>": a != b}[op]
                     break
@@ -1376,15 +1552,52 @@ def _eq(a, b):
         return len(arr) == 0 and str(_disp(other)) == ""
     if isinstance(a, bool) or isinstance(b, bool):
         return str(_disp(a)).lower() == str(_disp(b)).lower()
+    # Two NUMBERS, and below two numeric-looking strings, are compared the way
+    # the engine compares numbers, which is not IEEE equality (_decided; the
+    # header, 2026-09-25): refused where the two part, answered as before
+    # everywhere else. _n is called from THIS frame, as in p_cmp, because a
+    # gate that replays comparisons finds the sites by the function that
+    # calls it.
     if isinstance(a, (int, float)) and isinstance(b, (int, float)):
-        return _n(a) == _n(b)
+        a, b = _n(a), _n(b)
+        _decided(a, b, "is")
+        return a == b
     sa, sb = str(_disp(a)), str(_disp(b))
-    try:
-        return _n(sa) == _n(sb) if sa.strip() and sb.strip() and \
-            _rx(r'-?\d+(\.\d+)?').fullmatch(sa.strip()) and \
-            _rx(r'-?\d+(\.\d+)?').fullmatch(sb.strip()) else sa == sb
-    except Exception:
+    if not (sa.strip() and sb.strip()
+            and _rx(r'-?\d+(\.\d+)?').fullmatch(sa.strip())
+            and _rx(r'-?\d+(\.\d+)?').fullmatch(sb.strip())):
         return sa == sb
+    try:
+        na, nb = _n(sa), _n(sb)
+    except (Imprecise, OverflowError):
+        # A numeric string past 2^53 (or past any double): the engine turns
+        # BOTH strings into doubles - rounding them - and compares those, so
+        # two different strings can be one number there, while this branch
+        # answers by the text. Until 2026-09-25 the text answer was given
+        # unconditionally (a bare `except Exception` here swallowed _n's
+        # 2^53 refusal and every other); it is given now only where the
+        # engine would agree with it, and REFUSED where it would not:
+        # "9007199254740994" is "9007199254740995" is TRUE on the engine
+        # (the second rounds to ...996, one double away, inside the
+        # tolerance) and false by the text. (A string that ROUNDS to 2^53 or
+        # below, like "9007199254740993", never gets here: _n answers the
+        # rounded number, which is the engine's reading too.) A string
+        # longer than _R8L is not a number to the engine at all, so a pair
+        # with one of those compares as TEXT there too, and answers here.
+        if (sa != sb and len(sa.lstrip()) <= _R8L and len(sb.lstrip()) <= _R8L
+                and _engine_equal(float(sa), float(sb))):
+            raise Indistinct(
+                "`%s is %s`: two different numeric strings the engine reads "
+                "as ONE number - past 2^53 it rounds each to a double (%r, "
+                "%r) and its comparison calls those equal "
+                "(docs/OXT-ENGINE-NOTES.md 2.10 and 2.11) - so on OXT this "
+                "`is` answers true, where the text answers false. Compare "
+                "wide values and digests by their digits or bytes, never "
+                "with `is`."
+                % (sa, sb, float(sa), float(sb)))
+        return sa == sb
+    _decided(na, nb, "is")
+    return na == nb
 
 
 def _split_chunks(s, d):

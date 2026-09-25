@@ -76,6 +76,15 @@ discovered:
     messages are delivered in order after the driving handler returns, each
     advancing the modeled clock. A handler that re-arms itself is delivered
     a bounded number of times.
+  - A NUMERIC comparison is refused where the engine answers it differently
+    from IEEE (2026-09-25, the base's header): the numeric branch of this
+    file's `<`, `<=`, `>`, `>=` and `<>` calls the base's _decided, and `is`
+    goes through the base's _eq, which does the same. Text ordering is
+    untouched. `case` matching also goes through _eq, as it did before,
+    although the engine's `switch` matches case values as TEXT
+    (engine/src/exec-keywords.cpp, DOCUMENTED, never run here): "1.0" and
+    "1" are one case in this runner and two on an engine - a divergence
+    older than the refusal, named here so it is read rather than met.
 
 THREE MEMBERS DRIVE THIS RUNNER NOW, AND THE THIRD FOUND THREE MODEL DEFECTS
 (2026-09-11). coinxt's wallet gate was the second stack through it; nocloud's
@@ -452,6 +461,14 @@ class DemoExpr(LCS._Expr):
                     # keys with `<`, nocloud on two 64-hex lines (2026-09-11).
                     if LCS._is_numeric(v, False) and LCS._is_numeric(r, False):
                         a, b = LCS._n(v), LCS._n(r)
+                        # the base's refusal, not a copy of it: a numeric
+                        # pair the engine's tolerant comparison answers
+                        # differently from IEEE is REFUSED here exactly as
+                        # in lcs-interp.py's own p_cmp (its header,
+                        # 2026-09-25) - this restatement would otherwise be
+                        # the one comparison site in the family that still
+                        # answered such a pair the IEEE way
+                        LCS._decided(a, b, op, self.s)
                     else:
                         a, b = (str(LCS._disp(v)).lower(),
                                 str(LCS._disp(r)).lower())
@@ -2122,6 +2139,15 @@ function rmUnion
    end try
    return "ran"
 end rmUnion
+function rmNearOrder
+   return 2097152 > (9007199254740992 - 1) / 4294967296
+end rmNearOrder
+function rmNearIs
+   return 0.1 + 0.2 is 0.3
+end rmNearIs
+function rmFarOrder
+   return 1700000000 < 1700000001
+end rmFarOrder
 """
 
 
@@ -2160,6 +2186,25 @@ def check_runner_model(c):
                  False, "it became a catchable script error: %s" % exc)
         except Exception:                                # noqa: BLE001
             c.ck("[MODEL] an unmodelled array command stops the run", True)
+        # A NUMERIC comparison the engine answers differently from IEEE is
+        # refused through THIS runner's comparator as through the base's
+        # (lcs-interp.py header, 2026-09-25). The `<` family here is a
+        # restatement of the base's, not a call into it, so without this pin
+        # a tidy-up could drop the refusal from the comparator every stack
+        # gate in the family runs through, and nothing would say so.
+        for name, what in (("rmNearOrder", "riptide's old u64 bound at "
+                            "2^53 + 1, through `>`"),
+                           ("rmNearIs", "0.1 + 0.2 against 0.3, through "
+                            "`is`")):
+            label = "[MODEL] a pair the engine calls equal is refused: " + what
+            try:
+                got = run(name)
+                c.ck(label, False, "it answered %r" % (got,))
+            except LCS.Indistinct:
+                c.ck(label, True)
+        got = run("rmFarOrder")
+        c.ck("[MODEL] ... and a clearly separated pair still orders "
+             "(timestamps a second apart)", got is True, repr(got))
     finally:
         shutil.rmtree(sandbox, ignore_errors=True)
 

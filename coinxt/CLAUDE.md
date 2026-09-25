@@ -271,6 +271,15 @@ Symptom -> cause -> fix. Engine behaviour gets one line and its engine note.
     lives in nostrxt (drift-gated); `check-script-vectors.py` is the regression proof for every extension to it.
 20. **2^53** (2026-09-08; engine note 2.4): Python ints made the model MORE capable than the engine, which fails
     silently. `_exact()` refuses any value past 2^53; `Imprecise` is not a `Thrown`, so a script `try` cannot eat it.
+    Its twin since 2026-09-25 (engine note 2.10): the engine calls two numbers EQUAL within 10 DBL_EPSILON of the
+    smaller (a relative tolerance between 8 and 16 DBL_EPSILON, OBSERVED 2026-09-24; the 10, its source's, DOCUMENTED),
+    so the model refuses (`Indistinct`, not a `Thrown` either) any comparison whose operator answers differently there
+    than in IEEE - the `tValue > (9007199254740992 - tByte) / 256` class. Tier 0 of `check-script-vectors.py` holds it
+    to the engine's eight probe readings. Measured over every execution gate before it landed (2026-09-25): it
+    refused riptide's old u64 bound at 2^53 + 1 and nothing else (no gate then reached wallet-core's old twin; the
+    edge vectors added the day before do, and it refuses them); the wide digit strings the Runes, LEB128 and decimal
+    helpers test with `is "0"` still answer, because the engine agrees there. An absolute 1e-6, or a tolerance
+    applied whatever the operator, would also have refused riptide's VALID 2^53 - 1.
 21. **What the model does.** Arrays are values (deep copy at every binding). The trailing-delimiter rule is modelled (a
     bare `split()` once made the "m/" negative vector test the model, not the script). `the number of chunks of X & Y`
     counts X alone (engine note 2.6, corrected 2026-09-11: the "binds into the target" reading was the runner's; the

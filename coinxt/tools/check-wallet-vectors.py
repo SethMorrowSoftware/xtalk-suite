@@ -2896,6 +2896,8 @@ def _guard_answer(fn):
         return "refused"
     except LCS.Imprecise:
         return "let through"
+    except LCS.Indistinct:
+        return "not decided"
     if got == "":
         return "refused"
     return "answered %r" % (got,)
@@ -2910,12 +2912,19 @@ def check_tolerance_fires(c):
     probe = LCS.Interp(_PROBE_LADDER)
 
     def readings():
-        return [str(LCS._disp(probe.eval_expr(expr, {})))
-                for expr, _want in _PROBE_READINGS]
+        out = []
+        for expr, _want in _PROBE_READINGS:
+            try:
+                out.append(str(LCS._disp(probe.eval_expr(expr, {}))))
+            except LCS.Indistinct:
+                out.append("refused")
+        return out
 
     engine_read = [want for _expr, want in _PROBE_READINGS]
-    c.ck("exact IEEE reads riptide's two probe lines as the engine did NOT",
-         readings(), ["true"] * 6 + ["1", "1"])
+    c.ck("the plain interpreter refuses each probe the engine read "
+         "differently from IEEE, and answers the two it read the same",
+         readings(), ["true", "refused", "refused", "refused", "true",
+                      "refused", "refused", "refused"])
     for index, (label, same, _old) in enumerate(TOLERANCE_MODELS):
         restore = _tolerant_compare(same)
         try:
@@ -2936,15 +2945,20 @@ def check_tolerance_fires(c):
         # the two guards (`>`), and `is` over riptide's pair: the swap must
         # reach the ordering operators AND _eq, or a vector could pass
         # under a rule the tier never applied
+        try:
+            pair = fixture.eval_expr(
+                "2097152 is (9007199254740992 - 1) / 4294967296", {})
+        except LCS.Indistinct:
+            pair = "not decided"
         return (_guard_answer(lambda: fixture.call("oldRiptideU64", [2 ** 21, 1])),
                 _guard_answer(lambda: fixture.call("oldCwLeRead", [past])),
-                fixture.eval_expr("2097152 is (9007199254740992 - 1) / 4294967296",
-                                  {}))
+                pair)
 
-    c.ck("exact IEEE refuses 2^53 + 1 at both quotient guards and tells the "
-         "pair apart (the engine ACCEPTED riptide's on 2026-09-24: the "
-         "disagreement this tier is for)",
-         answers(), ("refused", "refused", False))
+    c.ck("the plain interpreter will not decide 2^53 + 1 at either quotient "
+         "guard, nor whether the pair is equal (since 2026-09-25 it refuses a "
+         "comparison the engine answers differently from IEEE; the engine "
+         "ACCEPTED riptide's on 2026-09-24)",
+         answers(), ("not decided", "not decided", "not decided"))
     for label, same, old_cw in TOLERANCE_MODELS:
         restore = _tolerant_compare(same)
         try:
@@ -2954,8 +2968,8 @@ def check_tolerance_fires(c):
         c.ck("under %s, riptide's guard lets 2^53 + 1 through as the engine "
              "did and `is` calls the pair equal; wallet-core's old guard: %s"
              % (label, old_cw), got, ("let through", old_cw, True))
-    c.ck("and the exact rule is restored afterwards", answers(),
-         ("refused", "refused", False))
+    c.ck("and the interpreter's own rule is restored afterwards", answers(),
+         ("not decided", "not decided", "not decided"))
 
 
 def check_tolerance_models(c, ip, run):

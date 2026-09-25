@@ -211,6 +211,27 @@ def check_interp_model(c, ip):
          ev("the seconds"), LCS.SECONDS[0])
     c.ck('the engine number fold: "1e3" IS an integer here, as on OXT',
          ev('"1e3" is an integer'), True)
+    # The engine's comparison is not IEEE equality (root engine notes 2.10;
+    # the interpreter's header, 2026-09-25): two numbers within 10 *
+    # DBL_EPSILON of the smaller are EQUAL there, so the interpreter REFUSES
+    # (LCS.Indistinct) a comparison whose answer that moves, and answers the
+    # rest as before. Pinned in THIS carrier's copy too, because a published
+    # nostrxt runs no coinxt gate. This member's nearest case is the `since`
+    # filter, a timestamp against one a second later: 5.9e-10 of their size
+    # apart, far outside the tolerance, and answered. The full fixture lives
+    # beside the interpreter's home, coinxt's check-script-vectors.
+    c.ck("a timestamp one second later is later (far outside the tolerance)",
+         ev("1700000000 < 1700000001"), True)
+
+    def decided(expr):
+        try:
+            return "answered %r" % (ev(expr),)
+        except LCS.Indistinct:
+            return "refused"
+
+    c.ck("a pair the engine calls equal is refused, not answered the IEEE "
+         "way (riptide's old u64 bound at 2^53 + 1)",
+         decided("2097152 > (9007199254740992 - 1) / 4294967296"), "refused")
 
 
 # --------------------------------------------------------------------- tier 1
