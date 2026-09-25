@@ -2722,9 +2722,14 @@ def check_case_folding_fires(c, ip):
 #
 # SCOPE, deliberately: the wide-integer vectors, not the whole set. The swap
 # below reaches every comparison the interpreter makes, so a full re-run is
-# one flag away (--all-comparison-rules) and was run by hand on 2026-09-24;
-# the gate carries the part whose answer must never move, at a cost of
-# seconds rather than one more full pass of the slowest vector gate here.
+# one flag away (--all-comparison-rules). This line used to say that run was
+# made by hand on 2026-09-24; it never finished (a loaded machine, about four
+# hours, stopped). What did run, by hand on 2026-09-25 (03:32 to 03:45 UTC,
+# the fixed cwLeRead / cwBeRead), is the whole set once per model: 1727
+# vectors each under the engine's rule, a 15-digit round trip and an absolute
+# 1e-6, none differing. The gate carries the part whose answer must never
+# move, at a cost of seconds rather than one more full pass of the slowest
+# vector gate here.
 #
 # HOW A RULE IS SWAPPED WITHOUT TOUCHING THE INTERPRETER (byte-identical with
 # nostrxt's copy, and loaded by riptide's runner). The ordering operators live
