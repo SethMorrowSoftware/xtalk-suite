@@ -262,7 +262,12 @@ extern "C" ENX_API int ENX_CALL enx_abi_version(void) {
     /* Returning a compile-time constant cannot throw, so the guard is pure
      * uniformity: CLAUDE.md rule 2 says EVERY enx_* body runs inside one, and
      * an invariant with a silent exception is an invariant nobody can check.
-     * The compiler folds the try/catch away, so uniformity is free here. */
+     * GCC and clang fold the try/catch away (every committed .so and dylib
+     * slice is a leaf that returns the constant); MSVC does NOT: both
+     * committed DLLs keep the guard's frame, an FS:[0] EH registration on x86
+     * and a /GS-cookie frame with the catch's -6 path on x64 (measured
+     * 2026-09-25 on the 2026-09-12 builds). The suite's
+     * tools/check-binary-freshness.py decodes the ABI through both shapes. */
     ENX_GUARD_INT(ENX_ERR_THROWN, {
         return ENX_ABI_VERSION;
     });
