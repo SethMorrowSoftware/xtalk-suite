@@ -26,12 +26,16 @@ tools/build-all.sh runs it, and holds the verdict:
        `is`, engine note 2.11);
     g  kSuUiVersion named inside the build (a stamp that hashes itself);
     l  a constant's value changed beside a trailing comment (the comment
-       must not blind the gate to the value).
+       must not blind the gate to the value);
+    n  a stale stamp behind a trailing comment on its own line (and --fix
+       then restores the value and keeps the comment).
   MUST PASS (the build did not change):
     h  a comment edit inside suBuildAll (comments cannot move a control);
     i  a code edit in a handler the build does not reach (suPump);
     k  a trailing comment on a constant the build reads (the first cut
-       died here with "not in list", --fix included).
+       died here with "not in list", --fix included);
+    m  a trailing comment on the stamp line itself (the first cut read it
+       as no declaration: "found 0").
   --fix:
     j  on case a's copy, --fix writes a stamp, the gate then passes, and a
        second --fix changes nothing.
@@ -60,6 +64,14 @@ STAMP_RE = re.compile(r'^(constant kSuUiVersion = ")([^"]*)(")$', re.M)
 
 def set_stamp(value):
     return lambda t: STAMP_RE.sub(lambda m: m.group(1) + value + m.group(3), t, 1)
+
+
+def comment_stamp(value):
+    """The stamp line with a trailing comment, its value kept (None) or
+    replaced."""
+    return lambda t: STAMP_RE.sub(
+        lambda m: m.group(1) + (m.group(2) if value is None else value)
+        + m.group(3) + "   -- derived, never bumped", t, 1)
 
 
 # (id, what, needle, replacement or a function of the text, must fail?,
@@ -114,6 +126,14 @@ CASES = [
      "constant kSuRowStep = 34\n",
      "constant kSuRowStep = 36   -- the row pitch\n",
      True, "fingerprint to"),
+    # The same, on the STAMP's own line: the first cut read one as no
+    # declaration at all ("found 0").
+    ("m", "a trailing comment on the stamp line (NEGATIVE: must pass)",
+     None, comment_stamp(None),
+     False, "check-suite-ui-version: OK"),
+    ("n", "a stale stamp behind a trailing comment",
+     None, comment_stamp("suite-board-1"),
+     True, "is suite-board-1"),
 ]
 
 
@@ -194,6 +214,16 @@ def main():
                 STAMP_RE, "", mutate(core, CASES[0][2], CASES[0][3]))
             verdict(only_stamp, "j  --fix touched the stamp line and nothing "
                     "else")
+        # n's copy: --fix rewrites the value and keeps the line's comment
+        if "n" in paths:
+            code, out = run(paths["n"], "--fix")
+            fixed = open(paths["n"], encoding="utf-8").read()
+            c2, o2 = run(paths["n"])
+            want = comment_stamp(None)(core)
+            verdict(code == 0 and c2 == 0 and fixed == want,
+                    "n  --fix restores the stamp behind its comment, the "
+                    "comment kept and nothing else touched",
+                    "\n".join((out, o2)))
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
     if problems:

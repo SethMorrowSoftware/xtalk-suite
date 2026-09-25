@@ -76,7 +76,11 @@ PREFIX = "suite-board-"
 # The closure must reach these, or it is not the board's builder any more
 # and a green here would be checking nothing.
 FLOOR = ("suBuildAll", "suBuildReset", "uiChrome", "uiButton", "uiLabel")
-CONST_LINE = re.compile(r'^constant\s+' + STAMP + r'\s*=\s*"([^"]*)"\s*$', re.M)
+# The stamp's own line may carry a trailing comment, like any other
+# declaration in the core: the first cut refused one as "found 0" (review,
+# 2026-09-25). --fix rewrites the quoted value only.
+CONST_LINE = re.compile(r'^constant\s+' + STAMP + r'\s*=\s*"([^"]*)"'
+                        r'[ \t]*(?:(?:--|#|//)[^\n]*)?$', re.M)
 
 
 def _load_generator():
