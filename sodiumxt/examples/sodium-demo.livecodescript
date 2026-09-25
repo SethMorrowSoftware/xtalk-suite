@@ -27,8 +27,9 @@ script "sodiumDemo"
 -- sx* handlers throw on auth failure, so the demo wraps those in try/catch.
 --
 -- HONESTY (the suite convention): the sx* surface itself is engine-proven
--- (sxSelfTest ran 71 checks green on-engine 2026-08-12, per sodiumxt/
--- CLAUDE.md), but this DEMO's UI was unified onto the suite kit 2026-08-14,
+-- (sxSelfTest ran 106 checks green on-engine, most recently on Windows
+-- 2026-09-24, per sodiumxt/CLAUDE.md; this line cited the 71 of 2026-08-12
+-- until then), but this DEMO's UI was unified onto the suite kit 2026-08-14,
 -- so the stack as a whole is verified statically and needs an OXT re-pass.
 --
 -- THE LOOK is the suite UI kit, carried verbatim between the marker lines
@@ -639,7 +640,7 @@ on buildUI
    uiFooter \
          "Backed by libsodium through the SodiumXT C shim. Every cipher" \
          & " here is authenticated: tampering and wrong keys are rejected." \
-         & " The sx* surface is engine-proven (71 checks green 2026-08-12);" \
+         & " The sx* surface is engine-proven (106 checks green 2026-09-24);" \
          & " this kit UI still needs an OXT re-pass.", \
          "24,610,796,638"
 

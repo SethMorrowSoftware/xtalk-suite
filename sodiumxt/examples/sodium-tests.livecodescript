@@ -15,7 +15,9 @@
 -- (the ASCII bytes); textDecode them here when a String is wanted. A passphrase
 -- is textEncoded to UTF-8 before it crosses.
 --
--- Engine-verified through ABI 10 (2026-08-24: 106 checks in the suite paste, the raw-ChaCha20 section included; previously through ABI 9): the "run it in OXT to confirm" label that
+-- Engine-verified through ABI 10 (2026-08-24, and again on Windows 2026-09-24:
+-- 106 checks in the suite paste, the raw-ChaCha20 section included;
+-- previously through ABI 9): the "run it in OXT to confirm" label that
 -- stood here is retired by recorded passes - the complete harness ran green
 -- on-engine 2026-08-10 (68 checks, zero failures, twice in one day), again
 -- 2026-08-12 on Windows x64 (71 checks, adding the ABI-7 sxSha3_256 / FIPS 202
@@ -30,9 +32,12 @@
 -- independent RFC 8439 reference) ran green in that 2026-08-24 paste, all 7
 -- checks, on Windows x86_64; the "ONE section with no engine run today"
 -- sentence that stood here after that run contradicted the line above it and
--- was corrected 2026-09-24. Owed now is platform cover only: that DLL was a
--- mingw build that no longer ships, so the MSVC DLLs, the mac dylib and Linux
--- at ABI 10 each still need a run (CLAUDE.md's platform table).
+-- was corrected 2026-09-24. All 7 ran green again in the 2026-09-24 D-23
+-- suite paste on Windows (106/106). Owed now is platform cover only: the
+-- 2026-08-24 DLL was a mingw build that no longer ships, and the 2026-09-24
+-- run recorded neither sxVersion() nor bitness, so the MSVC DLLs, the mac
+-- dylib and Linux at ABI 10 each still need a run that names its build
+-- (CLAUDE.md's platform table).
 
 local sLog
 local sPass

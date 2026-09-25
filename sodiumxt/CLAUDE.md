@@ -155,7 +155,7 @@ and zeroes the state. There is no LCB unload hook: apps free what they open (`cl
 |---|---|---|---|
 | `x86_64-linux` | **10** | release run 12 (2026-08-27), pinned 1.0.20 source | none recorded for this build; Linux last recorded at ABI 9 (2026-08-18) |
 | `x86-linux` | **10** | release run 12, pinned 1.0.20 source (`-m32`) | none recorded |
-| `x86_64-win32` | **10** | MSVC + vcpkg libsodium 1.0.22 (D-08); last re-committed 2026-09-12 | needs its Windows engine pass (runbook row 23); the 2026-08-24 106/106 ran on a mingw DLL that no longer ships |
+| `x86_64-win32` | **10** | MSVC + vcpkg libsodium 1.0.22 (D-08); last re-committed 2026-09-12 | needs its Windows engine pass (runbook row 23); the 2026-08-24 106/106 ran on a mingw DLL that no longer ships, and the 2026-09-24 106/106 on Windows recorded neither `sxVersion()` nor bitness, so it names no DLL |
 | `x86-win32` | **10** | as the x64 row | needs its Windows engine pass (runbook row 23; a 32-bit OXT) |
 | `universal-mac` | **10** | release run 12, pinned 1.0.20 source; both slices in one pass, `lipo -archs` asserted, arm64 tested natively, x86_64 under Rosetta 2 | no OXT load recorded |
 
@@ -201,15 +201,18 @@ A DLL nobody can run here passes three checks: (1) exports match the Linux build
 | 2026-08-27 | CI, no engine | `release-binaries.yml` run 12 (GitHub run 33025459610, cec1e85) | all five rows at ABI 10; mac universal, both slices tested |
 | 2026-08-27 | OXT, two-machine session (platform and package not recorded) | suite paste | 2440 passed / 2 failed / 3 skipped; every folded member green, sodiumxt included (both failures were the live loopbacks, UDP to 127.0.0.1 blocked on that machine) |
 | 2026-08-27, 2026-09-12 | CI, no engine | runs 33100007529 (b9e1c1b) and 34657390798 (421bab3) | Windows DLLs re-committed (MSVC + vcpkg, 1.0.22); the 09-12 pair ships |
+| 2026-09-24 | OXT, Windows (the engine reports Win32; OXT version, OS build, bitness and `sxVersion()` not recorded, so no DLL is named) | the D-23 suite paste (built from 9aa62c8; this member as at 6401e43) | `sxSelfTest()` 106/106, every group incl. ristretto ABI 8+9 and the 7-check ChaCha20; sampler 17/17; the CROSS seams green (one identity with libtorrent, the BEP44 item TorrentXT accepts, one sealed payload, OnionXT's SodiumXT-backed capabilities); board row 125/0/0, no skips; paste 2620 passed / 5 failed / 3 skipped, the failures riptide's three and the two live loopbacks |
 
 ## Status
 
 The whole `sx*` surface is engine-proven through ABI 10 (every section, ChaCha20 included,
-green on Windows x64 2026-08-24; ristretto also on Linux 2026-08-18). The current BINARIES
-are not: no record names any of the five committed builds (the shipped Windows DLLs of
-2026-09-12 postdate every engine record; the 2026-08-27 paste did not record its platform
-or package). The demo's UI (unified onto the suite kit 2026-08-14) is "verified
-statically; needs an OXT re-pass". Open work is tracked in the suite's docs/WORK-PLAN.md.
+green on Windows x64 2026-08-24 and again on Windows 2026-09-24, 106/106 both times;
+ristretto also on Linux 2026-08-18). The current BINARIES are not: no record names any of
+the five committed builds (the 2026-09-24 paste is the one engine record after the shipped
+Windows DLLs of 2026-09-12, and it recorded neither `sxVersion()` nor bitness, so it cannot
+say which DLL it loaded; the 2026-08-27 paste did not record its platform or package). The
+demo's UI (unified onto the suite kit 2026-08-14) is "verified statically; needs an OXT
+re-pass". Open work is tracked in the suite's docs/WORK-PLAN.md.
 
 ## Build and gates
 

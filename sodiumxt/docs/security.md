@@ -127,7 +127,8 @@ requester's capability ledger, shipped as a thin wrap of audited code. The evide
 the house standard: C KATs under ASan/UBSan cross-checked against an independent RFC 8439
 implementation (three implementations agree on the pinned vectors), then **observed on
 an engine 2026-08-24** (Windows x86_64, OXT 9.6.3, ABI 10): the 7-check raw-ChaCha20
-section green inside the 106-check `sxSelfTest()`, folded into the suite paste.
+section green inside the 106-check `sxSelfTest()`, folded into the suite paste, and green
+again there 2026-09-24 (Windows).
 
 ## Provenance and reporting
 
