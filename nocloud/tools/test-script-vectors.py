@@ -75,6 +75,40 @@ FIXTURES = [
      " < (sUserRoutes[tRootKey][tBestKey][\"method\"] & space"
      " & sUserRoutes[tRootKey][tBestKey][\"path\"]))",
      "qsUserRouteFind('GET','/api/files/x') over ['GET /api/:a/x', 'GET /api/:Z/x']"),
+    # The route layer's case-exact COMPARISONS, which only the gate's [engine is] pass can
+    # see (2026-09-25): under the interpreter's own `is` (case-exact) each of these reverts
+    # answered exactly what the fix answers, and all four passed the gate. Each is named
+    # by a row of the pass where `is` folds as the engine's does.
+    ("Allow over the built-in table claims a path with bare `is` (folds on the engine)",
+     "         if qsSameText(sHttpRoutes[tKey][\"path\"], pPath) then\n",
+     "         if sHttpRoutes[tKey][\"path\"] is pPath then\n",
+     "qsHttpAllow exact('/_EDIT/api/write') [engine is]"),
+    ("Allow over a folder's table claims a path with bare `is` (folds on the engine)",
+     "            if qsSameText(tRoutePath, pPath) then\n"
+     "               put tMethod & return after tExtras\n            else if",
+     "            if tRoutePath is pPath then\n"
+     "               put tMethod & return after tExtras\n            else if",
+     "qsHttpAllow exact('/API/submit') [engine is]"),
+    ("the CORS preflight claims a path with bare `is` (folds on the engine)",
+     "         put qsSameText(tRoutePath, pPath) into tClaims\n",
+     "         put (tRoutePath is pPath) into tClaims\n",
+     "qsCorsPreflight('/API/SUBMIT') [engine is]"),
+    ("qsSameText without its exact stage (the folded pre-test answers alone)",
+     "   return ((\"h\" & qsHexKey(pA)) is (\"h\" & qsHexKey(pB)))\n",
+     "   return true\n",
+     "qsSameText('/api/x','/API/x') [engine is]"),
+    # A declared route METHOD is a token (2026-09-25): each entry's own method is what
+    # Allow copies into the header, so a CR, LF or space in it reached that header.
+    ("the declared-method predicate accepting anything",
+     "function qsHttpMethodValid pMethod\n",
+     "function qsHttpMethodValid pMethod\n   return true\n",
+     "qsHttpMethodValid('POST\\r\\nX-EVIL: 1')"),
+    ("the route loader filing a method it never checked",
+     "         if not qsHttpMethodValid(tMethod) then\n"
+     "            next repeat                       -- a method is a token: no space, CR or LF\n"
+     "         end if\n",
+     "",
+     "qsLoadUserRoutes refuses a method that is not a token before it files the route"),
 ]
 
 

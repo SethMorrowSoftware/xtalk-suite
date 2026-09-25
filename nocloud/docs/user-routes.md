@@ -81,7 +81,7 @@ web link (the mount re-prefix described under `redirect` below).
 
 | Field | Meaning | Default |
 |---|---|---|
-| `method` | HTTP method to match (`GET`, `POST`, ...) | `GET` |
+| `method` | HTTP method to match (`GET`, `POST`, ...), in any letter case. Letters, digits and `-` only: a route whose method holds anything else (a space, a comma, CR or LF) is skipped at load. *(Since 2026-09-25; verified statically; needs an OXT pass.)* | `GET` |
 | `path` | The URL path. Must start with `/`; may not contain `..` or control bytes; may not be under the reserved `/_qs/` or `/_edit/`. May contain `:name` **parameter segments** (see "Path parameters" below) - but the **first** segment must always be literal. | *(required)* |
 | `body` | The response body (any text). Capped at 64 KB. | `""` |
 | `template` | `true` enables `{{...}}` substitution in `body` (see below). Values are escaped for `type`. | `false` |
@@ -132,7 +132,8 @@ is loaded (an invalid pattern is skipped, like any other invalid route):
   header values - those stay exactly as declared.
 - **Precedence is deterministic:** an exact route on the literal path always wins over a
   pattern; among matching patterns the one with the *fewest* parameters (most literal)
-  wins, ties broken by comparing the route keys - never by table order.
+  wins, ties broken by comparing the route keys byte for byte (`METHOD /path`, so `:Z`
+  sorts before `:a`) - never by table order.
 - **`Allow`, `405`, and CORS see patterns.** An `OPTIONS` (or an unsupported method) on
   `/api/greet/world` derives its `Allow` from every route *matching* that path, patterns
   included, and a `cors: true` param route answers the preflight for its matching paths

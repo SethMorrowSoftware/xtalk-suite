@@ -7011,6 +7011,29 @@ function qsUserPathValid pPath
    return true
 end qsUserPathValid
 
+-- Is pMethod a method a user route may declare? Non-empty, and nothing but the token
+-- characters qsSanitizeHeaderName keeps (letters, digits, "-"), which every real method
+-- fits (GET, PATCH, PROPFIND, M-SEARCH). qsLoadUserRoutes skips a route whose method is
+-- not (2026-09-25). Until then any text was stored, and qsHttpAllow copies a route's
+-- method into the Allow header: a method carrying CR LF put a bare CR into every OPTIONS
+-- and 405 reply on that path (the LF became a list separator, the CR stayed). Since the
+-- same day's case-exact tables, where Allow reads each entry's own method instead of
+-- splitting the key at its first space, a method carrying a space showed up in Allow for
+-- the wrong path too ("GET /a" declared on "/b"), and its key aliased another route's
+-- ("GET /a" + "/b" is "GET" + "/a /b"). The request parser takes the method as word 1 of
+-- the request line, so no request carries a space: the refused routes were unreachable,
+-- and dropping them changes only the Allow header and the /_qs/routes listing. Compared
+-- by LENGTH, not `is` (a folded, number-parsing compare: suite engine note 2.11):
+-- qsSanitizeHeaderName only ever deletes. Pure; golden: http_method_valid().
+function qsHttpMethodValid pMethod
+   local tKept
+   if pMethod is empty then
+      return false
+   end if
+   put the number of chars of qsSanitizeHeaderName(pMethod) into tKept
+   return (tKept is the number of chars of pMethod)
+end qsHttpMethodValid
+
 -- ---- route-table keys: CASE-EXACT, on purpose (2026-09-25) --------------------------
 -- HTTP paths are case-sensitive (RFC 3986 6.2.2.1: only the scheme and host fold), and
 -- until 2026-09-25 this server's were not. Both route tables were keyed by the TEXT
@@ -7405,6 +7428,9 @@ command qsLoadUserRoutes pRoot
          put toUpper(qsTrim(tRoute["method"])) into tMethod
          if tMethod is empty then
             put "GET" into tMethod
+         end if
+         if not qsHttpMethodValid(tMethod) then
+            next repeat                       -- a method is a token: no space, CR or LF
          end if
          put tRoute["path"] into tPath
          if not qsUserPatternValid(tPath) then

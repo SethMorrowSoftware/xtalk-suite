@@ -73,6 +73,8 @@ User-declared routes (.qsroutes.json):
                                          route declares one, no pattern matches one, and the
                                          static pipeline refuses one)
   qsUserPathValid -> user_path_valid()  (absolute, traversal-free; /_qs and /_edit reserved)
+  qsHttpMethodValid -> http_method_valid() (a declared method is a token: letters, digits,
+                                         "-"; no space, CR or LF can reach Allow; 2026-09-25)
   qsSanitizeHeaderName  -> sanitize_header_name()  (letters/digits/hyphen only)
   qsSanitizeHeaderValue -> sanitize_header_value() (CR/LF/control bytes dropped)
   qsRenderTemplate -> render_template() (bounded {{...}} substitution in a route body)
@@ -830,10 +832,12 @@ def user_route_find(keys, method, path):
 # ---- qsHttpAllow: the Allow header value for a path --------------------------
 # Static verbs GET/HEAD/OPTIONS plus any method registered for a route CLAIMING this
 # path - built-in routes (always exact) and (when a root is shared) the folder's
-# user-declared .qsroutes.json routes, where "claiming" is an exact key match OR a
-# :param pattern that MATCHES the path (a param route's methods must never fall out of
-# the OPTIONS/405 derivation) - in deterministic (sorted) order, de-duplicated. Both
-# tables key on "METHOD /path". Mirrors qsHttpAllow(pPath, pRoot).
+# user-declared .qsroutes.json routes, where "claiming" is an exact path match (same_text,
+# case-exact like the table since 2026-09-25) OR a :param pattern that MATCHES the path (a
+# param route's methods must never fall out of the OPTIONS/405 derivation) - in
+# deterministic (sorted) order, de-duplicated. The tables are given as readable
+# "METHOD /path" strings; the script's keys are hex (route_key) and it reads each entry's
+# own method and path. Mirrors qsHttpAllow(pPath, pRoot).
 
 def http_allow(route_keys, path, user_keys=None):
     extras = set()
@@ -856,8 +860,8 @@ def http_allow(route_keys, path, user_keys=None):
 # Empty unless some user route CLAIMING `path` (exact, or a matching :param pattern -
 # the same rule as http_allow, so the preflight promise holds identically for param
 # routes) opted into cors; else the four Access-Control-* lines (Allow-Methods reuses
-# the already-computed Allow value). `cors_keys` = the set of "METHOD /path" keys whose
-# route set cors:true. Mirrors qsCorsPreflight.
+# the already-computed Allow value). `cors_keys` = the readable "METHOD /path" routes
+# that set cors:true (the script walks its hex-keyed entries). Mirrors qsCorsPreflight.
 
 def cors_preflight(cors_keys, path, allow):
     for k in cors_keys:
@@ -1079,6 +1083,33 @@ def sanitize_header_name(n):
         if (48 <= o <= 57) or (65 <= o <= 90) or (97 <= o <= 122) or c == "-":
             out += c
     return out
+
+
+def http_method_valid(m):
+    """Mirror qsHttpMethodValid: a user route's declared method must be non-empty and
+    nothing but the token characters sanitize_header_name keeps. Since 2026-09-25 each
+    table entry's own method is what http_allow copies into the Allow header (the key used
+    to be split at its first space), so a method carrying CR LF or a space would reach that
+    header; qsLoadUserRoutes skips such a route instead. The script compares LENGTHS
+    (sanitize only deletes), which is this equality."""
+    return m != "" and sanitize_header_name(m) == m
+
+
+# the methods qsLoadUserRoutes has upper-cased and must accept or skip (the execution gate
+# drives the script's predicate on the same list)
+HTTP_METHOD_ROWS = [
+    ("GET", True), ("POST", True), ("DELETE", True), ("PATCH", True),
+    ("M-SEARCH", True), ("PROPFIND", True), ("GET2", True),
+    ("", False),
+    ("POST\r\nX-EVIL: 1", False),              # CR LF: a bare CR reached the Allow header
+    ("POST\rX-EVIL:1", False),
+    ("POST\nX", False),
+    ("GET /A", False),                          # a space: Allow on the wrong path, an aliased key
+    ("GET\t", False), ("GE T", False),
+    ("GET,POST", False),                        # a comma would forge a second Allow entry
+    ("G\u00c9T", False),                   # non-ASCII
+    ("UNDER_SCORE", False),                     # "_" is not a kept token char (strict)
+]
 
 
 # ---- qsMountLocation: user-route redirect Location vs the capability mount ----
@@ -2007,6 +2038,10 @@ def main():
         ("under_score", "underscore"),          # underscore not a kept token char (strict)
     ]:
         check("sanitize_header_name(%r)" % name, sanitize_header_name(name), want)
+    # a declared route METHOD is a token (2026-09-25): what http_allow copies into the
+    # Allow header can carry no CR, LF or space, and no key can alias another route's
+    for method, want in HTTP_METHOD_ROWS:
+        check("http_method_valid(%r)" % method, http_method_valid(method), want)
 
     # -- redirect Location vs the /<token>/ capability mount (the redirect hole) --
     for loc, mount, want in [
@@ -2089,8 +2124,8 @@ def main():
           "HTML escape, capability gate, SPA fallback, HTTP framing, keep-alive req "
           "length, JSON escape, editor confinement, LAN-first gate, query parse, size "
           "probe, filename sanitise, rate + ETA format, HTTP-date, Allow header, "
-          "editor login backoff, user-route path + header sanitise, template render + "
-          "escape, CORS preflight, conditional-GET ETag, shared file-head plan, "
+          "editor login backoff, user-route path + method + header sanitise, template "
+          "render + escape, CORS preflight, conditional-GET ETag, shared file-head plan, "
           "redirect mount re-prefix, editor parent-dirs, param patterns + reserved "
           "backstop + pattern Allow/preflight, reserved-namespace predicate, HEAD route "
           "lookup, case-exact route keys + fold rows, one-shot text reply + HEAD body "

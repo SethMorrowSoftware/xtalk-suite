@@ -79,7 +79,12 @@ reuse cuts against unlinkability; reversible if an OXT pass shows Tor pages stal
   empty), and every route-path comparison (`qsHttpAllow`, `qsCorsPreflight`,
   `qsRouteMatch`'s static segments) goes through `qsSameText`, which neither folds case
   nor compares number-like text as numbers (engine note 2.11). Methods still fold, on
-  purpose: `get` is `GET`, as it always was here.
+  purpose: `get` is `GET`, as it always was here. A declared route's method must be a
+  token (`qsHttpMethodValid`: letters, digits, `-`), because each entry's own method is
+  what `qsHttpAllow` copies into the `Allow` header; a method holding a CR, LF or space
+  is skipped at load. `tools/check-script-vectors.py` drives this layer twice, the second
+  time with `is` folding case as the engine's does: the model's own `is` is case-exact,
+  and under it a bare `is` in place of `qsSameText` answered exactly as the fix does.
 - **Reserved namespaces.** `qsHttpServeStatic` refuses `/_qs` and `/_edit` before it
   touches the share, through the ONE `qsHttpReservedPath` predicate that also serves
   `qsUserPathValid` and `qsRouteMatch`'s backstop (it replaced three literal copies). It

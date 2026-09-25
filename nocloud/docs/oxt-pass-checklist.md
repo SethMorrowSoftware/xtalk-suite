@@ -85,7 +85,10 @@ Uses the sample's `GET /api/greet/:name` route. Test over **both** transports.
       reserved namespaces).
 - [ ] A `file` route pointing at a dotfile (`.env`, `.qsroutes.json`, `.git/config`) -> **skipped**.
 - [ ] A route header value containing CR/LF -> the injected bytes are **stripped** (no extra
-      header line appears in the response).
+      header line appears in the response). Likewise a route whose `method` holds CR/LF or a
+      space (`"POST\r\nX-Evil: 1"`, `"GET /a"`) -> **skipped** at load: absent from
+      `/_qs/routes`, and `OPTIONS` on its path answers `Allow: GET, HEAD, OPTIONS` with no
+      stray CR (`qsHttpMethodValid`, 2026-09-25; verified statically; this is its pass).
 - [ ] A templated body with content-type `image/svg+xml` (or `application/javascript`) reflecting
       `{{query.x}}=<script>` -> **escaped** (no executable markup reaches the browser).
 - [ ] **Concurrent shares:** a Tor folder share *and* a web-link share up at once -> each sees
