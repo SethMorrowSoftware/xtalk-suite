@@ -170,9 +170,11 @@ script "xTalkSuiteSelfTest"
 -- in the process) and its event queue is one per process, so a run that
 -- includes DataChannelXT - its row, the cross row, Run all - still ends
 -- another DataChannel stack's peers. Close those first. The paste calls
--- dcCleanup only after a run that initialised DataChannelXT itself, never on
--- open or close. Both halves verified statically and in the headless boot
--- model (tools/check-suite-ui-boot.py); needs an OXT pass.
+-- dcCleanup only while it holds a dcInit of its own: at the end of a run
+-- that initialised DataChannelXT, or when a close or a re-entry cuts such a
+-- run short - never on a first open, a close at rest, or after a run that
+-- left DataChannelXT out. Both halves verified statically and in the
+-- headless boot model (tools/check-suite-ui-boot.py); needs an OXT pass.
 --
 -- MISSING EXTENSIONS SKIP, THEY NEVER FAIL. Each member is probed with one
 -- cheap guarded call inside try/catch (the family's fail-closed probe pattern,
