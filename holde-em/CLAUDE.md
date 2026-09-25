@@ -340,8 +340,9 @@ and bet chip. `tools/check-table-layout.py` re-derives all 159 control rects
 
 **Two entry points, one run.** `heRunSelftest` is interactive: report panel,
 clipboard and `msg`, ending `==== n pass, m fail, k skip ====`. `heSelfTest()`
-is quiet: it returns the report with the first line `n passed, m failed`
-(riptide's `rsSelfTest` shape), builds no control, never touches the clipboard,
+is quiet: it returns the report with the first line `n passed, m failed, k skipped`
+(riptide's `rsSelfTest` shape; until 2026-09-25 the skip count sat on a prose second
+line, which the suite paste's merge never counted), builds no control, never touches the clipboard,
 and sweeps pending `heNet*` sends. Both drive `heTestRunAllSections`, 25
 sections in run order: 1 Evaluator, 2 Betting, 3 Ante, 4 Level, 5 Legal,
 6 Schedule, 7 Shuffle, 8 Fold, 9 Crypto, 10 Receipt, 11 Deal, 12 DealOrder,

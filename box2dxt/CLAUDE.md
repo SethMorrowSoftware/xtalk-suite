@@ -455,7 +455,7 @@ Pre-fold: the user's own OXT passes; post-fold: the suite paste. Passed/failed.
 | 2026-08-20 | Windows x86_64 | v30 | **375/0**; `playLoudness` reads back EXACT on Win32 (24->24, 73->73) |
 | 2026-08-21 | Linux | v30 | 374/1: `playLoudness` reads a constant 0 (24->0, 73->0); v31 demotes it to a printed three-way observation (exact / ordered-not-exact / does-not-track), expectation 374 |
 | 2026-08-24 | Windows x86_64, OXT 9.6.3 | whole suite paste (harness v31 by date) | 2,373/0 with 3 skips suite-wide; box2dxt's own count not captured, so v31 green is an inference |
-| 2026-09-24 | OXT, Win32 (version, OS build and bitness not recorded) | the D-23 suite paste (built at `9aa62c8`; this member's fold and Kit identical to `6401e43`'s), harness v32, on the board's 1200-wide card (860 standalone, 760 in the old paste) | **385/0**, no skips (board row 387/0/0: the core adds its zero-failures and floor lines). At 1200 wide the camera held: hScroll 900, a world-px write lands at 1500. `playLoudness` exact (24->24, 73->73); `revLibraryMapping` hook available. v32's observations: a caller's tab does NOT reach a called handler (it saw comma), and a Kit call left its caller's delimiter alone (tab in, tab out), so the ten passed without exercising the fix (gotcha 5) |
+| 2026-09-24 | OXT, Win32, a 2026-09-12 DLL by the maintainer's account (its first engine load); version, OS build and bitness not recorded | the D-23 suite paste (built at `9aa62c8`; this member's fold and Kit identical to `6401e43`'s), harness v32, on the board's 1200-wide card (860 standalone, 760 in the old paste) | **385/0**, no skips (board row 387/0/0: the core adds its zero-failures and floor lines). At 1200 wide the camera held: hScroll 900, a world-px write lands at 1500. `playLoudness` exact (24->24, 73->73); `revLibraryMapping` hook available. v32's observations: a caller's tab does NOT reach a called handler (it saw comma), and a Kit call left its caller's delimiter alone (tab in, tab out), so the ten passed without exercising the fix (gotcha 5) |
 
 v29, v30, v31 and v32 totals are not comparable. Kit defects the runs found (fixed):
 
@@ -494,7 +494,8 @@ both built, verified and installed it, and the installer reported it
 `(unchanged)` (a sha256 match; the shim and `CMakeLists.txt` have not changed
 since the fold), which is why git shows only the fold's commit for it. The suite's `release-binaries.yml`
 has box2dxt rows since 2026-08-23: run 12 committed the Linux libraries
-2026-08-27 (resolving D-03), the Windows DLLs again 2026-09-12. That `x86-linux`
+2026-08-27 (resolving D-03), the Windows DLLs again 2026-09-12 (one of which first met an
+engine on 2026-09-24, by the maintainer's account; its bitness was not recorded). That `x86-linux`
 library requires GLIBC_2.34 (stock ubuntu-24.04 multilib), `x86_64-linux` only
 2.17. Open work lives in the suite's `docs/WORK-PLAN.md`.
 

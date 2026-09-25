@@ -33,7 +33,9 @@ The native shim's ABI is tracked separately by `b2Version()` (currently `4`).
   (2026-09-12, run 34657390798 from `0f17ab5`, commit `421bab3`). The Linux
   libraries and the `universal-mac` dylib were rebuilt too and came out
   byte-identical to the committed ones (the installer reported them
-  `(unchanged)`), so git shows no change for them. Not yet loaded by an engine.
+  `(unchanged)`), so git shows no change for them. Not yet loaded by an engine
+  when committed; one of the two Windows DLLs first loaded on 2026-09-24 (the suite
+  paste, harness v32 385/0, by the maintainer's account; its bitness not recorded).
 - **Kit: ten handlers no longer assume the caller's `itemDelimiter`**
   (2026-09-09, `51ac525`). `b2kAddBox`, `b2kAddBall`, `b2kAddCapsule`,
   `b2kAddPolygon`, `b2kReshape`, `b2kHinge`, `b2kWeld`, `b2kSlider`,
