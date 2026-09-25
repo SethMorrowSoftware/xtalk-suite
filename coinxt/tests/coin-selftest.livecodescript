@@ -788,10 +788,37 @@ private function cxBech32EncodeValuesInner pHrp, pValues, pSpec
    -- emit NOTHING for that position - a string one character short, carrying a
    -- checksum computed over data it does not contain. It would decode to
    -- something, and that something would not be what the caller encoded.
+   --
+   -- WHOLE FIRST, AND DECIDED EXACTLY (2026-09-25). This read
+   -- `tIndex < 0 or tIndex > 31 or tIndex is not trunc(tIndex)`, and every
+   -- one of those comparisons goes through the engine's tolerant rule (suite
+   -- engine note 2.10: two numbers within 10 DBL_EPSILON of the smaller are
+   -- EQUAL, and anything within 2.2e-15 of zero IS zero). So 3.0000000000000004
+   -- was "3" to `is not trunc()`, and -0.000000000000001 passed all three
+   -- tests: values that are not whole, accepted by the one line whose job is
+   -- to refuse them. What they became next is the engine's chunk-index
+   -- conversion (the source rounds a computed index half away from zero, so
+   -- most likely the neighbouring integer; the family interpreter answers an
+   -- EMPTY character for char 0.999999999999999, the fail-open described
+   -- above), and a refusal should not rest on either. `is an integer` has no
+   -- tolerance: the engine source (exec-math.cpp, MCMathEvalIsAnInteger)
+   -- answers it with a plain C `t_double == floor(t_double)` on the converted
+   -- number, and answers false for empty. It is its own `if`, ahead of the
+   -- range, because `or` evaluates BOTH operands (engine note 2.5): trunc()
+   -- of a non-number was a hard engine error inside the old chain, not this
+   -- file's refusal. The texts
+   -- the engine still calls whole ("3.0", "+3", " 3", "3e0", "0x1F") are
+   -- encoded as the number they spell, and the checksum below reads the same
+   -- number, so they cannot split the string from its checksum. Verified
+   -- statically; needs an OXT pass (tools/check-wallet-vectors.py's tier 4
+   -- replays the old line under the engine's rule and lets both through).
    put the number of items of pValues into tCount
    repeat with tI = 1 to tCount
       put item tI of pValues into tIndex
-      if tIndex < 0 or tIndex > 31 or tIndex is not trunc(tIndex) then
+      if tIndex is not an integer then
+         throw "CoinXT: cxBech32EncodeValues: every data value must be a whole number between 0 and 31."
+      end if
+      if tIndex < 0 or tIndex > 31 then
          throw "CoinXT: cxBech32EncodeValues: every data value must be a whole number between 0 and 31."
       end if
    end repeat

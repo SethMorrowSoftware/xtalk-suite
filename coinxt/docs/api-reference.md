@@ -300,6 +300,12 @@ of 5-bit numbers and `pSpec` is `"bech32"` or `"bech32m"`. The decoder returns
 an array with `hrp`, `spec` and `values`, and **reports which encoding
 verified** rather than accepting either - that is what lets the address layer
 enforce the BIP-350 pairing. Most callers want the address handlers instead.
+Every value must be a whole number from 0 to 31 (`is an integer`, which the
+engine decides exactly); an empty item, a non-number, and a value a hair off
+an integer (`3.0000000000000004`, `-0.000000000000001`) are refused, where
+until 2026-09-25 the last two passed the engine's tolerant comparison. The
+spellings the engine calls whole (`3.0`, `+3`, `3e0`) encode as the number
+they spell. Verified statically; needs an OXT pass.
 
 ### `cxSegwitAddressEncode(pHrp, pVersion, pProgram)` / `cxSegwitAddressDecode(pHrp, pAddress)`
 

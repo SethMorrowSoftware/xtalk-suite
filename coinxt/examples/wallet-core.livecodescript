@@ -571,6 +571,55 @@ function cwBeRead pBytes
    return tValue
 end cwBeRead
 
+function cwAmountAdd pTotal, pAmount, pWho
+   -- pTotal + pAmount for two amounts already held exactly (non-negative
+   -- whole satoshi, each at most 2^53), REFUSED when the sum would pass 2^53.
+   --
+   -- WHY A SUM NEEDS ITS OWN BOUND (2026-09-25). cwLeRead holds every decoded
+   -- amount to 2^53, but a transaction's outputs and a PSBT's inputs are
+   -- ADDED, and two amounts each under the bound (2^52 + 1 twice, both eight
+   -- bytes of somebody else's choosing) sum past it: on the engine the total
+   -- rounds with no error (suite engine note 2.4), and a total that differs
+   -- from the truth by a few satoshi is a fee that does too. The family
+   -- interpreter stops on it; the engine does not.
+   --
+   -- DECIDED ON 32-BIT HALVES, never on the sum. `pTotal + pAmount >
+   -- 9007199254740992` would compare two numbers past 4.5e14, where the
+   -- engine calls integers a few apart EQUAL (engine note 2.10), and would
+   -- compare a sum that has already rounded. Each operand splits into its
+   -- high and low 32 bits - a division by 2^32, exact in binary, then
+   -- trunc - so every number below is under 2^34 and every comparison is
+   -- between integers at least 1 apart at that size: the lows add with a
+   -- carry, the highs add, and the sum fits when the high part is under 2^21
+   -- (2^53 is 2^21 times 2^32) or exactly 2^21 with nothing below it.
+   -- Verified statically; needs an OXT pass (tools/check-wallet-vectors.py
+   -- replays the bound under the engine's rule in tier 4).
+   local tHi, tLo, tAHi, tALo, tOver
+   put cwIntDiv(pTotal, 4294967296) into tHi
+   put pTotal - tHi * 4294967296 into tLo
+   put cwIntDiv(pAmount, 4294967296) into tAHi
+   put pAmount - tAHi * 4294967296 into tALo
+   add tALo to tLo
+   add tAHi to tHi
+   if tLo >= 4294967296 then
+      subtract 4294967296 from tLo
+      add 1 to tHi
+   end if
+   put false into tOver
+   if tHi > 2097152 then
+      put true into tOver
+   else if tHi is 2097152 then
+      if tLo > 0 then
+         put true into tOver
+      end if
+   end if
+   if tOver then
+      throw "wallet-core: " & pWho & ": the amounts add up to more than " & \
+            "2^53 satoshi, which cannot be held exactly."
+   end if
+   return pTotal + pAmount
+end cwAmountAdd
+
 function cwHexIsClean pHex
    -- True when pHex is an even-length run of hex digits, lower or upper case.
    -- Written as its own predicate because every entry point that takes hex
@@ -1734,7 +1783,7 @@ function cwExpandExponent pText
 end cwExpandExponent
 
 function cwBtcToSat pText
-   local tText, tSign, tWhole, tFrac, tPos, tI, tCount
+   local tText, tSign, tWhole, tFrac, tPos, tI, tCount, tOver
    put cwTrim(pText) into tText
    if tText is "" then
       throw "wallet-core: cwBtcToSat: an empty amount."
@@ -1780,6 +1829,36 @@ function cwBtcToSat pText
    repeat while the number of chars of tFrac < 8
       put tFrac & "0" into tFrac
    end repeat
+   -- THE WHOLE PART IS BOUNDED BEFORE THE MULTIPLY (2026-09-25). Nothing
+   -- limited its digits, so "100000000000" BTC went into tWhole * 100000000
+   -- and came out a double past 2^53: ROUNDED, with no error, on the engine
+   -- (suite engine note 2.4), where the family interpreter stops on it. The
+   -- bound is the wallet's one exact limit, 2^53 satoshi (cwLeRead's), and it
+   -- is decided on small exact integers, never on the product: leading zeros
+   -- off, at most 8 digits (so tWhole is under 10^8), then tWhole against
+   -- 90071992 and, at exactly that, the eight fraction digits against
+   -- 54740992 - the two halves of 9007199254740992. Every operand is under
+   -- 10^8, far below the 4.5e14 where the engine's comparison starts calling
+   -- integers one apart equal (engine note 2.10). The tests are an `else if`
+   -- chain, never one `or`: `or` evaluates both sides, and a 400-digit
+   -- tWhole compared against anything is the interpreter's hard stop.
+   -- Verified statically; needs an OXT pass.
+   put cwDecClean(tWhole) into tWhole
+   put false into tOver
+   if the number of chars of tWhole > 8 then
+      put true into tOver
+   else if tWhole > 90071992 then
+      put true into tOver
+   else if tWhole is 90071992 then
+      if tFrac > 54740992 then
+         put true into tOver
+      end if
+   end if
+   if tOver then
+      throw "wallet-core: cwBtcToSat: " & quote & pText & quote & \
+            " is more than 90071992.54740992 BTC (2^53 satoshi), the most " & \
+            "a number here holds to the satoshi."
+   end if
    if tSign is "-" then
       return 0 - (tWhole * 100000000 + tFrac)
    end if
@@ -1801,13 +1880,42 @@ function cwFormatAmount pSat, pUnit
 end cwFormatAmount
 
 function cwParseAmount pText, pUnit
-   local tText
+   -- THE SAT FORM IS DIGITS WORTH AT MOST 2^53, CHECKED AS TEXT FIRST
+   -- (2026-09-25). It asked `is an integer`, which the engine answers yes to
+   -- for "1e20" and for twenty nines, and `+ 0` then rounded either one past
+   -- 2^53 with no error (suite engine note 2.4); a digit count cannot bound an
+   -- exponent, so the shape is plain digits (and an optional minus, as
+   -- before). The bound is cwBtcToSat's, 2^53 satoshi, decided by
+   -- cwDecCompare on the DIGITS - length, then digit by digit - so no wide
+   -- number is ever compared (engine note 2.10). "3.0", "+3" and "1e3" were
+   -- whole numbers to the old test and are refused now: a person typing
+   -- satoshi types digits, and an exponent in an amount field is the
+   -- catastrophe cwExpandExponent's note keeps out of cwBtcToSat. Verified
+   -- statically; needs an OXT pass.
+   local tText, tDigits, tSign, tI, tCount
    put cwTrim(pText) into tText
    if pUnit is "sat" then
-      if tText is not an integer then
+      put tText into tDigits
+      put "" into tSign
+      if char 1 of tDigits is "-" then
+         put "-" into tSign
+         put char 2 to -1 of tDigits into tDigits
+      end if
+      put the number of chars of tDigits into tCount
+      if tCount is 0 then
          throw "wallet-core: cwParseAmount: satoshi are whole numbers."
       end if
-      return tText + 0
+      repeat with tI = 1 to tCount
+         if offset(char tI of tDigits, "0123456789") is 0 then
+            throw "wallet-core: cwParseAmount: satoshi are whole numbers."
+         end if
+      end repeat
+      if cwDecCompare(tDigits, "9007199254740992") > 0 then
+         throw "wallet-core: cwParseAmount: " & quote & pText & quote & \
+               " is more than 2^53 satoshi, the most a number here holds " & \
+               "exactly."
+      end if
+      return (tSign & cwDecClean(tDigits)) + 0
    end if
    if pUnit is "mBTC" then
       return cwIntDiv(cwBtcToSat(tText), 1000)
@@ -2972,7 +3080,9 @@ function cwTxDecode pRawHex
    put 0 into tTotal
    repeat with tI = 1 to tCount
       put cwLeRead(cxHexDecode(char tPos to (tPos + 15) of tHex)) into tOutRec["value"]
-      add tOutRec["value"] to tTotal
+      -- the running total is bounded too: each value is under 2^53, their
+      -- sum need not be (cwAmountAdd, 2026-09-25)
+      put cwAmountAdd(tTotal, tOutRec["value"], "cwTxDecode") into tTotal
       put tPos + 16 into tPos
       put cwReadVarInt(tHex, tPos) into tRec
       put tRec["value"] into tLen
@@ -4268,7 +4378,8 @@ function cwPsbtSummary pB64, pNetwork
          put true into tMissing
       else
          put cwSatToBtc(tAmount) && "BTC" after tOut
-         add tAmount to tTotalIn
+         -- bounded as a SUM, not only per input (cwAmountAdd, 2026-09-25)
+         put cwAmountAdd(tTotalIn, tAmount, "cwPsbtSummary") into tTotalIn
       end if
       put "  " & cwPsbtInputType(tMap[tI]) & ", " & tSigCount & \
             " signature(s)" & return after tOut
@@ -4278,7 +4389,7 @@ function cwPsbtSummary pB64, pNetwork
    repeat with tI = 1 to tCount
       put tTx["outputs"] into tOutRec
       put tOutRec[tI] into tOutRec
-      add tOutRec["value"] to tTotalOut
+      put cwAmountAdd(tTotalOut, tOutRec["value"], "cwPsbtSummary") into tTotalOut
       put "unrecognised script" into tAddr
       try
          put cwAddressForScript(pNetwork, tOutRec["script"]) into tAddr
@@ -6533,8 +6644,31 @@ function cwBolt11AmountMsat pAmount
 end cwBolt11AmountMsat
 
 private function cwBitsToInt pValues, pFrom, pTo
-   -- 5-bit values as one big-endian number; stays exact to 53 bits.
-   local tI, tOut
+   -- 5-bit values as one big-endian number.
+   --
+   -- AT MOST TEN VALUES THAT COUNT (2026-09-25). This said "stays exact to 53
+   -- bits" and nothing held it there: an invoice's x (expiry) and c (final
+   -- cltv) fields are as long as the invoice says, up to 1023 values, so an
+   -- eleven-value field is 55 bits, and the engine would have ROUNDED it with
+   -- no error (suite engine note 2.4) where the family interpreter stops. The
+   -- count is of SIGNIFICANT values - leading zero values add no width, and
+   -- BOLT11 only asks a writer, not a reader, for the minimal form - and ten
+   -- of them is 50 bits, under 2^53 with room. It is decided on the count,
+   -- before the first multiply, so no wide number is ever compared. The
+   -- timestamp is seven values and never near it. Verified statically; needs
+   -- an OXT pass.
+   local tI, tOut, tWidth
+   put 0 into tWidth
+   repeat with tI = pFrom to pTo
+      if tWidth > 0 or pValues[tI] > 0 then
+         add 1 to tWidth
+      end if
+   end repeat
+   if tWidth > 10 then
+      throw "wallet-core: an invoice field carries an integer wider than " & \
+            "50 bits (" & tWidth & " significant five-bit values), past what " & \
+            "a number here holds exactly."
+   end if
    put 0 into tOut
    repeat with tI = pFrom to pTo
       put tOut * 32 + pValues[tI] into tOut
