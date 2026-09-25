@@ -2697,11 +2697,16 @@ def check_case_folding_fires(c, ip):
 # says exactly which. Two unequal numbers are EQUAL when they differ by less
 # than MC_EPSILON = 10 DBL_EPSILON of the SMALLER magnitude, or by less than
 # MC_EPSILON outright when that magnitude is below it (engine/src/
-# exec-logic.cpp and sysdefs.h; DOCUMENTED, and it reproduces all eight probe
-# readings - check_tolerance_fires re-proves that on every run). So integers
-# one apart compare equal from 450359962737050 (2^52 / 10) up: satoshi
-# amounts blur within a few sats past 4.5 million BTC, which no wallet here
-# holds, and a guard that leans on a sub-integer gap fails at any size.
+# exec-logic.cpp and sysdefs.h; DOCUMENTED, and it reproduces all eight
+# readings of riptide's first two probe lines). riptide's third probe line
+# then read the rule's consequences on an engine (Linux, 2026-09-25), the
+# constant to the digit among them: `N is N + 1` is true at N =
+# 450359962737050 and false one below, and 2^52 / 10 lies between.
+# check_tolerance_fires re-proves the rule against all fourteen recorded
+# numeric answers on every run. So integers one apart compare equal from
+# 450359962737050 (2^52 / 10) up: satoshi amounts blur within a few sats
+# past 4.5 million BTC, which no wallet here holds, and a guard that leans on
+# a sub-integer gap fails at any size.
 #
 # wallet-core's cwLeRead and cwBeRead had the same quotient form, one byte at
 # a time. At their edge the comparison was 35184372088832 against
@@ -2718,7 +2723,7 @@ def check_case_folding_fires(c, ip):
 # ruled out as the exact rule, kept as margin (a bound on a wide integer
 # whose answer moves between plausible rules is leaning on a constant). A
 # probe reading that the engine's rule cannot reproduce is a new row, and
-# check_tolerance_fires holds the eight there are.
+# check_tolerance_fires holds the fourteen there are.
 #
 # SCOPE, deliberately: the wide-integer vectors, not the whole set. The swap
 # below reaches every comparison the interpreter makes, so a full re-run is
@@ -2854,13 +2859,23 @@ end oldCwLeRead
 """
 
 
-# THE ENGINE'S RECORDED ANSWERS to riptide's first two numeric compare probe
-# lines (probe 1 read in the 2026-09-24 second run, probe 2 in the third;
-# riptide/CLAUDE.md's ledger), each expression spelled as riptide's harness
-# spells it; the ladder is its rstUlpLadder under a fixture name. The
-# engine's rule must read all eight, and each margin model must misread at
-# least one, which is why it is margin. Pure IEEE reads true six times, then
-# 1 and 1.
+# THE ENGINE'S RECORDED ANSWERS to riptide's numeric compare probe lines
+# (riptide/CLAUDE.md's ledger), each expression spelled as riptide's harness
+# spells it; the ladder is its rstUlpLadder under a fixture name. Probe 1
+# was read in the 2026-09-24 second run and probe 2 in the third (Windows);
+# the 2026-09-25 Linux run read both again, answer for answer, and read
+# probe 3 for the first time, exactly as the engine source's rule predicted.
+# The engine's rule must read all fourteen, and each margin model must
+# misread at least one, which is why it is margin. Pure IEEE reads true six
+# times, then 1 and 1, then true four times and false twice.
+#
+# Probe 3 enters at its item 3. Its items 1 and 2 ("1e999" is "2e999" and
+# "1e5" is "100000", both true on the engine) are not comparisons of two
+# numbers but text becoming a number (strtod: suite engine note 2.11), and
+# tools/lcs-interp.py does not model that parse: its _eq reads only
+# -?\d+(\.\d+)? as a number, so it compares both pairs as TEXT and never
+# calls the _n a candidate rule swaps. No comparison rule could reproduce
+# them, so holding one to them here would test the parse, not the rule.
 _PROBE_LADDER = """
 function probeUlpLadder pBase, pUlps
    local tStep
@@ -2883,6 +2898,17 @@ _PROBE_READINGS = (
     ("1073741824 + 1 / 2097152 > 1073741824", "false"),
     ("probeUlpLadder(1, 4503599627370496)", "16"),
     ("probeUlpLadder(8, 562949953421312)", "16"),
+    # probe 3, items 3 to 8 (Linux, 2026-09-25): the absolute branch near
+    # zero (1e-15 is within MC_EPSILON of 0, 1e-14 is not), integers one
+    # apart at 2^49 (8 DBL_EPSILON: equal) and 2^48 (16: told apart), and
+    # N against N + 1 either side of 2^52 / 10 = 450359962737049.6, which
+    # reads the constant to the digit
+    ("1 / 1000000000000000 > 0", "false"),
+    ("1 / 100000000000000 > 0", "true"),
+    ("562949953421312 < 562949953421313", "false"),
+    ("281474976710656 < 281474976710657", "true"),
+    ("450359962737050 is 450359962737051", "true"),
+    ("450359962737049 is 450359962737050", "false"),
 )
 
 
@@ -2914,8 +2940,8 @@ def check_tolerance_fires(c):
                 for expr, _want in _PROBE_READINGS]
 
     engine_read = [want for _expr, want in _PROBE_READINGS]
-    c.ck("exact IEEE reads riptide's two probe lines as the engine did NOT",
-         readings(), ["true"] * 6 + ["1", "1"])
+    c.ck("exact IEEE reads riptide's three probe lines as the engine did NOT",
+         readings(), ["true"] * 6 + ["1", "1"] + ["true"] * 4 + ["false"] * 2)
     for index, (label, same, _old) in enumerate(TOLERANCE_MODELS):
         restore = _tolerant_compare(same)
         try:
@@ -2923,8 +2949,10 @@ def check_tolerance_fires(c):
         finally:
             restore()
         if index == 0:
-            c.ck("under %s, riptide's two probe lines read the eight answers "
-                 "the engine gave (2026-09-24)" % label, got, engine_read)
+            c.ck("under %s, riptide's probe lines read the fourteen numeric "
+                 "answers the engine gave (probes 1 and 2, Windows 2026-09-24 "
+                 "and Linux 2026-09-25; probe 3's items 3-8, Linux 2026-09-25)"
+                 % label, got, engine_read)
         else:
             c.ck("under %s they misread at least one (margin, not the rule)"
                  % label, got != engine_read, True)

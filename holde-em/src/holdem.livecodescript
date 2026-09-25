@@ -97,8 +97,16 @@ kUIVersion stays 15 (no chrome moved).
     section 15, the victim sealing on aliases among them; an unread hand
     field, a repeatable hand number, History without either rule, and
     heNetOccOfSeats without its order test one each. Verified
-    statically; needs an OXT pass: all of it (the next engine run
-    RECORDS the v47 total).
+    statically; needs an OXT pass: what the harness does not reach --
+    these rules in the standalone stack (heRunSelftest), in hotseat
+    hands and between machines. This line said "all of it" until the
+    record below.
+  * ENGINE RECORD (holde-em/CLAUDE.md's ledger): the 2026-09-25 suite
+    paste on Linux (64-bit by the maintainer's account; the OXT build
+    not recorded) ran this version folded at harness 47: 751/0, every
+    section green, the five live legs SKIPped by name -- the first v47
+    total, and the first engine run of these 23 pins and of v0.25.4's
+    seven (no run is recorded at harness 46).
 
 v0.25.4 -- HEX NEVER MEETS BARE `is`: heHexEq (2026-09-25). NO WIRE CHANGED
 -- not a byte, and protocol-kat's pins are untouched; what a verifier
@@ -151,7 +159,10 @@ new assert sites, CLAUDE.md rule 5); kUIVersion stays 15 (no chrome moved).
     refusing a 57.0000000000001 raise with act-bad-amount (section 5).
     tools/fold-kat.py's commit compare lowercases the transcript's side,
     as protocol-kat's twins already do. Verified statically; needs an OXT
-    pass: all of it (the next engine run RECORDS the v46 total).
+    pass: these fixes in the standalone stack, in hotseat hands and
+    between machines. This line said "all of it" until the v0.25.5
+    ENGINE RECORD above, which ran these seven pins at harness 47; they
+    assert the helpers' answers, not what bare `is` answers.
 
 v0.25.3 -- THE LOBBY OVERLAY ENDS WHEN THE FIRST HAND BEGINS (2026-08-27).
 NO WIRE CHANGED -- not a byte. kHeVersion 0.25.2 -> 0.25.3; kHeHarnessV
