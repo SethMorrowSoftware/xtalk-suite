@@ -315,8 +315,16 @@ hangs on a sub-integer difference. A bound that only works in exact
 arithmetic is a bound the engine may not enforce. Both sites were rewritten
 that way on 2026-09-24 (verified statically; needs an OXT pass).
 **Gate:** riptide's harness checks the u64 bound from both sides (2^53 parses,
-2^53 + 1 is refused), which is how an engine run caught it; nothing headless
-can, while the interpreter decides comparisons the IEEE way.
+2^53 + 1 is refused), which is how an engine run caught it, and since the fix it
+prints a diagnostic that tells the candidate mechanisms apart on the next run.
+Headlessly, the interpreter itself compares the IEEE way, so two gates replay
+the bounds under three CANDIDATE engine rules (a relative DBL_EPSILON
+tolerance, an absolute 1e-6 one, a 15-significant-digit round trip), each
+first proven to reproduce the engine's accept through the old line:
+`riptide/tools/check-script-vectors.py` (tier 1c, plus a static scan refusing
+a library comparison against a quotient) and `coinxt/tools/check-wallet-vectors.py`
+(tier 4). They settle the rewritten bounds' LOGIC under each candidate; which
+rule the engine really has stays open.
 **Does NOT mean:** integer arithmetic below 2^53 is inexact (it is exact:
 2.4), or that comparing two clearly different numbers is unreliable; only a
 verdict that rests on a difference far below 1 is.
