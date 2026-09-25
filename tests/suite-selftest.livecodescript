@@ -177,7 +177,8 @@ script "xTalkSuiteSelfTest"
 -- list carried in every member CLAUDE.md): no brace array literals, no
 -- subscripted function results, array emptiness by counting `the keys of` a
 -- LOCAL, binary built with numToByte because string literals have no escape
--- syntax, byte-exact compares only under `set the caseSensitive to true`, all
+-- syntax, byte-exact compares only under `set the caseSensitive to true` and
+-- never between two number-like texts (engine note 2.11), all
 -- declarations at handler top, and teardown calls written bare in statement
 -- position, which is enetxt's own shipped teardown idiom (enet-lan-chat line
 -- 220, enet-selftest line 371).
@@ -18447,16 +18448,17 @@ private function rsReadBEu64 pBytes
    -- interpreter (Python floats) refused and every headless gate stayed
    -- green. But the two sides differ by about 2.3e-10, a relative 1.1e-16,
    -- and the engine did not answer that comparison the way IEEE does. The
-   -- same day's second run showed WHY in part (the harness's probe line;
-   -- suite engine note 2.10): the engine answers nearly-equal numbers as
-   -- equal, and 1 + 2^-51 > 1 reads false on it. Whether by a relative or
-   -- absolute tolerance or a decimal round trip, that run could not tell; it
-   -- refused 2^53 + 1 through the halves bound that follows. So the rule is
-   -- the one that holds under every such explanation: decide a bound on a
+   -- same day's second run showed the engine answering nearly-equal numbers
+   -- as equal (1 + 2^-51 > 1 reads false on it), and refused 2^53 + 1
+   -- through the halves bound that follows; its third named the rule (the
+   -- harness's probe lines; suite engine note 2.10): two numbers within 10
+   -- DBL_EPSILON of the SMALLER one are EQUAL. So integers one apart blur
+   -- only from about 4.5e14, and the halves never get near that. The rule
+   -- here holds under that rule and any looser one: decide a bound on a
    -- wide integer by comparing exact integers that differ by at least 1 at a
    -- modest magnitude - never against a quotient, and never on a difference
-   -- smaller than any plausible tolerance. tools/check-script-vectors.py
-   -- replays this bound under three comparison models, after proving that
+   -- smaller than the tolerance. tools/check-script-vectors.py replays this
+   -- bound under the engine's rule and two margin models, after proving that
    -- each of them accepts 2^53 + 1 through the old line as the engine did.
    -- Plain nested ifs, no compound `and`: both operands of one always
    -- evaluate (engine notes 2.5). Harmless here, but the habit costs less
@@ -29402,6 +29404,12 @@ private command rs1rstSectionHead
    --   round trip, 10 to 14 digits     true,false,K,K/8        (K 256 to 2^22)
    --   round trip, 16 digits           true,false,4,1
    -- K itself then measures the tolerance to within a factor of 2.
+   -- READ 2026-09-24 (the third run, 10:10 PM): true,false,16,16. Only the
+   -- relative family predicted it: 1 + 8 ulps compares equal to 1 and
+   -- 1 + 16 ulps does not, and the step is the same at 8, so the tolerance
+   -- scales with the size and lies between 8 and 16 DBL_EPSILON. The engine
+   -- source says 10 (MC_EPSILON; suite engine note 2.10, DOCUMENTED), and
+   -- its rule reproduces all eight readings of these two lines.
    put "      numeric compare probe 2 (diagnostic; relative reads" && \
          "true,false,K,K; absolute false,true,K,K/8; round trip" && \
          "true,false,K,K/8):" && \
@@ -29409,6 +29417,39 @@ private command rs1rstSectionHead
          (1073741824 + 1 / 2097152 > 1073741824) & "," & \
          rs1rstUlpLadder(1, 4503599627370496) & "," & \
          rs1rstUlpLadder(8, 562949953421312) & return after rs1sLog
+   -- DIAGNOSTIC 3, not a check (added 2026-09-25). Probes 1 and 2 measured
+   -- the rule on fractions; these eight read its consequences straight off
+   -- the engine rather than infer them from it. The engine source's rule
+   -- (engine/src/exec-logic.cpp and sysdefs.h: two unequal numbers are equal
+   -- when they differ by less than 10 DBL_EPSILON of the SMALLER one, or by
+   -- less than 10 DBL_EPSILON outright when that one is smaller still; text
+   -- becomes a number through strtod, which answers +inf past 1e308):
+   --   1  "1e999" is "2e999"             two texts that overflow: both +inf
+   --   2  "1e5" is "100000"              exponent-form text is a number
+   --   3  1e-15 > 0                      the absolute branch near zero
+   --   4  1e-14 > 0                      ... and just past it
+   --   5  2^49 < 2^49 + 1                integers 1 apart, 8 DBL_EPSILON
+   --   6  2^48 < 2^48 + 1                ... and 16 DBL_EPSILON
+   --   7, 8  N is N + 1 at N = 450359962737050 and at one less: the
+   --      threshold is 2^52 / 10 = 450359962737049.6, so these two read
+   --      the constant itself, not just its power of two
+   -- Predicted, the source's rule   true,true,false,true,false,true,true,false
+   --           pure IEEE doubles    false,true,true,true,true,true,false,false
+   --           family interpreter   false,false,true,true,true,true,false,false
+   -- Items 1 and 2 are why a hex digest must never meet `is` as bare text
+   -- (engine note 2.11). Every operand is below 2^53, and the interpreter
+   -- reads items 1 and 2 as text, so it runs this line too (it does, read
+   -- as above; the all-absent boot gate stops before this section).
+   put "      numeric compare probe 3 (diagnostic; the engine source's rule" && \
+         "reads true,true,false,true,false,true,true,false):" && \
+         ("1e999" is "2e999") & "," & \
+         ("1e5" is "100000") & "," & \
+         (1 / 1000000000000000 > 0) & "," & \
+         (1 / 100000000000000 > 0) & "," & \
+         (562949953421312 < 562949953421313) & "," & \
+         (281474976710656 < 281474976710657) & "," & \
+         (450359962737050 is 450359962737051) & "," & \
+         (450359962737049 is 450359962737050) & return after rs1sLog
    put rs1tHead into rs1tBig
    repeat with rs1rstI = 5 to 12
       put numToByte(255) into byte rs1rstI of rs1tBig

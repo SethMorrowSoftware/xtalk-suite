@@ -140,9 +140,11 @@ LAW here, not carried-for-later. Change nothing without a very good reason.
 - **Decide a wide integer's bound on small exact integers, never against a quotient** (2026-09-24; the numeric model
   is engine note 2.4): OXT (Win32, the suite paste) ACCEPTED 2^53 + 1 through riptide's
   `tHi > (9007199254740992 - tLo) / 4294967296`, adjacent doubles that IEEE and `lcs-interp.py` both order
-  (OBSERVED; the tolerance or ~15-digit round trip behind it is INFERRED). `cwLeRead` / `cwBeRead` had the form, safe
-  only under an absolute tolerance, and now decide 2^53 as 32 times 2^48 on the bytes; `check-wallet-vectors.py`
-  tier 4 runs the bound under each candidate rule. Verified statically; needs an OXT pass.
+  (OBSERVED). The rule behind it, named by the same day's third run and the engine source: two unequal numbers
+  within 10 DBL_EPSILON of the SMALLER are EQUAL (so integers one apart blur from 4.5e14; engine note 2.10).
+  `cwLeRead` / `cwBeRead` had the form, safe only under an absolute tolerance, and now decide 2^53 as 32 times
+  2^48 on the bytes; `check-wallet-vectors.py` tier 4 runs the bound under the engine's rule and two margin
+  models. Verified statically; needs an OXT pass.
 - Base58 is long division over the byte array (nothing exceeds 58 * 255), not a bit repack.
 - **Look up alphabet characters by BYTE VALUE with `cxCharIndex`, never `offset()` or `is`**: `the caseSensitive`
   defaults to false, and in Base58 `a` and `A` are different digits - the file's "most dangerous line".

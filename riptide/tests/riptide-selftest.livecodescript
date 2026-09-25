@@ -554,6 +554,12 @@ private command rstSectionHead
    --   round trip, 10 to 14 digits     true,false,K,K/8        (K 256 to 2^22)
    --   round trip, 16 digits           true,false,4,1
    -- K itself then measures the tolerance to within a factor of 2.
+   -- READ 2026-09-24 (the third run, 10:10 PM): true,false,16,16. Only the
+   -- relative family predicted it: 1 + 8 ulps compares equal to 1 and
+   -- 1 + 16 ulps does not, and the step is the same at 8, so the tolerance
+   -- scales with the size and lies between 8 and 16 DBL_EPSILON. The engine
+   -- source says 10 (MC_EPSILON; suite engine note 2.10, DOCUMENTED), and
+   -- its rule reproduces all eight readings of these two lines.
    put "      numeric compare probe 2 (diagnostic; relative reads" && \
          "true,false,K,K; absolute false,true,K,K/8; round trip" && \
          "true,false,K,K/8):" && \
@@ -561,6 +567,39 @@ private command rstSectionHead
          (1073741824 + 1 / 2097152 > 1073741824) & "," & \
          rstUlpLadder(1, 4503599627370496) & "," & \
          rstUlpLadder(8, 562949953421312) & return after sLog
+   -- DIAGNOSTIC 3, not a check (added 2026-09-25). Probes 1 and 2 measured
+   -- the rule on fractions; these eight read its consequences straight off
+   -- the engine rather than infer them from it. The engine source's rule
+   -- (engine/src/exec-logic.cpp and sysdefs.h: two unequal numbers are equal
+   -- when they differ by less than 10 DBL_EPSILON of the SMALLER one, or by
+   -- less than 10 DBL_EPSILON outright when that one is smaller still; text
+   -- becomes a number through strtod, which answers +inf past 1e308):
+   --   1  "1e999" is "2e999"             two texts that overflow: both +inf
+   --   2  "1e5" is "100000"              exponent-form text is a number
+   --   3  1e-15 > 0                      the absolute branch near zero
+   --   4  1e-14 > 0                      ... and just past it
+   --   5  2^49 < 2^49 + 1                integers 1 apart, 8 DBL_EPSILON
+   --   6  2^48 < 2^48 + 1                ... and 16 DBL_EPSILON
+   --   7, 8  N is N + 1 at N = 450359962737050 and at one less: the
+   --      threshold is 2^52 / 10 = 450359962737049.6, so these two read
+   --      the constant itself, not just its power of two
+   -- Predicted, the source's rule   true,true,false,true,false,true,true,false
+   --           pure IEEE doubles    false,true,true,true,true,true,false,false
+   --           family interpreter   false,false,true,true,true,true,false,false
+   -- Items 1 and 2 are why a hex digest must never meet `is` as bare text
+   -- (engine note 2.11). Every operand is below 2^53, and the interpreter
+   -- reads items 1 and 2 as text, so it runs this line too (it does, read
+   -- as above; the all-absent boot gate stops before this section).
+   put "      numeric compare probe 3 (diagnostic; the engine source's rule" && \
+         "reads true,true,false,true,false,true,true,false):" && \
+         ("1e999" is "2e999") & "," & \
+         ("1e5" is "100000") & "," & \
+         (1 / 1000000000000000 > 0) & "," & \
+         (1 / 100000000000000 > 0) & "," & \
+         (562949953421312 < 562949953421313) & "," & \
+         (281474976710656 < 281474976710657) & "," & \
+         (450359962737050 is 450359962737051) & "," & \
+         (450359962737049 is 450359962737050) & return after sLog
    put tHead into tBig
    repeat with rstI = 5 to 12
       put numToByte(255) into byte rstI of tBig

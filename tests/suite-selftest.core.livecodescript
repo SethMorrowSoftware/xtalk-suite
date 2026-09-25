@@ -177,7 +177,8 @@ script "xTalkSuiteSelfTest"
 -- list carried in every member CLAUDE.md): no brace array literals, no
 -- subscripted function results, array emptiness by counting `the keys of` a
 -- LOCAL, binary built with numToByte because string literals have no escape
--- syntax, byte-exact compares only under `set the caseSensitive to true`, all
+-- syntax, byte-exact compares only under `set the caseSensitive to true` and
+-- never between two number-like texts (engine note 2.11), all
 -- declarations at handler top, and teardown calls written bare in statement
 -- position, which is enetxt's own shipped teardown idiom (enet-lan-chat line
 -- 220, enet-selftest line 371).

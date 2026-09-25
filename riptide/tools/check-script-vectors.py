@@ -44,8 +44,10 @@ disagree, the engine is right. The interpreter's own header carries the
 modelled-subset contract and its named divergences. One more is named here:
 its numeric comparisons are pure IEEE, and on 2026-09-24 an engine answered
 one differently (a 2^53 + 1 seq accepted through a quotient bound this gate
-refused), so tier 1c replays the u64 bound under three comparison models
-and statically refuses any comparison against a quotient in the library.
+refused), so tier 1c replays the u64 bound under the engine's own comparison
+rule (named by that day's third run and the engine source; suite engine note
+2.10) and two ruled-out candidates kept as margin, and statically refuses any
+comparison against a quotient in the library.
 
 THE SOURCE REWRITES, AND WHY THEY ARE ASSERTED. riptide was written before
 this gate existed and uses three spellings outside the interpreter's
@@ -505,8 +507,8 @@ def check_u64_bound(c, ip):
     guards against was precisely non-monotonic.
 
     The table itself is u64_rows(), shared with tier 1c, which replays it
-    under three engine comparison models: two passes over one table can
-    never drift into testing different rows.
+    under the engine's comparison rule and two more candidates: two passes
+    over one table can never drift into testing different rows.
     """
     c.note("tier 1b: the 2^53 u64 bound and the ceilings that depend on it")
     for label, got, want in u64_rows(ip):
@@ -607,17 +609,23 @@ def u64_rows(ip):
 # interpreter computes in, being Python floats - puts that below 2097152, so
 # tier 1b refused the record and stayed green. The two sides differ by about
 # 2.3e-10, a relative 1.1e-16, and the engine did not answer that the IEEE
-# way. The accept is OBSERVED; the cause is INFERRED - a comparison tolerance
-# (absolute or relative, nothing yet says which) or a round trip through
-# about 15 significant digits - and the harness now prints a four-comparison
-# probe that tells those apart on the next run.
+# way. The accept is OBSERVED. The harness then printed two probe lines, and
+# the day's third run named the rule (riptide/CLAUDE.md's ledger; suite
+# engine note 2.10): a RELATIVE tolerance between 8 and 16 DBL_EPSILON,
+# the same at 1 and at 8. The engine source says exactly which: two unequal
+# numbers are EQUAL when they differ by less than MC_EPSILON = 10
+# DBL_EPSILON of the SMALLER magnitude, or by less than MC_EPSILON outright
+# when that magnitude is below it (engine/src/exec-logic.cpp, sysdefs.h;
+# DOCUMENTED). That rule reproduces all eight probe readings, and the
+# fixture below re-proves it on every run.
 #
 # WHAT. Tier 1b's table again, once per model below. Each model changes only
 # the ANSWER of a numeric comparison, at the interpreter's two comparison
-# sites; the arithmetic under it stays exact. A bound decided on exact small
-# integers (the fix: the u32 halves against 2^21) answers the same under all
-# three, and that is the property being checked, not any one guess about the
-# engine.
+# sites; the arithmetic under it stays exact. The first model is the
+# engine's rule. The other two were ruled out by the probes as the EXACT
+# rule and stay as margin: a bound decided on exact small integers (the fix:
+# the u32 halves against 2^21) answers the same under all three, which says
+# the fix does not lean on the one constant.
 #
 # FIXTURE FIRST (the fixture-before-gate law). The pre-2026-09-24 handler is
 # kept below, verbatim bar its comment, as the seeded defect. Before any
@@ -627,20 +635,33 @@ def u64_rows(ip):
 # see the defect that shipped cannot vouch for its fix. Each model must also
 # have reached a comparison site at all: the hook keys on the interpreter's
 # function names, so a rename there would silently turn every model back
-# into IEEE - and the fixture's "accepts" leg would then fail loudly.
+# into IEEE - and the fixture's "accepts" leg would then fail loudly. And
+# the engine's rule must read the probes' eight recorded answers through the
+# interpreter, while each margin model misreads at least one of them (the
+# reason it is margin and not the rule).
 
 DBL_EPSILON = 2.220446049250313e-16
+MC_EPSILON = DBL_EPSILON * 10.0
+
+
+def _model_engine(a, b):
+    """The engine's own rule (engine/src/exec-logic.cpp, MCLogicCompareTo
+    and MCLogicIsEqualTo): unequal numbers are equal when they differ by less
+    than MC_EPSILON of the smaller magnitude, or by less than MC_EPSILON when
+    that magnitude is below MC_EPSILON."""
+    if a == b:
+        return a, b
+    smaller = min(abs(a), abs(b))
+    if smaller < MC_EPSILON:
+        same = abs(a - b) < MC_EPSILON
+    else:
+        same = abs(a - b) / smaller < MC_EPSILON
+    return (a, a) if same else (a, b)
 
 
 def _model_absolute(a, b):
     """Equal when within 1e-6: an absolute tolerance."""
     return (a, a) if abs(a - b) < 1e-6 else (a, b)
-
-
-def _model_relative(a, b):
-    """Equal when within DBL_EPSILON of the larger magnitude."""
-    return (a, a) if abs(a - b) <= DBL_EPSILON * max(abs(a), abs(b)) \
-        else (a, b)
 
 
 def _model_digits15(a, b):
@@ -649,10 +670,45 @@ def _model_digits15(a, b):
 
 
 ENGINE_MODELS = [
+    ("the engine's rule (10 DBL_EPSILON of the smaller)", _model_engine),
     ("an absolute 1e-6 tolerance", _model_absolute),
-    ("a relative DBL_EPSILON tolerance", _model_relative),
     ("a 15-significant-digit round trip", _model_digits15),
 ]
+
+# The engine's recorded answers to the harness's first two probe lines
+# (numeric compare probe 1 read in the 2026-09-24 second run, probe 2 in the
+# third; riptide/CLAUDE.md's ledger), each expression as the harness spells
+# it. The ladder is the harness's rstUlpLadder under a fixture name. Pure
+# IEEE reads true,true,true,true,true,true,1,1.
+PROBE_LADDER = "\n".join([
+    "function probeUlpLadder pBase, pUlps",
+    "   local tStep",
+    "   put 1 into tStep",
+    "   repeat while tStep <= 1073741824",
+    "      if pBase + tStep / pUlps > pBase then",
+    "         return tStep",
+    "      end if",
+    "      multiply tStep by 2",
+    "   end repeat",
+    "   return 0",
+    "end probeUlpLadder"])
+PROBE_READINGS = [
+    ("1 + 1 / 10000000 > 1", "true"),
+    ("1 + 1 / 2251799813685248 > 1", "false"),
+    ("2097152 > (9007199254740992 - 1) / 4294967296", "false"),
+    ("1 + 23 / 4503599627370496 > 1 + 22 / 4503599627370496", "false"),
+    ("1 / 10000000000 > 0", "true"),
+    ("1073741824 + 1 / 2097152 > 1073741824", "false"),
+    ("probeUlpLadder(1, 4503599627370496)", "16"),
+    ("probeUlpLadder(8, 562949953421312)", "16"),
+]
+
+
+def _probe_answers(interp):
+    """The interpreter's answers to PROBE_READINGS, spelled as the engine
+    printed them."""
+    return [str(LCS._disp(interp.eval_expr(expr, {})))
+            for expr, _want in PROBE_READINGS]
 
 
 class _ModelNum(object):
@@ -771,7 +827,23 @@ def _refuses_2p53p1(interp):
 
 
 def check_u64_engine_models(c, ip, src, fail):
-    c.note("tier 1c: the u64 bound under three engine comparison models")
+    c.note("tier 1c: the u64 bound under the engine's comparison rule and "
+           "two margin models")
+    probe = LCS.Interp(PROBE_LADDER)
+    want = [w for _expr, w in PROBE_READINGS]
+    c.ck("fixture: under IEEE the probes read true,true,true,true,true,true,"
+         "1,1 - the answers the engine did NOT give",
+         _probe_answers(probe),
+         ["true", "true", "true", "true", "true", "true", "1", "1"])
+    for index, (name, model) in enumerate(ENGINE_MODELS):
+        with engine_model(model):
+            got = _probe_answers(probe)
+        if index == 0:
+            c.ck("fixture: %s reads the eight answers the engine gave "
+                 "(probes 1 and 2, 2026-09-24)" % name, got, want)
+        else:
+            c.ck("fixture: %s misreads at least one of them (margin, not "
+                 "the rule)" % name, got != want, True)
     old = LCS.Interp(seed_old_bound(src, fail))
     c.ck("fixture: under IEEE the pre-2026-09-24 bound REFUSES 2^53+1 "
          "(head, BTXO total) - why every headless gate was green over it",

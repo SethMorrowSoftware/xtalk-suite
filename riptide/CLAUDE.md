@@ -295,13 +295,18 @@ Code comments cite these numbers; keep them.
    (hi < 2^21, or hi = 2^21 and lo = 0; 2026-09-24): the quotient form
    `tHi > (2^53 - tLo) / 2^32` passed that table under IEEE and let 2^53 + 1 through on an engine
    (ledger, 2026-09-24); the halves bound refused it there in the day's second run, whose probe line
-   showed the engine answering nearly-equal numbers as equal (1 + 2^-51 > 1 reads false; a relative
-   or absolute tolerance or a decimal round trip, not yet told apart: suite engine note 2.10, and
-   the harness's second probe line is built to settle it). Decide a
+   showed the engine answering nearly-equal numbers as equal (1 + 2^-51 > 1 reads false). The third
+   run's second probe line named the rule: a RELATIVE tolerance between 8 and 16 DBL_EPSILON of the
+   smaller operand, which the engine source puts at 10 (suite engine note 2.10). So integers 1
+   apart compare EQUAL from about 4.5e14 (2^48.7), not "past 2^52" as 8ea0f21's message said:
+   `rsIngestHead`'s and `rsIngestBridge`'s rollback and seq-agreement comparisons blur there, and
+   no counter or clock here gets near it (seqs start at 0 or at the seconds; open work in the
+   suite's `docs/WORK-PLAN.md`). Decide a
    wide-integer bound on exact integers that differ by at least 1 at a modest magnitude, never
-   against a quotient. Tier 1c replays the table under three comparison models (fixture: the old
-   line, which each must accept) and refuses any library comparison against a quotient; the
-   harness prints a four-comparison probe that tells the candidate causes apart.
+   against a quotient. Tier 1c replays the table under the engine's rule and two looser candidates
+   (fixture: the old line, which each must accept) and refuses any library comparison against a
+   quotient; the harness prints three probe lines: the first two measured the rule, the third
+   reads its consequences (wide integers, near zero, number-like text).
 10. **A dead write is invisible to every other gate** (2026-09-08): `raAppSave` emitted `headseq`
     and `raAppLoad` never read it; check-demo-boot round-trips it now. Any value worth persisting is
     worth round-tripping in a test.
@@ -347,6 +352,7 @@ Newest last. "Maintainer's account" is a dated report with no result text or pla
 | 2026-08-29 | OXT (maintainer's pasted record) | the v11 UI boot self-check | 9 passed / 1 failed / 0 skipped, all five cards built, every capability true. The FAIL was the carried self-check's own cross-card `there is` defect (suite engine note 5.6; this record is its primary evidence), fixed in the master the same day |
 | 2026-09-24 | OXT, Win32; the suite paste (board D-23) | riptide's folded harness, its first engine run since phase 8 | 487 passed, 2 failed, 2 skipped (the skips: the live-tor legs). The four sections that use the core's session (the kind-C chunked-post store, DMs, the live feed, media) passed. FAIL 1: the capability check still counted SEVEN probe keys, and phase 8 made it ten (a stale check, not a library defect). FAIL 2: "a seq of 2^53 + 1 is REFUSED" - the engine ACCEPTED it through `rsReadBEu64`'s quotient bound, which pure IEEE, and so every headless gate, refuses (OBSERVED; the cause INFERRED, trap 9). Both fixed the same day: the check asserts the exact ten-key set, the bound is decided on the u32 halves. Verified statically; needs an OXT re-pass |
 | 2026-09-24 (the second run, 8:41 PM local) | OXT, Win32; a fresh stack, the suite paste regenerated at 21aaa61 | riptide's folded harness with both fixes | 489 passed, 0 failed, 2 skipped (the live-tor legs); the whole paste 2623 / 2 / 3, its two FAILs the enet and datachannel loopbacks. Both fixes GREEN on the engine: "probe reports exactly its ten keys" (it printed all ten) and "a seq of 2^53 + 1 is REFUSED". The probe line read `true,false,false,false` where IEEE reads `true,true,true,true`: the engine answers nearly-equal numbers as equal (1 + 2^-51 > 1 is false on it), OBSERVED; whether by a relative or an absolute tolerance or a decimal round trip, the reading cannot tell (suite engine note 2.10, trap 9) |
+| 2026-09-24 (the third run, 10:10 PM local) | OXT, Win32; a fresh stack, the suite paste as regenerated at b34f7b0 (the board review's fixes) | riptide's folded harness, whose report now opens with three counts | 489 passed, 0 failed, 2 skipped (the live-tor legs), and this time the board MERGED the skips (its row read 491 / 0 / 2 with the two cross-member checks; the whole paste 2623 / 2 / 10, its two FAILs the loopbacks again). The second probe line read `true,false,16,16`: `1e-10 > 0` true, `2^30 + 2^-21 > 2^30` false, and the smallest step told apart is 16 ulps at 1 AND at 8, so the engine's comparison tolerance is RELATIVE, between 8 and 16 DBL_EPSILON (OBSERVED). The engine source's rule (10 DBL_EPSILON of the smaller operand) reproduces all eight readings of the two probe lines (suite engine note 2.10, trap 9) |
 
 Caveats that travel with the ledger:
 - The 2026-09-09 tag change (trap 8) re-pinned the admission response and welcome goldens, which
@@ -355,8 +361,8 @@ Caveats that travel with the ledger:
 - Harness sections added after 2026-08-24 (Nostr, app state, the watermarks, the u64 bound, the 996
   cap) first met an engine on 2026-09-24 (ledger); of that run's two FAILs, only the u64 bound's
   2^53 + 1 row fell in them. The day's fixes (the ten-key check, the halves bound and exactness
-  check, the numeric probe line) ran green in its second run. The harness's SECOND probe line
-  (2026-09-25) is static + headless only.
+  check, the numeric probe line) ran green in its second run, and the second probe line in its
+  third. The harness's THIRD probe line (2026-09-25) is static + headless only.
 - Headless on 2026-09-23: check-script-vectors 84 checks (1 skip), check-demo-boot 44 checks. Run
   the gates for current counts.
 
@@ -387,7 +393,7 @@ In the suite, beyond this member's gates:
 - **The fold**: the harness folds as member `riptide` (prefix `rs1`, entry `rsSelfTest`, merged via
   `stMergeReturned`), so its report's first line must stay exactly "N passed, M failed, K
   skipped" (since 2026-09-25: the skip count used to sit on a prose second line, which the merge
-  never counted). The library embeds verbatim as a script layer; the coverage gate fails on
+  never counted; the three-count line merged on the engine in the 2026-09-24 third run). The library embeds verbatim as a script layer; the coverage gate fails on
   an unexercised public `rs*`. A script-layer or harness edit is not done until
   `python3 tools/build-suite-selftest.py` has rebuilt the paste.
 - **The demo's embeds**: five libraries via the suite's `tools/sync-demo-embeds.py`, in the order

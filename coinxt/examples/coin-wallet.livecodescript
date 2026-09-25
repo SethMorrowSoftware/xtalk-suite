@@ -3692,17 +3692,16 @@ function cwLeRead pBytes
    -- lo 1) - OBSERVED. Its comparison is 2097152 against 2097151.99999999977,
    -- two ADJACENT doubles, and IEEE, python and this family's interpreter all
    -- answer "greater", so every headless gate was green over it. Why the
-   -- engine answered otherwise is INFERRED, not observed: a comparison
-   -- tolerance, absolute or relative, or a round trip through about 15
-   -- significant digits. The edge here was 35184372088832 against
-   -- 35184372088831.99609375: adjacent doubles again (one ulp, 2^-53 of
-   -- their size, the same RELATIVE gap as riptide's) but 0.0039 apart. So
-   -- the old form was safe under an ABSOLUTE tolerance smaller than that
-   -- (1e-6, say) and broken under a RELATIVE one, or a 15-digit round trip
-   -- that spells the quotient 35184372088832, and nothing tells us which rule
-   -- the engine has. tools/check-wallet-vectors.py's tier 4 pins all of this:
-   -- the old guard lets 2^53 + 1 through under the relative and 15-digit
-   -- candidates and refuses it under the absolute one.
+   -- engine answered otherwise was named by that day's third run and the
+   -- engine source (suite engine note 2.10): two unequal numbers within 10
+   -- DBL_EPSILON of the SMALLER one are EQUAL. The edge here was
+   -- 35184372088832 against 35184372088831.99609375: adjacent doubles again
+   -- (one ulp, 2^-53 of their size, the same RELATIVE gap as riptide's) but
+   -- 0.0039 apart. So the old form was safe only under an ABSOLUTE
+   -- tolerance smaller than that (1e-6, say), and the engine's is relative:
+   -- it was broken here too. tools/check-wallet-vectors.py's tier 4 pins all
+   -- of this: the old guard lets 2^53 + 1 through under the engine's rule
+   -- and a 15-digit round trip, and refuses it only under the absolute one.
    --
    -- So nothing wide is compared any more. 2^53 is 32 * 2^48: the byte 0x20
    -- followed by six zero bytes. A value fits exactly when the bytes worth
@@ -3718,8 +3717,8 @@ function cwLeRead pBytes
    -- where a difference of 1 is only 128 ulps; on the bytes every operand is
    -- small.) tValue is multiplied only after its byte has passed, so the
    -- check still comes BEFORE the multiply. Verified statically; needs an OXT
-   -- pass (tier 4 runs the bound under each candidate rule, headlessly, which
-   -- settles logic and not the engine).
+   -- pass (tier 4 runs the bound under the engine's rule and two margin
+   -- models, headlessly, which settles logic and not the engine).
    local tValue, tI, tCount, tByte, tHigh
    put the number of bytes of pBytes into tCount
    put 0 into tValue

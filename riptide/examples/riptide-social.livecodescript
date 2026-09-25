@@ -9686,16 +9686,17 @@ private function rsReadBEu64 pBytes
    -- interpreter (Python floats) refused and every headless gate stayed
    -- green. But the two sides differ by about 2.3e-10, a relative 1.1e-16,
    -- and the engine did not answer that comparison the way IEEE does. The
-   -- same day's second run showed WHY in part (the harness's probe line;
-   -- suite engine note 2.10): the engine answers nearly-equal numbers as
-   -- equal, and 1 + 2^-51 > 1 reads false on it. Whether by a relative or
-   -- absolute tolerance or a decimal round trip, that run could not tell; it
-   -- refused 2^53 + 1 through the halves bound that follows. So the rule is
-   -- the one that holds under every such explanation: decide a bound on a
+   -- same day's second run showed the engine answering nearly-equal numbers
+   -- as equal (1 + 2^-51 > 1 reads false on it), and refused 2^53 + 1
+   -- through the halves bound that follows; its third named the rule (the
+   -- harness's probe lines; suite engine note 2.10): two numbers within 10
+   -- DBL_EPSILON of the SMALLER one are EQUAL. So integers one apart blur
+   -- only from about 4.5e14, and the halves never get near that. The rule
+   -- here holds under that rule and any looser one: decide a bound on a
    -- wide integer by comparing exact integers that differ by at least 1 at a
    -- modest magnitude - never against a quotient, and never on a difference
-   -- smaller than any plausible tolerance. tools/check-script-vectors.py
-   -- replays this bound under three comparison models, after proving that
+   -- smaller than the tolerance. tools/check-script-vectors.py replays this
+   -- bound under the engine's rule and two margin models, after proving that
    -- each of them accepts 2^53 + 1 through the old line as the engine did.
    -- Plain nested ifs, no compound `and`: both operands of one always
    -- evaluate (engine notes 2.5). Harmless here, but the habit costs less

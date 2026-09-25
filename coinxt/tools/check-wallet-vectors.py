@@ -61,8 +61,10 @@ for once (coinxt's own check-selftest-vectors.py, 2026-08-13).
 THE COMPARISON RULE IS NOT ASSUMED (tier 4, 2026-09-24). An OXT run accepted
 2^53 + 1 through a guard every tool here refuses it with, because the engine
 did not order two adjacent doubles the way IEEE does. So the wide-integer
-bound vectors run again under each candidate rule (a relative tolerance, a
-15-digit round trip, an absolute 1e-6) and must not move under any of them.
+bound vectors run again under the engine's own rule (named on 2026-09-25 by
+riptide's probe and the engine source: suite engine note 2.10) and two
+ruled-out candidates kept as margin (a 15-digit round trip, an absolute
+1e-6), and must not move under any of them.
 
 Usage:
   python3 tools/check-wallet-vectors.py            # per-check detail
@@ -2679,33 +2681,44 @@ def check_case_folding_fires(c, ip):
 
 # ---------------------------------------------------- tier 4: comparison rules
 #
-# THE ENGINE DID NOT ORDER TWO NUMBERS THE WAY IEEE DOES, and what it does
-# instead is not known. OBSERVED 2026-09-24 (OXT, Win32, riptide's fold in the
-# suite paste): riptide's rsReadBEu64 guarded a u64 with
+# THE ENGINE DID NOT ORDER TWO NUMBERS THE WAY IEEE DOES. OBSERVED 2026-09-24
+# (OXT, Win32, riptide's fold in the suite paste): riptide's rsReadBEu64
+# guarded a u64 with
 #     if tHi > (9007199254740992 - tLo) / 4294967296 then return empty
 # and for hi = 2^21, lo = 1 - the value 2^53 + 1 - IEEE answers 2097152 >
 # 2097151.99999999977 TRUE and refuses, while the engine ACCEPTED the record.
 # Python and tools/lcs-interp.py both answer as IEEE does, so every headless
 # gate was green over it. The operands are ADJACENT doubles, one ulp (2^-53 of
-# their size) apart. Why the engine called them equal is INFERRED, not
-# observed: a comparison tolerance, absolute or relative (xTalk engines are
-# widely reported to answer (0.1 + 0.2) = 0.3 as true), or a round trip
-# through about 15 significant digits.
+# their size) apart.
+#
+# WHAT IT DOES INSTEAD, named by that day's third run (riptide's second probe
+# line; riptide/CLAUDE.md's ledger has the reading): a RELATIVE tolerance
+# between 8 and 16 DBL_EPSILON, the same at 1 and at 8, and the engine source
+# says exactly which. Two unequal numbers are EQUAL when they differ by less
+# than MC_EPSILON = 10 DBL_EPSILON of the SMALLER magnitude, or by less than
+# MC_EPSILON outright when that magnitude is below it (engine/src/
+# exec-logic.cpp and sysdefs.h; DOCUMENTED, and it reproduces all eight probe
+# readings - check_tolerance_fires re-proves that on every run). So integers
+# one apart compare equal from 450359962737050 (2^52 / 10) up: satoshi
+# amounts blur within a few sats past 4.5 million BTC, which no wallet here
+# holds, and a guard that leans on a sub-integer gap fails at any size.
 #
 # wallet-core's cwLeRead and cwBeRead had the same quotient form, one byte at
 # a time. At their edge the comparison was 35184372088832 against
 # 35184372088831.99609375: adjacent doubles again, but 0.0039 apart. So that
 # guard held under an ABSOLUTE tolerance smaller than the gap (1e-6, say) and
 # failed under a RELATIVE one, which swallows one ulp at any size, or a
-# 15-digit round trip, which spells the quotient 35184372088832. Whether the
-# shipped guard worked depended on a rule nobody here can name.
+# 15-digit round trip, which spells the quotient 35184372088832. When it
+# shipped, whether the guard worked depended on a rule nobody here could
+# name; the rule named since is relative, so it did not.
 #
-# So this tier names no rule. The boundary vectors (check_wide_reads) run once
-# per CANDIDATE below and must give the SAME answers under every one: the
-# question the build asks is "does this bound's answer depend on which
-# plausible comparison rule the engine has?", and for a bound on a wide
-# integer the answer has to be no. A candidate is not a claim about the
-# engine; an engine observation that fits none of them is a new row.
+# So this tier does not rest on the one rule either. The boundary vectors
+# (check_wide_reads) run once per MODEL below and must give the SAME answers
+# under every one: the engine's rule first, then two candidates the probes
+# ruled out as the exact rule, kept as margin (a bound on a wide integer
+# whose answer moves between plausible rules is leaning on a constant). A
+# probe reading that the engine's rule cannot reproduce is a new row, and
+# check_tolerance_fires holds the eight there are.
 #
 # SCOPE, deliberately: the wide-integer vectors, not the whole set. The swap
 # below reaches every comparison the interpreter makes, so a full re-run is
@@ -2724,11 +2737,19 @@ def check_case_folding_fires(c, ip):
 # before any vector trusts it, and that the real rule comes back.
 
 _DBL_EPSILON = 2.0 ** -52
+_MC_EPSILON = _DBL_EPSILON * 10.0
 
 
-def _same_relative(a, b):
-    """Equal within DBL_EPSILON of the larger operand: one ulp, at any size."""
-    return abs(a - b) <= _DBL_EPSILON * max(abs(a), abs(b))
+def _same_engine(a, b):
+    """The engine's own rule (engine/src/exec-logic.cpp, MCLogicCompareTo and
+    MCLogicIsEqualTo): unequal numbers are equal within MC_EPSILON of the
+    SMALLER magnitude, or within MC_EPSILON outright below it."""
+    if a == b:
+        return True
+    smaller = min(abs(a), abs(b))
+    if smaller < _MC_EPSILON:
+        return abs(a - b) < _MC_EPSILON
+    return abs(a - b) / smaller < _MC_EPSILON
 
 
 def _same_digits15(a, b):
@@ -2744,8 +2765,8 @@ def _same_absolute(a, b):
 # (the candidate, its test for "equal", and what wallet-core's OLD quotient
 # guard did with 2^53 + 1 under it - recorded as executable fact, below)
 TOLERANCE_MODELS = (
-    ("a relative tolerance (DBL_EPSILON of the larger operand)",
-     _same_relative, "let through"),
+    ("the engine's rule (10 DBL_EPSILON of the smaller operand)",
+     _same_engine, "let through"),
     ("a round trip through 15 significant digits", _same_digits15,
      "let through"),
     ("an absolute tolerance of 1e-6", _same_absolute, "refused"),
@@ -2828,6 +2849,38 @@ end oldCwLeRead
 """
 
 
+# THE ENGINE'S RECORDED ANSWERS to riptide's first two numeric compare probe
+# lines (probe 1 read in the 2026-09-24 second run, probe 2 in the third;
+# riptide/CLAUDE.md's ledger), each expression spelled as riptide's harness
+# spells it; the ladder is its rstUlpLadder under a fixture name. The
+# engine's rule must read all eight, and each margin model must misread at
+# least one, which is why it is margin. Pure IEEE reads true six times, then
+# 1 and 1.
+_PROBE_LADDER = """
+function probeUlpLadder pBase, pUlps
+   local tStep
+   put 1 into tStep
+   repeat while tStep <= 1073741824
+      if pBase + tStep / pUlps > pBase then
+         return tStep
+      end if
+      multiply tStep by 2
+   end repeat
+   return 0
+end probeUlpLadder
+"""
+_PROBE_READINGS = (
+    ("1 + 1 / 10000000 > 1", "true"),
+    ("1 + 1 / 2251799813685248 > 1", "false"),
+    ("2097152 > (9007199254740992 - 1) / 4294967296", "false"),
+    ("1 + 23 / 4503599627370496 > 1 + 22 / 4503599627370496", "false"),
+    ("1 / 10000000000 > 0", "true"),
+    ("1073741824 + 1 / 2097152 > 1073741824", "false"),
+    ("probeUlpLadder(1, 4503599627370496)", "16"),
+    ("probeUlpLadder(8, 562949953421312)", "16"),
+)
+
+
 def _guard_answer(fn):
     """What a guard did with 2^53 + 1: refused it, or let it through to the
     multiply - where the interpreter's 2^53 stop names it, and an engine
@@ -2849,6 +2902,28 @@ def check_tolerance_fires(c):
     and the exact rule must not, or the tier models nothing. The same run
     pins which candidates broke wallet-core's old guard, so the paragraph
     above is checked rather than believed."""
+    probe = LCS.Interp(_PROBE_LADDER)
+
+    def readings():
+        return [str(LCS._disp(probe.eval_expr(expr, {})))
+                for expr, _want in _PROBE_READINGS]
+
+    engine_read = [want for _expr, want in _PROBE_READINGS]
+    c.ck("exact IEEE reads riptide's two probe lines as the engine did NOT",
+         readings(), ["true"] * 6 + ["1", "1"])
+    for index, (label, same, _old) in enumerate(TOLERANCE_MODELS):
+        restore = _tolerant_compare(same)
+        try:
+            got = readings()
+        finally:
+            restore()
+        if index == 0:
+            c.ck("under %s, riptide's two probe lines read the eight answers "
+                 "the engine gave (2026-09-24)" % label, got, engine_read)
+        else:
+            c.ck("under %s they misread at least one (margin, not the rule)"
+                 % label, got != engine_read, True)
+
     fixture = LCS.Interp(_QUOTIENT_GUARDS)
     past = to_str((2 ** 53 + 1).to_bytes(8, "little"))
 

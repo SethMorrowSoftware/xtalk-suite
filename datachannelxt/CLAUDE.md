@@ -202,8 +202,10 @@ Numbered as cited elsewhere in the suite (the suite's `tools/check-lcb-signature
 10. **LCB idioms do not exist in LCS**: no `{}` array literals; no subscripting a function
     result (`f(x)["k"]`); a bare `is empty` on an ARRAY is vacuously true (count `the keys of`
     instead); string literals have NO escapes (`"\0"` is two characters; use `numToByte`); `is`
-    is case-insensitive (`set the caseSensitive to true` for byte-exact compares). The checker
-    flags the first two (`LCS_ANTIPATTERNS`).
+    is case-insensitive (`set the caseSensitive to true`), and even then it compares two
+    NUMBER-LIKE operands as numbers ("1e5" is "100000"; suite engine note 2.11, from the engine
+    source), so a byte-exact compare also prefixes a letter to both sides or goes byte by byte.
+    The checker flags the first two (`LCS_ANTIPATTERNS`).
 11. **An EVENT name may never equal a public `dc*` handler name** (engine note 6.7). Dispatched
     names share ONE message namespace with public handlers and the LIBRARY handler wins, so the
     app's `on <name>` is never reached. Observed 2026-08-18 on `dcLocalDescription`: the
