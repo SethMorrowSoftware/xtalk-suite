@@ -50,12 +50,14 @@ script "enetSelfTest"
 -- at every recorded pass from 2026-08-10 on: 21/21 on 2026-08-17 (OXT 9.6.3,
 -- Windows x86_64, NT 10.0); 34 on 2026-08-20 (Windows: the 21 plus, by count,
 -- the 13 helper-section assertions); a whole paste with no failure on
--- 2026-08-24 (enetxt's own count not recorded); and green again on
--- 2026-08-27, the renamed helper locals included (that paste's two failures
--- were the core's loopbacks on a machine blocking UDP to 127.0.0.1). The
--- ASYNC loopback is deliberately NOT folded (two state machines in one
--- process race for the event handlers); it last ran standalone, green, on
--- 2026-08-13.
+-- 2026-08-24 (enetxt's own count not recorded); green again on 2026-08-27,
+-- the renamed helper locals included (that paste's two failures were the
+-- core's loopbacks on a machine blocking UDP to 127.0.0.1); and 34/34 on
+-- 2026-09-24 (Windows, the D-23 paste, whose core loopbacks stalled the
+-- same way: suspected environment, suite runbook trap 5.5, not yet tested
+-- independently). The ASYNC loopback is deliberately NOT folded (two state
+-- machines in one process race for the event handlers); it last ran
+-- standalone, green, on 2026-08-13.
 
 -- >>> BEGIN EMBEDDED LIBRARIES (tools/sync-demo-embeds.py) >>>
 -- Pasted from the sources below so this demo runs with NO `start

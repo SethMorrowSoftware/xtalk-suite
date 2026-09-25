@@ -95,8 +95,8 @@ FIRST failure since the last clear, naming what threw (the drain reports the hos
 dispatch the event name). It is first-wins and sticky: nothing clears it but
 `enPollClearError` (bare in statement position, like `enDeinitialize`), not even stopping
 and restarting the pump, so an app that reports each distinct failure must clear after
-reading. (The healthy-path assertions ran folded in the 2026-08-20 suite paste; the throw
-paths are verified statically and need an OXT pass.)
+reading. (The healthy-path assertions ran folded in the suite paste from 2026-08-20 through
+2026-09-24; the throw paths are verified statically and need an OXT pass.)
 
 ## Constants (mirrored from the native registries; checker-enforced)
 

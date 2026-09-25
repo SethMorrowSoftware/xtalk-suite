@@ -112,7 +112,7 @@ gates: the family's unified, byte-identical `check-livecodescript.py`,
 
 **Status.** Engine-proven: the self-test ran green standalone on 2026-08-07 and, async
 loopback and statistics included, on 2026-08-13, and folded in the suite paste from
-2026-08-10 through 2026-08-27; the LAN chat ran on one Linux machine on 2026-08-18. The LAN
+2026-08-10 through 2026-09-24; the LAN chat ran on one Linux machine on 2026-08-18. The LAN
 chat between two machines and the internet chat across two networks are verified
 statically; they need an OXT pass. `CLAUDE.md` carries the dated ledger.
 
