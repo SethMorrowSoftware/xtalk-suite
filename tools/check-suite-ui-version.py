@@ -116,15 +116,23 @@ def handlers(view):
 
 
 def constants(view, gen):
-    """{lower name: (spelling, its comment-free declaration line)} for every
-    name a column-0 `constant` line declares, split by the generator's own
-    declaration_names (a comma inside a string literal is data, not a second
-    name: kSuKeys is one constant)."""
+    """{lower name: (spelling, its comment-free declaration line, its index)}
+    for every name a column-0 `constant` line declares, split by the
+    generator's own declaration_names (a comma inside a string literal is
+    data, not a second name: kSuKeys is one constant).
+
+    The INDEX is carried, not looked up again: the first cut ordered the
+    constants with view.index(the rstripped line), and a line with anything
+    after its value - a trailing `-- comment`, which the view keeps as
+    trailing space, or plain trailing space - is not in the view in that
+    form. The gate then died on "'constant kSuRowStep = 34' is not in list",
+    --fix with it, over an edit its own rule says changes nothing (review,
+    2026-09-25)."""
     out = {}
-    for ln in view:
+    for i, ln in enumerate(view):
         if re.match(r'^constant\s', ln, re.I):
             for name in gen.declaration_names(ln[len("constant"):]):
-                out[name.lower()] = (name, ln.rstrip())
+                out[name.lower()] = (name, ln.rstrip(), i)
     return out
 
 
@@ -161,7 +169,7 @@ def fingerprint(text, gen):
         spelling, a, b = table[low]
         code = [ln.rstrip() for ln in view[a:b + 1] if ln.strip()]
         parts.append("\n".join(code))
-    for low in sorted(named, key=lambda n: view.index(consts[n][1])):
+    for low in sorted(named, key=lambda n: (consts[n][2], n)):
         parts.append(consts[low][1])
     digest = hashlib.sha256("\n\n".join(parts).encode("utf-8")).hexdigest()[:12]
     spellings = [table[n][0] for n in sorted(reach, key=lambda n: table[n][1])]

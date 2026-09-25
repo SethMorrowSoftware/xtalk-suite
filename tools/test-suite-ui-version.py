@@ -24,10 +24,14 @@ tools/build-all.sh runs it, and holds the verdict:
        hand-bumped "suite-board-1";
     f  a stamp that is not prefixed (bare hex digits: suBuild compares it with
        `is`, engine note 2.11);
-    g  kSuUiVersion named inside the build (a stamp that hashes itself).
+    g  kSuUiVersion named inside the build (a stamp that hashes itself);
+    l  a constant's value changed beside a trailing comment (the comment
+       must not blind the gate to the value).
   MUST PASS (the build did not change):
     h  a comment edit inside suBuildAll (comments cannot move a control);
-    i  a code edit in a handler the build does not reach (suPump).
+    i  a code edit in a handler the build does not reach (suPump);
+    k  a trailing comment on a constant the build reads (the first cut
+       died here with "not in list", --fix included).
   --fix:
     j  on case a's copy, --fix writes a stamp, the gate then passes, and a
        second --fix changes nothing.
@@ -97,6 +101,19 @@ CASES = [
      '   put empty into tEvents\n   send "suPump" to me in 33 milliseconds\n'
      'end suPump\n',
      False, "check-suite-ui-version: OK"),
+    # A comment AFTER the value of a constant the build reads (review,
+    # 2026-09-25): the first cut died on "... is not in list" here, --fix
+    # included, over an edit its own rule says changes nothing. k proves it
+    # passes; l proves the comment did not blind it to the value beside it.
+    ("k", "a trailing comment on a constant the build reads (NEGATIVE: "
+          "must pass)",
+     "constant kSuRowStep = 34\n",
+     "constant kSuRowStep = 34   -- the row pitch\n",
+     False, "check-suite-ui-version: OK"),
+    ("l", "that constant's value changed beside a trailing comment",
+     "constant kSuRowStep = 34\n",
+     "constant kSuRowStep = 36   -- the row pitch\n",
+     True, "fingerprint to"),
 ]
 
 
