@@ -195,9 +195,10 @@ because a harness once ran against a stale in-memory library and reported failur
   `test-build-suite-selftest.py`), the drift fixtures `test-ui-kit-drift.py` and
   `test-harness-scaffold-drift.py`, and `check-suite-ui-boot.py` (fixture `test-suite-ui-boot.py`),
   which drives the board's logic through the family interpreter in an all-absent profile and
-  upgrades no label. Run all has run on an engine (2026-09-24: the build, the boot self-check,
-  the rows adding up to the totals, Copy results; runbook section 8); a row's Run, Show and the
-  filters are verified statically; needs an OXT pass (runbook row 48).
+  upgrades no label. Run all has run on an engine (2026-09-24 on Windows: the build, the boot
+  self-check, the rows adding up to the totals, Copy results; 2026-09-25 on Linux, the same, Copy
+  results there INFERRED from the report's shape; runbook section 8); a row's
+  Run, Show and the filters are verified statically; needs an OXT pass (runbook row 48).
 - **A script-layer edit is done only when every carrier is regenerated** (`build-suite-selftest.py`
   AND `sync-demo-embeds.py`). The carrier sets overlap without either containing the other: the
   b2k Kit is in the paste and no demo; `onionxt/src/onion-httpd.livecodescript` is in demos only.
@@ -312,10 +313,14 @@ worse than no gate, because it answers the question nobody asks twice.
   allowlist `[a-z]+xt` that could not match box2dxt. Every native member's CURRENT binaries come
   from the 2026-09-12 dispatch (run 34657390798 from 0f17ab5, commit 421bab3). Their WINDOWS
   builds first met an engine on 2026-09-24: the D-23 suite paste loaded all six and ran every
-  member's sections (runbook section 8; the bitness was not recorded). No engine has loaded the
-  Linux or mac builds yet. The Windows DLLs carry libsodium 1.0.22 (D-08) and libtorrent 2.1.1,
-  not the versions pinned for the other platforms, and that run exercised both by the maintainer's
-  account (the report prints no library version).
+  member's sections (runbook section 8; the bitness was not recorded). On 2026-09-25 a Linux
+  engine ran the same paste green (2672/0/10) with a Linux build of all six loaded, but which
+  builds is not recorded (neither the bitness nor whether the committed `.so` files were
+  installed; torrentxt's enforced the 2026-09-08 BEP44 cap, so it was built from that source or
+  later, INFERRED). No engine has loaded the mac builds yet. The Windows DLLs carry libsodium
+  1.0.22 (D-08) and libtorrent 2.1.1, not the versions pinned for the other platforms, and the
+  2026-09-24 run exercised both by the maintainer's account (the report prints no library
+  version).
 
 ## Member repositories and publishing
 
