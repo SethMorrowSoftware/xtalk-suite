@@ -47,9 +47,10 @@ WHAT IT CHECKS
     the ui* kit master. The first version knew about ONE carried block - the ui
     kit - so it asked "does this armed handler call an unpinned ui* handler?"
     and never asked the same question about anything else, including the OTHER
-    carried block. `stPump` in the suite core is armed by
-    `send "stPump" to me in 33 milliseconds` and calls `stShow`, which writes
-    `field "stResults"` unqualified; the gate read stPump's own body, found no
+    carried block. The suite core's pump (then `stPump`, `suPump` since
+    2026-09-25) is armed by `send ... to me in 33 milliseconds` and calls
+    `stShow`, which writes `field "stResults"` unqualified; the gate read the
+    pump's own body, found no
     control reference, checked the kit list, and passed. A one-callee-list
     check is a check for the bug you already found - the ONE hop the ui-kit
     fix had already closed.

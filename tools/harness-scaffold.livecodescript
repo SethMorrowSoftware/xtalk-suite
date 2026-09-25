@@ -39,6 +39,23 @@
 -- blue, the ok/warn/bad set, the platform mono face) but the block is
 -- deliberately kit-independent: harnesses are tools, fold into the suite
 -- paste, and must not carry a second 300-line block to stay pasteable.
+--
+-- THE ONE CARRIER THAT DOES BOTH is the suite paste, since owner decision
+-- D-23 (2026-09-24; docs/OPEN-DECISIONS.md). Its core carries this block
+-- AND the kit (and the demo boot self-check) and builds the demos' board
+-- with the kit, whose builders make this block's four report controls
+-- under their own names - stSummary, stResults, stCopy, stRerun - so
+-- stShow, stPaint, stCopyResults, the RUN NOT FINISHED trailer and the
+-- mouseUp route run there unchanged, while stBuild and its makers are
+-- carried and never called. The paste is already tens of thousands of
+-- lines, so the kit costs it no pasteability, and it gains the demos' look
+-- and a boot check of its own window. The reasoning above still governs the
+-- four member harness windows (enetxt, datachannelxt, torrentxt, coinxt):
+-- they keep matching the kit by value, D-18's reasoning, and this block's
+-- stBuild is still what builds them. The paste repaints its own report by
+-- first word after each run, because stPaint's `begins with` cannot see a
+-- folded member's indented FAIL; teaching stPaint that is a master change
+-- for the member windows' next re-pass (docs/WORK-PLAN.md suite-wide #13).
 
 -- ==== SUITE HARNESS SCAFFOLD v1 BEGIN (verbatim copy; master: tools/harness-scaffold.livecodescript; gate: tools/check-harness-scaffold-drift.py) ====
 -- The harness scaffolding as one carried block: counters, the window, the
@@ -201,7 +218,7 @@ command stShow
    -- has always rendered. This handler is ALSO called from an async pump, on a
    -- `send ... in` tick, where they are not: with another window in front the
    -- write would throw "Chunk: error in object expression", and in the suite
-   -- core that throw lands in stPump, which is where the timer re-arms.
+   -- core that throw lands in suPump, which is where the timer re-arms.
    -- PRECAUTIONARY, NOT DIAGNOSED. It was written on 2026-08-20 while chasing
    -- two engine reports that ended mid-CROSS-section, and that was the wrong
    -- cause: the third run, same build, completed 1981/0/1 through both

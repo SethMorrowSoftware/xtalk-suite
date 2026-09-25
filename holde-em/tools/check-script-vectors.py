@@ -77,7 +77,19 @@ shipped script was nested for this gate (`heBetApply`'s non-numeric wager
 refusal, see the member's CLAUDE.md, 2026-09-11): `X is not a number or X is
 not trunc(X)` evaluates `trunc("abc")` under the both-operands rule (root
 engine notes 2.5), which the interpreter refuses; nested, the answer is the
-same under either reading of the engine and the section can run.
+same under either reading of the engine and the section can run. (Since
+2026-09-25 its second test is `is not an integer`: the engine's comparison
+tolerance, engine note 2.10, passed a near-integer through `trunc`.)
+
+ONE CLASS THIS GATE CANNOT SEE (2026-09-25): bare `is` between two
+number-like hex texts. The engine compares them as NUMBERS (engine note
+2.11), while the interpreter reads only -?\\d+(\\.\\d+)? as a number, so an
+exponent-form or overflowing pair is text here and equal there. The stack
+compares hex through heHexEq; section 21's genesis pin and section 9's
+heEnvVerify pin are the ones that fail here if heHexEq, or a call site,
+slips back to bare `is` - both digit-only, so both numbers here too. That
+was driven by hand against both mutants that day; it is an attestation,
+not a tools/test-script-vectors.py fixture.
 
 Mutation-tested (tools/test-script-vectors.py): a wrong straight-flush rank,
 a settlement that gives the odd chip to the wrong seat, and a shuffle that
@@ -152,31 +164,35 @@ Thrown = LCS.Thrown
 
 # (section, minimum passes, exact skips). The pass floors are the counts
 # measured on 2026-09-11 (stack 0.25.3, harness v44), plus section 24's,
-# measured when it landed on 2026-09-24 (harness v45); raise them when the
-# harness grows. A skip count is EXACT: a section that skips more than it
-# did is a section that stopped running something.
+# measured when it landed on 2026-09-24 (harness v45), sections 5, 9
+# and 21 raised on 2026-09-25 (stack 0.25.4, harness v46: the heHexEq and
+# near-integer pins), and sections 11, 15 and 21 raised the same day (stack
+# 0.25.5, harness v47: the canonical-index, hand-binding and audit-guard
+# pins); raise them when the harness grows. A skip count is
+# EXACT: a section that skips more than it did is a section that stopped
+# running something.
 SECTIONS = [
     ("heTestEvaluatorRun", 28, 0),
     ("heTestBettingRun", 68, 0),
     ("heTestAnteRun", 23, 0),
     ("heTestLevelRun", 12, 0),
-    ("heTestLegalRun", 18, 0),
+    ("heTestLegalRun", 19, 0),
     ("heTestScheduleRun", 3, 0),
     ("heTestShuffleRun", 9, 0),
     ("heTestFoldRun", 17, 0),
-    ("heTestCryptoRun", 25, 0),
+    ("heTestCryptoRun", 26, 0),
     ("heTestReceiptRun", 17, 0),
-    ("heTestDealRun", 16, 0),
+    ("heTestDealRun", 20, 0),
     ("heTestDealOrderRun", 5, 0),
     ("heTestLobbyRun", 10, 0),
     ("heTestNetSim", 20, 0),
-    ("heTestNetPlay", 47, 0),
+    ("heTestNetPlay", 60, 0),
     ("heTestLevel2Run", 0, 1),          # ristretto255 is not modelled: skips
     ("heTestOnionRun", 35, 1),          # the LIVE tor table skips by name
     ("heTestOracleRun", 32, 2),         # the LIVE three-machine round + the onion oracle
     ("heTestLevel2VoidRun", 2, 1),      # its ristretto (DLEQ) half skips
     ("heTestLivenessRun", 84, 2),       # the LIVE timed table + the LIVE tor redial
-    ("heTestHelpersRun", 28, 1),
+    ("heTestHelpersRun", 39, 1),
     ("heTestLeafRun", 39, 0),
     ("heTestLeafRun2", 83, 0),
     ("heTestLeafRun3", 50, 0),          # every leg pure or gGame-only: nothing skips

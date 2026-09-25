@@ -1285,9 +1285,12 @@ end cxBtcAddressP2TRInner
 -- ==============================================================================
 -- BIP-341 Taproot: the tweak, and the address builder that applies it.
 --
--- STATUS: verified statically and executed headlessly against BIP-341's own
--- published wallet test vectors (tools/check-script-vectors.py drives the real
--- script through the real shim); needs an OXT pass. New in ABI 6.
+-- STATUS: executed headlessly against BIP-341's own published wallet test
+-- vectors (tools/check-script-vectors.py drives the real script through the
+-- real shim), and green on an engine: the suite paste's BIP-341 wallet-vector
+-- section on 2026-08-17 (278/278) and every run since, most recently
+-- 2026-09-24 (296/296; coinxt/CLAUDE.md's ledger). This label said "needs an
+-- OXT pass" until 2026-09-25, five weeks after that record. New in ABI 6.
 -- ==============================================================================
 
 -- Q = P + int(hash_TapTweak(bytes(P) || merkle_root)) * G, BIP-341's output
@@ -2224,11 +2227,13 @@ end cxXpub
 -- A caller who needs the bytes (cxSign, cxPublicKey) runs cxHexDecode over
 -- the decoded "seckey".
 --
--- STATUS: verified statically; needs an OXT pass. The logic is executed
--- headlessly by tools/check-script-vectors.py against oracle-derived vectors
--- anchored to the Bitcoin wiki's published worked example, both directions
--- plus the refusals - the same net every earlier phase carries - but no
--- engine has run these two handlers yet.
+-- STATUS: the logic is executed headlessly by tools/check-script-vectors.py
+-- against oracle-derived vectors anchored to the Bitcoin wiki's published
+-- worked example, both directions plus the refusals - the same net every
+-- earlier phase carries - and both handlers are green on an engine: the suite
+-- paste's 14 WIF checks on 2026-08-17 and every run since, most recently
+-- 2026-09-24 (coinxt/CLAUDE.md's ledger). This label said no engine had run
+-- them until 2026-09-25.
 -- ==============================================================================
 
 -- The WIF network version bytes, the same role kCxVersionP2PKH plays for an
@@ -3615,7 +3620,7 @@ command stShow
    -- has always rendered. This handler is ALSO called from an async pump, on a
    -- `send ... in` tick, where they are not: with another window in front the
    -- write would throw "Chunk: error in object expression", and in the suite
-   -- core that throw lands in stPump, which is where the timer re-arms.
+   -- core that throw lands in suPump, which is where the timer re-arms.
    -- PRECAUTIONARY, NOT DIAGNOSED. It was written on 2026-08-20 while chasing
    -- two engine reports that ended mid-CROSS-section, and that was the wrong
    -- cause: the third run, same build, completed 1981/0/1 through both

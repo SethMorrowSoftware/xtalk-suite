@@ -84,13 +84,16 @@ hosting layer (`oxh*`). `tools/run-gates.sh` runs the static gate, the docs-styl
 and Tor Browser exercised the SOCKS dial, SAFECOOKIE auth, publishing a v3 onion, inbound accept,
 streams both ways and bootstrap, and `oxh*` sites, file shares and routes rendered in Tor Browser. The
 offline `oxSelfTest()` ran green folded into every dated suite pass from 2026-08-10 (61 checks on
-2026-08-17 and 2026-08-20), and coinxt's wallet, which carries OnionXT, synced real testnet wallets
-over Tor through a v3 onion (Esplora on port 80, Electrum on port 143) on 2026-09-02/03. Still
-"verified statically; needs an OXT pass + a live-Tor pass": the optional Mode B launch, four inline
-`VERIFY` hypotheses, an OnionXT-to-OnionXT dial and the two-instance round trip, the live negative
-paths (all but one: a retired v2 onion's mapped REP `0x01` failed closed in the 2026-09-02 wallet log),
-the 2026-08-23/24 socket-message changes, and the 2026-09-09 `oxWrite` error return and callback pins. `bash tools/run-gates.sh` runs on every push (the generated `.github/workflows/gates.yml` here,
-and the suite's `build-all.sh --gates`).
+2026-08-17 and 2026-08-20; 74 and one counted skip on 2026-09-24, Windows, including the three
+live-daemon names on their refusal paths and the two SOCKS timeout reasons), and coinxt's wallet,
+which carries OnionXT, synced real testnet wallets over Tor through a v3 onion (Esplora on port 80,
+Electrum on port 143) on 2026-09-02/03. Still "verified statically; needs an OXT pass + a live-Tor
+pass": the optional Mode B launch, four inline `VERIFY` hypotheses, an OnionXT-to-OnionXT dial and the
+two-instance round trip, the live negative paths (all but one: a retired v2 onion's mapped REP `0x01`
+failed closed in the 2026-09-02 wallet log), the 2026-08-23/24 socket-message changes on a live socket
+(the harness's offline half, each named function disowning a foreign socket, ran green on 2026-09-24),
+and the 2026-09-09 `oxWrite` error return and callback pins. `bash tools/run-gates.sh` runs on every
+push (the generated `.github/workflows/gates.yml` here, and the suite's `build-all.sh --gates`).
 
 ## Troubleshooting
 

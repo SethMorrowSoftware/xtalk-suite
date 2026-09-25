@@ -145,6 +145,7 @@ Usage:
   python3 tools/build-suite-selftest.py --check    # fail if it is out of date
 """
 
+import importlib.util
 import os
 import re
 import sys
@@ -153,6 +154,45 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 CORE = os.path.join(ROOT, "tests", "suite-selftest.core.livecodescript")
 OUT = os.path.join(ROOT, "tests", "suite-selftest.livecodescript")
+
+
+def _load_tool(filename):
+    """Exec-load a neighbouring tool by path (there is no package here)."""
+    spec = importlib.util.spec_from_file_location(
+        filename.replace("-", "_").replace(".py", ""), os.path.join(HERE, filename))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+# THE CORE'S CARRIED BLOCKS, spelled by the gates that own them. The core
+# carries three blocks verbatim - the harness scaffold, the UI kit and the demo
+# boot self-check (the paste wears the demos' card look since D-23) - and each
+# block declares its script-level names ABOVE ITS OWN handlers, which is right
+# for every other carrier and wrong for this paste: check-suite-selftest.py's
+# check 10 requires every declaration above the paste's FIRST handler, and the
+# kit and self-check blocks sit below the scaffold's handlers. hoist_core_
+# declarations() below moves those lines up. The marker lines are read from
+# the drift gates rather than spelled again here: a second spelling is a
+# second thing to keep in step, and the one that drifts is the one nobody
+# re-reads.
+CARRIED_SPANS = tuple(
+    (mod.BEGIN, mod.END) for mod in (
+        _load_tool("check-harness-scaffold-drift.py"),
+        _load_tool("check-ui-kit-drift.py"),
+        _load_tool("check-demo-selfcheck-drift.py")))
+
+# THE ONE TABLE OF WHAT A SUITE MEMBER IS (tools/member-registry.py). Every
+# registry member either has a folded harness below (Member.member names it)
+# or a written reason here for having none; generate() refuses anything else,
+# so a twelfth member cannot be silently missing from the paste - or from the
+# board of member rows the core draws from the same names.
+REGISTRY = _load_tool("member-registry.py")
+NO_HARNESS = {
+    "nocloud": "an app with no in-engine harness; its file-server golden "
+               "test and script-vector gate run headlessly in the gates "
+               "(nocloud/tools/run-gates.sh)",
+}
 
 # Handlers a member harness defines that belong to ITS OWN standalone UI. The
 # core owns the window here, so these are dropped. Any of them still called from
@@ -185,10 +225,22 @@ STUB_IF_CALLED = {"stshow", "stpaint"}
 
 
 class Member:
-    def __init__(self, key, path, prefix, entry, title, note,
+    def __init__(self, key, member, shape, path, prefix, entry, title, note,
                  cut_before=None, rewrites=(), strip_spans=(), drop_extra=(),
                  keep_names=()):
         self.key = key
+        # The member's name in tools/member-registry.py, which is also the key
+        # of its row on the paste's board (the core's kSuKeys) and what
+        # check-suite-selftest.py derives its prefix table from.
+        self.member = member
+        # How the harness hands back its result, which decides how the core
+        # merges it: "returned" (the report is the entry point's return value;
+        # stMergeReturned) or "counted" (it accumulates into its own script
+        # locals, which the core reads by name; stMergeCounted).
+        if shape not in ("returned", "counted"):
+            raise SystemExit(f"build-suite-selftest: {key}: shape must be "
+                             f"'returned' or 'counted', not {shape!r}")
+        self.shape = shape
         self.path = os.path.join(ROOT, path)
         self.prefix = prefix
         self.entry = entry          # handler the core calls, BEFORE prefixing
@@ -221,20 +273,23 @@ class Member:
 # probe, which runs first either way.
 MEMBERS = [
     Member(
-        "sodium", "sodiumxt/examples/sodium-tests.livecodescript", "sx1",
+        "sodium", "sodiumxt", "returned",
+        "sodiumxt/examples/sodium-tests.livecodescript", "sx1",
         "sxSelfTest", "SodiumXT: the full sx* self-test",
         "24 groups: encoding, hashing (BLAKE2b, SHA3-256), secretbox, AEAD, "
         "pwhash, KDF, secretstream, signing, box, seal, key exchange, padding, "
         "ristretto255 (ABI 8 and 9) and the raw ChaCha20 xor (ABI 10).",
     ),
     Member(
-        "onion", "onionxt/examples/onionxt-tests.livecodescript", "ox1",
+        "onion", "onionxt", "returned",
+        "onionxt/examples/onionxt-tests.livecodescript", "ox1",
         "oxSelfTest", "OnionXT: the full ox* self-test",
         "12 sections, all OFFLINE - no Tor daemon is started or contacted. "
         "The live-Tor paths stay in onionxt's own demo.",
     ),
     Member(
-        "coin", "coinxt/tests/coin-selftest.livecodescript", "cx1",
+        "coin", "coinxt", "counted",
+        "coinxt/tests/coin-selftest.livecodescript", "cx1",
         "stRun", "CoinXT: the full cx* self-test",
         "32 sections across all five phases: hashes, the secp256k1 curve, the "
         "encoders and addresses, BIP-340 Schnorr and BIP-341 Taproot, "
@@ -253,7 +308,8 @@ MEMBERS = [
             "-- <<< END EMBEDDED LIBRARIES <<<"),),
     ),
     Member(
-        "torrent", "torrentxt/tests/torrent-selftest.livecodescript", "bt1",
+        "torrent", "torrentxt", "counted",
+        "torrentxt/tests/torrent-selftest.livecodescript", "bt1",
         "stRun", "TorrentXT: the full bt* self-test",
         "Synchronous throughout. Reuses the suite's single session rather than "
         "opening a second one, which TorrentXT does not allow.",
@@ -313,7 +369,8 @@ MEMBERS = [
         ),
     ),
     Member(
-        "enet", "enetxt/tests/enet-selftest.livecodescript", "en1",
+        "enet", "enetxt", "counted",
+        "enetxt/tests/enet-selftest.livecodescript", "en1",
         "stRun", "ENetXT: the synchronous half of the en* self-test",
         "Lifecycle, stale-handle no-ops, tuning and abrupt teardown. The async "
         "loopback is NOT folded in - the core drives a real ENet loopback of its "
@@ -322,7 +379,8 @@ MEMBERS = [
         cut_before='   stSection "loopback: hosts + connect (async)"',
     ),
     Member(
-        "dc", "datachannelxt/tests/datachannel-selftest.livecodescript", "dc1",
+        "dc", "datachannelxt", "counted",
+        "datachannelxt/tests/datachannel-selftest.livecodescript", "dc1",
         "stRun", "DataChannelXT: the synchronous half of the dc* self-test",
         "Lifecycle and the stale-handle surface. The async loopback is NOT "
         "folded in, for the same reason as ENetXT's; the core negotiates a real "
@@ -330,7 +388,8 @@ MEMBERS = [
         cut_before='   stSection "loopback: create + negotiate (async)"',
     ),
     Member(
-        "box2d", "box2dxt/examples/box2dxt-selftest.livecodescript", "b21",
+        "box2d", "box2dxt", "returned",
+        "box2dxt/examples/box2dxt-selftest.livecodescript", "b21",
         "stSelfTest", "Box2Dxt: the full b2k Kit self-test",
         "43 test handlers driving the REAL Kit deterministically: the world "
         "started PAUSED and hand-stepped one fixed 1/60 tick at a time, the "
@@ -367,7 +426,8 @@ MEMBERS = [
         keep_names=("b2kFell", "b2kSensorEnter", "b2kContact"),
     ),
     Member(
-        "riptide", "riptide/tests/riptide-selftest.livecodescript", "rs1",
+        "riptide", "riptide", "returned",
+        "riptide/tests/riptide-selftest.livecodescript", "rs1",
         "rsSelfTest", "Riptide Social (phases 1-8): the rs* self-test",
         "The capstone app's harness: the KDF subkey tree, identity to handle "
         "to onion, the RIPTKEY1 key file, the RSH1/RSP1 framings, the post "
@@ -378,42 +438,63 @@ MEMBERS = [
         "SKIP when those are absent, and the whole crypto set skips without "
         "SodiumXT.",
         rewrites=(
-            # Same one-session-per-process constraint the torrent member's
-            # rewrite handles: the core opened THE session during its probe,
-            # so the folded copy must alias it - a second btStartSession here
-            # would be refused and the live-feed section would SKIP while
-            # looking perfectly green. The standalone start (into a
-            # temporary, committed only on success) stays as the fallback for
-            # the no-core-session case.
-            ("""   try
+            # THE CORE'S HANDLE WINS, ON EVERY CALL, and there is no fallback
+            # start. The one-session-per-process constraint is the torrent
+            # member's (see its rewrite above): the core opened THE session
+            # during its probe, and a second btStartSession would be refused.
+            #
+            # This rewrite used to alias the core's handle only on the FIRST
+            # call. The standalone head of rstAcquireSession returns
+            # sRsTestSession whenever it is already set, so a cached handle
+            # won over the core's forever after - and the core stops THE
+            # session and takes a new one on EVERY run (stCleanup, then the
+            # probe). From the second run in one launch (Run all, or a
+            # member's own Run) all four of Riptide's sections that acquire it
+            # (the chunked-post store, DMs, the live feed and media) therefore
+            # talked to a stopped session. The whole acquire body is replaced
+            # now, the head included, so the cache is refreshed from the core
+            # every time it is read.
+            #
+            # And nothing starts a session here any more. The standalone
+            # start stayed as a fallback "for the no-core-session case", which
+            # in this paste is not a missing extension (the core's guard
+            # skips the whole member then) but a session somebody else holds,
+            # or one released between the probe and this call. Starting one
+            # there takes a session nothing in the paste will ever stop: the
+            # core's teardown only knows its own handle, so TorrentXT is lost
+            # for the rest of the launch (OXT-PASS-RUNBOOK 5.1.1). Zero means
+            # SKIP, which is what the member's sections already do with it.
+            # check-suite-selftest.py (check 6b) holds all three halves.
+            ("""   if sRsTestSession is not empty and sRsTestSession > 0 then
+      return sRsTestSession
+   end if
+   try
       put btStartSession() into tNew
    catch tErr
       put 0 into tNew
    end try
    if tNew is not empty and tNew > 0 then
       put tNew into sRsTestSession
-   end if""",
-             """   -- GENERATED (tools/build-suite-selftest.py): TorrentXT allows exactly
-   -- ONE session per process and the suite core already opened it during
-   -- its probe. Alias the core's handle instead of asking for a second -
-   -- the ask would be refused, and this member's live-feed section would
-   -- SKIP while looking perfectly green.
-   if @CORESESSION@ > 0 then
-      put @CORESESSION@ into tNew
-   else
-      try
-         put btStartSession() into tNew
-      catch tErr
-         put 0 into tNew
-      end try
    end if
-   if tNew is not empty and tNew > 0 then
-      put tNew into sRsTestSession
-   end if"""),
+   if sRsTestSession is empty or sRsTestSession <= 0 then return 0
+   return sRsTestSession""",
+             """   -- GENERATED (tools/build-suite-selftest.py): THE SUITE CORE OWNS THE
+   -- SESSION. TorrentXT allows exactly one per process, the core opens it
+   -- in its probe and stops it at teardown, and it takes a NEW one on every
+   -- run - so a handle cached here by an earlier run is dead. Read the
+   -- core's handle on every call, and never start one: a session started
+   -- here is one nothing in this paste would ever stop. Zero means SKIP.
+   if @CORESESSION@ > 0 then
+      put @CORESESSION@ into sRsTestSession
+      return sRsTestSession
+   end if
+   put 0 into sRsTestSession
+   return 0"""),
         ),
     ),
     Member(
-        "holdem", "holde-em/src/holdem.livecodescript", "he1",
+        "holdem", "holde-em", "returned",
+        "holde-em/src/holdem.livecodescript", "he1",
         "heSelfTest", "holde-em: the full he* self-test",
         "21 sections over the whole game, driven through heSelfTest - the QUIET "
         "entry point (report returned as a value, no control built, no "
@@ -535,7 +616,8 @@ MEMBERS = [
         ),
     ),
     Member(
-        "nostr", "nostrxt/examples/nostrxt-tests.livecodescript", "nx1",
+        "nostr", "nostrxt", "returned",
+        "nostrxt/examples/nostrxt-tests.livecodescript", "nx1",
         "nxSelfTest", "NostrXT: the full nx* self-test",
         "17 sections, all OFFLINE and deterministic: canonical serialization, "
         "the JSON parser, NIP-19 bech32/TLV, the NIP-44 schedule, padding and "
@@ -1141,6 +1223,112 @@ def assert_no_duplicate_definitions(text):
         raise SystemExit("\n".join(msg))
 
 
+HOIST_NOTE = ("-- (this block's script-level declarations are hoisted above the "
+              "first handler by tools/build-suite-selftest.py; engine note 1.2)")
+
+
+def hoist_core_declarations(core):
+    """Move the core's CARRIED-BLOCK declarations above its first handler.
+
+    Returns (core_without_them, hoisted_lines). The hoisted lines go to the
+    declaration marker, which sits above every handler in the paste.
+
+    WHY. A carried block is verbatim, so its declarations sit where its master
+    puts them: above that block's own handlers, which is correct lexical scope
+    in any file carrying one block. The core carries three in a row (scaffold,
+    UI kit, self-check), so the kit's constants and the self-check's locals
+    land below the scaffold's handlers - still correct for the code that reads
+    them, and a violation of check-suite-selftest.py's check 10, which is
+    deliberately blunt (position, not reachability) because the subtle version
+    of it is how the fold once shipped 106 late declarations. Moving a
+    declaration UP never takes a name out of scope for anyone (engine note
+    1.2 resolves by lexical position), so the hoist cannot break a reader.
+
+    NARROW ON PURPOSE. Only column-0 declarations INSIDE a carried span are
+    moved. A hand-written late declaration in the core is refused rather than
+    quietly hoisted: the core's own code keeps its own discipline, and a hoist
+    that moved everything would exempt it from check 10 without anyone
+    deciding that. A declaration continued onto the next line is refused too,
+    because moving its first line would strand the tail.
+
+    The carried spans in the CORE stay byte-identical to their masters (the
+    drift gates check the core); only the generated paste differs, and the
+    drift gates skip it by exact path for that reason.
+    """
+    lines = core.split("\n")
+    view = strip_comments(core).split("\n")
+    if len(view) != len(lines):
+        raise SystemExit("build-suite-selftest: the comment-free view of the "
+                         "core lost lines; the declaration hoist cannot be "
+                         "trusted to pick the right ones.")
+    first = next((i for i, l in enumerate(view)
+                  if re.match(r'^(?:private\s+)?(?:command|function|on)\s+\w+', l)),
+                 None)
+    if first is None:
+        raise SystemExit("build-suite-selftest: the core defines no handler at "
+                         "all; that is not the core.")
+    spans = []
+    for begin, end in CARRIED_SPANS:
+        b = [i for i, l in enumerate(lines) if l.strip() == begin]
+        e = [i for i, l in enumerate(lines) if l.strip() == end]
+        if len(b) > 1 or len(e) > 1 or len(b) != len(e):
+            raise SystemExit(
+                f"build-suite-selftest: the core carries {len(b)} BEGIN and "
+                f"{len(e)} END line(s) for the block opening\n  {begin}\n"
+                f"  It must carry each block at most once, whole.")
+        if b:
+            if e[0] <= b[0]:
+                raise SystemExit(f"build-suite-selftest: END precedes BEGIN for "
+                                 f"the block opening\n  {begin}")
+            spans.append((b[0], e[0]))
+    out, hoisted, noted = [], [], set()
+    for i, (orig, seen) in enumerate(zip(lines, view)):
+        if i > first and re.match(r'^(?:local|constant)\s', seen):
+            span = next((s for s in spans if s[0] < i < s[1]), None)
+            if span is None:
+                raise SystemExit(
+                    f"build-suite-selftest: core line {i + 1} declares "
+                    f"{seen.strip()!r} below the first handler (line "
+                    f"{first + 1}). Move it above '-- GENERATED MEMBER "
+                    f"DECLARATIONS GO HERE --'; the hoist exists only for "
+                    f"carried blocks, whose masters cannot be reordered "
+                    f"(engine note 1.2).")
+            if seen.rstrip().endswith("\\"):
+                raise SystemExit(
+                    f"build-suite-selftest: core line {i + 1} is a declaration "
+                    f"continued onto the next line; hoisting its first line "
+                    f"would strand the rest. Write it on one line in the "
+                    f"block's master.")
+            hoisted.append(orig)
+            if span not in noted:
+                noted.add(span)
+                out.append(HOIST_NOTE)
+            continue
+        out.append(orig)
+    return "\n".join(out), hoisted
+
+
+def assert_registry_covered():
+    """Every registry member is folded in, or says why it is not."""
+    folded = {m.member for m in MEMBERS}
+    names = [m.name for m in REGISTRY.MEMBERS]
+    unknown = sorted((folded | set(NO_HARNESS)) - set(names))
+    missing = [n for n in names if n not in folded and n not in NO_HARNESS]
+    both = sorted(folded & set(NO_HARNESS))
+    msg = []
+    if unknown:
+        msg.append("names no registry member: " + ", ".join(unknown))
+    if missing:
+        msg.append("registry member(s) with neither a folded harness nor a "
+                   "NO_HARNESS reason: " + ", ".join(missing))
+    if both:
+        msg.append("folded AND excused in NO_HARNESS: " + ", ".join(both))
+    if msg:
+        raise SystemExit("build-suite-selftest: the member table disagrees "
+                         "with tools/member-registry.py -\n  "
+                         + "\n  ".join(msg))
+
+
 def wrap(text, width):
     words, line, out = text.split(), "", []
     for w in words:
@@ -1162,18 +1350,27 @@ def generate():
     decl_marker = "-- GENERATED MEMBER DECLARATIONS GO HERE --"
     if decl_marker not in core:
         raise SystemExit(f"build-suite-selftest: {CORE} has no '{decl_marker}' line")
+    assert_registry_covered()
+    core, hoisted = hoist_core_declarations(core)
 
     parts = [fold(m) for m in MEMBERS]
     embeds = [embed(l) for l in SCRIPT_LAYERS]
     declarations = ("\n\n".join(p[0] for p in parts)
                     + "\n\n" + "\n\n".join(e[0] for e in embeds))
+    if hoisted:
+        # FIRST, above every member and embed declaration: they are the
+        # core's own names, and the core is the first thing in the file.
+        declarations = ("-- ---- the core's carried-block declarations "
+                        "(hoisted by tools/build-suite-selftest.py) ----\n"
+                        + "\n".join(hoisted) + "\n\n" + declarations)
     folded = "\n\n\n".join(p[1] for p in parts)
     embed_banner = (
         "-- " + "=" * 74 + "\n"
-        "-- THE TWO PURE-SCRIPT LIBRARIES THEMSELVES, embedded by\n"
+        "-- THE FIVE PURE-SCRIPT LIBRARIES THEMSELVES (coinxt, onionxt, the b2k\n"
+        "-- Kit, riptide and the nostrxt core), embedded by\n"
         "-- tools/build-suite-selftest.py so that one paste carries the code its\n"
-        "-- tests test. These used to be a separate setup step (`start using\n"
-        "-- stack` x2), and that step cost an engine pass on 2026-08-10: a fresh\n"
+        "-- tests test. The first two used to be a separate setup step (`start\n"
+        "-- using stack` x2), and that step cost an engine pass on 2026-08-10: a fresh\n"
         "-- harness ran against a stale in-memory coinxt stack and reported the\n"
         "-- two failures its parser fix had already closed. Embedded, the harness\n"
         "-- and the library are built from one tree and cannot skew.\n"

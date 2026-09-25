@@ -291,7 +291,22 @@ Code comments cite these numbers; keep them.
    missed). The BTXO miss INVERTED the 8 GiB cap, since `empty > 8589934592` is false: a failure
    value changed from a wrong number to empty makes downstream `>` guards never fire, so a partial
    sweep is worse than none. check-script-vectors holds a monotonic table (1 KiB and exactly 8 GiB
-   accepted; 8 GiB+1, 2^53, 2^53+1, 2^64-1 refused).
+   accepted; 8 GiB+1, 2^53, 2^53+1, 2^64-1 refused). The bound is decided on the two u32 HALVES
+   (hi < 2^21, or hi = 2^21 and lo = 0; 2026-09-24): the quotient form
+   `tHi > (2^53 - tLo) / 2^32` passed that table under IEEE and let 2^53 + 1 through on an engine
+   (ledger, 2026-09-24); the halves bound refused it there in the day's second run, whose probe line
+   showed the engine answering nearly-equal numbers as equal (1 + 2^-51 > 1 reads false). The third
+   run's second probe line named the rule: a RELATIVE tolerance between 8 and 16 DBL_EPSILON of the
+   smaller operand, which the engine source puts at 10 (suite engine note 2.10). So integers 1
+   apart compare EQUAL from about 4.5e14 (2^48.7), not "past 2^52" as 8ea0f21's message said:
+   `rsIngestHead`'s and `rsIngestBridge`'s rollback and seq-agreement comparisons blur there, and
+   no counter or clock here gets near it (seqs start at 0 or at the seconds; open work in the
+   suite's `docs/WORK-PLAN.md`). Decide a
+   wide-integer bound on exact integers that differ by at least 1 at a modest magnitude, never
+   against a quotient. Tier 1c replays the table under the engine's rule and two looser candidates
+   (fixture: the old line, which each must accept) and refuses any library comparison against a
+   quotient; the harness prints three probe lines: the first two measured the rule, the third
+   reads its consequences (wide integers, near zero, number-like text).
 10. **A dead write is invisible to every other gate** (2026-09-08): `raAppSave` emitted `headseq`
     and `raAppLoad` never read it; check-demo-boot round-trips it now. Any value worth persisting is
     worth round-tripping in a test.
@@ -335,13 +350,19 @@ Newest last. "Maintainer's account" is a dated report with no result text or pla
 | 2026-08-29 | OXT (maintainer's account) | the first phase-8 card landing | FAIL: broke `openStack` for the whole app (`Chunk: no target found`, plus a non-literal-constant compile kill); reverted |
 | 2026-08-29 | OXT (maintainer's account) | the re-landed five-card stack | reported working: `openStack` completes with the Nostr card in place |
 | 2026-08-29 | OXT (maintainer's pasted record) | the v11 UI boot self-check | 9 passed / 1 failed / 0 skipped, all five cards built, every capability true. The FAIL was the carried self-check's own cross-card `there is` defect (suite engine note 5.6; this record is its primary evidence), fixed in the master the same day |
+| 2026-09-24 | OXT, Win32; the suite paste (board D-23) | riptide's folded harness, its first engine run since phase 8 | 487 passed, 2 failed, 2 skipped (the skips: the live-tor legs). The four sections that use the core's session (the kind-C chunked-post store, DMs, the live feed, media) passed. FAIL 1: the capability check still counted SEVEN probe keys, and phase 8 made it ten (a stale check, not a library defect). FAIL 2: "a seq of 2^53 + 1 is REFUSED" - the engine ACCEPTED it through `rsReadBEu64`'s quotient bound, which pure IEEE, and so every headless gate, refuses (OBSERVED; the cause INFERRED, trap 9). Both fixed the same day: the check asserts the exact ten-key set, the bound is decided on the u32 halves. Verified statically; needs an OXT re-pass |
+| 2026-09-24 (the second run, 8:41 PM local) | OXT, Win32; a fresh stack, the suite paste regenerated at 21aaa61 | riptide's folded harness with both fixes | 489 passed, 0 failed, 2 skipped (the live-tor legs); the whole paste 2623 / 2 / 3, its two FAILs the enet and datachannel loopbacks. Both fixes GREEN on the engine: "probe reports exactly its ten keys" (it printed all ten) and "a seq of 2^53 + 1 is REFUSED". The probe line read `true,false,false,false` where IEEE reads `true,true,true,true`: the engine answers nearly-equal numbers as equal (1 + 2^-51 > 1 is false on it), OBSERVED; whether by a relative or an absolute tolerance or a decimal round trip, the reading cannot tell (suite engine note 2.10, trap 9) |
+| 2026-09-24 (the third run, 10:10 PM local) | OXT, Win32; a fresh stack, the suite paste as regenerated at b34f7b0 (the board review's fixes) | riptide's folded harness, whose report now opens with three counts | 489 passed, 0 failed, 2 skipped (the live-tor legs), and this time the board MERGED the skips (its row read 491 / 0 / 2 with the two cross-member checks; the whole paste 2623 / 2 / 10, its two FAILs the loopbacks again). The second probe line read `true,false,16,16`: `1e-10 > 0` true, `2^30 + 2^-21 > 2^30` false, and the smallest step told apart is 16 ulps at 1 AND at 8, so the engine's comparison tolerance is RELATIVE, between 8 and 16 DBL_EPSILON (OBSERVED). The engine source's rule (10 DBL_EPSILON of the smaller operand) reproduces all eight readings of the two probe lines (suite engine note 2.10, trap 9) |
 
 Caveats that travel with the ledger:
-- The 2026-09-09 tag change (trap 8) re-pinned the admission response and welcome goldens, so the
-  engine-green admission and welcome BYTES are superseded; the sync-record goldens ("riptide-lan-s")
-  are unchanged.
+- The 2026-09-09 tag change (trap 8) re-pinned the admission response and welcome goldens, which
+  superseded the 2026-08-20 engine-green admission and welcome BYTES; the re-pinned bytes then ran
+  green on the engine on 2026-09-24. The sync-record goldens ("riptide-lan-s") are unchanged.
 - Harness sections added after 2026-08-24 (Nostr, app state, the watermarks, the u64 bound, the 996
-  cap) are static + headless only.
+  cap) first met an engine on 2026-09-24 (ledger); of that run's two FAILs, only the u64 bound's
+  2^53 + 1 row fell in them. The day's fixes (the ten-key check, the halves bound and exactness
+  check, the numeric probe line) ran green in its second run, and the second probe line in its
+  third. The harness's THIRD probe line (2026-09-25) is static + headless only.
 - Headless on 2026-09-23: check-script-vectors 84 checks (1 skip), check-demo-boot 44 checks. Run
   the gates for current counts.
 
@@ -356,9 +377,9 @@ suite's `docs/OXT-PASS-RUNBOOK.md` rows flip; open work lives in the suite's `do
 | 3, media | DONE 2026-08-15, two machines. Mid-download playback measured negative 2026-08-27 and fixed; the faststart re-run is owed |
 | 4, DMs | DONE 2026-08-15, two machines; the D15 clean close (2026-08-17) post-dates that pass and has not run |
 | 5, the call + typing lane | built, never run. Verified statically; needs an OXT pass |
-| 6, LAN mesh | compute engine-green 2026-08-20, admission and welcome bytes re-pinned since (caveat above). Owed: the live mesh (draft-appears criterion, media handoff, third device) |
+| 6, LAN mesh | compute engine-green 2026-08-20, and again 2026-09-24 with the admission and welcome bytes as re-pinned on 2026-09-09 (caveat above). Owed: the live mesh (draft-appears criterion, media handoff, third device) |
 | 7, anon persona + 8.2/8.3 serving | compute engine-green 2026-08-15 and 2026-08-20; needs an OXT + live-Tor pass. The harness's 2 anon-service SKIPs are exactly that leg |
-| 8, Nostr bridge + `RIPTAPP1` (built 2026-08-29) | library verified statically and executed headlessly (rule 7a); needs an OXT + live-relay pass. The v11 label: verified statically + headless boot + an engine boot record with one since-fixed check defect; needs an OXT re-pass, whose boot record should read 10 passed / 0 failed |
+| 8, Nostr bridge + `RIPTAPP1` (built 2026-08-29) | offline compute engine-green 2026-09-24 (the `RIPTAPP1` store and the Nostr rail's harness sections, in the suite paste); the relay half needs an OXT + live-relay pass. The v11 label: verified statically + headless boot + an engine boot record with one since-fixed check defect; needs an OXT re-pass, whose boot record should read 10 passed / 0 failed |
 
 ## 7. Gates and suite integration
 
@@ -370,8 +391,9 @@ FAILS the gates; a missing `../coinxt` skips tier 2 unless `XTALK_REQUIRE_SIBLIN
 
 In the suite, beyond this member's gates:
 - **The fold**: the harness folds as member `riptide` (prefix `rs1`, entry `rsSelfTest`, merged via
-  `stMergeReturned`), so its report's first line must stay exactly "N passed, M failed", the skip
-  count on its own line. The library embeds verbatim as a script layer; the coverage gate fails on
+  `stMergeReturned`), so its report's first line must stay exactly "N passed, M failed, K
+  skipped" (since 2026-09-25: the skip count used to sit on a prose second line, which the merge
+  never counted; the three-count line merged on the engine in the 2026-09-24 third run). The library embeds verbatim as a script layer; the coverage gate fails on
   an unexercised public `rs*`. A script-layer or harness edit is not done until
   `python3 tools/build-suite-selftest.py` has rebuilt the paste.
 - **The demo's embeds**: five libraries via the suite's `tools/sync-demo-embeds.py`, in the order

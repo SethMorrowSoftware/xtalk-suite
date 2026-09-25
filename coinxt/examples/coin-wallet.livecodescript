@@ -1301,9 +1301,12 @@ end cxBtcAddressP2TRInner
 -- ==============================================================================
 -- BIP-341 Taproot: the tweak, and the address builder that applies it.
 --
--- STATUS: verified statically and executed headlessly against BIP-341's own
--- published wallet test vectors (tools/check-script-vectors.py drives the real
--- script through the real shim); needs an OXT pass. New in ABI 6.
+-- STATUS: executed headlessly against BIP-341's own published wallet test
+-- vectors (tools/check-script-vectors.py drives the real script through the
+-- real shim), and green on an engine: the suite paste's BIP-341 wallet-vector
+-- section on 2026-08-17 (278/278) and every run since, most recently
+-- 2026-09-24 (296/296; coinxt/CLAUDE.md's ledger). This label said "needs an
+-- OXT pass" until 2026-09-25, five weeks after that record. New in ABI 6.
 -- ==============================================================================
 
 -- Q = P + int(hash_TapTweak(bytes(P) || merkle_root)) * G, BIP-341's output
@@ -2240,11 +2243,13 @@ end cxXpub
 -- A caller who needs the bytes (cxSign, cxPublicKey) runs cxHexDecode over
 -- the decoded "seckey".
 --
--- STATUS: verified statically; needs an OXT pass. The logic is executed
--- headlessly by tools/check-script-vectors.py against oracle-derived vectors
--- anchored to the Bitcoin wiki's published worked example, both directions
--- plus the refusals - the same net every earlier phase carries - but no
--- engine has run these two handlers yet.
+-- STATUS: the logic is executed headlessly by tools/check-script-vectors.py
+-- against oracle-derived vectors anchored to the Bitcoin wiki's published
+-- worked example, both directions plus the refusals - the same net every
+-- earlier phase carries - and both handlers are green on an engine: the suite
+-- paste's 14 WIF checks on 2026-08-17 and every run since, most recently
+-- 2026-09-24 (coinxt/CLAUDE.md's ledger). This label said no engine had run
+-- them until 2026-09-25.
 -- ==============================================================================
 
 -- The WIF network version bytes, the same role kCxVersionP2PKH plays for an
@@ -3258,14 +3263,16 @@ end cxHexOfInt
 -- What the logs did NOT reach, as that file's Status lists it for this layer:
 -- testnet4, BIP-322 (the tenth log skipped it on a p2pkh wallet), Runes,
 -- BOLT11, silent-payment RECEIVING, and every fix dated after the logs (the
--- 2^53 parse refusal of 2026-09-08, the 2026-09-10 audit fixes) - verified
--- statically and headlessly; needs an OXT pass. Read the list by what ran,
--- not by the section dates below: several sections are headed 2026-09-04
--- although git dates their commits 2026-09-03, and two of them, the
--- silent-payment SEND and the inscription, ran in the tenth log. The
+-- 2^53 parse refusal of 2026-09-08 and its 2026-09-24 rewrite onto the
+-- bytes, the 2026-09-10 audit fixes) - verified statically and headlessly;
+-- needs an OXT pass. Read the list by what ran, not by the section dates
+-- below: several sections are headed 2026-09-04 although git dates their
+-- commits 2026-09-03, and two of them, the silent-payment SEND and the
+-- inscription, ran in the tenth log. The
 -- cryptography underneath HAS its own record - CoinXT's library passes, most
--- recently 290/290 on 2026-08-24 (Windows x86_64) - so a failure here is most
--- likely this file's arithmetic, not the library's.
+-- recently 296/296 on 2026-09-24 (the suite paste on Windows, ABI 7's
+-- cxPubkeyCombine included) - so a failure here is most likely this file's
+-- arithmetic, not the library's.
 --
 -- CUSTODY, said plainly, because this layer is one call away from a signature:
 -- OXT script variables are not locked memory and can be paged to disk. A seed
@@ -3676,13 +3683,59 @@ function cwLeRead pBytes
    -- left to detect, because the rounding has already happened silently. This
    -- is also what makes the downstream length guards honest - they were
    -- comparing against a number the engine may already have changed.
-   local tValue, tI, tCount, tByte
+   --
+   -- THE BOUND IS DECIDED ON THE BYTES, NEVER AGAINST A QUOTIENT (2026-09-24).
+   -- Until then the guard was `if tValue > (9007199254740992 - tByte) / 256`,
+   -- which pure IEEE answers correctly. That day's suite paste on OXT (Win32)
+   -- ran riptide's rsReadBEu64, which guards a u64 with the same quotient
+   -- form over two 32-bit halves, and the engine ACCEPTED 2^53 + 1 (hi 2^21,
+   -- lo 1) - OBSERVED. Its comparison is 2097152 against 2097151.99999999977,
+   -- two ADJACENT doubles, and IEEE, python and this family's interpreter all
+   -- answer "greater", so every headless gate was green over it. Why the
+   -- engine answered otherwise was named by that day's third run and the
+   -- engine source (suite engine note 2.10): two unequal numbers within 10
+   -- DBL_EPSILON of the SMALLER one are EQUAL. The edge here was
+   -- 35184372088832 against 35184372088831.99609375: adjacent doubles again
+   -- (one ulp, 2^-53 of their size, the same RELATIVE gap as riptide's) but
+   -- 0.0039 apart. So the old form was safe only under an ABSOLUTE
+   -- tolerance smaller than that (1e-6, say), and the engine's is relative:
+   -- it was broken here too. tools/check-wallet-vectors.py's tier 4 pins all
+   -- of this: the old guard lets 2^53 + 1 through under the engine's rule
+   -- and a 15-digit round trip, and refuses it only under the absolute one.
+   --
+   -- So nothing wide is compared any more. 2^53 is 32 * 2^48: the byte 0x20
+   -- followed by six zero bytes. A value fits exactly when the bytes worth
+   -- 2^48 and more, read as one number (tHigh), come to under 32, or to
+   -- exactly 32 with every byte below them zero. The bytes arrive most
+   -- significant first, so tHigh is complete before the first low byte, and
+   -- it is refused as soon as it passes 32, so it never exceeds 32 * 256 +
+   -- 255. Every comparison that decides the bound is between small exact
+   -- integers at least 1 apart - tHigh against 32, a byte against 0, a
+   -- byte's rank against 6 - so a tolerance would have to be three percent
+   -- wide to blur one. (Comparing tValue with 2^45 before the multiply would
+   -- be exact too, but it keeps a wide operand in the decision, past 2^32,
+   -- where a difference of 1 is only 128 ulps; on the bytes every operand is
+   -- small.) tValue is multiplied only after its byte has passed, so the
+   -- check still comes BEFORE the multiply. Verified statically; needs an OXT
+   -- pass (tier 4 runs the bound under the engine's rule and two margin
+   -- models, headlessly, which settles logic and not the engine).
+   local tValue, tI, tCount, tByte, tHigh
    put the number of bytes of pBytes into tCount
    put 0 into tValue
+   put 0 into tHigh
    repeat with tI = tCount down to 1
       put byteToNum(byte tI of pBytes) into tByte
-      if tValue > (9007199254740992 - tByte) / 256 then
-         throw "cwLeRead: the value is over 2^53 and cannot be held exactly"
+      if tI - 1 >= 6 then
+         -- byte tI is worth 256^(tI - 1), 2^48 or more: the high part
+         put tHigh * 256 + tByte into tHigh
+         if tHigh > 32 then
+            throw "cwLeRead: the value is over 2^53 and cannot be held exactly"
+         end if
+      else if tByte > 0 then
+         -- a set byte under 2^48, past a high part already AT 2^53
+         if tHigh is 32 then
+            throw "cwLeRead: the value is over 2^53 and cannot be held exactly"
+         end if
       end if
       put tValue * 256 + tByte into tValue
    end repeat
@@ -3691,15 +3744,24 @@ end cwLeRead
 
 function cwBeRead pBytes
    -- Big-endian twin of cwLeRead, and it carries the same 2^53 refusal for the
-   -- same reason - see that handler's note. Same bound, same placement before
-   -- the multiply.
-   local tValue, tI, tCount, tByte
+   -- same reason - see that handler's note. Same bound, decided on the same
+   -- bytes (2026-09-24), still before the multiply. Only the byte order
+   -- differs: byte tI of a big-endian field is worth 256^(tCount - tI).
+   local tValue, tI, tCount, tByte, tHigh
    put the number of bytes of pBytes into tCount
    put 0 into tValue
+   put 0 into tHigh
    repeat with tI = 1 to tCount
       put byteToNum(byte tI of pBytes) into tByte
-      if tValue > (9007199254740992 - tByte) / 256 then
-         throw "cwBeRead: the value is over 2^53 and cannot be held exactly"
+      if tCount - tI >= 6 then
+         put tHigh * 256 + tByte into tHigh
+         if tHigh > 32 then
+            throw "cwBeRead: the value is over 2^53 and cannot be held exactly"
+         end if
+      else if tByte > 0 then
+         if tHigh is 32 then
+            throw "cwBeRead: the value is over 2^53 and cannot be held exactly"
+         end if
       end if
       put tValue * 256 + tByte into tValue
    end repeat

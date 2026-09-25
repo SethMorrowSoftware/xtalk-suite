@@ -13,8 +13,10 @@ script "RiptideSelfTest"
 -- and the media section seeds a local temp file and reads its status back,
 -- all skipping honestly when torrentxt is absent or a session cannot start.
 --
--- STATUS (honesty convention): the phase-1 and phase-2 sections had their OXT
--- pass on 2026-08-12 (133/133 via the folded suite harness, no skips). The
+-- STATUS (honesty convention): the whole harness runs on an engine folded in
+-- the suite paste, most recently 2026-09-24 (489 passed, 0 failed, 2 skipped:
+-- the live-tor legs; riptide/CLAUDE.md's ledger). Its first OXT pass was
+-- phases 1 and 2 on 2026-08-12 (133/133, no skips). The
 -- oracle still independently pins the phase-2 vectors
 -- (tools/riptide_reference.py, via tools/check-selftest-vectors.py, which
 -- re-derives every golden constant below).
@@ -171,12 +173,16 @@ function rsSelfTest
    else
       rstSkip "every crypto section: SodiumXT is not installed"
    end if
-   -- The first line is EXACTLY two counts + passed/failed and nothing else:
-   -- the suite core's stSummaryCounts treats any other word as prose, so the
-   -- skip count gets its own line (the sodiumxt/onionxt returned-report shape).
-   return sPass && "passed," && sFail && "failed" & return & \
-         sSkip && "skipped (optional dependencies; see the log)" & return & \
-         "----------------------------------------" & return & sLog
+   -- The first line is EXACTLY the three counts and their words, nothing
+   -- else: "P passed, F failed, S skipped", the form the suite core's
+   -- stSummaryCounts has read since 2026-08-17 (onionxt's shape). Any other
+   -- word makes a line prose, which the parser refuses. Until 2026-09-25 the
+   -- skip count sat on a second, prose line, under the older two-count rule,
+   -- so the suite paste printed riptide's skips and never merged them: its
+   -- board row and totals said 0 skipped while this log listed 2.
+   return sPass && "passed," && sFail && "failed," && sSkip && "skipped" & \
+         return & "(the skips are optional dependencies; see the log)" & \
+         return & "----------------------------------------" & return & sLog
 end rsSelfTest
 
 --------------------------------------------------------------------------
@@ -223,17 +229,67 @@ private function rstFlipByte pData, pIndex
    return tOut
 end rstFlipByte
 
+-- A DIAGNOSTIC for suite engine note 2.10, never a check: the smallest
+-- power-of-two count of ulps k (1 to 2^30) for which this engine answers
+-- pBase + k ulps > pBase, or 0 if none does. pUlps is the number of ulps in
+-- one unit at pBase (2^52 at 1, 2^49 at 8), so every operand is an exact
+-- double and the only thing measured is the comparison rule. 2^30 ulps at 1
+-- is about 2.4e-7, past the 1e-7 the 2026-09-24 probe line showed this
+-- engine tells apart, so the ladder always ends on a real step.
+private function rstUlpLadder pBase, pUlps
+   local tStep
+   put 1 into tStep
+   repeat while tStep <= 1073741824
+      if pBase + tStep / pUlps > pBase then
+         return tStep
+      end if
+      multiply tStep by 2
+   end repeat
+   return 0
+end rstUlpLadder
+
 --------------------------------------------------------------------------
 -- sections
 --------------------------------------------------------------------------
 
 private command rstSectionCapabilities pCaps
+   local tWant, tGot, tDelim
    rstSection "capabilities + version"
    rstCheck (rsVersion() contains "Riptide"), "rsVersion names the library"
    rstCheck (pCaps["canCrypto"] is true or pCaps["canCrypto"] is false), \
          "probe reports canCrypto as a boolean"
-   rstCheck (the number of lines in the keys of pCaps is 7), \
-         "probe reports six extensions plus the derived hasSha3"
+   -- The EXACT key set, sorted, never a count (2026-09-24). This line used
+   -- to assert "7 keys: six extensions plus the derived hasSha3". Phase 8
+   -- (d9277c3, 2026-08-29) gave rsProbeCapabilities three more - hasNostr,
+   -- hasNostrRelay, canNostrSign - and nothing noticed the count go stale,
+   -- because this harness runs only on an engine and it did not meet one
+   -- between phase 8 and the suite paste of 2026-09-24, which reported it
+   -- as a FAIL (this exact-set check passed there on the day's second run).
+   -- A count also passes a key renamed or swapped for another;
+   -- the list cannot, and on a failure the log shows what the probe
+   -- returned. A new capability edits the literal below AND the log lines.
+   -- The sort is case-blind by default and these names order the same
+   -- either way. A trailing return, should an engine's `the keys` end with
+   -- one, is list formatting and not a key, so it is dropped before the
+   -- compare (a line COUNT ignores it, engine notes 2.2; a string does not).
+   -- `sort lines` reads the lineDelimiter, which is saved, set and restored
+   -- around the one line that needs it (engine notes 2.3).
+   put "canCrypto,canNostrSign,hasCoin,hasDataChannel,hasEnet," & \
+         "hasNostr,hasNostrRelay,hasOnion,hasSha3,hasTorrent" into tWant
+   put the keys of pCaps into tGot
+   if the last char of tGot is return then
+      delete the last char of tGot
+   end if
+   put the lineDelimiter into tDelim
+   set the lineDelimiter to return
+   sort lines of tGot
+   set the lineDelimiter to tDelim
+   replace return with comma in tGot
+   rstCheck (tGot is tWant), \
+         "probe reports exactly its ten keys (" & tWant & ")"
+   if tGot is not tWant then
+      put "      the probe returned:" && tGot & return after sLog
+   end if
    put "      canCrypto=" & pCaps["canCrypto"] & \
          " hasTorrent=" & pCaps["hasTorrent"] & \
          " hasOnion=" & pCaps["hasOnion"] & return after sLog
@@ -241,6 +297,9 @@ private command rstSectionCapabilities pCaps
          " hasEnet=" & pCaps["hasEnet"] & \
          " hasCoin=" & pCaps["hasCoin"] & \
          " hasSha3=" & pCaps["hasSha3"] & return after sLog
+   put "      hasNostr=" & pCaps["hasNostr"] & \
+         " hasNostrRelay=" & pCaps["hasNostrRelay"] & \
+         " canNostrSign=" & pCaps["canNostrSign"] & return after sLog
 end rstSectionCapabilities
 
 private command rstSectionKdfTree
@@ -375,7 +434,7 @@ private command rstSectionKeyFile
 end rstSectionKeyFile
 
 private command rstSectionHead
-   local tHead, tParsed, tRebuilt, tUpper, tBig, tBigParsed, rstI
+   local tHead, tParsed, tRebuilt, tUpper, tBig, tBigParsed, tSeq53, rstI
    rstSection "RSH1 - the feed head"
    put rsBuildHead(kRsGoldHeadSeq, kRsGoldHeadName, kRsGoldPost2Target, \
          kRsGoldPrekeyTarget, kRsGoldOnion, kRsGoldProfileTarget) into tHead
@@ -425,11 +484,122 @@ private command rstSectionHead
    put rsParseHead(tBig) into tBigParsed
    rstCheck (tBigParsed is not empty), \
          "a seq of exactly 2^53 still parses (it IS representable)"
-   rstCheck (tBigParsed["seq"] is 9007199254740992), \
-         "and comes back as exactly 2^53, not a rounded neighbour"
+   -- Exactness is judged on the two u32 HALVES (2026-09-24), not by
+   -- `tBigParsed["seq"] is 9007199254740992` as it was: that is an equality
+   -- at magnitude 2^53, where a rounded neighbour differs by only 1 or 2,
+   -- and a relative comparison tolerance (one suspected cause of the
+   -- 2^53 + 1 failure just below) would answer true for the neighbour too.
+   -- The check could not see the one thing its label claims. The halves are
+   -- exact integers below 2^32, and any neighbour moves the low half off 0.
+   -- Guarded, so an empty parse is a plain FAIL, never arithmetic on empty.
+   if tBigParsed is not empty then
+      put tBigParsed["seq"] into tSeq53
+      rstCheck (tSeq53 div 4294967296 is 2097152 and \
+            tSeq53 mod 4294967296 is 0), \
+            "and comes back as exactly 2^53, not a rounded neighbour"
+   else
+      rstCheck false, "and comes back as exactly 2^53, not a rounded neighbour"
+   end if
+   -- The next check FAILED on 2026-09-24 (OXT, Win32, the suite paste):
+   -- the engine accepted 2^53 + 1 through the old quotient bound in
+   -- rsReadBEu64, whose comment has the story. The bound is decided on the
+   -- halves now, and the check passed on the engine in that day's second
+   -- run (the paste regenerated at 21aaa61; riptide/CLAUDE.md's ledger).
    put numToByte(1) into byte 12 of tBig
    rstCheck (rsParseHead(tBig) is empty), \
          "a seq of 2^53 + 1 is REFUSED (the first unrepresentable value)"
+   -- DIAGNOSTIC, not a check (2026-09-24). That failure is OBSERVED; its
+   -- cause is INFERRED. These four comparisons are all true in pure IEEE,
+   -- and each candidate rule answers them differently. Probes 2 to 4 divide
+   -- integers below 2^53 by powers of two, so their operands are exact
+   -- doubles; probe 1 only has to differ from 1 by about 1e-7. Predicted
+   -- readings (checked against Python models of each rule):
+   --   IEEE, no tolerance              true,true,true,true
+   --   absolute tolerance 1e-6         false,false,false,false
+   --   relative, 1 x DBL_EPSILON       true,true,false,false
+   --   relative, 2+ x DBL_EPSILON      true,false,false,false
+   --   round trip, 15 sig. digits      true,false,false,true
+   -- The third is the failing bound itself: hi = 2^21, lo = 1.
+   -- READ 2026-09-24 (the second run): true,false,false,false. So the engine
+   -- does answer nearly-equal numbers as equal (OBSERVED), but that reading
+   -- does not name the rule: the Python models fit it with a relative tolerance from 2
+   -- DBL_EPSILON to 1e-7, an ABSOLUTE one from 2^-32 (about 2.3e-10) to
+   -- 1e-7, or a decimal round trip at 8 to 14 or at 16 significant digits.
+   -- The table above listed only one of those families. nostrxt's "since
+   -- excludes older events" (1700000000 < 1700000001, green in the same
+   -- run) narrows two of them: a relative tolerance is under 5.9e-10, and a
+   -- round trip keeps 10 digits or more. The second probe line tells the
+   -- families apart.
+   put "      numeric compare probe (diagnostic; IEEE reads" && \
+         "true,true,true,true):" && \
+         (1 + 1 / 10000000 > 1) & "," & \
+         (1 + 1 / 2251799813685248 > 1) & "," & \
+         (2097152 > (9007199254740992 - 1) / 4294967296) & "," & \
+         (1 + 23 / 4503599627370496 > 1 + 22 / 4503599627370496) & \
+         return after sLog
+   -- DIAGNOSTIC 2, not a check (added 2026-09-25). Two answers and two
+   -- ladders (rstUlpLadder: the smallest power-of-two count of ulps K the
+   -- engine tells apart, at 1 and at 8, where one ulp is 8 times larger):
+   --   tiny    1e-10 > 0                 false only under an ABSOLUTE rule
+   --   big     2^30 + 2^-21 > 2^30       true only under an ABSOLUTE rule:
+   --                                     two ulps, 4.8e-7 apart but only
+   --                                     2 DBL_EPSILON of their size
+   --   K1, K8  a relative rule gives K1 = K8; an absolute rule or a decimal
+   --           round trip gives K8 = K1 / 8
+   -- Every operand stays below 2^53, so the family interpreter (which
+   -- refuses a wider integer) can run this line too. Predicted readings (the
+   -- same Python models, over what is left of each family's range):
+   --   relative, 2 eps to 5.9e-10      true,false,K,K          (K 4 to 2^22)
+   --   absolute, 2^-32 to 1e-7         false,true,K,K/8        (K 2^21 to 2^29)
+   --   round trip, 10 to 14 digits     true,false,K,K/8        (K 256 to 2^22)
+   --   round trip, 16 digits           true,false,4,1
+   -- K itself then measures the tolerance to within a factor of 2.
+   -- READ 2026-09-24 (the third run, 10:10 PM): true,false,16,16. Only the
+   -- relative family predicted it: 1 + 8 ulps compares equal to 1 and
+   -- 1 + 16 ulps does not, and the step is the same at 8, so the tolerance
+   -- scales with the size and lies between 8 and 16 DBL_EPSILON. The engine
+   -- source says 10 (MC_EPSILON; suite engine note 2.10, DOCUMENTED), and
+   -- its rule reproduces all eight readings of these two lines.
+   put "      numeric compare probe 2 (diagnostic; relative reads" && \
+         "true,false,K,K; absolute false,true,K,K/8; round trip" && \
+         "true,false,K,K/8):" && \
+         (1 / 10000000000 > 0) & "," & \
+         (1073741824 + 1 / 2097152 > 1073741824) & "," & \
+         rstUlpLadder(1, 4503599627370496) & "," & \
+         rstUlpLadder(8, 562949953421312) & return after sLog
+   -- DIAGNOSTIC 3, not a check (added 2026-09-25). Probes 1 and 2 measured
+   -- the rule on fractions; these eight read its consequences straight off
+   -- the engine rather than infer them from it. The engine source's rule
+   -- (engine/src/exec-logic.cpp and sysdefs.h: two unequal numbers are equal
+   -- when they differ by less than 10 DBL_EPSILON of the SMALLER one, or by
+   -- less than 10 DBL_EPSILON outright when that one is smaller still; text
+   -- becomes a number through strtod, which answers +inf past 1e308):
+   --   1  "1e999" is "2e999"             two texts that overflow: both +inf
+   --   2  "1e5" is "100000"              exponent-form text is a number
+   --   3  1e-15 > 0                      the absolute branch near zero
+   --   4  1e-14 > 0                      ... and just past it
+   --   5  2^49 < 2^49 + 1                integers 1 apart, 8 DBL_EPSILON
+   --   6  2^48 < 2^48 + 1                ... and 16 DBL_EPSILON
+   --   7, 8  N is N + 1 at N = 450359962737050 and at one less: the
+   --      threshold is 2^52 / 10 = 450359962737049.6, so these two read
+   --      the constant itself, not just its power of two
+   -- Predicted, the source's rule   true,true,false,true,false,true,true,false
+   --           pure IEEE doubles    false,true,true,true,true,true,false,false
+   --           family interpreter   false,false,true,true,true,true,false,false
+   -- Items 1 and 2 are why a hex digest must never meet `is` as bare text
+   -- (engine note 2.11). Every operand is below 2^53, and the interpreter
+   -- reads items 1 and 2 as text, so it runs this line too (it does, read
+   -- as above; the all-absent boot gate stops before this section).
+   put "      numeric compare probe 3 (diagnostic; the engine source's rule" && \
+         "reads true,true,false,true,false,true,true,false):" && \
+         ("1e999" is "2e999") & "," & \
+         ("1e5" is "100000") & "," & \
+         (1 / 1000000000000000 > 0) & "," & \
+         (1 / 100000000000000 > 0) & "," & \
+         (562949953421312 < 562949953421313) & "," & \
+         (281474976710656 < 281474976710657) & "," & \
+         (450359962737050 is 450359962737051) & "," & \
+         (450359962737049 is 450359962737050) & return after sLog
    put tHead into tBig
    repeat with rstI = 5 to 12
       put numToByte(255) into byte rstI of tBig

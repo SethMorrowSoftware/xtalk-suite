@@ -15,8 +15,8 @@ v0.25.2 on 2026-08-27) and the Box2Dxt Kit (`b2k*`, optional presentation).
 ONE paste-and-run stack, `src/holdem.livecodescript`, holds the game, its
 self-test harness, the diagnostics `heProbeSodium` / `heProbeTorrent` /
 `heProbeKit` / `heProbeSounds`, and the carried onionxt layer between
-`tools/sync-demo-embeds.py` sentinels. Current: `kHeVersion` 0.25.3,
-`kHeHarnessV` 45, `kUIVersion` 15.
+`tools/sync-demo-embeds.py` sentinels. Current: `kHeVersion` 0.25.5,
+`kHeHarnessV` 47, `kUIVersion` 15.
 
 `holdem-spec.md` is the contract. Where code differs, the code wins and the
 spec is updated. Because chips may someday carry value, read spec 2 (threat
@@ -59,9 +59,13 @@ assets/cards/, assets/sounds/  vendored Kenney CC0 art and audio (see each NOTIC
    point. Bump `kHeHarnessV` on every engine-behaviour change AND whenever
    assert sites are added (v0.24.5 added five sites without a bump, so "v41"
    names two totals; v43 -> v44 on 2026-09-10 covered the four wire-arity
-   sites, v44 -> v45 on 2026-09-24 section 24's). Call sites are not checks
-   (at v40, 374 sites reported 507 checks): the next engine run RECORDS the
-   v45 total rather than matching 667.
+   sites, v44 -> v45 on 2026-09-24 section 24's, v45 -> v46 on 2026-09-25
+   the seven heHexEq and near-integer pins, v46 -> v47 the same day the
+   23 canonical-index, hand-binding and audit-guard pins). Call sites
+   are not checks (at v40, 374 sites reported 507 checks), so an engine run
+   RECORDS a new total rather than matching the last: the first v45 total,
+   2026-09-24, was 721 passed with every extension present, plus the 5
+   live-leg skips (the ledger); the next run records the v47 total.
    `kHeHarnessV` is printed in the report header so a stale paste identifies
    itself. Asserts are self-diagnosing: print what was observed against what
    was expected, never a bare FAIL, and write first-contact tests to debug
@@ -192,11 +196,37 @@ itself is catalogued in the suite's
   line that is not ten fields, before decode, and refuses a last char that is a
   tab, because the engine ignores one trailing delimiter when counting (engine
   note 2.2). A legal wire ends in a 128-hex host signature. Four harness checks
-  pin both directions; they have not yet met an engine (the v45 run owes them).
+  (harness section 9) pin both directions; their first engine run,
+  2026-09-24, was green (the ledger).
+- **Hex never meets bare `is` (v0.25.4; suite engine note 2.11).** `is`,
+  `is not`, `=` and `<>` compare two number-like texts as NUMBERS, so two
+  overflowing digests are both +inf and the 64-zero genesis head `is` "0";
+  `set the caseSensitive to true` does not help. Every digest, commitment,
+  head, key, signature or table id is compared with `heHexEq` (a letter
+  prefix, both sides lowercased). The headless gate sees a slip only for
+  all-digit pairs (the interpreter reads only `-?\d+(\.\d+)?` as a number),
+  which is why sections 9 and 21 pin the genesis head against "0". Its twin
+  from note 2.10: a whole-number test is `is an integer`, never `is trunc(x)`.
+- **A wire index is canonical TEXT, and a count is walked (v0.25.5).** `"03"`,
+  `"3.0"`, `"+3"`, `" 3"` and `"3e0"` are the number 3 to `is`, `<` and a chunk
+  index, but five different array keys, so a dealer's aliased commitments once
+  counted as the whole table's and let it choose its seed last. Every position,
+  seat, count, hand number and seq off a wire goes through `heCanonIdx` first;
+  keys are what it returns; two indices compare as `("n" & a) is ("n" & b)`;
+  an "all are in" count is walked over `1..count` or the dealt seats
+  (`heNetPosFilled`, `heNetSeatsFilled`), never incremented per message. A
+  per-hand wire (`kHeHandBoundTypes`) must carry the open hand, and handStart
+  numbers strictly increase (`gGame["handFolded"]`) over a legal seat list
+  (`heNetOccOfSeats`): the hand field is the sender's signed binding, and the
+  per-hand seeds hash it. History's translation (`heNetLogToHotseat`) applies
+  the same index and hand rules, so a wire the table dropped for THOSE reasons
+  never reaches it; sender authority is still not re-checked there. An act is
+  still replayable at a later turn of the SAME hand (no turn key).
 - **Both operands are evaluated (engine note 2.5).** `heBetApply`'s refusal
   `X is not a number or X is not trunc(X)` evaluated `trunc("abc")`; it is
-  nested now. Whether `trunc` of a non-number throws on the engine is
-  unrecorded.
+  nested now, and the nested form ran green on the engine on 2026-09-24
+  (harness section 5's non-numeric raise). Whether `trunc` of a non-number
+  throws on the engine is unrecorded.
 - **KNOWN EDGE (recorded, not engineered away).** A timeout drained from the
   REORDER BUFFER can be early-refused by the client that just learned of the
   turn: fail-visible, disputed at the settle, healed by reconnect.
@@ -336,8 +366,9 @@ and bet chip. `tools/check-table-layout.py` re-derives all 159 control rects
 
 **Two entry points, one run.** `heRunSelftest` is interactive: report panel,
 clipboard and `msg`, ending `==== n pass, m fail, k skip ====`. `heSelfTest()`
-is quiet: it returns the report with the first line `n passed, m failed`
-(riptide's `rsSelfTest` shape), builds no control, never touches the clipboard,
+is quiet: it returns the report with the first line `n passed, m failed, k skipped`
+(riptide's `rsSelfTest` shape; until 2026-09-25 the skip count sat on a prose second
+line, which the suite paste's merge never counted), builds no control, never touches the clipboard,
 and sweeps pending `heNet*` sends. Both drive `heTestRunAllSections`, 25
 sections in run order: 1 Evaluator, 2 Betting, 3 Ante, 4 Level, 5 Legal,
 6 Schedule, 7 Shuffle, 8 Fold, 9 Crypto, 10 Receipt, 11 Deal, 12 DealOrder,
@@ -439,16 +470,23 @@ sending `heNextHandTick`, which deals a hand, and no harness may arm that.
 | 2026-08-20 | Windows x86_64, suite paste | folded harness v0.24.5 / h41 | **543/0/5**, every section green |
 | 2026-08-24 | Windows x86_64, suite paste | folded harness v0.25.0 / h42 | **584/0**; the batch mask path equal to the per-point fallback byte for byte; the DLEQ proof and refusal legs green |
 | 2026-08-27 | OXT, two machines, one LAN (platform not recorded) | suite paste 2440/2/3 (the 2 were the live loopbacks, environment); folded holde-em v0.25.2 / h43 | **667/0**, the FIRST engine run of the onionxt-carrying file. The first two-machine 2d contact joined and dealt, but underneath the lobby overlay; v0.25.3 fixes that (statically) |
+| 2026-09-24 | Windows (the engine reports Win32; OXT version and OS build not recorded), suite paste | the D-23 board's first run, 2620/5/3 (built from 9aa62c8; the stack as at 6401e43); folded holde-em v0.25.3 / h45 through `heSelfTest` | **721/0**, the v45 total: all 24 sections green (the four wire-arity checks in section 9 and section 24 for the first time; 16 and 19 whole on SodiumXT ABI 10), `heProbeSodium` ok. The 5 skips, the live legs (tor table, three-machine oracle round, onion-hosted oracle, live timed table, tor redial), print on their own line, unmerged: the board row read 723/0/0 (the core adds its zero-failure and floor asserts). None of the paste's 5 failures was this member's |
+| 2026-09-24, the second and third runs (8:41 and 10:10 PM local) | as above, fresh stacks; the paste regenerated at 21aaa61, then at b34f7b0 | the same folded holde-em v0.25.3 / h45 | **721/0/5** both times. From the third run `heSelfTest` opens with three counts (the file's own change, no harness bump), and the board MERGED the five skips: its row read 723/0/5, and the paste's totals 2623/2/10. The two failures of each run were the live loopbacks, not this member's |
 
 ## 7. Status
 
 Engine-proven, folded into the suite paste: every harness section's headless
-slice, including Level 2 compute, the batch mask step, void-and-audit, the five
-cheater bots and DLEQ (latest 667/0 at v0.25.2/h43, 2026-08-27). Verified
-statically; needs an OXT pass: the v0.25.3 overlay fix, the v45 total (the
-wire-arity checks and section 24), everything visual and timed (the 720p layout eye, the
-Phase 1 6-seat session), and every live multi-machine leg (2d re-run, 2e timed
-session, 2f two-machine tor + redial, the Phase 3 three-machine oracle round).
+slice at v0.25.3 / h45, including the wire-arity checks, section 24, Level 2
+compute, the batch mask step, void-and-audit, the five cheater bots and DLEQ
+(latest 721/0, Windows, 2026-09-24; the five live legs skip by name). Verified
+statically; needs an OXT pass: the v0.25.5 canonical wire indices, walked
+counts, hand binding and audit guards, the v0.25.4 heHexEq and near-integer
+fixes, the v47 total (the v0.25.4 and v0.25.5 pins), the v0.25.3 overlay fix
+(its fold-time `heLobbyHide` has run only as the guarded no-op a paste makes it;
+the dismissal itself is the 2d re-run's), everything visual and timed (the 720p
+layout eye, the Phase 1 6-seat session), and every live multi-machine leg (2d
+re-run, 2e timed session, 2f two-machine tor + redial, the Phase 3 three-machine
+oracle round).
 Level 2 is not yet wired into played hands. Row 14 (the deal-path re-pass) can
 close at inference strength: section 11's seeds-XOR and full-deck asserts have
 been green in every folded run since 2026-08-17, and engine note 3.1 is

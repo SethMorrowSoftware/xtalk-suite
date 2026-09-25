@@ -37,9 +37,12 @@ THE TWO RULES THAT FIX BOTH, and why they are derived rather than listed
 
 PARSING, same three cuts as everywhere else in this family
     Comments are cut with a string-state-aware scanner (a `--` inside a literal
-    is not a comment); the three carried spans are cut so only the demo's own
-    code is read; and the scan reads literals, so the noise-stripper that blanks
-    them is the wrong tool - root CLAUDE.md records that lesson three times.
+    is not a comment); the carried spans (embedded libraries, the kit, the
+    self-check and - for the suite core - the harness scaffold) are cut so only
+    the demo's own code is read, and test-demo-selfcheck-drift.py proves the
+    scaffold cut is load-bearing; and the scan reads literals, so the
+    noise-stripper that blanks them is the wrong tool - root CLAUDE.md records
+    that lesson three times.
 
 USAGE
     python3 tools/check-demo-control-lists.py            # gate
@@ -64,7 +67,14 @@ KIT = os.path.join(ROOT, "tools", "ui-kit.livecodescript")
 
 SPANS = [(">>> BEGIN EMBEDDED LIBRARIES", "<<< END EMBEDDED LIBRARIES"),
          ("==== SUITE UI KIT v2 BEGIN", "==== SUITE UI KIT v2 END"),
-         ("==== DEMO SELF-CHECK v1 BEGIN", "==== DEMO SELF-CHECK v1 END")]
+         ("==== DEMO SELF-CHECK v1 BEGIN", "==== DEMO SELF-CHECK v1 END"),
+         # The suite core (an adopter since D-23) also carries the harness
+         # scaffold, whose stBuild names stTitle and friends. The core never
+         # calls stBuild - the board builds the scaffold's four report
+         # controls itself - so reading the block would put a control nothing
+         # builds (stTitle) on the self-check's list and print a FAIL on
+         # every open.
+         ("==== SUITE HARNESS SCAFFOLD v1 BEGIN", "==== SUITE HARNESS SCAFFOLD v1 END")]
 
 # A NAME THE DEMO ONLY EVER REFERENCES IS A CONTROL NOTHING BUILDS, and that
 # is invisible from inside the demo: the painters in this family all guard

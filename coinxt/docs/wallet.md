@@ -232,10 +232,10 @@ modelled shell. SodiumXT is modelled and declared in the gate; OnionXT answers
 its version probe and nothing else. `tools/test-wallet-boot.py` seeds real
 defects into copies and requires the gate to fail on each.
 
-**The library has five engine passes** (2026-08-08 through 2026-08-24, the last
-at 290/290), so the cryptography under the wallet is engine-observed except
-`cxPubkeyCombine`, which the silent-payment receiver uses (ABI 7; needs an OXT
-pass).
+**The library has six engine passes** (2026-08-08 through 2026-09-24, the last
+at 296/296 in the suite paste), so the cryptography under the wallet is
+engine-observed, `cxPubkeyCombine` (ABI 7, which the silent-payment receiver
+uses) included since 2026-09-24. The receiver built on it has not run.
 
 An interpreter is an approximation of the engine and never the engine; where
 they disagree the engine is right. What the gates settle is that the code RUNS
@@ -266,7 +266,8 @@ engine".
 
 - Everything added from 2026-09-04: the Ordinals and Vault screens as screens,
   testnet4 and BIP-329 labels, BIP-322, Runes, BOLT11, silent-payment
-  receiving (and `cxPubkeyCombine` under it), the Bitcoin Core backends (no node
+  receiving (its `cxPubkeyCombine` has run in the library harness since
+  2026-09-24; the receiver has not), the Bitcoin Core backends (no node
   has been met at all), and the 2026-09-10 audit fixes.
 - Update from main's swap itself.
 - Electrum on the mainnet onion (port 110).

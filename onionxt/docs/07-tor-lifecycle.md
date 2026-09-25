@@ -29,7 +29,7 @@ connection (on Windows, `Error 10061`) means nothing is listening there. The ful
 The app should detect the daemon (`oxConnectControl` + `GETINFO version`) and, if it is absent, show a
 clear "start Tor / install Tor" message rather than failing obscurely.
 
-## Mode B: launch a tor binary (optional; not yet run on an engine)
+## Mode B: launch a tor binary (optional; the launch not yet run on an engine)
 
 `oxLaunchTor pTorPath, pDataDir, pSocksPort, pControlPort` does exactly this, and no more:
 
@@ -62,8 +62,11 @@ moves tor's notices to the file once tor has read its torrc, so only its first f
 still reach the pipe. That file is also where tor's own `Bootstrapped 100%` line can be read;
 OnionXT itself still reads neither the pipe nor the log. Still absent: `close process`, any cleanup of
 the torrc, the log or the `DataDirectory`, and a way for `oxStopTor` to stop a child whose control
-connection never authenticated. All of Mode B, the 2026-09-24 checks included, is labelled "verified
-statically; needs an OXT pass + a live-Tor pass".
+connection never authenticated. All of Mode B, the 2026-09-24 result checks included, is labelled
+"verified statically; needs an OXT pass + a live-Tor pass", except two legs that touch nothing: step
+1's refusal (called with both arguments empty) and `oxStopTor` while unauthenticated, which only
+disconnects, ran green on an engine on 2026-09-24 (the member harness's sections 3 and 5, in the suite
+paste). Nothing was launched or shut down.
 
 Bundling a tor binary is a licensing and size decision (BSD-3, large, per platform, with an update
 duty), carries the Tor Project's naming and packaging expectations (never imply endorsement), and does

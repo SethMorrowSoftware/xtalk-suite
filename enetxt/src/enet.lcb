@@ -34,7 +34,9 @@ library org.openxtalk.library.enet
 --
 -- OXT cannot compile/run .lcb headlessly, so every edit gets the static gate
 -- (tools/check-livecodescript.py) and runtime confirmation waits on a manual
--- OXT pass. The selftest suite ran green in OXT on 2026-08-07.
+-- OXT pass. The selftest suite ran green in OXT on 2026-08-07 (the async
+-- loopback standalone 2026-08-13; the sync half folded in the suite paste,
+-- most recently 2026-09-24: CLAUDE.md's ledger).
 
 use com.livecode.foreign
 

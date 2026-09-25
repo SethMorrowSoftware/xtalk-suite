@@ -31,10 +31,14 @@
 -- suite paste's sxSelfTest() ran 106/106 on Windows x86_64 with its 7-check
 -- ChaCha20 section (CLAUDE.md's evidence ledger). This paragraph called it
 -- "the ONE surface with no engine run today" until 2026-09-24, a month after
--- that record: an understated label is as wrong as an overstated one. What is
--- still owed is PLATFORM cover, not surface cover - the 2026-08-24 run loaded
--- a mingw DLL that no longer ships, so the shipped MSVC DLLs, the mac dylib
--- and Linux at ABI 10 have no engine record (CLAUDE.md's platform table).
+-- that record: an understated label is as wrong as an overstated one. The
+-- whole harness, ChaCha20 included, ran 106/106 again on Windows 2026-09-24
+-- (the D-23 suite paste, on one of the two shipped MSVC DLLs of 2026-09-12 by
+-- the maintainer's account). What is still owed is PLATFORM cover, not surface
+-- cover - the 2026-08-24 run loaded a mingw DLL that no longer ships, and the
+-- 2026-09-24 run recorded neither sxVersion() nor bitness, so neither MSVC
+-- DLL, nor the mac dylib, nor Linux at ABI 10 has an engine record that names
+-- it (CLAUDE.md's platform table).
 -- The conventions below were settled
 -- against a real OXT compile and a crash audit; they are recorded so they are
 -- not relearned:
@@ -1940,7 +1944,9 @@ end handler
 -- runs; the 12-byte nonce is an HKDF slice, never caller-chosen in anger).
 -- It is NOT a sealing API: to just encrypt bytes, use sxSecretBox /
 -- sxAeadEncrypt / the secretstream family, which authenticate and mint
--- nonces. Verified statically; needs an OXT pass.
+-- nonces. Observed on an engine 2026-08-24 and 2026-09-24 (Windows, the
+-- harness's 7-check section; CLAUDE.md's ledger). This banner still said
+-- "Verified statically; needs an OXT pass" until 2026-09-24.
 -- --------------------------------------------------------------------------
 
 -- out = pData XOR ChaCha20-IETF keystream (RFC 8439: 32-byte key, 12-byte

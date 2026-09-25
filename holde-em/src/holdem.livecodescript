@@ -8,6 +8,151 @@ message box (interactive -- report panel, clipboard, msg) and heSelfTest()
 (quiet -- returns the report as a value and touches nothing). No second
 stack, no required extensions to be playable.
 
+v0.25.5 -- ONE POSITION, ONE KEY, ONE HAND: heCanonIdx (2026-09-25). NO
+WIRE CHANGED -- not a byte an honest client emits, and protocol-kat's pins
+are untouched; what a verifier ACCEPTS narrowed. kHeVersion 0.25.4 ->
+0.25.5; kHeHarnessV 46 -> 47 (23 new assert sites, CLAUDE.md rule 5);
+kUIVersion stays 15 (no chrome moved).
+  * THE DEFECT (holde-em WORK-PLAN coding #11; root docs/OXT-ENGINE-NOTES.md
+    2.10 and 2.11). heNetContribPosOk read a contribution's position as a
+    NUMBER, so "03", "3.0", "+3", " 3" and "3e0" each owned position 3,
+    while the seedCommit, seedSeal and seedReveal folds stored under the
+    RAW key and added one to their count per new key. A dealer posted its
+    own commitment under three aliases before anyone had committed: the
+    commit count reached the contributor count, every honest seat sealed
+    its seed to the dealer (react step 3), and the dealer ground its own
+    seed with everyone else's in hand, then committed the winner under
+    its canonical position, still empty. The audit re-derived that deck
+    clean; the Level 1 oracle could do the same. Seats, counts and hand
+    numbers had the same shape: sit (both forms), stand, show/muck, the
+    timeout bid and act seat, holeDeliver's seat and its holeN (a dealer
+    "delivering" to "03" and "3.0" started the blinds while a real seat
+    held no cards), handStart's seats and button, dealLevel's level,
+    dealer and count, and the reorder buffer's seq ("07" compared as 7
+    and then sat in a slot nothing reads).
+  * A SECOND HOLE THE SWEEP FOUND. Nothing read a wire's hand field (item
+    3, inside the SENDER's signature). A host could re-sequence last
+    hand's signed commits and reveals into the next hand: every honest
+    client saw its position "already committed" and stayed silent, and
+    the dealer held every seed before choosing its own; or replay a
+    player's old signed act (a fold, a raise) at its turn in a later
+    hand. A REPEATED handStart number did the first wholesale:
+    heNetHandSeedHex hashes table and hand, so every seat re-derived the
+    seeds of a hand whose reveals the dealer had already seen. NOT
+    CLOSED: within ONE hand an act carries no turn key, so the host can
+    still re-sequence a player's earlier act at a later turn (two honest
+    checks are byte-identical, so no content dedupe can tell them
+    apart); a turn key moves wire bytes (spec 6 records it).
+  * THE FIX. heCanonIdx, beside heHexEq: a non-empty run of ASCII digits,
+    no leading zero, at most 14 of them (below where engine note 2.10
+    blurs two integers), at most pMax, tested as TEXT before anything
+    reads it as a number; empty otherwise. Every fold keys by what it
+    returns and compares two indices as ("n" & a) is ("n" & b). Counts
+    are WALKED, never incremented per message: heNetPosFilled over
+    positions 1..contributors (commitN, sealN, revealN, react steps 3, 4
+    and 9, heNetRevealedDealA), heNetSeatsFilled over the hand's dealt
+    seats (holeN, receiptN, react step 5, heNetTurnMark's blinds gate),
+    so no alias or duplicate can move one; the first write wins.
+    kHeHandBoundTypes names the sixteen per-hand types and
+    heNetFoldGameWire drops any that does not carry the open hand.
+    handStart needs a canonical hand above the last one this client
+    folded (gGame["handFolded"]) and a legal seat list (heNetOccOfSeats:
+    two or more canonical seats, strictly ascending, rebuilt) with a
+    canonical button among it; dealLevel's count is canonical and equals
+    the dealt seats, its level and dealer compare as text.
+    heNetIngestWire's seq is canonical. History's translation
+    (heNetLogToHotseat) applies the same index and hand rules -- the
+    per-hand binding, handStart's number and seat checks, canonical
+    seats, counts and reveal positions -- and its audit
+    (heAuditDealsFromLog) keys positions and seats canonically, so a wire
+    the table dropped for these reasons never reaches History. (History
+    still does not re-check a wire's SENDER: a translation, not a second
+    verification pass.)
+  * CODING #12. heAuditDeal and heAuditDealLog hashed log-supplied seeds
+    through sxHex2Bin, which throws, with no shape check: a hand-edited
+    transcript threw out of the whole History audit. Each seed is
+    heIsHex-checked first, in its own `if` (engine note 2.5), and
+    heAuditDealLog checks the count (heCanonIdx) and the table id too,
+    each failure NAMED (H4): fail:seed-malformed-position-N,
+    fail:count-malformed, fail:table-malformed.
+  * PINS (23). Section 21 (+6): heCanonIdx's refusals (six aliases of 3,
+    zero, a sign, empty, past the max, fifteen digits) and keeps;
+    heNetOccOfSeats rebuilding a legal list and refusing one seat, a
+    repeat, a descent, an alias, a seat past the max and a gap. Section
+    11 (+4): heAuditDeal and the transcript audit naming a non-hex seed
+    and a non-canonical count, and an alias commit line dropped while
+    the canonical one stands. Section 15 (+13), the attack driven end to
+    end through the real ingest path on throwaway copies: four aliases
+    of the dealer's position refused, stored nowhere and counted
+    nowhere; the victim does not seal until the two canonical commits
+    land, and then does; a repeated handStart refused with the hand's
+    commits intact, and skipped by History too; last hand's signed
+    commit replayed into this hand dropped, live and in History; four
+    aliased seals leave the dealer's seal count at 0, the deal unstarted
+    and no hole delivery counted. tools/fold-kat.py mirrors the audit's
+    keying (canon_idx, kHeMaxSeats read from this file) and the guards,
+    with vectors of its own. Mutants of the final source, run
+    headlessly: a permissive heCanonIdx fails six pins (sections 21, 11
+    and 15); the pre-fix shape (permissive plus per-key counts) eight in
+    section 15, the victim sealing on aliases among them; an unread hand
+    field, a repeatable hand number, History without either rule, and
+    heNetOccOfSeats without its order test one each. Verified
+    statically; needs an OXT pass: all of it (the next engine run
+    RECORDS the v47 total).
+
+v0.25.4 -- HEX NEVER MEETS BARE `is`: heHexEq (2026-09-25). NO WIRE CHANGED
+-- not a byte, and protocol-kat's pins are untouched; what a verifier
+ACCEPTS narrowed. kHeVersion 0.25.3 -> 0.25.4; kHeHarnessV 45 -> 46 (seven
+new assert sites, CLAUDE.md rule 5); kUIVersion stays 15 (no chrome moved).
+  * THE DEFECT (root docs/OXT-ENGINE-NOTES.md 2.11, DOCUMENTED from the
+    engine source, not yet observed here). `is`, `is not`, `=` and `<>`
+    first try to read BOTH operands as numbers (C strtod, no range check)
+    and, when both parse, compare the NUMBERS; only otherwise the text.
+    Lowercase hex is number-like when it is all digits, or digits, one
+    "e", digits, and two texts that overflow a double are both +inf, so
+    they compare EQUAL; `set the caseSensitive to true` does not help. The
+    seed-commit audit (heAuditDeal, heAuditDealLog, the seedReveal fold,
+    heNetDealerDeal) compared a commitment that arrives off the wire,
+    shape-checked only, with bare `is not`: a dealer that commits a
+    number-like value and holds seeds whose commitments are number-like
+    too (about 2^41 BLAKE2b tries each) passes the audit with whichever
+    seed it likes, after seeing everyone else's. The chain heads had the
+    same hole (heEnvVerify, heNetIngestWire, heNetDrainBuffer, the receipt
+    and ckpt folds; the 64-zero genesis head `is` "0"), so a host grinding
+    its wires until heads are number-like could splice forks past the
+    equivocation detector. No headless gate saw any of it: the family
+    interpreter reads only -?\d+(\.\d+)? as a number, so only an
+    all-digit pair (the genesis case) is visible there, and no test drove
+    one.
+  * THE FIX. heHexEq, beside heIsHex, returns ("h" & toLower(pA)) is
+    ("h" & toLower(pB)): the letter keeps both operands on the text path,
+    and lowercasing both keeps hex case-blind (an honest commit in either
+    case passes) with one answer on the engine and in the interpreter,
+    which models `is` case-sensitively. Every comparison between two hex
+    values that the wire or a peer can reach goes through it: 40 sites --
+    keys (host, dealer, oracle, roster, our own), the table id, the chain,
+    receipt and ckpt heads, the seed and L2 ck commitments, the L2 point
+    lookup, the showdown re-verifications and the DLEQ checks.
+    heNetDealerDeal's seal check is NESTED on the way (engine note 2.5):
+    its one-line `or` hashed a seed that had just failed heIsHex, through
+    sxHex2Bin, which throws, instead of reaching the named abort.
+  * NEAR-INTEGERS (engine note 2.10's tolerance, also from the engine
+    source): heBetApply's `is not trunc(tTargetAmt)` passed
+    "57.0000000000001" on the engine -- a fractional wager into shared
+    state that IEEE and the interpreter refuse -- so it is `is not an
+    integer` now (the parsed double == its floor: exact on both).
+    heIsCardList, heSettingsNumOk and section 7's draw check had the same
+    shape and took the same fix.
+  * PINS: heHexEq's answers for two overflowing 64-hex texts, 1e5 against
+    100000, the genesis head against "0", self-equality and case (section
+    21); heEnvVerify dropping a prev that is the genesis head only as a
+    number (section 9, the pin the headless gate CAN see fail: the
+    interpreter reads two short all-digit texts as numbers too); heBetApply
+    refusing a 57.0000000000001 raise with act-bad-amount (section 5).
+    tools/fold-kat.py's commit compare lowercases the transcript's side,
+    as protocol-kat's twins already do. Verified statically; needs an OXT
+    pass: all of it (the next engine run RECORDS the v46 total).
+
 v0.25.3 -- THE LOBBY OVERLAY ENDS WHEN THE FIRST HAND BEGINS (2026-08-27).
 NO WIRE CHANGED -- not a byte. kHeVersion 0.25.2 -> 0.25.3; kHeHarnessV
 stays 43 here (44 since 2026-09-10 and 45 since 2026-09-24, below);
@@ -79,9 +224,17 @@ ones, it is dismissed sooner).
       defects caught by it. heHandSettle stays on the worklist: it ends by
       sending heNextHandTick, which deals a hand. No wire, KAT or game
       change; heProbeSodium is the 25th entry in heTestRunAllSections now.
-    Verified statically; needs an OXT pass: the overlay fix, the v45
-    total, the four wire-arity checks and section 24 (none has met an
-    engine; the next run RECORDS the v45 total rather than matching 667).
+    Verified statically; needs an OXT pass: the overlay fix (its fold-time
+    heLobbyHide has run only as the guarded no-op a paste makes it; the
+    dismissal itself is the 2d re-run's). This line also named the v45
+    total, the four wire-arity checks and section 24 ("none has met an
+    engine") until the record below.
+  * ENGINE RECORD (holde-em/CLAUDE.md's ledger; the runbook's section 8):
+    the 2026-09-24 suite paste (the D-23 board's first run), on Windows
+    (the engine reports Win32; OXT version not recorded), ran this version
+    folded at harness 45: 721/0, every section green, the four wire-arity
+    checks and section 24 on their first engine run, the five live legs
+    SKIPped by name. No run is recorded at harness 44.
 
 v0.25.2 -- HOLDE-EM CARRIES ONIONXT: ONION TABLES WITH NO `start using`
 STEP (2026-08-27). NO WIRE CHANGED -- not a byte. kHeVersion 0.25.1 ->
@@ -3480,8 +3633,8 @@ end oxProcessId
 -- declaration silently evaluates to nothing at runtime)
 --------------------------------------------------------------------------
 
-constant kHeVersion = "0.25.3"
-constant kHeHarnessV = "45"
+constant kHeVersion = "0.25.5"
+constant kHeHarnessV = "47"
 constant kUIVersion = "15"
 
 -- card contract (mirrored in tools/evaluator-kat.py): index 1..52,
@@ -3562,6 +3715,16 @@ constant kHeDomainOracle = "HOLDEM-ORACLE-v1|"
 -- right after that transition wire), which is what makes two ckpts that
 -- disagree host-fork EVIDENCE rather than a timing artifact.
 constant kHeCkptStreets = "deal,flop,turn,river,showdown"
+-- The wire types that belong to ONE hand (2026-09-25, v0.25.5): each must
+-- carry the current hand number in its signed item 3, or heNetFoldGameWire
+-- drops it. The hand field sits inside the SENDER's signature, so a host
+-- cannot change it, but until this list existed nothing READ it: a host
+-- could re-sequence last hand's signed commits and reveals into this hand
+-- (every honest client then saw its own position "already committed" and
+-- stayed silent), know every player's entropy in advance, and deal the deck
+-- it chose, with the audit re-deriving that deck clean. join / sit / stand
+-- are seat state that outlives a hand, and handStart is checked on its own.
+constant kHeHandBoundTypes = "dealLevel,seedCommit,seedSeal,holeDeliver,seedReveal,bidAnte,bidSB,bidBB,act,board,settle,receipt,audit,ckpt,show,muck"
 -- spec 9 host-loss watchdog: poll ticks (250 ms) of host wire-silence
 -- during PLAY before a client declares the host (or oracle -- same role)
 -- lost and runs the deterministic election. 240 ticks = 60 s: generous
@@ -4027,6 +4190,79 @@ function heIsHex pTxt, pLen
    return true
 end heIsHex
 
+function heHexEq pA, pB
+   -- THE equality for hex identifiers (2026-09-25): a digest, a seed
+   -- commitment, a chain or receipt head, a pubkey, a signature, a table
+   -- id. Bare `is` is NOT a text compare: it first tries to read BOTH
+   -- operands as numbers and, when both parse, compares the NUMBERS (root
+   -- docs/OXT-ENGINE-NOTES.md 2.11, DOCUMENTED from the engine source, not
+   -- yet observed here; 2.10 adds a relative tolerance on top). Lowercase
+   -- hex is number-like when it is all digits, or digits, one "e", digits,
+   -- and any two texts that overflow a double are both +inf: "1e" and 62
+   -- digits `is` "2e" and 62 digits, and the 64-zero genesis head `is` "0".
+   -- `set the caseSensitive to true` changes none of that; case matters
+   -- only on the text path, which two number-like operands never reach.
+   -- The attack, in one sentence: a dealer who commits a number-like value
+   -- and holds seeds whose commitments are number-like too (about 2^41
+   -- BLAKE2b tries each) passes the seed audit with whichever seed it
+   -- prefers, AFTER seeing everyone else's. The "h" in front keeps both
+   -- operands on the text path (no number parse accepts a leading letter).
+   -- Both are LOWERCASED because hex is case-blind (heIsHex admits either
+   -- case, and an honest peer's commit in either spelling must keep
+   -- passing), and lowercasing rather than leaning on the caseSensitive
+   -- default gives one answer on the engine and in the family interpreter,
+   -- which models `is` case-SENSITIVELY. Pure (H5), no FFI: safe on empty
+   -- or malformed input and inside an `or` chain whose operands all
+   -- evaluate (engine note 2.5); empty equals only empty.
+   -- THE RULE: a digest, commitment, head, key or signature never meets
+   -- bare `is`, `is not`, `=` or `<>` in this file. It meets heHexEq.
+   return ("h" & toLower(pA)) is ("h" & toLower(pB))
+end heHexEq
+
+function heCanonIdx pTxt, pMax
+   -- the CANONICAL spelling of a positive whole number read off a wire (a
+   -- contributor position, a seat, a count, a hand number, a seq), or empty
+   -- when pTxt is not one (2026-09-25, v0.25.5). Canonical = a non-empty
+   -- run of ASCII digits with no leading zero, at most 14 of them (below
+   -- 10^14, where the engine still tells two integers one apart: engine
+   -- note 2.10 blurs them only from about 4.5e14), and at most pMax when
+   -- pMax is given. Tested as TEXT, before anything reads it as a number.
+   -- WHY: `is`, `<` and a chunk index read "03", "3.0", "+3", " 3" and
+   -- "3e0" as the NUMBER 3 (MCU_strtol skips spaces and leading zeros; suite
+   -- engine notes 2.10, 2.11), while an array KEY keeps the raw text. So an
+   -- alias passed every "is this position 3?" check and was then stored,
+   -- and COUNTED, as a separate position: a dealer posted its own commitment
+   -- under three aliases, the commit count told every honest seat that all
+   -- commitments were in, the honest seats sealed their seeds to it, and it
+   -- ground its own seed with everyone else's in hand. One canonical text
+   -- names one key; every fold keys, compares and counts by what this
+   -- returns, and compares two of them as text ("n" & a) is ("n" & b), the
+   -- letter keeping the compare off the number path as heHexEq's does.
+   -- Pure (H5), no FFI; the checks are nested (engine note 2.5).
+   local tLen, tCh
+   put the number of chars of pTxt into tLen
+   if tLen < 1 or tLen > 14 then
+      return empty
+   end if
+   repeat for each char tCh in pTxt
+      if offset(tCh, "0123456789") is 0 then
+         return empty
+      end if
+   end repeat
+   if char 1 of pTxt is "0" then
+      return empty   -- zero itself, and every leading-zero spelling
+   end if
+   if pMax is not empty then
+      if pMax is not a number then
+         return empty
+      end if
+      if pTxt > pMax then
+         return empty
+      end if
+   end if
+   return pTxt
+end heCanonIdx
+
 -- Identity keys are derived by calling sxSignKeypairFromSeed directly into
 -- plain locals at each site (the proven-safe form -- same as
 -- sxBoxKeypairFromSeed in heProbeSodium). No @-reference wrapper, so there is
@@ -4379,7 +4615,10 @@ function heEnvVerify pWireLine, pFromPubHex, pHostPubHex, pExpectedPrevHex
    if tBodyHex is not empty and not heIsHex(tBodyHex, 0) then
       return "drop:malformed"
    end if
-   if pFromPubHex is not empty and tA["from"] is not pFromPubHex then
+   -- the key and head compares are heHexEq, never bare `is`: a number-like
+   -- prev would otherwise match a head it only EQUALS AS A NUMBER (the
+   -- 64-zero genesis head `is` "0"; heHexEq, engine note 2.11)
+   if pFromPubHex is not empty and not heHexEq(tA["from"], pFromPubHex) then
       return "drop:unknown-from"
    end if
    if not heVerifyDetached(heHex2BinD(tA["senderSig"]), \
@@ -4390,7 +4629,7 @@ function heEnvVerify pWireLine, pFromPubHex, pHostPubHex, pExpectedPrevHex
          textEncode(tA["envLine"], "utf-8"), heHex2BinD(pHostPubHex)) then
       return "drop:bad-host-sig"
    end if
-   if pExpectedPrevHex is not empty and tA["prev"] is not pExpectedPrevHex then
+   if pExpectedPrevHex is not empty and not heHexEq(tA["prev"], pExpectedPrevHex) then
       return "drop:chain-break"
    end if
    return "ok"
@@ -4560,8 +4799,18 @@ function heAuditDeal pTableData, pHandNum, pSeedsHexA, pCommitsA, pCount, pDealA
    -- revealed seeds and name the FIRST failing step. Returns "pass"/"fail:..".
    local tSeatPos, tDeckList, tCheckA, tSeatNum
    set the itemDelimiter to comma
+   -- heHexEq, never bare `is` (engine note 2.11): the commitment came off
+   -- the wire shape-checked only, and a number-like commit would open to
+   -- any seed whose own commitment is number-like too (heHexEq's comment).
+   -- Each seed is SHAPE-checked first, in its own `if` (engine note 2.5):
+   -- heSeedCommitHex decodes through sxHex2Bin, which throws on malformed
+   -- hex, so a bad seed names its position instead of throwing out of the
+   -- audit (H4; 2026-09-25, holde-em WORK-PLAN coding #12)
    repeat with tSeatPos = 1 to pCount
-      if heSeedCommitHex(pSeedsHexA[tSeatPos]) is not pCommitsA[tSeatPos] then
+      if not heIsHex(pSeedsHexA[tSeatPos], 64) then
+         return "fail:seed-malformed-position-" & tSeatPos
+      end if
+      if not heHexEq(heSeedCommitHex(pSeedsHexA[tSeatPos]), pCommitsA[tSeatPos]) then
          return "fail:commit-mismatch-position-" & tSeatPos
       end if
    end repeat
@@ -4634,22 +4883,36 @@ function heAuditDealsFromLog pLogTxt
             put tBodyA["table"] into tTableHex
             put tBodyA["count"] into tCount
             break
+         -- positions and seats are keyed by their CANONICAL text (heCanonIdx,
+         -- 2026-09-25): the audit reads keys 1..count and the dealt seats,
+         -- so an alias line ("pos=03") was stored under a key nothing reads.
+         -- Dropping it here says so instead of carrying a dead entry, and
+         -- matches the live fold, which refuses the same wire.
          case "seedCommit"
             put tBodyTxt into tBodyA
             split tBodyA by comma and "="
-            put tBodyA["commit"] into tCommitsA[tBodyA["pos"]]
+            put heCanonIdx(tBodyA["pos"], tCount) into tPos
+            if tPos is not empty then
+               put tBodyA["commit"] into tCommitsA[tPos]
+            end if
             break
          case "seedReveal"
             put tBodyTxt into tBodyA
             split tBodyA by comma and "="
-            put tBodyA["seed"] into tSeedsA[tBodyA["pos"]]
+            put heCanonIdx(tBodyA["pos"], tCount) into tPos
+            if tPos is not empty then
+               put tBodyA["seed"] into tSeedsA[tPos]
+            end if
             break
          case "holeDeliver"
             put tBodyTxt into tBodyA
             split tBodyA by comma and "="
             put tBodyA["cards"] into tCardTxt
             replace "|" with comma in tCardTxt
-            put heCardIndex(item 1 of tCardTxt) & comma & heCardIndex(item 2 of tCardTxt) into tHolesA[tBodyA["seat"]]
+            put heCanonIdx(tBodyA["seat"], kHeMaxSeats) into tSeatNum
+            if tSeatNum is not empty then
+               put heCardIndex(item 1 of tCardTxt) & comma & heCardIndex(item 2 of tCardTxt) into tHolesA[tSeatNum]
+            end if
             break
          case "board"
             put tBodyTxt into tBodyA
@@ -4690,8 +4953,26 @@ function heAuditDealLog pTableHex, pHandNum, pSeedsHexA, pCommitsA, pCount, pOcc
    -- revealed match. Returns "pass" or "fail:...".
    local tSeatPos, tDeckList, tCheckA, tSeatNum, tBoardN
    set the itemDelimiter to comma
+   -- A TRANSCRIPT IS A FILE ANYONE CAN HAND-EDIT (2026-09-25, holde-em
+   -- WORK-PLAN coding #12), so every field this derives from is shape-checked
+   -- before it reaches an FFI decode or a loop bound, each in its own `if`
+   -- (engine note 2.5): the contributor count bounds the loop below, the
+   -- table id and every seed go through sxHex2Bin (which throws on malformed
+   -- hex), and a throw here escaped the whole History audit. Each failure
+   -- is NAMED instead (H4), the way a wrong commitment already was.
+   if heCanonIdx(pCount, kHeMaxSeats + 1) is empty then
+      return "fail:count-malformed"
+   end if
+   if not heIsHex(pTableHex, 64) then
+      return "fail:table-malformed"
+   end if
+   -- heHexEq, never bare `is`: the same number-like commitment hole as
+   -- heAuditDeal's, read from a transcript anyone can hand you
    repeat with tSeatPos = 1 to pCount
-      if heSeedCommitHex(pSeedsHexA[tSeatPos]) is not pCommitsA[tSeatPos] then
+      if not heIsHex(pSeedsHexA[tSeatPos], 64) then
+         return "fail:seed-malformed-position-" & tSeatPos
+      end if
+      if not heHexEq(heSeedCommitHex(pSeedsHexA[tSeatPos]), pCommitsA[tSeatPos]) then
          return "fail:commit-mismatch-position-" & tSeatPos
       end if
    end repeat
@@ -5014,14 +5295,14 @@ end heL2MaskDeckHex
 function heL2CardOfPointHex pPointHex, pBaseDeckList
    -- card index 1..52 of a point in the base table, 0 when absent. PURE
    -- text scan, no FFI, so table lookups can never throw on hostile input;
-   -- `is` compares case-insensitively, which the Python twin mirrors by
-   -- lowercasing both sides.
+   -- heHexEq lowercases both sides, exactly as the Python twin does, and
+   -- keeps a number-like point from matching by VALUE (engine note 2.11).
    local tIdx, tBaseHex
    set the itemDelimiter to comma
    put 0 into tIdx
    repeat for each item tBaseHex in pBaseDeckList
       add 1 to tIdx
-      if tBaseHex is pPointHex then
+      if heHexEq(tBaseHex, pPointHex) then
          return tIdx
       end if
    end repeat
@@ -5120,7 +5401,7 @@ function heL2RevealShuffleHex pInDeckList, pOutDeckList, pScalarHex, pPermList
    repeat with tPos = 1 to 52
       put item tPos of pOutDeckList into tOutHex
       put item tPos of tRedoneList into tRedoneHex
-      if tRedoneHex is not tOutHex then
+      if not heHexEq(tRedoneHex, tOutHex) then
          return "void:shuffle-mismatch:" & tPos
       end if
    end repeat
@@ -5144,7 +5425,7 @@ function heL2RevealUnmaskHex pInHex, pOutHex, pScalarHex
    if not heIsHex(pOutHex, 64) then
       return "void:point-format"
    end if
-   if tRedoneHex is pOutHex then
+   if heHexEq(tRedoneHex, pOutHex) then
       return "ok"
    end if
    return "void:unmask-mismatch"
@@ -5378,7 +5659,10 @@ function heL2DleqVerify pCkHex, pP1Hex, pP2Hex, pProofHex
    catch tVfyErr
       return "void:no-dleq"
    end try
-   if tZRedHex is not tZHex then
+   -- every point and scalar compare below is heHexEq, never bare `is`: z
+   -- and (a1, a2) are the prover's to choose, so a value that compares
+   -- equal only AS A NUMBER must never close a check (engine note 2.11)
+   if not heHexEq(tZRedHex, tZHex) then
       return "void:scalar-format"
    end if
    try
@@ -5405,7 +5689,7 @@ function heL2DleqVerify pCkHex, pP1Hex, pP2Hex, pProofHex
    catch tVfyErr
       return "void:dleq-mismatch:1"
    end try
-   if tLhsHex is not tRhsHex then
+   if not heHexEq(tLhsHex, tRhsHex) then
       return "void:dleq-mismatch:1"
    end if
    try
@@ -5416,7 +5700,7 @@ function heL2DleqVerify pCkHex, pP1Hex, pP2Hex, pProofHex
    catch tVfyErr
       return "void:dleq-mismatch:2"
    end try
-   if tLhsHex is not tRhsHex then
+   if not heHexEq(tLhsHex, tRhsHex) then
       return "void:dleq-mismatch:2"
    end if
    return "ok"
@@ -5747,7 +6031,7 @@ function heL2VoidAudit pStateA, pRevealsText
       if tCkStored is not empty and heL2HasDleq() then
          -- (the KAT mirror always has the algebra; a pre-ABI-9 engine
          -- cannot compute k*B, so it skips the binding and still audits)
-         if heL2CommitKeyHex(tRkA[tPosI]) is not tCkStored then
+         if not heHexEq(heL2CommitKeyHex(tRkA[tPosI]), tCkStored) then
             return "named=" & tPosI & "|void:audit-ck-mismatch"
          end if
       end if
@@ -6568,7 +6852,7 @@ command heNetOnHandshake pPeer, pTokenData, pFromSeq
    if gGame["isHost"] is not "true" and tRoleTxt is "host" then
       if gGame["hostPubHex"] is empty then
          put tPubHex into gGame["hostPubHex"]
-      else if gGame["hostPubHex"] is not tPubHex then
+      else if not heHexEq(gGame["hostPubHex"], tPubHex) then
          -- copy the trusted host key out before chunking it (H6: never chunk an
          -- array element directly)
          put gGame["hostPubHex"] into tHostShort
@@ -6701,7 +6985,7 @@ command heHostRelay pPeer, pContentAndSig
    -- relay them for a non-host sender, so an admitted player cannot forge table
    -- config or roster through the relay (deep-dive transport). The host emits
    -- these from its own key (heNetSendAction uses gGame["idPubHex"]).
-   if (tTypeTxt is "cfg" or tTypeTxt is "roster") and tFromHex is not gGame["hostPubHex"] then
+   if (tTypeTxt is "cfg" or tTypeTxt is "roster") and not heHexEq(tFromHex, gGame["hostPubHex"]) then
       exit heHostRelay
    end if
    -- verify the sender actually signed this content (host cannot forge content)
@@ -6756,8 +7040,9 @@ command heNetIngestWire pWire
    -- fields sit inside the host-signed span, but a receiver still has to ENFORCE
    -- them: otherwise a host-signed wire for another table, or a downgraded envelope
    -- version, would be accepted onto our chain (deep-dive transport). A mismatch is
-   -- a hard drop, NOT a chain gap, so it never triggers a resync.
-   if tA["table"] is not gGame["tableIdHex"] then
+   -- a hard drop, NOT a chain gap, so it never triggers a resync. The table
+   -- id and the prev below are hex: heHexEq, never bare `is` (engine note 2.11).
+   if not heHexEq(tA["table"], gGame["tableIdHex"]) then
       put "drop:wrong-table " & char 1 to 24 of pWire & return after gGame["netLog"]
       heLobbyRefresh
       exit heNetIngestWire
@@ -6767,8 +7052,12 @@ command heNetIngestWire pWire
       heLobbyRefresh
       exit heNetIngestWire
    end if
-   put tA["seq"] into tSeq
-   if tSeq is not a number then
+   -- the seq is CANONICAL text (heCanonIdx, 2026-09-25): it keys the reorder
+   -- buffer and becomes lastSeq, and the drain looks buffered wires up by
+   -- lastSeq + 1 -- so a host-signed "07" or "7.0" compared as 7 and then sat
+   -- in a buffer slot nothing ever reads, and "1.5" slipped BETWEEN two seqs
+   put heCanonIdx(tA["seq"], empty) into tSeq
+   if tSeq is empty then
       put "drop:bad-seq " & char 1 to 24 of pWire & return after gGame["netLog"]
       heLobbyRefresh
       exit heNetIngestWire
@@ -6786,7 +7075,7 @@ command heNetIngestWire pWire
    end if
    -- tSeq is exactly lastSeq+1: it must chain onto our head, or the host's stream
    -- is inconsistent (should not happen) -- ask for a replay rather than wedge.
-   if tA["prev"] is not gGame["chainHeadHex"] then
+   if not heHexEq(tA["prev"], gGame["chainHeadHex"]) then
       put "drop:chain-break" && char 1 to 24 of pWire & return after gGame["netLog"]
       heNetRequestSync
       heLobbyRefresh
@@ -6833,7 +7122,7 @@ command heNetApplyWire pWire, pA
    -- ignore-the-body treatment a non-host cfg gets. In-order apply guarantees
    -- the roster wire admitting a sender lands before that sender's first
    -- relayed action, so an honest stream never trips this.
-   if tFromHex is not gGame["hostPubHex"] and not heRosterHasKey(tFromHex) then
+   if not heHexEq(tFromHex, gGame["hostPubHex"]) and not heRosterHasKey(tFromHex) then
       put "note   unrostered sender " & char 1 to 8 of tFromHex \
             & " -- body ignored (seq " & tSeqTxt & ")" & return after gGame["netLog"]
       exit heNetApplyWire
@@ -6844,7 +7133,7 @@ command heNetApplyWire pWire, pA
    -- so an admitted player cannot forge table config/roster by getting a
    -- content line relayed (the host relays any admitted sender's content).
    if tTypeTxt is "roster" or tTypeTxt is "cfg" then
-      if tFromHex is gGame["hostPubHex"] then
+      if heHexEq(tFromHex, gGame["hostPubHex"]) then
          if tTypeTxt is "roster" then
             put heEnvBodyText(tBodyHex) into gGame["rosterBody"]
          else
@@ -6891,7 +7180,7 @@ function heRosterHasKey pPubHex
       else
          put tItem into tPub
       end if
-      if tPub is pPubHex then
+      if heHexEq(tPub, pPubHex) then
          return true
       end if
    end repeat
@@ -6924,7 +7213,7 @@ command heNetDrainBuffer
       put empty into gGame["wireBuf"][tNext]
       subtract 1 from gGame["wireBufN"]
       put heEnvWireParse(tWire) into tA
-      if tA["prev"] is not gGame["chainHeadHex"] then
+      if not heHexEq(tA["prev"], gGame["chainHeadHex"]) then
          exit repeat   -- a buffered wire that no longer chains: leave it for replay
       end if
       heNetApplyWire tWire, tA
@@ -7140,7 +7429,7 @@ function heNetElectablePubs
    repeat for each item tSeatNum in tChipList
       if gGame["sitOutBy"][tSeatNum] is not "true" then
          put gGame["pubBySeat"][tSeatNum] into tPub
-         if tPub is not empty and tPub is not gGame["hostPubHex"] then
+         if tPub is not empty and not heHexEq(tPub, gGame["hostPubHex"]) then
             put tPub & return after tOut
          end if
       end if
@@ -7191,7 +7480,7 @@ command heNetHostLost pWhyTxt
    heDisableActions
    if tElected is empty then
       put "HOST LOST (" & pWhyTxt & ") -- no live seated player to elect. The table is over; stacks stand at the last receipt." into tMsgTxt
-   else if tElected is gGame["idPubHex"] then
+   else if heHexEq(tElected, gGame["idPubHex"]) then
       put "HOST LOST (" & pWhyTxt & ") -- the in-flight hand is void; stacks stand at the last receipt. YOU are the elected host (lowest live key): Create a table and share the new invite." into tMsgTxt
    else
       put "HOST LOST (" & pWhyTxt & ") -- the in-flight hand is void; stacks stand at the last receipt. Elected host: " & char 1 to 12 of tElected & " -- join its new invite when it re-hosts." into tMsgTxt
@@ -7996,6 +8285,10 @@ command heNetGameInit
    put empty into gGame["catchUpTo"]
    put kHeGenesisPrev into gGame["rcptHeadHex"]
    put empty into gGame["oDeal"]
+   -- the last handStart this client FOLDED (2026-09-25): a handStart must
+   -- carry a canonical hand number above it, so no hand number, and with it
+   -- no per-hand seed, ever repeats at one table (heNetFoldGameWire)
+   put 0 into gGame["handFolded"]
    -- spec 9 host-loss election state (2e/Phase 3)
    put "false" into gGame["hostLost"]
    put 0 into gGame["hostQuietTicks"]
@@ -8156,21 +8449,103 @@ function heNetContribPosOk pPos, pFromSeat, pFromHex
    -- owns the position: seats own their packed positions (seatByPub is the
    -- authority, never the body); the oracle -- the host key, dealing at
    -- Level 1 with no seat -- owns exactly position dealCount+1.
-   local tCount
-   if pPos is not a number then
+   -- The position must be CANONICAL (heCanonIdx, 2026-09-25) and within
+   -- 1..contributors, and every compare below is TEXT behind a letter: this
+   -- used to read pPos as a NUMBER, so "03", "3.0" and "+3" each owned
+   -- position 3 and each became its own stored, counted entry in the fold.
+   local tCount, tPos
+   put heNetContribCount() into tCount
+   put heCanonIdx(pPos, tCount) into tPos
+   if tPos is empty then
       return false
    end if
    if pFromSeat > 0 then
-      return (heNetSeatAtPos(pPos) is pFromSeat)
+      return (("n" & heNetSeatAtPos(tPos)) is ("n" & pFromSeat))
    end if
-   if heNetOracleDeal() and pFromHex is gGame["hostPubHex"] then
-      put gGame["oDeal"]["dealCount"] into tCount
-      if tCount is a number and pPos is (tCount + 1) then
-         return true
-      end if
+   if heNetOracleDeal() and heHexEq(pFromHex, gGame["hostPubHex"]) then
+      return (("n" & tPos) is ("n" & tCount))
    end if
    return false
 end heNetContribPosOk
+
+function heNetPosFilled pWhich
+   -- how many CONTRIBUTOR positions 1..heNetContribCount() hold an entry in
+   -- gGame["oDeal"][pWhich] (commitsBy, sealsBy, revealsBy). WALKED over the
+   -- canonical keys every time, never counted per message (2026-09-25):
+   -- "add 1 on each new key" let three aliases of one position read as
+   -- three commitments, and every threshold downstream (seal when the
+   -- commits are in, deal when the seals are in, settle when the reveals
+   -- are in) trusted that count. A walk over 1..count cannot be advanced
+   -- by a duplicate, an alias or a position outside the hand.
+   local tCount, tPos, tN
+   put heNetContribCount() into tCount
+   put 0 into tN
+   repeat with tPos = 1 to tCount
+      if gGame["oDeal"][pWhich][tPos] is not empty then
+         add 1 to tN
+      end if
+   end repeat
+   return tN
+end heNetPosFilled
+
+function heNetSeatsFilled pWhich
+   -- the seat twin of heNetPosFilled: how many of THIS hand's dealt seats
+   -- (gGame["state"]["occ"], canonical since the handStart fold checks it)
+   -- hold an entry in gGame["oDeal"][pWhich] (holeSealedBy, receiptsBy).
+   -- Walked, for the same reason: holeN once counted a delivery per new
+   -- raw seat key, so a dealer could "deliver" to "03" and "3.0" and start
+   -- the blinds while a real seat still held no cards.
+   local tOccList, tSeatNum, tN
+   set the itemDelimiter to comma
+   put gGame["state"]["occ"] into tOccList
+   put 0 into tN
+   repeat for each item tSeatNum in tOccList
+      if gGame["oDeal"][pWhich][tSeatNum] is not empty then
+         add 1 to tN
+      end if
+   end repeat
+   return tN
+end heNetSeatsFilled
+
+function heNetOccOfSeats pSeatsTxt
+   -- the DEALT-seat list a handStart's seats= field names ("1|3|4"),
+   -- rebuilt as canonical comma text ("1,3,4"), or empty when it is not a
+   -- legal one (2026-09-25, v0.25.5): two or more seats, each canonical
+   -- within 1..kHeMaxSeats (heCanonIdx), strictly ascending. The list IS
+   -- the contributor-position order (heNetSeatPos), so an alias or a
+   -- duplicate would hand one seat two positions, or a seat none; and it is
+   -- REBUILT from the checked items, so the one trailing delimiter the
+   -- engine ignores when counting (engine note 2.2) never rides into the
+   -- state. One rule for the live fold and History's translation. Pure (H5).
+   local tSeatsTxt, tSeatItem, tPrevSeat, tOccList, tSeatN
+   set the itemDelimiter to comma
+   put pSeatsTxt into tSeatsTxt
+   replace "|" with comma in tSeatsTxt
+   put empty into tOccList
+   put empty into tPrevSeat
+   put 0 into tSeatN
+   repeat for each item tSeatItem in tSeatsTxt
+      if heCanonIdx(tSeatItem, kHeMaxSeats) is empty then
+         return empty
+      end if
+      if tPrevSeat is not empty then
+         if tSeatItem <= tPrevSeat then
+            return empty
+         end if
+      end if
+      put tSeatItem into tPrevSeat
+      if tOccList is empty then
+         put tSeatItem into tOccList
+      else
+         put comma & tSeatItem after tOccList
+      end if
+      add 1 to tSeatN
+   end repeat
+   if tSeatN < 2 then
+      return empty
+   end if
+   return tOccList
+end heNetOccOfSeats
 
 --------------------------------------------------------------------------
 -- 2e liveness (spec 8.1/9): act timers + the per-hand time-bank, sit-out,
@@ -8267,7 +8642,7 @@ command heNetTurnMark
             & gGame["handNum"] & "-" & tStateA["street"] into tKeyTxt
    else if tStateA["phase"] is "blinds" \
          and gGame["oDeal"]["dealCount"] is a number \
-         and gGame["oDeal"]["holeN"] >= gGame["oDeal"]["dealCount"] then
+         and heNetSeatsFilled("holeSealedBy") >= gGame["oDeal"]["dealCount"] then
       -- the forced-post timer arms only once the deal is COMPLETE: a
       -- stalled L0 deal (a contributor never commits/seals) has no timeout
       -- prescription at Level 0 -- recorded, not invented; spec 9's
@@ -8554,7 +8929,7 @@ function heNetPubIsLive pPubHex
    -- (reconnecting re-stamps it), and the honest limit of what rp1 can prove.
    -- Verified statically; needs an OXT pass.
    local tSeenMs
-   if pPubHex is gGame["idPubHex"] then
+   if heHexEq(pPubHex, gGame["idPubHex"]) then
       return true   -- ourselves: the host running this check is present
    end if
    if gGame["peerByPub"][pPubHex] is empty then
@@ -8599,7 +8974,7 @@ command heNetSeatLateJoiners
    repeat for each key tPubHex in gGame["boxByPub"]
       if gGame["admittedA"][tPubHex] is "true" \
             and gGame["seatByPub"][tPubHex] is empty then
-         if gGame["oracleHost"] is "true" and tPubHex is gGame["idPubHex"] then
+         if gGame["oracleHost"] is "true" and heHexEq(tPubHex, gGame["idPubHex"]) then
             next repeat   -- the oracle never takes a seat
          end if
          if not heNetPubIsLive(tPubHex) then
@@ -8649,7 +9024,7 @@ command heNetStartGame
       if gGame["admittedA"][tPubHex] is "true" then
          -- Phase 3: the ORACLE hosts and deals but never takes a seat --
          -- its join still bound a session box (the seedSeals seal to it)
-         if gGame["oracleHost"] is "true" and tPubHex is gGame["idPubHex"] then
+         if gGame["oracleHost"] is "true" and heHexEq(tPubHex, gGame["idPubHex"]) then
             next repeat
          end if
          put tPubHex & return after tPubsTxt
@@ -8824,11 +9199,31 @@ command heNetFoldGameWire pTypeTxt, pFromHex, pBodyTxt, pHandTxt
    local tBodyA, tSeat, tPos, tHex, tAmt, tVerb, tCardsTxt, tOneCard, tIdxList
    local tFromSeat, tDealerPub, tOccList, tCount, tStackAmt, tOpenErr, tOpenTxt
    local tDeltasTxt, tMineTxt, tHeadHex, tSigHex, tResultTxt, tPrevBad
-   local tStreetName, tBoardHeld, tBoardN, tCkptHead
+   local tStreetName, tBoardHeld, tBoardN, tCkptHead, tHandCanon, tRawTxt
    set the itemDelimiter to comma
    put pBodyTxt into tBodyA
    split tBodyA by comma and "="
    put gGame["seatByPub"][pFromHex] into tFromSeat
+   -- EVERY WIRE INDEX IS CANONICAL TEXT (heCanonIdx, 2026-09-25, v0.25.5):
+   -- a position, a seat, a count and a hand number are each checked as text
+   -- before anything reads them as numbers, stored under that canonical
+   -- key, compared as ("n" & a) is ("n" & b), and counted by walking the
+   -- hand's own range (heNetPosFilled, heNetSeatsFilled), never per message.
+   -- And a wire that belongs to one hand (kHeHandBoundTypes) must carry THIS
+   -- hand's number in its signed item 3: nothing read that field before, so
+   -- a host could re-sequence last hand's signed commits and reveals into
+   -- this one, the honest clients saw their positions "already committed"
+   -- and stayed silent, and the dealer knew every seed before it chose its
+   -- own. A wire for another hand is dropped whole, before any case acts on it.
+   if pTypeTxt is among the items of kHeHandBoundTypes then
+      if heCanonIdx(pHandTxt, empty) is empty \
+            or ("n" & pHandTxt) is not ("n" & gGame["handNum"]) then
+         put "drop   " & pTypeTxt & " for hand " & char 1 to 12 of pHandTxt \
+               & " while hand " & gGame["handNum"] & " is open" & return after gGame["netLog"]
+         heNetGameReact
+         exit heNetFoldGameWire
+      end if
+   end if
    switch pTypeTxt
 
       case "join"
@@ -8850,8 +9245,10 @@ command heNetFoldGameWire pTypeTxt, pFromHex, pBodyTxt, pHandTxt
          -- that already owns the seat): re-enters at the next hand boundary
          -- (heNetNextOccList reads sitOutBy; the host's next kick deals it).
          if tBodyA["pub"] is empty then
-            put tBodyA["seat"] into tSeat
-            if tFromSeat is 0 or tSeat is not tFromSeat then
+            -- the seat is canonical text and matched as text (heCanonIdx):
+            -- "02" used to pass as the sender's seat 2 by NUMBER
+            put heCanonIdx(tBodyA["seat"], kHeMaxSeats) into tSeat
+            if tSeat is empty or ("n" & tSeat) is not ("n" & tFromSeat) then
                put "drop   sit-return for a seat the sender does not own" & return after gGame["netLog"]
                break
             end if
@@ -8861,13 +9258,16 @@ command heNetFoldGameWire pTypeTxt, pFromHex, pBodyTxt, pHandTxt
             heHudMark
             break
          end if
-         if pFromHex is not gGame["hostPubHex"] then
+         if not heHexEq(pFromHex, gGame["hostPubHex"]) then
             put "drop   non-host sit ignored" & return after gGame["netLog"]
             break
          end if
-         put tBodyA["seat"] into tSeat
+         -- canonical 1..kHeMaxSeats (heCanonIdx): a seat of "03" or "3.0"
+         -- used to pass this range test as the number 3 and then become its
+         -- OWN pubBySeat key and a second seatedList entry beside seat 3
+         put heCanonIdx(tBodyA["seat"], kHeMaxSeats) into tSeat
          put tBodyA["pub"] into tHex
-         if tSeat is not a number or tSeat < 1 or tSeat > kHeMaxSeats or not heIsHex(tHex, 64) then
+         if tSeat is empty or not heIsHex(tHex, 64) then
             put "drop   malformed sit" & return after gGame["netLog"]
             break
          end if
@@ -8889,25 +9289,47 @@ command heNetFoldGameWire pTypeTxt, pFromHex, pBodyTxt, pHandTxt
             put tStackAmt into gGame["stacksBy"][tSeat]
          end if
          put "true" into gGame["gameOn"]
-         if tHex is gGame["idPubHex"] then
+         if heHexEq(tHex, gGame["idPubHex"]) then
             heUISetStatus "You are seated at seat " & tSeat & ". The game is starting."
          end if
          break
 
       case "handStart"
-         if pFromHex is not gGame["hostPubHex"] then
+         if not heHexEq(pFromHex, gGame["hostPubHex"]) then
             put "drop   non-host handStart ignored" & return after gGame["netLog"]
             break
          end if
-         put tBodyA["seats"] into tOccList
-         replace "|" with comma in tOccList
-         put tBodyA["button"] into tSeat
-         if tOccList is empty or tSeat is not a number then
+         -- the HAND NUMBER is canonical and strictly above the last hand this
+         -- client folded (2026-09-25). Every seat's per-hand seed is DERIVED
+         -- from table and hand number (heNetHandSeedHex), so a repeated number
+         -- repeats every seed, and a dealer that saw them the first time
+         -- could stack the second deal. handFolded, not handNum: the host
+         -- advances handNum before it emits (heNetHandKick), then folds its
+         -- own handStart like everyone else.
+         put heCanonIdx(pHandTxt, empty) into tHandCanon
+         if tHandCanon is empty then
+            put "drop   handStart with a malformed hand number" & return after gGame["netLog"]
+            break
+         end if
+         if gGame["handFolded"] is a number then
+            if tHandCanon <= gGame["handFolded"] then
+               put "drop   handStart for hand " & tHandCanon & " after hand " \
+                     & gGame["handFolded"] & " (hand numbers never repeat)" & return after gGame["netLog"]
+               break
+            end if
+         end if
+         -- a legal dealt-seat list (heNetOccOfSeats: two or more canonical
+         -- seats, strictly ascending, REBUILT) and a canonical button among
+         -- them -- the one rule History's translation applies too
+         put heNetOccOfSeats(tBodyA["seats"]) into tOccList
+         put heCanonIdx(tBodyA["button"], kHeMaxSeats) into tSeat
+         if tOccList is empty or tSeat is empty or tSeat is not among the items of tOccList then
             put "drop   malformed handStart" & return after gGame["netLog"]
             break
          end if
          heNetHandReset
-         put pHandTxt into gGame["handNum"]
+         put tHandCanon into gGame["handFolded"]
+         put tHandCanon into gGame["handNum"]
          put tSeat into gGame["buttonSeat"]
          put heBetNewHand(gGame["sb"], gGame["bb"], gGame["ante"], gGame["stacksBy"], \
                tOccList, tSeat) into gGame["state"]
@@ -8929,7 +9351,7 @@ command heNetFoldGameWire pTypeTxt, pFromHex, pBodyTxt, pHandTxt
          break
 
       case "dealLevel"
-         if pFromHex is not gGame["hostPubHex"] then
+         if not heHexEq(pFromHex, gGame["hostPubHex"]) then
             put "drop   non-host dealLevel ignored" & return after gGame["netLog"]
             break
          end if
@@ -8937,23 +9359,37 @@ command heNetFoldGameWire pTypeTxt, pFromHex, pBodyTxt, pHandTxt
          -- (Phase 3, spec 7.2: dealer=0, no seat). Anything else is refused
          -- readably -- which is ALSO how a pre-oracle client refuses an
          -- oracle table instead of mis-folding it (downgrade refusal).
-         if tBodyA["level"] is not "0" and tBodyA["level"] is not "1" then
+         -- the level, the dealer and the count are compared as TEXT (2026-09-25):
+         -- "0.0" and "1e0" used to read as levels 0 and 1, and the count is the
+         -- contributor range every position and threshold hangs off, so it
+         -- must be canonical AND equal the number of dealt seats -- a host
+         -- that named fewer could leave a seat's entropy out of the deck.
+         if ("n" & tBodyA["level"]) is not "n0" and ("n" & tBodyA["level"]) is not "n1" then
             put "drop   unsupported deal level " & tBodyA["level"] & return after gGame["netLog"]
             break
          end if
-         put tBodyA["dealer"] into tSeat
-         put tBodyA["count"] into tCount
-         if tSeat is not a number or tCount is not a number then
+         put gGame["state"]["occ"] into tOccList
+         put heCanonIdx(tBodyA["count"], kHeMaxSeats) into tCount
+         if tCount is empty or ("n" & tCount) is not ("n" & the number of items of tOccList) then
             put "drop   malformed dealLevel" & return after gGame["netLog"]
             break
          end if
-         if tBodyA["level"] is "1" and tSeat is not 0 then
-            put "drop   level-1 dealLevel must name the oracle (dealer=0)" & return after gGame["netLog"]
-            break
+         if ("n" & tBodyA["level"]) is "n1" then
+            if ("n" & tBodyA["dealer"]) is not "n0" then
+               put "drop   level-1 dealLevel must name the oracle (dealer=0)" & return after gGame["netLog"]
+               break
+            end if
+            put 0 into tSeat
+         else
+            put heCanonIdx(tBodyA["dealer"], kHeMaxSeats) into tSeat
+            if tSeat is empty or tSeat is not among the items of tOccList then
+               put "drop   malformed dealLevel" & return after gGame["netLog"]
+               break
+            end if
          end if
          put tSeat into gGame["oDeal"]["dealerSeat"]
          put tCount into gGame["oDeal"]["dealCount"]
-         if tBodyA["level"] is "1" then
+         if ("n" & tBodyA["level"]) is "n1" then
             put "true" into gGame["oDeal"]["oracleDeal"]
             put "deal   the ORACLE deals this hand (level 1; it holds no seat)" & return after gGame["netLog"]
          end if
@@ -8961,22 +9397,46 @@ command heNetFoldGameWire pTypeTxt, pFromHex, pBodyTxt, pHandTxt
 
       case "seedCommit"
          -- position ownership via heNetContribPosOk: seats own their packed
-         -- positions; the ORACLE (host, level 1, no seat) owns dealCount+1
-         put tBodyA["pos"] into tPos
+         -- positions; the ORACLE (host, level 1, no seat) owns dealCount+1.
+         -- THE POSITION IS CANONICAL OR THE WIRE DROPS (2026-09-25, v0.25.5):
+         -- "03", "3.0" and "+3" each passed ownership as the NUMBER 3, each
+         -- landed under its own raw key and each added one to commitN -- so
+         -- a dealer's three aliased commits told every honest seat that all
+         -- commitments were in (react step 3), the honest seats sealed their
+         -- seeds to it, and it ground its own seed with theirs in hand and
+         -- committed that under "3", still empty. Stored under the canonical
+         -- key only, first wins, and commitN is WALKED over 1..contributors
+         -- (heNetPosFilled), so no alias or duplicate can move it.
+         put tBodyA["pos"] into tRawTxt   -- a plain local before chunking (H6)
+         put heCanonIdx(tRawTxt, heNetContribCount()) into tPos
          put tBodyA["commit"] into tHex
+         if tPos is empty then
+            put "drop   seedCommit: position " & char 1 to 12 of tRawTxt \
+                  & " is not canonical" & return after gGame["netLog"]
+            break
+         end if
          if not heIsHex(tHex, 64) or not heNetContribPosOk(tPos, tFromSeat, pFromHex) then
             put "drop   bad seedCommit" & return after gGame["netLog"]
             break
          end if
          if gGame["oDeal"]["commitsBy"][tPos] is empty then
             put tHex into gGame["oDeal"]["commitsBy"][tPos]
-            add 1 to gGame["oDeal"]["commitN"]
          end if
+         put heNetPosFilled("commitsBy") into gGame["oDeal"]["commitN"]
          break
 
       case "seedSeal"
-         put tBodyA["pos"] into tPos
+         -- canonical position, first wins, walked count: seedCommit's rule,
+         -- because the dealer opens sealsBy over 1..contributors and deals
+         -- when the seal count says every position is in
+         put tBodyA["pos"] into tRawTxt   -- a plain local before chunking (H6)
+         put heCanonIdx(tRawTxt, heNetContribCount()) into tPos
          put tBodyA["sealed"] into tHex
+         if tPos is empty then
+            put "drop   seedSeal: position " & char 1 to 12 of tRawTxt \
+                  & " is not canonical" & return after gGame["netLog"]
+            break
+         end if
          if tHex is empty or not heIsHex(tHex, 0) \
                or not heNetContribPosOk(tPos, tFromSeat, pFromHex) then
             put "drop   bad seedSeal" & return after gGame["netLog"]
@@ -8984,27 +9444,34 @@ command heNetFoldGameWire pTypeTxt, pFromHex, pBodyTxt, pHandTxt
          end if
          if gGame["oDeal"]["sealsBy"][tPos] is empty then
             put tHex into gGame["oDeal"]["sealsBy"][tPos]
-            add 1 to gGame["oDeal"]["sealN"]
          end if
+         put heNetPosFilled("sealsBy") into gGame["oDeal"]["sealN"]
          break
 
       case "holeDeliver"
          -- Phase 3: at level 1 the dealer key is the ORACLE's (host), no
          -- seat behind it -- heNetDealerPubHex names it either way
          put heNetDealerPubHex() into tDealerPub
-         if pFromHex is not tDealerPub then
+         if not heHexEq(pFromHex, tDealerPub) then
             put "drop   holeDeliver not from the dealer" & return after gGame["netLog"]
             break
          end if
-         put tBodyA["seat"] into tSeat
+         -- a canonical seat that is DEALT this hand (2026-09-25): holeN used
+         -- to count one delivery per new raw seat key, so a dealer could
+         -- "deliver" to "03" and "3.0", reach holeN >= dealCount, and start
+         -- the blinds (react step 5) while a real seat held no cards. The
+         -- count is walked over the hand's dealt seats (heNetSeatsFilled).
+         put gGame["state"]["occ"] into tOccList
+         put heCanonIdx(tBodyA["seat"], kHeMaxSeats) into tSeat
          put tBodyA["sealed"] into tHex
-         if tSeat is not a number or tHex is empty or not heIsHex(tHex, 0) then
+         if tSeat is empty or tSeat is not among the items of tOccList \
+               or tHex is empty or not heIsHex(tHex, 0) then
             put "drop   malformed holeDeliver" & return after gGame["netLog"]
             break
          end if
          if gGame["oDeal"]["holeSealedBy"][tSeat] is empty then
             put tHex into gGame["oDeal"]["holeSealedBy"][tSeat]
-            add 1 to gGame["oDeal"]["holeN"]
+            put heNetSeatsFilled("holeSealedBy") into gGame["oDeal"]["holeN"]
             -- 2e street ckpts: the LAST sealed delivery is the "deal"
             -- boundary's transition wire -- record its head once
             if gGame["oDeal"]["dealCount"] is a number \
@@ -9016,7 +9483,7 @@ command heNetFoldGameWire pTypeTxt, pFromHex, pBodyTxt, pHandTxt
             -- timer (heNetTurnMark gates the blinds subject on holeN)
             heNetTurnMark
          end if
-         if tSeat is heNetMySeat() and gGame["oDeal"]["myHoles"] is empty then
+         if ("n" & tSeat) is ("n" & heNetMySeat()) and gGame["oDeal"]["myHoles"] is empty then
             -- our private lane: open the sealed box with the session key (H4:
             -- a bad blob is a logged drop; the audit names the dealer later)
             try
@@ -9045,8 +9512,8 @@ command heNetFoldGameWire pTypeTxt, pFromHex, pBodyTxt, pHandTxt
             put "drop   stand from an unseated key" & return after gGame["netLog"]
             break
          end if
-         put tBodyA["seat"] into tSeat
-         if tSeat is not a number or tSeat is not tFromSeat then
+         put heCanonIdx(tBodyA["seat"], kHeMaxSeats) into tSeat
+         if tSeat is empty or ("n" & tSeat) is not ("n" & tFromSeat) then
             put "drop   stand for a seat the sender does not own" & return after gGame["netLog"]
             break
          end if
@@ -9067,13 +9534,19 @@ command heNetFoldGameWire pTypeTxt, pFromHex, pBodyTxt, pHandTxt
          -- engine-rejects it visibly (wrong seat for the sender) and
          -- stalls where it always stalled -- never mis-folds.
          if tBodyA["timeout"] is "1" then
-            if pFromHex is not gGame["hostPubHex"] then
+            if not heHexEq(pFromHex, gGame["hostPubHex"]) then
                put "drop   non-host timeout ignored" & return after gGame["netLog"]
                break
             end if
-            put tBodyA["seat"] into tSeat
+            -- the seat is a canonical DEALT seat (2026-09-25): "03" used to
+            -- pass as seat 3 and then post under its own raw key, so the
+            -- forced bet, the bank spend and the miss count all landed on a
+            -- seat that does not exist
+            put gGame["state"]["occ"] into tOccList
+            put heCanonIdx(tBodyA["seat"], kHeMaxSeats) into tSeat
             put tBodyA["amount"] into tAmt
-            if tSeat is not a number or tAmt is not a number then
+            if tSeat is empty or tSeat is not among the items of tOccList \
+                  or tAmt is not a number then
                put "drop   malformed timeout " & pTypeTxt & return after gGame["netLog"]
                break
             end if
@@ -9141,13 +9614,14 @@ command heNetFoldGameWire pTypeTxt, pFromHex, pBodyTxt, pHandTxt
          -- host's seat) and stalls visibly -- except a host self-timeout,
          -- which folds identically to a voluntary check/fold there.
          if tBodyA["timeout"] is "1" then
-            if pFromHex is not gGame["hostPubHex"] then
+            if not heHexEq(pFromHex, gGame["hostPubHex"]) then
                put "drop   non-host timeout ignored" & return after gGame["netLog"]
                break
             end if
-            put tBodyA["seat"] into tSeat
+            put gGame["state"]["occ"] into tOccList
+            put heCanonIdx(tBodyA["seat"], kHeMaxSeats) into tSeat
             put tBodyA["verb"] into tVerb
-            if tSeat is not a number then
+            if tSeat is empty or tSeat is not among the items of tOccList then
                put "drop   malformed timeout act" & return after gGame["netLog"]
                break
             end if
@@ -9187,7 +9661,7 @@ command heNetFoldGameWire pTypeTxt, pFromHex, pBodyTxt, pHandTxt
 
       case "board"
          put heNetDealerPubHex() into tDealerPub
-         if pFromHex is not tDealerPub then
+         if not heHexEq(pFromHex, tDealerPub) then
             put "drop   board not from the dealer" & return after gGame["netLog"]
             break
          end if
@@ -9239,25 +9713,37 @@ command heNetFoldGameWire pTypeTxt, pFromHex, pBodyTxt, pHandTxt
          break
 
       case "seedReveal"
-         put tBodyA["pos"] into tPos
+         -- canonical position, first wins, walked count: seedCommit's rule.
+         -- revealN gates the host's settle (react step 9) and the revealed
+         -- deal every client re-derives (heNetRevealedDealA).
+         put tBodyA["pos"] into tRawTxt   -- a plain local before chunking (H6)
+         put heCanonIdx(tRawTxt, heNetContribCount()) into tPos
          put tBodyA["seed"] into tHex
+         if tPos is empty then
+            put "drop   seedReveal: position " & char 1 to 12 of tRawTxt \
+                  & " is not canonical" & return after gGame["netLog"]
+            break
+         end if
          if not heIsHex(tHex, 64) or not heNetContribPosOk(tPos, tFromSeat, pFromHex) then
             put "drop   bad seedReveal" & return after gGame["netLog"]
             break
          end if
-         -- the reveal must open the commitment made before the deal (spec 7.1)
-         if heSeedCommitHex(tHex) is not gGame["oDeal"]["commitsBy"][tPos] then
+         -- the reveal must open the commitment made before the deal (spec
+         -- 7.1) -- through heHexEq, never bare `is`: a number-like commit
+         -- would "open" to any seed whose commitment is number-like too
+         -- (engine note 2.11; the attack is in heHexEq's comment)
+         if not heHexEq(heSeedCommitHex(tHex), gGame["oDeal"]["commitsBy"][tPos]) then
             put "AUDIT  seedReveal pos " & tPos & " does not match its commit" & return after gGame["netLog"]
             break
          end if
          if gGame["oDeal"]["revealsBy"][tPos] is empty then
             put tHex into gGame["oDeal"]["revealsBy"][tPos]
-            add 1 to gGame["oDeal"]["revealN"]
          end if
+         put heNetPosFilled("revealsBy") into gGame["oDeal"]["revealN"]
          break
 
       case "settle"
-         if pFromHex is not gGame["hostPubHex"] then
+         if not heHexEq(pFromHex, gGame["hostPubHex"]) then
             put "drop   non-host settle ignored" & return after gGame["netLog"]
             break
          end if
@@ -9289,15 +9775,18 @@ command heNetFoldGameWire pTypeTxt, pFromHex, pBodyTxt, pHandTxt
          put tBodyA["head"] into tHeadHex
          put tBodyA["sig"] into tSigHex
          if not heIsHex(tHeadHex, 64) or not heIsHex(tSigHex, 128) \
-               or tHeadHex is not gGame["rcptHeadHex"] \
+               or not heHexEq(tHeadHex, gGame["rcptHeadHex"]) \
                or not heReceiptSigVerify(tSigHex, tHeadHex, pFromHex) then
             put "drop   bad receipt from seat " & tFromSeat & return after gGame["netLog"]
             break
          end if
          if gGame["oDeal"]["receiptsBy"][tFromSeat] is empty then
             put tSigHex into gGame["oDeal"]["receiptsBy"][tFromSeat]
-            add 1 to gGame["oDeal"]["receiptN"]
          end if
+         -- walked over the hand's DEALT seats (2026-09-25): a seated key sat
+         -- out of this hand could add one per receipt and make the "co-signed
+         -- by all" line true before every dealt seat had signed
+         put heNetSeatsFilled("receiptsBy") into gGame["oDeal"]["receiptN"]
          if gGame["oDeal"]["receiptN"] >= gGame["oDeal"]["dealCount"] then
             put "rcpt   hand " & gGame["handNum"] & " receipt co-signed by all " \
                   & gGame["oDeal"]["receiptN"] & " seats" & return after gGame["netLog"]
@@ -9307,7 +9796,7 @@ command heNetFoldGameWire pTypeTxt, pFromHex, pBodyTxt, pHandTxt
       case "audit"
          -- Phase 3: the ORACLE audits too (it witnessed the whole deal it
          -- ran); its verdict files under contributor slot 0, logged by name
-         if tFromSeat is 0 and not (heNetOracleDeal() and pFromHex is gGame["hostPubHex"]) then
+         if tFromSeat is 0 and not (heNetOracleDeal() and heHexEq(pFromHex, gGame["hostPubHex"])) then
             put "drop   audit from an unseated key" & return after gGame["netLog"]
             break
          end if
@@ -9346,7 +9835,7 @@ command heNetFoldGameWire pTypeTxt, pFromHex, pBodyTxt, pHandTxt
             break
          end if
          put gGame["oDeal"]["ckptHeadBy"][tStreetName] into tCkptHead
-         if tCkptHead is not empty and tHeadHex is not tCkptHead then
+         if tCkptHead is not empty and not heHexEq(tHeadHex, tCkptHead) then
             put "CKPT-FORK seat " & tFromSeat & " signed a different " & tStreetName \
                   & " head -- host equivocation evidence" & return after gGame["netLog"]
             break
@@ -9367,8 +9856,8 @@ command heNetFoldGameWire pTypeTxt, pFromHex, pBodyTxt, pHandTxt
             put "drop   " & pTypeTxt & " from an unseated key" & return after gGame["netLog"]
             break
          end if
-         put tBodyA["seat"] into tSeat
-         if tSeat is not a number or tSeat is not tFromSeat then
+         put heCanonIdx(tBodyA["seat"], kHeMaxSeats) into tSeat
+         if tSeat is empty or ("n" & tSeat) is not ("n" & tFromSeat) then
             put "drop   " & pTypeTxt & " for a seat the sender does not own" & return after gGame["netLog"]
             break
          end if
@@ -9496,7 +9985,9 @@ command heNetGameReact
    -- At level 1 the dealer is the ORACLE: seats seal to its session box, and
    -- the oracle "seals to itself" too, so the transcript carries every
    -- contributor's seal uniformly and the counts stay simple.
-   if tPos > 0 and gGame["oDeal"]["commitN"] >= tContribN \
+   -- (every threshold here WALKS the canonical keys -- heNetPosFilled,
+   -- heNetSeatsFilled -- rather than trusting a count, 2026-09-25)
+   if tPos > 0 and heNetPosFilled("commitsBy") >= tContribN \
          and gGame["oDeal"]["sealSent"] is not "true" \
          and gGame["oDeal"]["sealsBy"][tPos] is empty then
       put heNetDealerPubHex() into tDealerPubHex
@@ -9518,7 +10009,7 @@ command heNetGameReact
    -- re-derives; per-seat delivery inside is presence-guarded, so seats the
    -- transcript already served are never re-sent). heNetWeDeal: the button
    -- seat at level 0, the seatless ORACLE at level 1.
-   if heNetWeDeal() and gGame["oDeal"]["sealN"] >= tContribN \
+   if heNetWeDeal() and heNetPosFilled("sealsBy") >= tContribN \
          and gGame["oDeal"]["dealerDealA"] is not an array then
       heNetDealerDeal
    end if
@@ -9526,7 +10017,7 @@ command heNetGameReact
    -- money), then the SB, and the BB only after it SEES the SB fold -- so the
    -- two forced posts can never race in the relay's ordering. Seats only
    -- (tMySeat > 0): the oracle contributes entropy, never chips.
-   if gGame["oDeal"]["holeN"] >= tCount and tPos > 0 and tMySeat > 0 then
+   if heNetSeatsFilled("holeSealedBy") >= tCount and tPos > 0 and tMySeat > 0 then
       put gGame["state"] into tStateA
       if tStateA["phase"] is "blinds" then
          if gGame["ante"] > 0 and gGame["oDeal"]["anteSent"] is not "true" \
@@ -9612,7 +10103,7 @@ command heNetGameReact
    -- 9. host: emit the settle once every seed is revealed (the oracle's own
    -- reveal included); every client will verify it against its own
    -- recomputation before folding it
-   if gGame["isHost"] is "true" and gGame["oDeal"]["revealN"] >= tContribN \
+   if gGame["isHost"] is "true" and heNetPosFilled("revealsBy") >= tContribN \
          and gGame["oDeal"]["settleSent"] is not "true" \
          and (tStateA["phase"] is "showdown" or tStateA["phase"] is "handdone") then
       put heNetComputeSettleTxt() into tDeltasTxt
@@ -9677,7 +10168,7 @@ command heNetDealerDeal
    -- verify each against its commitment (a mismatch aborts the deal, named),
    -- derive the committed deck, and send each seat its two hole cards sealed
    -- to ITS session key (spec 7.1 steps 3-4)
-   local tPos, tCount, tSeedsA, tSealedHex, tSeedHex, tOpenErr, tBad
+   local tPos, tCount, tSeedsA, tSealedHex, tSeedHex, tOpenErr, tBad, tPosBad
    local tDealA, tOccList, tSeatNum, tHolePair, tPeerPubHex, tPeerBoxHex
    local tSealErr, tSealedOut
    set the itemDelimiter to comma
@@ -9694,8 +10185,20 @@ command heNetDealerDeal
       catch tOpenErr
          put empty into tSeedHex
       end try
-      if not heIsHex(tSeedHex, 64) \
-            or heSeedCommitHex(tSeedHex) is not gGame["oDeal"]["commitsBy"][tPos] then
+      -- NESTED, not one `or` (2026-09-25): both operands of `or` are
+      -- evaluated (engine note 2.5), and the old one-liner hashed the seed
+      -- even when it had just failed heIsHex -- through sxHex2Bin, which
+      -- throws on malformed input -- so a contributor that sealed garbage
+      -- threw out of the react pass instead of reaching this named abort
+      -- (H4). The commitment compare is heHexEq, never bare `is` (engine
+      -- note 2.11: a number-like commit opens to any number-like seed hash).
+      put "false" into tPosBad
+      if not heIsHex(tSeedHex, 64) then
+         put "true" into tPosBad
+      else if not heHexEq(heSeedCommitHex(tSeedHex), gGame["oDeal"]["commitsBy"][tPos]) then
+         put "true" into tPosBad
+      end if
+      if tPosBad is "true" then
          put "AUDIT  seal at pos " & tPos & " bad or commit-mismatched -- deal aborted" & return after gGame["netLog"]
          put "true" into tBad
       end if
@@ -9790,7 +10293,7 @@ function heNetRevealedDealA
    if tCount is not a number or tCount is 0 then
       return empty
    end if
-   if gGame["oDeal"]["revealN"] < tCount then
+   if heNetPosFilled("revealsBy") < tCount then
       return empty
    end if
    repeat with tPos = 1 to tCount
@@ -10757,11 +11260,20 @@ function heBetApply pStateA, pMsgType, pSeatNum, pAmount
             -- trunc of a non-number throws is the runbook's S1 row P). Nested,
             -- the refusal is the same under either reading, and the section
             -- that pins it (heTestLegalRun) can run headlessly (2026-09-11).
+            -- `is not an integer`, not `is not trunc(...)` (2026-09-25): the
+            -- old test compared two NUMBERS, and the engine calls numbers
+            -- within 10 DBL_EPSILON of each other equal (root
+            -- docs/OXT-ENGINE-NOTES.md 2.10, from the engine source), so
+            -- "57.0000000000001" and "400.0000000000002" passed it there
+            -- while IEEE and the family interpreter refused them -- a
+            -- fractional wager into shared state that no headless gate
+            -- could see. `is an integer` is exact on the engine (the parsed
+            -- double == its floor) and in the interpreter alike.
             if tTargetAmt is not a number then
                put "act-bad-amount" into tStateA["err"]
                return tStateA
             end if
-            if tTargetAmt is not trunc(tTargetAmt) then
+            if tTargetAmt is not an integer then
                put "act-bad-amount" into tStateA["err"]
                return tStateA
             end if
@@ -11028,7 +11540,11 @@ function heIsCardList pListTxt, pCount
       if tItem is not a number then
          return false
       end if
-      if tItem is not trunc(tItem) or tItem < 1 or tItem > 52 then
+      -- `is not an integer`, exact, where `is not trunc(tItem)` let a
+      -- near-integer through the engine's comparison tolerance (engine note
+      -- 2.10; heBetApply's act-bad-amount comment, 2026-09-25). tItem is a
+      -- number by now, so the `or` evaluating every operand (2.5) is safe.
+      if tItem is not an integer or tItem < 1 or tItem > 52 then
          return false
       end if
    end repeat
@@ -11299,7 +11815,11 @@ function heNetLogToHotseat pLogTxt
    -- session through the exact same replay path as a hotseat one. PURE
    -- (H5): reads no gGame. The input chain was verified wire-by-wire on
    -- ingest (heEnvVerify); this is a format translation, not a second
-   -- verification pass. The mapping:
+   -- verification pass -- except that since v0.25.5 (2026-09-25) it applies
+   -- the live fold's INDEX and HAND rules (canonical seats, counts and
+   -- positions; the per-hand binding; handStart's number and seat checks),
+   -- so a wire the table dropped for those reasons never reaches History.
+   -- Sender authority is still not re-checked here. The mapping:
    --   * the signed cfg's stakes + the sit wires' seats become the hotseat
    --     cfg line (stacks seed from the cfg's stack, as the live fold does),
    --     emitted once before the first handStart;
@@ -11327,6 +11847,7 @@ function heNetLogToHotseat pLogTxt
    local tHandLines, tShowLines, tSettleLine, tTableHex, tHoleLines
    local tOccList, tButton, tContribN, tSeedsA, tRevealN, tHandNum
    local tPos, tDealErr, tDeckList, tDealA, tHolePair, tNamesTxt, tSeenHand
+   local tPosI, tOccNew, tButtonNew
    set the itemDelimiter to comma
    put 1 into tCfgSB
    put 2 into tCfgBB
@@ -11354,6 +11875,18 @@ function heNetLogToHotseat pLogTxt
       put heEnvBodyText(tA["bodyHex"]) into tBodyTxt
       put tSeatByPubA[tA["from"]] into tFromSeat
       set the itemDelimiter to comma
+      -- the live fold's HAND BINDING (kHeHandBoundTypes, 2026-09-25): a
+      -- per-hand wire that does not carry the open hand was dropped at the
+      -- table, so History skips it too. Kept, last hand's commit replayed
+      -- into this one would be filed under this hand, and the audit (its
+      -- last line per position wins) would fail an honest deal on the
+      -- host's say-so. tHandNum is the last handStart History accepted.
+      if tTypeTxt is among the items of kHeHandBoundTypes then
+         if heCanonIdx(tHandTxt, empty) is empty \
+               or ("n" & tHandTxt) is not ("n" & tHandNum) then
+            next repeat
+         end if
+      end if
       switch tTypeTxt
          case "cfg"
             put tBodyTxt into tBodyA
@@ -11377,11 +11910,38 @@ function heNetLogToHotseat pLogTxt
             -- effect is already in the next handStart's seats
             put tBodyTxt into tBodyA
             split tBodyA by comma and "="
-            if tBodyA["seat"] is a number and tBodyA["pub"] is not empty then
-               put tBodyA["seat"] into tSeatByPubA[tBodyA["pub"]]
+            -- a CANONICAL seat only (heCanonIdx, 2026-09-25): the live sit
+            -- fold refuses any other spelling, and History must replay the
+            -- game the table actually played
+            put heCanonIdx(tBodyA["seat"], kHeMaxSeats) into tSeatNum
+            if tSeatNum is not empty and tBodyA["pub"] is not empty then
+               put tSeatNum into tSeatByPubA[tBodyA["pub"]]
             end if
             break
          case "handStart"
+            -- the live fold's handStart rules (2026-09-25): a canonical hand
+            -- number above the last one taken, a legal dealt-seat list
+            -- (heNetOccOfSeats) and a canonical button among it. The table
+            -- dropped anything else, so History skips it, BEFORE the
+            -- previous hand is flushed: a repeated handStart must not end
+            -- the hand it repeats. (The sender is not re-checked here: this
+            -- is a translation, not a second verification pass.)
+            put tBodyTxt into tBodyA
+            split tBodyA by comma and "="
+            if heCanonIdx(tHandTxt, empty) is empty then
+               break
+            end if
+            if tHandNum is not empty then
+               if tHandTxt <= tHandNum then
+                  break
+               end if
+            end if
+            put heNetOccOfSeats(tBodyA["seats"]) into tOccNew
+            put heCanonIdx(tBodyA["button"], kHeMaxSeats) into tButtonNew
+            if tOccNew is empty or tButtonNew is empty \
+                  or tButtonNew is not among the items of tOccNew then
+               break
+            end if
             -- flush the PREVIOUS hand first (its trailing show/muck wires
             -- land between its settle and this handStart)
             put heNetXlatFlush(tHandLines, tHoleLines, tShowLines, tSettleLine) after tOut
@@ -11393,11 +11953,8 @@ function heNetLogToHotseat pLogTxt
             put 0 into tRevealN
             put 0 into tContribN
             put "true" into tSeenHand
-            put tBodyTxt into tBodyA
-            split tBodyA by comma and "="
-            put tBodyA["seats"] into tOccList
-            replace "|" with comma in tOccList
-            put tBodyA["button"] into tButton
+            put tOccNew into tOccList
+            put tButtonNew into tButton
             put tHandTxt into tHandNum
             if tCfgDone is not "true" then
                -- the one-time hotseat cfg: the sit wires' seats, each
@@ -11422,11 +11979,11 @@ function heNetLogToHotseat pLogTxt
          case "dealLevel"
             put tBodyTxt into tBodyA
             split tBodyA by comma and "="
-            put tBodyA["count"] into tContribN
-            if tContribN is not a number then
+            put heCanonIdx(tBodyA["count"], kHeMaxSeats) into tContribN
+            if tContribN is empty then
                put 0 into tContribN
             end if
-            if tBodyA["level"] is "1" then
+            if ("n" & tBodyA["level"]) is "n1" then
                add 1 to tContribN   -- the oracle's entropy position
             end if
             put tA["table"] into tTableHex
@@ -11440,10 +11997,20 @@ function heNetLogToHotseat pLogTxt
          case "seedReveal"
             put tBodyTxt into tBodyA
             split tBodyA by comma and "="
-            if tBodyA["pos"] is a number and tSeedsA[tBodyA["pos"]] is empty then
-               put tBodyA["seed"] into tSeedsA[tBodyA["pos"]]
-               add 1 to tRevealN
+            -- canonical position, first wins, and the count WALKED over
+            -- 1..contributors (2026-09-25): this counted one reveal per new
+            -- raw key, so aliases could claim "all revealed" and re-derive
+            -- History's hole lines from a seed set with holes in it
+            put heCanonIdx(tBodyA["pos"], tContribN) into tPos
+            if tPos is not empty and tSeedsA[tPos] is empty then
+               put tBodyA["seed"] into tSeedsA[tPos]
             end if
+            put 0 into tRevealN
+            repeat with tPosI = 1 to tContribN
+               if tSeedsA[tPosI] is not empty then
+                  add 1 to tRevealN
+               end if
+            end repeat
             put heLogLine(tHandTxt, heNetXlatFrom(tFromSeat), "seedReveal", tBodyTxt) \
                   & return after tHandLines
             break
@@ -11462,9 +12029,15 @@ function heNetLogToHotseat pLogTxt
             -- verb/amount by name).
             put tBodyTxt into tBodyA
             split tBodyA by comma and "="
-            if tBodyA["timeout"] is "1" and tBodyA["seat"] is a number then
-               put heLogLine(tHandTxt, "seat" & tBodyA["seat"], tTypeTxt, tBodyTxt) \
-                     & return after tHandLines
+            -- the timeout's seat is CANONICAL or the line is not replayed
+            -- (2026-09-25): "seat03" would reach the fold as seat "03", which
+            -- the live table refused; the fold would have acted on it
+            put heCanonIdx(tBodyA["seat"], kHeMaxSeats) into tSeatNum
+            if tBodyA["timeout"] is "1" then
+               if tSeatNum is not empty then
+                  put heLogLine(tHandTxt, "seat" & tSeatNum, tTypeTxt, tBodyTxt) \
+                        & return after tHandLines
+               end if
             else if tFromSeat is a number then
                put heLogLine(tHandTxt, "seat" & tFromSeat, tTypeTxt, tBodyTxt) \
                      & return after tHandLines
@@ -12929,11 +13502,13 @@ command heSettingsApply
 end heSettingsApply
 
 function heSettingsNumOk pVal, pMin
-   -- a whole, non-negative number at least pMin
+   -- a whole, non-negative number at least pMin. `is not an integer` is
+   -- exact; `is not trunc(pVal)` passed a near-integer through the engine's
+   -- comparison tolerance (engine note 2.10; heBetApply, 2026-09-25)
    if pVal is not a number then
       return false
    end if
-   if pVal is not trunc(pVal) then
+   if pVal is not an integer then
       return false
    end if
    return pVal >= pMin
@@ -13001,7 +13576,7 @@ command heLobbyRefresh
       if tSeatRole is empty then
          put "player" into tSeatRole
       end if
-      if tKeyPub is gGame["idPubHex"] then
+      if heHexEq(tKeyPub, gGame["idPubHex"]) then
          put "* " after tRoster
       else
          put "  " after tRoster
@@ -14922,19 +15497,26 @@ function heSelfTest
    --     unreadable while its report was perfect. That exact failure cost the
    --     2026-08-09 engine pass two members; it is not a hypothetical.
    --
-   -- THE FIRST LINE IS THE CONTRACT: exactly two numbers plus "passed" and
-   -- "failed", in that order, and nothing else. One extra word and
-   -- stSummaryCounts reads the line as prose and refuses it (which is the
-   -- behaviour that makes the parse safe, not a bug to work around). So the
-   -- skip count gets its own line, and the run's banner stays below the
-   -- divider where it can never be mistaken for a summary.
+   -- THE FIRST LINE IS THE CONTRACT: exactly three numbers plus "passed",
+   -- "failed" and "skipped", in that order, and nothing else - the form the
+   -- core's stSummaryCounts has read since 2026-08-17. One extra word and it
+   -- reads the line as prose and refuses it (which is the behaviour that
+   -- makes the parse safe, not a bug to work around), so the explanation of
+   -- the skips gets its own line, and the run's banner stays below the
+   -- divider where it can never be mistaken for a summary. Until 2026-09-25
+   -- the first line carried only two counts and the skip count sat on that
+   -- prose line, so the suite paste printed these skips and never merged
+   -- them: its board row said 0 skipped while this log listed 5.
    --
-   -- Verified statically; needs an OXT pass.
+   -- The quiet entry point ran on an engine inside the suite paste
+   -- (2026-09-24, 721 passed), and so did this three-count line in that
+   -- day's third run: the board merged the five skips (its row read
+   -- 723 / 0 / 5; holde-em/CLAUDE.md's ledger).
    heTestRunAllSections
    -- leave no timer of ours running inside somebody else's paste
    heTestSweepNetTimers
-   return gPassN && "passed," && gFailN && "failed" & return & \
-         gSkipN && "skipped (absent optional extensions and engine-only paths -- see the log)" \
+   return gPassN && "passed," && gFailN && "failed," && gSkipN && "skipped" \
+         & return & "(the skips are absent optional extensions and engine-only paths -- see the log)" \
          & return & "----------------------------------------" & return & gRpt
 end heSelfTest
 
@@ -15142,6 +15724,16 @@ command heTestDealRun
    heTAssert "deal: audit names a corrupted commit", \
          heAuditDeal(tTableData, 1, tSeedsA, tCommitsA, 3, tDealA, "1,2,3", 1), \
          "fail:commit-mismatch-position-2"
+   -- ...and a seed that is not hex NAMES its position rather than throwing
+   -- (2026-09-25, holde-em WORK-PLAN coding #12): heSeedCommitHex decodes
+   -- through sxHex2Bin, which throws on malformed hex, and the seed check
+   -- now runs first, in its own `if`
+   put kKatCommit2 into tCommitsA[2]
+   put "nothex" into tSeedsA[2]
+   heTAssert "deal: audit names a non-hex seed instead of throwing", \
+         heAuditDeal(tTableData, 1, tSeedsA, tCommitsA, 3, tDealA, "1,2,3", 1), \
+         "fail:seed-malformed-position-2"
+   put kKatSeed2 into tSeedsA[2]
 
    -- audit-from-TRANSCRIPT (mirror of tools/fold-kat.py): build the canned
    -- Level 0 log heHandStart would write and confirm heAuditDealsFromLog
@@ -15178,6 +15770,28 @@ command heTestDealRun
    replace ("pos=2,seed=" & kKatSeed2) with ("pos=2,seed=" & kKatSeed1) in tDealLog
    put heAuditDealsFromLog(tDealLog) into tAuditOut
    heTContains "deal: audit-from-transcript catches a tampered seed", tAuditOut, "deal-FAILED"
+   -- a HAND-EDITED transcript names what is malformed instead of throwing out
+   -- of the History audit (2026-09-25, coding #12): a non-hex seed, then a
+   -- contributor count that is not canonical (heCanonIdx; "03" used to run
+   -- the audit loop as the number 3)
+   replace ("pos=2,seed=" & kKatSeed1) with "pos=2,seed=nothex" in tDealLog
+   put heAuditDealsFromLog(tDealLog) into tAuditOut
+   heTContains "deal: a transcript's non-hex seed is named, not thrown", \
+         tAuditOut, "deal-FAILED fail:seed-malformed-position-2"
+   replace "pos=2,seed=nothex" with ("pos=2,seed=" & kKatSeed2) in tDealLog
+   replace ",count=3" with ",count=03" in tDealLog
+   put heAuditDealsFromLog(tDealLog) into tAuditOut
+   heTContains "deal: a transcript's non-canonical contributor count is named", \
+         tAuditOut, "deal-FAILED fail:count-malformed"
+   -- and an ALIAS commit line after the canonical one is dropped by the
+   -- canonical keying, so the real commitment stands (fold-kat pins the
+   -- same vector: its old int() keys let the alias overwrite position 1)
+   replace ",count=03" with ",count=3" in tDealLog
+   replace ("pos=3,commit=" & kKatCommit3) with ("pos=3,commit=" & kKatCommit3 & return \
+         & heLogLine(1, "seat1", "seedCommit", "pos=01,commit=" & kKatCommit2)) in tDealLog
+   put heAuditDealsFromLog(tDealLog) into tAuditOut
+   heTContains "deal: an alias commit line is dropped; the canonical one stands", \
+         tAuditOut, "1/1 deals verified"
 end heTestDealRun
 
 function heTIdentityDeck
@@ -15477,6 +16091,17 @@ command heTNetDeliver pPayloadTxt
    heNetOnMessage 0, textEncode(pPayloadTxt, "utf-8")
 end heTNetDeliver
 
+command heTNetHostWire pHandNum, pFromPubHex, pFromSec, pTypeTxt, pBodyTxt, pHostSec
+   -- the position-alias and stale-hand probes (2026-09-25): one wire from
+   -- pFromPubHex carrying hand pHandNum in its signed item 3, sequenced and
+   -- countersigned as the host would (next seq, our own chain head), and
+   -- ingested into the CURRENT gGame through the real verify-and-fold path
+   local tContent, tWire
+   put heEnvContentLine(kKatTableHex, pHandNum, pFromPubHex, pTypeTxt, pBodyTxt) into tContent
+   put heWireBuild(tContent, pFromSec, gGame["lastSeq"] + 1, gGame["chainHeadHex"], pHostSec) into tWire
+   heNetIngestWire tWire
+end heTNetHostWire
+
 command heTNetPump
    -- shuttle captured payloads between the contexts until all go quiet.
    -- Player outboxes carry "c" frames to the host; the host outbox carries
@@ -15625,6 +16250,8 @@ command heTestNetPlay
    local tStateA, tSbSeat, tBbSeat, tStep, tSeat, tOwe, tBoardTxt, tRcptHand1
    local tSnapG, tEvil, tEvilC, tOffPub, tOffSec, tDlrSeat, tDlrPub, tDlrSec, tStackSnap
    local tSeqSnap, tXlatTxt, tXlatFold, tOutboxTxt
+   local tHostSeat, tPlaySeat, tHostPos, tMyPos, tHandNext, tAliasList, tAlias
+   local tXlatCut, tStartKey, tCutN
    put return & "-- 15. Online Level 0 hand, end to end (single-machine loopback)" & return after gRpt
    if not heHasSodium() then
       heTSkip "netplay: online hand", "SodiumXT not installed"
@@ -15915,6 +16542,114 @@ command heTestNetPlay
          gGame["oDeal"]["settleDone"], "false"
    put tSnapG into gTNetPlayG
 
+   -- POSITION ALIASES, driven end to end through the real ingest path
+   -- (2026-09-25, v0.25.5; holde-em WORK-PLAN coding #11), on THROWAWAY
+   -- copies of the player. THE ATTACK: the dealer posts its OWN commitment
+   -- under aliases of its position before anyone has committed. Each alias
+   -- used to pass ownership as the NUMBER, land under its raw key and add
+   -- one to commitN, so the count reached the contributor count and the
+   -- honest seat sealed its seed to the dealer (react step 3) while the
+   -- dealer's real position was still empty: the dealer then ground its own
+   -- seed with every other seed in hand. Here the HOST seat deals a fresh
+   -- hand and the player is the victim.
+   put gTNetPlayG["seatByPub"][tHostPubHex] into tHostSeat
+   put gTNetPlayG["seatByPub"][tPlayPubHex] into tPlaySeat
+   put gTNetPlayG["handNum"] + 1 into tHandNext
+   put gTNetPlayG into gGame
+   put empty into gGame["netOutbox"]
+   put empty into gGame["netLog"]
+   heTNetHostWire tHandNext, tHostPubHex, tHostSec, "handStart", \
+         "seats=1|2,button=" & tHostSeat, tHostSec
+   heTNetHostWire tHandNext, tHostPubHex, tHostSec, "dealLevel", \
+         "level=0,dealer=" & tHostSeat & ",count=2", tHostSec
+   put heNetSeatPos(tHostSeat) into tHostPos
+   put heNetSeatPos(tPlaySeat) into tMyPos
+   put "0" & tHostPos & comma & tHostPos & ".0" & comma & "+" & tHostPos \
+         & comma & tHostPos & "e0" into tAliasList
+   repeat for each item tAlias in tAliasList
+      heTNetHostWire tHandNext, tHostPubHex, tHostSec, "seedCommit", \
+            "pos=" & tAlias & ",commit=" & kKatCommit1, tHostSec
+   end repeat
+   heTAssert "alias: the fresh hand is open at the victim (its commit sent, not yet on the chain)", \
+         gGame["handNum"] & "/" & gGame["oDeal"]["commitSent"], tHandNext & "/true"
+   heTAssert "alias: four aliases of the dealer's position are refused and none is stored", \
+         heNetPosFilled("commitsBy") & "/" & gGame["oDeal"]["commitN"] & "/" \
+         & gGame["oDeal"]["commitsBy"]["0" & tHostPos], "0/0/"
+   heTContains "alias: the refusal names the position as not canonical", \
+         gGame["netLog"], "is not canonical"
+   put gGame["netOutbox"] into tOutboxTxt   -- a plain local before it is searched (H6)
+   heTAssert "alias: the honest seat does NOT seal its seed on aliases (react step 3)", \
+         gGame["oDeal"]["sealSent"] & "/" & (tOutboxTxt contains "seedSeal"), "false/false"
+   -- the canonical commits, and only they, complete the count: the
+   -- dealer's own, then the victim's own (its seed as react derived it)
+   heTNetHostWire tHandNext, tHostPubHex, tHostSec, "seedCommit", \
+         "pos=" & tHostPos & ",commit=" & kKatCommit1, tHostSec
+   heTAssert "alias: the dealer's canonical commit counts once, and still no seal", \
+         heNetPosFilled("commitsBy") & "/" & gGame["oDeal"]["sealSent"], "1/false"
+   heTNetHostWire tHandNext, tPlayPubHex, tPlaySec, "seedCommit", "pos=" & tMyPos \
+         & ",commit=" & heSeedCommitHex(gGame["oDeal"]["mySeedHex"]), tHostSec
+   heTAssert "alias: with both canonical commits in, the victim seals -- and only now", \
+         heNetPosFilled("commitsBy") & "/" & gGame["oDeal"]["sealSent"], "2/true"
+   -- a REPEATED hand number is refused whole: every per-hand seed derives
+   -- from table and hand (heNetHandSeedHex), so a second hand 3 would re-deal
+   -- seeds the dealer already holds -- and it would wipe this hand's store
+   heTNetHostWire tHandNext, tHostPubHex, tHostSec, "handStart", \
+         "seats=1|2,button=" & tHostSeat, tHostSec
+   heTAssert "stale: a repeated handStart is refused and this hand's commits survive", \
+         (gGame["netLog"] contains "never repeat") & "/" & heNetPosFilled("commitsBy"), "true/2"
+   -- ...and History's translation applies the same rule (heNetLogToHotseat,
+   -- 2026-09-25): the repeat does not end the hand it repeats, so this
+   -- hand keeps ONE start line where the old translation wrote two
+   put return & tHandNext & tab & "table" & tab & "handStart" & tab into tStartKey
+   put heNetLogToHotseat(gGame["log"]) into tXlatTxt
+   put offset(tStartKey, tXlatTxt) into tCutN
+   put char (tCutN + 1) to -1 of tXlatTxt into tXlatCut
+   heTAssert "stale: History skips the repeated handStart too (one start line for the hand)", \
+         (tCutN > 0) & "/" & (tXlatCut contains tStartKey), "true/false"
+
+   -- STALE HANDS and THE DEAL SIDE, on a second throwaway where the PLAYER
+   -- deals. First the replay the hand binding closes: last hand's signed
+   -- commit, re-sequenced by the host into this hand's still-open position.
+   -- Its hand number is inside the player's signature, so the host cannot
+   -- rewrite it -- but until 2026-09-25 nothing READ it, and the victim
+   -- would have seen its position "already committed" and stayed silent.
+   put gTNetPlayG into gGame
+   put empty into gGame["netOutbox"]
+   put empty into gGame["netLog"]
+   heTNetHostWire tHandNext, tHostPubHex, tHostSec, "handStart", \
+         "seats=1|2,button=" & tPlaySeat, tHostSec
+   heTNetHostWire tHandNext, tHostPubHex, tHostSec, "dealLevel", \
+         "level=0,dealer=" & tPlaySeat & ",count=2", tHostSec
+   heTNetHostWire tHandNext - 1, tPlayPubHex, tPlaySec, "seedCommit", \
+         "pos=" & tMyPos & ",commit=" & kKatCommit2, tHostSec
+   heTAssert "stale: last hand's commit replayed into this hand is dropped; the position stays open", \
+         (gGame["netLog"] contains ("for hand " & (tHandNext - 1))) & "/" \
+         & gGame["oDeal"]["commitsBy"][tMyPos], "true/"
+   -- History skips it too: filed under this hand, the audit (last line per
+   -- position wins) would have failed an honest deal on the host's say-so
+   put heNetLogToHotseat(gGame["log"]) into tXlatTxt
+   heTAssert "stale: History's translation skips the replayed commit too", \
+         (tXlatTxt contains ("commit=" & kKatCommit2)), "false"
+   -- then the commit phase completes canonically, and the other seat posts
+   -- its seal under aliases: the dealer deals when its seal count says every
+   -- position is in (react step 4), so that count must not move either
+   heTNetHostWire tHandNext, tHostPubHex, tHostSec, "seedCommit", \
+         "pos=" & tHostPos & ",commit=" & kKatCommit1, tHostSec
+   heTNetHostWire tHandNext, tPlayPubHex, tPlaySec, "seedCommit", "pos=" & tMyPos \
+         & ",commit=" & heSeedCommitHex(gGame["oDeal"]["mySeedHex"]), tHostSec
+   repeat for each item tAlias in tAliasList
+      heTNetHostWire tHandNext, tHostPubHex, tHostSec, "seedSeal", \
+            "pos=" & tAlias & ",sealed=deadbeef", tHostSec
+   end repeat
+   heTAssert "alias: the dealer's seal count ignores four aliased seals", \
+         heNetPosFilled("sealsBy") & "/" & gGame["oDeal"]["sealN"], "0/0"
+   put gGame["netOutbox"] into tOutboxTxt   -- a plain local before it is searched (H6)
+   heTAssert "alias: so the deal never starts on aliases (react step 4)", \
+         (gGame["oDeal"]["dealerDealA"] is an array) & "/" & (tOutboxTxt contains "holeDeliver") \
+         & "/" & (gGame["netLog"] contains "deal aborted"), "false/false/false"
+   heTAssert "alias: and no hole delivery is counted (walked over the dealt seats)", \
+         heNetSeatsFilled("holeSealedBy"), 0
+
    put empty into gTNetHostG
    put empty into gTNetPlayG
    put tSaved into gGame
@@ -16001,6 +16736,14 @@ command heTestCryptoRun
          heEnvVerify(tWire, heBin2HexS(tHostPub), heBin2HexS(tPub), kHeGenesisPrev), "drop:unknown-from"
    heTAssert "crypto: verify drops a chain break", \
          heEnvVerify(tWire, heBin2HexS(tPub), heBin2HexS(tPub), kKatChainHead6), "drop:chain-break"
+   -- ...and so is a prev that equals the genesis head only AS A NUMBER
+   -- (2026-09-25): "0" `is` the 64-zero head under bare `is` on the engine
+   -- AND in the headless interpreter (both read two short all-digit texts
+   -- as numbers), so this is the pin that sees heEnvVerify's prev check
+   -- slip back from heHexEq to bare `is` (root docs/OXT-ENGINE-NOTES.md 2.11)
+   put heWireBuild(tContent, tSec, 1, "0", tSec) into tTampered
+   heTAssert "crypto: verify drops a prev that is the genesis head only as a number", \
+         heEnvVerify(tTampered, heBin2HexS(tPub), heBin2HexS(tPub), kHeGenesisPrev), "drop:chain-break"
    -- H4: a malformed (non-hex) field must DROP cleanly, never throw out of the
    -- poll loop. Corrupt the from-key to non-hex and confirm the verdict.
    put tWire into tTampered
@@ -17538,7 +18281,7 @@ command heTestHelpersRun
    -- Everything here is values-in/values-out (H5) and needs no extension,
    -- so this section never SKIPs as a whole; the one branch that reaches a
    -- bt* call probes for it and SKIPs by name.
-   local tSaved, tRcTxt, tRcErr, tDelimTxt, tRectTxt
+   local tSaved, tRcTxt, tRcErr, tDelimTxt, tRectTxt, tHexA, tHexB
    put return & "-- 21. Pure helpers: leaf values nothing else pinned (shallow)" & return after gRpt
    set the itemDelimiter to comma
 
@@ -17575,6 +18318,56 @@ command heTestHelpersRun
          heSettingsNumOk(empty, 0), "false"
    heTAssert "helpers: heSettingsNumOk accepts zero at minimum zero", \
          heSettingsNumOk(0, 0), "true"
+
+   -- heHexEq (2026-09-25): THE compare for hex identifiers, because bare
+   -- `is` reads two number-like texts as NUMBERS (root
+   -- docs/OXT-ENGINE-NOTES.md 2.11, from the engine source; not yet
+   -- observed here). Each pin states the HELPER's answer, which the engine
+   -- and the family interpreter compute alike; the labels say what bare
+   -- `is` answers instead. The interpreter reads exponent forms as text, so
+   -- of the number-like pins only the genesis one fails headlessly if
+   -- heHexEq's body slips back to bare `is` (the case pin fails there too,
+   -- but only because the model's `is` is case-sensitive); the others are
+   -- the engine run's to tell apart. The first pair are valid 64-hex
+   -- (heIsHex admits both, so both pass a wire's shape check), and both
+   -- overflow a double to +inf.
+   put "1e" & "01234567890123456789012345678901234567890123456789012345678901" into tHexA
+   put "2e" & "01234567890123456789012345678901234567890123456789012345678901" into tHexB
+   heTAssert "helpers: heHexEq keeps two overflowing 64-hex texts apart (bare is: equal on the engine)", \
+         heHexEq(tHexA, tHexB) & "," & heIsHex(tHexA, 64) & "," & heIsHex(tHexB, 64), "false,true,true"
+   heTAssert "helpers: heHexEq keeps 1e5 and 100000 apart (bare is: equal on the engine)", \
+         heHexEq("1e5", "100000"), "false"
+   heTAssert "helpers: heHexEq keeps the 64-zero genesis head and 0 apart (bare is: equal everywhere)", \
+         heHexEq(kHeGenesisPrev, "0") & "," & heHexEq(kHeGenesisPrev, kHeGenesisPrev), "false,true"
+   heTAssert "helpers: heHexEq calls a hex text equal to itself", heHexEq(tHexA, tHexA), "true"
+   heTAssert "helpers: heHexEq is case-blind, as hex is (an honest commit in either case passes)", \
+         heHexEq(toUpper(kKatCommit1), kKatCommit1), "true"
+
+   -- heCanonIdx (2026-09-25, v0.25.5): the one gate every wire index -- a
+   -- contributor position, a seat, a count, a hand number, a seq -- passes
+   -- before anything reads it as a number. Each alias below is the NUMBER 3
+   -- to `is` and to a chunk index, and each used to become its own stored,
+   -- counted position (section 15 drives that attack end to end).
+   heTAssert "helpers: heCanonIdx refuses every alias of 3", \
+         heCanonIdx("03", 9) & "|" & heCanonIdx("3.0", 9) & "|" & heCanonIdx("+3", 9) \
+         & "|" & heCanonIdx(" 3", 9) & "|" & heCanonIdx("3e0", 9) & "|" & heCanonIdx("3 ", 9), \
+         "|||||"
+   heTAssert "helpers: heCanonIdx refuses zero, a sign, empty text and a value past the max", \
+         heCanonIdx("0", 9) & "|" & heCanonIdx("-3", 9) & "|" & heCanonIdx(empty, 9) \
+         & "|" & heCanonIdx("10", 9), "|||"
+   heTAssert "helpers: heCanonIdx keeps a canonical index, bounded or not", \
+         heCanonIdx("3", 9) & "|" & heCanonIdx("9", 9) & "|" & heCanonIdx("12", empty), "3|9|12"
+   heTAssert "helpers: heCanonIdx stops at 14 digits (below where the engine blurs integers)", \
+         heCanonIdx("99999999999999", empty) & "|" & heCanonIdx("100000000000000", empty), \
+         "99999999999999|"
+   -- heNetOccOfSeats: the dealt-seat rule the live handStart fold and
+   -- History's translation share (2026-09-25); kHeMaxSeats is 6
+   heTAssert "helpers: heNetOccOfSeats rebuilds a legal seat list as canonical text", \
+         heNetOccOfSeats("1|3|4") & "/" & heNetOccOfSeats("2|6"), "1,3,4/2,6"
+   heTAssert "helpers: heNetOccOfSeats refuses one seat, a repeat, a descent, an alias, past the max, a gap", \
+         heNetOccOfSeats("1") & "|" & heNetOccOfSeats("1|1") & "|" & heNetOccOfSeats("3|1") \
+         & "|" & heNetOccOfSeats("1|03") & "|" & heNetOccOfSeats("1|7") \
+         & "|" & heNetOccOfSeats("1||2"), "|||||"
 
    -- heHandByOf: what the HUD subtracts to show chips BEHIND. Its contract
    -- has a sharp edge -- at "between" the deltas are ALREADY in stacksBy, so
@@ -18618,6 +19411,13 @@ command heTestLegalRun
    put heTBlinds(tStateA) into tStateA
    put heTAct(tStateA, 1, "raise,4.5", "act-bad-amount", "legal: fractional raise rejected") into tStateA
    put heTAct(tStateA, 1, "raise,abc", "act-bad-amount", "legal: non-numeric raise rejected") into tStateA
+   -- a NEAR-integer too (2026-09-25): the old `is not trunc(...)` test let
+   -- this through on the engine, whose comparison calls numbers within 10
+   -- DBL_EPSILON of each other equal (root docs/OXT-ENGINE-NOTES.md 2.10);
+   -- IEEE and the headless run refused it either way, so only an engine
+   -- run of this line tells the two tests apart
+   put heTAct(tStateA, 1, "raise,57.0000000000001", "act-bad-amount", \
+         "legal: a near-integer raise (57.0000000000001) rejected") into tStateA
    put heTAct(tStateA, 1, "raise,4", empty, "legal: the integer raise still lands") into tStateA
 end heTestLegalRun
 
@@ -18671,7 +19471,9 @@ command heTestShuffleRun
       put heDrawInt(tDrawState, tRangeN) into tDrawPair
       put item 1 of tDrawPair into tDrawVal
       put item 2 of tDrawPair into tDrawState
-      if tDrawVal < 1 or tDrawVal > tRangeN or tDrawVal is not trunc(tDrawVal) then
+      -- `is not an integer` is exact on the engine; `is not trunc(...)`
+      -- would call a near-integer whole (engine note 2.10, 2026-09-25)
+      if tDrawVal < 1 or tDrawVal > tRangeN or tDrawVal is not an integer then
          add 1 to tOutOfRange
       end if
    end repeat

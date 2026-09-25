@@ -202,8 +202,10 @@ Numbered as cited elsewhere in the suite (the suite's `tools/check-lcb-signature
 10. **LCB idioms do not exist in LCS**: no `{}` array literals; no subscripting a function
     result (`f(x)["k"]`); a bare `is empty` on an ARRAY is vacuously true (count `the keys of`
     instead); string literals have NO escapes (`"\0"` is two characters; use `numToByte`); `is`
-    is case-insensitive (`set the caseSensitive to true` for byte-exact compares). The checker
-    flags the first two (`LCS_ANTIPATTERNS`).
+    is case-insensitive (`set the caseSensitive to true`), and even then it compares two
+    NUMBER-LIKE operands as numbers ("1e5" is "100000"; suite engine note 2.11, from the engine
+    source), so a byte-exact compare also prefixes a letter to both sides or goes byte by byte.
+    The checker flags the first two (`LCS_ANTIPATTERNS`).
 11. **An EVENT name may never equal a public `dc*` handler name** (engine note 6.7). Dispatched
     names share ONE message namespace with public handlers and the LIBRARY handler wins, so the
     app's `on <name>` is never reached. Observed 2026-08-18 on `dcLocalDescription`: the
@@ -251,12 +253,18 @@ Numbered as cited elsewhere in the suite (the suite's `tools/check-lcb-signature
 | 2026-08-27 | OXT, two-machine session (platform not recorded) | suite paste; a DHT-signalled WebRTC chat | paste 2440 / 2 / 3, every folded member green; the 2 failures were the core's live loopbacks stalling on a machine blocking UDP to 127.0.0.1 (environment). Same evening the maintainer reported "the DHT-signalled WebRTC chat WORKS (real machines, one LAN)"; which stack (the dht-chat demo or closing-pass leg E) and the selected-pair type were not recorded |
 | 2026-09-12 | CI, no engine | `release-binaries.yml` run 34657390798 (`421bab3`) | every platform rebuilt from a tree containing `23a2914` (C++ gotcha 7) |
 | 2026-09-24 | headless Chromium 141.0.7390.37, Linux x86_64; no engine | `tests/browser-peer.html` against itself, and against the committed `x86_64-linux` library through the `dcx_*` C ABI (a scratch ctypes driver, in both roles) | the page's three checks green; `dcx_send_text` arrived as a string and `dcx_send_data` as an ArrayBuffer, byte-exact; the page's string and ArrayBuffer arrived as TEXT and PAYLOAD events; selected pair host / `prflx` (the browser hid its host address behind an mDNS name). Not the `.lcb`, not an engine: `docs/browser-interop.md` |
+| 2026-09-24 | OXT, Windows (the engine reports Win32), a 2026-09-12 DLL by the maintainer's account (its first engine load); version, OS build and bitness not recorded | the D-23 suite paste (built from `9aa62c8`; this harness byte-for-byte as at `6401e43`) | paste 2620 / 5 / 3 (2628); datachannelxt 39 folded, 0 failed, no skips: lifecycle, the stale-handle surface at its exact codes (including the oversize `dcSendText` on a stale handle, still -2, a leg the 2026-08-17 record did not name), the embedded-NUL refusal at -3 and its cleared last-error, and the `datachannel-helpers` section (the pump deliberately left unarmed). The core's live loopback created both peers and A's channel (`dcInit` 0, the version names libdatachannel, `dcPeerState(0)` -1), then stalled in phase `opening` to the 40 s deadline, its one FAIL; both loopbacks also stalled on 2026-08-27, whose phases and machine were not recorded (the suite runbook's trap 5.5; suspected environment, this machine's UDP loopback not yet tested independently). The day's second run (8:41 PM) read the same, line for line, so the live legs (open, the 60000 budget, delivery) did not run; `dcCleanup` 0. Board row 46 / 1 / 0; the paste's other FAILs were riptide's three and the enet loopback |
 
 ## Status
 
 The whole `dc*` surface is engine-proven (standalone async loopback 2026-08-15; folded
-through 2026-08-27), and the flagship demo ran on one machine on Linux and Windows
-(2026-08-18). No engine has loaded the 2026-09-12 binaries or any `universal-mac` dylib.
+through 2026-09-24), and the flagship demo ran on one machine on Linux and Windows
+(2026-08-18). The suite core's own live loopback (green 2026-08-20) stalled on 2026-08-27,
+recorded as a machine blocking UDP to 127.0.0.1 (environment; its phase not recorded), and in
+`opening` in both of 2026-09-24's runs (suspected environment; not yet tested independently).
+The 2026-09-24 paste ran on a 2026-09-12 Windows DLL (the maintainer's account; its bitness
+not recorded), those binaries' first engine load; no engine has loaded the 2026-09-12 Linux
+builds or any `universal-mac` dylib.
 C++ gotcha 7's two exits are driven natively by `tests/orphan_channel_test.cpp` (2026-09-24,
 ASan/UBSan and TSan), not by an engine. The pump's failure branches (`dcPollLastError`) are
 verified statically; needs an OXT pass.

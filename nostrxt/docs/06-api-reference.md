@@ -1,9 +1,10 @@
 # 06 - Public API Reference (`nx*` and `nxr*`)
 
-> **Status:** the `nx*` core is ENGINE-PROVEN 2026-08-24 (Windows x86_64, OXT 9.6.3). The
-> `nxr*` surface is split: `nxrConnect` through publish and the relay's ok-confirm are
-> LIVE-PROVEN the same day against wss://nos.lol; the receive leg, the NIP-42 exchange and every
-> ws:// path keep "verified statically; needs a live-relay pass" (`05-relay-client.md`).
+> **Status:** the `nx*` core is ENGINE-PROVEN 2026-08-24 (Windows x86_64, OXT 9.6.3), and again
+> 2026-09-24 (Windows, the engine reports Win32). The `nxr*` surface is split: `nxrConnect`
+> through publish and the relay's ok-confirm are LIVE-PROVEN 2026-08-24 against wss://nos.lol;
+> the receive leg, the NIP-42 exchange and every ws:// path keep "verified statically; needs a
+> live-relay pass" (`05-relay-client.md`).
 
 The public surface of both files, handler by handler: the pure-compute core
 (`src/nostrxt.livecodescript`, `nx*`) and the relay client

@@ -149,11 +149,12 @@ The dated records are in [CLAUDE.md](CLAUDE.md), "As-built notes"; this is the s
 - **Engine passes of the library:** 2026-08-08 (phase 1, the hash surface); 2026-08-10 (phases 2-4,
   207/207); 2026-08-12 (phase 5, 230/230, Windows x64); 2026-08-17 (WIF, ABI 5 and the ABI 6
   BIP-340 / BIP-341 surface, 278/278, Windows x86_64, OXT 9.6.3); 2026-08-24 (the BIP-341 sighash and
-  script-path handlers, 290/290, Windows x86_64, OXT 9.6.3). Every handler through ABI 6 (94 of 95) has
-  run green on an engine.
-- **ABI 7, `cxPubkeyCombine` (2026-09-10):** verified statically and headlessly; needs an OXT pass. No
-  engine has loaded the five binaries rebuilt at ABI 7 (release run 34657390798, 2026-09-12), and the
-  `x86-win32` DLL has never executed anywhere.
+  script-path handlers, 290/290, Windows x86_64, OXT 9.6.3); 2026-09-24 (ABI 7, 296/296, the suite
+  paste on Windows). Every handler (95 of 95) has now run green on an engine.
+- **ABI 7, `cxPubkeyCombine` (2026-09-10):** ran green on an engine on 2026-09-24 (the suite paste on
+  Windows: its six checks), on the 2026-09-12 DLL (release run 34657390798), that build's first engine
+  load. Its bitness was not recorded, so the `x86-win32` DLL may still never have executed anywhere,
+  and no engine has loaded the Linux or mac builds.
 - **Independent acceptance:** 2026-08-12, and 2026-08-13 for all four transaction families
   (python-bitcointx 1.1.5 and eth-account 0.13.7, 31 checks, a negative control in each).
 - **Broadcast:** Bitcoin testnet spends built over the `cx*` sighash and encoder were accepted from the

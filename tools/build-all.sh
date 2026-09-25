@@ -161,6 +161,16 @@ if [ -f tools/test-checker.py ]; then
   echo "== suite: tools/test-checker.py =="
   python3 tools/test-checker.py
 fi
+# Fixtures FIRST (D-23, 2026-09-24): the suite core is a kit adopter, and the
+# generated paste is skipped by EXACT PATH through GENERATED_CARRIERS - so the
+# fixture proves the skip is load-bearing and path-exact (a byte copy of the
+# paste anywhere else in tests/ is still flagged) before the gate is trusted.
+# It mutates the core in place and plants a file in tests/: never run it
+# beside another gate that reads those files.
+if [ -f tools/test-ui-kit-drift.py ]; then
+  echo "== suite: tools/test-ui-kit-drift.py =="
+  python3 tools/test-ui-kit-drift.py
+fi
 if [ -f tools/check-ui-kit-drift.py ]; then
   echo "== suite: tools/check-ui-kit-drift.py =="
   python3 tools/check-ui-kit-drift.py
@@ -175,6 +185,10 @@ fi
 if [ -f tools/check-stack-size.py ]; then
   echo "== suite: tools/check-stack-size.py =="
   python3 tools/check-stack-size.py
+fi
+if [ -f tools/test-harness-scaffold-drift.py ]; then
+  echo "== suite: tools/test-harness-scaffold-drift.py =="
+  python3 tools/test-harness-scaffold-drift.py
 fi
 if [ -f tools/check-harness-scaffold-drift.py ]; then
   echo "== suite: tools/check-harness-scaffold-drift.py =="
@@ -509,6 +523,14 @@ fi
 # pastes into an engine is no longer the one the sources describe - and it will
 # still run, and still go green, about code that moved. Same failure and same
 # gate shape as tools/sync-demo-embeds.py.
+# The generator's own refusals first (D-23): a hand-written late declaration,
+# a continued one, a drifted rewrite needle and an unexcused registry member
+# must each stop the build, and the declaration hoist must move exactly the
+# carried blocks' declarations and nothing else.
+if [ -f tools/test-build-suite-selftest.py ]; then
+  echo "== suite: tools/test-build-suite-selftest.py =="
+  python3 tools/test-build-suite-selftest.py
+fi
 if [ -f tools/build-suite-selftest.py ]; then
   echo "== suite: tools/build-suite-selftest.py --check =="
   python3 tools/build-suite-selftest.py --check
@@ -546,6 +568,13 @@ if [ -f tools/build-preflight.py ]; then
   echo "== suite: tools/build-preflight.py --check =="
   python3 tools/build-preflight.py --check
 fi
+# Every check the gate makes, proven to fire on a seeded defect (one mutation
+# per case, the needle present exactly once) and to stay quiet on the negative
+# controls, before the gate is trusted on the committed paste.
+if [ -f tools/test-suite-selftest.py ]; then
+  echo "== suite: tools/test-suite-selftest.py =="
+  python3 tools/test-suite-selftest.py
+fi
 if [ -f tools/check-suite-selftest.py ]; then
   echo "== suite: tools/check-suite-selftest.py =="
   python3 tools/check-suite-selftest.py
@@ -559,6 +588,24 @@ fi
 if [ -f tools/check-suite-coverage.py ]; then
   echo "== suite: tools/check-suite-coverage.py =="
   python3 tools/check-suite-coverage.py --check
+fi
+
+# --- suite-level: and the board RUNS -----------------------------------------
+# The three gates above prove the paste is current, structurally sound and
+# reaches the suite; none executes a line of it. The board (D-23) is booted
+# headlessly through riptide's stack runner in an all-absent profile and
+# driven through its real routes (a row's Run, Show, the filters, Copy, a
+# close mid-run, the boot self-check). It settles LOGIC only - no rendering,
+# parsing or message delivery - so it upgrades no honesty label. The fixture
+# runs FIRST: each case seeds one defect into a scratch copy of the paste and
+# requires the gate to fail on the check that names it.
+if [ -f tools/test-suite-ui-boot.py ]; then
+  echo "== suite: tools/test-suite-ui-boot.py =="
+  python3 tools/test-suite-ui-boot.py
+fi
+if [ -f tools/check-suite-ui-boot.py ]; then
+  echo "== suite: tools/check-suite-ui-boot.py =="
+  python3 tools/check-suite-ui-boot.py
 fi
 # tools/install-release-binaries.py is the one piece of code standing between a
 # freshly built artifact and a committed binary, and until now NOTHING ran it

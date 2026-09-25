@@ -240,7 +240,7 @@ command stShow
    -- has always rendered. This handler is ALSO called from an async pump, on a
    -- `send ... in` tick, where they are not: with another window in front the
    -- write would throw "Chunk: error in object expression", and in the suite
-   -- core that throw lands in stPump, which is where the timer re-arms.
+   -- core that throw lands in suPump, which is where the timer re-arms.
    -- PRECAUTIONARY, NOT DIAGNOSED. It was written on 2026-08-20 while chasing
    -- two engine reports that ended mid-CROSS-section, and that was the wrong
    -- cause: the third run, same build, completed 1981/0/1 through both

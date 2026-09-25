@@ -60,11 +60,12 @@ script "RiptideSocial"
 -- bogus handle), the only ones its harness section has. The LIVE halves
 -- keep their labels: a kind-C post walked by a second machine, BTXO over
 -- a real Tor stream, deadlines on a playing fetch. The phase-8 layer
--- (built 2026-08-29) is verified statically and executed headlessly
--- (tools/check-script-vectors.py); it needs an OXT + live-relay pass
--- (riptide/CLAUDE.md's status). The harness sections added after
--- 2026-08-24 (Nostr, app state, the watermarks, the u64 bound, the
--- 996-byte cap) have not run on an engine yet.
+-- (built 2026-08-29) ran its offline compute engine-green on 2026-09-24:
+-- the harness sections added after 2026-08-24 (Nostr, app state, the
+-- watermarks, the u64 bound, the 996-byte cap) all met an engine in that
+-- day's suite paste, and after the day's two fixes the harness read 489
+-- passed, 0 failed, 2 skipped (the live-tor legs). Its relay half still
+-- needs an OXT + live-relay pass (riptide/CLAUDE.md's ledger and status).
 --
 -- WHAT THIS LAYER OWNS
 --   - the master seed and the RIPTKEY1 sealed key file (Argon2id + secretbox,
@@ -4940,11 +4941,49 @@ private function rsReadBEu64 pBytes
    -- answer rather than a rounded one. EVERY call site checks for empty and
    -- refuses the record; that is what makes this safe rather than merely
    -- different.
+   --
+   -- THE BOUND IS DECIDED ON THE TWO u32 HALVES (2026-09-24): hi * 2^32 + lo
+   -- is at most 2^53 exactly when hi < 2^21 (2097152), or hi = 2^21 and
+   -- lo = 0. Each half is built from four bytes, so both are exact integers
+   -- below 2^32, and every comparison below is between integers that differ
+   -- by at least 1 at that modest magnitude. No rounding rule and no
+   -- comparison tolerance an engine could plausibly apply changes its answer,
+   -- and on the engine it refused 2^53 + 1 (2026-09-24, the day's second
+   -- run of the suite paste).
+   --
+   -- It used to be `if tHi > (9007199254740992 - tLo) / 4294967296`, and on
+   -- 2026-09-24 (OXT, Win32, the suite paste's riptide fold) that line
+   -- ACCEPTED a seq of 2^53 + 1: the harness check "a seq of 2^53 + 1 is
+   -- REFUSED" failed (OBSERVED). For hi = 2^21, lo = 1 the right side is
+   -- 2097151.99999999977, which pure IEEE puts below 2097152, so the family
+   -- interpreter (Python floats) refused and every headless gate stayed
+   -- green. But the two sides differ by about 2.3e-10, a relative 1.1e-16,
+   -- and the engine did not answer that comparison the way IEEE does. The
+   -- same day's second run showed the engine answering nearly-equal numbers
+   -- as equal (1 + 2^-51 > 1 reads false on it), and refused 2^53 + 1
+   -- through the halves bound that follows; its third named the rule (the
+   -- harness's probe lines; suite engine note 2.10): two numbers within 10
+   -- DBL_EPSILON of the SMALLER one are EQUAL. So integers one apart blur
+   -- only from about 4.5e14, and the halves never get near that. The rule
+   -- here holds under that rule and any looser one: decide a bound on a
+   -- wide integer by comparing exact integers that differ by at least 1 at a
+   -- modest magnitude - never against a quotient, and never on a difference
+   -- smaller than the tolerance. tools/check-script-vectors.py replays this
+   -- bound under the engine's rule and two margin models, after proving that
+   -- each of them accepts 2^53 + 1 through the old line as the engine did.
+   -- Plain nested ifs, no compound `and`: both operands of one always
+   -- evaluate (engine notes 2.5). Harmless here, but the habit costs less
+   -- than the audit.
    local tHi, tLo
    put rsReadBEu32(byte 1 to 4 of pBytes) into tHi
    put rsReadBEu32(byte 5 to 8 of pBytes) into tLo
-   if tHi > (9007199254740992 - tLo) / 4294967296 then
+   if tHi > 2097152 then
       return empty
+   end if
+   if tHi is 2097152 then
+      if tLo is not 0 then
+         return empty
+      end if
    end if
    return tHi * 4294967296 + tLo
 end rsReadBEu64

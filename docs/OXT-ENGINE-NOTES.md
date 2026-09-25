@@ -143,6 +143,11 @@ the node unchanged instead of throwing: a fail-OPEN in a derivation path.
 **Rule:** never infer "no trailing empty component" from an item count; check the string.
 
 ### 2.3 `itemDelimiter` and `lineDelimiter` are global mutable state
+**Superseded in part, OBSERVED 2026-09-24 (Windows; read the counterpoint
+and its settlement below first):** on that engine the itemDelimiter is
+HANDLER-LOCAL in both directions (the lineDelimiter was not probed). The rule
+stands; the title's cross-handler claim does not, for the itemDelimiter, and
+the number is kept because the tree cites it.
 **OBSERVED** (several times, in shipped code). A handler that sets one and
 returns without restoring it corrupts every later parse in unrelated code; the
 symptom is always "item 1 returned the whole list". **Rule:** save, set,
@@ -160,6 +165,28 @@ tab reaches a called handler, and whether a callee's comma leaks back - so its
 first engine run settles it: record the answer here, and reclassify this entry
 only then. The rule holds under both readings, which is why nothing changes
 until it does.
+**Settled for Windows, OBSERVED 2026-09-24** (the D-23 suite paste's first
+run, box2dxt harness v32 folded in, 385/0; runbook section 8): both halves
+printed the dictionary's answer. "a caller's tab does NOT reach a called
+handler on Win32 (it saw comma)", and "a Kit call left its caller's delimiter
+alone on Win32 (tab in, tab out)". So on that engine an itemDelimiter set in
+one handler is invisible to the handlers it calls and cannot leak back out of
+them: the title's "global" is WRONG there for the itemDelimiter. The probe
+reads only `the itemDelimiter`; the lineDelimiter, which the dictionary
+describes the same way, was not probed. This entry's undated observations
+(platforms unknown) were most likely the leak that both readings share - a
+delimiter left set for the rest of ONE handler, reaching a later parse in the
+same handler. Linux and macOS have not run the probe; it is one engine build
+on one platform, and the dictionary's claim is platform-independent, so the
+expectation is the same answer everywhere, not yet the evidence.
+**What changes:** the reason, not the rule. Save, set, restore still guards
+the rest of the handler that set the delimiter, which is where every
+remaining hazard lives, and it costs nothing where it is redundant. What no
+longer holds is "an unrestored delimiter corrupts its caller" - many member
+comments and the carried templates' gotcha still say it, and that wording is
+open work (WORK-PLAN suite-wide), not a defect: nothing that restores a
+delimiter is wrong for doing so. **Does NOT mean:** a handler may leave a
+delimiter set and then parse something else itself.
 
 ### 2.4 Every number is an IEEE double, so integers are exact only to 2^53
 **DOCUMENTED** (LiveCode's numeric model; runbook row P is the five-minute
@@ -172,7 +199,9 @@ REFUSES any integer past the exact range; before that it computed at Python's
 arbitrary precision, looser than the engine.
 **Rule:** never accumulate past 2^53. Split into bytes, hex or decimal digits
 (coinxt's no-bignum discipline), and bound every wide decoder at its parse
-site, because after the arithmetic nothing is left to detect.
+site, because after the arithmetic nothing is left to detect - and decide
+that bound on exact integers, not against a quotient: on 2026-09-24 an engine
+let 2^53 + 1 through a quotient-form bound that IEEE arithmetic refuses (2.10).
 
 ### 2.5 `and` and `or` evaluate BOTH operands - there is no short-circuit
 **DOCUMENTED** for the rule itself (runbook row P(b) is the probe that would
@@ -262,6 +291,154 @@ many it filled (`binaryEncode` is the function that returns data).
 **Rule:** `get binaryDecode("H*", pData, tHex)`, then read `tHex`. **Gate:**
 none.
 **Does NOT mean:** `binaryEncode` returns its result like any function.
+
+### 2.10 A comparison of two nearly-equal numbers is not decided the IEEE way: a bound checked against a QUOTIENT lets the value through
+**OBSERVED 2026-09-24** (Windows, the D-23 suite paste's first run; runbook
+section 8): riptide's `rsReadBEu64` refused a u64 past 2^53 with
+`if tHi > (9007199254740992 - tLo) / 4294967296 then return empty`. For the
+first unrepresentable value, 2^53 + 1 (`tHi` = 2097152, `tLo` = 1), IEEE
+double arithmetic answers `2097152 > 2097151.99999999976716935...` TRUE, and
+so did the family interpreter, so every headless gate was green. On the engine
+the record PARSED, and the harness check "a seq of 2^53 + 1 is REFUSED (the
+first unrepresentable value)" went red while its neighbours (2^53 itself
+parses, and comes back exact; an all-ones u64 is refused) passed. The two
+operands differ by about 2.3e-10: 1.1e-16 of their size.
+**OBSERVED 2026-09-24, the second run (a fresh stack, the paste regenerated at
+21aaa61): the comparison treats nearly-equal numbers as equal.** The fixed harness prints
+four probes that pure IEEE answers `true,true,true,true`, and the engine read
+`true,false,false,false`: `1 + 1e-7 > 1` true, but `1 + 2^-51 > 1` false,
+`2097152 > (2^53 - 1) / 2^32` false (the old bound itself) and
+`1 + 23 * 2^-52 > 1 + 22 * 2^-52` false. The three that read false compare exact
+doubles, so it is how the engine decides a comparison, not its arithmetic.
+That reading fitted three families of rule (a relative tolerance, an absolute
+one, a decimal round trip), and nostrxt's "since excludes older events"
+(`1700000000 < 1700000001`, green in the same run) capped a relative one below
+5.9e-10.
+**OBSERVED 2026-09-24, the third run (10:10 PM local, a fresh stack, the paste
+as regenerated at b34f7b0): the tolerance is RELATIVE, between 8 and 16
+DBL_EPSILON.** The harness's second probe line read `true,false,16,16`:
+`1e-10 > 0` true (no absolute tolerance of that size), `2^30 + 2^-21 > 2^30`
+false (two ulps, 2 DBL_EPSILON of their size, called equal), and the smallest
+step the engine tells apart is 16 ulps both at 1 and at 8, where an ulp is 8
+times larger: 1 + 8 ulps compares equal to 1, 1 + 16 ulps does not, and the
+step scales with the size. Only the relative family predicted that reading (an
+absolute rule reads `false,true,K,K/8`, a decimal round trip
+`true,false,K,K/8`).
+**DOCUMENTED 2026-09-25, from the engine source**, which names the constant
+inside that bracket: `engine/src/exec-logic.cpp` (`MCLogicIsEqualTo`,
+`MCLogicCompareTo`; byte-identical in OXT's own tree,
+github.com/OpenXTalk-org/OpenXTalk-Community-DPE `master`, and in livecode
+`develop-9.6`) calls two unequal numbers EQUAL when
+`|a - b| / min(|a|, |b|) < MC_EPSILON`, or, when the smaller magnitude is
+itself below MC_EPSILON, when `|a - b| < MC_EPSILON`; `engine/src/sysdefs.h`
+defines `MC_EPSILON` as `DBL_EPSILON * 10.0` (about 2.2e-15) in both trees.
+That rule reproduces all eight readings of the two probe lines and the first
+run's accept. It governs every numeric `=`, `is`, `<>`, `is not`, `<`, `<=`,
+`>` and `>=` whenever both operands convert to numbers, number-like TEXT
+included (2.11). The maintainer's binary was not inspected, so the 10 is the
+source's: the harness's third probe line (2026-09-25) reads it to the digit on
+the next run (`N is N + 1` at N = 450359962737050 and at one less), with the
+consequences below.
+**What follows** (INFERRED from the rule, which predicted every reading so far;
+the third probe line reads each directly):
+- Two INTEGERS one apart compare EQUAL from N = 450,359,962,737,050 (2^52 / 10,
+  about 2^48.7), and d apart from about d x 4.5e14; below that every integer
+  comparison is exact. Nothing the tree compares honestly lives up there
+  (millisecond clocks sit near 1.7e12; satoshi amounts blur within a few sats
+  only past 4.5 million BTC; riptide's seqs start at 0 or at the seconds), but
+  a wire integer an attacker picks can (riptide/CLAUDE.md trap 9).
+- Near zero the tolerance is absolute: anything within 2.2e-15 of 0 equals 0.
+- A verdict that rests on a sub-integer gap fails at ANY size. coinxt's wallet
+  decoders bounded their accumulators as riptide did
+  (`tValue > (9007199254740992 - tByte) / 256`): a margin of 0.0039 at 3.5e13,
+  safe from an absolute tolerance, and under the relative rule the engine has,
+  exactly as broken as riptide's.
+**Rule:** decide a bound with exact INTEGERS that differ by at least 1 at a
+modest magnitude (below 2^48 at the very least) - compare the two u32 halves,
+or the leading bytes - and never against a quotient, a product past 2^53, or
+any value whose verdict hangs on a sub-integer difference. A wide integer that
+must be ORDERED exactly (a seq, an amount past 4.5e14) is compared on its
+halves too. A bound that only works in exact arithmetic is a bound the engine
+may not enforce. Both sites were rewritten that way on 2026-09-24: riptide's
+refused 2^53 + 1 on the engine in the second run; coinxt's (the wallet, which
+the paste does not carry) is verified statically; needs an OXT pass.
+**Gate:** riptide's harness checks the u64 bound from both sides (2^53 parses,
+2^53 + 1 is refused), which is how an engine run caught it, and prints the
+three probe lines above. Headlessly, the interpreter itself compares the IEEE
+way, so two gates replay the bounds under the ENGINE'S RULE and two candidates
+the probes ruled out, kept as margin (an absolute 1e-6 tolerance, a
+15-significant-digit round trip). Each model is first proven to reproduce the
+engine's accept through the old line, and the engine's rule to read the eight
+recorded probe answers through the interpreter while each margin model
+misreads one: `riptide/tools/check-script-vectors.py` (tier 1c, plus a static
+scan refusing a library comparison against a quotient) and
+`coinxt/tools/check-wallet-vectors.py` (tier 4). They settle the rewritten
+bounds' LOGIC. No gate yet refuses a comparison that falls INSIDE the
+tolerance anywhere else in the tree (docs/WORK-PLAN.md).
+**Does NOT mean:** integer arithmetic below 2^53 is inexact (it is exact:
+2.4), or that comparing small integers is unreliable. A verdict that rests on
+a difference below 10 DBL_EPSILON of the operands is, and for two integers one
+apart that begins at 4.5e14.
+
+### 2.11 `is` compares two number-like TEXTS as numbers, so hex digests and tokens can compare equal when their bytes differ
+**DOCUMENTED 2026-09-25, from the engine source; not yet observed here.**
+`MCLogicIsEqualTo` and `MCLogicCompareTo` (`engine/src/exec-logic.cpp`, the
+code 2.10 cites) first try to turn BOTH operands into numbers, and when both
+turn, compare them as numbers by 2.10's rule; only otherwise do they compare
+text. Text becomes a number through `MCU_strtor8`
+(`libfoundation/src/foundation-typeconvert.cpp`): an integer parse, then C
+`strtod` over up to 384 characters, with no range check. So:
+- `"1e5" is "100000"` and `"0012" is "12"` are true;
+- any two texts that overflow a double are both +inf, so `"1e999" is "2e999"`
+  is true;
+- `set the caseSensitive to true` changes none of this: case matters only on
+  the text path, which two number-like operands never reach. Data values go
+  through the same parse.
+A lowercase hex string is number-like when it is all digits, or digits, one
+`e`, digits. Among random 64-character digests that is rare (about 1 in 10^12),
+but a value an ATTACKER chooses can be number-like on purpose, and a digest
+whose preimage the attacker grinds needs about 2^41 tries. coinxt met the idea
+first as a hazard, never as a failure: its "discipline 3" moved the
+Base58Check checksum off `is` ("has not been observed to collide on this
+surface") and its harness compares hex with `("h" & pA) is ("h" & pB)`.
+**What it put at risk, and the fixes** (a read-only sweep, 2026-09-25; the
+costs computed, not demonstrated). holde-em's audit compared a seed commitment
+that came off the wire with `is not` against the hash of the revealed seed, so
+a dealer who committed a number-like value and held seeds whose hashes were
+number-like too passed the audit with whichever seed it liked; its chain-head
+checks had the same shape. quickshare's capability gate
+(`if tTok is not sCwToken`, 32 hex characters, in nocloud and in torrentxt's
+torrent-quickshare) admitted `/1e999/` on the one share in about 1.2 million
+whose token overflows, and datachannel-dht-chat's 8-hex answer nonces
+overflowed about 1 time in 120 each. All were fixed the same day: holde-em
+(v0.25.4, harness 46) compares every hex identifier through `heHexEq` (40
+sites; its 64-zero genesis head had compared equal to "0"), and the other two
+prefix a letter at the comparison. Verified statically; needs an OXT pass.
+The same parse makes INDEX aliases, and an array key keeps the raw text:
+holde-em checked a wire position as a NUMBER but stored and counted it under
+its raw spelling, so "03", "3.0", "+3", " 3" and "3e0" were position 3 to the
+check and five new positions to the count, and a dealer could fake "every
+commitment is in" and grind its own seed after the others'. The interpreter
+reads the first three forms as numbers too, so that half was visible
+headlessly; the rest is inferred from `MCU_strtol` and `strtod`. v0.25.5
+(harness 47, 2026-09-25) accepts only canonical digit text for every wire
+index (`heCanonIdx`), keys and compares by it, walks its counts over the
+hand's own range, and binds every per-hand wire to the open hand. Verified
+statically; needs an OXT pass.
+**Rule:** never compare a hex digest, a token, a key or any identifier with
+bare `is`, `is not`, `=` or `<>`. Prefix a letter to both sides (no number
+parse accepts `h1e5`), adding `set the caseSensitive to true` where case is
+part of the value (hex digits are not: `heHexEq` lowercases both sides), or
+compare byte by byte (coinxt's `cxCompareBytes`, nostrxt's `nxCtEqualHex`).
+riptide's "compare kinds by BYTE, never `is`" is the same rule, met from the
+case side.
+**Gate:** none yet (docs/WORK-PLAN.md suite-wide #18 proposes a static rule,
+#19 an interpreter that knows the parse). The family interpreter's `_eq`
+treats only `-?\d+(\.\d+)?` as a number, so it reads every exponent-form
+pair as text and no headless gate sees this class; holde-em's harness pins
+the genesis head against "0", the one number-like pair the interpreter does
+read as numbers. riptide's harness prints `"1e999" is "2e999"` and `"1e5" is "100000"` in its
+third probe line (2026-09-25), which reads the parse on the next run.
 
 ## 3. Control flow
 

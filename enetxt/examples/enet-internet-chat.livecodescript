@@ -32,7 +32,7 @@ script "EnetInternetChat"
 --   public IP is known, because libtorrent learns it from DHT traffic too.
 --
 -- HONESTY (the suite convention): every en* and bt* call here is individually
--- engine-proven (member harnesses green through 2026-08-24), and the UPnP +
+-- engine-proven (member harnesses green through 2026-09-24), and the UPnP +
 -- externalIp flow is ported from torrent-quickshare, whose clearweb layer has
 -- an engine pass behind it - but THIS stack is new, and its whole point is a
 -- leg no single machine can prove: verified statically; needs a TWO-MACHINE,

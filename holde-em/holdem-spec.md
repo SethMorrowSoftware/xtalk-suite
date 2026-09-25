@@ -163,6 +163,32 @@ Rules, each closing a specific hole:
   button, act, bank, miss`; `heLobbyCfgBody`, pinned as `kKatLobbyCfgBody`), and the
   host relay refuses a `cfg` from any other key. An admitted-key list, void/forfeit
   rules and per-player co-signing of `cfg` before hand 1 are **specified, not built**.
+- **Every wire index is a canonical decimal, keyed and compared as TEXT** (normative
+  since 2026-09-25, v0.25.5). A position, seat, count, dealer seat, button or dealt
+  hand's number, and the relay's `seq`, is a non-empty run of ASCII digits with no
+  leading zero (at most 14, below where the engine blurs two integers), inside its
+  range; a receiver drops any other spelling. The format's own zeros (the oracle's
+  `dealer=0`, `level=0`) are matched as exact text. The engine reads `"03"`, `"3.0"`,
+  `"+3"`, `" 3"` and `"3e0"` as the number 3 while an array keeps the raw key (suite
+  engine notes 2.10, 2.11), so a numeric check let a dealer post its own `seedCommit`
+  under aliases of its position, have them counted as everyone's, collect the honest
+  seals, and choose its seed last. Per-position and per-seat state is stored under
+  the canonical key, first wins, and every "all are in" count is WALKED over
+  positions `1..count` (or the hand's dealt seats), never incremented per message, so
+  no alias or duplicate can advance it (`heCanonIdx`, `heNetPosFilled`,
+  `heNetSeatsFilled`).
+- **A per-hand wire names the open hand** (normative since 2026-09-25). `dealLevel`,
+  the three seed types, `holeDeliver`, `board`, `bid*`, `act`, `settle`, `receipt`,
+  `audit`, `ckpt`, `show` and `muck` must carry the currently open hand in `hand`,
+  which the SENDER signs; any other is dropped whole. Without it a host could
+  re-sequence a previous hand's signed commitments and reveals into a new hand and
+  hold every seed before choosing its own, or replay a player's old `act` at its
+  turn. And `handStart` hand numbers strictly increase at a table: each seat's seed
+  derives from table and hand (7.1 step 1), so a repeated number repeats every seed.
+  History's translation applies both rules. **Not closed:** WITHIN one hand an `act`
+  carries no turn key, so the host could re-sequence a player's earlier signed act at
+  a later turn (two honest checks are byte-identical, so no content dedupe can tell
+  them apart). Binding an act to its turn changes wire bytes; it is not built.
 
 Message vocabulary: `cfg join leave sit stand shuffleStep unmaskStep seedCommit
 seedSeal seedReveal holeDeliver board bid[SB/BB/Ante] act(fold|check|call|bet|raise|
@@ -179,9 +205,10 @@ Body schemas (all byte-pinned in `tools/protocol-kat.py`):
   from the seat's own key (sit-out).
 - `sit` (host, one per seated player at game start): `seat=N,pub=<64hex>`. A `sit`
   WITHOUT `pub=`, from the seat's own key, is a return from sit-out.
-- `handStart` (host): `seats=1|2|..,button=B`. `dealLevel` (host):
-  `level=0,dealer=<seat>,count=N` (the dealer is the button seat's player); the
-  oracle's form is `level=1,dealer=0` (7.2).
+- `handStart` (host): `seats=1|2|..,button=B`, at least two seats, strictly
+  ascending, the button among them. `dealLevel` (host):
+  `level=0,dealer=<seat>,count=N` (the dealer is the button seat's player; `count` is
+  the number of dealt seats); the oracle's form is `level=1,dealer=0` (7.2).
 - `seedCommit` / `seedSeal` / `seedReveal`: `pos=<seat>` plus payload from the seat's
   own key. `holeDeliver` (dealer): `seat=N,sealed=<hex>`, the two card names sealed to
   seat N's session box pub. `board` (dealer): `street=..,cards=a|b|c`.
@@ -225,7 +252,10 @@ share the transcript, betting engine and settlement.
    sxHash("HOLDEM-SHUF-v1|" || table || "|" || decimal(hand) || "|" || seed_1 XOR ...
    XOR seed_N)`; stream block j = `sxHash(streamKey || uint32be(j))`; draws are 4-byte
    big-endian words, rejection-sampled (no modulo bias). The dealer **cannot stack the
-   deck**: their own seed was committed before they saw anyone else's.
+   deck**: their own seed was committed before they saw anyone else's. That holds only
+   while "every commitment is in" means one canonical commitment per position of THIS
+   hand (section 6's index and hand rules; before v0.25.5 a dealer's aliased
+   commitments could satisfy it).
 4. The dealer sends each player's two hole cards in a sealed box (`holeDeliver`);
    board cards are broadcast at each street.
 5. At hand end everyone broadcasts `seedReveal`; every client recomputes the shuffle and
@@ -593,6 +623,12 @@ apply. `README.md`'s phase table records what is built and what each exit still 
 ## 16. Security checklist (implementation laws, SodiumXT-doc style)
 
 - Compare secrets and MACs with `sxMemEqual`, never `is` / `=`.
+- Compare every PUBLIC hex value (a digest, commitment, head, key, signature or table id)
+  with `heHexEq`, never bare `is` / `=`: two number-like texts compare as numbers, so two
+  that overflow a double are equal (the suite's engine note 2.11; v0.25.4).
+- Read every wire index (position, seat, count, hand, seq) through `heCanonIdx`, key
+  by what it returns, and COUNT by walking the range, never per message: `"03"` is
+  the number 3 to `is` and a different array key (section 6; v0.25.5).
 - All randomness from `sxRandomBytes` / `sxRandomUniform`; the engine `random()` never
   touches anything dealing- or key-related.
 - Every hash is domain-separated (`"HOLDEM-<PURPOSE>-v<N>|"` prefixes, versioned).

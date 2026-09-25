@@ -26,6 +26,7 @@ Exit status is non-zero on any mismatch (CI gate).
 
 import importlib.util
 import pathlib
+import re
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -40,6 +41,22 @@ def _load(name, rel):
 bk = _load("bkat", "tools/betting-kat.py")
 ev = _load("evkat", "tools/evaluator-kat.py")
 pk = _load("pkat", "tools/protocol-kat.py")   # deal machinery (spec 7.1)
+
+
+def _stack_max_seats():
+    """kHeMaxSeats, READ out of src/holdem.livecodescript rather than copied
+    here (a hand-copied number goes stale silently, root CLAUDE.md): the seat
+    bound heCanonIdx checks seats against, and (+1, the oracle's position)
+    the contributor count's. A parse that stops matching FAILS, never
+    defaults."""
+    text = (ROOT / "src" / "holdem.livecodescript").read_text(encoding="utf-8")
+    m = re.search(r'^constant kHeMaxSeats = (\d+)[ \t]*$', text, re.M)
+    if not m:
+        raise AssertionError("kHeMaxSeats not found in src/holdem.livecodescript")
+    return int(m.group(1))
+
+
+MAX_SEATS = _stack_max_seats()
 
 CATEGORY = {8: "straight flush", 7: "four of a kind", 6: "full house",
             5: "flush", 4: "straight", 3: "three of a kind", 2: "two pair",
@@ -215,7 +232,10 @@ def independent_fold(tx):
                 # mirrors heFoldTranscript's settle guard: a contested showdown
                 # needs 5 in-range board cards and a valid hole pair per
                 # unfolded seat -- a truncated or hand-edited transcript is
-                # named and skipped, never a crash mid-audit
+                # named and skipped, never a crash mid-audit. (heIsCardList's
+                # whole-number test is `is an integer` since v0.25.4, exact;
+                # card_index returns Python ints, so the range test is the
+                # whole mirror of it.)
                 bad = len(board) != 5 or not all(1 <= c <= 52 for c in board)
                 for s in inhand:
                     hp = holes.get(s, [])
@@ -290,12 +310,19 @@ def build_level0_transcript(tamper=""):
     L = []
     L.append((0, "table", "cfg", "sb=1,bb=2,seats=1|2|3,stacks=400|400|400,button=1"))
     L.append((1, "table", "handStart", "seats=1|2|3,button=1"))
-    L.append((1, "table", "dealLevel", "level=0,table=%s,count=3" % table.hex()))
+    count_txt = "03" if tamper == "count03" else "3"   # a non-canonical count (v0.25.5)
+    L.append((1, "table", "dealLevel", "level=0,table=%s,count=%s" % (table.hex(), count_txt)))
     for i, c in enumerate(commits, 1):
         L.append((1, "seat%d" % occ[i - 1], "seedCommit", "pos=%d,commit=%s" % (i, c.hex())))
+    if tamper == "alias":
+        # an ALIAS of position 1 after the canonical commit: dropped by the
+        # canonical keying, so the real commit stands (v0.25.5)
+        L.append((1, "seat1", "seedCommit", "pos=01,commit=%s" % ("ab" * 32)))
     revealed = [s.hex() for s in seeds]
     if tamper == "seed":                                  # flip a bit of a revealed seed
         revealed[1] = "%064x" % (int(revealed[1], 16) ^ 1)
+    if tamper == "nothex":                                # a hand-edited, non-hex seed
+        revealed[1] = "nothex"
     for i, sd in enumerate(revealed, 1):
         L.append((1, "seat%d" % occ[i - 1], "seedReveal", "pos=%d,seed=%s" % (i, sd)))
     for s in occ:
@@ -309,9 +336,59 @@ def build_level0_transcript(tamper=""):
     return L
 
 
+def canon_idx(txt, max_=None):
+    """heCanonIdx's mirror (v0.25.5, 2026-09-25): the canonical text of a
+    positive whole number read off a wire, or "" when txt is not one. A
+    non-empty run of ASCII digits, no leading zero, at most 14 of them, and
+    at most max_ when given -- tested as TEXT, before anything reads it as a
+    number, because the engine reads "03", "3.0", "+3", " 3" and "3e0" all
+    as the number 3 while an array key keeps the raw text (the position-
+    alias attack, holde-em WORK-PLAN coding #11)."""
+    txt = "" if txt is None else str(txt)
+    if not 1 <= len(txt) <= 14:
+        return ""
+    if any(c not in "0123456789" for c in txt):
+        return ""
+    if txt[0] == "0":
+        return ""
+    if max_ is not None and str(max_) != "":
+        # `pMax is not a number` refuses outright; a numeric pMax in any
+        # spelling ("03") bounds as its value, as the engine reads it
+        try:
+            bound = float(str(max_).strip())
+        except ValueError:
+            return ""
+        if int(txt) > bound:
+            return ""
+    return txt
+
+
+def _is_hex(txt, n):
+    """heIsHex's mirror: even-length hex, exactly n chars when n > 0."""
+    txt = "" if txt is None else str(txt)
+    if not txt or len(txt) % 2 or (n and len(txt) != n):
+        return False
+    return all(c in "0123456789abcdefABCDEF" for c in txt)
+
+
 def _audit_one_deal(table, hand, seeds, commits, count, occ, button, holes, board):
+    # heAuditDealLog's guards (v0.25.5, 2026-09-25, coding #12): a hand-edited
+    # transcript names what is malformed -- the count, the table id, a seed --
+    # instead of throwing out of the History audit
+    if canon_idx(count, MAX_SEATS + 1) == "":
+        return "fail:count-malformed"
+    if not _is_hex(table, 64):
+        return "fail:table-malformed"
+    table = bytes.fromhex(table)
+    count = int(count)
     for pos in range(1, count + 1):
-        if pk.seed_commit(bytes.fromhex(seeds[pos])).hex() != commits[pos]:
+        if not _is_hex(seeds.get(pos), 64):
+            return "fail:seed-malformed-position-%d" % pos
+        # heAuditDealLog compares through heHexEq since v0.25.4 (2026-09-25):
+        # a letter prefix and both sides lowercased, so TEXT, case-blind and
+        # never numbers (the suite's engine note 2.11). Lowercasing the
+        # transcript's side here is that rule, as protocol-kat's twins do.
+        if pk.seed_commit(bytes.fromhex(seeds[pos])).hex() != commits.get(pos, "").lower():
             return "fail:commit-mismatch-position-%d" % pos
     xr = pk.xor_seeds([bytes.fromhex(seeds[p]) for p in range(1, count + 1)])
     deck = pk.shuffle_from_stream(pk.stream_bytes(pk.stream_key(table, hand, xr), 16))
@@ -330,7 +407,9 @@ def _audit_one_deal(table, hand, seeds, commits, count, occ, button, holes, boar
 
 def audit_deals_from_log(tx):
     seeds, commits, holes, board = {}, {}, {}, []
-    table, count, occ, button, hand, level0 = None, 0, [], 0, 0, False
+    # table and count start EMPTY, as the xTalk's locals do: an empty bound is
+    # no bound (heCanonIdx), and an empty count is named count-malformed
+    table, count, occ, button, hand, level0 = "", "", [], 0, 0, False
     verified, total, lines = 0, 0, []
     for h, frm, typ, body in tx:
         d = dict(p.split("=", 1) for p in body.split(",")) if body else {}
@@ -340,16 +419,27 @@ def audit_deals_from_log(tx):
             hand = h
             level0, seeds, commits, holes, board = False, {}, {}, {}, []
         elif typ == "dealLevel":
+            # kept as TEXT, as heAuditDealsFromLog keeps them: the audit names
+            # a malformed table id or count (v0.25.5) instead of raising here
             level0 = True
-            table = bytes.fromhex(d["table"])
-            count = int(d["count"])
+            table = d.get("table", "")
+            count = d.get("count", "")
+        # positions and seats key by their CANONICAL text (heCanonIdx's
+        # mirror, v0.25.5): an alias line ("pos=03") is dropped, last
+        # canonical line wins, exactly as heAuditDealsFromLog stores them
         elif typ == "seedCommit":
-            commits[int(d["pos"])] = d["commit"]
+            p = canon_idx(d.get("pos"), count)
+            if p:
+                commits[int(p)] = d["commit"]
         elif typ == "seedReveal":
-            seeds[int(d["pos"])] = d["seed"]
+            p = canon_idx(d.get("pos"), count)
+            if p:
+                seeds[int(p)] = d["seed"]
         elif typ == "holeDeliver":
             c = d["cards"].split("|")
-            holes[int(d["seat"])] = [ev.card_index(c[0]), ev.card_index(c[1])]
+            s = canon_idx(d.get("seat"), MAX_SEATS)
+            if s:
+                holes[int(s)] = [ev.card_index(c[0]), ev.card_index(c[1])]
         elif typ == "board":
             for c in d["cards"].split("|"):
                 board.append(ev.card_index(c))
@@ -455,6 +545,30 @@ def main():
     check("deal audit: tampered seed fails (0/1)", (v2, t2), (0, 1))
     contains("deal audit: tampered seed named commit-mismatch",
              " ".join(lines2), "commit-mismatch")
+
+    # v0.25.5 (2026-09-25): wire indices are CANONICAL text -- heCanonIdx,
+    # mirrored as canon_idx over the same vectors the harness pins (section
+    # 21) -- and a hand-edited transcript NAMES what is malformed instead of
+    # throwing (holde-em WORK-PLAN coding #11 and #12)
+    check("canon: every alias of 3 is refused",
+          [canon_idx(a, 9) for a in ("03", "3.0", "+3", " 3", "3e0", "3 ")],
+          [""] * 6)
+    check("canon: zero, a sign, empty text and a value past the max are refused",
+          [canon_idx("0", 9), canon_idx("-3", 9), canon_idx("", 9), canon_idx("10", 9)],
+          [""] * 4)
+    check("canon: a canonical index is kept, bounded or not",
+          [canon_idx("3", 9), canon_idx("9", 9), canon_idx("12")], ["3", "9", "12"])
+    check("canon: 14 digits at most (below where the engine blurs integers)",
+          [canon_idx("9" * 14), canon_idx("1" + "0" * 14)], ["9" * 14, ""])
+    v3, t3, lines3 = audit_deals_from_log(build_level0_transcript("alias"))
+    check("deal audit: an alias commit line is dropped; the canonical one stands (1/1)",
+          (v3, t3), (1, 1))
+    v4, t4, lines4 = audit_deals_from_log(build_level0_transcript("nothex"))
+    contains("deal audit: a non-hex seed is NAMED, not raised",
+             " ".join(lines4), "deal-FAILED fail:seed-malformed-position-2")
+    v5, t5, lines5 = audit_deals_from_log(build_level0_transcript("count03"))
+    contains("deal audit: a non-canonical contributor count is named",
+             " ".join(lines5), "deal-FAILED fail:count-malformed")
 
     print()
     if fails:

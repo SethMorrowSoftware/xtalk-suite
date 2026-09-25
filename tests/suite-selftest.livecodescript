@@ -1,8 +1,10 @@
 script "xTalkSuiteSelfTest"
 
 -- suite-selftest.livecodescript - ONE self-building RUNTIME harness that drives
--- ALL SIX xTalk Suite members in a single OXT process and reports PASS / FAIL /
--- SKIP per check.
+-- every xTalk Suite member with an in-engine harness - ten of the eleven in
+-- tools/member-registry.py; nocloud's tests run headlessly in the gates - in a
+-- single OXT process, and reports PASS / FAIL / SKIP per check on a board with
+-- one row per member (the demos' card look since D-23; see THE BOARD below).
 --
 -- WHY THIS FILE EXISTS. Every member already ships a deep per-member selftest
 -- (torrentxt/tests, enetxt/tests, datachannelxt/tests, ...) and those stay
@@ -45,10 +47,12 @@ script "xTalkSuiteSelfTest"
 -- inline and merged into that run's total (onionxt/CLAUDE.md's evidence
 -- ledger). What has never fired on an engine is stMergeFloor's REFUSAL branch.
 -- The one number that puts at risk is onionxt's floor, re-derived to 51 on
--- 2026-09-24 beside its call site below (verified statically; needs an OXT
--- pass): too high, and a green run reports one extra FAIL line naming the
--- member and printing what it attempted, which is the failure mode this file
--- chooses on purpose over an uncaught error.
+-- 2026-09-24 beside its call site below: too high, and a green run reports one
+-- extra FAIL line naming the member and printing what it attempted, which is
+-- the failure mode this file chooses on purpose over an uncaught error. It met
+-- an engine the same day (Windows, the D-23 board's first run, 2620/5/3):
+-- onionxt attempted 75 against 51 and nostrxt 279 against 278, both floors
+-- PASSED, and the refusal branch still has not fired.
 --
 -- THIS IS NO LONGER A SAMPLER, AND THAT IS THE BIG CHANGE. It used to drive
 -- about a dozen handlers per member and say so. It now carries EVERY member's
@@ -71,15 +75,20 @@ script "xTalkSuiteSelfTest"
 --                                     BUILDS graphics on this card, wipes
 --                                     them, and tears its world down before
 --                                     returning (added 2026-08-16)
---   riptide         rsSelfTest()      run LAST: identity, wire formats, and
---                                     the phase-2 live feed layer, which
---                                     also shares this file's session
+--   riptide         rsSelfTest()      identity, wire formats, and the
+--                                     phase-2 live feed layer, which also
+--                                     shares this file's session
+--   nostrxt         nxSelfTest()      17 offline sections; signing SKIPs
+--                                     without CoinXT (added 2026-08-23)
+--   holde-em        heSelfTest()      run LAST: the whole game, prefixed,
+--                                     through its QUIET entry point (added
+--                                     2026-08-16)
 --
--- AND IT CARRIES THE FOUR PURE-SCRIPT LIBRARIES THEMSELVES. coinxt's script
+-- AND IT CARRIES THE FIVE PURE-SCRIPT LIBRARIES THEMSELVES. coinxt's script
 -- layer (encoders, addresses, the HD wallet walk), onionxt's entire ox*
--- surface, riptide's rs* layer and box2dxt's b2k Kit are LiveCodeScript, and
--- the first two used to be a separate setup step - `start using stack` x2
--- before pasting.
+-- surface, riptide's rs* layer, box2dxt's b2k Kit and the nostrxt core are
+-- LiveCodeScript, and the first two used to be a separate setup step - `start
+-- using stack` x2 before pasting.
 -- Embedded, that step is gone, and so is the failure mode it carried: the
 -- 2026-08-10 re-run pasted a fresh harness into an engine whose in-memory
 -- coinxt stack predated a parser fix, and got two red lines that read as
@@ -125,14 +134,29 @@ script "xTalkSuiteSelfTest"
 --
 -- HOW TO USE: open OXT, make a one-card stack, paste THIS into the STACK script
 -- (Object > Stack Script), then close and reopen the stack. It builds its own
--- UI, probes for each member, runs everything it can, and shows the list. Use
--- "Copy results" to put the run on the clipboard and paste it back verbatim.
+-- window, probes for each member, runs everything it can, and shows the
+-- report. Wait for the SUMMARY section at the bottom, then use "Copy results"
+-- to put the run on the clipboard and paste it back verbatim.
+--
+-- THE BOARD (D-23). The window is the demos' card look at 1200 x 640: one row
+-- per member on the left (a pill - OK, FAILED, skipped, absent, not run - its
+-- pass / fail / skip counts, and two buttons), the report on the right, and
+-- a boot self-check of the window itself. "Run all" re-runs everything and
+-- is the suite RECORD. A row's "Run" re-runs that ONE member end to end
+-- (probe, its sections, teardown, summary) and replaces the report, which
+-- then says "Scope:" at its top and bottom - a one-member report is never the
+-- record. "Show" and the filter buttons (All, Failures, Skips, Boot check)
+-- change only what the right-hand pane shows; Copy results always copies the
+-- whole report, whatever is showing.
 --
 -- RUN IT STANDALONE. TorrentXT allows only ONE session per process, so close
 -- any other TorrentXT stack (client, demo, torrent-selftest) first - otherwise
 -- the torrent sections SKIP with a note rather than fighting for the session.
 -- The enet loopback deliberately uses UDP port 27196, NOT the 27098 that
--- enet-selftest uses, so the two harnesses can coexist if both are open.
+-- enet-selftest uses, so the two never fight for a port - but do not run
+-- them at once: this paste's cleanup calls enDeinitialize, which acts on
+-- the whole process and would end the other window's ENet hosts (review,
+-- 2026-09-25; the suite's WORK-PLAN carries the fix).
 --
 -- MISSING EXTENSIONS SKIP, THEY NEVER FAIL. Each member is probed with one
 -- cheap guarded call inside try/catch (the family's fail-closed probe pattern,
@@ -141,7 +165,10 @@ script "xTalkSuiteSelfTest"
 -- section still runs, and any cross-member check that needs the absent member
 -- skips with a reason instead of failing.
 --
--- NON-DESTRUCTIVE. Nothing here writes a file, moves storage, deletes a
+-- NON-DESTRUCTIVE. Nothing here writes outside the temporary folder: the
+-- folded SodiumXT, TorrentXT, Box2Dxt and Riptide harnesses write their own
+-- scratch files there (TorrentXT and Riptide fall back to Documents where an
+-- engine reports no temporary folder), and nothing moves storage, deletes a
 -- torrent, or touches a Tor control port. The DHT puts are queued into the
 -- ordinary public DHT exactly as any client would; nothing else leaves the box
 -- except loopback UDP to 127.0.0.1.
@@ -150,7 +177,8 @@ script "xTalkSuiteSelfTest"
 -- list carried in every member CLAUDE.md): no brace array literals, no
 -- subscripted function results, array emptiness by counting `the keys of` a
 -- LOCAL, binary built with numToByte because string literals have no escape
--- syntax, byte-exact compares only under `set the caseSensitive to true`, all
+-- syntax, byte-exact compares only under `set the caseSensitive to true` and
+-- never between two number-like texts (engine note 2.11), all
 -- declarations at handler top, and teardown calls written bare in statement
 -- position, which is enetxt's own shipped teardown idiom (enet-lan-chat line
 -- 220, enet-selftest line 371).
@@ -189,8 +217,38 @@ constant kStSctpFloor = 16384
 constant kStDeadlineMs = 40000
 
 constant kStTitle = "xTalk Suite - End-to-End Self-Test"
-constant kStWidth = 760
+-- 1200 x 640 is the demos' window (the UI kit's rule 6: the whole window fits
+-- a 720p display). The width matters to exactly one folded harness: box2dxt
+-- centres its world on this card (sOriginX is half the card's width) and two
+-- of its camera checks scroll a 3000-px level. Both still hold at 1200 with
+-- room to spare - hScroll 900 against a floor of 800, and 300 against 100
+-- (box2dxt-selftest's stTestCamScrolledWrite and stTestKitCameraApi) - and
+-- the height, which sets its origin and kill floor, is unchanged. Worked out by
+-- arithmetic first, then OBSERVED on 2026-09-24 (Windows, the board's first
+-- engine run): box2dxt's harness went 385/0 on this 1200-wide card, reporting
+-- "the viewport scrolled (hScroll 900)" and the world-px write landing on 1500.
+constant kStWidth = 1200
 constant kStHeight = 640
+
+-- ---- the board (D-23; see THE BOARD below the carried blocks) ---------------
+-- The build stamp: a stack built by an older paste (the scaffold's window, or
+-- an earlier board) is cleared and rebuilt once; a current one only repaints.
+constant kSuUiVersion = "suite-board-1"
+-- One row per tools/member-registry.py member, IN ITS ORDER AND ITS SPELLING,
+-- then the cross-member row. check-suite-selftest.py holds all three lists to
+-- the registry, so a new member cannot be missing from the board.
+constant kSuKeys = "sodiumxt,torrentxt,enetxt,datachannelxt,box2dxt,coinxt,onionxt,nostrxt,riptide,nocloud,holde-em,cross"
+constant kSuNames = "SodiumXT,TorrentXT,enetxt,DataChannelXT,Box2Dxt,CoinXT,OnionXT,NostrXT,Riptide Social,No Cloud Quick Share,holde-em,Cross-member + teardown"
+-- The members with no in-engine harness (tools/build-suite-selftest.py's
+-- NO_HARNESS): a row with a caption, and no pill or Run.
+constant kSuNoHarness = "nocloud"
+-- Row geometry: the first row's top, and the pitch.
+constant kSuRowTop = 136
+constant kSuRowStep = 34
+-- Every control this script names, DERIVED by tools/check-demo-control-lists.py
+-- (--write regenerates it; the gate fails a stale copy). The boot self-check
+-- asserts each one exists.
+constant kSuScControls = "stCopy,stRerun,stResults,stSummary,suBootLog,suFilterAll,suFilterBoot,suFilterFail,suFilterSkip,suHeadCounts,suHeadRun,suHeadStatus,suMembersCap,suPanMembers,suPanResults,suSecMembers,suSecResults,suView,suViewCap,uiFooter,uiStatus,uiTitle"
 
 -- ---- state -------------------------------------------------------------------
 -- "true" while the async phases are still live. Spelled sAsyncRunning rather
@@ -202,7 +260,7 @@ constant kStHeight = 640
 -- hand-maintained file; renaming there would touch a shipped library and
 -- re-carry its six embedded copies for this file's convenience.
 local sAsyncRunning
--- Set once, the first time a render inside the pump throws. See stPump.
+-- Set once, the first time a render inside the pump throws. See suPump.
 local sRenderNoted
 
 -- probe results (one flag per member; "reason" strings carry the SKIP note)
@@ -237,6 +295,16 @@ local sDcBigSize, sDcBigWant
 
 local sDeadline            -- the async phases' drop-dead time (ms clock)
 
+-- the board (D-23)
+local sSuScope             -- what the report covers: "all" or one kSuKeys item (empty before the first run)
+local sSuFilter            -- the right-hand view: "all", "fail", "skip", "boot" or "m:<key>"
+local sSuP, sSuF, sSuS     -- per-row passed / failed / skipped (arrays keyed by kSuKeys items)
+local sSuSpan              -- per-row report spans: lines of "from to" into sResultText
+local sSuMarkKey, sSuMarkP, sSuMarkF, sSuMarkS, sSuMarkLen -- the open tally (suTallyOpen)
+local sSuViewLen           -- the length of sResultText when a filtered view last rendered
+local sSuPainted           -- the loopback phases the rows last showed
+local sSuArmed             -- a row's Run, armed and not yet started (suArmRun)
+
 -- Every FOLDED member's script locals and constants are hoisted to here, above
 -- the first handler, by tools/build-suite-selftest.py - and so are the two
 -- EMBEDDED script layers' (coinxt's and onionxt's), for the same reason.
@@ -256,6 +324,27 @@ local sDeadline            -- the async phases' drop-dead time (ms clock)
 -- broke the invariant, by putting one file's declarations after another file's
 -- readers. check-suite-selftest.py now fails if any declaration lands below the
 -- first handler.
+-- ---- the core's carried-block declarations (hoisted by tools/build-suite-selftest.py) ----
+constant kUiBg = "240,242,246"
+constant kUiCard = "255,255,255"
+constant kUiCardLine = "225,229,236"
+constant kUiAccent = "44,90,160"
+constant kUiAccentText = "255,255,255"
+constant kUiAccentSub = "199,216,241"
+constant kUiInk = "28,34,46"
+constant kUiInkSoft = "95,104,118"
+constant kUiMuted = "138,146,158"
+constant kUiOk = "23,128,63"
+constant kUiWarn = "150,110,40"
+constant kUiBad = "176,58,46"
+constant kUiFieldLine = "203,210,222"
+constant kUiCodeBg = "244,246,250"
+constant kUiCodeLine = "210,217,229"
+constant kScProbe = "self-check: delayed write reached the status line"
+local sScLines          -- the whole block, kept so a Copy button has something
+local sScPassed, sScFailed, sScSkipped
+local sScLogField       -- the adopting demo's own log field, set by scBegin
+
 -- ---- SodiumXT: the full sx* self-test ----
 local sx1sLog
 local sx1sPass
@@ -569,8 +658,8 @@ local rs1sSkip
 local rs1sRsTestSession
 
 -- ---- holde-em: the full he* self-test ----
-constant he1kHeVersion = "0.25.3"
-constant he1kHeHarnessV = "45"
+constant he1kHeVersion = "0.25.5"
+constant he1kHeHarnessV = "47"
 constant he1kUIVersion = "15"
 constant he1kHeRankChars = "23456789TJQKA"
 constant he1kHeSuitChars = "cdhs"
@@ -597,6 +686,7 @@ constant he1kHeTwo32 = 4294967296
 constant he1kHeDomainOnion = "HOLDEM-ONION-v1|"
 constant he1kHeDomainOracle = "HOLDEM-ORACLE-v1|"
 constant he1kHeCkptStreets = "deal,flop,turn,river,showdown"
+constant he1kHeHandBoundTypes = "dealLevel,seedCommit,seedSeal,holeDeliver,seedReveal,bidAnte,bidSB,bidBB,act,board,settle,receipt,audit,ckpt,show,muck"
 constant he1kHeHostLossTicks = 240
 constant he1kHeDefaultActSecs = 30
 constant he1kHeDefaultBankSecs = 60
@@ -1268,7 +1358,7 @@ command stShow
    -- has always rendered. This handler is ALSO called from an async pump, on a
    -- `send ... in` tick, where they are not: with another window in front the
    -- write would throw "Chunk: error in object expression", and in the suite
-   -- core that throw lands in stPump, which is where the timer re-arms.
+   -- core that throw lands in suPump, which is where the timer re-arms.
    -- PRECAUTIONARY, NOT DIAGNOSED. It was written on 2026-08-20 while chasing
    -- two engine reports that ended mid-CROSS-section, and that was the wrong
    -- cause: the third run, same build, completed 1981/0/1 through both
@@ -1372,35 +1462,1825 @@ on mouseUp
 end mouseUp
 -- ==== SUITE HARNESS SCAFFOLD v1 END ====
 
+-- ---- the demos' look (carried; D-23) -----------------------------------------
+-- The UI kit and the boot self-check, carried verbatim like the scaffold above.
+-- Their script-level declarations sit above their own handlers here, as in
+-- every carrier; the GENERATED paste hoists them above its first handler
+-- (tools/build-suite-selftest.py), because there the scaffold's handlers come
+-- first and check-suite-selftest.py's check 10 wants every declaration above
+-- all of them.
+-- ==== SUITE UI KIT v2 BEGIN (verbatim copy; master: tools/ui-kit.livecodescript; gate: tools/check-ui-kit-drift.py) ====
+-- The family look as one carried block: the kit owns colors, chrome, and
+-- control construction; the adopting demo owns layout (explicit rects) and
+-- logic. Builders are idempotent (create-if-missing), so a rebuild on
+-- reopen is safe. Do not edit this block in place: change the master and
+-- re-carry it.
+-- (this block's script-level declarations are hoisted above the first handler by tools/build-suite-selftest.py; engine note 1.2)
+
+-- The platform's own terminal face for codes, keys, tables and logs, so
+-- the monospace surfaces look native instead of typewriter-Courier. A
+-- missing face substitutes the engine default - a soft, safe failure.
+function uiMonoFont
+   if the platform is "MacOS" then
+      return "Menlo"
+   else if the platform is "Win32" then
+      return "Consolas"
+   end if
+   return "DejaVu Sans Mono"
+end uiMonoFont
+
+-- The window chrome every adopter shares: stack size, page ground, the
+-- title band, and the one status line under it (write it with uiStatus).
+-- pBandH is optional (default 30); a taller band leaves room for an
+-- adopter's tagline or status pill, placed by the adopter.
+command uiChrome pTitle, pWidth, pHeight, pBandH
+   local tFH
+   if pBandH is empty then
+      put 30 into pBandH
+   end if
+   set the width of this stack to pWidth
+   set the height of this stack to pHeight
+   set the backgroundColor of this card to kUiBg
+   set the title of this stack to pTitle
+   uiGfx "uiBand", "0,0," & pWidth & "," & pBandH
+   set the style of graphic "uiBand" to "rectangle"
+   set the filled of graphic "uiBand" to true
+   set the backgroundColor of graphic "uiBand" to kUiAccent
+   set the lineSize of graphic "uiBand" to 0
+   uiLabel "uiTitle", "  " & pTitle, "0,0," & pWidth & "," & pBandH, 15
+   set the foregroundColor of field "uiTitle" to kUiAccentText
+   set the textStyle of field "uiTitle" to "bold"
+   -- center the title on the band midline by MEASURED height (never guess
+   -- font metrics - the family's OXT passes clipped hand-sized labels)
+   put the formattedHeight of field "uiTitle" into tFH
+   if tFH > 0 and tFH < pBandH then
+      set the height of field "uiTitle" to tFH
+      set the top of field "uiTitle" to ((pBandH - tFH) div 2)
+   end if
+   uiLabel "uiStatus", empty, "16," & (pBandH + 4) & "," & (pWidth - 16) & "," & (pBandH + 22), 11
+end uiChrome
+
+-- The status line, colored by what it reports: "ok", "warn", "bad", or
+-- anything else for neutral/muted. Demos route probe results through this
+-- so a stack that cannot run says so in red, at the top, immediately.
+command uiStatus pText, pKind
+   -- PIN THE STACK, THEN CHECK THE FIELD EXISTS. Both halves were missing and
+   -- both are load-bearing on a TIMER-driven call.
+   --
+   -- An unqualified `field "uiStatus"` resolves against the DEFAULTSTACK, not
+   -- against the stack whose script is running. Inside openStack those are the
+   -- same thing, which is why every demo's startup status line always worked.
+   -- A handler arriving from `send ... in` has no such guarantee: with a second
+   -- stack in front, the write lands in the wrong stack or resolves to nothing.
+   --
+   -- THE PIN RESTS ON THE DOCUMENTED RESOLUTION RULE, NOT ON A THROW WE SAW.
+   -- This comment used to cite enet-lan-chat's once-a-second dashboard throwing
+   -- "Chunk: error in object expression" REPEATEDLY on 2026-08-18, and dht-chat
+   -- hiding the same fault behind a guard. Neither half held up: that throw was
+   -- the ARGUMENT at the call site (`the number of keys of sPeers`, which does
+   -- not parse - OXT-ENGINE-NOTES 1.7) and never reached uiStatus at all, and
+   -- the guard credited to the kit was dht-chat's own wxSetStatus wrapper - the
+   -- master had no existence check until the same commit that added this pin.
+   -- What a guarded call site WOULD do if the defaultStack diverged is fail
+   -- silently, which is the argument for a gate rather than for more guards.
+   -- See OXT-ENGINE-NOTES 5.3, now classed DOCUMENTED.
+   --
+   -- The pin is holde-em's idiom, engine-proven there, and its comment names
+   -- this exact hazard. The existence check stays as well: a demo may call the
+   -- status line before its chrome is built, and a cosmetic line must never
+   -- take down a poll chain.
+   set the defaultStack to the short name of this stack
+   if there is no field "uiStatus" then
+      exit uiStatus
+   end if
+   put pText into field "uiStatus"
+   if pKind is "ok" then
+      set the foregroundColor of field "uiStatus" to kUiOk
+   else if pKind is "warn" then
+      set the foregroundColor of field "uiStatus" to kUiWarn
+   else if pKind is "bad" then
+      set the foregroundColor of field "uiStatus" to kUiBad
+   else
+      set the foregroundColor of field "uiStatus" to kUiInkSoft
+   end if
+end uiStatus
+
+-- A static caption at a FIXED rect (idempotent, borderless, transparent).
+-- Use uiWrap instead when the text may wrap or the exact height matters.
+command uiLabel pName, pText, pRect, pSize
+   if there is no field pName then
+      create field
+      set the name of the last field to pName
+   end if
+   set the rect of field pName to pRect
+   set the lockText of field pName to true
+   set the borderWidth of field pName to 0
+   set the opaque of field pName to false
+   set the threeD of field pName to false
+   set the textSize of field pName to pSize
+   set the foregroundColor of field pName to kUiInk
+   put pText into field pName
+end uiLabel
+
+-- A caption FIT to its measured text height (top pinned). The fit does
+-- double duty: it prevents clipping (hand-sized rects clipped text on a
+-- real Windows pass), and it makes `the height of field` equal the TEXT
+-- height, which midline centering relies on. GUARD: only resize on a sane
+-- measurement - a 0/blank formattedHeight (possible before the window is
+-- fully realized) would collapse the label. Empty labels are skipped
+-- (they receive their text later).
+command uiWrap pName, pText, pRect, pSize
+   local tOldDelim, tTop, tFH
+   uiLabel pName, pText, pRect, pSize
+   if pText is not empty then
+      put the itemDelimiter into tOldDelim
+      set the itemDelimiter to comma
+      put item 2 of pRect into tTop
+      set the itemDelimiter to tOldDelim
+      put the formattedHeight of field pName into tFH
+      if tFH > 0 then
+         set the height of field pName to tFH
+         set the top of field pName to tTop
+      end if
+   end if
+end uiWrap
+
+-- A small, muted caption (hints, toggle descriptions, empty states).
+command uiCap pName, pText, pRect
+   uiWrap pName, pText, pRect, 10
+   set the foregroundColor of field pName to kUiMuted
+end uiCap
+
+-- A numbered bold section header with a hairline divider placed below the
+-- label's ACTUAL (fit-to-text) bottom, so it tracks the real header
+-- height on any platform's line metrics.
+command uiSection pName, pText, pRect
+   local tOldDelim, tL, tR, tB
+   uiWrap pName, pText, pRect, 13
+   set the textStyle of field pName to "bold"
+   put the itemDelimiter into tOldDelim
+   set the itemDelimiter to comma
+   put item 1 of pRect into tL
+   put item 3 of pRect into tR
+   set the itemDelimiter to tOldDelim
+   put the bottom of field pName into tB
+   uiGfx (pName & "Line"), (tL & comma & (tB + 1) & comma & tR & comma & (tB + 2))
+   set the style of graphic (pName & "Line") to "rectangle"
+   set the filled of graphic (pName & "Line") to true
+   set the backgroundColor of graphic (pName & "Line") to kUiCardLine
+   set the lineSize of graphic (pName & "Line") to 0
+end uiSection
+
+-- A one-line entry field, mono and flat ("modern input" chrome instead of
+-- the engine's sunken-3D default), because hex, addresses and paths are
+-- what this suite's demos edit.
+command uiInput pName, pRect
+   if there is no field pName then
+      create field
+      set the name of the last field to pName
+   end if
+   set the rect of field pName to pRect
+   set the lockText of field pName to false
+   set the traversalOn of field pName to true
+   set the threeD of field pName to false
+   set the borderWidth of field pName to 1
+   set the borderColor of field pName to kUiFieldLine
+   set the opaque of field pName to true
+   set the backgroundColor of field pName to kUiCard
+   -- 4-item margins form ONLY: OXT ignored the single-number form on a
+   -- real engine pass
+   set the margins of field pName to "6,6,6,6"
+   set the textSize of field pName to 11
+   set the textFont of field pName to uiMonoFont()
+end uiInput
+
+-- A read-only output/log area: mono, flat, scrolling, hairline-bordered.
+command uiArea pName, pRect
+   if there is no field pName then
+      create field
+      set the name of the last field to pName
+   end if
+   set the rect of field pName to pRect
+   set the lockText of field pName to true
+   set the traversalOn of field pName to false
+   set the threeD of field pName to false
+   set the borderWidth of field pName to 1
+   set the borderColor of field pName to kUiCardLine
+   set the opaque of field pName to true
+   set the backgroundColor of field pName to kUiCard
+   set the margins of field pName to "6,6,6,6"
+   set the vScrollbar of field pName to true
+   set the textSize of field pName to 10
+   set the textFont of field pName to uiMonoFont()
+end uiArea
+
+-- A row-selectable table: uiArea plus list behavior and tab stops
+-- ("230,340"-style comma lists). Pair it with a uiLabel header carrying
+-- the same tabStops, set by the adopter.
+command uiTable pName, pRect, pTabStops
+   uiArea pName, pRect
+   set the listBehavior of field pName to true
+   if pTabStops is not empty then
+      set the tabStops of field pName to pTabStops
+   end if
+end uiTable
+
+command uiButton pName, pLabel, pRect
+   if there is no button pName then
+      create button
+      set the name of the last button to pName
+   end if
+   set the rect of button pName to pRect
+   set the label of button pName to pLabel
+end uiButton
+
+-- A script-managed checkbox: autoHilite OFF because the family drives
+-- toggle state from script locals (a mode the environment cannot honour
+-- must never stay silently armed - the quickshare pill lesson), so the
+-- hilite is set explicitly by the adopter's state machine.
+command uiCheckbox pName, pLabel, pRect
+   uiButton pName, pLabel, pRect
+   set the style of button pName to "checkbox"
+   set the autoHilite of button pName to false
+end uiCheckbox
+
+-- Create-or-reuse a named graphic: the chrome layer (cards, pills,
+-- dividers, drop targets). Created BEFORE the controls that sit on it, so
+-- it stays behind them in z-order. roundRect + antialiased by default;
+-- callers restyle.
+command uiGfx pName, pRect
+   if there is no graphic pName then
+      create graphic
+      set the name of the last graphic to pName
+   end if
+   set the rect of graphic pName to pRect
+   set the style of graphic pName to "roundRect"
+   set the antialiased of graphic pName to true
+end uiGfx
+
+-- A dashboard card: a rounded, hairline-bordered, softly shadowed panel
+-- placed BEHIND a group of controls. It only groups visually; clicks on
+-- it fall through to the adopter's `default: pass mouseUp`.
+command uiPanel pName, pRect
+   local tShadow, tErr
+   uiGfx pName, pRect
+   set the roundRadius of graphic pName to 14
+   set the filled of graphic pName to true
+   set the backgroundColor of graphic pName to kUiCard
+   set the lineSize of graphic pName to 1
+   -- a graphic strokes its outline in the foregroundColor; borderColor is
+   -- set too so whichever the engine honours, the hairline lands
+   set the foregroundColor of graphic pName to kUiCardLine
+   set the borderColor of graphic pName to kUiCardLine
+   -- soft drop shadow is an LC-9-era feature, so it is a PURE
+   -- enhancement: an engine without it just skips it (the try) and the
+   -- hairline still separates the card from the page
+   try
+      put "90,98,114" into tShadow["color"]
+      put 30 into tShadow["opacity"]
+      put 10 into tShadow["size"]
+      put 0 into tShadow["spread"]
+      put 2 into tShadow["distance"]
+      put 90 into tShadow["angle"]
+      set the dropShadow of graphic pName to tShadow
+   catch tErr
+   end try
+end uiPanel
+
+-- A status pill: rounded chip + centered label, colored by state kind -
+-- "ok" green, "wait" amber, "bad" red, anything else the muted on-band
+-- blue. The adopter repaints it from ONE place so its handlers cannot
+-- disagree about the colors (the nocloud Tor-pill discipline).
+command uiPill pName, pText, pRect, pKind
+   local tOldDelim, tTop, tBot, tFH
+   put the itemDelimiter into tOldDelim
+   set the itemDelimiter to comma
+   put item 2 of pRect into tTop
+   put item 4 of pRect into tBot
+   set the itemDelimiter to tOldDelim
+   uiGfx (pName & "Bg"), pRect
+   set the roundRadius of graphic (pName & "Bg") to (tBot - tTop)
+   set the filled of graphic (pName & "Bg") to true
+   set the lineSize of graphic (pName & "Bg") to 0
+   if pKind is "ok" then
+      set the backgroundColor of graphic (pName & "Bg") to "205,240,214"
+   else if pKind is "wait" then
+      set the backgroundColor of graphic (pName & "Bg") to "250,240,199"
+   else if pKind is "bad" then
+      set the backgroundColor of graphic (pName & "Bg") to "243,215,213"
+   else
+      set the backgroundColor of graphic (pName & "Bg") to "31,64,116"
+   end if
+   uiLabel pName, pText, pRect, 10
+   set the textAlign of field pName to "center"
+   if pKind is "ok" then
+      set the foregroundColor of field pName to "22,101,52"
+   else if pKind is "wait" then
+      set the foregroundColor of field pName to "133,98,14"
+   else if pKind is "bad" then
+      set the foregroundColor of field pName to "135,44,38"
+   else
+      set the foregroundColor of field pName to kUiAccentSub
+   end if
+   -- center the label on the chip midline by measured height
+   put the formattedHeight of field pName into tFH
+   if tFH > 0 and tFH < (tBot - tTop) then
+      set the height of field pName to tFH
+      set the top of field pName to (tTop + ((tBot - tTop - tFH) div 2))
+   end if
+end uiPill
+
+-- Click-to-copy feedback: flash the button's label to "Copied!" for
+-- 1200 ms, then restore the real label (stashed in uRealLabel).
+command uiCopyFlash pBtn
+   if there is no button pBtn then
+      exit uiCopyFlash
+   end if
+   if the uRealLabel of button pBtn is empty then
+      set the uRealLabel of button pBtn to the label of button pBtn
+   end if
+   set the label of button pBtn to "Copied!"
+   send ("uiCopyFlashReset" && quote & pBtn & quote) to me in 1200 milliseconds
+end uiCopyFlash
+
+command uiCopyFlashReset pBtn
+   -- Pinned for the same reason uiStatus is: this one arrives 1200ms later by
+   -- `send`, so the defaultStack is whatever is current THEN, not the stack
+   -- that flashed the button. Its existence guard means the failure is silent
+   -- rather than loud - the label just never comes back, or comes back on
+   -- another stack's button - which is why it needed finding rather than
+   -- reporting itself.
+   set the defaultStack to the short name of this stack
+   if there is no button pBtn then
+      exit uiCopyFlashReset
+   end if
+   if the uRealLabel of button pBtn is not empty then
+      set the label of button pBtn to the uRealLabel of button pBtn
+   end if
+end uiCopyFlashReset
+
+-- The honesty/custody footer every demo carries: what the stack is, what
+-- it is not, and its engine-evidence state.
+command uiFooter pText, pRect
+   uiWrap "uiFooter", pText, pRect, 11
+   set the textStyle of field "uiFooter" to "italic"
+   set the foregroundColor of field "uiFooter" to kUiMuted
+end uiFooter
+-- ---- contextual menus -------------------------------------------------------
+--
+-- A RIGHT-CLICK MENU, as one hidden popup button per menu.
+--
+-- The engine's contextual menu is a BUTTON whose style is "menu" and whose
+-- menuMode is "popup": its text is the item list, one per line, `popup`
+-- shows it at a point, and choosing an item sends `menuPick` with the item's
+-- LABEL. The button needs no script - with no handler of its own the message
+-- walks the hierarchy and arrives at the card and then the stack, which is
+-- where an adopter's router already lives.
+--
+-- OPT-IN, AND THAT IS DELIBERATE. This block is carried byte-identical by
+-- every demo in the suite, so a kit that BUILT a menu would change eighteen
+-- stacks to serve one. Nothing here runs unless an adopter calls
+-- uiContextMenu, and a demo that never does is unchanged in behaviour.
+--
+-- NONE OF THIS HAS RUN ON AN ENGINE. `popup`, `menuMode` and `menuPick` are
+-- documented LiveCode and OpenXTalk is a fork of it, but this suite has never
+-- exercised a menu and the headless runners model no mouse button at all - so
+-- an adopter's right-click handler belongs in a `try`, and losing the menu
+-- must never cost the ordinary click. uiPopupMenu answers whether it worked
+-- rather than throwing, so the caller can decide.
+
+command uiContextMenu pName, pItems
+   -- One hidden popup button, created once and refilled on every call so a
+   -- menu can change with the screen it belongs to. The rect is small and
+   -- inside the window because a stack's controls are measured by
+   -- tools/check-stack-size.py whether they are visible or not.
+   if there is no button pName then
+      -- THE KIT'S OWN IDIOM, and not `create button pName`. Every other
+      -- builder in this block creates the control unnamed and then names the
+      -- last one, which is the spelling the family's headless runners model
+      -- and the one every adopter has already been through an engine with.
+      create button
+      set the name of the last button to pName
+   end if
+   set the style of button pName to "menu"
+   set the menuMode of button pName to "popup"
+   set the text of button pName to pItems
+   set the rect of button pName to "2,2,18,18"
+   set the visible of button pName to false
+end uiContextMenu
+
+function uiPopupMenu pName
+   -- WHICH menu, recorded before it opens. menuPick carries the item's label
+   -- and nothing else, so an adopter with two menus would otherwise have to
+   -- keep every label in the stack globally unique - a constraint that is
+   -- invisible until the day two screens both want "Copy".
+   --
+   -- Answers true or false rather than throwing: on an engine without popup
+   -- menus the right thing is for the click to do nothing, not for the
+   -- adopter's mouseDown to die.
+   local tError
+   if there is no button pName then
+      return false
+   end if
+   set the uUiMenu of this stack to pName
+   try
+      popup button pName at the clickLoc
+   catch tError
+      set the uUiMenu of this stack to empty
+      return false
+   end try
+   return true
+end uiPopupMenu
+
+function uiMenuSource
+   -- The name of the menu the last menuPick came from.
+   return the uUiMenu of this stack
+end uiMenuSource
+
+-- ==== SUITE UI KIT v2 END ====
+
+-- ==== DEMO SELF-CHECK v1 BEGIN (verbatim copy; master: tools/demo-selfcheck.livecodescript; gate: tools/check-demo-selfcheck-drift.py) ====
+-- The sentinel is a CONSTANT so the probe compares against one spelling; a
+-- literal repeated at the write and the read is a check that can pass while
+-- disagreeing with itself.
+-- (this block's script-level declarations are hoisted above the first handler by tools/build-suite-selftest.py; engine note 1.2)
+
+command scBegin pLogField
+   put pLogField into sScLogField
+   put empty into sScLines
+   put 0 into sScPassed
+   put 0 into sScFailed
+   put 0 into sScSkipped
+   scLine "== boot self-check (nothing is hosted, connected, or bound) =="
+end scBegin
+
+-- Each line is LOGGED as it is made, not accumulated and flushed at the end.
+-- The first draft did both - a flush after the synchronous half and another
+-- after the probe - which printed every synchronous line twice.
+command scLine pText
+   put pText & return after sScLines
+   -- pin the stack: scFinish reaches here from a `send ... in` tick, and the
+   -- field is named unqualified (OXT-ENGINE-NOTES 5.3)
+   set the defaultStack to the short name of this stack
+   if sScLogField is empty or there is no field sScLogField then
+      exit scLine
+   end if
+   put pText & return after field sScLogField
+   set the vscroll of field sScLogField to the formattedHeight of field sScLogField
+end scLine
+
+command scAssert pName, pOk
+   if pOk then
+      add 1 to sScPassed
+      scLine "PASS  " & pName
+   else
+      add 1 to sScFailed
+      scLine "FAIL  " & pName
+   end if
+end scAssert
+
+-- SKIP, never FAIL, for an absent extension: a missing member is an
+-- environment, and only a present-and-broken member is a defect.
+command scSkip pName, pReason
+   add 1 to sScSkipped
+   scLine "SKIP  " & pName & " (" & pReason & ")"
+end scSkip
+
+-- An empty value prints as nothing, which reads as a missing check rather than
+-- an answer of empty; every observed value in a self-check goes through here.
+-- This is the playLoudness lesson (OXT-ENGINE-NOTES 5.4) as a helper: a check
+-- that reports only its own name costs a whole engine pass to diagnose.
+function scShow pValue
+   if pValue is empty then
+      return "empty"
+   end if
+   return pValue
+end scShow
+
+-- Returns the comma-list of control names in pList that do not exist, or empty.
+-- The adopter passes EVERY control name its own script references, derived from
+-- the source rather than hand-picked: a missing control is not cosmetic, it is
+-- the "Chunk: error in object expression" class, and finding it at boot beats
+-- finding it when somebody clicks.
+function scMissing pList
+   local tName, tMissing, tC, tFound
+   set the defaultStack to the short name of this stack
+   repeat for each item tName in pList
+      -- ALL FOUR CONTROL TYPES. The kit builds fields (uiLabel/uiWrap/uiCap/
+      -- uiSection/uiInput/uiArea/uiTable), buttons (uiButton/uiCheckbox) AND
+      -- GRAPHICS (uiGfx/uiPanel/uiPill). The first version of this asked only
+      -- about fields and buttons, so every uiPill a demo builds - the Tor
+      -- pills in both Quick Shares, for one - reported as a missing control on
+      -- a stack where it exists.
+      --
+      -- AND IMAGES (2026-08-31), for the same reason one step further out. A
+      -- demo may build a control the KIT does not: coinxt's wallet paints a
+      -- QR into an image, which is the only way a BMP this family builds
+      -- becomes something a phone can read. Registered and built, it reported
+      -- as missing - found by coinxt/tools/check-wallet-boot.py, which boots
+      -- the stack headlessly, so this one cost no engine time. The lesson is
+      -- the one this block already carries twice: the list of types a demo
+      -- can build is not the list of types the KIT builds.
+      --
+      -- AND EVERY CARD (2026-08-29). Unqualified `there is a field X` answers
+      -- for the CURRENT card only (engine notes 5.6) - OBSERVED when
+      -- riptide's five-card boot reported all 63 off-card controls missing
+      -- from a stack where every one existed. A single-card demo walks its
+      -- one card here, exactly the old behaviour.
+      put false into tFound
+      repeat with tC = 1 to the number of cards of this stack
+         if there is a field tName of card tC \
+               or there is a button tName of card tC \
+               or there is a graphic tName of card tC \
+               or there is an image tName of card tC then
+            put true into tFound
+            exit repeat
+         end if
+      end repeat
+      if not tFound then
+         put tName & comma after tMissing
+      end if
+   end repeat
+   if tMissing is empty then
+      return empty
+   end if
+   return char 1 to -2 of tMissing
+end scMissing
+
+-- Call LAST in <pfx>ScRun. It arms the probe below; 400ms lands it before the
+-- usual 800ms dashboard tick, so nothing races for the status line.
+--
+-- SAY THAT THE REPORT IS UNFINISHED, for the reason the suite harness carries a
+-- RUN NOT FINISHED trailer: a report that simply stops reads exactly like a
+-- report that ended, and the difference cost that harness a round trip on
+-- 2026-08-19. One line is cheaper than the ambiguity.
+command scArmProbe
+   scLine "      ...one delayed-write check still to come; the count line " \
+         & "below it is the end of the block"
+   send "scTickProbe" to me in 400 milliseconds
+end scArmProbe
+
+-- THE ONE CHECK THAT NEEDS A TIMER.
+--
+-- OXT-ENGINE-NOTES 5.3 says an unqualified control reference inside a delayed
+-- handler resolves against THE DEFAULTSTACK, not the stack whose script is
+-- running - and that entry is classed DOCUMENTED, not OBSERVED, because this
+-- tree has never actually watched the unpinned form fail. It also names the run
+-- that would settle it: open a second stack in front and let a `send ... in`
+-- handler write an unqualified field.
+--
+-- So this probe READS the defaultStack before pinning and PRINTS what it found.
+-- On an ordinary run that line is context. On a run with another window in front
+-- it is the measurement 5.3 is missing, taken for free and at no risk, because
+-- the pin lands immediately afterwards and the write is verified.
+command scTickProbe
+   local tWas, tPrev, tPrevColor, tGot, tErr
+   put the defaultStack into tWas
+   set the defaultStack to the short name of this stack
+   if there is no field "uiStatus" then
+      scSkip "a delayed handler writes the status line", "the chrome is not built"
+      scFinish
+      exit scTickProbe
+   end if
+   -- RESTORE THE COLOUR TOO, not just the text. uiStatus takes a KIND, and
+   -- handing it back "ok" would repaint a "bad" line green - so a stack whose
+   -- extension is missing would end this probe claiming to be fine.
+   put field "uiStatus" into tPrev
+   put the foregroundColor of field "uiStatus" into tPrevColor
+   try
+      uiStatus kScProbe, empty
+      put field "uiStatus" into tGot
+   catch tErr
+      put "THREW:" && tErr into tGot
+   end try
+   uiStatus tPrev, empty
+   set the foregroundColor of field "uiStatus" to tPrevColor
+   scAssert "a delayed handler writes the status line " \
+         & "(defaultStack on entry: " & scShow(tWas) & ")", (tGot is kScProbe)
+   scFinish
+end scTickProbe
+
+command scFinish
+   scLine "      " & sScPassed & " passed, " & sScFailed & " failed, " \
+         & sScSkipped & " skipped - select this block and copy it into the " \
+         & "OXT pass record"
+   if sScFailed is 0 then
+      scLine "      boot self-check GREEN (this is the single-machine claim; " \
+            & "the live legs are the runbook's)"
+      exit scFinish
+   end if
+   scLine "      boot self-check has FAILURES above - report them before " \
+         & "running any live leg"
+   -- ONLY ON FAILURE does this touch the status line, and the asymmetry is
+   -- deliberate. Green, the demo's own "Ready ..." line is the more useful
+   -- thing to be reading and the detail is in the log a few lines up. Red, the
+   -- log may be on a tab nobody has clicked - so the one surface a person is
+   -- certainly looking at has to say so. Fail loud, pass quiet.
+   uiStatus "Boot self-check: " & sScFailed & " FAILED (see the log)", "bad"
+end scFinish
+-- ==== DEMO SELF-CHECK v1 END ====
+
+-- ==============================================================================
+-- THE BOARD (D-23): the demos' card look, one row per member
+-- ==============================================================================
+-- WHAT CHANGED, AND WHAT DID NOT. Until D-23 this paste built the harness
+-- scaffold's plain window (stBuild). It now wears the demos' look: the UI kit
+-- above builds a 1200 x 640 card with one row per tools/member-registry.py
+-- member (a status pill, its pass / fail / skip counts, Run and Show), a
+-- results pane with a filter (All, Failures, Skips, Boot check, and one
+-- member's lines), Run all and Copy results; and the demo boot self-check
+-- above checks that window every time it opens.
+--
+-- THE REPORT DID NOT CHANGE, and that is the design rather than a leftover.
+-- The scaffold's accounting (stAssert and friends), stReportText's RUN NOT
+-- FINISHED trailer, stShow, stPaint, stCopyResults, closeStack and the mouseUp
+-- that routes Re-run and Copy all run exactly as they did on the engine
+-- records (2026-08-20 to 2026-08-27), because the kit builds the four controls
+-- the scaffold writes UNDER THE SCAFFOLD'S OWN NAMES - stSummary, stResults,
+-- stCopy, stRerun - so every one of those handlers finds what it always found.
+-- "Run all" is the old Re-run button with a new label. stBuild and its three
+-- makers stay in the carried block and are never called: a carried block is
+-- carried whole, and its master still builds the four member harness windows.
+--
+-- FIRST ENGINE RUN 2026-09-24 (Windows, the paste as of 9aa62c8), and it is
+-- worth being exact about what it covered, because a report is text and some
+-- of this board is not. RAN: the build at 1200 x 640 with every row (the boot
+-- self-check, 9 passed, 0 failed, including its delayed write), openStack's
+-- Run all end to end, the tallies (the summary's check that the rows add up to
+-- the totals held at 2620 / 5 / 3), the boot block above the summary, and Copy
+-- results. NOT SHOWN BY THAT REPORT, so still verified statically; needs an OXT
+-- pass (OXT-PASS-RUNBOOK row 48): a row's Run (the button-1 press arming a
+-- tick), Show, the filter buttons and their views, and how the pills looked.
+-- The headless UI boot (tools/check-suite-ui-boot.py) settles their LOGIC and
+-- nothing about rendering or message delivery. The checks the run makes are
+-- the ones the dated records ran.
+
 -- ---- lifecycle ---------------------------------------------------------------
+-- BUILD, CLEAN, RUN, CHECK - in that order, on every open.
+--
+-- stCleanup FIRST, and unconditionally. On a first open there is nothing to
+-- free and every call in it is guarded (enDeinitialize is refcount-guarded in
+-- the shim; the rest sit in a try), so it costs nothing. On the runbook's
+-- re-entry escape hatch - `send "openStack" to this stack` (OXT-PASS-RUNBOOK
+-- 5.2) on a stack that may be mid-run - it is what stops the old pump and
+-- releases the old run's transports and session before the new run takes
+-- them. stRun also releases the session it finds, so this is belt and braces
+-- for the session and the only brace for the ENet hosts and WebRTC peers.
+--
+-- suScRun LAST: the boot self-check reads what the build and the run left
+-- behind (the demo contract), and it only READS - it takes nothing.
 on openStack
-   stBuild
+   suBuild
+   stCleanup
    stRun
+   suScRun
 end openStack
 
+-- THE BOARD'S BUTTONS. The scaffold's mouseUp (carried, engine-proven) routes
+-- Run all and Copy results; everything the board adds routes HERE, on the
+-- press, so the carried block needs no hook. Three rules, each with a reason:
+--   * BUTTON 1 ONLY. A right-click passes on untouched. coin-wallet's
+--     stack-level mouseDown is the engine-run precedent (2026-09-02) for a
+--     mouseDown that passes everything it does not own.
+--   * BUTTONS ONLY. A press on a field, a pill or a panel passes on.
+--   * NO RUN INSIDE THE PRESS. A row's Run only ARMS one pinned tick
+--     (suArmRun); the run starts 33 ms later from a timer, the shape the pump
+--     has always had, so no member run ever executes inside a mouse handler
+--     with the button held down. A filter press is only a repaint.
+-- If an engine disagrees about acting on the press (runbook row 48 records
+-- it), the fallback is one line in the scaffold master's mouseUp: dispatch
+-- the target's name to this stack from its default branch.
+on mouseDown pWhich
+   local tName
+   if pWhich is not 1 then
+      pass mouseDown
+   end if
+   if word 1 of the name of the target is not "button" then
+      pass mouseDown
+   end if
+   put the short name of the target into tName
+   if tName begins with "suRun" then
+      suArmRun (char 6 to -1 of tName)
+   else if tName begins with "suShow" then
+      suSetFilter ("m:" & char 7 to -1 of tName)
+   else if tName begins with "suFilter" then
+      suSetFilter (char 9 to -1 of tName)
+   else
+      pass mouseDown
+   end if
+end mouseDown
 
+-- ARM ONE ROW'S RUN: validate the key, refuse while a run is live, and start
+-- the run from a pinned 33 ms tick rather than inside the click.
+--
+-- WHY REFUSE rather than restart. A row's Run replaces the whole report, and a
+-- live run is mid-pump with transports open. Throwing a run away is what Run
+-- all is for - it has always stopped everything first, and it is the
+-- runbook's documented recovery (5.1.1) - so a second row press during a run
+-- is far more likely a mis-press than a request, and it says so and waits.
+command suArmRun pKey
+   set the defaultStack to the short name of this stack
+   if not suIsRunKey(pKey) then
+      exit suArmRun
+   end if
+   if sAsyncRunning is "true" or sSuArmed is not empty then
+      uiStatus "A run is still going: wait for its summary line, or press Run all to restart everything.", "warn"
+      exit suArmRun
+   end if
+   put toLower(pKey) into sSuArmed
+   uiStatus "Starting" && suTitleOf(sSuArmed) & ": the synchronous checks run first and the window waits for them.", empty
+   send "suRunTick" to me in 33 milliseconds
+end suArmRun
 
+-- The armed run, from its tick. PINNED FIRST (engine note 5.3): everything it
+-- reaches writes controls by unqualified name, and a `send ... in` handler
+-- resolves those against the defaultStack, not against this stack.
+command suRunTick
+   local tKey
+   set the defaultStack to the short name of this stack
+   put sSuArmed into tKey
+   put empty into sSuArmed
+   if tKey is empty then
+      exit suRunTick
+   end if
+   stCleanup
+   stRun tKey
+end suRunTick
 
+-- ---- scope: what one run covers ---------------------------------------------
+-- A scoped run is a SUBSEQUENCE of Run all, never a reordering of it: every
+-- section keeps its place relative to the others, so the ordering invariants
+-- the run depends on (the probe first; the deep harnesses before the seal and
+-- the loopback starts; holde-em's timer sweep before the loopbacks arm; the
+-- ENet start before the budget section) hold in every scope by construction.
 
+-- A key a row's Run may carry: one of kSuKeys, and not a member with no
+-- in-engine harness.
+function suIsRunKey pKey
+   local tKeys, tOld, tOk
+   put kSuKeys into tKeys
+   put the itemDelimiter into tOld
+   set the itemDelimiter to comma
+   put (pKey is among the items of tKeys) into tOk
+   set the itemDelimiter to tOld
+   if suNoHarness(pKey) then
+      return false
+   end if
+   return tOk
+end suIsRunKey
 
+-- A member with no in-engine harness: a row with a caption instead of a pill
+-- and a Run. kSuNoHarness is a LIST, so it is asked as one - `is` would match
+-- only while the list happened to hold a single name, and a second such
+-- member would then get a Run button and a pill that counts nothing
+-- (check-suite-selftest.py check 17 refuses the `is` form outright).
+function suNoHarness pKey
+   local tList, tOld, tHit
+   put kSuNoHarness into tList
+   put the itemDelimiter into tOld
+   set the itemDelimiter to comma
+   put (pKey is among the items of tList) into tHit
+   set the itemDelimiter to tOld
+   return tHit
+end suNoHarness
 
+-- Empty (the scaffold's parameterless Run all) and anything unknown mean
+-- everything; a row's key means that row.
+command suScopeSet pScope
+   put "all" into sSuScope
+   if suIsRunKey(pScope) then
+      put toLower(pScope) into sSuScope
+   end if
+end suScopeSet
 
+function suInScope pKey
+   return (sSuScope is "all") or (sSuScope is pKey)
+end suInScope
 
+-- The two transports each run one live loopback; the cross row runs both.
+function suUsesEnet
+   return suInScope("enetxt") or suInScope("cross")
+end suUsesEnet
 
+function suUsesDc
+   return suInScope("datachannelxt") or suInScope("cross")
+end suUsesDc
 
+function suTitleOf pKey
+   local tKeys, tNames, tOld, tI, tTitle
+   put kSuKeys into tKeys
+   put kSuNames into tNames
+   put pKey into tTitle
+   put the itemDelimiter into tOld
+   set the itemDelimiter to comma
+   repeat with tI = 1 to the number of items of tKeys
+      if item tI of tKeys is pKey then
+         put item tI of tNames into tTitle
+      end if
+   end repeat
+   set the itemDelimiter to tOld
+   return tTitle
+end suTitleOf
 
+function suScopeLabel
+   if sSuScope is "all" then
+      return "all members (Run all)"
+   end if
+   return suTitleOf(sSuScope) && "only"
+end suScopeLabel
 
+-- ---- tallies: what each row counted -----------------------------------------
+-- SNAPSHOT DELTAS AROUND EACH BLOCK, never counters inside member code: the
+-- member harnesses stay exactly as they ship. suTallyOpen notes the scaffold's
+-- three counters and the report's length; suTallyClose adds the differences to
+-- the row and records which report lines the block wrote, which is what a
+-- member's Show view prints. In Run all a block counts to its own row; in a
+-- one-member run EVERYTHING counts to that member's row, the probe and the
+-- teardown included, because that row is the run.
+--
+-- Keys are kSuKeys' lowercase spellings: array keys fold case (engine note
+-- 2.7), so one spelling everywhere keeps the question from arising.
+command suTallyReset
+   local tKeys, tKey, tOld
+   put empty into sSuP
+   put empty into sSuF
+   put empty into sSuS
+   put empty into sSuSpan
+   put kSuKeys into tKeys
+   put the itemDelimiter into tOld
+   set the itemDelimiter to comma
+   repeat for each item tKey in tKeys
+      put 0 into sSuP[tKey]
+      put 0 into sSuF[tKey]
+      put 0 into sSuS[tKey]
+      put empty into sSuSpan[tKey]
+   end repeat
+   set the itemDelimiter to tOld
+   put empty into sSuMarkKey
+   put -1 into sSuViewLen
+end suTallyReset
+
+command suTallyOpen pKey
+   -- A mark still open means a block threw past its own close; attribute what
+   -- it counted before starting the next, so nothing is dropped.
+   if sSuMarkKey is not empty then
+      suTallyClose
+   end if
+   if sSuScope is "all" then
+      put pKey into sSuMarkKey
+   else
+      put sSuScope into sSuMarkKey
+   end if
+   put sPassed into sSuMarkP
+   put sFailed into sSuMarkF
+   put sSkipped into sSuMarkS
+   put the length of sResultText into sSuMarkLen
+end suTallyOpen
+
+command suTallyClose
+   local tKey, tOk, tFrom, tTo
+   put sSuMarkKey into tKey
+   put empty into sSuMarkKey
+   if tKey is empty then
+      exit suTallyClose
+   end if
+   -- VALIDATE BEFORE ADDING (stMergeCounted's lesson): an `add` on a
+   -- non-number is an uncaught engine error that takes the whole run, and
+   -- this runs inside the pump. Built as one value, because OXT does not
+   -- short-circuit `and` (engine note 2.5).
+   put (sPassed is a number and sFailed is a number and sSkipped is a number and sSuMarkP is a number and sSuMarkF is a number and sSuMarkS is a number) into tOk
+   if tOk is false then
+      exit suTallyClose
+   end if
+   add (sPassed - sSuMarkP) to sSuP[tKey]
+   add (sFailed - sSuMarkF) to sSuF[tKey]
+   add (sSkipped - sSuMarkS) to sSuS[tKey]
+   -- The span, only when the block wrote something: a pump tick with no
+   -- events writes nothing, and this keeps that case free of a line count.
+   if the length of sResultText > sSuMarkLen then
+      put (the number of lines of (char 1 to sSuMarkLen of sResultText)) + 1 into tFrom
+      put the number of lines of sResultText into tTo
+      suSpanAdd tKey, tFrom, tTo
+   end if
+end suTallyClose
+
+-- One row's report spans, as lines of "from to"; a span that starts where the
+-- last one ended extends it, so a transport's many pump ticks read as one.
+command suSpanAdd pKey, pFrom, pTo
+   local tList, tN, tLast
+   put sSuSpan[pKey] into tList
+   put the number of lines of tList into tN
+   if tN > 0 then
+      put line tN of tList into tLast
+      if (word 2 of tLast) + 1 >= pFrom then
+         put (word 1 of tLast) && pTo into line tN of tList
+         put tList into sSuSpan[pKey]
+         exit suSpanAdd
+      end if
+   end if
+   put pFrom && pTo & return after tList
+   put tList into sSuSpan[pKey]
+end suSpanAdd
+
+function suNum pValue
+   if pValue is a number then
+      return pValue
+   end if
+   return 0
+end suNum
+
+-- ---- the rows ----------------------------------------------------------------
+-- A row's pill, as two lines: the kit's pill kind, then the pill's text. Only
+-- "ok", "wait" and "bad" are used; any other kind paints the kit's navy, which
+-- is meant for the title band. pFinal says the run is over for this question
+-- (the summary asks before sStRunDone is set).
+function suRowState pKey, pFinal
+   local tP, tF, tS
+   if not suInScope(pKey) then
+      return "wait" & return & "not run"
+   end if
+   put suNum(sSuP[pKey]) into tP
+   put suNum(sSuF[pKey]) into tF
+   put suNum(sSuS[pKey]) into tS
+   if pFinal is not true then
+      if sAsyncRunning is "true" then
+         if suLive(pKey) then
+            return "wait" & return & "running..."
+         end if
+      end if
+   end if
+   if tF > 0 then
+      return "bad" & return & tF && "FAILED"
+   end if
+   if tP > 0 then
+      return "ok" & return & "OK"
+   end if
+   if tS > 0 then
+      if suPresent(pKey) then
+         return "wait" & return & "skipped"
+      end if
+      if pKey is "torrentxt" then
+         -- the probe cannot tell "not installed" from "a session is already
+         -- live in this process"; the member's Show view carries the reason
+         return "wait" & return & "unavailable"
+      end if
+      return "wait" & return & "absent"
+   end if
+   -- A FINISHED row that counted nothing is a defect, not a quiet one: every
+   -- block this file runs ends in a PASS, a FAIL or a SKIP, so 0/0/0 means a
+   -- block ran outside its tally or not at all.
+   if pFinal is true or sStRunDone is "true" then
+      return "bad" & return & "nothing ran"
+   end if
+   return "wait" & return & "waiting"
+end suRowState
+
+-- Still on the wire: only the transports, and the cross row that owns both.
+function suLive pKey
+   if pKey is "enetxt" then
+      return not stEnDone()
+   end if
+   if pKey is "datachannelxt" then
+      return not stDcDone()
+   end if
+   if pKey is "cross" then
+      return not (stEnDone() and stDcDone())
+   end if
+   return false
+end suLive
+
+-- Was the member there to test? The probe's own flags; a member whose SKIPs
+-- mean "not installed" reads "absent", one whose SKIPs are its own reads
+-- "skipped". holde-em and the cross row have nothing to probe.
+function suPresent pKey
+   switch pKey
+      case "sodiumxt"
+         return sHaveSodium is true
+      case "torrentxt"
+         return sHaveTorrent is true
+      case "enetxt"
+         return sHaveEnet is true
+      case "datachannelxt"
+         return sHaveDc is true
+      case "box2dxt"
+         return sHaveBox2d is true
+      case "coinxt"
+         return (sHaveCoin is true) and (sHaveCoinScript is true)
+      case "onionxt"
+         return sHaveOnion is true
+      case "nostrxt"
+         return sHaveNostrScript is true
+      case "riptide"
+         return sHaveRiptideScript is true
+   end switch
+   return true
+end suPresent
+
+-- ONE PAINTER FOR EVERY ROW, so no two handlers can disagree about a pill (the
+-- discipline the kit's uiPill asks for). It repaints the same names at the
+-- same rects every time, pins first (it is reached from the pump's timer), and
+-- does nothing before the board exists.
+command suPaintRows
+   local tKeys, tKey, tI, tOld, tTop, tState, tCounts
+   set the defaultStack to the short name of this stack
+   if there is no field "suView" then
+      exit suPaintRows
+   end if
+   put kSuKeys into tKeys
+   put the itemDelimiter into tOld
+   set the itemDelimiter to comma
+   repeat with tI = 1 to the number of items of tKeys
+      put item tI of tKeys into tKey
+      if not suNoHarness(tKey) then
+         put kSuRowTop + kSuRowStep * (tI - 1) into tTop
+         put suRowState(tKey, false) into tState
+         uiPill ("suPill" & tKey), (line 2 of tState), ("200," & (tTop + 7) & ",296," & (tTop + 27)), (line 1 of tState)
+         if suInScope(tKey) then
+            put suNum(sSuP[tKey]) && "/" && suNum(sSuF[tKey]) && "/" && suNum(sSuS[tKey]) into tCounts
+         else
+            put "-" into tCounts
+         end if
+         uiLabel ("suCount" & tKey), tCounts, ("300," & (tTop + 9) & ",376," & (tTop + 25)), 10
+         set the textFont of field ("suCount" & tKey) to uiMonoFont()
+         set the foregroundColor of field ("suCount" & tKey) to kUiInkSoft
+      end if
+   end repeat
+   set the itemDelimiter to tOld
+   put sPhaseEn & "/" & sPhaseDc into sSuPainted
+end suPaintRows
+
+-- Every row control, by its computed name, for the boot self-check (the
+-- derived kSuScControls list cannot see a name built from a key).
+function suRowControls
+   local tKeys, tKey, tOut, tOld
+   put kSuKeys into tKeys
+   put empty into tOut
+   put the itemDelimiter into tOld
+   set the itemDelimiter to comma
+   repeat for each item tKey in tKeys
+      put "suName" & tKey & comma after tOut
+      if suNoHarness(tKey) then
+         put "suNote" & tKey & comma after tOut
+      else
+         put "suPill" & tKey & comma & "suPill" & tKey & "Bg" & comma & "suCount" & tKey & comma & "suRun" & tKey & comma & "suShow" & tKey & comma after tOut
+      end if
+   end repeat
+   set the itemDelimiter to tOld
+   return char 1 to -2 of tOut
+end suRowControls
+
+-- ---- the window ----------------------------------------------------------------
+-- Built once and STAMPED (uSuUiVersion): a reopen with the current board only
+-- repaints, and a stack an OLDER paste built - the scaffold's 760-wide window,
+-- or an earlier board - is cleared and rebuilt, which is riptide-social's and
+-- the Quick Shares' upgrade path. The build runs under lock screen with the
+-- unlock in the catch too (coin-wallet's trap 41: a throw between lock and
+-- unlock is how a script error becomes a frozen engine).
+command suBuild
+   local tError
+   set the defaultStack to the short name of this stack
+   if the uSuUiVersion of this stack is kSuUiVersion then
+      if there is a field "suView" then
+         -- A stamped window keeps what the last build drew, and that includes
+         -- its SIZE, which a person can change: a new mainstack is resizable,
+         -- and only suBuildAll's uiChrome ever set it. Reopened at another
+         -- size, the boot self-check's 1200 x 640 assertion went red over a
+         -- green run (review, 2026-09-25; found in the model, not on an
+         -- engine). The layout inside is fixed, so the size is re-asserted
+         -- here, the same two properties uiChrome sets.
+         if the width of this stack is not kStWidth then
+            set the width of this stack to kStWidth
+         end if
+         if the height of this stack is not kStHeight then
+            set the height of this stack to kStHeight
+         end if
+         suPaintRows
+         suSetFilter sSuFilter
+         exit suBuild
+      end if
+   end if
+   lock screen
+   try
+      suBuildAll
+   catch tError
+      unlock screen
+      answer "The self-test could not build its window:" & return & return & tError & return & return & "The run still goes ahead, but there is no window to read it in. Report this with the text above: the paste may be damaged."
+      exit suBuild
+   end try
+   unlock screen
+   set the uSuUiVersion of this stack to kSuUiVersion
+   suPaintRows
+   suSetFilter "all"
+end suBuild
+
+-- Clear what an older build left, by NAME: the scaffold's own window (the
+-- names below, compared as a list rather than written as control references,
+-- so the self-check's derived list never mistakes them for controls this
+-- script needs) and every board or kit control. This is box2dxt's engine-run
+-- restart-loop delete (its stWipe; 2026-08-17 and 2026-08-20), which never
+-- trusts a control number across a deletion.
+command suBuildReset
+   local tAgain, tI, tName, tRetired, tOld, tHit
+   put "stTitle,stSummary,stCopy,stRerun,stResults" into tRetired
+   put the itemDelimiter into tOld
+   set the itemDelimiter to comma
+   put true into tAgain
+   repeat while tAgain
+      put false into tAgain
+      repeat with tI = 1 to the number of controls of this card
+         put the short name of control tI of this card into tName
+         put (tName is among the items of tRetired) into tHit
+         if char 1 to 2 of tName is "su" or char 1 to 2 of tName is "ui" then
+            put true into tHit
+         end if
+         if tHit then
+            delete control tI of this card
+            put true into tAgain
+            exit repeat
+         end if
+      end repeat
+   end repeat
+   set the itemDelimiter to tOld
+end suBuildReset
+
+-- THE LAYOUT, at 1200 x 640 (the kit's rule 6: the whole window fits 720p).
+-- Panels first so they sit behind everything (kit rule 1). The four scaffold
+-- controls keep the scaffold's names; everything the board adds is su*, and
+-- nothing is named st_*, b2k* or he*, the prefixes box2dxt's and holde-em's
+-- folded harnesses own on this same card.
+command suBuildAll
+   local tKeys, tNames, tKey, tI, tOld, tTop, tRect
+   suBuildReset
+   uiChrome kStTitle, kStWidth, kStHeight
+   uiPanel "suPanMembers", "8,88,500," & (kStHeight - 8)
+   uiPanel "suPanResults", "508,88," & (kStWidth - 8) & "," & (kStHeight - 8)
+
+   -- the header row: the scaffold's controls, under the scaffold's names
+   uiLabel "stSummary", "No run yet.", "16,58," & (kStWidth - 260) & ",80", 13
+   set the textStyle of field "stSummary" to "bold"
+   uiButton "stRerun", "Run all", (kStWidth - 248) & ",56," & (kStWidth - 140) & ",80"
+   uiButton "stCopy", "Copy results", (kStWidth - 132) & ",56," & (kStWidth - 16) & ",80"
+
+   -- 1. the members, one row each, in tools/member-registry.py's order
+   uiSection "suSecMembers", "1.  Members: one row per extension and app", "20,96,488,114"
+   uiCap "suHeadStatus", "status", "200,118,296,132"
+   uiCap "suHeadCounts", "pass / fail / skip", "300,118,378,132"
+   uiCap "suHeadRun", "this member", "380,118,488,132"
+   put kSuKeys into tKeys
+   put kSuNames into tNames
+   put the itemDelimiter into tOld
+   set the itemDelimiter to comma
+   repeat with tI = 1 to the number of items of tKeys
+      put item tI of tKeys into tKey
+      put kSuRowTop + kSuRowStep * (tI - 1) into tTop
+      uiLabel ("suName" & tKey), (item tI of tNames), ("20," & (tTop + 7) & ",196," & (tTop + 27)), 12
+      set the textStyle of field ("suName" & tKey) to "bold"
+      if suNoHarness(tKey) then
+         put "200," & (tTop + 6) & ",488," & (tTop + 30) into tRect
+         uiCap ("suNote" & tKey), "no in-engine harness: its tests run headlessly in the gates", tRect
+      else
+         uiButton ("suRun" & tKey), "Run", ("380," & (tTop + 5) & ",432," & (tTop + 29))
+         uiButton ("suShow" & tKey), "Show", ("436," & (tTop + 5) & ",488," & (tTop + 29))
+      end if
+   end repeat
+   set the itemDelimiter to tOld
+   uiCap "suMembersCap", "Run re-runs ONE member end to end (probe, its sections, teardown, summary) and replaces the report; Show lists only its lines. Run all is the suite record.", "20,546,488,580"
+   uiFooter "Every member's own self-test plus the cross-member seams, in one process. Run all ran on an engine 2026-09-24; Run, Show and the filters need an OXT pass (D-23).", "20,588,488,628"
+
+   -- 2. the results: three fields on one rect, exactly one visible
+   uiSection "suSecResults", "2.  Results", "520,96,760,114"
+   uiButton "suFilterAll", "All", "872,94,924,118"
+   uiButton "suFilterFail", "Failures", "930,94,1010,118"
+   uiButton "suFilterSkip", "Skips", "1016,94,1076,118"
+   uiButton "suFilterBoot", "Boot check", "1082,94,1180,118"
+   set the autoHilite of button "suFilterAll" to false
+   set the autoHilite of button "suFilterFail" to false
+   set the autoHilite of button "suFilterSkip" to false
+   set the autoHilite of button "suFilterBoot" to false
+   uiCap "suViewCap", "All: the whole report.", "520,122,1180,138"
+   uiArea "stResults", "520,142," & (kStWidth - 20) & "," & (kStHeight - 18)
+   uiArea "suView", "520,142," & (kStWidth - 20) & "," & (kStHeight - 18)
+   uiArea "suBootLog", "520,142," & (kStWidth - 20) & "," & (kStHeight - 18)
+end suBuildAll
+
+-- ---- the results views --------------------------------------------------------
+-- ALL is the scaffold's own stResults, rewritten every tick by stShow and
+-- painted by stPaint exactly as before - and it is always what Copy copies.
+-- FAILURES, SKIPS and ONE MEMBER are composed into suView, which is shown in
+-- stResults' place while stShow keeps writing the hidden original, so nothing
+-- fights over a field. BOOT CHECK shows the self-check's own log.
+command suSetFilter pWhich
+   local tWhich
+   set the defaultStack to the short name of this stack
+   put toLower(pWhich) into tWhich
+   if tWhich is not "fail" and tWhich is not "skip" and tWhich is not "boot" then
+      if tWhich begins with "m:" then
+         if not suIsRunKey(char 3 to -1 of tWhich) then
+            put "all" into tWhich
+         end if
+      else
+         put "all" into tWhich
+      end if
+   end if
+   put tWhich into sSuFilter
+   if there is no field "suView" then
+      exit suSetFilter
+   end if
+   set the hilite of button "suFilterAll" to (tWhich is "all")
+   set the hilite of button "suFilterFail" to (tWhich is "fail")
+   set the hilite of button "suFilterSkip" to (tWhich is "skip")
+   set the hilite of button "suFilterBoot" to (tWhich is "boot")
+   put -1 into sSuViewLen
+   set the vScroll of field "suView" to 0
+   suRenderView
+end suSetFilter
+
+-- Render the current view. Pinned (the pump reaches it), contained (a view
+-- that cannot render must never cost a run), and under lock screen with the
+-- unlock outside the try, so the unlock always runs.
+command suRenderView
+   local tText, tCap, tScroll, tError
+   set the defaultStack to the short name of this stack
+   if there is no field "suView" then
+      exit suRenderView
+   end if
+   lock screen
+   try
+      if sSuFilter is "fail" or sSuFilter is "skip" or sSuFilter begins with "m:" then
+         put the vScroll of field "suView" into tScroll
+         put suViewText(sSuFilter) into tText
+         put tText into field "suView"
+         suPaintView
+         set the vScroll of field "suView" to tScroll
+         set the visible of field "stResults" to false
+         set the visible of field "suBootLog" to false
+         set the visible of field "suView" to true
+         if sSuFilter is "fail" then
+            put "Failures: each FAIL line under the section it sits in. Copy results still copies the whole report." into tCap
+         else if sSuFilter is "skip" then
+            put "Skips: each SKIP line under the section it sits in. Copy results still copies the whole report." into tCap
+         else
+            put suTitleOf(char 3 to -1 of sSuFilter) & ": only the lines its row counted. Copy results still copies the whole report." into tCap
+         end if
+      else if sSuFilter is "boot" then
+         set the visible of field "stResults" to false
+         set the visible of field "suView" to false
+         set the visible of field "suBootLog" to true
+         put "Boot check: this window's own self-check, run on open. Not counted in the totals; the report carries it just above its summary." into tCap
+      else
+         set the visible of field "suView" to false
+         set the visible of field "suBootLog" to false
+         set the visible of field "stResults" to true
+         put "All: the whole report, exactly what Copy results copies." into tCap
+      end if
+   catch tError
+      put "This view could not render (" & tError & "); All still shows the whole report." into tCap
+   end try
+   put the length of sResultText into sSuViewLen
+   uiCap "suViewCap", tCap, "520,122,1180,138"
+   unlock screen
+end suRenderView
+
+function suViewText pFilter
+   if pFilter is "fail" then
+      return suKindText("fail")
+   end if
+   if pFilter is "skip" then
+      return suKindText("skip")
+   end if
+   return suMemberText(char 3 to -1 of pFilter)
+end suViewText
+
+-- One kind of line, each under the section header and member-report divider it
+-- sits in, with up to three indented note lines that follow it (a FAIL's
+-- "it raised:" is usually the next line). Read from sResultText, and ended
+-- with the scaffold's own trailer while the run is unfinished.
+function suKindText pKind
+   local tSrc, tLine, tKind, tHead, tSub, tHeadShown, tSubShown, tNotes, tN, tOut, tHeadLine
+   put sResultText into tSrc
+   put empty into tHead
+   put empty into tSub
+   put 0 into tNotes
+   put 0 into tN
+   put empty into tOut
+   repeat for each line tLine in tSrc
+      put suLineKind(tLine) into tKind
+      if tKind is "head" then
+         put tLine into tHead
+         put empty into tSub
+         put false into tHeadShown
+         put false into tSubShown
+         put 0 into tNotes
+      else if tKind is "sub" or tKind is "marker" then
+         put tLine into tSub
+         put false into tSubShown
+         put 0 into tNotes
+      else if tKind is pKind then
+         if tHeadShown is not true then
+            if tHead is not empty then
+               put return & tHead & return after tOut
+            end if
+            put true into tHeadShown
+         end if
+         if tSubShown is not true then
+            if tSub is not empty then
+               put tSub & return after tOut
+            end if
+            put true into tSubShown
+         end if
+         put tLine & return after tOut
+         add 1 to tN
+         put 3 into tNotes
+      else if tNotes > 0 then
+         if tKind is "other" and char 1 of tLine is space then
+            put tLine & return after tOut
+            subtract 1 from tNotes
+         else
+            put 0 into tNotes
+         end if
+      end if
+   end repeat
+   if pKind is "fail" then
+      put "Failures:" && tN && "FAIL line(s) in the report." into tHeadLine
+      if tN is 0 then
+         put tHeadLine && "Nothing failed." into tHeadLine
+      end if
+   else
+      put "Skips:" && tN && "SKIP line(s) in the report." into tHeadLine
+      if tN is 0 then
+         put tHeadLine && "Nothing skipped." into tHeadLine
+      end if
+   end if
+   return tHeadLine & return & tOut & suTrailer()
+end suKindText
+
+-- One member's lines: the spans its row counted.
+function suMemberText pKey
+   local tTitle, tList, tSrc, tLine, tOut
+   put suTitleOf(pKey) into tTitle
+   if not suInScope(pKey) then
+      return tTitle && "was not in this run's scope (" & suScopeLabel() & ")." & return & "Press Run on its row, or Run all." & return
+   end if
+   put sSuSpan[pKey] into tList
+   put sResultText into tSrc
+   put empty into tOut
+   repeat for each line tLine in tList
+      put (line (word 1 of tLine) to (word 2 of tLine) of tSrc) & return after tOut
+   end repeat
+   return tTitle & ":" && suNum(sSuP[pKey]) && "passed," && suNum(sSuF[pKey]) && "failed," && suNum(sSuS[pKey]) && "skipped, in the lines below." & return & tOut & suTrailer()
+end suMemberText
+
+-- The scaffold's own RUN NOT FINISHED trailer, taken from stReportText rather
+-- than copied, so a filtered view of an unfinished run says so in the same
+-- words the whole report does.
+function suTrailer
+   local tFull
+   if sStRunDone is "true" then
+      return empty
+   end if
+   put stReportText() into tFull
+   return char ((the length of sResultText) + 1) to -1 of tFull
+end suTrailer
+
+-- WHAT A LINE IS, by its FIRST WORD, case-sensitively. Every folded format
+-- reads right this way: the scaffold's unindented `PASS` / `FAIL` / `SKIP`,
+-- the returned reports' indented `  ok` / `  FAIL` / `  skip`, onionxt's and
+-- nostrxt's `  --   (skipped: ...)`, section headers `== x ==`, member
+-- sub-sections `-- x`, and the `---- X report ----` dividers. `begins with`
+-- (stPaint's test) cannot see an indented FAIL, which is why the whole
+-- report is repainted by this after it finishes (suPaintResults). The
+-- caseSensitive property is restored explicitly: engine notes 2.3 and 2.7
+-- disagree about whether a local property survives its handler, and this
+-- code does not need to find out.
+function suLineKind pLine
+   local tW1, tKind, tWas
+   put word 1 of pLine into tW1
+   put the caseSensitive into tWas
+   set the caseSensitive to true
+   put "other" into tKind
+   if tW1 is "FAIL" then
+      put "fail" into tKind
+   else if tW1 is "PASS" or tW1 is "ok" then
+      put "pass" into tKind
+   else if tW1 is "SKIP" or tW1 is "skip" then
+      put "skip" into tKind
+   else if tW1 is "==" then
+      put "head" into tKind
+   else if tW1 is "----" then
+      put "marker" into tKind
+   else if tW1 is "--" then
+      if word 2 of pLine begins with "(skipped" then
+         put "skip" into tKind
+      else
+         put "sub" into tKind
+      end if
+   end if
+   set the caseSensitive to tWas
+   return tKind
+end suLineKind
+
+-- Paint a composed view by line kind: stPaint's per-line idiom (engine-run on
+-- every record since 2026-08-20), muted first and then only the lines that
+-- carry a meaning, so a long view costs one pass.
+command suPaintView
+   local tText, tLine, tI, tKind, tError
+   set the defaultStack to the short name of this stack
+   if there is no field "suView" then
+      exit suPaintView
+   end if
+   put field "suView" into tText
+   set the foregroundColor of field "suView" to kUiMuted
+   put 0 into tI
+   try
+      repeat for each line tLine in tText
+         add 1 to tI
+         put suLineKind(tLine) into tKind
+         if tKind is "fail" then
+            set the foregroundColor of line tI of field "suView" to kUiBad
+         else if tKind is "pass" then
+            set the foregroundColor of line tI of field "suView" to kUiOk
+         else if tKind is "skip" then
+            set the foregroundColor of line tI of field "suView" to kUiWarn
+         else if tKind is "head" then
+            set the foregroundColor of line tI of field "suView" to kUiAccent
+         end if
+      end repeat
+   catch tError
+   end try
+end suPaintView
+
+-- The whole report, repainted by FIRST WORD once the run is over. stPaint
+-- (carried) paints by `begins with`, so a member's indented `  FAIL` stays
+-- muted in the All view; the carried block cannot change without re-carrying
+-- four published member harnesses, so the paste corrects its own view here.
+-- Only the lines stPaint could not have painted right are touched.
+command suPaintResults
+   local tText, tLine, tI, tKind, tError
+   set the defaultStack to the short name of this stack
+   if there is no field "stResults" then
+      exit suPaintResults
+   end if
+   put field "stResults" into tText
+   put 0 into tI
+   lock screen
+   try
+      repeat for each line tLine in tText
+         add 1 to tI
+         if char 1 of tLine is space or char 1 of tLine is "=" then
+            put suLineKind(tLine) into tKind
+            if tKind is "fail" then
+               set the foregroundColor of line tI of field "stResults" to kUiBad
+            else if tKind is "pass" then
+               set the foregroundColor of line tI of field "stResults" to kUiOk
+            else if tKind is "skip" then
+               set the foregroundColor of line tI of field "stResults" to kUiWarn
+            else if tKind is "head" then
+               set the foregroundColor of line tI of field "stResults" to kUiAccent
+            end if
+         end if
+      end repeat
+   catch tError
+   end try
+   unlock screen
+end suPaintResults
+
+-- ---- the run's two ends --------------------------------------------------------
+-- The start of a run: the summary line back to neutral (stShow colours it only
+-- when a run finishes, so a new run would otherwise start in the last one's
+-- red or green).
+command suRunStarting
+   set the defaultStack to the short name of this stack
+   if there is a field "stSummary" then
+      set the foregroundColor of field "stSummary" to kUiInk
+   end if
+end suRunStarting
+
+-- The end of the synchronous half, just before the pump is armed. This is the
+-- first moment anything painted becomes visible (the handler is about to
+-- return; engine-observed on 2026-08-19, when a run copied mid-pump ended at
+-- the last synchronous section), so the rows and the view are painted here.
+-- CONTAINED: the `send "suPump"` after it is the only route to teardown.
+command suSyncDone
+   local tError, tNote
+   try
+      suPaintRows
+      suRenderView
+      if suUsesEnet() or suUsesDc() then
+         put "the live loopbacks are still running" into tNote
+      else
+         put "the teardown and the summary follow on the next tick" into tNote
+      end if
+      uiStatus "Running (" & suScopeLabel() & "): the synchronous checks are done;" && tNote & ". Wait for the summary line before you copy.", empty
+   catch tError
+      -- a paint must never cost a run; the report is assembled in a variable
+   end try
+end suSyncDone
+
+-- One pump tick's paint, before the pump's re-arm and in a try of its own: the
+-- rows when a transport's phase moved, and a filtered view when the report
+-- grew. Nothing repaints on a tick that changed nothing, and a paint that
+-- throws costs only the paint (suAfterDone repaints everything at the end).
+command suPumpPaint
+   local tError
+   try
+      suPumpPaintNow
+   catch tError
+   end try
+end suPumpPaint
+
+command suPumpPaintNow
+   if (sPhaseEn & "/" & sPhaseDc) is not sSuPainted then
+      suPaintRows
+   end if
+   if sSuFilter is "fail" or sSuFilter is "skip" or sSuFilter begins with "m:" then
+      if the length of sResultText is not sSuViewLen then
+         suRenderView
+      end if
+   end if
+end suPumpPaintNow
+
+-- The window's boot self-check, appended to the report UNCOUNTED, just above
+-- the summary: Copy results then carries the window's record too (runbook row
+-- 37 asks for the boot block), while the totals stay the run's alone. Each
+-- line is prefixed, so no boot line ever reads as a run's PASS or FAIL - not
+-- to a person, and not to the Failures view.
+command suBootIntoReport
+   local tLine
+   if sScLines is empty then
+      exit suBootIntoReport
+   end if
+   stSection "boot self-check (this window's own, run on open; NOT counted in the totals)"
+   repeat for each line tLine in sScLines
+      stNote "[boot] " & tLine
+   end repeat
+end suBootIntoReport
+
+-- Is the self-check's one delayed check still to come? Read from the
+-- self-check's OWN record, not from `the pendingMessages`: that list is
+-- engine-wide, and every demo that carries the self-check arms its own
+-- "scTickProbe", so another open demo's probe used to read as this one's
+-- (review, 2026-09-25). The carried block writes its "still to come" line
+-- when it arms the probe (scArmProbe) and its count line when the probe
+-- has run (scFinish), so the probe is pending exactly while the first is in
+-- sScLines and the second is not.
+function suBootPending
+   local tArmed, tDone
+   put ("one delayed-write check still to come" is in sScLines) into tArmed
+   put ("select this block and copy it into the" is in sScLines) into tDone
+   if tArmed then
+      if not tDone then
+         return true
+      end if
+   end if
+   return false
+end suBootPending
+
+-- The summary section's own lines: the scope, what the report is, the board as
+-- text (so the tick sheet's member totals are COPIED, not transcribed from a
+-- screenshot), the board check, and the boot verdict.
+--
+-- THE BOARD CHECK: every counted check belongs to exactly one row, so the rows
+-- must add up to the totals. It prints a note when they do and FAILs only when
+-- they do not - so a green run's totals stay comparable with every dated
+-- record taken before the board existed, and a tally lost to a block that ran
+-- outside suTallyOpen / suTallyClose is a red line on an engine, not a quietly
+-- wrong pill.
+command suSummaryNotes
+   local tKeys, tNames, tKey, tI, tOld, tState, tP, tF, tS, tSumP, tSumF, tSumS, tOk
+   stNote "Scope:" && suScopeLabel() & "."
+   if sSuScope is not "all" then
+      stNote "A one-member run is NOT the suite record. The record is a Run all,"
+      stNote "copied after its summary; this report covers the scope above only."
+   end if
+   stNote "Each member's deep self-test above is the harness it ships standalone,"
+   stNote "folded in by tools/build-suite-selftest.py; the ENet and DataChannel"
+   stNote "live loopbacks are this file's own. Paste these numbers back."
+   stNote "per member (passed / failed / skipped; the rows on the left):"
+   put 0 into tSumP
+   put 0 into tSumF
+   put 0 into tSumS
+   put kSuKeys into tKeys
+   put kSuNames into tNames
+   put the itemDelimiter into tOld
+   set the itemDelimiter to comma
+   repeat with tI = 1 to the number of items of tKeys
+      put item tI of tKeys into tKey
+      if suNoHarness(tKey) then
+         stNote "  " & suPad(item tI of tNames, 24) & "    -     -     -  no in-engine harness"
+      else
+         put suNum(sSuP[tKey]) into tP
+         put suNum(sSuF[tKey]) into tF
+         put suNum(sSuS[tKey]) into tS
+         add tP to tSumP
+         add tF to tSumF
+         add tS to tSumS
+         put suRowState(tKey, true) into tState
+         if suInScope(tKey) then
+            stNote "  " & suPad(item tI of tNames, 24) & suPadLeft(tP, 5) & suPadLeft(tF, 6) & suPadLeft(tS, 6) & "  " & (line 2 of tState)
+         else
+            stNote "  " & suPad(item tI of tNames, 24) & "    -     -     -  not run"
+         end if
+      end if
+   end repeat
+   set the itemDelimiter to tOld
+   put (tSumP is sPassed and tSumF is sFailed and tSumS is sSkipped) into tOk
+   if tOk then
+      stNote "the rows account for every counted check (" & tSumP & " / " & tSumF & " / " & tSumS & ")"
+   else
+      suTallyOpen "cross"
+      stAssert "the rows account for every counted check", false
+      stNote "the rows add up to" && tSumP & " / " & tSumF & " / " & tSumS & "; the totals are" && sPassed & " / " & sFailed & " / " & sSkipped
+      stNote "a block ran outside suTallyOpen / suTallyClose; the pills are wrong, the totals are not"
+      suTallyClose
+   end if
+   if sScLines is empty then
+      stNote "boot self-check: has not run in this window"
+   else if suBootPending() then
+      stNote "boot self-check: its one delayed check had not fired yet; see the Boot check view"
+   else
+      stNote "boot self-check:" && sScPassed && "passed," && sScFailed && "failed," && sScSkipped && "skipped (the Boot check view has it whole)"
+   end if
+end suSummaryNotes
+
+function suPad pText, pWidth
+   local tOut
+   put pText into tOut
+   repeat while (the number of chars of tOut) < pWidth
+      put space after tOut
+   end repeat
+   return tOut
+end suPad
+
+function suPadLeft pText, pWidth
+   local tOut
+   put pText into tOut
+   repeat while (the number of chars of tOut) < pWidth
+      put space before tOut
+   end repeat
+   return tOut
+end suPadLeft
+
+-- After stReportDone: the report repainted by first word, the rows and the
+-- view final, and the status line. Contained - stFinish runs from the pump's
+-- tick, and by now the run is complete; a paint that throws must not bring an
+-- error dialog down on a finished, correct report.
+command suAfterDone
+   local tError
+   set the defaultStack to the short name of this stack
+   try
+      suPaintResults
+      suPaintRows
+      suRenderView
+      suStatusFinal
+   catch tError
+      uiStatus "The run finished, but the board could not repaint (" & tError & "). The report is complete: Copy results.", "warn"
+   end try
+end suAfterDone
+
+-- THE ONE STATUS LINE (kit rule 2), composed from the run's verdict and the
+-- boot check's. Fail loud: a boot failure keeps the line red even over a
+-- green run, and scFinish paints its own red line if it runs after this.
+command suStatusFinal
+   local tText, tKind
+   put "Finished (" & suScopeLabel() & "):" && sPassed && "passed," && sFailed && "failed," && sSkipped && "skipped." into tText
+   put "ok" into tKind
+   if sFailed is not a number then
+      put "bad" into tKind
+   else if sFailed > 0 then
+      put "bad" into tKind
+      put tText && "Press Failures to list them." into tText
+   end if
+   if sSuScope is not "all" then
+      put tText && "One member only: the suite record is Run all." into tText
+   end if
+   if sScFailed is a number then
+      if sScFailed > 0 then
+         put "bad" into tKind
+         put tText && "Boot self-check:" && sScFailed && "FAILED (see Boot check)." into tText
+      end if
+   end if
+   uiStatus tText, tKind
+end suStatusFinal
+
+-- ---- the boot self-check (the demo contract; the block above does the rest) ---
+-- Non-destructive: it reads the window and the probe's answers and takes
+-- nothing. The run has already started (openStack runs it first), so the
+-- checks below are about THIS window and THIS run's start, not a demo's idle
+-- state. The log field is emptied first: a reopen must not stack a second
+-- block under the first (coin-wallet's waScFresh lesson, 2026-09-02).
+command suScRun
+   local tMissing
+   set the defaultStack to the short name of this stack
+   if there is a field "suBootLog" then
+      put empty into field "suBootLog"
+   end if
+   scBegin "suBootLog"
+   put scMissing(kSuScControls) into tMissing
+   scAssert "all 22 controls this script names exist" & suMissingNote(tMissing), tMissing is empty
+   put scMissing(suRowControls()) into tMissing
+   scAssert "every member row is built (" & suRowCount() & " rows, each with its controls)" & suMissingNote(tMissing), tMissing is empty
+   scAssert "the window is" && kStWidth && "x" && kStHeight && "(saw" && the width of this stack && "x" && the height of this stack & ")", suWindowSized()
+   scAssert "the last member row sits above the members caption", suLastRowFits()
+   scAssert "the board is stamped" && kSuUiVersion && "(saw" && scShow(the uSuUiVersion of this stack) & ")", the uSuUiVersion of this stack is kSuUiVersion
+   scAssert "the run started before this check (running:" && scShow(sAsyncRunning) & ", finished:" && scShow(sStRunDone) & ")", suRunStarted()
+   scAssert "the probe answered present or absent for every member", suProbeAnswered()
+   scAssert "exactly one results view is showing", suVisibleViews() is 1
+   scArmProbe
+end suScRun
+
+function suMissingNote pMissing
+   if pMissing is empty then
+      return empty
+   end if
+   return " (missing: " & pMissing & ")"
+end suMissingNote
+
+function suRowCount
+   local tKeys, tOld, tN
+   put kSuKeys into tKeys
+   put the itemDelimiter into tOld
+   set the itemDelimiter to comma
+   put the number of items of tKeys into tN
+   set the itemDelimiter to tOld
+   return tN
+end suRowCount
+
+function suWindowSized
+   return (the width of this stack is kStWidth) and (the height of this stack is kStHeight)
+end suWindowSized
+
+-- A thirteenth member must fail HERE, before an engine session, rather than
+-- draw its row over the caption: the last row's name field ends above it.
+function suLastRowFits
+   local tKeys, tOld, tLast
+   put kSuKeys into tKeys
+   put the itemDelimiter into tOld
+   set the itemDelimiter to comma
+   put item -1 of tKeys into tLast
+   set the itemDelimiter to tOld
+   if there is no field ("suName" & tLast) then
+      return false
+   end if
+   if there is no field "suMembersCap" then
+      return false
+   end if
+   return the bottom of field ("suName" & tLast) < the top of field "suMembersCap"
+end suLastRowFits
+
+function suRunStarted
+   return (sAsyncRunning is "true") or (sStRunDone is "true")
+end suRunStarted
+
+function suIsBool pValue
+   return (pValue is true) or (pValue is false)
+end suIsBool
+
+function suProbeAnswered
+   return suIsBool(sHaveSodium) and suIsBool(sHaveTorrent) and suIsBool(sHaveEnet) and suIsBool(sHaveDc) and suIsBool(sHaveOnion) and suIsBool(sHaveCoin) and suIsBool(sHaveCoinScript) and suIsBool(sHaveRiptideScript) and suIsBool(sHaveNostrScript) and suIsBool(sHaveBox2d)
+end suProbeAnswered
+
+function suVisibleViews
+   local tN
+   put 0 into tN
+   if there is a field "stResults" then
+      if the visible of field "stResults" then
+         add 1 to tN
+      end if
+   end if
+   if there is a field "suView" then
+      if the visible of field "suView" then
+         add 1 to tN
+      end if
+   end if
+   if there is a field "suBootLog" then
+      if the visible of field "suBootLog" then
+         add 1 to tN
+      end if
+   end if
+   return tN
+end suVisibleViews
 
 -- ---- the run -----------------------------------------------------------------
-command stRun
+-- pScope is empty for everything (the scaffold's Run all calls this with no
+-- argument, and openStack does too) or one kSuKeys item for a row's Run. A
+-- scoped run is a SUBSEQUENCE of this handler's order, never a reordering:
+-- each block below runs only when suInScope says so, and each is wrapped in a
+-- tally (suTallyOpen / suTallyClose) so the board knows which row it counted.
+command stRun pScope
    local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    -- Belt and braces: a run that was interrupted (an engine error mid-pump)
    -- can leave a pump armed even though stCleanup never ran.
    stCancelPump
    stResetCounters
+   suScopeSet pScope
+   suTallyReset
+   suRunStarting
    put "true" into sAsyncRunning
    put empty into sPhaseEn
    put empty into sPhaseDc
+   -- The render latch is per RUN: left set, a second run's pump would never
+   -- report a render that throws.
+   put empty into sRenderNoted
    -- RELEASE THE SESSION BEFORE FORGETTING IT. This line used to be a bare
    -- `put 0 into sSession`, and that is how an engine pass loses the whole
    -- TorrentXT surface for the rest of the launch. The one-session latch lives
@@ -1433,7 +3313,11 @@ command stRun
    put empty into sSealBox
 
    put "xTalk Suite end-to-end self-test" & return into sResultText
-   put "First green engine pass recorded 2026-08-08; this run re-confirms it here." & return after sResultText
+   -- This line is written BEFORE any check runs, so it must not claim the
+   -- run's outcome: it used to end "this run re-confirms it here", printed
+   -- atop a run with 5 failures on 2026-09-24 (records audit, 2026-09-25).
+   put "First green engine pass recorded 2026-08-08; the summary at the end says how this run went." & return after sResultText
+   put "Scope: " & suScopeLabel() & return after sResultText
 
    -- EVERY synchronous section is contained. A section that throws - a
    -- mis-declared foreign handler, an unexpected native error, an API that has
@@ -1444,36 +3328,56 @@ command stRun
    -- stProbe is contained for the same reason as every section below, and one
    -- sharper one: it is the statement that TAKES the session. A throw anywhere
    -- after btStartSession returned - a later probe's scaffolding, a report line
-   -- - would strand a live session AND skip the `send "stPump"` at the bottom
+   -- - would strand a live session AND skip the `send "suPump"` at the bottom
    -- of this handler, which is the only route to stFinish and stTeardown. Each
    -- per-member probe inside already carries its own try, so this catches only
    -- the scaffolding between them, and every sHave* flag a half-finished probe
    -- leaves behind is read from inside a try, so a stale one costs a FAIL line.
+   -- THE PROBE RUNS IN EVERY SCOPE: it sets every sHave* flag the sections
+   -- read, and it is the statement that takes THE session.
+   suTallyOpen "cross"
    try
       stProbe
    catch tError
       stSectionFailed "extension probe", tError
    end try
-   try
-      stSodiumSection
-   catch tError
-      stSectionFailed "SodiumXT", tError
-   end try
-   try
-      stTorrentSection
-   catch tError
-      stSectionFailed "TorrentXT", tError
-   end try
-   try
-      stOnionSection
-   catch tError
-      stSectionFailed "OnionXT", tError
-   end try
-   try
-      stCoinSection
-   catch tError
-      stSectionFailed "CoinXT", tError
-   end try
+   suTallyClose
+   if suInScope("sodiumxt") then
+      suTallyOpen "sodiumxt"
+      try
+         stSodiumSection
+      catch tError
+         stSectionFailed "SodiumXT", tError
+      end try
+      suTallyClose
+   end if
+   if suInScope("torrentxt") then
+      suTallyOpen "torrentxt"
+      try
+         stTorrentSection
+      catch tError
+         stSectionFailed "TorrentXT", tError
+      end try
+      suTallyClose
+   end if
+   if suInScope("onionxt") then
+      suTallyOpen "onionxt"
+      try
+         stOnionSection
+      catch tError
+         stSectionFailed "OnionXT", tError
+      end try
+      suTallyClose
+   end if
+   if suInScope("coinxt") then
+      suTallyOpen "coinxt"
+      try
+         stCoinSection
+      catch tError
+         stSectionFailed "CoinXT", tError
+      end try
+      suTallyClose
+   end if
    -- THE DEEP PER-MEMBER HARNESSES. Everything above is the suite's own
    -- sampler; this is each member's WHOLE self-test, folded in verbatim by
    -- tools/build-suite-selftest.py and namespaced so five harnesses that all
@@ -1493,7 +3397,7 @@ command stRun
    -- of the six have unguarded prologues (bt1stRun clears the error and reads
    -- btLastError before its try begins), and stMergeCounted/stMergeReturned
    -- only validate counters they were actually handed. A throw here therefore
-   -- skipped everything below - including `send "stPump"`, which is what
+   -- skipped everything below - including `send "suPump"`, which is what
    -- eventually reaches stFinish and stTeardown - so the run ended with the
    -- libtorrent session, the ENet hosts and the WebRTC peers all still live and
    -- no summary printed. The session is the one that does not come back: see
@@ -1511,44 +3415,79 @@ command stRun
    try
       stRunMemberHarnesses
    catch tError
+      suTallyOpen "cross"
       stSectionFailed "deep per-member self-tests", tError
+      suTallyClose
    end try
-   try
-      stCrossIdentitySection
-   catch tError
-      stSectionFailed "cross: one identity", tError
-   end try
-   try
-      stCrossBep44Section
-   catch tError
-      stSectionFailed "cross: BEP44 signing", tError
-   end try
-   try
-      stSealPayload
-   catch tError
-      stSectionFailed "cross: sealed payload", tError
-   end try
-   try
-      stStartEnetLoopback
-   catch tError
-      stSectionFailed "enetxt loopback start", tError
-      put "failed" into sPhaseEn
-   end try
-   try
-      stStartDcLoopback
-   catch tError
-      stSectionFailed "datachannelxt loopback start", tError
-      put "failed" into sPhaseDc
-   end try
-   try
-      stCrossBudgetSection
-   catch tError
-      stSectionFailed "cross: 60000-byte budget", tError
-   end try
+   if suInScope("cross") then
+      suTallyOpen "cross"
+      try
+         stCrossIdentitySection
+      catch tError
+         stSectionFailed "cross: one identity", tError
+      end try
+      suTallyClose
+      suTallyOpen "cross"
+      try
+         stCrossBep44Section
+      catch tError
+         stSectionFailed "cross: BEP44 signing", tError
+      end try
+      suTallyClose
+   end if
+   -- The seal serves both loopbacks, so it runs wherever either does; the
+   -- transports' own rows, the cross row, and Run all.
+   if suUsesEnet() or suUsesDc() then
+      suTallyOpen "cross"
+      try
+         stSealPayload
+      catch tError
+         stSectionFailed "cross: sealed payload", tError
+      end try
+      suTallyClose
+   end if
+   -- A loopback out of this run's scope is "skip" from the start, so the pump
+   -- treats it as finished and the teardown leaves its library alone.
+   if suUsesEnet() then
+      suTallyOpen "enetxt"
+      try
+         stStartEnetLoopback
+      catch tError
+         stSectionFailed "enetxt loopback start", tError
+         put "failed" into sPhaseEn
+      end try
+      suTallyClose
+   else
+      put "skip" into sPhaseEn
+   end if
+   if suUsesDc() then
+      suTallyOpen "datachannelxt"
+      try
+         stStartDcLoopback
+      catch tError
+         stSectionFailed "datachannelxt loopback start", tError
+         put "failed" into sPhaseDc
+      end try
+      suTallyClose
+   else
+      put "skip" into sPhaseDc
+   end if
+   -- The budget's ENet half needs the ENet loopback's live peer, so it runs
+   -- where that does (its DataChannel half runs inside the DC loopback).
+   if suUsesEnet() then
+      suTallyOpen "cross"
+      try
+         stCrossBudgetSection
+      catch tError
+         stSectionFailed "cross: 60000-byte budget", tError
+      end try
+      suTallyClose
+   end if
 
    put the milliseconds + kStDeadlineMs into sDeadline
    stShow
-   send "stPump" to me in 33 milliseconds
+   suSyncDone
+   send "suPump" to me in 33 milliseconds
 end stRun
 
 -- ---- the probe ---------------------------------------------------------------
@@ -1891,7 +3830,7 @@ command stOnionSection
 
    stSection "OnionXT: pure-compute address paths (no Tor daemon touched)"
    if not sHaveOnion then
-      stSkip "OnionXT surface", "start using stack " & quote & "onionxt" & quote
+      stSkip "OnionXT surface", "the embedded onionxt layer did not answer its probe; the paste is damaged"
       exit stOnionSection
    end if
 
@@ -2193,7 +4132,7 @@ command stCrossOnionSection
    stSection "CROSS: OnionXT advertises its real SodiumXT-backed capabilities"
    if not sHaveOnion then
       stSkip "OnionXT capability negotiation", \
-            "start using stack " & quote & "onionxt" & quote
+            "the embedded onionxt layer did not answer its probe; the paste is damaged"
       exit stCrossOnionSection
    end if
 
@@ -2281,7 +4220,9 @@ command stCrossBudgetSection
       stAssert "enSend refuses 60001 bytes with -4 (never truncates)", \
             enSend(sEnClientPeer, 0, tOver, 0) is -4
    end if
-   if not sHaveDc then
+   if not suUsesDc() then
+      stNote "the datachannelxt half is not in this run's scope"
+   else if not sHaveDc then
       stSkip "datachannelxt refuses 60001 bytes", \
             "install org.openxtalk.library.datachannel"
    else
@@ -2604,11 +4545,16 @@ end stCheckSealed
 -- ONE timer chain drives BOTH async members. It reschedules itself until every
 -- async phase is terminal or the deadline passes; it never blocks the
 -- interpreter, because nothing in this family may block the one script thread.
-command stPump
+command suPump
    local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tEvents, tEvent
+   -- PINNED FIRST (engine note 5.3). This handler arrives by `send ... in`, and
+   -- since D-23 it paints the board's rows and views as well as the report;
+   -- every one of those names a control unqualified, so the defaultStack is
+   -- set once here rather than trusted painter by painter.
+   set the defaultStack to the short name of this stack
    if sAsyncRunning is not "true" then
-      exit stPump
+      exit suPump
    end if
 
    -- Contained for the same reason the synchronous sections are, and with one
@@ -2617,6 +4563,7 @@ command stPump
    -- libtorrent session would all leak until the maintainer closed the stack.
    -- Marking the phase "failed" lets the run converge and tear down properly.
    if not stEnDone() then
+      suTallyOpen "enetxt"
       try
          put enPoll(sEnServer) into tEvents
          repeat for each element tEvent in tEvents
@@ -2632,9 +4579,11 @@ command stPump
          stNote "it raised:" && tError
          put "failed" into sPhaseEn
       end try
+      suTallyClose
    end if
 
    if not stDcDone() then
+      suTallyOpen "datachannelxt"
       try
          put dcPoll() into tEvents
          repeat for each element tEvent in tEvents
@@ -2646,33 +4595,38 @@ command stPump
          stNote "it raised:" && tError
          put "failed" into sPhaseDc
       end try
+      suTallyClose
    end if
 
    if stEnDone() and stDcDone() then
       stFinish
-      exit stPump
+      exit suPump
    end if
 
    -- A stuck section must not take the run with it: record the failure against
    -- the section that hung and finish everything else.
    if the milliseconds > sDeadline then
       if not stEnDone() then
+         suTallyOpen "enetxt"
          stAssert "enet loopback finished before the deadline", false
          stNote "stalled in phase" && sPhaseEn & "; UDP to 127.0.0.1 may be blocked"
          put "failed" into sPhaseEn
+         suTallyClose
       end if
       if not stDcDone() then
+         suTallyOpen "datachannelxt"
          stAssert "datachannel loopback finished before the deadline", false
          stNote "stalled in phase" && sPhaseDc & "; UDP to this machine may be blocked"
          put "failed" into sPhaseDc
+         suTallyClose
       end if
       stFinish
-      exit stPump
+      exit suPump
    end if
 
    -- THE RE-ARM IS THE ONE STATEMENT THAT MUST ALWAYS BE REACHED, and until
    -- 2026-08-20 the render above it was the only thing in this handler that
-   -- was not contained. The comment at the top of stPump already had the whole
+   -- was not contained. The comment at the top of suPump already had the whole
    -- argument - a throw out of the pump breaks the timer chain, so nothing
    -- ever reaches stFinish and the hosts, peers and libtorrent session leak -
    -- and it had been applied to the two poll blocks and not to this line.
@@ -2694,14 +4648,19 @@ command stPump
    catch tError
       if sRenderNoted is not "true" then
          put "true" into sRenderNoted
+         suTallyOpen "cross"
          stAssert "the report rendered from the pump", false
          stNote "it raised:" && tError
          stNote "the run continues; the report is assembled in a variable and"
          stNote "does not depend on the field it failed to write"
+         suTallyClose
       end if
    end try
-   send "stPump" to me in 33 milliseconds
-end stPump
+   -- The board's paint, contained on its own (suPumpPaint swallows its own
+   -- throw) so it can neither break the chain nor be mistaken for the report.
+   suPumpPaint
+   send "suPump" to me in 33 milliseconds
+end suPump
 
 -- ---- finish + teardown -------------------------------------------------------
 command stFinish
@@ -2709,34 +4668,48 @@ command stFinish
    -- Run last: OnionXT's capability advertisement is pure compute, but reading
    -- it here keeps the whole cross-member story in one block at the end of the
    -- report, next to the transports it describes.
-   try
-      stCrossOnionSection
-   catch tError
-      stSectionFailed "cross: OnionXT capabilities", tError
-   end try
+   -- It is OnionXT's capability advertisement checked against SodiumXT, so it
+   -- belongs to OnionXT's own row as much as to the cross row.
+   if suInScope("onionxt") or suInScope("cross") then
+      suTallyOpen "cross"
+      try
+         stCrossOnionSection
+      catch tError
+         stSectionFailed "cross: OnionXT capabilities", tError
+      end try
+      suTallyClose
+   end if
 
    -- Teardown is contained too, but it is the ONE thing that must be attempted
    -- no matter what came before: stCleanup on closeStack is the safety net if a
    -- handle survives this.
+   suTallyOpen "cross"
    try
       stTeardown
    catch tError
       stSectionFailed "teardown", tError
    end try
+   suTallyClose
 
+   -- The window's boot record goes in just ABOVE the summary, uncounted, so
+   -- the summary stays the report's last section (the runbook's contract).
+   suBootIntoReport
    stSection "summary"
-   stNote "This is a sampler, not a full per-member selftest: it drives the"
-   stNote "headline paths and the cross-member seams. Each member has a deeper"
-   stNote "harness that still needs its own engine run. Paste these numbers back."
+   suSummaryNotes
    put empty into sAsyncRunning
    stReportDone
+   suAfterDone
 end stFinish
 
 -- Everything this file opened gets closed, in dependency order, each guarded so
 -- one absent member cannot stop the rest from being released.
 command stTeardown
    stSection "teardown (nothing may outlive the run)"
-   if sHaveDc then
+   -- A transport this run's SCOPE never started is not asserted on: a
+   -- SodiumXT-only run must not report dcCleanup or enDeinitialize for a
+   -- library it never initialised. stCleanup still frees everything, bare and
+   -- guarded, exactly as before.
+   if sHaveDc and suUsesDc() then
       if sDcChanA is not empty and sDcChanA > 0 then
          dcCloseChannel sDcChanA
          dcFreeChannel sDcChanA
@@ -2757,7 +4730,7 @@ command stTeardown
    put empty into sDcPeerA
    put empty into sDcPeerB
 
-   if sHaveEnet then
+   if sHaveEnet and suUsesEnet() then
       if sEnServer is not empty and sEnServer > 0 then
          stAssert "enHostDestroy(server) returns 0", enHostDestroy(sEnServer) is 0
       end if
@@ -2848,15 +4821,37 @@ end stCleanup
 -- `sAsyncRunning is "true"` guard, both would drive the same phase machine, and every
 -- assertion would be counted twice - a silently wrong report, which is worse
 -- than no report. `the pendingMessages` lines are id,time,message,object.
+--
+-- EVERY TIMER THIS FILE ARMS is cancelled here: the pump, and a row's armed
+-- Run (suRunTick), whose run would otherwise start on top of the one Run all
+-- just began. check-suite-selftest.py holds the two lists together. The
+-- carried blocks' own timers are not the core's to cancel: the self-check's
+-- one delayed probe restores what it touches, and the kit's copy flash is not
+-- used here. The item delimiter is restored (engine note 2.3): this runs
+-- inside stRun, above sections that split items of their own.
+-- `the pendingMessages` lists EVERY pending message in the engine, not this
+-- stack's, so a cancel by name reaches any open stack that arms a message
+-- of that name. That is why the paste's two timers have paste-only names.
+-- Until 2026-09-25 the pump was "stPump", the name enet-selftest's and
+-- datachannel-selftest's own pumps still use, so opening this paste, or
+-- pressing Run all or a row's Run, cancelled a loopback running in either
+-- of those windows (neither cancels anything itself; review, 2026-09-25,
+-- not observed on an engine). A name, not a target filter: the
+-- target's spelling in that list has no engine record in this tree, and a
+-- filter that never matched would stop this handler cancelling its own
+-- pump.
 command stCancelPump
-   local tPending, tLine
+   local tPending, tLine, tOld
    put the pendingMessages into tPending
+   put the itemDelimiter into tOld
    set the itemDelimiter to comma
    repeat for each line tLine in tPending
-      if item 3 of tLine is "stPump" then
+      if item 3 of tLine is "suPump" or item 3 of tLine is "suRunTick" then
          cancel (item 1 of tLine)
       end if
    end repeat
+   set the itemDelimiter to tOld
+   put empty into sSuArmed
 end stCancelPump
 
 -- Count a bridged list WITHOUT `the number of elements` (the sibling selftests
@@ -2916,9 +4911,13 @@ end stRepeatByte
 command stRunMemberHarnesses
    local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tNxReport, tNxCaps, tNxFloor -- NostrXT's probe-selected floor (its call site)
-   stSection "deep per-member self-tests (each member's own harness, folded in)"
-   stNote "Each of these is the SAME harness that member ships standalone."
-   stNote "A failure here means the same thing it would mean there."
+   -- The header is the run's, not a member's (no tally is open), and a
+   -- cross-only run folds no member, so it prints nothing here.
+   if sSuScope is not "cross" then
+      stSection "deep per-member self-tests (each member's own harness, folded in)"
+      stNote "Each of these is the SAME harness that member ships standalone."
+      stNote "A failure here means the same thing it would mean there."
+   end if
 
    -- SodiumXT, OnionXT, Box2Dxt, Riptide and holde-em return their report as a
    -- string; CoinXT, TorrentXT, ENetXT and DataChannelXT accumulate into their
@@ -2928,8 +4927,8 @@ command stRunMemberHarnesses
    --
    -- THE THIRD ARGUMENT TO stMergeReturned IS A FLOOR: the fewest items that
    -- member can attempt in any environment it supports (checks + skips). Read
-   -- stMergeFloor for what it does and does not catch. TWO of the six are
-   -- measured today:
+   -- stMergeFloor for what it does and does not catch. TWO of the six
+   -- returned-report members are measured today:
    --
    --   OnionXT   51, derived section by section at its call site below. It is
    --             the member whose harness can degrade the furthest (its skips
@@ -2950,127 +4949,153 @@ command stRunMemberHarnesses
    --             has already paid once for a gate that reported the constants
    --             it had PARSED as the ones it had CHECKED. So the four carry
    --             the honest floor and say so, and measuring them is open work.
-   if sHaveSodium then
-      try
-         -- floor 1: catastrophic only, not measured (see above)
-         stMergeReturned "SodiumXT", sx1sxSelfTest(), 1
-      catch tError
-         stSectionFailed "SodiumXT deep self-test", tError
-      end try
-   else
-      stSkip "SodiumXT deep self-test", "install org.openxtalk.library.sodium"
+   if suInScope("sodiumxt") then
+      suTallyOpen "sodiumxt"
+      if sHaveSodium then
+         try
+            -- floor 1: catastrophic only, not measured (see above)
+            stMergeReturned "SodiumXT", sx1sxSelfTest(), 1
+         catch tError
+            stSectionFailed "SodiumXT deep self-test", tError
+         end try
+      else
+         stSkip "SodiumXT deep self-test", "install org.openxtalk.library.sodium"
+      end if
+      suTallyClose
    end if
 
-   if sHaveOnion then
-      try
-         -- THE FLOOR IS 51, and the arithmetic is here because a number with
-         -- no derivation beside it is a number nobody dares to change - which
-         -- is how a ratchet quietly becomes a decoration. onionxt's harness
-         -- runs twelve sections; nine of them can bail out, and since
-         -- 2026-08-17 every bail-out counts as one skip. Attempted = checks +
-         -- skips, per section, worst case:
-         --    1 version and capabilities     6   unconditional
-         --    2 initial state                1   3 checks, or 1 skip when this
-         --                                       session is already authed
-         --    3 fail-closed arguments        6   5 unconditional, + 4 pre-auth
-         --                                       checks or 1 skip
-         --    4 unknown handles             10   unconditional
-         --    5 idempotent teardown          3   2 unconditional, + oxStopTor:
-         --                                       1 check, or 1 skip if authed
-         --    6 address round-trip           6   2 addresses x (2 + 1 either
-         --                                       way: re-encode or skip)
-         --    7 address negative paths       4   3, + 1 either way
-         --    8 SodiumXT ABI-6 composition   2   2 x (check or skip)
-         --    9 configuration setters       10   unconditional
-         --   10 loopback guard               1   18 checks, or 1 skip where
-         --                                       oxHostOfSocket is not in this
-         --                                       script
-         --   11 oxh* HTTP helpers            1   27 checks, or 1 skip where
-         --                                       onion-httpd is not in this
-         --                                       script (THIS paste: it is not)
-         --   12 SOCKS timeout reasons        1   3 checks, or 1 skip where
-         --                                       the library is not in this
-         --                                       script
-         --                                  --
-         --                                  51
-         -- THIS paste normally attempts 70-75: sections 10 and 12 resolve here
-         -- because the generator embeds the library into this same script,
-         -- section 11 is one skip because it does not embed onion-httpd, and
-         -- an already-authenticated session trades sections 2 and 3's seven
-         -- checks for two skips. The floor is deliberately the
-         -- environment-proof 51 rather than the paste-expected 70: a floor that
-         -- can false-fail an engine session is worth less than a floor that
-         -- catches less, and the degraded case is no longer invisible anyway -
-         -- it arrives as up to 11 skips on the summary line.
-         --
-         -- RE-DERIVED 2026-09-24. This read 41 over ten sections until then,
-         -- and 41 had gone stale without going WRONG: section 3 grew two
-         -- pre-auth checks and section 4 five unconditional ones (2026-08-20,
-         -- 2026-08-24), and section 11 arrived, all without the floor moving -
-         -- a floor below the true minimum still passes, so nothing said so.
-         -- Cross-check on the arithmetic: onionxt's CLAUDE.md records a
-         -- 2026-08-12 engine run at 43 checks, which was sections 1-9 at their
-         -- best case then, and 2026-08-17's 61, which was those 43 plus section
-         -- 10's 18; sections 1-9 read 53 at best today, those 43 plus the 7
-         -- above plus 2026-09-24's three (oxTransportDial and oxLaunchTor in
-         -- section 3, oxStopTor in section 5). Verified statically; needs an
-         -- OXT pass.
-         stMergeReturned "OnionXT", ox1oxSelfTest(), 51
-      catch tError
-         stSectionFailed "OnionXT deep self-test", tError
-      end try
-   else
-      stSkip "OnionXT deep self-test", "install org.openxtalk.library.onion"
+   if suInScope("onionxt") then
+      suTallyOpen "onionxt"
+      if sHaveOnion then
+         try
+            -- THE FLOOR IS 51, and the arithmetic is here because a number with
+            -- no derivation beside it is a number nobody dares to change - which
+            -- is how a ratchet quietly becomes a decoration. onionxt's harness
+            -- runs twelve sections; nine of them can bail out, and since
+            -- 2026-08-17 every bail-out counts as one skip. Attempted = checks +
+            -- skips, per section, worst case:
+            --    1 version and capabilities     6   unconditional
+            --    2 initial state                1   3 checks, or 1 skip when this
+            --                                       session is already authed
+            --    3 fail-closed arguments        6   5 unconditional, + 4 pre-auth
+            --                                       checks or 1 skip
+            --    4 unknown handles             10   unconditional
+            --    5 idempotent teardown          3   2 unconditional, + oxStopTor:
+            --                                       1 check, or 1 skip if authed
+            --    6 address round-trip           6   2 addresses x (2 + 1 either
+            --                                       way: re-encode or skip)
+            --    7 address negative paths       4   3, + 1 either way
+            --    8 SodiumXT ABI-6 composition   2   2 x (check or skip)
+            --    9 configuration setters       10   unconditional
+            --   10 loopback guard               1   18 checks, or 1 skip where
+            --                                       oxHostOfSocket is not in this
+            --                                       script
+            --   11 oxh* HTTP helpers            1   27 checks, or 1 skip where
+            --                                       onion-httpd is not in this
+            --                                       script (THIS paste: it is not)
+            --   12 SOCKS timeout reasons        1   3 checks, or 1 skip where
+            --                                       the library is not in this
+            --                                       script
+            --                                  --
+            --                                  51
+            -- THIS paste normally attempts 70-75: sections 10 and 12 resolve here
+            -- because the generator embeds the library into this same script,
+            -- section 11 is one skip because it does not embed onion-httpd, and
+            -- an already-authenticated session trades sections 2 and 3's seven
+            -- checks for two skips. The floor is deliberately the
+            -- environment-proof 51 rather than the paste-expected 70: a floor that
+            -- can false-fail an engine session is worth less than a floor that
+            -- catches less, and the degraded case is no longer invisible anyway -
+            -- it arrives as up to 11 skips on the summary line.
+            --
+            -- RE-DERIVED 2026-09-24. This read 41 over ten sections until then,
+            -- and 41 had gone stale without going WRONG: section 3 grew two
+            -- pre-auth checks and section 4 five unconditional ones (2026-08-20,
+            -- 2026-08-24), and section 11 arrived, all without the floor moving -
+            -- a floor below the true minimum still passes, so nothing said so.
+            -- Cross-check on the arithmetic: onionxt's CLAUDE.md records a
+            -- 2026-08-12 engine run at 43 checks, which was sections 1-9 at their
+            -- best case then, and 2026-08-17's 61, which was those 43 plus section
+            -- 10's 18; sections 1-9 read 53 at best today, those 43 plus the 7
+            -- above plus 2026-09-24's three (oxTransportDial and oxLaunchTor in
+            -- section 3, oxStopTor in section 5). FIRST ENGINE RUN 2026-09-24
+            -- (Windows, the D-23 board): 74 passed, 0 failed, 1 skipped = 75
+            -- attempted against 51 - the top of the paste-expected range, as
+            -- predicted for a session that ran sections 2 and 3 pre-auth.
+            stMergeReturned "OnionXT", ox1oxSelfTest(), 51
+         catch tError
+            stSectionFailed "OnionXT deep self-test", tError
+         end try
+      else
+         stSkip "OnionXT deep self-test", "the embedded onionxt layer did not answer its probe; the paste is damaged"
+      end if
+      suTallyClose
    end if
 
    -- BOTH pieces, because ten of the folded sections call the script layer and
    -- would report FAIL rather than SKIP without it (see stProbe).
-   if sHaveCoin and sHaveCoinScript then
-      try
-         cx1stRun
-         stMergeCounted "CoinXT", cx1sResultText, cx1sPassed, cx1sFailed, cx1sTotal, cx1sSkipped
-      catch tError
-         stSectionFailed "CoinXT deep self-test", tError
-      end try
-   else if sHaveCoin then
-      stSkip "CoinXT deep self-test", "the extension is loaded but its SCRIPT layer is not:" && \
-            "start using stack " & quote & "coinxt" & quote & \
-            " - 10 of its 27 sections need it"
-   else
-      stSkip "CoinXT deep self-test", "install org.openxtalk.library.coin"
+   if suInScope("coinxt") then
+      suTallyOpen "coinxt"
+      if sHaveCoin and sHaveCoinScript then
+         try
+            cx1stRun
+            stMergeCounted "CoinXT", cx1sResultText, cx1sPassed, cx1sFailed, cx1sTotal, cx1sSkipped
+         catch tError
+            stSectionFailed "CoinXT deep self-test", tError
+         end try
+      else if sHaveCoin then
+         stSkip "CoinXT deep self-test", "the extension is loaded but the embedded script" && \
+               "layer did not answer its probe (the paste is damaged); its script-layer" && \
+               "sections need it"
+      else
+         stSkip "CoinXT deep self-test", "install org.openxtalk.library.coin"
+      end if
+      suTallyClose
    end if
 
-   if sHaveTorrent then
-      try
-         bt1stRun
-         stMergeCounted "TorrentXT", bt1sResultText, bt1sPassed, bt1sFailed, bt1sTotal, bt1sSkipped
-      catch tError
-         stSectionFailed "TorrentXT deep self-test", tError
-      end try
-   else
-      stSkip "TorrentXT deep self-test", sTorrentNote
+   if suInScope("torrentxt") then
+      suTallyOpen "torrentxt"
+      if sHaveTorrent then
+         try
+            bt1stRun
+            stMergeCounted "TorrentXT", bt1sResultText, bt1sPassed, bt1sFailed, bt1sTotal, bt1sSkipped
+         catch tError
+            stSectionFailed "TorrentXT deep self-test", tError
+         end try
+      else
+         stSkip "TorrentXT deep self-test", sTorrentNote
+      end if
+      suTallyClose
    end if
 
-   if sHaveEnet then
-      try
-         en1stRun
-         stMergeCounted "ENetXT (sync half)", en1sResultText, en1sPassed, en1sFailed, en1sTotal, en1sSkipped
-      catch tError
-         stSectionFailed "ENetXT deep self-test", tError
-      end try
-   else
-      stSkip "ENetXT deep self-test", "install org.openxtalk.library.enet"
+   if suInScope("enetxt") then
+      suTallyOpen "enetxt"
+      if sHaveEnet then
+         try
+            en1stRun
+            stMergeCounted "ENetXT (sync half)", en1sResultText, en1sPassed, en1sFailed, en1sTotal, en1sSkipped
+         catch tError
+            stSectionFailed "ENetXT deep self-test", tError
+         end try
+      else
+         stSkip "ENetXT deep self-test", "install org.openxtalk.library.enet"
+      end if
+      suTallyClose
    end if
 
-   if sHaveDc then
-      try
-         dc1stRun
-         stMergeCounted "DataChannelXT (sync half)", dc1sResultText, dc1sPassed, dc1sFailed, dc1sTotal, dc1sSkipped
-      catch tError
-         stSectionFailed "DataChannelXT deep self-test", tError
-      end try
-   else
-      stSkip "DataChannelXT deep self-test", "install org.openxtalk.library.datachannel"
+   if suInScope("datachannelxt") then
+      suTallyOpen "datachannelxt"
+      if sHaveDc then
+         try
+            dc1stRun
+            stMergeCounted "DataChannelXT (sync half)", dc1sResultText, dc1sPassed, dc1sFailed, dc1sTotal, dc1sSkipped
+         catch tError
+            stSectionFailed "DataChannelXT deep self-test", tError
+         end try
+      else
+         stSkip "DataChannelXT deep self-test", "install org.openxtalk.library.datachannel"
+      end if
+      suTallyClose
    end if
 
    -- BOX2DXT RUNS AFTER THE TRANSPORTS AND BEFORE RIPTIDE, and unlike every
@@ -3078,21 +5103,26 @@ command stRunMemberHarnesses
    -- graphics and images (all named st_*), drives them through a real physics
    -- world, and wipes them again. That is exactly what it does standalone; the
    -- only difference here is whose card it is. Its own stWipe deletes controls
-   -- by the "st_" prefix, which none of this harness's window controls carry
-   -- (stTitle, stSummary, stResults, stCopy, stRerun - no underscore), and its
+   -- by the "st_" and "b2k" prefixes, which none of this harness's window
+   -- controls carry (stSummary, stResults, stCopy, stRerun and the board's su*
+   -- and ui* controls; D-23), and its
    -- last act is b2kStop + b2kTeardown, which bump the Kit's generation tag so
    -- any frame message still queued from its worlds is a no-op. It therefore
    -- has to finish BEFORE the cross-member loopbacks below arm their pump.
-   if sHaveBox2d then
-      try
-         -- floor 1: catastrophic only, not measured (see above)
-         stMergeReturned "Box2Dxt", b21stSelfTest(), 1
-      catch tError
-         stSectionFailed "Box2Dxt deep self-test", tError
-      end try
-   else
-      stSkip "Box2Dxt deep self-test", "install org.openxtalk.box2dxt (the b2k " & \
-            "Kit is embedded in this paste, but the physics is native)"
+   if suInScope("box2dxt") then
+      suTallyOpen "box2dxt"
+      if sHaveBox2d then
+         try
+            -- floor 1: catastrophic only, not measured (see above)
+            stMergeReturned "Box2Dxt", b21stSelfTest(), 1
+         catch tError
+            stSectionFailed "Box2Dxt deep self-test", tError
+         end try
+      else
+         stSkip "Box2Dxt deep self-test", "install org.openxtalk.box2dxt (the b2k " & \
+               "Kit is embedded in this paste, but the physics is native)"
+      end if
+      suTallyClose
    end if
 
    -- Riptide is an APP layer over the extensions above, so it runs after them:
@@ -3100,16 +5130,20 @@ command stRunMemberHarnesses
    -- harness handles a missing optional extension itself (sections SKIP), and
    -- refuses cleanly without SodiumXT, so the only gate here is the embedded
    -- layer being present at all.
-   if sHaveRiptideScript then
-      try
-         -- floor 1: catastrophic only, not measured (see above)
-         stMergeReturned "Riptide Social (phases 1-8)", rs1rsSelfTest(), 1
-      catch tError
-         stSectionFailed "Riptide deep self-test", tError
-      end try
-   else
-      stSkip "Riptide deep self-test", \
-            "the riptide script layer is not present; the paste is damaged"
+   if suInScope("riptide") then
+      suTallyOpen "riptide"
+      if sHaveRiptideScript then
+         try
+            -- floor 1: catastrophic only, not measured (see above)
+            stMergeReturned "Riptide Social (phases 1-8)", rs1rsSelfTest(), 1
+         catch tError
+            stSectionFailed "Riptide deep self-test", tError
+         end try
+      else
+         stSkip "Riptide deep self-test", \
+               "the riptide script layer is not present; the paste is damaged"
+      end if
+      suTallyClose
    end if
 
    -- NostrXT is another protocol layer over the extensions: its harness
@@ -3118,80 +5152,87 @@ command stRunMemberHarnesses
    -- layer defines the engine's socket handlers, which the embedded onionxt
    -- layer already defines, so it is deliberately not in this paste
    -- (nostrxt/CLAUDE.md, the two-file split).
-   if sHaveNostrScript then
-      try
-         -- THE FLOOR IS 278 WITH COINXT AND 253 WITHOUT, and it is the first
-         -- floor here chosen by a probe, because this is the first harness
-         -- whose every item-count branch hangs off one probe the core can
-         -- read. Attempted = passed + failed + skipped (stMergeReturned);
-         -- a skip counts as ONE item, and a section that bails out emits a
-         -- fixed number of skips rather than one per check it did not run.
-         --
-         -- THE DATED RECORD: 2026-08-24, Windows x86_64, OXT 9.6.3, this
-         -- paste with CoinXT and SodiumXT ABI 10 installed: 274 passed, 0
-         -- failed, 2 skipped = 276 attempted (nostrxt/CLAUDE.md, the ledger).
-         -- Counted by hand section by section it is exactly that: 274 checks,
-         -- and the 2 skips are section 17 (the nxr* relay layer, which is
-         -- never in this paste, so it is 2 skips here in every environment).
-         -- 2026-09-24 added 3 unconditional checks (the 2026-09-09 fix's
-         -- pins in sections 4 and 14), so that configuration now attempts
-         -- 279. What moves the count, and nothing else does (every other
-         -- nxtCheck runs in every environment; pass or fail, it counts):
-         --    CoinXT absent   section 6: 2 skips for its 19 or 17; section
-         --                    9: 2 skips for its 8; section 11: 1 skip for
-         --                    its 4 or 5 post-probe checks      -> 253
-         --    SodiumXT absent section 6: 1 skip for 3 key-generation checks
-         --                    (-2); no cipher, so section 11 takes the
-         --                    fail-closed branch, 3 checks for 2 (+1)
-         --    SodiumXT < 10   section 11's 3-check branch only (+1)
-         -- So with CoinXT the count is 278 (no SodiumXT), 279 (the record's
-         -- configuration) or 280 (a pre-ABI-10 SodiumXT); without it, 253
-         -- whatever SodiumXT is. Measured, not only added up: the real
-         -- harness was run through the family interpreter
-         -- (nostrxt/tools/lcs-interp.py) in all six combinations, over the
-         -- committed sibling binaries, and printed exactly these totals (its
-         -- one FAIL in every run, "nxUnixNow is after the fixture era", is
-         -- the interpreter's fixed deterministic clock, not a defect, and a
-         -- FAIL counts as attempted all the same). That settles the
-         -- COUNTING, which is logic; the floor itself has not met an
-         -- engine: verified statically; needs an OXT pass.
-         --
-         -- WHY TWO NUMBERS, when OnionXT's one environment-proof 41 sits
-         -- under its paste-expected 58. A single number must be <= 253 to
-         -- spare a CoinXT-less engine, and 253 is 26 items under the record's
-         -- 279 - the whole of section 12 could vanish from a fully equipped
-         -- run and still read green, which is the silent shrink a floor is
-         -- for. OnionXT could not do better: its skips follow runtime state
-         -- (an authed session, a daemon) that nothing here can read. This
-         -- harness branches on ONE cached answer, nxProbeCapabilities()'s
-         -- hasCoin, which it reads first thing; the embedded core is
-         -- unprefixed, so the call below returns that SAME cached array -
-         -- read after the harness has run, so the floor keys on the answer
-         -- the harness actually branched on and cannot disagree with it.
-         -- Taking the minimum across the SodiumXT cases keeps it
-         -- environment-proof within each branch: a green run in ANY
-         -- supported install meets it, and a run in the record's
-         -- configuration that lost 2 or more items does not (3 on a
-         -- pre-ABI-10 SodiumXT; 1 without SodiumXT, or without CoinXT).
-         --
-         -- A HARNESS EDIT THAT REMOVES A CHECK MUST RE-DERIVE THIS, in the
-         -- same change; adding one only widens the margin. Nothing gates it
-         -- headlessly: one interpreted run of the whole harness took 15 to
-         -- 35 minutes per environment on the machine that measured it.
-         put nx1nxSelfTest() into tNxReport
-         put nxProbeCapabilities() into tNxCaps
-         if tNxCaps["hasCoin"] is true then
-            put 278 into tNxFloor
-         else
-            put 253 into tNxFloor
-         end if
-         stMergeReturned "NostrXT", tNxReport, tNxFloor
-      catch tError
-         stSectionFailed "NostrXT deep self-test", tError
-      end try
-   else
-      stSkip "NostrXT deep self-test", \
-            "the nostrxt script layer is not present; the paste is damaged"
+   if suInScope("nostrxt") then
+      suTallyOpen "nostrxt"
+      if sHaveNostrScript then
+         try
+            -- THE FLOOR IS 278 WITH COINXT AND 253 WITHOUT, and it is the first
+            -- floor here chosen by a probe, because this is the first harness
+            -- whose every item-count branch hangs off one probe the core can
+            -- read. Attempted = passed + failed + skipped (stMergeReturned);
+            -- a skip counts as ONE item, and a section that bails out emits a
+            -- fixed number of skips rather than one per check it did not run.
+            --
+            -- THE DATED RECORD: 2026-08-24, Windows x86_64, OXT 9.6.3, this
+            -- paste with CoinXT and SodiumXT ABI 10 installed: 274 passed, 0
+            -- failed, 2 skipped = 276 attempted (nostrxt/CLAUDE.md, the ledger).
+            -- Counted by hand section by section it is exactly that: 274 checks,
+            -- and the 2 skips are section 17 (the nxr* relay layer, which is
+            -- never in this paste, so it is 2 skips here in every environment).
+            -- 2026-09-24 added 3 unconditional checks (the 2026-09-09 fix's
+            -- pins in sections 4 and 14), so that configuration now attempts
+            -- 279. What moves the count, and nothing else does (every other
+            -- nxtCheck runs in every environment; pass or fail, it counts):
+            --    CoinXT absent   section 6: 2 skips for its 19 or 17; section
+            --                    9: 2 skips for its 8; section 11: 1 skip for
+            --                    its 4 or 5 post-probe checks      -> 253
+            --    SodiumXT absent section 6: 1 skip for 3 key-generation checks
+            --                    (-2); no cipher, so section 11 takes the
+            --                    fail-closed branch, 3 checks for 2 (+1)
+            --    SodiumXT < 10   section 11's 3-check branch only (+1)
+            -- So with CoinXT the count is 278 (no SodiumXT), 279 (the record's
+            -- configuration) or 280 (a pre-ABI-10 SodiumXT); without it, 253
+            -- whatever SodiumXT is. Measured, not only added up: the real
+            -- harness was run through the family interpreter
+            -- (nostrxt/tools/lcs-interp.py) in all six combinations, over the
+            -- committed sibling binaries, and printed exactly these totals (its
+            -- one FAIL in every run, "nxUnixNow is after the fixture era", is
+            -- the interpreter's fixed deterministic clock, not a defect, and a
+            -- FAIL counts as attempted all the same). That settles the
+            -- COUNTING, which is logic. The floor itself first met an engine
+            -- on 2026-09-24 (Windows, the D-23 board, CoinXT and SodiumXT ABI
+            -- 10 present): 277 passed, 0 failed, 2 skipped = 279 attempted,
+            -- exactly the count predicted above for that configuration, and
+            -- the 278 floor PASSED.
+            --
+            -- WHY TWO NUMBERS, when OnionXT's one environment-proof 51 sits
+            -- under its paste-expected 70. A single number must be <= 253 to
+            -- spare a CoinXT-less engine, and 253 is 26 items under the record's
+            -- 279 - the whole of section 12 could vanish from a fully equipped
+            -- run and still read green, which is the silent shrink a floor is
+            -- for. OnionXT could not do better: its skips follow runtime state
+            -- (an authed session, a daemon) that nothing here can read. This
+            -- harness branches on ONE cached answer, nxProbeCapabilities()'s
+            -- hasCoin, which it reads first thing; the embedded core is
+            -- unprefixed, so the call below returns that SAME cached array -
+            -- read after the harness has run, so the floor keys on the answer
+            -- the harness actually branched on and cannot disagree with it.
+            -- Taking the minimum across the SodiumXT cases keeps it
+            -- environment-proof within each branch: a green run in ANY
+            -- supported install meets it, and a run in the record's
+            -- configuration that lost 2 or more items does not (3 on a
+            -- pre-ABI-10 SodiumXT; 1 without SodiumXT, or without CoinXT).
+            --
+            -- A HARNESS EDIT THAT REMOVES A CHECK MUST RE-DERIVE THIS, in the
+            -- same change; adding one only widens the margin. Nothing gates it
+            -- headlessly: one interpreted run of the whole harness took 15 to
+            -- 35 minutes per environment on the machine that measured it.
+            put nx1nxSelfTest() into tNxReport
+            put nxProbeCapabilities() into tNxCaps
+            if tNxCaps["hasCoin"] is true then
+               put 278 into tNxFloor
+            else
+               put 253 into tNxFloor
+            end if
+            stMergeReturned "NostrXT", tNxReport, tNxFloor
+         catch tError
+            stSectionFailed "NostrXT deep self-test", tError
+         end try
+      else
+         stSkip "NostrXT deep self-test", \
+               "the nostrxt script layer is not present; the paste is damaged"
+      end if
+      suTallyClose
    end if
 
    -- HOLDE-EM RUNS LAST, and unlike every other member there is nothing to
@@ -3219,12 +5260,16 @@ command stRunMemberHarnesses
    -- writes to msg, and its "==== n pass, m fail, k skip ====" summary is a
    -- line stSummaryCounts refuses on purpose (measured 2026-08-17: the string
    -- carries the skip count too - this comment quoted it a field short).
-   try
-      -- floor 1: catastrophic only, not measured (see above)
-      stMergeReturned "holde-em (hotseat + online + Level 2)", he1heSelfTest(), 1
-   catch tError
-      stSectionFailed "holde-em deep self-test", tError
-   end try
+   if suInScope("holde-em") then
+      suTallyOpen "holde-em"
+      try
+         -- floor 1: catastrophic only, not measured (see above)
+         stMergeReturned "holde-em (hotseat + online + Level 2)", he1heSelfTest(), 1
+      catch tError
+         stSectionFailed "holde-em deep self-test", tError
+      end try
+      suTallyClose
+   end if
 end stRunMemberHarnesses
 
 -- Strip the punctuation a report hangs off its words, so "PASSED:" and
@@ -3379,15 +5424,15 @@ end stSummaryCounts
 --             package predates ristretto255 (ABI 8)"` on each of its two ABI
 --             probes - so its skips are already inside its pass count and a
 --             third number here would count them twice.
---   Riptide   BOTH keep a real skip counter and BOTH park it on a SECOND
---   holde-em  line, worded as prose on purpose so this parser refuses it.
---             Their own comments say so and name the two-count rule as the
---             reason ("the skip count gets its own line"). So their skips are
---             printed and never merged - the same hole this change closes for
---             onionxt, in two more members. Widening the parser is what
---             unblocks them; moving their counts onto line 1 is an edit in
---             their own files, and until someone makes it their skips stay
---             visible-but-unmerged rather than silently zero.
+--   Riptide   BOTH keep a real skip counter, and until 2026-09-25 BOTH
+--   holde-em  parked it on a SECOND line, worded as prose on purpose so this
+--             parser refused it, so their skips were printed and never
+--             merged. The D-23 board made that a contradiction on screen: on
+--             2026-09-24 riptide's row read 0 skipped over a log listing 2,
+--             holde-em's 0 over 5, and the Skips view counted 10 SKIP lines
+--             against a summary of 3 (found by review, not by a gate). Both
+--             now put all three counts on line 1, an edit in their own files;
+--             widening the parser is what made that possible.
 -- The two-count form is therefore still first-class, not deprecated: no member
 -- is rewritten from here to suit this file, which would be backwards.
 --
@@ -3587,10 +5632,11 @@ end stMergeCounted
 
 
 -- ==========================================================================
--- THE TWO PURE-SCRIPT LIBRARIES THEMSELVES, embedded by
+-- THE FIVE PURE-SCRIPT LIBRARIES THEMSELVES (coinxt, onionxt, the b2k
+-- Kit, riptide and the nostrxt core), embedded by
 -- tools/build-suite-selftest.py so that one paste carries the code its
--- tests test. These used to be a separate setup step (`start using
--- stack` x2), and that step cost an engine pass on 2026-08-10: a fresh
+-- tests test. The first two used to be a separate setup step (`start
+-- using stack` x2), and that step cost an engine pass on 2026-08-10: a fresh
 -- harness ran against a stale in-memory coinxt stack and reported the
 -- two failures its parser fix had already closed. Embedded, the harness
 -- and the library are built from one tree and cannot skew.
@@ -16385,11 +18431,49 @@ private function rsReadBEu64 pBytes
    -- answer rather than a rounded one. EVERY call site checks for empty and
    -- refuses the record; that is what makes this safe rather than merely
    -- different.
+   --
+   -- THE BOUND IS DECIDED ON THE TWO u32 HALVES (2026-09-24): hi * 2^32 + lo
+   -- is at most 2^53 exactly when hi < 2^21 (2097152), or hi = 2^21 and
+   -- lo = 0. Each half is built from four bytes, so both are exact integers
+   -- below 2^32, and every comparison below is between integers that differ
+   -- by at least 1 at that modest magnitude. No rounding rule and no
+   -- comparison tolerance an engine could plausibly apply changes its answer,
+   -- and on the engine it refused 2^53 + 1 (2026-09-24, the day's second
+   -- run of the suite paste).
+   --
+   -- It used to be `if tHi > (9007199254740992 - tLo) / 4294967296`, and on
+   -- 2026-09-24 (OXT, Win32, the suite paste's riptide fold) that line
+   -- ACCEPTED a seq of 2^53 + 1: the harness check "a seq of 2^53 + 1 is
+   -- REFUSED" failed (OBSERVED). For hi = 2^21, lo = 1 the right side is
+   -- 2097151.99999999977, which pure IEEE puts below 2097152, so the family
+   -- interpreter (Python floats) refused and every headless gate stayed
+   -- green. But the two sides differ by about 2.3e-10, a relative 1.1e-16,
+   -- and the engine did not answer that comparison the way IEEE does. The
+   -- same day's second run showed the engine answering nearly-equal numbers
+   -- as equal (1 + 2^-51 > 1 reads false on it), and refused 2^53 + 1
+   -- through the halves bound that follows; its third named the rule (the
+   -- harness's probe lines; suite engine note 2.10): two numbers within 10
+   -- DBL_EPSILON of the SMALLER one are EQUAL. So integers one apart blur
+   -- only from about 4.5e14, and the halves never get near that. The rule
+   -- here holds under that rule and any looser one: decide a bound on a
+   -- wide integer by comparing exact integers that differ by at least 1 at a
+   -- modest magnitude - never against a quotient, and never on a difference
+   -- smaller than the tolerance. tools/check-script-vectors.py replays this
+   -- bound under the engine's rule and two margin models, after proving that
+   -- each of them accepts 2^53 + 1 through the old line as the engine did.
+   -- Plain nested ifs, no compound `and`: both operands of one always
+   -- evaluate (engine notes 2.5). Harmless here, but the habit costs less
+   -- than the audit.
    local tHi, tLo
    put rsReadBEu32(byte 1 to 4 of pBytes) into tHi
    put rsReadBEu32(byte 5 to 8 of pBytes) into tLo
-   if tHi > (9007199254740992 - tLo) / 4294967296 then
+   if tHi > 2097152 then
       return empty
+   end if
+   if tHi is 2097152 then
+      if tLo is not 0 then
+         return empty
+      end if
    end if
    return tHi * 4294967296 + tLo
 end rsReadBEu64
@@ -26956,12 +29040,16 @@ function rs1rsSelfTest
    else
       rs1rstSkip "every crypto section: SodiumXT is not installed"
    end if
-   -- The first line is EXACTLY two counts + passed/failed and nothing else:
-   -- the suite core's stSummaryCounts treats any other word as prose, so the
-   -- skip count gets its own line (the sodiumxt/onionxt returned-report shape).
-   return rs1sPass && "passed," && rs1sFail && "failed" & return & \
-         rs1sSkip && "skipped (optional dependencies; see the log)" & return & \
-         "----------------------------------------" & return & rs1sLog
+   -- The first line is EXACTLY the three counts and their words, nothing
+   -- else: "P passed, F failed, S skipped", the form the suite core's
+   -- stSummaryCounts has read since 2026-08-17 (onionxt's shape). Any other
+   -- word makes a line prose, which the parser refuses. Until 2026-09-25 the
+   -- skip count sat on a second, prose line, under the older two-count rule,
+   -- so the suite paste printed riptide's skips and never merged them: its
+   -- board row and totals said 0 skipped while this log listed 2.
+   return rs1sPass && "passed," && rs1sFail && "failed," && rs1sSkip && "skipped" & \
+         return & "(the skips are optional dependencies; see the log)" & \
+         return & "----------------------------------------" & return & rs1sLog
 end rs1rsSelfTest
 
 private command rs1rstCheck pCondition, pLabel
@@ -27003,13 +29091,56 @@ private function rs1rstFlipByte pData, pIndex
    return rs1tOut
 end rs1rstFlipByte
 
+private function rs1rstUlpLadder pBase, pUlps
+   local rs1tStep
+   put 1 into rs1tStep
+   repeat while rs1tStep <= 1073741824
+      if pBase + rs1tStep / pUlps > pBase then
+         return rs1tStep
+      end if
+      multiply rs1tStep by 2
+   end repeat
+   return 0
+end rs1rstUlpLadder
+
 private command rs1rstSectionCapabilities pCaps
+   local rs1tWant, rs1tGot, rs1tDelim
    rs1rstSection "capabilities + version"
    rs1rstCheck (rsVersion() contains "Riptide"), "rsVersion names the library"
    rs1rstCheck (pCaps["canCrypto"] is true or pCaps["canCrypto"] is false), \
          "probe reports canCrypto as a boolean"
-   rs1rstCheck (the number of lines in the keys of pCaps is 7), \
-         "probe reports six extensions plus the derived hasSha3"
+   -- The EXACT key set, sorted, never a count (2026-09-24). This line used
+   -- to assert "7 keys: six extensions plus the derived hasSha3". Phase 8
+   -- (d9277c3, 2026-08-29) gave rsProbeCapabilities three more - hasNostr,
+   -- hasNostrRelay, canNostrSign - and nothing noticed the count go stale,
+   -- because this harness runs only on an engine and it did not meet one
+   -- between phase 8 and the suite paste of 2026-09-24, which reported it
+   -- as a FAIL (this exact-set check passed there on the day's second run).
+   -- A count also passes a key renamed or swapped for another;
+   -- the list cannot, and on a failure the log shows what the probe
+   -- returned. A new capability edits the literal below AND the log lines.
+   -- The sort is case-blind by default and these names order the same
+   -- either way. A trailing return, should an engine's `the keys` end with
+   -- one, is list formatting and not a key, so it is dropped before the
+   -- compare (a line COUNT ignores it, engine notes 2.2; a string does not).
+   -- `sort lines` reads the lineDelimiter, which is saved, set and restored
+   -- around the one line that needs it (engine notes 2.3).
+   put "canCrypto,canNostrSign,hasCoin,hasDataChannel,hasEnet," & \
+         "hasNostr,hasNostrRelay,hasOnion,hasSha3,hasTorrent" into rs1tWant
+   put the keys of pCaps into rs1tGot
+   if the last char of rs1tGot is return then
+      delete the last char of rs1tGot
+   end if
+   put the lineDelimiter into rs1tDelim
+   set the lineDelimiter to return
+   sort lines of rs1tGot
+   set the lineDelimiter to rs1tDelim
+   replace return with comma in rs1tGot
+   rs1rstCheck (rs1tGot is rs1tWant), \
+         "probe reports exactly its ten keys (" & rs1tWant & ")"
+   if rs1tGot is not rs1tWant then
+      put "      the probe returned:" && rs1tGot & return after rs1sLog
+   end if
    put "      canCrypto=" & pCaps["canCrypto"] & \
          " hasTorrent=" & pCaps["hasTorrent"] & \
          " hasOnion=" & pCaps["hasOnion"] & return after rs1sLog
@@ -27017,6 +29148,9 @@ private command rs1rstSectionCapabilities pCaps
          " hasEnet=" & pCaps["hasEnet"] & \
          " hasCoin=" & pCaps["hasCoin"] & \
          " hasSha3=" & pCaps["hasSha3"] & return after rs1sLog
+   put "      hasNostr=" & pCaps["hasNostr"] & \
+         " hasNostrRelay=" & pCaps["hasNostrRelay"] & \
+         " canNostrSign=" & pCaps["canNostrSign"] & return after rs1sLog
 end rs1rstSectionCapabilities
 
 private command rs1rstSectionKdfTree
@@ -27151,7 +29285,7 @@ private command rs1rstSectionKeyFile
 end rs1rstSectionKeyFile
 
 private command rs1rstSectionHead
-   local rs1tHead, rs1tParsed, rs1tRebuilt, rs1tUpper, rs1tBig, rs1tBigParsed, rs1rstI
+   local rs1tHead, rs1tParsed, rs1tRebuilt, rs1tUpper, rs1tBig, rs1tBigParsed, rs1tSeq53, rs1rstI
    rs1rstSection "RSH1 - the feed head"
    put rsBuildHead(rs1kRsGoldHeadSeq, rs1kRsGoldHeadName, rs1kRsGoldPost2Target, \
          rs1kRsGoldPrekeyTarget, rs1kRsGoldOnion, rs1kRsGoldProfileTarget) into rs1tHead
@@ -27201,11 +29335,122 @@ private command rs1rstSectionHead
    put rsParseHead(rs1tBig) into rs1tBigParsed
    rs1rstCheck (rs1tBigParsed is not empty), \
          "a seq of exactly 2^53 still parses (it IS representable)"
-   rs1rstCheck (rs1tBigParsed["seq"] is 9007199254740992), \
-         "and comes back as exactly 2^53, not a rounded neighbour"
+   -- Exactness is judged on the two u32 HALVES (2026-09-24), not by
+   -- `rs1tBigParsed["seq"] is 9007199254740992` as it was: that is an equality
+   -- at magnitude 2^53, where a rounded neighbour differs by only 1 or 2,
+   -- and a relative comparison tolerance (one suspected cause of the
+   -- 2^53 + 1 failure just below) would answer true for the neighbour too.
+   -- The check could not see the one thing its label claims. The halves are
+   -- exact integers below 2^32, and any neighbour moves the low half off 0.
+   -- Guarded, so an empty parse is a plain FAIL, never arithmetic on empty.
+   if rs1tBigParsed is not empty then
+      put rs1tBigParsed["seq"] into rs1tSeq53
+      rs1rstCheck (rs1tSeq53 div 4294967296 is 2097152 and \
+            rs1tSeq53 mod 4294967296 is 0), \
+            "and comes back as exactly 2^53, not a rounded neighbour"
+   else
+      rs1rstCheck false, "and comes back as exactly 2^53, not a rounded neighbour"
+   end if
+   -- The next check FAILED on 2026-09-24 (OXT, Win32, the suite paste):
+   -- the engine accepted 2^53 + 1 through the old quotient bound in
+   -- rsReadBEu64, whose comment has the story. The bound is decided on the
+   -- halves now, and the check passed on the engine in that day's second
+   -- run (the paste regenerated at 21aaa61; riptide/CLAUDE.md's ledger).
    put numToByte(1) into byte 12 of rs1tBig
    rs1rstCheck (rsParseHead(rs1tBig) is empty), \
          "a seq of 2^53 + 1 is REFUSED (the first unrepresentable value)"
+   -- DIAGNOSTIC, not a check (2026-09-24). That failure is OBSERVED; its
+   -- cause is INFERRED. These four comparisons are all true in pure IEEE,
+   -- and each candidate rule answers them differently. Probes 2 to 4 divide
+   -- integers below 2^53 by powers of two, so their operands are exact
+   -- doubles; probe 1 only has to differ from 1 by about 1e-7. Predicted
+   -- readings (checked against Python models of each rule):
+   --   IEEE, no tolerance              true,true,true,true
+   --   absolute tolerance 1e-6         false,false,false,false
+   --   relative, 1 x DBL_EPSILON       true,true,false,false
+   --   relative, 2+ x DBL_EPSILON      true,false,false,false
+   --   round trip, 15 sig. digits      true,false,false,true
+   -- The third is the failing bound itself: hi = 2^21, lo = 1.
+   -- READ 2026-09-24 (the second run): true,false,false,false. So the engine
+   -- does answer nearly-equal numbers as equal (OBSERVED), but that reading
+   -- does not name the rule: the Python models fit it with a relative tolerance from 2
+   -- DBL_EPSILON to 1e-7, an ABSOLUTE one from 2^-32 (about 2.3e-10) to
+   -- 1e-7, or a decimal round trip at 8 to 14 or at 16 significant digits.
+   -- The table above listed only one of those families. nostrxt's "since
+   -- excludes older events" (1700000000 < 1700000001, green in the same
+   -- run) narrows two of them: a relative tolerance is under 5.9e-10, and a
+   -- round trip keeps 10 digits or more. The second probe line tells the
+   -- families apart.
+   put "      numeric compare probe (diagnostic; IEEE reads" && \
+         "true,true,true,true):" && \
+         (1 + 1 / 10000000 > 1) & "," & \
+         (1 + 1 / 2251799813685248 > 1) & "," & \
+         (2097152 > (9007199254740992 - 1) / 4294967296) & "," & \
+         (1 + 23 / 4503599627370496 > 1 + 22 / 4503599627370496) & \
+         return after rs1sLog
+   -- DIAGNOSTIC 2, not a check (added 2026-09-25). Two answers and two
+   -- ladders (rs1rstUlpLadder: the smallest power-of-two count of ulps K the
+   -- engine tells apart, at 1 and at 8, where one ulp is 8 times larger):
+   --   tiny    1e-10 > 0                 false only under an ABSOLUTE rule
+   --   big     2^30 + 2^-21 > 2^30       true only under an ABSOLUTE rule:
+   --                                     two ulps, 4.8e-7 apart but only
+   --                                     2 DBL_EPSILON of their size
+   --   K1, K8  a relative rule gives K1 = K8; an absolute rule or a decimal
+   --           round trip gives K8 = K1 / 8
+   -- Every operand stays below 2^53, so the family interpreter (which
+   -- refuses a wider integer) can run this line too. Predicted readings (the
+   -- same Python models, over what is left of each family's range):
+   --   relative, 2 eps to 5.9e-10      true,false,K,K          (K 4 to 2^22)
+   --   absolute, 2^-32 to 1e-7         false,true,K,K/8        (K 2^21 to 2^29)
+   --   round trip, 10 to 14 digits     true,false,K,K/8        (K 256 to 2^22)
+   --   round trip, 16 digits           true,false,4,1
+   -- K itself then measures the tolerance to within a factor of 2.
+   -- READ 2026-09-24 (the third run, 10:10 PM): true,false,16,16. Only the
+   -- relative family predicted it: 1 + 8 ulps compares equal to 1 and
+   -- 1 + 16 ulps does not, and the step is the same at 8, so the tolerance
+   -- scales with the size and lies between 8 and 16 DBL_EPSILON. The engine
+   -- source says 10 (MC_EPSILON; suite engine note 2.10, DOCUMENTED), and
+   -- its rule reproduces all eight readings of these two lines.
+   put "      numeric compare probe 2 (diagnostic; relative reads" && \
+         "true,false,K,K; absolute false,true,K,K/8; round trip" && \
+         "true,false,K,K/8):" && \
+         (1 / 10000000000 > 0) & "," & \
+         (1073741824 + 1 / 2097152 > 1073741824) & "," & \
+         rs1rstUlpLadder(1, 4503599627370496) & "," & \
+         rs1rstUlpLadder(8, 562949953421312) & return after rs1sLog
+   -- DIAGNOSTIC 3, not a check (added 2026-09-25). Probes 1 and 2 measured
+   -- the rule on fractions; these eight read its consequences straight off
+   -- the engine rather than infer them from it. The engine source's rule
+   -- (engine/src/exec-logic.cpp and sysdefs.h: two unequal numbers are equal
+   -- when they differ by less than 10 DBL_EPSILON of the SMALLER one, or by
+   -- less than 10 DBL_EPSILON outright when that one is smaller still; text
+   -- becomes a number through strtod, which answers +inf past 1e308):
+   --   1  "1e999" is "2e999"             two texts that overflow: both +inf
+   --   2  "1e5" is "100000"              exponent-form text is a number
+   --   3  1e-15 > 0                      the absolute branch near zero
+   --   4  1e-14 > 0                      ... and just past it
+   --   5  2^49 < 2^49 + 1                integers 1 apart, 8 DBL_EPSILON
+   --   6  2^48 < 2^48 + 1                ... and 16 DBL_EPSILON
+   --   7, 8  N is N + 1 at N = 450359962737050 and at one less: the
+   --      threshold is 2^52 / 10 = 450359962737049.6, so these two read
+   --      the constant itself, not just its power of two
+   -- Predicted, the source's rule   true,true,false,true,false,true,true,false
+   --           pure IEEE doubles    false,true,true,true,true,true,false,false
+   --           family interpreter   false,false,true,true,true,true,false,false
+   -- Items 1 and 2 are why a hex digest must never meet `is` as bare text
+   -- (engine note 2.11). Every operand is below 2^53, and the interpreter
+   -- reads items 1 and 2 as text, so it runs this line too (it does, read
+   -- as above; the all-absent boot gate stops before this section).
+   put "      numeric compare probe 3 (diagnostic; the engine source's rule" && \
+         "reads true,true,false,true,false,true,true,false):" && \
+         ("1e999" is "2e999") & "," & \
+         ("1e5" is "100000") & "," & \
+         (1 / 1000000000000000 > 0) & "," & \
+         (1 / 100000000000000 > 0) & "," & \
+         (562949953421312 < 562949953421313) & "," & \
+         (281474976710656 < 281474976710657) & "," & \
+         (450359962737050 is 450359962737051) & "," & \
+         (450359962737049 is 450359962737050) & return after rs1sLog
    put rs1tHead into rs1tBig
    repeat with rs1rstI = 5 to 12
       put numToByte(255) into byte rs1rstI of rs1tBig
@@ -28673,28 +30918,18 @@ end rs1rstSectionDm
 
 private function rs1rstAcquireSession
    local rs1tNew, rs1tErr
-   if rs1sRsTestSession is not empty and rs1sRsTestSession > 0 then
+   -- GENERATED (tools/build-suite-selftest.py): THE SUITE CORE OWNS THE
+   -- SESSION. TorrentXT allows exactly one per process, the core opens it
+   -- in its probe and stops it at teardown, and it takes a NEW one on every
+   -- run - so a handle cached here by an earlier run is dead. Read the
+   -- core's handle on every call, and never start one: a session started
+   -- here is one nothing in this paste would ever stop. Zero means SKIP.
+   if sSession > 0 then
+      put sSession into rs1sRsTestSession
       return rs1sRsTestSession
    end if
-   -- GENERATED (tools/build-suite-selftest.py): TorrentXT allows exactly
-   -- ONE session per process and the suite core already opened it during
-   -- its probe. Alias the core's handle instead of asking for a second -
-   -- the ask would be refused, and this member's live-feed section would
-   -- SKIP while looking perfectly green.
-   if sSession > 0 then
-      put sSession into rs1tNew
-   else
-      try
-         put btStartSession() into rs1tNew
-      catch rs1tErr
-         put 0 into rs1tNew
-      end try
-   end if
-   if rs1tNew is not empty and rs1tNew > 0 then
-      put rs1tNew into rs1sRsTestSession
-   end if
-   if rs1sRsTestSession is empty or rs1sRsTestSession <= 0 then return 0
-   return rs1sRsTestSession
+   put 0 into rs1sRsTestSession
+   return 0
 end rs1rstAcquireSession
 
 private command rs1rstSectionLiveFeed pCaps
@@ -28945,6 +31180,79 @@ function he1heIsHex pTxt, pLen
    end repeat
    return true
 end he1heIsHex
+
+function he1heHexEq pA, pB
+   -- THE equality for hex identifiers (2026-09-25): a digest, a seed
+   -- commitment, a chain or receipt head, a pubkey, a signature, a table
+   -- id. Bare `is` is NOT a text compare: it first tries to read BOTH
+   -- operands as numbers and, when both parse, compares the NUMBERS (root
+   -- docs/OXT-ENGINE-NOTES.md 2.11, DOCUMENTED from the engine source, not
+   -- yet observed here; 2.10 adds a relative tolerance on top). Lowercase
+   -- hex is number-like when it is all digits, or digits, one "e", digits,
+   -- and any two texts that overflow a double are both +inf: "1e" and 62
+   -- digits `is` "2e" and 62 digits, and the 64-zero genesis head `is` "0".
+   -- `set the caseSensitive to true` changes none of that; case matters
+   -- only on the text path, which two number-like operands never reach.
+   -- The attack, in one sentence: a dealer who commits a number-like value
+   -- and holds seeds whose commitments are number-like too (about 2^41
+   -- BLAKE2b tries each) passes the seed audit with whichever seed it
+   -- prefers, AFTER seeing everyone else's. The "h" in front keeps both
+   -- operands on the text path (no number parse accepts a leading letter).
+   -- Both are LOWERCASED because hex is case-blind (he1heIsHex admits either
+   -- case, and an honest peer's commit in either spelling must keep
+   -- passing), and lowercasing rather than leaning on the caseSensitive
+   -- default gives one answer on the engine and in the family interpreter,
+   -- which models `is` case-SENSITIVELY. Pure (H5), no FFI: safe on empty
+   -- or malformed input and inside an `or` chain whose operands all
+   -- evaluate (engine note 2.5); empty equals only empty.
+   -- THE RULE: a digest, commitment, head, key or signature never meets
+   -- bare `is`, `is not`, `=` or `<>` in this file. It meets he1heHexEq.
+   return ("h" & toLower(pA)) is ("h" & toLower(pB))
+end he1heHexEq
+
+function he1heCanonIdx pTxt, pMax
+   -- the CANONICAL spelling of a positive whole number read off a wire (a
+   -- contributor position, a seat, a count, a hand number, a seq), or empty
+   -- when pTxt is not one (2026-09-25, v0.25.5). Canonical = a non-empty
+   -- run of ASCII digits with no leading zero, at most 14 of them (below
+   -- 10^14, where the engine still tells two integers one apart: engine
+   -- note 2.10 blurs them only from about 4.5e14), and at most pMax when
+   -- pMax is given. Tested as TEXT, before anything reads it as a number.
+   -- WHY: `is`, `<` and a chunk index read "03", "3.0", "+3", " 3" and
+   -- "3e0" as the NUMBER 3 (MCU_strtol skips spaces and leading zeros; suite
+   -- engine notes 2.10, 2.11), while an array KEY keeps the raw text. So an
+   -- alias passed every "is this position 3?" check and was then stored,
+   -- and COUNTED, as a separate position: a dealer posted its own commitment
+   -- under three aliases, the commit count told every honest seat that all
+   -- commitments were in, the honest seats sealed their seeds to it, and it
+   -- ground its own seed with everyone else's in hand. One canonical text
+   -- names one key; every fold keys, compares and counts by what this
+   -- returns, and compares two of them as text ("n" & a) is ("n" & b), the
+   -- letter keeping the compare off the number path as he1heHexEq's does.
+   -- Pure (H5), no FFI; the checks are nested (engine note 2.5).
+   local he1tLen, he1tCh
+   put the number of chars of pTxt into he1tLen
+   if he1tLen < 1 or he1tLen > 14 then
+      return empty
+   end if
+   repeat for each char he1tCh in pTxt
+      if offset(he1tCh, "0123456789") is 0 then
+         return empty
+      end if
+   end repeat
+   if char 1 of pTxt is "0" then
+      return empty   -- zero itself, and every leading-zero spelling
+   end if
+   if pMax is not empty then
+      if pMax is not a number then
+         return empty
+      end if
+      if pTxt > pMax then
+         return empty
+      end if
+   end if
+   return pTxt
+end he1heCanonIdx
 
 function he1heSignDetachedD pMsgData, pSecData
    return sxSignDetached(pMsgData, pSecData)
@@ -29263,7 +31571,10 @@ function he1heEnvVerify pWireLine, pFromPubHex, pHostPubHex, pExpectedPrevHex
    if he1tBodyHex is not empty and not he1heIsHex(he1tBodyHex, 0) then
       return "drop:malformed"
    end if
-   if pFromPubHex is not empty and he1tA["from"] is not pFromPubHex then
+   -- the key and head compares are he1heHexEq, never bare `is`: a number-like
+   -- prev would otherwise match a head it only EQUALS AS A NUMBER (the
+   -- 64-zero genesis head `is` "0"; he1heHexEq, engine note 2.11)
+   if pFromPubHex is not empty and not he1heHexEq(he1tA["from"], pFromPubHex) then
       return "drop:unknown-from"
    end if
    if not he1heVerifyDetached(he1heHex2BinD(he1tA["senderSig"]), \
@@ -29274,7 +31585,7 @@ function he1heEnvVerify pWireLine, pFromPubHex, pHostPubHex, pExpectedPrevHex
          textEncode(he1tA["envLine"], "utf-8"), he1heHex2BinD(pHostPubHex)) then
       return "drop:bad-host-sig"
    end if
-   if pExpectedPrevHex is not empty and he1tA["prev"] is not pExpectedPrevHex then
+   if pExpectedPrevHex is not empty and not he1heHexEq(he1tA["prev"], pExpectedPrevHex) then
       return "drop:chain-break"
    end if
    return "ok"
@@ -29433,8 +31744,18 @@ function he1heAuditDeal pTableData, pHandNum, pSeedsHexA, pCommitsA, pCount, pDe
    -- revealed seeds and name the FIRST failing step. Returns "pass"/"fail:..".
    local he1tSeatPos, he1tDeckList, he1tCheckA, he1tSeatNum
    set the itemDelimiter to comma
+   -- he1heHexEq, never bare `is` (engine note 2.11): the commitment came off
+   -- the wire shape-checked only, and a number-like commit would open to
+   -- any seed whose own commitment is number-like too (he1heHexEq's comment).
+   -- Each seed is SHAPE-checked first, in its own `if` (engine note 2.5):
+   -- he1heSeedCommitHex decodes through sxHex2Bin, which throws on malformed
+   -- hex, so a bad seed names its position instead of throwing out of the
+   -- audit (H4; 2026-09-25, holde-em WORK-PLAN coding #12)
    repeat with he1tSeatPos = 1 to pCount
-      if he1heSeedCommitHex(pSeedsHexA[he1tSeatPos]) is not pCommitsA[he1tSeatPos] then
+      if not he1heIsHex(pSeedsHexA[he1tSeatPos], 64) then
+         return "fail:seed-malformed-position-" & he1tSeatPos
+      end if
+      if not he1heHexEq(he1heSeedCommitHex(pSeedsHexA[he1tSeatPos]), pCommitsA[he1tSeatPos]) then
          return "fail:commit-mismatch-position-" & he1tSeatPos
       end if
    end repeat
@@ -29507,22 +31828,36 @@ function he1heAuditDealsFromLog pLogTxt
             put he1tBodyA["table"] into he1tTableHex
             put he1tBodyA["count"] into he1tCount
             break
+         -- positions and seats are keyed by their CANONICAL text (he1heCanonIdx,
+         -- 2026-09-25): the audit reads keys 1..count and the dealt seats,
+         -- so an alias line ("pos=03") was stored under a key nothing reads.
+         -- Dropping it here says so instead of carrying a dead entry, and
+         -- matches the live fold, which refuses the same wire.
          case "seedCommit"
             put he1tBodyTxt into he1tBodyA
             split he1tBodyA by comma and "="
-            put he1tBodyA["commit"] into he1tCommitsA[he1tBodyA["pos"]]
+            put he1heCanonIdx(he1tBodyA["pos"], he1tCount) into he1tPos
+            if he1tPos is not empty then
+               put he1tBodyA["commit"] into he1tCommitsA[he1tPos]
+            end if
             break
          case "seedReveal"
             put he1tBodyTxt into he1tBodyA
             split he1tBodyA by comma and "="
-            put he1tBodyA["seed"] into he1tSeedsA[he1tBodyA["pos"]]
+            put he1heCanonIdx(he1tBodyA["pos"], he1tCount) into he1tPos
+            if he1tPos is not empty then
+               put he1tBodyA["seed"] into he1tSeedsA[he1tPos]
+            end if
             break
          case "holeDeliver"
             put he1tBodyTxt into he1tBodyA
             split he1tBodyA by comma and "="
             put he1tBodyA["cards"] into he1tCardTxt
             replace "|" with comma in he1tCardTxt
-            put he1heCardIndex(item 1 of he1tCardTxt) & comma & he1heCardIndex(item 2 of he1tCardTxt) into he1tHolesA[he1tBodyA["seat"]]
+            put he1heCanonIdx(he1tBodyA["seat"], he1kHeMaxSeats) into he1tSeatNum
+            if he1tSeatNum is not empty then
+               put he1heCardIndex(item 1 of he1tCardTxt) & comma & he1heCardIndex(item 2 of he1tCardTxt) into he1tHolesA[he1tSeatNum]
+            end if
             break
          case "board"
             put he1tBodyTxt into he1tBodyA
@@ -29563,8 +31898,26 @@ function he1heAuditDealLog pTableHex, pHandNum, pSeedsHexA, pCommitsA, pCount, p
    -- revealed match. Returns "pass" or "fail:...".
    local he1tSeatPos, he1tDeckList, he1tCheckA, he1tSeatNum, he1tBoardN
    set the itemDelimiter to comma
+   -- A TRANSCRIPT IS A FILE ANYONE CAN HAND-EDIT (2026-09-25, holde-em
+   -- WORK-PLAN coding #12), so every field this derives from is shape-checked
+   -- before it reaches an FFI decode or a loop bound, each in its own `if`
+   -- (engine note 2.5): the contributor count bounds the loop below, the
+   -- table id and every seed go through sxHex2Bin (which throws on malformed
+   -- hex), and a throw here escaped the whole History audit. Each failure
+   -- is NAMED instead (H4), the way a wrong commitment already was.
+   if he1heCanonIdx(pCount, he1kHeMaxSeats + 1) is empty then
+      return "fail:count-malformed"
+   end if
+   if not he1heIsHex(pTableHex, 64) then
+      return "fail:table-malformed"
+   end if
+   -- he1heHexEq, never bare `is`: the same number-like commitment hole as
+   -- he1heAuditDeal's, read from a transcript anyone can hand you
    repeat with he1tSeatPos = 1 to pCount
-      if he1heSeedCommitHex(pSeedsHexA[he1tSeatPos]) is not pCommitsA[he1tSeatPos] then
+      if not he1heIsHex(pSeedsHexA[he1tSeatPos], 64) then
+         return "fail:seed-malformed-position-" & he1tSeatPos
+      end if
+      if not he1heHexEq(he1heSeedCommitHex(pSeedsHexA[he1tSeatPos]), pCommitsA[he1tSeatPos]) then
          return "fail:commit-mismatch-position-" & he1tSeatPos
       end if
    end repeat
@@ -29847,14 +32200,14 @@ end he1heL2MaskDeckHex
 function he1heL2CardOfPointHex pPointHex, pBaseDeckList
    -- card index 1..52 of a point in the base table, 0 when absent. PURE
    -- text scan, no FFI, so table lookups can never throw on hostile input;
-   -- `is` compares case-insensitively, which the Python twin mirrors by
-   -- lowercasing both sides.
+   -- he1heHexEq lowercases both sides, exactly as the Python twin does, and
+   -- keeps a number-like point from matching by VALUE (engine note 2.11).
    local he1tIdx, he1tBaseHex
    set the itemDelimiter to comma
    put 0 into he1tIdx
    repeat for each item he1tBaseHex in pBaseDeckList
       add 1 to he1tIdx
-      if he1tBaseHex is pPointHex then
+      if he1heHexEq(he1tBaseHex, pPointHex) then
          return he1tIdx
       end if
    end repeat
@@ -29953,7 +32306,7 @@ function he1heL2RevealShuffleHex pInDeckList, pOutDeckList, pScalarHex, pPermLis
    repeat with he1tPos = 1 to 52
       put item he1tPos of pOutDeckList into he1tOutHex
       put item he1tPos of he1tRedoneList into he1tRedoneHex
-      if he1tRedoneHex is not he1tOutHex then
+      if not he1heHexEq(he1tRedoneHex, he1tOutHex) then
          return "void:shuffle-mismatch:" & he1tPos
       end if
    end repeat
@@ -29977,7 +32330,7 @@ function he1heL2RevealUnmaskHex pInHex, pOutHex, pScalarHex
    if not he1heIsHex(pOutHex, 64) then
       return "void:point-format"
    end if
-   if he1tRedoneHex is pOutHex then
+   if he1heHexEq(he1tRedoneHex, pOutHex) then
       return "ok"
    end if
    return "void:unmask-mismatch"
@@ -30163,7 +32516,10 @@ function he1heL2DleqVerify pCkHex, pP1Hex, pP2Hex, pProofHex
    catch he1tVfyErr
       return "void:no-dleq"
    end try
-   if he1tZRedHex is not he1tZHex then
+   -- every point and scalar compare below is he1heHexEq, never bare `is`: z
+   -- and (a1, a2) are the prover's to choose, so a value that compares
+   -- equal only AS A NUMBER must never close a check (engine note 2.11)
+   if not he1heHexEq(he1tZRedHex, he1tZHex) then
       return "void:scalar-format"
    end if
    try
@@ -30190,7 +32546,7 @@ function he1heL2DleqVerify pCkHex, pP1Hex, pP2Hex, pProofHex
    catch he1tVfyErr
       return "void:dleq-mismatch:1"
    end try
-   if he1tLhsHex is not he1tRhsHex then
+   if not he1heHexEq(he1tLhsHex, he1tRhsHex) then
       return "void:dleq-mismatch:1"
    end if
    try
@@ -30201,7 +32557,7 @@ function he1heL2DleqVerify pCkHex, pP1Hex, pP2Hex, pProofHex
    catch he1tVfyErr
       return "void:dleq-mismatch:2"
    end try
-   if he1tLhsHex is not he1tRhsHex then
+   if not he1heHexEq(he1tLhsHex, he1tRhsHex) then
       return "void:dleq-mismatch:2"
    end if
    return "ok"
@@ -30532,7 +32888,7 @@ function he1heL2VoidAudit pStateA, pRevealsText
       if he1tCkStored is not empty and he1heL2HasDleq() then
          -- (the KAT mirror always has the algebra; a pre-ABI-9 engine
          -- cannot compute k*B, so it skips the binding and still audits)
-         if he1heL2CommitKeyHex(he1tRkA[he1tPosI]) is not he1tCkStored then
+         if not he1heHexEq(he1heL2CommitKeyHex(he1tRkA[he1tPosI]), he1tCkStored) then
             return "named=" & he1tPosI & "|void:audit-ck-mismatch"
          end if
       end if
@@ -31333,7 +33689,7 @@ command he1heNetOnHandshake pPeer, pTokenData, pFromSeq
    if he1gGame["isHost"] is not "true" and he1tRoleTxt is "host" then
       if he1gGame["hostPubHex"] is empty then
          put he1tPubHex into he1gGame["hostPubHex"]
-      else if he1gGame["hostPubHex"] is not he1tPubHex then
+      else if not he1heHexEq(he1gGame["hostPubHex"], he1tPubHex) then
          -- copy the trusted host key out before chunking it (H6: never chunk an
          -- array element directly)
          put he1gGame["hostPubHex"] into he1tHostShort
@@ -31466,7 +33822,7 @@ command he1heHostRelay pPeer, pContentAndSig
    -- relay them for a non-host sender, so an admitted player cannot forge table
    -- config or roster through the relay (deep-dive transport). The host emits
    -- these from its own key (he1heNetSendAction uses he1gGame["idPubHex"]).
-   if (he1tTypeTxt is "cfg" or he1tTypeTxt is "roster") and he1tFromHex is not he1gGame["hostPubHex"] then
+   if (he1tTypeTxt is "cfg" or he1tTypeTxt is "roster") and not he1heHexEq(he1tFromHex, he1gGame["hostPubHex"]) then
       exit he1heHostRelay
    end if
    -- verify the sender actually signed this content (host cannot forge content)
@@ -31521,8 +33877,9 @@ command he1heNetIngestWire pWire
    -- fields sit inside the host-signed span, but a receiver still has to ENFORCE
    -- them: otherwise a host-signed wire for another table, or a downgraded envelope
    -- version, would be accepted onto our chain (deep-dive transport). A mismatch is
-   -- a hard drop, NOT a chain gap, so it never triggers a resync.
-   if he1tA["table"] is not he1gGame["tableIdHex"] then
+   -- a hard drop, NOT a chain gap, so it never triggers a resync. The table
+   -- id and the prev below are hex: he1heHexEq, never bare `is` (engine note 2.11).
+   if not he1heHexEq(he1tA["table"], he1gGame["tableIdHex"]) then
       put "drop:wrong-table " & char 1 to 24 of pWire & return after he1gGame["netLog"]
       he1heLobbyRefresh
       exit he1heNetIngestWire
@@ -31532,8 +33889,12 @@ command he1heNetIngestWire pWire
       he1heLobbyRefresh
       exit he1heNetIngestWire
    end if
-   put he1tA["seq"] into he1tSeq
-   if he1tSeq is not a number then
+   -- the seq is CANONICAL text (he1heCanonIdx, 2026-09-25): it keys the reorder
+   -- buffer and becomes lastSeq, and the drain looks buffered wires up by
+   -- lastSeq + 1 -- so a host-signed "07" or "7.0" compared as 7 and then sat
+   -- in a buffer slot nothing ever reads, and "1.5" slipped BETWEEN two seqs
+   put he1heCanonIdx(he1tA["seq"], empty) into he1tSeq
+   if he1tSeq is empty then
       put "drop:bad-seq " & char 1 to 24 of pWire & return after he1gGame["netLog"]
       he1heLobbyRefresh
       exit he1heNetIngestWire
@@ -31551,7 +33912,7 @@ command he1heNetIngestWire pWire
    end if
    -- he1tSeq is exactly lastSeq+1: it must chain onto our head, or the host's stream
    -- is inconsistent (should not happen) -- ask for a replay rather than wedge.
-   if he1tA["prev"] is not he1gGame["chainHeadHex"] then
+   if not he1heHexEq(he1tA["prev"], he1gGame["chainHeadHex"]) then
       put "drop:chain-break" && char 1 to 24 of pWire & return after he1gGame["netLog"]
       he1heNetRequestSync
       he1heLobbyRefresh
@@ -31598,7 +33959,7 @@ command he1heNetApplyWire pWire, pA
    -- ignore-the-body treatment a non-host cfg gets. In-order apply guarantees
    -- the roster wire admitting a sender lands before that sender's first
    -- relayed action, so an honest stream never trips this.
-   if he1tFromHex is not he1gGame["hostPubHex"] and not he1heRosterHasKey(he1tFromHex) then
+   if not he1heHexEq(he1tFromHex, he1gGame["hostPubHex"]) and not he1heRosterHasKey(he1tFromHex) then
       put "note   unrostered sender " & char 1 to 8 of he1tFromHex \
             & " -- body ignored (seq " & he1tSeqTxt & ")" & return after he1gGame["netLog"]
       exit he1heNetApplyWire
@@ -31609,7 +33970,7 @@ command he1heNetApplyWire pWire, pA
    -- so an admitted player cannot forge table config/roster by getting a
    -- content line relayed (the host relays any admitted sender's content).
    if he1tTypeTxt is "roster" or he1tTypeTxt is "cfg" then
-      if he1tFromHex is he1gGame["hostPubHex"] then
+      if he1heHexEq(he1tFromHex, he1gGame["hostPubHex"]) then
          if he1tTypeTxt is "roster" then
             put he1heEnvBodyText(he1tBodyHex) into he1gGame["rosterBody"]
          else
@@ -31656,7 +34017,7 @@ function he1heRosterHasKey pPubHex
       else
          put he1tItem into he1tPub
       end if
-      if he1tPub is pPubHex then
+      if he1heHexEq(he1tPub, pPubHex) then
          return true
       end if
    end repeat
@@ -31689,7 +34050,7 @@ command he1heNetDrainBuffer
       put empty into he1gGame["wireBuf"][he1tNext]
       subtract 1 from he1gGame["wireBufN"]
       put he1heEnvWireParse(he1tWire) into he1tA
-      if he1tA["prev"] is not he1gGame["chainHeadHex"] then
+      if not he1heHexEq(he1tA["prev"], he1gGame["chainHeadHex"]) then
          exit repeat   -- a buffered wire that no longer chains: leave it for replay
       end if
       he1heNetApplyWire he1tWire, he1tA
@@ -31891,7 +34252,7 @@ function he1heNetElectablePubs
    repeat for each item he1tSeatNum in he1tChipList
       if he1gGame["sitOutBy"][he1tSeatNum] is not "true" then
          put he1gGame["pubBySeat"][he1tSeatNum] into he1tPub
-         if he1tPub is not empty and he1tPub is not he1gGame["hostPubHex"] then
+         if he1tPub is not empty and not he1heHexEq(he1tPub, he1gGame["hostPubHex"]) then
             put he1tPub & return after he1tOut
          end if
       end if
@@ -31942,7 +34303,7 @@ command he1heNetHostLost pWhyTxt
    he1heDisableActions
    if he1tElected is empty then
       put "HOST LOST (" & pWhyTxt & ") -- no live seated player to elect. The table is over; stacks stand at the last receipt." into he1tMsgTxt
-   else if he1tElected is he1gGame["idPubHex"] then
+   else if he1heHexEq(he1tElected, he1gGame["idPubHex"]) then
       put "HOST LOST (" & pWhyTxt & ") -- the in-flight hand is void; stacks stand at the last receipt. YOU are the elected host (lowest live key): Create a table and share the new invite." into he1tMsgTxt
    else
       put "HOST LOST (" & pWhyTxt & ") -- the in-flight hand is void; stacks stand at the last receipt. Elected host: " & char 1 to 12 of he1tElected & " -- join its new invite when it re-hosts." into he1tMsgTxt
@@ -32715,6 +35076,10 @@ command he1heNetGameInit
    put empty into he1gGame["catchUpTo"]
    put he1kHeGenesisPrev into he1gGame["rcptHeadHex"]
    put empty into he1gGame["oDeal"]
+   -- the last handStart this client FOLDED (2026-09-25): a handStart must
+   -- carry a canonical hand number above it, so no hand number, and with it
+   -- no per-hand seed, ever repeats at one table (he1heNetFoldGameWire)
+   put 0 into he1gGame["handFolded"]
    -- spec 9 host-loss election state (2e/Phase 3)
    put "false" into he1gGame["hostLost"]
    put 0 into he1gGame["hostQuietTicks"]
@@ -32865,21 +35230,103 @@ function he1heNetContribPosOk pPos, pFromSeat, pFromHex
    -- owns the position: seats own their packed positions (seatByPub is the
    -- authority, never the body); the oracle -- the host key, dealing at
    -- Level 1 with no seat -- owns exactly position dealCount+1.
-   local he1tCount
-   if pPos is not a number then
+   -- The position must be CANONICAL (he1heCanonIdx, 2026-09-25) and within
+   -- 1..contributors, and every compare below is TEXT behind a letter: this
+   -- used to read pPos as a NUMBER, so "03", "3.0" and "+3" each owned
+   -- position 3 and each became its own stored, counted entry in the fold.
+   local he1tCount, he1tPos
+   put he1heNetContribCount() into he1tCount
+   put he1heCanonIdx(pPos, he1tCount) into he1tPos
+   if he1tPos is empty then
       return false
    end if
    if pFromSeat > 0 then
-      return (he1heNetSeatAtPos(pPos) is pFromSeat)
+      return (("n" & he1heNetSeatAtPos(he1tPos)) is ("n" & pFromSeat))
    end if
-   if he1heNetOracleDeal() and pFromHex is he1gGame["hostPubHex"] then
-      put he1gGame["oDeal"]["dealCount"] into he1tCount
-      if he1tCount is a number and pPos is (he1tCount + 1) then
-         return true
-      end if
+   if he1heNetOracleDeal() and he1heHexEq(pFromHex, he1gGame["hostPubHex"]) then
+      return (("n" & he1tPos) is ("n" & he1tCount))
    end if
    return false
 end he1heNetContribPosOk
+
+function he1heNetPosFilled pWhich
+   -- how many CONTRIBUTOR positions 1..he1heNetContribCount() hold an entry in
+   -- he1gGame["oDeal"][pWhich] (commitsBy, sealsBy, revealsBy). WALKED over the
+   -- canonical keys every time, never counted per message (2026-09-25):
+   -- "add 1 on each new key" let three aliases of one position read as
+   -- three commitments, and every threshold downstream (seal when the
+   -- commits are in, deal when the seals are in, settle when the reveals
+   -- are in) trusted that count. A walk over 1..count cannot be advanced
+   -- by a duplicate, an alias or a position outside the hand.
+   local he1tCount, he1tPos, he1tN
+   put he1heNetContribCount() into he1tCount
+   put 0 into he1tN
+   repeat with he1tPos = 1 to he1tCount
+      if he1gGame["oDeal"][pWhich][he1tPos] is not empty then
+         add 1 to he1tN
+      end if
+   end repeat
+   return he1tN
+end he1heNetPosFilled
+
+function he1heNetSeatsFilled pWhich
+   -- the seat twin of he1heNetPosFilled: how many of THIS hand's dealt seats
+   -- (he1gGame["state"]["occ"], canonical since the handStart fold checks it)
+   -- hold an entry in he1gGame["oDeal"][pWhich] (holeSealedBy, receiptsBy).
+   -- Walked, for the same reason: holeN once counted a delivery per new
+   -- raw seat key, so a dealer could "deliver" to "03" and "3.0" and start
+   -- the blinds while a real seat still held no cards.
+   local he1tOccList, he1tSeatNum, he1tN
+   set the itemDelimiter to comma
+   put he1gGame["state"]["occ"] into he1tOccList
+   put 0 into he1tN
+   repeat for each item he1tSeatNum in he1tOccList
+      if he1gGame["oDeal"][pWhich][he1tSeatNum] is not empty then
+         add 1 to he1tN
+      end if
+   end repeat
+   return he1tN
+end he1heNetSeatsFilled
+
+function he1heNetOccOfSeats pSeatsTxt
+   -- the DEALT-seat list a handStart's seats= field names ("1|3|4"),
+   -- rebuilt as canonical comma text ("1,3,4"), or empty when it is not a
+   -- legal one (2026-09-25, v0.25.5): two or more seats, each canonical
+   -- within 1..he1kHeMaxSeats (he1heCanonIdx), strictly ascending. The list IS
+   -- the contributor-position order (he1heNetSeatPos), so an alias or a
+   -- duplicate would hand one seat two positions, or a seat none; and it is
+   -- REBUILT from the checked items, so the one trailing delimiter the
+   -- engine ignores when counting (engine note 2.2) never rides into the
+   -- state. One rule for the live fold and History's translation. Pure (H5).
+   local he1tSeatsTxt, he1tSeatItem, he1tPrevSeat, he1tOccList, he1tSeatN
+   set the itemDelimiter to comma
+   put pSeatsTxt into he1tSeatsTxt
+   replace "|" with comma in he1tSeatsTxt
+   put empty into he1tOccList
+   put empty into he1tPrevSeat
+   put 0 into he1tSeatN
+   repeat for each item he1tSeatItem in he1tSeatsTxt
+      if he1heCanonIdx(he1tSeatItem, he1kHeMaxSeats) is empty then
+         return empty
+      end if
+      if he1tPrevSeat is not empty then
+         if he1tSeatItem <= he1tPrevSeat then
+            return empty
+         end if
+      end if
+      put he1tSeatItem into he1tPrevSeat
+      if he1tOccList is empty then
+         put he1tSeatItem into he1tOccList
+      else
+         put comma & he1tSeatItem after he1tOccList
+      end if
+      add 1 to he1tSeatN
+   end repeat
+   if he1tSeatN < 2 then
+      return empty
+   end if
+   return he1tOccList
+end he1heNetOccOfSeats
 
 function he1heTimeoutVerbOf pStateA, pSeatNum
    -- the spec 9 expiry prescription, PURE (H5): check when the seat owes
@@ -32956,7 +35403,7 @@ command he1heNetTurnMark
             & he1gGame["handNum"] & "-" & he1tStateA["street"] into he1tKeyTxt
    else if he1tStateA["phase"] is "blinds" \
          and he1gGame["oDeal"]["dealCount"] is a number \
-         and he1gGame["oDeal"]["holeN"] >= he1gGame["oDeal"]["dealCount"] then
+         and he1heNetSeatsFilled("holeSealedBy") >= he1gGame["oDeal"]["dealCount"] then
       -- the forced-post timer arms only once the deal is COMPLETE: a
       -- stalled L0 deal (a contributor never commits/seals) has no timeout
       -- prescription at Level 0 -- recorded, not invented; spec 9's
@@ -33243,7 +35690,7 @@ function he1heNetPubIsLive pPubHex
    -- (reconnecting re-stamps it), and the honest limit of what rp1 can prove.
    -- Verified statically; needs an OXT pass.
    local he1tSeenMs
-   if pPubHex is he1gGame["idPubHex"] then
+   if he1heHexEq(pPubHex, he1gGame["idPubHex"]) then
       return true   -- ourselves: the host running this check is present
    end if
    if he1gGame["peerByPub"][pPubHex] is empty then
@@ -33288,7 +35735,7 @@ command he1heNetSeatLateJoiners
    repeat for each key he1tPubHex in he1gGame["boxByPub"]
       if he1gGame["admittedA"][he1tPubHex] is "true" \
             and he1gGame["seatByPub"][he1tPubHex] is empty then
-         if he1gGame["oracleHost"] is "true" and he1tPubHex is he1gGame["idPubHex"] then
+         if he1gGame["oracleHost"] is "true" and he1heHexEq(he1tPubHex, he1gGame["idPubHex"]) then
             next repeat   -- the oracle never takes a seat
          end if
          if not he1heNetPubIsLive(he1tPubHex) then
@@ -33338,7 +35785,7 @@ command he1heNetStartGame
       if he1gGame["admittedA"][he1tPubHex] is "true" then
          -- Phase 3: the ORACLE hosts and deals but never takes a seat --
          -- its join still bound a session box (the seedSeals seal to it)
-         if he1gGame["oracleHost"] is "true" and he1tPubHex is he1gGame["idPubHex"] then
+         if he1gGame["oracleHost"] is "true" and he1heHexEq(he1tPubHex, he1gGame["idPubHex"]) then
             next repeat
          end if
          put he1tPubHex & return after he1tPubsTxt
@@ -33513,11 +35960,31 @@ command he1heNetFoldGameWire pTypeTxt, pFromHex, pBodyTxt, pHandTxt
    local he1tBodyA, he1tSeat, he1tPos, he1tHex, he1tAmt, he1tVerb, he1tCardsTxt, he1tOneCard, he1tIdxList
    local he1tFromSeat, he1tDealerPub, he1tOccList, he1tCount, he1tStackAmt, he1tOpenErr, he1tOpenTxt
    local he1tDeltasTxt, he1tMineTxt, he1tHeadHex, he1tSigHex, he1tResultTxt, he1tPrevBad
-   local he1tStreetName, he1tBoardHeld, he1tBoardN, he1tCkptHead
+   local he1tStreetName, he1tBoardHeld, he1tBoardN, he1tCkptHead, he1tHandCanon, he1tRawTxt
    set the itemDelimiter to comma
    put pBodyTxt into he1tBodyA
    split he1tBodyA by comma and "="
    put he1gGame["seatByPub"][pFromHex] into he1tFromSeat
+   -- EVERY WIRE INDEX IS CANONICAL TEXT (he1heCanonIdx, 2026-09-25, v0.25.5):
+   -- a position, a seat, a count and a hand number are each checked as text
+   -- before anything reads them as numbers, stored under that canonical
+   -- key, compared as ("n" & a) is ("n" & b), and counted by walking the
+   -- hand's own range (he1heNetPosFilled, he1heNetSeatsFilled), never per message.
+   -- And a wire that belongs to one hand (he1kHeHandBoundTypes) must carry THIS
+   -- hand's number in its signed item 3: nothing read that field before, so
+   -- a host could re-sequence last hand's signed commits and reveals into
+   -- this one, the honest clients saw their positions "already committed"
+   -- and stayed silent, and the dealer knew every seed before it chose its
+   -- own. A wire for another hand is dropped whole, before any case acts on it.
+   if pTypeTxt is among the items of he1kHeHandBoundTypes then
+      if he1heCanonIdx(pHandTxt, empty) is empty \
+            or ("n" & pHandTxt) is not ("n" & he1gGame["handNum"]) then
+         put "drop   " & pTypeTxt & " for hand " & char 1 to 12 of pHandTxt \
+               & " while hand " & he1gGame["handNum"] & " is open" & return after he1gGame["netLog"]
+         he1heNetGameReact
+         exit he1heNetFoldGameWire
+      end if
+   end if
    switch pTypeTxt
 
       case "join"
@@ -33539,8 +36006,10 @@ command he1heNetFoldGameWire pTypeTxt, pFromHex, pBodyTxt, pHandTxt
          -- that already owns the seat): re-enters at the next hand boundary
          -- (he1heNetNextOccList reads sitOutBy; the host's next kick deals it).
          if he1tBodyA["pub"] is empty then
-            put he1tBodyA["seat"] into he1tSeat
-            if he1tFromSeat is 0 or he1tSeat is not he1tFromSeat then
+            -- the seat is canonical text and matched as text (he1heCanonIdx):
+            -- "02" used to pass as the sender's seat 2 by NUMBER
+            put he1heCanonIdx(he1tBodyA["seat"], he1kHeMaxSeats) into he1tSeat
+            if he1tSeat is empty or ("n" & he1tSeat) is not ("n" & he1tFromSeat) then
                put "drop   sit-return for a seat the sender does not own" & return after he1gGame["netLog"]
                break
             end if
@@ -33550,13 +36019,16 @@ command he1heNetFoldGameWire pTypeTxt, pFromHex, pBodyTxt, pHandTxt
             he1heHudMark
             break
          end if
-         if pFromHex is not he1gGame["hostPubHex"] then
+         if not he1heHexEq(pFromHex, he1gGame["hostPubHex"]) then
             put "drop   non-host sit ignored" & return after he1gGame["netLog"]
             break
          end if
-         put he1tBodyA["seat"] into he1tSeat
+         -- canonical 1..he1kHeMaxSeats (he1heCanonIdx): a seat of "03" or "3.0"
+         -- used to pass this range test as the number 3 and then become its
+         -- OWN pubBySeat key and a second seatedList entry beside seat 3
+         put he1heCanonIdx(he1tBodyA["seat"], he1kHeMaxSeats) into he1tSeat
          put he1tBodyA["pub"] into he1tHex
-         if he1tSeat is not a number or he1tSeat < 1 or he1tSeat > he1kHeMaxSeats or not he1heIsHex(he1tHex, 64) then
+         if he1tSeat is empty or not he1heIsHex(he1tHex, 64) then
             put "drop   malformed sit" & return after he1gGame["netLog"]
             break
          end if
@@ -33578,25 +36050,47 @@ command he1heNetFoldGameWire pTypeTxt, pFromHex, pBodyTxt, pHandTxt
             put he1tStackAmt into he1gGame["stacksBy"][he1tSeat]
          end if
          put "true" into he1gGame["gameOn"]
-         if he1tHex is he1gGame["idPubHex"] then
+         if he1heHexEq(he1tHex, he1gGame["idPubHex"]) then
             he1heUISetStatus "You are seated at seat " & he1tSeat & ". The game is starting."
          end if
          break
 
       case "handStart"
-         if pFromHex is not he1gGame["hostPubHex"] then
+         if not he1heHexEq(pFromHex, he1gGame["hostPubHex"]) then
             put "drop   non-host handStart ignored" & return after he1gGame["netLog"]
             break
          end if
-         put he1tBodyA["seats"] into he1tOccList
-         replace "|" with comma in he1tOccList
-         put he1tBodyA["button"] into he1tSeat
-         if he1tOccList is empty or he1tSeat is not a number then
+         -- the HAND NUMBER is canonical and strictly above the last hand this
+         -- client folded (2026-09-25). Every seat's per-hand seed is DERIVED
+         -- from table and hand number (he1heNetHandSeedHex), so a repeated number
+         -- repeats every seed, and a dealer that saw them the first time
+         -- could stack the second deal. handFolded, not handNum: the host
+         -- advances handNum before it emits (he1heNetHandKick), then folds its
+         -- own handStart like everyone else.
+         put he1heCanonIdx(pHandTxt, empty) into he1tHandCanon
+         if he1tHandCanon is empty then
+            put "drop   handStart with a malformed hand number" & return after he1gGame["netLog"]
+            break
+         end if
+         if he1gGame["handFolded"] is a number then
+            if he1tHandCanon <= he1gGame["handFolded"] then
+               put "drop   handStart for hand " & he1tHandCanon & " after hand " \
+                     & he1gGame["handFolded"] & " (hand numbers never repeat)" & return after he1gGame["netLog"]
+               break
+            end if
+         end if
+         -- a legal dealt-seat list (he1heNetOccOfSeats: two or more canonical
+         -- seats, strictly ascending, REBUILT) and a canonical button among
+         -- them -- the one rule History's translation applies too
+         put he1heNetOccOfSeats(he1tBodyA["seats"]) into he1tOccList
+         put he1heCanonIdx(he1tBodyA["button"], he1kHeMaxSeats) into he1tSeat
+         if he1tOccList is empty or he1tSeat is empty or he1tSeat is not among the items of he1tOccList then
             put "drop   malformed handStart" & return after he1gGame["netLog"]
             break
          end if
          he1heNetHandReset
-         put pHandTxt into he1gGame["handNum"]
+         put he1tHandCanon into he1gGame["handFolded"]
+         put he1tHandCanon into he1gGame["handNum"]
          put he1tSeat into he1gGame["buttonSeat"]
          put he1heBetNewHand(he1gGame["sb"], he1gGame["bb"], he1gGame["ante"], he1gGame["stacksBy"], \
                he1tOccList, he1tSeat) into he1gGame["state"]
@@ -33618,7 +36112,7 @@ command he1heNetFoldGameWire pTypeTxt, pFromHex, pBodyTxt, pHandTxt
          break
 
       case "dealLevel"
-         if pFromHex is not he1gGame["hostPubHex"] then
+         if not he1heHexEq(pFromHex, he1gGame["hostPubHex"]) then
             put "drop   non-host dealLevel ignored" & return after he1gGame["netLog"]
             break
          end if
@@ -33626,23 +36120,37 @@ command he1heNetFoldGameWire pTypeTxt, pFromHex, pBodyTxt, pHandTxt
          -- (Phase 3, spec 7.2: dealer=0, no seat). Anything else is refused
          -- readably -- which is ALSO how a pre-oracle client refuses an
          -- oracle table instead of mis-folding it (downgrade refusal).
-         if he1tBodyA["level"] is not "0" and he1tBodyA["level"] is not "1" then
+         -- the level, the dealer and the count are compared as TEXT (2026-09-25):
+         -- "0.0" and "1e0" used to read as levels 0 and 1, and the count is the
+         -- contributor range every position and threshold hangs off, so it
+         -- must be canonical AND equal the number of dealt seats -- a host
+         -- that named fewer could leave a seat's entropy out of the deck.
+         if ("n" & he1tBodyA["level"]) is not "n0" and ("n" & he1tBodyA["level"]) is not "n1" then
             put "drop   unsupported deal level " & he1tBodyA["level"] & return after he1gGame["netLog"]
             break
          end if
-         put he1tBodyA["dealer"] into he1tSeat
-         put he1tBodyA["count"] into he1tCount
-         if he1tSeat is not a number or he1tCount is not a number then
+         put he1gGame["state"]["occ"] into he1tOccList
+         put he1heCanonIdx(he1tBodyA["count"], he1kHeMaxSeats) into he1tCount
+         if he1tCount is empty or ("n" & he1tCount) is not ("n" & the number of items of he1tOccList) then
             put "drop   malformed dealLevel" & return after he1gGame["netLog"]
             break
          end if
-         if he1tBodyA["level"] is "1" and he1tSeat is not 0 then
-            put "drop   level-1 dealLevel must name the oracle (dealer=0)" & return after he1gGame["netLog"]
-            break
+         if ("n" & he1tBodyA["level"]) is "n1" then
+            if ("n" & he1tBodyA["dealer"]) is not "n0" then
+               put "drop   level-1 dealLevel must name the oracle (dealer=0)" & return after he1gGame["netLog"]
+               break
+            end if
+            put 0 into he1tSeat
+         else
+            put he1heCanonIdx(he1tBodyA["dealer"], he1kHeMaxSeats) into he1tSeat
+            if he1tSeat is empty or he1tSeat is not among the items of he1tOccList then
+               put "drop   malformed dealLevel" & return after he1gGame["netLog"]
+               break
+            end if
          end if
          put he1tSeat into he1gGame["oDeal"]["dealerSeat"]
          put he1tCount into he1gGame["oDeal"]["dealCount"]
-         if he1tBodyA["level"] is "1" then
+         if ("n" & he1tBodyA["level"]) is "n1" then
             put "true" into he1gGame["oDeal"]["oracleDeal"]
             put "deal   the ORACLE deals this hand (level 1; it holds no seat)" & return after he1gGame["netLog"]
          end if
@@ -33650,22 +36158,46 @@ command he1heNetFoldGameWire pTypeTxt, pFromHex, pBodyTxt, pHandTxt
 
       case "seedCommit"
          -- position ownership via he1heNetContribPosOk: seats own their packed
-         -- positions; the ORACLE (host, level 1, no seat) owns dealCount+1
-         put he1tBodyA["pos"] into he1tPos
+         -- positions; the ORACLE (host, level 1, no seat) owns dealCount+1.
+         -- THE POSITION IS CANONICAL OR THE WIRE DROPS (2026-09-25, v0.25.5):
+         -- "03", "3.0" and "+3" each passed ownership as the NUMBER 3, each
+         -- landed under its own raw key and each added one to commitN -- so
+         -- a dealer's three aliased commits told every honest seat that all
+         -- commitments were in (react step 3), the honest seats sealed their
+         -- seeds to it, and it ground its own seed with theirs in hand and
+         -- committed that under "3", still empty. Stored under the canonical
+         -- key only, first wins, and commitN is WALKED over 1..contributors
+         -- (he1heNetPosFilled), so no alias or duplicate can move it.
+         put he1tBodyA["pos"] into he1tRawTxt   -- a plain local before chunking (H6)
+         put he1heCanonIdx(he1tRawTxt, he1heNetContribCount()) into he1tPos
          put he1tBodyA["commit"] into he1tHex
+         if he1tPos is empty then
+            put "drop   seedCommit: position " & char 1 to 12 of he1tRawTxt \
+                  & " is not canonical" & return after he1gGame["netLog"]
+            break
+         end if
          if not he1heIsHex(he1tHex, 64) or not he1heNetContribPosOk(he1tPos, he1tFromSeat, pFromHex) then
             put "drop   bad seedCommit" & return after he1gGame["netLog"]
             break
          end if
          if he1gGame["oDeal"]["commitsBy"][he1tPos] is empty then
             put he1tHex into he1gGame["oDeal"]["commitsBy"][he1tPos]
-            add 1 to he1gGame["oDeal"]["commitN"]
          end if
+         put he1heNetPosFilled("commitsBy") into he1gGame["oDeal"]["commitN"]
          break
 
       case "seedSeal"
-         put he1tBodyA["pos"] into he1tPos
+         -- canonical position, first wins, walked count: seedCommit's rule,
+         -- because the dealer opens sealsBy over 1..contributors and deals
+         -- when the seal count says every position is in
+         put he1tBodyA["pos"] into he1tRawTxt   -- a plain local before chunking (H6)
+         put he1heCanonIdx(he1tRawTxt, he1heNetContribCount()) into he1tPos
          put he1tBodyA["sealed"] into he1tHex
+         if he1tPos is empty then
+            put "drop   seedSeal: position " & char 1 to 12 of he1tRawTxt \
+                  & " is not canonical" & return after he1gGame["netLog"]
+            break
+         end if
          if he1tHex is empty or not he1heIsHex(he1tHex, 0) \
                or not he1heNetContribPosOk(he1tPos, he1tFromSeat, pFromHex) then
             put "drop   bad seedSeal" & return after he1gGame["netLog"]
@@ -33673,27 +36205,34 @@ command he1heNetFoldGameWire pTypeTxt, pFromHex, pBodyTxt, pHandTxt
          end if
          if he1gGame["oDeal"]["sealsBy"][he1tPos] is empty then
             put he1tHex into he1gGame["oDeal"]["sealsBy"][he1tPos]
-            add 1 to he1gGame["oDeal"]["sealN"]
          end if
+         put he1heNetPosFilled("sealsBy") into he1gGame["oDeal"]["sealN"]
          break
 
       case "holeDeliver"
          -- Phase 3: at level 1 the dealer key is the ORACLE's (host), no
          -- seat behind it -- he1heNetDealerPubHex names it either way
          put he1heNetDealerPubHex() into he1tDealerPub
-         if pFromHex is not he1tDealerPub then
+         if not he1heHexEq(pFromHex, he1tDealerPub) then
             put "drop   holeDeliver not from the dealer" & return after he1gGame["netLog"]
             break
          end if
-         put he1tBodyA["seat"] into he1tSeat
+         -- a canonical seat that is DEALT this hand (2026-09-25): holeN used
+         -- to count one delivery per new raw seat key, so a dealer could
+         -- "deliver" to "03" and "3.0", reach holeN >= dealCount, and start
+         -- the blinds (react step 5) while a real seat held no cards. The
+         -- count is walked over the hand's dealt seats (he1heNetSeatsFilled).
+         put he1gGame["state"]["occ"] into he1tOccList
+         put he1heCanonIdx(he1tBodyA["seat"], he1kHeMaxSeats) into he1tSeat
          put he1tBodyA["sealed"] into he1tHex
-         if he1tSeat is not a number or he1tHex is empty or not he1heIsHex(he1tHex, 0) then
+         if he1tSeat is empty or he1tSeat is not among the items of he1tOccList \
+               or he1tHex is empty or not he1heIsHex(he1tHex, 0) then
             put "drop   malformed holeDeliver" & return after he1gGame["netLog"]
             break
          end if
          if he1gGame["oDeal"]["holeSealedBy"][he1tSeat] is empty then
             put he1tHex into he1gGame["oDeal"]["holeSealedBy"][he1tSeat]
-            add 1 to he1gGame["oDeal"]["holeN"]
+            put he1heNetSeatsFilled("holeSealedBy") into he1gGame["oDeal"]["holeN"]
             -- 2e street ckpts: the LAST sealed delivery is the "deal"
             -- boundary's transition wire -- record its head once
             if he1gGame["oDeal"]["dealCount"] is a number \
@@ -33705,7 +36244,7 @@ command he1heNetFoldGameWire pTypeTxt, pFromHex, pBodyTxt, pHandTxt
             -- timer (he1heNetTurnMark gates the blinds subject on holeN)
             he1heNetTurnMark
          end if
-         if he1tSeat is he1heNetMySeat() and he1gGame["oDeal"]["myHoles"] is empty then
+         if ("n" & he1tSeat) is ("n" & he1heNetMySeat()) and he1gGame["oDeal"]["myHoles"] is empty then
             -- our private lane: open the sealed box with the session key (H4:
             -- a bad blob is a logged drop; the audit names the dealer later)
             try
@@ -33734,8 +36273,8 @@ command he1heNetFoldGameWire pTypeTxt, pFromHex, pBodyTxt, pHandTxt
             put "drop   stand from an unseated key" & return after he1gGame["netLog"]
             break
          end if
-         put he1tBodyA["seat"] into he1tSeat
-         if he1tSeat is not a number or he1tSeat is not he1tFromSeat then
+         put he1heCanonIdx(he1tBodyA["seat"], he1kHeMaxSeats) into he1tSeat
+         if he1tSeat is empty or ("n" & he1tSeat) is not ("n" & he1tFromSeat) then
             put "drop   stand for a seat the sender does not own" & return after he1gGame["netLog"]
             break
          end if
@@ -33756,13 +36295,19 @@ command he1heNetFoldGameWire pTypeTxt, pFromHex, pBodyTxt, pHandTxt
          -- engine-rejects it visibly (wrong seat for the sender) and
          -- stalls where it always stalled -- never mis-folds.
          if he1tBodyA["timeout"] is "1" then
-            if pFromHex is not he1gGame["hostPubHex"] then
+            if not he1heHexEq(pFromHex, he1gGame["hostPubHex"]) then
                put "drop   non-host timeout ignored" & return after he1gGame["netLog"]
                break
             end if
-            put he1tBodyA["seat"] into he1tSeat
+            -- the seat is a canonical DEALT seat (2026-09-25): "03" used to
+            -- pass as seat 3 and then post under its own raw key, so the
+            -- forced bet, the bank spend and the miss count all landed on a
+            -- seat that does not exist
+            put he1gGame["state"]["occ"] into he1tOccList
+            put he1heCanonIdx(he1tBodyA["seat"], he1kHeMaxSeats) into he1tSeat
             put he1tBodyA["amount"] into he1tAmt
-            if he1tSeat is not a number or he1tAmt is not a number then
+            if he1tSeat is empty or he1tSeat is not among the items of he1tOccList \
+                  or he1tAmt is not a number then
                put "drop   malformed timeout " & pTypeTxt & return after he1gGame["netLog"]
                break
             end if
@@ -33830,13 +36375,14 @@ command he1heNetFoldGameWire pTypeTxt, pFromHex, pBodyTxt, pHandTxt
          -- host's seat) and stalls visibly -- except a host self-timeout,
          -- which folds identically to a voluntary check/fold there.
          if he1tBodyA["timeout"] is "1" then
-            if pFromHex is not he1gGame["hostPubHex"] then
+            if not he1heHexEq(pFromHex, he1gGame["hostPubHex"]) then
                put "drop   non-host timeout ignored" & return after he1gGame["netLog"]
                break
             end if
-            put he1tBodyA["seat"] into he1tSeat
+            put he1gGame["state"]["occ"] into he1tOccList
+            put he1heCanonIdx(he1tBodyA["seat"], he1kHeMaxSeats) into he1tSeat
             put he1tBodyA["verb"] into he1tVerb
-            if he1tSeat is not a number then
+            if he1tSeat is empty or he1tSeat is not among the items of he1tOccList then
                put "drop   malformed timeout act" & return after he1gGame["netLog"]
                break
             end if
@@ -33876,7 +36422,7 @@ command he1heNetFoldGameWire pTypeTxt, pFromHex, pBodyTxt, pHandTxt
 
       case "board"
          put he1heNetDealerPubHex() into he1tDealerPub
-         if pFromHex is not he1tDealerPub then
+         if not he1heHexEq(pFromHex, he1tDealerPub) then
             put "drop   board not from the dealer" & return after he1gGame["netLog"]
             break
          end if
@@ -33928,25 +36474,37 @@ command he1heNetFoldGameWire pTypeTxt, pFromHex, pBodyTxt, pHandTxt
          break
 
       case "seedReveal"
-         put he1tBodyA["pos"] into he1tPos
+         -- canonical position, first wins, walked count: seedCommit's rule.
+         -- revealN gates the host's settle (react step 9) and the revealed
+         -- deal every client re-derives (he1heNetRevealedDealA).
+         put he1tBodyA["pos"] into he1tRawTxt   -- a plain local before chunking (H6)
+         put he1heCanonIdx(he1tRawTxt, he1heNetContribCount()) into he1tPos
          put he1tBodyA["seed"] into he1tHex
+         if he1tPos is empty then
+            put "drop   seedReveal: position " & char 1 to 12 of he1tRawTxt \
+                  & " is not canonical" & return after he1gGame["netLog"]
+            break
+         end if
          if not he1heIsHex(he1tHex, 64) or not he1heNetContribPosOk(he1tPos, he1tFromSeat, pFromHex) then
             put "drop   bad seedReveal" & return after he1gGame["netLog"]
             break
          end if
-         -- the reveal must open the commitment made before the deal (spec 7.1)
-         if he1heSeedCommitHex(he1tHex) is not he1gGame["oDeal"]["commitsBy"][he1tPos] then
+         -- the reveal must open the commitment made before the deal (spec
+         -- 7.1) -- through he1heHexEq, never bare `is`: a number-like commit
+         -- would "open" to any seed whose commitment is number-like too
+         -- (engine note 2.11; the attack is in he1heHexEq's comment)
+         if not he1heHexEq(he1heSeedCommitHex(he1tHex), he1gGame["oDeal"]["commitsBy"][he1tPos]) then
             put "AUDIT  seedReveal pos " & he1tPos & " does not match its commit" & return after he1gGame["netLog"]
             break
          end if
          if he1gGame["oDeal"]["revealsBy"][he1tPos] is empty then
             put he1tHex into he1gGame["oDeal"]["revealsBy"][he1tPos]
-            add 1 to he1gGame["oDeal"]["revealN"]
          end if
+         put he1heNetPosFilled("revealsBy") into he1gGame["oDeal"]["revealN"]
          break
 
       case "settle"
-         if pFromHex is not he1gGame["hostPubHex"] then
+         if not he1heHexEq(pFromHex, he1gGame["hostPubHex"]) then
             put "drop   non-host settle ignored" & return after he1gGame["netLog"]
             break
          end if
@@ -33978,15 +36536,18 @@ command he1heNetFoldGameWire pTypeTxt, pFromHex, pBodyTxt, pHandTxt
          put he1tBodyA["head"] into he1tHeadHex
          put he1tBodyA["sig"] into he1tSigHex
          if not he1heIsHex(he1tHeadHex, 64) or not he1heIsHex(he1tSigHex, 128) \
-               or he1tHeadHex is not he1gGame["rcptHeadHex"] \
+               or not he1heHexEq(he1tHeadHex, he1gGame["rcptHeadHex"]) \
                or not he1heReceiptSigVerify(he1tSigHex, he1tHeadHex, pFromHex) then
             put "drop   bad receipt from seat " & he1tFromSeat & return after he1gGame["netLog"]
             break
          end if
          if he1gGame["oDeal"]["receiptsBy"][he1tFromSeat] is empty then
             put he1tSigHex into he1gGame["oDeal"]["receiptsBy"][he1tFromSeat]
-            add 1 to he1gGame["oDeal"]["receiptN"]
          end if
+         -- walked over the hand's DEALT seats (2026-09-25): a seated key sat
+         -- out of this hand could add one per receipt and make the "co-signed
+         -- by all" line true before every dealt seat had signed
+         put he1heNetSeatsFilled("receiptsBy") into he1gGame["oDeal"]["receiptN"]
          if he1gGame["oDeal"]["receiptN"] >= he1gGame["oDeal"]["dealCount"] then
             put "rcpt   hand " & he1gGame["handNum"] & " receipt co-signed by all " \
                   & he1gGame["oDeal"]["receiptN"] & " seats" & return after he1gGame["netLog"]
@@ -33996,7 +36557,7 @@ command he1heNetFoldGameWire pTypeTxt, pFromHex, pBodyTxt, pHandTxt
       case "audit"
          -- Phase 3: the ORACLE audits too (it witnessed the whole deal it
          -- ran); its verdict files under contributor slot 0, logged by name
-         if he1tFromSeat is 0 and not (he1heNetOracleDeal() and pFromHex is he1gGame["hostPubHex"]) then
+         if he1tFromSeat is 0 and not (he1heNetOracleDeal() and he1heHexEq(pFromHex, he1gGame["hostPubHex"])) then
             put "drop   audit from an unseated key" & return after he1gGame["netLog"]
             break
          end if
@@ -34035,7 +36596,7 @@ command he1heNetFoldGameWire pTypeTxt, pFromHex, pBodyTxt, pHandTxt
             break
          end if
          put he1gGame["oDeal"]["ckptHeadBy"][he1tStreetName] into he1tCkptHead
-         if he1tCkptHead is not empty and he1tHeadHex is not he1tCkptHead then
+         if he1tCkptHead is not empty and not he1heHexEq(he1tHeadHex, he1tCkptHead) then
             put "CKPT-FORK seat " & he1tFromSeat & " signed a different " & he1tStreetName \
                   & " head -- host equivocation evidence" & return after he1gGame["netLog"]
             break
@@ -34056,8 +36617,8 @@ command he1heNetFoldGameWire pTypeTxt, pFromHex, pBodyTxt, pHandTxt
             put "drop   " & pTypeTxt & " from an unseated key" & return after he1gGame["netLog"]
             break
          end if
-         put he1tBodyA["seat"] into he1tSeat
-         if he1tSeat is not a number or he1tSeat is not he1tFromSeat then
+         put he1heCanonIdx(he1tBodyA["seat"], he1kHeMaxSeats) into he1tSeat
+         if he1tSeat is empty or ("n" & he1tSeat) is not ("n" & he1tFromSeat) then
             put "drop   " & pTypeTxt & " for a seat the sender does not own" & return after he1gGame["netLog"]
             break
          end if
@@ -34185,7 +36746,9 @@ command he1heNetGameReact
    -- At level 1 the dealer is the ORACLE: seats seal to its session box, and
    -- the oracle "seals to itself" too, so the transcript carries every
    -- contributor's seal uniformly and the counts stay simple.
-   if he1tPos > 0 and he1gGame["oDeal"]["commitN"] >= he1tContribN \
+   -- (every threshold here WALKS the canonical keys -- he1heNetPosFilled,
+   -- he1heNetSeatsFilled -- rather than trusting a count, 2026-09-25)
+   if he1tPos > 0 and he1heNetPosFilled("commitsBy") >= he1tContribN \
          and he1gGame["oDeal"]["sealSent"] is not "true" \
          and he1gGame["oDeal"]["sealsBy"][he1tPos] is empty then
       put he1heNetDealerPubHex() into he1tDealerPubHex
@@ -34207,7 +36770,7 @@ command he1heNetGameReact
    -- re-derives; per-seat delivery inside is presence-guarded, so seats the
    -- transcript already served are never re-sent). he1heNetWeDeal: the button
    -- seat at level 0, the seatless ORACLE at level 1.
-   if he1heNetWeDeal() and he1gGame["oDeal"]["sealN"] >= he1tContribN \
+   if he1heNetWeDeal() and he1heNetPosFilled("sealsBy") >= he1tContribN \
          and he1gGame["oDeal"]["dealerDealA"] is not an array then
       he1heNetDealerDeal
    end if
@@ -34215,7 +36778,7 @@ command he1heNetGameReact
    -- money), then the SB, and the BB only after it SEES the SB fold -- so the
    -- two forced posts can never race in the relay's ordering. Seats only
    -- (he1tMySeat > 0): the oracle contributes entropy, never chips.
-   if he1gGame["oDeal"]["holeN"] >= he1tCount and he1tPos > 0 and he1tMySeat > 0 then
+   if he1heNetSeatsFilled("holeSealedBy") >= he1tCount and he1tPos > 0 and he1tMySeat > 0 then
       put he1gGame["state"] into he1tStateA
       if he1tStateA["phase"] is "blinds" then
          if he1gGame["ante"] > 0 and he1gGame["oDeal"]["anteSent"] is not "true" \
@@ -34301,7 +36864,7 @@ command he1heNetGameReact
    -- 9. host: emit the settle once every seed is revealed (the oracle's own
    -- reveal included); every client will verify it against its own
    -- recomputation before folding it
-   if he1gGame["isHost"] is "true" and he1gGame["oDeal"]["revealN"] >= he1tContribN \
+   if he1gGame["isHost"] is "true" and he1heNetPosFilled("revealsBy") >= he1tContribN \
          and he1gGame["oDeal"]["settleSent"] is not "true" \
          and (he1tStateA["phase"] is "showdown" or he1tStateA["phase"] is "handdone") then
       put he1heNetComputeSettleTxt() into he1tDeltasTxt
@@ -34366,7 +36929,7 @@ command he1heNetDealerDeal
    -- verify each against its commitment (a mismatch aborts the deal, named),
    -- derive the committed deck, and send each seat its two hole cards sealed
    -- to ITS session key (spec 7.1 steps 3-4)
-   local he1tPos, he1tCount, he1tSeedsA, he1tSealedHex, he1tSeedHex, he1tOpenErr, he1tBad
+   local he1tPos, he1tCount, he1tSeedsA, he1tSealedHex, he1tSeedHex, he1tOpenErr, he1tBad, he1tPosBad
    local he1tDealA, he1tOccList, he1tSeatNum, he1tHolePair, he1tPeerPubHex, he1tPeerBoxHex
    local he1tSealErr, he1tSealedOut
    set the itemDelimiter to comma
@@ -34383,8 +36946,20 @@ command he1heNetDealerDeal
       catch he1tOpenErr
          put empty into he1tSeedHex
       end try
-      if not he1heIsHex(he1tSeedHex, 64) \
-            or he1heSeedCommitHex(he1tSeedHex) is not he1gGame["oDeal"]["commitsBy"][he1tPos] then
+      -- NESTED, not one `or` (2026-09-25): both operands of `or` are
+      -- evaluated (engine note 2.5), and the old one-liner hashed the seed
+      -- even when it had just failed he1heIsHex -- through sxHex2Bin, which
+      -- throws on malformed input -- so a contributor that sealed garbage
+      -- threw out of the react pass instead of reaching this named abort
+      -- (H4). The commitment compare is he1heHexEq, never bare `is` (engine
+      -- note 2.11: a number-like commit opens to any number-like seed hash).
+      put "false" into he1tPosBad
+      if not he1heIsHex(he1tSeedHex, 64) then
+         put "true" into he1tPosBad
+      else if not he1heHexEq(he1heSeedCommitHex(he1tSeedHex), he1gGame["oDeal"]["commitsBy"][he1tPos]) then
+         put "true" into he1tPosBad
+      end if
+      if he1tPosBad is "true" then
          put "AUDIT  seal at pos " & he1tPos & " bad or commit-mismatched -- deal aborted" & return after he1gGame["netLog"]
          put "true" into he1tBad
       end if
@@ -34479,7 +37054,7 @@ function he1heNetRevealedDealA
    if he1tCount is not a number or he1tCount is 0 then
       return empty
    end if
-   if he1gGame["oDeal"]["revealN"] < he1tCount then
+   if he1heNetPosFilled("revealsBy") < he1tCount then
       return empty
    end if
    repeat with he1tPos = 1 to he1tCount
@@ -35417,11 +37992,20 @@ function he1heBetApply pStateA, pMsgType, pSeatNum, pAmount
             -- trunc of a non-number throws is the runbook's S1 row P). Nested,
             -- the refusal is the same under either reading, and the section
             -- that pins it (he1heTestLegalRun) can run headlessly (2026-09-11).
+            -- `is not an integer`, not `is not trunc(...)` (2026-09-25): the
+            -- old test compared two NUMBERS, and the engine calls numbers
+            -- within 10 DBL_EPSILON of each other equal (root
+            -- docs/OXT-ENGINE-NOTES.md 2.10, from the engine source), so
+            -- "57.0000000000001" and "400.0000000000002" passed it there
+            -- while IEEE and the family interpreter refused them -- a
+            -- fractional wager into shared state that no headless gate
+            -- could see. `is an integer` is exact on the engine (the parsed
+            -- double == its floor) and in the interpreter alike.
             if he1tTargetAmt is not a number then
                put "act-bad-amount" into he1tStateA["err"]
                return he1tStateA
             end if
-            if he1tTargetAmt is not trunc(he1tTargetAmt) then
+            if he1tTargetAmt is not an integer then
                put "act-bad-amount" into he1tStateA["err"]
                return he1tStateA
             end if
@@ -35674,7 +38258,11 @@ function he1heIsCardList pListTxt, pCount
       if he1tItem is not a number then
          return false
       end if
-      if he1tItem is not trunc(he1tItem) or he1tItem < 1 or he1tItem > 52 then
+      -- `is not an integer`, exact, where `is not trunc(he1tItem)` let a
+      -- near-integer through the engine's comparison tolerance (engine note
+      -- 2.10; he1heBetApply's act-bad-amount comment, 2026-09-25). he1tItem is a
+      -- number by now, so the `or` evaluating every operand (2.5) is safe.
+      if he1tItem is not an integer or he1tItem < 1 or he1tItem > 52 then
          return false
       end if
    end repeat
@@ -35945,7 +38533,11 @@ function he1heNetLogToHotseat pLogTxt
    -- session through the exact same replay path as a hotseat one. PURE
    -- (H5): reads no he1gGame. The input chain was verified wire-by-wire on
    -- ingest (he1heEnvVerify); this is a format translation, not a second
-   -- verification pass. The mapping:
+   -- verification pass -- except that since v0.25.5 (2026-09-25) it applies
+   -- the live fold's INDEX and HAND rules (canonical seats, counts and
+   -- positions; the per-hand binding; handStart's number and seat checks),
+   -- so a wire the table dropped for those reasons never reaches History.
+   -- Sender authority is still not re-checked here. The mapping:
    --   * the signed cfg's stakes + the sit wires' seats become the hotseat
    --     cfg line (stacks seed from the cfg's stack, as the live fold does),
    --     emitted once before the first handStart;
@@ -35973,6 +38565,7 @@ function he1heNetLogToHotseat pLogTxt
    local he1tHandLines, he1tShowLines, he1tSettleLine, he1tTableHex, he1tHoleLines
    local he1tOccList, he1tButton, he1tContribN, he1tSeedsA, he1tRevealN, he1tHandNum
    local he1tPos, he1tDealErr, he1tDeckList, he1tDealA, he1tHolePair, he1tNamesTxt, he1tSeenHand
+   local he1tPosI, he1tOccNew, he1tButtonNew
    set the itemDelimiter to comma
    put 1 into he1tCfgSB
    put 2 into he1tCfgBB
@@ -36000,6 +38593,18 @@ function he1heNetLogToHotseat pLogTxt
       put he1heEnvBodyText(he1tA["bodyHex"]) into he1tBodyTxt
       put he1tSeatByPubA[he1tA["from"]] into he1tFromSeat
       set the itemDelimiter to comma
+      -- the live fold's HAND BINDING (he1kHeHandBoundTypes, 2026-09-25): a
+      -- per-hand wire that does not carry the open hand was dropped at the
+      -- table, so History skips it too. Kept, last hand's commit replayed
+      -- into this one would be filed under this hand, and the audit (its
+      -- last line per position wins) would fail an honest deal on the
+      -- host's say-so. he1tHandNum is the last handStart History accepted.
+      if he1tTypeTxt is among the items of he1kHeHandBoundTypes then
+         if he1heCanonIdx(he1tHandTxt, empty) is empty \
+               or ("n" & he1tHandTxt) is not ("n" & he1tHandNum) then
+            next repeat
+         end if
+      end if
       switch he1tTypeTxt
          case "cfg"
             put he1tBodyTxt into he1tBodyA
@@ -36023,11 +38628,38 @@ function he1heNetLogToHotseat pLogTxt
             -- effect is already in the next handStart's seats
             put he1tBodyTxt into he1tBodyA
             split he1tBodyA by comma and "="
-            if he1tBodyA["seat"] is a number and he1tBodyA["pub"] is not empty then
-               put he1tBodyA["seat"] into he1tSeatByPubA[he1tBodyA["pub"]]
+            -- a CANONICAL seat only (he1heCanonIdx, 2026-09-25): the live sit
+            -- fold refuses any other spelling, and History must replay the
+            -- game the table actually played
+            put he1heCanonIdx(he1tBodyA["seat"], he1kHeMaxSeats) into he1tSeatNum
+            if he1tSeatNum is not empty and he1tBodyA["pub"] is not empty then
+               put he1tSeatNum into he1tSeatByPubA[he1tBodyA["pub"]]
             end if
             break
          case "handStart"
+            -- the live fold's handStart rules (2026-09-25): a canonical hand
+            -- number above the last one taken, a legal dealt-seat list
+            -- (he1heNetOccOfSeats) and a canonical button among it. The table
+            -- dropped anything else, so History skips it, BEFORE the
+            -- previous hand is flushed: a repeated handStart must not end
+            -- the hand it repeats. (The sender is not re-checked here: this
+            -- is a translation, not a second verification pass.)
+            put he1tBodyTxt into he1tBodyA
+            split he1tBodyA by comma and "="
+            if he1heCanonIdx(he1tHandTxt, empty) is empty then
+               break
+            end if
+            if he1tHandNum is not empty then
+               if he1tHandTxt <= he1tHandNum then
+                  break
+               end if
+            end if
+            put he1heNetOccOfSeats(he1tBodyA["seats"]) into he1tOccNew
+            put he1heCanonIdx(he1tBodyA["button"], he1kHeMaxSeats) into he1tButtonNew
+            if he1tOccNew is empty or he1tButtonNew is empty \
+                  or he1tButtonNew is not among the items of he1tOccNew then
+               break
+            end if
             -- flush the PREVIOUS hand first (its trailing show/muck wires
             -- land between its settle and this handStart)
             put he1heNetXlatFlush(he1tHandLines, he1tHoleLines, he1tShowLines, he1tSettleLine) after he1tOut
@@ -36039,11 +38671,8 @@ function he1heNetLogToHotseat pLogTxt
             put 0 into he1tRevealN
             put 0 into he1tContribN
             put "true" into he1tSeenHand
-            put he1tBodyTxt into he1tBodyA
-            split he1tBodyA by comma and "="
-            put he1tBodyA["seats"] into he1tOccList
-            replace "|" with comma in he1tOccList
-            put he1tBodyA["button"] into he1tButton
+            put he1tOccNew into he1tOccList
+            put he1tButtonNew into he1tButton
             put he1tHandTxt into he1tHandNum
             if he1tCfgDone is not "true" then
                -- the one-time hotseat cfg: the sit wires' seats, each
@@ -36068,11 +38697,11 @@ function he1heNetLogToHotseat pLogTxt
          case "dealLevel"
             put he1tBodyTxt into he1tBodyA
             split he1tBodyA by comma and "="
-            put he1tBodyA["count"] into he1tContribN
-            if he1tContribN is not a number then
+            put he1heCanonIdx(he1tBodyA["count"], he1kHeMaxSeats) into he1tContribN
+            if he1tContribN is empty then
                put 0 into he1tContribN
             end if
-            if he1tBodyA["level"] is "1" then
+            if ("n" & he1tBodyA["level"]) is "n1" then
                add 1 to he1tContribN   -- the oracle's entropy position
             end if
             put he1tA["table"] into he1tTableHex
@@ -36086,10 +38715,20 @@ function he1heNetLogToHotseat pLogTxt
          case "seedReveal"
             put he1tBodyTxt into he1tBodyA
             split he1tBodyA by comma and "="
-            if he1tBodyA["pos"] is a number and he1tSeedsA[he1tBodyA["pos"]] is empty then
-               put he1tBodyA["seed"] into he1tSeedsA[he1tBodyA["pos"]]
-               add 1 to he1tRevealN
+            -- canonical position, first wins, and the count WALKED over
+            -- 1..contributors (2026-09-25): this counted one reveal per new
+            -- raw key, so aliases could claim "all revealed" and re-derive
+            -- History's hole lines from a seed set with holes in it
+            put he1heCanonIdx(he1tBodyA["pos"], he1tContribN) into he1tPos
+            if he1tPos is not empty and he1tSeedsA[he1tPos] is empty then
+               put he1tBodyA["seed"] into he1tSeedsA[he1tPos]
             end if
+            put 0 into he1tRevealN
+            repeat with he1tPosI = 1 to he1tContribN
+               if he1tSeedsA[he1tPosI] is not empty then
+                  add 1 to he1tRevealN
+               end if
+            end repeat
             put he1heLogLine(he1tHandTxt, he1heNetXlatFrom(he1tFromSeat), "seedReveal", he1tBodyTxt) \
                   & return after he1tHandLines
             break
@@ -36108,9 +38747,15 @@ function he1heNetLogToHotseat pLogTxt
             -- verb/amount by name).
             put he1tBodyTxt into he1tBodyA
             split he1tBodyA by comma and "="
-            if he1tBodyA["timeout"] is "1" and he1tBodyA["seat"] is a number then
-               put he1heLogLine(he1tHandTxt, "seat" & he1tBodyA["seat"], he1tTypeTxt, he1tBodyTxt) \
-                     & return after he1tHandLines
+            -- the timeout's seat is CANONICAL or the line is not replayed
+            -- (2026-09-25): "seat03" would reach the fold as seat "03", which
+            -- the live table refused; the fold would have acted on it
+            put he1heCanonIdx(he1tBodyA["seat"], he1kHeMaxSeats) into he1tSeatNum
+            if he1tBodyA["timeout"] is "1" then
+               if he1tSeatNum is not empty then
+                  put he1heLogLine(he1tHandTxt, "seat" & he1tSeatNum, he1tTypeTxt, he1tBodyTxt) \
+                        & return after he1tHandLines
+               end if
             else if he1tFromSeat is a number then
                put he1heLogLine(he1tHandTxt, "seat" & he1tFromSeat, he1tTypeTxt, he1tBodyTxt) \
                      & return after he1tHandLines
@@ -37557,11 +40202,13 @@ command he1heSettingsApply
 end he1heSettingsApply
 
 function he1heSettingsNumOk pVal, pMin
-   -- a whole, non-negative number at least pMin
+   -- a whole, non-negative number at least pMin. `is not an integer` is
+   -- exact; `is not trunc(pVal)` passed a near-integer through the engine's
+   -- comparison tolerance (engine note 2.10; he1heBetApply, 2026-09-25)
    if pVal is not a number then
       return false
    end if
-   if pVal is not trunc(pVal) then
+   if pVal is not an integer then
       return false
    end if
    return pVal >= pMin
@@ -37629,7 +40276,7 @@ command he1heLobbyRefresh
       if he1tSeatRole is empty then
          put "player" into he1tSeatRole
       end if
-      if he1tKeyPub is he1gGame["idPubHex"] then
+      if he1heHexEq(he1tKeyPub, he1gGame["idPubHex"]) then
          put "* " after he1tRoster
       else
          put "  " after he1tRoster
@@ -39242,19 +41889,26 @@ function he1heSelfTest
    --     unreadable while its report was perfect. That exact failure cost the
    --     2026-08-09 engine pass two members; it is not a hypothetical.
    --
-   -- THE FIRST LINE IS THE CONTRACT: exactly two numbers plus "passed" and
-   -- "failed", in that order, and nothing else. One extra word and
-   -- stSummaryCounts reads the line as prose and refuses it (which is the
-   -- behaviour that makes the parse safe, not a bug to work around). So the
-   -- skip count gets its own line, and the run's banner stays below the
-   -- divider where it can never be mistaken for a summary.
+   -- THE FIRST LINE IS THE CONTRACT: exactly three numbers plus "passed",
+   -- "failed" and "skipped", in that order, and nothing else - the form the
+   -- core's stSummaryCounts has read since 2026-08-17. One extra word and it
+   -- reads the line as prose and refuses it (which is the behaviour that
+   -- makes the parse safe, not a bug to work around), so the explanation of
+   -- the skips gets its own line, and the run's banner stays below the
+   -- divider where it can never be mistaken for a summary. Until 2026-09-25
+   -- the first line carried only two counts and the skip count sat on that
+   -- prose line, so the suite paste printed these skips and never merged
+   -- them: its board row said 0 skipped while this log listed 5.
    --
-   -- Verified statically; needs an OXT pass.
+   -- The quiet entry point ran on an engine inside the suite paste
+   -- (2026-09-24, 721 passed), and so did this three-count line in that
+   -- day's third run: the board merged the five skips (its row read
+   -- 723 / 0 / 5; holde-em/CLAUDE.md's ledger).
    he1heTestRunAllSections
    -- leave no timer of ours running inside somebody else's paste
    he1heTestSweepNetTimers
-   return he1gPassN && "passed," && he1gFailN && "failed" & return & \
-         he1gSkipN && "skipped (absent optional extensions and engine-only paths -- see the log)" \
+   return he1gPassN && "passed," && he1gFailN && "failed," && he1gSkipN && "skipped" \
+         & return & "(the skips are absent optional extensions and engine-only paths -- see the log)" \
          & return & "----------------------------------------" & return & he1gRpt
 end he1heSelfTest
 
@@ -39477,6 +42131,16 @@ command he1heTestDealRun
    he1heTAssert "deal: audit names a corrupted commit", \
          he1heAuditDeal(he1tTableData, 1, he1tSeedsA, he1tCommitsA, 3, he1tDealA, "1,2,3", 1), \
          "fail:commit-mismatch-position-2"
+   -- ...and a seed that is not hex NAMES its position rather than throwing
+   -- (2026-09-25, holde-em WORK-PLAN coding #12): he1heSeedCommitHex decodes
+   -- through sxHex2Bin, which throws on malformed hex, and the seed check
+   -- now runs first, in its own `if`
+   put he1kKatCommit2 into he1tCommitsA[2]
+   put "nothex" into he1tSeedsA[2]
+   he1heTAssert "deal: audit names a non-hex seed instead of throwing", \
+         he1heAuditDeal(he1tTableData, 1, he1tSeedsA, he1tCommitsA, 3, he1tDealA, "1,2,3", 1), \
+         "fail:seed-malformed-position-2"
+   put he1kKatSeed2 into he1tSeedsA[2]
 
    -- audit-from-TRANSCRIPT (mirror of tools/fold-kat.py): build the canned
    -- Level 0 log he1heHandStart would write and confirm he1heAuditDealsFromLog
@@ -39513,6 +42177,28 @@ command he1heTestDealRun
    replace ("pos=2,seed=" & he1kKatSeed2) with ("pos=2,seed=" & he1kKatSeed1) in he1tDealLog
    put he1heAuditDealsFromLog(he1tDealLog) into he1tAuditOut
    he1heTContains "deal: audit-from-transcript catches a tampered seed", he1tAuditOut, "deal-FAILED"
+   -- a HAND-EDITED transcript names what is malformed instead of throwing out
+   -- of the History audit (2026-09-25, coding #12): a non-hex seed, then a
+   -- contributor count that is not canonical (he1heCanonIdx; "03" used to run
+   -- the audit loop as the number 3)
+   replace ("pos=2,seed=" & he1kKatSeed1) with "pos=2,seed=nothex" in he1tDealLog
+   put he1heAuditDealsFromLog(he1tDealLog) into he1tAuditOut
+   he1heTContains "deal: a transcript's non-hex seed is named, not thrown", \
+         he1tAuditOut, "deal-FAILED fail:seed-malformed-position-2"
+   replace "pos=2,seed=nothex" with ("pos=2,seed=" & he1kKatSeed2) in he1tDealLog
+   replace ",count=3" with ",count=03" in he1tDealLog
+   put he1heAuditDealsFromLog(he1tDealLog) into he1tAuditOut
+   he1heTContains "deal: a transcript's non-canonical contributor count is named", \
+         he1tAuditOut, "deal-FAILED fail:count-malformed"
+   -- and an ALIAS commit line after the canonical one is dropped by the
+   -- canonical keying, so the real commitment stands (fold-kat pins the
+   -- same vector: its old int() keys let the alias overwrite position 1)
+   replace ",count=03" with ",count=3" in he1tDealLog
+   replace ("pos=3,commit=" & he1kKatCommit3) with ("pos=3,commit=" & he1kKatCommit3 & return \
+         & he1heLogLine(1, "seat1", "seedCommit", "pos=01,commit=" & he1kKatCommit2)) in he1tDealLog
+   put he1heAuditDealsFromLog(he1tDealLog) into he1tAuditOut
+   he1heTContains "deal: an alias commit line is dropped; the canonical one stands", \
+         he1tAuditOut, "1/1 deals verified"
 end he1heTestDealRun
 
 function he1heTIdentityDeck
@@ -39812,6 +42498,17 @@ command he1heTNetDeliver pPayloadTxt
    he1heNetOnMessage 0, textEncode(pPayloadTxt, "utf-8")
 end he1heTNetDeliver
 
+command he1heTNetHostWire pHandNum, pFromPubHex, pFromSec, pTypeTxt, pBodyTxt, pHostSec
+   -- the position-alias and stale-hand probes (2026-09-25): one wire from
+   -- pFromPubHex carrying hand pHandNum in its signed item 3, sequenced and
+   -- countersigned as the host would (next seq, our own chain head), and
+   -- ingested into the CURRENT he1gGame through the real verify-and-fold path
+   local he1tContent, he1tWire
+   put he1heEnvContentLine(he1kKatTableHex, pHandNum, pFromPubHex, pTypeTxt, pBodyTxt) into he1tContent
+   put he1heWireBuild(he1tContent, pFromSec, he1gGame["lastSeq"] + 1, he1gGame["chainHeadHex"], pHostSec) into he1tWire
+   he1heNetIngestWire he1tWire
+end he1heTNetHostWire
+
 command he1heTNetPump
    -- shuttle captured payloads between the contexts until all go quiet.
    -- Player outboxes carry "c" frames to the host; the host outbox carries
@@ -39960,6 +42657,8 @@ command he1heTestNetPlay
    local he1tStateA, he1tSbSeat, he1tBbSeat, he1tStep, he1tSeat, he1tOwe, he1tBoardTxt, he1tRcptHand1
    local he1tSnapG, he1tEvil, he1tEvilC, he1tOffPub, he1tOffSec, he1tDlrSeat, he1tDlrPub, he1tDlrSec, he1tStackSnap
    local he1tSeqSnap, he1tXlatTxt, he1tXlatFold, he1tOutboxTxt
+   local he1tHostSeat, he1tPlaySeat, he1tHostPos, he1tMyPos, he1tHandNext, he1tAliasList, he1tAlias
+   local he1tXlatCut, he1tStartKey, he1tCutN
    put return & "-- 15. Online Level 0 hand, end to end (single-machine loopback)" & return after he1gRpt
    if not he1heHasSodium() then
       he1heTSkip "netplay: online hand", "SodiumXT not installed"
@@ -40250,6 +42949,114 @@ command he1heTestNetPlay
          he1gGame["oDeal"]["settleDone"], "false"
    put he1tSnapG into he1gTNetPlayG
 
+   -- POSITION ALIASES, driven end to end through the real ingest path
+   -- (2026-09-25, v0.25.5; holde-em WORK-PLAN coding #11), on THROWAWAY
+   -- copies of the player. THE ATTACK: the dealer posts its OWN commitment
+   -- under aliases of its position before anyone has committed. Each alias
+   -- used to pass ownership as the NUMBER, land under its raw key and add
+   -- one to commitN, so the count reached the contributor count and the
+   -- honest seat sealed its seed to the dealer (react step 3) while the
+   -- dealer's real position was still empty: the dealer then ground its own
+   -- seed with every other seed in hand. Here the HOST seat deals a fresh
+   -- hand and the player is the victim.
+   put he1gTNetPlayG["seatByPub"][he1tHostPubHex] into he1tHostSeat
+   put he1gTNetPlayG["seatByPub"][he1tPlayPubHex] into he1tPlaySeat
+   put he1gTNetPlayG["handNum"] + 1 into he1tHandNext
+   put he1gTNetPlayG into he1gGame
+   put empty into he1gGame["netOutbox"]
+   put empty into he1gGame["netLog"]
+   he1heTNetHostWire he1tHandNext, he1tHostPubHex, he1tHostSec, "handStart", \
+         "seats=1|2,button=" & he1tHostSeat, he1tHostSec
+   he1heTNetHostWire he1tHandNext, he1tHostPubHex, he1tHostSec, "dealLevel", \
+         "level=0,dealer=" & he1tHostSeat & ",count=2", he1tHostSec
+   put he1heNetSeatPos(he1tHostSeat) into he1tHostPos
+   put he1heNetSeatPos(he1tPlaySeat) into he1tMyPos
+   put "0" & he1tHostPos & comma & he1tHostPos & ".0" & comma & "+" & he1tHostPos \
+         & comma & he1tHostPos & "e0" into he1tAliasList
+   repeat for each item he1tAlias in he1tAliasList
+      he1heTNetHostWire he1tHandNext, he1tHostPubHex, he1tHostSec, "seedCommit", \
+            "pos=" & he1tAlias & ",commit=" & he1kKatCommit1, he1tHostSec
+   end repeat
+   he1heTAssert "alias: the fresh hand is open at the victim (its commit sent, not yet on the chain)", \
+         he1gGame["handNum"] & "/" & he1gGame["oDeal"]["commitSent"], he1tHandNext & "/true"
+   he1heTAssert "alias: four aliases of the dealer's position are refused and none is stored", \
+         he1heNetPosFilled("commitsBy") & "/" & he1gGame["oDeal"]["commitN"] & "/" \
+         & he1gGame["oDeal"]["commitsBy"]["0" & he1tHostPos], "0/0/"
+   he1heTContains "alias: the refusal names the position as not canonical", \
+         he1gGame["netLog"], "is not canonical"
+   put he1gGame["netOutbox"] into he1tOutboxTxt   -- a plain local before it is searched (H6)
+   he1heTAssert "alias: the honest seat does NOT seal its seed on aliases (react step 3)", \
+         he1gGame["oDeal"]["sealSent"] & "/" & (he1tOutboxTxt contains "seedSeal"), "false/false"
+   -- the canonical commits, and only they, complete the count: the
+   -- dealer's own, then the victim's own (its seed as react derived it)
+   he1heTNetHostWire he1tHandNext, he1tHostPubHex, he1tHostSec, "seedCommit", \
+         "pos=" & he1tHostPos & ",commit=" & he1kKatCommit1, he1tHostSec
+   he1heTAssert "alias: the dealer's canonical commit counts once, and still no seal", \
+         he1heNetPosFilled("commitsBy") & "/" & he1gGame["oDeal"]["sealSent"], "1/false"
+   he1heTNetHostWire he1tHandNext, he1tPlayPubHex, he1tPlaySec, "seedCommit", "pos=" & he1tMyPos \
+         & ",commit=" & he1heSeedCommitHex(he1gGame["oDeal"]["mySeedHex"]), he1tHostSec
+   he1heTAssert "alias: with both canonical commits in, the victim seals -- and only now", \
+         he1heNetPosFilled("commitsBy") & "/" & he1gGame["oDeal"]["sealSent"], "2/true"
+   -- a REPEATED hand number is refused whole: every per-hand seed derives
+   -- from table and hand (he1heNetHandSeedHex), so a second hand 3 would re-deal
+   -- seeds the dealer already holds -- and it would wipe this hand's store
+   he1heTNetHostWire he1tHandNext, he1tHostPubHex, he1tHostSec, "handStart", \
+         "seats=1|2,button=" & he1tHostSeat, he1tHostSec
+   he1heTAssert "stale: a repeated handStart is refused and this hand's commits survive", \
+         (he1gGame["netLog"] contains "never repeat") & "/" & he1heNetPosFilled("commitsBy"), "true/2"
+   -- ...and History's translation applies the same rule (he1heNetLogToHotseat,
+   -- 2026-09-25): the repeat does not end the hand it repeats, so this
+   -- hand keeps ONE start line where the old translation wrote two
+   put return & he1tHandNext & tab & "table" & tab & "handStart" & tab into he1tStartKey
+   put he1heNetLogToHotseat(he1gGame["log"]) into he1tXlatTxt
+   put offset(he1tStartKey, he1tXlatTxt) into he1tCutN
+   put char (he1tCutN + 1) to -1 of he1tXlatTxt into he1tXlatCut
+   he1heTAssert "stale: History skips the repeated handStart too (one start line for the hand)", \
+         (he1tCutN > 0) & "/" & (he1tXlatCut contains he1tStartKey), "true/false"
+
+   -- STALE HANDS and THE DEAL SIDE, on a second throwaway where the PLAYER
+   -- deals. First the replay the hand binding closes: last hand's signed
+   -- commit, re-sequenced by the host into this hand's still-open position.
+   -- Its hand number is inside the player's signature, so the host cannot
+   -- rewrite it -- but until 2026-09-25 nothing READ it, and the victim
+   -- would have seen its position "already committed" and stayed silent.
+   put he1gTNetPlayG into he1gGame
+   put empty into he1gGame["netOutbox"]
+   put empty into he1gGame["netLog"]
+   he1heTNetHostWire he1tHandNext, he1tHostPubHex, he1tHostSec, "handStart", \
+         "seats=1|2,button=" & he1tPlaySeat, he1tHostSec
+   he1heTNetHostWire he1tHandNext, he1tHostPubHex, he1tHostSec, "dealLevel", \
+         "level=0,dealer=" & he1tPlaySeat & ",count=2", he1tHostSec
+   he1heTNetHostWire he1tHandNext - 1, he1tPlayPubHex, he1tPlaySec, "seedCommit", \
+         "pos=" & he1tMyPos & ",commit=" & he1kKatCommit2, he1tHostSec
+   he1heTAssert "stale: last hand's commit replayed into this hand is dropped; the position stays open", \
+         (he1gGame["netLog"] contains ("for hand " & (he1tHandNext - 1))) & "/" \
+         & he1gGame["oDeal"]["commitsBy"][he1tMyPos], "true/"
+   -- History skips it too: filed under this hand, the audit (last line per
+   -- position wins) would have failed an honest deal on the host's say-so
+   put he1heNetLogToHotseat(he1gGame["log"]) into he1tXlatTxt
+   he1heTAssert "stale: History's translation skips the replayed commit too", \
+         (he1tXlatTxt contains ("commit=" & he1kKatCommit2)), "false"
+   -- then the commit phase completes canonically, and the other seat posts
+   -- its seal under aliases: the dealer deals when its seal count says every
+   -- position is in (react step 4), so that count must not move either
+   he1heTNetHostWire he1tHandNext, he1tHostPubHex, he1tHostSec, "seedCommit", \
+         "pos=" & he1tHostPos & ",commit=" & he1kKatCommit1, he1tHostSec
+   he1heTNetHostWire he1tHandNext, he1tPlayPubHex, he1tPlaySec, "seedCommit", "pos=" & he1tMyPos \
+         & ",commit=" & he1heSeedCommitHex(he1gGame["oDeal"]["mySeedHex"]), he1tHostSec
+   repeat for each item he1tAlias in he1tAliasList
+      he1heTNetHostWire he1tHandNext, he1tHostPubHex, he1tHostSec, "seedSeal", \
+            "pos=" & he1tAlias & ",sealed=deadbeef", he1tHostSec
+   end repeat
+   he1heTAssert "alias: the dealer's seal count ignores four aliased seals", \
+         he1heNetPosFilled("sealsBy") & "/" & he1gGame["oDeal"]["sealN"], "0/0"
+   put he1gGame["netOutbox"] into he1tOutboxTxt   -- a plain local before it is searched (H6)
+   he1heTAssert "alias: so the deal never starts on aliases (react step 4)", \
+         (he1gGame["oDeal"]["dealerDealA"] is an array) & "/" & (he1tOutboxTxt contains "holeDeliver") \
+         & "/" & (he1gGame["netLog"] contains "deal aborted"), "false/false/false"
+   he1heTAssert "alias: and no hole delivery is counted (walked over the dealt seats)", \
+         he1heNetSeatsFilled("holeSealedBy"), 0
+
    put empty into he1gTNetHostG
    put empty into he1gTNetPlayG
    put he1tSaved into he1gGame
@@ -40336,6 +43143,14 @@ command he1heTestCryptoRun
          he1heEnvVerify(he1tWire, he1heBin2HexS(he1tHostPub), he1heBin2HexS(he1tPub), he1kHeGenesisPrev), "drop:unknown-from"
    he1heTAssert "crypto: verify drops a chain break", \
          he1heEnvVerify(he1tWire, he1heBin2HexS(he1tPub), he1heBin2HexS(he1tPub), he1kKatChainHead6), "drop:chain-break"
+   -- ...and so is a prev that equals the genesis head only AS A NUMBER
+   -- (2026-09-25): "0" `is` the 64-zero head under bare `is` on the engine
+   -- AND in the headless interpreter (both read two short all-digit texts
+   -- as numbers), so this is the pin that sees he1heEnvVerify's prev check
+   -- slip back from he1heHexEq to bare `is` (root docs/OXT-ENGINE-NOTES.md 2.11)
+   put he1heWireBuild(he1tContent, he1tSec, 1, "0", he1tSec) into he1tTampered
+   he1heTAssert "crypto: verify drops a prev that is the genesis head only as a number", \
+         he1heEnvVerify(he1tTampered, he1heBin2HexS(he1tPub), he1heBin2HexS(he1tPub), he1kHeGenesisPrev), "drop:chain-break"
    -- H4: a malformed (non-hex) field must DROP cleanly, never throw out of the
    -- poll loop. Corrupt the from-key to non-hex and confirm the verdict.
    put he1tWire into he1tTampered
@@ -41873,7 +44688,7 @@ command he1heTestHelpersRun
    -- Everything here is values-in/values-out (H5) and needs no extension,
    -- so this section never SKIPs as a whole; the one branch that reaches a
    -- bt* call probes for it and SKIPs by name.
-   local he1tSaved, he1tRcTxt, he1tRcErr, he1tDelimTxt, he1tRectTxt
+   local he1tSaved, he1tRcTxt, he1tRcErr, he1tDelimTxt, he1tRectTxt, he1tHexA, he1tHexB
    put return & "-- 21. Pure helpers: leaf values nothing else pinned (shallow)" & return after he1gRpt
    set the itemDelimiter to comma
 
@@ -41910,6 +44725,56 @@ command he1heTestHelpersRun
          he1heSettingsNumOk(empty, 0), "false"
    he1heTAssert "helpers: he1heSettingsNumOk accepts zero at minimum zero", \
          he1heSettingsNumOk(0, 0), "true"
+
+   -- he1heHexEq (2026-09-25): THE compare for hex identifiers, because bare
+   -- `is` reads two number-like texts as NUMBERS (root
+   -- docs/OXT-ENGINE-NOTES.md 2.11, from the engine source; not yet
+   -- observed here). Each pin states the HELPER's answer, which the engine
+   -- and the family interpreter compute alike; the labels say what bare
+   -- `is` answers instead. The interpreter reads exponent forms as text, so
+   -- of the number-like pins only the genesis one fails headlessly if
+   -- he1heHexEq's body slips back to bare `is` (the case pin fails there too,
+   -- but only because the model's `is` is case-sensitive); the others are
+   -- the engine run's to tell apart. The first pair are valid 64-hex
+   -- (he1heIsHex admits both, so both pass a wire's shape check), and both
+   -- overflow a double to +inf.
+   put "1e" & "01234567890123456789012345678901234567890123456789012345678901" into he1tHexA
+   put "2e" & "01234567890123456789012345678901234567890123456789012345678901" into he1tHexB
+   he1heTAssert "helpers: he1heHexEq keeps two overflowing 64-hex texts apart (bare is: equal on the engine)", \
+         he1heHexEq(he1tHexA, he1tHexB) & "," & he1heIsHex(he1tHexA, 64) & "," & he1heIsHex(he1tHexB, 64), "false,true,true"
+   he1heTAssert "helpers: he1heHexEq keeps 1e5 and 100000 apart (bare is: equal on the engine)", \
+         he1heHexEq("1e5", "100000"), "false"
+   he1heTAssert "helpers: he1heHexEq keeps the 64-zero genesis head and 0 apart (bare is: equal everywhere)", \
+         he1heHexEq(he1kHeGenesisPrev, "0") & "," & he1heHexEq(he1kHeGenesisPrev, he1kHeGenesisPrev), "false,true"
+   he1heTAssert "helpers: he1heHexEq calls a hex text equal to itself", he1heHexEq(he1tHexA, he1tHexA), "true"
+   he1heTAssert "helpers: he1heHexEq is case-blind, as hex is (an honest commit in either case passes)", \
+         he1heHexEq(toUpper(he1kKatCommit1), he1kKatCommit1), "true"
+
+   -- he1heCanonIdx (2026-09-25, v0.25.5): the one gate every wire index -- a
+   -- contributor position, a seat, a count, a hand number, a seq -- passes
+   -- before anything reads it as a number. Each alias below is the NUMBER 3
+   -- to `is` and to a chunk index, and each used to become its own stored,
+   -- counted position (section 15 drives that attack end to end).
+   he1heTAssert "helpers: he1heCanonIdx refuses every alias of 3", \
+         he1heCanonIdx("03", 9) & "|" & he1heCanonIdx("3.0", 9) & "|" & he1heCanonIdx("+3", 9) \
+         & "|" & he1heCanonIdx(" 3", 9) & "|" & he1heCanonIdx("3e0", 9) & "|" & he1heCanonIdx("3 ", 9), \
+         "|||||"
+   he1heTAssert "helpers: he1heCanonIdx refuses zero, a sign, empty text and a value past the max", \
+         he1heCanonIdx("0", 9) & "|" & he1heCanonIdx("-3", 9) & "|" & he1heCanonIdx(empty, 9) \
+         & "|" & he1heCanonIdx("10", 9), "|||"
+   he1heTAssert "helpers: he1heCanonIdx keeps a canonical index, bounded or not", \
+         he1heCanonIdx("3", 9) & "|" & he1heCanonIdx("9", 9) & "|" & he1heCanonIdx("12", empty), "3|9|12"
+   he1heTAssert "helpers: he1heCanonIdx stops at 14 digits (below where the engine blurs integers)", \
+         he1heCanonIdx("99999999999999", empty) & "|" & he1heCanonIdx("100000000000000", empty), \
+         "99999999999999|"
+   -- he1heNetOccOfSeats: the dealt-seat rule the live handStart fold and
+   -- History's translation share (2026-09-25); he1kHeMaxSeats is 6
+   he1heTAssert "helpers: he1heNetOccOfSeats rebuilds a legal seat list as canonical text", \
+         he1heNetOccOfSeats("1|3|4") & "/" & he1heNetOccOfSeats("2|6"), "1,3,4/2,6"
+   he1heTAssert "helpers: he1heNetOccOfSeats refuses one seat, a repeat, a descent, an alias, past the max, a gap", \
+         he1heNetOccOfSeats("1") & "|" & he1heNetOccOfSeats("1|1") & "|" & he1heNetOccOfSeats("3|1") \
+         & "|" & he1heNetOccOfSeats("1|03") & "|" & he1heNetOccOfSeats("1|7") \
+         & "|" & he1heNetOccOfSeats("1||2"), "|||||"
 
    -- he1heHandByOf: what the HUD subtracts to show chips BEHIND. Its contract
    -- has a sharp edge -- at "between" the deltas are ALREADY in stacksBy, so
@@ -42953,6 +45818,13 @@ command he1heTestLegalRun
    put he1heTBlinds(he1tStateA) into he1tStateA
    put he1heTAct(he1tStateA, 1, "raise,4.5", "act-bad-amount", "legal: fractional raise rejected") into he1tStateA
    put he1heTAct(he1tStateA, 1, "raise,abc", "act-bad-amount", "legal: non-numeric raise rejected") into he1tStateA
+   -- a NEAR-integer too (2026-09-25): the old `is not trunc(...)` test let
+   -- this through on the engine, whose comparison calls numbers within 10
+   -- DBL_EPSILON of each other equal (root docs/OXT-ENGINE-NOTES.md 2.10);
+   -- IEEE and the headless run refused it either way, so only an engine
+   -- run of this line tells the two tests apart
+   put he1heTAct(he1tStateA, 1, "raise,57.0000000000001", "act-bad-amount", \
+         "legal: a near-integer raise (57.0000000000001) rejected") into he1tStateA
    put he1heTAct(he1tStateA, 1, "raise,4", empty, "legal: the integer raise still lands") into he1tStateA
 end he1heTestLegalRun
 
@@ -43006,7 +45878,9 @@ command he1heTestShuffleRun
       put he1heDrawInt(he1tDrawState, he1tRangeN) into he1tDrawPair
       put item 1 of he1tDrawPair into he1tDrawVal
       put item 2 of he1tDrawPair into he1tDrawState
-      if he1tDrawVal < 1 or he1tDrawVal > he1tRangeN or he1tDrawVal is not trunc(he1tDrawVal) then
+      -- `is not an integer` is exact on the engine; `is not trunc(...)`
+      -- would call a near-integer whole (engine note 2.10, 2026-09-25)
+      if he1tDrawVal < 1 or he1tDrawVal > he1tRangeN or he1tDrawVal is not an integer then
          add 1 to he1tOutOfRange
       end if
    end repeat

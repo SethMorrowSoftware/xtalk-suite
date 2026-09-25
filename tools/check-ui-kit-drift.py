@@ -23,6 +23,13 @@ Four failure modes, all fatal:
     what makes "every demo is a kit adopter" a property of the tree rather
     than of one cleanup pass - the fleet was unified once (2026-08-14) and
     without this check the next demo would fork the look again.
+
+The suite paste's hand-written half, tests/suite-selftest.core.livecodescript,
+is an ADOPTER since D-23 (2026-09-24) - it left EXEMPT that day - and the
+GENERATED paste built from it is skipped by exact path through
+GENERATED_CARRIERS, never by content. tools/test-ui-kit-drift.py proves each
+of those fires: drift in the core, a byte copy of the paste planted elsewhere,
+the table emptied, the core re-exempted, the core unregistered.
 """
 
 import glob
@@ -55,7 +62,23 @@ ADOPTERS = [
     os.path.join("nocloud", "src", "nocloudquickshare.livecodescript"),
     os.path.join("tests", "suite-closing-pass.livecodescript"),
     os.path.join("nostrxt", "examples", "nostrxt-demo.livecodescript"),
+    # the suite paste's hand-written half: it wears the demos' look since D-23
+    # (2026-09-24) and keeps the harness scaffold for its report plumbing
+    os.path.join("tests", "suite-selftest.core.livecodescript"),
 ]
+
+# GENERATED CARRIERS, skipped BY EXACT PATH and never by content. The suite
+# paste carries the core's copy of this block, but tools/build-suite-selftest.py
+# writes it and hoists the block's constants above the paste's first handler,
+# so it is deliberately NOT byte-identical to the master; its --check pins it
+# to the core, whose copy this gate checks. The same table is in all three
+# carried-block drift gates, at module level so each fixture can prove the
+# skip is load-bearing and path-exact.
+GENERATED_CARRIERS = {
+    os.path.join("tests", "suite-selftest.livecodescript"):
+        "generated from the core by tools/build-suite-selftest.py, which hoists "
+        "its carried blocks' declarations; --check pins it to the core",
+}
 
 BEGIN = ("-- ==== SUITE UI KIT v2 BEGIN (verbatim copy; master: "
          "tools/ui-kit.livecodescript; gate: tools/check-ui-kit-drift.py) ====")
@@ -72,8 +95,6 @@ EXEMPT = {
     os.path.join("torrentxt", "tests", "torrent-selftest.livecodescript"):
         "carries the harness scaffold block instead (its own drift gate)",
     os.path.join("coinxt", "tests", "coin-selftest.livecodescript"):
-        "carries the harness scaffold block instead (its own drift gate)",
-    os.path.join("tests", "suite-selftest.core.livecodescript"):
         "carries the harness scaffold block instead (its own drift gate)",
     # box2dxt's stacks are GAMES: canvas worlds drawn by the member's own
     # b2k Kit (whose embedded copies have their own sync gate,
@@ -97,7 +118,7 @@ EXEMPT = {
     # holde-em's table is a game in the box2dxt mold: a canvas drawn by the
     # b2k Kit's sprites (cards) and bodies (chips), with the member's own
     # dark-felt chrome. Permanent by the same decision the box2dxt games
-    # carry, D-18 (2026-08-27; holde-em/CLAUDE.md rule 9).
+    # carry, D-18 (2026-08-27; holde-em/CLAUDE.md rule 10).
     os.path.join("holde-em", "src", "holdem.livecodescript"):
         "game table on the b2k Kit; permanent by D-18",
 }
@@ -141,10 +162,11 @@ def main():
 
     # every stack that CARRIES the marker must be registered - member examples
     # (subdirectories included), app sources, and the suite-level stacks in
-    # root tests/ alike. Generated files (the folded suite harness) inherit their
-    # source part's block and are checked at the SOURCE, so a generated carrier is
-    # skipped rather than registered - its freshness gate
-    # (build-suite-selftest.py --check) already pins it to the checked source.
+    # root tests/ alike. The generated suite paste inherits the core's block and
+    # is checked at the SOURCE - the core is a registered adopter (D-23) - so the
+    # paste is skipped by exact path through GENERATED_CARRIERS rather than
+    # registered; its freshness gate (build-suite-selftest.py --check) pins it to
+    # the core. A byte copy of it under any other name is still a carrier.
     # A demo's EMBEDDED region is the same case: sync-demo-embeds.py --check pins
     # it to the provider, and the provider is registered in its own right.
     carriers = []
@@ -155,6 +177,8 @@ def main():
                     "tests/*.livecodescript"):
         for path in sorted(glob.glob(os.path.join(ROOT, pattern))):
             rel = os.path.relpath(path, ROOT)
+            if rel in GENERATED_CARRIERS:
+                continue
             text = open(path, encoding="utf-8").read()
             if "GENERATED - do not edit" in text[:4000]:
                 continue
@@ -174,8 +198,8 @@ def main():
                     "tests/*.livecodescript"):
         for path in sorted(glob.glob(os.path.join(ROOT, pattern))):
             rel = os.path.relpath(path, ROOT)
-            if rel == os.path.join("tests", "suite-selftest.livecodescript"):
-                continue  # generated; its sources are checked above
+            if rel in GENERATED_CARRIERS:
+                continue  # generated; its source is checked above
             text = open(path, encoding="utf-8").read()
             if "GENERATED - do not edit" in text[:4000]:
                 continue

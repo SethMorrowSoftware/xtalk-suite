@@ -109,7 +109,7 @@ does not compile with parentheses).
 The binding is engine-proven: first live loopback 2026-08-08; every one of the 31 public
 `dc*` handlers called by name 2026-08-10; the standalone self-test green end to end,
 async loopback included, 2026-08-15; the embedded-NUL refusal and exact stale-handle codes
-green 2026-08-17 (Windows); folded in the suite paste through 2026-08-27. The flagship ran on
+green 2026-08-17 (Windows); folded in the suite paste through 2026-09-24. The flagship ran on
 one machine on Linux and Windows on 2026-08-18, which surfaced engine notes 1.6, 6.6 and 6.7
 (why the event is `dcLocalDescriptionReady`), and a DHT-signalled WebRTC chat was reported
 working between two machines on one LAN on 2026-08-27 (which stack ran was not recorded).

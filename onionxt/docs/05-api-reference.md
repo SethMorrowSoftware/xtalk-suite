@@ -85,7 +85,7 @@ handler and reports the same way:
 |---|---|---|
 | `oxShutdown` | command | Close every stream, remove every service, disconnect control. Idempotent; call it when the app closes (for example on `closeStack`) since OXT has no deterministic unload hook. |
 
-## Optional Mode B: launching tor (not the default; not yet run on an engine)
+## Optional Mode B: launching tor (not the default; the launch not yet run on an engine)
 
 The recommended base is Mode A, an already-running daemon (doc 07). Mode B is flagged `VERIFY:` in the
 source:
@@ -147,8 +147,10 @@ EMBEDDER: every socket library declares the three engine names and one script ca
 twice, so `tools/sync-demo-embeds.py` drops the three wrappers for a registered (app, library) pair and
 the app calls `oxSocketError(...)` etc. from its own handler exactly where it would pass. No logic is
 copied, so nothing goes stale; nocloud's `nocloudquickshare.livecodescript` was the first app to carry
-OnionXT this way. The split is **verified statically**; the own-socket branches are unchanged and keep
-their engine evidence, and the wrapper form needs a live-Tor re-pass.
+OnionXT this way. The split is **verified statically** except its answer for somebody else's socket:
+each named function returned `"false"` for a foreign socket on an engine on 2026-09-24 (the member
+harness, folded into the suite paste). The own-socket branches are unchanged and keep their engine
+evidence, and the wrapper form needs a live-Tor re-pass.
 
 > **Integration rule: if your stack defines any of these three, it must `pass` the ones that are not
 > yours.** A handler that does not forward the message can swallow it before OnionXT's copy runs.

@@ -41,7 +41,13 @@ WHAT IT IS NOT. An approximation of the engine, not the engine. Nothing
 here promotes a handler out of "verified statically; needs an OXT pass" -
 what it settles is LOGIC, not parser behaviour. If this file and the engine
 disagree, the engine is right. The interpreter's own header carries the
-modelled-subset contract and its named divergences.
+modelled-subset contract and its named divergences. One more is named here:
+its numeric comparisons are pure IEEE, and on 2026-09-24 an engine answered
+one differently (a 2^53 + 1 seq accepted through a quotient bound this gate
+refused), so tier 1c replays the u64 bound under the engine's own comparison
+rule (named by that day's third run and the engine source; suite engine note
+2.10) and two ruled-out candidates kept as margin, and statically refuses any
+comparison against a quotient in the library.
 
 THE SOURCE REWRITES, AND WHY THEY ARE ASSERTED. riptide was written before
 this gate existed and uses three spellings outside the interpreter's
@@ -499,46 +505,473 @@ def check_u64_bound(c, ip):
     than as isolated refusals: a bound that only ever refuses is
     indistinguishable from a parser that is simply broken, and the defect this
     guards against was precisely non-monotonic.
+
+    The table itself is u64_rows(), shared with tier 1c, which replays it
+    under the engine's comparison rule and two more candidates: two passes
+    over one table can never drift into testing different rows.
     """
     c.note("tier 1b: the 2^53 u64 bound and the ceilings that depend on it")
+    for label, got, want in u64_rows(ip):
+        c.ck(label, got, want)
 
-    def head_with_seq(seq8):
-        b  = b"RSH1" + seq8 + bytes([1]) + b"n"
-        b += b"ab" * 20 + b"cd" * 20 + bytes([0]) + b"ef" * 20
-        return to_str(b)
 
-    for seq8, label, should_parse in [
-            (b"\x00" * 8, "seq 0", True),
-            (b"\x00\x1f\xff\xff\xff\xff\xff\xff", "seq 2^53-1", True),
-            (b"\x00\x20\x00\x00\x00\x00\x00\x00", "seq 2^53 (representable)", True),
-            (b"\x00\x20\x00\x00\x00\x00\x00\x01", "seq 2^53+1", False),
-            (b"\xff" * 8, "seq 2^64-1", False)]:
-        out = ip.call("rsParseHead", [head_with_seq(seq8)])
-        c.ck("rsParseHead: %s %s" % (label, "parses" if should_parse else "refused"),
-             bool(out) and out != "", should_parse)
+def u64_head_with_seq(seq8):
+    """An RSH1 head whose only variable is its eight seq bytes."""
+    b  = b"RSH1" + seq8 + bytes([1]) + b"n"
+    b += b"ab" * 20 + b"cd" * 20 + bytes([0]) + b"ef" * 20
+    return to_str(b)
 
-    out = ip.call("rsParseHead", [head_with_seq(b"\x00\x20\x00\x00\x00\x00\x00\x00")])
-    c.ck("rsParseHead: 2^53 comes back exact, not a rounded neighbour",
-         str(LCS._n(out["seq"])), "9007199254740992")
 
-    def btxo_header(total):
-        name = b"x.bin"
-        b  = b"BTXO" + bytes([1]) + bytes([0])
-        b += bytes([(len(name) >> 8) & 255, len(name) & 255]) + name
-        b += bytes([(total >> (8 * i)) & 255 for i in range(7, -1, -1)])
-        return to_str(b)
+def u64_btxo_header(total):
+    """A BTXO header declaring TOTAL bytes (eight big-endian bytes)."""
+    name = b"x.bin"
+    b  = b"BTXO" + bytes([1]) + bytes([0])
+    b += bytes([(len(name) >> 8) & 255, len(name) & 255]) + name
+    b += bytes([(total >> (8 * i)) & 255 for i in range(7, -1, -1)])
+    return to_str(b)
 
-    CEIL = 8589934592          # kRsBtxoMaxTotal
-    for total, label, want in [
-            (1024, "1 KiB", "header"),
-            (CEIL, "exactly the 8 GiB ceiling", "header"),
-            (CEIL + 1, "8 GiB + 1", "refused"),
-            (2 ** 53, "2^53", "refused"),
-            (2 ** 53 + 1, "2^53+1 (the regression case)", "refused"),
-            (2 ** 64 - 1, "2^64-1 (the big lie)", "refused")]:
-        out = ip.call("rsBtxoStreamStep", [btxo_header(total), "header"])
-        got = out.get("status") if isinstance(out, dict) else str(out)
-        c.ck("rsBtxoStreamStep: declared total %s -> %s" % (label, want), got, want)
+
+U64_BTXO_CEIL = 8589934592          # kRsBtxoMaxTotal
+
+U64_SEQ_ROWS = [
+    (b"\x00" * 8, "seq 0", True),
+    (b"\x00\x1f\xff\xff\xff\xff\xff\xff", "seq 2^53-1", True),
+    (b"\x00\x20\x00\x00\x00\x00\x00\x00", "seq 2^53 (representable)", True),
+    (b"\x00\x20\x00\x00\x00\x00\x00\x01", "seq 2^53+1", False),
+    (b"\xff" * 8, "seq 2^64-1", False)]
+
+U64_TOTAL_ROWS = [
+    (1024, "1 KiB", "header"),
+    (U64_BTXO_CEIL, "exactly the 8 GiB ceiling", "header"),
+    (U64_BTXO_CEIL + 1, "8 GiB + 1", "refused"),
+    (2 ** 53, "2^53", "refused"),
+    (2 ** 53 + 1, "2^53+1 (the regression case)", "refused"),
+    (2 ** 64 - 1, "2^64-1 (the big lie)", "refused")]
+
+
+# What a row reads when the bound let a u64 PAST 2^53 through. The
+# interpreter refuses to compute such an integer (LCS.Imprecise, which no
+# script `try` can swallow) where an engine would carry on with a rounded
+# number, so that refusal of the ARITHMETIC is the evidence that the BOUND
+# did not fire - and a row must report it as a named failure, never die on
+# it as a traceback.
+PAST_2P53 = ("NOT REFUSED: the bound let a value past 2^53 reach the "
+             "arithmetic after it (an engine would carry on, rounded)")
+
+
+def u64_call(ip, name, args):
+    try:
+        return ip.call(name, args)
+    except LCS.Imprecise:
+        return PAST_2P53
+
+
+def u64_parsed(out):
+    """True when rsParseHead's answer is a parsed head, not a refusal."""
+    return bool(out) and out != ""
+
+
+def u64_status(out):
+    """rsBtxoStreamStep's status, or whatever came back instead."""
+    return out.get("status") if isinstance(out, dict) else str(out)
+
+
+def u64_rows(ip):
+    """Every row of the monotonic table as (label, got, want)."""
+    rows = []
+    for seq8, label, should_parse in U64_SEQ_ROWS:
+        out = u64_call(ip, "rsParseHead", [u64_head_with_seq(seq8)])
+        rows.append(("rsParseHead: %s %s"
+                     % (label, "parses" if should_parse else "refused"),
+                     out if out is PAST_2P53 else u64_parsed(out),
+                     should_parse))
+    out = u64_call(ip, "rsParseHead",
+                   [u64_head_with_seq(b"\x00\x20\x00\x00\x00\x00\x00\x00")])
+    rows.append(("rsParseHead: 2^53 comes back exact, not a rounded neighbour",
+                 str(LCS._n(out["seq"])) if isinstance(out, dict)
+                 else repr(out), "9007199254740992"))
+    for total, label, want in U64_TOTAL_ROWS:
+        out = u64_call(ip, "rsBtxoStreamStep",
+                       [u64_btxo_header(total), "header"])
+        rows.append(("rsBtxoStreamStep: declared total %s -> %s"
+                     % (label, want), u64_status(out), want))
+    return rows
+
+
+# --------------------------------------------------------------------------
+# tier 1c: the u64 bound under ENGINE COMPARISON MODELS (2026-09-24)
+# --------------------------------------------------------------------------
+#
+# WHY. On 2026-09-24 an OXT engine (Win32, the suite paste's riptide fold)
+# ACCEPTED a head seq of 2^53 + 1 that every gate here refused. The bound
+# was `if tHi > (9007199254740992 - tLo) / 4294967296`; at hi = 2^21, lo = 1
+# the right side is 2097151.99999999977, and pure IEEE - which is what the
+# interpreter computes in, being Python floats - puts that below 2097152, so
+# tier 1b refused the record and stayed green. The two sides differ by about
+# 2.3e-10, a relative 1.1e-16, and the engine did not answer that the IEEE
+# way. The accept is OBSERVED. The harness then printed two probe lines, and
+# the day's third run named the rule (riptide/CLAUDE.md's ledger; suite
+# engine note 2.10): a RELATIVE tolerance between 8 and 16 DBL_EPSILON,
+# the same at 1 and at 8. The engine source says exactly which: two unequal
+# numbers are EQUAL when they differ by less than MC_EPSILON = 10
+# DBL_EPSILON of the SMALLER magnitude, or by less than MC_EPSILON outright
+# when that magnitude is below it (engine/src/exec-logic.cpp, sysdefs.h;
+# DOCUMENTED). That rule reproduces all eight probe readings, and the
+# fixture below re-proves it on every run.
+#
+# WHAT. Tier 1b's table again, once per model below. Each model changes only
+# the ANSWER of a numeric comparison, at the interpreter's two comparison
+# sites; the arithmetic under it stays exact. The first model is the
+# engine's rule. The other two were ruled out by the probes as the EXACT
+# rule and stay as margin: a bound decided on exact small integers (the fix:
+# the u32 halves against 2^21) answers the same under all three, which says
+# the fix does not lean on the one constant.
+#
+# FIXTURE FIRST (the fixture-before-gate law). The pre-2026-09-24 handler is
+# kept below, verbatim bar its comment, as the seeded defect. Before any
+# model is trusted to pass the shipped bound, it must reproduce BOTH halves
+# of the finding on the old one: IEEE refuses 2^53 + 1 (why the gates were
+# green), and the model accepts it (what the engine did). A model that cannot
+# see the defect that shipped cannot vouch for its fix. Each model must also
+# have reached a comparison site at all: the hook keys on the interpreter's
+# function names, so a rename there would silently turn every model back
+# into IEEE - and the fixture's "accepts" leg would then fail loudly. And
+# the engine's rule must read the probes' eight recorded answers through the
+# interpreter, while each margin model misreads at least one of them (the
+# reason it is margin and not the rule).
+
+DBL_EPSILON = 2.220446049250313e-16
+MC_EPSILON = DBL_EPSILON * 10.0
+
+
+def _model_engine(a, b):
+    """The engine's own rule (engine/src/exec-logic.cpp, MCLogicCompareTo
+    and MCLogicIsEqualTo): unequal numbers are equal when they differ by less
+    than MC_EPSILON of the smaller magnitude, or by less than MC_EPSILON when
+    that magnitude is below MC_EPSILON."""
+    if a == b:
+        return a, b
+    smaller = min(abs(a), abs(b))
+    if smaller < MC_EPSILON:
+        same = abs(a - b) < MC_EPSILON
+    else:
+        same = abs(a - b) / smaller < MC_EPSILON
+    return (a, a) if same else (a, b)
+
+
+def _model_absolute(a, b):
+    """Equal when within 1e-6: an absolute tolerance."""
+    return (a, a) if abs(a - b) < 1e-6 else (a, b)
+
+
+def _model_digits15(a, b):
+    """Both operands rounded through 15 significant digits first."""
+    return float("%.15g" % a), float("%.15g" % b)
+
+
+ENGINE_MODELS = [
+    ("the engine's rule (10 DBL_EPSILON of the smaller)", _model_engine),
+    ("an absolute 1e-6 tolerance", _model_absolute),
+    ("a 15-significant-digit round trip", _model_digits15),
+]
+
+# The engine's recorded answers to the harness's first two probe lines
+# (numeric compare probe 1 read in the 2026-09-24 second run, probe 2 in the
+# third; riptide/CLAUDE.md's ledger), each expression as the harness spells
+# it. The ladder is the harness's rstUlpLadder under a fixture name. Pure
+# IEEE reads true,true,true,true,true,true,1,1.
+PROBE_LADDER = "\n".join([
+    "function probeUlpLadder pBase, pUlps",
+    "   local tStep",
+    "   put 1 into tStep",
+    "   repeat while tStep <= 1073741824",
+    "      if pBase + tStep / pUlps > pBase then",
+    "         return tStep",
+    "      end if",
+    "      multiply tStep by 2",
+    "   end repeat",
+    "   return 0",
+    "end probeUlpLadder"])
+PROBE_READINGS = [
+    ("1 + 1 / 10000000 > 1", "true"),
+    ("1 + 1 / 2251799813685248 > 1", "false"),
+    ("2097152 > (9007199254740992 - 1) / 4294967296", "false"),
+    ("1 + 23 / 4503599627370496 > 1 + 22 / 4503599627370496", "false"),
+    ("1 / 10000000000 > 0", "true"),
+    ("1073741824 + 1 / 2097152 > 1073741824", "false"),
+    ("probeUlpLadder(1, 4503599627370496)", "16"),
+    ("probeUlpLadder(8, 562949953421312)", "16"),
+]
+
+
+def _probe_answers(interp):
+    """The interpreter's answers to PROBE_READINGS, spelled as the engine
+    printed them."""
+    return [str(LCS._disp(interp.eval_expr(expr, {})))
+            for expr, _want in PROBE_READINGS]
+
+
+class _ModelNum(object):
+    """One operand of one comparison, answering the six comparisons by an
+    engine model. The hook hands these out only at a comparison site, where
+    the value is compared and then dropped, so no arithmetic ever sees one."""
+    __slots__ = ("v", "model")
+
+    def __init__(self, v, model):
+        self.v = v
+        self.model = model
+
+    def _pair(self, other):
+        return self.model(self.v,
+                          other.v if isinstance(other, _ModelNum) else other)
+
+    def __eq__(self, other):
+        a, b = self._pair(other)
+        return a == b
+
+    def __ne__(self, other):
+        a, b = self._pair(other)
+        return a != b
+
+    def __lt__(self, other):
+        a, b = self._pair(other)
+        return a < b
+
+    def __le__(self, other):
+        a, b = self._pair(other)
+        return a <= b
+
+    def __gt__(self, other):
+        a, b = self._pair(other)
+        return a > b
+
+    def __ge__(self, other):
+        a, b = self._pair(other)
+        return a >= b
+
+    __hash__ = None
+
+
+class engine_model(object):
+    """While active, every numeric comparison the interpreter makes answers
+    by MODEL. The interpreter coerces both operands of `< <= > >= <>` (in
+    _Expr.p_cmp) and of a numeric `is` / `=` (in _eq) through its module
+    function _n, so wrapping _n's result for those two callers - and only
+    them - moves every comparison and nothing else. `fired` counts the
+    wrapped operands, so a caller can prove the hook reached a site."""
+    SITES = ("p_cmp", "_eq")
+
+    def __init__(self, model):
+        self.model = model
+        self.fired = 0
+        self.real = None
+
+    def __enter__(self):
+        real = self.real = LCS._n
+
+        def hooked(v):
+            out = real(v)
+            if (sys._getframe(1).f_code.co_name in self.SITES
+                    and isinstance(out, (int, float))
+                    and not isinstance(out, bool)):
+                self.fired += 1
+                return _ModelNum(out, self.model)
+            return out
+
+        LCS._n = hooked
+        return self
+
+    def __exit__(self, *_exc):
+        LCS._n = self.real
+        return False
+
+
+# The handler as it shipped from 2026-09-08 until 2026-09-24, comment cut -
+# the seeded defect of tier 1c and of the quotient scan. Kept VERBATIM: the
+# point of a seeded defect is that it is the one that actually shipped.
+OLD_READ_BEU64 = "\n".join([
+    "private function rsReadBEu64 pBytes",
+    "   local tHi, tLo",
+    "   put rsReadBEu32(byte 1 to 4 of pBytes) into tHi",
+    "   put rsReadBEu32(byte 5 to 8 of pBytes) into tLo",
+    "   if tHi > (9007199254740992 - tLo) / 4294967296 then",
+    "      return empty",
+    "   end if",
+    "   return tHi * 4294967296 + tLo",
+    "end rsReadBEu64"])
+OLD_BOUND_LINE = "if tHi > (9007199254740992 - tLo) / 4294967296 then"
+
+_READ_BEU64_RX = re.compile(
+    r'^private function rsReadBEu64 pBytes$.*?^end rsReadBEu64$',
+    re.M | re.S)
+
+
+def seed_old_bound(text, fail):
+    """TEXT with its one rsReadBEu64 replaced by the pre-2026-09-24 one."""
+    found = len(_READ_BEU64_RX.findall(text))
+    if found != 1:
+        fail("tier 1c's fixture expects exactly ONE rsReadBEu64 handler to "
+             "seed the old bound into, and found %d; without it the models "
+             "would be trusted untested" % found)
+    return _READ_BEU64_RX.sub(lambda _m: OLD_READ_BEU64, text)
+
+
+def _refuses_2p53p1(interp):
+    """[head refused?, BTXO total refused?] for a u64 of 2^53 + 1. A parsed
+    head and PAST_2P53 alike mean: not refused."""
+    head = u64_call(interp, "rsParseHead",
+                    [u64_head_with_seq(b"\x00\x20" + b"\x00" * 5 + b"\x01")])
+    total = u64_call(interp, "rsBtxoStreamStep",
+                     [u64_btxo_header(2 ** 53 + 1), "header"])
+    return [not u64_parsed(head), u64_status(total) == "refused"]
+
+
+def check_u64_engine_models(c, ip, src, fail):
+    c.note("tier 1c: the u64 bound under the engine's comparison rule and "
+           "two margin models")
+    probe = LCS.Interp(PROBE_LADDER)
+    want = [w for _expr, w in PROBE_READINGS]
+    c.ck("fixture: under IEEE the probes read true,true,true,true,true,true,"
+         "1,1 - the answers the engine did NOT give",
+         _probe_answers(probe),
+         ["true", "true", "true", "true", "true", "true", "1", "1"])
+    for index, (name, model) in enumerate(ENGINE_MODELS):
+        with engine_model(model):
+            got = _probe_answers(probe)
+        if index == 0:
+            c.ck("fixture: %s reads the eight answers the engine gave "
+                 "(probes 1 and 2, 2026-09-24)" % name, got, want)
+        else:
+            c.ck("fixture: %s misreads at least one of them (margin, not "
+                 "the rule)" % name, got != want, True)
+    old = LCS.Interp(seed_old_bound(src, fail))
+    c.ck("fixture: under IEEE the pre-2026-09-24 bound REFUSES 2^53+1 "
+         "(head, BTXO total) - why every headless gate was green over it",
+         _refuses_2p53p1(old), [True, True])
+    for name, model in ENGINE_MODELS:
+        with engine_model(model) as hook:
+            got = _refuses_2p53p1(old)
+        c.ck("fixture: under %s it ACCEPTS 2^53+1 (head, BTXO total), as "
+             "the engine did on 2026-09-24" % name, got, [False, False])
+        c.ck("fixture: %s reached the interpreter's comparison sites" % name,
+             hook.fired > 0, True)
+    for name, model in ENGINE_MODELS:
+        with engine_model(model) as hook:
+            rows = u64_rows(ip)
+        for label, got, want in rows:
+            c.ck("[%s] %s" % (name, label), got, want)
+        c.ck("[%s] the model reached the comparison sites" % name,
+             hook.fired > 0, True)
+
+
+# The quotient scan: the static half of the same rule, over the whole
+# library rather than tier 1c's table. A logical line (comments cut: --, #,
+# // and /* */; string literals blanked; `\` continuations joined) that both
+# DIVIDES and COMPARES is refused; a one-line `if COND then STMT` is judged
+# as its two halves, so a condition that divides is refused and a statement
+# that merely divides is not. Its bound is its question: a quotient put into
+# a variable first and compared on a later line passes it, which is why tier
+# 1c exists too. It reads the LIBRARY only; the harness's numeric probe
+# compares against quotients on purpose, and the demo's own code was swept
+# by hand on 2026-09-24 and has no `/` in it (its three `div`s centre two
+# fields and format a log line; none is compared). The fixtures pin the comment
+# and literal handling first, because comments-versus-literals has changed
+# a scanner's answer in this tree three times (root CLAUDE.md).
+_COMPARES_RX = re.compile(r'[<>=]|\bis\b', re.I)
+_ONE_LINE_IF_RX = re.compile(r'^\s*(?:else\s+)?if\s+(.+?)\s+then\s+(\S.*)$',
+                             re.I)
+
+# (source, the line numbers the scan must report)
+QUOTIENT_SCAN_FIXTURES = [
+    ("-- if a / b > c, in a comment", []),
+    ('put "http://x/y > z" into t', []),
+    ("# a / b > c after a hash", []),
+    ("put a / b into c // x > y after a slash comment", []),
+    ("/* a / b > c\nstill a / b > c */ put 1 into x", []),
+    ("if tDT <= 0 then put 1 / 60 into tDT", []),
+    ("return trunc(pA / pB)", []),
+    ("if tX > \\\n      tA / tB then", [1]),
+    ("if tHi > (9007199254740992 - tLo) / 4294967296 then", [1]),
+    ("if (a / b) is 2 then return empty", [1]),
+    ("if x then put (a / b <> c) into t", [1]),
+]
+
+
+def _logical_code_lines(text):
+    """(first line number, code) per logical line of a .livecodescript."""
+    in_block = False
+    pending, start = "", None
+    for number, raw in enumerate(text.split("\n"), start=1):
+        out, i, in_str = [], 0, False
+        while i < len(raw):
+            ch = raw[i]
+            if in_block:
+                if raw.startswith("*/", i):
+                    in_block = False
+                    i += 2
+                else:
+                    i += 1
+                continue
+            if in_str:
+                out.append('"' if ch == '"' else " ")
+                in_str = ch != '"'
+                i += 1
+                continue
+            if ch == '"':
+                in_str = True
+                out.append(ch)
+            elif raw.startswith("/*", i):
+                in_block = True
+                i += 2
+                continue
+            elif raw.startswith("--", i) or raw.startswith("//", i) \
+                    or ch == "#":
+                break
+            else:
+                out.append(ch)
+            i += 1
+        code = "".join(out)
+        if start is None:
+            start = number
+        if code.rstrip().endswith("\\"):
+            pending += code.rstrip()[:-1] + " "
+            continue
+        yield start, pending + code
+        pending, start = "", None
+
+
+def _divides_and_compares(code):
+    return "/" in code and _COMPARES_RX.search(code) is not None
+
+
+def quotient_comparisons(text):
+    """[(line, code)] for every logical line that compares a quotient."""
+    out = []
+    for number, code in _logical_code_lines(text):
+        m = _ONE_LINE_IF_RX.match(code)
+        if m:
+            hit = "/" in m.group(1) or _divides_and_compares(m.group(2))
+        else:
+            hit = _divides_and_compares(code)
+        if hit:
+            out.append((number, " ".join(code.split())))
+    return out
+
+
+def check_no_quotient_comparisons(c, fail):
+    c.note("tier 1c: no comparison against a quotient in the library")
+    for source, want in QUOTIENT_SCAN_FIXTURES:
+        c.ck("fixture: the quotient scan reports %r at %r"
+             % (source.split("\n")[0][:40], want),
+             [n for n, _code in quotient_comparisons(source)], want)
+    with open(SCRIPT, "r", encoding="utf-8") as fh:
+        shipped = fh.read()
+    seeded = [code for _line, code in
+              quotient_comparisons(seed_old_bound(shipped, fail))]
+    c.ck("fixture: the scan flags the pre-2026-09-24 bound when it is "
+         "seeded back", OLD_BOUND_LINE in seeded, True)
+    c.ck("the shipped library compares against no quotient",
+         quotient_comparisons(shipped), [])
 
 
 def check_capacity_arithmetic(c, ip):
@@ -833,6 +1266,8 @@ def main(argv):
             "%s x%d" % (n, hits[n]) for n, _w, _f in REWRITES))
     check_pure(c, ip, V)
     check_u64_bound(c, ip)
+    check_u64_engine_models(c, ip, src, fail)
+    check_no_quotient_comparisons(c, fail)
     check_capacity_arithmetic(c, ip)
     if install_coin_natives():
         check_composed(c, ip, V)
