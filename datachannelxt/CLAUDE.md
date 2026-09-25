@@ -254,17 +254,22 @@ Numbered as cited elsewhere in the suite (the suite's `tools/check-lcb-signature
 | 2026-09-12 | CI, no engine | `release-binaries.yml` run 34657390798 (`421bab3`) | every platform rebuilt from a tree containing `23a2914` (C++ gotcha 7) |
 | 2026-09-24 | headless Chromium 141.0.7390.37, Linux x86_64; no engine | `tests/browser-peer.html` against itself, and against the committed `x86_64-linux` library through the `dcx_*` C ABI (a scratch ctypes driver, in both roles) | the page's three checks green; `dcx_send_text` arrived as a string and `dcx_send_data` as an ArrayBuffer, byte-exact; the page's string and ArrayBuffer arrived as TEXT and PAYLOAD events; selected pair host / `prflx` (the browser hid its host address behind an mDNS name). Not the `.lcb`, not an engine: `docs/browser-interop.md` |
 | 2026-09-24 | OXT, Windows (the engine reports Win32), a 2026-09-12 DLL by the maintainer's account (its first engine load); version, OS build and bitness not recorded | the D-23 suite paste (built from `9aa62c8`; this harness byte-for-byte as at `6401e43`) | paste 2620 / 5 / 3 (2628); datachannelxt 39 folded, 0 failed, no skips: lifecycle, the stale-handle surface at its exact codes (including the oversize `dcSendText` on a stale handle, still -2, a leg the 2026-08-17 record did not name), the embedded-NUL refusal at -3 and its cleared last-error, and the `datachannel-helpers` section (the pump deliberately left unarmed). The core's live loopback created both peers and A's channel (`dcInit` 0, the version names libdatachannel, `dcPeerState(0)` -1), then stalled in phase `opening` to the 40 s deadline, its one FAIL; both loopbacks also stalled on 2026-08-27, whose phases and machine were not recorded (the suite runbook's trap 5.5; suspected environment, this machine's UDP loopback not yet tested independently). The day's second run (8:41 PM) read the same, line for line, so the live legs (open, the 60000 budget, delivery) did not run; `dcCleanup` 0. Board row 46 / 1 / 0; the paste's other FAILs were riptide's three and the enet loopback |
+| 2026-09-25 | OXT, Linux (box2dxt's lines print `the platform` as Linux); by the maintainer's account 64-bit Kubuntu 24.04 with the latest committed builds, so the `x86_64-linux` file of `421bab3` (release run 34657390798, 2026-09-12; glibc floor 2.38, and Kubuntu 24.04 ships 2.39); OXT build and library version not recorded | the D-23 suite paste as regenerated at `f1346e0` (the tree at `cba3130`, PR #145; this harness's folded code as on 2026-09-24, comments aside) | paste 2672 / 0 / 10 (2682); datachannelxt 39 folded, 0 failed, no skips, the same sections as 2026-09-24. The core's live loopback COMPLETED: `dcInit` 0, the version names libdatachannel, `dcPeerState(0)` -1, both peers and A's channel created; the loopback negotiated and both ends opened, the incoming channel carries its label, peer A reports connected; `dcSendData` refused 60001 bytes with -4 (enetxt's code) and carried the SodiumXT-sealed ciphertext byte for byte, opened to the exact plaintext; SCTP negotiated at least its 16 KiB floor, and a payload at the negotiated cap was accepted and delivered whole; `dcCleanup` 0. Board row 56/0/0. That `.so`'s first engine load (its C ABI was driven headlessly on 2026-09-24, no engine), and the paste loopback's first recorded completion since 2026-08-20 (Windows; the 2026-08-24 paste's zero failures imply one more), after its stalls of 2026-08-27 and of all three 2026-09-24 runs (Windows, in `opening`). So the paste's loopback code completes on an engine, and the Windows stall belongs to that platform or machine (trap 5.5). C++ gotcha 7's two exits (a peer already freed, a full handle table) are not on this loopback's path |
 
 ## Status
 
 The whole `dc*` surface is engine-proven (standalone async loopback 2026-08-15; folded
-through 2026-09-24), and the flagship demo ran on one machine on Linux and Windows
+through 2026-09-25), and the flagship demo ran on one machine on Linux and Windows
 (2026-08-18). The suite core's own live loopback (green 2026-08-20) stalled on 2026-08-27,
 recorded as a machine blocking UDP to 127.0.0.1 (environment; its phase not recorded), and in
-`opening` in both of 2026-09-24's runs (suspected environment; not yet tested independently).
-The 2026-09-24 paste ran on a 2026-09-12 Windows DLL (the maintainer's account; its bitness
-not recorded), those binaries' first engine load; no engine has loaded the 2026-09-12 Linux
-builds or any `universal-mac` dylib.
+`opening` in all three of 2026-09-24's runs (Windows; suspected environment, not yet tested
+independently), then COMPLETED on Linux x86_64 on 2026-09-25 (negotiated, both ends open,
+SCTP at least 16 KiB, a cap-sized payload whole), so the paste's loopback code works on an
+engine and the Windows stall is that platform's or that machine's. The 2026-09-24 paste ran
+on a 2026-09-12 Windows DLL (the maintainer's account; its bitness not recorded) and the
+2026-09-25 paste on the 2026-09-12 `x86_64-linux` file (the maintainer's account: 64-bit
+Kubuntu 24.04, the latest committed builds), each file's first engine load; neither the
+`x86-linux` file nor the `universal-mac` dylib has met an engine.
 C++ gotcha 7's two exits are driven natively by `tests/orphan_channel_test.cpp` (2026-09-24,
 ASan/UBSan and TSan), not by an engine. The pump's failure branches (`dcPollLastError`) are
 verified statically; needs an OXT pass.
@@ -276,8 +281,9 @@ networks with real NAT traversal (a `srflx`/`prflx` selected pair; loopback neve
 host), a two-machine run recorded against the dht-chat demo by name (the 2026-08-27 one-LAN
 report does not name its stack), any engine record for
 `examples/datachannel-loopback.livecodescript`, and a Mac engine load. Both Linux libraries
-need glibc 2.38 or newer (measured 2026-09-23 with `objdump -T`). Open work is tracked in
-the suite's docs/WORK-PLAN.md.
+need glibc 2.38 or newer (measured 2026-09-23 with `objdump -T`); the x86_64 one loaded on
+Kubuntu 24.04, whose release ships 2.39. Open work is tracked in the suite's
+docs/WORK-PLAN.md.
 
 ## Build and gates
 
