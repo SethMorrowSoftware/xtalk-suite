@@ -43,6 +43,38 @@ FIXTURES = [
      "   if sFsMethod[pStream] is \"HEAD\" then\n      put \"\" into tBody\n",
      "   if sFsMethod[pStream] is \"NEVER\" then\n      put \"\" into tBody\n",
      "qsFsSendText HEAD sends the GET head and no body"),
+    # The case-exact route table (WORK-PLAN nocloud #6, 2026-09-25). The first is the
+    # defect itself: route keys built from the raw "METHOD /path" text, which the engine's
+    # array subscript folds (engine note 2.7) and so, since 2026-09-24, does the model's.
+    ("the folding lookup: route keys built from the raw METHOD /path text",
+     "   return qsHexKey(toUpper(pMethod) & space & pPath)\n",
+     "   return toUpper(pMethod) & space & pPath\n",
+     "qsRouteLookupKey('GET','/API/hello') over the built-in table"),
+    ("share roots keyed by the raw folder path (two folders, one folded table)",
+     "   return qsHexKey(pRoot)\n",
+     "   return pRoot\n",
+     "qsHttpAllow under root '/srv/site'"),
+    # The route layer's path comparison as bare `is`: the model's `is` is case-exact (its
+    # named divergence), so the case half is invisible here; its number half is not (it
+    # reads plain decimals as numbers, as the engine does), which is what names this.
+    ("the route path comparison as bare `is`",
+     "function qsSameText pA, pB\n",
+     "function qsSameText pA, pB\n   return (pA is pB)\n",
+     "qsSameText('01','1')"),
+    ("the reserved-namespace guard compared case-exactly (looser than the engine)",
+     "   put toLower(pPath) into tLow\n",
+     "   put pPath into tLow\n",
+     "qsHttpReservedPath('/_QS/info')"),
+    ("duplicate capture names compared case-exactly (:id and :ID, one array key)",
+     "      if toLower(tName) is among the lines of tSeen then\n",
+     "      if tName is among the lines of tSeen then\n",
+     "qsUserPatternValid('/api/:id/:ID')"),
+    ("the pattern tie-break on the readable key (the engine folds text `<`)",
+     "(tCount is tBestCount and (\"k\" & tKey) < (\"k\" & tBestKey))",
+     "(tCount is tBestCount and (sUserRoutes[tRootKey][tKey][\"method\"] & space & tRoutePath)"
+     " < (sUserRoutes[tRootKey][tBestKey][\"method\"] & space"
+     " & sUserRoutes[tRootKey][tBestKey][\"path\"]))",
+     "qsUserRouteFind('GET','/api/files/x') over ['GET /api/:a/x', 'GET /api/:Z/x']"),
 ]
 
 

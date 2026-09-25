@@ -2319,8 +2319,11 @@ local sCanEncrypt       -- "true" if SodiumXT (libsodium) is installed + working
 local sEncryptWhy       -- why the probe said no (empty while healthy); an ABI
                         -- skew reads differently from an absent extension
 local sHasJson          -- "true" if the engine can parse JSON (JSONToArray probed once; fail-closed)
-local sUserRoutes       -- array: root -> ("METHOD /path" -> descriptor), from each folder's .qsroutes.json
-local sUserRoutesLoaded -- array: root -> "true" once that folder's .qsroutes.json has been read (or skipped)
+-- Both keyed CASE-EXACTLY (2026-09-25): the engine folds array keys (suite engine note
+-- 2.7), so the outer key is qsRootKey(root) and the inner one qsRouteKey(method, path),
+-- hex that no fold can merge, and each descriptor carries its readable method + path.
+local sUserRoutes       -- array: qsRootKey(root) -> (qsRouteKey -> descriptor), from each folder's .qsroutes.json
+local sUserRoutesLoaded -- array: qsRootKey(root) -> "true" once that folder's .qsroutes.json has been read (or skipped)
 local sPendingKey       -- array: info-hash -> 32-byte file key, for a download to decrypt
 local sPendingName      -- array: info-hash -> original filename, for that download
 local sXferName         -- array: info-hash -> real name to SHOW locally (swarm sees .enc)
@@ -2394,11 +2397,13 @@ local sFsTxName         -- array: stream -> the file's leaf name (for the log)
 local sFsTxDeadline     -- array: stream -> the milliseconds of the last activity (watchdog)
 local sFsMethod         -- array: stream -> the current request's method (HEAD must send no body)
 -- Dynamic routes (the light xTalk backend). A hosted web app can call back into
--- this stack: sHttpRoutes maps "METHOD /path" -> the name of an xTalk handler that
+-- this stack: sHttpRoutes maps METHOD + path to the name of an xTalk handler that
 -- answers the request (see qsHttpRoute / qsHttpReply below). Works over BOTH
 -- transports; on the direct web link a route sits under the token, e.g.
--- http://<ip>:<port>/<token>/_qs/info.
-local sHttpRoutes       -- array: "METHOD /path" -> handler name in this script
+-- http://<ip>:<port>/<token>/_qs/info. Keyed by qsRouteKey, case-exact: a path is
+-- case-sensitive, and a table keyed by the path text answered GET /API/x out of the
+-- /api/x route on the engine (qsRouteKey says why).
+local sHttpRoutes       -- array: qsRouteKey(method, path) -> {handler, method, path}
 -- qsHttpHeaderEnd's scanner choice, probed ONCE on first use: "fast" when the
 -- engine's byteOffset proves it handles a multi-byte needle on a known vector,
 -- else "loop" (the original interpreted scan). See qsHttpHeaderEnd.
@@ -4671,7 +4676,7 @@ end qsStopTorrentRow
 -- teardown in qsStartOnionShare: abort any live transfer first (so the file handle is
 -- closed before we delete the .enc), remove the service, delete our temp, reset state.
 command qsOnionStopShare
-   local tErr, tCode
+   local tErr, tCode, tRootKey
    if sActiveShare["service"] is empty then
       qsLog "There is no Tor share to stop."
       exit qsOnionStopShare
@@ -4697,8 +4702,9 @@ command qsOnionStopShare
       catch tErr
       end try
    end if
-   delete variable sUserRoutes[sActiveShare["root"]]   -- custom routes reload if re-shared
-   delete variable sUserRoutesLoaded[sActiveShare["root"]]
+   put qsRootKey(sActiveShare["root"]) into tRootKey
+   delete variable sUserRoutes[tRootKey]           -- custom routes reload if re-shared
+   delete variable sUserRoutesLoaded[tRootKey]
    put empty into sActiveShare
    put empty into sXferSel
    if tCode is not empty and the text of field "qsCode" is tCode then
@@ -6395,8 +6401,14 @@ end qsPathHasControl
 
 -- Register a dynamic route: pHandler is a command in THIS script, called as
 -- pHandler pConn, pRequest (pRequest is the parsed array; reply with qsHttpReply).
+-- Keyed by qsRouteKey (case-exact); the entry keeps its readable method and path
+-- because a hex key cannot be read back cheaply, and qsHttpAllow walks them.
 command qsHttpRoute pMethod, pPath, pHandler
-   put pHandler into sHttpRoutes[toUpper(pMethod) & space & pPath]
+   local tDesc
+   put pHandler into tDesc["handler"]
+   put toUpper(pMethod) into tDesc["method"]
+   put pPath into tDesc["path"]
+   put tDesc into sHttpRoutes[qsRouteKey(pMethod, pPath)]
 end qsHttpRoute
 
 -- Call a route handler; a throw or a missing handler becomes a clean 500 (so a buggy
@@ -6463,31 +6475,34 @@ end qsSendRedirect
 -- app-relative path; pRoot is THIS share's folder (for its user routes). A HEAD is looked up
 -- as its own method first and then as the GET it is defined to be (qsRouteLookupKey, and the
 -- explicit retry on the pattern finder), so every route this server ADVERTISES HEAD on is
--- actually reachable by one. This is the block that used to be copied verbatim into
--- qsFsServePath AND qsCwServe.
+-- actually reachable by one. Every lookup here is CASE-EXACT on the path (qsRouteKey,
+-- qsSameText; 2026-09-25): GET /API/x is not the /api/x route. This is the block that used
+-- to be copied verbatim into qsFsServePath AND qsCwServe.
 command qsHttpTryRoutes pConn, pAppPath, pRoot, pHeaders
-   local tMethod, tRouteKey, tAllow, tCrlf, tPatternKey, tParams
+   local tMethod, tRouteKey, tAllow, tCrlf, tPatternKey, tParams, tRootKey
    put (numToChar(13) & numToChar(10)) into tCrlf
    put pHeaders["__method"] into tMethod
    -- the key is per-TABLE, not per-request: qsRouteLookupKey answers a HEAD out of the GET
    -- route unless THIS table declares a HEAD one, and the two tables are declared
-   -- independently, so it is asked once for each.
+   -- independently, so it is asked once for each. It answers the key that HITS, or empty.
    put qsRouteLookupKey(tMethod, pAppPath, sHttpRoutes) into tRouteKey
-   if sHttpRoutes[tRouteKey] is not empty then
+   if tRouteKey is not empty then
       put pAppPath into pHeaders["__path"]              -- hand the handler the decoded path
-      qsHttpDispatch pConn, sHttpRoutes[tRouteKey], pHeaders
+      qsHttpDispatch pConn, sHttpRoutes[tRouteKey]["handler"], pHeaders
       return "true"
    end if
    qsEnsureUserRoutes pRoot                             -- lazy-load this folder's .qsroutes.json
+   put qsRootKey(pRoot) into tRootKey
    -- exact user routes hit the table directly. A PATTERN descriptor is deliberately NOT
    -- served off this fast path: a request whose literal path IS the pattern text would
    -- exact-hit the key and dispatch with no captures, so patterns always go through the
    -- matcher below - one code path, captures always set.
-   put qsRouteLookupKey(tMethod, pAppPath, sUserRoutes[pRoot]) into tRouteKey
-   if sUserRoutes[pRoot][tRouteKey] is an array \
-         and sUserRoutes[pRoot][tRouteKey]["pattern"] is not "true" then
-      qsUserRouteDispatch pConn, sUserRoutes[pRoot][tRouteKey], pHeaders, pRoot
-      return "true"
+   put qsRouteLookupKey(tMethod, pAppPath, sUserRoutes[tRootKey]) into tRouteKey
+   if tRouteKey is not empty then
+      if sUserRoutes[tRootKey][tRouteKey]["pattern"] is not "true" then
+         qsUserRouteDispatch pConn, sUserRoutes[tRootKey][tRouteKey], pHeaders, pRoot
+         return "true"
+      end if
    end if
    -- parameterised user routes (an exact miss only): deterministic pick, then the
    -- captures ride the request array under the server-owned "__" namespace
@@ -6504,9 +6519,9 @@ command qsHttpTryRoutes pConn, pAppPath, pRoot, pHeaders
       put qsUserRouteFind(pRoot, "GET", pAppPath) into tPatternKey
    end if
    if tPatternKey is not empty then
-      put qsRouteMatch(qsRouteKeyPath(tPatternKey), pAppPath) into tParams
+      put qsRouteMatch(sUserRoutes[tRootKey][tPatternKey]["path"], pAppPath) into tParams
       put tParams into pHeaders["__params"]
-      qsUserRouteDispatch pConn, sUserRoutes[pRoot][tPatternKey], pHeaders, pRoot
+      qsUserRouteDispatch pConn, sUserRoutes[tRootKey][tPatternKey], pHeaders, pRoot
       return "true"
    end if
    if tMethod is "OPTIONS" then
@@ -6711,36 +6726,39 @@ end qsPad2
 -- The Allow header value for pPath: the static verbs (GET, HEAD, OPTIONS) plus any method
 -- registered as a dynamic route CLAIMING this path - both built-in routes (sHttpRoutes, always
 -- exact) and, when pRoot is given, the shared folder's user-declared .qsroutes.json routes,
--- where "claiming" means an exact key match OR a :param pattern that MATCHES pPath (so a param
+-- where "claiming" means an exact path match OR a :param pattern that MATCHES pPath (so a param
 -- route's methods never silently fall out of the OPTIONS/405 derivation - the request would
 -- dispatch there, so Allow must say so) - in a deterministic (sorted) order, de-duplicated.
--- Both route tables key on "METHOD /path", so the same split works for each. Pure over those
--- tables; mirrored by http_allow() in the golden.
+-- "Exact" is qsSameText, the route table's own rule (case-exact, never a number compare):
+-- until 2026-09-25 this compared with bare `is`, which folds case on the engine, so once the
+-- table stopped folding it would have advertised POST on /API/x for a route only /api/x
+-- has - a guard looser than its table. Each entry carries its readable method and path (the
+-- table keys are hex). Pure over those tables; mirrored by http_allow() in the golden.
 function qsHttpAllow pPath, pRoot
-   local tKey, tMethod, tRoutePath, tSp, tExtras, tOut
+   local tKey, tMethod, tRoutePath, tExtras, tOut, tRootKey
    put "" into tExtras
    repeat for each key tKey in sHttpRoutes
-      put offset(space, tKey) into tSp
-      if tSp >= 1 then
-         put char 1 to (tSp - 1) of tKey into tMethod
-         put char (tSp + 1) to -1 of tKey into tRoutePath
-         if tRoutePath is pPath and tMethod is not "GET" and tMethod is not "HEAD" \
-               and tMethod is not "OPTIONS" and tMethod is not among the lines of tExtras then
+      put sHttpRoutes[tKey]["method"] into tMethod
+      if tMethod is not "GET" and tMethod is not "HEAD" \
+            and tMethod is not "OPTIONS" and tMethod is not among the lines of tExtras then
+         if qsSameText(sHttpRoutes[tKey]["path"], pPath) then
             put tMethod & return after tExtras
          end if
       end if
    end repeat
    if pRoot is not empty then
-      repeat for each key tKey in sUserRoutes[pRoot]
-         put offset(space, tKey) into tSp
-         if tSp >= 1 then
-            put char 1 to (tSp - 1) of tKey into tMethod
-            put char (tSp + 1) to -1 of tKey into tRoutePath
-            if (tRoutePath is pPath or (qsRouteHasParams(tRoutePath) \
-                  and qsRouteMatch(tRoutePath, pPath) is an array)) \
-                  and tMethod is not "GET" and tMethod is not "HEAD" \
-                  and tMethod is not "OPTIONS" and tMethod is not among the lines of tExtras then
+      put qsRootKey(pRoot) into tRootKey
+      repeat for each key tKey in sUserRoutes[tRootKey]
+         put sUserRoutes[tRootKey][tKey]["method"] into tMethod
+         put sUserRoutes[tRootKey][tKey]["path"] into tRoutePath
+         if tMethod is not "GET" and tMethod is not "HEAD" \
+               and tMethod is not "OPTIONS" and tMethod is not among the lines of tExtras then
+            if qsSameText(tRoutePath, pPath) then
                put tMethod & return after tExtras
+            else if qsRouteHasParams(tRoutePath) then
+               if qsRouteMatch(tRoutePath, pPath) is an array then
+                  put tMethod & return after tExtras
+               end if
             end if
          end if
       end repeat
@@ -6765,19 +6783,23 @@ end qsHttpAllow
 -- the browser sends OPTIONS first and expects the Allow-* headers back or it aborts the real
 -- request. pAllow is the already-computed Allow value (the methods this path accepts), reused
 -- verbatim for Allow-Methods. Origin is "*" (never credentialed here), so Allow-Headers: * is
--- valid. Pure over sUserRoutes; golden: cors_*.
+-- valid. "Exact" is qsSameText, as in qsHttpAllow and the table itself (2026-09-25). Pure
+-- over sUserRoutes; golden: cors_*.
 function qsCorsPreflight pRoot, pPath, pAllow
-   local tKey, tSp, tRoutePath, tCrlf
+   local tKey, tRoutePath, tCrlf, tRootKey, tClaims
    if pRoot is empty then
       return ""
    end if
    put (numToChar(13) & numToChar(10)) into tCrlf
-   repeat for each key tKey in sUserRoutes[pRoot]
-      put offset(space, tKey) into tSp
-      if tSp >= 1 and sUserRoutes[pRoot][tKey]["cors"] is "true" then
-         put char (tSp + 1) to -1 of tKey into tRoutePath
-         if tRoutePath is pPath or (qsRouteHasParams(tRoutePath) \
-               and qsRouteMatch(tRoutePath, pPath) is an array) then
+   put qsRootKey(pRoot) into tRootKey
+   repeat for each key tKey in sUserRoutes[tRootKey]
+      if sUserRoutes[tRootKey][tKey]["cors"] is "true" then
+         put sUserRoutes[tRootKey][tKey]["path"] into tRoutePath
+         put qsSameText(tRoutePath, pPath) into tClaims
+         if tClaims is not "true" and qsRouteHasParams(tRoutePath) then
+            put (qsRouteMatch(tRoutePath, pPath) is an array) into tClaims
+         end if
+         if tClaims is "true" then
             return "Access-Control-Allow-Origin: *" & tCrlf & \
                "Access-Control-Allow-Methods: " & pAllow & tCrlf & \
                "Access-Control-Allow-Headers: *" & tCrlf & \
@@ -6884,7 +6906,7 @@ end qsTransparencyRoute
 -- and a concurrent clearweb share never see each other's routes. Loads lazily (qsEnsureUserRoutes)
 -- exactly like the serve paths, so it reflects what a real request would match.
 command qsRoutesRoute pConn, pRequest
-   local tKind, tRoot, tKey, tDesc, tQ, tItems, tCount, tMethod, tPath, tJson
+   local tKind, tRoot, tKey, tDesc, tQ, tItems, tCount, tMethod, tPath, tJson, tRootKey
    put char 1 to 2 of pConn into tKind          -- "ox" (Tor) or "cw" (clearweb)
    if tKind is "ox" then
       put sActiveShare["root"] into tRoot
@@ -6896,10 +6918,11 @@ command qsRoutesRoute pConn, pRequest
    put 0 into tCount
    if tRoot is not empty then
       qsEnsureUserRoutes tRoot                   -- same lazy load the serve paths use
-      repeat for each key tKey in sUserRoutes[tRoot]
-         put sUserRoutes[tRoot][tKey] into tDesc
-         put word 1 of tKey into tMethod         -- keys are "METHOD /path" (space-joined)
-         put word 2 to -1 of tKey into tPath
+      put qsRootKey(tRoot) into tRootKey
+      repeat for each key tKey in sUserRoutes[tRootKey]
+         put sUserRoutes[tRootKey][tKey] into tDesc
+         put tDesc["method"] into tMethod        -- the key is hex (qsRouteKey); the entry
+         put tDesc["path"] into tPath            -- carries its method and path verbatim
          if tItems is not empty then
             put "," after tItems
          end if
@@ -6950,12 +6973,21 @@ end qsCanJson
 -- those places; the static one was added 2026-08-17 and a FOURTH copy of a security rule is
 -- exactly the drift this repo keeps checkers for, so the predicate is one handler now.
 -- Prefix-exact on purpose: "/_qsx" and "/_editor" are ordinary paths, not reserved ones.
+-- CASE-FOLDED on purpose, and said so (2026-09-25): "/_QS/info" and "/_Edit" are reserved
+-- too. The engine's `is` and `begins with` folded here all along (the caseSensitive
+-- defaults to false); the golden and the execution gate's interpreter compare exactly, so
+-- to them "/_QS/x" was an ordinary path - a user route they would accept, served through
+-- the model's FOLDED route keys at /_qs/x. toLower makes the fold the same in all three.
+-- The route table is case-exact (qsRouteKey), so this guard is STRICTER than the table:
+-- it refuses a mixed-case prefix no route answers, which is the safe side.
 -- Pure; golden: reserved_path().
 function qsHttpReservedPath pPath
-   if pPath is "/_qs" or pPath begins with "/_qs/" then
+   local tLow
+   put toLower(pPath) into tLow
+   if tLow is "/_qs" or tLow begins with "/_qs/" then
       return true
    end if
-   if pPath is "/_edit" or pPath begins with "/_edit/" then
+   if tLow is "/_edit" or tLow begins with "/_edit/" then
       return true
    end if
    return false
@@ -6979,55 +7011,117 @@ function qsUserPathValid pPath
    return true
 end qsUserPathValid
 
--- The path half of a "METHOD /path" route-table key (both route tables key this way).
--- Pure; golden: route_key_path().
-function qsRouteKeyPath pKey
-   local tSp
-   put offset(space, pKey) into tSp
-   if tSp < 1 then
-      return ""
-   end if
-   return char (tSp + 1) to -1 of pKey
-end qsRouteKeyPath
+-- ---- route-table keys: CASE-EXACT, on purpose (2026-09-25) --------------------------
+-- HTTP paths are case-sensitive (RFC 3986 6.2.2.1: only the scheme and host fold), and
+-- until 2026-09-25 this server's were not. Both route tables were keyed by the TEXT
+-- "METHOD /path", and the engine folds array KEYS unless the caseSensitive (a
+-- handler-local property) is true - tA["A"] and tA["a"] are ONE element (suite engine
+-- note 2.7, OBSERVED 2026-09-15) - so GET /API/x reached the /api/x route and a HEAD
+-- to /API/X fell back to it too. The guards around the table folded as well (`is`,
+-- `begins with`, `contains` all fold by default), so nothing failed OPEN on the engine;
+-- but the golden and the family interpreter compare case-exactly while the model's keys
+-- fold, so the headless world held a reserved guard LOOSER than its table: "/_QS/x" was a
+-- legal user route there, and the folded lookup served it at /_qs/x. The fix
+-- keys both tables by the hex of the key text (qsRouteKey), which no fold can merge, and
+-- compares every route PATH through qsSameText. The guards may be STRICTER than the
+-- table (qsHttpReservedPath folds on purpose), never looser. Found 2026-09-24 by reading,
+-- fixed and pinned headlessly 2026-09-25 (the golden's route_* rows and
+-- tools/check-script-vectors.py); verified statically; needs an OXT pass.
 
--- The route-table key a request should LOOK UP - the other half of the key story, and the
--- one place HEAD is turned back into GET. Every method looks up its own "METHOD /path" key;
--- a HEAD looks up its own key when the table actually declares a HEAD route (an explicit
--- one wins - it may want to answer differently) and otherwise falls back to the GET key,
--- because HEAD is defined as GET-without-a-body and this server ADVERTISES it on every path
--- (qsHttpAllow unconditionally answers "GET, HEAD, OPTIONS"). Until 2026-08-17 the key was
--- built from the literal method, so a HEAD missed BOTH route tables and fell through to the
--- static pipeline - where a reserved or app path has no file, its leaf has no ".", and
--- qsSiteSpaTarget therefore handed back index.html: HEAD /_qs/info answered 200 text/html
--- with the SPA while GET /_qs/info answered JSON. pTable is the route array being consulted
--- (both tables key on "METHOD /path", so one lookup serves sHttpRoutes and
--- sUserRoutes[root]); the body is suppressed downstream by qsCwSendText / qsFsSendText, so
--- the fallback reply carries the GET's headers and Content-Length and no bytes.
--- Pure over pTable; golden: route_lookup_key().
+-- The lowercase hex of pText's UTF-8 bytes: an array key no case fold can merge with
+-- another, because its only letters are a-f and always lower case. UTF-8 first, so a
+-- non-ASCII path keys by its real bytes. A pure-script loop rather than binaryDecode("H*"):
+-- the execution gate's interpreter models no binaryDecode, and a route key is a few dozen
+-- bytes. Pure; golden: hex_key().
+function qsHexKey pText
+   local tBytes, tDigits, tHex, tI, tN
+   put "0123456789abcdef" into tDigits
+   put textEncode(pText, "UTF-8") into tBytes
+   put empty into tHex
+   repeat with tI = 1 to the number of bytes of tBytes
+      put byteToNum(byte tI of tBytes) into tN
+      put (char (tN div 16 + 1) of tDigits) & (char (tN mod 16 + 1) of tDigits) after tHex
+   end repeat
+   return tHex
+end qsHexKey
+
+-- The route-table key for pMethod + pPath: the hex (qsHexKey) of "METHOD /path", the method
+-- upper-cased first. Methods fold ON PURPOSE (this server has always matched "get" as GET,
+-- and qsHttpTryRoutes' method tests fold too); paths do not. Every writer and every lookup
+-- of sHttpRoutes and sUserRoutes goes through here, so no path text is ever an array key.
+-- Pure; golden: route_key().
+function qsRouteKey pMethod, pPath
+   return qsHexKey(toUpper(pMethod) & space & pPath)
+end qsRouteKey
+
+-- The key a share ROOT (a disk folder) is filed under in sUserRoutes / sUserRoutesLoaded.
+-- The same fold: on a case-sensitive filesystem /home/u/Site and /home/u/site are two
+-- folders, and keyed by the path text a Tor share of one and a web share of the other
+-- would share one route table (the second never reading its own .qsroutes.json) and one
+-- teardown. Exact keys are never wrong where the filesystem folds: one folder under two
+-- spellings loads its one file twice. Pure; golden: root_key().
+function qsRootKey pRoot
+   return qsHexKey(pRoot)
+end qsRootKey
+
+-- Are pA and pB the same text, byte for byte? The route layer's ONE path comparison. Bare
+-- `is` is wrong twice for a path: it folds case (the caseSensitive defaults to false) and it
+-- compares two number-like texts AS NUMBERS (suite engine note 2.11), so "01" is "1" and
+-- "1e2" is "100". The first test is the cheap common answer: texts that differ even under
+-- the fold differ in bytes (a letter on each side keeps `is` on its text path). Only texts
+-- that the fold calls equal pay for the exact test, which compares hex, where there is no
+-- case left to fold and a letter again keeps the number parse away. Pure; golden:
+-- same_text().
+function qsSameText pA, pB
+   if ("s" & pA) is not ("s" & pB) then
+      return false
+   end if
+   return (("h" & qsHexKey(pA)) is ("h" & qsHexKey(pB)))
+end qsSameText
+
+-- The route-table key a request DISPATCHES to, or empty when pTable has no route for it -
+-- the one place HEAD is turned back into GET. Every method looks up its own key; a HEAD
+-- that finds no HEAD route of its own (an explicit one wins - it may want to answer
+-- differently) falls back to the GET key, because HEAD is defined as GET-without-a-body
+-- and this server ADVERTISES it on every path (qsHttpAllow unconditionally answers "GET,
+-- HEAD, OPTIONS"). Until 2026-08-17 the key was built from the literal method, so a HEAD
+-- missed BOTH route tables and fell through to the static pipeline - where a reserved or
+-- app path has no file, its leaf has no ".", and qsSiteSpaTarget therefore handed back
+-- index.html: HEAD /_qs/info answered 200 text/html with the SPA while GET /_qs/info
+-- answered JSON. pTable is the route array being consulted (both tables key by
+-- qsRouteKey, so one lookup serves sHttpRoutes and sUserRoutes[root]); the body is
+-- suppressed downstream by qsCwSendText / qsFsSendText, so the fallback reply carries the
+-- GET's headers and Content-Length and no bytes. It READS the table itself (since
+-- 2026-09-25; before, it answered a key and each caller read it) so the execution gate
+-- drives the read the engine folds, not a Python dictionary's. Pure over pTable; golden:
+-- route_lookup_key().
 function qsRouteLookupKey pMethod, pPath, pTable
    local tMethod, tKey
-   put toUpper(pMethod) into tMethod
-   put tMethod & space & pPath into tKey
-   if tMethod is not "HEAD" then
-      return tKey
-   end if
    -- pTable can legitimately arrive unset (sUserRoutes[root] before any .qsroutes.json is
-   -- loaded, or with no folder shared at all), which is a table declaring no HEAD route -
-   -- the same answer the lookup below would give, just without indexing a non-array.
+   -- loaded, or with no folder shared at all), which is a table declaring no route at all.
    if pTable is not an array then
-      return "GET" & space & pPath
+      return empty
    end if
+   put toUpper(pMethod) into tMethod
+   put qsRouteKey(tMethod, pPath) into tKey
    if pTable[tKey] is not empty then
       return tKey
    end if
-   return "GET" & space & pPath
+   if tMethod is "HEAD" then
+      put qsRouteKey("GET", pPath) into tKey
+      if pTable[tKey] is not empty then
+         return tKey
+      end if
+   end if
+   return empty
 end qsRouteLookupKey
 
 -- Does a route path carry a PARAM segment (a "/"-separated segment starting ":")? This is
--- the one test that decides exact-vs-pattern for a STORED key: qsLoadUserRoutes only stores
--- a param-shaped path after qsUserPatternValid accepts it (and marks the descriptor
--- "pattern"), so within the table "has a param segment" and "is a pattern route" are the
--- same predicate - which lets qsHttpAllow/qsCorsPreflight stay pure over the key strings.
+-- the one test that decides exact-vs-pattern for a STORED route: qsLoadUserRoutes only
+-- stores a param-shaped path after qsUserPatternValid accepts it (and qsUserRouteStore marks
+-- the descriptor "pattern"), so within the table "has a param segment" and "is a pattern
+-- route" are the same predicate - which lets qsHttpAllow/qsCorsPreflight stay pure over
+-- each entry's path.
 -- Pure; golden: route_has_params().
 function qsRouteHasParams pPath
    local tSavedID, tSeg
@@ -7107,11 +7201,15 @@ function qsUserPatternValid pPath
             return false
          end if
       end repeat
-      if tName is among the lines of tSeen then
+      -- duplicate capture name, compared FOLDED on purpose: qsRouteMatch files each
+      -- capture under its name as an ARRAY KEY, which folds (engine note 2.7), so :id and
+      -- :ID are one capture and the second would silently shadow the first. The engine's
+      -- `among` folded here already; toLower makes the golden and the interpreter agree.
+      if toLower(tName) is among the lines of tSeen then
          set the itemDelimiter to tSavedID
-         return false                          -- duplicate capture name
+         return false
       end if
-      put tName & return after tSeen
+      put toLower(tName) & return after tSeen
    end repeat
    set the itemDelimiter to tSavedID
    return true
@@ -7157,7 +7255,9 @@ function qsRouteMatch pPattern, pPath
          end if
          put tPathSeg into tParams[char 2 to -1 of tPatSeg]
       else
-         if tPatSeg is not tPathSeg then
+         -- a static segment matches EXACTLY (qsSameText): bare `is` folded case and read
+         -- "01" as "1", so /api/files/:n answered /API/FILES/x and /v/1/:x answered /v/01/x
+         if not qsSameText(tPatSeg, tPathSeg) then
             set the itemDelimiter to tSavedID
             return "no"
          end if
@@ -7171,21 +7271,22 @@ end qsRouteMatch
 -- caller's fast path (a straight table hit); this arbitrates only the parameterised
 -- routes. Deterministic when several patterns match one path: fewest params wins (most
 -- literal = most specific), ties broken by the smallest key - array key iteration order
--- is not a contract, so the winner must never depend on it. Pure over the route table;
--- golden: user_route_find() (the same walk, over the keys as a list).
+-- is not a contract, so the winner must never depend on it. The keys are qsRouteKey hex,
+-- whose order is the byte order of "METHOD /path" (two hex digits per byte, 0-9 before
+-- a-f), compared with a letter prefixed so `<` never reads a key as a number; the method
+-- and path come from the entry, the method compared exactly (both sides upper case).
+-- Pure over the route table; golden: user_route_find() (the same walk, over the keys as
+-- a list).
 function qsUserRouteFind pRoot, pMethod, pPath
-   local tKey, tSp, tRoutePath, tBestKey, tBestCount, tCount
+   local tRootKey, tKey, tRoutePath, tBestKey, tBestCount, tCount
    put "" into tBestKey
    put -1 into tBestCount
-   repeat for each key tKey in sUserRoutes[pRoot]
-      put offset(space, tKey) into tSp
-      if tSp < 1 then
+   put qsRootKey(pRoot) into tRootKey
+   repeat for each key tKey in sUserRoutes[tRootKey]
+      if not qsSameText(sUserRoutes[tRootKey][tKey]["method"], pMethod) then
          next repeat
       end if
-      if char 1 to (tSp - 1) of tKey is not pMethod then
-         next repeat
-      end if
-      put char (tSp + 1) to -1 of tKey into tRoutePath
+      put sUserRoutes[tRootKey][tKey]["path"] into tRoutePath
       if not qsRouteHasParams(tRoutePath) then
          next repeat                           -- exact routes are the caller's fast path
       end if
@@ -7194,7 +7295,7 @@ function qsUserRouteFind pRoot, pMethod, pPath
       end if
       put qsRouteParamCount(tRoutePath) into tCount
       if tBestKey is empty or tCount < tBestCount \
-            or (tCount is tBestCount and tKey < tBestKey) then
+            or (tCount is tBestCount and ("k" & tKey) < ("k" & tBestKey)) then
          put tKey into tBestKey
          put tCount into tBestCount
       end if
@@ -7234,27 +7335,30 @@ end qsSanitizeHeaderName
 -- clearweb share that are up at the same time never see each other's routes and neither
 -- reparses on every request. A no-op unless JSON decoding is available.
 command qsEnsureUserRoutes pRoot
+   local tRootKey
    if pRoot is empty then
       exit qsEnsureUserRoutes
    end if
-   if sUserRoutesLoaded[pRoot] is "true" then
+   put qsRootKey(pRoot) into tRootKey
+   if sUserRoutesLoaded[tRootKey] is "true" then
       exit qsEnsureUserRoutes
    end if
-   put "true" into sUserRoutesLoaded[pRoot]
+   put "true" into sUserRoutesLoaded[tRootKey]
    if not sHasJson then
       exit qsEnsureUserRoutes
    end if
    qsLoadUserRoutes pRoot
 end qsEnsureUserRoutes
 
--- Read + parse + validate <root>/.qsroutes.json into sUserRoutes[pRoot]. EVERY step is
--- guarded (read/decode, the JSON parse, and each route) so a malformed config disables just
--- this feature - never the server, never the request that triggered the load. Each route
--- becomes a descriptor: kind ("body"/"file"/"redirect"), status, ctype, body|file|location,
--- an optional template flag, and a newline-separated block of already-sanitised header lines.
+-- Read + parse + validate <root>/.qsroutes.json into sUserRoutes (through qsUserRouteStore).
+-- EVERY step is guarded (read/decode, the JSON parse, and each route) so a malformed config
+-- disables just this feature - never the server, never the request that triggered the load.
+-- Each route becomes a descriptor: kind ("body"/"file"/"redirect"), status, ctype,
+-- body|file|location, an optional template flag, and a newline-separated block of
+-- already-sanitised header lines.
 command qsLoadUserRoutes pRoot
    local tFile, tText, tData, tList, tI, tRoute, tCount, tErr
-   local tMethod, tPath, tKey, tDesc, tHkey, tHval, tHname, tHlow, tStat, tHdrs
+   local tMethod, tPath, tDesc, tHkey, tHval, tHname, tHlow, tStat, tHdrs, tRootKey
    put pRoot & "/" & kUserRoutesFile into tFile
    if there is no file tFile then
       exit qsLoadUserRoutes
@@ -7377,22 +7481,34 @@ command qsLoadUserRoutes pRoot
             end repeat
          end if
          put tHdrs into tDesc["headers"]
-         if qsRouteHasParams(tPath) then
-            -- a :param pattern: served ONLY through qsUserRouteFind/qsRouteMatch (never
-            -- the exact-key fast path), so a request whose literal path IS the pattern
-            -- text still goes through the matcher and gets its captures
-            put "true" into tDesc["pattern"]
-         end if
-         put tMethod & space & tPath into tKey      -- last write wins on a duplicate key
-         put tDesc into sUserRoutes[pRoot][tKey]
+         qsUserRouteStore pRoot, tMethod, tPath, tDesc   -- last write wins on a duplicate key
       catch tErr
          -- a malformed route is skipped, never fatal to the load or the request
       end try
    end repeat
-   if the number of elements of sUserRoutes[pRoot] > 0 then
-      qsLog ("Loaded " & the number of elements of sUserRoutes[pRoot] & " custom API route(s) from " & kUserRoutesFile & ".")
+   put qsRootKey(pRoot) into tRootKey
+   if the number of elements of sUserRoutes[tRootKey] > 0 then
+      qsLog ("Loaded " & the number of elements of sUserRoutes[tRootKey] & " custom API route(s) from " & kUserRoutesFile & ".")
    end if
 end qsLoadUserRoutes
+
+-- File one VALIDATED user route (qsLoadUserRoutes did the vetting) into sUserRoutes under
+-- its case-exact keys: qsRootKey(pRoot), then qsRouteKey(pMethod, pPath). The descriptor
+-- takes its readable method and path along (the keys are hex) and, for a :param pattern,
+-- the "pattern" flag that keeps it OFF the exact-key fast path: a request whose literal
+-- path IS the pattern text still goes through the matcher and gets its captures. A
+-- duplicate key replaces the earlier route (last write wins); two paths that differ only
+-- in case are two routes now, where the folded key merged them and kept the FIRST
+-- spelling with the LAST descriptor. The one writer of the table, so the execution gate
+-- fills it through here rather than guessing its shape.
+command qsUserRouteStore pRoot, pMethod, pPath, pDesc
+   put toUpper(pMethod) into pDesc["method"]
+   put pPath into pDesc["path"]
+   if qsRouteHasParams(pPath) then
+      put "true" into pDesc["pattern"]
+   end if
+   put pDesc into sUserRoutes[qsRootKey(pRoot)][qsRouteKey(pMethod, pPath)]
+end qsUserRouteStore
 
 -- The CRLF-terminated extra-header block for a user route (its stored newline-separated,
 -- already-sanitised header lines).
@@ -9196,7 +9312,7 @@ command qsStartClearweb pPath, pName
 end qsStartClearweb
 
 command qsStopClearweb
-   local tK, tErr, tRc
+   local tK, tErr, tRc, tRootKey
    if sCwActive is not "true" then
       exit qsStopClearweb
    end if
@@ -9214,8 +9330,9 @@ command qsStopClearweb
    put "false" into sCwActive
    put 0 into sCwMapId
    put empty into sCwToken
-   delete variable sUserRoutes[sCwRoot]         -- custom routes reload if this folder is re-shared
-   delete variable sUserRoutesLoaded[sCwRoot]
+   put qsRootKey(sCwRoot) into tRootKey
+   delete variable sUserRoutes[tRootKey]        -- custom routes reload if this folder is re-shared
+   delete variable sUserRoutesLoaded[tRootKey]
    put empty into sCwRoot
    put empty into sCwFilePath
    -- clear the left-panel link only if it still shows THIS web share: a code share

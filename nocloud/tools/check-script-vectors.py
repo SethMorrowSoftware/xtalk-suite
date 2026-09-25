@@ -36,7 +36,14 @@ settles is LOGIC, not parser behaviour. The interpreter's header carries the
 modelled subset and its named divergences; the one that matters most here is
 that `is`, `contains`, `begins with` and `ends with` are modelled CASE-SENSITIVE
 where the engine folds case. Every helper driven here is either
-case-indifferent by construction or compares through toLower first.
+case-indifferent by construction or compares through toLower first - and the
+route layer, which since 2026-09-25 must be case-EXACT where the engine's `is`
+folds, is held through what the model does see: its array keys fold like the
+engine's (so the route tables are filled by the script's own writers and read
+by the script's own qsRouteLookupKey, and a key that folds merges here too),
+and its `is` reads plain decimals as numbers (so qsSameText's rows "01" / "1"
+catch a bare `is`). The case half of qsSameText's exactness is structural (hex
+has no case) and is the OXT pass's to observe.
 
 THE SPELLINGS, AND WHERE THEY LIVE. nocloud writes nine forms the shared
 interpreter had never modelled: `repeat for each char`, a bare `repeat` (the
@@ -77,7 +84,8 @@ driving it with --source: qsHasDotSegment answering false for "/.git/config",
 qsHttpParseHead keeping the FIRST Content-Length, qsEditSafePath admitting a
 ".." segment, and qsFsSendText sending a body for HEAD were each caught. The
 same four are held by tools/test-script-vectors.py so the discrimination is
-re-proven on every push rather than remembered.
+re-proven on every push rather than remembered, beside six for the case-exact
+route table (2026-09-25; that file lists them).
 
 Run from the member directory or anywhere:  python3 tools/check-script-vectors.py
 """
@@ -130,8 +138,10 @@ if not os.path.isfile(RUNNER):
 
 # The floor is a ratchet, not a target: a run that finds FEWER checks than this
 # is a run where a section silently stopped executing (a helper renamed, an
-# import failing inside a try) and must fail rather than print OK.
-FLOOR = 380
+# import failing inside a try) and must fail rather than print OK. Raised from
+# 380 on 2026-09-25, when the route-table rows added about a hundred checks: the
+# old floor would have let every one of them stop unseen.
+FLOOR = 480
 
 
 def _load(name, path):
@@ -411,48 +421,92 @@ def drive(c, ip, world, sandbox):
     c.ck("qsHttpDate(-1)", call("qsHttpDate", [-1]), G.http_date(-1))
     c.ck("qsHttpDate('x')", call("qsHttpDate", ["x"]), G.http_date("x"))
 
+    # -- the route tables are filled through the SCRIPT's own writers (qsHttpRoute for the
+    # built-in table, qsUserRouteStore for a folder's), never typed here: the key shape is
+    # the script's business, and a hand-built table would pin a shape the script never
+    # writes (root CLAUDE.md, "component verified, system claimed"). Each reset empties both.
+    def builtin(keys):
+        ip.globals["shttproutes"] = ""
+        for k in keys:
+            m, pth = k.split(" ", 1)
+            call("qsHttpRoute", [m, pth, "x"])
+        return ip.globals["shttproutes"]
+
+    def user(keys, cors=False, root="/r"):
+        ip.globals["suserroutes"] = ""
+        store(keys, cors, root)
+        return user_table(root)
+
+    def store(keys, cors=False, root="/r"):
+        for k in keys:
+            m, pth = k.split(" ", 1)
+            call("qsUserRouteStore", [root, m, pth,
+                                      {"kind": "body", "cors": "true"} if cors else {"kind": "body"}])
+
+    def user_table(root="/r"):
+        # read with the ENGINE's folded subscript, as the script would (LCS._arr_get),
+        # so a table filed under a folded root key cannot hide behind python's exact `in`
+        tbl = ip.globals.get("suserroutes")
+        return LCS._arr_get(tbl, G.root_key(root)) if isinstance(tbl, dict) else ""
+
     # -- Allow, over the built-in table and the per-root user table --
-    def routes(keys, cors=False):
-        return dict((k, {"cors": "true"} if cors else {"handler": "x"}) for k in keys)
-    ip.globals["shttproutes"] = routes(["GET /_qs/info", "GET /_edit", "POST /_edit/login",
-                                        "GET /_edit/api/list", "GET /_edit/api/read",
-                                        "PUT /_edit/api/write"])
-    ip.globals["suserroutes"] = {}
+    _routes = ["GET /_qs/info", "GET /_edit", "POST /_edit/login",
+               "GET /_edit/api/list", "GET /_edit/api/read", "PUT /_edit/api/write"]
+    builtin(_routes)
+    ip.globals["suserroutes"] = ""
     for path in ["/_edit/login", "/_edit/api/write", "/_qs/info", "/nope"]:
         c.ck("qsHttpAllow(%r)" % path, call("qsHttpAllow", [path, ""]),
-             G.http_allow(list(ip.globals["shttproutes"]), path))
-    ip.globals["shttproutes"] = routes(["POST /x", "PUT /x", "DELETE /x", "GET /x"])
+             G.http_allow(_routes, path))
+    builtin(["POST /x", "PUT /x", "DELETE /x", "GET /x"])
     c.ck("qsHttpAllow multi", call("qsHttpAllow", ["/x", ""]),
-         G.http_allow(list(ip.globals["shttproutes"]), "/x"))
-    ip.globals["shttproutes"] = {}
+         G.http_allow(["POST /x", "PUT /x", "DELETE /x", "GET /x"], "/x"))
+    builtin([])
     uroutes = ["POST /api/submit", "GET /api/hello", "PUT /api/submit"]
-    ip.globals["suserroutes"] = {"/r": routes(uroutes)}
+    user(uroutes)
     for path in ["/api/submit", "/api/hello", "/nope"]:
         c.ck("qsHttpAllow user(%r)" % path, call("qsHttpAllow", [path, "/r"]),
              G.http_allow([], path, uroutes))
-    ip.globals["shttproutes"] = routes(["POST /dup"])
-    ip.globals["suserroutes"] = {"/r": routes(["POST /dup"])}
+    builtin(["POST /dup"])
+    user(["POST /dup"])
     c.ck("qsHttpAllow dedup across the tables", call("qsHttpAllow", ["/dup", "/r"]),
          G.http_allow(["POST /dup"], "/dup", ["POST /dup"]))
-    ip.globals["shttproutes"] = {}
+    builtin([])
     for path, ukeys in [
             ("/api/files/readme.txt",
              ["DELETE /api/files/:name", "GET /api/files/:name", "PUT /api/other/:x"]),
             ("/api/files/x", ["POST /api/files/x", "POST /api/files/:n"]),
             ("/api/files/a/b", ["DELETE /api/files/:n"]),
             ("/_qs/info", ["DELETE /:x/info"])]:
-        ip.globals["suserroutes"] = {"/r": routes(ukeys)}
+        user(ukeys)
         c.ck("qsHttpAllow param(%r)" % path, call("qsHttpAllow", [path, "/r"]),
              G.http_allow([], path, ukeys))
+    # the path claim is EXACT, as the table is (2026-09-25): bare `is` folded case and read
+    # "01" as the number 1, so Allow advertised methods no route would answer. The number
+    # rows are the half the interpreter can see (its `is` compares plain decimals as
+    # numbers, and is case-exact where the engine folds: the case rows hold the mirror).
+    for path, routes, ukeys in [
+            ("/API/submit", [], uroutes),
+            ("/_EDIT/api/write", _routes, []),
+            ("/v/01", ["POST /v/1"], ["PUT /v/1"]),
+            ("/v/1.0", ["POST /v/1"], ["PUT /v/1"]),
+            ("/v/1e2", [], ["PUT /v/100"]),
+            ("/v/1", ["POST /v/1"], ["PUT /v/1"])]:
+        builtin(routes)
+        user(ukeys)
+        c.ck("qsHttpAllow exact(%r)" % path, call("qsHttpAllow", [path, "/r"]),
+             G.http_allow(routes, path, ukeys))
+    builtin([])
 
     # -- CORS preflight: only where a cors route matches the path --
     cors_keys = ["POST /api/submit", "GET /api/open"]
-    ip.globals["suserroutes"] = {"/r": routes(cors_keys, cors=True)}
+    user(cors_keys, cors=True)
     for path, allow in [("/api/submit", "GET, HEAD, OPTIONS, POST"),
-                        ("/api/other", "GET, HEAD, OPTIONS")]:
+                        ("/api/other", "GET, HEAD, OPTIONS"),
+                        ("/API/SUBMIT", "GET, HEAD, OPTIONS"),
+                        ("/api/Submit", "GET, HEAD, OPTIONS")]:
         c.ck("qsCorsPreflight(%r)" % path, call("qsCorsPreflight", ["/r", path, allow]),
              G.cors_preflight(cors_keys, path, allow))
-    ip.globals["suserroutes"] = {"/r": {}}
+    user([])
     c.ck("qsCorsPreflight with no routes",
          call("qsCorsPreflight", ["/r", "/api/submit", "GET, HEAD, OPTIONS"]),
          G.cors_preflight([], "/api/submit", "GET, HEAD, OPTIONS"))
@@ -460,11 +514,30 @@ def drive(c, ip, world, sandbox):
          call("qsCorsPreflight", ["", "/api/submit", "GET, HEAD, OPTIONS"]), "")
     for keys, path, allow in [(["POST /api/thing/:id"], "/api/thing/42", "GET, HEAD, OPTIONS, POST"),
                               (["POST /api/thing/:id"], "/api/other/42", "GET, HEAD, OPTIONS"),
+                              (["POST /api/thing/:id"], "/API/thing/42", "GET, HEAD, OPTIONS"),
+                              (["POST /v/1/:id"], "/v/01/42", "GET, HEAD, OPTIONS"),
                               (["GET /:x/info"], "/_qs/info", "GET, HEAD, OPTIONS")]:
-        ip.globals["suserroutes"] = {"/r": routes(keys, cors=True)}
+        user(keys, cors=True)
         c.ck("qsCorsPreflight param %r" % path, call("qsCorsPreflight", ["/r", path, allow]),
              G.cors_preflight(keys, path, allow))
-    ip.globals["suserroutes"] = {}
+
+    # -- share ROOTS are case-exact too (qsRootKey): on a case-sensitive filesystem
+    # /srv/Site and /srv/site are two folders, two route tables, two teardowns --
+    ip.globals["suserroutes"] = ""
+    store(["POST /api/x", "GET /api/p/:id"], cors=True, root="/srv/Site")
+    for root, ukeys in [("/srv/Site", ["POST /api/x", "GET /api/p/:id"]), ("/srv/site", []),
+                        ("/SRV/SITE", [])]:
+        c.ck("qsHttpAllow under root %r" % root, call("qsHttpAllow", ["/api/x", root]),
+             G.http_allow([], "/api/x", ukeys))
+        c.ck("qsCorsPreflight under root %r" % root,
+             call("qsCorsPreflight", [root, "/api/x", "GET, HEAD, OPTIONS"]),
+             G.cors_preflight(ukeys, "/api/x", "GET, HEAD, OPTIONS"))
+        c.ck("qsUserRouteFind under root %r" % root,
+             call("qsUserRouteFind", [root, "GET", "/api/p/7"]),
+             G.user_route_find(ukeys, "GET", "/api/p/7"))
+    c.ck("qsRootKey is the mirror's root_key", call("qsRootKey", ["/srv/Site"]),
+         G.root_key("/srv/Site"))
+    ip.globals["suserroutes"] = ""
 
     # -- conditional GET --
     c.ck("qsHttpWeakETag", call("qsHttpWeakETag", [1000, 42, 0]), G.http_weak_etag(1000, 42, 0))
@@ -563,31 +636,59 @@ def drive(c, ip, world, sandbox):
     # -- user-route path validation and the reserved-namespace predicate --
     for path in ["/api/hello", "/hello", "/go/docs", "/normal-path_123", "/_qsx", "",
                  "api/x", "/../etc", "/a/../b", "/_qs", "/_qs/info", "/_edit",
-                 "/_edit/login", "/a\nb"]:
+                 "/_edit/login", "/a\nb", "/_QS/info", "/_Edit/api/write", "/_QSX"]:
         c.ck("qsUserPathValid(%r)" % path, boolish(call("qsUserPathValid", [path])),
              G.user_path_valid(path))
     for path in ["/_qs", "/_qs/info", "/_qs/", "/_edit", "/_edit/api/write", "/_qsx",
-                 "/_editor", "/a/_qs", "/_q", "/", ""]:
+                 "/_editor", "/a/_qs", "/_q", "/", "", "/_QS", "/_QS/info", "/_Qs/",
+                 "/_EDIT", "/_Edit/api/write", "/_QSX", "/_EDITOR"]:
         c.ck("qsHttpReservedPath(%r)" % path, boolish(call("qsHttpReservedPath", [path])),
              G.reserved_path(path))
 
-    # -- HEAD route lookup --
+    # -- the case-exact keys (2026-09-25) --
+    for text in ["", "GET /api/x", "/caf\u00e9", "A", "a", "\x00\x7f", "PUT /_EDIT/API"]:
+        c.ck("qsHexKey(%r)" % text, call("qsHexKey", [text]), G.hex_key(text))
+    for method, path in [("GET", "/api/x"), ("get", "/api/x"), ("GET", "/API/x"),
+                         ("POST", "/caf\u00e9"), ("HEAD", "/")]:
+        c.ck("qsRouteKey(%r,%r)" % (method, path), call("qsRouteKey", [method, path]),
+             G.route_key(method, path))
+    for one, two in [("/api/x", "/api/x"), ("", ""), ("/api/x", "/API/x"), ("01", "1"),
+                     ("1.0", "1"), ("1e2", "100"), ("caf\u00e9", "CAF\u00c9"), ("a", "a ")]:
+        c.ck("qsSameText(%r,%r)" % (one, two), boolish(call("qsSameText", [one, two])),
+             G.same_text(one, two))
+
+    # -- HEAD route lookup, and the FOLD rows: the script READS the table (since
+    # 2026-09-25), so the subscript the engine folds is the interpreter's folded one here.
+    # Each row runs against BOTH tables, filled by the script's own writers: one lookup
+    # serves both. The golden holds each fold row's witness (it collided pre-fix). --
     lk_builtin = ["GET /_qs/info", "GET /_qs/transparency", "POST /_edit/login"]
     lk_user = ["GET /api/hello", "HEAD /probe", "GET /probe", "POST /api/submit"]
-    for method, path, keys in [("HEAD", "/_qs/info", lk_builtin), ("HEAD", "/api/hello", lk_user),
-                               ("HEAD", "/probe", lk_user), ("GET", "/api/hello", lk_user),
-                               ("GET", "/nope", lk_user), ("POST", "/api/submit", lk_user),
-                               ("POST", "/probe", lk_user), ("HEAD", "/nope", lk_user),
-                               ("head", "/api/hello", lk_user), ("HEAD", "/api/hello", []),
-                               ("GET", "/api/hello", [])]:
-        table = routes(keys) if keys else ""
-        c.ck("qsRouteLookupKey(%r,%r)" % (method, path),
-             call("qsRouteLookupKey", [method, path, table]),
-             G.route_lookup_key(method, path, keys))
+    lk_odd = ["GET /caf\u00e9", "GET /v/1"]
+    rows = [("HEAD", "/_qs/info", lk_builtin), ("HEAD", "/api/hello", lk_user),
+            ("HEAD", "/probe", lk_user), ("GET", "/probe", lk_user),
+            ("GET", "/api/hello", lk_user), ("GET", "/nope", lk_user),
+            ("POST", "/api/submit", lk_user), ("POST", "/probe", lk_user),
+            ("HEAD", "/nope", lk_user), ("head", "/api/hello", lk_user),
+            ("HEAD", "/api/hello", []), ("GET", "/api/hello", []),
+            # the fold rows: GET /API/x is not the /api/x route, nor through HEAD
+            ("GET", "/API/hello", lk_user), ("GET", "/Api/Hello", lk_user),
+            ("HEAD", "/API/HELLO", lk_user), ("HEAD", "/PROBE", lk_user),
+            ("POST", "/API/submit", lk_user), ("GET", "/_QS/info", lk_builtin),
+            ("POST", "/_Edit/Login", lk_builtin),
+            ("GET", "/caf\u00e9", lk_odd), ("GET", "/CAF\u00c9", lk_odd),
+            ("GET", "/v/1", lk_odd), ("GET", "/v/01", lk_odd), ("GET", "/v/1.0", lk_odd)]
+    for method, path, keys in rows:
+        want = G.route_lookup_key(method, path, G.table(keys))
+        tbl = builtin(keys) if keys else ""
+        c.ck("qsRouteLookupKey(%r,%r) over the built-in table" % (method, path),
+             call("qsRouteLookupKey", [method, path, tbl]), want)
+        tbl = user(keys) if keys else ""
+        c.ck("qsRouteLookupKey(%r,%r) over a folder's table" % (method, path),
+             call("qsRouteLookupKey", [method, path, tbl]), want)
+    builtin([])
+    ip.globals["suserroutes"] = ""
 
     # -- :param patterns --
-    for key in ["GET /api/x", "DELETE /api/files/:name", "GET /a b", "NOSPACE"]:
-        c.ck("qsRouteKeyPath(%r)" % key, call("qsRouteKeyPath", [key]), G.route_key_path(key))
     for path in ["/api/hello", "/api/:name", "/api/files/:name", "/api/x:y", "/"]:
         c.ck("qsRouteHasParams(%r)" % path, boolish(call("qsRouteHasParams", [path])),
              G.route_has_params(path))
@@ -596,7 +697,8 @@ def drive(c, ip, world, sandbox):
              G.route_param_count(path))
     for path in ["/api/:name", "/api/files/:name", "/api/:a/:b", "/api/:a/sub/:b", "/dl/:tag/",
                  "/api/hello", "/:x", "/:x/y", "/_qs/:x", "/_edit/:x", "/api/:", "/api/:na-me",
-                 "/api/:x/:x", "/files/:a..b", "api/:x"]:
+                 "/api/:x/:x", "/files/:a..b", "api/:x", "/api/:id/:ID", "/api/:id/:idx",
+                 "/_QS/:x"]:
         c.ck("qsUserPatternValid(%r)" % path, boolish(call("qsUserPatternValid", [path])),
              G.user_pattern_valid(path))
     for pattern, path in [("/api/files/:name", "/api/files/readme.txt"), ("/api/:a/:b", "/api/x/y"),
@@ -605,7 +707,10 @@ def drive(c, ip, world, sandbox):
                           ("/dl/:tag", "/dl/v1/"), ("/dl/:tag/", "/dl/v1"),
                           ("/api/greet/:name", "/api/greet/:name"), ("/:x/info", "/_qs/info"),
                           ("/_qs/:x", "/_qs/info"), ("/files/:x", "/_qs/info"), ("/:x", "/_edit"),
-                          ("/:x/login", "/_edit/login")]:
+                          ("/:x/login", "/_edit/login"), ("/:x/info", "/_QS/info"),
+                          ("/api/files/:name", "/API/files/x"), ("/api/files/:name", "/api/FILES/x"),
+                          ("/v/1/:x", "/v/01/x"), ("/v/1/:x", "/v/1.0/x"), ("/v/1e2/:x", "/v/100/x"),
+                          ("/v/1/:x", "/v/1/x"), ("/api/files/:name", "/api/files/README")]:
         got = call("qsRouteMatch", [pattern, path])
         # the script answers "no" (a non-array) where the mirror answers None
         c.ck("qsRouteMatch(%r,%r)" % (pattern, path),
@@ -614,13 +719,18 @@ def drive(c, ip, world, sandbox):
     for keys, method, path in [(pat_keys, "GET", "/api/files/x"), (pat_keys, "POST", "/api/files/x"),
                                (pat_keys, "DELETE", "/api/files/x"), (pat_keys, "GET", "/api/x/y"),
                                (pat_keys, "GET", "/api/hello"), (pat_keys, "GET", "/_qs/info"),
+                               (pat_keys, "GET", "/API/files/x"), (pat_keys, "GET", "/_QS/info"),
                                (["GET /api/files/:b", "GET /api/:a/x"], "GET", "/api/files/x"),
+                               # the tie-break is BYTE order: /api/:Z/x before /api/:a/x,
+                               # where the old readable keys' folded `<` picked :a
+                               (["GET /api/:a/x", "GET /api/:Z/x"], "GET", "/api/files/x"),
+                               (["GET /api/:Z/x", "GET /api/:a/x"], "GET", "/api/files/x"),
                                (["GET /:x/info"], "GET", "/_qs/info"),
                                (["GET /api/greet/:name"], "GET", "/api/greet/:name")]:
-        ip.globals["suserroutes"] = {"/r": routes(keys)}
-        c.ck("qsUserRouteFind(%r,%r) over %d keys" % (method, path, len(keys)),
+        user(keys)
+        c.ck("qsUserRouteFind(%r,%r) over %s" % (method, path, keys),
              call("qsUserRouteFind", ["/r", method, path]), G.user_route_find(keys, method, path))
-    ip.globals["suserroutes"] = {}
+    ip.globals["suserroutes"] = ""
 
     # -- header sanitising --
     for val in ["value", "a\r\nb", "a\tb", "x\x00y", "keep me"]:

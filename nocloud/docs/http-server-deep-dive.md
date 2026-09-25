@@ -70,9 +70,23 @@ reuse cuts against unlinkability; reversible if an OXT pass shows Tor pages stal
   fallback. Both text twins (`qsFsSendText`, `qsCwSendText`) suppress the body on `HEAD`
   (`sFsMethod` is stashed per stream, cleared in `qsFsCleanup`). A HEAD body over Tor only
   wastes bandwidth (the stream closes); on the clearweb keep-alive path it would desync.
+- **Case-exact paths** (2026-09-25; verified statically; needs an OXT pass). A path matches
+  a route byte for byte: `GET /API/x` is not the `/api/x` route. Both tables were keyed by
+  the text "METHOD /path", and the engine folds array keys (the suite's engine note 2.7),
+  so until this date it was. Now `qsRouteKey` (the hex of "METHOD /path") keys both
+  tables, `qsRootKey` keys each share root's table, each entry carries its readable method
+  and path, `qsRouteLookupKey` reads the table and answers the key that dispatches (or
+  empty), and every route-path comparison (`qsHttpAllow`, `qsCorsPreflight`,
+  `qsRouteMatch`'s static segments) goes through `qsSameText`, which neither folds case
+  nor compares number-like text as numbers (engine note 2.11). Methods still fold, on
+  purpose: `get` is `GET`, as it always was here.
 - **Reserved namespaces.** `qsHttpServeStatic` refuses `/_qs` and `/_edit` before it
   touches the share, through the ONE `qsHttpReservedPath` predicate that also serves
-  `qsUserPathValid` and `qsRouteMatch`'s backstop (it replaced three literal copies).
+  `qsUserPathValid` and `qsRouteMatch`'s backstop (it replaced three literal copies). It
+  folds case on purpose (`/_QS/info` is reserved too): stricter than the case-exact table,
+  which is the side a guard may err on. The engine's comparisons folded it all along; since
+  2026-09-25 it says so with `toLower`, so the golden and the execution gate see the same
+  rule.
 
 ### 1.4 Static serving and streaming
 
@@ -145,8 +159,11 @@ Every change must preserve all five.
   body, through `qsTemplateEscape` (a param is hostile input), never a `file` target, a
   `Location` or a header. "Streaming" for a route means the `file` kind through
   `qsHttpFileHead` and the pumps; inline bodies are capped at 64 KB. There is no `*`
-  prefix, deliberately. Exact beats pattern, then fewest params, then the smallest key;
-  patterns never ride the exact-key fast path.
+  prefix, deliberately. Exact beats pattern, then fewest params, then the smallest key
+  (byte order of "METHOD /path", since the keys became hex on 2026-09-25; the engine's
+  text `<` over the old keys folded case); patterns never ride the exact-key fast path.
+  Capture names are unique ignoring case, because captures are filed under their names
+  as array keys, which fold.
 - **Redirects under the token mount (2026-08-15).** A user redirect's folder-absolute
   `Location` is re-based onto `/<token>/` over a web link (`qsMountLocation`); external
   and relative targets, and the Tor root, are untouched.

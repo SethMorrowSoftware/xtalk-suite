@@ -109,7 +109,11 @@ Inspect the raw headers on any file response (curl `-I`, or the webapp Backend i
 - [ ] Present too: **`Referrer-Policy: no-referrer`**, **`X-Frame-Options: DENY`**,
       **`X-Robots-Tag: noindex, nofollow`**, **`Permissions-Policy: browsing-topics=()`**.
 - [ ] `OPTIONS /` -> `200` + `Allow: GET, HEAD, OPTIONS`.
-- [ ] `OPTIONS` on a path with a declared `POST` route -> `Allow` **includes `POST`**.
+- [ ] `OPTIONS` on a path with a declared `POST` route -> `Allow` **includes `POST`**. Then
+      the same path in another case (`OPTIONS /API/submit` for a `/api/submit` route) ->
+      `Allow: GET, HEAD, OPTIONS` with **no** `POST`, and `POST /API/submit` is **not** the
+      route (a `405`): routing is case-exact since 2026-09-25 (verified statically; this
+      is its engine pass). `GET /_qs/info` still answers JSON; `GET /_QS/INFO` does not.
 - [ ] An unsupported method (e.g. `DELETE /somefile`) -> `405` + `Allow` header.
 - [ ] `HEAD` on a file -> headers only, **no body**.
 - [ ] **`HEAD` on a ROUTE** (fixed 2026-08-17; verified statically + golden-pinned, THIS is its
@@ -128,7 +132,8 @@ Inspect the raw headers on any file response (curl `-I`, or the webapp Backend i
       `GET` pattern: headers + `Content-Length`, no body, **not** the SPA fallback.
 - [ ] **The reserved namespaces are never served off disk** (`qsHttpReservedPath`, new
       2026-08-17): `GET /_qs/nope` and `HEAD /_qs/nope` -> **`404`**, not `index.html` at `200`;
-      `/_edit/api/nope` likewise. Then put a real folder named `_qs` (with a file in it) inside
+      `/_edit/api/nope` likewise, and `GET /_QS/INFO` too (the guard folds case on purpose,
+      2026-09-25). Then put a real folder named `_qs` (with a file in it) inside
       the shared folder -> it stays unreachable over HTTP on both transports. (An *unsupported
       method* on a real reserved path, e.g. `DELETE /_qs/info`, is still the route layer's
       `405` + `Allow` - unchanged.)

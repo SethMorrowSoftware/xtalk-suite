@@ -124,7 +124,8 @@ is loaded (an invalid pattern is skipped, like any other invalid route):
   (`%2F`) is decoded *before* routing, so it splits into real segments - a parameter can
   never smuggle one. A trailing `/` in the pattern is significant and must be present in
   the request too.
-- **Names are `A-Z a-z 0-9 _`, non-empty, and unique** within one pattern.
+- **Names are `A-Z a-z 0-9 _`, non-empty, and unique** within one pattern, ignoring case
+  (`:id` and `:ID` are the same name, so a pattern with both is refused).
 - **Captures reach only a templated `body`,** as `{{param.name}}` - escaped for the
   response type exactly like `{{query.NAME}}` (a parameter value is visitor-chosen input).
   Parameters are **never** substituted into a `file` target, a `redirect` location, or
@@ -173,8 +174,14 @@ There is still **no scripting** - templating only substitutes these fixed, escap
   URLs, tiny reflected/echo endpoints, redirects and short-links - anything a *canned* or
   *file-backed* response covers. For genuinely dynamic logic the stack still offers
   `qsHttpRoute "GET","/api/thing","myHandler"` -> `qsHttpReply` inside the script.
+- **Paths match exactly, letter case included.** A route on `/api/hello` answers
+  `/api/hello`, not `/API/hello` or `/Api/Hello`, and a static segment of a pattern matches
+  the same way (`/v/1/:x` does not answer `/v/01/x`). The method is matched in any case
+  (`get` is `GET`). Two routes whose paths differ only in case are two routes. *(Since
+  2026-09-25; verified statically; needs an OXT pass.)*
 - **Reserved:** paths under `/_qs/` (the host's own info/transparency routes) and `/_edit/`
-  (the LAN editor) can never be overridden, and an invalid route is skipped, not fatal.
+  (the LAN editor), in any letter case (`/_QS/...` too), can never be overridden, and an
+  invalid route is skipped, not fatal.
 - **Dotfiles stay hidden:** a `file` route can't point at a hidden dot-file (`.env`, `.git/...`,
   `.qsroutes.json` itself) - those are invisible over both transports, exactly as they are to
   the static file paths. Such a route is skipped.
