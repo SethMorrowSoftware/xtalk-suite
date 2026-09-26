@@ -96,7 +96,12 @@ Three are not, and each is handled explicitly rather than fudged:
              core already drives a real loopback on both transports for its
              cross-member sections and two state machines in one process would
              race. The per-member harness stays the place for that depth, and
-             the generated file says so where the cut is.
+             the generated file says so where the cut is. Each sync prefix
+             also has ONE rewrite (2026-09-25, work plan suite-wide #16): its
+             two enInitialize / dcInit calls go through the core's counted
+             suEnInit / suDcInit, because its own teardown is cut and both
+             libraries' init belongs to the whole process - the core gives
+             back exactly the holds counted, never another open stack's.
 
 Every cut point and rewrite below is ASSERTED against the source. If a member
 harness is edited such that a marker moves, this build FAILS rather than quietly
@@ -377,6 +382,31 @@ MEMBERS = [
         "own below, and two state machines in one process would race for the "
         "event handlers. Run enetxt/tests/enet-selftest.livecodescript for that.",
         cut_before='   stSection "loopback: hosts + connect (async)"',
+        rewrites=(
+            # THE PASTE COUNTS EVERY HOLD IT TAKES (work plan suite-wide #16).
+            # enInitialize is process-wide and refcounted in enetxt's shim, and
+            # the deinitialize that takes the count to zero destroys every live
+            # host in the process - another open stack's included. This sync
+            # half initializes twice and, standalone, gives both back in its
+            # stFinish; here that teardown is cut (check 7), so the two holds
+            # were never returned. Through the core's suEnInit they are counted
+            # like the core's own, and suEnRelease gives back exactly that many
+            # at teardown or on the next stCleanup. The labels stay the
+            # member's; only the call moves. suEnInit is a core name nothing in
+            # this harness defines, so the rename leaves it alone, and
+            # check-suite-selftest.py check 18 refuses any enInitialize the
+            # paste can reach outside the core's wrapper.
+            ("""   stAssert "enInitialize returns 0", enInitialize() is 0
+   stAssert "enInitialize idempotent", enInitialize() is 0
+""",
+             """   -- GENERATED (tools/build-suite-selftest.py): both calls go through the
+   -- suite core's suEnInit, which counts each hold this paste takes, so the
+   -- core gives back exactly that many and never another open stack's (this
+   -- harness's own teardown is not folded). Work plan suite-wide #16.
+   stAssert "enInitialize returns 0", suEnInit() is 0
+   stAssert "enInitialize idempotent", suEnInit() is 0
+"""),
+        ),
     ),
     Member(
         "dc", "datachannelxt", "counted",
@@ -386,6 +416,24 @@ MEMBERS = [
         "folded in, for the same reason as ENetXT's; the core negotiates a real "
         "peer connection below. Run datachannelxt's own harness for that.",
         cut_before='   stSection "loopback: create + negotiate (async)"',
+        rewrites=(
+            # The same routing as enetxt's, for the other half of the reason.
+            # dcCleanup is NOT counted in its shim: it frees every peer and
+            # channel in the process however many dcInit calls came first. So
+            # the core calls it only after a run in which the paste itself
+            # initialised DataChannelXT, and these two calls must be counted
+            # for that to be true of a datachannelxt row's Run.
+            ("""   stAssert "dcInit returns 0", dcInit() is 0
+   stAssert "dcInit idempotent", dcInit() is 0
+""",
+             """   -- GENERATED (tools/build-suite-selftest.py): both calls go through the
+   -- suite core's suDcInit, so the core knows this run holds DataChannelXT
+   -- and calls dcCleanup for it (dcCleanup frees every peer in the process,
+   -- so the core never calls it without a hold). Work plan suite-wide #16.
+   stAssert "dcInit returns 0", suDcInit() is 0
+   stAssert "dcInit idempotent", suDcInit() is 0
+"""),
+        ),
     ),
     Member(
         "box2d", "box2dxt", "returned",

@@ -195,7 +195,10 @@ because a harness once ran against a stale in-memory library and reported failur
   `test-build-suite-selftest.py`), the drift fixtures `test-ui-kit-drift.py` and
   `test-harness-scaffold-drift.py`, and `check-suite-ui-boot.py` (fixture `test-suite-ui-boot.py`),
   which drives the board's logic through the family interpreter in an all-absent profile and
-  upgrades no label. Run all has run on an engine (2026-09-24: the build, the boot self-check,
+  upgrades no label. The build stamp `kSuUiVersion` is DERIVED, never bumped:
+  `check-suite-ui-version.py` (fixture `test-suite-ui-version.py`) holds it to a hash of the code
+  `suBuildAll` reaches and the constants it names; after a build change run it with `--fix`, then
+  regenerate. Run all has run on an engine (2026-09-24: the build, the boot self-check,
   the rows adding up to the totals, Copy results; runbook section 8); a row's Run, Show and the
   filters are verified statically; needs an OXT pass (runbook row 48).
 - **A script-layer edit is done only when every carrier is regenerated** (`build-suite-selftest.py`
@@ -223,6 +226,11 @@ because a harness once ran against a stale in-memory library and reported failur
   handle on every call and never start one (a cached handle went stale on every run after the
   first; check 6b). `en1stCleanup`/`dc1stCleanup` call
   `enDeinitialize`/`dcCleanup` and must stay unreachable; `check-suite-selftest.py` enforces it.
+  Both libraries' init is PROCESS-wide (ENet's shim refcounts it and the release that reaches
+  zero destroys every host; `dcCleanup` frees every peer), so the paste takes and gives back its
+  holds only through the core's counted `suEnInit`/`suEnRelease` and `suDcInit`/`suDcRelease`,
+  the two folds' inits rewritten to them (work plan suite-wide #16). Check 18 refuses any reachable
+  call outside those four; `check-suite-ui-boot.py` drives them beside a modelled other stack.
 - **box2dxt's fold**, each mechanism asserting its inputs exist: `strip_spans` cuts the harness's
   carried Kit (embedded once, from `src/`); `drop_extra` drops `openCard`, `closeCard` and
   `buildStUI`; `keep_names` keeps `b2kFell`, `b2kSensorEnter` and `b2kContact` unprefixed, because

@@ -67,6 +67,22 @@ until that day:
   l  riptide's summary line goes back to two counts: its skips are printed
      and never merged, and the Skips view disagrees with the summary.
 
+And six for the transports' process-wide holds (work plan suite-wide #16,
+the gate's one scenario with modelled natives: another stack holds ENet and
+a DataChannel peer beside the paste):
+
+  m  stCleanup's release is the old bare enDeinitialize, so opening the
+     paste gives back a hold it never took and the other stack's host dies.
+  n  the folded enetxt harness's two inits go uncounted again (the
+     generator's rewrite undone), so the run leaks two holds.
+  o  stCleanup's release is the old bare dcCleanup, so opening the paste
+     frees the other stack's DataChannel peer.
+  p  suEnRelease gives back one hold more than it counted.
+  q  suEnInit counts a refused enInitialize, so the teardown gives back
+     holds the paste never took.
+  r  the loopback goes on to bind after a refused enInitialize (the old
+     start: a refusal read as a held port).
+
 The mutants run concurrently, at most one gate run per core.
 
 USAGE
@@ -163,6 +179,41 @@ MUTANTS = [
      '         return & rs1sSkip && "skipped (optional dependencies; see the '
      'log)" & \\\n',
      "the report's SKIP-kind lines are the totals' skipped count"),
+    # Six for the transports' process-wide holds (work plan suite-wide #16,
+    # scenario_transport_holds). m and o are the pre-2026-09-25 core put
+    # back; n is the fold before the generator routed its inits.
+    ("m", "stCleanup's release is the old bare enDeinitialize, called on "
+          "every open before any initialize",
+     '      suEnRelease false\n',
+     '      enDeinitialize\n',
+     "open (stCleanup before any run): the other stack's ENet host is alive"),
+    ("n", "the folded enetxt harness initializes uncounted (the generator's "
+          "rewrite undone)",
+     '   en1stAssert "enInitialize returns 0", suEnInit() is 0\n'
+     '   en1stAssert "enInitialize idempotent", suEnInit() is 0\n',
+     '   en1stAssert "enInitialize returns 0", enInitialize() is 0\n'
+     '   en1stAssert "enInitialize idempotent", enInitialize() is 0\n',
+     "the enetxt run took three holds"),
+    ("o", "stCleanup's release is the old bare dcCleanup, called on every "
+          "open",
+     '      suDcRelease false\n',
+     '      dcCleanup\n',
+     "open (stCleanup before any run): no dcCleanup without a DataChannel "
+     "hold of the paste's own"),
+    ("p", "suEnRelease gives back one more hold than it counted",
+     '   repeat while sSuEnHeld > 0\n',
+     '   repeat while sSuEnHeld >= 0\n',
+     "open (stCleanup before any run): the paste never gave back an ENet "
+     "hold it did not take"),
+    ("q", "suEnInit counts a refused enInitialize",
+     '   put enInitialize() into tR\n   if tR is 0 then\n',
+     '   put enInitialize() into tR\n   if tR is not empty then\n',
+     "three refused enInitialize calls are counted as no hold"),
+    ("r", "the loopback goes on to bind after a refused enInitialize",
+     '   if tInit is not 0 then\n      put "failed" into sPhaseEn\n'
+     '      exit stStartEnetLoopback\n   end if\n',
+     '',
+     "and the loopback stopped at the refusal: no host was attempted"),
 ]
 
 
