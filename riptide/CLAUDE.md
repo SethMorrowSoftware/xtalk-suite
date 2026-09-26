@@ -15,8 +15,8 @@ inside `riptide/`.
 The suite's capstone app, pure LiveCodeScript over the installed extension surfaces. It is
 structured like a member so the suite's gates walk it, but it is an APP: nothing here is compiled,
 nothing adds native surface, and `rs*` never becomes a library other members may call. Library
-0.12.0 (`kRsVersion`), 106 public `rs*` handlers; the suite's `tools/check-suite-coverage.py` prints
-the current coverage row (106/106 when last run) and is the authority over any copied number.
+0.13.0 (`kRsVersion`), 107 public `rs*` handlers; the suite's `tools/check-suite-coverage.py` prints
+the current coverage row (107/107 when last run) and is the authority over any copied number.
 
 | Path | Holds |
 |---|---|
@@ -111,7 +111,8 @@ Code comments cite these numbers; keep them.
   is refused, 0 is the affirmative "never seen", equal is accepted, strictly older refused; same-seq
   equivocation is out of scope. Apply semantics, no wire change (protocol 4.1, 8.1). No app in this
   tree ingests a foreign bridge yet. A deferral written in a comment is not a design, it is an open
-  defect with a polite name.
+  defect with a polite name. The seqs are ORDERED through `rsSeqCompare` and bounded through
+  `rsIsWireInt`, never `<` or `is` (trap 9, 2026-09-25).
 - The harness's session starts into a temporary, commits only on success and is never stopped; the
   suite generator aliases the folded copy to the core's session (`@CORESESSION@`), since a second
   `btStartSession` is refused and the live section would SKIP green.
@@ -298,15 +299,46 @@ Code comments cite these numbers; keep them.
    showed the engine answering nearly-equal numbers as equal (1 + 2^-51 > 1 reads false). The third
    run's second probe line named the rule: a RELATIVE tolerance between 8 and 16 DBL_EPSILON of the
    smaller operand, which the engine source puts at 10 (suite engine note 2.10). So integers 1
-   apart compare EQUAL from about 4.5e14 (2^48.7), not "past 2^52" as 8ea0f21's message said:
-   `rsIngestHead`'s and `rsIngestBridge`'s rollback and seq-agreement comparisons blur there, and
-   no counter or clock here gets near it (seqs start at 0 or at the seconds; open work in the
-   suite's `docs/WORK-PLAN.md`). Decide a
+   apart compare EQUAL from about 4.5e14 (2^48.7), not "past 2^52" as 8ea0f21's message said. Decide a
    wide-integer bound on exact integers that differ by at least 1 at a modest magnitude, never
    against a quotient. Tier 1c replays the table under the engine's rule and two looser candidates
    (fixture: the old line, which each must accept) and refuses any library comparison against a
    quotient; the harness prints three probe lines: the first two measured the rule, the third
    reads its consequences (wide integers, near zero, number-like text).
+   **Ordering, 2026-09-25.** By the same rule (these consequences are INFERRED from it, not
+   observed) every ORDER over a wire integer blurred too, and those are accepted up to
+   2^53 - 1: `rsIngestHead`'s and `rsIngestBridge`'s rollback gate
+   (`tSeq < pMinSeq`) let a head or bridge up to 19 older than the watermark through near 2^53,
+   their seq agreement (`is not`) passed an author-signed record whose embedded seq sat a few off
+   its BEP44 seq, their sanity bounds and every builder's (`>= 9007199254740992`) refused the 19
+   integers below 2^53 on the engine only (and `rsBtxoHeader`'s total had no upper bound at all),
+   and the demo's LAN replay guards
+   (`tRec["seq"] <= tLast`, `tRec["tick"] <= tLast`, the handoff's), its feed MAX
+   (`feedSeq > sSeq`), its feed claim's change test (`sSeq is not sLanFeedLast`) and its head
+   watermarks (`pSeq > tSeen`, `tSeen > tFloor`) read a newer value as not newer. No counter or
+   clock here gets near the range (seqs start at 0 or at the seconds), but the wire value is the
+   sender's to choose. Every one now goes through ONE public helper, `rsSeqCompare(pA, pB)`
+   ("below", "equal", "above", or EMPTY when either is not an integer from 0 to 2^53 - 1), which
+   compares the two u32 halves as `rsReadBEu64` decides its bound, and every bound through
+   `rsIsWireInt` (the high half below 2^21; `rsLanValidCount` folded into it). Callers test for the
+   answer that lets a record THROUGH, so an empty answer refuses. It compares VALUES ("0012" is
+   12), as `is an integer` already did; every wire value reaching it is a number `rsReadBEu64` built
+   or torrentxt's decimal text of a native integer. No spec change: the wire and the apply rules
+   are as they were. A record at exactly 2^53, which the parsers accept and no builder emits, is
+   now dropped by the demo's LAN guards (outside the helper's domain: fail closed). Held by
+   check-script-vectors tier 1d (the table, `rsIngestHead` end to end near 2^53, `rsIngestBridge`'s
+   rollback gate, and the top of the range, under IEEE and all three models, after three seeded
+   copies of the spellings that shipped each read right under IEEE and wrong under the engine's
+   rule; `rsIngestBridge`'s seq AGREEMENT runs with tier 2, because only a bridge that verifies over
+   the real CoinXT reaches it), check-demo-boot's seq-order drive (the demo's seven ordering sites
+   near 2^53 under the engine's rule; test-demo-boot's fixture 6 seeds all the old spellings back
+   and requires every deciding check to fail), and the harness section "wire integers ordered
+   exactly" plus top-of-range checks in the BEP44, ingest and BTXO sections, which meet the engine
+   on the next paste run. The same review (2026-09-25) found that NO executing check reached the
+   bridge's agreement: deleting it left every gate green, and the harness's "a seq disagreeing
+   with the bridge's embedded seq" check changed the seq without re-signing, so the BEP44
+   signature refused it first. The harness now re-signs at the new seq and reads which gate
+   answered, for the head too. Verified statically + headless; needs an OXT pass.
 10. **A dead write is invisible to every other gate** (2026-09-08): `raAppSave` emitted `headseq`
     and `raAppLoad` never read it; check-demo-boot round-trips it now. Any value worth persisting is
     worth round-tripping in a test.

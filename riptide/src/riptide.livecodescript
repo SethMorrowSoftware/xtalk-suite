@@ -247,6 +247,10 @@ script "RiptideSocial"
 --       hex chars (48 seal bytes + the 268-byte intro, times two); anything
 --       else is refused before a byte is decoded
 --   u64 travels as hi:u32 lo:u32 via binaryEncode("NN"), the BTXO discipline.
+--   Every wire integer (a seq, a tick, a timestamp, a size) is an integer
+--     from 0 to 2^53 - 1 (rsIsWireInt), and is ORDERED only through
+--     rsSeqCompare, on its u32 halves: the engine's `<` and `is` call
+--     integers one apart equal from about 4.5e14 (suite engine note 2.10).
 --   DHT targets travel as 40 ASCII hex; the all-zeros target means "none".
 --   On the DHT (phase 2): the stored BEP44 v is the BENCODED byte string of
 --     the record ("<len>:<bytes>"); the canonical signing buffer is
@@ -254,7 +258,7 @@ script "RiptideSocial"
 --     bytes btDhtBep44SignBuf returns and torrent_shim.cpp verifies); an
 --     immutable item's target is SHA-1 of the bencoded value.
 
-constant kRsVersion = "0.12.0"
+constant kRsVersion = "0.13.0"
 constant kRsKeyMagic = "RIPTKEY1"
 constant kRsHeadMagic = "RSH1"
 constant kRsPostMagic = "RSP1"
@@ -834,16 +838,16 @@ end rsRoomId
 -- truncate. Max size 260 bytes, far under the 1000-byte BEP44 value cap.
 function rsBuildHead pSeq, pDisplayName, pLatestPost, pPrekey, pOnionAddr, pProfileMeta
    local tNameBytes, tOnion, tOnionChars, tLatest, tPrekeyT, tProfile, tOut
-   if pSeq is not an integer or pSeq < 0 then
-      rsSetError "rsBuildHead: seq must be a non-negative integer"
-      return empty
-   end if
    -- The seq field is a u64 on the wire, but xTalk numbers are doubles, so only
    -- values below 2^53 round-trip exactly. Refuse anything at or above that
    -- rather than serialize a seq that re-parses to a different number (a BEP44
    -- monotonic-counter field silently changing value is a correctness bug).
-   if pSeq >= 9007199254740992 then
-      rsSetError "rsBuildHead: seq must be below 2^53 to round-trip exactly"
+   -- The bound is rsIsWireInt's, decided on the halves (2026-09-25): spelled
+   -- `pSeq >= 9007199254740992` it also refused, on the engine only, every
+   -- seq within 19 of 2^53 (suite engine note 2.10).
+   if not rsIsWireInt(pSeq) then
+      rsSetError "rsBuildHead: seq must be a non-negative integer below 2^53" && \
+            "(so it round-trips exactly)"
       return empty
    end if
    put textEncode(pDisplayName, "UTF-8") into tNameBytes
@@ -1023,12 +1027,9 @@ end rsPostBody
 
 private function rsPostBodyInner pTimestamp, pPrevTarget, pKind, pTextContent, pChunkTargets, pMediaList
    local tPrev, tOut, tTextBytes, tChunkCount, tMediaCount, tItem, tNorm
-   if pTimestamp is an integer and pTimestamp >= 9007199254740992 then
-      rsSetError "rsPostBody: the timestamp must be below 2^53 to round-trip exactly"
-      return empty
-   end if
-   if pTimestamp is not an integer or pTimestamp < 0 then
-      rsSetError "rsPostBody: the timestamp must be a non-negative integer"
+   if not rsIsWireInt(pTimestamp) then
+      rsSetError "rsPostBody: the timestamp must be a non-negative integer" && \
+            "below 2^53 (so it round-trips exactly)"
       return empty
    end if
    put rsNormalizeTarget(pPrevTarget) into tPrev
@@ -1417,12 +1418,12 @@ end rsBencodedByteStringLen
 -- can verify a head's signature even in a paste with no torrentxt at all.
 function rsBep44SignBuf pSalt, pSeq, pValue
    local tSaltBytes, tRawLen, tOut
-   if pSeq is not an integer or pSeq < 0 then
-      rsSetError "rsBep44SignBuf: seq must be a non-negative integer"
-      return empty
-   end if
-   if pSeq >= 9007199254740992 then
-      rsSetError "rsBep44SignBuf: seq must be below 2^53 to round-trip exactly"
+   -- 0 .. 2^53 - 1, decided on its halves (rsIsWireInt): this buffer is
+   -- rebuilt on the INGEST path too, so a bound the engine answered fuzzily
+   -- here would refuse, near 2^53, a seq the ingest checks above it accept
+   if not rsIsWireInt(pSeq) then
+      rsSetError "rsBep44SignBuf: seq must be an integer from 0 to 2^53 - 1" && \
+            "(below 2^53, so it round-trips exactly)"
       return empty
    end if
    put textEncode(pSalt, "UTF-8") into tSaltBytes
@@ -1460,6 +1461,78 @@ function rsImmutableTarget pValue
    end if
    return rsBinToHexString(sha1Digest(rsBencodeBytes(pValue)))
 end rsImmutableTarget
+
+-- Order two WIRE INTEGERS exactly (2026-09-25): "below", "equal" or
+-- "above" as pA is below, equal to or above pB, or EMPTY, with the reason
+-- in rsLastError(), when either is not an integer from 0 to 2^53 - 1 (the
+-- range every riptide builder accepts; rsIsWireInt). The seqs, ticks and
+-- watermarks riptide orders - the head and bridge rollback gates and seq
+-- agreement here, the demo's LAN replay guards and head watermarks - go
+-- through this and nothing else. A caller tests for the answer that LETS a
+-- record through (`is "above"`, or "above" or "equal"), never `is not
+-- "below"`, so an empty answer can only ever refuse.
+--
+-- WHY NOT `<`. Every numeric comparison on the engine calls two numbers
+-- EQUAL when they differ by less than 10 DBL_EPSILON of the smaller one
+-- (suite engine note 2.10: the engine source's rule, which reproduces every
+-- probe line the 2026-09-24 runs read), so two integers one apart compare
+-- equal from 450359962737050 (about 2^48.7), and d apart from about
+-- d x 4.5e14. These values are ATTACKER-SUPPLIED up to 2^53 - 1, where
+-- `tSeq < pMinSeq` let a replayed head up to 19 older through the rollback
+-- gate, and `tRec["seq"] <= tLast` dropped a newer LAN record. Pure IEEE -
+-- and so the family interpreter and every headless gate - orders all of
+-- them exactly, which is why none of them could see it.
+--
+-- HOW. Each operand splits into its two u32 halves, hi = trunc(v / 2^32)
+-- and lo = v - hi * 2^32, and the halves are compared, high first: the
+-- rule rsReadBEu64 decides its bound by. Dividing an integer below 2^53 by
+-- a power of two is exact, and so are trunc, the product and the
+-- difference, so both halves are exact integers below 2^32. Two of those
+-- that differ at all differ by at least 1 at a size where the engine's
+-- tolerance is below 1e-5, so every comparison below answers as exact
+-- integers do, under the engine's rule and under any looser one the probes
+-- left open. (Canonical DIGIT TEXT orders exactly too, shorter first, but
+-- `<` and `is` read two digit strings as NUMBERS (engine note 2.11), so it
+-- would need a letter prefix on both sides; the halves need nothing.)
+--
+-- WHAT IS COMPARED IS THE VALUE: an operand is the number the engine makes
+-- of it, so "0012", "12.0" and "1.2e1" are all 12 here, as they already
+-- were to `is an integer`. Every wire value that reaches a caller is a
+-- number rsReadBEu64 built from bytes, or torrentxt's decimal spelling of
+-- a native integer (an event seq), and below 2^53 that value is exact.
+-- tools/check-script-vectors.py replays this under the engine's rule and
+-- two margin models, after proving the engine's rule catches the naive
+-- `<` form that the ingest gates used to spell.
+function rsSeqCompare pA, pB
+   local tHiA, tLoA, tHiB, tLoB
+   if not rsIsWireInt(pA) then
+      rsSetError "rsSeqCompare: both operands must be integers from 0 to" && \
+            "2^53 - 1"
+      return empty
+   end if
+   if not rsIsWireInt(pB) then
+      rsSetError "rsSeqCompare: both operands must be integers from 0 to" && \
+            "2^53 - 1"
+      return empty
+   end if
+   put trunc(pA / 4294967296) into tHiA
+   put pA - tHiA * 4294967296 into tLoA
+   put trunc(pB / 4294967296) into tHiB
+   put pB - tHiB * 4294967296 into tLoB
+   if tHiA < tHiB then
+      return "below"
+   end if
+   if tHiA > tHiB then
+      return "above"
+   end if
+   if tLoA < tLoB then
+      return "below"
+   end if
+   if tLoA > tLoB then
+      return "above"
+   end if
+   return "equal"
+end rsSeqCompare
 
 -- Verify and unpack a drained dhtMutableItem EVENT as a followee's feed
 -- head. pEvent is the event array btPoll returned (publicKey, salt, seq,
@@ -1502,6 +1575,7 @@ end rsImmutableTarget
 -- a strictly higher per-device seq, feed state as max).
 function rsIngestHead pEvent, pExpectedHandleHex, pMinSeq
    local tHandle, tEventKey, tSeq, tHead, tSigHex, tSig, tBuf, tOk, tErr
+   local tOrder
    put toLower(pExpectedHandleHex) into tHandle
    if not rsIsHexOfLen(tHandle, 64) then
       rsSetError "rsIngestHead: the expected handle must be 64 hex chars"
@@ -1510,8 +1584,10 @@ function rsIngestHead pEvent, pExpectedHandleHex, pMinSeq
    -- Fail closed FIRST: a caller that omits the watermark gets refused, never
    -- served. Same sanity bounds as the event seq below (0 .. 2^53-1, the
    -- engine's exact-integer range - a double cannot compare a bigger one
-   -- correctly, so accepting one would make this very check unreliable).
-   if pMinSeq is not an integer or pMinSeq < 0 or pMinSeq >= 9007199254740992 then
+   -- correctly, so accepting one would make this very check unreliable),
+   -- decided on the value's halves (rsIsWireInt): `>= 9007199254740992`
+   -- itself answers true on the engine for every integer within 19 of 2^53.
+   if not rsIsWireInt(pMinSeq) then
       rsSetError "rsIngestHead: a reader watermark is required (pass 0 for a" && \
             "handle whose head has never been accepted)"
       return empty
@@ -1529,21 +1605,32 @@ function rsIngestHead pEvent, pExpectedHandleHex, pMinSeq
       return empty
    end if
    put pEvent["seq"] into tSeq
-   if tSeq is not an integer or tSeq < 0 or tSeq >= 9007199254740992 then
+   if not rsIsWireInt(tSeq) then
       rsSetError "rsIngestHead: the event seq is not a sane integer"
       return empty
    end if
    -- The rollback gate. Placed after the seq SANITY check (so the comparison
    -- is between two numbers the engine can hold exactly) and before the parse
    -- and the signature verify (so a replayed head costs the reader nothing).
-   if tSeq < pMinSeq then
+   -- ORDERED EXACTLY (rsSeqCompare, 2026-09-25). It was `tSeq < pMinSeq`,
+   -- and the engine calls two numbers equal when they differ by less than
+   -- 10 DBL_EPSILON of the smaller (suite engine note 2.10), so by that
+   -- rule a head one older than the watermark was "not below" it from about
+   -- 4.5e14, and near 2^53 one up to 19 older: a replaying node chose from
+   -- a window of old heads. The test names the answers that LET a head through, so
+   -- a refusal from the helper (empty) refuses the head too.
+   put rsSeqCompare(tSeq, pMinSeq) into tOrder
+   if tOrder is not "above" and tOrder is not "equal" then
       rsSetError "rsIngestHead: this head is older than one already accepted" && \
             "for this handle (seq" && tSeq && "before" && pMinSeq & ")"
       return empty
    end if
    put rsParseHead(pEvent["value"]) into tHead
    if tHead is empty then return empty
-   if tHead["seq"] is not tSeq then
+   -- exact too: `is not` blurred the same way, so an author could sign a
+   -- head whose embedded seq sat a few below its BEP44 seq, and the reader's
+   -- watermark then took the embedded one
+   if rsSeqCompare(tHead["seq"], tSeq) is not "equal" then
       -- rsPublishHead uses the head's own embedded seq as the BEP44 seq, so
       -- a disagreement means this record was not published by this layer
       -- (or was reassembled); refuse rather than guess which counter to
@@ -2306,12 +2393,9 @@ end rsVerifyDmSigned
 -- cannot be expressed.
 function rsBuildIntro pTimestamp, pRecipientHandleHex, pSenderKxPubHex, pIdentitySeed
    local tRecipient, tKxPub, tSender, tBody
-   if pTimestamp is not an integer or pTimestamp < 0 then
-      rsSetError "rsBuildIntro: the timestamp must be a non-negative integer"
-      return empty
-   end if
-   if pTimestamp >= 9007199254740992 then
-      rsSetError "rsBuildIntro: the timestamp must be below 2^53"
+   if not rsIsWireInt(pTimestamp) then
+      rsSetError "rsBuildIntro: the timestamp must be a non-negative integer" && \
+            "below 2^53"
       return empty
    end if
    put toLower(pRecipientHandleHex) into tRecipient
@@ -2501,13 +2585,9 @@ function rsDmMessageBody pKind, pTimestamp, pBodyText
       rsSetError "rsDmMessageBody: the kind must be one of T, O, A"
       return empty
    end if
-   if pTimestamp is not an integer or pTimestamp < 0 then
+   if not rsIsWireInt(pTimestamp) then
       rsSetError "rsDmMessageBody: the timestamp must be a non-negative" && \
-            "integer"
-      return empty
-   end if
-   if pTimestamp >= 9007199254740992 then
-      rsSetError "rsDmMessageBody: the timestamp must be below 2^53"
+            "integer below 2^53"
       return empty
    end if
    put textEncode(pBodyText, "UTF-8") into tBody
@@ -2979,15 +3059,6 @@ end rsLanVerifyWelcome
 -- claims to have said it.
 --------------------------------------------------------------------------
 
--- A wire counter (seq / tick / timestamp): a non-negative integer below
--- 2^53, the exact-double cap (the rsDmMessageBody discipline).
-private function rsLanValidCount pValue
-   if pValue is not an integer then return false
-   if pValue < 0 then return false
-   if pValue >= 9007199254740992 then return false
-   return true
-end rsLanValidCount
-
 -- Sign a sync-record body under the shared LAN key, domain-tagged.
 private function rsLanSyncSign pBody, pMaster
    local tKeys, tSig, tErr
@@ -3041,7 +3112,7 @@ function rsLanBuildDraft pName, pSeq, pDraftText, pMaster
             kRsLanMaxName && "bytes"
       return empty
    end if
-   if not rsLanValidCount(pSeq) then
+   if not rsIsWireInt(pSeq) then
       rsSetError "rsLanBuildDraft: the seq must be a non-negative" && \
             "integer below 2^53"
       return empty
@@ -3152,7 +3223,7 @@ function rsLanBuildFeedState pName, pFeedSeq, pReadPeerHex, pReadUpTo, pMaster
             kRsLanMaxName && "bytes"
       return empty
    end if
-   if not rsLanValidCount(pFeedSeq) then
+   if not rsIsWireInt(pFeedSeq) then
       rsSetError "rsLanBuildFeedState: the feed seq must be a" && \
             "non-negative integer below 2^53"
       return empty
@@ -3167,7 +3238,7 @@ function rsLanBuildFeedState pName, pFeedSeq, pReadPeerHex, pReadUpTo, pMaster
          return empty
       end if
    end if
-   if not rsLanValidCount(pReadUpTo) then
+   if not rsIsWireInt(pReadUpTo) then
       rsSetError "rsLanBuildFeedState: the read-up-to timestamp must be" && \
             "a non-negative integer below 2^53"
       return empty
@@ -3271,7 +3342,7 @@ function rsLanBuildPresence pName, pTyping, pTick, pMaster
       rsSetError "rsLanBuildPresence: typing must be true or false"
       return empty
    end if
-   if not rsLanValidCount(pTick) then
+   if not rsIsWireInt(pTick) then
       rsSetError "rsLanBuildPresence: the tick must be a non-negative" && \
             "integer below 2^53"
       return empty
@@ -3385,7 +3456,7 @@ function rsLanBuildHandoff pName, pSeq, pInfoHash, pFileName, pFileSize, pMaster
             kRsLanMaxName && "bytes"
       return empty
    end if
-   if not rsLanValidCount(pSeq) then
+   if not rsIsWireInt(pSeq) then
       rsSetError "rsLanBuildHandoff: the seq must be a non-negative" && \
             "integer below 2^53"
       return empty
@@ -3403,7 +3474,7 @@ function rsLanBuildHandoff pName, pSeq, pInfoHash, pFileName, pFileSize, pMaster
             kRsLanMaxFile && "bytes (refused, never truncated)"
       return empty
    end if
-   if not rsLanValidCount(pFileSize) then
+   if not rsIsWireInt(pFileSize) then
       rsSetError "rsLanBuildHandoff: the file size must be a" && \
             "non-negative integer below 2^53"
       return empty
@@ -3767,8 +3838,13 @@ function rsBtxoHeader pName, pTotalSize, pFlags
       rsSetError "rsBtxoHeader: the name must be 1..65535 UTF-8 bytes"
       return empty
    end if
-   if pTotalSize is not an integer or pTotalSize < 0 then
-      rsSetError "rsBtxoHeader: the total size must be a non-negative integer"
+   -- a wire integer like every other (rsIsWireInt, 2026-09-25): past 2^53
+   -- rsBEu64 would split a ROUNDED double, and the header would declare a
+   -- size that is not the one asked for; the receiver's rsReadBEu64 refuses
+   -- it anyway, but caps refuse on BUILD too (rule 4)
+   if not rsIsWireInt(pTotalSize) then
+      rsSetError "rsBtxoHeader: the total size must be a non-negative" && \
+            "integer below 2^53"
       return empty
    end if
    if pFlags is not an integer or pFlags < 0 or pFlags > 255 then
@@ -4156,13 +4232,9 @@ end rsNostrSignEvent
 -- discipline, applied to a pointer that leaves the app).
 function rsNostrNoteEvent pTimestamp, pText, pMediaList
    local tTags, tCount, tI, tHash, tSaved, tEvent, tErr
-   if pTimestamp is not an integer or pTimestamp < 0 then
+   if not rsIsWireInt(pTimestamp) then
       rsSetError "rsNostrNoteEvent: the timestamp must be a non-negative" && \
-            "integer"
-      return empty
-   end if
-   if pTimestamp >= 9007199254740992 then
-      rsSetError "rsNostrNoteEvent: the timestamp is out of range"
+            "integer below 2^53"
       return empty
    end if
    if pText is empty then
@@ -4277,13 +4349,14 @@ end rsNostrMediaTags
 function rsBuildBridge pSeq, pTimestamp, pMaster, pAuxHex
    local tIdSeed, tIdKeys, tNostr, tBody, tPre, tEdSig, tDigest
    local tSecHex, tSchSig, tAux, tErr
-   if pSeq is not an integer or pSeq < 0 or pSeq >= 9007199254740992 then
-      rsSetError "rsBuildBridge: the seq must be a non-negative integer"
+   if not rsIsWireInt(pSeq) then
+      rsSetError "rsBuildBridge: the seq must be a non-negative integer" && \
+            "below 2^53"
       return empty
    end if
-   if pTimestamp is not an integer or pTimestamp < 0 or \
-         pTimestamp >= 9007199254740992 then
-      rsSetError "rsBuildBridge: the timestamp must be a non-negative integer"
+   if not rsIsWireInt(pTimestamp) then
+      rsSetError "rsBuildBridge: the timestamp must be a non-negative integer" && \
+            "below 2^53"
       return empty
    end if
    if pAuxHex is not empty and not rsIsHexOfLen(toLower(pAuxHex), 64) then
@@ -4451,10 +4524,9 @@ function rsNostrBridgeEvent pBridgeBytes, pMaster, pTimestamp, pAuxHex
    local tRec, tHex, tTags, tEvent, tErr
    put rsParseBridge(pBridgeBytes) into tRec
    if tRec is empty then return empty
-   if pTimestamp is not an integer or pTimestamp < 0 or \
-         pTimestamp >= 9007199254740992 then
+   if not rsIsWireInt(pTimestamp) then
       rsSetError "rsNostrBridgeEvent: the timestamp must be a non-negative" && \
-            "integer"
+            "integer below 2^53"
       return empty
    end if
    put rsBinToHexString(pBridgeBytes) into tHex
@@ -4655,6 +4727,7 @@ end rsRequestBridge
 -- seq is accepted (a refresh), strictly older is refused (a rollback).
 function rsIngestBridge pEvent, pExpectedHandleHex, pMinSeq
    local tHandle, tEventKey, tSeq, tRec, tSigHex, tSig, tBuf, tOk, tErr
+   local tOrder
    put toLower(pExpectedHandleHex) into tHandle
    if not rsIsHexOfLen(tHandle, 64) then
       rsSetError "rsIngestBridge: the expected handle must be 64 hex chars"
@@ -4662,8 +4735,9 @@ function rsIngestBridge pEvent, pExpectedHandleHex, pMinSeq
    end if
    -- Fail closed FIRST, before the event is even looked at: an untaught
    -- caller gets a refusal, never a served record. Same bounds as the event
-   -- seq below (0 .. 2^53-1, the engine's exact-integer range).
-   if pMinSeq is not an integer or pMinSeq < 0 or pMinSeq >= 9007199254740992 then
+   -- seq below (0 .. 2^53-1, the engine's exact-integer range), decided on
+   -- the halves as rsIngestHead's are.
+   if not rsIsWireInt(pMinSeq) then
       rsSetError "rsIngestBridge: a reader watermark is required (pass 0 for a" && \
             "handle whose bridge has never been accepted)"
       return empty
@@ -4680,14 +4754,17 @@ function rsIngestBridge pEvent, pExpectedHandleHex, pMinSeq
       return empty
    end if
    put pEvent["seq"] into tSeq
-   if tSeq is not an integer or tSeq < 0 or tSeq >= 9007199254740992 then
+   if not rsIsWireInt(tSeq) then
       rsSetError "rsIngestBridge: the event seq is not a sane integer"
       return empty
    end if
    -- The rollback gate, in the same place as rsIngestHead's: after the seq
    -- sanity check (two exact integers) and before the two signature
-   -- verifications (a replayed bridge costs the reader nothing).
-   if tSeq < pMinSeq then
+   -- verifications (a replayed bridge costs the reader nothing). Ordered
+   -- exactly, for rsIngestHead's reason (its rollback gate says why); the
+   -- test names the answers that let a bridge through.
+   put rsSeqCompare(tSeq, pMinSeq) into tOrder
+   if tOrder is not "above" and tOrder is not "equal" then
       rsSetError "rsIngestBridge: this bridge is older than one already" && \
             "accepted for this handle (seq" && tSeq && "before" && pMinSeq & ")"
       return empty
@@ -4715,7 +4792,7 @@ function rsIngestBridge pEvent, pExpectedHandleHex, pMinSeq
    end if
    put rsVerifyBridge(pEvent["value"], tHandle, empty) into tRec
    if tRec is empty then return empty
-   if tRec["seq"] is not tSeq then
+   if rsSeqCompare(tRec["seq"], tSeq) is not "equal" then
       rsSetError "rsIngestBridge: the BEP44 seq and the bridge's embedded" && \
             "seq disagree"
       return empty
@@ -4924,6 +5001,34 @@ private function rsReadBEu32 pBytes
    put byteToNum(byte 4 of pBytes) into tD
    return ((tA * 256 + tB) * 256 + tC) * 256 + tD
 end rsReadBEu32
+
+-- An integer from 0 to 2^53 - 1: the one range every riptide wire counter
+-- (a seq, a tick, a timestamp, a size) is built, parsed-then-ordered and
+-- watermarked in, and rsSeqCompare's domain. Decided on the HIGH HALF,
+-- never against 9007199254740992 itself: on the engine
+-- `pValue >= 9007199254740992` is TRUE for every integer within 19 of 2^53
+-- (suite engine note 2.10), so a bound spelled that way refuses values IEEE
+-- accepts - failing closed, but differently on the engine and in every
+-- headless gate, and on the ingest path it refused a head the rollback gate
+-- had just ordered. trunc(pValue / 2^32) is exact: below 2^21 for every
+-- integer below 2^53, and at least 2^21 for 2^53 itself, for any spelling
+-- that rounds to it (the text of 2^53 + 1 does), and for +inf. The checks
+-- are nested, not an `or` chain, because both operands of `or` evaluate
+-- (engine note 2.5) and the division must never see a non-number.
+private function rsIsWireInt pValue
+   local tHi
+   if pValue is not an integer then
+      return false
+   end if
+   if pValue < 0 then
+      return false
+   end if
+   put trunc(pValue / 4294967296) into tHi
+   if tHi > 2097151 then
+      return false
+   end if
+   return true
+end rsIsWireInt
 
 private function rsReadBEu64 pBytes
    -- A big-endian u64, REFUSED (empty) past 2^53.

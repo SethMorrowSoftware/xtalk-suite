@@ -1743,6 +1743,7 @@ def boot(c, path, profile, drive=True):
             ip.deliver_sends()
             drive_nostr(c, ip, world, profile)
             drive_lan_keys(c, ip, world, profile)
+            drive_seq_order(c, ip, world, profile)
             try:
                 ip.call("raLock", [])
                 c.ck("[%s] raLock tears down cleanly" % profile, True)
@@ -2062,6 +2063,150 @@ def drive_lan_keys(c, ip, world, profile):
     except Exception as exc:                            # noqa: BLE001
         c.ck("[%s] LAN: case-variant device names key apart" % profile,
              False, "%s: %s" % (type(exc).__name__, exc))
+    finally:
+        for k, v in saved.items():
+            ip.globals[k] = v
+        try:
+            ip.call("raLanSyncReset", [])
+        except Exception:                               # noqa: BLE001
+            pass
+
+
+def drive_seq_order(c, ip, world, profile):
+    """The demo's OWN wire-integer orderings near 2^53, under the ENGINE'S
+    comparison rule (riptide/CLAUDE.md trap 9; 2026-09-25).
+
+    WHY THIS EXISTS. The engine calls two numbers equal when they differ by
+    less than 10 DBL_EPSILON of the smaller (suite engine note 2.10), so
+    integers one apart compare EQUAL from about 4.5e14. The demo's LAN
+    replay guards were `tRec["seq"] <= tLast` and `tRec["tick"] <= tLast`,
+    its feed-state MAX `tRec["feedSeq"] > sSeq`, its head watermarks
+    `pSeq > tSeen` and `tSeen > tFloor`: near 2^53 each read a newer value
+    as "not newer". The guards' refusal is SILENT by design, so a dropped
+    record said nothing, and this model's own comparisons are IEEE, so the
+    boot saw nothing either. They all order through the library's
+    rsSeqCompare now (the demo's raLanIsNewer for the three replay guards).
+
+    It drives them the way drive_lan_keys drives the keying: the receive
+    handler directly, with records the SHIPPED library signs under the
+    unlocked master (built under IEEE, before the model is switched on;
+    the builders are check-script-vectors' tier 1d), then the watermark
+    handlers. Every call that decides runs under the engine's rule from
+    check-script-vectors (CSV.ENGINE_MODELS[0]), and the hook must reach a
+    comparison site. test-demo-boot.py seeds the old `<=` guard back and
+    requires this drive to fire. Everything it sets is restored."""
+    seed = ip.globals.get("smasterseed", "")
+    if not seed:
+        c.ck("[%s] seq order: an unlocked master to sign the records with"
+             % profile, False, "sMasterSeed is empty after raCreate")
+        return
+    t53 = 2 ** 53
+    peer = "7"
+    engine_name, engine_rule = CSV.ENGINE_MODELS[0]
+    saved = dict((k, ip.globals.get(k, "")) for k in
+                 ("slandevices", "slanhost", "slanisserver", "sseq",
+                  "slanfeedlast", "sheadseen", "sappdirty", "slanname",
+                  "slanpresenceat", "slanseq", "slantick", "slandraftlast",
+                  "slandraftseen", "slandraftnextok", "slantypinguntil"))
+
+    def signed(builder, *args):
+        out = ip.call(builder, list(args) + [seed])
+        if not out:
+            raise RuntimeError("%s refused: %s"
+                               % (builder, ip.call("rsLastError", [])))
+        return out
+
+    def receive(kind, record):
+        ip.call("raLanSyncReceive", [peer, kind, record])
+
+    def slot(name, key):
+        arr = ip.globals.get(name, "")
+        return (str(LCS._disp(LCS._arr_get(arr, key)))
+                if isinstance(arr, dict) else "")
+
+    try:
+        ip.globals["slandevices"] = {peer: "hub"}
+        ip.globals["slanhost"] = 1
+        ip.globals["slanisserver"] = ""
+        ip.call("raLanSyncReset", [])
+        dev = str(ip.call("raLanDevKey", ["Tablet"]))
+        recs = {
+            "d1": signed("rsLanBuildDraft", "Tablet", t53 - 2, "draft A"),
+            "d2": signed("rsLanBuildDraft", "Tablet", t53 - 1, "draft B"),
+            "d0": signed("rsLanBuildDraft", "Tablet", t53 - 2, "STALE"),
+            "p1": signed("rsLanBuildPresence", "Tablet", "true", t53 - 2),
+            "p2": signed("rsLanBuildPresence", "Tablet", "false", t53 - 1),
+            "m1": signed("rsLanBuildHandoff", "Tablet", t53 - 2, "ab" * 20,
+                         "a.mp4", 1000),
+            "m2": signed("rsLanBuildHandoff", "Tablet", t53 - 1, "cd" * 20,
+                         "b.mp4", 2000),
+            "f1": signed("rsLanBuildFeedState", "Tablet", t53 - 1, "", 0),
+        }
+        got = {}
+        handle, other = "ab" * 32, "cd" * 32
+        with CSV.engine_model(engine_rule) as hook:
+            receive("D", recs["d1"])
+            receive("D", recs["d2"])
+            got["draft"] = [slot("slanpeerseq", dev),
+                            slot("slanpeerdraft", dev)]
+            receive("D", recs["d0"])
+            got["stale"] = slot("slanpeerdraft", dev)
+            receive("P", recs["p1"])
+            receive("P", recs["p2"])
+            got["tick"] = slot("slanpeertick", dev)
+            receive("M", recs["m1"])
+            receive("M", recs["m2"])
+            got["media"] = str(ip.globals.get("slanmediahash", ""))
+            ip.globals["sseq"] = t53 - 2
+            receive("F", recs["f1"])
+            got["feed"] = str(LCS._disp(ip.globals.get("sseq", "")))
+            ip.globals["sheadseen"] = {}
+            ip.globals["sappdirty"] = ""
+            ip.call("raHeadAccepted", [handle, t53 - 2])
+            ip.call("raHeadAccepted", [handle, t53 - 1])
+            got["seen"] = [slot("sheadseen", handle),
+                           str(ip.globals.get("sappdirty", ""))]
+            ip.call("raHeadAccepted", [other, t53 - 2])
+            got["wm"] = [str(LCS._disp(ip.call("raHeadWatermark",
+                                               [handle, t53 - 2]))),
+                         str(LCS._disp(ip.call("raHeadWatermark",
+                                               [other, t53 - 1])))]
+            # the feed claim's change detection, on the SEND side: one tick
+            # with nothing else due (the draft is what was last sent, the
+            # presence cadence far off), and a seq one above the last one
+            # broadcast. A detected change rebuilds the record and records
+            # it as sent; enSend itself sits in the demo's try.
+            ip.globals["slanname"] = "Tablet"
+            ip.globals["slanpresenceat"] = world.ms + 10 ** 9
+            ip.globals["slanfeedlast"] = t53 - 2
+            ip.globals["sseq"] = t53 - 1
+            ip.call("raLanSyncTick", [])
+            got["claim"] = str(LCS._disp(ip.globals.get("slanfeedlast", "")))
+        c.ck("[%s] seq order: a draft one seq newer near 2^53 is APPLIED "
+             "under %s" % (profile, engine_name),
+             got["draft"] == [str(t53 - 1), "draft B"], repr(got["draft"]))
+        c.ck("[%s] seq order: a replayed older draft is still dropped"
+             % profile, got["stale"] == "draft B", repr(got["stale"]))
+        c.ck("[%s] seq order: a presence tick one newer is applied"
+             % profile, got["tick"] == str(t53 - 1), repr(got["tick"]))
+        c.ck("[%s] seq order: a media offer one seq newer is applied"
+             % profile, got["media"] == "cd" * 20, repr(got["media"]))
+        c.ck("[%s] seq order: a feed seq one above ours is adopted (MAX)"
+             % profile, got["feed"] == str(t53 - 1), repr(got["feed"]))
+        c.ck("[%s] seq order: a head one newer raises the watermark and "
+             "marks the state dirty" % profile,
+             got["seen"] == [str(t53 - 1), "true"], repr(got["seen"]))
+        c.ck("[%s] seq order: the watermark is the HIGHER of seen and floor, "
+             "both ways round" % profile,
+             got["wm"] == [str(t53 - 1), str(t53 - 1)], repr(got["wm"]))
+        c.ck("[%s] seq order: a feed seq one above the last broadcast is "
+             "SENT (the tick sees the change)" % profile,
+             got["claim"] == str(t53 - 1), repr(got["claim"]))
+        c.ck("[%s] seq order: the engine model reached the comparison sites"
+             % profile, hook.fired > 0, "fired %d" % hook.fired)
+    except Exception as exc:                            # noqa: BLE001
+        c.ck("[%s] seq order: the demo orders wire integers exactly"
+             % profile, False, "%s: %s" % (type(exc).__name__, exc))
     finally:
         for k, v in saved.items():
             ip.globals[k] = v

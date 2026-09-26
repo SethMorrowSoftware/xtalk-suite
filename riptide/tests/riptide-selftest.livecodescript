@@ -161,6 +161,7 @@ function rsSelfTest
       rstSectionHelpers
       rstSectionBep44
       rstSectionIngest
+      rstSectionSeqOrder
       rstSectionDm tCaps
       rstSectionLan
       rstSectionLanSync
@@ -887,6 +888,14 @@ private command rstSectionBep44
    rstCheck (rsBep44SignBuf(rsHeadSalt(), 9007199254740992, \
          textEncode("2:hi", "ASCII")) is empty), \
          "a seq at 2^53 is refused (it would not round-trip)"
+   -- ... and 2^53 - 1, the top of the range, is ACCEPTED (2026-09-25). The
+   -- bound is rsIsWireInt's, decided on the value's halves; spelled
+   -- `pSeq >= 9007199254740992` it answered TRUE here on the engine, which
+   -- calls integers within 19 of 2^53 equal to it (suite engine note 2.10),
+   -- so the engine refused a seq every headless gate accepted.
+   rstCheck (rsBep44SignBuf(rsHeadSalt(), 9007199254740991, \
+         textEncode("2:hi", "ASCII")) is not empty), \
+         "a seq of 2^53 - 1 is accepted (the top of the range, exactly)"
    rstCheck (rsBep44SignBuf(rsHeadSalt(), 7, \
          textEncode("hi", "ASCII")) is empty), \
          "a non-bencoded value is refused"
@@ -908,6 +917,50 @@ private command rstSectionBep44
    rstCheck (rsImmutableTarget(empty) is empty), \
          "an empty immutable value is refused"
 end rstSectionBep44
+
+-- Wire integers ordered EXACTLY (2026-09-25; riptide/CLAUDE.md trap 9).
+-- The engine calls two numbers equal when they differ by less than 10
+-- DBL_EPSILON of the smaller (suite engine note 2.10), so integers one
+-- apart compare EQUAL from 450359962737050, and the rollback gates' old
+-- `tSeq < pMinSeq` let a replayed head up to 19 older through near 2^53.
+-- rsSeqCompare orders on the two u32 halves instead. The pairs below are
+-- the ones the old spelling gets wrong on the engine (2^53 - 1 against
+-- 2^53 - 2; 450359962737051 against 450359962737050), the pair just below
+-- the blur, the halves' own boundary (2^32 against 2^32 - 1, and a low-half
+-- step above it), small values and equality; then the refusals, since the
+-- helper's domain is 0 .. 2^53 - 1 and an EMPTY answer is what makes every
+-- caller fail closed. Headlessly, tools/check-script-vectors.py replays the
+-- same pairs under the engine's rule; here they meet the engine itself.
+private command rstSectionSeqOrder
+   rstSection "wire integers ordered exactly (rsSeqCompare)"
+   rstCheck (rsSeqCompare(9007199254740991, 9007199254740990) is "above"), \
+         "2^53 - 1 is ABOVE 2^53 - 2 (a bare `<` or `>` calls them equal)"
+   rstCheck (rsSeqCompare(9007199254740990, 9007199254740991) is "below"), \
+         "2^53 - 2 is BELOW 2^53 - 1"
+   rstCheck (rsSeqCompare(9007199254740991, 9007199254740991) is "equal"), \
+         "2^53 - 1 is EQUAL to itself"
+   rstCheck (rsSeqCompare(450359962737051, 450359962737050) is "above"), \
+         "450359962737051 is above 450359962737050 (the first blurred pair)"
+   rstCheck (rsSeqCompare(450359962737050, 450359962737049) is "above"), \
+         "450359962737050 is above 450359962737049 (just below the blur)"
+   rstCheck (rsSeqCompare(4294967296, 4294967295) is "above"), \
+         "2^32 is above 2^32 - 1 (the high halves differ)"
+   rstCheck (rsSeqCompare(4294967297, 4294967296) is "above"), \
+         "2^32 + 1 is above 2^32 (the low halves differ under one high half)"
+   rstCheck (rsSeqCompare(7, 6) is "above"), "7 is above 6"
+   rstCheck (rsSeqCompare(0, 1) is "below"), "0 is below 1"
+   rstCheck (rsSeqCompare(0, 0) is "equal"), "0 is equal to 0"
+   rstCheck (rsSeqCompare(9007199254740992, 0) is empty), \
+         "2^53 is outside the domain: empty, never an order"
+   rstCheck (rsSeqCompare(0, 9007199254740992) is empty), \
+         "on either side"
+   rstCheck (rsSeqCompare(-1, 0) is empty), "a negative operand is refused"
+   rstCheck (rsSeqCompare(1.5, 1) is empty), "a fraction is refused"
+   rstCheck (rsSeqCompare("seven", 0) is empty), "a non-number is refused"
+   rstCheck (rsSeqCompare(empty, 0) is empty), "an empty operand is refused"
+   rstCheck (rsLastError() contains "rsSeqCompare"), \
+         "and the refusal says why"
+end rstSectionSeqOrder
 
 private command rstSectionIngest
    local tEvent, tBad, tPostEvent, tHead, tPost, tSig
@@ -936,6 +989,11 @@ private command rstSectionIngest
    put 8 into tBad["seq"]
    rstCheck (rsIngestHead(tBad, kRsGoldHandle, 0) is empty), \
          "a seq disagreeing with the head's embedded seq is refused"
+   -- which gate answered (2026-09-25): the golden signature is over seq 7,
+   -- so this event would ALSO fail the signature check; the agreement check
+   -- runs first here, and this line keeps it the one that is tested
+   rstCheck (rsLastError() contains "disagree"), \
+         "by the seq agreement check, which runs before the signature"
    put tEvent into tBad
    put rstFlipByte(tBad["value"], 2) into tBad["value"]
    rstCheck (rsIngestHead(tBad, kRsGoldHandle, 0) is empty), \
@@ -989,6 +1047,16 @@ private command rstSectionIngest
          "a head OLDER than the watermark is refused (the rollback gate)"
    rstCheck (rsIngestHead(tEvent, kRsGoldHandle, 4096) is empty), \
          "and a far-older head is refused the same way"
+   -- A watermark at the TOP of the range (2026-09-25). 2^53 - 1 is a sane
+   -- watermark and the seq-7 golden head is older than it, so the refusal
+   -- must be the ROLLBACK gate's. Before the halves bound, the engine's
+   -- `pMinSeq >= 9007199254740992` called 2^53 - 1 out of range and refused
+   -- it as a missing watermark instead (suite engine note 2.10), so the
+   -- second check reads which gate answered.
+   rstCheck (rsIngestHead(tEvent, kRsGoldHandle, 9007199254740991) is empty), \
+         "a watermark of 2^53 - 1 refuses the seq-7 head"
+   rstCheck (rsLastError() contains "older"), \
+         "as a rollback (the watermark is sane), not as a bad watermark"
 
    -- the post walk, on synthetic dhtImmutableItem events: head names post 2,
    -- post 2's prev names post 1, post 1's prev is the zero target - the end
@@ -1109,6 +1177,10 @@ private command rstSectionAnon pCaps
          "a truncated BTXO header is refused"
    rstCheck (rsBtxoHeader("x", -1, 0) is empty), \
          "a negative total size is refused"
+   -- and one at 2^53 (2026-09-25): the builder had no upper bound, so a
+   -- total past the exact range was split as a ROUNDED double
+   rstCheck (rsBtxoHeader("x", 9007199254740992, 0) is empty), \
+         "a total size at 2^53 is refused (it would not round-trip)"
    -- a header whose name field is invalid UTF-8 (0xFF) passes the exact
    -- length gate but must be REFUSED, not thrown (the never-throw contract)
    rstCheck (rsBtxoParseHeader(rstBin("4254584f0100" & "0001" & "ff" & \
@@ -1594,10 +1666,20 @@ private command rstNostrIngest pBridge
    put rsHeadSalt() into tBad["salt"]
    rstCheck (rsIngestBridge(tBad, kRsGoldHandle, 0) is empty), \
          "the HEAD salt is refused (one rail, one salt)"
+   -- RE-SIGNED at seq 2 (2026-09-25): the BEP44 signature covers the seq,
+   -- and rsIngestBridge checks the agreement LAST, after both signatures, so
+   -- this event with the golden signature left on it was refused by the
+   -- signature check and never reached the agreement check it names (with
+   -- that check deleted it still passed). The second check reads which gate
+   -- answered.
    put tEvent into tBad
    put 2 into tBad["seq"]
+   put rsBep44SignBuf("riptide-nostr", 2, tValue) into tBuf
+   put rstHex(sxSignDetached(tBuf, tKeys["secretKey"])) into tBad["signature"]
    rstCheck (rsIngestBridge(tBad, kRsGoldHandle, 0) is empty), \
          "a seq disagreeing with the bridge's embedded seq is refused"
+   rstCheck (rsLastError() contains "disagree"), \
+         "by the seq agreement check (the BEP44 layer is validly signed at seq 2)"
    put tEvent into tBad
    -- byte 150 is inside the ed25519 signature: the BEP44 layer still
    -- passes (its signature covers the bencoded value, which changed too)
