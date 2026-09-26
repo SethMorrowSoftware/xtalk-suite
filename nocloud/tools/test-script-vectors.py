@@ -61,6 +61,17 @@ FIXTURES = [
      "function qsSameText pA, pB\n",
      "function qsSameText pA, pB\n   return (pA is pB)\n",
      "qsSameText('01','1')"),
+    # A REFUSAL IS NEVER A PASS (2026-09-26). The folding pre-test as bare `is` is caught
+    # on the engine by the exact stage after it, so every answer here reads right; but the
+    # model REFUSES "1e2" is not "100" (engine note 2.11: one number there, two texts
+    # here), and the gate must fail on that by name. Its first named_calls handed the
+    # refusal back as text, which boolish() read as false - the answer qsSameText('1e2',
+    # '100') expects - and qsRouteMatch's dict filter as "no match": this script passed the
+    # whole gate green.
+    ("the folding pre-test as bare `is` (refused by the model, whatever the rows read)",
+     "   if (\"s\" & pA) is not (\"s\" & pB) then\n",
+     "   if pA is not pB then\n",
+     "qsSameText('1e2', '100'): REFUSED by the family interpreter"),
     ("the reserved-namespace guard compared case-exactly (looser than the engine)",
      "   put toLower(pPath) into tLow\n",
      "   put pPath into tLow\n",

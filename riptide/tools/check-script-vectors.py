@@ -564,15 +564,26 @@ PAST_2P53 = ("NOT REFUSED: the bound let a value past 2^53 reach the "
              "arithmetic after it (an engine would carry on, rounded)")
 
 
+# What a row reads when the interpreter REFUSED the comparison deciding it
+# (LCS.Indistinct, since 2026-09-25): the engine's tolerant comparison
+# answers that pair differently from IEEE, so no answer here is the engine's.
+INDISTINCT = ("NOT ANSWERED: the interpreter refused a comparison the engine "
+              "answers differently from IEEE (LCS.Indistinct)")
+
+
 def u64_call(ip, name, args):
     try:
         return ip.call(name, args)
     except LCS.Imprecise:
         return PAST_2P53
+    except LCS.Indistinct:
+        return INDISTINCT
 
 
 def u64_parsed(out):
-    """True when rsParseHead's answer is a parsed head, not a refusal."""
+    """True when rsParseHead's answer is a parsed head, not a refusal.
+    Never asked of INDISTINCT: the callers pass that through as itself (a
+    non-empty text, it would read here as a parsed head)."""
     return bool(out) and out != ""
 
 
@@ -588,7 +599,11 @@ def u64_rows(ip):
         out = u64_call(ip, "rsParseHead", [u64_head_with_seq(seq8)])
         rows.append(("rsParseHead: %s %s"
                      % (label, "parses" if should_parse else "refused"),
-                     out if out is PAST_2P53 else u64_parsed(out),
+                     # PAST_2P53 and INDISTINCT stand as themselves: read
+                     # through u64_parsed, a refusal was a "parses" answer
+                     # (2026-09-26; tier 1c's seq-0 fixture holds it)
+                     out if out is PAST_2P53 or out is INDISTINCT
+                     else u64_parsed(out),
                      should_parse))
     out = u64_call(ip, "rsParseHead",
                    [u64_head_with_seq(b"\x00\x20\x00\x00\x00\x00\x00\x00")])
@@ -623,7 +638,8 @@ def u64_rows(ip):
 # when that magnitude is below it (engine/src/exec-logic.cpp, sysdefs.h;
 # DOCUMENTED). That rule reproduces all eight readings of the first two
 # probe lines, and the harness's third line then read its consequences on
-# an engine (Linux, 2026-09-25): the absolute branch near zero, the integer
+# an engine (Linux, then Windows, 2026-09-25, alike): the absolute branch
+# near zero, the integer
 # threshold between 2^48 and 2^49, and the constant itself to the digit
 # (N is N + 1 true at N = 450359962737050, false one below; 2^52 / 10 lies
 # between). The fixture below re-proves the rule against every one of
@@ -685,6 +701,15 @@ ENGINE_MODELS = [
     ("a 15-significant-digit round trip", _model_digits15),
 ]
 
+
+def _model_ieee(a, b):
+    """Exact IEEE comparison, REPLAYED. Not one of ENGINE_MODELS: since
+    2026-09-25 the plain interpreter refuses (LCS.Indistinct) a comparison
+    the engine answers differently from IEEE, so a fixture that must show
+    what IEEE answers - why no headless gate saw a seeded defect before that
+    date - replays it through a model like the others."""
+    return a, b
+
 # The engine's recorded answers to the harness's numeric compare probes,
 # each expression as the harness spells it (riptide/CLAUDE.md's ledger).
 # Probe 1 was read in the 2026-09-24 second run and probe 2 in the third
@@ -694,12 +719,12 @@ ENGINE_MODELS = [
 #
 # Probe 3 enters at its item 3. Its items 1 and 2 ("1e999" is "2e999" and
 # "1e5" is "100000", both true on the engine) are not comparisons of two
-# numbers but text becoming a number (strtod: suite engine note 2.11), and
-# the interpreter does not model that parse: its _eq reads only
-# -?\d+(\.\d+)? as a number, so it compares both pairs as TEXT and never
-# reaches the comparison sites a model swaps. No comparison model could
-# reproduce them, so holding a model to them here would test the parse,
-# not the rule. Pure IEEE reads the fourteen below as
+# numbers but text becoming a number (strtod: suite engine note 2.11). Since
+# 2026-09-25 the interpreter ports that parse and REFUSES both (it answered
+# false, by the text, before), but it never reaches the number comparison a
+# model swaps, so holding a model to them here would test the parse, not
+# the rule: coinxt's check-script-vectors tier 0 holds the interpreter to
+# them instead. Pure IEEE reads the fourteen below as
 # true,true,true,true,true,true,1,1 then true,true,true,true,false,false.
 PROBE_LADDER = "\n".join([
     "function probeUlpLadder pBase, pUlps",
@@ -722,7 +747,8 @@ PROBE_READINGS = [
     ("1073741824 + 1 / 2097152 > 1073741824", "false"),
     ("probeUlpLadder(1, 4503599627370496)", "16"),
     ("probeUlpLadder(8, 562949953421312)", "16"),
-    # probe 3, items 3 to 8 (Linux, 2026-09-25): the absolute branch near
+    # probe 3, items 3 to 8 (Linux and Windows, 2026-09-25): the absolute
+    # branch near
     # zero (1e-15 is within MC_EPSILON of 0, 1e-14 is not), integers one
     # apart at 2^49 (8 DBL_EPSILON: equal) and 2^48 (16: told apart), and
     # N against N + 1 either side of 2^52 / 10 = 450359962737049.6, which
@@ -734,6 +760,18 @@ PROBE_READINGS = [
     ("450359962737050 is 450359962737051", "true"),
     ("450359962737049 is 450359962737050", "false"),
 ]
+
+
+def _probe_plain(interp):
+    """The PLAIN interpreter's answers to PROBE_READINGS: a value where it
+    answers, "refused" where it will not (LCS.Indistinct)."""
+    out = []
+    for expr, _want in PROBE_READINGS:
+        try:
+            out.append(str(LCS._disp(interp.eval_expr(expr, {}))))
+        except LCS.Indistinct:
+            out.append("refused")
+    return out
 
 
 def _probe_answers(interp):
@@ -850,12 +888,38 @@ def seed_old_bound(text, fail):
 
 def _refuses_2p53p1(interp):
     """[head refused?, BTXO total refused?] for a u64 of 2^53 + 1. A parsed
-    head and PAST_2P53 alike mean: not refused."""
+    head and PAST_2P53 alike mean: not refused. A call the interpreter
+    refused to decide reads INDISTINCT, never True or False: until
+    2026-09-26 it read "not refused" in both places (a non-empty answer to
+    u64_parsed, a status other than "refused"), which is the answer the
+    models' fixtures below expect of the old bound."""
     head = u64_call(interp, "rsParseHead",
                     [u64_head_with_seq(b"\x00\x20" + b"\x00" * 5 + b"\x01")])
     total = u64_call(interp, "rsBtxoStreamStep",
                      [u64_btxo_header(2 ** 53 + 1), "header"])
-    return [not u64_parsed(head), u64_status(total) == "refused"]
+    return [head if head is INDISTINCT else not u64_parsed(head),
+            total if total is INDISTINCT else u64_status(total) == "refused"]
+
+
+# A comparison the engine answers TRUE at seq 0 (`0 is 1e-15`: inside
+# MC_EPSILON of zero, engine note 2.10) and the plain interpreter therefore
+# refuses, seeded just before rsReadBEu64's return: on an engine it would
+# refuse a valid seq 0, and headlessly tier 1b's table read the refusal as
+# "seq 0 parses" and passed (2026-09-26). Never shipped; a fixture.
+_U64_RETURN = "   return tHi * 4294967296 + tLo\nend rsReadBEu64\n"
+SEQ0_REFUSED_LINES = ("   if tHi * 4294967296 + tLo is 0.000000000000001 then\n"
+                      "      return empty\n"
+                      "   end if\n")
+
+
+def seed_refused_seq0(text, fail):
+    """TEXT with SEQ0_REFUSED_LINES before rsReadBEu64's one return."""
+    found = text.count(_U64_RETURN)
+    if found != 1:
+        fail("tier 1c's seq-0 refusal fixture expects rsReadBEu64 to end in "
+             "ONE `return tHi * 4294967296 + tLo`, and found %d; without it "
+             "tier 1b's refusal reading goes untested" % found)
+    return text.replace(_U64_RETURN, SEQ0_REFUSED_LINES + _U64_RETURN)
 
 
 def check_u64_engine_models(c, ip, src, fail):
@@ -863,27 +927,37 @@ def check_u64_engine_models(c, ip, src, fail):
            "two margin models")
     probe = LCS.Interp(PROBE_LADDER)
     want = [w for _expr, w in PROBE_READINGS]
-    c.ck("fixture: under IEEE the probes read true,true,true,true,true,true,"
-         "1,1 and true,true,true,true,false,false - the answers the engine "
-         "did NOT give",
-         _probe_answers(probe),
-         ["true", "true", "true", "true", "true", "true", "1", "1",
-          "true", "true", "true", "true", "false", "false"])
+    c.ck("fixture: the plain interpreter REFUSES each probe the engine read "
+         "differently from IEEE (IEEE reads true x6, 1, 1 and true x4, "
+         "false x2) and answers the five it read the same - its refusal held "
+         "to fourteen observations",
+         _probe_plain(probe),
+         ["true", "refused", "refused", "refused", "true", "refused",
+          "refused", "refused",
+          "refused", "true", "refused", "true", "refused", "false"])
     for index, (name, model) in enumerate(ENGINE_MODELS):
         with engine_model(model):
             got = _probe_answers(probe)
         if index == 0:
             c.ck("fixture: %s reads the fourteen numeric answers the engine "
-                 "gave (probes 1 and 2, Windows 2026-09-24 and Linux "
-                 "2026-09-25; probe 3's items 3-8, Linux 2026-09-25)"
+                 "gave (probes 1 and 2 on Windows 2026-09-24; those and "
+                 "probe 3's items 3-8 on Linux and on Windows 2026-09-25)"
                  % name, got, want)
         else:
             c.ck("fixture: %s misreads at least one of them (margin, not "
                  "the rule)" % name, got != want, True)
     old = LCS.Interp(seed_old_bound(src, fail))
-    c.ck("fixture: under IEEE the pre-2026-09-24 bound REFUSES 2^53+1 "
-         "(head, BTXO total) - why every headless gate was green over it",
-         _refuses_2p53p1(old), [True, True])
+    c.ck("fixture: the plain interpreter REFUSES to decide the "
+         "pre-2026-09-24 bound at 2^53+1 (head, BTXO total) - it answered "
+         "the IEEE way until 2026-09-25, which is why every headless gate "
+         "was green over it", _refuses_2p53p1(old), [INDISTINCT, INDISTINCT])
+    # A REFUSAL IS NEVER A ROW'S ANSWER (2026-09-26): tier 1b's table must
+    # read a refused seq-0 comparison as the refusal, not as a parsed head.
+    refused = LCS.Interp(seed_refused_seq0(src, fail))
+    c.ck("fixture: a comparison the plain interpreter refuses at seq 0 "
+         "reads as that refusal in tier 1b's table, never as `parses`",
+         [got for label, got, _w in u64_rows(refused)
+          if label.startswith("rsParseHead: seq 0 ")], [INDISTINCT])
     for name, model in ENGINE_MODELS:
         with engine_model(model) as hook:
             got = _refuses_2p53p1(old)
@@ -1043,7 +1117,11 @@ def check_no_quotient_comparisons(c, fail):
 # it) and WRONG under the engine's rule (the reason it had to go). A model
 # that cannot see the defect that shipped cannot vouch for its fix. The
 # margin models are not required to catch them: an absolute 1e-6 tolerance
-# orders integers one apart exactly by construction.
+# orders integers one apart exactly by construction. Since 2026-09-25 the
+# PLAIN interpreter refuses (LCS.Indistinct) a comparison the engine and
+# IEEE answer differently, so each defect's plain leg must be REFUSED at
+# exactly the rows the engine reads wrong, and IEEE is REPLAYED
+# (_model_ieee) for the rows-right half.
 
 T53 = 2 ** 53
 
@@ -1172,10 +1250,21 @@ def seed_old_ingest(text, fail):
     return text
 
 
+# What a row reads when the plain interpreter REFUSED the comparison that
+# decides it (LCS.Indistinct): the engine and IEEE part there.
+REFUSED_ROW = "refused (LCS.Indistinct)"
+
+
 def seq_order_answers(interp):
-    """{label: rsSeqCompare's answer} over SEQ_ORDER_ROWS."""
-    return dict((label, str(interp.call("rsSeqCompare", [a, b])))
-                for a, b, _want, label in SEQ_ORDER_ROWS)
+    """{label: rsSeqCompare's answer} over SEQ_ORDER_ROWS, REFUSED_ROW where
+    the interpreter refused to decide it."""
+    out = {}
+    for a, b, _want, label in SEQ_ORDER_ROWS:
+        try:
+            out[label] = str(interp.call("rsSeqCompare", [a, b]))
+        except LCS.Indistinct:
+            out[label] = REFUSED_ROW
+    return out
 
 
 def _order_identity():
@@ -1234,73 +1323,84 @@ def ingest_rows(interp, events, handle):
     WRONG gate (a later signature check, say) does not pass for the right
     one."""
     rows = []
+    refused = object()
 
     def ingest(name, event, watermark):
-        out = interp.call(name, [event, handle, watermark])
+        try:
+            out = interp.call(name, [event, handle, watermark])
+        except LCS.Indistinct:
+            return refused, ""
         return out, str(interp.call("rsLastError", []))
 
+    def row(key, label, out, got, want):
+        rows.append((key, label, REFUSED_ROW if out is refused else got,
+                     want))
+
     out, err = ingest("rsIngestHead", events["top-2"], T53 - 1)
-    rows.append(("head-1-older",
-                 "rsIngestHead: a head ONE older than a 2^53-1 watermark is "
-                 "refused by the rollback gate",
-                 [out in ("", {}), "older" in err], [True, True]))
+    row("head-1-older",
+        "rsIngestHead: a head ONE older than a 2^53-1 watermark is "
+        "refused by the rollback gate", out,
+        [out in ("", {}), "older" in err], [True, True])
     out, err = ingest("rsIngestHead", events["top-20"], T53 - 1)
-    rows.append(("head-19-older",
-                 "rsIngestHead: a head 19 older than a 2^53-1 watermark is "
-                 "refused by the rollback gate",
-                 [out in ("", {}), "older" in err], [True, True]))
+    row("head-19-older",
+        "rsIngestHead: a head 19 older than a 2^53-1 watermark is "
+        "refused by the rollback gate", out,
+        [out in ("", {}), "older" in err], [True, True])
     out, _err = ingest("rsIngestHead", events["top-2"], T53 - 2)
-    rows.append(("head-refresh",
-                 "rsIngestHead: the SAME seq at 2^53-2 ingests (a refresh), "
-                 "its seq exact",
-                 isinstance(out, dict) and str(LCS._n(out["seq"])),
-                 str(T53 - 2)))
+    row("head-refresh",
+        "rsIngestHead: the SAME seq at 2^53-2 ingests (a refresh), "
+        "its seq exact", out,
+        isinstance(out, dict) and str(LCS._n(out["seq"])), str(T53 - 2))
     out, _err = ingest("rsIngestHead", events["top-2"], T53 - 3)
-    rows.append(("head-newer",
-                 "rsIngestHead: a head one NEWER than the watermark ingests",
-                 isinstance(out, dict), True))
+    row("head-newer",
+        "rsIngestHead: a head one NEWER than the watermark ingests", out,
+        isinstance(out, dict), True)
     out, err = ingest("rsIngestHead", events["skew"], 0)
-    rows.append(("head-skew",
-                 "rsIngestHead: a signed head whose embedded seq sits one "
-                 "below its BEP44 seq is refused as a disagreement",
-                 [out in ("", {}), "disagree" in err], [True, True]))
+    row("head-skew",
+        "rsIngestHead: a signed head whose embedded seq sits one "
+        "below its BEP44 seq is refused as a disagreement", out,
+        [out in ("", {}), "disagree" in err], [True, True])
     out, err = ingest("rsIngestBridge", events["bridge"], T53 - 1)
-    rows.append(("bridge-1-older",
-                 "rsIngestBridge: a bridge one older than a 2^53-1 "
-                 "watermark is refused by the ROLLBACK gate (before any "
-                 "signature)", [out in ("", {}), "older" in err],
-                 [True, True]))
+    row("bridge-1-older",
+        "rsIngestBridge: a bridge one older than a 2^53-1 "
+        "watermark is refused by the ROLLBACK gate (before any "
+        "signature)", out, [out in ("", {}), "older" in err],
+        [True, True])
     out, err = ingest("rsIngestBridge", events["bridge"], T53 - 2)
-    rows.append(("bridge-equal",
-                 "rsIngestBridge: at an equal watermark the rollback gate "
-                 "passes it on (the junk value is refused later, for "
-                 "another reason)", "older" in err, False))
+    row("bridge-equal",
+        "rsIngestBridge: at an equal watermark the rollback gate "
+        "passes it on (the junk value is refused later, for "
+        "another reason)", out, "older" in err, False)
     return rows
 
 
 def top_of_range_rows(interp):
     """The bound at 2^53 - 1 through the builders and the BEP44 buffer:
-    accepted, exactly, and 2^53 refused."""
+    accepted, exactly, and 2^53 refused. A call the interpreter refused to
+    decide (LCS.Indistinct) reads REFUSED_ROW."""
     v = interp.call("rsBencodeBytes", ["hi"])
+
+    def built(name, args):
+        try:
+            return bool(interp.call(name, args))
+        except LCS.Indistinct:
+            return REFUSED_ROW
+
     return [
         ("rsBep44SignBuf: seq 2^53-1 is accepted",
-         bool(interp.call("rsBep44SignBuf", ["riptide-head", T53 - 1, v])),
-         True),
+         built("rsBep44SignBuf", ["riptide-head", T53 - 1, v]), True),
         ("rsBep44SignBuf: seq 2^53 is refused",
-         bool(interp.call("rsBep44SignBuf", ["riptide-head", T53, v])),
-         False),
+         built("rsBep44SignBuf", ["riptide-head", T53, v]), False),
         ("rsBuildHead: seq 2^53-1 builds",
-         bool(interp.call("rsBuildHead", [T53 - 1, "n", "", "", "", ""])),
-         True),
+         built("rsBuildHead", [T53 - 1, "n", "", "", "", ""]), True),
         ("rsLanBuildDraft: seq 2^53-1 builds",
-         bool(interp.call("rsLanBuildDraft", ["dev", T53 - 1, "x", MASTER])),
-         True),
+         built("rsLanBuildDraft", ["dev", T53 - 1, "x", MASTER]), True),
         # the one builder that had NO upper bound before 2026-09-25: a total
         # past 2^53 was split as a rounded double
         ("rsBtxoHeader: total 2^53-1 builds",
-         bool(interp.call("rsBtxoHeader", ["x", T53 - 1, 0])), True),
+         built("rsBtxoHeader", ["x", T53 - 1, 0]), True),
         ("rsBtxoHeader: total 2^53 is refused",
-         bool(interp.call("rsBtxoHeader", ["x", T53, 0])), False),
+         built("rsBtxoHeader", ["x", T53, 0]), False),
     ]
 
 
@@ -1312,9 +1412,19 @@ def check_seq_order(c, ip, src, fail):
 
     # A: the naive helper
     naive = LCS.Interp(seed_naive_compare(src, fail))
-    c.ck("fixture A: under IEEE the naive `<`/`>` helper reads every row "
-         "right - why no headless gate could see the defect",
-         seq_order_answers(naive), want)
+    got = seq_order_answers(naive)
+    c.ck("fixture A: the plain interpreter REFUSES the naive helper at "
+         "exactly the blurred rows (the engine and IEEE part on each) and "
+         "reads the rest right",
+         (sorted(label for label in want if got[label] == REFUSED_ROW),
+          sorted(label for label in want
+                 if got[label] not in (want[label], REFUSED_ROW))),
+         (sorted(BLURRED_ROWS), []))
+    with engine_model(_model_ieee):
+        got = seq_order_answers(naive)
+    c.ck("fixture A: under IEEE (replayed) the naive `<`/`>` helper reads "
+         "every row right - why no headless gate could see the defect "
+         "before 2026-09-25", got, want)
     with engine_model(engine_rule):
         got = seq_order_answers(naive)
     c.ck("fixture A: under %s the naive helper calls exactly the blurred "
@@ -1328,8 +1438,17 @@ def check_seq_order(c, ip, src, fail):
     old = LCS.Interp(seed_old_ingest(src, fail))
     events, handle = ingest_events(old)
     rows = ingest_rows(old, events, handle)
-    c.ck("fixture B: under IEEE the old ingest lines read every ingest row "
-         "right (the rows they misread, listed)",
+    c.ck("fixture B: the plain interpreter REFUSES the old ingest lines at "
+         "both replayed heads, the skewed head and the older bridge, and "
+         "reads the rest right (refused, then misread)",
+         ([key for key, _l, got, _w in rows if got == REFUSED_ROW],
+          [key for key, _l, got, w in rows if got not in (w, REFUSED_ROW)]),
+         (["head-1-older", "head-19-older", "head-skew", "bridge-1-older"],
+          []))
+    with engine_model(_model_ieee):
+        rows = ingest_rows(old, events, handle)
+    c.ck("fixture B: under IEEE (replayed) the old ingest lines read every "
+         "ingest row right (the rows they misread, listed)",
          [key for key, _l, got, w in rows if got != w], [])
     with engine_model(engine_rule):
         rows = ingest_rows(old, events, handle)
@@ -1340,8 +1459,14 @@ def check_seq_order(c, ip, src, fail):
 
     # C: the bound against 2^53 itself
     oldb = LCS.Interp(seed_old_wire_int(src, fail))
-    c.ck("fixture C: under IEEE the old `>=` bound accepts 2^53-1 at every "
-         "top-of-range row", [got for _l, got, _w in top_of_range_rows(oldb)],
+    c.ck("fixture C: the plain interpreter REFUSES the old `>=` bound at "
+         "2^53-1 at every top-of-range row, and answers 2^53 (equal operands)",
+         [got for _l, got, _w in top_of_range_rows(oldb)],
+         [REFUSED_ROW, False, REFUSED_ROW, REFUSED_ROW, REFUSED_ROW, False])
+    with engine_model(_model_ieee):
+        got = [g for _l, g, _w in top_of_range_rows(oldb)]
+    c.ck("fixture C: under IEEE (replayed) the old `>=` bound accepts 2^53-1 "
+         "at every top-of-range row", got,
          [True, False, True, True, True, False])
     with engine_model(engine_rule):
         got = [g for _l, g, _w in top_of_range_rows(oldb)]
@@ -1395,7 +1520,8 @@ def check_seq_order(c, ip, src, fail):
 # twice with an oracle-signed BEP44 layer: at seq 2^53 - 2 (it ingests,
 # exactly) and at 2^53 - 1 (an author-signed skew one apart, which must be
 # refused BY THE AGREEMENT CHECK). Fixture B's old `is not` must read both
-# right under IEEE and let the skew through under the engine's rule.
+# right under IEEE (replayed: _model_ieee), let the skew through under the
+# engine's rule, and be refused by the plain interpreter at the skew alone.
 
 def bridge_order_events(interp):
     """(events, handle): the bridge rows' events, built and signed under
@@ -1418,17 +1544,27 @@ def bridge_order_rows(interp, events, handle):
     refusal row reads the error, so a refusal by any OTHER gate (the
     signature, the rollback gate) does not pass for this one."""
     rows = []
-    out = interp.call("rsIngestBridge", [events["match"], handle, T53 - 2])
+
+    def ingest(event, watermark):
+        # REFUSED_ROW where the interpreter refused to decide the call
+        try:
+            out = interp.call("rsIngestBridge", [event, handle, watermark])
+        except LCS.Indistinct:
+            return None, ""
+        return out, str(interp.call("rsLastError", []))
+
+    out, _err = ingest(events["match"], T53 - 2)
     rows.append(("bridge-match",
                  "rsIngestBridge: a real bridge at 2^53-2 ingests at an "
                  "equal watermark, its seq exact",
+                 REFUSED_ROW if out is None else
                  isinstance(out, dict) and str(LCS._n(out["seq"])),
                  str(T53 - 2)))
-    out = interp.call("rsIngestBridge", [events["skew"], handle, 0])
-    err = str(interp.call("rsLastError", []))
+    out, err = ingest(events["skew"], 0)
     rows.append(("bridge-skew",
                  "rsIngestBridge: a signed bridge whose embedded seq sits one "
                  "below its BEP44 seq is refused BY THE AGREEMENT CHECK",
+                 REFUSED_ROW if out is None else
                  [out in ("", {}), "disagree" in err], [True, True]))
     return rows
 
@@ -1441,8 +1577,15 @@ def check_seq_order_bridge(c, ip, src, fail):
     old = LCS.Interp(seed_old_ingest(src, fail))
     events, handle = bridge_order_events(old)
     rows = bridge_order_rows(old, events, handle)
-    c.ck("fixture B (bridge): under IEEE the old `is not` reads both bridge "
-         "rows right (the rows it misreads, listed)",
+    c.ck("fixture B (bridge): the plain interpreter REFUSES the old `is not` "
+         "at the skewed bridge alone (refused, then misread)",
+         ([key for key, _l, got, _w in rows if got == REFUSED_ROW],
+          [key for key, _l, got, w in rows if got not in (w, REFUSED_ROW)]),
+         (["bridge-skew"], []))
+    with engine_model(_model_ieee):
+        rows = bridge_order_rows(old, events, handle)
+    c.ck("fixture B (bridge): under IEEE (replayed) the old `is not` reads "
+         "both bridge rows right (the rows it misreads, listed)",
          [key for key, _l, got, w in rows if got != w], [])
     with engine_model(engine_rule):
         rows = bridge_order_rows(old, events, handle)

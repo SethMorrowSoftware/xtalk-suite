@@ -105,7 +105,11 @@ The split is **load-bearing, not aesthetic** (the suite generator's fold cites t
    built from brace characters inside quoted literals and parsed by walking UTF-8 bytes.
    `f(x)["k"]` does not parse: put every function result into a local before subscripting.
 4. **Number coercion is a canonical-form hazard.** "1e3" `is an integer`, so `nxEventFromJson`
-   requires created_at and kind to be PLAIN DIGIT runs before they reach the serializer.
+   requires created_at and kind to be PLAIN DIGIT runs before they reach the serializer. The
+   same parse reaches every comparison: two number-like texts are compared as NUMBERS, so
+   `"12e4" is "120000"` is true on the engine (suite engine note 2.11). Compare hex ids through
+   `nxCtEqualHex`, never bare `is`. Since 2026-09-25 the interpreter REFUSES (`Indistinct`) any
+   comparison where its reading of such text and the engine's would answer differently.
 5. **OnionXT's socket lessons, inherited whole** (suite engine notes 6.1, 6.2): byte
    discipline, `with message` everywhere, short reads are normal, `open socket` is async and
    failure arrives as a `socketError` MESSAGE, watchdog every handshake, store the engine's socket
@@ -201,6 +205,12 @@ bash tools/run-gates.sh     # the member's one gate list: what CI and the suite'
   absent SKIPS loudly, `XTALK_REQUIRE_SIBLINGS=1` fails); stand-ins are a deterministic
   `sxRandomBytes` and hashlib for `sha1Digest`. It settles LOGIC, not parser behaviour, so it
   upgrades no label. `tools/test-script-vectors.py` is its mutation drive (slow; gotcha 10).
+  Since 2026-09-25 the interpreter refuses a comparison the engine answers differently (suite
+  engine notes 2.10, a tolerance inside 10 DBL_EPSILON, and 2.11, number-like text), and tier 0
+  pins both in THIS copy, because a published nostrxt runs no coinxt gate; the full fixture is
+  coinxt's `check-script-vectors.py` tier 0. Measured over this member's gates that day, and
+  again on 2026-09-26 over the tree that merged it with the day's batch: nothing in the shipped
+  core was refused (only tier 0's own two rows, on purpose).
 - `tools/check-docs-style.py`, and `tools/check-doc-handlers.py --check` (docs and source agree on
   the public surface both ways; `docs/06-api-reference.md` names every public handler).
 

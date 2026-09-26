@@ -76,6 +76,34 @@ discovered:
     messages are delivered in order after the driving handler returns, each
     advancing the modeled clock. A handler that re-arms itself is delivered
     a bounded number of times.
+  - A NUMERIC comparison is refused where the engine answers it differently
+    from IEEE (2026-09-25, the base's header): the numeric branch of this
+    file's `<`, `<=`, `>`, `>=` and `<>` calls the base's _decided, and `is`
+    goes through the base's _eq, which does the same.
+  - So is a comparison whose OPERANDS the engine reads differently (the
+    same day, engine note 2.11; the base's header, its third 2026-09-25
+    section): the engine turns text into a number with MCU_strtor8, which
+    reads "1e5", "+3" and "3." and not "1_0", and this file chooses numbers
+    or text by Python's float() (_py_numeric). The numeric branch refuses
+    what _n refuses (text the engine reads otherwise) plus a Boolean and an
+    empty operand under `<>` (_ordered_alike); the text branch refuses where
+    the engine would read both as numbers and order them otherwise, or
+    cannot be told (_text_order_alike: "0x10" < "20"). Text against text is
+    untouched. A refused comparison is held back as the base's _Undecided,
+    so an `and` / `or` whose other operand settles the answer drops it, and
+    the base's p_or raises it where nothing does.
+  - An EMPTY operand orders as 0 against a number, as the base's `<` family
+    and the engine's MCLogicCompareTo read it (DOCUMENTED; `<>`, the
+    engine's `is not`, never converts one). Until 2026-09-25 it ordered as
+    TEXT here, so `"" > -1` was false and `"" < 0` true: the census that
+    measured the 2.11 refusal found coin-wallet's cwSatToBtc printing an
+    empty amount as "-0.00000000" in the boot (an engine prints
+    "0.00000000"), and two house guards over an empty value (waCpfpBuild,
+    waHttpFeed) refused inside an `and` that settles them.
+  - `case` matches as TEXT (_switch_matches), the engine's way
+    (engine/src/exec-keywords.cpp, MCKeywordsExecSwitch, DOCUMENTED, never
+    run here). Until 2026-09-25 it went through the base's _eq, the numeric
+    reading, so "1.0" and "1" were one case here and two on an engine.
 
 THREE MEMBERS DRIVE THIS RUNNER NOW, AND THE THIRD FOUND THREE MODEL DEFECTS
 (2026-09-11). coinxt's wallet gate was the second stack through it; nocloud's
@@ -433,12 +461,21 @@ class DemoExpr(LCS._Expr):
                         v = (not hit) if neg else hit
                         continue
                     if word:
-                        hit = LCS._is_numeric(v, word == "integer")
-                        v = (not hit) if neg else hit
+                        try:
+                            hit = LCS._is_numeric(v, word == "integer")
+                            v = (not hit) if neg else hit
+                        except LCS.Indistinct as exc:
+                            # held back for an `and` / `or` to settle, as
+                            # the base's p_cmp does (its _Undecided)
+                            v = LCS._Undecided("in `%s`: %s" % (self.s, exc))
                         continue
                     self.i = save2
                 r = self.p_concat()
-                v = (not LCS._eq(v, r)) if neg else LCS._eq(v, r)
+                try:
+                    hit = LCS._eq(v, r)
+                    v = (not hit) if neg else hit
+                except LCS.Indistinct as exc:
+                    v = LCS._Undecided("in `%s`: %s" % (self.s, exc))
                 continue
             self.ws()
             for op in (">=", "<=", "<>", ">", "<"):
@@ -450,13 +487,54 @@ class DemoExpr(LCS._Expr):
                     # refuses with a ValueError out of _n, which is stricter
                     # than the engine). holde-em breaks a tie on two route
                     # keys with `<`, nocloud on two 64-hex lines (2026-09-11).
-                    if LCS._is_numeric(v, False) and LCS._is_numeric(r, False):
-                        a, b = LCS._n(v), LCS._n(r)
-                    else:
-                        a, b = (str(LCS._disp(v)).lower(),
-                                str(LCS._disp(r)).lower())
-                    v = {">=": a >= b, "<=": a <= b, ">": a > b,
-                         "<": a < b, "<>": a != b}[op]
+                    # "Both numbers" is Python's float() reading
+                    # (_py_numeric), as it always was; the ENGINE's is
+                    # MCU_strtor8's, and wherever the two would give
+                    # different answers the base refuses (engine note 2.11;
+                    # lcs-interp.py's header, the third 2026-09-25 section).
+                    # An EMPTY operand is a number here too, 0, as it is to
+                    # the base's `<` family (its _n) and to the engine's
+                    # orderings (MCLogicCompareTo converts an empty operand
+                    # to 0; DOCUMENTED, engine note 2.11) - but not to `<>`,
+                    # the engine's `is not`, which never converts one. Until
+                    # 2026-09-25 this runner ordered empty as TEXT, so
+                    # `"" < 0` was true here and false there: the wallet's
+                    # cwSatToBtc formatted an empty amount as "-0.00000000"
+                    # in the boot where an engine prints "0.00000000" (the
+                    # census that measured the 2.11 refusal found it).
+                    # A refused comparison is held back for an `and` / `or`
+                    # to settle (the base's _Undecided; its p_or raises it
+                    # when nothing does), exactly as in the base's p_cmp.
+                    empty_is_zero = op != "<>"
+                    try:
+                        if ((LCS._py_numeric(v, False)
+                             or (empty_is_zero and _is_empty_text(v)))
+                                and (LCS._py_numeric(r, False)
+                                     or (empty_is_zero
+                                         and _is_empty_text(r)))):
+                            # _n refuses a text the engine reads otherwise
+                            a, b = LCS._n(v), LCS._n(r)
+                            # the base's refusal, not a copy of it: a numeric
+                            # pair the engine's tolerant comparison answers
+                            # differently from IEEE is REFUSED here exactly
+                            # as in lcs-interp.py's own p_cmp (its header,
+                            # 2026-09-25) - this restatement would otherwise
+                            # be the one comparison site in the family that
+                            # still answered such a pair the IEEE way
+                            LCS._decided(a, b, op, self.s)
+                            LCS._ordered_alike(v, r, a, b, op, self.s)
+                        else:
+                            # ordered as text: refused where the engine reads
+                            # both as numbers (empty is 0 to the orderings)
+                            # and orders them otherwise, or cannot be told
+                            LCS._text_order_alike(v, r, op, self.s)
+                            a, b = (str(LCS._disp(v)).lower(),
+                                    str(LCS._disp(r)).lower())
+                        v = {">=": a >= b, "<=": a <= b, ">": a > b,
+                             "<": a < b, "<>": a != b}[op]
+                    except LCS.Indistinct as exc:
+                        v = LCS._Undecided("in `%s` (`%s`): %s"
+                                           % (self.s, op, exc))
                     break
             else:
                 self.i = save
@@ -675,6 +753,34 @@ class _Break(Exception):
     """`break`: leave the enclosing switch. Not a Thrown, so a script's own
     try/catch cannot swallow it (the engine's break is control flow, not an
     error), and not an _Exit, so a repeat around the switch keeps looping."""
+
+
+def _is_empty_text(v):
+    """An EMPTY operand: the text "" (a Bytes one too), never a number, a
+    Boolean or an array."""
+    return isinstance(v, str) and v == ""
+
+
+def _switch_matches(subject, value):
+    """Does a `case` value match the `switch` subject? AS TEXT, the engine's
+    way (engine/src/exec-keywords.cpp, MCKeywordsExecSwitch: both sides go
+    through ConvertToString and MCStringIsEqualTo; DOCUMENTED, never run
+    here), never as numbers: "1.0" and "1" are two cases, and so are "1e5"
+    and "100000", where `is` would call each pair one number (engine note
+    2.11). Until 2026-09-25 this runner matched through the base's _eq, the
+    numeric reading, so a switch over a number-like value could take an arm
+    the engine never takes. Case-SENSITIVE, like the base's `is` (the base's
+    header, its first named divergence; the engine folds case unless `the
+    caseSensitive` is set). A non-integral number is spelled by the engine's
+    `numberFormat`, which the model does not reproduce, and an array has no
+    text form, so either is refused rather than matched."""
+    for x in (subject, value):
+        if isinstance(x, dict) or (isinstance(x, float) and x != int(x)):
+            raise SyntaxError(
+                "switch/case over %r: the engine matches cases as TEXT, and "
+                "the runner does not model this value's text form (the "
+                "numberFormat, or an array's)" % (x,))
+    return str(LCS._disp(subject)) == str(LCS._disp(value))
 
 
 class DemoInterp(LCS.Interp):
@@ -1326,7 +1432,7 @@ class DemoInterp(LCS.Interp):
                     if self.truth(v):
                         start = idx
                         break
-                elif LCS._eq(subject, v):
+                elif _switch_matches(subject, v):
                     start = idx
                     break
             if start == idx:
@@ -1407,18 +1513,69 @@ def _round_away(x, digits):
     return LCS._exact(int(r)) if digits == 0 else r / scale
 
 
+_BASE_DIGITS = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+
+
 def _base_convert(text, base_from, base_to):
-    n = int(str(text).strip(), base_from)
+    """baseConvert as the engine's SOURCE writes it (DOCUMENTED, read
+    2026-09-26 from livecode develop-9.6; never run here):
+    engine/src/exec-math.cpp's MCMathEvalBaseConvert refuses a base outside
+    2..36, and libfoundation/src/foundation-math.cpp's MCMathConvertToBase10
+    reads the source text: EMPTY is an error, one leading `+` or `-`, then
+    every character (uppercased) a digit or letter below the source base,
+    anything else - a space, `0x`, `_` - an error, into a uint32_t
+    accumulator; MCMathConvertFromBase10 writes the digits, uppercase, a `-`
+    before them for a negative source ("-0" included). Each error is a
+    LegacyThrow (EE_BASECONVERT_BADSOURCEBASE, _BADDESTBASE, _CANTCONVERT):
+    a SCRIPT error, which a script `try` catches, so each is a Thrown here.
+    Until 2026-09-26 this read the text with Python's int(text.strip(),
+    base): empty text raised a ValueError past every script `try` (a
+    holde-em mutant met it), and edge spaces, "0x" and "1_0" were READ where
+    the engine throws. The accumulator wraps silently past 2^32 - 1 on the
+    engine; that is REFUSED (Imprecise, the 2^53 stop's class: not a
+    Thrown, so no script `try` eats it) rather than emulated, because no
+    run has shown the wrap and nothing in the tree converts past 32 bits."""
+    if not 2 <= base_from <= 36:
+        raise Thrown("baseConvert: source base %d is not between 2 and 36 "
+                     "(EE_BASECONVERT_BADSOURCEBASE)" % base_from)
+    if not 2 <= base_to <= 36:
+        raise Thrown("baseConvert: destination base %d is not between 2 and "
+                     "36 (EE_BASECONVERT_BADDESTBASE)" % base_to)
+    src = str(text)
+    cant = Thrown("baseConvert: %r is not a number in base %d "
+                  "(EE_BASECONVERT_CANTCONVERT)" % (src, base_from))
+    if src == "":
+        raise cant
+    neg = src[0] == "-"
+    value = 0
+    for ch in src[1:] if src[0] in "+-" else src:
+        up = ch.upper() if ch.isascii() else ch
+        if "0" <= up <= "9" and ord(up) - 48 < base_from:
+            digit = ord(up) - 48
+        elif "A" <= up < chr(ord("A") + base_from - 10):
+            digit = ord(up) - 55
+        else:
+            raise cant
+        value = value * base_from + digit
+        if value > 0xFFFFFFFF:
+            raise LCS.Imprecise(
+                "baseConvert(%r, %d, %d): the engine reads the source into "
+                "a uint32_t (libfoundation's MCMathConvertToBase10) and "
+                "WRAPS past 4294967295 without an error, so on OXT this "
+                "answers a different number (the engine source, DOCUMENTED; "
+                "refused like the 2^53 stop). Convert 32 bits or fewer at a "
+                "time." % (src, base_from, base_to))
+    if neg and value == 0:
+        return "-0"
     if base_to == 10:
-        return LCS._exact(n)
-    digits = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-    neg = n < 0
-    n = abs(n)
+        return LCS._exact(-value if neg else value)
     out = ""
-    while n:
-        out = digits[n % base_to] + out
-        n //= base_to
-    return ("-" if neg else "") + (out or "0")
+    while True:
+        out = _BASE_DIGITS[value % base_to] + out
+        value //= base_to
+        if not value:
+            break
+    return ("-" if neg else "") + out
 
 
 def install_common(world):
@@ -2083,8 +2240,11 @@ def drive_seq_order(c, ip, world, profile):
     its feed-state MAX `tRec["feedSeq"] > sSeq`, its head watermarks
     `pSeq > tSeen` and `tSeen > tFloor`: near 2^53 each read a newer value
     as "not newer". The guards' refusal is SILENT by design, so a dropped
-    record said nothing, and this model's own comparisons are IEEE, so the
-    boot saw nothing either. They all order through the library's
+    record said nothing, and this model's own comparisons were IEEE, so the
+    boot saw nothing either (since 2026-09-25 the plain interpreter REFUSES
+    such a pair instead, the base's Indistinct; this drive answers under the
+    engine's rule, whose operands the refusal leaves to the model, so it
+    still sees a wrong ANSWER, not a stop). They all order through the library's
     rsSeqCompare now (the demo's raLanIsNewer for the three replay guards).
 
     It drives them the way drive_lan_keys drives the keying: the receive
@@ -2267,6 +2427,76 @@ function rmUnion
    end try
    return "ran"
 end rmUnion
+function rmNearOrder
+   return 2097152 > (9007199254740992 - 1) / 4294967296
+end rmNearOrder
+function rmNearIs
+   return 0.1 + 0.2 is 0.3
+end rmNearIs
+function rmTextIs
+   return "1e5" is "100000"
+end rmTextIs
+function rmEmptyOrder
+   return empty > -1
+end rmEmptyOrder
+function rmEmptyBelowZero
+   return empty < 0
+end rmEmptyBelowZero
+function rmEmptyOrderAgrees
+   return empty < 5
+end rmEmptyOrderAgrees
+function rmHexOrder
+   return "0x10" < "20"
+end rmHexOrder
+function rmExpOrder
+   return "1e5" > 99999
+end rmExpOrder
+function rmGuardAnd pX
+   if pX is an integer and pX >= 0 then
+      return "counted"
+   end if
+   return "refused"
+end rmGuardAnd
+function rmGuardOr pX
+   if pX is not an integer or pX < 0 then
+      return "refused"
+   end if
+   return "counted"
+end rmGuardOr
+function rmSettleAnd pN
+   if pN > 0 and "12e4" is "120000" then
+      return "same"
+   end if
+   return "not"
+end rmSettleAnd
+function rmSettleOr pN
+   if pN < 1 or "12e4" is "120000" then
+      return "short"
+   end if
+   return "long"
+end rmSettleOr
+function rmCase pSubject
+   switch pSubject
+      case "1"
+         return "one"
+      case 100000
+         return "hundred thousand"
+      default
+         return "no case"
+   end switch
+end rmCase
+function rmFarOrder
+   return 1700000000 < 1700000001
+end rmFarOrder
+function rmBaseConvert pText, pFrom, pTo
+   local tOut
+   try
+      put baseConvert(pText, pFrom, pTo) into tOut
+   catch tErr
+      return "thrown: " & tErr
+   end try
+   return tOut
+end rmBaseConvert
 """
 
 
@@ -2305,6 +2535,130 @@ def check_runner_model(c):
                  False, "it became a catchable script error: %s" % exc)
         except Exception:                                # noqa: BLE001
             c.ck("[MODEL] an unmodelled array command stops the run", True)
+        # A NUMERIC comparison the engine answers differently from IEEE is
+        # refused through THIS runner's comparator as through the base's
+        # (lcs-interp.py header, 2026-09-25). The `<` family here is a
+        # restatement of the base's, not a call into it, so without this pin
+        # a tidy-up could drop the refusal from the comparator every stack
+        # gate in the family runs through, and nothing would say so.
+        for name, what in (("rmNearOrder", "riptide's old u64 bound at "
+                            "2^53 + 1, through `>`"),
+                           ("rmNearIs", "0.1 + 0.2 against 0.3, through "
+                            "`is`")):
+            label = "[MODEL] a pair the engine calls equal is refused: " + what
+            try:
+                got = run(name)
+                c.ck(label, False, "it answered %r" % (got,))
+            except LCS.Indistinct:
+                c.ck(label, True)
+        got = run("rmFarOrder")
+        c.ck("[MODEL] ... and a clearly separated pair still orders "
+             "(timestamps a second apart)", got is True, repr(got))
+        # OPERANDS the engine reads differently (engine note 2.11; the base's
+        # header, its third 2026-09-25 section), through THIS comparator:
+        # `is` over two texts the engine reads as one number, and an ordering
+        # whose text reading the note does not establish (hex). Each fails
+        # against the runner before 2026-09-25.
+        for name, what in (("rmTextIs", '"1e5" is "100000" (true on the '
+                            "engine, OBSERVED on Linux and Windows "
+                            "2026-09-25; false by the text), through `is`"),
+                           ("rmHexOrder", '"0x10" < "20" (hex: not '
+                            "established), through `<`")):
+            label = ("[MODEL] an operand the engine reads differently is "
+                     "refused: " + what)
+            try:
+                got = run(name)
+                c.ck(label, False, "it answered %r" % (got,))
+            except LCS.Indistinct:
+                c.ck(label, True)
+        # An EMPTY operand orders as 0 against a number, as the base's `<`
+        # family and the engine's MCLogicCompareTo read it; until 2026-09-25
+        # this runner ordered it as text, so the first two answered false and
+        # true here (the wallet's cwSatToBtc printed an empty amount as
+        # "-0.00000000" in the boot).
+        for name, want in (("rmEmptyOrder", True), ("rmEmptyBelowZero", False),
+                           ("rmEmptyOrderAgrees", True)):
+            got = run(name)
+            c.ck("[MODEL] %s: empty orders as 0 against a number (%r)"
+                 % (name, want), got is want, repr(got))
+        got = run("rmExpOrder")
+        c.ck('[MODEL] ... and "1e5" > 99999, a number to both, still '
+             "orders as one", got is True, repr(got))
+        # The house guards around an EMPTY value answer as on the engine
+        # (coin-wallet's waCpfpBuild and waHttpFeed meet one in the boot);
+        # and where an `and` / `or` holds a refused comparison, the half that
+        # settles the answer decides it: the engine evaluates both operands
+        # (engine note 2.5) and gets a Boolean from each, so the refused one
+        # is dropped (the base's _Undecided), and raised where nothing
+        # settles it.
+        for name, arg, want in (("rmGuardAnd", "", "refused"),
+                                ("rmGuardOr", "", "refused"),
+                                ("rmGuardAnd", "7", "counted"),
+                                ("rmGuardOr", "7", "counted"),
+                                ("rmSettleAnd", 0, "not"),
+                                ("rmSettleOr", 0, "short")):
+            try:
+                got = ip.call(name, [arg])
+            except LCS.Indistinct as exc:
+                got = "Indistinct: %s" % str(exc)[:60]
+            c.ck("[MODEL] %s(%r) is answered %r (and / or settle it)"
+                 % (name, arg, want), got == want, repr(got))
+        for name in ("rmSettleAnd", "rmSettleOr"):
+            label = ("[MODEL] %s(1): nothing settles the refused half, so "
+                     "it is refused" % name)
+            try:
+                got = ip.call(name, [1])
+                c.ck(label, False, "it answered %r" % (got,))
+            except LCS.Indistinct:
+                c.ck(label, True)
+        # `case` matches as TEXT (MCKeywordsExecSwitch): "1.0" is not the
+        # case "1", and "1e5" is not the case 100000 - both were, through
+        # the base's _eq, until 2026-09-25
+        for subject, want in (("1", "one"), ("1.0", "no case"),
+                              ("100000", "hundred thousand"),
+                              ("1e5", "no case")):
+            got = ip.call("rmCase", [subject])
+            c.ck("[MODEL] switch %r takes %r (cases match as text)"
+                 % (subject, want), got == want, repr(got))
+        # baseConvert as MCMathConvertToBase10 reads its source (the engine
+        # source, DOCUMENTED): each error a SCRIPT error the script's `try`
+        # catches ("thrown", and only baseConvert's own: a handler the runner
+        # cannot find is a Thrown too), never a Python error past it (empty
+        # text raised a ValueError until 2026-09-26), and nothing read that
+        # the engine refuses (Python's int() stripped spaces and read "0x"
+        # and "_"). The engine functions are the boot's; installed here too
+        # so this tier runs first and alone.
+        install_engine_functions(World(sandbox))
+        for args, want in ((("", 16, 10), "thrown"),
+                           (("ff", 16, 10), "255"), (("FF", 16, 10), "255"),
+                           (("-ff", 16, 10), "-255"), (("+7", 10, 16), "7"),
+                           (("255", 10, 16), "FF"), (("0", 10, 2), "0"),
+                           (("-", 10, 16), "-0"),
+                           (("ffffffff", 16, 10), "4294967295"),
+                           ((" ff", 16, 10), "thrown"),
+                           (("ff ", 16, 10), "thrown"),
+                           (("0x1f", 16, 10), "thrown"),
+                           (("1_0", 10, 16), "thrown"),
+                           (("g", 16, 10), "thrown"), (("12", 2, 10), "thrown"),
+                           (("7", 1, 10), "thrown"), (("0", 1, 10), "thrown"),
+                           (("7", 37, 10), "thrown"), (("7", 10, 37), "thrown")):
+            try:
+                got = str(LCS._disp(ip.call("rmBaseConvert", list(args))))
+            except Exception as exc:                     # noqa: BLE001
+                got = "escaped the script's try: %s" % type(exc).__name__
+            if got.startswith("thrown: baseConvert: "):
+                got = "thrown"
+            c.ck("[MODEL] baseConvert%r answers %r (the engine source)"
+                 % (args, want), got == want, repr(got))
+        # past the uint32_t accumulator the engine wraps without an error:
+        # refused, never a wrapped or an exact answer, and no `try` eats it
+        try:
+            got = ip.call("rmBaseConvert", ["100000000", 16, 10])
+            c.ck("[MODEL] baseConvert past 2^32 - 1 is refused (Imprecise)",
+                 False, "it answered %r" % (got,))
+        except LCS.Imprecise:
+            c.ck("[MODEL] baseConvert past 2^32 - 1 is refused (Imprecise)",
+                 True)
     finally:
         shutil.rmtree(sandbox, ignore_errors=True)
 

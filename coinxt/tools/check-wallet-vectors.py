@@ -2901,7 +2901,8 @@ def check_case_folding_fires(c, ip):
 # MC_EPSILON outright when that magnitude is below it (engine/src/
 # exec-logic.cpp and sysdefs.h; DOCUMENTED, and it reproduces all eight
 # readings of riptide's first two probe lines). riptide's third probe line
-# then read the rule's consequences on an engine (Linux, 2026-09-25), the
+# then read the rule's consequences on an engine (Linux, then Windows,
+# 2026-09-25, character for character alike), the
 # constant to the digit among them: `N is N + 1` is true at N =
 # 450359962737050 and false one below, and 2^52 / 10 lies between.
 # check_tolerance_fires re-proves the rule against all fourteen recorded
@@ -3073,11 +3074,11 @@ end oldCwLeRead
 #
 # Probe 3 enters at its item 3. Its items 1 and 2 ("1e999" is "2e999" and
 # "1e5" is "100000", both true on the engine) are not comparisons of two
-# numbers but text becoming a number (strtod: suite engine note 2.11), and
-# tools/lcs-interp.py does not model that parse: its _eq reads only
-# -?\d+(\.\d+)? as a number, so it compares both pairs as TEXT and never
-# calls the _n a candidate rule swaps. No comparison rule could reproduce
-# them, so holding one to them here would test the parse, not the rule.
+# numbers but text becoming a number (strtod: suite engine note 2.11). Since
+# 2026-09-25 tools/lcs-interp.py ports that parse and REFUSES both (it
+# compared them as TEXT before), but neither reaches the number comparison a
+# candidate rule swaps, so holding a rule to them here would test the parse,
+# not the rule: check-script-vectors.py tier 0 holds the interpreter to them.
 _PROBE_LADDER = """
 function probeUlpLadder pBase, pUlps
    local tStep
@@ -3100,7 +3101,8 @@ _PROBE_READINGS = (
     ("1073741824 + 1 / 2097152 > 1073741824", "false"),
     ("probeUlpLadder(1, 4503599627370496)", "16"),
     ("probeUlpLadder(8, 562949953421312)", "16"),
-    # probe 3, items 3 to 8 (Linux, 2026-09-25): the absolute branch near
+    # probe 3, items 3 to 8 (Linux and Windows, 2026-09-25): the absolute
+    # branch near
     # zero (1e-15 is within MC_EPSILON of 0, 1e-14 is not), integers one
     # apart at 2^49 (8 DBL_EPSILON: equal) and 2^48 (16: told apart), and
     # N against N + 1 either side of 2^52 / 10 = 450359962737049.6, which
@@ -3124,6 +3126,8 @@ def _guard_answer(fn):
         return "refused"
     except LCS.Imprecise:
         return "let through"
+    except LCS.Indistinct:
+        return "not decided"
     if got == "":
         return "refused"
     return "answered %r" % (got,)
@@ -3138,12 +3142,22 @@ def check_tolerance_fires(c):
     probe = LCS.Interp(_PROBE_LADDER)
 
     def readings():
-        return [str(LCS._disp(probe.eval_expr(expr, {})))
-                for expr, _want in _PROBE_READINGS]
+        out = []
+        for expr, _want in _PROBE_READINGS:
+            try:
+                out.append(str(LCS._disp(probe.eval_expr(expr, {}))))
+            except LCS.Indistinct:
+                out.append("refused")
+        return out
 
     engine_read = [want for _expr, want in _PROBE_READINGS]
-    c.ck("exact IEEE reads riptide's three probe lines as the engine did NOT",
-         readings(), ["true"] * 6 + ["1", "1"] + ["true"] * 4 + ["false"] * 2)
+    c.ck("the plain interpreter refuses each probe the engine read "
+         "differently from IEEE (IEEE reads true x6, 1, 1 and true x4, "
+         "false x2), and answers the five it read the same",
+         readings(), ["true", "refused", "refused", "refused", "true",
+                      "refused", "refused", "refused",
+                      "refused", "true", "refused", "true", "refused",
+                      "false"])
     for index, (label, same, _old) in enumerate(TOLERANCE_MODELS):
         restore = _tolerant_compare(same)
         try:
@@ -3152,8 +3166,9 @@ def check_tolerance_fires(c):
             restore()
         if index == 0:
             c.ck("under %s, riptide's probe lines read the fourteen numeric "
-                 "answers the engine gave (probes 1 and 2, Windows 2026-09-24 "
-                 "and Linux 2026-09-25; probe 3's items 3-8, Linux 2026-09-25)"
+                 "answers the engine gave (probes 1 and 2 on Windows "
+                 "2026-09-24; those and probe 3's items 3-8 on Linux and on "
+                 "Windows 2026-09-25)"
                  % label, got, engine_read)
         else:
             c.ck("under %s they misread at least one (margin, not the rule)"
@@ -3166,15 +3181,20 @@ def check_tolerance_fires(c):
         # the two guards (`>`), and `is` over riptide's pair: the swap must
         # reach the ordering operators AND _eq, or a vector could pass
         # under a rule the tier never applied
+        try:
+            pair = fixture.eval_expr(
+                "2097152 is (9007199254740992 - 1) / 4294967296", {})
+        except LCS.Indistinct:
+            pair = "not decided"
         return (_guard_answer(lambda: fixture.call("oldRiptideU64", [2 ** 21, 1])),
                 _guard_answer(lambda: fixture.call("oldCwLeRead", [past])),
-                fixture.eval_expr("2097152 is (9007199254740992 - 1) / 4294967296",
-                                  {}))
+                pair)
 
-    c.ck("exact IEEE refuses 2^53 + 1 at both quotient guards and tells the "
-         "pair apart (the engine ACCEPTED riptide's on 2026-09-24: the "
-         "disagreement this tier is for)",
-         answers(), ("refused", "refused", False))
+    c.ck("the plain interpreter will not decide 2^53 + 1 at either quotient "
+         "guard, nor whether the pair is equal (since 2026-09-25 it refuses a "
+         "comparison the engine answers differently from IEEE; the engine "
+         "ACCEPTED riptide's on 2026-09-24)",
+         answers(), ("not decided", "not decided", "not decided"))
     for label, same, old_cw in TOLERANCE_MODELS:
         restore = _tolerant_compare(same)
         try:
@@ -3184,8 +3204,8 @@ def check_tolerance_fires(c):
         c.ck("under %s, riptide's guard lets 2^53 + 1 through as the engine "
              "did and `is` calls the pair equal; wallet-core's old guard: %s"
              % (label, old_cw), got, ("let through", old_cw, True))
-    c.ck("and the exact rule is restored afterwards", answers(),
-         ("refused", "refused", False))
+    c.ck("and the interpreter's own rule is restored afterwards", answers(),
+         ("not decided", "not decided", "not decided"))
 
 
 # ROW #8'S TWO OLD LINES (2026-09-25), as fixtures never shipped: the library's
@@ -3244,10 +3264,14 @@ def check_exact_integer_fixtures(c):
     """MUTATION for row #8, in tier 4's shape. Each old line is replayed under
     exact IEEE and under every candidate rule: IEEE refuses what the line
     meant to refuse (which is why every headless gate was green), and the
-    ENGINE'S rule lets it through - so the model sees the class. The shipped
-    replacements must answer the same under every rule. The round trip is
-    lifted out of the SHIPPED coin-wallet source, and its scAssert line is
-    pinned to it, so a revert of either half fails here."""
+    ENGINE'S rule lets it through - so the model sees the class. The PLAIN
+    interpreter, which since 2026-09-25 refuses a comparison the engine
+    answers differently from IEEE (LCS.Indistinct; engine note 2.10), must
+    decide neither old line where the two part, so IEEE is replayed here as
+    one more model rather than read off the interpreter. The shipped
+    replacements must answer the same under every rule and plain. The round
+    trip is lifted out of the SHIPPED coin-wallet source, and its scAssert
+    line is pinned to it, so a revert of either half fails here."""
     wallet = open(WALLET, encoding="utf-8").read()
     m = re.search(r'^function waSelfTestSatRoundTrip\b.*?^end waSelfTestSatRoundTrip\b',
                   wallet, re.S | re.M)
@@ -3265,7 +3289,13 @@ def check_exact_integer_fixtures(c):
     near = ("3.0000000000000004", "-0.000000000000001", "31.000000000000004")
 
     def guard_answers():
-        return [guard.call("oldBech32ValueGuard", [v]) for v in near]
+        out = []
+        for v in near:
+            try:
+                out.append(guard.call("oldBech32ValueGuard", [v]))
+            except LCS.Indistinct:
+                out.append("not decided")
+        return out
 
     def trip(off):
         stubs = ("function cwSatToBtc pSat\n   return \"21000000.00000000\"\n"
@@ -3274,15 +3304,33 @@ def check_exact_integer_fixtures(c):
         fixture = _DivModInterp(helper + "\n\n" + stubs + _OLD_EXACT_LINES)
         def truth(v):
             return v is True or v == "true"
-        return (truth(fixture.call("oldSatRoundTrip", [])),
-                truth(fixture.call("waSelfTestSatRoundTrip", [])))
+        try:
+            old = truth(fixture.call("oldSatRoundTrip", []))
+        except LCS.Indistinct:
+            old = "not decided"
+        return (old, truth(fixture.call("waSelfTestSatRoundTrip", [])))
 
     offsets = (-5, -4, -1, 0, 1, 4, 5)
     exact = [(off == 0, off == 0) for off in offsets]
-    c.ck("exact IEEE refuses all three near-integers at the old bech32 guard "
-         "(green headlessly)", guard_answers(), ["refused"] * 3)
-    c.ck("exact IEEE: the old round trip and the shipped one both see every "
-         "satoshi of error", [trip(off) for off in offsets], exact)
+    c.ck("the plain interpreter decides none of the three near-integers at "
+         "the old bech32 guard (the engine and IEEE part on each)",
+         guard_answers(), ["not decided"] * 3)
+    c.ck("... nor the old round trip at an error of 1 to 4 satoshi at "
+         "2.1e15; the shipped one it decides, and sees every satoshi",
+         [trip(off) for off in offsets],
+         [("not decided" if 0 < abs(off) <= 4 else off == 0, off == 0)
+          for off in offsets])
+    restore = _tolerant_compare(lambda a, b: a == b)
+    try:
+        ieee_guards = guard_answers()
+        ieee_trips = [trip(off) for off in offsets]
+    finally:
+        restore()
+    c.ck("exact IEEE, replayed, refuses all three near-integers at the old "
+         "bech32 guard (green headlessly until 2026-09-25)", ieee_guards,
+         ["refused"] * 3)
+    c.ck("exact IEEE, replayed: the old round trip and the shipped one both "
+         "see every satoshi of error", ieee_trips, exact)
     for index, (label, same, _old) in enumerate(TOLERANCE_MODELS):
         restore = _tolerant_compare(same)
         try:

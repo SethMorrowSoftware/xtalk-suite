@@ -211,6 +211,39 @@ def check_interp_model(c, ip):
          ev("the seconds"), LCS.SECONDS[0])
     c.ck('the engine number fold: "1e3" IS an integer here, as on OXT',
          ev('"1e3" is an integer'), True)
+    # The engine's comparison is not IEEE equality (root engine notes 2.10;
+    # the interpreter's header, 2026-09-25): two numbers within 10 *
+    # DBL_EPSILON of the smaller are EQUAL there, so the interpreter REFUSES
+    # (LCS.Indistinct) a comparison whose answer that moves, and answers the
+    # rest as before. Pinned in THIS carrier's copy too, because a published
+    # nostrxt runs no coinxt gate. This member's nearest case is the `since`
+    # filter, a timestamp against one a second later: 5.9e-10 of their size
+    # apart, far outside the tolerance, and answered. The full fixture lives
+    # beside the interpreter's home, coinxt's check-script-vectors.
+    c.ck("a timestamp one second later is later (far outside the tolerance)",
+         ev("1700000000 < 1700000001"), True)
+
+    def decided(expr):
+        try:
+            return "answered %r" % (ev(expr),)
+        except LCS.Indistinct:
+            return "refused"
+
+    c.ck("a pair the engine calls equal is refused, not answered the IEEE "
+         "way (riptide's old u64 bound at 2^53 + 1)",
+         decided("2097152 > (9007199254740992 - 1) / 4294967296"), "refused")
+    # ... and the engine reads number-like TEXT as a number before it ever
+    # compares text (root engine notes 2.11; the interpreter's header, its
+    # third 2026-09-25 section): two different hex ids that are both
+    # digits-e-digits are one number there, so `is` answers true on OXT and
+    # false by the text. Refused, where it used to answer false; ids that are
+    # not number-like still answer, which is every id this member compares
+    # through nxCtEqualHex and nxIsHex anyway.
+    c.ck("two number-like hex ids the engine reads as one number are "
+         "refused, not compared as text",
+         decided('"12e4" is "120000"'), "refused")
+    c.ck("two hex ids that are not number-like still compare as text",
+         decided('"ab12" is "ab13"'), "answered False")
 
 
 # --------------------------------------------------------------------- tier 1
