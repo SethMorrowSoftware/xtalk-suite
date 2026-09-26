@@ -623,9 +623,13 @@ def check_or_evaluation(c, ip):
         except Exception as exc:                       # noqa: BLE001
             c.ck("%s (raised %s)" % (label, type(exc).__name__), False, True)
 
-    # The itemDelimiter is "/" inside nxJsonPathNode and is GLOBAL mutable
-    # state, so the new early-out must restore it. If it did not, a later
-    # comma-delimited read would see "/" and quietly return the whole string.
+    # The itemDelimiter is "/" inside nxJsonPathNode, and this interpreter
+    # holds it as GLOBAL state, so the new early-out must restore it here: if
+    # it did not, a later comma-delimited read would see "/" and quietly
+    # return the whole string. On Windows and Linux the engine resets it when
+    # the handler returns (engine note 2.3: handler-local, OBSERVED
+    # 2026-09-24 and 09-25), so there this pins the family's discipline, not
+    # an engine hazard; macOS has not run the probe.
     #
     # READ THE DELIMITER ITSELF (2026-09-24). This check's first version
     # asked a SECOND nxJsonGet for "a/1" after the refusal and wanted "x" -

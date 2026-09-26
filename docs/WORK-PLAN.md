@@ -37,7 +37,9 @@ the preflight; and that both engines are 64-bit, so every Windows run loaded the
 2.10's constant and the two items of 2.11 that line probes are now OBSERVED on
 Windows too) and stalled both loopbacks a fourth time (suite engine #9).
 A batch of headless work from 2026-09-25 and 09-26, integrated on 2026-09-26,
-closed suite-wide #16 (the paste gives back exactly the ENet holds it took, and
+closed suite-wide #14 (the paste's headless `--full` run, runbook 3.2: no
+fold-level fault), #15 (the itemDelimiter premise, reworded to engine note 2.3's
+answer), #16 (the paste gives back exactly the ENet holds it took, and
 calls `dcCleanup` only while it holds a `dcInit` of its own), #17 (the board's
 stamp derived from its build), #18 (the family checker's check 23) and #19 (the
 family interpreter refuses a comparison the engine answers differently);
@@ -222,7 +224,6 @@ keeping the scaffold for its report.
 | 9 | Draft PR #138 (archivext reviewed against the 9.6.3 dictionary) targets a member that left this tree on 2026-09-21; it was still open and conflicted on 2026-09-23. Move it to the archivext repository or close it | A dead PR against this tree | S | owner |
 | 12 | *(optional)* Pay down bare citations: `tools/check-doc-anchors.py` re-resolves anchored citations only and counts the rest as unverified | A line number is a fact about today's file | S-M | none |
 | 13 | **Harness scaffold v2: `stPaint` paints by FIRST WORD**, as the suite core's `suLineKind` does (case-sensitive `FAIL`, `PASS`/`ok`, `SKIP`/`skip`, section headers), with a fixture for the note lines a first-word rule could misread. Carry it just before the four member harness windows' next engine re-pass, so one session proves the new block in all four; the suite paste repaints its own view after each run meanwhile (`suPaintResults`), which v2 would retire | The carried `stPaint` tests `begins with`, so a returned member report's indented `  FAIL` stays muted in the paste's All view. A master change re-carries into four published member harnesses, the preflight and the core, and relabels every window it touches | S | engine (rides the harness windows' next re-pass) |
-| 15 | Re-word the premise "the itemDelimiter is global mutable state" where the tree states it as a fact (about twenty sites: member `CLAUDE.md` gotchas, code comments in onionxt, coinxt, datachannelxt, torrentxt and holde-em, coinxt's wallet docs, and the carried templates' gotcha 5, byte-identical in `onionxt/templates/` and `coinxt/templates/`) to engine note 2.3's settled answer: the itemDelimiter is handler-LOCAL on Windows and on Linux (OBSERVED 2026-09-24 and 2026-09-25, both directions; the lineDelimiter was not probed on either), the dictionary's claim everywhere. Keep every save, set, restore: it still guards the rest of the handler that sets the delimiter | A stated fact the engine contradicted on its first run of the probe; the practice it justifies is still right, so nothing is wrong except the reason | S-M | none |
 | 20 | **The closing pass over-releases ENet.** `tests/suite-closing-pass.livecodescript`'s `closeStack` calls `enDeinitialize` bare whether or not leg B ever initialized ENet, and `cpBStart`'s "already hosting" refusal runs after `get enInitialize()`, leaving a hold it never returns; its `dcCleanup` is gated on `sDcReady`, a flag and not a count. Count the holds as the suite core does (`suEnInit` / `suEnRelease`) | The class the paste's counted holds closed on 2026-09-25: beside another ENet window, the close ends that window's hosts. Found 2026-09-25 by an interpreter probe (a close with leg B never run took no hold, gave one back, and the other stack's host was lost); not observed on an engine | S | none |
 | 21 | **Number-like literals in check 23.** The rule exempts every literal, but by engine note 2.11's parse a hex chunk compared with a number-like literal compares as a number: "14e0" is "0014" (INFERRED from the engine source). Sites in the tree: coinxt's wallet script-type and prefix tests (`char 1 to 4 of tHex is "0014"`, `"0020"`, `"5120"`, `char 9 to 12 of tHex is "0001"`, in `wallet-core` and its copy in `coin-wallet`), riptide's zero-target checks against `kRsZeroTarget` (40 zeros, so a target spelled `0e` and then digits reads as 0), and `nostrxt-tests`' `... is "610162"`. Extend the rule so a literal or declared constant whose VALUE is number-like counts as hex-shaped beside a hex operand (a must-refuse fixture from each shape), then fix the sites (a letter prefix, or compare the chunk as text) | The literal exemption lets through the genesis-against-"0" shape note 2.11 names; the checker's review measured these sites on 2026-09-25 (holde-em's genesis-head assert took `heHexEq` at integration, `57ce37d`) | S-M | none (the wallet sites after coinxt's check-23 fixes land) |
 | 22 | **Settle the interpreter's UNSURE forms on an engine.** The line LANDED 2026-09-26: riptide's harness prints a fourth diagnostic probe line (`rstTextProbe`, each item in its own `try`, nothing counted) reading `"0x10" is "16"`, `"inf" is "1e999"`, `"nan" is "nan"` (two texts built apart), an NBSP-edged `"3"` against 3 (`numToCodepoint(160)`), a 385-digit run (375 zeros, then 4294967296) against 4294967296, and `"0x1.8" is "1.5"`, beside the source's prediction `true,?,?,?,false,?` (each `?` the C library's). The last two replace this row's first spelling: the interpreter ANSWERS `"0x.8" is "0.5"` (text before strtod), and a run against itself reads true under every reading, so neither could teach it anything. riptide's check-script-vectors tier 1e holds the line's shape (each item's statements pinned, the line at `rstSectionHead`'s top level) and the interpreter's refusal of each item. Left: the next paste run's reading of the line, verbatim, on Windows and on Linux (runbook S1 item 1); then teach `coinxt/tools/lcs-interp.py` (and its nostrxt twin) the readings the engine gives, record them in engine note 2.11 and move tier 1e's refusal rows to the recorded answers. Teachable from the source alone meanwhile: items 1 and 5 (engine note 2.11), and a zero-padded run past 384 characters against an IDENTICAL copy, which `_eq` refuses (`_n` reads it first) though every reading answers true | Since 2026-09-25 the interpreter REFUSES these forms, because engine note 2.11 does not establish them; an engine reading would let it answer (the source already decides items 1 and 5; engine note 2.11) | S | engine (the reading); then none |
@@ -755,7 +756,7 @@ Advisory, like the recommendations in OPEN-DECISIONS: a route, not a decision.
    (box2dxt v32, nostrxt's floor and pins, onionxt's exemptions and launch checks,
    torrentxt's boundary tests and HEAD port, the enetxt and datachannelxt smoke
    blocks, riptide's LAN keys, the stale-text rows), and the 2026-09-25/26 batch the
-   next one (suite-wide #16-#19, holde-em #13-#15, riptide #9, coinxt #8, nocloud #6,
+   next one (suite-wide #14-#19, holde-em #13-#15, riptide #9, coinxt #8, nocloud #6,
    torrentxt #18, enetxt #3; suite-wide #22's probe line landed 2026-09-26, its
    reading owed). Left with no blocker, the short ones first: the stacks
    that release a hold they never took (enetxt #4, suite-wide #20) and
@@ -763,11 +764,11 @@ Advisory, like the recommendations in OPEN-DECISIONS: a route, not a decision.
    check 23 cannot read (riptide #11 and #12, and suite-wide #21's literal rule);
    riptide #10 (the persona-index cap); coinxt #9-#11 (the bounds row #8 left, and
    the mBTC form's truncation) and #3 (the Core residue); torrentxt #21
-   (torrent-quickshare's guards); suite-wide #15 (the itemDelimiter premise);
-   nocloud's optional #4 boot gate; holde-em #3 (more leaf tranches), #10 (the
-   admission list, a table-protocol bump) and the L-sized #1 (Level 2 in played
-   hands); box2dxt #4 (platformer polish); and the optional rows. Regenerate
-   the paste, the preflight and the demo embeds once, at the end of any batch.
+   (torrent-quickshare's guards); nocloud's optional #4 boot gate; holde-em #3
+   (more leaf tranches), #10 (the admission list, a table-protocol bump) and the
+   L-sized #1 (Level 2 in played hands); box2dxt #4 (platformer polish); and the
+   optional rows. Regenerate the paste, the preflight and the demo embeds once,
+   at the end of any batch.
 2. **Release-lane decisions, then one dispatch:** the Windows pins and the glibc floor
    decided, torrentxt ABI 12 landed in the same change,
    `release-binaries.yml` dispatched once, so the engine session proves one coherent set. Proving today's

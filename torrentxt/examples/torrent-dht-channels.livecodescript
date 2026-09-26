@@ -2130,7 +2130,10 @@ end oxStripLineEnd
 private function oxFieldAfter pText, pMarker
    -- The whitespace-delimited token immediately following pMarker in pText, or
    -- empty. Used for METHODS=, PROGRESS=, ServiceID=, version=, SERVERHASH=, etc.
-   -- itemDelimiter is global mutable state, so save and restore it (gotcha 7).
+   -- Save and restore the itemDelimiter (gotcha 7). It is handler-local on
+   -- Windows and Linux (engine note 2.3), so this cannot reach a caller
+   -- there; the restore is the family's rule, costs nothing, and holds on
+   -- macOS, which has not run the probe.
    local tPos, tRest, tSaved, tOut
    put offset(pMarker, pText) into tPos
    if tPos is 0 then
@@ -7197,7 +7200,7 @@ end chDefaultSave
 
 function chSelectedLine
    local tNum
-   set the itemDelimiter to comma   -- the hilitedLines is comma-delimited; itemDelimiter is global
+   set the itemDelimiter to comma   -- the hilitedLines is comma-delimited; set it, never assume it
    put item 1 of (the hilitedLines of field "chSubs") into tNum
    if tNum is empty or tNum is not a number then
       return 0
@@ -7260,9 +7263,12 @@ function chFmtBytes pBytes
    put "B,KiB,MiB,GiB,TiB" into tUnits
    put pBytes into tVal
    put 1 into tI
-   -- Save and restore the itemDelimiter around the one span that reads items: it is
-   -- engine-global (engine note 2.3), so the bare `set ... to comma` this function had
-   -- until 2026-09-24 clobbered any caller mid-parse with another delimiter.
+   -- Save and restore the itemDelimiter around the one span that reads items. The
+   -- bare `set ... to comma` this function had until 2026-09-24 was read then as
+   -- clobbering any caller mid-parse, on the premise that the delimiter is
+   -- engine-global; engine note 2.3 has since OBSERVED it handler-local on Windows
+   -- and Linux (both directions; no Mac run), so there it reached no caller. The
+   -- restore keeps the rest of this handler on what it found and costs nothing.
    put the itemDelimiter into tOldDelim
    set the itemDelimiter to comma
    repeat while tVal >= 1024 and tI < the number of items of tUnits

@@ -101,8 +101,10 @@ script "NostrDemo"
 -- false) on failure and record the reason; nxLastError() returns it. cx*/sx*
 -- failures throw, so every foreign call in here sits inside a try. Binary is
 -- byte discipline (numToByte / byteToNum / byte chunks), never char/line/word
--- on bytes; itemDelimiter and lineDelimiter are global mutable state and are
--- saved, set, used and restored around every chunk read.
+-- on bytes; itemDelimiter and lineDelimiter are saved, set, used and restored
+-- around every chunk read (the itemDelimiter is handler-local on Windows and
+-- Linux, suite engine note 2.3, so the restore guards the rest of the handler
+-- that set it; the lineDelimiter is unprobed and treated as global).
 --
 -- EVENT SHAPE (the one record this library passes around): an event is an
 -- xTalk array with keys "id", "pubkey", "created_at", "kind", "content",
@@ -1040,11 +1042,15 @@ private function nxJsonPathNode pJson, pPath
          -- "abc" turned this never-throw library into an uncaught engine
          -- error, and OXT runs script on the UI thread.
          --
-         -- The itemDelimiter restore has to be repeated in the new early-out:
-         -- it is "/" at this point and it is GLOBAL mutable state (engine
-         -- notes 2.3), so returning without restoring would corrupt every
-         -- later `item` operation in the process - a far worse and much
-         -- quieter bug than the one being fixed.
+         -- The itemDelimiter restore is repeated in the new early-out: it is
+         -- "/" at this point. When this was written the delimiter was taken
+         -- for GLOBAL mutable state, so a missed restore read as corrupting
+         -- every later `item` operation in the process; engine note 2.3 has
+         -- since OBSERVED it handler-local on Windows and Linux (both
+         -- directions; no Mac run), so there it would misparse only the rest
+         -- of this handler. The restore stays: it costs nothing, macOS has not
+         -- run the probe, and tools/check-script-vectors.py pins it under the
+         -- interpreter, whose delimiter is global.
          if not nxIsDigits(tStep) then
             set the itemDelimiter to tSavedDelim
             nxSetError "nxJson: no element" && tStep
@@ -4949,8 +4955,11 @@ private command nxtTestJsonParse
    -- it; caught, the regression is one FAIL line and the report survives.
    --
    -- The same call pins the other half of that fix: the early-out now
-   -- restores the itemDelimiter, which is "/" at that point and global
-   -- state (suite engine note 2.3). It reads the DELIMITER, not a second
+   -- restores the itemDelimiter, which is "/" at that point. On Windows and
+   -- Linux the itemDelimiter is handler-local (suite engine note 2.3), so
+   -- this line passes there whatever the early-out does; under the headless
+   -- gate's interpreter, which holds it global, it is the check. It reads
+   -- the DELIMITER, not a second
    -- nxJsonGet: the walk saves whatever delimiter it finds and sets "/"
    -- itself, so a second call answers "x" even after a leak (the headless
    -- gate's first version of this check did exactly that and stayed green

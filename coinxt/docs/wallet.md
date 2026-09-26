@@ -47,12 +47,16 @@ calls to get wrong, and no way for one screen to leave another screen's answer
 stale.
 
 **No `item` and no `line` chunks.** Lists are arrays, keyed `1..n` with an `n`
-count. `the itemDelimiter` and `the lineDelimiter` are global mutable state in
-this engine family, and this member's `CLAUDE.md` records nine CoinXT handlers
-that a hostile delimiter turned into wrong ANSWERS rather than errors. CoinXT
-answered that with a save/set/use/restore wrapper; not reading those chunks at
-all is the stronger answer, available here because this layer was written after
-the lesson.
+count. A chunk read parses under whatever delimiter is set at that line, and
+this member's `CLAUDE.md` records nine CoinXT handlers that a hostile delimiter
+turned into wrong ANSWERS rather than errors (measured under the family
+interpreter, which models both delimiters as global). CoinXT answered that
+with a save/set/use/restore wrapper; not reading those chunks at all is the
+stronger answer, available here because this layer was written after the
+lesson. It was written when both delimiters were taken for global state; the
+itemDelimiter has since been observed handler-local on Windows and Linux (the
+suite's engine note 2.3; no Mac run; the lineDelimiter unprobed), and the
+answer holds under either reading.
 
 **No UI and no I/O.** That is what lets the vector gate run it.
 

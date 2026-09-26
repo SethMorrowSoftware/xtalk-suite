@@ -140,8 +140,9 @@ Gotchas 1-10 keep their numbers: the suite work plan cites gotcha 8.
    whole-script compilation in this family.
 6. **Commands report via `the result`; functions return:** `btAddMagnet` is a command
    (`put the result into tH`); `btTorrentStatus(tH)` is a function.
-7. **`itemDelimiter` / `lineDelimiter` are global state:** set them right before use, as
-   the code does before splitting a `BTXQS1:`/`BTXTOR1:` code (engine note 2.3).
+7. **Set `itemDelimiter` / `lineDelimiter` right before use,** as the code does before
+   splitting a `BTXQS1:`/`BTXTOR1:` code (engine note 2.3: the itemDelimiter is handler-local,
+   OBSERVED on Windows and Linux; the lineDelimiter is unprobed, still treated as global).
 8. **A `bt*` call outside a `try` with TorrentXT absent is an uncaught engine error.** With
    the library missing or ABI-skewed (recorded symptom: "can't find handler" on
    `btRp1Enable`), `btStartSession` raised out of `qsStart` AND `openStack` until

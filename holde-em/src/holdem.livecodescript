@@ -3824,7 +3824,10 @@ end oxStripLineEnd
 private function oxFieldAfter pText, pMarker
    -- The whitespace-delimited token immediately following pMarker in pText, or
    -- empty. Used for METHODS=, PROGRESS=, ServiceID=, version=, SERVERHASH=, etc.
-   -- itemDelimiter is global mutable state, so save and restore it (gotcha 7).
+   -- Save and restore the itemDelimiter (gotcha 7). It is handler-local on
+   -- Windows and Linux (engine note 2.3), so this cannot reach a caller
+   -- there; the restore is the family's rule, costs nothing, and holds on
+   -- macOS, which has not run the probe.
    local tPos, tRest, tSaved, tOut
    put offset(pMarker, pText) into tPos
    if tPos is 0 then
@@ -4562,7 +4565,7 @@ on closeStack
       put empty into gOxCtlUp
    end if
    -- cancel only our own timers; pendingMessages lines are id,time,name,target
-   -- (gotcha 5: set the delimiter before parsing -- closeStack inherits it)
+   -- (gotcha 5: set the delimiter before parsing, never assume it)
    set the itemDelimiter to comma
    repeat for each line tMsgLine in the pendingMessages
       if item 3 of tMsgLine begins with "he" then
@@ -13976,7 +13979,7 @@ end heLevelFor
 function heLevelForPeriod pPeriodIdx, pLevelsTxt
    -- return the "sb,bb,ante" for a 1-based period index, clamped to the last
    -- level. Shared by hand-count and (future) time-based schedules. Saves and
-   -- restores the itemDelimiter so it never leaks ";" to the caller (gotcha 5).
+   -- restores the itemDelimiter around its ";" parse, on every exit (gotcha 5).
    local tSaved, tLevels, tCount, tIdx, tLevel
    put the itemDelimiter into tSaved
    set the itemDelimiter to ";"
@@ -14837,9 +14840,13 @@ end heLobbyHide
 command heLobbySetVisible pOn
    -- toggle the whole overlay by concrete type (by-name generic "control"
    -- references are not reliably valid in strict OXT; field/button/graphic are).
-   -- The delimiter is pinned and RESTORED (gotcha 5): since the handStart fold
-   -- calls heLobbyHide, this runs mid-fold, where clobbering the global
-   -- itemDelimiter would corrupt whatever parse the caller resumes.
+   -- The delimiter is pinned and RESTORED (gotcha 5). Since the handStart fold
+   -- calls heLobbyHide, this runs mid-fold; v0.25.3 restored it so that a
+   -- clobbered delimiter could not corrupt the parse the caller resumes, on
+   -- the reading that it is global. Engine note 2.3 has since OBSERVED the
+   -- itemDelimiter handler-local on Windows and Linux (both directions), so
+   -- there it cannot; the restore stays because it costs nothing and macOS
+   -- has not run the probe.
    local tFields, tButtons, tNm, tOldDelim
    if there is a graphic "heLobbyBg" then
       set the visible of graphic "heLobbyBg" to pOn
@@ -16005,11 +16012,14 @@ function heStackFolder
    -- message box and never saved (there is no file to be relative to) -- then set
    -- uHeAtlasPath/uHeBacksPath by hand, or just save the stack once. LiveCode reports
    -- filenames with "/" separators on every platform, so item 1 to -2 is the folder.
-   -- gotcha 5: the itemDelimiter is global mutable state, so it is saved and
-   -- restored here. Leaving it as "/" (pre-v0.14.1) leaked a foreign delimiter out
-   -- to every caller -- heKitTryInit's early exit on a missing atlas returned with
-   -- it still set, and the next handler to chunk items without setting it first
-   -- would have parsed with "/".
+   -- gotcha 5: the itemDelimiter is saved and restored here. Before v0.14.1 it
+   -- was left as "/", read then as a foreign delimiter leaking to every caller
+   -- (heKitTryInit's early exit on a missing atlas returned with it still set,
+   -- and the next handler to chunk items without setting it first would have
+   -- parsed with "/"). Engine note 2.3 has since OBSERVED the itemDelimiter
+   -- handler-local on Windows and Linux (both directions; no Mac run), so there
+   -- the "/" ended with this handler; the restore keeps the rule uniform and
+   -- costs nothing.
    local tFile, tSaved, tOut
    put the filename of this stack into tFile
    if tFile is empty then
@@ -20888,9 +20898,13 @@ command heTestHelpersRun
    -- day someone makes it path-aware, they change a test and not a promise.
    heTAssert "helpers: heSwapExt's dotted-folder edge is cosmetic, not a crash", \
          heSwapExt("/a.b/cards", ".xml"), "/a.xml"
-   -- gotcha 5: it sets the itemDelimiter to "." and MUST put it back. This
-   -- line is the only thing that can catch that regression -- a leaked "."
-   -- would corrupt the next comma-item read in whatever called it.
+   -- gotcha 5: it sets the itemDelimiter to "." and MUST put it back. Where
+   -- the delimiter crosses a call, a leaked "." would corrupt the next
+   -- comma-item read in whatever called it, and this line is the only thing
+   -- that can catch that regression. On Windows and Linux it does not cross
+   -- (engine note 2.3, handler-local), so there this line passes whatever
+   -- heSwapExt does; under tools/check-script-vectors.py, whose interpreter
+   -- keeps the delimiter global, it is still the check.
    put the itemDelimiter into tDelimTxt
    heTAssert "helpers: heSwapExt restores the itemDelimiter (gotcha 5)", tDelimTxt, comma
 
@@ -21886,7 +21900,9 @@ command heTestEvaluatorRun
    end repeat
    heTAssert "eval: antisymmetry over all vector pairs", tBad, 0
    -- leave the delimiter as the house default, not the "|" this section parses
-   -- vectors with (gotcha 5: it is global state and the next section inherits it)
+   -- vectors with (gotcha 5: under the headless interpreter's global model the
+   -- next section inherits it; on Windows and Linux it is handler-local, engine
+   -- note 2.3)
    set the itemDelimiter to comma
 end heTestEvaluatorRun
 

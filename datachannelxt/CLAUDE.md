@@ -191,7 +191,8 @@ Numbered as cited elsewhere in the suite (the suite's `tools/check-lcb-signature
 5. **`unsafe ... end unsafe` brackets every foreign call; all declarations at handler top**
    in `.lcb`.
 6. **Commands report via `the result`; functions return a value.**
-7. **`itemDelimiter` is global** - set it immediately before use (engine note 2.3).
+7. **Set `itemDelimiter` immediately before use** (engine note 2.3): it is handler-local (OBSERVED on
+   Windows and Linux; no Mac run), so a set one lasts for the rest of its own handler and no further.
 8. **`dcPoll` is the ONE buffer call returning a COUNT, not bytes** (like `btPoll`): the walker
    reads the leading u16 and each bodyLen, so the buffer tail is never touched.
 9. **`ZStringUTF8` measures with `strlen`**, so an embedded NUL truncates a text message AND

@@ -1064,10 +1064,13 @@ def check_no_timers(c, board, also=()):
 
 
 def check_delimiters(c):
-    """The model holds the item and line delimiters as GLOBAL state (engine
-    note 2.3, OBSERVED; the dictionary's local reading is its documented
-    counterpoint), so a handler that sets one and returns without restoring
-    it leaks it into everything after - here, visibly."""
+    """The model holds the item and line delimiters as GLOBAL state, so a
+    handler that sets one and returns without restoring it leaks it into
+    everything after - here, visibly. That is the stricter reading, not the
+    engine's: engine note 2.3 has OBSERVED the itemDelimiter handler-LOCAL on
+    Windows and Linux (the dictionary's claim; the lineDelimiter unprobed, no
+    Mac run), so this checks the family's save/set/restore discipline, which
+    still guards the rest of each handler."""
     c.eq("no handler left the item or line delimiter changed",
          (LCS.ITEM_DELIMITER[0], LCS.LINE_DELIMITER[0]), (",", "\n"))
 
@@ -1574,12 +1577,23 @@ def scenario_foreign_timers(c, board):
                       'stack "enetSelfTest"'],
                      [mid + 1, world.ms + 5000, "scTickProbe",
                       'stack "sodiumDemo"']]
+    # stCancelPump sets comma and puts back what it found. check_delimiters
+    # cannot see that restore go (comma IS the value it wants), so a caller's
+    # "|" goes in here and must come back. Only this model can ask: on the
+    # Windows and Linux engines the itemDelimiter is handler-local (engine
+    # note 2.3), so there a caller's "|" never reaches the handler at all.
+    was = LCS.set_item_delimiter("|")
     try:
         ip.call("stCancelPump", [])
+        handed_back = LCS.ITEM_DELIMITER[0]
+        LCS.set_item_delimiter(was)
         pending = ip.call("suBootPending", [])
     except Exception as exc:                            # noqa: BLE001
+        LCS.set_item_delimiter(was)
         world.foreign = []
         return c.threw("stCancelPump and suBootPending run", exc)
+    c.eq("stCancelPump hands its caller's itemDelimiter back (the global "
+         "model)", handed_back, "|")
     c.eq("stCancelPump leaves another stack's pump and probe queued",
          sorted(f[2] for f in world.foreign), ["scTickProbe", "stPump"])
     c.eq("suBootPending does not read another demo's pending probe as this "

@@ -190,10 +190,15 @@ LAW here, not carried-for-later. Change nothing without a very good reason.
   `waSpAfterInspect`'s `... is waZeroTxid()`. Verified statically; needs an OXT pass.
 - Keccak-256 (Ethereum, `0x01` padding) is NOT SHA3-256 (FIPS-202, `0x06`): two shim functions, never aliased. The
   bech32 constant is 1, bech32m's `0x2bc830a3`. An encoder must never emit what its own decoder refuses.
-- **`the itemDelimiter` is global mutable state** (templates/CLAUDE.md rule 5; engine note 2.3). Nine public handlers
-  wear a save/set/use/restore wrapper around an untouched `Inner` body (fixed 2026-08-08: a hostile delimiter made
+- **`the itemDelimiter` is handler-LOCAL on Windows and Linux** (engine note 2.3, OBSERVED 2026-09-24 and 09-25,
+  both directions; no Mac run; templates/CLAUDE.md rule 5). Nine public handlers wear a save/set/use/restore wrapper
+  around an untouched `Inner` body (2026-08-08: under the family interpreter's GLOBAL delimiter a hostile one made
   `cxMnemonicValidate` answer FALSE to a valid phrase). The gate requires each to be indifferent to the delimiter and
-  to restore it, throw path included. The carried book had answered this; read it before filing an engine question.
+  to restore it, throw path included. On those two engines a caller's delimiter never reaches them, so the wrappers
+  are redundant there; they stay because they cost nothing, macOS has not run the probe, and the interpreter's
+  global model is the reading the gate can check. The engine question was withdrawn on 2026-08-08 because the
+  carried book (then "global mutable state") answered it; the 2026-09-24 probe answered it the other way. Read the
+  book before filing an engine question, and treat its answer as a claim until a dated run backs it.
 
 ### Testing and conformance
 

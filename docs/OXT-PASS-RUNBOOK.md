@@ -948,7 +948,9 @@ section 8, and out of 1.2, the session tables and the tick sheet. A partial pass
 honestly recorded is worth more than a full pass generously described. Before
 adding a question here, grep the carried lesson books: an engine session is the
 most expensive way to learn something already written down (the `itemDelimiter`
-question was withdrawn because `coinxt/templates/CLAUDE.md` rule 5 answered it).
+question was withdrawn on 2026-08-08 because `coinxt/templates/CLAUDE.md` rule 5
+answered it). A book's answer is still a claim until a dated run backs it: the
+2026-09-24 probe answered that question the other way (engine note 2.3).
 
 ---
 

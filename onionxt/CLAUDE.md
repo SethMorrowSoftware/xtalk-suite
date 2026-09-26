@@ -104,8 +104,10 @@ SodiumXT does, never a raw pointer.
 4. Constants are literal and declared before first use (engine note 1.3).
 5. LCB only: `unsafe` around every foreign call, declarations at handler top.
 6. Commands report via `the result`; functions return a value.
-7. **`itemDelimiter` / `lineDelimiter` are global mutable state** (engine note 2.3): set
-   `the lineDelimiter to crlf` where the control protocol is parsed, and restore it.
+7. **Set `itemDelimiter` / `lineDelimiter` right where you parse, and restore them** (engine
+   note 2.3): `the lineDelimiter to crlf` where the control protocol is parsed. The itemDelimiter
+   is handler-LOCAL (OBSERVED on Windows and Linux, both directions; no Mac run), so the restore
+   guards the rest of the handler that set it; the lineDelimiter is unprobed, still treated as global.
 8. `is a` accepts only number / integer / boolean / point / rect / date / color.
 9. A script compiles as a unit: an error at an unrelated line means a compile error elsewhere.
 10. **Socket ids are the engine's**: store and reuse them verbatim; never rebuild one (engine note 6.2).

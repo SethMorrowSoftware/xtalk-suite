@@ -26,17 +26,21 @@ script "walletCore"
 --    be driven headlessly (see 3).
 --
 -- 2. NO `item` AND NO `line` CHUNKS. Lists are ARRAYS, keyed 1..n with an "n"
---    count. `the itemDelimiter` and `the lineDelimiter` are global mutable
---    state in this engine family (templates/CLAUDE.md rule 5), and the
---    member's own CLAUDE.md records nine handlers that a hostile delimiter
---    turned into wrong ANSWERS rather than errors - a valid seed phrase
---    reported invalid, an address built from the wrong bytes. CoinXT answered
---    that with a save/set/use/restore wrapper around every affected handler.
---    Not reading those chunks at all is the stronger answer, and it is
---    available here because this layer was written after the lesson instead
---    of before it. Comma-joined strings are still BUILT here (that is CoinXT's
---    transaction API), which is safe: building a string never reads the
---    delimiter.
+--    count. A chunk read parses under whatever delimiter is set at that line,
+--    and the member's own CLAUDE.md records nine handlers that a hostile
+--    delimiter turned into wrong ANSWERS rather than errors - a valid seed
+--    phrase reported invalid, an address built from the wrong bytes
+--    (measured under the family interpreter, which models the delimiters as
+--    global). CoinXT answered that with a save/set/use/restore wrapper around
+--    every affected handler. Not reading those chunks at all is the stronger
+--    answer, and it is available here because this layer was written after
+--    the lesson instead of before it. The lesson book then called both
+--    delimiters global mutable state (templates/CLAUDE.md rule 5); the
+--    suite's engine note 2.3 has since observed the itemDelimiter
+--    handler-local on Windows and Linux (no Mac run; the lineDelimiter
+--    unprobed), and this answer holds under either reading. Comma-joined
+--    strings are still BUILT here (that is CoinXT's transaction API), which
+--    is safe: building a string never reads the delimiter.
 --
 -- 3. NO UI AND NO I/O. No field, no control, no socket, no URL, no file. That
 --    is what lets tools/check-wallet-vectors.py RUN this file - the actual
@@ -256,7 +260,7 @@ constant kCwHexDigits = "0123456789abcdef"
 -- because this dialect's spellings for these operations are traps: `div` and
 -- `mod` are OPERATORS some OXT parsers reject inside a compound expression,
 -- `^` is rejected outright in one, `bitXor` is an operator and not a function,
--- and `item` reads global mutable state. CoinXT's own script layer carries the
+-- and `item` reads whatever delimiter is set. CoinXT's own script layer carries the
 -- same four helpers for the same reasons; they are re-declared here rather
 -- than borrowed because those are private to that file and this one has to
 -- stand alone when it is loaded as a library rather than embedded.
@@ -346,9 +350,12 @@ end cwBitAndN
 
 -- ---- comma lists, read without `the itemDelimiter` ---------------------------
 -- The parameter tables above are comma lists and have to be indexed. `item N
--- of` would do it and would read a property any other script in the process
--- may have changed, so these two scan for the separator instead. They are the
--- ONLY place in this file that takes a delimited string apart.
+-- of` would do it, but only under a delimiter set first, and this layer
+-- reads no delimiter at all (point 2 above), so these two scan for the
+-- separator instead. They are the ONLY place in this file that takes a
+-- delimited string apart. (This once said any other script in the process
+-- might have changed the delimiter; the suite's engine note 2.3 has since
+-- observed it handler-local on Windows and Linux, no Mac run.)
 
 private function cwListAt pList, pIndex
    return cwSplitAt(pList, pIndex, ",")

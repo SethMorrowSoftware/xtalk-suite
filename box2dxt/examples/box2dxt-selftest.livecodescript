@@ -1736,10 +1736,14 @@ end stTestSheetPersist
 -- they read an "x,y": b2kAddBox, b2kAddBall, b2kAddCapsule, b2kAddPolygon,
 -- b2kReshape, b2kHinge, b2kWeld, b2kSlider, b2kWheel and b2kDrawPoly. Before
 -- it, a caller that had set tab - the contraption builder's Images panel did,
--- one call chain deep - made `item 1 of the loc` answer the whole "512,246",
--- and that string went into arithmetic or a Number-typed .lcb parameter: a
--- hard throw (engine note 6.4), not a wrong number. The fix shipped with no
--- assertion and left kStHarnessV at 31, against rule 2; this section is both.
+-- one call chain deep - was read (a static finding, on the reading that the
+-- delimiter crosses a call) as making `item 1 of the loc` answer the whole
+-- "512,246", and that string going into arithmetic or a Number-typed .lcb
+-- parameter: a hard throw (engine note 6.4), not a wrong number. The
+-- observations below found that it does not cross on Win32 or Linux (engine
+-- note 2.3, handler-local), so there it could not happen. The fix shipped
+-- with no assertion and left kStHarnessV at 31, against rule 2; this section
+-- is both.
 -- All ten are driven, because each carries its own copy of the one line.
 --
 -- Each call runs under a tab set IMMEDIATELY before it (the Kit's own

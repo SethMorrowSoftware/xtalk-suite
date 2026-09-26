@@ -297,8 +297,11 @@ private command nxtTestJsonParse
    -- it; caught, the regression is one FAIL line and the report survives.
    --
    -- The same call pins the other half of that fix: the early-out now
-   -- restores the itemDelimiter, which is "/" at that point and global
-   -- state (suite engine note 2.3). It reads the DELIMITER, not a second
+   -- restores the itemDelimiter, which is "/" at that point. On Windows and
+   -- Linux the itemDelimiter is handler-local (suite engine note 2.3), so
+   -- this line passes there whatever the early-out does; under the headless
+   -- gate's interpreter, which holds it global, it is the check. It reads
+   -- the DELIMITER, not a second
    -- nxJsonGet: the walk saves whatever delimiter it finds and sets "/"
    -- itself, so a second call answers "x" even after a leak (the headless
    -- gate's first version of this check did exactly that and stayed green

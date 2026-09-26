@@ -4176,8 +4176,12 @@ end stCleanup
 -- just began. check-suite-selftest.py holds the two lists together. The
 -- carried blocks' own timers are not the core's to cancel: the self-check's
 -- one delayed probe restores what it touches, and the kit's copy flash is not
--- used here. The item delimiter is restored (engine note 2.3): this runs
--- inside stRun, above sections that split items of their own.
+-- used here. The item delimiter is restored (engine note 2.3): it is
+-- handler-local on Windows and Linux, so there it could not reach the
+-- sections stRun runs next; restored anyway, the family's rule, which
+-- tools/check-suite-ui-boot.py pins under its global delimiter model (a
+-- caller's "|" must come back; its end-of-scenario check alone could not
+-- see this restore go, since comma is the value it wants).
 -- `the pendingMessages` lists EVERY pending message in the engine, not this
 -- stack's, so a cancel by name reaches any open stack that arms a message
 -- of that name. That is why the paste's two timers have paste-only names.

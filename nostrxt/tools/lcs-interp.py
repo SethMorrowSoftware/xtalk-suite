@@ -127,7 +127,9 @@ through the same helpers). What is modelled, and on what evidence:
     handler finishes executing"): every handler call starts at false and
     the caller's value comes back when the callee returns. That is a
     different scope from the delimiters, which this file holds as global
-    state on note 2.3's own evidence; nothing in the tree has observed the
+    state, the stricter reading (see ITEM_DELIMITER: note 2.3 has since
+    OBSERVED the itemDelimiter handler-local on Windows and Linux, and the
+    global model is kept on purpose); nothing in the tree has observed the
     scope of caseSensitive either way, and riptide's three painters set it
     true without ever resetting it, so a global model would let one painter
     silently turn every later array in a boot back into exact-spelling keys,
@@ -2336,14 +2338,24 @@ HASHES = {}
 #
 # This used to be a hidden assumption: item chunks split on "," unconditionally,
 # so a script's dependence on the engine default was INVISIBLE here. An
-# adversarial review flagged exactly that, and it matters because the property is
-# GLOBAL MUTABLE STATE in this engine family (templates/CLAUDE.md rule 5) - an
-# app may set it and not restore it, and any script that reads `item` afterwards
-# then silently parses something else.
+# adversarial review flagged exactly that, when the family took the property for
+# GLOBAL MUTABLE STATE (templates/CLAUDE.md rule 5): an app may set it and not
+# restore it, and any script that reads `item` afterwards then silently parses
+# something else. That is the model this file keeps: ONE delimiter for the whole
+# run, set and restored by the script, never reset at a handler call.
 #
-# Modelling it lets a gate run the published vectors under a HOSTILE delimiter
-# and see what the engine would really do. Without this, no fix for that exposure
-# could be verified headlessly, only asserted.
+# THE ENGINE IS NOT THAT (engine note 2.3, OBSERVED 2026-09-24 on Windows and
+# 2026-09-25 on Linux, both directions; the LiveCode dictionary's claim; no Mac
+# run): there the itemDelimiter is HANDLER-LOCAL - a called handler starts at
+# comma, and a callee's set ends when it returns. The global model is kept on
+# purpose. It is the STRICTER reading for a leak: every unrestored set stays
+# visible to a gate here, where a local model would forgive it at the return,
+# so the family's save/set/restore discipline stays checkable headlessly while
+# macOS and the lineDelimiter are unprobed. Two limits follow from it. A gate
+# that runs the published vectors under a HOSTILE caller delimiter proves a
+# guard those engines make redundant, not an exposure they have. And the model
+# is BLIND to the converse: a callee that relies on inheriting its caller's
+# non-comma delimiter parses as intended here and under comma on those engines.
 # ---------------------------------------------------------------------------
 ITEM_DELIMITER = [","]
 
