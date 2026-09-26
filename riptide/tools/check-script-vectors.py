@@ -52,7 +52,10 @@ same for ORDERING: rsSeqCompare, rsIsWireInt and the two ingest verifiers
 near 2^53, where the rule calls integers one apart equal, each after a
 seeded copy of the spelling that shipped has read right under IEEE and wrong
 under the engine's rule (the bridge's seq agreement with tier 2, since only
-a bridge that verifies over the real CoinXT reaches it).
+a bridge that verifies over the real CoinXT reaches it). Tier 1e
+(2026-09-26) reads the HARNESS, not the library: the shape of its fourth
+numeric compare probe line, and the plain interpreter's refusal of each of
+its six items (suite engine note 2.11's forms that only an engine can read).
 
 THE SOURCE REWRITES, AND WHY THEY ARE ASSERTED. riptide was written before
 this gate existed and uses three spellings outside the interpreter's
@@ -1609,6 +1612,322 @@ def check_seq_order_bridge(c, ip, src, fail):
                  % name, fired > 0, True)
 
 
+# --------------------------------------------------------------------------
+# tier 1e: the harness's FOURTH numeric compare probe (2026-09-26)
+# --------------------------------------------------------------------------
+# The harness prints a fourth diagnostic line (suite work plan 1.2 #22) that
+# reads, on an engine, six text forms the family interpreter REFUSES as
+# unsure because suite engine note 2.11 does not establish how the engine
+# reads them: a hex integer, the C99 strtod words inf and nan, a hex float, a
+# NO-BREAK SPACE at an edge, and a 385-digit run past R8L. Only an engine
+# prints it, so nothing else would notice an edit that dropped an item,
+# swapped one back to a form the interpreter answers (the work plan row's
+# "0x.8" is "0.5" is one: MCU_strtor8 makes it text before strtod runs), let
+# a throw end the harness, or counted the line as a check. This tier holds
+# the line's SHAPE (the six items in order, the diagnostic prefix, the
+# printed prediction, the statement at rstSectionHead's top level, every
+# item inside the try whose catch keeps a throw on the line, each item's
+# statements exactly, nothing counted) and runs the harness's OWN rstTextProbe,
+# lifted out of the file, through the plain interpreter: each item must be
+# REFUSED (LCS.Indistinct citing 2.11), and each refusal must name the
+# operand the harness comment says it builds (the NaN pair, the U+00A0 edge,
+# the 385 characters). A refusal is the handling probes 1-3 get too (tier
+# 1c here, coinxt's check-script-vectors tier 0): no headless gate can run
+# such a line, so a gate that holds the refusal is the one place a headless
+# run meets it. When the engine's reading is recorded and the interpreter
+# is taught it, these refusal rows are what change, beside that record.
+# The shape checker is proven able to fire first, on seeded copies.
+
+HARNESS = os.path.join(MEMBER, "tests", "riptide-selftest.livecodescript")
+PROBE4_PREFIX = "numeric compare probe 4 (diagnostic;"
+PROBE4_PREDICTED = "true,?,?,?,false,?"
+# (item, the comparison its branch makes, a fragment its refusal must name)
+PROBE4_ITEMS = [
+    (1, '("0x10" is "16")', '`"0x10" is "16"`'),
+    (2, '("inf" is "1e999")', '`"inf" is "1e999"`'),
+    (3, '(tA is tB)', '`"nan" is "nan"`'),
+    (4, '(tA is 3)', '"\\xa03"'),
+    (5, '(tA is 4294967296)', '4294967296 (385 chars)'),
+    (6, '("0x1.8" is "1.5")', '`"0x1.8" is "1.5"`'),
+]
+# Each item's statements, from its branch to the next, EXACTLY (review,
+# 2026-09-26). The refusal rows below cannot see an edit that keeps every
+# operand the interpreter refuses but changes what the ENGINE prints: a line
+# after the comparison that overwrites its answer, or the NaN pair copied
+# from one value (`put tA into tB`), which the engine may hand
+# MCLogicIsEqualTo as ONE value, answered true before either is read, so the
+# item could print true under every C library (the harness builds the two
+# apart so the item never rests on that sharing, which is not recorded).
+# Both passed this tier green until the bodies were pinned.
+PROBE4_BODIES = {
+    1: ['put ("0x10" is "16") into tOut'],
+    2: ['put ("inf" is "1e999") into tOut'],
+    3: ['put "n" into tA', 'put "an" after tA', 'put "na" into tB',
+        'put "n" after tB', 'put (tA is tB) into tOut'],
+    4: ['put numToCodepoint(160) & "3" into tA', 'put (tA is 3) into tOut'],
+    5: ['put empty into tA', 'repeat with tN = 1 to 375', 'put "0" after tA',
+        'end repeat', 'put "4294967296" after tA',
+        'put (tA is 4294967296) into tOut'],
+    6: ['put ("0x1.8" is "1.5") into tOut'],
+}
+_PROBE4_FN_RX = re.compile(
+    r'^private function rstTextProbe pItem$.*?^end rstTextProbe$',
+    re.M | re.S)
+_SECTION_HEAD_RX = re.compile(
+    r'^private command rstSectionHead$.*?^end rstSectionHead$', re.M | re.S)
+# the probe-4 statement's first and last physical lines, as a seed wraps them
+PROBE4_OPEN = ('   put "      numeric compare probe 4 (diagnostic; the engine '
+               'source" && \\\n')
+PROBE4_CLOSE = 'rstTextProbe(6) & return after sLog\n'
+# what a counted line would call, and the counters it would touch
+_PROBE4_COUNTED_RX = re.compile(r'\b(rstCheck|rstSkip|sPass|sFail|sSkip)\b')
+
+
+def _probe4_logical(body):
+    """The body's logical lines: each `\\`-continued statement joined into
+    one, comments cut outside string literals."""
+    out, buf = [], ""
+    for raw in body.split("\n"):
+        code, instr = "", False
+        for i, ch in enumerate(raw):
+            if ch == '"':
+                instr = not instr
+            elif not instr and raw.startswith("--", i):
+                break
+            code += ch
+        code = code.rstrip()
+        if code.endswith("\\"):
+            buf += code[:-1] + " "
+            continue
+        out.append((buf + code).strip())
+        buf = ""
+    return [ln for ln in out if ln]
+
+
+def _probe4_depth(lines):
+    """How many blocks (a multi-line `if`, `repeat`, `try`, `switch`) are
+    open after LINES, logical lines of one handler. A one-line `if X then
+    statement` opens none; `else`, `catch` and `case` neither open nor
+    close. Enough for rstSectionHead, whose only blocks are these."""
+    depth = 0
+    for ln in lines:
+        low = ln.lower()
+        word = low.split()[0]
+        if word == "end" and low.split()[1:2] in (["if"], ["repeat"],
+                                                  ["try"], ["switch"]):
+            depth -= 1
+        elif word in ("else", "catch", "case", "default", "finally"):
+            continue
+        elif ((word == "if" and low.endswith(" then"))
+              or word in ("repeat", "try", "switch")):
+            depth += 1
+    return depth
+
+
+def probe4_shape(text):
+    """What is wrong with the probe-4 line and its handler in TEXT (the
+    harness source); an empty list when nothing is."""
+    bad = []
+    heads = _SECTION_HEAD_RX.findall(text)
+    if len(heads) != 1:
+        return ["expected one rstSectionHead, found %d" % len(heads)]
+    head = _probe4_logical(heads[0])
+    lines = [ln for ln in head if PROBE4_PREFIX in ln]
+    if len(lines) != 1:
+        bad.append("expected ONE statement in rstSectionHead carrying %r, "
+                   "found %d" % (PROBE4_PREFIX, len(lines)))
+    else:
+        line = lines[0]
+        # at the handler's top level, as probes 1-3 are: inside an `if` (or
+        # any block) a run that reaches the section can skip the line whole
+        depth = _probe4_depth(head[1:head.index(line)])
+        if depth != 0:
+            bad.append("the probe-4 statement sits inside %d open block(s) "
+                       "of rstSectionHead, not at its top level" % depth)
+        if not (line.startswith('put "') and
+                line.endswith("& return after sLog")):
+            bad.append("the probe-4 statement is not one `put ... & return "
+                       "after sLog` (a printed line)")
+        if PROBE4_PREDICTED not in line:
+            bad.append("the probe-4 line does not print the source's "
+                       "prediction %s" % PROBE4_PREDICTED)
+        calls = re.findall(r'\brstTextProbe\((\d+)\)', line)
+        if calls != [str(n) for n, _e, _f in PROBE4_ITEMS]:
+            bad.append("the probe-4 line reads items %s, not 1 to 6 in "
+                       "order" % ",".join(calls))
+        if _PROBE4_COUNTED_RX.search(line):
+            bad.append("the probe-4 line calls a counting handler")
+    fns = _PROBE4_FN_RX.findall(text)
+    if len(fns) != 1:
+        bad.append("expected ONE `private function rstTextProbe pItem`, "
+                   "found %d" % len(fns))
+        return bad
+    body = _probe4_logical(fns[0])[1:-1]
+    if _PROBE4_COUNTED_RX.search("\n".join(body)):
+        bad.append("rstTextProbe touches a counter or a counting handler")
+    low = [ln.lower() for ln in body]
+    if low.count("try") != 1 or low.count("end try") != 1 \
+            or low.count("catch terr") != 1:
+        bad.append("rstTextProbe is not ONE try / catch tErr / end try")
+        return bad
+    t, c, e = low.index("try"), low.index("catch terr"), low.index("end try")
+    before, inside, catch, after = (body[:t], body[t + 1:c], body[c + 1:e],
+                                    body[e + 1:])
+    if any(re.search(r'\bis\b|[<>=]', ln) for ln in before + after
+           if not ln.lower().startswith("local ")):
+        bad.append("rstTextProbe compares outside its try")
+    if after != ["return tOut"]:
+        bad.append("rstTextProbe does not end `end try` / `return tOut`")
+    if catch != ['replace return with " " in tErr',
+                 'replace comma with ";" in tErr',
+                 'put "threw:" && tErr into tOut']:
+        bad.append("rstTextProbe's catch does not print the throw's text "
+                   "on the line (returns to spaces, commas to semicolons)")
+    branches = [ln for ln in inside
+                if re.match(r'(else )?if pItem is \d+ then$', ln)]
+    want = ["if pItem is 1 then"] + ["else if pItem is %d then" % n
+                                     for n, _e, _f in PROBE4_ITEMS[1:]]
+    if branches != want:
+        bad.append("rstTextProbe's branches are %r, not items 1 to 6 in "
+                   "order" % branches)
+    else:
+        marks = [inside.index(b) for b in branches] + [len(inside)]
+        for (n, expr, _frag), lo, hi in zip(PROBE4_ITEMS, marks, marks[1:]):
+            puts = [ln for ln in inside[lo + 1:hi]
+                    if ln.startswith("put (") and ln.endswith(" into tOut")]
+            if puts != ["put %s into tOut" % expr]:
+                bad.append("item %d does not compare %s into tOut (%r)"
+                           % (n, expr, puts))
+        if marks[0] != 0 or inside[-1:] != ["end if"]:
+            bad.append("rstTextProbe's try holds more than the six branches "
+                       "(it must open with item 1's `if` and close with "
+                       "`end if`)")
+        else:
+            marks[-1] = len(inside) - 1
+            for n, lo, hi in zip(sorted(PROBE4_BODIES), marks, marks[1:]):
+                if inside[lo + 1:hi] != PROBE4_BODIES[n]:
+                    bad.append("item %d's statements are %r, not exactly %r"
+                               % (n, inside[lo + 1:hi], PROBE4_BODIES[n]))
+    return bad
+
+
+def _probe4_seeds(text, fail):
+    """Seeded copies of TEXT, each a way the line could silently lose what
+    it reads: (text, what was seeded, what the shape checker must say)."""
+    def swap(old, new, why, says):
+        if text.count(old) != 1:
+            fail("tier 1e's fixture expects %r exactly once in the harness, "
+                 "and found %d; without it the shape checker goes untested"
+                 % (old, text.count(old)))
+        return text.replace(old, new), why, says
+
+    seeds = [
+        swap('rstTextProbe(3) & "," & ', "",
+             "an item dropped from the line", "reads items 1,2,4,5,6"),
+        swap("numeric compare probe 4 (diagnostic;",
+             "numeric compare probe 4 (",
+             "the diagnostic prefix dropped", "found 0"),
+        swap("reads true,?,?,?,false,? where", "reads true,true where",
+             "the printed prediction changed", "source's prediction"),
+        swap('put ("0x1.8" is "1.5") into tOut',
+             'put ("0x.8" is "0.5") into tOut',
+             "item 6 swapped back to the row's form, which the interpreter "
+             "answers", "item 6 does not compare"),
+        swap('      put "threw:" && tErr into tOut',
+             '      throw tErr',
+             "a throw no longer printed on the line",
+             "catch does not print"),
+        swap("   put empty into tOut\n   try\n",
+             '   put empty into tOut\n   put ("inf" is "1e999") into tOut\n'
+             "   try\n",
+             "a comparison outside the try, where a throw ends the harness",
+             "compares outside its try"),
+        swap("   return tOut\nend rstTextProbe",
+             '   rstCheck (tOut is not empty), "probe 4"\n'
+             "   return tOut\nend rstTextProbe",
+             "the diagnostic counted as a check",
+             "touches a counter or a counting handler"),
+        # the review's three (2026-09-26): each passed this tier green, and
+        # each changes what an engine prints while the interpreter still
+        # refuses every item
+        swap('         put ("inf" is "1e999") into tOut\n',
+             '         put ("inf" is "1e999") into tOut\n'
+             '         put "true" into tOut\n',
+             "item 2's answer overwritten after its comparison",
+             "item 2's statements"),
+        swap('         put "na" into tB\n         put "n" after tB\n',
+             '         put tA into tB\n',
+             "item 3's NaN pair copied from one value, which the engine may "
+             "share and answer true unread", "item 3's statements"),
+        swap(PROBE4_OPEN, '   if the platform is "none" then\n' + PROBE4_OPEN,
+             "the line moved inside an `if`", "not at its top level"),
+    ]
+    # the last seed is half built: its `if` closes after the statement
+    last, why, says = seeds.pop()
+    if last.count(PROBE4_CLOSE) != 1:
+        fail("tier 1e's fixture expects %r exactly once in the harness, "
+             "and found %d; without it the shape checker goes untested"
+             % (PROBE4_CLOSE, last.count(PROBE4_CLOSE)))
+    seeds.append((last.replace(PROBE4_CLOSE, PROBE4_CLOSE + "   end if\n"),
+                  why, says))
+    return seeds
+
+
+def check_probe4(c, fail):
+    c.note("tier 1e: the harness's fourth numeric compare probe (the text "
+           "forms engine note 2.11 does not establish)")
+    with open(HARNESS, "r", encoding="utf-8") as fh:
+        text = fh.read()
+    for seeded, why, says in _probe4_seeds(text, fail):
+        c.ck("fixture: the shape check refuses a seeded copy with %s, "
+             "saying so" % why,
+             any(says in problem for problem in probe4_shape(seeded)), True)
+    c.ck("the probe-4 line: one printed line of six items in order at "
+         "rstSectionHead's top level, the diagnostic prefix and the "
+         "source's prediction %s, each item inside rstTextProbe's try and "
+         "built exactly as pinned, nothing counted" % PROBE4_PREDICTED,
+         probe4_shape(text), [])
+    fns = _PROBE4_FN_RX.findall(text)
+    if len(fns) != 1:
+        return
+    # numToCodepoint names a Unicode code point (riptide's runner models it
+    # the same way); installed for this tier only
+    was = LCS.HASHES.get("numtocodepoint")
+    LCS.HASHES["numtocodepoint"] = lambda a: chr(int(LCS._n(a[0])))
+    try:
+        probe = LCS.Interp(fns[0])
+        for n, expr, frag in PROBE4_ITEMS:
+            try:
+                got = "answered %s" % (LCS._disp(
+                    probe.call("rstTextProbe", [n])),)
+            except LCS.Indistinct as exc:
+                msg = str(exc)
+                got = ("refused" if "2.11" in msg and frag in msg
+                       else "refused, but naming neither 2.11 nor %s: %s"
+                       % (frag, msg[:160]))
+            c.ck("item %d, %s: the plain interpreter REFUSES it (the "
+                 "engine's reading is owed; teach the interpreter from it)"
+                 % (n, expr), got, "refused")
+        c.ck("an item past 6 reads empty and never throws",
+             probe.call("rstTextProbe", [7]), "")
+        thrower = LCS.Interp(fns[0].replace(
+            'put ("0x10" is "16") into tOut',
+            'throw "seeded" & return & "a, b"'))
+        c.ck("a throw inside an item prints its text in the item's place, "
+             "on one line and with no comma",
+             thrower.call("rstTextProbe", [1]), "threw: seeded a; b")
+        swapped = LCS.Interp(fns[0].replace('("0x1.8" is "1.5")',
+                                            '("0x.8" is "0.5")'))
+        c.ck("fixture: the row's \"0x.8\" is \"0.5\" is ANSWERED (false: "
+             "text before strtod), so the line reads the refused sibling",
+             str(LCS._disp(swapped.call("rstTextProbe", [6]))), "false")
+    finally:
+        if was is None:
+            LCS.HASHES.pop("numtocodepoint", None)
+        else:
+            LCS.HASHES["numtocodepoint"] = was
+
+
 def check_capacity_arithmetic(c, ip):
     """The numbers that MOVE when kRsMaxRecord moves, pinned headlessly.
 
@@ -1904,6 +2223,7 @@ def main(argv):
     check_u64_engine_models(c, ip, src, fail)
     check_no_quotient_comparisons(c, fail)
     check_seq_order(c, ip, src, fail)
+    check_probe4(c, fail)
     check_capacity_arithmetic(c, ip)
     if install_coin_natives():
         check_composed(c, ip, V)

@@ -250,6 +250,65 @@ private function rstUlpLadder pBase, pUlps
    return 0
 end rstUlpLadder
 
+-- A DIAGNOSTIC for suite engine note 2.11, never a check (2026-09-26): item
+-- pItem (1 to 6) of the fourth numeric compare probe line, whose comment in
+-- rstSectionHead says what each item reads and what decides it. Each item
+-- runs inside the try, so a throw prints its text in the item's place
+-- (returns and commas turned into spaces and semicolons, so the line stays
+-- one line of six comma-separated items) instead of ending the harness.
+-- The source stays ASCII; the two non-trivial operands are built here:
+--   3  two NaN words, each built a piece at a time, so the two operands are
+--      separate values: MCLogicIsEqualTo (engine/src/exec-logic.cpp)
+--      answers true for two references to ONE value before it reads either,
+--      and whether the engine shares one value between two equal literals
+--      is not recorded in this tree
+--   4  numToCodepoint(160) is U+00A0, NO-BREAK SPACE, on every platform,
+--      because it names a Unicode code point, not a native character (the
+--      LiveCode dictionary, DOCUMENTED; the paste's holde-em harness calls
+--      numToCodepoint in its suit-glyph checks, green on Linux and on
+--      Windows on 2026-09-25, which shows the function compiles and runs
+--      there, not what it returns for 160). numToChar(160) would not do: it
+--      is the NATIVE character 160, U+00A0 in Latin-1 (Linux) and in
+--      Windows-1252 but a dagger in MacRoman. The engine then hands
+--      MCU_strtor8 the NATIVE byte (MCAutoStringRefAsCString): 0xA0 on
+--      Linux and on Windows, 0xCA on macOS
+--   5  375 zeros, then 4294967296 (2^32): 385 characters, one past R8L,
+--      built by a loop
+private function rstTextProbe pItem
+   local tA, tB, tN, tOut, tErr
+   put empty into tOut
+   try
+      if pItem is 1 then
+         put ("0x10" is "16") into tOut
+      else if pItem is 2 then
+         put ("inf" is "1e999") into tOut
+      else if pItem is 3 then
+         put "n" into tA
+         put "an" after tA
+         put "na" into tB
+         put "n" after tB
+         put (tA is tB) into tOut
+      else if pItem is 4 then
+         put numToCodepoint(160) & "3" into tA
+         put (tA is 3) into tOut
+      else if pItem is 5 then
+         put empty into tA
+         repeat with tN = 1 to 375
+            put "0" after tA
+         end repeat
+         put "4294967296" after tA
+         put (tA is 4294967296) into tOut
+      else if pItem is 6 then
+         put ("0x1.8" is "1.5") into tOut
+      end if
+   catch tErr
+      replace return with " " in tErr
+      replace comma with ";" in tErr
+      put "threw:" && tErr into tOut
+   end try
+   return tOut
+end rstTextProbe
+
 --------------------------------------------------------------------------
 -- sections
 --------------------------------------------------------------------------
@@ -614,6 +673,47 @@ private command rstSectionHead
          (281474976710656 < 281474976710657) & "," & \
          (450359962737050 is 450359962737051) & "," & \
          (450359962737049 is 450359962737050) & return after sLog
+   -- DIAGNOSTIC 4, not a check (added 2026-09-26; suite work plan 1.2 #22).
+   -- Probe 3's items 1 and 2 read the two forms of engine note 2.11's parse
+   -- that have met an engine. The family interpreter
+   -- (coinxt/tools/lcs-interp.py, twinned in nostrxt) REFUSES as unsure the
+   -- forms that note does not establish, and these six are forms it
+   -- refuses, each class of them covered (rstTextProbe builds them):
+   --   1  "0x10" is "16"            a hex integer: MCU_strtol's base 16
+   --   2  "inf" is "1e999"          a C99 strtod word, against +inf
+   --   3  "nan" is "nan"            two NaN words, built separately
+   --   4  NBSP & "3" is 3           a character outside ASCII at the edge
+   --   5  a 385-digit run is 4294967296
+   --                                past R8L (384) and past the integer
+   --                                parse's int32 (integer_t is int32_t on
+   --                                32- and 64-bit builds, foundation.h)
+   --   6  "0x1.8" is "1.5"          a C99 hex float
+   -- The work plan's row named "0x.8" is "0.5" and a 385-digit run against
+   -- itself; the interpreter ANSWERS the first (false: MCU_strtor8 makes a
+   -- "0x" followed by no hex digit text before strtod ever runs), and the
+   -- second reads true whatever decides it (identical text, or one number),
+   -- so it cannot read the limit. The line reads the refused sibling of
+   -- each, the forms the interpreter's UNSURE classes name.
+   -- Predicted by the engine SOURCE (libfoundation's MCU_strtol and
+   -- MCU_strtor8, engine/src/exec-logic.cpp's MCLogicIsEqualTo; OXT's tree
+   -- and livecode develop-9.6 identical):  true,?,?,?,false,?
+   -- where each ? is the C library's to decide, not the engine's source:
+   -- strtod for 2, 3 and 6 (a C99 strtod reads inf, nan and hex floats,
+   -- giving true,false,true there; an older one reads none, giving
+   -- false,true,false), and C isspace in the engine's locale for 4 (true
+   -- only where byte 0xA0 is a space; the "C" locale says it is not). Which
+   -- C runtime OXT links on each platform is not recorded in this tree.
+   -- The interpreter refuses all six (LCS.Indistinct, which a script try
+   -- cannot catch), so no headless run prints this line, as none prints
+   -- probe 3 (whose item 1 it refuses first); riptide's
+   -- check-script-vectors tier 1e holds this line's shape and the six
+   -- refusals. Its reading is owed to the next engine run (the suite
+   -- runbook's S1 item 1 asks for the line verbatim).
+   put "      numeric compare probe 4 (diagnostic; the engine source" && \
+         "reads true,?,?,?,false,? where ? is the C library's):" && \
+         rstTextProbe(1) & "," & rstTextProbe(2) & "," & \
+         rstTextProbe(3) & "," & rstTextProbe(4) & "," & \
+         rstTextProbe(5) & "," & rstTextProbe(6) & return after sLog
    put tHead into tBig
    repeat with rstI = 5 to 12
       put numToByte(255) into byte rstI of tBig

@@ -308,15 +308,30 @@ Code comments cite these numbers; keep them.
    wide-integer bound on exact integers that differ by at least 1 at a modest magnitude, never
    against a quotient. Tier 1c replays the table under the engine's rule and two looser candidates
    (fixture: the old line, which each must accept) and refuses any library comparison against a
-   quotient; the harness prints three probe lines: the first two measured the rule, the third
-   reads its consequences (wide integers, near zero, number-like text), and read them on Linux and
-   on Windows (2026-09-25) exactly as the source's rule predicts. Tier 1c holds the rule to every
+   quotient; the harness prints three probe lines on it (a fourth, below, reads the text parse):
+   the first two measured the rule, the third reads its consequences (wide integers, near zero,
+   number-like text), and read them on Linux and on Windows (2026-09-25) exactly as the source's
+   rule predicts. Tier 1c holds the rule to every
    recorded numeric answer of the three (probe 3's first two items are a text parse, held by coinxt's
    check-script-vectors tier 0 instead). Since 2026-09-25 the plain interpreter itself REFUSES
    (`Indistinct`) a comparison the engine answers differently, by the tolerance (2.10) or by
    reading text as a number (2.11), so tier 1c's plain legs expect the refusal where IEEE answered:
    the nine of the fourteen numeric probe answers the engine gave otherwise, and the old bound at
-   2^53 + 1. The engine-model and margin legs are unchanged.
+   2^53 + 1. The engine-model and margin legs are unchanged. A FOURTH probe line (2026-09-26,
+   the suite work plan's suite-wide #22) reads, one per form, the six text forms the interpreter
+   refuses as unsure (suite engine note 2.11: the engine source decides two of them, the C
+   library the other four, and no engine has read any): `"0x10" is "16"`,
+   `"inf" is "1e999"`, `"nan" is "nan"` (two texts built apart), an NBSP-edged "3" against 3
+   (`numToCodepoint(160)`, U+00A0 whatever the native encoding), a 385-digit run against
+   4294967296 and `"0x1.8" is "1.5"`. Each item is read inside its own `try` in `rstTextProbe`, so
+   a throw prints its text on the line; nothing is counted. It prints the engine source's
+   prediction `true,?,?,?,false,?` (each `?` the C library's to decide). The work plan's row named
+   `"0x.8" is "0.5"` (the interpreter answers it: text before strtod) and a run against itself
+   (true under every reading), so the line reads their refused siblings. check-script-vectors
+   tier 1e holds its shape, each item's statements exactly and the line's top-level place in
+   `rstSectionHead` (after seeded copies it must refuse) and the plain interpreter's refusal of
+   each item as the harness builds it. Verified statically; needs an OXT pass: it has
+   not met an engine, and its reading is owed to the next paste run.
    **Ordering, 2026-09-25.** By the same rule (these consequences are INFERRED from it, not
    observed) every ORDER over a wire integer blurred too, and those are accepted up to
    2^53 - 1: `rsIngestHead`'s and `rsIngestBridge`'s rollback gate
@@ -420,7 +435,8 @@ Caveats that travel with the ledger:
   2^53 + 1 row fell in them. The day's fixes (the ten-key check, the halves bound and exactness
   check, the numeric probe line) ran green in its second run, and the second probe line in its
   third. The harness's third probe line (added 2026-09-25) first ran on an engine the same day, on
-  Linux and then on Windows (the ledger), and read the same on both.
+  Linux and then on Windows (the ledger), and read the same on both. The fourth (added
+  2026-09-26, trap 9) has not run.
 - Headless on 2026-09-23: check-script-vectors 84 checks (1 skip), check-demo-boot 44 checks. Run
   the gates for current counts.
 

@@ -473,6 +473,33 @@ overflow a double compare equal, and exponent-form text compares as a number.
 Nothing else here has run: `"0012" is "12"`, a leading `+` or whitespace, the
 `inf` and `nan` spellings, the 384-character limit and the `caseSensitive`
 claim stay DOCUMENTED, and macOS has not run the line.
+**A fourth probe line exists, its reading OWED (2026-09-26, work plan
+suite-wide #22).** riptide's harness now prints, beside the three, one
+diagnostic line of six items, each read inside its own `try`: the six forms
+the family interpreter refuses as unsure (the "Gate, headless" paragraph
+below), one per form. `"0x10" is "16"` (a hexadecimal integer, which
+`MCU_strtol` reads in base 16); `"inf" is "1e999"` and `"nan" is "nan"` (the
+C99 `strtod` words; the two NaN texts are built separately, because
+`MCLogicIsEqualTo` answers true for two references to ONE value before it
+reads either); `numToCodepoint(160) & "3"` against 3 (a NO-BREAK SPACE at the
+edge, handed to `MCU_strtor8` as its native byte, 0xA0 on Windows and on
+Linux, where C `isspace` decides); a 385-character run, 375 zeros and then
+4294967296, against 4294967296; and `"0x1.8" is "1.5"` (a C99 hex float). The
+source, read 2026-09-26 (libfoundation's `foundation-typeconvert.cpp` and
+`foundation.h`, and `exec-logic.cpp`, identical in OXT's tree and in livecode
+`develop-9.6`), decides two of them: the first is TRUE, and the fifth FALSE,
+because `integer_t` is `int32_t` in both branches of `foundation.h`'s
+`__32_BIT__` test, so the integer parse overflows and 385 characters is past
+R8L, which leaves text. The other four are the C library's, not the source's
+(a C99 library in the "C" locale would answer true, false, false, true), so
+the line prints the prediction `true,?,?,?,false,?` beside its reading, and
+Windows and Linux may read them differently. The work plan's row named
+`"0x.8" is "0.5"` and a run against itself; the interpreter answers the first
+(false: `MCU_strtor8` makes a `0x` with no hex digit after it text before
+`strtod` runs), and the second reads true under every reading, so the line
+reads their refused siblings. No engine has run the line: every form above
+stays DOCUMENTED until a run is recorded (the runbook's S1 item 1 asks for
+the line verbatim).
 holde-em's `heHexEq` pins, green in the same runs, name bare `is`'s answer only
 in their labels ("bare is: equal on the engine") and assert the helper's, so
 they observe the fix, not this parse.
@@ -594,21 +621,30 @@ reading and the engine's give the same ANSWER it answers as before, and where
 they part, or where this note does not establish the form at all (a
 hexadecimal integer, which `MCU_strtol` reads in base 16 with no overflow
 check; `inf`, `nan` and hex floats, which only a C99 `strtod` reads; a
-non-ASCII edge character, a space or not by encoding and locale), it REFUSES
+non-ASCII edge character, a space or not by encoding and locale; a run past
+384 characters that only a 64-bit integer parse would hold), it REFUSES
 (`Indistinct`, citing this note) rather than re-answer the engine's way or
 guess. So `"1e5" is "100000"` stops a headless run instead of answering false,
-and `"1e5" > 99999` still answers true. The same reading gave two smaller
-findings from the source, both now refused where they move an answer: `<>` is
-the engine's `is not`, which never turns an EMPTY operand into a number (the
-interpreter read it as 0, so `empty <> 0` answered false where the engine
-answers true), and a Boolean is never a number to a comparison. `switch`
+and `"1e5" > 99999` still answers true. Two of those unsure forms the source
+read of 2026-09-26 (the fourth probe line's paragraph above) now decides: a
+hexadecimal integer small enough for `integer_t` (`"0x10"` is 16), and the
+long run, which is text because `integer_t` is 32 bits on every build; the
+interpreter refuses both until work plan suite-wide #22 teaches it. The
+2026-09-25 reading also gave two smaller findings from the source, both now
+refused where they move an answer: `<>` is the engine's `is not`, which never
+turns an EMPTY operand into a number (the interpreter read it as 0, so
+`empty <> 0` answered false where the engine answers true), and a Boolean is
+never a number to a comparison. `switch`
 matches its cases as TEXT (`MCKeywordsExecSwitch`), and riptide's runner, which
 matched them through `is`, does too now. Held by coinxt's
 `check-script-vectors.py` tier 0 (a table of forms, and riptide's third probe
 line as the engine READ it on Linux and on Windows, item for item the
 source's prediction: the interpreter refuses items 1, 2, 3, 5 and 7 and
 answers 4, 6 and 8 as the engine did), nostrxt's tier 0 and riptide's
-runner-model tier. The first census (the day it landed) found no shipped
+runner-model tier; riptide's `check-script-vectors.py` tier 1e holds the
+fourth probe line's shape and the interpreter's refusal of each of its six
+items (2026-09-26), the rows to change once an engine has read them and the
+interpreter is taught. The first census (the day it landed) found no shipped
 comparison of number-like TEXT anywhere, and three in the wallet boot of an
 EMPTY operand against a number, which the engine's orderings read as 0
 (`MCLogicCompareTo` converts empty; the source) and riptide's runner then
