@@ -162,13 +162,14 @@ script "xTalkSuiteSelfTest"
 -- enet-selftest or a chat demo could end that window's hosts (review,
 -- 2026-09-25; work plan suite-wide #16). It now gives back exactly the holds
 -- it took and no more: every enInitialize here is counted in sSuEnHeld
--- (suEnInit, suEnRelease; THE PASTE'S HOLD, below). The reverse direction is
--- enetxt's own, and it is not the end of enet-selftest's RUN (its stFinish
--- pairs the run's two enInitialize calls) but its stCleanup: on its close and
--- on its Re-run it calls enDeinitialize once more, bare. So do not close
--- enet-selftest or press its Re-run while a run here holds ENet (the enetxt
--- row, the cross row, Run all): the cross row holds one, and would lose its
--- loopback hosts. DataChannelXT
+-- (suEnInit, suEnRelease; THE PASTE'S HOLD, below). The reverse direction was
+-- enetxt's own: enet-selftest's stCleanup called enDeinitialize once more,
+-- bare, on its close and on its Re-run, so closing it while a run here held
+-- ENet (the enetxt row, the cross row, Run all) could end this paste's
+-- loopback hosts. Since 2026-09-26 it counts its holds the same way
+-- (stEnInit, stEnRelease; work plan enetxt #4), and so does the suite
+-- closing pass (suite-wide #20): verified statically and in the headless
+-- model (tools/check-transport-holds.py); needs an OXT pass. DataChannelXT
 -- is the one this cannot settle from script, so for it the old advice
 -- stands: dcCleanup is not counted at all (it frees EVERY peer and channel
 -- in the process) and its event queue is one per process, so a run that
@@ -202,8 +203,9 @@ script "xTalkSuiteSelfTest"
 -- syntax, byte-exact compares only under `set the caseSensitive to true` and
 -- never between two number-like texts (engine note 2.11), all
 -- declarations at handler top, and teardown calls written bare in statement
--- position, which is enetxt's own shipped teardown idiom (enet-lan-chat line
--- 220, enet-selftest line 371).
+-- position, which is enetxt's own shipped teardown idiom (enet-lan-chat's
+-- ecStop; enet-selftest's stCleanup wrote it so too until 2026-09-26, when
+-- its release moved into expression position to be counted, as below).
 --
 -- That last one is NOT a style choice, and this comment used to say it was.
 -- It read: "datachannelxt spells the same thing dcCleanup(); BOTH forms are

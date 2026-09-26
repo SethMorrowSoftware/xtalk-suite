@@ -106,6 +106,25 @@ The shim cites these by number; keep the numbering.
    outside RFC 1918 / loopback / link-local (truth table in the boot self-check). On ONE
    network it cannot connect: most routers refuse to hairpin the public-IP invite
    (engine-reported 2026-08-27; the watchdog's cause 5).
+7. **A window may give back only the ENet holds it took** (fixed in `tests/enet-selftest`
+   2026-09-26; the suite work plan's enetxt #4). The shim's init count is process-wide, so
+   an `enDeinitialize` with no `enInitialize` of this stack's behind it takes ANOTHER
+   window's hold, and the one that reaches zero destroys that window's hosts. The harness
+   took two holds per run, gave back two in `stFinish` (the second, labelled "extra
+   deinitialize is a no-op 0", was in fact the call that reached zero), then gave back a
+   third, bare, in `stCleanup` on every close and every Re-run: beside the suite paste's
+   cross row or a chat demo, that ended their hosts (an interpreter probe read the count
+   1, 3, 1, 0). It now counts its holds in `sStEnHeld` through `stEnInit` / `stEnRelease`,
+   the suite paste's `suEnInit` / `suEnRelease` pattern: `stFinish` gives back exactly the
+   run's two, `stCleanup` only what a live run still holds (none at rest), a refused init
+   counts none. The no-op leg (`stEnNoOpLeg`) calls only where the shim has just refused a
+   probe host with "call enInitialize first", i.e. at a process count of zero; beside
+   another ENet window it destroys its probe host and SKIPs. The chat demos pair
+   `ecStart`/`ecStop` and `eiStart`/`eiStop`; a re-fired `openStack` there leaks a hold
+   and harms no other window. The suite's `tools/check-transport-holds.py` drives the
+   harness beside a modelled other window (its fixture plants each old line back and fails);
+   verified statically and headlessly; needs an OXT pass. The fold into the suite paste
+   routes `stRun`'s two `stEnInit` calls to the paste's own counted `suEnInit` instead.
 
 ## Engine evidence ledger
 
@@ -146,8 +165,9 @@ checks reached: the fix is driven natively by the smoke test (2026-09-24, ASan/U
 an engine. Still un-exercised: the LAN chat demo
 between two real machines (runbook row 6, S3 item 6), the closing pass's separate enet leg B
 (S3 item 1), `enet-internet-chat` across two networks (verified statically; needs a
-two-machine, two-network OXT pass), a standalone async re-run on the current binaries, and any
-Mac engine load. Open work: the suite's docs/WORK-PLAN.md.
+two-machine, two-network OXT pass), a standalone async re-run on the current binaries (it
+carries the counted holds of gotcha 7, 2026-09-26: verified statically and headlessly; needs
+an OXT pass), and any Mac engine load. Open work: the suite's docs/WORK-PLAN.md.
 
 ## Build and gates
 

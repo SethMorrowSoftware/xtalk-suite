@@ -387,7 +387,12 @@ def main(argv):
                        f"kept a stopped session alive from the second run on")
 
     # ---- 7. the folded teardowns stay UNREACHABLE ---------------------------
-    # en1stCleanup calls enDeinitialize and dc1stCleanup calls dcCleanup. Both
+    # en1stCleanup calls enDeinitialize and dc1stCleanup calls dcCleanup. (Since
+    # 2026-09-26, work plan enetxt #4, en1stCleanup reaches it through the
+    # harness's own counted en1stEnRelease, whose count the fold never raises:
+    # its inits are rewritten to the core's suEnInit. It stays dead all the
+    # same - it also destroys the harness's hosts - and check 18 would name
+    # en1stEnRelease's call if it were reached.) Both
     # are folded in as dead code, and both MUST stay dead: the core runs its own
     # ENet and DataChannel loopbacks for the cross-member sections, and either
     # teardown would pull the transport out from under them mid-run. Wiring one
