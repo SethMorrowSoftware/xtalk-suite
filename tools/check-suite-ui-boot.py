@@ -192,7 +192,8 @@ OXT compiles - the static gates and an engine pass own that), MESSAGE DELIVERY
 front of the defaultStack pins, and mouseDown acting on the press rather than
 the release are OXT-PASS-RUNBOOK row 48), `is` FOLDING CASE (the interpreter's
 `is` is case-SENSITIVE whatever `the caseSensitive` says, so a case defect in
-suLineKind is invisible here), the three SLOW_SCOPES and Run all, and EVERY
+suLineKind is invisible here), the three SLOW_SCOPES and Run all (the --full
+profile below runs Run all, and so all three), and EVERY
 PRESENT-EXTENSION PATH: with every native absent no loopback opens, no session
 is taken and no member harness runs - bar the transport-holds scenario, whose
 two libraries are a refcount and a peer table and no more (no event arrives,
@@ -201,10 +202,88 @@ label: what the 2026-09-24 engine runs did not show (a row's Run, Show, the
 filters, the pills' look) stays "verified statically plus a headless UI boot;
 needs an OXT pass" (D-23, runbook row 48).
 
+THE --full PROFILE: RUN ALL OVER THE WHOLE PASTE, BEFORE AN ENGINE SESSION
+--------------------------------------------------------------------------
+`--full` (work plan suite-wide #14, closed 2026-09-26; its fixture is
+tools/test-suite-ui-boot.py --full, run first). Everything above drives the
+BOARD; this drives the RUN. It delivers the paste ritual (OXT-PASS-RUNBOOK
+3.1: closeStack as the applied window closes, openStack as it reopens,
+closeStack when done) to the WHOLE generated paste - every member folded,
+every embedded layer present, every native absent, so each probe fails closed
+and each native member's sections SKIP exactly as the paste's own probe
+decides - and lets Run all run to its end the way an engine does. openStack
+is suBuild, stCleanup, stRun with no scope (Run all, synchronously, up to its
+`send "suPump"`) and suScRun (the boot self-check, which arms its one probe);
+then the engine's timers, earliest first, until none is left. The maintainers'
+engine runs launched Run all exactly so; the one they later pressed a second
+time is the stRerun mouseUp, which this profile does not repeat. Then it
+asserts what an engine session would otherwise be the first to show:
+
+  - no section threw and the interpreter refused nothing, each NAMED by
+    section, row, handler and line: a script error by where it was raised
+    (the report says which section caught it), a refusal at the core
+    runner's call it escaped from (CORE_RUNNERS), where it is handed on to
+    that runner's own catch as a script error so every other section runs;
+  - the totals are the report's own PASS / FAIL / SKIP lines plus what every
+    merge folded in (counted from each report AS HANDED to stMergeReturned),
+    the rows add up to them, the summary's printed table is the rows, and
+    each row's pill is FULL_PILLS';
+  - each folded member wrote exactly one outcome, its merged report or its
+    SKIP line, and the present layers' harnesses are the ones that ran;
+  - the report ends without RUN NOT FINISHED, and Copy results carries it so;
+  - the boot self-check's block, green once its probe fires;
+  - stTeardown ran once, from stFinish, and nothing is held after it or after
+    the last closeStack;
+  - no fold created or deleted a control, touched the clipboard, resized the
+    window or wrote the message box (bar MSG_WRITERS); every "can't find
+    handler" names an absent native or a NOT_IN_PASTE layer; the timers after
+    openStack are exactly FULL_TIMERS; the delimiters are restored.
+
+It prints the per-row table the run produced - labelled THE INTERPRETER'S
+RUN, never an engine's (root rule 6) - with each row's seconds and the wall
+time. It settles LOGIC, not parsing, runs no present-extension path, and
+upgrades no label.
+
+Its model deltas, FULL_DELTAS, live in its own subclass (FullInterp), each
+with the engine's rule beside it, each counted and required to fire: `do`
+(holde-em's he1heRunSection runs every section as `do pName`), `the result`
+after a statement-position handler call (onionxt's harness reads it after
+every command) and a bare `put` into the message box (holde-em's probe). The
+fast tier keeps SuiteInterp without them, so its SLOW_SCOPES reasons stay
+true of the model it measures them in. Two run-level settings, each named
+where it is set: the clock (FULL_CLOCK, pinned by FULL_CLOCK_PIN) and
+Python's frame limit (FULL_RECURSION, in a worker thread; the deepest handler
+nesting is printed).
+
+ITS FIRST RUNS (2026-09-26) found no fold-level fault in the paste. They
+found two readings of the GATE's that were wrong for Run all, each fixed
+where it lives: returned_merges read a merged report back from the text up to
+the next section header, which in Run all ran on into the absent natives'
+SKIP lines (five skips short); and two "can't find handler" probes name
+layers the paste leaves out on purpose (NOT_IN_PASTE).
+
+NOT A PER-PUSH GATE, and measured, not assumed. On 2026-09-26, on the
+four-core machine that wrote it and beside another gate run (load about 4,
+under nice), one --full run took 350 to 423 s of wall time, openStack's
+synchronous Run all nearly all of it: nostrxt's folded harness 290 to 330 s,
+holde-em's about 60 s, everything else a few seconds. Its fixture is five
+such runs at once: 1137 s (about 19 minutes) for the clean run and its four
+mutants, on that machine the same day. Per push that is about 25 more
+minutes on a job (suite-gates.yml) that ran 1h22m to 2h43m in its fifteen
+runs of 2026-09-21 to 09-24 against a 240-minute ceiling, in a block of
+suite gates that are seconds each. What it would buy there is the fold-level
+facts above, which change only when the paste is regenerated (once per batch,
+the work plan's rule), and which the fast tier's board checks and each folded
+member's own execution gate already cover in part on every push. So
+build-all --gates does not run it; the runbook (3.2) names it as the
+headless step before a regenerated paste goes onto an engine.
+
 Usage:
   python3 tools/check-suite-ui-boot.py                 # the gate (fast tier)
   python3 tools/check-suite-ui-boot.py --verbose       # every check printed
   python3 tools/check-suite-ui-boot.py --paste PATH    # a mutated copy (fixtures)
+  python3 tools/check-suite-ui-boot.py --full          # Run all, the whole
+                                                       # paste (pre-session)
 """
 
 import collections
@@ -215,6 +294,7 @@ import re
 import shutil
 import sys
 import tempfile
+import threading
 import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -1195,18 +1275,35 @@ REPORT_NOTE = r'^\s+---- .+ report ----$'
 SECTION_HEAD = r'^== .* ==$'
 
 
-def returned_merges(lines):
+def returned_merges(lines, reports=None):
     """Each returned-report merge in a finished report, as (folded, own):
     the (P, F, S) stMergeReturned's note says it added to the totals, and the
-    PASS / FAIL / SKIP lines of the member's verbatim report (the lines after
-    its "---- <member> report ----" note, up to the next section header) that
-    are spelled the scaffold's way and so were counted as the core's own."""
+    PASS / FAIL / SKIP lines of the member's verbatim report that are spelled
+    the scaffold's way and so were counted as the core's own.
+
+    `reports`, when given, is each merge's verbatim report AS HANDED to
+    stMergeReturned, in merge order (the --full profile records them), and
+    its lines are counted. Without it, the report is read back from the text:
+    the lines after the "---- <member> report ----" note, up to the next
+    section header - true of a SCOPED run only. In Run all the core writes the
+    next members' SKIP lines straight after a verbatim report with no header
+    between (the absent natives' deep self-tests follow OnionXT's), and that
+    read took them as OnionXT's own: five skips short on the --full profile's
+    first run, 2026-09-26."""
     out = []
+    notes = 0
     for k, ln in enumerate(lines):
         m = _rx(FOLDED_NOTE).match(ln)
         if not m:
             continue
         folded = tuple(int(x) for x in m.groups())
+        if reports is not None:
+            text = reports[notes] if notes < len(reports) else ""
+            notes += 1
+            out.append((folded, tuple(
+                sum(1 for x in _lines(text) if x.startswith(pfx))
+                for pfx in ("PASS  ", "FAIL  ", "SKIP  "))))
+            continue
         j = k + 1
         if j < len(lines) and _rx(REPORT_NOTE).match(lines[j]):
             j += 1
@@ -1220,13 +1317,16 @@ def returned_merges(lines):
     return out
 
 
-def check_finished(c, board, scope, merged=None, boot_whole=True):
+def check_finished(c, board, scope, merged=None, boot_whole=True,
+                   reports=None):
     """Everything a finished scoped run leaves behind. `merged` is
     (verbatim lines, (P, F, S) folded in) when the views scenario merged
     synthetic reports; None for a plain run, whose totals must be exactly the
     report's own PASS / FAIL / SKIP lines. `boot_whole` is False only where
     the self-check's delayed probe fired AFTER the report was finished, so
-    the report carries the block as it stood then: a prefix of it."""
+    the report carries the block as it stood then: a prefix of it.
+    `reports` is every returned report as merged (returned_merges says why
+    Run all needs them)."""
     ip, world = board.ip, board.world
     report = board.report()
     lines = _lines(report)
@@ -1270,7 +1370,10 @@ def check_finished(c, board, scope, merged=None, boot_whole=True):
         # Until 2026-09-25 this was the core's lines alone, true only while no
         # fast scope merged a report: riptide's did the moment a review moved
         # it into the fast tier.
-        adj = returned_merges(lines)
+        adj = returned_merges(lines, reports)
+        if reports is not None:
+            c.eq("one merge note per report handed to stMergeReturned",
+                 len(adj), len(reports))
         c.eq("the totals are the report's own PASS / FAIL / SKIP lines plus "
              "what each returned report folded in (%d merged)" % len(adj),
              got, tuple(base[k] + sum(f[k] - o[k] for f, o in adj)
@@ -2393,6 +2496,654 @@ def scenario_transport_holds(c, src, sandbox):
 
 
 # ==========================================================================
+# THE --full PROFILE: Run all over the whole paste, as openStack starts it
+# ==========================================================================
+#
+# Everything above drives the BOARD, through the fast scopes only (the
+# three SLOW_SCOPES and Run all are left out). This profile is the other half: the paste ritual (runbook 3.1 step 4, close the
+# window and reopen it; step 5, close it when done) delivered to the whole
+# generated file, every member folded, every native absent, and Run all let
+# run to its end through the pump - then the fold-level facts an engine
+# session would otherwise be the first to show. The header's THE --full
+# PROFILE section has the why and the numbers; this is the machinery.
+
+# The model's clock for this profile: 2026-09-26 00:00:00 UTC. The base's
+# fixed `the seconds` is 1700000000 (2023-11-14), EXACTLY the boundary of
+# nostrxt's fixture era, and the folded nostrxt harness asserts that now is
+# after it (`nxUnixNow() > 1700000000`): on the base's clock that one check
+# fails in every interpreted run (the core's NostrXT floor comment records it
+# as the interpreter's clock, not a defect). An engine's clock is the wall
+# clock, which no session will ever read at 2023 again. Fixed rather than
+# real so a run reproduces; pinned by FULL_CLOCK_PIN, the harness's own line,
+# which must read ok (proof the clock reached a harness, not only a variable).
+FULL_CLOCK = 1790380800
+FULL_CLOCK_PIN = "  ok   nxUnixNow is after the fixture era"
+
+# PYTHON'S limits, not the engine's. Every handler level costs the model
+# about twenty-five Python frames (a statement, its expression parser's
+# levels, the call), so the folded nostrxt harness, which nests past a
+# hundred handler levels, overruns Python's default 1000 frames (the fast
+# tier's re-measured SLOW_SCOPES reason). The run goes in a worker thread with
+# a stack big enough for FULL_RECURSION frames; the deepest handler nesting
+# the run reached is printed, and a RecursionError is still a refusal
+# reported by name, never a pass.
+FULL_RECURSION = 40000
+FULL_THREAD_STACK = 512 * 1024 * 1024
+
+# The engine's open and close messages, in the ritual's order. The model
+# delivers each one the paste HANDLES, and asserts that is exactly
+# RITUAL_HANDLED: a fold that brings back a preOpenStack or an openCard
+# (holde-em's and box2dxt's are dropped on purpose) fails here until its
+# delivery is modelled, rather than being silently never sent.
+RITUAL_MESSAGES = ("closeStack", "closeCard", "suspendStack", "preOpenStack",
+                   "preOpenCard", "openCard", "openStack", "resumeStack")
+RITUAL_HANDLED = ("closeStack", "openStack")
+
+# The core's RUNNER handlers: every section they call sits inside a try/catch
+# of theirs (stRun's per-section trys, stRunMemberHarnesses' per-member trys,
+# stFinish's two, suPump's two). A model REFUSAL is not a script error, so no
+# script catch sees it: it would escape openStack and take the whole run. At
+# a call a runner makes, FullInterp records it BY NAME (section, row, handler,
+# line) and rethrows it as a script error, so the runner's catch reports that
+# section and every other section still runs - and the gate fails on it.
+CORE_RUNNERS = ("strun", "strunmemberharnesses", "stfinish", "supump")
+
+# The timers Run all leaves after openStack returns, in delivery order, in
+# this profile: the pump's first tick finds both loopbacks "skip" (no native)
+# and finishes the run; then the boot self-check's one delayed probe. A timer
+# a folded harness armed and never swept would be delivered too, and named.
+FULL_TIMERS = ["suPump", "scTickProbe"]
+
+# EACH ROW'S PILL AFTER RUN ALL, in this profile, with the reason: the six
+# natives are absent (torrentxt alone reads unavailable, EXPECTED_PILLS says
+# why; coinxt's script half is embedded but suPresent needs both halves); the
+# four present script layers' folded harnesses run and pass; the cross row
+# runs the probe, the teardown and stCrossOnionSection, and skips the rest.
+FULL_PILLS = {
+    "sodiumxt": ("wait", "absent"), "torrentxt": ("wait", "unavailable"),
+    "enetxt": ("wait", "absent"), "datachannelxt": ("wait", "absent"),
+    "box2dxt": ("wait", "absent"), "coinxt": ("wait", "absent"),
+    "onionxt": ("ok", "OK"), "nostrxt": ("ok", "OK"), "riptide": ("ok", "OK"),
+    "holde-em": ("ok", "OK"), "cross": ("ok", "OK"),
+}
+# The folded harnesses that RUN in this profile (the rest SKIP by probe).
+FULL_MERGED = ("onionxt", "nostrxt", "riptide", "holde-em")
+
+# The ONE handler that may write the message box, and why: holde-em's
+# he1heProbeSodium echoes its report with a bare `put` by design (the folded
+# he1heSelfTest's header records it as the quiet entry point's one honest
+# exception, harmless in a host paste). Any other writer is a fold that
+# reaches msg, which an engine session shows as a message box popping open.
+MSG_WRITERS = ("he1heprobesodium",)
+
+# The model deltas THIS profile adds, each counted and each required to fire.
+FULL_DELTAS = collections.OrderedDict([
+    ("do", "do EXPR runs the text as statements in the calling handler"),
+    ("command-result", "a statement-position handler call sets the result"),
+    ("msg-put", "a bare put writes the message box"),
+])
+
+# `the result` after a handler call, and the call-position branch below:
+# the words a statement can start with that are ENGINE statements, never a
+# handler call, whatever the paste defines.
+_STATEMENT_WORDS = frozenset((
+    "put", "get", "set", "send", "cancel", "pass", "answer", "delete", "do",
+    "if", "else", "end", "repeat", "switch", "case", "default", "break",
+    "try", "catch", "return", "exit", "next", "local", "global", "constant",
+    "throw", "add", "subtract", "multiply", "divide", "sort", "split",
+    "replace", "create", "go", "hide", "show", "lock", "unlock", "wait"))
+
+
+def _is_bare_put(line):
+    """`put EXPR` with no into / after / before outside its strings."""
+    return LCS.split_outside_strings(line[4:], ("into", "after",
+                                                "before")) is None
+
+
+class FullWorld(SuiteWorld):
+    def __init__(self, sandbox):
+        super().__init__(sandbox)
+        self.msg = ""               # the message box
+        self.msg_writers = []       # which handler wrote it, per write
+
+
+class FullInterp(SuiteInterp):
+    """SuiteInterp plus the three constructs Run all reaches that the fast
+    tier never does (FULL_DELTAS), and the bookkeeping that names a fault:
+    the handler stack, the statement each frame is on, where every script
+    error was raised, the refusals, the calls, and each row's time."""
+
+    def __init__(self, src, world):
+        super().__init__(src, world)
+        self.stack = []             # handler names, outermost first
+        self.where = []             # the statement each frame is on
+        self.max_depth = 0
+        self.calls = collections.Counter()
+        # (message, handler, line, row) for each script error, where it was
+        # RAISED; the probes raise hundreds, so the newest are kept
+        self.thrown = collections.deque(maxlen=50000)
+        self.faults = []            # refusals, each a dict naming it
+        self.row_time = collections.Counter()
+        self._tally = None
+        self.controls_at_run = None  # the card's controls as stRun began
+        self.merged_reports = []    # each report handed to stMergeReturned
+
+    def _row(self):
+        return str(self.globals.get("ssumarkkey", "")) or "(no row)"
+
+    def call(self, name, args):
+        low = name.lower()
+        self.stack.append(name)
+        self.where.append("")
+        self.calls[low] += 1
+        if len(self.stack) > self.max_depth:
+            self.max_depth = len(self.stack)
+        if low == "strun" and self.controls_at_run is None:
+            self.controls_at_run = [ct.name for ct in
+                                    self.world.current().controls]
+        if low == "sutallyopen":
+            self._tally = (str(LCS._disp(args[0])) if args else "",
+                           time.time())
+        elif low == "sutallyclose" and self._tally is not None:
+            self.row_time[self._tally[0]] += time.time() - self._tally[1]
+            self._tally = None
+        elif low == "stmergereturned" and len(args) > 1:
+            self.merged_reports.append(str(LCS._disp(args[1])))
+        caller = self.stack[-2].lower() if len(self.stack) > 1 else ""
+        try:
+            return super().call(name, args)
+        except (LCS._Return, LCS._Exit, LCS._Next, Thrown, DB._Break):
+            raise
+        except Exception as exc:                        # noqa: BLE001
+            if caller not in CORE_RUNNERS:
+                raise
+            # A REFUSAL at a runner's call: named, then handed to the
+            # runner's own catch as a script error (see CORE_RUNNERS).
+            fault = getattr(exc, "full_origin", None) or {
+                "handler": name, "line": "", "row": self._row()}
+            fault = dict(fault, section=name, caller=self.stack[-2],
+                         error="%s: %s" % (type(exc).__name__, exc))
+            self.faults.append(fault)
+            t = Thrown("the interpreter refused (%s): %s"
+                       % (type(exc).__name__, exc))
+            # the report's section line is attributed to the REFUSED
+            # statement, not to the runner line that now raises
+            t.full_origin = fault
+            self.thrown.append((str(t.msg), fault.get("handler", name),
+                                fault.get("line", ""), fault.get("row", "")))
+            raise t
+        finally:
+            self.stack.pop()
+            self.where.pop()
+
+    def _origin(self, line):
+        return {"handler": self.stack[-1] if self.stack else "(top level)",
+                "line": line, "row": self._row(),
+                "stack": " > ".join(self.stack[-6:])}
+
+    def _exec_stmt(self, body, i, env):
+        line = body[i].strip()
+        if self.where:
+            self.where[-1] = line
+        try:
+            return self._full_stmt(body, i, env, line)
+        except (LCS._Return, LCS._Exit, LCS._Next, DB._Break):
+            raise
+        except Thrown as t:
+            # where it was RAISED: the innermost statement sees it first
+            if not hasattr(t, "full_origin"):
+                t.full_origin = self._origin(line)
+                self.thrown.append((str(t.msg), t.full_origin["handler"],
+                                    line, t.full_origin["row"]))
+            raise
+        except Exception as exc:                        # noqa: BLE001
+            if not hasattr(exc, "full_origin"):
+                try:
+                    exc.full_origin = self._origin(line)
+                except (AttributeError, TypeError):
+                    pass
+            raise
+
+    def _full_stmt(self, body, i, env, line):
+        head = line.split(None, 1)
+        w0 = head[0].lower() if head else ""
+        world = self.world
+        if w0 == "do":
+            # THE ENGINE'S `do` (LiveCode dictionary, `do`, DOCUMENTED): the
+            # text is compiled and run as statements IN THE CALLING HANDLER,
+            # its locals and `it` visible. holde-em's he1heRunSection runs
+            # each section as `do pName` (engine-run on 2026-09-24 and
+            # 2026-09-25: its folded harness's sections all reported).
+            text = str(LCS._disp(self.eval_expr(line[2:].strip(), env)))
+            fire("do")
+            self._exec(text.split("\n"), env)
+            return i + 1
+        if w0 == "put" and _is_bare_put(line):
+            # `put EXPR` with no container writes the MESSAGE BOX (LiveCode
+            # dictionary, `put`, DOCUMENTED). Recorded, and who wrote it.
+            world.msg = str(LCS._disp(self.eval_expr(line[3:].strip(), env)))
+            world.msg_writers.append(self.stack[-1] if self.stack else "")
+            fire("msg-put")
+            return i + 1
+        if (w0 in self.handlers and w0 not in _STATEMENT_WORDS
+                and w0 not in world.native_commands):
+            # A statement-position handler call. THE ENGINE SETS `the result`
+            # to what a command handler RETURNS (LiveCode dictionary,
+            # `return`, DOCUMENTED; OBSERVED through onionxt's harness, which
+            # reads `the result` after every oxDial / oxClose / oxWrite
+            # command and ran 74/0/1 on the 2026-09-24 engine, where this
+            # model without the rule printed thirteen FAIL lines), and to
+            # empty when it returns none (the dictionary's reading; the
+            # model's, never separately observed). SuiteInterp's own branch
+            # discards the value; this one keeps it.
+            r = self.call(head[0], self._args(line[len(head[0]):].strip(),
+                                              env))
+            world.result = "" if r is None else r
+            fire("command-result")
+            return i + 1
+        return super()._exec_stmt(body, i, env)
+
+
+def _deep_blocks(ip):
+    """Each member block of stRunMemberHarnesses, read from the paste: {key:
+    (merge labels, skip labels)} - the `stMergeReturned "X"` / `stMergeCounted
+    "X"` section it writes when its member ran, and the `stSkip "Y deep
+    self-test"` line it writes when not. Read, never copied, so a relabel in
+    the core moves the check with it."""
+    blocks, key = collections.OrderedDict(), None
+    for raw in ip.handlers["strunmemberharnesses"][1]:
+        s = raw.strip()
+        m = _rx(r'^if\s+suInScope\("([\w-]+)"\)\s+then$').match(s)
+        if m:
+            key = m.group(1)
+            blocks.setdefault(key, (set(), set()))
+            continue
+        if key is None:
+            continue
+        m = _rx(r'stMerge(?:Returned|Counted)\s+"([^"]+)"').search(s)
+        if m:
+            blocks[key][0].add(m.group(1))
+        m = _rx(r'^stSkip\s+"([^"]+ deep self-test)"').match(s)
+        if m:
+            blocks[key][1].add(m.group(1))
+    return blocks
+
+
+def attribute(ip, text):
+    """The newest recorded script error whose message this report text
+    carries: 'handler, at `line` (row)'. Empty when none matches."""
+    for msg, handler, line, row in reversed(ip.thrown):
+        if len(msg) > 3 and msg in text:
+            return "raised in %s, at `%s` (row %s)" % (handler, line[:100],
+                                                       row)
+    return ""
+
+
+def section_faults(ip, lines):
+    """Every section the report says threw (the core's stSectionFailed:
+    'FAIL  <section> section ran to completion', then 'it raised: <error>'),
+    and every FAIL line a member's own guard wrote for a throw (holde-em's
+    'FAIL  <section> THREW: <error>'), each attributed to where it was raised."""
+    out = []
+    for k, ln in enumerate(lines):
+        s = ln.strip()
+        m = _rx(r'^FAIL\s+(.+) section ran to completion$').match(s)
+        if m:
+            nxt = lines[k + 1].strip() if k + 1 < len(lines) else ""
+            err = nxt[len("it raised:"):].strip() \
+                if nxt.startswith("it raised:") else "(no error line)"
+            out.append("section %r threw: %s; %s"
+                       % (m.group(1), err, attribute(ip, err) or
+                          "origin not recorded"))
+            continue
+        if s.startswith("FAIL") and ("THREW" in s or "threw" in s):
+            out.append("%s; %s" % (s[:160], attribute(ip, s) or
+                                   "origin not recorded"))
+    return out
+
+
+def summary_table(lines):
+    """The summary's per-member table as printed: {title: (P, F, S, state)}
+    for the rows it counted (a not-run or no-harness row has no numbers)."""
+    out, inside = {}, False
+    for ln in lines:
+        if ln.strip().startswith("per member (passed / failed / skipped"):
+            inside = True
+            continue
+        if not inside:
+            continue
+        m = _rx(r'^ {8}(\S.*?)\s+(\d+)\s+(\d+)\s+(\d+)  (.+)$').match(ln)
+        if m:
+            out[m.group(1)] = (int(m.group(2)), int(m.group(3)),
+                               int(m.group(4)), m.group(5))
+            continue
+        if not ln.startswith("        "):
+            break
+    return out
+
+
+def print_full_table(board, ip, wall, sync_s):
+    """The per-row table THE INTERPRETER'S RUN produced - labelled so it is
+    never mistaken for an engine's record (root CLAUDE.md rule 6)."""
+    print("check-suite-ui-boot --full: THE INTERPRETER'S RUN of Run all "
+          "(the family interpreter over the generated paste, every native "
+          "absent). NOT an engine's run: record an engine's totals from an "
+          "engine.")
+    print("  %-26s %7s %7s %8s  %-12s %8s" % ("row", "passed", "failed",
+                                              "skipped", "pill", "seconds"))
+    for key, title in zip(board.keys, board.names):
+        if key == board.no_harness:
+            print("  %-26s %7s %7s %8s  %-12s %8s" % (title, "-", "-", "-",
+                                                      "no harness", "-"))
+            continue
+        p, f, s = board.row(key)
+        print("  %-26s %7d %7d %8d  %-12s %8.1f"
+              % (title, p, f, s, board.text("suPill" + key),
+                 ip.row_time.get(key, 0.0)))
+    p, f, s = board.totals()
+    print("  %-26s %7d %7d %8d  (the summary line: %s)"
+          % ("totals", p, f, s, board.text("stSummary")))
+    print("  wall time %.1f s (openStack's synchronous Run all %.1f s); the "
+          "deepest handler nesting %d; %d handler calls"
+          % (wall, sync_s, ip.max_depth, sum(ip.calls.values())))
+
+
+def run_full(c, path):
+    """The --full profile, start to end. Returns nothing; every finding is a
+    check on `c`."""
+    t0 = time.time()
+    sandbox = tempfile.mkdtemp(prefix="suite-ui-full-")
+    clock = LCS.SECONDS[0]
+    LCS.SECONDS[0] = FULL_CLOCK             # before the World seeds from it
+    try:
+        def fail(msg):
+            c.ck("the paste reads the way the runner reads a stack", False,
+                 msg)
+            raise RuntimeError(msg)
+
+        src = build_source(path, fail)
+        world = FullWorld(sandbox)
+        ip = FullInterp(src, world)
+        install_engine_builtins(world)
+        _run_full(c, ip, world, t0)
+    finally:
+        LCS.SECONDS[0] = clock
+        shutil.rmtree(sandbox, ignore_errors=True)
+
+
+def _run_full(c, ip, world, t0):
+    c.section("--full: the all-absent profile and the ritual")
+    natives = sorted(k for k in LCS.HASHES if k.startswith(NATIVE_PREFIXES))
+    c.eq("no native extension handler is installed", natives, [])
+    c.eq("no absent native is DEFINED in the paste",
+         [n for n in ABSENT_NATIVES if n.lower() in ip.handlers], [])
+    c.eq("the engine open/close messages the paste handles are exactly the "
+         "ones this profile delivers (a new one needs its delivery modelled)",
+         [n for n in RITUAL_MESSAGES if n.lower() in ip.handlers],
+         list(RITUAL_HANDLED))
+    c.eq("openStack is the four calls the ritual runs",
+         tuple(ln.strip() for ln in ip.handlers["openstack"][1]
+               if ln.strip()), OPEN_STACK)
+
+    # THE RITUAL (runbook 3.1): step 4 closes the window the paste was
+    # applied in - closeStack on a script whose every local is empty - and
+    # reopens it: openStack, which builds the board and runs Run all
+    # synchronously up to its first `send "suPump"`, then the boot
+    # self-check, which arms its one probe. Then the engine's timers, earliest
+    # first, until none is left: the pump's ticks to stFinish, the probe.
+    c.section("--full: close, reopen (openStack runs Run all), the timers")
+    try:
+        ip.call("closeStack", [])
+    except Exception as exc:                            # noqa: BLE001
+        return report_escape(c, ip, "the first closeStack (a fresh script)",
+                             exc)
+    t_open = time.time()
+    try:
+        ip.call("openStack", [])
+    except Exception as exc:                            # noqa: BLE001
+        return report_escape(c, ip, "openStack (Run all's synchronous half)",
+                             exc)
+    sync_s = time.time() - t_open
+    board = Board(ip, world)
+    try:
+        delivered = deliver_all(ip, world)
+    except Exception as exc:                            # noqa: BLE001
+        return report_escape(c, ip, "the timers after openStack", exc)
+    c.eq("the timers delivered after openStack, in order (a harness's "
+         "unswept timer would be here)", delivered, FULL_TIMERS)
+    check_full_run(c, ip, world, board)
+
+    # Copy results, the way every recorded engine report came back (4.1)
+    c.section("--full: Copy results after the finish")
+    n = len(world.answers)
+    down, up, err = press(ip, world, "stCopy")
+    c.ck("Copy results is handled by the scaffold's mouseUp",
+         err is None and down is True and up is False,
+         err or "down passed=%r up passed=%r" % (down, up))
+    p, f, s = board.totals()
+    c.eq("the clipboard is the counts, a blank line and the report",
+         world.clipboard.get("text"),
+         "%d passed, %d failed, %d skipped, %d total\n\n" %
+         (p, f, s, board.num("sTotal")) + board.report())
+    c.ck("and it carries no RUN NOT FINISHED trailer",
+         "RUN NOT FINISHED" not in str(world.clipboard.get("text")))
+    c.ck("the answer says copied", world.answers[n:][:1] and
+         world.answers[n].startswith("Results copied to the clipboard."),
+         repr(world.answers[n:]))
+
+    # step 5: close the window when done
+    c.section("--full: closeStack when done (runbook 3.1 step 5)")
+    try:
+        ip.call("closeStack", [])
+    except Exception as exc:                            # noqa: BLE001
+        return report_escape(c, ip, "the last closeStack", exc)
+    c.eq("closing after the run leaves no timer, no session, no hold",
+         (ip.pending_names(), str(board.g("sSession")),
+          str(board.g("sSuEnHeld")) in ("", "0"),
+          str(board.g("sSuDcHeld")) in ("", "0")), ([], "0", True, True))
+    check_delimiters(c)
+    c.section("--full: refusals and throws, by name")
+    refused = ["%s (called by %s; row %s): %s, in %s at `%s`"
+               % (f["section"], f["caller"], f["row"], f["error"],
+                  f["handler"], f["line"][:100]) for f in ip.faults]
+    c.ck("the interpreter refused nothing (each named: section, row, "
+         "handler, line)", not refused, "\n".join(refused))
+    print_full_table(board, ip, time.time() - t0, sync_s)
+
+
+def report_escape(c, ip, when, exc):
+    """A failure that escaped every script catch AND every runner boundary
+    (a refusal in stRun's own lines, in the pump, in a timer): the run is
+    dead, so this names where and stops."""
+    origin = getattr(exc, "full_origin", None) or {}
+    return c.ck("%s ran without escaping the model" % when, False,
+                "%s: %s\n  in %s, at `%s` (row %s)\n  stack: %s"
+                % (type(exc).__name__, exc, origin.get("handler", "?"),
+                   str(origin.get("line", "?"))[:120], origin.get("row", "?"),
+                   origin.get("stack", "?")))
+
+
+def check_full_run(c, ip, world, board):
+    """The fold-level facts, after the last timer."""
+    lines = _lines(board.report())
+    c.section("--full: the finished run (check_finished, scope all)")
+    check_probe_answers(c, board)
+    check_finished(c, board, "all", boot_whole=False,
+                   reports=ip.merged_reports)
+
+    c.section("--full: no section threw or was refused")
+    faults = section_faults(ip, lines)
+    # printed as lines, never as a repr: a name must read verbatim
+    c.ck("no section threw, and no member's guard caught a throw (each "
+         "named with where it was raised)", not faults, "\n".join(faults))
+
+    c.section("--full: the rows and the totals")
+    rows = dict((k, board.row(k)) for k in board.keys
+                if k != board.no_harness)
+    c.eq("the rows add up to the totals line",
+         tuple(sum(r[j] for r in rows.values()) for j in range(3)),
+         board.totals())
+    table = summary_table(lines)
+    want = dict((board.title_of(k), rows[k]) for k in rows)
+    c.eq("the summary's printed table is the rows, row by row",
+         dict((t, v[:3]) for t, v in table.items()), want)
+    c.eq("each row's pill after Run all (FULL_PILLS)",
+         dict((k, (board.text("suPill" + k),
+                   board.ctl("suPill" + k + "Bg").props.get(
+                       "backgroundcolor"))) for k in rows),
+         dict((k, (FULL_PILLS[k][1], board.pill.get(FULL_PILLS[k][0])))
+              for k in rows if k in FULL_PILLS))
+    c.eq("FULL_PILLS names exactly the rows with a harness",
+         sorted(FULL_PILLS), sorted(rows))
+    c.eq("every row with a harness counted something (none reads "
+         "nothing ran)", [k for k, r in rows.items() if sum(r) == 0], [])
+
+    c.section("--full: every folded member reported once")
+    blocks = _deep_blocks(ip)
+    heads = set(ln for ln in lines if _rx(SECTION_HEAD).match(ln))
+    ran, wrong = [], []
+    for key, (merges, skips) in blocks.items():
+        merged = [m for m in merges
+                  if lines.count("== %s: its own full self-test ==" % m)]
+        skipped = [s for s in skips if any(
+            ln.startswith("SKIP  " + s + "  ") or ln == "SKIP  " + s
+            for ln in lines)]
+        if len(merged) + len(skipped) != 1:
+            wrong.append("%s: merged %s, skipped %s" % (key, merged, skipped))
+        if merged:
+            ran.append(key)
+    c.eq("each folded member's block wrote exactly one outcome (its merged "
+         "report or its SKIP line)", wrong, [])
+    c.eq("the folded harnesses that ran are the present layers' "
+         "(FULL_MERGED)", sorted(ran), sorted(FULL_MERGED))
+    c.eq("no merged report's section header appears twice",
+         sorted(h for h in heads if lines.count(h) > 1
+                and h.endswith(": its own full self-test ==")), [])
+    c.ck("the model's clock reached a harness (FULL_CLOCK_PIN)",
+         FULL_CLOCK_PIN in lines, FULL_CLOCK_PIN)
+
+    c.section("--full: teardown ran")
+    c.eq("stFinish ran once and stTeardown ran once, from it",
+         (ip.calls["stfinish"], ip.calls["stteardown"]), (1, 1))
+    teardown = "== teardown (nothing may outlive the run) =="
+    c.eq("the report carries the teardown section once", lines.count(
+        teardown), 1)
+    if teardown in lines:
+        at = lines.index(teardown)
+        member_heads = [k for k, ln in enumerate(lines)
+                        if ln.endswith(": its own full self-test ==")]
+        c.ck("after every member's section and before the boot block and the "
+             "summary", all(k < at for k in member_heads)
+             and at < lines.index(SUMMARY_HEADER)
+             and (BOOT_HEADER not in lines or at < lines.index(BOOT_HEADER)),
+             "teardown at line %d" % (at + 1))
+    c.eq("nothing is held after the teardown (session, ENet, DataChannel)",
+         (str(board.g("sSession")), str(board.g("sSuEnHeld")) in ("", "0"),
+          str(board.g("sSuDcHeld")) in ("", "0")), ("0", True, True))
+
+    c.section("--full: the boot self-check")
+    sc = _lines(board.g("sScLines"))
+    c.eq("the self-check is green once its probe fired",
+         (board.num("sScFailed"), board.num("sScSkipped")), (0, 0))
+    c.ck("its last line is the green verdict",
+         sc and sc[-1].strip().startswith("boot self-check GREEN"),
+         repr(sc[-1:] if sc else None))
+    c.eq("the Boot check log holds exactly the block",
+         board.text("suBootLog"), str(board.g("sScLines")))
+    c.ck("the summary says the probe had not fired when it was written (the "
+         "pump's first tick finished the run at 33 ms; the probe is at 400)",
+         "      boot self-check: its one delayed check had not fired yet; "
+         "see the Boot check view" in lines)
+    text, colour = board.status()
+    c.ck("the status line reads Finished, in the verdict's colour",
+         text.startswith("Finished (all members (Run all)):")
+         and colour == board.colors["kUiBad" if board.totals()[1]
+                                    else "kUiOk"], repr((text, colour)))
+
+    c.section("--full: what the folds may not touch")
+    c.eq("no control was created or deleted by the run (a folded harness "
+         "decorating the board)", [ct.name for ct in world.current().controls],
+         ip.controls_at_run)
+    c.eq("the window is still %d x %d" % (board.width, board.height),
+         (world.stack_props.get("width"), world.stack_props.get("height")),
+         (board.width, board.height))
+    c.eq("the clipboard is untouched until Copy results", world.clipboard, {})
+    c.eq("only MSG_WRITERS wrote the message box",
+         sorted(set(w.lower() for w in world.msg_writers) - set(MSG_WRITERS)),
+         [])
+    c.ck("and what it holds is holde-em's probe report",
+         world.msg.startswith("SodiumXT probe (holde-em "), repr(world.msg[:80]))
+    missing, layers = missing_handlers(ip)
+    c.eq("every can't-find-handler the run raised names an ABSENT native or "
+         "a NOT_IN_PASTE layer (an engine builtin the model lacks, or a "
+         "fold's misspelt call, would be named here)", missing, [])
+    c.eq("every NOT_IN_PASTE probe was raised by some run (a stale excuse "
+         "is an exemption for a probe that is gone)",
+         sorted(set(NOT_IN_PASTE) - layers), [])
+
+
+# Script layers the paste DELIBERATELY does not carry, whose absence a folded
+# harness probes by calling one of their handlers and SKIPs on the "can't
+# find handler": {the probed name: why the layer is not in the paste}.
+NOT_IN_PASTE = {
+    "nxrVersion": "nostrxt's relay layer (nxr*) defines the engine's socket "
+                  "handlers, which the embedded onionxt layer already "
+                  "defines, so it is not in the paste (the core's NostrXT "
+                  "comment); the folded harness's relay section SKIPs",
+    "oxhTrim": "onion-httpd's oxh* helpers are embedded in demos only, "
+               "never the paste (root CLAUDE.md, the carrier sets); the "
+               "folded onionxt harness's oxh* section SKIPs",
+}
+
+
+def missing_handlers(ip):
+    """(the handler names the run's "can't find handler" errors named that
+    are neither an absent native's - a native prefix, and not defined in the
+    paste - nor a NOT_IN_PASTE layer's, the NOT_IN_PASTE names seen)."""
+    out, layers = set(), set()
+    for msg, _h, _l, _r in ip.thrown:
+        m = (_rx(r"can't find handler: (\w+)").search(msg)
+             or _rx(r"can't find handler \(unknown function (\w+)\)")
+             .search(msg))
+        if not m:
+            continue
+        name = m.group(1)
+        if name in NOT_IN_PASTE and name.lower() not in ip.handlers:
+            layers.add(name)
+        elif not (name.lower().startswith(NATIVE_PREFIXES)
+                  and name.lower() not in ip.handlers):
+            out.add(name)
+    return sorted(out), layers
+
+
+def main_full(path, verbose):
+    """--full in a worker thread whose stack holds FULL_RECURSION frames."""
+    c = Checker(verbose)
+    t0 = time.time()
+    box = {}
+
+    def work():
+        try:
+            run_full(c, path)
+        except Exception as exc:                        # noqa: BLE001
+            box["exc"] = exc
+
+    old = sys.getrecursionlimit()
+    sys.setrecursionlimit(FULL_RECURSION)
+    threading.stack_size(FULL_THREAD_STACK)
+    try:
+        worker = threading.Thread(target=work, name="suite-ui-full")
+        worker.start()
+        worker.join()
+    finally:
+        threading.stack_size(0)
+        sys.setrecursionlimit(old)
+    if "exc" in box:
+        c.threw("the --full profile ran to its end", box["exc"])
+    return finish_report(c, t0, full=True)
+
+
+# ==========================================================================
 # the drive
 # ==========================================================================
 
@@ -2446,9 +3197,12 @@ def main(argv):
     if "--paste" in argv:
         k = argv.index("--paste")
         if k + 1 >= len(argv):
-            print("usage: check-suite-ui-boot.py [--verbose] [--paste PATH]")
+            print("usage: check-suite-ui-boot.py [--full] [--verbose] "
+                  "[--paste PATH]")
             return 2
         path = argv[k + 1]
+    if "--full" in argv:
+        return main_full(path, verbose)
     t0 = time.time()
     c = Checker(verbose)
     sandbox = tempfile.mkdtemp(prefix="suite-ui-boot-")
@@ -2502,17 +3256,30 @@ def main(argv):
     return finish_report(c, t0)
 
 
-def finish_report(c, t0):
+def finish_report(c, t0, full=False):
     elapsed = time.time() - t0
+    deltas = FULL_DELTAS if full else DELTAS
     c.section("the model")
     c.eq("every model delta fired (a hook nobody exercises is a stale "
-         "excuse)", [n for n in DELTAS if FIRED[n] == 0], [])
+         "excuse)", [n for n in deltas if FIRED[n] == 0], [])
     print("check-suite-ui-boot: deltas fired: %s" % ", ".join(
-        "%s x%d" % (n, FIRED[n]) for n in DELTAS))
+        "%s x%d" % (n, FIRED[n]) for n in deltas))
     if c.failures:
         print("check-suite-ui-boot: %d of %d check(s) FAILED (%.1fs)"
               % (len(c.failures), c.n, elapsed))
         return 1
+    if full:
+        print("check-suite-ui-boot --full: OK (%d checks, %.1fs): the paste "
+              "ritual (close, reopen, close) delivered to the WHOLE generated "
+              "paste, every member folded and every native absent; Run all "
+              "ran to its end through the pump; no section threw or was "
+              "refused; the rows add up to the totals; the report ends "
+              "without RUN NOT FINISHED; the boot self-check is green; the "
+              "teardown ran; no fold touched a control, the clipboard or "
+              "the window. The interpreter's run, not an engine's: logic "
+              "only; it upgrades no label, and every present-extension path "
+              "is still unrun here." % (c.n, elapsed))
+        return 0
     print("check-suite-ui-boot: OK (%d checks, %.1fs): the board built and "
           "rebuilt over an older window; %s ran through their rows' Run; the "
           "filters, Show, Copy, the refusals, a close mid-run and the boot "

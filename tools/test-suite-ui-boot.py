@@ -85,8 +85,31 @@ a DataChannel peer beside the paste):
 
 The mutants run concurrently, at most one gate run per core.
 
+THE --full MUTANTS (python3 tools/test-suite-ui-boot.py --full)
+---------------------------------------------------------------
+The gate's --full profile (Run all over the whole paste, every member
+folded, as openStack starts it) is the step before an engine session, not a
+per-push gate, and so is its fixture: each case is one whole interpreted Run
+all, minutes long (the gate's docstring has the measured wall time and the
+reason it stays out of build-all --gates). Run it first, then the gate, per
+docs/OXT-PASS-RUNBOOK.md section 3.2. Each defect must be caught BY NAME:
+
+  F1  a folded harness throws: riptide's rs1rsSelfTest raises before its
+      first section. The core's per-member catch reports the section; the
+      gate must name the handler the error was raised in, and its line.
+  F2  the interpreter REFUSES a statement inside a folded holde-em section
+      (a hexadecimal text compared with a decimal one, engine note 2.11): a
+      refusal is no script error, so no script catch sees it, and it would
+      take the whole run. The gate must name the section and the handler.
+  F3  a row miscounts: holde-em's block is counted to no row (its
+      suTallyOpen deleted), so the rows no longer add up to the totals.
+  F4  the teardown never runs: stFinish's stTeardown call is deleted.
+
+A clean --full run on the committed paste must pass first, as above.
+
 USAGE
-    python3 tools/test-suite-ui-boot.py
+    python3 tools/test-suite-ui-boot.py           # the fast tier's mutants
+    python3 tools/test-suite-ui-boot.py --full    # the --full profile's
 """
 
 import concurrent.futures
@@ -217,22 +240,59 @@ MUTANTS = [
 ]
 
 
-def run_gate(path):
-    """(exit code, output) of one gate run; a run past TIMEOUT is reported as
-    exit None - a hang is a failure to name, not a traceback to read."""
+# The --full profile's mutants (the header's F list). Each `must` is a tuple:
+# the check that names the defect, and what the name must carry.
+FULL_MUTANTS = [
+    ("F1", "a folded harness throws: riptide's rs1rsSelfTest raises before "
+           "its first section",
+     '   put 0 into rs1sSkip\n   put rsProbeCapabilities() into rs1tCaps\n',
+     '   put 0 into rs1sSkip\n   throw "fixture F1: planted in riptide"\n'
+     '   put rsProbeCapabilities() into rs1tCaps\n',
+     ("no section threw", "raised in rs1rsSelfTest",
+      'throw "fixture F1: planted in riptide"')),
+    ("F2", "the interpreter refuses a statement inside a folded holde-em "
+           "section (a hex text against a decimal one)",
+     '"-- 21. Pure helpers: leaf values nothing else pinned (shallow)" & '
+     'return after he1gRpt\n',
+     '"-- 21. Pure helpers: leaf values nothing else pinned (shallow)" & '
+     'return after he1gRpt\n   get "0x10" is "16"\n',
+     ("the interpreter refused nothing", "he1heSelfTest",
+      "he1heTestHelpersRun", 'get "0x10" is "16"')),
+    ("F3", "a row miscounts: holde-em's block is counted to no row (its "
+           "suTallyOpen deleted)",
+     '   if suInScope("holde-em") then\n      suTallyOpen "holde-em"\n',
+     '   if suInScope("holde-em") then\n',
+     ("the rows add up to the totals line",)),
+    ("F4", "the teardown never runs: stFinish's stTeardown call deleted",
+     '   try\n      stTeardown\n   catch tError\n'
+     '      stSectionFailed "teardown", tError\n',
+     '   try\n   catch tError\n      stSectionFailed "teardown", tError\n',
+     ("stFinish ran once and stTeardown ran once",)),
+]
+# One whole interpreted Run all per case; five at once share the cores.
+FULL_TIMEOUT = 5400
+
+
+def run_gate(path, full=False):
+    """(exit code, output) of one gate run; a run past its timeout is
+    reported as exit None - a hang is a failure to name, not a traceback to
+    read."""
+    limit = FULL_TIMEOUT if full else TIMEOUT
+    cmd = [sys.executable, GATE, "--paste", path] + (["--full"] if full
+                                                    else [])
     try:
-        proc = subprocess.run([sys.executable, GATE, "--paste", path],
-                              stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                              text=True, timeout=TIMEOUT)
+        proc = subprocess.run(cmd, stdout=subprocess.PIPE,
+                              stderr=subprocess.STDOUT, text=True,
+                              timeout=limit)
     except subprocess.TimeoutExpired as exc:
         out = exc.stdout or ""
         if isinstance(out, bytes):
             out = out.decode("utf-8", "replace")
-        return None, out + "\n(no verdict in %d s: the gate hung)" % TIMEOUT
+        return None, out + "\n(no verdict in %d s: the gate hung)" % limit
     return proc.returncode, proc.stdout
 
 
-def one(mutant, paste, scratch):
+def one(mutant, paste, scratch, full=False):
     mid, what, needle, repl, must = mutant
     hits = paste.count(needle)
     if hits != 1:
@@ -242,7 +302,7 @@ def one(mutant, paste, scratch):
     path = os.path.join(scratch, "mutant-%s.livecodescript" % mid)
     with open(path, "w", encoding="utf-8") as fh:
         fh.write(paste.replace(needle, repl, 1))
-    code, out = run_gate(path)
+    code, out = run_gate(path, full)
     problems = []
     if code != 1:
         problems.append("%s (%s): the gate exited %s, not 1 - %s"
@@ -250,9 +310,11 @@ def one(mutant, paste, scratch):
                            "it is BLIND to this defect" if code == 0
                            else "it hung" if code is None
                            else "a setup failure is not a catch"))
-    if must not in out:
-        problems.append("%s (%s): the gate never printed %r, so it did not "
-                        "fail for THIS reason" % (mid, what, must))
+    for need in ((must,) if isinstance(must, str) else must):
+        if need not in out:
+            problems.append("%s (%s): the gate never printed %r, so it did "
+                            "not fail for THIS reason, or did not name it"
+                            % (mid, what, need))
     if "Traceback" in out:
         problems.append("%s (%s): the gate crashed (a traceback is not a "
                         "catch)" % (mid, what))
@@ -263,7 +325,11 @@ def one(mutant, paste, scratch):
     return problems
 
 
-def main():
+def main(argv):
+    full = "--full" in argv
+    mutants = FULL_MUTANTS if full else MUTANTS
+    ok_line = ("check-suite-ui-boot --full: OK" if full
+               else "check-suite-ui-boot: OK")
     with open(PASTE, encoding="utf-8") as fh:
         paste = fh.read()
     scratch = tempfile.mkdtemp(prefix="test-suite-ui-boot-")
@@ -272,12 +338,13 @@ def main():
         # one gate run per core at most: the runs are CPU-bound, and more
         # workers than cores only stretch every run's wall clock
         with concurrent.futures.ThreadPoolExecutor(
-                max_workers=max(1, min(len(MUTANTS) + 1,
+                max_workers=max(1, min(len(mutants) + 1,
                                        os.cpu_count() or 1))) as pool:
-            clean = pool.submit(run_gate, PASTE)
-            futs = [(m, pool.submit(one, m, paste, scratch)) for m in MUTANTS]
+            clean = pool.submit(run_gate, PASTE, full)
+            futs = [(m, pool.submit(one, m, paste, scratch, full))
+                    for m in mutants]
             code, out = clean.result()
-            if code != 0 or "check-suite-ui-boot: OK" not in out:
+            if code != 0 or ok_line not in out:
                 problems.append("the CLEAN paste did not pass (exit %s), so no "
                                 "catch below means anything:\n      %s"
                                 % (code, "\n      ".join(
@@ -292,11 +359,11 @@ def main():
     if problems:
         print("test-suite-ui-boot: FAIL\n  " + "\n  ".join(problems))
         return 1
-    print("test-suite-ui-boot: OK (the clean paste passes, and all %d seeded "
-          "defects fail the gate, each on the check that names it)"
-          % len(MUTANTS))
+    print("test-suite-ui-boot%s: OK (the clean paste passes, and all %d "
+          "seeded defects fail the gate, each on the check that names it)"
+          % (" --full" if full else "", len(mutants)))
     return 0
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(main(sys.argv[1:]))

@@ -203,7 +203,10 @@ because a harness once ran against a stale in-memory library and reported failur
   `test-build-suite-selftest.py`), the drift fixtures `test-ui-kit-drift.py` and
   `test-harness-scaffold-drift.py`, and `check-suite-ui-boot.py` (fixture `test-suite-ui-boot.py`),
   which drives the board's logic through the family interpreter in an all-absent profile and
-  upgrades no label. The build stamp `kSuUiVersion` is DERIVED, never bumped:
+  upgrades no label; its `--full` profile (runbook 3.2: the step before an engine session, not
+  per push) runs Run all over the whole paste from openStack and fails by name on a throw, a
+  refusal, rows that miss the totals or a teardown that never ran. The build stamp
+  `kSuUiVersion` is DERIVED, never bumped:
   `check-suite-ui-version.py` (fixture `test-suite-ui-version.py`) holds it to a hash of the code
   `suBuildAll` reaches and the constants it names; after a build change run it with `--fix`, then
   regenerate. Run all has run on an engine (2026-09-24 on Windows: the build, the boot
