@@ -93,10 +93,11 @@ in dispatchers, and would have hidden a real one). The copies are unified now; t
 CURRENT copy TOGETHER WITH `tools/test-checker.py` and its fixtures** - the fixtures are what keep a
 rule honest when you extend it (an attestation must become a committed fixture, section 1).
 
-Its twenty-two checks, and the engine lesson each encodes. The numbers are the checker's own (its
+Its twenty-three checks, and the engine lesson each encodes. The numbers are the checker's own (its
 docstring lists them, and that docstring is the authority: count there, not here). Checks 13-21 came
-from the hold-em lineage in the 2026-08-15 checker union, 22 from riptide's blank-window stack; this
-list read "twelve check families" until 2026-09-24, which was the pre-union count:
+from the hold-em lineage in the 2026-08-15 checker union, 22 from riptide's blank-window stack, 23
+from the 2026-09-25 hex-comparison sweep; this list read "twelve check families" until 2026-09-24,
+which was the pre-union count:
 
 1. **ASCII only.** Smart/curly quotes (U+2018/2019/201C/201D) fail OXT compilation outright; en/em
    dashes break house style; any other non-ASCII byte is reported, and a non-UTF-8 file is refused.
@@ -151,6 +152,19 @@ list read "twelve check families" until 2026-09-24, which was the pre-union coun
     return` does not compile, and since a script compiles as a unit that one line opens the stack as
     a blank window with no error to point at (section 1). The comma-separated multi-declaration form,
     commas inside quoted values included, is legal.
+23. **A hex digest, token, nonce, commitment or key meeting a bare comparison** (`is`, `is not`,
+    `=`, `<>`, `<`, `<=`, `>`, `>=`; `.livecodescript` only). The engine compares two NUMBER-LIKE
+    texts as numbers (C `strtod`, no range check), so two hex values shaped digits-`e`-digits both
+    overflow to +inf and compare equal, and a 64-zero head `is` "0" (the suite's engine note 2.11,
+    from the engine source). It fires when ONE operand is hex-shaped by name (a name ending `Hex`,
+    `Token`, `Tok`, `Nonce`, `Commit`, `Digest`, `Hash`, `Pub`, `Pubkey`, `PublicKey`, `SecretKey` or
+    `Txid`, and under equality `Target`, measured over the suite's tree; a literal array key named
+    that way; a call ending in `Hex`; a chunk of any of these, whatever its index) and the other is
+    not `empty`, a literal, a constant or a number. The fix it accepts is a letter on each side,
+    `("h" & a) is ("h" & b)`, or a byte/hex-equality helper; `0x` is not such a letter (it starts a
+    base-16 number). A name heuristic narrows the class and cannot close it: a hex value in a
+    plain-named variable passes, and a number-like literal is exempt with every literal (by the
+    same parse, "14e0" is "0014").
 
 It is a lexer-level checker, not a compiler: it errs toward NOT raising false positives, so passing
 it is necessary, never sufficient.

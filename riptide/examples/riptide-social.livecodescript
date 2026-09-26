@@ -14570,6 +14570,12 @@ end raHeadAccepted
 
 command raHandleEvent pEvent
    local tHead, tPost, tNext, tOk, tKeyCount
+   -- DHT targets compare as TEXT, a letter on each side: bare `is` reads
+   -- two number-like texts as NUMBERS (suite engine note 2.11), so a
+   -- 40-hex target shaped digits-e-digits could match a different one,
+   -- and one that is all zeros but shorter reads as the zero target.
+   -- Found by the family checker's check 23 (2026-09-25); verified
+   -- statically; needs an OXT pass.
    switch pEvent["name"]
       case "dhtMutableItem"
          if sDmAwaitDmHead is "true" and sDmTarget is not empty then
@@ -14579,7 +14585,7 @@ command raHandleEvent pEvent
             if tKeyCount > 0 then
                raHeadAccepted sDmTarget, tHead["seq"]
                put empty into sDmAwaitDmHead
-               if tHead["prekeyTarget"] is rsZeroTarget() then
+               if ("h" & tHead["prekeyTarget"]) is ("h" & rsZeroTarget()) then
                   raDmLog raDmShort(sDmTarget) && "publishes no prekey" && \
                         "(their app predates DMs); cannot open a channel."
                else
@@ -14595,7 +14601,7 @@ command raHandleEvent pEvent
                   -- A.9: the head also names a profileMeta blob (spec
                   -- 4.1's display name); fetch and show it beside the
                   -- handle, degrading honestly when it is absent
-                  if tHead["profileMetaTarget"] is rsZeroTarget() then
+                  if ("h" & tHead["profileMetaTarget"]) is ("h" & rsZeroTarget()) then
                      raDmLog "they publish no profile-name blob;" && \
                            "showing the handle."
                   else
@@ -14619,7 +14625,7 @@ command raHandleEvent pEvent
                raHeadAccepted sHandle, tHead["seq"]
                put empty into sAwaitOwn
                put tHead["seq"] into sSeq
-               if tHead["latestPostTarget"] is not rsZeroTarget() then
+               if ("h" & tHead["latestPostTarget"]) is not ("h" & rsZeroTarget()) then
                   put tHead["latestPostTarget"] into sMyLatest
                end if
                raFeedNote "raIdOut", "recovered your head: seq" && sSeq & comma && "latest post" && tHead["latestPostTarget"]
@@ -14639,7 +14645,7 @@ command raHandleEvent pEvent
                -- out of band"); fetch it and show it, verified by its
                -- content address on arrival - and say so honestly when
                -- the head carries the none target instead.
-               if tHead["profileMetaTarget"] is rsZeroTarget() then
+               if ("h" & tHead["profileMetaTarget"]) is ("h" & rsZeroTarget()) then
                   raFeedNote "raTheirFeed", "no profile-name blob published (the head carries the none target)."
                else
                   put tHead["profileMetaTarget"] into sProfileNext
@@ -14650,7 +14656,7 @@ command raHandleEvent pEvent
                      put empty into sProfileNext
                   end if
                end if
-               if tHead["latestPostTarget"] is rsZeroTarget() then
+               if ("h" & tHead["latestPostTarget"]) is ("h" & rsZeroTarget()) then
                   raFeedNote "raTheirFeed", "no posts yet."
                else
                   put tHead["latestPostTarget"] into sWalkNext
@@ -14666,26 +14672,26 @@ command raHandleEvent pEvent
          end if
          break
       case "dhtImmutableItem"
-         if sDmAwaitPrekey is not empty and pEvent["target"] is sDmAwaitPrekey then
+         if sDmAwaitPrekey is not empty and ("h" & pEvent["target"]) is ("h" & sDmAwaitPrekey) then
             raDmPrekeyArrived pEvent["value"]
          end if
          -- the kind-C reassembly walk (A2) and the profileMeta reader
          -- (A.9) ride the same event stream as the chain walk, each with
          -- its own await slot - independent ifs, the prekey-vs-walk
          -- pattern, so concurrent lookups never steal each other's answer
-         if sChunkNext is not empty and pEvent["target"] is sChunkNext then
+         if sChunkNext is not empty and ("h" & pEvent["target"]) is ("h" & sChunkNext) then
             raChunkArrived pEvent
          end if
-         if sProfileNext is not empty and pEvent["target"] is sProfileNext then
+         if sProfileNext is not empty and ("h" & pEvent["target"]) is ("h" & sProfileNext) then
             raFeedNote "raTheirFeed", raProfileLine(pEvent, sProfileNext)
             put empty into sProfileNext
          end if
          if sDmProfileNext is not empty and \
-               pEvent["target"] is sDmProfileNext then
+               ("h" & pEvent["target"]) is ("h" & sDmProfileNext) then
             raDmLog raProfileLine(pEvent, sDmProfileNext)
             put empty into sDmProfileNext
          end if
-         if sWalkNext is not empty and pEvent["target"] is sWalkNext then
+         if sWalkNext is not empty and ("h" & pEvent["target"]) is ("h" & sWalkNext) then
             put rsIngestPost(pEvent, sWalkNext, sFollowHandle) into tPost
             put the number of lines of the keys of tPost into tKeyCount
             if tKeyCount is 0 then
@@ -14730,7 +14736,7 @@ command raHandleEvent pEvent
                   end if
                end if
                put tPost["prevPostTarget"] into tNext
-               if tNext is rsZeroTarget() then
+               if ("h" & tNext) is ("h" & rsZeroTarget()) then
                   raFeedNote "raTheirFeed", "chain COMPLETE:" && sWalkCount && "post(s), every authorSig verified."
                   put empty into sWalkNext
                else if sWalkCount >= kWalkMax then
@@ -15110,7 +15116,9 @@ end raDmStart
 -- first contact readable only by the person the post chain belongs to.
 command raDmPrekeyArrived pValue
    local tParsed, tH
-   if rsImmutableTarget(pValue) is not sDmAwaitPrekey then
+   -- the content address compares as TEXT, a letter on each side (suite
+   -- engine note 2.11; raHandleEvent has why)
+   if ("h" & rsImmutableTarget(pValue)) is not ("h" & sDmAwaitPrekey) then
       raDmLog "a prekey answer did not hash to its target; ignored."
       exit raDmPrekeyArrived
    end if
@@ -16639,7 +16647,9 @@ command raLanMediaGet
    if sLanMediaWatch is an integer and sLanMediaWatch > 0 then
       put rsMediaStatus(sLanMediaWatch) into tS
       if tS is an array then
-         if toLower(tS["infoHashV1"]) is tHash and \
+         -- the info-hash compares as TEXT, a letter on each side (suite
+         -- engine note 2.11: bare `is` reads number-like hex as a number)
+         if ("h" & toLower(tS["infoHashV1"])) is ("h" & tHash) and \
                tS["filePath"] is not empty then
             if there is a file tS["filePath"] then
                -- existence is not playability (raMediaFrontReady's story)
@@ -17505,7 +17515,9 @@ command raNxFollow
       raNxNote "not an npub or a 64-hex key:" && rsLastError()
       exit raNxFollow
    end if
-   if tHex is sNxPubkey then
+   -- as TEXT, a letter on each side (suite engine note 2.11): a pasted key
+   -- shaped digits-e-digits must not read as a number equal to ours
+   if ("h" & tHex) is ("h" & sNxPubkey) then
       raNxNote "that is your own key."
       exit raNxFollow
    end if
@@ -17916,7 +17928,8 @@ command raMediaGet
    if sMediaWatch is an integer and sMediaWatch > 0 then
       put rsMediaStatus(sMediaWatch) into tS
       if tS is an array then
-         if toLower(tS["infoHashV1"]) is tHash and tS["filePath"] is not empty then
+         -- the info-hash compares as TEXT, a letter on each side (engine note 2.11)
+         if ("h" & toLower(tS["infoHashV1"])) is ("h" & tHash) and tS["filePath"] is not empty then
             if there is a file tS["filePath"] then
                -- file-EXISTENCE is not playability: libtorrent allocates
                -- the file the moment metadata arrives, so this used to

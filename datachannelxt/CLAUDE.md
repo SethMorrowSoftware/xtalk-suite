@@ -205,7 +205,9 @@ Numbered as cited elsewhere in the suite (the suite's `tools/check-lcb-signature
     is case-insensitive (`set the caseSensitive to true`), and even then it compares two
     NUMBER-LIKE operands as numbers ("1e5" is "100000"; suite engine note 2.11, from the engine
     source), so a byte-exact compare also prefixes a letter to both sides or goes byte by byte.
-    The checker flags the first two (`LCS_ANTIPATTERNS`).
+    The checker flags the first two (`LCS_ANTIPATTERNS`), and its check 23 a bare comparison
+    with an operand NAMED like hex (a nonce, a key, a hash; the dht-chat's DHT key filter was
+    its find here, 2026-09-25, verified statically).
 11. **An EVENT name may never equal a public `dc*` handler name** (engine note 6.7). Dispatched
     names share ONE message namespace with public handlers and the LIBRARY handler wins, so the
     app's `on <name>` is never reached. Observed 2026-08-18 on `dcLocalDescription`: the

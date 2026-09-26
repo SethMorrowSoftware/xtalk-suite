@@ -3471,7 +3471,9 @@ command cpCFinished pTorrent
    end if
    put "true" into sLeechDone
    put textDecode(sxBin2Hex(sxHashFile(cpTempDir() & "/" & kShareFolder & "/" & kPayloadFile, 32)), "ascii") into tHash
-   if tHash is sLeechHash then
+   -- hex against hex compares as TEXT, a letter on each side (suite engine
+   -- note 2.11: bare `is` reads two number-like texts as numbers)
+   if ("h" & tHash) is ("h" & sLeechHash) then
       cpSay "cpCOut", "PASS download complete and the payload hash MATCHES the sharer's - exact bytes via the real swarm. SECTION C's transfer leg COMPLETE"
    else
       cpSay "cpCOut", "FAIL hash mismatch: got" && tHash
@@ -3788,7 +3790,8 @@ end cpETick
 
 command cpEOnMutable pEvent
    local tHeadText
-   if sERole is empty or pEvent["publicKey"] is not sEKeys["publicKey"] then
+   -- the 64-hex keys compare as TEXT, a letter on each side (engine note 2.11)
+   if sERole is empty or ("k" & pEvent["publicKey"]) is not ("k" & sEKeys["publicKey"]) then
       exit cpEOnMutable
    end if
    if sEPhase is "fetch-offer" and pEvent["salt"] is kSaltOffer then
@@ -3856,7 +3859,8 @@ command cpEOnImmutable pEvent
    put line 1 of tBody into tNonce
    put line 2 of tBody into tType
    put line 3 to -1 of tBody into tSdp
-   if tNonce is sENonce then
+   -- the nonce compares as TEXT, a letter on each side (engine note 2.11)
+   if ("n" & tNonce) is ("n" & sENonce) then
       exit cpEOnImmutable
    end if
    put empty into sEWant

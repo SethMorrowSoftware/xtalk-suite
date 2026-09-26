@@ -3321,7 +3321,9 @@ private command testSodiumComposition
       put "90e7595fc89e52fdfddce9c6a43d74dbf6047025ee0462d2d172e8b6a2841d6ee" & \
           "da66ce2983f7ff7e47c49615220e78c25c775a040957316b7bafd5985450f90" into tExpectExp
       put sxSignSeedToExpandedKey(testRepeatByte(66, 32)) into tExpanded
-      oxCheck (testHex(tExpanded) is tExpectExp), \
+      -- hex against hex compares as TEXT, a letter on each side (suite engine
+      -- note 2.11: bare `is` reads two number-like texts as numbers)
+      oxCheck (("h" & testHex(tExpanded)) is ("h" & tExpectExp)), \
          "sxSignSeedToExpandedKey(seed 0x42 x 32) matches the pinned expanded-key vector"
    else
       oxSkip "sxSignSeedToExpandedKey needs SodiumXT ABI >= 6"
@@ -3332,7 +3334,7 @@ private command testSodiumComposition
       local tMac, tExpectMac
       put "5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843" into tExpectMac
       put sxHmacSha256(textEncode("Jefe", "UTF-8"), textEncode("what do ya want for nothing?", "UTF-8")) into tMac
-      oxCheck (testHex(tMac) is tExpectMac), \
+      oxCheck (("h" & testHex(tMac)) is ("h" & tExpectMac)), \
          "sxHmacSha256 (RFC 4231 Test Case 2) matches the pinned HMAC vector"
    else
       oxSkip "sxHmacSha256 needs SodiumXT ABI >= 6"

@@ -3003,8 +3003,10 @@ command stTorrentSection
    stAssert "btDhtKeypair reports its 64-hex seed", \
          the number of chars of tKp["seed"] is 64
    put btDhtKeypair(tKp["seed"]) into tKp2
+   -- hex against hex compares as TEXT, a letter on each side (suite engine
+   -- note 2.11: bare `is` reads two number-like texts as numbers)
    stAssert "btDhtKeypair is deterministic from that seed", \
-         tKp2["publicKey"] is tKp["publicKey"]
+         ("h" & tKp2["publicKey"]) is ("h" & tKp["publicKey"])
 
    -- The alert drain has to survive being called; the events themselves arrive
    -- asynchronously and are not asserted here (that is the member selftest's job).
@@ -3058,7 +3060,9 @@ command stOnionSection
       put numToByte(0) after tZeroPub
    end repeat
    set the caseSensitive to true
-   stAssert "oxPublicKeyFromAddress decoded base32 byte-exactly", tPub is tZeroPub
+   -- a letter on each side keeps `is` on its text path (engine note 2.11)
+   stAssert "oxPublicKeyFromAddress decoded base32 byte-exactly", \
+         ("b" & tPub) is ("b" & tZeroPub)
    set the caseSensitive to false
 
    -- The fail-closed half: wrong length, a character outside the base32
@@ -3189,7 +3193,7 @@ command stCoinCurveSection
       -- ecrecover: the signature alone must yield the signer's key back.
       put cxRecover(cxSignRecoverable(tSeckey, tDigest), tDigest) into tRecovered
       stAssert "cxRecover returns the signing public key", \
-            stHex(tRecovered) is stHex(tPubU)
+            ("h" & stHex(tRecovered)) is ("h" & stHex(tPubU))
    catch tError
       stSectionFailed "CoinXT secp256k1", tError
    end try
@@ -3225,7 +3229,7 @@ command stCrossIdentitySection
 
    put btDhtKeypair(tSeedHex) into tKp
    stAssert "btDhtKeypair accepts the SodiumXT seed verbatim", \
-         tKp["seed"] is tSeedHex
+         ("h" & tKp["seed"]) is ("h" & tSeedHex)
    put btDhtKeypair(tSeedHex) into tKp
    stAssert "btDhtKeypair is deterministic on that seed (same key twice)", \
          the number of chars of tKp["publicKey"] is 64
@@ -3234,9 +3238,10 @@ command stCrossIdentitySection
    put textDecode(sxBin2Hex(tPub), "UTF-8") into tPubHex
    -- Both hex encoders emit lowercase, and `is` is case-insensitive by default,
    -- so this compare is deliberately left case-INsensitive: it is a comparison
-   -- of two hex TEXTS, not of secret bytes.
+   -- of two hex TEXTS, not of secret bytes - with a letter on each side, so
+   -- `is` stays on its TEXT path (engine note 2.11).
    stAssert "SodiumXT and libtorrent derive the SAME ed25519 public key", \
-         tPubHex is tKp["publicKey"]
+         ("h" & tPubHex) is ("h" & tKp["publicKey"])
 
    -- The two libraries disagree on how to SPELL the secret key, and the suite
    -- depends on knowing which is which: libsodium's is seed||publicKey (64
@@ -3255,7 +3260,7 @@ command stCrossIdentitySection
    else
       put textDecode(sxBin2Hex(tExpanded), "UTF-8") into tExpandedHex
       stAssert "libtorrent's DHT secret key IS SodiumXT's expanded key", \
-            tExpandedHex is tKp["secretKey"]
+            ("h" & tExpandedHex) is ("h" & tKp["secretKey"])
    end if
 
    -- The third leg of the claim: that same public key IS a v3 .onion address.

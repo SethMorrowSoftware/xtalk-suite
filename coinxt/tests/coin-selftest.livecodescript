@@ -3857,7 +3857,7 @@ command stRunKeccak
       -- a hashing failure - do not go looking in the vectors.
       stAssert "cxKeccak256 of the empty input", stHex(cxKeccak256(stText(""))) is kKeccakEmpty
       stAssert "cxKeccak256 of abc", stHex(cxKeccak256(stText("abc"))) is kKeccakAbc
-      stAssert "cxKeccak256 is deterministic", stHex(cxKeccak256(stText("abc"))) is stHex(cxKeccak256(stText("abc")))
+      stAssert "cxKeccak256 is deterministic", stSameHex(stHex(cxKeccak256(stText("abc"))), stHex(cxKeccak256(stText("abc"))))
    catch tError
       stSectionFailed "Keccak-256", tError
    end try
@@ -3874,8 +3874,8 @@ command stRunSha3
       -- differ ONLY in a padding byte, so a shim that wires one to the other is
       -- a silent, plausible, totally wrong answer - and on Ethereum, a wrong
       -- address. Assert the difference explicitly, in both directions.
-      stAssert "cxSha3_256 is NOT aliased to cxKeccak256", stHex(cxSha3_256(stText("abc"))) is not stHex(cxKeccak256(stText("abc")))
-      stAssert "cxKeccak256 is NOT aliased to cxSha3_256", stHex(cxKeccak256(stText(""))) is not stHex(cxSha3_256(stText("")))
+      stAssert "cxSha3_256 is NOT aliased to cxKeccak256", not stSameHex(stHex(cxSha3_256(stText("abc"))), stHex(cxKeccak256(stText("abc"))))
+      stAssert "cxKeccak256 is NOT aliased to cxSha3_256", not stSameHex(stHex(cxKeccak256(stText(""))), stHex(cxSha3_256(stText(""))))
    catch tError
       stSectionFailed "SHA3-256", tError
    end try
@@ -3928,7 +3928,7 @@ command stRunHmac
       stAssert "HMAC-SHA256 case 2", stHex(cxHmacSha256(tKey2, tMsg2)) is kHmac2Sha256
       stAssert "HMAC-SHA512 case 2", stHex(cxHmacSha512(tKey2, tMsg2)) is kHmac2Sha512
       -- A MAC must depend on its key. Same message, different key, different tag.
-      stAssert "HMAC-SHA256 depends on the key", stHex(cxHmacSha256(tKey1, tMsg1)) is not stHex(cxHmacSha256(tKey2, tMsg1))
+      stAssert "HMAC-SHA256 depends on the key", not stSameHex(stHex(cxHmacSha256(tKey1, tMsg1)), stHex(cxHmacSha256(tKey2, tMsg1)))
    catch tError
       stSectionFailed "HMAC", tError
    end try
@@ -3992,7 +3992,7 @@ command stRunIndependence
       -- stale or empty buffer would pass every fixed vector above by accident
       -- only if the vector were wrong too, but this catches a buffer that never
       -- gets the caller's bytes at all.
-      stAssert "one changed input byte changes the digest", stHex(cxKeccak256(stText("abc"))) is not stHex(cxKeccak256(stText("abd")))
+      stAssert "one changed input byte changes the digest", not stSameHex(stHex(cxKeccak256(stText("abc"))), stHex(cxKeccak256(stText("abd"))))
    catch tError
       stSectionFailed "independence", tError
    end try
@@ -4043,7 +4043,7 @@ command stRunCurveKeys
       -- cxNewSeckey validates caller entropy and hands it back unchanged. The
       -- private key 1 is the generator G, which is why no vector table is
       -- needed here: this public key is the curve's own definition.
-      stAssert "cxNewSeckey accepts a valid key", stHex(cxNewSeckey(tSk)) is stHex(tSk)
+      stAssert "cxNewSeckey accepts a valid key", stSameHex(stHex(cxNewSeckey(tSk)), stHex(tSk))
       stAssert "cxSeckeyIsValid says true for a valid key", cxSeckeyIsValid(tSk) is true
       put cxPublicKey(tSk, true) into tPubC
       put cxPublicKey(tSk, false) into tPubU
@@ -4053,8 +4053,8 @@ command stRunCurveKeys
       -- int). If it were dropped, both calls would return the same length.
       stAssert "the compressed key is 33 bytes", the number of bytes of tPubC is 33
       stAssert "the uncompressed key is 65 bytes", the number of bytes of tPubU is 65
-      stAssert "cxPubkeyDecompress rebuilds the uncompressed key", stHex(cxPubkeyDecompress(tPubC)) is stHex(tPubU)
-      stAssert "cxPubkeyDecompress of an uncompressed key is a no-op", stHex(cxPubkeyDecompress(tPubU)) is stHex(tPubU)
+      stAssert "cxPubkeyDecompress rebuilds the uncompressed key", stSameHex(stHex(cxPubkeyDecompress(tPubC)), stHex(tPubU))
+      stAssert "cxPubkeyDecompress of an uncompressed key is a no-op", stSameHex(stHex(cxPubkeyDecompress(tPubU)), stHex(tPubU))
       -- The two ABI-4 tweak entry points. BIP-32 non-hardened derivation is
       -- built on the claim that tweaking the PRIVATE key and tweaking the
       -- PUBLIC key land on the same point; if they ever disagreed, an xpub
@@ -4062,10 +4062,10 @@ command stRunCurveKeys
       -- nothing above this line would notice. 1 + 1 = 2 pins both to the
       -- curve's own second point rather than only to each other.
       put cxSeckeyTweakAdd(tSk, tSk) into tTweaked
-      stAssert "cxSeckeyTweakAdd of 1 by 1 is the scalar 2", stHex(tTweaked) is stHex(stRepeatByte(0, 31) & numToByte(2))
+      stAssert "cxSeckeyTweakAdd of 1 by 1 is the scalar 2", stSameHex(stHex(tTweaked), stHex(stRepeatByte(0, 31) & numToByte(2)))
       stAssert "and its public key is 2G", stHex(cxPublicKey(tTweaked, true)) is kPubTwoCompressed
       stAssert "cxPubkeyTweakAdd of G by 1 is also 2G", stHex(cxPubkeyTweakAdd(tPubC, tSk)) is kPubTwoCompressed
-      stAssert "so private and public tweaking agree", stHex(cxPubkeyTweakAdd(tPubC, tSk)) is stHex(cxPublicKey(cxSeckeyTweakAdd(tSk, tSk), true))
+      stAssert "so private and public tweaking agree", stSameHex(stHex(cxPubkeyTweakAdd(tPubC, tSk)), stHex(cxPublicKey(cxSeckeyTweakAdd(tSk, tSk), true)))
       -- Both refuse a ZERO tweak, where upstream's public entry point accepts
       -- it. Accepting on one path and refusing on the other is the
       -- interoperability bug this member exists to prevent, so the symmetry is
@@ -4105,7 +4105,7 @@ command stRunCurveSign
       -- code draws fresh OS entropy for side-channel blinding on every call;
       -- that blinding cancels, and this is the check that says so from script.
       put cxSign(tSk, tDigest) into tAgain
-      stAssert "signing twice gives the same signature", stHex(tAgain) is stHex(tSig)
+      stAssert "signing twice gives the same signature", stSameHex(stHex(tAgain), stHex(tSig))
    catch tError
       stSectionFailed "ECDSA signing", tError
    end try
@@ -4152,7 +4152,7 @@ command stRunCurveRecover
       -- The whole point of recovery: get the signer back from the signature
       -- alone. Recovery ALSO succeeds for a wrong id and returns some other
       -- key, so comparing against the expected key is the real check.
-      stAssert "cxRecover returns the signing public key", stHex(tRec) is stHex(tPubU)
+      stAssert "cxRecover returns the signing public key", stSameHex(stHex(tRec), stHex(tPubU))
       stAssert "and that key is the published G", stHex(tRec) is kPubOneUncompressed
    catch tError
       stSectionFailed "ecrecover", tError
@@ -4170,13 +4170,13 @@ command stRunCurveEcdh
       put cxPublicKey(tB, true) into tPubB
       put cxEcdh(tA, tPubB) into tShared1
       put cxEcdh(tB, tPubA) into tShared2
-      stAssert "both sides derive the same point", stHex(tShared1) is stHex(tShared2)
+      stAssert "both sides derive the same point", stSameHex(stHex(tShared1), stHex(tShared2))
       stAssert "the shared point is 65 bytes", the number of bytes of tShared1 is cxEcdhLen()
       stAssert "the shared point is in uncompressed form", byteToNum(byte 1 of tShared1) is 4
       -- 1 * (2G) == 2G, so with these two keys the shared point is just the
       -- public key of the other side. That makes this leg checkable against a
       -- value already pinned above rather than against a new magic constant.
-      stAssert "1 * 2G is 2G", stHex(tShared1) is stHex(cxPublicKey(tB, false))
+      stAssert "1 * 2G is 2G", stSameHex(stHex(tShared1), stHex(cxPublicKey(tB, false)))
    catch tError
       stSectionFailed "ECDH", tError
    end try
@@ -4279,7 +4279,7 @@ command stRunBase58
       -- other while both used the wrong hash would pass every round-trip below.
       stAssert "cxHash256 of abc is the published double-SHA-256", stHex(cxHash256(stText("abc"))) is kHash256Abc
       stAssert "cxHash256 is 32 bytes", the number of bytes of cxHash256(stText("")) is 32
-      stAssert "and it is genuinely SHA-256 applied twice", stHex(cxHash256(stText("abc"))) is stHex(cxSha256(cxSha256(stText("abc"))))
+      stAssert "and it is genuinely SHA-256 applied twice", stSameHex(stHex(cxHash256(stText("abc"))), stHex(cxSha256(cxSha256(stText("abc")))))
       stAssert "encodes the worked example", cxBase58CheckEncode(tPayload) is kBase58Address
       stAssert "decodes it back", cxHexEncode(cxBase58CheckDecode(kBase58Address)) is stToLowerText(kBase58Payload)
       -- The checksum is the entire point of the encoding: one flipped character

@@ -60,7 +60,9 @@ tools/                     suite gates, their fixture tests, generators, carried
    dialects); declarations at handler top in `.lcb` (measured, NOT enforced for `.livecodescript`,
    where a mid-handler `local` is legal); `unsafe` around foreign calls; block balance including
    `switch`; the zero-arg statement call and throw-in-catch refusals; the per-dialect antipattern
-   sets. The copies are byte-identical (`tools/check-checker-drift.py`) and `tools/test-checker.py`
+   sets; a hex digest, token, nonce or key (by name) meeting a bare comparison (check 23, engine
+   note 2.11; a name heuristic that narrows the class, not a proof). The copies are
+   byte-identical (`tools/check-checker-drift.py`) and `tools/test-checker.py`
    fixture-tests every rule in every copy. **Done means:** a script change passes that gate; a shim
    change passes the member's smoke test under ASan/UBSan; a native-library change refreshes the
    committed `src/code/<arch>-<platform>/` binary in the same change.

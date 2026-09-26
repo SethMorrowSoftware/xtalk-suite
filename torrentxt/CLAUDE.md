@@ -249,7 +249,11 @@ gate holds to the demo: the rest was copied from nocloud's and restates it, and 
 its mirrors name nocloud handlers this demo never got, the dotfile guard among them
 (`qsHasDotSegment`: this demo's folder server has no refusal of `/.git/config` or
 `/.env`), nor did nocloud's reserved-namespace guard (`qsHttpReservedPath`) come across
-(found 2026-09-25; the suite's docs/WORK-PLAN.md tracks it).
+(found 2026-09-25; the suite's docs/WORK-PLAN.md tracks it). The family checker's check 23 then found the LAN editor's
+write gate (`qsEditAuthed`, the `x-edit-token` header) still on bare `is` in both copies, and
+own-key, info-hash and cross-library key compares in `torrent-dht-channels` and
+`torrent-client`; all took the same fix the same day (the cross-library key check compares
+bytes with `sxMemEqual`), verified statically; needs an OXT pass.
 
 ## Engine evidence ledger
 

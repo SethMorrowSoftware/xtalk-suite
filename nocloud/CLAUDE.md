@@ -191,7 +191,11 @@ Gotchas 1-10 keep their numbers: the suite work plan cites gotcha 8.
     overflows to +inf, and so do `1e999` and `inf` in a request, so `qsCwServe`'s capability
     gate let `/1e999/` in on about one share in 1.2 million until it compared
     `("t" & tTok)` with `("t" & sCwToken)` (2026-09-25; verified statically; needs an OXT
-    pass). Prefix a letter to both sides, or compare byte by byte.
+    pass). Prefix a letter to both sides, or compare byte by byte. The same day the family
+    checker's check 23 found the one the sweep missed, the LAN editor's WRITE gate
+    (`qsEditAuthed` compared the `x-edit-token` header with bare `is`), fixed the same way;
+    the checker now refuses a bare comparison with an operand named like a token, hash, nonce
+    or hex value, so name such values that way.
 22. **A path is never an array key, and a route path never meets bare `is`.** Array keys
     fold case (suite engine note 2.7), so while `sHttpRoutes` and `sUserRoutes` were keyed
     by the text "METHOD /path", `GET /API/x` dispatched to the `/api/x` route, and share
