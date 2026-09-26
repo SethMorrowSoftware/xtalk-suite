@@ -144,12 +144,19 @@ def _load_reference():
     return mod
 
 
+_TOOLS = {}
+
+
 def _load_tool(name, filename):
-    import importlib.util
-    spec = importlib.util.spec_from_file_location(name, os.path.join(HERE, filename))
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
+    """A sibling tool as a module, loaded once (the scan below runs seven
+    times: its six fixtures and the harness itself)."""
+    if name not in _TOOLS:
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(name, os.path.join(HERE, filename))
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        _TOOLS[name] = mod
+    return _TOOLS[name]
 
 
 # --- the harness's own COMPARISONS (2026-09-26) -------------------------------
