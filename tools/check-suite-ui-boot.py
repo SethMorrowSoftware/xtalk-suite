@@ -280,7 +280,8 @@ rounds on four cores, the load lower). Per push that is 20 to 25 more
 minutes on the job that runs build-all --gates
 (suite-gates.yml's "static gates + golden vectors"), which GitHub timed at
 2h53m, 2h59m and 2h54m in runs 830, 842 and 849 (2026-09-25 and 09-26)
-against its 240-minute ceiling, in a block of suite gates that are seconds
+against the 240-minute ceiling it then had (270 since 2026-09-26, re-measured
+from those runs), in a block of suite gates that are seconds
 each. What it would buy there is the fold-level
 facts above, which change only when the paste is regenerated (once per batch,
 the work plan's rule), and which the fast tier's board checks and each folded
