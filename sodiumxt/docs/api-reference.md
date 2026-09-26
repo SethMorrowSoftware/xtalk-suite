@@ -71,8 +71,9 @@ are 32-byte `Data`; the from-hash input is one 64-byte digest, which
 `sxHash(tData, 64)` (BLAKE2b-512) produces. Evidence: C KATs cross-checked against
 an independent RFC 9496 reference (`holde-em/tools/protocol-kat.py`), green under
 ASan/UBSan 2026-08-15; **observed on an engine 2026-08-17** (Windows x86_64, NT 10.0,
-OXT 9.6.3, ABI 9) and 2026-08-18 (Linux), folded into the suite paste; most recently
-2026-09-24 (Windows, ABI 10). The harness section SKIPs cleanly on a pre-ABI-8 package.
+OXT 9.6.3, ABI 9) and 2026-08-18 (Linux), folded into the suite paste; at ABI 10
+2026-09-24 (Windows x86_64) and, most recently, 2026-09-25 (Linux x86_64 and Windows
+x86_64). The harness section SKIPs cleanly on a pre-ABI-8 package.
 
 | Handler | Returns | Notes |
 |---|---|---|
@@ -92,9 +93,10 @@ proof's response arithmetic). Same discipline as ABI 8: thin wrappers over
 from the built libsodium and re-derived by the independent RFC 9496 reference (the
 base-mult of 7 also equals RFC 9496's small-multiples entry B[7]). **Observed on an
 engine 2026-08-17** (Windows x86_64, NT 10.0, OXT 9.6.3, ABI 9) and 2026-08-18
-(Linux), most recently 2026-09-24 (Windows, ABI 10), including the failure the batch
-API exists to get right: one bad point fails the whole call, naming index 2 of 3. The
-harness probes this subsection separately, so an ABI-8 package SKIPs only these checks.
+(Linux), at ABI 10 2026-09-24 (Windows x86_64) and most recently 2026-09-25 (Linux
+x86_64 and Windows x86_64), including the failure the batch API exists to get right:
+one bad point fails the whole call, naming index 2 of 3. The harness probes this
+subsection separately, so an ABI-8 package SKIPs only these checks.
 
 | Handler | Returns | Notes |
 |---|---|---|
@@ -115,9 +117,10 @@ v2 is the named consumer. It is NOT a sealing API: to encrypt bytes, use `sxSecr
 independent RFC 8439 reference (three implementations agree on the pinned vectors), green
 under ASan/UBSan 2026-08-23; **observed on an engine 2026-08-24** (Windows x86_64, OXT
 9.6.3, ABI 10): the 7-check raw-ChaCha20 section green inside the 106-check
-`sxSelfTest()`, folded into the suite paste, and again 2026-09-24 (Windows), its RFC 8439
-A.2 #1 keystream included. Every committed binary is at ABI 10; the harness section SKIPs
-cleanly on an older package.
+`sxSelfTest()`, folded into the suite paste, and again 2026-09-24 (Windows x86_64) and
+2026-09-25 (Linux x86_64, the first recorded run on Linux, and Windows x86_64), its RFC
+8439 A.2 #1 keystream included. Every committed binary is at ABI 10; the harness section
+SKIPs cleanly on an older package.
 
 | Handler | Returns | Notes |
 |---|---|---|
@@ -255,9 +258,10 @@ server's tx and vice versa. rx is for receiving, tx for sending.
   (`tests/suite-selftest.livecodescript` at the suite root). Engine record: 68/68 on
   2026-08-10 (twice), 71/71 on 2026-08-12 (Windows x64, ABI 7 incl. SHA3), the ristretto
   sections 2026-08-17/18, 106/106 on 2026-08-24 (Windows x86_64, ABI 10), and 106/106
-  again on 2026-09-24 (Windows). On 2026-08-08 the suite pass also showed, on-engine,
-  that `sxSignSeedToExpandedKey`'s 64-byte expanded key equals the DHT secret key
-  libtorrent derives from the same seed (again green 2026-09-24). The full ledger is in
+  again on 2026-09-24 (Windows x86_64) and 2026-09-25 (Linux x86_64 and Windows x86_64).
+  On 2026-08-08 the suite pass also showed, on-engine, that `sxSignSeedToExpandedKey`'s
+  64-byte expanded key equals the DHT secret key libtorrent derives from the same seed
+  (again green 2026-09-24 and on both platforms 2026-09-25). The full ledger is in
   `CLAUDE.md`.
 - `examples/sodium-demo.livecodescript` - an interactive showcase with seven tabs (Secret
   Key, Public Key, Signatures, Hash/Files, Identity, Rekey, About), with a "Run the full

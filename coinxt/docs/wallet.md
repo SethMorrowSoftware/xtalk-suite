@@ -232,10 +232,11 @@ modelled shell. SodiumXT is modelled and declared in the gate; OnionXT answers
 its version probe and nothing else. `tools/test-wallet-boot.py` seeds real
 defects into copies and requires the gate to fail on each.
 
-**The library has six engine passes** (2026-08-08 through 2026-09-24, the last
-at 296/296 in the suite paste), so the cryptography under the wallet is
-engine-observed, `cxPubkeyCombine` (ABI 7, which the silent-payment receiver
-uses) included since 2026-09-24. The receiver built on it has not run.
+**The library has passed on an engine from 2026-08-08 through 2026-09-25**
+(296/296 in the suite paste on Windows 2026-09-24, and on Linux and Windows
+2026-09-25), so the cryptography under the wallet is engine-observed,
+`cxPubkeyCombine` (ABI 7, which the silent-payment receiver uses) included
+since 2026-09-24. The receiver built on it has not run.
 
 An interpreter is an approximation of the engine and never the engine; where
 they disagree the engine is right. What the gates settle is that the code RUNS

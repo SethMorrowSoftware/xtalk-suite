@@ -52,12 +52,16 @@ script "enetSelfTest"
 -- the 13 helper-section assertions); a whole paste with no failure on
 -- 2026-08-24 (enetxt's own count not recorded); green again on 2026-08-27,
 -- the renamed helper locals included (that paste's two failures were the
--- core's loopbacks on a machine blocking UDP to 127.0.0.1); and 34/34 on
+-- core's loopbacks on a machine blocking UDP to 127.0.0.1); 34/34 on
 -- 2026-09-24 (Windows, the D-23 paste, whose core loopbacks stalled the
 -- same way: suspected environment, suite runbook trap 5.5, not yet tested
--- independently). The ASYNC loopback is deliberately NOT folded (two state
--- machines in one process race for the event handlers); it last ran
--- standalone, green, on 2026-08-13.
+-- independently); and 34/34 on 2026-09-25 on Linux x86_64 (the same paste,
+-- whose core ENet loopback COMPLETED: connect, the sealed ciphertext, 60000
+-- bytes as one message, a graceful disconnect) and on Windows x86_64, where
+-- the core loopback stalled in connecting a fourth time. The ASYNC loopback is
+-- deliberately NOT folded (two state machines in one process race for the
+-- event handlers); THIS file's own last ran standalone, green, on
+-- 2026-08-13.
 
 -- >>> BEGIN EMBEDDED LIBRARIES (tools/sync-demo-embeds.py) >>>
 -- Pasted from the sources below so this demo runs with NO `start

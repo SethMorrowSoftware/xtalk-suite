@@ -14,8 +14,9 @@ script "RiptideSelfTest"
 -- all skipping honestly when torrentxt is absent or a session cannot start.
 --
 -- STATUS (honesty convention): the whole harness runs on an engine folded in
--- the suite paste, most recently 2026-09-24 (489 passed, 0 failed, 2 skipped:
--- the live-tor legs; riptide/CLAUDE.md's ledger). Its first OXT pass was
+-- the suite paste, most recently 2026-09-25 on Linux and on Windows, as on
+-- Windows on 2026-09-24 (489 passed, 0 failed, 2 skipped: the live-tor
+-- legs; riptide/CLAUDE.md's ledger). Its first OXT pass was
 -- phases 1 and 2 on 2026-08-12 (133/133, no skips). The
 -- oracle still independently pins the phase-2 vectors
 -- (tools/riptide_reference.py, via tools/check-selftest-vectors.py, which

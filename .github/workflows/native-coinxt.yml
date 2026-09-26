@@ -34,15 +34,20 @@
 #     is silently ignored for PE, which fails open). The x86_64 DLL is driven
 #     through the published vectors on a real Windows runner before it is
 #     bundled (release-binaries.yml's kat-windows job); the x86-win32 DLL may
-#     never have executed anywhere: that step is x86_64 only, and the one
-#     engine run of these builds (2026-09-24) did not record its bitness.
+#     never have executed anywhere: that step is x86_64 only, and the Windows
+#     engine runs (2026-09-24 and 2026-09-25) were a 64-bit OXT by the
+#     maintainer's account (given 2026-09-26), so they loaded the x86_64-win32
+#     DLL.
 #   * MACOS: one universal dylib, built in one pass on macos-15 with a
 #     two-arch CC and -exported_symbols_list (Mach-O ignores a version
 #     script), both slices driven through the vectors on the same runner -
 #     arm64 natively, x86_64 under Rosetta. The first shipped in release run 12
 #     (2026-08-27); every committed coinxt binary today comes from the
-#     2026-09-12 dispatch (run 34657390798), and of those only a Windows DLL
-#     has met an engine (2026-09-24, the suite paste; bitness not recorded).
+#     2026-09-12 dispatch (run 34657390798), and of those two have met an
+#     engine in the suite paste, both 64-bit by the maintainer's account: the
+#     x86_64-win32 DLL (2026-09-24; the 2026-09-25 Windows run INFERRED to be
+#     on it too) and the x86_64-linux library (2026-09-25). The x86-win32,
+#     x86-linux and mac builds have not.
 #
 # What is open is PER-PUSH coverage of those platforms: a Windows lane (MinGW
 # plus the KATs on a Windows runner, including a 32-bit Python for the x86 DLL)

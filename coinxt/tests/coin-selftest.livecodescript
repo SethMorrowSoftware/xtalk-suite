@@ -1,7 +1,12 @@
 script "coinSelfTest"
--- STATUS: last run GREEN in the 2026-08-17 engine pass (Windows x86_64, NT 10.0, OXT 9.6.3) - 278/278, zero failures, folded
--- into tests/suite-selftest.livecodescript. Runs standalone too: this file
--- carries src/coinxt.livecodescript, so there is nothing to `start using`.
+-- STATUS: last run GREEN in the 2026-09-25 engine passes (Linux x86_64 on the
+-- committed 2026-09-12 library, and Windows x86_64; 64-bit OXT on both by the
+-- maintainer's account) - 296/296 each, zero failures, folded into
+-- tests/suite-selftest.livecodescript; 296/296 on Windows the day before.
+-- (This line said 2026-08-17's 278/278 until 2026-09-25, after 290/290 on
+-- 2026-08-24 and 296/296 on 2026-09-24: coinxt/CLAUDE.md's ledger.) Runs
+-- standalone too: this file carries src/coinxt.livecodescript, so there is
+-- nothing to `start using`.
 
 -- coin-selftest.livecodescript - a self-building RUNTIME harness that drives
 -- the CoinXT public API in OXT and reports PASS / FAIL per handler. This is the
@@ -61,17 +66,23 @@ script "coinSelfTest"
 -- RUN HISTORY: engine-passed. Phases 1-3 closed 2026-08-10 (207/207 on the
 -- same-day re-run, after the engine surfaced one real fail-open in
 -- cxHdDerivePath); phase 5 closed 2026-08-12 (Windows x64, 230/230); the ABI 6
--- Schnorr/Taproot surface ran green 2026-08-16 on the day it shipped; the last
--- full run was 278/278 on 2026-08-17. tools/check-script-vectors.py continues to
+-- Schnorr/Taproot surface ran green 2026-08-16 on the day it shipped; full runs
+-- since: 278/278 on 2026-08-17, 290/290 on 2026-08-24, 296/296 on 2026-09-24
+-- (Windows) and 2026-09-25 (Linux x86_64 and Windows x86_64).
+-- tools/check-script-vectors.py continues to
 -- execute the real .livecodescript headlessly against the same vectors on every
 -- push, so a regression between engine passes is caught by CI, not by the next
 -- paste.
 --
 -- WHAT IT STILL DOES NOT PROVE: cxBtcAddressP2TR encodes an output key it is
 -- GIVEN and does not derive one (see its comment) - the tweak itself is a
--- separate, and now shipped, ABI 6 handler. There is no BIP-341 sighash builder
--- anywhere in coinxt: it signs a sighash it is handed. And no transaction this
--- file builds has been broadcast to a live network.
+-- separate, and now shipped, ABI 6 handler. (The sentence that stood here, "there
+-- is no BIP-341 sighash builder anywhere in coinxt", stopped being true on
+-- 2026-08-23: cxBtcSighashTaproot and the tapscript helpers are in the script
+-- layer, and this file's "BIP-341: taproot sighash + script tree" section ran
+-- green on an engine from 2026-08-24, most recently 2026-09-25; corrected that
+-- day.) And no transaction this file builds has been broadcast to a live
+-- network.
 --
 -- HOW TO USE: open OXT, make a one-card stack, paste THIS into the STACK script
 -- (Object > Stack Script), then close+reopen. It builds its own UI, runs every

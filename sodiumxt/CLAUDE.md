@@ -153,10 +153,10 @@ and zeroes the state. There is no LCB unload hook: apps free what they open (`cl
 
 | platform id | ABI | built from | engine record |
 |---|---|---|---|
-| `x86_64-linux` | **10** | release run 12 (2026-08-27), pinned 1.0.20 source | none recorded for this build; Linux last recorded at ABI 9 (2026-08-18) |
-| `x86-linux` | **10** | release run 12, pinned 1.0.20 source (`-m32`) | none recorded |
-| `x86_64-win32` | **10** | MSVC + vcpkg libsodium 1.0.22 (D-08); last re-committed 2026-09-12 | one of the two MSVC DLLs ran 106/106 on 2026-09-24 (the maintainer's account: the 2026-09-12 set, their first engine load), but neither bitness nor `sxVersion()` was recorded, so this row is still owed a run that names it (runbook row 23); the 2026-08-24 106/106 ran on a mingw DLL that no longer ships |
-| `x86-win32` | **10** | as the x64 row | as the x64 row: the 2026-09-24 run may have loaded this DLL, and which it loaded is not recorded (runbook row 23; a 32-bit OXT) |
+| `x86_64-linux` | **10** | release run 12 (2026-08-27), pinned 1.0.20 source; left unchanged by the 2026-09-12 run | 106/106 on 2026-09-25 (the maintainer's account: 64-bit Kubuntu 24.04, the latest committed builds), this file's first RECORDED engine load (the 2026-08-27 paste recorded no platform or package, so it may have been earlier: the suite work plan's sodiumxt coding #6); `sxVersion()` not recorded. Linux before it: ABI 9 (2026-08-18) |
+| `x86-linux` | **10** | release run 12, pinned 1.0.20 source (`-m32`) | none recorded (runbook row 47; a 32-bit OXT) |
+| `x86_64-win32` | **10** | MSVC + vcpkg libsodium 1.0.22 (D-08); last re-committed 2026-09-12 | 106/106 in each of the 2026-09-24 runs, their first engine load, and again 2026-09-25: 64-bit OXT by the maintainer's account (given 2026-09-26), so this DLL, the 2026-09-12 build on 2026-09-24 by the same account (on 2026-09-25 INFERRED: the same machine, and no Windows DLL committed since). LOADED at ABI 10 (the ChaCha20 section runs only past the `.lcb`'s exact guard) with SHA3, ristretto and ChaCha20 green; `sxVersion()` not recorded, so libsodium 1.0.22 is the build's pin, not a reading: runbook row 23's x86_64 half is met bar that one line. The 2026-08-24 106/106 ran on a mingw DLL that no longer ships |
+| `x86-win32` | **10** | as the x64 row | none recorded: every Windows run since 2026-09-12 was 64-bit by the maintainer's account (runbook row 23; a 32-bit OXT) |
 | `universal-mac` | **10** | release run 12, pinned 1.0.20 source; both slices in one pass, `lipo -archs` asserted, arm64 tested natively, x86_64 under Rosetta 2 | no OXT load recorded |
 
 The suite's `tools/build-preflight.py` parses the `universal-mac` row and needs exactly one;
@@ -201,18 +201,24 @@ A DLL nobody can run here passes three checks: (1) exports match the Linux build
 | 2026-08-27 | CI, no engine | `release-binaries.yml` run 12 (GitHub run 33025459610, cec1e85) | all five rows at ABI 10; mac universal, both slices tested |
 | 2026-08-27 | OXT, two-machine session (platform and package not recorded) | suite paste | 2440 passed / 2 failed / 3 skipped; every folded member green, sodiumxt included (both failures were the live loopbacks, UDP to 127.0.0.1 blocked on that machine) |
 | 2026-08-27, 2026-09-12 | CI, no engine | runs 33100007529 (b9e1c1b) and 34657390798 (421bab3) | Windows DLLs re-committed (MSVC + vcpkg, 1.0.22); the 09-12 pair ships |
-| 2026-09-24 | OXT, Windows (the engine reports Win32), one of the 2026-09-12 MSVC DLLs by the maintainer's account (their first engine load); OXT version, OS build, bitness and `sxVersion()` not recorded, so not which | the D-23 suite paste (built from 9aa62c8; this member as at 6401e43) | `sxSelfTest()` 106/106, every group incl. ristretto ABI 8+9 and the 7-check ChaCha20; sampler 17/17; the CROSS seams green (one identity with libtorrent, the BEP44 item TorrentXT accepts, one sealed payload, OnionXT's SodiumXT-backed capabilities); board row 125/0/0, no skips; paste 2620 passed / 5 failed / 3 skipped, the failures riptide's three and the two live loopbacks |
+| 2026-09-24 | OXT, Windows (the engine reports Win32), the 2026-09-12 MSVC DLLs by the maintainer's account (their first engine load), 64-bit by the same account (given 2026-09-26, after this row said "bitness not recorded"), so the `x86_64-win32` one; OXT version, OS build and `sxVersion()` not recorded | the D-23 suite paste (built from 9aa62c8; this member as at 6401e43) | `sxSelfTest()` 106/106, every group incl. ristretto ABI 8+9 and the 7-check ChaCha20; sampler 17/17; the CROSS seams green (one identity with libtorrent, the BEP44 item TorrentXT accepts, one sealed payload, OnionXT's SodiumXT-backed capabilities); board row 125/0/0, no skips; paste 2620 passed / 5 failed / 3 skipped, the failures riptide's three and the two live loopbacks. The day's second and third runs read the same for sodiumxt (the suite runbook's section 8) |
+| 2026-09-25 | OXT, Linux (box2dxt's lines print `the platform` as Linux); by the maintainer's account 64-bit Kubuntu 24.04 with the latest committed builds, so the `x86_64-linux` row (release run 12's file), the latest OXT (no version recorded), no preflight, and the report the launch's SECOND Run all (the first ran on open; that account given 2026-09-26); `sxVersion()` not recorded | the D-23 suite paste as regenerated at f1346e0 (the tree at cba3130, PR #145; this member's folded code as on 2026-09-24, comments aside) | `sxSelfTest()` 106/106, every group incl. ristretto ABI 8+9 and the 7-check ChaCha20 with its RFC 8439 A.2 #1 keystream: the first RECORDED ChaCha20 run on Linux, and Linux's first record at ABI 10 (the section runs only past the `.lcb`'s exact ABI guard, which agrees with the account); sampler 17/17; the CROSS seams green (one identity with libtorrent, the BEP44 item TorrentXT accepts, OnionXT's SodiumXT-backed capabilities, and one sealed payload that this time crossed BOTH live loopbacks and opened to the exact plaintext on each); board row 125/0/0, no skips; paste 2672 passed / 0 failed / 10 skipped |
+| 2026-09-25 (Windows; the Kit report's clock 10:54 PM local) | OXT, Windows (the engine reports Win32), by the maintainer's account the machine of the 2026-09-24 runs and 64-bit, so the `x86_64-win32` DLL, INFERRED to be the 2026-09-12 MSVC build (no Windows DLL committed since); no preflight (the same account: none on either machine); the OXT build, `sxVersion()` and whether the report is a launch's first or second Run all not recorded | the same D-23 suite paste as the Linux run (INFERRED from the version lines both reports print: the board stamp `suite-board-1`, holde-em's "stack v0.25.5 harness v47" and riptide's third probe line) | `sxSelfTest()` 106/106 ("PASSED: 106   FAILED: 0"), every group green, the ABI-10 ChaCha20 section included; board row 125/0/0, no skips (the sampler green again); the cross-member row 20/0/0, so the CROSS seams green, the payload sealed but not delivered: that waits on the live loopbacks, and both stalled (the enetxt and datachannelxt rows' FAILs); paste 2653 passed / 2 failed / 10 skipped (2665), the two FAILs the loopbacks' deadlines |
 
 ## Status
 
 The whole `sx*` surface is engine-proven through ABI 10 (every section, ChaCha20 included,
-green on Windows x64 2026-08-24 and again on Windows 2026-09-24, 106/106 both times;
-ristretto also on Linux 2026-08-18). The current BINARIES are proven only in part: the
-2026-09-24 paste loaded one of the two shipped Windows DLLs of 2026-09-12 (the maintainer's
-account; their first engine load), but it recorded neither `sxVersion()` nor bitness, so no
-row of the committed-binaries table is named by a record, and the Linux and mac builds have
-none (the 2026-08-27 paste did not record its platform or package). The demo's UI (unified onto the suite kit 2026-08-14) is "verified statically; needs an OXT
-re-pass". Open work is tracked in the suite's docs/WORK-PLAN.md.
+green on Windows x64 2026-08-24, on Windows x86_64 again 2026-09-24, and on Linux x86_64 and
+Windows x86_64 2026-09-25, 106/106 each time; ristretto also on Linux 2026-08-18). The current
+BINARIES are proven in part: the 2026-09-25 Linux paste loaded the `x86_64-linux` file, and
+the 2026-09-24 and 2026-09-25 Windows pastes the `x86_64-win32` DLL of 2026-09-12, its first
+engine load on 2026-09-24 (the maintainer's account: 64-bit OXT on both machines, the latest
+builds; the 2026-09-25 Windows DLL INFERRED the same, the ledger), the two rows of the
+committed-binaries table a record names, neither with `sxVersion()` recorded; `x86-linux`,
+`x86-win32` and the mac build have no record (the 2026-08-27 paste did not record its
+platform or package). The demo's UI (unified onto the
+suite kit 2026-08-14) is "verified statically; needs an OXT re-pass". Open work is tracked
+in the suite's docs/WORK-PLAN.md.
 
 ## Build and gates
 

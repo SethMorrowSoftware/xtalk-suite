@@ -29,7 +29,7 @@ script "EnetLanChat"
 --
 -- HONESTY (the suite convention): every en* call here is individually
 -- engine-proven (the member selftest standalone on 2026-08-13, folded in the
--- suite paste through 2026-09-24). THIS stack ran once, on ONE Linux machine,
+-- suite paste through 2026-09-25). THIS stack ran once, on ONE Linux machine,
 -- on 2026-08-18, after the kit restyle of 2026-08-14: that first run found
 -- the empty-handle throw and the `number of keys` parse failure (enetxt
 -- CLAUDE.md gotchas 2 and 3), and after the fixes the maintainer reported
