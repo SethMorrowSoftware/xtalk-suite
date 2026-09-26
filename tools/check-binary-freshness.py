@@ -111,7 +111,8 @@ shape gets its execution evidence from its fixture instead:
 DLL's sections into memory on an x86-64 Linux host and calls the function
 (the path is RIP-relative and calls nothing outside the image), requires the
 decoded value, and requires the `eb 00` mutant this file refuses to return the
-catch value instead. The x86 guarded DLLs cannot execute there (FS:[0] and a
+catch value instead; a function it enters that crashes or hangs is a failure
+there, never a SKIP. The x86 guarded DLLs cannot execute there (FS:[0] and a
 32-bit code segment); for them, as for both, the fixture holds the decoder's
 instruction boundaries, mnemonics and value to GNU objdump's disassembly, and
 flips every byte of both shapes.
@@ -1293,8 +1294,14 @@ def decode_return_constant_arm64(code):
 #     __security_check_cookie shape exactly;
 #   * S (the cookie slot) is the same in the store and the reload, and lies
 #     inside the F-byte frame - a slot at or past F would overwrite the return
-#     address and `ret` would go somewhere else; F is the same in the sub and
-#     the add, and in the same encoding;
+#     address and `ret` would go somewhere else. S is a disp8, which the CPU
+#     SIGN-extends: 0x80 and above address BELOW rsp ([rsp-8] for 0xf8), so
+#     they are refused as outside the frame rather than read as large offsets
+#     (read unsigned, 0xf8 fitted a 0x100-byte frame; review, 2026-09-26);
+#   * F is the same in the sub and the add, and in the same encoding - an
+#     imm8 is sign-extended too, so `add rsp, 0x88` as imm8 is add rsp, -0x78
+#     and would not release a `sub rsp, 0x88` written as imm32 - and is not
+#     negative in either;
 #   * L equals the continuation's own length;
 #   * FREE, and why: the x86 handler (it runs only if an exception unwinds
 #     through a frame whose EH state never leaves -1, so no catch here can
@@ -1364,7 +1371,9 @@ MSVC_CHECK_COOKIE_X64 = (
 )
 
 # Enough for the longest shape above (x64 with both imm32 forms and the
-# five-byte continuation: 64 bytes); a shorter read is a named mismatch.
+# five-byte continuation: 55 bytes; the x86 shape is 54), with room to spare;
+# a shorter read is a named mismatch. tools/test-binary-freshness.py decodes
+# a synthesized 55-byte vector, so a read cut below it fails there.
 GUARDED_READ = 72
 
 
@@ -1449,6 +1458,15 @@ def _cookie_of(mem):
     return cookie
 
 
+def _signed_imm(value, imm8):
+    """An x64 `sub/add rsp` immediate as the CPU reads it: imm8 and imm32 are
+    both sign-extended, so 0x88 is -0x78 as an imm8 and 0x88 as an imm32."""
+    top = 0x80 if imm8 else 0x80000000
+    signed = value - 2 * top if value >= top else value
+    return "%s%#x (%s)" % ("-" if signed < 0 else "", abs(signed),
+                           "imm8" if imm8 else "imm32")
+
+
 def _decode_guarded_x86(mem, fn_va, trace):
     code = mem.read_va(fn_va, GUARDED_READ)
     fields, _, _ = match_shape(code, MSVC_GUARDED_X86, fn_va, trace)
@@ -1469,14 +1487,22 @@ def _decode_guarded_x64(mem, fn_va, trace):
     fields, chosen, _ = match_shape(code, MSVC_GUARDED_X64, fn_va, local)
     frame, slot = fields["frame"], fields["slot"]
     if chosen[0] != chosen[10] or fields["unframe"] != frame:
+        # Both immediates are printed as the CPU reads them (sign-extended),
+        # because the equal-looking raw values of a mixed encoding are the
+        # case this refusal exists for: imm32 0x88 against imm8 0x88 (-0x78).
         raise ShapeRefused("the epilogue releases a different frame than the "
-                           "prologue allocates (sub %#x, add %#x)"
-                           % (frame, fields["unframe"]))
+                           "prologue allocates (sub rsp, %s; add rsp, %s)"
+                           % (_signed_imm(frame, chosen[0] == 0),
+                              _signed_imm(fields["unframe"], chosen[10] == 0)))
     if frame >= (0x80 if chosen[0] == 0 else 0x80000000):
         raise ShapeRefused("sub rsp, %#x is a negative immediate" % frame)
     if fields["reload"] != slot:
         raise ShapeRefused("the cookie is stored at [rsp+%#x] but reloaded "
                            "from [rsp+%#x]" % (slot, fields["reload"]))
+    if slot >= 0x80:
+        raise ShapeRefused("the cookie slot's disp8 %#x is negative, so the "
+                           "store is [rsp-%#x], below rsp and outside the "
+                           "frame" % (slot, 0x100 - slot))
     if slot + 8 > frame:
         raise ShapeRefused("the cookie slot [rsp+%#x] is not inside the %#x-"
                            "byte frame, so the store would overwrite the "

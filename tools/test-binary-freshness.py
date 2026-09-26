@@ -20,15 +20,23 @@ WHAT IT PROVES, in five legs:
      load-config cookie the decoder checks them against. They decode to 11, 2
      and 1. Recorded, not read from the tree, so a future rebuild that moves
      every address cannot silently retire the mutation battery below: leg 4
-     repeats it on whatever the tree holds.
+     repeats it on whatever the tree holds. One SYNTHESIZED vector joins them:
+     the longest shape the gate's table accepts (imm32 frame, five-byte
+     continuation), which no committed DLL has, so the gate's read length is
+     held to it.
   2. NAMED MUTANTS on those vectors, each refused for its own stated reason:
      one fixed byte changed; the `mov`'s immediate sent to ecx instead of eax;
      eax overwritten after the `mov`; the x64 jmp no longer skipping the catch
      continuation (the CPU then returns 0 or -6: leg 5 executes it); the call
      target moved; a __security_check_cookie comparing another address or
-     returning differently; the cookie slot outside the frame; the frame
-     released differently than allocated; the cookie not the load config's; no
-     cookie on record; the EH handler outside executable code.
+     returning differently; the cookie slot outside the frame (on the return
+     address, or below rsp through a negative disp8); the frame released
+     differently than allocated (a different size, or an imm32 against an
+     equal-looking imm8, which sign-extends); a negative frame in either
+     encoding; the cookie not the load config's; no cookie on record; the EH
+     handler, the call target or the check's failure jmp outside executable
+     code. The mutants that change two places at once are the ones leg 3's
+     single-byte flips cannot reach.
   3. EVERY BYTE FLIPPED. For each byte of each recorded shape, three flips
      (^0x01, ^0x80, ^0xFF): a value byte must decode to the flipped value; a
      FREE byte (the x86 EH handler, the x64 catch value, the check's failure
@@ -46,19 +54,24 @@ WHAT IT PROVES, in five legs:
      leg-3 sweep again on each committed guarded function's real bytes.
      Because the gate may SKIP what it cannot read, a reader defect that made
      every guarded DLL unreadable would pass all of that; so while a committed
-     DLL is still the RECORDED build (the same bytes at the same VA), it must
-     read back every recorded fact - cookie VA, section classes, value. A
-     rebuild lapses that anchor with a NOTE, never a failure: a release must
-     not be blocked by a recording.
+     DLL is still the RECORDED build (its file SHA-256, decided without the
+     reader under test), it must read back every recorded fact - export VA,
+     function and check bytes, cookie VA, section classes, value. A rebuild
+     lapses that anchor with a NOTE, never a failure: a release must not be
+     blocked by a recording.
   5. INDEPENDENT READINGS, where this host allows (each prints a SKIP naming
      why when it does not): GNU objdump's disassembly must agree with the
      decoder's instruction boundaries, mnemonics and value; and on an x86-64
      Linux host each x64 guarded function is EXECUTED from a mapped copy of
      its DLL's sections and must return the decoded value, while its `eb 00`
      mutant must return the catch value - the refused mutant is a different
-     function, not a harmless variant. (The x86 DLLs cannot execute here: that
-     would need a 32-bit code segment and FS:[0], so objdump is their only
-     independent reader.)
+     function, not a harmless variant. Only a host that is not x86-64 Linux,
+     or refuses this file an RWX mapping, SKIPs; once it has granted one, a
+     function that is entered and crashes or hangs FAILS, a child that ends
+     any other way FAILS, and an int3 planted at an entry proves the harness
+     tells a crash inside the function apart from the rest. (The x86 DLLs are
+     not executed here: that would need a 32-bit code segment and FS:[0], so
+     objdump is their only independent reader.)
 
 None of this is an engine result: it settles what the committed bytes do on a
 CPU, which is what the gate claims, and nothing about an OXT engine.
@@ -67,6 +80,7 @@ USAGE
     python3 tools/test-binary-freshness.py
 """
 
+import hashlib
 import importlib.util
 import os
 import platform
@@ -104,9 +118,13 @@ def check(ok, label):
 # instruction against `objdump -d -M intel` (binutils 2.42). `exec` and
 # `write` are the [start, end) VA ranges of the executable and writable
 # sections the decoder asks about; `cookie` is the load config's
-# SecurityCookie.
+# SecurityCookie. `sha256` is the whole DLL's (the same digest its member's
+# MANIFEST.sha256 lists): it is how leg 4's anchor knows the committed file IS
+# the recorded build without asking the reader under test (see there).
 VECTORS = [
     {"label": "torrentxt x86-win32", "machine": "x86", "value": 11,
+     "sha256": "05b9b9e12c1016271f0d3b276c77453d"
+               "db1d68b84bf0068001a1c797b6d0dd8e",
      "fn_va": 0x1006e6f0,
      "fn": "55 8b ec 6a ff 68 50 46 68 10 64 a1 00 00 00 00 50 a1 00 ff 8a "
            "10 33 c5 50 8d 45 f4 64 a3 00 00 00 00 b8 0b 00 00 00 8b 4d f4 "
@@ -115,6 +133,8 @@ VECTORS = [
      "exec": [(0x10001000, 0x106c0a00)],
      "write": [(0x108aa000, 0x108e8024), (0x108e9000, 0x108e9200)]},
     {"label": "torrentxt x86_64-win32", "machine": "x64", "value": 11,
+     "sha256": "b0082af2842d2a81e77a2ecaa9f11d70"
+               "b85599114705cf8e542f8ca9c0d28e1e",
      "fn_va": 0x18013ae20,
      "fn": "48 81 ec 88 00 00 00 48 8b 05 92 7f 9c 00 48 33 c4 48 89 44 24 "
            "70 b8 0b 00 00 00 eb 02 33 c0 48 8b 4c 24 70 48 33 cc e8 14 e7 "
@@ -126,6 +146,8 @@ VECTORS = [
      "exec": [(0x180001000, 0x180854400)],
      "write": [(0x180afa000, 0x180b4268c), (0x180b9c000, 0x180b9c200)]},
     {"label": "enetxt x86-win32", "machine": "x86", "value": 2,
+     "sha256": "a7e9f2b1f67c51bc6a2aaa7f3eccef02"
+               "4ac6a82ab465c7ca149ee135ec0ed7a4",
      "fn_va": 0x10002e10,
      "fn": "55 8b ec 6a ff 68 30 be 00 10 64 a1 00 00 00 00 50 a1 40 00 01 "
            "10 33 c5 50 8d 45 f4 64 a3 00 00 00 00 b8 02 00 00 00 8b 4d f4 "
@@ -134,6 +156,8 @@ VECTORS = [
      "exec": [(0x10001000, 0x1000c600)],
      "write": [(0x10010000, 0x1001021c)]},
     {"label": "enetxt x86_64-win32", "machine": "x64", "value": 2,
+     "sha256": "a79418631c21349994a1c81785d5f992"
+               "d09bbea4ab6c9c802a69c71dac2192e1",
      "fn_va": 0x1800032e0,
      "fn": "48 83 ec 68 48 8b 05 55 dd 00 00 48 33 c4 48 89 44 24 50 b8 02 "
            "00 00 00 eb 05 b8 fa ff ff ff 48 8b 4c 24 50 48 33 cc e8 94 88 "
@@ -145,6 +169,8 @@ VECTORS = [
      "exec": [(0x180001000, 0x18000d000)],
      "write": [(0x180011000, 0x1800112e0)]},
     {"label": "datachannelxt x86-win32", "machine": "x86", "value": 1,
+     "sha256": "58c763971bfdab746e31a82fafe2abd4"
+               "55b6f198ff2da7b775c1264eb5a6b541",
      "fn_va": 0x10053dd0,
      "fn": "55 8b ec 6a ff 68 d0 b3 34 10 64 a1 00 00 00 00 50 a1 00 96 43 "
            "10 33 c5 50 8d 45 f4 64 a3 00 00 00 00 b8 01 00 00 00 8b 4d f4 "
@@ -153,6 +179,8 @@ VECTORS = [
      "exec": [(0x10001000, 0x10357200)],
      "write": [(0x10434000, 0x10443714), (0x10444000, 0x10444200)]},
     {"label": "datachannelxt x86_64-win32", "machine": "x64", "value": 1,
+     "sha256": "05bf16b5861c34c37045f248d428de32"
+               "a7695f4c497558724036ea67c6f8a22e",
      "fn_va": 0x1801183e0,
      "fn": "48 81 ec 88 00 00 00 48 8b 05 92 8a 50 00 48 33 c4 48 89 44 24 "
            "70 b8 01 00 00 00 eb 02 33 c0 48 8b 4c 24 70 48 33 cc e8 c4 3b "
@@ -294,6 +322,33 @@ def rel32_edit(offset, value):
     return {offset + i: b for i, b in enumerate(struct.pack("<i", value))}
 
 
+def rebuilt(vec, fn_bytes):
+    """A VectorMemory for `vec` whose function bytes are replaced WHOLE: for a
+    mutant, or a synthesized vector, whose length differs from the recording
+    (the offset edits of mutant() cannot insert or delete a byte)."""
+    mem = VectorMemory(vec)
+    mem.chunks[vec["fn_va"]] = bytearray(fn_bytes)
+    return mem
+
+
+def longest_x64(vec):
+    """`vec` (an imm32-frame x64 recording with the two-byte `xor eax, eax`
+    continuation) rewritten to the LONGEST shape the gate's table accepts:
+    the same function with the five-byte `mov eax, -1` continuation, the jmp
+    widened to skip it and the call's rel32 moved back by the three bytes the
+    call itself moved on, so it still reaches the same check. 55 bytes, which
+    is what GUARDED_READ has to cover; no committed DLL has this combination,
+    so without it nothing would notice a read cut below it."""
+    fn = bytearray.fromhex(vec["fn"])
+    short, long_ = layout_x64(True, False), layout_x64(True, True)
+    cont = short["skip_at"] + 1
+    rel = struct.unpack_from("<i", fn, short["call_rel"])[0]
+    out = (fn[:short["skip_at"]] + bytes([5]) + bytes.fromhex("b8 ff ff ff ff")
+           + fn[cont + 2:])
+    struct.pack_into("<i", out, long_["call_rel"], rel - 3)
+    return out
+
+
 def named_mutants():
     by_label = {v["label"]: v for v in VECTORS}
     x86 = by_label["torrentxt x86-win32"]
@@ -344,6 +399,31 @@ def named_mutants():
          "releases a different frame"),
         ("x64 (imm8): a negative frame, sub rsp, -0x18", x64b,
          mutant(x64b, fn={3: 0xE8, 47: 0xE8}), "negative immediate"),
+        # The four below change TWO places consistently, which no single-byte
+        # flip in leg 3 can do; each check they pin survived removal from the
+        # gate until they were added (review, 2026-09-26).
+        ("x64 (imm32): a negative frame, sub and add rsp, 0x80000088", x64,
+         mutant(x64, fn={6: 0x80, lay["length"] - 2: 0x80}),
+         "negative immediate"),
+        # imm32 0x88 against imm8 0x88: equal raw immediates, but the imm8 is
+        # sign-extended, so the epilogue is add rsp, -0x78 and `ret` pops from
+        # 0x100 bytes below the return address. The encoding comparison is
+        # the only thing that refuses it.
+        ("x64: sub rsp, 0x88 (imm32) released by add rsp, 0x88 as an imm8 "
+         "(add rsp, -0x78)", x64,
+         rebuilt(x64, bytes.fromhex(x64["fn"])[:lay["length"] - 8]
+                 + bytes.fromhex("48 83 c4 88 c3")),
+         "add rsp, -0x78 (imm8)"),
+        # A disp8 is sign-extended too: 0xf8 is [rsp-8], BELOW rsp, which an
+        # unsigned reading placed inside a 0x100-byte frame.
+        ("x64: cookie slot disp8 0xf8 (= [rsp-8]) in a 0x100-byte frame", x64,
+         mutant(x64, fn={3: 0x00, 4: 0x01, lay["length"] - 5: 0x00,
+                         lay["length"] - 4: 0x01, lay["slot"]: 0xF8,
+                         lay["reload"]: 0xF8}),
+         "is negative, so the store is [rsp-0x8]"),
+        ("x64: the check's failure jmp moved outside every executable section",
+         x64, mutant(x64, check_=rel32_edit(26, 0x100000)),
+         "the check's failure jmp"),
         # -- the cookie and the image's records
         ("x86: cookie read from 4 bytes past SecurityCookie", x86,
          mutant(x86, fn={18: 0x04}), "not the load config's"),
@@ -357,9 +437,14 @@ def named_mutants():
          mutant(x64, cookie=0x180001000), "not in a writable section"),
         ("x86: the EH handler outside every executable section", x86,
          mutant(x86, exec_=[(0x10001000, 0x10600000)]), "EH handler"),
+        # The reason names the CALL TARGET: with the failure jmp's target also
+        # outside this range, "not in an executable section" alone was
+        # satisfied by the check below it, so removing the call-target check
+        # from the gate left this mutant green (review, 2026-09-26).
         ("x64: the call target outside every executable section", x64,
          mutant(x64, exec_=[(0x180001000, 0x180200000)]),
-         "not in an executable section"),
+         "the call target %#x is not in an executable section"
+         % x64["check_va"]),
     ]
     return cases
 
@@ -479,6 +564,20 @@ def objdump_supports_pe():
 # relocations: the guarded x64 path is RIP-relative throughout and calls
 # nothing outside the image), optionally patches one byte, and calls the
 # function with no arguments. A child process, so a crash is a report.
+#
+# Its output separates the ways it can end, and none of them is a SKIP: the
+# leg's one SKIP is exec_host_reason(), which asks the host for the same
+# mapping first. `NOMAP <why>` with exit 3: the child was refused the
+# read-write-execute mapping the parent was just granted. `MAPPED` (flushed
+# after the mapping, before the call) then the value: the answer.
+# `MAPPED` and then anything else - a signal, a hang, no value - is the
+# function the decoder accepted being ENTERED and not returning, which
+# contradicts the decoder's claim "this path returns N": a FAILURE. Any other
+# ending is the harness itself broken: a FAILURE too, so a lost marker cannot
+# quietly turn the leg into a SKIP. The first version made every child failure
+# a SKIP, and three x64 functions that all crashed left the leg green with
+# three SKIP lines (review, 2026-09-26); main() now also proves the split on
+# every run with an int3 planted at an entry, which must come back "entered".
 EXEC_CHILD = r"""
 import ctypes, mmap, struct, sys
 path, rva, patch_off, patch_byte = sys.argv[1], int(sys.argv[2], 16), \
@@ -489,8 +588,12 @@ nsec, optsz = struct.unpack_from("<HH", data, coff + 2)[0], \
     struct.unpack_from("<H", data, coff + 16)[0]
 opt = coff + 20
 size = struct.unpack_from("<I", data, opt + 56)[0]
-buf = mmap.mmap(-1, size, flags=mmap.MAP_PRIVATE | mmap.MAP_ANONYMOUS,
-                prot=mmap.PROT_READ | mmap.PROT_WRITE | mmap.PROT_EXEC)
+try:
+    buf = mmap.mmap(-1, size, flags=mmap.MAP_PRIVATE | mmap.MAP_ANONYMOUS,
+                    prot=mmap.PROT_READ | mmap.PROT_WRITE | mmap.PROT_EXEC)
+except (OSError, ValueError) as exc:
+    print("NOMAP %s" % exc)
+    sys.exit(3)
 for i in range(nsec):
     b = opt + optsz + 40 * i
     vsize, va, rsize, rptr = struct.unpack_from("<IIII", data, b + 8)
@@ -499,34 +602,66 @@ for i in range(nsec):
 if patch_off >= 0:
     buf[rva + patch_off] = patch_byte
 base = ctypes.addressof(ctypes.c_char.from_buffer(buf))
-print(ctypes.CFUNCTYPE(ctypes.c_int)(base + rva)())
+fn = ctypes.CFUNCTYPE(ctypes.c_int)(base + rva)
+sys.stdout.write("MAPPED\n")
+sys.stdout.flush()
+print(fn())
 """
 
 
 def execute_x64(path, rva, patch=None):
-    """(int, None) from running the function natively, or (None, why)."""
+    """Run the function natively in a child: (value, why, kind).
+
+    kind "value": it returned `value`. "host": the child was refused the
+    mapping. "entered": the function was entered and returned no value (a
+    crash or a hang inside it). "harness": the child ended any other way.
+    The caller has already asked the host for the mapping itself
+    (exec_host_reason), so none of the last three is a SKIP there."""
     off, byte = patch if patch else (-1, 0)
     try:
         done = subprocess.run([sys.executable, "-c", EXEC_CHILD, path,
                                f"{rva:x}", str(off), str(byte)],
                               capture_output=True, text=True, timeout=60)
-    except (OSError, subprocess.TimeoutExpired) as exc:
-        return None, f"the child did not complete ({exc})"
+    except subprocess.TimeoutExpired as exc:
+        partial = exc.stdout or b""
+        if isinstance(partial, bytes):
+            partial = partial.decode("ascii", "replace")
+        entered = partial.splitlines()[:1] == ["MAPPED"]
+        return (None, f"the child did not complete ({exc})",
+                "entered" if entered else "harness")
+    except OSError as exc:
+        return None, f"the child did not start ({exc})", "harness"
+    lines = done.stdout.strip().splitlines()
+    if done.returncode == 3 and len(lines) == 1 and lines[0].startswith("NOMAP"):
+        return None, f"the host refused an RWX mapping ({lines[0][6:]})", "host"
+    tail = (done.stderr.strip().splitlines()
+            or [f"exit status {done.returncode}, no diagnostic"])[-1]
+    if lines[:1] != ["MAPPED"]:
+        return (None, f"the child ended before the call ({tail}; stdout "
+                f"{done.stdout.strip()!r})", "harness")
     if done.returncode != 0:
-        tail = (done.stderr.strip().splitlines() or
-                [f"exit status {done.returncode}, no diagnostic"])[-1]
-        return None, f"the child failed ({tail})"
-    try:
-        return int(done.stdout.strip()), None
-    except ValueError:
-        return None, f"the child printed {done.stdout.strip()!r}"
+        return None, f"the child failed inside the call ({tail})", "entered"
+    if len(lines) == 2 and re.fullmatch(r"-?\d+", lines[1]):
+        return int(lines[1]), None, "value"
+    return None, f"the call printed {done.stdout.strip()!r}", "entered"
 
 
 def exec_host_reason():
+    """Why this host cannot run the execution leg, or None. The ONLY source
+    of that leg's SKIP: it asks the host for an RWX mapping itself, so a
+    child that reports one refused on a host that just granted it is a
+    harness failure, not a second way to skip."""
     if not sys.platform.startswith("linux"):
         return f"the host is {sys.platform}, not Linux"
     if platform.machine() not in ("x86_64", "AMD64"):
         return f"the host CPU is {platform.machine()}, not x86-64"
+    try:
+        import mmap
+        mmap.mmap(-1, 4096, flags=mmap.MAP_PRIVATE | mmap.MAP_ANONYMOUS,
+                  prot=mmap.PROT_READ | mmap.PROT_WRITE
+                  | mmap.PROT_EXEC).close()
+    except (OSError, ValueError, AttributeError) as exc:
+        return f"the host refuses a read-write-execute mapping ({exc})"
     return None
 
 
@@ -539,6 +674,17 @@ def main():
         check(got == vec["value"],
               f"{vec['label']}: recorded vector decodes to {got}, not "
               f"{vec['value']} ({why})")
+    # The longest accepted shape, synthesized (see longest_x64): it must fit
+    # the gate's GUARDED_READ and decode, and it must be the length the gate's
+    # comment and this file's layout both say.
+    tx64 = next(v for v in VECTORS if v["label"] == "torrentxt x86_64-win32")
+    longest = longest_x64(tx64)
+    check(len(longest) == layout_x64(True, True)["length"] == 55,
+          f"the longest x64 shape is {len(longest)} bytes, not 55")
+    got, why = decode(rebuilt(tx64, longest), tx64["fn_va"])
+    check(got == tx64["value"], f"the longest accepted x64 shape (imm32 "
+          f"frame, five-byte continuation) decodes to {got}, not "
+          f"{tx64['value']} ({why})")
     for label, kind, hexs, value in LEAF_VECTORS:
         code = bytes.fromhex(hexs) + b"\xcc" * 16
         if kind == "arm64":
@@ -554,8 +700,9 @@ def main():
                             "write": [(0x9000, 0xA000)]})
         check(decode(mem, 0x1000)[0] is None,
               f"leaf class {label}: the guarded decoder accepted a leaf")
-    print(f"{TAG}: leg 1 - {len(VECTORS)} recorded guarded vectors and "
-          f"{len(LEAF_VECTORS)} leaf classes decode to their recorded values")
+    print(f"{TAG}: leg 1 - {len(VECTORS)} recorded guarded vectors, the "
+          f"synthesized longest x64 shape and {len(LEAF_VECTORS)} leaf "
+          f"classes decode to their recorded values")
 
     # Leg 2.
     cases = named_mutants()
@@ -715,6 +862,12 @@ def main():
     # must yield the recorded facts exactly: cookie VA, section classes and
     # value. A rebuilt DLL lapses this anchor with a NOTE, never a failure: a
     # release that changes the bytes must not be blocked by a recording.
+    #
+    # "Still the recorded build" is decided by the FILE's SHA-256, never by
+    # the reader under test. The first version asked the reader (the export's
+    # VA and the bytes read there), so a reader defect that moved every VA -
+    # a PE32+ ImageBase read without its high half - made all three x64 DLLs
+    # look rebuilt: three NOTEs, three gate SKIPs, OK (review, 2026-09-26).
     anchored, lapsed = 0, []
     for vec in VECTORS:
         name, plat = vec["label"].split()
@@ -724,18 +877,28 @@ def main():
         if not os.path.isfile(path):
             lapsed.append(f"{vec['label']} (no committed DLL)")
             continue
-        _exports, image = GATE.read_pe(path)
-        fn = bytes.fromhex(vec["fn"])
-        same = (image.export_va(member["abi_symbol"]) == vec["fn_va"]
-                and image.read_va(vec["fn_va"], len(fn)) == fn)
-        if same and "check" in vec:
-            chk = bytes.fromhex(vec["check"])
-            same = image.read_va(vec["check_va"], len(chk)) == chk
-        if not same:
+        with open(path, "rb") as fh:
+            digest = hashlib.sha256(fh.read()).hexdigest()
+        if digest != vec["sha256"]:
             lapsed.append(f"{vec['label']} (rebuilt since 2026-09-25)")
             continue
+        _exports, image = GATE.read_pe(path)
         anchored += 1
         where = f"{vec['label']} (the recorded build)"
+        fn = bytes.fromhex(vec["fn"])
+        placed = image.export_va(member["abi_symbol"])
+        check(placed == vec["fn_va"],
+              f"{where}: the reader places {member['abi_symbol']} at "
+              f"{placed if placed is None else hex(placed)}, recorded "
+              f"{vec['fn_va']:#x}")
+        check(image.read_va(vec["fn_va"], len(fn)) == fn,
+              f"{where}: the reader's bytes at the recorded VA are not the "
+              f"recorded function")
+        if "check" in vec:
+            chk = bytes.fromhex(vec["check"])
+            check(image.read_va(vec["check_va"], len(chk)) == chk,
+                  f"{where}: the reader's bytes at the recorded check VA are "
+                  f"not the recorded __security_check_cookie")
         check(image.security_cookie_va() == (vec["cookie"], None),
               f"{where}: the load config reads "
               f"{image.security_cookie_va()}, recorded {vec['cookie']:#x}")
@@ -860,8 +1023,61 @@ def main():
                          f"shows {len(movs)} `mov eax,{decode_ok:#x}` lines"):
                     agreed += 1
     exec_why = exec_host_reason()
-    executed = 0
+    executed, int3_caught = 0, False
     x64_live = [g for g in guarded_live if g[3].machine == "x64"]
+    def ran(what, result):
+        """An execute_x64 result's value, or None after reporting it as a
+        FAILURE. There is no SKIP here: exec_host_reason() already asked this
+        host for the mapping, so every other ending is the function or the
+        harness misbehaving (EXEC_CHILD's comment says which is which)."""
+        got, why, kind = result
+        if kind == "value":
+            return got
+        if kind == "entered":
+            check(False, f"{what}: the function the decoder accepted was "
+                  f"ENTERED and returned no value ({why}) - the decoder's "
+                  f"claim that this path returns is wrong")
+        else:
+            check(False, f"{what}: the execution harness broke ({why}, "
+                  f"{kind}) on a host that granted the mapping; a broken "
+                  f"harness must not decay into a SKIP")
+        return None
+
+    if exec_why is None and x64_live:
+        # The harness's own negative vector: an int3 where the first decoded
+        # function begins must come back "entered" (a crash inside the call,
+        # which ran() FAILS) - never a value, a host refusal or a harness
+        # break. Without it, a classifier that lost the MAPPED marker or
+        # filed a crash as a refusal would pass the live runs by skipping.
+        member, plat, path, code_at, _v = x64_live[0]
+        result = execute_x64(
+            path, code_at.export_rva_of(member["abi_symbol"]), (0, 0xCC))
+        got, why, kind = result
+        # ...and ran() must turn it, and each of the other two non-value
+        # endings, into exactly one FAILURE and no SKIP. Each is withdrawn
+        # once counted: these endings were planted, so reporting them is the
+        # harness passing, not a finding.
+        reported_ok = True
+        for label, planted in (("the int3 probe", result),
+                               ("a planted harness break",
+                                (None, "planted", "harness")),
+                               ("a planted refusal in the child",
+                                (None, "planted", "host"))):
+            failures, skips = len(FAILURES), len(SKIPS)
+            ran(label, planted)
+            reported = FAILURES[failures:]
+            del FAILURES[failures:]
+            reported_ok &= check(
+                len(reported) == 1 and len(SKIPS) == skips,
+                f"{label} ({planted[2]!r}) was reported as {len(reported)} "
+                f"failure(s) and {len(SKIPS) - skips} SKIP(s), not one "
+                f"failure")
+        if (check(kind == "entered", f"{member['name']} {plat}: with an int3 "
+                  f"at its entry the child came back {kind!r} ({got}; "
+                  f"{why}), not 'entered' - the harness cannot tell a crash "
+                  f"inside the function from anything else")
+                and reported_ok):
+            int3_caught = True
     if exec_why is not None:
         SKIPS.append(f"x64 execution cross-check - {exec_why}")
     else:
@@ -878,9 +1094,9 @@ def main():
                 SKIPS.append(f"{member['name']} {plat} execution - the "
                              f"file's cookie {stored:#x} has high bits set")
                 continue
-            live, why = execute_x64(path, rva)
+            live = ran(f"{member['name']} {plat} execution",
+                       execute_x64(path, rva))
             if live is None:
-                SKIPS.append(f"{member['name']} {plat} execution - {why}")
                 continue
             if not check(live == value, f"{member['name']} {plat}: EXECUTING "
                          f"the function returns {live}, the decoder read "
@@ -895,10 +1111,9 @@ def main():
                                                  fn_off + cont + 1)[0]
             else:
                 catch_value = 0
-            mutated, why = execute_x64(path, rva, (layout["skip_at"], 0))
+            mutated = ran(f"{member['name']} {plat} `eb 00` execution",
+                          execute_x64(path, rva, (layout["skip_at"], 0)))
             if mutated is None:
-                SKIPS.append(f"{member['name']} {plat} `eb 00` execution - "
-                             f"{why}")
                 continue
             if check(mutated == catch_value and mutated != value,
                      f"{member['name']} {plat}: the `eb 00` mutant returns "
@@ -907,7 +1122,9 @@ def main():
     print(f"{TAG}: leg 5 - objdump agrees with the decoder on {agreed} of "
           f"{len(guarded_live)} guarded functions; {executed} of "
           f"{len(x64_live)} x64 guarded functions EXECUTED here return the "
-          f"decoded value, and their `eb 00` mutants the catch value")
+          f"decoded value, and their `eb 00` mutants the catch value"
+          + ("; an int3 at an entry is caught as a crash inside the "
+             "function, not a SKIP" if int3_caught else ""))
 
     for skip in SKIPS:
         print(f"{TAG}: SKIP {skip}")
