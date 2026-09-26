@@ -44469,7 +44469,7 @@ command he1heTestNetPlay
    local he1tSeqSnap, he1tXlatTxt, he1tXlatFold, he1tOutboxTxt
    local he1tHostSeat, he1tPlaySeat, he1tHostPos, he1tMyPos, he1tHandNext, he1tAliasList, he1tAlias
    local he1tXlatCut, he1tStartKey, he1tCutN, he1tTurnNow, he1tForgedTxt, he1tWireTxt, he1tWireA, he1tLogCopy
-   local he1tP3Pub, he1tP3Sec, he1tP3PubHex, he1tFarA, he1tFarB
+   local he1tP3Pub, he1tP3Sec, he1tP3PubHex, he1tFarA
    put return & "-- 15. Online Level 0 hand, end to end (single-machine loopback)" & return after he1gRpt
    if not he1heHasSodium() then
       he1heTSkip "netplay: online hand", "SodiumXT not installed"
@@ -44884,38 +44884,43 @@ command he1heTestNetPlay
    -- key is read from the dealer SEAT on every wire, so a host that re-sat
    -- that seat mid-hand switched the dealing key after the seals, at the
    -- table and in History alike (the review's probe). Hand 1 deals seats 1,
-   -- 2 and 5, seat 2 dealing; seat 3 is held but not dealt, and seat 5 is
-   -- dealt but KEYLESS (its key moved to seat 6 before the first hand,
-   -- which a host may do). The host then: (a) re-sits the DEALER seat to a
-   -- third key, which signs a flop -- THE PROBE; (b) moves the dealer's own
-   -- key to the empty seat 4, which would leave the dealing key nobody's
-   -- (the two-wire form); (c) re-sits seat 3, occupied but not dealt; (d)
-   -- sits the third key into seat 5, dealt but keyless, and the key
-   -- commits for seat 5's position and stands for seat 3; then (e) the
-   -- honest late joiner's shape -- the unseated third key into the EMPTY
-   -- seat 4, not dealt -- which still seats it (and its stand counts). Each
-   -- of (a)-(d) is refused and NAMED at the table, History refuses the
-   -- same ones and takes (e), and each of the three rules alone decides
-   -- one of (b), (c) and (d).
+   -- 2, 5 and 6, seat 2 dealing; seat 3 is held but not dealt; seat 5 is
+   -- dealt but KEYLESS (its key moved to seat 3 before the first hand,
+   -- which a host may do), and seat 6 is dealt but NO sit ever filled it
+   -- (a host may deal any legal seat list). The host then: (a) re-sits the
+   -- DEALER seat to a third key, which signs a flop -- THE PROBE; (b) moves
+   -- the dealer's own key to the empty seat 4, which would leave the
+   -- dealing key nobody's (the two-wire form); (c) re-sits seat 3, occupied
+   -- but not dealt; (d) sits the third key into seat 5, dealt but keyless,
+   -- and into seat 6, dealt and never sat, and the key commits for seat 5's
+   -- position and stands for seat 3; then (e) the honest late joiner's
+   -- shape -- the unseated third key into the EMPTY seat 4, not dealt --
+   -- which still seats it (and its stand counts). Each of (a)-(d) is
+   -- refused and NAMED at the table, History refuses the same ones and
+   -- takes (e), and each of the three rules alone decides one of (b), (c)
+   -- and (d). Seat 6 is the round-2 review's (2026-09-26): with only seat
+   -- 5, a table that asked its SEATED list (every seat a sit ever filled)
+   -- instead of the open hand's DEALT seats passed every pin here -- seat 5
+   -- is in both -- yet let a key take a dealt seat no sit had filled
+   -- mid-hand, and History (which has only the dealt seats) disagreed.
    he1heTNetPlayCtx "false", he1tPlayPubHex, he1tPlaySec, he1tPlayBoxPub, he1tPlayBoxSec, he1tHostPubHex, he1kKatIdSeed2
    put "false" into he1gGame["online"]
    put he1heBin2HexS(he1heHash32(textEncode("holdem-seat3-key", "utf-8"))) into he1tFarA
-   put he1heBin2HexS(he1heHash32(textEncode("holdem-seat5-key", "utf-8"))) into he1tFarB
    he1heTNetHostWire 0, he1tHostPubHex, he1tHostSec, "roster", \
          he1tHostPubHex & ":host," & he1tPlayPubHex & ":player," & he1tP3PubHex & ":player", he1tHostSec
    he1heTNetHostWire 0, he1tHostPubHex, he1tHostSec, "sit", "seat=1,pub=" & he1tHostPubHex, he1tHostSec
    he1heTNetHostWire 0, he1tHostPubHex, he1tHostSec, "sit", "seat=2,pub=" & he1tPlayPubHex, he1tHostSec
+   he1heTNetHostWire 0, he1tHostPubHex, he1tHostSec, "sit", "seat=5,pub=" & he1tFarA, he1tHostSec
    he1heTNetHostWire 0, he1tHostPubHex, he1tHostSec, "sit", "seat=3,pub=" & he1tFarA, he1tHostSec
-   he1heTNetHostWire 0, he1tHostPubHex, he1tHostSec, "sit", "seat=5,pub=" & he1tFarB, he1tHostSec
-   he1heTNetHostWire 0, he1tHostPubHex, he1tHostSec, "sit", "seat=6,pub=" & he1tFarB, he1tHostSec
-   he1heTNetHostWire 1, he1tHostPubHex, he1tHostSec, "handStart", "seats=1|2|5,button=2", he1tHostSec
-   he1heTNetHostWire 1, he1tHostPubHex, he1tHostSec, "dealLevel", "level=0,dealer=2,count=3", he1tHostSec
+   he1heTNetHostWire 1, he1tHostPubHex, he1tHostSec, "handStart", "seats=1|2|5|6,button=2", he1tHostSec
+   he1heTNetHostWire 1, he1tHostPubHex, he1tHostSec, "dealLevel", "level=0,dealer=2,count=4", he1tHostSec
    he1heTNetHostWire 1, he1tHostPubHex, he1tHostSec, "sit", "seat=2,pub=" & he1tP3PubHex, he1tHostSec
    he1heTNetHostWire 1, he1tP3PubHex, he1tP3Sec, "board", "street=flop,cards=2h|3h|4h", he1tHostSec
    he1heTNetHostWire 1, he1tHostPubHex, he1tHostSec, "sit", "seat=4,pub=" & he1tPlayPubHex, he1tHostSec
    he1heTNetHostWire 1, he1tPlayPubHex, he1tPlaySec, "board", "street=flop,cards=5h|6h|7h", he1tHostSec
    he1heTNetHostWire 1, he1tHostPubHex, he1tHostSec, "sit", "seat=3,pub=" & he1tP3PubHex, he1tHostSec
    he1heTNetHostWire 1, he1tHostPubHex, he1tHostSec, "sit", "seat=5,pub=" & he1tP3PubHex, he1tHostSec
+   he1heTNetHostWire 1, he1tHostPubHex, he1tHostSec, "sit", "seat=6,pub=" & he1tP3PubHex, he1tHostSec
    he1heTNetHostWire 1, he1tP3PubHex, he1tP3Sec, "seedCommit", "pos=3,commit=" & he1kKatCommit3, he1tHostSec
    he1heTNetHostWire 1, he1tP3PubHex, he1tP3Sec, "stand", "seat=3,n=1", he1tHostSec
    he1heTAssert "openseat: the host's re-sit of the DEALER seat mid-hand is refused, named; the dealer's flop stands", \
@@ -44931,6 +44936,9 @@ command he1heTestNetPlay
    he1heTAssert "openseat: a KEYLESS seat the hand dealt waits for the boundary, named (no commit for it)", \
          (he1gGame["netLog"] contains "sit into seat 5, dealt into open hand 1") & "/" \
          & he1gGame["seatByPub"][he1tP3PubHex] & "/" & he1gGame["oDeal"]["commitsBy"][3], "true//"
+   he1heTAssert "openseat: a dealt seat NO sit ever filled waits too (the hand's dealt seats, not the seated list), named", \
+         (he1gGame["netLog"] contains "sit into seat 6, dealt into open hand 1") & "/" \
+         & he1gGame["seatByPub"][he1tP3PubHex] & "/" & he1gGame["pubBySeat"][6], "true//"
    he1heTNetHostWire 1, he1tHostPubHex, he1tHostSec, "sit", "seat=4,pub=" & he1tP3PubHex, he1tHostSec
    he1heTNetHostWire 1, he1tP3PubHex, he1tP3Sec, "stand", "seat=4,n=1", he1tHostSec
    he1heTAssert "openseat: the late joiner's shape (an unseated key, an EMPTY seat not dealt) still seats", \
