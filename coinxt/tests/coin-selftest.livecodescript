@@ -5179,11 +5179,30 @@ command stRunFailOpen
       stAssert "P2PKH refuses 33 bytes tagged 0x04", stThrows("cxBtcAddressP2PKH", tKey)
       -- char (n) of a 32-character charset returns EMPTY past the end, so an
       -- out-of-range value used to emit nothing and shorten the string.
-      stAssert "bech32 refuses a data value of 32", stThrows2("cxBech32EncodeValues", "bc", "0,32,1")
-      stAssert "bech32 refuses a negative data value", stThrows2("cxBech32EncodeValues", "bc", "0,-1")
+      --
+      -- THE SPEC IS PASSED AND THE MESSAGE ASSERTED (2026-09-26, found in the
+      -- review of work-plan row #8). These three called stThrows2, so the
+      -- third argument, pSpec, was EMPTY, and cxBech32Const refuses an empty
+      -- spec ("the encoding must be either bech32 or bech32m") after the
+      -- guards run. With the guard under test deleted, each call still threw
+      -- - on the spec - so none of the three could fail (a headless probe
+      -- through the family interpreter; tools/check-script-vectors.py passes
+      -- the spec). "It threw" tested the layer below, the weak assertion
+      -- stThrowsText exists to replace.
+      stAssertRefusal "bech32 refuses a data value of 32", stThrowsText3("cxBech32EncodeValues", "bc", "0,32,1", "bech32"), "cxBech32EncodeValues", "whole number between 0 and 31"
+      stAssertRefusal "bech32 refuses a negative data value", stThrowsText3("cxBech32EncodeValues", "bc", "0,-1", "bech32"), "cxBech32EncodeValues", "whole number between 0 and 31"
+      -- WHOLE, DECIDED EXACTLY (work-plan row #8, 2026-09-25). The guard read
+      -- `tIndex is not trunc(tIndex)`, and the engine's `is` calls two numbers
+      -- within 10 DBL_EPSILON of the smaller EQUAL (suite engine note 2.10), so
+      -- by that rule these two were let through; `is an integer` has no
+      -- tolerance. The first engine run of these three reads the new line;
+      -- until then they are verified statically; needs an OXT pass.
+      stAssertRefusal "bech32 refuses a value one ulp above 3", stThrowsText3("cxBech32EncodeValues", "bc", "0,3.0000000000000004", "bech32"), "cxBech32EncodeValues", "whole number between 0 and 31"
+      stAssertRefusal "bech32 refuses a value within 2.2e-15 below zero", stThrowsText3("cxBech32EncodeValues", "bc", "0,-0.000000000000001", "bech32"), "cxBech32EncodeValues", "whole number between 0 and 31"
+      stAssert "and 3e0, a spelling the engine calls whole, encodes exactly as 3", cxBech32EncodeValues("bc", "0,3e0", "bech32") is cxBech32EncodeValues("bc", "0,3", "bech32")
       -- An uppercase HRP used to produce a MIXED-case string, which BIP-173
       -- forbids and which this library's own decoder rejects.
-      stAssert "an uppercase HRP is refused", stThrows2("cxBech32EncodeValues", "BC", "0")
+      stAssertRefusal "an uppercase HRP is refused", stThrowsText3("cxBech32EncodeValues", "BC", "0", "bech32"), "cxBech32EncodeValues", "lowercase"
    catch tError
       stSectionFailed "fail-closed regressions", tError
    end try
