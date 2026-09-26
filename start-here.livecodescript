@@ -1116,9 +1116,12 @@ command slCloseSessionStacks pKeep
    end if
    -- one item per turn, with the delimiter re-pinned EVERY turn: `close
    -- stack` runs the closed demo's own teardown, and teardowns set the
-   -- global itemDelimiter (family gotcha 7) - a `repeat for each item`
-   -- spanning those calls would be chunking on whatever the last demo
-   -- left behind
+   -- itemDelimiter. This was written when the family took it for global
+   -- state (family gotcha 7), under which a `repeat for each item` spanning
+   -- those calls would chunk on whatever the last demo left behind; engine
+   -- note 2.3 has since OBSERVED it handler-local on Windows and Linux (no
+   -- Mac run), so there a teardown cannot reach this loop. The re-pin costs
+   -- one line and stays.
    repeat until tSweep is empty
       set the itemDelimiter to comma
       put item 1 of tSweep into tName

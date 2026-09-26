@@ -91,13 +91,16 @@ command enStartPolling pHost, pTarget, pIntervalMs
    if pHost is empty or pHost is 0 then
       exit enStartPolling
    end if
-   -- sPollHosts is a COMMA list, but `among the items of` splits on whatever
-   -- the itemDelimiter currently is - global mutable state this handler
-   -- INHERITS from whoever called it (the family's LCS gotcha: set it
+   -- sPollHosts is a COMMA list, and `among the items of` splits on whatever
+   -- the itemDelimiter is at that line (the family's LCS gotcha: set it
    -- immediately before use, never assume it). Set it around our own read and
-   -- put back what we found: a helper must not decide the delimiter for the
-   -- handler that called it. The writes below are delimiter-free (they append
-   -- a literal comma), so only the read needs bracketing.
+   -- put back what we found. This once said the handler INHERITED its
+   -- caller's delimiter; engine note 2.3 has since OBSERVED it handler-local
+   -- on Windows and Linux (both directions; no Mac run), so there a call
+   -- starts at comma and ours cannot reach back. The bracket keeps the rest
+   -- of this handler on what it found and costs nothing. The writes below are
+   -- delimiter-free (they append a literal comma), so only the read needs
+   -- bracketing.
    put the itemDelimiter into tSavedDelim
    set the itemDelimiter to comma
    if pHost is not among the items of sPollHosts then
@@ -137,9 +140,10 @@ command enStopPolling pHost
    end if
    put empty into tNew
    -- Same bracketing as enStartPolling: this walk re-splits the comma list, so
-   -- it sets the delimiter it needs and restores the caller's. Dropping the
-   -- restore would leave OUR comma behind in the caller's handler, which is
-   -- the same class of bug from the other direction.
+   -- it sets the delimiter it needs and restores what it found. Dropping the
+   -- restore would leave OUR comma for the rest of this handler; it would not
+   -- reach the caller's on Windows or Linux (engine note 2.3, handler-local),
+   -- which is what this comment once said.
    put the itemDelimiter into tSavedDelim
    set the itemDelimiter to comma
    repeat for each item tI in sPollHosts
@@ -272,13 +276,16 @@ function enFormatBytes pBytes
    -- counted under whatever delimiter was in force rather than the one this
    -- data is written in - and under any delimiter but comma that string is a
    -- ONE-item list, so the loop never runs and a gigabyte reports itself in
-   -- bytes. Set once before the FIRST read; restore before returning, since a
-   -- humaniser has no business changing its caller's delimiter (the family's
-   -- LCS gotcha: itemDelimiter is global mutable state - set it immediately
-   -- before use, and put back what you found). Not a precaution: holde-em's
-   -- v0.15 audit found three real leaks of exactly this shape - heStackFolder
-   -- returning with the delimiter left at a slash, heSwapExt at a dot - and
-   -- answered all three with save-and-restore.
+   -- bytes. Set once before the FIRST read; restore before returning (the
+   -- family's LCS gotcha: set it immediately before use, and put back what
+   -- you found). This was written when the family took the itemDelimiter for
+   -- global state that a caller could hand in and a humaniser could hand
+   -- back, and holde-em's v0.15 audit fixed three handlers of this shape on
+   -- that reading - heStackFolder returning with the delimiter left at a
+   -- slash, heSwapExt at a dot. Engine note 2.3 has since OBSERVED it
+   -- handler-LOCAL on Windows and Linux (both directions; no Mac run), so
+   -- there a call starts at comma and cannot change its caller's. The rule
+   -- still holds for the rest of THIS handler, and the restore costs nothing.
    put the itemDelimiter into tSavedDelim
    set the itemDelimiter to comma
    repeat while tVal >= 1024 and tI < the number of items of tUnits
@@ -450,13 +457,16 @@ function btFormatBytes pBytes
    -- counted under whatever delimiter was in force rather than the one this
    -- data is written in - and under any delimiter but comma that string is a
    -- ONE-item list, so the loop never runs and a gigabyte reports itself in
-   -- bytes. Set once before the FIRST read; restore before returning, since a
-   -- humaniser has no business changing its caller's delimiter (the family's
-   -- LCS gotcha: itemDelimiter is global mutable state - set it immediately
-   -- before use, and put back what you found). Not a precaution: holde-em's
-   -- v0.15 audit found three real leaks of exactly this shape - heStackFolder
-   -- returning with the delimiter left at a slash, heSwapExt at a dot - and
-   -- answered all three with save-and-restore.
+   -- bytes. Set once before the FIRST read; restore before returning (the
+   -- family's LCS gotcha: set it immediately before use, and put back what
+   -- you found). This was written when the family took the itemDelimiter for
+   -- global state that a caller could hand in and a humaniser could hand
+   -- back, and holde-em's v0.15 audit fixed three handlers of this shape on
+   -- that reading - heStackFolder returning with the delimiter left at a
+   -- slash, heSwapExt at a dot. Engine note 2.3 has since OBSERVED it
+   -- handler-LOCAL on Windows and Linux (both directions; no Mac run), so
+   -- there a call starts at comma and cannot change its caller's. The rule
+   -- still holds for the rest of THIS handler, and the restore costs nothing.
    put the itemDelimiter into tSavedDelim
    set the itemDelimiter to comma
    repeat while tVal >= 1024 and tI < the number of items of tUnits

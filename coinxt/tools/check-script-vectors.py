@@ -1837,13 +1837,18 @@ def check_vectors(c, ip):
          REF.bip39_seed(twelve).hex())
 
     # ---- the itemDelimiter guard ------------------------------------------
-    # `item` reads the engine's CURRENT delimiter, and that is GLOBAL MUTABLE
-    # STATE (templates/CLAUDE.md rule 5), so an app that set it and did not
-    # restore it would get silently wrong answers here. Measured before the
-    # guards went in: a hostile delimiter made cxBtcAddressP2WPKH fail outright
-    # and cxMnemonicValidate answer FALSE to a perfectly good twelve-word
-    # backup. Every guarded handler must now be indifferent to it, AND must hand
-    # the caller's setting back untouched - including when it throws.
+    # `item` reads the CURRENT delimiter, and the interpreter holds it as
+    # GLOBAL state, the reading templates/CLAUDE.md rule 5 gave when these
+    # guards went in: an app that set it and did not restore it would get
+    # silently wrong answers here. Measured then, under this model: a hostile
+    # delimiter made cxBtcAddressP2WPKH fail outright and cxMnemonicValidate
+    # answer FALSE to a perfectly good twelve-word backup. Every guarded
+    # handler must now be indifferent to it, AND must hand the caller's
+    # setting back untouched - including when it throws. On Windows and Linux
+    # the engine makes both halves automatic (engine note 2.3: the
+    # itemDelimiter is handler-LOCAL there, OBSERVED 2026-09-24 and 09-25), so
+    # this section proves the guards, not an engine exposure; macOS has not
+    # run the probe.
     c.note("\nindifference to a hostile itemDelimiter")
     hostile = "\t"
     guarded = [

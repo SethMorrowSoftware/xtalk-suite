@@ -99,8 +99,10 @@ def main():
          "if false then"),
         # 5. drop the delimiter restore from the 2026-09-09 early-out in
         # nxJsonPathNode: the refusal still happens, the answer is still
-        # empty, and "/" is left as the process-wide itemDelimiter - the
-        # quiet half of that fix, and the one a refusal-only check misses.
+        # empty, and "/" is left as the MODELLED itemDelimiter (global in
+        # lcs-interp.py; handler-local on the Windows and Linux engines,
+        # engine note 2.3) - the quiet half of that fix, and the one a
+        # refusal-only check misses.
         ("a forgotten delimiter restore on the JSON refusal is caught",
          "         if not nxIsDigits(tStep) then\n"
          "            set the itemDelimiter to tSavedDelim\n",

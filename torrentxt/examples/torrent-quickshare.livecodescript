@@ -1524,9 +1524,12 @@ function qsBytes pBytes
    put "B,KiB,MiB,GiB,TiB" into tUnits
    put pBytes into tVal
    put 1 into tI
-   -- Save and restore the itemDelimiter around the one span that reads items: it is
-   -- engine-global (engine note 2.3), so the bare `set ... to comma` this function had
-   -- until 2026-09-24 clobbered any caller mid-parse with another delimiter.
+   -- Save and restore the itemDelimiter around the one span that reads items. The
+   -- bare `set ... to comma` this function had until 2026-09-24 was read then as
+   -- clobbering any caller mid-parse, on the premise that the delimiter is
+   -- engine-global; engine note 2.3 has since OBSERVED it handler-local on Windows
+   -- and Linux (both directions; no Mac run), so there it reached no caller. The
+   -- restore keeps the rest of this handler on what it found and costs nothing.
    put the itemDelimiter into tOldDelim
    set the itemDelimiter to comma
    repeat while tVal >= 1024 and tI < the number of items of tUnits

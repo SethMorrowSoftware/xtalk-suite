@@ -195,8 +195,10 @@ script "riptideSocialApp"
 -- false) on failure and record the reason; nxLastError() returns it. cx*/sx*
 -- failures throw, so every foreign call in here sits inside a try. Binary is
 -- byte discipline (numToByte / byteToNum / byte chunks), never char/line/word
--- on bytes; itemDelimiter and lineDelimiter are global mutable state and are
--- saved, set, used and restored around every chunk read.
+-- on bytes; itemDelimiter and lineDelimiter are saved, set, used and restored
+-- around every chunk read (the itemDelimiter is handler-local on Windows and
+-- Linux, suite engine note 2.3, so the restore guards the rest of the handler
+-- that set it; the lineDelimiter is unprobed and treated as global).
 --
 -- EVENT SHAPE (the one record this library passes around): an event is an
 -- xTalk array with keys "id", "pubkey", "created_at", "kind", "content",
@@ -1134,11 +1136,15 @@ private function nxJsonPathNode pJson, pPath
          -- "abc" turned this never-throw library into an uncaught engine
          -- error, and OXT runs script on the UI thread.
          --
-         -- The itemDelimiter restore has to be repeated in the new early-out:
-         -- it is "/" at this point and it is GLOBAL mutable state (engine
-         -- notes 2.3), so returning without restoring would corrupt every
-         -- later `item` operation in the process - a far worse and much
-         -- quieter bug than the one being fixed.
+         -- The itemDelimiter restore is repeated in the new early-out: it is
+         -- "/" at this point. When this was written the delimiter was taken
+         -- for GLOBAL mutable state, so a missed restore read as corrupting
+         -- every later `item` operation in the process; engine note 2.3 has
+         -- since OBSERVED it handler-local on Windows and Linux (both
+         -- directions; no Mac run), so there it would misparse only the rest
+         -- of this handler. The restore stays: it costs nothing, macOS has not
+         -- run the probe, and tools/check-script-vectors.py pins it under the
+         -- interpreter, whose delimiter is global.
          if not nxIsDigits(tStep) then
             set the itemDelimiter to tSavedDelim
             nxSetError "nxJson: no element" && tStep
@@ -5734,7 +5740,12 @@ end rsBuildPostChunked
 -- media list rather than anything that named a delimiter - and it survived
 -- the 2026-08-17 sweep for the same reason rsPersonaAllows's copy did:
 -- comma IS the engine default, so it is invisible until some caller sets
--- something else.
+-- something else. (That was the family's reading on 2026-08-29. The suite's
+-- engine note 2.3 has since OBSERVED the itemDelimiter handler-local on
+-- Windows and Linux, both directions, so there the set ended with the
+-- handler and no caller saw it. The wrapper stays: it costs nothing, macOS
+-- has not run the probe, and tools/check-script-vectors.py pins it under the
+-- interpreter, whose delimiter is global.)
 --
 -- Restored around the WHOLE body rather than at each exit, because there are
 -- SEVEN refusal exits here and a restore per exit is the line the next
@@ -6706,14 +6717,18 @@ function rsMediaCreate pSession, pPath
             "handle"
       return empty
    end if
-   -- itemDelimiter is GLOBAL mutable state and this is the library's only
-   -- non-default set, so it is saved and restored around the NARROWEST
-   -- possible span - the path split, nothing else. Restoring here rather
-   -- than at each exit is not tidiness: this function has SEVEN exits, six
-   -- of them refusals, and a restore per exit is a line a later refusal
-   -- path forgets. The leak was real and its symptom was a mystery, not a
-   -- delimiter: a caller's later comma-joined item read returned the whole
-   -- list under "/" (the demo carried a point patch quoting exactly that).
+   -- This is the library's only non-default itemDelimiter set, so it is
+   -- saved and restored around the NARROWEST possible span - the path
+   -- split, nothing else. Restoring here rather than at each exit is not
+   -- tidiness: this function has SEVEN exits, six of them refusals, and a
+   -- restore per exit is a line a later refusal path forgets. C10
+   -- (2026-08-17) took the property for GLOBAL mutable state and described
+   -- the leak as a caller's later comma-joined item read returning the
+   -- whole list under "/" (the demo carried a point patch quoting exactly
+   -- that). The suite's engine note 2.3 has since OBSERVED the itemDelimiter
+   -- handler-local on Windows and Linux (both directions; no Mac run), so
+   -- there a "/" left at an exit ends with this handler; the narrow span
+   -- still keeps the rest of it on the default.
    put the itemDelimiter into tSavedDelim
    set the itemDelimiter to "/"
    put item 1 to -2 of pPath into tParent
@@ -8359,17 +8374,21 @@ end rsAnonOnion
 function rsPersonaAllows pIsAnon, pTransport
    local tKnown, tSaved, tKnownTransport
    put "onion,dht,torrent,rp1,enet,dc,feed,media,nostr" into tKnown
-   -- SAVE AND RESTORE, and this one is a fix rather than a habit: this
-   -- handler set the itemDelimiter and never put it back, leaking comma to
-   -- everything that ran after it. That is the C10 defect (rsMediaCreate
-   -- leaking "/" for the rest of the session) in the one handler where it
-   -- reads worst - the app's Anon card paints the guard panel by calling
-   -- this nine times in a row, so a card repaint silently reset the
-   -- delimiter under whatever the pump was doing next. Benign in practice
-   -- only because comma IS the engine default, which is exactly why it
-   -- survived the 2026-08-17 sweep that found the other one. Fixed the same
-   -- way that one was: restore around the NARROWEST span, not at each exit,
-   -- because a restore per exit is the line the next refusal path forgets.
+   -- SAVE AND RESTORE. On 2026-08-29 this was a fix rather than a habit: this
+   -- handler set the itemDelimiter and never put it back, read then as
+   -- leaking comma to everything that ran after it. That is the C10 defect
+   -- (rsMediaCreate leaking "/" for the rest of the session) in the one
+   -- handler where it reads worst - the app's Anon card paints the guard
+   -- panel by calling this nine times in a row, so a card repaint would
+   -- silently reset the delimiter under whatever the pump was doing next.
+   -- Benign in practice only because comma IS the engine default, which is
+   -- exactly why it survived the 2026-08-17 sweep that found the other one.
+   -- Both readings took the delimiter for global state; the suite's engine
+   -- note 2.3 has since OBSERVED it handler-local on Windows and Linux (both
+   -- directions; no Mac run), so there it never left this handler. Fixed
+   -- the same way that one was: restore around the NARROWEST span, not at
+   -- each exit, because a restore per exit is the line the next refusal
+   -- path forgets.
    put the itemDelimiter into tSaved
    set the itemDelimiter to comma
    put (pTransport is among the items of tKnown) into tKnownTransport
@@ -11846,7 +11865,10 @@ end oxStripLineEnd
 private function oxFieldAfter pText, pMarker
    -- The whitespace-delimited token immediately following pMarker in pText, or
    -- empty. Used for METHODS=, PROGRESS=, ServiceID=, version=, SERVERHASH=, etc.
-   -- itemDelimiter is global mutable state, so save and restore it (gotcha 7).
+   -- Save and restore the itemDelimiter (gotcha 7). It is handler-local on
+   -- Windows and Linux (engine note 2.3), so this cannot reach a caller
+   -- there; the restore is the family's rule, costs nothing, and holds on
+   -- macOS, which has not run the probe.
    local tPos, tRest, tSaved, tOut
    put offset(pMarker, pText) into tPos
    if tPos is 0 then
@@ -13991,7 +14013,7 @@ command raCreate
       if tSealed is empty then
          throw "rsSealMasterSeed:" && rsLastError()
       end if
-      -- the folder half of the write, itemDelimiter guarded (global state)
+      -- the folder half of the write, itemDelimiter saved and restored
       put the itemDelimiter into tSaved
       set the itemDelimiter to "/"
       put item 1 to -2 of tPath into tFolder
@@ -14719,14 +14741,15 @@ command raHandleEvent pEvent
                   -- under the authorSig); surface it and pre-fill the strip
                   -- with the first hash so Fetch + play is one click
                   raFeedNote "raTheirFeed", "  media attachment(s):" && tPost["mediaTargets"]
-                  -- itemDelimiter is global mutable state; set it right
-                  -- before the item read, and target card 1's field,
-                  -- guarded. The handler that used to leave it as "/" was
-                  -- the LIBRARY (rsMediaCreate), fixed at its source to
-                  -- save and restore the narrowest span; this line stays
-                  -- as defence in depth because the pump reaches here from
-                  -- any card after any handler, and one line is cheaper
-                  -- than trusting every caller in a file no harness runs.
+                  -- set the itemDelimiter right before the item read, and
+                  -- target card 1's field, guarded. This once blamed a
+                  -- global delimiter left as "/" by the LIBRARY
+                  -- (rsMediaCreate, fixed at its source to save and restore
+                  -- the narrowest span); the suite's engine note 2.3 has
+                  -- since observed the itemDelimiter handler-local on
+                  -- Windows and Linux, so there no other handler can set it
+                  -- for this one. The line stays: one line is cheaper than
+                  -- an assumption, and macOS has not run the probe.
                   set the itemDelimiter to comma
                   if there is a field "raMediaHash" of card 1 then
                      if field "raMediaHash" of card 1 is empty then
@@ -15028,9 +15051,12 @@ command raAttach
       exit raAttach
    end if
    put it into sPendingMediaPath
-   -- itemDelimiter is global mutable state; take the leaf, then RESTORE it
-   -- to comma (the pump's raHandleEvent reads comma-joined media lists, and
-   -- leaving it as "/" made item 1 return the whole list)
+   -- take the leaf, then set the itemDelimiter back to comma for the rest
+   -- of this handler. This once said the delimiter was global, so that
+   -- leaving "/" made the pump's raHandleEvent read item 1 as the whole
+   -- media list; it is handler-local on Windows and Linux (the suite's
+   -- engine note 2.3; no Mac run), so there "/" ends with raAttach, and
+   -- raHandleEvent sets comma itself.
    set the itemDelimiter to "/"
    put item -1 of sPendingMediaPath into tShortName
    set the itemDelimiter to comma
@@ -16592,8 +16618,8 @@ command raLanSendMedia
       raLanLog "rsMediaCreate refused:" && rsLastError()
       exit raLanSendMedia
    end if
-   -- itemDelimiter is global mutable state; take the leaf, then RESTORE
-   -- it to comma (the raAttach lesson)
+   -- take the leaf, then set the itemDelimiter back to comma for the rest
+   -- of this handler (the raAttach shape)
    set the itemDelimiter to "/"
    put item -1 of tPath into tShortName
    set the itemDelimiter to comma
@@ -17733,10 +17759,12 @@ command raAppLoad
             && "damaged file). Starting empty; nothing was overwritten."
       exit raAppLoad
    end if
-   -- BOTH delimiters saved and restored. Restoring the itemDelimiter to a
-   -- hard-coded comma would be right only until some caller had set it to
-   -- something else, which is exactly the C10 shape (a handler that leaves
-   -- a delimiter behind, and a mystery about lists two rails away).
+   -- BOTH delimiters saved and restored, to what was found rather than a
+   -- hard-coded comma: the family's rule, and under the global reading C10
+   -- was written in, the difference between a clean handler and a mystery
+   -- about lists two rails away. On Windows and Linux the itemDelimiter is
+   -- handler-local (the suite's engine note 2.3), so what was found is comma
+   -- there; the lineDelimiter has not been probed.
    put the lineDelimiter into tSaved
    put the itemDelimiter into tSavedItem
    set the lineDelimiter to return

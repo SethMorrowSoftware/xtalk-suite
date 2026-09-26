@@ -5034,8 +5034,10 @@ end stCleanup
 -- just began. check-suite-selftest.py holds the two lists together. The
 -- carried blocks' own timers are not the core's to cancel: the self-check's
 -- one delayed probe restores what it touches, and the kit's copy flash is not
--- used here. The item delimiter is restored (engine note 2.3): this runs
--- inside stRun, above sections that split items of their own.
+-- used here. The item delimiter is restored (engine note 2.3): it is
+-- handler-local on Windows and Linux, so there it could not reach the
+-- sections stRun runs next; restored anyway, the family's rule, which
+-- tools/check-suite-ui-boot.py checks under its global delimiter model.
 -- `the pendingMessages` lists EVERY pending message in the engine, not this
 -- stack's, so a cancel by name reaches any open stack that arms a message
 -- of that name. That is why the paste's two timers have paste-only names.
@@ -10005,7 +10007,10 @@ end oxStripLineEnd
 private function oxFieldAfter pText, pMarker
    -- The whitespace-delimited token immediately following pMarker in pText, or
    -- empty. Used for METHODS=, PROGRESS=, ServiceID=, version=, SERVERHASH=, etc.
-   -- itemDelimiter is global mutable state, so save and restore it (gotcha 7).
+   -- Save and restore the itemDelimiter (gotcha 7). It is handler-local on
+   -- Windows and Linux (engine note 2.3), so this cannot reach a caller
+   -- there; the restore is the family's rule, costs nothing, and holds on
+   -- macOS, which has not run the probe.
    local tPos, tRest, tSaved, tOut
    put offset(pMarker, pText) into tPos
    if tPos is 0 then
@@ -16269,14 +16274,18 @@ function rsMediaCreate pSession, pPath
             "handle"
       return empty
    end if
-   -- itemDelimiter is GLOBAL mutable state and this is the library's only
-   -- non-default set, so it is saved and restored around the NARROWEST
-   -- possible span - the path split, nothing else. Restoring here rather
-   -- than at each exit is not tidiness: this function has SEVEN exits, six
-   -- of them refusals, and a restore per exit is a line a later refusal
-   -- path forgets. The leak was real and its symptom was a mystery, not a
-   -- delimiter: a caller's later comma-joined item read returned the whole
-   -- list under "/" (the demo carried a point patch quoting exactly that).
+   -- This is the library's only non-default itemDelimiter set, so it is
+   -- saved and restored around the NARROWEST possible span - the path
+   -- split, nothing else. Restoring here rather than at each exit is not
+   -- tidiness: this function has SEVEN exits, six of them refusals, and a
+   -- restore per exit is a line a later refusal path forgets. C10
+   -- (2026-08-17) took the property for GLOBAL mutable state and described
+   -- the leak as a caller's later comma-joined item read returning the
+   -- whole list under "/" (the demo carried a point patch quoting exactly
+   -- that). The suite's engine note 2.3 has since OBSERVED the itemDelimiter
+   -- handler-local on Windows and Linux (both directions; no Mac run), so
+   -- there a "/" left at an exit ends with this handler; the narrow span
+   -- still keeps the rest of it on the default.
    put the itemDelimiter into tSavedDelim
    set the itemDelimiter to "/"
    put item 1 to -2 of pPath into tParent
@@ -17636,17 +17645,21 @@ end rsAnonOnion
 function rsPersonaAllows pIsAnon, pTransport
    local tKnown, tSaved, tKnownTransport
    put "onion,dht,torrent,rp1,enet,dc,feed,media,nostr" into tKnown
-   -- SAVE AND RESTORE, and this one is a fix rather than a habit: this
-   -- handler set the itemDelimiter and never put it back, leaking comma to
-   -- everything that ran after it. That is the C10 defect (rsMediaCreate
-   -- leaking "/" for the rest of the session) in the one handler where it
-   -- reads worst - the app's Anon card paints the guard panel by calling
-   -- this nine times in a row, so a card repaint silently reset the
-   -- delimiter under whatever the pump was doing next. Benign in practice
-   -- only because comma IS the engine default, which is exactly why it
-   -- survived the 2026-08-17 sweep that found the other one. Fixed the same
-   -- way that one was: restore around the NARROWEST span, not at each exit,
-   -- because a restore per exit is the line the next refusal path forgets.
+   -- SAVE AND RESTORE. On 2026-08-29 this was a fix rather than a habit: this
+   -- handler set the itemDelimiter and never put it back, read then as
+   -- leaking comma to everything that ran after it. That is the C10 defect
+   -- (rsMediaCreate leaking "/" for the rest of the session) in the one
+   -- handler where it reads worst - the app's Anon card paints the guard
+   -- panel by calling this nine times in a row, so a card repaint would
+   -- silently reset the delimiter under whatever the pump was doing next.
+   -- Benign in practice only because comma IS the engine default, which is
+   -- exactly why it survived the 2026-08-17 sweep that found the other one.
+   -- Both readings took the delimiter for global state; the suite's engine
+   -- note 2.3 has since OBSERVED it handler-local on Windows and Linux (both
+   -- directions; no Mac run), so there it never left this handler. Fixed
+   -- the same way that one was: restore around the NARROWEST span, not at
+   -- each exit, because a restore per exit is the line the next refusal
+   -- path forgets.
    put the itemDelimiter into tSaved
    set the itemDelimiter to comma
    put (pTransport is among the items of tKnown) into tKnownTransport
@@ -19647,11 +19660,15 @@ private function nxJsonPathNode pJson, pPath
          -- "abc" turned this never-throw library into an uncaught engine
          -- error, and OXT runs script on the UI thread.
          --
-         -- The itemDelimiter restore has to be repeated in the new early-out:
-         -- it is "/" at this point and it is GLOBAL mutable state (engine
-         -- notes 2.3), so returning without restoring would corrupt every
-         -- later `item` operation in the process - a far worse and much
-         -- quieter bug than the one being fixed.
+         -- The itemDelimiter restore is repeated in the new early-out: it is
+         -- "/" at this point. When this was written the delimiter was taken
+         -- for GLOBAL mutable state, so a missed restore read as corrupting
+         -- every later `item` operation in the process; engine note 2.3 has
+         -- since OBSERVED it handler-local on Windows and Linux (both
+         -- directions; no Mac run), so there it would misparse only the rest
+         -- of this handler. The restore stays: it costs nothing, macOS has not
+         -- run the probe, and tools/check-script-vectors.py pins it under the
+         -- interpreter, whose delimiter is global.
          if not nxIsDigits(tStep) then
             set the itemDelimiter to tSavedDelim
             nxSetError "nxJson: no element" && tStep
@@ -25634,13 +25651,16 @@ command en1enStartPolling pHost, pTarget, pIntervalMs
    if pHost is empty or pHost is 0 then
       exit en1enStartPolling
    end if
-   -- en1sPollHosts is a COMMA list, but `among the items of` splits on whatever
-   -- the itemDelimiter currently is - global mutable state this handler
-   -- INHERITS from whoever called it (the family's LCS gotcha: set it
+   -- en1sPollHosts is a COMMA list, and `among the items of` splits on whatever
+   -- the itemDelimiter is at that line (the family's LCS gotcha: set it
    -- immediately before use, never assume it). Set it around our own read and
-   -- put back what we found: a helper must not decide the delimiter for the
-   -- handler that called it. The writes below are delimiter-free (they append
-   -- a literal comma), so only the read needs bracketing.
+   -- put back what we found. This once said the handler INHERITED its
+   -- caller's delimiter; engine note 2.3 has since OBSERVED it handler-local
+   -- on Windows and Linux (both directions; no Mac run), so there a call
+   -- starts at comma and ours cannot reach back. The bracket keeps the rest
+   -- of this handler on what it found and costs nothing. The writes below are
+   -- delimiter-free (they append a literal comma), so only the read needs
+   -- bracketing.
    put the itemDelimiter into en1tSavedDelim
    set the itemDelimiter to comma
    if pHost is not among the items of en1sPollHosts then
@@ -25676,9 +25696,10 @@ command en1enStopPolling pHost
    end if
    put empty into en1tNew
    -- Same bracketing as en1enStartPolling: this walk re-splits the comma list, so
-   -- it sets the delimiter it needs and restores the caller's. Dropping the
-   -- restore would leave OUR comma behind in the caller's handler, which is
-   -- the same class of bug from the other direction.
+   -- it sets the delimiter it needs and restores what it found. Dropping the
+   -- restore would leave OUR comma for the rest of this handler; it would not
+   -- reach the caller's on Windows or Linux (engine note 2.3, handler-local),
+   -- which is what this comment once said.
    put the itemDelimiter into en1tSavedDelim
    set the itemDelimiter to comma
    repeat for each item en1tI in en1sPollHosts
@@ -25802,13 +25823,16 @@ function en1enFormatBytes pBytes
    -- counted under whatever delimiter was in force rather than the one this
    -- data is written in - and under any delimiter but comma that string is a
    -- ONE-item list, so the loop never runs and a gigabyte reports itself in
-   -- bytes. Set once before the FIRST read; restore before returning, since a
-   -- humaniser has no business changing its caller's delimiter (the family's
-   -- LCS gotcha: itemDelimiter is global mutable state - set it immediately
-   -- before use, and put back what you found). Not a precaution: holde-em's
-   -- v0.15 audit found three real leaks of exactly this shape - heStackFolder
-   -- returning with the delimiter left at a slash, heSwapExt at a dot - and
-   -- answered all three with save-and-restore.
+   -- bytes. Set once before the FIRST read; restore before returning (the
+   -- family's LCS gotcha: set it immediately before use, and put back what
+   -- you found). This was written when the family took the itemDelimiter for
+   -- global state that a caller could hand in and a humaniser could hand
+   -- back, and holde-em's v0.15 audit fixed three handlers of this shape on
+   -- that reading - heStackFolder returning with the delimiter left at a
+   -- slash, heSwapExt at a dot. Engine note 2.3 has since OBSERVED it
+   -- handler-LOCAL on Windows and Linux (both directions; no Mac run), so
+   -- there a call starts at comma and cannot change its caller's. The rule
+   -- still holds for the rest of THIS handler, and the restore costs nothing.
    put the itemDelimiter into en1tSavedDelim
    set the itemDelimiter to comma
    repeat while en1tVal >= 1024 and en1tI < the number of items of en1tUnits
@@ -26395,13 +26419,16 @@ function dc1dcFormatBytes pBytes
    -- counted under whatever delimiter was in force rather than the one this
    -- data is written in - and under any delimiter but comma that string is a
    -- ONE-item list, so the loop never runs and a gigabyte reports itself in
-   -- bytes. Set once before the FIRST read; restore before returning, since a
-   -- humaniser has no business changing its caller's delimiter (the family's
-   -- LCS gotcha: itemDelimiter is global mutable state - set it immediately
-   -- before use, and put back what you found). Not a precaution: holde-em's
-   -- v0.15 audit found three real leaks of exactly this shape - heStackFolder
-   -- returning with the delimiter left at a slash, heSwapExt at a dot - and
-   -- answered all three with save-and-restore.
+   -- bytes. Set once before the FIRST read; restore before returning (the
+   -- family's LCS gotcha: set it immediately before use, and put back what
+   -- you found). This was written when the family took the itemDelimiter for
+   -- global state that a caller could hand in and a humaniser could hand
+   -- back, and holde-em's v0.15 audit fixed three handlers of this shape on
+   -- that reading - heStackFolder returning with the delimiter left at a
+   -- slash, heSwapExt at a dot. Engine note 2.3 has since OBSERVED it
+   -- handler-LOCAL on Windows and Linux (both directions; no Mac run), so
+   -- there a call starts at comma and cannot change its caller's. The rule
+   -- still holds for the rest of THIS handler, and the restore costs nothing.
    put the itemDelimiter into dc1tSavedDelim
    set the itemDelimiter to comma
    repeat while dc1tVal >= 1024 and dc1tI < the number of items of dc1tUnits
@@ -40628,7 +40655,7 @@ end he1heLevelFor
 function he1heLevelForPeriod pPeriodIdx, pLevelsTxt
    -- return the "sb,bb,ante" for a 1-based period index, clamped to the last
    -- level. Shared by hand-count and (future) time-based schedules. Saves and
-   -- restores the itemDelimiter so it never leaks ";" to the caller (gotcha 5).
+   -- restores the itemDelimiter around its ";" parse, on every exit (gotcha 5).
    local he1tSaved, he1tLevels, he1tCount, he1tIdx, he1tLevel
    put the itemDelimiter into he1tSaved
    set the itemDelimiter to ";"
@@ -41483,9 +41510,13 @@ end he1heLobbyHide
 command he1heLobbySetVisible pOn
    -- toggle the whole overlay by concrete type (by-name generic "control"
    -- references are not reliably valid in strict OXT; field/button/graphic are).
-   -- The delimiter is pinned and RESTORED (gotcha 5): since the handStart fold
-   -- calls he1heLobbyHide, this runs mid-fold, where clobbering the global
-   -- itemDelimiter would corrupt whatever parse the caller resumes.
+   -- The delimiter is pinned and RESTORED (gotcha 5). Since the handStart fold
+   -- calls he1heLobbyHide, this runs mid-fold; v0.25.3 restored it so that a
+   -- clobbered delimiter could not corrupt the parse the caller resumes, on
+   -- the reading that it is global. Engine note 2.3 has since OBSERVED the
+   -- itemDelimiter handler-local on Windows and Linux (both directions), so
+   -- there it cannot; the restore stays because it costs nothing and macOS
+   -- has not run the probe.
    local he1tFields, he1tButtons, he1tNm, he1tOldDelim
    if there is a graphic "heLobbyBg" then
       set the visible of graphic "heLobbyBg" to pOn
@@ -42586,11 +42617,14 @@ function he1heStackFolder
    -- message box and never saved (there is no file to be relative to) -- then set
    -- uHeAtlasPath/uHeBacksPath by hand, or just save the stack once. LiveCode reports
    -- filenames with "/" separators on every platform, so item 1 to -2 is the folder.
-   -- gotcha 5: the itemDelimiter is global mutable state, so it is saved and
-   -- restored here. Leaving it as "/" (pre-v0.14.1) leaked a foreign delimiter out
-   -- to every caller -- he1heKitTryInit's early exit on a missing atlas returned with
-   -- it still set, and the next handler to chunk items without setting it first
-   -- would have parsed with "/".
+   -- gotcha 5: the itemDelimiter is saved and restored here. Before v0.14.1 it
+   -- was left as "/", read then as a foreign delimiter leaking to every caller
+   -- (he1heKitTryInit's early exit on a missing atlas returned with it still set,
+   -- and the next handler to chunk items without setting it first would have
+   -- parsed with "/"). Engine note 2.3 has since OBSERVED the itemDelimiter
+   -- handler-local on Windows and Linux (both directions; no Mac run), so there
+   -- the "/" ended with this handler; the restore keeps the rule uniform and
+   -- costs nothing.
    local he1tFile, he1tSaved, he1tOut
    put the filename of this stack into he1tFile
    if he1tFile is empty then
@@ -47234,9 +47268,13 @@ command he1heTestHelpersRun
    -- day someone makes it path-aware, they change a test and not a promise.
    he1heTAssert "helpers: he1heSwapExt's dotted-folder edge is cosmetic, not a crash", \
          he1heSwapExt("/a.b/cards", ".xml"), "/a.xml"
-   -- gotcha 5: it sets the itemDelimiter to "." and MUST put it back. This
-   -- line is the only thing that can catch that regression -- a leaked "."
-   -- would corrupt the next comma-item read in whatever called it.
+   -- gotcha 5: it sets the itemDelimiter to "." and MUST put it back. Where
+   -- the delimiter crosses a call, a leaked "." would corrupt the next
+   -- comma-item read in whatever called it, and this line is the only thing
+   -- that can catch that regression. On Windows and Linux it does not cross
+   -- (engine note 2.3, handler-local), so there this line passes whatever
+   -- he1heSwapExt does; under tools/check-script-vectors.py, whose interpreter
+   -- keeps the delimiter global, it is still the check.
    put the itemDelimiter into he1tDelimTxt
    he1heTAssert "helpers: he1heSwapExt restores the itemDelimiter (gotcha 5)", he1tDelimTxt, comma
 
@@ -48232,7 +48270,9 @@ command he1heTestEvaluatorRun
    end repeat
    he1heTAssert "eval: antisymmetry over all vector pairs", he1tBad, 0
    -- leave the delimiter as the house default, not the "|" this section parses
-   -- vectors with (gotcha 5: it is global state and the next section inherits it)
+   -- vectors with (gotcha 5: under the headless interpreter's global model the
+   -- next section inherits it; on Windows and Linux it is handler-local, engine
+   -- note 2.3)
    set the itemDelimiter to comma
 end he1heTestEvaluatorRun
 
@@ -49249,8 +49289,11 @@ private command nx1nxtTestJsonParse
    -- it; caught, the regression is one FAIL line and the report survives.
    --
    -- The same call pins the other half of that fix: the early-out now
-   -- restores the itemDelimiter, which is "/" at that point and global
-   -- state (suite engine note 2.3). It reads the DELIMITER, not a second
+   -- restores the itemDelimiter, which is "/" at that point. On Windows and
+   -- Linux the itemDelimiter is handler-local (suite engine note 2.3), so
+   -- this line passes there whatever the early-out does; under the headless
+   -- gate's interpreter, which holds it global, it is the check. It reads
+   -- the DELIMITER, not a second
    -- nxJsonGet: the walk saves whatever delimiter it finds and sets "/"
    -- itself, so a second call answers "x" even after a leak (the headless
    -- gate's first version of this check did exactly that and stayed green

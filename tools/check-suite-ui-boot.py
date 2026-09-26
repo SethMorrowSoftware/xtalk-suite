@@ -974,10 +974,13 @@ def check_no_timers(c, board, also=()):
 
 
 def check_delimiters(c):
-    """The model holds the item and line delimiters as GLOBAL state (engine
-    note 2.3, OBSERVED; the dictionary's local reading is its documented
-    counterpoint), so a handler that sets one and returns without restoring
-    it leaks it into everything after - here, visibly."""
+    """The model holds the item and line delimiters as GLOBAL state, so a
+    handler that sets one and returns without restoring it leaks it into
+    everything after - here, visibly. That is the stricter reading, not the
+    engine's: engine note 2.3 has OBSERVED the itemDelimiter handler-LOCAL on
+    Windows and Linux (the dictionary's claim; the lineDelimiter unprobed, no
+    Mac run), so this checks the family's save/set/restore discipline, which
+    still guards the rest of each handler."""
     c.eq("no handler left the item or line delimiter changed",
          (LCS.ITEM_DELIMITER[0], LCS.LINE_DELIMITER[0]), (",", "\n"))
 

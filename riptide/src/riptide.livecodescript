@@ -1007,7 +1007,12 @@ end rsBuildPostChunked
 -- media list rather than anything that named a delimiter - and it survived
 -- the 2026-08-17 sweep for the same reason rsPersonaAllows's copy did:
 -- comma IS the engine default, so it is invisible until some caller sets
--- something else.
+-- something else. (That was the family's reading on 2026-08-29. The suite's
+-- engine note 2.3 has since OBSERVED the itemDelimiter handler-local on
+-- Windows and Linux, both directions, so there the set ended with the
+-- handler and no caller saw it. The wrapper stays: it costs nothing, macOS
+-- has not run the probe, and tools/check-script-vectors.py pins it under the
+-- interpreter, whose delimiter is global.)
 --
 -- Restored around the WHOLE body rather than at each exit, because there are
 -- SEVEN refusal exits here and a restore per exit is the line the next
@@ -1979,14 +1984,18 @@ function rsMediaCreate pSession, pPath
             "handle"
       return empty
    end if
-   -- itemDelimiter is GLOBAL mutable state and this is the library's only
-   -- non-default set, so it is saved and restored around the NARROWEST
-   -- possible span - the path split, nothing else. Restoring here rather
-   -- than at each exit is not tidiness: this function has SEVEN exits, six
-   -- of them refusals, and a restore per exit is a line a later refusal
-   -- path forgets. The leak was real and its symptom was a mystery, not a
-   -- delimiter: a caller's later comma-joined item read returned the whole
-   -- list under "/" (the demo carried a point patch quoting exactly that).
+   -- This is the library's only non-default itemDelimiter set, so it is
+   -- saved and restored around the NARROWEST possible span - the path
+   -- split, nothing else. Restoring here rather than at each exit is not
+   -- tidiness: this function has SEVEN exits, six of them refusals, and a
+   -- restore per exit is a line a later refusal path forgets. C10
+   -- (2026-08-17) took the property for GLOBAL mutable state and described
+   -- the leak as a caller's later comma-joined item read returning the
+   -- whole list under "/" (the demo carried a point patch quoting exactly
+   -- that). The suite's engine note 2.3 has since OBSERVED the itemDelimiter
+   -- handler-local on Windows and Linux (both directions; no Mac run), so
+   -- there a "/" left at an exit ends with this handler; the narrow span
+   -- still keeps the rest of it on the default.
    put the itemDelimiter into tSavedDelim
    set the itemDelimiter to "/"
    put item 1 to -2 of pPath into tParent
@@ -3632,17 +3641,21 @@ end rsAnonOnion
 function rsPersonaAllows pIsAnon, pTransport
    local tKnown, tSaved, tKnownTransport
    put "onion,dht,torrent,rp1,enet,dc,feed,media,nostr" into tKnown
-   -- SAVE AND RESTORE, and this one is a fix rather than a habit: this
-   -- handler set the itemDelimiter and never put it back, leaking comma to
-   -- everything that ran after it. That is the C10 defect (rsMediaCreate
-   -- leaking "/" for the rest of the session) in the one handler where it
-   -- reads worst - the app's Anon card paints the guard panel by calling
-   -- this nine times in a row, so a card repaint silently reset the
-   -- delimiter under whatever the pump was doing next. Benign in practice
-   -- only because comma IS the engine default, which is exactly why it
-   -- survived the 2026-08-17 sweep that found the other one. Fixed the same
-   -- way that one was: restore around the NARROWEST span, not at each exit,
-   -- because a restore per exit is the line the next refusal path forgets.
+   -- SAVE AND RESTORE. On 2026-08-29 this was a fix rather than a habit: this
+   -- handler set the itemDelimiter and never put it back, read then as
+   -- leaking comma to everything that ran after it. That is the C10 defect
+   -- (rsMediaCreate leaking "/" for the rest of the session) in the one
+   -- handler where it reads worst - the app's Anon card paints the guard
+   -- panel by calling this nine times in a row, so a card repaint would
+   -- silently reset the delimiter under whatever the pump was doing next.
+   -- Benign in practice only because comma IS the engine default, which is
+   -- exactly why it survived the 2026-08-17 sweep that found the other one.
+   -- Both readings took the delimiter for global state; the suite's engine
+   -- note 2.3 has since OBSERVED it handler-local on Windows and Linux (both
+   -- directions; no Mac run), so there it never left this handler. Fixed
+   -- the same way that one was: restore around the NARROWEST span, not at
+   -- each exit, because a restore per exit is the line the next refusal
+   -- path forgets.
    put the itemDelimiter into tSaved
    set the itemDelimiter to comma
    put (pTransport is among the items of tKnown) into tKnownTransport
