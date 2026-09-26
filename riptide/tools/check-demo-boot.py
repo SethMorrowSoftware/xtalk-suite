@@ -2240,8 +2240,11 @@ def drive_seq_order(c, ip, world, profile):
     its feed-state MAX `tRec["feedSeq"] > sSeq`, its head watermarks
     `pSeq > tSeen` and `tSeen > tFloor`: near 2^53 each read a newer value
     as "not newer". The guards' refusal is SILENT by design, so a dropped
-    record said nothing, and this model's own comparisons are IEEE, so the
-    boot saw nothing either. They all order through the library's
+    record said nothing, and this model's own comparisons were IEEE, so the
+    boot saw nothing either (since 2026-09-25 the plain interpreter REFUSES
+    such a pair instead, the base's Indistinct; this drive answers under the
+    engine's rule, whose operands the refusal leaves to the model, so it
+    still sees a wrong ANSWER, not a stop). They all order through the library's
     rsSeqCompare now (the demo's raLanIsNewer for the three replay guards).
 
     It drives them the way drive_lan_keys drives the keying: the receive
@@ -2556,8 +2559,9 @@ def check_runner_model(c):
         # `is` over two texts the engine reads as one number, and an ordering
         # whose text reading the note does not establish (hex). Each fails
         # against the runner before 2026-09-25.
-        for name, what in (("rmTextIs", '"1e5" is "100000" (true there, '
-                            "false by the text), through `is`"),
+        for name, what in (("rmTextIs", '"1e5" is "100000" (true on the '
+                            "engine, OBSERVED on Linux and Windows "
+                            "2026-09-25; false by the text), through `is`"),
                            ("rmHexOrder", '"0x10" < "20" (hex: not '
                             "established), through `<`")):
             label = ("[MODEL] an operand the engine reads differently is "

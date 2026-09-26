@@ -340,8 +340,9 @@ Code comments cite these numbers; keep them.
    now dropped by the demo's LAN guards (outside the helper's domain: fail closed). Held by
    check-script-vectors tier 1d (the table, `rsIngestHead` end to end near 2^53, `rsIngestBridge`'s
    rollback gate, and the top of the range, under IEEE and all three models, after three seeded
-   copies of the spellings that shipped each read right under IEEE and wrong under the engine's
-   rule; `rsIngestBridge`'s seq AGREEMENT runs with tier 2, because only a bridge that verifies over
+   copies of the spellings that shipped each read right under IEEE (replayed, `_model_ieee`),
+   wrong under the engine's rule, and REFUSED by the plain interpreter at exactly the rows the
+   engine reads wrong; `rsIngestBridge`'s seq AGREEMENT runs with tier 2, because only a bridge that verifies over
    the real CoinXT reaches it), check-demo-boot's seq-order drive (the demo's seven ordering sites
    near 2^53 under the engine's rule; test-demo-boot's fixture 6 seeds all the old spellings back
    and requires every deciding check to fail), and the harness section "wire integers ordered
