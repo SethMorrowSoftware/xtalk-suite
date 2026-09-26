@@ -629,12 +629,12 @@ and `"1e5" > 99999` still answers true. Two of those unsure forms the source
 read of 2026-09-26 (the fourth probe line's paragraph above) now decides: a
 hexadecimal integer small enough for `integer_t` (`"0x10"` is 16), and the
 long run, which is text because `integer_t` is 32 bits on every build; the
-interpreter refuses both until work plan suite-wide #22 teaches it. The same
-reading gave two smaller findings from the source, both now refused where they
-move an answer: `<>` is the engine's `is not`, which never turns an EMPTY
-operand into a number (the interpreter read it as 0, so `empty <> 0` answered
-false where the engine answers true), and a Boolean is never a number to a
-comparison. `switch`
+interpreter refuses both until work plan suite-wide #22 teaches it. The
+2026-09-25 reading also gave two smaller findings from the source, both now
+refused where they move an answer: `<>` is the engine's `is not`, which never
+turns an EMPTY operand into a number (the interpreter read it as 0, so
+`empty <> 0` answered false where the engine answers true), and a Boolean is
+never a number to a comparison. `switch`
 matches its cases as TEXT (`MCKeywordsExecSwitch`), and riptide's runner, which
 matched them through `is`, does too now. Held by coinxt's
 `check-script-vectors.py` tier 0 (a table of forms, and riptide's third probe
