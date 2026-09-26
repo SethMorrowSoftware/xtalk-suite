@@ -378,6 +378,10 @@ Code comments cite these numbers; keep them.
     cwSatToBtc printed an empty amount "-0.00000000" in the boot), and matches `case` as TEXT,
     the engine's way (until then `"1.0"` took `case "1"` here). A refused comparison inside an
     `and` / `or` whose other operand settles the answer is dropped (the base's `_Undecided`).
+    `baseConvert` reads its source as the engine source's `MCMathConvertToBase10` does
+    (2026-09-26): empty text, an edge space, `0x` or `_` is a SCRIPT error a `try` catches (Python's
+    `int()` raised past every `try` on empty text, and read the rest), and a value past 2^32 - 1,
+    which the engine's uint32 accumulator wraps without an error, is refused (`Imprecise`).
 15. **The demo carries TWO socket libraries** (onionxt, nostrxt's relay layer). The embed tool drops
     both libraries' `socketError`/`socketClosed`/`socketTimeout` wrappers; the demo's own three call
     `oxSocketError`/`nxrSocketError` (and kin), then `pass`. Keep that `pass`: swallowing a socket

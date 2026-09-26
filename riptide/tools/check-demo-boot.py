@@ -1513,18 +1513,69 @@ def _round_away(x, digits):
     return LCS._exact(int(r)) if digits == 0 else r / scale
 
 
+_BASE_DIGITS = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+
+
 def _base_convert(text, base_from, base_to):
-    n = int(str(text).strip(), base_from)
+    """baseConvert as the engine's SOURCE writes it (DOCUMENTED, read
+    2026-09-26 from livecode develop-9.6; never run here):
+    engine/src/exec-math.cpp's MCMathEvalBaseConvert refuses a base outside
+    2..36, and libfoundation/src/foundation-math.cpp's MCMathConvertToBase10
+    reads the source text: EMPTY is an error, one leading `+` or `-`, then
+    every character (uppercased) a digit or letter below the source base,
+    anything else - a space, `0x`, `_` - an error, into a uint32_t
+    accumulator; MCMathConvertFromBase10 writes the digits, uppercase, a `-`
+    before them for a negative source ("-0" included). Each error is a
+    LegacyThrow (EE_BASECONVERT_BADSOURCEBASE, _BADDESTBASE, _CANTCONVERT):
+    a SCRIPT error, which a script `try` catches, so each is a Thrown here.
+    Until 2026-09-26 this read the text with Python's int(text.strip(),
+    base): empty text raised a ValueError past every script `try` (a
+    holde-em mutant met it), and edge spaces, "0x" and "1_0" were READ where
+    the engine throws. The accumulator wraps silently past 2^32 - 1 on the
+    engine; that is REFUSED (Imprecise, the 2^53 stop's class: not a
+    Thrown, so no script `try` eats it) rather than emulated, because no
+    run has shown the wrap and nothing in the tree converts past 32 bits."""
+    if not 2 <= base_from <= 36:
+        raise Thrown("baseConvert: source base %d is not between 2 and 36 "
+                     "(EE_BASECONVERT_BADSOURCEBASE)" % base_from)
+    if not 2 <= base_to <= 36:
+        raise Thrown("baseConvert: destination base %d is not between 2 and "
+                     "36 (EE_BASECONVERT_BADDESTBASE)" % base_to)
+    src = str(text)
+    cant = Thrown("baseConvert: %r is not a number in base %d "
+                  "(EE_BASECONVERT_CANTCONVERT)" % (src, base_from))
+    if src == "":
+        raise cant
+    neg = src[0] == "-"
+    value = 0
+    for ch in src[1:] if src[0] in "+-" else src:
+        up = ch.upper() if ch.isascii() else ch
+        if "0" <= up <= "9" and ord(up) - 48 < base_from:
+            digit = ord(up) - 48
+        elif "A" <= up < chr(ord("A") + base_from - 10):
+            digit = ord(up) - 55
+        else:
+            raise cant
+        value = value * base_from + digit
+        if value > 0xFFFFFFFF:
+            raise LCS.Imprecise(
+                "baseConvert(%r, %d, %d): the engine reads the source into "
+                "a uint32_t (libfoundation's MCMathConvertToBase10) and "
+                "WRAPS past 4294967295 without an error, so on OXT this "
+                "answers a different number (the engine source, DOCUMENTED; "
+                "refused like the 2^53 stop). Convert 32 bits or fewer at a "
+                "time." % (src, base_from, base_to))
+    if neg and value == 0:
+        return "-0"
     if base_to == 10:
-        return LCS._exact(n)
-    digits = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-    neg = n < 0
-    n = abs(n)
+        return LCS._exact(-value if neg else value)
     out = ""
-    while n:
-        out = digits[n % base_to] + out
-        n //= base_to
-    return ("-" if neg else "") + (out or "0")
+    while True:
+        out = _BASE_DIGITS[value % base_to] + out
+        value //= base_to
+        if not value:
+            break
+    return ("-" if neg else "") + out
 
 
 def install_common(world):
@@ -2434,6 +2485,15 @@ end rmCase
 function rmFarOrder
    return 1700000000 < 1700000001
 end rmFarOrder
+function rmBaseConvert pText, pFrom, pTo
+   local tOut
+   try
+      put baseConvert(pText, pFrom, pTo) into tOut
+   catch tErr
+      return "thrown: " & tErr
+   end try
+   return tOut
+end rmBaseConvert
 """
 
 
@@ -2556,6 +2616,45 @@ def check_runner_model(c):
             got = ip.call("rmCase", [subject])
             c.ck("[MODEL] switch %r takes %r (cases match as text)"
                  % (subject, want), got == want, repr(got))
+        # baseConvert as MCMathConvertToBase10 reads its source (the engine
+        # source, DOCUMENTED): each error a SCRIPT error the script's `try`
+        # catches ("thrown", and only baseConvert's own: a handler the runner
+        # cannot find is a Thrown too), never a Python error past it (empty
+        # text raised a ValueError until 2026-09-26), and nothing read that
+        # the engine refuses (Python's int() stripped spaces and read "0x"
+        # and "_"). The engine functions are the boot's; installed here too
+        # so this tier runs first and alone.
+        install_engine_functions(World(sandbox))
+        for args, want in ((("", 16, 10), "thrown"),
+                           (("ff", 16, 10), "255"), (("FF", 16, 10), "255"),
+                           (("-ff", 16, 10), "-255"), (("+7", 10, 16), "7"),
+                           (("255", 10, 16), "FF"), (("0", 10, 2), "0"),
+                           (("-", 10, 16), "-0"),
+                           (("ffffffff", 16, 10), "4294967295"),
+                           ((" ff", 16, 10), "thrown"),
+                           (("ff ", 16, 10), "thrown"),
+                           (("0x1f", 16, 10), "thrown"),
+                           (("1_0", 10, 16), "thrown"),
+                           (("g", 16, 10), "thrown"), (("12", 2, 10), "thrown"),
+                           (("7", 1, 10), "thrown"), (("0", 1, 10), "thrown"),
+                           (("7", 37, 10), "thrown"), (("7", 10, 37), "thrown")):
+            try:
+                got = str(LCS._disp(ip.call("rmBaseConvert", list(args))))
+            except Exception as exc:                     # noqa: BLE001
+                got = "escaped the script's try: %s" % type(exc).__name__
+            if got.startswith("thrown: baseConvert: "):
+                got = "thrown"
+            c.ck("[MODEL] baseConvert%r answers %r (the engine source)"
+                 % (args, want), got == want, repr(got))
+        # past the uint32_t accumulator the engine wraps without an error:
+        # refused, never a wrapped or an exact answer, and no `try` eats it
+        try:
+            got = ip.call("rmBaseConvert", ["100000000", 16, 10])
+            c.ck("[MODEL] baseConvert past 2^32 - 1 is refused (Imprecise)",
+                 False, "it answered %r" % (got,))
+        except LCS.Imprecise:
+            c.ck("[MODEL] baseConvert past 2^32 - 1 is refused (Imprecise)",
+                 True)
     finally:
         shutil.rmtree(sandbox, ignore_errors=True)
 
