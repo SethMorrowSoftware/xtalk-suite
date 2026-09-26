@@ -216,9 +216,13 @@ on-engine pass. Keep both gates green in CI on every push / PR.
    Negate the whole comparison: `not (tHost ends with ".onion")`, `not (x is in y)`.
 4. **`is a <type>` accepts only** number / integer / boolean / point / rect / date / color. There is NO
    `is a string`. To sniff bytes or text, check length / content, not a type.
-5. **`itemDelimiter` / `lineDelimiter` are global mutable state.** Set them immediately before the parse
-   that needs them and RESTORE them afterward, because other code assumes the defaults (`item` = comma,
-   `line` = lf). CRLF protocols: `set the lineDelimiter to crlf` right where you parse, then restore.
+5. **Set `itemDelimiter` / `lineDelimiter` immediately before the parse that needs them, and RESTORE
+   them afterward**, because the rest of the handler assumes the defaults (`item` = comma, `line` = lf).
+   The itemDelimiter is handler-LOCAL, not global (the suite's engine note 2.3: OBSERVED on Windows
+   2026-09-24 and Linux 2026-09-25, both directions, the LiveCode dictionary's claim; no Mac run): a set
+   one neither reaches the handlers you call nor outlives your handler, so an unrestored one misparses
+   the rest of ITS OWN handler. The lineDelimiter has not been probed on any engine: keep treating it as
+   global. CRLF protocols: `set the lineDelimiter to crlf` right where you parse, then restore.
 6. **The empty string `is in` every string** (and is a prefix/suffix of every string). Guard any
    trim/scan loop with an explicit non-empty check, or it never terminates / over-matches.
 7. **Constants must be literal and declared before first use** (see section 3). **The same

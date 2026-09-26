@@ -153,8 +153,11 @@ itself is catalogued in the suite's
    parameter, `k` constant; the public surface is `he*`.
 4. **Block vs single-line `if`**; a trailing `\` continues a line. Naive counters
    false-positive on these; do not "fix" valid code.
-5. **`itemDelimiter`/`lineDelimiter` are global:** set them before every parse
-   (engine note 2.3). `heLobbySetVisible` restores it mid-fold since v0.25.3.
+5. **Set `itemDelimiter`/`lineDelimiter` before every parse, and restore them**
+   (engine note 2.3): the itemDelimiter is handler-local (OBSERVED on Windows and
+   Linux, both directions; no Mac run), so an unrestored one misparses the rest of
+   its own handler; the lineDelimiter is unprobed and still treated as global.
+   `heLobbySetVisible` restores it mid-fold since v0.25.3.
 6. **Constants must be literal** (unified check 22 refuses a non-literal value;
    engine note 1.3).
 7. **A command called with `()` throws** "error in function handler" and its body

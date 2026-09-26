@@ -116,7 +116,8 @@ and zeroes the state. There is no LCB unload hook: apps free what they open (`cl
 4. **Constants are literal and declared before first use** (engine note 1.3).
 5. **LCB: `unsafe` around each foreign call; declarations at a handler's TOP**
    (suite engine notes section 4).
-6. **`itemDelimiter` / `lineDelimiter` are global state** (engine note 2.3): set before use.
+6. **Set `itemDelimiter` / `lineDelimiter` before use** (engine note 2.3): the itemDelimiter is
+   handler-local (OBSERVED on Windows and Linux; no Mac run), the lineDelimiter unprobed.
 7. **Commands report via `the result`, functions return**; `is a <type>` accepts only
    number, integer, boolean, point, rect, date and color (no `is a string`).
 8. **Crypto in script:** `sxRandomBytes`, never `random()`; `sxMemEqual`, never `is`/`=`;

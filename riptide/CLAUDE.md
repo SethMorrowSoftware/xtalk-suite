@@ -274,7 +274,11 @@ Code comments cite these numbers; keep them.
 5. **Delimiter leaks.** C10 (2026-08-17): `rsMediaCreate` left `itemDelimiter` "/" on 7 exits;
    restore around the NARROWEST span, not per exit (`rsAnonFeedPage`'s `lineDelimiter` too).
    `raAttach` (2026-08-14) and `rsPersonaAllows` (2026-08-29, benign only because comma is the
-   default) leaked it as well. The demo's defensive re-set in `raHandleEvent` STAYS.
+   default) leaked it as well. The demo's defensive re-set in `raHandleEvent` STAYS. Those were read
+   as leaks into callers; suite engine note 2.3 has since OBSERVED the itemDelimiter handler-LOCAL on
+   Windows and Linux (both directions; no Mac run), so there each reached only the rest of its own
+   handler. The restores stay: they guard that, cost nothing, and `tools/check-script-vectors.py` pins
+   them under the interpreter, which keeps the delimiter global.
 6. **A non-literal `constant kX = "a" & return & "b"`** kills compilation of the whole one-unit
    script (suite engine note 1.3; family checker check 22).
 7. **`Chunk: no target found` at `openStack` (the first phase-8 card, 2026-08-29) was never

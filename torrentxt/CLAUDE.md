@@ -190,7 +190,8 @@ Script layer:
 11. In `.lcb`, `unsafe ... end unsafe` around every foreign call and declarations at the TOP of
     the handler (engine notes section 4); mid-handler `local` is legal in `.livecodescript`.
 12. Commands report via `the result`, functions return a value (`btAddMagnet` is a command).
-13. `itemDelimiter` / `lineDelimiter` are global: set them right before use (engine note 2.3).
+13. Set `itemDelimiter` / `lineDelimiter` right before use (engine note 2.3: the itemDelimiter is
+    handler-local, OBSERVED on Windows and Linux; the lineDelimiter is unprobed).
 14. Event handlers take ONE event array (`dispatch tName to sPollTarget with tEvent`): write
     `on pieceFinished pEvent` and read `pEvent["piece"]`.
 

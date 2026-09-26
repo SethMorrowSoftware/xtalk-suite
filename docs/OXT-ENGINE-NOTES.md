@@ -142,12 +142,16 @@ undeclared-constant and catch-variable checks.
 the node unchanged instead of throwing: a fail-OPEN in a derivation path.
 **Rule:** never infer "no trailing empty component" from an item count; check the string.
 
-### 2.3 `itemDelimiter` and `lineDelimiter` are global mutable state
-**Superseded in part, OBSERVED 2026-09-24 (Windows) and 2026-09-25 (Linux);
-read the counterpoint and its settlements below first:** on both engines the
-itemDelimiter is HANDLER-LOCAL in both directions (the lineDelimiter was not
-probed on either). The rule stands; the title's cross-handler claim does not,
-for the itemDelimiter, and the number is kept because the tree cites it.
+### 2.3 `itemDelimiter` is HANDLER-LOCAL, not global (Windows, Linux): an unrestored one misparses the rest of its own handler
+**Settled for the itemDelimiter, OBSERVED 2026-09-24 (Windows) and 2026-09-25
+(Linux); read the counterpoint and its settlements below first:** on both
+engines the itemDelimiter is HANDLER-LOCAL in both directions (the
+lineDelimiter was not probed on either, and macOS has not run the probe). The
+rule stands; the original title's cross-handler claim does not, for the
+itemDelimiter. **Retitled 2026-09-26:** until then this entry was titled
+"`itemDelimiter` and `lineDelimiter` are global mutable state", the premise
+the probe contradicted; the number is kept because the tree cites it. The
+original entry follows as written (undated):
 **OBSERVED** (several times, in shipped code). A handler that sets one and
 returns without restoring it corrupts every later parse in unrelated code; the
 symptom is always "item 1 returned the whole list". **Rule:** save, set,
@@ -172,7 +176,7 @@ printed the dictionary's answer. "a caller's tab does NOT reach a called
 handler on Win32 (it saw comma)", and "a Kit call left its caller's delimiter
 alone on Win32 (tab in, tab out)". So on that engine an itemDelimiter set in
 one handler is invisible to the handlers it calls and cannot leak back out of
-them: the title's "global" is WRONG there for the itemDelimiter. The probe
+them: the (original) title's "global" is WRONG there for the itemDelimiter. The probe
 reads only `the itemDelimiter`; the lineDelimiter, which the dictionary
 describes the same way, was not probed. This entry's undated observations
 (platforms unknown) were most likely the leak that both readings share - a
@@ -191,11 +195,26 @@ unprobed on any engine, and macOS has not run the probe.
 **What changes:** the reason, not the rule. Save, set, restore still guards
 the rest of the handler that set the delimiter, which is where every
 remaining hazard lives, and it costs nothing where it is redundant. What no
-longer holds is "an unrestored delimiter corrupts its caller" - many member
-comments and the carried templates' gotcha still say it, and that wording is
-open work (WORK-PLAN suite-wide), not a defect: nothing that restores a
-delimiter is wrong for doing so. **Does NOT mean:** a handler may leave a
-delimiter set and then parse something else itself.
+longer holds is "an unrestored delimiter corrupts its caller": nothing that
+restores a delimiter is wrong for doing so, only the reason was.
+**Re-worded across the tree 2026-09-26** (WORK-PLAN suite-wide #15, closed):
+the member `CLAUDE.md` gotchas, the carried templates' gotcha 5
+(`onionxt/templates/` and `coinxt/templates/`), coinxt's API and wallet docs,
+the binding playbook, and the code comments that stated the premise as a fact
+now give this answer and the true reason. Dated records (ledger rows,
+changelogs, runbook section 8, the dated paragraphs above) keep what was
+believed on their date. Three things stay on purpose. The lineDelimiter
+claims: not probed, so still treated as global. Every save, set, restore in
+code. And the family interpreter's GLOBAL model of both delimiters
+(`coinxt/tools/lcs-interp.py`, twinned in nostrxt, which the headless
+execution gates and `tools/check-suite-ui-boot.py` run on): it is stricter
+than these engines for a leak (it flags every unrestored set, which a local
+model would forgive at the return), so it is what keeps the discipline
+checkable headlessly, but it is BLIND to the converse - a callee that relies
+on inheriting its caller's non-comma delimiter parses as intended there and
+under comma on these engines - and a hostile-caller vector run under it
+proves a guard these engines make redundant. **Does NOT mean:** a handler may
+leave a delimiter set and then parse something else itself.
 
 ### 2.4 Every number is an IEEE double, so integers are exact only to 2^53
 **DOCUMENTED** (LiveCode's numeric model; runbook row P is the five-minute

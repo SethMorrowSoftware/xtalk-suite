@@ -98,9 +98,11 @@ The split is **load-bearing, not aesthetic** (the suite generator's fold cites t
    round-trips compare through `nxStrEqExact` (core) / `nxrStrEq` (relay). A folded compare on
    "EVENT" vs "event" silently accepts a non-conforming relay. (Array keys fold too: suite
    engine note 2.7.)
-2. **`itemDelimiter` / `lineDelimiter` are global mutable state** (suite engine note 2.3). Every
-   chunk read saves, sets, uses and restores; internal lists flow as 1-based sequential ARRAYS
-   counted with the delimiter-free `is among the keys of` walk.
+2. **Every chunk read saves, sets, uses and restores its delimiter** (suite engine note 2.3: the
+   itemDelimiter is handler-LOCAL, OBSERVED on Windows and Linux in both directions, no Mac run, so
+   the restore guards the rest of that handler; the lineDelimiter is unprobed and still treated as
+   global). Internal lists flow as 1-based sequential ARRAYS counted with the delimiter-free
+   `is among the keys of` walk.
 3. **JSON is byte work.** The family checker refuses braces outside string literals, so JSON is
    built from brace characters inside quoted literals and parsed by walking UTF-8 bytes.
    `f(x)["k"]` does not parse: put every function result into a local before subscripting.
