@@ -764,9 +764,10 @@ Advisory, like the recommendations in OPEN-DECISIONS: a route, not a decision.
    check 23 cannot read (riptide #11 and #12, and suite-wide #21's literal rule);
    riptide #10 (the persona-index cap); coinxt #9-#11 (the bounds row #8 left, and
    the mBTC form's truncation) and #3 (the Core residue); torrentxt #21
-   (torrent-quickshare's guards); suite-wide #15 (the itemDelimiter premise); nocloud's optional #4 boot gate; holde-em #3 (more
-   leaf tranches), #10 (the admission list, a table-protocol bump) and the L-sized #1
-   (Level 2 in played hands); box2dxt #4 (platformer polish); suite-wide #14 (the
+   (torrent-quickshare's guards); suite-wide #15 (the itemDelimiter premise);
+   nocloud's optional #4 boot gate; holde-em #3 (more leaf tranches), #10 (the
+   admission list, a table-protocol bump) and the L-sized #1 (Level 2 in played
+   hands); box2dxt #4 (platformer polish); suite-wide #14 (the
    paste's `--full` headless profile, worth running last, just before an engine
    session); and the optional rows. Regenerate the paste, the preflight and the demo
    embeds once, at the end of any batch.
