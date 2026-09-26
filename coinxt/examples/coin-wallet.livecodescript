@@ -804,10 +804,37 @@ private function cxBech32EncodeValuesInner pHrp, pValues, pSpec
    -- emit NOTHING for that position - a string one character short, carrying a
    -- checksum computed over data it does not contain. It would decode to
    -- something, and that something would not be what the caller encoded.
+   --
+   -- WHOLE FIRST, AND DECIDED EXACTLY (2026-09-25). This read
+   -- `tIndex < 0 or tIndex > 31 or tIndex is not trunc(tIndex)`, and every
+   -- one of those comparisons goes through the engine's tolerant rule (suite
+   -- engine note 2.10: two numbers within 10 DBL_EPSILON of the smaller are
+   -- EQUAL, and anything within 2.2e-15 of zero IS zero). So 3.0000000000000004
+   -- was "3" to `is not trunc()`, and -0.000000000000001 passed all three
+   -- tests: values that are not whole, accepted by the one line whose job is
+   -- to refuse them. What they became next is the engine's chunk-index
+   -- conversion (the source rounds a computed index half away from zero, so
+   -- most likely the neighbouring integer; the family interpreter answers an
+   -- EMPTY character for char 0.999999999999999, the fail-open described
+   -- above), and a refusal should not rest on either. `is an integer` has no
+   -- tolerance: the engine source (exec-math.cpp, MCMathEvalIsAnInteger)
+   -- answers it with a plain C `t_double == floor(t_double)` on the converted
+   -- number, and answers false for empty. It is its own `if`, ahead of the
+   -- range, because `or` evaluates BOTH operands (engine note 2.5): trunc()
+   -- of a non-number was a hard engine error inside the old chain, not this
+   -- file's refusal. The texts
+   -- the engine still calls whole ("3.0", "+3", " 3", "3e0", "0x1F") are
+   -- encoded as the number they spell, and the checksum below reads the same
+   -- number, so they cannot split the string from its checksum. Verified
+   -- statically; needs an OXT pass (tools/check-wallet-vectors.py's tier 4
+   -- replays the old line under the engine's rule and lets both through).
    put the number of items of pValues into tCount
    repeat with tI = 1 to tCount
       put item tI of pValues into tIndex
-      if tIndex < 0 or tIndex > 31 or tIndex is not trunc(tIndex) then
+      if tIndex is not an integer then
+         throw "CoinXT: cxBech32EncodeValues: every data value must be a whole number between 0 and 31."
+      end if
+      if tIndex < 0 or tIndex > 31 then
          throw "CoinXT: cxBech32EncodeValues: every data value must be a whole number between 0 and 31."
       end if
    end repeat
@@ -3768,6 +3795,55 @@ function cwBeRead pBytes
    return tValue
 end cwBeRead
 
+function cwAmountAdd pTotal, pAmount, pWho
+   -- pTotal + pAmount for two amounts already held exactly (non-negative
+   -- whole satoshi, each at most 2^53), REFUSED when the sum would pass 2^53.
+   --
+   -- WHY A SUM NEEDS ITS OWN BOUND (2026-09-25). cwLeRead holds every decoded
+   -- amount to 2^53, but a transaction's outputs and a PSBT's inputs are
+   -- ADDED, and two amounts each under the bound (2^52 + 1 twice, both eight
+   -- bytes of somebody else's choosing) sum past it: on the engine the total
+   -- rounds with no error (suite engine note 2.4), and a total that differs
+   -- from the truth by a few satoshi is a fee that does too. The family
+   -- interpreter stops on it; the engine does not.
+   --
+   -- DECIDED ON 32-BIT HALVES, never on the sum. `pTotal + pAmount >
+   -- 9007199254740992` would compare two numbers past 4.5e14, where the
+   -- engine calls integers a few apart EQUAL (engine note 2.10), and would
+   -- compare a sum that has already rounded. Each operand splits into its
+   -- high and low 32 bits - a division by 2^32, exact in binary, then
+   -- trunc - so every number below is under 2^34 and every comparison is
+   -- between integers at least 1 apart at that size: the lows add with a
+   -- carry, the highs add, and the sum fits when the high part is under 2^21
+   -- (2^53 is 2^21 times 2^32) or exactly 2^21 with nothing below it.
+   -- Verified statically; needs an OXT pass (tools/check-wallet-vectors.py
+   -- replays the bound under the engine's rule in tier 4).
+   local tHi, tLo, tAHi, tALo, tOver
+   put cwIntDiv(pTotal, 4294967296) into tHi
+   put pTotal - tHi * 4294967296 into tLo
+   put cwIntDiv(pAmount, 4294967296) into tAHi
+   put pAmount - tAHi * 4294967296 into tALo
+   add tALo to tLo
+   add tAHi to tHi
+   if tLo >= 4294967296 then
+      subtract 4294967296 from tLo
+      add 1 to tHi
+   end if
+   put false into tOver
+   if tHi > 2097152 then
+      put true into tOver
+   else if tHi is 2097152 then
+      if tLo > 0 then
+         put true into tOver
+      end if
+   end if
+   if tOver then
+      throw "wallet-core: " & pWho & ": the amounts add up to more than " & \
+            "2^53 satoshi, which cannot be held exactly."
+   end if
+   return pTotal + pAmount
+end cwAmountAdd
+
 function cwHexIsClean pHex
    -- True when pHex is an even-length run of hex digits, lower or upper case.
    -- Written as its own predicate because every entry point that takes hex
@@ -4881,9 +4957,37 @@ function cwExpandExponent pText
    else if char 1 of tExpTxt is "+" then
       put char 2 to -1 of tExpTxt into tExpTxt
    end if
-   if tExpTxt is "" or tExpTxt is not an integer then
+   -- THE EXPONENT IS DIGITS, AND AT MOST THREE OF THEM COUNT (2026-09-26,
+   -- work-plan row #8's class, found in its review). This asked `is not an
+   -- integer`, which the engine answers no to for twenty nines, so
+   -- `tExpTxt + 0` ROUNDED a twenty-digit exponent to 1e20 with no error
+   -- (suite engine note 2.4; the family interpreter stops on it instead),
+   -- and the exponent then COUNTS the zero-padding loops below (trap 41: a
+   -- loop driven by a count the input supplies): 1e20 turns of `put "0"
+   -- after`, a frozen wallet, and nine digits already a gigabyte of zeros.
+   -- The text comes from a backend's JSON (Electrum's and Core's fee
+   -- replies), so it is whoever answers. A JSON exponent is plain digits
+   -- after one optional sign, and every double's spelling needs at most
+   -- three (1e308 up, 5e-324 down), so leading zeros off and three digits
+   -- left refuses nothing a serializer writes and caps every loop below
+   -- near a thousand turns. "5.0" and "+-5" were integers to the old test
+   -- and are not exponents. Verified statically; needs an OXT pass.
+   put the number of chars of tExpTxt into tCount
+   if tCount is 0 then
       throw "wallet-core: cwExpandExponent: " & quote & pText & quote & \
             " has no whole exponent."
+   end if
+   repeat with tI = 1 to tCount
+      if offset(char tI of tExpTxt, "0123456789") is 0 then
+         throw "wallet-core: cwExpandExponent: " & quote & pText & quote & \
+               " has no whole exponent."
+      end if
+   end repeat
+   put cwDecClean(tExpTxt) into tExpTxt
+   if the number of chars of tExpTxt > 3 then
+      throw "wallet-core: cwExpandExponent: " & quote & (char 1 to 40 of pText) & \
+            quote & " has an exponent past 999, which no number read from " & \
+            "a double carries."
    end if
    put tExpSign * (tExpTxt + 0) into tExp
    put offset(".", tMant) into tPos
@@ -4931,7 +5035,7 @@ function cwExpandExponent pText
 end cwExpandExponent
 
 function cwBtcToSat pText
-   local tText, tSign, tWhole, tFrac, tPos, tI, tCount
+   local tText, tSign, tWhole, tFrac, tPos, tI, tCount, tOver
    put cwTrim(pText) into tText
    if tText is "" then
       throw "wallet-core: cwBtcToSat: an empty amount."
@@ -4977,6 +5081,36 @@ function cwBtcToSat pText
    repeat while the number of chars of tFrac < 8
       put tFrac & "0" into tFrac
    end repeat
+   -- THE WHOLE PART IS BOUNDED BEFORE THE MULTIPLY (2026-09-25). Nothing
+   -- limited its digits, so "100000000000" BTC went into tWhole * 100000000
+   -- and came out a double past 2^53: ROUNDED, with no error, on the engine
+   -- (suite engine note 2.4), where the family interpreter stops on it. The
+   -- bound is the wallet's one exact limit, 2^53 satoshi (cwLeRead's), and it
+   -- is decided on small exact integers, never on the product: leading zeros
+   -- off, at most 8 digits (so tWhole is under 10^8), then tWhole against
+   -- 90071992 and, at exactly that, the eight fraction digits against
+   -- 54740992 - the two halves of 9007199254740992. Every operand is under
+   -- 10^8, far below the 4.5e14 where the engine's comparison starts calling
+   -- integers one apart equal (engine note 2.10). The tests are an `else if`
+   -- chain, never one `or`: `or` evaluates both sides, and a 400-digit
+   -- tWhole compared against anything is the interpreter's hard stop.
+   -- Verified statically; needs an OXT pass.
+   put cwDecClean(tWhole) into tWhole
+   put false into tOver
+   if the number of chars of tWhole > 8 then
+      put true into tOver
+   else if tWhole > 90071992 then
+      put true into tOver
+   else if tWhole is 90071992 then
+      if tFrac > 54740992 then
+         put true into tOver
+      end if
+   end if
+   if tOver then
+      throw "wallet-core: cwBtcToSat: " & quote & pText & quote & \
+            " is more than 90071992.54740992 BTC (2^53 satoshi), the most " & \
+            "a number here holds to the satoshi."
+   end if
    if tSign is "-" then
       return 0 - (tWhole * 100000000 + tFrac)
    end if
@@ -4998,13 +5132,42 @@ function cwFormatAmount pSat, pUnit
 end cwFormatAmount
 
 function cwParseAmount pText, pUnit
-   local tText
+   -- THE SAT FORM IS DIGITS WORTH AT MOST 2^53, CHECKED AS TEXT FIRST
+   -- (2026-09-25). It asked `is an integer`, which the engine answers yes to
+   -- for "1e20" and for twenty nines, and `+ 0` then rounded either one past
+   -- 2^53 with no error (suite engine note 2.4); a digit count cannot bound an
+   -- exponent, so the shape is plain digits (and an optional minus, as
+   -- before). The bound is cwBtcToSat's, 2^53 satoshi, decided by
+   -- cwDecCompare on the DIGITS - length, then digit by digit - so no wide
+   -- number is ever compared (engine note 2.10). "3.0", "+3" and "1e3" were
+   -- whole numbers to the old test and are refused now: a person typing
+   -- satoshi types digits, and an exponent in an amount field is the
+   -- catastrophe cwExpandExponent's note keeps out of cwBtcToSat. Verified
+   -- statically; needs an OXT pass.
+   local tText, tDigits, tSign, tI, tCount
    put cwTrim(pText) into tText
    if pUnit is "sat" then
-      if tText is not an integer then
+      put tText into tDigits
+      put "" into tSign
+      if char 1 of tDigits is "-" then
+         put "-" into tSign
+         put char 2 to -1 of tDigits into tDigits
+      end if
+      put the number of chars of tDigits into tCount
+      if tCount is 0 then
          throw "wallet-core: cwParseAmount: satoshi are whole numbers."
       end if
-      return tText + 0
+      repeat with tI = 1 to tCount
+         if offset(char tI of tDigits, "0123456789") is 0 then
+            throw "wallet-core: cwParseAmount: satoshi are whole numbers."
+         end if
+      end repeat
+      if cwDecCompare(tDigits, "9007199254740992") > 0 then
+         throw "wallet-core: cwParseAmount: " & quote & pText & quote & \
+               " is more than 2^53 satoshi, the most a number here holds " & \
+               "exactly."
+      end if
+      return (tSign & cwDecClean(tDigits)) + 0
    end if
    if pUnit is "mBTC" then
       return cwIntDiv(cwBtcToSat(tText), 1000)
@@ -6169,7 +6332,9 @@ function cwTxDecode pRawHex
    put 0 into tTotal
    repeat with tI = 1 to tCount
       put cwLeRead(cxHexDecode(char tPos to (tPos + 15) of tHex)) into tOutRec["value"]
-      add tOutRec["value"] to tTotal
+      -- the running total is bounded too: each value is under 2^53, their
+      -- sum need not be (cwAmountAdd, 2026-09-25)
+      put cwAmountAdd(tTotal, tOutRec["value"], "cwTxDecode") into tTotal
       put tPos + 16 into tPos
       put cwReadVarInt(tHex, tPos) into tRec
       put tRec["value"] into tLen
@@ -7465,7 +7630,8 @@ function cwPsbtSummary pB64, pNetwork
          put true into tMissing
       else
          put cwSatToBtc(tAmount) && "BTC" after tOut
-         add tAmount to tTotalIn
+         -- bounded as a SUM, not only per input (cwAmountAdd, 2026-09-25)
+         put cwAmountAdd(tTotalIn, tAmount, "cwPsbtSummary") into tTotalIn
       end if
       put "  " & cwPsbtInputType(tMap[tI]) & ", " & tSigCount & \
             " signature(s)" & return after tOut
@@ -7475,7 +7641,7 @@ function cwPsbtSummary pB64, pNetwork
    repeat with tI = 1 to tCount
       put tTx["outputs"] into tOutRec
       put tOutRec[tI] into tOutRec
-      add tOutRec["value"] to tTotalOut
+      put cwAmountAdd(tTotalOut, tOutRec["value"], "cwPsbtSummary") into tTotalOut
       put "unrecognised script" into tAddr
       try
          put cwAddressForScript(pNetwork, tOutRec["script"]) into tAddr
@@ -9730,8 +9896,31 @@ function cwBolt11AmountMsat pAmount
 end cwBolt11AmountMsat
 
 private function cwBitsToInt pValues, pFrom, pTo
-   -- 5-bit values as one big-endian number; stays exact to 53 bits.
-   local tI, tOut
+   -- 5-bit values as one big-endian number.
+   --
+   -- AT MOST TEN VALUES THAT COUNT (2026-09-25). This said "stays exact to 53
+   -- bits" and nothing held it there: an invoice's x (expiry) and c (final
+   -- cltv) fields are as long as the invoice says, up to 1023 values, so an
+   -- eleven-value field is 55 bits, and the engine would have ROUNDED it with
+   -- no error (suite engine note 2.4) where the family interpreter stops. The
+   -- count is of SIGNIFICANT values - leading zero values add no width, and
+   -- BOLT11 only asks a writer, not a reader, for the minimal form - and ten
+   -- of them is 50 bits, under 2^53 with room. It is decided on the count,
+   -- before the first multiply, so no wide number is ever compared. The
+   -- timestamp is seven values and never near it. Verified statically; needs
+   -- an OXT pass.
+   local tI, tOut, tWidth
+   put 0 into tWidth
+   repeat with tI = pFrom to pTo
+      if tWidth > 0 or pValues[tI] > 0 then
+         add 1 to tWidth
+      end if
+   end repeat
+   if tWidth > 10 then
+      throw "wallet-core: an invoice field carries an integer wider than " & \
+            "50 bits (" & tWidth & " significant five-bit values), past what " & \
+            "a number here holds exactly."
+   end if
    put 0 into tOut
    repeat with tI = pFrom to pTo
       put tOut * 32 + pValues[tI] into tOut
@@ -24541,18 +24730,15 @@ on waCoreHead pSocket, pData
       -- RPC port); holds a non-2xx status for the body to explain
       waHttpCheckStatus pData
       put waHttpHeader(pData, "content-length") into tLen
-      if tLen is not an integer then
+      if tLen is empty then
          waNetFail "the reply from " & pSocket & " carried no " & \
                "Content-Length, which Bitcoin Core always sends. Is that " & \
                "port a Bitcoin Core RPC port?"
          exit waCoreHead
       end if
-      if tLen > kWaMaxBody then
-         waNetFail "the backend sent more than " & kWaMaxBody & \
-               " bytes for one answer, which is not a shape this wallet " & \
-               "asked for."
-         exit waCoreHead
-      end if
+      -- digits, bounded before any arithmetic, and at most kWaMaxBody; a
+      -- refusal throws to the catch below (waCheckedLength, 2026-09-25)
+      put waCheckedLength(tLen) into tLen
       if tLen is 0 then
          waCoreBody pSocket, ""
          exit waCoreHead
@@ -26389,8 +26575,22 @@ end waHttpHeader
 function waHexToInt pHex
    -- A hex number the way a chunk-size line spells it: digits until the
    -- first thing that is not one (chunk extensions follow a semicolon).
-   local tI, tCount, tDigit, tOut
+   --
+   -- AT LEAST ONE DIGIT, AND AT MOST EIGHT THAT COUNT (2026-09-25). Nothing
+   -- bounded the digits, so a size line of seventeen f's went through
+   -- tOut * 16 past 2^53 and the engine ROUNDED it with no error (suite
+   -- engine note 2.4) where the family interpreter stops; and a line with
+   -- no hex digit at all read as 0, which is the LAST chunk, so a malformed
+   -- size line ended the body early and delivered what had come so far as
+   -- the whole answer. Leading zeros add no width; eight significant digits
+   -- is under 2^32, far below both 2^53 and any size the caller then
+   -- compares against kWaMaxBody. Both refusals throw, to the caller's
+   -- catch (waStreamEvent fails the request with the reason). Verified
+   -- statically; needs an OXT pass.
+   local tI, tCount, tDigit, tOut, tRead, tWidth
    put 0 into tOut
+   put 0 into tRead
+   put 0 into tWidth
    put cwLower(cwTrim(pHex)) into pHex
    put the number of chars of pHex into tCount
    repeat with tI = 1 to tCount
@@ -26398,10 +26598,53 @@ function waHexToInt pHex
       if tDigit is 0 then
          exit repeat
       end if
+      add 1 to tRead
+      if tWidth > 0 or tDigit > 1 then
+         add 1 to tWidth
+      end if
+      if tWidth > 8 then
+         throw "the backend sent a chunk size of more than eight hex " & \
+               "digits, past any answer this wallet reads: " & \
+               char 1 to 40 of pHex
+      end if
       put tOut * 16 + tDigit - 1 into tOut
    end repeat
+   if tRead is 0 then
+      throw "the backend sent a chunk-size line with no size in it: " & \
+            char 1 to 40 of pHex
+   end if
    return tOut
 end waHexToInt
+
+private function waCheckedLength pText
+   -- A CONTENT-LENGTH IS DIGITS, A SHORT RUN OF THEM, AND NO MORE THAN ONE
+   -- ANSWER MAY BE (2026-09-25). One handler for both HTTP transports
+   -- (trap 37: a check written in one transport's branch is one the next
+   -- transport does not inherit). waCoreHead asked `is an integer` and then
+   -- `> kWaMaxBody`, waHttpFeed asked `is an integer and >= 0`, and the
+   -- engine answers `is an integer` yes for "1e3", "3.0" and twenty nines,
+   -- rounding the last past 2^53 with no error (suite engine note 2.4). So
+   -- the shape is settled on the TEXT first: digits only, at most nine of
+   -- them (under 10^9, exact, and far below where the engine's comparison
+   -- blurs integers, engine note 2.10), and only then compared with
+   -- kWaMaxBody. The caller has already handled an ABSENT header, whose
+   -- meaning differs per transport. Verified statically; needs an OXT pass.
+   if not waIsDigits(pText) then
+      throw "the backend's reply carried a Content-Length that is not a " & \
+            "length: " & char 1 to 40 of pText
+   end if
+   if the number of chars of pText > 9 then
+      throw "the backend's reply carried a Content-Length of more than " & \
+            "nine digits, past any answer this wallet reads: " & \
+            char 1 to 40 of pText
+   end if
+   if pText > kWaMaxBody then
+      throw "the backend sent more than " & kWaMaxBody & \
+            " bytes for one answer, which is not a shape this wallet " & \
+            "asked for."
+   end if
+   return pText + 0
+end waCheckedLength
 
 command waHttpFeed
    -- THE ESPLORA REPLY DECODER, a phase machine over sWaBuffer that consumes
@@ -26448,8 +26691,16 @@ command waHttpFeed
          put waHttpHeader(sWaHttpHead, "content-length") into tLen
          if tEnc contains "chunked" then
             put "size" into sWaHttpPhase
-         else if tLen is an integer and tLen >= 0 then
-            put tLen into sWaHttpLeft
+         else if tLen is not empty then
+            -- A LENGTH THAT IS THERE IS READ OR REFUSED, never guessed
+            -- (2026-09-25). `tLen is an integer and tLen >= 0` let "1e3"
+            -- and twenty nines through as numbers (the engine rounds the
+            -- second, suite engine note 2.4), and sent "-5" or "abc" to the
+            -- close-delimited branch below, reading a body whose framing the
+            -- reply had got wrong. RFC 9112 calls an invalid Content-Length
+            -- unrecoverable; waCheckedLength throws, and waStreamEvent's
+            -- catch fails the request with the reason.
+            put waCheckedLength(tLen) into sWaHttpLeft
             put "len" into sWaHttpPhase
          else
             put "true" into sWaHttpDrop
@@ -26474,6 +26725,16 @@ command waHttpFeed
          put byte 1 to (tPos - 1) of sWaBuffer into tLine
          waHttpConsume tPos + 1
          put waHexToInt(tLine) into sWaHttpLeft
+         -- a chunk larger than a whole answer may be is refused at its size
+         -- line, not after a megabyte of it has been buffered (2026-09-25);
+         -- waHexToInt has already held it to eight hex digits, so this
+         -- compares two small exact integers
+         if sWaHttpLeft > kWaMaxBody then
+            waNetFail "the backend sent more than " & kWaMaxBody & \
+                  " bytes for one answer, which is not a shape this wallet " & \
+                  "asked for."
+            exit repeat
+         end if
          if sWaHttpLeft is 0 then
             put "trailer" into sWaHttpPhase
          else
@@ -28864,7 +29125,7 @@ command waScRun
       scAssert "the P2PKH dust threshold is 546", cwDustThreshold("p2pkh") is 546
       scAssert "the P2WPKH dust threshold is 294", cwDustThreshold("p2wpkh") is 294
       scAssert "satoshi survive a round trip through BTC", \
-            cwBtcToSat(cwSatToBtc(2100000000000000)) is 2100000000000000
+            waSelfTestSatRoundTrip()
       scAssert "Bitcoin Core's descriptor checksum matches", \
             cwDescriptorChecksum("raw(deadbeef)") is "89f8spxm"
       scAssert "the empty-message magic hash matches", cwMsgDigest("") is \
@@ -28933,6 +29194,27 @@ function waSelfTestAddress pType, pNetwork
    put empty into tRec
    return tAddr
 end waSelfTestAddress
+
+function waSelfTestSatRoundTrip
+   -- The whole supply, 2.1e15 satoshi, out to BTC text and back, compared
+   -- EXACTLY (2026-09-25). This read `cwBtcToSat(cwSatToBtc(...)) is
+   -- 2100000000000000`, and at that size the engine's `is` calls two
+   -- integers up to four apart EQUAL (suite engine note 2.10: within 10
+   -- DBL_EPSILON of the smaller), so a round trip that gained or lost one to
+   -- four satoshi passed the one check that exists to catch it. `div` and
+   -- `mod` 100000000 split the answer into the BTC and the satoshi below
+   -- them, and each half is compared at a size where the engine's rule is
+   -- exact (21000000, and 0). The shape is settled first, as its own `if`:
+   -- `div` on a non-number is an engine error, not a FAIL line. Verified
+   -- statically; needs an OXT pass (tools/check-wallet-vectors.py's tier 4
+   -- replays both forms under the engine's rule).
+   local tSat
+   put cwBtcToSat(cwSatToBtc(2100000000000000)) into tSat
+   if tSat is not an integer then
+      return false
+   end if
+   return (tSat div 100000000) is 21000000 and (tSat mod 100000000) is 0
+end waSelfTestSatRoundTrip
 
 function waSelfTestUriAmount
    local tRec

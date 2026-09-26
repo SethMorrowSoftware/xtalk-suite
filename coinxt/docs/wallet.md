@@ -561,7 +561,7 @@ disjoint from every other library). The groups are:
 | Scripts | `cwPush`, `cwPushLen`, `cwScriptNum`, `cwScriptP2pkh`, `cwScriptP2sh`, `cwScriptP2wpkh`, `cwScriptP2wsh`, `cwScriptP2tr`, `cwRedeemP2shP2wpkh`, `cwScriptP2shP2wpkh`, `cwMultisigScript`, `cwScriptKind`, `cwScriptAsm`, `cwScriptItems`, `cwScriptCheck`, `cwOpReturnScript`, `cwOpReturnData` |
 | Addresses | `cwAddressForScript`, `cwScriptForAddress`, `cwAddressKind`, `cwAddressIsValid`, `cwAddressProblem`, `cwElectrumScripthash` |
 | Derivation | `cwParsePath`, `cwFormatPath`, `cwAccountPath`, `cwFingerprint`, `cwXKeyEncode`, `cwXKeyDecode`, `cwXKeyIsPrivate`, `cwXKeyRespell`, `cwAccountXKey`, `cwChainNode`, `cwAddressAt`, `cwMultisigAddressAt` |
-| Amounts | `cwSatToBtc`, `cwBtcToSat`, `cwFormatAmount`, `cwParseAmount`, `cwExpandExponent` |
+| Amounts | `cwSatToBtc`, `cwBtcToSat`, `cwFormatAmount`, `cwParseAmount`, `cwExpandExponent`, `cwAmountAdd` |
 | Size and fees | `cwVarIntLen`, `cwInputBaseBytes`, `cwInputWitnessBytes`, `cwOutputBytes`, `cwEstimateVsize`, `cwSimpleInputs`, `cwTapscriptInputVsize`, `cwFeeFor`, `cwDustThreshold`, `cwRbfMinFee`, `cwFeeRateLabel` |
 | Coin selection | `cwSelectCoins` |
 | Transactions | `cwTxInput`, `cwTxOutput`, `cwOutpointsHex`, `cwSequencesList`, `cwOutputsHex`, `cwSighash`, `cwSighashTaproot`, `cwSignInput`, `cwSignTaproot`, `cwSignKeyPath`, `cwSignMultisig`, `cwMultisigKeys`, `cwWitnessBytes`, `cwWitnessStackEncode`, `cwWitnessStackDecode`, `cwCompressPubkey`, `cwDerToCompact`, `cwTxSerialize`, `cwTxid`, `cwTxDecode` |
@@ -577,6 +577,20 @@ disjoint from every other library). The groups are:
 | JSON | `cwJsonParse`, `cwJsonType`, `cwJsonCount`, `cwJsonAt`, `cwJsonMember`, `cwJsonKeys`, `cwJsonText`, `cwJsonPath`, `cwJsonGet`, `cwJsonEscape`, `cwJsonString2` |
 | QR | `cwQrVersionFor`, `cwQrCodewords`, `cwQrMatrix`, `cwQrText`, `cwQrBmp` |
 | Lists and bytes | `cwCharIndex`, `cwSameBytes`, `cwListNew`, `cwListAdd`, `cwListCount`, `cwLeBytes`, `cwBeBytes`, `cwLeRead`, `cwBeRead`, `cwReverseBytes`, `cwHexIsClean`, `cwHexCompare`, `cwSortHexList`, `cwLower`, `cwUpper`, `cwTrim`, `cwB64Encode`, `cwB64Decode`, `cwStripWhitespace`, `cwVarIntHex`, `cwHexListHas`, `cwSigsList`, `cwWifInfo`, `cwMnemonicStrength`, `cwMnemonicWordCount`, `cwUnixDate`, `cwVersion` |
+
+**The exact limit is 2^53 satoshi** (about 90.07 million BTC, more than four
+times the supply), because an engine number is a double. These integers are
+bounded before any arithmetic and refused past it, never rounded: `cwLeRead` /
+`cwBeRead` on the bytes, `cwBtcToSat` on its whole part, `cwParseAmount`'s
+satoshi form on its digits (no exponents), BOLT11's `x` and `c` fields at ten
+significant 5-bit values, a transaction's outputs or a PSBT's inputs as a SUM
+(`cwAmountAdd`, decided on 32-bit halves), and a JSON number's exponent in
+`cwExpandExponent` at three digits. The mBTC form reads through `cwBtcToSat`,
+so it stops at 90071992.54740992 mBTC. That is not yet every integer the
+wallet reads: the numbers a backend reports (a coin's value and vout, a height)
+and the wallet's own sums of coin values reach arithmetic unbounded. The
+bounds from 2026-09-25 and 2026-09-26 are verified statically; needs an OXT
+pass.
 
 Errors are thrown strings beginning `wallet-core: `, matching CoinXT's own
 convention. Two handlers answer a question instead of throwing, for the same

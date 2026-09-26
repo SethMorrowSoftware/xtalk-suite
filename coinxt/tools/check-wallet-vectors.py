@@ -86,6 +86,9 @@ MEMBER = os.path.dirname(HERE)
 
 CORE = os.path.join(MEMBER, "examples", "wallet-core.livecodescript")
 COIN = os.path.join(MEMBER, "src", "coinxt.livecodescript")
+# read, never run, by this gate: tier 4 lifts the boot self-check's round
+# trip out of it (check_exact_integer_fixtures) and pins its scAssert line
+WALLET = os.path.join(MEMBER, "examples", "coin-wallet.livecodescript")
 
 
 def _load(name, path):
@@ -1625,6 +1628,205 @@ def check_wide_reads(c, ip):
          read("cwPsbtInputAmount", [utxo(top + 1)]), refusal("cwLeRead"))
 
 
+def check_exact_integers(c, ip):
+    """Work-plan row #8 (2026-09-25): every integer this layer, or the library
+    under it, takes from TEXT or BYTES is bounded before the arithmetic, and
+    every bound is decided on small exact integers.
+
+    The engine rounds a number past 2^53 with no error (suite engine note
+    2.4) and calls two numbers within 10 DBL_EPSILON of the smaller EQUAL
+    (2.10), so a bound checked against a wide value, or a whole-number test
+    written as `X is trunc(X)`, can be let through on an engine by the very
+    comparison meant to refuse it. Tier 4 re-runs this whole function under
+    the engine's rule and the two margin models, so no answer here may move
+    under any of them. Every call goes through run(), which turns a refusal
+    into its text and anything else into a plain answer, so one vector that
+    moved cannot end the run. Both directions each time (trap 16): the bound
+    itself answers, one past it is refused.
+    """
+    import base64 as _b64
+    import json as _json
+    call = ip.call
+    c.note("\nexact integers: bounds decided before the arithmetic (row #8)")
+    top = 2 ** 53
+
+    def run(name, args):
+        try:
+            return call(name, args)
+        except LCS.Thrown as thrown:
+            return "refused: %s" % thrown.msg
+        except LCS.Imprecise:
+            return "let past 2^53 (the interpreter's stop fired)"
+        except Exception as exc:                        # noqa: BLE001
+            return "stopped: %s: %s" % (type(exc).__name__, str(exc)[:80])
+
+    # ---- (a) the library's bech32 data values: whole, decided exactly ------
+    # `tIndex is not trunc(tIndex)` went through the engine's tolerant `is`;
+    # tier 4's fixture (check_exact_integer_fixtures) replays that old line
+    # and lets the first three through under the engine's rule. The last two
+    # were refused on the engine only as an error (trunc() of a non-number)
+    # or not at all (an empty item converts to 0 there).
+    whole = ("refused: CoinXT: cxBech32EncodeValues: every data value must be "
+             "a whole number between 0 and 31.")
+    three = run("cxBech32EncodeValues", ["bc", "0,3", "bech32"])
+    c.ck("cxBech32EncodeValues encodes 0,3", three,
+         CR.bech32_encode("bc", [0, 3], "bech32"))
+    for label, values in (
+            ("a value one ulp above 3 (3.0000000000000004)", "0,3.0000000000000004"),
+            ("a value within 2.2e-15 below zero (-1e-15)", "0,-0.000000000000001"),
+            ("a value one ulp above 31", "0,31.000000000000004"),
+            ("an EMPTY value", "0,,1"),
+            ("a value that is not a number", "0,x")):
+        c.ck("cxBech32EncodeValues refuses %s by name" % label,
+             run("cxBech32EncodeValues", ["bc", values, "bech32"]), whole)
+    # the spellings the engine calls whole (`is an integer` is true for them
+    # on the engine and here) encode as the number they spell: the character
+    # and the checksum read the same number, so the string cannot come apart
+    # from its checksum
+    for alias in ("3.0", "+3", "3e0"):
+        c.ck("0,%s encodes exactly as 0,3" % alias,
+             run("cxBech32EncodeValues", ["bc", "0," + alias, "bech32"]), three)
+
+    # ---- (c) cwBtcToSat: the whole part, bounded before the multiply --------
+    def over_btc(text):
+        return ("refused: wallet-core: cwBtcToSat: \"%s\" is more than "
+                "90071992.54740992 BTC (2^53 satoshi), the most a number here "
+                "holds to the satoshi." % text)
+
+    for text, want in (("90071992.54740992", top), ("90071992.5474099", top - 2),
+                       ("90071991.99999999", 9007199199999999),
+                       ("-90071992.54740992", -top),
+                       ("0000000000000000000000001.5", 150000000)):
+        c.ck("%s BTC is %d satoshi, exactly" % (text, want),
+             run("cwBtcToSat", [text]), want)
+        c.ck("and the oracle agrees about %s" % text, REF.btc_to_sat(text), want)
+    for text in ("90071992.54740993", "90071993", "100000000000",
+                 "99999999999999999999.5", "-90071992.54740993"):
+        c.ck("%s BTC is refused before the multiply, by name" % text,
+             run("cwBtcToSat", [text]), over_btc(text))
+        try:
+            REF.btc_to_sat(text)
+            c.ck("and the oracle refuses %s too" % text, "accepted", "refused")
+        except ValueError:
+            c.ck("and the oracle refuses %s too" % text, "refused", "refused")
+    # the mBTC form reads its text through cwBtcToSat, so it has the same
+    # ceiling counted in mBTC: 90071992.54740992 of them, 2^53 / 1000 satoshi
+    c.ck("90071992.54740992 mBTC is the most the mBTC form reads",
+         run("cwParseAmount", ["90071992.54740992", "mBTC"]), top // 1000)
+    c.ck("and one past it is refused by cwBtcToSat's bound",
+         run("cwParseAmount", ["90071992.54740993", "mBTC"]),
+         over_btc("90071992.54740993"))
+
+    # ---- (c) cwParseAmount's satoshi form: digits, at most 2^53 --------------
+    for text, want in (("546", 546), (" 9007199254740992 ", top), ("-5", -5),
+                       ("0", 0), ("00000000000000000000000000042", 42)):
+        c.ck("%r satoshi reads as %d" % (text, want),
+             run("cwParseAmount", [text, "sat"]), want)
+    for text in ("9007199254740993", "99999999999999999999"):
+        c.ck("%s satoshi is refused, compared as digits" % text,
+             run("cwParseAmount", [text, "sat"]),
+             "refused: wallet-core: cwParseAmount: \"%s\" is more than 2^53 "
+             "satoshi, the most a number here holds exactly." % text)
+    for text in ("1e3", "3.0", "+3", "", "-", "abc", "1 2", "0x10"):
+        c.ck("%r is not a satoshi amount: digits only" % text,
+             run("cwParseAmount", [text, "sat"]),
+             "refused: wallet-core: cwParseAmount: satoshi are whole numbers.")
+
+    # ---- (c) the same class, found in review: cwExpandExponent's exponent ---
+    # (2026-09-26) A backend's JSON number (Electrum's and Core's fee replies)
+    # reaches cwExpandExponent, whose exponent went through `is an integer`
+    # and `+ 0` with no digit bound AND then counted the zero-padding loops:
+    # twenty digits rounded to 1e20 on the engine (suite engine note 2.4), a
+    # loop no one would see the end of, where this interpreter stops instead.
+    # Digits only now, at most three that count, which every double's
+    # spelling fits. The positives are checked against Python's Decimal, an
+    # independent way to move a decimal point (no gate pinned this handler
+    # before). Both directions, and the boundary (trap 16).
+    from decimal import Decimal as _Dec
+    for text in ("4.22e-06", "1e-05", "1.5E+3", "-2.5e-3", "1.50e1", "1e-0005",
+                 "1e0000000000000000000005", "1e308", "5e-324", "1e999", "1e-999"):
+        c.ck("cwExpandExponent(%r) moves the point where Decimal does" % text,
+             run("cwExpandExponent", [text]), format(_Dec(text), "f"))
+    # (a mutant that drops the bound must FINISH here, so the widest is five
+    # digits: the old loop ran 12345 turns for it, fast headlessly, and would
+    # have run 123456789 for a nine-digit one, which reads as a hung gate)
+    for text in ("1e1000", "1e-1000", "1e99999999999999999999", "2.5E+12345"):
+        c.ck("cwExpandExponent refuses %r: an exponent past 999, before any "
+             "arithmetic or loop" % text, run("cwExpandExponent", [text]),
+             "refused: wallet-core: cwExpandExponent: \"%s\" has an exponent past "
+             "999, which no number read from a double carries." % text)
+    for text in ("1e5.0", "1e+-5", "1e+", "1e 5"):
+        c.ck("cwExpandExponent refuses %r: an exponent is digits" % text,
+             run("cwExpandExponent", [text]),
+             "refused: wallet-core: cwExpandExponent: \"%s\" has no whole "
+             "exponent." % text)
+
+    # ---- (c) BOLT11's x and c fields: at most ten significant values ----------
+    wide_msg = ("refused: wallet-core: an invoice field carries an integer wider "
+                "than 50 bits (11 significant five-bit values), past what a "
+                "number here holds exactly.")
+    c.ck("cwBitsToInt reads ten 5-bit values of 31 as 2^50 - 1",
+         run("cwBitsToInt", [lst([31] * 10), 1, 10]), 2 ** 50 - 1)
+    c.ck("and five leading zero values add no width",
+         run("cwBitsToInt", [lst([0] * 5 + [31] * 10), 1, 15]), 2 ** 50 - 1)
+    c.ck("eleven significant values are refused, even where the value would fit",
+         run("cwBitsToInt", [lst([1] + [0] * 10), 1, 11]), wide_msg)
+    with open(BOLT11_VECTORS, encoding="utf-8") as fh:
+        inv = _json.load(fh)["valid"][0]["invoice"]
+    hrp, _spec, values = REF.bech32_decode_long(inv, 65535)
+    for tag in ("x", "c"):
+        # the field goes in ahead of the rest, so the reader meets it before
+        # the signature it invalidates: the refusal must be the width's
+        wide = values[:7] + [CR.CHARSET.index(tag), 0, 11] + [31] * 11 + values[7:]
+        bad = REF.bech32_encode_long(hrp, wide, "bech32")
+        c.ck("an invoice whose %s field is 55 bits wide is refused before the "
+             "multiply, by name" % tag, run("cwBolt11Decode", [bad]), wide_msg)
+        try:
+            REF.bolt11_decode(bad)
+            c.ck("and the oracle refuses that %s field too" % tag, "accepted", "refused")
+        except ValueError:
+            c.ck("and the oracle refuses that %s field too" % tag, "refused", "refused")
+
+    # ---- (d) a SUM of decoded amounts, bounded as a sum ----------------------
+    def sum_msg(who):
+        return ("refused: wallet-core: %s: the amounts add up to more than 2^53 "
+                "satoshi, which cannot be held exactly." % who)
+
+    for a, b in ((top - 1, 1), (top, 0), (0, top), (2 ** 52, 2 ** 52),
+                 (2 ** 32 - 1, top - 2 ** 32 + 1), (123456789, 987654321)):
+        c.ck("cwAmountAdd(%d, %d) is exact" % (a, b),
+             run("cwAmountAdd", [a, b, "x"]), a + b)
+    for a, b in ((top, 1), (top - 1, 2), (2 ** 52 + 1, 2 ** 52 + 1),
+                 (2 ** 32, top - 2 ** 32 + 1), (top, top)):
+        c.ck("cwAmountAdd(%d, %d) is refused" % (a, b),
+             run("cwAmountAdd", [a, b, "x"]), sum_msg("x"))
+    spk = bytes.fromhex("0014" + "75" * 20)
+    ins = [("aa" * 32, 0, 0xFFFFFFFD)]
+    half = 2 ** 52 + 1
+    two = REF.tx_serialize(2, ins, [(half, spk), (half, spk)], 0, [b""], None).hex()
+    c.ck("cwTxDecode refuses two outputs of 2^52 + 1: each fits, the total "
+         "does not", run("cwTxDecode", [two]), sum_msg("cwTxDecode"))
+    edge = REF.tx_serialize(2, ins, [(top - 1, spk), (1, spk)], 0, [b""], None).hex()
+    got = run("cwTxDecode", [edge])
+    c.ck("and reads outputs that total exactly 2^53",
+         got["outputtotal"] if isinstance(got, dict) else got, top)
+    ins2 = [("aa" * 32, 0, 0xFFFFFFFD), ("bb" * 32, 1, 0xFFFFFFFD)]
+
+    def psbt(amount):
+        raw = REF.psbt_create(2, ins2, [(1000, spk)], 0,
+                              in_meta={0: {"witness_utxo": (amount, spk)},
+                                       1: {"witness_utxo": (amount, spk)}})
+        return _b64.b64encode(raw).decode("ascii")
+
+    c.ck("cwPsbtSummary refuses two inputs of 2^52 + 1: the total in is "
+         "bounded as a sum", run("cwPsbtSummary", [psbt(half), "mainnet"]),
+         sum_msg("cwPsbtSummary"))
+    got = run("cwPsbtSummary", [psbt(2 ** 52), "mainnet"])
+    c.ck("and summarises two inputs that total exactly 2^53, fee and all",
+         isinstance(got, str) and ("(%d sat)" % (top - 1000)) in got,
+         True)
+
+
 def check_messages(c, ip):
     call = ip.call
     c.note("\nsigned messages, URIs and descriptors")
@@ -2958,6 +3160,119 @@ def check_tolerance_fires(c):
          ("refused", "refused", False))
 
 
+# ROW #8'S TWO OLD LINES (2026-09-25), as fixtures never shipped: the library's
+# bech32 value guard and the wallet boot self-check's round trip, each as it
+# stood. They are how this tier proves the engine's rule lets through what the
+# shipped replacements refuse - both lines were green under IEEE, which is
+# every tool here.
+_OLD_EXACT_LINES = """
+function oldBech32ValueGuard pValue
+   if pValue < 0 or pValue > 31 or pValue is not trunc(pValue) then
+      return "refused"
+   end if
+   return "let through"
+end oldBech32ValueGuard
+
+function oldSatRoundTrip
+   return cwBtcToSat(cwSatToBtc(2100000000000000)) is 2100000000000000
+end oldSatRoundTrip
+"""
+
+
+class _DivModExpr(LCS._Expr):
+    """`div` and `mod`, which coin-wallet uses and the base interpreter does
+    not model, the way riptide's boot runner models them (check-demo-boot.py
+    DemoExpr.p_mul, which check-wallet-boot.py runs the real stack under):
+    integer division and its remainder, exact below 2^53. Only p_mul is
+    restated, so p_cmp and _eq stay the base's, which is what lets
+    _tolerant_compare reach this class too."""
+
+    def p_mul(self):
+        v = self.p_unary()
+        while True:
+            self.ws()
+            if self.i < len(self.s) and self.s[self.i] in "*/":
+                op = self.s[self.i]
+                self.i += 1
+                r = self.p_unary()
+                v = LCS._n(v) * LCS._n(r) if op == "*" else LCS._n(v) / LCS._n(r)
+                continue
+            m = LCS._rxi(r'(div|mod)\b').match(self.s[self.i:])
+            if m:
+                self.i += len(m.group(1))
+                r = self.p_unary()
+                a, b = LCS._n(v), LCS._n(r)
+                v = int(a // b) if m.group(1).lower() == "div" else a - b * int(a // b)
+                continue
+            return v
+
+
+class _DivModInterp(LCS.Interp):
+    def eval_expr(self, expr, env):
+        return _DivModExpr(self, env).parse(expr)
+
+
+def check_exact_integer_fixtures(c):
+    """MUTATION for row #8, in tier 4's shape. Each old line is replayed under
+    exact IEEE and under every candidate rule: IEEE refuses what the line
+    meant to refuse (which is why every headless gate was green), and the
+    ENGINE'S rule lets it through - so the model sees the class. The shipped
+    replacements must answer the same under every rule. The round trip is
+    lifted out of the SHIPPED coin-wallet source, and its scAssert line is
+    pinned to it, so a revert of either half fails here."""
+    wallet = open(WALLET, encoding="utf-8").read()
+    m = re.search(r'^function waSelfTestSatRoundTrip\b.*?^end waSelfTestSatRoundTrip\b',
+                  wallet, re.S | re.M)
+    c.ck("coin-wallet carries waSelfTestSatRoundTrip", m is not None, True)
+    helper = m.group(0) if m else ""
+    boot = re.search(r'scAssert "satoshi survive a round trip through BTC", \\\n'
+                     r'\s*(.*)\n', wallet)
+    c.ck("the boot self-check's round trip asks waSelfTestSatRoundTrip(), not "
+         "`is` at 2.1e15", boot.group(1).strip() if boot else "(no such scAssert)",
+         "waSelfTestSatRoundTrip()")
+    c.ck("and no `is 2100000000000000` is left in the stack",
+         "is 2100000000000000" in wallet, False)
+
+    guard = LCS.Interp(_OLD_EXACT_LINES)
+    near = ("3.0000000000000004", "-0.000000000000001", "31.000000000000004")
+
+    def guard_answers():
+        return [guard.call("oldBech32ValueGuard", [v]) for v in near]
+
+    def trip(off):
+        stubs = ("function cwSatToBtc pSat\n   return \"21000000.00000000\"\n"
+                 "end cwSatToBtc\n\nfunction cwBtcToSat pText\n   return %d\n"
+                 "end cwBtcToSat\n" % (2100000000000000 + off))
+        fixture = _DivModInterp(helper + "\n\n" + stubs + _OLD_EXACT_LINES)
+        def truth(v):
+            return v is True or v == "true"
+        return (truth(fixture.call("oldSatRoundTrip", [])),
+                truth(fixture.call("waSelfTestSatRoundTrip", [])))
+
+    offsets = (-5, -4, -1, 0, 1, 4, 5)
+    exact = [(off == 0, off == 0) for off in offsets]
+    c.ck("exact IEEE refuses all three near-integers at the old bech32 guard "
+         "(green headlessly)", guard_answers(), ["refused"] * 3)
+    c.ck("exact IEEE: the old round trip and the shipped one both see every "
+         "satoshi of error", [trip(off) for off in offsets], exact)
+    for index, (label, same, _old) in enumerate(TOLERANCE_MODELS):
+        restore = _tolerant_compare(same)
+        try:
+            guards = guard_answers()
+            trips = [trip(off) for off in offsets]
+        finally:
+            restore()
+        if index == 0:
+            c.ck("under %s the old bech32 guard lets all three through (the "
+                 "old line's defect, reproduced)" % label, guards,
+                 ["let through"] * 3)
+            c.ck("and the old round trip is blind to an error of 1 to 4 satoshi "
+                 "at 2.1e15, and sees 5; the shipped one sees every one",
+                 trips, [(abs(off) <= 4, off == 0) for off in offsets])
+        c.ck("under %s the shipped round trip answers as exact IEEE does" % label,
+             [t[1] for t in trips], [off == 0 for off in offsets])
+
+
 def check_tolerance_models(c, ip, run):
     """Re-run `run` under every candidate rule. Failures are reported against
     THIS tier, naming the rule that moved them, and in the terse output the
@@ -3035,6 +3350,11 @@ def main(argv):
                 check_audit_2026_09_01(ck, interp)
                 check_script_framing(ck, interp)
                 check_wide_reads(ck, interp)
+                check_exact_integers(ck, interp)
+
+            def wide_integers(ck, interp):
+                check_wide_reads(ck, interp)
+                check_exact_integers(ck, interp)
 
             run_all(c, ip)
             c.note("re-running the whole set with `is` and `offset()` folded "
@@ -3048,7 +3368,8 @@ def main(argv):
             c.note("re-running %s under each candidate engine comparison rule"
                    % ("the whole set" if every else "the wide-integer vectors"))
             check_tolerance_fires(c)
-            check_tolerance_models(c, ip, run_all if every else check_wide_reads)
+            check_exact_integer_fixtures(c)
+            check_tolerance_models(c, ip, run_all if every else wide_integers)
 
     if c.problems:
         print("check-wallet-vectors: FAILED")

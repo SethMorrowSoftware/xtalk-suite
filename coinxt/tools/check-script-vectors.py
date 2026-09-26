@@ -24,7 +24,11 @@ LOGIC error is found here, in CI, instead of in a scarce engine session.
 Two tiers, so it is useful in both environments:
   1. CONSTANTS, always, no compiler needed. The alphabets, the generator
      constants, the bech32m constant and the version bytes are extracted from
-     the script text and compared against the reference.
+     the script text and compared against the reference. Beside them (1b,
+     2026-09-25) the one handler of examples/coinxt-demo.livecodescript that
+     decides an integer, cdWholeField, is lifted out and run, and the demo's
+     build handlers are read to prove every counter goes through it: no
+     other gate runs the demo.
   2. VECTORS, when a C compiler is available: the whole encoder surface driven
      through the interpreter against BIP-173, BIP-350, EIP-55, the RLP
      yellow-paper examples and a Base58Check worked example.
@@ -305,6 +309,117 @@ def check_constants(c, text):
     want = [0x3B6A57B2, 0x26508E6D, 0x1EA119FA, 0x3D4233DD, 0x2A1462B3]
     c.ck("the bech32 polymod generator constants match BIP-173",
          [int(x) for x in gen.group(1).split(",")] if gen else None, want)
+
+
+# -------------------------------------------------------------------- tier 1b
+DEMO = os.path.join(ROOT, "examples", "coinxt-demo.livecodescript")
+
+
+def check_demo_fields(c):
+    """coinxt-demo's integer fields (work-plan row #8, 2026-09-25).
+
+    The demo is not run by any gate, and its build handlers read five
+    Ethereum counters, two satoshi amounts and an output index straight from
+    fields. They asked `is an integer` (the vout nothing at all), which the
+    engine answers yes for "1e20" and for twenty nines, and the arithmetic
+    after it (cxHexOfInt, cxUIntToBytesLE) rounded either past 2^53 with no
+    error (suite engine note 2.4), so a signed transaction could carry a
+    nonce other than the one typed. Every counter now goes through
+    cdWholeField, which is lifted out of the SHIPPED demo and run here:
+    digits only, at most fifteen, decided on the text before any number
+    exists. The build handlers are then read, every field they read found
+    by the scan, to prove each one is a counter routed through it or text
+    named with a reason, and that none is asked `is an integer` any more.
+    No compiler needed; this tier runs where tier 2 SKIPs.
+    """
+    c.note("\ncoinxt-demo's integer fields (no compiler needed)")
+    text = open(DEMO, encoding="utf-8").read()
+    m = re.search(r'^function cdWholeField\b.*?^end cdWholeField\b', text, re.S | re.M)
+    c.ck("coinxt-demo carries cdWholeField", m is not None, True)
+    if m is None:
+        return
+    ip = LCS.Interp(m.group(0))
+
+    def run(value):
+        try:
+            return ip.call("cdWholeField", [value, "the nonce"])
+        except LCS.Thrown as thrown:
+            return "refused: %s" % thrown.msg
+        except LCS.Imprecise:
+            return "let past 2^53 (the interpreter's stop fired)"
+        except Exception as exc:                        # noqa: BLE001
+            return "stopped: %s: %s" % (type(exc).__name__, str(exc)[:60])
+
+    for value, want in (("5", 5), (" 42 \n", 42), ("0", 0),
+                        ("999999999999999", 999999999999999), ("000000000000005", 5)):
+        c.ck("cdWholeField reads %r as %d" % (value, want), run(value), want)
+    for value in ("1000000000000000", "99999999999999999999"):
+        c.ck("cdWholeField refuses %s: more than fifteen digits, before any "
+             "arithmetic" % value, run(value),
+             "refused: the nonce has more than 15 digits, past what this demo "
+             "holds exactly")
+    for value in ("1e20", "3.0", "+3", "-1", "abc", "0x10", "5 6"):
+        c.ck("cdWholeField refuses %r: digits only" % value, run(value),
+             "refused: the nonce must be a whole number, digits only")
+    for value in ("", " \t\n"):
+        c.ck("cdWholeField refuses %r: no number at all" % value, run(value),
+             "refused: the nonce must be a whole number")
+
+    def code_only(body):
+        # comments cut with the string state tracked (root CLAUDE.md,
+        # "comments versus literals"): the handlers' own notes quote the old
+        # `is an integer` form, and a note is not a test
+        out = []
+        for line in body.split("\n"):
+            quoted, cut = False, len(line)
+            for i, ch in enumerate(line):
+                if ch == '"':
+                    quoted = not quoted
+                elif not quoted and line.startswith("--", i):
+                    cut = i
+                    break
+            out.append(line[:cut])
+        return "\n".join(out)
+    # THE FIELDS ARE DERIVED FROM THE HANDLERS, NOT LISTED (2026-09-26). This
+    # tier first named the seven counters it knew of, and the eighth,
+    # cdBtcVout, went on to cxBtcOutpoint as typed ("3.5" encoded as vout 3,
+    # an empty field as vout 0) under a docstring that said every counter was
+    # proven: a hand list is the question already answered (root CLAUDE.md,
+    # "a gate is bounded by the question it asks"). Now every field a build
+    # handler READS must go through cdWholeField or be named below as text,
+    # with the reason; a field written (`into field`) is output. A new field
+    # has to be classified before this passes, and an excuse no handler
+    # reads any more fails as stale.
+    not_counters = {
+        "cdBtcPrev": "a txid: 64 hex, checked by cxBtcOutpoint's decode",
+        "cdBtcDest": "an address, checked by cxSegwitAddressDecode",
+        "cdEthTo": "an address, checked by cdEthAddressHex",
+        "cdEthValue": "wei as HEX (it exceeds 2^53), checked by cdCleanHex",
+    }
+    handlers = ("cdEthBuild", "cdBtcBuild")
+    read_as_text = set()
+    for handler in handlers:
+        body = re.search(r'^command %s\b(.*?)^end %s\b' % (handler, handler),
+                         text, re.S | re.M)
+        c.ck("coinxt-demo carries %s" % handler, body is not None, True)
+        body = code_only(body.group(1)) if body else ""
+        written = set(re.findall(r'\binto field "(cd\w+)"', body))
+        reads = [f for f in re.findall(r'\bfield "(cd\w+)"', body) if f not in written]
+        c.ck("%s reads fields at all (the scan found its target)" % handler,
+             len(reads) > 0, True)
+        for field in sorted(set(reads)):
+            if field in not_counters:
+                read_as_text.add(field)
+                continue
+            c.ck("%s reads field %s through cdWholeField" % (handler, field),
+                 re.search(r'cdWholeField\(field "%s"' % field, body) is not None
+                 and len(re.findall(r'\bfield "%s"' % field, body))
+                 == len(re.findall(r'cdWholeField\(field "%s"' % field, body)),
+                 True)
+        c.ck("and %s asks no field `is an integer`" % handler,
+             re.search(r'\bis (not )?an integer\b', body) is not None, False)
+    c.ck("every field excused as text is still read by a build handler",
+         sorted(set(not_counters) - read_as_text), [])
 
 
 # --------------------------------------------------------------------- tier 2
@@ -1046,6 +1161,26 @@ def check_vectors(c, ip):
          throws("cxBech32EncodeValues", "bc", "0,-1", "bech32"), True)
     c.ck("cxBech32EncodeValues refuses a fractional value",
          throws("cxBech32EncodeValues", "bc", "0,1.5", "bech32"), True)
+    # WHOLE, DECIDED EXACTLY (2026-09-25; work-plan row #8). The guard was
+    # `tIndex is not trunc(tIndex)`, and the engine's `is` calls numbers
+    # within 10 DBL_EPSILON EQUAL (suite engine note 2.10), so the first two
+    # went through there; this interpreter compares the IEEE way and refused
+    # them anyway, which is why check-wallet-vectors.py's tier 4 carries the
+    # proof under the engine's rule. What these pin is the MESSAGE (the file's
+    # own refusal, not an engine error from trunc() of a non-number) and the
+    # empty item, which the engine converts to 0 and the old chain encoded.
+    whole = ("CoinXT: cxBech32EncodeValues: every data value must be a whole "
+             "number between 0 and 31.")
+    for label, values in (("one ulp above 3", "0,3.0000000000000004"),
+                          ("-1e-15, within 2.2e-15 of zero", "0,-0.000000000000001"),
+                          ("an empty item", "0,,1"),
+                          ("a value that is not a number", "0,x")):
+        c.ck("cxBech32EncodeValues refuses %s, by name" % label,
+             throw_text("cxBech32EncodeValues", "bc", values, "bech32"), whole)
+    for alias in ("3.0", "+3", "3e0"):
+        c.ck("0,%s (whole to the engine) encodes exactly as 0,3" % alias,
+             call("cxBech32EncodeValues", "bc", "0," + alias, "bech32"),
+             call("cxBech32EncodeValues", "bc", "0,3", "bech32"))
     # An uppercase HRP used to give a MIXED-case string, which BIP-173 forbids
     # and which this file's own decoder rejects.
     c.ck("an uppercase HRP is refused rather than mixed into the output",
@@ -1499,6 +1634,7 @@ def main(argv):
 
     check_interp_model(c)
     check_constants(c, text)
+    check_demo_fields(c)
 
     cc = find_cc()
     if cc is None:

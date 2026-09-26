@@ -412,6 +412,13 @@ def btc_to_sat(text: str) -> int:
         raise ValueError("a satoshi is the smallest unit: at most 8 decimals")
     frac = (frac + "00000000")[:8]
     v = int(whole) * 100000000 + int(frac)
+    # THE SAME BOUND AS THE SCRIPT (2026-09-25): 2^53 satoshi, the most an
+    # engine double holds exactly (suite engine note 2.4). Python would
+    # answer any size; the engine would round, so the script refuses and
+    # this refuses with it, or a vector past the bound would read as the
+    # script being wrong.
+    if v > 2 ** 53:
+        raise ValueError("more than 2^53 satoshi")
     return -v if neg else v
 
 
@@ -1764,6 +1771,19 @@ def _bits_to_int(values):
     return n
 
 
+def _bits_to_int_bounded(values):
+    """An x or c field as an integer, refused past ten significant 5-bit
+    values (50 bits): the script holds a BOLT11 integer field to what an
+    engine double holds exactly (2026-09-25), and the oracle refuses the same
+    fields so a vector past the bound cannot read as a disagreement."""
+    significant = list(values)
+    while significant and significant[0] == 0:
+        significant.pop(0)
+    if len(significant) > 10:
+        raise ValueError("an integer wider than 50 bits")
+    return _bits_to_int(values)
+
+
 def bolt11_decode(invoice: str) -> dict:
     """The decoded invoice, or raise ValueError(reason)."""
     hrp, spec, values = bech32_decode_long(invoice.strip(), 65535)
@@ -1820,9 +1840,9 @@ def bolt11_decode(invoice: str) -> dict:
         elif ch == "n" and ln == 53 and "payee" not in fields:
             fields["payee"] = _bits_to_bytes(data)[:33].hex()
         elif ch == "x":
-            fields["expiry"] = _bits_to_int(data)
+            fields["expiry"] = _bits_to_int_bounded(data)
         elif ch == "c":
-            fields["cltv"] = _bits_to_int(data)
+            fields["cltv"] = _bits_to_int_bounded(data)
         elif ch == "m" and "metadata" not in fields:
             fields["metadata"] = _bits_to_bytes(data).hex()
         elif ch == "f" and data and "fallback" not in fields:

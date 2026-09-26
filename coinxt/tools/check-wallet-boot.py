@@ -3349,6 +3349,27 @@ def drive(c, ip, world, sandbox):
         c.ck("a reply with no Content-Length is refused with the question to ask",
              "carried no Content-Length" in core_log(), core_log(200))
         ip.call("waNetAbort", [])
+        # A LENGTH IS DIGITS, BOUNDED BEFORE ANY ARITHMETIC (2026-09-25, work
+        # plan row #8). `is an integer` said yes to both of these: twenty
+        # nines went on to `> kWaMaxBody` as a double the engine had rounded
+        # (this interpreter stopped on it instead, outside the script's try),
+        # and "1e3" went on to `read from socket ... for 1e3`. Both are
+        # refused by waCheckedLength now, through the head's catch.
+        for bad_len, why in (("99999999999999999999", "more than nine digits"),
+                             ("1e3", "not a length")):
+            # counted from a mark (trap 28): the reason must be NEW in the log
+            seen = _fld(world, "lg_text").count(why)
+            world.sock = []
+            ip.call("waNetQueue", ["tip", ""])
+            core_pump()
+            world.result = ""
+            ip.call("waSockOpened", ["127.0.0.1:18332"])
+            ip.call("waCoreHead", ["127.0.0.1:18332",
+                                   "HTTP/1.1 200 OK\r\nContent-Length: %s\r\n\r\n" % bad_len])
+            c.ck("a Content-Length of %s is refused before any arithmetic (%s)"
+                 % (bad_len, why), _fld(world, "lg_text").count(why) > seen,
+                 core_log(200))
+            ip.call("waNetAbort", [])
 
         # ---- the idle close, the remote host, the file, the carry ----
         ip.globals["swasock"] = "127.0.0.1:18332"
@@ -4831,6 +4852,41 @@ def drive(c, ip, world, sandbox):
              log_tail(200))
         c.eq("and the tip is untouched", str(ip.globals.get("swatipheight")), "5127812")
         ip.call("waNetAbort", [])
+        # FRAMING NUMBERS ARE BOUNDED BEFORE THE ARITHMETIC (2026-09-25, work
+        # plan row #8). A Content-Length of twenty nines, a chunk size of
+        # seventeen hex digits: `is an integer` and waHexToInt's `* 16` took
+        # both past 2^53, which the engine rounds with no error and this
+        # interpreter stops on. "1e3" was a length to `is an integer`, and a
+        # size line with no hex digit read as 0, the LAST chunk, ending the
+        # body early. Each is a named failure now, and the tip stays put.
+        for label, reply, why in (
+                ("a Content-Length of twenty digits",
+                 "HTTP/1.1 200 OK\r\nContent-Length: 99999999999999999999\r\n\r\n51",
+                 "more than nine digits"),
+                ("a Content-Length of 1e3",
+                 "HTTP/1.1 200 OK\r\nContent-Length: 1e3\r\n\r\n51", "not a length"),
+                ("a chunk size of seventeen hex digits",
+                 "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n"
+                 "fffffffffffffffff\r\n51", "more than eight hex digits"),
+                ("a chunk size past a whole answer",
+                 "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n"
+                 "ffffffff\r\n51", "bytes for one answer"),
+                ("a chunk-size line with no size in it",
+                 "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n"
+                 "zz\r\n\r\n", "no size in it")):
+            # counted from a mark (trap 28): the reason must be NEW in the log
+            seen = _fld(world, "lg_text").count(why)
+            ip.call("waNetQueue", ["tip", ""])
+            ip.call("waNetPump", [])
+            h = int(LCS._n(ip.globals.get("swastream")))
+            world.tor_state[h] = "connected"
+            stream_event(h, "open")
+            stream_event(h, "data", reply)
+            c.ck("%s is a failure named by its reason" % label,
+                 _fld(world, "lg_text").count(why) > seen, log_tail(200))
+            c.eq("and the tip is untouched by %s" % label,
+                 str(ip.globals.get("swatipheight")), "5127812")
+            ip.call("waNetAbort", [])
         # ...and the Network screen says a sync is one rendezvous on both
         priv_tor = str(ip.call("waPrivacyText", []))
         c.ck("the privacy text says both Tor transports run a sync down one stream",

@@ -145,6 +145,23 @@ LAW here, not carried-for-later. Change nothing without a very good reason.
   `cwLeRead` / `cwBeRead` had the form, safe only under an absolute tolerance, and now decide 2^53 as 32 times
   2^48 on the bytes; `check-wallet-vectors.py` tier 4 runs the bound under the engine's rule and two margin
   models. Verified statically; needs an OXT pass.
+- **Bound an integer's digits before the arithmetic, and ask `is an integer`, never `is trunc()`** (2026-09-25,
+  work-plan row #8; engine notes 2.4, 2.10). The engine source decides `is an integer` exactly
+  (`MCMathEvalIsAnInteger`: a C `d == floor(d)` on the converted number, false for empty), while `X is trunc(X)`
+  goes through the tolerant `is`: by that rule `cxBech32EncodeValues` let `3.0000000000000004` and
+  `-0.000000000000001` through (what a non-whole value became after that was the engine's chunk-index rounding; the
+  interpreter answered an EMPTY character, trap 16's fail-open). But `is an integer` says yes to "1e20", "3.0" and
+  twenty nines, so a value headed for arithmetic is settled as TEXT first, digits only and a bounded count:
+  `cwBtcToSat`'s whole part, `cwParseAmount`'s satoshi form, `cwBitsToInt` (BOLT11 `x` / `c`), `cwExpandExponent`'s
+  exponent (three digits, 2026-09-26: it also COUNTED a padding loop, trap 41, from a backend's fee reply),
+  coin-wallet's `waCheckedLength` (both HTTP transports) and `waHexToInt`, and every counter field of coinxt-demo
+  through `cdWholeField` (the output index was missed first; `check-script-vectors.py` tier 1b now derives the fields
+  from the build handlers). A SUM of amounts each under 2^53 is bounded as a sum (`cwAmountAdd`, on 32-bit halves:
+  `cwTxDecode`'s outputs, `cwPsbtSummary`'s ins and outs), and the boot self-check's 2.1e15 round trip compares
+  `div` / `mod` 100000000, where `is` was blind to 1 to 4 sats. Tier 4 of `check-wallet-vectors.py` replays both old
+  lines under the engine's rule. coin-selftest's bech32 refusal lines pass the spec and assert the message: they had
+  passed only two arguments, and the empty spec threw whatever the guard did, so none could fail. Verified
+  statically; needs an OXT pass.
 - Base58 is long division over the byte array (nothing exceeds 58 * 255), not a bit repack.
 - **Look up alphabet characters by BYTE VALUE with `cxCharIndex`, never `offset()` or `is`**: `the caseSensitive`
   defaults to false, and in Base58 `a` and `A` are different digits - the file's "most dangerous line".
@@ -498,9 +515,13 @@ wallet, all four public transports, broadcast, RBF, CPFP, an OP_RETURN note, a s
 a timelock payment (2026-09-01 to 09-03, testnet). Bitcoin spends over the `cx*` sighash and encoder were accepted on
 testnet; a native-P2WPKH broadcast is not recorded, and no EIP-155 / EIP-1559 transaction has been broadcast. Verified
 statically; needs an OXT pass: every ABI 7 binary but the one Windows DLL that loaded on 2026-09-24 (its bitness was not
-recorded, so the `x86-win32` DLL may still never have executed); the wallet surface
+recorded, so the `x86-win32` DLL may still never have executed); `cxBech32EncodeValues`'s 2026-09-25
+whole-number guard (the handler itself ran green on 2026-09-24; the new line has not run, and coin-selftest's
+message-checked refusal lines of 2026-09-26 are what will read it); the wallet surface
 added from 2026-09-04 (the Ordinals and Vault screens, testnet4, BIP-329, BIP-322, silent-payment receiving, Runes,
-BOLT11, the Core backends, the 2026-09-10 fixes, the 2026-09-24 byte-level 2^53 bound in `cwLeRead` / `cwBeRead`);
+BOLT11, the Core backends, the 2026-09-10 fixes, the 2026-09-24 byte-level 2^53 bound in `cwLeRead` / `cwBeRead`,
+the 2026-09-25 exact-integer bounds of work-plan row #8, coinxt-demo's `cdWholeField` and the 2026-09-26
+`cwExpandExponent` bound);
 and what the logs did not reach (the update swap, mainnet Electrum on port 110, the stale-answer skip, paint/pump
 timing, the mixed tip+fees batch, the three corrected menu items, the backend un-marking a coin, Esplora's 400 body in
 the log, CPFP on a foreign transaction, an Electrum-format seed opening real coins, a vault release after its height).
