@@ -3353,8 +3353,9 @@ def check_tolerance_models(c, ip, run):
 # THE INTERPRETER READS NONE OF IT. tools/lcs-interp.py's _eq treats only
 # -?\d+(\.\d+)? as a number and falls back to TEXT past 2^53, so an exponent
 # pair and a 64-digit pair are text to every headless gate; its ordering
-# operators coerce through _n, which REFUSES a 64-digit value (Imprecise) and
-# raises on hex with a letter in it. The family checker's check 23 found 27
+# operators coerce through _n, which REFUSES a 64-digit value (Imprecise, and
+# an OverflowError at +inf) and raises on hex with a letter in it, so it
+# cannot even run a bare hex sort. The family checker's check 23 found 27
 # bare comparisons of hex in this member on 2026-09-26 (wallet-core's eight,
 # carried into coin-wallet, and coin-wallet's own eleven); none had a vector
 # that could fail.
