@@ -166,7 +166,8 @@ first engine run settles it: record the answer here, and reclassify this entry
 only then. The rule holds under both readings, which is why nothing changes
 until it does.
 **Settled for Windows, OBSERVED 2026-09-24** (the D-23 suite paste's first
-run, box2dxt harness v32 folded in, 385/0; runbook section 8): both halves
+run, box2dxt harness v32 folded in, 385/0; runbook section 8; a 64-bit OXT by
+the maintainer's account; the same two lines again on 2026-09-25): both halves
 printed the dictionary's answer. "a caller's tab does NOT reach a called
 handler on Win32 (it saw comma)", and "a Kit call left its caller's delimiter
 alone on Win32 (tab in, tab out)". So on that engine an itemDelimiter set in
@@ -181,13 +182,12 @@ dictionary's claim is platform-independent, so the expectation is the same
 answer everywhere, not yet the evidence.
 **Settled for Linux too, OBSERVED 2026-09-25** (the D-23 suite paste on a
 Linux engine, box2dxt harness v32 folded in, 385/0; runbook section 8; 64-bit
-Kubuntu 24.04 by the maintainer's account, the OXT build not recorded): the
-same two lines, "a caller's tab does NOT reach a called handler on Linux (it
-saw comma)" and "a Kit call left its caller's delimiter alone on Linux (tab
-in, tab out)". Two
-platforms now read the dictionary's answer for the itemDelimiter, both
-directions; the lineDelimiter is still unprobed on any engine, and macOS has
-not run the probe.
+Kubuntu 24.04 and "the latest" OXT by the maintainer's account, its version
+not given): the same two lines, "a caller's tab does NOT reach a called
+handler on Linux (it saw comma)" and "a Kit call left its caller's delimiter
+alone on Linux (tab in, tab out)". Two platforms now read the dictionary's
+answer for the itemDelimiter, both directions; the lineDelimiter is still
+unprobed on any engine, and macOS has not run the probe.
 **What changes:** the reason, not the rule. Save, set, restore still guards
 the rest of the handler that set the delimiter, which is where every
 remaining hazard lives, and it costs nothing where it is redundant. What no
@@ -345,15 +345,17 @@ That rule reproduces all eight readings of the two probe lines and the first
 run's accept. It governs every numeric `=`, `is`, `<>`, `is not`, `<`, `<=`,
 `>` and `>=` whenever both operands convert to numbers, number-like TEXT
 included (2.11). The maintainer's binary was not inspected, so the 10 was the
-source's until the Linux run below read it off an engine.
-**OBSERVED 2026-09-25, on Linux (the D-23 suite paste, the first run of the
-harness's third probe line; runbook section 8; 64-bit Kubuntu 24.04 by the
-maintainer's account, the OXT build not recorded): the constant is 10
-DBL_EPSILON, to the digit.** The first two probe lines read exactly as on
-Windows (`true,false,false,false` and `true,false,16,16`), and the third read
-`true,true,false,true,false,true,true,false`, the engine source's predicted
-reading item for item (exact IEEE comparison would read items 3 to 8
-`true,true,true,true,false,false`):
+source's until the Linux and Windows runs below read it off an engine.
+**OBSERVED 2026-09-25, on Linux and then on Windows (the D-23 suite paste, the
+first two runs of the harness's third probe line; runbook section 8; both a
+64-bit OXT by the maintainer's account, Linux on Kubuntu 24.04 with "the
+latest" OXT, the Windows OXT build not stated): the constant is 10
+DBL_EPSILON, to the digit.** On Linux the first two probe lines read exactly as
+on 2026-09-24's Windows runs (`true,false,false,false` and `true,false,16,16`),
+and the third read `true,true,false,true,false,true,true,false`, the engine
+source's predicted reading item for item (exact IEEE comparison would read
+items 3 to 8 `true,true,true,true,false,false`). The Windows run the same day
+printed all three lines character for character the same:
 - items 7-8: `450359962737050 is 450359962737051` true, and
   `450359962737049 is 450359962737050` false. Under the source's form (the gap
   over the SMALLER operand), the constant lies above 1 / 450359962737050 and at
@@ -366,25 +368,25 @@ reading item for item (exact IEEE comparison would read items 3 to 8
 - items 3-4: `1e-15 > 0` false and `1e-14 > 0` true, the absolute branch near
   zero, its threshold between the two (the source's is 2.2e-15);
 - items 1-2 read how text becomes a number (2.11).
-So on Linux the rule's shape (relative above the near-zero branch, absolute
-within it) and its constant are OBSERVED at every point the three lines
-probe; between those points, and for the comparison operators no line uses,
-the rule stays the source's (DOCUMENTED) and what follows from it INFERRED
-(below). On Windows the two probe lines bracket the relative tolerance
-between 8 and 16 DBL_EPSILON (OBSERVED 2026-09-24), and the 10 there is
-INFERRED: from the same source and from readings identical to Linux's, since
-the third line has not run on Windows.
+So on both platforms the rule's shape (relative above the near-zero branch,
+absolute within it) and its constant are OBSERVED at every point the three
+lines probe; between those points, and for the comparison operators no line
+uses, the rule stays the source's (DOCUMENTED) and what follows from it
+INFERRED (below). On Windows the 2026-09-24 runs had bracketed the relative
+tolerance between 8 and 16 DBL_EPSILON, and until the third line ran there
+the 10 was INFERRED from the source and from Linux; it is now read off that
+engine too. macOS has not run any probe line.
 **What follows** (INFERRED from the rule, bar the two points marked, which the
-Linux run's third probe line read directly):
+third probe line read directly on Linux and on Windows):
 - Two INTEGERS one apart compare EQUAL from N = 450,359,962,737,050 (2^52 / 10,
-  about 2^48.7; OBSERVED on Linux at that N and one below it, and at 2^49 and
+  about 2^48.7; OBSERVED on both at that N and one below it, and at 2^49 and
   2^48), and d apart from about d x 4.5e14; below that every integer
   comparison is exact. Nothing the tree compares honestly lives up there
   (millisecond clocks sit near 1.7e12; satoshi amounts blur within a few sats
   only past 4.5 million BTC; riptide's seqs start at 0 or at the seconds), but
   a wire integer an attacker picks can (riptide/CLAUDE.md trap 9).
 - Near zero the tolerance is absolute: anything within 2.2e-15 of 0 equals 0
-  (OBSERVED on Linux: 1e-15 equals 0, 1e-14 does not).
+  (OBSERVED on Linux and Windows: 1e-15 equals 0, 1e-14 does not).
 - A verdict that rests on a sub-integer gap fails at ANY size. coinxt's wallet
   decoders bounded their accumulators as riptide did
   (`tValue > (9007199254740992 - tByte) / 256`): a margin of 0.0039 at 3.5e13,
@@ -397,9 +399,9 @@ any value whose verdict hangs on a sub-integer difference. A wide integer that
 must be ORDERED exactly (a seq, an amount past 4.5e14) is compared on its
 halves too. A bound that only works in exact arithmetic is a bound the engine
 may not enforce. Both sites were rewritten that way on 2026-09-24: riptide's
-refused 2^53 + 1 on the engine in the second run, and again on Linux on
-2026-09-25; coinxt's (the wallet, which the paste does not carry) is verified
-statically; needs an OXT pass.
+refused 2^53 + 1 on the engine in the second run, and again on Linux and on
+Windows on 2026-09-25; coinxt's (the wallet, which the paste does not carry) is
+verified statically; needs an OXT pass.
 **Gate:** riptide's harness checks the u64 bound from both sides (2^53 parses,
 2^53 + 1 is refused), which is how an engine run caught it, and prints the
 three probe lines above. Headlessly, the interpreter itself compares the IEEE
@@ -422,7 +424,7 @@ apart that begins at 4.5e14.
 
 ### 2.11 `is` compares two number-like TEXTS as numbers, so hex digests and tokens can compare equal when their bytes differ
 **DOCUMENTED 2026-09-25, from the engine source; two of its claims OBSERVED
-the same day on Linux (below), the rest still DOCUMENTED.**
+the same day on Linux and on Windows (below), the rest still DOCUMENTED.**
 `MCLogicIsEqualTo` and `MCLogicCompareTo` (`engine/src/exec-logic.cpp`, the
 code 2.10 cites) first try to turn BOTH operands into numbers, and when both
 turn, compare them as numbers by 2.10's rule; only otherwise do they compare
@@ -435,14 +437,15 @@ text. Text becomes a number through `MCU_strtor8`
 - `set the caseSensitive to true` changes none of this: case matters only on
   the text path, which two number-like operands never reach. Data values go
   through the same parse.
-**OBSERVED 2026-09-25, on Linux** (the D-23 suite paste; runbook section 8):
-riptide's third probe line read `"1e999" is "2e999"` TRUE and
-`"1e5" is "100000"` TRUE, where the text path answers false for both. So two
-texts that overflow a double compare equal, and exponent-form text compares as
-a number. Nothing else here has run: `"0012" is "12"`, a leading `+` or
-whitespace, the `inf` and `nan` spellings, the 384-character limit and the
-`caseSensitive` claim stay DOCUMENTED, and Windows has not run the line.
-holde-em's `heHexEq` pins, green in the same run, name bare `is`'s answer only
+**OBSERVED 2026-09-25, on Linux and then on Windows** (the D-23 suite paste,
+both a 64-bit OXT by the maintainer's account; runbook section 8): riptide's
+third probe line read `"1e999" is "2e999"` TRUE and `"1e5" is "100000"` TRUE
+on both, where the text path answers false for both. So two texts that
+overflow a double compare equal, and exponent-form text compares as a number.
+Nothing else here has run: `"0012" is "12"`, a leading `+` or whitespace, the
+`inf` and `nan` spellings, the 384-character limit and the `caseSensitive`
+claim stay DOCUMENTED, and macOS has not run the line.
+holde-em's `heHexEq` pins, green in the same runs, name bare `is`'s answer only
 in their labels ("bare is: equal on the engine") and assert the helper's, so
 they observe the fix, not this parse.
 A lowercase hex string is number-like when it is all digits, or digits, one
@@ -465,9 +468,10 @@ overflowed about 1 time in 120 each. All were fixed the same day: holde-em
 (v0.25.4, harness 46) compares every hex identifier through `heHexEq` (40
 sites; its 64-zero genesis head had compared equal to "0"), and the other two
 prefix a letter at the comparison. holde-em's half first ran on an engine on
-2026-09-25 (Linux, the suite paste: its `heHexEq` and near-integer pins green
-at v0.25.5 / harness 47, 751/0/5). The quickshare and dht-chat fixes, which the
-paste does not carry: verified statically; needs an OXT pass.
+2026-09-25 (the suite paste on Linux, then on Windows: its `heHexEq` and
+near-integer pins green at v0.25.5 / harness 47, 751/0/5 both times). The
+quickshare and dht-chat fixes, which the paste does not carry: verified
+statically; needs an OXT pass.
 The same parse makes INDEX aliases, and an array key keeps the raw text:
 holde-em checked a wire position as a NUMBER but stored and counted it under
 its raw spelling, so "03", "3.0", "+3", " 3" and "3e0" were position 3 to the
@@ -479,9 +483,9 @@ headlessly; the rest is inferred from `MCU_strtol` and `strtod`. v0.25.5
 index (`heCanonIdx`), keys and compares by it, walks its counts over the
 hand's own range, and binds every per-hand wire to the open hand. Its harness
 pins (`heCanonIdx` refusing every alias of 3, the alias and stale-wire attacks
-of section 15, the walked counts) ran green on an engine on 2026-09-25 (Linux,
-the same run); on a live wire between machines the fix is verified
-statically; needs an OXT pass (runbook row 18).
+of section 15, the walked counts) ran green on an engine on 2026-09-25 (the
+same two runs, Linux and Windows); on a live wire between machines the fix is
+verified statically; needs an OXT pass (runbook row 18).
 **Rule:** never compare a hex digest, a token, a key or any identifier with
 bare `is`, `is not`, `=` or `<>`. Prefix a letter to both sides (no number
 parse accepts `h1e5`), adding `set the caseSensitive to true` where case is
@@ -495,9 +499,9 @@ treats only `-?\d+(\.\d+)?` as a number, so it reads every exponent-form
 pair as text and no headless gate sees this class; holde-em's harness pins
 the genesis head against "0", the one number-like pair the interpreter does
 read as numbers. riptide's harness prints `"1e999" is "2e999"` and `"1e5" is "100000"` in its
-third probe line (2026-09-25), which read the parse on Linux the same day
-(above): a printed diagnostic, not a check, so a different reading on another
-engine would print, not fail.
+third probe line (2026-09-25), which read the parse on Linux and on Windows
+the same day (above): a printed diagnostic, not a check, so a different
+reading on another engine would print, not fail.
 
 ## 3. Control flow
 
@@ -640,14 +644,17 @@ a symptom is not an observation of it.
 | Linux, 2026-08-18 (harness v29) | 73 | not 73 (the assert printed no value) | FAIL |
 | Win32, 2026-08-20 (harness v30) | 24, 73 | 24, 73 | EXACT |
 | Linux, 2026-08-21 (harness v30) | 24, 73 | **0, 0** | write-only: a constant 0 |
-| Win32, 2026-09-24 (harness v32, the suite paste) | 24, 73 | 24, 73 | EXACT, printed as a note |
+| Win32, 2026-09-24 (harness v32, the suite paste; a 64-bit OXT by the maintainer's account) | 24, 73 | 24, 73 | EXACT, printed as a note |
 | Linux, 2026-09-25 (harness v32, the suite paste; 64-bit Kubuntu 24.04 by the maintainer's account) | 24, 73 | **0, 0** | write-only again, printed as a note: "readback does NOT track the write on Linux" |
+| Win32, 2026-09-25 (harness v32, the suite paste; the same 64-bit machine as 2026-09-24, by the maintainer's account) | 24, 73 | 24, 73 | EXACT again, printed as a note: "playLoudness readback is EXACT on Win32" |
 
 It broke v29's exactness assert on Linux, then v30's replacement ORDER assert
 (a high write reads back above a low one) on a healthy Linux engine. Since v31
 the harness asserts only that the value is readable and prints the readback,
 so the 2026-09-25 Linux reading, the same constant 0 as 2026-08-21's, was a
-note on a green run, not a FAIL.
+note on a green run, not a FAIL. The same day's Windows run read back exact
+under the same harness and paste, both engines 64-bit: the split follows the
+platform, not the date, the harness or the bitness.
 **Rule:** `playLoudness` is a REQUEST, not a register: set it and move on, and
 never compare against or compute from the readback, not even its ordering (v31
 asserts only that it is READABLE). **Lesson:** every assertion must print the
