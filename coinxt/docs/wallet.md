@@ -613,14 +613,18 @@ when both parse (the suite's engine note 2.11), so a txid or a key that is all
 digits, or digits-e-digits, is a number there: two exponent-form values both
 overflow to infinity and compare equal, and two 64-digit values agreeing in
 their leading digits tie. `cwSameHex` puts a letter on each side, which keeps
-both on the text path; `cwHexCompare` orders nibble by nibble. Every txid, key
-and PSBT-key comparison in wallet-core and coin-wallet goes through one of the
-two (2026-09-26: the coin tie-break, the multisig, taproot and PSBT key
-matches, the BOLT11 payee check, the broadcast marks and the history rows).
-Tier 5 of `tools/check-wallet-vectors.py` carries the engine's parse as a model
-and fails each fix undone, and the boot self-check's line "two exponent-form
-txids are two values, in hex order" reads both helpers on the engine at every
-open. Verified statically; needs an OXT pass.
+both on the text path; `cwHexCompare` orders nibble by nibble. Every such
+comparison the family checker's check 23 found in wallet-core and coin-wallet
+goes through one of the two (2026-09-26: the coin tie-break, the multisig,
+taproot and PSBT key matches, the BOLT11 payee check, the broadcast marks and
+the history rows). The check reads names, so a few plain-named ones remain
+(the scriptPubKey checks in PSBT signing and BIP-322 verification, the
+unsigned-transaction check in PSBT combining, and two in coin-wallet; the
+suite work plan lists them). Tier 5 of `tools/check-wallet-vectors.py` carries
+the engine's parse as a model and fails each fix undone, and the boot
+self-check's line "two exponent-form txids are two values, in hex order" reads
+both helpers on the engine at every open. Verified statically; needs an OXT
+pass.
 
 ## Running it
 

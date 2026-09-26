@@ -535,9 +535,11 @@ await-slot routing, zero-target tests and prekey content-address check, and
 three riptide harness asserts. Verified statically; needs an OXT pass. The
 sites in holde-em's harness, riptide's library (its content-address checks
 among them) and the coinxt wallet were left to the work changing those files
-(docs/WORK-PLAN.md); the wallet's 27 went through `cwSameHex` and
-`cwHexCompare` on 2026-09-26, and coinxt's `check-wallet-vectors.py` tier 5
-carries this parse as a model that fails each of those fixes undone (verified
+(docs/WORK-PLAN.md); 26 of the wallet's 27 went through `cwSameHex` and
+`cwHexCompare` on 2026-09-26 (the 27th compared two version NUMBERS: a false
+positive, renamed), and coinxt's `check-wallet-vectors.py` tier 5 carries
+this parse as a model (a port of `MCU_strtol` / `MCU_strtor8`, the base-16
+`0x` form included) that fails each of those fixes undone (verified
 statically; needs an OXT pass). It is a NAME heuristic: it narrows the class and cannot
 close it. A hex value in a plain-named variable passes (riptide's
 `tComputed is not tExpected`, the blob content-address check); so does every

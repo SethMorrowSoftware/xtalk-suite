@@ -3362,19 +3362,21 @@ def check_tolerance_models(c, ip, run):
 #
 # SO THIS TIER CARRIES THE PARSE AS A MODEL, the way tier 4 carries the
 # tolerance: _engine_parse_compare swaps `is` and the ordering operators for
-# ones that read an operand as the engine does (decimal digits, an optional
-# point and exponent, overflow to +inf; NOT modelled: the 0x base-16 form,
-# the inf/nan spellings, leading blanks - no hex value spells any of them)
-# and compare two numbers by the engine's tolerance, anything else as text.
-# check_parse_model_fires proves it reads the two recorded parse answers
-# and the fourteen numeric ones, and then plants each OLD spelling back into
-# the shipped source and requires that site's vectors to FAIL under it. The
-# vectors themselves run in every tier (plain, case-folded, the tolerance
-# models) and under this model, and must pass everywhere. The WHOLE set ran
-# under it once, by hand on 2026-09-26 (after the fixes; about 26 minutes):
-# 1866 vectors, none moving, so no other vector here meets a number-like
-# pair on a compare. --all-comparison-rules repeats that. The model upgrades
-# no honesty label: the fixes are verified statically; needs an OXT pass.
+# ones that read an operand as the engine's source does (_mcu_strtor8 below,
+# a port of MCU_strtol and MCU_strtor8: the integer parse with its base-16
+# "0x" form, then strtod over at most 384 characters, blanks skipped) and
+# compare two numbers by the engine's tolerance, anything else as text.
+# check_parse_model_fires proves it reads the two recorded parse answers,
+# six more the source documents, and the fourteen numeric ones, and then
+# plants each OLD spelling back into the shipped source, and each of three
+# ways to break the two helpers, and requires the vectors to FAIL under it.
+# The vectors themselves run in every tier (plain, case-folded, the
+# tolerance models) and under this model, and must pass everywhere. The
+# WHOLE set ran under the first model (a decimal regex) once, by hand on
+# 2026-09-26 (after the fixes; about 26 minutes): 1866 vectors, none moving;
+# see check_parse_model for the run under this port. --all-comparison-rules
+# repeats it. The model upgrades no honesty label: the fixes are verified
+# statically; needs an OXT pass.
 
 # number-like hex: every value below is valid hex AND a number to the engine
 HX_INF_A = "2e" + "9" * 62          # 2e(62 nines): +inf
@@ -3387,7 +3389,117 @@ KEY_B = "02" + "1" * 63 + "2"       # 1 apart at 2.1e64: a tie
 KEY_INF_A = "02" + "1e" + "9" * 62  # 21e(62 nines): +inf
 KEY_INF_B = "03" + "1e" + "9" * 62  # 31e(62 nines): +inf too
 
-_ENGINE_NUMBER_TEXT = re.compile(r"[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?\Z")
+# THE PARSE, PORTED LINE FOR LINE (review, 2026-09-26). The first model here
+# was a decimal regex, and it read "0x" + hex as TEXT - so a cwSameHex that
+# prefixed "0x" instead of a letter, the one wrong prefix engine note 2.11
+# names (and cwSameHex's own comment rules out in words), passed every vector
+# in this tier. The functions below follow libfoundation's MCU_strtol and
+# MCU_strtor8 (src/foundation-typeconvert.cpp, livecode develop-9.6, the file
+# engine note 2.11 cites; DOCUMENTED, not observed): an integer parse first,
+# base 16 after "0x", whose overflow nothing checks (so a 64-hex value keeps
+# its low 32 bits, as an int32_t that wraps, the C compiler's usual answer to
+# signed overflow), octals off (`the convertOctals` defaults to false); only
+# when that fails, C strtod over at most R8L = 384 characters (decimal and
+# hex floats, inf, infinity, nan), refusing a second character of "+" or "-"
+# and an "x" with no hex digit after it. Leading and trailing blanks are
+# skipped. A value that is already a number stays one; an array never is.
+_C_SPACES = " \t\n\v\f\r"
+_HEX_DIGITS = "0123456789abcdefABCDEF"
+_R8L = 384
+_STRTOD_DEC = re.compile(r"[+-]?(?:[0-9]+\.?[0-9]*|\.[0-9]+)(?:[eE][+-]?[0-9]+)?")
+_STRTOD_HEX = re.compile(r"[+-]?0[xX](?:[0-9a-fA-F]+\.?[0-9a-fA-F]*|\.[0-9a-fA-F]+)"
+                         r"(?:[pP][+-]?[0-9]+)?")
+_STRTOD_WORD = re.compile(r"[+-]?(?:inf(?:inity)?|nan(?:\([0-9A-Za-z_]*\))?)", re.I)
+
+
+def _int32(value):
+    value &= 0xFFFFFFFF
+    return value - 0x100000000 if value & 0x80000000 else value
+
+
+def _mcu_strtol(s):
+    """MCU_strtol(span, '\\0', reals=false, octals=false): (value, done,
+    remainder)."""
+    i, n = 0, len(s)
+    while i < n and s[i] in _C_SPACES:
+        i += 1
+    if i == n:
+        return 0, False, ""
+    negative = False
+    if s[i] in "+-":
+        negative = s[i] == "-"
+        i += 1
+    if i == n:
+        return 0, False, ""
+    startlength = n - i
+    base = 10
+    if s[i] == "0" and n - i > 2 and s[i + 1] in "xX":
+        base = 16
+        i += 2
+    value = 0
+    while i < n:
+        ch = s[i]
+        if "0" <= ch <= "9":
+            v = ord(ch) - 48
+            if base < 16 and value > 2147483647 // base - v:
+                return 0, False, ""
+            value = _int32(value * base + v)
+        elif ch in _C_SPACES:
+            while i < n and s[i] in _C_SPACES:
+                i += 1
+            break
+        elif ch == ".":
+            if startlength > 1:
+                i += 1
+                while i < n and s[i] == "0":
+                    i += 1
+                if i == n:
+                    break
+                if s[i] in _C_SPACES:
+                    i += 1
+                    break
+            return 0, False, ""
+        elif base == 16 and "a" <= ch.lower() <= "f":
+            value = _int32(value * base + ord(ch.lower()) - 87)
+        else:
+            return 0, False, ""
+        i += 1
+    if negative:
+        value = _int32(-value)
+    while i < n and s[i] in _C_SPACES:
+        i += 1
+    return value, True, s[i:]
+
+
+def _mcu_strtor8(s):
+    """MCU_strtor8(span, convertoctals=false): the number, or None."""
+    value, done, rest = _mcu_strtol(s)
+    if done:
+        return float(value) if rest == "" else None
+    t = s.lstrip(_C_SPACES)
+    if t == "":
+        return None
+    if len(t) > 1 and ((t[1] in "xX" and (len(t) == 2 or t[2] not in _HEX_DIGITS))
+                       or t[1] in "+-"):
+        return None
+    if len(t) > _R8L:
+        return None
+    m = _STRTOD_HEX.match(t)
+    if m:
+        body = m.group(0)
+        try:
+            num = float.fromhex(body)
+        except OverflowError:
+            num = float("-inf") if body.startswith("-") else float("inf")
+    else:
+        m = _STRTOD_WORD.match(t) or _STRTOD_DEC.match(t)
+        if not m:
+            return None
+        word = m.group(0).lower().split("(")[0]
+        num = float(word)
+    if t[m.end():].strip(_C_SPACES) != "":
+        return None
+    return num
 
 
 def _engine_number(v):
@@ -3397,10 +3509,7 @@ def _engine_number(v):
         return None
     if isinstance(v, (int, float)):
         return float(v)
-    s = str(v)
-    if _ENGINE_NUMBER_TEXT.match(s):
-        return float(s)
-    return None
+    return _mcu_strtor8(str(v))
 
 
 def _engine_parse_compare(same=None):
@@ -3984,9 +4093,48 @@ _HEX_MUTATIONS = (
      'if tSpender is not "" and tSpender is not pRec["txid"] then', _vec_wallet_history),
 )
 
+# THE HELPERS THEMSELVES, BROKEN THE WAY A LATER EDIT COULD BREAK THEM
+# (review, 2026-09-26). The list above undoes each FIX; these break the two
+# helpers every fix leans on, and each must fail too. A "0x" prefix is the
+# wrong letter engine note 2.11 names (a base-16 number whose low 32 bits
+# alone decide): the first model read it as text and passed it. cwHexCompare
+# was never bare, but the boot self-check claims to read it ("in hex order")
+# and that half could be dropped with every vector still green, so its bare
+# spelling must fail both the order vectors and the self-check line.
+_HELPER_LINE = "   put cwMin(the number of chars of tA, the number of chars of tB) into tCount\n"
+_HELPER_BARE_ORDER = ("   if tA < tB then\n      return -1\n   end if\n"
+                      "   if tA > tB then\n      return 1\n   end if\n   return 0\n")
+_HELPER_MUTATIONS = (
+    ("cwSameHex with a 0x prefix, the wrong letter", "core",
+     'return ("h" & pA) is ("h" & pB)', 'return ("0x" & pA) is ("0x" & pB)', _vec_same_hex),
+    ("cwHexCompare comparing the whole texts with bare < and >", "core",
+     _HELPER_LINE, _HELPER_BARE_ORDER + _HELPER_LINE, _vec_hex_order),
+    ("cwHexCompare comparing the whole texts with bare < and >, as the wallet's "
+     "boot self-check reads it", "core-in-wallet",
+     _HELPER_LINE, _HELPER_BARE_ORDER + _HELPER_LINE, _vec_wallet_selftest),
+)
+
 # riptide's third probe line, items 1 and 2: text becoming a number (read
 # TRUE on Linux and on Windows, 2026-09-25)
 _PARSE_READINGS = (('"1e999" is "2e999"', True), ('"1e5" is "100000"', True))
+
+# what the SOURCE says the parse does beyond those two (DOCUMENTED, not
+# observed: no engine has read these). Each separates the port above from
+# the regex it replaced, which read all but the second-to-last differently.
+_SOURCE_PARSE_READINGS = (
+    # base 16 after "0x", its overflow unchecked: the low 32 bits decide
+    ('"0x2e99999999" is "0x1e99999999"', True),
+    ('"0x12" is "18"', True),
+    # blanks are skipped around a number
+    ('" 12 " is "12"', True),
+    # past R8L = 384 characters strtod is never tried, so two different
+    # 385-digit values are text (the regex read both as +inf: equal)
+    ('"%s" is "%s"' % ("1" * 385, "1" * 384 + "2"), False),
+    # strtod's own words: inf is a number, +inf, as 1e999 is
+    ('"inf" is "1e999"', True),
+    # an integer followed by more than blanks is not a number at all
+    ('"12 34" is "12"', False),
+)
 
 
 def _run_quiet(block, target):
@@ -4009,6 +4157,7 @@ def check_parse_model_fires(c):
     try:
         swapped = (LCS._eq is not real[0], LCS._Expr.p_cmp is not real[1])
         parse = [probe.eval_expr(expr, {}) for expr, _want in _PARSE_READINGS]
+        source = [probe.eval_expr(expr, {}) for expr, _want in _SOURCE_PARSE_READINGS]
         numeric = [str(LCS._disp(probe.eval_expr(expr, {})))
                    for expr, _want in _PROBE_READINGS]
     finally:
@@ -4018,6 +4167,9 @@ def check_parse_model_fires(c):
     c.ck("under the engine's parse, riptide's third probe line's items 1-2 read "
          "as the engine read them (Linux and Windows, 2026-09-25)",
          parse, [want for _expr, want in _PARSE_READINGS])
+    c.ck("and the parse reads the source's base-16, blank, R8L, strtod-word and "
+         "remainder cases as MCU_strtor8 answers them (DOCUMENTED, not observed)",
+         source, [want for _expr, want in _SOURCE_PARSE_READINGS])
     c.ck("and the fourteen numeric answers still read as the engine gave them",
          numeric, [want for _expr, want in _PROBE_READINGS])
     c.ck("and the real comparisons are restored afterwards",
@@ -4026,9 +4178,9 @@ def check_parse_model_fires(c):
     core = open(CORE, encoding="utf-8").read()
     wallet = _wallet_own_code(open(WALLET, encoding="utf-8").read())
     coin = open(COIN, encoding="utf-8").read()
-    for label, where, new, old, block in _HEX_MUTATIONS:
+    for label, where, new, old, block in _HEX_MUTATIONS + _HELPER_MUTATIONS:
         text = wallet if where == "wallet" else core
-        c.ck("the shipped %s carries the fix exactly once (%s)"
+        c.ck("the shipped %s carries the line under test exactly once (%s)"
              % ("coin-wallet" if where == "wallet" else "wallet-core", label),
              text.count(new), 1)
         if text.count(new) != 1:

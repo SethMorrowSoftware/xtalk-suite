@@ -176,13 +176,18 @@ LAW here, not carried-for-later. Change nothing without a very good reason.
   record and the raw-tx check. One was a false positive by name (`cwXKeyDecode`'s `tPub` held a version NUMBER:
   renamed); `cwHexListHas`'s inner `is`, invisible to the checker, went the same way. `cwSameHex` is `("h" & a) is
   ("h" & b)` (case folds as `is` folds text). Tier 5 of `check-wallet-vectors.py` models the engine's parse, which
-  the interpreter lacks (it reads exponent form and 64-digit values as TEXT), proves the model on riptide's two
-  recorded parse answers, and fails every fix undone, coin-wallet's through its handlers lifted out of the shipped
-  stack; a key or a txid the shim derives is planted to be number-like. The wallet's boot self-check reads the two
-  helpers at such a pair at every open (`waSelfTestHexCompares`, pure script): the line an engine session will
-  observe. Plain-named hex compares remain the checker's known misses here (`... is not tSpk` in `cwPsbtSign`,
-  `sWaInspectWanted is ...` in `waStoreRawTx`, the SP check's `... is waZeroTxid()`). Verified statically; needs an
-  OXT pass.
+  the interpreter lacks (it reads exponent form and 64-digit values as TEXT): a port of the source's `MCU_strtol` /
+  `MCU_strtor8` (the review's, the same day: the first model, a decimal regex, read `"0x" & hex` as text, where the
+  source reads a base-16 int32 whose low 32 bits alone decide). It proves the model on riptide's two recorded parse
+  answers and six the source documents, and fails every fix undone, coin-wallet's through its handlers lifted out of
+  the shipped stack, and both helpers broken (a `0x` prefix; `cwHexCompare` comparing whole texts, which the boot
+  line's "in hex order" half had been free to drop); a key or a txid the shim derives is planted to be number-like.
+  The wallet's boot self-check reads the two helpers at such a pair at every open (`waSelfTestHexCompares`, pure
+  script): the line an engine session will observe. Plain-named hex compares remain the checker's known misses here,
+  so "every hex compare" is not yet true: `... is not tSpk` (three) in `cwPsbtSign`, `cwScriptP2wpkh(tPub) is not
+  tScript` in `cwBip322Verify`, `tA["unsignedtx"] is not tB["unsignedtx"]` in `cwPsbtCombine` (under the modelled
+  parse, two all-digit unsigned transactions one byte apart MERGE), `sWaInspectWanted is ...` in `waStoreRawTx` and
+  `waSpAfterInspect`'s `... is waZeroTxid()`. Verified statically; needs an OXT pass.
 - Keccak-256 (Ethereum, `0x01` padding) is NOT SHA3-256 (FIPS-202, `0x06`): two shim functions, never aliased. The
   bech32 constant is 1, bech32m's `0x2bc830a3`. An encoder must never emit what its own decoder refuses.
 - **`the itemDelimiter` is global mutable state** (templates/CLAUDE.md rule 5; engine note 2.3). Nine public handlers

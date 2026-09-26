@@ -3926,8 +3926,12 @@ function cwSameHex pA, pB
    -- 0x prefix would not do). Case folds as `is` folds text, which is right
    -- for hex: "AB" and "ab" are the same byte. An ORDER of two hex values is
    -- cwHexCompare's; a case-significant string (Base58, an address) is
-   -- cwSameBytes'. Every hex equality in this layer and in coin-wallet goes
-   -- through here (2026-09-26, the family checker's check 23 found 17).
+   -- cwSameBytes'. Every hex equality the family checker's check 23 found
+   -- in this layer and in coin-wallet goes through here (2026-09-26: its
+   -- sixteen, and cwHexListHas's, which it could not see). It reads NAMES,
+   -- so plain-named compares remain: cwPsbtSign's scriptPubKey checks,
+   -- cwBip322Verify's P2WPKH one, cwPsbtCombine's unsigned transactions and
+   -- two in coin-wallet (the suite work plan's coinxt rows).
    return ("h" & pA) is ("h" & pB)
 end cwSameHex
 
@@ -29277,12 +29281,14 @@ function waSelfTestHexCompares
    -- double, and the engine's bare `is` reads both operands as numbers when
    -- both parse (suite engine note 2.11; "1e999" is "2e999" read TRUE on
    -- Linux and on Windows, 2026-09-25), so it calls these two EQUAL, and
-   -- its `<` cannot order them. Every txid and key compare in wallet-core
-   -- and in this stack now goes through cwSameHex or cwHexCompare; this
-   -- line is where an engine session OBSERVES that the two keep the pair
-   -- apart and in character order, rather than a gate inferring it.
-   -- tools/check-wallet-vectors.py's tier 5 fails it with cwSameHex's
-   -- letter prefix undone, under its model of the engine's parse.
+   -- its `<` cannot order them. Every txid and key compare the family
+   -- checker's check 23 found in wallet-core and in this stack now goes
+   -- through cwSameHex or cwHexCompare (a few plain-named ones it cannot
+   -- see remain: cwSameHex lists them); this line is where an engine
+   -- session OBSERVES that the two keep the pair apart and in character
+   -- order, rather than a gate inferring it. tools/check-wallet-vectors.py's
+   -- tier 5 fails it with cwSameHex's letter prefix undone, and with
+   -- cwHexCompare comparing whole texts, under its model of the parse.
    local tTail, tI, tA, tB
    put "" into tTail
    repeat with tI = 1 to 62

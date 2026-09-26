@@ -702,8 +702,12 @@ function cwSameHex pA, pB
    -- 0x prefix would not do). Case folds as `is` folds text, which is right
    -- for hex: "AB" and "ab" are the same byte. An ORDER of two hex values is
    -- cwHexCompare's; a case-significant string (Base58, an address) is
-   -- cwSameBytes'. Every hex equality in this layer and in coin-wallet goes
-   -- through here (2026-09-26, the family checker's check 23 found 17).
+   -- cwSameBytes'. Every hex equality the family checker's check 23 found
+   -- in this layer and in coin-wallet goes through here (2026-09-26: its
+   -- sixteen, and cwHexListHas's, which it could not see). It reads NAMES,
+   -- so plain-named compares remain: cwPsbtSign's scriptPubKey checks,
+   -- cwBip322Verify's P2WPKH one, cwPsbtCombine's unsigned transactions and
+   -- two in coin-wallet (the suite work plan's coinxt rows).
    return ("h" & pA) is ("h" & pB)
 end cwSameHex
 
