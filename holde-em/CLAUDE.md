@@ -66,7 +66,7 @@ assets/cards/, assets/sounds/  vendored Kenney CC0 art and audio (see each NOTIC
    RECORDS a new total rather than matching the last: the first v45 total,
    2026-09-24, was 721 passed with every extension present, plus the 5
    live-leg skips, and the first v47 total, 2026-09-25, 751 passed with the
-   same 5 (the ledger; no run is recorded at v46).
+   same 5, on Linux and on Windows (the ledger; no run is recorded at v46).
    `kHeHarnessV` is printed in the report header so a stale paste identifies
    itself. Asserts are self-diagnosing: print what was observed against what
    was expected, never a bare FAIL, and write first-contact tests to debug
@@ -209,11 +209,12 @@ itself is catalogued in the suite's
   which is why sections 9 and 21 pin the genesis head against "0". Its twin
   from note 2.10: a whole-number test is `is an integer`, never `is trunc(x)`.
   Those pins and section 5's near-integer raise ran green on an engine on
-  2026-09-25 (Linux, the ledger). They assert what `heHexEq` and the guard
-  answer, never what bare `is` answers (the labels only describe that), so
-  they observe the fix, not the hazard; two of note 2.11's claims (two
-  overflowing texts equal, `"1e5" is "100000"`) were observed the same day
-  by riptide's third probe line, not by this harness.
+  2026-09-25 (Linux and Windows, the ledger). They assert what `heHexEq` and
+  the guard answer, never what bare `is` answers (the labels only describe
+  that), so they observe the fix, not the hazard; two of note 2.11's claims
+  (two overflowing texts equal, `"1e5" is "100000"`) were observed the same
+  day, on both platforms, by riptide's third probe line, not by this
+  harness.
 - **A wire index is canonical TEXT, and a count is walked (v0.25.5).** `"03"`,
   `"3.0"`, `"+3"`, `" 3"` and `"3e0"` are the number 3 to `is`, `<` and a chunk
   index, but five different array keys, so a dealer's aliased commitments once
@@ -230,7 +231,7 @@ itself is catalogued in the suite's
   never reaches it; sender authority is still not re-checked there. An act is
   still replayable at a later turn of the SAME hand (no turn key). The v0.25.5
   pins (sections 11, 15 and 21, the alias attack driven end to end among
-  them) ran green on an engine on 2026-09-25 (Linux, the ledger).
+  them) ran green on an engine on 2026-09-25 (Linux and Windows, the ledger).
 - **Both operands are evaluated (engine note 2.5).** `heBetApply`'s refusal
   `X is not a number or X is not trunc(X)` evaluated `trunc("abc")`; it is
   nested now, and the nested form ran green on the engine on 2026-09-24
@@ -388,8 +389,8 @@ bare `put tRpt`, so it writes `msg`; deliberate, harmless).
 The 5 member skips are the live legs (tor table, three-machine oracle round,
 onion-hosted oracle, live timed table, tor redial). They are counted on the
 report's first line, so the suite paste merges them: the board row read
-723/0/5 in the 2026-09-24 third run and 753/0/5 on 2026-09-25. Until that
-third run they sat on a second line `stMergeReturned` did not parse.
+723/0/5 in the 2026-09-24 third run and 753/0/5 in both 2026-09-25 runs. Until
+that third run they sat on a second line `stMergeReturned` did not parse.
 
 **Suite fold contract (the NINTH folded harness, 2026-08-16).** Prefix `he1`,
 entry `he1heSelfTest`. It is a PREFIXED fold, not a verbatim embed, because the
@@ -481,9 +482,10 @@ sending `heNextHandTick`, which deals a hand, and no harness may arm that.
 | 2026-08-20 | Windows x86_64, suite paste | folded harness v0.24.5 / h41 | **543/0/5**, every section green |
 | 2026-08-24 | Windows x86_64, suite paste | folded harness v0.25.0 / h42 | **584/0**; the batch mask path equal to the per-point fallback byte for byte; the DLEQ proof and refusal legs green |
 | 2026-08-27 | OXT, two machines, one LAN (platform not recorded) | suite paste 2440/2/3 (the 2 were the live loopbacks, environment); folded holde-em v0.25.2 / h43 | **667/0**, the FIRST engine run of the onionxt-carrying file. The first two-machine 2d contact joined and dealt, but underneath the lobby overlay; v0.25.3 fixes that (statically) |
-| 2026-09-24 | Windows (the engine reports Win32; OXT version and OS build not recorded), suite paste | the D-23 board's first run, 2620/5/3 (built from 9aa62c8; the stack as at 6401e43); folded holde-em v0.25.3 / h45 through `heSelfTest` | **721/0**, the v45 total: all 24 sections green (the four wire-arity checks in section 9 and section 24 for the first time; 16 and 19 whole on SodiumXT ABI 10), `heProbeSodium` ok. The 5 skips, the live legs (tor table, three-machine oracle round, onion-hosted oracle, live timed table, tor redial), print on their own line, unmerged: the board row read 723/0/0 (the core adds its zero-failure and floor asserts). None of the paste's 5 failures was this member's |
+| 2026-09-24 | Windows (the engine reports Win32; 64-bit by the maintainer's account, given 2026-09-26; OXT version and OS build not recorded), suite paste | the D-23 board's first run, 2620/5/3 (built from 9aa62c8; the stack as at 6401e43); folded holde-em v0.25.3 / h45 through `heSelfTest` | **721/0**, the v45 total: all 24 sections green (the four wire-arity checks in section 9 and section 24 for the first time; 16 and 19 whole on SodiumXT ABI 10), `heProbeSodium` ok. The 5 skips, the live legs (tor table, three-machine oracle round, onion-hosted oracle, live timed table, tor redial), print on their own line, unmerged: the board row read 723/0/0 (the core adds its zero-failure and floor asserts). None of the paste's 5 failures was this member's |
 | 2026-09-24, the second and third runs (8:41 and 10:10 PM local) | as above, fresh stacks; the paste regenerated at 21aaa61, then at b34f7b0 | the same folded holde-em v0.25.3 / h45 | **721/0/5** both times. From the third run `heSelfTest` opens with three counts (the file's own change, no harness bump), and the board MERGED the five skips: its row read 723/0/5, and the paste's totals 2623/2/10. The two failures of each run were the live loopbacks, not this member's |
-| 2026-09-25 | Linux: 64-bit, Kubuntu 24.04, the committed x86_64-linux libraries (the maintainer's account, "latest builds"; the OXT build not recorded), suite paste | the D-23 suite paste as at cba3130, last regenerated at f1346e0 (the stack as there), 2672/0/10; folded holde-em v0.25.5 / h47 through `heSelfTest` (its header: "stack v0.25.5  harness v47") | **751/0/5**, the first v47 total and the first engine run of v0.25.4 and v0.25.5 (no run is recorded at h46): all 24 sections green, `heProbeSodium` ok, the five live legs SKIPped by name and merged (board row 753/0/5). 751 is the v45 total plus 30, which matches the assert sites v46 (7) and v47 (23) added (sites are not checks in general, rule 5). Green among them: section 5's near-integer raise (57.0000000000001 refused) beside the integer raise that lands; section 9's prev that is the genesis head only as a number, dropped; section 21's `heHexEq`, `heCanonIdx` and `heNetOccOfSeats` pins; section 11's non-hex seed and non-canonical count named, not thrown, and an alias commit line dropped; section 15's alias, stale-handStart and replayed-commit attack driven end to end (no seal on aliases, nothing stored or counted, History skipping both). The `heHexEq` pins assert the helper's answer, not bare `is`'s (3.2). The first record naming Linux with this member's count; none of the paste's checks failed |
+| 2026-09-25 | Linux: 64-bit, Kubuntu 24.04, the committed x86_64-linux libraries and the latest OXT (the maintainer's account, "latest builds"; no OXT version recorded), suite paste; the report the launch's second Run all (the same account, given 2026-09-26) | the D-23 suite paste as at cba3130, last regenerated at f1346e0 (the stack as there), 2672/0/10; folded holde-em v0.25.5 / h47 through `heSelfTest` (its header: "stack v0.25.5  harness v47") | **751/0/5**, the first v47 total and the first engine run of v0.25.4 and v0.25.5 (no run is recorded at h46): all 24 sections green, `heProbeSodium` ok, the five live legs SKIPped by name and merged (board row 753/0/5). 751 is the v45 total plus 30, which matches the assert sites v46 (7) and v47 (23) added (sites are not checks in general, rule 5). Green among them: section 5's near-integer raise (57.0000000000001 refused) beside the integer raise that lands; section 9's prev that is the genesis head only as a number, dropped; section 21's `heHexEq`, `heCanonIdx` and `heNetOccOfSeats` pins; section 11's non-hex seed and non-canonical count named, not thrown, and an alias commit line dropped; section 15's alias, stale-handStart and replayed-commit attack driven end to end (no seal on aliases, nothing stored or counted, History skipping both). The `heHexEq` pins assert the helper's answer, not bare `is`'s (3.2). The first record naming Linux with this member's count; none of the paste's checks failed |
+| 2026-09-25 (Windows; the Kit report's clock 10:54 PM local) | Windows (the engine reports Win32), by the maintainer's account the machine of the 2026-09-24 runs and 64-bit; the OXT build and whether the report is a launch's first or second Run all not recorded; suite paste | the same D-23 suite paste as the Linux run (INFERRED from the version lines both reports print: the board stamp `suite-board-1`, holde-em's "stack v0.25.5 harness v47" and riptide's third probe line), 2653/2/10; folded holde-em v0.25.5 / h47 through `heSelfTest` (its header: "holde-em self-test  stack v0.25.5  harness v47") | **751/0/5**, the v47 total again, read as on Linux the same day: all 24 sections green, the five live legs SKIPped by name and merged (board row 753/0/5), so the v0.25.4 and v0.25.5 pins listed in the row above have run on Windows too. The paste's two failures were the live loopbacks, not this member's |
 
 ## 7. Status
 
@@ -492,16 +494,16 @@ slice at v0.25.5 / h47, including the v0.25.5 canonical wire indices, walked
 counts, hand binding and audit guards and the v0.25.4 heHexEq and near-integer
 fixes (their pins in sections 5, 9, 11, 15 and 21), the wire-arity checks,
 section 24, Level 2 compute, the batch mask step, void-and-audit, the five
-cheater bots and DLEQ (latest 751/0/5, Linux, 2026-09-25; 721/0 at h45,
-Windows, 2026-09-24; the five live legs skip by name). Verified statically;
-needs an OXT pass: what the harness does not reach, namely those fixes in the
-standalone stack (`heRunSelftest` has no record at v0.25.4 or later), in
-hotseat hands and between machines; the v0.25.3 overlay fix (its fold-time
-`heLobbyHide` has run only as the guarded no-op a paste makes it; the
-dismissal itself is the 2d re-run's); everything visual and timed (the 720p
-layout eye, the Phase 1 6-seat session); and every live multi-machine leg (2d
-re-run, 2e timed session, 2f two-machine tor + redial, the Phase 3 three-machine
-oracle round).
+cheater bots and DLEQ (latest 751/0/5 on 2026-09-25, on Linux and on Windows;
+721/0 at h45, Windows, 2026-09-24; the five live legs skip by name). Verified
+statically; needs an OXT pass: what the harness does not reach, namely those
+fixes in the standalone stack (`heRunSelftest` has no record at v0.25.4 or
+later), in hotseat hands and between machines; the v0.25.3 overlay fix (its
+fold-time `heLobbyHide` has run only as the guarded no-op a paste makes it;
+the dismissal itself is the 2d re-run's); everything visual and timed (the
+720p layout eye, the Phase 1 6-seat session); and every live multi-machine leg
+(2d re-run, 2e timed session, 2f two-machine tor + redial, the Phase 3
+three-machine oracle round).
 Level 2 is not yet wired into played hands. Row 14 (the deal-path re-pass) can
 close at inference strength: section 11's seeds-XOR and full-deck asserts have
 been green in every folded run since 2026-08-17, and engine note 3.1 is

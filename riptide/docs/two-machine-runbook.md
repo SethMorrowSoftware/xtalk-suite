@@ -50,11 +50,11 @@ to chase a non-bug:
 
 Built after the feed's two-machine passes, and never driven through this
 stack on an engine: the kind-C rail's COMPUTE half ran engine-green in the
-2026-08-24 suite paste, the watermark refusals (the harness's ingest-verifier
-section) in the 2026-09-24 (Windows) and 2026-09-25 (Linux) ones, and the
-rest is pinned headlessly only. Setup as for the feed: A and B on DIFFERENT
-identities, both unlocked with a TorrentXT session, B following A by pasting
-A's handle and clicking `Fetch feed`.
+2026-08-24 suite paste, the watermark refusals (the harness's
+ingest-verifier section) in the 2026-09-24 (Windows) and 2026-09-25 (Linux
+and Windows) ones, and the rest is pinned headlessly only. Setup as for the
+feed: A and B on DIFFERENT identities, both unlocked with a TorrentXT
+session, B following A by pasting A's handle and clicking `Fetch feed`.
 
 1. **The kind-C long post (backlog A2, 2026-08-23).** On A, paste about
    2,000 characters of plain text into the compose field and `Post`. Text

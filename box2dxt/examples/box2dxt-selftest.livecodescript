@@ -44,12 +44,13 @@
 -- =====================================================================
 
 -- STATUS: GREEN at harness v32 in the 2026-09-24 pass - 385/385 on OXT on
--- Win32 (version, OS build and bitness not recorded), folded into the D-23
--- suite paste and run on its 1200-wide card (this stack's own window is 860) -
--- and again on Linux in the 2026-09-25 pass, 385/385 on the same card (64-bit
--- Kubuntu 24.04 and the committed x86_64-linux library by the maintainer's
--- account; the OXT version not recorded). Earlier: 374/374 at v29 on Windows
--- x86_64 (NT 10.0, OXT 9.6.3) in the 2026-08-17 pass, folded into
+-- Win32 (64-bit by the maintainer's account; version and OS build not
+-- recorded), folded into the D-23 suite paste and run on its 1200-wide card
+-- (this stack's own window is 860) - and again in the 2026-09-25 passes,
+-- 385/385 on the same card on Linux (64-bit Kubuntu 24.04, the committed
+-- x86_64-linux library and the latest OXT by the maintainer's account) and on
+-- Win32 (64-bit; the OXT version not recorded). Earlier: 374/374 at v29 on
+-- Windows x86_64 (NT 10.0, OXT 9.6.3) in the 2026-08-17 pass, folded into
 -- tests/suite-selftest.livecodescript.
 --
 -- 2026-08-18, LINUX, harness v29: 373 passed, 1 FAILED. The single failure was
@@ -79,8 +80,9 @@
 -- so on Win32 that section passed without exercising the fix. Its Linux run
 -- (2026-09-25) printed 385 and the same two answers, with the playLoudness
 -- readback a note (asked 24/73, read 0/0), the line that failed v30 there on
--- 2026-08-21. macOS has not run v32: record the total a pass prints rather
--- than matching this one.
+-- 2026-08-21; its second Win32 run (2026-09-25) printed 385 and the Win32
+-- answers again, the readback exact. macOS has not run v32: record the total
+-- a pass prints rather than matching this one.
 local gRep, gPass, gFail, gFellCount, gRunning
 local gMsgEnters, gMsgContacts   -- message-path counters (vs polling)
 

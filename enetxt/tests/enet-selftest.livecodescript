@@ -55,9 +55,10 @@ script "enetSelfTest"
 -- core's loopbacks on a machine blocking UDP to 127.0.0.1); 34/34 on
 -- 2026-09-24 (Windows, the D-23 paste, whose core loopbacks stalled the
 -- same way: suspected environment, suite runbook trap 5.5, not yet tested
--- independently); and 34/34 on 2026-09-25 (Linux x86_64, the same paste,
+-- independently); and 34/34 on 2026-09-25 on Linux x86_64 (the same paste,
 -- whose core ENet loopback COMPLETED: connect, the sealed ciphertext, 60000
--- bytes as one message, a graceful disconnect). The ASYNC loopback is
+-- bytes as one message, a graceful disconnect) and on Windows x86_64, where
+-- the core loopback stalled in connecting a fourth time. The ASYNC loopback is
 -- deliberately NOT folded (two state machines in one process race for the
 -- event handlers); THIS file's own last ran standalone, green, on
 -- 2026-08-13.

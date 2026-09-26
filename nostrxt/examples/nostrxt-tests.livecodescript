@@ -17,8 +17,9 @@ script "nostrxt-tests"
 -- ran again 2026-09-24 (Windows, the engine reports Win32; the D-23 suite
 -- paste): 277 passed, 0 failed, the same 2 skipped - the 274 plus the three
 -- pins of the 2026-09-09 fix added that day (two refusals and a delimiter
--- restore, in sections 4 and 14) - and on 2026-09-25 (Linux, 64-bit, the
--- suite paste): the same 277 passed, 0 failed, 2 skipped. Section 17 (the
+-- restore, in sections 4 and 14) - and on 2026-09-25 (the suite paste on
+-- Linux and on Windows, 64-bit both): the same 277 passed, 0 failed, 2
+-- skipped each. Section 17 (the
 -- relay layer, offline) has no engine run anywhere; the demo's "Run
 -- nxSelfTest" button is where it runs. Section 17: verified statically;
 -- needs an OXT pass. Every pinned constant below is DERIVED by

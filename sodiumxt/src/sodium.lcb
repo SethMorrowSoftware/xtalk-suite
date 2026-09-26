@@ -33,13 +33,14 @@
 -- "the ONE surface with no engine run today" until 2026-09-24, a month after
 -- that record: an understated label is as wrong as an overstated one. The
 -- whole harness, ChaCha20 included, ran 106/106 again on Windows 2026-09-24
--- (the D-23 suite paste, on one of the two shipped MSVC DLLs of 2026-09-12 by
--- the maintainer's account), and on Linux 2026-09-25: the first recorded
--- ChaCha20 run there, on the committed x86_64-linux file (the maintainer's
--- account: 64-bit, the latest committed builds). What is still owed is
--- PLATFORM cover, not surface cover - the 2026-08-24 run loaded a mingw DLL
--- that no longer ships, and the 2026-09-24 run recorded neither sxVersion()
--- nor bitness, so neither MSVC DLL, nor x86-linux, nor the mac dylib has an
+-- (the D-23 suite paste, on the shipped x86_64-win32 MSVC DLL of 2026-09-12
+-- by the maintainer's account, which named the bitness 64-bit on
+-- 2026-09-26), on Linux 2026-09-25 - the first recorded ChaCha20 run there,
+-- on the committed x86_64-linux file (the maintainer's account: 64-bit, the
+-- latest committed builds) - and on Windows x86_64 the same day. What is
+-- still owed is PLATFORM cover, not surface cover - the 2026-08-24 run
+-- loaded a mingw DLL that no longer ships, no run has recorded sxVersion(),
+-- and neither the x86-win32 DLL, nor x86-linux, nor the mac dylib has an
 -- engine record that names it (CLAUDE.md's platform table).
 -- The conventions below were settled
 -- against a real OXT compile and a crash audit; they are recorded so they are
@@ -1947,9 +1948,9 @@ end handler
 -- It is NOT a sealing API: to just encrypt bytes, use sxSecretBox /
 -- sxAeadEncrypt / the secretstream family, which authenticate and mint
 -- nonces. Observed on an engine 2026-08-24 and 2026-09-24 (Windows) and
--- 2026-09-25 (Linux x86_64), the harness's 7-check section each time
--- (CLAUDE.md's ledger). This banner still said "Verified statically; needs
--- an OXT pass" until 2026-09-24.
+-- 2026-09-25 (Linux x86_64 and Windows x86_64), the harness's 7-check
+-- section each time (CLAUDE.md's ledger). This banner still said "Verified
+-- statically; needs an OXT pass" until 2026-09-24.
 -- --------------------------------------------------------------------------
 
 -- out = pData XOR ChaCha20-IETF keystream (RFC 8439: 32-byte key, 12-byte

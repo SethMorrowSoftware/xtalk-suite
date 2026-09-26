@@ -14,8 +14,8 @@ contract; this file is what you can call today, handler by handler.
 > 2026-08-12; WIF, the ABI 5 wipe binding and the ABI 6 BIP-340 / BIP-341 surface, 278/278, Windows
 > x86_64, OXT 9.6.3, 2026-08-17; the BIP-341 sighash and script-path handlers, 290/290, Windows x86_64,
 > OXT 9.6.3, 2026-08-24; ABI 7, 296/296, the suite paste on Windows, 2026-09-24, and again on Linux
-> x86_64, 2026-09-25. Every handler has run green on an engine, `cxPubkeyCombine` (ABI 7, 2026-09-10)
-> last, on 2026-09-24.
+> x86_64 and Windows x86_64, 2026-09-25. Every handler has run green on an engine, `cxPubkeyCombine`
+> (ABI 7, 2026-09-10) last, on 2026-09-24.
 >
 > **Independent acceptance** (2026-08-12/13, `tools/verify-independent-decoder.py`, a manual run):
 > fresh legacy P2PKH, native P2WPKH, EIP-155 and EIP-1559 transactions built by the shipped script
