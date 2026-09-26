@@ -423,6 +423,20 @@ stack you `start using`) and call `put sxSelfTest()`
 
 ### 3.2 Order of play
 
+**Before the session, headless, on a dev machine.** After the last
+regeneration of the paste, run `python3 tools/test-suite-ui-boot.py --full`,
+then `python3 tools/check-suite-ui-boot.py --full` (work plan suite-wide #14,
+closed 2026-09-26). The second delivers the paste ritual (3.1: close, reopen,
+close) to the whole generated paste through the family interpreter, every
+native absent, lets Run all run to its end through the pump, and fails BY NAME
+on a section that throws or that the interpreter refuses (section, row,
+handler, line), rows that do not add up to the totals, a report that ends in
+`RUN NOT FINISHED`, a red boot self-check or a teardown that never ran. It
+prints the per-row table that run produced: the interpreter's run, NOT an
+engine record. It runs no present-extension path, settles logic and not
+parsing, and upgrades no label. It takes minutes, not seconds, so it is not in
+the per-push gate set; the gate's docstring has the measured cost.
+
 **The preflight first.** `tests/preflight.livecodescript` answers "can this
 machine run the pass at all?" in one paste. `tools/build-preflight.py` generates
 it and READS the expected ABIs from the C shims (sodiumxt 10, torrentxt 11,
