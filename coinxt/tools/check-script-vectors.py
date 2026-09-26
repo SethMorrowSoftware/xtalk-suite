@@ -2128,6 +2128,164 @@ def check_vectors(c, ip):
                    F["v1559"], "", F["recid1559"], F["r1559hex"], F["s1559hex"])
     c.ck("cxEth1559Encode raw (0x02 envelope)", res1559["raw"], F["raw1559"].hex())
     c.ck("cxEth1559Encode txhash", res1559["txhash"], F["txhash1559"].hex())
+    check_integer_arguments(c, call, F)
+
+
+# ---- phase 5: the integer arguments, settled as digits (row #10) ----------
+#
+# WORK-PLAN coinxt row #10 (2026-09-26). cxUIntToBytesLE (amounts, vout,
+# sequence, version, locktime), cxHexOfInt (nonce, gas, chain id, recovery
+# id) and cxVarInt encoded whatever number they were handed. Digit text past
+# 2^53 became the bytes of its ROUNDED neighbour on the engine with no error
+# (suite engine note 2.4), and "1e3", "3.0", "+3" and an empty value were
+# numbers to the arithmetic, so a transaction could carry a nonce, an amount
+# or a vout other than the one written. cxCheckedWhole settles each one at
+# the library boundary now: a non-empty run of ASCII digits, at most 2^53,
+# decided on the digits.
+#
+# EVERY REFUSAL HERE FAILS ON THE OLD CODE, and in one of two ways, both
+# visible as a failed row rather than a crash: past 2^53 the interpreter
+# STOPS (its `_exact` refuses the arithmetic the engine would round), which
+# `outcome` reports as a stop, not as the message; and a malformed spelling
+# ENCODED, which reports as bytes. The controls pass either way: 2^53 itself
+# is written exactly, and the old refusals keep their words.
+_ROW10_OVER = "the most this encoder writes exactly."
+_ROW10_DIGITS = "must be a whole number written in digits."
+
+
+def check_integer_arguments(c, call, F):
+    c.note("\nphase 5: integer arguments settled as digits, at most 2^53 "
+           "(work-plan row #10)")
+    top = 2 ** 53
+
+    def outcome(fn, *args):
+        """What the handler did: its bytes (hex), its array, or its refusal,
+        with the interpreter's own stops named so a vector cannot crash."""
+        try:
+            got = call(fn, *args)
+        except LCS.Thrown as thrown:
+            return "refused: %s" % thrown.msg
+        except LCS.Imprecise:
+            return "stopped: the interpreter's 2^53 stop (the engine rounds)"
+        except LCS.Indistinct:
+            return "stopped: the interpreter refused to decide (engine note 2.10/2.11)"
+        except Exception as exc:                        # noqa: BLE001
+            return "stopped: %s: %s" % (type(exc).__name__, str(exc)[:80])
+        if isinstance(got, dict):
+            return got
+        return to_bytes(got).hex()
+
+    def refused(who, what, why):
+        if why == "over":
+            return ("refused: CoinXT: %s: %s is more than 9007199254740992, %s"
+                    % (who, what, _ROW10_OVER))
+        return "refused: CoinXT: %s: %s %s" % (who, what, _ROW10_DIGITS)
+
+    # ---- cxVarInt: the count --------------------------------------------
+    c.ck("cxVarInt(2^53) is written exactly (the bound itself)",
+         outcome("cxVarInt", top), REF.varint(top).hex())
+    c.ck("cxVarInt reads a count with leading zeros as its digits",
+         outcome("cxVarInt", "000" + str(top)), REF.varint(top).hex())
+    for label, value in (("2^53 + 1", top + 1), ("2^53 + 1 as digit text", str(top + 1)),
+                         ("twenty nines", "9" * 20)):
+        c.ck("cxVarInt refuses %s by name, before any arithmetic" % label,
+             outcome("cxVarInt", value), refused("cxVarInt", "the count", "over"))
+    for value in ("1e3", "3.0", "+3", " 3", "", "0x10", "3 ", "x"):
+        c.ck("cxVarInt refuses %r: not written in digits" % value,
+             outcome("cxVarInt", value), refused("cxVarInt", "the count", "digits"))
+    c.ck("and a negative count keeps its old refusal, word for word",
+         outcome("cxVarInt", -1), "refused: CoinXT: cxVarInt: the count must not be negative.")
+
+    # ---- cxUIntToBytesLE, through the public handlers that reach it -------
+    spk = F["spk0"]
+    c.ck("cxBtcOutput writes an amount of 2^53 exactly",
+         outcome("cxBtcOutput", top, spk), REF.btc_output(top, bytes.fromhex(spk)).hex())
+    for label, value in (("2^53 + 1", top + 1), ("twenty nines", "9" * 20)):
+        c.ck("cxBtcOutput refuses an amount of %s by name" % label,
+             outcome("cxBtcOutput", value, spk),
+             refused("cxUIntToBytesLE", "the value", "over"))
+    for value in ("1e8", "150000000.0", "+1000", ""):
+        c.ck("cxBtcOutput refuses an amount written %r" % value,
+             outcome("cxBtcOutput", value, spk),
+             refused("cxUIntToBytesLE", "the value", "digits"))
+    c.ck("cxBtcOutpoint writes vout 4294967295, the widest four bytes hold",
+         outcome("cxBtcOutpoint", F["txid0"], 4294967295),
+         REF.btc_outpoint(bytes.fromhex(F["txid0"]), 4294967295).hex())
+    c.ck("and still refuses 4294967296 as not fitting (the old refusal)",
+         outcome("cxBtcOutpoint", F["txid0"], 4294967296),
+         "refused: CoinXT: cxUIntToBytesLE: the value does not fit in the "
+         "requested width.")
+    c.ck("cxBtcOutpoint refuses a vout written 1e1 (it wrote vout 10)",
+         outcome("cxBtcOutpoint", F["txid0"], "1e1"),
+         refused("cxUIntToBytesLE", "the value", "digits"))
+    # a sequence reaches the encoder through the itemDelimiter wrapper, which
+    # captures a refusal and throws it after `end try` (trap 13): the MESSAGE
+    # must come through it unchanged
+    c.ck("cxBtcTxEncode refuses a sequence written 1e9, message intact through "
+         "the delimiter wrapper",
+         outcome("cxBtcTxEncode", 1, F["outpoints"], F["scriptsigs"],
+                 "1e9," + F["sequences"].split(",")[1], F["witnesses"], F["outputs"], 17),
+         refused("cxUIntToBytesLE", "the value", "digits"))
+    c.ck("cxBtcTxEncode refuses a locktime of 2^53 + 1 by name",
+         outcome("cxBtcTxEncode", 1, F["outpoints"], F["scriptsigs"], F["sequences"],
+                 F["witnesses"], F["outputs"], top + 1),
+         refused("cxUIntToBytesLE", "the value", "over"))
+
+    # ---- cxHexOfInt: the Ethereum counters --------------------------------
+    to = F["ethTo"]
+    gp, val = F["ethGasPrice"], F["ethValue"]
+    c.ck("cxEthLegacySighash signs a nonce of 2^53 exactly",
+         outcome("cxEthLegacySighash", top, gp, 21000, to, val, "", 1),
+         REF.eth_legacy_sighash(top, 20 * 10**9, 21000, bytes.fromhex(to), 10**18,
+                                b"", 1).hex())
+    c.ck("cxEthLegacySighash refuses a nonce of 2^53 + 1 by name",
+         outcome("cxEthLegacySighash", top + 1, gp, 21000, to, val, "", 1),
+         refused("cxHexOfInt", "the value", "over"))
+    for label, args in (("a gas limit written 21e3 (it signed gas 21000)",
+                         (9, gp, "21e3", to, val, "", 1)),
+                        ("a chain id written 1.0", (9, gp, 21000, to, val, "", "1.0")),
+                        ("an EMPTY nonce (it signed nonce 0)", ("", gp, 21000, to, val, "", 1))):
+        c.ck("cxEthLegacySighash refuses %s" % label,
+             outcome("cxEthLegacySighash", *args),
+             refused("cxHexOfInt", "the value", "digits"))
+    c.ck("cxEth1559Sighash refuses a chain id of 2^53 + 1 by name",
+         outcome("cxEth1559Sighash", top + 1, 0, F["m1559prio"], F["m1559fee"], 21000,
+                 to, F["v1559"], ""),
+         refused("cxHexOfInt", "the value", "over"))
+    c.ck("cxEth1559Encode refuses a y-parity written 1e0 (it wrote 1)",
+         outcome("cxEth1559Encode", 1, 0, F["m1559prio"], F["m1559fee"], 21000, to,
+                 F["v1559"], "", "1e0", F["r1559hex"], F["s1559hex"]),
+         refused("cxHexOfInt", "the value", "digits"))
+
+    # ---- cxEthLegacyEncode: v is COMPUTED from the chain id ---------------
+    # v = recid + 2 * chainId + 35, so the chain id is bounded where v still
+    # fits with any recovery id (at most 3): 4503599627370477. At that bound
+    # and recid 3, v is exactly 2^53, and the raw transaction is the
+    # reference's RLP over the same fields, byte for byte.
+    edge = 4503599627370477
+    rr, ss = F["r155hex"], F["s155hex"]
+    fields = [REF._rlp_uint(9), REF._rlp_uint(20 * 10**9), REF._rlp_uint(21000),
+              REF.rlp_encode(bytes.fromhex(to)), REF._rlp_uint(10**18), REF.rlp_encode(b""),
+              REF._rlp_uint(3 + 2 * edge + 35), REF._rlp_uint(int(rr, 16)),
+              REF._rlp_uint(int(ss, 16))]
+    got = outcome("cxEthLegacyEncode", 9, gp, 21000, to, val, "", edge, 3, rr, ss)
+    c.ck("cxEthLegacyEncode writes chain id %d with recid 3 (v = 2^53) exactly" % edge,
+         got["raw"] if isinstance(got, dict) else got,
+         REF._rlp_list_join(fields).hex())
+    for label, chain in (("one past it", edge + 1), ("2^53", top)):
+        c.ck("cxEthLegacyEncode refuses a chain id of %s by name, before v is "
+             "computed" % label,
+             outcome("cxEthLegacyEncode", 9, gp, 21000, to, val, "", chain, 0, rr, ss),
+             "refused: CoinXT: cxEthLegacyEncode: the chain id is more than %d, %s"
+             % (edge, _ROW10_OVER))
+    c.ck("cxEthLegacyEncode refuses a recovery id of 4 (it wrote v = 41 for "
+         "chain 1, which reads as chain 3)",
+         outcome("cxEthLegacyEncode", 9, gp, 21000, to, val, "", 1, 4, rr, ss),
+         "refused: CoinXT: cxEthLegacyEncode: the recovery id is more than 3, %s"
+         % _ROW10_OVER)
+    c.ck("cxEthLegacyEncode refuses an empty recovery id",
+         outcome("cxEthLegacyEncode", 9, gp, 21000, to, val, "", 1, "", rr, ss),
+         refused("cxEthLegacyEncode", "the recovery id", "digits"))
 
 
 

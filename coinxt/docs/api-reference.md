@@ -479,6 +479,18 @@ one item per input or output, the same convention the RLP and bech32 layers use.
 > from trailing empties and is read as such. `pSequences` is the exception and
 > must have exactly one entry per input (a sequence is never empty).
 
+> **Every integer these handlers write is settled as digits first**
+> (2026-09-26): an amount, a vout, a sequence, a version, a locktime, a count,
+> a nonce, a gas limit, a chain id or a recovery id must be a non-empty run of
+> ASCII digits (a number the caller computed arrives as its digits), and at
+> most 2^53, decided on the digits before any arithmetic. A leading minus is
+> refused as negative; `1e3`, `3.0`, `+3` or a blank as not written in digits;
+> anything past 2^53 by name, where until then it was written as the bytes of
+> its rounded neighbour. `cxEthLegacyEncode` computes `v` from its chain id,
+> so it takes a chain id of at most 4503599627370477 and a recovery id of at
+> most 3, the largest for which `v` stays at most 2^53. Verified statically;
+> needs an OXT pass.
+
 **Byte helpers.**
 
 - `cxVarInt(pN)` - Bitcoin CompactSize (1/3/5/9 bytes) as `Data`.

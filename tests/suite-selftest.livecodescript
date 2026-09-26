@@ -7536,13 +7536,53 @@ function cxWifDecode pWif
    return tResult
 end cxWifDecode
 
+private function cxCheckedWhole pValue, pMax, pWho, pWhat
+   local tText, tCount, tI, tStart
+   put pValue into tText
+   put the number of chars of tText into tCount
+   if tCount > 0 then
+      if byteToNum(char 1 of tText) is 45 then
+         throw "CoinXT: " & pWho & ": " & pWhat & " must not be negative."
+      end if
+   end if
+   if tCount is 0 then
+      throw "CoinXT: " & pWho & ": " & pWhat & " must be a whole number " & \
+            "written in digits."
+   end if
+   repeat with tI = 1 to tCount
+      if cxCharIndex(char tI of tText, "0123456789") is 0 then
+         throw "CoinXT: " & pWho & ": " & pWhat & " must be a whole number " & \
+               "written in digits."
+      end if
+   end repeat
+   -- leading zeros off (one digit always stays), then compare as digits
+   put 1 into tStart
+   repeat while tStart < tCount
+      if byteToNum(char tStart of tText) is not 48 then
+         exit repeat
+      end if
+      add 1 to tStart
+   end repeat
+   put char tStart to tCount of tText into tText
+   put the number of chars of tText into tCount
+   if tCount > the number of chars of pMax then
+      throw "CoinXT: " & pWho & ": " & pWhat & " is more than " & pMax & \
+            ", the most this encoder writes exactly."
+   end if
+   if tCount is the number of chars of pMax then
+      if cxCompareBytes(tText, pMax) > 0 then
+         throw "CoinXT: " & pWho & ": " & pWhat & " is more than " & pMax & \
+               ", the most this encoder writes exactly."
+      end if
+   end if
+   return tText + 0
+end cxCheckedWhole
+
 private function cxUIntToBytesLE pValue, pWidth
    local tOut, tRest, tI
-   if pValue < 0 then
-      throw "CoinXT: cxUIntToBytesLE: the value must not be negative."
-   end if
+   put cxCheckedWhole(pValue, "9007199254740992", "cxUIntToBytesLE", \
+         "the value") into tRest
    put "" into tOut
-   put pValue into tRest
    repeat with tI = 1 to pWidth
       put numToByte(cxIntMod(tRest, 256)) after tOut
       put cxIntDiv(tRest, 256) into tRest
@@ -7554,19 +7594,18 @@ private function cxUIntToBytesLE pValue, pWidth
 end cxUIntToBytesLE
 
 function cxVarInt pN
-   if pN < 0 then
-      throw "CoinXT: cxVarInt: the count must not be negative."
+   local tN
+   put cxCheckedWhole(pN, "9007199254740992", "cxVarInt", "the count") into tN
+   if tN < 253 then
+      return numToByte(tN)
    end if
-   if pN < 253 then
-      return numToByte(pN)
+   if tN <= 65535 then
+      return numToByte(253) & cxUIntToBytesLE(tN, 2)
    end if
-   if pN <= 65535 then
-      return numToByte(253) & cxUIntToBytesLE(pN, 2)
+   if tN <= 4294967295 then
+      return numToByte(254) & cxUIntToBytesLE(tN, 4)
    end if
-   if pN <= 4294967295 then
-      return numToByte(254) & cxUIntToBytesLE(pN, 4)
-   end if
-   return numToByte(255) & cxUIntToBytesLE(pN, 8)
+   return numToByte(255) & cxUIntToBytesLE(tN, 8)
 end cxVarInt
 
 private function cxStripLeadingZeroBytes pData
@@ -8157,8 +8196,21 @@ function cxEthLegacySighash pNonce, pGasPriceHex, pGas, pToHex, pValueHex, pData
 end cxEthLegacySighash
 
 function cxEthLegacyEncode pNonce, pGasPriceHex, pGas, pToHex, pValueHex, pDataHex, pChainId, pRecid, pRHex, pSHex
-   local tBody, tRaw, tResult, tV
-   put pRecid + 2 * pChainId + 35 into tV
+   local tBody, tRaw, tResult, tV, tRecid, tChain
+   -- v IS COMPUTED, SO ITS INPUTS ARE BOUNDED WHERE THE SUM STILL FITS
+   -- (2026-09-26). cxHexOfInt bounds what it is handed, but here it is
+   -- handed a SUM, and a chain id near 2^53 doubles past it before any
+   -- guard sees it: the engine would round v with no error (suite engine
+   -- note 2.4) and sign a transaction for a chain the caller did not name.
+   -- So both inputs are settled as digits first: the recovery id at most 3
+   -- (every id secp256k1 defines; EIP-155's are 0 and 1) and the chain id
+   -- at most 4503599627370477, the largest for which 3 + 2 * id + 35 is
+   -- still at most 2^53. Verified statically; needs an OXT pass.
+   put cxCheckedWhole(pRecid, "3", "cxEthLegacyEncode", "the recovery id") \
+         into tRecid
+   put cxCheckedWhole(pChainId, "4503599627370477", "cxEthLegacyEncode", \
+         "the chain id") into tChain
+   put tRecid + 2 * tChain + 35 into tV
    put cxRlpUintFromHex(cxHexOfInt(pNonce)) into tBody
    put tBody & cxRlpUintFromHex(pGasPriceHex) into tBody
    put tBody & cxRlpUintFromHex(cxHexOfInt(pGas)) into tBody
@@ -8206,14 +8258,13 @@ function cxEth1559Encode pChainId, pNonce, pMaxPriorityHex, pMaxFeeHex, pGas, pT
 end cxEth1559Encode
 
 private function cxHexOfInt pValue
-   local tHex
-   if pValue < 0 then
-      throw "CoinXT: cxHexOfInt: the value must not be negative."
-   end if
-   if pValue is 0 then
+   local tHex, tValue
+   put cxCheckedWhole(pValue, "9007199254740992", "cxHexOfInt", "the value") \
+         into tValue
+   if tValue is 0 then
       return ""
    end if
-   put cxHexEncode(cxUIntToBytes(pValue)) into tHex
+   put cxHexEncode(cxUIntToBytes(tValue)) into tHex
    return tHex
 end cxHexOfInt
 -- <<< GENERATED EMBED: coinxt script layer <<< --
@@ -25184,6 +25235,19 @@ command cx1stRunFailOpen
       cx1stAssertRefusal "bech32 refuses a value one ulp above 3", cx1stThrowsText3("cxBech32EncodeValues", "bc", "0,3.0000000000000004", "bech32"), "cxBech32EncodeValues", "whole number between 0 and 31"
       cx1stAssertRefusal "bech32 refuses a value within 2.2e-15 below zero", cx1stThrowsText3("cxBech32EncodeValues", "bc", "0,-0.000000000000001", "bech32"), "cxBech32EncodeValues", "whole number between 0 and 31"
       cx1stAssert "and 3e0, a spelling the engine calls whole, encodes exactly as 3", cxBech32EncodeValues("bc", "0,3e0", "bech32") is cxBech32EncodeValues("bc", "0,3", "bech32")
+      -- THE ENCODERS' INTEGER ARGUMENTS ARE DIGITS, AT MOST 2^53 (work-plan
+      -- row #10, 2026-09-26). cxVarInt, cxUIntToBytesLE (every amount, vout,
+      -- sequence, version and locktime) and cxHexOfInt (the Ethereum
+      -- counters) encoded digit text past 2^53 as the bytes of its ROUNDED
+      -- neighbour (suite engine note 2.4) and "1e3" as 1000; cxCheckedWhole
+      -- settles each on its characters first now. The bound itself is written
+      -- exactly (2^53 is 0x20000000000000, so its eight LE bytes end 20 00).
+      -- The values cross as TEXT through cx1stThrowsText's `do`, which is the
+      -- shape the guard reads. Verified statically; needs an OXT pass.
+      cx1stAssert "cxVarInt writes 2^53 exactly", cx1stSameHex(cxHexEncode(cxVarInt("9007199254740992")), "ff0000000000002000")
+      cx1stAssertRefusal "cxVarInt refuses 2^53 + 1 written in digits", cx1stThrowsText("cxVarInt", "9007199254740993"), "cxVarInt", "more than 9007199254740992"
+      cx1stAssertRefusal "cxVarInt refuses a count written 1e3", cx1stThrowsText("cxVarInt", "1e3"), "cxVarInt", "written in digits"
+      cx1stAssertRefusal "an output of 2^53 + 1 satoshi is refused", cx1stThrowsText2("cxBtcOutput", "9007199254740993", cx1kTxOutScript0), "cxUIntToBytesLE", "more than 9007199254740992"
       -- An uppercase HRP used to produce a MIXED-case string, which BIP-173
       -- forbids and which this library's own decoder rejects.
       cx1stAssertRefusal "an uppercase HRP is refused", cx1stThrowsText3("cxBech32EncodeValues", "BC", "0", "bech32"), "cxBech32EncodeValues", "lowercase"

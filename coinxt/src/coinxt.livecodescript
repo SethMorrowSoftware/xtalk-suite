@@ -2325,19 +2325,94 @@ end cxWifDecode
 -- under 2^53) and cross as integers. Ethereum wei-scale fields (value,
 -- gasPrice, the 1559 fee caps) routinely exceed 2^53, so they cross as MINIMAL
 -- big-endian HEX and are RLP-encoded as byte strings; only the small counters
--- (nonce, gas, chainId, recid) cross as integers.
+-- (nonce, gas, chainId, recid) cross as integers. "Stay inside" was a claim
+-- about callers until 2026-09-26: every integer an encoder here writes is now
+-- settled as digits, at most 2^53, before any arithmetic (cxCheckedWhole).
+
+-- A WHOLE NUMBER AN ENCODER IS ABOUT TO WRITE, SETTLED AS TEXT BEFORE ANY
+-- ARITHMETIC TOUCHES IT (2026-09-26; the suite's docs/WORK-PLAN.md, coinxt
+-- row #10). cxUIntToBytesLE, cxVarInt and cxHexOfInt encoded whatever they
+-- were handed: digit text past 2^53 went into cxIntMod / cxIntDiv and came
+-- out as the bytes of its ROUNDED neighbour, with no error, on the engine
+-- (suite engine note 2.4), so a transaction could carry an amount, a vout
+-- or a nonce other than the one its caller passed, and "1e3", "3.0" or
+-- "+3" were numbers to the arithmetic and encoded as 1000 and 3. The family
+-- interpreter stops at 2^53 where the engine rounds, so no headless gate
+-- could see it. What is written is now what was meant, or a refusal:
+--   * the SHAPE first, on the text: a leading minus is the old "must not be
+--     negative" refusal, word for word; anything else that is not a
+--     non-empty run of ASCII digits is refused as not written in digits (an
+--     exponent, a sign, a point, a blank: a digit COUNT cannot bound "1e20"
+--     and a numeric test cannot see "3.0", so the question is what the
+--     characters are). A number a caller computed arrives as its text on
+--     the engine (digits, for a whole value), so every caller in this file
+--     and in the wallet passes;
+--   * then the BOUND, on the digits: leading zeros off, then the length,
+--     then byte for byte against pMax (a clean digit string), so no wide
+--     number is ever formed or compared (engine note 2.10's tolerance is
+--     never reached). pMax is 2^53 at the three encoders, the wallet's one
+--     exact limit (21e6 BTC is 2.1e15 sat, well under it), and smaller where
+--     a caller COMPUTES from the value (cxEthLegacyEncode's v).
+-- Only then is it a number: `tText + 0` of at most sixteen digits no larger
+-- than pMax, exact. Returns that number. Digits have no case, so the lookup
+-- is by byte value like every other one here. Verified statically; needs an
+-- OXT pass (tools/check-script-vectors.py runs it headlessly, and every
+-- refusal there fails with this guard removed).
+private function cxCheckedWhole pValue, pMax, pWho, pWhat
+   local tText, tCount, tI, tStart
+   put pValue into tText
+   put the number of chars of tText into tCount
+   if tCount > 0 then
+      if byteToNum(char 1 of tText) is 45 then
+         throw "CoinXT: " & pWho & ": " & pWhat & " must not be negative."
+      end if
+   end if
+   if tCount is 0 then
+      throw "CoinXT: " & pWho & ": " & pWhat & " must be a whole number " & \
+            "written in digits."
+   end if
+   repeat with tI = 1 to tCount
+      if cxCharIndex(char tI of tText, "0123456789") is 0 then
+         throw "CoinXT: " & pWho & ": " & pWhat & " must be a whole number " & \
+               "written in digits."
+      end if
+   end repeat
+   -- leading zeros off (one digit always stays), then compare as digits
+   put 1 into tStart
+   repeat while tStart < tCount
+      if byteToNum(char tStart of tText) is not 48 then
+         exit repeat
+      end if
+      add 1 to tStart
+   end repeat
+   put char tStart to tCount of tText into tText
+   put the number of chars of tText into tCount
+   if tCount > the number of chars of pMax then
+      throw "CoinXT: " & pWho & ": " & pWhat & " is more than " & pMax & \
+            ", the most this encoder writes exactly."
+   end if
+   if tCount is the number of chars of pMax then
+      if cxCompareBytes(tText, pMax) > 0 then
+         throw "CoinXT: " & pWho & ": " & pWhat & " is more than " & pMax & \
+               ", the most this encoder writes exactly."
+      end if
+   end if
+   return tText + 0
+end cxCheckedWhole
 
 -- Fixed-width little-endian encoder. Bitcoin serialization is little-endian
 -- throughout, which nothing in phases 1-4 needed (their integers were all
 -- big-endian). pWidth bytes, least significant first; pValue must be
--- non-negative and fit in pWidth bytes.
+-- non-negative and fit in pWidth bytes, and is settled by cxCheckedWhole
+-- first (digits, at most 2^53): an eight-byte amount past 2^53 is refused
+-- rather than written as its rounded neighbour, and the loop below then
+-- works on an exact integer, so its "does not fit" test for a narrower
+-- width (a vout, a sequence, a version) is exact too.
 private function cxUIntToBytesLE pValue, pWidth
    local tOut, tRest, tI
-   if pValue < 0 then
-      throw "CoinXT: cxUIntToBytesLE: the value must not be negative."
-   end if
+   put cxCheckedWhole(pValue, "9007199254740992", "cxUIntToBytesLE", \
+         "the value") into tRest
    put "" into tOut
-   put pValue into tRest
    repeat with tI = 1 to pWidth
       put numToByte(cxIntMod(tRest, 256)) after tOut
       put cxIntDiv(tRest, 256) into tRest
@@ -2348,21 +2423,23 @@ private function cxUIntToBytesLE pValue, pWidth
    return tOut
 end cxUIntToBytesLE
 
--- Bitcoin CompactSize (varint): 1, 3, 5 or 9 bytes by magnitude.
+-- Bitcoin CompactSize (varint): 1, 3, 5 or 9 bytes by magnitude. The count
+-- is settled by cxCheckedWhole first (digits, at most 2^53; 2026-09-26), so
+-- the magnitude tests below compare an exact integer, never text or a
+-- rounded value: "1e3" was a count of 1000 to them.
 function cxVarInt pN
-   if pN < 0 then
-      throw "CoinXT: cxVarInt: the count must not be negative."
+   local tN
+   put cxCheckedWhole(pN, "9007199254740992", "cxVarInt", "the count") into tN
+   if tN < 253 then
+      return numToByte(tN)
    end if
-   if pN < 253 then
-      return numToByte(pN)
+   if tN <= 65535 then
+      return numToByte(253) & cxUIntToBytesLE(tN, 2)
    end if
-   if pN <= 65535 then
-      return numToByte(253) & cxUIntToBytesLE(pN, 2)
+   if tN <= 4294967295 then
+      return numToByte(254) & cxUIntToBytesLE(tN, 4)
    end if
-   if pN <= 4294967295 then
-      return numToByte(254) & cxUIntToBytesLE(pN, 4)
-   end if
-   return numToByte(255) & cxUIntToBytesLE(pN, 8)
+   return numToByte(255) & cxUIntToBytesLE(tN, 8)
 end cxVarInt
 
 -- Strip leading zero BYTES, so a hex uint field becomes its canonical minimal
@@ -3054,8 +3131,21 @@ end cxEthLegacySighash
 -- pRecid + 2*pChainId + 35. Returns an array: ["raw"] the signed tx hex,
 -- ["txhash"] the keccak transaction hash hex.
 function cxEthLegacyEncode pNonce, pGasPriceHex, pGas, pToHex, pValueHex, pDataHex, pChainId, pRecid, pRHex, pSHex
-   local tBody, tRaw, tResult, tV
-   put pRecid + 2 * pChainId + 35 into tV
+   local tBody, tRaw, tResult, tV, tRecid, tChain
+   -- v IS COMPUTED, SO ITS INPUTS ARE BOUNDED WHERE THE SUM STILL FITS
+   -- (2026-09-26). cxHexOfInt bounds what it is handed, but here it is
+   -- handed a SUM, and a chain id near 2^53 doubles past it before any
+   -- guard sees it: the engine would round v with no error (suite engine
+   -- note 2.4) and sign a transaction for a chain the caller did not name.
+   -- So both inputs are settled as digits first: the recovery id at most 3
+   -- (every id secp256k1 defines; EIP-155's are 0 and 1) and the chain id
+   -- at most 4503599627370477, the largest for which 3 + 2 * id + 35 is
+   -- still at most 2^53. Verified statically; needs an OXT pass.
+   put cxCheckedWhole(pRecid, "3", "cxEthLegacyEncode", "the recovery id") \
+         into tRecid
+   put cxCheckedWhole(pChainId, "4503599627370477", "cxEthLegacyEncode", \
+         "the chain id") into tChain
+   put tRecid + 2 * tChain + 35 into tV
    put cxRlpUintFromHex(cxHexOfInt(pNonce)) into tBody
    put tBody & cxRlpUintFromHex(pGasPriceHex) into tBody
    put tBody & cxRlpUintFromHex(cxHexOfInt(pGas)) into tBody
@@ -3109,16 +3199,19 @@ function cxEth1559Encode pChainId, pNonce, pMaxPriorityHex, pMaxFeeHex, pGas, pT
 end cxEth1559Encode
 
 -- A small non-negative integer to big-endian hex (an even number of hex chars),
--- for feeding an integer counter through the hex-uint RLP path. Stays inside
--- exact-integer range by construction (its callers pass nonce/gas/chainId/v).
+-- for feeding an integer counter through the hex-uint RLP path. It said it
+-- stayed inside exact-integer range "by construction", and nothing held it
+-- there: its callers pass the caller's nonce, gas, chain id and recovery id
+-- as given. Settled by cxCheckedWhole first now (digits, at most 2^53;
+-- 2026-09-26), so a nonce typed "1e3" or twenty digits long is refused
+-- rather than signed as a different number.
 private function cxHexOfInt pValue
-   local tHex
-   if pValue < 0 then
-      throw "CoinXT: cxHexOfInt: the value must not be negative."
-   end if
-   if pValue is 0 then
+   local tHex, tValue
+   put cxCheckedWhole(pValue, "9007199254740992", "cxHexOfInt", "the value") \
+         into tValue
+   if tValue is 0 then
       return ""
    end if
-   put cxHexEncode(cxUIntToBytes(pValue)) into tHex
+   put cxHexEncode(cxUIntToBytes(tValue)) into tHex
    return tHex
 end cxHexOfInt
