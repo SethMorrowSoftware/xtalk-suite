@@ -1653,10 +1653,12 @@ PROBE4_ITEMS = [
 # Each item's statements, from its branch to the next, EXACTLY (review,
 # 2026-09-26). The refusal rows below cannot see an edit that keeps every
 # operand the interpreter refuses but changes what the ENGINE prints: a line
-# after the comparison that overwrites its answer, or the NaN pair built as
-# ONE value (`put tA into tB`), which MCLogicIsEqualTo answers true before it
-# reads either, so the item would print true under every C library. Both
-# passed this tier green until the bodies were pinned.
+# after the comparison that overwrites its answer, or the NaN pair copied
+# from one value (`put tA into tB`), which the engine may hand
+# MCLogicIsEqualTo as ONE value, answered true before either is read, so the
+# item could print true under every C library (the harness builds the two
+# apart so the item never rests on that sharing, which is not recorded).
+# Both passed this tier green until the bodies were pinned.
 PROBE4_BODIES = {
     1: ['put ("0x10" is "16") into tOut'],
     2: ['put ("inf" is "1e999") into tOut'],
@@ -1855,8 +1857,8 @@ def _probe4_seeds(text, fail):
              "item 2's statements"),
         swap('         put "na" into tB\n         put "n" after tB\n',
              '         put tA into tB\n',
-             "item 3's NaN pair made ONE value, which the engine answers "
-             "true before it reads either", "item 3's statements"),
+             "item 3's NaN pair copied from one value, which the engine may "
+             "share and answer true unread", "item 3's statements"),
         swap(PROBE4_OPEN, '   if the platform is "none" then\n' + PROBE4_OPEN,
              "the line moved inside an `if`", "not at its top level"),
     ]
