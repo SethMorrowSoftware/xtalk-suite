@@ -626,7 +626,14 @@ number-like literals and a 64-zero constant (below). So every hex compare in
 those three files at which two different hex values can meet goes through the
 two helpers; what stays bare compares a chunk of hex whose width a length
 check fixes (in one DER parser, the even length its one caller passes) with
-a literal no other hex of that width equals ("02", "5120").
+a literal no other hex of that width equals ("02", "5120"). A review's sweep
+by value origin the same day found this note's `0x` form in the tree:
+coinxt's library harness asserted four Ethereum addresses (`"0x"` and 40
+hex) with bare `is`, which by this parse compares two addresses by their low
+32 bits and never by the EIP-55 casing, and the 32-zero BIP-39 entropy, which
+any run of zeros equals; they compare as text now, and coinxt's
+`check-selftest-vectors.py` refuses a bare comparison there of a literal or
+constant this parse may read as a number (the 0x reading stays DOCUMENTED).
 coinxt's `check-wallet-vectors.py` tier 5 carries this parse as a model (a
 port of `MCU_strtol` / `MCU_strtor8`, the base-16 `0x` form included) that
 fails each of those fixes undone (verified statically; needs an OXT pass).

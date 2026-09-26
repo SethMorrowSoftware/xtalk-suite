@@ -199,8 +199,19 @@ LAW here, not carried-for-later. Change nothing without a very good reason.
   `waValidateXKey`). So every hex compare in those three files at which two different hex values can meet goes through
   the two helpers now. Left bare on purpose, exact: a chunk of hex whose width a length check fixes against a literal
   no other hex of that width equals (`"02"`, `"87"`, `"5120"`, `"101"` ...), and `cwDerToCompact`'s `"02"` markers,
-  whose width only its one caller's even-length hex fixes (an odd-length text can end in a lone `"2"`). coinxt-demo
-  and `src/coinxt.livecodescript` had none. Verified statically; needs an OXT pass.
+  whose width only its one caller's even-length hex fixes (an odd-length text can end in a lone `"2"`).
+  `src/coinxt.livecodescript` has none (its checksum and EIP-55 compares are byte-value helpers). The same day's review
+  swept again by value origin and found what that sweep had passed: coinxt-demo's `cdEthAddressHex` asked "did the
+  caller write a checksum?" with `tPlain is not toLower(tPlain)`, which `is` answers false for EVERY address (it folds
+  case), so the EIP-55 check never ran and a mixed-case recipient with one mistyped letter was encoded as typed. It
+  decides mixed case by byte value now (`cdIsMixedCase`), and `check-script-vectors.py` tier 2b drives the shipped
+  handlers with `is` folded the engine's way and with the old line planted back (which accepts the bad address). And
+  coin-selftest asserted with bare `is` four `"0x"` Ethereum addresses (a base-16 number to the parse, so compared by
+  their low 32 bits and never by the checksum's casing), the 32-zero BIP-39 entropy (any run of zeros ties), `"80"`,
+  and every Base58, WIF and xprv constant (case-blind: trap 15); they go through `stSameText` (byte for byte) and
+  `stSameHex`, and `check-selftest-vectors.py` refuses a bare comparison in the harness's own code of a literal or
+  constant the engine may read as a number, a mixed-case constant or a `"0x"` address, with each old line planted
+  back as its fixture. Verified statically; needs an OXT pass.
 - Keccak-256 (Ethereum, `0x01` padding) is NOT SHA3-256 (FIPS-202, `0x06`): two shim functions, never aliased. The
   bech32 constant is 1, bech32m's `0x2bc830a3`. An encoder must never emit what its own decoder refuses.
 - **`the itemDelimiter` is handler-LOCAL on Windows and Linux** (engine note 2.3, OBSERVED 2026-09-24 and 09-25,
@@ -309,7 +320,10 @@ Symptom -> cause -> fix. Engine behaviour gets one line and its engine note.
     separator before splitting. The same rule made `cxBtcTxEncode` refuse the BIP-143 tx (a trailing EMPTY scriptSig):
     read lists BY INDEX and bound count guards to "too long" only; sequences stay strict.
 15. **Case folds by default** (`the caseSensitive` is false for `is`, `offset()`, and array KEYS - engine note 2.7):
-    never use an array as an exact-string index; compare through byte-value helpers.
+    never use an array as an exact-string index; compare through byte-value helpers. Setting it true does not travel:
+    it is handler-local (the LiveCode dictionary; engine note 2.3 observed that scope for the itemDelimiter), and
+    coin-selftest's `stRun` set it believing its sections byte-exact, which its Base58, WIF, xprv and EIP-55 asserts
+    were not (2026-09-26, now `stSameText`).
 16. **Every defect in the 2026-08-08 adversarial review FAILED OPEN**, and 87 green positive vectors saw none:
     `cxEthAddressIsChecksummed` compared a value with itself; `cxConvert5To8` signalled failure in-band as the bytes
     "ERROR" (now a separate status key); `cxBtcAddressP2PKH` validated nothing (the shared `cxCheckPubkey` checks length
@@ -388,7 +402,9 @@ Symptom -> cause -> fix. Engine behaviour gets one line and its engine note.
     paths use `_rx` / `_rxi`.
 22. **`is` is modelled case-SENSITIVELY whatever `the caseSensitive` says** (the property reaches array keys only,
     as a per-handler local), so `check-wallet-vectors.py` runs every vector twice, the second time with `is` and
-    `offset()` folded. `contains`, `begins with`, `ends with` and `sort` are NOT folded; putting one on
+    `offset()` folded, and `check-script-vectors.py` tier 2b runs coinxt-demo's EIP-55 handlers both ways (a demo
+    no gate ran was where the fold's absence hid a defect, 2026-09-26). `contains`, `begins with`, `ends with` and
+    `sort` are NOT folded; putting one on
     case-significant data needs a new tier, not a quiet widening. riptide's runner matches `switch` cases the same
     way: as TEXT (the engine's rule since 2026-09-25; until then through `is`, so `"1.0"` took `case "1"`), and
     case-sensitively.
@@ -617,7 +633,9 @@ are what will read it); the wallet surface added from 2026-09-04 (the Ordinals a
 BIP-322, silent-payment receiving, Runes, BOLT11, the Core backends, the 2026-09-10 fixes, the 2026-09-24 byte-level
 2^53 bound in `cwLeRead` / `cwBeRead`, the 2026-09-25 exact-integer bounds of work-plan row #8, coinxt-demo's
 `cdWholeField`, the 2026-09-26 `cwExpandExponent` bound and the 2026-09-26 hex compares through `cwSameHex` /
-`cwHexCompare`); and what the logs did not reach (the update swap, mainnet
+`cwHexCompare`); coinxt-demo's 2026-09-26 EIP-55 mixed-case test (`cdIsMixedCase`) and coin-selftest's asserts
+rewritten through `stSameText` / `stSameHex` the same day (the 296/296 above read their bare spellings; the next
+suite paste run reads these); and what the logs did not reach (the update swap, mainnet
 Electrum on port 110, the stale-answer skip, paint/pump timing, the mixed tip+fees batch, the three corrected menu
 items, the backend un-marking a coin, Esplora's 400 body in the log, CPFP on a foreign transaction, an Electrum-format
 seed opening real coins, a vault release after its height). Open work is in the suite's docs/WORK-PLAN.md.
