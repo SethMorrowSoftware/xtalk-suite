@@ -4214,7 +4214,10 @@ def check_parse_model_fires(c):
 
 def check_parse_model(c, ip, run):
     """Re-run `run` under the engine's text parse and tolerance; nothing may
-    move (the report shape is check_tolerance_models')."""
+    move (the report shape is check_tolerance_models'). The WHOLE set ran
+    under the port once, by hand on 2026-09-26 (the review, beside another
+    gate on a loaded machine: about 39 minutes with the plain pass): 1866
+    vectors plain and under the port, none moving, as under the regex."""
     inner = Checker(True)
     restore = _engine_parse_compare()
     try:
