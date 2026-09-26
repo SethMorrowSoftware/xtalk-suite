@@ -41,9 +41,8 @@ route layer, which since 2026-09-25 must be case-EXACT where the engine's `is`
 folds. That layer is driven TWICE (drive_routes): once under the interpreter's
 own `is`, which reads plain decimals as numbers and, since 2026-09-25, REFUSES a
 pair the engine reads otherwise (so qsSameText's "01" / "1" rows catch a bare `is`,
-and its "1e2" / "100" row does as a refusal, named by named_calls), and once under
-engine_is_folds, where `is` folds case as the
-engine's does by default (so a bare `is` in qsHttpAllow, qsCorsPreflight or
+and its "1e2" / "100" call fails as a refusal, on a row named_calls adds for it), and
+once under engine_is_folds, where `is` folds case as the engine's does by default (so a bare `is` in qsHttpAllow, qsCorsPreflight or
 qsSameText's exact stage answers as it would on the engine, and fails). Both
 passes read the tables through the model's folded array keys, and fill them
 through the script's own writers. The second pass was added the same day, when
@@ -300,21 +299,39 @@ def engine_is_folds():
 REFUSED = "REFUSED by the family interpreter (LCS.Indistinct)"
 
 
-def named_calls(ip):
+def _args_shown(args):
+    """A call's arguments as a failure label spells them: each repr cut to 40 characters,
+    so an HTTP buffer does not bury the name."""
+    out = []
+    for a in args:
+        text = repr(a)
+        out.append(text if len(text) <= 40 else text[:37] + "...")
+    return ", ".join(out)
+
+
+def named_calls(c, ip):
     """ip.call, bar one thing: a comparison the family interpreter REFUSES
     (LCS.Indistinct: the engine answers it differently from the model, engine notes 2.10
-    and 2.11) comes back as a value no mirror equals, so it fails its OWN row, by name,
-    and the rows after it still run. Until 2026-09-26 it ended the gate in a traceback
-    that named no row: the mutation drive's bare-`is` qsSameText is refused at "1e2" /
-    "100" (the engine reads both as one number, the text says two), and
-    test-script-vectors needs the name. A refusal is never a pass: the shipped script
-    meets none (every route comparison is letter-prefixed), and one would fail here,
-    named."""
+    and 2.11) FAILS A ROW OF ITS OWN, named by the call and its arguments, and the call
+    answers REFUSED so the rows after it still run. Until 2026-09-26 it ended the gate in
+    a traceback that named no row: the mutation drive's bare-`is` qsSameText is refused
+    at "1e2" / "100" (the engine reads both as one number, the text says two), and
+    test-script-vectors needs the name. The failure is recorded HERE, not left to the
+    caller's row, because a row reads its value through a filter a refusal can pass: the
+    first version returned the REFUSED text and let each row fail on it, and
+    boolish(REFUSED) is false, which is what qsSameText('1e2','100') expects, so that row
+    passed, and qsRouteMatch's `None if not isinstance(got, dict)` read it as "no match"
+    (a planted refusal went through the whole gate green; test-script-vectors now
+    carries it). A refusal is never a pass: the shipped script meets none (every route
+    comparison is letter-prefixed), and one fails here, named. `c` is the pass's own
+    checker, so the row carries the pass's tag."""
     def call(name, args):
         try:
             return ip.call(name, args)
         except LCS.Indistinct as exc:
-            return "%s: %s" % (REFUSED, str(exc)[:200])
+            c.ck("%s(%s): REFUSED by the family interpreter" % (name, _args_shown(args)),
+                 "%s: %s" % (REFUSED, str(exc)[:200]), "an answer")
+            return REFUSED
     return call
 
 
@@ -337,7 +354,7 @@ def drive_routes(c, ip):
     reserved namespaces, the declared-method token, the case-exact keys, the lookups and
     the :param patterns. drive() runs it under the interpreter's `is` and again under
     engine_is_folds(), with each label tagged; see engine_is_folds for why both."""
-    call = named_calls(ip)
+    call = named_calls(c, ip)
 
     # -- the route tables are filled through the SCRIPT's own writers (qsHttpRoute for the
     # built-in table, qsUserRouteStore for a folder's), never typed here: the key shape is
@@ -570,7 +587,7 @@ def drive_routes(c, ip):
 # the drive, section by section in the golden's order
 
 def drive(c, ip, world, sandbox):
-    call = named_calls(ip)
+    call = named_calls(c, ip)
     total = 1000
 
     # -- byte ranges --

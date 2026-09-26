@@ -187,7 +187,8 @@ Gotchas 1-10 keep their numbers: the suite work plan cites gotcha 8.
     the WHOLE map (an unset key reads as empty), which caught both.
 21. **A token, hash or nonce never meets bare `is`.** `is` compares two operands that
     both parse as numbers AS NUMBERS (C `strtod`, no range check; the suite's engine note
-    2.11, from the engine source, not yet observed): a hex token shaped digits-`e`-digits
+    2.11, from the engine source; `"1e999" is "2e999"` and `"1e5" is "100000"` read true
+    on Linux and on Windows, 2026-09-25, OBSERVED): a hex token shaped digits-`e`-digits
     overflows to +inf, and so do `1e999` and `inf` in a request, so `qsCwServe`'s capability
     gate let `/1e999/` in on about one share in 1.2 million until it compared
     `("t" & tTok)` with `("t" & sCwToken)` (2026-09-25; verified statically; needs an OXT
@@ -236,6 +237,7 @@ whole stack. The dated rows are STATIC records, each waiting on the checklist.
 | 2026-09-11 | family interpreter, not the engine | `tools/check-script-vectors.py` on the golden's inputs | 435 checks green; the fixture test catches 4 of 4 seeded defects (dotfile guard false; FIRST Content-Length kept; `..` admitted; Tor HEAD body sent) |
 | 2026-09-24 | none (static) | the OnionXT wording the 2026-08-24 embed made wrong: the header's builder list, `qsCapabilityLine`'s "OnionXT not in the message path", two `qsLog` lines advising an OnionXT install, the Tor chip's "extension not installed", two stale comments; one reason sentence, `qsOnionOffReason` | checklist section 8's "Without SodiumXT" line is its pass |
 | 2026-09-25 | family interpreter, not the engine | case-exact routing (gotcha 22): hex route and root keys, `qsSameText`, the reserved guard and the capture-name check folded on purpose; `qsRouteLookupKey` now reads the table and answers the key that dispatches, or empty; a declared route method must be a token (`qsHttpMethodValid`) | golden and execution gate green; the fixture test catches 16 of 16 seeded defects, twelve of them this change's (the raw-text keys that fold, raw root keys, `qsSameText` as bare `is`, the reserved guard and the capture-name check compared exactly, the pattern tie-break on the readable key; then, from its review, bare `is` in both halves of Allow and in the CORS preflight, `qsSameText` without its exact stage, which only the gate's second, engine-`is` pass names, and the declared-method token's predicate and its call site); checklist section 4 is its pass |
+| 2026-09-26 | family interpreter, not the engine | the gate under the interpreter's comparison refusal (suite engine notes 2.10, 2.11): a comparison the model REFUSES (`Indistinct`) now fails a row of its own, named by the call (`named_calls`); its first version handed the refusal back as text, which `boolish` read as false, so a script whose only fault was a refused `"1e2" is not "100"` passed the whole gate | execution gate green (the shipped script meets no refusal); the fixture test catches 17 of 17 seeded defects, the new one that script; a gate change, the shipped script untouched: no engine pass owed |
 
 Decisions that bind this app (the suite's docs/OPEN-DECISIONS.md), all 2026-08-27: **D-09**
 the Tor path stays close-per-response; **D-02** the HTTP-host endpoint menu waits for the

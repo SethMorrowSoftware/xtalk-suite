@@ -581,7 +581,9 @@ def u64_call(ip, name, args):
 
 
 def u64_parsed(out):
-    """True when rsParseHead's answer is a parsed head, not a refusal."""
+    """True when rsParseHead's answer is a parsed head, not a refusal.
+    Never asked of INDISTINCT: the callers pass that through as itself (a
+    non-empty text, it would read here as a parsed head)."""
     return bool(out) and out != ""
 
 
@@ -597,7 +599,11 @@ def u64_rows(ip):
         out = u64_call(ip, "rsParseHead", [u64_head_with_seq(seq8)])
         rows.append(("rsParseHead: %s %s"
                      % (label, "parses" if should_parse else "refused"),
-                     out if out is PAST_2P53 else u64_parsed(out),
+                     # PAST_2P53 and INDISTINCT stand as themselves: read
+                     # through u64_parsed, a refusal was a "parses" answer
+                     # (2026-09-26; tier 1c's seq-0 fixture holds it)
+                     out if out is PAST_2P53 or out is INDISTINCT
+                     else u64_parsed(out),
                      should_parse))
     out = u64_call(ip, "rsParseHead",
                    [u64_head_with_seq(b"\x00\x20\x00\x00\x00\x00\x00\x00")])
@@ -882,12 +888,38 @@ def seed_old_bound(text, fail):
 
 def _refuses_2p53p1(interp):
     """[head refused?, BTXO total refused?] for a u64 of 2^53 + 1. A parsed
-    head and PAST_2P53 alike mean: not refused."""
+    head and PAST_2P53 alike mean: not refused. A call the interpreter
+    refused to decide reads INDISTINCT, never True or False: until
+    2026-09-26 it read "not refused" in both places (a non-empty answer to
+    u64_parsed, a status other than "refused"), which is the answer the
+    models' fixtures below expect of the old bound."""
     head = u64_call(interp, "rsParseHead",
                     [u64_head_with_seq(b"\x00\x20" + b"\x00" * 5 + b"\x01")])
     total = u64_call(interp, "rsBtxoStreamStep",
                      [u64_btxo_header(2 ** 53 + 1), "header"])
-    return [not u64_parsed(head), u64_status(total) == "refused"]
+    return [head if head is INDISTINCT else not u64_parsed(head),
+            total if total is INDISTINCT else u64_status(total) == "refused"]
+
+
+# A comparison the engine answers TRUE at seq 0 (`0 is 1e-15`: inside
+# MC_EPSILON of zero, engine note 2.10) and the plain interpreter therefore
+# refuses, seeded just before rsReadBEu64's return: on an engine it would
+# refuse a valid seq 0, and headlessly tier 1b's table read the refusal as
+# "seq 0 parses" and passed (2026-09-26). Never shipped; a fixture.
+_U64_RETURN = "   return tHi * 4294967296 + tLo\nend rsReadBEu64\n"
+SEQ0_REFUSED_LINES = ("   if tHi * 4294967296 + tLo is 0.000000000000001 then\n"
+                      "      return empty\n"
+                      "   end if\n")
+
+
+def seed_refused_seq0(text, fail):
+    """TEXT with SEQ0_REFUSED_LINES before rsReadBEu64's one return."""
+    found = text.count(_U64_RETURN)
+    if found != 1:
+        fail("tier 1c's seq-0 refusal fixture expects rsReadBEu64 to end in "
+             "ONE `return tHi * 4294967296 + tLo`, and found %d; without it "
+             "tier 1b's refusal reading goes untested" % found)
+    return text.replace(_U64_RETURN, SEQ0_REFUSED_LINES + _U64_RETURN)
 
 
 def check_u64_engine_models(c, ip, src, fail):
@@ -915,14 +947,17 @@ def check_u64_engine_models(c, ip, src, fail):
             c.ck("fixture: %s misreads at least one of them (margin, not "
                  "the rule)" % name, got != want, True)
     old = LCS.Interp(seed_old_bound(src, fail))
-    head = u64_call(old, "rsParseHead",
-                    [u64_head_with_seq(b"\x00\x20" + b"\x00" * 5 + b"\x01")])
-    total = u64_call(old, "rsBtxoStreamStep",
-                     [u64_btxo_header(2 ** 53 + 1), "header"])
     c.ck("fixture: the plain interpreter REFUSES to decide the "
          "pre-2026-09-24 bound at 2^53+1 (head, BTXO total) - it answered "
          "the IEEE way until 2026-09-25, which is why every headless gate "
-         "was green over it", [head, total], [INDISTINCT, INDISTINCT])
+         "was green over it", _refuses_2p53p1(old), [INDISTINCT, INDISTINCT])
+    # A REFUSAL IS NEVER A ROW'S ANSWER (2026-09-26): tier 1b's table must
+    # read a refused seq-0 comparison as the refusal, not as a parsed head.
+    refused = LCS.Interp(seed_refused_seq0(src, fail))
+    c.ck("fixture: a comparison the plain interpreter refuses at seq 0 "
+         "reads as that refusal in tier 1b's table, never as `parses`",
+         [got for label, got, _w in u64_rows(refused)
+          if label.startswith("rsParseHead: seq 0 ")], [INDISTINCT])
     for name, model in ENGINE_MODELS:
         with engine_model(model) as hook:
             got = _refuses_2p53p1(old)

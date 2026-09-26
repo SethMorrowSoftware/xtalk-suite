@@ -596,12 +596,14 @@ private command rstSectionHead
    --                                items 1, 2, 3, 5 and 7 (the ones this
    --                                prediction reads otherwise) and answers
    --                                4, 6 and 8 as the prediction does
+   -- Read 2026-09-25 on Linux and then on Windows exactly as predicted
+   -- (OBSERVED; engine notes 2.10 and 2.11, riptide/CLAUDE.md's ledger).
    -- Items 1 and 2 are why a hex digest must never meet `is` as bare text
    -- (engine note 2.11). Every operand is below 2^53, but the interpreter
    -- refuses a comparison the engine answers differently (engine notes 2.10
    -- and 2.11; coinxt's check-script-vectors tier 0 holds that refusal to
-   -- this line's prediction), so no headless run prints it any more (the
-   -- all-absent boot gate stops before this section anyway).
+   -- this line as the engines read it), so no headless run prints it any
+   -- more (the all-absent boot gate stops before this section anyway).
    put "      numeric compare probe 3 (diagnostic; the engine source's rule" && \
          "reads true,true,false,true,false,true,true,false):" && \
          ("1e999" is "2e999") & "," & \

@@ -610,8 +610,11 @@ a Boolean), raised where nothing does. The second census (2026-09-26, 2.10's
 Gate) found none in shipped script either; the one refusal of number-like
 text outside the fixtures that ask for it was nocloud's planted bare-`is`
 `qsSameText` mutant at `"1e2" is "100"`, which ended its gate in a traceback
-before the row that names it printed, so that gate now fails a refused row BY
-NAME. holde-em's harness
+before the row that names it printed, so that gate now fails a refused call BY
+NAME, on a row of its own (its first version handed the refusal back as text,
+which the row that expects `false` read as false: a script whose only fault
+was a refused comparison passed the gate green until review, 2026-09-26; the
+gate's mutation drive now carries that script). holde-em's harness
 pins the genesis head against "0", which both readings agree on.
 
 ## 3. Control flow

@@ -633,7 +633,22 @@ def check_interp_number_text(c):
             # the integer parse also takes a point and zeros, at any length
             ("t is 12", {"t": "12." + "0" * 400}, "true", "answered true"),
             ('"12a" is "12"', {}, "false", "answered false"),
+            # text after the integer parse's number makes the whole TEXT,
+            # never a strtod retry (MCU_strtor8 answers on the integer parse
+            # whatever its remainder; 2026-09-26, a mutant that read "12 5"
+            # as 12 survived every row above)
+            ('"12 5" is "12"', {}, "false", "answered false"),
+            # a point right after 0x is text before strtod ever runs (the
+            # early `p[1] == 'x'` test), where C99's strtod reads 0x.8 as 0.5
+            ('"0x.8" is "0.5"', {}, "false", "answered false"),
             ("t is u", {"t": top, "u": top}, "true", "answered true"),
+            # past Python's 4300-digit int() limit: text to the engine (too
+            # long for strtod, too wide for the integer parse), and the width
+            # test must not convert it (a ValueError until 2026-09-26)
+            ("t is u", {"t": "1" * 5000, "u": "1" * 5000}, "true",
+             "answered true"),
+            ("t is u", {"t": "1" * 5000, "u": "2" * 5000}, "false",
+             "answered false"),
             # forms the note does NOT establish: refused unless identical
             ('"0x10" is "16"', {}, "unknown", "refused"),
             ('"0x10" is "0x10"', {}, "true", "answered true"),
@@ -683,6 +698,7 @@ def check_interp_number_text(c):
             ('" 3 " is an integer', {}, "true", "answered true"),
             ('"3." is an integer', {}, "true", "answered true"),
             ('"2.5" is an integer', {}, "false", "answered false"),
+            ('"12 5" is a number', {}, "false", "answered false"),
             ("1 + 1 / 1125899906842624 is an integer", {}, "false",
              "answered false"),
             ("1 + 1 / 1125899906842624 is a number", {}, "true",

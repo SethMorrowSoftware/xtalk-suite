@@ -325,7 +325,9 @@ Symptom -> cause -> fix. Engine behaviour gets one line and its engine note.
     2.1e15 round trip here; riptide tier 1d's naive `rsSeqCompare`, old ingest lines and old `>=` bound), the
     records' probe 3 items 3-8 in tier 4's and tier 1c's plain legs, with IEEE REPLAYED as one more model where a
     fixture must show what IEEE answered; and nocloud's planted bare-`is` `qsSameText` mutant, refused at "1e2" /
-    "100" before the row that names it printed (that gate now fails a refused row by name).
+    "100" before the row that names it printed (that gate now fails a refused call by name, on a row of its own:
+    handed back as text, a refusal read as `false` had passed the row expecting false). A gate that catches
+    `Indistinct` must FAIL on it, never convert it into a value a row's filter can read as an answer.
 21. **What the model does.** Arrays are values (deep copy at every binding). The trailing-delimiter rule is modelled (a
     bare `split()` once made the "m/" negative vector test the model, not the script). `the number of chunks of X & Y`
     counts X alone (engine note 2.6, corrected 2026-09-11: the "binds into the target" reading was the runner's; the

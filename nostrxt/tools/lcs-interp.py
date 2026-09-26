@@ -1062,7 +1062,14 @@ def _read_text_uncached(s):
         return _READ_TEXT, None, ""
     if len(p) > _R8L:
         wide = _WIDE_DECIMAL.fullmatch(core)
-        if how == "overflow" and wide and int(wide.group(1)) < 2 ** 63:
+        # the width test is on the DIGITS, never through int(): Python refuses
+        # to convert more than 4300 digits (a ValueError, 2026-09-26: a
+        # 5000-digit text compared with itself crashed here, where the engine
+        # compares it as text and this file had answered)
+        digits = wide.group(1).lstrip("0") if wide else ""
+        if how == "overflow" and wide and (
+                len(digits) < 19
+                or (len(digits) == 19 and int(digits) < 2 ** 63)):
             return _READ_UNSURE, None, _UNSURE_WIDTH
         return _READ_TEXT, None, ""
     m = _STRTOD_DECIMAL.match(p)
