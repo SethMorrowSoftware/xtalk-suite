@@ -267,8 +267,9 @@ keeping the scaffold for its report.
   `x86_64-linux` build by the maintainer's account (64-bit, "the latest builds"; the
   caps agree, since no committed Linux build before `421bab3` carries them): its
   first engine load, which closed engine #1; its libtorrent version was not printed
-  (the tree pins 2.0.11 for Linux). Harness 106/106 in the suite paste on Windows, 2026-09-24, on the
-  2026-09-12 build by the maintainer's account (its first engine load, and
+  (the tree pins 2.0.11 for Linux). Harness 106/106 in the suite paste on Windows,
+  2026-09-24, on the 2026-09-12 build by the maintainer's account (its first engine
+  load, and
   libtorrent 2.1.1's and `load_torrent_buffer`'s first RECORDED Windows run, the
   2026-08-27 paste having recorded neither platform nor binaries; the 996-byte caps
   included); 101/101 on
@@ -317,12 +318,11 @@ keeping the scaffold for its report.
 - Latest records: the suite paste on Linux, 2026-09-25: folded 34/34 and the paste's
   own live loopback COMPLETED (127.0.0.1:27196: connect, the sealed ciphertext
   byte-for-byte, 60000 bytes reassembled into one message, a graceful disconnect),
-  on the 2026-09-12 `x86_64-linux` build by the maintainer's account; the Windows paste of 2026-09-24, folded 34/34
-  on the 2026-09-12 DLL with that loopback stalled (1.3 #9); standalone selftest
-  2026-08-07; async loopback 2026-08-13; folded 34 on 2026-08-20; `enet-lan-chat`
-  on one Linux machine 2026-08-18;
-  `enet-internet-chat` could not connect on one network 2026-08-27 (no hairpin, as
-  expected).
+  on the 2026-09-12 `x86_64-linux` build by the maintainer's account; the Windows
+  paste of 2026-09-24, folded 34/34 on the 2026-09-12 DLL with that loopback stalled
+  (1.3 #9); standalone selftest 2026-08-07; async loopback 2026-08-13; folded 34 on
+  2026-08-20; `enet-lan-chat` on one Linux machine 2026-08-18; `enet-internet-chat`
+  could not connect on one network 2026-08-27 (no hairpin, as expected).
 
 **Coding.**
 
@@ -349,9 +349,10 @@ keeping the scaffold for its report.
 - Latest records: the suite paste on Linux, 2026-09-25: folded 39/39 and the paste's
   own live loopback COMPLETED (negotiated, both ends open, SCTP at or above its
   16 KiB floor, the large payload whole), on the 2026-09-12 `x86_64-linux` build by
-  the maintainer's account (it needs glibc 2.38; Kubuntu 24.04 ships 2.39); the Windows paste of 2026-09-24, folded
-  39/39 on the 2026-09-12 DLL with that loopback stalled (1.3 #9); first live
-  loopback 2026-08-08; standalone async loopback 2026-08-15; folded 39 on 2026-08-20; `datachannel-dht-chat` on one machine each on
+  the maintainer's account (it needs glibc 2.38; Kubuntu 24.04 ships 2.39); the
+  Windows paste of 2026-09-24, folded 39/39 on the 2026-09-12 DLL with that loopback
+  stalled (1.3 #9); first live loopback 2026-08-08; standalone async loopback
+  2026-08-15; folded 39 on 2026-08-20; `datachannel-dht-chat` on one machine each on
   Linux and Windows 2026-08-18. On 2026-08-27 the maintainer reported a DHT-signalled
   WebRTC chat working on two machines on one LAN; the stack and the selected-pair
   type were not recorded.

@@ -232,9 +232,8 @@ Still `VERIFY:` (not yet exercised):
 8. Mode B: `oxLaunchTor` / `oxStopTor` past their offline legs (the empty-argument refusal and the
    unauthenticated disconnect ran green 2026-09-24, Windows, and 2026-09-25, Linux), `open process`,
    the `oxProcessId` accessor, `__OwningControllerProcess` (engine note 6.3); since 2026-09-24 also
-   the torrc-write and
-   `open process` result checks (what `the result` holds on success and on failure) and the
-   `Log notice file` line (the log appears and the pipe stays quiet).
+   the torrc-write and `open process` result checks (what `the result` holds on success and on
+   failure) and the `Log notice file` line (the log appears and the pipe stays quiet).
 9. The four inline hypotheses (runbook B.12): a second service on an in-use local port refused; the
    accepted-socket id format; a stale `close socket` tolerated; the topStack as default callback owner.
 10. An OnionXT-to-OnionXT onion dial and the two-instance sealed round trip (`examples/onion-roundtrip`).

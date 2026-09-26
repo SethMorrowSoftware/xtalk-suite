@@ -20,8 +20,9 @@ script "nostrxt-tests"
 -- restore, in sections 4 and 14) - and on 2026-09-25 (Linux, 64-bit, the
 -- suite paste): the same 277 passed, 0 failed, 2 skipped. Section 17 (the
 -- relay layer, offline) has no engine run anywhere; the demo's "Run
--- nxSelfTest" button is where it runs. Section 17: verified statically; needs an OXT pass. Every
--- pinned constant below is DERIVED by tools/nostr-kat.py from the
+-- nxSelfTest" button is where it runs. Section 17: verified statically;
+-- needs an OXT pass. Every pinned constant below is DERIVED by
+-- tools/nostr-kat.py from the
 -- published BIP-340, NIP-44, BIP-173 and NIP-19 vector sets or from the
 -- member's own oracle fixtures, and tools/check-selftest-vectors.py
 -- re-derives each one BY NAME on every build - never hand-edit a vector

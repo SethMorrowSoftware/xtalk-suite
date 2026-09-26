@@ -449,8 +449,9 @@ engine reports Win32; 277 passed, 0 failed, the same 2 skips) and **2026-09-25**
 same 277 / 0 / 2). Of the relay recipes, connect, handshake, publish and the relay's
 ok-confirm are **LIVE-PROVEN 2026-08-24** against wss://nos.lol; the half of recipe 6 that
 subscribes and reads events back, the NIP-42 answer in recipe 8, the teardown in recipe 11 and
-every ws:// path keep **"verified statically; needs a live-relay pass"**. The wss:// run met an ordinary public host, so whether a bad certificate
-would be refused is unmeasured in both directions (docs/07 gap #2).
+every ws:// path keep **"verified statically; needs a live-relay pass"**. The wss:// run met an
+ordinary public host, so whether a bad certificate would be refused is unmeasured in both
+directions (docs/07 gap #2).
 
 When you sit down at an engine: the suite runbook (`docs/OXT-PASS-RUNBOOK.md` at the suite root)
 is what to do and in what order; the member harness (`examples/nostrxt-tests.livecodescript`, or

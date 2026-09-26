@@ -109,14 +109,15 @@ holds every dated record); open work is in [docs/WORK-PLAN.md](docs/WORK-PLAN.md
 
 **Platform gaps, suite-wide.** Every native member's current binaries come from the 2026-09-12
 release dispatch (commit 421bab3). Their Windows builds first met an engine on 2026-09-24, in the
-suite paste, by the maintainer's account (the bitness was not recorded). Their `x86_64-linux` builds
-(sodiumxt's and box2dxt's are still run 12's) first met an engine on the record on 2026-09-25, in the same paste,
-green, on 64-bit Kubuntu 24.04 with "the latest builds" by the maintainer's account (torrentxt's
-997-byte refusals agree; the OXT build and library versions were not recorded). No
-OXT engine has loaded any `universal-mac` dylib. No record names a 32-bit engine: sodiumxt, torrentxt and coinxt on x86-win32 (coinxt's 32-bit DLL may never have executed
+suite paste, by the maintainer's account (the bitness was not recorded). Their `x86_64-linux`
+builds (sodiumxt's and box2dxt's are still run 12's) first met an engine on the record on
+2026-09-25, in the same paste, green, on 64-bit Kubuntu 24.04 with "the latest builds" by the
+maintainer's account (torrentxt's 997-byte refusals agree; the OXT build and library versions
+were not recorded). No OXT engine has loaded any `universal-mac` dylib. No record names a 32-bit
+engine: sodiumxt, torrentxt and coinxt on x86-win32 (coinxt's 32-bit DLL may never have executed
 anywhere: CI's Windows KAT step is x86_64 only, and the 2026-09-24 run's bitness is unknown), and
-sodiumxt and torrentxt on x86-linux. The Windows DLLs carry libsodium 1.0.22 (accepted, D-08) and libtorrent
-2.1.1 rather than the 1.0.20 and 2.0.11 the other platforms pin. Linux floors vary: both
+sodiumxt and torrentxt on x86-linux. The Windows DLLs carry libsodium 1.0.22 (accepted, D-08) and
+libtorrent 2.1.1 rather than the 1.0.20 and 2.0.11 the other platforms pin. Linux floors vary: both
 datachannelxt builds and torrentxt's 32-bit build need glibc 2.38, box2dxt's 32-bit build 2.34.
 The macOS dylibs are universal (arm64 + x86_64) and unsigned.
 
@@ -134,8 +135,8 @@ The macOS dylibs are universal (arm64 + x86_64) and unsigned.
 | 2026-08-20 | Windows | 1,981 passed, 0 failed, 1 skipped: the whole run, both live loopbacks, the 60000-byte budget on both transports, teardown |
 | 2026-08-24 | Windows x86_64, OXT 9.6.3 | 2,373 passed, 0 failed, 3 skipped: nostrxt's first contact, coinxt's BIP-341, sodiumxt's ABI 10 |
 | 2026-08-27 | two machines, one LAN | 2,440 passed, 2 failed, 3 skipped: every folded member green; both failures were the live loopbacks, stalled by loopback UDP being blocked on that machine |
-| 2026-09-24 | Windows (the engine reports Win32), three runs | the D-23 board's first engine runs: 2,620 / 5 / 3, then 2,623 / 2 / 3 and 2,623 / 2 / 10 once riptide's two fixes and the board review's were in. Both live loopbacks stalled in all three runs, in the same phases (runbook 5.5); the first run's other three failures were riptide's, fixed that evening, and its probe lines found the engine's comparison tolerance (engine note 2.10) |
-| 2026-09-25 | Linux: 64-bit Kubuntu 24.04 and the latest committed builds, by the maintainer's account (the OXT build not recorded) | 2,672 passed, 0 failed, 10 skipped: every member present and green, both live loopbacks completing (the paste's loopback code finishes on an engine); box2dxt settles engine note 2.3's itemDelimiter half on Linux; riptide's third probe line reads the engine's comparison constant to the digit and shows number-like texts comparing as numbers (engine notes 2.10, 2.11) |
+| 2026-09-24 | Windows (the engine reports Win32), three runs | the D-23 board's first engine runs: 2,620 / 5 / 3, then 2,623 / 2 / 3 and 2,623 / 2 / 10 once riptide's two fixes and the board review's were in. Both live loopbacks stalled in all three runs, in the same phases (runbook 5.5); the first run's other three failures were riptide's, fixed that evening, and riptide's probe lines, printed from the second run on, found the engine's comparison tolerance (engine note 2.10) |
+| 2026-09-25 | Linux: 64-bit Kubuntu 24.04 and the latest committed builds, by the maintainer's account (the OXT build not recorded) | 2,672 passed, 0 failed, 10 skipped: all ten probed extensions and script layers present and every member row green (nocloud has no in-engine harness), both live loopbacks completing (the paste's loopback code finishes on an engine); box2dxt settles engine note 2.3's itemDelimiter half on Linux; riptide's third probe line reads the engine's comparison constant to the digit and shows number-like texts comparing as numbers (engine notes 2.10, 2.11) |
 
 ## The shared engineering rules
 

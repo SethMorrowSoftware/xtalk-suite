@@ -18,9 +18,10 @@ never by silent fix.
 > compute halves of phases 4-7, through the 2026-08-23 additions (the
 > kind-C rail, `rsBtxoStreamStep`, `rsMediaStreamPlan`), ran green on an
 > engine in the suite paste on 2026-08-24 (Windows x86_64, riptide
-> 391/391), and again on 2026-09-24 and 2026-09-25 (below). The live legs - the phase-5 call, the two-machine mesh,
-> anything over a real tor or a real relay - remain, and
-> `docs/two-machine-runbook.md` scripts each. Added after 2026-08-24: the
+> 391/391), and again on 2026-09-24 and 2026-09-25 (below). The live
+> legs - the phase-5 call, the two-machine mesh, anything over a real tor
+> or a real relay - remain, and `docs/two-machine-runbook.md` scripts
+> each. Added after 2026-08-24: the
 > Nostr bridge, the app-state store, the required `pMinSeq` watermarks, the
 > u64 bound, the 996-byte record cap, and the 2026-09-09 LAN admission tag
 > (`riptide-lan-a`), which re-pinned the admission and welcome bytes. Their

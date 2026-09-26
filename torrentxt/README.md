@@ -228,14 +228,16 @@ BEP44 signed mutable items, NAT port mapping and the rp1 transport. The member h
 real engine** on Windows on 2026-08-17, 2026-08-20 and 2026-08-24, and **106/106** on
 2026-09-24 (Windows) and 2026-09-25 (Linux x86_64) with its new BEP44 size-boundary rows
 (first full run 96/96 on 2026-08-10; the session lifecycle and the signed-put refusal first
-observed 2026-08-08), so every public handler has executed on an engine. The two-machine rp1/DHT transport is evidenced through
-riptide (2026-08-13, 2026-08-15), and rp1 chat was reported working across two machines on
-one LAN on 2026-08-27. The 2026-09-24 run loaded the binaries committed 2026-09-12 (the
-maintainer's account, and its 997-byte refusals pass on no build older than 2026-09-08):
-their first engine load, so the 996-byte BEP44 cap and libtorrent 2.1 have run on Windows;
-its bitness was not recorded. The 2026-09-25 run loaded the same release's `x86_64-linux`
-library (the maintainer's account: 64-bit Kubuntu 24.04, the latest committed builds), its
-first engine load, so the cap has run on Linux on the pinned libtorrent 2.0.11 too. Still
+observed 2026-08-08), so every public handler has executed on an engine. The two-machine
+rp1/DHT transport is evidenced through riptide (2026-08-13, 2026-08-15), and rp1 chat was
+reported working across two machines on one LAN on 2026-08-27. The 2026-09-24 run loaded
+the binaries committed 2026-09-12 (the maintainer's account, and its 997-byte refusals pass
+on no build older than 2026-09-08): their first engine load, so the 996-byte BEP44 cap and
+libtorrent 2.1 have run on Windows; its bitness was not recorded. The 2026-09-25 run loaded
+the same release's `x86_64-linux` library (the maintainer's account: 64-bit Kubuntu 24.04,
+the latest committed builds; its 997-byte refusals agree), its first engine load, so the
+cap has run on Linux too, on the libtorrent 2.0.11 that build pins (the report prints no
+library version). Still
 owed: those binaries' rp1 queue cap and dropped-alert report under a real overflow; the
 Windows DLL of the other bitness; the 32-bit Linux library; any macOS engine; and the
 demos' kit-unified UIs, Tor paths and remaining two-machine runs, which are

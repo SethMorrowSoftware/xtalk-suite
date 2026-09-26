@@ -4,8 +4,8 @@
 > 10's `sxChaCha20IetfXor`) and engine-proven 2026-08-24 with the rest of the `nx*` core
 > (Windows x86_64, OXT 9.6.3), and again 2026-09-24 (Windows, the engine reports Win32) and
 > 2026-09-25 (Linux). On an installed SodiumXT older than ABI 10, encrypt/decrypt fail
-> closed by design (step 5). Relay-borne NIP-44 events (send one to a relay, read one back) keep "verified statically;
-> needs a live-relay pass".
+> closed by design (step 5). Relay-borne NIP-44 events (send one to a relay, read one back)
+> keep "verified statically; needs a live-relay pass".
 
 NIP-44 v2 is the encrypted-payload format that supersedes NIP-04: a versioned, padded,
 authenticated construction whose keys derive from a static ECDH between two Nostr identities.

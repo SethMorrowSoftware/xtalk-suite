@@ -366,11 +366,14 @@ reading item for item (exact IEEE comparison would read items 3 to 8
 - items 3-4: `1e-15 > 0` false and `1e-14 > 0` true, the absolute branch near
   zero, its threshold between the two (the source's is 2.2e-15);
 - items 1-2 read how text becomes a number (2.11).
-So on Linux the whole rule is OBSERVED, its constant included. On Windows the
-two probe lines bracket the relative tolerance between 8 and 16 DBL_EPSILON
-(OBSERVED 2026-09-24), and the 10 there is INFERRED: from the same source and
-from readings identical to Linux's, since the third line has not run on
-Windows.
+So on Linux the rule's shape (relative above the near-zero branch, absolute
+within it) and its constant are OBSERVED at every point the three lines
+probe; between those points, and for the comparison operators no line uses,
+the rule stays the source's (DOCUMENTED) and what follows from it INFERRED
+(below). On Windows the two probe lines bracket the relative tolerance
+between 8 and 16 DBL_EPSILON (OBSERVED 2026-09-24), and the 10 there is
+INFERRED: from the same source and from readings identical to Linux's, since
+the third line has not run on Windows.
 **What follows** (INFERRED from the rule, bar the two points marked, which the
 Linux run's third probe line read directly):
 - Two INTEGERS one apart compare EQUAL from N = 450,359,962,737,050 (2^52 / 10,
@@ -406,8 +409,9 @@ the probes ruled out, kept as margin (an absolute 1e-6 tolerance, a
 engine's accept through the old line, and the engine's rule to read the
 fourteen recorded numeric probe answers through the interpreter (the first two
 lines, and the third line's items 3 to 8; its items 1-2 are a text parse the
-interpreter does not model) while each margin model misreads one: `riptide/tools/check-script-vectors.py` (tier 1c, plus a static
-scan refusing a library comparison against a quotient) and
+interpreter does not model) while each margin model misreads one:
+`riptide/tools/check-script-vectors.py` (tier 1c, plus a static scan refusing
+a library comparison against a quotient) and
 `coinxt/tools/check-wallet-vectors.py` (tier 4). They settle the rewritten
 bounds' LOGIC. No gate yet refuses a comparison that falls INSIDE the
 tolerance anywhere else in the tree (docs/WORK-PLAN.md).

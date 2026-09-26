@@ -18,8 +18,8 @@
 -- Engine-verified through ABI 10 (2026-08-24, again on Windows 2026-09-24
 -- and on Linux x86_64 2026-09-25: 106 checks in the suite paste each time,
 -- the raw-ChaCha20 section included; previously through ABI 9): the "run it
--- in OXT to confirm" label that
--- stood here is retired by recorded passes - the complete harness ran green
+-- in OXT to confirm" label that stood here is retired by recorded passes -
+-- the complete harness ran green
 -- on-engine 2026-08-10 (68 checks, zero failures, twice in one day), again
 -- 2026-08-12 on Windows x64 (71 checks, adding the ABI-7 sxSha3_256 / FIPS 202
 -- vectors), and testRistretto (the ABI 8 group surface plus the ABI 9
