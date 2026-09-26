@@ -266,7 +266,7 @@ constant kStHeight = 640
 -- hand-copied number that let coin-wallet's controls of 2026-09-02..04 never
 -- appear in a stack that already existed. The "suite-board-" prefix keeps the
 -- `is` in suBuild a TEXT compare (engine note 2.11).
-constant kSuUiVersion = "suite-board-a6bce2a8362a"
+constant kSuUiVersion = "suite-board-0961bb91e5ee"
 -- One row per tools/member-registry.py member, IN ITS ORDER AND ITS SPELLING,
 -- then the cross-member row. check-suite-selftest.py holds all three lists to
 -- the registry, so a new member cannot be missing from the board.
@@ -2161,12 +2161,23 @@ end scFinish
 -- self-check, 9 passed, 0 failed, including its delayed write), openStack's
 -- Run all end to end, the tallies (the summary's check that the rows add up to
 -- the totals held at 2620 / 5 / 3), the boot block above the summary, and Copy
--- results. NOT SHOWN BY THAT REPORT, so still verified statically; needs an OXT
--- pass (OXT-PASS-RUNBOOK row 48): a row's Run (the button-1 press arming a
--- tick), Show, the filter buttons and their views, and how the pills looked.
--- The headless UI boot (tools/check-suite-ui-boot.py) settles their LOGIC and
--- nothing about rendering or message delivery. The checks the run makes are
--- the ones the dated records ran.
+-- results; the board review's fixes a report can show (the merged skips, the
+-- banner, the renamed pump) ran in that day's third run. RAN AGAIN 2026-09-25
+-- on Linux (the paste as at f1346e0, by its version lines): the same build,
+-- boot self-check and tallies (2672 / 0 / 10, both loopbacks completing), and
+-- Copy results by the maintainer's account, from a SECOND Run all in one
+-- launch (the same account), which took a fresh torrent session and ran
+-- riptide's session sections green. And again that day on Windows (the same
+-- paste by its version lines; 2653 / 2 / 10, the 2 the stalled loopbacks;
+-- whether a launch's first or second Run all, not stated). The runbook's
+-- section 8 and row 48 hold those records. NOT SHOWN BY ANY OF THOSE REPORTS,
+-- so still verified statically; needs an OXT pass (row 48): a row's Run (the
+-- button-1 press arming a tick), Show, the filter buttons and their views,
+-- how the pills looked, and what came after those runs: the counted ENet and
+-- DataChannel holds (THE PASTE'S HOLD) and the derived build stamp (both
+-- 2026-09-25). The headless UI boot (tools/check-suite-ui-boot.py) settles
+-- their LOGIC and nothing about rendering or message delivery. The checks the
+-- run makes are the ones the dated records ran.
 
 -- ---- lifecycle ---------------------------------------------------------------
 -- BUILD, CLEAN, RUN, CHECK - in that order, on every open.
@@ -2704,7 +2715,7 @@ command suBuildAll
    end repeat
    set the itemDelimiter to tOld
    uiCap "suMembersCap", "Run re-runs ONE member end to end (probe, its sections, teardown, summary) and replaces the report; Show lists only its lines. Run all is the suite record.", "20,546,488,580"
-   uiFooter "Every member's own self-test plus the cross-member seams, in one process. Run all ran on an engine 2026-09-24; Run, Show and the filters need an OXT pass (D-23).", "20,588,488,628"
+   uiFooter "Every member's own self-test plus the cross-member seams, in one process. Run all ran on engines 2026-09-24 and 09-25; Run, Show and the filters need an OXT pass (D-23).", "20,588,488,628"
 
    -- 2. the results: three fields on one rect, exactly one visible
    uiSection "suSecResults", "2.  Results", "520,96,760,114"

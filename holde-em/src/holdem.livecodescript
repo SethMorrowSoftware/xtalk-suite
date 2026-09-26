@@ -528,9 +528,12 @@ kUIVersion stays 15 (no chrome moved).
   * ENGINE RECORD (holde-em/CLAUDE.md's ledger): the 2026-09-25 suite
     paste on Linux (64-bit by the maintainer's account; the OXT build
     not recorded) ran this version folded at harness 47: 751/0, every
-    section green, the five live legs SKIPped by name -- the first v47
-    total, and the first engine run of these 23 pins and of v0.25.4's
-    seven (no run is recorded at harness 46).
+    section green, the five live legs SKIPped by name -- the first
+    RECORDED v47 total (that launch's first Run all went unreported),
+    and the first recorded engine run of these 23 pins and of v0.25.4's
+    seven (no run is recorded at harness 46). The same paste on Windows
+    later that day (64-bit by the same account; the OXT build not
+    recorded) read the same 751/0 with every section green.
 
 v0.25.4 -- HEX NEVER MEETS BARE `is`: heHexEq (2026-09-25). NO WIRE CHANGED
 -- not a byte, and protocol-kat's pins are untouched; what a verifier
