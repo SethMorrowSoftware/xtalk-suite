@@ -347,9 +347,9 @@ run's accept. It governs every numeric `=`, `is`, `<>`, `is not`, `<`, `<=`,
 included (2.11). The maintainer's binary was not inspected, so the 10 was the
 source's until the Linux and Windows runs below read it off an engine.
 **OBSERVED 2026-09-25, on Linux and then on Windows (the D-23 suite paste, the
-first two runs of the harness's third probe line; runbook section 8; both a
-64-bit OXT by the maintainer's account, Linux on Kubuntu 24.04 with "the
-latest" OXT, the Windows OXT build not stated): the constant is 10
+first two recorded readings of the harness's third probe line; runbook section
+8; both a 64-bit OXT by the maintainer's account, Linux on Kubuntu 24.04 with
+"the latest" OXT, the Windows OXT build not stated): the constant is 10
 DBL_EPSILON, to the digit.** On Linux the first two probe lines read exactly as
 on 2026-09-24's Windows runs (`true,false,false,false` and `true,false,16,16`),
 and the third read `true,true,false,true,false,true,true,false`, the engine
@@ -654,7 +654,9 @@ the harness asserts only that the value is readable and prints the readback,
 so the 2026-09-25 Linux reading, the same constant 0 as 2026-08-21's, was a
 note on a green run, not a FAIL. The same day's Windows run read back exact
 under the same harness and paste, both engines 64-bit: the split follows the
-platform, not the date, the harness or the bitness.
+platform, not the date, the harness or the bitness (INFERRED: each platform's
+readings come from one machine per run, never two side by side, so the
+platform is not yet told apart from the machine and its audio stack).
 **Rule:** `playLoudness` is a REQUEST, not a register: set it and move on, and
 never compare against or compute from the readback, not even its ordering (v31
 asserts only that it is READABLE). **Lesson:** every assertion must print the

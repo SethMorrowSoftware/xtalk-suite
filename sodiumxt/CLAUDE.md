@@ -213,9 +213,10 @@ Windows x86_64 2026-09-25, 106/106 each time; ristretto also on Linux 2026-08-18
 BINARIES are proven in part: the 2026-09-25 Linux paste loaded the `x86_64-linux` file, and
 the 2026-09-24 and 2026-09-25 Windows pastes the `x86_64-win32` DLL of 2026-09-12, its first
 engine load on 2026-09-24 (the maintainer's account: 64-bit OXT on both machines, the latest
-committed builds), the two rows of the committed-binaries table a record names, neither with
-`sxVersion()` recorded; `x86-linux`, `x86-win32` and the mac build have no record (the
-2026-08-27 paste did not record its platform or package). The demo's UI (unified onto the
+builds; the 2026-09-25 Windows DLL INFERRED the same, the ledger), the two rows of the
+committed-binaries table a record names, neither with `sxVersion()` recorded; `x86-linux`,
+`x86-win32` and the mac build have no record (the 2026-08-27 paste did not record its
+platform or package). The demo's UI (unified onto the
 suite kit 2026-08-14) is "verified statically; needs an OXT re-pass". Open work is tracked
 in the suite's docs/WORK-PLAN.md.
 

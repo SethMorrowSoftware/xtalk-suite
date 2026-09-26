@@ -315,15 +315,17 @@ worse than no gate, because it answers the question nobody asks twice.
   from the 2026-09-12 dispatch (run 34657390798 from 0f17ab5, commit 421bab3). Their
   `x86_64-win32` builds first met an engine on 2026-09-24: the D-23 suite paste loaded all six
   and ran every member's sections (runbook section 8), on a 64-bit OXT by the maintainer's
-  account (given 2026-09-26), and again on 2026-09-25. Their `x86_64-linux` builds (sodiumxt's
-  and box2dxt's still run 12's) first met an engine on the record on 2026-09-25: the same paste
-  ran green (2672/0/10) on 64-bit Kubuntu 24.04 with "the latest builds" and "the latest" OXT,
-  by the maintainer's account (torrentxt's 997-byte refusals agree: no committed Linux build
-  before 421bab3 carries that cap; the OXT version and library versions not recorded). No
-  engine has loaded the 32-bit (`x86-win32`, `x86-linux`) or mac builds yet. The Windows DLLs
-  carry libsodium 1.0.22 (D-08) and libtorrent 2.1.1, not the versions pinned for the other
-  platforms, and the Windows runs exercised both by the maintainer's account (the report prints
-  no library version).
+  account (given 2026-09-26), and again on 2026-09-25 on that machine (the builds INFERRED the
+  same: nothing newer is committed, and torrentxt's 997-byte refusals pass). Their
+  `x86_64-linux` builds (sodiumxt's and box2dxt's still run 12's) first met an engine on the
+  record on 2026-09-25: the same paste ran green (2672/0/10) on 64-bit Kubuntu 24.04 with "the
+  latest builds" and "the latest" OXT, by the maintainer's account (torrentxt's 997-byte
+  refusals agree: no committed Linux build before 421bab3 carries that cap; the OXT version and
+  library versions not recorded). No engine has loaded the 32-bit (`x86-win32`, `x86-linux`) or
+  mac builds yet. The Windows DLLs carry libsodium 1.0.22 (D-08) and libtorrent 2.1.1, not the
+  versions pinned for the other platforms, and the 2026-09-24 runs exercised both by the
+  maintainer's account, the 2026-09-25 Windows run by that inference (the report prints no
+  library version).
 
 ## Member repositories and publishing
 

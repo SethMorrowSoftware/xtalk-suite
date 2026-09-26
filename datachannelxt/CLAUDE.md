@@ -269,9 +269,10 @@ Linux x86_64 on 2026-09-25 (negotiated, both ends open, SCTP at least 16 KiB, a 
 payload whole), so the paste's loopback code works on an engine and the Windows stall is
 that platform's or that machine's. The 2026-09-24 and 2026-09-25 Windows pastes ran on the
 2026-09-12 `x86_64-win32` DLL and the 2026-09-25 Linux paste on the 2026-09-12
-`x86_64-linux` file (the maintainer's account: 64-bit OXT on both, the latest committed
-builds, Kubuntu 24.04 on Linux), each file's first engine load; neither the `x86-win32` or
-`x86-linux` file nor the `universal-mac` dylib has met an engine.
+`x86_64-linux` file (the maintainer's account: 64-bit OXT on both, the latest builds,
+Kubuntu 24.04 on Linux; the 2026-09-25 Windows DLL INFERRED the same, the ledger), each
+file's first engine load; neither the `x86-win32` or `x86-linux` file nor the
+`universal-mac` dylib has met an engine.
 C++ gotcha 7's two exits are driven natively by `tests/orphan_channel_test.cpp` (2026-09-24,
 ASan/UBSan and TSan), not by an engine. The pump's failure branches (`dcPollLastError`) are
 verified statically; needs an OXT pass.

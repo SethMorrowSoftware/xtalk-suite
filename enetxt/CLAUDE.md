@@ -138,9 +138,10 @@ message, a graceful disconnect. So the paste's loopback code works on an engine,
 Windows stall is that platform's or that machine's. The 2026-09-24 and 2026-09-25 Windows
 pastes ran on the 2026-09-12 `x86_64-win32` DLL and the 2026-09-25 Linux paste on the
 2026-09-12 `x86_64-linux` file (the maintainer's account: 64-bit OXT on both, the latest
-committed builds), each file's first engine load, but their one shim change since 2026-08-27
-(gotcha 1's fix) is on a path none of their checks reached: the fix is driven natively by the
-smoke test (2026-09-24, ASan/UBSan), not by an engine. Still un-exercised: the LAN chat demo
+builds; the 2026-09-25 Windows DLL INFERRED the same, the ledger), each file's first engine
+load, but their one shim change since 2026-08-27 (gotcha 1's fix) is on a path none of their
+checks reached: the fix is driven natively by the smoke test (2026-09-24, ASan/UBSan), not by
+an engine. Still un-exercised: the LAN chat demo
 between two real machines (runbook row 6, S3 item 6), the closing pass's separate enet leg B
 (S3 item 1), `enet-internet-chat` across two networks (verified statically; needs a
 two-machine, two-network OXT pass), a standalone async re-run on the current binaries, and any

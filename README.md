@@ -102,25 +102,26 @@ holds every dated record); open work is in [docs/WORK-PLAN.md](docs/WORK-PLAN.md
 | onionxt | pure script | live-Tor core and `oxh*` hosting at bring-up (pre-suite, undated); offline self-test 74/0/1 in the suite paste, Linux 2026-09-25 and Windows 2026-09-24 and 09-25; Esplora and Electrum over Tor from the coin wallet, 2026-09-02 and 09-03 | launching tor from the library (Mode B); four inline probes; an OnionXT-to-OnionXT round trip; live negative paths |
 | nostrxt | pure script | core 277/0/2 in the suite paste, Linux 2026-09-25 and Windows 2026-09-24 and 09-25 (the NIP-44 cipher round trip included); relay connect, publish and ok-confirm live against wss://nos.lol, 2026-08-24 | the relay receive leg; NIP-42; `ws://`; bad-certificate TLS (engine note 6.8) |
 | box2dxt | 5 platforms, ABI 4 | Kit harness v32: 385/0 in the suite paste on its 1200-wide card, Linux 2026-09-25 (run 12's `x86_64-linux` file, by the maintainer's account) and Windows 2026-09-24 and 09-25 (on the 2026-09-12 DLL there); every run settles the itemDelimiter half of engine note 2.3 (handler-local). `playLoudness` reads back 0 on Linux and exact on Windows (engine note 5.4), a printed note since v31 | the five game stacks since the 2026-08-14 fold; risk R1 on Linux and macOS |
-| coinxt | 5 platforms, ABI 7 | library 296/296 at ABI 7 in the suite paste, Linux 2026-09-25 and Windows 2026-09-24 and 09-25, on the 2026-09-12 builds by the maintainer's account (`x86_64-linux` and `x86_64-win32`, both engines 64-bit; the six `cxPubkeyCombine` checks included); 290/290 at ABI 6, 2026-08-24; the wallet's engine logs, 2026-09-01 to 09-03: all four public transports, testnet broadcasts, RBF, CPFP, an inscription | silent-payment receive; the wallet surface added since 2026-09-04; a native-P2WPKH and any Ethereum broadcast; the 32-bit Windows DLL |
+| coinxt | 5 platforms, ABI 7 | library 296/296 at ABI 7 in the suite paste, Linux 2026-09-25 and Windows 2026-09-24 and 09-25, on the 2026-09-12 builds by the maintainer's account (`x86_64-linux` and `x86_64-win32`, both engines 64-bit; the 2026-09-25 Windows run's build INFERRED; the six `cxPubkeyCombine` checks included); 290/290 at ABI 6, 2026-08-24; the wallet's engine logs, 2026-09-01 to 09-03: all four public transports, testnet broadcasts, RBF, CPFP, an inscription | silent-payment receive; the wallet surface added since 2026-09-04; a native-P2WPKH and any Ethereum broadcast; the 32-bit Windows DLL |
 | riptide | app | phases 1-4 done on two machines, 2026-08-13 and 2026-08-15; harness 489/0/2 in the suite paste, Linux 2026-09-25 (a second Run all in one launch, by the maintainer's account, so the fold's stale-session fix ran; its third probe line read the engine's comparison constant, 10 DBL_EPSILON, engine note 2.10), Windows 2026-09-25 (the same probe lines) and Windows 2026-09-24 (the day's second and third runs; its first read 487/2/2: a stale capability count, and a u64 bound the engine let through; both fixed and green that evening) | live passes of phases 5-8; the faststart re-run; the boot re-paste |
 | nocloud | app | no dated engine pass in this tree (its pre-fold passes are undated); gates green, including a headless execution gate | the 69-item OXT checklist, web-link and Tor halves |
 | holde-em | app | folded harness 751/0/5 at v0.25.5 (harness v47), Linux and Windows, 2026-09-25 (the 2026-09-25 hex-compare and canonical-index fixes' pins included); 721/0 at v0.25.3 (harness v45), Windows, 2026-09-24 | the standalone self-test and hotseat hands on v0.25.5; a six-seat hotseat session; the multi-machine exits; Level 2 is not yet wired into played hands |
 
 **Platform gaps, suite-wide.** Every native member's current binaries come from the 2026-09-12
-release dispatch (commit 421bab3). Their `x86_64-win32` builds first met an engine on 2026-09-24,
-in the suite paste, and again on 2026-09-25, by the maintainer's account (a 64-bit OXT). Their
-`x86_64-linux` builds (sodiumxt's and box2dxt's are still run 12's) first met an engine on the
-record on 2026-09-25, in the same paste, green, on 64-bit Kubuntu 24.04 with "the latest builds"
-and "the latest" OXT by the maintainer's account (torrentxt's 997-byte refusals agree; the OXT
-version and library versions were not recorded). No OXT engine has loaded any `universal-mac`
-dylib. No record names a 32-bit engine: sodiumxt, torrentxt and coinxt on x86-win32 (coinxt's
-32-bit DLL may never have executed anywhere: CI's Windows KAT step is x86_64 only, and every
-Windows engine run since 2026-09-24 loaded the 64-bit DLL, by the same account), and sodiumxt and
-torrentxt on x86-linux. The Windows DLLs carry libsodium 1.0.22 (accepted, D-08) and
+release dispatch (commit 421bab3). Their `x86_64-win32` builds first met an engine on 2026-09-24, in
+the suite paste, on a 64-bit OXT by the maintainer's account, and again on 2026-09-25 on that
+machine (its binaries not stated: INFERRED the same set, since nothing newer is committed and
+torrentxt's 997-byte refusals pass). Their `x86_64-linux` builds (sodiumxt's and box2dxt's are still
+run 12's) first met an engine on the record on 2026-09-25, in the same paste, green, on 64-bit
+Kubuntu 24.04 with "the latest builds" and "the latest" OXT by the maintainer's account (torrentxt's
+997-byte refusals agree; the OXT version and library versions were not recorded). No OXT engine has
+loaded any `universal-mac` dylib. No record names a 32-bit engine: sodiumxt, torrentxt and coinxt on
+x86-win32 (coinxt's 32-bit DLL may never have executed anywhere: CI's Windows KAT step is x86_64
+only, and every Windows engine run since 2026-09-24 loaded the 64-bit DLL, by the same account), and
+sodiumxt and torrentxt on x86-linux. The Windows DLLs carry libsodium 1.0.22 (accepted, D-08) and
 libtorrent 2.1.1 rather than the 1.0.20 and 2.0.11 the other platforms pin. Linux floors vary: both
-datachannelxt builds and torrentxt's 32-bit build need glibc 2.38, box2dxt's 32-bit build 2.34.
-The macOS dylibs are universal (arm64 + x86_64) and unsigned.
+datachannelxt builds and torrentxt's 32-bit build need glibc 2.38, box2dxt's 32-bit build 2.34. The
+macOS dylibs are universal (arm64 + x86_64) and unsigned.
 
 ### The suite paste, run by run
 
@@ -138,7 +139,7 @@ The macOS dylibs are universal (arm64 + x86_64) and unsigned.
 | 2026-08-27 | two machines, one LAN | 2,440 passed, 2 failed, 3 skipped: every folded member green; both failures were the live loopbacks, stalled by loopback UDP being blocked on that machine |
 | 2026-09-24 | Windows (the engine reports Win32), three runs; a 64-bit OXT by the maintainer's account | the D-23 board's first engine runs: 2,620 / 5 / 3, then 2,623 / 2 / 3 and 2,623 / 2 / 10 once riptide's two fixes and the board review's were in. Both live loopbacks stalled in all three runs, in the same phases (runbook 5.5); the first run's other three failures were riptide's, fixed that evening, and riptide's probe lines, printed from the second run on, found the engine's comparison tolerance (engine note 2.10) |
 | 2026-09-25 | Linux: 64-bit Kubuntu 24.04, the latest committed builds and "the latest" OXT, by the maintainer's account (no OXT version given) | 2,672 passed, 0 failed, 10 skipped, from a SECOND Run all in one launch by the maintainer's account: all ten probed extensions and script layers present and every member row green (nocloud has no in-engine harness), riptide's session sections included (the fold's stale-session fix), both live loopbacks completing (the paste's loopback code finishes on an engine); box2dxt settles engine note 2.3's itemDelimiter half on Linux; riptide's third probe line reads the engine's comparison constant to the digit and shows number-like texts comparing as numbers (engine notes 2.10, 2.11) |
-| 2026-09-25 | Windows, the 2026-09-24 machine (64-bit, by the maintainer's account) | 2,653 passed, 2 failed, 10 skipped: every member header as on Linux, riptide's third probe line included, so engine notes 2.10 and 2.11 hold on Windows too; the 2 failures are both live loopbacks, stalled on that machine a fourth time in the same phases (runbook 5.5) |
+| 2026-09-25 | Windows, the 2026-09-24 machine (64-bit, by the maintainer's account) | 2,653 passed, 2 failed, 10 skipped: every member header as on Linux, riptide's three probe lines character for character, so engine note 2.10's constant and the two items of 2.11 that line probes read the same on Windows; the 2 failures are both live loopbacks, stalled on that machine a fourth time in the same phases (runbook 5.5) |
 
 ## The shared engineering rules
 
