@@ -23894,7 +23894,11 @@ end cx1stCleanup
 
 command cx1stRun
    cx1stResetCounters
-   -- Byte-exact compares, and hex strings that must not fold case.
+   -- Reaches only THIS handler's own comparisons: `the caseSensitive` is
+   -- handler-local (the LiveCode dictionary; engine note 2.3 observed that
+   -- scope for the itemDelimiter), so none of the cx1stRun* sections below sees
+   -- it. A case-significant value is compared through cx1stSameText, hex through
+   -- cx1stSameHex (2026-09-26).
    set the caseSensitive to true
 
    put "CoinXT API self-test" & return into cx1sResultText
@@ -24394,7 +24398,7 @@ command cx1stRunBase58
       cx1stAssert "cxHash256 of abc is the published double-SHA-256", cx1stHex(cxHash256(cx1stText("abc"))) is cx1kHash256Abc
       cx1stAssert "cxHash256 is 32 bytes", the number of bytes of cxHash256(cx1stText("")) is 32
       cx1stAssert "and it is genuinely SHA-256 applied twice", cx1stSameHex(cx1stHex(cxHash256(cx1stText("abc"))), cx1stHex(cxSha256(cxSha256(cx1stText("abc")))))
-      cx1stAssert "encodes the worked example", cxBase58CheckEncode(cx1tPayload) is cx1kBase58Address
+      cx1stAssert "encodes the worked example", cx1stSameText(cxBase58CheckEncode(cx1tPayload), cx1kBase58Address)
       cx1stAssert "decodes it back", cxHexEncode(cxBase58CheckDecode(cx1kBase58Address)) is cx1stToLowerText(cx1kBase58Payload)
       -- The checksum is the entire point of the encoding: one flipped character
       -- must be refused, never coerced into a nearby valid-looking payload.
@@ -24403,7 +24407,7 @@ command cx1stRunBase58
       -- Leading zero bytes must survive as leading "1"s, one for one. That is
       -- what makes a mainnet P2PKH address start with a 1 at all.
       put numToByte(0) & numToByte(0) & cxHexDecode("deadbeef") into cx1tPadded
-      cx1stAssert "two leading zero bytes give two leading ones", char 1 to 2 of cxBase58CheckEncode(cx1tPadded) is "11"
+      cx1stAssert "two leading zero bytes give two leading ones", cx1stSameText(char 1 to 2 of cxBase58CheckEncode(cx1tPadded), "11")
       cx1stAssert "the round trip preserves them", cxHexEncode(cxBase58CheckDecode(cxBase58CheckEncode(cx1tPadded))) is "0000deadbeef"
    catch cx1tError
       cx1stSectionFailed "Base58Check", cx1tError
@@ -24437,11 +24441,11 @@ command cx1stRunAddresses
       put cxPublicKey(cx1tSeckey, true) into cx1tPubC
       put cxPublicKey(cx1tSeckey, false) into cx1tPubU
       -- Each of these is a PUBLISHED answer, not a CoinXT expectation.
-      cx1stAssert "cxBtcAddressP2PKH of G", cxBtcAddressP2PKH(cx1tPubC) is cx1kP2pkhOfG
+      cx1stAssert "cxBtcAddressP2PKH of G", cx1stSameText(cxBtcAddressP2PKH(cx1tPubC), cx1kP2pkhOfG)
       cx1stAssert "cxBtcAddressP2WPKH of G is the BIP-173 vector", cxBtcAddressP2WPKH(cx1tPubC) is cx1kP2wpkhOfG
       cx1stAssert "cxBtcAddressP2TR of x-only G is the BIP-350 vector", cxBtcAddressP2TR(byte 2 to 33 of cx1tPubU) is cx1kP2trOfG
-      cx1stAssert "cxEthAddress of G (from the compressed key)", cxEthAddressChecksum(cxEthAddress(cx1tPubC)) is cx1kEthOfG
-      cx1stAssert "cxEthAddress agrees from the uncompressed key", cxEthAddress(cx1tPubU) is cxEthAddress(cx1tPubC)
+      cx1stAssert "cxEthAddress of G (from the compressed key)", cx1stSameText(cxEthAddressChecksum(cxEthAddress(cx1tPubC)), cx1kEthOfG)
+      cx1stAssert "cxEthAddress agrees from the uncompressed key", cx1stSameText(cxEthAddress(cx1tPubU), cxEthAddress(cx1tPubC))
       -- An uncompressed key in a v0 SegWit address makes funds unspendable by
       -- every modern wallet, so it must be refused rather than encoded.
       cx1stAssert "P2WPKH refuses an uncompressed key", cx1stThrows("cxBtcAddressP2WPKH", cx1tPubU)
@@ -24464,8 +24468,8 @@ command cx1stRunEip55
    local cx1tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    cx1stSection "EIP-55 checksummed Ethereum addresses"
    try
-      cx1stAssert "checksums the first specification example", cxEthAddressChecksum(cx1stToLowerText(cx1kEip55A)) is cx1kEip55A
-      cx1stAssert "checksums the second", cxEthAddressChecksum(cx1stToLowerText(cx1kEip55B)) is cx1kEip55B
+      cx1stAssert "checksums the first specification example", cx1stSameText(cxEthAddressChecksum(cx1stToLowerText(cx1kEip55A)), cx1kEip55A)
+      cx1stAssert "checksums the second", cx1stSameText(cxEthAddressChecksum(cx1stToLowerText(cx1kEip55B)), cx1kEip55B)
       cx1stAssert "recognises a correctly checksummed address", cxEthAddressIsChecksummed(cx1kEip55A) is true
       -- An all-lowercase address carries NO checksum, so reporting it as valid
       -- would quietly retire the protection EIP-55 exists to give.
@@ -24482,7 +24486,7 @@ command cx1stRunRlp
    cx1stSection "RLP"
    try
       cx1stAssert "encodes the string dog", cxHexEncode(cxRlpEncodeBytes(cx1stText("dog"))) is "83646f67"
-      cx1stAssert "encodes the empty string", cxHexEncode(cxRlpEncodeBytes("")) is "80"
+      cx1stAssert "encodes the empty string", cx1stSameHex(cxHexEncode(cxRlpEncodeBytes("")), "80")
       cx1stAssert "encodes a single byte below 0x80 as itself", cxHexEncode(cxRlpEncodeBytes(numToByte(15))) is "0f"
       cx1stAssert "encodes the empty list", cxHexEncode(cxRlpEncodeList("")) is "c0"
       put cxRlpEncodeBytes(cx1stText("cat")) & cxRlpEncodeBytes(cx1stText("dog")) into cx1tCatDog
@@ -24509,13 +24513,13 @@ command cx1stRunWif
    try
       -- The mainnet/uncompressed answer IS the Bitcoin wiki's published worked
       -- example; the other forms are oracle-derived (see the constants block).
-      cx1stAssert "encodes the wiki worked example (mainnet, uncompressed)", cxWifEncode(cx1kWifSeckey, "mainnet", false) is cx1kWifUncompressed
-      cx1stAssert "the compressed form is the same key with the 0x01 marker", cxWifEncode(cx1kWifSeckey, "mainnet", true) is cx1kWifCompressed
-      cx1stAssert "the testnet form differs only in its version byte", cxWifEncode(cx1kWifSeckey, "testnet", true) is cx1kWifTestnet
+      cx1stAssert "encodes the wiki worked example (mainnet, uncompressed)", cx1stSameText(cxWifEncode(cx1kWifSeckey, "mainnet", false), cx1kWifUncompressed)
+      cx1stAssert "the compressed form is the same key with the 0x01 marker", cx1stSameText(cxWifEncode(cx1kWifSeckey, "mainnet", true), cx1kWifCompressed)
+      cx1stAssert "the testnet form differs only in its version byte", cx1stSameText(cxWifEncode(cx1kWifSeckey, "testnet", true), cx1kWifTestnet)
       -- The three encodings must be three different strings, or the network
       -- and the flag are not reaching the payload at all.
-      cx1stAssert "compressed and uncompressed forms are distinct", cx1kWifCompressed is not cx1kWifUncompressed
-      cx1stAssert "mainnet and testnet forms are distinct", cx1kWifTestnet is not cx1kWifCompressed
+      cx1stAssert "compressed and uncompressed forms are distinct", not cx1stSameText(cx1kWifCompressed, cx1kWifUncompressed)
+      cx1stAssert "mainnet and testnet forms are distinct", not cx1stSameText(cx1kWifTestnet, cx1kWifCompressed)
       put cxWifDecode(cx1kWifCompressed) into cx1tDecoded
       cx1stAssert "decodes back to the same key", cx1tDecoded["seckey"] is cx1kWifSeckey
       cx1stAssert "and reports mainnet", cx1tDecoded["network"] is "mainnet"
@@ -24775,6 +24779,20 @@ function cx1stSameHex pA, pB
    return ("h" & pA) is ("h" & pB)
 end cx1stSameHex
 
+function cx1stSameText pA, pB
+   local cx1tI, cx1tCount
+   put the number of bytes of pA into cx1tCount
+   if cx1tCount is not the number of bytes of pB then
+      return false
+   end if
+   repeat with cx1tI = 1 to cx1tCount
+      if byteToNum(byte cx1tI of pA) is not byteToNum(byte cx1tI of pB) then
+         return false
+      end if
+   end repeat
+   return true
+end cx1stSameText
+
 function cx1stToLowerText pText
    local cx1tI, cx1tCount, cx1tCode, cx1tOut
    put "" into cx1tOut
@@ -24838,7 +24856,7 @@ command cx1stRunBip39
    try
       put cxHexDecode(cx1kBip39Entropy12) into cx1tEnt
       cx1stAssert "12 words from all-zero entropy", cxMnemonicFromEntropy(cx1tEnt) is cx1kBip39Mnemonic
-      cx1stAssert "and back to the entropy", cxHexEncode(cxMnemonicToEntropy(cx1kBip39Mnemonic)) is cx1kBip39Entropy12
+      cx1stAssert "and back to the entropy", cx1stSameHex(cxHexEncode(cxMnemonicToEntropy(cx1kBip39Mnemonic)), cx1kBip39Entropy12)
       put cxHexDecode(cx1kBip39Entropy24) into cx1tEnt
       cx1stAssert "24 words from all-ones entropy", cxMnemonicFromEntropy(cx1tEnt) is cx1kBip39Mnemonic24
       cx1stAssert "and back to the entropy", cxHexEncode(cxMnemonicToEntropy(cx1kBip39Mnemonic24)) is cx1kBip39Entropy24
@@ -24882,20 +24900,20 @@ command cx1stRunBip32
    cx1stSection "BIP-32 derivation"
    try
       put cxHdFromSeed(cxHexDecode(cx1kBip32Seed1)) into cx1tNode
-      cx1stAssert "vector 1 master xprv", cxXprv(cx1tNode) is cx1kBip32V1Xprv
-      cx1stAssert "vector 1 master xpub", cxXpub(cx1tNode) is cx1kBip32V1Xpub
+      cx1stAssert "vector 1 master xprv", cx1stSameText(cxXprv(cx1tNode), cx1kBip32V1Xprv)
+      cx1stAssert "vector 1 master xpub", cx1stSameText(cxXpub(cx1tNode), cx1kBip32V1Xpub)
       cx1stAssert "the master node is at depth 0", cx1tNode["depth"] is 0
       put cxHdDerivePath(cx1tNode, "m/0'") into cx1tChild
-      cx1stAssert "vector 1 m/0' xprv", cxXprv(cx1tChild) is cx1kBip32V1H0Xprv
-      cx1stAssert "vector 1 m/0' xpub", cxXpub(cx1tChild) is cx1kBip32V1H0Xpub
-      cx1stAssert "h is accepted as a hardened marker", cxXprv(cxHdDerivePath(cx1tNode, "m/0h")) is cx1kBip32V1H0Xprv
+      cx1stAssert "vector 1 m/0' xprv", cx1stSameText(cxXprv(cx1tChild), cx1kBip32V1H0Xprv)
+      cx1stAssert "vector 1 m/0' xpub", cx1stSameText(cxXpub(cx1tChild), cx1kBip32V1H0Xpub)
+      cx1stAssert "h is accepted as a hardened marker", cx1stSameText(cxXprv(cxHdDerivePath(cx1tNode, "m/0h")), cx1kBip32V1H0Xprv)
       -- cxHdDeriveChild is the single CKD step cxHdDerivePath is a loop over,
       -- and it is public API in its own right. Pin it to the SAME published
       -- vector rather than only to the path walker: a shared defect in the
       -- step would make the two agree while both were wrong, so the first
       -- assertion here is against BIP-32's own number and the second is the
       -- agreement check on top of it.
-      cx1stAssert "cxHdDeriveChild reaches m/0' as one hardened step", cxXprv(cxHdDeriveChild(cx1tNode, 2147483648)) is cx1kBip32V1H0Xprv
+      cx1stAssert "cxHdDeriveChild reaches m/0' as one hardened step", cx1stSameText(cxXprv(cxHdDeriveChild(cx1tNode, 2147483648)), cx1kBip32V1H0Xprv)
       cx1stAssert "and a normal step agrees with the path walker", cxXprv(cxHdDeriveChild(cx1tChild, 1)) is cxXprv(cxHdDerivePath(cx1tNode, "m/0'/1"))
       cx1stAssert "index 0 is not treated as hardened", cxXprv(cxHdDeriveChild(cx1tNode, 0)) is cxXprv(cxHdDerivePath(cx1tNode, "m/0"))
       put cxHdDeriveChild(cx1tChild, 1) into cx1tStep
@@ -24903,10 +24921,10 @@ command cx1stRunBip32
       cx1stAssert "a child index at or above 2^32 is refused", cx1stThrows2("cxHdDeriveChild", cx1tNode, 4294967296)
       cx1stAssert "a negative child index is refused", cx1stThrows2("cxHdDeriveChild", cx1tNode, -1)
       put cxHdDerivePath(cx1tNode, cx1kBip32V1DeepPath) into cx1tDeep
-      cx1stAssert "vector 1 five levels deep", cxXprv(cx1tDeep) is cx1kBip32V1DeepXprv
+      cx1stAssert "vector 1 five levels deep", cx1stSameText(cxXprv(cx1tDeep), cx1kBip32V1DeepXprv)
       cx1stAssert "and it is at depth 5", cx1tDeep["depth"] is 5
       -- Vector 3 is in the BIP for one reason: a leading zero in the master key.
-      cx1stAssert "vector 3 (leading-zero master key)", cxXprv(cxHdFromSeed(cxHexDecode(cx1kBip32Seed3))) is cx1kBip32V3Xprv
+      cx1stAssert "vector 3 (leading-zero master key)", cx1stSameText(cxXprv(cxHdFromSeed(cxHexDecode(cx1kBip32Seed3))), cx1kBip32V3Xprv)
       -- A watch-only node is the whole point of an xpub, and its limits are the
       -- whole point of hardened derivation.
       put cxHdNeuter(cx1tChild) into cx1tWatch
@@ -24941,14 +24959,14 @@ command cx1stRunBip44
       -- same twelve words that restore a wallet anywhere else restore THIS one
       -- to the same addresses.
       put cxHdFromSeed(cxMnemonicToSeed(cx1kBip39Mnemonic, "")) into cx1tMaster
-      cx1stAssert "the test mnemonic's root xprv", cxXprv(cx1tMaster) is cx1kAbandonXprv
+      cx1stAssert "the test mnemonic's root xprv", cx1stSameText(cxXprv(cx1tMaster), cx1kAbandonXprv)
       put cxHdDerivePath(cx1tMaster, cx1kAbandonBip44) into cx1tNode
-      cx1stAssert "m/44'/0'/0'/0/0 is the published P2PKH address", cxBtcAddressP2PKH(cx1tNode["pubkey"]) is cx1kAbandonP2pkh
+      cx1stAssert "m/44'/0'/0'/0/0 is the published P2PKH address", cx1stSameText(cxBtcAddressP2PKH(cx1tNode["pubkey"]), cx1kAbandonP2pkh)
       put cxHdDerivePath(cx1tMaster, cx1kAbandonBip84) into cx1tNode
       cx1stAssert "m/84'/0'/0'/0/0 is the BIP-84 vector", cxBtcAddressP2WPKH(cx1tNode["pubkey"]) is cx1kAbandonP2wpkh
-      cx1stAssert "the BIP-84 account xpub", cxXpub(cxHdDerivePath(cx1tMaster, cx1kAbandonBip84Account)) is cx1kAbandonBip84Xpub
+      cx1stAssert "the BIP-84 account xpub", cx1stSameText(cxXpub(cxHdDerivePath(cx1tMaster, cx1kAbandonBip84Account)), cx1kAbandonBip84Xpub)
       put cxHdDerivePath(cx1tMaster, cx1kAbandonEthPath) into cx1tNode
-      cx1stAssert "m/44'/60'/0'/0/0 is the published Ethereum address", cxEthAddressChecksum(cxEthAddress(cx1tNode["pubkey"])) is cx1kAbandonEth
+      cx1stAssert "m/44'/60'/0'/0/0 is the published Ethereum address", cx1stSameText(cxEthAddressChecksum(cxEthAddress(cx1tNode["pubkey"])), cx1kAbandonEth)
    catch cx1tError
       cx1stSectionFailed "BIP-44", cx1tError
    end try
