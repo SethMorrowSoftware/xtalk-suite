@@ -144,6 +144,116 @@ def _load_reference():
     return mod
 
 
+_TOOLS = {}
+
+
+def _load_tool(name, filename):
+    """A sibling tool as a module, loaded once (the scan below runs seven
+    times: its six fixtures and the harness itself)."""
+    if name not in _TOOLS:
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(name, os.path.join(HERE, filename))
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        _TOOLS[name] = mod
+    return _TOOLS[name]
+
+
+# --- the harness's own COMPARISONS (2026-09-26) -------------------------------
+# A constant re-derived above can still be ASSERTED through a comparison that
+# cannot fail. Two shapes did exactly that. `is` reads two operands that both
+# parse as numbers AS NUMBERS (suite engine note 2.11; `"0x" & hex` is a
+# base-16 number there, wrapping to its low 32 bits): kBip39Entropy12 is 32
+# zeros, so "and back to the entropy" passed for 15 or 17 zero bytes, and the
+# four Ethereum-address asserts (kEthOfG, kEip55A, kEip55B, kAbandonEth)
+# compared two "0x" addresses by their last eight hex digits. And `is` folds
+# case in every section handler (`the caseSensitive` is handler-local, so
+# stRun's `set` never reached them), so every Base58, WIF, xprv and EIP-55
+# assert passed a wrong CASING - for EIP-55 the whole of the checksum. They go
+# through stSameText (byte for byte) and stSameHex (hex as text) now, and this
+# scan refuses a bare `is` / `is not` / `=` / `<>` in the harness's own code
+# that meets a literal or constant the engine may read as a NUMBER (the
+# interpreter's port of MCU_strtor8 decides: a number or an unsure form), a
+# constant holding BOTH cases, or a "0x" address producer. It reads operands
+# the way the family checker's check 23 reads them.
+_OX_PRODUCERS = ("cxethaddress", "cxethaddresschecksum")
+
+
+def bare_compare_problems(text):
+    """(count of comparisons scanned, [problem]) for the harness text."""
+    ck = _load_tool("check_livecodescript_sv", "check-livecodescript.py")
+    lcs = _load_tool("lcs_interp_sv", "lcs-interp.py")
+    if EMBED_BEGIN in text and EMBED_END in text:
+        cut = text.index(EMBED_BEGIN)
+        # keep the line count, so a problem names its line in the real file
+        span = text[cut:text.index(EMBED_END) + len(EMBED_END)]
+        text = text[:cut] + "\n" * span.count("\n") + text[cut + len(span):]
+    consts = dict(re.findall(r'^constant (k\w+) = "([^"]*)"', text, re.M))
+
+    def numberlike(value):
+        kind = lcs._read_text(value)[0]
+        return kind not in (lcs._READ_TEXT, lcs._READ_EMPTY)
+
+    def why(toks):
+        toks = ck._cmp_strip_parens(list(toks))
+        if len(toks) == 1 and toks[0].startswith('"') and numberlike(toks[0].strip('"')):
+            return "the literal %s, which the engine may read as a number" % toks[0]
+        if len(toks) == 1 and toks[0] in consts:
+            value = consts[toks[0]]
+            if numberlike(value):
+                return "%s, which the engine may read as a number" % toks[0]
+            if re.search(r"[A-Z]", value) and re.search(r"[a-z]", value):
+                return "%s, whose CASE is part of the value" % toks[0]
+        if len(toks) >= 2 and toks[0].lower() in _OX_PRODUCERS and toks[1] == "(":
+            return "a \"0x\" address from %s, a base-16 number to `is`" % toks[0]
+        return ""
+
+    kept, _ = ck.clean_logical_lines("coin-selftest", text, ["--", "#", "//"],
+                                     keep_strings=True)
+    count, problems = 0, []
+    for lineno, line in kept:
+        if re.match(r"(?i)^\s*(constant|local|global|repeat\s+with)\b", line):
+            continue
+        toks = ck._CMP_TOKEN.findall(line)
+        for start, end, op in ck._cmp_find_operators(toks):
+            if op not in ("is", "is not", "=", "<>"):
+                continue
+            count += 1
+            for side in (ck._cmp_left_operand(toks, start),
+                         ck._cmp_right_operand(toks, end)):
+                reason = why(side)
+                if reason:
+                    problems.append("coin-selftest line %d: a bare `%s` meets %s; "
+                                    "compare through stSameText (case included) or "
+                                    "stSameHex (hex as text)" % (lineno, op, reason))
+    return count, problems
+
+
+# Each shape the scan exists for, planted back into the SHIPPED harness as it
+# stood before 2026-09-26 (the new spelling, then the old one): the scan must
+# refuse every one, or it is a blind gate reporting OK.
+_BARE_COMPARE_FIXTURES = (
+    ("a number-like constant (32 zeros)",
+     "stSameHex(cxHexEncode(cxMnemonicToEntropy(kBip39Mnemonic)), kBip39Entropy12)",
+     "cxHexEncode(cxMnemonicToEntropy(kBip39Mnemonic)) is kBip39Entropy12"),
+    ("a number-like literal",
+     'stSameHex(cxHexEncode(cxRlpEncodeBytes("")), "80")',
+     'cxHexEncode(cxRlpEncodeBytes("")) is "80"'),
+    ("a case-significant constant (EIP-55)",
+     "stSameText(cxEthAddressChecksum(stToLowerText(kEip55B)), kEip55B)",
+     "cxEthAddressChecksum(stToLowerText(kEip55B)) is kEip55B"),
+    ("a case-significant constant (Base58)",
+     "stSameText(cxBase58CheckEncode(tPayload), kBase58Address)",
+     "cxBase58CheckEncode(tPayload) is kBase58Address"),
+    ("two \"0x\" addresses",
+     "stSameText(cxEthAddress(tPubU), cxEthAddress(tPubC))",
+     "cxEthAddress(tPubU) is cxEthAddress(tPubC)"),
+    ("two case-significant constants, `is not`",
+     "not stSameText(kWifCompressed, kWifUncompressed)",
+     "kWifCompressed is not kWifUncompressed"),
+)
+
+
 def sha3_256(data):
     return hashlib.sha3_256(data).hexdigest()
 
@@ -719,6 +829,27 @@ def main(argv):
         problems.append("these names are listed as inputs but no longer exist in "
                         "the harness: " + ", ".join(stale))
 
+    # --- the comparisons the constants are asserted through -----------------
+    with open(SELFTEST, "r", encoding="utf-8") as handle:
+        harness = handle.read()
+    for label, new, old in _BARE_COMPARE_FIXTURES:
+        if harness.count(new) != 1:
+            problems.append("the harness no longer carries this line exactly once, "
+                            "so the scan's fixture for %s cannot plant it: %s"
+                            % (label, new))
+            continue
+        _count, caught = bare_compare_problems(harness.replace(new, old))
+        if not caught:
+            problems.append("the bare-comparison scan is BLIND to %s: the old "
+                            "line `%s` planted back passed it" % (label, old))
+        elif not terse:
+            print(f"  OK  the scan refuses {label} planted back")
+    compares, bare = bare_compare_problems(harness)
+    problems.extend(bare)
+    if not terse:
+        print(f"  OK  {compares} bare comparison(s) in the harness's own code; "
+              f"{len(bare)} meet a number-like or case-significant operand")
+
     for note in notes:
         print(f"  note: {note}")
 
@@ -729,7 +860,9 @@ def main(argv):
         return 1
 
     print(f"check-selftest-vectors: OK ({len(checked)} of {len(k)} harness "
-          f"constant(s) re-derived, {len(inputs)} are inputs)")
+          f"constant(s) re-derived, {len(inputs)} are inputs; {compares} bare "
+          f"comparison(s) scanned, none on a number-like or case-significant "
+          f"operand)")
     return 0
 
 

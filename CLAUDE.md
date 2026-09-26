@@ -212,8 +212,9 @@ because a harness once ran against a stale in-memory library and reported failur
   regenerate. Run all has run on an engine (2026-09-24 on Windows: the build, the boot
   self-check, the rows adding up to the totals, Copy results; 2026-09-25 on Linux, the same, and
   by the maintainer's account a SECOND Run all in one launch, riptide's session sections green;
-  2026-09-25 on Windows again; runbook section 8); a row's Run, Show and the filters are verified
-  statically; needs an OXT pass (runbook row 48).
+  2026-09-25 on Windows again; 2026-09-26 on Linux, the batch paste, again a second Run all in
+  one launch by that account, the derived stamp's boot line green; runbook section 8); a row's
+  Run, Show and the filters are verified statically; needs an OXT pass (runbook row 48).
 - **A script-layer edit is done only when every carrier is regenerated** (`build-suite-selftest.py`
   AND `sync-demo-embeds.py`). The carrier sets overlap without either containing the other: the
   b2k Kit is in the paste and no demo; `onionxt/src/onion-httpd.livecodescript` is in demos only.
@@ -340,7 +341,8 @@ worse than no gate, because it answers the question nobody asks twice.
   record on 2026-09-25: the same paste ran green (2672/0/10) on 64-bit Kubuntu 24.04 with "the
   latest builds" and "the latest" OXT, by the maintainer's account (torrentxt's 997-byte
   refusals agree: no committed Linux build before 421bab3 carries that cap; the OXT version and
-  library versions not recorded). No engine has loaded the 32-bit (`x86-win32`, `x86-linux`) or
+  library versions not recorded), and again on 2026-09-26 on that machine by the same account (the
+  batch paste, 2876/0/10). No engine has loaded the 32-bit (`x86-win32`, `x86-linux`) or
   mac builds yet. The Windows DLLs carry libsodium 1.0.22 (D-08) and libtorrent 2.1.1, not the
   versions pinned for the other platforms, and the 2026-09-24 runs exercised both by the
   maintainer's account, the 2026-09-25 Windows run by that inference (the report prints no

@@ -160,8 +160,9 @@ LAW here, not carried-for-later. Change nothing without a very good reason.
   `cwTxDecode`'s outputs, `cwPsbtSummary`'s ins and outs), and the boot self-check's 2.1e15 round trip compares
   `div` / `mod` 100000000, where `is` was blind to 1 to 4 sats. Tier 4 of `check-wallet-vectors.py` replays both old
   lines under the engine's rule. coin-selftest's bech32 refusal lines pass the spec and assert the message: they had
-  passed only two arguments, and the empty spec threw whatever the guard did, so none could fail. Verified
-  statically; needs an OXT pass.
+  passed only two arguments, and the empty spec threw whatever the guard did, so none could fail.
+  `cxBech32EncodeValues`'s guard and those lines ran green on an engine on 2026-09-26 (Linux; the ledger); the
+  rest of this entry is verified statically; needs an OXT pass.
 - Base58 is long division over the byte array (nothing exceeds 58 * 255), not a bit repack.
 - **Look up alphabet characters by BYTE VALUE with `cxCharIndex`, never `offset()` or `is`**: `the caseSensitive`
   defaults to false, and in Base58 `a` and `A` are different digits - the file's "most dangerous line".
@@ -199,8 +200,19 @@ LAW here, not carried-for-later. Change nothing without a very good reason.
   `waValidateXKey`). So every hex compare in those three files at which two different hex values can meet goes through
   the two helpers now. Left bare on purpose, exact: a chunk of hex whose width a length check fixes against a literal
   no other hex of that width equals (`"02"`, `"87"`, `"5120"`, `"101"` ...), and `cwDerToCompact`'s `"02"` markers,
-  whose width only its one caller's even-length hex fixes (an odd-length text can end in a lone `"2"`). coinxt-demo
-  and `src/coinxt.livecodescript` had none. Verified statically; needs an OXT pass.
+  whose width only its one caller's even-length hex fixes (an odd-length text can end in a lone `"2"`).
+  `src/coinxt.livecodescript` has none (its checksum and EIP-55 compares are byte-value helpers). The same day's review
+  swept again by value origin and found what that sweep had passed: coinxt-demo's `cdEthAddressHex` asked "did the
+  caller write a checksum?" with `tPlain is not toLower(tPlain)`, which `is` answers false for EVERY address (it folds
+  case), so the EIP-55 check never ran and a mixed-case recipient with one mistyped letter was encoded as typed. It
+  decides mixed case by byte value now (`cdIsMixedCase`), and `check-script-vectors.py` tier 2b drives the shipped
+  handlers with `is` folded the engine's way and with the old line planted back (which accepts the bad address). And
+  coin-selftest asserted with bare `is` four `"0x"` Ethereum addresses (a base-16 number to the parse, so compared by
+  their low 32 bits and never by the checksum's casing), the 32-zero BIP-39 entropy (any run of zeros ties), `"80"`,
+  and every Base58, WIF and xprv constant (case-blind: trap 15); they go through `stSameText` (byte for byte) and
+  `stSameHex`, and `check-selftest-vectors.py` refuses a bare comparison in the harness's own code of a literal or
+  constant the engine may read as a number, a mixed-case constant or a `"0x"` address, with each old line planted
+  back as its fixture. Verified statically; needs an OXT pass.
 - Keccak-256 (Ethereum, `0x01` padding) is NOT SHA3-256 (FIPS-202, `0x06`): two shim functions, never aliased. The
   bech32 constant is 1, bech32m's `0x2bc830a3`. An encoder must never emit what its own decoder refuses.
 - **`the itemDelimiter` is handler-LOCAL on Windows and Linux** (engine note 2.3, OBSERVED 2026-09-24 and 09-25,
@@ -309,7 +321,10 @@ Symptom -> cause -> fix. Engine behaviour gets one line and its engine note.
     separator before splitting. The same rule made `cxBtcTxEncode` refuse the BIP-143 tx (a trailing EMPTY scriptSig):
     read lists BY INDEX and bound count guards to "too long" only; sequences stay strict.
 15. **Case folds by default** (`the caseSensitive` is false for `is`, `offset()`, and array KEYS - engine note 2.7):
-    never use an array as an exact-string index; compare through byte-value helpers.
+    never use an array as an exact-string index; compare through byte-value helpers. Setting it true does not travel:
+    it is handler-local (the LiveCode dictionary; engine note 2.3 observed that scope for the itemDelimiter), and
+    coin-selftest's `stRun` set it believing its sections byte-exact, which its Base58, WIF, xprv and EIP-55 asserts
+    were not (2026-09-26, now `stSameText`).
 16. **Every defect in the 2026-08-08 adversarial review FAILED OPEN**, and 87 green positive vectors saw none:
     `cxEthAddressIsChecksummed` compared a value with itself; `cxConvert5To8` signalled failure in-band as the bytes
     "ERROR" (now a separate status key); `cxBtcAddressP2PKH` validated nothing (the shared `cxCheckPubkey` checks length
@@ -388,7 +403,9 @@ Symptom -> cause -> fix. Engine behaviour gets one line and its engine note.
     paths use `_rx` / `_rxi`.
 22. **`is` is modelled case-SENSITIVELY whatever `the caseSensitive` says** (the property reaches array keys only,
     as a per-handler local), so `check-wallet-vectors.py` runs every vector twice, the second time with `is` and
-    `offset()` folded. `contains`, `begins with`, `ends with` and `sort` are NOT folded; putting one on
+    `offset()` folded, and `check-script-vectors.py` tier 2b runs coinxt-demo's EIP-55 handlers both ways (a demo
+    no gate ran was where the fold's absence hid a defect, 2026-09-26). `contains`, `begins with`, `ends with` and
+    `sort` are NOT folded; putting one on
     case-significant data needs a new tier, not a quiet widening. riptide's runner matches `switch` cases the same
     way: as TEXT (the engine's rule since 2026-09-25; until then through `is`, so `"1.0"` took `case "1"`), and
     case-sensitively.
@@ -543,6 +560,7 @@ The script layer's 51: phase 3 encodings (19), phase 4 HD (11), phase 5 transact
 | 2026-09-24 | Windows (the engine reports Win32), the 2026-09-12 release DLL at ABI 7 (its first engine load, the maintainer's account), 64-bit by the same account (given 2026-09-26, after this row said "the bitness not recorded"), so the `x86_64-win32` one | the D-23 suite paste (2620/5/3; none of the five failures was coinxt's) | coinxt 296/296 and the core's two samplers 11/11. ABI 7's first engine run: the "secp256k1 keys" section's six `cxPubkeyCombine` checks (G + G is 2G, one key is itself, the intermediate-infinity sum G + (-G) + 2G, and three refusals: the point at infinity, a length not a multiple of 33, an empty set), the first `Data`-of-many-keys shape this binding marshalled. `cxCheckABI` passed against the shipped binary; every section through phase 5 green |
 | 2026-09-25 | Linux (box2dxt's lines print `the platform` as Linux); by the maintainer's account 64-bit Kubuntu 24.04 with the latest committed builds, so the `x86_64-linux` library of `421bab3` (release run 34657390798, 2026-09-12) at ABI 7; the latest OXT (no version recorded), no preflight, and the report the launch's second Run all, by the same account (given 2026-09-26) | the D-23 suite paste as regenerated at `f1346e0` (2672/0/10; this member's folded code as on 2026-09-24, comments aside) | coinxt 296/296 and the core's two samplers 11/11; board row 308/0/0. `cxCheckABI` passed against the loaded library (ABI 7, which agrees with the account): that file's first engine load and ABI 7's first recorded run on Linux, the "secp256k1 keys" section's six `cxPubkeyCombine` checks included; every section through phase 5 green, line for line as on Windows the day before. The wallet is not in the paste |
 | 2026-09-25 (Windows; the Kit report's clock 10:54 PM local) | Windows (the engine reports Win32), by the maintainer's account the machine of the 2026-09-24 runs and 64-bit, so the `x86_64-win32` library, INFERRED to be the 2026-09-12 DLL at ABI 7 (none committed since; `cxCheckABI` agrees); no preflight (the same account: none on either machine); the OXT build and whether the report is a launch's first or second Run all not recorded | the same D-23 suite paste as the Linux run (INFERRED from the version lines both reports print: the board stamp `suite-board-1`, holde-em's "stack v0.25.5 harness v47" and riptide's third probe line; 2653/2/10, the two failures were the live loopbacks, neither coinxt's) | coinxt "296 passed, 0 failed of 296 checks" and board row 308/0/0; "PASS  cxCheckABI passes against the shipped binary", and the six `cxPubkeyCombine` lines PASS: ABI 7 on the `x86_64-win32` DLL, as on 2026-09-24 |
+| 2026-09-26 (Linux; the Kit report's clock "Saturday, September 26, 2026 4:23 PM") | Linux, by the maintainer's account the machine of the 2026-09-25 Linux run (64-bit Kubuntu 24.04, the latest committed builds, so the `x86_64-linux` library of `421bab3` at ABI 7; "the latest" OXT, no version recorded, and whether it was the 2026-09-25 build not stated); a fresh stack, no preflight, and the report the launch's second Run all, taken with Copy results (the same account, given 2026-09-26) | PR #147's D-23 suite paste (INFERRED from the version lines the report prints, which exist together only in that batch: the board stamp `suite-board-0961bb91e5ee`, holde-em's "stack v0.25.6 harness v48" and riptide's fourth probe line; its head `2ec9594` carries the paste as last regenerated at `986769f`; 2876/0/10), with this member's library and coin-selftest as that batch left them: work-plan row #8's library half and coin-selftest's hex compares through `stSameHex` | coinxt "299 passed, 0 failed of 299 checks", board row 311/0/0; "PASS  cxCheckABI passes against the shipped binary" (ABI 7, which agrees with the account); every section green. 299 is 2026-09-25's 296 plus the three lines row #8 added to "fail-closed regressions", each PASS: "bech32 refuses a value one ulp above 3" and "bech32 refuses a value within 2.2e-15 below zero" (both refusals message-checked, "whole number between 0 and 31") and "and 3e0, a spelling the engine calls whole, encodes exactly as 3". So `cxBech32EncodeValues`'s exact whole-number guard (`is not an integer`, its own `if` ahead of the range) refused 3.0000000000000004 and -0.000000000000001 on an engine, the two values the old `is not trunc()` line let through by the engine's rule (suite engine note 2.12; the old line ran on engines on 2026-09-24 and 2026-09-25, but only on whole values, 32 and -1 among them, never on these two), and let "3e0" through to the same string as 3, so `"3e0" is an integer` answered true there, as note 2.12 reads the source (OBSERVED, Linux). The section's three older refusal lines (a data value of 32, a negative value, an uppercase HRP) ran as rewritten the same day, the spec passed and the message checked, for the first time. The wallet (coin-wallet, wallet-core) is not in the paste: its batch changes did not run |
 
 ### Independent acceptance (manual-only by D-17)
 
@@ -567,7 +585,7 @@ brief says the release lane does; the work plan carries that).
 | 2026-09-12 | release run 34657390798 (commit `421bab3`) | replaced all five at ABI 7 |
 
 CI executes the committed x86_64-linux library's vectors on every push (`native-coinxt.yml`), and that library met an
-engine on 2026-09-25 (the ledger above; 64-bit, by the maintainer's account). The 2026-09-12 `x86_64-win32` DLL met one
+engine on 2026-09-25 and again on 2026-09-26 (the ledger above; 64-bit, by the maintainer's account). The 2026-09-12 `x86_64-win32` DLL met one
 on 2026-09-24 and again on 2026-09-25 (64-bit OXT, by the maintainer's account given 2026-09-26). The `x86-win32` DLL
 may still never have executed anywhere (CI's Windows KAT step is x86_64 only, and every Windows engine run since
 2026-09-12 was 64-bit, by the same account); no engine has loaded the `x86-linux` or mac builds.
@@ -605,19 +623,21 @@ hot `re.match` in the interpreter, riptide's runner and `check-wallet-boot.py` c
 
 Engine-proven: the whole library surface through ABI 7 (all 95 handlers; 296/296 on 2026-09-24 in the suite paste, on
 the 2026-09-12 `x86_64-win32` DLL, whose first engine load that was, and on 2026-09-25 on the 2026-09-12 `x86_64-linux`
-library, its first too, and on Windows again, INFERRED on the same DLL; 290/290 at ABI 6 on 2026-08-24, Windows x86_64)
+library, its first too, and on Windows again, INFERRED on the same DLL; 299/299 on 2026-09-26 on that Linux library,
+`cxBech32EncodeValues`'s exact whole-number guard of 2026-09-25 among them; 290/290 at ABI 6 on 2026-08-24, Windows x86_64)
 and, in the wallet, all four public transports, broadcast, RBF, CPFP, an OP_RETURN note, a silent-payment send, an
 inscription and a timelock payment (2026-09-01 to 09-03, testnet). Bitcoin spends over the `cx*` sighash and encoder
 were accepted on testnet; a native-P2WPKH broadcast is not recorded, and no EIP-155 / EIP-1559 transaction has been
 broadcast. Verified statically; needs an OXT pass: every ABI 7 binary but the `x86_64-linux` library (2026-09-25) and
 the `x86_64-win32` DLL (2026-09-24 and 2026-09-25; 64-bit by the maintainer's account), so the `x86-win32` DLL may still
-never have executed; `cxBech32EncodeValues`'s 2026-09-25 whole-number guard (the handler itself ran green on
-2026-09-24 and 2026-09-25; the new line has not run, and coin-selftest's message-checked refusal lines of 2026-09-26
-are what will read it); the wallet surface added from 2026-09-04 (the Ordinals and Vault screens, testnet4, BIP-329,
+never have executed; `cxBech32EncodeValues`'s whole-number guard on Windows (it ran green on Linux on 2026-09-26,
+coin-selftest's three row #8 lines and its message-checked refusals; the ledger); the wallet surface added from 2026-09-04 (the Ordinals and Vault screens, testnet4, BIP-329,
 BIP-322, silent-payment receiving, Runes, BOLT11, the Core backends, the 2026-09-10 fixes, the 2026-09-24 byte-level
 2^53 bound in `cwLeRead` / `cwBeRead`, the 2026-09-25 exact-integer bounds of work-plan row #8, coinxt-demo's
 `cdWholeField`, the 2026-09-26 `cwExpandExponent` bound and the 2026-09-26 hex compares through `cwSameHex` /
-`cwHexCompare`); and what the logs did not reach (the update swap, mainnet
+`cwHexCompare`); coinxt-demo's 2026-09-26 EIP-55 mixed-case test (`cdIsMixedCase`) and coin-selftest's asserts
+rewritten through `stSameText` / `stSameHex` the same day (the 296/296 above read their bare spellings; the next
+suite paste run reads these); and what the logs did not reach (the update swap, mainnet
 Electrum on port 110, the stale-answer skip, paint/pump timing, the mixed tip+fees batch, the three corrected menu
 items, the backend un-marking a coin, Esplora's 400 body in the log, CPFP on a foreign transaction, an Electrum-format
 seed opening real coins, a vault release after its height). Open work is in the suite's docs/WORK-PLAN.md.

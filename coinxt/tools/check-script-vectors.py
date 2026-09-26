@@ -31,7 +31,9 @@ Two tiers, so it is useful in both environments:
      other gate runs the demo.
   2. VECTORS, when a C compiler is available: the whole encoder surface driven
      through the interpreter against BIP-173, BIP-350, EIP-55, the RLP
-     yellow-paper examples and a Base58Check worked example.
+     yellow-paper examples and a Base58Check worked example. Beside them (2b,
+     2026-09-26) coinxt-demo's EIP-55 recipient check, lifted out and run
+     with `is` as the interpreter reads it and folded as the engine does.
 A missing compiler SKIPS tier 2 loudly; it never passes silently.
 
 IT IS SLOW, AND THAT IS THE PRICE, NOT A DEFECT. Tier 2 takes a couple of
@@ -949,6 +951,119 @@ def check_demo_fields(c):
              re.search(r'\bis (not )?an integer\b', body) is not None, False)
     c.ck("every field excused as text is still read by a build handler",
          sorted(set(not_counters) - read_as_text), [])
+
+
+# ------------------------------------------------------------------- tier 2b
+# coinxt-demo's EIP-55 check, under the ENGINE's case rule (2026-09-26).
+# cdEthAddressHex decided "did the caller write a checksum?" with `tPlain is
+# not toLower(tPlain)`. `is` folds case on an engine (`the caseSensitive`
+# defaults to false, and it is a handler-local property nothing there set),
+# so that test was false for every address and the checksum never ran: a
+# mixed-case address with one mistyped letter went into the transaction as
+# typed. The interpreter's `is` is case-SENSITIVE (coinxt CLAUDE.md trap 22),
+# which is why no run of the demo's logic could have seen it. This tier lifts
+# the three handlers out of the SHIPPED demo, runs them over the real script
+# layer and the shim's Keccak, and asks the same four questions twice: with
+# the interpreter's `is`, and with `is` folded the way the engine folds it.
+# Then it plants the old test back and requires the folded run to ACCEPT the
+# corrupted address, so the fold is proven to see the class it is here for.
+_DEMO_ETH_LIFT = ("cdCleanHex", "cdEthAddressHex", "cdIsMixedCase")
+_DEMO_ETH_FIXED = "if cdIsMixedCase(tPlain) is true then"
+_DEMO_ETH_OLD = "if tPlain is not toLower(tPlain) then"
+# the EIP-55 specification's first example, the same with ONE letter's case
+# flipped (so its checksum fails), and the two single-case spellings, which
+# claim no checksum
+_EIP55_GOOD = "0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed"
+_EIP55_BAD = "0x5AAeb6053F3E94C9b9A09f33669435E7Ef1BeAed"
+
+
+def _demo_eth_unit(layer, demo_text, old=False):
+    """The layer plus the three demo handlers, as shipped (or with the old
+    mixed-case test planted back). The interpreter models neither `word`
+    nor `toLower`, so `word 1 of X` is rewritten to a call answered below
+    (asserted to happen exactly twice) and both are answered natively."""
+    parts = []
+    for name in _DEMO_ETH_LIFT:
+        m = re.search(r"^function %s\b.*?^end %s\b[^\n]*" % (name, name),
+                      demo_text, re.S | re.M)
+        if m is None:
+            return None, "coinxt-demo no longer defines %s" % name
+        parts.append(m.group(0))
+    lifted = "\n\n".join(parts)
+    if lifted.count(_DEMO_ETH_FIXED) != 1:
+        return None, "cdEthAddressHex no longer carries its mixed-case test"
+    if old:
+        lifted = lifted.replace(_DEMO_ETH_FIXED, _DEMO_ETH_OLD)
+    lifted, words = re.subn(r"\bword 1 of (\w+)\b", r"fxWordOne(\1)", lifted)
+    if words != 2:
+        return None, "expected `word 1 of` twice in the lifted handlers, found %d" % words
+    return LCS.Interp(layer + "\n" + lifted), ""
+
+
+def check_demo_eth_address(c, layer):
+    c.note("\ncoinxt-demo's EIP-55 check, under the interpreter's `is` and the "
+           "engine's case fold")
+    demo_text = open(DEMO, encoding="utf-8").read()
+    saved = {k: LCS.HASHES.get(k) for k in ("fxwordone", "tolower")}
+    real_eq = LCS._eq
+
+    def folded_eq(a, b):
+        # the engine's default for text: case folds (numbers and arrays keep
+        # the interpreter's own answer)
+        if real_eq(a, b):
+            return True
+        if isinstance(a, (dict, bool)) or isinstance(b, (dict, bool)):
+            return False
+        return str(LCS._disp(a)).lower() == str(LCS._disp(b)).lower()
+
+    def run(ip, address):
+        try:
+            return "accepted " + str(LCS._disp(ip.call("cdEthAddressHex", [address])))
+        except LCS.Thrown as exc:
+            msg = str(exc.msg)
+            return "refused: checksum" if "FAILS its EIP-55 checksum" in msg \
+                else "refused: " + msg[:60]
+
+    lower = _EIP55_GOOD[2:].lower()
+    want = {_EIP55_GOOD: "accepted " + lower,
+            _EIP55_BAD: "refused: checksum",
+            _EIP55_GOOD.lower(): "accepted " + lower,
+            "0x" + _EIP55_GOOD[2:].upper(): "accepted " + lower}
+    what = {_EIP55_GOOD: "the EIP-55 example (mixed case, checksum good)",
+            _EIP55_BAD: "it with one letter's case flipped (checksum bad)",
+            _EIP55_GOOD.lower(): "it all-lowercase (no checksum claimed)",
+            "0x" + _EIP55_GOOD[2:].upper(): "it all-uppercase (no checksum claimed)"}
+    LCS.HASHES["fxwordone"] = lambda args: (str(LCS._disp(args[0])).split() or [""])[0]
+    LCS.HASHES["tolower"] = lambda args: str(LCS._disp(args[0])).lower()
+    try:
+        ip, why = _demo_eth_unit(layer, demo_text)
+        c.ck("the three handlers lift out of the shipped demo", why, "")
+        if ip is None:
+            return
+        old_ip, why = _demo_eth_unit(layer, demo_text, old=True)
+        for rule in ("interpreter", "engine"):
+            if rule == "engine":
+                LCS._eq = folded_eq
+            try:
+                c.ck("the %s rule is the one in force: \"A\" is \"a\"" % rule,
+                     ip.eval_expr('"A" is "a"', {}), rule == "engine")
+                for address in want:
+                    c.ck("cdEthAddressHex, %s `is`: %s" % (rule, what[address]),
+                         run(ip, address), want[address])
+                # the old test, planted back: blind under the engine's rule
+                c.ck("and the OLD mixed-case test, %s `is`, %s the flipped letter"
+                     % (rule, "accepts" if rule == "engine" else "refuses"),
+                     run(old_ip, _EIP55_BAD),
+                     "accepted " + lower if rule == "engine" else "refused: checksum")
+            finally:
+                LCS._eq = real_eq
+    finally:
+        LCS._eq = real_eq
+        for k, v in saved.items():
+            if v is None:
+                LCS.HASHES.pop(k, None)
+            else:
+                LCS.HASHES[k] = v
 
 
 # --------------------------------------------------------------------- tier 2
@@ -2191,6 +2306,7 @@ def main(argv):
                    f"{len(ip.constants)} constants) through tools/lcs-interp.py")
             check_vectors(c, ip)
             check_taproot_bip341(c, ip)
+            check_demo_eth_address(c, text)
 
     if c.problems:
         print("check-script-vectors: FAILED")

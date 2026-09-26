@@ -54,8 +54,13 @@ seeded copy of the spelling that shipped has read right under IEEE and wrong
 under the engine's rule (the bridge's seq agreement with tier 2, since only
 a bridge that verifies over the real CoinXT reaches it). Tier 1e
 (2026-09-26) reads the HARNESS, not the library: the shape of its fourth
-numeric compare probe line, and the plain interpreter's refusal of each of
-its six items (suite engine note 2.11's forms that only an engine can read).
+numeric compare probe line, the plain interpreter's refusal of each of
+its six items (suite engine note 2.11's forms that only an engine can read),
+and the engine readings of that line recorded so far (Linux, 2026-09-26),
+each six booleans agreeing with the prediction the line prints wherever the
+engine source decides, and each quoted verbatim by its run's row of
+riptide/CLAUDE.md's ledger (the C library's four items have no other
+holder).
 
 THE SOURCE REWRITES, AND WHY THEY ARE ASSERTED. riptide was written before
 this gate existed and uses three spellings outside the interpreter's
@@ -1634,9 +1639,34 @@ def check_seq_order_bridge(c, ip, src, fail):
 # the 385 characters). A refusal is the handling probes 1-3 get too (tier
 # 1c here, coinxt's check-script-vectors tier 0): no headless gate can run
 # such a line, so a gate that holds the refusal is the one place a headless
-# run meets it. When the engine's reading is recorded and the interpreter
-# is taught it, these refusal rows are what change, beside that record.
-# The shape checker is proven able to fire first, on seeded copies.
+# run meets it. The shape checker is proven able to fire first, on seeded
+# copies.
+#
+# THE READINGS, RECORDED (2026-09-26). An engine has now printed the line
+# (Linux, 2026-09-26; riptide/CLAUDE.md's ledger), and its answers are held
+# below as DATA, keyed by platform and date, the way tier 1c holds probes
+# 1-3 (PROBE_READINGS). What can be checked about a recorded reading without
+# an engine is what the harness itself says about it: six booleans (no item
+# threw or printed empty), and the items the engine SOURCE decides (the
+# non-? places of the prediction the line prints: items 1 and 5) as that
+# prediction says. The C library's four are recorded, not re-derived: no
+# model here reads a C library. A recorded answer corrupted to disagree with
+# the source, or to anything but six booleans, fails this tier; seeded
+# corruptions of the real record prove the check can fire. The refusal rows
+# stay as they are: the interpreter is not taught the reading yet (a later
+# change, with the Windows reading beside it), and when it is, those rows are
+# what change, beside this record.
+#
+# A SECOND HOLDER (audit, 2026-09-26). The source decides only items 1 and
+# 5, so a record whose item 2, 3, 4 or 6 was flipped passed every check
+# above (the audit flipped item 3, NaN's, and the tier stayed green). With
+# no model of a C library to re-derive those four, the reading is held
+# twice instead, the way sodiumxt's CLAUDE.md table is a holder for the
+# suite's preflight: every recorded reading must be quoted VERBATIM, after
+# "Probe 4", in this member's CLAUDE.md ledger row of its date that names
+# its platform, and every ledger row that quotes one must be in the record.
+# A corruption of either copy now fails; seeded flips of each of the six
+# items, on each side, prove it.
 
 HARNESS = os.path.join(MEMBER, "tests", "riptide-selftest.livecodescript")
 PROBE4_PREFIX = "numeric compare probe 4 (diagnostic;"
@@ -1650,6 +1680,33 @@ PROBE4_ITEMS = [
     (5, '(tA is 4294967296)', '4294967296 (385 chars)'),
     (6, '("0x1.8" is "1.5")', '`"0x1.8" is "1.5"`'),
 ]
+# The engine's readings of the line, exactly as its reports printed them
+# after the colon, keyed by (`the platform` as the engine names it, the date
+# of the run). Add a reading here when a report carries one, and quote it in
+# that run's row of riptide/CLAUDE.md's ledger (LEDGER, below); never edit
+# one.
+#   ("Linux", "2026-09-26"): the suite paste of PR #147 (its head 2ec9594),
+#     riptide 0.13.0's harness, a SECOND Run all in one launch on a fresh
+#     stack, by the maintainer's account 64-bit Kubuntu 24.04, the machine of
+#     the 2026-09-25 Linux run. Items 1 and 5 as the source predicts; 2, 3
+#     and 6 read true,false,true, the reading the harness comment gives a C99
+#     strtod (inf and a hex float parse, NaN is unequal to itself), and 4
+#     false, the "C" locale's (byte 0xA0 is not a space, so the text stayed
+#     text).
+# Owed: Win32 (MSVC's C runtime decides items 2, 3, 4 and 6 there).
+PROBE4_RECORDED = {
+    ("Linux", "2026-09-26"): "true,true,false,false,false,true",
+}
+# `the platform` as an engine answers it, for the keys above
+PROBE4_PLATFORMS = ("Linux", "Win32", "MacOS")
+# The second holder of each reading: this member's ledger, and the words a
+# ledger row's first two cells use for each platform above
+LEDGER = os.path.join(MEMBER, "CLAUDE.md")
+PROBE4_LEDGER_WORDS = {
+    "Linux": ("Linux",),
+    "Win32": ("Win32", "Windows"),
+    "MacOS": ("MacOS", "macOS", "Mac OS"),
+}
 # Each item's statements, from its branch to the next, EXACTLY (review,
 # 2026-09-26). The refusal rows below cannot see an edit that keeps every
 # operand the interpreter refuses but changes what the ENGINE prints: a line
@@ -1811,6 +1868,195 @@ def probe4_shape(text):
     return bad
 
 
+_PROBE4_PREDICTION_RX = re.compile(r'\breads ((?:[a-z?]+,){5}[a-z?]+) where\b')
+_PROBE4_DATE_RX = re.compile(r'^20\d\d-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$')
+
+
+def probe4_printed_prediction(text):
+    """The prediction the probe-4 line PRINTS (six items, each true, false
+    or ?), read from the harness's own statement in TEXT, not from
+    PROBE4_PREDICTED; None when there is not exactly one such statement or
+    it prints no such prediction."""
+    heads = _SECTION_HEAD_RX.findall(text)
+    if len(heads) != 1:
+        return None
+    lines = [ln for ln in _probe4_logical(heads[0]) if PROBE4_PREFIX in ln]
+    if len(lines) != 1:
+        return None
+    found = _PROBE4_PREDICTION_RX.findall(lines[0])
+    return found[0] if len(found) == 1 else None
+
+
+def probe4_recorded_problems(recorded, prediction):
+    """What is wrong with RECORDED ({(platform, date): reading}) held
+    against PREDICTION (what the line prints); an empty list when nothing
+    is. A reading is six booleans, and every place the prediction decides
+    (not ?) reads as the prediction says."""
+    if not recorded:
+        return ["no engine reading of the probe-4 line is recorded"]
+    pred = (prediction or "").split(",")
+    if len(pred) != len(PROBE4_ITEMS) or \
+            any(p not in ("true", "false", "?") for p in pred):
+        return ["the printed prediction %r is not six items of true, false "
+                "or ?" % (prediction,)]
+    bad = []
+    for key in sorted(recorded, key=repr):
+        if not (isinstance(key, tuple) and len(key) == 2
+                and key[0] in PROBE4_PLATFORMS
+                and isinstance(key[1], str) and _PROBE4_DATE_RX.match(key[1])):
+            bad.append("%r is not a (platform, date) key (a platform is one "
+                       "of %s, a date YYYY-MM-DD)"
+                       % (key, ", ".join(PROBE4_PLATFORMS)))
+            continue
+        reading = recorded[key]
+        items = reading.split(",") if isinstance(reading, str) else []
+        if len(items) != len(PROBE4_ITEMS) or \
+                any(i not in ("true", "false") for i in items):
+            bad.append("%s %s: %r is not six booleans"
+                       % (key[0], key[1], reading))
+            continue
+        for n, (want, got) in enumerate(zip(pred, items), 1):
+            if want != "?" and got != want:
+                bad.append("%s %s: item %d reads %s, where the engine source "
+                           "decides %s" % (key[0], key[1], n, got, want))
+    return bad
+
+
+# a ledger row's quote of the line's reading: the first backticked run of
+# six booleans after "Probe 4" (the row's other backticks, the prediction's
+# among them, never read as six booleans)
+_LEDGER_PROBE4_RX = re.compile(
+    r'[Pp]robe 4\b.{0,240}?`((?:true|false)(?:,(?:true|false)){5})`')
+_LEDGER_ROW_DATE_RX = re.compile(r'^\| (20\d\d-\d\d-\d\d)\b')
+
+
+def _probe4_ledger_rows(ledger):
+    """The ledger's dated table rows in LEDGER (text): (date, the platforms
+    its first two cells name, the probe-4 readings it quotes, the row)."""
+    out = []
+    for row in ledger.split("\n"):
+        m = _LEDGER_ROW_DATE_RX.match(row)
+        if not m:
+            continue
+        head = "|".join(row.split("|")[1:3])
+        named = tuple(p for p in PROBE4_PLATFORMS
+                      if any(w in head for w in PROBE4_LEDGER_WORDS[p]))
+        out.append((m.group(1), named, _LEDGER_PROBE4_RX.findall(row), row))
+    return out
+
+
+def probe4_ledger_problems(recorded, ledger):
+    """RECORDED ({(platform, date): reading}) against the member's ledger
+    text LEDGER; an empty list when the two agree. Every recorded reading is
+    quoted, exactly, by a ledger row of its date naming its platform, and
+    no row of that date and platform quotes another; every row that quotes a
+    reading is recorded. The C library decides four of the six items, so no
+    model re-derives them: this second holder is what makes a corrupted
+    answer in either copy fail."""
+    bad = []
+    rows = _probe4_ledger_rows(ledger)
+    for key in sorted(recorded, key=repr):
+        if not (isinstance(key, tuple) and len(key) == 2
+                and key[0] in PROBE4_PLATFORMS):
+            continue  # the record check names a malformed key
+        platform, date = key
+        mine = [r for r in rows if r[0] == date and platform in r[1]]
+        quoted = sorted(set(q for r in mine for q in r[2]))
+        if not mine:
+            bad.append("%s %s: no ledger row of that date names %s"
+                       % (platform, date, platform))
+        elif not quoted:
+            bad.append("%s %s: the ledger row quotes no probe-4 reading "
+                       "(six booleans in backticks, after \"Probe 4\")"
+                       % (platform, date))
+        elif quoted != [recorded[key]]:
+            bad.append("%s %s: the ledger quotes %s, the record %s"
+                       % (platform, date, " and ".join(quoted),
+                          recorded[key]))
+    for date, named, quotes, _row in rows:
+        for q in quotes:
+            if not any(recorded.get((p, date)) == q for p in named):
+                bad.append("the ledger row of %s (%s) quotes %s, which no "
+                           "recorded reading of that date and platform holds"
+                           % (date, ", ".join(named) or "no platform named",
+                              q))
+    return bad
+
+
+def _probe4_ledger_seeds(recorded, ledger, fail):
+    """Corrupted copies of the record and of the LEDGER text, each of which
+    the ledger check must refuse: (record, ledger, what, what it must say).
+    Every item's flip is seeded on each side, so a corrupted answer in
+    either copy is proven to fail, the C library's four included."""
+    key = sorted(recorded, key=repr)[0]
+    # the run's row found by its date and platform, NOT by the recorded
+    # reading, so a record corrupted on its own reaches the check below and
+    # is named there rather than stopping here
+    rows = [r for r in _probe4_ledger_rows(ledger)
+            if r[0] == key[1] and key[0] in r[1] and len(r[2]) == 1]
+    if len(rows) != 1 or rows[0][3].count("`%s`" % rows[0][2][0]) != 1 \
+            or ledger.count(rows[0][3] + "\n") != 1:
+        fail("tier 1e's ledger fixture expects one ledger row of %s %s "
+             "quoting one probe-4 reading once, and found %d; without it "
+             "the ledger check goes untested" % (key[0], key[1], len(rows)))
+    row, quoted = rows[0][3], rows[0][2][0]
+
+    def flipped(reading, n):
+        out = reading.split(",")
+        out[n - 1] = "false" if out[n - 1] == "true" else "true"
+        return ",".join(out)
+
+    seeds = []
+    for n in range(1, len(PROBE4_ITEMS) + 1):
+        rec = dict(recorded)
+        rec[key] = flipped(recorded[key], n)
+        seeds.append((rec, ledger, "the record's item %d flipped" % n,
+                      "the ledger quotes"))
+        seeds.append((recorded, ledger.replace(
+            row, row.replace("`%s`" % quoted, "`%s`" % flipped(quoted, n))),
+            "the ledger row's item %d flipped" % n, "the ledger quotes"))
+    seeds.append((recorded, ledger.replace(row + "\n", ""),
+                  "the run's ledger row deleted", "no ledger row"))
+    seeds.append((recorded, ledger.replace(
+        row, row + "\n" + row.replace(key[1], "2099-01-01", 1)),
+        "a ledger row quoting a reading the record lacks",
+        "which no recorded reading"))
+    return seeds
+
+
+def _probe4_record_seeds(recorded):
+    """Corrupted copies of RECORDED, each built from its first real entry:
+    (the copy, what was corrupted, what the record check must say)."""
+    key = sorted(recorded, key=repr)[0]
+    items = recorded[key].split(",")
+
+    def with_reading(reading):
+        out = dict(recorded)
+        out[key] = reading
+        return out
+
+    def flipped(n):
+        out = list(items)
+        out[n - 1] = "false" if out[n - 1] == "true" else "true"
+        return ",".join(out)
+
+    moved = dict(recorded)
+    moved[(key[0].lower(), key[1])] = moved.pop(key)
+    return [
+        (with_reading(flipped(1)), "item 1 (source-decided) flipped",
+         "item 1 reads"),
+        (with_reading(flipped(5)), "item 5 (source-decided) flipped",
+         "item 5 reads"),
+        (with_reading(",".join(items[:3] + ["threw: seeded"] + items[4:])),
+         "a thrown item in place of a boolean", "is not six booleans"),
+        (with_reading(",".join(items[:5])), "an item dropped",
+         "is not six booleans"),
+        (moved, "the platform spelled other than the engine names it",
+         "is not a (platform, date) key"),
+        ({}, "the record emptied", "no engine reading"),
+    ]
+
+
 def _probe4_seeds(text, fail):
     """Seeded copies of TEXT, each a way the line could silently lose what
     it reads: (text, what was seeded, what the shape checker must say)."""
@@ -1887,6 +2133,41 @@ def check_probe4(c, fail):
          "source's prediction %s, each item inside rstTextProbe's try and "
          "built exactly as pinned, nothing counted" % PROBE4_PREDICTED,
          probe4_shape(text), [])
+    # the recorded readings, against the prediction the line prints
+    printed = probe4_printed_prediction(text)
+    for seeded, why, says in _probe4_record_seeds(PROBE4_RECORDED):
+        c.ck("fixture: the record check refuses a corrupted copy of the "
+             "recorded readings (%s), saying so" % why,
+             any(says in problem
+                 for problem in probe4_recorded_problems(seeded, printed)),
+             True)
+    moved = text.replace("reads true,?,?,?,false,? where",
+                         "reads false,?,?,?,false,? where")
+    c.ck("fixture: the prediction is READ from the harness line: a copy "
+         "printing item 1 as false refuses the real record's item 1",
+         any("item 1 reads" in problem for problem in probe4_recorded_problems(
+             PROBE4_RECORDED, probe4_printed_prediction(moved))), True)
+    c.ck("the probe-4 line prints the prediction %s (read from the harness)"
+         % PROBE4_PREDICTED, printed, PROBE4_PREDICTED)
+    for key in sorted(PROBE4_RECORDED, key=repr):
+        c.ck("the recorded probe-4 reading, %s %s (%s): six booleans, and "
+             "items 1 and 5, the ones the engine source decides, as the "
+             "line's printed prediction says"
+             % (key[0], key[1], PROBE4_RECORDED[key]),
+             probe4_recorded_problems({key: PROBE4_RECORDED[key]}, printed),
+             [])
+    # the second holder: the member's ledger quotes each reading verbatim
+    with open(LEDGER, "r", encoding="utf-8") as fh:
+        ledger = fh.read()
+    for rec, led, why, says in _probe4_ledger_seeds(PROBE4_RECORDED, ledger,
+                                                    fail):
+        c.ck("fixture: the ledger check refuses %s, saying so" % why,
+             any(says in problem
+                 for problem in probe4_ledger_problems(rec, led)), True)
+    c.ck("every recorded probe-4 reading is quoted verbatim by its run's row "
+         "of riptide/CLAUDE.md's ledger, and every reading a ledger row "
+         "quotes is recorded (the C library's four items have no other "
+         "holder)", probe4_ledger_problems(PROBE4_RECORDED, ledger), [])
     fns = _PROBE4_FN_RX.findall(text)
     if len(fns) != 1:
         return
@@ -1905,8 +2186,9 @@ def check_probe4(c, fail):
                 got = ("refused" if "2.11" in msg and frag in msg
                        else "refused, but naming neither 2.11 nor %s: %s"
                        % (frag, msg[:160]))
-            c.ck("item %d, %s: the plain interpreter REFUSES it (the "
-                 "engine's reading is owed; teach the interpreter from it)"
+            c.ck("item %d, %s: the plain interpreter still REFUSES it (the "
+                 "Linux reading is recorded above and the Win32 one owed; "
+                 "teaching the interpreter is a later change)"
                  % (n, expr), got, "refused")
         c.ck("an item past 6 reads empty and never throws",
              probe.call("rstTextProbe", [7]), "")

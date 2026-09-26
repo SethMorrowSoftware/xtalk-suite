@@ -3805,7 +3805,11 @@ end stCleanup
 -- ---- the run -----------------------------------------------------------------
 command stRun
    stResetCounters
-   -- Byte-exact compares, and hex strings that must not fold case.
+   -- Reaches only THIS handler's own comparisons: `the caseSensitive` is
+   -- handler-local (the LiveCode dictionary; engine note 2.3 observed that
+   -- scope for the itemDelimiter), so none of the stRun* sections below sees
+   -- it. A case-significant value is compared through stSameText, hex through
+   -- stSameHex (2026-09-26).
    set the caseSensitive to true
 
    put "CoinXT API self-test" & return into sResultText
@@ -4336,7 +4340,7 @@ command stRunBase58
       stAssert "cxHash256 of abc is the published double-SHA-256", stHex(cxHash256(stText("abc"))) is kHash256Abc
       stAssert "cxHash256 is 32 bytes", the number of bytes of cxHash256(stText("")) is 32
       stAssert "and it is genuinely SHA-256 applied twice", stSameHex(stHex(cxHash256(stText("abc"))), stHex(cxSha256(cxSha256(stText("abc")))))
-      stAssert "encodes the worked example", cxBase58CheckEncode(tPayload) is kBase58Address
+      stAssert "encodes the worked example", stSameText(cxBase58CheckEncode(tPayload), kBase58Address)
       stAssert "decodes it back", cxHexEncode(cxBase58CheckDecode(kBase58Address)) is stToLowerText(kBase58Payload)
       -- The checksum is the entire point of the encoding: one flipped character
       -- must be refused, never coerced into a nearby valid-looking payload.
@@ -4345,7 +4349,7 @@ command stRunBase58
       -- Leading zero bytes must survive as leading "1"s, one for one. That is
       -- what makes a mainnet P2PKH address start with a 1 at all.
       put numToByte(0) & numToByte(0) & cxHexDecode("deadbeef") into tPadded
-      stAssert "two leading zero bytes give two leading ones", char 1 to 2 of cxBase58CheckEncode(tPadded) is "11"
+      stAssert "two leading zero bytes give two leading ones", stSameText(char 1 to 2 of cxBase58CheckEncode(tPadded), "11")
       stAssert "the round trip preserves them", cxHexEncode(cxBase58CheckDecode(cxBase58CheckEncode(tPadded))) is "0000deadbeef"
    catch tError
       stSectionFailed "Base58Check", tError
@@ -4379,11 +4383,11 @@ command stRunAddresses
       put cxPublicKey(tSeckey, true) into tPubC
       put cxPublicKey(tSeckey, false) into tPubU
       -- Each of these is a PUBLISHED answer, not a CoinXT expectation.
-      stAssert "cxBtcAddressP2PKH of G", cxBtcAddressP2PKH(tPubC) is kP2pkhOfG
+      stAssert "cxBtcAddressP2PKH of G", stSameText(cxBtcAddressP2PKH(tPubC), kP2pkhOfG)
       stAssert "cxBtcAddressP2WPKH of G is the BIP-173 vector", cxBtcAddressP2WPKH(tPubC) is kP2wpkhOfG
       stAssert "cxBtcAddressP2TR of x-only G is the BIP-350 vector", cxBtcAddressP2TR(byte 2 to 33 of tPubU) is kP2trOfG
-      stAssert "cxEthAddress of G (from the compressed key)", cxEthAddressChecksum(cxEthAddress(tPubC)) is kEthOfG
-      stAssert "cxEthAddress agrees from the uncompressed key", cxEthAddress(tPubU) is cxEthAddress(tPubC)
+      stAssert "cxEthAddress of G (from the compressed key)", stSameText(cxEthAddressChecksum(cxEthAddress(tPubC)), kEthOfG)
+      stAssert "cxEthAddress agrees from the uncompressed key", stSameText(cxEthAddress(tPubU), cxEthAddress(tPubC))
       -- An uncompressed key in a v0 SegWit address makes funds unspendable by
       -- every modern wallet, so it must be refused rather than encoded.
       stAssert "P2WPKH refuses an uncompressed key", stThrows("cxBtcAddressP2WPKH", tPubU)
@@ -4406,8 +4410,8 @@ command stRunEip55
    local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    stSection "EIP-55 checksummed Ethereum addresses"
    try
-      stAssert "checksums the first specification example", cxEthAddressChecksum(stToLowerText(kEip55A)) is kEip55A
-      stAssert "checksums the second", cxEthAddressChecksum(stToLowerText(kEip55B)) is kEip55B
+      stAssert "checksums the first specification example", stSameText(cxEthAddressChecksum(stToLowerText(kEip55A)), kEip55A)
+      stAssert "checksums the second", stSameText(cxEthAddressChecksum(stToLowerText(kEip55B)), kEip55B)
       stAssert "recognises a correctly checksummed address", cxEthAddressIsChecksummed(kEip55A) is true
       -- An all-lowercase address carries NO checksum, so reporting it as valid
       -- would quietly retire the protection EIP-55 exists to give.
@@ -4424,7 +4428,7 @@ command stRunRlp
    stSection "RLP"
    try
       stAssert "encodes the string dog", cxHexEncode(cxRlpEncodeBytes(stText("dog"))) is "83646f67"
-      stAssert "encodes the empty string", cxHexEncode(cxRlpEncodeBytes("")) is "80"
+      stAssert "encodes the empty string", stSameHex(cxHexEncode(cxRlpEncodeBytes("")), "80")
       stAssert "encodes a single byte below 0x80 as itself", cxHexEncode(cxRlpEncodeBytes(numToByte(15))) is "0f"
       stAssert "encodes the empty list", cxHexEncode(cxRlpEncodeList("")) is "c0"
       put cxRlpEncodeBytes(stText("cat")) & cxRlpEncodeBytes(stText("dog")) into tCatDog
@@ -4451,13 +4455,13 @@ command stRunWif
    try
       -- The mainnet/uncompressed answer IS the Bitcoin wiki's published worked
       -- example; the other forms are oracle-derived (see the constants block).
-      stAssert "encodes the wiki worked example (mainnet, uncompressed)", cxWifEncode(kWifSeckey, "mainnet", false) is kWifUncompressed
-      stAssert "the compressed form is the same key with the 0x01 marker", cxWifEncode(kWifSeckey, "mainnet", true) is kWifCompressed
-      stAssert "the testnet form differs only in its version byte", cxWifEncode(kWifSeckey, "testnet", true) is kWifTestnet
+      stAssert "encodes the wiki worked example (mainnet, uncompressed)", stSameText(cxWifEncode(kWifSeckey, "mainnet", false), kWifUncompressed)
+      stAssert "the compressed form is the same key with the 0x01 marker", stSameText(cxWifEncode(kWifSeckey, "mainnet", true), kWifCompressed)
+      stAssert "the testnet form differs only in its version byte", stSameText(cxWifEncode(kWifSeckey, "testnet", true), kWifTestnet)
       -- The three encodings must be three different strings, or the network
       -- and the flag are not reaching the payload at all.
-      stAssert "compressed and uncompressed forms are distinct", kWifCompressed is not kWifUncompressed
-      stAssert "mainnet and testnet forms are distinct", kWifTestnet is not kWifCompressed
+      stAssert "compressed and uncompressed forms are distinct", not stSameText(kWifCompressed, kWifUncompressed)
+      stAssert "mainnet and testnet forms are distinct", not stSameText(kWifTestnet, kWifCompressed)
       put cxWifDecode(kWifCompressed) into tDecoded
       stAssert "decodes back to the same key", tDecoded["seckey"] is kWifSeckey
       stAssert "and reports mainnet", tDecoded["network"] is "mainnet"
@@ -4798,16 +4802,44 @@ command stAssertRefusal pName, pMessage, pHandler, pReason
    end if
 end stAssertRefusal
 
--- Byte-exact equality for two HEX STRINGS, which `is` alone cannot promise.
--- `is` compares two operands that both LOOK numeric as NUMBERS, and a hex
--- string can be all decimal digits - rarely for a 64-byte signature, but this
--- library's whole discipline is that "rarely" is not "never", and the
--- Base58Check checksum path already had to be moved off `is` for exactly this
--- reason. Prefixing a letter forces the string comparison, which with `the
--- caseSensitive` set true (stRun does) is byte for byte.
+-- Equality for two HEX STRINGS, compared as TEXT, which `is` alone cannot
+-- promise. `is` compares two operands that both LOOK numeric as NUMBERS
+-- (suite engine note 2.11), and a hex string can be all decimal digits -
+-- rarely for a 64-byte signature, but this library's whole discipline is that
+-- "rarely" is not "never", and the Base58Check checksum path already had to
+-- be moved off `is` for exactly this reason. Prefixing a letter forces the
+-- string comparison. It FOLDS CASE, which is right for hex: `the
+-- caseSensitive` is a handler-local property (the LiveCode dictionary; engine
+-- note 2.3 observed the same scope for the itemDelimiter), so stRun's `set`
+-- does not reach this handler, and this comment's claim until 2026-09-26 that
+-- it did ("byte for byte") was the premise under the case-significant lines
+-- that now go through stSameText.
 function stSameHex pA, pB
    return ("h" & pA) is ("h" & pB)
 end stSameHex
+
+-- Byte-for-byte equality, CASE INCLUDED, decided by byte value, so neither
+-- the caseSensitive nor the number parse can move it (2026-09-26). For every
+-- value whose case is part of it - Base58 (an address, a WIF, an xprv) and
+-- an EIP-55 address - and for a "0x" Ethereum address, which `is` reads as a
+-- base-16 NUMBER, wrapping to its low 32 bits (engine note 2.11, from the
+-- source: `"0x" & hex` is exactly the prefix the note says not to use). The
+-- asserts against kEthOfG, kEip55A, kEip55B and kAbandonEth were bare `is`
+-- and so checked neither the checksum's casing nor more than the last eight
+-- hex digits.
+function stSameText pA, pB
+   local tI, tCount
+   put the number of bytes of pA into tCount
+   if tCount is not the number of bytes of pB then
+      return false
+   end if
+   repeat with tI = 1 to tCount
+      if byteToNum(byte tI of pA) is not byteToNum(byte tI of pB) then
+         return false
+      end if
+   end repeat
+   return true
+end stSameText
 
 -- ASCII lowercase, by byte value, so it does not depend on the caseSensitive.
 function stToLowerText pText
@@ -4895,7 +4927,7 @@ command stRunBip39
    try
       put cxHexDecode(kBip39Entropy12) into tEnt
       stAssert "12 words from all-zero entropy", cxMnemonicFromEntropy(tEnt) is kBip39Mnemonic
-      stAssert "and back to the entropy", cxHexEncode(cxMnemonicToEntropy(kBip39Mnemonic)) is kBip39Entropy12
+      stAssert "and back to the entropy", stSameHex(cxHexEncode(cxMnemonicToEntropy(kBip39Mnemonic)), kBip39Entropy12)
       put cxHexDecode(kBip39Entropy24) into tEnt
       stAssert "24 words from all-ones entropy", cxMnemonicFromEntropy(tEnt) is kBip39Mnemonic24
       stAssert "and back to the entropy", cxHexEncode(cxMnemonicToEntropy(kBip39Mnemonic24)) is kBip39Entropy24
@@ -4939,20 +4971,20 @@ command stRunBip32
    stSection "BIP-32 derivation"
    try
       put cxHdFromSeed(cxHexDecode(kBip32Seed1)) into tNode
-      stAssert "vector 1 master xprv", cxXprv(tNode) is kBip32V1Xprv
-      stAssert "vector 1 master xpub", cxXpub(tNode) is kBip32V1Xpub
+      stAssert "vector 1 master xprv", stSameText(cxXprv(tNode), kBip32V1Xprv)
+      stAssert "vector 1 master xpub", stSameText(cxXpub(tNode), kBip32V1Xpub)
       stAssert "the master node is at depth 0", tNode["depth"] is 0
       put cxHdDerivePath(tNode, "m/0'") into tChild
-      stAssert "vector 1 m/0' xprv", cxXprv(tChild) is kBip32V1H0Xprv
-      stAssert "vector 1 m/0' xpub", cxXpub(tChild) is kBip32V1H0Xpub
-      stAssert "h is accepted as a hardened marker", cxXprv(cxHdDerivePath(tNode, "m/0h")) is kBip32V1H0Xprv
+      stAssert "vector 1 m/0' xprv", stSameText(cxXprv(tChild), kBip32V1H0Xprv)
+      stAssert "vector 1 m/0' xpub", stSameText(cxXpub(tChild), kBip32V1H0Xpub)
+      stAssert "h is accepted as a hardened marker", stSameText(cxXprv(cxHdDerivePath(tNode, "m/0h")), kBip32V1H0Xprv)
       -- cxHdDeriveChild is the single CKD step cxHdDerivePath is a loop over,
       -- and it is public API in its own right. Pin it to the SAME published
       -- vector rather than only to the path walker: a shared defect in the
       -- step would make the two agree while both were wrong, so the first
       -- assertion here is against BIP-32's own number and the second is the
       -- agreement check on top of it.
-      stAssert "cxHdDeriveChild reaches m/0' as one hardened step", cxXprv(cxHdDeriveChild(tNode, 2147483648)) is kBip32V1H0Xprv
+      stAssert "cxHdDeriveChild reaches m/0' as one hardened step", stSameText(cxXprv(cxHdDeriveChild(tNode, 2147483648)), kBip32V1H0Xprv)
       stAssert "and a normal step agrees with the path walker", cxXprv(cxHdDeriveChild(tChild, 1)) is cxXprv(cxHdDerivePath(tNode, "m/0'/1"))
       stAssert "index 0 is not treated as hardened", cxXprv(cxHdDeriveChild(tNode, 0)) is cxXprv(cxHdDerivePath(tNode, "m/0"))
       put cxHdDeriveChild(tChild, 1) into tStep
@@ -4960,10 +4992,10 @@ command stRunBip32
       stAssert "a child index at or above 2^32 is refused", stThrows2("cxHdDeriveChild", tNode, 4294967296)
       stAssert "a negative child index is refused", stThrows2("cxHdDeriveChild", tNode, -1)
       put cxHdDerivePath(tNode, kBip32V1DeepPath) into tDeep
-      stAssert "vector 1 five levels deep", cxXprv(tDeep) is kBip32V1DeepXprv
+      stAssert "vector 1 five levels deep", stSameText(cxXprv(tDeep), kBip32V1DeepXprv)
       stAssert "and it is at depth 5", tDeep["depth"] is 5
       -- Vector 3 is in the BIP for one reason: a leading zero in the master key.
-      stAssert "vector 3 (leading-zero master key)", cxXprv(cxHdFromSeed(cxHexDecode(kBip32Seed3))) is kBip32V3Xprv
+      stAssert "vector 3 (leading-zero master key)", stSameText(cxXprv(cxHdFromSeed(cxHexDecode(kBip32Seed3))), kBip32V3Xprv)
       -- A watch-only node is the whole point of an xpub, and its limits are the
       -- whole point of hardened derivation.
       put cxHdNeuter(tChild) into tWatch
@@ -4998,14 +5030,14 @@ command stRunBip44
       -- same twelve words that restore a wallet anywhere else restore THIS one
       -- to the same addresses.
       put cxHdFromSeed(cxMnemonicToSeed(kBip39Mnemonic, "")) into tMaster
-      stAssert "the test mnemonic's root xprv", cxXprv(tMaster) is kAbandonXprv
+      stAssert "the test mnemonic's root xprv", stSameText(cxXprv(tMaster), kAbandonXprv)
       put cxHdDerivePath(tMaster, kAbandonBip44) into tNode
-      stAssert "m/44'/0'/0'/0/0 is the published P2PKH address", cxBtcAddressP2PKH(tNode["pubkey"]) is kAbandonP2pkh
+      stAssert "m/44'/0'/0'/0/0 is the published P2PKH address", stSameText(cxBtcAddressP2PKH(tNode["pubkey"]), kAbandonP2pkh)
       put cxHdDerivePath(tMaster, kAbandonBip84) into tNode
       stAssert "m/84'/0'/0'/0/0 is the BIP-84 vector", cxBtcAddressP2WPKH(tNode["pubkey"]) is kAbandonP2wpkh
-      stAssert "the BIP-84 account xpub", cxXpub(cxHdDerivePath(tMaster, kAbandonBip84Account)) is kAbandonBip84Xpub
+      stAssert "the BIP-84 account xpub", stSameText(cxXpub(cxHdDerivePath(tMaster, kAbandonBip84Account)), kAbandonBip84Xpub)
       put cxHdDerivePath(tMaster, kAbandonEthPath) into tNode
-      stAssert "m/44'/60'/0'/0/0 is the published Ethereum address", cxEthAddressChecksum(cxEthAddress(tNode["pubkey"])) is kAbandonEth
+      stAssert "m/44'/60'/0'/0/0 is the published Ethereum address", stSameText(cxEthAddressChecksum(cxEthAddress(tNode["pubkey"])), kAbandonEth)
    catch tError
       stSectionFailed "BIP-44", tError
    end try
