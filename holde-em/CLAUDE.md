@@ -65,9 +65,11 @@ assets/cards/, assets/sounds/  vendored Kenney CC0 art and audio (see each NOTIC
    same day again for the v0.25.6 wire change and its 75 turn-binding,
    sender-rule, sit-out-mark and History-agreement pins, and -- still
    unreleased, so still 48 -- the 2026-09-26 fix pass's 77: the table
-   protocol, row 16's History rules, the re-sit mapping and heTSame; and
-   its review's 6, the relay's pre-verify, a joiner's naming and a cfg
-   re-signed mid-game). Call sites
+   protocol, row 16's History rules, the re-sit mapping and heTSame; its
+   review's 6, the relay's pre-verify, a joiner's naming and a cfg
+   re-signed mid-game; its round 2's 18, the open-hand seat rule and
+   History's late joiner; and that round's review's 2, a dealt seat no sit
+   filled and a seat's stack after the first hand). Call sites
    are not checks (at v40, 374 sites reported 507 checks), so an engine run
    RECORDS a new total rather than matching the last: the first v45 total,
    2026-09-24, was 721 passed with every extension present, plus the 5
@@ -274,10 +276,15 @@ itself is catalogued in the suite's
   table's word on it. Its review added a cfg the host re-signs mid-game:
   the table adopts it at once, and History follows it through the fold's
   `level` line (stakes for later hands, `miss=` at once), because its one
-  cfg line is written at the first handStart. Still NOT followed (older,
-  recorded): a LATE JOINER, whose seat that one cfg line never gave a
-  stack, so History fails a hand the table played honestly (a work-plan
-  row). An unseated sender is one with no CANONICAL seat:
+  cfg line is written at the first handStart. Its round 2 (the same day)
+  seats a LATE JOINER in History too: every seat opens on the stack its
+  SIT gave it (the cfg's `stack=` as it stood then, as the live sit reads
+  it), written ahead of the first handStart that deals it -- the first
+  hand's seats in the opening cfg line, a later seat in a cfg line of its
+  own listing only its seat and stack; the fold's cfg case sets only what
+  a line LISTS (fold-kat mirrors it). Before, that one cfg line gave
+  stacks to the first hand's seats only, and History failed a hand the
+  table played honestly. An unseated sender is one with no CANONICAL seat:
   `tFromSeat is 0` never matched an unseated key's empty seat.
 - **One table protocol, refused by name (v0.25.6 fix pass, 2026-09-26).**
   `kHeEnvV` is 2: a v0.25.5 peer and this build could not fold each
@@ -305,11 +312,23 @@ itself is catalogued in the suite's
 - **One dealLevel per hand, one key per seat (v0.25.6 fix pass).** A second
   dealLevel is refused at the table and in History (`levelTaken`), and a
   host seat assignment clears the re-sat seat's old key and the moved
-  key's old seat, on both sides. OPEN (the owner's call, spec 6): the
-  dealing key follows the dealer SEAT, so a host that re-sits that seat
-  mid-hand still switches the dealing key after the seals (the review's
-  probe, 2026-09-26); refusing a host sit into an occupied seat while its
-  hand is open would close it, and no honest host sends one.
+  key's old seat, on both sides.
+- **The open-hand seat rule (the fix pass's round 2, 2026-09-26; the
+  owner's call, spec 6).** The dealing key follows the dealer SEAT, so a
+  host that re-sat that seat mid-hand switched the dealing key after the
+  seals (the review's probe). A hand is open from its handStart to the
+  next, and while one is open a host sit must put an UNSEATED key into an
+  EMPTY seat the open hand did NOT deal -- exactly what
+  `heNetSeatLateJoiners` sends -- or it is refused and named, at the table
+  and in History (`heSeatAssignOk`, one pure predicate; never re-list its
+  rules in a case). An occupied seat (the probe; a re-sit between hands
+  also handed the seat's stack to the host's choice of key), a dealt seat
+  even when keyless (it waits for the boundary: a key arriving mid-hand
+  would take the seat's turn, reveal and holes, and at the dealer seat the
+  dealing key), and a key that already holds a seat (moving the dealer's
+  key out left the dealing key nobody's: the two-wire form). Before the
+  first handStart nothing is refused and the clearings above are the rule.
+  Section 15's (c2) drives every refusal and the late joiner's shape.
 - **Both operands are evaluated (engine note 2.5).** `heBetApply`'s refusal
   `X is not a number or X is not trunc(X)` evaluated `trunc("abc")`; it is
   nested now, and the nested form ran green on the engine on 2026-09-24
@@ -585,7 +604,8 @@ cheater bots and DLEQ (latest 751/0/5 on 2026-09-25, on Linux and on Windows;
 statically; needs an OXT pass: the v0.25.6 turn binding, sit-out marks and
 one sender predicate (live and in History), its fix pass (table protocol 2
 and the refusals it names, row 16's History rules, one dealLevel per hand,
-one key per seat, the text-only harness equality) and the v48 total that
+one key per seat, the text-only harness equality, and its round 2's
+open-hand seat rule and History's late joiner) and the v48 total that
 carries their pins; what the harness does not reach, namely the v0.25.4 and
 v0.25.5 fixes in the standalone stack (`heRunSelftest` has no record at
 v0.25.4 or later), in hotseat hands and between machines; the v0.25.3 overlay

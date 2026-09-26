@@ -175,8 +175,11 @@ Thrown = LCS.Thrown
 # 14, 15, 17 and 21 raised on 2026-09-26 (the same unreleased 0.25.6 / v48:
 # the fix pass's table-protocol refusals, row 16's History rules, the re-sit
 # mapping and heTSame; then 14, 15 and 21 again for its review's relay
-# pre-verify, a joiner's naming and a cfg re-signed mid-game); raise them
-# when the harness grows. A skip count is
+# pre-verify, a joiner's naming and a cfg re-signed mid-game; then 8, 15,
+# 20 and 21 again for its round 2: the open-hand seat rule and History's
+# late joiner; then 15 once more for that round's review: a dealt seat no
+# sit filled, and a seat's stack after the first hand); raise them when
+# the harness grows. A skip count is
 # EXACT: a section that skips more than it did is a section that stopped
 # running something.
 SECTIONS = [
@@ -187,20 +190,20 @@ SECTIONS = [
     ("heTestLegalRun", 19, 0),
     ("heTestScheduleRun", 3, 0),
     ("heTestShuffleRun", 9, 0),
-    ("heTestFoldRun", 22, 0),
+    ("heTestFoldRun", 24, 0),
     ("heTestCryptoRun", 33, 0),
     ("heTestReceiptRun", 17, 0),
     ("heTestDealRun", 20, 0),
     ("heTestDealOrderRun", 5, 0),
     ("heTestLobbyRun", 10, 0),
     ("heTestNetSim", 38, 0),
-    ("heTestNetPlay", 92, 0),
+    ("heTestNetPlay", 102, 0),
     ("heTestLevel2Run", 0, 1),          # ristretto255 is not modelled: skips
     ("heTestOnionRun", 54, 1),          # the LIVE tor table skips by name
     ("heTestOracleRun", 34, 2),         # the LIVE three-machine round + the onion oracle
     ("heTestLevel2VoidRun", 2, 1),      # its ristretto (DLEQ) half skips
-    ("heTestLivenessRun", 89, 2),       # the LIVE timed table + the LIVE tor redial
-    ("heTestHelpersRun", 86, 1),
+    ("heTestLivenessRun", 91, 2),       # the LIVE timed table + the LIVE tor redial
+    ("heTestHelpersRun", 92, 1),
     ("heTestLeafRun", 39, 0),
     ("heTestLeafRun2", 83, 0),
     ("heTestLeafRun3", 50, 0),          # every leg pure or gGame-only: nothing skips

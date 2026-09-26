@@ -82,7 +82,9 @@ every stand and sit-return the seat's next sit-out mark, and one sender predicat
 the table and History alike; then table protocol 2, so a table mixing v0.25.6 with an older
 holde-em is refused at the invite and the handshake with the reason in words, History
 replaying the board order, the applied settle and the timeout rules the table applies, one
-dealLevel per hand and one key per seat) is verified statically; needs an OXT pass. Invites
+dealLevel per hand and one key per seat; then, once a hand is open, no host re-sit or move,
+only a late joiner into an empty seat the hand did not deal, whom History now seats on the
+stack the table gave it) is verified statically; needs an OXT pass. Invites
 now read `p2:<code>`; an older build refuses them, and this one refuses an older build's.
 The first two-machine 2d contact was 2026-08-27, at v0.25.2.
 [CLAUDE.md](CLAUDE.md) carries the full evidence ledger.

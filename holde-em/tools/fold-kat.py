@@ -184,6 +184,37 @@ def transcript_timeouts():
     return L
 
 
+def transcript_late_join(drop_seat_line=False):
+    """A canned ONLINE-shaped session with a LATE JOINER (v0.25.6 fix pass,
+    round 2, 2026-09-26; mirror of the harness's heTKatLateJoinLog), as
+    heNetLogToHotseat now translates one: the opening cfg gives stacks to the
+    first hand's two seats only, and seat 3 -- seated between the hands on a
+    stack= the host had re-signed to 250 -- gets a cfg line of its own,
+    listing just its seat and stack, ahead of the first handStart that deals
+    it. Hand 2 is three-handed (button 2: seat 3 posts the SB, seat 1 the
+    BB) and folds to the big blind: 400/401/249, two settles verified.
+    drop_seat_line leaves that line out, as History wrote it before: seat 3
+    has no stack and its blind is engine-rejected."""
+    L = []
+    def log(hand, frm, typ, body):
+        L.append((hand, frm, typ, body))
+    log(0, "table", "cfg", "sb=1,bb=2,ante=0,seats=1|2,stacks=400|400,button=1,miss=2")
+    log(1, "table", "handStart", "seats=1|2,button=1")
+    log(1, "seat1", "bidSB", "amount=1")
+    log(1, "seat2", "bidBB", "amount=2")
+    log(1, "seat1", "act", "verb=fold,amount=0,turn=1")
+    log(1, "table", "settle", "deltas=1:-1|2:1")
+    if not drop_seat_line:
+        log(2, "table", "cfg", "seats=3,stacks=250")
+    log(2, "table", "handStart", "seats=1|2|3,button=2")
+    log(2, "seat3", "bidSB", "amount=1")
+    log(2, "seat1", "bidBB", "amount=2")
+    log(2, "seat2", "act", "verb=fold,amount=0,turn=1")
+    log(2, "seat3", "act", "verb=fold,amount=0,turn=2")
+    log(2, "table", "settle", "deltas=1:1|2:0|3:-1")
+    return L
+
+
 def timeout_verb_of(st, seat):
     """heTimeoutVerbOf: check when the seat owes nothing this street."""
     return "fold" if st["betCur"] - st["streetBy"][seat] > 0 else "check"
@@ -308,11 +339,25 @@ def independent_fold(tx):
     for hand, frm, typ, body in tx:
         d = _kv(body) if body else {}
         if typ == "cfg":
-            sb, bb = int(d["sb"]), int(d["bb"])
-            ante = int(d.get("ante", 0))
-            seats = [int(x) for x in d["seats"].split("|")]
-            stk = [int(x) for x in d["stacks"].split("|")]
-            stacks = {s: stk[i] for i, s in enumerate(seats)}
+            # a cfg line sets only what it LISTS (v0.25.6 fix pass, round 2,
+            # 2026-09-26; mirror of heFoldTranscript): the opening cfg lists
+            # everything, and History's translation also writes one listing
+            # ONLY a late joiner's seat and stack, which moves no stake, no
+            # miss limit and no other seat's stack. (This mirror REPLACED the
+            # whole stack table on every cfg until then; the xTalk always
+            # set only the listed seats.) ante starts at 0 above, so an
+            # opening cfg without ante= still means none.
+            if d.get("sb", "") != "":
+                sb = int(d["sb"])
+            if d.get("bb", "") != "":
+                bb = int(d["bb"])
+            if d.get("ante", "") != "":
+                ante = int(d["ante"])
+            if d.get("seats", "") != "":
+                seats = [int(x) for x in d["seats"].split("|")]
+                stk = [int(x) for x in d["stacks"].split("|")]
+                for i, s in enumerate(seats):
+                    stacks[s] = stk[i]
             if d.get("miss", "").isdigit():
                 miss_max = int(d["miss"])
         elif typ in ("stand", "sit"):
@@ -336,7 +381,10 @@ def independent_fold(tx):
         elif typ == "handStart":
             occ = [int(x) for x in d["seats"].split("|")]
             btn = int(d["button"])
-            st = bk.new_hand(sb, bb, {s: stacks[s] for s in occ}, occ, btn, ante=ante)
+            # a dealt seat no cfg line gave a stack reads as 0 (the xTalk's
+            # empty stack in arithmetic), so its blind is engine-rejected --
+            # what History did to a late joiner before round 2
+            st = bk.new_hand(sb, bb, {s: stacks.get(s, 0) for s in occ}, occ, btn, ante=ante)
             holes, board = {}, []
             show_choice = {}
             bank_used = set()          # one time-bank per hand per seat
@@ -366,11 +414,13 @@ def independent_fold(tx):
             if typ == "act":
                 st = bk.apply_msg(st, "act", seat,
                                   d["verb"] + "," + ("0" if timed_out else d["amount"]))
-                if st["err"]:
-                    errors.append("engine-rejected:" + st["err"])
             else:
                 st = bk.apply_msg(st, typ, seat, int(d["amount"]))
+            # a rejected BID is named too, as heFoldTranscript names it (this
+            # mirror named only acts until 2026-09-26, when a late joiner's
+            # rejected blind was the whole symptom)
             if st["err"]:
+                errors.append("engine-rejected:" + st["err"])
                 continue
             if timed_out:
                 if d.get("bank") == "1":
@@ -411,7 +461,7 @@ def independent_fold(tx):
             if not verified:
                 errors.append("settle-mismatch")
             for s in st["occ"]:
-                stacks[s] += deltas[s]
+                stacks[s] = stacks.get(s, 0) + deltas[s]
             # THE AWARDED POT, NOT THE SUM OF COMMITMENTS (fixed 2026-08-17,
             # mirroring holdem.livecodescript). A bet nobody called is
             # RETURNED, so it was never in the pot - summing handBy reported
@@ -685,6 +735,31 @@ def main():
     check("timeouts: without the rule the same transcript does NOT replay clean",
           naive["errors"] != [] or sum(1 for h in naive["history"]
                                        if h.endswith("; settle-verified")) < 5, True)
+
+    # v0.25.6 fix pass, round 2 (2026-09-26): a LATE JOINER's own cfg line
+    # (its seat and the stack its sit gave it) seats it in the fold, and a
+    # cfg line sets only what it lists, so the stakes stay 1/2 (the
+    # harness's section 8 pins, heTKatLateJoinLog). Without the line --
+    # History before round 2 -- the joiner's blind is engine-rejected.
+    lj = independent_fold(transcript_late_join())
+    # (.get: a fold that lost the joiner's seat must read as a FAIL, not a KeyError)
+    check("latejoin: its own cfg line seats it and moves no stake (400/401/249, no errors)",
+          ("/".join(str(lj["stacks"].get(s)) for s in (1, 2, 3)), lj["errors"]),
+          ("400/401/249", []))
+    check("latejoin: both settles verify",
+          sum(1 for h in lj["history"] if h.endswith("; settle-verified")), 2)
+    ljd = independent_fold(transcript_late_join(drop_seat_line=True))
+    check("latejoin: without the line the joiner's blind is engine-rejected (1 settle verified)",
+          (any(e.startswith("engine-rejected") for e in ljd["errors"]),
+           sum(1 for h in ljd["history"] if h.endswith("; settle-verified"))), (True, 1))
+    # ...and the line must not move the stakes: a cfg case that re-read sb
+    # and bb from every line (what "sets only what it lists" forbids) would
+    # fold the joiner's hand on no blinds at all
+    ljs = independent_fold([(h, f, t, b if t != "cfg" or h == 0 else
+                             "sb=0,bb=0,ante=0," + b) for (h, f, t, b) in transcript_late_join()])
+    check("latejoin: a seat line that DID move the stakes breaks the replay",
+          ljs["errors"] != [] or sum(1 for h in ljs["history"]
+                                     if h.endswith("; settle-verified")) < 2, True)
 
     # a truncated transcript (missing a board line before a contested settle)
     # is named and skipped, never a crash mid-audit
