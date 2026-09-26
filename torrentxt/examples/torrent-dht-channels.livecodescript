@@ -4405,7 +4405,7 @@ command chUnfollow
    end if
    put empty into tLeft
    repeat for each line tLine in sFollows
-      if tLine is not empty and tLine is not tKey then
+      if tLine is not empty and ("h" & tLine) is not ("h" & tKey) then
          if tLeft is empty then
             put tLine into tLeft
          else

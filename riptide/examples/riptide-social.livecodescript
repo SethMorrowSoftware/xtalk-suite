@@ -6069,7 +6069,7 @@ private function rsAssembleChunkTextInner pChunkTargets, pParts
          rsSetError "rsAssembleChunkText: missing chunk" && tNorm
          return empty
       end if
-      if rsImmutableTarget(tPart) is not tNorm then
+      if ("h" & rsImmutableTarget(tPart)) is not ("h" & tNorm) then
          rsSetError "rsAssembleChunkText: chunk" && tNorm && \
                "does not hash to its own target"
          return empty
@@ -6320,7 +6320,7 @@ function rsIngestHead pEvent, pExpectedHandleHex, pMinSeq
       return empty
    end if
    put toLower(pEvent["publicKey"]) into tEventKey
-   if not rsIsHexOfLen(tEventKey, 64) or tEventKey is not tHandle then
+   if not rsIsHexOfLen(tEventKey, 64) or ("h" & tEventKey) is not ("h" & tHandle) then
       rsSetError "rsIngestHead: the event is not for this handle"
       return empty
    end if
@@ -6410,14 +6410,14 @@ function rsIngestPost pEvent, pExpectedTarget, pAuthorHandleHex
       return empty
    end if
    put toLower(pEvent["target"]) into tEventTarget
-   if tEventTarget is not tExpected then
+   if ("h" & tEventTarget) is not ("h" & tExpected) then
       rsSetError "rsIngestPost: the event names a different target"
       return empty
    end if
    put pEvent["value"] into tValue
    put rsImmutableTarget(tValue) into tComputed
    if tComputed is empty then return empty
-   if tComputed is not tExpected then
+   if ("h" & tComputed) is not ("h" & tExpected) then
       rsSetError "rsIngestPost: the value does not hash to its own target"
       return empty
    end if
@@ -6445,14 +6445,14 @@ function rsIngestBlob pEvent, pExpectedTarget
       return empty
    end if
    put toLower(pEvent["target"]) into tEventTarget
-   if tEventTarget is not tExpected then
+   if ("h" & tEventTarget) is not ("h" & tExpected) then
       rsSetError "rsIngestBlob: the event names a different target"
       return empty
    end if
    put pEvent["value"] into tValue
    put rsImmutableTarget(tValue) into tComputed
    if tComputed is empty then return empty
-   if tComputed is not tExpected then
+   if ("h" & tComputed) is not ("h" & tExpected) then
       rsSetError "rsIngestBlob: the value does not hash to its own target"
       return empty
    end if
@@ -6557,7 +6557,7 @@ function rsPublishImmutable pSession, pValue
       rsSetError "rsPublishImmutable: btDhtPutImmutable failed;" && tWhy
       return empty
    end if
-   if toLower(tTarget) is not tExpected then
+   if ("h" & toLower(tTarget)) is not ("h" & tExpected) then
       rsSetError "rsPublishImmutable: libtorrent's target" && tTarget && \
             "disagrees with the recomputed" && tExpected
       return empty
@@ -7189,7 +7189,7 @@ function rsVerifyIntro pBytes, pMyHandleHex
    local tOut
    put rsParseIntro(pBytes) into tOut
    if tOut is empty then return empty
-   if tOut["recipientHandle"] is not toLower(pMyHandleHex) then
+   if ("h" & tOut["recipientHandle"]) is not ("h" & toLower(pMyHandleHex)) then
       rsSetError "rsVerifyIntro: this intro is addressed to" && \
             tOut["recipientHandle"] & ", not to me"
       return empty
@@ -9192,7 +9192,7 @@ function rsVerifyBridge pBytes, pExpectHandleHex, pExpectNostrPubHex
          rsSetError "rsVerifyBridge: the expected handle must be 64 hex chars"
          return empty
       end if
-      if tRec["handle"] is not tWantHandle then
+      if ("h" & tRec["handle"]) is not ("h" & tWantHandle) then
          rsSetError "rsVerifyBridge: the record names a different handle"
          return empty
       end if
@@ -9204,7 +9204,7 @@ function rsVerifyBridge pBytes, pExpectHandleHex, pExpectNostrPubHex
                "chars"
          return empty
       end if
-      if tRec["nostrPub"] is not tWantPub then
+      if ("h" & tRec["nostrPub"]) is not ("h" & tWantPub) then
          rsSetError "rsVerifyBridge: the record names a different nostr key"
          return empty
       end if
@@ -9362,7 +9362,7 @@ function rsPublishBridge pSession, pBridgeBytes, pIdentitySeed
    -- A bridge names its handle INSIDE the signed span, so publishing one
    -- under a different key would put a record on the DHT that verifies as
    -- somebody else's linkage at a target nobody looks for. Refuse loudly.
-   if tKeys["handle"] is not tRec["handle"] then
+   if ("h" & tKeys["handle"]) is not ("h" & tRec["handle"]) then
       rsSetError "rsPublishBridge: the signing seed is not the handle the" && \
             "bridge names"
       return false
@@ -9470,7 +9470,7 @@ function rsIngestBridge pEvent, pExpectedHandleHex, pMinSeq
       return empty
    end if
    put toLower(pEvent["publicKey"]) into tEventKey
-   if not rsIsHexOfLen(tEventKey, 64) or tEventKey is not tHandle then
+   if not rsIsHexOfLen(tEventKey, 64) or ("h" & tEventKey) is not ("h" & tHandle) then
       rsSetError "rsIngestBridge: the event is not for this handle"
       return empty
    end if
@@ -15092,7 +15092,7 @@ command raDmStart
       uiStatus "A handle is 64 hex characters (from the author's Feed card).", "warn"
       exit raDmStart
    end if
-   if tHandle is sHandle then
+   if ("h" & tHandle) is ("h" & sHandle) then
       uiStatus "That is your own handle; DM someone else.", "warn"
       exit raDmStart
    end if

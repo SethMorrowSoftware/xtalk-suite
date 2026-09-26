@@ -16908,8 +16908,8 @@ command heTestNetPlay
          gTNetPlayG["stacksBy"][tSbSeat] & "/" & gTNetPlayG["stacksBy"][tBbSeat], \
          gTNetHostG["stacksBy"][tSbSeat] & "/" & gTNetHostG["stacksBy"][tBbSeat]
    heTAssert "netplay: receipt heads agree and left genesis", \
-         (gTNetPlayG["rcptHeadHex"] is gTNetHostG["rcptHeadHex"] \
-         and gTNetPlayG["rcptHeadHex"] is not kHeGenesisPrev), "true"
+         (heHexEq(gTNetPlayG["rcptHeadHex"], gTNetHostG["rcptHeadHex"]) \
+         and not heHexEq(gTNetPlayG["rcptHeadHex"], kHeGenesisPrev)), "true"
    heTContains "netplay: the receipt is co-signed by both seats", \
          gTNetPlayG["netLog"], "receipt co-signed by all 2"
    heTContains "netplay: seat 1 audits the deal clean", gTNetPlayG["netLog"], "audit  seat 1: pass"
@@ -17016,7 +17016,7 @@ command heTestNetPlay
    put gTNetPlayG into gGame
    put gGame["oDeal"]["dealerSeat"] into tDlrSeat
    put gGame["pubBySeat"][tDlrSeat] into tDlrPub
-   if tDlrPub is tHostPubHex then
+   if heHexEq(tDlrPub, tHostPubHex) then
       put tHostSec into tDlrSec
    else
       put tPlaySec into tDlrSec
@@ -17081,8 +17081,8 @@ command heTestNetPlay
          gTNetPlayG["stacksBy"][1] & "/" & gTNetPlayG["stacksBy"][2], \
          gTNetHostG["stacksBy"][1] & "/" & gTNetHostG["stacksBy"][2]
    heTAssert "netplay: the receipt chain advanced hand to hand", \
-         (gTNetPlayG["rcptHeadHex"] is not tRcptHand1 \
-         and gTNetPlayG["rcptHeadHex"] is gTNetHostG["rcptHeadHex"]), "true"
+         (not heHexEq(gTNetPlayG["rcptHeadHex"], tRcptHand1) \
+         and heHexEq(gTNetPlayG["rcptHeadHex"], gTNetHostG["rcptHeadHex"])), "true"
    heTAssert "netplay: both sides end at the same chain head", \
          gTNetPlayG["chainHeadHex"], gTNetHostG["chainHeadHex"]
 
@@ -17281,7 +17281,7 @@ command heTestNetPlay
    put gTNetPlayG into tSnapG
    put gTNetPlayG into gGame
    put gGame["pubBySeat"][heNetSeatAtPos(1)] into tOffPub
-   if tOffPub is tHostPubHex then
+   if heHexEq(tOffPub, tHostPubHex) then
       put tHostSec into tOffSec
    else
       put tPlaySec into tOffSec
@@ -18056,8 +18056,8 @@ command heTestOracleRun
    heTAssert "oracle: hole deliveries cover exactly the seats", \
          gTNetHostG["oDeal"]["holeN"], 2
    heTAssert "oracle: every context at one chain head", \
-         (gTNetPlayG["chainHeadHex"] is gTNetHostG["chainHeadHex"] \
-         and gTNetPlay2G["chainHeadHex"] is gTNetHostG["chainHeadHex"]), "true"
+         (heHexEq(gTNetPlayG["chainHeadHex"], gTNetHostG["chainHeadHex"]) \
+         and heHexEq(gTNetPlay2G["chainHeadHex"], gTNetHostG["chainHeadHex"])), "true"
 
    -- hand 1: the SB folds -> deterministic deltas; reveals (incl. the
    -- oracle's pos 3), the verified settle, seat-only receipts, three audits
@@ -18657,7 +18657,7 @@ command heTestLivenessRun
    -- holds itself at zero misses forever and is never sat out.
    put 1 into gGame["missCntBy"][tSeatOther]
    put gGame["pubBySeat"][tSeatOther] into tOtherPub
-   if tOtherPub is tPlayPubHex then
+   if heHexEq(tOtherPub, tPlayPubHex) then
       put tPlaySec into tOtherSec
    else
       put tHostSec into tOtherSec
@@ -18936,8 +18936,8 @@ command heTestLivenessRun
          gTNetPlayG["oDeal"]["settleDone"] & "/" & gTNetPlay2G["oDeal"]["settleDone"] \
          & "/" & gTNetHostG["oDeal"]["settleDone"], "true/true/true"
    heTAssert "latejoin: identical fold state (one chain head everywhere)", \
-         (gTNetPlayG["chainHeadHex"] is gTNetHostG["chainHeadHex"] \
-         and gTNetPlay2G["chainHeadHex"] is gTNetHostG["chainHeadHex"]), "true"
+         (heHexEq(gTNetPlayG["chainHeadHex"], gTNetHostG["chainHeadHex"]) \
+         and heHexEq(gTNetPlay2G["chainHeadHex"], gTNetHostG["chainHeadHex"])), "true"
    heTAssert "latejoin: three-seat chips conserved and agreed", \
          gTNetPlay2G["stacksBy"][1] + gTNetPlay2G["stacksBy"][2] + gTNetPlay2G["stacksBy"][3] \
          & "/" & (gTNetPlay2G["stacksBy"][1] is gTNetHostG["stacksBy"][1]), "1200/true"
