@@ -519,6 +519,265 @@ def check_interp_compare(c):
          verdict(lambda: ev("t > u", t=Replayed(2097152.0),
                             u=Replayed((top - 1) / 4294967296))),
          "answered True")
+    check_interp_number_text(c)
+
+
+# RIPTIDE'S THIRD PROBE LINE (riptide/tests/riptide-selftest.livecodescript,
+# "numeric compare probe 3", added 2026-09-25). NOT YET READ ON AN ENGINE:
+# the second column is the engine SOURCE's prediction (exec-logic.cpp's rule
+# and MCU_strtor8's parse; engine notes 2.10 and 2.11, DOCUMENTED), the third
+# what this interpreter answered before 2026-09-25 (items 1 and 2 as TEXT,
+# the rest the IEEE way). Each expression as the harness spells it.
+_ENGINE_PROBE3_PREDICTED = [
+    ('"1e999" is "2e999"', "true", "false"),
+    ('"1e5" is "100000"', "true", "false"),
+    ("1 / 1000000000000000 > 0", "false", "true"),
+    ("1 / 100000000000000 > 0", "true", "true"),
+    ("562949953421312 < 562949953421313", "false", "true"),
+    ("281474976710656 < 281474976710657", "true", "true"),
+    ("450359962737050 is 450359962737051", "true", "false"),
+    ("450359962737049 is 450359962737050", "false", "false"),
+]
+
+
+def check_interp_number_text(c):
+    """Pin the TEXT-AS-NUMBER refusal (tools/lcs-interp.py header, the
+    second 2026-09-25 section; docs/OXT-ENGINE-NOTES.md 2.11): the engine
+    turns BOTH operands of a comparison into numbers whenever both parse
+    (MCU_strtor8: an integer parse, then C strtod over at most 384
+    characters), so "1e5" is "100000" is TRUE there, and until this date the
+    interpreter read every exponent-form text as TEXT in `is` and answered
+    false - no headless gate could see a hex digest or a token compare equal
+    to a different one. The interpreter now answers only where its reading
+    and the engine's give the same answer, and REFUSES (LCS.Indistinct, the
+    class the 2.10 refusal uses; its message names engine note 2.11) where
+    they part, or where the note does not establish how the engine reads a
+    form at all (hex, inf and nan words, a non-ASCII edge), rather than
+    guess. The table in the interpreter's header is what these rows hold.
+
+    Each row says what the ENGINE answers (from its source; nothing here has
+    run on an engine, and probe 3 is the line that will read it) and the
+    row's want is what the INTERPRETER must do: answer, or refuse. A regression to
+    the old reading fails the refusal rows; an over-eager refusal fails the
+    answer rows.
+    """
+    c.note("tier 0: text the engine reads as a number is refused where the "
+           "answer moves (engine notes 2.11)")
+    ip = LCS.Interp(_COMPARE_SRC + _NUMBER_TEXT_SRC)
+
+    def ev(expr, **env):
+        return LCS._Expr(ip, dict(env)).parse(expr)
+
+    def verdict(fn):
+        try:
+            got = fn()
+        except LCS.Indistinct as exc:
+            return "refused" if "2.1" in str(exc) else "refused, uncited"
+        except LCS.Imprecise:
+            return "refused (Imprecise)"
+        except LCS.Thrown as exc:
+            return "threw %r" % (exc.msg,)
+        except Exception as exc:                         # noqa: BLE001
+            return "crashed: %s" % type(exc).__name__
+        return "answered %s" % (str(LCS._disp(got)),)
+
+    def short(env):
+        def one(v):
+            text = repr(v)
+            return text if len(text) <= 24 else "<%d chars>" % len(str(v))
+        return "".join(" %s=%s" % (k, one(v)) for k, v in env.items())
+
+    # PROBE 3, PREDICTED (the engine has not read it): refuse each item the
+    # source's rule answers differently from the old reading, answer the
+    # three it answers the same, and say so in the label.
+    for expr, predicted, old in _ENGINE_PROBE3_PREDICTED:
+        want = ("answered " + old if predicted == old else "refused")
+        c.ck("PREDICTED (probe 3, unread): the source's rule reads `%s` as "
+             "%s, the old reading %s" % (expr, predicted, old),
+             verdict(lambda: ev(expr)), want)
+
+    # `is`: (expression, env, the engine's answer from its source, want).
+    top = "9" * 20
+    for expr, env, engine, want in [
+            # forms note 2.11 establishes, where the old text reading parts
+            ('"1e5" is "100000"', {}, "true", "refused"),
+            ('"1E5" is "1e5"', {}, "true", "refused"),
+            ('"+3" is "3"', {}, "true", "refused"),
+            ('"3." is "3"', {}, "true", "refused"),
+            ('"1e999" is "2e999"', {}, "true", "refused"),
+            ('"1e-999" is 0', {}, "true", "refused"),
+            ('".5" is 0.5', {}, "true", "refused"),
+            ("t is u", {"t": "12e4", "u": 120000}, "true", "refused"),
+            # ... and where it does not part: answered
+            ('"1e5" is "1e5"', {}, "true", "answered true"),
+            ('"1e5" is "abc"', {}, "false", "answered false"),
+            ('"1e10" is "2e10"', {}, "false", "answered false"),
+            ('" 3" is "3"', {}, "true", "answered true"),
+            ("t is 3", {"t": "3 "}, "true", "answered true"),
+            ('"0012" is "12"', {}, "true", "answered true"),
+            ('"1_000" is 1000', {}, "false", "answered false"),
+            ('"" is 0', {}, "false", "answered false"),
+            ("t is 3", {"t": "0" * 400 + "3"}, "true", "answered true"),
+            # the integer parse also takes a point and zeros, at any length
+            ("t is 12", {"t": "12." + "0" * 400}, "true", "answered true"),
+            ('"12a" is "12"', {}, "false", "answered false"),
+            ("t is u", {"t": top, "u": top}, "true", "answered true"),
+            # forms the note does NOT establish: refused unless identical
+            ('"0x10" is "16"', {}, "unknown", "refused"),
+            ('"0x10" is "0x10"', {}, "true", "answered true"),
+            ('"0x10" is "abc"', {}, "false", "answered false"),
+            ('"inf" is "1e999"', {}, "unknown", "refused"),
+            ('"nan" is "nan"', {}, "unknown", "refused"),
+            ("t is 3", {"t": "\xa03"}, "unknown", "refused"),
+            ('t is "100000"', {"t": "\xa01e5"}, "unknown", "refused"),
+            # forms Python reads as numbers and the engine never does
+            ("t is 3", {"t": "\u0663"}, "false", "refused"),
+            ("t is 3", {"t": "\x1c3"}, "false", "refused"),
+            ("t is 1.5", {"t": "1.5" + "0" * 400}, "false", "refused")]:
+        c.ck("`is`: %s%s (the engine: %s)" % (expr, short(env), engine),
+             verdict(lambda: ev(expr, **env)), want)
+
+    # `<>` is the engine's `is not` (MCLogicEvalIsNotEqualTo), never an
+    # ordering: an EMPTY operand is not turned into 0 there.
+    for expr, env, engine, want in [
+            ('"" <> 0', {}, "true", "refused"),
+            ('"" <> 5', {}, "true", "answered true"),
+            ('"1e5" <> "100000"', {}, "false", "answered false"),
+            ("t <> 3", {"t": "\u0663"}, "true", "refused")]:
+        c.ck("`<>`: %s%s (the engine: %s)" % (expr, short(env), engine),
+             verdict(lambda: ev(expr, **env)), want)
+
+    # ORDERING (MCLogicCompareTo: an empty operand IS 0 here, a Boolean is
+    # text, and text orders as text).
+    for expr, env, engine, want in [
+            ('"1e5" > 99999', {}, "true", "answered true"),
+            ('" 3 " < 4', {}, "true", "answered true"),
+            ('"" < 1', {}, "true", "answered true"),
+            ('" " < 1', {}, "text order", "refused"),
+            ('"1_0" > 5', {}, "text order", "refused"),
+            ('"inf" > 5', {}, "unknown", "refused"),
+            ('"0x10" > 5', {}, "unknown", "refused"),
+            ("t > 0", {"t": True}, "text order", "refused"),
+            ("t < 5", {"t": "\u0663"}, "text order", "refused")]:
+        c.ck("ordering: %s%s (the engine: %s)" % (expr, short(env), engine),
+             verdict(lambda: ev(expr, **env)), want)
+    c.ck('ordering: "1e999" > 5 (the engine: true, +inf) is not answered',
+         verdict(lambda: ev('"1e999" > 5')).startswith("refused"), True)
+
+    # `is a number` / `is an integer` (MCMathEvalIsAnInteger: the number,
+    # then `d == floor(d)` EXACTLY - no tolerance; so 1 + 2^-50 is not one).
+    for expr, env, engine, want in [
+            ('"1e3" is an integer', {}, "true", "answered true"),
+            ('" 3 " is an integer', {}, "true", "answered true"),
+            ('"3." is an integer', {}, "true", "answered true"),
+            ('"2.5" is an integer', {}, "false", "answered false"),
+            ("1 + 1 / 1125899906842624 is an integer", {}, "false",
+             "answered false"),
+            ("1 + 1 / 1125899906842624 is a number", {}, "true",
+             "answered true"),
+            ('"1e999" is a number', {}, "true", "answered true"),
+            ('"1e999" is an integer', {}, "true", "refused"),
+            ('"0x10" is a number', {}, "unknown", "refused"),
+            ('"inf" is a number', {}, "unknown", "refused"),
+            ('"nan" is an integer', {}, "unknown", "refused"),
+            ('"1_0" is a number', {}, "false", "refused"),
+            ("t is a number", {"t": "\u0663"}, "false", "refused"),
+            ('"" is a number', {}, "false", "answered false"),
+            ('"abc" is not a number', {}, "true", "answered true")]:
+        c.ck("%s%s (the engine: %s)" % (expr, short(env), engine),
+             verdict(lambda: ev(expr, **env)), want)
+
+    # ARITHMETIC on text: the engine throws where the text is not a number;
+    # a Python float() that reads more than strtod must not quietly compute.
+    for expr, env, want in [
+            ('"1e5" + 1', {}, "answered 100001"),
+            ('" 3 " + 1', {}, "answered 4"),
+            ('"+3" + 1', {}, "answered 4"),
+            ('"1_0" + 1', {}, "refused"),
+            ("t + 1", {"t": "\u0663"}, "refused"),
+            ('"  " + 1', {}, "refused"),
+            ('"nan" + 1', {}, "refused")]:
+        c.ck("arithmetic: %s%s" % (expr, short(env)),
+             verdict(lambda: ev(expr, **env)), want)
+
+    # THE REFUSAL NAMES ITS SITE: both operands, the operator, the note.
+    got = verdict(lambda: ip.call("tnDigestIs", ["12e4", "120000"]))
+    c.ck("inside a handler, `is` over two number-like texts is refused",
+         got, "refused")
+    try:
+        ip.call("tnDigestIs", ["12e4", "120000"])
+        msg = ""
+    except LCS.Indistinct as exc:
+        msg = str(exc)
+    c.ck("... and the message names both operands, the operator, the "
+         "expression and engine note 2.11",
+         ('"12e4"' in msg and '"120000"' in msg and "`is`" in msg
+          and "pA is pB" in msg and "2.11" in msg), True)
+    c.ck("a script `try` cannot swallow it",
+         verdict(lambda: ip.call("tnCaughtIs", ["12e4", "120000"])),
+         "refused")
+    c.ck("a letter prefix keeps the same digests off the number path "
+         "(the 2026-09-25 fixes' form)",
+         verdict(lambda: ip.call("tnPrefixedIs", ["12e4", "120000"])),
+         "answered false")
+
+    # AN `and` / `or` THE ANSWER DOES NOT HANG ON. The engine evaluates both
+    # operands (engine note 2.5) and a comparison gives it a Boolean, so
+    # `false and X` is false and `true or X` true whatever X reads there: a
+    # refused comparison is held back (LCS._Undecided) and dropped where the
+    # other operand settles the answer, and refused where nothing does.
+    # Found by the census that measured this change: coin-wallet's
+    # waCpfpBuild guards with `pRec["fee"] is an integer and pRec["fee"] >=
+    # 0`, which compared an EMPTY fee through riptide's runner (as text
+    # there then, as 0 on the engine) and answers false either way.
+    for expr, want in [
+            ("false and 0.1 + 0.2 is 0.3", "answered false"),
+            ("0.1 + 0.2 is 0.3 and false", "answered false"),
+            ("true or 0.1 + 0.2 is 0.3", "answered true"),
+            ('"12e4" is "120000" or true', "answered true"),
+            ('"12e4" is "120000" and false', "answered false"),
+            ("not 0.1 + 0.2 is 0.3 or true", "answered true"),
+            ("true and 0.1 + 0.2 is 0.3", "refused"),
+            ("0.1 + 0.2 is 0.3 or false", "refused"),
+            ("not 0.1 + 0.2 is 0.3", "refused"),
+            ('false or "12e4" is "120000"', "refused"),
+            # stricter than it need be, and pinned so a change is seen: a
+            # parenthesised comparison is settled at its own parentheses
+            ("(0.1 + 0.2 is 0.3) and false", "refused"),
+            # text refused on its way into ARITHMETIC is never held back:
+            # that throws on the engine, and a throw is no Boolean
+            ('false and "1_0" + 1 > 0', "refused")]:
+        c.ck("and / or: %s" % expr, verdict(lambda: ev(expr)), want)
+    c.ck("inside a handler, a guard whose first half is false settles it",
+         verdict(lambda: ip.call("tnMaskedAnd", [0, "12e4", "120000"])),
+         "answered not")
+    c.ck("... and one whose first half is true does not",
+         verdict(lambda: ip.call("tnMaskedAnd", [1, "12e4", "120000"])),
+         "refused")
+
+
+_NUMBER_TEXT_SRC = """
+function tnDigestIs pA, pB
+   return pA is pB
+end tnDigestIs
+function tnCaughtIs pA, pB
+   local tErr
+   try
+      return tnDigestIs(pA, pB)
+   catch tErr
+      return "caught: " & tErr
+   end try
+end tnCaughtIs
+function tnPrefixedIs pA, pB
+   return ("h" & pA) is ("h" & pB)
+end tnPrefixedIs
+function tnMaskedAnd pN, pA, pB
+   if pN > 0 and pA is pB then
+      return "same"
+   end if
+   return "not"
+end tnMaskedAnd
+"""
 
 
 # --------------------------------------------------------------------- tier 1

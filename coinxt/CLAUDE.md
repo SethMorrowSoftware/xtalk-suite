@@ -139,8 +139,8 @@ LAW here, not carried-for-later. Change nothing without a very good reason.
   bech32 checksum needs. Mask every accumulator well below 2^53 (engine note 2.4).
 - **Decide a wide integer's bound on small exact integers, never against a quotient** (2026-09-24; the numeric model
   is engine note 2.4): OXT (Win32, the suite paste) ACCEPTED 2^53 + 1 through riptide's
-  `tHi > (9007199254740992 - tLo) / 4294967296`, adjacent doubles that IEEE and `lcs-interp.py` both order
-  (OBSERVED). The rule behind it, named by the same day's third run and the engine source: two unequal numbers
+  `tHi > (9007199254740992 - tLo) / 4294967296`, adjacent doubles that IEEE and `lcs-interp.py` both ordered
+  (OBSERVED; the interpreter refuses that comparison since 2026-09-25, trap 20). The rule behind it, named by the same day's third run and the engine source: two unequal numbers
   within 10 DBL_EPSILON of the SMALLER are EQUAL (so integers one apart blur from 4.5e14; engine note 2.10).
   `cwLeRead` / `cwBeRead` had the form, safe only under an absolute tolerance, and now decide 2^53 as 32 times
   2^48 on the bytes; `check-wallet-vectors.py` tier 4 runs the bound under the engine's rule and two margin
@@ -268,18 +268,37 @@ Symptom -> cause -> fix. Engine behaviour gets one line and its engine note.
 ### Interpreter and gate method
 
 19. **`tools/lcs-interp.py` contract: stricter than the engine is acceptable, looser is a bug.** A byte-identical copy
-    lives in nostrxt (drift-gated); `check-script-vectors.py` is the regression proof for every extension to it.
+    lives in nostrxt (drift-gated); `check-script-vectors.py` is the regression proof for every extension to it. Where
+    the model cannot give the engine's answer it REFUSES, and says why (traps 20 and 21); it never guesses.
 20. **2^53** (2026-09-08; engine note 2.4): Python ints made the model MORE capable than the engine, which fails
     silently. `_exact()` refuses any value past 2^53; `Imprecise` is not a `Thrown`, so a script `try` cannot eat it.
-    Its twin since 2026-09-25 (engine note 2.10): the engine calls two numbers EQUAL within 10 DBL_EPSILON of the
-    smaller (a relative tolerance between 8 and 16 DBL_EPSILON, OBSERVED 2026-09-24; the 10, its source's, DOCUMENTED),
-    so the model refuses (`Indistinct`, not a `Thrown` either) any comparison whose operator answers differently there
-    than in IEEE - the `tValue > (9007199254740992 - tByte) / 256` class. Tier 0 of `check-script-vectors.py` holds it
-    to the engine's eight probe readings. Measured over every execution gate before it landed (2026-09-25): it
-    refused riptide's old u64 bound at 2^53 + 1 and nothing else (no gate then reached wallet-core's old twin; the
-    edge vectors added the day before do, and it refuses them); the wide digit strings the Runes, LEB128 and decimal
-    helpers test with `is "0"` still answer, because the engine agrees there. An absolute 1e-6, or a tolerance
-    applied whatever the operator, would also have refused riptide's VALID 2^53 - 1.
+    Two twins since 2026-09-25, one class (`Indistinct`, not a `Thrown` either; every one raised through `_refuse`):
+    (a) engine note 2.10: the engine calls two numbers EQUAL within 10 DBL_EPSILON of the smaller (a relative tolerance
+    between 8 and 16 DBL_EPSILON, OBSERVED 2026-09-24; the 10, its source's, DOCUMENTED), so the model refuses any
+    comparison whose OPERATOR answers differently there than in IEEE - the `tValue > (9007199254740992 - tByte) / 256`
+    class. An absolute 1e-6, or a tolerance applied whatever the operator, would also have refused riptide's VALID
+    2^53 - 1. (b) engine note 2.11: the engine turns BOTH operands into numbers whenever both parse (`MCU_strtor8`,
+    ported line for line as `_read_text`), so `"1e5" is "100000"` is true there; the model refuses wherever its own
+    reading (text in `is`, Python's `float()` in the `<` family, `is a number` and arithmetic) and the engine's give
+    different answers, and wherever the note does not establish the form (hex, `inf` / `nan`, a non-ASCII edge),
+    rather than re-answer the engine's way (the interpreter's header has the table). Tier 0 of
+    `check-script-vectors.py` holds (a) to the engine's eight probe readings and (b) to that table and to riptide's
+    third probe line as the source PREDICTS it (not yet read on an engine). MEASURED before it landed (2026-09-25):
+    a census build (the one refusal door, `_refuse`, logging and letting the old answer stand) over the run-gates.sh
+    lists of coinxt, nostrxt, riptide, nocloud, holde-em and torrentxt and the suite's board-boot gates logged
+    refusals only in the fixtures that ask for them (tier 0 here, riptide's runner-model tier and tier 1c, nostrxt's
+    tier 0, tier 4's plain legs) and THREE comparisons in shipped code, all in the wallet boot and all an EMPTY
+    operand ordered against a number, which the engine's orderings read as 0 and riptide's runner then ordered as
+    TEXT: `waCpfpBuild`'s `pRec["fee"] is an integer and pRec["fee"] >= 0` and `waHttpFeed`'s `tLen is an integer
+    and tLen >= 0`, each inside an `and` whose first half is false either way, and wallet-core's `cwSatToBtc`,
+    `if tSat < 0` over an empty amount on the History screen, where the runner's text answer (true) printed
+    "-0.00000000" and an engine prints "0.00000000". The fixes were the MODEL's: the runner orders empty as 0
+    against a number, as this file's `<` family already did, and a refused comparison is held back (`_Undecided`)
+    and dropped where the other operand of `and` / `or` settles the answer (engine note 2.5: both are evaluated,
+    each gives a Boolean), raised where nothing does; text refused on its way into arithmetic is never held back
+    (that throws on the engine). No shipped file needed a fix; whether History should show an unknown amount as
+    0.00000000 is a wallet question the census raised, not answered here. The wide digit strings the Runes, LEB128
+    and decimal helpers test with `is "0"` still answer, because the engine agrees there.
 21. **What the model does.** Arrays are values (deep copy at every binding). The trailing-delimiter rule is modelled (a
     bare `split()` once made the "m/" negative vector test the model, not the script). `the number of chunks of X & Y`
     counts X alone (engine note 2.6, corrected 2026-09-11: the "binds into the target" reading was the runner's; the
@@ -288,12 +307,19 @@ Symptom -> cause -> fix. Engine behaviour gets one line and its engine note.
     `waNumAtLeast` / `waIsDigits` / `waIsInt` - a lesson repeated after being written down three times is a missing
     function. `the name` of a control is type-prefixed. `is` against an array compares as an array. Array KEYS fold
     case (engine note 2.7; modelled since 2026-09-24, the first spelling written is kept, tier 0 of
-    `check-script-vectors.py` pins it). NOT modelled: `round()`, `repeat for each line`. `ip.call` reaches natives
-    only through script. Hot paths use `_rx` / `_rxi`.
+    `check-script-vectors.py` pins it). Text reads as a number only where the model and the engine's `MCU_strtor8`
+    agree (trap 20 (b)): `<>` is the engine's `is not`, so an EMPTY operand is not 0 to it (refused where that
+    moves the answer; the orderings do read empty as 0); a Boolean is never a number to a comparison; `is an
+    integer` is EXACT (`d == floor(d)`, no tolerance) on both. A Boolean in ARITHMETIC still reads as 1 or 0 here,
+    where the engine throws (named, not changed). NOT modelled: `round()`, `repeat for each line`, the
+    `numberFormat` (a non-integral number's text is Python's). `ip.call` reaches natives only through script. Hot
+    paths use `_rx` / `_rxi`.
 22. **`is` is modelled case-SENSITIVELY whatever `the caseSensitive` says** (the property reaches array keys only,
     as a per-handler local), so `check-wallet-vectors.py` runs every vector twice, the second time with `is` and
     `offset()` folded. `contains`, `begins with`, `ends with` and `sort` are NOT folded; putting one on
-    case-significant data needs a new tier, not a quiet widening.
+    case-significant data needs a new tier, not a quiet widening. riptide's runner matches `switch` cases the same
+    way: as TEXT (the engine's rule since 2026-09-25; until then through `is`, so `"1.0"` took `case "1"`), and
+    case-sensitively.
 23. **When a mutation survives, suspect the probe first, but check**: twice the probe was wrong (wrong direction; half
     a defect reverted), once the check was (an "it threw" assertion over a shim that refuses the same input).
 24. **Reproduce, then fix: correct the model first**, see the engine's failure headlessly on the unmodified code, then

@@ -364,17 +364,29 @@ refused 2^53 + 1 on the engine in the second run; coinxt's (the wallet, which
 the paste does not carry) is verified statically; needs an OXT pass.
 **Gate:** riptide's harness checks the u64 bound from both sides (2^53 parses,
 2^53 + 1 is refused), which is how an engine run caught it, and prints the
-three probe lines above. Headlessly, the interpreter itself compares the IEEE
-way, so two gates replay the bounds under the ENGINE'S RULE and two candidates
-the probes ruled out, kept as margin (an absolute 1e-6 tolerance, a
+three probe lines above. Headlessly, since 2026-09-25 the family interpreter
+(`coinxt/tools/lcs-interp.py`, twinned in nostrxt, and riptide's runner over
+it) REFUSES (`Indistinct`, which no script `try` can catch) any comparison
+whose OPERATOR this rule answers differently from IEEE: it refuses, it does not
+emulate, and it answers every other comparison as before, riptide's old bound
+at the valid 2^53 - 1 included (`>` is false both ways there), and so is a
+refused comparison inside an `and` / `or` whose other operand settles the
+answer (2.11's Gate says why). Tier 0 of
+`coinxt/tools/check-script-vectors.py` holds it to the eight probe readings:
+it answers the two the engine read as IEEE does and refuses the six it read
+otherwise. Two gates also replay the bounds under the ENGINE'S RULE and two
+candidates the probes ruled out, kept as margin (an absolute 1e-6 tolerance, a
 15-significant-digit round trip). Each model is first proven to reproduce the
 engine's accept through the old line, and the engine's rule to read the eight
 recorded probe answers through the interpreter while each margin model
 misreads one: `riptide/tools/check-script-vectors.py` (tier 1c, plus a static
 scan refusing a library comparison against a quotient) and
-`coinxt/tools/check-wallet-vectors.py` (tier 4). They settle the rewritten
-bounds' LOGIC. No gate yet refuses a comparison that falls INSIDE the
-tolerance anywhere else in the tree (docs/WORK-PLAN.md).
+`coinxt/tools/check-wallet-vectors.py` (tier 4); their plain-interpreter legs
+expect the refusal where IEEE answered. They settle the rewritten bounds'
+LOGIC. Measured over every execution gate the day the refusal landed (a
+census that logged each one and kept the old answer): no comparison in the
+tree's shipped script falls inside the tolerance; every one it logged was a
+fixture that asks for it.
 **Does NOT mean:** integer arithmetic below 2^53 is inexact (it is exact:
 2.4), or that comparing small integers is unreliable. A verdict that rests on
 a difference below 10 DBL_EPSILON of the operands is, and for two integers one
@@ -432,13 +444,45 @@ part of the value (hex digits are not: `heHexEq` lowercases both sides), or
 compare byte by byte (coinxt's `cxCompareBytes`, nostrxt's `nxCtEqualHex`).
 riptide's "compare kinds by BYTE, never `is`" is the same rule, met from the
 case side.
-**Gate:** none yet (docs/WORK-PLAN.md suite-wide #18 proposes a static rule,
-#19 an interpreter that knows the parse). The family interpreter's `_eq`
-treats only `-?\d+(\.\d+)?` as a number, so it reads every exponent-form
-pair as text and no headless gate sees this class; holde-em's harness pins
-the genesis head against "0", the one number-like pair the interpreter does
-read as numbers. riptide's harness prints `"1e999" is "2e999"` and `"1e5" is "100000"` in its
-third probe line (2026-09-25), which reads the parse on the next run.
+**Gate:** the interpreter, since 2026-09-25 (docs/WORK-PLAN.md suite-wide #18
+proposes a static rule beside it). Until then the family interpreter's `_eq`
+treated only `-?\d+(\.\d+)?` as a number, so it read every exponent-form pair
+as text, while its `<` family, `is a number` and arithmetic read text through
+Python's `float()`, which reads MORE than `strtod` ("1_000", digits outside
+ASCII); no headless gate saw this class. It now carries a port of
+`MCU_strtor8` (`_read_text`) and applies 2.10's policy: where its own reading
+and the engine's give the same ANSWER it answers as before, and where they
+part, or where this note does not establish the form at all (a hexadecimal
+integer, which `MCU_strtol` reads in base 16 with no overflow check; `inf`,
+`nan` and hex floats, which only a C99 `strtod` reads; a non-ASCII edge
+character, a space or not by encoding and locale), it REFUSES (`Indistinct`,
+citing this note) rather than re-answer the engine's way or guess. So
+`"1e5" is "100000"` stops a headless run instead of answering false, and
+`"1e5" > 99999` still answers true. The same reading gave two smaller
+findings from the source, both now refused where they move an answer: `<>`
+is the engine's `is not`, which never turns an EMPTY operand into a number
+(the interpreter read it as 0, so `empty <> 0` answered false where the
+engine answers true), and a Boolean is never a number to a comparison. `switch`
+matches its cases as TEXT (`MCKeywordsExecSwitch`), and riptide's runner, which
+matched them through `is`, does too now. Held by coinxt's
+`check-script-vectors.py` tier 0 (a table of forms, and riptide's third probe
+line as the source PREDICTS it: the interpreter refuses items 1, 2, 3, 5 and 7
+and reads 4, 6 and 8 as predicted), nostrxt's tier 0 and riptide's
+runner-model tier. Measured over every execution gate the day it landed
+(the same census): no shipped comparison of number-like TEXT anywhere, and
+three in the wallet boot of an EMPTY operand against a number, which the
+engine's orderings read as 0 (`MCLogicCompareTo` converts empty; the source)
+and riptide's runner then ordered as text. Two sat inside an `and` that is
+false either way (`X is an integer and X >= 0`); the third, wallet-core's
+`cwSatToBtc` (`if tSat < 0` over an empty amount), printed "-0.00000000"
+through the runner where an engine prints "0.00000000". The runner now
+orders empty as 0 against a number, as the interpreter's own `<` family
+already did, and a refused comparison inside `and` / `or` is held back and
+dropped where the other operand settles the answer (2.5: both operands are
+evaluated, and each gives a Boolean), raised where nothing does. holde-em's
+harness pins the genesis head against "0", which both readings agree on. riptide's harness prints
+`"1e999" is "2e999"` and `"1e5" is "100000"` in its third probe line
+(2026-09-25), which reads the parse on the next run.
 
 ## 3. Control flow
 

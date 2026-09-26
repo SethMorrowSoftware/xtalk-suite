@@ -232,6 +232,18 @@ def check_interp_model(c, ip):
     c.ck("a pair the engine calls equal is refused, not answered the IEEE "
          "way (riptide's old u64 bound at 2^53 + 1)",
          decided("2097152 > (9007199254740992 - 1) / 4294967296"), "refused")
+    # ... and the engine reads number-like TEXT as a number before it ever
+    # compares text (root engine notes 2.11; the interpreter's header, its
+    # third 2026-09-25 section): two different hex ids that are both
+    # digits-e-digits are one number there, so `is` answers true on OXT and
+    # false by the text. Refused, where it used to answer false; ids that are
+    # not number-like still answer, which is every id this member compares
+    # through nxCtEqualHex and nxIsHex anyway.
+    c.ck("two number-like hex ids the engine reads as one number are "
+         "refused, not compared as text",
+         decided('"12e4" is "120000"'), "refused")
+    c.ck("two hex ids that are not number-like still compare as text",
+         decided('"ab12" is "ab13"'), "answered False")
 
 
 # --------------------------------------------------------------------- tier 1
