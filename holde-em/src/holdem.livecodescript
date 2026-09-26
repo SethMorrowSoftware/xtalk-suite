@@ -9634,6 +9634,64 @@ function heSitMarkOk pMarkTxt, pDoneN
    return empty
 end heSitMarkOk
 
+function heSeatAssignOk pSeat, pPubHex, pHolderHex, pHeldSeat, pOpenHand, pOccList
+   -- THE OPEN-HAND SEAT RULE (v0.25.6, the fix pass's round 2, 2026-09-26;
+   -- a consensus narrowing, the owner's call): empty when the HOST's seat
+   -- assignment (sit, seat=pSeat, pub=pPubHex) may fold, else the reason
+   -- the fold logs. pHolderHex is the key holding pSeat now (empty: none),
+   -- pHeldSeat the seat pPubHex holds now (empty: none), pOpenHand the last
+   -- handStart the table took (0 or empty before the first) and pOccList
+   -- that hand's dealt seats. The live sit fold asks it with the table's
+   -- maps (heNetFoldGameWire) and History's translation with the maps it
+   -- has walked to (heNetLogToHotseat), so the two cannot drift. Pure (H5).
+   -- WHY. The dealing key is read from the dealer SEAT on every wire (live
+   -- heNetDealerPubHex, and History per wire), so a host that re-sat the
+   -- dealer seat mid-hand switched the dealing KEY after the seals -- the
+   -- effect a second dealLevel had (refused since row 16e), by another wire
+   -- (the review's probe: dealer 833fed8e, seat 2 re-sat to ad1d6dbb, and
+   -- that key's flop taken, at the table and in History alike). A seat's
+   -- key is more than the dealer's, too: it acts, commits, reveals, gets
+   -- its holes sealed to its box and signs the hand's receipt, and the
+   -- seat's STACK stays with the seat, so a re-sit between hands handed a
+   -- player's chips to the host's choice of key. So, once a hand is open
+   -- -- from the first handStart on, a hand stays open until the next
+   -- handStart, which is also where the per-hand wires stop naming it --
+   -- a host assignment must seat a key that holds NO seat into a seat
+   -- that NO key holds and that the open hand did NOT deal:
+   --   * an OCCUPIED seat is refused (the probe; and the chips);
+   --   * a seat DEALT into the open hand is refused even when no key holds
+   --     it (only a host that dealt a keyless seat makes one): whoever sat
+   --     there mid-hand would take the seat's turn, reveal and holes, and
+   --     at the dealer seat the dealing key, after the seals. It waits for
+   --     the hand boundary, and an honest host never needs it to;
+   --   * a key that ALREADY holds a seat is refused: moving the dealer's
+   --     key to an empty seat left the dealer seat keyless -- the dealing
+   --     key switched to nobody -- and a second sit into the now-empty
+   --     seat was the two-wire form of the probe.
+   -- That is exactly the one assignment an honest host sends mid-game
+   -- (heNetSeatLateJoiners: an unseated, present key into the lowest EMPTY
+   -- seat, at the boundary, before the next handStart deals it), so no
+   -- honest table ever sees the refusal. Before the first hand anything
+   -- the fold's one-key-per-seat clearings can make consistent is taken
+   -- (heNetStartGame's seating; no chips have moved).
+   local tOpen
+   set the itemDelimiter to comma
+   put heCanonIdx(pOpenHand, empty) into tOpen
+   if tOpen is empty then
+      return empty
+   end if
+   if pHolderHex is not empty then
+      return "sit into occupied seat " & pSeat & " while hand " & tOpen & " is open"
+   end if
+   if pSeat is among the items of pOccList then
+      return "sit into seat " & pSeat & ", dealt into open hand " & tOpen
+   end if
+   if pHeldSeat is not empty then
+      return "sit of a key that holds seat " & pHeldSeat & " while hand " & tOpen & " is open"
+   end if
+   return empty
+end heSeatAssignOk
+
 command heNetTurnMark
    -- (re)aim the act timer at whoever the folded engine state says is due:
    -- the acting seat, or -- once the deal is complete -- the next forced
@@ -10295,6 +10353,19 @@ command heNetFoldGameWire pTypeTxt, pFromHex, pBodyTxt, pHandTxt
          put tBodyA["pub"] into tHex
          if tSeat is empty or not heIsHex(tHex, 64) then
             put "drop   malformed sit" & return after gGame["netLog"]
+            break
+         end if
+         -- THE OPEN-HAND SEAT RULE (v0.25.6 fix pass, round 2, 2026-09-26):
+         -- once a hand is open, only an unseated key into an empty seat the
+         -- hand did not deal -- heSeatAssignOk says why; History's
+         -- translation asks it the same question. A re-sit of the DEALER
+         -- seat used to switch the dealing key after the seals (the
+         -- review's probe). handFolded is the hand the table opened last
+         -- (0 before the first), state's occ that hand's dealt seats.
+         put heSeatAssignOk(tSeat, tHex, gGame["pubBySeat"][tSeat], gGame["seatByPub"][tHex], \
+               gGame["handFolded"], gGame["state"]["occ"]) into tWhyTxt
+         if tWhyTxt is not empty then
+            put "drop   " & tWhyTxt & return after gGame["netLog"]
             break
          end if
          -- ONE KEY PER SEAT, ONE SEAT PER KEY (v0.25.6, 2026-09-26). A
@@ -12626,7 +12697,7 @@ function heFoldTranscript pLogTxt
    local tPos, tCardTxt, tOneCard, tSettleBad
    local tHistLine, tBoardNames, tPotTotal, tWinnersTxt, tShownTxt, tHolePair, tAuditPart
    local tShowChoiceA, tShownPiece
-   local tSitOutA, tMissA, tBankUsedA, tMissMax, tTimedOut, tRuleAmt
+   local tSitOutA, tMissA, tBankUsedA, tMissMax, tTimedOut, tRuleAmt, tCfgSeats
    set the itemDelimiter to comma
    -- ONLINE liveness state for the timeout replay (v0.25.6, 2026-09-26;
    -- holde-em WORK-PLAN row 16c), folded from the translated transcript
@@ -12635,6 +12706,7 @@ function heFoldTranscript pLogTxt
    -- seat's miss count, and the per-hand time-bank. A hotseat log has none
    -- of these lines and no timeout, so none of it moves there.
    put kHeDefaultMisses into tMissMax
+   put 0 into tAnte   -- a cfg without ante= is a pre-ante transcript: none
    put 0 into tOutA["handNum"]
    put empty into tOutA["trace"]
    put empty into tOutA["errors"]
@@ -12653,21 +12725,35 @@ function heFoldTranscript pLogTxt
       switch tType
 
          case "cfg"
+            -- A cfg line sets only what it LISTS (v0.25.6 fix pass, round 2,
+            -- 2026-09-26). The opening cfg lists everything, as it always
+            -- has; online, History's translation (heNetLogToHotseat) also
+            -- writes a cfg line that lists ONLY a late joiner's seat and the
+            -- stack the table seated it with, just ahead of the first
+            -- handStart that deals it, and that line must move no stake, no
+            -- miss limit and no other seat's stack. (The hand's seats and
+            -- button are the handStart's own, read there.) Before, History
+            -- had one cfg line, stacks for the first hand's seats only, so a
+            -- late joiner reached the fold with no stack and its blind was
+            -- engine-rejected. tAnte starts at 0, so an opening cfg without
+            -- ante= still means none, as it did.
             put tBodyTxt into tBodyA
             split tBodyA by comma and "="
-            put tBodyA["sb"] into tSB
-            put tBodyA["bb"] into tBB
-            put tBodyA["ante"] into tAnte    -- absent in pre-ante transcripts
-            if tAnte is empty then
-               put 0 into tAnte
+            if tBodyA["sb"] is not empty then
+               put tBodyA["sb"] into tSB
             end if
-            put tBodyA["seats"] into tOccList
-            replace "|" with comma in tOccList
-            put tBodyA["button"] into tButtonSeat
+            if tBodyA["bb"] is not empty then
+               put tBodyA["bb"] into tBB
+            end if
+            if tBodyA["ante"] is not empty then
+               put tBodyA["ante"] into tAnte
+            end if
+            put tBodyA["seats"] into tCfgSeats
+            replace "|" with comma in tCfgSeats
             put tBodyA["stacks"] into tStacksTxt
             replace "|" with comma in tStacksTxt
             put 0 into tPos
-            repeat for each item tSeatNum in tOccList
+            repeat for each item tSeatNum in tCfgSeats
                add 1 to tPos
                put item tPos of tStacksTxt into tOutA["stacksBy"][tSeatNum]
             end repeat
@@ -13040,7 +13126,7 @@ function heNetLogToHotseat pLogTxt, pHostHex
    local tPosI, tOccNew, tButtonNew, tHexTxt, tCommitsA
    local tRosterTxt, tPubBySeatA, tCtxA, tLevelA, tFromHex, tDealerSeat
    local tCfgMiss, tLevelTaken, tBoardN, tBoardA, tSettleCands, tSitMarkA
-   local tOldPub, tOldSeat, tMarkWhy
+   local tOldPub, tOldSeat, tMarkWhy, tOpenStackA, tHasStackA, tDeltasTxt, tPairTxt
    set the itemDelimiter to comma
    put 1 into tCfgSB
    put 2 into tCfgBB
@@ -13214,8 +13300,17 @@ function heNetLogToHotseat pLogTxt, pHostHex
             -- table actually played. A RE-SIT clears the seat's old key and
             -- the key's old seat, as the live fold does (v0.25.6): kept, the
             -- old key went on acting for the seat here too.
+            -- And THE OPEN-HAND SEAT RULE (v0.25.6 fix pass, round 2): once a
+            -- hand is open, only an unseated key into an empty seat that hand
+            -- did not deal (heSeatAssignOk, the question the live fold asks,
+            -- over the maps this walk has reached; tHandNum is empty before
+            -- the first handStart, as handFolded is 0 at the table).
             put heCanonIdx(tBodyA["seat"], kHeMaxSeats) into tSeatNum
             if tSeatNum is not empty and heIsHex(tBodyA["pub"], 64) then
+               if heSeatAssignOk(tSeatNum, tBodyA["pub"], tPubBySeatA[tSeatNum], \
+                     tSeatByPubA[tBodyA["pub"]], tHandNum, tOccList) is not empty then
+                  break
+               end if
                put tPubBySeatA[tSeatNum] into tOldPub
                if tOldPub is not empty and not heHexEq(tOldPub, tBodyA["pub"]) then
                   put empty into tSeatByPubA[tOldPub]
@@ -13226,6 +13321,22 @@ function heNetLogToHotseat pLogTxt, pHostHex
                end if
                put tSeatNum into tSeatByPubA[tBodyA["pub"]]
                put tBodyA["pub"] into tPubBySeatA[tSeatNum]
+               -- the seat's OPENING STACK, as the live sit fold gives it
+               -- (v0.25.6 fix pass, round 2): the cfg's stack= as it stands
+               -- AT THIS SIT (tStackAmt; a cfg re-signed with another stack=
+               -- seats the next joiner on that one, as heNetCfgVal does), and
+               -- only when the seat holds no stack yet (the table's
+               -- `stacksBy is not a number`: never sat, never in a settle it
+               -- applied). Held until the first handStart that deals the
+               -- seat, which writes it into the fold as a cfg line. History
+               -- used to give stacks only to the FIRST hand's seats, so a
+               -- LATE JOINER (heNetSeatLateJoiners, an honest path) reached
+               -- the fold with none: its blind was engine-rejected and a hand
+               -- the table settled cleanly read settle-MISMATCH.
+               if tHasStackA[tSeatNum] is not "true" then
+                  put tStackAmt into tOpenStackA[tSeatNum]
+                  put "true" into tHasStackA[tSeatNum]
+               end if
             end if
             break
          case "handStart"
@@ -13258,6 +13369,26 @@ function heNetLogToHotseat pLogTxt, pHostHex
             put heNetXlatPickSettle(tOut, tHandLines, tHoleLines, tShowLines, \
                   tSettleCands, tHandNum) into tSettleLine
             put heNetXlatFlush(tHandLines, tHoleLines, tShowLines, tSettleLine) after tOut
+            -- every seat the applied settle names holds a stack at the table
+            -- from here on (heNetApplySettle adds its delta), even one the
+            -- host dealt with no sit behind it, so a later sit into that
+            -- seat keeps it there (above). Settles fold here, before any sit
+            -- into their seats can: a sit into a seat the open hand dealt is
+            -- refused (heSeatAssignOk)
+            put heLogField(tSettleLine, 4) into tDeltasTxt
+            if tDeltasTxt begins with "deltas=" then
+               delete char 1 to 7 of tDeltasTxt
+               replace "|" with comma in tDeltasTxt
+               repeat for each item tPairTxt in tDeltasTxt
+                  put offset(":", tPairTxt) into tPos
+                  if tPos > 1 then
+                     put heCanonIdx(char 1 to (tPos - 1) of tPairTxt, kHeMaxSeats) into tSeatNum
+                     if tSeatNum is not empty then
+                        put "true" into tHasStackA[tSeatNum]
+                     end if
+                  end if
+               end repeat
+            end if
             put empty into tHandLines
             put empty into tShowLines
             put empty into tSettleLine
@@ -13280,26 +13411,41 @@ function heNetLogToHotseat pLogTxt, pHostHex
             put tOccList into tCtxA["occ"]
             put 0 into tCtxA["contribN"]
             put "false" into tCtxA["oracle"]
-            if tCfgDone is not "true" then
-               -- the one-time hotseat cfg: the sit wires' seats, each
-               -- opening on the signed cfg's stack
-               put "true" into tCfgDone
-               put empty into tSeatsTxt
-               put empty into tStacksTxt
-               repeat for each item tSeatNum in tOccList
+            -- each dealt seat's OPENING STACK, the first time a hand deals
+            -- it: the one the table gave it at its sit (tOpenStackA, above).
+            -- The first hand's go into the one-time hotseat cfg line with the
+            -- stakes; a seat first dealt LATER (a late joiner, or a seat that
+            -- sat out the first hand) gets a cfg line of its own, listing
+            -- only its seat and stack, just ahead of the handStart -- the
+            -- fold's cfg case sets only what a line lists (v0.25.6 fix pass,
+            -- round 2). A dealt seat no sit gave a stack gets none, as at the
+            -- table.
+            put empty into tSeatsTxt
+            put empty into tStacksTxt
+            repeat for each item tSeatNum in tOccList
+               if tOpenStackA[tSeatNum] is not empty then
                   put tSeatNum & "|" after tSeatsTxt
-                  put tStackAmt & "|" after tStacksTxt
-               end repeat
-               if tSeatsTxt is not empty then
-                  delete char -1 of tSeatsTxt
-                  delete char -1 of tStacksTxt
+                  put tOpenStackA[tSeatNum] & "|" after tStacksTxt
+                  put empty into tOpenStackA[tSeatNum]
                end if
+            end repeat
+            if tSeatsTxt is not empty then
+               delete char -1 of tSeatsTxt
+               delete char -1 of tStacksTxt
+            end if
+            if tCfgDone is not "true" then
+               -- the one-time hotseat cfg: the stakes, and the first hand's
+               -- seats, each opening on the stack its sit gave it
                -- (miss= since v0.25.6: the consecutive-miss limit the
                -- fold's timeout replay sits a seat out at)
+               put "true" into tCfgDone
                put heLogLine(0, "table", "cfg", "sb=" & tCfgSB & ",bb=" & tCfgBB \
                      & ",ante=" & tCfgAnte & ",seats=" & tSeatsTxt \
                      & ",stacks=" & tStacksTxt & ",button=" & tButton \
                      & ",miss=" & tCfgMiss) & return after tOut
+            else if tSeatsTxt is not empty then
+               put heLogLine(tHandTxt, "table", "cfg", "seats=" & tSeatsTxt \
+                     & ",stacks=" & tStacksTxt) & return after tHandLines
             end if
             put heLogLine(tHandTxt, "table", "handStart", tBodyTxt) & return after tHandLines
             break
@@ -17881,7 +18027,7 @@ command heTestNetPlay
    local tSeqSnap, tXlatTxt, tXlatFold, tOutboxTxt
    local tHostSeat, tPlaySeat, tHostPos, tMyPos, tHandNext, tAliasList, tAlias
    local tXlatCut, tStartKey, tCutN, tTurnNow, tForgedTxt, tWireTxt, tWireA, tLogCopy
-   local tP3Pub, tP3Sec, tP3PubHex
+   local tP3Pub, tP3Sec, tP3PubHex, tFarA, tFarB
    put return & "-- 15. Online Level 0 hand, end to end (single-machine loopback)" & return after gRpt
    if not heHasSodium() then
       heTSkip "netplay: online hand", "SodiumXT not installed"
@@ -18234,20 +18380,25 @@ command heTestNetPlay
    heTAssert "sender: a player-signed settle is no settle in History (hand 1 not verified)", \
          (tXlatFold["history"] contains "hand 1:") & "/" & the number of lines of tXlatFold["history"], \
          "false/1"
-   -- (c) THE SENDER CONTEXT AGREES WIRE BY WIRE (review fix, 2026-09-25): a
-   -- misbehaving host's stream on a throwaway context, whose flops the
-   -- table takes or refuses for WHO signed them, and History must take the
-   -- same ones. Hand 1 (level 0, dealer seat 2): the host re-sits seat 2 to
-   -- an UNROSTERED key, whose flop the table ignores (the roster rule; the
-   -- dealer rule alone would pass it); the seat's old key signs a flop,
-   -- refused (the dealer key is read per wire); the host sits the old key
-   -- back and its flop folds. Hand 2: dealLevel level 1 then level 0 naming
-   -- seat 2 -- the table's oracle flag only ever SETS, so the ORACLE still
-   -- deals: seat 2's flop is refused and the host's folds. History first
-   -- froze the dealer key at the dealLevel and cleared the oracle on level
-   -- 0, and took flops B and D where the table took C and E. (Since the
-   -- 2026-09-26 fix pass the second dealLevel is refused outright, at both,
-   -- row 16e; the outcome here is the same, and (e) below pins the rule.)
+   -- (c) THE SENDER CONTEXT AGREES WIRE BY WIRE (review fix, 2026-09-25;
+   -- re-cast by the fix pass's round 2, 2026-09-26): a misbehaving host's
+   -- stream on a throwaway context, whose flops the table takes or refuses
+   -- for WHO signed them, and History must take the same ones. Hand 1
+   -- (level 0): the host's first dealLevel names a count that is not the
+   -- dealt seats, refused at both, so the SECOND (dealer seat 2) is the
+   -- first the hand takes -- a History that took the refused one would
+   -- have no dealer and refuse seat 2's flop; the host's flop is not the
+   -- dealer's. Hand 2: seat 3 was given, before the first hand, to an
+   -- UNROSTERED key (the host's sit is host-signed, so it folds), and seat
+   -- 3 deals: its flop passes the dealer rule but not the roster rule, so
+   -- neither side takes it. Hand 3: dealLevel level 1 then level 0 naming
+   -- seat 2 -- the table's oracle flag only ever SETS (and since row 16e
+   -- the second dealLevel is refused outright), so the ORACLE deals: seat
+   -- 2's flop is refused and the host's folds. History first froze the
+   -- dealer key at the dealLevel and cleared the oracle on level 0. (This
+   -- block used to re-sit the dealer seat mid-hand, and the seat's current
+   -- key's flop folded at both; since the open-hand seat rule that re-sit
+   -- is refused -- (c2) below.)
    put gGame into tSnapG
    sxSignKeypairFromSeed heHex2BinD(kKatIdSeed3), tP3Pub, tP3Sec
    put heBin2HexS(tP3Pub) into tP3PubHex
@@ -18257,32 +18408,97 @@ command heTestNetPlay
          tHostPubHex & ":host," & tPlayPubHex & ":player", tHostSec
    heTNetHostWire 0, tHostPubHex, tHostSec, "sit", "seat=1,pub=" & tHostPubHex, tHostSec
    heTNetHostWire 0, tHostPubHex, tHostSec, "sit", "seat=2,pub=" & tPlayPubHex, tHostSec
+   heTNetHostWire 0, tHostPubHex, tHostSec, "sit", "seat=3,pub=" & tP3PubHex, tHostSec
    heTNetHostWire 1, tHostPubHex, tHostSec, "handStart", "seats=1|2,button=2", tHostSec
-   heTNetHostWire 1, tHostPubHex, tHostSec, "dealLevel", "level=0,dealer=2,count=2", tHostSec
-   -- (a count that is not the dealt seats: the table refuses this one, and
-   -- the dealer stays seat 2 -- History must refuse it too)
    heTNetHostWire 1, tHostPubHex, tHostSec, "dealLevel", "level=0,dealer=1,count=3", tHostSec
-   heTNetHostWire 1, tHostPubHex, tHostSec, "sit", "seat=2,pub=" & tP3PubHex, tHostSec
-   heTNetHostWire 1, tP3PubHex, tP3Sec, "board", "street=flop,cards=2c|3c|4c", tHostSec
+   heTNetHostWire 1, tHostPubHex, tHostSec, "dealLevel", "level=0,dealer=2,count=2", tHostSec
+   heTNetHostWire 1, tHostPubHex, tHostSec, "board", "street=flop,cards=2c|3c|4c", tHostSec
    heTNetHostWire 1, tPlayPubHex, tPlaySec, "board", "street=flop,cards=5c|6c|7c", tHostSec
-   heTNetHostWire 1, tHostPubHex, tHostSec, "sit", "seat=2,pub=" & tPlayPubHex, tHostSec
-   heTNetHostWire 1, tPlayPubHex, tPlaySec, "board", "street=flop,cards=8c|9c|2h", tHostSec
-   heTAssert "agree: hand 1's table ignored the unrostered key and took the seat's CURRENT key's flop", \
-         (gGame["netLog"] contains "unrostered sender") & "/" & gGame["oDeal"]["boardList"], \
-         "true/" & heCardIndex("8c") & comma & heCardIndex("9c") & comma & heCardIndex("2h")
-   heTNetHostWire 2, tHostPubHex, tHostSec, "handStart", "seats=1|2,button=1", tHostSec
-   heTNetHostWire 2, tHostPubHex, tHostSec, "dealLevel", "level=1,dealer=0,count=2", tHostSec
-   heTNetHostWire 2, tHostPubHex, tHostSec, "dealLevel", "level=0,dealer=2,count=2", tHostSec
-   heTNetHostWire 2, tPlayPubHex, tPlaySec, "board", "street=flop,cards=2d|3d|4d", tHostSec
-   heTNetHostWire 2, tHostPubHex, tHostSec, "board", "street=flop,cards=5d|6d|7d", tHostSec
-   heTAssert "agree: hand 2's table kept the ORACLE dealing (level 1 then 0) and took its flop", \
+   heTAssert "agree: hand 1's table refused the malformed dealLevel and took seat 2's flop", \
+         (gGame["netLog"] contains "malformed dealLevel") & "/" & gGame["oDeal"]["dealerSeat"] \
+         & "/" & gGame["oDeal"]["boardList"], \
+         "true/2/" & heCardIndex("5c") & comma & heCardIndex("6c") & comma & heCardIndex("7c")
+   heTNetHostWire 2, tHostPubHex, tHostSec, "handStart", "seats=1|3,button=3", tHostSec
+   heTNetHostWire 2, tHostPubHex, tHostSec, "dealLevel", "level=0,dealer=3,count=2", tHostSec
+   heTNetHostWire 2, tP3PubHex, tP3Sec, "board", "street=flop,cards=8c|9c|2h", tHostSec
+   heTAssert "agree: hand 2's table ignored the unrostered dealer's flop", \
+         (gGame["netLog"] contains "unrostered sender") & "/" & gGame["oDeal"]["dealerSeat"] \
+         & "/" & gGame["oDeal"]["boardList"], "true/3/"
+   heTNetHostWire 3, tHostPubHex, tHostSec, "handStart", "seats=1|2,button=1", tHostSec
+   heTNetHostWire 3, tHostPubHex, tHostSec, "dealLevel", "level=1,dealer=0,count=2", tHostSec
+   heTNetHostWire 3, tHostPubHex, tHostSec, "dealLevel", "level=0,dealer=2,count=2", tHostSec
+   heTNetHostWire 3, tPlayPubHex, tPlaySec, "board", "street=flop,cards=2d|3d|4d", tHostSec
+   heTNetHostWire 3, tHostPubHex, tHostSec, "board", "street=flop,cards=5d|6d|7d", tHostSec
+   heTAssert "agree: hand 3's table kept the ORACLE dealing (level 1 then 0) and took its flop", \
          heNetOracleDeal() & "/" & gGame["oDeal"]["boardList"], \
          "true/" & heCardIndex("5d") & comma & heCardIndex("6d") & comma & heCardIndex("7d")
    put heNetLogToHotseat(gGame["log"], tHostPubHex) into tXlatTxt
    heTAssert "agree: History took exactly the flops the table took (A/B/C/D/E)", \
          (tXlatTxt contains "cards=2c|3c|4c") & "/" & (tXlatTxt contains "cards=5c|6c|7c") \
          & "/" & (tXlatTxt contains "cards=8c|9c|2h") & "/" & (tXlatTxt contains "cards=2d|3d|4d") \
-         & "/" & (tXlatTxt contains "cards=5d|6d|7d"), "false/false/true/false/true"
+         & "/" & (tXlatTxt contains "cards=5d|6d|7d"), "false/true/false/false/true"
+   -- (c2) THE OPEN-HAND SEAT RULE (v0.25.6 fix pass, round 2, 2026-09-26;
+   -- a consensus narrowing, the owner's call; heSeatAssignOk). The dealing
+   -- key is read from the dealer SEAT on every wire, so a host that re-sat
+   -- that seat mid-hand switched the dealing key after the seals, at the
+   -- table and in History alike (the review's probe). Hand 1 deals seats 1,
+   -- 2 and 5, seat 2 dealing; seat 3 is held but not dealt, and seat 5 is
+   -- dealt but KEYLESS (its key moved to seat 6 before the first hand,
+   -- which a host may do). The host then: (a) re-sits the DEALER seat to a
+   -- third key, which signs a flop -- THE PROBE; (b) moves the dealer's own
+   -- key to the empty seat 4, which would leave the dealing key nobody's
+   -- (the two-wire form); (c) re-sits seat 3, occupied but not dealt; (d)
+   -- sits the third key into seat 5, dealt but keyless, and the key
+   -- commits for seat 5's position and stands for seat 3; then (e) the
+   -- honest late joiner's shape -- the unseated third key into the EMPTY
+   -- seat 4, not dealt -- which still seats it (and its stand counts). Each
+   -- of (a)-(d) is refused and NAMED at the table, History refuses the
+   -- same ones and takes (e), and each of the three rules alone decides
+   -- one of (b), (c) and (d).
+   heTNetPlayCtx "false", tPlayPubHex, tPlaySec, tPlayBoxPub, tPlayBoxSec, tHostPubHex, kKatIdSeed2
+   put "false" into gGame["online"]
+   put heBin2HexS(heHash32(textEncode("holdem-seat3-key", "utf-8"))) into tFarA
+   put heBin2HexS(heHash32(textEncode("holdem-seat5-key", "utf-8"))) into tFarB
+   heTNetHostWire 0, tHostPubHex, tHostSec, "roster", \
+         tHostPubHex & ":host," & tPlayPubHex & ":player," & tP3PubHex & ":player", tHostSec
+   heTNetHostWire 0, tHostPubHex, tHostSec, "sit", "seat=1,pub=" & tHostPubHex, tHostSec
+   heTNetHostWire 0, tHostPubHex, tHostSec, "sit", "seat=2,pub=" & tPlayPubHex, tHostSec
+   heTNetHostWire 0, tHostPubHex, tHostSec, "sit", "seat=3,pub=" & tFarA, tHostSec
+   heTNetHostWire 0, tHostPubHex, tHostSec, "sit", "seat=5,pub=" & tFarB, tHostSec
+   heTNetHostWire 0, tHostPubHex, tHostSec, "sit", "seat=6,pub=" & tFarB, tHostSec
+   heTNetHostWire 1, tHostPubHex, tHostSec, "handStart", "seats=1|2|5,button=2", tHostSec
+   heTNetHostWire 1, tHostPubHex, tHostSec, "dealLevel", "level=0,dealer=2,count=3", tHostSec
+   heTNetHostWire 1, tHostPubHex, tHostSec, "sit", "seat=2,pub=" & tP3PubHex, tHostSec
+   heTNetHostWire 1, tP3PubHex, tP3Sec, "board", "street=flop,cards=2h|3h|4h", tHostSec
+   heTNetHostWire 1, tHostPubHex, tHostSec, "sit", "seat=4,pub=" & tPlayPubHex, tHostSec
+   heTNetHostWire 1, tPlayPubHex, tPlaySec, "board", "street=flop,cards=5h|6h|7h", tHostSec
+   heTNetHostWire 1, tHostPubHex, tHostSec, "sit", "seat=3,pub=" & tP3PubHex, tHostSec
+   heTNetHostWire 1, tHostPubHex, tHostSec, "sit", "seat=5,pub=" & tP3PubHex, tHostSec
+   heTNetHostWire 1, tP3PubHex, tP3Sec, "seedCommit", "pos=3,commit=" & kKatCommit3, tHostSec
+   heTNetHostWire 1, tP3PubHex, tP3Sec, "stand", "seat=3,n=1", tHostSec
+   heTAssert "openseat: the host's re-sit of the DEALER seat mid-hand is refused, named; the dealer's flop stands", \
+         (gGame["netLog"] contains "sit into occupied seat 2 while hand 1 is open") & "/" \
+         & heHexEq(gGame["pubBySeat"][2], tPlayPubHex) & "/" & gGame["oDeal"]["boardList"], \
+         "true/true/" & heCardIndex("5h") & comma & heCardIndex("6h") & comma & heCardIndex("7h")
+   heTAssert "openseat: moving the dealer's key to an empty seat is refused, named (it keeps seat 2)", \
+         (gGame["netLog"] contains "sit of a key that holds seat 2 while hand 1 is open") & "/" \
+         & gGame["seatByPub"][tPlayPubHex] & "/" & gGame["pubBySeat"][4], "true/2/"
+   heTAssert "openseat: an occupied seat the hand did not deal is refused too, named (its key keeps it)", \
+         (gGame["netLog"] contains "sit into occupied seat 3 while hand 1 is open") & "/" \
+         & heHexEq(gGame["pubBySeat"][3], tFarA) & "/" & gGame["sitOutBy"][3], "true/true/"
+   heTAssert "openseat: a KEYLESS seat the hand dealt waits for the boundary, named (no commit for it)", \
+         (gGame["netLog"] contains "sit into seat 5, dealt into open hand 1") & "/" \
+         & gGame["seatByPub"][tP3PubHex] & "/" & gGame["oDeal"]["commitsBy"][3], "true//"
+   heTNetHostWire 1, tHostPubHex, tHostSec, "sit", "seat=4,pub=" & tP3PubHex, tHostSec
+   heTNetHostWire 1, tP3PubHex, tP3Sec, "stand", "seat=4,n=1", tHostSec
+   heTAssert "openseat: the late joiner's shape (an unseated key, an EMPTY seat not dealt) still seats", \
+         gGame["seatByPub"][tP3PubHex] & "/" & heHexEq(gGame["pubBySeat"][4], tP3PubHex) \
+         & "/" & gGame["sitOutBy"][4], "4/true/true"
+   put heNetLogToHotseat(gGame["log"], tHostPubHex) into tXlatTxt
+   heTAssert "openseat: History refuses the same sits and takes the same one (the dealer's flop, no commit, one stand: seat 4's)", \
+         (tXlatTxt contains "cards=2h|3h|4h") & "/" & (tXlatTxt contains "cards=5h|6h|7h") \
+         & "/" & (tXlatTxt contains ("commit=" & kKatCommit3)) & "/" & heTCountLines(tXlatTxt, tab & "stand" & tab) \
+         & "/" & (tXlatTxt contains ("seat4" & tab & "stand")), "false/true/false/1/true"
    -- (d) THE OWNER'S OWN EQUIVOCATION (review fix, 2026-09-25): the sender
    -- rules pass every wire here -- each is the position owner's -- but the
    -- table keeps a position's FIRST commitment and only a reveal that opens
@@ -18451,17 +18667,21 @@ command heTestNetPlay
    heTContains "row16b: History keeps the settle the table APPLIED (not the last one)", \
          tXlatFold["history"], "deltas 1:-2|2:2; settle-verified"
    -- ONE KEY PER SEAT (v0.25.6; the re-sit mapping, confirmed by a
-   -- headless probe on 2026-09-26): the host re-sits seat 2 to a third key,
-   -- and the seat's OLD key must lose it -- its commit and its stand are
-   -- refused -- at the table and in History; then the host MOVES that key
-   -- to seat 3, and seat 2 must have no key at all (its dealer turn deals
-   -- nothing from the moved key)
+   -- headless probe on 2026-09-26): before the first hand (the only time
+   -- the open-hand seat rule lets a host re-sit or move a key: (c2)
+   -- above), the host sits a third key into seat 3 and then into seat 2,
+   -- which both RE-SITS seat 2 and MOVES the key out of seat 3. Seat 2's
+   -- OLD key must lose it -- its commit and its stand are refused -- at
+   -- the table and in History; and seat 3 must have no key at all (its
+   -- dealer turn in hand 2 deals nothing from the moved key). Until round
+   -- 2 the move was made mid-hand; that is refused now.
    heTNetPlayCtx "false", tPlayPubHex, tPlaySec, tPlayBoxPub, tPlayBoxSec, tHostPubHex, kKatIdSeed2
    put "false" into gGame["online"]
    heTNetHostWire 0, tHostPubHex, tHostSec, "roster", \
          tHostPubHex & ":host," & tPlayPubHex & ":player," & tP3PubHex & ":player", tHostSec
    heTNetHostWire 0, tHostPubHex, tHostSec, "sit", "seat=1,pub=" & tHostPubHex, tHostSec
    heTNetHostWire 0, tHostPubHex, tHostSec, "sit", "seat=2,pub=" & tPlayPubHex, tHostSec
+   heTNetHostWire 0, tHostPubHex, tHostSec, "sit", "seat=3,pub=" & tP3PubHex, tHostSec
    heTNetHostWire 0, tHostPubHex, tHostSec, "sit", "seat=2,pub=" & tP3PubHex, tHostSec
    heTNetHostWire 1, tHostPubHex, tHostSec, "handStart", "seats=1|2,button=1", tHostSec
    heTNetHostWire 1, tHostPubHex, tHostSec, "dealLevel", "level=0,dealer=1,count=2", tHostSec
@@ -18476,12 +18696,11 @@ command heTestNetPlay
    heTAssert "resit: History keeps the new key's commit, not the old key's", \
          (tXlatTxt contains ("commit=" & kKatCommit2)) & "/" & (tXlatTxt contains ("commit=" & kKatCommit3)), \
          "false/true"
-   heTNetHostWire 1, tHostPubHex, tHostSec, "sit", "seat=3,pub=" & tP3PubHex, tHostSec
-   heTNetHostWire 2, tHostPubHex, tHostSec, "handStart", "seats=1|2,button=2", tHostSec
-   heTNetHostWire 2, tHostPubHex, tHostSec, "dealLevel", "level=0,dealer=2,count=2", tHostSec
+   heTNetHostWire 2, tHostPubHex, tHostSec, "handStart", "seats=1|3,button=3", tHostSec
+   heTNetHostWire 2, tHostPubHex, tHostSec, "dealLevel", "level=0,dealer=3,count=2", tHostSec
    heTNetHostWire 2, tP3PubHex, tP3Sec, "board", "street=flop,cards=2h|3h|4h", tHostSec
    heTAssert "resit: a MOVED key leaves its old seat keyless, and deals nothing for it", \
-         gGame["pubBySeat"][2] & "/" & gGame["seatByPub"][tP3PubHex] & "/" & gGame["oDeal"]["boardList"], "/3/"
+         gGame["pubBySeat"][3] & "/" & gGame["seatByPub"][tP3PubHex] & "/" & gGame["oDeal"]["boardList"], "/2/"
    put heNetLogToHotseat(gGame["log"], tHostPubHex) into tXlatTxt
    heTAssert "resit: ...and History takes no board from it either", \
          (tXlatTxt contains "cards=2h|3h|4h"), false
@@ -19756,6 +19975,7 @@ command heTestLivenessRun
    local tContent, tWire, tHead, tTokTxt, tFrameTxt, tListTxt, tKeyA, tKeyB
    local tEvil, tEvilC, tSnapG, tHandBefore, tOutboxTxt, tWireN, tLineTxt
    local tSnapH, tBodyA, tSeatOther, tOtherPub, tOtherSec, tGhostPub, tLivePub
+   local tXlatTxt, tXlatFold
    put return & "-- 20. Liveness: act timers + time-bank, sit-out, late-join, redial" & return after gRpt
    set the itemDelimiter to comma
 
@@ -20305,6 +20525,25 @@ command heTestLivenessRun
    heTAssert "latejoin: three-seat chips conserved and agreed", \
          gTNetPlay2G["stacksBy"][1] + gTNetPlay2G["stacksBy"][2] + gTNetPlay2G["stacksBy"][3] \
          & "/" & (gTNetPlay2G["stacksBy"][1] is gTNetHostG["stacksBy"][1]), "1200/true"
+   -- HISTORY FOLDS THE LATE JOINER (v0.25.6 fix pass, round 2, 2026-09-26;
+   -- older than v0.25.6). An honest table: the joiner took an EMPTY seat
+   -- at the boundary through heNetSeatLateJoiners, the one assignment the
+   -- open-hand seat rule leaves open. History wrote one cfg line with
+   -- stacks for the first hand's seats only, so seat 3 reached the fold
+   -- with no stack: its blind was engine-rejected and the hand the table
+   -- settled cleanly read settle-MISMATCH (found headlessly: the table
+   -- 395/407/398, History 397/403/0). The translation now writes seat 3's
+   -- opening stack -- the one its sit gave it -- as a cfg line of its own
+   -- ahead of the first handStart that deals it.
+   put heNetLogToHotseat(gTNetHostG["log"], tHostPubHex) into tXlatTxt
+   put heFoldTranscript(tXlatTxt) into tXlatFold
+   heTAssert "latejoin: History seats the joiner with the stack its sit gave it (a cfg line for seat 3 alone)", \
+         heTCountLines(tXlatTxt, tab & "cfg" & tab & "seats=3,stacks=400"), 1
+   heTAssert "latejoin: ...and folds the session as the table played it (stacks agree, every settle verified, no errors)", \
+         tXlatFold["stacksBy"][1] & "/" & tXlatFold["stacksBy"][2] & "/" & tXlatFold["stacksBy"][3] \
+         & "/" & heTCountLines(tXlatFold["history"], "; settle-verified") & "/" & tXlatFold["errors"], \
+         gTNetHostG["stacksBy"][1] & "/" & gTNetHostG["stacksBy"][2] & "/" & gTNetHostG["stacksBy"][3] \
+         & "/" & the number of lines of tXlatFold["history"] & "/"
    -- GHOST SEATS (v0.24.0, F7): "has joined" is a historical fact, and it was
    -- the only test the boundary applied -- so a peer that joined and then
    -- closed its stack (still admitted, still in boxByPub: nothing ever clears
@@ -20682,6 +20921,29 @@ command heTestHelpersRun
    heTAssert "sitmark: no mark (a pre-v0.25.6 sender) and an alias are refused", \
          heSitMarkOk(empty, 0) & "|" & heSitMarkOk("03", 2), \
          "carries no sit-out mark|sit-out mark 03 is not canonical"
+
+   -- heSeatAssignOk (v0.25.6 fix pass, round 2, 2026-09-26): once a hand is
+   -- open, a host seat assignment seats only an unseated key into an empty
+   -- seat that hand did not deal -- the late joiner's shape. The probe's
+   -- keys: 833fed8e holds the dealer seat 2, and the host re-sits it to
+   -- ad1d6dbb. Section 15's (c2) drives each refusal end to end.
+   heTAssert "seatrule: before the first hand, a re-sit and a move still fold", \
+         heSeatAssignOk(2, kKatIdPub3, kKatIdPub2, 3, 0, empty) & "|" \
+         & heSeatAssignOk(2, kKatIdPub3, kKatIdPub2, 3, empty, "1,2"), "|"
+   heTAssert "seatrule: the late joiner's shape folds while a hand is open", \
+         heSeatAssignOk(3, kKatIdPub3, empty, empty, 7, "1,2"), empty
+   heTAssert "seatrule: the probe -- the dealer seat re-sat mid-hand -- is refused, named", \
+         heSeatAssignOk(2, kKatIdPub3, kKatIdPub2, empty, 7, "1,2"), \
+         "sit into occupied seat 2 while hand 7 is open"
+   heTAssert "seatrule: an occupied seat the hand did not deal is refused too", \
+         heSeatAssignOk(4, kKatIdPub3, kKatIdPub1, empty, 7, "1,2"), \
+         "sit into occupied seat 4 while hand 7 is open"
+   heTAssert "seatrule: a KEYLESS seat the open hand dealt waits for the boundary", \
+         heSeatAssignOk(2, kKatIdPub3, empty, empty, 7, "1,2"), \
+         "sit into seat 2, dealt into open hand 7"
+   heTAssert "seatrule: a key that holds a seat cannot move while a hand is open", \
+         heSeatAssignOk(4, kKatIdPub2, empty, 2, 7, "1,2"), \
+         "sit of a key that holds seat 2 while hand 7 is open"
 
    -- heWireSenderOk (v0.25.6; coding #14): THE sender rules, one predicate
    -- for the live fold and History's translation. A level-0 hand: seat 1 is
@@ -22130,6 +22392,39 @@ function heTKatTimeoutLog
    return tLog
 end heTKatTimeoutLog
 
+function heTKatLateJoinLog pDropSeatLine
+   -- a canned ONLINE-shaped session with a LATE JOINER (v0.25.6 fix pass,
+   -- round 2, 2026-09-26), as heNetLogToHotseat now translates one: the
+   -- opening cfg line gives stacks to the first hand's two seats only, and
+   -- seat 3 -- seated between the hands, on a stack= the host had since
+   -- re-signed to 250 -- gets a cfg line of its OWN, listing just its seat
+   -- and stack, ahead of the first handStart that deals it. The fold's cfg
+   -- case sets only what a line lists, so that line moves no stake. Hand 2
+   -- is three-handed (button 2: seat 3 posts the small blind, seat 1 the
+   -- big), folds to the big blind. With pDropSeatLine "true" the seat line
+   -- is left out, as History wrote it before: seat 3 reaches the fold with
+   -- no stack and its blind is engine-rejected. Final stacks 400/401/249,
+   -- two settles verified. Mirror of fold-kat's transcript_late_join.
+   local tLog
+   put empty into tLog
+   put heLogLine(0, "table", "cfg", "sb=1,bb=2,ante=0,seats=1|2,stacks=400|400,button=1,miss=2") & return after tLog
+   put heLogLine(1, "table", "handStart", "seats=1|2,button=1") & return after tLog
+   put heLogLine(1, "seat1", "bidSB", "amount=1") & return after tLog
+   put heLogLine(1, "seat2", "bidBB", "amount=2") & return after tLog
+   put heLogLine(1, "seat1", "act", "verb=fold,amount=0,turn=1") & return after tLog
+   put heLogLine(1, "table", "settle", "deltas=1:-1|2:1") & return after tLog
+   if pDropSeatLine is not "true" then
+      put heLogLine(2, "table", "cfg", "seats=3,stacks=250") & return after tLog
+   end if
+   put heLogLine(2, "table", "handStart", "seats=1|2|3,button=2") & return after tLog
+   put heLogLine(2, "seat3", "bidSB", "amount=1") & return after tLog
+   put heLogLine(2, "seat1", "bidBB", "amount=2") & return after tLog
+   put heLogLine(2, "seat2", "act", "verb=fold,amount=0,turn=1") & return after tLog
+   put heLogLine(2, "seat3", "act", "verb=fold,amount=0,turn=2") & return after tLog
+   put heLogLine(2, "table", "settle", "deltas=1:1|2:0|3:-1") & return after tLog
+   return tLog
+end heTKatLateJoinLog
+
 function heTKatAnteLog
    -- canned ante session (mirror of fold-kat ante_transcript): 3-handed, ante
    -- 2 each, blinds 1/2, folds to the BB. Pot = 3 antes (6) + SB (1) + BB (2)
@@ -22221,6 +22516,22 @@ command heTestFoldRun
    heTAssert "fold: host timeouts replay as the table took them (394/406, no errors)", \
          heTFoldTxt(tFoldA), "394/406/ hand=5 errs=[]"
    heTAssert "fold: ...all five settles verify", heTCountLines(tFoldA["history"], "; settle-verified"), 5
+
+   -- A LATE JOINER in History (v0.25.6 fix pass, round 2, 2026-09-26): the
+   -- translation gives a seat first dealt after hand 1 a cfg line of its
+   -- own (its seat and the stack its sit gave it), and the fold's cfg case
+   -- sets only what a line lists -- so the joiner opens on 250 and the
+   -- stakes stay 1/2. Without the line (History before this) the joiner's
+   -- blind is engine-rejected. Mirrored in fold-kat (transcript_late_join);
+   -- section 20 drives the honest session end to end.
+   put heFoldTranscript(heTKatLateJoinLog("false")) into tFoldA
+   heTAssert "fold: a late joiner's own cfg line seats it, and moves no stake (400/401/249, no errors)", \
+         heTFoldTxt(tFoldA) & "/" & heTCountLines(tFoldA["history"], "; settle-verified"), \
+         "400/401/249 hand=2 errs=[]/2"
+   put heFoldTranscript(heTKatLateJoinLog("true")) into tFoldB
+   heTAssert "fold: ...and without it the joiner's blind is engine-rejected (History before round 2)", \
+         (tFoldB["errors"] contains "engine-rejected") & "/" & heTCountLines(tFoldB["history"], "; settle-verified"), \
+         "true/1"
 
    -- deep-dive (OXT-pass finding): the online lobby and the hotseat game share
    -- gGame["log"] in two incompatible formats -- a 4-field hotseat line vs a
