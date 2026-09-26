@@ -577,7 +577,7 @@ disjoint from every other library). The groups are:
 | Descriptors | `cwDescriptorChecksum`, `cwDescriptor`, `cwDescriptorMultisig` |
 | JSON | `cwJsonParse`, `cwJsonType`, `cwJsonCount`, `cwJsonAt`, `cwJsonMember`, `cwJsonKeys`, `cwJsonText`, `cwJsonPath`, `cwJsonGet`, `cwJsonEscape`, `cwJsonString2` |
 | QR | `cwQrVersionFor`, `cwQrCodewords`, `cwQrMatrix`, `cwQrText`, `cwQrBmp` |
-| Lists and bytes | `cwCharIndex`, `cwSameBytes`, `cwListNew`, `cwListAdd`, `cwListCount`, `cwLeBytes`, `cwBeBytes`, `cwLeRead`, `cwBeRead`, `cwReverseBytes`, `cwHexIsClean`, `cwHexCompare`, `cwSortHexList`, `cwLower`, `cwUpper`, `cwTrim`, `cwB64Encode`, `cwB64Decode`, `cwStripWhitespace`, `cwVarIntHex`, `cwHexListHas`, `cwSigsList`, `cwWifInfo`, `cwMnemonicStrength`, `cwMnemonicWordCount`, `cwUnixDate`, `cwVersion` |
+| Lists and bytes | `cwCharIndex`, `cwSameBytes`, `cwSameHex`, `cwListNew`, `cwListAdd`, `cwListCount`, `cwLeBytes`, `cwBeBytes`, `cwLeRead`, `cwBeRead`, `cwReverseBytes`, `cwHexIsClean`, `cwHexCompare`, `cwSortHexList`, `cwLower`, `cwUpper`, `cwTrim`, `cwB64Encode`, `cwB64Decode`, `cwStripWhitespace`, `cwVarIntHex`, `cwHexListHas`, `cwSigsList`, `cwWifInfo`, `cwMnemonicStrength`, `cwMnemonicWordCount`, `cwUnixDate`, `cwVersion` |
 
 **The exact limit is 2^53 satoshi** (about 90.07 million BTC, more than four
 times the supply), because an engine number is a double. These integers are
@@ -606,6 +606,25 @@ this layer looks a character up in an alphabet whose two cases sit at different
 positions, or binds a signature to a particular address string, it uses these
 instead. `tools/check-wallet-vectors.py` re-runs every vector under the engine's
 rule so it cannot be forgotten.
+
+**Hex is compared with `cwSameHex`, and ordered with `cwHexCompare`, never with
+bare `is` or `<`.** The engine reads both operands of a comparison as NUMBERS
+when both parse (the suite's engine note 2.11), so a txid or a key that is all
+digits, or digits-e-digits, is a number there: two exponent-form values both
+overflow to infinity and compare equal, and two 64-digit values agreeing in
+their leading digits tie. `cwSameHex` puts a letter on each side, which keeps
+both on the text path; `cwHexCompare` orders nibble by nibble. Every such
+comparison the family checker's check 23 found in wallet-core and coin-wallet
+goes through one of the two (2026-09-26: the coin tie-break, the multisig,
+taproot and PSBT key matches, the BOLT11 payee check, the broadcast marks and
+the history rows). The check reads names, so a few plain-named ones remain
+(the scriptPubKey checks in PSBT signing and BIP-322 verification, the
+unsigned-transaction check in PSBT combining, and two in coin-wallet; the
+suite work plan lists them). Tier 5 of `tools/check-wallet-vectors.py` carries
+the engine's parse as a model and fails each fix undone, and the boot
+self-check's line "two exponent-form txids are two values, in hex order" reads
+both helpers on the engine at every open. Verified statically; needs an OXT
+pass.
 
 ## Running it
 
@@ -646,7 +665,10 @@ receiving and the Bitcoin Core backends are separate sessions (the suite work
 plan's coinxt engine rows).
 
 1. **Boot.** Open the stack; the boot self-check prints its own record with no
-   FAIL line. It flips nothing new, but everything below depends on it.
+   FAIL line. Everything below depends on it, and its line "two exponent-form
+   txids are two values, in hex order" is the first engine reading of
+   `cwSameHex` and `cwHexCompare` at a number-like pair (2026-09-26; the sites
+   that call them stay verified statically).
 2. **Tools, Inspect.** Paste any `lnbc...` invoice: the payee node key, the
    amount and the fields are read out. Then, with a mainnet backend chosen on
    Network, a transaction id known to carry a runestone (any Runes etching or

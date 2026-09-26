@@ -166,6 +166,28 @@ LAW here, not carried-for-later. Change nothing without a very good reason.
 - **Look up alphabet characters by BYTE VALUE with `cxCharIndex`, never `offset()` or `is`**: `the caseSensitive`
   defaults to false, and in Base58 `a` and `A` are different digits - the file's "most dangerous line".
 - **Compare checksums with `cxCompareBytes`, never `is`**, which compares numeric-looking hex as NUMBERS.
+- **Compare hex with `cwSameHex` and order it with `cwHexCompare`, never bare `is` / `<`** (2026-09-26; engine
+  note 2.11, whose exponent form was OBSERVED 2026-09-25): the engine reads both operands as numbers when both parse,
+  so all-digit or digits-e-digits txids and keys tie (two overflows are both +inf; two 64-digit values agreeing in
+  their leading digits sit inside note 2.10's tolerance) and a txid sort ordered some pairs by value. The family
+  checker's check 23 found 27 bare compares (wallet-core's eight, carried into coin-wallet, and coin-wallet's
+  eleven): the coin tie-break, the multisig, taproot-internal and PSBT key matches, the BOLT11 payee check, the
+  broadcast marks, the pending-spender and own-broadcast lookups, the CPFP coins, the bump guard, the Core mempool
+  record and the raw-tx check. One was a false positive by name (`cwXKeyDecode`'s `tPub` held a version NUMBER:
+  renamed); `cwHexListHas`'s inner `is`, invisible to the checker, went the same way. `cwSameHex` is `("h" & a) is
+  ("h" & b)` (case folds as `is` folds text). Tier 5 of `check-wallet-vectors.py` models the engine's parse, which
+  the interpreter lacks (it reads exponent form and 64-digit values as TEXT): a port of the source's `MCU_strtol` /
+  `MCU_strtor8` (the review's, the same day: the first model, a decimal regex, read `"0x" & hex` as text, where the
+  source reads a base-16 int32 whose low 32 bits alone decide). It proves the model on riptide's two recorded parse
+  answers and six the source documents, and fails every fix undone, coin-wallet's through its handlers lifted out of
+  the shipped stack, and both helpers broken (a `0x` prefix; `cwHexCompare` comparing whole texts, which the boot
+  line's "in hex order" half had been free to drop); a key or a txid the shim derives is planted to be number-like.
+  The wallet's boot self-check reads the two helpers at such a pair at every open (`waSelfTestHexCompares`, pure
+  script): the line an engine session will observe. Plain-named hex compares remain the checker's known misses here,
+  so "every hex compare" is not yet true: `... is not tSpk` (three) in `cwPsbtSign`, `cwScriptP2wpkh(tPub) is not
+  tScript` in `cwBip322Verify`, `tA["unsignedtx"] is not tB["unsignedtx"]` in `cwPsbtCombine` (under the modelled
+  parse, two all-digit unsigned transactions one byte apart MERGE), `sWaInspectWanted is ...` in `waStoreRawTx` and
+  `waSpAfterInspect`'s `... is waZeroTxid()`. Verified statically; needs an OXT pass.
 - Keccak-256 (Ethereum, `0x01` padding) is NOT SHA3-256 (FIPS-202, `0x06`): two shim functions, never aliased. The
   bech32 constant is 1, bech32m's `0x2bc830a3`. An encoder must never emit what its own decoder refuses.
 - **`the itemDelimiter` is global mutable state** (templates/CLAUDE.md rule 5; engine note 2.3). Nine public handlers
@@ -576,7 +598,8 @@ never have executed; `cxBech32EncodeValues`'s 2026-09-25 whole-number guard (the
 are what will read it); the wallet surface added from 2026-09-04 (the Ordinals and Vault screens, testnet4, BIP-329,
 BIP-322, silent-payment receiving, Runes, BOLT11, the Core backends, the 2026-09-10 fixes, the 2026-09-24 byte-level
 2^53 bound in `cwLeRead` / `cwBeRead`, the 2026-09-25 exact-integer bounds of work-plan row #8, coinxt-demo's
-`cdWholeField` and the 2026-09-26 `cwExpandExponent` bound); and what the logs did not reach (the update swap, mainnet
+`cdWholeField`, the 2026-09-26 `cwExpandExponent` bound and the 2026-09-26 hex compares through `cwSameHex` /
+`cwHexCompare`); and what the logs did not reach (the update swap, mainnet
 Electrum on port 110, the stale-answer skip, paint/pump timing, the mixed tip+fees batch, the three corrected menu
 items, the backend un-marking a coin, Esplora's 400 body in the log, CPFP on a foreign transaction, an Electrum-format
 seed opening real coins, a vault release after its height). Open work is in the suite's docs/WORK-PLAN.md.
