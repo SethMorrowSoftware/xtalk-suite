@@ -311,8 +311,12 @@ Code comments cite these numbers; keep them.
    quotient; the harness prints three probe lines: the first two measured the rule, the third
    reads its consequences (wide integers, near zero, number-like text), and read them on Linux and
    on Windows (2026-09-25) exactly as the source's rule predicts. Tier 1c holds the rule to every
-   recorded numeric answer of the three (probe 3's first two items are a text parse the interpreter
-   does not model, so they stay out).
+   recorded numeric answer of the three (probe 3's first two items are a text parse, held by coinxt's
+   check-script-vectors tier 0 instead). Since 2026-09-25 the plain interpreter itself REFUSES
+   (`Indistinct`) a comparison the engine answers differently, by the tolerance (2.10) or by
+   reading text as a number (2.11), so tier 1c's plain legs expect the refusal where IEEE answered:
+   the nine of the fourteen numeric probe answers the engine gave otherwise, and the old bound at
+   2^53 + 1. The engine-model and margin legs are unchanged.
    **Ordering, 2026-09-25.** By the same rule (these consequences are INFERRED from it, not
    observed) every ORDER over a wire integer blurred too, and those are accepted up to
    2^53 - 1: `rsIngestHead`'s and `rsIngestBridge`'s rollback gate
@@ -367,7 +371,13 @@ Code comments cite these numbers; keep them.
     `put ... into URL` answers through `the result` (2026-09-24): empty when the write landed, and the
     planted text, with nothing written, for a path in `World.url_write_refuse` (coinxt's save guards
     are held that way). An unplanted missing parent folder is still CREATED, which is looser than the
-    engine; a gate that needs that refusal plants it.
+    engine; a gate that needs that refusal plants it. Since 2026-09-25 the runner's own `<` family
+    refuses what the base refuses (suite engine notes 2.10 and 2.11) plus an ordering the text
+    answers and the engine may not (`"0x10" < "20"`), orders an EMPTY operand as 0 against a
+    number, as the base and the engine's source do (it ordered empty as text, so coin-wallet's
+    cwSatToBtc printed an empty amount "-0.00000000" in the boot), and matches `case` as TEXT,
+    the engine's way (until then `"1.0"` took `case "1"` here). A refused comparison inside an
+    `and` / `or` whose other operand settles the answer is dropped (the base's `_Undecided`).
 15. **The demo carries TWO socket libraries** (onionxt, nostrxt's relay layer). The embed tool drops
     both libraries' `socketError`/`socketClosed`/`socketTimeout` wrappers; the demo's own three call
     `oxSocketError`/`nxrSocketError` (and kin), then `pass`. Keep that `pass`: swallowing a socket
