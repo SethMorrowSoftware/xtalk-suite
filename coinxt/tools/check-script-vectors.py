@@ -1677,9 +1677,11 @@ def check_vectors(c, ip):
     # WHOLE, DECIDED EXACTLY (2026-09-25; work-plan row #8). The guard was
     # `tIndex is not trunc(tIndex)`, and the engine's `is` calls numbers
     # within 10 DBL_EPSILON EQUAL (suite engine note 2.10), so the first two
-    # went through there; this interpreter compares the IEEE way and refused
-    # them anyway, which is why check-wallet-vectors.py's tier 4 carries the
-    # proof under the engine's rule. What these pin is the MESSAGE (the file's
+    # went through there; this interpreter answered the old guard the IEEE
+    # way, refusing them anyway (since 2026-09-25 it refuses to DECIDE the old
+    # guard there instead), which is why check-wallet-vectors.py's tier 4
+    # carries the proof under the engine's rule. The shipped guard is exact
+    # (`is an integer`), so it answers here. What these pin is the MESSAGE (the file's
     # own refusal, not an engine error from trunc() of a non-number) and the
     # empty item, which the engine converts to 0 and the old chain encoded.
     whole = ("CoinXT: cxBech32EncodeValues: every data value must be a whole "

@@ -228,7 +228,10 @@ nostrxt, riptide, nocloud, holde-em and torrentxt - with the tree's bounds
 as they then stood. coinxt/CLAUDE.md trap 20 records what it refused, and
 what the two rules the finding proposed instead (an absolute 1e-6, or a
 tolerance applied without asking which operator) would have refused beside
-it.
+it. RE-MEASURED 2026-09-26 over the tree that merged this with the day's
+batch and engine records (the same lists, and the suite's board-boot gates;
+the door logging AND raising, so every gate ran as it does): no refusal in
+shipped script; the new ones were fixtures', listed in the same trap.
 
 AND A THIRD, THE SAME DAY: an OPERAND the engine reads differently
 (docs/OXT-ENGINE-NOTES.md 2.11; DOCUMENTED from the engine source, and two
@@ -304,7 +307,8 @@ check-script-vectors.py tier 0 (check_interp_number_text, with riptide's
 third probe line as the engine READ it on Linux and on Windows, 2026-09-25,
 item for item the source's prediction), the runner-model
 tier of riptide's check-demo-boot.py, and nostrxt's tier 0; MEASURED over
-every execution gate before it landed (coinxt/CLAUDE.md trap 20).
+every execution gate before it landed, and again over the merged tree on
+2026-09-26 (coinxt/CLAUDE.md trap 20).
 """
 import base64
 import re

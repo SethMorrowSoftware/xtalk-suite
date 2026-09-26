@@ -208,8 +208,9 @@ bash tools/run-gates.sh     # the member's one gate list: what CI and the suite'
   Since 2026-09-25 the interpreter refuses a comparison the engine answers differently (suite
   engine notes 2.10, a tolerance inside 10 DBL_EPSILON, and 2.11, number-like text), and tier 0
   pins both in THIS copy, because a published nostrxt runs no coinxt gate; the full fixture is
-  coinxt's `check-script-vectors.py` tier 0. Measured over this member's gates that day: nothing
-  in the shipped core was refused.
+  coinxt's `check-script-vectors.py` tier 0. Measured over this member's gates that day, and
+  again on 2026-09-26 over the tree that merged it with the day's batch: nothing in the shipped
+  core was refused (only tier 0's own two rows, on purpose).
 - `tools/check-docs-style.py`, and `tools/check-doc-handlers.py --check` (docs and source agree on
   the public surface both ways; `docs/06-api-reference.md` names every public handler).
 

@@ -3074,11 +3074,11 @@ end oldCwLeRead
 #
 # Probe 3 enters at its item 3. Its items 1 and 2 ("1e999" is "2e999" and
 # "1e5" is "100000", both true on the engine) are not comparisons of two
-# numbers but text becoming a number (strtod: suite engine note 2.11), and
-# tools/lcs-interp.py does not model that parse: its _eq reads only
-# -?\d+(\.\d+)? as a number, so it compares both pairs as TEXT and never
-# calls the _n a candidate rule swaps. No comparison rule could reproduce
-# them, so holding one to them here would test the parse, not the rule.
+# numbers but text becoming a number (strtod: suite engine note 2.11). Since
+# 2026-09-25 tools/lcs-interp.py ports that parse and REFUSES both (it
+# compared them as TEXT before), but neither reaches the number comparison a
+# candidate rule swaps, so holding a rule to them here would test the parse,
+# not the rule: check-script-vectors.py tier 0 holds the interpreter to them.
 _PROBE_LADDER = """
 function probeUlpLadder pBase, pUlps
    local tStep

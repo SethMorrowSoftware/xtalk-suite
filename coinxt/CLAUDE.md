@@ -317,7 +317,15 @@ Symptom -> cause -> fix. Engine behaviour gets one line and its engine note.
     each gives a Boolean), raised where nothing does; text refused on its way into arithmetic is never held back
     (that throws on the engine). No shipped file needed a fix; whether History should show an unknown amount as
     0.00000000 is a wallet question the census raised, not answered here. The wide digit strings the Runes, LEB128
-    and decimal helpers test with `is "0"` still answer, because the engine agrees there.
+    and decimal helpers test with `is "0"` still answer, because the engine agrees there. RE-MEASURED 2026-09-26
+    over the tree that merged the refusal with the 2026-09-25 batch and records (the same lists; the door logging
+    AND raising, so every gate ran exactly as it does): no refusal in shipped script, this member's wallet boot and
+    vector set included. Every NEW one was a fixture's, each now expecting the refusal: the batch's seeded old lines,
+    which their fixtures had read through the plain interpreter as IEEE (tier 4's row #8 bech32 value guard and
+    2.1e15 round trip here; riptide tier 1d's naive `rsSeqCompare`, old ingest lines and old `>=` bound), the
+    records' probe 3 items 3-8 in tier 4's and tier 1c's plain legs, with IEEE REPLAYED as one more model where a
+    fixture must show what IEEE answered; and nocloud's planted bare-`is` `qsSameText` mutant, refused at "1e2" /
+    "100" before the row that names it printed (that gate now fails a refused row by name).
 21. **What the model does.** Arrays are values (deep copy at every binding). The trailing-delimiter rule is modelled (a
     bare `split()` once made the "m/" negative vector test the model, not the script). `the number of chunks of X & Y`
     counts X alone (engine note 2.6, corrected 2026-09-11: the "binds into the target" reading was the runner's; the
@@ -326,7 +334,10 @@ Symptom -> cause -> fix. Engine behaviour gets one line and its engine note.
     `waNumAtLeast` / `waIsDigits` / `waIsInt` - a lesson repeated after being written down three times is a missing
     function. `the name` of a control is type-prefixed. `is` against an array compares as an array. Array KEYS fold
     case (engine note 2.7; modelled since 2026-09-24, the first spelling written is kept, tier 0 of
-    `check-script-vectors.py` pins it). Text reads as a number only where the model and the engine's `MCU_strtor8`
+    `check-script-vectors.py` pins it). riptide's runner (which the wallet boot runs through) reads `baseConvert`'s
+    source as the engine's `MCMathConvertToBase10` does since 2026-09-26: empty, an edge space, `0x` or `_` is a
+    script error a `try` catches, and a value past 2^32 - 1 (the engine's uint32 wraps) is refused. Text reads as a
+    number only where the model and the engine's `MCU_strtor8`
     agree (trap 20 (b)): `<>` is the engine's `is not`, so an EMPTY operand is not 0 to it (refused where that
     moves the answer; the orderings do read empty as 0); a Boolean is never a number to a comparison; `is an
     integer` is EXACT (`d == floor(d)`, no tolerance) on both. A Boolean in ARITHMETIC still reads as 1 or 0 here,

@@ -29,9 +29,10 @@ The seeded defects, and what each stands in for:
      (2026-09-25): the LAN replay guard, the feed-state MAX, the feed
      claim's change test and both head-watermark handlers, all at once.
      The engine calls integers one apart EQUAL from about 4.5e14 (root
-     docs/OXT-ENGINE-NOTES.md 2.10) and this model compares the IEEE way,
-     so only the boot's seq-order drive, which runs them under the engine's
-     rule, can see these. One seeded copy, one gate run, and EVERY one of
+     docs/OXT-ENGINE-NOTES.md 2.10) and this model compared the IEEE way
+     (since 2026-09-25 it refuses such a pair instead), so only the boot's
+     seq-order drive, which runs them under the engine's rule, sees them as
+     the wrong ANSWERS they are there. One seeded copy, one gate run, and EVERY one of
      the drive's deciding checks must be among the failures: a drive that
      caught one of five would pass a plain "the gate fired".
 """
