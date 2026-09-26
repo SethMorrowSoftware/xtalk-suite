@@ -69,10 +69,9 @@ TWO HALVES, because a drive sees only the paths it drives.
                   be zero) and beside the other stack, where it SKIPs and
                   its probe host is destroyed, or where the probe is refused
                   for another reason (it SKIPs and makes no call); a run
-                  whose every
-                  enInitialize is refused while the other stack takes a
-                  hold mid-run; and a close after a run that threw because
-                  the extension is absent. The report must carry exactly
+                  whose every enInitialize is refused while the other stack
+                  takes a hold mid-run; and a close after a run that threw
+                  because the extension is absent. The report must carry exactly
                   one FAIL line (the deadline) and the release's PASS.
   closing pass    open and close with no leg run; leg B's Host, pressed
                   once and twice (the second refused before any hold);
@@ -106,8 +105,8 @@ and must fire, the family's rule for a model hook.
   hostname        `the hostName` answers a fixed name and hostNameToAddress
                   a private address (leg B's host path lists them).
   torrent         leg E's minimal TorrentXT: btStartSession answers a
-                  handle, btDhtKeypair a seed, and the configuration and
-                  stop commands are recorded.
+                  handle and btDhtKeypair a seed; the configuration commands
+                  answer 0, and starts and stops are counted.
 
 WHAT IT CANNOT SEE
 ------------------
@@ -454,9 +453,9 @@ def install(world, models, torrent=None, enet_absent=False):
         "enresetpeer": en("peer_op"),
         "ensetpeertimeout": en("peer_op"),
         "ensetpeerpinginterval": en("peer_op"),
-        "enbroadcast": lambda a: -2 if models["en"].host_op(a) else 0,
-        "enbroadcasttext": lambda a: -2 if models["en"].host_op(a) else 0,
-        "enflush": lambda a: -2 if models["en"].host_op(a) else 0,
+        "enbroadcast": en("host_op"),
+        "enbroadcasttext": en("host_op"),
+        "enflush": en("host_op"),
         "ensethostbandwidth": en("host_op"),
         "enpeerstatus": en("peer_status"),
         "enhoststatus": en("host_status"),
