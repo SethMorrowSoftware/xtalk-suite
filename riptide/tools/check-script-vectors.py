@@ -54,8 +54,11 @@ seeded copy of the spelling that shipped has read right under IEEE and wrong
 under the engine's rule (the bridge's seq agreement with tier 2, since only
 a bridge that verifies over the real CoinXT reaches it). Tier 1e
 (2026-09-26) reads the HARNESS, not the library: the shape of its fourth
-numeric compare probe line, and the plain interpreter's refusal of each of
-its six items (suite engine note 2.11's forms that only an engine can read).
+numeric compare probe line, the plain interpreter's refusal of each of
+its six items (suite engine note 2.11's forms that only an engine can read),
+and the engine readings of that line recorded so far (Linux, 2026-09-26),
+each six booleans agreeing with the prediction the line prints wherever the
+engine source decides.
 
 THE SOURCE REWRITES, AND WHY THEY ARE ASSERTED. riptide was written before
 this gate existed and uses three spellings outside the interpreter's
@@ -1634,9 +1637,23 @@ def check_seq_order_bridge(c, ip, src, fail):
 # the 385 characters). A refusal is the handling probes 1-3 get too (tier
 # 1c here, coinxt's check-script-vectors tier 0): no headless gate can run
 # such a line, so a gate that holds the refusal is the one place a headless
-# run meets it. When the engine's reading is recorded and the interpreter
-# is taught it, these refusal rows are what change, beside that record.
-# The shape checker is proven able to fire first, on seeded copies.
+# run meets it. The shape checker is proven able to fire first, on seeded
+# copies.
+#
+# THE READINGS, RECORDED (2026-09-26). An engine has now printed the line
+# (Linux, 2026-09-26; riptide/CLAUDE.md's ledger), and its answers are held
+# below as DATA, keyed by platform and date, the way tier 1c holds probes
+# 1-3 (PROBE_READINGS). What can be checked about a recorded reading without
+# an engine is what the harness itself says about it: six booleans (no item
+# threw or printed empty), and the items the engine SOURCE decides (the
+# non-? places of the prediction the line prints: items 1 and 5) as that
+# prediction says. The C library's four are recorded, not re-derived: no
+# model here reads a C library. A recorded answer corrupted to disagree with
+# the source, or to anything but six booleans, fails this tier; seeded
+# corruptions of the real record prove the check can fire. The refusal rows
+# stay as they are: the interpreter is not taught the reading yet (a later
+# change, with the Windows reading beside it), and when it is, those rows are
+# what change, beside this record.
 
 HARNESS = os.path.join(MEMBER, "tests", "riptide-selftest.livecodescript")
 PROBE4_PREFIX = "numeric compare probe 4 (diagnostic;"
@@ -1650,6 +1667,23 @@ PROBE4_ITEMS = [
     (5, '(tA is 4294967296)', '4294967296 (385 chars)'),
     (6, '("0x1.8" is "1.5")', '`"0x1.8" is "1.5"`'),
 ]
+# The engine's readings of the line, exactly as its reports printed them
+# after the colon, keyed by (`the platform` as the engine names it, the date
+# of the run). Add a reading here when a report carries one; never edit one.
+#   ("Linux", "2026-09-26"): the suite paste of PR #147 (its head 2ec9594),
+#     riptide 0.13.0's harness, a SECOND Run all in one launch on a fresh
+#     stack, by the maintainer's account 64-bit Kubuntu 24.04, the machine of
+#     the 2026-09-25 Linux run. Items 1 and 5 as the source predicts; 2, 3
+#     and 6 read true,false,true, the reading the harness comment gives a C99
+#     strtod (inf and a hex float parse, NaN is unequal to itself), and 4
+#     false, the "C" locale's (byte 0xA0 is not a space, so the text stayed
+#     text).
+# Owed: Win32 (MSVC's C runtime decides items 2, 3, 4 and 6 there).
+PROBE4_RECORDED = {
+    ("Linux", "2026-09-26"): "true,true,false,false,false,true",
+}
+# `the platform` as an engine answers it, for the keys above
+PROBE4_PLATFORMS = ("Linux", "Win32", "MacOS")
 # Each item's statements, from its branch to the next, EXACTLY (review,
 # 2026-09-26). The refusal rows below cannot see an edit that keeps every
 # operand the interpreter refuses but changes what the ENGINE prints: a line
@@ -1811,6 +1845,93 @@ def probe4_shape(text):
     return bad
 
 
+_PROBE4_PREDICTION_RX = re.compile(r'\breads ((?:[a-z?]+,){5}[a-z?]+) where\b')
+_PROBE4_DATE_RX = re.compile(r'^20\d\d-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$')
+
+
+def probe4_printed_prediction(text):
+    """The prediction the probe-4 line PRINTS (six items, each true, false
+    or ?), read from the harness's own statement in TEXT, not from
+    PROBE4_PREDICTED; None when there is not exactly one such statement or
+    it prints no such prediction."""
+    heads = _SECTION_HEAD_RX.findall(text)
+    if len(heads) != 1:
+        return None
+    lines = [ln for ln in _probe4_logical(heads[0]) if PROBE4_PREFIX in ln]
+    if len(lines) != 1:
+        return None
+    found = _PROBE4_PREDICTION_RX.findall(lines[0])
+    return found[0] if len(found) == 1 else None
+
+
+def probe4_recorded_problems(recorded, prediction):
+    """What is wrong with RECORDED ({(platform, date): reading}) held
+    against PREDICTION (what the line prints); an empty list when nothing
+    is. A reading is six booleans, and every place the prediction decides
+    (not ?) reads as the prediction says."""
+    if not recorded:
+        return ["no engine reading of the probe-4 line is recorded"]
+    pred = (prediction or "").split(",")
+    if len(pred) != len(PROBE4_ITEMS) or \
+            any(p not in ("true", "false", "?") for p in pred):
+        return ["the printed prediction %r is not six items of true, false "
+                "or ?" % (prediction,)]
+    bad = []
+    for key in sorted(recorded, key=repr):
+        if not (isinstance(key, tuple) and len(key) == 2
+                and key[0] in PROBE4_PLATFORMS
+                and isinstance(key[1], str) and _PROBE4_DATE_RX.match(key[1])):
+            bad.append("%r is not a (platform, date) key (a platform is one "
+                       "of %s, a date YYYY-MM-DD)"
+                       % (key, ", ".join(PROBE4_PLATFORMS)))
+            continue
+        reading = recorded[key]
+        items = reading.split(",") if isinstance(reading, str) else []
+        if len(items) != len(PROBE4_ITEMS) or \
+                any(i not in ("true", "false") for i in items):
+            bad.append("%s %s: %r is not six booleans"
+                       % (key[0], key[1], reading))
+            continue
+        for n, (want, got) in enumerate(zip(pred, items), 1):
+            if want != "?" and got != want:
+                bad.append("%s %s: item %d reads %s, where the engine source "
+                           "decides %s" % (key[0], key[1], n, got, want))
+    return bad
+
+
+def _probe4_record_seeds(recorded):
+    """Corrupted copies of RECORDED, each built from its first real entry:
+    (the copy, what was corrupted, what the record check must say)."""
+    key = sorted(recorded, key=repr)[0]
+    items = recorded[key].split(",")
+
+    def with_reading(reading):
+        out = dict(recorded)
+        out[key] = reading
+        return out
+
+    def flipped(n):
+        out = list(items)
+        out[n - 1] = "false" if out[n - 1] == "true" else "true"
+        return ",".join(out)
+
+    moved = dict(recorded)
+    moved[(key[0].lower(), key[1])] = moved.pop(key)
+    return [
+        (with_reading(flipped(1)), "item 1 (source-decided) flipped",
+         "item 1 reads"),
+        (with_reading(flipped(5)), "item 5 (source-decided) flipped",
+         "item 5 reads"),
+        (with_reading(",".join(items[:3] + ["threw: seeded"] + items[4:])),
+         "a thrown item in place of a boolean", "is not six booleans"),
+        (with_reading(",".join(items[:5])), "an item dropped",
+         "is not six booleans"),
+        (moved, "the platform spelled other than the engine names it",
+         "is not a (platform, date) key"),
+        ({}, "the record emptied", "no engine reading"),
+    ]
+
+
 def _probe4_seeds(text, fail):
     """Seeded copies of TEXT, each a way the line could silently lose what
     it reads: (text, what was seeded, what the shape checker must say)."""
@@ -1887,6 +2008,29 @@ def check_probe4(c, fail):
          "source's prediction %s, each item inside rstTextProbe's try and "
          "built exactly as pinned, nothing counted" % PROBE4_PREDICTED,
          probe4_shape(text), [])
+    # the recorded readings, against the prediction the line prints
+    printed = probe4_printed_prediction(text)
+    for seeded, why, says in _probe4_record_seeds(PROBE4_RECORDED):
+        c.ck("fixture: the record check refuses a corrupted copy of the "
+             "recorded readings (%s), saying so" % why,
+             any(says in problem
+                 for problem in probe4_recorded_problems(seeded, printed)),
+             True)
+    moved = text.replace("reads true,?,?,?,false,? where",
+                         "reads false,?,?,?,false,? where")
+    c.ck("fixture: the prediction is READ from the harness line: a copy "
+         "printing item 1 as false refuses the real record's item 1",
+         any("item 1 reads" in problem for problem in probe4_recorded_problems(
+             PROBE4_RECORDED, probe4_printed_prediction(moved))), True)
+    c.ck("the probe-4 line prints the prediction %s (read from the harness)"
+         % PROBE4_PREDICTED, printed, PROBE4_PREDICTED)
+    for key in sorted(PROBE4_RECORDED, key=repr):
+        c.ck("the recorded probe-4 reading, %s %s (%s): six booleans, and "
+             "items 1 and 5, the ones the engine source decides, as the "
+             "line's printed prediction says"
+             % (key[0], key[1], PROBE4_RECORDED[key]),
+             probe4_recorded_problems({key: PROBE4_RECORDED[key]}, printed),
+             [])
     fns = _PROBE4_FN_RX.findall(text)
     if len(fns) != 1:
         return
@@ -1905,8 +2049,9 @@ def check_probe4(c, fail):
                 got = ("refused" if "2.11" in msg and frag in msg
                        else "refused, but naming neither 2.11 nor %s: %s"
                        % (frag, msg[:160]))
-            c.ck("item %d, %s: the plain interpreter REFUSES it (the "
-                 "engine's reading is owed; teach the interpreter from it)"
+            c.ck("item %d, %s: the plain interpreter still REFUSES it (the "
+                 "Linux reading is recorded above and the Win32 one owed; "
+                 "teaching the interpreter is a later change)"
                  % (n, expr), got, "refused")
         c.ck("an item past 6 reads empty and never throws",
              probe.call("rstTextProbe", [7]), "")
