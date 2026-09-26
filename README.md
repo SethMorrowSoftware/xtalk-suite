@@ -115,7 +115,10 @@ torrentxt's 997-byte refusals pass). Their `x86_64-linux` builds (sodiumxt's and
 run 12's) first met an engine on the record on 2026-09-25, in the same paste, green, on 64-bit
 Kubuntu 24.04 with "the latest builds" and "the latest" OXT by the maintainer's account (torrentxt's
 997-byte refusals agree; the OXT version and library versions were not recorded), and again on
-2026-09-26 on that machine by the same account (the batch paste, 2,876 / 0 / 10). No OXT engine has
+2026-09-26 on that machine by the same account (the batch paste, 2,876 / 0 / 10). The same day the
+engine preflight's first Linux run (presumably that machine; not stated) LOADED all six at their
+ABIs on OXT 9.7.0-dp-1 and printed libsodium 1.0.20, enet 1.3.18 and libdatachannel v0.24.5, the
+Linux pins. No OXT engine has
 loaded any `universal-mac` dylib. No record names a 32-bit engine: sodiumxt, torrentxt and coinxt on
 x86-win32 (coinxt's 32-bit DLL may never have executed anywhere: CI's Windows KAT step is x86_64
 only, and every Windows engine run since 2026-09-24 loaded the 64-bit DLL, by the same account), and
@@ -142,6 +145,7 @@ macOS dylibs are universal (arm64 + x86_64) and unsigned.
 | 2026-09-25 | Linux: 64-bit Kubuntu 24.04, the latest committed builds and "the latest" OXT, by the maintainer's account (no OXT version given) | 2,672 passed, 0 failed, 10 skipped, from a SECOND Run all in one launch by the maintainer's account: all ten probed extensions and script layers present and every member row green (nocloud has no in-engine harness), riptide's session sections included (the fold's stale-session fix), both live loopbacks completing (the paste's loopback code finishes on an engine); box2dxt settles engine note 2.3's itemDelimiter half on Linux; riptide's third probe line reads the engine's comparison constant to the digit and shows number-like texts comparing as numbers (engine notes 2.10, 2.11) |
 | 2026-09-25 | Windows, the 2026-09-24 machine (64-bit, by the maintainer's account) | 2,653 passed, 2 failed, 10 skipped: every member header as on Linux, riptide's three probe lines character for character, so engine note 2.10's constant and the two items of 2.11 that line probes read the same on Windows; the 2 failures are both live loopbacks, stalled on that machine a fourth time in the same phases (runbook 5.5) |
 | 2026-09-26 | Linux, the 2026-09-25 machine (64-bit Kubuntu 24.04, "the latest" OXT and the committed builds, by the maintainer's account; whether the OXT build was 2026-09-25's not stated) | 2,876 passed, 0 failed, 10 skipped, the 2026-09-25/26 batch's first engine run, again from a SECOND Run all in one launch by that account (a fresh stack): every member row green, holde-em v0.25.6 / harness 48 and riptide 0.13.0's exact seq order among them, and coinxt's exact whole-number guard (engine note 2.12); both live loopbacks completed again; riptide's fourth probe line reads "inf", "nan" and a hex float comparing as numbers on Linux (its C library's parse, INFERRED), so free text can compare as a number (engine note 2.11) |
+| 2026-09-26 (5:11 PM) | Linux, presumably the same machine (not stated); OXT 9.7.0-dp-1 by the preflight reported with it (INFERRED for this run) | 2,876 passed, 0 failed, 10 skipped again: line for line the earlier run bar the Kit's clock, four generation-tagged joint handles and an image id, so riptide's fourth probe line read the same twice on one machine (a repeat, not a second platform). The preflight reported with it LOADED all six at their ABIs, its first Linux run |
 
 ## The shared engineering rules
 

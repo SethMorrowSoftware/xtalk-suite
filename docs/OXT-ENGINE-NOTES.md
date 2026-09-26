@@ -545,9 +545,13 @@ the line verbatim).
 **Read on Linux, OBSERVED 2026-09-26** (the batch paste, the line's first
 engine run; runbook section 8; the 2026-09-25 machine, 64-bit Kubuntu 24.04
 with "the latest" OXT, by the maintainer's account, the OXT version not
-given, nor whether it was the 2026-09-25 build). The line printed, verbatim
-after its colon, `true,true,false,false,false,true`, against the prediction
-`true,?,?,?,false,?`; no item threw. Item by item:
+given, nor whether it was the 2026-09-25 build; the day's preflight, reported
+later with a second run, printed OXT 9.7.0-dp-1, INFERRED for this one). The
+line printed, verbatim after its colon, `true,true,false,false,false,true`,
+against the prediction `true,?,?,?,false,?`; no item threw. A second run of the same paste that day
+(5:11 PM by the Kit's clock, presumably on the same machine: not stated)
+printed the line identically: a repeat on one machine and one C library, not
+a second platform. Item by item:
 1. `"0x10" is "16"` TRUE, as the source predicts. OBSERVED. That
    `MCU_strtol`'s base-16 branch read it is the source's path (DOCUMENTED),
    not something this reading shows: a C99 `strtod` reads "0x10" as 16 too,
@@ -826,7 +830,12 @@ coinxt's and holde-em's sites), with one point **OBSERVED 2026-09-25** on
 Linux and on Windows (64-bit, the suite paste; runbook section 8): holde-em's
 harness line "legal: a near-integer raise (57.0000000000001) rejected" PASSED
 through `is not an integer`. The old `is trunc(X)` form has not run on an
-engine.
+engine. [Corrected 2026-09-26, the sentence above kept as written: the form
+HAS run, on whole values only, in coinxt's old bech32 guard
+(`tIndex is not trunc(tIndex)`, in the pastes of 2026-09-24 and 2026-09-25,
+whose coin-selftest encodes through it and refused a data value of 32
+green). What no engine has run is the form against a NEAR-integer, the case
+this note is about.]
 **OBSERVED again 2026-09-26, on Linux** (the batch paste, on the 2026-09-25
 machine by the maintainer's account; runbook section 8): coinxt's three new
 "fail-closed regressions" lines, the first engine run of
@@ -840,13 +849,11 @@ near-zero branch, OBSERVED at 1e-15 > 0, it cannot call -1e-15 below 0). And
 `"3e0" is an integer` is TRUE on the engine, and the encoder read "3e0" as 3
 (its whole string equal to 3's). So the exact test's yes to a spelling that
 is not canonical digits is OBSERVED for one form; "1e20", "3.0", "+3",
-" 3", "0x1F" and "1e999" (the Rule below) stay DOCUMENTED. Windows has not
-run the three lines. What no engine has run is the old `is trunc(X)` form
-against a NEAR-integer: the form itself did run, on whole values only, in
-coinxt's old bech32 guard (`tIndex is not trunc(tIndex)`, in the pastes
-of 2026-09-24 and 2026-09-25, whose coin-selftest encodes through it and
-refused a data value of 32 green), so "has not run on an engine" above is
-true of that case, not of the form.
+" 3", "0x1F" and "1e999" (the Rule below) stay DOCUMENTED. A second run of
+that paste the same day (5:11 PM, presumably on the same machine: not
+stated) passed the three lines again, a repeat on one machine. Windows has
+not run them. The old form against a near-integer stays unrun (the
+correction above).
 `is a number` and `is an integer` (exec-math.cpp, `MCMathEvalIsANumber`,
 `MCMathEvalIsAnInteger`) convert the operand as 2.11 describes
 (`MCU_strtor8` for text) and then ask a plain C `d == floor(d)`: no

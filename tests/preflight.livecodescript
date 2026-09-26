@@ -37,8 +37,12 @@
 -- engine it is running in. A SKIP here means "not installed on THIS machine",
 -- never "missing from the suite".
 --
--- Honesty label: verified statically; needs an OXT pass. Not one line of this
--- file has run on an engine.
+-- Honesty label: its green path has run on an engine, every extension LOADED:
+-- on Windows on 2026-08-17 and 2026-08-24 (OXT 9.6.3, at the ABIs of the day) and
+-- on Linux on 2026-09-26 (OXT 9.7.0-dp-1, at 10, 11, 2, 1, 7 and 4; the suite
+-- runbook's section 8). No recorded run has shown an ABI SKEW, NOT INSTALLED
+-- or UNCLASSIFIED row, a script layer found loaded, or the macOS note: those
+-- paths are verified statically; needs an OXT pass.
 
 -- ---- expected ABI, read from the C shims -------------------------------------
 -- GENERATED. Each number is the macro named beside it, and tools/build-preflight.py
@@ -797,7 +801,8 @@ command pfNextSection
    stNote ""
    stNote "The tor daemon is NOT probed here: runbook 2.3's torrc and its"
    stNote quote & "Opening Control listener" & quote & " log line stay the S2/S4 prerequisite."
-   stNote "This whole file is unexecuted until you run it: verified statically;"
+   stNote "Its all-LOADED path has run on engines (runbook section 8); an ABI"
+   stNote "SKEW, NOT INSTALLED or UNCLASSIFIED row has not: verified statically;"
    stNote "needs an OXT pass. Report anything it gets wrong as a defect in it."
 end pfNextSection
 
@@ -849,9 +854,10 @@ function pfClassify pError
    if tText contains "abi " then
       return "skew"
    end if
-   -- The ABSENT spelling is the ENGINE's, not ours, and this file has never run
-   -- on one - so it matches loosely and prints the raw text either way. A miss
-   -- here costs a mislabelled row; it can never cost the fact itself.
+   -- The ABSENT spelling is the ENGINE's, not ours, and no recorded run has
+   -- shown it (each one loaded all six) - so it matches loosely and prints the
+   -- raw text either way. A miss here costs a mislabelled row; it can never
+   -- cost the fact itself.
    if tText contains "handler" then
       return "absent"
    end if
