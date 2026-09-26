@@ -3909,6 +3909,28 @@ function cwSameBytes pA, pB
    return true
 end cwSameBytes
 
+function cwSameHex pA, pB
+   -- True when two HEX texts - a txid, a public key, a PSBT key - are the
+   -- same value, compared as TEXT. Bare `is` is not that comparison. The
+   -- engine first tries to read BOTH operands as numbers (an integer parse,
+   -- then C strtod, no range check) and compares NUMBERS when both parse
+   -- (suite engine note 2.11; exponent form OBSERVED on Linux and Windows
+   -- 2026-09-25): a hex value that is all digits, or digits-e-digits, is
+   -- number-like, "1e999..." and "2e999..." both overflow to +inf and
+   -- compare EQUAL, and two 64-digit values agreeing in their leading
+   -- fifteen or so digits sit inside engine note 2.10's tolerance. Random
+   -- digests are rarely number-like; a value someone else supplies - a
+   -- backend's txid, a PSBT's key, an invoice's node key - can be made so.
+   -- A letter on each side keeps both on the text path: no number the
+   -- engine reads starts with "h" ("0x" does start one, a base-16 one, so a
+   -- 0x prefix would not do). Case folds as `is` folds text, which is right
+   -- for hex: "AB" and "ab" are the same byte. An ORDER of two hex values is
+   -- cwHexCompare's; a case-significant string (Base58, an address) is
+   -- cwSameBytes'. Every hex equality in this layer and in coin-wallet goes
+   -- through here (2026-09-26, the family checker's check 23 found 17).
+   return ("h" & pA) is ("h" & pB)
+end cwSameHex
+
 function cwLower pText
    -- toLower is not in the subset the offline vector runner models, and this
    -- file has to be runnable there (see the header). ASCII only, which is all
@@ -4692,8 +4714,8 @@ function cwXKeyDecode pText, pPreferNetwork, pPreferType
    -- to taproot still comes back p2wpkh, because zpub names one row.
    -- tNode["ambiguous"] and tNode["candidates"] report what was actually
    -- open, so a caller can say so rather than present a guess as a fact.
-   local tRaw, tNode, tVersion, tBody, tNet, tStem, tI, tJ, tPub, tPrv, tLen
-   local tMatches, tPick, tCount, tRec, tPair
+   local tRaw, tNode, tVersion, tBody, tNet, tStem, tI, tJ, tPubVersion
+   local tPrvVersion, tLen, tMatches, tPick, tCount, tRec, tPair
    put cxBase58CheckDecode(cwTrim(pText)) into tRaw
    put the number of bytes of tRaw into tLen
    if tLen is not 78 then
@@ -4726,9 +4748,13 @@ function cwXKeyDecode pText, pPreferNetwork, pPreferType
       put cwListAt(kCwNetworks, tI) into tNet
       repeat with tJ = 1 to 5
          put cwListAt(kCwScriptTypes, tJ) into tStem
-         put cwXKeyVersion(tNet, tStem, true) into tPub
-         put cwXKeyVersion(tNet, tStem, false) into tPrv
-         if tVersion is tPub or tVersion is tPrv then
+         -- Version NUMBERS, compared as numbers on purpose: cwBeRead and
+         -- cwXKeyVersion both answer an integer below 2^32, exact on any
+         -- engine. (Named tPub / tPrv until 2026-09-26, which the family
+         -- checker's check 23 read as a public KEY meeting a bare `is`.)
+         put cwXKeyVersion(tNet, tStem, true) into tPubVersion
+         put cwXKeyVersion(tNet, tStem, false) into tPrvVersion
+         if tVersion is tPubVersion or tVersion is tPrvVersion then
             put "" into tRec
             put tNet into tRec["network"]
             put tStem into tRec["scripttype"]
@@ -5629,7 +5655,7 @@ private function cwSortCoins pPool, pStrategy
 end cwSortCoins
 
 private function cwCoinBefore pA, pB, pStrategy
-   local tKa, tKb
+   local tKa, tKb, tOrder
    if pStrategy is "smallest" then
       put pA["value"] into tKa
       put pB["value"] into tKb
@@ -5650,10 +5676,21 @@ private function cwCoinBefore pA, pB, pStrategy
    if tKa > tKb then
       return false
    end if
-   if pA["txid"] < pB["txid"] then
+   -- THE TIE-BREAK IS HEX ORDER, NIBBLE BY NIBBLE (2026-09-26). It was a bare
+   -- `pA["txid"] < pB["txid"]`, and `<` takes the NUMBER path whenever both
+   -- operands read as numbers (suite engine notes 2.10 and 2.11): two
+   -- digits-e-digits txids both overflow to +inf and tie, a 64-digit txid
+   -- orders against one of those by value rather than by its characters,
+   -- and two 64-digit txids agreeing in their leading fifteen or so digits
+   -- tie inside the engine's tolerance - while every other pair orders as
+   -- text. So the order moved with WHICH txids a backend reported, and "the
+   -- same two coins always order the same way" held only on the text path.
+   -- cwHexCompare compares small nibble values, never the texts as numbers.
+   put cwHexCompare(pA["txid"], pB["txid"]) into tOrder
+   if tOrder < 0 then
       return true
    end if
-   if pA["txid"] > pB["txid"] then
+   if tOrder > 0 then
       return false
    end if
    return (pA["vout"] + 0) <= (pB["vout"] + 0)
@@ -6035,7 +6072,9 @@ function cwSignMultisig pSeckeys, pDigestHex, pWitnessScriptHex
       repeat with tJ = 1 to tCount
          put pSeckeys[tJ] into tSk
          put cxHexEncode(cxPublicKey(cxHexDecode(tSk), true)) into tPub
-         if tPub is tKeys[tI] then
+         -- the script's keys are the SENDER's bytes: compared as hex text,
+         -- never through `is`'s number path (cwSameHex)
+         if cwSameHex(tPub, tKeys[tI]) is true then
             put cxHexEncode(cxDerEncode(cxSign(cxHexDecode(tSk), cxHexDecode(pDigestHex)))) \
                   & "01" into tSig
             put cwListAdd(tWit, tSig) into tWit
@@ -6937,12 +6976,15 @@ function cwPsbtParse pB64
 end cwPsbtParse
 
 function cwPsbtFind pEntries, pType, pKeyHex
-   -- The value of the first entry of this type and key data, or empty.
+   -- The value of the first entry of this type and key data, or empty. The
+   -- key data is hex a PSBT's author chose (a public key, a hash), so it is
+   -- matched as text (cwSameHex): through bare `is`, two different number-
+   -- like keys could name one entry.
    local tI, tCount, tEntry
    put cwListCount(pEntries) into tCount
    repeat with tI = 1 to tCount
       put pEntries[tI] into tEntry
-      if tEntry["type"] is pType and tEntry["key"] is pKeyHex then
+      if tEntry["type"] is pType and cwSameHex(tEntry["key"], pKeyHex) is true then
          return tEntry["value"]
       end if
    end repeat
@@ -7048,12 +7090,13 @@ end cwPsbtDropTypes
 private function cwPsbtSetEntry pEntries, pType, pKeyHex, pValueHex
    -- Replace an entry of this (type, key) or append it. BIP-174 requires keys
    -- to be unique within a map, so this is the only correct way to add one.
+   -- "The same key" is the same hex TEXT (cwSameHex), as in cwPsbtFind.
    local tOut, tI, tCount, tEntry
    put pEntries into tOut
    put cwListCount(pEntries) into tCount
    repeat with tI = 1 to tCount
       put tOut[tI] into tEntry
-      if tEntry["type"] is pType and tEntry["key"] is pKeyHex then
+      if tEntry["type"] is pType and cwSameHex(tEntry["key"], pKeyHex) is true then
          put pValueHex into tEntry["value"]
          put tEntry into tOut[tI]
          return tOut
@@ -7168,7 +7211,8 @@ function cwPsbtSign pB64, pKeys, pNetwork
          repeat with tJ = 1 to tKeyCount
             put pKeys[tJ] into tKey
             put cxHexEncode(cxXOnlyPubkey(cxHexDecode(tKey["seckey"]))) into tPub
-            if tPub is tInternal then
+            -- tInternal is the PSBT's own bytes: matched as hex text
+            if cwSameHex(tPub, tInternal) is true then
                -- AND THE TWEAK MUST LAND ON THE OUTPUT'S OWN KEY. Matching
                -- the internal key alone proves only that this seed produced
                -- the key the PSBT NAMES; it does not prove the scriptPubKey
@@ -10168,7 +10212,9 @@ function cwBolt11Decode pInvoice
       throw "wallet-core: the invoice's signature is not recoverable."
    end if
    if tOut["payee"] is not "" then
-      if tOut["payee"] is not tPub then
+      -- the n field is the invoice author's text: matched as hex text
+      -- (cwSameHex), so a number-like node key cannot stand for another
+      if cwSameHex(tOut["payee"], tPub) is not true then
          throw "wallet-core: the invoice's signature does not recover to the node key its n field names."
       end if
       put char 65 to 128 of tSig into tS
@@ -18720,7 +18766,7 @@ command waNoteBroadcast pRaw, pTxid
       put tIns[tI] into tIn
       put tIn["txid"] & ":" & tIn["vout"] into tKey
       put sWaSpentBy[tKey] into tOld
-      if tOld is not "" and tOld is not tTxid then
+      if tOld is not "" and cwSameHex(tOld, tTxid) is not true then
          if not (tVoided contains tOld) then
             put waCoinsNotFrom(tOld) into sWaUtxos
             put tOld & return after tVoided
@@ -18728,7 +18774,7 @@ command waNoteBroadcast pRaw, pTxid
                   "added from it are void"
          end if
       end if
-      if tOld is not tTxid then
+      if cwSameHex(tOld, tTxid) is not true then
          add 1 to tNew
       end if
       put tTxid into sWaSpentBy[tKey]
@@ -18794,7 +18840,7 @@ command waUnnoteBroadcast pRaw
    repeat with tI = 1 to tCount
       put tIns[tI] into tIn
       put tIn["txid"] & ":" & tIn["vout"] into tKey
-      if sWaSpentBy[tKey] is tTx["txid"] then
+      if cwSameHex(sWaSpentBy[tKey], tTx["txid"]) is true then
          put "" into sWaSpentBy[tKey]
          add 1 to tFreed
       end if
@@ -18812,7 +18858,8 @@ function waPendingSpenderOf pTxid
    local tKey, tLen
    put the number of chars of pTxid into tLen
    repeat for each key tKey in sWaSpentBy
-      if char 1 to tLen of tKey is pTxid and char (tLen + 1) of tKey is ":" \
+      if cwSameHex(char 1 to tLen of tKey, pTxid) is true \
+            and char (tLen + 1) of tKey is ":" \
             and sWaSpentBy[tKey] is not "" then
          return sWaSpentBy[tKey]
       end if
@@ -18840,7 +18887,7 @@ private function waCoinsNotFrom pTxid
    put cwListCount(sWaUtxos) into tCount
    repeat with tI = 1 to tCount
       put sWaUtxos[tI] into tRec
-      if tRec["txid"] is not pTxid then
+      if cwSameHex(tRec["txid"], pTxid) is not true then
          put cwListAdd(tOut, tRec) into tOut
       end if
    end repeat
@@ -19641,7 +19688,7 @@ function waCpfpCoins pTxid
    put cwListCount(sWaUtxos) into tCount
    repeat with tI = 1 to tCount
       put sWaUtxos[tI] into tRec
-      if tRec["txid"] is not pTxid then
+      if cwSameHex(tRec["txid"], pTxid) is not true then
          next repeat
       end if
       if tRec["confirmations"] + 0 > 0 then
@@ -19862,7 +19909,7 @@ command waBumpFee pRec
    -- be spending a coin that never exists - which is what the 2026-09-03
    -- evening run did, and both children were refused by every node.
    put waPendingSpenderOf(pRec["txid"]) into tSpender
-   if tSpender is not "" and tSpender is not pRec["txid"] then
+   if tSpender is not "" and cwSameHex(tSpender, pRec["txid"]) is not true then
       throw "an output of that transaction is already spent by " & tSpender & \
             ", which this wallet built and queued; replacing the parent would " & \
             "leave that one spending a coin that never exists. Bump the child " & \
@@ -26025,7 +26072,7 @@ private command waCoreMempoolRecord pTxid, pNode
    put cwListCount(sWaHistory) into tCount
    repeat with tI = 1 to tCount
       put sWaHistory[tI] into tRec
-      if tRec["txid"] is cwLower(pTxid) then
+      if cwSameHex(tRec["txid"], cwLower(pTxid)) is true then
          put tSize into tRec["vsize"]
          put cwBtcToSat(cwExpandExponent(tFee)) into tRec["fee"]
          put tRec into sWaHistory[tI]
@@ -26276,7 +26323,7 @@ function waIsOwnBroadcast pTxid
    -- every input a broadcast spent carries its txid (waNoteBroadcast).
    local tKey
    repeat for each key tKey in sWaSpentBy
-      if sWaSpentBy[tKey] is pTxid then
+      if cwSameHex(sWaSpentBy[tKey], pTxid) is true then
          return true
       end if
    end repeat
@@ -27680,7 +27727,7 @@ command waStoreRawTx pTxid, pHex
             "something that is not hex: " & char 1 to 80 of tHex
    end if
    put cwTxDecode(tHex) into tTx
-   if tTx["txid"] is not cwLower(pTxid) then
+   if cwSameHex(tTx["txid"], cwLower(pTxid)) is not true then
       throw "the backend answered the request for " & pTxid & " with the " & \
             "bytes of " & tTx["txid"] & ", which is a different transaction."
    end if
@@ -27688,7 +27735,7 @@ command waStoreRawTx pTxid, pHex
    put cwListCount(sWaHistory) into tCount
    repeat with tI = 1 to tCount
       put sWaHistory[tI] into tRec
-      if tRec["txid"] is cwLower(pTxid) then
+      if cwSameHex(tRec["txid"], cwLower(pTxid)) is true then
          put tHex into tRec["raw"]
          put tRec into sWaHistory[tI]
          add 1 to tHit
