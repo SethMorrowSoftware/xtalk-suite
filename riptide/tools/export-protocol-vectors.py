@@ -224,6 +224,18 @@ def refusal_vectors(R, g):
         ("an anon feed-page title over 64 bytes", "onion-serving",
          "oracle anon_feed_page",
          lambda: R["anon_feed_page"]("x" * 65, [])),
+        # the persona index cap (protocol section 2): persona n is 0 to
+        # ANON_INDEX_LIMIT - 1, because from n = 100 subkey 100+n is
+        # persona n-100's subkey 200+n (one seed, two cipher schemes)
+        ("an anon persona index at the cap", "subkey-tree",
+         "oracle anon_seed",
+         lambda: R["anon_seed"](master, R["ANON_INDEX_LIMIT"])),
+        ("an anon persona DM seed at the cap", "subkey-tree",
+         "oracle anon_dm_seed",
+         lambda: R["anon_dm_seed"](master, R["ANON_INDEX_LIMIT"])),
+        ("anon persona 100, whose ed25519 subkey is persona 0's kx subkey",
+         "subkey-tree", "oracle anon_seed",
+         lambda: R["anon_seed"](master, 100)),
     ]
     for name, rule, checked_by, fn in builder_cases:
         add(name, rule, checked_by, None,

@@ -73,6 +73,8 @@
   "prekeyRec": "52534b31643934363139303538353338363536386333313233613666613730366639346635313430666466653634376162353166646637366533663665353739396433634af78ee3dc74534030feac4a92bf540c17cd9fb992c8e3e0eeb9af2822c9d6c40df10e2880b8a395bfe1cf076d8a325c00d9fbb046987657c080faff77a98609",
   "prekeyRecTarget": "5b92cd531aa0537e43def0f737e2a61c48673008",
   "roomId": "3a57d3ad644536e20a4486d31bde5ecb3902d3a5",
+  "roomIdNumEqual": "31c009d208e34830da05c61389b26fd6f417eaff",
+  "roomIdNumOrder": "f88f95e135daecbc4dca25dd8335b49692d4c804",
   "sessionRx": "0cf0c702142da300ac5d769dff39a1b4aabe4842b617cdf4a624815290b4ba38",
   "sessionTx": "2f8bb162c5e2d4346eadcf2a47804458428840336303e629d1ac20e8375dfe83"
  },
@@ -311,6 +313,30 @@
    "name": "an anon feed-page title over 64 bytes",
    "note": "builder-refusal case: a conforming builder must refuse these inputs (and a strict parser the resulting shape)",
    "specRule": "onion-serving",
+   "vector": null
+  },
+  {
+   "checkedBy": "oracle anon_seed",
+   "executed": true,
+   "name": "an anon persona index at the cap",
+   "note": "builder-refusal case: a conforming builder must refuse these inputs (and a strict parser the resulting shape)",
+   "specRule": "subkey-tree",
+   "vector": null
+  },
+  {
+   "checkedBy": "oracle anon_dm_seed",
+   "executed": true,
+   "name": "an anon persona DM seed at the cap",
+   "note": "builder-refusal case: a conforming builder must refuse these inputs (and a strict parser the resulting shape)",
+   "specRule": "subkey-tree",
+   "vector": null
+  },
+  {
+   "checkedBy": "oracle anon_seed",
+   "executed": true,
+   "name": "anon persona 100, whose ed25519 subkey is persona 0's kx subkey",
+   "note": "builder-refusal case: a conforming builder must refuse these inputs (and a strict parser the resulting shape)",
+   "specRule": "subkey-tree",
    "vector": null
   },
   {
