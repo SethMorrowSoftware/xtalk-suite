@@ -7064,8 +7064,9 @@ end rsDmKeys
 -- the "two distinct handles" check go through rsByteOrder, never `<` or
 -- `is` over the hex: two number-like handles compared as NUMBERS there
 -- (suite engine note 2.11), so two spellings of one number were refused as
--- one handle, and a numeric order picked the role a byte-order peer (the
--- protocol's rule, 5.6) would pick too, leaving both ends one role.
+-- one handle, and where the numeric order and the byte order disagree, this
+-- side took the role a peer keeping the protocol's rule (5.6) takes too,
+-- leaving both ends one role.
 function rsDmSessionKeys pMyHandleHex, pMyKxKeys, pTheirHandleHex, pTheirKxPubHex
    local tMine, tTheirs, tOrder, tTheirPub, tRx, tTx, tOut, tErr
    put toLower(pMyHandleHex) into tMine
