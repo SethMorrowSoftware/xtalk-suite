@@ -2456,7 +2456,9 @@ OLD_ROOM_LINES = [
      '   end if\n'),
 ]
 OLD_SESSION_LINES = [
-    ('   put rsByteOrder(rsHexToBin(tMine), rsHexToBin(tTheirs)) into tOrder\n'
+    ('   -- two validated 64-char lowercase hex spellings: their ASCII bytes\n'
+     '   -- order exactly as the key bytes they spell, with no SodiumXT call\n'
+     '   put rsByteOrder(tMine, tTheirs) into tOrder\n'
      '   if tOrder is "equal" then\n',
      '   if tMine is tTheirs then\n'),
     ('      if tOrder is "below" then\n',

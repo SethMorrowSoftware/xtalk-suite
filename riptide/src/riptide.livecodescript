@@ -2345,7 +2345,9 @@ function rsDmSessionKeys pMyHandleHex, pMyKxKeys, pTheirHandleHex, pTheirKxPubHe
       rsSetError "rsDmSessionKeys: the peer handle must be 64 hex chars"
       return empty
    end if
-   put rsByteOrder(rsHexToBin(tMine), rsHexToBin(tTheirs)) into tOrder
+   -- two validated 64-char lowercase hex spellings: their ASCII bytes
+   -- order exactly as the key bytes they spell, with no SodiumXT call
+   put rsByteOrder(tMine, tTheirs) into tOrder
    if tOrder is "equal" then
       rsSetError "rsDmSessionKeys: a DM session needs two DISTINCT handles"
       return empty
