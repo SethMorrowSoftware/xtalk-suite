@@ -327,6 +327,12 @@ def independent_fold(tx):
         elif typ == "level":
             sb, bb = int(d["sb"]), int(d["bb"])
             ante = int(d.get("ante", 0))
+            # the fix pass's review (2026-09-26): History's translation writes
+            # a level line for a cfg the host re-signed mid-game, carrying its
+            # miss=, which the table applies at its next timeout (a hotseat
+            # level carries none)
+            if d.get("miss", "").isdigit():
+                miss_max = int(d["miss"])
         elif typ == "handStart":
             occ = [int(x) for x in d["seats"].split("|")]
             btn = int(d["button"])

@@ -65,7 +65,9 @@ assets/cards/, assets/sounds/  vendored Kenney CC0 art and audio (see each NOTIC
    same day again for the v0.25.6 wire change and its 75 turn-binding,
    sender-rule, sit-out-mark and History-agreement pins, and -- still
    unreleased, so still 48 -- the 2026-09-26 fix pass's 77: the table
-   protocol, row 16's History rules, the re-sit mapping and heTSame). Call sites
+   protocol, row 16's History rules, the re-sit mapping and heTSame; and
+   its review's 6, the relay's pre-verify, a joiner's naming and a cfg
+   re-signed mid-game). Call sites
    are not checks (at v40, 374 sites reported 507 checks), so an engine run
    RECORDS a new total rather than matching the last: the first v45 total,
    2026-09-24, was 721 passed with every extension present, plus the 5
@@ -258,7 +260,13 @@ itself is catalogued in the suite's
   (`heTimeoutRuleOk`, fed by translated stand and sit-return lines and
   the miss count), a timeout only for a dealt seat, and one dealLevel per
   hand; only a timeout's CLOCK is not replayable, and History takes the
-  table's word on it. An unseated sender is one with no CANONICAL seat:
+  table's word on it. Its review added a cfg the host re-signs mid-game:
+  the table adopts it at once, and History follows it through the fold's
+  `level` line (stakes for later hands, `miss=` at once), because its one
+  cfg line is written at the first handStart. Still NOT followed (older,
+  recorded): a LATE JOINER, whose seat that one cfg line never gave a
+  stack, so History fails a hand the table played honestly (a work-plan
+  row). An unseated sender is one with no CANONICAL seat:
   `tFromSeat is 0` never matched an unseated key's empty seat.
 - **One table protocol, refused by name (v0.25.6 fix pass, 2026-09-26).**
   `kHeEnvV` is 2: a v0.25.5 peer and this build could not fold each
@@ -271,13 +279,26 @@ itself is catalogued in the suite's
   spent: one foreign line once wedged the table), the ingest -- and named
   to the person once per table in words (`heNetNameVersion`, status line
   plus lobby feed). A new entry point for peers must refuse the same way.
+  Its review (2026-09-26): the relay spends a seq only on a wire the
+  ingest's own `heEnvVerify` passes (a non-hex body, signed by any
+  admitted key, still wedged the table: never re-list the ingest's rules
+  in the relay, ask it); and rp1's swarm connects a joiner to an older
+  table's PLAYERS too, so a fellow player is named in a joiner's words
+  (`heVersionWhoOf`: "player" at our table, "host" or "peer" at one we
+  join) and the host's own refusal gets the full naming once even after
+  another's (`gGame["verNamedHost"]`): "Cannot join" is the message a
+  joiner needs.
   The next protocol change bumps `kHeEnvV`, and protocol-kat re-derives
   every envelope pin (`env_version` reads this file, so a bump without the
   re-derivation fails).
 - **One dealLevel per hand, one key per seat (v0.25.6 fix pass).** A second
   dealLevel is refused at the table and in History (`levelTaken`), and a
   host seat assignment clears the re-sat seat's old key and the moved
-  key's old seat, on both sides.
+  key's old seat, on both sides. OPEN (the owner's call, spec 6): the
+  dealing key follows the dealer SEAT, so a host that re-sits that seat
+  mid-hand still switches the dealing key after the seals (the review's
+  probe, 2026-09-26); refusing a host sit into an occupied seat while its
+  hand is open would close it, and no honest host sends one.
 - **Both operands are evaluated (engine note 2.5).** `heBetApply`'s refusal
   `X is not a number or X is not trunc(X)` evaluated `trunc("abc")`; it is
   nested now, and the nested form ran green on the engine on 2026-09-24

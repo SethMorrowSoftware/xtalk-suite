@@ -157,6 +157,11 @@ protocol 1, so a table of the two split without a word. Protocol 2:
   lobby's net feed, in full once per table and in a short feed line after that: which
   protocol the other side speaks, which this build speaks, and that both sides need the
   same holde-em (`heVersionMismatchTxt`, `heNetNameVersion`). Never a log line alone.
+  The words fit who met whom (`heVersionWhoOf`): a host names the player it refused; a
+  joiner names the host it cannot join, or a fellow player at that table (rp1's swarm
+  connects players to each other too, so an older table's player can handshake before
+  its host), and the host's own refusal is named in full once even after another's,
+  because "Cannot join" is the message a joiner needs.
 - **Early.** The invite carries its protocol, `p2:<64hex>` (or `p2:<64hex>@<address>.onion`),
   and an untagged or other-tagged invite is refused at the paste, before any network. The
   admission token (spec 5) is `pub TAB role TAB sig TAB 2`, the signature over
@@ -168,7 +173,10 @@ protocol 1, so a table of the two split without a word. Protocol 2:
   says it cannot join. The onion hello's trailing seq is item 5. The host's relay refuses
   another protocol's (or another table's) content line before it assigns a `seq` -- a
   line sequenced and then dropped by the host's own ingest once left `seqCounter` ahead
-  of `lastSeq` and wedged the table for everyone -- and a sequenced wire of another
+  of `lastSeq` and wedged the table for everyone -- and, by the same rule, any line
+  the ingest's own verifier would drop (a body that is not hex, from any admitted key,
+  did exactly that until the fix pass's review): the relay asks `heEnvVerify` of the
+  wire it would send and spends the `seq` only on "ok". A sequenced wire of another
   protocol is dropped and named. The DHT rendezvous is unchanged: only a hand-edited
   invite reaches it across versions, and the handshake then refuses by name. The host's
   replay and the `s?` frame serve admitted peers only; the oracle is the host role and
@@ -260,14 +268,24 @@ Rules, each closing a specific hole:
   bank and sit-out state, `heTimeoutRuleOk`, fed by the accepted stands, returns and
   misses), a timeout only for a dealt seat, and one dealLevel per hand (below). A
   timeout's CLOCK is not replayable -- no transcript records when a wire reached a
-  client -- so History takes the table's word on it.
+  client -- so History takes the table's word on it. A cfg the host re-signs after the
+  first hand (an honest host signs one, in the lobby) is followed too: the table adopts
+  it at once, and History carries its stakes and `miss=` forward as a `level` line (the
+  fix pass's review). Not yet followed: a late joiner, whose seat History's one cfg line
+  never gave a stack, so History fails a hand the table played honestly (recorded
+  2026-09-26; work plan).
 - **One dealLevel per hand, one key per seat** (normative since 2026-09-26, v0.25.6; a
   consensus narrowing, the owner's call). The first `dealLevel` a hand takes fixes its
   dealer and contributors; a second is refused at the table and in History (it used to
   fold, dealer and count last-wins, so a host could switch the dealer after the seals).
   A host seat assignment that re-sits an occupied seat unseats the seat's old key, and
   one that moves a key leaves its old seat keyless, at the table and in History (the old
-  key used to keep acting, committing and standing for the seat).
+  key used to keep acting, committing and standing for the seat). **Open (the owner's
+  call):** the dealing key is read from the dealer SEAT on every wire, so a host that
+  re-sits the dealer seat mid-hand still switches the dealing key after the seals, at the
+  table and in History alike (found by the fix pass's review, 2026-09-26). Refusing a host
+  assignment into an occupied seat while its hand is open would close it; no honest host
+  sends one (seats are never vacated, and late joiners take empty seats).
 
 Message vocabulary: `cfg join leave sit stand shuffleStep unmaskStep seedCommit
 seedSeal seedReveal holeDeliver board bid[SB/BB/Ante] act(fold|check|call|bet|raise|
@@ -751,6 +769,9 @@ apply. `README.md`'s phase table records what is built and what each exit still 
   another protocol reaches first refuses it by that number, as text, and SAYS so to the
   person (section 6; v0.25.6's fix pass): a table that splits silently is worse than one
   that refuses to form. A new entry point for peers carries the same refusal.
+- The host relay spends a `seq` only on a wire the ingest's own verifier accepts, asked
+  of that verifier, never of a second copy of its rules (section 6): a line sequenced and
+  then dropped leaves every client one gap behind for good.
 - When History cannot replay a live refusal, say why in the spec (a timeout's clock is
   the one case today); every refusal that IS transcript-derived is replayed through the
   same pure rule the table applies (section 6).
