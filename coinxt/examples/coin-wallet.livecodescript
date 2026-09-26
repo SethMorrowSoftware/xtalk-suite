@@ -29146,6 +29146,10 @@ command waScRun
    scAssert "all the controls this script names exist (missing: " & \
          scShow(tMissing) & ")", tMissing is empty
    scAssert "the wallet engine answers", cwVersion() begins with "CoinXT Wallet core"
+   -- Pure script, so it needs no extension: the engine's own parse, read
+   -- at every open (waSelfTestHexCompares says why).
+   scAssert "two exponent-form txids are two values, in hex order", \
+         waSelfTestHexCompares()
    if sWaHaveCoin is "true" then
       -- BIP-84's own published first receive address for the public test
       -- mnemonic. If this line is wrong, every address this wallet has ever
@@ -29266,6 +29270,31 @@ function waSelfTestSatRoundTrip
    end if
    return (tSat div 100000000) is 21000000 and (tSat mod 100000000) is 0
 end waSelfTestSatRoundTrip
+
+function waSelfTestHexCompares
+   -- THE HEX HELPERS, READ BY THE ENGINE ITSELF (2026-09-26). Two txids in
+   -- exponent form, "2e" and "1e" followed by 62 nines, both overflow a
+   -- double, and the engine's bare `is` reads both operands as numbers when
+   -- both parse (suite engine note 2.11; "1e999" is "2e999" read TRUE on
+   -- Linux and on Windows, 2026-09-25), so it calls these two EQUAL, and
+   -- its `<` cannot order them. Every txid and key compare in wallet-core
+   -- and in this stack now goes through cwSameHex or cwHexCompare; this
+   -- line is where an engine session OBSERVES that the two keep the pair
+   -- apart and in character order, rather than a gate inferring it.
+   -- tools/check-wallet-vectors.py's tier 5 fails it with cwSameHex's
+   -- letter prefix undone, under its model of the engine's parse.
+   local tTail, tI, tA, tB
+   put "" into tTail
+   repeat with tI = 1 to 62
+      put "9" after tTail
+   end repeat
+   put "2e" & tTail into tA
+   put "1e" & tTail into tB
+   if cwSameHex(tA, tB) is not false or cwSameHex(tA, tA) is not true then
+      return false
+   end if
+   return cwHexCompare(tA, tB) is 1 and cwHexCompare(tB, tA) is -1
+end waSelfTestHexCompares
 
 function waSelfTestUriAmount
    local tRec

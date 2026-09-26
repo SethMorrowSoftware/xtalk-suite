@@ -3499,8 +3499,9 @@ def _vec_same_hex(c, ip):
                        (HX_ONES, HX_ONES2, "two 64-digit values one apart"),
                        (KEY_A, KEY_B, "two 66-digit keys one apart"),
                        (KEY_INF_A, KEY_INF_B, "two exponent-form keys"),
-                       ("0012", "12", "a leading zero, which even the interpreter's `is` reads away")):
-        c.ck("cwSameHex: %s are two values" % what, call("cwSameHex", [a, b]), False)
+                       ("0012", "12", "0012 and 12, which even the interpreter's `is` "
+                        "reads as one number")):
+        c.ck("cwSameHex tells apart %s" % what, call("cwSameHex", [a, b]), False)
 
 
 def _vec_hex_order(c, ip):
@@ -3677,7 +3678,7 @@ def check_hex_compares(c, ip):
 _WALLET_LIFT = ("waEmptyList", "waHoldsCoin", "waCoinsNotFrom", "waPendingSpenderOf",
                 "waIsOwnBroadcast", "waCpfpCoins", "waNoteBroadcast", "waUnnoteBroadcast",
                 "waWholeAtLeast", "waNumAtLeast", "waCoreMempoolRecord", "waStoreRawTx",
-                "waBumpFee")
+                "waBumpFee", "waSelfTestHexCompares")
 _WALLET_STUBS = """
 local sWaUtxos, sWaSpentBy, sWaFrozen, sWaHistory, sWaNetwork, sWaSpends
 local sWaSpParents, sWaSpPending, sWaInspectWanted, sFxLog, sFxTx
@@ -3885,6 +3886,17 @@ def _vec_wallet_history(c, fx):
          "tying with the parent's", verdict, True)
 
 
+def _vec_wallet_selftest(c, fx):
+    """The boot self-check's hex line: the one place an ENGINE reads the two
+    helpers at a number-like pair (coin-wallet runs it at every open)."""
+    wallet = open(WALLET, encoding="utf-8").read()
+    m = re.search(r'scAssert "two exponent-form txids are two values, in hex order", '
+                  r'\\\n\s*(.*)\n', wallet)
+    c.ck("the boot self-check asks waSelfTestHexCompares()",
+         m.group(1).strip() if m else "(no such scAssert)", "waSelfTestHexCompares()")
+    c.ck("and waSelfTestHexCompares holds", fx.call("waSelfTestHexCompares", []), True)
+
+
 def check_wallet_hex_compares(c, ip, fx=None):
     """coin-wallet's eleven, through the lifted handlers (the block above).
     `ip` is unused: the fixture is its own unit."""
@@ -3893,6 +3905,7 @@ def check_wallet_hex_compares(c, ip, fx=None):
     _vec_wallet_marks(c, fx)
     _vec_wallet_broadcasts(c, fx)
     _vec_wallet_history(c, fx)
+    _vec_wallet_selftest(c, fx)
 
 
 # EACH FIX, UNDONE. (label, file, the shipped text, the old spelling, the
@@ -3902,6 +3915,9 @@ def check_wallet_hex_compares(c, ip, fx=None):
 _HEX_MUTATIONS = (
     ("cwSameHex's letter prefix", "core",
      'return ("h" & pA) is ("h" & pB)', "return pA is pB", _vec_same_hex),
+    ("cwSameHex's letter prefix, as the wallet's boot self-check reads it",
+     "core-in-wallet", 'return ("h" & pA) is ("h" & pB)', "return pA is pB",
+     _vec_wallet_selftest),
     ("cwCoinBefore's txid tie-break", "core",
      '   put cwHexCompare(pA["txid"], pB["txid"]) into tOrder\n   if tOrder < 0 then\n'
      '      return true\n   end if\n   if tOrder > 0 then\n      return false\n   end if\n',
@@ -4007,9 +4023,9 @@ def check_parse_model_fires(c):
     wallet = _wallet_own_code(open(WALLET, encoding="utf-8").read())
     coin = open(COIN, encoding="utf-8").read()
     for label, where, new, old, block in _HEX_MUTATIONS:
-        text = core if where == "core" else wallet
+        text = wallet if where == "wallet" else core
         c.ck("the shipped %s carries the fix exactly once (%s)"
-             % ("wallet-core" if where == "core" else "coin-wallet", label),
+             % ("coin-wallet" if where == "wallet" else "wallet-core", label),
              text.count(new), 1)
         if text.count(new) != 1:
             continue
@@ -4018,6 +4034,8 @@ def check_parse_model_fires(c):
             body = "\n".join(ln for ln in mutated.split("\n")
                              if not ln.startswith('script "'))
             unit = LCS.Interp(coin + "\n" + body)
+        elif where == "core-in-wallet":
+            unit = _wallet_fixture(core_text=mutated)
         else:
             unit = _wallet_fixture(wallet_text=mutated)
         if not c.terse:
