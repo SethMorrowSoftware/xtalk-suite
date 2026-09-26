@@ -35,6 +35,16 @@ The seeded defects, and what each stands in for:
      the wrong ANSWERS they are there. One seeded copy, one gate run, and EVERY one of
      the drive's deciding checks must be among the failures: a drive that
      caught one of five would pass a plain "the gate fired".
+  7. The draft change detection spelled with bare `is not` again
+     (2026-09-26, work plan riptide #12): raLanSyncTick's two tests
+     (`sLanDraftLast`, `sLanDraftSeen`) and raDmTypingTick's
+     (`sDcTypingSeen`). The engine compares two number-like drafts as
+     NUMBERS (root docs/OXT-ENGINE-NOTES.md 2.11), so an edit from 12 to
+     0012 was no change and a draft reading nan never equalled itself. The
+     model reads plain decimals as numbers too and refuses the pairs the
+     engine reads otherwise, so the boot's draft-change drive sees each old
+     line as a missed edit or a refusal; as in 6, every deciding check must
+     be among the failures.
 """
 import os
 import re
@@ -120,6 +130,35 @@ def main():
         "seq order: the watermark is the HIGHER of seen and floor",
     ]
 
+    # Fixture 7: the same shape as 6, for the draft change detection.
+    draft_change = [
+        ('      -- compared as TEXT, a letter on both sides (raLanSyncTick says '
+         'why)\n'
+         '      if ("t" & tText) is not ("t" & sDcTypingSeen) then\n',
+         '      if tText is not sDcTypingSeen then\n'),
+        ('      if ("t" & tText) is not ("t" & sLanDraftSeen) then\n',
+         '      if tText is not sLanDraftSeen then\n'),
+        ('      put (("t" & tText) is not ("t" & sLanDraftLast)) into '
+         'tDraftChanged\n'
+         '      if tDraftChanged and tNow >= sLanDraftNextOk then\n',
+         '      if tText is not sLanDraftLast and tNow >= sLanDraftNextOk '
+         'then\n'),
+    ]
+    draft_change_must_fail = [
+        "draft change: an edit from 12 to 0012",
+        "draft change: an edit from 1 to 1.0",
+        "draft change: an edit from 100000 to 1e5",
+        "draft change: an edit from 16 to 0x10",
+        "draft change: an edit from inf to Infinity",
+        "draft change: a draft reading nan is sent ONCE",
+        "draft change: a DM compose edit from 12 to 0012",
+        "draft change: a DM compose edit from 1 to 1.0",
+        "draft change: a DM compose edit from 100000 to 1e5",
+        "draft change: a DM compose edit from 16 to 0x10",
+        "draft change: a DM compose edit from inf to Infinity",
+        "draft change: an unedited DM compose reading nan",
+    ]
+
     failed = 0
     for label, old, new in fixtures:
         mutated = mutate(clean, old, new, label)
@@ -163,6 +202,30 @@ def main():
     finally:
         os.unlink(tmp)
 
+    label = ("the demo's draft change detection spelled with bare `is not` "
+             "again is caught at every edit")
+    seeded = clean
+    for old, new in draft_change:
+        seeded = mutate(seeded, old, new, label)
+    with tempfile.NamedTemporaryFile("w", suffix=".livecodescript",
+                                     delete=False, encoding="utf-8") as fh:
+        fh.write(seeded)
+        tmp = fh.name
+    try:
+        rc, out = run_gate(tmp)
+        fail_lines = [ln for ln in out.splitlines() if "FAIL" in ln]
+        missed = [want for want in draft_change_must_fail
+                  if not any(want in ln for ln in fail_lines)]
+        if rc == 0 or missed:
+            failed += 1
+            print("FAIL  %s: exit %d; checks that did NOT fire: %s\n%s"
+                  % (label, rc, missed, out[-400:]))
+        else:
+            print("PASS  %s (%d checks fired)"
+                  % (label, len(draft_change_must_fail)))
+    finally:
+        os.unlink(tmp)
+
     rc, out = run_gate(DEMO)
     if rc != 0:
         failed += 1
@@ -175,7 +238,7 @@ def main():
         print("test-demo-boot: %d fixture(s) misbehaved" % failed)
         return 1
     print("test-demo-boot: OK (%d seeded defects caught, clean run passes)"
-          % (len(fixtures) + 1))
+          % (len(fixtures) + 2))
     return 0
 
 

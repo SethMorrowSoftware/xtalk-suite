@@ -1901,6 +1901,7 @@ def boot(c, path, profile, drive=True):
             drive_nostr(c, ip, world, profile)
             drive_lan_keys(c, ip, world, profile)
             drive_seq_order(c, ip, world, profile)
+            drive_draft_change(c, ip, world, profile)
             try:
                 ip.call("raLock", [])
                 c.ck("[%s] raLock tears down cleanly" % profile, True)
@@ -2370,6 +2371,149 @@ def drive_seq_order(c, ip, world, profile):
     finally:
         for k, v in saved.items():
             ip.globals[k] = v
+        try:
+            ip.call("raLanSyncReset", [])
+        except Exception:                               # noqa: BLE001
+            pass
+
+
+# (previous text, edited text, what the pair is): each edit a person can
+# make that a bare `is` reads as NO change, because the engine reads both
+# spellings as one number (suite engine note 2.11; the exponent form
+# OBSERVED there 2026-09-25, "0x10" is "16" and "inf" the C library's
+# number on Linux 2026-09-26).
+DRAFT_EDITS = [
+    ("12", "0012", "leading zeros"),
+    ("1", "1.0", "a trailing .0"),
+    ("100000", "1e5", "the exponent form"),
+    ("16", "0x10", "a hex spelling"),
+    ("inf", "Infinity", "two spellings of infinity"),
+]
+
+
+def drive_draft_change(c, ip, world, profile):
+    """The demo's draft CHANGE detection, which decides what is re-sent
+    (work plan riptide #12; 2026-09-26).
+
+    WHY THIS EXISTS. raLanSyncTick re-sends the LAN draft only when the
+    field differs from the last text broadcast (`sLanDraftLast`) and
+    refreshes the typing window when it differs from the last text seen
+    (`sLanDraftSeen`); raDmTypingTick does the same for the DM compose field
+    (`sDcTypingSeen`). All three were a bare `is not`, which compares two
+    number-like texts as NUMBERS (suite engine note 2.11): an edit from 12
+    to 0012 was no change, never re-sent, and the peer kept the old draft,
+    while a draft reading "nan" never equalled its own broadcast and went
+    out again on every debounce. They compare with a letter on both sides
+    now. The model's own `is` reads two plain decimals as numbers and
+    REFUSES a pair the engine reads otherwise (the base's Indistinct), so
+    each old line fails here as a missed edit or a refusal.
+
+    It drives the two ticks directly: the draft field's text set, the
+    debounce opened, one tick, and what the tick recorded as sent and
+    seen. test-demo-boot.py seeds the three old lines back and requires
+    every deciding check here to fail. Everything it sets is restored."""
+    seed = ip.globals.get("smasterseed", "")
+    if not seed:
+        c.ck("[%s] draft change: an unlocked master to sign the drafts with"
+             % profile, False, "sMasterSeed is empty after raCreate")
+        return
+    peer = "7"
+    names = ("slandevices", "slanhost", "slanisserver", "sseq", "slanname",
+             "slanpresenceat", "slanseq", "slandraftlast", "slandraftseen",
+             "slandraftnextok", "slantypinguntil", "sdctypingchan",
+             "sdctypingseen", "sdctypinguntil", "sdctypingsent",
+             "sdctypingsentat")
+    saved = dict((k, ip.globals.get(k, "")) for k in names)
+    draft = world.resolve("field", "raLanDraft", "raDevices")
+    compose = world.resolve("field", "raDmMsg", "raMessages")
+    saved_text = [None if f is None else f.props.get("text")
+                  for f in (draft, compose)]
+
+    def glob(name):
+        return str(LCS._disp(ip.globals.get(name, "")))
+
+    def lan_tick(text):
+        """One sync tick over TEXT with the debounce open: (sent, seen,
+        typing window renewed), each read off what the tick recorded."""
+        draft.props["text"] = text
+        ip.globals["slandraftnextok"] = 0
+        ip.globals["slantypinguntil"] = 0
+        seq = glob("slanseq")
+        ip.call("raLanSyncTick", [])
+        return (glob("slanseq") != seq and glob("slandraftlast") == text,
+                glob("slandraftseen") == text,
+                glob("slantypinguntil") not in ("", "0"))
+
+    def dm_tick(text):
+        """One typing tick over TEXT: (seen, typing window renewed)."""
+        compose.props["text"] = text
+        ip.globals["sdctypinguntil"] = 0
+        ip.call("raDmTypingTick", [])
+        return (glob("sdctypingseen") == text,
+                glob("sdctypinguntil") not in ("", "0"))
+
+    def attempt(fn, *args):
+        try:
+            return fn(*args)
+        except LCS.Indistinct as exc:
+            return "refused: " + str(exc)[:100]
+
+    if draft is None or compose is None:
+        c.ck("[%s] draft change: the draft and compose fields exist"
+             % profile, False, "raLanDraft %r, raDmMsg %r" % (draft, compose))
+        return
+    try:
+        ip.globals["slandevices"] = {peer: "hub"}
+        ip.globals["slanhost"] = 1
+        ip.globals["slanisserver"] = ""
+        ip.globals["slanname"] = "Tablet"
+        ip.globals["sseq"] = 0
+        ip.globals["slanpresenceat"] = world.ms + 10 ** 9
+        # each pair from a reset mesh, so the tick that broadcasts BEFORE
+        # compares it with empty (text on every reading) and only the edit
+        # meets the comparison under test
+        for before, after, what in DRAFT_EDITS:
+            ip.call("raLanSyncReset", [])
+            lan_tick(before)
+            got = attempt(lan_tick, after)
+            c.ck("[%s] draft change: an edit from %s to %s (%s) is SENT, "
+                 "seen and renews the typing window"
+                 % (profile, before, after, what),
+                 got == (True, True, True), repr(got))
+        ip.call("raLanSyncReset", [])
+        lan_tick("nan")
+        got = attempt(lan_tick, "nan")
+        c.ck("[%s] draft change: a draft reading nan is sent ONCE, then "
+             "left alone (no re-send, no typing renewal)" % profile,
+             got == (False, True, False), repr(got))
+        ip.globals["sdctypingchan"] = "1"
+        ip.globals["sdctypingsent"] = ""
+        ip.globals["sdctypingsentat"] = world.ms + 10 ** 9
+        for before, after, what in DRAFT_EDITS:
+            ip.globals["sdctypingseen"] = ""
+            dm_tick(before)
+            got = attempt(dm_tick, after)
+            c.ck("[%s] draft change: a DM compose edit from %s to %s (%s) "
+                 "renews the typing window" % (profile, before, after, what),
+                 got == (True, True), repr(got))
+        ip.globals["sdctypingseen"] = ""
+        dm_tick("nan")
+        got = attempt(dm_tick, "nan")
+        c.ck("[%s] draft change: an unedited DM compose reading nan does "
+             "not renew the typing window" % profile,
+             got == (True, False), repr(got))
+    except Exception as exc:                            # noqa: BLE001
+        c.ck("[%s] draft change: the ticks compare the draft as text"
+             % profile, False, "%s: %s" % (type(exc).__name__, exc))
+    finally:
+        for k, v in saved.items():
+            ip.globals[k] = v
+        for f, t in zip((draft, compose), saved_text):
+            if f is not None:
+                if t is None:
+                    f.props.pop("text", None)
+                else:
+                    f.props["text"] = t
         try:
             ip.call("raLanSyncReset", [])
         except Exception:                               # noqa: BLE001

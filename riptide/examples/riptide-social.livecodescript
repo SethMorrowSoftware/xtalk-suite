@@ -15771,7 +15771,8 @@ command raDmTypingTick
    put the milliseconds into tNow
    if there is a field "raDmMsg" of card "raMessages" then
       put the text of field "raDmMsg" of card "raMessages" into tText
-      if tText is not sDcTypingSeen then
+      -- compared as TEXT, a letter on both sides (raLanSyncTick says why)
+      if ("t" & tText) is not ("t" & sDcTypingSeen) then
          put tText into sDcTypingSeen
          put tNow + kDcTypingMs into sDcTypingUntil
       end if
@@ -16274,7 +16275,7 @@ end raLanRelay
 -- ABSOLUTE state. Cross-card law: the draft field lives on the Devices
 -- card and the pump runs anywhere - qualify and guard every reference.
 command raLanSyncTick
-   local tNow, tText, tTyping, tBytes, tFeedChanged
+   local tNow, tText, tTyping, tBytes, tFeedChanged, tDraftChanged
    if sMasterSeed is empty or sLanName is empty then
       exit raLanSyncTick
    end if
@@ -16288,11 +16289,19 @@ command raLanSyncTick
    -- the last state actually broadcast
    if there is a field "raLanDraft" of card "raDevices" then
       put the text of field "raLanDraft" of card "raDevices" into tText
-      if tText is not sLanDraftSeen then
+      -- "changed" is decided on the TEXT, a letter on both sides: bare `is`
+      -- compares two number-like drafts as NUMBERS (suite engine note
+      -- 2.11), so an edit from 12 to 0012, 1 to 1.0 or 100000 to 1e5 was
+      -- no change and never re-sent, and a draft reading nan was never
+      -- equal to itself (INFERRED from the Linux reading), re-sent on every
+      -- debounce. The caseSensitive above settles case, not this. Never an
+      -- i or n prefix: "n" & "an" spells nan (the same note)
+      if ("t" & tText) is not ("t" & sLanDraftSeen) then
          put tText into sLanDraftSeen
          put tNow + kLanTypingMs into sLanTypingUntil
       end if
-      if tText is not sLanDraftLast and tNow >= sLanDraftNextOk then
+      put (("t" & tText) is not ("t" & sLanDraftLast)) into tDraftChanged
+      if tDraftChanged and tNow >= sLanDraftNextOk then
          add 1 to sLanSeq
          put rsLanBuildDraft(sLanName, sLanSeq, tText, sMasterSeed) \
                into tBytes
