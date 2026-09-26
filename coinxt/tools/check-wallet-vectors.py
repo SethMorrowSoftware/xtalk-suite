@@ -3370,7 +3370,10 @@ def check_tolerance_models(c, ip, run):
 # and the fourteen numeric ones, and then plants each OLD spelling back into
 # the shipped source and requires that site's vectors to FAIL under it. The
 # vectors themselves run in every tier (plain, case-folded, the tolerance
-# models) and under this model, and must pass everywhere. The model upgrades
+# models) and under this model, and must pass everywhere. The WHOLE set ran
+# under it once, by hand on 2026-09-26 (after the fixes; about 26 minutes):
+# 1866 vectors, none moving, so no other vector here meets a number-like
+# pair on a compare. --all-comparison-rules repeats that. The model upgrades
 # no honesty label: the fixes are verified statically; needs an OXT pass.
 
 # number-like hex: every value below is valid hex AND a number to the engine
