@@ -4119,8 +4119,10 @@ _HELPER_MUTATIONS = (
 _PARSE_READINGS = (('"1e999" is "2e999"', True), ('"1e5" is "100000"', True))
 
 # what the SOURCE says the parse does beyond those two (DOCUMENTED, not
-# observed: no engine has read these). Each separates the port above from
-# the regex it replaced, which read all but the second-to-last differently.
+# observed: no engine has read these). Four separate the port above from the
+# regex it replaced, which misread them (the base-16 pair, "0x12", the
+# 385-digit pair and "inf"); the blank and remainder cases it read the same
+# way, through the interpreter's own _eq, and are here so the port keeps them.
 _SOURCE_PARSE_READINGS = (
     # base 16 after "0x", its overflow unchecked: the low 32 bits decide
     ('"0x2e99999999" is "0x1e99999999"', True),
