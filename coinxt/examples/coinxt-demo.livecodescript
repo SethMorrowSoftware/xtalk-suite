@@ -4084,7 +4084,8 @@ end cdCleanHex
 
 -- An Ethereum address for the encoder: 20 bytes of hex, checksum-checked when
 -- the caller wrote it in mixed case (EIP-55's whole point), accepted plain
--- when all-lowercase (no checksum was claimed).
+-- when it is in one case (all-lowercase or all-uppercase: no checksum was
+-- claimed, EIP-55's own definition).
 function cdEthAddressHex pAddress
    local tHex, tPlain
    put cdCleanHex(pAddress) into tHex
@@ -4095,13 +4096,41 @@ function cdEthAddressHex pAddress
    if char 1 to 2 of tPlain is "0x" then
       delete char 1 to 2 of tPlain
    end if
-   if tPlain is not toLower(tPlain) then
+   -- MIXED CASE IS DECIDED BY BYTE VALUE (cdIsMixedCase; 2026-09-26). This
+   -- read `if tPlain is not toLower(tPlain)`, and `is` folds case (`the
+   -- caseSensitive` defaults to false and nothing here sets it), so the test
+   -- was false for EVERY address: the checksum was never checked, and a
+   -- mixed-case address with a mistyped letter went into the transaction
+   -- as typed. The family interpreter compares case-sensitively, so no
+   -- headless run could see it until check-script-vectors.py drove this
+   -- handler with `is` folded the engine's way.
+   if cdIsMixedCase(tPlain) is true then
       if cxEthAddressIsChecksummed("0x" & tPlain) is not true then
          throw "the mixed-case address FAILS its EIP-55 checksum; refusing rather than guessing"
       end if
    end if
    return tHex
 end cdEthAddressHex
+
+-- True when pText holds both an upper-case and a lower-case ASCII letter,
+-- by BYTE VALUE, so no caseSensitive setting (and no number parse) can move
+-- the answer.
+function cdIsMixedCase pText
+   local tI, tCount, tCode, tUpper, tLower
+   put false into tUpper
+   put false into tLower
+   put the number of bytes of pText into tCount
+   repeat with tI = 1 to tCount
+      put byteToNum(byte tI of pText) into tCode
+      if tCode >= 65 and tCode <= 90 then
+         put true into tUpper
+      end if
+      if tCode >= 97 and tCode <= 122 then
+         put true into tLower
+      end if
+   end repeat
+   return tUpper and tLower
+end cdIsMixedCase
 
 -- Minimal big-endian hex of a nonnegative integer (gwei * 1e9 stays exact
 -- well under 2^53; the guard in cdEthBuild keeps it there).
