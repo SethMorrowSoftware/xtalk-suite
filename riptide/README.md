@@ -24,6 +24,10 @@ pass for the anon persona and a live-relay pass for Nostr).
   re-pinned 2026-09-09, and 2026-09-26 (Linux) at 0.13.0, 512 passed, 0 failed, 2 skipped, its
   exact wire-seq ordering (`rsSeqCompare`) among them. Phase 5 (the call) is built and never run; the live legs of phases 6-7
   (the LAN mesh, the anon persona over Tor) are owed.
+- **0.14.0** (2026-09-26): the anon persona index is capped (n is 0 or 1, protocol
+  section 2), two handles are ordered byte by byte in `rsRoomId` and `rsDmSessionKeys`,
+  and the app's draft change detection compares text, not number. Verified statically +
+  headless; needs an OXT pass.
 - **Phase 8** (the Nostr bridge, built 2026-08-29): the library is executed headlessly
   against the real committed CoinXT by `tools/check-script-vectors.py`, which settles
   logic, not parser behaviour, and its offline compute (the `RIPTAPP1` store and the
@@ -126,9 +130,9 @@ to the proven sender. Labels flip only on a dated engine report; the suite's
 
 | Document | What it is |
 |---|---|
-| [docs/api-reference.md](docs/api-reference.md) | the public `rs*` surface of the library: 107 handlers at 0.13.0, phases 1-8 |
+| [docs/api-reference.md](docs/api-reference.md) | the public `rs*` surface of the library: 107 handlers at 0.14.0, phases 1-8 |
 | [docs/two-machine-runbook.md](docs/two-machine-runbook.md) | how to drive the app on real OXT machines, phase by phase, with the log lines each step expects |
-| [docs/protocol-vectors.json](docs/protocol-vectors.json) | GENERATED: the Riptide Protocol conformance bundle, 67 golden vectors (one fixed identity, every wire record, derivation and target) plus 31 refusal vectors, for implementations in any language. Its prose half is the suite's [`docs/RIPTIDE-PROTOCOL.md`](https://github.com/SethMorrowSoftware/xtalk-suite/blob/main/docs/RIPTIDE-PROTOCOL.md). Regenerate with `python3 tools/export-protocol-vectors.py`, whose `--check` re-executes the bundle in the gate set; never edit it by hand |
+| [docs/protocol-vectors.json](docs/protocol-vectors.json) | GENERATED: the Riptide Protocol conformance bundle, the golden vectors (one fixed identity, every wire record, derivation and target) plus the refusal vectors, for implementations in any language; its generator prints how many. Its prose half is the suite's [`docs/RIPTIDE-PROTOCOL.md`](https://github.com/SethMorrowSoftware/xtalk-suite/blob/main/docs/RIPTIDE-PROTOCOL.md). Regenerate with `python3 tools/export-protocol-vectors.py`, whose `--check` re-executes the bundle in the gate set; never edit it by hand |
 | [examples/README.md](examples/README.md) | the run guide for the app stack |
 | [CLAUDE.md](CLAUDE.md) | maintainer memory: the rules, the decisions, the traps, the evidence ledger |
 | [RIPTIDE-SOCIAL-SPEC.md](https://github.com/SethMorrowSoftware/xtalk-suite/blob/main/docs/RIPTIDE-SOCIAL-SPEC.md) | the capstone design, at suite level: the identity seed, the signed BEP44 feed with co-seeded torrent media, the rp1 and secretstream DMs, WebRTC live sessions, enet LAN device sync, the onion-only persona, and the Nostr rail |

@@ -15,7 +15,7 @@ inside `riptide/`.
 The suite's capstone app, pure LiveCodeScript over the installed extension surfaces. It is
 structured like a member so the suite's gates walk it, but it is an APP: nothing here is compiled,
 nothing adds native surface, and `rs*` never becomes a library other members may call. Library
-0.13.0 (`kRsVersion`), 107 public `rs*` handlers; the suite's `tools/check-suite-coverage.py` prints
+0.14.0 (`kRsVersion`), 107 public `rs*` handlers; the suite's `tools/check-suite-coverage.py` prints
 the current coverage row (107/107 when last run) and is the authority over any copied number.
 
 | Path | Holds |
@@ -79,6 +79,15 @@ Code comments cite these numbers; keep them.
 - Subkeys: 1 identity ed25519; 2 DM crypto_kx; 3 LAN; 4 Nostr (via the ladder); 5 `RIPTAPP1` seal;
   100+n anon ed25519; 200+n anon DM kx. One seed never feeds two cipher schemes (why 2 is not 1, and
   200+n is not 100+n).
+- The persona index n is 0 or 1 (`kRsAnonIndexLimit` = 2; 0.14.0, 2026-09-26): unbounded, persona
+  100's ed25519 seed WAS persona 0's kx seed (subkey 200; executed 2026-09-25). Any cap up to 100
+  keeps the rows apart; 2 is the smallest this tree uses (persona 0 ships, persona 1 shows in the
+  tests that two differ), because widening strands no persona and narrowing would. How far to widen
+  is the owner's (the suite work plan). `rsAnonSeed` and `rsAnonDmSeed` refuse past it, and so every
+  composite over them; the oracle (`ANON_INDEX_LIMIT`), the golden test, the protocol bundle's
+  refusal vectors and check-script-vectors tier 1f hold it (its fixture drops the cap and requires
+  personas 2 and 100 to derive and 100 to equal persona 0's kx seed). Verified statically; needs
+  an OXT pass (the harness's KDF section asks for 2 and 100 refused).
 - SHA-3 for the onion: `rsSha3` tries `sxSha3_256` (SodiumXT ABI 7, shipped 2026-08-11 because
   riptide needed it) then `cxSha3_256`; the goldens pin output, not provider, and riptide's own
   onion assembly degrades one provider at a time. `rsVerifyOnionClaim` needs no SHA-3.
@@ -143,6 +152,10 @@ Code comments cite these numbers; keep them.
   recorded delta from spec 5.1.
 - kx is anchored by `tools/emit-kx-anchor.py` (a REAL libsodium via ctypes). The lexically smaller
   lowercase-hex handle is the kx CLIENT; "my tx is your rx" is asserted from both ends.
+- Handles are ordered, and told apart, BYTE by byte (the private `rsByteOrder`, 0.14.0, 2026-09-26),
+  in `rsDmSessionKeys` and in `rsRoomId`'s key sort, never with `<`, `<=` or `is` over the hex (trap
+  16). Byte order is lowercase hex text order, so no real handle's role or room id moved: tier 1f
+  runs the golden session and room id through the new code, over a sweep of generated pairs too.
 - The recipient handle sits INSIDE the signed intro (third-party replay dies); the sender handle
   derives from the signing seed (a sender/signer mismatch is inexpressible). Frame and message kinds
   compare by BYTE, never `is`. Intro freshness (+-600 s) is the app's policy.
@@ -422,6 +435,31 @@ Code comments cite these numbers; keep them.
     both libraries' `socketError`/`socketClosed`/`socketTimeout` wrappers; the demo's own three call
     `oxSocketError`/`nxrSocketError` (and kin), then `pass`. Keep that `pass`: swallowing a socket
     message another library waits for is a HANG no gate sees.
+16. **Hex and free text meet `is`'s number path (2026-09-26; suite engine note 2.11).** Two texts a
+    number parse accepts compare as NUMBERS under `is`, `<` and kin, whatever their case setting.
+    Six sites here compared such text bare, under plain names check 23 cannot read, and were
+    fixed in 0.14.0 (work plan riptide #11 and #12, closed):
+    - `rsRoomId`'s `tA <= tB` and `rsDmSessionKeys`' `tMine < tTheirs` and `tMine is tTheirs`
+      ordered 64-hex handles. "9e0..01" is 90 and sorted before "0..0100" (100) against its bytes;
+      "1e0..0" and "0..01", two handles, were the number 1, so a session between them was refused and
+      the two ends derived two room ids. Now `rsByteOrder` (byteToNum, 0 to 255: exact on every
+      reading). A letter prefix would work on an engine too, but the family interpreter orders
+      numbers only (text reaching `<` is a ValueError), so it could not run that and runs this.
+      check-script-vectors tier 1f holds both handlers against the oracle (`room_id`, `kx_role`,
+      the goldens `roomIdNumOrder` / `roomIdNumEqual`), with the kx session commands modelled
+      oracle-backed (`RsInterp`); its fixtures plant the 0.13.0 lines and see the number-like rows
+      wrong or refused. Verified statically; needs an OXT pass (the harness's rendezvous and DM
+      sections carry the pairs).
+    - The demo's draft change detection (`raLanSyncTick`'s `sLanDraftLast` and `sLanDraftSeen`,
+      `raDmTypingTick`'s `sDcTypingSeen`): an edit from 12 to 0012 was no change and never re-sent,
+      and a draft reading nan never equalled its own broadcast (INFERRED from the 2026-09-26 Linux
+      reading). Now `("t" & tText) is not ("t" & ...)`. check-demo-boot's draft-change drive edits
+      12 to 0012, 1 to 1.0, 100000 to 1e5, 16 to 0x10 and inf to Infinity through both ticks and
+      holds a nan draft still; test-demo-boot's fixture 7 plants the three old lines and requires all
+      twelve deciding checks red. Verified statically + headless; needs an OXT pass (the demo is not
+      in the paste).
+    A letter never `i` or `n` ("n" & "an" spells nan). Free text elsewhere in the tree is the suite
+    work plan's suite-wide #26.
 
 ## 5. Engine evidence ledger
 

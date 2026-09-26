@@ -94,6 +94,9 @@ merged), with holde-em 721/0 at v0.25.3 / harness 45, and all three runs'
 loopbacks stalled too: four stalls in the same two phases on that Windows
 machine, against a Linux completion the same day (5.5: the paste's code
 alone does not explain the stall). A new total is not a regression by itself; a red line is.
+Since those runs riptide 0.14.0 (2026-09-26, work plan riptide #10 and #11) adds
+harness lines, the persona index cap and the room ids and kx roles of handles
+whose hex reads as a number, so its next total is a new one: record it.
 
 riptide's report carries FOUR numeric compare probe lines, printed and never
 counted. The first three have read the same on Linux and on Windows (section
