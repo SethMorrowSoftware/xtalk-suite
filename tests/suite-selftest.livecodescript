@@ -5037,7 +5037,9 @@ end stCleanup
 -- used here. The item delimiter is restored (engine note 2.3): it is
 -- handler-local on Windows and Linux, so there it could not reach the
 -- sections stRun runs next; restored anyway, the family's rule, which
--- tools/check-suite-ui-boot.py checks under its global delimiter model.
+-- tools/check-suite-ui-boot.py pins under its global delimiter model (a
+-- caller's "|" must come back; its end-of-scenario check alone could not
+-- see this restore go, since comma is the value it wants).
 -- `the pendingMessages` lists EVERY pending message in the engine, not this
 -- stack's, so a cancel by name reaches any open stack that arms a message
 -- of that name. That is why the paste's two timers have paste-only names.

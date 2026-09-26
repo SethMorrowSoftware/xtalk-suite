@@ -1464,12 +1464,23 @@ def scenario_foreign_timers(c, board):
                       'stack "enetSelfTest"'],
                      [mid + 1, world.ms + 5000, "scTickProbe",
                       'stack "sodiumDemo"']]
+    # stCancelPump sets comma and puts back what it found. check_delimiters
+    # cannot see that restore go (comma IS the value it wants), so a caller's
+    # "|" goes in here and must come back. Only this model can ask: on the
+    # Windows and Linux engines the itemDelimiter is handler-local (engine
+    # note 2.3), so there a caller's "|" never reaches the handler at all.
+    was = LCS.set_item_delimiter("|")
     try:
         ip.call("stCancelPump", [])
+        handed_back = LCS.ITEM_DELIMITER[0]
+        LCS.set_item_delimiter(was)
         pending = ip.call("suBootPending", [])
     except Exception as exc:                            # noqa: BLE001
+        LCS.set_item_delimiter(was)
         world.foreign = []
         return c.threw("stCancelPump and suBootPending run", exc)
+    c.eq("stCancelPump hands its caller's itemDelimiter back (the global "
+         "model)", handed_back, "|")
     c.eq("stCancelPump leaves another stack's pump and probe queued",
          sorted(f[2] for f in world.foreign), ["scTickProbe", "stPump"])
     c.eq("suBootPending does not read another demo's pending probe as this "

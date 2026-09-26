@@ -83,6 +83,16 @@ a DataChannel peer beside the paste):
   r  the loopback goes on to bind after a refused enInitialize (the old
      start: a refusal read as a held port).
 
+And one for the review of work plan suite-wide #15 (2026-09-26), which found
+the core's comment saying the gate checks stCancelPump's delimiter restore
+when nothing did (the restore could go and the gate stayed green, measured):
+
+  s  stCancelPump no longer puts back the itemDelimiter it found. Under the
+     model's GLOBAL delimiter a caller's "|" comes back as comma; on the
+     Windows and Linux engines (handler-local, engine note 2.3) it could
+     not reach the handler, so this pins the family's rule, not an engine
+     hazard.
+
 The mutants run concurrently, at most one gate run per core.
 
 USAGE
@@ -214,6 +224,12 @@ MUTANTS = [
      '      exit stStartEnetLoopback\n   end if\n',
      '',
      "and the loopback stopped at the refusal: no host was attempted"),
+    # One for the suite-wide #15 review: a restore no check could see go.
+    ("s", "stCancelPump no longer restores the itemDelimiter it found",
+     '   end repeat\n   set the itemDelimiter to tOld\n'
+     '   put empty into sSuArmed\n',
+     '   end repeat\n   put empty into sSuArmed\n',
+     "stCancelPump hands its caller's itemDelimiter back"),
 ]
 
 

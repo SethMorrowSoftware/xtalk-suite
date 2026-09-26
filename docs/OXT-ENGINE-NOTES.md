@@ -208,12 +208,17 @@ claims: not probed, so still treated as global. Every save, set, restore in
 code. And the family interpreter's GLOBAL model of both delimiters
 (`coinxt/tools/lcs-interp.py`, twinned in nostrxt, which the headless
 execution gates and `tools/check-suite-ui-boot.py` run on): it is stricter
-than these engines for a leak (it flags every unrestored set, which a local
-model would forgive at the return), so it is what keeps the discipline
-checkable headlessly, but it is BLIND to the converse - a callee that relies
-on inheriting its caller's non-comma delimiter parses as intended there and
-under comma on these engines - and a hostile-caller vector run under it
-proves a guard these engines make redundant. **Does NOT mean:** a handler may
+than these engines for a leak (an unrestored set outlives the return there,
+where a local model would forgive it), so it is what keeps the discipline
+checkable headlessly, though only where a gate looks: a handler that sets
+comma and drops its restore leaves comma behind, which a check for the
+default cannot see (`stCancelPump`'s restore went unpinned that way until
+the 2026-09-26 review gave it a hostile caller). It is BLIND to the
+converse - a callee that relies on inheriting its caller's non-comma
+delimiter parses as intended there and under comma on these engines (an
+ad hoc cross-file scan on 2026-09-26, not a gate, found no direct call of
+one under a literal non-comma delimiter) - and a hostile-caller vector run
+under it proves a guard these engines make redundant. **Does NOT mean:** a handler may
 leave a delimiter set and then parse something else itself.
 
 ### 2.4 Every number is an IEEE double, so integers are exact only to 2^53
