@@ -775,9 +775,14 @@ private function cxBech32EncodeValuesInner pHrp, pValues, pSpec
    -- file's refusal. The texts
    -- the engine still calls whole ("3.0", "+3", " 3", "3e0", "0x1F") are
    -- encoded as the number they spell, and the checksum below reads the same
-   -- number, so they cannot split the string from its checksum. Verified
-   -- statically; needs an OXT pass (tools/check-wallet-vectors.py's tier 4
-   -- replays the old line under the engine's rule and lets both through).
+   -- number, so they cannot split the string from its checksum. "3e0" is
+   -- OBSERVED so on Linux (the suite paste, 2026-09-26: "0,3e0" encoded
+   -- exactly as "0,3"), where this loop also refused both near-integers
+   -- above with its message (which of its two tests refused each: suite
+   -- engine note 2.12); the other spellings stay DOCUMENTED there, and on
+   -- Windows the guard is verified statically; needs an OXT pass
+   -- (tools/check-wallet-vectors.py's tier 4 replays the old line under the
+   -- engine's rule and lets both through).
    put the number of items of pValues into tCount
    repeat with tI = 1 to tCount
       put item tI of pValues into tIndex

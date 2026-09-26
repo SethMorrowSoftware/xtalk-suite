@@ -1666,7 +1666,11 @@ def check_seq_order_bridge(c, ip, src, fail):
 # "Probe 4", in this member's CLAUDE.md ledger row of its date that names
 # its platform, and every ledger row that quotes one must be in the record.
 # A corruption of either copy now fails; seeded flips of each of the six
-# items, on each side, prove it.
+# items, on each side, prove it. A later run of the same date and platform
+# that read the same is quoted in a ledger row of its own under the same
+# record (Linux 2026-09-26 has two, 4:23 PM and 5:11 PM), and the flips are
+# seeded in every such row; one that read DIFFERENTLY on the same date would
+# need a key this record does not have yet, and fails the check until then.
 
 HARNESS = os.path.join(MEMBER, "tests", "riptide-selftest.livecodescript")
 PROBE4_PREFIX = "numeric compare probe 4 (diagnostic;"
@@ -1692,7 +1696,10 @@ PROBE4_ITEMS = [
 #     and 6 read true,false,true, the reading the harness comment gives a C99
 #     strtod (inf and a hex float parse, NaN is unequal to itself), and 4
 #     false, the "C" locale's (byte 0xA0 is not a space, so the text stayed
-#     text).
+#     text). A second report of the same paste that day (the Kit's clock
+#     5:11 PM; presumably the same machine, not stated; OXT 9.7.0-dp-1 by the
+#     preflight reported with it, INFERRED) printed the line identically: a
+#     repeat on one machine, quoted in its own ledger row under this key.
 # Owed: Win32 (MSVC's C runtime decides items 2, 3, 4 and 6 there).
 PROBE4_RECORDED = {
     ("Linux", "2026-09-26"): "true,true,false,false,false,true",
@@ -1987,18 +1994,23 @@ def _probe4_ledger_seeds(recorded, ledger, fail):
     """Corrupted copies of the record and of the LEDGER text, each of which
     the ledger check must refuse: (record, ledger, what, what it must say).
     Every item's flip is seeded on each side, so a corrupted answer in
-    either copy is proven to fail, the C library's four included."""
+    either copy is proven to fail, the C library's four included. A second
+    run of one date and platform that read the same (Linux, 2026-09-26: the
+    4:23 PM and 5:11 PM reports) is a second ledger row quoting one record,
+    so every such row is seeded, and deleting the run's rows means all of
+    them."""
     key = sorted(recorded, key=repr)[0]
-    # the run's row found by its date and platform, NOT by the recorded
+    # the run's rows found by their date and platform, NOT by the recorded
     # reading, so a record corrupted on its own reaches the check below and
     # is named there rather than stopping here
     rows = [r for r in _probe4_ledger_rows(ledger)
             if r[0] == key[1] and key[0] in r[1] and len(r[2]) == 1]
-    if len(rows) != 1 or rows[0][3].count("`%s`" % rows[0][2][0]) != 1 \
-            or ledger.count(rows[0][3] + "\n") != 1:
-        fail("tier 1e's ledger fixture expects one ledger row of %s %s "
-             "quoting one probe-4 reading once, and found %d; without it "
-             "the ledger check goes untested" % (key[0], key[1], len(rows)))
+    if not rows or any(r[3].count("`%s`" % r[2][0]) != 1
+                       or ledger.count(r[3] + "\n") != 1 for r in rows):
+        fail("tier 1e's ledger fixture expects each ledger row of %s %s "
+             "to quote one probe-4 reading once, and at least one such row, "
+             "and found %d; without it the ledger check goes untested"
+             % (key[0], key[1], len(rows)))
     row, quoted = rows[0][3], rows[0][2][0]
 
     def flipped(reading, n):
@@ -2012,11 +2024,16 @@ def _probe4_ledger_seeds(recorded, ledger, fail):
         rec[key] = flipped(recorded[key], n)
         seeds.append((rec, ledger, "the record's item %d flipped" % n,
                       "the ledger quotes"))
-        seeds.append((recorded, ledger.replace(
-            row, row.replace("`%s`" % quoted, "`%s`" % flipped(quoted, n))),
-            "the ledger row's item %d flipped" % n, "the ledger quotes"))
-    seeds.append((recorded, ledger.replace(row + "\n", ""),
-                  "the run's ledger row deleted", "no ledger row"))
+        for k, (_d, _p, (one,), each) in enumerate(rows, 1):
+            seeds.append((recorded, ledger.replace(
+                each, each.replace("`%s`" % one, "`%s`" % flipped(one, n))),
+                "ledger row %d of %d's item %d flipped" % (k, len(rows), n),
+                "the ledger quotes"))
+    gone = ledger
+    for each in rows:
+        gone = gone.replace(each[3] + "\n", "")
+    seeds.append((recorded, gone, "the run's ledger rows deleted",
+                  "no ledger row"))
     seeds.append((recorded, ledger.replace(
         row, row + "\n" + row.replace(key[1], "2099-01-01", 1)),
         "a ledger row quoting a reading the record lacks",

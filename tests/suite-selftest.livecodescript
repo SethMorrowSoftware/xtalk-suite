@@ -6308,9 +6308,14 @@ private function cxBech32EncodeValuesInner pHrp, pValues, pSpec
    -- file's refusal. The texts
    -- the engine still calls whole ("3.0", "+3", " 3", "3e0", "0x1F") are
    -- encoded as the number they spell, and the checksum below reads the same
-   -- number, so they cannot split the string from its checksum. Verified
-   -- statically; needs an OXT pass (tools/check-wallet-vectors.py's tier 4
-   -- replays the old line under the engine's rule and lets both through).
+   -- number, so they cannot split the string from its checksum. "3e0" is
+   -- OBSERVED so on Linux (the suite paste, 2026-09-26: "0,3e0" encoded
+   -- exactly as "0,3"), where this loop also refused both near-integers
+   -- above with its message (which of its two tests refused each: suite
+   -- engine note 2.12); the other spellings stay DOCUMENTED there, and on
+   -- Windows the guard is verified statically; needs an OXT pass
+   -- (tools/check-wallet-vectors.py's tier 4 replays the old line under the
+   -- engine's rule and lets both through).
    put the number of items of pValues into tCount
    repeat with tI = 1 to tCount
       put item tI of pValues into tIndex
@@ -25172,8 +25177,10 @@ command cx1stRunFailOpen
       -- `tIndex is not trunc(tIndex)`, and the engine's `is` calls two numbers
       -- within 10 DBL_EPSILON of the smaller EQUAL (suite engine note 2.10), so
       -- by that rule these two were let through; `is an integer` has no
-      -- tolerance. The first engine run of these three reads the new line;
-      -- until then they are verified statically; needs an OXT pass.
+      -- tolerance. All three ran green on Linux on 2026-09-26 (the suite
+      -- paste, twice that day; suite engine note 2.12), so "3e0" is an
+      -- integer to the engine there; Windows has not run them: verified
+      -- statically; needs an OXT pass.
       cx1stAssertRefusal "bech32 refuses a value one ulp above 3", cx1stThrowsText3("cxBech32EncodeValues", "bc", "0,3.0000000000000004", "bech32"), "cxBech32EncodeValues", "whole number between 0 and 31"
       cx1stAssertRefusal "bech32 refuses a value within 2.2e-15 below zero", cx1stThrowsText3("cxBech32EncodeValues", "bc", "0,-0.000000000000001", "bech32"), "cxBech32EncodeValues", "whole number between 0 and 31"
       cx1stAssert "and 3e0, a spelling the engine calls whole, encodes exactly as 3", cxBech32EncodeValues("bc", "0,3e0", "bech32") is cxBech32EncodeValues("bc", "0,3", "bech32")
@@ -29894,7 +29901,9 @@ private command rs1rstSectionHead
    -- cannot catch), so no headless run prints this line, as none prints
    -- probe 3 (whose item 1 it refuses first); riptide's
    -- check-script-vectors tier 1e holds this line's shape and the six
-   -- refusals. Its reading is owed to the next engine run (the suite
+   -- refusals. Linux read it on 2026-09-26, the same in both of that day's
+   -- recorded runs (riptide/CLAUDE.md's ledger quotes the reading, and tier
+   -- 1e holds it as recorded data); the Windows reading is owed (the suite
    -- runbook's S1 item 1 asks for the line verbatim).
    put "      numeric compare probe 4 (diagnostic; the engine source" && \
          "reads true,?,?,?,false,? where ? is the C library's):" && \
