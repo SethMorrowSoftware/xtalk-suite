@@ -1732,6 +1732,35 @@ def check_exact_integers(c, ip):
              run("cwParseAmount", [text, "sat"]),
              "refused: wallet-core: cwParseAmount: satoshi are whole numbers.")
 
+    # ---- (c) the same class, found in review: cwExpandExponent's exponent ---
+    # (2026-09-26) A backend's JSON number (Electrum's and Core's fee replies)
+    # reaches cwExpandExponent, whose exponent went through `is an integer`
+    # and `+ 0` with no digit bound AND then counted the zero-padding loops:
+    # twenty digits rounded to 1e20 on the engine (suite engine note 2.4), a
+    # loop no one would see the end of, where this interpreter stops instead.
+    # Digits only now, at most three that count, which every double's
+    # spelling fits. The positives are checked against Python's Decimal, an
+    # independent way to move a decimal point (no gate pinned this handler
+    # before). Both directions, and the boundary (trap 16).
+    from decimal import Decimal as _Dec
+    for text in ("4.22e-06", "1e-05", "1.5E+3", "-2.5e-3", "1.50e1", "1e-0005",
+                 "1e0000000000000000000005", "1e308", "5e-324", "1e999", "1e-999"):
+        c.ck("cwExpandExponent(%r) moves the point where Decimal does" % text,
+             run("cwExpandExponent", [text]), format(_Dec(text), "f"))
+    # (a mutant that drops the bound must FINISH here, so the widest is five
+    # digits: the old loop ran 12345 turns for it, fast headlessly, and would
+    # have run 123456789 for a nine-digit one, which reads as a hung gate)
+    for text in ("1e1000", "1e-1000", "1e99999999999999999999", "2.5E+12345"):
+        c.ck("cwExpandExponent refuses %r: an exponent past 999, before any "
+             "arithmetic or loop" % text, run("cwExpandExponent", [text]),
+             "refused: wallet-core: cwExpandExponent: \"%s\" has an exponent past "
+             "999, which no number read from a double carries." % text)
+    for text in ("1e5.0", "1e+-5", "1e+", "1e 5"):
+        c.ck("cwExpandExponent refuses %r: an exponent is digits" % text,
+             run("cwExpandExponent", [text]),
+             "refused: wallet-core: cwExpandExponent: \"%s\" has no whole "
+             "exponent." % text)
+
     # ---- (c) BOLT11's x and c fields: at most ten significant values ----------
     wide_msg = ("refused: wallet-core: an invoice field carries an integer wider "
                 "than 50 bits (11 significant five-bit values), past what a "

@@ -4957,9 +4957,37 @@ function cwExpandExponent pText
    else if char 1 of tExpTxt is "+" then
       put char 2 to -1 of tExpTxt into tExpTxt
    end if
-   if tExpTxt is "" or tExpTxt is not an integer then
+   -- THE EXPONENT IS DIGITS, AND AT MOST THREE OF THEM COUNT (2026-09-26,
+   -- work-plan row #8's class, found in its review). This asked `is not an
+   -- integer`, which the engine answers no to for twenty nines, so
+   -- `tExpTxt + 0` ROUNDED a twenty-digit exponent to 1e20 with no error
+   -- (suite engine note 2.4; the family interpreter stops on it instead),
+   -- and the exponent then COUNTS the zero-padding loops below (trap 41: a
+   -- loop driven by a count the input supplies): 1e20 turns of `put "0"
+   -- after`, a frozen wallet, and nine digits already a gigabyte of zeros.
+   -- The text comes from a backend's JSON (Electrum's and Core's fee
+   -- replies), so it is whoever answers. A JSON exponent is plain digits
+   -- after one optional sign, and every double's spelling needs at most
+   -- three (1e308 up, 5e-324 down), so leading zeros off and three digits
+   -- left refuses nothing a serializer writes and caps every loop below
+   -- near a thousand turns. "5.0" and "+-5" were integers to the old test
+   -- and are not exponents. Verified statically; needs an OXT pass.
+   put the number of chars of tExpTxt into tCount
+   if tCount is 0 then
       throw "wallet-core: cwExpandExponent: " & quote & pText & quote & \
             " has no whole exponent."
+   end if
+   repeat with tI = 1 to tCount
+      if offset(char tI of tExpTxt, "0123456789") is 0 then
+         throw "wallet-core: cwExpandExponent: " & quote & pText & quote & \
+               " has no whole exponent."
+      end if
+   end repeat
+   put cwDecClean(tExpTxt) into tExpTxt
+   if the number of chars of tExpTxt > 3 then
+      throw "wallet-core: cwExpandExponent: " & quote & (char 1 to 40 of pText) & \
+            quote & " has an exponent past 999, which no number read from " & \
+            "a double carries."
    end if
    put tExpSign * (tExpTxt + 0) into tExp
    put offset(".", tMant) into tPos
