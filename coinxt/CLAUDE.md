@@ -183,11 +183,24 @@ LAW here, not carried-for-later. Change nothing without a very good reason.
   the shipped stack, and both helpers broken (a `0x` prefix; `cwHexCompare` comparing whole texts, which the boot
   line's "in hex order" half had been free to drop); a key or a txid the shim derives is planted to be number-like.
   The wallet's boot self-check reads the two helpers at such a pair at every open (`waSelfTestHexCompares`, pure
-  script): the line an engine session will observe. Plain-named hex compares remain the checker's known misses here,
-  so "every hex compare" is not yet true: `... is not tSpk` (three) in `cwPsbtSign`, `cwScriptP2wpkh(tPub) is not
-  tScript` in `cwBip322Verify`, `tA["unsignedtx"] is not tB["unsignedtx"]` in `cwPsbtCombine` (under the modelled
-  parse, two all-digit unsigned transactions one byte apart MERGE), `sWaInspectWanted is ...` in `waStoreRawTx` and
-  `waSpAfterInspect`'s `... is waZeroTxid()`. Verified statically; needs an OXT pass.
+  script): the line an engine session will observe. The checker reads NAMES, so the same day a sweep by hand of every
+  bare comparison in wallet-core, coin-wallet and coinxt-demo found 15 more, each now through `cwSameHex` with a tier-5
+  vector that fails its old spelling under the modelled parse (and a control that passes): plain-named scripts, keys
+  and transactions, which were the checker's known misses (`cwPsbtSign`'s three `... is not tSpk`, which SIGNED for a
+  sender's all-digit script agreeing with ours in its leading digits; `cwBip322Verify`'s `cwScriptP2wpkh(tPub) is not
+  tScript`, which ACCEPTED such a key's signature for the address; `cwPsbtCombine`'s unsigned transactions, which
+  MERGED two all-digit ones a byte apart; `waStoreRawTx`'s inspect wait; `waSpAfterInspect`'s `... is waZeroTxid()`,
+  which called a txid spelled `0e` and digits a coinbase and skipped the silent-payment check), and number-like
+  literals and a constant, which the checker exempts with every literal (`cwScriptKind`'s `"0014"` and `"0020"`, to
+  which `"14e0"`, `"20e0"`, `"2e01"` and `"02e1"` are equal; `cwTxDecode`'s segwit marker `"0001"`, which `"01e0"` is
+  too, so a legacy one-input transaction whose previous txid ends in e0, one in 256, was misparsed as segwit;
+  `kCwScalarZero` in `cwScalarNegate`, which left a `0e`-and-digits scalar un-negated, and `cwSpInputSum`;
+  Electrum's `"100"` in `waSeedFormatOf`, which `"1e2"` is, one phrase in 4096; the empty parent fingerprint twice in
+  `waValidateXKey`). So every hex compare in those three files at which two different hex values can meet goes through
+  the two helpers now. Left bare on purpose, exact: a chunk of hex whose width a length check fixes against a literal
+  no other hex of that width equals (`"02"`, `"87"`, `"5120"`, `"101"` ...), and `cwDerToCompact`'s `"02"` markers,
+  whose width only its one caller's even-length hex fixes (an odd-length text can end in a lone `"2"`). coinxt-demo
+  and `src/coinxt.livecodescript` had none. Verified statically; needs an OXT pass.
 - Keccak-256 (Ethereum, `0x01` padding) is NOT SHA3-256 (FIPS-202, `0x06`): two shim functions, never aliased. The
   bech32 constant is 1, bech32m's `0x2bc830a3`. An encoder must never emit what its own decoder refuses.
 - **`the itemDelimiter` is global mutable state** (templates/CLAUDE.md rule 5; engine note 2.3). Nine public handlers
