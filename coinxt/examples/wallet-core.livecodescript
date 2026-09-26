@@ -4100,10 +4100,14 @@ private function cwScriptForPubkey pType, pPubkeyHex
 end cwScriptForPubkey
 
 function cwHexListHas pList, pValue
+   -- Whether a list of hex values holds pValue, as hex TEXT (cwSameHex).
+   -- Its bare `is` was invisible to the family checker's check 23 (plain
+   -- names inside a helper) and is the same comparison cwSignMultisig's was:
+   -- cwPsbtSign asks it whether our public key is among a p2wsh script's.
    local tI, tCount
    put cwListCount(pList) into tCount
    repeat with tI = 1 to tCount
-      if pList[tI] is pValue then
+      if cwSameHex(pList[tI], pValue) is true then
          return true
       end if
    end repeat
