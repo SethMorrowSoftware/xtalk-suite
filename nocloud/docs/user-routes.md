@@ -81,7 +81,7 @@ web link (the mount re-prefix described under `redirect` below).
 
 | Field | Meaning | Default |
 |---|---|---|
-| `method` | HTTP method to match (`GET`, `POST`, ...) | `GET` |
+| `method` | HTTP method to match (`GET`, `POST`, ...), in any letter case. Letters, digits and `-` only: a route whose method holds anything else (a space, a comma, CR or LF) is skipped at load. *(Since 2026-09-25; verified statically; needs an OXT pass.)* | `GET` |
 | `path` | The URL path. Must start with `/`; may not contain `..` or control bytes; may not be under the reserved `/_qs/` or `/_edit/`. May contain `:name` **parameter segments** (see "Path parameters" below) - but the **first** segment must always be literal. | *(required)* |
 | `body` | The response body (any text). Capped at 64 KB. | `""` |
 | `template` | `true` enables `{{...}}` substitution in `body` (see below). Values are escaped for `type`. | `false` |
@@ -124,14 +124,16 @@ is loaded (an invalid pattern is skipped, like any other invalid route):
   (`%2F`) is decoded *before* routing, so it splits into real segments - a parameter can
   never smuggle one. A trailing `/` in the pattern is significant and must be present in
   the request too.
-- **Names are `A-Z a-z 0-9 _`, non-empty, and unique** within one pattern.
+- **Names are `A-Z a-z 0-9 _`, non-empty, and unique** within one pattern, ignoring case
+  (`:id` and `:ID` are the same name, so a pattern with both is refused).
 - **Captures reach only a templated `body`,** as `{{param.name}}` - escaped for the
   response type exactly like `{{query.NAME}}` (a parameter value is visitor-chosen input).
   Parameters are **never** substituted into a `file` target, a `redirect` location, or
   header values - those stay exactly as declared.
 - **Precedence is deterministic:** an exact route on the literal path always wins over a
   pattern; among matching patterns the one with the *fewest* parameters (most literal)
-  wins, ties broken by comparing the route keys - never by table order.
+  wins, ties broken by comparing the route keys byte for byte (`METHOD /path`, so `:Z`
+  sorts before `:a`) - never by table order.
 - **`Allow`, `405`, and CORS see patterns.** An `OPTIONS` (or an unsupported method) on
   `/api/greet/world` derives its `Allow` from every route *matching* that path, patterns
   included, and a `cors: true` param route answers the preflight for its matching paths
@@ -173,8 +175,14 @@ There is still **no scripting** - templating only substitutes these fixed, escap
   URLs, tiny reflected/echo endpoints, redirects and short-links - anything a *canned* or
   *file-backed* response covers. For genuinely dynamic logic the stack still offers
   `qsHttpRoute "GET","/api/thing","myHandler"` -> `qsHttpReply` inside the script.
+- **Paths match exactly, letter case included.** A route on `/api/hello` answers
+  `/api/hello`, not `/API/hello` or `/Api/Hello`, and a static segment of a pattern matches
+  the same way (`/v/1/:x` does not answer `/v/01/x`). The method is matched in any case
+  (`get` is `GET`). Two routes whose paths differ only in case are two routes. *(Since
+  2026-09-25; verified statically; needs an OXT pass.)*
 - **Reserved:** paths under `/_qs/` (the host's own info/transparency routes) and `/_edit/`
-  (the LAN editor) can never be overridden, and an invalid route is skipped, not fatal.
+  (the LAN editor), in any letter case (`/_QS/...` too), can never be overridden, and an
+  invalid route is skipped, not fatal.
 - **Dotfiles stay hidden:** a `file` route can't point at a hidden dot-file (`.env`, `.git/...`,
   `.qsroutes.json` itself) - those are invisible over both transports, exactly as they are to
   the static file paths. Such a route is skipped.

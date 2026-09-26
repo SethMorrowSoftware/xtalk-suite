@@ -237,7 +237,19 @@ in nocloud's copy. The capability gate in `qsCwServe` was fixed in BOTH copies o
 it compares `("t" & tTok)` with `("t" & sCwToken)`, because bare `is` compares two
 number-like texts as numbers and a hex token shaped digits-`e`-digits overflows to +inf, as
 `1e999` in a request does (the suite's engine note 2.11, from the engine source; verified
-statically; needs an OXT pass).
+statically; needs an OXT pass). Routing became case-exact in BOTH copies on 2026-09-25:
+`sHttpRoutes` was keyed by the text "METHOD /path", the engine folds array keys (engine
+note 2.7), so `GET /_EDIT` dispatched to the `/_edit` route; it is keyed by `qsRouteKey`
+(the hex of that text) now, and `qsRouteLookupKey` reads the table and answers the key
+that dispatches, or empty. `tests/fileserver_golden.py` mirrors all three helpers, and
+`tools/check-script-vectors.py` drives the demo's own `qsHttpRoute` and
+`qsRouteLookupKey` against those mirrors through the family interpreter, whose keys fold
+(verified statically; needs an OXT pass). That section is the only part of this golden a
+gate holds to the demo: the rest was copied from nocloud's and restates it, and five of
+its mirrors name nocloud handlers this demo never got, the dotfile guard among them
+(`qsHasDotSegment`: this demo's folder server has no refusal of `/.git/config` or
+`/.env`), nor did nocloud's reserved-namespace guard (`qsHttpReservedPath`) come across
+(found 2026-09-25; the suite's docs/WORK-PLAN.md tracks it).
 
 ## Engine evidence ledger
 
@@ -305,5 +317,7 @@ warning-clean (`/W3` on MSVC). OXT cannot compile `.lcb` or `.livecodescript` he
 since 2026-09-24 `tools/check-script-vectors.py` RUNS the demos' Model C receive paths (the
 BTXO receivers, `qsKeyOpensVerifier`, `qsReceiveOnion`'s parse, the Channels feed seal)
 through riptide's runner against `tests/onion_frame_golden.py`'s mirrors and the committed
-SodiumXT; it settles logic, not parser behaviour, so it upgrades no honesty label. Its
+SodiumXT, and since 2026-09-25 Quick Share's route table against
+`tests/fileserver_golden.py`'s; it settles logic, not parser behaviour, so it upgrades no
+honesty label. Its
 siblings are riptide, nostrxt and sodiumxt. `docs/building.md` has the options, floors and CI.
