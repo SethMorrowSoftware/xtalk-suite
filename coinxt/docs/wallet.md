@@ -579,14 +579,18 @@ disjoint from every other library). The groups are:
 | Lists and bytes | `cwCharIndex`, `cwSameBytes`, `cwListNew`, `cwListAdd`, `cwListCount`, `cwLeBytes`, `cwBeBytes`, `cwLeRead`, `cwBeRead`, `cwReverseBytes`, `cwHexIsClean`, `cwHexCompare`, `cwSortHexList`, `cwLower`, `cwUpper`, `cwTrim`, `cwB64Encode`, `cwB64Decode`, `cwStripWhitespace`, `cwVarIntHex`, `cwHexListHas`, `cwSigsList`, `cwWifInfo`, `cwMnemonicStrength`, `cwMnemonicWordCount`, `cwUnixDate`, `cwVersion` |
 
 **The exact limit is 2^53 satoshi** (about 90.07 million BTC, more than four
-times the supply), because an engine number is a double. Every integer the engine reads
-from text or bytes is bounded before any arithmetic and refused past it, never
-rounded: `cwLeRead` / `cwBeRead` on the bytes, `cwBtcToSat` on its whole part,
-`cwParseAmount`'s satoshi form on its digits (no exponents), BOLT11's `x` and
-`c` fields at ten significant 5-bit values, and a transaction's outputs or a
-PSBT's inputs as a SUM (`cwAmountAdd`, decided on 32-bit halves). The mBTC form
-reads through `cwBtcToSat`, so it stops at 90071992.54740992 mBTC. The bounds
-from 2026-09-25 are verified statically; needs an OXT pass.
+times the supply), because an engine number is a double. These integers are
+bounded before any arithmetic and refused past it, never rounded: `cwLeRead` /
+`cwBeRead` on the bytes, `cwBtcToSat` on its whole part, `cwParseAmount`'s
+satoshi form on its digits (no exponents), BOLT11's `x` and `c` fields at ten
+significant 5-bit values, a transaction's outputs or a PSBT's inputs as a SUM
+(`cwAmountAdd`, decided on 32-bit halves), and a JSON number's exponent in
+`cwExpandExponent` at three digits. The mBTC form reads through `cwBtcToSat`,
+so it stops at 90071992.54740992 mBTC. That is not yet every integer the
+wallet reads: the numbers a backend reports (a coin's value and vout, a height)
+and the wallet's own sums of coin values reach arithmetic unbounded. The
+bounds from 2026-09-25 and 2026-09-26 are verified statically; needs an OXT
+pass.
 
 Errors are thrown strings beginning `wallet-core: `, matching CoinXT's own
 convention. Two handlers answer a question instead of throwing, for the same
