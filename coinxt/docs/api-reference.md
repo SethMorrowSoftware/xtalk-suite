@@ -306,7 +306,10 @@ engine decides exactly); an empty item, a non-number, and a value a hair off
 an integer (`3.0000000000000004`, `-0.000000000000001`) are refused, where
 until 2026-09-25 the last two passed the engine's tolerant comparison. The
 spellings the engine calls whole (`3.0`, `+3`, `3e0`) encode as the number
-they spell. Verified statically; needs an OXT pass.
+they spell. The guard ran green on Linux on 2026-09-26 (the suite paste:
+both values above refused, and `3e0` encoded exactly as `3`); `3.0` and `+3`
+are the engine source's reading, not observed, and on Windows the guard is
+verified statically; needs an OXT pass.
 
 ### `cxSegwitAddressEncode(pHrp, pVersion, pProgram)` / `cxSegwitAddressDecode(pHrp, pAddress)`
 

@@ -342,7 +342,10 @@ worse than no gate, because it answers the question nobody asks twice.
   latest builds" and "the latest" OXT, by the maintainer's account (torrentxt's 997-byte
   refusals agree: no committed Linux build before 421bab3 carries that cap; the OXT version and
   library versions not recorded), and again on 2026-09-26 on that machine by the same account (the
-  batch paste, 2876/0/10). No engine has loaded the 32-bit (`x86-win32`, `x86-linux`) or
+  batch paste, 2876/0/10). The same day the preflight's first Linux run (presumably that machine,
+  not stated) LOADED all six at their ABIs and printed what those runs did not: OXT 9.7.0-dp-1,
+  and libsodium 1.0.20, enet 1.3.18 and libdatachannel v0.24.5, the tree's Linux pins (runbook
+  section 8). No engine has loaded the 32-bit (`x86-win32`, `x86-linux`) or
   mac builds yet. The Windows DLLs carry libsodium 1.0.22 (D-08) and libtorrent 2.1.1, not the
   versions pinned for the other platforms, and the 2026-09-24 runs exercised both by the
   maintainer's account, the 2026-09-25 Windows run by that inference (the report prints no
