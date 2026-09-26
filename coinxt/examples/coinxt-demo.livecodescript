@@ -3880,7 +3880,7 @@ end cdKeyNode
 
 -- ---- 3. bitcoin --------------------------------------------------------------
 command cdBtcBuild
-   local tNode, tPub, tInSat, tOutSat, tDest, tDecoded, tProgram
+   local tNode, tPub, tInSat, tOutSat, tDest, tDecoded, tProgram, tVout
    local tOutpoint, tSpk, tScriptCode, tOutRec, tDigest, tSig, tWit, tTx, tTxid
    local tOut, tErr, tFailed
    put false into tFailed
@@ -3897,9 +3897,18 @@ command cdBtcBuild
       if tDecoded["version"] is not 0 or the number of bytes of tProgram is not 20 then
          throw "this demo pays P2WPKH only: a version-0 address with a 20-byte program"
       end if
+      -- THE OUTPUT INDEX IS A COUNTER TOO (2026-09-26, found in row #8's
+      -- review). It went to cxBtcOutpoint as typed, and the library's
+      -- little-endian encoder takes whatever number it is handed: "3.5"
+      -- encoded as vout 3 and an empty field as vout 0 (a headless probe
+      -- through the family interpreter), so the signed input could spend
+      -- an output other than the one typed. cdWholeField first; the library
+      -- then refuses anything past 2^32 - 1 ("does not fit"). Verified
+      -- statically; needs an OXT pass.
+      put cdWholeField(field "cdBtcVout", "the output index") into tVout
       put cdKeyNode(kPath84) into tNode
       put tNode["pubkey"] into tPub
-      put cxHexEncode(cxBtcOutpoint(word 1 of field "cdBtcPrev", field "cdBtcVout")) into tOutpoint
+      put cxHexEncode(cxBtcOutpoint(word 1 of field "cdBtcPrev", tVout)) into tOutpoint
       put "0014" & cxHexEncode(tProgram) into tSpk
       put cxHexEncode(cxBtcOutput(tOutSat, tSpk)) into tOutRec
       -- BIP-143 P2WPKH scriptCode is the matching P2PKH script of OUR key
@@ -4002,7 +4011,9 @@ end cdEthBuild
 -- COUNT cannot bound an exponent, so the shape is plain ASCII digits, and
 -- fifteen of them is under 10^15, exact with room, and decided before any
 -- number is formed - no wide value is ever compared (engine note 2.10).
--- Every counter this demo takes (satoshi, nonce, gas, chain id, gwei) fits.
+-- Every counter this demo takes fits (nonce, gas, chain id, gwei, the output
+-- index), and satoshi to 10^15 - 1: an amount of ten million BTC or more (the
+-- supply is 2.1e15 sat, sixteen digits) is refused, never rounded.
 -- Leading and trailing blanks (a return typed after the number) are
 -- forgiven; a blank INSIDE is not a digit. Verified statically; needs an OXT
 -- pass (tools/check-script-vectors.py runs this handler headlessly).

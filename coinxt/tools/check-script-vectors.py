@@ -319,16 +319,18 @@ def check_demo_fields(c):
     """coinxt-demo's integer fields (work-plan row #8, 2026-09-25).
 
     The demo is not run by any gate, and its build handlers read five
-    Ethereum counters and two satoshi amounts straight from fields. They asked
-    `is an integer`, which the engine answers yes for "1e20" and for twenty
-    nines, and the arithmetic after it (cxHexOfInt, cxUIntToBytesLE) rounded
-    either past 2^53 with no error (suite engine note 2.4), so a signed
-    transaction could carry a nonce other than the one typed. Every field now
-    goes through cdWholeField, which is lifted out of the SHIPPED demo and run
-    here: digits only, at most fifteen, decided on the text before any
-    number exists. The build handlers are then read to prove each field is
-    routed through it and none is asked `is an integer` any more. No compiler
-    needed; this tier runs where tier 2 SKIPs.
+    Ethereum counters, two satoshi amounts and an output index straight from
+    fields. They asked `is an integer` (the vout nothing at all), which the
+    engine answers yes for "1e20" and for twenty nines, and the arithmetic
+    after it (cxHexOfInt, cxUIntToBytesLE) rounded either past 2^53 with no
+    error (suite engine note 2.4), so a signed transaction could carry a
+    nonce other than the one typed. Every counter now goes through
+    cdWholeField, which is lifted out of the SHIPPED demo and run here:
+    digits only, at most fifteen, decided on the text before any number
+    exists. The build handlers are then read, every field they read found
+    by the scan, to prove each one is a counter routed through it or text
+    named with a reason, and that none is asked `is an integer` any more.
+    No compiler needed; this tier runs where tier 2 SKIPs.
     """
     c.note("\ncoinxt-demo's integer fields (no compiler needed)")
     text = open(DEMO, encoding="utf-8").read()
@@ -378,17 +380,46 @@ def check_demo_fields(c):
                     break
             out.append(line[:cut])
         return "\n".join(out)
-    for handler, fields in (("cdEthBuild", ("cdEthNonce", "cdEthPrio", "cdEthMax",
-                                            "cdEthGas", "cdEthChain")),
-                            ("cdBtcBuild", ("cdBtcIn", "cdBtcOut"))):
+    # THE FIELDS ARE DERIVED FROM THE HANDLERS, NOT LISTED (2026-09-26). This
+    # tier first named the seven counters it knew of, and the eighth,
+    # cdBtcVout, went on to cxBtcOutpoint as typed ("3.5" encoded as vout 3,
+    # an empty field as vout 0) under a docstring that said every counter was
+    # proven: a hand list is the question already answered (root CLAUDE.md,
+    # "a gate is bounded by the question it asks"). Now every field a build
+    # handler READS must go through cdWholeField or be named below as text,
+    # with the reason; a field written (`into field`) is output. A new field
+    # has to be classified before this passes, and an excuse no handler
+    # reads any more fails as stale.
+    not_counters = {
+        "cdBtcPrev": "a txid: 64 hex, checked by cxBtcOutpoint's decode",
+        "cdBtcDest": "an address, checked by cxSegwitAddressDecode",
+        "cdEthTo": "an address, checked by cdEthAddressHex",
+        "cdEthValue": "wei as HEX (it exceeds 2^53), checked by cdCleanHex",
+    }
+    handlers = ("cdEthBuild", "cdBtcBuild")
+    read_as_text = set()
+    for handler in handlers:
         body = re.search(r'^command %s\b(.*?)^end %s\b' % (handler, handler),
                          text, re.S | re.M)
+        c.ck("coinxt-demo carries %s" % handler, body is not None, True)
         body = code_only(body.group(1)) if body else ""
-        for field in fields:
+        written = set(re.findall(r'\binto field "(cd\w+)"', body))
+        reads = [f for f in re.findall(r'\bfield "(cd\w+)"', body) if f not in written]
+        c.ck("%s reads fields at all (the scan found its target)" % handler,
+             len(reads) > 0, True)
+        for field in sorted(set(reads)):
+            if field in not_counters:
+                read_as_text.add(field)
+                continue
             c.ck("%s reads field %s through cdWholeField" % (handler, field),
-                 re.search(r'cdWholeField\(field "%s"' % field, body) is not None, True)
+                 re.search(r'cdWholeField\(field "%s"' % field, body) is not None
+                 and len(re.findall(r'\bfield "%s"' % field, body))
+                 == len(re.findall(r'cdWholeField\(field "%s"' % field, body)),
+                 True)
         c.ck("and %s asks no field `is an integer`" % handler,
              re.search(r'\bis (not )?an integer\b', body) is not None, False)
+    c.ck("every field excused as text is still read by a build handler",
+         sorted(set(not_counters) - read_as_text), [])
 
 
 # --------------------------------------------------------------------- tier 2
