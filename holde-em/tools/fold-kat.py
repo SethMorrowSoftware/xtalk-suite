@@ -742,8 +742,9 @@ def main():
     # harness's section 8 pins, heTKatLateJoinLog). Without the line --
     # History before round 2 -- the joiner's blind is engine-rejected.
     lj = independent_fold(transcript_late_join())
+    # (.get: a fold that lost the joiner's seat must read as a FAIL, not a KeyError)
     check("latejoin: its own cfg line seats it and moves no stake (400/401/249, no errors)",
-          ("%d/%d/%d" % (lj["stacks"][1], lj["stacks"][2], lj["stacks"][3]), lj["errors"]),
+          ("/".join(str(lj["stacks"].get(s)) for s in (1, 2, 3)), lj["errors"]),
           ("400/401/249", []))
     check("latejoin: both settles verify",
           sum(1 for h in lj["history"] if h.endswith("; settle-verified")), 2)

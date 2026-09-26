@@ -311,6 +311,97 @@ assert sites, its review 6 more, and its ROUND 2 (the same day) 18 more.
       naming flag; a joiner's fellow player named in the host's words; no
       level line for a re-signed cfg; the fold's level line ignoring miss=.
       Verified statically; needs an OXT pass: all of it.
+    - ROUND 2 (2026-09-26, the owner's "fix holdem" again; the owner has
+      decided consensus narrowings of this kind). Still 0.25.6 / h48 and
+      table protocol 2: no byte an honest client emits changed (protocol-kat
+      is untouched), and no build was released between the fix pass and
+      this; what a verifier ACCEPTS narrowed, and what History writes.
+        . THE OPEN-HAND SEAT RULE (its review's first NOT FIXED). The
+          dealing key is read from the dealer SEAT on every wire, so a host
+          that re-sat that seat mid-hand switched the dealing key after the
+          seals (the probe, driven again: dealer 833fed8e, seat 2 re-sat to
+          ad1d6dbb, that key's flop taken, table and History alike). A hand
+          is open from its handStart to the next one -- the span its
+          per-hand wires name -- and while one is open a host assignment
+          must seat a key that holds NO seat into a seat NO key holds and
+          the open hand did NOT deal (heSeatAssignOk, pure, asked by the
+          live sit fold and by History's translation over the maps each
+          has). Three refusals, each named in the net feed: an OCCUPIED
+          seat (the probe; and, between hands, a re-sit handed the seat's
+          STACK -- a player's chips -- to a key of the host's choosing); a
+          seat DEALT into the open hand even when no key holds it (the
+          question left open: yes, it waits for the boundary -- a key
+          arriving mid-hand at a dealt seat would take its turn, reveal,
+          holes and receipt, and at the dealer seat the dealing key; only
+          a host that dealt a keyless seat can make one); and a key that
+          ALREADY holds a seat (moving the dealer's key to an empty seat
+          left the dealer seat keyless -- the dealing key switched to
+          nobody -- and a sit into the now-empty seat was the two-wire form
+          of the probe). That is exactly the one assignment an honest host
+          sends mid-game (heNetSeatLateJoiners: an unseated, present key
+          into the lowest EMPTY seat at the boundary, before the next
+          handStart deals it), so an honest table never meets a refusal.
+          Before the first handStart nothing is refused (heNetStartGame's
+          seating; no chip has moved) and the fix pass's one-key-per-seat
+          clearings stay the rule there. With every dealt seat's key fixed
+          for its hand, a dealer key read per wire and one frozen at the
+          dealLevel now agree: the review's "dealer key frozen" mutant has
+          nothing left to catch, and the read stays per wire, the mirror of
+          heNetDealerPubHex.
+        . HISTORY SEATS A LATE JOINER (its review's second NOT FIXED, older
+          than v0.25.6). History wrote one cfg line at the first handStart,
+          stacks for that hand's seats only, so a seat the host sat later
+          -- heNetSeatLateJoiners, an honest path -- reached the fold with
+          no stack: its blind was engine-rejected and a hand the table
+          settled read settle-MISMATCH (driven again on section 20's honest
+          late-join session: the table 395/407/398, History 397/403/0,
+          bidBB-wrong-amount). The translation now gives each seat the
+          stack the table gave it -- the cfg's stack= as it stood at the
+          SIT that found the seat with none (heNetCfgVal at the live sit:
+          a cfg re-signed with another stack= seats the next joiner on
+          that one, and a re-sit keeps the seat's) -- and writes it ahead
+          of the first handStart that deals the seat: the first hand's
+          seats in the opening cfg line as before, a later seat in a cfg
+          line of its own listing only its seat and stack. The fold's cfg
+          case now sets only what a line LISTS (stakes, ante, miss, the
+          listed seats' stacks), so that line moves nothing else; an
+          opening cfg lists everything, so hotseat and online logs fold as
+          they did. Only a sit gives a seat a stack at the table -- a hand
+          that deals a keyless seat never settles (no key may reveal its
+          position), and no key reaches a dealt seat mid-hand -- so History
+          needs no other source. fold-kat mirrors the cfg rule
+          (transcript_late_join; its cfg case REPLACED the whole stack
+          table until now, where the xTalk always set only the listed
+          seats) and names a rejected bid as the xTalk does (it named only
+          acts).
+      PINS (18). Section 15 (+8): (c2) drives the rule through the real
+      ingest -- the probe refused and named with the dealer's flop
+      standing; the dealer's key moved to an empty seat, refused; an
+      occupied seat the hand did not deal, refused; a keyless dealt seat,
+      refused, with no commit for it; the late joiner's shape (an unseated
+      key into an empty seat not dealt) still seated, its stand counted;
+      History refusing and taking the same ones. (c) is re-cast: it re-sat
+      the dealer seat mid-hand, which the rule now refuses, so the refused
+      dealLevel, the roster rule and the oracle context each get a hand of
+      their own (+1). The one-key-per-seat block makes its re-sit and move
+      before the first hand and pins the stacks, a cfg re-signed with
+      stack=250 between the sits: 400/400/400/250 at the table and in
+      History (+1). Section 20 (+2): the honest late-join session's History
+      carries seat 3's own cfg line and folds as the table played it.
+      Section 8 (+2): heTKatLateJoinLog folds 400/401/249 with the seat
+      line, and without it the joiner's blind is engine-rejected. Section
+      21 (+6): heSeatAssignOk's keeps and each refusal.
+      Mutants of the final source, run headlessly, each fail their pins
+      (13): each of the rule's three refusals removed; the live sit
+      fold's call and History's call removed; the pre-hand exemption
+      removed; History dropping the late seat's cfg line; the fold's cfg
+      case re-reading stakes a line does not list; History seating a seat
+      on the stack= at its deal instead of its sit; a re-sit resetting the
+      seat's stack; and, re-checked on the re-cast (c), History without
+      its roster rule, taking a refused dealLevel, or without its oracle
+      context. And fold-kat's (3): a cfg that replaces the stack table, a
+      cfg that re-reads the stakes, a rejected bid left unnamed.
+      Verified statically; needs an OXT pass: all of it.
 
 v0.25.5 -- ONE POSITION, ONE KEY, ONE HAND: heCanonIdx (2026-09-25). NO
 WIRE CHANGED -- not a byte an honest client emits, and protocol-kat's pins
