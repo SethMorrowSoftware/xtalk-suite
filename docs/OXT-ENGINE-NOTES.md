@@ -491,8 +491,9 @@ apart that begins at 4.5e14.
 **DOCUMENTED 2026-09-25, from the engine source; two of its claims OBSERVED
 the same day on Linux and on Windows (below), the rest still DOCUMENTED.**
 **Six more forms read on Linux, OBSERVED 2026-09-26** (the fourth probe line,
-"Read on Linux" below): the `inf` and `nan` words and a hex float are
-numbers there, and free text meets them (the free-text paragraph below).
+"Read on Linux" below): the readings are OBSERVED; that they make the `inf`
+and `nan` words and a hex float numbers there is INFERRED, item by item
+below, and free text meets them (the free-text paragraph below, INFERRED).
 Windows has not read them.
 `MCLogicIsEqualTo` and `MCLogicCompareTo` (`engine/src/exec-logic.cpp`, the
 code 2.10 cites) first try to turn BOTH operands into numbers, and when both
@@ -544,12 +545,15 @@ the line verbatim).
 **Read on Linux, OBSERVED 2026-09-26** (the batch paste, the line's first
 engine run; runbook section 8; the 2026-09-25 machine, 64-bit Kubuntu 24.04
 with "the latest" OXT, by the maintainer's account, the OXT version not
-given). The line printed, verbatim after its colon,
-`true,true,false,false,false,true`, against the prediction
+given, nor whether it was the 2026-09-25 build). The line printed, verbatim
+after its colon, `true,true,false,false,false,true`, against the prediction
 `true,?,?,?,false,?`; no item threw. Item by item:
-1. `"0x10" is "16"` TRUE: the base-16 integer parse, as the source predicts.
-   OBSERVED. (Its missing overflow check, a long `0x` run wrapping to its low
-   32 bits, stays DOCUMENTED.)
+1. `"0x10" is "16"` TRUE, as the source predicts. OBSERVED. That
+   `MCU_strtol`'s base-16 branch read it is the source's path (DOCUMENTED),
+   not something this reading shows: a C99 `strtod` reads "0x10" as 16 too,
+   so the item cannot tell the two apart. (The base-16 branch's missing
+   overflow check, a long `0x` run wrapping to its low 32 bits, stays
+   DOCUMENTED.)
 2. `"inf" is "1e999"` TRUE. OBSERVED. The text path answers false, so "inf"
    became a number equal to the +inf that "1e999" overflows to: the C
    library's `strtod` reads the word (INFERRED from the source; the only
@@ -566,11 +570,13 @@ given). The line printed, verbatim after its colon,
    (INFERRED: C `isspace` in the engine's locale says byte 0xA0 is no space,
    the byte the source hands over, DOCUMENTED).
 5. The 385-character run against 4294967296 FALSE, as the source predicts.
-   OBSERVED: a zero-padded run of 385 characters stayed text, so no 64-bit
-   integer parse held it (INFERRED: `integer_t` is 32 bits on this build, as
-   `foundation.h` says). That the limit sits at exactly 384 stays DOCUMENTED:
-   no line reads a 384-character run.
-6. `"0x1.8" is "1.5"` TRUE: `strtod` reads a C99 hex float. OBSERVED.
+   OBSERVED. As a number the run would have been 4294967296, so it stayed
+   text and no 64-bit integer parse held it (INFERRED: `integer_t` is 32 bits
+   on this build, as `foundation.h` says). That the limit sits at exactly 384
+   stays DOCUMENTED: no line reads a 384-character run.
+6. `"0x1.8" is "1.5"` TRUE. OBSERVED. The text path answers false, so
+   `strtod` read the C99 hex float as 1.5 (INFERRED from the source: the
+   only reading under which it answers true).
 So on Linux items 1 and 5 read as the engine source decides them, and items
 2, 3, 4 and 6 read as a C99 `strtod` in a locale where 0xA0 is no space
 (true, false, false, true, the prediction for the "C" locale). The first
@@ -656,8 +662,10 @@ bare `is`, `is not`, `=` or `<>`. Prefix a letter to both sides (no number
 parse accepts `h1e5`; not `0x`, which starts a base-16 number, and `n` or `i`
 only before hex, since `"n" & "an"` spells NaN, which equals nothing, itself
 included, and `"i" & "nf"` spells +inf: both read from the source above,
-not observed; OBSERVED on Linux 2026-09-26, the fourth probe line above,
-whose item 3 builds its NaN as `"n"` then `"an"`), adding
+not observed; on Linux on 2026-09-26 the fourth probe line above read a
+"nan" built as `"n"` then `"an"` unequal to another "nan", and "inf" equal
+to "1e999", OBSERVED, that the two are NaN and +inf INFERRED, and Windows
+has not read either), adding
 `set the caseSensitive to true` where case is
 part of the value (hex digits are not: `heHexEq` lowercases both sides), or
 compare byte by byte (coinxt's `cxCompareBytes`, nostrxt's `nxCtEqualHex`).
@@ -770,7 +778,12 @@ answers 4, 6 and 8 as the engine did), nostrxt's tier 0 and riptide's
 runner-model tier; riptide's `check-script-vectors.py` tier 1e holds the
 fourth probe line's shape and the interpreter's refusal of each of its six
 items (2026-09-26), the rows to change once an engine has read them and the
-interpreter is taught. The first census (the day it landed) found no shipped
+interpreter is taught. Since the Linux reading (2026-09-26) it also holds that
+reading as recorded data, twice: its items 1 and 5 against the prediction the
+line prints, and all six against the reading quoted in riptide's ledger row of
+that run, so a corrupted C-library item in either copy fails the gate (seeded
+flips of each item prove it); the refusal rows stand until the interpreter is
+taught. The first census (the day it landed) found no shipped
 comparison of number-like TEXT anywhere, and three in the wallet boot of an
 EMPTY operand against a number, which the engine's orderings read as 0
 (`MCLogicCompareTo` converts empty; the source) and riptide's runner then
@@ -802,7 +815,7 @@ engine.
 **OBSERVED again 2026-09-26, on Linux** (the batch paste, on the 2026-09-25
 machine by the maintainer's account; runbook section 8): coinxt's three new
 "fail-closed regressions" lines, the first engine run of
-`cxBech32EncodeValues`' `is an integer` guard (2026-09-25). "bech32 refuses
+`cxBech32EncodeValues`' `is an integer` guard (written 2026-09-25). "bech32 refuses
 a value one ulp above 3" (3.0000000000000004) and "bech32 refuses a value
 within 2.2e-15 below zero" (-0.000000000000001) PASSED, each asserting the
 refusal's own message, so the exact test said no to both (for the second,
@@ -813,7 +826,12 @@ near-zero branch, OBSERVED at 1e-15 > 0, it cannot call -1e-15 below 0). And
 (its whole string equal to 3's). So the exact test's yes to a spelling that
 is not canonical digits is OBSERVED for one form; "1e20", "3.0", "+3",
 " 3", "0x1F" and "1e999" (the Rule below) stay DOCUMENTED. Windows has not
-run the three lines, and the old `is trunc(X)` form still has not run.
+run the three lines. What no engine has run is the old `is trunc(X)` form
+against a NEAR-integer: the form itself did run, on whole values only, in
+coinxt's old bech32 guard (`tIndex is not trunc(tIndex)`, in the pastes
+of 2026-09-24 and 2026-09-25, whose coin-selftest encodes through it and
+refused a data value of 32 green), so "has not run on an engine" above is
+true of that case, not of the form.
 `is a number` and `is an integer` (exec-math.cpp, `MCMathEvalIsANumber`,
 `MCMathEvalIsAnInteger`) convert the operand as 2.11 describes
 (`MCU_strtor8` for text) and then ask a plain C `d == floor(d)`: no
@@ -828,7 +846,9 @@ source rounds half away from zero, so most likely the neighbouring integer),
 where the family interpreter answers an EMPTY chunk for `char 0.999999999999999`.
 Both sites and their neighbours now ask `is an integer`: holde-em's since
 v0.25.4 (the line above), coinxt's since 2026-09-25 (`coinxt/CLAUDE.md`;
-verified statically; needs an OXT pass).
+verified statically; needs an OXT pass; its library site, the bech32 guard,
+has since run on Linux, 2026-09-26, above, while the wallet's and
+coinxt-demo's sites and Windows have not).
 **Rule:** test for a whole number with `is an integer`, never
 `is trunc(X)`, and as its own `if` ahead of a range test (`or` evaluates both
 operands, 2.5, so a one-line chain still hands `trunc` a non-number; whether

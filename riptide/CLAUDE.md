@@ -343,7 +343,11 @@ Code comments cite these numbers; keep them.
    `"nan"`, the NBSP-edged "3" left text); which C library decided them is INFERRED (the run
    prints none). Tier 1e now also holds that reading as RECORDED data, keyed by platform and
    date, the way tier 1c holds probes 1-3: six booleans, items 1 and 5 as the prediction the
-   line prints, and seeded corruptions of the record it must refuse. The Win32 reading is
+   line prints, and seeded corruptions of the record it must refuse. The source decides only
+   items 1 and 5, so a record with item 2, 3, 4 or 6 flipped passed that check (the
+   2026-09-26 audit flipped item 3 and the tier stayed green); the reading is therefore held
+   twice, the record and this file's ledger row of its run, which must quote it verbatim after
+   "Probe 4", and every item flipped on either side is seeded and refused. The Win32 reading is
    owed, and the interpreter is not yet taught the Linux one (it still refuses all six).
    **Ordering, 2026-09-25.** By the same rule (these consequences are INFERRED from it, not
    observed) every ORDER over a wire integer blurred too, and those are accepted up to
