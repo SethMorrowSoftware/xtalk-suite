@@ -61,7 +61,7 @@ regression is a finding about those builds, not about the script.
 | # | Run | Expect / record | ~min |
 |---|---|---|---|
 | 0 | `tests/preflight.livecodescript` (3.2) | six LOADED; Box2Dxt found 4 | 5 |
-| 1 | `tests/suite-selftest.livecodescript`, then its board (3.1) | RECORD every member total (below; the summary prints them per row), do not match it; wait for `summary` (4.1.1). Then row 48's open half in the same launch: three rows' Run, each filter (a second Run all ran on Linux on 2026-09-25) | 45 |
+| 1 | `tests/suite-selftest.livecodescript`, then its board (3.1) | RECORD every member total (below; the summary prints them per row), do not match it; wait for `summary` (4.1.1); copy riptide's `numeric compare probe 4` line back VERBATIM (below). Then row 48's open half in the same launch: three rows' Run, each filter (a second Run all ran on Linux on 2026-09-25) | 45 |
 | P | engine-notes probes, message box | row P | 5 |
 | Q | coinxt ABI 7 + silent-payment receive | row Q (its wallet half needs NET) | 20 |
 | 3 | `riptide-social`, then `torrent-quickshare` and `torrent-dht-channels`, one fresh launch each | rows 35, 37 | 20 |
@@ -87,6 +87,24 @@ holde-em 721/0 at v0.25.3 / harness 45, and all three runs' loopbacks stalled
 too: four stalls in the same two phases on that Windows machine, against a
 Linux completion the same day (5.5: the paste's code alone does not explain
 the stall). A new total is not a regression by itself; a red line is.
+
+riptide's report carries FOUR numeric compare probe lines, printed and never
+counted. The first three have read the same on Linux and on Windows (section
+8). The fourth (added 2026-09-26, work plan suite-wide #22) has not met an
+engine: copy it back VERBATIM, from its leading spaces through its sixth
+item, with the platform and the OXT's bitness, on each machine that runs the
+paste. It begins `numeric compare probe 4 (diagnostic;`, prints the
+source's prediction `true,?,?,?,false,?`, and after its colon six
+comma-separated readings: `"0x10" is "16"`, `"inf" is "1e999"`,
+`"nan" is "nan"`, a NO-BREAK SPACE and "3" against 3, a 385-digit run
+against 4294967296, and `"0x1.8" is "1.5"` (engine note 2.11 has what each
+reads). Whatever it prints is a reading, not a failure: a `?` item is
+decided by the C library under the engine, so Windows and Linux may differ,
+and both readings are wanted; an item that prints `threw:` and a message
+is a reading too (copy the message whole). If item 1 or item 5 differs from
+the prediction, say so in the record: the engine source decides those two.
+The family interpreter refuses all six until the reading is recorded and it
+is taught (work plan suite-wide #22).
 
 ### S2 - one machine plus tor (~3 h with setup)
 
@@ -851,6 +869,7 @@ S1 [ ] 0 preflight ____/____/____ sxVersion ______ layers: ox ___ cx ___ nx ___
    [ ] 1 suite paste ____/____/____ (summary reached ___)  sodiumxt ___
          torrentxt ___ onionxt ___ coinxt ___ enetxt ___ dc ___ nostrxt ___
          riptide ___ box2dxt v32 ___ holde-em v0.25.6/48 ___
+         riptide probe 4, verbatim (#22): ______________________________
          board [48]: the pills look right after Run all ___
          Run: sodiumxt ___ torrentxt, twice ___ enetxt running... -> OK ___
          filters ___ a row's Show ___ Copy ___

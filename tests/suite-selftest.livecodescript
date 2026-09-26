@@ -29817,8 +29817,8 @@ private command rs1rstSectionHead
    -- Probe 3's items 1 and 2 read the two forms of engine note 2.11's parse
    -- that have met an engine. The family interpreter
    -- (coinxt/tools/lcs-interp.py, twinned in nostrxt) REFUSES as unsure the
-   -- forms that note does not establish, and these six are the ones it
-   -- refuses, one per form (rs1rstTextProbe builds them):
+   -- forms that note does not establish, and these six are forms it
+   -- refuses, each class of them covered (rs1rstTextProbe builds them):
    --   1  "0x10" is "16"            a hex integer: MCU_strtol's base 16
    --   2  "inf" is "1e999"          a C99 strtod word, against +inf
    --   3  "nan" is "nan"            two NaN words, built separately
@@ -29848,7 +29848,7 @@ private command rs1rstSectionHead
    -- probe 3 (whose item 1 it refuses first); riptide's
    -- check-script-vectors tier 1e holds this line's shape and the six
    -- refusals. Its reading is owed to the next engine run (the suite
-   -- runbook's section 8 asks for the line verbatim).
+   -- runbook's S1 item 1 asks for the line verbatim).
    put "      numeric compare probe 4 (diagnostic; the engine source" && \
          "reads true,?,?,?,false,? where ? is the C library's):" && \
          rs1rstTextProbe(1) & "," & rs1rstTextProbe(2) & "," & \
