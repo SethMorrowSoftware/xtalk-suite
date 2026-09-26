@@ -19,7 +19,7 @@ new). kHeVersion 0.25.5 -> 0.25.6; kHeHarnessV 47 -> 48 (a wire change and
 moved). The FIX PASS at the end of this entry (2026-09-26, unreleased, so
 the same 0.25.6 / 48) bumps the TABLE PROTOCOL, kHeEnvV 1 -> 2, and adds 77
 assert sites, its review 6 more, its ROUND 2 (the same day) 18 more, and
-that round's review 1 more.
+that round's review 2 more.
   * #13, AN ACT REPLAYED LATER IN ITS OWN HAND. v0.25.5 bound every per-hand
     wire to its hand, but an act carried no TURN, and two honest checks are
     byte-identical, so no content dedupe could tell a replay from a new act:
@@ -415,9 +415,22 @@ that round's review 1 more.
       seats -- decides the other way both times. (c2) now moves seat 5's
       key to seat 3 before the hand (seat 3 still held, not dealt) and
       deals seat 6, which no sit ever filled; the third key's sit into it
-      is refused and named (+1). The survivor now fails three pins; the
-      worker's rule, call-site and History mutants re-planted on the new
-      block each still fail theirs. Verified statically; needs an OXT pass.
+      is refused and named (+1). The survivor now fails three pins; round
+      2's rule, call-site and History mutants, re-planted on the new
+      block, each still fail theirs. And TWO MORE SURVIVORS in History's
+      stacks, both confirmed headlessly against sections 15 and 20: a
+      translation that followed stack= only until it wrote its opening cfg
+      line (every stack= change the pins made came before the first
+      hand), and one that gave an opening stack to every seat GAINING A
+      KEY rather than to a seat with none (no pin refilled a keyless seat
+      that still held chips -- a seat whose key a host moved before the
+      first hand keeps them). Either would disagree with the table,
+      which History must mirror exactly. The one-key-per-seat block
+      now plays on: hand 3 deals seats 1 and 2, the host re-signs stack=300
+      while it is open, then refills keyless seat 3 (400 kept) and seats a
+      new key in empty seat 5 (300), and hand 4 deals both; table and
+      History read 400/300 (+1). Each survivor now fails that pin.
+      Verified statically; needs an OXT pass.
 
 v0.25.5 -- ONE POSITION, ONE KEY, ONE HAND: heCanonIdx (2026-09-25). NO
 WIRE CHANGED -- not a byte an honest client emits, and protocol-kat's pins
@@ -18126,7 +18139,7 @@ command heTestNetPlay
    local tSeqSnap, tXlatTxt, tXlatFold, tOutboxTxt
    local tHostSeat, tPlaySeat, tHostPos, tMyPos, tHandNext, tAliasList, tAlias
    local tXlatCut, tStartKey, tCutN, tTurnNow, tForgedTxt, tWireTxt, tWireA, tLogCopy
-   local tP3Pub, tP3Sec, tP3PubHex, tFarA
+   local tP3Pub, tP3Sec, tP3PubHex, tFarA, tFarB
    put return & "-- 15. Online Level 0 hand, end to end (single-machine loopback)" & return after gRpt
    if not heHasSodium() then
       heTSkip "netplay: online hand", "SodiumXT not installed"
@@ -18824,6 +18837,28 @@ command heTestNetPlay
          gGame["stacksBy"][1] & "/" & gGame["stacksBy"][2] & "/" & gGame["stacksBy"][3] & "/" & gGame["stacksBy"][4] \
          & "|" & tXlatFold["stacksBy"][1] & "/" & tXlatFold["stacksBy"][2] & "/" & tXlatFold["stacksBy"][3] \
          & "/" & tXlatFold["stacksBy"][4], "400/400/400/250|400/400/400/250"
+   -- ...and AFTER the first hand (round 2's review, 2026-09-26): hand 3
+   -- deals seats 1 and 2 only; while it is open the host re-signs its cfg
+   -- with stack=300, then sits the key it unseated from seat 2 into seat 3
+   -- (keyless since its key moved, not dealt by hand 3, but still holding
+   -- the 400 its first sit gave it) and a new key into the empty seat 5,
+   -- and hand 4 deals both. At the table the refilled seat KEEPS its 400
+   -- (a sit gives a stack only to a seat with none) and seat 5 opens on
+   -- 300 (the cfg as it stands at ITS sit, mid-game). History must seat
+   -- both the same: the pins above made every change of stack= before the
+   -- first hand, and never refilled a seat that held chips, so a History
+   -- that followed stack= only until its opening cfg line, or that gave a
+   -- stack to every seat gaining a KEY, passed them all.
+   put heBin2HexS(heHash32(textEncode("holdem-seat5-key", "utf-8"))) into tFarB
+   heTNetHostWire 3, tHostPubHex, tHostSec, "handStart", "seats=1|2,button=1", tHostSec
+   heTNetHostWire 3, tHostPubHex, tHostSec, "cfg", "v=1,level=0,sb=1,bb=2,ante=0,stack=300,seats=6,button=1,miss=2", tHostSec
+   heTNetHostWire 3, tHostPubHex, tHostSec, "sit", "seat=3,pub=" & tPlayPubHex, tHostSec
+   heTNetHostWire 3, tHostPubHex, tHostSec, "sit", "seat=5,pub=" & tFarB, tHostSec
+   heTNetHostWire 4, tHostPubHex, tHostSec, "handStart", "seats=1|3|5,button=1", tHostSec
+   put heFoldTranscript(heNetLogToHotseat(gGame["log"], tHostPubHex)) into tXlatFold
+   heTAssert "resit: after hand 1, a refilled keyless seat keeps its chips and a new seat opens on the re-signed stack= (400/300), table and History", \
+         gGame["seatByPub"][tPlayPubHex] & "/" & gGame["stacksBy"][3] & "/" & gGame["stacksBy"][5] \
+         & "|" & tXlatFold["stacksBy"][3] & "/" & tXlatFold["stacksBy"][5], "3/400/300|400/300"
    -- A CFG RE-SIGNED MID-GAME (the fix pass's review, 2026-09-26): the host
    -- opens on miss=1, then re-sends its cfg with miss=5 inside hand 1. The
    -- table adopts it at once, so seat 2's timeout there is one miss of

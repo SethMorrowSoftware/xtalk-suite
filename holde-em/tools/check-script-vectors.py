@@ -178,7 +178,8 @@ Thrown = LCS.Thrown
 # pre-verify, a joiner's naming and a cfg re-signed mid-game; then 8, 15,
 # 20 and 21 again for its round 2: the open-hand seat rule and History's
 # late joiner; then 15 once more for that round's review: a dealt seat no
-# sit filled); raise them when the harness grows. A skip count is
+# sit filled, and a seat's stack after the first hand); raise them when
+# the harness grows. A skip count is
 # EXACT: a section that skips more than it did is a section that stopped
 # running something.
 SECTIONS = [
@@ -196,7 +197,7 @@ SECTIONS = [
     ("heTestDealOrderRun", 5, 0),
     ("heTestLobbyRun", 10, 0),
     ("heTestNetSim", 38, 0),
-    ("heTestNetPlay", 101, 0),
+    ("heTestNetPlay", 102, 0),
     ("heTestLevel2Run", 0, 1),          # ristretto255 is not modelled: skips
     ("heTestOnionRun", 54, 1),          # the LIVE tor table skips by name
     ("heTestOracleRun", 34, 2),         # the LIVE three-machine round + the onion oracle

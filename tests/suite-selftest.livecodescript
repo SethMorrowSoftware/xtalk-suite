@@ -44469,7 +44469,7 @@ command he1heTestNetPlay
    local he1tSeqSnap, he1tXlatTxt, he1tXlatFold, he1tOutboxTxt
    local he1tHostSeat, he1tPlaySeat, he1tHostPos, he1tMyPos, he1tHandNext, he1tAliasList, he1tAlias
    local he1tXlatCut, he1tStartKey, he1tCutN, he1tTurnNow, he1tForgedTxt, he1tWireTxt, he1tWireA, he1tLogCopy
-   local he1tP3Pub, he1tP3Sec, he1tP3PubHex, he1tFarA
+   local he1tP3Pub, he1tP3Sec, he1tP3PubHex, he1tFarA, he1tFarB
    put return & "-- 15. Online Level 0 hand, end to end (single-machine loopback)" & return after he1gRpt
    if not he1heHasSodium() then
       he1heTSkip "netplay: online hand", "SodiumXT not installed"
@@ -45167,6 +45167,28 @@ command he1heTestNetPlay
          he1gGame["stacksBy"][1] & "/" & he1gGame["stacksBy"][2] & "/" & he1gGame["stacksBy"][3] & "/" & he1gGame["stacksBy"][4] \
          & "|" & he1tXlatFold["stacksBy"][1] & "/" & he1tXlatFold["stacksBy"][2] & "/" & he1tXlatFold["stacksBy"][3] \
          & "/" & he1tXlatFold["stacksBy"][4], "400/400/400/250|400/400/400/250"
+   -- ...and AFTER the first hand (round 2's review, 2026-09-26): hand 3
+   -- deals seats 1 and 2 only; while it is open the host re-signs its cfg
+   -- with stack=300, then sits the key it unseated from seat 2 into seat 3
+   -- (keyless since its key moved, not dealt by hand 3, but still holding
+   -- the 400 its first sit gave it) and a new key into the empty seat 5,
+   -- and hand 4 deals both. At the table the refilled seat KEEPS its 400
+   -- (a sit gives a stack only to a seat with none) and seat 5 opens on
+   -- 300 (the cfg as it stands at ITS sit, mid-game). History must seat
+   -- both the same: the pins above made every change of stack= before the
+   -- first hand, and never refilled a seat that held chips, so a History
+   -- that followed stack= only until its opening cfg line, or that gave a
+   -- stack to every seat gaining a KEY, passed them all.
+   put he1heBin2HexS(he1heHash32(textEncode("holdem-seat5-key", "utf-8"))) into he1tFarB
+   he1heTNetHostWire 3, he1tHostPubHex, he1tHostSec, "handStart", "seats=1|2,button=1", he1tHostSec
+   he1heTNetHostWire 3, he1tHostPubHex, he1tHostSec, "cfg", "v=1,level=0,sb=1,bb=2,ante=0,stack=300,seats=6,button=1,miss=2", he1tHostSec
+   he1heTNetHostWire 3, he1tHostPubHex, he1tHostSec, "sit", "seat=3,pub=" & he1tPlayPubHex, he1tHostSec
+   he1heTNetHostWire 3, he1tHostPubHex, he1tHostSec, "sit", "seat=5,pub=" & he1tFarB, he1tHostSec
+   he1heTNetHostWire 4, he1tHostPubHex, he1tHostSec, "handStart", "seats=1|3|5,button=1", he1tHostSec
+   put he1heFoldTranscript(he1heNetLogToHotseat(he1gGame["log"], he1tHostPubHex)) into he1tXlatFold
+   he1heTAssert "resit: after hand 1, a refilled keyless seat keeps its chips and a new seat opens on the re-signed stack= (400/300), table and History", \
+         he1gGame["seatByPub"][he1tPlayPubHex] & "/" & he1gGame["stacksBy"][3] & "/" & he1gGame["stacksBy"][5] \
+         & "|" & he1tXlatFold["stacksBy"][3] & "/" & he1tXlatFold["stacksBy"][5], "3/400/300|400/300"
    -- A CFG RE-SIGNED MID-GAME (the fix pass's review, 2026-09-26): the host
    -- opens on miss=1, then re-sends its cfg with miss=5 inside hand 1. The
    -- table adopts it at once, so seat 2's timeout there is one miss of

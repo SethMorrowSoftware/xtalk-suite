@@ -68,8 +68,8 @@ assets/cards/, assets/sounds/  vendored Kenney CC0 art and audio (see each NOTIC
    protocol, row 16's History rules, the re-sit mapping and heTSame; its
    review's 6, the relay's pre-verify, a joiner's naming and a cfg
    re-signed mid-game; its round 2's 18, the open-hand seat rule and
-   History's late joiner; and that round's review's 1, a dealt seat no sit
-   filled). Call sites
+   History's late joiner; and that round's review's 2, a dealt seat no sit
+   filled and a seat's stack after the first hand). Call sites
    are not checks (at v40, 374 sites reported 507 checks), so an engine run
    RECORDS a new total rather than matching the last: the first v45 total,
    2026-09-24, was 721 passed with every extension present, plus the 5
