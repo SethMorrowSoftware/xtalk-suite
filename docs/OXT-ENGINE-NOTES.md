@@ -493,7 +493,7 @@ the same day on Linux and on Windows (below), the rest still DOCUMENTED.**
 **Six more forms read on Linux, OBSERVED 2026-09-26** (the fourth probe line,
 "Read on Linux" below): the readings are OBSERVED; that they make the `inf`
 and `nan` words and a hex float numbers there is INFERRED, item by item
-below, and free text meets them (the free-text paragraph below, INFERRED).
+below, and free text meets them (INFERRED: the free-text paragraph below).
 Windows has not read them.
 `MCLogicIsEqualTo` and `MCLogicCompareTo` (`engine/src/exec-logic.cpp`, the
 code 2.10 cites) first try to turn BOTH operands into numbers, and when both
@@ -570,10 +570,13 @@ after its colon, `true,true,false,false,false,true`, against the prediction
    (INFERRED: C `isspace` in the engine's locale says byte 0xA0 is no space,
    the byte the source hands over, DOCUMENTED).
 5. The 385-character run against 4294967296 FALSE, as the source predicts.
-   OBSERVED. As a number the run would have been 4294967296, so it stayed
-   text and no 64-bit integer parse held it (INFERRED: `integer_t` is 32 bits
-   on this build, as `foundation.h` says). That the limit sits at exactly 384
-   stays DOCUMENTED: no line reads a 384-character run.
+   OBSERVED. A number would have been 4294967296, so no 64-bit integer parse
+   held the run (INFERRED: `integer_t` is 32 bits on this build, as
+   `foundation.h` says), and it stayed text (INFERRED from the source: the
+   decimal integer parse gives up on overflow rather than wrapping, and 385
+   characters is past R8L; a parse that wrapped to 0 would also read false).
+   That the limit sits at exactly 384 stays DOCUMENTED: no line reads a
+   384-character run.
 6. `"0x1.8" is "1.5"` TRUE. OBSERVED. The text path answers false, so
    `strtod` read the C99 hex float as 1.5 (INFERRED from the source: the
    only reading under which it answers true).
@@ -591,13 +594,14 @@ this note's source reading; not observed at any site). A comparison reads its
 operands, not where they came from, so a name, label, tag, JSON key, route
 segment or device name that a person typed or a wire carried is number-like
 whenever its spelling is: "nan" in any case never `is` another "nan" held
-apart from it (so `is not` answers true, and a lookup or dedupe by `is` never
-finds its own copy), "inf" is "1e999" and "Infinity", a hex float is its
-value ("0x1.8" is "1.5", "0x10" is "16"), and the exponent and leading-zero
-forms above join them ("1e5" is "100000", OBSERVED 2026-09-25). Only a
-comparison where BOTH sides can be number-like is at risk: against a text no
-number parse accepts ("id", "/", any word) it takes the text path. Work plan
-suite-wide #26 sweeps the tree for such compares.
+apart from it (so `is not` answers true, and a lookup or dedupe by `is`
+misses a "nan" that arrived apart from the one it holds), "inf" is "1e999"
+and "Infinity", a hex number is its value ("0x1.8" is "1.5", "0x10" is
+"16"), and the exponent and leading-zero forms above join them ("1e5" is
+"100000", OBSERVED 2026-09-25). Only a comparison where BOTH sides can be
+number-like is at risk: against a text no number parse accepts ("id", "/",
+any other word) it takes the text path. Work plan suite-wide #26 sweeps the
+tree for such compares.
 **Rule, free text:** compare user-typed or wire text as TEXT: a letter on
 both sides, never `i` or `n` in either case (any text can follow the prefix,
 and "an", "nf" or "nfinity" after it spell the two words), with
@@ -605,12 +609,16 @@ and "an", "nf" or "nfinity" after it spell the two words), with
 holde-em's `heTSame` ("t" & each side) and nocloud's `qsSameText` ("s", then
 hex) are two such helpers in the tree.
 **Gate:** no static check sees free text (check 23, below, is a name rule
-for hex). The family interpreter REFUSES all six of the line's forms (the
-"Gate, headless" paragraph below), so an execution gate that drives one
-through a bare comparison stops rather than answering, until work plan
-suite-wide #22 teaches it the readings; the line itself is a printed
-diagnostic, never a check, so a different reading on another engine prints,
-it does not fail.
+for hex). The family interpreter REFUSES each of the line's six comparisons
+(the "Gate, headless" paragraph below), and in general a bare comparison
+whose answer turns on these readings: two spellings of one value ("inf"
+against "Infinity", "0x1.8" against "1.5", "1e5" against "100000") and a
+"nan" against any number-like text, its own spelling included. It ANSWERS
+identical text other than a NaN ("inf" is "inf" is true under every
+reading), so a vector stops a bare site only when it pairs different
+spellings, or brings a "nan". That holds until work plan suite-wide #22
+teaches it the readings; the line itself is a printed diagnostic, never a
+check, so a different reading on another engine prints, it does not fail.
 **Does NOT mean:** that Windows reads the same (its C library has not been
 read), that such text is unsafe everywhere (an array key keeps the raw text,
 and `switch` matches its cases as text, both below), or that one value
