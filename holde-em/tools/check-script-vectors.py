@@ -195,7 +195,7 @@ SECTIONS = [
     ("heTestDealOrderRun", 5, 0),
     ("heTestLobbyRun", 10, 0),
     ("heTestNetSim", 38, 0),
-    ("heTestNetPlay", 99, 0),
+    ("heTestNetPlay", 100, 0),
     ("heTestLevel2Run", 0, 1),          # ristretto255 is not modelled: skips
     ("heTestOnionRun", 54, 1),          # the LIVE tor table skips by name
     ("heTestOracleRun", 34, 2),         # the LIVE three-machine round + the onion oracle

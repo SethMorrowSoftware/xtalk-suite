@@ -271,21 +271,47 @@ Rules, each closing a specific hole:
   client -- so History takes the table's word on it. A cfg the host re-signs after the
   first hand (an honest host signs one, in the lobby) is followed too: the table adopts
   it at once, and History carries its stakes and `miss=` forward as a `level` line (the
-  fix pass's review). Not yet followed: a late joiner, whose seat History's one cfg line
-  never gave a stack, so History fails a hand the table played honestly (recorded
-  2026-09-26; work plan).
+  fix pass's review). And a LATE JOINER (the fix pass's round 2, the same day): each seat
+  opens in History on the stack the table gave it -- the cfg's `stack=` as it stood at the
+  sit that found the seat with none, as the live sit reads it -- written into the fold
+  ahead of the first `handStart` that deals the seat: the first hand's seats in the
+  opening cfg line, a seat first dealt later in a cfg line of its own that lists only its
+  seat and stack (the fold's cfg case sets only what a line lists). Before, History's one
+  cfg line gave stacks to the first hand's seats only, so a joiner the host seated at a
+  boundary -- an honest path -- reached the fold with none, its blind was refused, and
+  History failed a hand the table played honestly.
 - **One dealLevel per hand, one key per seat** (normative since 2026-09-26, v0.25.6; a
   consensus narrowing, the owner's call). The first `dealLevel` a hand takes fixes its
   dealer and contributors; a second is refused at the table and in History (it used to
   fold, dealer and count last-wins, so a host could switch the dealer after the seals).
   A host seat assignment that re-sits an occupied seat unseats the seat's old key, and
   one that moves a key leaves its old seat keyless, at the table and in History (the old
-  key used to keep acting, committing and standing for the seat). **Open (the owner's
-  call):** the dealing key is read from the dealer SEAT on every wire, so a host that
-  re-sits the dealer seat mid-hand still switches the dealing key after the seals, at the
-  table and in History alike (found by the fix pass's review, 2026-09-26). Refusing a host
-  assignment into an occupied seat while its hand is open would close it; no honest host
-  sends one (seats are never vacated, and late joiners take empty seats).
+  key used to keep acting, committing and standing for the seat).
+- **The open-hand seat rule** (normative since 2026-09-26, the v0.25.6 fix pass's round
+  2; a consensus narrowing, the owner's call). The dealing key is read from the dealer
+  SEAT on every wire, so a host that re-sat the dealer seat mid-hand switched the dealing
+  key after the seals, at the table and in History alike (found by the fix pass's review:
+  the effect a second `dealLevel` had, by another wire). A hand is OPEN from its
+  `handStart` to the next one (the span its per-hand wires name), and while one is open a
+  host seat assignment must seat a key that holds NO seat into a seat that NO key holds
+  and that the open hand did NOT deal; anything else is refused and named in the net feed,
+  at the table and in History alike (`heSeatAssignOk`, one predicate for both):
+  - an **occupied** seat: the probe, and between hands a re-sit that handed the seat's
+    stack -- a player's chips -- to a key of the host's choosing;
+  - a seat **dealt into the open hand**, even one no key holds (only a host that dealt a
+    keyless seat makes one). It waits for the hand boundary: a key arriving there
+    mid-hand would take the seat's turn, reveal, holes and receipt, and at the dealer
+    seat the dealing key;
+  - a key that **already holds a seat**: moving the dealer's key to an empty seat left the
+    dealer seat keyless -- the dealing key switched to nobody -- and a sit into the
+    now-empty seat was the two-wire form of the probe.
+
+  That is exactly what an honest host sends mid-game (a present, unseated joiner into the
+  lowest EMPTY seat at the boundary, before the next `handStart` deals it), so an honest
+  table never meets a refusal. Before the first `handStart` nothing is refused (the
+  game-start seating; no chip has moved), and the one-key-per-seat clearings above are
+  the rule there. With every dealt seat's key fixed for its hand, the dealing key cannot
+  change after the seals by any wire.
 
 Message vocabulary: `cfg join leave sit stand shuffleStep unmaskStep seedCommit
 seedSeal seedReveal holeDeliver board bid[SB/BB/Ante] act(fold|check|call|bet|raise|
@@ -627,7 +653,9 @@ value layer must consume receipts and nothing but receipts** (section 13).
   dealt out at the next boundary, mid-hand turns timing out instantly (a pending blind
   included), back next hand on its own `sit` (no `pub=`). A table with fewer than 2 live
   seats but 2+ chip-holding seats WAITS. Late-join rides the same boundary: a present
-  joiner takes the lowest empty seat with the cfg opening stack, or observes when full.
+  joiner takes the lowest empty seat with the cfg opening stack, or observes when full --
+  the one seat assignment the open-hand seat rule (section 6) admits once a hand is open,
+  and History seats the joiner on that same stack (since 2026-09-26).
 - **Timeout in dealing** (L2): void-and-audit (7.3); an aborter never sees the flop
   and is the named party (a config forfeit rule is specified, not built; section 6).
 - **Host loss**: a wire-silence watchdog (no host-countersigned wire for 60 s during
