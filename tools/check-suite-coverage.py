@@ -610,6 +610,8 @@ HOLDEM_WORKLIST = {
     # (now pure) and heEnvBodyText off this list with pins of their own; its
     # review (the same day) took heNetOracleDeal, which section 15's
     # History-agreement pin reads to prove the table kept the oracle dealing.
+    # Its fix pass (2026-09-26, the table protocol) took heNetOnHandshake:
+    # section 14 drives it with a v0.25.5 token at both ends of a mixed table.
     "no-test": (
         "NO REASON - a pure or near-pure handler a section could name today, "
         "and none does. This is the debt, not an exemption",
@@ -626,7 +628,7 @@ HOLDEM_WORKLIST = {
          "heNetDealerBoard", "heNetDealerDeal", "heNetDealerPubHex",
          "heNetDrainBuffer", "heNetFoldGameWire",
          "heNetGameReact", "heNetHandReset", "heNetHandSeedHex",
-         "heNetHostLost", "heNetMyContribPos", "heNetOnHandshake",
+         "heNetHostLost", "heNetMyContribPos",
          "heNetOnRp1", "heNetOnionHello", "heNetOnionRedialGiveup",
          "heNetParkHotseat", "heNetPubIsLive",
          "heNetRequestSync", "heNetRevealedDealA", "heNetSendToHost", "heNetSendWireTo", "heNetShowBoard",

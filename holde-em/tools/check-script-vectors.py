@@ -171,8 +171,10 @@ Thrown = LCS.Thrown
 # pins), and sections 2, 8, 15, 18, 20 and 21 raised the same day again
 # (stack 0.25.6, harness v48: the turn-binding, sender-rule and sit-out-mark
 # pins, and the review's History-agreement and keyless-act pins in 15, its
-# oracle History in 18 and its sit-return replay in 20); raise them when the
-# harness grows. A skip count is
+# oracle History in 18 and its sit-return replay in 20), and sections 8, 9,
+# 14, 15, 17 and 21 raised on 2026-09-26 (the same unreleased 0.25.6 / v48:
+# the fix pass's table-protocol refusals, row 16's History rules, the re-sit
+# mapping and heTSame); raise them when the harness grows. A skip count is
 # EXACT: a section that skips more than it did is a section that stopped
 # running something.
 SECTIONS = [
@@ -183,20 +185,20 @@ SECTIONS = [
     ("heTestLegalRun", 19, 0),
     ("heTestScheduleRun", 3, 0),
     ("heTestShuffleRun", 9, 0),
-    ("heTestFoldRun", 20, 0),
-    ("heTestCryptoRun", 26, 0),
+    ("heTestFoldRun", 22, 0),
+    ("heTestCryptoRun", 33, 0),
     ("heTestReceiptRun", 17, 0),
     ("heTestDealRun", 20, 0),
     ("heTestDealOrderRun", 5, 0),
     ("heTestLobbyRun", 10, 0),
-    ("heTestNetSim", 20, 0),
-    ("heTestNetPlay", 74, 0),
+    ("heTestNetSim", 35, 0),
+    ("heTestNetPlay", 90, 0),
     ("heTestLevel2Run", 0, 1),          # ristretto255 is not modelled: skips
-    ("heTestOnionRun", 35, 1),          # the LIVE tor table skips by name
+    ("heTestOnionRun", 54, 1),          # the LIVE tor table skips by name
     ("heTestOracleRun", 34, 2),         # the LIVE three-machine round + the onion oracle
     ("heTestLevel2VoidRun", 2, 1),      # its ristretto (DLEQ) half skips
     ("heTestLivenessRun", 89, 2),       # the LIVE timed table + the LIVE tor redial
-    ("heTestHelpersRun", 67, 1),
+    ("heTestHelpersRun", 85, 1),
     ("heTestLeafRun", 39, 0),
     ("heTestLeafRun2", 83, 0),
     ("heTestLeafRun3", 50, 0),          # every leg pure or gGame-only: nothing skips

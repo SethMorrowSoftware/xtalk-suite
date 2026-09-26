@@ -111,8 +111,10 @@ boundary; offering a read-only role needs a wire/UI decision.
   binding. Private lanes (hole-card deliveries at L0/L1) are sealed boxes to the
   session key; compromise of one table's session key never spans tables.
 - **Admission**: each peer's `btRp1SetToken` carries its signed admission claim
-  (`"HOLDEM-SESS-v1|" table | pub | role`, `heAdmitTokenData`), so peers drop a token
-  that does not verify for this table at handshake time, before any game message. As
+  (`"HOLDEM-SESS-v<N>|" table | pub | role`, N the table protocol, framed `pub TAB role
+  TAB sig TAB N`; `heAdmitTokenData`, section 6), so peers drop a token that does not
+  verify for this table at handshake time, before any game message, and refuse by name
+  one that verifies as another protocol. As
   built every table is effectively "open": any key whose token verifies is admitted. An
   admitted-pubkey list in the table config is **specified, not built**.
 - **Freshness law**: fresh deal randomness every hand (L0 seeds, L2 scalars and
@@ -140,6 +142,48 @@ items 1-6, host 1-9) while the chain hashes the WHOLE line, so an appended field
 every signature check and forks the receiver's chain unrecoverably. A bare trailing tab
 must also be refused (the engine ignores one trailing delimiter when counting, suite
 engine note 2.2); a legal wire ends in a 128-hex host signature.
+
+**The table protocol** (normative since 2026-09-26, v0.25.6; `kHeEnvV`, now **2**). `v`
+is the table protocol, and a peer of another protocol is refused **openly, early and
+exactly** wherever it first meets this build. v0.25.6's turn keys and sit-out marks
+changed what a peer can fold: a v0.25.6 client drops a v0.25.5 peer's acts ("carries no
+turn key") and its unmarked stands, an older client ignores the new keys, and both spoke
+protocol 1, so a table of the two split without a word. Protocol 2:
+
+- **Exact.** A version is compared as TEXT (`heEnvVersionOk`: a canonical number, then a
+  letter-prefixed compare); `"2.0"`, `"02"`, `" 2"` and `"2e0"` are not 2, though `is`
+  reads them as 2 on the number path (suite engine notes 2.10, 2.11).
+- **Named.** A mismatch names itself to the person, on the status line and in the
+  lobby's net feed, in full once per table and in a short feed line after that: which
+  protocol the other side speaks, which this build speaks, and that both sides need the
+  same holde-em (`heVersionMismatchTxt`, `heNetNameVersion`). Never a log line alone.
+- **Early.** The invite carries its protocol, `p2:<64hex>` (or `p2:<64hex>@<address>.onion`),
+  and an untagged or other-tagged invite is refused at the paste, before any network. The
+  admission token (spec 5) is `pub TAB role TAB sig TAB 2`, the signature over
+  `"HOLDEM-SESS-v2|<table>|<pub>|<role>"` (`heAdmitDomain`; protocol 1 signed
+  `"HOLDEM-SESS-v1|..."` over three items, so a v1 token is *recognised* -- it verifies
+  under the v1 domain and no other -- where a stranger's verifies as nothing). The rp1
+  handshake and the onion `h` hello refuse another protocol's token before admission: no
+  replay, no roster, never seated or dealt to; a joiner meeting an older host's token
+  says it cannot join. The onion hello's trailing seq is item 5. The host's relay refuses
+  another protocol's (or another table's) content line before it assigns a `seq` -- a
+  line sequenced and then dropped by the host's own ingest once left `seqCounter` ahead
+  of `lastSeq` and wedged the table for everyone -- and a sequenced wire of another
+  protocol is dropped and named. The DHT rendezvous is unchanged: only a hand-edited
+  invite reaches it across versions, and the handshake then refuses by name. The host's
+  replay and the `s?` frame serve admitted peers only; the oracle is the host role and
+  meets joiners through the same handshake.
+- **What a v0.25.5 client sees** (it cannot be changed): a `p2:` invite is refused by
+  format at the paste ("Invite code must be 64 hex characters (or 64hex@<address>.onion
+  for an onion table)." or, for an onion invite, "Onion invite: the part before the @ must
+  be the 64-hex table code."). With the tag stripped by hand, on rp1 it cannot verify the
+  v2 host's token ("drop handshake from an unadmitted peer" in its lobby feed), never
+  adopts a host and waits at "Joining table ... waiting for the host.", while the v2 host
+  names it and never admits, replays to or seats it; on onion the v2 host closes its
+  stream and it shows "Lost the tor stream to the host. Join again...". A v0.25.5 *host*
+  cannot verify a v2 joiner's token either (on rp1 it drops it as an unadmitted peer and
+  never seats it; on onion it closes the stream, and the v2 joiner says the host closed
+  before answering and may run a different holde-em). No mixed table forms.
 
 Fields: `v` protocol version; `table` the 32-byte random table id; `hand` the hand
 number, 0 = table setup; `seq` assigned by the host relay, strictly increasing; `prev`
@@ -208,10 +252,22 @@ Rules, each closing a specific hole:
   of the deal: a position's first commitment, and only a reveal that opens it. Before
   this, a non-owner's commit, or an owner's second one, read as that position's
   commitment in the audit (a false FAIL), and a player-signed settle for a hand the
-  table never settled read as verified (a false PASS). Not yet replayed: the board's
-  street order, the first settle that matches, a timeout's own checks (clock,
-  prescription, bank) and a timeout for an undealt seat (each a visible History FAIL or
-  error, never a false PASS on chips).
+  table never settled read as verified (a false PASS). Since 2026-09-26 (v0.25.6's fix
+  pass) History also replays the board's street order (the flop onto an empty board, the
+  turn onto three cards, the river onto four; `heBoardTakeOf`), the settle the table
+  APPLIED (the first, after every reveal, that matches the recomputation), a timeout's
+  transcript-derived checks (the exact prescription and the bank flag against the seat's
+  bank and sit-out state, `heTimeoutRuleOk`, fed by the accepted stands, returns and
+  misses), a timeout only for a dealt seat, and one dealLevel per hand (below). A
+  timeout's CLOCK is not replayable -- no transcript records when a wire reached a
+  client -- so History takes the table's word on it.
+- **One dealLevel per hand, one key per seat** (normative since 2026-09-26, v0.25.6; a
+  consensus narrowing, the owner's call). The first `dealLevel` a hand takes fixes its
+  dealer and contributors; a second is refused at the table and in History (it used to
+  fold, dealer and count last-wins, so a host could switch the dealer after the seals).
+  A host seat assignment that re-sits an occupied seat unseats the seat's old key, and
+  one that moves a key leaves its old seat keyless, at the table and in History (the old
+  key used to keep acting, committing and standing for the seat).
 
 Message vocabulary: `cfg join leave sit stand shuffleStep unmaskStep seedCommit
 seedSeal seedReveal holeDeliver board bid[SB/BB/Ante] act(fold|check|call|bet|raise|
@@ -491,6 +547,15 @@ Deterministic no-limit hold'em over the transcript. The rules the implementation
   within one hand the same stand would still replay after the seat's own return. A
   per-seat counter is monotonic, spans hands, and names each stand-or-return once: a
   replay carries a spent mark, a double press repeats a mark, and both are refused.
+  **The honest race, as a player sees it** (recorded 2026-09-26): a client computes the
+  next mark from the marks its own folds have already accepted, so a Stand and a Return
+  (sit back) pressed before either has come back from the host both carry the same mark.
+  The first to be sequenced is taken; the second is refused everywhere as a spent mark
+  (`stand:` or `sit-return:` "sit-out mark K is not the next (K+1)" in the net feed) and
+  does nothing, and the player presses it again once the first has landed. Nothing is
+  lost or mis-applied -- the refused press simply did not happen -- and no retry is
+  automatic, because an automatic re-send is exactly the replay the mark exists to
+  refuse.
 
 ### 8.2 Hand evaluator
 
@@ -537,7 +602,9 @@ value layer must consume receipts and nothing but receipts** (section 13).
   could check), the transcript-derived bank state, and the deadline passed on the
   CLIENT's own clock within 5 s of jitter (not the +-600 s window: no timestamp crosses
   the wire), waived for a historical wire and for a turn whose clock started during a
-  catch-up replay; it must name the open turn (section 6). `miss=` consecutive
+  catch-up replay; it must name the open turn (section 6). History replays the
+  prescription and bank checks (they are transcript-derived) but not the clock (no
+  transcript records when a wire reached a client). `miss=` consecutive
   timeouts, or the seat's own `stand` (bearing its next sit-out mark, 8.1), sit it out:
   dealt out at the next boundary, mid-hand turns timing out instantly (a pending blind
   included), back next hand on its own `sit` (no `pub=`). A table with fewer than 2 live
@@ -571,10 +638,11 @@ value layer must consume receipts and nothing but receipts** (section 13).
   info-hash + announce; join = the same from the code; leave = part + remove torrent.
   The DHT carries **zero game data**, rendezvous only.
 - **Onion tables** (identical envelopes over OnionXT streams):
-  - The invite is `<64hex-table>@<56base32>.onion`: one word, deliberately non-hex, so a
-    client without onion support refuses it readably (downgrade refusal by format). An
-    onion invite without working OnionXT is refused outright; there is no fallback
-    transport either way.
+  - The invite is `p2:<64hex-table>@<56base32>.onion` (the table-protocol tag since
+    v0.25.6, section 6): one word, deliberately non-hex, so a client without onion
+    support refuses it readably (downgrade refusal by format). An onion invite without
+    working OnionXT is refused outright; there is no fallback transport either way. A
+    DHT table's invite is `p2:<64hex-table>`.
   - Service seed = `sxHash("HOLDEM-ONION-v1|" || idSeed || "|" || tableId)`,
     secret-keyed and re-derivable, so a restarted host republishes the same address,
     computed offline at create (`sxSignKeypairFromSeed` -> `oxAddressFromPublicKey`;
@@ -583,7 +651,8 @@ value layer must consume receipts and nothing but receipts** (section 13).
     reassembled per stream on the poll tick and fed to the rp1 router.
   - The admission token rides the stream's first line (the `h` frame, beside
     `c`/`w`/`r!`/`s?`); the host answers a verified hello with its own *before* the
-    replay; an unverified hello earns nothing.
+    replay; an unverified hello earns nothing, and a hello of another table protocol is
+    named and its stream closed (section 6).
   - Onion tables touch no DHT. Tor is assumed on SOCKS 9050 / control 9051, probed
     fail-closed through watchdogged states on a lobby status line.
 - **Direct-TCP upgrade** (optional, unbuilt): pairwise `btMapPort` + engine sockets for
@@ -678,6 +747,13 @@ apply. `README.md`'s phase table records what is built and what each exit still 
   predicate wherever wires are folded, the table and History alike (section 6;
   v0.25.6): rules written twice drift. Derive the context it reads the way the table
   derives it, wire by wire: a context rebuilt differently drifts just the same.
+- A wire change BUMPS the table protocol (`kHeEnvV`), and every entry point a peer of
+  another protocol reaches first refuses it by that number, as text, and SAYS so to the
+  person (section 6; v0.25.6's fix pass): a table that splits silently is worse than one
+  that refuses to form. A new entry point for peers carries the same refusal.
+- When History cannot replay a live refusal, say why in the spec (a timeout's clock is
+  the one case today); every refusal that IS transcript-derived is replayed through the
+  same pure rule the table applies (section 6).
 - All randomness from `sxRandomBytes` / `sxRandomUniform`; the engine `random()` never
   touches anything dealing- or key-related.
 - Every hash is domain-separated (`"HOLDEM-<PURPOSE>-v<N>|"` prefixes, versioned).

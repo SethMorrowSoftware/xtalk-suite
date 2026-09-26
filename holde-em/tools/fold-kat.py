@@ -127,6 +127,97 @@ def transcript_turns(replay=False):
     return out
 
 
+def transcript_timeouts():
+    """A canned ONLINE-shaped heads-up session of HOST TIMEOUTS (v0.25.6,
+    2026-09-26; mirror of the harness's heTKatTimeoutLog, holde-em WORK-PLAN
+    row 16c): the table refuses a timeout whose check-or-fold prescription or
+    bank flag its folded state does not allow (heTimeoutRuleOk), and History
+    must skip exactly those. A seat's accepted stand and sit-return ride as
+    "stand" / "sit" lines; misses sit a seat out at the cfg's miss=; a
+    voluntary act resets them. Each hand turns on one rule (see the
+    harness's comment); the honest fold ends 394/406, five settles
+    verified."""
+    L = []
+    def log(hand, frm, typ, body):
+        L.append((hand, frm, typ, body))
+    t = "timeout=1"
+    log(0, "table", "cfg", "sb=1,bb=2,seats=1|2,stacks=400|400,button=1,miss=2")
+    log(1, "table", "handStart", "seats=1|2,button=1")
+    log(1, "seat1", "bidSB", "amount=1")
+    log(1, "seat2", "bidBB", "amount=2")
+    log(1, "seat1", "act", "verb=check,amount=0,seat=1,%s,bank=1,turn=1" % t)
+    log(1, "seat1", "act", "verb=fold,amount=0,seat=1,%s,bank=0,turn=1" % t)
+    log(1, "seat1", "act", "verb=fold,amount=0,seat=1,%s,bank=1,turn=1" % t)
+    log(1, "table", "settle", "deltas=1:-1|2:1")
+    log(2, "table", "handStart", "seats=1|2,button=2")
+    log(2, "seat2", "bidSB", "amount=1")
+    log(2, "seat1", "bidBB", "amount=2")
+    log(2, "seat2", "act", "verb=call,amount=1,turn=1")
+    log(2, "seat1", "act", "verb=check,amount=0,turn=2")
+    log(2, "seat1", "act", "verb=bet,amount=2,turn=3")
+    log(2, "seat2", "act", "verb=raise,amount=6,turn=4")
+    log(2, "seat1", "act", "verb=fold,amount=0,seat=1,%s,bank=1,turn=5" % t)
+    log(2, "table", "settle", "deltas=1:-4|2:4")
+    log(3, "table", "handStart", "seats=1|2,button=1")
+    log(3, "seat1", "bidSB", "amount=1")
+    log(3, "seat2", "bidBB", "amount=2")
+    log(3, "seat1", "act", "verb=fold,amount=0,seat=1,%s,bank=1,turn=1" % t)
+    log(3, "table", "settle", "deltas=1:-1|2:1")
+    log(4, "table", "handStart", "seats=1|2,button=2")
+    log(4, "seat2", "bidSB", "amount=1")
+    log(4, "seat1", "bidBB", "amount=2")
+    log(4, "seat2", "act", "verb=raise,amount=4,turn=1")
+    log(4, "seat1", "act", "verb=fold,amount=0,seat=1,%s,bank=0,turn=2" % t)
+    log(4, "table", "settle", "deltas=1:-2|2:2")
+    log(4, "seat1", "sit", "seat=1")
+    log(4, "seat2", "stand", "seat=2")
+    log(5, "table", "handStart", "seats=1|2,button=1")
+    log(5, "seat1", "bidSB", "amount=1")
+    log(5, "seat2", "bidBB", "amount=2")
+    log(5, "seat1", "act", "verb=fold,amount=0,seat=1,%s,bank=0,turn=1" % t)
+    log(5, "seat1", "act", "verb=call,amount=1,turn=1")
+    log(5, "seat2", "act", "verb=check,amount=0,seat=2,%s,bank=0,turn=2" % t)
+    log(5, "seat2", "act", "verb=check,amount=0,seat=2,%s,bank=0,turn=3" % t)
+    log(5, "seat1", "act", "verb=bet,amount=2,turn=4")
+    log(5, "seat2", "act", "verb=fold,amount=0,seat=2,%s,bank=0,turn=5" % t)
+    log(5, "table", "settle", "deltas=1:2|2:-2")
+    return L
+
+
+def timeout_verb_of(st, seat):
+    """heTimeoutVerbOf: check when the seat owes nothing this street."""
+    return "fold" if st["betCur"] - st["streetBy"][seat] > 0 else "check"
+
+
+def timeout_post_of(st):
+    """heTimeoutPostOf: the pending forced post, antes first, then SB, BB."""
+    if st["phase"] != "blinds":
+        return ""
+    if st["ante"] > 0:
+        for s in st["occ"]:
+            if st.get("antePostedBy", {}).get(s) != "true":
+                return "bidAnte,%d,%d" % (s, min(st["ante"], st["stackBy"][s]))
+    if st.get("sbPosted") != "true":
+        return "bidSB,%d,%d" % (st["sbSeat"], min(st["sb"], st["stackBy"][st["sbSeat"]]))
+    return "bidBB,%d,%d" % (st["bbSeat"], min(st["bb"], st["stackBy"][st["bbSeat"]]))
+
+
+def timeout_rule_ok(st, d, seat, kind, amt, bank_used, sit_out):
+    """heTimeoutRuleOk: "" when the timeout's prescription and bank flag are
+    the ones the folded state allows, else the reason."""
+    if kind == "act":
+        if d.get("verb") != timeout_verb_of(st, seat) or str(amt) != "0":
+            return "wrong prescription (%s)" % d.get("verb")
+    elif timeout_post_of(st) != "%s,%d,%s" % (kind, seat, amt):
+        return "wrong forced post"
+    if d.get("bank") == "1":
+        if bank_used or sit_out:
+            return "bank already spent"
+    elif not bank_used and not sit_out:
+        return "bank denied (unspent bank needs bank=1)"
+    return ""
+
+
 def ante_transcript():
     # 3-handed, ante 2 each, blinds 1/2. Everyone antes (dead money), then folds
     # to the BB. Commitments are 2 / 3 / 4 (nine chips), but the AWARDED POT IS
@@ -212,6 +303,8 @@ def independent_fold(tx):
     history = []
     errors = []
     stacks_final = None
+    # v0.25.6 (row 16c): the online liveness state the timeout replay reads
+    sit_out, misses, bank_used, miss_max = set(), {}, set(), 2
     for hand, frm, typ, body in tx:
         d = _kv(body) if body else {}
         if typ == "cfg":
@@ -220,6 +313,17 @@ def independent_fold(tx):
             seats = [int(x) for x in d["seats"].split("|")]
             stk = [int(x) for x in d["stacks"].split("|")]
             stacks = {s: stk[i] for i, s in enumerate(seats)}
+            if d.get("miss", "").isdigit():
+                miss_max = int(d["miss"])
+        elif typ in ("stand", "sit"):
+            # an online seat's accepted sit-out / return (the translation
+            # emits only what the table accepted): read by the timeout rule
+            seat = int(frm[4:])
+            if typ == "stand":
+                sit_out.add(seat)
+            else:
+                sit_out.discard(seat)
+                misses[seat] = 0
         elif typ == "level":
             sb, bb = int(d["sb"]), int(d["bb"])
             ante = int(d.get("ante", 0))
@@ -229,6 +333,7 @@ def independent_fold(tx):
             st = bk.new_hand(sb, bb, {s: stacks[s] for s in occ}, occ, btn, ante=ante)
             holes, board = {}, []
             show_choice = {}
+            bank_used = set()          # one time-bank per hand per seat
         elif typ == "holeDeliver":
             c = d["cards"].split("|")
             holes[int(d["seat"])] = [ev.card_index(c[0]), ev.card_index(c[1])]
@@ -236,18 +341,39 @@ def independent_fold(tx):
             for c in d["cards"].split("|"):
                 board.append(ev.card_index(c))
             st = bk.apply_msg(st, "board", 0, 0)
-        elif typ in ("bidAnte", "bidSB", "bidBB"):
-            st = bk.apply_msg(st, typ, int(frm[4:]), int(d["amount"]))
-        elif typ == "act":
+        elif typ in ("bidAnte", "bidSB", "bidBB", "act"):
+            seat = int(frm[4:])
             # v0.25.6 (holde-em WORK-PLAN coding #13): an ONLINE act names its
             # turn and replays only there (heActTurnOk, mirrored as
             # bk.act_turn_ok) -- a re-sequenced earlier act is skipped, as
             # the table refused it; a hotseat act carries no key
-            if d.get("turn", "") != "" and bk.act_turn_ok(d["turn"], st):
+            if typ == "act" and d.get("turn", "") != "" and bk.act_turn_ok(d["turn"], st):
                 continue
-            st = bk.apply_msg(st, "act", int(frm[4:]), d["verb"] + "," + d["amount"])
+            # v0.25.6 (row 16c): a HOST TIMEOUT replays the table's
+            # transcript-derived checks (timeout_rule_ok) and is skipped when
+            # the table refused it; an act timeout folds with amount 0
+            timed_out = d.get("timeout") == "1"
+            if timed_out:
+                amt = "0" if typ == "act" else d["amount"]
+                if timeout_rule_ok(st, d, seat, typ, amt, seat in bank_used, seat in sit_out):
+                    continue
+            if typ == "act":
+                st = bk.apply_msg(st, "act", seat,
+                                  d["verb"] + "," + ("0" if timed_out else d["amount"]))
+                if st["err"]:
+                    errors.append("engine-rejected:" + st["err"])
+            else:
+                st = bk.apply_msg(st, typ, seat, int(d["amount"]))
             if st["err"]:
-                errors.append("engine-rejected:" + st["err"])
+                continue
+            if timed_out:
+                if d.get("bank") == "1":
+                    bank_used.add(seat)
+                misses[seat] = misses.get(seat, 0) + 1
+                if misses[seat] >= miss_max:
+                    sit_out.add(seat)
+            elif typ == "act":
+                misses[seat] = 0     # a voluntary act is presence
         elif typ in ("show", "muck"):
             # 2e display choice: recorded ahead of the settle; annotates the
             # audited showdown, never changes it (mirror of heFoldTranscript)
@@ -535,6 +661,24 @@ def main():
           ("442/394/364", []))
     contains("turns: ...and the hand still settles verified", rp["history"][0],
              "settle-verified")
+
+    # v0.25.6 (row 16c): host timeouts replay the table's transcript-derived
+    # checks -- prescription, bank, sit-out from stands and misses, returns,
+    # the miss reset -- and skip what the table refused (the harness's
+    # section 8 pins, heTKatTimeoutLog)
+    to = independent_fold(transcript_timeouts())
+    check("timeouts: replayed as the table took them (394/406, no errors)",
+          ("%d/%d" % (to["stacks"][1], to["stacks"][2]), to["errors"]), ("394/406", []))
+    check("timeouts: all five settles verify",
+          sum(1 for h in to["history"] if h.endswith("; settle-verified")), 5)
+    # ...and each rule is load-bearing: folding every timeout the table
+    # refused (no rule) breaks the replay, which is what History did before
+    tx = [(h, f, t, b) for (h, f, t, b) in transcript_timeouts()]
+    naive = independent_fold([(h, f, t, b.replace("timeout=1", "timeout=0"))
+                              for (h, f, t, b) in tx])
+    check("timeouts: without the rule the same transcript does NOT replay clean",
+          naive["errors"] != [] or sum(1 for h in naive["history"]
+                                       if h.endswith("; settle-verified")) < 5, True)
 
     # a truncated transcript (missing a board line before a contested settle)
     # is named and skipped, never a crash mid-audit

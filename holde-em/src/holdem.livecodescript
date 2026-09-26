@@ -8,14 +8,17 @@ message box (interactive -- report panel, clipboard, msg) and heSelfTest()
 (quiet -- returns the report as a value and touches nothing). No second
 stack, no required extensions to be playable.
 
-v0.25.6 -- ONE TURN, ONE MARK, ONE SET OF SENDER RULES (2026-09-25; holde-em
-WORK-PLAN coding #13, #14 and #15). A WIRE CHANGE: an act's body and a
+v0.25.6 -- ONE TURN, ONE MARK, ONE SET OF SENDER RULES, ONE TABLE PROTOCOL
+(2026-09-25/26; holde-em WORK-PLAN coding #13, #14, #15 and row 16). A WIRE
+CHANGE: an act's body and a
 stand's or sit-return's body each gain a key inside the sender's signature,
 so protocol-kat's pins moved (timeout_act_body, stand_body, sitback_body,
 heads 10..13 and 24, all re-derived by the tool; act_body and act_head25
 new). kHeVersion 0.25.5 -> 0.25.6; kHeHarnessV 47 -> 48 (a wire change and
 75 new assert sites, CLAUDE.md rule 5); kUIVersion stays 15 (no chrome
-moved).
+moved). The FIX PASS at the end of this entry (2026-09-26, unreleased, so
+the same 0.25.6 / 48) bumps the TABLE PROTOCOL, kHeEnvV 1 -> 2, and adds 77
+assert sites.
   * #13, AN ACT REPLAYED LATER IN ITS OWN HAND. v0.25.5 bound every per-hand
     wire to its hand, but an act carried no TURN, and two honest checks are
     byte-identical, so no content dedupe could tell a replay from a new act:
@@ -132,6 +135,122 @@ moved).
     keeping the last commit, keeping a reveal that opens nothing, and the
     translation as first written. Verified statically; needs an OXT pass:
     all of it (the next engine run RECORDS the v48 total).
+  * THE FIX PASS (2026-09-26, still unreleased, so still 0.25.6 / h48; the
+    owner's "fix holdem"). A SECOND WIRE CHANGE under the same version:
+    the TABLE PROTOCOL, kHeEnvV "1" -> "2", and 77 more assert sites.
+    - A MIXED TABLE, REFUSED OPENLY, EARLY AND EXACTLY. This build drops a
+      v0.25.5 peer's acts ("carries no turn key") and its unmarked stands
+      and returns, an older client ignores the new keys, and both spoke
+      protocol 1: a table of the two split without a word. The version is
+      now 2, and every place a peer of another version reaches first
+      refuses it by that number AS TEXT (heEnvVersionOk -- the ingest's
+      `is not kHeEnvV` read "2.0", "02" and "2e0" as 2 on the number path,
+      engine notes 2.10/2.11) and NAMES it to the person
+      (heVersionMismatchTxt, heNetNameVersion: the status line and the
+      lobby's net feed, once per table in full, in words -- which protocol
+      the other side speaks, which this build speaks, that both need the
+      same holde-em; never a netLog line alone):
+        . the INVITE carries its protocol, "p2:" (heInviteTag, heInviteTxt);
+          an untagged (v0.25.5) invite, or another tag, is refused at the
+          paste (heInviteParse), before anything touches the network;
+        . the ADMISSION TOKEN names its protocol in item 4 under its
+          signature's domain, "HOLDEM-SESS-v<N>|" (heAdmitDomain: protocol
+          1's is kHeDomainSess byte for byte, so a v0.25.5 token is
+          RECOGNISED -- heAdmitTokenVersion -- and a stranger's is not);
+          the rp1 handshake and the onion hello refuse another protocol's
+          token before admission (no replay, no roster, no seat), and a
+          joiner meeting an older HOST says why it cannot join; the onion
+          hello's seq moved to item 5;
+        . the host's RELAY refuses another protocol's (or table's) content
+          BEFORE it spends a seq: sequenced, then dropped by the host's own
+          ingest, one such line used to leave seqCounter ahead of lastSeq
+          and wedge the whole table;
+        . a sequenced WIRE of another protocol is dropped and named;
+        . a joiner whose onion host closes the stream before any hello is
+          told it may be another holde-em (onion gives no more than that).
+      The DHT rendezvous is unchanged (reached only by a hand-edited
+      invite, and then the handshake refuses by name); the host's replay
+      and the "s?" frame serve admitted peers only; the oracle is the host
+      role through the same handshake. An OLD client cannot be changed:
+      it refuses a tagged invite by format, cannot verify a v2 token (so it
+      never admits or seats this build, and never adopts a v2 host), and
+      sees the stream close on onion. Spec 6 records what it sees.
+      protocol-kat moved every envelope-derived pin with the version
+      (re-derived by --print-pinned and --gen-xtalk, never by hand) and
+      gained admit_sig_v1 (the v0.25.5 token), env_version (read from this
+      file) and invite_tag.
+    - THE REVIEW'S ROW #16, all five: History replays the game the table
+      played. (a) The board's street order (heBoardTakeOf, lifted out of
+      the live fold): History appended every dealer-signed board, so a
+      re-sequenced flop gave it a six-card board. (b) The settle the table
+      APPLIED: the first after the reveals that matches the recomputation
+      (heNetXlatPickSettle; trial folds only when a hand has more than one
+      candidate), where History kept the LAST settle wire and also took one
+      from before the reveals the table dropped. (c) heNetTimeoutOk's
+      TRANSCRIPT-DERIVED checks (heTimeoutRuleOk, lifted out of it: the
+      exact prescription, and the bank flag against the seat's bank and
+      sit-out state) replayed by heFoldTranscript, fed by the stand and
+      sit-return lines the translation now emits once their marks check,
+      with misses counted and reset as live; the CLOCK is not replayable (no
+      transcript says when a wire reached a client) and History takes the
+      table's word on it. (d) A timeout for a seat not dealt, or a timeout
+      post of no number: dropped live as malformed, and now not translated.
+      (e) A SECOND dealLevel in one hand is REFUSED, at the table and in
+      History (a consensus narrowing, the owner's call): it used to fold,
+      dealer and count last-wins, so a host could switch the dealer after
+      the seals.
+    - ONE KEY PER SEAT. The host-assignment sit, live and in History, never
+      cleared a re-sat seat's OLD key (seatByPub kept it, so it still acted,
+      committed and stood for the seat -- confirmed by a headless probe) nor
+      a moved key's old seat (pubBySeat kept it, the dealer key among
+      others). Both mappings clear now, on both sides.
+    - THE HARNESS'S OWN EQUALITY. heTAssert compared got and want with bare
+      `is`, so a hex pair compared as numbers; it compares through heTSame
+      now, text behind a letter. Measured first: no assertion in any
+      section the headless gate runs had got and want equal as numbers but
+      different as text, and the Level 2 sections it skips compare hex and
+      verdict text only, so no assertion changed meaning. The family
+      checker's check 23 finds no bare hex compare left in the file, and
+      the three its name rule cannot see (the onion-seed pins' `tSeedHex1
+      is tSeedHex2`, twice in section 17, and section 18's `tSeedA is
+      tSeedB` -- the review's "three older bare-is key compares") compare
+      through heHexEq now.
+    - PINS (77): section 9 (+7) the token's protocol, protocol 1's domain,
+      the v0.25.5 token recognised and refused, its seq not read as a
+      version, a claim without its signature, a stranger; section 14 (+15)
+      the mixed table each way -- a v1 wire (and "2.0", "02") dropped and
+      named once, an older host not adopted, a v0.25.5 joiner not admitted
+      and told why, the relay spending no seq on another protocol or
+      table, a Start that seats and deals nobody, and a later mismatch's
+      short line; section 17 (+19) the
+      tagged invite, an untagged or other or aliased tag refused in words,
+      a v0.25.5 hello refused and its stream closed, an older host's hello
+      not adopted, the close-before-hello message (and the named one kept);
+      section 8 (+2) a canned
+      timeout session (heTKatTimeoutLog, five hands, one rule each; fold-kat
+      mirrors it as transcript_timeouts); section 15 (+16) row 16 end to
+      end on throwaway contexts, table and History agreeing hand by hand,
+      and the re-sit both ways; section 21 (+18) heEnvVersionOk,
+      heVersionMismatchTxt, heTSame, heBoardTakeOf, heNetXlatPickSettle,
+      heTimeoutRuleOk.
+      Mutants of the final source, run headlessly, each fail their pins
+      (37): the ingest comparing the version on the number path, or
+      dropping it unnamed; the handshake, the onion hello and the relay (by
+      protocol, and by table) not refusing; verify admitting any protocol's
+      token; the token signed under protocol 1's domain; an untagged invite
+      taken as this protocol; heEnvVersionOk on the number path; the onion
+      close saying only "lost", or overwriting a named mismatch; a mismatch
+      named in full every time; heTSame on the number path; History
+      appending every board, keeping the LAST settle, taking one before
+      the reveals, never trying the candidates, or keeping the last when
+      none verifies; the fold without the timeout rule, its prescription
+      half, its bank half, its miss count or its miss reset, or ignoring
+      stands or returns; the translation dropping accepted stands or
+      returns, or keeping a stand with a spent mark; History translating a
+      timeout for an undealt seat or a post of no number; a second
+      dealLevel taken at the table or in History; and each of the re-sit's
+      four clearings (old key and old seat, table and History). Verified
+      statically; needs an OXT pass: all of it.
 
 v0.25.5 -- ONE POSITION, ONE KEY, ONE HAND: heCanonIdx (2026-09-25). NO
 WIRE CHANGED -- not a byte an honest client emits, and protocol-kat's pins
@@ -3779,7 +3898,15 @@ constant kHeRngMax = 2147483646
 
 -- Phase 2 (online) protocol: domain-separated, versioned hash tags (spec 16)
 -- and the canonical envelope version. Pinned in tools/protocol-kat.py.
-constant kHeEnvV = "1"
+-- kHeEnvV is THE TABLE PROTOCOL VERSION (v0.25.6: "1" -> "2"): item 1 of
+-- every content line and wire, item 4 of the admission token (whose
+-- signature domain carries it, heAdmitDomain) and the "p<N>:" tag of the
+-- invite (heInviteTxt). v0.25.6's turn keys and sit-out marks changed what
+-- a v0.25.5 peer can fold, and a table of the two split SILENTLY (each
+-- dropped or ignored the other's wires); so every place a peer of another
+-- version reaches first refuses it by this number, as TEXT
+-- (heEnvVersionOk), and says so in words (heNetNameVersion). Spec 6.
+constant kHeEnvV = "2"
 constant kHeDomainSeedC = "HOLDEM-SEEDC-v1|"
 constant kHeDomainShuf = "HOLDEM-SHUF-v1|"
 constant kHeDomainChain = "HOLDEM-CHAIN-v1|"
@@ -4102,29 +4229,31 @@ constant kKatIdSeed2 = "fa645b9f3778a3b162514e3a00436568aef46b726e10ef563c94e73b
 constant kKatIdSeed3 = "7833fb1675dbb196e2222ad6f93ff30aacd313faf7a7818078e30a47f6890083"
 constant kKatIdPub1 = "b6ef1a19d789c27bea3f6c127db635929541f34907750ee12d0b715c010c7566"
 constant kKatCfgBody = "v=1,level=0,sb=1,bb=2,seats=3,button=1"
-constant kKatEnv0ContentHex = "31096535323637353635306437616434386337313239313835656664616563316532623839636334313064386534633865303835626364363532313837623237643309300962366566316131396437383963323762656133663663313237646236333539323935343166333439303737353065653132643062373135633031306337353636096366670937363364333132633663363537363635366333643330326337333632336433313263363236323364333232633733363536313734373333643333326336323735373437343666366533643331"
-constant kKatEnv0SenderSig = "c1d5f49bcc0fb8418830f63cc8be9c6bf7e5fd11a77807af38e672aa7284bba9c9cd58d73976888055851d034d440ab504cd0c9ab984f7df368a5f94225b310b"
-constant kKatChainHead6 = "62fcd52b3757f590c33bede7330620853074c1e5c153549244a8dac7287e3778"
-constant kKatSettleHash = "68095dcf5a74fac1e1340a1073a466dcf117024257f5c265de21698257b34b6f"
-constant kKatAdmitSig = "17cf45eeecf27a3e9b63e1e0ff47ae1ea337430cb135fb499944a60681fcd1e949a7a88f532b2f888c0ea32364e93e9aa2f569419f27e8034b695a4ee94d5e0b"
+constant kKatEnv0ContentHex = "32096535323637353635306437616434386337313239313835656664616563316532623839636334313064386534633865303835626364363532313837623237643309300962366566316131396437383963323762656133663663313237646236333539323935343166333439303737353065653132643062373135633031306337353636096366670937363364333132633663363537363635366333643330326337333632336433313263363236323364333232633733363536313734373333643333326336323735373437343666366533643331"
+constant kKatEnv0SenderSig = "a34e4dc460d9d60f30a4a9e2306297a20a9c88e59249297c8f52ad68a3962cd791f290c9ad1b704274397346037abc716bb9e87ef4dd72ce27013c8af227450d"
+constant kKatChainHead6 = "a4b93b207e9b04429ff1067c997719b8eaccb3d79fd149e52b50f0437e4a1b7a"
+constant kKatSettleHash = "f12114fd4229876fe54432a20d69395b9fcda8a65f75715cd9c24b6c9d27aba9"
+constant kKatAdmitSig = "e9eb87d7b9c05fd7f139c0fdc40a2a35509a96c312860e95578afbcfee611d5734bf4cf0fa9b37d2d280d311bb755fb4eb53d9d0889cd701e51ed096d7e97405"
+constant kKatAdmitSigV1 = "17cf45eeecf27a3e9b63e1e0ff47ae1ea337430cb135fb499944a60681fcd1e949a7a88f532b2f888c0ea32364e93e9aa2f569419f27e8034b695a4ee94d5e0b"
+constant kKatInviteTag = "p2:"
 constant kKatIdPub2 = "833fed8ee30a882bd877555a9df260d4322224fa095513d84972a660e7ad6b10"
 constant kKatLobbyCfgBody = "v=1,level=0,sb=1,bb=2,ante=0,stack=400,seats=6,button=1,act=30,bank=60,miss=2"
 constant kKatRosterBody = "833fed8ee30a882bd877555a9df260d4322224fa095513d84972a660e7ad6b10:player,b6ef1a19d789c27bea3f6c127db635929541f34907750ee12d0b715c010c7566:host"
-constant kKatLobbyHead2 = "57c56971affa1ac3d723d600937df12046a7def0c059444054f763e94a65b7fa"
-constant kKatCkptSig = "08c7f29409998d642657b9a084802b7ca3a136d696e881b545ed4e5a750fdb6d14e4967f401977aca416f03c0d4f03f98b3acc53e61266f3d8cee9912639e20f"
+constant kKatLobbyHead2 = "bde6814ab6b254ea5f8d525195abd0d416f6f9df73eaefc9899bfe838dd54080"
+constant kKatCkptSig = "3703e93fdc7353f4edb5e29880496d1d8a0bd64ea023fc9265ace0069331ea1a907024f408cf7ca139b303068ce4c635ca4b2e01bc6bc6efdd85cd3d845e9e03"
 constant kKatSettleHash2 = "5e716ce9022f4c47d99e081b52be3a8bb5f9f1f56d3def18577c2f7ac9de8df5"
-constant kKatRcptHead1 = "53ed9ccc64863dc05c1b76cd7953e19bba73895b8dd22ea00e6c9ff40f423cef"
-constant kKatRcptHead2 = "0284af24c750eaaaa5a521b87d8f1ab6ce00b0b2be074ce03d24884e004fc910"
-constant kKatRcptSig1 = "222929a8ce05e0d45cab6658d9e67d882d6cfa1f91c35cda8e07a58763c4b1fb6c733e23d116f04ed91960c0ad386541139fed43e1632df341175021d70b1700"
-constant kKatRcptSig2 = "20a21d334da7d32b00bf3a17920350ebaad0773121fc3f2d9feba041360d9548fb527c555cab8039985439bed3af73d17656b939942a6bc3a793630275070706"
-constant kKatRcptSig3 = "429a37ee32d74fd2d09b1b3a86fccc383c7e773ef52670ed07e4ede7e2e10f9ab4b791d630d0b44bdb6c405ed5238cc0bbab9d40129d3673c2c39f1d5d1a9c09"
+constant kKatRcptHead1 = "7e2d450ff3847f945f11e5b2d6cbc5b0914636036ac69b9a536f8a76ce172a8b"
+constant kKatRcptHead2 = "a25ab8169bc14ce961a2c9e3a642374bf2c8524bfe44f7edeb7a4fc1691bd792"
+constant kKatRcptSig1 = "5479c0d5cc1fe94a167f1da6fac629f81910b7bdbe1d8b455513922a5b693718e172d8cdde54d6e60fffd42331a02ba6641da64f85db94fb38df688f328c2b03"
+constant kKatRcptSig2 = "f83353b2e0d27f8164751bd2fad3450d1ef8714e0b211242cf5d15ae9ffea4ecb40fec8485b449b438df716db910e8e056b86b0a3ac1f2762dbde8aa435ad200"
+constant kKatRcptSig3 = "e76118539b47872dcfd9c71ccf99b9ae964b642a2ae3d02716e54bade2bbf3ba0e7a6875e729874fb608b36e7e0296eadd51886c06413ce5e8e546fe035e3c08"
 -- 2e street ckpt + show/muck wires (spec 6 as-built) + spec 9 election +
 -- Phase 3 oracle seeds/cfg (generated by tools/protocol-kat.py --gen-xtalk;
 -- keep the block complete -- a dropped constant evaluates to its own name)
-constant kKatCkptBody = "street=flop,head=62fcd52b3757f590c33bede7330620853074c1e5c153549244a8dac7287e3778,sig=08c7f29409998d642657b9a084802b7ca3a136d696e881b545ed4e5a750fdb6d14e4967f401977aca416f03c0d4f03f98b3acc53e61266f3d8cee9912639e20f"
-constant kKatCkptHead7 = "296cfef0944557351fa4899e8da5722743b4cfd212206dcf9a2b89fc30331497"
-constant kKatShowHead8 = "969def7cb20b499f2ae3fa259234f09ac79cd4608e65b2d25b2027217a82a45c"
-constant kKatMuckHead9 = "5fbfd0aeef7d918249601a92233de273809dc1b4791e991e22758ba85af6df71"
+constant kKatCkptBody = "street=flop,head=a4b93b207e9b04429ff1067c997719b8eaccb3d79fd149e52b50f0437e4a1b7a,sig=3703e93fdc7353f4edb5e29880496d1d8a0bd64ea023fc9265ace0069331ea1a907024f408cf7ca139b303068ce4c635ca4b2e01bc6bc6efdd85cd3d845e9e03"
+constant kKatCkptHead7 = "f2b8365acfac83ff8ba41a5e7ab4d8c7bda648dc04b6fc864f1ebec7ad1c1eed"
+constant kKatShowHead8 = "af5dec0a160e639654643d93c74fb716a054ecad1dba2a0fa4a751cfcf9f9d60"
+constant kKatMuckHead9 = "ffb4bc6383777776121354e1587ede1d9977b2b5c40f0141b02eddf45329eb16"
 -- 2e liveness wires (v0.23.0): the seq 10..13 transcript extension --
 -- host-authored timeout act/bid (timeout=1/bank= marks on the EXISTING
 -- wires), a seat's own stand (sit-out) and pub-less sit (return) -- plus
@@ -4134,15 +4263,15 @@ constant kKatMuckHead9 = "5fbfd0aeef7d918249601a92233de273809dc1b4791e991e22758b
 -- binding and the sit-out mark), so heads 10..13 moved; kKatActBody is a
 -- player's own act as heNetBoundBody builds it
 constant kKatTimeoutBody = "verb=fold,amount=0,seat=3,timeout=1,bank=1,turn=1"
-constant kKatTimeoutHead10 = "74cd646a06d2fdac421462b9070323ae9c91b42f1cc7e37c1fb89e710f442668"
+constant kKatTimeoutHead10 = "e425447b123c948d9a34d5965445ff0376eab35b24884f0418eef6c13b20b79d"
 constant kKatStandBody = "seat=2,n=1"
-constant kKatStandHead11 = "e035624243754a23926b656d025fa7ae3d91c184f1c18910fef2a51c9c9755f8"
+constant kKatStandHead11 = "d79040f87c573d1e53cb6961669c2b345e27feb5c9088700311d470c3c24d2ec"
 constant kKatSitBackBody = "seat=2,n=2"
-constant kKatSitBackHead12 = "3e65a48a04975263f3480baf3889eea57b613bda6a07dfd9c4421abf23d42f85"
+constant kKatSitBackHead12 = "5c9c0bd7f7d98ecdfe19e530c986c0776c45c3b26c7131ee59f0e4f4bf69a521"
 constant kKatTimeoutBidBody = "amount=2,seat=3,timeout=1,bank=1"
-constant kKatTimeoutBidHead13 = "ebd7ecad18e549234e6a9f607a20788952ad1e1e3d83a3fe5b6124e80496f7d2"
+constant kKatTimeoutBidHead13 = "2465c1732f91ed124a8345f6fba55d47c6f8cf268eb620477ca12d4b4a8ed30e"
 constant kKatActBody = "verb=check,amount=0,turn=2"
-constant kKatHelloTrimHex = "68093833336665643865653330613838326264383737353535613964663236306434333232323234666130393535313364383439373261363630653761643662313009706c61796572096430326231653832366634333531323634636433613737613135383039323134393566396337646635663066323961333730656262356664643639623961316335633163393232366165323836353931393632326132363664663132346163373535623537313431613664386137376530656238623666376438396465323038093432"
+constant kKatHelloTrimHex = "68093833336665643865653330613838326264383737353535613964663236306434333232323234666130393535313364383439373261363630653761643662313009706c617965720936663330323134383161326666623366303636386630626331656230646534316637376465653264643134383730663135306435353135376135373631343432326461663338366564626363356162363831373166633861313131616231613930383231363030646363366165306263303333326636323464396137323130390932093432"
 constant kKatIdPub3 = "ad1d6dbbd062cdacf356daf0834471b6246105b17e3b988dd5e7f0db45fb66a6"
 constant kKatElectedHost = "833fed8ee30a882bd877555a9df260d4322224fa095513d84972a660e7ad6b10"
 -- the same election with the LOWEST key's seat SITTING OUT: spec 9 elects
@@ -4395,6 +4524,70 @@ function heCanonIdx pTxt, pMax
    end if
    return pTxt
 end heCanonIdx
+
+function heEnvVersionOk pVerTxt
+   -- TRUE when pVerTxt, a table-protocol version read off a wire, a relayed
+   -- content line, an admission token or an invite, is EXACTLY this build's
+   -- (kHeEnvV), as TEXT (v0.25.6, 2026-09-26). The ingest used to test
+   -- `tA["v"] is not kHeEnvV`, and `is` compares two number-like texts as
+   -- NUMBERS (suite engine notes 2.10, 2.11): "2.0", "02", " 2" and "2e0"
+   -- would all have passed as version 2. A version is a canonical index
+   -- (heCanonIdx: digits, no leading zero) or it is not one this build
+   -- speaks, and two are compared behind a letter, the file's rule for
+   -- anything that must not reach the number path. Pure (H5).
+   local tVer
+   put heCanonIdx(pVerTxt, empty) into tVer
+   if tVer is empty then
+      return false
+   end if
+   return ("v" & tVer) is ("v" & kHeEnvV)
+end heEnvVersionOk
+
+function heVersionMismatchTxt pTheirV, pWhoTxt, pKeyHex
+   -- THE WORDS a table-protocol mismatch names itself in (v0.25.6,
+   -- 2026-09-26), pure so the harness pins them: which protocol the other
+   -- side speaks, which this build speaks, and that both sides need the
+   -- same holde-em. pWhoTxt says who met us: "host" (the table we are
+   -- joining), "player" (a peer's handshake or hello, refused at our
+   -- table), "relay" (a content line a peer asked us, the host, to
+   -- sequence), "wire" (a sequenced wire), "invite" (a pasted invite).
+   -- pKeyHex (optional) names the peer's key. A protocol is described as
+   -- older or newer only when it is a canonical number; anything else is
+   -- quoted, truncated, as received.
+   local tTheirTxt, tKeyTxt, tMineTxt, tVer
+   put heCanonIdx(pTheirV, empty) into tVer
+   if tVer is empty then
+      put "an unrecognised table protocol (" & char 1 to 12 of pTheirV & ")" into tTheirTxt
+   else if tVer < kHeEnvV then
+      put "table protocol " & tVer & " (an older holde-em)" into tTheirTxt
+   else
+      put "table protocol " & tVer & " (a newer holde-em)" into tTheirTxt
+   end if
+   put "table protocol " & kHeEnvV & " (holde-em " & kHeVersion & ")" into tMineTxt
+   put empty into tKeyTxt
+   if pKeyHex is not empty then
+      put " (key " & char 1 to 8 of pKeyHex & ")" into tKeyTxt
+   end if
+   switch pWhoTxt
+      case "host"
+         return "Cannot join: this table's host" & tKeyTxt & " speaks " & tTheirTxt \
+               & ", and this build speaks " & tMineTxt \
+               & ". Both sides need the same holde-em version: ask the host which one it runs."
+      case "player"
+         return "Refused a player" & tKeyTxt & " that speaks " & tTheirTxt \
+               & ": this table speaks " & tMineTxt & ". It was not admitted, sent the" \
+               & " table or seated. Both sides need the same holde-em version."
+      case "relay"
+         return "Refused a message from" & tKeyTxt & " in " & tTheirTxt \
+               & ": this table speaks " & tMineTxt & ", and it was not sequenced." \
+               & " Both sides need the same holde-em version."
+      case "invite"
+         return "This invite is for " & tTheirTxt & ", and this build speaks " & tMineTxt \
+               & ". Both sides need the same holde-em version: ask the host which one it runs."
+   end switch
+   return "Dropped a wire in " & tTheirTxt & ": this table speaks " & tMineTxt \
+         & ", and nothing in it was folded. Both sides need the same holde-em version."
+end heVersionMismatchTxt
 
 -- Identity keys are derived by calling sxSignKeypairFromSeed directly into
 -- plain locals at each site (the proven-safe form -- same as
@@ -6266,37 +6459,87 @@ command heIdentitySetup
    end try
 end heIdentitySetup
 
+function heAdmitDomain pVerTxt
+   -- the admission token's signature domain for table protocol pVerTxt:
+   -- "HOLDEM-SESS-v<N>|". Protocol 1's is kHeDomainSess itself, byte for
+   -- byte (section 21 pins it), which is what lets this build RECOGNISE a
+   -- v0.25.5 token -- it verifies under the v1 domain and no other -- and
+   -- name it, where a stranger's garbage verifies under none. Pure (H5).
+   return "HOLDEM-SESS-v" & pVerTxt & "|"
+end heAdmitDomain
+
 function heAdmitTokenData pTableHex, pPubHex, pSecData, pRole
-   -- signed admission claim (spec 5): sign over
-   -- "HOLDEM-SESS-v1|<table>|<pub>|<role>", framed pubHex TAB role TAB sigHex,
-   -- published in btRp1SetToken so peers drop strangers at handshake and a
-   -- joining player adopts only a self-declared host (role "host")
+   -- signed admission claim (spec 5), published in btRp1SetToken (and as an
+   -- onion stream's first "h" line) so peers drop strangers at handshake
+   -- and a joining player adopts only a self-declared host (role "host").
+   -- v0.25.6 (2026-09-26): framed pubHex TAB role TAB sigHex TAB <kHeEnvV>,
+   -- the signature over heAdmitDomain(kHeEnvV) & "<table>|<pub>|<role>".
+   -- The version is SIGNED (it is in the domain), so a peer cannot claim
+   -- another's; and a protocol-1 verifier, which rebuilds the v1 message
+   -- from items 1..3, fails this signature, so a v0.25.5 host or joiner
+   -- drops this token as a stranger's ("handshake from an unadmitted peer")
+   -- and never admits, replays to or SEATS a peer whose every wire it would
+   -- misread. Pinned in protocol-kat (admit_sig, hello_trim_frame).
    local tSigHex
-   put heBin2HexS(heSignDetachedD(textEncode(kHeDomainSess & pTableHex & "|" & pPubHex & "|" & pRole, "utf-8"), pSecData)) into tSigHex
-   return textEncode(pPubHex & tab & pRole & tab & tSigHex, "utf-8")
+   put heBin2HexS(heSignDetachedD(textEncode(heAdmitDomain(kHeEnvV) & pTableHex & "|" \
+         & pPubHex & "|" & pRole, "utf-8"), pSecData)) into tSigHex
+   return textEncode(pPubHex & tab & pRole & tab & tSigHex & tab & kHeEnvV, "utf-8")
 end heAdmitTokenData
 
-function heAdmitTokenVerify pTokenData, pTableHex
-   -- returns the admitted pubHex if the token is well-formed and its signature
-   -- verifies, else "" (the peer is a stranger and is ignored)
-   local tTok, tPubHex, tRole, tSigHex, tSaved
+function heAdmitTokenVersion pTokenData, pTableHex
+   -- the table protocol an admission token VERIFIES under, or empty when it
+   -- verifies under none (a stranger, a wrong table, garbage): v0.25.6,
+   -- 2026-09-26. A token naming a canonical version other than 1 in item 4
+   -- is checked under that version's domain first; then every token is
+   -- checked as protocol 1's three items (a v0.25.5 token has no item 4,
+   -- and a v0.25.5 onion hello puts its SEQ there, so item 4 is never
+   -- trusted as a version without its signature). Only what verifies is
+   -- named -- an unverified claim earns nothing, the hello rule -- and the
+   -- signature is the only proof of which build made the token.
+   local tTok, tPubHex, tRole, tSigHex, tVerTxt, tSaved
    put textDecode(pTokenData, "utf-8") into tTok
    put the itemDelimiter into tSaved
    set the itemDelimiter to tab
    put item 1 of tTok into tPubHex
    put item 2 of tTok into tRole
    put item 3 of tTok into tSigHex
+   put item 4 of tTok into tVerTxt
    set the itemDelimiter to tSaved
    -- a stranger's token is untrusted: reject malformed hex before decoding it
    -- (sxHex2Bin throws) -- 64-char pub and 128-char detached sig (H4)
    if not heIsHex(tPubHex, 64) or not heIsHex(tSigHex, 128) then
+      return empty
+   end if
+   -- (raw Data only inside the call expressions: the H6 corollary)
+   put heCanonIdx(tVerTxt, empty) into tVerTxt
+   if tVerTxt is not empty and ("v" & tVerTxt) is not "v1" then
+      if heVerifyDetached(heHex2BinD(tSigHex), textEncode(heAdmitDomain(tVerTxt) & pTableHex \
+            & "|" & tPubHex & "|" & tRole, "utf-8"), heHex2BinD(tPubHex)) then
+         return tVerTxt
+      end if
+   end if
+   if heVerifyDetached(heHex2BinD(tSigHex), textEncode(heAdmitDomain("1") & pTableHex \
+         & "|" & tPubHex & "|" & tRole, "utf-8"), heHex2BinD(tPubHex)) then
+      return "1"
+   end if
+   return empty
+end heAdmitTokenVersion
+
+function heAdmitTokenVerify pTokenData, pTableHex
+   -- returns the admitted pubHex if the token is well-formed and verifies
+   -- AS THIS BUILD'S PROTOCOL (heAdmitTokenVersion, heEnvVersionOk), else ""
+   -- (the peer is a stranger, or speaks another table protocol -- the
+   -- handshake and the hello tell the two apart and NAME the second)
+   local tTok, tPubHex, tSaved
+   if not heEnvVersionOk(heAdmitTokenVersion(pTokenData, pTableHex)) then
       return ""
    end if
-   if heVerifyDetached(heHex2BinD(tSigHex), \
-         textEncode(kHeDomainSess & pTableHex & "|" & tPubHex & "|" & tRole, "utf-8"), heHex2BinD(tPubHex)) then
-      return tPubHex
-   end if
-   return ""
+   put textDecode(pTokenData, "utf-8") into tTok
+   put the itemDelimiter into tSaved
+   set the itemDelimiter to tab
+   put item 1 of tTok into tPubHex
+   set the itemDelimiter to tSaved
+   return tPubHex
 end heAdmitTokenVerify
 
 function heAdmitTokenRole pTokenData
@@ -6422,18 +6665,32 @@ function heOnionSeedHex pIdSeedHex, pTableHex, pModeTxt
    return heHashDomHex(kHeDomainOnion, textEncode(pIdSeedHex & "|" & pTableHex, "utf-8"))
 end heOnionSeedHex
 
+function heInviteTag
+   -- the invite's table-protocol tag, "p<kHeEnvV>:" (v0.25.6): see
+   -- heInviteTxt. Pure; one spelling for the writer, the parser and the pins.
+   return "p" & kHeEnvV & ":"
+end heInviteTag
+
 function heInviteTxt
    -- the shareable invite for the CURRENT table (2f as-built): DHT tables
-   -- keep the bare 64-hex code; an onion table appends "@" and the host's
+   -- carry the 64-hex code; an onion table appends "@" and the host's
    -- derived onion address, so one pasteable string carries the transport,
    -- the rendezvous, and -- because a v3 address IS the service's ed25519
    -- public key -- the host endpoint's identity.
+   -- v0.25.6 (2026-09-26): prefixed with the TABLE PROTOCOL, "p2:" (heInviteTag),
+   -- so the first thing a person pastes already says which holde-em can
+   -- join. A v0.25.5 stack refuses the tagged invite by format before it
+   -- touches the network ("Invite code must be 64 hex characters..." or,
+   -- for an onion invite, "the part before the @ must be the 64-hex table
+   -- code"), the downgrade-refusal-by-format the onion invite already
+   -- relies on; this build refuses an untagged (protocol-1) invite, or a
+   -- tag for any other protocol, in words (heInviteParse).
    local tAddrTxt
    put gGame["onionAddrTxt"] into tAddrTxt
    if gGame["transport"] is "onion" and tAddrTxt is not empty then
-      return gGame["tableIdHex"] & "@" & tAddrTxt
+      return heInviteTag() & gGame["tableIdHex"] & "@" & tAddrTxt
    end if
-   return gGame["tableIdHex"]
+   return heInviteTag() & gGame["tableIdHex"]
 end heInviteTxt
 
 function heInviteParse pInviteTxt
@@ -6447,22 +6704,51 @@ function heInviteParse pInviteTxt
    -- validator runs as a belt at join time. Case is normalized: an uppercase
    -- paste would otherwise bind a mismatching table id and every wire would
    -- drop as wrong-table. Returns an array: "err" (empty, or the readable
-   -- refusal), "transport", "table", "onion".
-   local tA, tTxt, tAtPos, tTableTxt, tAddrTxt, tCore, tI, tCh
+   -- refusal), "transport", "table", "onion", and "ver" (the table protocol
+   -- the invite names).
+   -- v0.25.6 (2026-09-26): an invite opens with its TABLE PROTOCOL,
+   -- "p<N>:" (heInviteTag). A tag naming any protocol but this build's is
+   -- refused at once, in words (heVersionMismatchTxt), before the rest is
+   -- read: another protocol's invite need not look like ours. An UNTAGGED
+   -- invite that is otherwise well formed is protocol 1 -- how holde-em
+   -- 0.25.5 and earlier write them -- and is refused the same way, so a
+   -- joiner learns why at the paste, before anything touches the network
+   -- (the earliest point a mixed table can be stopped).
+   local tA, tTxt, tAtPos, tTableTxt, tAddrTxt, tCore, tI, tCh, tColonPos, tVerTxt
    put empty into tA["err"]
    put empty into tA["transport"]
    put empty into tA["table"]
    put empty into tA["onion"]
+   put empty into tA["ver"]
    put word 1 of pInviteTxt into tTxt
    if tTxt is empty then
       put "Paste an invite code first." into tA["err"]
       return tA
    end if
    put toLower(tTxt) into tTxt
+   put offset(":", tTxt) into tColonPos
+   if char 1 of tTxt is "p" and tColonPos > 1 then
+      put char 2 to (tColonPos - 1) of tTxt into tVerTxt
+      put tVerTxt into tA["ver"]
+      if not heEnvVersionOk(tVerTxt) then
+         put heVersionMismatchTxt(tVerTxt, "invite", empty) into tA["err"]
+         return tA
+      end if
+      put char (tColonPos + 1) to -1 of tTxt into tTxt
+   else
+      put "1" into tVerTxt   -- untagged; named below only if the rest is a real invite
+   end if
    put offset("@", tTxt) into tAtPos
    if tAtPos is 0 then
       if not heIsHex(tTxt, 64) then
-         put "Invite code must be 64 hex characters (or 64hex@<address>.onion for an onion table)." into tA["err"]
+         put "Invite code must be " & heInviteTag() & " followed by 64 hex characters (or " & heInviteTag() \
+               & "64hex@<address>.onion for an onion table)." into tA["err"]
+         return tA
+      end if
+      if not heEnvVersionOk(tVerTxt) then
+         put tVerTxt into tA["ver"]
+         put heVersionMismatchTxt(tVerTxt, "invite", empty) \
+               & " (An invite with no " & heInviteTag() & " tag is from holde-em 0.25.5 or earlier.)" into tA["err"]
          return tA
       end if
       put "rp1" into tA["transport"]
@@ -6472,7 +6758,7 @@ function heInviteParse pInviteTxt
    put char 1 to (tAtPos - 1) of tTxt into tTableTxt
    put char (tAtPos + 1) to -1 of tTxt into tAddrTxt
    if not heIsHex(tTableTxt, 64) then
-      put "Onion invite: the part before the @ must be the 64-hex table code." into tA["err"]
+      put "Onion invite: the part before the @ must be " & heInviteTag() & " followed by the 64-hex table code." into tA["err"]
       return tA
    end if
    if not (tAddrTxt ends with ".onion") then
@@ -6492,6 +6778,12 @@ function heInviteParse pInviteTxt
          return tA
       end if
    end repeat
+   if not heEnvVersionOk(tVerTxt) then
+      put tVerTxt into tA["ver"]
+      put heVersionMismatchTxt(tVerTxt, "invite", empty) \
+            & " (An invite with no " & heInviteTag() & " tag is from holde-em 0.25.5 or earlier.)" into tA["err"]
+      return tA
+   end if
    put "onion" into tA["transport"]
    put tTableTxt into tA["table"]
    put tAddrTxt into tA["onion"]
@@ -6793,6 +7085,13 @@ command heTableJoin pCodeTxt
    put heJoinRefusal(tInvA, heHasOnion()) into tRefusalTxt
    if tRefusalTxt is not empty then
       heUISetStatus tRefusalTxt
+      -- a TABLE-PROTOCOL refusal (v0.25.6) lands in the lobby's own net feed
+      -- too: Join is pressed in the lobby, whose overlay covers the status
+      -- line (the heNetStartGame lesson, 2026-08-27)
+      if tInvA["ver"] is not empty and not heEnvVersionOk(tInvA["ver"]) then
+         put "VERSION " & tRefusalTxt & return after gGame["netLog"]
+         heLobbyRefresh
+      end if
       exit heTableJoin
    end if
    if not heHasSodium() then
@@ -6941,13 +7240,59 @@ command heNetOnRp1 pEvA
    end switch
 end heNetOnRp1
 
+command heNetNameVersion pTheirV, pWhoTxt, pKeyHex
+   -- a TABLE-PROTOCOL mismatch, NAMED to the person (v0.25.6, 2026-09-26):
+   -- the first one at this table goes to the status line AND the lobby's
+   -- net feed in full words (heVersionMismatchTxt: which protocol the other
+   -- side speaks, which this build speaks, that both need the same
+   -- holde-em); later ones at the same table add a short feed line each,
+   -- so a peer that keeps retrying cannot bury the table in repeats. Never
+   -- a netLog line alone: a mixed table used to fail as nothing but
+   -- "drop:bad-version" in a feed nobody was reading, and split silently.
+   -- gGame["verNamed"] is per table (heNetGameInit clears it).
+   local tTxt
+   put heVersionMismatchTxt(pTheirV, pWhoTxt, pKeyHex) into tTxt
+   if gGame["verNamed"] is "true" then
+      put "drop   table protocol " & char 1 to 12 of pTheirV & " (" & pWhoTxt & " " \
+            & char 1 to 8 of pKeyHex & "): this table speaks " & kHeEnvV & return after gGame["netLog"]
+   else
+      put "true" into gGame["verNamed"]
+      put "VERSION " & tTxt & return after gGame["netLog"]
+      heUISetStatus tTxt
+   end if
+   heLobbyRefresh
+end heNetNameVersion
+
 command heNetOnHandshake pPeer, pTokenData, pFromSeq
    -- admit-or-drop (spec 5): a peer whose token does not verify against this
    -- table is ignored, before any game message is accepted from it.
    -- pFromSeq (2e, optional): the peer's self-named applied seq from an
    -- onion hello -- honored as a TRIM HINT on a RECONNECT only (a first
    -- join always gets the full log; a rebuilt client's mark is 0 = full).
+   -- v0.25.6 (2026-09-26): a token that verifies as ANOTHER table protocol
+   -- (heAdmitTokenVersion) is the earliest point a mixed table can be
+   -- stopped, and it is stopped HERE, named (heNetNameVersion): the peer is
+   -- not admitted, so it gets no replay and no roster entry, the relay
+   -- refuses its content, and it can never be seated or dealt to. A
+   -- joiner meeting an older HOST's token says why it cannot join. The old
+   -- side cannot verify our token either, so it never admits us (spec 6).
    local tPubHex, tRoleTxt, tIsNew, tOldPeer, tReconnect, tPeersA, tHostShort
+   local tTokVer, tTokTxt, tSaved, tWhoTxt
+   put heAdmitTokenVersion(pTokenData, gGame["tableIdHex"]) into tTokVer
+   if tTokVer is not empty and not heEnvVersionOk(tTokVer) then
+      put textDecode(pTokenData, "utf-8") into tTokTxt
+      put the itemDelimiter into tSaved
+      set the itemDelimiter to tab
+      put item 1 of tTokTxt into tPubHex
+      put item 2 of tTokTxt into tRoleTxt
+      set the itemDelimiter to tSaved
+      put "player" into tWhoTxt
+      if tRoleTxt is "host" and gGame["isHost"] is not "true" then
+         put "host" into tWhoTxt
+      end if
+      heNetNameVersion tTokVer, tWhoTxt, tPubHex
+      exit heNetOnHandshake
+   end if
    put heAdmitTokenVerify(pTokenData, gGame["tableIdHex"]) into tPubHex
    if tPubHex is empty then
       put "drop   handshake from an unadmitted peer" & return after gGame["netLog"]
@@ -7101,11 +7446,14 @@ command heHostRelay pPeer, pContentAndSig
    -- countersign, advance the chain, and broadcast the sequenced wire to all.
    -- The content's own sender signature is checked before it is relayed.
    local tContent, tSenderSig, tSaved, tFromHex, tEnvLine, tHostSig, tWire, tTypeTxt
+   local tVerTxt, tTableTxt
    put the itemDelimiter into tSaved
    set the itemDelimiter to tab
    -- contentLine is items 1..6, senderSig is item 7 of pContentAndSig
    put item 1 to 6 of pContentAndSig into tContent
    put item 7 of pContentAndSig into tSenderSig
+   put item 1 of tContent into tVerTxt
+   put item 2 of tContent into tTableTxt
    put item 4 of tContent into tFromHex
    put item 5 of tContent into tTypeTxt
    set the itemDelimiter to tSaved
@@ -7126,6 +7474,25 @@ command heHostRelay pPeer, pContentAndSig
       exit heHostRelay
    end if
    if gGame["admittedA"][tFromHex] is not "true" then
+      exit heHostRelay
+   end if
+   -- the PROTOCOL and the TABLE, checked BEFORE a seq is spent (v0.25.6,
+   -- 2026-09-26). The relay used to sequence any admitted sender's signed
+   -- content, and its own ingest then dropped a line of another protocol
+   -- or another table (heNetIngestWire) AFTER seqCounter had moved: the
+   -- host's lastSeq stayed behind its seqCounter, every later wire arrived
+   -- as a gap on every client and on the host itself, and the table
+   -- wedged. One v0.25.5 content line would have ended a v0.25.6 table.
+   -- (A protocol-1 peer is not admitted at all -- heNetOnHandshake -- so
+   -- this refuses a peer that passed the handshake and then signed another
+   -- protocol's content: named, never sequenced.)
+   if not heEnvVersionOk(tVerTxt) then
+      heNetNameVersion tVerTxt, "relay", tFromHex
+      exit heHostRelay
+   end if
+   if not heHexEq(tTableTxt, gGame["tableIdHex"]) then
+      put "drop   relay: content for another table from " & char 1 to 8 of tFromHex \
+            & " (not sequenced)" & return after gGame["netLog"]
       exit heHostRelay
    end if
    add 1 to gGame["seqCounter"]
@@ -7180,9 +7547,15 @@ command heNetIngestWire pWire
       heLobbyRefresh
       exit heNetIngestWire
    end if
-   if tA["v"] is not kHeEnvV then
+   -- the version is compared as TEXT (heEnvVersionOk, v0.25.6): `is not
+   -- kHeEnvV` read "2.0", "02" and "2e0" as version 2 on the number path
+   -- (engine notes 2.10, 2.11). A mismatch is NAMED to the person
+   -- (heNetNameVersion), never only logged: before v0.25.6 a v0.25.5 peer
+   -- and this build shared protocol 1 and dropped each other's new and old
+   -- wires as malformed, a table that split without a word.
+   if not heEnvVersionOk(tA["v"]) then
       put "drop:bad-version " & char 1 to 24 of pWire & return after gGame["netLog"]
-      heLobbyRefresh
+      heNetNameVersion tA["v"], "wire", empty
       exit heNetIngestWire
    end if
    -- the seq is CANONICAL text (heCanonIdx, 2026-09-25): it keys the reorder
@@ -7501,6 +7874,11 @@ command heNetReplayLogTo pPeer, pFromSeq
    -- PAST the requester's applied seq -- the resume-from-the-last-street
    -- half of the street-ckpt work. A reconnect handshake still replays in
    -- full (a rebuilt client has nothing); dedup keeps either idempotent.
+   -- v0.25.6: a peer of another table protocol never reaches here -- both
+   -- callers (heNetOnHandshake, the "s?" frame) serve ADMITTED peers only,
+   -- and the handshake refuses another protocol's token before admission --
+   -- and the log it replays holds only wires this build's ingest accepted,
+   -- all of this protocol (heNetIngestWire, heHostRelay).
    local tWireLine, tLog, tFromSeq, tSeqTxt, tSaved
    put pFromSeq into tFromSeq
    if tFromSeq is not a number then
@@ -7922,11 +8300,13 @@ command heNetOnionTick
          if gGame["oxDialOpen"] is "open" or tStreamState is "connected" then
             -- introduce ourselves: the admission token that rides rp1's
             -- handshake event rides the stream's first wire line here.
-            -- 2e: the frame carries our APPLIED SEQ as a trailing item --
-            -- heAdmitTokenVerify reads items 1..3 only, so an old host
-            -- ignores it (full replay, dedup-shed) while a 2e host TRIMS
-            -- its reconnect replay to the wires past the mark ("since your
-            -- last ckpt", spec 9). A fresh joiner's mark is 0 = everything.
+            -- 2e: the frame carries our APPLIED SEQ as a trailing item
+            -- (item 5 since v0.25.6's token carries its protocol in item
+            -- 4) -- the host TRIMS its reconnect replay to the wires past
+            -- the mark ("since your last ckpt", spec 9). A fresh joiner's
+            -- mark is 0 = everything. A v0.25.5 host cannot verify this
+            -- token (heAdmitTokenData) and closes the stream: see
+            -- heNetOnionDead's no-host-yet branch.
             heNetTxTo gGame["oxStream"], "h" & tab & textDecode( \
                   heAdmitTokenData(gGame["tableIdHex"], gGame["idPubHex"], gGame["idSecData"], "player"), "utf-8") \
                   & tab & gGame["lastSeq"]
@@ -8170,12 +8550,33 @@ command heNetOnionHello pPeer, pTokenTxt
    -- joiner adopts the host key before the replayed wires reach it -- and
    -- then the shared handshake path runs (admission, replay, roster),
    -- identical to rp1's. 2e: the frame may carry the sender's APPLIED SEQ
-   -- as a fourth tab item (the redial resync mark, pinned as
-   -- hello_trim_frame in protocol-kat) -- heAdmitTokenVerify reads items
-   -- 1..3 only, so the extension is compatible both ways; the mark trims
-   -- the host's reconnect replay to the wires past it (spec 9 "since your
-   -- last ckpt"; a lie only starves the liar, dedup keeps any replay safe).
-   local tPubHex, tFromSeq, tSaved
+   -- as a trailing tab item (the redial resync mark, pinned as
+   -- hello_trim_frame in protocol-kat); the mark trims the host's
+   -- reconnect replay to the wires past it (spec 9 "since your last ckpt";
+   -- a lie only starves the liar, dedup keeps any replay safe).
+   -- v0.25.6 (2026-09-26): the token is FOUR items since it carries its
+   -- table protocol (heAdmitTokenData), so the seq is item 5. A hello that
+   -- verifies as ANOTHER protocol (heAdmitTokenVersion) -- a v0.25.5
+   -- joiner's, whose own seq sits in item 4 -- is named
+   -- (heNetNameVersion) and its stream closed, before any reply: an older
+   -- client gets not even our identity, and is never admitted, replayed
+   -- to or seated. It sees the stream close (spec 6 records the words).
+   local tPubHex, tFromSeq, tSaved, tTokVer, tRoleTxt, tWhoTxt
+   put heAdmitTokenVersion(textEncode(pTokenTxt, "utf-8"), gGame["tableIdHex"]) into tTokVer
+   if tTokVer is not empty and not heEnvVersionOk(tTokVer) then
+      put the itemDelimiter into tSaved
+      set the itemDelimiter to tab
+      put item 1 of pTokenTxt into tPubHex
+      put item 2 of pTokenTxt into tRoleTxt
+      set the itemDelimiter to tSaved
+      put "player" into tWhoTxt
+      if tRoleTxt is "host" and gGame["isHost"] is not "true" then
+         put "host" into tWhoTxt
+      end if
+      heNetOnionCloseStream pPeer
+      heNetNameVersion tTokVer, tWhoTxt, tPubHex
+      exit heNetOnionHello
+   end if
    put heAdmitTokenVerify(textEncode(pTokenTxt, "utf-8"), gGame["tableIdHex"]) into tPubHex
    if tPubHex is empty then
       put "drop   onion hello failed verification (stream " & pPeer & ")" & return after gGame["netLog"]
@@ -8185,7 +8586,7 @@ command heNetOnionHello pPeer, pTokenTxt
    end if
    put the itemDelimiter into tSaved
    set the itemDelimiter to tab
-   put item 4 of pTokenTxt into tFromSeq
+   put item 5 of pTokenTxt into tFromSeq
    set the itemDelimiter to tSaved
    if tFromSeq is not a number then
       put 0 into tFromSeq
@@ -8312,6 +8713,25 @@ command heNetOnionDead
             heNetOnionRedialArm
             exit heNetOnionDead
          end if
+         -- v0.25.6: a host that closes the stream BEFORE its hello ever
+         -- reached us (no host key adopted) refused our hello, and the
+         -- likeliest reason at a well-formed invite is another table
+         -- protocol: a v0.25.5 host cannot verify a v0.25.6 token. Onion
+         -- gives this side no more than the close, so say what it can
+         -- mean rather than "lost" (spec 6; the rp1 transport names the
+         -- older host from its token instead, heNetOnHandshake)
+         if gGame["hostPubHex"] is empty then
+            if gGame["verNamed"] is "true" then
+               -- the host's own hello already NAMED its protocol (and this
+               -- side closed the stream on it): keep that message, which
+               -- says more than a close can, and tear down quietly
+               heNetOnionStandDown "Tor: closed -- the host speaks another table protocol (see the status line)"
+               exit heNetOnionDead
+            end if
+            heNetOnionFail "The host closed the connection without answering this client's hello: it refused this key, or it runs a different holde-em (this build speaks table protocol " \
+                  & kHeEnvV & ", holde-em " & kHeVersion & "; both sides need the same holde-em version)."
+            exit heNetOnionDead
+         end if
          heNetOnionFail "Lost the tor stream to the host. Join again with the same invite to reconnect (if a host was elected, the net feed names it)."
          exit heNetOnionDead
       end if
@@ -8367,7 +8787,7 @@ function heNetOnionStatusTxt
       case "ready"
          return "Tor: ready"
    end switch
-   return "Tor: idle -- Create hosts an onion table; Join takes a 64hex@...onion invite"
+   return "Tor: idle -- Create hosts an onion table; Join takes a " & heInviteTag() & "64hex@...onion invite"
 end heNetOnionStatusTxt
 
 on heOnionStatus pKind, pInfo
@@ -8496,6 +8916,9 @@ command heNetGameInit
    put "false" into gGame["foldApplied"]
    put "false" into gGame["handWait"]
    put empty into gGame["seenMsByPub"]
+   -- v0.25.6: a table-protocol mismatch is named in full once per table
+   -- (heNetNameVersion)
+   put empty into gGame["verNamed"]
 end heNetGameInit
 
 command heNetHandReset
@@ -8827,6 +9250,51 @@ function heDealLevelOf pBodyTxt, pOccList
    return tOutA
 end heDealLevelOf
 
+function heBoardTakeOf pStreetTxt, pCardsTxt, pHeldN
+   -- a board wire's street read the one way the table reads it (v0.25.6,
+   -- 2026-09-26: lifted out of the live fold so History's translation
+   -- reads it identically; holde-em WORK-PLAN row 16a), PURE (H5). pHeldN
+   -- is how many board cards this hand already holds. Returns an array:
+   -- "err" (empty when the street folds), "idx" (the card indices, comma
+   -- text). Each street lands exactly once and in order -- the flop onto
+   -- an empty board, the turn onto three cards, the river onto four -- so a
+   -- redelivered or re-sequenced street is refused: a doubled flop would
+   -- shift every later slot. History used to append every dealer-signed
+   -- board wire, and a re-sequenced flop gave it a SIX-card board.
+   local tOutA, tCardsTxt, tIdxList, tOneCard
+   set the itemDelimiter to comma
+   put empty into tOutA["err"]
+   put empty into tOutA["idx"]
+   if not ((pStreetTxt is "flop" and pHeldN is 0) \
+         or (pStreetTxt is "turn" and pHeldN is 3) \
+         or (pStreetTxt is "river" and pHeldN is 4)) then
+      put "out-of-order/duplicate board (" & char 1 to 12 of pStreetTxt & ")" into tOutA["err"]
+      return tOutA
+   end if
+   put pCardsTxt into tCardsTxt
+   replace "|" with comma in tCardsTxt
+   put empty into tIdxList
+   repeat for each item tOneCard in tCardsTxt
+      put heCardIndex(tOneCard) & comma after tIdxList
+   end repeat
+   if tIdxList is not empty then
+      delete char -1 of tIdxList
+   end if
+   if pStreetTxt is "flop" then
+      if not heIsCardList(tIdxList, 3) then
+         put "malformed board" into tOutA["err"]
+         return tOutA
+      end if
+   else
+      if not heIsCardList(tIdxList, 1) then
+         put "malformed board" into tOutA["err"]
+         return tOutA
+      end if
+   end if
+   put tIdxList into tOutA["idx"]
+   return tOutA
+end heBoardTakeOf
+
 function heNetPosFilled pWhich
    -- how many CONTRIBUTOR positions 1..heNetContribCount() hold an entry in
    -- gGame["oDeal"][pWhich] (commitsBy, sealsBy, revealsBy). WALKED over the
@@ -8968,6 +9436,44 @@ function heTimeoutPostOf pStateA
    return "bidBB" & comma & pStateA["bbSeat"] & comma \
          & min(pStateA["bb"], pStateA["stackBy"][pStateA["bbSeat"]])
 end heTimeoutPostOf
+
+function heTimeoutRuleOk pStateA, pBodyA, pSeatNum, pKindTxt, pAmt, pBankUsed, pSitOut
+   -- the TRANSCRIPT-DERIVED half of a host timeout's verification, PURE
+   -- (H5; v0.25.6, 2026-09-26): empty when the timeout wire's prescription
+   -- and bank flag are the ones the folded state allows, else the refusal.
+   -- The verb (act) or the forced post (bid) must be EXACTLY what the
+   -- engine state prescribes (heTimeoutVerbOf, heTimeoutPostOf: a host may
+   -- never fold a seat that could check, nor post a wrong amount); bank=1
+   -- only while the seat's one per-hand bank is unspent and it is not
+   -- sitting out, bank=0 only when it is spent or the seat sits out.
+   -- pBankUsed / pSitOut: the seat's "true" flags as the caller folded
+   -- them. Lifted out of heNetTimeoutOk so History's fold replays the same
+   -- rule (heFoldTranscript; holde-em WORK-PLAN row 16c): the table
+   -- refused a timeout for these reasons and History used to fold it
+   -- anyway. The CLOCK half stays in heNetTimeoutOk -- no reader of a
+   -- transcript can know when a wire arrived on someone's clock.
+   local tPostTxt
+   if pKindTxt is "act" then
+      if pBodyA["verb"] is not heTimeoutVerbOf(pStateA, pSeatNum) or pAmt is not 0 then
+         return "wrong prescription (" & pBodyA["verb"] & ")"
+      end if
+   else
+      put heTimeoutPostOf(pStateA) into tPostTxt
+      if tPostTxt is not (pKindTxt & comma & pSeatNum & comma & pAmt) then
+         return "wrong forced post"
+      end if
+   end if
+   if pBodyA["bank"] is "1" then
+      if pBankUsed is "true" or pSitOut is "true" then
+         return "bank already spent"
+      end if
+   else
+      if pBankUsed is not "true" and pSitOut is not "true" then
+         return "bank denied (unspent bank needs bank=1)"
+      end if
+   end if
+   return empty
+end heTimeoutRuleOk
 
 function heSitMarkOk pMarkTxt, pDoneN
    -- THE SIT-OUT MARK (v0.25.6, 2026-09-25; holde-em WORK-PLAN coding #15):
@@ -9202,28 +9708,13 @@ function heNetTimeoutOk pBodyA, pSeatNum, pKindTxt, pAmt
    -- itself asked -- and during catch-up replay, where the live table
    -- already policed it). Returns empty when the wire folds, else the
    -- refusal reason (logged loudly: a rushing host is EVIDENCE).
-   local tLimit, tElapsed, tPostTxt
-   if pKindTxt is "act" then
-      if pBodyA["verb"] is not heTimeoutVerbOf(gGame["state"], pSeatNum) \
-            or pAmt is not 0 then
-         return "wrong prescription (" & pBodyA["verb"] & ")"
-      end if
-   else
-      put heTimeoutPostOf(gGame["state"]) into tPostTxt
-      if tPostTxt is not (pKindTxt & comma & pSeatNum & comma & pAmt) then
-         return "wrong forced post"
-      end if
-   end if
-   if pBodyA["bank"] is "1" then
-      if gGame["oDeal"]["bankUsedBy"][pSeatNum] is "true" \
-            or gGame["sitOutBy"][pSeatNum] is "true" then
-         return "bank already spent"
-      end if
-   else
-      if gGame["oDeal"]["bankUsedBy"][pSeatNum] is not "true" \
-            and gGame["sitOutBy"][pSeatNum] is not "true" then
-         return "bank denied (unspent bank needs bank=1)"
-      end if
+   -- v0.25.6: the prescription and bank checks are heTimeoutRuleOk, the
+   -- pure rule History's fold replays too; only the clock is this one's.
+   local tLimit, tElapsed, tRuleTxt
+   put heTimeoutRuleOk(gGame["state"], pBodyA, pSeatNum, pKindTxt, pAmt, \
+         gGame["oDeal"]["bankUsedBy"][pSeatNum], gGame["sitOutBy"][pSeatNum]) into tRuleTxt
+   if tRuleTxt is not empty then
+      return tRuleTxt
    end if
    if gGame["sitOutBy"][pSeatNum] is "true" then
       return empty   -- instant by construction; no clock to check
@@ -9592,11 +10083,11 @@ command heNetFoldGameWire pTypeTxt, pFromHex, pBodyTxt, pHandTxt
    -- hand's dealer; everything seat-scoped must come from the key that OWNS
    -- the seat (a seat claim in a body is never trusted over seatByPub).
    -- Anything malformed is a logged drop, never a throw (H4).
-   local tBodyA, tSeat, tPos, tHex, tAmt, tVerb, tCardsTxt, tOneCard, tIdxList
+   local tBodyA, tSeat, tPos, tHex, tAmt, tVerb, tIdxList
    local tFromSeat, tOccList, tStackAmt, tOpenErr, tOpenTxt
    local tDeltasTxt, tMineTxt, tHeadHex, tSigHex, tResultTxt, tPrevBad
    local tStreetName, tBoardHeld, tBoardN, tCkptHead, tHandCanon, tRawTxt
-   local tWhyTxt, tLevelA
+   local tWhyTxt, tLevelA, tBoardA, tOldPub, tOldSeat
    set the itemDelimiter to comma
    put pBodyTxt into tBodyA
    split tBodyA by comma and "="
@@ -9683,6 +10174,24 @@ command heNetFoldGameWire pTypeTxt, pFromHex, pBodyTxt, pHandTxt
             put "drop   malformed sit" & return after gGame["netLog"]
             break
          end if
+         -- ONE KEY PER SEAT, ONE SEAT PER KEY (v0.25.6, 2026-09-26). A
+         -- re-sit used to write the new mappings and leave the old ones:
+         -- the seat's OLD key still read the seat from seatByPub, so it
+         -- still acted, committed, revealed and stood for a seat the host
+         -- had given away (confirmed by a headless probe the same day),
+         -- and a key moved to another seat still owned its old one in
+         -- pubBySeat (the dealer key, the election). Only a misbehaving host
+         -- re-sits -- an honest one seats each key once, into an empty seat
+         -- -- but the table must mean one thing by "seat 2" either way, and
+         -- History's translation clears the same two mappings.
+         put gGame["pubBySeat"][tSeat] into tOldPub
+         if tOldPub is not empty and not heHexEq(tOldPub, tHex) then
+            put empty into gGame["seatByPub"][tOldPub]
+         end if
+         put gGame["seatByPub"][tHex] into tOldSeat
+         if tOldSeat is not empty and ("n" & tOldSeat) is not ("n" & tSeat) then
+            put empty into gGame["pubBySeat"][tOldSeat]
+         end if
          put tSeat into gGame["seatByPub"][tHex]
          put tHex into gGame["pubBySeat"][tSeat]
          put gGame["seatedList"] into tOccList
@@ -9766,11 +10275,26 @@ command heNetFoldGameWire pTypeTxt, pFromHex, pBodyTxt, pHandTxt
          -- case so History's translation reads it the same way): the level,
          -- dealer and count as canonical TEXT, the count equal to the dealt
          -- seats, anything past level 1 refused readably (downgrade refusal).
+         -- ONE dealLevel per hand (v0.25.6, 2026-09-26; a consensus
+         -- narrowing, the owner's call; holde-em WORK-PLAN row 16e): a
+         -- second one used to fold -- the dealer seat and the count
+         -- last-wins, the oracle flag sticky -- so a misbehaving host could
+         -- switch the DEALER after the seals had gone to the first one. The
+         -- first dealLevel the table takes fixes the dealer and the
+         -- contributors for the hand; any later one is refused, here and
+         -- in History (heNetLogToHotseat). A refused (malformed) one does
+         -- not count as taken.
+         if gGame["oDeal"]["levelTaken"] is "true" then
+            put "drop   a second dealLevel for hand " & gGame["handNum"] \
+                  & " (the first fixed the dealer)" & return after gGame["netLog"]
+            break
+         end if
          put heDealLevelOf(pBodyTxt, gGame["state"]["occ"]) into tLevelA
          if tLevelA["err"] is not empty then
             put "drop   " & tLevelA["err"] & return after gGame["netLog"]
             break
          end if
+         put "true" into gGame["oDeal"]["levelTaken"]
          put tLevelA["dealer"] into gGame["oDeal"]["dealerSeat"]
          put tLevelA["count"] into gGame["oDeal"]["dealCount"]
          if ("n" & tLevelA["level"]) is "n1" then
@@ -10056,36 +10580,17 @@ command heNetFoldGameWire pTypeTxt, pFromHex, pBodyTxt, pHandTxt
          -- a redelivered or reconnect-burst board wire
          -- must not append twice (a doubled flop would shift every later slot
          -- and corrupt the audit's board compare). Each street lands exactly
-         -- once, in order.
+         -- once, in order: heBoardTakeOf (v0.25.6), the rule History's
+         -- translation applies too.
          put tBodyA["street"] into tStreetName
          put gGame["oDeal"]["boardList"] into tBoardHeld
          put the number of items of tBoardHeld into tBoardN
-         if not ((tStreetName is "flop" and tBoardN is 0) \
-               or (tStreetName is "turn" and tBoardN is 3) \
-               or (tStreetName is "river" and tBoardN is 4)) then
-            put "drop   out-of-order/duplicate board (" & tStreetName & ")" & return after gGame["netLog"]
+         put heBoardTakeOf(tStreetName, tBodyA["cards"], tBoardN) into tBoardA
+         if tBoardA["err"] is not empty then
+            put "drop   " & tBoardA["err"] & return after gGame["netLog"]
             break
          end if
-         put tBodyA["cards"] into tCardsTxt
-         replace "|" with comma in tCardsTxt
-         put empty into tIdxList
-         repeat for each item tOneCard in tCardsTxt
-            put heCardIndex(tOneCard) & comma after tIdxList
-         end repeat
-         if tIdxList is not empty then
-            delete char -1 of tIdxList
-         end if
-         if tStreetName is "flop" then
-            if not heIsCardList(tIdxList, 3) then
-               put "drop   malformed board" & return after gGame["netLog"]
-               break
-            end if
-         else
-            if not heIsCardList(tIdxList, 1) then
-               put "drop   malformed board" & return after gGame["netLog"]
-               break
-            end if
-         end if
+         put tBoardA["idx"] into tIdxList
          if gGame["oDeal"]["boardList"] is empty then
             put tIdxList into gGame["oDeal"]["boardList"]
          else
@@ -11998,7 +12503,15 @@ function heFoldTranscript pLogTxt
    local tPos, tCardTxt, tOneCard, tSettleBad
    local tHistLine, tBoardNames, tPotTotal, tWinnersTxt, tShownTxt, tHolePair, tAuditPart
    local tShowChoiceA, tShownPiece
+   local tSitOutA, tMissA, tBankUsedA, tMissMax, tTimedOut, tRuleAmt
    set the itemDelimiter to comma
+   -- ONLINE liveness state for the timeout replay (v0.25.6, 2026-09-26;
+   -- holde-em WORK-PLAN row 16c), folded from the translated transcript
+   -- the way the table folds it: who sits out (stand / sit lines, and
+   -- kHeDefaultMisses -- or the cfg's miss= -- consecutive timeouts), each
+   -- seat's miss count, and the per-hand time-bank. A hotseat log has none
+   -- of these lines and no timeout, so none of it moves there.
+   put kHeDefaultMisses into tMissMax
    put 0 into tOutA["handNum"]
    put empty into tOutA["trace"]
    put empty into tOutA["errors"]
@@ -12035,6 +12548,27 @@ function heFoldTranscript pLogTxt
                add 1 to tPos
                put item tPos of tStacksTxt into tOutA["stacksBy"][tSeatNum]
             end repeat
+            if tBodyA["miss"] is a number then
+               put tBodyA["miss"] into tMissMax   -- an online table's signed limit
+            end if
+            break
+
+         case "stand"
+         case "sit"
+            -- an ONLINE seat's own sit-out and its return (v0.25.6):
+            -- translated only when the table accepted them (the seat's
+            -- owner, the next sit-out mark; heNetLogToHotseat), and read
+            -- here only by the timeout replay below. The seat is the
+            -- from-name's, as for acts. A return clears the miss count, as
+            -- the live sit-return fold does.
+            put heLogField(tLogLine, 2) into tFromTxt
+            put char 5 to -1 of tFromTxt into tSeatNum
+            if tType is "stand" then
+               put "true" into tSitOutA[tSeatNum]
+            else
+               put empty into tSitOutA[tSeatNum]
+               put 0 into tMissA[tSeatNum]
+            end if
             break
 
          case "level"
@@ -12057,6 +12591,7 @@ function heFoldTranscript pLogTxt
             put tBodyA["button"] into tButtonSeat
             put heBetNewHand(tSB, tBB, tAnte, tOutA["stacksBy"], tOccList, tButtonSeat) into tStateA
             put "true" into tHaveHand
+            put empty into tBankUsedA   -- ONE time-bank per hand per seat (spec 8.1)
             put empty into tHolesA
             put empty into tBoardList
             put empty into tRanksA
@@ -12114,13 +12649,51 @@ function heFoldTranscript pLogTxt
                   next repeat
                end if
             end if
+            -- a HOST TIMEOUT (timeout=1, online only) is replayed with the
+            -- table's TRANSCRIPT-DERIVED checks (v0.25.6, row 16c): the
+            -- exact check-or-fold or forced post the state prescribes, and
+            -- the bank flag the seat's bank and sit-out state allow
+            -- (heTimeoutRuleOk, the rule heNetTimeoutOk applies live). A
+            -- refusal is skipped, as the table refused it and played on.
+            -- The deadline is NOT replayed: no transcript says when a wire
+            -- reached anyone's clock (spec 6).
+            put (tBodyA["timeout"] is "1") into tTimedOut
+            if tTimedOut then
+               put tBodyA["amount"] into tRuleAmt
+               if tType is "act" then
+                  put 0 into tRuleAmt   -- live: the act timeout's amount is 0, whatever the body says
+               end if
+               if heTimeoutRuleOk(tStateA, tBodyA, tSeatNum, tType, tRuleAmt, \
+                     tBankUsedA[tSeatNum], tSitOutA[tSeatNum]) is not empty then
+                  next repeat
+               end if
+            end if
             if tType is "act" then
-               put heBetApply(tStateA, "act", tSeatNum, tBodyA["verb"] & comma & tBodyA["amount"]) into tStateA
+               if tTimedOut then
+                  put heBetApply(tStateA, "act", tSeatNum, tBodyA["verb"] & comma & 0) into tStateA
+               else
+                  put heBetApply(tStateA, "act", tSeatNum, tBodyA["verb"] & comma & tBodyA["amount"]) into tStateA
+               end if
             else
                put heBetApply(tStateA, tType, tSeatNum, tBodyA["amount"]) into tStateA
             end if
             if tStateA["err"] is not empty then
                put "engine-rejected:" & tStateA["err"] & return after tOutA["errors"]
+            else if tTimedOut then
+               -- an APPLIED timeout spends the bank it named and counts a
+               -- miss; the limit sits the seat out (heNetTimeoutMiss)
+               if tBodyA["bank"] is "1" then
+                  put "true" into tBankUsedA[tSeatNum]
+               end if
+               if tMissA[tSeatNum] is not a number then
+                  put 0 into tMissA[tSeatNum]
+               end if
+               add 1 to tMissA[tSeatNum]
+               if tMissA[tSeatNum] >= tMissMax then
+                  put "true" into tSitOutA[tSeatNum]
+               end if
+            else if tType is "act" then
+               put 0 into tMissA[tSeatNum]   -- a voluntary act is presence (F5)
             end if
             break
 
@@ -12289,14 +12862,23 @@ function heNetLogToHotseat pLogTxt, pHostHex
    --     FIRST commitment is the one kept, and a reveal must open it --
    --     the deal audit reads the LAST line per position, so only the
    --     wires the table kept become lines.
+   --   * the ROW-16 rules (v0.25.6, 2026-09-26; holde-em WORK-PLAN row 16):
+   --     the board's street order (heBoardTakeOf, the live fold's rule: a
+   --     re-sequenced flop used to give History a six-card board); the
+   --     settle the table APPLIED -- the first one, after the reveals, that
+   --     matches the recomputation (heNetXlatPickSettle), where History
+   --     kept the LAST settle wire; a timeout only for a DEALT seat (the
+   --     table dropped any other as malformed); ONE dealLevel per hand
+   --     (the table refuses a second); and a re-sit clears the seat's old
+   --     key and the key's old seat, as the live sit fold does. A timeout's
+   --     prescription and bank checks are replayed by the fold
+   --     (heFoldTranscript, through heTimeoutRuleOk), fed by the stand and
+   --     sit-return lines this walk emits once their sit-out marks check
+   --     (heSitMarkOk) -- the transcript-derived half of heNetTimeoutOk.
+   --     Its CLOCK is not replayable: when a wire reached a client is not
+   --     in any transcript, so History takes the table's word on it.
    -- A refused wire is skipped silently: the table refused it and played
-   -- on, and History replays the game the table played. NOT YET for the
-   -- live board fold's street order, the FIRST settle that matches the
-   -- table's own recomputation, heNetTimeoutOk's refusals (its clock,
-   -- which no reader can know, and its prescription and bank checks,
-   -- which it could) and a timeout for a seat not dealt (holde-em
-   -- WORK-PLAN; each is a visible History FAIL or error, never a false
-   -- PASS on chips). The mapping:
+   -- on, and History replays the game the table played. The mapping:
    --   * the signed cfg's stakes + the sit wires' seats become the hotseat
    --     cfg line (stacks seed from the cfg's stack, as the live fold does),
    --     emitted once before the first handStart;
@@ -12326,10 +12908,16 @@ function heNetLogToHotseat pLogTxt, pHostHex
    local tPos, tDealErr, tDeckList, tDealA, tHolePair, tNamesTxt, tSeenHand
    local tPosI, tOccNew, tButtonNew, tHexTxt, tCommitsA
    local tRosterTxt, tPubBySeatA, tCtxA, tLevelA, tFromHex, tDealerSeat
+   local tCfgMiss, tLevelTaken, tBoardN, tBoardA, tSettleCands, tSitMarkA
+   local tOldPub, tOldSeat, tMarkWhy
    set the itemDelimiter to comma
    put 1 into tCfgSB
    put 2 into tCfgBB
    put 0 into tCfgAnte
+   put kHeDefaultMisses into tCfgMiss
+   put "false" into tLevelTaken
+   put 0 into tBoardN
+   put empty into tSettleCands
    put kHeDefaultStack into tStackAmt
    put "false" into tCfgDone
    put "false" into tSeenHand
@@ -12417,22 +13005,71 @@ function heNetLogToHotseat pLogTxt, pHostHex
             if tBodyA["stack"] is a number then
                put tBodyA["stack"] into tStackAmt
             end if
+            -- the consecutive-miss limit (heNetCfgVal("miss") live), for
+            -- the fold's timeout replay (v0.25.6)
+            if tBodyA["miss"] is a number then
+               put tBodyA["miss"] into tCfgMiss
+            end if
             break
          case "roster"
             -- who the table admits from here on (the live gGame["rosterBody"])
             put tBodyTxt into tRosterTxt
             break
-         case "sit"
-            -- the host ASSIGNMENT form only (seat=N,pub=...); a seat's own
-            -- sit-return (2e, no pub) is liveness state, not seating -- its
-            -- effect is already in the next handStart's seats
+         case "stand"
+            -- a seat's own sit-out (v0.25.6 in History): kept only when its
+            -- sit-out mark is the seat's next (heSitMarkOk, the live rule;
+            -- the sender owns the seat, heWireSenderOk above), and then
+            -- emitted for the fold, whose timeout replay reads who sits out
+            -- (a sitting-out seat's timeout must carry bank=0)
             put tBodyTxt into tBodyA
             split tBodyA by comma and "="
-            -- a CANONICAL seat and a 64-hex key only (heCanonIdx,
-            -- 2026-09-25): the live sit fold refuses any other, and History
-            -- must replay the game the table actually played
+            put heSitMarkOk(tBodyA["n"], tSitMarkA[tFromSeat]) into tMarkWhy
+            if tMarkWhy is empty then
+               if tSitMarkA[tFromSeat] is a number then
+                  add 1 to tSitMarkA[tFromSeat]
+               else
+                  put 1 into tSitMarkA[tFromSeat]
+               end if
+               put heLogLine(tHandTxt, "seat" & tFromSeat, "stand", "seat=" & tFromSeat) \
+                     & return after tHandLines
+            end if
+            break
+         case "sit"
+            put tBodyTxt into tBodyA
+            split tBodyA by comma and "="
+            if tBodyA["pub"] is empty then
+               -- a seat's own RETURN from sit-out (2e, no pub): its seating
+               -- effect is already in the next handStart's seats, and since
+               -- v0.25.6 it is emitted for the fold's timeout replay too,
+               -- once its sit-out mark checks (heSitMarkOk), as the stand's
+               put heSitMarkOk(tBodyA["n"], tSitMarkA[tFromSeat]) into tMarkWhy
+               if tMarkWhy is empty then
+                  if tSitMarkA[tFromSeat] is a number then
+                     add 1 to tSitMarkA[tFromSeat]
+                  else
+                     put 1 into tSitMarkA[tFromSeat]
+                  end if
+                  put heLogLine(tHandTxt, "seat" & tFromSeat, "sit", "seat=" & tFromSeat) \
+                        & return after tHandLines
+               end if
+               break
+            end if
+            -- the host ASSIGNMENT form (seat=N,pub=...): a CANONICAL seat
+            -- and a 64-hex key only (heCanonIdx, 2026-09-25): the live sit
+            -- fold refuses any other, and History must replay the game the
+            -- table actually played. A RE-SIT clears the seat's old key and
+            -- the key's old seat, as the live fold does (v0.25.6): kept, the
+            -- old key went on acting for the seat here too.
             put heCanonIdx(tBodyA["seat"], kHeMaxSeats) into tSeatNum
             if tSeatNum is not empty and heIsHex(tBodyA["pub"], 64) then
+               put tPubBySeatA[tSeatNum] into tOldPub
+               if tOldPub is not empty and not heHexEq(tOldPub, tBodyA["pub"]) then
+                  put empty into tSeatByPubA[tOldPub]
+               end if
+               put tSeatByPubA[tBodyA["pub"]] into tOldSeat
+               if tOldSeat is not empty and ("n" & tOldSeat) is not ("n" & tSeatNum) then
+                  put empty into tPubBySeatA[tOldSeat]
+               end if
                put tSeatNum into tSeatByPubA[tBodyA["pub"]]
                put tBodyA["pub"] into tPubBySeatA[tSeatNum]
             end if
@@ -12462,16 +13099,22 @@ function heNetLogToHotseat pLogTxt, pHostHex
                break
             end if
             -- flush the PREVIOUS hand first (its trailing show/muck wires
-            -- land between its settle and this handStart)
+            -- land between its settle and this handStart), with the settle
+            -- the table applied (heNetXlatPickSettle, v0.25.6)
+            put heNetXlatPickSettle(tOut, tHandLines, tHoleLines, tShowLines, \
+                  tSettleCands, tHandNum) into tSettleLine
             put heNetXlatFlush(tHandLines, tHoleLines, tShowLines, tSettleLine) after tOut
             put empty into tHandLines
             put empty into tShowLines
             put empty into tSettleLine
+            put empty into tSettleCands
             put empty into tHoleLines
             put empty into tSeedsA
             put empty into tCommitsA
             put 0 into tRevealN
             put 0 into tContribN
+            put 0 into tBoardN
+            put "false" into tLevelTaken
             put "true" into tSeenHand
             put tOccNew into tOccList
             put tButtonNew into tButton
@@ -12497,30 +13140,34 @@ function heNetLogToHotseat pLogTxt, pHostHex
                   delete char -1 of tSeatsTxt
                   delete char -1 of tStacksTxt
                end if
+               -- (miss= since v0.25.6: the consecutive-miss limit the
+               -- fold's timeout replay sits a seat out at)
                put heLogLine(0, "table", "cfg", "sb=" & tCfgSB & ",bb=" & tCfgBB \
                      & ",ante=" & tCfgAnte & ",seats=" & tSeatsTxt \
-                     & ",stacks=" & tStacksTxt & ",button=" & tButton) & return after tOut
+                     & ",stacks=" & tStacksTxt & ",button=" & tButton \
+                     & ",miss=" & tCfgMiss) & return after tOut
             end if
             put heLogLine(tHandTxt, "table", "handStart", tBodyTxt) & return after tHandLines
             break
          case "dealLevel"
             -- read the one way the live fold reads it (heDealLevelOf,
             -- v0.25.6): a dealLevel the table refused is skipped, and the
-            -- one it took names this hand's dealer and contributors
+            -- one it took names this hand's dealer and contributors. ONE
+            -- per hand (v0.25.6, 2026-09-26, row 16e): the table refuses a
+            -- second, so History does. (Before, both folded it -- dealer
+            -- and count last-wins, the oracle flag only ever set -- and the
+            -- review of 2026-09-25 had History match that; a host could
+            -- switch the dealer after the seals.)
+            if tLevelTaken is "true" then
+               break
+            end if
             put heDealLevelOf(tBodyTxt, tOccList) into tLevelA
             if tLevelA["err"] is not empty then
                break
             end if
-            -- EXACTLY the live fold's state change, a second dealLevel in
-            -- one hand included (only a misbehaving host sends one): the
-            -- dealer seat and the count are last-wins, but the oracle flag
-            -- is only ever SET (the live case writes oracleDeal on level 1
-            -- and never clears it; heNetHandReset does), so level 1 then
-            -- level 0 leaves the ORACLE dealing with dealCount + 1
-            -- contributors. First written as "level 0 clears the oracle",
-            -- History then took a flop from the level-0 seat that the
-            -- table refused and refused the oracle's that it took (review
-            -- fix, 2026-09-25; pinned in section 15)
+            put "true" into tLevelTaken
+            -- the oracle flag is only ever SET within a hand, as the live
+            -- case writes it (heNetHandReset clears it with the hand)
             put tLevelA["dealer"] into tDealerSeat
             if ("n" & tLevelA["level"]) is "n1" then
                put "true" into tCtxA["oracle"]
@@ -12594,6 +13241,18 @@ function heNetLogToHotseat pLogTxt, pHostHex
                   & return after tHandLines
             break
          case "board"
+            -- the live fold's STREET ORDER (heBoardTakeOf, v0.25.6, row
+            -- 16a): the flop onto an empty board, the turn onto three, the
+            -- river onto four, well formed -- anything else the table
+            -- dropped. History used to append every dealer-signed board
+            -- wire, so a re-sequenced flop gave it a six-card board.
+            put tBodyTxt into tBodyA
+            split tBodyA by comma and "="
+            put heBoardTakeOf(tBodyA["street"], tBodyA["cards"], tBoardN) into tBoardA
+            if tBoardA["err"] is not empty then
+               break
+            end if
+            add heCountItems(tBoardA["idx"]) to tBoardN
             put heLogLine(tHandTxt, "table", "board", tBodyTxt) & return after tHandLines
             break
          case "bidAnte"
@@ -12617,12 +13276,17 @@ function heNetLogToHotseat pLogTxt, pHostHex
             end if
             -- the timeout's seat is CANONICAL or the line is not replayed
             -- (2026-09-25): "seat03" would reach the fold as seat "03", which
-            -- the live table refused; the fold would have acted on it
+            -- the live table refused; the fold would have acted on it. And
+            -- (v0.25.6, row 16d) it is a seat DEALT this hand, and a timeout
+            -- post's amount is a number: the table dropped any other as a
+            -- malformed timeout, and History translated it anyway
             put heCanonIdx(tBodyA["seat"], kHeMaxSeats) into tSeatNum
             if tBodyA["timeout"] is "1" then
-               if tSeatNum is not empty then
-                  put heLogLine(tHandTxt, "seat" & tSeatNum, tTypeTxt, tBodyTxt) \
-                        & return after tHandLines
+               if tSeatNum is not empty and tSeatNum is among the items of tOccList then
+                  if tTypeTxt is "act" or tBodyA["amount"] is a number then
+                     put heLogLine(tHandTxt, "seat" & tSeatNum, tTypeTxt, tBodyTxt) \
+                           & return after tHandLines
+                  end if
                end if
             else if tFromSeat is a number then
                put heLogLine(tHandTxt, "seat" & tFromSeat, tTypeTxt, tBodyTxt) \
@@ -12637,11 +13301,23 @@ function heNetLogToHotseat pLogTxt, pHostHex
          case "settle"
             -- held back so the trailing show/muck wires can precede it;
             -- the holes re-derive HERE, while this hand's reveals are in
-            -- scope (needs SodiumXT; guarded -- an incomplete or
-            -- underivable hand honestly gets no hole lines)
-            put heLogLine(tHandTxt, "table", "settle", tBodyTxt) into tSettleLine
-            put empty into tHoleLines
-            if heHasSodium() and tContribN > 0 and tRevealN >= tContribN then
+            -- scope (needs SodiumXT; guarded -- an underivable hand
+            -- honestly gets no hole lines).
+            -- v0.25.6 (row 16b): the table takes a settle only once every
+            -- contributor has revealed (heNetComputeSettleTxt is empty
+            -- before, and the wire drops), and then the FIRST that matches
+            -- its own recomputation (settleDone). So a settle before the
+            -- reveals is skipped here too, and every later one is kept as a
+            -- CANDIDATE; the flush keeps the one the table applied
+            -- (heNetXlatPickSettle), where this used to keep the LAST.
+            if tContribN is 0 or tRevealN < tContribN then
+               break
+            end if
+            put heLogLine(tHandTxt, "table", "settle", tBodyTxt) & return after tSettleCands
+            if tHoleLines is not empty then
+               break   -- derived at this hand's first candidate
+            end if
+            if heHasSodium() then
                try
                   put heLevel0Deck(heHex2BinD(tTableHex), tHandNum, tSeedsA, tContribN) into tDeckList
                   put heDealAssign(tDeckList, tOccList, tButton) into tDealA
@@ -12658,12 +13334,50 @@ function heNetLogToHotseat pLogTxt, pHostHex
             break
       end switch
    end repeat
+   put heNetXlatPickSettle(tOut, tHandLines, tHoleLines, tShowLines, \
+         tSettleCands, tHandNum) into tSettleLine
    put heNetXlatFlush(tHandLines, tHoleLines, tShowLines, tSettleLine) after tOut
    if tSeenHand is not "true" then
       return empty
    end if
    return tOut
 end heNetLogToHotseat
+
+function heNetXlatPickSettle pPrefix, pHandLines, pHoleLines, pShowLines, pCands, pHandNum
+   -- the ONE settle line History folds for a hand: the one the table
+   -- applied (v0.25.6, 2026-09-26; holde-em WORK-PLAN row 16b). The live
+   -- fold takes the FIRST settle that equals its own recomputation and
+   -- ignores the rest (settleDone); a mismatching one before it is refused
+   -- (SETTLE-MISMATCH). pCands holds the hand's candidates in wire order
+   -- (heNetLogToHotseat keeps only those after the reveals). One candidate
+   -- -- every honest hand -- is taken as it is. With more, each is tried
+   -- in order by the fold itself over the translated history so far
+   -- (pPrefix) plus this hand: the first the fold reports settle-verified
+   -- is the one; if none is, the FIRST is kept, so the hand still reads
+   -- settle-MISMATCH, the dispute the table logged. Only a misbehaving
+   -- host sends two, so the trial folds cost nothing on an honest table.
+   -- Pure (H5): heFoldTranscript is pure.
+   local tN, tCand, tFoldA, tLastTxt, tHistTxt
+   put the number of lines of pCands into tN
+   if tN is 0 then
+      return empty
+   end if
+   if tN is 1 then
+      return line 1 of pCands
+   end if
+   repeat for each line tCand in pCands
+      if tCand is empty then
+         next repeat
+      end if
+      put heFoldTranscript(pPrefix & heNetXlatFlush(pHandLines, pHoleLines, pShowLines, tCand)) into tFoldA
+      put tFoldA["history"] into tHistTxt   -- a plain local before chunking (H6)
+      put line -1 of tHistTxt into tLastTxt
+      if tLastTxt begins with ("hand " & pHandNum & ":") and tLastTxt ends with "; settle-verified" then
+         return tCand
+      end if
+   end repeat
+   return line 1 of pCands
+end heNetXlatPickSettle
 
 function heNetXlatFrom pFromSeat
    -- translated from-name: a seated key is "seatN"; anything else (the
@@ -16239,8 +16953,23 @@ command heRunSection pName
    end try
 end heRunSection
 
+function heTSame pObserved, pExpected
+   -- the harness's ONE equality (v0.25.6, 2026-09-26): TEXT, behind a
+   -- letter, the file's rule for anything that must not reach the number
+   -- path. heTAssert compared with bare `is`, and `is` compares two
+   -- number-like texts as NUMBERS (suite engine notes 2.10, 2.11), so a
+   -- hex got/want pair compared as numbers -- two different digests that
+   -- both overflow a double would have PASSED, and "1.0" passed as "1".
+   -- Measured before the change: across every section the headless gate
+   -- runs, no assertion's got and want were equal as numbers yet different
+   -- as text, so no pin relied on the number path; the Level 2 sections
+   -- the gate skips compare only hex and verdict text. Case still folds as
+   -- the engine's default does (hex is lowercased at every seam).
+   return ("t" & pObserved) is ("t" & pExpected)
+end heTSame
+
 command heTAssert pLabel, pObserved, pExpected
-   if pObserved is pExpected then
+   if heTSame(pObserved, pExpected) then
       add 1 to gPassN
       put "PASS  " & pLabel & return after gRpt
    else
@@ -16513,6 +17242,7 @@ command heTestNetSim
    local tCfgWire, tRosterWire, tActWire, tCfg2Wire, tHostLog, tContent, tSenderSig, tPacket
    local tHead1, tHead2, tHead3, tHead4, tBadPub, tBadSec, tBadPubHex, tGhostWire
    local tPriorCfg, tForgedWire, tPriorHead, tWrongTable, tWrongWire
+   local tSeqBefore, tV1Wire, tV1Tok, tFeedTxt
    put return & "-- 14. Online orchestration loopback (single machine, no rp1)" & return after gRpt
    if not heHasSodium() then
       heTSkip "netsim: online orchestration", "SodiumXT not installed"
@@ -16666,8 +17396,140 @@ command heTestNetSim
    heNetIngestWire tWrongWire
    heTAssert "netsim: a wire for another table is dropped (chain unchanged)", gGame["chainHeadHex"], tPriorHead
 
+   -- ===== A MIXED TABLE, EACH WAY (v0.25.6, 2026-09-26) =====
+   -- kHeEnvV went 1 -> 2 because v0.25.6 and v0.25.5 could not fold each
+   -- other's wires and a table of both split without a word. Every entry
+   -- point refuses another protocol EXACTLY (as text), NAMES it to the
+   -- person, and moves nothing: no fold, no admission, no seq, no seat.
+   -- (1) a PROTOCOL-1 WIRE, host-signed and in sequence, at a v0.25.6
+   -- player: dropped, named in words, nothing folded -- a v1 sit seating
+   -- this very player must not seat it
+   put empty into gGame["netLog"]
+   put empty into gGame["verNamed"]
+   put gGame["lastSeq"] into tSeqBefore
+   put gGame["chainHeadHex"] into tPriorHead
+   put heTEnvContentLineV("1", kKatTableHex, 0, tHostPubHex, "sit", "seat=1,pub=" & tPlayPubHex) into tContent
+   put heWireBuild(tContent, tHostSec, tSeqBefore + 1, tPriorHead, tHostSec) into tV1Wire
+   heNetIngestWire tV1Wire
+   heTAssert "mixed: a protocol-1 wire is dropped and folds nothing (seq, head, log, seat)", \
+         gGame["lastSeq"] & "/" & heHexEq(gGame["chainHeadHex"], tPriorHead) & "/" \
+         & (gGame["log"] contains tV1Wire) & "/" & gGame["seatByPub"][tPlayPubHex], tSeqBefore & "/true/false/"
+   heTContains "mixed: ...and is NAMED to the person on the status line, in words", gGame["statusTxt"], \
+         "Dropped a wire in table protocol 1 (an older holde-em): this table speaks table protocol " & kHeEnvV
+   heTContains "mixed: ...and in the lobby's net feed", gGame["netLog"], "VERSION Dropped a wire"
+   -- EXACT: this protocol's number in another spelling is not this protocol
+   -- (the ingest compared `is`, and "2.0" and "02" are 2 on the number path)
+   put heTEnvContentLineV(kHeEnvV & ".0", kKatTableHex, 0, tHostPubHex, "sit", "seat=1,pub=" & tPlayPubHex) into tContent
+   heNetIngestWire heWireBuild(tContent, tHostSec, tSeqBefore + 1, tPriorHead, tHostSec)
+   put heTEnvContentLineV("0" & kHeEnvV, kKatTableHex, 0, tHostPubHex, "sit", "seat=1,pub=" & tPlayPubHex) into tContent
+   heNetIngestWire heWireBuild(tContent, tHostSec, tSeqBefore + 1, tPriorHead, tHostSec)
+   heTAssert "mixed: '" & kHeEnvV & ".0' and '0" & kHeEnvV & "' are not protocol " & kHeEnvV & " (exact, as text)", \
+         gGame["lastSeq"] & "/" & gGame["seatByPub"][tPlayPubHex], tSeqBefore & "/"
+   -- ...and the naming is ONCE per table: later ones add a short feed line
+   heTAssert "mixed: the full naming is once per table (one VERSION line after three drops)", \
+         heTCountLines(gGame["netLog"], "VERSION Dropped a wire"), 1
+   -- (2) an OLDER HOST's rp1 handshake at a v0.25.6 joiner: not adopted,
+   -- and the joiner says why it cannot join
+   put empty into gGame["hostPubHex"]
+   put empty into gGame["verNamed"]
+   put tHostPubHex & tab & "host" & tab & heBin2HexS(heSignDetachedD(textEncode(kHeDomainSess \
+         & kKatTableHex & "|" & tHostPubHex & "|host", "utf-8"), tHostSec)) into tV1Tok
+   heNetOnHandshake 4, textEncode(tV1Tok, "utf-8")
+   heTAssert "mixed: a joiner does not adopt or admit a v0.25.5 host", \
+         gGame["hostPubHex"] & "/" & gGame["admittedA"][tHostPubHex], "/"
+   heTContains "mixed: ...and says why it cannot join", gGame["statusTxt"], \
+         "Cannot join: this table's host (key " & char 1 to 8 of tHostPubHex & ") speaks table protocol 1"
+
+   -- ===== the HOST side: a v0.25.6 host meets a v0.25.5 joiner =====
+   put empty into gGame
+   put "true" into gGame["online"]
+   put "true" into gGame["isHost"]
+   put tHostPubHex into gGame["idPubHex"]
+   put tHostSec into gGame["idSecData"]
+   put tHostPubHex into gGame["hostPubHex"]
+   put kKatTableHex into gGame["tableIdHex"]
+   put 0 into gGame["handNum"]
+   put 0 into gGame["seqCounter"]
+   put kHeGenesisPrev into gGame["chainHeadHex"]
+   put 0 into gGame["lastSeq"]
+   put 0 into gGame["wireBufN"]
+   put "true" into gGame["netCap"]
+   put empty into gGame["netOutbox"]
+   put "true" into gGame["admittedA"][tHostPubHex]
+   put "host" into gGame["roleByPub"][tHostPubHex]
+   heNetSendAction "cfg", kKatLobbyCfgBody
+   put empty into gGame["netOutbox"]
+   -- (3) its rp1 handshake: RECOGNISED as protocol 1, NOT admitted -- so no
+   -- replay, no roster, and nothing it sends is ever sequenced or seated
+   put tPlayPubHex & tab & "player" & tab & heBin2HexS(heSignDetachedD(textEncode(kHeDomainSess \
+         & kKatTableHex & "|" & tPlayPubHex & "|player", "utf-8"), tPlaySec)) into tV1Tok
+   heNetOnHandshake 6, textEncode(tV1Tok, "utf-8")
+   heTAssert "mixed: the host does not admit a v0.25.5 joiner, and sends it nothing", \
+         gGame["admittedA"][tPlayPubHex] & "/" & gGame["peerPubA"][6] & "/" & gGame["netOutbox"], "//"
+   heTContains "mixed: ...and TELLS the host's person, in words", gGame["statusTxt"], \
+         "Refused a player (key " & char 1 to 8 of tPlayPubHex & ") that speaks table protocol 1 (an older holde-em): this table speaks table protocol " & kHeEnvV
+   heTContains "mixed: ...that both sides need the same holde-em", gGame["statusTxt"], \
+         "Both sides need the same holde-em version"
+   -- (4) the RELAY refuses another protocol's content BEFORE a seq is spent,
+   -- even from an admitted key: sequenced and then dropped by the host's
+   -- own ingest, one v1 line used to leave seqCounter ahead of lastSeq and
+   -- wedge the table for everyone. Another table's content likewise.
+   put "true" into gGame["admittedA"][tPlayPubHex]
+   put gGame["seqCounter"] & "/" & gGame["lastSeq"] into tSeqBefore
+   put heTEnvContentLineV("1", kKatTableHex, 0, tPlayPubHex, "join", "box=" & kKatCommit1) into tContent
+   heHostRelay 0, tContent & tab & heEnvSenderSigHex(tContent, tPlaySec)
+   put heTEnvContentLineV(kHeEnvV & ".0", kKatTableHex, 0, tPlayPubHex, "join", "box=" & kKatCommit1) into tContent
+   heHostRelay 0, tContent & tab & heEnvSenderSigHex(tContent, tPlaySec)
+   heTAssert "mixed: the relay spends no seq on a protocol-1 (or '" & kHeEnvV & ".0') line", \
+         gGame["seqCounter"] & "/" & gGame["lastSeq"], tSeqBefore
+   heTContains "mixed: ...and names it", gGame["netLog"], "table protocol 1 (relay"
+   put heEnvContentLine(tWrongTable, 0, tPlayPubHex, "join", "box=" & kKatCommit1) into tContent
+   heHostRelay 0, tContent & tab & heEnvSenderSigHex(tContent, tPlaySec)
+   heTAssert "mixed: the relay spends no seq on another table's line either", \
+         gGame["seqCounter"] & "/" & gGame["lastSeq"], tSeqBefore
+   -- (5) NO SEAT, NO DEAL: the refused joiner bound no session box, so the
+   -- host's Start finds one joined player and deals nothing
+   put empty into gGame["admittedA"][tPlayPubHex]
+   put kKatCommit1 into gGame["boxByPub"][tHostPubHex]
+   put the number of lines of gGame["log"] into tSeqBefore
+   heNetStartGame
+   heTAssert "mixed: the host's Start seats nobody and deals no hand (1 joined)", \
+         (the number of lines of gGame["log"]) & "/" & gGame["gameOn"] & "/" & (gGame["statusTxt"] contains "have 1"), \
+         tSeqBefore & "//true"
+   -- heNetNameVersion itself: after the table's first naming, a later
+   -- mismatch is one short feed line that still says which protocol, whose
+   -- key and what this table speaks -- and it leaves the status line alone
+   put gGame["statusTxt"] into tPriorCfg
+   heNetNameVersion "3", "player", tBadPubHex
+   put gGame["netLog"] into tFeedTxt   -- a plain local before chunking (H6)
+   heTAssert "mixed: a later mismatch is one short feed line, the status line kept", \
+         (line -1 of tFeedTxt contains ("table protocol 3 (player " & char 1 to 8 of tBadPubHex \
+         & "): this table speaks " & kHeEnvV)) & "/" & (gGame["statusTxt"] is tPriorCfg), "true/true"
+
    put tSaved into gGame
 end heTestNetSim
+
+function heTEnvContentLineV pVerTxt, pTableHex, pHandNum, pFromHex, pTypeTxt, pBodyTxt
+   -- a content line in ANOTHER table protocol (v0.25.6): heEnvContentLine
+   -- with item 1 replaced, the one field a v0.25.5 peer's lines differ in
+   -- at the envelope. The mixed-table pins build their foreign wires here.
+   local tLine
+   put heEnvContentLine(pTableHex, pHandNum, pFromHex, pTypeTxt, pBodyTxt) into tLine
+   return pVerTxt & char offset(tab, tLine) to -1 of tLine
+end heTEnvContentLineV
+
+function heTCountLines pTxt, pNeedle
+   -- how many lines of pTxt contain pNeedle (a counting helper for pins
+   -- that must see ONE line where a defect would write two)
+   local tLine, tN
+   put 0 into tN
+   repeat for each line tLine in pTxt
+      if tLine contains pNeedle then
+         add 1 to tN
+      end if
+   end repeat
+   return tN
+end heTCountLines
 
 command heTNetDeliver pPayloadTxt
    -- netplay loopback: deliver one captured rp1 payload into the CURRENT
@@ -17202,7 +18064,9 @@ command heTestNetPlay
    -- seat 2 -- the table's oracle flag only ever SETS, so the ORACLE still
    -- deals: seat 2's flop is refused and the host's folds. History first
    -- froze the dealer key at the dealLevel and cleared the oracle on level
-   -- 0, and took flops B and D where the table took C and E.
+   -- 0, and took flops B and D where the table took C and E. (Since the
+   -- 2026-09-26 fix pass the second dealLevel is refused outright, at both,
+   -- row 16e; the outcome here is the same, and (e) below pins the rule.)
    put gGame into tSnapG
    sxSignKeypairFromSeed heHex2BinD(kKatIdSeed3), tP3Pub, tP3Sec
    put heBin2HexS(tP3Pub) into tP3PubHex
@@ -17274,6 +18138,172 @@ command heTestNetPlay
          (tXlatTxt contains ("commit=" & kKatCommit2)) & "/" & (tXlatTxt contains ("commit=" & kKatCommit3)) \
          & "/" & (tXlatTxt contains ("seed=" & kKatSeed2)) & "/" & (tXlatTxt contains ("seed=" & kKatSeed3)) \
          & "/" & (heAuditDealsFromLog(tXlatTxt) contains "1/1 deals verified"), "true/false/true/false/true"
+   -- (e) ROW 16 (v0.25.6, 2026-09-26; holde-em WORK-PLAN row 16): five
+   -- places the table refused a wire and History replayed it anyway, each
+   -- driven here through the real ingest on a throwaway context, and each
+   -- held to "History replays the game the table played".
+   heTNetPlayCtx "false", tPlayPubHex, tPlaySec, tPlayBoxPub, tPlayBoxSec, tHostPubHex, kKatIdSeed2
+   put "false" into gGame["online"]
+   heTNetHostWire 0, tHostPubHex, tHostSec, "roster", \
+         tHostPubHex & ":host," & tPlayPubHex & ":player," & tP3PubHex & ":player", tHostSec
+   heTNetHostWire 0, tHostPubHex, tHostSec, "sit", "seat=1,pub=" & tHostPubHex, tHostSec
+   heTNetHostWire 0, tHostPubHex, tHostSec, "sit", "seat=2,pub=" & tPlayPubHex, tHostSec
+   -- hand 1: (16e) a SECOND dealLevel, naming seat 2 after the first named
+   -- seat 1, is refused, so seat 2's flop is not the dealer's; (16a) a
+   -- duplicate flop and a flop after the turn are refused; (16d) a timeout
+   -- for seat 3, which is not dealt, and a timeout post of no number, are
+   -- malformed
+   heTNetHostWire 1, tHostPubHex, tHostSec, "handStart", "seats=1|2,button=1", tHostSec
+   heTNetHostWire 1, tHostPubHex, tHostSec, "dealLevel", "level=0,dealer=1,count=2", tHostSec
+   heTNetHostWire 1, tHostPubHex, tHostSec, "dealLevel", "level=0,dealer=2,count=2", tHostSec
+   heTNetHostWire 1, tPlayPubHex, tPlaySec, "board", "street=flop,cards=2d|3d|4d", tHostSec
+   heTNetHostWire 1, tHostPubHex, tHostSec, "board", "street=flop,cards=5d|6d|7d", tHostSec
+   heTNetHostWire 1, tHostPubHex, tHostSec, "board", "street=flop,cards=5d|6d|7d", tHostSec
+   heTNetHostWire 1, tHostPubHex, tHostSec, "board", "street=turn,cards=8d", tHostSec
+   heTNetHostWire 1, tHostPubHex, tHostSec, "board", "street=flop,cards=9d|Td|Jd", tHostSec
+   heTNetHostWire 1, tHostPubHex, tHostSec, "board", "street=river,cards=Qd", tHostSec
+   heTNetHostWire 1, tHostPubHex, tHostSec, "act", "verb=fold,amount=0,seat=3,timeout=1,bank=1,turn=1", tHostSec
+   heTNetHostWire 1, tHostPubHex, tHostSec, "bidBB", "amount=2,seat=3,timeout=1,bank=1", tHostSec
+   heTNetHostWire 1, tHostPubHex, tHostSec, "bidSB", "amount=x,seat=1,timeout=1,bank=1", tHostSec
+   heTAssert "row16e: the table refuses a second dealLevel; seat 1 still deals", \
+         (gGame["netLog"] contains "a second dealLevel for hand 1") & "/" & gGame["oDeal"]["dealerSeat"] \
+         & "/" & (gGame["netLog"] contains "board not from the dealer"), "true/1/true"
+   heTAssert "row16a: the table holds five board cards, each street once", gGame["oDeal"]["boardList"], \
+         heCardIndex("5d") & comma & heCardIndex("6d") & comma & heCardIndex("7d") & comma \
+         & heCardIndex("8d") & comma & heCardIndex("Qd")
+   heTAssert "row16d: the table drops a timeout for an undealt seat, and a post of no number", \
+         (gGame["netLog"] contains "malformed timeout act") & "/" & (gGame["netLog"] contains "malformed timeout bidBB") \
+         & "/" & (gGame["netLog"] contains "malformed timeout bidSB"), "true/true/true"
+   put heNetLogToHotseat(gGame["log"], tHostPubHex) into tXlatTxt
+   heTAssert "row16e: History takes ONE dealLevel and no flop from seat 2", \
+         heTCountLines(tXlatTxt, tab & "dealLevel" & tab) & "/" & (tXlatTxt contains "cards=2d|3d|4d"), "1/false"
+   heTAssert "row16a: History takes the same three streets (not a six-card board)", \
+         heTCountLines(tXlatTxt, tab & "board" & tab) & "/" & (tXlatTxt contains "cards=9d|Td|Jd"), "3/false"
+   heTAssert "row16d: History translates neither malformed timeout", \
+         (tXlatTxt contains "seat3") & "/" & (tXlatTxt contains "amount=x"), "false/false"
+   -- hand 2: (16c) two host timeouts the table REFUSED -- seat 1's fold
+   -- with bank=0 while its bank is unspent, and a FOLD for seat 2 when it
+   -- could check -- then the hand played out; (16b) a settle before the
+   -- reveals (dropped), the matching settle (taken), and a later
+   -- different one (ignored: the table settled already)
+   heTNetHostWire 2, tHostPubHex, tHostSec, "handStart", "seats=1|2,button=1", tHostSec
+   heTNetHostWire 2, tHostPubHex, tHostSec, "dealLevel", "level=0,dealer=1,count=2", tHostSec
+   heTNetHostWire 2, tHostPubHex, tHostSec, "seedCommit", "pos=1,commit=" & kKatCommit1, tHostSec
+   heTNetHostWire 2, tPlayPubHex, tPlaySec, "seedCommit", "pos=2,commit=" & kKatCommit2, tHostSec
+   heTNetHostWire 2, tHostPubHex, tHostSec, "bidSB", "amount=1", tHostSec
+   heTNetHostWire 2, tPlayPubHex, tPlaySec, "bidBB", "amount=2", tHostSec
+   heTNetHostWire 2, tHostPubHex, tHostSec, "act", "verb=fold,amount=0,seat=1,timeout=1,bank=0,turn=1", tHostSec
+   heTNetHostWire 2, tHostPubHex, tHostSec, "act", "verb=call,amount=1,turn=1", tHostSec
+   heTNetHostWire 2, tHostPubHex, tHostSec, "act", "verb=fold,amount=0,seat=2,timeout=1,bank=1,turn=2", tHostSec
+   heTNetHostWire 2, tPlayPubHex, tPlaySec, "act", "verb=check,amount=0,turn=2", tHostSec
+   heTNetHostWire 2, tPlayPubHex, tPlaySec, "act", "verb=bet,amount=4,turn=3", tHostSec
+   heTNetHostWire 2, tHostPubHex, tHostSec, "settle", "deltas=1:9|2:-9", tHostSec
+   heTNetHostWire 2, tHostPubHex, tHostSec, "act", "verb=fold,amount=0,turn=4", tHostSec
+   heTNetHostWire 2, tHostPubHex, tHostSec, "seedReveal", "pos=1,seed=" & kKatSeed1, tHostSec
+   heTNetHostWire 2, tPlayPubHex, tPlaySec, "seedReveal", "pos=2,seed=" & kKatSeed2, tHostSec
+   heTNetHostWire 2, tHostPubHex, tHostSec, "settle", "deltas=1:7|2:-7", tHostSec
+   heTNetHostWire 2, tHostPubHex, tHostSec, "settle", "deltas=1:-2|2:2", tHostSec
+   heTNetHostWire 2, tHostPubHex, tHostSec, "settle", "deltas=1:5|2:-5", tHostSec
+   heTAssert "row16c: the table refused both timeouts, by bank and by prescription", \
+         (gGame["netLog"] contains "TIMEOUT-REFUSED act seat 1: bank denied") & "/" \
+         & (gGame["netLog"] contains "TIMEOUT-REFUSED act seat 2: wrong prescription (fold)"), "true/true"
+   heTAssert "row16b: the table dropped the early settle, refused a wrong one, took the match, ignored the last", \
+         (gGame["netLog"] contains "settle before the reveals completed") & "/" \
+         & (gGame["netLog"] contains "SETTLE-MISMATCH host=1:7|2:-7") & "/" & gGame["oDeal"]["settleDone"] \
+         & "/" & gGame["stacksBy"][1] & "/" & gGame["stacksBy"][2], "true/true/true/398/402"
+   -- hand 3: (16b) a settle whose reveals never completed -- a fold-win,
+   -- so History could verify it on its own -- the table never takes
+   heTNetHostWire 3, tHostPubHex, tHostSec, "handStart", "seats=1|2,button=2", tHostSec
+   heTNetHostWire 3, tHostPubHex, tHostSec, "dealLevel", "level=0,dealer=2,count=2", tHostSec
+   heTNetHostWire 3, tHostPubHex, tHostSec, "seedCommit", "pos=1,commit=" & kKatCommit1, tHostSec
+   heTNetHostWire 3, tPlayPubHex, tPlaySec, "seedCommit", "pos=2,commit=" & kKatCommit2, tHostSec
+   heTNetHostWire 3, tPlayPubHex, tPlaySec, "bidSB", "amount=1", tHostSec
+   heTNetHostWire 3, tHostPubHex, tHostSec, "bidBB", "amount=2", tHostSec
+   heTNetHostWire 3, tPlayPubHex, tPlaySec, "act", "verb=fold,amount=0,turn=1", tHostSec
+   heTNetHostWire 3, tHostPubHex, tHostSec, "seedReveal", "pos=1,seed=" & kKatSeed1, tHostSec
+   heTNetHostWire 3, tHostPubHex, tHostSec, "settle", "deltas=1:1|2:-1", tHostSec
+   heTAssert "row16b: the table never settles a hand whose reveals are incomplete", \
+         gGame["oDeal"]["settleDone"] & "/" & gGame["stacksBy"][1], "false/398"
+   -- hand 4: seat 2 STANDS (mark 1), so the host's bank=0 timeout for it
+   -- folds at the table with no clock (it asked to sit out); History must
+   -- carry the stand to replay that bank flag
+   heTNetHostWire 4, tHostPubHex, tHostSec, "handStart", "seats=1|2,button=2", tHostSec
+   heTNetHostWire 4, tHostPubHex, tHostSec, "dealLevel", "level=0,dealer=2,count=2", tHostSec
+   heTNetHostWire 4, tHostPubHex, tHostSec, "seedCommit", "pos=1,commit=" & kKatCommit1, tHostSec
+   heTNetHostWire 4, tPlayPubHex, tPlaySec, "seedCommit", "pos=2,commit=" & kKatCommit2, tHostSec
+   heTNetHostWire 4, tPlayPubHex, tPlaySec, "bidSB", "amount=1", tHostSec
+   heTNetHostWire 4, tHostPubHex, tHostSec, "bidBB", "amount=2", tHostSec
+   heTNetHostWire 4, tPlayPubHex, tPlaySec, "stand", "seat=2,n=1", tHostSec
+   heTNetHostWire 4, tHostPubHex, tHostSec, "act", "verb=fold,amount=0,seat=2,timeout=1,bank=0,turn=1", tHostSec
+   heTNetHostWire 4, tHostPubHex, tHostSec, "seedReveal", "pos=1,seed=" & kKatSeed1, tHostSec
+   heTNetHostWire 4, tPlayPubHex, tPlaySec, "seedReveal", "pos=2,seed=" & kKatSeed2, tHostSec
+   heTNetHostWire 4, tHostPubHex, tHostSec, "settle", "deltas=1:1|2:-1", tHostSec
+   -- hand 5: seat 2 RETURNS (mark 2), the host replays its OLD stand (mark
+   -- 1, refused), and a bank=1 timeout -- right only for a seat that is
+   -- back -- folds at the table once its deadline has passed (this
+   -- client's clock is set back: the clock is the one thing no transcript
+   -- carries, so History takes the table's word on it)
+   heTNetHostWire 5, tHostPubHex, tHostSec, "handStart", "seats=1|2,button=1", tHostSec
+   heTNetHostWire 5, tHostPubHex, tHostSec, "dealLevel", "level=0,dealer=1,count=2", tHostSec
+   heTNetHostWire 5, tHostPubHex, tHostSec, "seedCommit", "pos=1,commit=" & kKatCommit1, tHostSec
+   heTNetHostWire 5, tPlayPubHex, tPlaySec, "seedCommit", "pos=2,commit=" & kKatCommit2, tHostSec
+   heTNetHostWire 5, tPlayPubHex, tPlaySec, "sit", "seat=2,n=2", tHostSec
+   heTNetHostWire 5, tPlayPubHex, tPlaySec, "stand", "seat=2,n=1", tHostSec
+   heTNetHostWire 5, tHostPubHex, tHostSec, "bidSB", "amount=1", tHostSec
+   heTNetHostWire 5, tPlayPubHex, tPlaySec, "bidBB", "amount=2", tHostSec
+   heTNetHostWire 5, tHostPubHex, tHostSec, "act", "verb=call,amount=1,turn=1", tHostSec
+   put 0 into gGame["turnStartMs"]
+   heTNetHostWire 5, tHostPubHex, tHostSec, "act", "verb=check,amount=0,seat=2,timeout=1,bank=1,turn=2", tHostSec
+   heTNetHostWire 5, tPlayPubHex, tPlaySec, "act", "verb=bet,amount=2,turn=3", tHostSec
+   heTNetHostWire 5, tHostPubHex, tHostSec, "act", "verb=fold,amount=0,turn=4", tHostSec
+   heTNetHostWire 5, tHostPubHex, tHostSec, "seedReveal", "pos=1,seed=" & kKatSeed1, tHostSec
+   heTNetHostWire 5, tPlayPubHex, tPlaySec, "seedReveal", "pos=2,seed=" & kKatSeed2, tHostSec
+   heTNetHostWire 5, tHostPubHex, tHostSec, "settle", "deltas=1:-2|2:2", tHostSec
+   heTAssert "row16c: the table took the sit-out and return marks and both timeouts (397/403)", \
+         (gGame["netLog"] contains "stand: sit-out mark 1 is not the next (3)") & "/" \
+         & gGame["stacksBy"][1] & "/" & gGame["stacksBy"][2], "true/397/403"
+   put heFoldTranscript(heNetLogToHotseat(gGame["log"], tHostPubHex)) into tXlatFold
+   heTAssert "row16: History replays the table's game -- hands 2, 4, 5 verified, hand 3 never settled", \
+         heTCountLines(tXlatFold["history"], "; settle-verified") & "/" & (tXlatFold["history"] contains "hand 3:") \
+         & "/" & tXlatFold["stacksBy"][1] & "/" & tXlatFold["stacksBy"][2] & "/" & tXlatFold["errors"], \
+         "3/false/397/403/"
+   heTContains "row16b: History keeps the settle the table APPLIED (not the last one)", \
+         tXlatFold["history"], "deltas 1:-2|2:2; settle-verified"
+   -- ONE KEY PER SEAT (v0.25.6; the re-sit mapping, confirmed by a
+   -- headless probe on 2026-09-26): the host re-sits seat 2 to a third key,
+   -- and the seat's OLD key must lose it -- its commit and its stand are
+   -- refused -- at the table and in History; then the host MOVES that key
+   -- to seat 3, and seat 2 must have no key at all (its dealer turn deals
+   -- nothing from the moved key)
+   heTNetPlayCtx "false", tPlayPubHex, tPlaySec, tPlayBoxPub, tPlayBoxSec, tHostPubHex, kKatIdSeed2
+   put "false" into gGame["online"]
+   heTNetHostWire 0, tHostPubHex, tHostSec, "roster", \
+         tHostPubHex & ":host," & tPlayPubHex & ":player," & tP3PubHex & ":player", tHostSec
+   heTNetHostWire 0, tHostPubHex, tHostSec, "sit", "seat=1,pub=" & tHostPubHex, tHostSec
+   heTNetHostWire 0, tHostPubHex, tHostSec, "sit", "seat=2,pub=" & tPlayPubHex, tHostSec
+   heTNetHostWire 0, tHostPubHex, tHostSec, "sit", "seat=2,pub=" & tP3PubHex, tHostSec
+   heTNetHostWire 1, tHostPubHex, tHostSec, "handStart", "seats=1|2,button=1", tHostSec
+   heTNetHostWire 1, tHostPubHex, tHostSec, "dealLevel", "level=0,dealer=1,count=2", tHostSec
+   heTNetHostWire 1, tPlayPubHex, tPlaySec, "seedCommit", "pos=2,commit=" & kKatCommit2, tHostSec
+   heTNetHostWire 1, tPlayPubHex, tPlaySec, "stand", "seat=2,n=1", tHostSec
+   heTNetHostWire 1, tP3PubHex, tP3Sec, "seedCommit", "pos=2,commit=" & kKatCommit3, tHostSec
+   heTAssert "resit: the seat's old key holds no seat; its commit and stand are refused", \
+         gGame["seatByPub"][tPlayPubHex] & "/" & heHexEq(gGame["oDeal"]["commitsBy"][2], kKatCommit3) \
+         & "/" & gGame["sitOutBy"][2] & "/" & (gGame["netLog"] contains "stand from an unseated key"), \
+         "/true//true"
+   put heNetLogToHotseat(gGame["log"], tHostPubHex) into tXlatTxt
+   heTAssert "resit: History keeps the new key's commit, not the old key's", \
+         (tXlatTxt contains ("commit=" & kKatCommit2)) & "/" & (tXlatTxt contains ("commit=" & kKatCommit3)), \
+         "false/true"
+   heTNetHostWire 1, tHostPubHex, tHostSec, "sit", "seat=3,pub=" & tP3PubHex, tHostSec
+   heTNetHostWire 2, tHostPubHex, tHostSec, "handStart", "seats=1|2,button=2", tHostSec
+   heTNetHostWire 2, tHostPubHex, tHostSec, "dealLevel", "level=0,dealer=2,count=2", tHostSec
+   heTNetHostWire 2, tP3PubHex, tP3Sec, "board", "street=flop,cards=2h|3h|4h", tHostSec
+   heTAssert "resit: a MOVED key leaves its old seat keyless, and deals nothing for it", \
+         gGame["pubBySeat"][2] & "/" & gGame["seatByPub"][tP3PubHex] & "/" & gGame["oDeal"]["boardList"], "/3/"
+   put heNetLogToHotseat(gGame["log"], tHostPubHex) into tXlatTxt
+   heTAssert "resit: ...and History takes no board from it either", \
+         (tXlatTxt contains "cards=2h|3h|4h"), false
    put tSnapG into gGame
 
    -- adversarial probe, post-hand: a seedReveal that does not open its
@@ -17555,8 +18585,8 @@ command heTestCryptoRun
    -- roundtrip returns the admitted pubkey for a good token, "" for a wrong
    -- table, and the role is recoverable for host adoption
    sxSignKeypairFromSeed heHex2BinD(kKatIdSeed1), tPub, tSec
-   heTAssert "admit: host-token signature", \
-         heBin2HexS(heSignDetachedD(textEncode(kHeDomainSess & kKatTableHex & "|" & kKatIdPub1 & "|host", "utf-8"), tSec)), \
+   heTAssert "admit: host-token signature (table protocol " & kHeEnvV & ")", \
+         heBin2HexS(heSignDetachedD(textEncode(heAdmitDomain(kHeEnvV) & kKatTableHex & "|" & kKatIdPub1 & "|host", "utf-8"), tSec)), \
          kKatAdmitSig
    heTAssert "admit: verify accepts a good token", \
          heAdmitTokenVerify(heAdmitTokenData(kKatTableHex, kKatIdPub1, tSec, "host"), kKatTableHex), kKatIdPub1
@@ -17564,6 +18594,30 @@ command heTestCryptoRun
          heAdmitTokenVerify(heAdmitTokenData(kKatTableHex, kKatIdPub1, tSec, "host"), kKatChainHead6), ""
    heTAssert "admit: role is recoverable", \
          heAdmitTokenRole(heAdmitTokenData(kKatTableHex, kKatIdPub1, tSec, "host")), "host"
+   -- THE TABLE PROTOCOL IN THE TOKEN (v0.25.6, 2026-09-26): the token names
+   -- its protocol in item 4 under its signature's domain; protocol 1's
+   -- domain is kHeDomainSess byte for byte, so a v0.25.5 token -- pinned
+   -- here by its own signature, kKatAdmitSigV1, the value kKatAdmitSig held
+   -- before the bump -- is RECOGNISED as protocol 1 and refused, where a
+   -- stranger's verifies as nothing at all
+   heTAssert "admit: protocol 1's domain is kHeDomainSess, byte for byte", \
+         heAdmitDomain("1"), kHeDomainSess
+   heTAssert "admit: the token names this build's protocol and verifies as it", \
+         heAdmitTokenVersion(heAdmitTokenData(kKatTableHex, kKatIdPub1, tSec, "host"), kKatTableHex), kHeEnvV
+   heTAssert "admit: a v0.25.5 token's signature (protocol 1, pinned)", \
+         heBin2HexS(heSignDetachedD(textEncode(kHeDomainSess & kKatTableHex & "|" & kKatIdPub1 & "|host", "utf-8"), tSec)), \
+         kKatAdmitSigV1
+   put kKatIdPub1 & tab & "host" & tab & kKatAdmitSigV1 into tTampered
+   heTAssert "admit: a v0.25.5 token is recognised as protocol 1 and NOT admitted", \
+         heAdmitTokenVersion(textEncode(tTampered, "utf-8"), kKatTableHex) & "/" \
+         & heAdmitTokenVerify(textEncode(tTampered, "utf-8"), kKatTableHex), "1/"
+   heTAssert "admit: ...its onion hello's seq in item 4 is not read as a version", \
+         heAdmitTokenVersion(textEncode(tTampered & tab & 17, "utf-8"), kKatTableHex), "1"
+   heTAssert "admit: a v0.25.5 signature CLAIMING this protocol is still protocol 1", \
+         heAdmitTokenVersion(textEncode(tTampered & tab & kHeEnvV, "utf-8"), kKatTableHex), "1"
+   heTAssert "admit: a stranger's token verifies as no protocol", \
+         heAdmitTokenVersion(textEncode(kKatIdPub1 & tab & "host" & tab & kKatRcptSig1 & tab & kHeEnvV, \
+         "utf-8"), kKatTableHex), empty
 end heTestCryptoRun
 
 command heTestReceiptRun
@@ -17775,11 +18829,14 @@ command heTestOnionRun
    put return & "-- 17. Onion tables (2f): invite codec + fail-closed + hello" & return after gRpt
    set the itemDelimiter to comma
 
-   -- the invite codec: pure, no dependencies at all
-   put heInviteParse(kKatTableHex) into tInvA
-   heTAssert "invite: a bare 64-hex code parses as the DHT transport", \
+   -- the invite codec: pure, no dependencies at all. Since v0.25.6 every
+   -- invite opens with its TABLE PROTOCOL tag (kKatInviteTag, "p2:",
+   -- pinned by protocol-kat's invite_tag; heInviteTag writes it)
+   heTAssert "invite: the tag is this build's table protocol (pinned)", heInviteTag(), kKatInviteTag
+   put heInviteParse(kKatInviteTag & kKatTableHex) into tInvA
+   heTAssert "invite: a tagged 64-hex code parses as the DHT transport", \
          tInvA["transport"] & "/" & tInvA["table"] & "/" & tInvA["err"], "rp1/" & kKatTableHex & "/"
-   put kKatTableHex & "@" & kKatOnionAddr into tInviteTxt
+   put kKatInviteTag & kKatTableHex & "@" & kKatOnionAddr into tInviteTxt
    put heInviteParse(tInviteTxt) into tInvA
    heTAssert "invite: table@address.onion parses as the onion transport", \
          tInvA["transport"] & "/" & tInvA["table"] & "/" & tInvA["onion"] & "/" & tInvA["err"], \
@@ -17789,20 +18846,52 @@ command heTestOnionRun
          tInvA["table"] & "/" & tInvA["onion"], kKatTableHex & "/" & kKatOnionAddr
    -- the downgrade-refusal-BY-FORMAT property: one word, and not bare hex,
    -- so a pre-2f stack's `word 1` + heIsHex gate refuses the WHOLE invite
+   -- (and since the tag, a v0.25.5 stack refuses a DHT invite the same way)
    heTAssert "invite: an onion invite is one word and NOT bare hex (a pre-2f stack fails closed)", \
          (the number of words of tInviteTxt) & "/" & heIsHex(tInviteTxt, 64), "1/false"
+   heTAssert "invite: a tagged DHT invite is NOT bare hex either (a v0.25.5 stack refuses it)", \
+         heIsHex(kKatInviteTag & kKatTableHex, 64), false
    put heInviteParse("abc123") into tInvA
    heTContains "invite: a short code is refused readably", tInvA["err"], "64 hex"
-   put heInviteParse("zz" & char 3 to -1 of kKatTableHex & "@" & kKatOnionAddr) into tInvA
+   put heInviteParse(kKatInviteTag & "zz" & char 3 to -1 of kKatTableHex & "@" & kKatOnionAddr) into tInvA
    heTContains "invite: a non-hex table part is refused readably", tInvA["err"], "table code"
-   put heInviteParse(kKatTableHex & "@" & "1" & char 2 to -1 of kKatOnionAddr) into tInvA
+   put heInviteParse(kKatInviteTag & kKatTableHex & "@" & "1" & char 2 to -1 of kKatOnionAddr) into tInvA
    heTContains "invite: an address character outside base32 is refused", tInvA["err"], "character"
-   put heInviteParse(kKatTableHex & "@" & char 2 to -1 of kKatOnionAddr) into tInvA
+   put heInviteParse(kKatInviteTag & kKatTableHex & "@" & char 2 to -1 of kKatOnionAddr) into tInvA
    heTContains "invite: a 55-char address core is refused", tInvA["err"], "56"
-   put heInviteParse(kKatTableHex & "@" & char 1 to 56 of kKatOnionAddr) into tInvA
+   put heInviteParse(kKatInviteTag & kKatTableHex & "@" & char 1 to 56 of kKatOnionAddr) into tInvA
    heTContains "invite: a missing .onion suffix is refused", tInvA["err"], ".onion"
    put heInviteParse("") into tInvA
    heTContains "invite: an empty paste is refused readably", tInvA["err"], "Paste"
+   -- A MIXED TABLE STOPS AT THE PASTE (v0.25.6, 2026-09-26): an untagged
+   -- invite that is otherwise well formed is a v0.25.5 host's (protocol 1)
+   -- and is refused IN WORDS -- which protocol, which this build speaks,
+   -- that both sides need the same holde-em -- before anything touches the
+   -- network; a tag naming any other protocol, or not a canonical number,
+   -- likewise (exact: "p2.0:" and "p02:" are not "p2:")
+   put heInviteParse(kKatTableHex) into tInvA
+   heTAssert "version: an untagged (v0.25.5) DHT invite is refused, not joined", \
+         tInvA["transport"] & "/" & tInvA["ver"], "/1"
+   heTContains "version: ...naming protocol 1 as an older holde-em", tInvA["err"], \
+         "table protocol 1 (an older holde-em)"
+   heTContains "version: ...naming this build's protocol", tInvA["err"], \
+         "this build speaks table protocol " & kHeEnvV
+   heTContains "version: ...and that both sides need the same holde-em", tInvA["err"], \
+         "Both sides need the same holde-em version"
+   put heInviteParse(kKatTableHex & "@" & kKatOnionAddr) into tInvA
+   heTAssert "version: an untagged (v0.25.5) ONION invite is refused the same way", \
+         tInvA["transport"] & "/" & (tInvA["err"] contains "table protocol 1"), "/true"
+   put heInviteParse("p3:" & kKatTableHex) into tInvA
+   heTContains "version: a newer protocol's invite is refused, named as newer", tInvA["err"], \
+         "table protocol 3 (a newer holde-em)"
+   put heInviteParse("p" & kHeEnvV & ".0:" & kKatTableHex) into tInvA
+   heTAssert "version: a tag that is this protocol only as a NUMBER is refused (exact)", \
+         tInvA["transport"] & "/" & (tInvA["err"] contains "unrecognised table protocol"), "/true"
+   put heInviteParse("p0" & kHeEnvV & ":" & kKatTableHex) into tInvA
+   heTAssert "version: a leading-zero tag is refused too", \
+         tInvA["transport"] & "/" & (tInvA["err"] contains "unrecognised table protocol"), "/true"
+   heTContains "version: the join gate carries the version refusal", \
+         heJoinRefusal(heInviteParse(kKatTableHex), true), "table protocol 1"
 
    -- the join-side fail-closed gate, both branches, on ANY engine (presence
    -- is a parameter -- the H5 shape)
@@ -17824,10 +18913,10 @@ command heTestOnionRun
       heTAssert "onion seed: 32 bytes of lowercase hex", heIsHex(tSeedHex1, 64), true
       put heOnionSeedHex(kKatIdSeed2, kKatTableHex, empty) into tSeedHex2
       heTAssert "onion seed: keyed by the host identity (another key, another address)", \
-            tSeedHex1 is tSeedHex2, false
+            heHexEq(tSeedHex1, tSeedHex2), false
       put heOnionSeedHex(kKatIdSeed1, kKatSeed1, empty) into tSeedHex2
       heTAssert "onion seed: fresh per table (another table, another address)", \
-            tSeedHex1 is tSeedHex2, false
+            heHexEq(tSeedHex1, tSeedHex2), false
    else
       heTSkip "onion seed: derivation properties", "SodiumXT not installed"
    end if
@@ -17848,7 +18937,7 @@ command heTestOnionRun
                the number of chars of tAddrTxt, 62
          heTAssert "onion addr: OnionXT validates the derived address", \
                oxIsValidAddress(tAddrTxt), true
-         put heInviteParse(kKatTableHex & "@" & tAddrTxt) into tInvA
+         put heInviteParse(kKatInviteTag & kKatTableHex & "@" & tAddrTxt) into tInvA
          heTAssert "onion addr: a real derived address rides the invite round-trip", \
                tInvA["onion"] & "/" & tInvA["err"], tAddrTxt & "/"
          put heBin2HexS(oxPublicKeyFromAddress(tAddrTxt)) into tRecovHex
@@ -17920,6 +19009,26 @@ command heTestOnionRun
       put textDecode(heAdmitTokenData(kKatSeed1, tPlayPubHex, tPlaySec, "player"), "utf-8") into tTokTxt
       heNetOnMessage 11, textEncode("h" & tab & tTokTxt, "utf-8")
       heTAssert "hello: a wrong-table hello admits nothing", gGame["peerPubA"][11], empty
+      -- A v0.25.5 JOINER'S HELLO (v0.25.6, 2026-09-26): its token is
+      -- protocol 1 (three items, the v1 domain) and its seq rides in item
+      -- 4. The host RECOGNISES it -- it verifies as protocol 1, not as
+      -- nothing -- and refuses it before any reply: no admission, no hello
+      -- back, no replay, its stream closed, and the mismatch named in words
+      put empty into gGame["netOutbox"]
+      put empty into gGame["netLog"]
+      put "partial" into gGame["oxBufA"][13]
+      put tPlayPubHex & tab & "player" & tab & heBin2HexS(heSignDetachedD(textEncode(kHeDomainSess \
+            & kKatTableHex & "|" & tPlayPubHex & "|player", "utf-8"), tPlaySec)) into tTokTxt
+      heNetOnMessage 13, textEncode("h" & tab & tTokTxt & tab & 0, "utf-8")
+      heTAssert "version: a v0.25.5 hello admits nothing and earns no reply", \
+            gGame["peerPubA"][13] & "/" & gGame["netOutbox"], "/"
+      heTAssert "version: ...its stream is closed (its buffer gone)", \
+            (13 is among the keys of gGame["oxBufA"]), false
+      heTContains "version: ...and the host is TOLD, in words, on the status line", \
+            gGame["statusTxt"], "Refused a player (key " & char 1 to 8 of tPlayPubHex \
+            & ") that speaks table protocol 1 (an older holde-em)"
+      heTContains "version: ...and in the lobby's net feed", gGame["netLog"], \
+            "VERSION Refused a player"
       -- PLAYER side: adopting the host from ITS hello over the dialed stream
       put empty into gGame
       put "true" into gGame["online"]
@@ -17939,6 +19048,38 @@ command heTestOnionRun
             gGame["peerByPub"][tHostPubHex], 3
       heTAssert "hello: the player answers no hello of its own (no ping-pong)", \
             gGame["netOutbox"], empty
+      -- an OLDER HOST's hello at a v0.25.6 joiner: the joiner adopts
+      -- nothing and says why it cannot join (the one message the person
+      -- needs; the old host, for its part, cannot verify our hello)
+      put empty into gGame["hostPubHex"]
+      put empty into gGame["peerByPub"]
+      put empty into gGame["verNamed"]
+      put tHostPubHex & tab & "host" & tab & heBin2HexS(heSignDetachedD(textEncode(kHeDomainSess \
+            & kKatTableHex & "|" & tHostPubHex & "|host", "utf-8"), tHostSec)) into tHostTokTxt
+      heNetOnMessage 3, textEncode("h" & tab & tHostTokTxt, "utf-8")
+      heTAssert "version: a joiner does not adopt a v0.25.5 host", gGame["hostPubHex"], empty
+      heTContains "version: ...and says why it cannot join, in words", gGame["statusTxt"], \
+            "Cannot join: this table's host (key " & char 1 to 8 of tHostPubHex \
+            & ") speaks table protocol 1 (an older holde-em), and this build speaks table protocol " & kHeEnvV
+      -- the OTHER way round on onion: a v0.25.5 host cannot verify our
+      -- hello and just closes the stream -- all onion gives this side. A
+      -- close before any host hello names what it can mean, the protocol
+      -- included, where it used to say only "lost" (heNetOnionDead)
+      put "onion" into gGame["transport"]
+      put "false" into gGame["online"]   -- (heNetStop has nothing to tear down here)
+      put "false" into gGame["gameOn"]
+      put 5 into gGame["oxStream"]
+      put 5 & return into gGame["oxDeadList"]
+      heNetOnionDead
+      heTAssert "version: ...and when the host's own hello named its protocol, that message stays", \
+            (gGame["statusTxt"] contains "Cannot join: this table's host") & "/" & gGame["oxState"], "true/failed"
+      put empty into gGame["verNamed"]
+      put "ready" into gGame["oxState"]
+      put 5 into gGame["oxStream"]
+      put 5 & return into gGame["oxDeadList"]
+      heNetOnionDead
+      heTContains "version: a host that closes before answering our hello may run another holde-em -- said", \
+            gGame["statusTxt"], "runs a different holde-em (this build speaks table protocol " & kHeEnvV
       put tSaved into gGame
    else
       heTSkip "hello handshake loopback", "SodiumXT not installed"
@@ -17975,7 +19116,7 @@ command heTestOracleRun
       heTAssert "oracle: playing-table service seed (2f derivation, pinned)", tSeedA, kKatOnionSeed
       put heOnionSeedHex(kKatIdSeed1, kKatTableHex, "oracle") into tSeedB
       heTAssert "oracle: oracle-table service seed (kHeDomainOracle, pinned)", tSeedB, kKatOracleSeed
-      heTAssert "oracle: the two domains never share an address seed", tSeedA is tSeedB, false
+      heTAssert "oracle: the two domains never share an address seed", heHexEq(tSeedA, tSeedB), false
    else
       heTSkip "oracle: service-seed domain separation", "SodiumXT not installed"
    end if
@@ -19431,6 +20572,111 @@ command heTestHelpersRun
          heNetBoundBody("sit", "seat=3,pub=" & kKatIdPub3) & "|" & heNetBoundBody("show", "seat=2"), \
          "seat=3,pub=" & kKatIdPub3 & "|seat=2"
    put tSaved into gGame
+
+   -- heEnvVersionOk (v0.25.6): the table protocol, as TEXT. The ingest's
+   -- `is not kHeEnvV` read each of these aliases as this protocol on the
+   -- number path (engine notes 2.10, 2.11); "2e0" and "+2" are numbers only
+   -- to the engine, the rest to the family interpreter too
+   heTAssert "version: this build's protocol is accepted", heEnvVersionOk(kHeEnvV), true
+   heTAssert "version: every other spelling of it is refused (exact)", \
+         heEnvVersionOk(kHeEnvV & ".0") & "|" & heEnvVersionOk("0" & kHeEnvV) & "|" \
+         & heEnvVersionOk(" " & kHeEnvV) & "|" & heEnvVersionOk(kHeEnvV & "e0") & "|" \
+         & heEnvVersionOk("+" & kHeEnvV) & "|" & heEnvVersionOk(empty), "false|false|false|false|false|false"
+   heTAssert "version: protocol 1 (v0.25.5) and protocol 3 are not this build's", \
+         heEnvVersionOk("1") & "|" & heEnvVersionOk("3"), "false|false"
+   -- heVersionMismatchTxt: the words, per meeting point -- which protocol
+   -- the other side speaks, which this build speaks, same holde-em
+   put heVersionMismatchTxt("1", "host", kKatIdPub1) into tHexA
+   heTAssert "version: the joiner's words name both protocols and the remedy", \
+         (tHexA contains "table protocol 1 (an older holde-em)") & "|" \
+         & (tHexA contains ("this build speaks table protocol " & kHeEnvV & " (holde-em " & kHeVersion & ")")) \
+         & "|" & (tHexA contains "Both sides need the same holde-em version") \
+         & "|" & (tHexA contains char 1 to 8 of kKatIdPub1), "true|true|true|true"
+   heTAssert "version: a newer protocol is named as newer; a malformed one is quoted", \
+         (heVersionMismatchTxt("3", "wire", empty) contains "table protocol 3 (a newer holde-em)") & "|" \
+         & (heVersionMismatchTxt("2.0", "relay", empty) contains "an unrecognised table protocol (2.0)"), \
+         "true|true"
+
+   -- heTSame (v0.25.6): the harness's own equality, TEXT behind a letter.
+   -- heTAssert compared with bare `is`, so two different number-like texts
+   -- that are equal as NUMBERS passed each other ("1.0" and "1" in the
+   -- family interpreter; hex digests that overflow a double on the engine)
+   heTAssert "tsame: equal texts are the same", heTSame("abc", "abc") & "|" & heTSame(400, "400"), "true|true"
+   heTAssert "tsame: texts equal only as numbers are NOT the same", \
+         heTSame("1.0", "1") & "|" & heTSame("007", "7") & "|" & heTSame("1e0", "1") & "|" \
+         & heTSame("0e11", "0e22"), "false|false|false|false"
+
+   -- heBoardTakeOf (v0.25.6, row 16a): the street order the live fold and
+   -- History's translation both apply
+   put heBoardTakeOf("flop", "2c|3c|4c", 0) into tLevelA
+   heTAssert "board: a flop onto an empty board is taken", \
+         tLevelA["err"] & "|" & tLevelA["idx"], "|" & heCardIndex("2c") & comma & heCardIndex("3c") & comma & heCardIndex("4c")
+   put heBoardTakeOf("flop", "2c|3c|4c", 3) into tLevelA
+   put tLevelA["err"] into tHexB
+   put heBoardTakeOf("turn", "5c", 0) into tLevelA
+   put "|" & tLevelA["err"] after tHexB
+   put heBoardTakeOf("river", "5c", 3) into tLevelA
+   put "|" & tLevelA["err"] after tHexB
+   heTAssert "board: a flop onto a flop, a turn onto nothing, a river onto a flop are refused", tHexB, \
+         "out-of-order/duplicate board (flop)|out-of-order/duplicate board (turn)|out-of-order/duplicate board (river)"
+   put heBoardTakeOf("turn", "5c|6c", 3) into tLevelA
+   put tLevelA["err"] into tHexB
+   put heBoardTakeOf("flop", "2c|3c|zz", 0) into tLevelA
+   put "|" & tLevelA["err"] after tHexB
+   heTAssert "board: a turn of two cards, or an unknown card, is malformed", tHexB, \
+         "malformed board|malformed board"
+
+   -- heNetXlatPickSettle (v0.25.6, row 16b): of a hand's settle candidates,
+   -- the one the table APPLIED -- the first the fold verifies; the first
+   -- when none does (the dispute); and a lone one as it is
+   put heLogLine(0, "table", "cfg", "sb=1,bb=2,seats=1|2,stacks=400|400,button=1") & return into tHexA
+   put heLogLine(1, "table", "handStart", "seats=1|2,button=1") & return \
+         & heLogLine(1, "seat1", "bidSB", "amount=1") & return \
+         & heLogLine(1, "seat2", "bidBB", "amount=2") & return \
+         & heLogLine(1, "seat1", "act", "verb=fold,amount=0") & return into tHexB
+   put heLogLine(1, "table", "settle", "deltas=1:5|2:-5") & return \
+         & heLogLine(1, "table", "settle", "deltas=1:-1|2:1") & return \
+         & heLogLine(1, "table", "settle", "deltas=1:9|2:-9") & return into tDelimTxt
+   heTAssert "settle pick: the first candidate that verifies, not the first or the last", \
+         heNetXlatPickSettle(tHexA, tHexB, empty, empty, tDelimTxt, 1), \
+         heLogLine(1, "table", "settle", "deltas=1:-1|2:1")
+   heTAssert "settle pick: with none verifying, the first (the dispute the table logged)", \
+         heNetXlatPickSettle(tHexA, tHexB, empty, empty, line 1 of tDelimTxt & return & line 3 of tDelimTxt, 1), \
+         line 1 of tDelimTxt
+   heTAssert "settle pick: a lone candidate is taken as it is; none is none", \
+         heNetXlatPickSettle(tHexA, tHexB, empty, empty, line 3 of tDelimTxt, 1) & "|" \
+         & heNetXlatPickSettle(tHexA, tHexB, empty, empty, empty, 1), line 3 of tDelimTxt & "|"
+
+   -- heTimeoutRuleOk (v0.25.6, row 16c): the transcript-derived half of a
+   -- host timeout's verification, the one History's fold replays. Heads-up
+   -- after the blinds: seat 1 (the SB, to act) owes 1, so its prescription
+   -- is FOLD; the BB would owe nothing, so its would be CHECK
+   put heTNewHand(1, 2, "400,400", "1,2", 1) into tCtxA
+   put heTBlinds(tCtxA) into tCtxA
+   put "verb=fold,amount=0,seat=1,timeout=1,bank=1,turn=1" into tHexA
+   split tHexA by comma and "="
+   heTAssert "timeout rule: the exact prescription with an unspent bank passes", \
+         heTimeoutRuleOk(tCtxA, tHexA, 1, "act", 0, empty, empty), empty
+   put "check" into tHexA["verb"]
+   heTAssert "timeout rule: a check for a seat that owes is the wrong prescription", \
+         heTimeoutRuleOk(tCtxA, tHexA, 1, "act", 0, empty, empty), "wrong prescription (check)"
+   put "fold" into tHexA["verb"]
+   heTAssert "timeout rule: bank=1 twice in a hand is refused; so is bank=1 while sitting out", \
+         heTimeoutRuleOk(tCtxA, tHexA, 1, "act", 0, "true", empty) & "|" \
+         & heTimeoutRuleOk(tCtxA, tHexA, 1, "act", 0, empty, "true"), "bank already spent|bank already spent"
+   put "0" into tHexA["bank"]
+   heTAssert "timeout rule: bank=0 needs a spent bank or a sit-out", \
+         heTimeoutRuleOk(tCtxA, tHexA, 1, "act", 0, empty, empty) & "|" \
+         & heTimeoutRuleOk(tCtxA, tHexA, 1, "act", 0, "true", empty) & "|" \
+         & heTimeoutRuleOk(tCtxA, tHexA, 1, "act", 0, empty, "true"), \
+         "bank denied (unspent bank needs bank=1)||"
+   put heTNewHand(1, 2, "400,400", "1,2", 1) into tCtxA
+   put "amount=1,seat=1,timeout=1,bank=1" into tHexA
+   split tHexA by comma and "="
+   heTAssert "timeout rule: the forced post must be exactly the pending one", \
+         heTimeoutRuleOk(tCtxA, tHexA, 1, "bidSB", 1, empty, empty) & "|" \
+         & heTimeoutRuleOk(tCtxA, tHexA, 2, "bidBB", 2, empty, empty) & "|" \
+         & heTimeoutRuleOk(tCtxA, tHexA, 1, "bidSB", "1.0", empty, empty), "|wrong forced post|wrong forced post"
 end heTestHelpersRun
 
 command heTestLeafRun
@@ -19717,12 +20963,13 @@ command heTestLeafRun2
    put "AB12" into gGame["tableIdHex"]
    put "onion" into gGame["transport"]
    put "xyz.onion" into gGame["onionAddrTxt"]
-   heTAssert "leaf2: heInviteTxt carries the onion endpoint", heInviteTxt(), "AB12@xyz.onion"
+   heTAssert "leaf2: heInviteTxt carries the onion endpoint (after the protocol tag)", heInviteTxt(), \
+         kKatInviteTag & "AB12@xyz.onion"
    put "dht" into gGame["transport"]
-   heTAssert "leaf2: heInviteTxt is the bare code on DHT", heInviteTxt(), "AB12"
+   heTAssert "leaf2: heInviteTxt is the tagged code on DHT", heInviteTxt(), kKatInviteTag & "AB12"
    put "onion" into gGame["transport"]
    put empty into gGame["onionAddrTxt"]
-   heTAssert "leaf2: heInviteTxt falls back with no address", heInviteTxt(), "AB12"
+   heTAssert "leaf2: heInviteTxt falls back with no address", heInviteTxt(), kKatInviteTag & "AB12"
    put 3 into gGame["handNum"]
    put empty into gGame["log"]
    heLogAppend "handStart", "table", "seats=1|3"
@@ -20589,6 +21836,71 @@ function heTKatTurnLog pReplay
    return tOut
 end heTKatTurnLog
 
+function heTKatTimeoutLog
+   -- a canned ONLINE-shaped heads-up session of HOST TIMEOUTS (v0.25.6,
+   -- 2026-09-26; holde-em WORK-PLAN row 16c), as heNetLogToHotseat
+   -- translates one: timeout acts carry seat=/timeout=1/bank=/turn=, and a
+   -- seat's accepted stand and sit-return ride as "stand" / "sit" lines.
+   -- The table refuses a timeout whose prescription or bank flag the folded
+   -- state does not allow (heTimeoutRuleOk), and History's fold must skip
+   -- exactly those. Every hand below turns on one rule -- skip the wrong
+   -- one, or fold a refused one, and a settle no longer verifies:
+   --   hand 1: a CHECK for a seat that owes, and a bank=0 with the bank
+   --           unspent, are refused; the bank=1 fold folds (seat 1, miss 1)
+   --   hand 2: seat 1's VOLUNTARY check resets its misses, then a timeout
+   --           fold (miss 1 again, not 2)
+   --   hand 3: so seat 1 is NOT sitting out, and its bank=1 timeout folds
+   --           (miss 2 -> sits out, the cfg's miss=2)
+   --   hand 4: sitting out, its bank=0 timeout (bank unspent) folds
+   --   hand 5: seat 1 RETURNS, so its bank=0 timeout is refused; seat 2
+   --           STANDS, so its bank=0 timeouts fold
+   -- Final stacks 394/406, five settles verified. Mirror of fold-kat's
+   -- transcript_timeouts.
+   local tLog
+   put empty into tLog
+   put heLogLine(0, "table", "cfg", "sb=1,bb=2,seats=1|2,stacks=400|400,button=1,miss=2") & return after tLog
+   put heLogLine(1, "table", "handStart", "seats=1|2,button=1") & return after tLog
+   put heLogLine(1, "seat1", "bidSB", "amount=1") & return after tLog
+   put heLogLine(1, "seat2", "bidBB", "amount=2") & return after tLog
+   put heLogLine(1, "seat1", "act", "verb=check,amount=0,seat=1,timeout=1,bank=1,turn=1") & return after tLog
+   put heLogLine(1, "seat1", "act", "verb=fold,amount=0,seat=1,timeout=1,bank=0,turn=1") & return after tLog
+   put heLogLine(1, "seat1", "act", "verb=fold,amount=0,seat=1,timeout=1,bank=1,turn=1") & return after tLog
+   put heLogLine(1, "table", "settle", "deltas=1:-1|2:1") & return after tLog
+   put heLogLine(2, "table", "handStart", "seats=1|2,button=2") & return after tLog
+   put heLogLine(2, "seat2", "bidSB", "amount=1") & return after tLog
+   put heLogLine(2, "seat1", "bidBB", "amount=2") & return after tLog
+   put heLogLine(2, "seat2", "act", "verb=call,amount=1,turn=1") & return after tLog
+   put heLogLine(2, "seat1", "act", "verb=check,amount=0,turn=2") & return after tLog
+   put heLogLine(2, "seat1", "act", "verb=bet,amount=2,turn=3") & return after tLog
+   put heLogLine(2, "seat2", "act", "verb=raise,amount=6,turn=4") & return after tLog
+   put heLogLine(2, "seat1", "act", "verb=fold,amount=0,seat=1,timeout=1,bank=1,turn=5") & return after tLog
+   put heLogLine(2, "table", "settle", "deltas=1:-4|2:4") & return after tLog
+   put heLogLine(3, "table", "handStart", "seats=1|2,button=1") & return after tLog
+   put heLogLine(3, "seat1", "bidSB", "amount=1") & return after tLog
+   put heLogLine(3, "seat2", "bidBB", "amount=2") & return after tLog
+   put heLogLine(3, "seat1", "act", "verb=fold,amount=0,seat=1,timeout=1,bank=1,turn=1") & return after tLog
+   put heLogLine(3, "table", "settle", "deltas=1:-1|2:1") & return after tLog
+   put heLogLine(4, "table", "handStart", "seats=1|2,button=2") & return after tLog
+   put heLogLine(4, "seat2", "bidSB", "amount=1") & return after tLog
+   put heLogLine(4, "seat1", "bidBB", "amount=2") & return after tLog
+   put heLogLine(4, "seat2", "act", "verb=raise,amount=4,turn=1") & return after tLog
+   put heLogLine(4, "seat1", "act", "verb=fold,amount=0,seat=1,timeout=1,bank=0,turn=2") & return after tLog
+   put heLogLine(4, "table", "settle", "deltas=1:-2|2:2") & return after tLog
+   put heLogLine(4, "seat1", "sit", "seat=1") & return after tLog
+   put heLogLine(4, "seat2", "stand", "seat=2") & return after tLog
+   put heLogLine(5, "table", "handStart", "seats=1|2,button=1") & return after tLog
+   put heLogLine(5, "seat1", "bidSB", "amount=1") & return after tLog
+   put heLogLine(5, "seat2", "bidBB", "amount=2") & return after tLog
+   put heLogLine(5, "seat1", "act", "verb=fold,amount=0,seat=1,timeout=1,bank=0,turn=1") & return after tLog
+   put heLogLine(5, "seat1", "act", "verb=call,amount=1,turn=1") & return after tLog
+   put heLogLine(5, "seat2", "act", "verb=check,amount=0,seat=2,timeout=1,bank=0,turn=2") & return after tLog
+   put heLogLine(5, "seat2", "act", "verb=check,amount=0,seat=2,timeout=1,bank=0,turn=3") & return after tLog
+   put heLogLine(5, "seat1", "act", "verb=bet,amount=2,turn=4") & return after tLog
+   put heLogLine(5, "seat2", "act", "verb=fold,amount=0,seat=2,timeout=1,bank=0,turn=5") & return after tLog
+   put heLogLine(5, "table", "settle", "deltas=1:2|2:-2") & return after tLog
+   return tLog
+end heTKatTimeoutLog
+
 function heTKatAnteLog
    -- canned ante session (mirror of fold-kat ante_transcript): 3-handed, ante
    -- 2 each, blinds 1/2, folds to the BB. Pot = 3 antes (6) + SB (1) + BB (2)
@@ -20667,6 +21979,19 @@ command heTestFoldRun
    heTAssert "fold: an act replayed at a later turn is skipped, not folded (no engine error behind it)", \
          heTFoldTxt(tFoldA), "442/394/364 hand=1 errs=[]"
    heTContains "fold: ...and the hand still settles verified", tFoldA["history"], "settle-verified"
+
+   -- HOST TIMEOUTS in History (v0.25.6, 2026-09-26; holde-em WORK-PLAN row
+   -- 16c): the fold replays heNetTimeoutOk's TRANSCRIPT-DERIVED checks
+   -- (heTimeoutRuleOk: the exact prescription, the bank flag against the
+   -- seat's bank and sit-out state, sit-outs from stand lines and from
+   -- misses, returns from sit lines, a voluntary act resetting the misses)
+   -- and skips what the table refused. Each hand of the canned session
+   -- turns on one of those rules (heTKatTimeoutLog); mirrored in fold-kat
+   -- (transcript_timeouts). The deadline itself is not replayable.
+   put heFoldTranscript(heTKatTimeoutLog()) into tFoldA
+   heTAssert "fold: host timeouts replay as the table took them (394/406, no errors)", \
+         heTFoldTxt(tFoldA), "394/406/ hand=5 errs=[]"
+   heTAssert "fold: ...all five settles verify", heTCountLines(tFoldA["history"], "; settle-verified"), 5
 
    -- deep-dive (OXT-pass finding): the online lobby and the hotseat game share
    -- gGame["log"] in two incompatible formats -- a 4-field hotseat line vs a
