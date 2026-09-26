@@ -350,9 +350,12 @@ end cwBitAndN
 
 -- ---- comma lists, read without `the itemDelimiter` ---------------------------
 -- The parameter tables above are comma lists and have to be indexed. `item N
--- of` would do it and would read a property any other script in the process
--- may have changed, so these two scan for the separator instead. They are the
--- ONLY place in this file that takes a delimited string apart.
+-- of` would do it, but only under a delimiter set first, and this layer
+-- reads no delimiter at all (point 2 above), so these two scan for the
+-- separator instead. They are the ONLY place in this file that takes a
+-- delimited string apart. (This once said any other script in the process
+-- might have changed the delimiter; the suite's engine note 2.3 has since
+-- observed it handler-local on Windows and Linux, no Mac run.)
 
 private function cwListAt pList, pIndex
    return cwSplitAt(pList, pIndex, ",")

@@ -1709,13 +1709,17 @@ def check_pure(c, ip, V):
     delim_survives("rsAssembleChunkText leaves it alone on refusal too",
                    lambda: ip.call("rsAssembleChunkText", ["", {}]))
     # rsPersonaAllows had the SAME leak and was fixed in the same pass, but
-    # it cannot be driven here: it uses `is not among the items of`, which
-    # the interpreter does not model. Its delimiter discipline and its full
-    # truth table are asserted in the folded suite harness instead, which is
-    # where the guard belongs anyway. Named rather than silently omitted.
+    # it cannot be driven here: it uses `is among the items of`, which the
+    # interpreter does not model. The folded suite harness asserts its full
+    # truth table on the engine, NOT its delimiter discipline: nothing does,
+    # and on the Windows and Linux engines no harness line could (engine
+    # note 2.3: the itemDelimiter is handler-local there, so a caller never
+    # sees the handler's set). Until 2026-09-26 this said the harness held
+    # both. Named rather than silently omitted.
     c.skip("rsPersonaAllows' delimiter discipline",
            "`is among the items of` is outside the interpreter's subset; "
-           "the folded harness asserts the guard on the engine")
+           "the folded harness asserts its truth table only, and an "
+           "engine with a handler-local delimiter cannot see this restore")
 
     c.note("the app-state store: framing, caps and refusals")
     sealed = ip.call("rsSealAppState", ["hello state", MASTER])

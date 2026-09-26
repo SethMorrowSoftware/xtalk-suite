@@ -1566,9 +1566,11 @@ private command rstSectionNostr pCaps
    -- would be a linkage anybody could forge half of.
    -- the six bytes are one per FIELD of the signed span: the handle, the
    -- Nostr key, the seq, the timestamp, and one byte of each signature.
-   -- The delimiter is set explicitly rather than assumed: comma is the
-   -- engine default, but a harness that leans on a default is a harness
-   -- that breaks the day some earlier section forgets to restore one.
+   -- The delimiter is set explicitly rather than assumed. This once said an
+   -- earlier section that forgot to restore one would break this loop; the
+   -- suite's engine note 2.3 has since observed the itemDelimiter
+   -- handler-local on Windows and Linux (no Mac run), so there only this
+   -- handler's own set reaches it.
    put the itemDelimiter into tSavedDelim
    set the itemDelimiter to comma
    repeat for each item tI in "5,69,140,148,150,214"
