@@ -3411,19 +3411,27 @@ def _engine_parse_compare(same=None):
     real_eq = LCS._eq
 
     class Operand:
+        """What the ordering operators compare: the engine's number when the
+        operand parses, and its TEXT always, because a number meeting text
+        is compared as text (its own spelling: "1e999", not "inf")."""
         __slots__ = ("num", "text")
 
         def __init__(self, v):
             self.num = _engine_number(v)
-            self.text = None if self.num is not None else str(LCS._disp(v))
+            if isinstance(v, str):
+                self.text = v
+            else:
+                try:
+                    self.text = str(LCS._disp(v))
+                except (OverflowError, ValueError):
+                    self.text = str(v)
 
         def order(self, other):
             if self.num is not None and other.num is not None:
                 if same(self.num, other.num):
                     return 0
                 return -1 if self.num < other.num else 1
-            a = self.text if self.num is None else str(LCS._disp(self.num))
-            b = other.text if other.num is None else str(LCS._disp(other.num))
+            a, b = self.text, other.text
             return (a > b) - (a < b)
 
         def __lt__(self, other):
