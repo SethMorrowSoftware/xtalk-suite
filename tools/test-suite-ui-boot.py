@@ -105,6 +105,18 @@ docs/OXT-PASS-RUNBOOK.md section 3.2. Each defect must be caught BY NAME:
       suTallyOpen deleted), so the rows no longer add up to the totals.
   F4  the teardown never runs: stFinish's stTeardown call is deleted.
 
+And two a review found on 2026-09-26, each GREEN against the gate as first
+written (so each check they name was made exact for them):
+
+  F5  a misspelt native call: holde-em's SodiumXT probe calls
+      sxRandmUniform. The run is exactly an absent library's, so only the
+      can't-find-handler check can see it, and it did not while an absent
+      native was any undefined name with a native prefix; it is now a
+      public handler a native member's .lcb declares.
+  F6  the teardown moves from stFinish to the pump's last tick, counted to
+      its row: once, before the summary, every count adding up. The check
+      said "from stFinish" and counted calls; it now reads the caller.
+
 A clean --full run on the committed paste must pass first, as above.
 
 USAGE
@@ -268,8 +280,27 @@ FULL_MUTANTS = [
      '      stSectionFailed "teardown", tError\n',
      '   try\n   catch tError\n      stSectionFailed "teardown", tError\n',
      ("stFinish ran once and stTeardown ran once",)),
+    # Found by review, 2026-09-26: each was GREEN against the gate as first
+    # written, and each check it now fails was made exact for it.
+    ("F5", "a misspelt native call: holde-em's SodiumXT probe calls "
+           "sxRandmUniform, which no .lcb declares",
+     '         get sxRandomUniform(2)\n'
+     '         put "true" into he1gHasSodiumChk\n',
+     '         get sxRandmUniform(2)\n'
+     '         put "true" into he1gHasSodiumChk\n',
+     ("every can't-find-handler the run raised names an ABSENT native",
+      "sxRandmUniform")),
+    ("F6", "the teardown moves out of stFinish into the pump's last tick "
+           "(counted to its row, so every count still adds up)",
+     ('   try\n      stTeardown\n   catch tError\n'
+      '      stSectionFailed "teardown", tError\n',
+      '   if stEnDone() and stDcDone() then\n      stFinish\n'),
+     ('   try\n   catch tError\n      stSectionFailed "teardown", tError\n',
+      '   if stEnDone() and stDcDone() then\n      suTallyOpen "cross"\n'
+      '      stTeardown\n      suTallyClose\n      stFinish\n'),
+     ("stTeardown's call came from stFinish",)),
 ]
-# One whole interpreted Run all per case; five at once share the cores.
+# One whole interpreted Run all per case, at most one case per core.
 FULL_TIMEOUT = 5400
 
 
@@ -294,14 +325,21 @@ def run_gate(path, full=False):
 
 def one(mutant, paste, scratch, full=False):
     mid, what, needle, repl, must = mutant
-    hits = paste.count(needle)
-    if hits != 1:
-        return ["%s (%s): the needle occurs %d times in the paste, not once - "
-                "the fixture is stale; re-read the core and update it"
-                % (mid, what, hits)]
+    # A mutant is one edit, or (F6) a tuple of edits applied in order, each
+    # needle required exactly once in the text it is applied to.
+    edits = (list(zip(needle, repl)) if isinstance(needle, tuple)
+             else [(needle, repl)])
+    text = paste
+    for k, (nd, rp) in enumerate(edits, 1):
+        hits = text.count(nd)
+        if hits != 1:
+            return ["%s (%s): needle %d of %d occurs %d times in the paste, "
+                    "not once - the fixture is stale; re-read the core and "
+                    "update it" % (mid, what, k, len(edits), hits)]
+        text = text.replace(nd, rp, 1)
     path = os.path.join(scratch, "mutant-%s.livecodescript" % mid)
     with open(path, "w", encoding="utf-8") as fh:
-        fh.write(paste.replace(needle, repl, 1))
+        fh.write(text)
     code, out = run_gate(path, full)
     problems = []
     if code != 1:

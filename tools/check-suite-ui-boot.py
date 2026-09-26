@@ -232,11 +232,12 @@ asserts what an engine session would otherwise be the first to show:
     SKIP line, and the present layers' harnesses are the ones that ran;
   - the report ends without RUN NOT FINISHED, and Copy results carries it so;
   - the boot self-check's block, green once its probe fires;
-  - stTeardown ran once, from stFinish, and nothing is held after it or after
-    the last closeStack;
+  - stTeardown ran once, called by stFinish (itself called by the pump's
+    last tick), and nothing is held after it or after the last closeStack;
   - no fold created or deleted a control, touched the clipboard, resized the
     window or wrote the message box (bar MSG_WRITERS); every "can't find
-    handler" names an absent native or a NOT_IN_PASTE layer; the timers after
+    handler" names an absent native (a public handler a native member's .lcb
+    declares, read from the tree) or a NOT_IN_PASTE layer; the timers after
     openStack are exactly FULL_TIMERS; the delimiters are restored.
 
 It prints the per-row table the run produced - labelled THE INTERPRETER'S
@@ -260,18 +261,27 @@ found two readings of the GATE's that were wrong for Run all, each fixed
 where it lives: returned_merges read a merged report back from the text up to
 the next section header, which in Run all ran on into the absent natives'
 SKIP lines (five skips short); and two "can't find handler" probes name
-layers the paste leaves out on purpose (NOT_IN_PASTE).
+layers the paste leaves out on purpose (NOT_IN_PASTE). A review the same day
+found two checks weaker than their words, each made exact with a fixture
+that was green against the old check: an absent native was any undefined
+name with a native PREFIX, so a misspelt native call read as the library's
+absence (F5); and "stTeardown ran once, from stFinish" counted the calls and
+never looked at the caller (F6).
 
 NOT A PER-PUSH GATE, and measured, not assumed. On 2026-09-26, on the
 four-core machine that wrote it and beside other gate runs (load 4 to 8,
 under nice), one --full run took 330 to 425 s of wall time in five runs,
 openStack's synchronous Run all nearly all of it: nostrxt's folded harness
-270 to 330 s, holde-em's about 60 s, everything else a few seconds. Its fixture is five
-such runs at once: 1137 s (about 19 minutes) for the clean run and its four
-mutants, on that machine the same day. Per push that is about 25 more
-minutes on a job (suite-gates.yml) that ran 1h22m to 2h43m in its fifteen
-runs of 2026-09-21 to 09-24 against a 240-minute ceiling, in a block of
-suite gates that are seconds each. What it would buy there is the fold-level
+270 to 330 s, holde-em's about 60 s, everything else a few seconds. Its
+fixture is one such run per case, the clean paste and each F mutant, at
+most one per core: 1137 s (about 19 minutes) for the clean run and F1-F4 on
+that machine the same day, and 888 s for the clean run and F1-F6 (two
+rounds on four cores, the load lower). Per push that is 20 to 25 more
+minutes on the job that runs build-all --gates
+(suite-gates.yml's "static gates + golden vectors"), which GitHub timed at
+2h53m, 2h59m and 2h54m in runs 830, 842 and 849 (2026-09-25 and 09-26)
+against its 240-minute ceiling, in a block of suite gates that are seconds
+each. What it would buy there is the fold-level
 facts above, which change only when the paste is regenerated (once per batch,
 the work plan's rule), and which the fast tier's board checks and each folded
 member's own execution gate already cover in part on every push. So
@@ -2620,8 +2630,15 @@ class FullInterp(SuiteInterp):
         self.max_depth = 0
         self.calls = collections.Counter()
         # (message, handler, line, row) for each script error, where it was
-        # RAISED; the probes raise hundreds, so the newest are kept
+        # RAISED (_thrown_add). BOUNDED only as a memory guard for a run that
+        # loops on a throw: the clean run of 2026-09-26 raised 58 in all (the
+        # probes' "can't find handler"s among them), and a record that dropped
+        # an early one would blind missing_handlers, so thrown_total counts
+        # every one and check_full_run fails on an overflow.
         self.thrown = collections.deque(maxlen=50000)
+        self.thrown_total = 0
+        # who called the two handlers the teardown check names, per call
+        self.callers = collections.defaultdict(list)
         self.faults = []            # refusals, each a dict naming it
         self.row_time = collections.Counter()
         self._tally = None
@@ -2650,6 +2667,9 @@ class FullInterp(SuiteInterp):
         elif low == "stmergereturned" and len(args) > 1:
             self.merged_reports.append(str(LCS._disp(args[1])))
         caller = self.stack[-2].lower() if len(self.stack) > 1 else ""
+        if low in ("stfinish", "stteardown"):
+            self.callers[low].append(self.stack[-2] if len(self.stack) > 1
+                                     else "(the engine)")
         try:
             return super().call(name, args)
         except (LCS._Return, LCS._Exit, LCS._Next, Thrown, DB._Break):
@@ -2669,12 +2689,16 @@ class FullInterp(SuiteInterp):
             # the report's section line is attributed to the REFUSED
             # statement, not to the runner line that now raises
             t.full_origin = fault
-            self.thrown.append((str(t.msg), fault.get("handler", name),
-                                fault.get("line", ""), fault.get("row", "")))
+            self._thrown_add((str(t.msg), fault.get("handler", name),
+                              fault.get("line", ""), fault.get("row", "")))
             raise t
         finally:
             self.stack.pop()
             self.where.pop()
+
+    def _thrown_add(self, entry):
+        self.thrown.append(entry)
+        self.thrown_total += 1
 
     def _origin(self, line):
         return {"handler": self.stack[-1] if self.stack else "(top level)",
@@ -2693,8 +2717,8 @@ class FullInterp(SuiteInterp):
             # where it was RAISED: the innermost statement sees it first
             if not hasattr(t, "full_origin"):
                 t.full_origin = self._origin(line)
-                self.thrown.append((str(t.msg), t.full_origin["handler"],
-                                    line, t.full_origin["row"]))
+                self._thrown_add((str(t.msg), t.full_origin["handler"],
+                                  line, t.full_origin["row"]))
             raise
         except Exception as exc:                        # noqa: BLE001
             if not hasattr(exc, "full_origin"):
@@ -3024,8 +3048,15 @@ def check_full_run(c, ip, world, board):
          FULL_CLOCK_PIN in lines, FULL_CLOCK_PIN)
 
     c.section("--full: teardown ran")
-    c.eq("stFinish ran once and stTeardown ran once, from it",
+    c.eq("stFinish ran once and stTeardown ran once",
          (ip.calls["stfinish"], ip.calls["stteardown"]), (1, 1))
+    # WHO called them, not only how often: until a review on 2026-09-26 the
+    # count above carried the words "from it" and checked none of it, so a
+    # teardown moved out of stFinish into the pump (fixture F6) read green.
+    c.eq("stTeardown's call came from stFinish, and stFinish's from the "
+         "pump's last tick",
+         (ip.callers.get("stteardown"), ip.callers.get("stfinish")),
+         (["stFinish"], ["suPump"]))
     teardown = "== teardown (nothing may outlive the run) =="
     c.eq("the report carries the teardown section once", lines.count(
         teardown), 1)
@@ -3074,10 +3105,19 @@ def check_full_run(c, ip, world, board):
          [])
     c.ck("and what it holds is holde-em's probe report",
          world.msg.startswith("SodiumXT probe (holde-em "), repr(world.msg[:80]))
-    missing, layers = missing_handlers(ip)
-    c.eq("every can't-find-handler the run raised names an ABSENT native or "
-         "a NOT_IN_PASTE layer (an engine builtin the model lacks, or a "
-         "fold's misspelt call, would be named here)", missing, [])
+    c.ck("the script-error record kept every error the run raised (the two "
+         "checks below read it)", ip.thrown_total <= ip.thrown.maxlen,
+         "%d raised, the newest %d kept" % (ip.thrown_total,
+                                            ip.thrown.maxlen))
+    api = native_api()
+    c.eq("every probed absent native is a public handler of a native "
+         "member's .lcb (native_api() read the extensions it checks against)",
+         [n for n in ABSENT_NATIVES if n.lower() not in api], [])
+    missing, layers = missing_handlers(ip, api)
+    c.eq("every can't-find-handler the run raised names an ABSENT native (a "
+         "public handler a native member's .lcb declares) or a NOT_IN_PASTE "
+         "layer (an engine builtin the model lacks, or a fold's misspelt "
+         "call, would be named here)", missing, [])
     c.eq("every NOT_IN_PASTE probe was raised by some run (a stale excuse "
          "is an exemption for a probe that is gone)",
          sorted(set(NOT_IN_PASTE) - layers), [])
@@ -3097,10 +3137,39 @@ NOT_IN_PASTE = {
 }
 
 
-def missing_handlers(ip):
+def native_api():
+    """{lower-case name: its .lcb} for every PUBLIC handler a native member's
+    extension declares (tools/member-registry.py's native=True members, each
+    `<member>/src/*.lcb`): what a script can call on an engine WITH the
+    extension, and so the only names whose "can't find handler" is an absent
+    native. READ, never copied, so a new or renamed export moves with its
+    .lcb. Until a review on 2026-09-26 the test was the native PREFIX alone,
+    and a misspelt call (`sxRandmUniform` in holde-em's sodium probe, fixture
+    F5) read as SodiumXT's absence: the run is identical to an absent
+    library's, green, while on an engine WITH SodiumXT that probe would still
+    say "not installed" and skip every crypto section."""
+    reg = _load("member_registry", os.path.join(HERE, "member-registry.py"))
+    out = {}
+    for m in reg.MEMBERS:
+        if not m.native:
+            continue
+        src = os.path.join(ROOT, m.name, "src")
+        for fn in sorted(os.listdir(src)) if os.path.isdir(src) else ():
+            if not fn.endswith(".lcb"):
+                continue
+            with open(os.path.join(src, fn), encoding="utf-8") as fh:
+                for ln in fh:
+                    hit = _rx(r'^\s*public\s+handler\s+(\w+)\s*\(').match(ln)
+                    if hit:
+                        out[hit.group(1).lower()] = "%s/src/%s" % (m.name, fn)
+    return out
+
+
+def missing_handlers(ip, api):
     """(the handler names the run's "can't find handler" errors named that
-    are neither an absent native's - a native prefix, and not defined in the
-    paste - nor a NOT_IN_PASTE layer's, the NOT_IN_PASTE names seen)."""
+    are neither an absent native's - a public handler of a native member's
+    .lcb (`api`, native_api()), and not defined in the paste - nor a
+    NOT_IN_PASTE layer's, the NOT_IN_PASTE names seen)."""
     out, layers = set(), set()
     for msg, _h, _l, _r in ip.thrown:
         m = (_rx(r"can't find handler: (\w+)").search(msg)
@@ -3111,8 +3180,7 @@ def missing_handlers(ip):
         name = m.group(1)
         if name in NOT_IN_PASTE and name.lower() not in ip.handlers:
             layers.add(name)
-        elif not (name.lower().startswith(NATIVE_PREFIXES)
-                  and name.lower() not in ip.handlers):
+        elif not (name.lower() in api and name.lower() not in ip.handlers):
             out.add(name)
     return sorted(out), layers
 
