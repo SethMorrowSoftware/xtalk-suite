@@ -586,6 +586,33 @@ def drive_routes(c, ip):
 # --------------------------------------------------------------------------
 # the drive, section by section in the golden's order
 
+def drive_own_code(c, ip):
+    """qsIsOwnCode (2026-09-26), under engine_is_folds() only: its answer is a case-FOLDED
+    compare, as the engine's `is` gives, so the interpreter's case-exact `is` would fail the
+    upper-case row for the wrong reason. The number rows are the point: two 40-hex codes
+    "0e1..." and "0e2..." are one number to a bare `is`, which the interpreter REFUSES
+    (named_calls fails that row by name), so a revert of any of the three letter-prefixed
+    compares fails here. The script's three sources are set directly: they are state the
+    share flow writes, and qsIsOwnCode only reads them."""
+    call = named_calls(c, ip)
+    h1, h2, hx = "0e" + "1" * 38, "0e" + "2" * 38, "ab" * 20
+    for code, share, by_handle, active in [
+            (h2, h1, [], ""), (h2, "", [h1], ""), (h2, "", [], h1), (h1, h1, [], ""),
+            (hx.upper(), hx, [], ""), (hx, "", ["x", hx], ""), (hx, "", [], hx),
+            (hx, h1, [h2], "zz")]:
+        ip.globals["ssharecode"] = share
+        ip.globals["ssharecodebyhandle"] = ({"h%d" % i: v for i, v in enumerate(by_handle)}
+                                            if by_handle else "")
+        ip.globals["sactiveshare"] = {"code": active} if active else ""
+        c.ck("qsIsOwnCode(%r...) over %r / %d retained / %r" % (code[:6], share[:6],
+                                                                  len(by_handle), active[:6]),
+             boolish(call("qsIsOwnCode", [code])),
+             G.is_own_code(code, share, by_handle, active))
+    ip.globals["ssharecode"] = ""
+    ip.globals["ssharecodebyhandle"] = ""
+    ip.globals["sactiveshare"] = ""
+
+
 def drive(c, ip, world, sandbox):
     call = named_calls(c, ip)
     total = 1000
@@ -766,6 +793,7 @@ def drive(c, ip, world, sandbox):
     drive_routes(c, ip)
     with engine_is_folds():
         drive_routes(Tagged(c, ENGINE_IS), ip)
+        drive_own_code(Tagged(c, ENGINE_IS), ip)
     # -- conditional GET --
     c.ck("qsHttpWeakETag", call("qsHttpWeakETag", [1000, 42, 0]), G.http_weak_etag(1000, 42, 0))
     et = G.http_weak_etag(1000, 42, 3)

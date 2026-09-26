@@ -4011,17 +4011,21 @@ end qsLooksLikeCode
 -- Is this a code WE minted (and is still live)? Offering the user a download
 -- of their own outbound share - fresh on the clipboard from the Copy button -
 -- would be nonsense, so those never pre-fill the Receive box.
+-- A code can be a bare 40-hex info-hash (qsShareFile's plain path), and
+-- two all-digit hashes with one "e" compare as NUMBERS under a bare `is`
+-- (suite engine note 2.11), so each side carries a letter: text, case-folded
+-- as before (a hash is the same hash in either case).
 function qsIsOwnCode pCode
    local tK
-   if pCode is not empty and pCode is sShareCode then
+   if pCode is not empty and ("c" & pCode) is ("c" & sShareCode) then
       return true
    end if
    repeat for each key tK in sShareCodeByHandle
-      if sShareCodeByHandle[tK] is pCode then
+      if ("c" & sShareCodeByHandle[tK]) is ("c" & pCode) then
          return true
       end if
    end repeat
-   if sActiveShare["code"] is pCode then
+   if ("c" & sActiveShare["code"]) is ("c" & pCode) then
       return true
    end if
    return false

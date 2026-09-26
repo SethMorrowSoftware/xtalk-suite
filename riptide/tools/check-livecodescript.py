@@ -208,18 +208,21 @@ The checks, and the engine lesson each encodes:
       `Handle` are out because nearly every site they added names no hex
       (cache, keyboard, route and tab keys, JSON-RPC and icon ids, a
       sheet-load signature, FFI integer handles), though `Key` and `Handle`
-      also add a few that do (riptide's head-key check `tEventKey is not
-      tHandle`; HEX_NAME_SUFFIXES names them): those pass, as known misses.
+      also added a few that do (riptide's head-key check `tEventKey is not
+      tHandle`; HEX_NAME_SUFFIXES names them): known misses, each prefixed
+      by hand on 2026-09-26.
       `Pub`, `Pubkey`, `PublicKey`, `SecretKey` and `Txid` are in because
       every site they added compared a key or txid; `Target` is in under
       equality only, where it is riptide's DHT target, because under the
       ordering operators it is box2dxt's numeric set-point. A name
       heuristic NARROWS the class and cannot close it: a hex value in a
       plain-named variable compared with another plain-named one passes
-      (riptide's `tComputed is not tExpected`), and a NUMBER-LIKE literal
-      is exempt with every literal (`char 1 to 4 of tHex is "0014"` passes,
-      though by the same parse "14e0" is "0014"). The family interpreter is
-      the other half (docs/WORK-PLAN.md suite-wide #19).
+      (riptide's `tComputed is not tExpected` did, until 2026-09-26 put
+      both sides behind an `"h" &` prefix by hand), and a NUMBER-LIKE
+      literal is exempt with every literal (`char 1 to 4 of tHex is "0014"`
+      passes, though by the same parse "14e0" is "0014"). The family
+      interpreter is the other half: it refuses every such comparison a
+      gate RUNS (docs/OXT-ENGINE-NOTES.md 2.11).
 
 One hold-em lineage check is deliberately NOT here, and the reason is
 recorded so it is not "rediscovered": the chunk-of-an-array-element refusal
@@ -1390,11 +1393,12 @@ def check_stray_backslash(path, cleaned):
 # all clean: `Key` also adds riptide's head check `tEventKey is not tHandle`
 # (64-hex keys, the head's authenticity) and torrent-dht-channels' unfollow
 # `tLine is not tKey`, and `Handle` riptide's identity-handle compares;
-# those are this heuristic's known misses (docs/WORK-PLAN.md), not proof
-# the class is empty there. A name is hex-shaped when it IS one of these
-# (first letter either case: `txid`, `publicKey`) or ENDS in one at a camel
-# boundary (`sCwToken`, `pFromPubHex`, `infoHash`, `nostrPub`); a literal
-# key is judged by its last `-`/`_`-separated part (`x-edit-token`).
+# those were this heuristic's known misses (each prefixed by hand,
+# 2026-09-26), and they are not proof the class is empty there. A name is
+# hex-shaped when it IS one of these (first letter either case: `txid`,
+# `publicKey`) or ENDS in one at a camel boundary (`sCwToken`,
+# `pFromPubHex`, `infoHash`, `nostrPub`); a literal key is judged by its
+# last `-`/`_`-separated part (`x-edit-token`).
 HEX_NAME_SUFFIXES = ("Hex", "Token", "Tok", "Nonce", "Commit", "Digest",
                      "Hash", "Pub", "Pubkey", "PubKey", "PublicKey",
                      "SecretKey", "Txid")

@@ -273,7 +273,13 @@ were the concrete case: driven through the folded model on 2026-09-24, the
 pre-fix demo dropped a draft from "phone" after one from "Phone" as a replay,
 silently. The same day its demo re-keyed per-device state by the name's UTF-8
 bytes in hex (`raLanDevKey`), a key no fold can merge, and `check-demo-boot`'s
-`drive_lan_keys` drives both spellings.
+`drive_lan_keys` drives both spellings. nocloud's QuickShare was the second, on
+2026-09-25: its route tables were keyed by the text "METHOD /path", so
+`GET /API/x` dispatched to the `/api/x` route (HTTP paths are case-sensitive).
+It now keys by the hex of that text (`qsRouteKey`, `qsRootKey`), with the same
+fix in torrentxt's `torrent-quickshare`, and `nocloud/tools/check-script-vectors.py`
+drives the lookups through the folded keys (`nocloud/CLAUDE.md` gotcha 22).
+Verified statically; needs an OXT pass.
 **Does NOT mean:** `the keys of` still returns each key's ORIGINAL spelling, so
 a scan over the keys is exact; only the subscript lookup folds.
 
@@ -418,7 +424,9 @@ interpreter used to, and refuses the eleven it read otherwise. Two gates also
 replay the bounds under the ENGINE'S RULE and two candidates the probes ruled
 out, kept as margin (an absolute 1e-6 tolerance, a 15-significant-digit round
 trip): `riptide/tools/check-script-vectors.py` (tiers 1c and 1d, plus a static
-scan refusing a library comparison against a quotient) and
+scan refusing a library comparison against a quotient),
+`riptide/tools/check-demo-boot.py` (`drive_seq_order`: the demo's own replay
+guards and head watermarks near 2^53, under the engine's rule) and
 `coinxt/tools/check-wallet-vectors.py` (tier 4). Each model is first proven to
 reproduce the engine's accept through the old line, and the engine's rule to
 read the fourteen recorded numeric probe answers (the first two lines, and the
@@ -621,6 +629,43 @@ which the row that expects `false` read as false: a script whose only fault
 was a refused comparison passed the gate green until review, 2026-09-26; the
 gate's mutation drive now carries that script). holde-em's harness
 pins the genesis head against "0", which both readings agree on.
+
+### 2.12 `is an integer` is exact, `X is trunc(X)` is not: a whole-number test written as a comparison lets a near-integer through
+**DOCUMENTED** (the engine source, read 2026-09-25 by the work that fixed
+coinxt's and holde-em's sites), with one point **OBSERVED 2026-09-25** on
+Linux and on Windows (64-bit, the suite paste; runbook section 8): holde-em's
+harness line "legal: a near-integer raise (57.0000000000001) rejected" PASSED
+through `is not an integer`. The old `is trunc(X)` form has not run on an
+engine.
+`is a number` and `is an integer` (exec-math.cpp, `MCMathEvalIsANumber`,
+`MCMathEvalIsAnInteger`) convert the operand as 2.11 describes
+(`MCU_strtor8` for text) and then ask a plain C `d == floor(d)`: no
+tolerance, and false for empty. `X is trunc(X)` goes through the comparison
+of 2.10 instead, so a value within 10 DBL_EPSILON of a whole number IS that
+number: by the rule, holde-em's `heBetApply` let a wager of
+"57.0000000000001" into shared state, and coinxt's `cxBech32EncodeValues`
+let `3.0000000000000004` and `-0.000000000000001` through as 5-bit values
+(INFERRED from the source; not observed). What such a value becomes next is
+not a refusal either: a computed chunk index is converted by rounding (the
+source rounds half away from zero, so most likely the neighbouring integer),
+where the family interpreter answers an EMPTY chunk for `char 0.999999999999999`.
+Both sites and their neighbours now ask `is an integer`: holde-em's since
+v0.25.4 (the line above), coinxt's since 2026-09-25 (`coinxt/CLAUDE.md`;
+verified statically; needs an OXT pass).
+**Rule:** test for a whole number with `is an integer`, never
+`is trunc(X)`, and as its own `if` ahead of a range test (`or` evaluates both
+operands, 2.5, so a one-line chain still hands `trunc` a non-number; whether
+that throws on the engine is unrecorded). When the value is headed
+for arithmetic, settle it as TEXT first (digits only, a bounded count): the
+exact test still says yes to "1e20", "3.0", "+3", " 3", "0x1F" and "1e999".
+**Gate:** no static check. The family interpreter models both exactly as the
+source reads (`_is_numeric` in `coinxt/tools/lcs-interp.py`) and REFUSES a
+comparison the 2.10 tolerance decides, so an execution gate that drives a
+near-integer through `is trunc(X)` stops there; coinxt's
+`check-wallet-vectors.py` tier 4 replays the old bech32 line under the
+engine's rule and lets both values through.
+**Does NOT mean:** `trunc` is wrong, or that `is an integer` bounds a value:
+2^60 and +inf are integers to it, and 2.4's 2^53 limit is a separate test.
 
 ## 3. Control flow
 

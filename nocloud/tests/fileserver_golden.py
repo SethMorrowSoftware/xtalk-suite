@@ -99,6 +99,11 @@ User-declared routes (.qsroutes.json):
   qsRouteMatch     -> route_match()     (segment matcher + the reserved-path backstop)
   qsUserRouteFind  -> user_route_find() (deterministic pattern pick for one request)
 
+The Receive box's clipboard offer:
+  qsIsOwnCode     -> is_own_code()      (a code WE minted is never offered back: text
+                                         equality, case-folded as `is` folds, never a
+                                         number compare; 2026-09-26)
+
 Transfers-row formatting:
   qsRateShort     -> rate_short()
   qsEtaShort      -> eta_short()
@@ -669,6 +674,25 @@ def same_text(a, b):
     """Mirror qsSameText: byte for byte. The script's first test (the folded compare)
     only rejects early; its answer is the exact one, so the mirror is plain equality."""
     return a == b
+
+
+# ---- the clipboard offer's own-code test (2026-09-26) -----------------------------------
+# A share code can be a bare 40-hex info-hash (qsShareFile's plain path), and two all-digit
+# hashes with one "e" are one NUMBER to a bare `is` (the suite's engine note 2.11: "0e1..."
+# and "0e2..." are both 0), so the script compares each side behind a letter. The fold stays:
+# a hash pasted in upper case is the same hash.
+
+def is_own_code(code, share_code, by_handle, active_code):
+    """Mirror qsIsOwnCode: is `code` the current share's, any retained share's, or the
+    active share's? Case-folded TEXT equality. An empty code against an empty field
+    answers true, as the script always has (its caller never passes an empty code)."""
+    def same(a, b):
+        return a.lower() == b.lower()
+    if code != "" and same(code, share_code):
+        return True
+    if any(same(v, code) for v in by_handle):
+        return True
+    return same(active_code, code)
 
 
 def rk(readable):
@@ -1810,6 +1834,21 @@ def main():
         ("caf\u00e9", "CAF\u00c9", False), ("a", "a ", False),
     ]:
         check("same_text(%r,%r)" % (a, b), same_text(a, b), want)
+
+    _h1, _h2 = "0e" + "1" * 38, "0e" + "2" * 38   # two hashes, one number (0) to a bare `is`
+    _hx = "ab" * 20
+    for code, share, by_handle, active, want in [
+        (_h2, _h1, [], "", False),                 # the number path would say "own"
+        (_h2, "", [_h1], "", False),               # ... in the retained shares too
+        (_h2, "", [], _h1, False),                 # ... and the active one
+        (_h1, _h1, [], "", True),
+        (_hx.upper(), _hx, [], "", True),          # the same hash in upper case
+        (_hx, "", ["x", _hx], "", True),
+        (_hx, "", [], _hx, True),
+        (_hx, _h1, [_h2], "zz", False),
+        ("", "", [], "", True),                    # the script's empty answer, kept
+    ]:
+        check("is_own_code(%r...)" % code[:6], is_own_code(code, share, by_handle, active), want)
 
     # -- HEAD route lookup: HEAD is GET-without-a-body, so it must reach the GET route --
     # Until 2026-08-17 the lookup key was built from the literal method, so a HEAD matched

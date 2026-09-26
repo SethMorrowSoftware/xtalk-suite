@@ -120,6 +120,12 @@ FIXTURES = [
      "         end if\n",
      "",
      "qsLoadUserRoutes refuses a method that is not a token before it files the route"),
+    # A share code can be a bare 40-hex info-hash (2026-09-26): "0e1..." and "0e2..." are
+    # one number to a bare `is`, which the interpreter refuses and the gate names.
+    ("the own-code test comparing a retained share's code with bare `is`",
+     "      if (\"c\" & sShareCodeByHandle[tK]) is (\"c\" & pCode) then\n",
+     "      if sShareCodeByHandle[tK] is pCode then\n",
+     "qsIsOwnCode('0e2222"),
 ]
 
 
