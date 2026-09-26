@@ -28,8 +28,8 @@ never by silent fix.
 > harness sections first met an engine on 2026-09-24 (Windows: the u64
 > bound let 2^53 + 1 through and was decided on its halves the same day,
 > green in that day's second run) and ran green again on 2026-09-25
-> (Linux): 489 passed, 0 failed, 2 skipped (the live-Tor legs) each time
-> from the second Windows run on.
+> (Linux and Windows): 489 passed, 0 failed, 2 skipped (the live-Tor legs)
+> each time from the second Windows run on.
 
 ## Conventions
 
@@ -294,7 +294,8 @@ Verified statically, and EXECUTED headlessly against the real committed
 CoinXT by `tools/check-script-vectors.py` - which settles logic, not parser
 behaviour. The offline half ran on an engine too: the harness's Nostr
 sections, green in the suite paste on 2026-09-24 (Windows) and 2026-09-25
-(Linux). Anything that reaches a relay needs an OXT + a live-relay pass.
+(Linux and Windows). Anything that reaches a relay needs an OXT + a
+live-relay pass.
 
 | Handler | Returns | Notes |
 |---|---|---|

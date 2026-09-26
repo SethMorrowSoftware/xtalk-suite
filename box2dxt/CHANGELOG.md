@@ -17,7 +17,8 @@ The native shim's ABI is tracked separately by `b2Version()` (currently `4`).
   NOT reach a called handler there, so the section said exactly that
   (CLAUDE.md section 12). On Linux x86_64 on 2026-09-25: 385/0 and the same
   answer, with the `playLoudness` readback (v30's one Linux FAIL) printed as
-  a note.
+  a note; on Win32 again the same day: 385/0, the same answer, and the
+  readback exact.
 - **The reference pages are complete** (2026-09-24): `docs/api-reference.md`
   names all 376 public `b2...` handlers (every per-joint accessor, the shape
   geometry readers, the Linux loader trio) and `docs/kit-reference.md` all 313
@@ -36,11 +37,12 @@ The native shim's ABI is tracked separately by `b2Version()` (currently `4`).
   libraries and the `universal-mac` dylib were rebuilt too and came out
   byte-identical to the committed ones (the installer reported them
   `(unchanged)`), so git shows no change for them. Not yet loaded by an engine
-  when committed; one of the two Windows DLLs first loaded on 2026-09-24 (the suite
-  paste, harness v32 385/0, by the maintainer's account; its bitness not recorded),
-  and the `x86_64-linux` library, on the record, on 2026-09-25 (the suite paste,
-  385/0, 64-bit by the maintainer's account; that file is run 12's, and the
-  2026-08-27 paste, which may have loaded it first, recorded no platform).
+  when committed; the `x86_64-win32` DLL first loaded on 2026-09-24 (the suite
+  paste, harness v32 385/0, by the maintainer's account, which named the bitness
+  64-bit on 2026-09-26; again 2026-09-25), and the `x86_64-linux` library, on the
+  record, on 2026-09-25 (the suite paste, 385/0, 64-bit by the maintainer's
+  account; that file is run 12's, and the 2026-08-27 paste, which may have loaded
+  it first, recorded no platform).
 - **Kit: ten handlers no longer assume the caller's `itemDelimiter`**
   (2026-09-09, `51ac525`). `b2kAddBox`, `b2kAddBall`, `b2kAddCapsule`,
   `b2kAddPolygon`, `b2kReshape`, `b2kHinge`, `b2kWeld`, `b2kSlider`,
@@ -51,9 +53,9 @@ The native shim's ABI is tracked separately by `b2Version()` (currently `4`).
   leaked a borrowed delimiter (`serializeText`, `refreshImagePanel`,
   `fireEmitter` among them) now restore it around the narrowest span. The
   trigger was found statically. The self-test assertion for it came with
-  harness v32 (2026-09-24), which passed on Win32 that day and on Linux on
-  2026-09-25 without exercising the fix: on both a caller's tab does not
-  reach a called handler, so that trigger could not have fired (CLAUDE.md
+  harness v32 (2026-09-24), which passed on Win32 that day and on Linux and
+  Win32 on 2026-09-25 without exercising the fix: on both a caller's tab does
+  not reach a called handler, so that trigger could not have fired (CLAUDE.md
   gotcha 5). The fix on macOS, and the eight builder restores: verified
   statically; needs an OXT pass.
 - **Committed Linux and Windows libraries from the first release dispatch to

@@ -19,15 +19,15 @@ pass for the anon persona and a live-relay pass for Nostr).
   server.
 - **Phases 4-7, compute**: green in the suite paste on an engine 2026-08-15, 2026-08-20
   (riptide 338/0/2), 2026-08-24 (391/391, including the kind-C rail and the BTXO
-  receive path), and 2026-09-24 (Windows) and 2026-09-25 (Linux), 489 passed, 0 failed,
-  2 skipped (the live-Tor legs) with phase 6's admission and welcome bytes as re-pinned
-  2026-09-09. Phase 5 (the call) is built and never run; the live legs of phases 6-7
+  receive path), and 2026-09-24 (Windows) and 2026-09-25 (Linux and Windows), 489 passed,
+  0 failed, 2 skipped (the live-Tor legs) with phase 6's admission and welcome bytes as
+  re-pinned 2026-09-09. Phase 5 (the call) is built and never run; the live legs of phases 6-7
   (the LAN mesh, the anon persona over Tor) are owed.
 - **Phase 8** (the Nostr bridge, built 2026-08-29): the library is executed headlessly
   against the real committed CoinXT by `tools/check-script-vectors.py`, which settles
   logic, not parser behaviour, and its offline compute (the `RIPTAPP1` store and the
   Nostr rail's harness sections) ran green in the suite paste on an engine 2026-09-24
-  (Windows) and 2026-09-25 (Linux). The card's boot was reported working on an engine
+  (Windows) and 2026-09-25 (Linux and Windows). The card's boot was reported working on an engine
   2026-08-29, and the v11 UI boot read 9 passed / 1 failed, the one FAIL a since-fixed
   defect in the carried self-check. The relay half and the card need an OXT +
   live-relay pass.

@@ -1,7 +1,8 @@
 script "coinSelfTest"
--- STATUS: last run GREEN in the 2026-09-25 engine pass (Linux x86_64, the committed
--- 2026-09-12 library by the maintainer's account) - 296/296, zero failures, folded
--- into tests/suite-selftest.livecodescript; 296/296 on Windows the day before.
+-- STATUS: last run GREEN in the 2026-09-25 engine passes (Linux x86_64 on the
+-- committed 2026-09-12 library, and Windows x86_64; 64-bit OXT on both by the
+-- maintainer's account) - 296/296 each, zero failures, folded into
+-- tests/suite-selftest.livecodescript; 296/296 on Windows the day before.
 -- (This line said 2026-08-17's 278/278 until 2026-09-25, after 290/290 on
 -- 2026-08-24 and 296/296 on 2026-09-24: coinxt/CLAUDE.md's ledger.) Runs
 -- standalone too: this file carries src/coinxt.livecodescript, so there is
@@ -67,7 +68,8 @@ script "coinSelfTest"
 -- cxHdDerivePath); phase 5 closed 2026-08-12 (Windows x64, 230/230); the ABI 6
 -- Schnorr/Taproot surface ran green 2026-08-16 on the day it shipped; full runs
 -- since: 278/278 on 2026-08-17, 290/290 on 2026-08-24, 296/296 on 2026-09-24
--- (Windows) and 2026-09-25 (Linux x86_64). tools/check-script-vectors.py continues to
+-- (Windows) and 2026-09-25 (Linux x86_64 and Windows x86_64).
+-- tools/check-script-vectors.py continues to
 -- execute the real .livecodescript headlessly against the same vectors on every
 -- push, so a regression between engine passes is caught by CI, not by the next
 -- paste.
