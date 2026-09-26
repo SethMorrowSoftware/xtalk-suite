@@ -308,9 +308,10 @@ Code comments cite these numbers; keep them.
    wide-integer bound on exact integers that differ by at least 1 at a modest magnitude, never
    against a quotient. Tier 1c replays the table under the engine's rule and two looser candidates
    (fixture: the old line, which each must accept) and refuses any library comparison against a
-   quotient; the harness prints three probe lines: the first two measured the rule, the third
-   reads its consequences (wide integers, near zero, number-like text), and read them on Linux and
-   on Windows (2026-09-25) exactly as the source's rule predicts. Tier 1c holds the rule to every
+   quotient; the harness prints three probe lines on it (a fourth, below, reads the text parse):
+   the first two measured the rule, the third reads its consequences (wide integers, near zero,
+   number-like text), and read them on Linux and on Windows (2026-09-25) exactly as the source's
+   rule predicts. Tier 1c holds the rule to every
    recorded numeric answer of the three (probe 3's first two items are a text parse, held by coinxt's
    check-script-vectors tier 0 instead). Since 2026-09-25 the plain interpreter itself REFUSES
    (`Indistinct`) a comparison the engine answers differently, by the tolerance (2.10) or by
@@ -318,7 +319,8 @@ Code comments cite these numbers; keep them.
    the nine of the fourteen numeric probe answers the engine gave otherwise, and the old bound at
    2^53 + 1. The engine-model and margin legs are unchanged. A FOURTH probe line (2026-09-26,
    the suite work plan's suite-wide #22) reads, one per form, the six text forms the interpreter
-   refuses as unsure because suite engine note 2.11 does not establish them: `"0x10" is "16"`,
+   refuses as unsure (suite engine note 2.11: the engine source decides two of them, the C
+   library the other four, and no engine has read any): `"0x10" is "16"`,
    `"inf" is "1e999"`, `"nan" is "nan"` (two texts built apart), an NBSP-edged "3" against 3
    (`numToCodepoint(160)`, U+00A0 whatever the native encoding), a 385-digit run against
    4294967296 and `"0x1.8" is "1.5"`. Each item is read inside its own `try` in `rstTextProbe`, so
@@ -326,8 +328,9 @@ Code comments cite these numbers; keep them.
    prediction `true,?,?,?,false,?` (each `?` the C library's to decide). The work plan's row named
    `"0x.8" is "0.5"` (the interpreter answers it: text before strtod) and a run against itself
    (true under every reading), so the line reads their refused siblings. check-script-vectors
-   tier 1e holds its shape (after seeded copies it must refuse) and the plain interpreter's
-   refusal of each item as the harness builds it. Verified statically; needs an OXT pass: it has
+   tier 1e holds its shape, each item's statements exactly and the line's top-level place in
+   `rstSectionHead` (after seeded copies it must refuse) and the plain interpreter's refusal of
+   each item as the harness builds it. Verified statically; needs an OXT pass: it has
    not met an engine, and its reading is owed to the next paste run.
    **Ordering, 2026-09-25.** By the same rule (these consequences are INFERRED from it, not
    observed) every ORDER over a wire integer blurred too, and those are accepted up to
