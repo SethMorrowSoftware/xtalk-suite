@@ -29418,6 +29418,41 @@ private function rs1rstUlpLadder pBase, pUlps
    return 0
 end rs1rstUlpLadder
 
+private function rs1rstTextProbe pItem
+   local rs1tA, rs1tB, rs1tN, rs1tOut, rs1tErr
+   put empty into rs1tOut
+   try
+      if pItem is 1 then
+         put ("0x10" is "16") into rs1tOut
+      else if pItem is 2 then
+         put ("inf" is "1e999") into rs1tOut
+      else if pItem is 3 then
+         put "n" into rs1tA
+         put "an" after rs1tA
+         put "na" into rs1tB
+         put "n" after rs1tB
+         put (rs1tA is rs1tB) into rs1tOut
+      else if pItem is 4 then
+         put numToCodepoint(160) & "3" into rs1tA
+         put (rs1tA is 3) into rs1tOut
+      else if pItem is 5 then
+         put empty into rs1tA
+         repeat with rs1tN = 1 to 375
+            put "0" after rs1tA
+         end repeat
+         put "4294967296" after rs1tA
+         put (rs1tA is 4294967296) into rs1tOut
+      else if pItem is 6 then
+         put ("0x1.8" is "1.5") into rs1tOut
+      end if
+   catch rs1tErr
+      replace return with " " in rs1tErr
+      replace comma with ";" in rs1tErr
+      put "threw:" && rs1tErr into rs1tOut
+   end try
+   return rs1tOut
+end rs1rstTextProbe
+
 private command rs1rstSectionCapabilities pCaps
    local rs1tWant, rs1tGot, rs1tDelim
    rs1rstSection "capabilities + version"
@@ -29778,6 +29813,47 @@ private command rs1rstSectionHead
          (281474976710656 < 281474976710657) & "," & \
          (450359962737050 is 450359962737051) & "," & \
          (450359962737049 is 450359962737050) & return after rs1sLog
+   -- DIAGNOSTIC 4, not a check (added 2026-09-26; suite work plan 1.2 #22).
+   -- Probe 3's items 1 and 2 read the two forms of engine note 2.11's parse
+   -- that have met an engine. The family interpreter
+   -- (coinxt/tools/lcs-interp.py, twinned in nostrxt) REFUSES as unsure the
+   -- forms that note does not establish, and these six are the ones it
+   -- refuses, one per form (rs1rstTextProbe builds them):
+   --   1  "0x10" is "16"            a hex integer: MCU_strtol's base 16
+   --   2  "inf" is "1e999"          a C99 strtod word, against +inf
+   --   3  "nan" is "nan"            two NaN words, built separately
+   --   4  NBSP & "3" is 3           a character outside ASCII at the edge
+   --   5  a 385-digit run is 4294967296
+   --                                past R8L (384) and past the integer
+   --                                parse's int32 (integer_t is int32_t on
+   --                                32- and 64-bit builds, foundation.h)
+   --   6  "0x1.8" is "1.5"          a C99 hex float
+   -- The work plan's row named "0x.8" is "0.5" and a 385-digit run against
+   -- itself; the interpreter ANSWERS the first (false: MCU_strtor8 makes a
+   -- "0x" followed by no hex digit text before strtod ever runs), and the
+   -- second reads true whatever decides it (identical text, or one number),
+   -- so it cannot read the limit. The line reads the refused sibling of
+   -- each, the forms the interpreter's UNSURE classes name.
+   -- Predicted by the engine SOURCE (libfoundation's MCU_strtol and
+   -- MCU_strtor8, engine/src/exec-logic.cpp's MCLogicIsEqualTo; OXT's tree
+   -- and livecode develop-9.6 identical):  true,?,?,?,false,?
+   -- where each ? is the C library's to decide, not the engine's source:
+   -- strtod for 2, 3 and 6 (a C99 strtod reads inf, nan and hex floats,
+   -- giving true,false,true there; an older one reads none, giving
+   -- false,true,false), and C isspace in the engine's locale for 4 (true
+   -- only where byte 0xA0 is a space; the "C" locale says it is not). Which
+   -- C runtime OXT links on each platform is not recorded in this tree.
+   -- The interpreter refuses all six (LCS.Indistinct, which a script try
+   -- cannot catch), so no headless run prints this line, as none prints
+   -- probe 3 (whose item 1 it refuses first); riptide's
+   -- check-script-vectors tier 1e holds this line's shape and the six
+   -- refusals. Its reading is owed to the next engine run (the suite
+   -- runbook's section 8 asks for the line verbatim).
+   put "      numeric compare probe 4 (diagnostic; the engine source" && \
+         "reads true,?,?,?,false,? where ? is the C library's):" && \
+         rs1rstTextProbe(1) & "," & rs1rstTextProbe(2) & "," & \
+         rs1rstTextProbe(3) & "," & rs1rstTextProbe(4) & "," & \
+         rs1rstTextProbe(5) & "," & rs1rstTextProbe(6) & return after rs1sLog
    put rs1tHead into rs1tBig
    repeat with rs1rstI = 5 to 12
       put numToByte(255) into byte rs1rstI of rs1tBig
