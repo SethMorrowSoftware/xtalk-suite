@@ -613,21 +613,35 @@ and in the suite's core and closing pass; `Target` then found riptide-social's
 await-slot routing, zero-target tests and prekey content-address check, and
 three riptide harness asserts. Verified statically; needs an OXT pass. The
 sites in holde-em's harness, riptide's library (its content-address checks
-among them) and the coinxt wallet were left to the work changing those files
-(docs/WORK-PLAN.md); 26 of the wallet's 27 went through `cwSameHex` and
+among them) and the coinxt wallet waited for the work then changing those
+files, and took the same fix on 2026-09-26 (holde-em's and riptide's when
+that work was integrated, 57ce37d); 26 of the wallet's 27 went through `cwSameHex` and
 `cwHexCompare` on 2026-09-26 (the 27th compared two version NUMBERS: a false
-positive, renamed), and coinxt's `check-wallet-vectors.py` tier 5 carries
-this parse as a model (a port of `MCU_strtol` / `MCU_strtor8`, the base-16
-`0x` form included) that fails each of those fixes undone (verified
-statically; needs an OXT pass). It is a NAME heuristic: it narrows the class and cannot
+positive, renamed). The same day a sweep by hand of every bare comparison in
+coinxt's wallet, its wallet-core and its demo found 15 more that no name rule
+sees, and they went through `cwSameHex` too: plain-named scripts, keys and
+transactions (PSBT signing's three scriptPubKey checks, BIP-322's key check,
+PSBT combining's unsigned transactions, two txid tests in the wallet) and
+number-like literals and a 64-zero constant (below). So every hex compare in
+those three files at which two different hex values can meet goes through the
+two helpers; what stays bare compares a chunk of hex whose width a length
+check fixes (in one DER parser, the even length its one caller passes) with
+a literal no other hex of that width equals ("02", "5120").
+coinxt's `check-wallet-vectors.py` tier 5 carries this parse as a model (a
+port of `MCU_strtol` / `MCU_strtor8`, the base-16 `0x` form included) that
+fails each of those fixes undone (verified statically; needs an OXT pass).
+It is a NAME heuristic: it narrows the class and cannot
 close it. A hex value in a plain-named variable passes (riptide's
-`tComputed is not tExpected`, the blob content-address check); so does every
+`tComputed is not tExpected`, the blob content-address check, did until it
+was prefixed by hand on 2026-09-26); so does every
 caller of a helper that compares its arguments with bare `is` (holde-em's
 `heTAssert` did until 2026-09-26, when v0.25.6 moved it to `heTSame`); and so does a
 NUMBER-LIKE literal, exempt with every literal: the wallet's script-type
-tests compare `char 1 to 4 of tHex is "0014"`, and by this note's parse
-"14e0" is "0014" (INFERRED, not observed), as riptide's 40-zero
-`kRsZeroTarget` and holde-em's 64-zero genesis head are "0". What a name
+tests compared `char 1 to 4 of tHex is "0014"` until 2026-09-26, and by this
+note's parse "14e0" is "0014" (INFERRED, not observed), as "01e0" is the
+segwit marker "0001" its transaction decoder tested for, as riptide's 40-zero
+`kRsZeroTarget` and holde-em's 64-zero genesis head are "0", and as the
+wallet's 64-zero `kCwScalarZero` was any scalar spelled "0e" and digits. What a name
 cannot see, an execution can: the family interpreter (below) refuses every
 such comparison a gate actually RUNS. riptide's harness prints
 `"1e999" is "2e999"` and `"1e5" is "100000"` in its third probe line

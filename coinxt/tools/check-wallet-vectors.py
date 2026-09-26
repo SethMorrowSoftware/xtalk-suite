@@ -70,11 +70,13 @@ THE TEXT PARSE IS NOT ASSUMED EITHER (tier 5, 2026-09-26). The engine reads
 BOTH operands of `is` or `<` as numbers when both parse (suite engine note
 2.11), so an all-digit or digits-e-digits hex value is a NUMBER there and two
 different ones can tie, while the interpreter reads them as text. The family
-checker's check 23 found 27 such compares of txids and keys in this member;
-tier 5 carries the parse as a model, proves it reads riptide's two recorded
-parse answers, plants each fix's OLD spelling back into the shipped source
-(wallet-core, and coin-wallet's handlers lifted out of the shipped stack) and
-requires its vectors to fail, and runs the vectors under it.
+checker's check 23 found 27 such compares of txids and keys in this member,
+and a sweep by hand the same day 15 more that a name rule cannot see (plain
+names, number-like literals and a 64-zero constant); tier 5 carries the
+parse as a model, proves it reads riptide's two recorded parse answers,
+plants each fix's OLD spelling back into the shipped source (wallet-core,
+and coin-wallet's handlers lifted out of the shipped stack) and requires its
+vectors to fail, and runs the vectors under it.
 
 Usage:
   python3 tools/check-wallet-vectors.py            # per-check detail
@@ -3406,7 +3408,21 @@ def check_tolerance_models(c, ip, run):
 # cannot even run a bare hex sort. The family checker's check 23 found 27
 # bare comparisons of hex in this member on 2026-09-26 (wallet-core's eight,
 # carried into coin-wallet, and coin-wallet's own eleven); none had a vector
-# that could fail.
+# that could fail. It reads NAMES, so the same day's second pass, a sweep of
+# every bare comparison in wallet-core, coin-wallet and coinxt-demo by hand,
+# found 15 more: plain-named scripts, keys and transactions (cwPsbtSign's
+# three scriptPubKey checks, cwBip322Verify's key check, cwPsbtCombine's
+# unsigned transactions, waStoreRawTx's inspect wait, waSpAfterInspect's
+# coinbase test) and number-like literals and a constant the check exempts
+# with every literal ("0014" and "0020" in cwScriptKind, the segwit marker
+# "0001" in cwTxDecode, kCwScalarZero in cwScalarNegate and cwSpInputSum,
+# Electrum's "100" in waSeedFormatOf, the empty parent fingerprint twice in
+# waValidateXKey). What the sweep left bare compares a chunk of hex whose
+# width a length check fixes with a literal no other hex of that width reads
+# equal to ("02", "87", "5120", "101" ...): exact, so no vector could fail.
+# cwDerToCompact's two "02" markers are the one place the width is not
+# fixed (an odd-length text can end in a lone "2", which is 2), and every
+# caller hands it even-length hex, where it is.
 #
 # SO THIS TIER CARRIES THE PARSE AS A MODEL, the way tier 4 carries the
 # tolerance: _engine_parse_compare swaps `is` and the ordering operators for
@@ -3815,6 +3831,200 @@ def _vec_bolt11_payee(c, ip):
         c.ck("cwBolt11Decode: the signature recovers to %s" % what, verdict, want)
 
 
+# ---- the plain-named compares (2026-09-26, the second pass) ------------------
+#
+# Check 23 reads NAMES, so a hex value under a plain name (`tSpk`, `tScript`,
+# `tA["unsignedtx"]`) or meeting a number-like LITERAL or constant ("0014",
+# "0001", kCwScalarZero), which the check exempts with every literal, waited
+# for a sweep by hand. Each vector below reaches its compare at a pair the
+# number path ties and the text path does not; where one side is something
+# the real shim derives (a hash, a tweak), that one answer is planted, as the
+# key vectors above plant theirs, and a control shows the plant is live.
+_ONES20 = "11" * 20                 # a hash160 that is all digits
+_ONES20_NEAR = "11" * 19 + "12"     # ... and one that ties with it
+_ZERO_E = "0e" + "1" * 62           # a valid scalar, and the NUMBER 0 to `is`
+
+
+def _plant_on(name, when, answer_hex):
+    """Answer the native `name` with answer_hex's bytes when its first
+    argument is `when` (bytes), and as the shim does otherwise."""
+    def answer(args, real):
+        if to_bytes(args[0]) == when:
+            return to_str(bytes.fromhex(answer_hex))
+        return real(args)
+    return _plant_native(name, answer)
+
+
+def _signed_why(r):
+    return int(LCS._n(r["signed"])), _vec_text(r["why"])
+
+
+def _vec_psbt_scripts(c, ip):
+    """cwPsbtSign signs an input only for the script it is about to unlock:
+    three compares of our script with the PSBT's scriptPubKey (the sender's
+    bytes). Ours is planted to be all digits; the sender's agrees with it in
+    its leading digits, a tie on the number path."""
+    call = ip.call
+    sk = bytes.fromhex(_PLANT_SK)
+    pub = CR.pubkey(sk)
+    ins = lst([call("cwTxInput", ["aa" * 32, 0, 0xFFFFFFFD])])
+    outs = lst([call("cwTxOutput", [45000, "0014" + "22" * 20])])
+    keys = lst([{"seckey": _PLANT_SK}])
+
+    def sign(meta, plant):
+        b64 = call("cwPsbtCreate", [2, ins, outs, 0, {"1": meta}, {}])
+        restore = plant()
+        try:
+            return _signed_why(call("cwPsbtSign", [b64, keys, "mainnet"]))
+        finally:
+            restore()
+
+    # (1) P2WSH: the witness script's hash, against the witness UTXO
+    ws = call("cwMultisigScript", [1, lst([pub.hex()])])
+    for spk, want, what in (("0020" + HX_ONES2, (0, True), "one that ties with it"),
+                            ("0020" + HX_ONES, (1, False), "its own (control)")):
+        got = sign({"witnessutxoscript": spk, "witnessutxovalue": 50000,
+                    "witnessscript": ws},
+                   lambda: _plant_on("cxsha256", bytes.fromhex(ws), HX_ONES))
+        c.ck("cwPsbtSign, P2WSH: a witness script whose hash is all digits, over "
+             "a scriptPubKey that is %s: signed, and the why-line" % what,
+             (got[0], "does not hash to the output" in got[1]), want)
+    # (2) P2WPKH: our key's script, against the witness UTXO
+    for spk, want, what in (("0014" + _ONES20_NEAR, (0, True), "one that ties with it"),
+                            ("0014" + _ONES20, (1, False), "its own (control)")):
+        got = sign({"witnessutxoscript": spk, "witnessutxovalue": 50000},
+                   lambda: _plant_on("cxripemd160", CR.sha256(pub), _ONES20))
+        c.ck("cwPsbtSign, P2WPKH: a key whose hash is all digits, over a "
+             "scriptPubKey that is %s: signed, and the why-line" % what,
+             (got[0], "no key here unlocks it" in got[1]), want)
+    # (3) P2TR: the key-path tweak of our internal key, against the output
+    internal = pub[1:].hex()        # the x-only key: the compressed one's x
+    for spk, want, what in (("5120" + HX_ONES2, (0, True), "one that ties with it"),
+                            ("5120" + HX_ONES, (1, False), "its own (control)")):
+        got = sign({"witnessutxoscript": spk, "witnessutxovalue": 50000,
+                    "tapinternalkey": internal},
+                   lambda: _plant_on("cxtaproottweakpubkey", bytes.fromhex(internal),
+                                     HX_ONES + "00"))
+        c.ck("cwPsbtSign, P2TR: an internal key whose tweak is all digits, over "
+             "a scriptPubKey that is %s: signed, and the why-line" % what,
+             (got[0], "does not pay to the key-path" in got[1]), want)
+
+
+def _vec_bip322_key(c, ip):
+    """cwBip322Verify accepts a P2WPKH signature only from the address's own
+    key: the signature's key, hashed to a script, against the address's
+    script. The key's hash is planted to be all digits; the address's
+    program ties with it on the number path."""
+    call = ip.call
+    sk = bytes.fromhex(_PLANT_SK)
+    pub = CR.pubkey(sk)
+    for program, want, what in ((_ONES20_NEAR, (False, True), "one that ties with it"),
+                                (_ONES20, (True, False), "its own (control)")):
+        addr = CR.segwit_encode("bc", 0, bytes.fromhex(program))
+        spk = "0014" + program
+        restore = _plant_on("cxripemd160", CR.sha256(pub), _ONES20)
+        try:
+            sig = call("cwBip322Sign", [_PLANT_SK, "tier 5", "p2wpkh", spk, pub.hex()])
+            r = call("cwBip322Verify", ["mainnet", addr, "tier 5", sig])
+        finally:
+            restore()
+        c.ck("cwBip322Verify: a key whose hash is all digits, for an address "
+             "whose program is %s: ok, and the why-line" % what,
+             (r["ok"] is True or r["ok"] == "true",
+              "not the address's" in _vec_text(r["why"])), want)
+
+
+def _digit_tx(spk_tail):
+    """An unsigned transaction whose every byte is written in digits: version
+    2, one input (txid 11..11, vout 0, sequence 0), one 10000-sat output to a
+    P2WPKH program ending spk_tail, locktime 0."""
+    return REF.tx_serialize(2, [("11" * 32, 0, 0)],
+                            [(10000, bytes.fromhex("0014" + "22" * 19 + spk_tail))],
+                            0, [b""]).hex()
+
+
+def _vec_psbt_combine(c, ip):
+    """cwPsbtCombine merges two PSBTs only of the SAME unsigned transaction.
+    Two all-digit ones, one output byte apart, are one number."""
+    call = ip.call
+    ins = lst([call("cwTxInput", ["11" * 32, 0, 0])])
+
+    def psbt(tail):
+        outs = lst([call("cwTxOutput", [10000, "0014" + "22" * 19 + tail])])
+        return call("cwPsbtCreate", [2, ins, outs, 0, {}, {}])
+
+    a, b = psbt("22"), psbt("23")
+    c.ck("the two unsigned transactions are all digits, and differ",
+         (call("cwPsbtParse", [a])["unsignedtx"], call("cwPsbtParse", [b])["unsignedtx"]),
+         (_digit_tx("22"), _digit_tx("23")))
+    try:
+        call("cwPsbtCombine", [a, b])
+        verdict = "merged"
+    except LCS.Thrown as exc:
+        verdict = "DIFFERENT transactions" in str(exc.msg)
+    c.ck("cwPsbtCombine refuses two all-digit transactions one byte apart", verdict, True)
+    c.ck("and combines a transaction with itself",
+         bool(_vec_text(call("cwPsbtCombine", [a, a]))), True)
+
+
+def _vec_script_kind(c, ip):
+    """cwScriptKind's witness-v0 prefixes: "14e0" and "0014" are both 14, and
+    "20e0", "2e01" and "02e1" all 20, to a bare `is`."""
+    call = ip.call
+    for spk, want in (("14e0" + "ab" * 20, "unknown"), ("0014" + "ab" * 20, "p2wpkh"),
+                      ("20e0" + "ab" * 32, "unknown"), ("2e01" + "ab" * 32, "unknown"),
+                      ("02e1" + "ab" * 32, "unknown"), ("0020" + "ab" * 32, "p2wsh")):
+        c.ck("cwScriptKind(%s...)" % spk[:4], _vec_text(call("cwScriptKind", [spk])), want)
+
+
+def _vec_tx_segwit_marker(c, ip):
+    """cwTxDecode's segwit marker: a LEGACY transaction with one input whose
+    previous txid ends in e0 has "01e0" at its fifth and sixth bytes, which
+    is 1 to a bare `is`, as the marker-and-flag "0001" is."""
+    call = ip.call
+    prev = "ab" * 31 + "e0"
+    tx = ([(prev, 3, 0xFFFFFFFF)], [(7000, bytes.fromhex("0014" + "22" * 20))])
+    raw = REF.tx_serialize(1, tx[0], tx[1], 0, [bytes.fromhex("51")]).hex()
+    want = REF.txid_of(1, tx[0], tx[1], 0, [bytes.fromhex("51")])
+    try:
+        d = call("cwTxDecode", [raw])
+        got = (_vec_text(d["txid"]), _vec_text(d["segwit"]),
+               _vec_text(unlst(d["inputs"])[0]["txid"]))
+    except LCS.Thrown as exc:
+        got = ("threw", str(exc.msg)[:80])
+    c.ck("cwTxDecode: a legacy transaction whose bytes 5-6 read 01e0 is legacy, "
+         "with its own txid and its input's", got, (want, "false", prev))
+    wit = REF.tx_serialize(1, tx[0], tx[1], 0, [b""], [[bytes.fromhex("51")]]).hex()
+    d = call("cwTxDecode", [wit])
+    c.ck("and the same spend with a witness is segwit, with the same txid (control)",
+         (_vec_text(d["segwit"]), _vec_text(d["txid"])),
+         ("true", REF.txid_of(1, tx[0], tx[1], 0, [b""])))
+
+
+def _vec_scalar_zero(c, ip):
+    """kCwScalarZero against a valid scalar spelled "0e" and digits, which is
+    the number 0 to a bare `is`: cwScalarNegate must negate it, and
+    cwSpInputSum must not call it a zero sum."""
+    call = ip.call
+    c.ck("cwScalarNegate negates a scalar spelled 0e and digits",
+         _vec_text(call("cwScalarNegate", [_ZERO_E])), "%064x" % (CR._N - int(_ZERO_E, 16)))
+    c.ck("and zero stays zero (control)", _vec_text(call("cwScalarNegate", ["0" * 64])),
+         "0" * 64)
+
+    def input_sum(keys):
+        try:
+            return _vec_text(call("cwSpInputSum", [lst([{"seckey": k, "xonly": False}
+                                                         for k in keys])]))
+        except LCS.Thrown as exc:
+            return "refused: " + str(exc.msg)[:60]
+    c.ck("cwSpInputSum: a sum spelled 0e and digits is not zero", input_sum([_ZERO_E]),
+         _ZERO_E)
+    other = "%064x" % (CR._N - int("11" * 32, 16))
+    c.ck("and a sum that IS zero is refused (control)",
+         input_sum(["11" * 32, other]).startswith("refused: wallet-core: cwSpInputSum: "
+                                                  "the input keys sum to zero"), True)
+
+
 def check_hex_compares(c, ip):
     """The shipped wallet-core's hex compares, each at a pair the number path
     reads differently from the text (the header above)."""
@@ -3826,28 +4036,50 @@ def check_hex_compares(c, ip):
     _vec_multisig_key(c, ip)
     _vec_taproot_internal(c, ip)
     _vec_bolt11_payee(c, ip)
+    _vec_psbt_scripts(c, ip)
+    _vec_bip322_key(c, ip)
+    _vec_psbt_combine(c, ip)
+    _vec_script_kind(c, ip)
+    _vec_tx_segwit_marker(c, ip)
+    _vec_scalar_zero(c, ip)
 
 
 # ---- coin-wallet's own compares, lifted out of the SHIPPED stack ------------
 #
-# The eleven are in coin-wallet's own code, which this gate never runs whole
+# The sixteen (check 23's eleven and the second pass's five) are in
+# coin-wallet's own code, which this gate never runs whole
 # (check-wallet-boot.py boots it, over riptide's object model). The handlers
 # that hold them are lifted out of the shipped file by name and run over the
 # real CoinXT script layer and wallet-core, with the stack's state (its
-# script locals) planted and its UI (the log, the balance, the nav) stubbed.
-# `set the defaultStack` is a no-op here, as it is to the logic under test.
+# script locals) planted and its UI (the log, the balance, the nav, the
+# status line, a painted field) stubbed or recorded. `set the defaultStack`
+# is a no-op here, as it is to the logic under test.
 _WALLET_LIFT = ("waEmptyList", "waHoldsCoin", "waCoinsNotFrom", "waPendingSpenderOf",
                 "waIsOwnBroadcast", "waCpfpCoins", "waNoteBroadcast", "waUnnoteBroadcast",
                 "waWholeAtLeast", "waNumAtLeast", "waCoreMempoolRecord", "waStoreRawTx",
-                "waBumpFee", "waSelfTestHexCompares")
+                "waBumpFee", "waSelfTestHexCompares",
+                # the second pass's five (2026-09-26): the inspect wait is in
+                # waStoreRawTx above; these hold the other four
+                "waSpAfterInspect", "waSpParentsNeeded", "waZeroTxid", "waSeedFormatOf",
+                "waValidateXKey")
 _WALLET_STUBS = """
 local sWaUtxos, sWaSpentBy, sWaFrozen, sWaHistory, sWaNetwork, sWaSpends
 local sWaSpParents, sWaSpPending, sWaInspectWanted, sFxLog, sFxTx
+local sWaSpScanSeckey, sWaSpSpendSeckey, sWaBackend, sWaHost, sWaScriptType
+local sFxStatus
 constant kWaSpParentsMax = 64
 
 command waLog pText
    put pText & return after sFxLog
 end waLog
+
+command uiStatus pText, pKind
+   put pText into sFxStatus
+end uiStatus
+
+function waInspectRaw pHex
+   return "inspected " & pHex
+end waInspectRaw
 
 command waRecomputeBalance
 end waRecomputeBalance
@@ -3869,17 +4101,28 @@ end fxPlantedTxDecode
 """
 _SET_DEFAULT_STACK = re.compile(r"(?i)^set\s+the\s+defaultStack\s+to\b")
 _FOR_EACH_KEY = re.compile(r"(?i)^repeat\s+for\s+each\s+key\s+(\w+)\s+in\s+(.+)$")
+_PUT_FIELD = re.compile(r'(?i)^put\s+(.+?)\s+into\s+field\s+"([^"]+)"$')
 
 
 class _WalletFixtureInterp(_DivModInterp):
-    """Two statements the base does not model, as riptide's boot runner
-    (check-demo-boot.py) models them: `set the defaultStack` is a no-op
-    (no stack here), and `repeat for each key` walks a SNAPSHOT of the keys
-    in their stored spelling, honouring `next repeat` and `exit repeat`."""
+    """Three statements the base does not model, the first two as riptide's
+    boot runner (check-demo-boot.py) models them: `set the defaultStack` is
+    a no-op (no stack here), `repeat for each key` walks a SNAPSHOT of the
+    keys in their stored spelling, honouring `next repeat` and `exit repeat`,
+    and `put X into field "name"` records X under the name in `fields`, so a
+    vector can read what a handler painted."""
+
+    fields = None
 
     def _exec_stmt(self, body, i, env):
         line = body[i].strip()
         if _SET_DEFAULT_STACK.match(line):
+            return i + 1
+        m = _PUT_FIELD.match(line)
+        if m:
+            if self.fields is None:
+                self.fields = {}
+            self.fields[m.group(2)] = self.eval_expr(m.group(1), env)
             return i + 1
         m = _FOR_EACH_KEY.match(line)
         if m:
@@ -3924,9 +4167,13 @@ def _wallet_fixture(core_text=None, wallet_text=None):
 
 def _fx_reset(fx, **state):
     for name in ("swautxos", "swaspentby", "swafrozen", "swahistory", "swaspends",
-                 "swaspparents", "swasppending", "swainspectwanted", "sfxlog", "sfxtx"):
+                 "swaspparents", "swasppending", "swainspectwanted", "sfxlog", "sfxtx",
+                 "swaspscanseckey", "swaspspendseckey", "swahost", "sfxstatus"):
         fx.globals[name] = ""
     fx.globals["swanetwork"] = "mainnet"
+    fx.globals["swabackend"] = "offline"
+    fx.globals["swascripttype"] = "p2wpkh"
+    fx.fields = {}
     for k, v in state.items():
         fx.globals[k.lower()] = LCS._copy(v)
 
@@ -4058,15 +4305,110 @@ def _vec_wallet_selftest(c, fx):
     c.ck("and waSelfTestHexCompares holds", fx.call("waSelfTestHexCompares", []), True)
 
 
+def _vec_wallet_inspect_wait(c, fx):
+    """waStoreRawTx paints the bytes into the History screen's panel only
+    when they are the ones it waits on (sWaInspectWanted), by text."""
+    call = fx.call
+    raw = _raw_spending("cc" * 32)
+    for wanted, want, what in (
+            (HX_ONES, (HX_ONES, "", ""), "a txid that ties with the one stored"),
+            (HX_ONES2, ("", "inspected " + raw, "arrived"), "the one stored (control)")):
+        _fx_reset(fx, sWaHistory=lst([]), sWaInspectWanted=wanted,
+                  sFxTx={"txid": HX_ONES2, "inputs": lst([]), "outputs": lst([])})
+        restore = _fx_planted_decode(fx)
+        try:
+            call("waStoreRawTx", [HX_ONES2, raw])
+        finally:
+            restore()
+        c.ck("waStoreRawTx, while the History screen waits on %s: the wait, the "
+             "panel and the status line" % what,
+             (_vec_text(fx.globals["swainspectwanted"]), _vec_text(fx.fields.get("hs_detail", "")),
+              "arrived" if "arrived" in _vec_text(fx.globals["sfxstatus"]) else ""), want)
+
+
+def _vec_wallet_sp_inspect(c, fx):
+    """waSpAfterInspect calls a one-input transaction a coinbase only when
+    its input spends the zero txid, by text; a txid spelled 0e and digits is
+    the number 0 to a bare `is`."""
+    call = fx.call
+    for prev, want, what in ((_ZERO_E, (False, True), "a txid spelled 0e and digits"),
+                             ("00" * 32, (True, False), "the zero txid (control)")):
+        raw = REF.tx_serialize(2, [(prev, 0, 0xFFFFFFFD)],
+                               [(1000, bytes.fromhex("5120" + "33" * 32))], 0, [b""]).hex()
+        _fx_reset(fx, sWaSpScanSeckey="aa" * 32, sWaSpSpendSeckey="bb" * 32)
+        got = _vec_text(call("waSpAfterInspect", [raw]))
+        c.ck("waSpAfterInspect, one input spending %s, offline: called a coinbase, "
+             "or asked for its parent" % what,
+             ("coinbase transaction spends nothing" in got, "This wallet is offline" in got),
+             want)
+
+
+# a phrase that is no seed of either kind, whose seed-version HMAC begins
+# "1e2" (found by search), and one whose HMAC begins "100", which is what
+# Electrum's generator makes a segwit seed of
+_SEED_1E2 = "zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo absurd public"
+_SEED_100 = "zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo abandon ginger"
+
+
+def _vec_wallet_seed_format(c, fx):
+    """waSeedFormatOf's Electrum segwit prefix "100", to which "1e2" is the
+    same number under a bare `is`."""
+    import hashlib
+    import hmac
+    call = fx.call
+
+    def head(phrase):
+        return hmac.new(b"Seed version", phrase.encode(), hashlib.sha512).hexdigest()[:3]
+
+    def bip39(phrase):
+        try:
+            CR.bip39_entropy(phrase)
+            return True
+        except Exception:                                       # noqa: BLE001
+            return False
+    c.ck("the two phrases: their seed-version prefixes, and neither is BIP-39",
+         (head(_SEED_1E2), bip39(_SEED_1E2), head(_SEED_100), bip39(_SEED_100)),
+         ("1e2", False, "100", False))
+    c.ck("waSeedFormatOf: a phrase whose prefix is 1e2 is no Electrum seed",
+         _vec_text(call("waSeedFormatOf", [_SEED_1E2])), "")
+    c.ck("and one whose prefix is 100 is a segwit one (control)",
+         _vec_text(call("waSeedFormatOf", [_SEED_100])), "electrum-segwit")
+
+
+def _vec_wallet_xkey_parent(c, fx):
+    """waValidateXKey's two structural tests of the parent fingerprint
+    against 00000000, to which 0e000001 is the same number under a bare
+    `is`: a master key must not have one, a derived key should."""
+    call = fx.call
+    sk = bytes.fromhex(_PLANT_SK)
+    version = REF.xkey_version("mainnet", "p2pkh", True)
+    for depth, fp, want, what in (
+            (0, "0e000001", (True, False), "a master key with fingerprint 0e000001"),
+            (3, "0e000001", (False, False), "a depth-3 key with fingerprint 0e000001"),
+            (0, "00000000", (False, False), "a master key with none (control)"),
+            (3, "00000000", (False, True), "a depth-3 key with none (control)")):
+        node = {"depth": depth, "parentfp": bytes.fromhex(fp), "index": 0,
+                "chaincode": bytes.fromhex("22" * 32), "pubkey": CR.pubkey(sk)}
+        _fx_reset(fx, sWaScriptType="p2pkh")
+        got = _vec_text(call("waValidateXKey", [REF.xkey_encode(node, version, False)]))
+        c.ck("waValidateXKey, %s: INCONSISTENT, SUSPECT" % what,
+             ("INCONSISTENT" in got, "SUSPECT" in got), want)
+
+
 def check_wallet_hex_compares(c, ip, fx=None):
-    """coin-wallet's eleven, through the lifted handlers (the block above).
-    `ip` is unused: the fixture is its own unit."""
+    """coin-wallet's sixteen, through the lifted handlers (the block above):
+    check 23's eleven and the second pass's five. `ip` is unused: the
+    fixture is its own unit."""
     c.note("\nhex compares in coin-wallet's own code (lifted from the shipped stack)")
     fx = fx or _wallet_fixture()
     _vec_wallet_marks(c, fx)
     _vec_wallet_broadcasts(c, fx)
     _vec_wallet_history(c, fx)
     _vec_wallet_selftest(c, fx)
+    _vec_wallet_inspect_wait(c, fx)
+    _vec_wallet_sp_inspect(c, fx)
+    _vec_wallet_seed_format(c, fx)
+    _vec_wallet_xkey_parent(c, fx)
 
 
 # EACH FIX, UNDONE. (label, file, the shipped text, the old spelling, the
@@ -4139,6 +4481,57 @@ _HEX_MUTATIONS = (
     ("waBumpFee's pending-child guard", "wallet",
      'if tSpender is not "" and cwSameHex(tSpender, pRec["txid"]) is not true then',
      'if tSpender is not "" and tSpender is not pRec["txid"] then', _vec_wallet_history),
+    # the second pass (2026-09-26): the plain names and number-like
+    # literals check 23 cannot see
+    ("cwPsbtSign's P2WSH witness-script check", "core",
+     "if cwSameHex(cwScriptP2wsh(tWitScript), tSpk) is not true then",
+     "if cwScriptP2wsh(tWitScript) is not tSpk then", _vec_psbt_scripts),
+    ("cwPsbtSign's P2TR output-key check", "core",
+     'if cwSameHex(cwScriptP2tr(cxHexEncode(tTweak["outputKey"])), \\\n'
+     '                     tSpk) is not true then',
+     'if cwScriptP2tr(cxHexEncode(tTweak["outputKey"])) \\\n'
+     '                     is not tSpk then', _vec_psbt_scripts),
+    ("cwPsbtSign's key-script check", "core",
+     "if cwSameHex(cwScriptForPubkey(tType, tPub), tSpk) is not true then",
+     "if cwScriptForPubkey(tType, tPub) is not tSpk then", _vec_psbt_scripts),
+    ("cwBip322Verify's key check", "core",
+     "if cwSameHex(cwScriptP2wpkh(tPub), tScript) is not true then",
+     "if cwScriptP2wpkh(tPub) is not tScript then", _vec_bip322_key),
+    ("cwPsbtCombine's unsigned-transaction check", "core",
+     'if cwSameHex(tA["unsignedtx"], tB["unsignedtx"]) is not true then',
+     'if tA["unsignedtx"] is not tB["unsignedtx"] then', _vec_psbt_combine),
+    ("cwScriptKind's P2WPKH prefix", "core",
+     'if tLen is 44 and cwSameHex(char 1 to 4 of tHex, "0014") is true then',
+     'if tLen is 44 and char 1 to 4 of tHex is "0014" then', _vec_script_kind),
+    ("cwScriptKind's P2WSH prefix", "core",
+     'if tLen is 68 and cwSameHex(char 1 to 4 of tHex, "0020") is true then',
+     'if tLen is 68 and char 1 to 4 of tHex is "0020" then', _vec_script_kind),
+    ("cwTxDecode's segwit marker", "core",
+     'if cwSameHex(char 9 to 12 of tHex, "0001") is true then',
+     'if char 9 to 12 of tHex is "0001" then', _vec_tx_segwit_marker),
+    ("cwScalarNegate's zero", "core",
+     "if cwSameHex(tA, kCwScalarZero) is true then",
+     "if tA is kCwScalarZero then", _vec_scalar_zero),
+    ("cwSpInputSum's zero sum", "core",
+     "if cwSameHex(tSum, kCwScalarZero) is true then",
+     "if tSum is kCwScalarZero then", _vec_scalar_zero),
+    ("waStoreRawTx's inspect wait", "wallet",
+     "if cwSameHex(sWaInspectWanted, cwLower(pTxid)) is true then",
+     "if sWaInspectWanted is cwLower(pTxid) then", _vec_wallet_inspect_wait),
+    ("waSpAfterInspect's coinbase test", "wallet",
+     'cwSameHex(cwLower(tIns[1]["txid"]), waZeroTxid()) is true then',
+     'cwLower(tIns[1]["txid"]) is waZeroTxid() then', _vec_wallet_sp_inspect),
+    ("waSeedFormatOf's segwit prefix", "wallet",
+     'if cwSameHex(char 1 to 3 of tHex, "100") is true then',
+     'if char 1 to 3 of tHex is "100" then', _vec_wallet_seed_format),
+    ("waValidateXKey's master-key test", "wallet",
+     'if cwSameHex(cxHexEncode(tNode["parentfp"]), "00000000") is not true \\\n'
+     '            or tNode["index"] is not 0 then',
+     'if cxHexEncode(tNode["parentfp"]) is not "00000000" or tNode["index"] is not 0 then',
+     _vec_wallet_xkey_parent),
+    ("waValidateXKey's empty-parent test", "wallet",
+     'if cwSameHex(cxHexEncode(tNode["parentfp"]), "00000000") is true then',
+     'if cxHexEncode(tNode["parentfp"]) is "00000000" then', _vec_wallet_xkey_parent),
 )
 
 # THE HELPERS THEMSELVES, BROKEN THE WAY A LATER EDIT COULD BREAK THEM
