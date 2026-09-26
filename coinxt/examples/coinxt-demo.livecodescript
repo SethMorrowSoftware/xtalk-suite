@@ -141,29 +141,31 @@ script "coinXTDemo"
 --      compares byteToNum values, which is exact whatever the caller's setting.
 --      This is the single most dangerous line of this whole file; do not
 --      "simplify" it to offset().
---   4. THIS FILE ASSUMES `the itemDelimiter` IS ITS DEFAULT COMMA, and that is
---      a REAL DEPENDENCY, not a note for tidiness. Twenty-six chunk expressions
---      here read comma-separated lists (bech32's 5-bit values, the 8-to-5
---      converters, the mnemonic word split, the path split), and every one of
---      them reads whatever the ENGINE's current item delimiter is. An app that
---      did `set the itemDelimiter to tab` and did not put it back would not get
---      an error from this file; it would get a silently wrong answer, which on
---      this surface means a wrong address.
+--   4. THIS FILE'S LIST PARSES NEED `the itemDelimiter` TO BE COMMA, and that
+--      is a REAL DEPENDENCY, not a note for tidiness. Twenty-six chunk
+--      expressions here read comma-separated lists (bech32's 5-bit values, the
+--      8-to-5 converters, the mnemonic word split, the path split), and every
+--      one of them reads whatever the delimiter is at that line. Under any
+--      other delimiter this file would not raise an error; it would give a
+--      silently wrong answer, which on this surface means a wrong address.
 --
---      THE FAMILY ALREADY SETTLED WHAT THIS PROPERTY IS, and this comment used
---      to say otherwise. templates/CLAUDE.md rule 5 states it plainly:
---      `itemDelimiter` / `lineDelimiter` are GLOBAL MUTABLE STATE - set them
---      immediately before the parse that needs them and RESTORE them afterward,
---      because other code assumes the defaults. OnionXT, which is the member
---      with the most on-engine hours, does exactly that at six sites (see
---      oxFieldAfter). So the remedy is NOT "set it at the top of every handler"
---      - that would leave the caller's delimiter changed, which is the very
---      thing the rule forbids - it is save, set, use, restore.
---
---      Applying that here is a deliberate change of its own, because a handler
---      that throws must restore on the way out too, and this file throws by
---      design on every malformed input. Until it is made, the dependency is
---      stated in docs/api-reference.md as a caller requirement.
+--      WHO CAN SET IT was settled on an engine after this was written: the
+--      itemDelimiter is HANDLER-LOCAL (the suite's engine note 2.3, OBSERVED
+--      on Windows 2026-09-24 and Linux 2026-09-25 in both directions, the
+--      LiveCode dictionary's claim; no Mac run). An app's `set the
+--      itemDelimiter to tab` does not reach these handlers there, and their
+--      own set does not outlive them. This comment and templates/CLAUDE.md
+--      rule 5 used to call it GLOBAL MUTABLE STATE, and the remedy was chosen
+--      on that reading: NOT "set it at the top of every handler" (which, were
+--      it global, would leave the caller's delimiter changed) but save, set,
+--      use, restore, as OnionXT does at six sites (see oxFieldAfter). The
+--      remedy is kept: it is right under both readings, it holds on an engine
+--      that has not run the probe, and the vector gate runs this file under
+--      the family interpreter (tools/lcs-interp.py), whose delimiter is
+--      global, which is the reading under which a guard can be checked at
+--      all. A handler that throws restores on the way out too, and this file
+--      throws by design on every malformed input: the guards, and why their
+--      throw comes after `end try`, are the block above cxBech32EncodeValues.
 --
 -- FAIL CLOSED, EVERYWHERE. Every decoder verifies its checksum and throws
 -- "CoinXT: <handler>: ..." on anything malformed. A corrupt address is never
@@ -619,17 +621,27 @@ end cxBech32Const
 -- the 8-to-5 converters, the mnemonic word split, the path split) - ten since
 -- ABI 6 added cxBtcAddressP2TRFromInternal, which reaches the bech32m encoder
 -- the same way cxBtcAddressP2TR does - and an
--- `item` chunk reads whatever the ENGINE's delimiter currently is - which is
--- GLOBAL MUTABLE STATE in this family (templates/CLAUDE.md rule 5). An app that
--- did `set the itemDelimiter to tab` and did not put it back would get silently
--- wrong answers from this library: measured, a hostile delimiter makes
--- cxBtcAddressP2WPKH fail outright and cxMnemonicValidate answer FALSE to a
--- perfectly good twelve-word backup. Neither is an error the caller can see.
+-- `item` chunk reads whatever the delimiter is at that line. These guards were
+-- written when the family took that for GLOBAL MUTABLE STATE (templates/
+-- CLAUDE.md rule 5 said so), under which an app that did `set the
+-- itemDelimiter to tab` and did not put it back would get silently wrong
+-- answers from this library: measured under the family interpreter, whose
+-- delimiter is global, a hostile delimiter made cxBtcAddressP2WPKH fail
+-- outright and cxMnemonicValidate answer FALSE to a perfectly good
+-- twelve-word backup. Neither is an error the caller can see.
+--
+-- ON AN ENGINE (the suite's engine note 2.3) the itemDelimiter is
+-- HANDLER-LOCAL: OBSERVED on Windows 2026-09-24 and Linux 2026-09-25, in both
+-- directions; no Mac run. There a caller's tab never reaches these handlers
+-- and the guards are redundant. They stay: redundant costs nothing, macOS has
+-- not run the probe, and the vector gate's indifference check
+-- (tools/check-script-vectors.py) runs under the global model, where the
+-- guards are exactly what it measures.
 --
 -- The remedy is the family's own, and OnionXT has used it at six sites for
 -- years: SAVE, set, use, RESTORE. Not `set the itemDelimiter to comma` at the
--- top of the handler - that leaves the caller's delimiter changed, which is the
--- thing the rule exists to prevent.
+-- top of the handler - under the global reading that leaves the caller's
+-- delimiter changed, which is the thing the rule exists to prevent.
 --
 -- It is done with a WRAPPER around each affected handler rather than by editing
 -- the handlers themselves. The bodies are vector-verified against published
@@ -639,9 +651,11 @@ end cxBech32Const
 -- underneath is untouched, and the `Inner` handlers are private so nothing
 -- outside this file can reach one without its guard.
 --
--- The catch is not optional: this layer throws by design on malformed input, so
--- without it a caller who catches a "bad checksum" error would find its own
--- delimiter silently changed as a side effect.
+-- The catch is not optional under the reading the guards were written for:
+-- this layer throws by design on malformed input, so without it a caller who
+-- catches a "bad checksum" error would find its own delimiter silently
+-- changed as a side effect wherever the delimiter crosses a call (not on
+-- Windows or Linux, above).
 --
 -- BUT THE THROW MUST HAPPEN AFTER `end try`, NOT INSIDE THE CATCH BLOCK, and
 -- that is not a style preference. These guards shipped re-throwing from inside
@@ -740,10 +754,37 @@ private function cxBech32EncodeValuesInner pHrp, pValues, pSpec
    -- emit NOTHING for that position - a string one character short, carrying a
    -- checksum computed over data it does not contain. It would decode to
    -- something, and that something would not be what the caller encoded.
+   --
+   -- WHOLE FIRST, AND DECIDED EXACTLY (2026-09-25). This read
+   -- `tIndex < 0 or tIndex > 31 or tIndex is not trunc(tIndex)`, and every
+   -- one of those comparisons goes through the engine's tolerant rule (suite
+   -- engine note 2.10: two numbers within 10 DBL_EPSILON of the smaller are
+   -- EQUAL, and anything within 2.2e-15 of zero IS zero). So 3.0000000000000004
+   -- was "3" to `is not trunc()`, and -0.000000000000001 passed all three
+   -- tests: values that are not whole, accepted by the one line whose job is
+   -- to refuse them. What they became next is the engine's chunk-index
+   -- conversion (the source rounds a computed index half away from zero, so
+   -- most likely the neighbouring integer; the family interpreter answers an
+   -- EMPTY character for char 0.999999999999999, the fail-open described
+   -- above), and a refusal should not rest on either. `is an integer` has no
+   -- tolerance: the engine source (exec-math.cpp, MCMathEvalIsAnInteger)
+   -- answers it with a plain C `t_double == floor(t_double)` on the converted
+   -- number, and answers false for empty. It is its own `if`, ahead of the
+   -- range, because `or` evaluates BOTH operands (engine note 2.5): trunc()
+   -- of a non-number was a hard engine error inside the old chain, not this
+   -- file's refusal. The texts
+   -- the engine still calls whole ("3.0", "+3", " 3", "3e0", "0x1F") are
+   -- encoded as the number they spell, and the checksum below reads the same
+   -- number, so they cannot split the string from its checksum. Verified
+   -- statically; needs an OXT pass (tools/check-wallet-vectors.py's tier 4
+   -- replays the old line under the engine's rule and lets both through).
    put the number of items of pValues into tCount
    repeat with tI = 1 to tCount
       put item tI of pValues into tIndex
-      if tIndex < 0 or tIndex > 31 or tIndex is not trunc(tIndex) then
+      if tIndex is not an integer then
+         throw "CoinXT: cxBech32EncodeValues: every data value must be a whole number between 0 and 31."
+      end if
+      if tIndex < 0 or tIndex > 31 then
          throw "CoinXT: cxBech32EncodeValues: every data value must be a whole number between 0 and 31."
       end if
    end repeat
@@ -1241,8 +1282,9 @@ end cxBtcAddressP2TRInner
 -- vectors (tools/check-script-vectors.py drives the real script through the
 -- real shim), and green on an engine: the suite paste's BIP-341 wallet-vector
 -- section on 2026-08-17 (278/278) and every run since, most recently
--- 2026-09-24 (296/296; coinxt/CLAUDE.md's ledger). This label said "needs an
--- OXT pass" until 2026-09-25, five weeks after that record. New in ABI 6.
+-- 2026-09-25 (296/296 on Linux and on Windows; coinxt/CLAUDE.md's ledger).
+-- This label said "needs an OXT pass" until 2026-09-25, five weeks after the
+-- first record. New in ABI 6.
 -- ==============================================================================
 
 -- Q = P + int(hash_TapTweak(bytes(P) || merkle_root)) * G, BIP-341's output
@@ -2184,8 +2226,8 @@ end cxXpub
 -- worked example, both directions plus the refusals - the same net every
 -- earlier phase carries - and both handlers are green on an engine: the suite
 -- paste's 14 WIF checks on 2026-08-17 and every run since, most recently
--- 2026-09-24 (coinxt/CLAUDE.md's ledger). This label said no engine had run
--- them until 2026-09-25.
+-- 2026-09-25 (on Linux and on Windows; coinxt/CLAUDE.md's ledger). This label
+-- said no engine had run them until 2026-09-25.
 -- ==============================================================================
 
 -- The WIF network version bytes, the same role kCxVersionP2PKH plays for an
@@ -2982,7 +3024,10 @@ end cxBtcTxEncodeInner
 -- without the trailing locktime, since a SegWit serialization inserts the
 -- witnesses between the outputs and the locktime. This is also exactly the
 -- preimage a txid hashes (marker off, locktime included), so cxBtcTxid reuses
--- it. Assumes the itemDelimiter is already comma (its callers set it).
+-- it. Reads items under comma without setting it: on Windows and Linux every
+-- handler starts at comma (the itemDelimiter is handler-local, the suite's
+-- engine note 2.3), and under the family interpreter's global model, or an
+-- engine where it crosses calls, its callers' own set is what supplies it.
 private function cxBtcTxBody pVersion, pOutpoints, pScriptSigs, pSequences, pOutputs, pLocktime, pWithMarker
    local tCount, tI, tBuf, tSig, tOutBytes
    put the number of items of pOutpoints into tCount
@@ -3853,15 +3898,15 @@ end cdKeyNode
 
 -- ---- 3. bitcoin --------------------------------------------------------------
 command cdBtcBuild
-   local tNode, tPub, tInSat, tOutSat, tDest, tDecoded, tProgram
+   local tNode, tPub, tInSat, tOutSat, tDest, tDecoded, tProgram, tVout
    local tOutpoint, tSpk, tScriptCode, tOutRec, tDigest, tSig, tWit, tTx, tTxid
    local tOut, tErr, tFailed
    put false into tFailed
    try
-      put field "cdBtcIn" into tInSat
-      put field "cdBtcOut" into tOutSat
-      if tInSat is not an integer or tOutSat is not an integer \
-            or tInSat <= 0 or tOutSat <= 0 or tOutSat >= tInSat then
+      -- digits, bounded before any arithmetic (cdWholeField, 2026-09-25)
+      put cdWholeField(field "cdBtcIn", "the input amount") into tInSat
+      put cdWholeField(field "cdBtcOut", "the output amount") into tOutSat
+      if tInSat <= 0 or tOutSat <= 0 or tOutSat >= tInSat then
          throw "amounts must be positive integers with output < input (the difference IS the fee)"
       end if
       put word 1 of field "cdBtcDest" into tDest
@@ -3870,9 +3915,18 @@ command cdBtcBuild
       if tDecoded["version"] is not 0 or the number of bytes of tProgram is not 20 then
          throw "this demo pays P2WPKH only: a version-0 address with a 20-byte program"
       end if
+      -- THE OUTPUT INDEX IS A COUNTER TOO (2026-09-26, found in row #8's
+      -- review). It went to cxBtcOutpoint as typed, and the library's
+      -- little-endian encoder takes whatever number it is handed: "3.5"
+      -- encoded as vout 3 and an empty field as vout 0 (a headless probe
+      -- through the family interpreter), so the signed input could spend
+      -- an output other than the one typed. cdWholeField first; the library
+      -- then refuses anything past 2^32 - 1 ("does not fit"). Verified
+      -- statically; needs an OXT pass.
+      put cdWholeField(field "cdBtcVout", "the output index") into tVout
       put cdKeyNode(kPath84) into tNode
       put tNode["pubkey"] into tPub
-      put cxHexEncode(cxBtcOutpoint(word 1 of field "cdBtcPrev", field "cdBtcVout")) into tOutpoint
+      put cxHexEncode(cxBtcOutpoint(word 1 of field "cdBtcPrev", tVout)) into tOutpoint
       put "0014" & cxHexEncode(tProgram) into tSpk
       put cxHexEncode(cxBtcOutput(tOutSat, tSpk)) into tOutRec
       -- BIP-143 P2WPKH scriptCode is the matching P2PKH script of OUR key
@@ -3910,15 +3964,20 @@ command cdEthBuild
    local tDigest, tSig, tRecId, tRes, tFrom, tOut, tErr, tFailed
    put false into tFailed
    try
-      put field "cdEthNonce" into tNonce
-      put field "cdEthPrio" into tPrio
-      put field "cdEthMax" into tMax
-      put field "cdEthGas" into tGas
-      put field "cdEthChain" into tChain
-      if tNonce is not an integer or tGas is not an integer or tChain is not an integer \
-            or tPrio is not an integer or tMax is not an integer \
-            or tNonce < 0 or tGas <= 0 or tChain <= 0 or tPrio <= 0 or tMax < tPrio then
-         throw "nonce/gas/chain must be integers, fees positive gwei with max >= prio"
+      -- DIGITS, BOUNDED BEFORE ANY ARITHMETIC (2026-09-25). These were
+      -- `is an integer` tests, which the engine answers yes for "1e20" and
+      -- for twenty nines; the nonce, gas and chain id then went into
+      -- cxHexOfInt's arithmetic past 2^53 and were ROUNDED with no error
+      -- (suite engine note 2.4), so the signed transaction could carry a
+      -- different nonce from the one typed. cdWholeField refuses the shape
+      -- and the length first.
+      put cdWholeField(field "cdEthNonce", "the nonce") into tNonce
+      put cdWholeField(field "cdEthPrio", "the priority fee") into tPrio
+      put cdWholeField(field "cdEthMax", "the max fee") into tMax
+      put cdWholeField(field "cdEthGas", "the gas limit") into tGas
+      put cdWholeField(field "cdEthChain", "the chain id") into tChain
+      if tGas <= 0 or tChain <= 0 or tPrio <= 0 or tMax < tPrio then
+         throw "gas and chain id must be positive, fees positive gwei with max >= prio"
       end if
       if tPrio > 9000000 or tMax > 9000000 then
          -- 9e6 gwei * 1e9 approaches 2^53; beyond that an xTalk number would
@@ -3960,6 +4019,55 @@ command cdEthBuild
 end cdEthBuild
 
 -- ---- small helpers -----------------------------------------------------------
+-- A whole number typed into a field, as the number it spells, or a refusal
+-- naming the field.
+--
+-- DIGITS ONLY, AT MOST FIFTEEN OF THEM (2026-09-25). `is an integer` is the
+-- wrong question for a field whose value goes into exact arithmetic: the
+-- engine answers yes for "1e20", "3.0" and twenty nines, and the arithmetic
+-- after it rounds past 2^53 with no error (suite engine note 2.4). A digit
+-- COUNT cannot bound an exponent, so the shape is plain ASCII digits, and
+-- fifteen of them is under 10^15, exact with room, and decided before any
+-- number is formed - no wide value is ever compared (engine note 2.10).
+-- Every counter this demo takes fits (nonce, gas, chain id, gwei, the output
+-- index), and satoshi to 10^15 - 1: an amount of ten million BTC or more (the
+-- supply is 2.1e15 sat, sixteen digits) is refused, never rounded.
+-- Leading and trailing blanks (a return typed after the number) are
+-- forgiven; a blank INSIDE is not a digit. Verified statically; needs an OXT
+-- pass (tools/check-script-vectors.py runs this handler headlessly).
+function cdWholeField pText, pWhat
+   local tText, tI, tCount, tStart, tEnd, tBlank
+   put space & tab & return & numToChar(13) into tBlank
+   put 1 into tStart
+   put the number of chars of pText into tEnd
+   repeat while tStart <= tEnd
+      if offset(char tStart of pText, tBlank) is 0 then
+         exit repeat
+      end if
+      add 1 to tStart
+   end repeat
+   repeat while tEnd >= tStart
+      if offset(char tEnd of pText, tBlank) is 0 then
+         exit repeat
+      end if
+      subtract 1 from tEnd
+   end repeat
+   put char tStart to tEnd of pText into tText
+   put the number of chars of tText into tCount
+   if tCount is 0 then
+      throw pWhat & " must be a whole number"
+   end if
+   repeat with tI = 1 to tCount
+      if offset(char tI of tText, "0123456789") is 0 then
+         throw pWhat & " must be a whole number, digits only"
+      end if
+   end repeat
+   if tCount > 15 then
+      throw pWhat & " has more than 15 digits, past what this demo holds exactly"
+   end if
+   return tText + 0
+end cdWholeField
+
 -- Strip an optional 0x and refuse anything that is not clean hex.
 function cdCleanHex pText
    local tHex

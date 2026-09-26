@@ -47,12 +47,16 @@ calls to get wrong, and no way for one screen to leave another screen's answer
 stale.
 
 **No `item` and no `line` chunks.** Lists are arrays, keyed `1..n` with an `n`
-count. `the itemDelimiter` and `the lineDelimiter` are global mutable state in
-this engine family, and this member's `CLAUDE.md` records nine CoinXT handlers
-that a hostile delimiter turned into wrong ANSWERS rather than errors. CoinXT
-answered that with a save/set/use/restore wrapper; not reading those chunks at
-all is the stronger answer, available here because this layer was written after
-the lesson.
+count. A chunk read parses under whatever delimiter is set at that line, and
+this member's `CLAUDE.md` records nine CoinXT handlers that a hostile delimiter
+turned into wrong ANSWERS rather than errors (measured under the family
+interpreter, which models both delimiters as global). CoinXT answered that
+with a save/set/use/restore wrapper; not reading those chunks at all is the
+stronger answer, available here because this layer was written after the
+lesson. It was written when both delimiters were taken for global state; the
+itemDelimiter has since been observed handler-local on Windows and Linux (the
+suite's engine note 2.3; no Mac run; the lineDelimiter unprobed), and the
+answer holds under either reading.
 
 **No UI and no I/O.** That is what lets the vector gate run it.
 
@@ -562,7 +566,7 @@ disjoint from every other library). The groups are:
 | Scripts | `cwPush`, `cwPushLen`, `cwScriptNum`, `cwScriptP2pkh`, `cwScriptP2sh`, `cwScriptP2wpkh`, `cwScriptP2wsh`, `cwScriptP2tr`, `cwRedeemP2shP2wpkh`, `cwScriptP2shP2wpkh`, `cwMultisigScript`, `cwScriptKind`, `cwScriptAsm`, `cwScriptItems`, `cwScriptCheck`, `cwOpReturnScript`, `cwOpReturnData` |
 | Addresses | `cwAddressForScript`, `cwScriptForAddress`, `cwAddressKind`, `cwAddressIsValid`, `cwAddressProblem`, `cwElectrumScripthash` |
 | Derivation | `cwParsePath`, `cwFormatPath`, `cwAccountPath`, `cwFingerprint`, `cwXKeyEncode`, `cwXKeyDecode`, `cwXKeyIsPrivate`, `cwXKeyRespell`, `cwAccountXKey`, `cwChainNode`, `cwAddressAt`, `cwMultisigAddressAt` |
-| Amounts | `cwSatToBtc`, `cwBtcToSat`, `cwFormatAmount`, `cwParseAmount`, `cwExpandExponent` |
+| Amounts | `cwSatToBtc`, `cwBtcToSat`, `cwFormatAmount`, `cwParseAmount`, `cwExpandExponent`, `cwAmountAdd` |
 | Size and fees | `cwVarIntLen`, `cwInputBaseBytes`, `cwInputWitnessBytes`, `cwOutputBytes`, `cwEstimateVsize`, `cwSimpleInputs`, `cwTapscriptInputVsize`, `cwFeeFor`, `cwDustThreshold`, `cwRbfMinFee`, `cwFeeRateLabel` |
 | Coin selection | `cwSelectCoins` |
 | Transactions | `cwTxInput`, `cwTxOutput`, `cwOutpointsHex`, `cwSequencesList`, `cwOutputsHex`, `cwSighash`, `cwSighashTaproot`, `cwSignInput`, `cwSignTaproot`, `cwSignKeyPath`, `cwSignMultisig`, `cwMultisigKeys`, `cwWitnessBytes`, `cwWitnessStackEncode`, `cwWitnessStackDecode`, `cwCompressPubkey`, `cwDerToCompact`, `cwTxSerialize`, `cwTxid`, `cwTxDecode` |
@@ -577,7 +581,21 @@ disjoint from every other library). The groups are:
 | Descriptors | `cwDescriptorChecksum`, `cwDescriptor`, `cwDescriptorMultisig` |
 | JSON | `cwJsonParse`, `cwJsonType`, `cwJsonCount`, `cwJsonAt`, `cwJsonMember`, `cwJsonKeys`, `cwJsonText`, `cwJsonPath`, `cwJsonGet`, `cwJsonEscape`, `cwJsonString2` |
 | QR | `cwQrVersionFor`, `cwQrCodewords`, `cwQrMatrix`, `cwQrText`, `cwQrBmp` |
-| Lists and bytes | `cwCharIndex`, `cwSameBytes`, `cwListNew`, `cwListAdd`, `cwListCount`, `cwLeBytes`, `cwBeBytes`, `cwLeRead`, `cwBeRead`, `cwReverseBytes`, `cwHexIsClean`, `cwHexCompare`, `cwSortHexList`, `cwLower`, `cwUpper`, `cwTrim`, `cwB64Encode`, `cwB64Decode`, `cwStripWhitespace`, `cwVarIntHex`, `cwHexListHas`, `cwSigsList`, `cwWifInfo`, `cwMnemonicStrength`, `cwMnemonicWordCount`, `cwUnixDate`, `cwVersion` |
+| Lists and bytes | `cwCharIndex`, `cwSameBytes`, `cwSameHex`, `cwListNew`, `cwListAdd`, `cwListCount`, `cwLeBytes`, `cwBeBytes`, `cwLeRead`, `cwBeRead`, `cwReverseBytes`, `cwHexIsClean`, `cwHexCompare`, `cwSortHexList`, `cwLower`, `cwUpper`, `cwTrim`, `cwB64Encode`, `cwB64Decode`, `cwStripWhitespace`, `cwVarIntHex`, `cwHexListHas`, `cwSigsList`, `cwWifInfo`, `cwMnemonicStrength`, `cwMnemonicWordCount`, `cwUnixDate`, `cwVersion` |
+
+**The exact limit is 2^53 satoshi** (about 90.07 million BTC, more than four
+times the supply), because an engine number is a double. These integers are
+bounded before any arithmetic and refused past it, never rounded: `cwLeRead` /
+`cwBeRead` on the bytes, `cwBtcToSat` on its whole part, `cwParseAmount`'s
+satoshi form on its digits (no exponents), BOLT11's `x` and `c` fields at ten
+significant 5-bit values, a transaction's outputs or a PSBT's inputs as a SUM
+(`cwAmountAdd`, decided on 32-bit halves), and a JSON number's exponent in
+`cwExpandExponent` at three digits. The mBTC form reads through `cwBtcToSat`,
+so it stops at 90071992.54740992 mBTC. That is not yet every integer the
+wallet reads: the numbers a backend reports (a coin's value and vout, a height)
+and the wallet's own sums of coin values reach arithmetic unbounded. The
+bounds from 2026-09-25 and 2026-09-26 are verified statically; needs an OXT
+pass.
 
 Errors are thrown strings beginning `wallet-core: `, matching CoinXT's own
 convention. Two handlers answer a question instead of throwing, for the same
@@ -592,6 +610,37 @@ this layer looks a character up in an alphabet whose two cases sit at different
 positions, or binds a signature to a particular address string, it uses these
 instead. `tools/check-wallet-vectors.py` re-runs every vector under the engine's
 rule so it cannot be forgotten.
+
+**Hex is compared with `cwSameHex`, and ordered with `cwHexCompare`, never with
+bare `is` or `<`.** The engine reads both operands of a comparison as NUMBERS
+when both parse (the suite's engine note 2.11), so a txid or a key that is all
+digits, or digits-e-digits, is a number there: two exponent-form values both
+overflow to infinity and compare equal, and two 64-digit values agreeing in
+their leading digits tie. `cwSameHex` puts a letter on each side, which keeps
+both on the text path; `cwHexCompare` orders nibble by nibble. Every hex
+comparison in wallet-core, coin-wallet and coinxt-demo at which two different
+hex values can meet goes through one of the two (2026-09-26). The family
+checker's check 23 found 27 by name: the coin tie-break, the multisig, taproot
+and PSBT key matches, the BOLT11 payee check, the broadcast marks and the
+history rows. It reads names, so a sweep of every bare comparison the same day
+found 15 more: the scriptPubKey checks in PSBT signing (a sender's all-digit
+script agreeing with ours in its leading digits was signed for) and in BIP-322
+verification, the unsigned-transaction check in PSBT combining (two all-digit
+transactions a byte apart merged), the History screen's wait for raw bytes, the
+silent-payment check's coinbase test (a txid spelled `0e` and digits read as
+the zero txid), the P2WPKH and P2WSH prefixes of the script kind (`"14e0"` is
+14 as `"0014"` is), the decoder's segwit marker (`"01e0"` is 1 as `"0001"`
+is, so one legacy one-input transaction in 256 was misparsed as segwit), the zero
+scalar in the silent-payment sum and its negation, Electrum's segwit seed
+prefix (`"1e2"` is 100) and the extended-key validator's two parent-fingerprint
+tests. Left bare, because they are exact: a chunk of hex whose width a length
+check fixes, against a literal no other hex of that width equals (`"02"`,
+`"87"`, `"5120"`), and `cwDerToCompact`'s two `"02"` markers, whose width only
+the even-length hex its one caller passes fixes. Tier 5 of
+`tools/check-wallet-vectors.py` carries the engine's parse as a model and fails
+each fix undone, and the boot self-check's line "two exponent-form txids are
+two values, in hex order" reads both helpers on the engine at every open.
+Verified statically; needs an OXT pass.
 
 ## Running it
 
@@ -632,7 +681,10 @@ receiving and the Bitcoin Core backends are separate sessions (the suite work
 plan's coinxt engine rows).
 
 1. **Boot.** Open the stack; the boot self-check prints its own record with no
-   FAIL line. It flips nothing new, but everything below depends on it.
+   FAIL line. Everything below depends on it, and its line "two exponent-form
+   txids are two values, in hex order" is the first engine reading of
+   `cwSameHex` and `cwHexCompare` at a number-like pair (2026-09-26; the sites
+   that call them stay verified statically).
 2. **Tools, Inspect.** Paste any `lnbc...` invoice: the payee node key, the
    amount and the fields are read out. Then, with a mainnet backend chosen on
    Network, a transaction id known to carry a runestone (any Runes etching or

@@ -2064,7 +2064,10 @@ end oxStripLineEnd
 private function oxFieldAfter pText, pMarker
    -- The whitespace-delimited token immediately following pMarker in pText, or
    -- empty. Used for METHODS=, PROGRESS=, ServiceID=, version=, SERVERHASH=, etc.
-   -- itemDelimiter is global mutable state, so save and restore it (gotcha 7).
+   -- Save and restore the itemDelimiter (gotcha 7). It is handler-local on
+   -- Windows and Linux (engine note 2.3), so this cannot reach a caller
+   -- there; the restore is the family's rule, costs nothing, and holds on
+   -- macOS, which has not run the probe.
    local tPos, tRest, tSaved, tOut
    put offset(pMarker, pText) into tPos
    if tPos is 0 then
@@ -3323,7 +3326,9 @@ private command testSodiumComposition
       put "90e7595fc89e52fdfddce9c6a43d74dbf6047025ee0462d2d172e8b6a2841d6ee" & \
           "da66ce2983f7ff7e47c49615220e78c25c775a040957316b7bafd5985450f90" into tExpectExp
       put sxSignSeedToExpandedKey(testRepeatByte(66, 32)) into tExpanded
-      oxCheck (testHex(tExpanded) is tExpectExp), \
+      -- hex against hex compares as TEXT, a letter on each side (suite engine
+      -- note 2.11: bare `is` reads two number-like texts as numbers)
+      oxCheck (("h" & testHex(tExpanded)) is ("h" & tExpectExp)), \
          "sxSignSeedToExpandedKey(seed 0x42 x 32) matches the pinned expanded-key vector"
    else
       oxSkip "sxSignSeedToExpandedKey needs SodiumXT ABI >= 6"
@@ -3334,7 +3339,7 @@ private command testSodiumComposition
       local tMac, tExpectMac
       put "5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843" into tExpectMac
       put sxHmacSha256(textEncode("Jefe", "UTF-8"), textEncode("what do ya want for nothing?", "UTF-8")) into tMac
-      oxCheck (testHex(tMac) is tExpectMac), \
+      oxCheck (("h" & testHex(tMac)) is ("h" & tExpectMac)), \
          "sxHmacSha256 (RFC 4231 Test Case 2) matches the pinned HMAC vector"
    else
       oxSkip "sxHmacSha256 needs SodiumXT ABI >= 6"

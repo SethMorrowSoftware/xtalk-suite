@@ -205,29 +205,31 @@ script "coinXTWallet"
 --      compares byteToNum values, which is exact whatever the caller's setting.
 --      This is the single most dangerous line of this whole file; do not
 --      "simplify" it to offset().
---   4. THIS FILE ASSUMES `the itemDelimiter` IS ITS DEFAULT COMMA, and that is
---      a REAL DEPENDENCY, not a note for tidiness. Twenty-six chunk expressions
---      here read comma-separated lists (bech32's 5-bit values, the 8-to-5
---      converters, the mnemonic word split, the path split), and every one of
---      them reads whatever the ENGINE's current item delimiter is. An app that
---      did `set the itemDelimiter to tab` and did not put it back would not get
---      an error from this file; it would get a silently wrong answer, which on
---      this surface means a wrong address.
+--   4. THIS FILE'S LIST PARSES NEED `the itemDelimiter` TO BE COMMA, and that
+--      is a REAL DEPENDENCY, not a note for tidiness. Twenty-six chunk
+--      expressions here read comma-separated lists (bech32's 5-bit values, the
+--      8-to-5 converters, the mnemonic word split, the path split), and every
+--      one of them reads whatever the delimiter is at that line. Under any
+--      other delimiter this file would not raise an error; it would give a
+--      silently wrong answer, which on this surface means a wrong address.
 --
---      THE FAMILY ALREADY SETTLED WHAT THIS PROPERTY IS, and this comment used
---      to say otherwise. templates/CLAUDE.md rule 5 states it plainly:
---      `itemDelimiter` / `lineDelimiter` are GLOBAL MUTABLE STATE - set them
---      immediately before the parse that needs them and RESTORE them afterward,
---      because other code assumes the defaults. OnionXT, which is the member
---      with the most on-engine hours, does exactly that at six sites (see
---      oxFieldAfter). So the remedy is NOT "set it at the top of every handler"
---      - that would leave the caller's delimiter changed, which is the very
---      thing the rule forbids - it is save, set, use, restore.
---
---      Applying that here is a deliberate change of its own, because a handler
---      that throws must restore on the way out too, and this file throws by
---      design on every malformed input. Until it is made, the dependency is
---      stated in docs/api-reference.md as a caller requirement.
+--      WHO CAN SET IT was settled on an engine after this was written: the
+--      itemDelimiter is HANDLER-LOCAL (the suite's engine note 2.3, OBSERVED
+--      on Windows 2026-09-24 and Linux 2026-09-25 in both directions, the
+--      LiveCode dictionary's claim; no Mac run). An app's `set the
+--      itemDelimiter to tab` does not reach these handlers there, and their
+--      own set does not outlive them. This comment and templates/CLAUDE.md
+--      rule 5 used to call it GLOBAL MUTABLE STATE, and the remedy was chosen
+--      on that reading: NOT "set it at the top of every handler" (which, were
+--      it global, would leave the caller's delimiter changed) but save, set,
+--      use, restore, as OnionXT does at six sites (see oxFieldAfter). The
+--      remedy is kept: it is right under both readings, it holds on an engine
+--      that has not run the probe, and the vector gate runs this file under
+--      the family interpreter (tools/lcs-interp.py), whose delimiter is
+--      global, which is the reading under which a guard can be checked at
+--      all. A handler that throws restores on the way out too, and this file
+--      throws by design on every malformed input: the guards, and why their
+--      throw comes after `end try`, are the block above cxBech32EncodeValues.
 --
 -- FAIL CLOSED, EVERYWHERE. Every decoder verifies its checksum and throws
 -- "CoinXT: <handler>: ..." on anything malformed. A corrupt address is never
@@ -683,17 +685,27 @@ end cxBech32Const
 -- the 8-to-5 converters, the mnemonic word split, the path split) - ten since
 -- ABI 6 added cxBtcAddressP2TRFromInternal, which reaches the bech32m encoder
 -- the same way cxBtcAddressP2TR does - and an
--- `item` chunk reads whatever the ENGINE's delimiter currently is - which is
--- GLOBAL MUTABLE STATE in this family (templates/CLAUDE.md rule 5). An app that
--- did `set the itemDelimiter to tab` and did not put it back would get silently
--- wrong answers from this library: measured, a hostile delimiter makes
--- cxBtcAddressP2WPKH fail outright and cxMnemonicValidate answer FALSE to a
--- perfectly good twelve-word backup. Neither is an error the caller can see.
+-- `item` chunk reads whatever the delimiter is at that line. These guards were
+-- written when the family took that for GLOBAL MUTABLE STATE (templates/
+-- CLAUDE.md rule 5 said so), under which an app that did `set the
+-- itemDelimiter to tab` and did not put it back would get silently wrong
+-- answers from this library: measured under the family interpreter, whose
+-- delimiter is global, a hostile delimiter made cxBtcAddressP2WPKH fail
+-- outright and cxMnemonicValidate answer FALSE to a perfectly good
+-- twelve-word backup. Neither is an error the caller can see.
+--
+-- ON AN ENGINE (the suite's engine note 2.3) the itemDelimiter is
+-- HANDLER-LOCAL: OBSERVED on Windows 2026-09-24 and Linux 2026-09-25, in both
+-- directions; no Mac run. There a caller's tab never reaches these handlers
+-- and the guards are redundant. They stay: redundant costs nothing, macOS has
+-- not run the probe, and the vector gate's indifference check
+-- (tools/check-script-vectors.py) runs under the global model, where the
+-- guards are exactly what it measures.
 --
 -- The remedy is the family's own, and OnionXT has used it at six sites for
 -- years: SAVE, set, use, RESTORE. Not `set the itemDelimiter to comma` at the
--- top of the handler - that leaves the caller's delimiter changed, which is the
--- thing the rule exists to prevent.
+-- top of the handler - under the global reading that leaves the caller's
+-- delimiter changed, which is the thing the rule exists to prevent.
 --
 -- It is done with a WRAPPER around each affected handler rather than by editing
 -- the handlers themselves. The bodies are vector-verified against published
@@ -703,9 +715,11 @@ end cxBech32Const
 -- underneath is untouched, and the `Inner` handlers are private so nothing
 -- outside this file can reach one without its guard.
 --
--- The catch is not optional: this layer throws by design on malformed input, so
--- without it a caller who catches a "bad checksum" error would find its own
--- delimiter silently changed as a side effect.
+-- The catch is not optional under the reading the guards were written for:
+-- this layer throws by design on malformed input, so without it a caller who
+-- catches a "bad checksum" error would find its own delimiter silently
+-- changed as a side effect wherever the delimiter crosses a call (not on
+-- Windows or Linux, above).
 --
 -- BUT THE THROW MUST HAPPEN AFTER `end try`, NOT INSIDE THE CATCH BLOCK, and
 -- that is not a style preference. These guards shipped re-throwing from inside
@@ -804,10 +818,37 @@ private function cxBech32EncodeValuesInner pHrp, pValues, pSpec
    -- emit NOTHING for that position - a string one character short, carrying a
    -- checksum computed over data it does not contain. It would decode to
    -- something, and that something would not be what the caller encoded.
+   --
+   -- WHOLE FIRST, AND DECIDED EXACTLY (2026-09-25). This read
+   -- `tIndex < 0 or tIndex > 31 or tIndex is not trunc(tIndex)`, and every
+   -- one of those comparisons goes through the engine's tolerant rule (suite
+   -- engine note 2.10: two numbers within 10 DBL_EPSILON of the smaller are
+   -- EQUAL, and anything within 2.2e-15 of zero IS zero). So 3.0000000000000004
+   -- was "3" to `is not trunc()`, and -0.000000000000001 passed all three
+   -- tests: values that are not whole, accepted by the one line whose job is
+   -- to refuse them. What they became next is the engine's chunk-index
+   -- conversion (the source rounds a computed index half away from zero, so
+   -- most likely the neighbouring integer; the family interpreter answers an
+   -- EMPTY character for char 0.999999999999999, the fail-open described
+   -- above), and a refusal should not rest on either. `is an integer` has no
+   -- tolerance: the engine source (exec-math.cpp, MCMathEvalIsAnInteger)
+   -- answers it with a plain C `t_double == floor(t_double)` on the converted
+   -- number, and answers false for empty. It is its own `if`, ahead of the
+   -- range, because `or` evaluates BOTH operands (engine note 2.5): trunc()
+   -- of a non-number was a hard engine error inside the old chain, not this
+   -- file's refusal. The texts
+   -- the engine still calls whole ("3.0", "+3", " 3", "3e0", "0x1F") are
+   -- encoded as the number they spell, and the checksum below reads the same
+   -- number, so they cannot split the string from its checksum. Verified
+   -- statically; needs an OXT pass (tools/check-wallet-vectors.py's tier 4
+   -- replays the old line under the engine's rule and lets both through).
    put the number of items of pValues into tCount
    repeat with tI = 1 to tCount
       put item tI of pValues into tIndex
-      if tIndex < 0 or tIndex > 31 or tIndex is not trunc(tIndex) then
+      if tIndex is not an integer then
+         throw "CoinXT: cxBech32EncodeValues: every data value must be a whole number between 0 and 31."
+      end if
+      if tIndex < 0 or tIndex > 31 then
          throw "CoinXT: cxBech32EncodeValues: every data value must be a whole number between 0 and 31."
       end if
    end repeat
@@ -1305,8 +1346,9 @@ end cxBtcAddressP2TRInner
 -- vectors (tools/check-script-vectors.py drives the real script through the
 -- real shim), and green on an engine: the suite paste's BIP-341 wallet-vector
 -- section on 2026-08-17 (278/278) and every run since, most recently
--- 2026-09-24 (296/296; coinxt/CLAUDE.md's ledger). This label said "needs an
--- OXT pass" until 2026-09-25, five weeks after that record. New in ABI 6.
+-- 2026-09-25 (296/296 on Linux and on Windows; coinxt/CLAUDE.md's ledger).
+-- This label said "needs an OXT pass" until 2026-09-25, five weeks after the
+-- first record. New in ABI 6.
 -- ==============================================================================
 
 -- Q = P + int(hash_TapTweak(bytes(P) || merkle_root)) * G, BIP-341's output
@@ -2248,8 +2290,8 @@ end cxXpub
 -- worked example, both directions plus the refusals - the same net every
 -- earlier phase carries - and both handlers are green on an engine: the suite
 -- paste's 14 WIF checks on 2026-08-17 and every run since, most recently
--- 2026-09-24 (coinxt/CLAUDE.md's ledger). This label said no engine had run
--- them until 2026-09-25.
+-- 2026-09-25 (on Linux and on Windows; coinxt/CLAUDE.md's ledger). This label
+-- said no engine had run them until 2026-09-25.
 -- ==============================================================================
 
 -- The WIF network version bytes, the same role kCxVersionP2PKH plays for an
@@ -3046,7 +3088,10 @@ end cxBtcTxEncodeInner
 -- without the trailing locktime, since a SegWit serialization inserts the
 -- witnesses between the outputs and the locktime. This is also exactly the
 -- preimage a txid hashes (marker off, locktime included), so cxBtcTxid reuses
--- it. Assumes the itemDelimiter is already comma (its callers set it).
+-- it. Reads items under comma without setting it: on Windows and Linux every
+-- handler starts at comma (the itemDelimiter is handler-local, the suite's
+-- engine note 2.3), and under the family interpreter's global model, or an
+-- engine where it crosses calls, its callers' own set is what supplies it.
 private function cxBtcTxBody pVersion, pOutpoints, pScriptSigs, pSequences, pOutputs, pLocktime, pWithMarker
    local tCount, tI, tBuf, tSig, tOutBytes
    put the number of items of pOutpoints into tCount
@@ -3223,17 +3268,21 @@ end cxHexOfInt
 --    be driven headlessly (see 3).
 --
 -- 2. NO `item` AND NO `line` CHUNKS. Lists are ARRAYS, keyed 1..n with an "n"
---    count. `the itemDelimiter` and `the lineDelimiter` are global mutable
---    state in this engine family (templates/CLAUDE.md rule 5), and the
---    member's own CLAUDE.md records nine handlers that a hostile delimiter
---    turned into wrong ANSWERS rather than errors - a valid seed phrase
---    reported invalid, an address built from the wrong bytes. CoinXT answered
---    that with a save/set/use/restore wrapper around every affected handler.
---    Not reading those chunks at all is the stronger answer, and it is
---    available here because this layer was written after the lesson instead
---    of before it. Comma-joined strings are still BUILT here (that is CoinXT's
---    transaction API), which is safe: building a string never reads the
---    delimiter.
+--    count. A chunk read parses under whatever delimiter is set at that line,
+--    and the member's own CLAUDE.md records nine handlers that a hostile
+--    delimiter turned into wrong ANSWERS rather than errors - a valid seed
+--    phrase reported invalid, an address built from the wrong bytes
+--    (measured under the family interpreter, which models the delimiters as
+--    global). CoinXT answered that with a save/set/use/restore wrapper around
+--    every affected handler. Not reading those chunks at all is the stronger
+--    answer, and it is available here because this layer was written after
+--    the lesson instead of before it. The lesson book then called both
+--    delimiters global mutable state (templates/CLAUDE.md rule 5); the
+--    suite's engine note 2.3 has since observed the itemDelimiter
+--    handler-local on Windows and Linux (no Mac run; the lineDelimiter
+--    unprobed), and this answer holds under either reading. Comma-joined
+--    strings are still BUILT here (that is CoinXT's transaction API), which
+--    is safe: building a string never reads the delimiter.
 --
 -- 3. NO UI AND NO I/O. No field, no control, no socket, no URL, no file. That
 --    is what lets tools/check-wallet-vectors.py RUN this file - the actual
@@ -3453,7 +3502,7 @@ constant kCwHexDigits = "0123456789abcdef"
 -- because this dialect's spellings for these operations are traps: `div` and
 -- `mod` are OPERATORS some OXT parsers reject inside a compound expression,
 -- `^` is rejected outright in one, `bitXor` is an operator and not a function,
--- and `item` reads global mutable state. CoinXT's own script layer carries the
+-- and `item` reads whatever delimiter is set. CoinXT's own script layer carries the
 -- same four helpers for the same reasons; they are re-declared here rather
 -- than borrowed because those are private to that file and this one has to
 -- stand alone when it is loaded as a library rather than embedded.
@@ -3543,9 +3592,12 @@ end cwBitAndN
 
 -- ---- comma lists, read without `the itemDelimiter` ---------------------------
 -- The parameter tables above are comma lists and have to be indexed. `item N
--- of` would do it and would read a property any other script in the process
--- may have changed, so these two scan for the separator instead. They are the
--- ONLY place in this file that takes a delimited string apart.
+-- of` would do it, but only under a delimiter set first, and this layer
+-- reads no delimiter at all (point 2 above), so these two scan for the
+-- separator instead. They are the ONLY place in this file that takes a
+-- delimited string apart. (This once said any other script in the process
+-- might have changed the delimiter; the suite's engine note 2.3 has since
+-- observed it handler-local on Windows and Linux, no Mac run.)
 
 private function cwListAt pList, pIndex
    return cwSplitAt(pList, pIndex, ",")
@@ -3768,6 +3820,55 @@ function cwBeRead pBytes
    return tValue
 end cwBeRead
 
+function cwAmountAdd pTotal, pAmount, pWho
+   -- pTotal + pAmount for two amounts already held exactly (non-negative
+   -- whole satoshi, each at most 2^53), REFUSED when the sum would pass 2^53.
+   --
+   -- WHY A SUM NEEDS ITS OWN BOUND (2026-09-25). cwLeRead holds every decoded
+   -- amount to 2^53, but a transaction's outputs and a PSBT's inputs are
+   -- ADDED, and two amounts each under the bound (2^52 + 1 twice, both eight
+   -- bytes of somebody else's choosing) sum past it: on the engine the total
+   -- rounds with no error (suite engine note 2.4), and a total that differs
+   -- from the truth by a few satoshi is a fee that does too. The family
+   -- interpreter stops on it; the engine does not.
+   --
+   -- DECIDED ON 32-BIT HALVES, never on the sum. `pTotal + pAmount >
+   -- 9007199254740992` would compare two numbers past 4.5e14, where the
+   -- engine calls integers a few apart EQUAL (engine note 2.10), and would
+   -- compare a sum that has already rounded. Each operand splits into its
+   -- high and low 32 bits - a division by 2^32, exact in binary, then
+   -- trunc - so every number below is under 2^34 and every comparison is
+   -- between integers at least 1 apart at that size: the lows add with a
+   -- carry, the highs add, and the sum fits when the high part is under 2^21
+   -- (2^53 is 2^21 times 2^32) or exactly 2^21 with nothing below it.
+   -- Verified statically; needs an OXT pass (tools/check-wallet-vectors.py
+   -- replays the bound under the engine's rule in tier 4).
+   local tHi, tLo, tAHi, tALo, tOver
+   put cwIntDiv(pTotal, 4294967296) into tHi
+   put pTotal - tHi * 4294967296 into tLo
+   put cwIntDiv(pAmount, 4294967296) into tAHi
+   put pAmount - tAHi * 4294967296 into tALo
+   add tALo to tLo
+   add tAHi to tHi
+   if tLo >= 4294967296 then
+      subtract 4294967296 from tLo
+      add 1 to tHi
+   end if
+   put false into tOver
+   if tHi > 2097152 then
+      put true into tOver
+   else if tHi is 2097152 then
+      if tLo > 0 then
+         put true into tOver
+      end if
+   end if
+   if tOver then
+      throw "wallet-core: " & pWho & ": the amounts add up to more than " & \
+            "2^53 satoshi, which cannot be held exactly."
+   end if
+   return pTotal + pAmount
+end cwAmountAdd
+
 function cwHexIsClean pHex
    -- True when pHex is an even-length run of hex digits, lower or upper case.
    -- Written as its own predicate because every entry point that takes hex
@@ -3832,6 +3933,40 @@ function cwSameBytes pA, pB
    end repeat
    return true
 end cwSameBytes
+
+function cwSameHex pA, pB
+   -- True when two HEX texts - a txid, a public key, a PSBT key - are the
+   -- same value, compared as TEXT. Bare `is` is not that comparison. The
+   -- engine first tries to read BOTH operands as numbers (an integer parse,
+   -- then C strtod, no range check) and compares NUMBERS when both parse
+   -- (suite engine note 2.11; exponent form OBSERVED on Linux and Windows
+   -- 2026-09-25): a hex value that is all digits, or digits-e-digits, is
+   -- number-like, "1e999..." and "2e999..." both overflow to +inf and
+   -- compare EQUAL, and two 64-digit values agreeing in their leading
+   -- fifteen or so digits sit inside engine note 2.10's tolerance. Random
+   -- digests are rarely number-like; a value someone else supplies - a
+   -- backend's txid, a PSBT's key, an invoice's node key - can be made so.
+   -- A letter on each side keeps both on the text path: no number the
+   -- engine reads starts with "h" ("0x" does start one, a base-16 one, so a
+   -- 0x prefix would not do). Case folds as `is` folds text, which is right
+   -- for hex: "AB" and "ab" are the same byte. An ORDER of two hex values is
+   -- cwHexCompare's; a case-significant string (Base58, an address) is
+   -- cwSameBytes'. Every hex equality in this layer and in coin-wallet at
+   -- which two different hex values can meet goes through here: the
+   -- sixteen the family checker's check 23 found and cwHexListHas's
+   -- (2026-09-26), and the fifteen the same day's sweep of every bare
+   -- comparison found where a name rule cannot look - plain-named scripts,
+   -- keys and transactions (cwPsbtSign's three scriptPubKey checks,
+   -- cwBip322Verify's key, cwPsbtCombine's unsigned transactions, two in
+   -- coin-wallet) and number-like literals and constants ("0014", "0020",
+   -- the segwit marker "0001", kCwScalarZero twice, three in coin-wallet).
+   -- Left bare, on purpose: a chunk of hex whose width a length check fixes,
+   -- against a literal no other hex of that width reads equal to ("02",
+   -- "87", "5120"), which is exact. cwDerToCompact's "02" markers are the
+   -- one chunk whose width nothing fixes (an odd-length text can end in a
+   -- lone "2", which is 2), and its one caller hands it even-length hex.
+   return ("h" & pA) is ("h" & pB)
+end cwSameHex
 
 function cwLower pText
    -- toLower is not in the subset the offline vector runner models, and this
@@ -4386,10 +4521,18 @@ function cwScriptKind pScriptHex
    if tLen is 46 and char 1 to 4 of tHex is "a914" and char 45 to 46 of tHex is "87" then
       return "p2sh"
    end if
-   if tLen is 44 and char 1 to 4 of tHex is "0014" then
+   -- The two witness-v0 prefixes are compared as TEXT (cwSameHex): a bare
+   -- `is` reads both sides as numbers when both parse (engine note 2.11),
+   -- and "14e0" is 14 as surely as "0014" is, as "20e0", "2e01" and "02e1"
+   -- are 20. So a 22-byte script starting 0x14 0xe0 was a P2WPKH output and
+   -- a 34-byte one starting 0x20 0xe0 a P2WSH. The others need no help:
+   -- "76a914", "a914", "88ac" and "6a" carry a letter, "87" is two
+   -- characters no other pair reads equal to, and no other four characters
+   -- spell 5120.
+   if tLen is 44 and cwSameHex(char 1 to 4 of tHex, "0014") is true then
       return "p2wpkh"
    end if
-   if tLen is 68 and char 1 to 4 of tHex is "0020" then
+   if tLen is 68 and cwSameHex(char 1 to 4 of tHex, "0020") is true then
       return "p2wsh"
    end if
    if tLen is 68 and char 1 to 4 of tHex is "5120" then
@@ -4616,8 +4759,8 @@ function cwXKeyDecode pText, pPreferNetwork, pPreferType
    -- to taproot still comes back p2wpkh, because zpub names one row.
    -- tNode["ambiguous"] and tNode["candidates"] report what was actually
    -- open, so a caller can say so rather than present a guess as a fact.
-   local tRaw, tNode, tVersion, tBody, tNet, tStem, tI, tJ, tPub, tPrv, tLen
-   local tMatches, tPick, tCount, tRec, tPair
+   local tRaw, tNode, tVersion, tBody, tNet, tStem, tI, tJ, tPubVersion
+   local tPrvVersion, tLen, tMatches, tPick, tCount, tRec, tPair
    put cxBase58CheckDecode(cwTrim(pText)) into tRaw
    put the number of bytes of tRaw into tLen
    if tLen is not 78 then
@@ -4650,9 +4793,13 @@ function cwXKeyDecode pText, pPreferNetwork, pPreferType
       put cwListAt(kCwNetworks, tI) into tNet
       repeat with tJ = 1 to 5
          put cwListAt(kCwScriptTypes, tJ) into tStem
-         put cwXKeyVersion(tNet, tStem, true) into tPub
-         put cwXKeyVersion(tNet, tStem, false) into tPrv
-         if tVersion is tPub or tVersion is tPrv then
+         -- Version NUMBERS, compared as numbers on purpose: cwBeRead and
+         -- cwXKeyVersion both answer an integer below 2^32, exact on any
+         -- engine. (Named tPub / tPrv until 2026-09-26, which the family
+         -- checker's check 23 read as a public KEY meeting a bare `is`.)
+         put cwXKeyVersion(tNet, tStem, true) into tPubVersion
+         put cwXKeyVersion(tNet, tStem, false) into tPrvVersion
+         if tVersion is tPubVersion or tVersion is tPrvVersion then
             put "" into tRec
             put tNet into tRec["network"]
             put tStem into tRec["scripttype"]
@@ -4881,9 +5028,37 @@ function cwExpandExponent pText
    else if char 1 of tExpTxt is "+" then
       put char 2 to -1 of tExpTxt into tExpTxt
    end if
-   if tExpTxt is "" or tExpTxt is not an integer then
+   -- THE EXPONENT IS DIGITS, AND AT MOST THREE OF THEM COUNT (2026-09-26,
+   -- work-plan row #8's class, found in its review). This asked `is not an
+   -- integer`, which the engine answers no to for twenty nines, so
+   -- `tExpTxt + 0` ROUNDED a twenty-digit exponent to 1e20 with no error
+   -- (suite engine note 2.4; the family interpreter stops on it instead),
+   -- and the exponent then COUNTS the zero-padding loops below (trap 41: a
+   -- loop driven by a count the input supplies): 1e20 turns of `put "0"
+   -- after`, a frozen wallet, and nine digits already a gigabyte of zeros.
+   -- The text comes from a backend's JSON (Electrum's and Core's fee
+   -- replies), so it is whoever answers. A JSON exponent is plain digits
+   -- after one optional sign, and every double's spelling needs at most
+   -- three (1e308 up, 5e-324 down), so leading zeros off and three digits
+   -- left refuses nothing a serializer writes and caps every loop below
+   -- near a thousand turns. "5.0" and "+-5" were integers to the old test
+   -- and are not exponents. Verified statically; needs an OXT pass.
+   put the number of chars of tExpTxt into tCount
+   if tCount is 0 then
       throw "wallet-core: cwExpandExponent: " & quote & pText & quote & \
             " has no whole exponent."
+   end if
+   repeat with tI = 1 to tCount
+      if offset(char tI of tExpTxt, "0123456789") is 0 then
+         throw "wallet-core: cwExpandExponent: " & quote & pText & quote & \
+               " has no whole exponent."
+      end if
+   end repeat
+   put cwDecClean(tExpTxt) into tExpTxt
+   if the number of chars of tExpTxt > 3 then
+      throw "wallet-core: cwExpandExponent: " & quote & (char 1 to 40 of pText) & \
+            quote & " has an exponent past 999, which no number read from " & \
+            "a double carries."
    end if
    put tExpSign * (tExpTxt + 0) into tExp
    put offset(".", tMant) into tPos
@@ -4931,7 +5106,7 @@ function cwExpandExponent pText
 end cwExpandExponent
 
 function cwBtcToSat pText
-   local tText, tSign, tWhole, tFrac, tPos, tI, tCount
+   local tText, tSign, tWhole, tFrac, tPos, tI, tCount, tOver
    put cwTrim(pText) into tText
    if tText is "" then
       throw "wallet-core: cwBtcToSat: an empty amount."
@@ -4977,6 +5152,36 @@ function cwBtcToSat pText
    repeat while the number of chars of tFrac < 8
       put tFrac & "0" into tFrac
    end repeat
+   -- THE WHOLE PART IS BOUNDED BEFORE THE MULTIPLY (2026-09-25). Nothing
+   -- limited its digits, so "100000000000" BTC went into tWhole * 100000000
+   -- and came out a double past 2^53: ROUNDED, with no error, on the engine
+   -- (suite engine note 2.4), where the family interpreter stops on it. The
+   -- bound is the wallet's one exact limit, 2^53 satoshi (cwLeRead's), and it
+   -- is decided on small exact integers, never on the product: leading zeros
+   -- off, at most 8 digits (so tWhole is under 10^8), then tWhole against
+   -- 90071992 and, at exactly that, the eight fraction digits against
+   -- 54740992 - the two halves of 9007199254740992. Every operand is under
+   -- 10^8, far below the 4.5e14 where the engine's comparison starts calling
+   -- integers one apart equal (engine note 2.10). The tests are an `else if`
+   -- chain, never one `or`: `or` evaluates both sides, and a 400-digit
+   -- tWhole compared against anything is the interpreter's hard stop.
+   -- Verified statically; needs an OXT pass.
+   put cwDecClean(tWhole) into tWhole
+   put false into tOver
+   if the number of chars of tWhole > 8 then
+      put true into tOver
+   else if tWhole > 90071992 then
+      put true into tOver
+   else if tWhole is 90071992 then
+      if tFrac > 54740992 then
+         put true into tOver
+      end if
+   end if
+   if tOver then
+      throw "wallet-core: cwBtcToSat: " & quote & pText & quote & \
+            " is more than 90071992.54740992 BTC (2^53 satoshi), the most " & \
+            "a number here holds to the satoshi."
+   end if
    if tSign is "-" then
       return 0 - (tWhole * 100000000 + tFrac)
    end if
@@ -4998,13 +5203,42 @@ function cwFormatAmount pSat, pUnit
 end cwFormatAmount
 
 function cwParseAmount pText, pUnit
-   local tText
+   -- THE SAT FORM IS DIGITS WORTH AT MOST 2^53, CHECKED AS TEXT FIRST
+   -- (2026-09-25). It asked `is an integer`, which the engine answers yes to
+   -- for "1e20" and for twenty nines, and `+ 0` then rounded either one past
+   -- 2^53 with no error (suite engine note 2.4); a digit count cannot bound an
+   -- exponent, so the shape is plain digits (and an optional minus, as
+   -- before). The bound is cwBtcToSat's, 2^53 satoshi, decided by
+   -- cwDecCompare on the DIGITS - length, then digit by digit - so no wide
+   -- number is ever compared (engine note 2.10). "3.0", "+3" and "1e3" were
+   -- whole numbers to the old test and are refused now: a person typing
+   -- satoshi types digits, and an exponent in an amount field is the
+   -- catastrophe cwExpandExponent's note keeps out of cwBtcToSat. Verified
+   -- statically; needs an OXT pass.
+   local tText, tDigits, tSign, tI, tCount
    put cwTrim(pText) into tText
    if pUnit is "sat" then
-      if tText is not an integer then
+      put tText into tDigits
+      put "" into tSign
+      if char 1 of tDigits is "-" then
+         put "-" into tSign
+         put char 2 to -1 of tDigits into tDigits
+      end if
+      put the number of chars of tDigits into tCount
+      if tCount is 0 then
          throw "wallet-core: cwParseAmount: satoshi are whole numbers."
       end if
-      return tText + 0
+      repeat with tI = 1 to tCount
+         if offset(char tI of tDigits, "0123456789") is 0 then
+            throw "wallet-core: cwParseAmount: satoshi are whole numbers."
+         end if
+      end repeat
+      if cwDecCompare(tDigits, "9007199254740992") > 0 then
+         throw "wallet-core: cwParseAmount: " & quote & pText & quote & \
+               " is more than 2^53 satoshi, the most a number here holds " & \
+               "exactly."
+      end if
+      return (tSign & cwDecClean(tDigits)) + 0
    end if
    if pUnit is "mBTC" then
       return cwIntDiv(cwBtcToSat(tText), 1000)
@@ -5466,7 +5700,7 @@ private function cwSortCoins pPool, pStrategy
 end cwSortCoins
 
 private function cwCoinBefore pA, pB, pStrategy
-   local tKa, tKb
+   local tKa, tKb, tOrder
    if pStrategy is "smallest" then
       put pA["value"] into tKa
       put pB["value"] into tKb
@@ -5487,10 +5721,21 @@ private function cwCoinBefore pA, pB, pStrategy
    if tKa > tKb then
       return false
    end if
-   if pA["txid"] < pB["txid"] then
+   -- THE TIE-BREAK IS HEX ORDER, NIBBLE BY NIBBLE (2026-09-26). It was a bare
+   -- `pA["txid"] < pB["txid"]`, and `<` takes the NUMBER path whenever both
+   -- operands read as numbers (suite engine notes 2.10 and 2.11): two
+   -- digits-e-digits txids both overflow to +inf and tie, a 64-digit txid
+   -- orders against one of those by value rather than by its characters,
+   -- and two 64-digit txids agreeing in their leading fifteen or so digits
+   -- tie inside the engine's tolerance - while every other pair orders as
+   -- text. So the order moved with WHICH txids a backend reported, and "the
+   -- same two coins always order the same way" held only on the text path.
+   -- cwHexCompare compares small nibble values, never the texts as numbers.
+   put cwHexCompare(pA["txid"], pB["txid"]) into tOrder
+   if tOrder < 0 then
       return true
    end if
-   if pA["txid"] > pB["txid"] then
+   if tOrder > 0 then
       return false
    end if
    return (pA["vout"] + 0) <= (pB["vout"] + 0)
@@ -5872,7 +6117,9 @@ function cwSignMultisig pSeckeys, pDigestHex, pWitnessScriptHex
       repeat with tJ = 1 to tCount
          put pSeckeys[tJ] into tSk
          put cxHexEncode(cxPublicKey(cxHexDecode(tSk), true)) into tPub
-         if tPub is tKeys[tI] then
+         -- the script's keys are the SENDER's bytes: compared as hex text,
+         -- never through `is`'s number path (cwSameHex)
+         if cwSameHex(tPub, tKeys[tI]) is true then
             put cxHexEncode(cxDerEncode(cxSign(cxHexDecode(tSk), cxHexDecode(pDigestHex)))) \
                   & "01" into tSig
             put cwListAdd(tWit, tSig) into tWit
@@ -6131,7 +6378,13 @@ function cwTxDecode pRawHex
    put cwLeRead(cxHexDecode(char 1 to 8 of tHex)) into tVer
    put 9 into tPos
    put false into tSegwit
-   if char 9 to 12 of tHex is "0001" then
+   -- The segwit marker and flag, compared as TEXT (cwSameHex). Through bare
+   -- `is` both sides are numbers when both parse (engine note 2.11), and
+   -- "01e0" is 1 as "0001" is: a legacy transaction with one input whose
+   -- previous txid ends in e0 - one in 256 of them - was read as segwit and
+   -- misparsed from its fifth byte on, refused or worse ("1e00", thirty
+   -- inputs and a previous txid ending in 00, is the other spelling).
+   if cwSameHex(char 9 to 12 of tHex, "0001") is true then
       put true into tSegwit
       put 13 into tPos
    end if
@@ -6169,7 +6422,9 @@ function cwTxDecode pRawHex
    put 0 into tTotal
    repeat with tI = 1 to tCount
       put cwLeRead(cxHexDecode(char tPos to (tPos + 15) of tHex)) into tOutRec["value"]
-      add tOutRec["value"] to tTotal
+      -- the running total is bounded too: each value is under 2^53, their
+      -- sum need not be (cwAmountAdd, 2026-09-25)
+      put cwAmountAdd(tTotal, tOutRec["value"], "cwTxDecode") into tTotal
       put tPos + 16 into tPos
       put cwReadVarInt(tHex, tPos) into tRec
       put tRec["value"] into tLen
@@ -6772,12 +7027,15 @@ function cwPsbtParse pB64
 end cwPsbtParse
 
 function cwPsbtFind pEntries, pType, pKeyHex
-   -- The value of the first entry of this type and key data, or empty.
+   -- The value of the first entry of this type and key data, or empty. The
+   -- key data is hex a PSBT's author chose (a public key, a hash), so it is
+   -- matched as text (cwSameHex): through bare `is`, two different number-
+   -- like keys could name one entry.
    local tI, tCount, tEntry
    put cwListCount(pEntries) into tCount
    repeat with tI = 1 to tCount
       put pEntries[tI] into tEntry
-      if tEntry["type"] is pType and tEntry["key"] is pKeyHex then
+      if tEntry["type"] is pType and cwSameHex(tEntry["key"], pKeyHex) is true then
          return tEntry["value"]
       end if
    end repeat
@@ -6883,12 +7141,13 @@ end cwPsbtDropTypes
 private function cwPsbtSetEntry pEntries, pType, pKeyHex, pValueHex
    -- Replace an entry of this (type, key) or append it. BIP-174 requires keys
    -- to be unique within a map, so this is the only correct way to add one.
+   -- "The same key" is the same hex TEXT (cwSameHex), as in cwPsbtFind.
    local tOut, tI, tCount, tEntry
    put pEntries into tOut
    put cwListCount(pEntries) into tCount
    repeat with tI = 1 to tCount
       put tOut[tI] into tEntry
-      if tEntry["type"] is pType and tEntry["key"] is pKeyHex then
+      if tEntry["type"] is pType and cwSameHex(tEntry["key"], pKeyHex) is true then
          put pValueHex into tEntry["value"]
          put tEntry into tOut[tI]
          return tOut
@@ -6949,8 +7208,13 @@ function cwPsbtSign pB64, pKeys, pNetwork
       -- check that the scripts it is given correspond to the output being
       -- spent; this is that check, and P2WSH makes it exact, because the
       -- output IS the hash of the script.
+      --
+      -- Exact only as TEXT (cwSameHex; 2026-09-26), like the two script
+      -- checks below: tSpk is the sender's bytes, and a bare `is not` reads
+      -- two all-digit scripts as numbers (engine note 2.11), so one that
+      -- agreed with ours in its leading fifteen or so digits passed as ours.
       if tType is "p2wsh" and tWitScript is not "" then
-         if cwScriptP2wsh(tWitScript) is not tSpk then
+         if cwSameHex(cwScriptP2wsh(tWitScript), tSpk) is not true then
             put tWhy & "input " & tI & ": the witness script this PSBT " & \
                   "carries does not hash to the output it says it spends, " & \
                   "so signing it would sign a preimage of the sender's " & \
@@ -7003,7 +7267,8 @@ function cwPsbtSign pB64, pKeys, pNetwork
          repeat with tJ = 1 to tKeyCount
             put pKeys[tJ] into tKey
             put cxHexEncode(cxXOnlyPubkey(cxHexDecode(tKey["seckey"]))) into tPub
-            if tPub is tInternal then
+            -- tInternal is the PSBT's own bytes: matched as hex text
+            if cwSameHex(tPub, tInternal) is true then
                -- AND THE TWEAK MUST LAND ON THE OUTPUT'S OWN KEY. Matching
                -- the internal key alone proves only that this seed produced
                -- the key the PSBT NAMES; it does not prove the scriptPubKey
@@ -7011,15 +7276,15 @@ function cwPsbtSign pB64, pKeys, pNetwork
                -- script tree commits to a merkle root, and signing it with
                -- the empty-root tweak produces a signature that verifies
                -- against nothing. Every other branch here checks the script
-               -- it is about to unlock (cwScriptForPubkey ... is not tSpk);
-               -- this is the one where the check needed a tweak first, and
-               -- so was the one where it was missing.
+               -- it is about to unlock (cwSameHex(cwScriptForPubkey(...),
+               -- tSpk)); this is the one where the check needed a tweak
+               -- first, and so was the one where it was missing.
                -- cxTaprootTweak takes and returns the X-ONLY key, and
                -- tInternal is already x-only (that is what
                -- PSBT_IN_TAP_INTERNAL_KEY holds), so nothing is sliced here.
                put cxTaprootTweak(cxHexDecode(tInternal), "") into tTweak
-               if cwScriptP2tr(cxHexEncode(tTweak["outputKey"])) \
-                     is not tSpk then
+               if cwSameHex(cwScriptP2tr(cxHexEncode(tTweak["outputKey"])), \
+                     tSpk) is not true then
                   put tWhy & "input " & tI & ": its internal key is one of " & \
                         "ours, but the output does not pay to the key-path " & \
                         "tweak of it - this input commits to a script tree, " & \
@@ -7069,7 +7334,10 @@ function cwPsbtSign pB64, pKeys, pNetwork
             put cwSighash("p2wsh", tTx["version"], tTxIns, tTxOuts, tI, \
                   tTx["locktime"], "", tAmount, tWitScript, cwListNew(), cwListNew()) into tDigest
          else
-            if cwScriptForPubkey(tType, tPub) is not tSpk then
+            -- as TEXT (cwSameHex): a P2WPKH script whose hash is all digits
+            -- is a number to a bare `is not`, and a sender's tSpk agreeing
+            -- in its leading digits would have been signed for as ours
+            if cwSameHex(cwScriptForPubkey(tType, tPub), tSpk) is not true then
                next repeat
             end if
             put cwSighash(tType, tTx["version"], tTxIns, tTxOuts, tI, \
@@ -7115,10 +7383,14 @@ private function cwScriptForPubkey pType, pPubkeyHex
 end cwScriptForPubkey
 
 function cwHexListHas pList, pValue
+   -- Whether a list of hex values holds pValue, as hex TEXT (cwSameHex).
+   -- Its bare `is` was invisible to the family checker's check 23 (plain
+   -- names inside a helper) and is the same comparison cwSignMultisig's was:
+   -- cwPsbtSign asks it whether our public key is among a p2wsh script's.
    local tI, tCount
    put cwListCount(pList) into tCount
    repeat with tI = 1 to tCount
-      if pList[tI] is pValue then
+      if cwSameHex(pList[tI], pValue) is true then
          return true
       end if
    end repeat
@@ -7386,10 +7658,14 @@ function cwPsbtCombine pA, pB
    -- unsigned transactions must be identical, and if they are not this
    -- REFUSES rather than picking one - two cosigners holding different
    -- transactions is the exact situation where quietly choosing is worst.
+   -- Identical as TEXT (cwSameHex; 2026-09-26): a bare `is not` reads two
+   -- all-digit transactions as numbers (engine note 2.11), and two that
+   -- differ past their fifteenth or so digit - one output's script, say -
+   -- are the same number, so they MERGED.
    local tA, tB, tI, tCount, tJ, tN, tMapA, tMapB, tEntry, tOut
    put cwPsbtParse(pA) into tA
    put cwPsbtParse(pB) into tB
-   if tA["unsignedtx"] is not tB["unsignedtx"] then
+   if cwSameHex(tA["unsignedtx"], tB["unsignedtx"]) is not true then
       throw "wallet-core: cwPsbtCombine: these two PSBTs are for DIFFERENT " & \
             "transactions and cannot be merged."
    end if
@@ -7465,7 +7741,8 @@ function cwPsbtSummary pB64, pNetwork
          put true into tMissing
       else
          put cwSatToBtc(tAmount) && "BTC" after tOut
-         add tAmount to tTotalIn
+         -- bounded as a SUM, not only per input (cwAmountAdd, 2026-09-25)
+         put cwAmountAdd(tTotalIn, tAmount, "cwPsbtSummary") into tTotalIn
       end if
       put "  " & cwPsbtInputType(tMap[tI]) & ", " & tSigCount & \
             " signature(s)" & return after tOut
@@ -7475,7 +7752,7 @@ function cwPsbtSummary pB64, pNetwork
    repeat with tI = 1 to tCount
       put tTx["outputs"] into tOutRec
       put tOutRec[tI] into tOutRec
-      add tOutRec["value"] to tTotalOut
+      put cwAmountAdd(tTotalOut, tOutRec["value"], "cwPsbtSummary") into tTotalOut
       put "unrecognised script" into tAddr
       try
          put cwAddressForScript(pNetwork, tOutRec["script"]) into tAddr
@@ -7757,7 +8034,10 @@ function cwBip322Verify pNetwork, pAddress, pMessage, pSigB64
                into tOut["why"]
          return tOut
       end if
-      if cwScriptP2wpkh(tPub) is not tScript then
+      -- as TEXT (cwSameHex): to a bare `is not` two all-digit P2WPKH
+      -- scripts are numbers (engine note 2.11), so a key whose hash agreed
+      -- with the address's in its leading digits signed for the address
+      if cwSameHex(cwScriptP2wpkh(tPub), tScript) is not true then
          put "the key in the signature is not the address's" into tOut["why"]
          return tOut
       end if
@@ -8323,7 +8603,10 @@ function cwScalarNegate pA
    -- n - a, which is the private key of the negated point; zero stays zero.
    local tA
    put cwScalarCheck(pA, "cwScalarNegate") into tA
-   if tA is kCwScalarZero then
+   -- zero as TEXT (cwSameHex): to a bare `is` the 64-zero constant is the
+   -- number 0 (engine note 2.11), and so is "0e" and any digits - a valid
+   -- scalar, which came back un-negated
+   if cwSameHex(tA, kCwScalarZero) is true then
       return tA
    end if
    return cwHexSub(kCwCurveN, tA)
@@ -8477,7 +8760,9 @@ function cwSpInputSum pInputs
       end if
       put cwScalarAdd(tSum, tKey) into tSum
    end repeat
-   if tSum is kCwScalarZero then
+   -- zero as TEXT (cwSameHex), as in cwScalarNegate: a sum spelled "0e"
+   -- and digits is the number 0 to a bare `is`, and was refused as zero
+   if cwSameHex(tSum, kCwScalarZero) is true then
       throw "wallet-core: cwSpInputSum: the input keys sum to zero, so no " & \
             "silent payment can be derived from these coins. Spend a " & \
             "different set."
@@ -9730,8 +10015,31 @@ function cwBolt11AmountMsat pAmount
 end cwBolt11AmountMsat
 
 private function cwBitsToInt pValues, pFrom, pTo
-   -- 5-bit values as one big-endian number; stays exact to 53 bits.
-   local tI, tOut
+   -- 5-bit values as one big-endian number.
+   --
+   -- AT MOST TEN VALUES THAT COUNT (2026-09-25). This said "stays exact to 53
+   -- bits" and nothing held it there: an invoice's x (expiry) and c (final
+   -- cltv) fields are as long as the invoice says, up to 1023 values, so an
+   -- eleven-value field is 55 bits, and the engine would have ROUNDED it with
+   -- no error (suite engine note 2.4) where the family interpreter stops. The
+   -- count is of SIGNIFICANT values - leading zero values add no width, and
+   -- BOLT11 only asks a writer, not a reader, for the minimal form - and ten
+   -- of them is 50 bits, under 2^53 with room. It is decided on the count,
+   -- before the first multiply, so no wide number is ever compared. The
+   -- timestamp is seven values and never near it. Verified statically; needs
+   -- an OXT pass.
+   local tI, tOut, tWidth
+   put 0 into tWidth
+   repeat with tI = pFrom to pTo
+      if tWidth > 0 or pValues[tI] > 0 then
+         add 1 to tWidth
+      end if
+   end repeat
+   if tWidth > 10 then
+      throw "wallet-core: an invoice field carries an integer wider than " & \
+            "50 bits (" & tWidth & " significant five-bit values), past what " & \
+            "a number here holds exactly."
+   end if
    put 0 into tOut
    repeat with tI = pFrom to pTo
       put tOut * 32 + pValues[tI] into tOut
@@ -9979,7 +10287,9 @@ function cwBolt11Decode pInvoice
       throw "wallet-core: the invoice's signature is not recoverable."
    end if
    if tOut["payee"] is not "" then
-      if tOut["payee"] is not tPub then
+      -- the n field is the invoice author's text: matched as hex text
+      -- (cwSameHex), so a number-like node key cannot stand for another
+      if cwSameHex(tOut["payee"], tPub) is not true then
          throw "wallet-core: the invoice's signature does not recover to the node key its n field names."
       end if
       put char 65 to 128 of tSig into tS
@@ -13562,7 +13872,10 @@ end oxStripLineEnd
 private function oxFieldAfter pText, pMarker
    -- The whitespace-delimited token immediately following pMarker in pText, or
    -- empty. Used for METHODS=, PROGRESS=, ServiceID=, version=, SERVERHASH=, etc.
-   -- itemDelimiter is global mutable state, so save and restore it (gotcha 7).
+   -- Save and restore the itemDelimiter (gotcha 7). It is handler-local on
+   -- Windows and Linux (engine note 2.3), so this cannot reach a caller
+   -- there; the restore is the family's rule, costs nothing, and holds on
+   -- macOS, which has not run the probe.
    local tPos, tRest, tSaved, tOut
    put offset(pMarker, pText) into tPos
    if tPos is 0 then
@@ -16058,7 +16371,11 @@ function waSeedFormatOf pText
    if char 1 to 2 of tHex is "01" then
       return "electrum-standard"
    end if
-   if char 1 to 3 of tHex is "100" then
+   -- "100" as TEXT (cwSameHex): a bare `is` reads both sides as numbers
+   -- when both parse (engine note 2.11), and "1e2" is 100, so one phrase in
+   -- 4096 that is no Electrum seed at all opened as a segwit one. "01",
+   -- "101" and "102" have no other spelling of their width.
+   if cwSameHex(char 1 to 3 of tHex, "100") is true then
       return "electrum-segwit"
    end if
    if char 1 to 3 of tHex is "101" or char 1 to 3 of tHex is "102" then
@@ -17657,11 +17974,14 @@ command waAddressesClick pRole
 end waAddressesClick
 
 function waSelectedAddress
-   -- SAVE, SET, USE, RESTORE. `the itemDelimiter` is global mutable state in
-   -- this engine and everything else in this stack assumes the default; a
-   -- handler that sets it to tab and walks away leaves every later `item`
-   -- expression parsing something else. Restoring it to comma would be a
-   -- guess about what the caller had.
+   -- SAVE, SET, USE, RESTORE. A handler that sets the itemDelimiter to tab
+   -- and walks away leaves every later `item` expression IN THAT HANDLER
+   -- parsing something else. This comment once said it reached the rest of
+   -- the stack too; the suite's engine note 2.3 has since observed the
+   -- itemDelimiter handler-local on Windows and Linux (both directions; no
+   -- Mac run), so there it cannot. The restore is the family's rule, costs
+   -- nothing, and holds on an engine that has not run the probe; restoring
+   -- what was found, not a hard-coded comma, is that rule.
    local tLine, tTab, tText, tSaved
    set the defaultStack to the short name of this stack
    put the hilitedLine of field "ad_table" into tLine
@@ -17961,9 +18281,10 @@ end waAddSelfPayment
 
 function waParsePayments
    -- One payment per line: "<address>, <amount>" or "<address>, MAX". The
-   -- comma is split by hand rather than with `item` so this does not depend
-   -- on the engine's current itemDelimiter, which anything in the process may
-   -- have changed.
+   -- comma is split by hand rather than with `item`, so this reads no
+   -- itemDelimiter at all. (This once said anything in the process might
+   -- have changed it; the suite's engine note 2.3 has since observed it
+   -- handler-local on Windows and Linux, no Mac run.)
    local tText, tI, tCount, tLine, tPos, tAddr, tAmountText, tRec, tList, tMax
    local tHaveData
    put field "sd_to" into tText
@@ -18531,7 +18852,7 @@ command waNoteBroadcast pRaw, pTxid
       put tIns[tI] into tIn
       put tIn["txid"] & ":" & tIn["vout"] into tKey
       put sWaSpentBy[tKey] into tOld
-      if tOld is not "" and tOld is not tTxid then
+      if tOld is not "" and cwSameHex(tOld, tTxid) is not true then
          if not (tVoided contains tOld) then
             put waCoinsNotFrom(tOld) into sWaUtxos
             put tOld & return after tVoided
@@ -18539,7 +18860,7 @@ command waNoteBroadcast pRaw, pTxid
                   "added from it are void"
          end if
       end if
-      if tOld is not tTxid then
+      if cwSameHex(tOld, tTxid) is not true then
          add 1 to tNew
       end if
       put tTxid into sWaSpentBy[tKey]
@@ -18605,7 +18926,7 @@ command waUnnoteBroadcast pRaw
    repeat with tI = 1 to tCount
       put tIns[tI] into tIn
       put tIn["txid"] & ":" & tIn["vout"] into tKey
-      if sWaSpentBy[tKey] is tTx["txid"] then
+      if cwSameHex(sWaSpentBy[tKey], tTx["txid"]) is true then
          put "" into sWaSpentBy[tKey]
          add 1 to tFreed
       end if
@@ -18623,7 +18944,8 @@ function waPendingSpenderOf pTxid
    local tKey, tLen
    put the number of chars of pTxid into tLen
    repeat for each key tKey in sWaSpentBy
-      if char 1 to tLen of tKey is pTxid and char (tLen + 1) of tKey is ":" \
+      if cwSameHex(char 1 to tLen of tKey, pTxid) is true \
+            and char (tLen + 1) of tKey is ":" \
             and sWaSpentBy[tKey] is not "" then
          return sWaSpentBy[tKey]
       end if
@@ -18651,7 +18973,7 @@ private function waCoinsNotFrom pTxid
    put cwListCount(sWaUtxos) into tCount
    repeat with tI = 1 to tCount
       put sWaUtxos[tI] into tRec
-      if tRec["txid"] is not pTxid then
+      if cwSameHex(tRec["txid"], pTxid) is not true then
          put cwListAdd(tOut, tRec) into tOut
       end if
    end repeat
@@ -19452,7 +19774,7 @@ function waCpfpCoins pTxid
    put cwListCount(sWaUtxos) into tCount
    repeat with tI = 1 to tCount
       put sWaUtxos[tI] into tRec
-      if tRec["txid"] is not pTxid then
+      if cwSameHex(tRec["txid"], pTxid) is not true then
          next repeat
       end if
       if tRec["confirmations"] + 0 > 0 then
@@ -19673,7 +19995,7 @@ command waBumpFee pRec
    -- be spending a coin that never exists - which is what the 2026-09-03
    -- evening run did, and both children were refused by every node.
    put waPendingSpenderOf(pRec["txid"]) into tSpender
-   if tSpender is not "" and tSpender is not pRec["txid"] then
+   if tSpender is not "" and cwSameHex(tSpender, pRec["txid"]) is not true then
       throw "an output of that transaction is already spent by " & tSpender & \
             ", which this wallet built and queued; replacing the parent would " & \
             "leave that one spending a coin that never exists. Bump the child " & \
@@ -20528,7 +20850,10 @@ function waSpAfterInspect pHex
    end if
    put return & "SILENT PAYMENT CHECK: " into tHead
    put tTx["inputs"] into tIns
-   if cwListCount(tIns) is 1 and cwLower(tIns[1]["txid"]) is waZeroTxid() then
+   -- the zero txid as TEXT (cwSameHex): to a bare `is` the 64 zeros are the
+   -- number 0 (engine note 2.11), and so is any txid spelled "0e" and
+   -- digits, which was then called a coinbase and never checked
+   if cwListCount(tIns) is 1 and cwSameHex(cwLower(tIns[1]["txid"]), waZeroTxid()) is true then
       return tHead & "a coinbase transaction spends nothing, so it cannot " & \
             "carry a silent payment." & return
    end if
@@ -21823,10 +22148,12 @@ private function waValidateAddress pText
    if cwSpIsAddress(pText) then
       return waValidateSpAddress(pText)
    end if
-   -- THE DELIMITER IS GLOBAL MUTABLE STATE. Save, set, use, restore is this
-   -- file's convention for every `item` read, and the reason is written out
-   -- above cxBech32EncodeValues: a handler somewhere else that set it to tab
-   -- and did not put it back turns this walk into one item, silently.
+   -- SAVE, SET, USE, RESTORE is this file's convention for every `item`
+   -- read; the reason is written out above cxBech32EncodeValues. This once
+   -- said a handler somewhere else that set tab and did not put it back
+   -- would turn this walk into one item; the itemDelimiter is handler-local
+   -- on Windows and Linux (the suite's engine note 2.3; no Mac run), so
+   -- there only this handler's own set decides it, which is the set below.
    put the itemDelimiter into tSavedDelim
    set the itemDelimiter to comma
    put "" into tGood
@@ -21960,14 +22287,19 @@ private function waValidateXKey pText
    -- zero parent is a key whose header was edited. Neither is caught by the
    -- checksum, and both derive perfectly valid addresses nobody else will
    -- ever see.
+   -- The empty fingerprint is TEXT (cwSameHex) in both tests: to a bare
+   -- `is` "00000000" is the number 0 (engine note 2.11), and so are
+   -- "0e000001" and every fingerprint spelled zeros, e, digits, so the
+   -- first test passed such a master key and the second accused a real one.
    if tNode["depth"] is 0 then
-      if cxHexEncode(tNode["parentfp"]) is not "00000000" or tNode["index"] is not 0 then
+      if cwSameHex(cxHexEncode(tNode["parentfp"]), "00000000") is not true \
+            or tNode["index"] is not 0 then
          put "INCONSISTENT: this claims to be a master key (depth 0), but a" & return after tOut
          put "master key has no parent and no child index. Something built" & return after tOut
          put "these bytes by hand." & return & return after tOut
       end if
    else
-      if cxHexEncode(tNode["parentfp"]) is "00000000" then
+      if cwSameHex(cxHexEncode(tNode["parentfp"]), "00000000") is true then
          put "SUSPECT: depth " & tNode["depth"] & " with an empty parent" & return after tOut
          put "fingerprint. A derived key records the key it came from." & return & \
                return after tOut
@@ -24541,18 +24873,15 @@ on waCoreHead pSocket, pData
       -- RPC port); holds a non-2xx status for the body to explain
       waHttpCheckStatus pData
       put waHttpHeader(pData, "content-length") into tLen
-      if tLen is not an integer then
+      if tLen is empty then
          waNetFail "the reply from " & pSocket & " carried no " & \
                "Content-Length, which Bitcoin Core always sends. Is that " & \
                "port a Bitcoin Core RPC port?"
          exit waCoreHead
       end if
-      if tLen > kWaMaxBody then
-         waNetFail "the backend sent more than " & kWaMaxBody & \
-               " bytes for one answer, which is not a shape this wallet " & \
-               "asked for."
-         exit waCoreHead
-      end if
+      -- digits, bounded before any arithmetic, and at most kWaMaxBody; a
+      -- refusal throws to the catch below (waCheckedLength, 2026-09-25)
+      put waCheckedLength(tLen) into tLen
       if tLen is 0 then
          waCoreBody pSocket, ""
          exit waCoreHead
@@ -25839,7 +26168,7 @@ private command waCoreMempoolRecord pTxid, pNode
    put cwListCount(sWaHistory) into tCount
    repeat with tI = 1 to tCount
       put sWaHistory[tI] into tRec
-      if tRec["txid"] is cwLower(pTxid) then
+      if cwSameHex(tRec["txid"], cwLower(pTxid)) is true then
          put tSize into tRec["vsize"]
          put cwBtcToSat(cwExpandExponent(tFee)) into tRec["fee"]
          put tRec into sWaHistory[tI]
@@ -26090,7 +26419,7 @@ function waIsOwnBroadcast pTxid
    -- every input a broadcast spent carries its txid (waNoteBroadcast).
    local tKey
    repeat for each key tKey in sWaSpentBy
-      if sWaSpentBy[tKey] is pTxid then
+      if cwSameHex(sWaSpentBy[tKey], pTxid) is true then
          return true
       end if
    end repeat
@@ -26389,8 +26718,22 @@ end waHttpHeader
 function waHexToInt pHex
    -- A hex number the way a chunk-size line spells it: digits until the
    -- first thing that is not one (chunk extensions follow a semicolon).
-   local tI, tCount, tDigit, tOut
+   --
+   -- AT LEAST ONE DIGIT, AND AT MOST EIGHT THAT COUNT (2026-09-25). Nothing
+   -- bounded the digits, so a size line of seventeen f's went through
+   -- tOut * 16 past 2^53 and the engine ROUNDED it with no error (suite
+   -- engine note 2.4) where the family interpreter stops; and a line with
+   -- no hex digit at all read as 0, which is the LAST chunk, so a malformed
+   -- size line ended the body early and delivered what had come so far as
+   -- the whole answer. Leading zeros add no width; eight significant digits
+   -- is under 2^32, far below both 2^53 and any size the caller then
+   -- compares against kWaMaxBody. Both refusals throw, to the caller's
+   -- catch (waStreamEvent fails the request with the reason). Verified
+   -- statically; needs an OXT pass.
+   local tI, tCount, tDigit, tOut, tRead, tWidth
    put 0 into tOut
+   put 0 into tRead
+   put 0 into tWidth
    put cwLower(cwTrim(pHex)) into pHex
    put the number of chars of pHex into tCount
    repeat with tI = 1 to tCount
@@ -26398,10 +26741,53 @@ function waHexToInt pHex
       if tDigit is 0 then
          exit repeat
       end if
+      add 1 to tRead
+      if tWidth > 0 or tDigit > 1 then
+         add 1 to tWidth
+      end if
+      if tWidth > 8 then
+         throw "the backend sent a chunk size of more than eight hex " & \
+               "digits, past any answer this wallet reads: " & \
+               char 1 to 40 of pHex
+      end if
       put tOut * 16 + tDigit - 1 into tOut
    end repeat
+   if tRead is 0 then
+      throw "the backend sent a chunk-size line with no size in it: " & \
+            char 1 to 40 of pHex
+   end if
    return tOut
 end waHexToInt
+
+private function waCheckedLength pText
+   -- A CONTENT-LENGTH IS DIGITS, A SHORT RUN OF THEM, AND NO MORE THAN ONE
+   -- ANSWER MAY BE (2026-09-25). One handler for both HTTP transports
+   -- (trap 37: a check written in one transport's branch is one the next
+   -- transport does not inherit). waCoreHead asked `is an integer` and then
+   -- `> kWaMaxBody`, waHttpFeed asked `is an integer and >= 0`, and the
+   -- engine answers `is an integer` yes for "1e3", "3.0" and twenty nines,
+   -- rounding the last past 2^53 with no error (suite engine note 2.4). So
+   -- the shape is settled on the TEXT first: digits only, at most nine of
+   -- them (under 10^9, exact, and far below where the engine's comparison
+   -- blurs integers, engine note 2.10), and only then compared with
+   -- kWaMaxBody. The caller has already handled an ABSENT header, whose
+   -- meaning differs per transport. Verified statically; needs an OXT pass.
+   if not waIsDigits(pText) then
+      throw "the backend's reply carried a Content-Length that is not a " & \
+            "length: " & char 1 to 40 of pText
+   end if
+   if the number of chars of pText > 9 then
+      throw "the backend's reply carried a Content-Length of more than " & \
+            "nine digits, past any answer this wallet reads: " & \
+            char 1 to 40 of pText
+   end if
+   if pText > kWaMaxBody then
+      throw "the backend sent more than " & kWaMaxBody & \
+            " bytes for one answer, which is not a shape this wallet " & \
+            "asked for."
+   end if
+   return pText + 0
+end waCheckedLength
 
 command waHttpFeed
    -- THE ESPLORA REPLY DECODER, a phase machine over sWaBuffer that consumes
@@ -26448,8 +26834,16 @@ command waHttpFeed
          put waHttpHeader(sWaHttpHead, "content-length") into tLen
          if tEnc contains "chunked" then
             put "size" into sWaHttpPhase
-         else if tLen is an integer and tLen >= 0 then
-            put tLen into sWaHttpLeft
+         else if tLen is not empty then
+            -- A LENGTH THAT IS THERE IS READ OR REFUSED, never guessed
+            -- (2026-09-25). `tLen is an integer and tLen >= 0` let "1e3"
+            -- and twenty nines through as numbers (the engine rounds the
+            -- second, suite engine note 2.4), and sent "-5" or "abc" to the
+            -- close-delimited branch below, reading a body whose framing the
+            -- reply had got wrong. RFC 9112 calls an invalid Content-Length
+            -- unrecoverable; waCheckedLength throws, and waStreamEvent's
+            -- catch fails the request with the reason.
+            put waCheckedLength(tLen) into sWaHttpLeft
             put "len" into sWaHttpPhase
          else
             put "true" into sWaHttpDrop
@@ -26474,6 +26868,16 @@ command waHttpFeed
          put byte 1 to (tPos - 1) of sWaBuffer into tLine
          waHttpConsume tPos + 1
          put waHexToInt(tLine) into sWaHttpLeft
+         -- a chunk larger than a whole answer may be is refused at its size
+         -- line, not after a megabyte of it has been buffered (2026-09-25);
+         -- waHexToInt has already held it to eight hex digits, so this
+         -- compares two small exact integers
+         if sWaHttpLeft > kWaMaxBody then
+            waNetFail "the backend sent more than " & kWaMaxBody & \
+                  " bytes for one answer, which is not a shape this wallet " & \
+                  "asked for."
+            exit repeat
+         end if
          if sWaHttpLeft is 0 then
             put "trailer" into sWaHttpPhase
          else
@@ -27419,7 +27823,7 @@ command waStoreRawTx pTxid, pHex
             "something that is not hex: " & char 1 to 80 of tHex
    end if
    put cwTxDecode(tHex) into tTx
-   if tTx["txid"] is not cwLower(pTxid) then
+   if cwSameHex(tTx["txid"], cwLower(pTxid)) is not true then
       throw "the backend answered the request for " & pTxid & " with the " & \
             "bytes of " & tTx["txid"] & ", which is a different transaction."
    end if
@@ -27427,7 +27831,7 @@ command waStoreRawTx pTxid, pHex
    put cwListCount(sWaHistory) into tCount
    repeat with tI = 1 to tCount
       put sWaHistory[tI] into tRec
-      if tRec["txid"] is cwLower(pTxid) then
+      if cwSameHex(tRec["txid"], cwLower(pTxid)) is true then
          put tHex into tRec["raw"]
          put tRec into sWaHistory[tI]
          add 1 to tHit
@@ -27443,7 +27847,11 @@ command waStoreRawTx pTxid, pHex
       put empty into sWaSpParents
    end if
    put tHex into sWaSpParents[cwLower(pTxid)]
-   if sWaInspectWanted is cwLower(pTxid) then
+   -- the txid the History screen waits on, as TEXT (cwSameHex): to a bare
+   -- `is` two all-digit txids agreeing in their leading digits are one
+   -- number (engine note 2.11), and another transaction's bytes landed in
+   -- the panel and ended the wait
+   if cwSameHex(sWaInspectWanted, cwLower(pTxid)) is true then
       put empty into sWaInspectWanted
       put waInspectRaw(tHex) into field "hs_detail"
       uiStatus "The bytes of " & pTxid & " arrived.", "ok"
@@ -27651,13 +28059,14 @@ private function waUnitChoice
 end waUnitChoice
 
 private function waDefaultPath
-   -- READS NO GLOBAL STATE. `the itemDelimiter` is one engine-wide property
-   -- and these demos are launched into ONE process by start-here, so a
-   -- handler that sets it and restores a hard-coded comma silently reassigns
-   -- whatever the caller had - and the damage lands in unrelated code, not
-   -- here. Its sibling waSelectedAddress saves and restores the caller's
-   -- value; this one has no need to touch the property at all, so it walks
-   -- the path by hand the way waField already does.
+   -- READS NO DELIMITER. This comment once called `the itemDelimiter` one
+   -- engine-wide property shared by every demo start-here launches into ONE
+   -- process, so that a handler restoring a hard-coded comma would reassign
+   -- whatever its caller had. The suite's engine note 2.3 has since observed
+   -- it handler-local on Windows and Linux (both directions; no Mac run), so
+   -- there it cannot. Its sibling waSelectedAddress saves and restores what
+   -- it found; this one has no need to touch the property at all, so it
+   -- walks the path by hand the way waField already does.
    local tFolder, tPos, tCut, tLen
    put the effective filename of this stack into tFolder
    if tFolder is empty then
@@ -28834,6 +29243,10 @@ command waScRun
    scAssert "all the controls this script names exist (missing: " & \
          scShow(tMissing) & ")", tMissing is empty
    scAssert "the wallet engine answers", cwVersion() begins with "CoinXT Wallet core"
+   -- Pure script, so it needs no extension: the engine's own parse, read
+   -- at every open (waSelfTestHexCompares says why).
+   scAssert "two exponent-form txids are two values, in hex order", \
+         waSelfTestHexCompares()
    if sWaHaveCoin is "true" then
       -- BIP-84's own published first receive address for the public test
       -- mnemonic. If this line is wrong, every address this wallet has ever
@@ -28864,7 +29277,7 @@ command waScRun
       scAssert "the P2PKH dust threshold is 546", cwDustThreshold("p2pkh") is 546
       scAssert "the P2WPKH dust threshold is 294", cwDustThreshold("p2wpkh") is 294
       scAssert "satoshi survive a round trip through BTC", \
-            cwBtcToSat(cwSatToBtc(2100000000000000)) is 2100000000000000
+            waSelfTestSatRoundTrip()
       scAssert "Bitcoin Core's descriptor checksum matches", \
             cwDescriptorChecksum("raw(deadbeef)") is "89f8spxm"
       scAssert "the empty-message magic hash matches", cwMsgDigest("") is \
@@ -28933,6 +29346,54 @@ function waSelfTestAddress pType, pNetwork
    put empty into tRec
    return tAddr
 end waSelfTestAddress
+
+function waSelfTestSatRoundTrip
+   -- The whole supply, 2.1e15 satoshi, out to BTC text and back, compared
+   -- EXACTLY (2026-09-25). This read `cwBtcToSat(cwSatToBtc(...)) is
+   -- 2100000000000000`, and at that size the engine's `is` calls two
+   -- integers up to four apart EQUAL (suite engine note 2.10: within 10
+   -- DBL_EPSILON of the smaller), so a round trip that gained or lost one to
+   -- four satoshi passed the one check that exists to catch it. `div` and
+   -- `mod` 100000000 split the answer into the BTC and the satoshi below
+   -- them, and each half is compared at a size where the engine's rule is
+   -- exact (21000000, and 0). The shape is settled first, as its own `if`:
+   -- `div` on a non-number is an engine error, not a FAIL line. Verified
+   -- statically; needs an OXT pass (tools/check-wallet-vectors.py's tier 4
+   -- replays both forms under the engine's rule).
+   local tSat
+   put cwBtcToSat(cwSatToBtc(2100000000000000)) into tSat
+   if tSat is not an integer then
+      return false
+   end if
+   return (tSat div 100000000) is 21000000 and (tSat mod 100000000) is 0
+end waSelfTestSatRoundTrip
+
+function waSelfTestHexCompares
+   -- THE HEX HELPERS, READ BY THE ENGINE ITSELF (2026-09-26). Two txids in
+   -- exponent form, "2e" and "1e" followed by 62 nines, both overflow a
+   -- double, and the engine's bare `is` reads both operands as numbers when
+   -- both parse (suite engine note 2.11; "1e999" is "2e999" read TRUE on
+   -- Linux and on Windows, 2026-09-25), so it calls these two EQUAL, and
+   -- its `<` cannot order them. Every txid and key compare the family
+   -- checker's check 23 found in wallet-core and in this stack now goes
+   -- through cwSameHex or cwHexCompare (a few plain-named ones it cannot
+   -- see remain: cwSameHex lists them); this line is where an engine
+   -- session OBSERVES that the two keep the pair apart and in character
+   -- order, rather than a gate inferring it. tools/check-wallet-vectors.py's
+   -- tier 5 fails it with cwSameHex's letter prefix undone, and with
+   -- cwHexCompare comparing whole texts, under its model of the parse.
+   local tTail, tI, tA, tB
+   put "" into tTail
+   repeat with tI = 1 to 62
+      put "9" after tTail
+   end repeat
+   put "2e" & tTail into tA
+   put "1e" & tTail into tB
+   if cwSameHex(tA, tB) is not false or cwSameHex(tA, tA) is not true then
+      return false
+   end if
+   return cwHexCompare(tA, tB) is 1 and cwHexCompare(tB, tA) is -1
+end waSelfTestHexCompares
 
 function waSelfTestUriAmount
    local tRec

@@ -191,7 +191,8 @@ Numbered as cited elsewhere in the suite (the suite's `tools/check-lcb-signature
 5. **`unsafe ... end unsafe` brackets every foreign call; all declarations at handler top**
    in `.lcb`.
 6. **Commands report via `the result`; functions return a value.**
-7. **`itemDelimiter` is global** - set it immediately before use (engine note 2.3).
+7. **Set `itemDelimiter` immediately before use** (engine note 2.3): it is handler-local (OBSERVED on
+   Windows and Linux; no Mac run), so a set one lasts for the rest of its own handler and no further.
 8. **`dcPoll` is the ONE buffer call returning a COUNT, not bytes** (like `btPoll`): the walker
    reads the leading u16 and each bodyLen, so the buffer tail is never touched.
 9. **`ZStringUTF8` measures with `strlen`**, so an embedded NUL truncates a text message AND
@@ -205,7 +206,9 @@ Numbered as cited elsewhere in the suite (the suite's `tools/check-lcb-signature
     is case-insensitive (`set the caseSensitive to true`), and even then it compares two
     NUMBER-LIKE operands as numbers ("1e5" is "100000"; suite engine note 2.11, from the engine
     source), so a byte-exact compare also prefixes a letter to both sides or goes byte by byte.
-    The checker flags the first two (`LCS_ANTIPATTERNS`).
+    The checker flags the first two (`LCS_ANTIPATTERNS`), and its check 23 a bare comparison
+    with an operand NAMED like hex (a nonce, a key, a hash; the dht-chat's DHT key filter was
+    its find here, 2026-09-25, verified statically).
 11. **An EVENT name may never equal a public `dc*` handler name** (engine note 6.7). Dispatched
     names share ONE message namespace with public handlers and the LIBRARY handler wins, so the
     app's `on <name>` is never reached. Observed 2026-08-18 on `dcLocalDescription`: the

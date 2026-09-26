@@ -281,6 +281,29 @@ def deal_signature(deck, occ_txt, button):
 
 GENESIS = bytes(32)
 
+# THE TABLE PROTOCOL VERSION every envelope below carries in item 1 (the
+# stack's kHeEnvV). v0.25.6 (2026-09-26) moved it 1 -> 2: v0.25.6's turn keys
+# and sit-out marks changed what a peer can fold, a v0.25.5 peer and a
+# v0.25.6 one used to share protocol 1 and split a table silently, and the
+# number is now what every entry point refuses another version by. EVERY
+# chain head, signature and settle/receipt value pinned from an envelope
+# moved with it, re-derived here (--print-pinned) and in the harness
+# (--gen-xtalk), never by hand. source_env_version() reads the stack's own
+# constant so a bump there without a re-derivation here fails loudly.
+ENV_V = 2
+
+
+def source_env_version():
+    """kHeEnvV, READ out of src/holdem.livecodescript (a hand-copied number
+    goes stale silently, root CLAUDE.md). A parse that stops matching FAILS."""
+    src = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                       "..", "src", "holdem.livecodescript")
+    m = re.search(r'^constant kHeEnvV = "(\d+)"[ \t]*$',
+                  open(src, encoding="utf-8").read(), re.M)
+    if not m:
+        raise AssertionError("kHeEnvV not found in src/holdem.livecodescript")
+    return m.group(1)
+
 # Every wire type make_wire builds during compute_all, recorded so the A6
 # coverage assertion in main() can hold "each source vocabulary type has at
 # least one pinned wire" against what actually ran, not against a hand-kept
@@ -363,16 +386,29 @@ def receipt_sig(rcpt_head_hex, id_seed):
     return ed_sign(("HOLDEM-RSIG-v1|" + rcpt_head_hex).encode("utf-8"), id_seed).hex()
 
 
-def admit_token(table_hex, id_seed, role="host"):
-    """Signed table-admission claim (spec 5): sign over
-    "HOLDEM-SESS-v1|<tableHex>|<pubHex>|<role>", framed as pubHex TAB role TAB
-    sigHex. Sent in btRp1SetToken so peers can drop strangers at handshake
+def admit_token(table_hex, id_seed, role="host", v=None):
+    """Signed table-admission claim (spec 5), sent in btRp1SetToken (and as an
+    onion stream's first "h" line) so peers can drop strangers at handshake
     before any game message, and so a joining player adopts only a
-    self-declared host (role="host"). Returns (token_line, sig_hex)."""
+    self-declared host (role="host"). Returns (token_line, sig_hex).
+
+    Table protocol v (default ENV_V) signs over
+    "HOLDEM-SESS-v<v>|<tableHex>|<pubHex>|<role>" (heAdmitDomain). Protocol
+    1 -- holde-em 0.25.5 and earlier -- frames pubHex TAB role TAB sigHex;
+    protocol 2 on (v0.25.6) appends TAB <v>, the version its signature
+    domain carries. A protocol-1 verifier rebuilds the v1 message from items
+    1..3 and fails a v2 signature, so an older client drops a newer token as
+    a stranger's; a v2 verifier recognises a v1 token (it verifies under the
+    v1 domain) and names it (heAdmitTokenVersion)."""
+    if v is None:
+        v = ENV_V
     pub_hex = ed_publickey(id_seed).hex()
-    msg = ("HOLDEM-SESS-v1|" + table_hex + "|" + pub_hex + "|" + role).encode("utf-8")
+    msg = ("HOLDEM-SESS-v%d|" % v + table_hex + "|" + pub_hex + "|" + role).encode("utf-8")
     sig_hex = ed_sign(msg, id_seed).hex()
-    return pub_hex + "\t" + role + "\t" + sig_hex, sig_hex
+    line = pub_hex + "\t" + role + "\t" + sig_hex
+    if v != 1:
+        line += "\t%d" % v
+    return line, sig_hex
 
 
 def roster_body(members):
@@ -1288,11 +1324,11 @@ def compute_all():
     heads = []
     wires = []
     for seq, (sender, hand, mtype, body) in enumerate(msgs, 1):
-        wire = make_wire(1, TABLE, hand, sender, mtype, body, seq, prev, HOST_SEED)
+        wire = make_wire(ENV_V, TABLE, hand, sender, mtype, body, seq, prev, HOST_SEED)
         wires.append(wire)
         prev = chain_next(wire)
         heads.append(prev.hex())
-    out["env0_content"] = content_line(1, TABLE, 0, ed_publickey(ID_SEEDS[0]),
+    out["env0_content"] = content_line(ENV_V, TABLE, 0, ed_publickey(ID_SEEDS[0]),
                                        "cfg", msgs[0][3])
     out["env0_sender_sig"] = ed_sign(out["env0_content"].encode("utf-8"),
                                      ID_SEEDS[0]).hex()
@@ -1300,6 +1336,20 @@ def compute_all():
     out["chain_heads"] = heads
     out["settle_hash"] = settle_hash("1:-4,2:8,3:-4", prev).hex()
     _, out["admit_sig"] = admit_token(TABLE.hex(), ID_SEEDS[0])
+    # v0.25.6: the SAME claim as protocol 1 signed it (holde-em 0.25.5's
+    # token, the value admit_sig held until the bump): the harness builds a
+    # v1 token from it and pins that this build recognises it as protocol 1
+    # and refuses it by name. The stack's own kHeEnvV rides as a pin too, so
+    # a version bump there without a re-derivation here fails loudly.
+    _, out["admit_sig_v1"] = admit_token(TABLE.hex(), ID_SEEDS[0], v=1)
+    out["env_version"] = source_env_version()
+    if out["env_version"] != str(ENV_V):
+        raise AssertionError("src kHeEnvV is %s but this KAT builds protocol %d: "
+                             "re-derive (--print-pinned, --gen-xtalk)"
+                             % (out["env_version"], ENV_V))
+    # the invite's table-protocol tag (heInviteTag): a v0.25.5 stack refuses
+    # a tagged invite by format, this build refuses an untagged one by name
+    out["invite_tag"] = "p%d:" % ENV_V
 
     # Host-trust fixture: a ckpt over the transcript head, and a TWO-hand
     # settlement-receipt chain that all three players sign.
@@ -1330,10 +1380,10 @@ def compute_all():
     # heLobbyCfgBody mirrors this string exactly.
     out["lobby_cfg_body"] = ("v=1,level=0,sb=1,bb=2,ante=0,stack=400,"
                              "seats=6,button=1,act=30,bank=60,miss=2")
-    lw1 = make_wire(1, TABLE, 0, ID_SEEDS[0], "cfg", out["lobby_cfg_body"],
+    lw1 = make_wire(ENV_V, TABLE, 0, ID_SEEDS[0], "cfg", out["lobby_cfg_body"],
                     1, GENESIS, HOST_SEED)
     lh1 = chain_next(lw1)
-    lw2 = make_wire(1, TABLE, 0, ID_SEEDS[0], "roster", out["roster_body"],
+    lw2 = make_wire(ENV_V, TABLE, 0, ID_SEEDS[0], "roster", out["roster_body"],
                     2, lh1, HOST_SEED)
     out["lobby_head2"] = chain_next(lw2).hex()
 
@@ -1345,17 +1395,17 @@ def compute_all():
     # (seq 7..9 chained from head 6), so every pre-existing chain-head pin
     # stands byte-for-byte -- additive, not a consensus break.
     out["ckpt_body"] = "street=flop,head=%s,sig=%s" % (heads[5], out["ckpt_sig"])
-    w7 = make_wire(1, TABLE, 1, ID_SEEDS[1], "ckpt", out["ckpt_body"],
+    w7 = make_wire(ENV_V, TABLE, 1, ID_SEEDS[1], "ckpt", out["ckpt_body"],
                    7, prev, HOST_SEED)
     h7 = chain_next(w7)
     out["ckpt_head7"] = h7.hex()
     out["show_body"] = "seat=2"
     out["muck_body"] = "seat=3"
-    w8 = make_wire(1, TABLE, 1, ID_SEEDS[1], "show", out["show_body"],
+    w8 = make_wire(ENV_V, TABLE, 1, ID_SEEDS[1], "show", out["show_body"],
                    8, h7, HOST_SEED)
     h8 = chain_next(w8)
     out["show_head8"] = h8.hex()
-    w9 = make_wire(1, TABLE, 1, ID_SEEDS[2], "muck", out["muck_body"],
+    w9 = make_wire(ENV_V, TABLE, 1, ID_SEEDS[2], "muck", out["muck_body"],
                    9, h8, HOST_SEED)
     h9 = chain_next(w9)
     out["muck_head9"] = h9.hex()
@@ -1372,23 +1422,35 @@ def compute_all():
     # transcript-derived consensus, never a clock's guess. "stand" is a
     # seat's own signed sit-out; "sit" WITHOUT a pub= field is its return
     # (the host-assignment form keeps pub=, so the two forms never collide).
-    out["timeout_act_body"] = "verb=fold,amount=0,seat=3,timeout=1,bank=1"
-    w10 = make_wire(1, TABLE, 1, HOST_SEED, "act", out["timeout_act_body"],
+    # v0.25.6 (2026-09-25) BOUND each of them, inside the signed body, and
+    # these pins moved on purpose (a wire change; kHeHarnessV 47 -> 48):
+    #   * every act names its TURN, "turn=<n>", n = 1 + the acts the hand
+    #     has applied (heBetTurnOf / heActTurnOk; holde-em WORK-PLAN coding
+    #     #13) -- a host could otherwise re-sequence a player's earlier act,
+    #     byte-identical to a new one, at a later turn of the same hand. The
+    #     timeout here is the hand's first act, turn 1;
+    #   * a stand and a sit-return name the seat's next SIT-OUT MARK,
+    #     "n=<k>", k = 1 + the marks accepted for that seat (heSitMarkOk;
+    #     coding #15) -- an old stand replayed hands later could otherwise
+    #     sit the player out again. Seat 2's stand is its first mark, its
+    #     return the second.
+    out["timeout_act_body"] = "verb=fold,amount=0,seat=3,timeout=1,bank=1,turn=1"
+    w10 = make_wire(ENV_V, TABLE, 1, HOST_SEED, "act", out["timeout_act_body"],
                     10, h9, HOST_SEED)
     h10 = chain_next(w10)
     out["timeout_head10"] = h10.hex()
-    out["stand_body"] = "seat=2"
-    w11 = make_wire(1, TABLE, 1, ID_SEEDS[1], "stand", out["stand_body"],
+    out["stand_body"] = "seat=2,n=1"
+    w11 = make_wire(ENV_V, TABLE, 1, ID_SEEDS[1], "stand", out["stand_body"],
                     11, h10, HOST_SEED)
     h11 = chain_next(w11)
     out["stand_head11"] = h11.hex()
-    out["sitback_body"] = "seat=2"
-    w12 = make_wire(1, TABLE, 1, ID_SEEDS[1], "sit", out["sitback_body"],
+    out["sitback_body"] = "seat=2,n=2"
+    w12 = make_wire(ENV_V, TABLE, 1, ID_SEEDS[1], "sit", out["sitback_body"],
                     12, h11, HOST_SEED)
     h12 = chain_next(w12)
     out["sitback_head12"] = h12.hex()
     out["timeout_bid_body"] = "amount=2,seat=3,timeout=1,bank=1"
-    w13 = make_wire(1, TABLE, 1, HOST_SEED, "bidBB", out["timeout_bid_body"],
+    w13 = make_wire(ENV_V, TABLE, 1, HOST_SEED, "bidBB", out["timeout_bid_body"],
                     13, h12, HOST_SEED)
     h13 = chain_next(w13)
     out["timeout_bid_head13"] = h13.hex()
@@ -1419,63 +1481,75 @@ def compute_all():
     # index pair like "48,33" -> 53 bytes).
     out["join_box_pub"] = H(b"HOLDEM-KAT-v1|boxpub|" + bytes([2])).hex()
     out["join_body"] = "box=" + out["join_box_pub"]
-    w14 = make_wire(1, TABLE, 0, ID_SEEDS[1], "join", out["join_body"],
+    w14 = make_wire(ENV_V, TABLE, 0, ID_SEEDS[1], "join", out["join_body"],
                     14, h13, HOST_SEED)
     h14 = chain_next(w14)
     out["handstart_body"] = "seats=1|2|3,button=1"
-    w15 = make_wire(1, TABLE, 1, HOST_SEED, "handStart", out["handstart_body"],
+    w15 = make_wire(ENV_V, TABLE, 1, HOST_SEED, "handStart", out["handstart_body"],
                     15, h14, HOST_SEED)
     h15 = chain_next(w15)
     out["deallevel_body"] = "level=0,dealer=1,count=3"
     # the same builder's ORACLE branch (spec 7.2: level=1 IS the oracle
     # marker, dealer=0 = no seat) - a format pin beside the level-0 wire
     out["deallevel_body_oracle"] = "level=1,dealer=0,count=3"
-    w16 = make_wire(1, TABLE, 1, HOST_SEED, "dealLevel", out["deallevel_body"],
+    w16 = make_wire(ENV_V, TABLE, 1, HOST_SEED, "dealLevel", out["deallevel_body"],
                     16, h15, HOST_SEED)
     h16 = chain_next(w16)
     seal_seed = (H(b"HOLDEM-KAT-v1|seal-standin|seedSeal") * 4)[:48 + 64]
     out["seedseal_body"] = "pos=2,sealed=" + seal_seed.hex()
-    w17 = make_wire(1, TABLE, 1, ID_SEEDS[1], "seedSeal", out["seedseal_body"],
+    w17 = make_wire(ENV_V, TABLE, 1, ID_SEEDS[1], "seedSeal", out["seedseal_body"],
                     17, h16, HOST_SEED)
     h17 = chain_next(w17)
     out["bidante_body"] = "amount=1"
-    w18 = make_wire(1, TABLE, 1, ID_SEEDS[1], "bidAnte", out["bidante_body"],
+    w18 = make_wire(ENV_V, TABLE, 1, ID_SEEDS[1], "bidAnte", out["bidante_body"],
                     18, h17, HOST_SEED)
     h18 = chain_next(w18)
     seal_hole = (H(b"HOLDEM-KAT-v1|seal-standin|holeDeliver") * 2)[:48 + 5]
     out["holedeliver_body"] = "seat=2,sealed=" + seal_hole.hex()
-    w19 = make_wire(1, TABLE, 1, ID_SEEDS[0], "holeDeliver", out["holedeliver_body"],
+    w19 = make_wire(ENV_V, TABLE, 1, ID_SEEDS[0], "holeDeliver", out["holedeliver_body"],
                     19, h18, HOST_SEED)
     h19 = chain_next(w19)
     out["board_body"] = "street=flop,cards=" + out["flop"].replace(",", "|")
-    w20 = make_wire(1, TABLE, 1, ID_SEEDS[0], "board", out["board_body"],
+    w20 = make_wire(ENV_V, TABLE, 1, ID_SEEDS[0], "board", out["board_body"],
                     20, h19, HOST_SEED)
     h20 = chain_next(w20)
     out["seedreveal_body"] = "pos=2,seed=" + out["deal_seeds"][1]
-    w21 = make_wire(1, TABLE, 1, ID_SEEDS[1], "seedReveal", out["seedreveal_body"],
+    w21 = make_wire(ENV_V, TABLE, 1, ID_SEEDS[1], "seedReveal", out["seedreveal_body"],
                     21, h20, HOST_SEED)
     h21 = chain_next(w21)
     out["settle_body"] = "deltas=1:-4|2:8|3:-4"
-    w22 = make_wire(1, TABLE, 1, HOST_SEED, "settle", out["settle_body"],
+    w22 = make_wire(ENV_V, TABLE, 1, HOST_SEED, "settle", out["settle_body"],
                     22, h21, HOST_SEED)
     h22 = chain_next(w22)
     out["receipt_body"] = "head=%s,sig=%s" % (rh1, receipt_sig(rh1, ID_SEEDS[1]))
-    w23 = make_wire(1, TABLE, 1, ID_SEEDS[1], "receipt", out["receipt_body"],
+    w23 = make_wire(ENV_V, TABLE, 1, ID_SEEDS[1], "receipt", out["receipt_body"],
                     23, h22, HOST_SEED)
     h23 = chain_next(w23)
     out["audit_body"] = "result=pass"
-    w24 = make_wire(1, TABLE, 1, ID_SEEDS[1], "audit", out["audit_body"],
+    w24 = make_wire(ENV_V, TABLE, 1, ID_SEEDS[1], "audit", out["audit_body"],
                     24, h23, HOST_SEED)
-    out["deal_wires_head24"] = chain_next(w24).hex()
+    h24 = chain_next(w24)
+    out["deal_wires_head24"] = h24.hex()
+    # a PLAYER's own act, as heNetBoundBody builds it (v0.25.6): the verb
+    # and amount the action buttons write, then ",turn=" and the turn the
+    # sender's folded state is waiting for -- here the hand's second act,
+    # after the timeout above took turn 1. The act type was pinned only by
+    # the host's timeout form; this pins the builder the buttons use.
+    # Pinned as the seq 25 extension: additive, no earlier pin moves.
+    out["act_body"] = "verb=check,amount=0,turn=2"
+    w25 = make_wire(ENV_V, TABLE, 1, ID_SEEDS[1], "act", out["act_body"],
+                    25, h24, HOST_SEED)
+    out["act_head25"] = chain_next(w25).hex()
     # the vocabulary itself, pinned: a type added to (or renamed in) the
     # dispatcher moves this value LOUDLY, beside the coverage assertion in
     # main() that requires the new type's wire
     out["wire_vocabulary"] = ",".join(source_wire_vocabulary())
-    # the onion hello's compatible extension (2e auto-redial): the admission
-    # token frame with the sender's APPLIED SEQ as a trailing tab item (the
-    # redial resync mark -- heAdmitTokenVerify reads items 1..3 only, so an
-    # old host ignores it and replays in full; a 2e host trims its
-    # reconnect replay to the tail past the mark)
+    # the onion hello's extension (2e auto-redial): the admission token frame
+    # with the sender's APPLIED SEQ as a trailing tab item (the redial resync
+    # mark; a 2e host trims its reconnect replay to the tail past the mark).
+    # Since v0.25.6 the token is four items (its protocol in item 4), so the
+    # seq is item 5; a v0.25.5 hello's seq sits in item 4, which the
+    # version check never trusts without the signature that goes with it.
     _tok, _ = admit_token(TABLE.hex(), ID_SEEDS[1], "player")
     out["hello_trim_frame"] = "h\t" + _tok + "\t42"
 
@@ -1886,30 +1960,33 @@ PINNED = {
  "l2v_dleq_outcome": "void|void:dleq-mismatch:2:1|named=2|bets-return|reveal-required",
  "l2v_dleq_missing": "void|void:proof-missing:1|named=1|bets-return|reveal-required",
  "l2v_audit_ck": "named=1|void:audit-ck-mismatch",
- "admit_sig": "17cf45eeecf27a3e9b63e1e0ff47ae1ea337430cb135fb499944a60681fcd1e949a7a88f532b2f888c0ea32364e93e9aa2f569419f27e8034b695a4ee94d5e0b",
+ "admit_sig": "e9eb87d7b9c05fd7f139c0fdc40a2a35509a96c312860e95578afbcfee611d5734bf4cf0fa9b37d2d280d311bb755fb4eb53d9d0889cd701e51ed096d7e97405",
  "burns": "Jd,9d,3d",
  # 2e street ckpt + show/muck wires (spec 6 as-built bodies), pinned as the
  # seq 7..9 extension of the six-envelope transcript -- additive, so no
  # earlier chain-head pin moved.
- "ckpt_body": "street=flop,head=62fcd52b3757f590c33bede7330620853074c1e5c153549244a8dac7287e3778,sig=08c7f29409998d642657b9a084802b7ca3a136d696e881b545ed4e5a750fdb6d14e4967f401977aca416f03c0d4f03f98b3acc53e61266f3d8cee9912639e20f",
- "ckpt_head7": "296cfef0944557351fa4899e8da5722743b4cfd212206dcf9a2b89fc30331497",
+ "ckpt_body": "street=flop,head=a4b93b207e9b04429ff1067c997719b8eaccb3d79fd149e52b50f0437e4a1b7a,sig=3703e93fdc7353f4edb5e29880496d1d8a0bd64ea023fc9265ace0069331ea1a907024f408cf7ca139b303068ce4c635ca4b2e01bc6bc6efdd85cd3d845e9e03",
+ "ckpt_head7": "f2b8365acfac83ff8ba41a5e7ab4d8c7bda648dc04b6fc864f1ebec7ad1c1eed",
  "show_body": "seat=2",
- "show_head8": "969def7cb20b499f2ae3fa259234f09ac79cd4608e65b2d25b2027217a82a45c",
+ "show_head8": "af5dec0a160e639654643d93c74fb716a054ecad1dba2a0fa4a751cfcf9f9d60",
  "muck_body": "seat=3",
- "muck_head9": "5fbfd0aeef7d918249601a92233de273809dc1b4791e991e22758ba85af6df71",
+ "muck_head9": "ffb4bc6383777776121354e1587ede1d9977b2b5c40f0141b02eddf45329eb16",
  # 2e liveness wires (spec 8.1/9 as-built, v0.23.0), the seq 10..13
  # extension: host-authored timeout act/bid (seat=/timeout=1/bank= on the
  # EXISTING wires, never a new kind), a seat's own stand (sit-out) and
  # pub-less sit (return), and the onion hello's compatible trailing-seq
- # trim mark for the auto-redial resync.
- "timeout_act_body": "verb=fold,amount=0,seat=3,timeout=1,bank=1",
- "timeout_head10": "bb5c70e38815d017dbcd3be3654fd8691fd2513bd816a5ab33659e1103fed694",
- "stand_body": "seat=2",
- "stand_head11": "fc854db9ed13c5dcaf7ae7455678c87b4a0e1a6286e88ad98dd61dbf173e8ef6",
- "sitback_body": "seat=2",
- "sitback_head12": "f69afd084f98085581135c43346641dea04f2937952becc641e9922709ea6cdc",
+ # trim mark for the auto-redial resync. v0.25.6 (2026-09-25) bound the
+ # act to its turn (turn=) and the stand and sit-return to the seat's
+ # sit-out mark (n=): these bodies, every head from 10 on, and head 24
+ # moved with it, re-derived by compute_all, not typed.
+ "timeout_act_body": "verb=fold,amount=0,seat=3,timeout=1,bank=1,turn=1",
+ "timeout_head10": "e425447b123c948d9a34d5965445ff0376eab35b24884f0418eef6c13b20b79d",
+ "stand_body": "seat=2,n=1",
+ "stand_head11": "d79040f87c573d1e53cb6961669c2b345e27feb5c9088700311d470c3c24d2ec",
+ "sitback_body": "seat=2,n=2",
+ "sitback_head12": "5c9c0bd7f7d98ecdfe19e530c986c0776c45c3b26c7131ee59f0e4f4bf69a521",
  "timeout_bid_body": "amount=2,seat=3,timeout=1,bank=1",
- "timeout_bid_head13": "6324a6371f62ec9819d0a53acace305c3faefd274efe5db87bf869e1b4a57fcd",
+ "timeout_bid_head13": "2465c1732f91ed124a8345f6fba55d47c6f8cf268eb620477ca12d4b4a8ed30e",
  # the deal-delivery wires (backlog A6, 2026-08-23): bodies hand-built from
  # the shipped builders' documented formats, pinned as the seq 14..24
  # extension of the same transcript (additive; the sealed blobs are
@@ -1927,11 +2004,15 @@ PINNED = {
  "board_body": "street=flop,cards=4h|2c|6d",
  "seedreveal_body": "pos=2,seed=f7badd5dc86a8a5dce0984ef43bcb7ec228398e08a854a8a8c455ff895dc8a49",
  "settle_body": "deltas=1:-4|2:8|3:-4",
- "receipt_body": "head=53ed9ccc64863dc05c1b76cd7953e19bba73895b8dd22ea00e6c9ff40f423cef,sig=6c2ae423fd05768c28b164893f566f910e79b9e9953b6efba941e6fc5d9c167cc0abe02aa39cc73d7b6b4e541e965e659dac1aae698d8e3c18dd9f1019a06008",
+ "receipt_body": "head=7e2d450ff3847f945f11e5b2d6cbc5b0914636036ac69b9a536f8a76ce172a8b,sig=3640f54f2307bb559ab19eae6fa13812c04c6fab3ed98d64746496a2f0811597ed789ad5e2dd70a7e1db7fc054207aa6d6e5b2eac538dd0125016337c58eae00",
  "audit_body": "result=pass",
- "deal_wires_head24": "2ac5e70a472bd5e18903b062c8e742900a1589bce12701ecfa18dba188a71d42",
+ "deal_wires_head24": "29acfd4be34f8d91487fafc7dea4ad68591fa92f76dc5b7b52bc90443ee248f7",
+ # v0.25.6: a player's own act as heNetBoundBody builds it (turn-bound),
+ # the seq 25 extension chained from head 24 -- additive
+ "act_body": "verb=check,amount=0,turn=2",
+ "act_head25": "46b51c6b53dbb6d4fc15c679410798441447a82dc47893bfe389fc41389d7bf9",
  "wire_vocabulary": "act,audit,bidAnte,bidBB,bidSB,board,cfg,ckpt,dealLevel,handStart,holeDeliver,join,muck,receipt,roster,seedCommit,seedReveal,seedSeal,settle,show,sit,stand",
- "hello_trim_frame": "h\t833fed8ee30a882bd877555a9df260d4322224fa095513d84972a660e7ad6b10\tplayer\td02b1e826f4351264cd3a77a1580921495f9c7df5f0f29a370ebb5fdd69b9a1c5c1c9226ae2865919622a266df124ac755b57141a6d8a77e0eb8b6f7d89de208\t42",
+ "hello_trim_frame": "h\t833fed8ee30a882bd877555a9df260d4322224fa095513d84972a660e7ad6b10\tplayer\t6f3021481a2ffb3f0668f0bc1eb0de41f77dee2dd14870f150d55157a57614422daf386edbcc5ab68171fc8a111ab1a90821600dcc6ae0bc0332f624d9a72109\t2\t42",
  # spec 9 host election: the deterministic successor (lowest live pubkey)
  "elected_host": "833fed8ee30a882bd877555a9df260d4322224fa095513d84972a660e7ad6b10",
  # ...and the same election with that lowest key SITTING OUT: a sat-out seat
@@ -1943,14 +2024,14 @@ PINNED = {
  "oracle_service_seed": "6e027a075cd69ea09e20004167c54c12491c5538f105c138a0bafe49d956e5d0",
  "lobby_cfg_body_oracle": "v=1,level=1,sb=1,bb=2,ante=0,stack=400,seats=6,button=1,act=30,bank=60,miss=2",
  "chain_heads": [
-  "a60914c4c335f520aaef3b3a5dace3f9dafc1ab4a26f7e65dde2e880d51ead02",
-  "d742f834712a24c4da268dcbc44182e511113370c87302132694faa02cdb3c0e",
-  "6082ffb793ad1e5c07fec8d4722f2a5aa730f50b8535c1f4aaaa8d7577e386da",
-  "31621b0b88fce5589ad1adfd891fcffa5f8f91454affadcf6e8b7daf91e3d997",
-  "91cfb880c55c546f559867c01427856b7e9f3efb5ef2b03d8f5bd4eb9cfb8f22",
-  "62fcd52b3757f590c33bede7330620853074c1e5c153549244a8dac7287e3778"
+  "bae5a7eca2b7dc1f1a0936d98c6eb45e718e97103fb7e2b10085c0bcd32e2168",
+  "82cace455f7be55027b526960144850452cbfa7634c54dcd6eddc3416d5cebb5",
+  "131ff8912afd65417a1eabd3b74315a94c7ca66a7f251c5ac8a452ef1c0beff9",
+  "3a9b8a67fd1a5cf2b85578e77e8e9b76e9210033f6f6d2492dda104ac7746bbd",
+  "4336f703fcb4f61235a62880e8d2754de69bd3251d53bbd88cc3948beb81800a",
+  "a4b93b207e9b04429ff1067c997719b8eaccb3d79fd149e52b50f0437e4a1b7a"
  ],
- "ckpt_sig": "08c7f29409998d642657b9a084802b7ca3a136d696e881b545ed4e5a750fdb6d14e4967f401977aca416f03c0d4f03f98b3acc53e61266f3d8cee9912639e20f",
+ "ckpt_sig": "3703e93fdc7353f4edb5e29880496d1d8a0bd64ea023fc9265ace0069331ea1a907024f408cf7ca139b303068ce4c635ca4b2e01bc6bc6efdd85cd3d845e9e03",
  "commits": [
   "7623721b5a6372fa974ed62f558fce9992259eb2a834ece7bcea66bce970c0e3",
   "83726c97707155ba2e81f0e5f673dd9e10dfde06e1c8f643bdd8539403aace51",
@@ -1969,9 +2050,9 @@ PINNED = {
   "e848bf12b0bf2708b52c20053ef674e603e7f3a3c7092533dc92e1b0828960cd"
  ],
  "deck": "Ks,4d,3c,Tc,9h,8c,Jd,4h,2c,6d,9d,Th,3d,9s,5s,3h,Qc,2h,9c,8h,7c,Js,7s,2d,6s,Ac,8s,As,Kh,2s,Ah,5h,Jh,Jc,4c,7h,6c,8d,Ad,Kd,Qs,Kc,6h,Qd,7d,5d,Qh,Ts,5c,3s,4s,Td",
- "env0_content": "1\te52675650d7ad48c7129185efdaec1e2b89cc410d8e4c8e085bcd652187b27d3\t0\tb6ef1a19d789c27bea3f6c127db635929541f34907750ee12d0b715c010c7566\tcfg\t763d312c6c6576656c3d302c73623d312c62623d322c73656174733d332c627574746f6e3d31",
- "env0_sender_sig": "c1d5f49bcc0fb8418830f63cc8be9c6bf7e5fd11a77807af38e672aa7284bba9c9cd58d73976888055851d034d440ab504cd0c9ab984f7df368a5f94225b310b",
- "env0_wire": "1\te52675650d7ad48c7129185efdaec1e2b89cc410d8e4c8e085bcd652187b27d3\t0\tb6ef1a19d789c27bea3f6c127db635929541f34907750ee12d0b715c010c7566\tcfg\t763d312c6c6576656c3d302c73623d312c62623d322c73656174733d332c627574746f6e3d31\tc1d5f49bcc0fb8418830f63cc8be9c6bf7e5fd11a77807af38e672aa7284bba9c9cd58d73976888055851d034d440ab504cd0c9ab984f7df368a5f94225b310b\t1\t0000000000000000000000000000000000000000000000000000000000000000\tef00bf818725cc9fbc867a1ba620ea89ba674d66029cf005bf7911b9e26ea111c7cd2129a7be1f25326d1f831ac98dc43e50dc31fbb9ea9c81e338fa95bd270c",
+ "env0_content": "2\te52675650d7ad48c7129185efdaec1e2b89cc410d8e4c8e085bcd652187b27d3\t0\tb6ef1a19d789c27bea3f6c127db635929541f34907750ee12d0b715c010c7566\tcfg\t763d312c6c6576656c3d302c73623d312c62623d322c73656174733d332c627574746f6e3d31",
+ "env0_sender_sig": "a34e4dc460d9d60f30a4a9e2306297a20a9c88e59249297c8f52ad68a3962cd791f290c9ad1b704274397346037abc716bb9e87ef4dd72ce27013c8af227450d",
+ "env0_wire": "2\te52675650d7ad48c7129185efdaec1e2b89cc410d8e4c8e085bcd652187b27d3\t0\tb6ef1a19d789c27bea3f6c127db635929541f34907750ee12d0b715c010c7566\tcfg\t763d312c6c6576656c3d302c73623d312c62623d322c73656174733d332c627574746f6e3d31\ta34e4dc460d9d60f30a4a9e2306297a20a9c88e59249297c8f52ad68a3962cd791f290c9ad1b704274397346037abc716bb9e87ef4dd72ce27013c8af227450d\t1\t0000000000000000000000000000000000000000000000000000000000000000\t7b75f3cd72661661b3a52e5dab43e23b6c63000fa32ba0461a4fcc9a048adca4b41aa8be76673cba1b537f011b6b64d50eb4bbf32f8ec2a6ee4683c112c9eb04",
  "flop": "4h,2c,6d",
  "holes": {
   "1": "3c,8c",
@@ -1990,25 +2071,34 @@ PINNED = {
  # v0.23.0: the 2e timer lengths joined the cfg body (act/bank/miss), a
  # documented consensus change -- this pin and lobby_head2 regenerated.
  "lobby_cfg_body": "v=1,level=0,sb=1,bb=2,ante=0,stack=400,seats=6,button=1,act=30,bank=60,miss=2",
- "lobby_head2": "57c56971affa1ac3d723d600937df12046a7def0c059444054f763e94a65b7fa",
- "receipt_head1": "53ed9ccc64863dc05c1b76cd7953e19bba73895b8dd22ea00e6c9ff40f423cef",
- "receipt_head2": "0284af24c750eaaaa5a521b87d8f1ab6ce00b0b2be074ce03d24884e004fc910",
+ "lobby_head2": "bde6814ab6b254ea5f8d525195abd0d416f6f9df73eaefc9899bfe838dd54080",
+ "receipt_head1": "7e2d450ff3847f945f11e5b2d6cbc5b0914636036ac69b9a536f8a76ce172a8b",
+ "receipt_head2": "a25ab8169bc14ce961a2c9e3a642374bf2c8524bfe44f7edeb7a4fc1691bd792",
  "receipt_sigs": [
-  "222929a8ce05e0d45cab6658d9e67d882d6cfa1f91c35cda8e07a58763c4b1fb6c733e23d116f04ed91960c0ad386541139fed43e1632df341175021d70b1700",
-  "20a21d334da7d32b00bf3a17920350ebaad0773121fc3f2d9feba041360d9548fb527c555cab8039985439bed3af73d17656b939942a6bc3a793630275070706",
-  "429a37ee32d74fd2d09b1b3a86fccc383c7e773ef52670ed07e4ede7e2e10f9ab4b791d630d0b44bdb6c405ed5238cc0bbab9d40129d3673c2c39f1d5d1a9c09"
+  "5479c0d5cc1fe94a167f1da6fac629f81910b7bdbe1d8b455513922a5b693718e172d8cdde54d6e60fffd42331a02ba6641da64f85db94fb38df688f328c2b03",
+  "f83353b2e0d27f8164751bd2fad3450d1ef8714e0b211242cf5d15ae9ffea4ecb40fec8485b449b438df716db910e8e056b86b0a3ac1f2762dbde8aa435ad200",
+  "e76118539b47872dcfd9c71ccf99b9ae964b642a2ae3d02716e54bade2bbf3ba0e7a6875e729874fb608b36e7e0296eadd51886c06413ce5e8e546fe035e3c08"
  ],
  "river": "9s",
  "roster_body": "833fed8ee30a882bd877555a9df260d4322224fa095513d84972a660e7ad6b10:player,b6ef1a19d789c27bea3f6c127db635929541f34907750ee12d0b715c010c7566:host",
  "seeds_xor": "73e2b09387940cf29398389f4d4fef74987ffac3c369b68cb522ded044cb00b8",
- "settle_hash": "68095dcf5a74fac1e1340a1073a466dcf117024257f5c265de21698257b34b6f",
+ "settle_hash": "f12114fd4229876fe54432a20d69395b9fcda8a65f75715cd9c24b6c9d27aba9",
  "settle_hash2": "5e716ce9022f4c47d99e081b52be3a8bb5f9f1f56d3def18577c2f7ac9de8df5",
  "stream_block0": "22a256dd9846bb3d40d24d3d5441cdf5415e9fb3532ba99f4f4812630941108d",
  "stream_key": "e4d91a49ee23982afb804fd386cbd3d2df6370ae0a743b0f461325b94818e40f",
  "synth_deck": "Ac,Kc,3d,5h,Kh,5d,Qc,3h,2h,5c,8c,4h,4d,Tc,7h,Qs,6c,Ts,6h,7d,Th,6s,Kd,3c,Jc,9s,4c,Ah,5s,2d,8s,As,2s,Ad,9d,Qh,8d,Jh,Qd,Jd,2c,6d,7s,Ks,7c,Js,8h,3s,4s,9h,9c,Td",
  "synth_stream": "8eaba859db2f1a2a3bce5e381fc1afa1339dc9b7a8a1bbc550277e756dabdffcf7390d23167268d1523ac24f71f476cd47cd1fcd31cfa7ec51ef45c7853978859f7a10230ff86f287f1ead8ec6ac797f6f3d3a1eb75bcb435b5f491b81077775b47c0dcf3cc1d1c8f329c4e1cdae9c6e21f3825454f5c04a21fde75572ef04e25e36672b9e4ce78b4333da7090746ff00b8e32e7ad161f033523cb6f5ba2b10af1a1ebf6c815e54e4fe5efed623198c302732bf6e40ed8856a89e15d78f564614531b8f684aa727e51ea968727a22eb6e14bd588d502b2637bd73d59a8518eaf7a2311d555dd86147e83af7f1e9ef7c9baf253b851bbb48abecdea0b27f90761a67fb810022c6eae480866f19839deb884a4ec819be41bcb605df7dd1ee2efcdaab49eef76d4a98b6be858d3324ac616f2b1f58fc9a1749a6164e2a0e276d62d1815d6a042c78b82f3b0d1ff78852cf8778ba3e127411f0121775056de9e5f8e4253f98b54e627e74cf8c2a38c83edd7d6272de4eb6bd645ebcae1f1701bda866beadc5968e757a8f902e2be46933346dcb794676fd609e14f67d20432796eb492a0c86910f10e51c5c02e5a9fa95f407283b3d0abfb8357cc5f94fe4416b5984eb07e046975e1c15edece5c9e80fd6de3d43d6831a310fe9d74e0c5bb9e438da44bffd728a284795046da833ffb8fdd16128b7fdee7ef76e434e035c7471d52",
  "table": "e52675650d7ad48c7129185efdaec1e2b89cc410d8e4c8e085bcd652187b27d3",
- "turn": "Th"
+ "turn": "Th",
+ # v0.25.6 (2026-09-26), the TABLE PROTOCOL 1 -> 2 (kHeEnvV): every envelope-derived
+ # value above moved with it and was re-derived by compute_all, not typed.
+ # admit_sig_v1 is the same claim as protocol 1 signed it (holde-em 0.25.5's
+ # token), which this build must recognise and refuse by name; env_version is
+ # the stack's own kHeEnvV, read from the source; invite_tag heads every
+ # invite.
+ "admit_sig_v1": "17cf45eeecf27a3e9b63e1e0ff47ae1ea337430cb135fb499944a60681fcd1e949a7a88f532b2f888c0ea32364e93e9aa2f569419f27e8034b695a4ee94d5e0b",
+ "env_version": "2",
+ "invite_tag": "p2:"
 }
 
 
@@ -2050,6 +2140,8 @@ def main():
         print('constant kKatChainHead6 = "%s"' % got["chain_heads"][5])
         print('constant kKatSettleHash = "%s"' % got["settle_hash"])
         print('constant kKatAdmitSig = "%s"' % got["admit_sig"])
+        print('constant kKatAdmitSigV1 = "%s"' % got["admit_sig_v1"])
+        print('constant kKatInviteTag = "%s"' % got["invite_tag"])
         print('constant kKatIdPub2 = "%s"' % got["id_pubs"][1])
         print('constant kKatLobbyCfgBody = "%s"' % got["lobby_cfg_body"])
         print('constant kKatRosterBody = "%s"' % got["roster_body"])
@@ -2067,10 +2159,13 @@ def main():
         print('constant kKatMuckHead9 = "%s"' % got["muck_head9"])
         print('constant kKatTimeoutBody = "%s"' % got["timeout_act_body"])
         print('constant kKatTimeoutHead10 = "%s"' % got["timeout_head10"])
+        print('constant kKatStandBody = "%s"' % got["stand_body"])
         print('constant kKatStandHead11 = "%s"' % got["stand_head11"])
+        print('constant kKatSitBackBody = "%s"' % got["sitback_body"])
         print('constant kKatSitBackHead12 = "%s"' % got["sitback_head12"])
         print('constant kKatTimeoutBidBody = "%s"' % got["timeout_bid_body"])
         print('constant kKatTimeoutBidHead13 = "%s"' % got["timeout_bid_head13"])
+        print('constant kKatActBody = "%s"' % got["act_body"])
         # the hello frame carries tabs, so it travels as hex of its UTF-8
         # bytes (the kKatEnv0ContentHex convention)
         print('constant kKatHelloTrimHex = "%s"' % got["hello_trim_frame"].encode("utf-8").hex())

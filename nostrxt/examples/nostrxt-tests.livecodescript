@@ -244,7 +244,9 @@ private command nxtTestJsonEscape
    nxtSection "NIP-01 json escaping"
    put quote & "\" & numToChar(10) & numToChar(13) & tab & numToChar(8) & numToChar(12) into tInput
    put "\" & quote & "\\\n\r\t\b\f" into tExpected
-   nxtCheck nxtBytesHex(nxJsonEscape(tInput)) is nxtBytesHex(tExpected), "the seven escapes, exactly"
+   -- hex against hex compares as TEXT, a letter on each side (suite engine
+   -- note 2.11: bare `is` reads two number-like texts as numbers)
+   nxtCheck ("h" & nxtBytesHex(nxJsonEscape(tInput))) is ("h" & nxtBytesHex(tExpected)), "the seven escapes, exactly"
    nxtCheck nxJsonEscape("plain text") is "plain text", "plain text passes through"
    nxtCheck nxtBytesHex(nxJsonEscape("a" & numToChar(1) & "b")) is "610162", "0x01 passes through VERBATIM (the rule json.dumps breaks)"
    nxtCheck nxJsonEscape(empty) is empty, "empty in, empty out"
@@ -295,8 +297,11 @@ private command nxtTestJsonParse
    -- it; caught, the regression is one FAIL line and the report survives.
    --
    -- The same call pins the other half of that fix: the early-out now
-   -- restores the itemDelimiter, which is "/" at that point and global
-   -- state (suite engine note 2.3). It reads the DELIMITER, not a second
+   -- restores the itemDelimiter, which is "/" at that point. On Windows and
+   -- Linux the itemDelimiter is handler-local (suite engine note 2.3), so
+   -- this line passes there whatever the early-out does; under the headless
+   -- gate's interpreter, which holds it global, it is the check. It reads
+   -- the DELIMITER, not a second
    -- nxJsonGet: the walk saves whatever delimiter it finds and sets "/"
    -- itself, so a second call answers "x" even after a leak (the headless
    -- gate's first version of this check did exactly that and stayed green

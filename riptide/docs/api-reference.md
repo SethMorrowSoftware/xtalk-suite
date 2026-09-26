@@ -1,7 +1,7 @@
 # Riptide API reference
 
-The public `rs*` surface of `src/riptide.livecodescript`: library 0.12.0,
-106 handlers, phases 1-8 (identity and the feed, media, DMs, the LAN mesh
+The public `rs*` surface of `src/riptide.livecodescript`: library 0.13.0,
+107 handlers, phases 1-8 (identity and the feed, media, DMs, the LAN mesh
 with its sync records and media handoff, the anon persona with its onion
 serving seams, the Nostr bridge and the `RIPTAPP1` app-state store). Pure
 LiveCodeScript over the installed suite extensions; the byte-exact wire
@@ -48,6 +48,11 @@ never by silent fix.
   throwing - see CLAUDE.md).
 - `pSession` is the app-owned TorrentXT session handle; `pMaster` the
   32-byte master seed; seeds are 32-byte `Data`.
+- **Wire integers** (a seq, a tick, a timestamp, a size) are integers from
+  0 to 2^53 - 1, bounded exactly on build and ingest, and ORDERED only
+  through `rsSeqCompare`: the engine's `<`, `>` and `is` call two integers
+  one apart equal from about 4.5e14 (suite engine note 2.10, inferred from
+  the engine source's rule), and these values are the sender's to choose.
 
 ## Probe, version, errors
 
@@ -108,7 +113,8 @@ strings, matching `sxKdfDerive`.
 | `rsBencodeBytes(pData)` | Data | `<len>:<bytes>`, the BEP44 value shape (the only bencode riptide puts on the DHT) |
 | `rsBep44SignBuf(pSalt, pSeq, pValue)` | Data | the canonical signing buffer `[4:salt<n>:<salt>] 3:seqi<seq>e 1:v <value>`, byte-identical to torrentxt's `btDhtBep44SignBuf`. `pValue` must be strictly well-formed bencode of 1..996 raw bytes (996, not 1000: BEP44's cap is on the BENCODED value - protocol spec 4.1); salt max 64 bytes; seq a non-negative integer below 2^53 |
 | `rsImmutableTarget(pValue)` | String | SHA-1 of the bencoded value: the immutable item's 40-hex target (what `btDhtPutImmutable` returns for the same bytes) |
-| `rsIngestHead(pEvent, pExpectedHandleHex, pMinSeq)` | Array | the parsed head, only if the drained `dhtMutableItem` event is for that handle and salt, the value is a strict RSH1 record, the embedded and BEP44 seqs agree, the seq is **not below `pMinSeq`** (the reader's watermark - the highest seq already accepted for this handle; pass `0` for a handle never seen), and the BEP44 signature verifies under the handle. `pMinSeq` is REQUIRED and fails closed: an omitted or non-numeric watermark is refused, because a validly-signed OLD head is a rollback and every other check here passes on one |
+| `rsSeqCompare(pA, pB)` | String | `"below"`, `"equal"` or `"above"` as `pA` is below, equal to or above `pB`, compared EXACTLY on their two u32 halves; EMPTY (with the reason in `rsLastError()`) when either is not an integer from 0 to 2^53 - 1. The one way the library and the demo order seqs, ticks and watermarks. Test for the answer that lets a record through (`is "above"`), never `is not "below"`, so an empty answer refuses. It compares values: `"0012"` is 12 |
+| `rsIngestHead(pEvent, pExpectedHandleHex, pMinSeq)` | Array | the parsed head, only if the drained `dhtMutableItem` event is for that handle and salt, the value is a strict RSH1 record, the embedded and BEP44 seqs agree, the seq is **not below `pMinSeq`** (the reader's watermark - the highest seq already accepted for this handle; pass `0` for a handle never seen), and the BEP44 signature verifies under the handle. `pMinSeq` is REQUIRED and fails closed: an omitted or non-numeric watermark is refused, because a validly-signed OLD head is a rollback and every other check here passes on one. Both the rollback gate and the seq agreement are decided by `rsSeqCompare`, so they hold up to 2^53 - 1 |
 | `rsIngestPost(pEvent, pExpectedTarget, pAuthorHandleHex)` | Array | the parsed post, only if the event answers the expected target, the value's recomputed SHA-1 IS that target, and the author's signature verifies |
 | `rsIngestBlob(pEvent, pExpectedTarget)` | Data | the verified bytes of a raw content-addressed blob (a kind-C text chunk, a profileMeta display-name blob): the event answers the awaited target and the value hashes to it - rsIngestPost minus the post parse, because content addressing is what extends the naming record's authorSig to these bytes |
 

@@ -125,7 +125,7 @@ to the proven sender. Labels flip only on a dated engine report; the suite's
 
 | Document | What it is |
 |---|---|
-| [docs/api-reference.md](docs/api-reference.md) | the public `rs*` surface of the library: 106 handlers at 0.12.0, phases 1-8 |
+| [docs/api-reference.md](docs/api-reference.md) | the public `rs*` surface of the library: 107 handlers at 0.13.0, phases 1-8 |
 | [docs/two-machine-runbook.md](docs/two-machine-runbook.md) | how to drive the app on real OXT machines, phase by phase, with the log lines each step expects |
 | [docs/protocol-vectors.json](docs/protocol-vectors.json) | GENERATED: the Riptide Protocol conformance bundle, 67 golden vectors (one fixed identity, every wire record, derivation and target) plus 31 refusal vectors, for implementations in any language. Its prose half is the suite's [`docs/RIPTIDE-PROTOCOL.md`](https://github.com/SethMorrowSoftware/xtalk-suite/blob/main/docs/RIPTIDE-PROTOCOL.md). Regenerate with `python3 tools/export-protocol-vectors.py`, whose `--check` re-executes the bundle in the gate set; never edit it by hand |
 | [examples/README.md](examples/README.md) | the run guide for the app stack |

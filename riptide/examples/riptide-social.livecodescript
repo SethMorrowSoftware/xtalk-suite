@@ -195,8 +195,10 @@ script "riptideSocialApp"
 -- false) on failure and record the reason; nxLastError() returns it. cx*/sx*
 -- failures throw, so every foreign call in here sits inside a try. Binary is
 -- byte discipline (numToByte / byteToNum / byte chunks), never char/line/word
--- on bytes; itemDelimiter and lineDelimiter are global mutable state and are
--- saved, set, used and restored around every chunk read.
+-- on bytes; itemDelimiter and lineDelimiter are saved, set, used and restored
+-- around every chunk read (the itemDelimiter is handler-local on Windows and
+-- Linux, suite engine note 2.3, so the restore guards the rest of the handler
+-- that set it; the lineDelimiter is unprobed and treated as global).
 --
 -- EVENT SHAPE (the one record this library passes around): an event is an
 -- xTalk array with keys "id", "pubkey", "created_at", "kind", "content",
@@ -1134,11 +1136,15 @@ private function nxJsonPathNode pJson, pPath
          -- "abc" turned this never-throw library into an uncaught engine
          -- error, and OXT runs script on the UI thread.
          --
-         -- The itemDelimiter restore has to be repeated in the new early-out:
-         -- it is "/" at this point and it is GLOBAL mutable state (engine
-         -- notes 2.3), so returning without restoring would corrupt every
-         -- later `item` operation in the process - a far worse and much
-         -- quieter bug than the one being fixed.
+         -- The itemDelimiter restore is repeated in the new early-out: it is
+         -- "/" at this point. When this was written the delimiter was taken
+         -- for GLOBAL mutable state, so a missed restore read as corrupting
+         -- every later `item` operation in the process; engine note 2.3 has
+         -- since OBSERVED it handler-local on Windows and Linux (both
+         -- directions; no Mac run), so there it would misparse only the rest
+         -- of this handler. The restore stays: it costs nothing, macOS has not
+         -- run the probe, and tools/check-script-vectors.py pins it under the
+         -- interpreter, whose delimiter is global.
          if not nxIsDigits(tStep) then
             set the itemDelimiter to tSavedDelim
             nxSetError "nxJson: no element" && tStep
@@ -4974,6 +4980,10 @@ end nxrSocketTimeout
 --       hex chars (48 seal bytes + the 268-byte intro, times two); anything
 --       else is refused before a byte is decoded
 --   u64 travels as hi:u32 lo:u32 via binaryEncode("NN"), the BTXO discipline.
+--   Every wire integer (a seq, a tick, a timestamp, a size) is an integer
+--     from 0 to 2^53 - 1 (rsIsWireInt), and is ORDERED only through
+--     rsSeqCompare, on its u32 halves: the engine's `<` and `is` call
+--     integers one apart equal from about 4.5e14 (suite engine note 2.10).
 --   DHT targets travel as 40 ASCII hex; the all-zeros target means "none".
 --   On the DHT (phase 2): the stored BEP44 v is the BENCODED byte string of
 --     the record ("<len>:<bytes>"); the canonical signing buffer is
@@ -4981,7 +4991,7 @@ end nxrSocketTimeout
 --     bytes btDhtBep44SignBuf returns and torrent_shim.cpp verifies); an
 --     immutable item's target is SHA-1 of the bencoded value.
 
-constant kRsVersion = "0.12.0"
+constant kRsVersion = "0.13.0"
 constant kRsKeyMagic = "RIPTKEY1"
 constant kRsHeadMagic = "RSH1"
 constant kRsPostMagic = "RSP1"
@@ -5561,16 +5571,16 @@ end rsRoomId
 -- truncate. Max size 260 bytes, far under the 1000-byte BEP44 value cap.
 function rsBuildHead pSeq, pDisplayName, pLatestPost, pPrekey, pOnionAddr, pProfileMeta
    local tNameBytes, tOnion, tOnionChars, tLatest, tPrekeyT, tProfile, tOut
-   if pSeq is not an integer or pSeq < 0 then
-      rsSetError "rsBuildHead: seq must be a non-negative integer"
-      return empty
-   end if
    -- The seq field is a u64 on the wire, but xTalk numbers are doubles, so only
    -- values below 2^53 round-trip exactly. Refuse anything at or above that
    -- rather than serialize a seq that re-parses to a different number (a BEP44
    -- monotonic-counter field silently changing value is a correctness bug).
-   if pSeq >= 9007199254740992 then
-      rsSetError "rsBuildHead: seq must be below 2^53 to round-trip exactly"
+   -- The bound is rsIsWireInt's, decided on the halves (2026-09-25): spelled
+   -- `pSeq >= 9007199254740992` it also refused, on the engine only, every
+   -- seq within 19 of 2^53 (suite engine note 2.10).
+   if not rsIsWireInt(pSeq) then
+      rsSetError "rsBuildHead: seq must be a non-negative integer below 2^53" && \
+            "(so it round-trips exactly)"
       return empty
    end if
    put textEncode(pDisplayName, "UTF-8") into tNameBytes
@@ -5730,7 +5740,12 @@ end rsBuildPostChunked
 -- media list rather than anything that named a delimiter - and it survived
 -- the 2026-08-17 sweep for the same reason rsPersonaAllows's copy did:
 -- comma IS the engine default, so it is invisible until some caller sets
--- something else.
+-- something else. (That was the family's reading on 2026-08-29. The suite's
+-- engine note 2.3 has since OBSERVED the itemDelimiter handler-local on
+-- Windows and Linux, both directions, so there the set ended with the
+-- handler and no caller saw it. The wrapper stays: it costs nothing, macOS
+-- has not run the probe, and tools/check-script-vectors.py pins it under the
+-- interpreter, whose delimiter is global.)
 --
 -- Restored around the WHOLE body rather than at each exit, because there are
 -- SEVEN refusal exits here and a restore per exit is the line the next
@@ -5750,12 +5765,9 @@ end rsPostBody
 
 private function rsPostBodyInner pTimestamp, pPrevTarget, pKind, pTextContent, pChunkTargets, pMediaList
    local tPrev, tOut, tTextBytes, tChunkCount, tMediaCount, tItem, tNorm
-   if pTimestamp is an integer and pTimestamp >= 9007199254740992 then
-      rsSetError "rsPostBody: the timestamp must be below 2^53 to round-trip exactly"
-      return empty
-   end if
-   if pTimestamp is not an integer or pTimestamp < 0 then
-      rsSetError "rsPostBody: the timestamp must be a non-negative integer"
+   if not rsIsWireInt(pTimestamp) then
+      rsSetError "rsPostBody: the timestamp must be a non-negative integer" && \
+            "below 2^53 (so it round-trips exactly)"
       return empty
    end if
    put rsNormalizeTarget(pPrevTarget) into tPrev
@@ -6068,7 +6080,7 @@ private function rsAssembleChunkTextInner pChunkTargets, pParts
          rsSetError "rsAssembleChunkText: missing chunk" && tNorm
          return empty
       end if
-      if rsImmutableTarget(tPart) is not tNorm then
+      if ("h" & rsImmutableTarget(tPart)) is not ("h" & tNorm) then
          rsSetError "rsAssembleChunkText: chunk" && tNorm && \
                "does not hash to its own target"
          return empty
@@ -6144,12 +6156,12 @@ end rsBencodedByteStringLen
 -- can verify a head's signature even in a paste with no torrentxt at all.
 function rsBep44SignBuf pSalt, pSeq, pValue
    local tSaltBytes, tRawLen, tOut
-   if pSeq is not an integer or pSeq < 0 then
-      rsSetError "rsBep44SignBuf: seq must be a non-negative integer"
-      return empty
-   end if
-   if pSeq >= 9007199254740992 then
-      rsSetError "rsBep44SignBuf: seq must be below 2^53 to round-trip exactly"
+   -- 0 .. 2^53 - 1, decided on its halves (rsIsWireInt): this buffer is
+   -- rebuilt on the INGEST path too, so a bound the engine answered fuzzily
+   -- here would refuse, near 2^53, a seq the ingest checks above it accept
+   if not rsIsWireInt(pSeq) then
+      rsSetError "rsBep44SignBuf: seq must be an integer from 0 to 2^53 - 1" && \
+            "(below 2^53, so it round-trips exactly)"
       return empty
    end if
    put textEncode(pSalt, "UTF-8") into tSaltBytes
@@ -6187,6 +6199,78 @@ function rsImmutableTarget pValue
    end if
    return rsBinToHexString(sha1Digest(rsBencodeBytes(pValue)))
 end rsImmutableTarget
+
+-- Order two WIRE INTEGERS exactly (2026-09-25): "below", "equal" or
+-- "above" as pA is below, equal to or above pB, or EMPTY, with the reason
+-- in rsLastError(), when either is not an integer from 0 to 2^53 - 1 (the
+-- range every riptide builder accepts; rsIsWireInt). The seqs, ticks and
+-- watermarks riptide orders - the head and bridge rollback gates and seq
+-- agreement here, the demo's LAN replay guards and head watermarks - go
+-- through this and nothing else. A caller tests for the answer that LETS a
+-- record through (`is "above"`, or "above" or "equal"), never `is not
+-- "below"`, so an empty answer can only ever refuse.
+--
+-- WHY NOT `<`. Every numeric comparison on the engine calls two numbers
+-- EQUAL when they differ by less than 10 DBL_EPSILON of the smaller one
+-- (suite engine note 2.10: the engine source's rule, which reproduces every
+-- probe line the 2026-09-24 runs read), so two integers one apart compare
+-- equal from 450359962737050 (about 2^48.7), and d apart from about
+-- d x 4.5e14. These values are ATTACKER-SUPPLIED up to 2^53 - 1, where
+-- `tSeq < pMinSeq` let a replayed head up to 19 older through the rollback
+-- gate, and `tRec["seq"] <= tLast` dropped a newer LAN record. Pure IEEE -
+-- and so the family interpreter and every headless gate - orders all of
+-- them exactly, which is why none of them could see it.
+--
+-- HOW. Each operand splits into its two u32 halves, hi = trunc(v / 2^32)
+-- and lo = v - hi * 2^32, and the halves are compared, high first: the
+-- rule rsReadBEu64 decides its bound by. Dividing an integer below 2^53 by
+-- a power of two is exact, and so are trunc, the product and the
+-- difference, so both halves are exact integers below 2^32. Two of those
+-- that differ at all differ by at least 1 at a size where the engine's
+-- tolerance is below 1e-5, so every comparison below answers as exact
+-- integers do, under the engine's rule and under any looser one the probes
+-- left open. (Canonical DIGIT TEXT orders exactly too, shorter first, but
+-- `<` and `is` read two digit strings as NUMBERS (engine note 2.11), so it
+-- would need a letter prefix on both sides; the halves need nothing.)
+--
+-- WHAT IS COMPARED IS THE VALUE: an operand is the number the engine makes
+-- of it, so "0012", "12.0" and "1.2e1" are all 12 here, as they already
+-- were to `is an integer`. Every wire value that reaches a caller is a
+-- number rsReadBEu64 built from bytes, or torrentxt's decimal spelling of
+-- a native integer (an event seq), and below 2^53 that value is exact.
+-- tools/check-script-vectors.py replays this under the engine's rule and
+-- two margin models, after proving the engine's rule catches the naive
+-- `<` form that the ingest gates used to spell.
+function rsSeqCompare pA, pB
+   local tHiA, tLoA, tHiB, tLoB
+   if not rsIsWireInt(pA) then
+      rsSetError "rsSeqCompare: both operands must be integers from 0 to" && \
+            "2^53 - 1"
+      return empty
+   end if
+   if not rsIsWireInt(pB) then
+      rsSetError "rsSeqCompare: both operands must be integers from 0 to" && \
+            "2^53 - 1"
+      return empty
+   end if
+   put trunc(pA / 4294967296) into tHiA
+   put pA - tHiA * 4294967296 into tLoA
+   put trunc(pB / 4294967296) into tHiB
+   put pB - tHiB * 4294967296 into tLoB
+   if tHiA < tHiB then
+      return "below"
+   end if
+   if tHiA > tHiB then
+      return "above"
+   end if
+   if tLoA < tLoB then
+      return "below"
+   end if
+   if tLoA > tLoB then
+      return "above"
+   end if
+   return "equal"
+end rsSeqCompare
 
 -- Verify and unpack a drained dhtMutableItem EVENT as a followee's feed
 -- head. pEvent is the event array btPoll returned (publicKey, salt, seq,
@@ -6229,6 +6313,7 @@ end rsImmutableTarget
 -- a strictly higher per-device seq, feed state as max).
 function rsIngestHead pEvent, pExpectedHandleHex, pMinSeq
    local tHandle, tEventKey, tSeq, tHead, tSigHex, tSig, tBuf, tOk, tErr
+   local tOrder
    put toLower(pExpectedHandleHex) into tHandle
    if not rsIsHexOfLen(tHandle, 64) then
       rsSetError "rsIngestHead: the expected handle must be 64 hex chars"
@@ -6237,14 +6322,16 @@ function rsIngestHead pEvent, pExpectedHandleHex, pMinSeq
    -- Fail closed FIRST: a caller that omits the watermark gets refused, never
    -- served. Same sanity bounds as the event seq below (0 .. 2^53-1, the
    -- engine's exact-integer range - a double cannot compare a bigger one
-   -- correctly, so accepting one would make this very check unreliable).
-   if pMinSeq is not an integer or pMinSeq < 0 or pMinSeq >= 9007199254740992 then
+   -- correctly, so accepting one would make this very check unreliable),
+   -- decided on the value's halves (rsIsWireInt): `>= 9007199254740992`
+   -- itself answers true on the engine for every integer within 19 of 2^53.
+   if not rsIsWireInt(pMinSeq) then
       rsSetError "rsIngestHead: a reader watermark is required (pass 0 for a" && \
             "handle whose head has never been accepted)"
       return empty
    end if
    put toLower(pEvent["publicKey"]) into tEventKey
-   if not rsIsHexOfLen(tEventKey, 64) or tEventKey is not tHandle then
+   if not rsIsHexOfLen(tEventKey, 64) or ("h" & tEventKey) is not ("h" & tHandle) then
       rsSetError "rsIngestHead: the event is not for this handle"
       return empty
    end if
@@ -6256,21 +6343,32 @@ function rsIngestHead pEvent, pExpectedHandleHex, pMinSeq
       return empty
    end if
    put pEvent["seq"] into tSeq
-   if tSeq is not an integer or tSeq < 0 or tSeq >= 9007199254740992 then
+   if not rsIsWireInt(tSeq) then
       rsSetError "rsIngestHead: the event seq is not a sane integer"
       return empty
    end if
    -- The rollback gate. Placed after the seq SANITY check (so the comparison
    -- is between two numbers the engine can hold exactly) and before the parse
    -- and the signature verify (so a replayed head costs the reader nothing).
-   if tSeq < pMinSeq then
+   -- ORDERED EXACTLY (rsSeqCompare, 2026-09-25). It was `tSeq < pMinSeq`,
+   -- and the engine calls two numbers equal when they differ by less than
+   -- 10 DBL_EPSILON of the smaller (suite engine note 2.10), so by that
+   -- rule a head one older than the watermark was "not below" it from about
+   -- 4.5e14, and near 2^53 one up to 19 older: a replaying node chose from
+   -- a window of old heads. The test names the answers that LET a head through, so
+   -- a refusal from the helper (empty) refuses the head too.
+   put rsSeqCompare(tSeq, pMinSeq) into tOrder
+   if tOrder is not "above" and tOrder is not "equal" then
       rsSetError "rsIngestHead: this head is older than one already accepted" && \
             "for this handle (seq" && tSeq && "before" && pMinSeq & ")"
       return empty
    end if
    put rsParseHead(pEvent["value"]) into tHead
    if tHead is empty then return empty
-   if tHead["seq"] is not tSeq then
+   -- exact too: `is not` blurred the same way, so an author could sign a
+   -- head whose embedded seq sat a few below its BEP44 seq, and the reader's
+   -- watermark then took the embedded one
+   if rsSeqCompare(tHead["seq"], tSeq) is not "equal" then
       -- rsPublishHead uses the head's own embedded seq as the BEP44 seq, so
       -- a disagreement means this record was not published by this layer
       -- (or was reassembled); refuse rather than guess which counter to
@@ -6323,14 +6421,14 @@ function rsIngestPost pEvent, pExpectedTarget, pAuthorHandleHex
       return empty
    end if
    put toLower(pEvent["target"]) into tEventTarget
-   if tEventTarget is not tExpected then
+   if ("h" & tEventTarget) is not ("h" & tExpected) then
       rsSetError "rsIngestPost: the event names a different target"
       return empty
    end if
    put pEvent["value"] into tValue
    put rsImmutableTarget(tValue) into tComputed
    if tComputed is empty then return empty
-   if tComputed is not tExpected then
+   if ("h" & tComputed) is not ("h" & tExpected) then
       rsSetError "rsIngestPost: the value does not hash to its own target"
       return empty
    end if
@@ -6358,14 +6456,14 @@ function rsIngestBlob pEvent, pExpectedTarget
       return empty
    end if
    put toLower(pEvent["target"]) into tEventTarget
-   if tEventTarget is not tExpected then
+   if ("h" & tEventTarget) is not ("h" & tExpected) then
       rsSetError "rsIngestBlob: the event names a different target"
       return empty
    end if
    put pEvent["value"] into tValue
    put rsImmutableTarget(tValue) into tComputed
    if tComputed is empty then return empty
-   if tComputed is not tExpected then
+   if ("h" & tComputed) is not ("h" & tExpected) then
       rsSetError "rsIngestBlob: the value does not hash to its own target"
       return empty
    end if
@@ -6470,7 +6568,7 @@ function rsPublishImmutable pSession, pValue
       rsSetError "rsPublishImmutable: btDhtPutImmutable failed;" && tWhy
       return empty
    end if
-   if toLower(tTarget) is not tExpected then
+   if ("h" & toLower(tTarget)) is not ("h" & tExpected) then
       rsSetError "rsPublishImmutable: libtorrent's target" && tTarget && \
             "disagrees with the recomputed" && tExpected
       return empty
@@ -6619,14 +6717,18 @@ function rsMediaCreate pSession, pPath
             "handle"
       return empty
    end if
-   -- itemDelimiter is GLOBAL mutable state and this is the library's only
-   -- non-default set, so it is saved and restored around the NARROWEST
-   -- possible span - the path split, nothing else. Restoring here rather
-   -- than at each exit is not tidiness: this function has SEVEN exits, six
-   -- of them refusals, and a restore per exit is a line a later refusal
-   -- path forgets. The leak was real and its symptom was a mystery, not a
-   -- delimiter: a caller's later comma-joined item read returned the whole
-   -- list under "/" (the demo carried a point patch quoting exactly that).
+   -- This is the library's only non-default itemDelimiter set, so it is
+   -- saved and restored around the NARROWEST possible span - the path
+   -- split, nothing else. Restoring here rather than at each exit is not
+   -- tidiness: this function has SEVEN exits, six of them refusals, and a
+   -- restore per exit is a line a later refusal path forgets. C10
+   -- (2026-08-17) took the property for GLOBAL mutable state and described
+   -- the leak as a caller's later comma-joined item read returning the
+   -- whole list under "/" (the demo carried a point patch quoting exactly
+   -- that). The suite's engine note 2.3 has since OBSERVED the itemDelimiter
+   -- handler-local on Windows and Linux (both directions; no Mac run), so
+   -- there a "/" left at an exit ends with this handler; the narrow span
+   -- still keeps the rest of it on the default.
    put the itemDelimiter into tSavedDelim
    set the itemDelimiter to "/"
    put item 1 to -2 of pPath into tParent
@@ -7033,12 +7135,9 @@ end rsVerifyDmSigned
 -- cannot be expressed.
 function rsBuildIntro pTimestamp, pRecipientHandleHex, pSenderKxPubHex, pIdentitySeed
    local tRecipient, tKxPub, tSender, tBody
-   if pTimestamp is not an integer or pTimestamp < 0 then
-      rsSetError "rsBuildIntro: the timestamp must be a non-negative integer"
-      return empty
-   end if
-   if pTimestamp >= 9007199254740992 then
-      rsSetError "rsBuildIntro: the timestamp must be below 2^53"
+   if not rsIsWireInt(pTimestamp) then
+      rsSetError "rsBuildIntro: the timestamp must be a non-negative integer" && \
+            "below 2^53"
       return empty
    end if
    put toLower(pRecipientHandleHex) into tRecipient
@@ -7105,7 +7204,7 @@ function rsVerifyIntro pBytes, pMyHandleHex
    local tOut
    put rsParseIntro(pBytes) into tOut
    if tOut is empty then return empty
-   if tOut["recipientHandle"] is not toLower(pMyHandleHex) then
+   if ("h" & tOut["recipientHandle"]) is not ("h" & toLower(pMyHandleHex)) then
       rsSetError "rsVerifyIntro: this intro is addressed to" && \
             tOut["recipientHandle"] & ", not to me"
       return empty
@@ -7228,13 +7327,9 @@ function rsDmMessageBody pKind, pTimestamp, pBodyText
       rsSetError "rsDmMessageBody: the kind must be one of T, O, A"
       return empty
    end if
-   if pTimestamp is not an integer or pTimestamp < 0 then
+   if not rsIsWireInt(pTimestamp) then
       rsSetError "rsDmMessageBody: the timestamp must be a non-negative" && \
-            "integer"
-      return empty
-   end if
-   if pTimestamp >= 9007199254740992 then
-      rsSetError "rsDmMessageBody: the timestamp must be below 2^53"
+            "integer below 2^53"
       return empty
    end if
    put textEncode(pBodyText, "UTF-8") into tBody
@@ -7706,15 +7801,6 @@ end rsLanVerifyWelcome
 -- claims to have said it.
 --------------------------------------------------------------------------
 
--- A wire counter (seq / tick / timestamp): a non-negative integer below
--- 2^53, the exact-double cap (the rsDmMessageBody discipline).
-private function rsLanValidCount pValue
-   if pValue is not an integer then return false
-   if pValue < 0 then return false
-   if pValue >= 9007199254740992 then return false
-   return true
-end rsLanValidCount
-
 -- Sign a sync-record body under the shared LAN key, domain-tagged.
 private function rsLanSyncSign pBody, pMaster
    local tKeys, tSig, tErr
@@ -7768,7 +7854,7 @@ function rsLanBuildDraft pName, pSeq, pDraftText, pMaster
             kRsLanMaxName && "bytes"
       return empty
    end if
-   if not rsLanValidCount(pSeq) then
+   if not rsIsWireInt(pSeq) then
       rsSetError "rsLanBuildDraft: the seq must be a non-negative" && \
             "integer below 2^53"
       return empty
@@ -7879,7 +7965,7 @@ function rsLanBuildFeedState pName, pFeedSeq, pReadPeerHex, pReadUpTo, pMaster
             kRsLanMaxName && "bytes"
       return empty
    end if
-   if not rsLanValidCount(pFeedSeq) then
+   if not rsIsWireInt(pFeedSeq) then
       rsSetError "rsLanBuildFeedState: the feed seq must be a" && \
             "non-negative integer below 2^53"
       return empty
@@ -7894,7 +7980,7 @@ function rsLanBuildFeedState pName, pFeedSeq, pReadPeerHex, pReadUpTo, pMaster
          return empty
       end if
    end if
-   if not rsLanValidCount(pReadUpTo) then
+   if not rsIsWireInt(pReadUpTo) then
       rsSetError "rsLanBuildFeedState: the read-up-to timestamp must be" && \
             "a non-negative integer below 2^53"
       return empty
@@ -7998,7 +8084,7 @@ function rsLanBuildPresence pName, pTyping, pTick, pMaster
       rsSetError "rsLanBuildPresence: typing must be true or false"
       return empty
    end if
-   if not rsLanValidCount(pTick) then
+   if not rsIsWireInt(pTick) then
       rsSetError "rsLanBuildPresence: the tick must be a non-negative" && \
             "integer below 2^53"
       return empty
@@ -8112,7 +8198,7 @@ function rsLanBuildHandoff pName, pSeq, pInfoHash, pFileName, pFileSize, pMaster
             kRsLanMaxName && "bytes"
       return empty
    end if
-   if not rsLanValidCount(pSeq) then
+   if not rsIsWireInt(pSeq) then
       rsSetError "rsLanBuildHandoff: the seq must be a non-negative" && \
             "integer below 2^53"
       return empty
@@ -8130,7 +8216,7 @@ function rsLanBuildHandoff pName, pSeq, pInfoHash, pFileName, pFileSize, pMaster
             kRsLanMaxFile && "bytes (refused, never truncated)"
       return empty
    end if
-   if not rsLanValidCount(pFileSize) then
+   if not rsIsWireInt(pFileSize) then
       rsSetError "rsLanBuildHandoff: the file size must be a" && \
             "non-negative integer below 2^53"
       return empty
@@ -8288,17 +8374,21 @@ end rsAnonOnion
 function rsPersonaAllows pIsAnon, pTransport
    local tKnown, tSaved, tKnownTransport
    put "onion,dht,torrent,rp1,enet,dc,feed,media,nostr" into tKnown
-   -- SAVE AND RESTORE, and this one is a fix rather than a habit: this
-   -- handler set the itemDelimiter and never put it back, leaking comma to
-   -- everything that ran after it. That is the C10 defect (rsMediaCreate
-   -- leaking "/" for the rest of the session) in the one handler where it
-   -- reads worst - the app's Anon card paints the guard panel by calling
-   -- this nine times in a row, so a card repaint silently reset the
-   -- delimiter under whatever the pump was doing next. Benign in practice
-   -- only because comma IS the engine default, which is exactly why it
-   -- survived the 2026-08-17 sweep that found the other one. Fixed the same
-   -- way that one was: restore around the NARROWEST span, not at each exit,
-   -- because a restore per exit is the line the next refusal path forgets.
+   -- SAVE AND RESTORE. On 2026-08-29 this was a fix rather than a habit: this
+   -- handler set the itemDelimiter and never put it back, read then as
+   -- leaking comma to everything that ran after it. That is the C10 defect
+   -- (rsMediaCreate leaking "/" for the rest of the session) in the one
+   -- handler where it reads worst - the app's Anon card paints the guard
+   -- panel by calling this nine times in a row, so a card repaint would
+   -- silently reset the delimiter under whatever the pump was doing next.
+   -- Benign in practice only because comma IS the engine default, which is
+   -- exactly why it survived the 2026-08-17 sweep that found the other one.
+   -- Both readings took the delimiter for global state; the suite's engine
+   -- note 2.3 has since OBSERVED it handler-local on Windows and Linux (both
+   -- directions; no Mac run), so there it never left this handler. Fixed
+   -- the same way that one was: restore around the NARROWEST span, not at
+   -- each exit, because a restore per exit is the line the next refusal
+   -- path forgets.
    put the itemDelimiter into tSaved
    set the itemDelimiter to comma
    put (pTransport is among the items of tKnown) into tKnownTransport
@@ -8494,8 +8584,13 @@ function rsBtxoHeader pName, pTotalSize, pFlags
       rsSetError "rsBtxoHeader: the name must be 1..65535 UTF-8 bytes"
       return empty
    end if
-   if pTotalSize is not an integer or pTotalSize < 0 then
-      rsSetError "rsBtxoHeader: the total size must be a non-negative integer"
+   -- a wire integer like every other (rsIsWireInt, 2026-09-25): past 2^53
+   -- rsBEu64 would split a ROUNDED double, and the header would declare a
+   -- size that is not the one asked for; the receiver's rsReadBEu64 refuses
+   -- it anyway, but caps refuse on BUILD too (rule 4)
+   if not rsIsWireInt(pTotalSize) then
+      rsSetError "rsBtxoHeader: the total size must be a non-negative" && \
+            "integer below 2^53"
       return empty
    end if
    if pFlags is not an integer or pFlags < 0 or pFlags > 255 then
@@ -8883,13 +8978,9 @@ end rsNostrSignEvent
 -- discipline, applied to a pointer that leaves the app).
 function rsNostrNoteEvent pTimestamp, pText, pMediaList
    local tTags, tCount, tI, tHash, tSaved, tEvent, tErr
-   if pTimestamp is not an integer or pTimestamp < 0 then
+   if not rsIsWireInt(pTimestamp) then
       rsSetError "rsNostrNoteEvent: the timestamp must be a non-negative" && \
-            "integer"
-      return empty
-   end if
-   if pTimestamp >= 9007199254740992 then
-      rsSetError "rsNostrNoteEvent: the timestamp is out of range"
+            "integer below 2^53"
       return empty
    end if
    if pText is empty then
@@ -9004,13 +9095,14 @@ end rsNostrMediaTags
 function rsBuildBridge pSeq, pTimestamp, pMaster, pAuxHex
    local tIdSeed, tIdKeys, tNostr, tBody, tPre, tEdSig, tDigest
    local tSecHex, tSchSig, tAux, tErr
-   if pSeq is not an integer or pSeq < 0 or pSeq >= 9007199254740992 then
-      rsSetError "rsBuildBridge: the seq must be a non-negative integer"
+   if not rsIsWireInt(pSeq) then
+      rsSetError "rsBuildBridge: the seq must be a non-negative integer" && \
+            "below 2^53"
       return empty
    end if
-   if pTimestamp is not an integer or pTimestamp < 0 or \
-         pTimestamp >= 9007199254740992 then
-      rsSetError "rsBuildBridge: the timestamp must be a non-negative integer"
+   if not rsIsWireInt(pTimestamp) then
+      rsSetError "rsBuildBridge: the timestamp must be a non-negative integer" && \
+            "below 2^53"
       return empty
    end if
    if pAuxHex is not empty and not rsIsHexOfLen(toLower(pAuxHex), 64) then
@@ -9119,7 +9211,7 @@ function rsVerifyBridge pBytes, pExpectHandleHex, pExpectNostrPubHex
          rsSetError "rsVerifyBridge: the expected handle must be 64 hex chars"
          return empty
       end if
-      if tRec["handle"] is not tWantHandle then
+      if ("h" & tRec["handle"]) is not ("h" & tWantHandle) then
          rsSetError "rsVerifyBridge: the record names a different handle"
          return empty
       end if
@@ -9131,7 +9223,7 @@ function rsVerifyBridge pBytes, pExpectHandleHex, pExpectNostrPubHex
                "chars"
          return empty
       end if
-      if tRec["nostrPub"] is not tWantPub then
+      if ("h" & tRec["nostrPub"]) is not ("h" & tWantPub) then
          rsSetError "rsVerifyBridge: the record names a different nostr key"
          return empty
       end if
@@ -9178,10 +9270,9 @@ function rsNostrBridgeEvent pBridgeBytes, pMaster, pTimestamp, pAuxHex
    local tRec, tHex, tTags, tEvent, tErr
    put rsParseBridge(pBridgeBytes) into tRec
    if tRec is empty then return empty
-   if pTimestamp is not an integer or pTimestamp < 0 or \
-         pTimestamp >= 9007199254740992 then
+   if not rsIsWireInt(pTimestamp) then
       rsSetError "rsNostrBridgeEvent: the timestamp must be a non-negative" && \
-            "integer"
+            "integer below 2^53"
       return empty
    end if
    put rsBinToHexString(pBridgeBytes) into tHex
@@ -9290,7 +9381,7 @@ function rsPublishBridge pSession, pBridgeBytes, pIdentitySeed
    -- A bridge names its handle INSIDE the signed span, so publishing one
    -- under a different key would put a record on the DHT that verifies as
    -- somebody else's linkage at a target nobody looks for. Refuse loudly.
-   if tKeys["handle"] is not tRec["handle"] then
+   if ("h" & tKeys["handle"]) is not ("h" & tRec["handle"]) then
       rsSetError "rsPublishBridge: the signing seed is not the handle the" && \
             "bridge names"
       return false
@@ -9382,6 +9473,7 @@ end rsRequestBridge
 -- seq is accepted (a refresh), strictly older is refused (a rollback).
 function rsIngestBridge pEvent, pExpectedHandleHex, pMinSeq
    local tHandle, tEventKey, tSeq, tRec, tSigHex, tSig, tBuf, tOk, tErr
+   local tOrder
    put toLower(pExpectedHandleHex) into tHandle
    if not rsIsHexOfLen(tHandle, 64) then
       rsSetError "rsIngestBridge: the expected handle must be 64 hex chars"
@@ -9389,14 +9481,15 @@ function rsIngestBridge pEvent, pExpectedHandleHex, pMinSeq
    end if
    -- Fail closed FIRST, before the event is even looked at: an untaught
    -- caller gets a refusal, never a served record. Same bounds as the event
-   -- seq below (0 .. 2^53-1, the engine's exact-integer range).
-   if pMinSeq is not an integer or pMinSeq < 0 or pMinSeq >= 9007199254740992 then
+   -- seq below (0 .. 2^53-1, the engine's exact-integer range), decided on
+   -- the halves as rsIngestHead's are.
+   if not rsIsWireInt(pMinSeq) then
       rsSetError "rsIngestBridge: a reader watermark is required (pass 0 for a" && \
             "handle whose bridge has never been accepted)"
       return empty
    end if
    put toLower(pEvent["publicKey"]) into tEventKey
-   if not rsIsHexOfLen(tEventKey, 64) or tEventKey is not tHandle then
+   if not rsIsHexOfLen(tEventKey, 64) or ("h" & tEventKey) is not ("h" & tHandle) then
       rsSetError "rsIngestBridge: the event is not for this handle"
       return empty
    end if
@@ -9407,14 +9500,17 @@ function rsIngestBridge pEvent, pExpectedHandleHex, pMinSeq
       return empty
    end if
    put pEvent["seq"] into tSeq
-   if tSeq is not an integer or tSeq < 0 or tSeq >= 9007199254740992 then
+   if not rsIsWireInt(tSeq) then
       rsSetError "rsIngestBridge: the event seq is not a sane integer"
       return empty
    end if
    -- The rollback gate, in the same place as rsIngestHead's: after the seq
    -- sanity check (two exact integers) and before the two signature
-   -- verifications (a replayed bridge costs the reader nothing).
-   if tSeq < pMinSeq then
+   -- verifications (a replayed bridge costs the reader nothing). Ordered
+   -- exactly, for rsIngestHead's reason (its rollback gate says why); the
+   -- test names the answers that let a bridge through.
+   put rsSeqCompare(tSeq, pMinSeq) into tOrder
+   if tOrder is not "above" and tOrder is not "equal" then
       rsSetError "rsIngestBridge: this bridge is older than one already" && \
             "accepted for this handle (seq" && tSeq && "before" && pMinSeq & ")"
       return empty
@@ -9442,7 +9538,7 @@ function rsIngestBridge pEvent, pExpectedHandleHex, pMinSeq
    end if
    put rsVerifyBridge(pEvent["value"], tHandle, empty) into tRec
    if tRec is empty then return empty
-   if tRec["seq"] is not tSeq then
+   if rsSeqCompare(tRec["seq"], tSeq) is not "equal" then
       rsSetError "rsIngestBridge: the BEP44 seq and the bridge's embedded" && \
             "seq disagree"
       return empty
@@ -9651,6 +9747,34 @@ private function rsReadBEu32 pBytes
    put byteToNum(byte 4 of pBytes) into tD
    return ((tA * 256 + tB) * 256 + tC) * 256 + tD
 end rsReadBEu32
+
+-- An integer from 0 to 2^53 - 1: the one range every riptide wire counter
+-- (a seq, a tick, a timestamp, a size) is built, parsed-then-ordered and
+-- watermarked in, and rsSeqCompare's domain. Decided on the HIGH HALF,
+-- never against 9007199254740992 itself: on the engine
+-- `pValue >= 9007199254740992` is TRUE for every integer within 19 of 2^53
+-- (suite engine note 2.10), so a bound spelled that way refuses values IEEE
+-- accepts - failing closed, but differently on the engine and in every
+-- headless gate, and on the ingest path it refused a head the rollback gate
+-- had just ordered. trunc(pValue / 2^32) is exact: below 2^21 for every
+-- integer below 2^53, and at least 2^21 for 2^53 itself, for any spelling
+-- that rounds to it (the text of 2^53 + 1 does), and for +inf. The checks
+-- are nested, not an `or` chain, because both operands of `or` evaluate
+-- (engine note 2.5) and the division must never see a non-number.
+private function rsIsWireInt pValue
+   local tHi
+   if pValue is not an integer then
+      return false
+   end if
+   if pValue < 0 then
+      return false
+   end if
+   put trunc(pValue / 4294967296) into tHi
+   if tHi > 2097151 then
+      return false
+   end if
+   return true
+end rsIsWireInt
 
 private function rsReadBEu64 pBytes
    -- A big-endian u64, REFUSED (empty) past 2^53.
@@ -11741,7 +11865,10 @@ end oxStripLineEnd
 private function oxFieldAfter pText, pMarker
    -- The whitespace-delimited token immediately following pMarker in pText, or
    -- empty. Used for METHODS=, PROGRESS=, ServiceID=, version=, SERVERHASH=, etc.
-   -- itemDelimiter is global mutable state, so save and restore it (gotcha 7).
+   -- Save and restore the itemDelimiter (gotcha 7). It is handler-local on
+   -- Windows and Linux (engine note 2.3), so this cannot reach a caller
+   -- there; the restore is the family's rule, costs nothing, and holds on
+   -- macOS, which has not run the probe.
    local tPos, tRest, tSaved, tOut
    put offset(pMarker, pText) into tPos
    if tPos is 0 then
@@ -13886,7 +14013,7 @@ command raCreate
       if tSealed is empty then
          throw "rsSealMasterSeed:" && rsLastError()
       end if
-      -- the folder half of the write, itemDelimiter guarded (global state)
+      -- the folder half of the write, itemDelimiter saved and restored
       put the itemDelimiter into tSaved
       set the itemDelimiter to "/"
       put item 1 to -2 of tPath into tFolder
@@ -14400,15 +14527,29 @@ end raExpire
 -- sSeq, which is restored from the state file and may be ahead of anything
 -- this run has ingested. Returns 0 for a handle never seen, which is the
 -- affirmative "no prior head" the library asks for.
+-- The two are ordered EXACTLY (rsSeqCompare, 2026-09-25): `tSeen > tFloor`
+-- is a comparison the engine calls equal for integers up to 19 apart near
+-- 2^53 (suite engine note 2.10), so it could hand the library the LOWER
+-- watermark and re-open a rollback window. A stored value that is not a
+-- wire integer at all (never written by this code, but the state file is
+-- read back) answers EMPTY, which rsIngestHead refuses loudly: fail closed,
+-- never a guess at which watermark to trust.
 private function raHeadWatermark pHandleHex, pFloor
-   local tSeen, tFloor
+   local tSeen, tFloor, tOrder
    put 0 into tFloor
    if pFloor is an integer and pFloor > 0 then
       put pFloor into tFloor
    end if
    put sHeadSeen[toLower(pHandleHex)] into tSeen
-   if tSeen is an integer and tSeen > tFloor then
+   if tSeen is empty then
+      return tFloor
+   end if
+   put rsSeqCompare(tSeen, tFloor) into tOrder
+   if tOrder is "above" then
       return tSeen
+   end if
+   if tOrder is empty then
+      return empty
    end if
    return tFloor
 end raHeadWatermark
@@ -14416,14 +14557,27 @@ end raHeadWatermark
 -- Raise the watermark after a head is ACCEPTED. Monotone by construction: it
 -- never moves down, so an out-of-order arrival cannot re-open the window a
 -- newer head already closed.
+-- Exactly ordered (rsSeqCompare, 2026-09-25): with `pSeq > tSeen` a newer
+-- head near 2^53 read as "not above" and the watermark stayed put, which
+-- left the gap between the two open to a replay. A stored value that is not
+-- an integer self-heals to the accepted seq, as it always did; one that is
+-- an integer the helper refuses stays put, and rsIngestHead refuses on it.
 private command raHeadAccepted pHandleHex, pSeq
-   local tKey, tSeen
+   local tKey, tSeen, tRaise
    if pSeq is not an integer or pSeq < 0 then
       exit raHeadAccepted
    end if
    put toLower(pHandleHex) into tKey
    put sHeadSeen[tKey] into tSeen
-   if tSeen is not an integer or pSeq > tSeen then
+   put false into tRaise
+   if tSeen is not an integer then
+      put true into tRaise
+   else
+      if rsSeqCompare(pSeq, tSeen) is "above" then
+         put true into tRaise
+      end if
+   end if
+   if tRaise then
       put pSeq into sHeadSeen[tKey]
       -- MARK DIRTY, or the watermark never reaches disk. raAppSave runs only
       -- when sAppDirty is "true" (the debounced tick and raNxTeardown both
@@ -14438,6 +14592,12 @@ end raHeadAccepted
 
 command raHandleEvent pEvent
    local tHead, tPost, tNext, tOk, tKeyCount
+   -- DHT targets compare as TEXT, a letter on each side: bare `is` reads
+   -- two number-like texts as NUMBERS (suite engine note 2.11), so a
+   -- 40-hex target shaped digits-e-digits could match a different one,
+   -- and one that is all zeros but shorter reads as the zero target.
+   -- Found by the family checker's check 23 (2026-09-25); verified
+   -- statically; needs an OXT pass.
    switch pEvent["name"]
       case "dhtMutableItem"
          if sDmAwaitDmHead is "true" and sDmTarget is not empty then
@@ -14447,7 +14607,7 @@ command raHandleEvent pEvent
             if tKeyCount > 0 then
                raHeadAccepted sDmTarget, tHead["seq"]
                put empty into sDmAwaitDmHead
-               if tHead["prekeyTarget"] is rsZeroTarget() then
+               if ("h" & tHead["prekeyTarget"]) is ("h" & rsZeroTarget()) then
                   raDmLog raDmShort(sDmTarget) && "publishes no prekey" && \
                         "(their app predates DMs); cannot open a channel."
                else
@@ -14463,7 +14623,7 @@ command raHandleEvent pEvent
                   -- A.9: the head also names a profileMeta blob (spec
                   -- 4.1's display name); fetch and show it beside the
                   -- handle, degrading honestly when it is absent
-                  if tHead["profileMetaTarget"] is rsZeroTarget() then
+                  if ("h" & tHead["profileMetaTarget"]) is ("h" & rsZeroTarget()) then
                      raDmLog "they publish no profile-name blob;" && \
                            "showing the handle."
                   else
@@ -14487,7 +14647,7 @@ command raHandleEvent pEvent
                raHeadAccepted sHandle, tHead["seq"]
                put empty into sAwaitOwn
                put tHead["seq"] into sSeq
-               if tHead["latestPostTarget"] is not rsZeroTarget() then
+               if ("h" & tHead["latestPostTarget"]) is not ("h" & rsZeroTarget()) then
                   put tHead["latestPostTarget"] into sMyLatest
                end if
                raFeedNote "raIdOut", "recovered your head: seq" && sSeq & comma && "latest post" && tHead["latestPostTarget"]
@@ -14507,7 +14667,7 @@ command raHandleEvent pEvent
                -- out of band"); fetch it and show it, verified by its
                -- content address on arrival - and say so honestly when
                -- the head carries the none target instead.
-               if tHead["profileMetaTarget"] is rsZeroTarget() then
+               if ("h" & tHead["profileMetaTarget"]) is ("h" & rsZeroTarget()) then
                   raFeedNote "raTheirFeed", "no profile-name blob published (the head carries the none target)."
                else
                   put tHead["profileMetaTarget"] into sProfileNext
@@ -14518,7 +14678,7 @@ command raHandleEvent pEvent
                      put empty into sProfileNext
                   end if
                end if
-               if tHead["latestPostTarget"] is rsZeroTarget() then
+               if ("h" & tHead["latestPostTarget"]) is ("h" & rsZeroTarget()) then
                   raFeedNote "raTheirFeed", "no posts yet."
                else
                   put tHead["latestPostTarget"] into sWalkNext
@@ -14534,26 +14694,26 @@ command raHandleEvent pEvent
          end if
          break
       case "dhtImmutableItem"
-         if sDmAwaitPrekey is not empty and pEvent["target"] is sDmAwaitPrekey then
+         if sDmAwaitPrekey is not empty and ("h" & pEvent["target"]) is ("h" & sDmAwaitPrekey) then
             raDmPrekeyArrived pEvent["value"]
          end if
          -- the kind-C reassembly walk (A2) and the profileMeta reader
          -- (A.9) ride the same event stream as the chain walk, each with
          -- its own await slot - independent ifs, the prekey-vs-walk
          -- pattern, so concurrent lookups never steal each other's answer
-         if sChunkNext is not empty and pEvent["target"] is sChunkNext then
+         if sChunkNext is not empty and ("h" & pEvent["target"]) is ("h" & sChunkNext) then
             raChunkArrived pEvent
          end if
-         if sProfileNext is not empty and pEvent["target"] is sProfileNext then
+         if sProfileNext is not empty and ("h" & pEvent["target"]) is ("h" & sProfileNext) then
             raFeedNote "raTheirFeed", raProfileLine(pEvent, sProfileNext)
             put empty into sProfileNext
          end if
          if sDmProfileNext is not empty and \
-               pEvent["target"] is sDmProfileNext then
+               ("h" & pEvent["target"]) is ("h" & sDmProfileNext) then
             raDmLog raProfileLine(pEvent, sDmProfileNext)
             put empty into sDmProfileNext
          end if
-         if sWalkNext is not empty and pEvent["target"] is sWalkNext then
+         if sWalkNext is not empty and ("h" & pEvent["target"]) is ("h" & sWalkNext) then
             put rsIngestPost(pEvent, sWalkNext, sFollowHandle) into tPost
             put the number of lines of the keys of tPost into tKeyCount
             if tKeyCount is 0 then
@@ -14581,14 +14741,15 @@ command raHandleEvent pEvent
                   -- under the authorSig); surface it and pre-fill the strip
                   -- with the first hash so Fetch + play is one click
                   raFeedNote "raTheirFeed", "  media attachment(s):" && tPost["mediaTargets"]
-                  -- itemDelimiter is global mutable state; set it right
-                  -- before the item read, and target card 1's field,
-                  -- guarded. The handler that used to leave it as "/" was
-                  -- the LIBRARY (rsMediaCreate), fixed at its source to
-                  -- save and restore the narrowest span; this line stays
-                  -- as defence in depth because the pump reaches here from
-                  -- any card after any handler, and one line is cheaper
-                  -- than trusting every caller in a file no harness runs.
+                  -- set the itemDelimiter right before the item read, and
+                  -- target card 1's field, guarded. This once blamed a
+                  -- global delimiter left as "/" by the LIBRARY
+                  -- (rsMediaCreate, fixed at its source to save and restore
+                  -- the narrowest span); the suite's engine note 2.3 has
+                  -- since observed the itemDelimiter handler-local on
+                  -- Windows and Linux, so there no other handler can set it
+                  -- for this one. The line stays: one line is cheaper than
+                  -- an assumption, and macOS has not run the probe.
                   set the itemDelimiter to comma
                   if there is a field "raMediaHash" of card 1 then
                      if field "raMediaHash" of card 1 is empty then
@@ -14598,7 +14759,7 @@ command raHandleEvent pEvent
                   end if
                end if
                put tPost["prevPostTarget"] into tNext
-               if tNext is rsZeroTarget() then
+               if ("h" & tNext) is ("h" & rsZeroTarget()) then
                   raFeedNote "raTheirFeed", "chain COMPLETE:" && sWalkCount && "post(s), every authorSig verified."
                   put empty into sWalkNext
                else if sWalkCount >= kWalkMax then
@@ -14890,9 +15051,12 @@ command raAttach
       exit raAttach
    end if
    put it into sPendingMediaPath
-   -- itemDelimiter is global mutable state; take the leaf, then RESTORE it
-   -- to comma (the pump's raHandleEvent reads comma-joined media lists, and
-   -- leaving it as "/" made item 1 return the whole list)
+   -- take the leaf, then set the itemDelimiter back to comma for the rest
+   -- of this handler. This once said the delimiter was global, so that
+   -- leaving "/" made the pump's raHandleEvent read item 1 as the whole
+   -- media list; it is handler-local on Windows and Linux (the suite's
+   -- engine note 2.3; no Mac run), so there "/" ends with raAttach, and
+   -- raHandleEvent sets comma itself.
    set the itemDelimiter to "/"
    put item -1 of sPendingMediaPath into tShortName
    set the itemDelimiter to comma
@@ -14954,7 +15118,7 @@ command raDmStart
       uiStatus "A handle is 64 hex characters (from the author's Feed card).", "warn"
       exit raDmStart
    end if
-   if tHandle is sHandle then
+   if ("h" & tHandle) is ("h" & sHandle) then
       uiStatus "That is your own handle; DM someone else.", "warn"
       exit raDmStart
    end if
@@ -14978,7 +15142,9 @@ end raDmStart
 -- first contact readable only by the person the post chain belongs to.
 command raDmPrekeyArrived pValue
    local tParsed, tH
-   if rsImmutableTarget(pValue) is not sDmAwaitPrekey then
+   -- the content address compares as TEXT, a letter on each side (suite
+   -- engine note 2.11; raHandleEvent has why)
+   if ("h" & rsImmutableTarget(pValue)) is not ("h" & sDmAwaitPrekey) then
       raDmLog "a prekey answer did not hash to its target; ignored."
       exit raDmPrekeyArrived
    end if
@@ -15936,6 +16102,27 @@ private function raLanDevKey pName
    return tHex
 end raLanDevKey
 
+-- The per-device replay guard of three record kinds (a draft's seq, a
+-- presence tick, a handoff's seq): true only for a wire integer strictly
+-- above pLast, the last one applied for that device, or for any wire
+-- integer when nothing has been applied yet (pLast empty). Ordered by
+-- rsSeqCompare (2026-09-25), never `<=`: the engine calls integers one apart
+-- EQUAL from about 4.5e14 (suite engine note 2.10), and a record's counter
+-- comes off the wire up to 2^53 (rsReadBEu64), so `tRec["seq"] <= tLast`
+-- silently DROPPED a newer record near there - the guard's refusal is
+-- silent by design, so nothing said so. A counter the helper refuses
+-- (2^53 itself, which no builder emits) is not newer: fail closed. The
+-- counters here seed from `the seconds` and never get near the range; the
+-- guard is exact because the wire value is the sender's to choose.
+-- Verified statically + headless (check-demo-boot drives it under the
+-- engine's comparison rule); needs an OXT pass.
+private function raLanIsNewer pValue, pLast
+   if pLast is empty then
+      return rsSeqCompare(pValue, 0) is not empty
+   end if
+   return rsSeqCompare(pValue, pLast) is "above"
+end raLanIsNewer
+
 -- Remember that this LINK carried this device, so a disconnect can drop
 -- exactly the state it fed us. Called on every APPLIED record (a refused
 -- one must leave no trace), with the device's raLanDevKey. A nested set,
@@ -16024,7 +16211,7 @@ end raLanRelay
 -- ABSOLUTE state. Cross-card law: the draft field lives on the Devices
 -- card and the pump runs anywhere - qualify and guard every reference.
 command raLanSyncTick
-   local tNow, tText, tTyping, tBytes
+   local tNow, tText, tTyping, tBytes, tFeedChanged
    if sMasterSeed is empty or sLanName is empty then
       exit raLanSyncTick
    end if
@@ -16063,7 +16250,23 @@ command raLanSyncTick
    -- The demo has no per-conversation read state to publish, so the
    -- record's read-receipt half travels as the none spelling (received
    -- receipts are still verified and logged).
-   if sSeq is an integer and sSeq > 0 and sSeq is not sLanFeedLast then
+   -- "changed" is decided exactly (rsSeqCompare): `sSeq is not sLanFeedLast`
+   -- called a seq one above the last one sent unchanged from about 4.5e14
+   -- (suite engine note 2.10), so the new claim was never broadcast.
+   -- Nothing sent yet (sLanFeedLast empty) is a change; nested, not `and`,
+   -- so the helper never runs on a value it would refuse (both operands of
+   -- `and` evaluate, engine note 2.5).
+   put false into tFeedChanged
+   if sSeq is an integer and sSeq > 0 then
+      if sLanFeedLast is empty then
+         put true into tFeedChanged
+      else
+         if rsSeqCompare(sSeq, sLanFeedLast) is not "equal" then
+            put true into tFeedChanged
+         end if
+      end if
+   end if
+   if tFeedChanged then
       put rsLanBuildFeedState(sLanName, sSeq, empty, 0, sMasterSeed) \
             into tBytes
       if tBytes is not empty then
@@ -16101,7 +16304,7 @@ end raLanSyncTick
 -- string (the declarations say why); the NAME is what the log and the
 -- panels show, the key is only ever an array index.
 command raLanSyncReceive pPeer, pKind, pBytes
-   local tRec, tLast, tDev
+   local tRec, tDev, tMine
    if sLanDevices[pPeer] is empty then
       raLanLog "stranger record refused (unadmitted peer): kind" && pKind
       exit raLanSyncReceive
@@ -16125,11 +16328,7 @@ command raLanSyncReceive pPeer, pKind, pBytes
                "refused: its device name could not be keyed"
          exit raLanSyncReceive
       end if
-      put sLanPeerSeq[tDev] into tLast
-      if tLast is empty then
-         put -1 into tLast
-      end if
-      if tRec["seq"] <= tLast then
+      if not raLanIsNewer(tRec["seq"], sLanPeerSeq[tDev]) then
          exit raLanSyncReceive
       end if
       raLanNoteName pPeer, tDev
@@ -16146,7 +16345,14 @@ command raLanSyncReceive pPeer, pKind, pBytes
          raLanLog "stranger record refused:" && rsLastError()
          exit raLanSyncReceive
       end if
-      if tRec["feedSeq"] > sSeq then
+      -- MAX-applied, ordered exactly (rsSeqCompare; `> sSeq` blurred near
+      -- 2^53 like the replay guards below). No head of our own yet counts
+      -- as 0, as the old comparison against an empty sSeq did.
+      put sSeq into tMine
+      if tMine is empty then
+         put 0 into tMine
+      end if
+      if rsSeqCompare(tRec["feedSeq"], tMine) is "above" then
          put tRec["feedSeq"] into sSeq
          put sSeq into sLanFeedLast
          raLanLog "feed seq" && sSeq && "adopted from" && tRec["name"] & \
@@ -16176,11 +16382,7 @@ command raLanSyncReceive pPeer, pKind, pBytes
                "refused: its device name could not be keyed"
          exit raLanSyncReceive
       end if
-      put sLanPeerTick[tDev] into tLast
-      if tLast is empty then
-         put -1 into tLast
-      end if
-      if tRec["tick"] <= tLast then
+      if not raLanIsNewer(tRec["tick"], sLanPeerTick[tDev]) then
          exit raLanSyncReceive
       end if
       raLanNoteName pPeer, tDev
@@ -16213,11 +16415,7 @@ command raLanSyncReceive pPeer, pKind, pBytes
                "refused: its device name could not be keyed"
          exit raLanSyncReceive
       end if
-      put sLanPeerMediaSeq[tDev] into tLast
-      if tLast is empty then
-         put -1 into tLast
-      end if
-      if tRec["seq"] <= tLast then
+      if not raLanIsNewer(tRec["seq"], sLanPeerMediaSeq[tDev]) then
          exit raLanSyncReceive
       end if
       raLanNoteName pPeer, tDev
@@ -16420,8 +16618,8 @@ command raLanSendMedia
       raLanLog "rsMediaCreate refused:" && rsLastError()
       exit raLanSendMedia
    end if
-   -- itemDelimiter is global mutable state; take the leaf, then RESTORE
-   -- it to comma (the raAttach lesson)
+   -- take the leaf, then set the itemDelimiter back to comma for the rest
+   -- of this handler (the raAttach shape)
    set the itemDelimiter to "/"
    put item -1 of tPath into tShortName
    set the itemDelimiter to comma
@@ -16475,7 +16673,9 @@ command raLanMediaGet
    if sLanMediaWatch is an integer and sLanMediaWatch > 0 then
       put rsMediaStatus(sLanMediaWatch) into tS
       if tS is an array then
-         if toLower(tS["infoHashV1"]) is tHash and \
+         -- the info-hash compares as TEXT, a letter on each side (suite
+         -- engine note 2.11: bare `is` reads number-like hex as a number)
+         if ("h" & toLower(tS["infoHashV1"])) is ("h" & tHash) and \
                tS["filePath"] is not empty then
             if there is a file tS["filePath"] then
                -- existence is not playability (raMediaFrontReady's story)
@@ -17341,7 +17541,9 @@ command raNxFollow
       raNxNote "not an npub or a 64-hex key:" && rsLastError()
       exit raNxFollow
    end if
-   if tHex is sNxPubkey then
+   -- as TEXT, a letter on each side (suite engine note 2.11): a pasted key
+   -- shaped digits-e-digits must not read as a number equal to ours
+   if ("h" & tHex) is ("h" & sNxPubkey) then
       raNxNote "that is your own key."
       exit raNxFollow
    end if
@@ -17557,10 +17759,12 @@ command raAppLoad
             && "damaged file). Starting empty; nothing was overwritten."
       exit raAppLoad
    end if
-   -- BOTH delimiters saved and restored. Restoring the itemDelimiter to a
-   -- hard-coded comma would be right only until some caller had set it to
-   -- something else, which is exactly the C10 shape (a handler that leaves
-   -- a delimiter behind, and a mystery about lists two rails away).
+   -- BOTH delimiters saved and restored, to what was found rather than a
+   -- hard-coded comma: the family's rule, and under the global reading C10
+   -- was written in, the difference between a clean handler and a mystery
+   -- about lists two rails away. On Windows and Linux the itemDelimiter is
+   -- handler-local (the suite's engine note 2.3), so what was found is comma
+   -- there; the lineDelimiter has not been probed.
    put the lineDelimiter into tSaved
    put the itemDelimiter into tSavedItem
    set the lineDelimiter to return
@@ -17752,7 +17956,8 @@ command raMediaGet
    if sMediaWatch is an integer and sMediaWatch > 0 then
       put rsMediaStatus(sMediaWatch) into tS
       if tS is an array then
-         if toLower(tS["infoHashV1"]) is tHash and tS["filePath"] is not empty then
+         -- the info-hash compares as TEXT, a letter on each side (engine note 2.11)
+         if ("h" & toLower(tS["infoHashV1"])) is ("h" & tHash) and tS["filePath"] is not empty then
             if there is a file tS["filePath"] then
                -- file-EXISTENCE is not playability: libtorrent allocates
                -- the file the moment metadata arrives, so this used to

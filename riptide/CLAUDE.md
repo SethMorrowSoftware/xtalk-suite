@@ -15,8 +15,8 @@ inside `riptide/`.
 The suite's capstone app, pure LiveCodeScript over the installed extension surfaces. It is
 structured like a member so the suite's gates walk it, but it is an APP: nothing here is compiled,
 nothing adds native surface, and `rs*` never becomes a library other members may call. Library
-0.12.0 (`kRsVersion`), 106 public `rs*` handlers; the suite's `tools/check-suite-coverage.py` prints
-the current coverage row (106/106 when last run) and is the authority over any copied number.
+0.13.0 (`kRsVersion`), 107 public `rs*` handlers; the suite's `tools/check-suite-coverage.py` prints
+the current coverage row (107/107 when last run) and is the authority over any copied number.
 
 | Path | Holds |
 |---|---|
@@ -111,7 +111,8 @@ Code comments cite these numbers; keep them.
   is refused, 0 is the affirmative "never seen", equal is accepted, strictly older refused; same-seq
   equivocation is out of scope. Apply semantics, no wire change (protocol 4.1, 8.1). No app in this
   tree ingests a foreign bridge yet. A deferral written in a comment is not a design, it is an open
-  defect with a polite name.
+  defect with a polite name. The seqs are ORDERED through `rsSeqCompare` and bounded through
+  `rsIsWireInt`, never `<` or `is` (trap 9, 2026-09-25).
 - The harness's session starts into a temporary, commits only on success and is never stopped; the
   suite generator aliases the folded copy to the core's session (`@CORESESSION@`), since a second
   `btStartSession` is refused and the live section would SKIP green. Since D-23 the fold reads the
@@ -273,7 +274,12 @@ Code comments cite these numbers; keep them.
 5. **Delimiter leaks.** C10 (2026-08-17): `rsMediaCreate` left `itemDelimiter` "/" on 7 exits;
    restore around the NARROWEST span, not per exit (`rsAnonFeedPage`'s `lineDelimiter` too).
    `raAttach` (2026-08-14) and `rsPersonaAllows` (2026-08-29, benign only because comma is the
-   default) leaked it as well. The demo's defensive re-set in `raHandleEvent` STAYS.
+   default) leaked it as well. The demo's defensive re-set in `raHandleEvent` STAYS. Those were read
+   as leaks into callers; suite engine note 2.3 has since OBSERVED the itemDelimiter handler-LOCAL on
+   Windows and Linux (both directions; no Mac run), so there each reached only the rest of its own
+   handler. The restores stay: they guard that and cost nothing (`tools/check-script-vectors.py` pins
+   the same discipline in `rsBuildPost` and `rsAssembleChunkText`, under an interpreter that keeps the
+   delimiter global).
 6. **A non-literal `constant kX = "a" & return & "b"`** kills compilation of the whole one-unit
    script (suite engine note 1.3; family checker check 22).
 7. **`Chunk: no target found` at `openStack` (the first phase-8 card, 2026-08-29) was never
@@ -303,18 +309,69 @@ Code comments cite these numbers; keep them.
    smaller operand, which the engine source puts at 10 (suite engine note 2.10), and the third
    probe line read 10 to the digit on Linux and on Windows on 2026-09-25 (`N is N + 1` true at
    N = 450359962737050, false one below). So integers 1
-   apart compare EQUAL from about 4.5e14 (2^48.7), not "past 2^52" as 8ea0f21's message said:
-   `rsIngestHead`'s and `rsIngestBridge`'s rollback and seq-agreement comparisons blur there, and
-   no counter or clock here gets near it (seqs start at 0 or at the seconds; open work in the
-   suite's `docs/WORK-PLAN.md`). Decide a
+   apart compare EQUAL from about 4.5e14 (2^48.7), not "past 2^52" as 8ea0f21's message said. Decide a
    wide-integer bound on exact integers that differ by at least 1 at a modest magnitude, never
    against a quotient. Tier 1c replays the table under the engine's rule and two looser candidates
    (fixture: the old line, which each must accept) and refuses any library comparison against a
-   quotient; the harness prints three probe lines: the first two measured the rule, the third
-   reads its consequences (wide integers, near zero, number-like text), and read them on Linux and
-   on Windows (2026-09-25) exactly as the source's rule predicts. Tier 1c holds the rule to every
-   recorded numeric answer of the three (probe 3's first two items are a text parse the interpreter
-   does not model, so they stay out).
+   quotient; the harness prints three probe lines on it (a fourth, below, reads the text parse):
+   the first two measured the rule, the third reads its consequences (wide integers, near zero,
+   number-like text), and read them on Linux and on Windows (2026-09-25) exactly as the source's
+   rule predicts. Tier 1c holds the rule to every
+   recorded numeric answer of the three (probe 3's first two items are a text parse, held by coinxt's
+   check-script-vectors tier 0 instead). Since 2026-09-25 the plain interpreter itself REFUSES
+   (`Indistinct`) a comparison the engine answers differently, by the tolerance (2.10) or by
+   reading text as a number (2.11), so tier 1c's plain legs expect the refusal where IEEE answered:
+   the nine of the fourteen numeric probe answers the engine gave otherwise, and the old bound at
+   2^53 + 1. The engine-model and margin legs are unchanged. A FOURTH probe line (2026-09-26,
+   the suite work plan's suite-wide #22) reads, one per form, the six text forms the interpreter
+   refuses as unsure (suite engine note 2.11: the engine source decides two of them, the C
+   library the other four, and no engine has read any): `"0x10" is "16"`,
+   `"inf" is "1e999"`, `"nan" is "nan"` (two texts built apart), an NBSP-edged "3" against 3
+   (`numToCodepoint(160)`, U+00A0 whatever the native encoding), a 385-digit run against
+   4294967296 and `"0x1.8" is "1.5"`. Each item is read inside its own `try` in `rstTextProbe`, so
+   a throw prints its text on the line; nothing is counted. It prints the engine source's
+   prediction `true,?,?,?,false,?` (each `?` the C library's to decide). The work plan's row named
+   `"0x.8" is "0.5"` (the interpreter answers it: text before strtod) and a run against itself
+   (true under every reading), so the line reads their refused siblings. check-script-vectors
+   tier 1e holds its shape, each item's statements exactly and the line's top-level place in
+   `rstSectionHead` (after seeded copies it must refuse) and the plain interpreter's refusal of
+   each item as the harness builds it. Verified statically; needs an OXT pass: it has
+   not met an engine, and its reading is owed to the next paste run.
+   **Ordering, 2026-09-25.** By the same rule (these consequences are INFERRED from it, not
+   observed) every ORDER over a wire integer blurred too, and those are accepted up to
+   2^53 - 1: `rsIngestHead`'s and `rsIngestBridge`'s rollback gate
+   (`tSeq < pMinSeq`) let a head or bridge up to 19 older than the watermark through near 2^53,
+   their seq agreement (`is not`) passed an author-signed record whose embedded seq sat a few off
+   its BEP44 seq, their sanity bounds and every builder's (`>= 9007199254740992`) refused the 19
+   integers below 2^53 on the engine only (and `rsBtxoHeader`'s total had no upper bound at all),
+   and the demo's LAN replay guards
+   (`tRec["seq"] <= tLast`, `tRec["tick"] <= tLast`, the handoff's), its feed MAX
+   (`feedSeq > sSeq`), its feed claim's change test (`sSeq is not sLanFeedLast`) and its head
+   watermarks (`pSeq > tSeen`, `tSeen > tFloor`) read a newer value as not newer. No counter or
+   clock here gets near the range (seqs start at 0 or at the seconds), but the wire value is the
+   sender's to choose. Every one now goes through ONE public helper, `rsSeqCompare(pA, pB)`
+   ("below", "equal", "above", or EMPTY when either is not an integer from 0 to 2^53 - 1), which
+   compares the two u32 halves as `rsReadBEu64` decides its bound, and every bound through
+   `rsIsWireInt` (the high half below 2^21; `rsLanValidCount` folded into it). Callers test for the
+   answer that lets a record THROUGH, so an empty answer refuses. It compares VALUES ("0012" is
+   12), as `is an integer` already did; every wire value reaching it is a number `rsReadBEu64` built
+   or torrentxt's decimal text of a native integer. No spec change: the wire and the apply rules
+   are as they were. A record at exactly 2^53, which the parsers accept and no builder emits, is
+   now dropped by the demo's LAN guards (outside the helper's domain: fail closed). Held by
+   check-script-vectors tier 1d (the table, `rsIngestHead` end to end near 2^53, `rsIngestBridge`'s
+   rollback gate, and the top of the range, under IEEE and all three models, after three seeded
+   copies of the spellings that shipped each read right under IEEE (replayed, `_model_ieee`),
+   wrong under the engine's rule, and REFUSED by the plain interpreter at exactly the rows the
+   engine reads wrong; `rsIngestBridge`'s seq AGREEMENT runs with tier 2, because only a bridge that verifies over
+   the real CoinXT reaches it), check-demo-boot's seq-order drive (the demo's seven ordering sites
+   near 2^53 under the engine's rule; test-demo-boot's fixture 6 seeds all the old spellings back
+   and requires every deciding check to fail), and the harness section "wire integers ordered
+   exactly" plus top-of-range checks in the BEP44, ingest and BTXO sections, which meet the engine
+   on the next paste run. The same review (2026-09-25) found that NO executing check reached the
+   bridge's agreement: deleting it left every gate green, and the harness's "a seq disagreeing
+   with the bridge's embedded seq" check changed the seq without re-signing, so the BEP44
+   signature refused it first. The harness now re-signs at the new seq and reads which gate
+   answered, for the head too. Verified statically + headless; needs an OXT pass.
 10. **A dead write is invisible to every other gate** (2026-09-08): `raAppSave` emitted `headseq`
     and `raAppLoad` never read it; check-demo-boot round-trips it now. Any value worth persisting is
     worth round-tripping in a test.
@@ -335,7 +392,17 @@ Code comments cite these numbers; keep them.
     `put ... into URL` answers through `the result` (2026-09-24): empty when the write landed, and the
     planted text, with nothing written, for a path in `World.url_write_refuse` (coinxt's save guards
     are held that way). An unplanted missing parent folder is still CREATED, which is looser than the
-    engine; a gate that needs that refusal plants it.
+    engine; a gate that needs that refusal plants it. Since 2026-09-25 the runner's own `<` family
+    refuses what the base refuses (suite engine notes 2.10 and 2.11) plus an ordering the text
+    answers and the engine may not (`"0x10" < "20"`), orders an EMPTY operand as 0 against a
+    number, as the base and the engine's source do (it ordered empty as text, so coin-wallet's
+    cwSatToBtc printed an empty amount "-0.00000000" in the boot), and matches `case` as TEXT,
+    the engine's way (until then `"1.0"` took `case "1"` here). A refused comparison inside an
+    `and` / `or` whose other operand settles the answer is dropped (the base's `_Undecided`).
+    `baseConvert` reads its source as the engine source's `MCMathConvertToBase10` does
+    (2026-09-26): empty text, an edge space, `0x` or `_` is a SCRIPT error a `try` catches (Python's
+    `int()` raised past every `try` on empty text, and read the rest), and a value past 2^32 - 1,
+    which the engine's uint32 accumulator wraps without an error, is refused (`Imprecise`).
 15. **The demo carries TWO socket libraries** (onionxt, nostrxt's relay layer). The embed tool drops
     both libraries' `socketError`/`socketClosed`/`socketTimeout` wrappers; the demo's own three call
     `oxSocketError`/`nxrSocketError` (and kin), then `pass`. Keep that `pass`: swallowing a socket
@@ -373,7 +440,8 @@ Caveats that travel with the ledger:
   2^53 + 1 row fell in them. The day's fixes (the ten-key check, the halves bound and exactness
   check, the numeric probe line) ran green in its second run, and the second probe line in its
   third. The harness's third probe line (added 2026-09-25) first ran on an engine the same day, on
-  Linux and then on Windows (the ledger), and read the same on both.
+  Linux and then on Windows (the ledger), and read the same on both. The fourth (added
+  2026-09-26, trap 9) has not run.
 - Headless on 2026-09-23: check-script-vectors 84 checks (1 skip), check-demo-boot 44 checks. Run
   the gates for current counts.
 

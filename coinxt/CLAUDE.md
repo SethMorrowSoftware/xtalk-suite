@@ -139,22 +139,79 @@ LAW here, not carried-for-later. Change nothing without a very good reason.
   bech32 checksum needs. Mask every accumulator well below 2^53 (engine note 2.4).
 - **Decide a wide integer's bound on small exact integers, never against a quotient** (2026-09-24; the numeric model
   is engine note 2.4): OXT (Win32, the suite paste) ACCEPTED 2^53 + 1 through riptide's
-  `tHi > (9007199254740992 - tLo) / 4294967296`, adjacent doubles that IEEE and `lcs-interp.py` both order
-  (OBSERVED). The rule behind it, named by the same day's third run and the engine source: two unequal numbers
+  `tHi > (9007199254740992 - tLo) / 4294967296`, adjacent doubles that IEEE and `lcs-interp.py` both ordered
+  (OBSERVED; the interpreter refuses that comparison since 2026-09-25, trap 20). The rule behind it, named by the same day's third run and the engine source: two unequal numbers
   within 10 DBL_EPSILON of the SMALLER are EQUAL (so integers one apart blur from 4.5e14; engine note 2.10).
   `cwLeRead` / `cwBeRead` had the form, safe only under an absolute tolerance, and now decide 2^53 as 32 times
   2^48 on the bytes; `check-wallet-vectors.py` tier 4 runs the bound under the engine's rule and two margin
   models. Verified statically; needs an OXT pass.
+- **Bound an integer's digits before the arithmetic, and ask `is an integer`, never `is trunc()`** (2026-09-25,
+  work-plan row #8; engine notes 2.4, 2.10). The engine source decides `is an integer` exactly
+  (`MCMathEvalIsAnInteger`: a C `d == floor(d)` on the converted number, false for empty), while `X is trunc(X)`
+  goes through the tolerant `is`: by that rule `cxBech32EncodeValues` let `3.0000000000000004` and
+  `-0.000000000000001` through (what a non-whole value became after that was the engine's chunk-index rounding; the
+  interpreter answered an EMPTY character, trap 16's fail-open). But `is an integer` says yes to "1e20", "3.0" and
+  twenty nines, so a value headed for arithmetic is settled as TEXT first, digits only and a bounded count:
+  `cwBtcToSat`'s whole part, `cwParseAmount`'s satoshi form, `cwBitsToInt` (BOLT11 `x` / `c`), `cwExpandExponent`'s
+  exponent (three digits, 2026-09-26: it also COUNTED a padding loop, trap 41, from a backend's fee reply),
+  coin-wallet's `waCheckedLength` (both HTTP transports) and `waHexToInt`, and every counter field of coinxt-demo
+  through `cdWholeField` (the output index was missed first; `check-script-vectors.py` tier 1b now derives the fields
+  from the build handlers). A SUM of amounts each under 2^53 is bounded as a sum (`cwAmountAdd`, on 32-bit halves:
+  `cwTxDecode`'s outputs, `cwPsbtSummary`'s ins and outs), and the boot self-check's 2.1e15 round trip compares
+  `div` / `mod` 100000000, where `is` was blind to 1 to 4 sats. Tier 4 of `check-wallet-vectors.py` replays both old
+  lines under the engine's rule. coin-selftest's bech32 refusal lines pass the spec and assert the message: they had
+  passed only two arguments, and the empty spec threw whatever the guard did, so none could fail. Verified
+  statically; needs an OXT pass.
 - Base58 is long division over the byte array (nothing exceeds 58 * 255), not a bit repack.
 - **Look up alphabet characters by BYTE VALUE with `cxCharIndex`, never `offset()` or `is`**: `the caseSensitive`
   defaults to false, and in Base58 `a` and `A` are different digits - the file's "most dangerous line".
 - **Compare checksums with `cxCompareBytes`, never `is`**, which compares numeric-looking hex as NUMBERS.
+- **Compare hex with `cwSameHex` and order it with `cwHexCompare`, never bare `is` / `<`** (2026-09-26; engine
+  note 2.11, whose exponent form was OBSERVED 2026-09-25): the engine reads both operands as numbers when both parse,
+  so all-digit or digits-e-digits txids and keys tie (two overflows are both +inf; two 64-digit values agreeing in
+  their leading digits sit inside note 2.10's tolerance) and a txid sort ordered some pairs by value. The family
+  checker's check 23 found 27 bare compares (wallet-core's eight, carried into coin-wallet, and coin-wallet's
+  eleven): the coin tie-break, the multisig, taproot-internal and PSBT key matches, the BOLT11 payee check, the
+  broadcast marks, the pending-spender and own-broadcast lookups, the CPFP coins, the bump guard, the Core mempool
+  record and the raw-tx check. One was a false positive by name (`cwXKeyDecode`'s `tPub` held a version NUMBER:
+  renamed); `cwHexListHas`'s inner `is`, invisible to the checker, went the same way. `cwSameHex` is `("h" & a) is
+  ("h" & b)` (case folds as `is` folds text). Tier 5 of `check-wallet-vectors.py` models the engine's parse, which
+  the interpreter lacks (it reads exponent form and 64-digit values as TEXT): a port of the source's `MCU_strtol` /
+  `MCU_strtor8` (the review's, the same day: the first model, a decimal regex, read `"0x" & hex` as text, where the
+  source reads a base-16 int32 whose low 32 bits alone decide). It proves the model on riptide's two recorded parse
+  answers and six the source documents, and fails every fix undone, coin-wallet's through its handlers lifted out of
+  the shipped stack, and both helpers broken (a `0x` prefix; `cwHexCompare` comparing whole texts, which the boot
+  line's "in hex order" half had been free to drop); a key or a txid the shim derives is planted to be number-like.
+  The wallet's boot self-check reads the two helpers at such a pair at every open (`waSelfTestHexCompares`, pure
+  script): the line an engine session will observe. The checker reads NAMES, so the same day a sweep by hand of every
+  bare comparison in wallet-core, coin-wallet and coinxt-demo found 15 more, each now through `cwSameHex` with a tier-5
+  vector that fails its old spelling under the modelled parse (and a control that passes): plain-named scripts, keys
+  and transactions, which were the checker's known misses (`cwPsbtSign`'s three `... is not tSpk`, which SIGNED for a
+  sender's all-digit script agreeing with ours in its leading digits; `cwBip322Verify`'s `cwScriptP2wpkh(tPub) is not
+  tScript`, which ACCEPTED such a key's signature for the address; `cwPsbtCombine`'s unsigned transactions, which
+  MERGED two all-digit ones a byte apart; `waStoreRawTx`'s inspect wait; `waSpAfterInspect`'s `... is waZeroTxid()`,
+  which called a txid spelled `0e` and digits a coinbase and skipped the silent-payment check), and number-like
+  literals and a constant, which the checker exempts with every literal (`cwScriptKind`'s `"0014"` and `"0020"`, to
+  which `"14e0"`, `"20e0"`, `"2e01"` and `"02e1"` are equal; `cwTxDecode`'s segwit marker `"0001"`, which `"01e0"` is
+  too, so a legacy one-input transaction whose previous txid ends in e0, one in 256, was misparsed as segwit;
+  `kCwScalarZero` in `cwScalarNegate`, which left a `0e`-and-digits scalar un-negated, and `cwSpInputSum`;
+  Electrum's `"100"` in `waSeedFormatOf`, which `"1e2"` is, one phrase in 4096; the empty parent fingerprint twice in
+  `waValidateXKey`). So every hex compare in those three files at which two different hex values can meet goes through
+  the two helpers now. Left bare on purpose, exact: a chunk of hex whose width a length check fixes against a literal
+  no other hex of that width equals (`"02"`, `"87"`, `"5120"`, `"101"` ...), and `cwDerToCompact`'s `"02"` markers,
+  whose width only its one caller's even-length hex fixes (an odd-length text can end in a lone `"2"`). coinxt-demo
+  and `src/coinxt.livecodescript` had none. Verified statically; needs an OXT pass.
 - Keccak-256 (Ethereum, `0x01` padding) is NOT SHA3-256 (FIPS-202, `0x06`): two shim functions, never aliased. The
   bech32 constant is 1, bech32m's `0x2bc830a3`. An encoder must never emit what its own decoder refuses.
-- **`the itemDelimiter` is global mutable state** (templates/CLAUDE.md rule 5; engine note 2.3). Nine public handlers
-  wear a save/set/use/restore wrapper around an untouched `Inner` body (fixed 2026-08-08: a hostile delimiter made
+- **`the itemDelimiter` is handler-LOCAL on Windows and Linux** (engine note 2.3, OBSERVED 2026-09-24 and 09-25,
+  both directions; no Mac run; templates/CLAUDE.md rule 5). Nine public handlers wear a save/set/use/restore wrapper
+  around an untouched `Inner` body (2026-08-08: under the family interpreter's GLOBAL delimiter a hostile one made
   `cxMnemonicValidate` answer FALSE to a valid phrase). The gate requires each to be indifferent to the delimiter and
-  to restore it, throw path included. The carried book had answered this; read it before filing an engine question.
+  to restore it, throw path included. On those two engines a caller's delimiter never reaches them, so the wrappers
+  are redundant there; they stay because they cost nothing, macOS has not run the probe, and the interpreter's
+  global model is the reading the gate can check. The engine question was withdrawn on 2026-08-08 because the
+  carried book (then "global mutable state") answered it; the 2026-09-24 probe answered it the other way. Read the
+  book before filing an engine question, and treat its answer as a claim until a dated run backs it.
 
 ### Testing and conformance
 
@@ -268,9 +325,49 @@ Symptom -> cause -> fix. Engine behaviour gets one line and its engine note.
 ### Interpreter and gate method
 
 19. **`tools/lcs-interp.py` contract: stricter than the engine is acceptable, looser is a bug.** A byte-identical copy
-    lives in nostrxt (drift-gated); `check-script-vectors.py` is the regression proof for every extension to it.
+    lives in nostrxt (drift-gated); `check-script-vectors.py` is the regression proof for every extension to it. Where
+    the model cannot give the engine's answer it REFUSES, and says why (traps 20 and 21); it never guesses.
 20. **2^53** (2026-09-08; engine note 2.4): Python ints made the model MORE capable than the engine, which fails
     silently. `_exact()` refuses any value past 2^53; `Imprecise` is not a `Thrown`, so a script `try` cannot eat it.
+    Two twins since 2026-09-25, one class (`Indistinct`, not a `Thrown` either; every one raised through `_refuse`):
+    (a) engine note 2.10: the engine calls two numbers EQUAL within 10 DBL_EPSILON of the smaller (a relative tolerance
+    between 8 and 16 DBL_EPSILON, OBSERVED 2026-09-24; the 10, its source's, read to the digit on Linux and on Windows
+    by riptide's third probe line, OBSERVED 2026-09-25), so the model refuses any
+    comparison whose OPERATOR answers differently there than in IEEE - the `tValue > (9007199254740992 - tByte) / 256`
+    class. An absolute 1e-6, or a tolerance applied whatever the operator, would also have refused riptide's VALID
+    2^53 - 1. (b) engine note 2.11: the engine turns BOTH operands into numbers whenever both parse (`MCU_strtor8`,
+    ported line for line as `_read_text`), so `"1e5" is "100000"` is true there; the model refuses wherever its own
+    reading (text in `is`, Python's `float()` in the `<` family, `is a number` and arithmetic) and the engine's give
+    different answers, and wherever the note does not establish the form (hex, `inf` / `nan`, a non-ASCII edge),
+    rather than re-answer the engine's way (the interpreter's header has the table). Tier 0 of
+    `check-script-vectors.py` holds (a) to the engine's readings of riptide's first two probe lines and (b) to that
+    table and to the third line as the engine READ it (Linux and Windows, 2026-09-25: `"1e999" is "2e999"` and
+    `"1e5" is "100000"` true, the source's prediction; its items 3-8 are (a) again). MEASURED before it landed (2026-09-25):
+    a census build (the one refusal door, `_refuse`, logging and letting the old answer stand) over the run-gates.sh
+    lists of coinxt, nostrxt, riptide, nocloud, holde-em and torrentxt and the suite's board-boot gates logged
+    refusals only in the fixtures that ask for them (tier 0 here, riptide's runner-model tier and tier 1c, nostrxt's
+    tier 0, tier 4's plain legs) and THREE comparisons in shipped code, all in the wallet boot and all an EMPTY
+    operand ordered against a number, which the engine's orderings read as 0 and riptide's runner then ordered as
+    TEXT: `waCpfpBuild`'s `pRec["fee"] is an integer and pRec["fee"] >= 0` and `waHttpFeed`'s `tLen is an integer
+    and tLen >= 0`, each inside an `and` whose first half is false either way, and wallet-core's `cwSatToBtc`,
+    `if tSat < 0` over an empty amount on the History screen, where the runner's text answer (true) printed
+    "-0.00000000" and an engine prints "0.00000000". The fixes were the MODEL's: the runner orders empty as 0
+    against a number, as this file's `<` family already did, and a refused comparison is held back (`_Undecided`)
+    and dropped where the other operand of `and` / `or` settles the answer (engine note 2.5: both are evaluated,
+    each gives a Boolean), raised where nothing does; text refused on its way into arithmetic is never held back
+    (that throws on the engine). No shipped file needed a fix; whether History should show an unknown amount as
+    0.00000000 is a wallet question the census raised, not answered here. The wide digit strings the Runes, LEB128
+    and decimal helpers test with `is "0"` still answer, because the engine agrees there. RE-MEASURED 2026-09-26
+    over the tree that merged the refusal with the 2026-09-25 batch and records (the same lists; the door logging
+    AND raising, so every gate ran exactly as it does): no refusal in shipped script, this member's wallet boot and
+    vector set included. Every NEW one was a fixture's, each now expecting the refusal: the batch's seeded old lines,
+    which their fixtures had read through the plain interpreter as IEEE (tier 4's row #8 bech32 value guard and
+    2.1e15 round trip here; riptide tier 1d's naive `rsSeqCompare`, old ingest lines and old `>=` bound), the
+    records' probe 3 items 3-8 in tier 4's and tier 1c's plain legs, with IEEE REPLAYED as one more model where a
+    fixture must show what IEEE answered; and nocloud's planted bare-`is` `qsSameText` mutant, refused at "1e2" /
+    "100" before the row that names it printed (that gate now fails a refused call by name, on a row of its own:
+    handed back as text, a refusal read as `false` had passed the row expecting false). A gate that catches
+    `Indistinct` must FAIL on it, never convert it into a value a row's filter can read as an answer.
 21. **What the model does.** Arrays are values (deep copy at every binding). The trailing-delimiter rule is modelled (a
     bare `split()` once made the "m/" negative vector test the model, not the script). `the number of chunks of X & Y`
     counts X alone (engine note 2.6, corrected 2026-09-11: the "binds into the target" reading was the runner's; the
@@ -279,12 +376,22 @@ Symptom -> cause -> fix. Engine behaviour gets one line and its engine note.
     `waNumAtLeast` / `waIsDigits` / `waIsInt` - a lesson repeated after being written down three times is a missing
     function. `the name` of a control is type-prefixed. `is` against an array compares as an array. Array KEYS fold
     case (engine note 2.7; modelled since 2026-09-24, the first spelling written is kept, tier 0 of
-    `check-script-vectors.py` pins it). NOT modelled: `round()`, `repeat for each line`. `ip.call` reaches natives
-    only through script. Hot paths use `_rx` / `_rxi`.
+    `check-script-vectors.py` pins it). riptide's runner (which the wallet boot runs through) reads `baseConvert`'s
+    source as the engine's `MCMathConvertToBase10` does since 2026-09-26: empty, an edge space, `0x` or `_` is a
+    script error a `try` catches, and a value past 2^32 - 1 (the engine's uint32 wraps) is refused. Text reads as a
+    number only where the model and the engine's `MCU_strtor8`
+    agree (trap 20 (b)): `<>` is the engine's `is not`, so an EMPTY operand is not 0 to it (refused where that
+    moves the answer; the orderings do read empty as 0); a Boolean is never a number to a comparison; `is an
+    integer` is EXACT (`d == floor(d)`, no tolerance) on both. A Boolean in ARITHMETIC still reads as 1 or 0 here,
+    where the engine throws (named, not changed). NOT modelled: `round()`, `repeat for each line`, the
+    `numberFormat` (a non-integral number's text is Python's). `ip.call` reaches natives only through script. Hot
+    paths use `_rx` / `_rxi`.
 22. **`is` is modelled case-SENSITIVELY whatever `the caseSensitive` says** (the property reaches array keys only,
     as a per-handler local), so `check-wallet-vectors.py` runs every vector twice, the second time with `is` and
     `offset()` folded. `contains`, `begins with`, `ends with` and `sort` are NOT folded; putting one on
-    case-significant data needs a new tier, not a quiet widening.
+    case-significant data needs a new tier, not a quiet widening. riptide's runner matches `switch` cases the same
+    way: as TEXT (the engine's rule since 2026-09-25; until then through `is`, so `"1.0"` took `case "1"`), and
+    case-sensitively.
 23. **When a mutation survives, suspect the probe first, but check**: twice the probe was wrong (wrong direction; half
     a defect reverted), once the check was (an "it threw" assertion over a shim that refuses the same input).
 24. **Reproduce, then fix: correct the model first**, see the engine's failure headlessly on the unmodified code, then
@@ -504,12 +611,16 @@ inscription and a timelock payment (2026-09-01 to 09-03, testnet). Bitcoin spend
 were accepted on testnet; a native-P2WPKH broadcast is not recorded, and no EIP-155 / EIP-1559 transaction has been
 broadcast. Verified statically; needs an OXT pass: every ABI 7 binary but the `x86_64-linux` library (2026-09-25) and
 the `x86_64-win32` DLL (2026-09-24 and 2026-09-25; 64-bit by the maintainer's account), so the `x86-win32` DLL may still
-never have executed; the wallet surface added from 2026-09-04 (the Ordinals and Vault screens, testnet4, BIP-329,
+never have executed; `cxBech32EncodeValues`'s 2026-09-25 whole-number guard (the handler itself ran green on
+2026-09-24 and 2026-09-25; the new line has not run, and coin-selftest's message-checked refusal lines of 2026-09-26
+are what will read it); the wallet surface added from 2026-09-04 (the Ordinals and Vault screens, testnet4, BIP-329,
 BIP-322, silent-payment receiving, Runes, BOLT11, the Core backends, the 2026-09-10 fixes, the 2026-09-24 byte-level
-2^53 bound in `cwLeRead` / `cwBeRead`); and what the logs did not reach (the update swap, mainnet Electrum on port 110,
-the stale-answer skip, paint/pump timing, the mixed tip+fees batch, the three corrected menu items, the backend
-un-marking a coin, Esplora's 400 body in the log, CPFP on a foreign transaction, an Electrum-format seed opening real
-coins, a vault release after its height). Open work is in the suite's docs/WORK-PLAN.md.
+2^53 bound in `cwLeRead` / `cwBeRead`, the 2026-09-25 exact-integer bounds of work-plan row #8, coinxt-demo's
+`cdWholeField`, the 2026-09-26 `cwExpandExponent` bound and the 2026-09-26 hex compares through `cwSameHex` /
+`cwHexCompare`); and what the logs did not reach (the update swap, mainnet
+Electrum on port 110, the stale-answer skip, paint/pump timing, the mixed tip+fees batch, the three corrected menu
+items, the backend un-marking a coin, Esplora's 400 body in the log, CPFP on a foreign transaction, an Electrum-format
+seed opening real coins, a vault release after its height). Open work is in the suite's docs/WORK-PLAN.md.
 
 ## Commands
 

@@ -25,6 +25,16 @@ The seeded defects, and what each stands in for:
      the model's own arrays do not fold, so the boot's LAN drive is the
      only thing that can see it, and a check nobody has watched fail is
      the blind-gate shape this file exists to rule out.
+  6. The demo's wire-integer orderings spelled with bare operators again
+     (2026-09-25): the LAN replay guard, the feed-state MAX, the feed
+     claim's change test and both head-watermark handlers, all at once.
+     The engine calls integers one apart EQUAL from about 4.5e14 (root
+     docs/OXT-ENGINE-NOTES.md 2.10) and this model compared the IEEE way
+     (since 2026-09-25 it refuses such a pair instead), so only the boot's
+     seq-order drive, which runs them under the engine's rule, sees them as
+     the wrong ANSWERS they are there. One seeded copy, one gate run, and EVERY one of
+     the drive's deciding checks must be among the failures: a drive that
+     caught one of five would pass a plain "the gate fired".
 """
 import os
 import re
@@ -76,6 +86,40 @@ def main():
          "   return pName\nend raLanDevKey\n"),
     ]
 
+    # Fixture 6: (shipped text, the spelling it replaced), and the drive's
+    # checks that must each FAIL on the seeded copy.
+    ordering = [
+        ('   return rsSeqCompare(pValue, pLast) is "above"\n'
+         'end raLanIsNewer\n',
+         '   return not (pValue <= pLast)\n'
+         'end raLanIsNewer\n'),
+        ('      if rsSeqCompare(tRec["feedSeq"], tMine) is "above" then\n',
+         '      if tRec["feedSeq"] > tMine then\n'),
+        ('         if rsSeqCompare(sSeq, sLanFeedLast) is not "equal" then\n',
+         '         if sSeq is not sLanFeedLast then\n'),
+        ('      if rsSeqCompare(pSeq, tSeen) is "above" then\n',
+         '      if pSeq > tSeen then\n'),
+        ('   put rsSeqCompare(tSeen, tFloor) into tOrder\n'
+         '   if tOrder is "above" then\n'
+         '      return tSeen\n'
+         '   end if\n'
+         '   if tOrder is empty then\n'
+         '      return empty\n'
+         '   end if\n',
+         '   if tSeen > tFloor then\n'
+         '      return tSeen\n'
+         '   end if\n'),
+    ]
+    ordering_must_fail = [
+        "seq order: a draft one seq newer near 2^53 is APPLIED",
+        "seq order: a presence tick one newer is applied",
+        "seq order: a media offer one seq newer is applied",
+        "seq order: a feed seq one above ours is adopted",
+        "seq order: a feed seq one above the last broadcast is SENT",
+        "seq order: a head one newer raises the watermark",
+        "seq order: the watermark is the HIGHER of seen and floor",
+    ]
+
     failed = 0
     for label, old, new in fixtures:
         mutated = mutate(clean, old, new, label)
@@ -95,6 +139,30 @@ def main():
         finally:
             os.unlink(tmp)
 
+    label = ("the demo's wire-integer orderings spelled with bare operators "
+             "again are each caught")
+    seeded = clean
+    for old, new in ordering:
+        seeded = mutate(seeded, old, new, label)
+    with tempfile.NamedTemporaryFile("w", suffix=".livecodescript",
+                                     delete=False, encoding="utf-8") as fh:
+        fh.write(seeded)
+        tmp = fh.name
+    try:
+        rc, out = run_gate(tmp)
+        fail_lines = [ln for ln in out.splitlines() if "FAIL" in ln]
+        missed = [want for want in ordering_must_fail
+                  if not any(want in ln for ln in fail_lines)]
+        if rc == 0 or missed:
+            failed += 1
+            print("FAIL  %s: exit %d; checks that did NOT fire: %s\n%s"
+                  % (label, rc, missed, out[-400:]))
+        else:
+            print("PASS  %s (%d checks fired)"
+                  % (label, len(ordering_must_fail)))
+    finally:
+        os.unlink(tmp)
+
     rc, out = run_gate(DEMO)
     if rc != 0:
         failed += 1
@@ -107,7 +175,7 @@ def main():
         print("test-demo-boot: %d fixture(s) misbehaved" % failed)
         return 1
     print("test-demo-boot: OK (%d seeded defects caught, clean run passes)"
-          % len(fixtures))
+          % (len(fixtures) + 1))
     return 0
 
 

@@ -50,22 +50,41 @@ HOW THE ABI NUMBER IS READ WITHOUT RUNNING THE LIBRARY. coinxt's copy called
 matching the host - so an ABI bump that missed the Windows DLLs (four of the six
 committed platforms are not this host) was unreachable. Here the number is
 DECODED from the function's own code bytes: every one of these is
-`int x_abi_version(void) { return N; }`, which every compiler in the tree emits
-as `[endbr] mov eax, imm32 ; ret`. We locate the function through the
-container's own export table (ELF `.dynsym` st_value, PE `AddressOfFunctions`),
-map its address to a file offset, and decode exactly that instruction pair - and
-NOTHING else. Where a compiler emitted a prologue instead, the answer is a SKIP
-naming the file and the reason, not a scan of the function body for a
-plausible-looking immediate: a skip you can name beats a check you cannot
-trust, and a wrong ABI number reported confidently is worse than no ABI number
-at all. Measured 2026-08-17: 18 of the 24 committed libraries decode - all 12
-ELF, sodiumxt's and coinxt's MinGW DLLs, and box2dxt's two; the six that do
-not are torrentxt's, enetxt's and datachannelxt's Windows DLLs, whose builds
-put a stack-check prologue ahead of the `mov eax`. That split is NOT simply
-"MinGW decodes, MSVC does not" - box2dxt's DLLs are MSVC (VCRUNTIME140) too and
-decode fine, because its `b2lc_abi_version` is a leaf with no buffers and got
-no prologue. Which is the point of decoding rather than assuming: the answer is
-read per file, and a file that does not read says so.
+`int x_abi_version(void) { return N; }`, and where that body is a LEAF every
+compiler in the tree emits it as `[endbr] mov eax, imm32 ; ret`. We locate the
+function through the container's own export table (ELF `.dynsym` st_value, PE
+`AddressOfFunctions`), map its address to a file offset, and decode exactly
+that instruction pair - and NOTHING else. Where a compiler emitted a prologue
+instead, the answer is a SKIP naming the file and the reason, not a scan of the
+function body for a plausible-looking immediate: a skip you can name beats a
+check you cannot trust, and a wrong ABI number reported confidently is worse
+than no ABI number at all. Measured 2026-08-17: 18 of the 24 committed
+libraries decoded - all 12 ELF, sodiumxt's and coinxt's MinGW DLLs, and
+box2dxt's two; the six that did not were torrentxt's, enetxt's and
+datachannelxt's Windows DLLs, whose builds put a stack-check prologue ahead of
+the `mov eax`. That split was NOT simply "MinGW decodes, MSVC does not" -
+box2dxt's DLLs are MSVC (VCRUNTIME140) too and decode fine, because its
+`b2lc_abi_version` is a leaf with no buffers and got no prologue. Which is the
+point of decoding rather than assuming: the answer is read per file, and a
+file that does not read says so.
+
+"A stack-check prologue" was half the story, and the other half is what made
+those six decodable. Their `x_abi_version` bodies sit inside the shim's
+exception-firewall guard (suite rule 2: a try/catch), which GCC and clang fold
+away - every ELF and mac slice of the same function is a leaf - and MSVC keeps
+as a FRAME: an FS:[0] C++ EH registration carrying the /GS cookie on x86, a
+/GS-cookie frame around a skipped catch continuation on x64, one shape per
+bitness across all three members. Since 2026-09-25 that frame is a SECOND
+exact PE shape (`decode_msvc_guarded`; its block comment lists the bytes and
+says why each varying operand is safe): every fixed byte must match, the
+cookie it reads must be the one the image's own load-config directory records,
+and on x64 its one call must be a __security_check_cookie whose eight
+instructions match whole. Measured 2026-09-25 on the 2026-09-12 builds: all
+six decode (torrentxt 11, enetxt 2, datachannelxt 1, each its header's
+define), so every committed library's ABI is read; the summary line prints
+how many, and how many through this shape. Anything else, including the next
+MSVC's variation on the frame, is still a SKIP naming the first byte that did
+not match.
 
 Since 2026-08-23 the Mach-O reader adds the two `universal-mac` dylibs, and
 BOTH slices of each decode - through two shapes the pair above does not cover,
@@ -86,7 +105,17 @@ shipped-is-not-run lesson applied to this file: the byte pattern is a claim
 until something executes the thing it claims to describe. The load runs in a
 subprocess so that a library which crashes or hangs on load is a REPORTED
 failure rather than a dead gate - and a library that cannot load at all is
-itself a finding worth having.
+itself a finding worth having. No Linux host can LOAD a DLL, so the guarded
+shape gets its execution evidence from its fixture instead:
+`tools/test-binary-freshness.py`, run before this gate, maps each x64 guarded
+DLL's sections into memory on an x86-64 Linux host and calls the function
+(the path is RIP-relative and calls nothing outside the image), requires the
+decoded value, and requires the `eb 00` mutant this file refuses to return the
+catch value instead; a function it enters that crashes or hangs is a failure
+there, never a SKIP. The x86 guarded DLLs cannot execute there (FS:[0] and a
+32-bit code segment); for them, as for both, the fixture holds the decoder's
+instruction boundaries, mnemonics and value to GNU objdump's disassembly, and
+flips every byte of both shapes.
 
 The container readers are stdlib `struct` walks, not shell-outs to `nm`. That
 is deliberate and the reason is written out in `coinxt/tools/package-
@@ -116,9 +145,11 @@ WHAT IS SKIPPED, AND WHY EACH SKIP IS WRITTEN DOWN RATHER THAN INFERRED:
     dispatch-pending state would be noise somebody deletes within a week. The
     allowance deletes itself: a refreshed dylib stops matching the record, and
     the MAC_KNOWN_STALE row becomes a hard failure until it is removed.
-  * Six of the twelve committed Windows DLLs' ABI constants (see above). Their
-    BIND, SOURCE and CLOSURE legs all still run - only the ABI number is
-    unreadable there.
+  * Six of the twelve committed Windows DLLs' ABI constants WERE skipped, from
+    2026-08-17 until the guarded shape landed on 2026-09-25 (see above); none
+    is today. A DLL whose function matches neither PE shape still SKIPs, with
+    the first deviating byte named, and its BIND, SOURCE and CLOSURE legs
+    still run - only its ABI number goes unread.
   * torrentxt's ELF export closure (see its row).
 
 Nothing else is skipped. Every skip prints, with its reason, on every run - and
@@ -648,8 +679,26 @@ def read_elf(path):
     return exports, code_at
 
 
-def read_pe(path):
-    """The PE EXPORT NAME TABLE, plus a code reader.
+# COFF Machine values this file reads (winnt.h IMAGE_FILE_MACHINE_*). The
+# guarded-shape decoder below is written per machine, so an image of any other
+# machine gets a named refusal from it rather than an x86 reading.
+PE_MACHINES = {0x014C: "x86", 0x8664: "x64"}
+
+# IMAGE_SCN_MEM_EXECUTE / IMAGE_SCN_MEM_WRITE, the two section characteristics
+# the guarded-shape decoder asks about.
+SCN_EXECUTE = 0x20000000
+SCN_WRITE = 0x80000000
+
+# IMAGE_DIRECTORY_ENTRY_LOAD_CONFIG, and where IMAGE_LOAD_CONFIG_DIRECTORY
+# keeps SecurityCookie: the VA of the /GS cookie the CRT initialises, which is
+# the image's own record of it (winnt.h; PE32 at +0x3C, PE32+ at +0x58, each a
+# pointer-sized field).
+LOAD_CONFIG_INDEX = 10
+SECURITY_COOKIE_FIELD = {"x86": (0x3C, 4), "x64": (0x58, 8)}
+
+
+class PeImage:
+    """One parsed PE image: its EXPORT NAME TABLE, and a code reader.
 
     The parse is carried from `coinxt/tools/package-extension.py`'s
     `read_pe_exports`, whose reasoning holds unchanged and is worth repeating
@@ -665,111 +714,228 @@ def read_pe(path):
     because it only needed the names. Walking name index -> ordinal ->
     AddressOfFunctions gives each export's code, and that is what makes the ABI
     pin reach a Windows DLL from a Linux host.
+
+    A CLASS since 2026-09-25 (it was a function returning a closure), because
+    the MSVC guarded shape (`decode_msvc_guarded`) needs three facts beyond an
+    export's first bytes: the COFF machine, the section map with each
+    section's characteristics, and the load-config directory's SecurityCookie.
+    Calling the object is still `code_at(name, count)`, the contract read_elf's
+    closure keeps, so check_member reads both formats the same way. The image
+    bytes are held BY REFERENCE and read at decode time, never cached: that is
+    what lets tools/test-binary-freshness.py flip one byte of a real DLL in
+    place and re-ask the decoder, without re-parsing a 12 MB image per flip.
     """
-    with open(path, "rb") as fh:
-        image = fh.read()
 
-    def u16(off):
-        if off < 0 or off + 2 > len(image):
+    def __init__(self, image):
+        self.data = image
+        pe_off = self.u32(0x3c)
+        if bytes(image[pe_off:pe_off + 4]) != b"PE\x00\x00":
+            raise ReadError("no PE signature at e_lfanew (0x%x)" % pe_off)
+        coff = pe_off + 4
+        machine = self.u16(coff)
+        self.machine = PE_MACHINES.get(machine, "0x%04x" % machine)
+        section_count, optional_size = self.u16(coff + 2), self.u16(coff + 16)
+        optional = coff + 20
+
+        # PE32 and PE32+ differ by the width of four fields ahead of the data
+        # directories, hence the 96/112 split. Getting it wrong reads the WRONG
+        # directory, so this is a hard branch with no default.
+        magic = self.u16(optional)
+        if magic == 0x10b:
+            dir_count_off, dir_off = optional + 92, optional + 96
+            self.image_base = self.u32(optional + 28)
+        elif magic == 0x20b:
+            dir_count_off, dir_off = optional + 108, optional + 112
+            self.image_base = (self.u32(optional + 24)
+                               | self.u32(optional + 28) << 32)
+        else:
+            raise ReadError("unknown optional-header magic 0x%x" % magic)
+        dir_count = self.u32(dir_count_off)
+        if dir_count < 1:
+            raise ReadError("the image declares no data directories")
+
+        self.export_rva = self.u32(dir_off)
+        self.export_size = self.u32(dir_off + 4)
+        if dir_count > LOAD_CONFIG_INDEX:
+            entry = dir_off + 8 * LOAD_CONFIG_INDEX
+            self.load_config = (self.u32(entry), self.u32(entry + 4))
+        else:
+            self.load_config = (0, 0)
+
+        self.sections = []
+        section_table = optional + optional_size
+        for index in range(section_count):
+            base = section_table + index * 40
+            # (VirtualAddress, VirtualSize, PointerToRawData, SizeOfRawData,
+            #  Characteristics)
+            self.sections.append((self.u32(base + 12), self.u32(base + 8),
+                                  self.u32(base + 20), self.u32(base + 16),
+                                  self.u32(base + 36)))
+
+        self.exports, self.rvas = set(), {}
+        if self.export_rva == 0 or self.export_size == 0:
+            # A real answer, not an error: this DLL exports nothing. The caller
+            # then reports every bind missing and refuses, which is the correct
+            # verdict for a library that would bind none of them.
+            return
+        directory = self.rva_to_offset(self.export_rva)
+        func_count = self.u32(directory + 20)
+        name_count = self.u32(directory + 24)
+        funcs_rva = self.u32(directory + 28)
+        names_rva = self.u32(directory + 32)
+        ords_rva = self.u32(directory + 36)
+        if name_count == 0:
+            return
+        if name_count > 65535 or func_count > 65535:
+            # PE ordinals are 16-bit, so a larger count is a corrupt field being
+            # read as a length. Refuse rather than allocate on it.
+            raise ReadError("implausible export count (%d names, %d functions)"
+                            % (name_count, func_count))
+
+        name_table = self.rva_to_offset(names_rva)
+        ord_table = self.rva_to_offset(ords_rva)
+        func_table = self.rva_to_offset(funcs_rva)
+        for index in range(name_count):
+            start = self.rva_to_offset(self.u32(name_table + 4 * index))
+            end = image.find(b"\x00", start)
+            if end < 0:
+                raise ReadError("export name %d is not NUL-terminated" % index)
+            name = bytes(image[start:end]).decode("ascii", "replace")
+            self.exports.add(name)
+            ordinal = self.u16(ord_table + 2 * index)
+            if ordinal < func_count:
+                self.rvas[name] = self.u32(func_table + 4 * ordinal)
+
+    def u16(self, off):
+        if off < 0 or off + 2 > len(self.data):
             raise ReadError("truncated: wanted 2 bytes at 0x%x" % off)
-        return struct.unpack_from("<H", image, off)[0]
+        return struct.unpack_from("<H", self.data, off)[0]
 
-    def u32(off):
-        if off < 0 or off + 4 > len(image):
+    def u32(self, off):
+        if off < 0 or off + 4 > len(self.data):
             raise ReadError("truncated: wanted 4 bytes at 0x%x" % off)
-        return struct.unpack_from("<I", image, off)[0]
+        return struct.unpack_from("<I", self.data, off)[0]
 
-    pe_off = u32(0x3c)
-    if image[pe_off:pe_off + 4] != b"PE\x00\x00":
-        raise ReadError("no PE signature at e_lfanew (0x%x)" % pe_off)
-    coff = pe_off + 4
-    section_count, optional_size = u16(coff + 2), u16(coff + 16)
-    optional = coff + 20
-
-    # PE32 and PE32+ differ by the width of four fields ahead of the data
-    # directories, hence the 96/112 split. Getting it wrong reads the WRONG
-    # directory, so this is a hard branch with no default.
-    magic = u16(optional)
-    if magic == 0x10b:
-        dir_count_off, dir_off = optional + 92, optional + 96
-    elif magic == 0x20b:
-        dir_count_off, dir_off = optional + 108, optional + 112
-    else:
-        raise ReadError("unknown optional-header magic 0x%x" % magic)
-    if u32(dir_count_off) < 1:
-        raise ReadError("the image declares no data directories")
-
-    export_rva, export_size = u32(dir_off), u32(dir_off + 4)
-
-    sections = []
-    section_table = optional + optional_size
-    for index in range(section_count):
-        base = section_table + index * 40
-        sections.append((u32(base + 12), u32(base + 8),
-                         u32(base + 20), u32(base + 16)))
-
-    def rva_to_offset(rva):
-        for vaddr, vsize, raw_ptr, raw_size in sections:
+    def section_of(self, rva):
+        for entry in self.sections:
+            vaddr, vsize, _raw_ptr, raw_size, _flags = entry
             if vaddr <= rva < vaddr + max(vsize, raw_size):
-                delta = rva - vaddr
-                # Past SizeOfRawData the bytes exist only once the loader has
-                # zero-filled them; there is nothing in the FILE to read.
-                if delta >= raw_size:
-                    raise ReadError(
-                        "RVA 0x%x lands in a section's virtual-only tail" % rva)
-                return raw_ptr + delta
-        raise ReadError("RVA 0x%x is in no section" % rva)
+                return entry
+        return None
 
-    if export_rva == 0 or export_size == 0:
-        # A real answer, not an error: this DLL exports nothing. The caller
-        # then reports every bind missing and refuses, which is the correct
-        # verdict for a library that would bind none of them.
-        return set(), lambda name, count=16: None
+    def rva_to_offset(self, rva):
+        entry = self.section_of(rva)
+        if entry is None:
+            raise ReadError("RVA 0x%x is in no section" % rva)
+        vaddr, _vsize, raw_ptr, raw_size, _flags = entry
+        delta = rva - vaddr
+        # Past SizeOfRawData the bytes exist only once the loader has
+        # zero-filled them; there is nothing in the FILE to read.
+        if delta >= raw_size:
+            raise ReadError(
+                "RVA 0x%x lands in a section's virtual-only tail" % rva)
+        return raw_ptr + delta
 
-    directory = rva_to_offset(export_rva)
-    func_count, name_count = u32(directory + 20), u32(directory + 24)
-    funcs_rva, names_rva, ords_rva = (u32(directory + 28), u32(directory + 32),
-                                      u32(directory + 36))
-    if name_count == 0:
-        return set(), lambda name, count=16: None
-    if name_count > 65535 or func_count > 65535:
-        # PE ordinals are 16-bit, so a larger count is a corrupt field being
-        # read as a length. Refuse rather than allocate on it.
-        raise ReadError("implausible export count (%d names, %d functions)"
-                        % (name_count, func_count))
+    def export_rva_of(self, name):
+        """The export's code RVA, or None for a missing name or a FORWARDER.
 
-    name_table = rva_to_offset(names_rva)
-    ord_table = rva_to_offset(ords_rva)
-    func_table = rva_to_offset(funcs_rva)
-
-    exports, rvas = set(), {}
-    for index in range(name_count):
-        start = rva_to_offset(u32(name_table + 4 * index))
-        end = image.find(b"\x00", start)
-        if end < 0:
-            raise ReadError("export name %d is not NUL-terminated" % index)
-        name = image[start:end].decode("ascii", "replace")
-        exports.add(name)
-        ordinal = u16(ord_table + 2 * index)
-        if ordinal < func_count:
-            rvas[name] = u32(func_table + 4 * ordinal)
-
-    def code_at(name, count=16):
-        rva = rvas.get(name)
+        An RVA inside the export directory's own range is a forwarder (the
+        "OTHERDLL.func" string), not code. Decoding it would be decoding ASCII
+        as instructions.
+        """
+        rva = self.rvas.get(name)
         if rva is None:
             return None
-        # An RVA inside the export directory's own range is a FORWARDER (the
-        # "OTHERDLL.func" string), not code. Decoding it would be decoding
-        # ASCII as instructions.
-        if export_rva <= rva < export_rva + export_size:
+        if self.export_rva <= rva < self.export_rva + self.export_size:
+            return None
+        return rva
+
+    def __call__(self, name, count=16):
+        """code_at(name, count): the export's first bytes, or None."""
+        rva = self.export_rva_of(name)
+        if rva is None:
             return None
         try:
-            offset = rva_to_offset(rva)
+            offset = self.rva_to_offset(rva)
         except ReadError:
             return None
-        return image[offset:offset + count]
+        return bytes(self.data[offset:offset + count])
 
-    return exports, code_at
+    # The VA-level view decode_msvc_guarded reads through. The absolute and
+    # RIP-relative operands inside the code are VAs (ImageBase + RVA), so the
+    # decoder works in VAs and this class does the one subtraction.
+
+    def export_va(self, name):
+        rva = self.export_rva_of(name)
+        return None if rva is None else self.image_base + rva
+
+    def read_va(self, va, count):
+        """Up to `count` bytes at `va`, never past its section's raw data;
+        b"" where the VA has no bytes in the FILE."""
+        rva = va - self.image_base
+        entry = self.section_of(rva) if rva >= 0 else None
+        if entry is None:
+            return b""
+        vaddr, _vsize, raw_ptr, raw_size, _flags = entry
+        delta = rva - vaddr
+        if delta >= raw_size:
+            return b""
+        take = min(count, raw_size - delta)
+        return bytes(self.data[raw_ptr + delta:raw_ptr + delta + take])
+
+    def _flags_of_va(self, va):
+        rva = va - self.image_base
+        entry = self.section_of(rva) if rva >= 0 else None
+        return None if entry is None else entry[4]
+
+    def is_exec_va(self, va):
+        flags = self._flags_of_va(va)
+        return flags is not None and bool(flags & SCN_EXECUTE)
+
+    def is_writable_va(self, va):
+        flags = self._flags_of_va(va)
+        return flags is not None and bool(flags & SCN_WRITE)
+
+    def security_cookie_va(self):
+        """(VA, None) of the /GS cookie per the load-config directory, or
+        (None, why). Read at call time, like the code bytes.
+
+        The structure's OWN leading Size field decides whether SecurityCookie
+        is present, not the data-directory entry's size: MSVC's PE32 images
+        declare 0x40 in the directory entry and 0xC0 in the structure (the
+        committed x86 DLLs do exactly that), and the structure's field is the
+        one the loader reads.
+        """
+        rva, size = self.load_config
+        if rva == 0 or size == 0:
+            return None, "the image has no load-config directory"
+        field = SECURITY_COOKIE_FIELD.get(self.machine)
+        if field is None:
+            return None, "no load-config layout for machine %s" % self.machine
+        try:
+            base = self.rva_to_offset(rva)
+            declared = self.u32(base)
+        except ReadError as exc:
+            return None, "the load-config directory is unreadable (%s)" % exc
+        at, width = field
+        if declared < at + width:
+            return None, ("the load-config structure declares %d bytes, too "
+                          "few to hold SecurityCookie at +0x%x"
+                          % (declared, at))
+        if base + at + width > len(self.data):
+            return None, "the load-config structure runs off the end of the file"
+        cookie = struct.unpack_from("<I" if width == 4 else "<Q",
+                                    self.data, base + at)[0]
+        if cookie == 0:
+            return None, "the load-config directory records no /GS cookie"
+        return cookie, None
+
+
+def read_pe(path):
+    """(exports, code_at) for a PE file; code_at is the PeImage itself."""
+    with open(path, "rb") as fh:
+        image = PeImage(fh.read())
+    return image.exports, image
 
 
 # Mach-O CPU types, from <mach/machine.h>: CPU_ARCH_ABI64 (0x01000000) OR'd
@@ -992,15 +1158,17 @@ def decode_return_constant(code):
     """`[endbr] mov eax, imm32 ; ret` -> imm32, else None.
 
     Deliberately the narrowest possible decoder. Every one of these functions
-    is `int x_abi_version(void) { return N; }`, and the six GCC/MinGW builds
-    emit exactly this pair; the three MSVC ones emit a `/GS` stack-check
-    prologue and put the `mov eax` somewhere inside it. Searching the body for
-    a `b8` byte would "work" on those and would also match the first immediate
-    of any other function that happened to be laid out that way - so this
-    returns None instead, and the caller SKIPS with the member named. A wrong
-    ABI number reported confidently is worse than no ABI number: it is the
-    coinxt-constant-gate lesson (a gate that overstates its coverage answers
-    the question nobody asks twice).
+    is `int x_abi_version(void) { return N; }`, and every leaf build emits
+    exactly this pair; the MSVC builds of the three C++ shims keep their
+    try/catch guard's frame and put the `mov eax` inside it. Searching the
+    body for a `b8` byte would "work" on those and would also match the first
+    immediate of any other function that happened to be laid out that way -
+    enetxt's x64 DLL carries a second `mov eax, imm32` two instructions later,
+    its catch path's -6 - so this returns None instead, and the caller tries
+    the one other exact shape it knows (decode_msvc_guarded, for a PE) or
+    SKIPS with the member named. A wrong ABI number reported confidently is
+    worse than no ABI number: it is the coinxt-constant-gate lesson (a gate
+    that overstates its coverage answers the question nobody asks twice).
 
     A second exact shape was ADDED 2026-08-23, when the Mach-O reader landed:
     `push rbp ; mov rbp,rsp ; mov eax, imm32 ; pop rbp ; ret`, which is what
@@ -1051,6 +1219,351 @@ def decode_return_constant_arm64(code):
         if nxt != NOP_ARM64:
             return None
     return None
+
+
+# --------------------------------------------------------------------------
+# The MSVC guarded shape (added 2026-09-25).
+#
+# torrentxt's, enetxt's and datachannelxt's Windows DLLs were this file's six
+# ABI SKIPs from 2026-08-17 to 2026-09-25, and the reason they printed ("a
+# stack-check prologue") was only half the story. Each `x_abi_version` is
+# `return N;` inside the shim's exception-firewall guard (suite rule 2:
+# BTX_GUARD_INT, ENX_GUARD_INT, DCX_GUARD_INT, each a try/catch). GCC and
+# clang fold that try/catch away, which is why every ELF and mac slice of the
+# same function is a leaf. MSVC does NOT: it keeps the guard's frame. Measured
+# on the 2026-09-12 DLLs (release run 34657390798), by this file's PE reader
+# and by GNU objdump's pei-i386 / pei-x86-64 disassembly, which agree
+# instruction for instruction - all three x86 DLLs emit one shape and all
+# three x64 DLLs another, differing only in addresses, the value, and (x64)
+# the frame size and its encoding, the cookie slot and the catch continuation:
+#
+#   x86 (C++ EH registration on FS:[0], carrying the /GS cookie):
+#     55 / 8b ec              push ebp ; mov ebp, esp
+#     6a ff                   push -1              EH state: no try active
+#     68 <handler>            push __ehhandler$x_abi_version
+#     64 a1 00 00 00 00 / 50  mov eax, fs:[0] ; push eax
+#     a1 <cookie>             mov eax, [__security_cookie]
+#     33 c5 / 50              xor eax, ebp ; push eax
+#     8d 45 f4                lea eax, [ebp-0Ch]
+#     64 a3 00 00 00 00       mov fs:[0], eax      frame registered
+#     b8 <N>                  mov eax, N           <- THE RETURN VALUE
+#     8b 4d f4                mov ecx, [ebp-0Ch]
+#     64 89 0d 00 00 00 00    mov fs:[0], ecx      frame unregistered
+#     59 / 8b e5 / 5d / c3    pop ecx ; mov esp, ebp ; pop ebp ; ret
+#
+#   x64 (a /GS-cookie frame; the catch handlers live in .pdata/.xdata):
+#     48 83 ec <f8> | 48 81 ec <f32>   sub rsp, F
+#     48 8b 05 <rel32>        mov rax, [rip+__security_cookie]
+#     48 33 c4                xor rax, rsp
+#     48 89 44 24 <s>         mov [rsp+S], rax
+#     b8 <N>                  mov eax, N           <- THE RETURN VALUE
+#     eb <L>                  jmp over the next instruction (L = its length)
+#     33 c0 | b8 <E>          the CATCH CONTINUATION: return 0 (btx, dcx) or
+#                             -6 (enx, ENX_ERR_THROWN); reached only when a
+#                             catch funclet resumes here, never on this path
+#     48 8b 4c 24 <s>         mov rcx, [rsp+S]
+#     48 33 cc                xor rcx, rsp
+#     e8 <rel32>              call __security_check_cookie
+#     48 83 c4 <f8> | 48 81 c4 <f32>   add rsp, F
+#     c3                      ret
+#
+# WHY THESE, AND ONLY THESE, DECODE WITH CONFIDENCE. In the x86 shape there is
+# no branch and no call: control runs straight from entry to `ret`, and after
+# `mov eax, N` nothing writes eax. In the x64 shape the one branch is the jmp,
+# which must skip EXACTLY the continuation instruction (`eb 00` would fall into
+# it and return 0 or -6 - the mutant tools/test-binary-freshness.py executes to
+# show it), and the one call must be a __security_check_cookie that compares
+# against the SAME cookie: its eight instructions are matched whole (below),
+# and on the path that returns (`ret`) they write rcx and the flags, never
+# rax. Its other exit jumps to __report_gsfailure, reached only when the
+# frame's copy of the cookie no longer matches the global (a smashed stack) or
+# the global's top 16 bits are set (which the CRT's cookie initialisation
+# clears; the committed files' initial x64 cookie, 0x2B992DDFA232, passes),
+# and this file does NOT decode it: /GS is DOCUMENTED to terminate the process
+# there (__fastfail), so on that path the function returns no value at all,
+# right or wrong.
+#
+# WHAT IS CHECKED THAT IS NOT A FIXED BYTE. Every operand that varies between
+# builds is either tied to the image's own records or is provably off the
+# returning path, and each is named here so a reader can see there is no
+# third kind:
+#   * the cookie operand (x86 absolute, x64 RIP-relative, and the one inside
+#     __security_check_cookie) must be the load-config directory's
+#     SecurityCookie VA - the image's own record of where its cookie lives;
+#   * the call target must be in an executable section and must match the
+#     __security_check_cookie shape exactly;
+#   * S (the cookie slot) is the same in the store and the reload, and lies
+#     inside the F-byte frame - a slot at or past F would overwrite the return
+#     address and `ret` would go somewhere else. S is a disp8, which the CPU
+#     SIGN-extends: 0x80 and above address BELOW rsp ([rsp-8] for 0xf8), so
+#     they are refused as outside the frame rather than read as large offsets
+#     (read unsigned, 0xf8 fitted a 0x100-byte frame; review, 2026-09-26);
+#   * F is the same in the sub and the add, and in the same encoding - an
+#     imm8 is sign-extended too, so `add rsp, 0x88` as imm8 is add rsp, -0x78
+#     and would not release a `sub rsp, 0x88` written as imm32 - and is not
+#     negative in either;
+#   * L equals the continuation's own length;
+#   * FREE, and why: the x86 handler (it runs only if an exception unwinds
+#     through a frame whose EH state never leaves -1, so no catch here can
+#     fire; it must still point into an executable section), the x64 catch
+#     value E (skipped by the jmp), and the failure jmp's target inside
+#     __security_check_cookie (off the returning path; must be executable).
+#     The fixture flips every byte of both shapes and requires exactly this:
+#     a flipped value byte decodes to the flipped value, a flipped free byte
+#     either leaves the value unchanged or (an address moved out of executable
+#     code) is refused, and every other flipped byte is a refusal.
+# Anything else - another MSVC version adding `bnd` prefixes, a different
+# frame, an extra instruction - is a SKIP that names the first byte that did
+# not match, exactly as before.
+# --------------------------------------------------------------------------
+
+# One instruction per row: (mnemonic, fixed opcode bytes, operand) with the
+# operand as "name:kind" (kind u8, u32, rel32) or None. A row may instead be a
+# tuple of such rows - alternatives, tried in order, whose fixed bytes differ.
+# The mnemonic is GNU objdump's (Intel syntax), so the fixture can hold the
+# walk's instruction boundaries to an independent disassembler.
+MSVC_GUARDED_X86 = (
+    ("push", "55", None),
+    ("mov", "8b ec", None),
+    ("push", "6a ff", None),
+    ("push", "68", "handler:u32"),
+    ("mov", "64 a1 00 00 00 00", None),
+    ("push", "50", None),
+    ("mov", "a1", "cookie:u32"),
+    ("xor", "33 c5", None),
+    ("push", "50", None),
+    ("lea", "8d 45 f4", None),
+    ("mov", "64 a3 00 00 00 00", None),
+    ("mov", "b8", "value:u32"),
+    ("mov", "8b 4d f4", None),
+    ("mov", "64 89 0d 00 00 00 00", None),
+    ("pop", "59", None),
+    ("mov", "8b e5", None),
+    ("pop", "5d", None),
+    ("ret", "c3", None),
+)
+
+MSVC_GUARDED_X64 = (
+    (("sub", "48 83 ec", "frame:u8"), ("sub", "48 81 ec", "frame:u32")),
+    ("mov", "48 8b 05", "cookie:rel32"),
+    ("xor", "48 33 c4", None),
+    ("mov", "48 89 44 24", "slot:u8"),
+    ("mov", "b8", "value:u32"),
+    ("jmp", "eb", "skip:u8"),
+    (("xor", "33 c0", None), ("mov", "b8", "caught:u32")),
+    ("mov", "48 8b 4c 24", "reload:u8"),
+    ("xor", "48 33 cc", None),
+    ("call", "e8", "check:rel32"),
+    (("add", "48 83 c4", "unframe:u8"), ("add", "48 81 c4", "unframe:u32")),
+    ("ret", "c3", None),
+)
+
+# __security_check_cookie as the committed x64 DLLs' CRT links it.
+MSVC_CHECK_COOKIE_X64 = (
+    ("cmp", "48 3b 0d", "cookie:rel32"),
+    ("jne", "75 10", None),                 # to the failure jmp at +0x19
+    ("rol", "48 c1 c1 10", None),
+    ("test", "66 f7 c1 ff ff", None),       # the cookie's top 16 bits are 0
+    ("jne", "75 01", None),                 # to the ror at +0x15
+    ("ret", "c3", None),                    # THE returning path
+    ("ror", "48 c1 c9 10", None),
+    ("jmp", "e9", "fail:rel32"),            # __report_gsfailure, not followed
+)
+
+# Enough for the longest shape above (x64 with both imm32 forms and the
+# five-byte continuation: 55 bytes; the x86 shape is 54), with room to spare;
+# a shorter read is a named mismatch. tools/test-binary-freshness.py decodes
+# a synthesized 55-byte vector, so a read cut below it fails there.
+GUARDED_READ = 72
+
+
+class ShapeRefused(Exception):
+    """The bytes are not the shape; the message names the first deviation."""
+
+
+def match_shape(code, rows, base_va, trace=None):
+    """Walk `rows` over `code` (which starts at `base_va`).
+
+    Returns ({operand name: value}, {alternative row index: chosen}, length).
+    u8/u32 operands are unsigned; a rel32 operand is returned as the VA it
+    RESOLVES to (the end of its instruction plus the signed displacement),
+    since every rel32 in these shapes is the instruction's last field. With a
+    `trace` list, appends (va, length, mnemonic) per instruction.
+    """
+    fields, chosen, pos = {}, {}, 0
+    for index, row in enumerate(rows):
+        alternatives = row if isinstance(row[0], tuple) else (row,)
+        for choice, (mnemonic, fixed_hex, operand) in enumerate(alternatives):
+            fixed = bytes.fromhex(fixed_hex)
+            if bytes(code[pos:pos + len(fixed)]) == fixed:
+                break
+        else:
+            wanted = " or ".join("`%s` (%s)" % (alt[1], alt[0])
+                                 for alt in alternatives)
+            found = bytes(code[pos:pos + 7]).hex(" ") or "no readable bytes"
+            raise ShapeRefused("+0x%x: expected %s, found %s"
+                               % (pos, wanted, found))
+        if len(alternatives) > 1:
+            chosen[index] = choice
+        start = pos
+        pos += len(fixed)
+        if operand is not None:
+            name, kind = operand.split(":")
+            width = 1 if kind == "u8" else 4
+            if pos + width > len(code):
+                raise ShapeRefused("+0x%x: the %s operand runs past the "
+                                   "readable bytes" % (pos, name))
+            if kind == "u8":
+                value = code[pos]
+            elif kind == "u32":
+                value = struct.unpack_from("<I", code, pos)[0]
+            else:
+                value = (base_va + pos + 4
+                         + struct.unpack_from("<i", code, pos)[0])
+            fields[name] = value
+            pos += width
+        if trace is not None:
+            trace.append((base_va + start, pos - start, mnemonic))
+    return fields, chosen, pos
+
+
+def decode_msvc_guarded(mem, fn_va, trace=None):
+    """(value, None) for an MSVC guarded `return N;`, else (None, why).
+
+    `mem` is the VA-level view PeImage provides: machine, read_va,
+    is_exec_va, is_writable_va, security_cookie_va (the fixture's recorded
+    vectors provide the same five). See the block comment above for the two
+    shapes and why each operand is safe. With a `trace` list, every decoded
+    instruction is appended as (va, length, mnemonic), the called
+    __security_check_cookie's included.
+    """
+    try:
+        if mem.machine == "x86":
+            return _decode_guarded_x86(mem, fn_va, trace), None
+        if mem.machine == "x64":
+            return _decode_guarded_x64(mem, fn_va, trace), None
+        raise ShapeRefused("machine %s has no guarded shape here"
+                           % mem.machine)
+    except ShapeRefused as exc:
+        return None, str(exc)
+
+
+def _cookie_of(mem):
+    cookie, why = mem.security_cookie_va()
+    if cookie is None:
+        raise ShapeRefused(why)
+    if not mem.is_writable_va(cookie):
+        raise ShapeRefused("the load config's SecurityCookie 0x%x is not in "
+                           "a writable section" % cookie)
+    return cookie
+
+
+def _signed_imm(value, imm8):
+    """An x64 `sub/add rsp` immediate as the CPU reads it: imm8 and imm32 are
+    both sign-extended, so 0x88 is -0x78 as an imm8 and 0x88 as an imm32."""
+    top = 0x80 if imm8 else 0x80000000
+    signed = value - 2 * top if value >= top else value
+    return "%s%#x (%s)" % ("-" if signed < 0 else "", abs(signed),
+                           "imm8" if imm8 else "imm32")
+
+
+def _decode_guarded_x86(mem, fn_va, trace):
+    code = mem.read_va(fn_va, GUARDED_READ)
+    fields, _, _ = match_shape(code, MSVC_GUARDED_X86, fn_va, trace)
+    cookie = _cookie_of(mem)
+    if fields["cookie"] != cookie:
+        raise ShapeRefused("the prologue reads its cookie from 0x%x, not the "
+                           "load config's SecurityCookie 0x%x"
+                           % (fields["cookie"], cookie))
+    if not mem.is_exec_va(fields["handler"]):
+        raise ShapeRefused("the EH handler 0x%x is not in an executable "
+                           "section" % fields["handler"])
+    return fields["value"]
+
+
+def _decode_guarded_x64(mem, fn_va, trace):
+    code = mem.read_va(fn_va, GUARDED_READ)
+    local = []
+    fields, chosen, _ = match_shape(code, MSVC_GUARDED_X64, fn_va, local)
+    frame, slot = fields["frame"], fields["slot"]
+    if chosen[0] != chosen[10] or fields["unframe"] != frame:
+        # Both immediates are printed as the CPU reads them (sign-extended),
+        # because the equal-looking raw values of a mixed encoding are the
+        # case this refusal exists for: imm32 0x88 against imm8 0x88 (-0x78).
+        raise ShapeRefused("the epilogue releases a different frame than the "
+                           "prologue allocates (sub rsp, %s; add rsp, %s)"
+                           % (_signed_imm(frame, chosen[0] == 0),
+                              _signed_imm(fields["unframe"], chosen[10] == 0)))
+    if frame >= (0x80 if chosen[0] == 0 else 0x80000000):
+        raise ShapeRefused("sub rsp, %#x is a negative immediate" % frame)
+    if fields["reload"] != slot:
+        raise ShapeRefused("the cookie is stored at [rsp+%#x] but reloaded "
+                           "from [rsp+%#x]" % (slot, fields["reload"]))
+    if slot >= 0x80:
+        raise ShapeRefused("the cookie slot's disp8 %#x is negative, so the "
+                           "store is [rsp-%#x], below rsp and outside the "
+                           "frame" % (slot, 0x100 - slot))
+    if slot + 8 > frame:
+        raise ShapeRefused("the cookie slot [rsp+%#x] is not inside the %#x-"
+                           "byte frame, so the store would overwrite the "
+                           "return address" % (slot, frame))
+    # local[5] is the jmp, local[6] the continuation it must skip exactly.
+    if fields["skip"] != local[6][1]:
+        raise ShapeRefused("the jmp skips %d byte(s) but the continuation is "
+                           "%d, so the normal path does not land on the "
+                           "cookie reload" % (fields["skip"], local[6][1]))
+    cookie = _cookie_of(mem)
+    if fields["cookie"] != cookie:
+        raise ShapeRefused("the prologue reads its cookie from 0x%x, not the "
+                           "load config's SecurityCookie 0x%x"
+                           % (fields["cookie"], cookie))
+    target = fields["check"]
+    if not mem.is_exec_va(target):
+        raise ShapeRefused("the call target 0x%x is not in an executable "
+                           "section" % target)
+    try:
+        checked, _, _ = match_shape(mem.read_va(target, 32),
+                                    MSVC_CHECK_COOKIE_X64, target, local)
+    except ShapeRefused as exc:
+        raise ShapeRefused("the call target 0x%x is not "
+                           "__security_check_cookie's shape (%s)"
+                           % (target, exc))
+    if checked["cookie"] != cookie:
+        raise ShapeRefused("the called check compares against 0x%x, not the "
+                           "cookie the prologue stored (0x%x)"
+                           % (checked["cookie"], cookie))
+    if not mem.is_exec_va(checked["fail"]):
+        raise ShapeRefused("the check's failure jmp 0x%x is not in an "
+                           "executable section" % checked["fail"])
+    if trace is not None:
+        trace.extend(local)
+    return fields["value"]
+
+
+def decode_abi(fmt, code_at, symbol):
+    """Leg 4's decode for one ELF or PE library.
+
+    (value, "leaf" | "guarded", None), or (None, None, why) where `why`
+    completes the sentence "<symbol>'s code ...". The leaf shape is tried
+    first (every ELF, and every PE whose function got no frame); a PE that is
+    not a leaf then gets the MSVC guarded shape, and nothing else. Both are
+    exact instruction sequences, so trying the second after the first widens
+    WHICH shapes read, never how loosely either one does. One function, so
+    check_member and tools/test-binary-freshness.py run the same path.
+    """
+    decoded = decode_return_constant(code_at(symbol, 24))
+    if decoded is not None:
+        return decoded, "leaf", None
+    if fmt != "pe":
+        return None, None, "does not begin `[endbr] mov eax, imm32 ; ret`"
+    fn_va = code_at.export_va(symbol)
+    if fn_va is None:
+        return None, None, "is not a code export (missing, or a forwarder)"
+    decoded, refused = decode_msvc_guarded(code_at, fn_va)
+    if decoded is None:
+        return None, None, (f"is neither the leaf `[endbr] mov eax, imm32 ; "
+                            f"ret` nor the MSVC guarded shape ({refused})")
+    return decoded, "guarded", None
 
 
 def call_abi_in_subprocess(path, symbol):
@@ -1511,16 +2024,19 @@ def check_member(member, problems, skips, notes, stats):
             check_export_legs(member, where, fmt, binds, defs, exports,
                               problems, skips, stats)
 
-            # Leg 4: the ABI pin.
-            decoded = decode_return_constant(code_at(member["abi_symbol"], 24))
+            # Leg 4: the ABI pin (decode_abi: the leaf shape, then, for a PE
+            # only, the MSVC guarded shape).
+            decoded, shape, why = decode_abi(fmt, code_at,
+                                             member["abi_symbol"])
             if decoded is None:
                 skips.append(
-                    f"{where} ABI pin - {member['abi_symbol']}'s code does not "
-                    f"begin `[endbr] mov eax, imm32 ; ret` (this toolchain "
-                    f"emitted a stack-check prologue), and scanning the body "
-                    f"for a plausible immediate would be a guess")
+                    f"{where} ABI pin - {member['abi_symbol']}'s code {why}, "
+                    f"and scanning the body for a plausible immediate would "
+                    f"be a guess")
             else:
                 stats["abi"] += 1
+                if shape == "guarded":
+                    stats["guarded"] += 1
                 if decoded != want_abi:
                     problems.append(
                         f"{where}: {member['abi_symbol']}() returns {decoded} "
@@ -1616,7 +2132,7 @@ def main(argv=()):
 
     problems, skips, notes = [], [], []
     stats = {"libs": 0, "binds": 0, "distinct": 0, "abi": 0, "confirmed": 0,
-             "mac": 0}
+             "mac": 0, "guarded": 0}
 
     assert_table_covers_tree(problems)
     for member in MEMBERS:
@@ -1652,7 +2168,8 @@ def main(argv=()):
           f"binds, {stats['binds']} bind-vs-export resolutions; every "
           f"non-static shim definition exported, outside any recorded-stale "
           f"mac state printed above; {stats['abi']} ABI constants decoded "
-          f"from committed code (a fat dylib contributes one per slice), "
+          f"from committed code (a fat dylib contributes one per slice; "
+          f"{stats['guarded']} through the MSVC guarded shape), "
           f"{stats['confirmed']} of them confirmed by loading the library "
           f"and calling the function")
     return 0

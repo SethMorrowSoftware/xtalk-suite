@@ -44,9 +44,11 @@ Public `Xx*` wrappers hide handles, pre-size buffers and walk records.
 **Engine behaviour:** ASCII only, comments included (note 1.4); an undeclared
 name evaluates to its own spelling (2.1); declarations resolve by lexical
 position (1.2); constants are literal and declared first (1.3);
-`itemDelimiter`/`lineDelimiter` are global, so set them right before each use
-and restore (2.3); `repeat with` ignores `step` (3.1); `throw` inside `catch` is
-lost (3.2); a zero-argument statement call is bare, `dcCleanup` not
+set `itemDelimiter`/`lineDelimiter` right before each use and restore them
+(2.3: the itemDelimiter is handler-local on Windows and Linux, so the restore
+guards the rest of the handler that set it; the lineDelimiter is unprobed);
+`repeat with` ignores `step` (3.1); `throw` inside `catch` is lost (3.2); a
+zero-argument statement call is bare, `dcCleanup` not
 `dcCleanup()` (3.3); a prefixed stem can be a token, `tExt` (1.5); a
 script-only stack file opened from disk builds no GUI (5.5); a timer-driven
 dispatcher resolves unqualified controls by the defaultStack: pin it (5.3).

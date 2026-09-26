@@ -66,11 +66,23 @@ riptide's probe and the engine source: suite engine note 2.10) and two
 ruled-out candidates kept as margin (a 15-digit round trip, an absolute
 1e-6), and must not move under any of them.
 
+THE TEXT PARSE IS NOT ASSUMED EITHER (tier 5, 2026-09-26). The engine reads
+BOTH operands of `is` or `<` as numbers when both parse (suite engine note
+2.11), so an all-digit or digits-e-digits hex value is a NUMBER there and two
+different ones can tie, while the interpreter reads them as text. The family
+checker's check 23 found 27 such compares of txids and keys in this member,
+and a sweep by hand the same day 15 more that a name rule cannot see (plain
+names, number-like literals and a 64-zero constant); tier 5 carries the
+parse as a model, proves it reads riptide's two recorded parse answers,
+plants each fix's OLD spelling back into the shipped source (wallet-core,
+and coin-wallet's handlers lifted out of the shipped stack) and requires its
+vectors to fail, and runs the vectors under it.
+
 Usage:
   python3 tools/check-wallet-vectors.py            # per-check detail
   python3 tools/check-wallet-vectors.py --check    # terse (the gate set)
   python3 tools/check-wallet-vectors.py --check --all-comparison-rules
-                                    # tier 4 over the WHOLE set (by hand)
+                                    # tiers 4 and 5 over the WHOLE set (by hand)
 """
 import ctypes
 import importlib.util
@@ -86,6 +98,9 @@ MEMBER = os.path.dirname(HERE)
 
 CORE = os.path.join(MEMBER, "examples", "wallet-core.livecodescript")
 COIN = os.path.join(MEMBER, "src", "coinxt.livecodescript")
+# read, never run, by this gate: tier 4 lifts the boot self-check's round
+# trip out of it (check_exact_integer_fixtures) and pins its scAssert line
+WALLET = os.path.join(MEMBER, "examples", "coin-wallet.livecodescript")
 
 
 def _load(name, path):
@@ -1625,6 +1640,205 @@ def check_wide_reads(c, ip):
          read("cwPsbtInputAmount", [utxo(top + 1)]), refusal("cwLeRead"))
 
 
+def check_exact_integers(c, ip):
+    """Work-plan row #8 (2026-09-25): every integer this layer, or the library
+    under it, takes from TEXT or BYTES is bounded before the arithmetic, and
+    every bound is decided on small exact integers.
+
+    The engine rounds a number past 2^53 with no error (suite engine note
+    2.4) and calls two numbers within 10 DBL_EPSILON of the smaller EQUAL
+    (2.10), so a bound checked against a wide value, or a whole-number test
+    written as `X is trunc(X)`, can be let through on an engine by the very
+    comparison meant to refuse it. Tier 4 re-runs this whole function under
+    the engine's rule and the two margin models, so no answer here may move
+    under any of them. Every call goes through run(), which turns a refusal
+    into its text and anything else into a plain answer, so one vector that
+    moved cannot end the run. Both directions each time (trap 16): the bound
+    itself answers, one past it is refused.
+    """
+    import base64 as _b64
+    import json as _json
+    call = ip.call
+    c.note("\nexact integers: bounds decided before the arithmetic (row #8)")
+    top = 2 ** 53
+
+    def run(name, args):
+        try:
+            return call(name, args)
+        except LCS.Thrown as thrown:
+            return "refused: %s" % thrown.msg
+        except LCS.Imprecise:
+            return "let past 2^53 (the interpreter's stop fired)"
+        except Exception as exc:                        # noqa: BLE001
+            return "stopped: %s: %s" % (type(exc).__name__, str(exc)[:80])
+
+    # ---- (a) the library's bech32 data values: whole, decided exactly ------
+    # `tIndex is not trunc(tIndex)` went through the engine's tolerant `is`;
+    # tier 4's fixture (check_exact_integer_fixtures) replays that old line
+    # and lets the first three through under the engine's rule. The last two
+    # were refused on the engine only as an error (trunc() of a non-number)
+    # or not at all (an empty item converts to 0 there).
+    whole = ("refused: CoinXT: cxBech32EncodeValues: every data value must be "
+             "a whole number between 0 and 31.")
+    three = run("cxBech32EncodeValues", ["bc", "0,3", "bech32"])
+    c.ck("cxBech32EncodeValues encodes 0,3", three,
+         CR.bech32_encode("bc", [0, 3], "bech32"))
+    for label, values in (
+            ("a value one ulp above 3 (3.0000000000000004)", "0,3.0000000000000004"),
+            ("a value within 2.2e-15 below zero (-1e-15)", "0,-0.000000000000001"),
+            ("a value one ulp above 31", "0,31.000000000000004"),
+            ("an EMPTY value", "0,,1"),
+            ("a value that is not a number", "0,x")):
+        c.ck("cxBech32EncodeValues refuses %s by name" % label,
+             run("cxBech32EncodeValues", ["bc", values, "bech32"]), whole)
+    # the spellings the engine calls whole (`is an integer` is true for them
+    # on the engine and here) encode as the number they spell: the character
+    # and the checksum read the same number, so the string cannot come apart
+    # from its checksum
+    for alias in ("3.0", "+3", "3e0"):
+        c.ck("0,%s encodes exactly as 0,3" % alias,
+             run("cxBech32EncodeValues", ["bc", "0," + alias, "bech32"]), three)
+
+    # ---- (c) cwBtcToSat: the whole part, bounded before the multiply --------
+    def over_btc(text):
+        return ("refused: wallet-core: cwBtcToSat: \"%s\" is more than "
+                "90071992.54740992 BTC (2^53 satoshi), the most a number here "
+                "holds to the satoshi." % text)
+
+    for text, want in (("90071992.54740992", top), ("90071992.5474099", top - 2),
+                       ("90071991.99999999", 9007199199999999),
+                       ("-90071992.54740992", -top),
+                       ("0000000000000000000000001.5", 150000000)):
+        c.ck("%s BTC is %d satoshi, exactly" % (text, want),
+             run("cwBtcToSat", [text]), want)
+        c.ck("and the oracle agrees about %s" % text, REF.btc_to_sat(text), want)
+    for text in ("90071992.54740993", "90071993", "100000000000",
+                 "99999999999999999999.5", "-90071992.54740993"):
+        c.ck("%s BTC is refused before the multiply, by name" % text,
+             run("cwBtcToSat", [text]), over_btc(text))
+        try:
+            REF.btc_to_sat(text)
+            c.ck("and the oracle refuses %s too" % text, "accepted", "refused")
+        except ValueError:
+            c.ck("and the oracle refuses %s too" % text, "refused", "refused")
+    # the mBTC form reads its text through cwBtcToSat, so it has the same
+    # ceiling counted in mBTC: 90071992.54740992 of them, 2^53 / 1000 satoshi
+    c.ck("90071992.54740992 mBTC is the most the mBTC form reads",
+         run("cwParseAmount", ["90071992.54740992", "mBTC"]), top // 1000)
+    c.ck("and one past it is refused by cwBtcToSat's bound",
+         run("cwParseAmount", ["90071992.54740993", "mBTC"]),
+         over_btc("90071992.54740993"))
+
+    # ---- (c) cwParseAmount's satoshi form: digits, at most 2^53 --------------
+    for text, want in (("546", 546), (" 9007199254740992 ", top), ("-5", -5),
+                       ("0", 0), ("00000000000000000000000000042", 42)):
+        c.ck("%r satoshi reads as %d" % (text, want),
+             run("cwParseAmount", [text, "sat"]), want)
+    for text in ("9007199254740993", "99999999999999999999"):
+        c.ck("%s satoshi is refused, compared as digits" % text,
+             run("cwParseAmount", [text, "sat"]),
+             "refused: wallet-core: cwParseAmount: \"%s\" is more than 2^53 "
+             "satoshi, the most a number here holds exactly." % text)
+    for text in ("1e3", "3.0", "+3", "", "-", "abc", "1 2", "0x10"):
+        c.ck("%r is not a satoshi amount: digits only" % text,
+             run("cwParseAmount", [text, "sat"]),
+             "refused: wallet-core: cwParseAmount: satoshi are whole numbers.")
+
+    # ---- (c) the same class, found in review: cwExpandExponent's exponent ---
+    # (2026-09-26) A backend's JSON number (Electrum's and Core's fee replies)
+    # reaches cwExpandExponent, whose exponent went through `is an integer`
+    # and `+ 0` with no digit bound AND then counted the zero-padding loops:
+    # twenty digits rounded to 1e20 on the engine (suite engine note 2.4), a
+    # loop no one would see the end of, where this interpreter stops instead.
+    # Digits only now, at most three that count, which every double's
+    # spelling fits. The positives are checked against Python's Decimal, an
+    # independent way to move a decimal point (no gate pinned this handler
+    # before). Both directions, and the boundary (trap 16).
+    from decimal import Decimal as _Dec
+    for text in ("4.22e-06", "1e-05", "1.5E+3", "-2.5e-3", "1.50e1", "1e-0005",
+                 "1e0000000000000000000005", "1e308", "5e-324", "1e999", "1e-999"):
+        c.ck("cwExpandExponent(%r) moves the point where Decimal does" % text,
+             run("cwExpandExponent", [text]), format(_Dec(text), "f"))
+    # (a mutant that drops the bound must FINISH here, so the widest is five
+    # digits: the old loop ran 12345 turns for it, fast headlessly, and would
+    # have run 123456789 for a nine-digit one, which reads as a hung gate)
+    for text in ("1e1000", "1e-1000", "1e99999999999999999999", "2.5E+12345"):
+        c.ck("cwExpandExponent refuses %r: an exponent past 999, before any "
+             "arithmetic or loop" % text, run("cwExpandExponent", [text]),
+             "refused: wallet-core: cwExpandExponent: \"%s\" has an exponent past "
+             "999, which no number read from a double carries." % text)
+    for text in ("1e5.0", "1e+-5", "1e+", "1e 5"):
+        c.ck("cwExpandExponent refuses %r: an exponent is digits" % text,
+             run("cwExpandExponent", [text]),
+             "refused: wallet-core: cwExpandExponent: \"%s\" has no whole "
+             "exponent." % text)
+
+    # ---- (c) BOLT11's x and c fields: at most ten significant values ----------
+    wide_msg = ("refused: wallet-core: an invoice field carries an integer wider "
+                "than 50 bits (11 significant five-bit values), past what a "
+                "number here holds exactly.")
+    c.ck("cwBitsToInt reads ten 5-bit values of 31 as 2^50 - 1",
+         run("cwBitsToInt", [lst([31] * 10), 1, 10]), 2 ** 50 - 1)
+    c.ck("and five leading zero values add no width",
+         run("cwBitsToInt", [lst([0] * 5 + [31] * 10), 1, 15]), 2 ** 50 - 1)
+    c.ck("eleven significant values are refused, even where the value would fit",
+         run("cwBitsToInt", [lst([1] + [0] * 10), 1, 11]), wide_msg)
+    with open(BOLT11_VECTORS, encoding="utf-8") as fh:
+        inv = _json.load(fh)["valid"][0]["invoice"]
+    hrp, _spec, values = REF.bech32_decode_long(inv, 65535)
+    for tag in ("x", "c"):
+        # the field goes in ahead of the rest, so the reader meets it before
+        # the signature it invalidates: the refusal must be the width's
+        wide = values[:7] + [CR.CHARSET.index(tag), 0, 11] + [31] * 11 + values[7:]
+        bad = REF.bech32_encode_long(hrp, wide, "bech32")
+        c.ck("an invoice whose %s field is 55 bits wide is refused before the "
+             "multiply, by name" % tag, run("cwBolt11Decode", [bad]), wide_msg)
+        try:
+            REF.bolt11_decode(bad)
+            c.ck("and the oracle refuses that %s field too" % tag, "accepted", "refused")
+        except ValueError:
+            c.ck("and the oracle refuses that %s field too" % tag, "refused", "refused")
+
+    # ---- (d) a SUM of decoded amounts, bounded as a sum ----------------------
+    def sum_msg(who):
+        return ("refused: wallet-core: %s: the amounts add up to more than 2^53 "
+                "satoshi, which cannot be held exactly." % who)
+
+    for a, b in ((top - 1, 1), (top, 0), (0, top), (2 ** 52, 2 ** 52),
+                 (2 ** 32 - 1, top - 2 ** 32 + 1), (123456789, 987654321)):
+        c.ck("cwAmountAdd(%d, %d) is exact" % (a, b),
+             run("cwAmountAdd", [a, b, "x"]), a + b)
+    for a, b in ((top, 1), (top - 1, 2), (2 ** 52 + 1, 2 ** 52 + 1),
+                 (2 ** 32, top - 2 ** 32 + 1), (top, top)):
+        c.ck("cwAmountAdd(%d, %d) is refused" % (a, b),
+             run("cwAmountAdd", [a, b, "x"]), sum_msg("x"))
+    spk = bytes.fromhex("0014" + "75" * 20)
+    ins = [("aa" * 32, 0, 0xFFFFFFFD)]
+    half = 2 ** 52 + 1
+    two = REF.tx_serialize(2, ins, [(half, spk), (half, spk)], 0, [b""], None).hex()
+    c.ck("cwTxDecode refuses two outputs of 2^52 + 1: each fits, the total "
+         "does not", run("cwTxDecode", [two]), sum_msg("cwTxDecode"))
+    edge = REF.tx_serialize(2, ins, [(top - 1, spk), (1, spk)], 0, [b""], None).hex()
+    got = run("cwTxDecode", [edge])
+    c.ck("and reads outputs that total exactly 2^53",
+         got["outputtotal"] if isinstance(got, dict) else got, top)
+    ins2 = [("aa" * 32, 0, 0xFFFFFFFD), ("bb" * 32, 1, 0xFFFFFFFD)]
+
+    def psbt(amount):
+        raw = REF.psbt_create(2, ins2, [(1000, spk)], 0,
+                              in_meta={0: {"witness_utxo": (amount, spk)},
+                                       1: {"witness_utxo": (amount, spk)}})
+        return _b64.b64encode(raw).decode("ascii")
+
+    c.ck("cwPsbtSummary refuses two inputs of 2^52 + 1: the total in is "
+         "bounded as a sum", run("cwPsbtSummary", [psbt(half), "mainnet"]),
+         sum_msg("cwPsbtSummary"))
+    got = run("cwPsbtSummary", [psbt(2 ** 52), "mainnet"])
+    c.ck("and summarises two inputs that total exactly 2^53, fee and all",
+         isinstance(got, str) and ("(%d sat)" % (top - 1000)) in got,
+         True)
+
+
 def check_messages(c, ip):
     call = ip.call
     c.note("\nsigned messages, URIs and descriptors")
@@ -2699,7 +2913,8 @@ def check_case_folding_fires(c, ip):
 # MC_EPSILON outright when that magnitude is below it (engine/src/
 # exec-logic.cpp and sysdefs.h; DOCUMENTED, and it reproduces all eight
 # readings of riptide's first two probe lines). riptide's third probe line
-# then read the rule's consequences on an engine (Linux, 2026-09-25), the
+# then read the rule's consequences on an engine (Linux, then Windows,
+# 2026-09-25, character for character alike), the
 # constant to the digit among them: `N is N + 1` is true at N =
 # 450359962737050 and false one below, and 2^52 / 10 lies between.
 # check_tolerance_fires re-proves the rule against all fourteen recorded
@@ -2725,7 +2940,8 @@ def check_case_folding_fires(c, ip):
 # probe reading that the engine's rule cannot reproduce is a new row, and
 # check_tolerance_fires holds the fourteen there are.
 #
-# SCOPE, deliberately: the wide-integer vectors, not the whole set. The swap
+# SCOPE, deliberately: the wide-integer vectors (and since 2026-09-26 tier 5's
+# hex-compare vectors), not the whole set. The swap
 # below reaches every comparison the interpreter makes, so a full re-run is
 # one flag away (--all-comparison-rules). This line used to say that run was
 # made by hand on 2026-09-24; it never finished (a loaded machine, about four
@@ -2871,11 +3087,11 @@ end oldCwLeRead
 #
 # Probe 3 enters at its item 3. Its items 1 and 2 ("1e999" is "2e999" and
 # "1e5" is "100000", both true on the engine) are not comparisons of two
-# numbers but text becoming a number (strtod: suite engine note 2.11), and
-# tools/lcs-interp.py does not model that parse: its _eq reads only
-# -?\d+(\.\d+)? as a number, so it compares both pairs as TEXT and never
-# calls the _n a candidate rule swaps. No comparison rule could reproduce
-# them, so holding one to them here would test the parse, not the rule.
+# numbers but text becoming a number (strtod: suite engine note 2.11). Since
+# 2026-09-25 tools/lcs-interp.py ports that parse and REFUSES both (it
+# compared them as TEXT before), but neither reaches the number comparison a
+# candidate rule swaps, so holding a rule to them here would test the parse,
+# not the rule: check-script-vectors.py tier 0 holds the interpreter to them.
 _PROBE_LADDER = """
 function probeUlpLadder pBase, pUlps
    local tStep
@@ -2898,7 +3114,8 @@ _PROBE_READINGS = (
     ("1073741824 + 1 / 2097152 > 1073741824", "false"),
     ("probeUlpLadder(1, 4503599627370496)", "16"),
     ("probeUlpLadder(8, 562949953421312)", "16"),
-    # probe 3, items 3 to 8 (Linux, 2026-09-25): the absolute branch near
+    # probe 3, items 3 to 8 (Linux and Windows, 2026-09-25): the absolute
+    # branch near
     # zero (1e-15 is within MC_EPSILON of 0, 1e-14 is not), integers one
     # apart at 2^49 (8 DBL_EPSILON: equal) and 2^48 (16: told apart), and
     # N against N + 1 either side of 2^52 / 10 = 450359962737049.6, which
@@ -2922,6 +3139,8 @@ def _guard_answer(fn):
         return "refused"
     except LCS.Imprecise:
         return "let through"
+    except LCS.Indistinct:
+        return "not decided"
     if got == "":
         return "refused"
     return "answered %r" % (got,)
@@ -2936,12 +3155,22 @@ def check_tolerance_fires(c):
     probe = LCS.Interp(_PROBE_LADDER)
 
     def readings():
-        return [str(LCS._disp(probe.eval_expr(expr, {})))
-                for expr, _want in _PROBE_READINGS]
+        out = []
+        for expr, _want in _PROBE_READINGS:
+            try:
+                out.append(str(LCS._disp(probe.eval_expr(expr, {}))))
+            except LCS.Indistinct:
+                out.append("refused")
+        return out
 
     engine_read = [want for _expr, want in _PROBE_READINGS]
-    c.ck("exact IEEE reads riptide's three probe lines as the engine did NOT",
-         readings(), ["true"] * 6 + ["1", "1"] + ["true"] * 4 + ["false"] * 2)
+    c.ck("the plain interpreter refuses each probe the engine read "
+         "differently from IEEE (IEEE reads true x6, 1, 1 and true x4, "
+         "false x2), and answers the five it read the same",
+         readings(), ["true", "refused", "refused", "refused", "true",
+                      "refused", "refused", "refused",
+                      "refused", "true", "refused", "true", "refused",
+                      "false"])
     for index, (label, same, _old) in enumerate(TOLERANCE_MODELS):
         restore = _tolerant_compare(same)
         try:
@@ -2950,8 +3179,9 @@ def check_tolerance_fires(c):
             restore()
         if index == 0:
             c.ck("under %s, riptide's probe lines read the fourteen numeric "
-                 "answers the engine gave (probes 1 and 2, Windows 2026-09-24 "
-                 "and Linux 2026-09-25; probe 3's items 3-8, Linux 2026-09-25)"
+                 "answers the engine gave (probes 1 and 2 on Windows "
+                 "2026-09-24; those and probe 3's items 3-8 on Linux and on "
+                 "Windows 2026-09-25)"
                  % label, got, engine_read)
         else:
             c.ck("under %s they misread at least one (margin, not the rule)"
@@ -2964,15 +3194,20 @@ def check_tolerance_fires(c):
         # the two guards (`>`), and `is` over riptide's pair: the swap must
         # reach the ordering operators AND _eq, or a vector could pass
         # under a rule the tier never applied
+        try:
+            pair = fixture.eval_expr(
+                "2097152 is (9007199254740992 - 1) / 4294967296", {})
+        except LCS.Indistinct:
+            pair = "not decided"
         return (_guard_answer(lambda: fixture.call("oldRiptideU64", [2 ** 21, 1])),
                 _guard_answer(lambda: fixture.call("oldCwLeRead", [past])),
-                fixture.eval_expr("2097152 is (9007199254740992 - 1) / 4294967296",
-                                  {}))
+                pair)
 
-    c.ck("exact IEEE refuses 2^53 + 1 at both quotient guards and tells the "
-         "pair apart (the engine ACCEPTED riptide's on 2026-09-24: the "
-         "disagreement this tier is for)",
-         answers(), ("refused", "refused", False))
+    c.ck("the plain interpreter will not decide 2^53 + 1 at either quotient "
+         "guard, nor whether the pair is equal (since 2026-09-25 it refuses a "
+         "comparison the engine answers differently from IEEE; the engine "
+         "ACCEPTED riptide's on 2026-09-24)",
+         answers(), ("not decided", "not decided", "not decided"))
     for label, same, old_cw in TOLERANCE_MODELS:
         restore = _tolerant_compare(same)
         try:
@@ -2982,8 +3217,149 @@ def check_tolerance_fires(c):
         c.ck("under %s, riptide's guard lets 2^53 + 1 through as the engine "
              "did and `is` calls the pair equal; wallet-core's old guard: %s"
              % (label, old_cw), got, ("let through", old_cw, True))
-    c.ck("and the exact rule is restored afterwards", answers(),
-         ("refused", "refused", False))
+    c.ck("and the interpreter's own rule is restored afterwards", answers(),
+         ("not decided", "not decided", "not decided"))
+
+
+# ROW #8'S TWO OLD LINES (2026-09-25), as fixtures never shipped: the library's
+# bech32 value guard and the wallet boot self-check's round trip, each as it
+# stood. They are how this tier proves the engine's rule lets through what the
+# shipped replacements refuse - both lines were green under IEEE, which is
+# every tool here.
+_OLD_EXACT_LINES = """
+function oldBech32ValueGuard pValue
+   if pValue < 0 or pValue > 31 or pValue is not trunc(pValue) then
+      return "refused"
+   end if
+   return "let through"
+end oldBech32ValueGuard
+
+function oldSatRoundTrip
+   return cwBtcToSat(cwSatToBtc(2100000000000000)) is 2100000000000000
+end oldSatRoundTrip
+"""
+
+
+class _DivModExpr(LCS._Expr):
+    """`div` and `mod`, which coin-wallet uses and the base interpreter does
+    not model, the way riptide's boot runner models them (check-demo-boot.py
+    DemoExpr.p_mul, which check-wallet-boot.py runs the real stack under):
+    integer division and its remainder, exact below 2^53. Only p_mul is
+    restated, so p_cmp and _eq stay the base's, which is what lets
+    _tolerant_compare reach this class too."""
+
+    def p_mul(self):
+        v = self.p_unary()
+        while True:
+            self.ws()
+            if self.i < len(self.s) and self.s[self.i] in "*/":
+                op = self.s[self.i]
+                self.i += 1
+                r = self.p_unary()
+                v = LCS._n(v) * LCS._n(r) if op == "*" else LCS._n(v) / LCS._n(r)
+                continue
+            m = LCS._rxi(r'(div|mod)\b').match(self.s[self.i:])
+            if m:
+                self.i += len(m.group(1))
+                r = self.p_unary()
+                a, b = LCS._n(v), LCS._n(r)
+                v = int(a // b) if m.group(1).lower() == "div" else a - b * int(a // b)
+                continue
+            return v
+
+
+class _DivModInterp(LCS.Interp):
+    def eval_expr(self, expr, env):
+        return _DivModExpr(self, env).parse(expr)
+
+
+def check_exact_integer_fixtures(c):
+    """MUTATION for row #8, in tier 4's shape. Each old line is replayed under
+    exact IEEE and under every candidate rule: IEEE refuses what the line
+    meant to refuse (which is why every headless gate was green), and the
+    ENGINE'S rule lets it through - so the model sees the class. The PLAIN
+    interpreter, which since 2026-09-25 refuses a comparison the engine
+    answers differently from IEEE (LCS.Indistinct; engine note 2.10), must
+    decide neither old line where the two part, so IEEE is replayed here as
+    one more model rather than read off the interpreter. The shipped
+    replacements must answer the same under every rule and plain. The round
+    trip is lifted out of the SHIPPED coin-wallet source, and its scAssert
+    line is pinned to it, so a revert of either half fails here."""
+    wallet = open(WALLET, encoding="utf-8").read()
+    m = re.search(r'^function waSelfTestSatRoundTrip\b.*?^end waSelfTestSatRoundTrip\b',
+                  wallet, re.S | re.M)
+    c.ck("coin-wallet carries waSelfTestSatRoundTrip", m is not None, True)
+    helper = m.group(0) if m else ""
+    boot = re.search(r'scAssert "satoshi survive a round trip through BTC", \\\n'
+                     r'\s*(.*)\n', wallet)
+    c.ck("the boot self-check's round trip asks waSelfTestSatRoundTrip(), not "
+         "`is` at 2.1e15", boot.group(1).strip() if boot else "(no such scAssert)",
+         "waSelfTestSatRoundTrip()")
+    c.ck("and no `is 2100000000000000` is left in the stack",
+         "is 2100000000000000" in wallet, False)
+
+    guard = LCS.Interp(_OLD_EXACT_LINES)
+    near = ("3.0000000000000004", "-0.000000000000001", "31.000000000000004")
+
+    def guard_answers():
+        out = []
+        for v in near:
+            try:
+                out.append(guard.call("oldBech32ValueGuard", [v]))
+            except LCS.Indistinct:
+                out.append("not decided")
+        return out
+
+    def trip(off):
+        stubs = ("function cwSatToBtc pSat\n   return \"21000000.00000000\"\n"
+                 "end cwSatToBtc\n\nfunction cwBtcToSat pText\n   return %d\n"
+                 "end cwBtcToSat\n" % (2100000000000000 + off))
+        fixture = _DivModInterp(helper + "\n\n" + stubs + _OLD_EXACT_LINES)
+        def truth(v):
+            return v is True or v == "true"
+        try:
+            old = truth(fixture.call("oldSatRoundTrip", []))
+        except LCS.Indistinct:
+            old = "not decided"
+        return (old, truth(fixture.call("waSelfTestSatRoundTrip", [])))
+
+    offsets = (-5, -4, -1, 0, 1, 4, 5)
+    exact = [(off == 0, off == 0) for off in offsets]
+    c.ck("the plain interpreter decides none of the three near-integers at "
+         "the old bech32 guard (the engine and IEEE part on each)",
+         guard_answers(), ["not decided"] * 3)
+    c.ck("... nor the old round trip at an error of 1 to 4 satoshi at "
+         "2.1e15; the shipped one it decides, and sees every satoshi",
+         [trip(off) for off in offsets],
+         [("not decided" if 0 < abs(off) <= 4 else off == 0, off == 0)
+          for off in offsets])
+    restore = _tolerant_compare(lambda a, b: a == b)
+    try:
+        ieee_guards = guard_answers()
+        ieee_trips = [trip(off) for off in offsets]
+    finally:
+        restore()
+    c.ck("exact IEEE, replayed, refuses all three near-integers at the old "
+         "bech32 guard (green headlessly until 2026-09-25)", ieee_guards,
+         ["refused"] * 3)
+    c.ck("exact IEEE, replayed: the old round trip and the shipped one both "
+         "see every satoshi of error", ieee_trips, exact)
+    for index, (label, same, _old) in enumerate(TOLERANCE_MODELS):
+        restore = _tolerant_compare(same)
+        try:
+            guards = guard_answers()
+            trips = [trip(off) for off in offsets]
+        finally:
+            restore()
+        if index == 0:
+            c.ck("under %s the old bech32 guard lets all three through (the "
+                 "old line's defect, reproduced)" % label, guards,
+                 ["let through"] * 3)
+            c.ck("and the old round trip is blind to an error of 1 to 4 satoshi "
+                 "at 2.1e15, and sees 5; the shipped one sees every one",
+                 trips, [(abs(off) <= 4, off == 0) for off in offsets])
+        c.ck("under %s the shipped round trip answers as exact IEEE does" % label,
+             [t[1] for t in trips], [off == 0 for off in offsets])
 
 
 def check_tolerance_models(c, ip, run):
@@ -3009,6 +3385,1297 @@ def check_tolerance_models(c, ip, run):
         c.ck("every vector gives the SAME answer under %s (%d re-run)%s"
              % (label, inner.count, detail),
              "%d differing" % len(inner.problems), "0 differing")
+
+
+# ------------------------------------ tier 5: hex compares (engine note 2.11)
+#
+# `is` AND `<` READ NUMBER-LIKE TEXT AS NUMBERS. The engine's comparison
+# (MCLogicIsEqualTo / MCLogicCompareTo, suite engine note 2.11) first tries
+# to turn BOTH operands into numbers - an integer parse, then C strtod with
+# no range check - and compares NUMBERS, by engine note 2.10's tolerance,
+# whenever both turn. So a hex value that is all digits, or digits-e-digits,
+# is a number there: "1e999..." and "2e999..." both overflow to +inf and are
+# EQUAL, "2000..." (64 characters) is smaller than "1e999...", and two
+# 64-digit values agreeing in their leading fifteen or so digits tie. Riptide's
+# third probe line read two of those answers on Linux and on Windows
+# (2026-09-25: `"1e999" is "2e999"` and `"1e5" is "100000"`, both TRUE).
+#
+# THE INTERPRETER READS NONE OF IT. tools/lcs-interp.py's _eq treats only
+# -?\d+(\.\d+)? as a number and falls back to TEXT past 2^53, so an exponent
+# pair and a 64-digit pair are text to every headless gate; its ordering
+# operators coerce through _n, which REFUSES a 64-digit value (Imprecise, and
+# an OverflowError at +inf) and raises on hex with a letter in it, so it
+# cannot even run a bare hex sort. The family checker's check 23 found 27
+# bare comparisons of hex in this member on 2026-09-26 (wallet-core's eight,
+# carried into coin-wallet, and coin-wallet's own eleven); none had a vector
+# that could fail. It reads NAMES, so the same day's second pass, a sweep of
+# every bare comparison in wallet-core, coin-wallet and coinxt-demo by hand,
+# found 15 more: plain-named scripts, keys and transactions (cwPsbtSign's
+# three scriptPubKey checks, cwBip322Verify's key check, cwPsbtCombine's
+# unsigned transactions, waStoreRawTx's inspect wait, waSpAfterInspect's
+# coinbase test) and number-like literals and a constant the check exempts
+# with every literal ("0014" and "0020" in cwScriptKind, the segwit marker
+# "0001" in cwTxDecode, kCwScalarZero in cwScalarNegate and cwSpInputSum,
+# Electrum's "100" in waSeedFormatOf, the empty parent fingerprint twice in
+# waValidateXKey). What the sweep left bare compares a chunk of hex whose
+# width a length check fixes with a literal no other hex of that width reads
+# equal to ("02", "87", "5120", "101" ...): exact, so no vector could fail.
+# cwDerToCompact's two "02" markers are the one place the width is not
+# fixed (an odd-length text can end in a lone "2", which is 2), and every
+# caller hands it even-length hex, where it is.
+#
+# SO THIS TIER CARRIES THE PARSE AS A MODEL, the way tier 4 carries the
+# tolerance: _engine_parse_compare swaps `is` and the ordering operators for
+# ones that read an operand as the engine's source does (_mcu_strtor8 below,
+# a port of MCU_strtol and MCU_strtor8: the integer parse with its base-16
+# "0x" form, then strtod over at most 384 characters, blanks skipped) and
+# compare two numbers by the engine's tolerance, anything else as text.
+# check_parse_model_fires proves it reads the two recorded parse answers,
+# six more the source documents, and the fourteen numeric ones, and then
+# plants each OLD spelling back into the shipped source, and each of three
+# ways to break the two helpers, and requires the vectors to FAIL under it.
+# The vectors themselves run in every tier (plain, case-folded, the
+# tolerance models) and under this model, and must pass everywhere. The
+# WHOLE set ran under the first model (a decimal regex) once, by hand on
+# 2026-09-26 (after the fixes; about 26 minutes): 1866 vectors, none moving;
+# see check_parse_model for the run under this port. --all-comparison-rules
+# repeats it. The model upgrades no honesty label: the fixes are verified
+# statically; needs an OXT pass.
+
+# number-like hex: every value below is valid hex AND a number to the engine
+HX_INF_A = "2e" + "9" * 62          # 2e(62 nines): +inf
+HX_INF_B = "1e" + "9" * 62          # 1e(62 nines): +inf, EQUAL to the one above
+HX_BIG = "2" + "0" * 63             # 2e63: finite, and below +inf
+HX_ONES = "1" * 64                  # 1.1e63 ...
+HX_ONES2 = "1" * 63 + "2"           # ... and this one differs by 1: a tie
+KEY_A = "02" + "1" * 64             # compressed-key shaped, 66 digits
+KEY_B = "02" + "1" * 63 + "2"       # 1 apart at 2.1e64: a tie
+KEY_INF_A = "02" + "1e" + "9" * 62  # 21e(62 nines): +inf
+KEY_INF_B = "03" + "1e" + "9" * 62  # 31e(62 nines): +inf too
+
+# THE PARSE, PORTED LINE FOR LINE (review, 2026-09-26). The first model here
+# was a decimal regex, and it read "0x" + hex as TEXT - so a cwSameHex that
+# prefixed "0x" instead of a letter, the one wrong prefix engine note 2.11
+# names (and cwSameHex's own comment rules out in words), passed every vector
+# in this tier. The functions below follow libfoundation's MCU_strtol and
+# MCU_strtor8 (src/foundation-typeconvert.cpp, livecode develop-9.6, the file
+# engine note 2.11 cites; DOCUMENTED, not observed): an integer parse first,
+# base 16 after "0x", whose overflow nothing checks (so a 64-hex value keeps
+# its low 32 bits, as an int32_t that wraps, the C compiler's usual answer to
+# signed overflow), octals off (`the convertOctals` defaults to false); only
+# when that fails, C strtod over at most R8L = 384 characters (decimal and
+# hex floats, inf, infinity, nan), refusing a second character of "+" or "-"
+# and an "x" with no hex digit after it. Leading and trailing blanks are
+# skipped. A value that is already a number stays one; an array never is.
+_C_SPACES = " \t\n\v\f\r"
+_HEX_DIGITS = "0123456789abcdefABCDEF"
+_R8L = 384
+_STRTOD_DEC = re.compile(r"[+-]?(?:[0-9]+\.?[0-9]*|\.[0-9]+)(?:[eE][+-]?[0-9]+)?")
+_STRTOD_HEX = re.compile(r"[+-]?0[xX](?:[0-9a-fA-F]+\.?[0-9a-fA-F]*|\.[0-9a-fA-F]+)"
+                         r"(?:[pP][+-]?[0-9]+)?")
+_STRTOD_WORD = re.compile(r"[+-]?(?:inf(?:inity)?|nan(?:\([0-9A-Za-z_]*\))?)", re.I)
+
+
+def _int32(value):
+    value &= 0xFFFFFFFF
+    return value - 0x100000000 if value & 0x80000000 else value
+
+
+def _mcu_strtol(s):
+    """MCU_strtol(span, '\\0', reals=false, octals=false): (value, done,
+    remainder)."""
+    i, n = 0, len(s)
+    while i < n and s[i] in _C_SPACES:
+        i += 1
+    if i == n:
+        return 0, False, ""
+    negative = False
+    if s[i] in "+-":
+        negative = s[i] == "-"
+        i += 1
+    if i == n:
+        return 0, False, ""
+    startlength = n - i
+    base = 10
+    if s[i] == "0" and n - i > 2 and s[i + 1] in "xX":
+        base = 16
+        i += 2
+    value = 0
+    while i < n:
+        ch = s[i]
+        if "0" <= ch <= "9":
+            v = ord(ch) - 48
+            if base < 16 and value > 2147483647 // base - v:
+                return 0, False, ""
+            value = _int32(value * base + v)
+        elif ch in _C_SPACES:
+            while i < n and s[i] in _C_SPACES:
+                i += 1
+            break
+        elif ch == ".":
+            if startlength > 1:
+                i += 1
+                while i < n and s[i] == "0":
+                    i += 1
+                if i == n:
+                    break
+                if s[i] in _C_SPACES:
+                    i += 1
+                    break
+            return 0, False, ""
+        elif base == 16 and "a" <= ch.lower() <= "f":
+            value = _int32(value * base + ord(ch.lower()) - 87)
+        else:
+            return 0, False, ""
+        i += 1
+    if negative:
+        value = _int32(-value)
+    while i < n and s[i] in _C_SPACES:
+        i += 1
+    return value, True, s[i:]
+
+
+def _mcu_strtor8(s):
+    """MCU_strtor8(span, convertoctals=false): the number, or None."""
+    value, done, rest = _mcu_strtol(s)
+    if done:
+        return float(value) if rest == "" else None
+    t = s.lstrip(_C_SPACES)
+    if t == "":
+        return None
+    if len(t) > 1 and ((t[1] in "xX" and (len(t) == 2 or t[2] not in _HEX_DIGITS))
+                       or t[1] in "+-"):
+        return None
+    if len(t) > _R8L:
+        return None
+    m = _STRTOD_HEX.match(t)
+    if m:
+        body = m.group(0)
+        try:
+            num = float.fromhex(body)
+        except OverflowError:
+            num = float("-inf") if body.startswith("-") else float("inf")
+    else:
+        m = _STRTOD_WORD.match(t) or _STRTOD_DEC.match(t)
+        if not m:
+            return None
+        word = m.group(0).lower().split("(")[0]
+        num = float(word)
+    if t[m.end():].strip(_C_SPACES) != "":
+        return None
+    return num
+
+
+def _engine_number(v):
+    """The engine's reading of an operand as a number (a float, +inf past
+    the double range, as strtod answers), or None when it stays text."""
+    if isinstance(v, bool) or isinstance(v, dict):
+        return None
+    if isinstance(v, (int, float)):
+        return float(v)
+    return _mcu_strtor8(str(v))
+
+
+def _engine_parse_compare(same=None):
+    """Make `is`, `is not`, `<`, `<=`, `>`, `>=` and `<>` answer as the
+    engine does: both operands numbers by its parse, compared by `same`
+    (the engine's tolerance unless told otherwise), else compared as text
+    (case-sensitively, as the interpreter's `is` is; tier 2 folds case).
+    Arithmetic, chunks and loop bounds keep the real _n. Returns what to
+    call to put the real ones back."""
+    same = same or _same_engine
+    real_p_cmp = LCS._Expr.p_cmp
+    real_eq = LCS._eq
+
+    class Operand:
+        """What the ordering operators compare: the engine's number when the
+        operand parses, and its TEXT always, because a number meeting text
+        is compared as text (its own spelling: "1e999", not "inf")."""
+        __slots__ = ("num", "text")
+
+        def __init__(self, v):
+            self.num = _engine_number(v)
+            if isinstance(v, str):
+                self.text = v
+            else:
+                try:
+                    self.text = str(LCS._disp(v))
+                except (OverflowError, ValueError):
+                    self.text = str(v)
+
+        def order(self, other):
+            if self.num is not None and other.num is not None:
+                if same(self.num, other.num):
+                    return 0
+                return -1 if self.num < other.num else 1
+            a, b = self.text, other.text
+            return (a > b) - (a < b)
+
+        def __lt__(self, other):
+            return self.order(other) < 0
+
+        def __le__(self, other):
+            return self.order(other) <= 0
+
+        def __gt__(self, other):
+            return self.order(other) > 0
+
+        def __ge__(self, other):
+            return self.order(other) >= 0
+
+        def __eq__(self, other):
+            return self.order(other) == 0
+
+        def __ne__(self, other):
+            return self.order(other) != 0
+
+        __hash__ = None
+
+    def engine_eq(a, b):
+        na, nb = _engine_number(a), _engine_number(b)
+        if na is not None and nb is not None:
+            return same(na, nb)
+        return real_eq(a, b)
+
+    scope = dict(vars(LCS))
+    scope["_n"] = Operand
+    scope["_eq"] = engine_eq
+    LCS._Expr.p_cmp = types.FunctionType(real_p_cmp.__code__, scope,
+                                         real_p_cmp.__name__)
+    LCS._eq = engine_eq
+
+    def restore():
+        LCS._Expr.p_cmp = real_p_cmp
+        LCS._eq = real_eq
+    return restore
+
+
+def _plant_native(name, answer):
+    """Answer one cx* native through `answer(args, real)`, returning what to
+    call to put the shim's back. A PLANTED answer is how a vector reaches a
+    compare whose one side the real shim derives: a public key or a
+    recovered key that is number-like takes about 2^43 tries to find."""
+    real = LCS.HASHES[name]
+    LCS.HASHES[name] = lambda args: answer(args, real)
+
+    def restore():
+        LCS.HASHES[name] = real
+    return restore
+
+
+def _vec_text(v):
+    return str(LCS._disp(v))
+
+
+def _vec_same_hex(c, ip):
+    call = ip.call
+    c.ck("cwSameHex: the same hex is the same", call("cwSameHex", ["ab" * 32, "ab" * 32]), True)
+    c.ck("cwSameHex: empty is empty, and not a digest",
+         (call("cwSameHex", ["", ""]), call("cwSameHex", ["", "00" * 32])), (True, False))
+    for a, b, what in ((HX_INF_A, HX_INF_B, "two values that overflow to +inf"),
+                       (HX_ONES, HX_ONES2, "two 64-digit values one apart"),
+                       (KEY_A, KEY_B, "two 66-digit keys one apart"),
+                       (KEY_INF_A, KEY_INF_B, "two exponent-form keys"),
+                       ("0012", "12", "0012 and 12, which even the interpreter's `is` "
+                        "reads as one number")):
+        c.ck("cwSameHex tells apart %s" % what, call("cwSameHex", [a, b]), False)
+
+
+def _vec_hex_order(c, ip):
+    call = ip.call
+    for a, b, what in ((HX_INF_A, HX_INF_B, "two +inf values"),
+                       (HX_BIG, HX_INF_B, "2e63 against +inf"),
+                       (HX_ONES2, HX_ONES, "two 64-digit values in the tolerance"),
+                       ("12e4", "5000", "a short pair whose NUMBERS order the other way")):
+        want = (a > b) - (a < b)
+        c.ck("cwHexCompare orders %s by their hex text" % what,
+             (_vec_text(call("cwHexCompare", [a, b])), _vec_text(call("cwHexCompare", [b, a]))),
+             (str(want), str(-want)))
+
+
+def _vec_coin_order(c, ip):
+    """cwCoinBefore's tie-break, through cwSelectCoins: two coins of equal
+    value, one of them enough, so the one that sorts FIRST is the one spent.
+    The reference sorts by (value, txid as text, vout); in each pair the text
+    order and the number path disagree."""
+    call = ip.call
+    for label, ta, va, tb, vb in (
+            ("two txids that overflow to +inf", HX_INF_A, 0, HX_INF_B, 1),
+            ("2e63 against a txid that overflows", HX_BIG, 0, HX_INF_B, 0),
+            ("two 64-digit txids inside the tolerance", HX_ONES2, 0, HX_ONES, 1)):
+        pool = [{"value": 60000, "txid": ta, "vout": va, "confirmations": 3},
+                {"value": 60000, "txid": tb, "vout": vb, "confirmations": 3}]
+        for strat in ("smallest", "largest"):
+            got = call("cwSelectCoins", [lst(pool), 50000, 1, "p2wpkh", lst(["p2wpkh"]),
+                                         "p2wpkh", strat, 0, 0])
+            want = REF.select_coins(pool, 50000, 1, "p2wpkh", ["p2wpkh"], "p2wpkh",
+                                    strategy=strat)
+            c.ck("coin order, %s (%s): the reference spends the txid first in text order"
+                 % (label, strat), [x["txid"] for x in want["selected"]], [tb])
+            c.ck("coin order, %s (%s): and so does cwSelectCoins" % (label, strat),
+                 [x["txid"] for x in unlst(got["selected"])], [tb])
+
+
+def _vec_psbt_keys(c, ip):
+    call = ip.call
+    for ka, kb, what in ((KEY_A, KEY_B, "66-digit keys one apart"),
+                         (KEY_INF_A, KEY_INF_B, "exponent-form keys")):
+        entries = lst([{"type": "02", "key": ka, "value": "aa"},
+                       {"type": "02", "key": kb, "value": "bb"}])
+        c.ck("cwPsbtFind: of two %s, the entry whose key is the same TEXT" % what,
+             (call("cwPsbtFind", [entries, "02", kb]), call("cwPsbtFind", [entries, "02", ka])),
+             ("bb", "aa"))
+        one = lst([{"type": "02", "key": ka, "value": "aa"}])
+        c.ck("cwPsbtFind: %s: an absent key finds nothing" % what,
+             call("cwPsbtFind", [one, "02", kb]), "")
+        got = unlst(call("cwPsbtSetEntry", [one, "02", kb, "bb"]))
+        c.ck("cwPsbtSetEntry: %s: a different key is APPENDED, the first kept" % what,
+             [(e["key"], e["value"]) for e in got], [(ka, "aa"), (kb, "bb")])
+        got = unlst(call("cwPsbtSetEntry", [one, "02", ka, "cc"]))
+        c.ck("cwPsbtSetEntry: %s: the same key is replaced" % what,
+             [(e["key"], e["value"]) for e in got], [(ka, "cc")])
+        c.ck("cwHexListHas: %s: membership is by text" % what,
+             (call("cwHexListHas", [lst([ka]), kb]), call("cwHexListHas", [lst([ka]), ka])),
+             (False, True))
+
+
+# a valid secret key (1 < k < n) whose planted public key is number-like
+_PLANT_SK = "01" * 32
+
+
+def _vec_multisig_key(c, ip):
+    """cwSignMultisig signs for a script key only when OUR key is that key,
+    by text. The planted public key and the script's key tie on the number
+    path; the planted key is the only thing that is not the real shim's."""
+    call = ip.call
+    script = "51" + "21" + KEY_B + "51" + "ae"
+    for planted, want, what in ((KEY_A, ("0", "false"), "a key that ties on the number path"),
+                                (KEY_B, ("1", "true"), "the script's own key (control)")):
+        def answer(args, real, planted=planted):
+            if to_bytes(args[0]) == bytes.fromhex(_PLANT_SK):
+                return to_str(bytes.fromhex(planted))
+            return real(args)
+        restore = _plant_native("cxpublickey", answer)
+        try:
+            r = call("cwSignMultisig", [lst([_PLANT_SK]), "11" * 32, script])
+        finally:
+            restore()
+        c.ck("cwSignMultisig: our public key is %s: signed, complete" % what,
+             (_vec_text(r["signed"]), _vec_text(r["complete"])), want)
+
+
+def _vec_taproot_internal(c, ip):
+    """cwPsbtSign's taproot branch matches our x-only key against the PSBT's
+    PSBT_IN_TAP_INTERNAL_KEY by text; a tie on the number path must leave the
+    input unsigned with its why-line."""
+    call = ip.call
+    ins = lst([call("cwTxInput", ["aa" * 32, 0, 0xFFFFFFFD])])
+    outs = lst([call("cwTxOutput", [45000, "0014" + "22" * 20])])
+    for internal, planted, what in ((HX_ONES, HX_ONES2, "64-digit keys one apart"),
+                                    (HX_INF_B, HX_INF_A, "exponent-form keys")):
+        meta = {"witnessutxoscript": "5120" + "33" * 32, "witnessutxovalue": 50000,
+                "tapinternalkey": internal}
+        b64 = call("cwPsbtCreate", [2, ins, outs, 0, {"1": meta}, {}])
+
+        def answer(args, real, planted=planted):
+            if to_bytes(args[0]) == bytes.fromhex(_PLANT_SK):
+                return to_str(bytes.fromhex(planted))
+            return real(args)
+        restore = _plant_native("cxxonlypubkey", answer)
+        try:
+            r = call("cwPsbtSign", [b64, lst([{"seckey": _PLANT_SK}]), "mainnet"])
+        finally:
+            restore()
+        c.ck("cwPsbtSign: an internal key that ties with ours (%s) is not ours: "
+             "unsigned, and the why-line says so" % what,
+             (_vec_text(r["signed"]),
+              "no key here matches its taproot internal key" in _vec_text(r["why"])),
+             ("0", True))
+
+
+def _bolt11_with_payee(payee_hex):
+    """The spec's first valid invoice with an `n` field naming payee_hex,
+    re-encoded (the signature is kept; cxRecover is planted around it)."""
+    import json as _json
+    v = _json.load(open(BOLT11_VECTORS, encoding="utf-8"))
+    invoice = v["valid"][0]["invoice"]
+    hrp, spec, values = REF.bech32_decode_long(invoice, 10 ** 6)
+    data = REF._convertbits(bytes.fromhex(payee_hex), 8, 5, True)
+    tag = [CR.CHARSET.find("n"), len(data) // 32, len(data) % 32] + list(data)
+    values = list(values[:7]) + tag + list(values[7:])
+    return REF.bech32_encode_long(hrp, values, spec)
+
+
+def _vec_bolt11_payee(c, ip):
+    """cwBolt11Decode refuses an invoice whose signature recovers to a key
+    other than the one its n field names, compared by text. The recovered
+    key is planted; the n field is the invoice author's text."""
+    call = ip.call
+    invoice = _bolt11_with_payee(KEY_B)
+    for planted, what in ((KEY_A, "a key that ties with the n field's on the number path"),
+                          (KEY_B, "the n field's own key (control)")):
+        point = bytes.fromhex("04" + planted[2:] + "00" * 32)
+
+        def answer(args, real, point=point):
+            return to_str(point)
+        restore = _plant_native("cxrecover", answer)
+        try:
+            try:
+                got = call("cwBolt11Decode", [invoice])
+                verdict = ("accepted", got["payee"])
+            except LCS.Thrown as exc:
+                verdict = ("refused", "does not recover to the node key" in str(exc.msg))
+        finally:
+            restore()
+        want = ("refused", True) if planted != KEY_B else ("accepted", KEY_B)
+        c.ck("cwBolt11Decode: the signature recovers to %s" % what, verdict, want)
+
+
+# ---- the plain-named compares (2026-09-26, the second pass) ------------------
+#
+# Check 23 reads NAMES, so a hex value under a plain name (`tSpk`, `tScript`,
+# `tA["unsignedtx"]`) or meeting a number-like LITERAL or constant ("0014",
+# "0001", kCwScalarZero), which the check exempts with every literal, waited
+# for a sweep by hand. Each vector below reaches its compare at a pair the
+# number path ties and the text path does not; where one side is something
+# the real shim derives (a hash, a tweak), that one answer is planted, as the
+# key vectors above plant theirs, and a control shows the plant is live.
+_ONES20 = "11" * 20                 # a hash160 that is all digits
+_ONES20_NEAR = "11" * 19 + "12"     # ... and one that ties with it
+_ZERO_E = "0e" + "1" * 62           # a valid scalar, and the NUMBER 0 to `is`
+
+
+def _plant_on(name, when, answer_hex):
+    """Answer the native `name` with answer_hex's bytes when its first
+    argument is `when` (bytes), and as the shim does otherwise."""
+    def answer(args, real):
+        if to_bytes(args[0]) == when:
+            return to_str(bytes.fromhex(answer_hex))
+        return real(args)
+    return _plant_native(name, answer)
+
+
+def _signed_why(r):
+    return int(LCS._n(r["signed"])), _vec_text(r["why"])
+
+
+def _vec_psbt_scripts(c, ip):
+    """cwPsbtSign signs an input only for the script it is about to unlock:
+    three compares of our script with the PSBT's scriptPubKey (the sender's
+    bytes). Ours is planted to be all digits; the sender's agrees with it in
+    its leading digits, a tie on the number path."""
+    call = ip.call
+    sk = bytes.fromhex(_PLANT_SK)
+    pub = CR.pubkey(sk)
+    ins = lst([call("cwTxInput", ["aa" * 32, 0, 0xFFFFFFFD])])
+    outs = lst([call("cwTxOutput", [45000, "0014" + "22" * 20])])
+    keys = lst([{"seckey": _PLANT_SK}])
+
+    def sign(meta, plant):
+        b64 = call("cwPsbtCreate", [2, ins, outs, 0, {"1": meta}, {}])
+        restore = plant()
+        try:
+            return _signed_why(call("cwPsbtSign", [b64, keys, "mainnet"]))
+        finally:
+            restore()
+
+    # (1) P2WSH: the witness script's hash, against the witness UTXO
+    ws = call("cwMultisigScript", [1, lst([pub.hex()])])
+    for spk, want, what in (("0020" + HX_ONES2, (0, True), "one that ties with it"),
+                            ("0020" + HX_ONES, (1, False), "its own (control)")):
+        got = sign({"witnessutxoscript": spk, "witnessutxovalue": 50000,
+                    "witnessscript": ws},
+                   lambda: _plant_on("cxsha256", bytes.fromhex(ws), HX_ONES))
+        c.ck("cwPsbtSign, P2WSH: a witness script whose hash is all digits, over "
+             "a scriptPubKey that is %s: signed, and the why-line" % what,
+             (got[0], "does not hash to the output" in got[1]), want)
+    # (2) P2WPKH: our key's script, against the witness UTXO
+    for spk, want, what in (("0014" + _ONES20_NEAR, (0, True), "one that ties with it"),
+                            ("0014" + _ONES20, (1, False), "its own (control)")):
+        got = sign({"witnessutxoscript": spk, "witnessutxovalue": 50000},
+                   lambda: _plant_on("cxripemd160", CR.sha256(pub), _ONES20))
+        c.ck("cwPsbtSign, P2WPKH: a key whose hash is all digits, over a "
+             "scriptPubKey that is %s: signed, and the why-line" % what,
+             (got[0], "no key here unlocks it" in got[1]), want)
+    # (3) P2TR: the key-path tweak of our internal key, against the output
+    internal = pub[1:].hex()        # the x-only key: the compressed one's x
+    for spk, want, what in (("5120" + HX_ONES2, (0, True), "one that ties with it"),
+                            ("5120" + HX_ONES, (1, False), "its own (control)")):
+        got = sign({"witnessutxoscript": spk, "witnessutxovalue": 50000,
+                    "tapinternalkey": internal},
+                   lambda: _plant_on("cxtaproottweakpubkey", bytes.fromhex(internal),
+                                     HX_ONES + "00"))
+        c.ck("cwPsbtSign, P2TR: an internal key whose tweak is all digits, over "
+             "a scriptPubKey that is %s: signed, and the why-line" % what,
+             (got[0], "does not pay to the key-path" in got[1]), want)
+
+
+def _vec_bip322_key(c, ip):
+    """cwBip322Verify accepts a P2WPKH signature only from the address's own
+    key: the signature's key, hashed to a script, against the address's
+    script. The key's hash is planted to be all digits; the address's
+    program ties with it on the number path."""
+    call = ip.call
+    sk = bytes.fromhex(_PLANT_SK)
+    pub = CR.pubkey(sk)
+    for program, want, what in ((_ONES20_NEAR, (False, True), "one that ties with it"),
+                                (_ONES20, (True, False), "its own (control)")):
+        addr = CR.segwit_encode("bc", 0, bytes.fromhex(program))
+        spk = "0014" + program
+        restore = _plant_on("cxripemd160", CR.sha256(pub), _ONES20)
+        try:
+            sig = call("cwBip322Sign", [_PLANT_SK, "tier 5", "p2wpkh", spk, pub.hex()])
+            r = call("cwBip322Verify", ["mainnet", addr, "tier 5", sig])
+        finally:
+            restore()
+        c.ck("cwBip322Verify: a key whose hash is all digits, for an address "
+             "whose program is %s: ok, and the why-line" % what,
+             (r["ok"] is True or r["ok"] == "true",
+              "not the address's" in _vec_text(r["why"])), want)
+
+
+def _digit_tx(spk_tail):
+    """An unsigned transaction whose every byte is written in digits: version
+    2, one input (txid 11..11, vout 0, sequence 0), one 10000-sat output to a
+    P2WPKH program ending spk_tail, locktime 0."""
+    return REF.tx_serialize(2, [("11" * 32, 0, 0)],
+                            [(10000, bytes.fromhex("0014" + "22" * 19 + spk_tail))],
+                            0, [b""]).hex()
+
+
+def _vec_psbt_combine(c, ip):
+    """cwPsbtCombine merges two PSBTs only of the SAME unsigned transaction.
+    Two all-digit ones, one output byte apart, are one number."""
+    call = ip.call
+    ins = lst([call("cwTxInput", ["11" * 32, 0, 0])])
+
+    def psbt(tail):
+        outs = lst([call("cwTxOutput", [10000, "0014" + "22" * 19 + tail])])
+        return call("cwPsbtCreate", [2, ins, outs, 0, {}, {}])
+
+    a, b = psbt("22"), psbt("23")
+    c.ck("the two unsigned transactions are all digits, and differ",
+         (call("cwPsbtParse", [a])["unsignedtx"], call("cwPsbtParse", [b])["unsignedtx"]),
+         (_digit_tx("22"), _digit_tx("23")))
+    try:
+        call("cwPsbtCombine", [a, b])
+        verdict = "merged"
+    except LCS.Thrown as exc:
+        verdict = "DIFFERENT transactions" in str(exc.msg)
+    c.ck("cwPsbtCombine refuses two all-digit transactions one byte apart", verdict, True)
+    c.ck("and combines a transaction with itself",
+         bool(_vec_text(call("cwPsbtCombine", [a, a]))), True)
+
+
+def _vec_script_kind(c, ip):
+    """cwScriptKind's witness-v0 prefixes: "14e0" and "0014" are both 14, and
+    "20e0", "2e01" and "02e1" all 20, to a bare `is`."""
+    call = ip.call
+    for spk, want in (("14e0" + "ab" * 20, "unknown"), ("0014" + "ab" * 20, "p2wpkh"),
+                      ("20e0" + "ab" * 32, "unknown"), ("2e01" + "ab" * 32, "unknown"),
+                      ("02e1" + "ab" * 32, "unknown"), ("0020" + "ab" * 32, "p2wsh")):
+        c.ck("cwScriptKind(%s...)" % spk[:4], _vec_text(call("cwScriptKind", [spk])), want)
+
+
+def _vec_tx_segwit_marker(c, ip):
+    """cwTxDecode's segwit marker: a LEGACY transaction with one input whose
+    previous txid ends in e0 has "01e0" at its fifth and sixth bytes, which
+    is 1 to a bare `is`, as the marker-and-flag "0001" is."""
+    call = ip.call
+    prev = "ab" * 31 + "e0"
+    tx = ([(prev, 3, 0xFFFFFFFF)], [(7000, bytes.fromhex("0014" + "22" * 20))])
+    raw = REF.tx_serialize(1, tx[0], tx[1], 0, [bytes.fromhex("51")]).hex()
+    want = REF.txid_of(1, tx[0], tx[1], 0, [bytes.fromhex("51")])
+    try:
+        d = call("cwTxDecode", [raw])
+        got = (_vec_text(d["txid"]), _vec_text(d["segwit"]),
+               _vec_text(unlst(d["inputs"])[0]["txid"]))
+    except LCS.Thrown as exc:
+        got = ("threw", str(exc.msg)[:80])
+    c.ck("cwTxDecode: a legacy transaction whose bytes 5-6 read 01e0 is legacy, "
+         "with its own txid and its input's", got, (want, "false", prev))
+    wit = REF.tx_serialize(1, tx[0], tx[1], 0, [b""], [[bytes.fromhex("51")]]).hex()
+    d = call("cwTxDecode", [wit])
+    c.ck("and the same spend with a witness is segwit, with the same txid (control)",
+         (_vec_text(d["segwit"]), _vec_text(d["txid"])),
+         ("true", REF.txid_of(1, tx[0], tx[1], 0, [b""])))
+
+
+def _vec_scalar_zero(c, ip):
+    """kCwScalarZero against a valid scalar spelled "0e" and digits, which is
+    the number 0 to a bare `is`: cwScalarNegate must negate it, and
+    cwSpInputSum must not call it a zero sum."""
+    call = ip.call
+    c.ck("cwScalarNegate negates a scalar spelled 0e and digits",
+         _vec_text(call("cwScalarNegate", [_ZERO_E])), "%064x" % (CR._N - int(_ZERO_E, 16)))
+    c.ck("and zero stays zero (control)", _vec_text(call("cwScalarNegate", ["0" * 64])),
+         "0" * 64)
+
+    def input_sum(keys):
+        try:
+            return _vec_text(call("cwSpInputSum", [lst([{"seckey": k, "xonly": False}
+                                                         for k in keys])]))
+        except LCS.Thrown as exc:
+            return "refused: " + str(exc.msg)[:60]
+    c.ck("cwSpInputSum: a sum spelled 0e and digits is not zero", input_sum([_ZERO_E]),
+         _ZERO_E)
+    other = "%064x" % (CR._N - int("11" * 32, 16))
+    c.ck("and a sum that IS zero is refused (control)",
+         input_sum(["11" * 32, other]).startswith("refused: wallet-core: cwSpInputSum: "
+                                                  "the input keys sum to zero"), True)
+
+
+def check_hex_compares(c, ip):
+    """The shipped wallet-core's hex compares, each at a pair the number path
+    reads differently from the text (the header above)."""
+    c.note("\nhex compares: txids, keys and PSBT keys as TEXT (engine note 2.11)")
+    _vec_same_hex(c, ip)
+    _vec_hex_order(c, ip)
+    _vec_coin_order(c, ip)
+    _vec_psbt_keys(c, ip)
+    _vec_multisig_key(c, ip)
+    _vec_taproot_internal(c, ip)
+    _vec_bolt11_payee(c, ip)
+    _vec_psbt_scripts(c, ip)
+    _vec_bip322_key(c, ip)
+    _vec_psbt_combine(c, ip)
+    _vec_script_kind(c, ip)
+    _vec_tx_segwit_marker(c, ip)
+    _vec_scalar_zero(c, ip)
+
+
+# ---- coin-wallet's own compares, lifted out of the SHIPPED stack ------------
+#
+# The sixteen (check 23's eleven and the second pass's five) are in
+# coin-wallet's own code, which this gate never runs whole
+# (check-wallet-boot.py boots it, over riptide's object model). The handlers
+# that hold them are lifted out of the shipped file by name and run over the
+# real CoinXT script layer and wallet-core, with the stack's state (its
+# script locals) planted and its UI (the log, the balance, the nav, the
+# status line, a painted field) stubbed or recorded. `set the defaultStack`
+# is a no-op here, as it is to the logic under test.
+_WALLET_LIFT = ("waEmptyList", "waHoldsCoin", "waCoinsNotFrom", "waPendingSpenderOf",
+                "waIsOwnBroadcast", "waCpfpCoins", "waNoteBroadcast", "waUnnoteBroadcast",
+                "waWholeAtLeast", "waNumAtLeast", "waCoreMempoolRecord", "waStoreRawTx",
+                "waBumpFee", "waSelfTestHexCompares",
+                # the second pass's five (2026-09-26): the inspect wait is in
+                # waStoreRawTx above; these hold the other four
+                "waSpAfterInspect", "waSpParentsNeeded", "waZeroTxid", "waSeedFormatOf",
+                "waValidateXKey")
+_WALLET_STUBS = """
+local sWaUtxos, sWaSpentBy, sWaFrozen, sWaHistory, sWaNetwork, sWaSpends
+local sWaSpParents, sWaSpPending, sWaInspectWanted, sFxLog, sFxTx
+local sWaSpScanSeckey, sWaSpSpendSeckey, sWaBackend, sWaHost, sWaScriptType
+local sFxStatus
+constant kWaSpParentsMax = 64
+
+command waLog pText
+   put pText & return after sFxLog
+end waLog
+
+command uiStatus pText, pKind
+   put pText into sFxStatus
+end uiStatus
+
+function waInspectRaw pHex
+   return "inspected " & pHex
+end waInspectRaw
+
+command waRecomputeBalance
+end waRecomputeBalance
+
+command waPaintNav
+end waPaintNav
+
+function waIsMine pAddress
+   return false
+end waIsMine
+
+function waAmount pSat
+   return pSat
+end waAmount
+
+function fxPlantedTxDecode pRaw
+   return sFxTx
+end fxPlantedTxDecode
+"""
+_SET_DEFAULT_STACK = re.compile(r"(?i)^set\s+the\s+defaultStack\s+to\b")
+_FOR_EACH_KEY = re.compile(r"(?i)^repeat\s+for\s+each\s+key\s+(\w+)\s+in\s+(.+)$")
+_PUT_FIELD = re.compile(r'(?i)^put\s+(.+?)\s+into\s+field\s+"([^"]+)"$')
+
+
+class _WalletFixtureInterp(_DivModInterp):
+    """Three statements the base does not model, the first two as riptide's
+    boot runner (check-demo-boot.py) models them: `set the defaultStack` is
+    a no-op (no stack here), `repeat for each key` walks a SNAPSHOT of the
+    keys in their stored spelling, honouring `next repeat` and `exit repeat`,
+    and `put X into field "name"` records X under the name in `fields`, so a
+    vector can read what a handler painted."""
+
+    fields = None
+
+    def _exec_stmt(self, body, i, env):
+        line = body[i].strip()
+        if _SET_DEFAULT_STACK.match(line):
+            return i + 1
+        m = _PUT_FIELD.match(line)
+        if m:
+            if self.fields is None:
+                self.fields = {}
+            self.fields[m.group(2)] = self.eval_expr(m.group(1), env)
+            return i + 1
+        m = _FOR_EACH_KEY.match(line)
+        if m:
+            inner, after = self._block(body, i, None, None)
+            src = self.eval_expr(m.group(2), env)
+            for key in (list(src.keys()) if isinstance(src, dict) else []):
+                env[m.group(1).lower()] = key
+                try:
+                    self._exec(inner, env)
+                except LCS._Next:
+                    pass
+                except LCS._Exit:
+                    break
+            return after
+        return super()._exec_stmt(body, i, env)
+
+
+def _wallet_own_code(text):
+    """coin-wallet below its embedded libraries: its OWN code."""
+    mark = "-- <<< END EMBEDDED LIBRARIES <<<"
+    return text[text.index(mark):] if mark in text else text
+
+
+def _lift(text, name):
+    m = re.search(r"^(?:private\s+)?(?:function|command)\s+%s\b.*?^end\s+%s\b[^\n]*"
+                  % (name, name), text, re.S | re.M)
+    if m is None:
+        raise LookupError("coin-wallet no longer defines %s" % name)
+    return m.group(0)
+
+
+def _wallet_fixture(core_text=None, wallet_text=None):
+    core_text = core_text if core_text is not None else open(CORE, encoding="utf-8").read()
+    wallet_text = wallet_text if wallet_text is not None else \
+        _wallet_own_code(open(WALLET, encoding="utf-8").read())
+    body = "\n".join(ln for ln in core_text.split("\n") if not ln.startswith('script "'))
+    lifted = "\n\n".join(_lift(wallet_text, n) for n in _WALLET_LIFT)
+    coin = open(COIN, encoding="utf-8").read()
+    fx = _WalletFixtureInterp(_WALLET_STUBS + "\n" + coin + "\n" + body + "\n\n" + lifted)
+    return fx
+
+
+def _fx_reset(fx, **state):
+    for name in ("swautxos", "swaspentby", "swafrozen", "swahistory", "swaspends",
+                 "swaspparents", "swasppending", "swainspectwanted", "sfxlog", "sfxtx",
+                 "swaspscanseckey", "swaspspendseckey", "swahost", "sfxstatus"):
+        fx.globals[name] = ""
+    fx.globals["swanetwork"] = "mainnet"
+    fx.globals["swabackend"] = "offline"
+    fx.globals["swascripttype"] = "p2wpkh"
+    fx.fields = {}
+    for k, v in state.items():
+        fx.globals[k.lower()] = LCS._copy(v)
+
+
+def _fx_planted_decode(fx):
+    """Answer cwTxDecode with sFxTx for one vector; returns the restorer."""
+    real = fx.handlers["cwtxdecode"]
+    fx.handlers["cwtxdecode"] = fx.handlers["fxplantedtxdecode"]
+
+    def restore():
+        fx.handlers["cwtxdecode"] = real
+    return restore
+
+
+def _coin(txid, vout, conf=0):
+    return {"txid": txid, "vout": vout, "value": 10000, "address": "x",
+            "confirmations": conf}
+
+
+def _txids(lst_value):
+    return [r["txid"] for r in unlst(lst_value)] if isinstance(lst_value, dict) else []
+
+
+def _vec_wallet_marks(c, fx):
+    """The broadcast marks and the coin filters: sWaSpentBy maps an outpoint
+    to the txid of OUR transaction spending it; the coin list holds records
+    by txid."""
+    call = fx.call
+    _fx_reset(fx, sWaUtxos=lst([_coin(HX_ONES, 0), _coin(HX_ONES2, 0)]))
+    c.ck("waCoinsNotFrom drops one transaction's coins, not a tie's",
+         _txids(call("waCoinsNotFrom", [HX_ONES2])), [HX_ONES])
+    c.ck("waCpfpCoins offers one transaction's coins, not a tie's",
+         _txids(call("waCpfpCoins", [HX_ONES2])), [HX_ONES2])
+    _fx_reset(fx, sWaSpentBy={HX_ONES + ":0": "cd" * 32})
+    c.ck("waPendingSpenderOf finds no spender of a txid that only ties with a marked one",
+         call("waPendingSpenderOf", [HX_ONES2]), "")
+    c.ck("and finds the one it marked", call("waPendingSpenderOf", [HX_ONES]), "cd" * 32)
+    _fx_reset(fx, sWaSpentBy={("ab" * 32) + ":0": HX_INF_A})
+    c.ck("waIsOwnBroadcast: a txid that ties with our broadcast's is not ours",
+         (call("waIsOwnBroadcast", [HX_INF_B]), call("waIsOwnBroadcast", [HX_INF_A])),
+         (False, True))
+
+
+def _raw_spending(prev_txid):
+    return REF.tx_serialize(2, [(prev_txid, 0, 0xFFFFFFFD)],
+                            [(1000, bytes.fromhex("0014" + "22" * 20))], 0, [b""]).hex()
+
+
+def _vec_wallet_broadcasts(c, fx):
+    """waNoteBroadcast: an input already marked by a DIFFERENT transaction is
+    a replacement, whose coins go; waUnnoteBroadcast: a refused broadcast
+    frees only ITS marks. T0 and T1 tie on the number path."""
+    call = fx.call
+    prev = "cc" * 32
+    raw = _raw_spending(prev)
+    key = prev + ":0"
+    _fx_reset(fx, sWaSpentBy={key: HX_ONES}, sWaUtxos=lst([_coin(HX_ONES, 1)]))
+    call("waNoteBroadcast", [raw, HX_ONES2])
+    log = _vec_text(fx.globals.get("sfxlog", ""))
+    c.ck("waNoteBroadcast: a spend by a transaction that ties with the marked one "
+         "REPLACES it: its coin goes, the mark moves, the log says both",
+         (_txids(fx.globals["swautxos"]), _vec_text(fx.globals["swaspentby"].get(key, "")),
+          "replaces" in log, "spent 1 coin(s)" in log),
+         ([], HX_ONES2, True, True))
+    _fx_reset(fx, sWaSpentBy={key: HX_ONES},
+              sFxTx={"txid": HX_ONES2, "inputs": lst([{"txid": prev, "vout": 0}]),
+                     "outputs": lst([])})
+    restore = _fx_planted_decode(fx)
+    try:
+        call("waUnnoteBroadcast", [raw])
+    finally:
+        restore()
+    c.ck("waUnnoteBroadcast: a refused transaction that ties with the marking one "
+         "leaves that one's mark", _vec_text(fx.globals["swaspentby"].get(key, "")), HX_ONES)
+
+
+def _vec_wallet_history(c, fx):
+    """The history rows a Core mempool answer and a raw transaction land on,
+    and the raw transaction's own txid check; the bump guard."""
+    call = fx.call
+    rows = lst([{"txid": HX_ONES, "vsize": 100, "fee": 1000},
+                {"txid": HX_ONES2, "vsize": 100, "fee": 1000}])
+    node = call("cwJsonParse", ['{"ancestorsize": 200, "fees": {"ancestor": 0.00002}}'])
+    _fx_reset(fx, sWaHistory=rows)
+    call("waCoreMempoolRecord", [HX_ONES2, node])
+    c.ck("waCoreMempoolRecord prices only the row whose txid is the same text",
+         [(_vec_text(r["vsize"]), _vec_text(r["fee"])) for r in unlst(fx.globals["swahistory"])],
+         [("100", "1000"), ("200", "2000")])
+    raw = _raw_spending("cc" * 32)
+    _fx_reset(fx, sWaHistory=rows,
+              sFxTx={"txid": HX_ONES, "inputs": lst([]), "outputs": lst([])})
+    restore = _fx_planted_decode(fx)
+    try:
+        try:
+            call("waStoreRawTx", [HX_ONES2, raw])
+            verdict = "stored"
+        except LCS.Thrown as exc:
+            verdict = "a different transaction" in str(exc.msg)
+        stored = None
+        if verdict is True:
+            call("waStoreRawTx", [HX_ONES, raw])
+            stored = [bool(_vec_text(r.get("raw", ""))) for r in unlst(fx.globals["swahistory"])]
+    finally:
+        restore()
+    c.ck("waStoreRawTx refuses bytes whose txid only ties with the one asked for",
+         verdict, True)
+    c.ck("and stores the right bytes on the one row whose txid is the same text",
+         stored, [True, False])
+    _fx_reset(fx, sWaSpentBy={HX_ONES2 + ":0": HX_ONES})
+    try:
+        call("waBumpFee", [{"txid": HX_ONES2, "confirmations": 0}])
+        verdict = "no refusal"
+    except LCS.Thrown as exc:
+        verdict = "already spent by" in str(exc.msg) or str(exc.msg)[:80]
+    except Exception as exc:                                    # noqa: BLE001
+        verdict = "%s: %s" % (type(exc).__name__, str(exc)[:80])
+    c.ck("waBumpFee refuses a parent whose output our child spends, the child's txid "
+         "tying with the parent's", verdict, True)
+
+
+def _vec_wallet_selftest(c, fx):
+    """The boot self-check's hex line: the one place an ENGINE reads the two
+    helpers at a number-like pair (coin-wallet runs it at every open)."""
+    wallet = open(WALLET, encoding="utf-8").read()
+    m = re.search(r'scAssert "two exponent-form txids are two values, in hex order", '
+                  r'\\\n\s*(.*)\n', wallet)
+    c.ck("the boot self-check asks waSelfTestHexCompares()",
+         m.group(1).strip() if m else "(no such scAssert)", "waSelfTestHexCompares()")
+    c.ck("and waSelfTestHexCompares holds", fx.call("waSelfTestHexCompares", []), True)
+
+
+def _vec_wallet_inspect_wait(c, fx):
+    """waStoreRawTx paints the bytes into the History screen's panel only
+    when they are the ones it waits on (sWaInspectWanted), by text."""
+    call = fx.call
+    raw = _raw_spending("cc" * 32)
+    for wanted, want, what in (
+            (HX_ONES, (HX_ONES, "", ""), "a txid that ties with the one stored"),
+            (HX_ONES2, ("", "inspected " + raw, "arrived"), "the one stored (control)")):
+        _fx_reset(fx, sWaHistory=lst([]), sWaInspectWanted=wanted,
+                  sFxTx={"txid": HX_ONES2, "inputs": lst([]), "outputs": lst([])})
+        restore = _fx_planted_decode(fx)
+        try:
+            call("waStoreRawTx", [HX_ONES2, raw])
+        finally:
+            restore()
+        c.ck("waStoreRawTx, while the History screen waits on %s: the wait, the "
+             "panel and the status line" % what,
+             (_vec_text(fx.globals["swainspectwanted"]), _vec_text(fx.fields.get("hs_detail", "")),
+              "arrived" if "arrived" in _vec_text(fx.globals["sfxstatus"]) else ""), want)
+
+
+def _vec_wallet_sp_inspect(c, fx):
+    """waSpAfterInspect calls a one-input transaction a coinbase only when
+    its input spends the zero txid, by text; a txid spelled 0e and digits is
+    the number 0 to a bare `is`."""
+    call = fx.call
+    for prev, want, what in ((_ZERO_E, (False, True), "a txid spelled 0e and digits"),
+                             ("00" * 32, (True, False), "the zero txid (control)")):
+        raw = REF.tx_serialize(2, [(prev, 0, 0xFFFFFFFD)],
+                               [(1000, bytes.fromhex("5120" + "33" * 32))], 0, [b""]).hex()
+        _fx_reset(fx, sWaSpScanSeckey="aa" * 32, sWaSpSpendSeckey="bb" * 32)
+        got = _vec_text(call("waSpAfterInspect", [raw]))
+        c.ck("waSpAfterInspect, one input spending %s, offline: called a coinbase, "
+             "or asked for its parent" % what,
+             ("coinbase transaction spends nothing" in got, "This wallet is offline" in got),
+             want)
+
+
+# a phrase that is no seed of either kind, whose seed-version HMAC begins
+# "1e2" (found by search), and one whose HMAC begins "100", which is what
+# Electrum's generator makes a segwit seed of
+_SEED_1E2 = "zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo absurd public"
+_SEED_100 = "zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo abandon ginger"
+
+
+def _vec_wallet_seed_format(c, fx):
+    """waSeedFormatOf's Electrum segwit prefix "100", to which "1e2" is the
+    same number under a bare `is`."""
+    import hashlib
+    import hmac
+    call = fx.call
+
+    def head(phrase):
+        return hmac.new(b"Seed version", phrase.encode(), hashlib.sha512).hexdigest()[:3]
+
+    def bip39(phrase):
+        try:
+            CR.bip39_entropy(phrase)
+            return True
+        except Exception:                                       # noqa: BLE001
+            return False
+    c.ck("the two phrases: their seed-version prefixes, and neither is BIP-39",
+         (head(_SEED_1E2), bip39(_SEED_1E2), head(_SEED_100), bip39(_SEED_100)),
+         ("1e2", False, "100", False))
+    c.ck("waSeedFormatOf: a phrase whose prefix is 1e2 is no Electrum seed",
+         _vec_text(call("waSeedFormatOf", [_SEED_1E2])), "")
+    c.ck("and one whose prefix is 100 is a segwit one (control)",
+         _vec_text(call("waSeedFormatOf", [_SEED_100])), "electrum-segwit")
+
+
+def _vec_wallet_xkey_parent(c, fx):
+    """waValidateXKey's two structural tests of the parent fingerprint
+    against 00000000, to which 0e000001 is the same number under a bare
+    `is`: a master key must not have one, a derived key should."""
+    call = fx.call
+    sk = bytes.fromhex(_PLANT_SK)
+    version = REF.xkey_version("mainnet", "p2pkh", True)
+    for depth, fp, want, what in (
+            (0, "0e000001", (True, False), "a master key with fingerprint 0e000001"),
+            (3, "0e000001", (False, False), "a depth-3 key with fingerprint 0e000001"),
+            (0, "00000000", (False, False), "a master key with none (control)"),
+            (3, "00000000", (False, True), "a depth-3 key with none (control)")):
+        node = {"depth": depth, "parentfp": bytes.fromhex(fp), "index": 0,
+                "chaincode": bytes.fromhex("22" * 32), "pubkey": CR.pubkey(sk)}
+        _fx_reset(fx, sWaScriptType="p2pkh")
+        got = _vec_text(call("waValidateXKey", [REF.xkey_encode(node, version, False)]))
+        c.ck("waValidateXKey, %s: INCONSISTENT, SUSPECT" % what,
+             ("INCONSISTENT" in got, "SUSPECT" in got), want)
+
+
+def check_wallet_hex_compares(c, ip, fx=None):
+    """coin-wallet's sixteen, through the lifted handlers (the block above):
+    check 23's eleven and the second pass's five. `ip` is unused: the
+    fixture is its own unit."""
+    c.note("\nhex compares in coin-wallet's own code (lifted from the shipped stack)")
+    fx = fx or _wallet_fixture()
+    _vec_wallet_marks(c, fx)
+    _vec_wallet_broadcasts(c, fx)
+    _vec_wallet_history(c, fx)
+    _vec_wallet_selftest(c, fx)
+    _vec_wallet_inspect_wait(c, fx)
+    _vec_wallet_sp_inspect(c, fx)
+    _vec_wallet_seed_format(c, fx)
+    _vec_wallet_xkey_parent(c, fx)
+
+
+# EACH FIX, UNDONE. (label, file, the shipped text, the old spelling, the
+# vector block that must fail on the old spelling under the engine's parse).
+# The shipped text must occur exactly once, so a rename or a revert of the
+# fix fails here before the mutation can pass vacuously.
+_HEX_MUTATIONS = (
+    ("cwSameHex's letter prefix", "core",
+     'return ("h" & pA) is ("h" & pB)', "return pA is pB", _vec_same_hex),
+    ("cwSameHex's letter prefix, as the wallet's boot self-check reads it",
+     "core-in-wallet", 'return ("h" & pA) is ("h" & pB)', "return pA is pB",
+     _vec_wallet_selftest),
+    ("cwCoinBefore's txid tie-break", "core",
+     '   put cwHexCompare(pA["txid"], pB["txid"]) into tOrder\n   if tOrder < 0 then\n'
+     '      return true\n   end if\n   if tOrder > 0 then\n      return false\n   end if\n',
+     '   if pA["txid"] < pB["txid"] then\n      return true\n   end if\n'
+     '   if pA["txid"] > pB["txid"] then\n      return false\n   end if\n', _vec_coin_order),
+    ("cwSignMultisig's script-key match", "core",
+     "if cwSameHex(tPub, tKeys[tI]) is true then", "if tPub is tKeys[tI] then",
+     _vec_multisig_key),
+    ("cwPsbtFind's key match", "core",
+     'if tEntry["type"] is pType and cwSameHex(tEntry["key"], pKeyHex) is true then\n'
+     '         return tEntry["value"]',
+     'if tEntry["type"] is pType and tEntry["key"] is pKeyHex then\n'
+     '         return tEntry["value"]', _vec_psbt_keys),
+    ("cwPsbtSetEntry's key match", "core",
+     'if tEntry["type"] is pType and cwSameHex(tEntry["key"], pKeyHex) is true then\n'
+     '         put pValueHex',
+     'if tEntry["type"] is pType and tEntry["key"] is pKeyHex then\n'
+     '         put pValueHex', _vec_psbt_keys),
+    ("cwHexListHas's membership", "core",
+     "if cwSameHex(pList[tI], pValue) is true then", "if pList[tI] is pValue then",
+     _vec_psbt_keys),
+    ("cwPsbtSign's internal-key match", "core",
+     "if cwSameHex(tPub, tInternal) is true then", "if tPub is tInternal then",
+     _vec_taproot_internal),
+    ("cwBolt11Decode's payee check", "core",
+     'if cwSameHex(tOut["payee"], tPub) is not true then',
+     'if tOut["payee"] is not tPub then', _vec_bolt11_payee),
+    ("waCoinsNotFrom", "wallet",
+     'if cwSameHex(tRec["txid"], pTxid) is not true then\n         put cwListAdd',
+     'if tRec["txid"] is not pTxid then\n         put cwListAdd', _vec_wallet_marks),
+    ("waCpfpCoins", "wallet",
+     'if cwSameHex(tRec["txid"], pTxid) is not true then\n         next repeat',
+     'if tRec["txid"] is not pTxid then\n         next repeat', _vec_wallet_marks),
+    ("waPendingSpenderOf", "wallet",
+     "if cwSameHex(char 1 to tLen of tKey, pTxid) is true \\\n            and char",
+     "if char 1 to tLen of tKey is pTxid \\\n            and char", _vec_wallet_marks),
+    ("waIsOwnBroadcast", "wallet",
+     "if cwSameHex(sWaSpentBy[tKey], pTxid) is true then",
+     "if sWaSpentBy[tKey] is pTxid then", _vec_wallet_marks),
+    ("waNoteBroadcast's replacement test", "wallet",
+     'if tOld is not "" and cwSameHex(tOld, tTxid) is not true then',
+     'if tOld is not "" and tOld is not tTxid then', _vec_wallet_broadcasts),
+    ("waNoteBroadcast's new-spend count", "wallet",
+     "if cwSameHex(tOld, tTxid) is not true then\n         add 1 to tNew",
+     "if tOld is not tTxid then\n         add 1 to tNew", _vec_wallet_broadcasts),
+    ("waUnnoteBroadcast", "wallet",
+     'if cwSameHex(sWaSpentBy[tKey], tTx["txid"]) is true then',
+     'if sWaSpentBy[tKey] is tTx["txid"] then', _vec_wallet_broadcasts),
+    ("waCoreMempoolRecord", "wallet",
+     'if cwSameHex(tRec["txid"], cwLower(pTxid)) is true then\n         put tSize',
+     'if tRec["txid"] is cwLower(pTxid) then\n         put tSize', _vec_wallet_history),
+    ("waStoreRawTx's txid check", "wallet",
+     'if cwSameHex(tTx["txid"], cwLower(pTxid)) is not true then',
+     'if tTx["txid"] is not cwLower(pTxid) then', _vec_wallet_history),
+    ("waStoreRawTx's history rows", "wallet",
+     'if cwSameHex(tRec["txid"], cwLower(pTxid)) is true then\n         put tHex',
+     'if tRec["txid"] is cwLower(pTxid) then\n         put tHex', _vec_wallet_history),
+    ("waBumpFee's pending-child guard", "wallet",
+     'if tSpender is not "" and cwSameHex(tSpender, pRec["txid"]) is not true then',
+     'if tSpender is not "" and tSpender is not pRec["txid"] then', _vec_wallet_history),
+    # the second pass (2026-09-26): the plain names and number-like
+    # literals check 23 cannot see
+    ("cwPsbtSign's P2WSH witness-script check", "core",
+     "if cwSameHex(cwScriptP2wsh(tWitScript), tSpk) is not true then",
+     "if cwScriptP2wsh(tWitScript) is not tSpk then", _vec_psbt_scripts),
+    ("cwPsbtSign's P2TR output-key check", "core",
+     'if cwSameHex(cwScriptP2tr(cxHexEncode(tTweak["outputKey"])), \\\n'
+     '                     tSpk) is not true then',
+     'if cwScriptP2tr(cxHexEncode(tTweak["outputKey"])) \\\n'
+     '                     is not tSpk then', _vec_psbt_scripts),
+    ("cwPsbtSign's key-script check", "core",
+     "if cwSameHex(cwScriptForPubkey(tType, tPub), tSpk) is not true then",
+     "if cwScriptForPubkey(tType, tPub) is not tSpk then", _vec_psbt_scripts),
+    ("cwBip322Verify's key check", "core",
+     "if cwSameHex(cwScriptP2wpkh(tPub), tScript) is not true then",
+     "if cwScriptP2wpkh(tPub) is not tScript then", _vec_bip322_key),
+    ("cwPsbtCombine's unsigned-transaction check", "core",
+     'if cwSameHex(tA["unsignedtx"], tB["unsignedtx"]) is not true then',
+     'if tA["unsignedtx"] is not tB["unsignedtx"] then', _vec_psbt_combine),
+    ("cwScriptKind's P2WPKH prefix", "core",
+     'if tLen is 44 and cwSameHex(char 1 to 4 of tHex, "0014") is true then',
+     'if tLen is 44 and char 1 to 4 of tHex is "0014" then', _vec_script_kind),
+    ("cwScriptKind's P2WSH prefix", "core",
+     'if tLen is 68 and cwSameHex(char 1 to 4 of tHex, "0020") is true then',
+     'if tLen is 68 and char 1 to 4 of tHex is "0020" then', _vec_script_kind),
+    ("cwTxDecode's segwit marker", "core",
+     'if cwSameHex(char 9 to 12 of tHex, "0001") is true then',
+     'if char 9 to 12 of tHex is "0001" then', _vec_tx_segwit_marker),
+    ("cwScalarNegate's zero", "core",
+     "if cwSameHex(tA, kCwScalarZero) is true then",
+     "if tA is kCwScalarZero then", _vec_scalar_zero),
+    ("cwSpInputSum's zero sum", "core",
+     "if cwSameHex(tSum, kCwScalarZero) is true then",
+     "if tSum is kCwScalarZero then", _vec_scalar_zero),
+    ("waStoreRawTx's inspect wait", "wallet",
+     "if cwSameHex(sWaInspectWanted, cwLower(pTxid)) is true then",
+     "if sWaInspectWanted is cwLower(pTxid) then", _vec_wallet_inspect_wait),
+    ("waSpAfterInspect's coinbase test", "wallet",
+     'cwSameHex(cwLower(tIns[1]["txid"]), waZeroTxid()) is true then',
+     'cwLower(tIns[1]["txid"]) is waZeroTxid() then', _vec_wallet_sp_inspect),
+    ("waSeedFormatOf's segwit prefix", "wallet",
+     'if cwSameHex(char 1 to 3 of tHex, "100") is true then',
+     'if char 1 to 3 of tHex is "100" then', _vec_wallet_seed_format),
+    ("waValidateXKey's master-key test", "wallet",
+     'if cwSameHex(cxHexEncode(tNode["parentfp"]), "00000000") is not true \\\n'
+     '            or tNode["index"] is not 0 then',
+     'if cxHexEncode(tNode["parentfp"]) is not "00000000" or tNode["index"] is not 0 then',
+     _vec_wallet_xkey_parent),
+    ("waValidateXKey's empty-parent test", "wallet",
+     'if cwSameHex(cxHexEncode(tNode["parentfp"]), "00000000") is true then',
+     'if cxHexEncode(tNode["parentfp"]) is "00000000" then', _vec_wallet_xkey_parent),
+)
+
+# THE HELPERS THEMSELVES, BROKEN THE WAY A LATER EDIT COULD BREAK THEM
+# (review, 2026-09-26). The list above undoes each FIX; these break the two
+# helpers every fix leans on, and each must fail too. A "0x" prefix is the
+# wrong letter engine note 2.11 names (a base-16 number whose low 32 bits
+# alone decide): the first model read it as text and passed it. cwHexCompare
+# was never bare, but the boot self-check claims to read it ("in hex order")
+# and that half could be dropped with every vector still green, so its bare
+# spelling must fail both the order vectors and the self-check line.
+_HELPER_LINE = "   put cwMin(the number of chars of tA, the number of chars of tB) into tCount\n"
+_HELPER_BARE_ORDER = ("   if tA < tB then\n      return -1\n   end if\n"
+                      "   if tA > tB then\n      return 1\n   end if\n   return 0\n")
+_HELPER_MUTATIONS = (
+    ("cwSameHex with a 0x prefix, the wrong letter", "core",
+     'return ("h" & pA) is ("h" & pB)', 'return ("0x" & pA) is ("0x" & pB)', _vec_same_hex),
+    ("cwHexCompare comparing the whole texts with bare < and >", "core",
+     _HELPER_LINE, _HELPER_BARE_ORDER + _HELPER_LINE, _vec_hex_order),
+    ("cwHexCompare comparing the whole texts with bare < and >, as the wallet's "
+     "boot self-check reads it", "core-in-wallet",
+     _HELPER_LINE, _HELPER_BARE_ORDER + _HELPER_LINE, _vec_wallet_selftest),
+)
+
+# riptide's third probe line, items 1 and 2: text becoming a number (read
+# TRUE on Linux and on Windows, 2026-09-25)
+_PARSE_READINGS = (('"1e999" is "2e999"', True), ('"1e5" is "100000"', True))
+
+# what the SOURCE says the parse does beyond those two (DOCUMENTED, not
+# observed: no engine has read these). Four separate the port above from the
+# regex it replaced, which misread them (the base-16 pair, "0x12", the
+# 385-digit pair and "inf"); the blank and remainder cases it read the same
+# way, through the interpreter's own _eq, and are here so the port keeps them.
+_SOURCE_PARSE_READINGS = (
+    # base 16 after "0x", its overflow unchecked: the low 32 bits decide
+    ('"0x2e99999999" is "0x1e99999999"', True),
+    ('"0x12" is "18"', True),
+    # blanks are skipped around a number
+    ('" 12 " is "12"', True),
+    # past R8L = 384 characters strtod is never tried, so two different
+    # 385-digit values are text (the regex read both as +inf: equal)
+    ('"%s" is "%s"' % ("1" * 385, "1" * 384 + "2"), False),
+    # strtod's own words: inf is a number, +inf, as 1e999 is
+    ('"inf" is "1e999"', True),
+    # an integer followed by more than blanks is not a number at all
+    ('"12 34" is "12"', False),
+)
+
+
+def _run_quiet(block, target):
+    inner = Checker(True)
+    try:
+        block(inner, target)
+    except Exception as exc:                                    # noqa: BLE001
+        inner.problems.append("stopped: %s: %s" % (type(exc).__name__, str(exc)[:100]))
+    return inner
+
+
+def check_parse_model_fires(c):
+    """MUTATION, in tier 4's shape. The parse model must read the engine's
+    two recorded parse answers and its fourteen numeric ones, and each fix
+    undone must fail its vectors under it: the model sees the class, and the
+    vectors can see each site."""
+    probe = LCS.Interp(_PROBE_LADDER)
+    real = (LCS._eq, LCS._Expr.p_cmp)
+    restore = _engine_parse_compare()
+    try:
+        swapped = (LCS._eq is not real[0], LCS._Expr.p_cmp is not real[1])
+        parse = [probe.eval_expr(expr, {}) for expr, _want in _PARSE_READINGS]
+        source = [probe.eval_expr(expr, {}) for expr, _want in _SOURCE_PARSE_READINGS]
+        numeric = [str(LCS._disp(probe.eval_expr(expr, {})))
+                   for expr, _want in _PROBE_READINGS]
+    finally:
+        restore()
+    c.ck("the parse model replaces `is` and the ordering operators", swapped,
+         (True, True))
+    c.ck("under the engine's parse, riptide's third probe line's items 1-2 read "
+         "as the engine read them (Linux and Windows, 2026-09-25)",
+         parse, [want for _expr, want in _PARSE_READINGS])
+    c.ck("and the parse reads the source's base-16, blank, R8L, strtod-word and "
+         "remainder cases as MCU_strtor8 answers them (DOCUMENTED, not observed)",
+         source, [want for _expr, want in _SOURCE_PARSE_READINGS])
+    c.ck("and the fourteen numeric answers still read as the engine gave them",
+         numeric, [want for _expr, want in _PROBE_READINGS])
+    c.ck("and the real comparisons are restored afterwards",
+         (LCS._eq is real[0], LCS._Expr.p_cmp is real[1]), (True, True))
+
+    core = open(CORE, encoding="utf-8").read()
+    wallet = _wallet_own_code(open(WALLET, encoding="utf-8").read())
+    coin = open(COIN, encoding="utf-8").read()
+    for label, where, new, old, block in _HEX_MUTATIONS + _HELPER_MUTATIONS:
+        text = wallet if where == "wallet" else core
+        c.ck("the shipped %s carries the line under test exactly once (%s)"
+             % ("coin-wallet" if where == "wallet" else "wallet-core", label),
+             text.count(new), 1)
+        if text.count(new) != 1:
+            continue
+        mutated = text.replace(new, old)
+        if where == "core":
+            body = "\n".join(ln for ln in mutated.split("\n")
+                             if not ln.startswith('script "'))
+            unit = LCS.Interp(coin + "\n" + body)
+        elif where == "core-in-wallet":
+            unit = _wallet_fixture(core_text=mutated)
+        else:
+            unit = _wallet_fixture(wallet_text=mutated)
+        if not c.terse:
+            # where the plain interpreter can express the class, and where
+            # it cannot: printed, not checked (docs/WORK-PLAN.md suite-wide
+            # #19 is the interpreter learning it)
+            plain = _run_quiet(block, unit)
+            c.note("  (%s undone: %d of its checks fail under the plain "
+                   "interpreter)" % (label, len(plain.problems)))
+        restore = _engine_parse_compare()
+        try:
+            engine = _run_quiet(block, unit)
+        finally:
+            restore()
+        c.ck("%s, undone, FAILS its vectors under the engine's parse" % label,
+             len(engine.problems) > 0, True)
+
+
+def check_parse_model(c, ip, run):
+    """Re-run `run` under the engine's text parse and tolerance; nothing may
+    move (the report shape is check_tolerance_models'). The WHOLE set ran
+    under the port once, by hand on 2026-09-26 (the review, beside another
+    gate on a loaded machine: about 39 minutes with the plain pass): 1866
+    vectors plain and under the port, none moving, as under the regex."""
+    inner = Checker(True)
+    restore = _engine_parse_compare()
+    try:
+        run(inner, ip)
+    except Exception as exc:                                    # noqa: BLE001
+        inner.problems.append("the run stopped: %s: %s" % (type(exc).__name__, exc))
+    finally:
+        restore()
+    detail = ""
+    if inner.problems:
+        detail = "\n      the vectors that moved:\n      " + \
+            "\n      ".join(p.replace("\n", "\n  ") for p in inner.problems[:8])
+        if len(inner.problems) > 8:
+            detail += "\n      ... and %d more" % (len(inner.problems) - 8)
+    c.ck("every vector gives the SAME answer under the engine's text parse and "
+         "tolerance (%d re-run)%s" % (inner.count, detail),
+         "%d differing" % len(inner.problems), "0 differing")
 
 
 def main(argv):
@@ -3063,6 +4730,18 @@ def main(argv):
                 check_audit_2026_09_01(ck, interp)
                 check_script_framing(ck, interp)
                 check_wide_reads(ck, interp)
+                check_exact_integers(ck, interp)
+                check_hex_compares(ck, interp)
+                check_wallet_hex_compares(ck, interp)
+
+            # the vectors whose answers rest on HOW the engine compares:
+            # tier 4 re-runs them under each tolerance, tier 5 under the
+            # engine's text parse
+            def comparison_set(ck, interp):
+                check_wide_reads(ck, interp)
+                check_exact_integers(ck, interp)
+                check_hex_compares(ck, interp)
+                check_wallet_hex_compares(ck, interp)
 
             run_all(c, ip)
             c.note("re-running the whole set with `is` and `offset()` folded "
@@ -3074,9 +4753,19 @@ def main(argv):
             # (by hand: a full pass per candidate - see the tier's header)
             every = "--all-comparison-rules" in argv[1:]
             c.note("re-running %s under each candidate engine comparison rule"
-                   % ("the whole set" if every else "the wide-integer vectors"))
+                   % ("the whole set" if every else
+                      "the wide-integer and hex-compare vectors"))
             check_tolerance_fires(c)
-            check_tolerance_models(c, ip, run_all if every else check_wide_reads)
+            check_exact_integer_fixtures(c)
+            check_tolerance_models(c, ip, run_all if every else comparison_set)
+            # tier 5: the engine's TEXT PARSE (engine note 2.11), proven to
+            # read the recorded parse answers and to fail every hex fix
+            # undone, then the same set (or the whole set) under it
+            c.note("re-running %s under the engine's text parse"
+                   % ("the whole set" if every else
+                      "the wide-integer and hex-compare vectors"))
+            check_parse_model_fires(c)
+            check_parse_model(c, ip, run_all if every else comparison_set)
 
     if c.problems:
         print("check-wallet-vectors: FAILED")

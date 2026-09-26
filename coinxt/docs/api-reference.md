@@ -301,6 +301,12 @@ of 5-bit numbers and `pSpec` is `"bech32"` or `"bech32m"`. The decoder returns
 an array with `hrp`, `spec` and `values`, and **reports which encoding
 verified** rather than accepting either - that is what lets the address layer
 enforce the BIP-350 pairing. Most callers want the address handlers instead.
+Every value must be a whole number from 0 to 31 (`is an integer`, which the
+engine decides exactly); an empty item, a non-number, and a value a hair off
+an integer (`3.0000000000000004`, `-0.000000000000001`) are refused, where
+until 2026-09-25 the last two passed the engine's tolerant comparison. The
+spellings the engine calls whole (`3.0`, `+3`, `3e0`) encode as the number
+they spell. Verified statically; needs an OXT pass.
 
 ### `cxSegwitAddressEncode(pHrp, pVersion, pProgram)` / `cxSegwitAddressDecode(pHrp, pAddress)`
 
@@ -708,9 +714,12 @@ proven only as a parameter. The 2026-08-08 engine pass confirmed it works.
 ## A note on `the itemDelimiter`
 
 The script layer moves data as comma-separated lists internally, and an `item`
-chunk reads whatever the engine's delimiter currently is. That property is
-global mutable state, so an app that sets it and does not restore it would once
-have got silently wrong answers here.
+chunk reads whatever the delimiter is at that line. The itemDelimiter is
+handler-local on Windows and Linux (the suite's engine note 2.3, OBSERVED
+2026-09-24 and 2026-09-25 in both directions; no Mac run), so an app's setting
+does not reach these handlers there. This page used to call it global mutable
+state, the family's reading until that probe, under which an app that set it
+and did not restore it would have got silently wrong answers here.
 
 **You no longer have to think about this.** The nine handlers that read item
 chunks save the delimiter, set it to comma for the duration, and hand your

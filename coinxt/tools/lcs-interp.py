@@ -61,7 +61,9 @@ THE NAMED DIVERGENCES GREW WITH IT, same contract as the `is` note above
     ("1e3" IS an integer to the engine - docs/OXT-ENGINE-NOTES and nostrxt's
     own gotcha 4), because the shipped script GUARDS against that fold with
     digit-run checks and a stricter model here would test the guard against a
-    world where the hazard does not exist.
+    world where the hazard does not exist. (Since 2026-09-25 the forms
+    Python's float() and the engine's MCU_strtor8 read differently are
+    refused rather than answered: the third 2026-09-25 section below.)
   - `the keys of` returns keys in INSERTION order, one per line, each in the
     spelling it was FIRST stored under (see the key fold below). The engine
     documents no order at all, so any script that needs one must sort - the
@@ -125,7 +127,9 @@ through the same helpers). What is modelled, and on what evidence:
     handler finishes executing"): every handler call starts at false and
     the caller's value comes back when the callee returns. That is a
     different scope from the delimiters, which this file holds as global
-    state on note 2.3's own evidence; nothing in the tree has observed the
+    state, the stricter reading (see ITEM_DELIMITER: note 2.3 has since
+    OBSERVED the itemDelimiter handler-local on Windows and Linux, and the
+    global model is kept on purpose); nothing in the tree has observed the
     scope of caseSensitive either way, and riptide's three painters set it
     true without ever resetting it, so a global model would let one painter
     silently turn every later array in a boot back into exact-spelling keys,
@@ -165,6 +169,148 @@ defect could pass the static checker AND every headless vector AND still be
 wrong on an engine. See _exact(). The refusal is STRICTER than the engine,
 which is allowed and is the point - the engine carries on with a rounded number
 and tells nobody, and that is the failure this stop exists to make loud.
+
+AND A SECOND REFUSAL OF THAT KIND, ADDED 2026-09-25: a comparison of two
+numbers that the ENGINE answers differently from IEEE is REFUSED (Indistinct,
+not a Thrown either) instead of answered. OBSERVED 2026-09-24 (OXT, Win32, the
+suite paste's riptide fold; docs/OXT-ENGINE-NOTES.md 2.10): riptide's
+rsReadBEu64 guarded a u64 with `tHi > (9007199254740992 - tLo) / 4294967296`,
+and for hi = 2^21, lo = 1 - the value 2^53 + 1 - the engine ACCEPTED the
+record. IEEE answers 2097152 > 2097151.99999999977 TRUE, and so did this file,
+so every headless gate stayed green over a bound the engine does not enforce:
+the two sides differ by 2^-32, 1.1e-16 of their size.
+  The same day's second and third runs read riptide's two probe lines -
+true,false,false,false and true,false,16,16 - so the engine's comparison has
+a RELATIVE tolerance between 8 and 16 DBL_EPSILON (OBSERVED; engine note
+2.10). The constant inside that bracket is the engine SOURCE's (DOCUMENTED,
+read 2026-09-25), and riptide's third probe line then read it off an engine
+to the digit (OBSERVED 2026-09-25 on Linux and then on Windows: `N is N + 1`
+true at N = 450359962737050 and false one below): the numeric branch of engine/src/exec-logic.cpp's MCLogicIsEqualTo and MCLogicCompareTo,
+the code behind `is` / `=`, `<>` / `is not`, `<`, `<=`, `>` and `>=`, calls
+two numbers EQUAL when they differ by less than MC_EPSILON of the SMALLER
+magnitude, or by less than MC_EPSILON outright when that magnitude is itself
+below it, and engine/src/sysdefs.h defines MC_EPSILON as DBL_EPSILON * 10.0
+(2.2e-15). exec-logic.cpp is byte-identical, and sysdefs.h's definition the
+same, in OXT's own tree (github.com/OpenXTalk-org/OpenXTalk-Community-DPE,
+master) and in livecode `develop-9.6` and `develop`. That rule reproduces the
+first run's accept and every reading of the three probe lines - and so does
+this file's refusal, which answers each probe the engine read as IEEE does
+and refuses each it read otherwise (coinxt's check-script-vectors.py tier 0
+holds it to all sixteen readings, riptide's tier 1c and coinxt's tier 4 to
+the fourteen numeric ones). The same source compares PLAINLY in a `repeat with` bound
+and in max() / min(), and `switch` matches its cases as TEXT, so those paths
+are left as they were.
+  The rule reaches past the probes. On the engine 0.1 + 0.2 is 0.3, 1e-20 is
+0, and two INTEGERS compare equal once the smaller passes 1 / MC_EPSILON
+(450359962737050, about 2^48.7) and they differ by less than MC_EPSILON of
+it: at 2^53, `>` cannot tell integers up to 19 apart. A numeric-looking
+string past 2^53 (and no longer than 384 characters, past which the engine
+reads no string as a number) is ROUNDED to a double before it is compared, so
+two different ones can be one number to `is` (engine note 2.11; see _eq,
+whose text answer for those was unconditional until this date).
+  REFUSED, not emulated, for the 2^53 stop's reasons: an emulated tolerance
+would make every gate agree, silently, with a rule read off an engine only at
+the points three probe lines touch (on two platforms, never on macOS), where
+a refusal names the site to a person;
+and a verdict that hangs on a difference of a few ulps is far more often a
+defect in the SCRIPT than a design - an exact bound the engine does not
+enforce is the class the 2026-09-24 run found. The test is the source's own
+arithmetic, in doubles (_engine_equal), and _decided refuses only where the
+OPERATOR's answer parts from IEEE. Equal numbers, numbers the rule keeps
+apart, and a near pair on which the operator answers the same either way all
+answer exactly as before: riptide's old bound at 2^53 - 1 compared 2097151 >
+2097151.0000000002, a pair the engine calls equal, where `>` is false on
+both, and it still answers. Only this file's own numbers are judged (an int
+or a float, as _n makes them): a Python driver that substitutes a number type
+of its own, to replay a comparison under a candidate engine rule, owns that
+answer.
+  MEASURED before it landed (2026-09-25), over every gate that runs script
+through this file or riptide's runner - the run-gates.sh lists of coinxt,
+nostrxt, riptide, nocloud, holde-em and torrentxt - with the tree's bounds
+as they then stood. coinxt/CLAUDE.md trap 20 records what it refused, and
+what the two rules the finding proposed instead (an absolute 1e-6, or a
+tolerance applied without asking which operator) would have refused beside
+it. RE-MEASURED 2026-09-26 over the tree that merged this with the day's
+batch and engine records (the same lists, and the suite's board-boot gates;
+the door logging AND raising, so every gate ran as it does): no refusal in
+shipped script; the new ones were fixtures', listed in the same trap.
+
+AND A THIRD, THE SAME DAY: an OPERAND the engine reads differently
+(docs/OXT-ENGINE-NOTES.md 2.11; DOCUMENTED from the engine source, and two
+of its forms OBSERVED 2026-09-25 on Linux and then on Windows: riptide's
+third probe line read "1e999" is "2e999" and "1e5" is "100000" TRUE on both,
+the source's prediction). MCLogicIsEqualTo and MCLogicCompareTo turn BOTH operands
+into numbers whenever both convert, and only otherwise compare text; a text
+converts through MCU_strtor8 (libfoundation/src/foundation-typeconvert.cpp):
+MCU_strtol's integer parse, then C strtod over at most 384 characters, no
+range check. So "1e5" is "100000" is TRUE on the engine, and until this date
+this file compared those as text in `is` and answered false, while its `<`
+family, `is a number` and arithmetic read text through Python's float(),
+which reads more than strtod does. _read_text ports MCU_strtor8 line for
+line, and every comparison and number reading here is held to it with 2.10's
+policy: where this file's answer and the engine's are the same, it answers
+as before; where they part, or where the note does not establish how the
+engine reads the text at all, it REFUSES (Indistinct, citing 2.11) rather
+than re-answer the engine's way or guess. What the two readings do with each
+form (a text operand; "before" is this file until this date):
+
+  form                         the engine (source)          before / now
+  "12", "-3", "0012", "1.5",   a number                     a number / same
+    "12.000", " 3 " (ASCII
+    spaces either side)
+  "1e5", "1E5", "+3", "3.",    a number (strtod; the        TEXT to `is`, a number
+    ".5", "1e-999" (0)           integer parse for "3.")      elsewhere / `is` refused
+                                                              where the answer moves
+  "1e999" (+inf)               +inf, no range check         TEXT to `is`, a crash in
+                                                              `<` / `is` refused where
+                                                              it moves; `<` and
+                                                              arithmetic Imprecise
+  longer than 384 characters   TEXT, unless the integer     a number when it looked
+    (strtod's path)              parse holds it (zero-        like a plain decimal /
+                                 padded, or "12.000...")      refused where it moves
+  "1_000", a digit outside     TEXT                         a number to float() /
+    ASCII, an edge float()                                    refused wherever it was
+    strips and C does not                                     read as one; ValueError
+    ("\\x1c3"), spaces only                                    for the rest, as before
+  "0x10"                       MCU_strtol's base 16, no     TEXT, or a ValueError /
+                                 overflow check: NOT in the   UNSURE: refused unless
+                                 note                         the two texts are one
+  "0x1p3", "inf", "nan"        C99 strtod only: NOT in      TEXT or a crash /
+                                 the note                     UNSURE, as above (NaN
+                                                              never answered)
+  a non-ASCII edge ("\\xa03")   a space or not by encoding   a number / UNSURE
+                                 and locale: NOT in the note
+  "" (empty)                   never a number to `is` and   `<>` read it as 0 /
+                                 `<>`; 0 to the orderings     `<>` refused where it
+                                                              moves; the rest agreed
+  a Boolean                    never a number (text)        1 or 0 in `<` / refused
+
+`is an integer` was already EXACT, as the engine's is (exec-math.cpp:
+`d == floor(d)`, no tolerance), and stays so; it and `is a number` now refuse
+the forms above where the two readings part. A refused COMPARISON that is an
+operand of `and` / `or` is held back (_Undecided) and dropped where the other
+operand settles the answer - the engine evaluates both operands (engine note
+2.5) and gets a Boolean from each, so `false and X` is false whatever X reads
+there - and raised where nothing settles it (2.10's refusals too). The
+census that measured this change found the shape twice in the wallet, the
+guard `X is an integer and X >= 0` over an EMPTY X, refused then because
+riptide's runner ordered empty as TEXT. Text refused on its way into
+arithmetic is never held back: that throws on the engine. A Boolean in
+ARITHMETIC still reads as 1 or 0 here where the engine throws: named, not
+changed (outside the comparison work, and Python drivers call _n on script
+values). riptide's runner, which restates the `<` family and runs `switch`,
+goes through the same helpers (_text_order_alike, _ordered_alike), now
+orders an EMPTY operand as 0 against a number, as this file's `<` family and
+the engine's MCLogicCompareTo do (the same census found the wallet's
+cwSatToBtc printing an empty amount "-0.00000000" in the boot through the
+old text ordering, where an engine prints "0.00000000"), and matches `case`
+as TEXT, the engine's way (MCKeywordsExecSwitch). Held by coinxt's
+check-script-vectors.py tier 0 (check_interp_number_text, with riptide's
+third probe line as the engine READ it on Linux and on Windows, 2026-09-25,
+item for item the source's prediction), the runner-model
+tier of riptide's check-demo-boot.py, and nostrxt's tier 0; MEASURED over
+every execution gate before it landed, and again over the merged tree on
+2026-09-26 (coinxt/CLAUDE.md trap 20).
 """
 import base64
 import re
@@ -208,6 +354,89 @@ class Imprecise(Exception):
     to swallow it. This is a statement about the TOOL's fidelity ("what you
     just computed would be a different number on an engine"), not a script
     error the script gets to handle."""
+
+
+class Indistinct(Exception):
+    """A comparison (or a number read from text) that the ENGINE answers
+    differently from this file, or that this file cannot tell how the engine
+    answers. Two causes, one class, each message citing its engine note:
+    two unequal numbers close enough that the engine's comparison calls them
+    equal (2.10; see _decided and the header), and an operand the engine
+    READS differently - text it turns into a number where this file compared
+    text, text this file's float() turned into a number where the engine
+    compares text, or a form whose reading the note does not establish
+    (2.11; see _read_text and the header's third 2026-09-25 section).
+
+    NOT a Thrown and NOT an Imprecise, on purpose. Not a Thrown for
+    Imprecise's reason (a script `try` must not swallow a statement about the
+    tool's fidelity); not an Imprecise because a driver that catches that one
+    reads it as "a value went past 2^53", and this is a different fact about
+    a different operation."""
+
+
+def _refuse(msg):
+    """Every refusal is DECIDED here, so it has one door: a measurement (a
+    census that logs each refusal and lets the old answer stand, to find
+    every site in one run of every gate) replaces this one function and
+    nothing else. Every caller is written to fall through to the answer this
+    file gave before the refusal existed. (_Undecided re-raises a refusal
+    this door already decided; it decides none of its own.)"""
+    raise Indistinct(msg)
+
+
+class _Undecided(object):
+    """The value of a COMPARISON the interpreter refused, held back while an
+    `and` / `or` around it may still settle the answer without it.
+
+    The engine evaluates BOTH operands of `and` and `or` (engine note 2.5),
+    and a comparison always gives it a Boolean, so `false and X` is false
+    and `true or X` is true whatever X reads there. A guard written the
+    house way round - `X is an integer and X >= 0`, `X is not an integer or
+    X < 0` - still compares X when the first half has already decided, and
+    a refusal there is irrelevant to the answer (the census that measured
+    this found the wallet's two, over an EMPTY X that riptide's runner then
+    ordered as text). So p_cmp hands a refused comparison up as this
+    value, p_and / p_or drop it where the other operand decides (and ONLY
+    there: `not` passes it through), and p_or re-raises it when nothing did,
+    so it never outlives the expression it came from. Only a comparison's
+    own refusal is held back: text refused on its way into ARITHMETIC
+    (`X + 0`) raises at once, because that throws on the engine, and a
+    thrown error is no Boolean for `and` to mask. Every other use - text,
+    arithmetic, truth, hashing - re-raises the refusal."""
+    __slots__ = ("msg",)
+
+    def __init__(self, msg):
+        self.msg = msg
+
+    def _stop(self, *_args):
+        raise Indistinct(self.msg)
+
+    def __repr__(self):
+        return "<undecided comparison: %s>" % self.msg[:80]
+
+    __bool__ = __str__ = __hash__ = __len__ = __iter__ = _stop
+    __eq__ = __ne__ = __lt__ = __le__ = __gt__ = __ge__ = _stop
+    __add__ = __radd__ = __sub__ = __rsub__ = __mul__ = __rmul__ = _stop
+    __truediv__ = __rtruediv__ = __neg__ = __float__ = __int__ = _stop
+    __index__ = __contains__ = __getitem__ = __format__ = _stop
+
+
+def _both(ip, v, r):
+    """`v and r` with either possibly _Undecided: a definite false decides
+    (the engine's answer is false whatever the other reads), else the
+    undecided one stands, else true."""
+    uv, ur = isinstance(v, _Undecided), isinstance(r, _Undecided)
+    if (not uv and not ip.truth(v)) or (not ur and not ip.truth(r)):
+        return False
+    return v if uv else (r if ur else True)
+
+
+def _either(ip, v, r):
+    """`v or r`, the same way round: a definite true decides."""
+    uv, ur = isinstance(v, _Undecided), isinstance(r, _Undecided)
+    if (not uv and ip.truth(v)) or (not ur and ip.truth(r)):
+        return True
+    return v if uv else (r if ur else False)
 
 
 class Bytes(str):
@@ -532,16 +761,510 @@ def _exact(v):
 
 
 def _n(v):
-    """Coerce to number the way xTalk does when arithmetic is applied."""
+    """Coerce to number the way xTalk does when arithmetic is applied.
+
+    Text is read by Python's float(), which reads MORE than the engine's
+    MCU_strtor8 (engine note 2.11; _read_text): "1_000", digits outside
+    ASCII, an edge Python calls whitespace and C does not, a fraction past
+    384 characters, and a string of spaces (0 here) are all text there, so
+    arithmetic on them THROWS on an engine where this file computed. Since
+    2026-09-25 such text is refused (Indistinct) rather than read, and so is
+    text the note does not say how the engine reads (inf and nan words, a
+    non-ASCII edge); text float() rejects raises its ValueError as before.
+    A Boolean still reads as 1 or 0 here, where the engine refuses it: a
+    named divergence outside the comparison work, recorded in the header."""
     if isinstance(v, bool):
         return 1 if v else 0
     if isinstance(v, (int, float)):
         return _exact(v)
-    s = str(v).strip()
+    raw = str(v)
+    s = raw.strip()
     if s == "":
+        if raw != "":
+            _refuse_number_text(raw, _read_text(raw))
         return 0
-    f = float(s)
-    return _exact(int(f) if f == int(f) else f)
+    try:
+        f = float(s)
+    except ValueError:
+        # text float() rejects stays a ValueError, bar a form the engine
+        # may read ("0x10"), which is refused by name
+        reading = _read_text(raw)
+        if reading[0] == _READ_UNSURE:
+            _refuse_number_text(raw, reading, read_here=False)
+        raise
+    if f != f or f in (_INF, -_INF):
+        # no engine double this file holds: the 2^53 stop (Imprecise), as
+        # before, unless the note does not establish the text at all
+        reading = _read_text(raw)
+        if reading[0] == _READ_UNSURE:
+            _refuse_number_text(raw, reading)
+        return _exact(f)
+    # the 2^53 stop FIRST, as before: past it `is` answers by the text
+    # (see _eq), whatever the engine's reading
+    value = _exact(int(f) if f == int(f) else f)
+    reading = _read_text(raw)
+    if reading[0] != _READ_NUMBER:
+        _refuse_number_text(raw, reading)
+    return value
+
+
+# THE ENGINE'S COMPARISON, as its source writes it (the constant DOCUMENTED;
+# the tolerance RELATIVE and between 8 and 16 DBL_EPSILON, OBSERVED 2026-09-24;
+# the header's 2026-09-25 section has the record, and why a disagreement is
+# REFUSED rather than emulated). engine/src/exec-logic.cpp's MCLogicIsEqualTo
+# and MCLogicCompareTo - behind `is` / `=`, `<>` / `is not`, and `<`, `<=`,
+# `>`, `>=` - skip IEEE equality for two numbers and call them EQUAL when
+#     t_min = min(|l|, |r|)
+#     t_min <  MC_EPSILON:   |l - r|           < MC_EPSILON
+#     t_min >= MC_EPSILON:   |l - r| / t_min   < MC_EPSILON
+# with `#define MC_EPSILON (DBL_EPSILON * 10.0)` in engine/src/sysdefs.h.
+# _engine_equal is that arithmetic, in doubles, the way the C does it.
+_MC_EPSILON = 2.0 ** -52 * 10.0     # DBL_EPSILON * 10.0 = 2.220446049250313e-15
+
+# The engine's answer for each operator once it has called the pair EQUAL
+# (MCLogicCompareTo answers 0, and `>` is `order > 0`, `>=` is `order >= 0`,
+# ...). `is` stands for `=` as well; `is not` is p_cmp's negation of `is`.
+_ON_ENGINE_EQUAL = {"is": True, "<>": False, "<": False, ">": False,
+                    "<=": True, ">=": True}
+
+# The longest string the engine will read as a number: MCU_strtor8 in
+# libfoundation/src/foundation-typeconvert.cpp (`#define R8L 384`, the same
+# source reading) answers "not a number" for anything longer, so `is` falls
+# back to comparing TEXT - a 428-digit hex that happens to be all digits,
+# like holde-em's kKatEnv0ContentHex, is never a number there.
+_R8L = 384
+
+# The number types this file makes: _n answers an int or a float, and a bool
+# never reaches a numeric comparison. Checked as EXACT types, not with
+# isinstance: a Python driver that hands a comparison a number type of its
+# own (a gate replaying the comparison under a candidate engine rule, with a
+# float subclass or a wrapper that answers the six operators itself) has
+# taken the answer over, and this check must not second-guess it.
+_PLAIN_NUMBER = (int, float)
+
+
+def _engine_equal(a, b):
+    """True when the engine's comparison calls two numbers equal (above).
+    float() is exact here: an int that reaches a comparison came through
+    _exact, so it is at most 2^53."""
+    fa, fb = float(a), float(b)
+    if fa == fb:
+        return True
+    da, db = abs(fa), abs(fb)
+    t_min = da if da < db else db
+    if t_min < _MC_EPSILON:
+        return abs(fa - fb) < _MC_EPSILON
+    return abs(fa - fb) / t_min < _MC_EPSILON
+
+
+def _decided(a, b, op, where=None):
+    """Return quietly when the engine answers `a op b` as IEEE - and so this
+    file - does; REFUSE it (Indistinct) when it does not.
+
+    The two part only when a and b are unequal and the engine calls them
+    equal, and then only for an operator whose answer moves: `is` and `<>`
+    always, `>` and `<=` only when a > b in IEEE, `<` and `>=` only when
+    a < b - whatever the order, the engine's answer is _ON_ENGINE_EQUAL[op].
+    OPERATOR-AWARE on purpose, and the corpus shows why: riptide's old u64
+    bound compared 2097151 > 2097151.0000000002 for the VALID seq 2^53 - 1,
+    a pair the engine calls equal, where `>` is false either way and the
+    record parses on both. Refusing that line would refuse a verdict the
+    engine and this file share; at 2^53 + 1 the same line compared 2097152
+    > 2097151.9999999998, true here and false there, and that one is the
+    defect. `where` is the expression text when the caller has it, so the
+    refusal names its site."""
+    if type(a) not in _PLAIN_NUMBER or type(b) not in _PLAIN_NUMBER:
+        return
+    if a == b or not _engine_equal(a, b):
+        return
+    engine = _ON_ENGINE_EQUAL[op]
+    ieee = {"is": False, "<>": True, "<": a < b, ">": a > b, "<=": a <= b,
+            ">=": a >= b}[op]
+    if ieee == engine:
+        return
+    gap = abs(float(a) - float(b))
+    smaller = min(abs(float(a)), abs(float(b)))
+    if smaller < _MC_EPSILON:
+        how = ("the smaller is within MC_EPSILON (10 * DBL_EPSILON) of zero, "
+               "where the engine calls any two numbers less than MC_EPSILON "
+               "apart EQUAL")
+    else:
+        how = ("that is %.2g of the smaller, and the engine calls two numbers "
+               "EQUAL when they differ by less than MC_EPSILON (10 * "
+               "DBL_EPSILON) of the smaller" % (gap / smaller))
+    _refuse(
+        "`%r %s %r`%s: the engine does not answer this comparison the IEEE "
+        "way. The two numbers differ by %r; %s (a relative tolerance, "
+        "OBSERVED on OXT 2026-09-24; its constant from "
+        "engine/src/exec-logic.cpp, DOCUMENTED; docs/OXT-ENGINE-NOTES.md "
+        "2.10). So on OXT this `%s` answers %s, where IEEE answers %s. Decide "
+        "a bound with exact integers that differ by at least 1 at a modest "
+        "magnitude (the u32 halves, the leading bytes), never against a "
+        "quotient."
+        % (a, op, b, (" in `%s`" % where) if where else "", gap, how, op,
+           str(engine).lower(), str(ieee).lower()))
+
+
+# HOW THE ENGINE READS TEXT AS A NUMBER (docs/OXT-ENGINE-NOTES.md 2.11;
+# DOCUMENTED from the source, 2026-09-25; exponent-form and overflowing text
+# OBSERVED the same day on Linux and Windows, no other form; the header's
+# third 2026-09-25 section has the table and the policy). MCLogicIsEqualTo
+# and MCLogicCompareTo turn BOTH operands into numbers whenever both
+# convert, and compare numbers (2.10's rule) before they ever compare text.
+# A text converts through MCExecContext::ConvertToNumber ->
+# MCTypeConvertStringToReal (which refuses a string that cannot be held in
+# the platform's native encoding) -> MCU_strtor8
+# (libfoundation/src/foundation-typeconvert.cpp): first MCU_strtol, an
+# integer parse, and only if that fails, C strtod over at most R8L (384)
+# characters, with no range check. The port below is that code, line for
+# line where it decides anything, with one change: a form whose reading the
+# note does not establish - a hexadecimal integer (MCU_strtol's base-16
+# branch, unchecked for overflow), a form C99's strtod reads and an older C
+# library does not (a hex float, inf, nan), an edge character outside ASCII
+# (a space or not by the platform's encoding and C locale), or a decision
+# that rests on the width of libfoundation's integer_t - answers UNSURE
+# instead of a guess, and a caller refuses wherever the answer could move.
+_C_SPACE = " \t\n\v\f\r"          # C isspace() over ASCII, in every locale
+_INTEGER_MAX = 2 ** 31 - 1        # libfoundation's INTEGER_MAX (int32_t)
+_HEX_DIGITS = "0123456789abcdefABCDEF"
+_INF = float("inf")
+
+_READ_EMPTY = "empty"      # "": no number to `is`, 0 to `<` (the source)
+_READ_TEXT = "text"        # the engine compares it as text (certain)
+_READ_NUMBER = "number"    # the engine reads it as this number (certain)
+_READ_UNSURE = "unsure"    # the note does not establish the reading
+
+# What can begin a text MCU_strtor8 accepts, once C spaces are skipped: a
+# digit, a sign, a point, or the first letter of inf / nan. Anything else
+# settles it as text without a scan (most text compared in a gate).
+_NUMBER_STARTS = frozenset("0123456789+-.iInN")
+# ... and the ASCII characters that settle it the other way, looked up once
+_OPENS_TEXT = frozenset(chr(c) for c in range(1, 128)) - _NUMBER_STARTS \
+    - frozenset(_C_SPACE)
+
+# The subject sequences of C strtod: the decimal form every C library reads,
+# and the forms only C99's reads (a hex float, inf / infinity, nan / nan(...)).
+_STRTOD_DECIMAL = re.compile(
+    r'[+-]?(?:[0-9]+\.?[0-9]*|\.[0-9]+)(?:[eE][+-]?[0-9]+)?')
+_STRTOD_C99_ONLY = re.compile(
+    r'[+-]?(?:0[xX](?:[0-9a-fA-F]+\.?[0-9a-fA-F]*|\.[0-9a-fA-F]+)'
+    r'(?:[pP][+-]?[0-9]+)?'
+    r'|[iI][nN][fF](?:[iI][nN][iI][tT][yY])?'
+    r'|[nN][aA][nN](?:\([0-9A-Za-z_]*\))?)')
+_WIDE_DECIMAL = re.compile(r'[+-]?([0-9]+)(?:\.0*)?')
+
+_UNSURE_HEX = ("a hexadecimal integer, which MCU_strtol reads in base 16 with "
+               "no overflow check; engine note 2.11 does not name the form")
+_UNSURE_C99 = ("a form C99's strtod reads (a hex float, inf, nan) and an "
+               "older C library does not; engine note 2.11 does not say "
+               "which library the engine was built against")
+_UNSURE_EDGE = ("a character outside ASCII (or a NUL) at its edge, a space "
+                "to the engine or not by the platform's native encoding and "
+                "C locale, which engine note 2.11 does not establish")
+_UNSURE_WIDTH = ("longer than 384 characters, so whether the engine's integer "
+                 "parse holds it rests on the width of libfoundation's "
+                 "integer_t, which engine note 2.11 does not establish")
+
+
+def _strtol(s):
+    """MCU_strtol as MCU_strtor8 calls it (no delimiter, reals false,
+    octals false - `the convertOctals`, which no script here sets), over an
+    ASCII string with no NUL. Answers (done, value, rest, how): `how` is
+    "hex" when the base-16 branch read it, "overflow" when the decimal
+    digits tripped its int32 guard (the caller goes on to strtod)."""
+    n = len(s)
+    i = 0
+    while i < n and s[i] in _C_SPACE:
+        i += 1
+    if i == n:
+        return False, 0, "", ""
+    neg = s[i] == "-"
+    if s[i] in "+-":
+        i += 1
+        if i == n:
+            return False, 0, "", ""
+    start = n - i                     # C's startlength, spaces after included
+    base = 10
+    if s[i] == "0" and n - i > 2 and s[i + 1] in "xX":
+        base = 16
+        i += 2
+    value = 0
+    while i < n:
+        ch = s[i]
+        if "0" <= ch <= "9":
+            v = ord(ch) - 48
+            # C: `base < 16 && value > INTEGER_MAX / base - v`
+            if base < 16 and value > _INTEGER_MAX // 10 - v:
+                return False, 0, "", "overflow"
+            value = value * base + v
+        elif ch in _C_SPACE:
+            while i < n and s[i] in _C_SPACE:
+                i += 1
+            break
+        elif ch == ".":
+            # an integer may END in a point and zeros ("12.", "12.000")
+            if start > 1:
+                i += 1
+                while i < n and s[i] == "0":
+                    i += 1
+                if i == n:
+                    break
+                if s[i] in _C_SPACE:
+                    i += 1
+                    break
+            return False, 0, "", ""
+        elif base == 16 and ch in "abcdefABCDEF":
+            value = value * 16 + int(ch, 16)
+        else:
+            return False, 0, "", ""
+        i += 1
+    while i < n and s[i] in _C_SPACE:
+        i += 1
+    return True, (-value if neg else value), s[i:], ("hex" if base == 16
+                                                       else "")
+
+
+def _read_text_uncached(s):
+    """(kind, value, why) for the text s: how MCU_strtor8 reads it (above)."""
+    if s == "":
+        return _READ_EMPTY, None, ""
+    if not s.isascii() or "\0" in s:
+        # A character outside ASCII is never a digit, sign or point to C, so
+        # INSIDE the text it settles it as text; at an EDGE it may be a
+        # space the parse skips (the encoding and locale decide), so text
+        # that would read as a number without it is unsure.
+        core = s.strip(_C_SPACE)
+        lo, hi = 0, len(core)
+        while lo < hi and (not core[lo].isascii() or core[lo] == "\0"
+                           or core[lo] in _C_SPACE):
+            lo += 1
+        while hi > lo and (not core[hi - 1].isascii() or core[hi - 1] == "\0"
+                           or core[hi - 1] in _C_SPACE):
+            hi -= 1
+        inner = core[lo:hi]
+        if (inner != core and inner and inner.isascii() and "\0" not in inner
+                and _read_text(inner)[0] != _READ_TEXT):
+            return _READ_UNSURE, None, _UNSURE_EDGE
+        return _READ_TEXT, None, ""
+    core = s.strip(_C_SPACE)
+    if not core or core[0] not in _NUMBER_STARTS:
+        return _READ_TEXT, None, ""
+    done, value, rest, how = _strtol(s)
+    if done:
+        # MCU_strtor8 answers here whatever the rest is: text after the
+        # integer makes the whole a non-number, never a strtod retry
+        if rest:
+            return _READ_TEXT, None, ""
+        if how == "hex":
+            return _READ_UNSURE, None, _UNSURE_HEX
+        return _READ_NUMBER, value, ""
+    p = s.lstrip(_C_SPACE)
+    if len(p) > 1 and ((p[1] in "xX" and (len(p) == 2 or p[2] not in _HEX_DIGITS))
+                       or p[1] in "+-"):
+        return _READ_TEXT, None, ""
+    if len(p) > _R8L:
+        wide = _WIDE_DECIMAL.fullmatch(core)
+        # the width test is on the DIGITS, never through int(): Python refuses
+        # to convert more than 4300 digits (a ValueError, 2026-09-26: a
+        # 5000-digit text compared with itself crashed here, where the engine
+        # compares it as text and this file had answered)
+        digits = wide.group(1).lstrip("0") if wide else ""
+        if how == "overflow" and wide and (
+                len(digits) < 19
+                or (len(digits) == 19 and int(digits) < 2 ** 63)):
+            return _READ_UNSURE, None, _UNSURE_WIDTH
+        return _READ_TEXT, None, ""
+    m = _STRTOD_DECIMAL.match(p)
+    if m and not p[m.end():].strip(_C_SPACE):
+        return _READ_NUMBER, float(m.group(0)), ""
+    m = _STRTOD_C99_ONLY.match(p)
+    if m and not p[m.end():].strip(_C_SPACE):
+        return _READ_UNSURE, None, _UNSURE_C99
+    return _READ_TEXT, None, ""
+
+
+_READ_CACHE = {}
+
+
+def _read_text(s):
+    """_read_text_uncached, remembered for short texts: the gates compare
+    the same few literals and small numbers millions of times."""
+    if not s or (s[0] not in _NUMBER_STARTS and s[0] not in _C_SPACE
+                 and s[0].isascii() and s[0] != "\0"):
+        return (_READ_EMPTY, None, "") if not s else (_READ_TEXT, None, "")
+    if len(s) > 64:
+        return _read_text_uncached(s)
+    got = _READ_CACHE.get(s)
+    if got is None:
+        if len(_READ_CACHE) > 65536:
+            _READ_CACHE.clear()
+        got = _READ_CACHE[s] = _read_text_uncached(str(s))
+    return got
+
+
+def _read_operand(v, empty_is_zero):
+    """How the engine reads one comparison operand: (kind, value, why).
+    `empty_is_zero` for the ordering operators, whose MCLogicCompareTo
+    converts an empty operand to 0; `is` and `<>` (MCLogicIsEqualTo) never
+    convert an empty one. A Boolean never converts (ConvertToNumber refuses
+    the type), and neither does an array."""
+    if isinstance(v, bool):
+        return _READ_TEXT, None, ""
+    if isinstance(v, (int, float)):
+        return _READ_NUMBER, v, ""
+    if isinstance(v, dict):
+        return _READ_TEXT, None, ""
+    got = _read_text(v if isinstance(v, str) else str(_disp(v)))
+    if empty_is_zero and got[0] == _READ_EMPTY:
+        return _READ_NUMBER, 0, ""
+    return got
+
+
+def _shown(v):
+    """An operand as a refusal message spells it: text quoted (escaped, and
+    cut in the middle past 60 characters), a number bare."""
+    if isinstance(v, bool) or isinstance(v, (int, float)):
+        return str(_disp(v)) if isinstance(v, bool) else repr(v)
+    text = str(v) if isinstance(v, str) else repr(v)
+    if len(text) > 60:
+        text = "%s...%s (%d chars)" % (text[:28], text[-24:], len(text))
+    return '"%s"' % text.encode("unicode_escape").decode("ascii").replace(
+        '"', '\\"')
+
+
+def _nan_like(v):
+    return isinstance(v, str) and "nan" in v.lower()
+
+
+def _refuse_number_text(raw, reading, read_here=True):
+    """_n met text the engine reads differently from Python's float(), or
+    may: arithmetic on it throws on an engine where this file computed, or
+    the other way about."""
+    kind, _value, why = reading
+    _refuse(
+        "%s: %s, and the engine %s (MCU_strtor8: an integer parse, then C "
+        "strtod over at most 384 characters; docs/OXT-ENGINE-NOTES.md 2.11). "
+        "So on OXT arithmetic or a numeric comparison on it is not what it "
+        "is here. Validate the text before it is used as a number (digits "
+        "only, `is an integer`)."
+        % (_shown(raw),
+           ("this file's float() reads that text as a number" if read_here
+            else "this file's float() does not read that text as a number"),
+           ("reads it as text" if kind != _READ_UNSURE
+            else "may or may not: it is " + why)))
+
+
+def _refuse_reading(a, b, op, ka, kb, engine, here):
+    """A comparison whose operands the engine reads differently from this
+    file (engine note 2.11): name both, the operator, both answers."""
+    if engine is None:
+        why = kb[2] if kb[0] == _READ_UNSURE else ka[2]
+        what = ("engine note 2.11 does not establish how the engine reads "
+                "one operand - %s - so this file will not guess whether this "
+                "`%s` answers true or false" % (why, op))
+    else:
+        what = ("the engine reads %s (MCU_strtor8: an integer parse, then C "
+                "strtod over at most 384 characters) and compares %s, so on "
+                "OXT this `%s` answers %s, where this file (%s) answers %s"
+                % ("both as NUMBERS (%r and %r)" % (ka[1], kb[1])
+                   if ka[0] == _READ_NUMBER and kb[0] == _READ_NUMBER
+                   else "at least one as TEXT",
+                   "those" if ka[0] == _READ_NUMBER and kb[0] == _READ_NUMBER
+                   else "the text", op, str(engine).lower(), here,
+                   str(not engine).lower()))
+    _refuse(
+        "`%s %s %s`: %s (docs/OXT-ENGINE-NOTES.md 2.11). Compare a digest, "
+        "token or key with a letter prefixed to both sides, or byte by byte; "
+        "compare a count only after `is an integer` has admitted it."
+        % (_shown(a), op, _shown(b), what))
+
+
+def _text_is_checked(a, b, sa, sb, same):
+    """`is` answered by the TEXT (`same`): return quietly where the engine
+    answers the same, REFUSE where it reads both operands as numbers and
+    answers otherwise, or where it cannot be told. The engine compares text
+    whenever either operand is not a number (or is empty), so that half
+    always agrees - modulo `the caseSensitive`, whose `is` divergence is the
+    header's first, named and unchanged."""
+    # the common case first, without a scan: either side empty, or opening
+    # with a character no number can open with, is text to the engine
+    if (not sa or not sb or sa[0] in _OPENS_TEXT or sb[0] in _OPENS_TEXT):
+        return
+    ka = _read_operand(a, False)
+    if ka[0] in (_READ_TEXT, _READ_EMPTY):
+        return
+    kb = _read_operand(b, False)
+    if kb[0] in (_READ_TEXT, _READ_EMPTY):
+        return
+    if ka[0] == _READ_NUMBER and kb[0] == _READ_NUMBER:
+        engine = _engine_equal(ka[1], kb[1])
+        if engine != same:
+            _refuse_reading(a, b, "is", ka, kb, engine, "by the text")
+        return
+    # an operand the note does not establish, facing a number or another:
+    # IDENTICAL text reads alike whichever way it is read, bar a NaN
+    if same and not (_nan_like(sa) or _nan_like(sb)):
+        return
+    _refuse_reading(a, b, "is", ka, kb, None, "by the text")
+
+
+def _ordered_alike(v, r, a, b, op, where):
+    """After p_cmp's _n turned both operands of `<`, `<=`, `>`, `>=` or `<>`
+    into numbers: _n refuses text the engine reads otherwise, which leaves
+    two operands it turned into numbers that the engine never does - a
+    Boolean (text there) and, for `<>`, an EMPTY one (`<>` is the engine's
+    `is not`, which only equals empty to empty; the orderings do read empty
+    as 0)."""
+    for x in (v, r):
+        if isinstance(x, bool):
+            _refuse(
+                "`%s %s %s` in `%s`: %s is a Boolean, which the engine never "
+                "turns into a number - it compares \"true\" and \"false\" as "
+                "TEXT - where this file compared 1 and 0 "
+                "(docs/OXT-ENGINE-NOTES.md 2.11)"
+                % (_shown(v), op, _shown(r), where, _shown(x)))
+            return
+    if op == "<>":
+        ev = isinstance(v, str) and v == ""
+        er = isinstance(r, str) and r == ""
+        if ev != er and not (a != b):
+            _refuse(
+                "`%s <> %s` in `%s`: `<>` is the engine's `is not` "
+                "(MCLogicIsEqualTo), which never turns an EMPTY operand into "
+                "a number, so on OXT this answers true, where this file read "
+                "empty as 0 and answered false (docs/OXT-ENGINE-NOTES.md "
+                "2.11). Test for empty first." % (_shown(v), _shown(r), where))
+
+
+def _text_order_alike(v, r, op, where):
+    """riptide's runner orders two operands as TEXT unless Python reads both
+    as numbers (check-demo-boot.py's p_cmp): return quietly where the engine
+    orders them the same way, REFUSE where it reads both as numbers and
+    answers otherwise (an empty operand is 0 to the orderings), or cannot
+    be told."""
+    zero = op != "<>"
+    ka = _read_operand(v, zero)
+    if ka[0] in (_READ_TEXT, _READ_EMPTY):
+        return
+    kb = _read_operand(r, zero)
+    if kb[0] in (_READ_TEXT, _READ_EMPTY):
+        return
+    sa, sb = str(_disp(v)).lower(), str(_disp(r)).lower()
+    text = {">=": sa >= sb, "<=": sa <= sb, ">": sa > sb, "<": sa < sb,
+            "<>": sa != sb}[op]
+    if ka[0] == _READ_NUMBER and kb[0] == _READ_NUMBER:
+        x, y = ka[1], kb[1]
+        eq = _engine_equal(x, y)
+        engine = {">=": eq or x > y, "<=": eq or x < y,
+                  ">": not eq and x > y, "<": not eq and x < y,
+                  "<>": not eq}[op]
+        if engine != text:
+            _refuse_reading(v, r, op, ka, kb, engine,
+                            "by the text, in `%s`" % where)
+        return
+    if sa == sb and not (_nan_like(sa) or _nan_like(sb)):
+        return
+    _refuse_reading(v, r, op, ka, kb, None, "by the text, in `%s`" % where)
 
 
 class Interp:
@@ -1078,15 +1801,22 @@ class _Expr:
                 return w
         return None
 
+    # `and` / `or` evaluate BOTH operands, as the engine does (engine note
+    # 2.5). A refused comparison arrives as an _Undecided, which a definite
+    # operand on the other side can settle (_both, _either); what nothing
+    # settles is raised at the top of the expression, here in p_or, so an
+    # _Undecided never leaves the expression it was made in.
     def p_or(self):
         v = self.p_and()
         while True:
             save = self.i
             if self.kw("or"):
                 r = self.p_and()
-                v = self.ip.truth(v) or self.ip.truth(r)
+                v = _either(self.ip, v, r)
             else:
                 self.i = save
+                if isinstance(v, _Undecided):
+                    raise Indistinct(v.msg)
                 return v
 
     def p_and(self):
@@ -1095,14 +1825,16 @@ class _Expr:
             save = self.i
             if self.kw("and"):
                 r = self.p_not()
-                v = self.ip.truth(v) and self.ip.truth(r)
+                v = _both(self.ip, v, r)
             else:
                 self.i = save
                 return v
 
     def p_not(self):
         if self.kw("not"):
-            return not self.ip.truth(self.p_not())
+            v = self.p_not()
+            # `not` of a Boolean is a Boolean: an undecided one stays so
+            return v if isinstance(v, _Undecided) else not self.ip.truth(v)
         return self.p_cmp()
 
     def p_cmp(self):
@@ -1142,21 +1874,53 @@ class _Expr:
                         v = (not hit) if neg else hit
                         continue
                     if word:
-                        hit = _is_numeric(v, word == "integer")
-                        v = (not hit) if neg else hit
+                        try:
+                            hit = _is_numeric(v, word == "integer")
+                            v = (not hit) if neg else hit
+                        except Indistinct as exc:
+                            # held back for an `and` / `or` to settle
+                            # (_Undecided), naming its site (engine note 2.11)
+                            v = _Undecided("in `%s`: %s" % (self.s, exc))
                         continue
                     self.i = save2
                 r = self.p_concat()
-                v = (not _eq(v, r)) if neg else _eq(v, r)
+                try:
+                    hit = _eq(v, r)
+                    v = (not hit) if neg else hit
+                except Indistinct as exc:
+                    # _eq cannot see the expression; the refusal names it,
+                    # held back for an `and` / `or` to settle (_Undecided)
+                    v = _Undecided("in `%s`: %s" % (self.s, exc))
                 continue
             self.ws()
             for op in (">=", "<=", "<>", ">", "<"):
                 if self.s[self.i:self.i + len(op)] == op:
                     self.i += len(op)
                     r = self.p_concat()
-                    a, b = _n(v), _n(r)
-                    v = {">=": a >= b, "<=": a <= b, ">": a > b, "<": a < b,
-                         "<>": a != b}[op]
+                    # coerced HERE, in p_cmp's own frame: a gate that replays
+                    # comparisons under a candidate engine rule finds the
+                    # comparison sites by the function that calls _n
+                    # (riptide's u64 replay does, 2026-09-24). _n refuses a
+                    # text the engine reads otherwise (engine note 2.11)
+                    try:
+                        a, b = _n(v), _n(r)
+                        # refused where the engine's tolerant comparison
+                        # parts from IEEE (the header, 2026-09-25) ...
+                        _decided(a, b, op, self.s)
+                        # ... and where the engine never turns an operand
+                        # into a number at all: a Boolean, and empty under
+                        # `<>`, which is the engine's `is not` (2.11)
+                        _ordered_alike(v, r, a, b, op, self.s)
+                        v = {">=": a >= b, "<=": a <= b, ">": a > b,
+                             "<": a < b, "<>": a != b}[op]
+                    except Indistinct as exc:
+                        # a refused comparison is held back for an `and` /
+                        # `or` to settle (_Undecided); p_or raises it if
+                        # nothing does. The operands were evaluated first,
+                        # so text refused on its way into ARITHMETIC inside
+                        # them has already raised, as it must
+                        v = _Undecided("in `%s` (`%s`): %s"
+                                       % (self.s, op, exc))
                     break
             else:
                 self.i = save
@@ -1376,15 +2140,56 @@ def _eq(a, b):
         return len(arr) == 0 and str(_disp(other)) == ""
     if isinstance(a, bool) or isinstance(b, bool):
         return str(_disp(a)).lower() == str(_disp(b)).lower()
+    # Two NUMBERS, and below two numeric-looking strings, are compared the way
+    # the engine compares numbers, which is not IEEE equality (_decided; the
+    # header, 2026-09-25): refused where the two part, answered as before
+    # everywhere else. _n is called from THIS frame, as in p_cmp, because a
+    # gate that replays comparisons finds the sites by the function that
+    # calls it.
     if isinstance(a, (int, float)) and isinstance(b, (int, float)):
-        return _n(a) == _n(b)
+        a, b = _n(a), _n(b)
+        _decided(a, b, "is")
+        return a == b
     sa, sb = str(_disp(a)), str(_disp(b))
+    # THIS FILE'S READING, unchanged since before 2026-09-25: two texts that
+    # look like plain decimals are numbers, anything else is text. The
+    # engine's reading is MCU_strtor8's (_read_text; engine note 2.11), and
+    # wherever the two would give different ANSWERS the comparison is
+    # refused, never re-answered the engine's way (the header's third
+    # 2026-09-25 section has the table and the why).
+    if not (sa.strip() and sb.strip()
+            and _rx(r'-?\d+(\.\d+)?').fullmatch(sa.strip())
+            and _rx(r'-?\d+(\.\d+)?').fullmatch(sb.strip())):
+        same = sa == sb
+        # answered by the TEXT: refused where the engine reads both as
+        # numbers and answers otherwise ("1e5" is "100000" is true there)
+        _text_is_checked(a, b, sa, sb, same)
+        return same
     try:
-        return _n(sa) == _n(sb) if sa.strip() and sb.strip() and \
-            _rx(r'-?\d+(\.\d+)?').fullmatch(sa.strip()) and \
-            _rx(r'-?\d+(\.\d+)?').fullmatch(sb.strip()) else sa == sb
-    except Exception:
-        return sa == sb
+        # _n refuses a text the engine does not read as this number (a
+        # digit outside ASCII, a Python-only space, past 384 characters)
+        na, nb = _n(sa), _n(sb)
+    except (Imprecise, OverflowError):
+        # A numeric string past 2^53 (or past any double): the engine turns
+        # BOTH strings into doubles - rounding them - and compares those, so
+        # two different strings can be one number there, while this branch
+        # answers by the text. Until 2026-09-25 the text answer was given
+        # unconditionally (a bare `except Exception` here swallowed _n's
+        # 2^53 refusal and every other); it is given now only where the
+        # engine would agree with it, and REFUSED where it would not:
+        # "9007199254740994" is "9007199254740995" is TRUE on the engine
+        # (the second rounds to ...996, one double away, inside the
+        # tolerance) and false by the text. (A string that ROUNDS to 2^53 or
+        # below, like "9007199254740993", never gets here: _n answers the
+        # rounded number, which is the engine's reading too.) A string
+        # longer than _R8L is not a number to the engine at all (the
+        # integer parse gives up on it first), so a pair with one of those
+        # compares as TEXT there too, and answers here.
+        same = sa == sb
+        _text_is_checked(a, b, sa, sb, same)
+        return same
+    _decided(na, nb, "is")
+    return na == nb
 
 
 def _split_chunks(s, d):
@@ -1474,12 +2279,14 @@ def _chunk_store(unit, n, cur, val):
     raise SyntaxError(f"chunk store into {unit} {n} of a {len(cur)}-char string: not modelled")
 
 
-def _is_numeric(v, want_int):
-    """`is a number` / `is an integer`, modelled the ENGINE's way: the operand
-    is parsed as a number first, so "1e3" IS an integer here (see the named
-    divergences in the header - the shipped scripts guard against exactly this
-    fold with digit-run checks, and a stricter model would test those guards
-    against a world without the hazard)."""
+def _py_numeric(v, want_int):
+    """`is a number` / `is an integer` as this file read them until
+    2026-09-25, through Python's float(): the operand is parsed as a number
+    first, so "1e3" IS an integer (the named divergence in the header - the
+    shipped scripts guard against exactly this fold with digit-run checks,
+    and a stricter model would test those guards against a world without the
+    hazard). riptide's runner still asks this question to choose between
+    ordering two operands as numbers or as text."""
     try:
         s = str(_disp(v)).strip()
     except TypeError:
@@ -1493,6 +2300,37 @@ def _is_numeric(v, want_int):
     return f == int(f) if want_int else True
 
 
+def _is_numeric(v, want_int):
+    """`is a number` / `is an integer`, answered as _py_numeric answers them
+    wherever the ENGINE answers the same, and refused (Indistinct) where it
+    does not or cannot be told (engine note 2.11; the header's third
+    2026-09-25 section). The engine (exec-math.cpp, MCMathEvalIsANumber and
+    MCMathEvalIsAnInteger) asks ConvertToNumber - MCU_strtor8 for text, so
+    "0x10" is a number there and "1_0" or a digit outside ASCII is not -
+    and then `d == floor(d)`, EXACTLY: no tolerance, so 1 + 2^-50 is not an
+    integer on either side, and "1e999" (+inf) is one there, where this
+    file's int() cannot hold it."""
+    kind, value, _why = _read_operand(v, False)
+    engine = kind == _READ_NUMBER and (
+        not want_int or value in (_INF, -_INF) or value == int(value))
+    try:
+        legacy, crashed = _py_numeric(v, want_int), False
+    except (OverflowError, ValueError):
+        legacy, crashed = None, True
+    if kind == _READ_UNSURE or crashed or legacy != engine:
+        _refuse(
+            "`%s is %s`: this file's float() answers %s, and the engine's "
+            "MCU_strtor8 %s (docs/OXT-ENGINE-NOTES.md 2.11). Validate the "
+            "text with a digit-run check before it is trusted as a number."
+            % (_shown(v), "an integer" if want_int else "a number",
+               "nothing (it cannot hold the value)" if crashed
+               else str(legacy).lower(),
+               ("may not read it the same way: it is " + _why)
+               if kind == _READ_UNSURE
+               else "answers " + str(engine).lower()))
+    return _py_numeric(v, want_int) if crashed else legacy
+
+
 HASHES = {}
 
 # ---------------------------------------------------------------------------
@@ -1500,14 +2338,24 @@ HASHES = {}
 #
 # This used to be a hidden assumption: item chunks split on "," unconditionally,
 # so a script's dependence on the engine default was INVISIBLE here. An
-# adversarial review flagged exactly that, and it matters because the property is
-# GLOBAL MUTABLE STATE in this engine family (templates/CLAUDE.md rule 5) - an
-# app may set it and not restore it, and any script that reads `item` afterwards
-# then silently parses something else.
+# adversarial review flagged exactly that, when the family took the property for
+# GLOBAL MUTABLE STATE (templates/CLAUDE.md rule 5): an app may set it and not
+# restore it, and any script that reads `item` afterwards then silently parses
+# something else. That is the model this file keeps: ONE delimiter for the whole
+# run, set and restored by the script, never reset at a handler call.
 #
-# Modelling it lets a gate run the published vectors under a HOSTILE delimiter
-# and see what the engine would really do. Without this, no fix for that exposure
-# could be verified headlessly, only asserted.
+# THE ENGINE IS NOT THAT (engine note 2.3, OBSERVED 2026-09-24 on Windows and
+# 2026-09-25 on Linux, both directions; the LiveCode dictionary's claim; no Mac
+# run): there the itemDelimiter is HANDLER-LOCAL - a called handler starts at
+# comma, and a callee's set ends when it returns. The global model is kept on
+# purpose. It is the STRICTER reading for a leak: every unrestored set stays
+# visible to a gate here, where a local model would forgive it at the return,
+# so the family's save/set/restore discipline stays checkable headlessly while
+# macOS and the lineDelimiter are unprobed. Two limits follow from it. A gate
+# that runs the published vectors under a HOSTILE caller delimiter proves a
+# guard those engines make redundant, not an exposure they have. And the model
+# is BLIND to the converse: a callee that relies on inheriting its caller's
+# non-comma delimiter parses as intended here and under comma on those engines.
 # ---------------------------------------------------------------------------
 ITEM_DELIMITER = [","]
 

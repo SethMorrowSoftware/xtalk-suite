@@ -200,29 +200,31 @@ script "coinSelfTest"
 --      compares byteToNum values, which is exact whatever the caller's setting.
 --      This is the single most dangerous line of this whole file; do not
 --      "simplify" it to offset().
---   4. THIS FILE ASSUMES `the itemDelimiter` IS ITS DEFAULT COMMA, and that is
---      a REAL DEPENDENCY, not a note for tidiness. Twenty-six chunk expressions
---      here read comma-separated lists (bech32's 5-bit values, the 8-to-5
---      converters, the mnemonic word split, the path split), and every one of
---      them reads whatever the ENGINE's current item delimiter is. An app that
---      did `set the itemDelimiter to tab` and did not put it back would not get
---      an error from this file; it would get a silently wrong answer, which on
---      this surface means a wrong address.
+--   4. THIS FILE'S LIST PARSES NEED `the itemDelimiter` TO BE COMMA, and that
+--      is a REAL DEPENDENCY, not a note for tidiness. Twenty-six chunk
+--      expressions here read comma-separated lists (bech32's 5-bit values, the
+--      8-to-5 converters, the mnemonic word split, the path split), and every
+--      one of them reads whatever the delimiter is at that line. Under any
+--      other delimiter this file would not raise an error; it would give a
+--      silently wrong answer, which on this surface means a wrong address.
 --
---      THE FAMILY ALREADY SETTLED WHAT THIS PROPERTY IS, and this comment used
---      to say otherwise. templates/CLAUDE.md rule 5 states it plainly:
---      `itemDelimiter` / `lineDelimiter` are GLOBAL MUTABLE STATE - set them
---      immediately before the parse that needs them and RESTORE them afterward,
---      because other code assumes the defaults. OnionXT, which is the member
---      with the most on-engine hours, does exactly that at six sites (see
---      oxFieldAfter). So the remedy is NOT "set it at the top of every handler"
---      - that would leave the caller's delimiter changed, which is the very
---      thing the rule forbids - it is save, set, use, restore.
---
---      Applying that here is a deliberate change of its own, because a handler
---      that throws must restore on the way out too, and this file throws by
---      design on every malformed input. Until it is made, the dependency is
---      stated in docs/api-reference.md as a caller requirement.
+--      WHO CAN SET IT was settled on an engine after this was written: the
+--      itemDelimiter is HANDLER-LOCAL (the suite's engine note 2.3, OBSERVED
+--      on Windows 2026-09-24 and Linux 2026-09-25 in both directions, the
+--      LiveCode dictionary's claim; no Mac run). An app's `set the
+--      itemDelimiter to tab` does not reach these handlers there, and their
+--      own set does not outlive them. This comment and templates/CLAUDE.md
+--      rule 5 used to call it GLOBAL MUTABLE STATE, and the remedy was chosen
+--      on that reading: NOT "set it at the top of every handler" (which, were
+--      it global, would leave the caller's delimiter changed) but save, set,
+--      use, restore, as OnionXT does at six sites (see oxFieldAfter). The
+--      remedy is kept: it is right under both readings, it holds on an engine
+--      that has not run the probe, and the vector gate runs this file under
+--      the family interpreter (tools/lcs-interp.py), whose delimiter is
+--      global, which is the reading under which a guard can be checked at
+--      all. A handler that throws restores on the way out too, and this file
+--      throws by design on every malformed input: the guards, and why their
+--      throw comes after `end try`, are the block above cxBech32EncodeValues.
 --
 -- FAIL CLOSED, EVERYWHERE. Every decoder verifies its checksum and throws
 -- "CoinXT: <handler>: ..." on anything malformed. A corrupt address is never
@@ -678,17 +680,27 @@ end cxBech32Const
 -- the 8-to-5 converters, the mnemonic word split, the path split) - ten since
 -- ABI 6 added cxBtcAddressP2TRFromInternal, which reaches the bech32m encoder
 -- the same way cxBtcAddressP2TR does - and an
--- `item` chunk reads whatever the ENGINE's delimiter currently is - which is
--- GLOBAL MUTABLE STATE in this family (templates/CLAUDE.md rule 5). An app that
--- did `set the itemDelimiter to tab` and did not put it back would get silently
--- wrong answers from this library: measured, a hostile delimiter makes
--- cxBtcAddressP2WPKH fail outright and cxMnemonicValidate answer FALSE to a
--- perfectly good twelve-word backup. Neither is an error the caller can see.
+-- `item` chunk reads whatever the delimiter is at that line. These guards were
+-- written when the family took that for GLOBAL MUTABLE STATE (templates/
+-- CLAUDE.md rule 5 said so), under which an app that did `set the
+-- itemDelimiter to tab` and did not put it back would get silently wrong
+-- answers from this library: measured under the family interpreter, whose
+-- delimiter is global, a hostile delimiter made cxBtcAddressP2WPKH fail
+-- outright and cxMnemonicValidate answer FALSE to a perfectly good
+-- twelve-word backup. Neither is an error the caller can see.
+--
+-- ON AN ENGINE (the suite's engine note 2.3) the itemDelimiter is
+-- HANDLER-LOCAL: OBSERVED on Windows 2026-09-24 and Linux 2026-09-25, in both
+-- directions; no Mac run. There a caller's tab never reaches these handlers
+-- and the guards are redundant. They stay: redundant costs nothing, macOS has
+-- not run the probe, and the vector gate's indifference check
+-- (tools/check-script-vectors.py) runs under the global model, where the
+-- guards are exactly what it measures.
 --
 -- The remedy is the family's own, and OnionXT has used it at six sites for
 -- years: SAVE, set, use, RESTORE. Not `set the itemDelimiter to comma` at the
--- top of the handler - that leaves the caller's delimiter changed, which is the
--- thing the rule exists to prevent.
+-- top of the handler - under the global reading that leaves the caller's
+-- delimiter changed, which is the thing the rule exists to prevent.
 --
 -- It is done with a WRAPPER around each affected handler rather than by editing
 -- the handlers themselves. The bodies are vector-verified against published
@@ -698,9 +710,11 @@ end cxBech32Const
 -- underneath is untouched, and the `Inner` handlers are private so nothing
 -- outside this file can reach one without its guard.
 --
--- The catch is not optional: this layer throws by design on malformed input, so
--- without it a caller who catches a "bad checksum" error would find its own
--- delimiter silently changed as a side effect.
+-- The catch is not optional under the reading the guards were written for:
+-- this layer throws by design on malformed input, so without it a caller who
+-- catches a "bad checksum" error would find its own delimiter silently
+-- changed as a side effect wherever the delimiter crosses a call (not on
+-- Windows or Linux, above).
 --
 -- BUT THE THROW MUST HAPPEN AFTER `end try`, NOT INSIDE THE CATCH BLOCK, and
 -- that is not a style preference. These guards shipped re-throwing from inside
@@ -799,10 +813,37 @@ private function cxBech32EncodeValuesInner pHrp, pValues, pSpec
    -- emit NOTHING for that position - a string one character short, carrying a
    -- checksum computed over data it does not contain. It would decode to
    -- something, and that something would not be what the caller encoded.
+   --
+   -- WHOLE FIRST, AND DECIDED EXACTLY (2026-09-25). This read
+   -- `tIndex < 0 or tIndex > 31 or tIndex is not trunc(tIndex)`, and every
+   -- one of those comparisons goes through the engine's tolerant rule (suite
+   -- engine note 2.10: two numbers within 10 DBL_EPSILON of the smaller are
+   -- EQUAL, and anything within 2.2e-15 of zero IS zero). So 3.0000000000000004
+   -- was "3" to `is not trunc()`, and -0.000000000000001 passed all three
+   -- tests: values that are not whole, accepted by the one line whose job is
+   -- to refuse them. What they became next is the engine's chunk-index
+   -- conversion (the source rounds a computed index half away from zero, so
+   -- most likely the neighbouring integer; the family interpreter answers an
+   -- EMPTY character for char 0.999999999999999, the fail-open described
+   -- above), and a refusal should not rest on either. `is an integer` has no
+   -- tolerance: the engine source (exec-math.cpp, MCMathEvalIsAnInteger)
+   -- answers it with a plain C `t_double == floor(t_double)` on the converted
+   -- number, and answers false for empty. It is its own `if`, ahead of the
+   -- range, because `or` evaluates BOTH operands (engine note 2.5): trunc()
+   -- of a non-number was a hard engine error inside the old chain, not this
+   -- file's refusal. The texts
+   -- the engine still calls whole ("3.0", "+3", " 3", "3e0", "0x1F") are
+   -- encoded as the number they spell, and the checksum below reads the same
+   -- number, so they cannot split the string from its checksum. Verified
+   -- statically; needs an OXT pass (tools/check-wallet-vectors.py's tier 4
+   -- replays the old line under the engine's rule and lets both through).
    put the number of items of pValues into tCount
    repeat with tI = 1 to tCount
       put item tI of pValues into tIndex
-      if tIndex < 0 or tIndex > 31 or tIndex is not trunc(tIndex) then
+      if tIndex is not an integer then
+         throw "CoinXT: cxBech32EncodeValues: every data value must be a whole number between 0 and 31."
+      end if
+      if tIndex < 0 or tIndex > 31 then
          throw "CoinXT: cxBech32EncodeValues: every data value must be a whole number between 0 and 31."
       end if
    end repeat
@@ -1300,8 +1341,9 @@ end cxBtcAddressP2TRInner
 -- vectors (tools/check-script-vectors.py drives the real script through the
 -- real shim), and green on an engine: the suite paste's BIP-341 wallet-vector
 -- section on 2026-08-17 (278/278) and every run since, most recently
--- 2026-09-24 (296/296; coinxt/CLAUDE.md's ledger). This label said "needs an
--- OXT pass" until 2026-09-25, five weeks after that record. New in ABI 6.
+-- 2026-09-25 (296/296 on Linux and on Windows; coinxt/CLAUDE.md's ledger).
+-- This label said "needs an OXT pass" until 2026-09-25, five weeks after the
+-- first record. New in ABI 6.
 -- ==============================================================================
 
 -- Q = P + int(hash_TapTweak(bytes(P) || merkle_root)) * G, BIP-341's output
@@ -2243,8 +2285,8 @@ end cxXpub
 -- worked example, both directions plus the refusals - the same net every
 -- earlier phase carries - and both handlers are green on an engine: the suite
 -- paste's 14 WIF checks on 2026-08-17 and every run since, most recently
--- 2026-09-24 (coinxt/CLAUDE.md's ledger). This label said no engine had run
--- them until 2026-09-25.
+-- 2026-09-25 (on Linux and on Windows; coinxt/CLAUDE.md's ledger). This label
+-- said no engine had run them until 2026-09-25.
 -- ==============================================================================
 
 -- The WIF network version bytes, the same role kCxVersionP2PKH plays for an
@@ -3041,7 +3083,10 @@ end cxBtcTxEncodeInner
 -- without the trailing locktime, since a SegWit serialization inserts the
 -- witnesses between the outputs and the locktime. This is also exactly the
 -- preimage a txid hashes (marker off, locktime included), so cxBtcTxid reuses
--- it. Assumes the itemDelimiter is already comma (its callers set it).
+-- it. Reads items under comma without setting it: on Windows and Linux every
+-- handler starts at comma (the itemDelimiter is handler-local, the suite's
+-- engine note 2.3), and under the family interpreter's global model, or an
+-- engine where it crosses calls, its callers' own set is what supplies it.
 private function cxBtcTxBody pVersion, pOutpoints, pScriptSigs, pSequences, pOutputs, pLocktime, pWithMarker
    local tCount, tI, tBuf, tSig, tOutBytes
    put the number of items of pOutpoints into tCount
@@ -3868,7 +3913,7 @@ command stRunKeccak
       -- a hashing failure - do not go looking in the vectors.
       stAssert "cxKeccak256 of the empty input", stHex(cxKeccak256(stText(""))) is kKeccakEmpty
       stAssert "cxKeccak256 of abc", stHex(cxKeccak256(stText("abc"))) is kKeccakAbc
-      stAssert "cxKeccak256 is deterministic", stHex(cxKeccak256(stText("abc"))) is stHex(cxKeccak256(stText("abc")))
+      stAssert "cxKeccak256 is deterministic", stSameHex(stHex(cxKeccak256(stText("abc"))), stHex(cxKeccak256(stText("abc"))))
    catch tError
       stSectionFailed "Keccak-256", tError
    end try
@@ -3885,8 +3930,8 @@ command stRunSha3
       -- differ ONLY in a padding byte, so a shim that wires one to the other is
       -- a silent, plausible, totally wrong answer - and on Ethereum, a wrong
       -- address. Assert the difference explicitly, in both directions.
-      stAssert "cxSha3_256 is NOT aliased to cxKeccak256", stHex(cxSha3_256(stText("abc"))) is not stHex(cxKeccak256(stText("abc")))
-      stAssert "cxKeccak256 is NOT aliased to cxSha3_256", stHex(cxKeccak256(stText(""))) is not stHex(cxSha3_256(stText("")))
+      stAssert "cxSha3_256 is NOT aliased to cxKeccak256", not stSameHex(stHex(cxSha3_256(stText("abc"))), stHex(cxKeccak256(stText("abc"))))
+      stAssert "cxKeccak256 is NOT aliased to cxSha3_256", not stSameHex(stHex(cxKeccak256(stText(""))), stHex(cxSha3_256(stText(""))))
    catch tError
       stSectionFailed "SHA3-256", tError
    end try
@@ -3939,7 +3984,7 @@ command stRunHmac
       stAssert "HMAC-SHA256 case 2", stHex(cxHmacSha256(tKey2, tMsg2)) is kHmac2Sha256
       stAssert "HMAC-SHA512 case 2", stHex(cxHmacSha512(tKey2, tMsg2)) is kHmac2Sha512
       -- A MAC must depend on its key. Same message, different key, different tag.
-      stAssert "HMAC-SHA256 depends on the key", stHex(cxHmacSha256(tKey1, tMsg1)) is not stHex(cxHmacSha256(tKey2, tMsg1))
+      stAssert "HMAC-SHA256 depends on the key", not stSameHex(stHex(cxHmacSha256(tKey1, tMsg1)), stHex(cxHmacSha256(tKey2, tMsg1)))
    catch tError
       stSectionFailed "HMAC", tError
    end try
@@ -4003,7 +4048,7 @@ command stRunIndependence
       -- stale or empty buffer would pass every fixed vector above by accident
       -- only if the vector were wrong too, but this catches a buffer that never
       -- gets the caller's bytes at all.
-      stAssert "one changed input byte changes the digest", stHex(cxKeccak256(stText("abc"))) is not stHex(cxKeccak256(stText("abd")))
+      stAssert "one changed input byte changes the digest", not stSameHex(stHex(cxKeccak256(stText("abc"))), stHex(cxKeccak256(stText("abd"))))
    catch tError
       stSectionFailed "independence", tError
    end try
@@ -4054,7 +4099,7 @@ command stRunCurveKeys
       -- cxNewSeckey validates caller entropy and hands it back unchanged. The
       -- private key 1 is the generator G, which is why no vector table is
       -- needed here: this public key is the curve's own definition.
-      stAssert "cxNewSeckey accepts a valid key", stHex(cxNewSeckey(tSk)) is stHex(tSk)
+      stAssert "cxNewSeckey accepts a valid key", stSameHex(stHex(cxNewSeckey(tSk)), stHex(tSk))
       stAssert "cxSeckeyIsValid says true for a valid key", cxSeckeyIsValid(tSk) is true
       put cxPublicKey(tSk, true) into tPubC
       put cxPublicKey(tSk, false) into tPubU
@@ -4064,8 +4109,8 @@ command stRunCurveKeys
       -- int). If it were dropped, both calls would return the same length.
       stAssert "the compressed key is 33 bytes", the number of bytes of tPubC is 33
       stAssert "the uncompressed key is 65 bytes", the number of bytes of tPubU is 65
-      stAssert "cxPubkeyDecompress rebuilds the uncompressed key", stHex(cxPubkeyDecompress(tPubC)) is stHex(tPubU)
-      stAssert "cxPubkeyDecompress of an uncompressed key is a no-op", stHex(cxPubkeyDecompress(tPubU)) is stHex(tPubU)
+      stAssert "cxPubkeyDecompress rebuilds the uncompressed key", stSameHex(stHex(cxPubkeyDecompress(tPubC)), stHex(tPubU))
+      stAssert "cxPubkeyDecompress of an uncompressed key is a no-op", stSameHex(stHex(cxPubkeyDecompress(tPubU)), stHex(tPubU))
       -- The two ABI-4 tweak entry points. BIP-32 non-hardened derivation is
       -- built on the claim that tweaking the PRIVATE key and tweaking the
       -- PUBLIC key land on the same point; if they ever disagreed, an xpub
@@ -4073,10 +4118,10 @@ command stRunCurveKeys
       -- nothing above this line would notice. 1 + 1 = 2 pins both to the
       -- curve's own second point rather than only to each other.
       put cxSeckeyTweakAdd(tSk, tSk) into tTweaked
-      stAssert "cxSeckeyTweakAdd of 1 by 1 is the scalar 2", stHex(tTweaked) is stHex(stRepeatByte(0, 31) & numToByte(2))
+      stAssert "cxSeckeyTweakAdd of 1 by 1 is the scalar 2", stSameHex(stHex(tTweaked), stHex(stRepeatByte(0, 31) & numToByte(2)))
       stAssert "and its public key is 2G", stHex(cxPublicKey(tTweaked, true)) is kPubTwoCompressed
       stAssert "cxPubkeyTweakAdd of G by 1 is also 2G", stHex(cxPubkeyTweakAdd(tPubC, tSk)) is kPubTwoCompressed
-      stAssert "so private and public tweaking agree", stHex(cxPubkeyTweakAdd(tPubC, tSk)) is stHex(cxPublicKey(cxSeckeyTweakAdd(tSk, tSk), true))
+      stAssert "so private and public tweaking agree", stSameHex(stHex(cxPubkeyTweakAdd(tPubC, tSk)), stHex(cxPublicKey(cxSeckeyTweakAdd(tSk, tSk), true)))
       -- Both refuse a ZERO tweak, where upstream's public entry point accepts
       -- it. Accepting on one path and refusing on the other is the
       -- interoperability bug this member exists to prevent, so the symmetry is
@@ -4116,7 +4161,7 @@ command stRunCurveSign
       -- code draws fresh OS entropy for side-channel blinding on every call;
       -- that blinding cancels, and this is the check that says so from script.
       put cxSign(tSk, tDigest) into tAgain
-      stAssert "signing twice gives the same signature", stHex(tAgain) is stHex(tSig)
+      stAssert "signing twice gives the same signature", stSameHex(stHex(tAgain), stHex(tSig))
    catch tError
       stSectionFailed "ECDSA signing", tError
    end try
@@ -4163,7 +4208,7 @@ command stRunCurveRecover
       -- The whole point of recovery: get the signer back from the signature
       -- alone. Recovery ALSO succeeds for a wrong id and returns some other
       -- key, so comparing against the expected key is the real check.
-      stAssert "cxRecover returns the signing public key", stHex(tRec) is stHex(tPubU)
+      stAssert "cxRecover returns the signing public key", stSameHex(stHex(tRec), stHex(tPubU))
       stAssert "and that key is the published G", stHex(tRec) is kPubOneUncompressed
    catch tError
       stSectionFailed "ecrecover", tError
@@ -4181,13 +4226,13 @@ command stRunCurveEcdh
       put cxPublicKey(tB, true) into tPubB
       put cxEcdh(tA, tPubB) into tShared1
       put cxEcdh(tB, tPubA) into tShared2
-      stAssert "both sides derive the same point", stHex(tShared1) is stHex(tShared2)
+      stAssert "both sides derive the same point", stSameHex(stHex(tShared1), stHex(tShared2))
       stAssert "the shared point is 65 bytes", the number of bytes of tShared1 is cxEcdhLen()
       stAssert "the shared point is in uncompressed form", byteToNum(byte 1 of tShared1) is 4
       -- 1 * (2G) == 2G, so with these two keys the shared point is just the
       -- public key of the other side. That makes this leg checkable against a
       -- value already pinned above rather than against a new magic constant.
-      stAssert "1 * 2G is 2G", stHex(tShared1) is stHex(cxPublicKey(tB, false))
+      stAssert "1 * 2G is 2G", stSameHex(stHex(tShared1), stHex(cxPublicKey(tB, false)))
    catch tError
       stSectionFailed "ECDH", tError
    end try
@@ -4290,7 +4335,7 @@ command stRunBase58
       -- other while both used the wrong hash would pass every round-trip below.
       stAssert "cxHash256 of abc is the published double-SHA-256", stHex(cxHash256(stText("abc"))) is kHash256Abc
       stAssert "cxHash256 is 32 bytes", the number of bytes of cxHash256(stText("")) is 32
-      stAssert "and it is genuinely SHA-256 applied twice", stHex(cxHash256(stText("abc"))) is stHex(cxSha256(cxSha256(stText("abc"))))
+      stAssert "and it is genuinely SHA-256 applied twice", stSameHex(stHex(cxHash256(stText("abc"))), stHex(cxSha256(cxSha256(stText("abc")))))
       stAssert "encodes the worked example", cxBase58CheckEncode(tPayload) is kBase58Address
       stAssert "decodes it back", cxHexEncode(cxBase58CheckDecode(kBase58Address)) is stToLowerText(kBase58Payload)
       -- The checksum is the entire point of the encoding: one flipped character
@@ -5163,11 +5208,30 @@ command stRunFailOpen
       stAssert "P2PKH refuses 33 bytes tagged 0x04", stThrows("cxBtcAddressP2PKH", tKey)
       -- char (n) of a 32-character charset returns EMPTY past the end, so an
       -- out-of-range value used to emit nothing and shorten the string.
-      stAssert "bech32 refuses a data value of 32", stThrows2("cxBech32EncodeValues", "bc", "0,32,1")
-      stAssert "bech32 refuses a negative data value", stThrows2("cxBech32EncodeValues", "bc", "0,-1")
+      --
+      -- THE SPEC IS PASSED AND THE MESSAGE ASSERTED (2026-09-26, found in the
+      -- review of work-plan row #8). These three called stThrows2, so the
+      -- third argument, pSpec, was EMPTY, and cxBech32Const refuses an empty
+      -- spec ("the encoding must be either bech32 or bech32m") after the
+      -- guards run. With the guard under test deleted, each call still threw
+      -- - on the spec - so none of the three could fail (a headless probe
+      -- through the family interpreter; tools/check-script-vectors.py passes
+      -- the spec). "It threw" tested the layer below, the weak assertion
+      -- stThrowsText exists to replace.
+      stAssertRefusal "bech32 refuses a data value of 32", stThrowsText3("cxBech32EncodeValues", "bc", "0,32,1", "bech32"), "cxBech32EncodeValues", "whole number between 0 and 31"
+      stAssertRefusal "bech32 refuses a negative data value", stThrowsText3("cxBech32EncodeValues", "bc", "0,-1", "bech32"), "cxBech32EncodeValues", "whole number between 0 and 31"
+      -- WHOLE, DECIDED EXACTLY (work-plan row #8, 2026-09-25). The guard read
+      -- `tIndex is not trunc(tIndex)`, and the engine's `is` calls two numbers
+      -- within 10 DBL_EPSILON of the smaller EQUAL (suite engine note 2.10), so
+      -- by that rule these two were let through; `is an integer` has no
+      -- tolerance. The first engine run of these three reads the new line;
+      -- until then they are verified statically; needs an OXT pass.
+      stAssertRefusal "bech32 refuses a value one ulp above 3", stThrowsText3("cxBech32EncodeValues", "bc", "0,3.0000000000000004", "bech32"), "cxBech32EncodeValues", "whole number between 0 and 31"
+      stAssertRefusal "bech32 refuses a value within 2.2e-15 below zero", stThrowsText3("cxBech32EncodeValues", "bc", "0,-0.000000000000001", "bech32"), "cxBech32EncodeValues", "whole number between 0 and 31"
+      stAssert "and 3e0, a spelling the engine calls whole, encodes exactly as 3", cxBech32EncodeValues("bc", "0,3e0", "bech32") is cxBech32EncodeValues("bc", "0,3", "bech32")
       -- An uppercase HRP used to produce a MIXED-case string, which BIP-173
       -- forbids and which this library's own decoder rejects.
-      stAssert "an uppercase HRP is refused", stThrows2("cxBech32EncodeValues", "BC", "0")
+      stAssertRefusal "an uppercase HRP is refused", stThrowsText3("cxBech32EncodeValues", "BC", "0", "bech32"), "cxBech32EncodeValues", "lowercase"
    catch tError
       stSectionFailed "fail-closed regressions", tError
    end try

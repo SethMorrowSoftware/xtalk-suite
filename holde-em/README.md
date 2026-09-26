@@ -14,7 +14,7 @@ hand is verifiable after the fact.
 
 | Extension | Provides |
 |---|---|
-| [TorrentXT](https://github.com/SethMorrowSoftware/TorrentXT) | rp1 peer messaging and DHT rendezvous (the table code IS the invite) |
+| [TorrentXT](https://github.com/SethMorrowSoftware/TorrentXT) | rp1 peer messaging and DHT rendezvous (the table code, tagged with its protocol, IS the invite) |
 | [SodiumXT](https://github.com/SethMorrowSoftware/SodiumXT) | identities, sealing, commitments, randomness, and the ristretto255 surface (ABI 8, plus ABI 9 for DLEQ and the batch step) |
 | [OnionXT](https://github.com/SethMorrowSoftware/OnionXT) | optional onion tables and onion-hosted deck oracles; CARRIED inside the stack, so only a local tor daemon is needed |
 | [Box2Dxt](https://github.com/SethMorrowSoftware/Box2Dxt) Kit | optional spritesheet card art |
@@ -70,15 +70,23 @@ dead-button rule.
 
 ## Status
 
-**v0.25.5 (harness 47).** The folded harness is engine-green at this version: latest
+**v0.25.6 (harness 48).** The folded harness is engine-green at v0.25.5 (harness 47): latest
 **751/0** on 2026-09-25 (in the suite paste, on Linux and on Windows), every section green,
 with the five live legs skipped by name, so v0.25.4's hex-compare and near-integer fixes and
 v0.25.5's canonical wire indices (a position, seat, count or hand number is checked as text
 and counted by walking its range, and a per-hand wire must name the open hand) have run on
-an engine through their harness pins. In the standalone stack, in played hands and between
+an engine through their harness pins; in the standalone stack, in played hands and between
 machines they are verified statically; needs an OXT pass. Before it, 721/0 at v0.25.3
-(harness 45) on 2026-09-24, Windows. The first two-machine 2d contact was 2026-08-27, at
-v0.25.2.
+(harness 45) on 2026-09-24, Windows. v0.25.6's wire change (every act names its turn,
+every stand and sit-return the seat's next sit-out mark, and one sender predicate serves
+the table and History alike; then table protocol 2, so a table mixing v0.25.6 with an older
+holde-em is refused at the invite and the handshake with the reason in words, History
+replaying the board order, the applied settle and the timeout rules the table applies, one
+dealLevel per hand and one key per seat; then, once a hand is open, no host re-sit or move,
+only a late joiner into an empty seat the hand did not deal, whom History now seats on the
+stack the table gave it) is verified statically; needs an OXT pass. Invites
+now read `p2:<code>`; an older build refuses them, and this one refuses an older build's.
+The first two-machine 2d contact was 2026-08-27, at v0.25.2.
 [CLAUDE.md](CLAUDE.md) carries the full evidence ledger.
 Anything visual, timed or multi-machine is "verified statically; needs an OXT pass"
 until a person confirms it. **Honestly: no played hand deals on Level 2 yet.** The

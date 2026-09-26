@@ -140,8 +140,9 @@ Gotchas 1-10 keep their numbers: the suite work plan cites gotcha 8.
    whole-script compilation in this family.
 6. **Commands report via `the result`; functions return:** `btAddMagnet` is a command
    (`put the result into tH`); `btTorrentStatus(tH)` is a function.
-7. **`itemDelimiter` / `lineDelimiter` are global state:** set them right before use, as
-   the code does before splitting a `BTXQS1:`/`BTXTOR1:` code (engine note 2.3).
+7. **Set `itemDelimiter` / `lineDelimiter` right before use,** as the code does before
+   splitting a `BTXQS1:`/`BTXTOR1:` code (engine note 2.3: the itemDelimiter is handler-local,
+   OBSERVED on Windows and Linux; the lineDelimiter is unprobed, still treated as global).
 8. **A `bt*` call outside a `try` with TorrentXT absent is an uncaught engine error.** With
    the library missing or ABI-skewed (recorded symptom: "can't find handler" on
    `btRp1Enable`), `btStartSession` raised out of `qsStart` AND `openStack` until
@@ -187,11 +188,39 @@ Gotchas 1-10 keep their numbers: the suite work plan cites gotcha 8.
     the WHOLE map (an unset key reads as empty), which caught both.
 21. **A token, hash or nonce never meets bare `is`.** `is` compares two operands that
     both parse as numbers AS NUMBERS (C `strtod`, no range check; the suite's engine note
-    2.11, from the engine source, not yet observed): a hex token shaped digits-`e`-digits
+    2.11, from the engine source; `"1e999" is "2e999"` and `"1e5" is "100000"` read true
+    on Linux and on Windows, 2026-09-25, OBSERVED): a hex token shaped digits-`e`-digits
     overflows to +inf, and so do `1e999` and `inf` in a request, so `qsCwServe`'s capability
     gate let `/1e999/` in on about one share in 1.2 million until it compared
     `("t" & tTok)` with `("t" & sCwToken)` (2026-09-25; verified statically; needs an OXT
-    pass). Prefix a letter to both sides, or compare byte by byte.
+    pass). Prefix a letter to both sides, or compare byte by byte. The same day the family
+    checker's check 23 found the one the sweep missed, the LAN editor's WRITE gate
+    (`qsEditAuthed` compared the `x-edit-token` header with bare `is`), fixed the same way;
+    the checker now refuses a bare comparison with an operand named like a token, hash, nonce
+    or hex value, so name such values that way. A share CODE is not named so and can be a
+    bare 40-hex info-hash: `qsIsOwnCode`'s three compares (the clipboard offer's "is this
+    ours?") went behind a letter on 2026-09-26, found by re-running check 23 with `Key` and
+    `Handle` added; a miss there only withheld an offer. Verified statically; needs an OXT pass.
+22. **A path is never an array key, and a route path never meets bare `is`.** Array keys
+    fold case (suite engine note 2.7), so while `sHttpRoutes` and `sUserRoutes` were keyed
+    by the text "METHOD /path", `GET /API/x` dispatched to the `/api/x` route, and share
+    roots `/srv/Site` and `/srv/site` shared one table. Since 2026-09-25 both tables key by
+    `qsRouteKey` (the hex of "METHOD /path", method upper-cased on purpose) under
+    `qsRootKey(root)`, each entry carries its readable method and path, `qsUserRouteStore`
+    is the one writer of a folder's table, and every route-path comparison (Allow, the CORS
+    preflight, `qsRouteMatch`'s static segments, the pattern pick's method) goes through
+    `qsSameText`, which is byte-exact where `is` folds case and reads "01" as "1". The
+    guards may be stricter than the table, never looser: `qsHttpReservedPath` and the
+    duplicate-capture check fold ON PURPOSE (`toLower`), because the engine folded them all
+    along and the capture array folds too. The golden and the family interpreter compare
+    case-exactly, so to them `/_QS/x` had been a legal user route the model's folded keys
+    served at `/_qs/x`. The interpreter's case-exact `is` also cannot tell a bare `is` from
+    `qsSameText`, so the execution gate drives the route layer a second time with `is`
+    folding as the engine's does (`engine_is_folds`); without that pass a bare `is` in
+    Allow, the CORS preflight or `qsSameText`'s exact stage passed every gate. A declared
+    route method must be a token (`qsHttpMethodValid`): each entry's own method is what
+    Allow copies into the header, so a CR, LF or space in it reached that header.
+    Verified statically; needs an OXT pass (checklist section 4).
 
 ## 4. Engine evidence ledger
 
@@ -211,6 +240,9 @@ whole stack. The dated rows are STATIC records, each waiting on the checklist.
 | 2026-09-09 | none (static) | eight delayed handlers pinned; `btStartSession` guarded | checklist section 8 is its pass |
 | 2026-09-11 | family interpreter, not the engine | `tools/check-script-vectors.py` on the golden's inputs | 435 checks green; the fixture test catches 4 of 4 seeded defects (dotfile guard false; FIRST Content-Length kept; `..` admitted; Tor HEAD body sent) |
 | 2026-09-24 | none (static) | the OnionXT wording the 2026-08-24 embed made wrong: the header's builder list, `qsCapabilityLine`'s "OnionXT not in the message path", two `qsLog` lines advising an OnionXT install, the Tor chip's "extension not installed", two stale comments; one reason sentence, `qsOnionOffReason` | checklist section 8's "Without SodiumXT" line is its pass |
+| 2026-09-25 | family interpreter, not the engine | case-exact routing (gotcha 22): hex route and root keys, `qsSameText`, the reserved guard and the capture-name check folded on purpose; `qsRouteLookupKey` now reads the table and answers the key that dispatches, or empty; a declared route method must be a token (`qsHttpMethodValid`) | golden and execution gate green; the fixture test catches 16 of 16 seeded defects, twelve of them this change's (the raw-text keys that fold, raw root keys, `qsSameText` as bare `is`, the reserved guard and the capture-name check compared exactly, the pattern tie-break on the readable key; then, from its review, bare `is` in both halves of Allow and in the CORS preflight, `qsSameText` without its exact stage, which only the gate's second, engine-`is` pass names, and the declared-method token's predicate and its call site); checklist section 4 is its pass |
+| 2026-09-26 | family interpreter, not the engine | the gate under the interpreter's comparison refusal (suite engine notes 2.10, 2.11): a comparison the model REFUSES (`Indistinct`) now fails a row of its own, named by the call (`named_calls`); its first version handed the refusal back as text, which `boolish` read as false, so a script whose only fault was a refused `"1e2" is not "100"` passed the whole gate | execution gate green (the shipped script meets no refusal); the fixture test catches 17 of 17 seeded defects, the new one that script; a gate change, the shipped script untouched: no engine pass owed |
+| 2026-09-26 | family interpreter, not the engine | `qsIsOwnCode` compares each code behind a letter (gotcha 21): two 40-hex codes `0e1...` and `0e2...` are one number to a bare `is`; the golden gains `is_own_code` and the gate drives it under the engine's folded `is` | golden and execution gate green (every one of the three compares, undone, fails it by name); the fixture test catches 18 of 18 seeded defects, the new one the retained-share compare |
 
 Decisions that bind this app (the suite's docs/OPEN-DECISIONS.md), all 2026-08-27: **D-09**
 the Tor path stays close-per-response; **D-02** the HTTP-host endpoint menu waits for the

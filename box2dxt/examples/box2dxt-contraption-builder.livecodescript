@@ -7894,9 +7894,11 @@ end saveImageLibrary
 
 -- A friendly name from a file path: the file name without folders or extension.
 function assetNameFromPath pPath
-   -- SAVE/RESTORE (2026-09-09). This used to leave the delimiter at "." for
-   -- everything downstream. gotcha 5 and engine notes 2.3: the delimiter is
-   -- GLOBAL mutable state, so save, set, restore around the narrowest span.
+   -- SAVE/RESTORE (2026-09-09). This used to leave the delimiter at ".",
+   -- read then as reaching everything downstream. gotcha 5 and engine notes
+   -- 2.3: save, set, restore around the narrowest span. The itemDelimiter is
+   -- handler-local on Windows and Linux (OBSERVED 2026-09-24 and 09-25), so
+   -- there the "." never outlived this handler; macOS has not run the probe.
    local tN, tSaved
    put the itemDelimiter into tSaved
    set the itemDelimiter to "/"        -- LiveCode uses "/" in paths on every platform
@@ -8707,7 +8709,10 @@ end buildSampleSwing
 -- Serialise the whole scene to CB2 text (used by Save and by Reset's snapshot).
 function serializeText
    local tOut, tP, tI, tWsrc, tWtgt
-   set the itemDelimiter to comma   -- partLine parses "x,y" locs by item; never assume the caller left it at comma
+   -- partLine parses "x,y" locs by item and sets nothing itself: it sees comma
+   -- on entry on Windows and Linux (engine note 2.3, handler-local), and this
+   -- set covers an engine where a callee inherits (gotcha 5: never assume it)
+   set the itemDelimiter to comma
    put "CB2" & cr into tOut
    put "world" & tab & gGravityMode & tab & gWorldFeel & tab & (gCCD is true) & tab & \
          (gSleepOn is true) & tab & (gWarmStart is true) & tab & numOr(gSubsteps, 4) & cr after tOut
@@ -10081,9 +10086,12 @@ end removeWiresFor
 -- the legacy global signal so an unwired plate/sensor still does something.
 on fireEmitter pEmitter
    -- COLLECT under the tab delimiter, RESTORE, then fire. fireTarget used to
-   -- be called from inside this loop with tab still set, so everything it
-   -- reaches parsed "x,y" locs by tab. Same targets, same order; the only
-   -- change is that no outward call happens while the delimiter is borrowed.
+   -- be called from inside this loop with tab still set, read on 2026-09-09
+   -- as making everything it reaches parse "x,y" locs by tab. On Windows and
+   -- Linux a called handler starts at comma (engine note 2.3, OBSERVED
+   -- 2026-09-24 and 09-25), so there it could not; macOS has not run the
+   -- probe. Same targets, same order; the only change is that no outward
+   -- call happens while the delimiter is borrowed.
    local tEdge, tTgt, tFired, tSaved, tTargets
    put false into tFired
    put the itemDelimiter into tSaved

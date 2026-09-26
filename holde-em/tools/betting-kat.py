@@ -49,6 +49,9 @@ def new_hand(sb, bb, stacks, occ, button, ante=0):
         "sb": sb, "bb": bb, "ante": ante, "occ": list(occ), "buttonSeat": button,
         "street": "preflop", "phase": "blinds", "toAct": 0,
         "betCur": 0, "raiseFull": bb, "aggressor": 0, "sdFirst": 0,
+        # v0.25.6: the acts this hand has APPLIED (heBetNewHand's actN); the
+        # turn the hand waits for is actN + 1 (turn_of / heBetTurnOf)
+        "actN": 0,
         "err": "", "note": "",
         "stackBy": {s: stacks[s] for s in occ},
         "streetBy": {s: 0 for s in occ},
@@ -253,9 +256,12 @@ def apply_msg(state, mtype, seat, amount):
         st["err"] = "act-out-of-turn"
         return st
 
+    # the turn counter moves on every APPLIED act and on nothing else (the
+    # heBetApply comment): one add per verb path, after its last refusal
     if verb == "fold":
         st["foldedBy"][seat] = "true"
         st["actedBy"][seat] = "true"
+        st["actN"] += 1
         if len(_in_hand(st)) == 1:
             st["phase"] = "handdone"
             st["toAct"] = 0
@@ -268,6 +274,7 @@ def apply_msg(state, mtype, seat, amount):
             st["err"] = "check-facing-bet"
             return st
         st["actedBy"][seat] = "true"
+        st["actN"] += 1
         return _after_action(st, seat)
 
     if verb == "call":
@@ -281,6 +288,7 @@ def apply_msg(state, mtype, seat, amount):
             return st
         _pay(st, seat, pay)
         st["actedBy"][seat] = "true"
+        st["actN"] += 1
         return _after_action(st, seat)
 
     if verb in ("bet", "raise", "allin"):
@@ -292,6 +300,7 @@ def apply_msg(state, mtype, seat, amount):
             if target <= st["betCur"]:
                 _pay(st, seat, st["stackBy"][seat])
                 st["actedBy"][seat] = "true"
+                st["actN"] += 1
                 return _after_action(st, seat)
         else:
             # integer-only wagers (mirrors heBetApply's act-bad-amount guard):
@@ -326,6 +335,7 @@ def apply_msg(state, mtype, seat, amount):
         st["betCur"] = target
         st["aggressor"] = seat
         st["actedBy"][seat] = "true"
+        st["actN"] += 1
         if increment >= st["raiseFull"]:
             st["raiseFull"] = increment
             for s in st["occ"]:
@@ -335,6 +345,28 @@ def apply_msg(state, mtype, seat, amount):
 
     st["err"] = "unknown-verb:" + verb
     return st
+
+
+def turn_of(st):
+    """heBetTurnOf's mirror (v0.25.6): the turn the hand waits for."""
+    return st.get("actN", 0) + 1
+
+
+def act_turn_ok(turn_txt, st):
+    """heActTurnOk's mirror (v0.25.6, holde-em WORK-PLAN coding #13): ""
+    when turn_txt, an online act's signed turn= field, names the open turn;
+    else the reason. Canonical text (heCanonIdx without a bound): a
+    non-empty run of ASCII digits, no leading zero, at most 14."""
+    turn_txt = "" if turn_txt is None else str(turn_txt)
+    canon = (1 <= len(turn_txt) <= 14 and turn_txt[0] != "0"
+             and all(c in "0123456789" for c in turn_txt))
+    if not canon:
+        if turn_txt == "":
+            return "carries no turn key"
+        return "turn key %s is not canonical" % turn_txt[:12]
+    if int(turn_txt) != turn_of(st):
+        return "for turn %s while turn %d is open" % (turn_txt, turn_of(st))
+    return ""
 
 
 def showdown_order(st):
@@ -831,8 +863,45 @@ def case_level_count():
     check("level: the default schedule counts 8 levels", len(lv.split(";")), 8)
 
 
+def case_turn_counter():
+    # v0.25.6 (holde-em WORK-PLAN coding #13), the harness's section 2 turn
+    # pins line for line: the blinds are not turns, a refusal moves nothing,
+    # and each verb path is one turn -- one pin per path, because each adds
+    # on its own line and a path that forgot would let two turns share a key
+    st = run_blinds(new_hand(1, 2, {1: 400, 2: 400, 3: 5}, [1, 2, 3], 1))
+    check("turn: the blinds are not turns", turn_of(st), 1)
+    ref = apply_msg(st, "act", 2, "check,0")
+    check("turn: an out-of-turn act moves no turn", (ref["err"], turn_of(ref)),
+          ("act-out-of-turn", 1))
+    ref = apply_msg(st, "act", 1, "check,0")
+    check("turn: a refused verb moves no turn", (ref["err"], turn_of(ref)),
+          ("check-facing-bet", 1))
+    steps = [(1, "raise,10", 2), (2, "call,9", 3), (3, "allin,5", 4),
+             (2, "check,0", 5), (1, "bet,20", 6), (2, "fold,0", 7)]
+    for seat, va, want in steps:
+        st = apply_msg(st, "act", seat, va)
+        check("turn: seat %d %s -> turn %d" % (seat, va, want),
+              (st["err"], turn_of(st)), ("", want))
+    check("turn: the fold leaves a runout", st["phase"], "runout")
+    st = run_blinds(new_hand(1, 2, {1: 100, 2: 100}, [1, 2], 1))
+    st = apply_msg(st, "act", 1, "fold,0")
+    check("turn: the fold that ENDS the hand is a turn too",
+          (turn_of(st), st["phase"]), (2, "handdone"))
+    st = run_blinds(new_hand(1, 2, {1: 100, 2: 100, 3: 100}, [1, 2, 3], 1))
+    check("turn: act_turn_ok accepts the open turn", act_turn_ok("1", st), "")
+    check("turn: a later turn is refused", act_turn_ok("2", st),
+          "for turn 2 while turn 1 is open")
+    check("turn: no key and an alias are refused",
+          (act_turn_ok("", st), act_turn_ok("01", st)),
+          ("carries no turn key", "turn key 01 is not canonical"))
+    st = apply_msg(st, "act", 1, "call,2")
+    check("turn: the spent turn -- a replay -- is refused", act_turn_ok("1", st),
+          "for turn 1 while turn 2 is open")
+
+
 def main():
     case_blind_schedule()
+    case_turn_counter()
     case_quick_amounts()
     case_min_raise()
     case_under_raise_no_reopen()

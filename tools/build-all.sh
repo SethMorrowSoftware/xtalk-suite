@@ -265,6 +265,16 @@ fi
 # lost in a MinGW cross-build, or an ABI bump the binary never got, passes it
 # and reaches a user as a bind failure at LOAD time. No compiler and no
 # binutils: stdlib struct walks over ELF and PE.
+# Its fixture runs FIRST: since 2026-09-25 the ABI leg decodes a second PE
+# shape (the frame MSVC keeps around the shim's try/catch guard), and a decoder
+# that reads more shapes can read a WRONG number with an OK beside it. The
+# fixture flips every byte of both shapes (recorded and live), holds the
+# decoder to objdump where binutils reads PE, and executes the x64 functions
+# on an x86-64 Linux host; each of those two prints a SKIP where it cannot run.
+if [ -f tools/test-binary-freshness.py ]; then
+  echo "== suite: tools/test-binary-freshness.py =="
+  python3 tools/test-binary-freshness.py
+fi
 if [ -f tools/check-binary-freshness.py ]; then
   echo "== suite: tools/check-binary-freshness.py =="
   # Unquoted on purpose: empty must expand to NO argument, not to "".
@@ -523,6 +533,22 @@ fi
 # pastes into an engine is no longer the one the sources describe - and it will
 # still run, and still go green, about code that moved. Same failure and same
 # gate shape as tools/sync-demo-embeds.py.
+# The board's build STAMP is derived, not bumped (work plan suite-wide #17,
+# 2026-09-25): kSuUiVersion must equal a hash of what suBuildAll reaches, or a
+# stack an older paste built keeps the old window forever - coin-wallet's
+# lost controls of 2026-09-02..04, one member over. It reads the CORE, so it
+# runs before the generator's --check carries the stamp into the paste. The
+# fixture first: it plants a layout change the stamp did not follow, in
+# suBuildAll, a helper, the carried kit and a constant, and a stale stamp,
+# each on a scratch copy.
+if [ -f tools/test-suite-ui-version.py ]; then
+  echo "== suite: tools/test-suite-ui-version.py =="
+  python3 tools/test-suite-ui-version.py
+fi
+if [ -f tools/check-suite-ui-version.py ]; then
+  echo "== suite: tools/check-suite-ui-version.py =="
+  python3 tools/check-suite-ui-version.py
+fi
 # The generator's own refusals first (D-23): a hand-written late declaration,
 # a continued one, a drifted rewrite needle and an unexcused registry member
 # must each stop the build, and the declaration hoist must move exactly the

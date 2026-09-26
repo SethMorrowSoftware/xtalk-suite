@@ -15,8 +15,8 @@ v0.25.2 on 2026-08-27) and the Box2Dxt Kit (`b2k*`, optional presentation).
 ONE paste-and-run stack, `src/holdem.livecodescript`, holds the game, its
 self-test harness, the diagnostics `heProbeSodium` / `heProbeTorrent` /
 `heProbeKit` / `heProbeSounds`, and the carried onionxt layer between
-`tools/sync-demo-embeds.py` sentinels. Current: `kHeVersion` 0.25.5,
-`kHeHarnessV` 47, `kUIVersion` 15.
+`tools/sync-demo-embeds.py` sentinels. Current: `kHeVersion` 0.25.6,
+`kHeHarnessV` 48, `kUIVersion` 15, table protocol (`kHeEnvV`) 2.
 
 `holdem-spec.md` is the contract. Where code differs, the code wins and the
 spec is updated. Because chips may someday carry value, read spec 2 (threat
@@ -61,12 +61,21 @@ assets/cards/, assets/sounds/  vendored Kenney CC0 art and audio (see each NOTIC
    names two totals; v43 -> v44 on 2026-09-10 covered the four wire-arity
    sites, v44 -> v45 on 2026-09-24 section 24's, v45 -> v46 on 2026-09-25
    the seven heHexEq and near-integer pins, v46 -> v47 the same day the
-   23 canonical-index, hand-binding and audit-guard pins). Call sites
+   23 canonical-index, hand-binding and audit-guard pins, v47 -> v48 the
+   same day again for the v0.25.6 wire change and its 75 turn-binding,
+   sender-rule, sit-out-mark and History-agreement pins, and -- still
+   unreleased, so still 48 -- the 2026-09-26 fix pass's 77: the table
+   protocol, row 16's History rules, the re-sit mapping and heTSame; its
+   review's 6, the relay's pre-verify, a joiner's naming and a cfg
+   re-signed mid-game; its round 2's 18, the open-hand seat rule and
+   History's late joiner; and that round's review's 2, a dealt seat no sit
+   filled and a seat's stack after the first hand). Call sites
    are not checks (at v40, 374 sites reported 507 checks), so an engine run
    RECORDS a new total rather than matching the last: the first v45 total,
    2026-09-24, was 721 passed with every extension present, plus the 5
    live-leg skips, and the first v47 total, 2026-09-25, 751 passed with the
-   same 5, on Linux and on Windows (the ledger; no run is recorded at v46).
+   same 5, on Linux and on Windows (the ledger; no run is recorded at v46);
+   the next run records the v48 total.
    `kHeHarnessV` is printed in the report header so a stale paste identifies
    itself. Asserts are self-diagnosing: print what was observed against what
    was expected, never a bare FAIL, and write first-contact tests to debug
@@ -144,8 +153,11 @@ itself is catalogued in the suite's
    parameter, `k` constant; the public surface is `he*`.
 4. **Block vs single-line `if`**; a trailing `\` continues a line. Naive counters
    false-positive on these; do not "fix" valid code.
-5. **`itemDelimiter`/`lineDelimiter` are global:** set them before every parse
-   (engine note 2.3). `heLobbySetVisible` restores it mid-fold since v0.25.3.
+5. **Set `itemDelimiter`/`lineDelimiter` before every parse, and restore them**
+   (engine note 2.3): the itemDelimiter is handler-local (OBSERVED on Windows and
+   Linux, both directions; no Mac run), so an unrestored one misparses the rest of
+   its own handler; the lineDelimiter is unprobed and still treated as global.
+   `heLobbySetVisible` restores it mid-fold since v0.25.3.
 6. **Constants must be literal** (unified check 22 refuses a non-literal value;
    engine note 1.3).
 7. **A command called with `()` throws** "error in function handler" and its body
@@ -206,7 +218,13 @@ itself is catalogued in the suite's
   head, key, signature or table id is compared with `heHexEq` (a letter
   prefix, both sides lowercased). The headless gate sees a slip only for
   all-digit pairs (the interpreter reads only `-?\d+(\.\d+)?` as a number),
-  which is why sections 9 and 21 pin the genesis head against "0". Its twin
+  which is why sections 9 and 21 pin the genesis head against "0". Since
+  2026-09-25 the family checker's check 23 also refuses, statically, a bare
+  comparison with an operand NAMED like hex (`...Hex`, `...Pub`, a
+  `...Hex(` call); it cannot see through a helper's parameters, so the
+  harness's own equality is text too since 2026-09-26: `heTAssert`
+  compares through `heTSame` ("t" & got is "t" & want), never bare `is`
+  (measured first: no assertion relied on the number path). Its twin
   from note 2.10: a whole-number test is `is an integer`, never `is trunc(x)`.
   Those pins and section 5's near-integer raise ran green on an engine on
   2026-09-25 (Linux and Windows, the ledger). They assert what `heHexEq` and
@@ -228,15 +246,100 @@ itself is catalogued in the suite's
   (`heNetOccOfSeats`): the hand field is the sender's signed binding, and the
   per-hand seeds hash it. History's translation (`heNetLogToHotseat`) applies
   the same index and hand rules, so a wire the table dropped for THOSE reasons
-  never reaches it; sender authority is still not re-checked there. An act is
-  still replayable at a later turn of the SAME hand (no turn key). The v0.25.5
-  pins (sections 11, 15 and 21, the alias attack driven end to end among
-  them) ran green on an engine on 2026-09-25 (Linux and Windows, the ledger).
+  never reaches it. The v0.25.5 pins (sections 11, 15 and 21, the alias
+  attack driven end to end among them) ran green on an engine on 2026-09-25
+  (Linux and Windows, the ledger).
+- **Every self-signed wire names its moment, and one predicate names who may
+  send it (v0.25.6).** An act carries `turn=` (1 + the acts the hand has
+  APPLIED: `heBetApply` counts `actN`, one add per verb path after its last
+  refusal, `heBetTurnOf` reads it) and folds only at that turn
+  (`heActTurnOk`, live and in `heFoldTranscript`); a stand or sit-return
+  carries `n=`, the seat's next sit-out mark (`heSitMarkOk`, counted in
+  `gGame["sitMarkBy"]`), deliberately NOT the hand number, because an honest
+  stand is usually sent between hands. `heNetSendAction` appends both through
+  `heNetBoundBody`; never hand-build a body that skips it. Sender authority
+  is `heWireSenderOk` alone: the live fold calls it before any case acts
+  (with `heNetSenderCtx`), the live apply for cfg and roster, and History's
+  translation for every wire (with the context it walked to, the roster
+  through the now-pure `heRosterHasKey`, dealLevel through `heDealLevelOf`).
+  A new wire type or sender rule goes into that predicate, never into one
+  case, or the table and History drift apart again. The CONTEXT must drift
+  no more than the rules: History re-reads the dealing key per wire from
+  the dealer seat (as `heNetDealerPubHex` does) and only ever sets the
+  oracle flag within a hand (as the live dealLevel case does), and it
+  keeps a position's first commitment and only a reveal that opens it,
+  because the deal audit reads the LAST line per position (review fixes,
+  2026-09-25; section 15's "agree:" pins, section 18's oracle History).
+  Since the 2026-09-26 fix pass History also replays the board's street
+  order (`heBoardTakeOf`), the settle the table APPLIED
+  (`heNetXlatPickSettle`), a timeout's prescription and bank checks
+  (`heTimeoutRuleOk`, fed by translated stand and sit-return lines and
+  the miss count), a timeout only for a dealt seat, and one dealLevel per
+  hand; only a timeout's CLOCK is not replayable, and History takes the
+  table's word on it. Its review added a cfg the host re-signs mid-game:
+  the table adopts it at once, and History follows it through the fold's
+  `level` line (stakes for later hands, `miss=` at once), because its one
+  cfg line is written at the first handStart. Its round 2 (the same day)
+  seats a LATE JOINER in History too: every seat opens on the stack its
+  SIT gave it (the cfg's `stack=` as it stood then, as the live sit reads
+  it), written ahead of the first handStart that deals it -- the first
+  hand's seats in the opening cfg line, a later seat in a cfg line of its
+  own listing only its seat and stack; the fold's cfg case sets only what
+  a line LISTS (fold-kat mirrors it). Before, that one cfg line gave
+  stacks to the first hand's seats only, and History failed a hand the
+  table played honestly. An unseated sender is one with no CANONICAL seat:
+  `tFromSeat is 0` never matched an unseated key's empty seat.
+- **One table protocol, refused by name (v0.25.6 fix pass, 2026-09-26).**
+  `kHeEnvV` is 2: a v0.25.5 peer and this build could not fold each
+  other's wires and a table of both split silently. A version is compared
+  as TEXT (`heEnvVersionOk`) wherever a peer first meets this build -- the
+  `p2:` invite tag (`heInviteParse`), the admission token's signed version
+  (`heAdmitTokenVersion`, `heAdmitDomain`; protocol 1's domain is
+  `kHeDomainSess`, so an old token is RECOGNISED), the rp1 handshake and
+  the onion hello (before admission), the host relay (before a seq is
+  spent: one foreign line once wedged the table), the ingest -- and named
+  to the person once per table in words (`heNetNameVersion`, status line
+  plus lobby feed). A new entry point for peers must refuse the same way.
+  Its review (2026-09-26): the relay spends a seq only on a wire the
+  ingest's own `heEnvVerify` passes (a non-hex body, signed by any
+  admitted key, still wedged the table: never re-list the ingest's rules
+  in the relay, ask it); and rp1's swarm connects a joiner to an older
+  table's PLAYERS too, so a fellow player is named in a joiner's words
+  (`heVersionWhoOf`: "player" at our table, "host" or "peer" at one we
+  join) and the host's own refusal gets the full naming once even after
+  another's (`gGame["verNamedHost"]`): "Cannot join" is the message a
+  joiner needs.
+  The next protocol change bumps `kHeEnvV`, and protocol-kat re-derives
+  every envelope pin (`env_version` reads this file, so a bump without the
+  re-derivation fails).
+- **One dealLevel per hand, one key per seat (v0.25.6 fix pass).** A second
+  dealLevel is refused at the table and in History (`levelTaken`), and a
+  host seat assignment clears the re-sat seat's old key and the moved
+  key's old seat, on both sides.
+- **The open-hand seat rule (the fix pass's round 2, 2026-09-26; the
+  owner's call, spec 6).** The dealing key follows the dealer SEAT, so a
+  host that re-sat that seat mid-hand switched the dealing key after the
+  seals (the review's probe). A hand is open from its handStart to the
+  next, and while one is open a host sit must put an UNSEATED key into an
+  EMPTY seat the open hand did NOT deal -- exactly what
+  `heNetSeatLateJoiners` sends -- or it is refused and named, at the table
+  and in History (`heSeatAssignOk`, one pure predicate; never re-list its
+  rules in a case). An occupied seat (the probe; a re-sit between hands
+  also handed the seat's stack to the host's choice of key), a dealt seat
+  even when keyless (it waits for the boundary: a key arriving mid-hand
+  would take the seat's turn, reveal and holes, and at the dealer seat the
+  dealing key), and a key that already holds a seat (moving the dealer's
+  key out left the dealing key nobody's: the two-wire form). Before the
+  first handStart nothing is refused and the clearings above are the rule.
+  Section 15's (c2) drives every refusal and the late joiner's shape.
 - **Both operands are evaluated (engine note 2.5).** `heBetApply`'s refusal
   `X is not a number or X is not trunc(X)` evaluated `trunc("abc")`; it is
   nested now, and the nested form ran green on the engine on 2026-09-24
   (harness section 5's non-numeric raise). Whether `trunc` of a non-number
   throws on the engine is unrecorded.
+- **KNOWN EDGE, the honest race (spec 8.1).** A Stand and a Return pressed
+  before either is sequenced carry the same sit-out mark: the second is
+  refused as spent and must be pressed again (never re-sent automatically).
 - **KNOWN EDGE (recorded, not engineered away).** A timeout drained from the
   REORDER BUFFER can be early-refused by the client that just learned of the
   turn: fail-visible, disputed at the settle, healed by reconnect.
@@ -295,13 +398,16 @@ re-derives through it, so the void strings never change). Section 16 pins batch
   watchdogs guard every wait. Fail closed and never fall back.
 - Tor is assumed running on 9050/9051; Tor Browser alone exposes no control
   port, and the message says so. `heJoinRefusal` is pure.
-- The invite is `<64hex>@<56base32>.onion`: one word and non-hex, which gives
-  downgrade refusal by format. The address comes from `heOnionSeedHex` under
+- The invite is `p2:<64hex>@<56base32>.onion` (the table-protocol tag since
+  the v0.25.6 fix pass; a DHT invite is `p2:<64hex>`): one word and non-hex,
+  which gives downgrade refusal by format. The address comes from `heOnionSeedHex` under
   `kHeDomainOnion`, computed offline at create (SodiumXT ABI 6 for the
   deterministic onion, ABI 7 `sxSha3_256` for the offline address) and
   cross-checked against `oxServiceAddress` at publish.
 - The `h` hello stands in for the rp1 handshake: verify-or-drop, and the host's
-  hello precedes the replay. LF framing is safe because every free-text field
+  hello precedes the replay. The token is four items (its protocol last), so
+  a redial's trailing seq is item 5; a hello of another protocol is named
+  and its stream closed. LF framing is safe because every free-text field
   is hex; one wire line per `oxWrite`.
 - H1: streams and the service close on leave/stop; the control connection
   survives between tables and gets `oxShutdown` on closeStack (`gOxCtlUp`).
@@ -320,7 +426,8 @@ re-derives through it, so the void strings never change). Section 16 pins batch
 - The oracle is the host role minus the seat. `level=1` in the signed cfg is its
   only marker, and dealLevel carries `level=1,dealer=0`. Seams:
   `heNetDealerPubHex`, `heNetWeDeal`, `heNetContribCount`, `heNetMyContribPos`,
-  `heNetContribPosOk`. The oracle owns position dealCount+1, holds no seat,
+  and `heWireSenderOk`'s position rule (it retired `heNetContribPosOk` at
+  v0.25.6). The oracle owns position dealCount+1, holds no seat,
   stack or receipt signature, and its audit files as "oracle" (slot 0). An onion
   oracle's seed uses `kHeDomainOracle`, never `kHeDomainOnion`.
 - Oracle loss IS host loss, with one 60 s wire-silence watchdog.
@@ -360,8 +467,9 @@ re-derives through it, so the void strings never change). Section 16 pins batch
   `heNetOnionDialFail` owns the fork. **Nothing may tear down the transport while
   hostLost is false and gameOn is true.** Redial: 4 attempts at 2/4/8/16 s
   backoff, 10 s per dial; a host-signed wire APPLYING resets the counter; the
-  trailing seq is item-1..3 compatible, and `heAdmitTokenVerify` never reads
-  past item 3.
+  trailing seq is item 5 (the token's own four items first), and
+  `heAdmitTokenVersion` never trusts an item 4 without the signature that
+  names it.
 - **Spectators DEFERRED 2026-08-16** (owner: "we do not need spectators at this
   point"). Joining a table with a free seat seats you with no way to decline,
   because every client sends role "player". Picking spectators back up needs a
@@ -496,14 +604,19 @@ fixes (their pins in sections 5, 9, 11, 15 and 21), the wire-arity checks,
 section 24, Level 2 compute, the batch mask step, void-and-audit, the five
 cheater bots and DLEQ (latest 751/0/5 on 2026-09-25, on Linux and on Windows;
 721/0 at h45, Windows, 2026-09-24; the five live legs skip by name). Verified
-statically; needs an OXT pass: what the harness does not reach, namely those
-fixes in the standalone stack (`heRunSelftest` has no record at v0.25.4 or
-later), in hotseat hands and between machines; the v0.25.3 overlay fix (its
-fold-time `heLobbyHide` has run only as the guarded no-op a paste makes it;
-the dismissal itself is the 2d re-run's); everything visual and timed (the
-720p layout eye, the Phase 1 6-seat session); and every live multi-machine leg
-(2d re-run, 2e timed session, 2f two-machine tor + redial, the Phase 3
-three-machine oracle round).
+statically; needs an OXT pass: the v0.25.6 turn binding, sit-out marks and
+one sender predicate (live and in History), its fix pass (table protocol 2
+and the refusals it names, row 16's History rules, one dealLevel per hand,
+one key per seat, the text-only harness equality, and its round 2's
+open-hand seat rule and History's late joiner) and the v48 total that
+carries their pins; what the harness does not reach, namely the v0.25.4 and
+v0.25.5 fixes in the standalone stack (`heRunSelftest` has no record at
+v0.25.4 or later), in hotseat hands and between machines; the v0.25.3 overlay
+fix (its fold-time `heLobbyHide` has run only as the guarded no-op a paste
+makes it; the dismissal itself is the 2d re-run's); everything visual and
+timed (the 720p layout eye, the Phase 1 6-seat session); and every live
+multi-machine leg (2d re-run, 2e timed session, 2f two-machine tor + redial,
+the Phase 3 three-machine oracle round).
 Level 2 is not yet wired into played hands. Row 14 (the deal-path re-pass) can
 close at inference strength: section 11's seeds-XOR and full-deck asserts have
 been green in every folded run since 2026-08-17, and engine note 3.1 is
@@ -519,7 +632,8 @@ python3 tools/check-script-vectors.py   # then the harness itself, headlessly
 
 `tools/run-gates.sh` is the one list: the static gate, `check-docs.py`,
 `check-table-layout.py`, the seven KATs (evaluator, betting, shuffle, protocol
-with 132 pinned values and all 22 wire types, fold, atlas, sounds),
+with every envelope, token and deal value it pins and all 22 wire types,
+fold, atlas, sounds),
 `logic-fuzz.py`, `test-script-vectors.py`, then `check-script-vectors.py
 --check`. Raise a section's floor in `check-script-vectors.py` when it grows.
 The OXT round trip: gates pass, the user pastes and runs the harness and/or

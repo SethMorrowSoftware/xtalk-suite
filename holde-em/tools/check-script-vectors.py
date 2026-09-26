@@ -62,11 +62,13 @@ an engine without that surface, and the gate REQUIRES those skips (a Level 2
 section that stopped skipping would be one that ran against a surface that
 does not exist here).
 
-NOT DRIVEN, with the reason: heTestNetPlay (an online hand over a REAL
-TorrentXT session - nothing headless can carry it), heProbeSodium (a
-diagnostic that prints a report; it asserts nothing), and the LIVE rows the
-onion and oracle sections declare as skips by name (a tor daemon, three
-machines).
+NOT DRIVEN, with the reason: heProbeSodium (a diagnostic that prints a
+report; it asserts nothing), and the LIVE rows the onion, oracle and
+liveness sections declare as skips by name (a tor daemon, three machines, a
+timed table). heTestNetPlay IS driven (SECTIONS below, since 2026-09-11):
+its online hand runs host and player contexts over the harness's own
+single-machine loopback, not a TorrentXT session. This list named it until
+2026-09-26.
 
 THE SOURCE IS READ THE WAY THE ENGINE READS IT. The base interpreter strips
 `--` comments; this stack also carries `/* ... */` block comments (the
@@ -166,33 +168,44 @@ Thrown = LCS.Thrown
 # measured on 2026-09-11 (stack 0.25.3, harness v44), plus section 24's,
 # measured when it landed on 2026-09-24 (harness v45), sections 5, 9
 # and 21 raised on 2026-09-25 (stack 0.25.4, harness v46: the heHexEq and
-# near-integer pins), and sections 11, 15 and 21 raised the same day (stack
+# near-integer pins), sections 11, 15 and 21 raised the same day (stack
 # 0.25.5, harness v47: the canonical-index, hand-binding and audit-guard
-# pins); raise them when the harness grows. A skip count is
+# pins), and sections 2, 8, 15, 18, 20 and 21 raised the same day again
+# (stack 0.25.6, harness v48: the turn-binding, sender-rule and sit-out-mark
+# pins, and the review's History-agreement and keyless-act pins in 15, its
+# oracle History in 18 and its sit-return replay in 20), and sections 8, 9,
+# 14, 15, 17 and 21 raised on 2026-09-26 (the same unreleased 0.25.6 / v48:
+# the fix pass's table-protocol refusals, row 16's History rules, the re-sit
+# mapping and heTSame; then 14, 15 and 21 again for its review's relay
+# pre-verify, a joiner's naming and a cfg re-signed mid-game; then 8, 15,
+# 20 and 21 again for its round 2: the open-hand seat rule and History's
+# late joiner; then 15 once more for that round's review: a dealt seat no
+# sit filled, and a seat's stack after the first hand); raise them when
+# the harness grows. A skip count is
 # EXACT: a section that skips more than it did is a section that stopped
 # running something.
 SECTIONS = [
     ("heTestEvaluatorRun", 28, 0),
-    ("heTestBettingRun", 68, 0),
+    ("heTestBettingRun", 91, 0),
     ("heTestAnteRun", 23, 0),
     ("heTestLevelRun", 12, 0),
     ("heTestLegalRun", 19, 0),
     ("heTestScheduleRun", 3, 0),
     ("heTestShuffleRun", 9, 0),
-    ("heTestFoldRun", 17, 0),
-    ("heTestCryptoRun", 26, 0),
+    ("heTestFoldRun", 24, 0),
+    ("heTestCryptoRun", 33, 0),
     ("heTestReceiptRun", 17, 0),
     ("heTestDealRun", 20, 0),
     ("heTestDealOrderRun", 5, 0),
     ("heTestLobbyRun", 10, 0),
-    ("heTestNetSim", 20, 0),
-    ("heTestNetPlay", 60, 0),
+    ("heTestNetSim", 38, 0),
+    ("heTestNetPlay", 102, 0),
     ("heTestLevel2Run", 0, 1),          # ristretto255 is not modelled: skips
-    ("heTestOnionRun", 35, 1),          # the LIVE tor table skips by name
-    ("heTestOracleRun", 32, 2),         # the LIVE three-machine round + the onion oracle
+    ("heTestOnionRun", 54, 1),          # the LIVE tor table skips by name
+    ("heTestOracleRun", 34, 2),         # the LIVE three-machine round + the onion oracle
     ("heTestLevel2VoidRun", 2, 1),      # its ristretto (DLEQ) half skips
-    ("heTestLivenessRun", 84, 2),       # the LIVE timed table + the LIVE tor redial
-    ("heTestHelpersRun", 39, 1),
+    ("heTestLivenessRun", 91, 2),       # the LIVE timed table + the LIVE tor redial
+    ("heTestHelpersRun", 92, 1),
     ("heTestLeafRun", 39, 0),
     ("heTestLeafRun2", 83, 0),
     ("heTestLeafRun3", 50, 0),          # every leg pure or gGame-only: nothing skips

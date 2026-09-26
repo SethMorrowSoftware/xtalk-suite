@@ -153,10 +153,32 @@ script "xTalkSuiteSelfTest"
 -- any other TorrentXT stack (client, demo, torrent-selftest) first - otherwise
 -- the torrent sections SKIP with a note rather than fighting for the session.
 -- The enet loopback deliberately uses UDP port 27196, NOT the 27098 that
--- enet-selftest uses, so the two never fight for a port - but do not run
--- them at once: this paste's cleanup calls enDeinitialize, which acts on
--- the whole process and would end the other window's ENet hosts (review,
--- 2026-09-25; the suite's WORK-PLAN carries the fix).
+-- enet-selftest uses, so the two never fight for a port. ENet's
+-- initialisation belongs to the whole PROCESS and its shim refcounts it: the
+-- enDeinitialize that takes the count to zero destroys every live host in the
+-- process, whichever stack made it. Until 2026-09-25 this paste called
+-- enDeinitialize more often than it called enInitialize (on every open,
+-- before any run), which took a hold another window had, so opening it beside
+-- enet-selftest or a chat demo could end that window's hosts (review,
+-- 2026-09-25; work plan suite-wide #16). It now gives back exactly the holds
+-- it took and no more: every enInitialize here is counted in sSuEnHeld
+-- (suEnInit, suEnRelease; THE PASTE'S HOLD, below). The reverse direction is
+-- enetxt's own, and it is not the end of enet-selftest's RUN (its stFinish
+-- pairs the run's two enInitialize calls) but its stCleanup: on its close and
+-- on its Re-run it calls enDeinitialize once more, bare. So do not close
+-- enet-selftest or press its Re-run while a run here holds ENet (the enetxt
+-- row, the cross row, Run all): the cross row holds one, and would lose its
+-- loopback hosts. DataChannelXT
+-- is the one this cannot settle from script, so for it the old advice
+-- stands: dcCleanup is not counted at all (it frees EVERY peer and channel
+-- in the process) and its event queue is one per process, so a run that
+-- includes DataChannelXT - its row, the cross row, Run all - still ends
+-- another DataChannel stack's peers. Close those first. The paste calls
+-- dcCleanup only while it holds a dcInit of its own: at the end of a run
+-- that initialised DataChannelXT, or when a close or a re-entry cuts such a
+-- run short - never on a first open, a close at rest, or after a run that
+-- left DataChannelXT out. Both halves verified statically and in the
+-- headless boot model (tools/check-suite-ui-boot.py); needs an OXT pass.
 --
 -- MISSING EXTENSIONS SKIP, THEY NEVER FAIL. Each member is probed with one
 -- cheap guarded call inside try/catch (the family's fail-closed probe pattern,
@@ -192,7 +214,9 @@ script "xTalkSuiteSelfTest"
 -- A ZERO-ARGUMENT call in STATEMENT position must be BARE: a statement starting
 -- with an identifier is parsed as a COMMAND, so `dcCleanup()` hands the command
 -- the expression `()`, and `()` is not an expression. In EXPRESSION position
--- (`dcCleanup() is 0`, below) the parenthesised form is correct and required,
+-- (`put dcCleanup() into tR`, in suDcRelease below; the core's teardown calls
+-- both transports' releases that way since 2026-09-25, so it can count them)
+-- the parenthesised form is correct and required,
 -- and a one-argument statement call like `dcFreePeer(sPeerA)` is fine because
 -- `(sPeerA)` IS an expression - which is why the broken spelling looks exactly
 -- like the working one beside it. Every member's check-livecodescript.py now
@@ -233,7 +257,16 @@ constant kStHeight = 640
 -- ---- the board (D-23; see THE BOARD below the carried blocks) ---------------
 -- The build stamp: a stack built by an older paste (the scaffold's window, or
 -- an earlier board) is cleared and rebuilt once; a current one only repaints.
-constant kSuUiVersion = "suite-board-1"
+-- DERIVED, never bumped by hand (work plan suite-wide #17, 2026-09-25): the
+-- value is a hash of the CODE of suBuildAll, every handler it reaches (the
+-- carried kit's builders included) and every constant those name, and
+-- tools/check-suite-ui-version.py fails the build when it is stale. After any
+-- change to the board's build, run that tool with --fix, then regenerate the
+-- paste. It was "suite-board-1" from D-23 until then, bumped by hand - the
+-- hand-copied number that let coin-wallet's controls of 2026-09-02..04 never
+-- appear in a stack that already existed. The "suite-board-" prefix keeps the
+-- `is` in suBuild a TEXT compare (engine note 2.11).
+constant kSuUiVersion = "suite-board-0961bb91e5ee"
 -- One row per tools/member-registry.py member, IN ITS ORDER AND ITS SPELLING,
 -- then the cross-member row. check-suite-selftest.py holds all three lists to
 -- the registry, so a new member cannot be missing from the board.
@@ -294,6 +327,21 @@ local sDcGot               -- the ciphertext B received (Data)
 local sDcBigSize, sDcBigWant
 
 local sDeadline            -- the async phases' drop-dead time (ms clock)
+
+-- THE PASTE'S HOLD on the two process-wide transport libraries (work plan
+-- suite-wide #16; see THE PASTE'S HOLD above stTeardown for the argument).
+-- sSuEnHeld counts the enInitialize calls that returned 0 and have not yet
+-- been given back; sSuDcHeld counts the dcInit calls that returned 0 since
+-- the paste last called dcCleanup. Written ONLY by suEnInit / suEnRelease and
+-- suDcInit / suDcRelease, and never below zero. A script local survives the
+-- runbook's re-entry (`send "openStack" to this stack`, 5.2), which is what
+-- lets stCleanup give back a live run's holds; a RECOMPILED script starts
+-- them empty (the loss path of runbook 5.1.1, the same one that orphans the
+-- torrent session), which reads as zero, so the worst a re-paste can do is
+-- leave the old run's holds in place - the library stays initialised until
+-- OXT quits - and never give back one this paste did not take.
+local sSuEnHeld
+local sSuDcHeld
 
 -- the board (D-23)
 local sSuScope             -- what the report covers: "all" or one kSuKeys item (empty before the first run)
@@ -1255,24 +1303,41 @@ end scFinish
 -- self-check, 9 passed, 0 failed, including its delayed write), openStack's
 -- Run all end to end, the tallies (the summary's check that the rows add up to
 -- the totals held at 2620 / 5 / 3), the boot block above the summary, and Copy
--- results. NOT SHOWN BY THAT REPORT, so still verified statically; needs an OXT
--- pass (OXT-PASS-RUNBOOK row 48): a row's Run (the button-1 press arming a
--- tick), Show, the filter buttons and their views, and how the pills looked.
--- The headless UI boot (tools/check-suite-ui-boot.py) settles their LOGIC and
--- nothing about rendering or message delivery. The checks the run makes are
--- the ones the dated records ran.
+-- results; the board review's fixes a report can show (the merged skips, the
+-- banner, the renamed pump) ran in that day's third run. RAN AGAIN 2026-09-25
+-- on Linux (the paste as at f1346e0, by its version lines): the same build,
+-- boot self-check and tallies (2672 / 0 / 10, both loopbacks completing), and
+-- Copy results by the maintainer's account, from a SECOND Run all in one
+-- launch (the same account), which took a fresh torrent session and ran
+-- riptide's session sections green. And again that day on Windows (the same
+-- paste by its version lines; 2653 / 2 / 10, the 2 the stalled loopbacks;
+-- whether a launch's first or second Run all, not stated). The runbook's
+-- section 8 and row 48 hold those records. NOT SHOWN BY ANY OF THOSE REPORTS,
+-- so still verified statically; needs an OXT pass (row 48): a row's Run (the
+-- button-1 press arming a tick), Show, the filter buttons and their views,
+-- how the pills looked, and what came after those runs: the counted ENet and
+-- DataChannel holds (THE PASTE'S HOLD) and the derived build stamp (both
+-- 2026-09-25). The headless UI boot (tools/check-suite-ui-boot.py) settles
+-- their LOGIC and nothing about rendering or message delivery. The checks the
+-- run makes are the ones the dated records ran.
 
 -- ---- lifecycle ---------------------------------------------------------------
 -- BUILD, CLEAN, RUN, CHECK - in that order, on every open.
 --
 -- stCleanup FIRST, and unconditionally. On a first open there is nothing to
--- free and every call in it is guarded (enDeinitialize is refcount-guarded in
--- the shim; the rest sit in a try), so it costs nothing. On the runbook's
--- re-entry escape hatch - `send "openStack" to this stack` (OXT-PASS-RUNBOOK
--- 5.2) on a stack that may be mid-run - it is what stops the old pump and
--- releases the old run's transports and session before the new run takes
--- them. stRun also releases the session it finds, so this is belt and braces
--- for the session and the only brace for the ENet hosts and WebRTC peers.
+-- free: the paste holds no ENet or DataChannel hold yet (sSuEnHeld and
+-- sSuDcHeld are zero), so it gives nothing back, and every call it does make
+-- sits in a try, so it costs nothing - and it takes nothing from another open
+-- stack. This comment used to say the opposite was harmless: "enDeinitialize
+-- is refcount-guarded in the shim". The shim's refcount guards only against
+-- going below ZERO; a deinitialize this paste never paired decrements another
+-- window's hold, and the one that reaches zero destroys that window's hosts
+-- (review, 2026-09-25; work plan suite-wide #16). On the runbook's re-entry
+-- escape hatch - `send "openStack" to this stack` (OXT-PASS-RUNBOOK 5.2) on a
+-- stack that may be mid-run - it is what stops the old pump and releases the
+-- old run's transports, holds and session before the new run takes them.
+-- stRun also releases the session it finds, so this is belt and braces for
+-- the session and the only brace for the ENet hosts and WebRTC peers.
 --
 -- suScRun LAST: the boot self-check reads what the build and the run left
 -- behind (the demo contract), and it only READS - it takes nothing.
@@ -1792,7 +1857,7 @@ command suBuildAll
    end repeat
    set the itemDelimiter to tOld
    uiCap "suMembersCap", "Run re-runs ONE member end to end (probe, its sections, teardown, summary) and replaces the report; Show lists only its lines. Run all is the suite record.", "20,546,488,580"
-   uiFooter "Every member's own self-test plus the cross-member seams, in one process. Run all ran on an engine 2026-09-24; Run, Show and the filters need an OXT pass (D-23).", "20,588,488,628"
+   uiFooter "Every member's own self-test plus the cross-member seams, in one process. Run all ran on engines 2026-09-24 and 09-25; Run, Show and the filters need an OXT pass (D-23).", "20,588,488,628"
 
    -- 2. the results: three fields on one rect, exactly one visible
    uiSection "suSecResults", "2.  Results", "520,96,760,114"
@@ -2949,8 +3014,10 @@ command stTorrentSection
    stAssert "btDhtKeypair reports its 64-hex seed", \
          the number of chars of tKp["seed"] is 64
    put btDhtKeypair(tKp["seed"]) into tKp2
+   -- hex against hex compares as TEXT, a letter on each side (suite engine
+   -- note 2.11: bare `is` reads two number-like texts as numbers)
    stAssert "btDhtKeypair is deterministic from that seed", \
-         tKp2["publicKey"] is tKp["publicKey"]
+         ("h" & tKp2["publicKey"]) is ("h" & tKp["publicKey"])
 
    -- The alert drain has to survive being called; the events themselves arrive
    -- asynchronously and are not asserted here (that is the member selftest's job).
@@ -3004,7 +3071,9 @@ command stOnionSection
       put numToByte(0) after tZeroPub
    end repeat
    set the caseSensitive to true
-   stAssert "oxPublicKeyFromAddress decoded base32 byte-exactly", tPub is tZeroPub
+   -- a letter on each side keeps `is` on its text path (engine note 2.11)
+   stAssert "oxPublicKeyFromAddress decoded base32 byte-exactly", \
+         ("b" & tPub) is ("b" & tZeroPub)
    set the caseSensitive to false
 
    -- The fail-closed half: wrong length, a character outside the base32
@@ -3135,7 +3204,7 @@ command stCoinCurveSection
       -- ecrecover: the signature alone must yield the signer's key back.
       put cxRecover(cxSignRecoverable(tSeckey, tDigest), tDigest) into tRecovered
       stAssert "cxRecover returns the signing public key", \
-            stHex(tRecovered) is stHex(tPubU)
+            ("h" & stHex(tRecovered)) is ("h" & stHex(tPubU))
    catch tError
       stSectionFailed "CoinXT secp256k1", tError
    end try
@@ -3171,7 +3240,7 @@ command stCrossIdentitySection
 
    put btDhtKeypair(tSeedHex) into tKp
    stAssert "btDhtKeypair accepts the SodiumXT seed verbatim", \
-         tKp["seed"] is tSeedHex
+         ("h" & tKp["seed"]) is ("h" & tSeedHex)
    put btDhtKeypair(tSeedHex) into tKp
    stAssert "btDhtKeypair is deterministic on that seed (same key twice)", \
          the number of chars of tKp["publicKey"] is 64
@@ -3180,9 +3249,10 @@ command stCrossIdentitySection
    put textDecode(sxBin2Hex(tPub), "UTF-8") into tPubHex
    -- Both hex encoders emit lowercase, and `is` is case-insensitive by default,
    -- so this compare is deliberately left case-INsensitive: it is a comparison
-   -- of two hex TEXTS, not of secret bytes.
+   -- of two hex TEXTS, not of secret bytes - with a letter on each side, so
+   -- `is` stays on its TEXT path (engine note 2.11).
    stAssert "SodiumXT and libtorrent derive the SAME ed25519 public key", \
-         tPubHex is tKp["publicKey"]
+         ("h" & tPubHex) is ("h" & tKp["publicKey"])
 
    -- The two libraries disagree on how to SPELL the secret key, and the suite
    -- depends on knowing which is which: libsodium's is seed||publicKey (64
@@ -3201,7 +3271,7 @@ command stCrossIdentitySection
    else
       put textDecode(sxBin2Hex(tExpanded), "UTF-8") into tExpandedHex
       stAssert "libtorrent's DHT secret key IS SodiumXT's expanded key", \
-            tExpandedHex is tKp["secretKey"]
+            ("h" & tExpandedHex) is ("h" & tKp["secretKey"])
    end if
 
    -- The third leg of the claim: that same public key IS a v3 .onion address.
@@ -3379,6 +3449,7 @@ end stCrossBudgetSection
 
 -- ---- enetxt: the live loopback ----------------------------------------------
 command stStartEnetLoopback
+   local tInit
    stSection "enetxt: live loopback on 127.0.0.1:" & kStPortEnet
    put empty into sEnServer
    put empty into sEnClient
@@ -3393,7 +3464,17 @@ command stStartEnetLoopback
       exit stStartEnetLoopback
    end if
 
-   stAssert "enInitialize returns 0", enInitialize() is 0
+   -- COUNTED (suEnInit; THE PASTE'S HOLD, above stTeardown), and a refusal
+   -- stops the section here. A first enInitialize can fail only when no stack
+   -- in the process holds ENet (the shim answers 0 to every later one), so a
+   -- host made now would fail too, and the bind probe below would blame a
+   -- held port for it.
+   put suEnInit() into tInit
+   stAssert "enInitialize returns 0", tInit is 0
+   if tInit is not 0 then
+      put "failed" into sPhaseEn
+      exit stStartEnetLoopback
+   end if
    stAssert "enLibraryVersion names enet", enLibraryVersion() begins with "enet "
    -- A stale handle must be a harmless no-op, not a crash: the generation-tagged
    -- handle rule, spot-checked (the member selftest covers the whole surface).
@@ -3509,6 +3590,7 @@ end stEnDone
 
 -- ---- datachannelxt: the live loopback ---------------------------------------
 command stStartDcLoopback
+   local tInit
    stSection "datachannelxt: live loopback (two in-process peers)"
    put empty into sDcPeerA
    put empty into sDcPeerB
@@ -3525,7 +3607,16 @@ command stStartDcLoopback
       exit stStartDcLoopback
    end if
 
-   stAssert "dcInit returns 0", dcInit() is 0
+   -- COUNTED (suDcInit), and a refusal stops the section here. A refused
+   -- dcInit is not counted, so this run will not call dcCleanup; a peer made
+   -- now would rest on an initialisation nobody counted (dcCreatePeer
+   -- initialises the library implicitly, behind the count).
+   put suDcInit() into tInit
+   stAssert "dcInit returns 0", tInit is 0
+   if tInit is not 0 then
+      put "failed" into sPhaseDc
+      exit stStartDcLoopback
+   end if
    stAssert "dcLibraryVersion names libdatachannel", \
          dcLibraryVersion() contains "libdatachannel"
    stAssert "dcPeerState(0) is -1 for a stale handle", dcPeerState(0) is -1
@@ -3848,14 +3939,121 @@ command stFinish
    suAfterDone
 end stFinish
 
+-- ---- THE PASTE'S HOLD on the two transport libraries ------------------------
+-- (work plan suite-wide #16, review 2026-09-25; verified statically and in the
+-- headless boot model; needs an OXT pass.)
+--
+-- enInitialize and enDeinitialize act on the WHOLE PROCESS. enetxt's shim
+-- refcounts them (enx_initialize / enx_deinitialize over g_init_count, in
+-- enetxt/src/enet_shim.cpp), and the deinitialize that takes the count to
+-- zero destroys every live host in the process, whichever stack created it.
+-- So another open ENet stack (enet-selftest, the chat demos) is safe beside
+-- this paste only while the paste never deinitializes more often than it
+-- initialized - and until 2026-09-25 it did. stCleanup called enDeinitialize
+-- on every open, before any initialize, and again after every run; the
+-- folded enetxt harness initializes twice and never deinitializes (its
+-- teardown is cut, check 7); the loopback initialized once and stTeardown
+-- deinitialized once. Opening the paste therefore took one hold that was not
+-- its own, and with one other ENet window open, that window's hosts died.
+--
+-- Now every enInitialize in the paste goes through suEnInit - the core's
+-- loopback, and the folded harness's two, which tools/build-suite-selftest.py
+-- rewrites to call it - and suEnRelease gives back exactly the holds counted,
+-- from stTeardown (asserted) or stCleanup (quietly), whichever runs first.
+-- check 18 of tools/check-suite-selftest.py refuses a call of any of the four
+-- library handlers anywhere the paste can reach except inside these four
+-- handlers, and tools/check-suite-ui-boot.py drives open, row Runs, a
+-- re-entry mid-run and a close over a modelled refcount another stack holds.
+--
+-- A refused enInitialize (non-zero) is not counted, because the shim did not
+-- count it either; one that THROWS (an ABI skew, an absent extension) counts
+-- nothing and reaches the calling section's own catch.
+function suEnInit
+   local tR
+   put enInitialize() into tR
+   if tR is 0 then
+      if sSuEnHeld is not an integer then
+         put 0 into sSuEnHeld
+      end if
+      add 1 to sSuEnHeld
+   end if
+   return tR
+end suEnInit
+
+-- Give back every hold suEnInit took, and not one more. The count comes down
+-- BEFORE each call, so a call that throws is never repeated: a throw leaves
+-- the rest held, which is the safe direction (a hold kept is a library left
+-- initialised until OXT quits; a hold given back twice is another window's
+-- hosts destroyed). pAssert is true from stTeardown, where the run records
+-- the release, and false from stCleanup, which records nothing.
+command suEnRelease pAssert
+   local tR, tCalls, tAllZero
+   if sSuEnHeld is not an integer then
+      put 0 into sSuEnHeld
+   end if
+   put 0 into tCalls
+   put true into tAllZero
+   repeat while sSuEnHeld > 0
+      subtract 1 from sSuEnHeld
+      add 1 to tCalls
+      put enDeinitialize() into tR
+      if tR is not 0 then
+         put false into tAllZero
+      end if
+   end repeat
+   if pAssert is true and tCalls > 0 then
+      stAssert "enDeinitialize returns 0", tAllZero
+      stNote "one enDeinitialize for each of this run's" && tCalls && "counted enInitialize calls, and no more"
+   end if
+end suEnRelease
+
+-- DataChannelXT has no refcount to pair with. dcx_init is an idempotent
+-- one-time init (and dcCreatePeer calls it implicitly), and dcx_cleanup frees
+-- EVERY peer and channel in the process and joins libdatachannel's threads,
+-- however many dcInit calls came before it. So one dcCleanup gives back any
+-- number of this paste's holds - and every other stack's peers with them,
+-- which no script can prevent (a row for datachannelxt's shim, not for this
+-- file). What the paste CAN do is never call it without a hold of its own:
+-- not on open, not on a close after the run already released, not after a
+-- run whose scope left DataChannelXT out. sSuDcHeld answers exactly that.
+function suDcInit
+   local tR
+   put dcInit() into tR
+   if tR is 0 then
+      if sSuDcHeld is not an integer then
+         put 0 into sSuDcHeld
+      end if
+      add 1 to sSuDcHeld
+   end if
+   return tR
+end suDcInit
+
+command suDcRelease pAssert
+   local tR, tHeld
+   put sSuDcHeld into tHeld
+   put 0 into sSuDcHeld
+   if tHeld is not an integer then
+      exit suDcRelease
+   end if
+   if tHeld <= 0 then
+      exit suDcRelease
+   end if
+   put dcCleanup() into tR
+   if pAssert is true then
+      stAssert "dcCleanup returns 0", tR is 0
+   end if
+end suDcRelease
+
 -- Everything this file opened gets closed, in dependency order, each guarded so
 -- one absent member cannot stop the rest from being released.
 command stTeardown
    stSection "teardown (nothing may outlive the run)"
    -- A transport this run's SCOPE never started is not asserted on: a
    -- SodiumXT-only run must not report dcCleanup or enDeinitialize for a
-   -- library it never initialised. stCleanup still frees everything, bare and
-   -- guarded, exactly as before.
+   -- library it never initialised. The two library releases say that exactly
+   -- since 2026-09-25: suDcRelease and suEnRelease assert when, and only
+   -- when, this run holds the library (THE PASTE'S HOLD, above). stCleanup
+   -- frees whatever a run that never reached here left behind, quietly.
    if sHaveDc and suUsesDc() then
       if sDcChanA is not empty and sDcChanA > 0 then
          dcCloseChannel sDcChanA
@@ -3870,8 +4068,8 @@ command stTeardown
       if sDcPeerB is not empty and sDcPeerB > 0 then
          dcFreePeer sDcPeerB
       end if
-      stAssert "dcCleanup returns 0", dcCleanup() is 0
    end if
+   suDcRelease true
    put empty into sDcChanA
    put empty into sDcChanB
    put empty into sDcPeerA
@@ -3884,8 +4082,8 @@ command stTeardown
       if sEnClient is not empty and sEnClient > 0 then
          stAssert "enHostDestroy(client) returns 0", enHostDestroy(sEnClient) is 0
       end if
-      stAssert "enDeinitialize returns 0", enDeinitialize() is 0
    end if
+   suEnRelease true
    put empty into sEnServer
    put empty into sEnClient
    put empty into sEnClientPeer
@@ -3923,7 +4121,10 @@ command stCleanup
       if sDcPeerB is not empty and sDcPeerB > 0 then
          dcFreePeer sDcPeerB
       end if
-      dcCleanup
+      -- ONLY what this paste holds (THE PASTE'S HOLD, above stTeardown). This
+      -- was a bare dcCleanup until 2026-09-25, on every open and after every
+      -- run, and dcCleanup frees every peer in the process.
+      suDcRelease false
    catch tError
       -- DataChannelXT absent or already released; nothing to free
    end try
@@ -3938,13 +4139,14 @@ command stCleanup
       if sEnClient is not empty and sEnClient > 0 then
          enHostDestroy sEnClient
       end if
-      -- Bare statement form, matching enetxt's own teardown (enet-selftest line
-      -- 371, enet-lan-chat line 220). This IS an engine constraint, contrary to
-      -- what this comment claimed before an OXT pass proved otherwise: a
-      -- zero-argument call in statement position must be bare, because the
-      -- parenthesised spelling passes `()` to a command and `()` is not an
-      -- expression. See the note in the file header.
-      enDeinitialize
+      -- EXACTLY the holds this paste took, and no more (THE PASTE'S HOLD,
+      -- above stTeardown). This was a bare enDeinitialize until 2026-09-25,
+      -- called on every open before any initialize, which gave back a hold
+      -- another window had taken; the shim's refcount stops only at zero, so
+      -- it could not tell. suEnRelease calls it in expression position, where
+      -- the parenthesised form is the right one (the header's note on bare
+      -- zero-argument statements).
+      suEnRelease false
    catch tError
       -- enetxt absent or already released; nothing to free
    end try
@@ -3974,8 +4176,12 @@ end stCleanup
 -- just began. check-suite-selftest.py holds the two lists together. The
 -- carried blocks' own timers are not the core's to cancel: the self-check's
 -- one delayed probe restores what it touches, and the kit's copy flash is not
--- used here. The item delimiter is restored (engine note 2.3): this runs
--- inside stRun, above sections that split items of their own.
+-- used here. The item delimiter is restored (engine note 2.3): it is
+-- handler-local on Windows and Linux, so there it could not reach the
+-- sections stRun runs next; restored anyway, the family's rule, which
+-- tools/check-suite-ui-boot.py pins under its global delimiter model (a
+-- caller's "|" must come back; its end-of-scenario check alone could not
+-- see this restore go, since comma is the value it wants).
 -- `the pendingMessages` lists EVERY pending message in the engine, not this
 -- stack's, so a cancel by name reaches any open stack that arms a message
 -- of that name. That is why the paste's two timers have paste-only names.

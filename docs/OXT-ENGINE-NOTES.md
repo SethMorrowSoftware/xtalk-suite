@@ -142,12 +142,16 @@ undeclared-constant and catch-variable checks.
 the node unchanged instead of throwing: a fail-OPEN in a derivation path.
 **Rule:** never infer "no trailing empty component" from an item count; check the string.
 
-### 2.3 `itemDelimiter` and `lineDelimiter` are global mutable state
-**Superseded in part, OBSERVED 2026-09-24 (Windows) and 2026-09-25 (Linux);
-read the counterpoint and its settlements below first:** on both engines the
-itemDelimiter is HANDLER-LOCAL in both directions (the lineDelimiter was not
-probed on either). The rule stands; the title's cross-handler claim does not,
-for the itemDelimiter, and the number is kept because the tree cites it.
+### 2.3 `itemDelimiter` is HANDLER-LOCAL, not global (Windows, Linux): an unrestored one misparses the rest of its own handler
+**Settled for the itemDelimiter, OBSERVED 2026-09-24 (Windows) and 2026-09-25
+(Linux); read the counterpoint and its settlements below first:** on both
+engines the itemDelimiter is HANDLER-LOCAL in both directions (the
+lineDelimiter was not probed on either, and macOS has not run the probe). The
+rule stands; the original title's cross-handler claim does not, for the
+itemDelimiter. **Retitled 2026-09-26:** until then this entry was titled
+"`itemDelimiter` and `lineDelimiter` are global mutable state", the premise
+the probe contradicted; the number is kept because the tree cites it. The
+original entry follows as written (undated):
 **OBSERVED** (several times, in shipped code). A handler that sets one and
 returns without restoring it corrupts every later parse in unrelated code; the
 symptom is always "item 1 returned the whole list". **Rule:** save, set,
@@ -172,7 +176,7 @@ printed the dictionary's answer. "a caller's tab does NOT reach a called
 handler on Win32 (it saw comma)", and "a Kit call left its caller's delimiter
 alone on Win32 (tab in, tab out)". So on that engine an itemDelimiter set in
 one handler is invisible to the handlers it calls and cannot leak back out of
-them: the title's "global" is WRONG there for the itemDelimiter. The probe
+them: the (original) title's "global" is WRONG there for the itemDelimiter. The probe
 reads only `the itemDelimiter`; the lineDelimiter, which the dictionary
 describes the same way, was not probed. This entry's undated observations
 (platforms unknown) were most likely the leak that both readings share - a
@@ -191,11 +195,31 @@ unprobed on any engine, and macOS has not run the probe.
 **What changes:** the reason, not the rule. Save, set, restore still guards
 the rest of the handler that set the delimiter, which is where every
 remaining hazard lives, and it costs nothing where it is redundant. What no
-longer holds is "an unrestored delimiter corrupts its caller" - many member
-comments and the carried templates' gotcha still say it, and that wording is
-open work (WORK-PLAN suite-wide), not a defect: nothing that restores a
-delimiter is wrong for doing so. **Does NOT mean:** a handler may leave a
-delimiter set and then parse something else itself.
+longer holds is "an unrestored delimiter corrupts its caller": nothing that
+restores a delimiter is wrong for doing so, only the reason was.
+**Re-worded across the tree 2026-09-26** (WORK-PLAN suite-wide #15, closed):
+the member `CLAUDE.md` gotchas, the carried templates' gotcha 5
+(`onionxt/templates/` and `coinxt/templates/`), coinxt's API and wallet docs,
+the binding playbook, and the code comments that stated the premise as a fact
+now give this answer and the true reason. Dated records (ledger rows,
+changelogs, runbook section 8, the dated paragraphs above) keep what was
+believed on their date. Three things stay on purpose. The lineDelimiter
+claims: not probed, so still treated as global. Every save, set, restore in
+code. And the family interpreter's GLOBAL model of both delimiters
+(`coinxt/tools/lcs-interp.py`, twinned in nostrxt, which the headless
+execution gates and `tools/check-suite-ui-boot.py` run on): it is stricter
+than these engines for a leak (an unrestored set outlives the return there,
+where a local model would forgive it), so it is what keeps the discipline
+checkable headlessly, though only where a gate looks: a handler that sets
+comma and drops its restore leaves comma behind, which a check for the
+default cannot see (`stCancelPump`'s restore went unpinned that way until
+the 2026-09-26 review gave it a hostile caller). It is BLIND to the
+converse - a callee that relies on inheriting its caller's non-comma
+delimiter parses as intended there and under comma on these engines (an
+ad hoc cross-file scan on 2026-09-26, not a gate, found no direct call of
+one under a literal non-comma delimiter) - and a hostile-caller vector run
+under it proves a guard these engines make redundant. **Does NOT mean:** a handler may
+leave a delimiter set and then parse something else itself.
 
 ### 2.4 Every number is an IEEE double, so integers are exact only to 2^53
 **DOCUMENTED** (LiveCode's numeric model; runbook row P is the five-minute
@@ -273,7 +297,13 @@ were the concrete case: driven through the folded model on 2026-09-24, the
 pre-fix demo dropped a draft from "phone" after one from "Phone" as a replay,
 silently. The same day its demo re-keyed per-device state by the name's UTF-8
 bytes in hex (`raLanDevKey`), a key no fold can merge, and `check-demo-boot`'s
-`drive_lan_keys` drives both spellings.
+`drive_lan_keys` drives both spellings. nocloud's QuickShare was the second, on
+2026-09-25: its route tables were keyed by the text "METHOD /path", so
+`GET /API/x` dispatched to the `/api/x` route (HTTP paths are case-sensitive).
+It now keys by the hex of that text (`qsRouteKey`, `qsRootKey`), with the same
+fix in torrentxt's `torrent-quickshare`, and `nocloud/tools/check-script-vectors.py`
+drives the lookups through the folded keys (`nocloud/CLAUDE.md` gotcha 22).
+Verified statically; needs an OXT pass.
 **Does NOT mean:** `the keys of` still returns each key's ORIGINAL spelling, so
 a scan over the keys is exact; only the subscript lookup folds.
 
@@ -404,19 +434,41 @@ Windows on 2026-09-25; coinxt's (the wallet, which the paste does not carry) is
 verified statically; needs an OXT pass.
 **Gate:** riptide's harness checks the u64 bound from both sides (2^53 parses,
 2^53 + 1 is refused), which is how an engine run caught it, and prints the
-three probe lines above. Headlessly, the interpreter itself compares the IEEE
-way, so two gates replay the bounds under the ENGINE'S RULE and two candidates
-the probes ruled out, kept as margin (an absolute 1e-6 tolerance, a
-15-significant-digit round trip). Each model is first proven to reproduce the
-engine's accept through the old line, and the engine's rule to read the
-fourteen recorded numeric probe answers through the interpreter (the first two
-lines, and the third line's items 3 to 8; its items 1-2 are a text parse the
-interpreter does not model) while each margin model misreads one:
-`riptide/tools/check-script-vectors.py` (tier 1c, plus a static scan refusing
-a library comparison against a quotient) and
-`coinxt/tools/check-wallet-vectors.py` (tier 4). They settle the rewritten
-bounds' LOGIC. No gate yet refuses a comparison that falls INSIDE the
-tolerance anywhere else in the tree (docs/WORK-PLAN.md).
+three probe lines above. Headlessly, since 2026-09-25 the family interpreter
+(`coinxt/tools/lcs-interp.py`, twinned in nostrxt, and riptide's runner over
+it) REFUSES (`Indistinct`, which no script `try` can catch) any comparison
+whose OPERATOR this rule answers differently from IEEE: it refuses, it does not
+emulate, and it answers every other comparison as before, riptide's old bound
+at the valid 2^53 - 1 included (`>` is false both ways there), and so is a
+refused comparison inside an `and` / `or` whose other operand settles the
+answer (2.11's Gate says why). Tier 0 of `coinxt/tools/check-script-vectors.py`
+holds it to all sixteen readings of the three probe lines (Windows 2026-09-24;
+Linux and Windows 2026-09-25): it answers the five the engine read as the
+interpreter used to, and refuses the eleven it read otherwise. Two gates also
+replay the bounds under the ENGINE'S RULE and two candidates the probes ruled
+out, kept as margin (an absolute 1e-6 tolerance, a 15-significant-digit round
+trip): `riptide/tools/check-script-vectors.py` (tiers 1c and 1d, plus a static
+scan refusing a library comparison against a quotient),
+`riptide/tools/check-demo-boot.py` (`drive_seq_order`: the demo's own replay
+guards and head watermarks near 2^53, under the engine's rule) and
+`coinxt/tools/check-wallet-vectors.py` (tier 4). Each model is first proven to
+reproduce the engine's accept through the old line, and the engine's rule to
+read the fourteen recorded numeric probe answers (the first two lines, and the
+third line's items 3 to 8; its items 1-2 are 2.11's text parse) while each
+margin model misreads one. Their plain-interpreter legs expect the refusal
+wherever the engine read a probe, or would decide a seeded old line,
+differently from IEEE, and where a fixture must show what IEEE answered (the
+reason no headless gate saw a defect) IEEE is replayed as one more model. They
+settle the rewritten bounds' LOGIC. MEASURED over every execution gate twice
+(a census of the interpreter's one refusal door, `_refuse`): the day the
+refusal landed, over that day's tree, and again on 2026-09-26 over the tree
+that merged it with the day's batch and the 2026-09-25 records (every gate in
+the run-gates.sh lists of coinxt, nostrxt, riptide, nocloud, holde-em and
+torrentxt and the suite's two board-boot gates, the door logging and raising
+exactly as the interpreter does). No comparison in the tree's shipped script
+falls inside the tolerance: every refusal either run logged was a fixture that
+asks for it, or a seeded old line or planted mutant a fixture runs on purpose
+(coinxt/CLAUDE.md trap 20 has the list).
 **Does NOT mean:** integer arithmetic below 2^53 is inexact (it is exact:
 2.4), or that comparing small integers is unreliable. A verdict that rests on
 a difference below 10 DBL_EPSILON of the operands is, and for two integers one
@@ -445,6 +497,33 @@ overflow a double compare equal, and exponent-form text compares as a number.
 Nothing else here has run: `"0012" is "12"`, a leading `+` or whitespace, the
 `inf` and `nan` spellings, the 384-character limit and the `caseSensitive`
 claim stay DOCUMENTED, and macOS has not run the line.
+**A fourth probe line exists, its reading OWED (2026-09-26, work plan
+suite-wide #22).** riptide's harness now prints, beside the three, one
+diagnostic line of six items, each read inside its own `try`: the six forms
+the family interpreter refuses as unsure (the "Gate, headless" paragraph
+below), one per form. `"0x10" is "16"` (a hexadecimal integer, which
+`MCU_strtol` reads in base 16); `"inf" is "1e999"` and `"nan" is "nan"` (the
+C99 `strtod` words; the two NaN texts are built separately, because
+`MCLogicIsEqualTo` answers true for two references to ONE value before it
+reads either); `numToCodepoint(160) & "3"` against 3 (a NO-BREAK SPACE at the
+edge, handed to `MCU_strtor8` as its native byte, 0xA0 on Windows and on
+Linux, where C `isspace` decides); a 385-character run, 375 zeros and then
+4294967296, against 4294967296; and `"0x1.8" is "1.5"` (a C99 hex float). The
+source, read 2026-09-26 (libfoundation's `foundation-typeconvert.cpp` and
+`foundation.h`, and `exec-logic.cpp`, identical in OXT's tree and in livecode
+`develop-9.6`), decides two of them: the first is TRUE, and the fifth FALSE,
+because `integer_t` is `int32_t` in both branches of `foundation.h`'s
+`__32_BIT__` test, so the integer parse overflows and 385 characters is past
+R8L, which leaves text. The other four are the C library's, not the source's
+(a C99 library in the "C" locale would answer true, false, false, true), so
+the line prints the prediction `true,?,?,?,false,?` beside its reading, and
+Windows and Linux may read them differently. The work plan's row named
+`"0x.8" is "0.5"` and a run against itself; the interpreter answers the first
+(false: `MCU_strtor8` makes a `0x` with no hex digit after it text before
+`strtod` runs), and the second reads true under every reading, so the line
+reads their refused siblings. No engine has run the line: every form above
+stays DOCUMENTED until a run is recorded (the runbook's S1 item 1 asks for
+the line verbatim).
 holde-em's `heHexEq` pins, green in the same runs, name bare `is`'s answer only
 in their labels ("bare is: equal on the engine") and assert the helper's, so
 they observe the fix, not this parse.
@@ -488,20 +567,179 @@ same two runs, Linux and Windows); on a live wire between machines the fix is
 verified statically; needs an OXT pass (runbook row 18).
 **Rule:** never compare a hex digest, a token, a key or any identifier with
 bare `is`, `is not`, `=` or `<>`. Prefix a letter to both sides (no number
-parse accepts `h1e5`), adding `set the caseSensitive to true` where case is
+parse accepts `h1e5`; not `0x`, which starts a base-16 number, and `n` or `i`
+only before hex, since `"n" & "an"` spells NaN, which equals nothing, itself
+included, and `"i" & "nf"` spells +inf: both read from the source above,
+not observed), adding `set the caseSensitive to true` where case is
 part of the value (hex digits are not: `heHexEq` lowercases both sides), or
 compare byte by byte (coinxt's `cxCompareBytes`, nostrxt's `nxCtEqualHex`).
 riptide's "compare kinds by BYTE, never `is`" is the same rule, met from the
 case side.
-**Gate:** none yet (docs/WORK-PLAN.md suite-wide #18 proposes a static rule,
-#19 an interpreter that knows the parse). The family interpreter's `_eq`
-treats only `-?\d+(\.\d+)?` as a number, so it reads every exponent-form
-pair as text and no headless gate sees this class; holde-em's harness pins
-the genesis head against "0", the one number-like pair the interpreter does
-read as numbers. riptide's harness prints `"1e999" is "2e999"` and `"1e5" is "100000"` in its
-third probe line (2026-09-25), which read the parse on Linux and on Windows
-the same day (above): a printed diagnostic, not a check, so a different
-reading on another engine would print, not fail.
+**Gate:** the family checker's check 23 (2026-09-25, byte-identical in every
+member; fixtures in `tools/test-checker.py`, among them every OLD and NEW line
+of the two fix commits, generated from git and re-extracted whenever the
+history is present). It refuses a bare `is`, `is not`, `=`, `<>`, `<`, `<=`,
+`>` or `>=` when ONE operand is hex-shaped by name (a name ending `Hex`,
+`Token`, `Tok`, `Nonce`, `Commit`, `Digest`, `Hash`, `Pub`, `Pubkey`,
+`PublicKey`, `SecretKey` or `Txid`, a literal array key named that way, an
+element of an array named that way, a call ending in `Hex`) and the other is
+not `empty`, a literal, a constant or a number; the ordering operators are in
+because `MCLogicCompareTo` takes the same number path, so a hex sort key
+orders some pairs as numbers and the rest as text. One hex-shaped side is
+enough: 11 of holde-em's 40 fixed comparisons had a plain-named partner, and
+a both-sides rule passes all of them. The suffix list was measured over the
+tree. `Key`, `Id`, `Sig` and `Handle` stayed out because nearly every site
+they add names no hex (cache, route and tab keys, JSON-RPC and icon ids, FFI
+integer handles), though `Key` and `Handle` add a few that do, riptide's
+head-key check `tEventKey is not tHandle` first: those are known misses.
+`Target` reads under equality only, where it is riptide's 40-hex DHT target,
+because under the ordering operators it is box2dxt's numeric set-point; a
+call ending in `Target` (`rsImmutableTarget`) counts there too. A chunk is
+judged by its container whatever its index (`char -8 to -1 of tHash`, `char
+tOff + 1 to tOff + 64 of tData`), and the prefix that keeps a side on the
+text path must be a letter no number STARTS with: `"0x" & tHex` is a base-16
+number (`MCU_strtol`, which checks no overflow at that base, so a 64-hex
+digest wraps to its low 32 bits and two digests agreeing there compare
+equal), so the check refuses it. Those three came from the same day's
+adversarial review, each with a planted mutant it kills.
+Its first run found sites the read-only sweep had missed, and the ones
+outside files other work was changing that day were fixed the same way:
+quickshare's edit-session gate in nocloud and in torrent-quickshare (on a
+session whose 48-hex token overflows, an `x-edit-token: 1e999` header would
+have passed the WRITE gate), datachannel-dht-chat's DHT key filter,
+torrentxt's own-key, info-hash and cross-library key checks, riptide-social's
+own-key and info-hash checks, and harness asserts in five members' harnesses
+and in the suite's core and closing pass; `Target` then found riptide-social's
+await-slot routing, zero-target tests and prekey content-address check, and
+three riptide harness asserts. Verified statically; needs an OXT pass. The
+sites in holde-em's harness, riptide's library (its content-address checks
+among them) and the coinxt wallet waited for the work then changing those
+files, and took the same fix on 2026-09-26 (holde-em's and riptide's when
+that work was integrated, 57ce37d); 26 of the wallet's 27 went through `cwSameHex` and
+`cwHexCompare` on 2026-09-26 (the 27th compared two version NUMBERS: a false
+positive, renamed). The same day a sweep by hand of every bare comparison in
+coinxt's wallet, its wallet-core and its demo found 15 more that no name rule
+sees, and they went through `cwSameHex` too: plain-named scripts, keys and
+transactions (PSBT signing's three scriptPubKey checks, BIP-322's key check,
+PSBT combining's unsigned transactions, two txid tests in the wallet) and
+number-like literals and a 64-zero constant (below). So every hex compare in
+those three files at which two different hex values can meet goes through the
+two helpers; what stays bare compares a chunk of hex whose width a length
+check fixes (in one DER parser, the even length its one caller passes) with
+a literal no other hex of that width equals ("02", "5120").
+coinxt's `check-wallet-vectors.py` tier 5 carries this parse as a model (a
+port of `MCU_strtol` / `MCU_strtor8`, the base-16 `0x` form included) that
+fails each of those fixes undone (verified statically; needs an OXT pass).
+It is a NAME heuristic: it narrows the class and cannot
+close it. A hex value in a plain-named variable passes (riptide's
+`tComputed is not tExpected`, the blob content-address check, did until it
+was prefixed by hand on 2026-09-26); so does every
+caller of a helper that compares its arguments with bare `is` (holde-em's
+`heTAssert` did until 2026-09-26, when v0.25.6 moved it to `heTSame`); and so does a
+NUMBER-LIKE literal, exempt with every literal: the wallet's script-type
+tests compared `char 1 to 4 of tHex is "0014"` until 2026-09-26, and by this
+note's parse "14e0" is "0014" (INFERRED, not observed), as "01e0" is the
+segwit marker "0001" its transaction decoder tested for, as riptide's 40-zero
+`kRsZeroTarget` and holde-em's 64-zero genesis head are "0", and as the
+wallet's 64-zero `kCwScalarZero` was any scalar spelled "0e" and digits. What a name
+cannot see, an execution can: the family interpreter (below) refuses every
+such comparison a gate actually RUNS. riptide's harness prints
+`"1e999" is "2e999"` and `"1e5" is "100000"` in its third probe line
+(2026-09-25), which read the parse on Linux and on Windows the same day
+(above): a printed diagnostic, not a check, so a different reading on another
+engine would print, not fail.
+**Gate, headless: the family interpreter** (`coinxt/tools/lcs-interp.py`,
+twinned in nostrxt, and riptide's runner over it), since 2026-09-25. Until then
+its `_eq` treated only `-?\d+(\.\d+)?` as a number, so it read every
+exponent-form pair as text, while its `<` family, `is a number` and arithmetic
+read text through Python's `float()`, which reads MORE than `strtod` ("1_000",
+digits outside ASCII); no headless gate saw this class. It now carries a port
+of `MCU_strtor8` (`_read_text`) and applies 2.10's policy: where its own
+reading and the engine's give the same ANSWER it answers as before, and where
+they part, or where this note does not establish the form at all (a
+hexadecimal integer, which `MCU_strtol` reads in base 16 with no overflow
+check; `inf`, `nan` and hex floats, which only a C99 `strtod` reads; a
+non-ASCII edge character, a space or not by encoding and locale; a run past
+384 characters that only a 64-bit integer parse would hold), it REFUSES
+(`Indistinct`, citing this note) rather than re-answer the engine's way or
+guess. So `"1e5" is "100000"` stops a headless run instead of answering false,
+and `"1e5" > 99999` still answers true. Two of those unsure forms the source
+read of 2026-09-26 (the fourth probe line's paragraph above) now decides: a
+hexadecimal integer small enough for `integer_t` (`"0x10"` is 16), and the
+long run, which is text because `integer_t` is 32 bits on every build; the
+interpreter refuses both until work plan suite-wide #22 teaches it. The
+2026-09-25 reading also gave two smaller findings from the source, both now
+refused where they move an answer: `<>` is the engine's `is not`, which never
+turns an EMPTY operand into a number (the interpreter read it as 0, so
+`empty <> 0` answered false where the engine answers true), and a Boolean is
+never a number to a comparison. `switch`
+matches its cases as TEXT (`MCKeywordsExecSwitch`), and riptide's runner, which
+matched them through `is`, does too now. Held by coinxt's
+`check-script-vectors.py` tier 0 (a table of forms, and riptide's third probe
+line as the engine READ it on Linux and on Windows, item for item the
+source's prediction: the interpreter refuses items 1, 2, 3, 5 and 7 and
+answers 4, 6 and 8 as the engine did), nostrxt's tier 0 and riptide's
+runner-model tier; riptide's `check-script-vectors.py` tier 1e holds the
+fourth probe line's shape and the interpreter's refusal of each of its six
+items (2026-09-26), the rows to change once an engine has read them and the
+interpreter is taught. The first census (the day it landed) found no shipped
+comparison of number-like TEXT anywhere, and three in the wallet boot of an
+EMPTY operand against a number, which the engine's orderings read as 0
+(`MCLogicCompareTo` converts empty; the source) and riptide's runner then
+ordered as text. Two sat inside an `and` that is false either way (`X is an
+integer and X >= 0`); the third, wallet-core's `cwSatToBtc` (`if tSat < 0`
+over an empty amount), printed "-0.00000000" through the runner where an
+engine prints "0.00000000". The runner now orders empty as 0 against a
+number, as the interpreter's own `<` family already did, and a refused
+comparison inside `and` / `or` is held back and dropped where the other
+operand settles the answer (2.5: both operands are evaluated, and each gives
+a Boolean), raised where nothing does. The second census (2026-09-26, 2.10's
+Gate) found none in shipped script either; the one refusal of number-like
+text outside the fixtures that ask for it was nocloud's planted bare-`is`
+`qsSameText` mutant at `"1e2" is "100"`, which ended its gate in a traceback
+before the row that names it printed, so that gate now fails a refused call BY
+NAME, on a row of its own (its first version handed the refusal back as text,
+which the row that expects `false` read as false: a script whose only fault
+was a refused comparison passed the gate green until review, 2026-09-26; the
+gate's mutation drive now carries that script). holde-em's harness
+pins the genesis head against "0", which both readings agree on.
+
+### 2.12 `is an integer` is exact, `X is trunc(X)` is not: a whole-number test written as a comparison lets a near-integer through
+**DOCUMENTED** (the engine source, read 2026-09-25 by the work that fixed
+coinxt's and holde-em's sites), with one point **OBSERVED 2026-09-25** on
+Linux and on Windows (64-bit, the suite paste; runbook section 8): holde-em's
+harness line "legal: a near-integer raise (57.0000000000001) rejected" PASSED
+through `is not an integer`. The old `is trunc(X)` form has not run on an
+engine.
+`is a number` and `is an integer` (exec-math.cpp, `MCMathEvalIsANumber`,
+`MCMathEvalIsAnInteger`) convert the operand as 2.11 describes
+(`MCU_strtor8` for text) and then ask a plain C `d == floor(d)`: no
+tolerance, and false for empty. `X is trunc(X)` goes through the comparison
+of 2.10 instead, so a value within 10 DBL_EPSILON of a whole number IS that
+number: by the rule, holde-em's `heBetApply` let a wager of
+"57.0000000000001" into shared state, and coinxt's `cxBech32EncodeValues`
+let `3.0000000000000004` and `-0.000000000000001` through as 5-bit values
+(INFERRED from the source; not observed). What such a value becomes next is
+not a refusal either: a computed chunk index is converted by rounding (the
+source rounds half away from zero, so most likely the neighbouring integer),
+where the family interpreter answers an EMPTY chunk for `char 0.999999999999999`.
+Both sites and their neighbours now ask `is an integer`: holde-em's since
+v0.25.4 (the line above), coinxt's since 2026-09-25 (`coinxt/CLAUDE.md`;
+verified statically; needs an OXT pass).
+**Rule:** test for a whole number with `is an integer`, never
+`is trunc(X)`, and as its own `if` ahead of a range test (`or` evaluates both
+operands, 2.5, so a one-line chain still hands `trunc` a non-number; whether
+that throws on the engine is unrecorded). When the value is headed
+for arithmetic, settle it as TEXT first (digits only, a bounded count): the
+exact test still says yes to "1e20", "3.0", "+3", " 3", "0x1F" and "1e999".
+**Gate:** no static check. The family interpreter models both exactly as the
+source reads (`_is_numeric` in `coinxt/tools/lcs-interp.py`) and REFUSES a
+comparison the 2.10 tolerance decides, so an execution gate that drives a
+near-integer through `is trunc(X)` stops there; coinxt's
+`check-wallet-vectors.py` tier 4 replays the old bech32 line under the
+engine's rule and lets both values through.
+**Does NOT mean:** `trunc` is wrong, or that `is an integer` bounds a value:
+2^60 and +inf are integers to it, and 2.4's 2^53 limit is a separate test.
 
 ## 3. Control flow
 

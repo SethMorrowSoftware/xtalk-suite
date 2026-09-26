@@ -73,22 +73,36 @@ User-declared routes (.qsroutes.json):
                                          route declares one, no pattern matches one, and the
                                          static pipeline refuses one)
   qsUserPathValid -> user_path_valid()  (absolute, traversal-free; /_qs and /_edit reserved)
+  qsHttpMethodValid -> http_method_valid() (a declared method is a token: letters, digits,
+                                         "-"; no space, CR or LF can reach Allow; 2026-09-25)
   qsSanitizeHeaderName  -> sanitize_header_name()  (letters/digits/hyphen only)
   qsSanitizeHeaderValue -> sanitize_header_value() (CR/LF/control bytes dropped)
   qsRenderTemplate -> render_template() (bounded {{...}} substitution in a route body)
   qsTemplateValue  -> template_value()  (deterministic tokens; clock tokens empty here)
   qsTemplateEscape -> template_escape() (default-deny: json types JSON, all else HTML)
   qsMountLocation -> mount_location()   (redirect Location re-based onto the /<token>/ mount)
-  qsRouteKeyPath   -> route_key_path()  (the path half of a "METHOD /path" key)
-  qsRouteLookupKey -> route_lookup_key() (the key a request LOOKS UP: a HEAD falls back to
-                                         the GET route, else it missed the table entirely
-                                         and the SPA fallback answered it)
+  qsHexKey         -> hex_key()         (lowercase hex of the UTF-8 bytes: a key no
+                                         case fold can merge; 2026-09-25)
+  qsRouteKey       -> route_key()       (the case-exact route-table key: the hex of
+                                         "METHOD /path", the method upper-cased)
+  qsRootKey        -> root_key()        (the case-exact key a share root is filed under)
+  qsSameText       -> same_text()       (the route layer's one path comparison: byte for
+                                         byte, never a case fold or a number compare)
+  qsRouteLookupKey -> route_lookup_key() (the key a request DISPATCHES to, or "": a HEAD
+                                         falls back to the GET route, else it missed the
+                                         table entirely and the SPA fallback answered it;
+                                         GET /API/x is not the /api/x route)
   qsRouteHasParams -> route_has_params() (exact key vs :param pattern - the one test)
   qsRouteParamCount -> route_param_count() (specificity rank: fewest params = most literal)
   qsUserPatternValid -> user_pattern_valid() (the :param declaration gate: static FIRST
                                          segment, [A-Za-z0-9_] names, no duplicates)
   qsRouteMatch     -> route_match()     (segment matcher + the reserved-path backstop)
   qsUserRouteFind  -> user_route_find() (deterministic pattern pick for one request)
+
+The Receive box's clipboard offer:
+  qsIsOwnCode     -> is_own_code()      (a code WE minted is never offered back: text
+                                         equality, case-folded as `is` folds, never a
+                                         number compare; 2026-09-26)
 
 Transfers-row formatting:
   qsRateShort     -> rate_short()
@@ -628,42 +642,118 @@ def http_date(epoch):
         pad2(hour), pad2(minute), pad2(sec))
 
 
-# ---- :param route patterns (Phase 3): key split, pattern test, matcher, picker ----
+# ---- route-table keys: case-exact (2026-09-25) ---------------------------------
+# HTTP paths are case-sensitive, and until 2026-09-25 this server's were not: both route
+# tables were keyed by the TEXT "METHOD /path", and the engine folds array keys (the suite's
+# engine note 2.7), so GET /API/x reached the /api/x route. The script now keys by the hex
+# of that text (qsRouteKey) and compares every route path with qsSameText. Every mirror
+# below takes its tables as readable "METHOD /path" strings and answers in the SCRIPT's
+# terms (hex keys, "" for a miss); tools/check-script-vectors.py fills the script's tables
+# through its own writers (qsHttpRoute, qsUserRouteStore) and drives the lookups, so the
+# key the engine would fold is read by the script, through the interpreter's folded keys.
+
+def hex_key(text):
+    """Mirror qsHexKey: the lowercase hex of the text's UTF-8 bytes. Its only letters are
+    a-f, always lower case, so key.lower() == key: no case fold merges two of them."""
+    return text.encode("utf-8").hex()
+
+
+def route_key(method, path):
+    """Mirror qsRouteKey: the hex of "METHOD /path", the method upper-cased (methods fold
+    on purpose; paths do not)."""
+    return hex_key(method.upper() + " " + path)
+
+
+def root_key(root):
+    """Mirror qsRootKey: a share root's key in sUserRoutes (hex too: on a case-sensitive
+    filesystem two folders differing only in case are two shares)."""
+    return hex_key(root)
+
+
+def same_text(a, b):
+    """Mirror qsSameText: byte for byte. The script's first test (the folded compare)
+    only rejects early; its answer is the exact one, so the mirror is plain equality."""
+    return a == b
+
+
+# ---- the clipboard offer's own-code test (2026-09-26) -----------------------------------
+# A share code can be a bare 40-hex info-hash (qsShareFile's plain path), and two all-digit
+# hashes with one "e" are one NUMBER to a bare `is` (the suite's engine note 2.11: "0e1..."
+# and "0e2..." are both 0), so the script compares each side behind a letter. The fold stays:
+# a hash pasted in upper case is the same hash.
+
+def is_own_code(code, share_code, by_handle, active_code):
+    """Mirror qsIsOwnCode: is `code` the current share's, any retained share's, or the
+    active share's? Case-folded TEXT equality. An empty code against an empty field
+    answers true, as the script always has (its caller never passes an empty code)."""
+    def same(a, b):
+        return a.lower() == b.lower()
+    if code != "" and same(code, share_code):
+        return True
+    if any(same(v, code) for v in by_handle):
+        return True
+    return same(active_code, code)
+
+
+def rk(readable):
+    """A readable "METHOD /path" table entry -> its route_key (vector shorthand)."""
+    method, path = readable.split(" ", 1)
+    return route_key(method, path)
+
+
+def table(readables):
+    """The key set of a table holding these readable "METHOD /path" routes."""
+    return set(rk(x) for x in readables)
+
+
+def engine_folds_onto(readables, key):
+    """The ENGINE's subscript over raw-text keys (engine note 2.7, ASCII): does `key` reach
+    a stored key when case folds? The witness that a vector exercises the fold at all: a
+    "must not find" row whose PRE-FIX raw key would not have collided proves nothing."""
+    return any(k.lower() == key.lower() for k in readables)
+
+
+def old_raw_lookup_hits(method, path, readables):
+    """Would the PRE-2026-09-25 lookup have dispatched this request on the engine? It keyed
+    by the raw "METHOD /path" text, a HEAD falling back to GET, and the subscript folded
+    (engine_folds_onto). Not a mirror of anything shipped: the fold rows' witness."""
+    m = method.upper()
+    if engine_folds_onto(readables, m + " " + path):
+        return True
+    return m == "HEAD" and engine_folds_onto(readables, "GET " + path)
+
+
+def route_lookup_key(method, path, keys):
+    """Mirror qsRouteLookupKey: the route-table key a request DISPATCHES to, or "" when the
+    table has no route for it - the one place HEAD is turned back into GET. Every method
+    looks up its own key; a HEAD with no HEAD route of its own (an explicit one wins) falls
+    back to the GET key, because HEAD is GET-without-a-body and the server advertises it on
+    every path (http_allow always lists it). Until 2026-08-17 the key was built from the
+    literal method, so a HEAD missed BOTH route tables and fell into the static pipeline -
+    where the path has no file, its leaf has no ".", and spa_is_route() therefore said
+    index.html: HEAD /_qs/info answered the SPA at 200 text/html while GET /_qs/info
+    answered JSON. Since 2026-09-25 the script reads the table itself and the keys are
+    case-exact, so GET /API/x finds nothing where /api/x is declared. `keys` is the key
+    set of the table being consulted (table()); an EMPTY one (no .qsroutes.json loaded,
+    or nothing shared) routes nothing - the script guards that case explicitly because
+    there the table arrives unset, and indexing a non-array is not a lookup."""
+    method = method.upper()
+    key = route_key(method, path)
+    if key in keys:
+        return key
+    if method == "HEAD" and route_key("GET", path) in keys:
+        return route_key("GET", path)
+    return ""
+
+
+# ---- :param route patterns (Phase 3): pattern test, matcher, picker ----------------
 # A user route path may carry :param segments. The pieces mirror one property each and
-# compose into the request-time walk: route_key_path splits a "METHOD /path" table key;
-# route_has_params is the ONE exact-vs-pattern test (safe because user_pattern_valid
-# refuses any param-shaped path it cannot store, so within the stored table the two are
-# the same predicate); route_param_count ranks specificity; route_match extracts the
-# captures; user_route_find arbitrates deterministically. Mirrors qsRouteKeyPath /
+# compose into the request-time walk: route_has_params is the ONE exact-vs-pattern test
+# (safe because user_pattern_valid refuses any param-shaped path it cannot store, so within
+# the stored table the two are the same predicate); route_param_count ranks specificity;
+# route_match extracts the captures; user_route_find arbitrates deterministically. Mirrors
 # qsRouteHasParams / qsRouteParamCount / qsUserPatternValid / qsRouteMatch /
 # qsUserRouteFind.
-
-def route_key_path(key):
-    sp = key.find(" ")
-    return "" if sp < 0 else key[sp + 1:]
-
-
-def route_lookup_key(method, path, table_keys):
-    """Mirror qsRouteLookupKey: the route-table key a request should LOOK UP, and the one
-    place HEAD is turned back into GET. Every method looks up its own "METHOD /path" key; a
-    HEAD looks up its own only when the table actually declares a HEAD route (an explicit
-    one wins) and otherwise falls back to the GET key, because HEAD is GET-without-a-body
-    and the server advertises it on every path (http_allow always lists it). Until
-    2026-08-17 the key was built from the literal method, so a HEAD missed BOTH route tables
-    and fell into the static pipeline - where the path has no file, its leaf has no ".", and
-    spa_is_route() therefore said index.html: HEAD /_qs/info answered the SPA at 200
-    text/html while GET /_qs/info answered JSON. `table_keys` is the key set of the table
-    being consulted; both tables key the same way, so one lookup serves both."""
-    method = method.upper()
-    key = method + " " + path
-    if method != "HEAD":
-        return key
-    # an EMPTY table (no .qsroutes.json loaded, or nothing shared) declares no HEAD route,
-    # so it takes the same branch - the LCS guards that case explicitly because there the
-    # table arrives unset rather than empty, and indexing a non-array is not a lookup
-    if key in table_keys:
-        return key
-    return "GET " + path
 
 
 def route_has_params(path):
@@ -697,9 +787,12 @@ def user_pattern_valid(path):
             o = ord(c)
             if not ((48 <= o <= 57) or (65 <= o <= 90) or (97 <= o <= 122) or c == "_"):
                 return False
-        if name in seen:
+        # compared FOLDED: route_match files captures under their names as ARRAY keys,
+        # which fold on the engine, so :id and :ID would be one capture (the script's
+        # `among` folded here all along; since 2026-09-25 it says so with toLower)
+        if name.lower() in seen:
             return False
-        seen.add(name)
+        seen.add(name.lower())
     return True
 
 
@@ -709,9 +802,11 @@ def route_match(pattern, path):
     path was urlDecoded before routing, so an encoded %2F is already a real separator and
     splits - a param can never smuggle a slash). Trailing slash is significant, checked up
     front (which also keeps the engine's trailing-delimiter item counting and this split()
-    in verdict agreement). BACKSTOP: never matches anything against a reserved request
-    path - declaration makes such a pattern unstorable, so this pins the defense-in-depth
-    line against a hostile pattern injected past declaration. Mirrors qsRouteMatch."""
+    in verdict agreement). A static segment matches EXACTLY (same_text; the script's bare
+    `is` folded case and read "01" as "1" until 2026-09-25). BACKSTOP: never matches
+    anything against a reserved request path - declaration makes such a pattern
+    unstorable, so this pins the defense-in-depth line against a hostile pattern injected
+    past declaration. Mirrors qsRouteMatch."""
     if reserved_path(path):
         return None
     if pattern.endswith("/") != path.endswith("/"):
@@ -726,22 +821,25 @@ def route_match(pattern, path):
             if got == "":
                 return None
             params[pat[1:]] = got
-        elif pat != got:
+        elif not same_text(pat, got):
             return None
     return params
 
 
 def user_route_find(keys, method, path):
-    """The stored pattern key that should serve method+path, or "". Exact keys are the
-    caller's fast path and are SKIPPED here. Deterministic across matches: fewest params
-    wins, ties broken by the smallest key (array iteration order is not a contract).
-    Mirrors qsUserRouteFind (which walks the same keys off the live table)."""
+    """The stored pattern key (route_key hex) that should serve method+path, or "". `keys`
+    are the table's routes as readable "METHOD /path" strings. Exact keys are the caller's
+    fast path and are SKIPPED here. Deterministic across matches: fewest params wins, ties
+    broken by the smallest KEY - the hex, whose order is the byte order of the readable
+    key (two digits a byte, 0-9 before a-f) - never array iteration order. The method
+    compares exactly (same_text; both sides upper case). Mirrors qsUserRouteFind (which
+    walks the same routes off the live table)."""
     best_key, best_count = "", -1
     for k in keys:
         sp = k.find(" ")
         if sp < 0:
             continue
-        if k[:sp] != method:
+        if not same_text(k[:sp], method):
             continue
         rp = k[sp + 1:]
         if not route_has_params(rp):
@@ -749,31 +847,34 @@ def user_route_find(keys, method, path):
         if route_match(rp, path) is None:
             continue
         count = route_param_count(rp)
-        if best_key == "" or count < best_count or (count == best_count and k < best_key):
-            best_key, best_count = k, count
+        key = rk(k)
+        if best_key == "" or count < best_count or (count == best_count and key < best_key):
+            best_key, best_count = key, count
     return best_key
 
 
 # ---- qsHttpAllow: the Allow header value for a path --------------------------
 # Static verbs GET/HEAD/OPTIONS plus any method registered for a route CLAIMING this
 # path - built-in routes (always exact) and (when a root is shared) the folder's
-# user-declared .qsroutes.json routes, where "claiming" is an exact key match OR a
-# :param pattern that MATCHES the path (a param route's methods must never fall out of
-# the OPTIONS/405 derivation) - in deterministic (sorted) order, de-duplicated. Both
-# tables key on "METHOD /path". Mirrors qsHttpAllow(pPath, pRoot).
+# user-declared .qsroutes.json routes, where "claiming" is an exact path match (same_text,
+# case-exact like the table since 2026-09-25) OR a :param pattern that MATCHES the path (a
+# param route's methods must never fall out of the OPTIONS/405 derivation) - in
+# deterministic (sorted) order, de-duplicated. The tables are given as readable
+# "METHOD /path" strings; the script's keys are hex (route_key) and it reads each entry's
+# own method and path. Mirrors qsHttpAllow(pPath, pRoot).
 
 def http_allow(route_keys, path, user_keys=None):
     extras = set()
     for k in route_keys:
         if " " in k:
             m, p = k.split(" ", 1)
-            if p == path and m not in ("GET", "HEAD", "OPTIONS"):
+            if same_text(p, path) and m not in ("GET", "HEAD", "OPTIONS"):
                 extras.add(m)
     for k in (user_keys or []):
         if " " in k:
             m, p = k.split(" ", 1)
-            claims = (p == path) or (route_has_params(p)
-                                     and route_match(p, path) is not None)
+            claims = same_text(p, path) or (route_has_params(p)
+                                            and route_match(p, path) is not None)
             if claims and m not in ("GET", "HEAD", "OPTIONS"):
                 extras.add(m)
     return ", ".join(["GET", "HEAD", "OPTIONS"] + sorted(extras))
@@ -783,15 +884,15 @@ def http_allow(route_keys, path, user_keys=None):
 # Empty unless some user route CLAIMING `path` (exact, or a matching :param pattern -
 # the same rule as http_allow, so the preflight promise holds identically for param
 # routes) opted into cors; else the four Access-Control-* lines (Allow-Methods reuses
-# the already-computed Allow value). `cors_keys` = the set of "METHOD /path" keys whose
-# route set cors:true. Mirrors qsCorsPreflight.
+# the already-computed Allow value). `cors_keys` = the readable "METHOD /path" routes
+# that set cors:true (the script walks its hex-keyed entries). Mirrors qsCorsPreflight.
 
 def cors_preflight(cors_keys, path, allow):
     for k in cors_keys:
         if " " not in k:
             continue
         p = k.split(" ", 1)[1]
-        if p == path or (route_has_params(p) and route_match(p, path) is not None):
+        if same_text(p, path) or (route_has_params(p) and route_match(p, path) is not None):
             return ("Access-Control-Allow-Origin: *\r\n"
                     "Access-Control-Allow-Methods: " + allow + "\r\n"
                     "Access-Control-Allow-Headers: *\r\n"
@@ -972,9 +1073,14 @@ def reserved_path(path):
     static pipeline refuses one instead of resolving it off disk or through the SPA
     fallback. One predicate for all three, because it was the same literal test written out
     three times and the static one would have made a fourth copy of a security rule.
-    Prefix-exact: "/_qsx" and "/_editor" are ordinary paths."""
-    return (path in ("/_qs", "/_edit")
-            or path.startswith("/_qs/") or path.startswith("/_edit/"))
+    Prefix-exact: "/_qsx" and "/_editor" are ordinary paths. CASE-FOLDED on purpose
+    (2026-09-25): "/_QS/info" is reserved too. The engine's `is` / `begins with` folded
+    here all along; this mirror (and the interpreter) compared exactly, so to the headless
+    gates "/_QS/x" was a legal user route that the model's FOLDED keys served at /_qs/x.
+    The route table is case-exact now, so this guard is stricter than the table: safe."""
+    low = path.lower()
+    return (low in ("/_qs", "/_edit")
+            or low.startswith("/_qs/") or low.startswith("/_edit/"))
 
 
 def user_path_valid(path):
@@ -1001,6 +1107,33 @@ def sanitize_header_name(n):
         if (48 <= o <= 57) or (65 <= o <= 90) or (97 <= o <= 122) or c == "-":
             out += c
     return out
+
+
+def http_method_valid(m):
+    """Mirror qsHttpMethodValid: a user route's declared method must be non-empty and
+    nothing but the token characters sanitize_header_name keeps. Since 2026-09-25 each
+    table entry's own method is what http_allow copies into the Allow header (the key used
+    to be split at its first space), so a method carrying CR LF or a space would reach that
+    header; qsLoadUserRoutes skips such a route instead. The script compares LENGTHS
+    (sanitize only deletes), which is this equality."""
+    return m != "" and sanitize_header_name(m) == m
+
+
+# the methods qsLoadUserRoutes has upper-cased and must accept or skip (the execution gate
+# drives the script's predicate on the same list)
+HTTP_METHOD_ROWS = [
+    ("GET", True), ("POST", True), ("DELETE", True), ("PATCH", True),
+    ("M-SEARCH", True), ("PROPFIND", True), ("GET2", True),
+    ("", False),
+    ("POST\r\nX-EVIL: 1", False),              # CR LF: a bare CR reached the Allow header
+    ("POST\rX-EVIL:1", False),
+    ("POST\nX", False),
+    ("GET /A", False),                          # a space: Allow on the wrong path, an aliased key
+    ("GET\t", False), ("GE T", False),
+    ("GET,POST", False),                        # a comma would forge a second Allow entry
+    ("G\u00c9T", False),                   # non-ASCII
+    ("UNDER_SCORE", False),                     # "_" is not a kept token char (strict)
+]
 
 
 # ---- qsMountLocation: user-route redirect Location vs the capability mount ----
@@ -1455,6 +1588,17 @@ def main():
     # a method present in BOTH tables appears once (dedup across tables)
     check("http_allow dedup-cross",
           http_allow(["POST /dup"], "/dup", ["POST /dup"]), "GET, HEAD, OPTIONS, POST")
+    # the path claim is EXACT, as the table is (2026-09-25): a route on /api/submit says
+    # nothing about /API/submit, and /v/1 nothing about /v/01 (bare `is` folded the first
+    # and read the second as the number 1, so Allow advertised a method no route answers)
+    for path, routes, user, want in [
+        ("/API/submit", [], _uroutes, "GET, HEAD, OPTIONS"),
+        ("/_EDIT/api/write", _routes, [], "GET, HEAD, OPTIONS"),
+        ("/v/01", ["POST /v/1"], ["PUT /v/1"], "GET, HEAD, OPTIONS"),
+        ("/v/1e2", [], ["PUT /v/100"], "GET, HEAD, OPTIONS"),
+        ("/v/1", ["POST /v/1"], ["PUT /v/1"], "GET, HEAD, OPTIONS, POST, PUT"),
+    ]:
+        check("http_allow exact(%r)" % path, http_allow(routes, path, user), want)
 
     # -- CORS preflight block: only when a cors route exists on the path --
     _cors_keys = ["POST /api/submit", "GET /api/open"]
@@ -1466,6 +1610,8 @@ def main():
           cors_preflight(_cors_keys, "/api/submit", "GET, HEAD, OPTIONS, POST"), _pf)
     check("cors_preflight no-cors-route", cors_preflight(_cors_keys, "/api/other", "GET, HEAD, OPTIONS"), "")
     check("cors_preflight empty", cors_preflight([], "/api/submit", "GET, HEAD, OPTIONS"), "")
+    # exact, like the table: a cors route on /api/submit answers no preflight for another case
+    check("cors_preflight other-case", cors_preflight(_cors_keys, "/API/SUBMIT", "GET, HEAD, OPTIONS"), "")
 
     # -- conditional GET: weak ETag build, core extraction, If-None-Match match --
     check("http_weak_etag", http_weak_etag(1000, 42, 0), 'W/"1000-42-0"')
@@ -1640,6 +1786,9 @@ def main():
         ("/_edit", False),
         ("/_edit/login", False),
         ("/a\nb", False),                       # control byte
+        ("/_QS/info", False),                   # reserved in ANY case (2026-09-25): the
+        ("/_Edit/api/write", False),            #   engine refused these all along
+        ("/_QSX", True),                        # ... and a longer first segment still is not
     ]:
         check("user_path_valid(%r)" % path, user_path_valid(path), want)
 
@@ -1651,42 +1800,113 @@ def main():
         ("/_editor", False),
         ("/a/_qs", False),                      # reserved only at the ROOT of the app path
         ("/_q", False), ("/", False), ("", False),
+        # folded ON PURPOSE (2026-09-25), stricter than the case-exact route table
+        ("/_QS", True), ("/_QS/info", True), ("/_Qs/", True),
+        ("/_EDIT", True), ("/_Edit/api/write", True),
+        ("/_QSX", False), ("/_EDITOR", False),
     ]:
         check("reserved_path(%r)" % path, reserved_path(path), want)
+
+    # -- the case-exact keys (2026-09-25): hex of the UTF-8 bytes, lower case only --
+    for text, want in [
+        ("", ""),
+        ("GET /api/x", "474554202f6170692f78"),
+        ("/caf\u00e9", "2f636166c3a9"),        # UTF-8 first: e-acute is c3 a9
+        ("A", "41"), ("a", "61"),               # two spellings, two keys
+        ("\x00\x7f", "007f"),
+    ]:
+        check("hex_key(%r)" % text, hex_key(text), want)
+    check("route_key upper-cases the method", route_key("get", "/api/x"),
+          "474554202f6170692f78")
+    check("route_key keeps the path's case", route_key("GET", "/API/x") != route_key("GET", "/api/x"),
+          True)
+    check("root_key is the hex of the root", root_key("/srv/Site"), hex_key("/srv/Site"))
+    check("root_key keeps the root's case", root_key("/srv/Site") != root_key("/srv/site"), True)
+    for text in ("GET /api/x", "/caf\u00e9", "PUT /_EDIT/API", "\x00\xff"):
+        check("hex_key(%r) has no case left to fold" % text,
+              hex_key(text) == hex_key(text).lower() and all(c in "0123456789abcdef"
+                                                            for c in hex_key(text)), True)
+    for a, b, want in [
+        ("/api/x", "/api/x", True), ("", "", True),
+        ("/api/x", "/API/x", False),            # bare `is` folds case
+        ("01", "1", False), ("1.0", "1", False),  # ... and compares number-like text
+        ("1e2", "100", False),                  #   as numbers (engine note 2.11)
+        ("caf\u00e9", "CAF\u00c9", False), ("a", "a ", False),
+    ]:
+        check("same_text(%r,%r)" % (a, b), same_text(a, b), want)
+
+    _h1, _h2 = "0e" + "1" * 38, "0e" + "2" * 38   # two hashes, one number (0) to a bare `is`
+    _hx = "ab" * 20
+    for code, share, by_handle, active, want in [
+        (_h2, _h1, [], "", False),                 # the number path would say "own"
+        (_h2, "", [_h1], "", False),               # ... in the retained shares too
+        (_h2, "", [], _h1, False),                 # ... and the active one
+        (_h1, _h1, [], "", True),
+        (_hx.upper(), _hx, [], "", True),          # the same hash in upper case
+        (_hx, "", ["x", _hx], "", True),
+        (_hx, "", [], _hx, True),
+        (_hx, _h1, [_h2], "zz", False),
+        ("", "", [], "", True),                    # the script's empty answer, kept
+    ]:
+        check("is_own_code(%r...)" % code[:6], is_own_code(code, share, by_handle, active), want)
 
     # -- HEAD route lookup: HEAD is GET-without-a-body, so it must reach the GET route --
     # Until 2026-08-17 the lookup key was built from the literal method, so a HEAD matched
     # nothing in either table and fell into the static pipeline - where the leaf has no "."
     # and the SPA fallback answers index.html. HEAD /_qs/info came back as the SPA page at
     # 200 text/html while http_allow had advertised HEAD on every path. Both transports
-    # shared that path, so both were wrong.
+    # shared that path, so both were wrong. Since 2026-09-25 the answer is the key that
+    # DISPATCHES, or "" for a miss, and the keys are case-exact.
     _lk_builtin = ["GET /_qs/info", "GET /_qs/transparency", "POST /_edit/login"]
     _lk_user = ["GET /api/hello", "HEAD /probe", "GET /probe", "POST /api/submit"]
     for method, path, keys, want in [
         ("HEAD", "/_qs/info", _lk_builtin, "GET /_qs/info"),     # the built-in route answers
         ("HEAD", "/api/hello", _lk_user, "GET /api/hello"),      # a user route answers
         ("HEAD", "/probe", _lk_user, "HEAD /probe"),             # a DECLARED HEAD route wins
+        ("GET", "/probe", _lk_user, "GET /probe"),               # ... and GET keeps its own
         ("GET", "/api/hello", _lk_user, "GET /api/hello"),       # a GET is untouched
-        ("GET", "/nope", _lk_user, "GET /nope"),                 # ... including a miss
+        ("GET", "/nope", _lk_user, ""),                          # a miss dispatches nothing
         ("POST", "/api/submit", _lk_user, "POST /api/submit"),   # no fallback for other verbs
-        ("POST", "/probe", _lk_user, "POST /probe"),             # ... even where GET exists
-        ("HEAD", "/nope", _lk_user, "GET /nope"),                # falls back, then misses ->
+        ("POST", "/probe", _lk_user, ""),                        # ... even where GET exists
+        ("HEAD", "/nope", _lk_user, ""),                         # falls back, then misses ->
                                                                  # the static pipeline, as before
         ("head", "/api/hello", _lk_user, "GET /api/hello"),      # method upper-cased first
-        ("HEAD", "/api/hello", [], "GET /api/hello"),            # an EMPTY table: no HEAD route
-        ("GET", "/api/hello", [], "GET /api/hello"),             # ... and unchanged for a GET
+        ("HEAD", "/api/hello", [], ""),                          # an EMPTY table routes nothing
+        ("GET", "/api/hello", [], ""),
     ]:
         check("route_lookup_key(%r,%r)" % (method, path),
-              route_lookup_key(method, path, keys), want)
-
-    # -- :param patterns: the key split, the exact-vs-pattern test, the specificity rank --
-    for key, want in [
-        ("GET /api/x", "/api/x"),
-        ("DELETE /api/files/:name", "/api/files/:name"),
-        ("GET /a b", "/a b"),                   # a path may contain a space; first space splits
-        ("NOSPACE", ""),
+              route_lookup_key(method, path, table(keys)), rk(want) if want else "")
+    # -- the FOLD rows (2026-09-25): each spelling the engine's folded keys used to merge
+    # onto a declared route must now dispatch NOTHING. The witness first: under the old
+    # raw-text key, each of these rows DID collide (engine note 2.7), so a green row here
+    # is the fold closed, not a row that never exercised it.
+    _fold_rows = [
+        ("GET", "/API/hello", _lk_user),        # GET /API/x is not the /api/x route
+        ("GET", "/Api/Hello", _lk_user),
+        ("HEAD", "/API/HELLO", _lk_user),       # nor through the HEAD -> GET fallback
+        ("HEAD", "/PROBE", _lk_user),           # nor onto a declared HEAD route
+        ("POST", "/API/submit", _lk_user),
+        ("GET", "/_QS/info", _lk_builtin),      # the built-in table too
+        ("POST", "/_Edit/Login", _lk_builtin),
+    ]
+    for method, path, keys in _fold_rows:
+        check("fold witness: %s %s collided under the old raw key" % (method, path),
+              old_raw_lookup_hits(method, path, keys), True)
+        check("route_lookup_key(%r,%r) folds nothing" % (method, path),
+              route_lookup_key(method, path, table(keys)), "")
+    # non-ASCII and number-like paths key by their bytes: no fold, no numeric alias
+    _lk_odd = ["GET /caf\u00e9", "GET /v/1"]
+    for method, path, want in [
+        ("GET", "/caf\u00e9", "GET /caf\u00e9"),
+        ("GET", "/CAF\u00c9", ""),
+        ("GET", "/v/1", "GET /v/1"),
+        ("GET", "/v/01", ""),
+        ("GET", "/v/1.0", ""),
     ]:
-        check("route_key_path(%r)" % key, route_key_path(key), want)
+        check("route_lookup_key(%r,%r) odd" % (method, path),
+              route_lookup_key(method, path, table(_lk_odd)), rk(want) if want else "")
+
+    # -- :param patterns: the exact-vs-pattern test, the specificity rank --
     for path, want in [
         ("/api/hello", False),
         ("/api/:name", True),
@@ -1718,6 +1938,9 @@ def main():
         ("/api/:", False),                      # ":" alone names nothing
         ("/api/:na-me", False),                 # names are [A-Za-z0-9_] only
         ("/api/:x/:x", False),                  # duplicate capture name
+        ("/api/:id/:ID", False),                # ... compared FOLDED: captures are array keys
+        ("/api/:id/:idx", True),
+        ("/_QS/:x", False),                     # reserved in any case (2026-09-25)
         ("/files/:a..b", False),                # ".." refused (user_path_valid runs first)
         ("api/:x", False),                      # must be absolute
     ]:
@@ -1744,6 +1967,16 @@ def main():
         ("/files/:x", "/_qs/info", None),
         ("/:x", "/_edit", None),
         ("/:x/login", "/_edit/login", None),
+        ("/:x/info", "/_QS/info", None),                # the backstop folds (2026-09-25)
+        # a static segment matches EXACTLY (2026-09-25): bare `is` folded case and read
+        # number-like segments as numbers, so each of these matched on the engine
+        ("/api/files/:name", "/API/files/x", None),
+        ("/api/files/:name", "/api/FILES/x", None),
+        ("/v/1/:x", "/v/01/x", None),
+        ("/v/1/:x", "/v/1.0/x", None),
+        ("/v/1e2/:x", "/v/100/x", None),
+        ("/v/1/:x", "/v/1/x", {"x": "x"}),
+        ("/api/files/:name", "/api/files/README", {"name": "README"}),  # captures keep case
     ]:
         check("route_match(%r,%r)" % (pattern, path), route_match(pattern, path), want)
 
@@ -1757,19 +1990,27 @@ def main():
         ("GET", "/api/x/y", "GET /api/:a/:b"),
         ("GET", "/api/hello", ""),               # exact keys are the caller's fast path
         ("GET", "/_qs/info", ""),                # reserved: nothing ever matches
+        ("GET", "/API/files/x", ""),             # case-exact (2026-09-25)
+        ("GET", "/_QS/info", ""),                # reserved in any case
     ]:
         check("user_route_find(%r,%r)" % (method, path),
-              user_route_find(_pat_keys, method, path), want)
+              user_route_find(_pat_keys, method, path), rk(want) if want else "")
     # equal param counts tie-break on the smallest key - never on table iteration order
     check("user_route_find tie-break",
           user_route_find(["GET /api/files/:b", "GET /api/:a/x"], "GET", "/api/files/x"),
-          "GET /api/:a/x")
+          rk("GET /api/:a/x"))
+    # the tie-break is BYTE order (":Z" is 3a 5a, before ":a", 3a 61), where the engine's
+    # text `<` over the old readable keys folded case and picked /api/:a/x (a before z)
+    check("user_route_find tie-break is byte order",
+          user_route_find(["GET /api/:a/x", "GET /api/:Z/x"], "GET", "/api/files/x"),
+          rk("GET /api/:Z/x"))
+    check("hex order is byte order", rk("GET /api/:Z/x") < rk("GET /api/:a/x"), True)
     # a hostile pattern injected past declaration still cannot claim a reserved path
     check("user_route_find hostile-reserved",
           user_route_find(["GET /:x/info"], "GET", "/_qs/info"), "")
     check("user_route_find literal-pattern-text",
           user_route_find(["GET /api/greet/:name"], "GET", "/api/greet/:name"),
-          "GET /api/greet/:name")
+          rk("GET /api/greet/:name"))
 
     # -- Allow/405 derivation with :param routes: a matching pattern contributes its methods --
     for path, ukeys, want in [
@@ -1804,9 +2045,9 @@ def main():
     # a folder file and rides the existing pump - Range-aware, per-route headers, type
     # override - through the one shared head builder already pinned above.)
     _dl_key = user_route_find(["GET /dl/:version"], "GET", "/dl/v1.2.3")
-    check("param file route find", _dl_key, "GET /dl/:version")
+    check("param file route find", _dl_key, rk("GET /dl/:version"))
     check("param file route captures",
-          route_match(route_key_path(_dl_key), "/dl/v1.2.3"), {"version": "v1.2.3"})
+          route_match("/dl/:version", "/dl/v1.2.3"), {"version": "v1.2.3"})
     _fh = http_file_head(10, "big.bin", dict(_fh_get, range="bytes=0-3"),
                          "application/octet-stream", "X-Route: dl\r\n", 42, 0, _fh_epoch)
     check("param file route head kind+window",
@@ -1836,6 +2077,10 @@ def main():
         ("under_score", "underscore"),          # underscore not a kept token char (strict)
     ]:
         check("sanitize_header_name(%r)" % name, sanitize_header_name(name), want)
+    # a declared route METHOD is a token (2026-09-25): what http_allow copies into the
+    # Allow header can carry no CR, LF or space, and no key can alias another route's
+    for method, want in HTTP_METHOD_ROWS:
+        check("http_method_valid(%r)" % method, http_method_valid(method), want)
 
     # -- redirect Location vs the /<token>/ capability mount (the redirect hole) --
     for loc, mount, want in [
@@ -1918,11 +2163,12 @@ def main():
           "HTML escape, capability gate, SPA fallback, HTTP framing, keep-alive req "
           "length, JSON escape, editor confinement, LAN-first gate, query parse, size "
           "probe, filename sanitise, rate + ETA format, HTTP-date, Allow header, "
-          "editor login backoff, user-route path + header sanitise, template render + "
-          "escape, CORS preflight, conditional-GET ETag, shared file-head plan, "
+          "editor login backoff, user-route path + method + header sanitise, template "
+          "render + escape, CORS preflight, conditional-GET ETag, shared file-head plan, "
           "redirect mount re-prefix, editor parent-dirs, param patterns + reserved "
           "backstop + pattern Allow/preflight, reserved-namespace predicate, HEAD route "
-          "lookup, one-shot text reply + HEAD body suppression all match)")
+          "lookup, case-exact route keys + fold rows, one-shot text reply + HEAD body "
+          "suppression all match)")
     return 0
 
 

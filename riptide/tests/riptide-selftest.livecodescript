@@ -162,6 +162,7 @@ function rsSelfTest
       rstSectionHelpers
       rstSectionBep44
       rstSectionIngest
+      rstSectionSeqOrder
       rstSectionDm tCaps
       rstSectionLan
       rstSectionLanSync
@@ -248,6 +249,65 @@ private function rstUlpLadder pBase, pUlps
    end repeat
    return 0
 end rstUlpLadder
+
+-- A DIAGNOSTIC for suite engine note 2.11, never a check (2026-09-26): item
+-- pItem (1 to 6) of the fourth numeric compare probe line, whose comment in
+-- rstSectionHead says what each item reads and what decides it. Each item
+-- runs inside the try, so a throw prints its text in the item's place
+-- (returns and commas turned into spaces and semicolons, so the line stays
+-- one line of six comma-separated items) instead of ending the harness.
+-- The source stays ASCII; the two non-trivial operands are built here:
+--   3  two NaN words, each built a piece at a time, so the two operands are
+--      separate values: MCLogicIsEqualTo (engine/src/exec-logic.cpp)
+--      answers true for two references to ONE value before it reads either,
+--      and whether the engine shares one value between two equal literals
+--      is not recorded in this tree
+--   4  numToCodepoint(160) is U+00A0, NO-BREAK SPACE, on every platform,
+--      because it names a Unicode code point, not a native character (the
+--      LiveCode dictionary, DOCUMENTED; the paste's holde-em harness calls
+--      numToCodepoint in its suit-glyph checks, green on Linux and on
+--      Windows on 2026-09-25, which shows the function compiles and runs
+--      there, not what it returns for 160). numToChar(160) would not do: it
+--      is the NATIVE character 160, U+00A0 in Latin-1 (Linux) and in
+--      Windows-1252 but a dagger in MacRoman. The engine then hands
+--      MCU_strtor8 the NATIVE byte (MCAutoStringRefAsCString): 0xA0 on
+--      Linux and on Windows, 0xCA on macOS
+--   5  375 zeros, then 4294967296 (2^32): 385 characters, one past R8L,
+--      built by a loop
+private function rstTextProbe pItem
+   local tA, tB, tN, tOut, tErr
+   put empty into tOut
+   try
+      if pItem is 1 then
+         put ("0x10" is "16") into tOut
+      else if pItem is 2 then
+         put ("inf" is "1e999") into tOut
+      else if pItem is 3 then
+         put "n" into tA
+         put "an" after tA
+         put "na" into tB
+         put "n" after tB
+         put (tA is tB) into tOut
+      else if pItem is 4 then
+         put numToCodepoint(160) & "3" into tA
+         put (tA is 3) into tOut
+      else if pItem is 5 then
+         put empty into tA
+         repeat with tN = 1 to 375
+            put "0" after tA
+         end repeat
+         put "4294967296" after tA
+         put (tA is 4294967296) into tOut
+      else if pItem is 6 then
+         put ("0x1.8" is "1.5") into tOut
+      end if
+   catch tErr
+      replace return with " " in tErr
+      replace comma with ";" in tErr
+      put "threw:" && tErr into tOut
+   end try
+   return tOut
+end rstTextProbe
 
 --------------------------------------------------------------------------
 -- sections
@@ -404,7 +464,9 @@ private command rstSectionKeyFile
    put rsGenerateMasterSeed() into tGenB
    rstCheck (the number of bytes in tGenA is 32), \
          "a generated master seed is 32 bytes"
-   rstCheck (rstHex(tGenA) is not rstHex(tGenB)), \
+   -- hex against hex compares as TEXT, a letter on each side (suite engine
+   -- note 2.11: bare `is` reads two number-like texts as numbers)
+   rstCheck (("h" & rstHex(tGenA)) is not ("h" & rstHex(tGenB))), \
          "two generated seeds differ (the CSPRNG is live)"
    put rstBin(kRsGoldMasterHex) into tSeed
    put rsSealMasterSeed(tSeed, "correct horse") into tSealed
@@ -455,7 +517,9 @@ private command rstSectionHead
          "profile-meta target round-trips"
    put rsBuildHead(0, "n", empty, empty, empty, empty) into tRebuilt
    put rsParseHead(tRebuilt) into tParsed
-   rstCheck (tParsed["latestPostTarget"] is rsZeroTarget()), \
+   -- targets compare as TEXT, a letter on each side (suite engine note
+   -- 2.11: bare `is` reads two number-like texts as numbers)
+   rstCheck (("h" & tParsed["latestPostTarget"]) is ("h" & rsZeroTarget())), \
          "an empty target normalizes to the zero target"
    rstCheck (tParsed["onionAddr"] is empty), \
          "an empty onion address round-trips as empty"
@@ -587,10 +651,18 @@ private command rstSectionHead
    -- Predicted, the source's rule   true,true,false,true,false,true,true,false
    --           pure IEEE doubles    false,true,true,true,true,true,false,false
    --           family interpreter   false,false,true,true,true,true,false,false
+   --                                until 2026-09-25; since then it REFUSES
+   --                                items 1, 2, 3, 5 and 7 (the ones this
+   --                                prediction reads otherwise) and answers
+   --                                4, 6 and 8 as the prediction does
+   -- Read 2026-09-25 on Linux and then on Windows exactly as predicted
+   -- (OBSERVED; engine notes 2.10 and 2.11, riptide/CLAUDE.md's ledger).
    -- Items 1 and 2 are why a hex digest must never meet `is` as bare text
-   -- (engine note 2.11). Every operand is below 2^53, and the interpreter
-   -- reads items 1 and 2 as text, so it runs this line too (it does, read
-   -- as above; the all-absent boot gate stops before this section).
+   -- (engine note 2.11). Every operand is below 2^53, but the interpreter
+   -- refuses a comparison the engine answers differently (engine notes 2.10
+   -- and 2.11; coinxt's check-script-vectors tier 0 holds that refusal to
+   -- this line as the engines read it), so no headless run prints it any
+   -- more (the all-absent boot gate stops before this section anyway).
    put "      numeric compare probe 3 (diagnostic; the engine source's rule" && \
          "reads true,true,false,true,false,true,true,false):" && \
          ("1e999" is "2e999") & "," & \
@@ -601,6 +673,47 @@ private command rstSectionHead
          (281474976710656 < 281474976710657) & "," & \
          (450359962737050 is 450359962737051) & "," & \
          (450359962737049 is 450359962737050) & return after sLog
+   -- DIAGNOSTIC 4, not a check (added 2026-09-26; suite work plan 1.2 #22).
+   -- Probe 3's items 1 and 2 read the two forms of engine note 2.11's parse
+   -- that have met an engine. The family interpreter
+   -- (coinxt/tools/lcs-interp.py, twinned in nostrxt) REFUSES as unsure the
+   -- forms that note does not establish, and these six are forms it
+   -- refuses, each class of them covered (rstTextProbe builds them):
+   --   1  "0x10" is "16"            a hex integer: MCU_strtol's base 16
+   --   2  "inf" is "1e999"          a C99 strtod word, against +inf
+   --   3  "nan" is "nan"            two NaN words, built separately
+   --   4  NBSP & "3" is 3           a character outside ASCII at the edge
+   --   5  a 385-digit run is 4294967296
+   --                                past R8L (384) and past the integer
+   --                                parse's int32 (integer_t is int32_t on
+   --                                32- and 64-bit builds, foundation.h)
+   --   6  "0x1.8" is "1.5"          a C99 hex float
+   -- The work plan's row named "0x.8" is "0.5" and a 385-digit run against
+   -- itself; the interpreter ANSWERS the first (false: MCU_strtor8 makes a
+   -- "0x" followed by no hex digit text before strtod ever runs), and the
+   -- second reads true whatever decides it (identical text, or one number),
+   -- so it cannot read the limit. The line reads the refused sibling of
+   -- each, the forms the interpreter's UNSURE classes name.
+   -- Predicted by the engine SOURCE (libfoundation's MCU_strtol and
+   -- MCU_strtor8, engine/src/exec-logic.cpp's MCLogicIsEqualTo; OXT's tree
+   -- and livecode develop-9.6 identical):  true,?,?,?,false,?
+   -- where each ? is the C library's to decide, not the engine's source:
+   -- strtod for 2, 3 and 6 (a C99 strtod reads inf, nan and hex floats,
+   -- giving true,false,true there; an older one reads none, giving
+   -- false,true,false), and C isspace in the engine's locale for 4 (true
+   -- only where byte 0xA0 is a space; the "C" locale says it is not). Which
+   -- C runtime OXT links on each platform is not recorded in this tree.
+   -- The interpreter refuses all six (LCS.Indistinct, which a script try
+   -- cannot catch), so no headless run prints this line, as none prints
+   -- probe 3 (whose item 1 it refuses first); riptide's
+   -- check-script-vectors tier 1e holds this line's shape and the six
+   -- refusals. Its reading is owed to the next engine run (the suite
+   -- runbook's S1 item 1 asks for the line verbatim).
+   put "      numeric compare probe 4 (diagnostic; the engine source" && \
+         "reads true,?,?,?,false,? where ? is the C library's):" && \
+         rstTextProbe(1) & "," & rstTextProbe(2) & "," & \
+         rstTextProbe(3) & "," & rstTextProbe(4) & "," & \
+         rstTextProbe(5) & "," & rstTextProbe(6) & return after sLog
    put tHead into tBig
    repeat with rstI = 5 to 12
       put numToByte(255) into byte rstI of tBig
@@ -846,7 +959,7 @@ private command rstSectionChunked pCaps
    end repeat
    put rsBuildPostChunked(kRsGoldTs3, empty, tTargets, empty, tSeed) \
          into tPost
-   rstCheck (tTarget is rsImmutableTarget(tPost)), \
+   rstCheck (("h" & tTarget) is ("h" & rsImmutableTarget(tPost))), \
          "the stored kind-C target equals the offline recomputation"
 end rstSectionChunked
 
@@ -888,6 +1001,14 @@ private command rstSectionBep44
    rstCheck (rsBep44SignBuf(rsHeadSalt(), 9007199254740992, \
          textEncode("2:hi", "ASCII")) is empty), \
          "a seq at 2^53 is refused (it would not round-trip)"
+   -- ... and 2^53 - 1, the top of the range, is ACCEPTED (2026-09-25). The
+   -- bound is rsIsWireInt's, decided on the value's halves; spelled
+   -- `pSeq >= 9007199254740992` it answered TRUE here on the engine, which
+   -- calls integers within 19 of 2^53 equal to it (suite engine note 2.10),
+   -- so the engine refused a seq every headless gate accepted.
+   rstCheck (rsBep44SignBuf(rsHeadSalt(), 9007199254740991, \
+         textEncode("2:hi", "ASCII")) is not empty), \
+         "a seq of 2^53 - 1 is accepted (the top of the range, exactly)"
    rstCheck (rsBep44SignBuf(rsHeadSalt(), 7, \
          textEncode("hi", "ASCII")) is empty), \
          "a non-bencoded value is refused"
@@ -909,6 +1030,50 @@ private command rstSectionBep44
    rstCheck (rsImmutableTarget(empty) is empty), \
          "an empty immutable value is refused"
 end rstSectionBep44
+
+-- Wire integers ordered EXACTLY (2026-09-25; riptide/CLAUDE.md trap 9).
+-- The engine calls two numbers equal when they differ by less than 10
+-- DBL_EPSILON of the smaller (suite engine note 2.10), so integers one
+-- apart compare EQUAL from 450359962737050, and the rollback gates' old
+-- `tSeq < pMinSeq` let a replayed head up to 19 older through near 2^53.
+-- rsSeqCompare orders on the two u32 halves instead. The pairs below are
+-- the ones the old spelling gets wrong on the engine (2^53 - 1 against
+-- 2^53 - 2; 450359962737051 against 450359962737050), the pair just below
+-- the blur, the halves' own boundary (2^32 against 2^32 - 1, and a low-half
+-- step above it), small values and equality; then the refusals, since the
+-- helper's domain is 0 .. 2^53 - 1 and an EMPTY answer is what makes every
+-- caller fail closed. Headlessly, tools/check-script-vectors.py replays the
+-- same pairs under the engine's rule; here they meet the engine itself.
+private command rstSectionSeqOrder
+   rstSection "wire integers ordered exactly (rsSeqCompare)"
+   rstCheck (rsSeqCompare(9007199254740991, 9007199254740990) is "above"), \
+         "2^53 - 1 is ABOVE 2^53 - 2 (a bare `<` or `>` calls them equal)"
+   rstCheck (rsSeqCompare(9007199254740990, 9007199254740991) is "below"), \
+         "2^53 - 2 is BELOW 2^53 - 1"
+   rstCheck (rsSeqCompare(9007199254740991, 9007199254740991) is "equal"), \
+         "2^53 - 1 is EQUAL to itself"
+   rstCheck (rsSeqCompare(450359962737051, 450359962737050) is "above"), \
+         "450359962737051 is above 450359962737050 (the first blurred pair)"
+   rstCheck (rsSeqCompare(450359962737050, 450359962737049) is "above"), \
+         "450359962737050 is above 450359962737049 (just below the blur)"
+   rstCheck (rsSeqCompare(4294967296, 4294967295) is "above"), \
+         "2^32 is above 2^32 - 1 (the high halves differ)"
+   rstCheck (rsSeqCompare(4294967297, 4294967296) is "above"), \
+         "2^32 + 1 is above 2^32 (the low halves differ under one high half)"
+   rstCheck (rsSeqCompare(7, 6) is "above"), "7 is above 6"
+   rstCheck (rsSeqCompare(0, 1) is "below"), "0 is below 1"
+   rstCheck (rsSeqCompare(0, 0) is "equal"), "0 is equal to 0"
+   rstCheck (rsSeqCompare(9007199254740992, 0) is empty), \
+         "2^53 is outside the domain: empty, never an order"
+   rstCheck (rsSeqCompare(0, 9007199254740992) is empty), \
+         "on either side"
+   rstCheck (rsSeqCompare(-1, 0) is empty), "a negative operand is refused"
+   rstCheck (rsSeqCompare(1.5, 1) is empty), "a fraction is refused"
+   rstCheck (rsSeqCompare("seven", 0) is empty), "a non-number is refused"
+   rstCheck (rsSeqCompare(empty, 0) is empty), "an empty operand is refused"
+   rstCheck (rsLastError() contains "rsSeqCompare"), \
+         "and the refusal says why"
+end rstSectionSeqOrder
 
 private command rstSectionIngest
    local tEvent, tBad, tPostEvent, tHead, tPost, tSig
@@ -937,6 +1102,11 @@ private command rstSectionIngest
    put 8 into tBad["seq"]
    rstCheck (rsIngestHead(tBad, kRsGoldHandle, 0) is empty), \
          "a seq disagreeing with the head's embedded seq is refused"
+   -- which gate answered (2026-09-25): the golden signature is over seq 7,
+   -- so this event would ALSO fail the signature check; the agreement check
+   -- runs first here, and this line keeps it the one that is tested
+   rstCheck (rsLastError() contains "disagree"), \
+         "by the seq agreement check, which runs before the signature"
    put tEvent into tBad
    put rstFlipByte(tBad["value"], 2) into tBad["value"]
    rstCheck (rsIngestHead(tBad, kRsGoldHandle, 0) is empty), \
@@ -990,6 +1160,16 @@ private command rstSectionIngest
          "a head OLDER than the watermark is refused (the rollback gate)"
    rstCheck (rsIngestHead(tEvent, kRsGoldHandle, 4096) is empty), \
          "and a far-older head is refused the same way"
+   -- A watermark at the TOP of the range (2026-09-25). 2^53 - 1 is a sane
+   -- watermark and the seq-7 golden head is older than it, so the refusal
+   -- must be the ROLLBACK gate's. Before the halves bound, the engine's
+   -- `pMinSeq >= 9007199254740992` called 2^53 - 1 out of range and refused
+   -- it as a missing watermark instead (suite engine note 2.10), so the
+   -- second check reads which gate answered.
+   rstCheck (rsIngestHead(tEvent, kRsGoldHandle, 9007199254740991) is empty), \
+         "a watermark of 2^53 - 1 refuses the seq-7 head"
+   rstCheck (rsLastError() contains "older"), \
+         "as a rollback (the watermark is sane), not as a bad watermark"
 
    -- the post walk, on synthetic dhtImmutableItem events: head names post 2,
    -- post 2's prev names post 1, post 1's prev is the zero target - the end
@@ -1004,7 +1184,7 @@ private command rstSectionIngest
    put rsIngestPost(tPostEvent, tPost["prevPostTarget"], kRsGoldHandle) \
          into tPost
    rstCheck (tPost is not empty), "walking the chain link ingests post 1"
-   rstCheck (tPost["prevPostTarget"] is rsZeroTarget()), \
+   rstCheck (("h" & tPost["prevPostTarget"]) is ("h" & rsZeroTarget())), \
          "whose prev is the zero target - the chain ends"
    rstCheck (rsIngestPost(tPostEvent, kRsGoldPost2Target, kRsGoldHandle) \
          is empty), "an event answering a different target is refused"
@@ -1110,6 +1290,10 @@ private command rstSectionAnon pCaps
          "a truncated BTXO header is refused"
    rstCheck (rsBtxoHeader("x", -1, 0) is empty), \
          "a negative total size is refused"
+   -- and one at 2^53 (2026-09-25): the builder had no upper bound, so a
+   -- total past the exact range was split as a ROUNDED double
+   rstCheck (rsBtxoHeader("x", 9007199254740992, 0) is empty), \
+         "a total size at 2^53 is refused (it would not round-trip)"
    -- a header whose name field is invalid UTF-8 (0xFF) passes the exact
    -- length gate but must be REFUSED, not thrown (the never-throw contract)
    rstCheck (rsBtxoParseHeader(rstBin("4254584f0100" & "0001" & "ff" & \
@@ -1482,9 +1666,11 @@ private command rstSectionNostr pCaps
    -- would be a linkage anybody could forge half of.
    -- the six bytes are one per FIELD of the signed span: the handle, the
    -- Nostr key, the seq, the timestamp, and one byte of each signature.
-   -- The delimiter is set explicitly rather than assumed: comma is the
-   -- engine default, but a harness that leans on a default is a harness
-   -- that breaks the day some earlier section forgets to restore one.
+   -- The delimiter is set explicitly rather than assumed. This once said an
+   -- earlier section that forgot to restore one would break this loop; the
+   -- suite's engine note 2.3 has since observed the itemDelimiter
+   -- handler-local on Windows and Linux (no Mac run), so there only this
+   -- handler's own set reaches it.
    put the itemDelimiter into tSavedDelim
    set the itemDelimiter to comma
    repeat for each item tI in "5,69,140,148,150,214"
@@ -1595,10 +1781,20 @@ private command rstNostrIngest pBridge
    put rsHeadSalt() into tBad["salt"]
    rstCheck (rsIngestBridge(tBad, kRsGoldHandle, 0) is empty), \
          "the HEAD salt is refused (one rail, one salt)"
+   -- RE-SIGNED at seq 2 (2026-09-25): the BEP44 signature covers the seq,
+   -- and rsIngestBridge checks the agreement LAST, after both signatures, so
+   -- this event with the golden signature left on it was refused by the
+   -- signature check and never reached the agreement check it names (with
+   -- that check deleted it still passed). The second check reads which gate
+   -- answered.
    put tEvent into tBad
    put 2 into tBad["seq"]
+   put rsBep44SignBuf("riptide-nostr", 2, tValue) into tBuf
+   put rstHex(sxSignDetached(tBuf, tKeys["secretKey"])) into tBad["signature"]
    rstCheck (rsIngestBridge(tBad, kRsGoldHandle, 0) is empty), \
          "a seq disagreeing with the bridge's embedded seq is refused"
+   rstCheck (rsLastError() contains "disagree"), \
+         "by the seq agreement check (the BEP44 layer is validly signed at seq 2)"
    put tEvent into tBad
    -- byte 150 is inside the ed25519 signature: the BEP44 layer still
    -- passes (its signature covers the bencoded value, which changed too)
@@ -2296,7 +2492,7 @@ private command rstSectionMedia pCaps
    rstCheck (tFound is tH), "and it is the handle btFindTorrent names"
    put rsMediaStatus(tH) into tS
    rstCheck (tS is an array), "rsMediaStatus returns a snapshot"
-   rstCheck (toLower(tS["infoHashV1"]) is tHash), \
+   rstCheck (("h" & toLower(tS["infoHashV1"])) is ("h" & tHash)), \
          "whose info-hash is the created one"
    rstCheck (tS["name"] contains "riptide-media-selftest"), \
          "whose name is the attached file's"
