@@ -265,6 +265,16 @@ fi
 # lost in a MinGW cross-build, or an ABI bump the binary never got, passes it
 # and reaches a user as a bind failure at LOAD time. No compiler and no
 # binutils: stdlib struct walks over ELF and PE.
+# Its fixture runs FIRST: since 2026-09-25 the ABI leg decodes a second PE
+# shape (the frame MSVC keeps around the shim's try/catch guard), and a decoder
+# that reads more shapes can read a WRONG number with an OK beside it. The
+# fixture flips every byte of both shapes (recorded and live), holds the
+# decoder to objdump where binutils reads PE, and executes the x64 functions
+# on an x86-64 Linux host; each of those two prints a SKIP where it cannot run.
+if [ -f tools/test-binary-freshness.py ]; then
+  echo "== suite: tools/test-binary-freshness.py =="
+  python3 tools/test-binary-freshness.py
+fi
 if [ -f tools/check-binary-freshness.py ]; then
   echo "== suite: tools/check-binary-freshness.py =="
   # Unquoted on purpose: empty must expand to NO argument, not to "".
