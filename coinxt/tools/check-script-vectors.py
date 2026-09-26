@@ -31,7 +31,9 @@ Two tiers, so it is useful in both environments:
      other gate runs the demo.
   2. VECTORS, when a C compiler is available: the whole encoder surface driven
      through the interpreter against BIP-173, BIP-350, EIP-55, the RLP
-     yellow-paper examples and a Base58Check worked example.
+     yellow-paper examples and a Base58Check worked example. Beside them (2b,
+     2026-09-26) coinxt-demo's EIP-55 recipient check, lifted out and run
+     with `is` as the interpreter reads it and folded as the engine does.
 A missing compiler SKIPS tier 2 loudly; it never passes silently.
 
 IT IS SLOW, AND THAT IS THE PRICE, NOT A DEFECT. Tier 2 takes a couple of
