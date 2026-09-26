@@ -8,6 +8,131 @@ message box (interactive -- report panel, clipboard, msg) and heSelfTest()
 (quiet -- returns the report as a value and touches nothing). No second
 stack, no required extensions to be playable.
 
+v0.25.6 -- ONE TURN, ONE MARK, ONE SET OF SENDER RULES (2026-09-25; holde-em
+WORK-PLAN coding #13, #14 and #15). A WIRE CHANGE: an act's body and a
+stand's or sit-return's body each gain a key inside the sender's signature,
+so protocol-kat's pins moved (timeout_act_body, stand_body, sitback_body,
+heads 10..13 and 24, all re-derived by the tool; act_body and act_head25
+new). kHeVersion 0.25.5 -> 0.25.6; kHeHarnessV 47 -> 48 (a wire change and
+75 new assert sites, CLAUDE.md rule 5); kUIVersion stays 15 (no chrome
+moved).
+  * #13, AN ACT REPLAYED LATER IN ITS OWN HAND. v0.25.5 bound every per-hand
+    wire to its hand, but an act carried no TURN, and two honest checks are
+    byte-identical, so no content dedupe could tell a replay from a new act:
+    a host could re-sequence a player's earlier signed check or fold at a
+    later turn of the same hand, and every client folded it as that
+    player's move. THE FIX: the betting engine counts the acts it APPLIES
+    (heBetNewHand's actN, one add per verb path after its last refusal, so
+    a refused act moves nothing -- the "err" contract), heBetTurnOf names
+    the turn a hand waits for (1 + actN), and every act -- the player's own
+    and the host's timeout alike -- carries turn=<that> in its signed body
+    (heNetSendAction appends it through heNetBoundBody, so no emitter can
+    forget). heActTurnOk refuses an act whose key is missing, not
+    canonical (heCanonIdx) or not the open turn; the live fold applies it
+    to both act forms, and History's replay (heFoldTranscript) skips a
+    keyed act that is not at its turn, as the table did. It also settles
+    an honest race: a seat's late act that loses to the host's timeout for
+    the same turn is refused by key instead of folded if the action has
+    come back round to it. The street is not a second key: the hand-wide
+    index already differs across streets.
+  * #14, HISTORY DID NOT RE-CHECK SENDERS. heNetLogToHotseat translated
+    every signed wire, including those the table refused for authority --
+    a non-owner's commit or reveal, a player-signed settle, a timeout no
+    host authored -- and the deal audit then read last-wins commits
+    against first-wins holes (a false FAIL), or a settle the table never
+    took as settle-verified (a false PASS). THE FIX: ONE sender predicate,
+    heWireSenderOk (host-only types, dealer-only board and holes, owned
+    seats, owned contributor positions, seated-only acts, receipts, ckpts
+    and audits, the oracle's position and audit), called by the live fold
+    before any case acts (heNetFoldGameWire, with heNetSenderCtx), by the
+    live apply for cfg and roster (heNetApplyWire), and by the translation
+    for every wire (with the context it has walked to: the roster so far
+    through heRosterHasKey, now pure; the hand's dealer, seats and
+    contributors through heDealLevelOf, the dealLevel reader lifted out of
+    the live fold). The per-case sender checks in the live fold are GONE,
+    replaced by the one call, so the two cannot drift; heNetContribPosOk is
+    retired into the predicate. The translation takes the host key as a
+    parameter (heNetLogToHotseat(pLogTxt, pHostHex)). The live fold's
+    unseated tests read `tFromSeat is 0`, which an unseated key's EMPTY
+    seat never is: an unseated rostered key's audit filed under the
+    ORACLE's slot 0, first wins, and its receipt and ckpt under dead keys.
+    The predicate tests for a canonical seat, so those are refused now.
+  * #15, STAND AND SIT WERE NOT BOUND. A host could replay a player's old
+    signed stand, hands later, and sit it out on every client. NOT bound to
+    the hand, and why: a stand is usually sent BETWEEN hands, when the open
+    hand is the one just finished, so an honest stand crossing the next
+    handStart would be refused, and within one hand the same stand would
+    still replay after the seat's own return. INSTEAD a per-seat SIT-OUT
+    MARK: each stand and sit-return carries n=<the seat's next mark>, one
+    past the marks the table accepted for that seat (gGame["sitMarkBy"],
+    counted by the two folds on every accepted wire). heSitMarkOk refuses a
+    spent, skipped, missing or non-canonical mark, so a replay carries a
+    spent mark and a double-press is the same mark. The host's seat
+    assignment (sit with pub=) is unchanged: only the host authors it.
+  * REVIEW FIXES (the same day, before any engine run; 9 of the 75 sites).
+    An adversarial review found History's translation still replaying a
+    game the table did not play, each confirmed by a headless probe:
+    (a) its sender CONTEXT froze the dealing key at the dealLevel, where
+    the live heNetDealerPubHex reads the dealer seat's key per wire, so
+    after the host re-sat that seat mid-hand History took the old key's
+    flop and refused the new key's; (b) it CLEARED the oracle flag on a
+    level-0 dealLevel, where the live fold only ever sets it, so a host's
+    level 1 then level 0 left the table on the oracle and History on the
+    seat; (c) a seat's OWN second commit (the sender rules pass it) became
+    the deal audit's commitment, last line wins, where the table keeps the
+    first; (d) a reveal that does not open its commitment, refused at the
+    table, re-derived History's holes (first wins). (c) and (d) failed an
+    honest deal as commit- or hole-mismatch, the row-#14 mechanism from
+    the owner instead of a stranger. Now the dealer key is re-read per
+    wire from the dealer seat, the oracle flag only sets, and a commit or
+    reveal becomes a History line only when the table would have kept it.
+    (e) Five rules could not fail a gate: History's roster rule, its
+    oracle context (no section had translated an oracle table), its
+    refusal of a dealLevel the table refused, its drop of a keyless act,
+    and the live sit-RETURN's mark check (only the stand's was pinned);
+    each deleted in a copy, every section stayed green. Pins: section 15
+    (+6) drives a misbehaving host's stream on throwaway contexts and
+    asserts the table and History take the same flops (an unrostered
+    key's, a re-sat seat's old key's, a refused dealLevel's, level 1 then
+    0), that after the owner's double commit and wrong reveal History
+    keeps the table's commitment and seed (not merely a self-consistent
+    pair: History derives the holes from the seeds it keeps, so its audit
+    alone passes a deck the table never dealt), and that a keyless act is
+    dropped at both; section 18 (+2) translates the oracle table's hand
+    and counts the oracle's kept position before auditing it; section 20
+    (+1) replays a seat's old sit-return while it sits out by choice.
+  * PINS (75). Section 2 (+23): the turn counter per verb path (raise,
+    call, the all-in for less, check, bet, fold, the fold that ends the
+    hand), bids and refusals moving nothing, heActTurnOk's keep and its
+    four refusals. Section 8 (+3): the canned session with turn keys folds
+    unchanged, and with seat 3's turn-8 check replayed at the river it
+    still folds clean and settle-verified (heTKatTurnLog). Section 15 (+14),
+    end to end on throwaway copies: the preflop check re-sequenced at the
+    flop is refused and moves nothing, the same seat's act at the open turn
+    folds, and History skips the replay; the live sender context is the
+    table's; a non-owner's commit is refused live and leaves History's
+    deal audit at 2/2; a player-signed settle is no settle in History;
+    and the review's six above. Section 18 (+2): the review's oracle
+    History. Section 20 (+5): the stand and return spend marks 1 and 2 on
+    both sides, the old stand replayed is refused and the seat stays in,
+    its next mark still stands it, and (the review's) its old RETURN
+    replayed while it sits out is refused too. Section 21 (+28):
+    heSitMarkOk, heWireSenderOk per rule and for the oracle, heDealLevelOf,
+    heRosterHasKey, and heNetBoundBody against protocol-kat's act_body,
+    stand_body and sitback_body. betting-kat mirrors the counter
+    (case_turn_counter) and fold-kat the History rule (transcript_turns).
+    Mutants of the final source, run headlessly, each fail their pins: no
+    live turn check, a call path that counts no turn, no History turn
+    check, a builder that binds no turn, History without the sender rules,
+    the live fold without them, an unchecked stand mark, an uncounted
+    return mark, a predicate that lets anyone settle; and the review's:
+    an unchecked return mark, History keeping a keyless act, History
+    without its roster rule, with no oracle context, clearing the oracle
+    on level 0, with the dealer key frozen, taking a refused dealLevel,
+    keeping the last commit, keeping a reveal that opens nothing, and the
+    translation as first written. Verified statically; needs an OXT pass:
+    all of it (the next engine run RECORDS the v48 total).
+
 v0.25.5 -- ONE POSITION, ONE KEY, ONE HAND: heCanonIdx (2026-09-25). NO
 WIRE CHANGED -- not a byte an honest client emits, and protocol-kat's pins
 are untouched; what a verifier ACCEPTS narrowed. kHeVersion 0.25.4 ->
@@ -3633,8 +3758,8 @@ end oxProcessId
 -- declaration silently evaluates to nothing at runtime)
 --------------------------------------------------------------------------
 
-constant kHeVersion = "0.25.5"
-constant kHeHarnessV = "47"
+constant kHeVersion = "0.25.6"
+constant kHeHarnessV = "48"
 constant kUIVersion = "15"
 
 -- card contract (mirrored in tools/evaluator-kat.py): index 1..52,
@@ -3723,7 +3848,9 @@ constant kHeCkptStreets = "deal,flop,turn,river,showdown"
 -- (every honest client then saw its own position "already committed" and
 -- stayed silent), know every player's entropy in advance, and deal the deck
 -- it chose, with the audit re-deriving that deck clean. join / sit / stand
--- are seat state that outlives a hand, and handStart is checked on its own.
+-- are seat state that outlives a hand, and handStart is checked on its own;
+-- since v0.25.6 a stand or sit-return is bound instead by the seat's
+-- sit-out mark (heSitMarkOk), and an act by its turn too (heActTurnOk).
 constant kHeHandBoundTypes = "dealLevel,seedCommit,seedSeal,holeDeliver,seedReveal,bidAnte,bidSB,bidBB,act,board,settle,receipt,audit,ckpt,show,muck"
 -- spec 9 host-loss watchdog: poll ticks (250 ms) of host wire-silence
 -- during PLAY before a client declares the host (or oracle -- same role)
@@ -4002,13 +4129,19 @@ constant kKatMuckHead9 = "5fbfd0aeef7d918249601a92233de273809dc1b4791e991e22758b
 -- host-authored timeout act/bid (timeout=1/bank= marks on the EXISTING
 -- wires), a seat's own stand (sit-out) and pub-less sit (return) -- plus
 -- the onion hello's trailing-seq trim frame (tab-framed, so it travels as
--- hex of its UTF-8 bytes, the kKatEnv0ContentHex convention)
-constant kKatTimeoutBody = "verb=fold,amount=0,seat=3,timeout=1,bank=1"
-constant kKatTimeoutHead10 = "bb5c70e38815d017dbcd3be3654fd8691fd2513bd816a5ab33659e1103fed694"
-constant kKatStandHead11 = "fc854db9ed13c5dcaf7ae7455678c87b4a0e1a6286e88ad98dd61dbf173e8ef6"
-constant kKatSitBackHead12 = "f69afd084f98085581135c43346641dea04f2937952becc641e9922709ea6cdc"
+-- hex of its UTF-8 bytes, the kKatEnv0ContentHex convention). v0.25.6: the
+-- act bodies carry turn= and the stand and sit-return bodies n= (the turn
+-- binding and the sit-out mark), so heads 10..13 moved; kKatActBody is a
+-- player's own act as heNetBoundBody builds it
+constant kKatTimeoutBody = "verb=fold,amount=0,seat=3,timeout=1,bank=1,turn=1"
+constant kKatTimeoutHead10 = "74cd646a06d2fdac421462b9070323ae9c91b42f1cc7e37c1fb89e710f442668"
+constant kKatStandBody = "seat=2,n=1"
+constant kKatStandHead11 = "e035624243754a23926b656d025fa7ae3d91c184f1c18910fef2a51c9c9755f8"
+constant kKatSitBackBody = "seat=2,n=2"
+constant kKatSitBackHead12 = "3e65a48a04975263f3480baf3889eea57b613bda6a07dfd9c4421abf23d42f85"
 constant kKatTimeoutBidBody = "amount=2,seat=3,timeout=1,bank=1"
-constant kKatTimeoutBidHead13 = "6324a6371f62ec9819d0a53acace305c3faefd274efe5db87bf869e1b4a57fcd"
+constant kKatTimeoutBidHead13 = "ebd7ecad18e549234e6a9f607a20788952ad1e1e3d83a3fe5b6124e80496f7d2"
+constant kKatActBody = "verb=check,amount=0,turn=2"
 constant kKatHelloTrimHex = "68093833336665643865653330613838326264383737353535613964663236306434333232323234666130393535313364383439373261363630653761643662313009706c61796572096430326231653832366634333531323634636433613737613135383039323134393566396337646635663066323961333730656262356664643639623961316335633163393232366165323836353931393632326132363664663132346163373535623537313431613664386137376530656238623666376438396465323038093432"
 constant kKatIdPub3 = "ad1d6dbbd062cdacf356daf0834471b6246105b17e3b988dd5e7f0db45fb66a6"
 constant kKatElectedHost = "833fed8ee30a882bd877555a9df260d4322224fa095513d84972a660e7ad6b10"
@@ -7091,7 +7224,7 @@ command heNetApplyWire pWire, pA
    -- append to the transcript, and fold presence bodies into the display. pA is
    -- a parsed wire (heEnvWireParse); its fields are copied into plain locals
    -- first, so heEnvBodyText and the log lines chunk only plain text (H6-safe).
-   local tTypeTxt, tSeqTxt, tFromHex, tBodyHex
+   local tTypeTxt, tSeqTxt, tFromHex, tBodyHex, tWhyTxt
    put pA["type"] into tTypeTxt
    put pA["seq"] into tSeqTxt
    put pA["from"] into tFromHex
@@ -7122,7 +7255,7 @@ command heNetApplyWire pWire, pA
    -- ignore-the-body treatment a non-host cfg gets. In-order apply guarantees
    -- the roster wire admitting a sender lands before that sender's first
    -- relayed action, so an honest stream never trips this.
-   if not heHexEq(tFromHex, gGame["hostPubHex"]) and not heRosterHasKey(tFromHex) then
+   if not heHexEq(tFromHex, gGame["hostPubHex"]) and not heRosterHasKey(gGame["rosterBody"], tFromHex) then
       put "note   unrostered sender " & char 1 to 8 of tFromHex \
             & " -- body ignored (seq " & tSeqTxt & ")" & return after gGame["netLog"]
       exit heNetApplyWire
@@ -7132,8 +7265,10 @@ command heNetApplyWire pWire, pA
    -- presence (spec 9): fold them only when the wire's own sender is the host,
    -- so an admitted player cannot forge table config/roster by getting a
    -- content line relayed (the host relays any admitted sender's content).
+   -- The rule is heWireSenderOk's (v0.25.6), the one History applies too.
    if tTypeTxt is "roster" or tTypeTxt is "cfg" then
-      if heHexEq(tFromHex, gGame["hostPubHex"]) then
+      put heWireSenderOk(tTypeTxt, empty, tFromHex, empty, heNetSenderCtx()) into tWhyTxt
+      if tWhyTxt is empty then
          if tTypeTxt is "roster" then
             put heEnvBodyText(tBodyHex) into gGame["rosterBody"]
          else
@@ -7147,7 +7282,7 @@ command heNetApplyWire pWire, pA
          end if
          heNetGameReact
       else
-         put "drop   non-host " & tTypeTxt & " body ignored" & return after gGame["netLog"]
+         put "drop   " & tWhyTxt & return after gGame["netLog"]
       end if
       exit heNetApplyWire
    end if
@@ -7165,14 +7300,17 @@ command heNetApplyWire pWire, pA
    end if
 end heNetApplyWire
 
-function heRosterHasKey pPubHex
-   -- TRUE when the host-signed roster body (heRosterBody format: "pub:role"
-   -- comma-items) lists pPubHex as a member. Membership is judged on the pub
-   -- field alone; an empty roster has no members (the host itself is exempted
-   -- at the call site, so the pre-roster cfg wire still folds).
+function heRosterHasKey pRosterTxt, pPubHex
+   -- TRUE when the host-signed roster body pRosterTxt (heRosterBody format:
+   -- "pub:role" comma-items) lists pPubHex as a member. Membership is judged
+   -- on the pub field alone; an empty roster has no members (the host itself
+   -- is exempted at the call site, so the pre-roster cfg wire still folds).
+   -- PURE since v0.25.6 (it read gGame["rosterBody"]): the live apply passes
+   -- the roster it holds and History's translation (heNetLogToHotseat) the
+   -- roster it has walked to, so both judge a sender by one rule.
    local tRoster, tItem, tColonPos, tPub
    set the itemDelimiter to comma
-   put gGame["rosterBody"] into tRoster
+   put pRosterTxt into tRoster
    repeat for each item tItem in tRoster
       put offset(":", tItem) into tColonPos
       if tColonPos > 0 then
@@ -7226,9 +7364,14 @@ end heNetDrainBuffer
 
 command heNetSendAction pTypeTxt, pBodyTxt
    -- a player emits a signed content line to the host (or, if we are the host,
-   -- straight into the relay). The host sequences and countersigns it.
+   -- straight into the relay). The host sequences and countersigns it. The
+   -- body gains its BINDING KEY here (heNetBoundBody, v0.25.6), beside the
+   -- hand number the content line already carries, so every emitter -- the
+   -- action buttons, the host's timeout, the stand and sit buttons -- binds
+   -- the same way and none can forget to.
    local tContent, tSenderSig, tPacket
-   put heEnvContentLine(gGame["tableIdHex"], gGame["handNum"], gGame["idPubHex"], pTypeTxt, pBodyTxt) into tContent
+   put heEnvContentLine(gGame["tableIdHex"], gGame["handNum"], gGame["idPubHex"], pTypeTxt, \
+         heNetBoundBody(pTypeTxt, pBodyTxt)) into tContent
    put heEnvSenderSigHex(tContent, gGame["idSecData"]) into tSenderSig
    put tContent & tab & tSenderSig into tPacket
    if gGame["isHost"] is "true" then
@@ -7237,6 +7380,48 @@ command heNetSendAction pTypeTxt, pBodyTxt
       heNetSendToHost "c" & tab & tPacket
    end if
 end heNetSendAction
+
+function heNetBoundBody pTypeTxt, pBodyTxt
+   -- the body a self-signed wire goes out with: pBodyTxt plus the key that
+   -- binds it to ONE moment (v0.25.6, 2026-09-25), inside the sender's
+   -- signature where the host cannot touch it.
+   --   * act: turn=<the turn our folded state is waiting for> (heBetTurnOf;
+   --     holde-em WORK-PLAN coding #13). The host's own timeout act binds
+   --     the same way, to the turn it times out.
+   --   * stand, and sit WITHOUT pub= (a seat's own return): n=<this seat's
+   --     next sit-out mark> (heSitMarkOk; coding #15). The host-assignment
+   --     sit keeps its pub= form and no mark: only the host can author it.
+   -- Every other type goes out untouched. Reads our folded store; the key
+   -- it appends is what every verifier derives from the same folds.
+   local tBodyA, tMySeat
+   switch pTypeTxt
+      case "act"
+         return pBodyTxt & ",turn=" & heBetTurnOf(gGame["state"])
+      case "stand"
+      case "sit"
+         put pBodyTxt into tBodyA
+         split tBodyA by comma and "="
+         if pTypeTxt is "sit" and tBodyA["pub"] is not empty then
+            return pBodyTxt
+         end if
+         put heNetMySeat() into tMySeat
+         return pBodyTxt & ",n=" & heNetSitMarkNext(tMySeat)
+   end switch
+   return pBodyTxt
+end heNetBoundBody
+
+function heNetSitMarkNext pSeatNum
+   -- the sit-out mark a seat's NEXT stand or sit-return must carry: one past
+   -- the marks this table has accepted for the seat (gGame["sitMarkBy"],
+   -- counted by the stand and sit-return folds, so every client holds the
+   -- same count). See heSitMarkOk for the rule.
+   local tDone
+   put gGame["sitMarkBy"][pSeatNum] into tDone
+   if tDone is not a number then
+      put 0 into tDone
+   end if
+   return tDone + 1
+end heNetSitMarkNext
 
 command heNetSendToHost pPayloadTxt
    local tHostPeer
@@ -8297,6 +8482,9 @@ command heNetGameInit
    -- per-hand bank lives under oDeal) and the act-timer's turn mark
    put empty into gGame["sitOutBy"]
    put empty into gGame["missCntBy"]
+   -- v0.25.6: each seat's accepted stand/sit-return marks (heSitMarkOk),
+   -- game-scoped on purpose -- the mark must never repeat at this table
+   put empty into gGame["sitMarkBy"]
    put empty into gGame["turnKey"]
    put 0 into gGame["turnStartMs"]
    put "false" into gGame["timeoutSent"]
@@ -8444,29 +8632,200 @@ function heNetMyContribPos
    return 0
 end heNetMyContribPos
 
-function heNetContribPosOk pPos, pFromSeat, pFromHex
-   -- a wire's contributor-position claim is trusted only when its SENDER
-   -- owns the position: seats own their packed positions (seatByPub is the
-   -- authority, never the body); the oracle -- the host key, dealing at
-   -- Level 1 with no seat -- owns exactly position dealCount+1.
-   -- The position must be CANONICAL (heCanonIdx, 2026-09-25) and within
-   -- 1..contributors, and every compare below is TEXT behind a letter: this
-   -- used to read pPos as a NUMBER, so "03", "3.0" and "+3" each owned
-   -- position 3 and each became its own stored, counted entry in the fold.
-   local tCount, tPos
-   put heNetContribCount() into tCount
-   put heCanonIdx(pPos, tCount) into tPos
-   if tPos is empty then
-      return false
+function heNetSenderCtx
+   -- the LIVE fold's view of who may send what this hand, for heWireSenderOk
+   -- (v0.25.6): the host key, the key that deals this hand (empty before a
+   -- dealLevel), the dealt seats, the contributor count and whether the
+   -- oracle deals. History's translation builds the same array from the
+   -- wires it has walked (heNetLogToHotseat), and the predicate reads
+   -- nothing else, so the table and History judge a sender alike.
+   local tCtxA
+   put gGame["hostPubHex"] into tCtxA["host"]
+   put heNetDealerPubHex() into tCtxA["dealer"]
+   put gGame["state"]["occ"] into tCtxA["occ"]
+   put heNetContribCount() into tCtxA["contribN"]
+   put heNetOracleDeal() into tCtxA["oracle"]
+   return tCtxA
+end heNetSenderCtx
+
+function heWireSenderOk pTypeTxt, pBodyTxt, pFromHex, pFromSeat, pCtxA
+   -- THE SENDER RULES, one pure predicate (H5) for the table AND History
+   -- (v0.25.6, 2026-09-25; holde-em WORK-PLAN coding #14): empty when the
+   -- key pFromHex, sitting at seat pFromSeat (empty when unseated), may
+   -- author a wire of type pTypeTxt with body pBodyTxt, else the reason
+   -- the live fold logs. The live fold asks it before any case acts
+   -- (heNetFoldGameWire, with heNetSenderCtx), the live apply asks it for
+   -- cfg and roster (heNetApplyWire), and History's translation asks it of
+   -- every wire it replays (heNetLogToHotseat, with the context it has
+   -- walked to). WHY ONE PREDICATE: the translation used to re-check NO
+   -- sender, so a wire every client had refused -- a non-owner's commit, a
+   -- player-signed settle, a timeout no host authored -- still reached the
+   -- History fold and the deal audit: last-wins commits read against
+   -- first-wins holes (a false FAIL), and a settle the table never took
+   -- read as settle-verified (a false PASS). Rules written twice drift;
+   -- this is written once.
+   -- pCtxA: "host" the host key; "dealer" this hand's dealing key; "occ"
+   -- the dealt seats (comma text); "contribN" the contributor count;
+   -- "oracle" true when the Level 1 oracle deals. The seat and position
+   -- rules compare canonical TEXT (heCanonIdx; engine notes 2.10, 2.11).
+   -- A sender is SEATED only with a canonical seat: the fold's seat map
+   -- holds nothing else, and an unseated key's seat reads empty (the old
+   -- per-case `tFromSeat is 0` tests never fired for one, so its receipt,
+   -- ckpt and audit were stored under dead keys -- the audit under the
+   -- ORACLE's slot 0 -- and its act or bid reached the engine).
+   local tBodyA, tHost, tSeated, tSeat, tPos, tRawTxt, tOccList
+   set the itemDelimiter to comma
+   put pBodyTxt into tBodyA
+   split tBodyA by comma and "="
+   put heHexEq(pFromHex, pCtxA["host"]) into tHost
+   put (heCanonIdx(pFromSeat, kHeMaxSeats) is not empty) into tSeated
+   switch pTypeTxt
+      case "cfg"
+      case "roster"
+         -- host-authored presence (spec 9); the relay refuses both too
+         if not tHost then
+            return "non-host " & pTypeTxt & " body ignored"
+         end if
+         return empty
+      case "handStart"
+      case "dealLevel"
+      case "settle"
+         if not tHost then
+            return "non-host " & pTypeTxt & " ignored"
+         end if
+         return empty
+      case "sit"
+         -- two forms share the name: the HOST's seat assignment (pub=) and
+         -- a seat's OWN return from sit-out (no pub)
+         if tBodyA["pub"] is not empty then
+            if not tHost then
+               return "non-host sit ignored"
+            end if
+            return empty
+         end if
+         put heCanonIdx(tBodyA["seat"], kHeMaxSeats) into tSeat
+         if not tSeated or tSeat is empty or ("n" & tSeat) is not ("n" & pFromSeat) then
+            return "sit-return for a seat the sender does not own"
+         end if
+         return empty
+      case "stand"
+      case "show"
+      case "muck"
+         -- seat-scoped: the sender must own the seat it declares for
+         if not tSeated then
+            return pTypeTxt & " from an unseated key"
+         end if
+         put heCanonIdx(tBodyA["seat"], kHeMaxSeats) into tSeat
+         if tSeat is empty or ("n" & tSeat) is not ("n" & pFromSeat) then
+            return pTypeTxt & " for a seat the sender does not own"
+         end if
+         return empty
+      case "seedCommit"
+      case "seedSeal"
+      case "seedReveal"
+         -- a CANONICAL contributor position the sender OWNS: a seat owns its
+         -- packed position (its index in the dealt seats); the oracle -- the
+         -- host, dealing at Level 1 with no seat -- owns position contribN
+         put tBodyA["pos"] into tRawTxt   -- a plain local before chunking (H6)
+         put heCanonIdx(tRawTxt, pCtxA["contribN"]) into tPos
+         if tPos is empty then
+            return pTypeTxt & ": position " & char 1 to 12 of tRawTxt & " is not canonical"
+         end if
+         if tSeated then
+            put pCtxA["occ"] into tOccList   -- a plain local before chunking (H6)
+            if ("n" & item tPos of tOccList) is ("n" & pFromSeat) then
+               return empty
+            end if
+         else if pCtxA["oracle"] is "true" and tHost then
+            if ("n" & tPos) is ("n" & pCtxA["contribN"]) then
+               return empty
+            end if
+         end if
+         return pTypeTxt & ": position " & tPos & " is not the sender's"
+      case "holeDeliver"
+      case "board"
+         if not heHexEq(pFromHex, pCtxA["dealer"]) then
+            return pTypeTxt & " not from the dealer"
+         end if
+         return empty
+      case "bidAnte"
+      case "bidSB"
+      case "bidBB"
+      case "act"
+         -- a timeout (timeout=1) is the HOST's, acting for the seat its body
+         -- names; anything else is the acting seat's own
+         if tBodyA["timeout"] is "1" then
+            if not tHost then
+               return "non-host timeout ignored"
+            end if
+            return empty
+         end if
+         if not tSeated then
+            return pTypeTxt & " from an unseated key"
+         end if
+         return empty
+      case "receipt"
+      case "ckpt"
+         if not tSeated then
+            return pTypeTxt & " from an unseated key"
+         end if
+         return empty
+      case "audit"
+         -- Phase 3: the dealing oracle audits too, with no seat
+         if tSeated or (pCtxA["oracle"] is "true" and tHost) then
+            return empty
+         end if
+         return "audit from an unseated key"
+   end switch
+   return empty   -- join, chat and the rest carry no sender rule
+end heWireSenderOk
+
+function heDealLevelOf pBodyTxt, pOccList
+   -- a dealLevel body read the one way the table reads it (v0.25.6: lifted
+   -- out of the live fold, so History's translation reads it identically),
+   -- PURE (H5). Returns an array: "err" the refusal (empty when legal),
+   -- "level" 0 or 1, "dealer" the dealing seat (0 = the ORACLE, level 1),
+   -- "count" the dealt-seat count. The level, dealer and count compare as
+   -- TEXT (2026-09-25): "0.0" and "1e0" used to read as levels 0 and 1, and
+   -- the count is the contributor range every position and threshold hangs
+   -- off, so it must be canonical AND equal the number of dealt seats -- a
+   -- host that named fewer could leave a seat's entropy out of the deck.
+   -- Level 1 is the oracle (spec 7.2: dealer=0, no seat); anything past
+   -- level 1 is refused readably, which is also how a pre-oracle client
+   -- refuses an oracle table (downgrade refusal).
+   local tBodyA, tOutA, tCount, tSeat, tOccList
+   set the itemDelimiter to comma
+   put pBodyTxt into tBodyA
+   split tBodyA by comma and "="
+   put pOccList into tOccList
+   put empty into tOutA["err"]
+   if ("n" & tBodyA["level"]) is not "n0" and ("n" & tBodyA["level"]) is not "n1" then
+      put "unsupported deal level " & tBodyA["level"] into tOutA["err"]
+      return tOutA
    end if
-   if pFromSeat > 0 then
-      return (("n" & heNetSeatAtPos(tPos)) is ("n" & pFromSeat))
+   put heCanonIdx(tBodyA["count"], kHeMaxSeats) into tCount
+   if tCount is empty or ("n" & tCount) is not ("n" & the number of items of tOccList) then
+      put "malformed dealLevel" into tOutA["err"]
+      return tOutA
    end if
-   if heNetOracleDeal() and heHexEq(pFromHex, gGame["hostPubHex"]) then
-      return (("n" & tPos) is ("n" & tCount))
+   if ("n" & tBodyA["level"]) is "n1" then
+      if ("n" & tBodyA["dealer"]) is not "n0" then
+         put "level-1 dealLevel must name the oracle (dealer=0)" into tOutA["err"]
+         return tOutA
+      end if
+      put 0 into tSeat
+   else
+      put heCanonIdx(tBodyA["dealer"], kHeMaxSeats) into tSeat
+      if tSeat is empty or tSeat is not among the items of tOccList then
+         put "malformed dealLevel" into tOutA["err"]
+         return tOutA
+      end if
    end if
-   return false
-end heNetContribPosOk
+   put tBodyA["level"] into tOutA["level"]
+   put tSeat into tOutA["dealer"]
+   put tCount into tOutA["count"]
+   return tOutA
+end heDealLevelOf
 
 function heNetPosFilled pWhich
    -- how many CONTRIBUTOR positions 1..heNetContribCount() hold an entry in
@@ -8609,6 +8968,42 @@ function heTimeoutPostOf pStateA
    return "bidBB" & comma & pStateA["bbSeat"] & comma \
          & min(pStateA["bb"], pStateA["stackBy"][pStateA["bbSeat"]])
 end heTimeoutPostOf
+
+function heSitMarkOk pMarkTxt, pDoneN
+   -- THE SIT-OUT MARK (v0.25.6, 2026-09-25; holde-em WORK-PLAN coding #15):
+   -- empty when pMarkTxt, a stand's or sit-return's signed n= field, is
+   -- exactly one past pDoneN, the marks the table has accepted for that
+   -- seat; else the reason. WHY: neither wire was bound to anything, so a
+   -- host could re-sequence a player's old signed stand, hands later, and
+   -- sit the player out on every client (liveness griefing: dealt out, its
+   -- turns timing out instantly). WHY NOT THE HAND NUMBER, as v0.25.5
+   -- bound the per-hand wires: a stand is usually sent BETWEEN hands, where
+   -- the open hand is the one just finished, so a stand crossing the next
+   -- handStart in flight would be refused for being honest, and within one
+   -- hand the same stand would still replay after the seat's own return. A
+   -- per-seat counter of accepted marks is monotonic, spans hands, and
+   -- names each stand-or-return exactly once: a replay carries a spent
+   -- mark and is refused, and a double-press is refused as the same mark.
+   -- Canonical text, text compare (heCanonIdx; engine notes 2.10, 2.11).
+   -- Pure (H5).
+   local tMark, tNext
+   put heCanonIdx(pMarkTxt, empty) into tMark
+   if tMark is empty then
+      if pMarkTxt is empty then
+         return "carries no sit-out mark"
+      end if
+      return "sit-out mark " & char 1 to 12 of pMarkTxt & " is not canonical"
+   end if
+   if pDoneN is a number then
+      put pDoneN + 1 into tNext
+   else
+      put 1 into tNext
+   end if
+   if ("n" & tMark) is not ("n" & tNext) then
+      return "sit-out mark " & tMark & " is not the next (" & tNext & ")"
+   end if
+   return empty
+end heSitMarkOk
 
 command heNetTurnMark
    -- (re)aim the act timer at whoever the folded engine state says is due:
@@ -9191,15 +9586,17 @@ end heNetEngineFold
 
 command heNetFoldGameWire pTypeTxt, pFromHex, pBodyTxt, pHandTxt
    -- fold one verified, in-order, ROSTERED game wire into the client game
-   -- store + engine. From-authority per type: sit/handStart/dealLevel/settle
-   -- must be host-authored; holeDeliver/board must come from this hand's
-   -- dealer; everything seat-scoped must come from the key that OWNS the seat
-   -- (a seat claim in a body is never trusted over seatByPub). Anything
-   -- malformed is a logged drop, never a throw (H4).
+   -- store + engine. From-authority per type (heWireSenderOk, since v0.25.6
+   -- the ONE statement of it): sit/handStart/dealLevel/settle and every
+   -- timeout must be host-authored; holeDeliver/board must come from this
+   -- hand's dealer; everything seat-scoped must come from the key that OWNS
+   -- the seat (a seat claim in a body is never trusted over seatByPub).
+   -- Anything malformed is a logged drop, never a throw (H4).
    local tBodyA, tSeat, tPos, tHex, tAmt, tVerb, tCardsTxt, tOneCard, tIdxList
-   local tFromSeat, tDealerPub, tOccList, tCount, tStackAmt, tOpenErr, tOpenTxt
+   local tFromSeat, tOccList, tStackAmt, tOpenErr, tOpenTxt
    local tDeltasTxt, tMineTxt, tHeadHex, tSigHex, tResultTxt, tPrevBad
    local tStreetName, tBoardHeld, tBoardN, tCkptHead, tHandCanon, tRawTxt
+   local tWhyTxt, tLevelA
    set the itemDelimiter to comma
    put pBodyTxt into tBodyA
    split tBodyA by comma and "="
@@ -9224,6 +9621,19 @@ command heNetFoldGameWire pTypeTxt, pFromHex, pBodyTxt, pHandTxt
          exit heNetFoldGameWire
       end if
    end if
+   -- WHO MAY SEND IT (v0.25.6): every sender rule this fold enforces lives
+   -- in heWireSenderOk -- host-only, dealer-only, seat ownership, position
+   -- ownership, seated-only -- and runs here, before any case acts, with
+   -- the table's own context. History's translation calls the same
+   -- predicate over the same wires, so a wire refused here is refused
+   -- there (holde-em WORK-PLAN coding #14). The cases below validate
+   -- BODIES only; none re-checks a sender.
+   put heWireSenderOk(pTypeTxt, pBodyTxt, pFromHex, tFromSeat, heNetSenderCtx()) into tWhyTxt
+   if tWhyTxt is not empty then
+      put "drop   " & tWhyTxt & return after gGame["netLog"]
+      heNetGameReact
+      exit heNetFoldGameWire
+   end if
    switch pTypeTxt
 
       case "join"
@@ -9245,23 +9655,25 @@ command heNetFoldGameWire pTypeTxt, pFromHex, pBodyTxt, pHandTxt
          -- that already owns the seat): re-enters at the next hand boundary
          -- (heNetNextOccList reads sitOutBy; the host's next kick deals it).
          if tBodyA["pub"] is empty then
-            -- the seat is canonical text and matched as text (heCanonIdx):
-            -- "02" used to pass as the sender's seat 2 by NUMBER
-            put heCanonIdx(tBodyA["seat"], kHeMaxSeats) into tSeat
-            if tSeat is empty or ("n" & tSeat) is not ("n" & tFromSeat) then
-               put "drop   sit-return for a seat the sender does not own" & return after gGame["netLog"]
+            -- the sender owns this canonical seat (heWireSenderOk: "02" used
+            -- to pass as seat 2 by NUMBER). v0.25.6: and the return carries
+            -- the seat's NEXT sit-out mark (heSitMarkOk, coding #15), or a
+            -- host could replay an old return -- or, the case that matters,
+            -- an old stand -- at any later moment. The mark moves only here
+            -- and in the stand case, on a wire that passed every check.
+            put heSitMarkOk(tBodyA["n"], gGame["sitMarkBy"][tFromSeat]) into tResultTxt
+            if tResultTxt is not empty then
+               put "drop   sit-return: " & tResultTxt & return after gGame["netLog"]
                break
             end if
+            put heNetSitMarkNext(tFromSeat) into gGame["sitMarkBy"][tFromSeat]
             put empty into gGame["sitOutBy"][tFromSeat]
             put 0 into gGame["missCntBy"][tFromSeat]
             put "sitout seat " & tFromSeat & " returns next hand" & return after gGame["netLog"]
             heHudMark
             break
          end if
-         if not heHexEq(pFromHex, gGame["hostPubHex"]) then
-            put "drop   non-host sit ignored" & return after gGame["netLog"]
-            break
-         end if
+         -- the HOST's assignment (heWireSenderOk refused any other key);
          -- canonical 1..kHeMaxSeats (heCanonIdx): a seat of "03" or "3.0"
          -- used to pass this range test as the number 3 and then become its
          -- OWN pubBySeat key and a second seatedList entry beside seat 3
@@ -9295,11 +9707,8 @@ command heNetFoldGameWire pTypeTxt, pFromHex, pBodyTxt, pHandTxt
          break
 
       case "handStart"
-         if not heHexEq(pFromHex, gGame["hostPubHex"]) then
-            put "drop   non-host handStart ignored" & return after gGame["netLog"]
-            break
-         end if
-         -- the HAND NUMBER is canonical and strictly above the last hand this
+         -- host-authored (heWireSenderOk). The HAND NUMBER is canonical and
+         -- strictly above the last hand this
          -- client folded (2026-09-25). Every seat's per-hand seed is DERIVED
          -- from table and hand number (heNetHandSeedHex), so a repeated number
          -- repeats every seed, and a dealer that saw them the first time
@@ -9351,54 +9760,30 @@ command heNetFoldGameWire pTypeTxt, pFromHex, pBodyTxt, pHandTxt
          break
 
       case "dealLevel"
-         if not heHexEq(pFromHex, gGame["hostPubHex"]) then
-            put "drop   non-host dealLevel ignored" & return after gGame["netLog"]
+         -- host-authored (heWireSenderOk). Level 0 = the button seat deals;
+         -- level 1 = the ORACLE deals (Phase 3, spec 7.2: dealer=0, no seat).
+         -- The body is read by heDealLevelOf (v0.25.6: lifted out of this
+         -- case so History's translation reads it the same way): the level,
+         -- dealer and count as canonical TEXT, the count equal to the dealt
+         -- seats, anything past level 1 refused readably (downgrade refusal).
+         put heDealLevelOf(pBodyTxt, gGame["state"]["occ"]) into tLevelA
+         if tLevelA["err"] is not empty then
+            put "drop   " & tLevelA["err"] & return after gGame["netLog"]
             break
          end if
-         -- level 0 = the button seat deals; level 1 = the ORACLE deals
-         -- (Phase 3, spec 7.2: dealer=0, no seat). Anything else is refused
-         -- readably -- which is ALSO how a pre-oracle client refuses an
-         -- oracle table instead of mis-folding it (downgrade refusal).
-         -- the level, the dealer and the count are compared as TEXT (2026-09-25):
-         -- "0.0" and "1e0" used to read as levels 0 and 1, and the count is the
-         -- contributor range every position and threshold hangs off, so it
-         -- must be canonical AND equal the number of dealt seats -- a host
-         -- that named fewer could leave a seat's entropy out of the deck.
-         if ("n" & tBodyA["level"]) is not "n0" and ("n" & tBodyA["level"]) is not "n1" then
-            put "drop   unsupported deal level " & tBodyA["level"] & return after gGame["netLog"]
-            break
-         end if
-         put gGame["state"]["occ"] into tOccList
-         put heCanonIdx(tBodyA["count"], kHeMaxSeats) into tCount
-         if tCount is empty or ("n" & tCount) is not ("n" & the number of items of tOccList) then
-            put "drop   malformed dealLevel" & return after gGame["netLog"]
-            break
-         end if
-         if ("n" & tBodyA["level"]) is "n1" then
-            if ("n" & tBodyA["dealer"]) is not "n0" then
-               put "drop   level-1 dealLevel must name the oracle (dealer=0)" & return after gGame["netLog"]
-               break
-            end if
-            put 0 into tSeat
-         else
-            put heCanonIdx(tBodyA["dealer"], kHeMaxSeats) into tSeat
-            if tSeat is empty or tSeat is not among the items of tOccList then
-               put "drop   malformed dealLevel" & return after gGame["netLog"]
-               break
-            end if
-         end if
-         put tSeat into gGame["oDeal"]["dealerSeat"]
-         put tCount into gGame["oDeal"]["dealCount"]
-         if ("n" & tBodyA["level"]) is "n1" then
+         put tLevelA["dealer"] into gGame["oDeal"]["dealerSeat"]
+         put tLevelA["count"] into gGame["oDeal"]["dealCount"]
+         if ("n" & tLevelA["level"]) is "n1" then
             put "true" into gGame["oDeal"]["oracleDeal"]
             put "deal   the ORACLE deals this hand (level 1; it holds no seat)" & return after gGame["netLog"]
          end if
          break
 
       case "seedCommit"
-         -- position ownership via heNetContribPosOk: seats own their packed
-         -- positions; the ORACLE (host, level 1, no seat) owns dealCount+1.
-         -- THE POSITION IS CANONICAL OR THE WIRE DROPS (2026-09-25, v0.25.5):
+         -- position ownership is heWireSenderOk's (v0.25.6): seats own their
+         -- packed positions; the ORACLE (host, level 1, no seat) owns
+         -- dealCount+1. THE POSITION IS CANONICAL OR THE WIRE DROPS
+         -- (2026-09-25, v0.25.5):
          -- "03", "3.0" and "+3" each passed ownership as the NUMBER 3, each
          -- landed under its own raw key and each added one to commitN -- so
          -- a dealer's three aliased commits told every honest seat that all
@@ -9415,7 +9800,7 @@ command heNetFoldGameWire pTypeTxt, pFromHex, pBodyTxt, pHandTxt
                   & " is not canonical" & return after gGame["netLog"]
             break
          end if
-         if not heIsHex(tHex, 64) or not heNetContribPosOk(tPos, tFromSeat, pFromHex) then
+         if not heIsHex(tHex, 64) then
             put "drop   bad seedCommit" & return after gGame["netLog"]
             break
          end if
@@ -9437,8 +9822,7 @@ command heNetFoldGameWire pTypeTxt, pFromHex, pBodyTxt, pHandTxt
                   & " is not canonical" & return after gGame["netLog"]
             break
          end if
-         if tHex is empty or not heIsHex(tHex, 0) \
-               or not heNetContribPosOk(tPos, tFromSeat, pFromHex) then
+         if tHex is empty or not heIsHex(tHex, 0) then
             put "drop   bad seedSeal" & return after gGame["netLog"]
             break
          end if
@@ -9449,14 +9833,10 @@ command heNetFoldGameWire pTypeTxt, pFromHex, pBodyTxt, pHandTxt
          break
 
       case "holeDeliver"
-         -- Phase 3: at level 1 the dealer key is the ORACLE's (host), no
-         -- seat behind it -- heNetDealerPubHex names it either way
-         put heNetDealerPubHex() into tDealerPub
-         if not heHexEq(pFromHex, tDealerPub) then
-            put "drop   holeDeliver not from the dealer" & return after gGame["netLog"]
-            break
-         end if
-         -- a canonical seat that is DEALT this hand (2026-09-25): holeN used
+         -- from this hand's dealer (heWireSenderOk; at level 1 the dealer
+         -- key is the ORACLE's, the host, with no seat behind it --
+         -- heNetDealerPubHex names it either way). A canonical seat that is
+         -- DEALT this hand (2026-09-25): holeN used
          -- to count one delivery per new raw seat key, so a dealer could
          -- "deliver" to "03" and "3.0", reach holeN >= dealCount, and start
          -- the blinds (react step 5) while a real seat held no cards. The
@@ -9507,16 +9887,18 @@ command heNetFoldGameWire pTypeTxt, pFromHex, pBodyTxt, pHandTxt
          -- like show/muck. Effective immediately: the seat is dealt out at
          -- the next boundary (heNetNextOccList), and mid-hand its turns
          -- time out INSTANTLY (heNetTurnLimitSecs reads sitOutBy) -- the
-         -- spec's auto check/fold, just without the wait.
-         if tFromSeat is 0 then
-            put "drop   stand from an unseated key" & return after gGame["netLog"]
+         -- spec's auto check/fold, just without the wait. The sender owns
+         -- the seat (heWireSenderOk). v0.25.6 (coding #15): the stand
+         -- carries the seat's NEXT sit-out mark (heSitMarkOk), so the host
+         -- cannot replay a player's old stand to sit it out again hands
+         -- later; the mark is counted even when the seat already sits out,
+         -- because every client accepted the same wire.
+         put heSitMarkOk(tBodyA["n"], gGame["sitMarkBy"][tFromSeat]) into tResultTxt
+         if tResultTxt is not empty then
+            put "drop   stand: " & tResultTxt & return after gGame["netLog"]
             break
          end if
-         put heCanonIdx(tBodyA["seat"], kHeMaxSeats) into tSeat
-         if tSeat is empty or ("n" & tSeat) is not ("n" & tFromSeat) then
-            put "drop   stand for a seat the sender does not own" & return after gGame["netLog"]
-            break
-         end if
+         put heNetSitMarkNext(tFromSeat) into gGame["sitMarkBy"][tFromSeat]
          if gGame["sitOutBy"][tFromSeat] is not "true" then
             put "true" into gGame["sitOutBy"][tFromSeat]
             put "sitout seat " & tFromSeat & " sits out (own request)" & return after gGame["netLog"]
@@ -9532,12 +9914,9 @@ command heNetFoldGameWire pTypeTxt, pFromHex, pBodyTxt, pHandTxt
          -- is what unwedges a hand whose seat went dark before its blind
          -- posted (spec 9 "auto ... posts"). A pre-liveness client
          -- engine-rejects it visibly (wrong seat for the sender) and
-         -- stalls where it always stalled -- never mis-folds.
+         -- stalls where it always stalled -- never mis-folds. Host-authored
+         -- (heWireSenderOk refuses a timeout from any other key).
          if tBodyA["timeout"] is "1" then
-            if not heHexEq(pFromHex, gGame["hostPubHex"]) then
-               put "drop   non-host timeout ignored" & return after gGame["netLog"]
-               break
-            end if
             -- the seat is a canonical DEALT seat (2026-09-25): "03" used to
             -- pass as seat 3 and then post under its own raw key, so the
             -- forced bet, the bank spend and the miss count all landed on a
@@ -9578,10 +9957,7 @@ command heNetFoldGameWire pTypeTxt, pFromHex, pBodyTxt, pHandTxt
             end if
             break
          end if
-         if tFromSeat is 0 then
-            put "drop   bid from an unseated key" & return after gGame["netLog"]
-            break
-         end if
+         -- a seated key's own post (heWireSenderOk)
          put tBodyA["amount"] into tAmt
          heNetEngineFold pTypeTxt, tFromSeat, tAmt
          -- v0.24.2, FOUND BY THE FIRST ENGINE RUN OF THIS SECTION: a bid does
@@ -9613,16 +9989,27 @@ command heNetFoldGameWire pTypeTxt, pFromHex, pBodyTxt, pHandTxt
          -- pre-liveness client engine-rejects it (out of turn for the
          -- host's seat) and stalls visibly -- except a host self-timeout,
          -- which folds identically to a voluntary check/fold there.
+         -- Host-authored (heWireSenderOk).
+         -- v0.25.6 (coding #13): EVERY act, this one included, names its
+         -- TURN inside the signed body, and folds only at that turn
+         -- (heActTurnOk). A host may author a new timeout whenever a clock
+         -- runs out, so binding its own is not the point; binding it keeps
+         -- ONE rule for every act, and a stale timeout that lost the race to
+         -- the seat's own act is refused here rather than by the engine.
+         -- (No re-arm on that refusal: the act that won the race moved the
+         -- turn, and heNetTurnMark already restarted the clock and cleared
+         -- the host's timeoutSent latch.)
          if tBodyA["timeout"] is "1" then
-            if not heHexEq(pFromHex, gGame["hostPubHex"]) then
-               put "drop   non-host timeout ignored" & return after gGame["netLog"]
-               break
-            end if
             put gGame["state"]["occ"] into tOccList
             put heCanonIdx(tBodyA["seat"], kHeMaxSeats) into tSeat
             put tBodyA["verb"] into tVerb
             if tSeat is empty or tSeat is not among the items of tOccList then
                put "drop   malformed timeout act" & return after gGame["netLog"]
+               break
+            end if
+            put heActTurnOk(tBodyA["turn"], gGame["state"]) into tResultTxt
+            if tResultTxt is not empty then
+               put "drop   timeout act " & tResultTxt & return after gGame["netLog"]
                break
             end if
             put heNetTimeoutOk(tBodyA, tSeat, "act", 0) into tResultTxt
@@ -9647,8 +10034,13 @@ command heNetFoldGameWire pTypeTxt, pFromHex, pBodyTxt, pHandTxt
             end if
             break
          end if
-         if tFromSeat is 0 then
-            put "drop   act from an unseated key" & return after gGame["netLog"]
+         -- a seated key's own act (heWireSenderOk), at the turn it names:
+         -- without the turn key a host could re-sequence this player's
+         -- earlier check or fold at a later turn of the same hand (two
+         -- honest checks are byte-identical, so nothing else could tell)
+         put heActTurnOk(tBodyA["turn"], gGame["state"]) into tResultTxt
+         if tResultTxt is not empty then
+            put "drop   act " & tResultTxt & return after gGame["netLog"]
             break
          end if
          put tBodyA["verb"] into tVerb
@@ -9660,12 +10052,8 @@ command heNetFoldGameWire pTypeTxt, pFromHex, pBodyTxt, pHandTxt
          break
 
       case "board"
-         put heNetDealerPubHex() into tDealerPub
-         if not heHexEq(pFromHex, tDealerPub) then
-            put "drop   board not from the dealer" & return after gGame["netLog"]
-            break
-         end if
-         -- street-vs-count dedupe: a redelivered or reconnect-burst board wire
+         -- from this hand's dealer (heWireSenderOk). Street-vs-count dedupe:
+         -- a redelivered or reconnect-burst board wire
          -- must not append twice (a doubled flop would shift every later slot
          -- and corrupt the audit's board compare). Each street lands exactly
          -- once, in order.
@@ -9724,7 +10112,7 @@ command heNetFoldGameWire pTypeTxt, pFromHex, pBodyTxt, pHandTxt
                   & " is not canonical" & return after gGame["netLog"]
             break
          end if
-         if not heIsHex(tHex, 64) or not heNetContribPosOk(tPos, tFromSeat, pFromHex) then
+         if not heIsHex(tHex, 64) then
             put "drop   bad seedReveal" & return after gGame["netLog"]
             break
          end if
@@ -9743,10 +10131,7 @@ command heNetFoldGameWire pTypeTxt, pFromHex, pBodyTxt, pHandTxt
          break
 
       case "settle"
-         if not heHexEq(pFromHex, gGame["hostPubHex"]) then
-            put "drop   non-host settle ignored" & return after gGame["netLog"]
-            break
-         end if
+         -- host-authored (heWireSenderOk)
          if gGame["oDeal"]["settleDone"] is "true" then
             break
          end if
@@ -9768,10 +10153,7 @@ command heNetFoldGameWire pTypeTxt, pFromHex, pBodyTxt, pHandTxt
          break
 
       case "receipt"
-         if tFromSeat is 0 then
-            put "drop   receipt from an unseated key" & return after gGame["netLog"]
-            break
-         end if
+         -- from a seated key (heWireSenderOk)
          put tBodyA["head"] into tHeadHex
          put tBodyA["sig"] into tSigHex
          if not heIsHex(tHeadHex, 64) or not heIsHex(tSigHex, 128) \
@@ -9795,11 +10177,11 @@ command heNetFoldGameWire pTypeTxt, pFromHex, pBodyTxt, pHandTxt
 
       case "audit"
          -- Phase 3: the ORACLE audits too (it witnessed the whole deal it
-         -- ran); its verdict files under contributor slot 0, logged by name
-         if tFromSeat is 0 and not (heNetOracleDeal() and heHexEq(pFromHex, gGame["hostPubHex"])) then
-            put "drop   audit from an unseated key" & return after gGame["netLog"]
-            break
-         end if
+         -- ran); its verdict files under contributor slot 0, logged by name.
+         -- A seated key or the dealing oracle (heWireSenderOk): until v0.25.6
+         -- this test read `tFromSeat is 0`, which an unseated key's EMPTY
+         -- seat never is, so any rostered key's audit filed under the
+         -- oracle's slot 0, first wins
          if tFromSeat is not a number then
             put 0 into tFromSeat   -- the oracle's verdict files under slot 0
          end if
@@ -9820,11 +10202,8 @@ command heNetFoldGameWire pTypeTxt, pFromHex, pBodyTxt, pHandTxt
          -- named head against the one WE recorded at that boundary -- every
          -- client recorded the transition wire's head, so a verified ckpt
          -- naming a different one is host-fork EVIDENCE (attributable
-         -- equivocation), logged loudly and never folded as agreement.
-         if tFromSeat is 0 then
-            put "drop   ckpt from an unseated key" & return after gGame["netLog"]
-            break
-         end if
+         -- equivocation), logged loudly and never folded as agreement. From
+         -- a seated key (heWireSenderOk).
          put tBodyA["street"] into tStreetName
          put tBodyA["head"] into tHeadHex
          put tBodyA["sig"] into tSigHex
@@ -9851,16 +10230,7 @@ command heNetFoldGameWire pTypeTxt, pFromHex, pBodyTxt, pHandTxt
          -- DISPLAY only by construction -- online ranks derive from the
          -- revealed seeds, so a muck hides nothing from the audit, only
          -- from the felt. Seat-scoped: the sender must own the seat it
-         -- declares for.
-         if tFromSeat is 0 then
-            put "drop   " & pTypeTxt & " from an unseated key" & return after gGame["netLog"]
-            break
-         end if
-         put heCanonIdx(tBodyA["seat"], kHeMaxSeats) into tSeat
-         if tSeat is empty or ("n" & tSeat) is not ("n" & tFromSeat) then
-            put "drop   " & pTypeTxt & " for a seat the sender does not own" & return after gGame["netLog"]
-            break
-         end if
+         -- declares for (heWireSenderOk).
          if gGame["oDeal"]["showBy"][tFromSeat] is empty then
             put pTypeTxt into gGame["oDeal"]["showBy"][tFromSeat]
             if pTypeTxt is "show" then
@@ -10886,6 +11256,12 @@ function heBetNewHand pSB, pBB, pAnte, pStacksA, pOccupiedList, pButtonSeat
    put pBB into tStateA["raiseFull"]
    put 0 into tStateA["aggressor"]
    put 0 into tStateA["sdFirst"]
+   -- the TURN COUNTER (v0.25.6, 2026-09-25): how many act messages this
+   -- hand has APPLIED. The act the hand is waiting for is turn actN + 1
+   -- (heBetTurnOf), and an online act carries that number inside its
+   -- signed body (heActTurnOk), so a player's earlier act cannot be
+   -- re-sequenced into a later turn. Bids and boards are not turns.
+   put 0 into tStateA["actN"]
    put empty into tStateA["err"]
    put empty into tStateA["note"]
    repeat for each item tSeatNum in pOccupiedList
@@ -11192,11 +11568,20 @@ function heBetApply pStateA, pMsgType, pSeatNum, pAmount
       return tStateA
    end if
 
+   -- THE TURN COUNTER moves on every APPLIED act and on nothing else
+   -- (v0.25.6): each of the five verb paths below adds one once it can no
+   -- longer refuse (the fold's two returns share one add), and no refusal
+   -- does, because a refused act changed no state (the "err"
+   -- contract above) and every client must count the same turns. It is
+   -- counted here, in the one engine the live fold, the hotseat and
+   -- History's replay all run, so the turn a sender names and the turn a
+   -- verifier expects come from the same line (heBetTurnOf).
    switch tVerb
 
       case "fold"
          put "true" into tStateA["foldedBy"][pSeatNum]
          put "true" into tStateA["actedBy"][pSeatNum]
+         add 1 to tStateA["actN"]
          if heCountItems(heBetInHandList(tStateA)) is 1 then
             put "handdone" into tStateA["phase"]
             put 0 into tStateA["toAct"]
@@ -11211,6 +11596,7 @@ function heBetApply pStateA, pMsgType, pSeatNum, pAmount
             return tStateA
          end if
          put "true" into tStateA["actedBy"][pSeatNum]
+         add 1 to tStateA["actN"]
          return heBetAfterAction(tStateA, pSeatNum)
 
       case "call"
@@ -11226,6 +11612,7 @@ function heBetApply pStateA, pMsgType, pSeatNum, pAmount
          end if
          put heBetPay(tStateA, pSeatNum, tPay) into tStateA
          put "true" into tStateA["actedBy"][pSeatNum]
+         add 1 to tStateA["actN"]
          return heBetAfterAction(tStateA, pSeatNum)
 
       case "bet"
@@ -11242,6 +11629,7 @@ function heBetApply pStateA, pMsgType, pSeatNum, pAmount
                -- an all-in that cannot even match the bet is a call for less
                put heBetPay(tStateA, pSeatNum, tStateA["stackBy"][pSeatNum]) into tStateA
                put "true" into tStateA["actedBy"][pSeatNum]
+               add 1 to tStateA["actN"]
                return heBetAfterAction(tStateA, pSeatNum)
             end if
          else
@@ -11311,6 +11699,7 @@ function heBetApply pStateA, pMsgType, pSeatNum, pAmount
          put tTargetAmt into tStateA["betCur"]
          put pSeatNum into tStateA["aggressor"]
          put "true" into tStateA["actedBy"][pSeatNum]
+         add 1 to tStateA["actN"]
          if tIncrement >= tStateA["raiseFull"] then
             -- a FULL raise reopens action for everyone else
             put tIncrement into tStateA["raiseFull"]
@@ -11327,6 +11716,53 @@ function heBetApply pStateA, pMsgType, pSeatNum, pAmount
          return tStateA
    end switch
 end heBetApply
+
+function heBetTurnOf pStateA
+   -- the TURN the hand is waiting for: 1 + the acts it has applied (v0.25.6,
+   -- 2026-09-25). A hand-wide index, unique per turn by construction: every
+   -- applied act moves it and nothing else does (heBetApply). The street is
+   -- NOT a second key: the index already differs across streets, and a
+   -- street name would be one more field every verifier had to keep in step
+   -- for no extra separation. Pure (H5); a state from before v0.25.6 has no
+   -- actN and reads as turn 1.
+   local tActN
+   put pStateA["actN"] into tActN
+   if tActN is not a number then
+      put 0 into tActN
+   end if
+   return tActN + 1
+end heBetTurnOf
+
+function heActTurnOk pTurnTxt, pStateA
+   -- THE TURN BINDING of an online act (v0.25.6, 2026-09-25; holde-em
+   -- WORK-PLAN coding #13): empty when pTurnTxt, the act body's signed
+   -- turn= field, names the turn pStateA is waiting for (heBetTurnOf), else
+   -- the reason. WHY: an act already carried its hand (v0.25.5) but no
+   -- turn, and two honest checks are byte-identical, so no content dedupe
+   -- could tell a replay from a new act -- a host could re-sequence a
+   -- player's earlier signed check or fold at a LATER turn of the same
+   -- hand and every client would fold it as that player's move. The turn
+   -- sits inside the SENDER's signature, so the host cannot rewrite it. It
+   -- also closes an honest race: a seat's late act that loses to the
+   -- host's timeout for the same turn now fails here, where it used to be
+   -- folded if the action had come back round to it. Canonical text and a
+   -- text compare (heCanonIdx; engine notes 2.10, 2.11). ONE rule for the
+   -- live fold (heNetFoldGameWire, both act forms) and History's replay
+   -- (heFoldTranscript). Pure (H5).
+   local tTurn, tOpen
+   put heCanonIdx(pTurnTxt, empty) into tTurn
+   if tTurn is empty then
+      if pTurnTxt is empty then
+         return "carries no turn key"
+      end if
+      return "turn key " & char 1 to 12 of pTurnTxt & " is not canonical"
+   end if
+   put heBetTurnOf(pStateA) into tOpen
+   if ("n" & tTurn) is not ("n" & tOpen) then
+      return "for turn " & tTurn & " while turn " & tOpen & " is open"
+   end if
+   return empty
+end heActTurnOk
 
 function heBetLegal pStateA, pSeatNum
    -- for the UI: one action per line -- "fold", "check", "call N",
@@ -11664,6 +12100,20 @@ function heFoldTranscript pLogTxt
             split tBodyA by comma and "="
             put heLogField(tLogLine, 2) into tFromTxt
             put char 5 to -1 of tFromTxt into tSeatNum
+            -- an ONLINE act names its turn (v0.25.6): History replays it only
+            -- at that turn, the rule the live fold applied (heActTurnOk), so
+            -- a player's earlier act the host re-sequenced later -- which
+            -- every client refused -- is not folded here either. Skipped
+            -- like the translation's own refusals, not an error: the table
+            -- refused it and played on. A hotseat line carries no turn key
+            -- (one process, no relay to replay through) and is unaffected;
+            -- the translation drops an online act WITHOUT one, as the table
+            -- did, so an empty key here always means hotseat.
+            if tType is "act" and tBodyA["turn"] is not empty then
+               if heActTurnOk(tBodyA["turn"], tStateA) is not empty then
+                  next repeat
+               end if
+            end if
             if tType is "act" then
                put heBetApply(tStateA, "act", tSeatNum, tBodyA["verb"] & comma & tBodyA["amount"]) into tStateA
             else
@@ -11808,18 +12258,45 @@ function heFoldTranscript pLogTxt
    return tOutA
 end heFoldTranscript
 
-function heNetLogToHotseat pLogTxt
+function heNetLogToHotseat pLogTxt, pHostHex
    -- ONLINE HISTORY FOLDING (2e; the 2d deferral): translate the signed
    -- wire chain into the 4-field hotseat-shaped transcript heFoldTranscript
    -- and heAuditDealsFromLog already fold, so History audits an ONLINE
    -- session through the exact same replay path as a hotseat one. PURE
-   -- (H5): reads no gGame. The input chain was verified wire-by-wire on
-   -- ingest (heEnvVerify); this is a format translation, not a second
-   -- verification pass -- except that since v0.25.5 (2026-09-25) it applies
-   -- the live fold's INDEX and HAND rules (canonical seats, counts and
-   -- positions; the per-hand binding; handStart's number and seat checks),
-   -- so a wire the table dropped for those reasons never reaches History.
-   -- Sender authority is still not re-checked here. The mapping:
+   -- (H5): reads no gGame; pHostHex is the host key every wire's host
+   -- signature was verified against on ingest (gGame["hostPubHex"] at the
+   -- caller). The input chain was verified wire-by-wire on ingest
+   -- (heEnvVerify), and the translation REPLAYS ONLY WHAT THE TABLE
+   -- ACCEPTED, by the table's own rules:
+   --   * the SENDER RULES (v0.25.6, holde-em WORK-PLAN coding #14): the
+   --     live apply's roster rule (heRosterHasKey over the roster walked so
+   --     far; the host always passes) and every per-type rule through
+   --     heWireSenderOk, the predicate the live fold itself calls, with the
+   --     context this walk has reached -- host-only cfg, roster, sit
+   --     assignments, handStart, dealLevel, settle and timeouts; the
+   --     dealer's holeDeliver and board; owned seats and positions. Until
+   --     v0.25.6 no sender was re-checked here: a non-owner's commit reached
+   --     the deal audit (last line per position wins) against first-wins
+   --     holes, a false FAIL; a player-signed settle for a hand the table
+   --     never settled read as settle-verified, a false PASS;
+   --   * the INDEX and HAND rules (v0.25.5): canonical seats, counts and
+   --     positions; the per-hand binding; handStart's number and seat
+   --     checks; dealLevel read by heDealLevelOf, as the live fold reads it;
+   --   * the TURN rule (v0.25.6, coding #13): an act without a canonical
+   --     turn key is dropped as the table dropped it, and heFoldTranscript
+   --     replays a keyed act only at the turn it names (heActTurnOk);
+   --   * the COMMIT and REVEAL rules (review fix, 2026-09-25): a position's
+   --     FIRST commitment is the one kept, and a reveal must open it --
+   --     the deal audit reads the LAST line per position, so only the
+   --     wires the table kept become lines.
+   -- A refused wire is skipped silently: the table refused it and played
+   -- on, and History replays the game the table played. NOT YET for the
+   -- live board fold's street order, the FIRST settle that matches the
+   -- table's own recomputation, heNetTimeoutOk's refusals (its clock,
+   -- which no reader can know, and its prescription and bank checks,
+   -- which it could) and a timeout for a seat not dealt (holde-em
+   -- WORK-PLAN; each is a visible History FAIL or error, never a false
+   -- PASS on chips). The mapping:
    --   * the signed cfg's stakes + the sit wires' seats become the hotseat
    --     cfg line (stacks seed from the cfg's stack, as the live fold does),
    --     emitted once before the first handStart;
@@ -11836,8 +12313,8 @@ function heNetLogToHotseat pLogTxt
    --     honest, never invented;
    --   * show/muck reposition just AHEAD of their hand's settle (on the
    --     wire they follow it; the fold annotates the showdown they cover);
-   --   * ckpt/receipt/audit/join/roster are not hotseat vocabulary -- the
-   --     net feed carries their live verdicts.
+   --   * ckpt/receipt/audit/join/roster/stand are not hotseat vocabulary --
+   --     the net feed carries their live verdicts.
    -- Returns empty when the log holds no translatable game (no handStart).
    -- Exercised end to end by the netplay loopback (section 15); the pieces
    -- it composes are each KAT-pinned (fold-kat, protocol-kat).
@@ -11847,7 +12324,8 @@ function heNetLogToHotseat pLogTxt
    local tHandLines, tShowLines, tSettleLine, tTableHex, tHoleLines
    local tOccList, tButton, tContribN, tSeedsA, tRevealN, tHandNum
    local tPos, tDealErr, tDeckList, tDealA, tHolePair, tNamesTxt, tSeenHand
-   local tPosI, tOccNew, tButtonNew
+   local tPosI, tOccNew, tButtonNew, tHexTxt, tCommitsA
+   local tRosterTxt, tPubBySeatA, tCtxA, tLevelA, tFromHex, tDealerSeat
    set the itemDelimiter to comma
    put 1 into tCfgSB
    put 2 into tCfgBB
@@ -11862,6 +12340,19 @@ function heNetLogToHotseat pLogTxt
    put empty into tHoleLines
    put 0 into tRevealN
    put 0 into tContribN
+   put empty into tRosterTxt
+   -- the SENDER CONTEXT heWireSenderOk reads, as this walk reaches it (the
+   -- live fold's heNetSenderCtx, rebuilt from the wires): the host key, the
+   -- hand's dealing key, its dealt seats, its contributor count, the oracle.
+   -- The dealing key is NOT stored: it is re-read before every wire from
+   -- the dealer SEAT and the seat map as they stand then (tDealerSeat), the
+   -- way the live heNetDealerPubHex reads it (review fix, 2026-09-25)
+   put pHostHex into tCtxA["host"]
+   put empty into tCtxA["dealer"]
+   put empty into tCtxA["occ"]
+   put 0 into tCtxA["contribN"]
+   put "false" into tCtxA["oracle"]
+   put 0 into tDealerSeat
    repeat for each line tWireLine in pLogTxt
       if tWireLine is empty then
          next repeat
@@ -11872,9 +12363,16 @@ function heNetLogToHotseat pLogTxt
       end if
       put tA["type"] into tTypeTxt
       put tA["hand"] into tHandTxt
+      put tA["from"] into tFromHex
       put heEnvBodyText(tA["bodyHex"]) into tBodyTxt
-      put tSeatByPubA[tA["from"]] into tFromSeat
+      put tSeatByPubA[tFromHex] into tFromSeat
       set the itemDelimiter to comma
+      -- the live apply's ROSTER RULE (heNetApplyWire; applied here since
+      -- v0.25.6): a sender that is neither the host nor in the host-signed
+      -- roster so far had its body ignored at the table
+      if not heHexEq(tFromHex, pHostHex) and not heRosterHasKey(tRosterTxt, tFromHex) then
+         next repeat
+      end if
       -- the live fold's HAND BINDING (kHeHandBoundTypes, 2026-09-25): a
       -- per-hand wire that does not carry the open hand was dropped at the
       -- table, so History skips it too. Kept, last hand's commit replayed
@@ -11886,6 +12384,22 @@ function heNetLogToHotseat pLogTxt
                or ("n" & tHandTxt) is not ("n" & tHandNum) then
             next repeat
          end if
+      end if
+      -- the live fold's SENDER RULES (v0.25.6): the same predicate, over
+      -- the context this walk has reached. The hand's DEALING KEY is read
+      -- here, per wire, as heNetDealerPubHex reads it live: the host while
+      -- the oracle deals, else whoever sits the dealer seat NOW. Frozen at
+      -- the dealLevel (as first written), History took a board from the
+      -- seat's old key after the host re-sat that seat mid-hand, and
+      -- refused the new key's, the opposite of the table (review fix,
+      -- 2026-09-25; pinned in section 15)
+      if tCtxA["oracle"] is "true" then
+         put pHostHex into tCtxA["dealer"]
+      else
+         put tPubBySeatA[tDealerSeat] into tCtxA["dealer"]
+      end if
+      if heWireSenderOk(tTypeTxt, tBodyTxt, tFromHex, tFromSeat, tCtxA) is not empty then
+         next repeat
       end if
       switch tTypeTxt
          case "cfg"
@@ -11904,18 +12418,23 @@ function heNetLogToHotseat pLogTxt
                put tBodyA["stack"] into tStackAmt
             end if
             break
+         case "roster"
+            -- who the table admits from here on (the live gGame["rosterBody"])
+            put tBodyTxt into tRosterTxt
+            break
          case "sit"
             -- the host ASSIGNMENT form only (seat=N,pub=...); a seat's own
             -- sit-return (2e, no pub) is liveness state, not seating -- its
             -- effect is already in the next handStart's seats
             put tBodyTxt into tBodyA
             split tBodyA by comma and "="
-            -- a CANONICAL seat only (heCanonIdx, 2026-09-25): the live sit
-            -- fold refuses any other spelling, and History must replay the
-            -- game the table actually played
+            -- a CANONICAL seat and a 64-hex key only (heCanonIdx,
+            -- 2026-09-25): the live sit fold refuses any other, and History
+            -- must replay the game the table actually played
             put heCanonIdx(tBodyA["seat"], kHeMaxSeats) into tSeatNum
-            if tSeatNum is not empty and tBodyA["pub"] is not empty then
+            if tSeatNum is not empty and heIsHex(tBodyA["pub"], 64) then
                put tSeatNum into tSeatByPubA[tBodyA["pub"]]
+               put tBodyA["pub"] into tPubBySeatA[tSeatNum]
             end if
             break
          case "handStart"
@@ -11924,8 +12443,8 @@ function heNetLogToHotseat pLogTxt
             -- (heNetOccOfSeats) and a canonical button among it. The table
             -- dropped anything else, so History skips it, BEFORE the
             -- previous hand is flushed: a repeated handStart must not end
-            -- the hand it repeats. (The sender is not re-checked here: this
-            -- is a translation, not a second verification pass.)
+            -- the hand it repeats. (Its sender -- the host -- was checked
+            -- above, by heWireSenderOk.)
             put tBodyTxt into tBodyA
             split tBodyA by comma and "="
             if heCanonIdx(tHandTxt, empty) is empty then
@@ -11950,12 +12469,20 @@ function heNetLogToHotseat pLogTxt
             put empty into tSettleLine
             put empty into tHoleLines
             put empty into tSeedsA
+            put empty into tCommitsA
             put 0 into tRevealN
             put 0 into tContribN
             put "true" into tSeenHand
             put tOccNew into tOccList
             put tButtonNew into tButton
             put tHandTxt into tHandNum
+            -- a new hand: no dealer and no contributors until its dealLevel
+            -- (the live heNetHandReset: dealerSeat 0, dealCount 0, the
+            -- oracle flag cleared with the rest of oDeal)
+            put 0 into tDealerSeat
+            put tOccList into tCtxA["occ"]
+            put 0 into tCtxA["contribN"]
+            put "false" into tCtxA["oracle"]
             if tCfgDone is not "true" then
                -- the one-time hotseat cfg: the sit wires' seats, each
                -- opening on the signed cfg's stack
@@ -11977,20 +12504,57 @@ function heNetLogToHotseat pLogTxt
             put heLogLine(tHandTxt, "table", "handStart", tBodyTxt) & return after tHandLines
             break
          case "dealLevel"
-            put tBodyTxt into tBodyA
-            split tBodyA by comma and "="
-            put heCanonIdx(tBodyA["count"], kHeMaxSeats) into tContribN
-            if tContribN is empty then
-               put 0 into tContribN
+            -- read the one way the live fold reads it (heDealLevelOf,
+            -- v0.25.6): a dealLevel the table refused is skipped, and the
+            -- one it took names this hand's dealer and contributors
+            put heDealLevelOf(tBodyTxt, tOccList) into tLevelA
+            if tLevelA["err"] is not empty then
+               break
             end if
-            if ("n" & tBodyA["level"]) is "n1" then
-               add 1 to tContribN   -- the oracle's entropy position
+            -- EXACTLY the live fold's state change, a second dealLevel in
+            -- one hand included (only a misbehaving host sends one): the
+            -- dealer seat and the count are last-wins, but the oracle flag
+            -- is only ever SET (the live case writes oracleDeal on level 1
+            -- and never clears it; heNetHandReset does), so level 1 then
+            -- level 0 leaves the ORACLE dealing with dealCount + 1
+            -- contributors. First written as "level 0 clears the oracle",
+            -- History then took a flop from the level-0 seat that the
+            -- table refused and refused the oracle's that it took (review
+            -- fix, 2026-09-25; pinned in section 15)
+            put tLevelA["dealer"] into tDealerSeat
+            if ("n" & tLevelA["level"]) is "n1" then
+               put "true" into tCtxA["oracle"]
             end if
+            put tLevelA["count"] into tContribN
+            if tCtxA["oracle"] is "true" then
+               add 1 to tContribN   -- the oracle's entropy position (heNetContribCount)
+            end if
+            put tContribN into tCtxA["contribN"]
             put tA["table"] into tTableHex
-            put heLogLine(tHandTxt, "table", "dealLevel", "level=" & tBodyA["level"] \
+            put heLogLine(tHandTxt, "table", "dealLevel", "level=" & tLevelA["level"] \
                   & ",table=" & tTableHex & ",count=" & tContribN) & return after tHandLines
             break
          case "seedCommit"
+            -- the live fold's COMMIT rule (review fix, 2026-09-25): a
+            -- canonical position, a 64-hex commitment, FIRST WINS -- and
+            -- only the commit the table kept becomes a line. The deal audit
+            -- reads the LAST commit line per position, so a second,
+            -- different commit the table ignored (the OWNER's equivocation;
+            -- the sender rules pass it) became the audit's commitment and
+            -- FAILED an honest deal against the reveal the table accepted:
+            -- holde-em WORK-PLAN #14's "last-wins commits against
+            -- first-wins holes", from the owner rather than a stranger
+            put tBodyTxt into tBodyA
+            split tBodyA by comma and "="
+            put heCanonIdx(tBodyA["pos"], tContribN) into tPos
+            put tBodyA["commit"] into tHexTxt
+            if tPos is empty then
+               break
+            end if
+            if not heIsHex(tHexTxt, 64) or tCommitsA[tPos] is not empty then
+               break
+            end if
+            put tHexTxt into tCommitsA[tPos]
             put heLogLine(tHandTxt, heNetXlatFrom(tFromSeat), "seedCommit", tBodyTxt) \
                   & return after tHandLines
             break
@@ -12000,11 +12564,26 @@ function heNetLogToHotseat pLogTxt
             -- canonical position, first wins, and the count WALKED over
             -- 1..contributors (2026-09-25): this counted one reveal per new
             -- raw key, so aliases could claim "all revealed" and re-derive
-            -- History's hole lines from a seed set with holes in it
+            -- History's hole lines from a seed set with holes in it.
+            -- And the reveal must OPEN the commitment the table kept, as the
+            -- live fold requires (review fix, 2026-09-25): a player that
+            -- revealed a wrong seed first and its real one second had the
+            -- wrong one refused at the table, but History kept it (first
+            -- wins), re-derived the holes from it, and the audit (whose
+            -- LAST reveal line is the real seed) failed an honest deal as
+            -- hole-mismatch. Only a kept reveal becomes a line.
             put heCanonIdx(tBodyA["pos"], tContribN) into tPos
-            if tPos is not empty and tSeedsA[tPos] is empty then
-               put tBodyA["seed"] into tSeedsA[tPos]
+            put tBodyA["seed"] into tHexTxt
+            if tPos is empty then
+               break
             end if
+            if not heIsHex(tHexTxt, 64) or tSeedsA[tPos] is not empty then
+               break
+            end if
+            if not heHexEq(heSeedCommitHex(tHexTxt), tCommitsA[tPos]) then
+               break
+            end if
+            put tHexTxt into tSeedsA[tPos]
             put 0 into tRevealN
             repeat with tPosI = 1 to tContribN
                if tSeedsA[tPosI] is not empty then
@@ -12026,9 +12605,16 @@ function heNetLogToHotseat pLogTxt
             -- THAT seat, or the fold would engine-reject it as the host
             -- seat's out-of-turn action (or the oracle's, which has none).
             -- The extra body keys ride along harmlessly (the fold reads
-            -- verb/amount by name).
+            -- verb/amount by name, and turn= where it is present).
             put tBodyTxt into tBodyA
             split tBodyA by comma and "="
+            -- an act the table could not place at a turn -- no turn key, or
+            -- a non-canonical one (heActTurnOk) -- was dropped there, and
+            -- is dropped here; a canonical key the fold checks against its
+            -- own turn count (v0.25.6)
+            if tTypeTxt is "act" and heCanonIdx(tBodyA["turn"], empty) is empty then
+               break
+            end if
             -- the timeout's seat is CANONICAL or the line is not replayed
             -- (2026-09-25): "seat03" would reach the fold as seat "03", which
             -- the live table refused; the fold would have acted on it
@@ -13708,7 +14294,7 @@ command heHistRefresh
          set the textColor of field "heHistAudit" to kHeGoldColor
          exit heHistRefresh
       end if
-      put heNetLogToHotseat(tLogTxt) into tXlatTxt
+      put heNetLogToHotseat(tLogTxt, gGame["hostPubHex"]) into tXlatTxt
       if tXlatTxt is empty then
          set the text of field "heHistList" to \
                "This transcript is the ONLINE signed chain (" \
@@ -16251,7 +16837,8 @@ command heTestNetPlay
    local tSnapG, tEvil, tEvilC, tOffPub, tOffSec, tDlrSeat, tDlrPub, tDlrSec, tStackSnap
    local tSeqSnap, tXlatTxt, tXlatFold, tOutboxTxt
    local tHostSeat, tPlaySeat, tHostPos, tMyPos, tHandNext, tAliasList, tAlias
-   local tXlatCut, tStartKey, tCutN
+   local tXlatCut, tStartKey, tCutN, tTurnNow, tForgedTxt, tWireTxt, tWireA, tLogCopy
+   local tP3Pub, tP3Sec, tP3PubHex
    put return & "-- 15. Online Level 0 hand, end to end (single-machine loopback)" & return after gRpt
    if not heHasSodium() then
       heTSkip "netplay: online hand", "SodiumXT not installed"
@@ -16364,11 +16951,62 @@ command heTestNetPlay
       put tPlayPubHex into tOffPub
       put tPlaySec into tOffSec
    end if
-   put heEnvContentLine(kKatTableHex, gGame["handNum"], tOffPub, "act", "verb=check,amount=0") into tEvilC
+   -- (it names the OPEN turn, v0.25.6, so it passes the turn binding and
+   -- the ENGINE is what refuses it: the seat is not the one to act)
+   put heEnvContentLine(kKatTableHex, gGame["handNum"], tOffPub, "act", \
+         "verb=check,amount=0,turn=" & heBetTurnOf(gGame["state"])) into tEvilC
    put heWireBuild(tEvilC, tOffSec, gGame["lastSeq"] + 1, gGame["chainHeadHex"], tHostSec) into tEvil
    heNetIngestWire tEvil
    heTContains "netplay: an out-of-turn act is engine-rejected on fold", \
          gGame["netLog"], "engine-rejected act"
+   put tSnapG into gTNetPlayG
+
+   -- THE SAME-HAND REPLAY (v0.25.6; holde-em WORK-PLAN coding #13), on a
+   -- throwaway copy. The flop's first actor is the seat that checked its
+   -- option PREFLOP; the host re-sequences that signed check -- byte for
+   -- byte, its turn key included -- at the flop, where it is the same seat's
+   -- turn and a check is legal. Until the turn binding every client folded
+   -- it as the seat's flop move. Then the same seat's act at the OPEN turn
+   -- folds, so the refusal was the turn key and nothing else.
+   put gTNetPlayG into tSnapG
+   put gTNetPlayG into gGame
+   put empty into gGame["netLog"]
+   put gGame["state"]["toAct"] into tSeat
+   put gGame["pubBySeat"][tSeat] into tOffPub
+   if heHexEq(tOffPub, tHostPubHex) then
+      put tHostSec into tOffSec
+   else
+      put tPlaySec into tOffSec
+   end if
+   put heBetTurnOf(gGame["state"]) into tTurnNow
+   heTNetHostWire gGame["handNum"], tOffPub, tOffSec, "act", \
+         "verb=check,amount=0,turn=" & (tTurnNow - 1), tHostSec
+   heTContains "replay: the seat's preflop check re-sequenced at the flop is refused, named", \
+         gGame["netLog"], "act for turn " & (tTurnNow - 1) & " while turn " & tTurnNow & " is open"
+   heTAssert "replay: ...and it moved nothing (same seat to act, same turn open)", \
+         gGame["state"]["toAct"] & "/" & heBetTurnOf(gGame["state"]), tSeat & "/" & tTurnNow
+   -- a KEYLESS act from the same seat (a pre-v0.25.6 client, or a player
+   -- that strips the key): the table drops it, and History's translation
+   -- must drop it too, or the fold replays it as a hotseat line would
+   -- (review fix, 2026-09-25: that drop had no pin -- deleted, every gate
+   -- stayed green). A FOLD, so a History that kept it would end the hand.
+   heTNetHostWire gGame["handNum"], tOffPub, tOffSec, "act", "verb=fold,amount=0", tHostSec
+   put heNetLogToHotseat(gGame["log"], tHostPubHex) into tXlatTxt
+   heTAssert "replay: a keyless act is dropped at the table and in History", \
+         (gGame["netLog"] contains "act carries no turn key") & "/" & (gGame["state"]["toAct"] is tSeat) \
+         & "/" & (tXlatTxt contains ("verb=fold,amount=0" & return)), "true/true/false"
+   -- History replays the table's game: the re-sequenced check is skipped,
+   -- so the seat's real flop check behind it folds clean. Without the
+   -- binding History folded the replay and then refused the real check as
+   -- out of turn.
+   heTNetHostWire gGame["handNum"], tOffPub, tOffSec, "act", \
+         "verb=check,amount=0,turn=" & tTurnNow, tHostSec
+   heTAssert "replay: the seat's act at the OPEN turn folds (the key was the refusal)", \
+         (gGame["state"]["toAct"] is not tSeat) & "/" & heBetTurnOf(gGame["state"]), \
+         "true/" & (tTurnNow + 1)
+   put heFoldTranscript(heNetLogToHotseat(gGame["log"], tHostPubHex)) into tXlatFold
+   heTAssert "replay: History skips the re-sequenced act too (no engine error behind it)", \
+         tXlatFold["errors"], empty
    put tSnapG into gTNetPlayG
 
    -- adversarial probe: a holeDeliver that will not OPEN (junk ciphertext,
@@ -16494,7 +17132,7 @@ command heTestNetPlay
    -- 2e ONLINE HISTORY FOLDING: the signed chain translates to the hotseat
    -- shape and the SAME fold + deal audit run over it -- two settled hands,
    -- every settle re-verified, both committed shuffles re-derived
-   put heNetLogToHotseat(gTNetHostG["log"]) into tXlatTxt
+   put heNetLogToHotseat(gTNetHostG["log"], tHostPubHex) into tXlatTxt
    put heFoldTranscript(tXlatTxt) into tXlatFold
    heTAssert "history: the translated chain folds two settled hands", \
          the number of lines of tXlatFold["history"], 2
@@ -16507,6 +17145,136 @@ command heTestNetPlay
          gTNetHostG["stacksBy"][1] & "/" & gTNetHostG["stacksBy"][2]
    heTContains "history: the deal audit re-derives both committed shuffles", \
          heAuditDealsFromLog(tXlatTxt), "2/2 deals verified"
+
+   -- HISTORY RE-CHECKS SENDERS (v0.25.6; holde-em WORK-PLAN coding #14).
+   -- (a) A NON-OWNER's commit, on a throwaway player: the player signs a
+   -- commitment for the HOST's position in the settled hand 2. The table
+   -- refuses it (heWireSenderOk); History, which used to translate every
+   -- signed wire, would have filed it as that position's LAST commit and
+   -- failed an honest deal on it.
+   put gTNetPlayG into tSnapG
+   put gTNetPlayG into gGame
+   put empty into gGame["netLog"]
+   put heNetSeatPos(gGame["seatByPub"][tHostPubHex]) into tHostPos
+   -- the context the live fold hands the predicate is the table's own view
+   put heNetSenderCtx() into tWireA
+   heTAssert "sender: the live context is the table's (host, dealer, dealt seats, contributors)", \
+         heHexEq(tWireA["host"], tHostPubHex) & "/" \
+         & heHexEq(tWireA["dealer"], gGame["pubBySeat"][gGame["oDeal"]["dealerSeat"]]) & "/" \
+         & tWireA["occ"] & "/" & tWireA["contribN"] & "/" & tWireA["oracle"], \
+         "true/true/" & gGame["state"]["occ"] & "/2/false"
+   heTNetHostWire gGame["handNum"], tPlayPubHex, tPlaySec, "seedCommit", \
+         "pos=" & tHostPos & ",commit=" & kKatCommit3, tHostSec
+   heTContains "sender: a non-owner's commit is refused at the table, named", \
+         gGame["netLog"], "seedCommit: position " & tHostPos & " is not the sender's"
+   heTContains "sender: ...and History's deal audit is unchanged by it (both deals verified)", \
+         heAuditDealsFromLog(heNetLogToHotseat(gGame["log"], tHostPubHex)), "2/2 deals verified"
+   put tSnapG into gTNetPlayG
+   -- (b) A NON-HOST settle: the host's own settle of hand 1 swapped for the
+   -- same deltas signed by the PLAYER -- a wire every client refuses, so
+   -- that hand was never settled at the table. It must not read as
+   -- settle-verified in History (the false PASS); the host's settle does.
+   put empty into tForgedTxt
+   put gTNetHostG["log"] into tLogCopy   -- a plain local before it is walked (H6)
+   repeat for each line tWireTxt in tLogCopy
+      put heEnvWireParse(tWireTxt) into tWireA
+      if tWireA["type"] is "settle" and ("n" & tWireA["hand"]) is "n1" then
+         put heEnvContentLine(kKatTableHex, 1, tPlayPubHex, "settle", \
+               heEnvBodyText(tWireA["bodyHex"])) into tEvilC
+         put heWireBuild(tEvilC, tPlaySec, tWireA["seq"], tWireA["prev"], tHostSec) \
+               & return after tForgedTxt
+      else
+         put tWireTxt & return after tForgedTxt
+      end if
+   end repeat
+   put heFoldTranscript(heNetLogToHotseat(tForgedTxt, tHostPubHex)) into tXlatFold
+   heTAssert "sender: a player-signed settle is no settle in History (hand 1 not verified)", \
+         (tXlatFold["history"] contains "hand 1:") & "/" & the number of lines of tXlatFold["history"], \
+         "false/1"
+   -- (c) THE SENDER CONTEXT AGREES WIRE BY WIRE (review fix, 2026-09-25): a
+   -- misbehaving host's stream on a throwaway context, whose flops the
+   -- table takes or refuses for WHO signed them, and History must take the
+   -- same ones. Hand 1 (level 0, dealer seat 2): the host re-sits seat 2 to
+   -- an UNROSTERED key, whose flop the table ignores (the roster rule; the
+   -- dealer rule alone would pass it); the seat's old key signs a flop,
+   -- refused (the dealer key is read per wire); the host sits the old key
+   -- back and its flop folds. Hand 2: dealLevel level 1 then level 0 naming
+   -- seat 2 -- the table's oracle flag only ever SETS, so the ORACLE still
+   -- deals: seat 2's flop is refused and the host's folds. History first
+   -- froze the dealer key at the dealLevel and cleared the oracle on level
+   -- 0, and took flops B and D where the table took C and E.
+   put gGame into tSnapG
+   sxSignKeypairFromSeed heHex2BinD(kKatIdSeed3), tP3Pub, tP3Sec
+   put heBin2HexS(tP3Pub) into tP3PubHex
+   heTNetPlayCtx "false", tPlayPubHex, tPlaySec, tPlayBoxPub, tPlayBoxSec, tHostPubHex, kKatIdSeed2
+   put "false" into gGame["online"]   -- fold only: this context emits nothing
+   heTNetHostWire 0, tHostPubHex, tHostSec, "roster", \
+         tHostPubHex & ":host," & tPlayPubHex & ":player", tHostSec
+   heTNetHostWire 0, tHostPubHex, tHostSec, "sit", "seat=1,pub=" & tHostPubHex, tHostSec
+   heTNetHostWire 0, tHostPubHex, tHostSec, "sit", "seat=2,pub=" & tPlayPubHex, tHostSec
+   heTNetHostWire 1, tHostPubHex, tHostSec, "handStart", "seats=1|2,button=2", tHostSec
+   heTNetHostWire 1, tHostPubHex, tHostSec, "dealLevel", "level=0,dealer=2,count=2", tHostSec
+   -- (a count that is not the dealt seats: the table refuses this one, and
+   -- the dealer stays seat 2 -- History must refuse it too)
+   heTNetHostWire 1, tHostPubHex, tHostSec, "dealLevel", "level=0,dealer=1,count=3", tHostSec
+   heTNetHostWire 1, tHostPubHex, tHostSec, "sit", "seat=2,pub=" & tP3PubHex, tHostSec
+   heTNetHostWire 1, tP3PubHex, tP3Sec, "board", "street=flop,cards=2c|3c|4c", tHostSec
+   heTNetHostWire 1, tPlayPubHex, tPlaySec, "board", "street=flop,cards=5c|6c|7c", tHostSec
+   heTNetHostWire 1, tHostPubHex, tHostSec, "sit", "seat=2,pub=" & tPlayPubHex, tHostSec
+   heTNetHostWire 1, tPlayPubHex, tPlaySec, "board", "street=flop,cards=8c|9c|2h", tHostSec
+   heTAssert "agree: hand 1's table ignored the unrostered key and took the seat's CURRENT key's flop", \
+         (gGame["netLog"] contains "unrostered sender") & "/" & gGame["oDeal"]["boardList"], \
+         "true/" & heCardIndex("8c") & comma & heCardIndex("9c") & comma & heCardIndex("2h")
+   heTNetHostWire 2, tHostPubHex, tHostSec, "handStart", "seats=1|2,button=1", tHostSec
+   heTNetHostWire 2, tHostPubHex, tHostSec, "dealLevel", "level=1,dealer=0,count=2", tHostSec
+   heTNetHostWire 2, tHostPubHex, tHostSec, "dealLevel", "level=0,dealer=2,count=2", tHostSec
+   heTNetHostWire 2, tPlayPubHex, tPlaySec, "board", "street=flop,cards=2d|3d|4d", tHostSec
+   heTNetHostWire 2, tHostPubHex, tHostSec, "board", "street=flop,cards=5d|6d|7d", tHostSec
+   heTAssert "agree: hand 2's table kept the ORACLE dealing (level 1 then 0) and took its flop", \
+         heNetOracleDeal() & "/" & gGame["oDeal"]["boardList"], \
+         "true/" & heCardIndex("5d") & comma & heCardIndex("6d") & comma & heCardIndex("7d")
+   put heNetLogToHotseat(gGame["log"], tHostPubHex) into tXlatTxt
+   heTAssert "agree: History took exactly the flops the table took (A/B/C/D/E)", \
+         (tXlatTxt contains "cards=2c|3c|4c") & "/" & (tXlatTxt contains "cards=5c|6c|7c") \
+         & "/" & (tXlatTxt contains "cards=8c|9c|2h") & "/" & (tXlatTxt contains "cards=2d|3d|4d") \
+         & "/" & (tXlatTxt contains "cards=5d|6d|7d"), "false/false/true/false/true"
+   -- (d) THE OWNER'S OWN EQUIVOCATION (review fix, 2026-09-25): the sender
+   -- rules pass every wire here -- each is the position owner's -- but the
+   -- table keeps a position's FIRST commitment and only a reveal that opens
+   -- it. Seat 2 commits twice, reveals a seed that opens neither the kept
+   -- commitment, then its real seed. The deal audit reads the LAST commit
+   -- and reveal lines, so History used to hold the second commit (commit-
+   -- mismatch) or re-derive the holes from the refused seed (hole-mismatch),
+   -- and FAIL a deal the table dealt and verified clean.
+   heTNetPlayCtx "false", tPlayPubHex, tPlaySec, tPlayBoxPub, tPlayBoxSec, tHostPubHex, kKatIdSeed2
+   put "false" into gGame["online"]
+   heTNetHostWire 0, tHostPubHex, tHostSec, "roster", \
+         tHostPubHex & ":host," & tPlayPubHex & ":player", tHostSec
+   heTNetHostWire 0, tHostPubHex, tHostSec, "sit", "seat=1,pub=" & tHostPubHex, tHostSec
+   heTNetHostWire 0, tHostPubHex, tHostSec, "sit", "seat=2,pub=" & tPlayPubHex, tHostSec
+   heTNetHostWire 1, tHostPubHex, tHostSec, "handStart", "seats=1|2,button=1", tHostSec
+   heTNetHostWire 1, tHostPubHex, tHostSec, "dealLevel", "level=0,dealer=1,count=2", tHostSec
+   heTNetHostWire 1, tHostPubHex, tHostSec, "seedCommit", "pos=1,commit=" & kKatCommit1, tHostSec
+   heTNetHostWire 1, tPlayPubHex, tPlaySec, "seedCommit", "pos=2,commit=" & kKatCommit2, tHostSec
+   heTNetHostWire 1, tPlayPubHex, tPlaySec, "seedCommit", "pos=2,commit=" & kKatCommit3, tHostSec
+   heTNetHostWire 1, tPlayPubHex, tPlaySec, "seedReveal", "pos=2,seed=" & kKatSeed3, tHostSec
+   heTNetHostWire 1, tPlayPubHex, tPlaySec, "seedReveal", "pos=2,seed=" & kKatSeed2, tHostSec
+   heTNetHostWire 1, tHostPubHex, tHostSec, "seedReveal", "pos=1,seed=" & kKatSeed1, tHostSec
+   heTNetHostWire 1, tHostPubHex, tHostSec, "settle", "deltas=1:0|2:0", tHostSec
+   heTAssert "agree: the table kept seat 2's FIRST commit and only the reveal that opens it", \
+         heHexEq(gGame["oDeal"]["commitsBy"][2], kKatCommit2) & "/" \
+         & heHexEq(gGame["oDeal"]["revealsBy"][2], kKatSeed2) & "/" \
+         & (gGame["netLog"] contains "seedReveal pos 2 does not match its commit"), "true/true/true"
+   -- History must keep the SAME commitment and seed, not merely a
+   -- self-consistent pair: it derives the holes from the seeds it keeps,
+   -- so a History that kept the second commit and the seed opening it
+   -- would audit its own deck clean -- a deck the table never dealt
+   put heNetLogToHotseat(gGame["log"], tHostPubHex) into tXlatTxt
+   heTAssert "agree: History keeps the table's commit and seed for seat 2, and audits the deal clean", \
+         (tXlatTxt contains ("commit=" & kKatCommit2)) & "/" & (tXlatTxt contains ("commit=" & kKatCommit3)) \
+         & "/" & (tXlatTxt contains ("seed=" & kKatSeed2)) & "/" & (tXlatTxt contains ("seed=" & kKatSeed3)) \
+         & "/" & (heAuditDealsFromLog(tXlatTxt) contains "1/1 deals verified"), "true/false/true/false/true"
+   put tSnapG into gGame
 
    -- adversarial probe, post-hand: a seedReveal that does not open its
    -- commitment is NAMED and never stored (the commit check runs first)
@@ -16601,7 +17369,7 @@ command heTestNetPlay
    -- 2026-09-25): the repeat does not end the hand it repeats, so this
    -- hand keeps ONE start line where the old translation wrote two
    put return & tHandNext & tab & "table" & tab & "handStart" & tab into tStartKey
-   put heNetLogToHotseat(gGame["log"]) into tXlatTxt
+   put heNetLogToHotseat(gGame["log"], tHostPubHex) into tXlatTxt
    put offset(tStartKey, tXlatTxt) into tCutN
    put char (tCutN + 1) to -1 of tXlatTxt into tXlatCut
    heTAssert "stale: History skips the repeated handStart too (one start line for the hand)", \
@@ -16627,7 +17395,7 @@ command heTestNetPlay
          & gGame["oDeal"]["commitsBy"][tMyPos], "true/"
    -- History skips it too: filed under this hand, the audit (last line per
    -- position wins) would have failed an honest deal on the host's say-so
-   put heNetLogToHotseat(gGame["log"]) into tXlatTxt
+   put heNetLogToHotseat(gGame["log"], tHostPubHex) into tXlatTxt
    heTAssert "stale: History's translation skips the replayed commit too", \
          (tXlatTxt contains ("commit=" & kKatCommit2)), "false"
    -- then the commit phase completes canonically, and the other seat posts
@@ -17198,6 +17966,7 @@ command heTestOracleRun
    local tOrcPubHex, tP1PubHex, tP2PubHex, tOrcBoxPub, tOrcBoxSec
    local tP1BoxPub, tP1BoxSec, tP2BoxPub, tP2BoxSec, tBoxErr
    local tStateA, tSbSeat, tBbSeat, tLoop, tElectTxt, tSeedA, tSeedB
+   local tXlatTxt, tLineTxt, tCommitN, tRevealN
    put return & "-- 18. Phase 3 deck oracle: no-seat host + election on oracle loss" & return after gRpt
    set the itemDelimiter to comma
    -- the pure pieces first: seed-domain separation + deterministic election
@@ -17312,6 +18081,30 @@ command heTestOracleRun
          gTNetPlayG["netLog"], "audit  oracle: pass"
    heTAssert "oracle: the uncontested winner mucks (display choice)", \
          gTNetPlayG["oDeal"]["showBy"][tBbSeat], "muck"
+   -- HISTORY OVER AN ORACLE TABLE (review fix, 2026-09-25): v0.25.6's
+   -- translation judges every sender, and at Level 1 its context must say
+   -- what the table's does -- the seatless host deals and owns position
+   -- dealCount+1 -- or the oracle's own commit and reveal are refused and
+   -- the committed shuffle cannot re-derive. No other section translates
+   -- an oracle table, so a context that never named the oracle passed
+   -- every gate. The audit alone cannot tell: History derives the holes
+   -- from the seeds it kept, so a context that dropped the oracle's
+   -- position re-derives a TWO-contributor deal consistent with itself
+   -- (a fold-win has no board to contradict it). Count what was kept.
+   put heNetLogToHotseat(gTNetPlayG["log"], tOrcPubHex) into tXlatTxt
+   put 0 into tCommitN
+   put 0 into tRevealN
+   repeat for each line tLineTxt in tXlatTxt
+      if heLogField(tLineTxt, 3) is "seedCommit" then
+         add 1 to tCommitN
+      else if heLogField(tLineTxt, 3) is "seedReveal" then
+         add 1 to tRevealN
+      end if
+   end repeat
+   heTAssert "oracle: History's context names the oracle (3 contributors; its commit and reveal kept)", \
+         (tXlatTxt contains ",count=3") & "/" & tCommitN & "/" & tRevealN, "true/3/3"
+   heTContains "oracle: ...and History re-derives the oracle-dealt shuffle clean", \
+         heAuditDealsFromLog(tXlatTxt), "1/1 deals verified"
 
    -- ELECTION ON ORACLE SILENCE: kick hand 2, reach the action, then the
    -- oracle says nothing more. Each player's watchdog trips independently;
@@ -17710,11 +18503,11 @@ command heTestLivenessRun
    put heWireBuild(tContent, tHostSec, 10, kKatMuckHead9, tHostSec) into tWire
    put heChainNextHex(tWire) into tHead
    heTAssert "timeout: the host timeout act chains (head 10)", tHead, kKatTimeoutHead10
-   put heEnvContentLine(kKatTableHex, 1, tPlayPubHex, "stand", "seat=2") into tContent
+   put heEnvContentLine(kKatTableHex, 1, tPlayPubHex, "stand", kKatStandBody) into tContent
    put heWireBuild(tContent, tPlaySec, 11, tHead, tHostSec) into tWire
    put heChainNextHex(tWire) into tHead
    heTAssert "stand: the sit-out wire chains (head 11)", tHead, kKatStandHead11
-   put heEnvContentLine(kKatTableHex, 1, tPlayPubHex, "sit", "seat=2") into tContent
+   put heEnvContentLine(kKatTableHex, 1, tPlayPubHex, "sit", kKatSitBackBody) into tContent
    put heWireBuild(tContent, tPlaySec, 12, tHead, tHostSec) into tWire
    put heChainNextHex(tWire) into tHead
    heTAssert "sit: the return wire chains (head 12)", tHead, kKatSitBackHead12
@@ -17790,7 +18583,8 @@ command heTestLivenessRun
    put gTNetPlayG into gGame
    put heTimeoutVerbOf(gGame["state"], tSeatX) into tVerb
    put heEnvContentLine(kKatTableHex, gGame["handNum"], tHostPubHex, "act", \
-         "verb=" & tVerb & ",amount=0,seat=" & tSeatX & ",timeout=1,bank=1") into tEvilC
+         "verb=" & tVerb & ",amount=0,seat=" & tSeatX & ",timeout=1,bank=1,turn=" \
+         & heBetTurnOf(gGame["state"])) into tEvilC
    put heWireBuild(tEvilC, tHostSec, gGame["lastSeq"] + 1, gGame["chainHeadHex"], tHostSec) into tEvil
    heNetIngestWire tEvil
    heTContains "timer: a premature host timeout is refused + named", \
@@ -17848,7 +18642,8 @@ command heTestLivenessRun
          into gGame["turnStartMs"]
    put heTimeoutVerbOf(gGame["state"], tSeatOther) into tVerb
    put heEnvContentLine(kKatTableHex, gGame["handNum"], tHostPubHex, "act", \
-         "verb=" & tVerb & ",amount=0,seat=" & tSeatOther & ",timeout=1,bank=1") into tEvilC
+         "verb=" & tVerb & ",amount=0,seat=" & tSeatOther & ",timeout=1,bank=1,turn=" \
+         & heBetTurnOf(gGame["state"])) into tEvilC
    put heWireBuild(tEvilC, tHostSec, gGame["lastSeq"] + 1, gGame["chainHeadHex"], tHostSec) into tEvil
    heNetIngestWire tEvil
    heTContains "refused: an engine-rejected timeout is named in the feed", \
@@ -17868,7 +18663,7 @@ command heTestLivenessRun
       put tHostSec into tOtherSec
    end if
    put heEnvContentLine(kKatTableHex, gGame["handNum"], tOtherPub, "act", \
-         "verb=check,amount=0") into tEvilC
+         "verb=check,amount=0,turn=" & heBetTurnOf(gGame["state"])) into tEvilC
    put heWireBuild(tEvilC, tOtherSec, gGame["lastSeq"] + 1, gGame["chainHeadHex"], tHostSec) into tEvil
    heNetIngestWire tEvil
    heTContains "refused: the out-of-turn act is engine-rejected", \
@@ -18013,6 +18808,40 @@ command heTestLivenessRun
    heTAssert "sitout: the return wire clears the state on both sides", \
          (gTNetPlayG["sitOutBy"][tSeatY] is not "true" \
          and gTNetHostG["sitOutBy"][tSeatY] is not "true"), "true"
+   -- THE SIT-OUT MARK (v0.25.6; holde-em WORK-PLAN coding #15): that stand
+   -- and that return spent the seat's marks 1 and 2, counted alike on both
+   -- sides. On a throwaway copy the host now replays the seat's OLD stand
+   -- (mark 1, signed by the seat itself): refused, and the seat stays in.
+   -- Unbound, the replay sat the player out on every client, any number of
+   -- hands later. Its NEXT mark (3) still folds: the refusal was the mark.
+   heTAssert "sitmark: the stand and the return spent marks 1 and 2 (both sides)", \
+         gTNetPlayG["sitMarkBy"][tSeatY] & "/" & gTNetHostG["sitMarkBy"][tSeatY], "2/2"
+   put gTNetPlayG into tSnapG
+   put gTNetPlayG into gGame
+   put empty into gGame["netLog"]
+   put gGame["pubBySeat"][tSeatY] into tOtherPub
+   if heHexEq(tOtherPub, tPlayPubHex) then
+      put tPlaySec into tOtherSec
+   else
+      put tHostSec into tOtherSec
+   end if
+   heTNetHostWire gGame["handNum"], tOtherPub, tOtherSec, "stand", "seat=" & tSeatY & ",n=1", tHostSec
+   heTContains "sitmark: a replayed stand (a spent mark) is refused, named", \
+         gGame["netLog"], "stand: sit-out mark 1 is not the next (3)"
+   heTAssert "sitmark: ...and the seat is NOT sat out by it", \
+         (gGame["sitOutBy"][tSeatY] is "true") & "/" & gGame["sitMarkBy"][tSeatY], "false/2"
+   heTNetHostWire gGame["handNum"], tOtherPub, tOtherSec, "stand", "seat=" & tSeatY & ",n=3", tHostSec
+   heTAssert "sitmark: the seat's NEXT mark still stands it (the mark was the refusal)", \
+         (gGame["sitOutBy"][tSeatY] is "true") & "/" & gGame["sitMarkBy"][tSeatY], "true/3"
+   -- ...and the OTHER direction (review fix, 2026-09-25): the seat now
+   -- sits out by its own choice, and the host replays its old RETURN (mark
+   -- 2) to deal it back in against its will. The return's mark check had
+   -- no pin: deleted, with the count kept, every gate stayed green.
+   heTNetHostWire gGame["handNum"], tOtherPub, tOtherSec, "sit", "seat=" & tSeatY & ",n=2", tHostSec
+   heTAssert "sitmark: a replayed sit-return is refused, named, and the seat stays out", \
+         (gGame["netLog"] contains "sit-return: sit-out mark 2 is not the next (4)") & "/" \
+         & (gGame["sitOutBy"][tSeatY] is "true") & "/" & gGame["sitMarkBy"][tSeatY], "true/true/3"
+   put tSnapG into gTNetPlayG
    -- the auto-sat-out seat returns too (re-enters next hand)
    put gTNetPlayG into gGame
    if heNetMySeat() is tSeatX then
@@ -18281,7 +19110,7 @@ command heTestHelpersRun
    -- Everything here is values-in/values-out (H5) and needs no extension,
    -- so this section never SKIPs as a whole; the one branch that reaches a
    -- bt* call probes for it and SKIPs by name.
-   local tSaved, tRcTxt, tRcErr, tDelimTxt, tRectTxt, tHexA, tHexB
+   local tSaved, tRcTxt, tRcErr, tDelimTxt, tRectTxt, tHexA, tHexB, tCtxA, tLevelA
    put return & "-- 21. Pure helpers: leaf values nothing else pinned (shallow)" & return after gRpt
    set the itemDelimiter to comma
 
@@ -18474,6 +19303,134 @@ command heTestHelpersRun
          heAwardedPot(tHandBy, "1"), 0
    heTAssert "pot: no seats is an empty pot, not an error", \
          heAwardedPot(tHandBy, empty), 0
+
+   -- heSitMarkOk (v0.25.6; holde-em WORK-PLAN coding #15): a stand or a
+   -- sit-return names the seat's NEXT sit-out mark, one past the marks the
+   -- table accepted for it, so an old stand cannot be replayed to sit the
+   -- player out again (section 20 drives the replay end to end)
+   heTAssert "sitmark: a seat's first mark is 1 (no marks yet, or zero)", \
+         heSitMarkOk("1", empty) & "|" & heSitMarkOk("1", 0), "|"
+   heTAssert "sitmark: the next mark after two is 3", heSitMarkOk("3", 2), empty
+   heTAssert "sitmark: a spent mark -- a REPLAY -- is refused, naming the next", \
+         heSitMarkOk("1", 2), "sit-out mark 1 is not the next (3)"
+   heTAssert "sitmark: a mark that skips ahead is refused too", \
+         heSitMarkOk("5", 2), "sit-out mark 5 is not the next (3)"
+   heTAssert "sitmark: no mark (a pre-v0.25.6 sender) and an alias are refused", \
+         heSitMarkOk(empty, 0) & "|" & heSitMarkOk("03", 2), \
+         "carries no sit-out mark|sit-out mark 03 is not canonical"
+
+   -- heWireSenderOk (v0.25.6; coding #14): THE sender rules, one predicate
+   -- for the live fold and History's translation. A level-0 hand: seat 1 is
+   -- the host key and seat 2 deals. Every refusal is pinned by the reason
+   -- the live fold logs.
+   put empty into tCtxA
+   put kKatIdPub1 into tCtxA["host"]
+   put kKatIdPub2 into tCtxA["dealer"]
+   put "1,2" into tCtxA["occ"]
+   put 2 into tCtxA["contribN"]
+   put "false" into tCtxA["oracle"]
+   heTAssert "sender: host-only types pass from the host", \
+         heWireSenderOk("settle", "deltas=1:1|2:-1", kKatIdPub1, 1, tCtxA) \
+         & "|" & heWireSenderOk("handStart", "seats=1|2,button=1", kKatIdPub1, 1, tCtxA) \
+         & "|" & heWireSenderOk("cfg", kKatLobbyCfgBody, kKatIdPub1, 1, tCtxA), "||"
+   heTAssert "sender: a seated player's settle is refused (the false-PASS wire)", \
+         heWireSenderOk("settle", "deltas=1:1|2:-1", kKatIdPub2, 2, tCtxA), "non-host settle ignored"
+   heTAssert "sender: a player's cfg, handStart and dealLevel are refused", \
+         heWireSenderOk("cfg", kKatLobbyCfgBody, kKatIdPub2, 2, tCtxA) \
+         & "|" & heWireSenderOk("handStart", "seats=1|2,button=2", kKatIdPub2, 2, tCtxA) \
+         & "|" & heWireSenderOk("dealLevel", "level=0,dealer=2,count=2", kKatIdPub2, 2, tCtxA), \
+         "non-host cfg body ignored|non-host handStart ignored|non-host dealLevel ignored"
+   heTAssert "sender: a seat commits for its OWN packed position", \
+         heWireSenderOk("seedCommit", "pos=2,commit=" & kKatCommit2, kKatIdPub2, 2, tCtxA), empty
+   heTAssert "sender: a NON-OWNER's commit is refused (the false-FAIL wire)", \
+         heWireSenderOk("seedCommit", "pos=1,commit=" & kKatCommit2, kKatIdPub2, 2, tCtxA), \
+         "seedCommit: position 1 is not the sender's"
+   heTAssert "sender: an alias position is refused as not canonical", \
+         heWireSenderOk("seedReveal", "pos=02,seed=" & kKatSeed2, kKatIdPub2, 2, tCtxA), \
+         "seedReveal: position 02 is not canonical"
+   heTAssert "sender: the board and holes come from the dealer only", \
+         heWireSenderOk("board", "street=flop,cards=2c|3c|4c", kKatIdPub2, 2, tCtxA) & "|" \
+         & heWireSenderOk("board", "street=flop,cards=2c|3c|4c", kKatIdPub1, 1, tCtxA) & "|" \
+         & heWireSenderOk("holeDeliver", "seat=1,sealed=aa", kKatIdPub1, 1, tCtxA), \
+         "|board not from the dealer|holeDeliver not from the dealer"
+   heTAssert "sender: a timeout is the host's; a player-signed one is refused", \
+         heWireSenderOk("act", "verb=fold,amount=0,seat=1,timeout=1,bank=1,turn=1", kKatIdPub1, 1, tCtxA) \
+         & "|" & heWireSenderOk("act", "verb=fold,amount=0,seat=1,timeout=1,bank=1,turn=1", kKatIdPub2, 2, tCtxA), \
+         "|non-host timeout ignored"
+   heTAssert "sender: an unseated key's act, receipt and audit are refused", \
+         heWireSenderOk("act", "verb=check,amount=0,turn=1", kKatIdPub3, empty, tCtxA) \
+         & "|" & heWireSenderOk("receipt", "head=00,sig=00", kKatIdPub3, empty, tCtxA) \
+         & "|" & heWireSenderOk("audit", "result=pass", kKatIdPub3, empty, tCtxA), \
+         "act from an unseated key|receipt from an unseated key|audit from an unseated key"
+   heTAssert "sender: show, stand and sit-return are for the sender's own seat", \
+         heWireSenderOk("show", "seat=2", kKatIdPub2, 2, tCtxA) \
+         & "|" & heWireSenderOk("muck", "seat=1", kKatIdPub2, 2, tCtxA) \
+         & "|" & heWireSenderOk("stand", "seat=1,n=1", kKatIdPub2, 2, tCtxA) \
+         & "|" & heWireSenderOk("sit", "seat=1,n=1", kKatIdPub2, 2, tCtxA), \
+         "|muck for a seat the sender does not own|stand for a seat the sender does not own" \
+         & "|sit-return for a seat the sender does not own"
+   heTAssert "sender: a seat assignment is the host's only", \
+         heWireSenderOk("sit", "seat=3,pub=" & kKatIdPub3, kKatIdPub1, 1, tCtxA) \
+         & "|" & heWireSenderOk("sit", "seat=3,pub=" & kKatIdPub3, kKatIdPub2, 2, tCtxA), \
+         "|non-host sit ignored"
+   -- the oracle deals (level 1): the host, seatless, owns position contribN
+   -- and audits under slot 0; any other position is not its own
+   put "true" into tCtxA["oracle"]
+   put 3 into tCtxA["contribN"]
+   put kKatIdPub1 into tCtxA["dealer"]
+   heTAssert "sender: the oracle commits for position contribN, audits, and nothing else", \
+         heWireSenderOk("seedCommit", "pos=3,commit=" & kKatCommit3, kKatIdPub1, empty, tCtxA) \
+         & "|" & heWireSenderOk("audit", "result=pass", kKatIdPub1, empty, tCtxA) \
+         & "|" & heWireSenderOk("seedCommit", "pos=2,commit=" & kKatCommit3, kKatIdPub1, empty, tCtxA), \
+         "||seedCommit: position 2 is not the sender's"
+
+   -- heDealLevelOf (v0.25.6): the dealLevel body read one way, for the live
+   -- fold and History alike (kHeMaxSeats is 6)
+   put heDealLevelOf("level=0,dealer=3,count=2", "1,3") into tLevelA
+   heTAssert "deallevel: a level-0 body names its dealer and count", \
+         tLevelA["err"] & "|" & tLevelA["level"] & "|" & tLevelA["dealer"] & "|" & tLevelA["count"], \
+         "|0|3|2"
+   put heDealLevelOf("level=1,dealer=0,count=2", "1,3") into tLevelA
+   heTAssert "deallevel: the oracle's body names dealer 0", \
+         tLevelA["err"] & "|" & tLevelA["level"] & "|" & tLevelA["dealer"], "|1|0"
+   put heDealLevelOf("level=0,dealer=3,count=3", "1,3") into tLevelA
+   heTAssert "deallevel: a count that is not the dealt seats is refused", tLevelA["err"], "malformed dealLevel"
+   put heDealLevelOf("level=1e0,dealer=0,count=2", "1,3") into tLevelA
+   heTAssert "deallevel: an alias of level 1 is refused readably", tLevelA["err"], "unsupported deal level 1e0"
+   put heDealLevelOf("level=1,dealer=3,count=2", "1,3") into tLevelA
+   heTAssert "deallevel: a level-1 body naming a seat is refused", \
+         tLevelA["err"], "level-1 dealLevel must name the oracle (dealer=0)"
+   put heDealLevelOf("level=0,dealer=2,count=2", "1,3") into tLevelA
+   heTAssert "deallevel: a dealer that is not dealt is refused", tLevelA["err"], "malformed dealLevel"
+
+   -- heRosterHasKey, pure since v0.25.6: the live apply's roster rule and
+   -- History's, over whichever roster each holds
+   heTAssert "roster: a listed key is a member, an unlisted one and an empty roster are not", \
+         heRosterHasKey(kKatRosterBody, kKatIdPub2) & "|" & heRosterHasKey(kKatRosterBody, kKatIdPub3) \
+         & "|" & heRosterHasKey(empty, kKatIdPub2), "true|false|false"
+
+   -- heNetBoundBody / heNetSitMarkNext (v0.25.6): the builders every emitter
+   -- goes through, pinned against protocol-kat's bodies (kKatActBody,
+   -- kKatStandBody, kKatSitBackBody), so the bytes the buttons sign are the
+   -- bytes the KAT pins. They read the live store: snapshot and restore.
+   put gGame into tSaved
+   put empty into gGame["state"]
+   put 1 into gGame["state"]["actN"]
+   put empty into gGame["seatByPub"]
+   put 2 into gGame["seatByPub"][kKatIdPub2]
+   put kKatIdPub2 into gGame["idPubHex"]
+   put empty into gGame["sitMarkBy"]
+   heTAssert "bound: a player's act names the open turn (protocol-kat's act_body)", \
+         heNetBoundBody("act", "verb=check,amount=0"), kKatActBody
+   heTAssert "bound: a first stand names mark 1 (protocol-kat's stand_body)", \
+         heNetSitMarkNext(2) & "|" & heNetBoundBody("stand", "seat=2"), "1|" & kKatStandBody
+   put 1 into gGame["sitMarkBy"][2]
+   heTAssert "bound: the return after it names mark 2 (protocol-kat's sitback_body)", \
+         heNetBoundBody("sit", "seat=2"), kKatSitBackBody
+   heTAssert "bound: the host's seat assignment and other types go out untouched", \
+         heNetBoundBody("sit", "seat=3,pub=" & kKatIdPub3) & "|" & heNetBoundBody("show", "seat=2"), \
+         "seat=3,pub=" & kKatIdPub3 & "|seat=2"
+   put tSaved into gGame
 end heTestHelpersRun
 
 command heTestLeafRun
@@ -19091,7 +20048,7 @@ function heTDeltasTxt pDeltasA, pOccList
 end heTDeltasTxt
 
 command heTestBettingRun
-   local tStateA, tDeltasA, tRanksA
+   local tStateA, tDeltasA, tRanksA, tRefA
    put return & "-- 2. betting engine (spec 8.1) + settlement (8.3)" & return after gRpt
    set the itemDelimiter to comma
 
@@ -19205,6 +20162,52 @@ command heTestBettingRun
    heTAssert "blind: short SB posts all-in", tStateA["allinBy"][4], "true"
    put heBetApply(tStateA, "bidBB", 6, 2) into tStateA
    heTAssert "blind: both blinds all-in -> runout", tStateA["phase"], "runout"
+
+   -- THE TURN COUNTER (v0.25.6; holde-em WORK-PLAN coding #13): the turn a
+   -- hand waits for is 1 + the acts it has APPLIED (heBetTurnOf), and an
+   -- online act must name it (heActTurnOk). One pin per verb path, because
+   -- each path adds on its own line and a path that forgot would let two
+   -- turns share a number -- a replay window. Mirrored in betting-kat
+   -- (case_turn_counter). Seat 3 starts short (5) so the call-for-less
+   -- all-in path runs.
+   put heTBlinds(heTNewHand(1, 2, "400,400,5", "1,2,3", 1)) into tStateA
+   heTAssert "turn: the blinds are not turns (turn 1 opens the betting)", \
+         heBetTurnOf(tStateA), 1
+   put heBetApply(tStateA, "act", 2, "check,0") into tRefA
+   heTAssert "turn: an out-of-turn act moves no turn", \
+         tRefA["err"] & "/" & heBetTurnOf(tRefA), "act-out-of-turn/1"
+   put heBetApply(tStateA, "act", 1, "check,0") into tRefA
+   heTAssert "turn: a refused verb (check facing a bet) moves no turn", \
+         tRefA["err"] & "/" & heBetTurnOf(tRefA), "check-facing-bet/1"
+   put heTAct(tStateA, 1, "raise,10", empty, "turn: utg raises") into tStateA
+   heTAssert "turn: a raise is a turn", heBetTurnOf(tStateA), 2
+   put heTAct(tStateA, 2, "call,9", empty, "turn: sb calls") into tStateA
+   heTAssert "turn: a call is a turn", heBetTurnOf(tStateA), 3
+   put heTAct(tStateA, 3, "allin,5", empty, "turn: the short bb calls all-in for less") into tStateA
+   heTAssert "turn: an all-in for less is a turn (and closes the street)", \
+         heBetTurnOf(tStateA) & "/" & tStateA["street"], "4/flop"
+   put heTAct(tStateA, 2, "check,0", empty, "turn: flop check") into tStateA
+   heTAssert "turn: a check is a turn, and the count spans streets", heBetTurnOf(tStateA), 5
+   put heTAct(tStateA, 1, "bet,20", empty, "turn: flop bet") into tStateA
+   heTAssert "turn: a bet is a turn", heBetTurnOf(tStateA), 6
+   put heTAct(tStateA, 2, "fold,0", empty, "turn: flop fold") into tStateA
+   heTAssert "turn: a fold is a turn", heBetTurnOf(tStateA) & "/" & tStateA["phase"], "7/runout"
+   put heTBlinds(heTNewHand(1, 2, "100,100", "1,2", 1)) into tStateA
+   put heTAct(tStateA, 1, "fold,0", empty, "turn: heads-up sb folds") into tStateA
+   heTAssert "turn: the fold that ENDS the hand is a turn too", \
+         heBetTurnOf(tStateA) & "/" & tStateA["phase"], "2/handdone"
+   -- heActTurnOk: the binding itself, as the live fold and History apply it
+   put heTBlinds(heTNewHand(1, 2, "100,100,100", "1,2,3", 1)) into tStateA
+   heTAssert "turn: the open turn's key is accepted", heActTurnOk("1", tStateA), empty
+   heTAssert "turn: a later turn's key is refused, naming both", \
+         heActTurnOk("2", tStateA), "for turn 2 while turn 1 is open"
+   heTAssert "turn: an act with no turn key is refused (a pre-v0.25.6 sender)", \
+         heActTurnOk(empty, tStateA), "carries no turn key"
+   heTAssert "turn: an alias of the open turn is refused (canonical text)", \
+         heActTurnOk("01", tStateA), "turn key 01 is not canonical"
+   put heTAct(tStateA, 1, "call,2", empty, "turn: utg limps") into tStateA
+   heTAssert "turn: the spent turn's key -- a REPLAY -- is refused", \
+         heActTurnOk("1", tStateA), "for turn 1 while turn 2 is open"
 end heTestBettingRun
 
 command heTestAnteRun
@@ -19556,6 +20559,36 @@ function heTKatLog pTamper
    return tLog
 end heTKatLog
 
+function heTKatTurnLog pReplay
+   -- the canned session with its acts ONLINE-shaped (v0.25.6): each act line
+   -- carries the turn= key its sender would have signed (1 + the acts
+   -- applied before it). With pReplay "true", seat 3's turn-8 check (on the
+   -- turn) is REPLAYED at the river, just ahead of its real turn-10 bet --
+   -- the re-sequenced act heActTurnOk refuses. It is seat 3's turn there
+   -- and a check is legal, so without the binding History would fold it,
+   -- and the real bet behind it would then fail as out of turn. Mirror of
+   -- fold-kat's transcript_turns.
+   local tLog, tLine, tOut, tTurnN, tReplayLine
+   put heTKatLog(empty) into tLog
+   put empty into tOut
+   put 0 into tTurnN
+   put empty into tReplayLine
+   repeat for each line tLine in tLog
+      if heLogField(tLine, 3) is "act" then
+         add 1 to tTurnN
+         if pReplay is "true" and tTurnN is 10 then
+            put tReplayLine & return after tOut
+         end if
+         put tLine & ",turn=" & tTurnN into tLine
+         if tTurnN is 8 then
+            put tLine into tReplayLine
+         end if
+      end if
+      put tLine & return after tOut
+   end repeat
+   return tOut
+end heTKatTurnLog
+
 function heTKatAnteLog
    -- canned ante session (mirror of fold-kat ante_transcript): 3-handed, ante
    -- 2 each, blinds 1/2, folds to the BB. Pot = 3 antes (6) + SB (1) + BB (2)
@@ -19622,6 +20655,18 @@ command heTestFoldRun
    heTAssert "fold: ante session settles to the pinned stacks", \
          heTFoldTxt(tFoldA), "398/397/405 hand=1 errs=[]"
    heTContains "fold: ante settle verified on replay", tFoldA["history"], "settle-verified"
+
+   -- TURN-BOUND ACTS in History (v0.25.6; holde-em WORK-PLAN coding #13):
+   -- an online act names its turn, and the fold replays it only there
+   -- (heActTurnOk) -- the rule every client applied live. Mirrored in
+   -- fold-kat (transcript_turns).
+   put heFoldTranscript(heTKatTurnLog("false")) into tFoldA
+   heTAssert "fold: acts carrying their turns fold exactly as the hotseat session", \
+         heTFoldTxt(tFoldA), "442/394/364 hand=1 errs=[]"
+   put heFoldTranscript(heTKatTurnLog("true")) into tFoldA
+   heTAssert "fold: an act replayed at a later turn is skipped, not folded (no engine error behind it)", \
+         heTFoldTxt(tFoldA), "442/394/364 hand=1 errs=[]"
+   heTContains "fold: ...and the hand still settles verified", tFoldA["history"], "settle-verified"
 
    -- deep-dive (OXT-pass finding): the online lobby and the hotseat game share
    -- gGame["log"] in two incompatible formats -- a 4-field hotseat line vs a

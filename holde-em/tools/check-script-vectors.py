@@ -166,33 +166,37 @@ Thrown = LCS.Thrown
 # measured on 2026-09-11 (stack 0.25.3, harness v44), plus section 24's,
 # measured when it landed on 2026-09-24 (harness v45), sections 5, 9
 # and 21 raised on 2026-09-25 (stack 0.25.4, harness v46: the heHexEq and
-# near-integer pins), and sections 11, 15 and 21 raised the same day (stack
+# near-integer pins), sections 11, 15 and 21 raised the same day (stack
 # 0.25.5, harness v47: the canonical-index, hand-binding and audit-guard
-# pins); raise them when the harness grows. A skip count is
+# pins), and sections 2, 8, 15, 18, 20 and 21 raised the same day again
+# (stack 0.25.6, harness v48: the turn-binding, sender-rule and sit-out-mark
+# pins, and the review's History-agreement and keyless-act pins in 15, its
+# oracle History in 18 and its sit-return replay in 20); raise them when the
+# harness grows. A skip count is
 # EXACT: a section that skips more than it did is a section that stopped
 # running something.
 SECTIONS = [
     ("heTestEvaluatorRun", 28, 0),
-    ("heTestBettingRun", 68, 0),
+    ("heTestBettingRun", 91, 0),
     ("heTestAnteRun", 23, 0),
     ("heTestLevelRun", 12, 0),
     ("heTestLegalRun", 19, 0),
     ("heTestScheduleRun", 3, 0),
     ("heTestShuffleRun", 9, 0),
-    ("heTestFoldRun", 17, 0),
+    ("heTestFoldRun", 20, 0),
     ("heTestCryptoRun", 26, 0),
     ("heTestReceiptRun", 17, 0),
     ("heTestDealRun", 20, 0),
     ("heTestDealOrderRun", 5, 0),
     ("heTestLobbyRun", 10, 0),
     ("heTestNetSim", 20, 0),
-    ("heTestNetPlay", 60, 0),
+    ("heTestNetPlay", 74, 0),
     ("heTestLevel2Run", 0, 1),          # ristretto255 is not modelled: skips
     ("heTestOnionRun", 35, 1),          # the LIVE tor table skips by name
-    ("heTestOracleRun", 32, 2),         # the LIVE three-machine round + the onion oracle
+    ("heTestOracleRun", 34, 2),         # the LIVE three-machine round + the onion oracle
     ("heTestLevel2VoidRun", 2, 1),      # its ristretto (DLEQ) half skips
-    ("heTestLivenessRun", 84, 2),       # the LIVE timed table + the LIVE tor redial
-    ("heTestHelpersRun", 39, 1),
+    ("heTestLivenessRun", 89, 2),       # the LIVE timed table + the LIVE tor redial
+    ("heTestHelpersRun", 67, 1),
     ("heTestLeafRun", 39, 0),
     ("heTestLeafRun2", 83, 0),
     ("heTestLeafRun3", 50, 0),          # every leg pure or gGame-only: nothing skips
