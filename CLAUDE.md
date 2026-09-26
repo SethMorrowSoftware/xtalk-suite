@@ -95,7 +95,7 @@ the suite paste is the generated case below. The family interpreter, `coinxt/too
 (twinned in nostrxt), and riptide's stack runner built on it let execution gates in coinxt, nostrxt,
 riptide, nocloud and holde-em RUN the shipped script headlessly (`check-script-vectors.py` and the
 boot runners). They settle logic, not parser behaviour, so they upgrade no honesty label. Since
-2026-09-26 the interpreter REFUSES a comparison the engine answers differently from IEEE, or text
+2026-09-25 the interpreter REFUSES a comparison the engine answers differently from IEEE, or text
 the engine reads as a number differently (engine notes 2.10, 2.11), rather than answer it.
 
 - **UI kit.** The gate also refuses any window-building stack that neither adopts nor carries a

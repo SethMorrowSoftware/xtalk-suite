@@ -50,8 +50,9 @@ enetxt #3 (the freshness gate reads every Windows DLL's ABI, through MSVC's
 guard frame where the shim has one, hardened by its review). Its workers and
 reviewers added suite-wide #20-#23, enetxt #4, datachannelxt #8-#9, torrentxt
 #21, coinxt #9-#12, riptide #10-#12 and holde-em #17, each checked against the
-tree first. None of that batch has met an engine: all of it is verified
-statically; needs an OXT pass.
+tree first. None of that batch has met an engine: every script change in it is
+verified statically; needs an OXT pass (the checker, the interpreter and the
+freshness gate are headless tools, held by their own fixtures).
 
 Where the rest lives: each engine leg's full green criterion, and the labels it flips,
 is its numbered row in [OXT-PASS-RUNBOOK.md](OXT-PASS-RUNBOOK.md) section 1.2 (this
@@ -135,8 +136,10 @@ mac files and box2dxt's Linux files unchanged: those are still the release run 1
 verified and installed it, and each installer log says "(unchanged)", a sha256 match
 (the shim and its build have not changed since the fold; runs 33025459610 and
 34657390798, read 2026-09-24). Git records only changes, so since 2026-09-24 the
-release commit's message carries the installer's per-library verdicts. No native source has changed
-since `421bab3`. Before 2026-09-24 the latest dated engine records predated it: the
+release commit's message carries the installer's per-library verdicts. No shipped native code has
+changed since `421bab3`: the native edits since are comments (enetxt's guard note of 2026-09-25
+among them) and datachannelxt's test-only seams, which the shipped library does not compile.
+Before 2026-09-24 the latest dated engine records predated it: the
 2026-08-24 paste, the 2026-08-27 two-machine paste and holde-em fold, the 2026-08-29
 riptide boot, and the 2026-08-31 to 09-03 coin-wallet logs (the 2026-08-27 paste,
 2440/2/3, does not record which platform or binaries it loaded). So the 2026-09-24
@@ -223,7 +226,7 @@ keeping the scaffold for its report.
 | 14 | *(pre-engine)* A `--full` profile for `tools/check-suite-ui-boot.py`: deliver `openStack` to the whole generated paste with every member folded, through the family interpreter (native members absent, so their sections SKIP; the pure-script layers, the tallies, teardown and the summary run), as the step before an engine session rather than a per-push gate | The all-absent profile settles the board's logic only; a whole-paste run would show a fold-level fault (a section that throws, rows that do not add up to the totals) in minutes rather than in an engine session. It settles logic, not parsing, and upgrades no label | M-L | none |
 | 20 | **The closing pass over-releases ENet.** `tests/suite-closing-pass.livecodescript`'s `closeStack` calls `enDeinitialize` bare whether or not leg B ever initialized ENet, and `cpBStart`'s "already hosting" refusal runs after `get enInitialize()`, leaving a hold it never returns; its `dcCleanup` is gated on `sDcReady`, a flag and not a count. Count the holds as the suite core does (`suEnInit` / `suEnRelease`) | The class the paste's counted holds closed on 2026-09-25: beside another ENet window, the close ends that window's hosts. Found 2026-09-25 by an interpreter probe (a close with leg B never run took no hold, gave one back, and the other stack's host was lost); not observed on an engine | S | none |
 | 21 | **Number-like literals in check 23.** The rule exempts every literal, but by engine note 2.11's parse a hex chunk compared with a number-like literal compares as a number: "14e0" is "0014" (INFERRED from the engine source). Sites in the tree: coinxt's wallet script-type and prefix tests (`char 1 to 4 of tHex is "0014"`, `"0020"`, `"5120"`, `char 9 to 12 of tHex is "0001"`, in `wallet-core` and its copy in `coin-wallet`), riptide's zero-target checks against `kRsZeroTarget` (40 zeros, so a target spelled `0e` and then digits reads as 0), and `nostrxt-tests`' `... is "610162"`. Extend the rule so a literal or declared constant whose VALUE is number-like counts as hex-shaped beside a hex operand (a must-refuse fixture from each shape), then fix the sites (a letter prefix, or compare the chunk as text) | The literal exemption lets through the genesis-against-"0" shape note 2.11 names; the checker's review measured these sites on 2026-09-25 (holde-em's genesis-head assert took `heHexEq` at integration, `57ce37d`) | S-M | none (the wallet sites after coinxt's check-23 fixes land) |
-| 22 | **Settle the interpreter's UNSURE forms on an engine.** Add a fourth diagnostic probe line to riptide's harness reading `"0x10" is "16"`, `"inf" is "1e999"`, `"nan" is "nan"`, an NBSP-edged `"3"` against 3, a 385-digit run against itself, and `"0x.8" is "0.5"`; then teach `coinxt/tools/lcs-interp.py` (and its nostrxt twin) the readings the engine gives | Since 2026-09-26 the interpreter REFUSES these forms, because engine note 2.11 does not establish them; an engine reading would let it answer | S | none (the line); engine (its reading) |
+| 22 | **Settle the interpreter's UNSURE forms on an engine.** Add a fourth diagnostic probe line to riptide's harness reading `"0x10" is "16"`, `"inf" is "1e999"`, `"nan" is "nan"`, an NBSP-edged `"3"` against 3, a 385-digit run against itself, and `"0x.8" is "0.5"`; then teach `coinxt/tools/lcs-interp.py` (and its nostrxt twin) the readings the engine gives | Since 2026-09-25 the interpreter REFUSES these forms, because engine note 2.11 does not establish them; an engine reading would let it answer. Add the line before the next paste, so that run reads it | S | none (the line); engine (its reading) |
 | 23 | *(optional)* After the next `release-binaries.yml` dispatch, re-record `tools/test-binary-freshness.py`'s `VECTORS` (bytes, VAs, cookie, section ranges and each DLL's sha256) from the new DLLs, and re-measure the guarded shape if the gate SKIPs a Windows ABI again | The recorded-build anchor is keyed by each DLL's SHA-256 and lapses with a printed NOTE once the DLLs are rebuilt; the mutation battery, the live sweep and the objdump and execution legs keep running on the new bytes. A new MSVC may vary the frame, and the gate then SKIPs by design | S | dispatch |
 
 ### 1.3 Engine work (suite-level)
@@ -588,9 +591,11 @@ extension, true multi-layer parallax (waits on transparent overlay art).
 ### 3.1 riptide
 
 - Library 0.13.0 (2026-09-25: wire seqs ordered exactly by `rsSeqCompare` and bounded
-  on their high half by `rsIsWireInt`, in the library and the demo's LAN checks;
-  verified statically; needs an OXT pass): 107 `rs*` handlers, coverage 107/107 as the
-  gate printed it on 2026-09-26. The five-card demo embeds
+  on their high half by `rsIsWireInt`, in the library and the demo's LAN checks; the
+  hex handle, key and content-address compares check 23 and its review found, moved
+  to text at integration, `57ce37d`; verified statically; needs an OXT pass): 107
+  `rs*` handlers, coverage 107/107 as the gate printed it on 2026-09-26. The
+  five-card demo embeds
   nostrxt (core and relay), riptide, onionxt and onion-httpd; `check-demo-boot` boots it
   headlessly over two capability profiles (it prints its own count).
 - Records: phases 1-2 two machines 2026-08-13, phases 3-4 2026-08-15; mid-download
@@ -752,13 +757,14 @@ Advisory, like the recommendations in OPEN-DECISIONS: a route, not a decision.
    torrentxt's boundary tests and HEAD port, the enetxt and datachannelxt smoke
    blocks, riptide's LAN keys, the stale-text rows), and the 2026-09-25/26 batch the
    next one (suite-wide #16-#19, holde-em #13-#15, riptide #9, coinxt #8, nocloud #6,
-   torrentxt #18, enetxt #3). Left with no blocker, the short ones first: the stacks
+   torrentxt #18, enetxt #3). Left with no blocker, the short ones first: suite-wide
+   #22's fourth probe line, before the next paste so that run reads it; the stacks
    that release a hold they never took (enetxt #4, suite-wide #20) and
    datachannel-dht-chat's nonce check (datachannelxt #9); the number-path compares
    check 23 cannot read (riptide #11 and #12, and suite-wide #21's literal rule);
-   riptide #10 (the persona-index cap); coinxt #9-#11 (the bounds row #8 left) and #3
-   (the Core residue); torrentxt #21 (torrent-quickshare's guards); suite-wide #15
-   (the itemDelimiter premise); nocloud's optional #4 boot gate; holde-em #3 (more
+   riptide #10 (the persona-index cap); coinxt #9-#11 (the bounds row #8 left, and
+   the mBTC form's truncation) and #3 (the Core residue); torrentxt #21
+   (torrent-quickshare's guards); suite-wide #15 (the itemDelimiter premise); nocloud's optional #4 boot gate; holde-em #3 (more
    leaf tranches), #10 (the admission list, a table-protocol bump) and the L-sized #1
    (Level 2 in played hands); box2dxt #4 (platformer polish); suite-wide #14 (the
    paste's `--full` headless profile, worth running last, just before an engine
@@ -780,8 +786,9 @@ Advisory, like the recommendations in OPEN-DECISIONS: a route, not a decision.
    version (the account says only "the latest") and `put sxVersion()`. The next
    paste is the first to carry the 2026-09-25/26 batch: record the new totals
    (holde-em v0.25.6 / harness 48, riptide 0.13.0's harness), watch the board
-   rebuild once over the old `suite-board-1` stamp, and keep the DataChannel
-   stacks closed (datachannelxt #8).
+   rebuild once over the old `suite-board-1` stamp, keep the DataChannel
+   stacks closed (datachannelxt #8), and neither close `enet-selftest` nor press
+   its Re-run while a paste run holds ENet (enetxt #4; runbook row 48).
 4. **What only a person can close:** D-04's wording and the owner calls; the box2dxt
    scenery and feel pass; holde-em's Phase 5 review and soak; the Model C Phase 4 exit
    on each OS.
