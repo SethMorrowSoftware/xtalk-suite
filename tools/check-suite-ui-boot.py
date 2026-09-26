@@ -263,10 +263,10 @@ SKIP lines (five skips short); and two "can't find handler" probes name
 layers the paste leaves out on purpose (NOT_IN_PASTE).
 
 NOT A PER-PUSH GATE, and measured, not assumed. On 2026-09-26, on the
-four-core machine that wrote it and beside another gate run (load about 4,
-under nice), one --full run took 350 to 423 s of wall time, openStack's
-synchronous Run all nearly all of it: nostrxt's folded harness 290 to 330 s,
-holde-em's about 60 s, everything else a few seconds. Its fixture is five
+four-core machine that wrote it and beside other gate runs (load 4 to 8,
+under nice), one --full run took 330 to 425 s of wall time in five runs,
+openStack's synchronous Run all nearly all of it: nostrxt's folded harness
+270 to 330 s, holde-em's about 60 s, everything else a few seconds. Its fixture is five
 such runs at once: 1137 s (about 19 minutes) for the clean run and its four
 mutants, on that machine the same day. Per push that is about 25 more
 minutes on a job (suite-gates.yml) that ran 1h22m to 2h43m in its fifteen
@@ -2730,9 +2730,10 @@ class FullInterp(SuiteInterp):
             # A statement-position handler call. THE ENGINE SETS `the result`
             # to what a command handler RETURNS (LiveCode dictionary,
             # `return`, DOCUMENTED; OBSERVED through onionxt's harness, which
-            # reads `the result` after every oxDial / oxClose / oxWrite
-            # command and ran 74/0/1 on the 2026-09-24 engine, where this
-            # model without the rule printed thirteen FAIL lines), and to
+            # reads `the result` after its oxDial, oxWrite, oxCreateService
+            # and other refusal-path commands and ran 74/0/1 on the
+            # 2026-09-24 engine, where this model without the rule printed
+            # thirteen FAIL lines on those reads), and to
             # empty when it returns none (the dictionary's reading; the
             # model's, never separately observed). SuiteInterp's own branch
             # discards the value; this one keeps it.
