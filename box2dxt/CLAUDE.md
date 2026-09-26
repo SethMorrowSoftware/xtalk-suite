@@ -121,13 +121,14 @@ doc map) - `dist/INSTALL.md` (packed by `make-release.py`) - `.github/workflows/
    at the end looks fixed and leaves the bug. Harness v32's
    `stTestCallerDelimiter` drives all ten under a caller's tab and prints
    whether a caller's delimiter reaches a called handler on that engine at
-   all. **Win32, 2026-09-24 (section 12): it does not** ("it saw comma"), and
-   a Kit call left its caller's tab alone ("tab in, tab out"): the
-   itemDelimiter crossed a handler call in neither direction, the LiveCode
-   dictionary's handler-local reading (engine note 2.3's counterpoint). So on
-   Win32 the ten passed WITHOUT exercising the fix (the harness says so), and
+   all. **Win32, 2026-09-24 and again 2026-09-25, and Linux, 2026-09-25
+   (section 12): it does not** ("it saw comma"), and a Kit call left its
+   caller's tab alone ("tab in, tab out"): on both, the itemDelimiter crossed
+   a handler call in neither direction, the LiveCode dictionary's
+   handler-local reading (engine note 2.3's counterpoint). So on Win32 and
+   Linux the ten passed WITHOUT exercising the fix (the harness says so), and
    no cross-call leak this entry guards against, the Images panel's included,
-   could have fired there. Linux and macOS: needs an OXT pass.
+   could have fired there. macOS: needs an OXT pass.
 6. **Constants must be literals**; derive computed values at runtime.
 7. **Command vs function.** A Kit COMMAND reports through `the result`
    (`b2kSpawnBox ...` then `put the result into tCtrl`); `get b2kSpawnBall(...)`
@@ -383,10 +384,10 @@ keys). The first 39 handlers are BEHAVIOUR tests; the 13 added at v23 are
 shallow "Kit API coverage" sections, and a handler that earns a real lesson
 graduates out. The 2026-09-09 Kit change left it at 31, against rule 2; v32
 (2026-09-24) is its assertion, `stTestCallerDelimiter` (11 lines, all ten fixed
-handlers under a caller's tab, plus two printed observations). v32 ran 385/0
-on Win32 the same day (section 12), its first run on a card wider than its own
-860 window; v31 never had a count of its own. Record the total a pass prints
-rather than matching 385.
+handlers under a caller's tab, plus two printed observations). v32 ran 385/0 on
+Win32 the same day (section 12), its first run on a card wider than its own 860
+window, and 385/0 on Linux and on Win32 again on 2026-09-25; v31 never had a
+count of its own. Record the total a pass prints rather than matching 385.
 
 It is the EIGHTH member folded into the suite paste (2026-08-16):
 
@@ -455,7 +456,9 @@ Pre-fold: the user's own OXT passes; post-fold: the suite paste. Passed/failed.
 | 2026-08-20 | Windows x86_64 | v30 | **375/0**; `playLoudness` reads back EXACT on Win32 (24->24, 73->73) |
 | 2026-08-21 | Linux | v30 | 374/1: `playLoudness` reads a constant 0 (24->0, 73->0); v31 demotes it to a printed three-way observation (exact / ordered-not-exact / does-not-track), expectation 374 |
 | 2026-08-24 | Windows x86_64, OXT 9.6.3 | whole suite paste (harness v31 by date) | 2,373/0 with 3 skips suite-wide; box2dxt's own count not captured, so v31 green is an inference |
-| 2026-09-24 | OXT, Win32, a 2026-09-12 DLL by the maintainer's account (its first engine load); version, OS build and bitness not recorded | the D-23 suite paste (built at `9aa62c8`; this member's fold and Kit identical to `6401e43`'s), harness v32, on the board's 1200-wide card (860 standalone, 760 in the old paste) | **385/0**, no skips (board row 387/0/0: the core adds its zero-failures and floor lines). At 1200 wide the camera held: hScroll 900, a world-px write lands at 1500. `playLoudness` exact (24->24, 73->73); `revLibraryMapping` hook available. v32's observations: a caller's tab does NOT reach a called handler (it saw comma), and a Kit call left its caller's delimiter alone (tab in, tab out), so the ten passed without exercising the fix (gotcha 5) |
+| 2026-09-24 | OXT, Win32, a 2026-09-12 DLL by the maintainer's account (its first engine load), 64-bit by the same account (given 2026-09-26, after this row said "bitness not recorded"), so the `x86_64-win32` one; version and OS build not recorded | the D-23 suite paste (built at `9aa62c8`; this member's fold and Kit identical to `6401e43`'s), harness v32, on the board's 1200-wide card (860 standalone, 760 in the old paste) | **385/0**, no skips (board row 387/0/0: the core adds its zero-failures and floor lines). At 1200 wide the camera held: hScroll 900, a world-px write lands at 1500. `playLoudness` exact (24->24, 73->73); `revLibraryMapping` hook available. v32's observations: a caller's tab does NOT reach a called handler (it saw comma), and a Kit call left its caller's delimiter alone (tab in, tab out), so the ten passed without exercising the fix (gotcha 5) |
+| 2026-09-25 | OXT, Linux (`the platform`, as these lines print it); by the maintainer's account 64-bit Kubuntu 24.04 with the latest committed builds, so the `x86_64-linux` file of release run 12 (`cec1e85`, 2026-08-27; the 2026-09-12 run rebuilt it byte-identical); the latest OXT (no version recorded), no preflight, and the report the launch's second Run all, by the same account (given 2026-09-26) | the D-23 suite paste (regenerated at `f1346e0`, the tree at `cba3130`; this member's fold and Kit as on 2026-09-24, comments aside), harness v32, on the board's 1200-wide card | **385/0**, no skips (board row 387/0/0); engine ABI 4. v32's first Linux run, and the first Linux record since v30's 374/1 on 2026-08-21, whose one FAIL, the `playLoudness` readback, is a printed note since v31 and read the same: "readable as a number" green, readback does NOT track the write (asked 24/73, read 0/0; engine note 5.4). At 1200 wide the camera held (hScroll 900, a world-px write lands at 1500); `revLibraryMapping` hook available (Linux). v32's observations, the Win32 answer: a caller's tab does NOT reach a called handler (it saw comma), and a Kit call left its caller's delimiter alone (tab in, tab out), so the ten passed without exercising the fix here too (gotcha 5). That file's first RECORDED engine load: the 2026-08-18 and 2026-08-21 Linux runs predate it, and the 2026-08-27 paste recorded no platform |
+| 2026-09-25 (Win32; the Kit report's clock "Friday, September 25, 2026 10:54 PM") | OXT, Win32, by the maintainer's account the machine of the 2026-09-24 runs and 64-bit, so the `x86_64-win32` DLL, INFERRED to be the 2026-09-12 file (no Windows DLL committed since); no preflight (the same account: none on either machine); the OXT build and whether the report is a launch's first or second Run all not recorded | the same D-23 suite paste as the Linux run (INFERRED from the version lines both reports print: the board stamp `suite-board-1`, holde-em's "stack v0.25.5 harness v47" and riptide's third probe line), harness v32, on the board's 1200-wide card | **385/0**, no skips (board row 387/0/0); engine ABI 4. Line for line the Linux report's (the camera at 1200 wide included) except where the platform shows: `playLoudness` "readback is EXACT on Win32" (24->24, 73->73), as on Win32 2026-08-20 and 2026-09-24 (engine note 5.4); `revLibraryMapping` hook available (Win32); v32's two observations read on Win32 again (a caller's tab does NOT reach a called handler, it saw comma; tab in, tab out), so the ten passed without exercising the fix (gotcha 5); and the two disabled-slab lines printed y 836.252747 where Linux printed 836.252708 (both assert only y > 440; the digits are recorded, their cause not examined) |
 
 v29, v30, v31 and v32 totals are not comparable. Kit defects the runs found (fixed):
 
@@ -478,26 +481,29 @@ v29, v30, v31 and v32 totals are not comparable. Kit defects the runs found (fix
 
 ## 13. Status
 
-Engine-proven: the Kit through harness v32 on Win32 (385/0, 2026-09-24) and
-through v30 on Linux (section 12), and the pre-fold games on Win32 (June 2026);
-v31 has no per-member record. The five game stacks (demo,
-platformer, slingshot, contraption builder, spike-gamekit) have not been re-run
-on an engine since the 2026-08-14 fold touched nearly every script (as of
-2026-09-23). The 2026-09-09 delimiter fix: its ten Kit handlers passed v32
-under a caller's tab on Win32, where a caller's tab does not reach a called
-handler, so no engine has yet exercised the fix itself (gotcha 5). The fix on
-Linux and macOS, the builder's eight restores and the card-fade pins: verified
-statically; need an OXT pass. The committed `universal-mac` dylib (ABI 4, arm64
-+ x86_64) has not been loaded by an engine. It is byte-identical to what the
-release lane builds: runs 33025459610 (2026-08-27) and 34657390798 (2026-09-12)
-both built, verified and installed it, and the installer reported it
-`(unchanged)` (a sha256 match; the shim and `CMakeLists.txt` have not changed
-since the fold), which is why git shows only the fold's commit for it. The suite's `release-binaries.yml`
-has box2dxt rows since 2026-08-23: run 12 committed the Linux libraries
-2026-08-27 (resolving D-03), the Windows DLLs again 2026-09-12 (one of which first met an
-engine on 2026-09-24, by the maintainer's account; its bitness was not recorded). That `x86-linux`
-library requires GLIBC_2.34 (stock ubuntu-24.04 multilib), `x86_64-linux` only
-2.17. Open work lives in the suite's `docs/WORK-PLAN.md`.
+Engine-proven: the Kit through harness v32 on Win32 (385/0, 2026-09-24 and
+2026-09-25) and on Linux x86_64 (385/0, 2026-09-25; section 12), and the
+pre-fold games on Win32 (June 2026); v31 has no per-member record. The five game
+stacks (demo, platformer, slingshot, contraption builder, spike-gamekit) have
+not been re-run on an engine since the 2026-08-14 fold touched nearly every
+script (as of 2026-09-23). The 2026-09-09 delimiter fix: its ten Kit handlers
+passed v32 under a caller's tab on Win32 and on Linux, where a caller's tab does
+not reach a called handler, so no engine has yet exercised the fix itself
+(gotcha 5). The fix on macOS, the builder's eight restores and the card-fade
+pins: verified statically; need an OXT pass. The committed `universal-mac` dylib
+(ABI 4, arm64 + x86_64) has not been loaded by an engine. It is byte-identical
+to what the release lane builds: runs 33025459610 (2026-08-27) and 34657390798
+(2026-09-12) both built, verified and installed it, and the installer reported
+it `(unchanged)` (a sha256 match; the shim and `CMakeLists.txt` have not changed
+since the fold), which is why git shows only the fold's commit for it. The
+suite's `release-binaries.yml` has box2dxt rows since 2026-08-23: run 12
+committed the Linux libraries 2026-08-27 (resolving D-03; the `x86_64-linux` one
+first met an engine, on the record, on 2026-09-25, 64-bit by the maintainer's
+account), the Windows DLLs again 2026-09-12 (the `x86_64-win32` one first met an
+engine on 2026-09-24, 64-bit OXT by the maintainer's account given 2026-09-26;
+the `x86-win32` one has not). That `x86-linux` library requires GLIBC_2.34
+(stock ubuntu-24.04 multilib), `x86_64-linux` only 2.17. Open work lives in the
+suite's `docs/WORK-PLAN.md`.
 
 ## 14. Build and gates
 

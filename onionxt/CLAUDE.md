@@ -192,7 +192,8 @@ throwing "reinstall"; gcc ASan + UBSan, headers `-isystem`, binary + `MANIFEST.s
 - **The two SOCKS timeouts are told apart (2026-09-24)**: `oxStreamDeadline` and `oxSocketTimeout`
   build their reason through `oxSocksTimeoutReason`, same `SOCKS handshake timed out` prefix, then the
   path and the stalled stage (docs/02); harness section 12 pins the difference, green on an engine
-  2026-09-24. Which path a real stall takes is still item 13.
+  2026-09-24 (Windows) and 2026-09-25 (Linux and Windows). Which path a real stall takes is still
+  item 13.
 
 ## Engine evidence ledger
 
@@ -208,6 +209,8 @@ throwing "reinstall"; gcc ASan + UBSan, headers `-isystem`, binary + `MANIFEST.s
 | 2026-09-02 | coin-wallet (carries onionxt), engine log | Esplora over Tor: `oxDial` to a v3 onion `:80`, 147 circuits, testnet broadcast `7978bdd2...`; later a v2 onion | green; one real `SOCKS handshake timed out` failed closed and was retried; the v2 onion got "general SOCKS server failure" (OnionXT's REP `0x01` mapping), failed closed |
 | 2026-09-03 | coin-wallet, engine logs 6-12 | Electrum over Tor (v3 onion, port 143): 173 dials, then one kept stream per sync; Esplora over one HTTP/1.1 stream; the autotest over Electrum on Tor | green; autotest 41 passed, 0 failed, 4 skipped in 248 s |
 | 2026-09-24 | Windows (the engine reports Win32; OXT version not recorded), the D-23 suite paste (2620/5/3), onionxt as at 6401e43 | `oxSelfTest()` folded; the core's OnionXT sampler and capability cross-check | 74 passed, 0 failed, 1 skipped (75 attempted, floor 51; sections 2-3 ran pre-auth): every section green, the 2026-09-24 additions included (the `oxTransportDial` and `oxLaunchTor` refusals, `oxStopTor` unauthenticated, section 12's two timeout reasons); the skip is section 11 (`oxh*` is not in the paste); sampler 9/9, cross 3/3. No tor touched; none of the paste's 5 fails was onionxt's |
+| 2026-09-25 | Linux: 64-bit, Kubuntu 24.04, the latest OXT (no version recorded), the report the launch's second Run all (the maintainer's account, the last two given 2026-09-26), the D-23 suite paste (2672/0/10) as regenerated at f1346e0, on main at cba3130; this harness and library unchanged in code since the row above (header comments only) | `oxSelfTest()` folded; the core's OnionXT sampler and capability cross-check | 74 passed, 0 failed, 1 skipped (75 attempted, floor 51), as in the row above: every section green, the three live-daemon names on their refusal paths, `oxStopTor` unauthenticated and section 12's two timeout reasons included; the skip is section 11 again; sampler 9/9, cross 3/3 (board row 85/0/1). The first record naming Linux with this member's count (the runbook's earlier Linux pastes, 2026-08-18 and 2026-08-21, recorded box2dxt's only). No tor touched; the paste had no failures |
+| 2026-09-25 (Windows; the Kit report's clock 10:54 PM local) | Windows (the engine reports Win32), by the maintainer's account the machine of the 2026-09-24 runs and 64-bit; the OXT build and whether the report is a launch's first or second Run all not recorded; the same D-23 suite paste as the Linux run (INFERRED from the version lines both reports print: the board stamp `suite-board-1`, holde-em's "stack v0.25.5 harness v47" and riptide's third probe line; 2653/2/10) | `oxSelfTest()` folded; the core's OnionXT sampler and capability cross-check | "74 passed, 0 failed, 1 skipped" (floor 51), as on Linux the same day: every section green, the three live-daemon names on their refusal paths, `oxStopTor` unauthenticated and section 12's two timeout reasons included; the skip is section 11 again; board row 85/0/1, and the cross-member row (the capability cross-check among it) green. No tor touched; the paste's two failures were the live loopbacks, neither onionxt's |
 
 Confirmed on-engine (promoted from `VERIFY:`):
 
@@ -229,10 +232,10 @@ Confirmed on-engine (promoted from `VERIFY:`):
 Still `VERIFY:` (not yet exercised):
 
 8. Mode B: `oxLaunchTor` / `oxStopTor` past their offline legs (the empty-argument refusal and the
-   unauthenticated disconnect ran green 2026-09-24), `open process`, the `oxProcessId` accessor,
-   `__OwningControllerProcess` (engine note 6.3); since 2026-09-24 also the torrc-write and
-   `open process` result checks (what `the result` holds on success and on failure) and the
-   `Log notice file` line (the log appears and the pipe stays quiet).
+   unauthenticated disconnect ran green 2026-09-24, Windows, and 2026-09-25, Linux and Windows),
+   `open process`, the `oxProcessId` accessor, `__OwningControllerProcess` (engine note 6.3); since
+   2026-09-24 also the torrc-write and `open process` result checks (what `the result` holds on
+   success and on failure) and the `Log notice file` line (the log appears and the pipe stays quiet).
 9. The four inline hypotheses (runbook B.12): a second service on an in-use local port refused; the
    accepted-socket id format; a stale `close socket` tolerated; the topStack as default callback owner.
 10. An OnionXT-to-OnionXT onion dial and the two-instance sealed round trip (`examples/onion-roundtrip`).
@@ -248,12 +251,12 @@ Still `VERIFY:` (not yet exercised):
 
 The live-Tor core and `oxh*` hosting are engine-proven (ledger above). The offline `oxSelfTest()` ran
 green folded into every dated suite pass above from 2026-08-10, and `tools/onion-kat.py` pins the
-pure-compute paths headlessly. The harness's 2026-09-24 additions (the three live-daemon names on
-their refusal paths, section 12's timeout reasons) ran green on an engine the same day (the
-2026-09-24 ledger row); the live legs they stop short of are items 8 and 13. Static only ("verified
-statically; needs an OXT pass + a live-Tor pass"): items 8-13, and the demo and spike as whole stacks
-since their 2026-08-14 move onto the suite UI kit. Open work is tracked in the suite's
-`docs/WORK-PLAN.md`.
+pure-compute paths headlessly. The harness's 2026-09-24 additions (the three live-daemon names on their
+refusal paths, section 12's timeout reasons) ran green on an engine the same day (the 2026-09-24 ledger
+row, Windows) and again on Linux and Windows on 2026-09-25; the live legs they stop short of are items
+8 and 13. Static only ("verified statically; needs an OXT pass + a live-Tor pass"): items 8-13, and the
+demo and spike as whole stacks since their 2026-08-14 move onto the suite UI kit. Open work is tracked
+in the suite's `docs/WORK-PLAN.md`.
 
 ## Build and gates
 

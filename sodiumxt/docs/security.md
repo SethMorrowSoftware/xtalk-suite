@@ -128,7 +128,7 @@ the house standard: C KATs under ASan/UBSan cross-checked against an independent
 implementation (three implementations agree on the pinned vectors), then **observed on
 an engine 2026-08-24** (Windows x86_64, OXT 9.6.3, ABI 10): the 7-check raw-ChaCha20
 section green inside the 106-check `sxSelfTest()`, folded into the suite paste, and green
-again there 2026-09-24 (Windows).
+again there 2026-09-24 (Windows x86_64) and 2026-09-25 (Linux x86_64 and Windows x86_64).
 
 ## Provenance and reporting
 

@@ -114,7 +114,10 @@ Code comments cite these numbers; keep them.
   defect with a polite name.
 - The harness's session starts into a temporary, commits only on success and is never stopped; the
   suite generator aliases the folded copy to the core's session (`@CORESESSION@`), since a second
-  `btStartSession` is refused and the live section would SKIP green.
+  `btStartSession` is refused and the live section would SKIP green. Since D-23 the fold reads the
+  core's handle on EVERY call (a cached one drove a stopped session on every run after the first
+  in a launch), and a SECOND Run all in one launch ran the four session sections green on an engine
+  on 2026-09-25 (Linux; which run it was is the maintainer's account; the ledger).
 
 **Phase 3, media.**
 - Attachments are SINGLE FILES: a trackerless torrent `btCreateTorrent(path, 0, 0, "")` seeded in
@@ -297,7 +300,9 @@ Code comments cite these numbers; keep them.
    (ledger, 2026-09-24); the halves bound refused it there in the day's second run, whose probe line
    showed the engine answering nearly-equal numbers as equal (1 + 2^-51 > 1 reads false). The third
    run's second probe line named the rule: a RELATIVE tolerance between 8 and 16 DBL_EPSILON of the
-   smaller operand, which the engine source puts at 10 (suite engine note 2.10). So integers 1
+   smaller operand, which the engine source puts at 10 (suite engine note 2.10), and the third
+   probe line read 10 to the digit on Linux and on Windows on 2026-09-25 (`N is N + 1` true at
+   N = 450359962737050, false one below). So integers 1
    apart compare EQUAL from about 4.5e14 (2^48.7), not "past 2^52" as 8ea0f21's message said:
    `rsIngestHead`'s and `rsIngestBridge`'s rollback and seq-agreement comparisons blur there, and
    no counter or clock here gets near it (seqs start at 0 or at the seconds; open work in the
@@ -306,7 +311,10 @@ Code comments cite these numbers; keep them.
    against a quotient. Tier 1c replays the table under the engine's rule and two looser candidates
    (fixture: the old line, which each must accept) and refuses any library comparison against a
    quotient; the harness prints three probe lines: the first two measured the rule, the third
-   reads its consequences (wide integers, near zero, number-like text).
+   reads its consequences (wide integers, near zero, number-like text), and read them on Linux and
+   on Windows (2026-09-25) exactly as the source's rule predicts. Tier 1c holds the rule to every
+   recorded numeric answer of the three (probe 3's first two items are a text parse the interpreter
+   does not model, so they stay out).
 10. **A dead write is invisible to every other gate** (2026-09-08): `raAppSave` emitted `headseq`
     and `raAppLoad` never read it; check-demo-boot round-trips it now. Any value worth persisting is
     worth round-tripping in a test.
@@ -353,6 +361,8 @@ Newest last. "Maintainer's account" is a dated report with no result text or pla
 | 2026-09-24 | OXT, Win32; the suite paste (board D-23) | riptide's folded harness, its first engine run since phase 8 | 487 passed, 2 failed, 2 skipped (the skips: the live-tor legs). The four sections that use the core's session (the kind-C chunked-post store, DMs, the live feed, media) passed. FAIL 1: the capability check still counted SEVEN probe keys, and phase 8 made it ten (a stale check, not a library defect). FAIL 2: "a seq of 2^53 + 1 is REFUSED" - the engine ACCEPTED it through `rsReadBEu64`'s quotient bound, which pure IEEE, and so every headless gate, refuses (OBSERVED; the cause INFERRED, trap 9). Both fixed the same day: the check asserts the exact ten-key set, the bound is decided on the u32 halves. Verified statically; needs an OXT re-pass |
 | 2026-09-24 (the second run, 8:41 PM local) | OXT, Win32; a fresh stack, the suite paste regenerated at 21aaa61 | riptide's folded harness with both fixes | 489 passed, 0 failed, 2 skipped (the live-tor legs); the whole paste 2623 / 2 / 3, its two FAILs the enet and datachannel loopbacks. Both fixes GREEN on the engine: "probe reports exactly its ten keys" (it printed all ten) and "a seq of 2^53 + 1 is REFUSED". The probe line read `true,false,false,false` where IEEE reads `true,true,true,true`: the engine answers nearly-equal numbers as equal (1 + 2^-51 > 1 is false on it), OBSERVED; whether by a relative or an absolute tolerance or a decimal round trip, the reading cannot tell (suite engine note 2.10, trap 9) |
 | 2026-09-24 (the third run, 10:10 PM local) | OXT, Win32; a fresh stack, the suite paste as regenerated at b34f7b0 (the board review's fixes) | riptide's folded harness, whose report now opens with three counts | 489 passed, 0 failed, 2 skipped (the live-tor legs), and this time the board MERGED the skips (its row read 491 / 0 / 2 with the two cross-member checks; the whole paste 2623 / 2 / 10, its two FAILs the loopbacks again). The second probe line read `true,false,16,16`: `1e-10 > 0` true, `2^30 + 2^-21 > 2^30` false, and the smallest step told apart is 16 ulps at 1 AND at 8, so the engine's comparison tolerance is RELATIVE, between 8 and 16 DBL_EPSILON (OBSERVED). The engine source's rule (10 DBL_EPSILON of the smaller operand) reproduces all eight readings of the two probe lines (suite engine note 2.10, trap 9) |
+| 2026-09-25 | OXT on Linux: 64-bit, Kubuntu 24.04, the committed x86_64-linux libraries and the latest OXT (the maintainer's account, "latest builds"; no OXT version recorded) | the D-23 suite paste as at `cba3130`, last regenerated at `f1346e0` (the report's holde-em v0.25.5 / harness 47 header and this harness's third probe line exist together only from there); riptide's folded harness as in the third run plus the third probe line (a diagnostic, not a check; the library changed in comments only) | 489 passed, 0 failed, 2 skipped (the live-tor legs), row 491 / 0 / 2; the whole paste 2672 / 0 / 10, no failures. The first record naming Linux with this member's count. All ten probe keys true bar `hasNostrRelay` (not in the paste by design). Probes 1 and 2 read as on Windows, `true,false,false,false` and `true,false,16,16`, so the same relative rule holds on this build. Probe 3, its first recorded reading (the launch's first Run all, on open, went unreported), read `true,true,false,true,false,true,true,false`, the engine source's prediction item for item (OBSERVED, Linux): `"1e999" is "2e999"` and `"1e5" is "100000"` true (text becomes a number: two overflowing texts are equal, exponent form is a number; suite engine note 2.11); `1e-15 > 0` false and `1e-14 > 0` true (the absolute branch near zero); `2^49 < 2^49 + 1` false and `2^48 < 2^48 + 1` true; `N is N + 1` true at N = 450359962737050 and false one below, which puts the constant at 10 DBL_EPSILON to the digit (2^52 / 10 = 450359962737049.6 lies between; suite engine note 2.10). The SECOND Run all in one launch, TorrentXT installed, by the maintainer's account (given 2026-09-26: Run all ran on open, they pressed it again, and this report is that run's, taken with Copy results; this row called it INFERRED to be the run launched on open until then). So the four sections that take the core's session (the kind-C chunked-post store, DMs, the live feed, media) ran green on a second run: 0 failed, and the only skips the two live-tor legs, so none of the four fell back to its "could not start a session" SKIP. The paste's stale-session fix (the fold reads the core's handle on every call) has therefore run on an engine, which is what the suite work plan's riptide engine #10 asks (a second Run all in one launch, TorrentXT installed, those four green on it) |
+| 2026-09-25 (Windows; the Kit report's clock 10:54 PM local) | OXT, Win32, by the maintainer's account the machine of the 2026-09-24 runs and 64-bit; the OXT build and whether the report is a launch's first or second Run all not recorded | the same D-23 suite paste as the Linux run (INFERRED from the version lines both reports print: the board stamp `suite-board-1`, holde-em's "stack v0.25.5 harness v47" and riptide's third probe line); riptide's folded harness as there | 489 passed, 0 failed, 2 skipped (the live-tor legs), row 491 / 0 / 2; the whole paste 2653 / 2 / 10, its two FAILs the enet and datachannel loopbacks. The three probe lines read EXACTLY as on Linux: `true,false,false,false`; `true,false,16,16`; and probe 3, its first recorded Windows reading, `true,true,false,true,false,true,true,false`. So on Windows too (64-bit) the constant is 10 DBL_EPSILON to the digit (items 7-8), the near-zero absolute branch (3-4) and the integer threshold (5-6) are the source's, and two number-like texts compare as numbers (items 1-2: two overflowing texts equal, exponent form a number; suite engine notes 2.10 and 2.11): OBSERVED on both platforms. Not counted toward the second Run all (not recorded which run this was) |
 
 Caveats that travel with the ledger:
 - The 2026-09-09 tag change (trap 8) re-pinned the admission response and welcome goldens, which
@@ -362,7 +372,8 @@ Caveats that travel with the ledger:
   cap) first met an engine on 2026-09-24 (ledger); of that run's two FAILs, only the u64 bound's
   2^53 + 1 row fell in them. The day's fixes (the ten-key check, the halves bound and exactness
   check, the numeric probe line) ran green in its second run, and the second probe line in its
-  third. The harness's THIRD probe line (2026-09-25) is static + headless only.
+  third. The harness's third probe line (added 2026-09-25) first ran on an engine the same day, on
+  Linux and then on Windows (the ledger), and read the same on both.
 - Headless on 2026-09-23: check-script-vectors 84 checks (1 skip), check-demo-boot 44 checks. Run
   the gates for current counts.
 
@@ -377,9 +388,9 @@ suite's `docs/OXT-PASS-RUNBOOK.md` rows flip; open work lives in the suite's `do
 | 3, media | DONE 2026-08-15, two machines. Mid-download playback measured negative 2026-08-27 and fixed; the faststart re-run is owed |
 | 4, DMs | DONE 2026-08-15, two machines; the D15 clean close (2026-08-17) post-dates that pass and has not run |
 | 5, the call + typing lane | built, never run. Verified statically; needs an OXT pass |
-| 6, LAN mesh | compute engine-green 2026-08-20, and again 2026-09-24 with the admission and welcome bytes as re-pinned on 2026-09-09 (caveat above). Owed: the live mesh (draft-appears criterion, media handoff, third device) |
-| 7, anon persona + 8.2/8.3 serving | compute engine-green 2026-08-15 and 2026-08-20; needs an OXT + live-Tor pass. The harness's 2 anon-service SKIPs are exactly that leg |
-| 8, Nostr bridge + `RIPTAPP1` (built 2026-08-29) | offline compute engine-green 2026-09-24 (the `RIPTAPP1` store and the Nostr rail's harness sections, in the suite paste); the relay half needs an OXT + live-relay pass. The v11 label: verified statically + headless boot + an engine boot record with one since-fixed check defect; needs an OXT re-pass, whose boot record should read 10 passed / 0 failed |
+| 6, LAN mesh | compute engine-green 2026-08-20, and again 2026-09-24 (Windows) and 2026-09-25 (Linux and Windows) with the admission and welcome bytes as re-pinned on 2026-09-09 (caveat above). Owed: the live mesh (draft-appears criterion, media handoff, third device) |
+| 7, anon persona + 8.2/8.3 serving | compute engine-green 2026-08-15 and 2026-08-20, and again 2026-09-24 (Windows) and 2026-09-25 (Linux and Windows); needs an OXT + live-Tor pass. The harness's 2 anon-service SKIPs are exactly that leg |
+| 8, Nostr bridge + `RIPTAPP1` (built 2026-08-29) | offline compute engine-green 2026-09-24 (Windows) and 2026-09-25 (Linux and Windows) (the `RIPTAPP1` store and the Nostr rail's harness sections, in the suite paste); the relay half needs an OXT + live-relay pass. The v11 label: verified statically + headless boot + an engine boot record with one since-fixed check defect; needs an OXT re-pass, whose boot record should read 10 passed / 0 failed |
 
 ## 7. Gates and suite integration
 

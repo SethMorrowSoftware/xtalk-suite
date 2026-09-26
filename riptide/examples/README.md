@@ -22,10 +22,13 @@ so do not edit it here.
 - Phase 4 (DMs): PASSED on two machines 2026-08-15, chat both ways, no server.
 - Phase 5 (the call and its typing lane): built, never run.
 - Phases 6 (the mesh) and 7 (anon over Tor, with the 8.2/8.3 onion serving):
-  compute engine-green 2026-08-20 in the suite paste (phase 6's admission and
-  welcome bytes were re-pinned 2026-09-09 since); the live legs are owed.
+  compute engine-green 2026-08-20 in the suite paste, and again 2026-09-24
+  (Windows) and 2026-09-25 (Linux and Windows) with phase 6's admission and
+  welcome bytes as re-pinned 2026-09-09; the live legs are owed.
 - Phase 8 (the Nostr bridge): the library is executed headlessly against the
-  real committed CoinXT (`../tools/check-script-vectors.py`). The card's label:
+  real committed CoinXT (`../tools/check-script-vectors.py`), and its offline
+  compute ran green in the suite paste on an engine 2026-09-24 (Windows) and
+  2026-09-25 (Linux and Windows). The card's label:
   verified statically + headless boot; needs an OXT re-pass. (Its re-landed boot
   ran on an engine 2026-08-29, and the v11 boot read 9 passed / 1 failed on a
   since-fixed self-check defect; the re-paste should read 10 passed / 0 failed.)

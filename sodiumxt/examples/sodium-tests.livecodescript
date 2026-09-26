@@ -15,10 +15,12 @@
 -- (the ASCII bytes); textDecode them here when a String is wanted. A passphrase
 -- is textEncoded to UTF-8 before it crosses.
 --
--- Engine-verified through ABI 10 (2026-08-24, and again on Windows 2026-09-24:
--- 106 checks in the suite paste, the raw-ChaCha20 section included;
--- previously through ABI 9): the "run it in OXT to confirm" label that
--- stood here is retired by recorded passes - the complete harness ran green
+-- Engine-verified through ABI 10 (2026-08-24, again on Windows 2026-09-24
+-- and on Linux x86_64 and Windows x86_64 2026-09-25: 106 checks in the
+-- suite paste each time,
+-- the raw-ChaCha20 section included; previously through ABI 9): the "run it
+-- in OXT to confirm" label that stood here is retired by recorded passes -
+-- the complete harness ran green
 -- on-engine 2026-08-10 (68 checks, zero failures, twice in one day), again
 -- 2026-08-12 on Windows x64 (71 checks, adding the ABI-7 sxSha3_256 / FIPS 202
 -- vectors), and testRistretto (the ABI 8 group surface plus the ABI 9
@@ -33,12 +35,15 @@
 -- checks, on Windows x86_64; the "ONE section with no engine run today"
 -- sentence that stood here after that run contradicted the line above it and
 -- was corrected 2026-09-24. All 7 ran green again in the 2026-09-24 D-23
--- suite paste on Windows (106/106), on one of the two shipped MSVC DLLs of
--- 2026-09-12 (the maintainer's account). Owed now is platform cover only:
--- the 2026-08-24 DLL was a mingw build that no longer ships, and the
--- 2026-09-24 run recorded neither sxVersion() nor bitness, so each MSVC DLL,
--- the mac dylib and Linux at ABI 10 still need a run that names its build
--- (CLAUDE.md's platform table).
+-- suite paste on Windows (106/106), on the shipped x86_64-win32 MSVC DLL of
+-- 2026-09-12 (the maintainer's account, which named the bitness 64-bit on
+-- 2026-09-26), again on Linux 2026-09-25 (106/106), the first recorded
+-- ChaCha20 run on Linux, on the committed x86_64-linux file (the
+-- maintainer's account: 64-bit, the latest committed builds), and on
+-- Windows x86_64 the same day (106/106). Owed now is platform cover only:
+-- the 2026-08-24 DLL was a mingw build that no longer ships, no run has
+-- recorded sxVersion(), and the x86-win32 DLL, x86-linux and the mac dylib
+-- still need a run that names its build (CLAUDE.md's platform table).
 
 local sLog
 local sPass

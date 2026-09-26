@@ -195,9 +195,11 @@ because a harness once ran against a stale in-memory library and reported failur
   `test-build-suite-selftest.py`), the drift fixtures `test-ui-kit-drift.py` and
   `test-harness-scaffold-drift.py`, and `check-suite-ui-boot.py` (fixture `test-suite-ui-boot.py`),
   which drives the board's logic through the family interpreter in an all-absent profile and
-  upgrades no label. Run all has run on an engine (2026-09-24: the build, the boot self-check,
-  the rows adding up to the totals, Copy results; runbook section 8); a row's Run, Show and the
-  filters are verified statically; needs an OXT pass (runbook row 48).
+  upgrades no label. Run all has run on an engine (2026-09-24 on Windows: the build, the boot
+  self-check, the rows adding up to the totals, Copy results; 2026-09-25 on Linux, the same, and
+  by the maintainer's account a SECOND Run all in one launch, riptide's session sections green;
+  2026-09-25 on Windows again; runbook section 8); a row's Run, Show and the filters are verified
+  statically; needs an OXT pass (runbook row 48).
 - **A script-layer edit is done only when every carrier is regenerated** (`build-suite-selftest.py`
   AND `sync-demo-embeds.py`). The carrier sets overlap without either containing the other: the
   b2k Kit is in the paste and no demo; `onionxt/src/onion-httpd.livecodescript` is in demos only.
@@ -310,12 +312,20 @@ worse than no gate, because it answers the question nobody asks twice.
 - **History.** Run 12 (2026-08-27) was the first dispatch to reach its commit stage; runs 5, 10 and
   11 died on a missing Perl module, 70 leaked ENet symbols in enetxt's mac dylib, and a commit
   allowlist `[a-z]+xt` that could not match box2dxt. Every native member's CURRENT binaries come
-  from the 2026-09-12 dispatch (run 34657390798 from 0f17ab5, commit 421bab3). Their WINDOWS
-  builds first met an engine on 2026-09-24: the D-23 suite paste loaded all six and ran every
-  member's sections (runbook section 8; the bitness was not recorded). No engine has loaded the
-  Linux or mac builds yet. The Windows DLLs carry libsodium 1.0.22 (D-08) and libtorrent 2.1.1,
-  not the versions pinned for the other platforms, and that run exercised both by the maintainer's
-  account (the report prints no library version).
+  from the 2026-09-12 dispatch (run 34657390798 from 0f17ab5, commit 421bab3). Their
+  `x86_64-win32` builds first met an engine on 2026-09-24: the D-23 suite paste loaded all six
+  and ran every member's sections (runbook section 8), on a 64-bit OXT by the maintainer's
+  account (given 2026-09-26), and again on 2026-09-25 on that machine (the builds INFERRED the
+  same: nothing newer is committed, and torrentxt's 997-byte refusals pass). Their
+  `x86_64-linux` builds (sodiumxt's and box2dxt's still run 12's) first met an engine on the
+  record on 2026-09-25: the same paste ran green (2672/0/10) on 64-bit Kubuntu 24.04 with "the
+  latest builds" and "the latest" OXT, by the maintainer's account (torrentxt's 997-byte
+  refusals agree: no committed Linux build before 421bab3 carries that cap; the OXT version and
+  library versions not recorded). No engine has loaded the 32-bit (`x86-win32`, `x86-linux`) or
+  mac builds yet. The Windows DLLs carry libsodium 1.0.22 (D-08) and libtorrent 2.1.1, not the
+  versions pinned for the other platforms, and the 2026-09-24 runs exercised both by the
+  maintainer's account, the 2026-09-25 Windows run by that inference (the report prints no
+  library version).
 
 ## Member repositories and publishing
 

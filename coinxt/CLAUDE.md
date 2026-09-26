@@ -433,7 +433,9 @@ The script layer's 51: phase 3 encodings (19), phase 4 HD (11), phase 5 transact
 | 2026-08-17 | Windows x86_64, NT 10.0, OXT 9.6.3 | suite paste (1,836 folded checks, 0 failed, 7 skips) | coinxt 278/278 at ABI 6: WIF (14 checks; an xprv refused on payload length), the `cnx_memzero` bind, BIP-340 vector 1 byte for byte, cases 5 (an off-curve key answers false) and 6 (odd R), three tamper negatives, fresh-aux signatures that differ and both verify (the full 19, 10 negative, run headless in `coin-kat.py`), the BIP-341 wallet vectors, `cxBtcAddressP2TR` still not tweaking, an empty `Data` in an OPTIONAL slot, a three-argument foreign call, an array return by name |
 | 2026-08-20 | Windows | suite paste, whole run | 1981 passed / 0 failed / 1 skipped overall; coinxt's own count not recorded |
 | 2026-08-24 | Windows x86_64, OXT 9.6.3 | suite paste (2373/0/3) | coinxt 290/290, including the 12-check BIP-341 section: both sighash paths, the `0xfa` leaf, the sorted fold, the control block, every refusal |
-| 2026-09-24 | Windows (the engine reports Win32; the bitness not recorded), the 2026-09-12 release DLL at ABI 7 (its first engine load, the maintainer's account) | the D-23 suite paste (2620/5/3; none of the five failures was coinxt's) | coinxt 296/296 and the core's two samplers 11/11. ABI 7's first engine run: the "secp256k1 keys" section's six `cxPubkeyCombine` checks (G + G is 2G, one key is itself, the intermediate-infinity sum G + (-G) + 2G, and three refusals: the point at infinity, a length not a multiple of 33, an empty set), the first `Data`-of-many-keys shape this binding marshalled. `cxCheckABI` passed against the shipped binary; every section through phase 5 green |
+| 2026-09-24 | Windows (the engine reports Win32), the 2026-09-12 release DLL at ABI 7 (its first engine load, the maintainer's account), 64-bit by the same account (given 2026-09-26, after this row said "the bitness not recorded"), so the `x86_64-win32` one | the D-23 suite paste (2620/5/3; none of the five failures was coinxt's) | coinxt 296/296 and the core's two samplers 11/11. ABI 7's first engine run: the "secp256k1 keys" section's six `cxPubkeyCombine` checks (G + G is 2G, one key is itself, the intermediate-infinity sum G + (-G) + 2G, and three refusals: the point at infinity, a length not a multiple of 33, an empty set), the first `Data`-of-many-keys shape this binding marshalled. `cxCheckABI` passed against the shipped binary; every section through phase 5 green |
+| 2026-09-25 | Linux (box2dxt's lines print `the platform` as Linux); by the maintainer's account 64-bit Kubuntu 24.04 with the latest committed builds, so the `x86_64-linux` library of `421bab3` (release run 34657390798, 2026-09-12) at ABI 7; the latest OXT (no version recorded), no preflight, and the report the launch's second Run all, by the same account (given 2026-09-26) | the D-23 suite paste as regenerated at `f1346e0` (2672/0/10; this member's folded code as on 2026-09-24, comments aside) | coinxt 296/296 and the core's two samplers 11/11; board row 308/0/0. `cxCheckABI` passed against the loaded library (ABI 7, which agrees with the account): that file's first engine load and ABI 7's first recorded run on Linux, the "secp256k1 keys" section's six `cxPubkeyCombine` checks included; every section through phase 5 green, line for line as on Windows the day before. The wallet is not in the paste |
+| 2026-09-25 (Windows; the Kit report's clock 10:54 PM local) | Windows (the engine reports Win32), by the maintainer's account the machine of the 2026-09-24 runs and 64-bit, so the `x86_64-win32` library, INFERRED to be the 2026-09-12 DLL at ABI 7 (none committed since; `cxCheckABI` agrees); no preflight (the same account: none on either machine); the OXT build and whether the report is a launch's first or second Run all not recorded | the same D-23 suite paste as the Linux run (INFERRED from the version lines both reports print: the board stamp `suite-board-1`, holde-em's "stack v0.25.5 harness v47" and riptide's third probe line; 2653/2/10, the two failures were the live loopbacks, neither coinxt's) | coinxt "296 passed, 0 failed of 296 checks" and board row 308/0/0; "PASS  cxCheckABI passes against the shipped binary", and the six `cxPubkeyCombine` lines PASS: ABI 7 on the `x86_64-win32` DLL, as on 2026-09-24 |
 
 ### Independent acceptance (manual-only by D-17)
 
@@ -457,9 +459,11 @@ brief says the release lane does; the work plan carries that).
 | 2026-09-10 | local, ABI 7 (commit `dca02b0`) | all five rebuilt here; the mac one cross-built (Zig + `ld64.lld`, trap 7) with exactly 44 `_cnx_*` names, verified by export trie, ABI constant and slices, not executed |
 | 2026-09-12 | release run 34657390798 (commit `421bab3`) | replaced all five at ABI 7 |
 
-CI executes the committed x86_64-linux library's vectors on every push (`native-coinxt.yml`). One 2026-09-12 Windows
-DLL loaded on an engine 2026-09-24 (the ledger above), its bitness not recorded, so the `x86-win32` DLL may still
-never have executed anywhere (CI's Windows KAT step is x86_64 only); no engine has loaded the Linux or mac builds.
+CI executes the committed x86_64-linux library's vectors on every push (`native-coinxt.yml`), and that library met an
+engine on 2026-09-25 (the ledger above; 64-bit, by the maintainer's account). The 2026-09-12 `x86_64-win32` DLL met one
+on 2026-09-24 and again on 2026-09-25 (64-bit OXT, by the maintainer's account given 2026-09-26). The `x86-win32` DLL
+may still never have executed anywhere (CI's Windows KAT step is x86_64 only, and every Windows engine run since
+2026-09-12 was 64-bit, by the same account); no engine has loaded the `x86-linux` or mac builds.
 
 ### The wallet on an engine
 
@@ -492,19 +496,20 @@ hot `re.match` in the interpreter, riptide's runner and `check-wallet-boot.py` c
 
 ## Status
 
-Engine-proven: the whole library surface through ABI 7 (all 95 handlers; 296/296 on 2026-09-24 in the suite paste, on the
-2026-09-12 Windows DLL, whose first engine load that was; 290/290 at ABI 6 on 2026-08-24, Windows x86_64) and, in the
-wallet, all four public transports, broadcast, RBF, CPFP, an OP_RETURN note, a silent-payment send, an inscription and
-a timelock payment (2026-09-01 to 09-03, testnet). Bitcoin spends over the `cx*` sighash and encoder were accepted on
-testnet; a native-P2WPKH broadcast is not recorded, and no EIP-155 / EIP-1559 transaction has been broadcast. Verified
-statically; needs an OXT pass: every ABI 7 binary but the one Windows DLL that loaded on 2026-09-24 (its bitness was not
-recorded, so the `x86-win32` DLL may still never have executed); the wallet surface
-added from 2026-09-04 (the Ordinals and Vault screens, testnet4, BIP-329, BIP-322, silent-payment receiving, Runes,
-BOLT11, the Core backends, the 2026-09-10 fixes, the 2026-09-24 byte-level 2^53 bound in `cwLeRead` / `cwBeRead`);
-and what the logs did not reach (the update swap, mainnet Electrum on port 110, the stale-answer skip, paint/pump
-timing, the mixed tip+fees batch, the three corrected menu items, the backend un-marking a coin, Esplora's 400 body in
-the log, CPFP on a foreign transaction, an Electrum-format seed opening real coins, a vault release after its height).
-Open work is in the suite's docs/WORK-PLAN.md.
+Engine-proven: the whole library surface through ABI 7 (all 95 handlers; 296/296 on 2026-09-24 in the suite paste, on
+the 2026-09-12 `x86_64-win32` DLL, whose first engine load that was, and on 2026-09-25 on the 2026-09-12 `x86_64-linux`
+library, its first too, and on Windows again, INFERRED on the same DLL; 290/290 at ABI 6 on 2026-08-24, Windows x86_64)
+and, in the wallet, all four public transports, broadcast, RBF, CPFP, an OP_RETURN note, a silent-payment send, an
+inscription and a timelock payment (2026-09-01 to 09-03, testnet). Bitcoin spends over the `cx*` sighash and encoder
+were accepted on testnet; a native-P2WPKH broadcast is not recorded, and no EIP-155 / EIP-1559 transaction has been
+broadcast. Verified statically; needs an OXT pass: every ABI 7 binary but the `x86_64-linux` library (2026-09-25) and
+the `x86_64-win32` DLL (2026-09-24 and 2026-09-25; 64-bit by the maintainer's account), so the `x86-win32` DLL may still
+never have executed; the wallet surface added from 2026-09-04 (the Ordinals and Vault screens, testnet4, BIP-329,
+BIP-322, silent-payment receiving, Runes, BOLT11, the Core backends, the 2026-09-10 fixes, the 2026-09-24 byte-level
+2^53 bound in `cwLeRead` / `cwBeRead`); and what the logs did not reach (the update swap, mainnet Electrum on port 110,
+the stale-answer skip, paint/pump timing, the mixed tip+fees batch, the three corrected menu items, the backend
+un-marking a coin, Esplora's 400 body in the log, CPFP on a foreign transaction, an Electrum-format seed opening real
+coins, a vault release after its height). Open work is in the suite's docs/WORK-PLAN.md.
 
 ## Commands
 

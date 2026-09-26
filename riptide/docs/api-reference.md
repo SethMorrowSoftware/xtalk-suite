@@ -17,14 +17,19 @@ never by silent fix.
 > propagation 2026-08-13; phases 3-4 passed on two machines 2026-08-15. The
 > compute halves of phases 4-7, through the 2026-08-23 additions (the
 > kind-C rail, `rsBtxoStreamStep`, `rsMediaStreamPlan`), ran green on an
-> engine in the suite paste, last on 2026-08-24 (Windows x86_64, riptide
-> 391/391). The live legs - the phase-5 call, the two-machine mesh,
-> anything over a real tor or a real relay - remain, and
-> `docs/two-machine-runbook.md` scripts each. Added after 2026-08-24 and
-> static + headless only: the Nostr bridge, the app-state store, the
-> required `pMinSeq` watermarks, the u64 bound, the 996-byte record cap,
-> and the 2026-09-09 LAN admission tag (`riptide-lan-a`), so the
-> engine-green admission and welcome bytes are superseded.
+> engine in the suite paste on 2026-08-24 (Windows x86_64, riptide
+> 391/391), and again on 2026-09-24 and 2026-09-25 (below). The live
+> legs - the phase-5 call, the two-machine mesh, anything over a real tor
+> or a real relay - remain, and `docs/two-machine-runbook.md` scripts
+> each. Added after 2026-08-24: the
+> Nostr bridge, the app-state store, the required `pMinSeq` watermarks, the
+> u64 bound, the 996-byte record cap, and the 2026-09-09 LAN admission tag
+> (`riptide-lan-a`), which re-pinned the admission and welcome bytes. Their
+> harness sections first met an engine on 2026-09-24 (Windows: the u64
+> bound let 2^53 + 1 through and was decided on its halves the same day,
+> green in that day's second run) and ran green again on 2026-09-25
+> (Linux and Windows): 489 passed, 0 failed, 2 skipped (the live-Tor legs)
+> each time from the second Windows run on.
 
 ## Conventions
 
@@ -287,7 +292,10 @@ handlers own only the key, the bridge, and the media convention.
 
 Verified statically, and EXECUTED headlessly against the real committed
 CoinXT by `tools/check-script-vectors.py` - which settles logic, not parser
-behaviour. Needs an OXT + a live-relay pass.
+behaviour. The offline half ran on an engine too: the harness's Nostr
+sections, green in the suite paste on 2026-09-24 (Windows) and 2026-09-25
+(Linux and Windows). Anything that reaches a relay needs an OXT + a
+live-relay pass.
 
 | Handler | Returns | Notes |
 |---|---|---|

@@ -616,8 +616,13 @@ def u64_rows(ip):
 # numbers are EQUAL when they differ by less than MC_EPSILON = 10
 # DBL_EPSILON of the SMALLER magnitude, or by less than MC_EPSILON outright
 # when that magnitude is below it (engine/src/exec-logic.cpp, sysdefs.h;
-# DOCUMENTED). That rule reproduces all eight probe readings, and the
-# fixture below re-proves it on every run.
+# DOCUMENTED). That rule reproduces all eight readings of the first two
+# probe lines, and the harness's third line then read its consequences on
+# an engine (Linux, 2026-09-25): the absolute branch near zero, the integer
+# threshold between 2^48 and 2^49, and the constant itself to the digit
+# (N is N + 1 true at N = 450359962737050, false one below; 2^52 / 10 lies
+# between). The fixture below re-proves the rule against every one of
+# those recorded numeric answers on every run.
 #
 # WHAT. Tier 1b's table again, once per model below. Each model changes only
 # the ANSWER of a numeric comparison, at the interpreter's two comparison
@@ -636,9 +641,9 @@ def u64_rows(ip):
 # have reached a comparison site at all: the hook keys on the interpreter's
 # function names, so a rename there would silently turn every model back
 # into IEEE - and the fixture's "accepts" leg would then fail loudly. And
-# the engine's rule must read the probes' eight recorded answers through the
-# interpreter, while each margin model misreads at least one of them (the
-# reason it is margin and not the rule).
+# the engine's rule must read the probes' fourteen recorded numeric answers
+# through the interpreter, while each margin model misreads at least one of
+# them (the reason it is margin and not the rule).
 
 DBL_EPSILON = 2.220446049250313e-16
 MC_EPSILON = DBL_EPSILON * 10.0
@@ -675,11 +680,22 @@ ENGINE_MODELS = [
     ("a 15-significant-digit round trip", _model_digits15),
 ]
 
-# The engine's recorded answers to the harness's first two probe lines
-# (numeric compare probe 1 read in the 2026-09-24 second run, probe 2 in the
-# third; riptide/CLAUDE.md's ledger), each expression as the harness spells
-# it. The ladder is the harness's rstUlpLadder under a fixture name. Pure
-# IEEE reads true,true,true,true,true,true,1,1.
+# The engine's recorded answers to the harness's numeric compare probes,
+# each expression as the harness spells it (riptide/CLAUDE.md's ledger).
+# Probe 1 was read in the 2026-09-24 second run and probe 2 in the third
+# (Windows); the 2026-09-25 Linux run read both again, answer for answer,
+# and read probe 3 for the first time, exactly as the engine source's rule
+# predicted. The ladder is the harness's rstUlpLadder under a fixture name.
+#
+# Probe 3 enters at its item 3. Its items 1 and 2 ("1e999" is "2e999" and
+# "1e5" is "100000", both true on the engine) are not comparisons of two
+# numbers but text becoming a number (strtod: suite engine note 2.11), and
+# the interpreter does not model that parse: its _eq reads only
+# -?\d+(\.\d+)? as a number, so it compares both pairs as TEXT and never
+# reaches the comparison sites a model swaps. No comparison model could
+# reproduce them, so holding a model to them here would test the parse,
+# not the rule. Pure IEEE reads the fourteen below as
+# true,true,true,true,true,true,1,1 then true,true,true,true,false,false.
 PROBE_LADDER = "\n".join([
     "function probeUlpLadder pBase, pUlps",
     "   local tStep",
@@ -701,6 +717,17 @@ PROBE_READINGS = [
     ("1073741824 + 1 / 2097152 > 1073741824", "false"),
     ("probeUlpLadder(1, 4503599627370496)", "16"),
     ("probeUlpLadder(8, 562949953421312)", "16"),
+    # probe 3, items 3 to 8 (Linux, 2026-09-25): the absolute branch near
+    # zero (1e-15 is within MC_EPSILON of 0, 1e-14 is not), integers one
+    # apart at 2^49 (8 DBL_EPSILON: equal) and 2^48 (16: told apart), and
+    # N against N + 1 either side of 2^52 / 10 = 450359962737049.6, which
+    # reads the constant to the digit
+    ("1 / 1000000000000000 > 0", "false"),
+    ("1 / 100000000000000 > 0", "true"),
+    ("562949953421312 < 562949953421313", "false"),
+    ("281474976710656 < 281474976710657", "true"),
+    ("450359962737050 is 450359962737051", "true"),
+    ("450359962737049 is 450359962737050", "false"),
 ]
 
 
@@ -832,15 +859,19 @@ def check_u64_engine_models(c, ip, src, fail):
     probe = LCS.Interp(PROBE_LADDER)
     want = [w for _expr, w in PROBE_READINGS]
     c.ck("fixture: under IEEE the probes read true,true,true,true,true,true,"
-         "1,1 - the answers the engine did NOT give",
+         "1,1 and true,true,true,true,false,false - the answers the engine "
+         "did NOT give",
          _probe_answers(probe),
-         ["true", "true", "true", "true", "true", "true", "1", "1"])
+         ["true", "true", "true", "true", "true", "true", "1", "1",
+          "true", "true", "true", "true", "false", "false"])
     for index, (name, model) in enumerate(ENGINE_MODELS):
         with engine_model(model):
             got = _probe_answers(probe)
         if index == 0:
-            c.ck("fixture: %s reads the eight answers the engine gave "
-                 "(probes 1 and 2, 2026-09-24)" % name, got, want)
+            c.ck("fixture: %s reads the fourteen numeric answers the engine "
+                 "gave (probes 1 and 2, Windows 2026-09-24 and Linux "
+                 "2026-09-25; probe 3's items 3-8, Linux 2026-09-25)"
+                 % name, got, want)
         else:
             c.ck("fixture: %s misreads at least one of them (margin, not "
                  "the rule)" % name, got != want, True)
