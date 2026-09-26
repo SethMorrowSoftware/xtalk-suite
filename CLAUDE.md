@@ -94,7 +94,9 @@ box2dxt carries the b2k Kit into its harness and games under its own `tools/sync
 the suite paste is the generated case below. The family interpreter, `coinxt/tools/lcs-interp.py`
 (twinned in nostrxt), and riptide's stack runner built on it let execution gates in coinxt, nostrxt,
 riptide, nocloud and holde-em RUN the shipped script headlessly (`check-script-vectors.py` and the
-boot runners). They settle logic, not parser behaviour, so they upgrade no honesty label.
+boot runners). They settle logic, not parser behaviour, so they upgrade no honesty label. Since
+2026-09-26 the interpreter REFUSES a comparison the engine answers differently from IEEE, or text
+the engine reads as a number differently (engine notes 2.10, 2.11), rather than answer it.
 
 - **UI kit.** The gate also refuses any window-building stack that neither adopts nor carries a
   written exemption (box2dxt's games and holde-em's table, permanent by D-18). The four member
@@ -154,7 +156,11 @@ The gates whose reason is not in their name:
 - `check-lcb-signatures.py`: every foreign bind against its C definition (arity, return and
   parameter types); box2dxt runs its own, which adds the name bijection.
 - `check-binary-freshness.py`: rule 5's automated half (a shim export change without a rebuilt
-  committed library fails). `check-handler-calls.py`: every cross-member call resolves.
+  committed library fails). It decodes the ABI from every committed library, the MSVC DLLs
+  through the frame MSVC keeps around a shim's try/catch guard too (2026-09-25; before, it
+  SKIPped enetxt's, datachannelxt's and torrentxt's), held by `test-binary-freshness.py`, whose
+  recorded-build anchor lapses with a NOTE when a dispatch rebuilds the DLLs.
+  `check-handler-calls.py`: every cross-member call resolves.
   `check-shim-scaffold-drift.py`: one handle table in three C++ shims (rule 4).
   `check-stack-size.py`: every window fits 1200 x 640 (720p); holde-em's controls are held by
   `holde-em/tools/check-table-layout.py`. `check-doc-anchors.py`: a suite-doc citation written
