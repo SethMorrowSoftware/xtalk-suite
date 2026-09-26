@@ -62,11 +62,13 @@ an engine without that surface, and the gate REQUIRES those skips (a Level 2
 section that stopped skipping would be one that ran against a surface that
 does not exist here).
 
-NOT DRIVEN, with the reason: heTestNetPlay (an online hand over a REAL
-TorrentXT session - nothing headless can carry it), heProbeSodium (a
-diagnostic that prints a report; it asserts nothing), and the LIVE rows the
-onion and oracle sections declare as skips by name (a tor daemon, three
-machines).
+NOT DRIVEN, with the reason: heProbeSodium (a diagnostic that prints a
+report; it asserts nothing), and the LIVE rows the onion, oracle and
+liveness sections declare as skips by name (a tor daemon, three machines, a
+timed table). heTestNetPlay IS driven (SECTIONS below, since 2026-09-11):
+its online hand runs host and player contexts over the harness's own
+single-machine loopback, not a TorrentXT session. This list named it until
+2026-09-26.
 
 THE SOURCE IS READ THE WAY THE ENGINE READS IT. The base interpreter strips
 `--` comments; this stack also carries `/* ... */` block comments (the

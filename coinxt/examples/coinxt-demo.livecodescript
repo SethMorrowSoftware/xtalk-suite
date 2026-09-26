@@ -1268,8 +1268,9 @@ end cxBtcAddressP2TRInner
 -- vectors (tools/check-script-vectors.py drives the real script through the
 -- real shim), and green on an engine: the suite paste's BIP-341 wallet-vector
 -- section on 2026-08-17 (278/278) and every run since, most recently
--- 2026-09-24 (296/296; coinxt/CLAUDE.md's ledger). This label said "needs an
--- OXT pass" until 2026-09-25, five weeks after that record. New in ABI 6.
+-- 2026-09-25 (296/296 on Linux and on Windows; coinxt/CLAUDE.md's ledger).
+-- This label said "needs an OXT pass" until 2026-09-25, five weeks after the
+-- first record. New in ABI 6.
 -- ==============================================================================
 
 -- Q = P + int(hash_TapTweak(bytes(P) || merkle_root)) * G, BIP-341's output
@@ -2211,8 +2212,8 @@ end cxXpub
 -- worked example, both directions plus the refusals - the same net every
 -- earlier phase carries - and both handlers are green on an engine: the suite
 -- paste's 14 WIF checks on 2026-08-17 and every run since, most recently
--- 2026-09-24 (coinxt/CLAUDE.md's ledger). This label said no engine had run
--- them until 2026-09-25.
+-- 2026-09-25 (on Linux and on Windows; coinxt/CLAUDE.md's ledger). This label
+-- said no engine had run them until 2026-09-25.
 -- ==============================================================================
 
 -- The WIF network version bytes, the same role kCxVersionP2PKH plays for an
