@@ -702,12 +702,20 @@ function cwSameHex pA, pB
    -- 0x prefix would not do). Case folds as `is` folds text, which is right
    -- for hex: "AB" and "ab" are the same byte. An ORDER of two hex values is
    -- cwHexCompare's; a case-significant string (Base58, an address) is
-   -- cwSameBytes'. Every hex equality the family checker's check 23 found
-   -- in this layer and in coin-wallet goes through here (2026-09-26: its
-   -- sixteen, and cwHexListHas's, which it could not see). It reads NAMES,
-   -- so plain-named compares remain: cwPsbtSign's scriptPubKey checks,
-   -- cwBip322Verify's P2WPKH one, cwPsbtCombine's unsigned transactions and
-   -- two in coin-wallet (the suite work plan's coinxt rows).
+   -- cwSameBytes'. Every hex equality in this layer and in coin-wallet at
+   -- which two different hex values can meet goes through here: the
+   -- sixteen the family checker's check 23 found and cwHexListHas's
+   -- (2026-09-26), and the fifteen the same day's sweep of every bare
+   -- comparison found where a name rule cannot look - plain-named scripts,
+   -- keys and transactions (cwPsbtSign's three scriptPubKey checks,
+   -- cwBip322Verify's key, cwPsbtCombine's unsigned transactions, two in
+   -- coin-wallet) and number-like literals and constants ("0014", "0020",
+   -- the segwit marker "0001", kCwScalarZero twice, three in coin-wallet).
+   -- Left bare, on purpose: a chunk of hex whose width a length check fixes,
+   -- against a literal no other hex of that width reads equal to ("02",
+   -- "87", "5120"), which is exact. cwDerToCompact's "02" markers are the
+   -- one chunk whose width nothing fixes (an odd-length text can end in a
+   -- lone "2", which is 2), and its one caller hands it even-length hex.
    return ("h" & pA) is ("h" & pB)
 end cwSameHex
 
@@ -1264,10 +1272,18 @@ function cwScriptKind pScriptHex
    if tLen is 46 and char 1 to 4 of tHex is "a914" and char 45 to 46 of tHex is "87" then
       return "p2sh"
    end if
-   if tLen is 44 and char 1 to 4 of tHex is "0014" then
+   -- The two witness-v0 prefixes are compared as TEXT (cwSameHex): a bare
+   -- `is` reads both sides as numbers when both parse (engine note 2.11),
+   -- and "14e0" is 14 as surely as "0014" is, as "20e0", "2e01" and "02e1"
+   -- are 20. So a 22-byte script starting 0x14 0xe0 was a P2WPKH output and
+   -- a 34-byte one starting 0x20 0xe0 a P2WSH. The others need no help:
+   -- "76a914", "a914", "88ac" and "6a" carry a letter, "87" is two
+   -- characters no other pair reads equal to, and no other four characters
+   -- spell 5120.
+   if tLen is 44 and cwSameHex(char 1 to 4 of tHex, "0014") is true then
       return "p2wpkh"
    end if
-   if tLen is 68 and char 1 to 4 of tHex is "0020" then
+   if tLen is 68 and cwSameHex(char 1 to 4 of tHex, "0020") is true then
       return "p2wsh"
    end if
    if tLen is 68 and char 1 to 4 of tHex is "5120" then
@@ -3113,7 +3129,13 @@ function cwTxDecode pRawHex
    put cwLeRead(cxHexDecode(char 1 to 8 of tHex)) into tVer
    put 9 into tPos
    put false into tSegwit
-   if char 9 to 12 of tHex is "0001" then
+   -- The segwit marker and flag, compared as TEXT (cwSameHex). Through bare
+   -- `is` both sides are numbers when both parse (engine note 2.11), and
+   -- "01e0" is 1 as "0001" is: a legacy transaction with one input whose
+   -- previous txid ends in e0 - one in 256 of them - was read as segwit and
+   -- misparsed from its fifth byte on, refused or worse ("1e00", thirty
+   -- inputs and a previous txid ending in 00, is the other spelling).
+   if cwSameHex(char 9 to 12 of tHex, "0001") is true then
       put true into tSegwit
       put 13 into tPos
    end if
@@ -3937,8 +3959,13 @@ function cwPsbtSign pB64, pKeys, pNetwork
       -- check that the scripts it is given correspond to the output being
       -- spent; this is that check, and P2WSH makes it exact, because the
       -- output IS the hash of the script.
+      --
+      -- Exact only as TEXT (cwSameHex; 2026-09-26), like the two script
+      -- checks below: tSpk is the sender's bytes, and a bare `is not` reads
+      -- two all-digit scripts as numbers (engine note 2.11), so one that
+      -- agreed with ours in its leading fifteen or so digits passed as ours.
       if tType is "p2wsh" and tWitScript is not "" then
-         if cwScriptP2wsh(tWitScript) is not tSpk then
+         if cwSameHex(cwScriptP2wsh(tWitScript), tSpk) is not true then
             put tWhy & "input " & tI & ": the witness script this PSBT " & \
                   "carries does not hash to the output it says it spends, " & \
                   "so signing it would sign a preimage of the sender's " & \
@@ -4000,15 +4027,15 @@ function cwPsbtSign pB64, pKeys, pNetwork
                -- script tree commits to a merkle root, and signing it with
                -- the empty-root tweak produces a signature that verifies
                -- against nothing. Every other branch here checks the script
-               -- it is about to unlock (cwScriptForPubkey ... is not tSpk);
-               -- this is the one where the check needed a tweak first, and
-               -- so was the one where it was missing.
+               -- it is about to unlock (cwSameHex(cwScriptForPubkey(...),
+               -- tSpk)); this is the one where the check needed a tweak
+               -- first, and so was the one where it was missing.
                -- cxTaprootTweak takes and returns the X-ONLY key, and
                -- tInternal is already x-only (that is what
                -- PSBT_IN_TAP_INTERNAL_KEY holds), so nothing is sliced here.
                put cxTaprootTweak(cxHexDecode(tInternal), "") into tTweak
-               if cwScriptP2tr(cxHexEncode(tTweak["outputKey"])) \
-                     is not tSpk then
+               if cwSameHex(cwScriptP2tr(cxHexEncode(tTweak["outputKey"])), \
+                     tSpk) is not true then
                   put tWhy & "input " & tI & ": its internal key is one of " & \
                         "ours, but the output does not pay to the key-path " & \
                         "tweak of it - this input commits to a script tree, " & \
@@ -4058,7 +4085,10 @@ function cwPsbtSign pB64, pKeys, pNetwork
             put cwSighash("p2wsh", tTx["version"], tTxIns, tTxOuts, tI, \
                   tTx["locktime"], "", tAmount, tWitScript, cwListNew(), cwListNew()) into tDigest
          else
-            if cwScriptForPubkey(tType, tPub) is not tSpk then
+            -- as TEXT (cwSameHex): a P2WPKH script whose hash is all digits
+            -- is a number to a bare `is not`, and a sender's tSpk agreeing
+            -- in its leading digits would have been signed for as ours
+            if cwSameHex(cwScriptForPubkey(tType, tPub), tSpk) is not true then
                next repeat
             end if
             put cwSighash(tType, tTx["version"], tTxIns, tTxOuts, tI, \
@@ -4379,10 +4409,14 @@ function cwPsbtCombine pA, pB
    -- unsigned transactions must be identical, and if they are not this
    -- REFUSES rather than picking one - two cosigners holding different
    -- transactions is the exact situation where quietly choosing is worst.
+   -- Identical as TEXT (cwSameHex; 2026-09-26): a bare `is not` reads two
+   -- all-digit transactions as numbers (engine note 2.11), and two that
+   -- differ past their fifteenth or so digit - one output's script, say -
+   -- are the same number, so they MERGED.
    local tA, tB, tI, tCount, tJ, tN, tMapA, tMapB, tEntry, tOut
    put cwPsbtParse(pA) into tA
    put cwPsbtParse(pB) into tB
-   if tA["unsignedtx"] is not tB["unsignedtx"] then
+   if cwSameHex(tA["unsignedtx"], tB["unsignedtx"]) is not true then
       throw "wallet-core: cwPsbtCombine: these two PSBTs are for DIFFERENT " & \
             "transactions and cannot be merged."
    end if
@@ -4751,7 +4785,10 @@ function cwBip322Verify pNetwork, pAddress, pMessage, pSigB64
                into tOut["why"]
          return tOut
       end if
-      if cwScriptP2wpkh(tPub) is not tScript then
+      -- as TEXT (cwSameHex): to a bare `is not` two all-digit P2WPKH
+      -- scripts are numbers (engine note 2.11), so a key whose hash agreed
+      -- with the address's in its leading digits signed for the address
+      if cwSameHex(cwScriptP2wpkh(tPub), tScript) is not true then
          put "the key in the signature is not the address's" into tOut["why"]
          return tOut
       end if
@@ -5317,7 +5354,10 @@ function cwScalarNegate pA
    -- n - a, which is the private key of the negated point; zero stays zero.
    local tA
    put cwScalarCheck(pA, "cwScalarNegate") into tA
-   if tA is kCwScalarZero then
+   -- zero as TEXT (cwSameHex): to a bare `is` the 64-zero constant is the
+   -- number 0 (engine note 2.11), and so is "0e" and any digits - a valid
+   -- scalar, which came back un-negated
+   if cwSameHex(tA, kCwScalarZero) is true then
       return tA
    end if
    return cwHexSub(kCwCurveN, tA)
@@ -5471,7 +5511,9 @@ function cwSpInputSum pInputs
       end if
       put cwScalarAdd(tSum, tKey) into tSum
    end repeat
-   if tSum is kCwScalarZero then
+   -- zero as TEXT (cwSameHex), as in cwScalarNegate: a sum spelled "0e"
+   -- and digits is the number 0 to a bare `is`, and was refused as zero
+   if cwSameHex(tSum, kCwScalarZero) is true then
       throw "wallet-core: cwSpInputSum: the input keys sum to zero, so no " & \
             "silent payment can be derived from these coins. Spend a " & \
             "different set."
