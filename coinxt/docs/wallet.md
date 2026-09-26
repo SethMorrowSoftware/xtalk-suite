@@ -618,7 +618,9 @@ and PSBT-key comparison in wallet-core and coin-wallet goes through one of the
 two (2026-09-26: the coin tie-break, the multisig, taproot and PSBT key
 matches, the BOLT11 payee check, the broadcast marks and the history rows).
 Tier 5 of `tools/check-wallet-vectors.py` carries the engine's parse as a model
-and fails each fix undone. Verified statically; needs an OXT pass.
+and fails each fix undone, and the boot self-check's line "two exponent-form
+txids are two values, in hex order" reads both helpers on the engine at every
+open. Verified statically; needs an OXT pass.
 
 ## Running it
 
@@ -659,7 +661,10 @@ receiving and the Bitcoin Core backends are separate sessions (the suite work
 plan's coinxt engine rows).
 
 1. **Boot.** Open the stack; the boot self-check prints its own record with no
-   FAIL line. It flips nothing new, but everything below depends on it.
+   FAIL line. Everything below depends on it, and its line "two exponent-form
+   txids are two values, in hex order" is the first engine reading of
+   `cwSameHex` and `cwHexCompare` at a number-like pair (2026-09-26; the sites
+   that call them stay verified statically).
 2. **Tools, Inspect.** Paste any `lnbc...` invoice: the payee node key, the
    amount and the fields are read out. Then, with a mainnet backend chosen on
    Network, a transaction id known to carry a runestone (any Runes etching or

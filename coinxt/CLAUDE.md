@@ -178,9 +178,11 @@ LAW here, not carried-for-later. Change nothing without a very good reason.
   ("h" & b)` (case folds as `is` folds text). Tier 5 of `check-wallet-vectors.py` models the engine's parse, which
   the interpreter lacks (it reads exponent form and 64-digit values as TEXT), proves the model on riptide's two
   recorded parse answers, and fails every fix undone, coin-wallet's through its handlers lifted out of the shipped
-  stack; a key or a txid the shim derives is planted to be number-like. Plain-named hex compares remain the checker's
-  known misses here (`... is not tSpk` in `cwPsbtSign`, `sWaInspectWanted is ...` in `waStoreRawTx`). Verified
-  statically; needs an OXT pass.
+  stack; a key or a txid the shim derives is planted to be number-like. The wallet's boot self-check reads the two
+  helpers at such a pair at every open (`waSelfTestHexCompares`, pure script): the line an engine session will
+  observe. Plain-named hex compares remain the checker's known misses here (`... is not tSpk` in `cwPsbtSign`,
+  `sWaInspectWanted is ...` in `waStoreRawTx`, the SP check's `... is waZeroTxid()`). Verified statically; needs an
+  OXT pass.
 - Keccak-256 (Ethereum, `0x01` padding) is NOT SHA3-256 (FIPS-202, `0x06`): two shim functions, never aliased. The
   bech32 constant is 1, bech32m's `0x2bc830a3`. An encoder must never emit what its own decoder refuses.
 - **`the itemDelimiter` is global mutable state** (templates/CLAUDE.md rule 5; engine note 2.3). Nine public handlers
