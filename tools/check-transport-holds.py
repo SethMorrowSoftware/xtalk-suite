@@ -67,7 +67,9 @@ TWO HALVES, because a drive sees only the paths it drives.
                   mid-run; the same run ALONE, where the no-op leg runs
                   (the shim refuses a probe host, so the count is known to
                   be zero) and beside the other stack, where it SKIPs and
-                  its probe host is destroyed; a run whose every
+                  its probe host is destroyed, or where the probe is refused
+                  for another reason (it SKIPs and makes no call); a run
+                  whose every
                   enInitialize is refused while the other stack takes a
                   hold mid-run; and a close after a run that threw because
                   the extension is absent. The report must carry exactly
@@ -277,6 +279,9 @@ class EnetHolds(UB.EnetModel):
         self.last_error = ""
         self.peers = {}         # peer handle -> host handle
         self.probe_refusals = 0
+        # set by a scenario: host creation refused for ANOTHER reason while
+        # ENet is held (the shim's "enet_host_create failed ..." path)
+        self.create_refusal = None
 
     def other_takes_a_hold(self):
         """Another stack initializes ENet and makes a host of its own."""
@@ -305,6 +310,11 @@ class EnetHolds(UB.EnetModel):
     def create_host(self, a, n):
         for k in range(n):
             _int(a[k], "enHostCreate*")
+        if self.create_refusal is not None and self.count > 0:
+            fire("enet-surface")
+            self.attempts += 1
+            self.last_error = self.create_refusal
+            return 0
         h = super().create(a)
         if h == 0:
             fire("enet-surface")
@@ -736,6 +746,27 @@ def scenario_selftest(c, src, sandbox):
         w.call("closeStack")
         check_other(c, w, "alone, a close at rest", count=0)
         c.eq("... and the close made no call", w.en.noop, 1)
+    finally:
+        w.close()
+
+    # 3b. the probe refused for ANOTHER reason while ENet is held elsewhere:
+    # the leg cannot tell the count is zero, so it must not call
+    c.section("enet-selftest: the no-op leg's probe refused for another "
+              "reason")
+    w = Window(src, sandbox)
+    try:
+        w.call("openStack")
+        w.en.create_refusal = ("enet_host_create failed (port in use? too "
+                               "many sockets?)")
+        if st_finish(c, w, "the run"):
+            leg = [ln for ln in report_lines(w)
+                   if "extra deinitialize is a no-op 0" in ln]
+            c.eq("a probe refused for another reason: the no-op leg SKIPs",
+                 [ln.split()[0] for ln in leg], ["SKIP"])
+            c.eq("a probe refused for another reason: no call was made "
+                 "(none at zero, none stolen)", (w.en.noop, w.en.stolen),
+                 (0, 0))
+            check_other(c, w, "a probe refused for another reason")
     finally:
         w.close()
 
