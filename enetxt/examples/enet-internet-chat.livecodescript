@@ -1082,22 +1082,28 @@ end eiClearGeneratedUI
 -- ---- startup / teardown ------------------------------------------------------
 command eiStart
    local tR, tErr
-   -- probe enetxt with a guarded call; fail closed with a clear message when
-   -- it is missing (the family's SodiumXT probe pattern)
-   put empty into sHaveEn
-   try
-      put enInitialize() into tR
-   catch tErr
-      eiLog "The enetxt extension is not installed (org.openxtalk.library.enet) - install it and reopen this stack."
-      uiStatus "enetxt NOT loaded: install org.openxtalk.library.enet and reopen.", "bad"
-      exit eiStart
-   end try
-   if tR is not 0 then
-      eiLog "enetxt failed to initialise:" && enLastError()
-      uiStatus "enetxt failed to initialise - see the log.", "bad"
-      exit eiStart
+   -- ONE ENet hold per window (enetxt CLAUDE.md gotcha 7): sHaveEn is "true"
+   -- exactly while this stack holds the one enInitialize that eiStop gives
+   -- back. The init count is process-wide, so a re-fired openStack keeps the
+   -- hold it has instead of taking a second that nothing gives back (until
+   -- 2026-09-27 this cleared the flag and initialized again).
+   if sHaveEn is not "true" then
+      -- probe enetxt with a guarded call; fail closed with a clear message
+      -- when it is missing (the family's SodiumXT probe pattern)
+      try
+         put enInitialize() into tR
+      catch tErr
+         eiLog "The enetxt extension is not installed (org.openxtalk.library.enet) - install it and reopen this stack."
+         uiStatus "enetxt NOT loaded: install org.openxtalk.library.enet and reopen.", "bad"
+         exit eiStart
+      end try
+      if tR is not 0 then
+         eiLog "enetxt failed to initialise:" && enLastError()
+         uiStatus "enetxt failed to initialise - see the log.", "bad"
+         exit eiStart
+      end if
+      put "true" into sHaveEn
    end if
-   put "true" into sHaveEn
    -- probe torrentxt the same way: a stale-handle getter is a harmless no-op
    -- when the extension is present, and a hard `handler not found` when it is
    -- not. Only the HOST role needs it; a joiner without it still joins.
@@ -1157,12 +1163,23 @@ command eiStop
    put "false" into sMapped
    put empty into sExtIp
    -- the one mandatory enet teardown (bare command form - OXT cannot compile
-   -- a zero-argument name() statement). Guarded like the eiStart probe.
-   try
-      enDeinitialize
-   catch tErr
-      -- extension not installed; nothing to release
-   end try
+   -- a zero-argument name() statement), and ONLY the hold eiStart took
+   -- (enetxt CLAUDE.md gotcha 7). The init count is process-wide and the
+   -- release that reaches zero destroys every host in the process, so until
+   -- 2026-09-27, when this call ran on every close, a close after a REFUSED
+   -- enInitialize (or with eiStart never reached) gave back another window's
+   -- hold and ended its hosts. The flag comes down BEFORE the call, so a
+   -- second close gives back nothing. Guarded like the eiStart probe.
+   -- (Verified statically and in the suite's headless model,
+   -- tools/check-transport-holds.py; needs an OXT pass.)
+   if sHaveEn is "true" then
+      put empty into sHaveEn
+      try
+         enDeinitialize
+      catch tErr
+         -- extension gone; nothing to release
+      end try
+   end if
 end eiStop
 
 -- ---- host / join / leave -----------------------------------------------------

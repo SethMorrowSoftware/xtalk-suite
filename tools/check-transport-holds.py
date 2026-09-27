@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""check-transport-holds.py - DRIVE the two windows outside the suite paste
-that take a process-wide transport hold, headlessly, beside ANOTHER stack
-that holds one too: enetxt's own enet-selftest and the suite closing pass.
+"""check-transport-holds.py - DRIVE the windows outside the suite paste that
+take a process-wide transport hold, headlessly, beside ANOTHER stack that
+holds one too: enetxt's own enet-selftest, the suite closing pass, and
+enetxt's two chat demos (since the review of 2026-09-27).
 
 WHY THIS EXISTS
 ---------------
@@ -31,6 +32,16 @@ Both were fixed on 2026-09-26 the paste's way: a count only two handlers
 write, a release that gives back exactly that count, a refused init counted
 as none. This gate is what holds them to it. Neither window is in the paste,
 so check-suite-ui-boot.py never saw them.
+
+The adversarial review of that fix (2026-09-27) drove the two ENet chat
+demos the same way, which the enetxt #4 row had called paired ("their only
+unpaired path is a re-fired openStack", a leak that harms no other window),
+and found the defect itself: ecStart / eiStart exited on a REFUSED
+enInitialize while ecStop / eiStop called enDeinitialize on every close, so a
+close after a refusal (or with the start never reached, or a second close)
+gave back another window's hold and ended its host. Each now takes at most
+ONE hold, flagged by sHaveEn, and gives back only that one; they are driven
+here too.
 
 WHAT IT DOES
 ------------
@@ -80,6 +91,14 @@ TWO HALVES, because a drive sees only the paths it drives.
                   enetxt absent; leg A run and closed twice; leg A on a
                   refused dcInit; leg E's Host (a minimal TorrentXT model:
                   a session, a keypair) and a close.
+  chat demos      enet-lan-chat and enet-internet-chat, each through its
+                  start handler (the one line of openStack that takes a
+                  hold; the window build and the boot self-check around it
+                  are not driven) and its real closeStack: start and close,
+                  a second close, a reopen and its close; a re-fired
+                  openStack (two starts, one hold); a close with the start
+                  never reached; a refused enInitialize while the other
+                  stack then takes a hold; enetxt absent.
 
 THE MODEL, beyond check-suite-ui-boot.py's
 ------------------------------------------
@@ -115,14 +134,14 @@ static gate owns that), MESSAGE DELIVERY (timers fire when this file says
 so), RENDERING, and every event path: no connect, receive or disconnect
 ever arrives, so enet-selftest's loopback always meets its deadline and the
 closing pass's legs never complete. It settles the LOGIC of who gives back
-which hold, and it upgrades no honesty label: both windows' hold handling is
-"verified statically; needs an OXT pass".
+which hold, and it upgrades no honesty label: every window's hold handling
+here is "verified statically; needs an OXT pass".
 
 Usage:
   python3 tools/check-transport-holds.py              # the gate
   python3 tools/check-transport-holds.py --verbose    # every check printed
   python3 tools/check-transport-holds.py --selftest PATH --closing PATH
-                                                      # mutated copies
+          --lanchat PATH --netchat PATH               # mutated copies
                                                       # (tools/test-transport-holds.py)
 """
 
@@ -139,6 +158,10 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 SELFTEST = os.path.join(ROOT, "enetxt", "tests", "enet-selftest.livecodescript")
 CLOSING = os.path.join(ROOT, "tests", "suite-closing-pass.livecodescript")
+LANCHAT = os.path.join(ROOT, "enetxt", "examples",
+                       "enet-lan-chat.livecodescript")
+NETCHAT = os.path.join(ROOT, "enetxt", "examples",
+                       "enet-internet-chat.livecodescript")
 
 
 def _load(name, path):
@@ -191,6 +214,13 @@ ROUTING = (
       "dcInit": ("cpDcInit",), "dcCleanup": ("cpDcRelease",)},
      {"sCpEnHeld": ("cpEnInit", "cpEnRelease"),
       "sCpDcHeld": ("cpDcInit", "cpDcRelease", "cpHoldsDc")}),
+    # The chat demos take at most ONE hold, so their count is the flag
+    # sHaveEn, which other handlers READ (the Host / Join guards, the boot
+    # self-check); the count half does not apply, the call half does.
+    ("enet-lan-chat", "lanchat",
+     {"enInitialize": ("ecStart",), "enDeinitialize": ("ecStop",)}, {}),
+    ("enet-internet-chat", "netchat",
+     {"enInitialize": ("eiStart",), "enDeinitialize": ("eiStop",)}, {}),
 )
 STRINGY = re.compile(r'\b(?:do|send|dispatch|call)\b|\bvalue\s*\(', re.I)
 DECL = re.compile(r'^\s*local\s+[\w\s,]*$', re.I)
@@ -519,6 +549,8 @@ class HoldInterp(UB.SuiteInterp):
 FILE_REWRITES = {
     "selftest": ("one-line `if ... then STMT` -> block form",),
     "closing": (),
+    "lanchat": (),
+    "netchat": (),
 }
 
 
@@ -972,16 +1004,128 @@ def scenario_closing(c, src, sandbox):
 
 
 # ==========================================================================
+# the two ENet chat demos
+# ==========================================================================
+#
+# Added by the adversarial review of 2026-09-27. The enetxt #4 row (and
+# enetxt CLAUDE.md gotcha 7, as first written) said the chat demos' only
+# unpaired path was a re-fired openStack, which "leaks a hold and harms no
+# other window". Driving them found a second: ecStart / eiStart exited on a
+# REFUSED enInitialize, but ecStop / eiStop called enDeinitialize on every
+# close, so a close after a refusal, beside a window that initialized ENet
+# since, gave back that window's hold and ended its host (and so did a close
+# whose start was never reached, and a second close). Each now takes at most
+# ONE hold, flagged by sHaveEn, and its stop gives back only that one.
+#
+# Their openStack builds the window first (ecBuild / eiBuild walk `the number
+# of buttons of this card`, a form this interpreter does not read) and runs
+# the boot self-check last; neither touches the hold. So the drive calls the
+# one line of openStack that does, the start handler, and the real
+# closeStack, whose only line is the stop.
+
+CHATS = (
+    ("enet-lan-chat", "lanchat", "ecStart"),
+    ("enet-internet-chat", "netchat", "eiStart"),
+)
+
+
+def chat_step(c, w, label, handler):
+    try:
+        w.call(handler)
+        return True
+    except Exception as exc:                            # noqa: BLE001
+        return c.threw("%s: %s runs" % (label, handler), exc)
+
+
+def scenario_chat(c, src, sandbox, label, start):
+    c.section("%s: start beside the other stack, then close" % label)
+    w = Window(src, sandbox)
+    try:
+        if chat_step(c, w, label, start):
+            c.eq("%s: the start took one hold" % label,
+                 (w.en.took, w.en.own, w.en.count), (1, 1, 2))
+        if chat_step(c, w, label, "closeStack"):
+            check_other(c, w, "%s's close" % label)
+            c.eq("%s: the close gave back exactly its one" % label,
+                 w.en.gave, 1)
+        if chat_step(c, w, label, "closeStack"):
+            check_other(c, w, "%s: a second close" % label)
+            c.eq("%s: a second close gave back nothing" % label,
+                 w.en.gave, 1)
+        # closed, then reopened: the stop cleared the flag, so the reopen
+        # takes (and its close gives back) a hold of its own
+        if chat_step(c, w, label, start):
+            c.eq("%s: a reopen after a close took a hold again" % label,
+                 (w.en.took, w.en.own), (2, 1))
+        if chat_step(c, w, label, "closeStack"):
+            check_other(c, w, "%s: the reopened window's close" % label)
+    finally:
+        w.close()
+
+    c.section("%s: a re-fired openStack, then close" % label)
+    w = Window(src, sandbox)
+    try:
+        chat_step(c, w, label, start)
+        if chat_step(c, w, label, start):
+            c.eq("%s: a re-fired openStack took no second hold" % label,
+                 (w.en.took, w.en.own), (1, 1))
+        if chat_step(c, w, label, "closeStack"):
+            check_other(c, w, "%s: a re-fired openStack's close" % label)
+    finally:
+        w.close()
+
+    c.section("%s: a close with the start never reached" % label)
+    w = Window(src, sandbox)
+    try:
+        if chat_step(c, w, label, "closeStack"):
+            check_other(c, w, "%s: a close with no start" % label)
+            c.eq("%s: a close with no start gave back nothing" % label,
+                 w.en.gave, 0)
+    finally:
+        w.close()
+
+    c.section("%s: the start's enInitialize refused, then another stack "
+              "initializes" % label)
+    w = Window(src, sandbox, en=EnetHolds(other=0, init_fails=True))
+    try:
+        if chat_step(c, w, label, start):
+            c.eq("%s: a refused enInitialize is no hold" % label,
+                 (w.en.took, w.en.own), (0, 0))
+        w.en.other_takes_a_hold()
+        if chat_step(c, w, label, "closeStack"):
+            check_other(c, w, "%s: a refused start's close" % label)
+            c.eq("%s: a refused start's close gave back nothing" % label,
+                 w.en.gave, 0)
+    finally:
+        w.close()
+
+    c.section("%s: enetxt absent" % label)
+    w = Window(src, sandbox, enet_absent=True)
+    try:
+        chat_step(c, w, label, start)
+        if chat_step(c, w, label, "closeStack"):
+            check_other(c, w, "%s: the absent start's close" % label)
+    finally:
+        w.close()
+
+
+# ==========================================================================
+
+KEYS = (("--selftest", "selftest"), ("--closing", "closing"),
+        ("--lanchat", "lanchat"), ("--netchat", "netchat"))
+
 
 def main(argv):
     verbose = "--verbose" in argv
-    paths = {"selftest": SELFTEST, "closing": CLOSING}
-    for flag, key in (("--selftest", "selftest"), ("--closing", "closing")):
+    paths = {"selftest": SELFTEST, "closing": CLOSING, "lanchat": LANCHAT,
+             "netchat": NETCHAT}
+    for flag, key in KEYS:
         if flag in argv:
             k = argv.index(flag)
             if k + 1 >= len(argv):
                 print("usage: check-transport-holds.py [--verbose] "
-                      "[--selftest PATH] [--closing PATH]")
+                      "[--selftest PATH] [--closing PATH] [--lanchat PATH] "
+                      "[--netchat PATH]")
                 return 2
             paths[key] = argv[k + 1]
     t0 = time.time()
@@ -1003,6 +1147,12 @@ def main(argv):
                 scenario(c, src, sandbox)
             except Exception as exc:                    # noqa: BLE001
                 c.threw("the %s scenarios ran to their end" % key, exc)
+        for label, key, start in CHATS:
+            src = build_source(paths[key], key, fail)
+            try:
+                scenario_chat(c, src, sandbox, label, start)
+            except Exception as exc:                    # noqa: BLE001
+                c.threw("the %s scenarios ran to their end" % key, exc)
     finally:
         shutil.rmtree(sandbox, ignore_errors=True)
 
@@ -1016,12 +1166,13 @@ def main(argv):
         print("check-transport-holds: %d of %d check(s) FAILED (%.1fs)"
               % (len(c.failures), c.n, elapsed))
         return 1
-    print("check-transport-holds: OK (%d checks, %.1fs): in enet-selftest "
-          "and the suite closing pass every library init and release is "
-          "routed through its counted wrapper; and driven beside another "
-          "stack's modelled ENet hold and host and DataChannel peer, every "
-          "open, run, Re-run, leg and close gave back exactly the holds its "
-          "window took (a refused init none), and enet-selftest's no-op leg "
+    print("check-transport-holds: OK (%d checks, %.1fs): in enet-selftest, "
+          "the suite closing pass and the two ENet chat demos every library "
+          "init and release is routed through its counted wrapper; and "
+          "driven beside another stack's modelled ENet hold and host and "
+          "DataChannel peer, every open, run, Re-run, leg, start and close "
+          "gave back exactly the holds its window took (a refused init "
+          "none), and enet-selftest's no-op leg "
           "called only at a count the shim said was zero. The interpreter's "
           "run, not an engine's: logic only; no event path; it upgrades no "
           "label (needs an OXT pass)." % (c.n, elapsed))

@@ -16,20 +16,34 @@ the pump every app needs.
 ## 2. The three habits every app needs
 
 ```livecodescript
+local sEnHeld  -- "true" while this stack holds the one enInitialize it took
+
 on openStack
-   get enInitialize()                    -- refcounted; throws a clear error
-                                         -- if the native ABI does not match
+   if enInitialize() is 0 then           -- refcounted; throws a clear error
+      put "true" into sEnHeld            -- if the native ABI does not match
+   end if
    start using stack "enetHelpers"
    -- create your host(s), then register EACH ONE with the pump:
    --   enStartPolling tHost, the long id of this card, 33
 end openStack
 
 on closeStack
-   enStopPolling
-   enDeinitialize  -- MANDATORY: the final one also destroys any surviving
-                   -- hosts; there is no automatic unload hook
+   -- stop pumping THIS stack's hosts, one by one: a bare enStopPolling
+   -- clears every host registered with the shared helpers, other stacks' too
+   --   enStopPolling tHost
+   if sEnHeld is "true" then
+      put empty into sEnHeld
+      enDeinitialize  -- MANDATORY: the final one also destroys any surviving
+                      -- hosts; there is no automatic unload hook
+   end if
 end closeStack
 ```
+
+**Give back only the hold this stack took.** The init count belongs to the whole process,
+and the `enDeinitialize` that takes it to zero destroys EVERY host in it, another window's
+included. So the release is paired with an `enInitialize` that returned 0 in this stack, and
+a close after a refused (or thrown) init gives back nothing (api-reference rule 1; the chat
+demos' `sHaveEn` does the same).
 
 **Pump or nothing.** ENet has no threads: connects, sends, retransmissions, pings and
 receives all progress inside `enPoll`. The helpers' timer loop is the transport's heartbeat;

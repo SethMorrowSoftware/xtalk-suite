@@ -119,12 +119,18 @@ The shim cites these by number; keep the numbering.
    run's two, `stCleanup` only what a live run still holds (none at rest), a refused init
    counts none. The no-op leg (`stEnNoOpLeg`) calls only where the shim has just refused a
    probe host with "call enInitialize first", i.e. at a process count of zero; beside
-   another ENet window it destroys its probe host and SKIPs. The chat demos pair
-   `ecStart`/`ecStop` and `eiStart`/`eiStop`; a re-fired `openStack` there leaks a hold
-   and harms no other window. The suite's `tools/check-transport-holds.py` drives the
-   harness beside a modelled other window (its fixture plants each old line back and fails);
-   verified statically and headlessly; needs an OXT pass. The fold into the suite paste
-   routes `stRun`'s two `stEnInit` calls to the paste's own counted `suEnInit` instead.
+   another ENet window it destroys its probe host and SKIPs. The chat demos had the defect
+   too, which the enetxt #4 row had missed (it said their only unpaired path was a
+   re-fired `openStack`, a leak that harms no other window): `ecStart` / `eiStart` exited
+   on a REFUSED `enInitialize`, but `ecStop` / `eiStop` called `enDeinitialize` on every
+   close, so a close after a refusal (or with the start never reached, or a second close)
+   gave back another window's hold and ended its hosts. Since 2026-09-27 (the fix's review)
+   each takes at most ONE hold, flagged by `sHaveEn`: a re-fired `openStack` keeps the one
+   it has, and the stop gives back only that one and lowers the flag first. The suite's
+   `tools/check-transport-holds.py` drives the harness and both demos beside a modelled
+   other window (its fixture plants each old line back and fails); verified statically and
+   headlessly; needs an OXT pass. The fold into the suite paste routes `stRun`'s two
+   `stEnInit` calls to the paste's own counted `suEnInit` instead.
 
 ## Engine evidence ledger
 
@@ -167,7 +173,8 @@ between two real machines (runbook row 6, S3 item 6), the closing pass's separat
 (S3 item 1), `enet-internet-chat` across two networks (verified statically; needs a
 two-machine, two-network OXT pass), a standalone async re-run on the current binaries (it
 carries the counted holds of gotcha 7, 2026-09-26: verified statically and headlessly; needs
-an OXT pass), and any Mac engine load. Open work: the suite's docs/WORK-PLAN.md.
+an OXT pass), the chat demos' one-hold start and stop (gotcha 7, 2026-09-27: verified
+statically and headlessly; needs an OXT pass), and any Mac engine load. Open work: the suite's docs/WORK-PLAN.md.
 
 ## Build and gates
 

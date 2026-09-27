@@ -7,10 +7,11 @@ WHY THIS EXISTS
 A blind gate still prints OK (root CLAUDE.md: fixture before gate). The gate
 drives two windows through a model, and every check could be reading the
 model instead of the window - so each defect below is seeded into a SCRATCH
-COPY of enetxt/tests/enet-selftest.livecodescript or
-tests/suite-closing-pass.livecodescript (the committed files are never
-touched), the gate is run on that copy as a subprocess with --selftest or
---closing, and the run must:
+COPY of enetxt/tests/enet-selftest.livecodescript,
+tests/suite-closing-pass.livecodescript or one of enetxt's two chat demos
+(the committed files are never touched), the gate is run on that copy as a
+subprocess with --selftest, --closing, --lanchat or --netchat, and the run
+must:
 
   1. exit 1 (0 is a blind gate; 2 is a setup failure, not a catch);
   2. print every check that names the defect (a gate that failed for some
@@ -56,12 +57,24 @@ the closing pass:
   cG  cpEnRelease gives back one more hold than it counted.
   cH  cpEnInit counts a refused enInitialize.
 
+the ENet chat demos (added by the review of 2026-09-27, which found the
+defect the enetxt #4 row had called harmless):
+  lA  ecStop gives back with the old bare call on every close: a close with
+      no start, or after a refused one, takes the other stack's hold.
+  lB  ecStart initializes again on a re-fired openStack (the old flag reset):
+      two holds, one given back.
+  lC  ecStop leaves its flag up: a second close takes the other stack's hold,
+      and a reopen takes none.
+  iA  eiStop's old bare call, as lA.
+  iB  eiStart's old re-initialization, as lB.
+
 And the ROUTING half's own, each on a path no scenario drives:
 
   rA  a bare enDeinitialize in the closing pass's leg F (cpFStop).
   rB  dcCleanup named by a `send` literal in cpFStop.
   rC  a count written outside its handlers (cpBCheckStuck).
   rD  an enInitialize in enet-selftest's stHandleServer.
+  rE  an enDeinitialize in enet-lan-chat's ecHost.
 
 NEGATIVE controls (the gate must pass): prose naming every library call in
 a comment and in a status literal, in both files.
@@ -84,6 +97,10 @@ FILES = {
     "selftest": os.path.join(ROOT, "enetxt", "tests",
                              "enet-selftest.livecodescript"),
     "closing": os.path.join(ROOT, "tests", "suite-closing-pass.livecodescript"),
+    "lanchat": os.path.join(ROOT, "enetxt", "examples",
+                            "enet-lan-chat.livecodescript"),
+    "netchat": os.path.join(ROOT, "enetxt", "examples",
+                            "enet-internet-chat.livecodescript"),
 }
 TIMEOUT = 600
 
@@ -114,6 +131,33 @@ CP_INIT_THEN_REFUSE = (
     '      exit cpBStart\n'
     '   end if\n')
 CP_FSTOP = 'command cpFStop\n   local tErr\n'
+
+
+def chat_stop(stop):
+    """The chat demo's guarded release (since the review of 2026-09-27) and
+    the old one it replaced, a bare call on every close."""
+    new = ('   if sHaveEn is "true" then\n'
+           '      put empty into sHaveEn\n'
+           '      try\n'
+           '         enDeinitialize\n'
+           '      catch tErr\n'
+           '         -- extension gone; nothing to release\n'
+           '      end try\n'
+           '   end if\n'
+           'end %s\n' % stop)
+    old = ('   try\n'
+           '      enDeinitialize\n'
+           '   catch tErr\n'
+           '      -- extension not installed; nothing to release\n'
+           '   end try\n'
+           'end %s\n' % stop)
+    return new, old
+
+
+LC_STOP_NEW, LC_STOP_OLD = chat_stop("ecStop")
+NC_STOP_NEW, NC_STOP_OLD = chat_stop("eiStop")
+LC_START = '   if sHaveEn is not "true" then\n      -- probe the extension'
+NC_START = '   if sHaveEn is not "true" then\n      -- probe enetxt'
 
 # (id, file, what the defect is, needle, replacement, lines the gate must
 #  print). An empty `must` is a NEGATIVE control: the gate must pass.
@@ -210,6 +254,39 @@ MUTANTS = [
      'command stHandleServer pEvent\n   local tR\n',
      'command stHandleServer pEvent\n   local tR\n   get enInitialize()\n',
      ("enInitialize is called only by stEnInit",)),
+    # the chat demos (the review of 2026-09-27): the old release put back,
+    # the old re-initializing start put back, and a stop that leaves the
+    # flag up
+    ("lA", "lanchat", "ecStop gives back with the old bare call on every "
+                      "close",
+     LC_STOP_NEW, LC_STOP_OLD,
+     ("enet-lan-chat: a close with no start: the other stack's ENet host is "
+      "alive",
+      "enet-lan-chat: a refused start's close: no deinitialize took a hold "
+      "this window never had")),
+    ("lB", "lanchat", "ecStart initializes again on a re-fired openStack",
+     LC_START, '   put empty into sHaveEn\n' + LC_START,
+     ("enet-lan-chat: a re-fired openStack took no second hold",
+      "enet-lan-chat: a re-fired openStack's close: this window holds no "
+      "ENet hold")),
+    ("lC", "lanchat", "ecStop leaves its flag up after the release",
+     '   if sHaveEn is "true" then\n      put empty into sHaveEn\n'
+     '      try\n         enDeinitialize\n',
+     '   if sHaveEn is "true" then\n      try\n         enDeinitialize\n',
+     ("enet-lan-chat: a second close: the other stack's ENet host is alive",
+      "enet-lan-chat: a reopen after a close took a hold again")),
+    ("iA", "netchat", "eiStop gives back with the old bare call on every "
+                      "close",
+     NC_STOP_NEW, NC_STOP_OLD,
+     ("enet-internet-chat: a refused start's close: the other stack's ENet "
+      "host is alive",
+      "enet-internet-chat: a close with no start gave back nothing")),
+    ("iB", "netchat", "eiStart initializes again on a re-fired openStack",
+     NC_START, '   put empty into sHaveEn\n' + NC_START,
+     ("enet-internet-chat: a re-fired openStack took no second hold",)),
+    ("rE", "lanchat", "an enDeinitialize in ecHost (routing)",
+     'command ecHost\n', 'command ecHost\n   get enDeinitialize()\n',
+     ("enDeinitialize is called only by ecStop",)),
     # NEGATIVE controls: prose and labels are not calls
     ("n1", "closing", "NEGATIVE: every library name in a comment and a "
                       "status literal (leg F)",
