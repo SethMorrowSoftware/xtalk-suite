@@ -92,8 +92,10 @@ record its member totals there. The three Windows runs of 2026-09-24 read
 2620/5/3, 2623/2/3 (riptide's two fixes in) and 2623/2/10 (the skips
 merged), with holde-em 721/0 at v0.25.3 / harness 45, and all three runs'
 loopbacks stalled too: four stalls in the same two phases on that Windows
-machine, against a Linux completion the same day (5.5: the paste's code
-alone does not explain the stall). A new total is not a regression by itself; a red line is.
+machine, against a Linux completion the same day (5.5: the stall is the
+paste's own pump, INFERRED once the members' own loopbacks completed on that
+machine on 2026-09-26; fixed 2026-09-27, verified statically; needs an OXT
+pass on Windows). A new total is not a regression by itself; a red line is.
 
 riptide's report carries FOUR numeric compare probe lines, printed and never
 counted. The first three have read the same on Linux and on Windows (section
@@ -825,9 +827,13 @@ where the members' own did not.
 comment above `suPump` has it too):
 
 1. The pump judged the stall on its first tick or its second. enetxt's shim
-   services a host only inside `enPoll`, so ENet cannot leave `connecting`
-   before the server's third poll (the client's CONNECT goes out on the first,
-   the VERIFY comes back on the second, the server sees the ACK on the third).
+   services a host only inside `enPoll`, so over a UDP loopback that works
+   (`enet-selftest`'s did, on that machine) the client sees the connect on its
+   second poll and the server on its third (the client's CONNECT goes out on
+   the first, the VERIFY comes back on the second, the server sees the ACK on
+   the third). Both reports lack the line the client's second poll writes
+   ("enet client sees the handle enConnect gave it"), and ENet never left
+   `connecting`.
 2. That tick came MORE than 40 s after the deadline was armed. The first
    2026-09-26 run was the one `openStack` started (the maintainer's account, and
    box2dxt's joint handles), and its summary said the boot self-check's delayed
@@ -840,19 +846,31 @@ comment above `suPump` has it too):
 3. The deadline was armed in `stRun` BEFORE the arm-time render of the whole
    report (about 3350 lines into field `stResults`), `suSyncDone`'s paints, the
    rest of `openStack` and the window's first layout, and the pump then
-   re-rendered the whole report on every 33 ms tick. Anything among those that
-   took 40 s failed both loopbacks before either was polled. The second
-   2026-09-26 run, pressed on the open window with no boot probe, stalled the
-   same way, so the window's first layout alone cannot explain it; the arm-time
-   render and the per-tick renders, or timers queued ahead of the pump, can.
+   re-rendered the whole report on every 33 ms tick; and the old pump judged
+   a tick AFTER its polls. Anything among those, or in the first tick's own
+   polls, that took 40 s failed both loopbacks after a poll or two, long
+   before either could finish. The second 2026-09-26 run, the launch's second
+   Run all (the maintainer's account), had no boot probe of its own (its boot
+   block is the launch's, the probe long fired) and ran on a window already
+   open, and it stalled the same way, so the window's first layout alone cannot
+   explain it; the arm-time render and the per-tick renders, timers queued
+   ahead of the pump, or a slow poll inside the first tick, can.
 4. WHAT takes the time on Windows is NOT KNOWN: the arm-time render,
-   `suSyncDone`'s paints, the window's first layout on open, and timers queued
-   ahead of the pump are the candidates. One fact narrows them without
-   settling it: before the D-23 board the Windows pastes re-rendered a report
-   of some 2,400 checks on every tick and their loopbacks completed, so what
-   the board changed on the way to a tick (its window and results field, the
-   boot self-check, `suSyncDone`, a report of some 2,900 checks) is where to
-   look, and the notes below measure each.
+   `suSyncDone`'s paints, the window's first layout on open, timers queued
+   ahead of the pump, and a slow native poll are the candidates. One fact
+   narrows them without settling it: before the D-23 board the Windows pastes
+   re-rendered a report on every tick and their loopbacks completed (1,982
+   checks on 2026-08-20, both loopbacks recorded; 2,376 on 2026-08-24 with no
+   failure and every extension loaded, so its DataChannel loopback completed
+   and its ENet one too unless its one skip nostrxt does not account for was a
+   held port: INFERRED).
+   What changed on the way to a tick since then is where to look: the board
+   (its window and results field, the boot self-check, `suSyncDone`, a report
+   of some 2,900 checks) and, at the same time, the DLLs (the 2026-09-12
+   `x86_64-win32` builds first met an engine with the D-23 board on
+   2026-09-24; `enet-selftest` clears the ENet one, this section's own test,
+   and the DataChannel one only by the maintainer's account of its demo). The
+   notes below measure each.
 
 **The fix (2026-09-27; verified statically and in the headless boot model;
 needs an OXT pass on Windows):** the deadline starts at the pump's FIRST tick;
@@ -881,8 +899,10 @@ report's line count), `suSyncDone`'s ms, the ms from arming the pump to its
 first tick (on open split into the boot self-check's share and the engine's
 own: the window's first layout and redraw, and timers due first), the timers
 queued at the arm and at the first tick, the serviced ticks, the pump's total
-ms, the slowest tick and the longest wait between ticks, and each loopback's
-ending (its tick and time). Run all on open, then Run all again in the same
+ms, the slowest tick and the longest wait between ticks, the slowest of each
+part of a tick (enet's polls and events, datachannel's poll and events, the
+board's paint), and each loopback's ending (its tick and time). Run all on
+open, then Run all again in the same
 launch, and copy each report back whole with Copy results: the first run's
 split shows the window's first layout, the second's does not. If a loopback
 still stalls, its note says after how many serviced ticks and how long, and

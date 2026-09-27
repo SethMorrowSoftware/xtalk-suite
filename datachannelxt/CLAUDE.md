@@ -270,11 +270,11 @@ through 2026-09-26), and the flagship demo ran on one machine on Linux and Windo
 recorded as a machine blocking UDP to 127.0.0.1 (environment; its phase not recorded), and in
 `opening` in all three of 2026-09-24's runs and again on 2026-09-25 (Windows, the same
 machine each time; a suspected environment until 2026-09-26, when enetxt's own loopback
-completed on that machine and this member's loopback demo worked there, by the maintainer's
-account: the suite runbook's 5.5), and COMPLETED on
+completed on that machine and this member's loopback demo "seems to work as intended" there,
+by the maintainer's account: the suite runbook's 5.5), and COMPLETED on
 Linux x86_64 on 2026-09-25 and again on 2026-09-26 (the same machine, by the maintainer's account; negotiated, both ends open, SCTP at least 16 KiB, a cap-sized
 payload whole), so the paste's loopback code works on an engine and the Windows stall is,
-INFERRED, the paste's own pump (its deadline armed before a slow render; fixed 2026-09-27,
+INFERRED, the paste's own pump (its deadline armed ahead of the arm-time render and the window's first layout, what took the time there not yet known; fixed 2026-09-27,
 verified statically; needs an OXT pass on Windows: the suite runbook's 5.5), not the machine's
 UDP. The 2026-09-24 and 2026-09-25 Windows pastes ran on the
 2026-09-12 `x86_64-win32` DLL and the 2026-09-25 Linux paste on the 2026-09-12

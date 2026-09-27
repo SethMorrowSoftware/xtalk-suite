@@ -138,7 +138,7 @@ phase not recorded) and in `connecting` in all three of 2026-09-24's runs and ag
 suite runbook's 5.5), and COMPLETED on Linux
 x86_64 on 2026-09-25 and again on 2026-09-26 (the same machine, by the maintainer's account): connect, the sealed ciphertext, 60000 bytes reassembled into one
 message, a graceful disconnect. So the paste's loopback code works on an engine, and the
-Windows stall is, INFERRED, the paste's own pump (its deadline armed before a slow render; fixed
+Windows stall is, INFERRED, the paste's own pump (its deadline armed ahead of the arm-time render and the window's first layout, what took the time there not yet known; fixed
 2026-09-27, verified statically; needs an OXT pass on Windows: the suite runbook's 5.5), not the
 machine's UDP. The 2026-09-24 and 2026-09-25 Windows
 pastes ran on the 2026-09-12 `x86_64-win32` DLL and the 2026-09-25 Linux paste on the
