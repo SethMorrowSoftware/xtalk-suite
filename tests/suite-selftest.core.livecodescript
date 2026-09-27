@@ -3851,13 +3851,17 @@ end stCheckSealed
 -- `connecting` and dc in `opening`, while the same code completed on Linux
 -- (2026-09-25 and 09-26); and on 2026-09-26 enetxt's standalone enet-selftest
 -- completed its own ENet loopback on that Windows machine (68/0/0, OBSERVED)
--- and the DataChannel loopback demo worked, by the maintainer's account. So
--- the paste's loopbacks failed where the members' did not. The diagnosis,
--- INFERRED from the 2026-09-26 reports and the engine source:
+-- and the DataChannel loopback demo "seems to work as intended", by the
+-- maintainer's account. So the paste's loopbacks failed where the members'
+-- did not. The diagnosis, INFERRED from the 2026-09-26 reports and the
+-- engine source:
 --   * the pump declared the stall on its first tick or its second. enetxt's
---     shim services a host only inside enPoll, so ENet cannot leave
---     `connecting` before the server's third poll (its CONNECT out on the
---     first, the VERIFY back on the second, the ACK in on the third);
+--     shim services a host only inside enPoll, so over a UDP loopback that
+--     works (enet-selftest's did, there) the client sees the connect on its
+--     second poll and the server on its third (the CONNECT out on the first,
+--     the VERIFY back on the second, the ACK in on the third); the Windows
+--     reports carry no "enet client sees the handle" line, the client's
+--     second poll, and ENet never left `connecting`;
 --   * that tick came MORE than 40 s after the old deadline was armed. The
 --     first run was the one openStack started, and its summary said the boot
 --     self-check's delayed probe had not fired (suScRun arms it after stRun
@@ -3871,12 +3875,16 @@ end stCheckSealed
 --     the whole report (about 3350 lines into field "stResults"), suSyncDone,
 --     the rest of openStack and the window's first layout, and the pump then
 --     re-rendered the whole report on every 33 ms tick, so a render slower
---     than the deadline failed both loopbacks before either was polled;
+--     than the deadline failed both loopbacks after a poll or two, long
+--     before either could finish;
 --   * WHAT takes the time on Windows is NOT KNOWN. suPumpNotes prints the
 --     measurements that separate the candidates (the arm-time render,
 --     suSyncDone's paints, the boot self-check, the engine's time before the
---     first tick, timers queued ahead of it), uncounted, so the next Windows
---     report carries them.
+--     first tick, timers queued ahead of it, and inside a tick each
+--     transport's poll apart from the board's paint: the old core judged
+--     tick 1 AFTER its polls, so one slow native poll fits the record too,
+--     and the 2026-09-12 Windows DLLs first met an engine with the D-23
+--     board), uncounted, so the next Windows report carries them.
 -- The fix is verified statically (check-suite-selftest.py check 19 holds the
 -- deadline to the pump and the report out of a live tick) and in
 -- tools/check-suite-ui-boot.py's Windows-stall scenario (which reproduces the
@@ -3887,7 +3895,7 @@ end stCheckSealed
 -- that Windows machine on 2026-09-26, so the shape did not fail it there.
 command suPump
    local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
-   local tEvents, tEvent, tLive, tStalled
+   local tEvents, tEvent, tLive, tStalled, tT0, tEnMs, tDcMs, tPaintMs
    -- PINNED FIRST (engine note 5.3). This handler arrives by `send ... in`, and
    -- since D-23 it paints the board's rows and views as well as the report;
    -- every one of those names a control unqualified, so the defaultStack is
@@ -3909,8 +3917,15 @@ command suPump
    -- nothing would ever reach stFinish - and the hosts, peers, and the one
    -- libtorrent session would all leak until the maintainer closed the stack.
    -- Marking the phase "failed" lets the run converge and tear down properly.
+   -- Each transport's block is TIMED (two reads of the clock, outside its
+   -- try): a slow tick in the timing notes is then its polls or its paint,
+   -- never a guess between them (review, 2026-09-27: a slow native poll on
+   -- the first tick fitted the Windows record as well as a slow render did).
+   put empty into tEnMs
+   put empty into tDcMs
    if not stEnDone() then
       suTallyOpen "enetxt"
+      put the milliseconds into tT0
       try
          put enPoll(sEnServer) into tEvents
          repeat for each element tEvent in tEvents
@@ -3926,11 +3941,13 @@ command suPump
          stNote "it raised:" && tError
          put "failed" into sPhaseEn
       end try
+      put the milliseconds - tT0 into tEnMs
       suTallyClose
    end if
 
    if not stDcDone() then
       suTallyOpen "datachannelxt"
+      put the milliseconds into tT0
       try
          put dcPoll() into tEvents
          repeat for each element tEvent in tEvents
@@ -3942,11 +3959,12 @@ command suPump
          stNote "it raised:" && tError
          put "failed" into sPhaseDc
       end try
+      put the milliseconds - tT0 into tDcMs
       suTallyClose
    end if
 
    try
-      suPumpServiced tLive
+      suPumpServiced tLive, tEnMs, tDcMs
    catch tError
    end try
 
@@ -3995,14 +4013,17 @@ command suPump
    -- The board's paint stays, contained on its own (suPumpPaint swallows its
    -- own throw) so it can neither break the chain nor cost the run: the rows
    -- and the status line when a phase moved, and a Failures or Skips view
-   -- when the report grew (suPumpPaintNow says why those two stay).
+   -- when the report grew (suPumpPaintNow says why those two stay). Timed,
+   -- like the polls above.
+   put the milliseconds into tT0
    suPumpPaint
+   put the milliseconds - tT0 into tPaintMs
    -- THE RE-ARM IS THE ONE STATEMENT THAT MUST ALWAYS BE REACHED: a throw out
    -- of the pump breaks the timer chain, and then nothing ever reaches
    -- stFinish and the hosts, peers and libtorrent session leak. So everything
    -- above it is contained, the tick's measurement included.
    try
-      suPumpTickEnd
+      suPumpTickEnd tPaintMs
    catch tError
    end try
    send "suPump" to me in 33 milliseconds
@@ -4066,12 +4087,16 @@ command suPumpTickStart
    end if
 end suPumpTickStart
 
--- After the polls: a tick that polled a live loopback is SERVICED, and a
--- loopback that has just ended is stamped with the tick and the time.
-command suPumpServiced pLive
+-- After the polls: a tick that polled a live loopback is SERVICED, each
+-- transport's block keeps its slowest time (empty when it was not polled this
+-- tick), and a loopback that has just ended is stamped with the tick and the
+-- time.
+command suPumpServiced pLive, pEnMs, pDcMs
    if pLive is true then
       add 1 to sSuTime["ticks"]
    end if
+   suPumpKeepMax "enPoll", pEnMs
+   suPumpKeepMax "dcPoll", pDcMs
    if stEnDone() and sSuTime["enEnd"] is empty then
       put suEndStamp(sPhaseEn) into sSuTime["enEnd"]
    end if
@@ -4086,16 +4111,29 @@ function suEndStamp pHow
    return pHow && "on tick" && sSuTime["ticks"] & "," && (the milliseconds - sSuTime["tick1"]) && "ms after the first tick"
 end suEndStamp
 
--- Before the re-arm: the tick's own time, for the slowest-tick note.
-command suPumpTickEnd
+-- Before the re-arm: the tick's own time, for the slowest-tick note, and the
+-- board's paint on it.
+command suPumpTickEnd pPaintMs
    local tNow, tTook
    put the milliseconds into tNow
    put tNow - sSuTime["tickAt"] into tTook
    if tTook > sSuTime["slow"] then
       put tTook into sSuTime["slow"]
    end if
+   suPumpKeepMax "paint", pPaintMs
    put tNow into sSuTime["rearm"]
 end suPumpTickEnd
+
+-- One slowest-so-far span: kept only when measured (a number), so a
+-- transport never polled in this run reads "not measured", never 0 ms.
+command suPumpKeepMax pKey, pMs
+   if pMs is not a number then
+      exit suPumpKeepMax
+   end if
+   if sSuTime[pKey] is empty or pMs > sSuTime[pKey] then
+      put pMs into sSuTime[pKey]
+   end if
+end suPumpKeepMax
 
 -- THE VERDICT. The deadline alone is not enough (a pump the engine starved
 -- has not serviced the loopbacks it would judge), the floor alone could wait
@@ -4186,6 +4224,7 @@ command suPumpNotes
          stNote "   and the engine's own, before the first tick (the window's first layout and redraw, timers due first):" && suMsText(tRest)
       end if
       stNote "the pump:" && sSuTime["ticks"] && "serviced ticks over" && (tNow - sSuTime["tick1"]) && "ms; the slowest tick" && suMsText(sSuTime["slow"]) & "; the longest wait between ticks" && suMsText(sSuTime["wait"]) && "(33 asked)"
+      stNote "   inside a tick, the slowest of each part: enet's polls and events" && suMsText(sSuTime["enPoll"]) & ", datachannel's poll and events" && suMsText(sSuTime["dcPoll"]) & ", the board's paint" && suMsText(sSuTime["paint"])
    end if
    stNote "other timers queued as the pump was armed:" && sSuTime["timersArm"]
    stNote "other timers queued at its first tick:" && sSuTime["timersTick1"]

@@ -2584,10 +2584,11 @@ def scenario_transport_holds(c, src, sandbox):
 # CLOCK comment, INFERRED): the old core armed its 40 s deadline BEFORE the
 # arm-time render of the whole report and re-rendered it on every pump tick,
 # so a render slower than the deadline failed both loopbacks on the pump's
-# first tick, before either was polled. What takes the time on Windows is
-# not known; this scenario gives the model that one candidate - a write into
-# field "stResults" costs RENDER_MS on the clock (the render-clock delta) -
-# and drives the two transports as a pair of libraries WITH events.
+# first tick, after one poll. What takes the time on Windows is not known;
+# this scenario gives the model two candidates - a write into field
+# "stResults" costs RENDER_MS on the clock (the render-clock delta), and in
+# the starved-pump run every dcPoll costs SLOW_TICK_MS (a slow native poll)
+# - and drives the two transports as a pair of libraries WITH events.
 #
 # The old core, planted back by tools/test-suite-ui-boot.py (mutant t),
 # reproduces the Windows report: both loopbacks FAIL in `connecting` and
@@ -2618,6 +2619,9 @@ ENET_DONE = "PASS  enet closed gracefully (server drained enetDisconnect)"
 DC_DONE = "PASS  datachannel delivered the large payload whole"
 STALL_FAILS = ("FAIL  enet loopback finished before the deadline",
                "FAIL  datachannel loopback finished before the deadline")
+# the notes' split of a tick: (enet ms, datachannel ms, paint ms)
+TICK_PARTS = (r"enet's polls and events (\d+) ms, datachannel's poll and "
+              r"events (\d+) ms, the board's paint (\d+) ms")
 PROBE_PENDING = ("      boot self-check: its one delayed check had not fired "
                  "yet; see the Boot check view")
 
@@ -2956,6 +2960,9 @@ def scenario_windows_stall(c, src, sandbox):
         c.ck("(on open) the notes count the serviced ticks, more than the "
              "floor: the DataChannel took %d polls to open" % DC_OPEN_SLOW,
              got is not None and got[0] > min_ticks, got)
+        c.ck("(on open) the notes time each part of a tick: enet's polls, "
+             "datachannel's poll and the board's paint, each measured",
+             note_value(notes, TICK_PARTS) is not None, notes)
         c.ck("(on open) each loopback's ending is stamped with its tick",
              note_value(notes, r'enet loopback: done on tick (\d+)')
              is not None and note_value(
@@ -3009,6 +3016,13 @@ def scenario_windows_stall(c, src, sandbox):
              "the floor, each tick as slow as the model made it",
              got is not None and got[1] > deadline and got[0] < min_ticks
              and got[2] >= SLOW_TICK_MS, got)
+        parts = note_value(notes, TICK_PARTS)
+        c.ck("(a starved pump) the notes put the slow tick in datachannel's "
+             "poll, not in enet's polls or the board's paint (review, "
+             "2026-09-27: a slow native poll fits the Windows record too)",
+             parts is not None and parts[1] >= SLOW_TICK_MS
+             and parts[0] < SLOW_TICK_MS and parts[2] < SLOW_TICK_MS,
+             (parts, notes))
 
         # 4. A BLOCKED LOOPBACK on a starved pump: nothing ever arrives, so
         # the floor is never reached in time and the CEILING must end the

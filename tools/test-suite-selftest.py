@@ -146,7 +146,7 @@ C_NOHARNESS_ASK = '      if suNoHarness(tKey) then\n         put "suNote" & tKey
 C_PUMP_ARM = '   suPumpArm\n   send "suPump" to me in 33 milliseconds\n'
 C_ARM_RESET = ('   put empty into sDeadline\n   put empty into sSuTime\n'
                '   put ((not stEnDone())')
-C_PUMP_PAINT = '\n   suPumpPaint\n   -- THE RE-ARM IS'
+C_PUMP_PAINT = '\n   suPumpPaint\n   put the milliseconds - tT0 into tPaintMs\n'
 C_PAINT_ROWS = '      suPaintRows\n      uiStatus "Running ("'
 
 

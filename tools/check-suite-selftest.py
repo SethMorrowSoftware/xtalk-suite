@@ -1300,8 +1300,9 @@ def main(argv):
     # loopbacks on the pump's first tick or its second, where enet-selftest's
     # own loopback completed: the deadline was armed in stRun BEFORE the
     # arm-time render of the whole report (and the window's first layout),
-    # and the pump re-rendered the report on every tick, so a slow render
-    # failed both loopbacks before either was polled (INFERRED).
+    # and the pump re-rendered the report on every tick, so anything slow
+    # ahead of the first tick failed both loopbacks after a poll or two
+    # (INFERRED; what took the time is not known).
     # tools/check-suite-ui-boot.py reproduces that report on the old core and
     # drives the fix along the paths it drives; this holds its two structural
     # halves on EVERY path, statically:

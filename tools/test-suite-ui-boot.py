@@ -93,7 +93,7 @@ when nothing did (the restore could go and the gate stayed green, measured):
      not reach the handler, so this pins the family's rule, not an engine
      hazard.
 
-And seven for the loopback pump's clock (work plan suite engine #9, the
+And eight for the loopback pump's clock (work plan suite engine #9, the
 Windows stall; the gate's scenario_windows_stall, whose loopbacks are
 modelled WITH events and whose every write of the report into the window
 costs 45 s on the model's clock):
@@ -113,6 +113,10 @@ costs 45 s on the model's clock):
      floor, long after the ceiling.
   y  the timing notes are never printed.
   z  the stall note blames UDP alone again, with no ticks and no time.
+  aa the datachannel block is no longer timed (review, 2026-09-27): the
+     notes must split a slow tick into enet's polls, datachannel's poll and
+     the board's paint, since a slow native poll inside the first tick fits
+     the Windows record as well as a slow render does.
 
 The mutants run concurrently, at most one gate run per core.
 
@@ -179,9 +183,11 @@ FIRST_TICK_DEADLINE = '      put tNow + kStDeadlineMs into sDeadline\n'
 VERDICT = ('   put true into tStalled\n   try\n'
            '      put suPumpStalled() into tStalled\n   catch tError\n'
            '      put true into tStalled\n   end try\n')
-PER_TICK_PAINT = '\n   suPumpPaint\n   -- THE RE-ARM IS'
+PER_TICK_PAINT = '\n   put the milliseconds into tT0\n   suPumpPaint\n'
 PER_TICK_RENDER = ('\n   try\n      stShow\n   catch tError\n   end try\n'
-                   '   suPumpPaint\n   -- THE RE-ARM IS')
+                   '   put the milliseconds into tT0\n   suPumpPaint\n')
+# the pump's split of a tick (mutant aa): the datachannel block's timing
+DC_POLL_TIMED = ('      put the milliseconds - tT0 into tDcMs\n')
 STALL_NOTE_TAIL = ('stNote "a blocked UDP loopback is one cause and a pump '
                    'the engine starved is another: the timing notes below '
                    'tell them apart (runbook 5.5)"\n')
@@ -355,6 +361,12 @@ MUTANTS = [
     ("z", "the stall note blames UDP alone again, with no ticks or time",
      (STALL_NOTE_EN, STALL_NOTE_DC), (OLD_NOTE_EN, OLD_NOTE_DC),
      "each stall note states its phase, the serviced ticks and the time"),
+    # And one from the review (2026-09-27): the notes must tell a slow
+    # native poll from a slow paint inside a tick.
+    ("aa", "the datachannel block is no longer timed, so a slow poll reads as "
+           "a slow tick with no part to blame",
+     DC_POLL_TIMED, '',
+     "the notes put the slow tick in datachannel's poll"),
 ]
 
 
