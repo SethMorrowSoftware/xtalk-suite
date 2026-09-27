@@ -183,12 +183,13 @@ if not os.path.isfile(RUNNER):
 # floor silently stopped executing part of itself (a case list that went empty,
 # a loop that no longer iterates), and the run must fail, not print OK. Keyed
 # by the section's first word; measured 2026-09-24 (the four folder-server sections
-# 2026-09-27).
+# 2026-09-27, serve and editor re-measured the same day for the review's anchor and
+# backslash rows).
 FLOORS = {"qsOnionRecvData": 105, "chOnionRecvData": 105, "pins": 6,
           "qsRouteLookupKey": 45,
           "qsKeyOpensVerifier": 11, "qsReceiveOnion": 177, "M9": 18,
           "qsDiskGuard": 16, "chDiskGuard": 16,
-          "fileserver": 164, "serve": 73, "listing": 8, "editor": 18}
+          "fileserver": 164, "serve": 81, "listing": 8, "editor": 26}
 
 
 def _load(name, path):
@@ -651,6 +652,10 @@ def check_fileserver(c, ip, source, sandbox):
          declared, FS.SERVE_ROUTES)
     root = os.path.join(sandbox, "share")
     build_tree(root, FS.SERVE_TREE)
+    # the siblings an unanchored path once reached: the root's name & each path, BESIDE
+    # it, so the anchor rows fail on the old code by serving a real file from outside
+    build_tree(os.path.dirname(root),
+               [os.path.basename(root) + t for t in FS.OUTSIDE_TREE])
     ip.globals["shttproutes"] = ""
     for key, handler in sorted(FS.SERVE_ROUTES.items()):
         m, pth = key.split(" ", 1)
@@ -716,9 +721,10 @@ def check_fileserver(c, ip, source, sandbox):
         c.ck(lab, replies, [want])
         written = dict((os.path.relpath(k, root).replace(os.sep, "/"), bytes(v))
                        for k, v in ip.files.items())
+        # a backslash is a separator to qsEditSafePath, so the saved path has "/" there
         c.ck(lab + ": what reached the disk", written,
-             {os.path.normpath(rel).replace(os.sep, "/"): body.encode("latin-1")}
-             if want[0] == 200 else {})
+             {os.path.normpath(rel.replace("\\", "/")).replace(os.sep, "/"):
+              body.encode("latin-1")} if want[0] == 200 else {})
     ip.served = None
     for name in ("sEditOn", "sCanEncrypt", "sCwActive", "sCwKind", "sCwRoot", "sEditSession",
                  "sCwToken", "sHttpRoutes"):

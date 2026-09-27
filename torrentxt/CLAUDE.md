@@ -269,8 +269,20 @@ it fails on each of those rows. Its first run also found `qsCwServe` building th
 path from `item 3 to -1` of the decoded path, which loses a subfolder's trailing slash
 (the engine ignores one trailing delimiter, engine note 2.2), so every clearweb
 subfolder answered a redirect to `.../docs//`; the rest is now the text after
-`/<token>`, and nocloud's identical `qsCwServe` is a suite work plan row. All verified
-statically; needs an OXT pass (+ live-Tor for the onion half). The family checker's check 23 then found the LAN editor's
+the token's item, and nocloud's identical `qsCwServe` is a suite work plan row. The
+same day's review found three spellings the guards read differently from the disk,
+each pinned by rows whose witness is a real path outside the share or a real dot path
+written, and each red with its old line planted back: a request target with no
+leading `/` (a raw client's `GET -old/x HTTP/1.1`; no browser sends one) was joined to
+the root's text, which carries no trailing slash, so the Tor path served a SIBLING
+folder whose name begins with the share's, listing included (in the tree since its
+first commit), and the first slash fix's offset, counted from the token alone, did the same
+on the web link; `qsFsServePath` now reads every path from the share root, and
+`qsCwServe` counts item 1 too. And the editor's new dot refusal read the raw path while
+`qsEditSafePath` turns `\` into `/`, so `\.env` was written as `.env`; it reads the
+path with those separators now. nocloud's copies of the unanchored Tor path and the
+backslash bypass are a suite work plan row. All verified statically; needs an OXT pass
+(+ live-Tor for the onion half). The family checker's check 23 then found the LAN editor's
 write gate (`qsEditAuthed`, the `x-edit-token` header) still on bare `is` in both copies, and
 own-key, info-hash and cross-library key compares in `torrent-dht-channels` and
 `torrent-client`; all took the same fix the same day (the cross-library key check compares

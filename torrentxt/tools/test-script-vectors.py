@@ -192,15 +192,34 @@ FIXTURES = [
      "      put \"<li class='file t-\"",
      "qsFsListing('/'): the names listed"),
     ("the editor writing a hidden path again", "qs", 1,
-     "   if qsHasDotSegment(tRel) then\n",
+     "   if qsHasDotSegment(tSegs) then\n",
      "   if false then\n",
      "qsEditWriteRoute('.env')"),
     ("the clearweb rest path joined from items (a subfolder's trailing slash lost)", "qs", 1,
-     "   put char ((the number of chars of tTok) + 2) to -1 of tPath into tRest\n",
-     "   set the itemDelimiter to \"/\"\n"
-     "   put \"/\" & (item 3 to -1 of tPath) into tRest\n"
-     "   set the itemDelimiter to tSavedID\n",
+     "   put char ((the number of chars of item 1 of tPath) + (the number of chars of tTok) + 2) \\\n"
+     "      to -1 of tPath into tRest\n",
+     "   put \"/\" & (item 3 to -1 of tPath) into tRest\n",
      "serve: clearweb GET /abc123/docs/"),
+    # The review of that port (2026-09-27): three spellings the guards did not read the
+    # way the disk does. Each old line planted back must be NAMED by an anchor or
+    # backslash row, whose witness (the golden's main()) is a real path outside the share
+    # or a real dot path written.
+    ("the Tor path not anchored at the share root (a sibling folder served)", "qs", 1,
+     "   if char 1 of tPath is not \"/\" then\n"
+     "      put \"/\" before tPath\n"
+     "   end if\n",
+     "",
+     "serve: Tor GET -backup/secret.txt"),
+    ("the clearweb rest offset from the token's length alone (the first 2026-09-27 fix)",
+     "qs", 1,
+     "   put char ((the number of chars of item 1 of tPath) + (the number of chars of tTok) + 2) \\\n"
+     "      to -1 of tPath into tRest\n",
+     "   put char ((the number of chars of tTok) + 2) to -1 of tPath into tRest\n",
+     "serve: clearweb GET X/abc123/public.txt"),
+    ("the editor's dot check reading the raw path (a backslash slips past)", "qs", 1,
+     "   if qsHasDotSegment(tSegs) then\n",
+     "   if qsHasDotSegment(tRel) then\n",
+     "qsEditWriteRoute('\\\\.env')"),
 ]
 
 

@@ -3282,7 +3282,7 @@ end qsEditReadRoute
 -- Auth required; qsEditSafePath confines the target to the served root. The body is
 -- already bounded by kFsMaxReq at the transport, and we re-check the editor cap.
 command qsEditWriteRoute pConn, pRequest
-   local tRel, tDisk, tBody, tErr
+   local tRel, tSegs, tDisk, tBody, tErr
    if not qsEditAuthed(pConn, pRequest) then
       qsEditDeny pConn
       exit qsEditWriteRoute
@@ -3298,7 +3298,15 @@ command qsEditWriteRoute pConn, pRequest
    -- save there is a file nobody can see, and this also refuses a trailing "." segment.
    -- Reading one (qsEditReadRoute) is unchanged: the editor is LAN-only and
    -- password-gated, and keeps its own rules (qsEditSafePath).
-   if qsHasDotSegment(tRel) then
+   -- The check reads the path with qsEditSafePath's separators: that handler turns
+   -- every "\" into "/", so "\.env" or "sub\.hidden\x.txt" WRITES a dot path, and
+   -- qsHasDotSegment splits on "/" alone - read raw, it saw one segment starting "\"
+   -- and let both through (nocloud's copy too; found by the same day's review, pinned
+   -- by the editor rows of tools/check-script-vectors.py; verified statically; needs
+   -- an OXT pass).
+   put tRel into tSegs
+   replace "\" with "/" in tSegs
+   if qsHasDotSegment(tSegs) then
       qsHttpReply pConn, 400, "text/plain; charset=utf-8", "Hidden (dot) paths cannot be written through the editor."
       exit qsEditWriteRoute
    end if
@@ -3524,6 +3532,18 @@ command qsFsServePath pStream, pHeaders
    if tPath contains ".." then
       qsFsSendText pStream, "403 Forbidden", "text/plain; charset=utf-8", "Forbidden."
       exit qsFsServePath
+   end if
+   -- ANCHORED at the share root (2026-09-27): the disk path below is tRoot & tPath, and
+   -- tRoot carries no trailing slash, so a request line whose target does not start
+   -- with "/" (Tor Browser never sends one; a raw client can: `GET -old/x HTTP/1.1`)
+   -- named a SIBLING folder whose name begins with the share's - "/home/u/Site" &
+   -- "-old/x" - and served its files and its listing, no ".." needed. Every path is
+   -- read from the share's root, as tests/fileserver_golden.py's serve_static always
+   -- modelled it. Found by the review of the dotfile port, pinned by
+   -- tools/check-script-vectors.py's serve rows over a real sibling folder; verified
+   -- statically; needs an OXT + live-Tor pass.
+   if char 1 of tPath is not "/" then
+      put "/" before tPath
    end if
    -- a registered dynamic route answers FIRST (any method, so a POST works); only
    -- then does the static GET/HEAD pipeline apply. Hand the handler the decoded path.
@@ -4322,16 +4342,22 @@ command qsCwServe pSocketID
    put the itemDelimiter into tSavedID
    set the itemDelimiter to "/"
    put item 2 of tPath into tTok            -- /<token>/... ; item 1 is "" (leading /)
+   -- The rest is the TEXT after the token's item, never items joined back up
+   -- (2026-09-27): the engine ignores ONE trailing delimiter when it counts items (the
+   -- suite's engine note 2.2, OBSERVED), so `item 3 to -1` of "/<token>/docs/" is
+   -- "docs" and the folder's trailing slash was lost - every clearweb subfolder
+   -- answered a redirect to ".../docs//", and its "Up a level" link redirected back
+   -- there. Found by tools/check-script-vectors.py's serve rows, the day they first
+   -- held this handler to the golden's capability_route, which always said "/docs/".
+   -- The offset counts item 1 as well as the token: a request target need not start
+   -- with "/" (a raw client's `GET X/<token>/f HTTP/1.1`), and an offset from the
+   -- token's length alone then began the rest INSIDE the token, "<its last char>/f",
+   -- which sCwRoot & tRest (no trailing slash) turned into a sibling folder named like
+   -- the share (the same day's review). So the rest starts at the "/" after the token,
+   -- or is empty. Verified statically; needs an OXT pass.
+   put char ((the number of chars of item 1 of tPath) + (the number of chars of tTok) + 2) \
+      to -1 of tPath into tRest
    set the itemDelimiter to tSavedID
-   -- The rest is the TEXT after "/<token>", never items joined back up (2026-09-27):
-   -- the engine ignores ONE trailing delimiter when it counts items (the suite's
-   -- engine note 2.2, OBSERVED), so `item 3 to -1` of "/<token>/docs/" is "docs" and
-   -- the folder's trailing slash was lost - every clearweb subfolder answered a
-   -- redirect to ".../docs//", and its "Up a level" link redirected back there. Found
-   -- by tools/check-script-vectors.py's serve rows, the day they first held this
-   -- handler to the golden's capability_route, which always said "/docs/". Verified
-   -- statically; needs an OXT pass.
-   put char ((the number of chars of tTok) + 2) to -1 of tPath into tRest
    if tRest is empty then
       put "/" into tRest
    end if

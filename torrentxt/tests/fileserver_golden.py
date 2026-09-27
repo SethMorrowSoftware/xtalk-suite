@@ -495,7 +495,10 @@ def capability_route(decoded_path, token):
     """Returns 'forbidden' (.. present), or (matches, rest) where matches is
     whether the token segment equals `token` and rest is the folder-relative path
     (leading '/'). Mirrors qsCwServe: replace \\ -> /, refuse '..', then split on
-    '/' with item 2 the token and item 3..-1 the rest."""
+    '/' with item 2 the token and the rest the TEXT after it (python's split keeps a
+    trailing empty item, so "/".join(items[2:]) is that text, a folder's trailing
+    slash included; the script takes it by a char offset that counts item 1 too,
+    so a target with no leading "/" still yields a rest anchored at "/")."""
     p = decoded_path.replace("\\", "/")
     if ".." in p:
         return "forbidden"
@@ -541,6 +544,8 @@ def serve_static(method, raw, tree, routes, shared=True, token=None):
         if not traversal_ok(raw):
             return ("text", "403")
         path = (path or "/").replace("\\", "/")
+        if not path.startswith("/"):
+            path = "/" + path                 # anchored at the share root (2026-09-27)
     else:
         cap = capability_route(path, token)
         if cap == "forbidden":
@@ -585,12 +590,14 @@ def listing_visible(names):
 def edit_write_decision(rel, tree):
     """Mirror qsEditWriteRoute's refusals for an AUTHORISED request, in its order: the
     confinement (qsEditSafePath) 400, a hidden (dot) path 400, a folder 409; else the save
-    (200). Returns the (status, body) the demo replies with."""
+    (200). Returns the (status, body) the demo replies with. The dot check reads the
+    path with edit_safe_path's separators, a backslash as a "/" (2026-09-27: read raw,
+    "\\.env" slipped past it and was written as .env)."""
     dirs, _ = _tree_sets(tree)
     disk = edit_safe_path("/srv", rel)
     if disk == "":
         return (400, "Bad path.")
-    if has_dot_segment(rel):
+    if has_dot_segment(rel.replace("\\", "/")):
         return (400, "Hidden (dot) paths cannot be written through the editor.")
     if disk[len("/srv/"):] in dirs:
         return (409, "That path is a folder.")
@@ -650,6 +657,14 @@ SERVE_ROWS = [
     ("GET", "/public.txt", False, ("text", "503")),
     ("GET", "/_QS/x", False, ("text", "404")),                  # reserved sits above the 503
     ("GET", "/.env", False, ("text", "503")),                   # the dot check below it
+    # THE ANCHOR ROWS (2026-09-27, the review of the port): a request target with no
+    # leading "/" is read from the share ROOT. Before, the disk path was the root's text
+    # & the target, so these named OUTSIDE_TREE's sibling folder (main() re-proves it)
+    ("GET", "-backup/secret.txt", True, ("text", "404")),       # was the sibling's file
+    ("GET", "-backup/", True, ("file", "index.html", "index.html")),   # was its listing
+    ("GET", "public.txt", True, ("file", "public.txt", "/public.txt")),   # was a 404
+    ("GET", "docs", True, ("redirect", "docs/")),
+    ("GET", ".env", True, ("text", "404")),
 ]
 CW_TOKEN = "abc123"
 # (method, raw path, the pinned outcome) - over the clearweb link (qsCwServe), folder share
@@ -672,7 +687,30 @@ CW_ROWS = [
     ("GET", "/abc123/_qsx", ("file", "index.html", "index.html")),
     ("GET", "/wrong/.env", ("text", "404")),                    # the token first
     ("PUT", "/abc123/.env", ("text", "405")),
+    # a target with no leading "/": the rest still starts at the "/" after the token
+    # (2026-09-27, the review: an offset from the token's length alone began it inside
+    # the token, "3/public.txt", OUTSIDE_TREE's sibling; main() re-proves it)
+    ("GET", "X/abc123/public.txt", ("file", "public.txt", "/public.txt")),
+    ("GET", "X/abc123/docs/", ("text", "200")),
 ]
+# Paths that exist at the share root's TEXT & the path, no separator between: folders
+# BESIDE the root whose names begin with its name (the gate builds each as the root's
+# basename & the path, next to the root). "-backup" is any such sibling; "3" is the one
+# the clearweb rows' old offset reached, the last char of CW_TOKEN. Nothing here is
+# servable: each exists only so the anchor rows above can fail on the old code.
+OUTSIDE_TREE = ["-backup/secret.txt", "3/public.txt"]
+
+
+def unanchored_disk_rel(raw):
+    """What the pre-2026-09-27 Tor path joined to the root's text: the decoded target,
+    unanchored. Not a mirror of anything shipped: the anchor rows' witness."""
+    return unquote_plus(raw).replace("\\", "/")
+
+
+def offset_rest(path, token):
+    """The rest the first 2026-09-27 qsCwServe took, char (len(token) + 2) to -1 (1-based),
+    which is right only when the target starts with "/". The anchor rows' witness."""
+    return path[len(token) + 1:]
 # (folder, the names on disk there) for the listing rows: SERVE_TREE's own folders
 LISTING_FOLDERS = ["", "docs", "sub", ".git"]
 # (rel path the editor is asked to write, the pinned (status, body))
@@ -686,6 +724,12 @@ EDIT_WRITE_ROWS = [
     ("docs", (409, "That path is a folder.")),
     ("../x.txt", (400, "Bad path.")),
     ("", (400, "Bad path.")),
+    # a backslash is a separator to qsEditSafePath, so the dot check reads it as one
+    # (2026-09-27, the review: read raw, each of these three was written)
+    ("\\.env", (400, "Hidden (dot) paths cannot be written through the editor.")),
+    ("sub\\.hidden\\x.txt", (400, "Hidden (dot) paths cannot be written through the editor.")),
+    ("docs\\.secret.txt", (400, "Hidden (dot) paths cannot be written through the editor.")),
+    ("docs\\new2.md", (200, "Saved.")),       # ... and refuses nothing by being one
 ]
 RESERVED_ROWS = [
     ("/_qs", True), ("/_qs/info", True), ("/_qs/", True),
@@ -796,6 +840,7 @@ CAPABILITY_ROWS = [
     ("/abc123/sub/", (True, "/sub/")),         # a subfolder
     ("/abc123/a/b.txt", (True, "/a/b.txt")),   # a nested file
     ("/abc123/photo.jpg", (True, "/photo.jpg")),
+    ("X/abc123/sub/", (True, "/sub/")),        # no leading "/": the rest still anchored
     ("/wrongtoken/", (False, "/")),            # bad token -> 404
     ("/", (False, "/")),                       # bare root, no token -> 404
     ("", (False, "/")),                        # empty -> 404
@@ -955,6 +1000,23 @@ def main():
                                                     or reserved_path(path)):
             check("witness: %s %s is on disk or would reach the SPA" % (method, raw),
                   path.strip("/") in dirs | files or spa_is_route(path), True)
+    # the anchor rows are escape rows: the old join of the root's text and the target
+    # named a real path OUTSIDE the share, and a row that named nothing would prove nothing
+    outside = set(OUTSIDE_TREE) | set(t.rsplit("/", 1)[0] + "/" for t in OUTSIDE_TREE)
+    anchored = [r for r in SERVE_ROWS if not r[1].startswith("/") and r[2]]
+    check("the Tor anchor rows exist", len(anchored) >= 4, True)
+    check("witness: some Tor anchor row once reached OUTSIDE_TREE",
+          any(unanchored_disk_rel(raw) in outside for _, raw, _, _ in anchored), True)
+    for method, raw, _, want in anchored:
+        if unanchored_disk_rel(raw) in outside:
+            check("witness: %s %s is not served from outside" % (method, raw),
+                  want[0] != "file" or want[1] != unanchored_disk_rel(raw), True)
+    cw_anchored = [r for r in CW_ROWS if not r[1].startswith("/")]
+    check("witness: some clearweb anchor row's old offset reached OUTSIDE_TREE",
+          any(offset_rest(raw, CW_TOKEN) in outside for _, raw, _ in cw_anchored), True)
+    for _, raw, _ in cw_anchored:
+        check("capability_route(%r) anchors the rest at '/'" % raw,
+              capability_route(raw, CW_TOKEN)[1].startswith("/"), True)
 
     # -- the listing hides every dot-leading name --
     check("listing_visible(root)", listing_visible(listing_names("")),
@@ -965,6 +1027,14 @@ def main():
     # -- the editor's write refusals --
     for rel, want in EDIT_WRITE_ROWS:
         check("edit_write_decision(%r)" % rel, edit_write_decision(rel, SERVE_TREE), want)
+    # the backslash rows are bypass rows: a raw read of each misses the dot, and the
+    # confinement still WRITES a dot path (so each can fail on the raw check)
+    slashed = [(rel, want) for rel, want in EDIT_WRITE_ROWS if "\\" in rel and want[0] == 400]
+    check("the editor's backslash dot rows exist", len(slashed) >= 3, True)
+    for rel, _ in slashed:
+        check("witness: %r slips past a raw dot check into a dot path" % rel,
+              (has_dot_segment(rel), has_dot_segment(edit_safe_path("/srv", rel)[5:])),
+              (False, True))
 
     # -- MIME mapping (extension is case-insensitive; unknown -> octet-stream) --
     for path, want in MIME_ROWS:
