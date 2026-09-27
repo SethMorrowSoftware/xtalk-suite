@@ -99,7 +99,8 @@ THE MODEL EXTENSIONS AND STAND-INS, declared rather than discovered:
   - The folder server (section 6): `the files` and `the folders` list the model's
     current defaultFolder on the real disk (names only, one per line; the folders
     carry "..", as the engine's do), and urlEncode is the engine's DOCUMENTED rule
-    (letters and digits kept, a space "+", every other byte %XX). While a section-6
+    (letters and digits kept, a space "+", every other byte %XX; the dictionary's
+    return-to-%0D%0A is not modelled, and no row's name holds one). While a section-6
     row runs, the replies are RECORDED at statement level instead of sent:
     qsFsSendText / qsCwSendText (the status), qsFsServeFile / qsCwServeFile (the
     disk path and the MIME name), qsFsSendRedirect / qsCwSendRedirect (the
