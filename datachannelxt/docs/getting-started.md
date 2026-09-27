@@ -179,7 +179,10 @@ Worth stealing from it even if you never run it:
   big, split across content-addressed immutable items listed in the mutable
   head (the wire-format comment at the top of the script has the details).
 - **Nonce-paired offer/answer.** DHT items linger for hours; a nonce echoed
-  from offer to answer is what lets "Reconnect" reuse a room code safely.
+  from offer to answer is what lets "Reconnect" reuse a room code safely. The
+  nonce is 8 lowercase hex, and a blob carrying anything else is dropped where
+  the body is parsed, before the nonce is stored or compared (2026-09-27;
+  verified statically; needs an OXT pass).
 
 It needs BOTH extensions installed (TorrentXT is probed at startup and the
 demo fails closed with an install message when absent).

@@ -98,7 +98,12 @@ MEMBERS = [
                        "TorrentXT's tree - so this one was created empty for "
                        "the suite to publish into"),
     Member("datachannelxt", "DataChannelXT", "extension",
-           OWNER + "/dataChannelXT", native=True, siblings=[],
+           OWNER + "/dataChannelXT", native=True,
+           # tools/check-script-vectors.py (2026-09-27) runs the dht-chat's
+           # signaling parse through riptide's runner, which loads nostrxt's
+           # interpreter at import. (The runner's coinxt binary is optional
+           # and this gate never asks for it.)
+           siblings=["riptide", "nostrxt"],
            mirror_note="the pre-suite home"),
     Member("box2dxt", "Box2Dxt", "extension", OWNER + "/Box2Dxt",
            native=True, siblings=[],

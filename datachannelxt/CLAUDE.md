@@ -26,11 +26,13 @@ The library ships bundled under `src/code/<arch>-<platform>/datachannelxt.{so,dl
 
 Layout: `src/` (shim, `dcx_abi.h`, `dcx_record.h` registries, `dcx_handle_table.h`,
 `datachannelxt.map` export filter, the `.lcb`, `code/`); `tests/` (C++ smoke, orphan-channel
-and handle tests, record golden, TSan suppressions, the OXT harness
-`datachannel-selftest.livecodescript`, and the browser-interop pair `browser-peer.html` +
-`datachannel-browser-peer.livecodescript`); `examples/` (helpers, `datachannel-loopback`, the
-flagship `datachannel-dht-chat`); `tools/` (`run-gates.sh` and its gates,
-`package-extension.py`); `docs/` (the four references and `browser-interop.md`).
+and handle tests, record golden, the dht-chat's signaling golden `dht_signal_golden.py`,
+TSan suppressions, the OXT harness `datachannel-selftest.livecodescript`, and the
+browser-interop pair `browser-peer.html` + `datachannel-browser-peer.livecodescript`);
+`examples/` (helpers, `datachannel-loopback`, the flagship `datachannel-dht-chat`); `tools/`
+(`run-gates.sh` and its gates, among them the dht-chat's execution gate
+`check-script-vectors.py` and its fixture test; `package-extension.py`); `docs/` (the four
+references and `browser-interop.md`).
 
 ## Rules
 
@@ -142,7 +144,13 @@ Code comments cite rules 1-3 by number; keep them.
    (content-addressed, so integrity is free). Body = `nonce LF type LF sdp`, split on the
    FIRST TWO LFs only (the SDP is full of line breaks).
 4. **The nonce pairs answer to offer**; both sides dedup/reject on it, which makes Reconnect
-   under the same code safe while stale items linger for hours.
+   under the same code safe while stale items linger for hours. It is 8 LOWERCASE hex, what
+   `wxRandomNonce` mints, and `wxApplyRemote` drops a body carrying anything else at the
+   split, before the nonce is stored or compared (`wxNonceValid`, 2026-09-27): the dedup
+   compares it behind a letter ("n" & nonce), which is sound only for hex, since a nonce
+   "an" spells "nan" (the suite's engine note 2.11). Held headlessly by
+   `tools/check-script-vectors.py` against `tests/dht_signal_golden.py`; verified
+   statically; needs an OXT pass.
 5. **The demo depends on TorrentXT's EXTENSION, never its example files**: the bt poll loop is
    inlined, and both extensions are probed at startup with guarded calls that fail closed.
 6. **One standing timer chain per loop**, armed once, rescheduling first, no-oping by phase;
@@ -261,6 +269,7 @@ Numbered as cited elsewhere in the suite (the suite's `tools/check-lcb-signature
 | 2026-09-25 (Windows; the Kit report's clock 10:54 PM local) | OXT, Windows (the engine reports Win32), by the maintainer's account the machine of the 2026-09-24 runs and 64-bit, so the `x86_64-win32` DLL, INFERRED to be the 2026-09-12 file (no Windows DLL committed since); no preflight (the same account: none on either machine); the OXT build and whether the report is a launch's first or second Run all not recorded | the same D-23 suite paste as the Linux run (INFERRED from the version lines both reports print: the board stamp `suite-board-1`, holde-em's "stack v0.25.5 harness v47" and riptide's third probe line) | paste 2653 / 2 / 10 (2665); datachannelxt 39 folded ("39 passed, 0 failed of 39 checks"), no skips, the same sections. The core's live loopback created both peers and A's channel (`dcInit` 0, the version names libdatachannel, `dcPeerState(0)` -1), then stalled in phase `opening` to the deadline ("UDP to this machine may be blocked"), one of the paste's two FAILs; `dcCleanup` 0; board row 46 / 1 / 0. That machine's FOURTH stall in `opening` (2026-09-24 three times, 2026-09-25), the same day the same paste's loopback completed on Linux, so on Windows the live legs (open, the 60000 budget, delivery) last ran in August (recorded 2026-08-20; the 2026-08-24 paste's zero failures imply one more); the standalone selftest there is what would tell the machine's UDP from the paste (trap 5.5) |
 | 2026-09-26 (Linux; the Kit report's clock "Saturday, September 26, 2026 4:23 PM") | OXT, Linux (box2dxt's lines print `the platform` as Linux); by the maintainer's account the machine of the 2026-09-25 Linux run (64-bit Kubuntu 24.04, the latest committed builds, so the `x86_64-linux` file of `421bab3` again; "the latest" OXT, no version recorded, and whether it was the 2026-09-25 build not stated); a fresh stack, no preflight, and the report the launch's second Run all, taken with Copy results (the same account, given 2026-09-26) | PR #147's D-23 suite paste (INFERRED from the version lines the report prints, which exist together only in that batch: the board stamp `suite-board-0961bb91e5ee`, holde-em's "stack v0.25.6 harness v48" and riptide's fourth probe line; its head `2ec9594` carries the paste as last regenerated at `986769f`; this harness's folded code as on 2026-09-25, comments aside, and the paste's holds now COUNTED through the core's `suDcInit` / `suDcRelease`, the suite work plan's suite-wide #16) | paste 2876 / 0 / 10 (2886); datachannelxt 39 folded ("39 passed, 0 failed of 39 checks"), no skips, the same sections. The core's live loopback COMPLETED again, line for line as on 2026-09-25: `dcInit` 0 (through the counted init), the version names libdatachannel, `dcPeerState(0)` -1, both peers and A's channel created; negotiated with both ends open, the incoming channel carrying its label, peer A connected; `dcSendData` refused 60001 bytes with -4 (enetxt's code) and carried the SodiumXT-sealed ciphertext byte for byte, opened to the exact plaintext; SCTP at least its 16 KiB floor, and a payload at the negotiated cap accepted and delivered whole; `dcCleanup` 0 at teardown through the counted release (OBSERVED, Linux). Board row 56/0/0. The loopback's second recorded completion on Linux, on the same machine by the account; again the launch's second Run all |
 | 2026-09-26 (Linux; the suite's engine preflight, and the Kit report's clock "Saturday, September 26, 2026 5:11 PM") | OXT 9.7.0-dp-1 on Linux (OBSERVED in the preflight's engine block, with systemVersion `Linux 6.8.0-139-generic` and processor `x86_64`; INFERRED for the paste run reported with it); presumably the machine of the 4:23 PM run, so the `x86_64-linux` file of `421bab3` again (not stated for these two reports); for the paste run, a launch's first or second Run all and Copy results not stated | the suite's `tests/preflight.livecodescript`, its first Linux run; and the batch paste a second time (INFERRED from its version lines, the 4:23 PM run's) | Preflight: "DataChannelXT loads; its ABI guard accepted the installed library (expects ABI 1)" PASS, LOADED at 1 by the guard's strict equality inside `dcInit` (an INFERENCE, as the report says); `dcInit` returned 0 (the probe prints its code only when it is not), and the probe released it with `dcCleanup`. Its details line, OBSERVED: `libdatachannel v0.24.5`, from `dcLibraryVersion()`, the first on record from an engine. It agrees with `CMakeLists.txt`'s pin, but only as a label: the shim returns `DCX_LIBDATACHANNEL_VERSION`, the pinned tag compiled in at build time, so the line says which pin the committed build was configured with, not what libdatachannel's code reports of itself. The paste: 2876 / 0 / 10, line for line the 4:23 PM report bar the Kit's clock line, four box2dxt joint handles and an image id, so datachannelxt 39/39 folded and the core's live loopback COMPLETED again (a third recorded Linux completion), `dcCleanup` 0 through the counted release |
+| 2026-09-27 | the family interpreter (riptide's runner), not an engine | `tools/check-script-vectors.py`, this member's first execution gate: the shipped `datachannel-dht-chat`'s `wxNonceValid`, `wxRandomNonce`, `wxApplyRemote` (into `wxApplyOffer` and `wxApplyAnswer`) and `wxTryHead` against `tests/dht_signal_golden.py`'s mirrors, every blob compressed and handed to the real parse | green. The nonce is refused at the split unless it is 8 lowercase hex (the suite work plan's datachannelxt #9); every nonce `wxRandomNonce` mints passes the check; an offer is answered once however often the DHT hands it back, a new nonce is followed, and two different nonces one number reads the same (00000001, 1e000000) stay two on both sides. The same day `wxTryHead`'s "same chunk list as the running fetch?" compare went behind a letter too (a one-chunk list is one 40-hex target, and two different digits-e-digits targets are one +inf to bare `is`, so the new list was never fetched), found beside #9 and pinned the same way. Run against the demo before the fix, the gate fails: the "an" offer is answered on its first delivery, and its second meets `"nan" is "nan"`, which the interpreter refuses to answer (engine note 2.11), and so do both chunk-list rows. `tools/test-script-vectors.py` plants six defects (that one, a case-folding and a length-blind `wxNonceValid`, each of the two 2026-09-25 letter-prefixed nonce compares back on bare `is`, and the chunk-list compare back on bare `is`) and the gate names each. Logic only: verified statically; needs an OXT pass |
 
 ## Status
 
@@ -280,7 +289,9 @@ file's first engine load; neither the `x86-win32` or `x86-linux` file nor the
 `universal-mac` dylib has met an engine.
 C++ gotcha 7's two exits are driven natively by `tests/orphan_channel_test.cpp` (2026-09-24,
 ASan/UBSan and TSan), not by an engine. The pump's failure branches (`dcPollLastError`) are
-verified statically; needs an OXT pass.
+verified statically; needs an OXT pass, and so is the dht-chat's nonce check at its parse
+boundary (2026-09-27; `tools/check-script-vectors.py` settles its logic headlessly, which
+upgrades no label).
 Still open for this member: browser interop on an engine (the browser page and the OXT half
 exist, with the procedure in `docs/browser-interop.md`; the page ran against the committed
 library in headless Chromium on 2026-09-24, and the OXT script is verified statically; needs
@@ -304,7 +315,8 @@ cmake -S . -B build-tsan -DDATACHANNELXT_BUILD_TESTS=ON -DDATACHANNELXT_SANITIZE
 cmake --build build-tsan --parallel
 TSAN_OPTIONS="halt_on_error=1:suppressions=$PWD/tests/tsan-suppressions.txt" \
   ./build-tsan/datachannel_smoke_test
-bash tools/run-gates.sh     # this member's gate list (what CI runs)
+bash tools/run-gates.sh     # this member's gate list (what CI runs); needs riptide and
+                            # nostrxt beside the checkout (the dht-chat's execution gate)
 ```
 
 The dependency build is minutes (FetchContent of the pinned tag with its submodules; DTLS

@@ -34,6 +34,8 @@ script "DataChannelDhtChat"
 --       kind "C": rest = comma-list of 40-hex targets   - fetch + concatenate
 --                 the immutable chunk items, in order, to get zlib(body)
 --   body (after decompress): nonce LF type LF sdp
+--     nonce: 8 lowercase hex (wxRandomNonce); a body with any other nonce is
+--     dropped at the split, before the nonce is stored or compared
 --
 -- The NONCE pairs an answer to the exact offer it answers: the answerer echoes
 -- the offer's nonce, and the host ignores any answer that does not echo its
@@ -1529,8 +1531,14 @@ command wxTryHead pValue
       wxApplyRemote tRest
    else if tKind is "C" then
       put textDecode(tRest, "UTF-8") into tRest
-      -- same list as before? the fetch is already running - let it retry
-      if tRest is sFetchTargets then
+      -- same list as before? the fetch is already running - let it retry.
+      -- As TEXT, a letter on each side (2026-09-27): a one-chunk list is one
+      -- 40-hex target, and bare `is` compares two number-like operands as
+      -- NUMBERS (the suite's engine note 2.11), so two different targets
+      -- shaped digits-e-digits both overflow to +inf and compare equal - the
+      -- new list would be taken for the running fetch and never fetched. "t"
+      -- starts no number the engine reads, whatever follows it.
+      if ("t" & tRest) is ("t" & sFetchTargets) then
          exit wxTryHead
       end if
       put tRest into sFetchTargets
@@ -1625,6 +1633,22 @@ command wxApplyRemote pZip
       exit wxApplyRemote
    end if
    put char 1 to (tCut - 1) of tBody into tNonce
+   -- THE NONCE IS A FIXED SHAPE, checked HERE, before anything stores or compares
+   -- it (2026-09-27): 8 lowercase hex, what wxRandomNonce mints on both sides.
+   -- Until then this took whatever preceded the first LF, and wxApplyOffer's
+   -- dedup compares ("n" & nonce): a nonce "an" spells "nan", which C's strtod
+   -- reads as a NaN, equal to nothing, itself included (a Linux engine read two
+   -- "nan" texts built that way unequal on 2026-09-26, OBSERVED; the NaN
+   -- reading INFERRED; Windows unread: the suite's engine note 2.11) - so one
+   -- offer was re-answered, and the peer rebuilt, on every delivery. The
+   -- letter prefix is sound only for hex, so hex is what crosses this line.
+   -- Dropped quietly, like a blob missing an LF above: the DHT hands back the
+   -- same item on every poll, and a line per poll is noise.
+   -- Pinned headlessly by tools/check-script-vectors.py against
+   -- tests/dht_signal_golden.py; verified statically; needs an OXT pass.
+   if not wxNonceValid(tNonce) then
+      exit wxApplyRemote
+   end if
    delete char 1 to tCut of tBody
    put offset(numToChar(10), tBody) into tCut
    if tCut is 0 then
@@ -1653,7 +1677,9 @@ command wxApplyOffer pNonce, pKind, pSdp
    -- engine source; not yet observed), and an 8-hex nonce that reads as
    -- digits-e-digits overflows to +inf, so two DIFFERENT such nonces (about
    -- 1 in 120 each) compared equal: a fresh offer dropped as answered, a
-   -- stale answer applied (2026-09-25). The wire format is unchanged.
+   -- stale answer applied (2026-09-25). The wire format is unchanged. The
+   -- prefix is sound because only 8-hex nonces get here (wxApplyRemote
+   -- refuses the rest, 2026-09-27): no hex value supplies the "an" of a NaN.
    if ("n" & pNonce) is ("n" & sSeenOfferNonce) then
       exit wxApplyOffer -- already answered this exact offer
    end if
@@ -1873,6 +1899,26 @@ function wxPathLabel pPair
    end if
    return "DIRECT path (NAT traversal succeeded)"
 end wxPathLabel
+
+-- Is pNonce a nonce this wire format carries: exactly 8 characters, each a
+-- LOWERCASE hex digit (the shape wxRandomNonce mints)? wxApplyRemote refuses
+-- anything else at the parse boundary. Judged by code point, not with `is in`
+-- or `contains`: those fold case while the caseSensitive is false (its
+-- default), and "0123ABCD" is not a nonce this demo mints. Pure; mirrored by
+-- nonce_valid() in tests/dht_signal_golden.py.
+function wxNonceValid pNonce
+   local tCh, tN
+   if the number of chars of pNonce is not 8 then
+      return false
+   end if
+   repeat for each char tCh in pNonce
+      put charToNum(tCh) into tN
+      if not ((tN >= 48 and tN <= 57) or (tN >= 97 and tN <= 102)) then
+         return false
+      end if
+   end repeat
+   return true
+end wxNonceValid
 
 -- 8 hex chars; a disambiguator, not a secret (the room code is the secret).
 function wxRandomNonce

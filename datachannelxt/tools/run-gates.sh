@@ -29,16 +29,27 @@ cd "$(dirname "$0")/.."
 echo "== datachannelxt: static gate =="
 python3 tools/check-livecodescript.py
 
-# Every golden-vector suite this member ships (today the record codec): the
-# ONE glob in this file, so a member adding one is covered with no edit here.
-# nullglob so an empty match runs nothing rather than handing python3 the
-# literal pattern.
+# Every golden-vector suite this member ships (the record codec, the dht-chat's
+# signaling parse): the ONE glob in this file, so a member adding one is
+# covered with no edit here. nullglob so an empty match runs nothing rather
+# than handing python3 the literal pattern.
 shopt -s nullglob
 for rel in tests/*golden*.py; do
   echo "== datachannelxt: $rel =="
   python3 "$rel"
 done
 shopt -u nullglob
+
+# The dht-chat execution gate (2026-09-27, the suite work plan's datachannelxt
+# #9): the shipped signaling parse boundary RUNS headlessly through riptide's
+# runner, held to tests/dht_signal_golden.py's mirrors (the nonce shape, the
+# body split, both dedup rules). After the golden, which it stands on; its
+# fixture test first, because a blind gate prints OK too. Siblings: riptide,
+# nostrxt (tools/member-registry.py in the suite).
+echo "== datachannelxt: tools/test-script-vectors.py =="
+python3 tools/test-script-vectors.py
+echo "== datachannelxt: tools/check-script-vectors.py =="
+python3 tools/check-script-vectors.py --check
 
 # Record-registry sync (shim header <-> .lcb constants): the record enums in
 # the shim header are the single source of truth, and every enumerator must
