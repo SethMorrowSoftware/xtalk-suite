@@ -420,7 +420,7 @@ keeping the scaffold for its report.
   pastes of 2026-09-24, 2026-09-25 and 2026-09-26 (twice in one launch), folded
   34/34 on the 2026-09-12 `x86_64-win32` DLL with that loopback stalled every
   time (1.3 #9); on 2026-09-26 the standalone `enet-selftest` on that machine
-  (presumably that DLL; not stated) ran 68/0/0 with its own async loopback
+  (by the maintainer's account; presumably that DLL) ran 68/0/0 with its own async loopback
   COMPLETE and no `RUN NOT FINISHED` trailer, which closed engine #1 (runbook
   section 8 and 4.3), and that evening's Windows preflight read `enet 1.3.18`
   too; standalone selftest 2026-08-07; async loopback 2026-08-13; folded 34 on
@@ -481,7 +481,7 @@ keeping the scaffold for its report.
 
 | # | Run | Where | Row | Green (in brief) |
 |---|---|---|---|---|
-| 1 | `datachannel-loopback`: **the only member demo with no itemised engine record** (the maintainer's account of 2026-09-26, presumably on the Windows machine, is "seems to work as intended", no more; runbook section 8) | S1 item 5 | 37 | connected + open on both sides; chat in both panes; the boot self-check green |
+| 1 | `datachannel-loopback`: **the only member demo with no itemised engine record** (the maintainer's account of 2026-09-26, on the Windows machine, is "seems to work as intended", no more; runbook section 8) | S1 item 5 | 37 | connected + open on both sides; chat in both panes; the boot self-check green |
 | 2 | `datachannel-selftest` standalone on the 2026-09-12 binaries (Windows; Linux with glibc 2.38 or newer), recording which library loaded. The paste's own loopback completed on Linux 2026-09-25 on the `x86_64-linux` build (the maintainer's account) and stalled on Windows 2026-09-24 to 09-26 (1.3 #9); the standalone harness's own async loopback has not run since 2026-08-15 | S1 item 6 | - (runbook 4.2) | green, no trailer |
 | 3 | Closing-pass leg E, and `datachannel-dht-chat` on two machines recorded BY NAME (the 2026-08-27 one-LAN report does not say whether the demo or leg E ran; its getting-started section 6 flow has no recorded run either) | S3 items 1, 6 | 6 | OPEN across machines; the record names the stack, both platforms and the selected ICE pair type |
 | 4 | Leg E or the DHT chat across two networks | 2NET | 40 | a `srflx` / `prflx` pair (record `relay` honestly if both NATs force TURN) |
