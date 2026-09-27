@@ -793,37 +793,100 @@ list them with an admin `netsh int ipv4 show excludedportrange protocol=tcp`) or
 `Error 10048` (`WSAEADDRINUSE`): pick another LOCAL port such as 8090 or 9099, and
 leave the VIRTUAL port at 80.
 
-### 5.5 UDP to loopback may be blocked on your machine
+### 5.5 A live loopback that stalls: a blocked UDP loopback, or the paste's pump
 
-The enet and dc loopbacks run over UDP on 127.0.0.1; a machine or security agent
-that blocks all UDP fails them (the dc harness fails with a note rather than
-hanging). If both fail, suspect the machine, test UDP loopback independently, and
-record an **environment** failure, distinct from a binding failure (seen
-2026-08-27: the only 2 failures of 2445; and again on 2026-09-24, on Windows,
-enet stalled in `connecting` and dc in `opening` at the 40 s deadline, in all
-three runs that day, 2 of 2628 in the first). **On 2026-09-25 the same
-loopback code COMPLETED on a Linux engine** (section 8; the paste's core had
-changed only a comment since the third Windows run): enet on 127.0.0.1:27196
-connected, carried the sealed ciphertext byte-for-byte, reassembled all 60000
-bytes into ONE message and closed gracefully; dc negotiated, opened both ends,
-reported SCTP at or above its 16 KiB floor and delivered the large payload
-whole. So the paste's loopbacks can complete on an engine, and the Windows
-stall belongs to that machine or that platform's builds, not to the paste's
-code alone. The same day the Windows machine (the same one, by the
-maintainer's account) ran the same paste and both loopbacks stalled a FOURTH
-time, in the same two phases (enet in `connecting`, dc in `opening`), while its
-other sections read as Linux's (section 8): four stalls in its four recorded
-runs, none in Linux's one recorded run. (On 2026-09-26 the batch's paste,
-whose core now takes and gives back its ENet and DataChannel holds counted,
-work plan suite-wide #16, completed both again on that Linux machine, by the
-maintainer's account: two recorded Linux runs, no stall; section 8.) Which,
-only that machine can say: the
-independent test is each transport's own loopback there, the standalone
-`enetxt/tests/enet-selftest.livecodescript` (port 27098) and
-`datachannelxt/examples/datachannel-loopback.livecodescript`. If they stall
-too, it is the machine (or the platform: record which); if they complete, the
-paste's loopbacks fail where the members' own do not, and that is a defect to
-report.
+The enet and dc loopbacks run over UDP on this machine (enet on 127.0.0.1); a
+machine or security agent that blocks all UDP fails them (the dc harness fails
+with a note rather than hanging). The independent test is each transport's own
+loopback on that machine: `enetxt/tests/enet-selftest.livecodescript` (port
+27098) and `datachannelxt/examples/datachannel-loopback.livecodescript`. If they
+stall too, it is the machine (or the platform: record which), an **environment**
+failure, distinct from a binding failure. If they complete, the paste's
+loopbacks fail where the members' own do not, and that is a defect in the paste.
+
+**The Windows machine, 2026-09-24 to 09-26: the paste's defect, not the
+machine's.** The paste's two loopbacks stalled there in every D-23 paste run on
+record, six (three on 2026-09-24, one on 09-25 and two on 09-26, section 8), always
+enet in `connecting` and dc in `opening` at the 40 s deadline, while the same
+loopback code completed on Linux (2026-09-25 and twice on 09-26, section 8).
+(The 2026-08-27 stall, recorded as blocked UDP, has no machine or phase on the
+record; the Windows pastes of 2026-08-20 and 2026-08-24, before the D-23 board,
+ran with no failure, 08-20's loopbacks included.) On 2026-09-26 the independent
+test ran on that Windows machine (the same machine as 2026-09-24 and 09-25, by
+the maintainer's account): `enet-selftest` went 68/0/0 with its async loopback
+section complete (connect, hello, echo, broadcast, the binary payload
+byte-for-byte, disconnect: OBSERVED in its report), and the DataChannel loopback
+demo "seems to work as intended", by the maintainer's account (no report; what
+row 37 asks of it, connected and open on both sides and chat in both panes, was
+not itemised). By this section's own criterion, the paste's loopbacks failed
+where the members' own did not.
+
+**The diagnosis, INFERRED** (the evidence chain; the core's THE PUMP'S CLOCK
+comment above `suPump` has it too):
+
+1. The pump judged the stall on its first tick or its second. enetxt's shim
+   services a host only inside `enPoll`, so ENet cannot leave `connecting`
+   before the server's third poll (the client's CONNECT goes out on the first,
+   the VERIFY comes back on the second, the server sees the ACK on the third).
+2. That tick came MORE than 40 s after the deadline was armed. The first
+   2026-09-26 run was the one `openStack` started (the maintainer's account, and
+   box2dxt's joint handles), and its summary said the boot self-check's delayed
+   probe "had not fired yet". `suScRun` arms that probe (due in 400 ms) after
+   `stRun` has armed the pump (due in 33 ms), and the engine keeps its pending
+   messages sorted by due time
+   and delivers the earliest due one per pass (LiveCode's develop-9.6
+   `uidc.cpp`, `doaddmessage` and `handlepending`: DOCUMENTED from the source,
+   never observed), so the pump reached its summary on a tick due before the
+   probe, with the deadline already past.
+3. The deadline was armed in `stRun` BEFORE the arm-time render of the whole
+   report (about 3350 lines into field `stResults`), `suSyncDone`'s paints, the
+   rest of `openStack` and the window's first layout, and the pump then
+   re-rendered the whole report on every 33 ms tick. Anything among those that
+   took 40 s failed both loopbacks before either was polled. The second
+   2026-09-26 run, pressed on the open window with no boot probe, stalled the
+   same way, so the window's first layout alone cannot explain it; the arm-time
+   render and the per-tick renders, or timers queued ahead of the pump, can.
+4. WHAT takes the time on Windows is NOT KNOWN: the arm-time render,
+   `suSyncDone`'s paints, the window's first layout on open, and timers queued
+   ahead of the pump are the candidates. One fact narrows them without
+   settling it: before the D-23 board the Windows pastes re-rendered a report
+   of some 2,400 checks on every tick and their loopbacks completed, so what
+   the board changed on the way to a tick (its window and results field, the
+   boot self-check, `suSyncDone`, a report of some 2,900 checks) is where to
+   look, and the notes below measure each.
+
+**The fix (2026-09-27; verified statically and in the headless boot model;
+needs an OXT pass on Windows):** the deadline starts at the pump's FIRST tick;
+a loopback is judged stalled only once the deadline has passed AND the pump has
+serviced it `kStMinTicks` times, or once `kStCeilingMs` has passed from that
+tick whatever the count, so a run always ends; the pump renders nothing of the
+report while a loopback is live (the rows' pills and the status line carry the
+progress, the Failures and Skips views stay live, and the report is written
+once, at the finish; Copy results mid-run still copies it from the variable with
+its RUN NOT FINISHED trailer); and a stall note now gives the ticks and the time
+and names both causes. `tools/check-suite-ui-boot.py`'s Windows-stall scenario
+reproduces the 2026-09-26 report on the old core (both loopbacks FAIL in
+`connecting` and `opening` on the first tick, the probe not fired) when a
+render of the report costs 45 s, and completes both on the new one;
+`check-suite-selftest.py` check 19 holds the deadline to the pump and the
+report out of a live tick. The standalone `enet-selftest` and
+`datachannel-selftest` keep the old shape (the deadline armed before a render
+every tick) at a report of about seventy lines; `enet-selftest`'s completed on
+that Windows machine on 2026-09-26.
+
+**What the next Windows run must read back.** On every run that arms a live
+loopback the report carries an UNCOUNTED section just after the loopbacks, "the
+loopbacks' pump: where the time went": the arm-time render's ms (and the
+report's line count), `suSyncDone`'s ms, the ms from arming the pump to its
+first tick (on open split into the boot self-check's share and the engine's
+own: the window's first layout and redraw, and timers due first), the timers
+queued at the arm and at the first tick, the serviced ticks, the pump's total
+ms, the slowest tick and the longest wait between ticks, and each loopback's
+ending (its tick and time). Run all on open, then Run all again in the same
+launch, and copy each report back whole with Copy results: the first run's
+split shows the window's first layout, the second's does not. If a loopback
+still stalls, its note says after how many serviced ticks and how long, and
+the section says where the time went.
 
 ### 5.6 onionxt's selftest tears down live state, on purpose
 
