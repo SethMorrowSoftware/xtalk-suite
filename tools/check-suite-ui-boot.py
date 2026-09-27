@@ -90,6 +90,23 @@ order, in ONE window (a maintainer opens the stack once and keeps pressing):
                nothing else: no event ever arrives, so each loopback waits for
                its deadline, and the folded harnesses stop at their first
                unmodelled call (after their two counted inits).
+  Windows      LAST of all, in an interpreter of its own (work plan suite
+  stall        engine #9, runbook 5.5): both loopbacks modelled WITH events
+               (LoopbackModel: ENet serviced only inside enPoll, as enetxt's
+               shim is; DataChannelXT's one process-wide queue), and every
+               write of the report into field "stResults" costing 45 s on the
+               clock (the render-clock delta). On open (openStack's four
+               calls, a cross run standing in for Run all) and from the
+               button, both loopbacks complete, no live pump tick writes the
+               report, the uncounted timing notes carry the render's cost, the
+               serviced ticks and each loopback's ending, and on open the boot
+               probe fires mid-pump. A starved pump (every tick 5 s) completes
+               on the floor of serviced ticks past the deadline; a blocked
+               loopback on it is judged by the ceiling, its note giving the
+               ticks and the time. The pre-2026-09-27 core, planted back by
+               the fixture, reproduces the Windows report: both loopbacks
+               FAIL on the first tick, enet in `connecting` and dc in
+               `opening`, and the probe had not fired.
 
 THE PROFILE: ALL-ABSENT
 -----------------------
@@ -177,7 +194,14 @@ and are asserted on here rather than counted.
   native-command     a modelled extension COMMAND in statement position
                      (`enHostDestroy sEnServer`, a bare `enDeinitialize`)
                      reaches the model; the base reaches a native only as a
-                     function. Fires only in the transport-holds scenario.
+                     function. Fires only in the transport-holds and
+                     Windows-stall scenarios.
+  render-clock       a write into field "stResults" advances the clock by the
+                     scenario's render cost (0 everywhere else), and a write a
+                     LIVE pump tick makes is counted. An ASSUMED cost, the one
+                     candidate the Windows record points at; what the engine's
+                     time really goes to is what the paste's timing notes
+                     measure. Fires only in the Windows-stall scenario.
 
 REFUSED rather than modelled: a read of `the visible` of a control that never
 had it set (the engine says true, the runner would say empty; a check reading
@@ -197,10 +221,13 @@ profile below runs Run all, and so all three), and EVERY
 PRESENT-EXTENSION PATH: with every native absent no loopback opens, no session
 is taken and no member harness runs - bar the transport-holds scenario, whose
 two libraries are a refcount and a peer table and no more (no event arrives,
-no byte crosses). It settles LOGIC. It upgrades no honesty
-label: what the 2026-09-24 engine runs did not show (a row's Run, Show, the
-filters, the pills' look) stays "verified statically plus a headless UI boot;
-needs an OXT pass" (D-23, runbook row 48).
+no byte crosses), and the Windows-stall scenario, whose two loopbacks are a
+scripted event sequence per poll (the shim's order, never its bytes: a
+payload crosses as the text it was sent as). It settles LOGIC. It upgrades no
+honesty label: what the 2026-09-24 engine runs did not show (a row's Run,
+Show, the filters, the pills' look) stays "verified statically plus a
+headless UI boot; needs an OXT pass" (D-23, runbook row 48), and so does the
+pump's clock (verified statically; needs an OXT pass on Windows).
 
 THE --full PROFILE: RUN ALL OVER THE WHOLE PASTE, BEFORE AN ENGINE SESSION
 --------------------------------------------------------------------------
@@ -490,6 +517,7 @@ DELTAS = collections.OrderedDict([
     ("effective-filename", "the effective filename of this stack is empty"),
     ("control-by-index", "controls of this card, by index"),
     ("native-command", "a modelled extension command in statement position"),
+    ("render-clock", "a write into field stResults costs the clock a render"),
 ])
 FIRED = collections.Counter()
 
@@ -512,8 +540,16 @@ class SuiteWorld(DB.World):
         self.passed = []            # message names, in the order passed
         # The modelled extension COMMANDS a statement may call (lower-case
         # names in LCS.HASHES). EMPTY in the all-absent profile; only
-        # scenario_transport_holds fills it, for its own interpreter.
+        # scenario_transport_holds and scenario_windows_stall fill it, each
+        # for its own interpreter.
         self.native_commands = set()
+        # The render-clock delta (scenario_windows_stall): what one write
+        # into field "stResults" costs the clock, in ms (0: nothing, as
+        # everywhere else), and how many such writes a LIVE pump tick made.
+        self.render_cost = 0
+        self.live_renders = 0
+        # The message deliver_next is delivering, for the count above.
+        self.delivering = None
 
 
 class SuiteExpr(DB.DemoExpr):
@@ -734,6 +770,16 @@ class SuiteInterp(DB.DemoInterp):
         if ctl is None:
             raise Thrown('Chunk: no such object (field "%s")' % name)
         v = str(LCS._disp(value))
+        if self.world.render_cost and name.lower() == "stresults":
+            # render-clock: the whole report into the window takes this long
+            # (the Windows candidate, scenario_windows_stall), and a write a
+            # LIVE pump tick makes is counted (sAsyncRunning is emptied
+            # before stFinish's own render, so the finish is not one)
+            self.world.ms += self.world.render_cost
+            if (self.world.delivering == "suPump"
+                    and str(self.globals.get("sasyncrunning", "")) == "true"):
+                self.world.live_renders += 1
+            fire("render-clock")
         if prep == "after":
             ctl.content = ctl.content + v
             return
@@ -791,7 +837,11 @@ def deliver_next(ip, world, only=None):
     world.ms = max(world.ms, pick[1])
     name, args = ip.parse_message(pick[2])
     fire("timer-delivery")
-    ip.call(name, args)
+    world.delivering = name
+    try:
+        ip.call(name, args)
+    finally:
+        world.delivering = None
     return name
 
 
@@ -2340,15 +2390,17 @@ def check_other_intact(c, models, when, paste_hosts=0, dc_lost_ok=False):
 
 
 def drive_past_deadline(c, board, label):
-    """One live pump tick (nothing arrives), then the clock past the run's
-    deadline and every queued message delivered: the loopbacks FAIL on the
-    deadline, as on an engine with blocked loopback UDP (trap 5.5), and the
-    run reaches stFinish and stTeardown."""
+    """One live pump tick (nothing arrives; the first tick sets the
+    deadline), then the clock past it and every queued message delivered:
+    the pump ticks on to its floor of serviced ticks and the loopbacks FAIL
+    on the deadline, as they would with nothing ever arriving (a blocked
+    loopback, runbook 5.5), and the run reaches stFinish and stTeardown."""
     ip, world = board.ip, board.world
     try:
         deliver_next(ip, world, only=("suPump",))
         world.ms = max(world.ms, int(LCS._n(board.g("sDeadline"))) + 1)
-        deliver_all(ip, world)
+        deliver_all(ip, world,
+                    bound=int(LCS._n(ip.constants["kStMinTicks"])) + 10)
         return True
     except Exception as exc:                            # noqa: BLE001
         return c.threw(label, exc)
@@ -2518,6 +2570,486 @@ def scenario_transport_holds(c, src, sandbox):
         for name in names:
             LCS.HASHES.pop(name, None)
         world.native_commands = set()
+
+
+# ==========================================================================
+# THE WINDOWS STALL, REPRODUCED (work plan suite engine #9, runbook 5.5)
+# ==========================================================================
+#
+# On the Windows machine of 2026-09-24 to 09-26 both loopbacks stalled in
+# every D-23 paste run on record, enet in `connecting` and dc in `opening`,
+# and in the run openStack started the summary said the boot self-check's
+# delayed probe had not fired; enetxt's standalone enet-selftest completed
+# its own loopback there (2026-09-26). The diagnosis (the core's THE PUMP'S
+# CLOCK comment, INFERRED): the old core armed its 40 s deadline BEFORE the
+# arm-time render of the whole report and re-rendered it on every pump tick,
+# so a render slower than the deadline failed both loopbacks on the pump's
+# first tick, before either was polled. What takes the time on Windows is
+# not known; this scenario gives the model that one candidate - a write into
+# field "stResults" costs RENDER_MS on the clock (the render-clock delta) -
+# and drives the two transports as a pair of libraries WITH events.
+#
+# The old core, planted back by tools/test-suite-ui-boot.py (mutant t),
+# reproduces the Windows report: both loopbacks FAIL in `connecting` and
+# `opening` on the first tick, and the on-open run's summary says the probe
+# had not fired. The new core completes both, prints its timing notes, and
+# the probe fires mid-pump. Three more runs pin the rest of the verdict: a
+# pump the engine starves (every tick costs SLOW_TICK_MS) completes on the
+# floor of serviced ticks where the deadline alone would have failed it; a
+# loopback that never answers is judged by the ceiling, with the ticks and
+# the time in its note; and a button run (the maintainer's second Run all in
+# one launch) completes with the status line carrying the phases.
+#
+# The model settles LOGIC under an assumed render cost. It says nothing about
+# what the engine's time actually goes to; the notes it checks are the ones
+# the next Windows report must carry back. It upgrades no label.
+
+RENDER_MS = 45000           # one write of the report into the window
+SLOW_TICK_MS = 5000         # a starved pump: each tick's dcPoll
+DC_OPEN_SLOW = 75           # polls from the answer to both channels open:
+                            # 2.5 s of the pump's rhythm, past the tick floor
+DC_OPEN_FAST = 10           # the same, for the starved pump
+STALL_NOTE = (r'^      stalled in phase (\w+) after (\d+) serviced ticks, '
+              r'(\d+) ms from the pump\'s first tick \(judged at \d+ ms and '
+              r'\d+ ticks, or \d+ ms whatever the count\)$')
+NOTES_HEADER = ("== the loopbacks' pump: where the time went (notes, not "
+                "counted; paste them back) ==")
+ENET_DONE = "PASS  enet closed gracefully (server drained enetDisconnect)"
+DC_DONE = "PASS  datachannel delivered the large payload whole"
+STALL_FAILS = ("FAIL  enet loopback finished before the deadline",
+               "FAIL  datachannel loopback finished before the deadline")
+PROBE_PENDING = ("      boot self-check: its one delayed check had not fired "
+                 "yet; see the Boot check view")
+
+
+class LoopbackModel:
+    """ENet and DataChannelXT as the paste's two loopbacks drive them, with
+    EVENTS, each delivered on a later poll than the call that causes it.
+
+    ENet as enetxt's shim runs it: a host is serviced only inside enPoll, so
+    the client's CONNECT leaves on its first poll, the client sees the
+    connect on its second, the server on its third (the ACK), and every
+    enSend leaves on the client's NEXT poll and arrives on the server's poll
+    after that. DataChannelXT's queue is one per process: A's offer and
+    candidate are there on the first dcPoll after its channel is made, B's
+    answer on the poll after dcSetRemoteDescription, and both channels open
+    `dc_open` polls after A takes the answer; a dcSendData arrives on the
+    next poll. `slow` is what each dcPoll costs the clock (one per tick
+    while the DataChannel loopback is live: a starved pump); `blocked` means
+    nothing ever arrives (a blocked UDP loopback)."""
+
+    S, C, P, SP = 0x30001, 0x30002, 0x30003, 0x30004
+    A, B, CA, CB = 0x40001, 0x40002, 0x40003, 0x40004
+
+    def __init__(self, world, dc_open, slow=0, blocked=False):
+        self.world, self.dc_open = world, dc_open
+        self.slow, self.blocked = slow, blocked
+        self.en_held = self.dc_held = 0
+        self.ns = self.nc = 0           # server / client polls
+        self.outbox, self.inbox = [], []
+        self.client_told = self.server_told = False
+        self.connected = False
+        self.nd = 0                     # dcPolls
+        self.dc_queue = []              # [due poll, event]
+        self.peers_made = 0
+        self.label = ""
+        self.open_at = None
+
+    # -- ENet --------------------------------------------------------------
+    def en_init(self, a):
+        self.en_held += 1
+        return 0
+
+    def en_deinit(self, a):
+        self.en_held = max(0, self.en_held - 1)
+        return 0
+
+    def en_server(self, a):
+        return self.S
+
+    def en_client(self, a):
+        return self.C
+
+    def en_connect(self, a):
+        return self.P if int(LCS._n(a[0])) == self.C else 0
+
+    def en_send(self, a):
+        if int(LCS._n(a[0])) != self.P:
+            return -2
+        ch, data = int(LCS._n(a[1])), str(LCS._disp(a[2]))
+        if ch not in (0, 1):
+            return -3
+        if len(data) > 60000:
+            return -4
+        self.outbox.append({"name": "enetReceive", "peer": self.SP,
+                            "channel": ch, "payload": data})
+        return 0
+
+    def en_disconnect(self, a):
+        self.outbox.append({"name": "enetDisconnect", "peer": self.SP,
+                            "data": int(LCS._n(a[1]))})
+        return 0
+
+    def en_poll(self, a):
+        host, out = int(LCS._n(a[0])), []
+        if host == self.S:
+            self.ns += 1
+            if not self.blocked:
+                if (self.ns >= 3 and self.nc >= 2
+                        and not self.server_told):
+                    self.server_told = True
+                    out.append({"name": "enetConnect", "peer": self.SP,
+                                "data": 7, "address": "127.0.0.1"})
+                out.extend(self.inbox)
+                self.inbox = []
+        elif host == self.C:
+            self.nc += 1
+            if not self.blocked:
+                if self.nc >= 2 and not self.client_told:
+                    self.client_told = True
+                    out.append({"name": "enetConnect", "peer": self.P})
+                self.inbox.extend(self.outbox)
+                self.outbox = []
+        return dict((str(k + 1), e) for k, e in enumerate(out))
+
+    def en_destroy(self, a):
+        return 0
+
+    # -- DataChannelXT -----------------------------------------------------
+    def dc_init(self, a):
+        self.dc_held += 1
+        return 0
+
+    def dc_cleanup(self, a):
+        self.dc_held = 0
+        return 0
+
+    def dc_state(self, a):
+        h = int(LCS._n(a[0]))
+        if h not in (self.A, self.B):
+            return -1
+        return 2 if self.connected else 1
+
+    def dc_peer(self, a):
+        self.peers_made += 1
+        return self.A if self.peers_made == 1 else self.B
+
+    def dc_channel(self, a):
+        if int(LCS._n(a[0])) != self.A:
+            return 0
+        self.label = str(LCS._disp(a[1]))
+        self._later(1, {"name": "dcLocalDescriptionReady", "peer": self.A,
+                        "sdp": "v=0 offer", "sdpType": "offer"})
+        self._later(1, {"name": "dcLocalCandidate", "peer": self.A,
+                        "candidate": "candidate:a", "mid": "0"})
+        return self.CA
+
+    def dc_set_remote(self, a):
+        peer, kind = int(LCS._n(a[0])), str(LCS._disp(a[2]))
+        if peer == self.B and kind == "offer":
+            self._later(1, {"name": "dcLocalDescriptionReady",
+                            "peer": self.B, "sdp": "v=0 answer",
+                            "sdpType": "answer"})
+            self._later(1, {"name": "dcLocalCandidate", "peer": self.B,
+                            "candidate": "candidate:b", "mid": "0"})
+        elif peer == self.A and kind == "answer":
+            self.open_at = self.nd + self.dc_open
+        return 0
+
+    def dc_label(self, a):
+        return self.label if int(LCS._n(a[0])) == self.CB else ""
+
+    def dc_send(self, a):
+        ch, data = int(LCS._n(a[0])), str(LCS._disp(a[1]))
+        if ch not in (self.CA, self.CB) or not self.connected:
+            return -2
+        if len(data) > 60000:
+            return -4
+        self._later(1, {"name": "dcMessage", "channel": self.CB,
+                        "payload": data})
+        return 0
+
+    def dc_max(self, a):
+        return 262144
+
+    def dc_poll(self, a):
+        self.nd += 1
+        self.world.ms += self.slow
+        if self.blocked:
+            return {}
+        if self.open_at is not None and self.nd >= self.open_at:
+            self.open_at = None
+            self.connected = True
+            self._later(0, {"name": "dcChannelIncoming", "peer": self.B,
+                            "channel": self.CB})
+            self._later(0, {"name": "dcChannelOpen", "channel": self.CA})
+            self._later(0, {"name": "dcChannelOpen", "channel": self.CB})
+        due = [e for n, e in self.dc_queue if n <= self.nd]
+        self.dc_queue = [(n, e) for n, e in self.dc_queue if n > self.nd]
+        return dict((str(k + 1), e) for k, e in enumerate(due))
+
+    def _later(self, polls, event):
+        self.dc_queue.append((self.nd + polls, event))
+
+    def none(self, a):
+        return 0
+
+
+# The statement-position commands the two loopbacks and their teardown call.
+LOOPBACK_COMMANDS = ("enhostdestroy", "endeinitialize", "dccleanup",
+                     "dcfreepeer", "dcfreechannel", "dcclosechannel",
+                     "dcsetremotedescription", "dcaddremotecandidate")
+
+
+def install_loopbacks(world, box):
+    """Install the modelled natives against box["m"], which each run
+    replaces; returns every name installed so the caller removes them."""
+    m = lambda name: (lambda a: getattr(box["m"], name)(a))    # noqa: E731
+    funcs = {
+        "enlibraryversion": lambda a: "enet 1.3.18",
+        "eninitialize": m("en_init"), "endeinitialize": m("en_deinit"),
+        "enhostcreateserver": m("en_server"),
+        "enhostcreateclient": m("en_client"),
+        "enconnect": m("en_connect"), "ensend": m("en_send"),
+        "endisconnect": m("en_disconnect"), "enpoll": m("en_poll"),
+        "enhostdestroy": m("en_destroy"),
+        "dclibraryversion": lambda a: "libdatachannel v0.24.5",
+        "dcinit": m("dc_init"), "dccleanup": m("dc_cleanup"),
+        "dcpeerstate": m("dc_state"), "dccreatepeer": m("dc_peer"),
+        "dccreatechannel": m("dc_channel"),
+        "dcsetremotedescription": m("dc_set_remote"),
+        "dcaddremotecandidate": m("none"),
+        "dcchannellabel": m("dc_label"), "dcsenddata": m("dc_send"),
+        "dcchannelmaxmessage": m("dc_max"), "dcpoll": m("dc_poll"),
+        "dcclosechannel": m("none"), "dcfreechannel": m("none"),
+        "dcfreepeer": m("none"),
+    }
+    LCS.HASHES.update(funcs)
+    world.native_commands = set(LOOPBACK_COMMANDS)
+    return list(funcs)
+
+
+def notes_of(lines):
+    """The timing-notes section's lines (header excluded), or None."""
+    if NOTES_HEADER not in lines:
+        return None
+    k, out = lines.index(NOTES_HEADER) + 1, []
+    while k < len(lines) and lines[k].startswith("      "):
+        out.append(lines[k])
+        k += 1
+    return out
+
+
+def fails_with_notes(lines):
+    """Every FAIL line and the note lines under it: what a stall printed."""
+    out = []
+    for k, ln in enumerate(lines):
+        if ln.startswith("FAIL"):
+            out.append(ln)
+            j = k + 1
+            while j < len(lines) and lines[j].startswith("      "):
+                out.append(lines[j])
+                j += 1
+    return out
+
+
+def check_stall_run(c, board, tag, want_notes=True):
+    """What every completed stall-scenario run must show; returns the report
+    lines and the notes (None when absent)."""
+    lines = _lines(board.report())
+    fails = fails_with_notes(lines)
+    c.eq("(%s) no FAIL line: both loopbacks were judged only on ticks that "
+         "serviced them" % tag, fails, [])
+    c.ck("(%s) the enet loopback completes (connect, the sealed payload, "
+         "60000 bytes as one message, a graceful close)" % tag,
+         ENET_DONE in lines, fails or "no line %r" % ENET_DONE)
+    c.ck("(%s) the datachannel loopback completes (negotiated, both ends "
+         "open, the payloads whole)" % tag, DC_DONE in lines,
+         fails or "no line %r" % DC_DONE)
+    c.eq("(%s) no live pump tick wrote the report into the window (the old "
+         "core wrote one every 33 ms tick)" % tag,
+         board.world.live_renders, 0)
+    notes = notes_of(lines)
+    if want_notes:
+        c.ck("(%s) the pump's timing notes are in the report" % tag,
+             notes is not None, "no line %r" % NOTES_HEADER)
+        c.ck("(%s) and they are NOTES: no line of them reads as a PASS, "
+             "FAIL or SKIP" % tag, notes is not None
+             and all(line_kind(ln) == "other" for ln in notes), notes)
+    c.eq("(%s) the teardown gave back both holds" % tag,
+         held(board), (0, 0))
+    c.eq("(%s) the rows add up to the totals (the notes counted nothing)"
+         % tag, tuple(sum(board.row(k)[i] for k in board.keys
+                          if k != board.no_harness) for i in range(3)),
+         board.totals())
+    check_no_timers(c, board, also=("scTickProbe",))
+    return lines, notes
+
+
+def note_value(notes, pattern):
+    """The first match of `pattern` among the notes, as a tuple of ints."""
+    for ln in notes or ():
+        m = _rx(pattern).search(ln)
+        if m:
+            return tuple(int(g) for g in m.groups())
+    return None
+
+
+def scenario_windows_stall(c, src, sandbox):
+    """THE WINDOWS STALL (the banner above): four runs in one interpreter of
+    their own, with the two loopbacks modelled WITH events."""
+    c.section("the Windows stall: a render slower than the deadline, a "
+              "starved pump and a blocked loopback")
+    world = SuiteWorld(tempfile.mkdtemp(dir=sandbox, prefix="stall-"))
+    ip = SuiteInterp(src, world)
+    install_engine_builtins(world)
+    box = {"m": LoopbackModel(world, DC_OPEN_SLOW)}
+    names = install_loopbacks(world, box)
+    k = ip.constants
+    min_ticks = int(LCS._n(k["kStMinTicks"]))
+    deadline = int(LCS._n(k["kStDeadlineMs"]))
+    ceiling = int(LCS._n(k["kStCeilingMs"]))
+    bound = min_ticks + 200
+    try:
+        c.ck("[MODEL] the render cost is longer than the deadline, the "
+             "slow DataChannel needs more polls than the floor, and the "
+             "starved pump's run is longer than the deadline and shorter "
+             "than the ceiling", RENDER_MS > deadline
+             and DC_OPEN_SLOW > min_ticks
+             and deadline < SLOW_TICK_MS * (DC_OPEN_FAST + 4) < ceiling,
+             (RENDER_MS, deadline, DC_OPEN_SLOW, min_ticks, SLOW_TICK_MS,
+              ceiling))
+
+        # 1. ON OPEN, the Windows run 1: openStack's four calls, a cross run
+        # standing in for Run all (scenario_boot's stand-in), every write of
+        # the report into the window costing RENDER_MS.
+        world.render_cost = RENDER_MS
+        ip.call("suBuild", [])
+        board = Board(ip, world)
+        ip.call("stCleanup", [])
+        ip.call("stRun", ["cross"])
+        ip.call("suScRun", [])
+        c.eq("(on open) the pump and the boot probe are queued, the pump "
+             "first", ip.pending_names(), ["suPump", "scTickProbe"])
+        try:
+            deliver_all(ip, world, bound=bound)
+        except Exception as exc:                        # noqa: BLE001
+            return c.threw("(on open) the run finishes", exc)
+        lines, notes = check_stall_run(c, board, "on open, a render slower "
+                                       "than the deadline")
+        c.ck("(on open) the boot probe fired during the pump, before the "
+             "summary (the old core's first tick ended the run ahead of it)",
+             PROBE_PENDING not in lines and any(
+                 ln.startswith("      boot self-check: 9 passed")
+                 for ln in lines),
+             [ln for ln in lines if "boot self-check:" in ln])
+        c.eq("(on open) the notes carry the arm-time render as the model "
+             "costed it", note_value(notes, r'as the pump was armed: (\d+) '
+                                            r'ms \('), (RENDER_MS,))
+        c.ck("(on open) the notes split the gap before the first tick: the "
+             "boot self-check's share, then the engine's",
+             note_value(notes, r'run on open after the arm: (\d+) ms')
+             is not None and note_value(
+                 notes, r'timers due first\): (\d+) ms') is not None, notes)
+        got = note_value(notes, r'the pump: (\d+) serviced ticks over (\d+) '
+                                r'ms')
+        c.ck("(on open) the notes count the serviced ticks, more than the "
+             "floor: the DataChannel took %d polls to open" % DC_OPEN_SLOW,
+             got is not None and got[0] > min_ticks, got)
+        c.ck("(on open) each loopback's ending is stamped with its tick",
+             note_value(notes, r'enet loopback: done on tick (\d+)')
+             is not None and note_value(
+                 notes, r'datachannel loopback: done on tick (\d+)')
+             is not None, notes)
+
+        # 2. A SECOND RUN FROM THE BUTTON in the same launch, the Windows
+        # run 2: no boot probe, the window already open. The status line
+        # carries the phases while the report waits for the finish.
+        box["m"] = LoopbackModel(world, DC_OPEN_SLOW)
+        world.live_renders = 0
+        if not start_row(c, board, "cross"):
+            return False
+        moved = None
+        try:
+            for _ in range(bound):
+                if not ip.pending_names():
+                    break
+                deliver_next(ip, world)
+                if board.g("sPhaseEn") == "sealed" and moved is None:
+                    moved = board.status()[0]
+            deliver_all(ip, world, bound=bound)
+        except Exception as exc:                        # noqa: BLE001
+            return c.threw("(button) the run finishes", exc)
+        c.ck("(button) while the loopbacks run, the status line names "
+             "their phases", moved is not None and
+             "the live loopbacks, enet sealed and datachannel opening"
+             in moved, repr(moved))
+        lines, notes = check_stall_run(c, board, "button, a render slower "
+                                       "than the deadline")
+        c.ck("(button) the notes say no boot self-check ran in the gap",
+             notes is not None and any("no boot self-check ran in that gap"
+                                       in ln for ln in notes), notes)
+
+        # 3. A STARVED PUMP: no render cost, but every tick costs
+        # SLOW_TICK_MS, so the deadline passes long before the loopbacks
+        # finish. The floor of serviced ticks keeps them alive.
+        world.render_cost = 0
+        world.live_renders = 0
+        box["m"] = LoopbackModel(world, DC_OPEN_FAST, slow=SLOW_TICK_MS)
+        if not start_row(c, board, "cross"):
+            return False
+        try:
+            deliver_all(ip, world, bound=bound)
+        except Exception as exc:                        # noqa: BLE001
+            return c.threw("(a starved pump) the run finishes", exc)
+        lines, notes = check_stall_run(c, board, "a starved pump")
+        got = note_value(notes, r'the pump: (\d+) serviced ticks over (\d+) '
+                                r'ms; the slowest tick (\d+) ms')
+        c.ck("(a starved pump) it ran past the deadline on fewer ticks than "
+             "the floor, each tick as slow as the model made it",
+             got is not None and got[1] > deadline and got[0] < min_ticks
+             and got[2] >= SLOW_TICK_MS, got)
+
+        # 4. A BLOCKED LOOPBACK on a starved pump: nothing ever arrives, so
+        # the floor is never reached in time and the CEILING must end the
+        # run, with the ticks and the time in each stall note.
+        box["m"] = LoopbackModel(world, DC_OPEN_FAST, slow=SLOW_TICK_MS,
+                                 blocked=True)
+        if not start_row(c, board, "cross"):
+            return False
+        try:
+            deliver_all(ip, world, bound=bound)
+        except Exception as exc:                        # noqa: BLE001
+            return c.threw("(a blocked loopback) the run ends", exc)
+        lines = _lines(board.report())
+        fails = fails_with_notes(lines)
+        c.eq("(a blocked loopback) both loopbacks FAIL, once each",
+             [ln for ln in fails if ln.startswith("FAIL")],
+             list(STALL_FAILS))
+        judged = [tuple(int(g) if g.isdigit() else g for g in
+                        _rx(STALL_NOTE).match(ln).groups())
+                  for ln in fails if _rx(STALL_NOTE).match(ln)]
+        c.ck("(a blocked loopback) each stall note states its phase, the "
+             "serviced ticks and the time from the first tick", [
+                 j[0] for j in judged] == ["connecting", "opening"], fails)
+        c.ck("(a blocked loopback) judged by the ceiling: past %d ms from "
+             "the first tick, on fewer ticks than the floor of %d"
+             % (ceiling, min_ticks), len(judged) == 2 and all(
+                 ceiling < j[2] <= ceiling + SLOW_TICK_MS + 33
+                 and j[1] < min_ticks for j in judged), judged)
+        c.ck("(a blocked loopback) and no note blames UDP alone: the next "
+             "line names a starved pump as the other cause",
+             sum(1 for ln in fails if "a pump the engine starved is "
+                 "another" in ln) == 2, fails)
+        c.eq("(a blocked loopback) the teardown gave back both holds",
+             held(board), (0, 0))
+        check_no_timers(c, board, also=("scTickProbe",))
+        return True
+    finally:
+        for name in names:
+            LCS.HASHES.pop(name, None)
+        world.native_commands = set()
+        world.render_cost = 0
 
 
 # ==========================================================================
@@ -3331,6 +3863,13 @@ def main(argv):
         except Exception as exc:                        # noqa: BLE001
             c.threw("the transport-holds scenario ran to its end", exc)
         check_delimiters(c)
+        # And the Windows stall, reproduced: its two loopbacks modelled WITH
+        # events, in an interpreter of its own, removed before the report
+        try:
+            scenario_windows_stall(c, src, sandbox)
+        except Exception as exc:                        # noqa: BLE001
+            c.threw("the Windows-stall scenario ran to its end", exc)
+        check_delimiters(c)
         c.section("EXPECTED_MODEL_FAILS")
         c.eq("every EXPECTED_MODEL_FAILS entry was printed by some run (a "
              "stale entry is an excuse for a failure that is gone)",
@@ -3369,7 +3908,10 @@ def finish_report(c, t0, full=False):
           "filters, Show, Copy, the refusals, a close mid-run and the boot "
           "self-check held, all-absent profile; and beside another stack's "
           "modelled ENet hold and DataChannel peer, open, row Runs, a "
-          "re-entry and closes gave back exactly the holds the paste took. "
+          "re-entry and closes gave back exactly the holds the paste took; "
+          "with a report render slower than the deadline (the Windows "
+          "stall), a starved pump and a blocked loopback, both loopbacks "
+          "were judged only on ticks that serviced them. "
           "NOT RUN in this fast tier: "
           "the %s scopes and Run all (their folded harnesses, not the "
           "board). NOT SEEN: rendering, parsing, message delivery, "

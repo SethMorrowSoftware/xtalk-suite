@@ -3967,7 +3967,7 @@ command suPump
          stAssert "enet loopback finished before the deadline", false
          stNote "stalled in phase" && sPhaseEn && suStallNote()
          stNote "a blocked UDP loopback is one cause and a pump the engine starved is another: the timing notes below tell them apart (runbook 5.5)"
-         put "stalled in" && sPhaseEn && "when judged" into sSuTime["enEnd"]
+         put suEndStamp("stalled in" && sPhaseEn & ", judged") into sSuTime["enEnd"]
          put "failed" into sPhaseEn
          suTallyClose
       end if
@@ -3976,7 +3976,7 @@ command suPump
          stAssert "datachannel loopback finished before the deadline", false
          stNote "stalled in phase" && sPhaseDc && suStallNote()
          stNote "a blocked UDP loopback is one cause and a pump the engine starved is another: the timing notes below tell them apart (runbook 5.5)"
-         put "stalled in" && sPhaseDc && "when judged" into sSuTime["dcEnd"]
+         put suEndStamp("stalled in" && sPhaseDc & ", judged") into sSuTime["dcEnd"]
          put "failed" into sPhaseDc
          suTallyClose
       end if
@@ -4065,18 +4065,22 @@ end suPumpTickStart
 -- After the polls: a tick that polled a live loopback is SERVICED, and a
 -- loopback that has just ended is stamped with the tick and the time.
 command suPumpServiced pLive
-   local tRun
    if pLive is true then
       add 1 to sSuTime["ticks"]
    end if
-   put the milliseconds - sSuTime["tick1"] into tRun
    if stEnDone() and sSuTime["enEnd"] is empty then
-      put sPhaseEn && "on tick" && sSuTime["ticks"] & "," && tRun && "ms after the first tick" into sSuTime["enEnd"]
+      put suEndStamp(sPhaseEn) into sSuTime["enEnd"]
    end if
    if stDcDone() and sSuTime["dcEnd"] is empty then
-      put sPhaseDc && "on tick" && sSuTime["ticks"] & "," && tRun && "ms after the first tick" into sSuTime["dcEnd"]
+      put suEndStamp(sPhaseDc) into sSuTime["dcEnd"]
    end if
 end suPumpServiced
+
+-- How a loopback ended, for the notes: the phase it ended in, the tick and
+-- the time from the first tick.
+function suEndStamp pHow
+   return pHow && "on tick" && sSuTime["ticks"] & "," && (the milliseconds - sSuTime["tick1"]) && "ms after the first tick"
+end suEndStamp
 
 -- Before the re-arm: the tick's own time, for the slowest-tick note.
 command suPumpTickEnd
