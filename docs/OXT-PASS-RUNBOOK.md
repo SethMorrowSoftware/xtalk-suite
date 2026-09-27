@@ -612,10 +612,18 @@ claiming unobserved behaviour alone: it is policy, not a label.
 
 ### 4.3 enetxt
 
-A green standalone re-run needs no label work (the async loopback closed
+A green standalone re-run needs no label work for the async loopback (closed
 2026-08-13): tick it; this cycle it is also the first standalone async run since
-the `sEnPolling` rename and on the 2026-09-12 binaries. Open: rows 6 (leg B, the
-LAN chat demo) and 39.
+the `sEnPolling` rename and on the 2026-09-12 binaries. It DOES carry one label:
+the counted holds of 2026-09-26 (enetxt `CLAUDE.md` gotcha 7; verified
+statically and headlessly; needs an OXT pass). Copy back the teardown's note
+line ("one enDeinitialize for each of this run's 2 counted enInitialize calls,
+and no more") and the no-op leg's line, PASS with no other ENet window open and
+SKIP beside one; then close it, or press Re-run, beside another ENet window (the
+suite paste mid-run, a chat demo) and record that window's hosts surviving. The
+chat demos' one-hold stop (gotcha 7, 2026-09-27) is the same check from their
+side: close one beside another ENet window. Open: rows 6 (leg B, the LAN chat
+demo) and 39.
 
 ### 4.4 torrentxt
 
