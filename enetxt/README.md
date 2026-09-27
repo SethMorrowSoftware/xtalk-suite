@@ -87,6 +87,9 @@ Mach-O under `universal-mac` ([docs/building.md](docs/building.md)).
 
 One rule the app must follow: **call `enDeinitialize` before quitting** (e.g. on
 `closeStack`), written bare in statement position. There is no automatic unload hook.
+Call it only for an `enInitialize` this stack made that returned 0: the count belongs to
+the whole process, so a spare release ends another window's hosts
+([docs/api-reference.md](docs/api-reference.md) rule 1).
 
 ## Documentation
 
