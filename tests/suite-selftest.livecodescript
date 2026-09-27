@@ -4699,9 +4699,10 @@ end stCheckSealed
 -- serviced ticks (kStMinTicks), or the ceiling (kStCeilingMs from that tick,
 -- whatever the count), so a run ALWAYS ends. And while a loopback is live the
 -- pump renders nothing of the report into the window: the rows' pills and the
--- status line carry the progress, and the report is written once, at the
--- finish (stReportDone). Copy results mid-run copies from the variable, with
--- the RUN NOT FINISHED trailer, exactly as before.
+-- status line carry the progress, and the report is written when the pump is
+-- armed and again at the finish (stReportDone), never on a live tick. Copy
+-- results mid-run copies from the variable, with the RUN NOT FINISHED
+-- trailer, exactly as before.
 --
 -- WHY: THE WINDOWS RECORD. On the Windows machine of 2026-09-24 to 09-26 both
 -- loopbacks stalled in every run of the D-23 paste on record (six), enet in
@@ -4717,8 +4718,9 @@ end stCheckSealed
 --     first, the VERIFY back on the second, the ACK in on the third);
 --   * that tick came MORE than 40 s after the old deadline was armed. The
 --     first run was the one openStack started, and its summary said the boot
---     self-check's delayed probe (armed 400 ms after the pump, by suScRun) had
---     not fired. The engine keeps its pending messages sorted by due time and
+--     self-check's delayed probe had not fired (suScRun arms it after stRun
+--     arms the pump, due in 400 ms where the pump is due in 33). The engine
+--     keeps its pending messages sorted by due time and
 --     delivers the earliest due one per pass (LiveCode's develop-9.6
 --     uidc.cpp, doaddmessage and handlepending: DOCUMENTED from the source,
 --     not observed), so the pump reached stFinish on a tick due before the
@@ -4733,9 +4735,11 @@ end stCheckSealed
 --     suSyncDone's paints, the boot self-check, the engine's time before the
 --     first tick, timers queued ahead of it), uncounted, so the next Windows
 --     report carries them.
--- The fix is verified statically and in tools/check-suite-ui-boot.py's
--- slow-render scenario (which reproduces the Windows report on the old core);
--- needs an OXT pass on Windows. The standalone enet-selftest and
+-- The fix is verified statically (check-suite-selftest.py check 19 holds the
+-- deadline to the pump and the report out of a live tick) and in
+-- tools/check-suite-ui-boot.py's Windows-stall scenario (which reproduces the
+-- Windows report on the old core); needs an OXT pass on Windows. The
+-- standalone enet-selftest and
 -- datachannel-selftest keep the old shape (the deadline armed before a render
 -- each tick) at a report of about seventy lines; enet-selftest's completed on
 -- that Windows machine on 2026-09-26, so the shape did not fail it there.
