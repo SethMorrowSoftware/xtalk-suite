@@ -103,7 +103,7 @@ result. Every "engine-proven" below quotes a dated record already in the tree.
 | Member | Latest dated engine record | Headless work open | Engine work open | Needs |
 |---|---|---|---|---|
 | sodiumxt | `sxSelfTest()` 106/106 in the suite paste on Linux, 2026-09-25 (again 2026-09-26), on the `x86_64-linux` file (run 12's) by the maintainer's account (the ABI-10 ChaCha20 section's first recorded Linux run), and on Windows, 2026-09-24 and 09-25, on the `x86_64-win32` MSVC DLL by the maintainer's account (64-bit; the 2026-09-12 build's first engine load) | only optional: the unbound length accessors | the 32-bit MSVC DLL, and `sxVersion()` on Windows; first Mac load; 32-bit Linux; the demo | S1, S5 |
-| torrentxt | harness 106/106 in the suite paste on Linux, 2026-09-25 (again 2026-09-26), the 2026-09-12 `x86_64-linux` build's first engine load by the maintainer's account (the 996-byte caps included, which agree), and on Windows, 2026-09-24 and 09-25, on the 2026-09-12 `x86_64-win32` build by the maintainer's account (64-bit; its first engine load, and libtorrent 2.1.1's first recorded Windows run; the 09-25 build INFERRED the same); 101/101 on 2026-08-17, 08-20 and 08-24 | ABI 12 alert codes; Windows libtorrent pin; the shim's btih hex check; torrent-quickshare's dotfile and reserved-path guards | the 32-bit rows (row 47); demo re-opens; Tor toggle and #31-#33; closing-pass C/D; a real swarm | S1-S5, NET |
+| torrentxt | harness 106/106 in the suite paste on Linux, 2026-09-25 (again 2026-09-26), the 2026-09-12 `x86_64-linux` build's first engine load by the maintainer's account (the 996-byte caps included, which agree), and on Windows, 2026-09-24 and 09-25, on the 2026-09-12 `x86_64-win32` build by the maintainer's account (64-bit; its first engine load, and libtorrent 2.1.1's first recorded Windows run; the 09-25 build INFERRED the same); 101/101 on 2026-08-17, 08-20 and 08-24 | ABI 12 alert codes; Windows libtorrent pin; the shim's btih hex check | the 32-bit rows (row 47); demo re-opens; Tor toggle and #31-#33; closing-pass C/D; a real swarm | S1-S5, NET |
 | enetxt | folded 34/34 and the paste's live loopback COMPLETED, Linux, 2026-09-25 and 09-26, on the 2026-09-12 `x86_64-linux` build by the maintainer's account; folded 34/34 on the 2026-09-12 `x86_64-win32` DLL, Windows, 2026-09-24 and 09-25 (the paste's loopback stalled there all four times, 5.5); async loopback 2026-08-13 | enet-selftest's extra deinitialize (#4) | standalone selftest; leg B and the LAN chat on two machines; internet chat; Mac | S1, S3, 2NET, S5 |
 | datachannelxt | folded 39/39 and the paste's live loopback COMPLETED, Linux, 2026-09-25 and 09-26, on the 2026-09-12 `x86_64-linux` build by the maintainer's account; folded 39/39 on the 2026-09-12 `x86_64-win32` DLL, Windows, 2026-09-24 and 09-25 (the paste's loopback stalled there all four times, 5.5); standalone async loopback 2026-08-15 | the process-wide `dcCleanup` (owner, then dispatch); owner calls: the Windows OpenSSL pin and notice, the legacy shim removal | loopback demo (no record at all); leg E; two-network call; browser interop; Mac | S1, S3, 2NET, S5 |
 | onionxt | offline self-test 74/0/1 in the suite paste, Linux 2026-09-25 and 09-26 and Windows 2026-09-24 and 09-25 (its floor held each time: 75 against 51); the live-Tor core from the early bring-up | Mode B's lifecycle (after leg F) | Mode B (leg F); the B.12 probes; negative paths; the round trip | S1, S2, S4 |
@@ -111,7 +111,7 @@ result. Every "engine-proven" below quotes a dated record already in the tree.
 | nostrxt | core 277/0/2 in the suite paste, Linux 2026-09-25 and 09-26 and Windows 2026-09-24 and 09-25 (its floor held each time: 279 against 278); relay SEND live 2026-08-24 | owner scope only: phase 9 (NIP-17/59, the outbox, `.onion` relays) | relay receive, NIP-42, `ws://`, a bad certificate, forced negatives | S1, NET, a local relay |
 | box2dxt | harness v32 385/0 in the suite paste on its 1200-wide card, Linux 2026-09-25 and 09-26 and Windows 2026-09-24 and 09-25 (on the 2026-09-12 DLL there, `playLoudness` exact); every run's delimiter lines settle engine note 2.3's itemDelimiter half | x86-linux glibc regression; platformer polish; three shim defects (dispatch) | the five games; R1; first Mac load; feel pass | S1, S5, PERSON |
 | riptide | phases 1-4 on two machines (to 2026-08-15); 512/0/2 at 0.13.0's harness in the suite paste, Linux 2026-09-26 (a second Run all in one launch again, by the maintainer's account; `rsSeqCompare` green; its fourth probe line's first reading, engine note 2.11); 489/0/2 in the suite paste, Linux 2026-09-25 (a second Run all in one launch, by the maintainer's account; its third probe line read the engine source's comparison rule, engine notes 2.10 and 2.11), Windows 2026-09-25 (the same three probe lines) and Windows 2026-09-24 (the day's second and third runs; its first read 487/2/2, both FAILs fixed that day); phase-8 boot 2026-08-29 | bridge reader; RSL1 magic; own-head refresh; per-identity app state; the persona-index cap; two handle orders and the LAN draft compare off the number path | row 35; phases 5, 6, 7 live; phase 8 live; faststart re-run | S1-S4, NET |
-| nocloud | no dated pass of this stack in the tree | mtime ETag after D-10; the D-02 menu (deferred) | the 69-item checklist, web-link and Tor halves; sections 7-8 | S1, S2 |
+| nocloud | no dated pass of this stack in the tree | the web link's lost subfolder slash (#7); mtime ETag after D-10; the D-02 menu (deferred) | the 69-item checklist, web-link and Tor halves; sections 7-8 | S1, S2 |
 | holde-em | 929/0/5 folded at v0.25.6 / harness 48, Linux, 2026-09-26 (its first engine run, single-machine lines); 751/0/5 folded at v0.25.5 / harness 47, Linux and Windows, 2026-09-25 (the v0.25.4 and v0.25.5 pins' first recorded engine runs; the 5 skips are the live legs); 721/0/5 at v0.25.3 / harness 45, Windows, 2026-09-24 | **Level 2 not wired into play**; animations; the untested handlers; a keyless dealt seat (owner) | harness 48 in the paste on Windows; the standalone `heRunSelftest` and hotseat hands; Phase 1 exit; 2d/2e/2f on real machines; the oracle round | S1-S4, 3M, PERSON |
 
 Suite coverage is what `python3 tools/check-suite-coverage.py` prints: the ratio
@@ -353,6 +353,14 @@ keeping the scaffold for its report.
   `qsRouteLookupKey` mirrored in `tests/fileserver_golden.py` and driven against the
   demo), and its LAN editor's session token is compared as text since the check-23
   sweep of the same day; verified statically; needs an OXT pass (Engine #2's re-open).
+- Its folder server refuses what nocloud's does since 2026-09-27 (coding #21, closed):
+  a dot-leading segment and a `/_qs` or `/_edit` path no route answered are 404s on
+  both transports, the listing hides dot-leading names, the LAN editor will not write
+  one, and a clearweb subfolder keeps its trailing slash. `tools/check-script-vectors.py`
+  runs the real serve paths, listing and editor write route over a folder carrying
+  `.env` and `.git/config` against `tests/fileserver_golden.py`, which it now holds to
+  the demo mirror by mirror (`torrentxt/CLAUDE.md`, "The Quick Share lineage");
+  verified statically; needs an OXT pass (Engine #2's re-open; the onion half Engine #3).
 
 **Coding.**
 
@@ -367,7 +375,6 @@ keeping the scaffold for its report.
 | 17 | Acknowledge the positioning and distribution risk of shipping a BitTorrent client, which the design brief asked to flag before public release (TorrentXT has been public since 2026-09-23); the legitimate framing is resilient distribution of large payloads | Recorded risk, never signed off | S | owner |
 | 19 | Refuse a non-hex btih in the shim: libtorrent 2.0.x's `magnet_uri.cpp` ignores `from_hex`'s failure (2.1.1 checks it), so `btx_add_magnet` adds a garbage info-hash on the Linux and mac builds, and a pre-Model-C QuickShare fed a `BTXTOR1:` code cut to 40 characters joins swarm b000...0. Both QuickShares' share-code checks now require hex (`qsIsHex`, 2026-09-24); the shim fix is a native change, so it rides a dispatch. The smoke test pins today's behaviour per libtorrent version | A malformed code joins a real swarm instead of refusing | S + dispatch | dispatch |
 | 20 | A truncated LOCKED `BTXTOR1:` code is offered as plaintext: when the address survives and the verifier is cut off, `qsReceiveOnion` shows the "not encrypted, download anyway?" prompt and dials without a key; the encrypted header then refuses it, so nothing is saved, but only after a network dial and a misleading prompt. Distinguishing "unlocked" from "lock cut off" needs a marker the code format does not carry today | A misleading prompt and a needless dial | S | owner (code format) |
-| 21 | Port nocloud's dotfile guard (`qsHasDotSegment`, round 5) and reserved-namespace guard (`qsHttpReservedPath`, 2026-08-17) to `torrent-quickshare`, and hold `torrentxt/tests/fileserver_golden.py` to the demo: five of its mirrors (`has_dot_segment`, `http_req_length`, `file_size_probe`, `safe_filename`, `rate_short` / `eta_short`) name handlers the demo does not have (the golden was copied from nocloud's), and only its route section is driven against the script (2026-09-25). By reading, the demo's folder server answers `/.git/config` and `/.env` over Tor and the web link, and its listing shows dot-folders | A guard the golden claims and the demo lacks, against the shared folder's privacy promise; `torrentxt/CLAUDE.md`'s Quick Share lineage paragraph points here | S-M | none |
 
 **Engine.**
 
@@ -725,6 +732,7 @@ extension, true multi-layer parallax (waits on transparent overlay art).
 | 3 | After the D-10 probe: build a restart-stable mtime ETag plus `Last-Modified` / `If-Modified-Since` with golden mirrors, or record "design confirmed" in the deep-dive's section 1.5, in D-10 and in `webapp/sw.js`'s header | Closes the one decided-but-unrun question | S-M | engine |
 | 4 | *(optional)* A headless boot gate on riptide's `check-demo-boot.py` pattern | Would exercise the TorrentXT-absent guard and the 49-control boot record without an engine; coinxt, riptide and holde-em have one | M | none |
 | 5 | The HTTP-host endpoint menu, listed below | Recorded roadmap; the deep-dive carries the questions that order it, not the menu itself | L | D-02 (deferred until the first external user report) |
+| 7 | **The web link loses a subfolder's trailing slash.** `qsCwServe` builds the folder-relative path as `"/" & (item 3 to -1 of tPath)`, and the engine ignores ONE trailing delimiter when it counts items (engine note 2.2, OBSERVED), so `/<token>/docs/` routes as `/docs`: the static pipeline redirects to `/<token>/docs//`, the listing's Up-a-level link redirects back there, and a user route declared with a trailing slash never matches over the web link. Take the rest as the text after `/<token>` (torrent-quickshare's twin, fixed 2026-09-27), and pin it: nocloud's execution gate does not drive `qsCwServe` (its header says why), so the row wants a serve section like torrentxt's | A redirect on every subfolder and a broken Up link on the web link; the chunk text INFERRED from 2.2's observed count, and reproduced by torrentxt's execution gate on the twin, not observed on an engine | S | none |
 
 The deferred menu (D-02; the five questions at the end of
 `nocloud/docs/http-server-deep-dive.md` section 4 decide the order):
@@ -835,13 +843,14 @@ Advisory, like the recommendations in OPEN-DECISIONS: a route, not a decision.
    torrentxt #18, enetxt #3; suite-wide #22's probe line landed 2026-09-26, and
    Linux read it the same day, its Windows reading owed). Left with no blocker,
    the short ones first: the stacks
-   that release a hold they never took (enetxt #4, suite-wide #20) and
-   datachannel-dht-chat's nonce check (datachannelxt #9); the number-path compares
+   that release a hold they never took (enetxt #4, suite-wide #20); the
+   number-path compares
    check 23 cannot read (riptide #11 and #12, suite-wide #21's literal rule, and
    #26's free-text sweep);
    riptide #10 (the persona-index cap); coinxt #9-#11 (the bounds row #8 left, and
-   the mBTC form's truncation) and #3 (the Core residue); torrentxt #21
-   (torrent-quickshare's guards); nocloud's optional #4 boot gate; holde-em #3
+   the mBTC form's truncation) and #3 (the Core residue); nocloud #7 (the web
+   link's lost subfolder slash, torrent-quickshare's twin fixed) and its optional #4
+   boot gate; holde-em #3
    (more leaf tranches), #10 (the admission list, a table-protocol bump) and the
    L-sized #1 (Level 2 in played hands); box2dxt #4 (platformer polish); and the
    optional rows. Regenerate the paste, the preflight and the demo embeds once,

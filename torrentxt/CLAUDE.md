@@ -247,12 +247,30 @@ note 2.7), so `GET /_EDIT` dispatched to the `/_edit` route; it is keyed by `qsR
 that dispatches, or empty. `tests/fileserver_golden.py` mirrors all three helpers, and
 `tools/check-script-vectors.py` drives the demo's own `qsHttpRoute` and
 `qsRouteLookupKey` against those mirrors through the family interpreter, whose keys fold
-(verified statically; needs an OXT pass). That section is the only part of this golden a
-gate holds to the demo: the rest was copied from nocloud's and restates it, and five of
-its mirrors name nocloud handlers this demo never got, the dotfile guard among them
-(`qsHasDotSegment`: this demo's folder server has no refusal of `/.git/config` or
-`/.env`), nor did nocloud's reserved-namespace guard (`qsHttpReservedPath`) come across
-(found 2026-09-25; the suite's docs/WORK-PLAN.md tracks it). The family checker's check 23 then found the LAN editor's
+(verified statically; needs an OXT pass). Until 2026-09-27 that section was the only
+part of this golden a gate held to the demo: the rest was copied from nocloud's, and
+five of its mirrors named nocloud handlers this demo never got, the dotfile guard among
+them, so the folder server answered `/.git/config` and `/.env` over Tor and the web link
+and listed dot-folders, and nocloud's reserved-namespace guard had not come across
+either (found 2026-09-25). On 2026-09-27 both guards were ported, byte for byte in their
+code: `qsHasDotSegment` 404s a dot-leading segment in both serve paths (below the 503,
+nocloud's order), `qsFsListing` lists no dot-leading name, and the LAN editor refuses to
+WRITE one (it may still list and read one); `qsHttpReservedPath` (case-folded, stricter
+than the case-exact table) 404s a `/_qs` or `/_edit` path no route answered, above the
+503, where the static pipeline used to serve a real `_qs` folder or the SPA fallback's
+index.html. The golden lost the four mirrors of handlers this demo does not have
+(nocloud's golden keeps them, against nocloud's script) and gained `reserved_path`,
+`serve_static` (the whole static decision over a folder tree, both transports),
+`listing_visible` and `edit_write_decision`; `tools/check-script-vectors.py` now drives
+EVERY mirror against the demo, and runs the real `qsFsServePath`, `qsCwServe`,
+`qsFsListing` and `qsEditWriteRoute` over a real folder carrying `.env`, `.git/config`
+and folders named like the reserved namespaces. Run against the demo before the port,
+it fails on each of those rows. Its first run also found `qsCwServe` building the rest
+path from `item 3 to -1` of the decoded path, which loses a subfolder's trailing slash
+(the engine ignores one trailing delimiter, engine note 2.2), so every clearweb
+subfolder answered a redirect to `.../docs//`; the rest is now the text after
+`/<token>`, and nocloud's identical `qsCwServe` is a suite work plan row. All verified
+statically; needs an OXT pass (+ live-Tor for the onion half). The family checker's check 23 then found the LAN editor's
 write gate (`qsEditAuthed`, the `x-edit-token` header) still on bare `is` in both copies, and
 own-key, info-hash and cross-library key compares in `torrent-dht-channels` and
 `torrent-client`; all took the same fix the same day (the cross-library key check compares
@@ -335,6 +353,7 @@ since 2026-09-24 `tools/check-script-vectors.py` RUNS the demos' Model C receive
 BTXO receivers, `qsKeyOpensVerifier`, `qsReceiveOnion`'s parse, the Channels feed seal)
 through riptide's runner against `tests/onion_frame_golden.py`'s mirrors and the committed
 SodiumXT, and since 2026-09-25 Quick Share's route table against
-`tests/fileserver_golden.py`'s; it settles logic, not parser behaviour, so it upgrades no
-honesty label. Its
+`tests/fileserver_golden.py`'s, and since 2026-09-27 every other mirror there, the two
+serve paths, the listing and the editor's write route over a real folder; it settles
+logic, not parser behaviour, so it upgrades no honesty label. Its
 siblings are riptide, nostrxt and sodiumxt. `docs/building.md` has the options, floors and CI.
