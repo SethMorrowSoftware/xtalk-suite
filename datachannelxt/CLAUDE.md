@@ -290,8 +290,9 @@ library in headless Chromium on 2026-09-24, and the OXT script is verified stati
 an OXT pass), a call across two
 networks with real NAT traversal (a `srflx`/`prflx` selected pair; loopback never leaves the
 host), a two-machine run recorded against the dht-chat demo by name (the 2026-08-27 one-LAN
-report does not name its stack), any engine record for
-`examples/datachannel-loopback.livecodescript`, and a Mac engine load. Both Linux libraries
+report does not name its stack), an itemised engine record for
+`examples/datachannel-loopback.livecodescript` (the maintainer's account of 2026-09-26, "seems
+to work as intended", is its only one), and a Mac engine load. Both Linux libraries
 need glibc 2.38 or newer (measured 2026-09-23 with `objdump -T`); the x86_64 one loaded on
 2026-09-25 on Kubuntu 24.04 by the maintainer's account, a release that ships 2.39 (the run
 did not print it). Open work is tracked in the suite's docs/WORK-PLAN.md.
