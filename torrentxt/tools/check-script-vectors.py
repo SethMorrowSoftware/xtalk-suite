@@ -61,6 +61,11 @@ work plan's Model C test row (docs/WORK-PLAN.md, torrentxt coding row 9):
      same way. qsFsListing must list exactly listing_visible() of each folder, and
      the editor's qsEditWriteRoute, authorised, must refuse exactly what
      edit_write_decision() refuses (a hidden path among them) and write what it saves.
+     The same day's review added the anchor rows (a request target with no leading
+     "/", read from the share root on both transports, with OUTSIDE_TREE's sibling
+     folders built BESIDE the root so the old join serves a real file from outside
+     it) and the editor's backslash rows (a backslash is a separator to
+     qsEditSafePath, so a backslash then ".env" is a dot path to refuse).
 
 WHAT IT IS NOT. An approximation of the engine, not the engine: riptide's
 runner over the family interpreter. Nothing here promotes any label past
