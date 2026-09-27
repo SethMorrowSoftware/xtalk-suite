@@ -4209,6 +4209,8 @@ def check_hex_compares(c, ip):
 _WALLET_LIFT = ("waEmptyList", "waHoldsCoin", "waCoinsNotFrom", "waPendingSpenderOf",
                 "waIsOwnBroadcast", "waCpfpCoins", "waNoteBroadcast", "waUnnoteBroadcast",
                 "waWholeAtLeast", "waNumAtLeast", "waCoreMempoolRecord", "waStoreRawTx",
+                # waWholeAtLeast decides on the digits since 2026-09-26 (row #9)
+                "waIsWhole", "waIsDigits",
                 "waBumpFee", "waSelfTestHexCompares",
                 # the second pass's five (2026-09-26): the inspect wait is in
                 # waStoreRawTx above; these hold the other four
