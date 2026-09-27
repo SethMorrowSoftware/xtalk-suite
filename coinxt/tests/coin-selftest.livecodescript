@@ -5261,10 +5261,9 @@ command stRunFailOpen
       -- `tIndex is not trunc(tIndex)`, and the engine's `is` calls two numbers
       -- within 10 DBL_EPSILON of the smaller EQUAL (suite engine note 2.10), so
       -- by that rule these two were let through; `is an integer` has no
-      -- tolerance. All three ran green on Linux on 2026-09-26 (the suite
-      -- paste, twice that day; suite engine note 2.12), so "3e0" is an
-      -- integer to the engine there; Windows has not run them: verified
-      -- statically; needs an OXT pass.
+      -- tolerance. All three ran green on Linux and on Windows on
+      -- 2026-09-26 (the suite paste, twice on each; suite engine note
+      -- 2.12), so "3e0" is an integer to the engine on both.
       stAssertRefusal "bech32 refuses a value one ulp above 3", stThrowsText3("cxBech32EncodeValues", "bc", "0,3.0000000000000004", "bech32"), "cxBech32EncodeValues", "whole number between 0 and 31"
       stAssertRefusal "bech32 refuses a value within 2.2e-15 below zero", stThrowsText3("cxBech32EncodeValues", "bc", "0,-0.000000000000001", "bech32"), "cxBech32EncodeValues", "whole number between 0 and 31"
       stAssert "and 3e0, a spelling the engine calls whole, encodes exactly as 3", cxBech32EncodeValues("bc", "0,3e0", "bech32") is cxBech32EncodeValues("bc", "0,3", "bech32")
