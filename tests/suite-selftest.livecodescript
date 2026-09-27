@@ -18677,7 +18677,8 @@ private function rsBytesAreUtf8 pBytes
    catch tErr
       return false
    end try
-   return textEncode(tDecoded, "UTF-8") is pBytes
+   set the caseSensitive to true
+   return ("b" & textEncode(tDecoded, "UTF-8")) is ("b" & pBytes)
 end rsBytesAreUtf8
 
 private function rsIsHexOfLen pValue, pLen
@@ -31173,6 +31174,15 @@ private command rs1rstSectionLanSync
    put rsLanVerifyDraft(rs1tBytes, rs1tMaster) into rs1tOut
    rs1rstCheck (rs1tOut is not empty and rs1tOut["draft"] is empty), \
          "an empty draft builds and verifies (cleared state)"
+   -- a draft reading nan, from a device named NaN, verifies intact: the
+   -- UTF-8 round trip compares bytes with a letter on both sides, because
+   -- bare `is` never calls a nan equal to itself (suite engine note 2.11;
+   -- the 2026-09-27 review of work plan riptide #12)
+   put rsLanBuildDraft("NaN", 7, "nan", rs1tMaster) into rs1tBytes
+   put rsLanVerifyDraft(rs1tBytes, rs1tMaster) into rs1tOut
+   rs1rstCheck (("t" & rs1tOut["draft"]) is "tnan" and \
+         ("t" & rs1tOut["name"]) is "tNaN"), \
+         "a draft reading nan, from a device named NaN, verifies intact"
    -- the stranger: a record signed under a DIFFERENT master is refused
    put rsLanBuildDraft(rs1kRsGoldLanJoinName, rs1kRsGoldLanSeq, \
          rs1kRsGoldLanDraftText, rs1rstBin(rs1kRsGoldConfSeedHex)) into rs1tBytes
@@ -31373,7 +31383,9 @@ private command rs1rstSectionDm pCaps
          rs1kRsGoldNumHandleNine, rs1kRsGoldDmKxPub) into rs1tNumB
    rs1rstCheck (rs1tNumA["role"] is "server" and rs1tNumB["role"] is "client"), \
          "9e0..01 (90 as a number) is the kx SERVER against 0..0100"
-   rs1rstCheck (("h" & rs1rstHex(rs1tNumA["tx"])) is ("h" & rs1rstHex(rs1tNumB["rx"]))), \
+   -- non-empty first: two refused sessions would cross-match as "h" is "h"
+   rs1rstCheck (rs1tNumA["tx"] is not empty and \
+         ("h" & rs1rstHex(rs1tNumA["tx"])) is ("h" & rs1rstHex(rs1tNumB["rx"]))), \
          "and that pair's tx and rx still cross-match"
    put rsDmSessionKeys(rs1kRsGoldNumHandleOneExp, rs1tMyKeys, \
          rs1kRsGoldNumHandleOne, rs1kRsGoldConfKxPub) into rs1tNumA

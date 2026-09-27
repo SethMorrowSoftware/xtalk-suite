@@ -2016,6 +2016,15 @@ private command rstSectionLanSync
    put rsLanVerifyDraft(tBytes, tMaster) into tOut
    rstCheck (tOut is not empty and tOut["draft"] is empty), \
          "an empty draft builds and verifies (cleared state)"
+   -- a draft reading nan, from a device named NaN, verifies intact: the
+   -- UTF-8 round trip compares bytes with a letter on both sides, because
+   -- bare `is` never calls a nan equal to itself (suite engine note 2.11;
+   -- the 2026-09-27 review of work plan riptide #12)
+   put rsLanBuildDraft("NaN", 7, "nan", tMaster) into tBytes
+   put rsLanVerifyDraft(tBytes, tMaster) into tOut
+   rstCheck (("t" & tOut["draft"]) is "tnan" and \
+         ("t" & tOut["name"]) is "tNaN"), \
+         "a draft reading nan, from a device named NaN, verifies intact"
    -- the stranger: a record signed under a DIFFERENT master is refused
    put rsLanBuildDraft(kRsGoldLanJoinName, kRsGoldLanSeq, \
          kRsGoldLanDraftText, rstBin(kRsGoldConfSeedHex)) into tBytes
@@ -2223,7 +2232,9 @@ private command rstSectionDm pCaps
          kRsGoldNumHandleNine, kRsGoldDmKxPub) into tNumB
    rstCheck (tNumA["role"] is "server" and tNumB["role"] is "client"), \
          "9e0..01 (90 as a number) is the kx SERVER against 0..0100"
-   rstCheck (("h" & rstHex(tNumA["tx"])) is ("h" & rstHex(tNumB["rx"]))), \
+   -- non-empty first: two refused sessions would cross-match as "h" is "h"
+   rstCheck (tNumA["tx"] is not empty and \
+         ("h" & rstHex(tNumA["tx"])) is ("h" & rstHex(tNumB["rx"]))), \
          "and that pair's tx and rx still cross-match"
    put rsDmSessionKeys(kRsGoldNumHandleOneExp, tMyKeys, \
          kRsGoldNumHandleOne, kRsGoldConfKxPub) into tNumA

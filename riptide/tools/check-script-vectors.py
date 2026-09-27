@@ -2480,12 +2480,13 @@ OLD_CAP_LINES = [
 ]
 
 
-def seed_lines(text, pairs, what, fail):
+def seed_lines(text, pairs, what, fail, tier="1f"):
     for new, old in pairs:
         if text.count(new) != 1:
-            fail("tier 1f's %s fixture expects the shipped text %r exactly "
+            fail("tier %s's %s fixture expects the shipped text %r exactly "
                  "once and found it %d times; the seeded defect would be a "
-                 "file nobody shipped" % (what, new.strip().split("\n")[0],
+                 "file nobody shipped" % (tier, what,
+                                          new.strip().split("\n")[0],
                                           text.count(new)))
         text = text.replace(new, old)
     return text
@@ -2592,6 +2593,93 @@ def check_persona_cap_and_order(c, ip, src, fail, V):
                   V["handle"].upper(), V["confKxPub"]]), "")
     c.ck("the kx model ran (the session rows reached sxKeyExchange*)",
          ip.kx_calls > before, True)
+
+
+# --------------------------------------------------------------------------
+# tier 1g: the UTF-8 round trip compares BYTES, never numbers (2026-09-27)
+# --------------------------------------------------------------------------
+#
+# WHY. rsBytesAreUtf8 (trap 4's round trip: decode, re-encode, require the
+# same bytes) ended `return textEncode(tDecoded, "UTF-8") is pBytes`. Two
+# texts a number parse accepts compare as NUMBERS under bare `is` (suite
+# engine note 2.11), and a text C's strtod reads as NaN is not `is` itself
+# held apart (OBSERVED on Linux 2026-09-26, the fourth probe line's item 3),
+# so every valid UTF-8 text spelled "nan", "NaN" or "nan(1)" failed its own
+# round trip: a LAN draft, a device or head name, a post reading nan was
+# refused as "not valid UTF-8" (INFERRED; no engine has run it). Found by
+# the review of riptide #12, whose change detection sends a "nan" draft
+# once: the receiver then refused it here. It compares ("b" & each side)
+# under the caseSensitive now.
+#
+# WHAT. The shipped rsBytesAreUtf8 over the NaN spellings and over controls
+# (number-like text that equals itself on every reading, and malformed
+# UTF-8 that must stay refused), then the three records a person names in
+# free text, built and parsed through it. FIXTURE FIRST: the old line
+# planted back must get every NaN row wrong or have the interpreter refuse
+# it (the base refuses a bare comparison a NaN text meets: note 2.11's
+# "Gate, headless" paragraph).
+
+NAN_TEXTS = ["nan", "NaN", "NAN", "nan(1)"]
+OLD_UTF8_LINES = [
+    ('   set the caseSensitive to true\n'
+     '   return ("b" & textEncode(tDecoded, "UTF-8")) is ("b" & pBytes)\n',
+     '   return textEncode(tDecoded, "UTF-8") is pBytes\n'),
+]
+
+
+def utf8_nan_rows(interp):
+    """(label, got, want): the NaN spellings through rsBytesAreUtf8 and the
+    records that route free text through it (the rows the fixture's old
+    line must get wrong)."""
+    master = MASTER
+    id_seed = to_str(REF["identity_seed"](bytes([0x42] * 32)))
+    rows = []
+    for t in NAN_TEXTS:
+        rows.append(("rsBytesAreUtf8(%r) is true (valid UTF-8)" % t,
+                     _called(interp, "rsBytesAreUtf8", [t]), True))
+
+    def field(builder_args, parser, parser_args_tail, key):
+        rec = _called(interp, builder_args[0], builder_args[1:])
+        if not isinstance(rec, str) or not rec:
+            return "the builder refused: %r" % (rec,)
+        out = _called(interp, parser, [rec] + parser_args_tail)
+        return str(out[key]) if isinstance(out, dict) else out
+
+    rows.append(("a LAN draft reading nan verifies, its text intact",
+                 field(["rsLanBuildDraft", "Tablet", 5, "nan", master],
+                       "rsLanVerifyDraft", [master], "draft"), "nan"))
+    rows.append(("a LAN draft from a device named NaN verifies, its name "
+                 "intact",
+                 field(["rsLanBuildDraft", "NaN", 5, "hello", master],
+                       "rsLanVerifyDraft", [master], "name"), "NaN"))
+    rows.append(("a post reading nan parses, its text intact",
+                 field(["rsBuildPost", 1754870400, REF["ZERO_TARGET"], "nan",
+                        "", id_seed], "rsParsePost", [], "text"), "nan"))
+    return rows
+
+
+def check_utf8_round_trip(c, ip, src, fail):
+    c.note("tier 1g: the UTF-8 round trip compares bytes, never numbers")
+    old = RsInterp(seed_lines(src, OLD_UTF8_LINES, "rsBytesAreUtf8", fail,
+                               tier="1g"))
+    right = [label for label, got, want in utf8_nan_rows(old) if got == want]
+    c.ck("fixture: the old bare `is` refuses (or is refused on) every NaN "
+         "spelling and every record carrying one", right, [])
+    for label, got, want in utf8_nan_rows(ip):
+        c.ck(label, got, want)
+    # the controls: text that equals itself on every reading still passes,
+    # and malformed UTF-8 is still refused (trap 4's engine finding). "an"
+    # is the prefix trap: a fix spelled with an "n" on both sides would
+    # compare "nan" with "nan" and refuse it (engine note 2.11's rule)
+    for t in ("hello", "inf", "1e5", "0012", "an", "caf\xc3\xa9"):
+        c.ck("rsBytesAreUtf8(%r) is still true" % t,
+             ip.call("rsBytesAreUtf8", [t]), True)
+    for t, what in (("\xc3", "a truncated two-byte sequence"),
+                    ("\xed\xa0\x80", "an encoded surrogate"),
+                    ("ab\xff", "a byte UTF-8 never uses"),
+                    ("\xc0\xae", "an overlong dot")):
+        c.ck("rsBytesAreUtf8 still refuses %s" % what,
+             ip.call("rsBytesAreUtf8", [t]), False)
 
 
 def check_capacity_arithmetic(c, ip):
@@ -2895,6 +2983,7 @@ def main(argv):
     check_seq_order(c, ip, src, fail)
     check_probe4(c, fail)
     check_persona_cap_and_order(c, ip, src, fail, V)
+    check_utf8_round_trip(c, ip, src, fail)
     check_capacity_arithmetic(c, ip)
     if install_coin_natives():
         check_composed(c, ip, V)

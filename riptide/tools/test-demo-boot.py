@@ -45,6 +45,19 @@ The seeded defects, and what each stands in for:
      engine reads otherwise, so the boot's draft-change drive sees each old
      line as a missed edit or a refusal; as in 6, every deciding check must
      be among the failures.
+  7b/7c. The same three sites spelled with an `n` (7b) or an `i` (7c) on
+     both sides (2026-09-27 review): the two prefixes the sites' own
+     comment rules out ("n" & "an" spells nan, "i" & "nf" and "i" &
+     "nfinity" two spellings of infinity), which passed the drive green
+     until it held a draft reading "an" and edited "nf" to "nfinity". Each
+     wrong fix is seeded and its rows must fail.
+  8. The 2026-09-27 review's three bare comparisons put back: the embedded
+     library's UTF-8 round trip (`textEncode(...) is pBytes`, which never
+     calls a nan equal to itself, so a "nan" draft the tick sends was refused
+     by the receiver), raProfileLine's restatement of it, and raHandleRp1's
+     inbox match (`pEvent["infoHashV1"] is rsInboxId(sDmTarget)`, two 40-hex
+     ids compared as numbers when both read as one). Each drive's deciding
+     rows must fail.
 """
 import os
 import re
@@ -159,6 +172,48 @@ def main():
         "draft change: an unedited DM compose reading nan",
     ]
 
+    # Fixtures 7b and 7c: the three draft sites with a prefix the sites'
+    # own comment rules out. (shipped, seeded) pairs built from fixture 7's
+    # shipped texts, so the three stay one list.
+    def prefixed(letter):
+        return [(new_text, new_text.replace('("t" & ', '("%s" & ' % letter))
+                for new_text, _old in draft_change]
+
+    prefix_n_must_fail = [
+        "draft change: a draft reading an (an n prefix makes it nan) is "
+        "sent ONCE",
+        "draft change: an unedited DM compose reading an (an n prefix "
+        "makes it nan)",
+    ]
+    prefix_i_must_fail = [
+        "draft change: an edit from nf to nfinity",
+        "draft change: a DM compose edit from nf to nfinity",
+    ]
+
+    # Fixture 8: the review's three bare comparisons put back.
+    review_lines = [
+        ('   set the caseSensitive to true\n'
+         '   return ("b" & textEncode(tDecoded, "UTF-8")) is ("b" & pBytes)\n',
+         '   return textEncode(tDecoded, "UTF-8") is pBytes\n'),
+        ('   set the caseSensitive to true\n'
+         '   if ("b" & textEncode(tName, "UTF-8")) is not ("b" & tBytes) then\n',
+         '   if textEncode(tName, "UTF-8") is not tBytes then\n'),
+        ('            if ("h" & toLower(pEvent["infoHashV1"])) is ("h" & '
+         'rsInboxId(sDmTarget)) then\n',
+         '            if pEvent["infoHashV1"] is rsInboxId(sDmTarget) then\n'),
+    ]
+    review_must_fail = [
+        "draft change: a draft reading nan from another device is APPLIED",
+        "profile line: a profile name reading nan is SHOWN",
+        "profile line: a profile name reading NaN is SHOWN",
+        # (the own-swarm row is not here: the old line answers identical
+        # text true on every reading, so it passes there by design; the
+        # upper-case spelling is two number spellings, refused)
+        "inbox match: ...spelled in upper case too",
+        "inbox match: a peer in ANOTHER swarm whose id also overflows is "
+        "NOT introduced to",
+    ]
+
     failed = 0
     for label, old, new in fixtures:
         mutated = mutate(clean, old, new, label)
@@ -178,53 +233,47 @@ def main():
         finally:
             os.unlink(tmp)
 
-    label = ("the demo's wire-integer orderings spelled with bare operators "
-             "again are each caught")
-    seeded = clean
-    for old, new in ordering:
-        seeded = mutate(seeded, old, new, label)
-    with tempfile.NamedTemporaryFile("w", suffix=".livecodescript",
-                                     delete=False, encoding="utf-8") as fh:
-        fh.write(seeded)
-        tmp = fh.name
-    try:
-        rc, out = run_gate(tmp)
-        fail_lines = [ln for ln in out.splitlines() if "FAIL" in ln]
-        missed = [want for want in ordering_must_fail
-                  if not any(want in ln for ln in fail_lines)]
-        if rc == 0 or missed:
-            failed += 1
-            print("FAIL  %s: exit %d; checks that did NOT fire: %s\n%s"
-                  % (label, rc, missed, out[-400:]))
-        else:
-            print("PASS  %s (%d checks fired)"
-                  % (label, len(ordering_must_fail)))
-    finally:
-        os.unlink(tmp)
+    def seeded_run(label, pairs, must_fail):
+        """One seeded copy, one gate run: every check in must_fail must be
+        among the FAIL lines (a drive that caught one of five would pass a
+        plain "the gate fired"). Returns 1 if the fixture misbehaved."""
+        seeded = clean
+        for old, new in pairs:
+            seeded = mutate(seeded, old, new, label)
+        with tempfile.NamedTemporaryFile("w", suffix=".livecodescript",
+                                         delete=False,
+                                         encoding="utf-8") as fh:
+            fh.write(seeded)
+            tmp = fh.name
+        try:
+            rc, out = run_gate(tmp)
+            fail_lines = [ln for ln in out.splitlines() if "FAIL" in ln]
+            missed = [want for want in must_fail
+                      if not any(want in ln for ln in fail_lines)]
+            if rc == 0 or missed:
+                print("FAIL  %s: exit %d; checks that did NOT fire: %s\n%s"
+                      % (label, rc, missed, out[-400:]))
+                return 1
+            print("PASS  %s (%d checks fired)" % (label, len(must_fail)))
+            return 0
+        finally:
+            os.unlink(tmp)
 
-    label = ("the demo's draft change detection spelled with bare `is not` "
-             "again is caught at every edit")
-    seeded = clean
-    for old, new in draft_change:
-        seeded = mutate(seeded, old, new, label)
-    with tempfile.NamedTemporaryFile("w", suffix=".livecodescript",
-                                     delete=False, encoding="utf-8") as fh:
-        fh.write(seeded)
-        tmp = fh.name
-    try:
-        rc, out = run_gate(tmp)
-        fail_lines = [ln for ln in out.splitlines() if "FAIL" in ln]
-        missed = [want for want in draft_change_must_fail
-                  if not any(want in ln for ln in fail_lines)]
-        if rc == 0 or missed:
-            failed += 1
-            print("FAIL  %s: exit %d; checks that did NOT fire: %s\n%s"
-                  % (label, rc, missed, out[-400:]))
-        else:
-            print("PASS  %s (%d checks fired)"
-                  % (label, len(draft_change_must_fail)))
-    finally:
-        os.unlink(tmp)
+    seeded_fixtures = [
+        ("the demo's wire-integer orderings spelled with bare operators "
+         "again are each caught", ordering, ordering_must_fail),
+        ("the demo's draft change detection spelled with bare `is not` "
+         "again is caught at every edit", draft_change,
+         draft_change_must_fail),
+        ("the draft change detection spelled with an n prefix (nan) is "
+         "caught", prefixed("n"), prefix_n_must_fail),
+        ("the draft change detection spelled with an i prefix (inf) is "
+         "caught", prefixed("i"), prefix_i_must_fail),
+        ("the review's bare round-trip and inbox compares put back are each "
+         "caught", review_lines, review_must_fail),
+    ]
+    for label, pairs, must_fail in seeded_fixtures:
+        failed += seeded_run(label, pairs, must_fail)
 
     rc, out = run_gate(DEMO)
     if rc != 0:
@@ -238,7 +287,7 @@ def main():
         print("test-demo-boot: %d fixture(s) misbehaved" % failed)
         return 1
     print("test-demo-boot: OK (%d seeded defects caught, clean run passes)"
-          % (len(fixtures) + 2))
+          % (len(fixtures) + len(seeded_fixtures)))
     return 0
 
 

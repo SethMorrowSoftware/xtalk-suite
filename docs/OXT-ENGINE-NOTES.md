@@ -608,7 +608,13 @@ any other word) it takes the text path. Work plan suite-wide #26 sweeps the
 tree for such compares. One site, riptide-social's draft change detection,
 took a letter on both sides on 2026-09-26 (its boot gate edits a draft from
 12 to 0012, 100000 to 1e5 and inf to Infinity): verified statically +
-headless; needs an OXT pass.
+headless; needs an OXT pass. A ROUND TRIP compares a text with its own
+re-encoding, so a text reading nan fails it whatever its bytes: riptide's
+UTF-8 validity check (`rsBytesAreUtf8`, restated in riptide-social's
+`raProfileLine`) refused every valid draft, name or post spelled nan until
+2026-09-27, when it took a letter on both sides (INFERRED from the Linux
+reading; verified statically; needs an OXT pass). nostrxt's NIP-44 unpad
+has the same shape, open under suite-wide #26.
 **Rule, free text:** compare user-typed or wire text as TEXT: a letter on
 both sides, never `i` or `n` in either case (any text can follow the prefix,
 and "an", "nf" or "nfinity" after it spell the two words), with
@@ -755,7 +761,9 @@ was prefixed by hand on 2026-09-26, and its two handle ORDERS, `rsRoomId`'s
 `tA <= tB` and `rsDmSessionKeys`' `tMine < tTheirs` and `tMine is tTheirs`,
 until riptide 0.14.0 moved them to a byte compare the same day: two
 number-like handles ordered as numbers, and "1e0...0" and "0...01" were one
-handle; verified statically; needs an OXT pass); so does every
+handle; verified statically; needs an OXT pass; and riptide-social's
+outbound DM match, an event's `infoHashV1` against `rsInboxId(...)`, until
+2026-09-27, verified statically + headless; needs an OXT pass); so does every
 caller of a helper that compares its arguments with bare `is` (holde-em's
 `heTAssert` did until 2026-09-26, when v0.25.6 moved it to `heTSame`); and so does a
 NUMBER-LIKE literal, exempt with every literal: the wallet's script-type

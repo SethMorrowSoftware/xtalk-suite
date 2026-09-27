@@ -26,8 +26,9 @@ pass for the anon persona and a live-relay pass for Nostr).
   (the LAN mesh, the anon persona over Tor) are owed.
 - **0.14.0** (2026-09-26): the anon persona index is capped (n is 0 or 1, protocol
   section 2), two handles are ordered byte by byte in `rsRoomId` and `rsDmSessionKeys`,
-  and the app's draft change detection compares text, not number. Verified statically +
-  headless; needs an OXT pass.
+  and the app's draft change detection compares text, not number; its review (2026-09-27)
+  did the same for the UTF-8 round trip (a valid text reading nan was refused) and the
+  app's outbound inbox match. Verified statically + headless; needs an OXT pass.
 - **Phase 8** (the Nostr bridge, built 2026-08-29): the library is executed headlessly
   against the real committed CoinXT by `tools/check-script-vectors.py`, which settles
   logic, not parser behaviour, and its offline compute (the `RIPTAPP1` store and the

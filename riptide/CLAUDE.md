@@ -284,7 +284,8 @@ Code comments cite these numbers; keep them.
    route handlers too.
 4. **`textDecode(x, "UTF-8")` is LOSSY (OBSERVED 2026-08-15).** It returns replacement characters
    and does not throw, so six parsers' try guards were inert. Validate with `rsBytesAreUtf8`:
-   decode, re-encode, require identical bytes (an inner try stays for an engine that does throw).
+   decode, re-encode, require identical bytes (an inner try stays for an engine that does throw),
+   compared with a letter on both sides and the case kept, never bare `is` (trap 16).
 5. **Delimiter leaks.** C10 (2026-08-17): `rsMediaCreate` left `itemDelimiter` "/" on 7 exits;
    restore around the NARROWEST span, not per exit (`rsAnonFeedPage`'s `lineDelimiter` too).
    `raAttach` (2026-08-14) and `rsPersonaAllows` (2026-08-29, benign only because comma is the
@@ -458,8 +459,28 @@ Code comments cite these numbers; keep them.
       holds a nan draft still; test-demo-boot's fixture 7 plants the three old lines and requires all
       twelve deciding checks red. Verified statically + headless; needs an OXT pass (the demo is not
       in the paste).
+    The review of those fixes (2026-09-27) found three more, each fixed the same way:
+    - The UTF-8 round trip itself (trap 4): `rsBytesAreUtf8` ended `textEncode(tDecoded,
+      "UTF-8") is pBytes`, and the demo's `raProfileLine` restates it, so any valid text reading
+      nan ("nan", "NaN", "nan(1)") failed its own round trip: a LAN draft or device name, a head
+      name, a post or a profile name reading nan was refused as "not valid UTF-8", which undid the
+      draft fix above at the RECEIVER (INFERRED from the Linux reading; Data values take the same
+      parse by the note's source reading). Now `("b" & ...) is ("b" & ...)` under
+      `set the caseSensitive to true`. check-script-vectors tier 1g (its fixture plants the old
+      line and sees every nan row refused), and check-demo-boot's receiver row and profile-line
+      drive. Verified statically; needs an OXT pass (the harness's LAN sync section verifies a
+      "nan" draft from a device named "NaN").
+    - `raHandleRp1`'s outbound match `pEvent["infoHashV1"] is rsInboxId(sDmTarget)`: two 40-hex
+      ids no name marks, missed by check 23 and the 0.13.0 sweep. Where a target's inbox id reads
+      as a number (the ground handle in check-demo-boot's `INBOX_NUM_HANDLE` has one that
+      overflows to +inf), a peer in any other overflowing swarm was sent the sealed intro and the
+      stream header. Now `("h" & toLower(...)) is ("h" & ...)`; check-demo-boot's inbox drive
+      spies `raDmIntroduceTo`. Verified statically + headless; needs an OXT pass.
+    - The draft drive passed a fix spelled with an `n` or an `i` on both sides, the two prefixes
+      the sites' own comment rules out; it now holds a draft reading "an" and edits "nf" to
+      "nfinity", and test-demo-boot's fixtures 7b and 7c seed each wrong prefix.
     A letter never `i` or `n` ("n" & "an" spells nan). Free text elsewhere in the tree is the suite
-    work plan's suite-wide #26.
+    work plan's suite-wide #26 (nostrxt's NIP-44 unpad has the round-trip shape too).
 
 ## 5. Engine evidence ledger
 

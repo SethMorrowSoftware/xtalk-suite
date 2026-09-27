@@ -1902,6 +1902,8 @@ def boot(c, path, profile, drive=True):
             drive_lan_keys(c, ip, world, profile)
             drive_seq_order(c, ip, world, profile)
             drive_draft_change(c, ip, world, profile)
+            drive_inbox_match(c, ip, world, profile)
+            drive_profile_line(c, ip, world, profile)
             try:
                 ip.call("raLock", [])
                 c.ck("[%s] raLock tears down cleanly" % profile, True)
@@ -2388,6 +2390,17 @@ DRAFT_EDITS = [
     ("100000", "1e5", "the exponent form"),
     ("16", "0x10", "a hex spelling"),
     ("inf", "Infinity", "two spellings of infinity"),
+    # the PREFIX traps (2026-09-27 review): the three sites' own comment
+    # says never an i or n, and until these rows a fix spelled ("i" & x) or
+    # ("n" & x) passed this drive green. "i" & "nf" is inf and "i" &
+    # "nfinity" is infinity, one number (the edit is missed); "n" & "an" is
+    # nan (DRAFT_HELD below: never equal to itself, re-sent every tick)
+    ("nf", "nfinity", "a word an i prefix turns into infinity"),
+]
+# (text, what): an unedited draft the tick must leave alone once sent
+DRAFT_HELD = [
+    ("nan", "nan"),
+    ("an", "an (an n prefix makes it nan)"),
 ]
 
 
@@ -2480,12 +2493,31 @@ def drive_draft_change(c, ip, world, profile):
                  "seen and renews the typing window"
                  % (profile, before, after, what),
                  got == (True, True, True), repr(got))
+        for text, what in DRAFT_HELD:
+            ip.call("raLanSyncReset", [])
+            lan_tick(text)
+            got = attempt(lan_tick, text)
+            c.ck("[%s] draft change: a draft reading %s is sent ONCE, then "
+                 "left alone (no re-send, no typing renewal)"
+                 % (profile, what), got == (False, True, False), repr(got))
+        # ...and the RECEIVING device applies a draft reading nan. Its verify
+        # runs the library's UTF-8 round trip, whose bare `is` never called
+        # a nan equal to itself (suite engine note 2.11; the 2026-09-27
+        # review), so the draft this tick sends once was refused there as
+        # "not valid UTF-8": the edit reached the wire and never the peer
         ip.call("raLanSyncReset", [])
-        lan_tick("nan")
-        got = attempt(lan_tick, "nan")
-        c.ck("[%s] draft change: a draft reading nan is sent ONCE, then "
-             "left alone (no re-send, no typing renewal)" % profile,
-             got == (False, True, False), repr(got))
+        dev = str(ip.call("raLanDevKey", ["Phone"]))
+        rec = ip.call("rsLanBuildDraft", ["Phone", 3, "nan", seed])
+        try:
+            ip.call("raLanSyncReceive", [peer, "D", rec])
+            arr = ip.globals.get("slanpeerdraft", "")
+            got = (str(LCS._disp(LCS._arr_get(arr, dev)))
+                   if isinstance(arr, dict) else repr(arr))
+        except LCS.Indistinct as exc:
+            got = "refused: " + str(exc)[:100]
+        c.ck("[%s] draft change: a draft reading nan from another device "
+             "is APPLIED by the receiver (its UTF-8 round trip compares "
+             "bytes)" % profile, got == "nan", repr(got))
         ip.globals["sdctypingchan"] = "1"
         ip.globals["sdctypingsent"] = ""
         ip.globals["sdctypingsentat"] = world.ms + 10 ** 9
@@ -2496,12 +2528,13 @@ def drive_draft_change(c, ip, world, profile):
             c.ck("[%s] draft change: a DM compose edit from %s to %s (%s) "
                  "renews the typing window" % (profile, before, after, what),
                  got == (True, True), repr(got))
-        ip.globals["sdctypingseen"] = ""
-        dm_tick("nan")
-        got = attempt(dm_tick, "nan")
-        c.ck("[%s] draft change: an unedited DM compose reading nan does "
-             "not renew the typing window" % profile,
-             got == (True, False), repr(got))
+        for text, what in DRAFT_HELD:
+            ip.globals["sdctypingseen"] = ""
+            dm_tick(text)
+            got = attempt(dm_tick, text)
+            c.ck("[%s] draft change: an unedited DM compose reading %s does "
+                 "not renew the typing window" % (profile, what),
+                 got == (True, False), repr(got))
     except Exception as exc:                            # noqa: BLE001
         c.ck("[%s] draft change: the ticks compare the draft as text"
              % profile, False, "%s: %s" % (type(exc).__name__, exc))
@@ -2518,6 +2551,114 @@ def drive_draft_change(c, ip, world, profile):
             ip.call("raLanSyncReset", [])
         except Exception:                               # noqa: BLE001
             pass
+
+
+# A handle whose INBOX ID a number parse reads (2026-09-27): the first i
+# from 0 for which BLAKE2b-20(sha256("riptide-inbox-grind-<i>") ||
+# "riptide-inbox") is digits, one e, digits (i = 7791809, about 30 s of
+# hashing). Its inbox id is 22e3876373832010822666586673841400846628, a
+# number past a double's range, so +inf to the engine (suite engine note
+# 2.11: "1e999" is "2e999", OBSERVED); INBOX_OTHER_SWARM is another 40-hex
+# id that overflows too. drive_inbox_match re-derives the id through the
+# oracle, so a stale constant fails by name.
+INBOX_NUM_HANDLE = ("06f54bd0383cf832b0beea6a62a8476b"
+                    "6e49e04a87778ca593a4972a2b4ed70d")
+INBOX_NUM_ID = "22e3876373832010822666586673841400846628"
+INBOX_OTHER_SWARM = "9e" + "9" * 38
+
+
+def drive_inbox_match(c, ip, world, profile):
+    """raHandleRp1's outbound match: a capable peer in the TARGET's inbox
+    swarm is sent my sealed intro and stream header (2026-09-27 review).
+
+    WHY THIS EXISTS. The match was `pEvent["infoHashV1"] is
+    rsInboxId(sDmTarget)`, two 40-hex ids under bare `is`, which compares two
+    number-like spellings as NUMBERS (suite engine note 2.11); no name in it
+    says hex, so check 23 and the 0.13.0 sweep passed it. Where the target's
+    inbox id overflows (INBOX_NUM_HANDLE's does), a peer in ANY other swarm
+    whose id overflows as well was introduced to. It compares ("h" & each
+    side) now, the event's side lowered. raDmIntroduceTo is SPIED, not run
+    (its send path is the phase-4 code the harness and the two-machine pass
+    hold): the question is only who is introduced to. The old line fails
+    here as a refusal (the base's Indistinct), test-demo-boot's fixture 8."""
+    want = CSV.REF["inbox_id"](INBOX_NUM_HANDLE)
+    c.ck("[%s] inbox match: the ground handle's inbox id is the oracle's "
+         "(number-like, so the rows below mean what they say)" % profile,
+         want == INBOX_NUM_ID, "oracle %r" % want)
+    names = ("sdmtarget", "sdmtargetkx")
+    saved = dict((k, ip.globals.get(k, "")) for k in names)
+    introduced = []
+    had_call = "call" in ip.__dict__
+    real_call = ip.call
+
+    def spy(name, args):
+        # every script-to-script call goes through the instance's `call`
+        # (the base's statement-position dispatch), so this sees the one
+        # the match makes
+        if name.lower() == "radmintroduceto":
+            introduced.append(list(args))
+            return ""
+        return real_call(name, args)
+
+    rows = [
+        (INBOX_NUM_ID, True, "the target's own inbox swarm is introduced to"),
+        (INBOX_NUM_ID.upper(), True, "...spelled in upper case too"),
+        (INBOX_OTHER_SWARM, False, "a peer in ANOTHER swarm whose id also "
+         "overflows is NOT introduced to"),
+        ("ab" * 20, False, "a peer in a plain other swarm is not"),
+    ]
+    try:
+        ip.call = spy
+        ip.globals["sdmtarget"] = INBOX_NUM_HANDLE
+        ip.globals["sdmtargetkx"] = "cd" * 32
+        for swarm, should, label in rows:
+            del introduced[:]
+            event = LCS.LcsArray({"name": "rp1Handshake", "peer": "5",
+                                  "supportsRp1": "1", "infoHashV1": swarm})
+            try:
+                ip.call("raHandleRp1", [event])
+                got = bool(introduced)
+            except LCS.Indistinct as exc:
+                got = "refused: " + str(exc)[:100]
+            c.ck("[%s] inbox match: %s" % (profile, label), got is should,
+                 repr(got))
+    finally:
+        if had_call:
+            ip.call = real_call
+        else:
+            ip.__dict__.pop("call", None)
+        for k, v in saved.items():
+            ip.globals[k] = v
+
+
+def drive_profile_line(c, ip, world, profile):
+    """raProfileLine's UTF-8 round trip over a fetched profile-name blob
+    (2026-09-27 review): the demo restates the library's rsBytesAreUtf8
+    idiom, and both ended in a bare `is`, which never calls a name reading
+    nan equal to itself (suite engine note 2.11). Both compare ("b" & each
+    side) under the caseSensitive now; the library's half is
+    check-script-vectors tier 1g. test-demo-boot's fixture 8 plants the old
+    line and requires the nan rows to fail."""
+    def line(value):
+        target = CSV.REF["immutable_target"](CSV.to_bytes(value))
+        event = LCS.LcsArray({"target": target, "value": value})
+        try:
+            return str(LCS._disp(ip.call("raProfileLine", [event, target])))
+        except LCS.Indistinct as exc:
+            return "refused: " + str(exc)[:100]
+
+    shown = "profile name (spec 4.1, content-verified): "
+    for value in ("nan", "NaN"):
+        got = line(value)
+        c.ck("[%s] profile line: a profile name reading %s is SHOWN, not "
+             "refused as not UTF-8" % (profile, value),
+             got == shown + value, repr(got))
+    got = line("Ada")
+    c.ck("[%s] profile line: a plain name is shown" % profile,
+         got == shown + "Ada", repr(got))
+    got = line("\xc3")
+    c.ck("[%s] profile line: malformed UTF-8 is still REFUSED" % profile,
+         "not valid UTF-8" in got, repr(got))
 
 
 # The array forms THIS runner adds to the base, pinned against the base's

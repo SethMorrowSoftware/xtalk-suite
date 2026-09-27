@@ -9732,6 +9732,13 @@ end rsBytesEqual
 -- re-encode the decoded string and require it to reproduce the original
 -- bytes exactly (only a valid UTF-8 sequence does). The inner try stays as
 -- belt-and-suspenders for any engine that DOES throw.
+-- The two byte strings are compared with a letter on both sides and the
+-- case kept (2026-09-27), never bare `is`: a text C's strtod reads as NaN
+-- ("nan", "NaN", "nan(1)") is not `is` itself held apart (suite engine
+-- note 2.11, OBSERVED on Linux 2026-09-26), so a LAN draft, a device or
+-- head name, or a post reading nan was refused here as "not valid UTF-8"
+-- (INFERRED; no engine has run it). Never an i or n prefix ("n" & "an"
+-- spells nan); "b" is neither.
 private function rsBytesAreUtf8 pBytes
    local tDecoded, tErr
    if the number of bytes in pBytes is 0 then return true
@@ -9740,7 +9747,8 @@ private function rsBytesAreUtf8 pBytes
    catch tErr
       return false
    end try
-   return textEncode(tDecoded, "UTF-8") is pBytes
+   set the caseSensitive to true
+   return ("b" & textEncode(tDecoded, "UTF-8")) is ("b" & pBytes)
 end rsBytesAreUtf8
 
 -- Strict LOWERCASE hex of an exact length. The check is by BYTE VALUE, not
@@ -14981,7 +14989,12 @@ private function raProfileLine pEvent, pExpected
             "bytes) - showing the head's own name."
    end if
    put textDecode(tBytes, "UTF-8") into tName
-   if textEncode(tName, "UTF-8") is not tBytes then
+   -- compared with a letter on both sides and the case kept, as the
+   -- library's round trip is (2026-09-27): bare `is` never calls a name
+   -- reading nan equal to itself (suite engine note 2.11), so that name
+   -- was REFUSED as not UTF-8 (INFERRED from the Linux reading)
+   set the caseSensitive to true
+   if ("b" & textEncode(tName, "UTF-8")) is not ("b" & tBytes) then
       return "profile-name blob REFUSED (not valid UTF-8) - showing the head's own name."
    end if
    return "profile name (spec 4.1, content-verified):" && tName
@@ -15244,8 +15257,14 @@ command raHandleRp1 pEvent
          -- a capable peer in the OUTBOUND target's inbox swarm gets the
          -- sealed intro + my stream header; anyone else is inbound-side
          -- and speaks first
+         -- the swarm is matched as TEXT, a letter on both sides: two 40-hex
+         -- ids a number parse accepts compare as NUMBERS under bare `is`
+         -- (suite engine note 2.11), so where the target's inbox id reads
+         -- as one (22e38..., +inf) a peer in any other swarm whose id also
+         -- overflows was sent the sealed intro and my stream header
+         -- (2026-09-27; the check 23 sweep's miss: no name here says hex)
          if sDmTarget is not empty and sDmTargetKx is not empty then
-            if pEvent["infoHashV1"] is rsInboxId(sDmTarget) then
+            if ("h" & toLower(pEvent["infoHashV1"])) is ("h" & rsInboxId(sDmTarget)) then
                raDmIntroduceTo tPeer
             end if
          end if
