@@ -2261,18 +2261,21 @@ def check_integer_arguments(c, call, F):
          refused("cxHexOfInt", "the value", "digits"))
 
     # ---- cxEthLegacyEncode: v is COMPUTED from the chain id ---------------
-    # v = recid + 2 * chainId + 35, so the chain id is bounded where v still
-    # fits with any recovery id (at most 3): 4503599627370477. At that bound
-    # and recid 3, v is exactly 2^53, and the raw transaction is the
-    # reference's RLP over the same fields, byte for byte.
-    edge = 4503599627370477
+    # v = recid + 2 * chainId + 35, and EIP-155 has room for a recovery id of
+    # 0 or 1 only: 2 on chain 1 is v = 39, which IS chain 2's v at id 0 (the
+    # 2026-09-26 review; row #10's first bound took secp256k1's 0 to 3 and
+    # let 2 and 3 through to that confusion). So the chain id is bounded
+    # where v still fits at recid 1: 4503599627370478. At that bound and
+    # recid 1, v is exactly 2^53, and the raw transaction is the reference's
+    # RLP over the same fields, byte for byte.
+    edge = 4503599627370478
     rr, ss = F["r155hex"], F["s155hex"]
     fields = [REF._rlp_uint(9), REF._rlp_uint(20 * 10**9), REF._rlp_uint(21000),
               REF.rlp_encode(bytes.fromhex(to)), REF._rlp_uint(10**18), REF.rlp_encode(b""),
-              REF._rlp_uint(3 + 2 * edge + 35), REF._rlp_uint(int(rr, 16)),
+              REF._rlp_uint(1 + 2 * edge + 35), REF._rlp_uint(int(rr, 16)),
               REF._rlp_uint(int(ss, 16))]
-    got = outcome("cxEthLegacyEncode", 9, gp, 21000, to, val, "", edge, 3, rr, ss)
-    c.ck("cxEthLegacyEncode writes chain id %d with recid 3 (v = 2^53) exactly" % edge,
+    got = outcome("cxEthLegacyEncode", 9, gp, 21000, to, val, "", edge, 1, rr, ss)
+    c.ck("cxEthLegacyEncode writes chain id %d with recid 1 (v = 2^53) exactly" % edge,
          got["raw"] if isinstance(got, dict) else got,
          REF._rlp_list_join(fields).hex())
     for label, chain in (("one past it", edge + 1), ("2^53", top)):
@@ -2281,11 +2284,19 @@ def check_integer_arguments(c, call, F):
              outcome("cxEthLegacyEncode", 9, gp, 21000, to, val, "", chain, 0, rr, ss),
              "refused: CoinXT: cxEthLegacyEncode: the chain id is more than %d, %s"
              % (edge, _ROW10_OVER))
-    c.ck("cxEthLegacyEncode refuses a recovery id of 4 (it wrote v = 41 for "
-         "chain 1, which reads as chain 3)",
-         outcome("cxEthLegacyEncode", 9, gp, 21000, to, val, "", 1, 4, rr, ss),
-         "refused: CoinXT: cxEthLegacyEncode: the recovery id is more than 3, %s"
-         % _ROW10_OVER)
+    for recid, reads in ((2, "chain 2's v at id 0"), (3, "chain 2's v at id 1"),
+                         (4, "chain 3's v at id 0")):
+        c.ck("cxEthLegacyEncode refuses a recovery id of %d (on chain 1 it wrote "
+             "v = %d, %s)" % (recid, recid + 2 + 35, reads),
+             outcome("cxEthLegacyEncode", 9, gp, 21000, to, val, "", 1, recid, rr, ss),
+             "refused: CoinXT: cxEthLegacyEncode: the recovery id is more than 1, %s"
+             % _ROW10_OVER)
+    # the control beside them: chain 2 at id 0 is v = 39, the spelling id 2 on
+    # chain 1 used to write, and it stays written for the chain that owns it
+    got = outcome("cxEthLegacyEncode", 9, gp, 21000, to, val, "", 2, 0, rr, ss)
+    c.ck("and chain 2 at recovery id 0 still writes v = 39 (control)",
+         REF.rlp_decode(bytes.fromhex(got["raw"]))[6].hex()
+         if isinstance(got, dict) else got, "27")
     c.ck("cxEthLegacyEncode refuses an empty recovery id",
          outcome("cxEthLegacyEncode", 9, gp, 21000, to, val, "", 1, "", rr, ss),
          refused("cxEthLegacyEncode", "the recovery id", "digits"))
@@ -2307,10 +2318,24 @@ _ROW10_MUTATIONS = (
      [('   put cxCheckedWhole(pValue, "9007199254740992", "cxHexOfInt", "the value") \\\n'
        '         into tValue\n', '   put pValue into tValue\n')]),
     ("cxEthLegacyEncode's recovery id and chain id, taken as they came",
-     [('   put cxCheckedWhole(pRecid, "3", "cxEthLegacyEncode", "the recovery id") \\\n'
+     [('   put cxCheckedWhole(pRecid, "1", "cxEthLegacyEncode", "the recovery id") \\\n'
        '         into tRecid\n', '   put pRecid into tRecid\n'),
-      ('   put cxCheckedWhole(pChainId, "4503599627370477", "cxEthLegacyEncode", \\\n'
+      ('   put cxCheckedWhole(pChainId, "4503599627370478", "cxEthLegacyEncode", \\\n'
        '         "the chain id") into tChain\n', '   put pChainId into tChain\n')]),
+    # A PLAUSIBLE WRONG FIX, not a revert: row #10's first bound, secp256k1's
+    # recovery ids 0 to 3 and the chain id that leaves room for 3. It passes
+    # every refusal above but ids 2 and 3, which it writes as chain 2's v
+    # (the 2026-09-26 review), so the block must fail on it.
+    ("cxEthLegacyEncode's recovery id bounded at 3 (secp256k1's range, not "
+     "EIP-155's)",
+     [('   put cxCheckedWhole(pRecid, "1", "cxEthLegacyEncode", "the recovery id") \\\n'
+       '         into tRecid\n',
+       '   put cxCheckedWhole(pRecid, "3", "cxEthLegacyEncode", "the recovery id") \\\n'
+       '         into tRecid\n'),
+      ('   put cxCheckedWhole(pChainId, "4503599627370478", "cxEthLegacyEncode", \\\n'
+       '         "the chain id") into tChain\n',
+       '   put cxCheckedWhole(pChainId, "4503599627370477", "cxEthLegacyEncode", \\\n'
+       '         "the chain id") into tChain\n')]),
 )
 
 

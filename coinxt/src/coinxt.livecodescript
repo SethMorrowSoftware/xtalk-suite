@@ -3137,13 +3137,19 @@ function cxEthLegacyEncode pNonce, pGasPriceHex, pGas, pToHex, pValueHex, pDataH
    -- handed a SUM, and a chain id near 2^53 doubles past it before any
    -- guard sees it: the engine would round v with no error (suite engine
    -- note 2.4) and sign a transaction for a chain the caller did not name.
-   -- So both inputs are settled as digits first: the recovery id at most 3
-   -- (every id secp256k1 defines; EIP-155's are 0 and 1) and the chain id
-   -- at most 4503599627370477, the largest for which 3 + 2 * id + 35 is
-   -- still at most 2^53. Verified statically; needs an OXT pass.
-   put cxCheckedWhole(pRecid, "3", "cxEthLegacyEncode", "the recovery id") \
+   -- So both inputs are settled as digits first. THE RECOVERY ID IS 0 OR 1,
+   -- EIP-155's two (the same day's review): v = {0,1} + 2 * chainId + 35
+   -- has room for nothing else, so any larger id writes ANOTHER chain's v -
+   -- 2 on chain 1 is v = 39, byte for byte chain 2's v at id 0, and 3 is
+   -- chain 2's at id 1. This bound said 3 ("every id secp256k1 defines")
+   -- and so let 2 and 3 through to exactly the chain-confusion it names;
+   -- secp256k1's 2 and 3 (an R.x past the group order) have no EIP-155
+   -- spelling at all. The chain id is then at most 4503599627370478, the
+   -- largest for which 1 + 2 * id + 35 is still at most 2^53. Verified
+   -- statically; needs an OXT pass.
+   put cxCheckedWhole(pRecid, "1", "cxEthLegacyEncode", "the recovery id") \
          into tRecid
-   put cxCheckedWhole(pChainId, "4503599627370477", "cxEthLegacyEncode", \
+   put cxCheckedWhole(pChainId, "4503599627370478", "cxEthLegacyEncode", \
          "the chain id") into tChain
    put tRecid + 2 * tChain + 35 into tV
    put cxRlpUintFromHex(cxHexOfInt(pNonce)) into tBody

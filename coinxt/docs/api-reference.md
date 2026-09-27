@@ -486,10 +486,11 @@ one item per input or output, the same convention the RLP and bech32 layers use.
 > most 2^53, decided on the digits before any arithmetic. A leading minus is
 > refused as negative; `1e3`, `3.0`, `+3` or a blank as not written in digits;
 > anything past 2^53 by name, where until then it was written as the bytes of
-> its rounded neighbour. `cxEthLegacyEncode` computes `v` from its chain id,
-> so it takes a chain id of at most 4503599627370477 and a recovery id of at
-> most 3, the largest for which `v` stays at most 2^53. Verified statically;
-> needs an OXT pass.
+> its rounded neighbour. `cxEthLegacyEncode` computes `v` as recovery id +
+> 2 * chain id + 35, so it takes a recovery id of 0 or 1 (EIP-155's two: a
+> larger one writes another chain's `v`, 2 on chain 1 being chain 2's `v` at
+> 0) and a chain id of at most 4503599627370478, the largest for which `v`
+> stays at most 2^53. Verified statically; needs an OXT pass.
 
 **Byte helpers.**
 
@@ -530,7 +531,8 @@ compact `r`/`s` from `cxSignRecoverable`.
   pChainId)` - the EIP-155 signing digest.
 - `cxEthLegacyEncode(pNonce, pGasPriceHex, pGas, pToHex, pValueHex, pDataHex,
   pChainId, pRecid, pRHex, pSHex)` - the signed legacy transaction; returns an
-  array `["raw"]`, `["txhash"]` (both hex). `v = pRecid + 2*pChainId + 35`.
+  array `["raw"]`, `["txhash"]` (both hex). `v = pRecid + 2*pChainId + 35`,
+  so `pRecid` is 0 or 1 and `pChainId` at most 4503599627370478 (above).
 - `cxEth1559Sighash(pChainId, pNonce, pMaxPriorityHex, pMaxFeeHex, pGas, pToHex,
   pValueHex, pDataHex)` - the EIP-1559 (type 0x02) signing digest, empty access
   list.
