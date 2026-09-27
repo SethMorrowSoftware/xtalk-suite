@@ -141,6 +141,13 @@ C_NX_SCOPE = 'if suInScope("nostrxt") then'
 C_NOHARNESS = 'constant kSuNoHarness = "nocloud"'
 # the one suNoHarness ask inside suRowControls (the loop with "suNote" & tKey)
 C_NOHARNESS_ASK = '      if suNoHarness(tKey) then\n         put "suNote" & tKey & comma after tOut'
+# The pump's clock (check 19): stRun's last two lines, suPumpArm's resets,
+# the pump's paint before its re-arm, and suPumpPaintNow's phase-moved paint.
+C_PUMP_ARM = '   suPumpArm\n   send "suPump" to me in 33 milliseconds\n'
+C_ARM_RESET = ('   put empty into sDeadline\n   put empty into sSuTime\n'
+               '   put ((not stEnDone())')
+C_PUMP_PAINT = '\n   suPumpPaint\n   -- THE RE-ARM IS'
+C_PAINT_ROWS = '      suPaintRows\n      uiStatus "Running ("'
 
 
 def handler(name, *body):
@@ -379,6 +386,37 @@ CASES = [
     ("17: a member's scope test spelled with the wrong key",
      "core", lambda t: swap(t, C_NX_SCOPE, 'if suInScope("nostr") then', "nostrxt scope"),
      {"17"}, 'no `if suInScope("nostrxt")`'),
+    # ---- 19: the loopbacks are judged only on ticks that serviced them ----
+    ("19: the deadline armed in stRun again, before the arm-time render (the old core)",
+     "core", lambda t: swap(t, C_PUMP_ARM,
+                            "   put the milliseconds + kStDeadlineMs into sDeadline\n"
+                            + C_PUMP_ARM, "stRun's end"),
+     {"19"}, "in stRun, which is named by"),
+    ("19: the deadline armed in suPumpArm, which stRun calls",
+     "core", lambda t: swap(t, C_ARM_RESET, C_ARM_RESET.replace(
+         "   put empty into sDeadline\n",
+         "   put the milliseconds + kStDeadlineMs into sDeadline\n"), "suPumpArm"),
+     {"19"}, "in suPumpArm, which is named by stRun"),
+    ("19: the first-tick handler also called from stRun",
+     "core", lambda t: swap(t, C_PUMP_ARM, "   suPumpTickStart\n" + C_PUMP_ARM,
+                            "stRun's end"),
+     {"19"}, "in suPumpTickStart, which is named by stRun, suPump"),
+    ("19: the pump renders the report on a live tick again (the old core)",
+     "core", lambda t: swap(t, C_PUMP_PAINT, C_PUMP_PAINT.replace(
+         "\n   suPumpPaint\n", "\n   stShow\n   suPumpPaint\n"), "suPump's paint"),
+     {"19"}, "suPump reaches stShow short of stFinish"),
+    ("19: a pump paint writes the report field",
+     "core", lambda t: swap(t, C_PAINT_ROWS, C_PAINT_ROWS.replace(
+         "      uiStatus", '      put stReportText() into field "stResults"\n      uiStatus'),
+                            "suPumpPaintNow"),
+     {"19"}, "suPumpPaintNow writes field 'stResults'"),
+    ("19 NEGATIVE: stShow and stPaint named in suPump's comment and a report label",
+     "core", lambda t: swap(t, C_PUMP_PAINT, C_PUMP_PAINT.replace(
+         "\n   suPumpPaint\n",
+         '\n   -- (fixture) stShow and stPaint are never called here\n'
+         '   stNote "stShow and stPaint wait for stFinish"\n   suPumpPaint\n'),
+                            "suPump's paint"),
+     set(), "check-suite-selftest: OK"),
 ]
 
 
