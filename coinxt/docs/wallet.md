@@ -566,7 +566,7 @@ disjoint from every other library). The groups are:
 | Scripts | `cwPush`, `cwPushLen`, `cwScriptNum`, `cwScriptP2pkh`, `cwScriptP2sh`, `cwScriptP2wpkh`, `cwScriptP2wsh`, `cwScriptP2tr`, `cwRedeemP2shP2wpkh`, `cwScriptP2shP2wpkh`, `cwMultisigScript`, `cwScriptKind`, `cwScriptAsm`, `cwScriptItems`, `cwScriptCheck`, `cwOpReturnScript`, `cwOpReturnData` |
 | Addresses | `cwAddressForScript`, `cwScriptForAddress`, `cwAddressKind`, `cwAddressIsValid`, `cwAddressProblem`, `cwElectrumScripthash` |
 | Derivation | `cwParsePath`, `cwFormatPath`, `cwAccountPath`, `cwFingerprint`, `cwXKeyEncode`, `cwXKeyDecode`, `cwXKeyIsPrivate`, `cwXKeyRespell`, `cwAccountXKey`, `cwChainNode`, `cwAddressAt`, `cwMultisigAddressAt` |
-| Amounts | `cwSatToBtc`, `cwBtcToSat`, `cwFormatAmount`, `cwParseAmount`, `cwExpandExponent`, `cwAmountAdd` |
+| Amounts | `cwSatToBtc`, `cwSatToMbtc`, `cwBtcToSat`, `cwFormatAmount`, `cwParseAmount`, `cwExpandExponent`, `cwAmountAdd` |
 | Size and fees | `cwVarIntLen`, `cwInputBaseBytes`, `cwInputWitnessBytes`, `cwOutputBytes`, `cwEstimateVsize`, `cwSimpleInputs`, `cwTapscriptInputVsize`, `cwFeeFor`, `cwDustThreshold`, `cwRbfMinFee`, `cwFeeRateLabel` |
 | Coin selection | `cwSelectCoins` |
 | Transactions | `cwTxInput`, `cwTxOutput`, `cwOutpointsHex`, `cwSequencesList`, `cwOutputsHex`, `cwSighash`, `cwSighashTaproot`, `cwSignInput`, `cwSignTaproot`, `cwSignKeyPath`, `cwSignMultisig`, `cwMultisigKeys`, `cwWitnessBytes`, `cwWitnessStackEncode`, `cwWitnessStackDecode`, `cwCompressPubkey`, `cwDerToCompact`, `cwTxSerialize`, `cwTxid`, `cwTxDecode` |
@@ -590,12 +590,23 @@ bounded before any arithmetic and refused past it, never rounded: `cwLeRead` /
 satoshi form on its digits (no exponents), BOLT11's `x` and `c` fields at ten
 significant 5-bit values, a transaction's outputs or a PSBT's inputs as a SUM
 (`cwAmountAdd`, decided on 32-bit halves), and a JSON number's exponent in
-`cwExpandExponent` at three digits. The mBTC form reads through `cwBtcToSat`,
-so it stops at 90071992.54740992 mBTC. That is not yet every integer the
-wallet reads: the numbers a backend reports (a coin's value and vout, a height)
-and the wallet's own sums of coin values reach arithmetic unbounded. The
-bounds from 2026-09-25 and 2026-09-26 are verified statically; needs an OXT
-pass.
+`cwExpandExponent` at three digits. Since 2026-09-26 the rest are too: the
+numbers a backend reports (a coin's value at most 2^53 and its vout at most
+4294967295, a height, a chain tip, a history row's fee and weight, the Core
+replies' counts) are digits bounded at their parse (coin-wallet's
+`waCheckedCount`, `waCheckedHeight` and `waIsWhole`, which `waWholeAtLeast`
+and `waWholeInRange` now ask in place of `is an integer`), a reply whose coins
+would sum past 2^53 is refused before anything is committed, and every sum the
+wallet takes of coin values (coin selection, the balance, MAX, an address's
+holding, CPFP, RBF, the review) goes through `cwAmountAdd`. The mBTC form
+moves its decimal point in TEXT both ways: `cwParseAmount` refuses a nonzero
+digit past the fifth mBTC decimal (finer than a satoshi; until then it was
+dropped, so "0.00012345" mBTC read as 12 sat) and reads to 90071992547.40992
+mBTC, 2^53 satoshi (until then 90071992.54740992, a thousandth of it), and
+`cwSatToMbtc` writes mBTC with eight decimals without multiplying by 1000,
+which passed 2^53 above about 90072 BTC. CoinXT's own encoders take their
+integers as digits at most 2^53 too (`cxCheckedWhole`). These bounds are
+verified statically; needs an OXT pass.
 
 Errors are thrown strings beginning `wallet-core: `, matching CoinXT's own
 convention. Two handlers answer a question instead of throwing, for the same

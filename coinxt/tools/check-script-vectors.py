@@ -31,9 +31,12 @@ Two tiers, so it is useful in both environments:
      other gate runs the demo.
   2. VECTORS, when a C compiler is available: the whole encoder surface driven
      through the interpreter against BIP-173, BIP-350, EIP-55, the RLP
-     yellow-paper examples and a Base58Check worked example. Beside them (2b,
-     2026-09-26) coinxt-demo's EIP-55 recipient check, lifted out and run
-     with `is` as the interpreter reads it and folded as the engine does.
+     yellow-paper examples and a Base58Check worked example, and (row #10,
+     2026-09-26) every integer argument the encoders write settled as
+     digits at most 2^53, each guard planted back to the old spelling and
+     required to fail its block. Beside them (2b, 2026-09-26) coinxt-demo's
+     EIP-55 recipient check, lifted out and run with `is` as the
+     interpreter reads it and folded as the engine does.
 A missing compiler SKIPS tier 2 loudly; it never passes silently.
 
 IT IS SLOW, AND THAT IS THE PRICE, NOT A DEFECT. Tier 2 takes a couple of
@@ -2288,6 +2291,53 @@ def check_integer_arguments(c, call, F):
          refused("cxEthLegacyEncode", "the recovery id", "digits"))
 
 
+# EACH GUARD, UNDONE (row #10). The shipped line and the spelling that stands
+# where the guard was (the argument taken as it came, which is what every
+# encoder did before 2026-09-26); the block above must fail on each, so a
+# revert, a rename or a vector that cannot see its encoder fails the gate.
+# The shipped line must occur exactly once.
+_ROW10_MUTATIONS = (
+    ("cxVarInt's count, taken as it came",
+     [('   put cxCheckedWhole(pN, "9007199254740992", "cxVarInt", "the count") into tN\n',
+       '   put pN into tN\n')]),
+    ("cxUIntToBytesLE's value, taken as it came",
+     [('   put cxCheckedWhole(pValue, "9007199254740992", "cxUIntToBytesLE", \\\n'
+       '         "the value") into tRest\n', '   put pValue into tRest\n')]),
+    ("cxHexOfInt's value, taken as it came",
+     [('   put cxCheckedWhole(pValue, "9007199254740992", "cxHexOfInt", "the value") \\\n'
+       '         into tValue\n', '   put pValue into tValue\n')]),
+    ("cxEthLegacyEncode's recovery id and chain id, taken as they came",
+     [('   put cxCheckedWhole(pRecid, "3", "cxEthLegacyEncode", "the recovery id") \\\n'
+       '         into tRecid\n', '   put pRecid into tRecid\n'),
+      ('   put cxCheckedWhole(pChainId, "4503599627370477", "cxEthLegacyEncode", \\\n'
+       '         "the chain id") into tChain\n', '   put pChainId into tChain\n')]),
+)
+
+
+def check_row10_fires(c, text, F):
+    c.note("\nphase 5: every row #10 guard, undone, fails its vectors")
+    for label, pairs in _ROW10_MUTATIONS:
+        counts = [text.count(new) for new, _old in pairs]
+        c.ck("the shipped script carries the guard exactly once (%s)" % label,
+             counts, [1] * len(pairs))
+        if counts != [1] * len(pairs):
+            continue
+        mutated = text
+        for new, old in pairs:
+            mutated = mutated.replace(new, old)
+        unit = LCS.Interp(mutated)
+
+        def call(fn, *args, _unit=unit):
+            return _unit.call(fn, [to_str(a) if isinstance(a, (bytes, bytearray)) else a
+                                   for a in args])
+        inner = Checker(True)
+        try:
+            check_integer_arguments(inner, call, F)
+        except Exception as exc:                        # noqa: BLE001
+            inner.problems.append("stopped: %s: %s" % (type(exc).__name__, exc))
+        c.ck("%s, undone, FAILS its vectors" % label, len(inner.problems) > 0, True)
+
+
 
 
 
@@ -2463,6 +2513,7 @@ def main(argv):
             c.note(f"\nrunning the shipped script ({len(ip.handlers)} handlers, "
                    f"{len(ip.constants)} constants) through tools/lcs-interp.py")
             check_vectors(c, ip)
+            check_row10_fires(c, text, _phase5_fixture())
             check_taproot_bip341(c, ip)
             check_demo_eth_address(c, text)
 

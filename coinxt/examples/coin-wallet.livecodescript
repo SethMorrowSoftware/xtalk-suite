@@ -5288,17 +5288,48 @@ end cwBtcToSat
 
 function cwFormatAmount pSat, pUnit
    -- The three units a wallet offers, and nothing between them: BTC with all
-   -- eight decimals, mBTC with five, and raw satoshi. Trailing zeros are KEPT
-   -- in BTC because a column of amounts that all end at the same place is
-   -- readable and a ragged one is not.
+   -- eight decimals, mBTC with five that count (cwSatToMbtc), and raw
+   -- satoshi. Trailing zeros are KEPT because a column of amounts that all
+   -- end at the same place is readable and a ragged one is not.
    if pUnit is "sat" then
       return pSat & " sat"
    end if
    if pUnit is "mBTC" then
-      return cwSatToBtc(pSat * 1000) & " mBTC"
+      return cwSatToMbtc(pSat) & " mBTC"
    end if
    return cwSatToBtc(pSat) & " BTC"
 end cwFormatAmount
+
+function cwSatToMbtc pSat
+   -- pSat satoshi as mBTC, the spelling this wallet has always shown: eight
+   -- decimals, the last three always zero, since a satoshi is mBTC's FIFTH
+   -- decimal.
+   --
+   -- THE POINT MOVES IN TEXT, NEVER BY A MULTIPLY (2026-09-26, found beside
+   -- work-plan coinxt row #11). This was cwSatToBtc(pSat * 1000), and
+   -- pSat * 1000 passes 2^53 from 9007199254741 sat (about 90072 BTC) on:
+   -- the engine ROUNDS it with no error (suite engine note 2.4), so a
+   -- balance above that was SHOWN wrong in mBTC, and coin-wallet's
+   -- waAmountBare wrote the same rounded number into the Send box, which
+   -- reads it back as the amount to pay. Now cwSatToBtc's exact text is
+   -- re-pointed three places right: its eight decimals are the first three
+   -- digits of the mBTC whole part and five mBTC decimals, and the three
+   -- zeros keep the column the old spelling had. cwParseAmount's mBTC form
+   -- reads every one of these back to the satoshi. Verified statically;
+   -- needs an OXT pass.
+   local tBtc, tSign, tPos, tWhole, tFrac
+   put cwSatToBtc(pSat) into tBtc
+   put "" into tSign
+   if char 1 of tBtc is "-" then
+      put "-" into tSign
+      put char 2 to -1 of tBtc into tBtc
+   end if
+   put offset(".", tBtc) into tPos
+   put char 1 to (tPos - 1) of tBtc into tWhole
+   put char (tPos + 1) to -1 of tBtc into tFrac
+   return tSign & cwDecClean(tWhole & char 1 to 3 of tFrac) & "." & \
+         char 4 to 8 of tFrac & "000"
+end cwSatToMbtc
 
 function cwParseAmount pText, pUnit
    -- THE SAT FORM IS DIGITS WORTH AT MOST 2^53, CHECKED AS TEXT FIRST
@@ -5339,10 +5370,87 @@ function cwParseAmount pText, pUnit
       return (tSign & cwDecClean(tDigits)) + 0
    end if
    if pUnit is "mBTC" then
-      return cwIntDiv(cwBtcToSat(tText), 1000)
+      return cwMbtcToSat(pText, tText)
    end if
    return cwBtcToSat(tText)
 end cwParseAmount
+
+private function cwMbtcToSat pTyped, pText
+   -- cwParseAmount's mBTC form: pText (trimmed) as satoshi, or a refusal
+   -- that quotes pTyped, what the person wrote.
+   --
+   -- THE POINT MOVES IN TEXT, AND A SATOSHI IS THE FIFTH DECIMAL (2026-09-26;
+   -- the suite's docs/WORK-PLAN.md, coinxt row #11). This read the mBTC text
+   -- through cwBtcToSat AS IF IT WERE BTC and then divided by 1000
+   -- (cwIntDiv), which TRUNCATED a sixth to eighth decimal with no word:
+   -- "0.00012345" mBTC read as 12 sat and "0.000001" mBTC as 0 (a headless
+   -- probe, 2026-09-25), so what a person typed was not what the Send box
+   -- paid; and it capped the form at 90071992.54740992 mBTC, a thousandth of
+   -- the bound, since the BTC parser's limit applied to the mBTC number. Now:
+   --   * the SHAPE is cwBtcToSat's, checked here so a refusal quotes what was
+   --     typed: an optional minus, digits, at most one point, an empty whole
+   --     part read as zero;
+   --   * a digit past the fifth decimal must be a ZERO, else the amount is
+   --     refused as finer than a satoshi (cwBtcToSat refuses a ninth BTC
+   --     decimal the same way). Zeros there are taken: this wallet writes
+   --     mBTC with eight decimals, the last three always zero (cwSatToMbtc,
+   --     and waAmountBare into the Send box), and has to read those back;
+   --   * the point then moves three places left IN TEXT (the whole part is
+   --     zero-padded to three digits and split), and cwBtcToSat reads the
+   --     result: its 2^53 bound, decided on the digits, is the only bound,
+   --     so the form now reads to 90071992547.40992 mBTC, 2^53 satoshi, and
+   --     a refusal there names the BTC equivalent it checked.
+   -- No arithmetic touches the typed number. Verified statically; needs an
+   -- OXT pass.
+   local tSign, tText, tPos, tWhole, tFrac, tI, tCount
+   put pText into tText
+   if tText is "" then
+      throw "wallet-core: cwParseAmount: an empty amount."
+   end if
+   put "" into tSign
+   if char 1 of tText is "-" then
+      put "-" into tSign
+      put char 2 to -1 of tText into tText
+   end if
+   put offset(".", tText) into tPos
+   if tPos is 0 then
+      put tText into tWhole
+      put "" into tFrac
+   else
+      put char 1 to (tPos - 1) of tText into tWhole
+      put char (tPos + 1) to -1 of tText into tFrac
+      if offset(".", tFrac) is not 0 then
+         throw "wallet-core: cwParseAmount: more than one decimal point."
+      end if
+   end if
+   put the number of chars of tWhole into tCount
+   repeat with tI = 1 to tCount
+      if offset(char tI of tWhole, "0123456789") is 0 then
+         throw "wallet-core: cwParseAmount: " & quote & pTyped & quote & \
+               " is not a decimal amount."
+      end if
+   end repeat
+   put the number of chars of tFrac into tCount
+   repeat with tI = 1 to tCount
+      if offset(char tI of tFrac, "0123456789") is 0 then
+         throw "wallet-core: cwParseAmount: " & quote & pTyped & quote & \
+               " is not a decimal amount."
+      end if
+   end repeat
+   repeat with tI = 6 to tCount
+      if char tI of tFrac is not "0" then
+         throw "wallet-core: cwParseAmount: a satoshi is the smallest unit, " & \
+               "and in mBTC it is the fifth decimal; " & quote & pTyped & \
+               quote & " goes past it."
+      end if
+   end repeat
+   put char 1 to 5 of tFrac into tFrac
+   repeat while the number of chars of tWhole < 3
+      put "0" before tWhole
+   end repeat
+   return cwBtcToSat(tSign & char 1 to -4 of tWhole & "." & \
+         char -3 to -1 of tWhole & tFrac)
+end cwMbtcToSat
 
 -- ==============================================================================
 -- SIZE, WEIGHT AND FEES
@@ -5732,10 +5840,16 @@ private function cwSelectionResult pSel, pTargetSat, pFeeRate, pInputType, pOutp
    put cwCoinSpecs(pSel, pInputType, pM, pCosigners) into tIns
    put cwEstimateVsize(tIns, tOuts) into tVsize
    put cwFeeFor(tVsize, pFeeRate) into tFee
+   -- THE SELECTION'S TOTAL THROUGH cwAmountAdd (2026-09-26; the suite's
+   -- docs/WORK-PLAN.md, coinxt row #9): each coin is at most 2^53, their
+   -- sum need not be, and a bare `add` past 2^53 ROUNDS on the engine with
+   -- no error (suite engine note 2.4) - the change and the fee are this
+   -- total minus the rest, so a rounded total is a fee off by a few
+   -- satoshi. The family interpreter stops there; the engine does not.
    put 0 into tTotal
    repeat with tI = 1 to tCount
       put pSel[tI] into tCoin
-      add tCoin["value"] to tTotal
+      put cwAmountAdd(tTotal, tCoin["value"], "cwSelectCoins") into tTotal
    end repeat
    put "" into tOut
    put pSel into tOut["selected"]
@@ -5897,10 +6011,16 @@ private function cwBranchAndBound pPool, pTargetSat, pFeeRate, pInputType, pOutp
          into tLongTermCost
    put tLongTermCost + tChangeCost into tCostOfChange
    put tLo + tCostOfChange into tHi
-   -- the suffix sums: what is still reachable from each position on
+   -- the suffix sums: what is still reachable from each position on.
+   -- THROUGH cwAmountAdd (2026-09-26; work-plan coinxt row #9): tRemain[1]
+   -- is the pool's whole effective value, a sum a bare `+` rounds past 2^53
+   -- with no error on the engine (suite engine note 2.4). Every other sum
+   -- this search forms - tValue, a subset's, and tValue + tRemain[tDepth],
+   -- which takes each coin at most once - is at most tRemain[1], so bounding
+   -- that one bounds them all, and the hot loop below keeps its plain `add`.
    put 0 into tRemain[tCount + 1]
    repeat with tI = tCount down to 1
-      put tRemain[tI + 1] + tValues[tI] into tRemain[tI]
+      put cwAmountAdd(tRemain[tI + 1], tValues[tI], "cwSelectCoins") into tRemain[tI]
    end repeat
    put 0 into tValue
    put 1 into tDepth
@@ -14223,7 +14343,7 @@ constant kWaVersion = "1.2.0"
 -- text before it is offered, the offer names the version and the SHA-256,
 -- and nothing replaces the script until you press Update.
 constant kWaUpdateUrl = "https://raw.githubusercontent.com/SethMorrowSoftware/xtalk-suite/main/coinxt/examples/coin-wallet.livecodescript"
-constant kWaUiVersion = "ui-c9ceb65b44b0"
+constant kWaUiVersion = "ui-2f38a022d166"
 
 -- The window, inside the family's 720p budget (tools/check-stack-size.py).
 constant kWaWidth = 1200
@@ -16926,12 +17046,19 @@ command waRecomputeBalance
          -- gone, by this wallet's own hand; its change is counted as pending
          next repeat
       end if
+      -- EVERY SUM OF COIN VALUES GOES THROUGH cwAmountAdd (2026-09-26;
+      -- work-plan coinxt row #9): each value is at most 2^53, a bare `add`
+      -- of them is not, and past 2^53 the engine rounds with no error
+      -- (suite engine note 2.4). The merges bound sWaUtxos's total before
+      -- they commit it (waCoinTotal), so these cannot refuse in practice;
+      -- they are bounded anyway, one rule for every sum.
       if sWaFrozen[tKey] is "true" then
-         add tRec["value"] to tFrozen
+         put cwAmountAdd(tFrozen, tRec["value"], "waRecomputeBalance") into tFrozen
       else if tRec["confirmations"] + 0 > 0 then
-         add tRec["value"] to tConfirmed
+         put cwAmountAdd(tConfirmed, tRec["value"], "waRecomputeBalance") \
+               into tConfirmed
       else
-         add tRec["value"] to tPending
+         put cwAmountAdd(tPending, tRec["value"], "waRecomputeBalance") into tPending
       end if
    end repeat
    put tConfirmed into sWaBalance["confirmed"]
@@ -16990,11 +17117,18 @@ private function waAmountBare pSat
    -- read "1.5". On satoshi it threw instead, which is why only one of the
    -- three units was silently wrong - the most dangerous arrangement there
    -- is, because two units looked fine.
+   --
+   -- mBTC is cwSatToMbtc (2026-09-26): this was cwSatToBtc(pSat * 1000), and
+   -- the multiply passes 2^53 above about 90072 BTC, where the engine rounds
+   -- it with no error (suite engine note 2.4), so the Send box was handed a
+   -- ROUNDED amount to pay. cwSatToMbtc moves the point in text, and
+   -- cwParseAmount's mBTC form reads its eight decimals (the last three
+   -- zero) back to the satoshi.
    if sWaUnit is "sat" then
       return pSat
    end if
    if sWaUnit is "mBTC" then
-      return cwSatToBtc(pSat * 1000)
+      return cwSatToMbtc(pSat)
    end if
    return cwSatToBtc(pSat)
 end waAmountBare
@@ -18041,7 +18175,9 @@ private function waBalanceByAddress
    put cwListCount(sWaUtxos) into tCount
    repeat with tI = 1 to tCount
       put sWaUtxos[tI] into tRec
-      add tRec["value"] to tOut[tRec["address"]]
+      -- a sum of coin values, through cwAmountAdd (2026-09-26; row #9)
+      put cwAmountAdd(tOut[tRec["address"]] + 0, tRec["value"], \
+            "waBalanceByAddress") into tOut[tRec["address"]]
    end repeat
    return tOut
 end waBalanceByAddress
@@ -18773,7 +18909,11 @@ command waBuildSpend pSign, pAsPsbt
    if tRate is not a number or tRate <= 0 then
       throw "the fee rate must be a positive number of sat/vB."
    end if
-   put field "sd_locktime" into tLock
+   -- TRIMMED (2026-09-26): CoinXT's encoders take an integer as a run of
+   -- digits and nothing else since then (work-plan coinxt row #10), so the
+   -- blank a field can carry after a typed locktime, which `is an integer`
+   -- forgave and the arithmetic ignored, would now be refused a step later
+   put cwTrim(field "sd_locktime") into tLock
    if tLock is not an integer or tLock < 0 then
       put 0 into tLock
    end if
@@ -18792,7 +18932,10 @@ command waBuildSpend pSign, pAsPsbt
       if tRec["max"] is true then
          put tI into tMaxIndex
       else
-         add tRec["value"] to tTarget
+         -- the payments' sum, through cwAmountAdd (2026-09-26; work-plan
+         -- coinxt row #9): each is at most 2^53 (cwParseAmount), two of
+         -- them need not be, and the engine rounds a bare sum past it
+         put cwAmountAdd(tTarget, tRec["value"], "waBuildSpend") into tTarget
       end if
       put cwListAdd(tOutTypes, tRec["kind"]) into tOutTypes
    end repeat
@@ -19213,7 +19356,11 @@ private function waMaxSpend pCoins, pOutTypes, pRate, pFixedSat
          next repeat
       end if
       put cwListAdd(tSel, tRec) into tSel
-      add tRec["value"] to tTotal
+      -- every sum here through cwAmountAdd (2026-09-26; work-plan coinxt
+      -- row #9), the fee plus the fixed outputs too: past 2^53 the engine
+      -- rounds a bare sum with no error, and this one decides whether the
+      -- MAX output is paid at all
+      put cwAmountAdd(tTotal, tRec["value"], "waMaxSpend") into tTotal
    end repeat
    put waSelectedInputSpecs(tSel) into tIns
    put cwEstimateVsize(tIns, pOutTypes) into tVsize
@@ -19230,7 +19377,7 @@ private function waMaxSpend pCoins, pOutTypes, pRate, pFixedSat
       put "no spendable coins" into tOut["why"]
       return tOut
    end if
-   if tTotal <= (tFee + pFixedSat) then
+   if tTotal <= cwAmountAdd(tFee, pFixedSat, "waMaxSpend") then
       put false into tOut["ok"]
       if pFixedSat > 0 then
          put "the fee (" & tFee & " sat) plus the fixed-amount outputs (" & \
@@ -19278,7 +19425,8 @@ function waReviewText pPays, pSel, pFee, pChange, pChangeRec, pVsize, pRate, pSe
    put cwListCount(pPays) into tCount
    repeat with tI = 1 to tCount
       put pPays[tI] into tRec
-      add tRec["value"] to tTotalOut
+      -- a sum of amounts, through cwAmountAdd (2026-09-26; row #9)
+      put cwAmountAdd(tTotalOut, tRec["value"], "waReviewText") into tTotalOut
       if char 1 to 9 of tRec["kind"] is "nulldata:" then
          put "  data   " & char 10 to -1 of tRec["kind"] & " bytes in an " & \
                "OP_RETURN output (value 0; it pays nobody)" & return after tOut
@@ -19609,7 +19757,8 @@ command waPaintCoins
       if sWaSelected[tKey] is "true" then
          put tRows & "[x]" & tTab into tRows
          add 1 to tSelCount
-         add tRec["value"] to tSelValue
+         -- a sum of coin values, through cwAmountAdd (2026-09-26; row #9)
+         put cwAmountAdd(tSelValue, tRec["value"], "waPaintCoins") into tSelValue
       else
          put tRows & "[ ]" & tTab into tRows
       end if
@@ -19957,7 +20106,8 @@ command waCpfpBuild pRec, pKids
       put pKids[tI] into tRec
       put cwListAdd(tInputs, cwTxInput(tRec["txid"], tRec["vout"], kCwSeqRbf)) into tInputs
       put cwListAdd(tSel, tRec) into tSel
-      add tRec["value"] to tTotalIn
+      -- a sum of coin values, through cwAmountAdd (2026-09-26; row #9)
+      put cwAmountAdd(tTotalIn, tRec["value"], "waCpfpBuild") into tTotalIn
    end repeat
    put waEmptyList() into tOutTypes
    put cwListAdd(tOutTypes, waChangeType()) into tOutTypes
@@ -20193,7 +20343,10 @@ command waBumpFee pRec
    repeat with tI = 1 to tCount
       put tSel[tI] into tRec
       put cwListAdd(tInputs, cwTxInput(tRec["txid"], tRec["vout"], tSeq)) into tInputs
-      add tRec["value"] to tTotalIn
+      -- the sums below through cwAmountAdd (2026-09-26; work-plan coinxt
+      -- row #9): their difference is the fee this replacement pays, and a
+      -- bare sum past 2^53 rounds with no error (suite engine note 2.4)
+      put cwAmountAdd(tTotalIn, tRec["value"], "waBumpFee") into tTotalIn
    end repeat
    put waEmptyList() into tOutputs
    put 0 into tTotalOut
@@ -20201,10 +20354,10 @@ command waBumpFee pRec
    repeat with tI = 1 to tCount
       put tPays[tI] into tRec
       put cwListAdd(tOutputs, cwTxOutput(tRec["value"], tRec["script"])) into tOutputs
-      add tRec["value"] to tTotalOut
+      put cwAmountAdd(tTotalOut, tRec["value"], "waBumpFee") into tTotalOut
    end repeat
    put cwListAdd(tOutputs, cwTxOutput(tNewChange, tChangeRec["script"])) into tOutputs
-   add tNewChange to tTotalOut
+   put cwAmountAdd(tTotalOut, tNewChange, "waBumpFee") into tTotalOut
    put waSignSpend(tInputs, tOutputs, tSel, tOld["locktime"]) into tRaw
    put cwTxDecode(tRaw) into tNew
    -- CHECK THE ARITHMETIC AGAINST THE TRANSACTION, not against the estimate.
@@ -21272,7 +21425,8 @@ function waLeafHeld pAddress
    repeat with tI = 1 to tCount
       put sWaUtxos[tI] into tRec
       if tRec["address"] is pAddress then
-         add tRec["value"] to tSum
+         -- a sum of coin values, through cwAmountAdd (2026-09-26; row #9)
+         put cwAmountAdd(tSum, tRec["value"], "waLeafHeld") into tSum
       end if
    end repeat
    return tSum
@@ -23663,12 +23817,17 @@ private function waCheckedHeight pText, pWhere
    -- NESTED for the same reason waSetSuggestedRate is: `or` evaluates both
    -- sides, and `<!DOCTYPE html>` is exactly the value this guard exists to
    -- catch.
-   if pText is not an integer then
-      throw "the " & pWhere & " backend answered the chain-tip request with " & \
-            "something that is not a height: " & char 1 to 80 of pText
-   end if
-   if pText < 0 then
-      -- SAME PHRASE AS THE BRANCH ABOVE, deliberately: a caller (and the
+   --
+   -- DIGITS, AT MOST 2^53, DECIDED ON THE TEXT (2026-09-26; work-plan
+   -- coinxt row #9). It asked `is an integer`, which the engine answers yes
+   -- to for "1e20" (so that was a chain tip, and every confirmation count
+   -- beneath it a negative number near -1e20), "3.0", "+3" and twenty nines
+   -- (a tip ROUNDED on its way in, suite engine note 2.4). A tip is plain
+   -- digits now, and no larger than the wallet's exact limit.
+   local tText
+   put cwTrim(pText) into tText
+   if char 1 of tText is "-" and waIsDigits(char 2 to -1 of tText) then
+      -- SAME PHRASE AS THE BRANCH BELOW, deliberately: a caller (and the
       -- gate) matches one string to mean "that was not a chain tip", and two
       -- wordings for one refusal is how a check ends up asserting a message
       -- instead of a behaviour.
@@ -23676,7 +23835,16 @@ private function waCheckedHeight pText, pWhere
             "something that is not a height, being negative: " & \
             char 1 to 80 of pText
    end if
-   return cwTrim(pText)
+   if not waIsDigits(tText) then
+      throw "the " & pWhere & " backend answered the chain-tip request with " & \
+            "something that is not a height: " & char 1 to 80 of pText
+   end if
+   if cwDecCompare(tText, "9007199254740992") > 0 then
+      throw "the " & pWhere & " backend answered the chain-tip request with " & \
+            "something that is not a height, being past 2^53: " & \
+            char 1 to 80 of pText
+   end if
+   return tText + 0
 end waCheckedHeight
 
 private function waCheckedTxid pText, pWhere
@@ -25139,21 +25307,92 @@ function waWholeAtLeast pValue, pMin
    -- on 2026-09-04) and each fix nested one site. A named question closes
    -- the class instead: every new Core guard asks it and cannot get the
    -- order wrong.
-   if pValue is not an integer then
+   --
+   -- "WHOLE" IS DECIDED ON THE DIGITS, AT MOST 2^53 (2026-09-26; work-plan
+   -- coinxt row #9). It asked `is an integer`, which the engine answers yes
+   -- to for "1e20", "3.0", "+3" and twenty nines (suite engine note 2.12),
+   -- so a node's scan height of "1e20" became the chain tip and a twenty-
+   -- digit height or size ROUNDED on its way into the arithmetic after it
+   -- (2.4). waIsWhole settles the text first; only then is it a number.
+   if not waIsWhole(pValue) then
       return false
    end if
-   return pValue >= pMin
+   return cwTrim(pValue) + 0 >= pMin
 end waWholeAtLeast
 
 function waWholeInRange pValue, pMin, pMax
-   if pValue is not an integer then
+   local tValue
+   if not waIsWhole(pValue) then
       return false
    end if
-   if pValue < pMin then
+   put cwTrim(pValue) + 0 into tValue
+   if tValue < pMin then
       return false
    end if
-   return pValue <= pMax
+   return tValue <= pMax
 end waWholeInRange
+
+function waIsWhole pValue
+   -- A whole number this wallet holds EXACTLY: past its edge blanks, an
+   -- optional minus and a non-empty run of ASCII digits, no larger than
+   -- 2^53 (cwLeRead's bound, and cwAmountAdd's), decided by cwDecCompare on
+   -- the DIGITS so no wide number is formed or compared (suite engine notes
+   -- 2.4, 2.10). The shape `is an integer` accepted and this refuses -
+   -- "1e20", "3.0", "+3", "0x1F" - is the whole point: those are numbers to
+   -- the engine's arithmetic, and a digit count cannot bound an exponent.
+   -- Verified statically; needs an OXT pass.
+   local tText
+   put cwTrim(pValue) into tText
+   if char 1 of tText is "-" then
+      put char 2 to -1 of tText into tText
+   end if
+   if not waIsDigits(tText) then
+      return false
+   end if
+   return cwDecCompare(tText, "9007199254740992") <= 0
+end waIsWhole
+
+private function waCheckedCount pText, pMax, pWhat
+   -- A count or an amount a backend reported, as the number it spells, or a
+   -- refusal naming pWhat and what came (2026-09-26; work-plan coinxt row
+   -- #9). A non-empty run of ASCII digits no larger than pMax (a clean digit
+   -- string: 4294967295 for a vout, 2^53 for satoshi), decided on the
+   -- DIGITS by cwDecCompare before any number exists. waIsDigits alone
+   -- admitted twenty nines, which `+ 0` then ROUNDED past 2^53 with no error
+   -- on the engine (suite engine note 2.4), where the family interpreter
+   -- stops. ONE handler for every transport that lists coins (trap 37).
+   -- The refusal reaches waNetFail through the delivering try, as "could not
+   -- read the answer", which is what it is. Verified statically; needs an
+   -- OXT pass.
+   if not waIsDigits(pText) then
+      throw "the backend listed " & pWhat & " that is not a whole number: " & \
+            char 1 to 40 of pText
+   end if
+   if cwDecCompare(pText, pMax) > 0 then
+      throw "the backend listed " & pWhat & " of more than " & pMax & \
+            ", which no real one is: " & char 1 to 40 of pText
+   end if
+   return pText + 0
+end waCheckedCount
+
+function waCoinTotal pList, pWho
+   -- The satoshi a list of coin records holds, summed through cwAmountAdd
+   -- (2026-09-26; work-plan coinxt row #9): each value is at most 2^53 once
+   -- waCheckedCount has read it, but a SUM of them need not be, and past
+   -- 2^53 the engine rounds a total with no error (suite engine note 2.4).
+   -- A merge asks this of the list it is about to commit, BEFORE it commits
+   -- (trap 38), so every sum this wallet later takes of sWaUtxos - the
+   -- balance, a MAX spend, an address's holding - is of coins whose total is
+   -- held exactly; cwAmountAdd refuses, naming pWho, where it would not be.
+   local tI, tCount, tRec, tTotal
+   put 0 into tTotal
+   put cwListCount(pList) into tCount
+   repeat with tI = 1 to tCount
+      put pList[tI] into tRec
+      put cwAmountAdd(tTotal, tRec["value"], pWho) into tTotal
+   end repeat
+   return tTotal
+end waCoinTotal
 
 function waNumAtLeast pValue, pMin
    -- The same question for a value that may have a decimal point: a fee
@@ -26326,9 +26565,18 @@ command waMergeCoreUnspent pNode
    -- directions: a coin the node still lists after we broadcast a spend of
    -- it loses its mark (the spend never reached the node), and a coin the
    -- node lists at 0 confirmations is a real unconfirmed coin.
-   local tList, tI, tCount, tItem, tRec, tAddr, tKey, tTotal
+   -- ITS NUMBERS ARE BOUNDED WHERE THEY ARE READ (2026-09-26; work-plan
+   -- coinxt row #9): the vout and the confirmations went through `+ 0` on
+   -- whatever came (an engine error on text that is no number, a rounded
+   -- value past 2^53, suite engine note 2.4), and the total was a bare sum.
+   -- The vout is waCheckedCount's, as every other transport's is; a
+   -- confirmation count that is not a whole number held exactly is read as
+   -- none; the total is waCoinTotal's, taken before anything is committed
+   -- (trap 38), marks included.
+   local tList, tI, tCount, tItem, tRec, tAddr, tKey, tTotal, tConfText
+   local tUnmark, tUnmarked
    put waEmptyList() into tList
-   put 0 into tTotal
+   put waEmptyList() into tUnmark
    put cwJsonCount(pNode) into tCount
    repeat with tI = 1 to tCount
       put cwJsonAt(pNode, tI) into tItem
@@ -26339,9 +26587,14 @@ command waMergeCoreUnspent pNode
       put "" into tRec
       put tAddr into tRec["address"]
       put cwJsonGet(tItem, "txid") into tRec["txid"]
-      put cwJsonGet(tItem, "vout") + 0 into tRec["vout"]
+      put waCheckedCount(cwJsonGet(tItem, "vout"), "4294967295", \
+            "a coin vout") into tRec["vout"]
       put cwBtcToSat(cwJsonGet(tItem, "amount")) into tRec["value"]
-      put cwJsonGet(tItem, "confirmations") + 0 into tRec["confirmations"]
+      put cwJsonGet(tItem, "confirmations") into tConfText
+      put 0 into tRec["confirmations"]
+      if waIsWhole(tConfText) then
+         put cwTrim(tConfText) + 0 into tRec["confirmations"]
+      end if
       if tRec["confirmations"] > 0 and sWaTipHeight is not "" then
          put sWaTipHeight - tRec["confirmations"] + 1 into tRec["height"]
       else
@@ -26349,12 +26602,20 @@ command waMergeCoreUnspent pNode
       end if
       put tRec["txid"] & ":" & tRec["vout"] into tKey
       if sWaSpentBy[tKey] is not "" then
+         put cwListAdd(tUnmark, tKey) into tUnmark
+      end if
+      put cwListAdd(tList, tRec) into tList
+   end repeat
+   put waCoinTotal(tList, "waMergeCoreUnspent") into tTotal
+   put cwListCount(tUnmark) into tCount
+   repeat with tI = 1 to tCount
+      put tUnmark[tI] into tKey
+      put sWaSpentBy[tKey] into tUnmarked
+      if tUnmarked is not "" then
          waLog "the node still lists " & tKey & " as unspent, which " & \
-               sWaSpentBy[tKey] & " spent when it was broadcast; offering it again"
+               tUnmarked & " spent when it was broadcast; offering it again"
          put "" into sWaSpentBy[tKey]
       end if
-      add tRec["value"] to tTotal
-      put cwListAdd(tList, tRec) into tList
    end repeat
    put tList into sWaUtxos
    waLog "the node's watch wallet lists " & cwListCount(tList) & \
@@ -26370,6 +26631,7 @@ command waMergeCoreHistory pNode
    -- transaction that pays two of our addresses is two rows, and the
    -- History screen de-duplicates by txid when it paints.
    local tList, tI, tCount, tItem, tRec, tAddr, tFee, tHeight, tSeen, tPaged
+   local tConfText
    put waEmptyList() into tList
    put cwJsonCount(pNode) into tCount
    repeat with tI = 1 to tCount
@@ -26378,7 +26640,16 @@ command waMergeCoreHistory pNode
       put "" into tRec
       put tAddr into tRec["address"]
       put cwJsonGet(tItem, "txid") into tRec["txid"]
-      put cwJsonGet(tItem, "confirmations") + 0 into tRec["confirmations"]
+      -- a whole number held exactly, or none (2026-09-26; work-plan coinxt
+      -- row #9): `+ 0` on whatever came was an engine error on text that is
+      -- no number and a rounded count past 2^53 (suite engine note 2.4).
+      -- Core writes -1 and below for a conflicted transaction, so the minus
+      -- is kept.
+      put cwJsonGet(tItem, "confirmations") into tConfText
+      put 0 into tRec["confirmations"]
+      if waIsWhole(tConfText) then
+         put cwTrim(tConfText) + 0 into tRec["confirmations"]
+      end if
       put cwJsonGet(tItem, "blockheight") into tHeight
       if waWholeAtLeast(tHeight, 0) then
          put tHeight into tRec["height"]
@@ -26457,7 +26728,11 @@ command waMergeScan pNode
       put "" into tRec
       put tAddr into tRec["address"]
       put cwJsonGet(tItem, "txid") into tRec["txid"]
-      put cwJsonGet(tItem, "vout") + 0 into tRec["vout"]
+      -- the vout is waCheckedCount's, as every transport's is (2026-09-26;
+      -- work-plan coinxt row #9): `+ 0` on whatever came was an engine
+      -- error on text that is no number and a rounded vout past 2^53
+      put waCheckedCount(cwJsonGet(tItem, "vout"), "4294967295", \
+            "a coin vout") into tRec["vout"]
       -- Core prints an amount with exactly eight decimals, as text here
       put cwBtcToSat(cwJsonGet(tItem, "amount")) into tRec["value"]
       put cwJsonGet(tItem, "height") into tHeight
@@ -26473,9 +26748,12 @@ command waMergeScan pNode
       if sWaSpentBy[tKey] is not "" then
          add 1 to tMarked
       end if
-      add tRec["value"] to tTotal
       put cwListAdd(tList, tRec) into tList
    end repeat
+   -- the scanned coins' total for the log, and below the whole list's,
+   -- through cwAmountAdd before anything is committed (2026-09-26; work-plan
+   -- coinxt row #9): a bare sum rounds past 2^53 with no error
+   put waCoinTotal(tList, "waMergeScan") into tTotal
    put 0 into tKept
    put cwListCount(sWaUtxos) into tCount
    repeat with tI = 1 to tCount
@@ -26489,6 +26767,7 @@ command waMergeScan pNode
          add 1 to tKept
       end if
    end repeat
+   get waCoinTotal(tList, "waMergeScan")
    put tList into sWaUtxos
    put 0 into tFound
    repeat for each key tAddr in tAddrs
@@ -27784,8 +28063,9 @@ command waMergeUtxos pAddress, pNode, pShape
    -- makes a spent coin disappear; merging would leave the wallet claiming a
    -- balance it no longer has.
    local tList, tI, tCount, tRec, tItem, tHeight, tConf, tKey
-   local tTxid, tVout, tValue
+   local tTxid, tVout, tValue, tUnmark, tUnmarked
    put waEmptyList() into tList
+   put waEmptyList() into tUnmark
    put cwListCount(sWaUtxos) into tCount
    repeat with tI = 1 to tCount
       put sWaUtxos[tI] into tRec
@@ -27824,21 +28104,31 @@ command waMergeUtxos pAddress, pNode, pShape
          throw "the backend listed a coin whose txid is not 64 hex chars: " & \
                char 1 to 80 of tTxid
       end if
-      if not waIsDigits(tVout) or not waIsDigits(tValue) then
-         throw "the backend listed a coin whose vout or value is not a whole " & \
-               "number: " & char 1 to 40 of tVout & " / " & char 1 to 40 of tValue
-      end if
+      -- AND BOUNDED ON THEIR DIGITS (2026-09-26; work-plan coinxt row #9):
+      -- waIsDigits admitted twenty nines, and `+ 0` then ROUNDED a vout or a
+      -- value past 2^53 with no error on the engine (suite engine note 2.4).
+      -- A vout is four bytes on the wire, a value at most 2^53 satoshi (the
+      -- whole supply is under a quarter of that).
+      put waCheckedCount(tVout, "4294967295", "a coin vout") into tVout
+      put waCheckedCount(tValue, "9007199254740992", "a coin value") into tValue
       put cwLower(tTxid) into tRec["txid"]
-      put tVout + 0 into tRec["vout"]
-      put tValue + 0 into tRec["value"]
+      put tVout into tRec["vout"]
+      put tValue into tRec["value"]
       -- The height is not refused, because its absent and negative spellings
       -- are legitimate: Esplora omits it for an unconfirmed coin, Electrum
       -- says 0, and -1 when the parent is unconfirmed too. Anything that is
       -- not an integer is treated as unconfirmed rather than fed to the
       -- subtraction. NESTED, not one `and` chain: the right operand would be
-      -- evaluated even when the guard said no (engine notes 2.5).
+      -- evaluated even when the guard said no (engine notes 2.5). But a
+      -- height that IS digits past 2^53 is not absent and not negative: it
+      -- is a number no chain has, which `+ 0` would round (2026-09-26), so it
+      -- is refused with the rest of the reply.
       put 0 into tConf
       if waIsInt(tHeight) then
+         if not waIsWhole(tHeight) then
+            throw "the backend listed a coin at a height past 2^53, which no " & \
+                  "chain has: " & char 1 to 40 of tHeight
+         end if
          if tHeight + 0 > 0 and sWaTipHeight is not "" then
             put sWaTipHeight - tHeight + 1 into tConf
          end if
@@ -27849,14 +28139,31 @@ command waMergeUtxos pAddress, pNode, pShape
       -- as unspent after this wallet broadcast a spend of it means the
       -- backend has no such spend (dropped, or never seen), and holding the
       -- coin back would hide money the network says is there - so the mark
-      -- comes off, and the log names the transaction it was.
+      -- comes off, and the log names the transaction it was. The keys are
+      -- COLLECTED here and the marks come off below, after the last check
+      -- that can refuse this reply (trap 38; 2026-09-26): a refused reply
+      -- changes nothing, the marks included.
       put tRec["txid"] & ":" & tRec["vout"] into tKey
       if sWaSpentBy[tKey] is not "" then
-         waLog "the backend still lists " & tKey & " as unspent, which " & \
-               sWaSpentBy[tKey] & " spent when it was broadcast; offering it again"
-         put "" into sWaSpentBy[tKey]
+         put cwListAdd(tUnmark, tKey) into tUnmark
       end if
       put cwListAdd(tList, tRec) into tList
+   end repeat
+   -- THE WALLET'S TOTAL, BOUNDED BEFORE IT IS COMMITTED (2026-09-26;
+   -- work-plan coinxt row #9): every value is at most 2^53, their sum need
+   -- not be (two coins of 2^52 + 1), and every later sum of sWaUtxos - the
+   -- balance, MAX, an address's holding - would then round. waCoinTotal
+   -- refuses such a reply whole.
+   get waCoinTotal(tList, "waMergeUtxos")
+   put cwListCount(tUnmark) into tCount
+   repeat with tI = 1 to tCount
+      put tUnmark[tI] into tKey
+      put sWaSpentBy[tKey] into tUnmarked
+      if tUnmarked is not "" then
+         waLog "the backend still lists " & tKey & " as unspent, which " & \
+               tUnmarked & " spent when it was broadcast; offering it again"
+         put "" into sWaSpentBy[tKey]
+      end if
    end repeat
    put tList into sWaUtxos
 end waMergeUtxos
@@ -27967,7 +28274,7 @@ command waMergeHistory pAddress, pNode, pShape
    -- touching two of this wallet's addresses appears once per address -
    -- which is what makes waUsedAddresses right, and is why the History
    -- screen de-duplicates by txid when it paints.
-   local tList, tI, tCount, tRec, tItem, tHeight, tConf
+   local tList, tI, tCount, tRec, tItem, tHeight, tConf, tFee, tWeight
    put waEmptyList() into tList
    put cwListCount(sWaHistory) into tCount
    repeat with tI = 1 to tCount
@@ -27989,16 +28296,40 @@ command waMergeHistory pAddress, pNode, pShape
          put cwJsonGet(tItem, "status/block_height") into tHeight
          -- Esplora says what a transaction paid and weighed; Electrum's
          -- history does not, and a child-pays-for-parent bump (waCpfpBuild)
-         -- needs both, so they are kept where they are offered (2026-09-04)
-         put cwJsonGet(tItem, "fee") into tRec["fee"]
-         if cwJsonGet(tItem, "weight") is an integer then
-            put cwCeilDiv(cwJsonGet(tItem, "weight"), 4) into tRec["vsize"]
+         -- needs both, so they are kept where they are offered (2026-09-04).
+         -- BOTH AS WHOLE NUMBERS THE WALLET HOLDS EXACTLY (2026-09-26;
+         -- work-plan coinxt row #9): the fee was stored as whatever came and
+         -- the weight asked `is an integer`, so "1e20" or twenty nines went
+         -- on to the fee bump's arithmetic, where the engine rounds past 2^53
+         -- (suite engine note 2.4). A fee or weight that is not one is not
+         -- kept, which is the case the bump already handles (it asks the
+         -- backend for the parent instead).
+         put cwJsonGet(tItem, "fee") into tFee
+         if waWholeAtLeast(tFee, 0) then
+            put cwTrim(tFee) + 0 into tRec["fee"]
+         end if
+         put cwJsonGet(tItem, "weight") into tWeight
+         if waWholeAtLeast(tWeight, 0) then
+            put cwCeilDiv(cwTrim(tWeight) + 0, 4) into tRec["vsize"]
          end if
       end if
-      if tHeight is not "" and tHeight + 0 > 0 and sWaTipHeight is not "" then
-         put sWaTipHeight - tHeight + 1 into tConf
-      else
-         put 0 into tConf
+      -- THE HEIGHT, digits at most 2^53 (2026-09-26): `tHeight + 0` ran on
+      -- whatever came, so text that was no number was an engine error from
+      -- inside the reply (`and` evaluates both sides, engine note 2.5), and
+      -- twenty digits ROUNDED into the confirmation count. Absent, zero and
+      -- negative stay unconfirmed, as before; digits past 2^53 refuse the
+      -- reply, as waMergeUtxos does for a coin.
+      if waIsInt(tHeight) then
+         if not waIsWhole(tHeight) then
+            throw "the backend listed a transaction at a height past 2^53, " & \
+                  "which no chain has: " & char 1 to 40 of tHeight
+         end if
+      end if
+      put 0 into tConf
+      if waWholeAtLeast(tHeight, 1) then
+         if sWaTipHeight is not "" then
+            put sWaTipHeight - tHeight + 1 into tConf
+         end if
       end if
       put tConf into tRec["confirmations"]
       put tHeight into tRec["height"]
