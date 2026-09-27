@@ -806,9 +806,9 @@ loopbacks fail where the members' own do not, and that is a defect in the paste.
 
 **The Windows machine, 2026-09-24 to 09-26: the paste's defect, not the
 machine's.** The paste's two loopbacks stalled there in every D-23 paste run on
-record, six (three on 2026-09-24, one on 09-25 and two on 09-26, section 8), always
-enet in `connecting` and dc in `opening` at the 40 s deadline, while the same
-loopback code completed on Linux (2026-09-25 and twice on 09-26, section 8).
+record, six (three on 2026-09-24, one on 09-25 and two on 09-26, section 8),
+always enet in `connecting` and dc in `opening` at the 40 s deadline, while the
+same loopback code completed on Linux (2026-09-25 and twice on 09-26, section 8).
 (The 2026-08-27 stall, recorded as blocked UDP, has no machine or phase on the
 record; the Windows pastes of 2026-08-20 and 2026-08-24, before the D-23 board,
 ran with no failure, 08-20's loopbacks included.) On 2026-09-26 the independent
@@ -833,11 +833,10 @@ comment above `suPump` has it too):
    box2dxt's joint handles), and its summary said the boot self-check's delayed
    probe "had not fired yet". `suScRun` arms that probe (due in 400 ms) after
    `stRun` has armed the pump (due in 33 ms), and the engine keeps its pending
-   messages sorted by due time
-   and delivers the earliest due one per pass (LiveCode's develop-9.6
-   `uidc.cpp`, `doaddmessage` and `handlepending`: DOCUMENTED from the source,
-   never observed), so the pump reached its summary on a tick due before the
-   probe, with the deadline already past.
+   messages sorted by due time and delivers the earliest due one per pass
+   (LiveCode's develop-9.6 `uidc.cpp`, `doaddmessage` and `handlepending`:
+   DOCUMENTED from the source, never observed), so the pump reached its summary
+   on a tick due before the probe, with the deadline already past.
 3. The deadline was armed in `stRun` BEFORE the arm-time render of the whole
    report (about 3350 lines into field `stResults`), `suSyncDone`'s paints, the
    rest of `openStack` and the window's first layout, and the pump then
@@ -862,9 +861,10 @@ serviced it `kStMinTicks` times, or once `kStCeilingMs` has passed from that
 tick whatever the count, so a run always ends; the pump renders nothing of the
 report while a loopback is live (the rows' pills and the status line carry the
 progress, the Failures and Skips views stay live, and the report is written
-once, at the finish; Copy results mid-run still copies it from the variable with
-its RUN NOT FINISHED trailer); and a stall note now gives the ticks and the time
-and names both causes. `tools/check-suite-ui-boot.py`'s Windows-stall scenario
+when the pump is armed and again at the finish, never on a live tick; Copy
+results mid-run still copies it from the variable with its RUN NOT FINISHED
+trailer); and a stall note now gives the ticks and the time and names both
+causes. `tools/check-suite-ui-boot.py`'s Windows-stall scenario
 reproduces the 2026-09-26 report on the old core (both loopbacks FAIL in
 `connecting` and `opening` on the first tick, the probe not fired) when a
 render of the report costs 45 s, and completes both on the new one;
