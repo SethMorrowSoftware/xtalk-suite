@@ -151,6 +151,12 @@ jobs:
         run: |
           brew update
           brew install openssl@3 ninja
+          # openssl@3 is keg-only since Homebrew's 3.6.4_1 bottle (2026-09):
+          # it is no longer linked into /opt/homebrew, so FindOpenSSL (which
+          # libdatachannel's CMakeLists calls) stopped finding its headers
+          # and this lane failed at configure. Point FindOpenSSL at the keg;
+          # it reads OPENSSL_ROOT_DIR from the environment as a hint.
+          echo "OPENSSL_ROOT_DIR=$(brew --prefix openssl@3)" >> "$GITHUB_ENV"
 
       - name: Set up vcpkg + acquire OpenSSL (Windows)
         if: matrix.acquire == 'vcpkg'
