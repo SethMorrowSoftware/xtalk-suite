@@ -24,6 +24,7 @@ Usage::
 Exit status is non-zero on any mismatch (CI gate).
 """
 
+import hashlib
 import importlib.util
 import pathlib
 import re
@@ -663,6 +664,179 @@ def audit_deals_from_log(tx):
     return verified, total, lines
 
 
+# --------------------------------------------------------------------------
+# AN ENGINE-RECORDED SESSION. Every transcript above is canned: written here
+# or built by the mirrors, so it can only show that the fold and the mirrors
+# agree with each other. This one is the ENGINE's: a six-seat hotseat session
+# the maintainer played on the standalone stack and pasted back on the evening
+# of the 2026-09-26 Windows pass ("here's a sample hold-em game in the gotseat
+# transcript"). Windows, by the maintainer's account (the next message, which
+# also carried that stack's heRunSelftest at v0.25.6 / harness 48, 929/0/5);
+# that the hands were dealt by that same build is presumable, not stated.
+# Four hands, sb 1 / bb 2, 400 each, the Level 0 deal: seat 5 wins all 2400,
+# with the dead button twice (hands 2 and 4) and a three-way all-in with a side
+# pot and an uncalled remainder (hand 4).
+#
+# What it pins that nothing canned can: the engine's sxHash (SodiumXT) deal,
+# betting engine and settlement agreeing with these mirrors on a session a
+# person played. A mirror or rule change that would have dealt, scheduled,
+# accepted or settled that session differently now fails here. Its limit:
+# hand 4's winner holds the best hand in every layer, so this session cannot
+# tell a layered settlement from a winner-takes-all one (a mirror broken that
+# way passes here); betting-kat's three-way side-pot case is what pins the
+# layers. The uncalled 386 IS pinned here (the awarded pot 2014, not 2400).
+#
+# Held VERBATIM: the paste's tab separators are written as single spaces (no
+# field contains one) and RECORDED_HOTSEAT_SHA256 is the SHA-256 of the
+# original tab-separated text, so an edit to the copy fails before anything
+# folds it.
+# --------------------------------------------------------------------------
+
+RECORDED_HOTSEAT_SHA256 = "84800841f6b14edc180e1f4739849a6ab2d5078f0c5702c3145c5c13c385902b"
+
+RECORDED_HOTSEAT = """\
+0 table cfg sb=1,bb=2,ante=0,seats=1|2|3|4|5|6,stacks=400|400|400|400|400|400,button=1,levelMode=off,speed=normal
+1 table handStart seats=1|2|3|4|5|6,button=1
+1 table dealLevel level=0,table=a3562279f122d2e581339c02dc495b7d0b20dc95f7cca6315614d0b451d03e1a,count=6
+1 seat1 seedCommit pos=1,commit=b8b34463a76e71af3540281f38af64846eddbd301ede8853f49d226a606bbb5d
+1 seat2 seedCommit pos=2,commit=1959fc4fc29b2ae1e1f81df609baeda0cb6a3d484982bc08843807826e50e56f
+1 seat3 seedCommit pos=3,commit=e362040e9c520036f7f086172e077f0e9f24ffb673f86d840717f2e56dcd5322
+1 seat4 seedCommit pos=4,commit=cb0e24b5e2ae497e19840c72267db0a453619c614e2c1b1daa3155dc727eed2c
+1 seat5 seedCommit pos=5,commit=5dcc36e7b441e5323b414914c0794a56c5510d587e58013cfb6308d08bd7688b
+1 seat6 seedCommit pos=6,commit=625008c32d8f14087378bc6806718bd518e3dccbbff34813e6c59a69f6af84bb
+1 seat1 seedReveal pos=1,seed=487c1a4d3f2f65041eee2a911b0065d49d791b3f6469c80c2bfb92e78ea59c1e
+1 seat2 seedReveal pos=2,seed=ef87b4db771e80b64303641bdcdf609d2ee48faf13152f55ce439aa44aa08092
+1 seat3 seedReveal pos=3,seed=10d5b6dded63322b012c66751ca1bba765b60a694c9ab977059b728b9de19792
+1 seat4 seedReveal pos=4,seed=1fe068242d85c3f0de2e83528403b82cc64a810ac6b8029d3f33eecac1f83eee
+1 seat5 seedReveal pos=5,seed=15c8810b6300e5d92c6ab8a1cf28de7c2630b0f7e0113d2337c5a7476ddd6ef8
+1 seat6 seedReveal pos=6,seed=19e2a876c6d6a86223cd855b6509d3eca3beb25d6d565d1f9bd40d3ce344ef89
+1 table holeDeliver seat=1,cards=6h|Kh
+1 table holeDeliver seat=2,cards=3d|2h
+1 table holeDeliver seat=3,cards=Qc|Qh
+1 table holeDeliver seat=4,cards=8h|9s
+1 table holeDeliver seat=5,cards=7d|3s
+1 table holeDeliver seat=6,cards=Qs|8c
+1 seat2 bidSB amount=1
+1 seat3 bidBB amount=2
+1 seat4 act verb=call,amount=2
+1 seat5 act verb=call,amount=2
+1 seat6 act verb=call,amount=2
+1 seat1 act verb=raise,amount=4
+1 seat2 act verb=allin,amount=400
+1 seat3 act verb=call,amount=398
+1 seat4 act verb=fold,amount=0
+1 seat5 act verb=fold,amount=0
+1 seat6 act verb=fold,amount=0
+1 seat1 act verb=fold,amount=0
+1 table board street=flop,cards=Ah|Jc|2d
+1 table board street=turn,cards=6c
+1 table board street=river,cards=Kd
+1 table settle deltas=1:-4|2:-400|3:410|4:-2|5:-2|6:-2
+2 table handStart seats=1|3|4|5|6,button=1
+2 table dealLevel level=0,table=a3562279f122d2e581339c02dc495b7d0b20dc95f7cca6315614d0b451d03e1a,count=5
+2 seat1 seedCommit pos=1,commit=6ef2fc848b34505eb69a616d51edce489cd0fb0e99f79bd7078e623cc5a4db58
+2 seat3 seedCommit pos=2,commit=4f8306fd5942433a1ec152248ee586baed668d9d62284194365932cd1dacd716
+2 seat4 seedCommit pos=3,commit=5edb07e600651e81b8478bdb1b0ebe8a8a7c4483e6a2b67326fc236bdc2348ee
+2 seat5 seedCommit pos=4,commit=e910c1fc1dd949fc4bbc82d39afe522e91cc797d7e389ca514eae7ac9c477022
+2 seat6 seedCommit pos=5,commit=337b67dda69764ec6cf23cf255d1f7328b077daa2ac7187d6904aee97327a65e
+2 seat1 seedReveal pos=1,seed=5b131bc4466e2c9fa8fcce68e679e090d30447a8dd03aaea717ed2eae38de246
+2 seat3 seedReveal pos=2,seed=e4885b8f46a66c6d5595df60e85f6281844a92ce0d4cfb1378b2e37e985b53df
+2 seat4 seedReveal pos=3,seed=a867b9b1cc1c90247a864fb949bf74eaf9e32f25963e817790bccb9213ce71dc
+2 seat5 seedReveal pos=4,seed=543dd8b6803827ca43d245282a564fad2c81aec6e08c039f102fc68aafd09bc7
+2 seat6 seedReveal pos=5,seed=8d8f36e60689ec6e3767eca6ffeeb05c64c923527f704efcbfd8020b3b68b8e2
+2 table holeDeliver seat=1,cards=7c|Jc
+2 table holeDeliver seat=3,cards=Jh|3d
+2 table holeDeliver seat=4,cards=Ts|Qs
+2 table holeDeliver seat=5,cards=4c|5c
+2 table holeDeliver seat=6,cards=Ac|3c
+2 seat3 bidSB amount=1
+2 seat4 bidBB amount=2
+2 seat5 act verb=raise,amount=4
+2 seat6 act verb=call,amount=4
+2 seat1 act verb=fold,amount=0
+2 seat3 act verb=fold,amount=0
+2 seat4 act verb=call,amount=2
+2 table board street=flop,cards=8c|Ah|7h
+2 seat4 act verb=bet,amount=2
+2 seat5 act verb=call,amount=2
+2 seat6 act verb=raise,amount=4
+2 seat4 act verb=call,amount=2
+2 seat5 act verb=call,amount=2
+2 table board street=turn,cards=Tc
+2 seat4 act verb=bet,amount=2
+2 seat5 act verb=raise,amount=4
+2 seat6 act verb=allin,amount=390
+2 seat4 act verb=fold,amount=0
+2 seat5 act verb=call,amount=386
+2 table board street=river,cards=6d
+2 table settle deltas=1:0|3:-1|4:-10|5:409|6:-398
+3 table handStart seats=1|3|4|5,button=3
+3 table dealLevel level=0,table=a3562279f122d2e581339c02dc495b7d0b20dc95f7cca6315614d0b451d03e1a,count=4
+3 seat1 seedCommit pos=1,commit=f46143ed00802111eff3efeeb4f804e7a76833abd57fe5e0e103c1297f36004c
+3 seat3 seedCommit pos=2,commit=50370e6461cb1086c136c5af1979542fd3a9509a474aecc533bc8b43a3727c25
+3 seat4 seedCommit pos=3,commit=7cc40eb35919c03971607cace8a3d1c5c78c9eaa3f440bc2683b33d90bd87028
+3 seat5 seedCommit pos=4,commit=1372e33b8e98ae11f1daec6a5172f5bfcaa06566b1727893030175bba7a4bae4
+3 seat1 seedReveal pos=1,seed=f11fec8c7be69ea277e04e841ba4ed7a897ea0abc562b22f86c38566cdf47528
+3 seat3 seedReveal pos=2,seed=0fbe9ecece819269fd8217ffd190e2cb323e6d62020fef2ba240b7e524c93bb5
+3 seat4 seedReveal pos=3,seed=f925ed9106468a303a1de8edec9b78f62477ce01263865c9b7febebe66fb4c5c
+3 seat5 seedReveal pos=4,seed=bb2f9c068b208338c2303fd157fb2fa32a456e175dfd9f9e9aeb75081f3d5a37
+3 table holeDeliver seat=1,cards=2c|3d
+3 table holeDeliver seat=3,cards=Jh|5c
+3 table holeDeliver seat=4,cards=3h|Jc
+3 table holeDeliver seat=5,cards=8d|8c
+3 seat4 bidSB amount=1
+3 seat5 bidBB amount=2
+3 seat1 act verb=fold,amount=0
+3 seat3 act verb=fold,amount=0
+3 seat4 act verb=call,amount=1
+3 seat5 act verb=check,amount=0
+3 table board street=flop,cards=Tc|9h|8s
+3 seat4 act verb=allin,amount=386
+3 seat5 act verb=call,amount=386
+3 table board street=turn,cards=5h
+3 table board street=river,cards=2d
+3 table settle deltas=1:0|3:0|4:-388|5:388
+4 table handStart seats=1|3|5,button=3
+4 table dealLevel level=0,table=a3562279f122d2e581339c02dc495b7d0b20dc95f7cca6315614d0b451d03e1a,count=3
+4 seat1 seedCommit pos=1,commit=07d62765b461f90e801c71a1768ac5dc28cfc715795e02f4d03b0a88e3617281
+4 seat3 seedCommit pos=2,commit=c5915eea426549f7476f33ea66beb4e5c6b6ae582f0c7566bfeda20bf75b3632
+4 seat5 seedCommit pos=3,commit=ab2812a3dd7e59b544dd3997b9fc1374acf3b05f9dc00f01199210589266ce40
+4 seat1 seedReveal pos=1,seed=a67ee8aced0e492b1fe9c6ae07682c8bf64ebb5e56ed9290bc656e202fd6bdb8
+4 seat3 seedReveal pos=2,seed=8bf390db8f188f0be5e3064eaada462769f36a119de089bd71581dcd1b4398ac
+4 seat5 seedReveal pos=3,seed=5389fdd2ed223dd88533170624a2b15fbb61eecceb50ae02b0648f099a365ae5
+4 table holeDeliver seat=1,cards=6c|Td
+4 table holeDeliver seat=3,cards=6s|3c
+4 table holeDeliver seat=5,cards=9h|2c
+4 seat5 bidSB amount=1
+4 seat1 bidBB amount=2
+4 seat3 act verb=allin,amount=809
+4 seat5 act verb=raise,amount=1195
+4 seat1 act verb=call,amount=394
+4 table board street=flop,cards=8s|Ac|7h
+4 table board street=turn,cards=5s
+4 table board street=river,cards=2s
+4 table settle deltas=1:-396|3:-809|5:1205
+"""
+
+
+def recorded_hotseat_text():
+    """The maintainer's paste as it was pasted: tab-separated, one line each,
+    a final newline."""
+    return "".join("\t".join(line.split(" ", 3)) + "\n"
+                   for line in RECORDED_HOTSEAT.strip("\n").split("\n"))
+
+
+def recorded_hotseat(edit=None):
+    """The recorded session as fold tuples; `edit` (a function of one tuple,
+    returning a tuple) plants a tamper for the negative checks."""
+    tx = []
+    for line in recorded_hotseat_text().splitlines():
+        h, frm, typ, body = line.split("\t")
+        e = (int(h), frm, typ, body)
+        tx.append(edit(e) if edit else e)
+    return tx
+
+
 def main():
     fails = 0
 
@@ -811,6 +985,74 @@ def main():
     check("deal audit: tampered seed fails (0/1)", (v2, t2), (0, 1))
     contains("deal audit: tampered seed named commit-mismatch",
              " ".join(lines2), "commit-mismatch")
+
+    # THE ENGINE-RECORDED SESSION (see RECORDED_HOTSEAT): what the engine
+    # dealt, accepted and settled, held against the mirrors.
+    check("recorded: the embedded copy is the maintainer's paste byte for byte",
+          hashlib.sha256(recorded_hotseat_text().encode("ascii")).hexdigest(),
+          RECORDED_HOTSEAT_SHA256)
+    rec = independent_fold(recorded_hotseat())
+    check("recorded: the session folds with no replay errors", rec["errors"], [])
+    check("recorded: seat 5 ends with all 2400 chips",
+          {s: v for s, v in rec["stacks"].items() if v}, {5: 2400})
+    check("recorded: all four settle lines verify",
+          sum(1 for h in rec["history"] if h.endswith("; settle-verified")), 4)
+    for n, (pot, win) in enumerate(((810, 3), (807, 5), (776, 5), (2014, 5)), 1):
+        contains("recorded: hand %d's awarded pot and winner" % n,
+                 rec["history"][n - 1] if len(rec["history"]) >= n else "",
+                 "pot %d; winner seat %d;" % (pot, win))
+    # hand 4: seat 3 all-in 809, seat 5 all-in 1195, seat 1 all-in 394 on its
+    # BB: a side pot, and seat 5's uncalled 386 comes back (pot 2014, not 2400)
+    contains("recorded: hand 4 is a three-way showdown over a side pot",
+             rec["history"][3] if len(rec["history"]) >= 4 else "",
+             "showdown 1=6c Td high card, 3=6s 3c high card, 5=9h 2c one pair")
+    v, t, lines = audit_deals_from_log(recorded_hotseat())
+    check("recorded: every deal re-derives from its revealed seeds (4/4)", (v, t), (4, 4))
+    # the dead button (spec 8.1): the engine's buttons, hand by hand, against
+    # the mirror's schedule over the seats still funded -- seat 1 keeps the
+    # button after seat 2 busts, seat 3 after seat 4 does
+    seen, want, last_bb, funded = [], [], 0, {}
+    for h, frm, typ, body in recorded_hotseat():
+        d = _kv(body)
+        if typ == "cfg":
+            funded = dict(zip((int(x) for x in d["seats"].split("|")),
+                              (int(x) for x in d["stacks"].split("|"))))
+        elif typ == "handStart":
+            occ = [int(x) for x in d["seats"].split("|")]
+            want.append(bk.schedule_button([s for s in sorted(funded) if funded[s] > 0], last_bb))
+            seen.append(int(d["button"]))
+            last_bb = bk.new_hand(1, 2, funded, occ, int(d["button"]))["bbSeat"]
+        elif typ == "settle":
+            for part in d["deltas"].split("|"):
+                s, dv = part.split(":")
+                funded[int(s)] += int(dv)
+    check("recorded: the engine's buttons are the dead-button schedule's",
+          (seen, want), ([1, 1, 3, 3], [1, 1, 3, 3]))
+
+    # ...and the recorded session is not a blind spot: each planted tamper
+    # is caught by the check that owns it
+    def _swap(hand, typ, old, new):
+        def edit(e):
+            if e[0] == hand and e[2] == typ and old in e[3]:
+                return (e[0], e[1], e[2], e[3].replace(old, new, 1))
+            return e
+        return edit
+    ts = independent_fold(recorded_hotseat(_swap(3, "settle", "4:-388|5:388", "4:-387|5:387")))
+    contains("recorded tamper: a moved chip in hand 3's settle is caught",
+             " ".join(ts["errors"]), "settle-mismatch")
+    ta = independent_fold(recorded_hotseat(_swap(4, "act", "verb=call,amount=394", "verb=call,amount=395")))
+    contains("recorded tamper: a wrong call amount in hand 4 is engine-rejected",
+             " ".join(ta["errors"]), "engine-rejected")
+    v, t, lines = audit_deals_from_log(recorded_hotseat(
+        _swap(2, "seedReveal", "seed=a867b9b1", "seed=a867b9b0")))
+    check("recorded tamper: a revealed seed off by one bit fails hand 2's audit (3/4)",
+          (v, t, [l for l in lines if "FAILED" in l]),
+          (3, 4, ["hand 2: deal-FAILED fail:commit-mismatch-position-3"]))
+    v, t, lines = audit_deals_from_log(recorded_hotseat(
+        _swap(1, "holeDeliver", "seat=3,cards=Qc|Qh", "seat=3,cards=Qc|Qd")))
+    check("recorded tamper: a substituted hole card fails hand 1's audit (3/4)",
+          (v, t, [l for l in lines if "FAILED" in l]),
+          (3, 4, ["hand 1: deal-FAILED fail:hole-mismatch-seat-3"]))
 
     # v0.25.5 (2026-09-25): wire indices are CANONICAL text -- heCanonIdx,
     # mirrored as canon_idx over the same vectors the harness pins (section
