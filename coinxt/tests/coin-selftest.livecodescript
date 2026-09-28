@@ -5320,7 +5320,7 @@ end stThrowsTaproot
 
 command stRunFailOpen
    local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
-   local tProgram, tDecoded, tKey
+   local tProgram, tDecoded, tKey, tMessage
    stSection "fail-closed regressions"
    try
       -- EIP-55 verification must depend on the CALLER'S casing. If these come
@@ -5380,6 +5380,17 @@ command stRunFailOpen
       stAssertRefusal "cxVarInt refuses 2^53 + 1 written in digits", stThrowsText("cxVarInt", "9007199254740993"), "cxVarInt", "more than 9007199254740992"
       stAssertRefusal "cxVarInt refuses a count written 1e3", stThrowsText("cxVarInt", "1e3"), "cxVarInt", "written in digits"
       stAssertRefusal "an output of 2^53 + 1 satoshi is refused", stThrowsText2("cxBtcOutput", "9007199254740993", kTxOutScript0), "cxUIntToBytesLE", "more than 9007199254740992"
+      -- A LEGACY ETHEREUM RECOVERY ID IS 0 OR 1 (row #10's review, 2026-09-26):
+      -- v = recid + 2 * chainId + 35, so an id of 2 on chain 1 wrote v = 39,
+      -- chain 2's v at id 0. The id is refused before r and s are read, so
+      -- they are empty here. Captured and asserted after `end try` (trap 13).
+      put "(did not throw)" into tMessage
+      try
+         get cxEthLegacyEncode(9, kEthGasPrice, 21000, kEthTo, kEthValue, "", 1, 2, "", "")
+      catch tError
+         put tError into tMessage
+      end try
+      stAssertRefusal "a legacy Ethereum recovery id of 2 is refused (it wrote chain 2's v)", tMessage, "cxEthLegacyEncode", "recovery id is more than 1"
       -- An uppercase HRP used to produce a MIXED-case string, which BIP-173
       -- forbids and which this library's own decoder rejects.
       stAssertRefusal "an uppercase HRP is refused", stThrowsText3("cxBech32EncodeValues", "BC", "0", "bech32"), "cxBech32EncodeValues", "lowercase"

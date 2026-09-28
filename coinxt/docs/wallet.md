@@ -590,15 +590,22 @@ bounded before any arithmetic and refused past it, never rounded: `cwLeRead` /
 satoshi form on its digits (no exponents), BOLT11's `x` and `c` fields at ten
 significant 5-bit values, a transaction's outputs or a PSBT's inputs as a SUM
 (`cwAmountAdd`, decided on 32-bit halves), and a JSON number's exponent in
-`cwExpandExponent` at three digits. Since 2026-09-26 the rest are too: the
-numbers a backend reports (a coin's value at most 2^53 and its vout at most
-4294967295, a height, a chain tip, a history row's fee and weight, the Core
-replies' counts) are digits bounded at their parse (coin-wallet's
-`waCheckedCount`, `waCheckedHeight` and `waIsWhole`, which `waWholeAtLeast`
-and `waWholeInRange` now ask in place of `is an integer`), a reply whose coins
-would sum past 2^53 is refused before anything is committed, and every sum the
-wallet takes of coin values (coin selection, the balance, MAX, an address's
-holding, CPFP, RBF, the review) goes through `cwAmountAdd`. The mBTC form
+`cwExpandExponent` at three digits. Since 2026-09-26 so are the numbers a
+backend reports (a coin's value, on every transport, a whole number from 0 to
+2^53, and its vout at most 4294967295, a height, a chain tip, a history row's
+fee and weight, the Core replies' counts): digits bounded at their parse
+(coin-wallet's `waCheckedCount`, `waCheckedHeight` and `waIsWhole`, which
+`waWholeAtLeast` and `waWholeInRange` now ask in place of `is an integer`). A
+reply whose coins would sum past 2^53 is refused before anything is committed,
+the chain tip a scan reports included, and every sum the wallet takes of coin
+values (coin selection, the balance, MAX, an address's holding, CPFP, RBF, the
+review) goes through `cwAmountAdd`. Not yet: the wallet's own typed and saved
+integers (the account number, a multisig's m, the Send screen's locktime, a
+coin typed on the offline Coins screen, and the lock recipes, the account and
+m read back from the wallet file) still ask `is an integer` or take `+ 0`
+(the suite's work plan, coinxt #13; CoinXT's encoders refuse what reaches
+them malformed, so a typed locktime of "1e3" is refused at the build rather
+than read as 1000). The mBTC form
 moves its decimal point in TEXT both ways: `cwParseAmount` refuses a nonzero
 digit past the fifth mBTC decimal (finer than a satoshi; until then it was
 dropped, so "0.00012345" mBTC read as 12 sat) and reads to 90071992547.40992

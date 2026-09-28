@@ -17056,8 +17056,10 @@ command waRecomputeBalance
       -- work-plan coinxt row #9): each value is at most 2^53, a bare `add`
       -- of them is not, and past 2^53 the engine rounds with no error
       -- (suite engine note 2.4). The merges bound sWaUtxos's total before
-      -- they commit it (waCoinTotal), so these cannot refuse in practice;
-      -- they are bounded anyway, one rule for every sum.
+      -- they commit it (waCoinTotal), so for coins a backend listed these
+      -- cannot refuse in practice; a coin typed on the offline Coins screen
+      -- (waAddManualCoin) is appended without that bound (the suite's work
+      -- plan, coinxt #13), so here a refusal is the backstop, not a spare.
       if sWaFrozen[tKey] is "true" then
          put cwAmountAdd(tFrozen, tRec["value"], "waRecomputeBalance") into tFrozen
       else if tRec["confirmations"] + 0 > 0 then
@@ -26595,7 +26597,15 @@ command waMergeCoreUnspent pNode
       put cwJsonGet(tItem, "txid") into tRec["txid"]
       put waCheckedCount(cwJsonGet(tItem, "vout"), "4294967295", \
             "a coin vout") into tRec["vout"]
-      put cwBtcToSat(cwJsonGet(tItem, "amount")) into tRec["value"]
+      -- THE VALUE IS waCheckedCount's TOO (the 2026-09-26 review): Core
+      -- writes it in BTC, so cwBtcToSat reads it first, and cwBtcToSat
+      -- takes a leading minus - so a negative coin passed here where the
+      -- same coin from Electrum or Esplora, read by waCheckedCount, is
+      -- refused (trap 37: a check one transport lacks is a check the
+      -- wallet lacks). The satoshi it read are digits, or refused as a coin
+      -- value that is not a whole number, the other transports' words.
+      put waCheckedCount(cwBtcToSat(cwJsonGet(tItem, "amount")), \
+            "9007199254740992", "a coin value") into tRec["value"]
       put cwJsonGet(tItem, "confirmations") into tConfText
       put 0 into tRec["confirmations"]
       if waIsWhole(tConfText) then
@@ -26700,12 +26710,9 @@ command waMergeScan pNode
    -- fall on every sync until the spend confirmed.
    local tList, tI, tCount, tRec, tItem, tHeight, tScanHeight, tAddr, tError
    local tKey, tKept, tSeen, tFound, tForeign, tTotal, tMarked, tAddrs, tItems
+   -- the scan's height is READ here and becomes the tip only below, after
+   -- the last check that can refuse this reply (trap 38)
    put cwJsonGet(pNode, "height") into tScanHeight
-   if waWholeAtLeast(tScanHeight, 0) then
-      if sWaTipHeight is "" or tScanHeight > sWaTipHeight then
-         put tScanHeight into sWaTipHeight
-      end if
-   end if
    put cwJsonPath(pNode, "unspents") into tItems
    if cwJsonType(tItems) is not "array" then
       throw "the node's scan answered with no unspents list, so nothing " & \
@@ -26739,9 +26746,21 @@ command waMergeScan pNode
       -- error on text that is no number and a rounded vout past 2^53
       put waCheckedCount(cwJsonGet(tItem, "vout"), "4294967295", \
             "a coin vout") into tRec["vout"]
-      -- Core prints an amount with exactly eight decimals, as text here
-      put cwBtcToSat(cwJsonGet(tItem, "amount")) into tRec["value"]
+      -- Core prints an amount with exactly eight decimals, as text here;
+      -- cwBtcToSat reads it and waCheckedCount holds the satoshi to digits
+      -- at most 2^53, as listunspent's and every transport's are (the
+      -- 2026-09-26 review: cwBtcToSat alone took a negative coin)
+      put waCheckedCount(cwBtcToSat(cwJsonGet(tItem, "amount")), \
+            "9007199254740992", "a coin value") into tRec["value"]
       put cwJsonGet(tItem, "height") into tHeight
+      -- a height of digits past 2^53 is no chain's, and refuses the reply
+      -- as waMergeUtxos's does (trap 37); absent or odd, it is unconfirmed
+      if waIsInt(tHeight) then
+         if not waIsWhole(tHeight) then
+            throw "the backend listed a coin at a height past 2^53, which no " & \
+                  "chain has: " & char 1 to 40 of tHeight
+         end if
+      end if
       if waWholeAtLeast(tHeight, 1) and waWholeAtLeast(tScanHeight, 0) then
          put tScanHeight - tHeight + 1 into tRec["confirmations"]
       else
@@ -26774,6 +26793,15 @@ command waMergeScan pNode
       end if
    end repeat
    get waCoinTotal(tList, "waMergeScan")
+   -- THE TIP, NOW THAT NOTHING BELOW CAN REFUSE (trap 38; the 2026-09-26
+   -- review). It was committed first, so a reply refused by a coin (a vout
+   -- past four bytes, a total past 2^53, no unspents list) still moved the
+   -- chain tip every confirmation count is read against
+   if waWholeAtLeast(tScanHeight, 0) then
+      if sWaTipHeight is "" or tScanHeight > sWaTipHeight then
+         put tScanHeight into sWaTipHeight
+      end if
+   end if
    put tList into sWaUtxos
    put 0 into tFound
    repeat for each key tAddr in tAddrs
