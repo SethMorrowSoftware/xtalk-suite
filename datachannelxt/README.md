@@ -115,7 +115,8 @@ a cap-sized payload whole). The flagship ran on
 one machine on Linux and Windows on 2026-08-18, which surfaced engine notes 1.6, 6.6 and 6.7
 (why the event is `dcLocalDescriptionReady`), and a DHT-signalled WebRTC chat was reported
 working between two machines on one LAN on 2026-08-27 (which stack ran was not recorded).
-Still open: the loopback demo (no engine record), a two-machine run recorded against the
+Still open: an itemised record of the loopback demo (on 2026-09-26, on Windows, it "seems to
+work as intended" by the maintainer's account, and no more), a two-machine run recorded against the
 dht-chat demo by name, a call across two networks with real NAT traversal, and browser
 interop on an engine (the page and the OXT half exist; the page has run only headlessly,
 2026-09-24, against the committed library through its C ABI).

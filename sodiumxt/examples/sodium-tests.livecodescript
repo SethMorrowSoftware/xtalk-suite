@@ -41,9 +41,10 @@
 -- ChaCha20 run on Linux, on the committed x86_64-linux file (the
 -- maintainer's account: 64-bit, the latest committed builds), and on
 -- Windows x86_64 the same day (106/106). Owed now is platform cover only:
--- the 2026-08-24 DLL was a mingw build that no longer ships, no run has
--- recorded sxVersion(), and the x86-win32 DLL, x86-linux and the mac dylib
--- still need a run that names its build (CLAUDE.md's platform table).
+-- the 2026-08-24 DLL was a mingw build that no longer ships (sxVersion() has
+-- been read since, by the suite preflight on 2026-09-26: libsodium 1.0.20 on
+-- Linux, 1.0.22 on Windows), and the x86-win32 DLL, x86-linux and the mac
+-- dylib still need a run that names its build (CLAUDE.md's platform table).
 
 local sLog
 local sPass

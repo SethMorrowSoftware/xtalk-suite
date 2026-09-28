@@ -744,10 +744,9 @@ private command rstSectionHead
    -- cannot catch), so no headless run prints this line, as none prints
    -- probe 3 (whose item 1 it refuses first); riptide's
    -- check-script-vectors tier 1e holds this line's shape and the six
-   -- refusals. Linux read it on 2026-09-26, the same in both of that day's
-   -- recorded runs (riptide/CLAUDE.md's ledger quotes the reading, and tier
-   -- 1e holds it as recorded data); the Windows reading is owed (the suite
-   -- runbook's S1 item 1 asks for the line verbatim).
+   -- refusals. Linux and Windows read it on 2026-09-26, identically, in two
+   -- recorded runs each (riptide/CLAUDE.md's ledger quotes every reading,
+   -- and tier 1e holds both platforms' as recorded data).
    put "      numeric compare probe 4 (diagnostic; the engine source" && \
          "reads true,?,?,?,false,? where ? is the C library's):" && \
          rstTextProbe(1) & "," & rstTextProbe(2) & "," & \

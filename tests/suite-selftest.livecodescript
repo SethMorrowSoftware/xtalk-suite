@@ -25581,10 +25581,9 @@ command cx1stRunFailOpen
       -- `tIndex is not trunc(tIndex)`, and the engine's `is` calls two numbers
       -- within 10 DBL_EPSILON of the smaller EQUAL (suite engine note 2.10), so
       -- by that rule these two were let through; `is an integer` has no
-      -- tolerance. All three ran green on Linux on 2026-09-26 (the suite
-      -- paste, twice that day; suite engine note 2.12), so "3e0" is an
-      -- integer to the engine there; Windows has not run them: verified
-      -- statically; needs an OXT pass.
+      -- tolerance. All three ran green on Linux and on Windows on
+      -- 2026-09-26 (the suite paste, twice on each; suite engine note
+      -- 2.12), so "3e0" is an integer to the engine on both.
       cx1stAssertRefusal "bech32 refuses a value one ulp above 3", cx1stThrowsText3("cxBech32EncodeValues", "bc", "0,3.0000000000000004", "bech32"), "cxBech32EncodeValues", "whole number between 0 and 31"
       cx1stAssertRefusal "bech32 refuses a value within 2.2e-15 below zero", cx1stThrowsText3("cxBech32EncodeValues", "bc", "0,-0.000000000000001", "bech32"), "cxBech32EncodeValues", "whole number between 0 and 31"
       cx1stAssert "and 3e0, a spelling the engine calls whole, encodes exactly as 3", cxBech32EncodeValues("bc", "0,3e0", "bech32") is cxBech32EncodeValues("bc", "0,3", "bech32")
@@ -30393,10 +30392,9 @@ private command rs1rstSectionHead
    -- cannot catch), so no headless run prints this line, as none prints
    -- probe 3 (whose item 1 it refuses first); riptide's
    -- check-script-vectors tier 1e holds this line's shape and the six
-   -- refusals. Linux read it on 2026-09-26, the same in both of that day's
-   -- recorded runs (riptide/CLAUDE.md's ledger quotes the reading, and tier
-   -- 1e holds it as recorded data); the Windows reading is owed (the suite
-   -- runbook's S1 item 1 asks for the line verbatim).
+   -- refusals. Linux and Windows read it on 2026-09-26, identically, in two
+   -- recorded runs each (riptide/CLAUDE.md's ledger quotes every reading,
+   -- and tier 1e holds both platforms' as recorded data).
    put "      numeric compare probe 4 (diagnostic; the engine source" && \
          "reads true,?,?,?,false,? where ? is the C library's):" && \
          rs1rstTextProbe(1) & "," & rs1rstTextProbe(2) & "," & \

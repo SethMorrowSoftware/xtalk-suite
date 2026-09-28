@@ -213,7 +213,8 @@ because a harness once ran against a stale in-memory library and reported failur
   self-check, the rows adding up to the totals, Copy results; 2026-09-25 on Linux, the same, and
   by the maintainer's account a SECOND Run all in one launch, riptide's session sections green;
   2026-09-25 on Windows again; 2026-09-26 on Linux, the batch paste, again a second Run all in
-  one launch by that account, the derived stamp's boot line green; runbook section 8); a row's
+  one launch by that account, the derived stamp's boot line green, and that evening on Windows,
+  an on-open Run all and a second in one launch by that account; runbook section 8); a row's
   Run, Show and the filters are verified statically; needs an OXT pass (runbook row 48).
 - **A script-layer edit is done only when every carrier is regenerated** (`build-suite-selftest.py`
   AND `sync-demo-embeds.py`). The carrier sets overlap without either containing the other: the
@@ -349,11 +350,13 @@ worse than no gate, because it answers the question nobody asks twice.
   batch paste, 2876/0/10). The same day the preflight's first Linux run (presumably that machine,
   not stated) LOADED all six at their ABIs and printed what those runs did not: OXT 9.7.0-dp-1,
   and libsodium 1.0.20, enet 1.3.18 and libdatachannel v0.24.5, the tree's Linux pins (runbook
-  section 8). No engine has loaded the 32-bit (`x86-win32`, `x86-linux`) or
-  mac builds yet. The Windows DLLs carry libsodium 1.0.22 (D-08) and libtorrent 2.1.1, not the
-  versions pinned for the other platforms, and the 2026-09-24 runs exercised both by the
-  maintainer's account, the 2026-09-25 Windows run by that inference (the report prints no
-  library version).
+  section 8). That evening the Windows machine, the same one by the maintainer's account, ran
+  the preflight (all six LOADED at their ABIs on OXT 9.6.3) and the batch paste twice in one
+  launch (2857/2/10, the loopbacks stalled). No engine has loaded the 32-bit (`x86-win32`,
+  `x86-linux`) or mac builds yet. The Windows DLLs carry libsodium 1.0.22 (D-08) and libtorrent
+  2.1.1, not the versions pinned for the other platforms, and the 2026-09-24 runs exercised both
+  by the maintainer's account, the later Windows runs by that inference; the 2026-09-26
+  preflight READ libsodium's (`libsodium 1.0.22`), and no report prints libtorrent's.
 
 ## Member repositories and publishing
 

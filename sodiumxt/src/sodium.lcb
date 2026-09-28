@@ -39,9 +39,10 @@
 -- on the committed x86_64-linux file (the maintainer's account: 64-bit, the
 -- latest committed builds) - and on Windows x86_64 the same day. What is
 -- still owed is PLATFORM cover, not surface cover - the 2026-08-24 run
--- loaded a mingw DLL that no longer ships, no run has recorded sxVersion(),
--- and neither the x86-win32 DLL, nor x86-linux, nor the mac dylib has an
--- engine record that names it (CLAUDE.md's platform table).
+-- loaded a mingw DLL that no longer ships (sxVersion() has been read since,
+-- by the suite preflight on 2026-09-26: libsodium 1.0.20 on Linux, 1.0.22 on
+-- Windows), and neither the x86-win32 DLL, nor x86-linux, nor the mac dylib
+-- has an engine record that names it (CLAUDE.md's platform table).
 -- The conventions below were settled
 -- against a real OXT compile and a crash audit; they are recorded so they are
 -- not relearned:
