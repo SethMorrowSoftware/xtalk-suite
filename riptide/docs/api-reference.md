@@ -1,6 +1,6 @@
 # Riptide API reference
 
-The public `rs*` surface of `src/riptide.livecodescript`: library 0.13.0,
+The public `rs*` surface of `src/riptide.livecodescript`: library 0.14.0,
 107 handlers, phases 1-8 (identity and the feed, media, DMs, the LAN mesh
 with its sync records and media handoff, the anon persona with its onion
 serving seams, the Nostr bridge and the `RIPTAPP1` app-state store). Pure
@@ -74,8 +74,8 @@ never by silent fix.
 | `rsIdentitySeed(pMaster)` | Data | subkey 1: the public identity ed25519 seed |
 | `rsDmSeed(pMaster)` | Data | subkey 2: the DM key-exchange seed |
 | `rsLanKey(pMaster)` | Data | subkey 3: the LAN mesh key |
-| `rsAnonSeed(pMaster, pIndex)` | Data | subkey 100+n: anon persona n's ed25519 seed |
-| `rsAnonDmSeed(pMaster, pIndex)` | Data | subkey 200+n: anon persona n's sealed-DM kx seed (spec 8.3) |
+| `rsAnonSeed(pMaster, pIndex)` | Data | subkey 100+n: anon persona n's ed25519 seed; n is 0 or 1 (`kRsAnonIndexLimit`, since 0.14.0), any other index refused (from 100 it would be persona n-100's kx seed) |
+| `rsAnonDmSeed(pMaster, pIndex)` | Data | subkey 200+n: anon persona n's sealed-DM kx seed (spec 8.3); the same index cap |
 
 The KDF context is the 8-byte `"riptide\0"`; subkey ids are decimal
 strings, matching `sxKdfDerive`.
@@ -90,7 +90,7 @@ strings, matching `sxKdfDerive`.
 | `rsOnionFromHandle(pHandleHex)` | String | convenience over the above |
 | `rsVerifyOnionClaim(pOnionAddr, pHandleHex)` | Boolean | true only if the address structurally decodes (onionxt's offline `oxPublicKeyFromAddress`) AND its embedded key equals the handle, compared constant-time. The security-relevant direction; needs no SHA-3 |
 | `rsInboxId(pHandleHex)` | String | 40-hex phantom-swarm id: BLAKE2b-20(pubkey and `"riptide-inbox"`) |
-| `rsRoomId(pPkAHex, pPkBHex, pSessionSalt)` | String | 40-hex pairwise room id: BLAKE2b-20(sortedConcat(pkA, pkB) and salt); symmetric in its peers |
+| `rsRoomId(pPkAHex, pPkBHex, pSessionSalt)` | String | 40-hex pairwise room id: BLAKE2b-20(sortedConcat(pkA, pkB) and salt); symmetric in its peers. Sorted by BYTE order (lowercase hex text order), byte by byte, never a number compare (0.14.0; suite engine note 2.11) |
 
 ## The feed records (RSH1 heads, RSP1 posts)
 
@@ -176,7 +176,7 @@ over rp1 in your inbox swarm; both sides derive one kx session
 | Handler | Returns | Notes |
 |---|---|---|
 | `rsDmKeys(pDmSeed)` | Array | the crypto_kx pair: `publicKey`, `secretKey` (32 B each), `publicKeyHex` |
-| `rsDmSessionKeys(pMyHandleHex, pMyKxKeys, pTheirHandleHex, pTheirKxPubHex)` | Array | `rx`, `tx`, `role`; the lexically smaller handle is the kx CLIENT, so both ends agree with no negotiation; my tx is the peer's rx |
+| `rsDmSessionKeys(pMyHandleHex, pMyKxKeys, pTheirHandleHex, pTheirKxPubHex)` | Array | `rx`, `tx`, `role`; the handle whose bytes sort first (lowercase hex text order) is the kx CLIENT, so both ends agree with no negotiation; two handles are one only when their bytes are (decided byte by byte since 0.14.0, never a number compare); my tx is the peer's rx |
 | `rsBuildPrekey(pKxPubHex, pIdentitySeed)` | Data | RSK1: the kx public signed by the identity key (132 B) |
 | `rsParsePrekey(pBytes)` | Array | `kxPub` |
 | `rsVerifyPrekey(pBytes, pHandleHex)` | Array | parse + signature under that handle, or empty; verify BEFORE sealing to it |

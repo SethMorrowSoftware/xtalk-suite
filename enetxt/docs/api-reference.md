@@ -17,7 +17,7 @@ real-time feel, 100+ ms for chat-grade traffic.
 | Handler | Returns | Notes |
 |---|---|---|
 | `enInitialize()` | Integer | refcounted global init; verifies the ABI (throws a clear error on skew) |
-| `enDeinitialize()` | Integer | balances init; the FINAL one destroys every surviving host - **mandatory before quit** (e.g. `closeStack`); idempotent |
+| `enDeinitialize()` | Integer | balances init; the FINAL one destroys every surviving host - **mandatory before quit** (e.g. `closeStack`); a no-op at a count of zero, but the count is process-wide: see rule 1 |
 | `enLibraryVersion()` | String | e.g. `enet 1.3.18` (the LINKED library) |
 | `enLastError()` | String | module-static last error, "" if none |
 | `enClearError()` | - | command-style; clears it |
@@ -111,6 +111,11 @@ proves the mirror matches `src/enx_record.h`.
 
 1. **Call `enDeinitialize` at quit** - no automatic unload hook exists. Write it bare in
    statement position; OXT cannot compile `enDeinitialize()` as a statement.
+   **Give back only the holds this stack took.** The init count belongs to the whole
+   process, so an `enDeinitialize` with no `enInitialize` of this stack's behind it
+   gives back ANOTHER window's hold, and the one that reaches zero destroys that
+   window's hosts. Pair each call with an init this stack made, or count them (the
+   self-test's `stEnInit` / `stEnRelease`, CLAUDE.md gotcha 7).
 2. **Pump** - nothing progresses without `enPoll` (the helpers do it for you). Its interval
    is the latency floor AND the correctness heartbeat for timeouts and retransmissions -
    keep it running while a host lives.

@@ -151,8 +151,8 @@ The dated records are in [CLAUDE.md](CLAUDE.md), "As-built notes"; this is the s
   BIP-340 / BIP-341 surface, 278/278, Windows x86_64, OXT 9.6.3); 2026-08-24 (the BIP-341 sighash and
   script-path handlers, 290/290, Windows x86_64, OXT 9.6.3); 2026-09-24 (ABI 7, 296/296, the suite
   paste on Windows); 2026-09-25 (296/296 again, the suite paste on Linux x86_64 and on Windows x86_64);
-  2026-09-26 (299/299, the suite paste on Linux x86_64, `cxBech32EncodeValues`'s exact whole-number guard
-  among them). Every handler (95 of 95) has now run green on an engine.
+  2026-09-26 (299/299, the suite paste on Linux x86_64 and on Windows x86_64, `cxBech32EncodeValues`'s
+  exact whole-number guard among them). Every handler (95 of 95) has now run green on an engine.
 - **ABI 7, `cxPubkeyCombine` (2026-09-10):** ran green on an engine on 2026-09-24 (the suite paste on
   Windows: its six checks), on the 2026-09-12 DLL (release run 34657390798), that build's first engine
   load, and on 2026-09-25 on the same release's `x86_64-linux` library (the maintainer's account:

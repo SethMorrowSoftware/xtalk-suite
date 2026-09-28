@@ -422,6 +422,47 @@ def btc_to_sat(text: str) -> int:
     return -v if neg else v
 
 
+# mBTC, a thousandth of a bitcoin, so 100000 satoshi, and a satoshi is its
+# fifth decimal (2026-09-26, work-plan coinxt row #11). The script read mBTC
+# through cwBtcToSat as if it were BTC and then divided by 1000, which
+# TRUNCATED a sixth to eighth decimal silently ("0.00012345" mBTC read as 12
+# sat) and capped the form at 90071992.54740992 mBTC, a thousandth of the
+# real bound. The rule written here is the one the script now follows: the
+# point moves in TEXT, a digit past the fifth decimal must be a zero (the
+# wallet itself writes mBTC with eight decimals, the last three always
+# zero, so those have to read back), and the bound is cwBtcToSat's 2^53 sat.
+def mbtc_to_sat(text: str) -> int:
+    t = str(text).strip()
+    if not t:
+        raise ValueError("empty amount")
+    neg = t.startswith("-")
+    if neg:
+        t = t[1:]
+    if t.count(".") > 1:
+        raise ValueError("more than one decimal point")
+    whole, _, frac = t.partition(".")
+    # the shape rules are btc_to_sat's (an empty whole part is zero, so "."
+    # and ".5" read), checked on ASCII digits as the script checks them
+    whole = whole or "0"
+    if not all(ch in "0123456789" for ch in whole + frac):
+        raise ValueError("amount is not a decimal number")
+    if any(ch != "0" for ch in frac[5:]):
+        raise ValueError("a satoshi is the fifth decimal of an mBTC amount")
+    v = int(whole) * 100000 + int((frac[:5] + "00000")[:5])
+    if v > 2 ** 53:
+        raise ValueError("more than 2^53 satoshi")
+    return -v if neg else v
+
+
+def sat_to_mbtc(sat: int) -> str:
+    """The mBTC spelling the wallet shows: eight decimals, as the old
+    cwSatToBtc(sat * 1000) printed it, so the last three are always zero
+    (derived, not multiplied: sat * 1000 passes 2^53 above 90071 BTC)."""
+    neg = sat < 0
+    whole, frac = divmod(abs(int(sat)), 100000)
+    return ("-" if neg else "") + "%d.%05d000" % (whole, frac)
+
+
 # ===========================================================================
 # SIZE, WEIGHT AND FEES
 #
@@ -650,10 +691,21 @@ def select_coins(utxos, target_sat, fee_rate, input_type, output_types,
         outs = list(output_types) + ([change_type] if with_change else [])
         return estimate_vsize([_type(u) for u in sel], outs)
 
+    def _bounded(total):
+        # THE SCRIPT'S SUMS STOP AT 2^53 (2026-09-26, work-plan coinxt row
+        # #9): cwSelectionResult and cwBranchAndBound add coin values through
+        # cwAmountAdd, which refuses a total past 2^53 because an engine
+        # double would round it (suite engine note 2.4). Python would answer
+        # any size, so the oracle refuses where the script does, or a vector
+        # past the bound would read as the script being wrong.
+        if total > 2 ** 53:
+            raise ValueError("the amounts add up to more than 2^53 satoshi")
+        return total
+
     def _result(sel, with_change):
         vs = _vsize(sel, with_change)
         fee = fee_for(vs, fee_rate)
-        total = sum(u["value"] for u in sel)
+        total = _bounded(sum(u["value"] for u in sel))
         change = total - target_sat - fee
         return {"selected": sel, "fee": fee, "change": change if with_change else 0,
                 "total_in": total, "vsize": vs}
@@ -686,7 +738,7 @@ def select_coins(utxos, target_sat, fee_rate, input_type, output_types,
         lo = target_sat + base_fee
         hi = lo + cost_of_change
         best = None
-        total_avail = sum(e for e, _ in eff)
+        total_avail = _bounded(sum(e for e, _ in eff))
 
         def _bnb(i, chosen, value, tries):
             nonlocal best

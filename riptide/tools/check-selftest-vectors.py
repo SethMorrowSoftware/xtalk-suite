@@ -157,6 +157,20 @@ def main(argv):
     want("kRsGoldRoomId",
          ref["room_id"](handle, conf_pub,
                         k["kRsGoldRoomSalt"].encode("ascii")))
+    # the number-like handles (chosen in the oracle, so held to its
+    # spelling here) and the byte-order room ids they pin (riptide #11)
+    want("kRsGoldNumHandleNine", ref["NUM_HANDLE_NINE"])
+    want("kRsGoldNumHandleHundred", ref["NUM_HANDLE_HUNDRED"])
+    want("kRsGoldNumHandleOneExp", ref["NUM_HANDLE_ONE_EXP"])
+    want("kRsGoldNumHandleOne", ref["NUM_HANDLE_ONE"])
+    want("kRsGoldRoomIdNumOrder",
+         ref["room_id"](k.get("kRsGoldNumHandleNine", ""),
+                        k.get("kRsGoldNumHandleHundred", ""),
+                        k["kRsGoldRoomSalt"].encode("ascii")))
+    want("kRsGoldRoomIdNumEqual",
+         ref["room_id"](k.get("kRsGoldNumHandleOneExp", ""),
+                        k.get("kRsGoldNumHandleOne", ""),
+                        k["kRsGoldRoomSalt"].encode("ascii")))
 
     post1 = ref["build_post"](int(k["kRsGoldTs1"]), ref["ZERO_TARGET"],
                               k["kRsGoldPost1Text"], [], id_seed)

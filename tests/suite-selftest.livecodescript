@@ -162,13 +162,14 @@ script "xTalkSuiteSelfTest"
 -- enet-selftest or a chat demo could end that window's hosts (review,
 -- 2026-09-25; work plan suite-wide #16). It now gives back exactly the holds
 -- it took and no more: every enInitialize here is counted in sSuEnHeld
--- (suEnInit, suEnRelease; THE PASTE'S HOLD, below). The reverse direction is
--- enetxt's own, and it is not the end of enet-selftest's RUN (its stFinish
--- pairs the run's two enInitialize calls) but its stCleanup: on its close and
--- on its Re-run it calls enDeinitialize once more, bare. So do not close
--- enet-selftest or press its Re-run while a run here holds ENet (the enetxt
--- row, the cross row, Run all): the cross row holds one, and would lose its
--- loopback hosts. DataChannelXT
+-- (suEnInit, suEnRelease; THE PASTE'S HOLD, below). The reverse direction was
+-- enetxt's own: enet-selftest's stCleanup called enDeinitialize once more,
+-- bare, on its close and on its Re-run, so closing it while a run here held
+-- ENet (the enetxt row, the cross row, Run all) could end this paste's
+-- loopback hosts. Since 2026-09-26 it counts its holds the same way
+-- (stEnInit, stEnRelease; work plan enetxt #4), and so does the suite
+-- closing pass (suite-wide #20): verified statically and in the headless
+-- model (tools/check-transport-holds.py); needs an OXT pass. DataChannelXT
 -- is the one this cannot settle from script, so for it the old advice
 -- stands: dcCleanup is not counted at all (it frees EVERY peer and channel
 -- in the process) and its event queue is one per process, so a run that
@@ -202,8 +203,9 @@ script "xTalkSuiteSelfTest"
 -- syntax, byte-exact compares only under `set the caseSensitive to true` and
 -- never between two number-like texts (engine note 2.11), all
 -- declarations at handler top, and teardown calls written bare in statement
--- position, which is enetxt's own shipped teardown idiom (enet-lan-chat line
--- 220, enet-selftest line 371).
+-- position, which is enetxt's own shipped teardown idiom (enet-lan-chat's
+-- ecStop; enet-selftest's stCleanup wrote it so too until 2026-09-26, when
+-- its release moved into expression position to be counted, as below).
 --
 -- That last one is NOT a style choice, and this comment used to say it was.
 -- It read: "datachannelxt spells the same thing dcCleanup(); BOTH forms are
@@ -237,8 +239,20 @@ constant kStOverBudget = 60001
 -- a number the wire did not agree to.
 constant kStSctpFloor = 16384
 -- Generous: two live loopbacks (ENet handshake, plus ICE/DTLS/SCTP for WebRTC)
--- plus a 60000-byte transfer each, on a possibly loaded machine.
+-- plus a 60000-byte transfer each, on a possibly loaded machine. Counted from
+-- the pump's FIRST TICK since 2026-09-27, never from the arm (THE PUMP'S
+-- CLOCK, above suPump, has the Windows record that made it so).
 constant kStDeadlineMs = 40000
+-- A loopback is judged stalled only once the deadline has passed AND the pump
+-- has serviced it this many times, so an engine that ticks rarely still gives
+-- each loopback its polls before the verdict. 60 ticks is two seconds of the
+-- pump's 33 ms rhythm: on a healthy engine the deadline decides. (enetxt's
+-- shim services a host only inside enPoll, so ENet's handshake alone takes
+-- three ticks: INFERRED from the shim and ENet's protocol, never measured.)
+constant kStMinTicks = 60
+-- And whatever the count, a pump this long past its first tick is judged, so
+-- a run ALWAYS ends: three deadlines.
+constant kStCeilingMs = 120000
 
 constant kStTitle = "xTalk Suite - End-to-End Self-Test"
 -- 1200 x 640 is the demos' window (the UI kit's rule 6: the whole window fits
@@ -293,8 +307,6 @@ constant kSuScControls = "stCopy,stRerun,stResults,stSummary,suBootLog,suFilterA
 -- hand-maintained file; renaming there would touch a shipped library and
 -- re-carry its six embedded copies for this file's convenience.
 local sAsyncRunning
--- Set once, the first time a render inside the pump throws. See suPump.
-local sRenderNoted
 
 -- probe results (one flag per member; "reason" strings carry the SKIP note)
 local sHaveSodium, sHaveTorrent, sHaveEnet, sHaveDc, sHaveOnion, sHaveCoin
@@ -326,7 +338,8 @@ local sDcAOpen, sDcBOpen
 local sDcGot               -- the ciphertext B received (Data)
 local sDcBigSize, sDcBigWant
 
-local sDeadline            -- the async phases' drop-dead time (ms clock)
+local sDeadline            -- the async phases' deadline (ms clock), set at the pump's FIRST tick
+local sSuTime              -- the pump's clock and what it measured (THE PUMP'S CLOCK, above suPump)
 
 -- THE PASTE'S HOLD on the two process-wide transport libraries (work plan
 -- suite-wide #16; see THE PASTE'S HOLD above stTeardown for the argument).
@@ -576,6 +589,7 @@ local en1sSentBinary       -- what the client sent (kept for byte-exact compare)
 local en1sSawServerDisc    -- "true" once the server drained enetDisconnect
 local en1sDeadline         -- the async phase's drop-dead time (ms clock)
 local en1sPhase            -- "", "connecting", "messaging", "binary", "closing", "done"
+local en1sStEnHeld
 local en1sTotal, en1sPassed, en1sFailed, en1sSkipped
 local en1sResultText          -- the accumulated PASS/FAIL/SKIP/section lines
 local en1sStRunDone           -- "true" once the run finished (drives the color)
@@ -653,6 +667,12 @@ constant rs1kRsGoldConfPub = "672e8e0b259627f15c772ec0d61f15cd786ce2bc7244549255
 constant rs1kRsGoldOnion = "ljkg4t7plunxn6knygzo33lvyrf77siav52gditnqqtukous6iwwe6yd.onion"
 constant rs1kRsGoldInboxId = "3cf4170b3e7253387f351af14eb1071224d0140e"
 constant rs1kRsGoldRoomId = "3a57d3ad644536e20a4486d31bde5ecb3902d3a5"
+constant rs1kRsGoldNumHandleNine = "9e00000000000000000000000000000000000000000000000000000000000001"
+constant rs1kRsGoldNumHandleHundred = "0000000000000000000000000000000000000000000000000000000000000100"
+constant rs1kRsGoldNumHandleOneExp = "1e00000000000000000000000000000000000000000000000000000000000000"
+constant rs1kRsGoldNumHandleOne = "0000000000000000000000000000000000000000000000000000000000000001"
+constant rs1kRsGoldRoomIdNumOrder = "f88f95e135daecbc4dca25dd8335b49692d4c804"
+constant rs1kRsGoldRoomIdNumEqual = "31c009d208e34830da05c61389b26fd6f417eaff"
 constant rs1kRsGoldPost1Hex = "5253503100000000689932803030303030303030303030303030303030303030303030303030303030303030303030303030303044000e68656c6c6f2c20726970746964650084b56e15631b88e780a74e22241c00efc34b63e50fd645ba651bb27dc41cac5953396ae8f848ef9b81711b08baa5b764fc5746bfd02122f36ac5a17f87a88f01"
 constant rs1kRsGoldPost1Target = "a161e3add5a4d78080db9219583e6a988954705c"
 constant rs1kRsGoldPost2Hex = "5253503100000000689932bc6131363165336164643561346437383038306462393231393538336536613938383935343730356344000b7365636f6e6420706f737401656565656565656565656565656565656565656565656565656565656565656565656565656565654d29a287d8ac5360688b548ee342f7754287e3ddc604fe2a5160263ce1ef7a5526f9a750dc05d0edf2c317ea0b3dca062e745d0e2fb6c1b381225c7d19dba10f"
@@ -1163,7 +1183,7 @@ constant kPI = 3.14159265358979
 
 -- >>> GENERATED EMBED: riptide script layer declarations >>> --
 -- ---- Riptide script layer (the real library, embedded) ----
-constant kRsVersion = "0.13.0"
+constant kRsVersion = "0.14.0"
 constant kRsKeyMagic = "RIPTKEY1"
 constant kRsHeadMagic = "RSH1"
 constant kRsPostMagic = "RSP1"
@@ -1188,7 +1208,6 @@ constant kRsMediaPlanPieces = 8
 constant kRsMediaPlanSpacingMs = 1000
 constant kRsAnonDmBodyLen = 632
 constant kRsAnonPageMax = 65536
-constant kRsAnonSubkeyBase = 100
 constant kRsHeadSalt = "riptide-head"
 constant kRsKdfContextText = "riptide"
 constant kRsInboxSuffix = "riptide-inbox"
@@ -1200,6 +1219,7 @@ constant kRsSubkeyNostr = "4"
 constant kRsSubkeyAppState = "5"
 constant kRsSubkeyAnonBase = 100
 constant kRsSubkeyAnonDmBase = 200
+constant kRsAnonIndexLimit = 2
 constant kRsNostrMagic = "RSN1"
 constant kRsNostrDomain = "riptide-nostr-b"
 constant kRsNostrSalt = "riptide-nostr"
@@ -2148,9 +2168,11 @@ end scFinish
 -- The scaffold's accounting (stAssert and friends), stReportText's RUN NOT
 -- FINISHED trailer, stShow, stPaint, stCopyResults, closeStack and the mouseUp
 -- that routes Re-run and Copy all run exactly as they did on the engine
--- records (2026-08-20 to 2026-08-27), because the kit builds the four controls
--- the scaffold writes UNDER THE SCAFFOLD'S OWN NAMES - stSummary, stResults,
--- stCopy, stRerun - so every one of those handlers finds what it always found.
+-- records (2026-08-20 to 2026-08-27; one change since: stShow is no longer
+-- called on a live pump tick, THE PUMP'S CLOCK above suPump), because the kit
+-- builds the four controls the scaffold writes UNDER THE SCAFFOLD'S OWN NAMES
+-- - stSummary, stResults, stCopy, stRerun - so every one of those handlers
+-- finds what it always found.
 -- "Run all" is the old Re-run button with a new label. stBuild and its three
 -- makers stay in the carried block and are never called: a carried block is
 -- carried whole, and its master still builds the four member harness windows.
@@ -2734,11 +2756,13 @@ command suBuildAll
 end suBuildAll
 
 -- ---- the results views --------------------------------------------------------
--- ALL is the scaffold's own stResults, rewritten every tick by stShow and
--- painted by stPaint exactly as before - and it is always what Copy copies.
--- FAILURES, SKIPS and ONE MEMBER are composed into suView, which is shown in
--- stResults' place while stShow keeps writing the hidden original, so nothing
--- fights over a field. BOOT CHECK shows the self-check's own log.
+-- ALL is the scaffold's own stResults, written by stShow when the pump is
+-- armed and again at the finish (never on a live pump tick since 2026-09-27:
+-- THE PUMP'S CLOCK, above suPump) and painted by stPaint exactly as before;
+-- Copy always copies the report from its variable. FAILURES, SKIPS and ONE
+-- MEMBER are composed into suView, which is shown in stResults' place while
+-- stShow writes the hidden original, so nothing fights over a field. BOOT
+-- CHECK shows the self-check's own log.
 command suSetFilter pWhich
    local tWhich
    set the defaultStack to the short name of this stack
@@ -3047,9 +3071,21 @@ command suSyncDone
 end suSyncDone
 
 -- One pump tick's paint, before the pump's re-arm and in a try of its own: the
--- rows when a transport's phase moved, and a filtered view when the report
--- grew. Nothing repaints on a tick that changed nothing, and a paint that
--- throws costs only the paint (suAfterDone repaints everything at the end).
+-- rows and the status line when a transport's phase moved, and a Failures or
+-- Skips view when the report grew. Nothing repaints on a tick that changed
+-- nothing, and a paint that throws costs only the paint (suAfterDone repaints
+-- everything at the end).
+--
+-- WHAT IT NEVER PAINTS WHILE A LOOPBACK IS LIVE (THE PUMP'S CLOCK, above
+-- suPump): the report itself (the All view, about 3350 lines) and a member's
+-- Show view (hundreds of lines for the big members, painted line by line).
+-- Both wait for the finish. The Failures and Skips views STAY live, bounded:
+-- their text is the FAIL or SKIP lines alone, not the report, and they re-render
+-- only on a tick whose phase change wrote report lines (about ten in a whole
+-- run), never on an idle one; a person who pressed one mid-run is watching
+-- it. Until 2026-09-27 a member's Show re-rendered here too, on every such
+-- tick, whichever member it showed. If a live view ever costs the loopbacks
+-- time, the timing notes' slowest tick says so.
 command suPumpPaint
    local tError
    try
@@ -3061,13 +3097,22 @@ end suPumpPaint
 command suPumpPaintNow
    if (sPhaseEn & "/" & sPhaseDc) is not sSuPainted then
       suPaintRows
+      uiStatus "Running (" & suScopeLabel() & "): the live loopbacks, enet" && suPhaseText(sPhaseEn) && "and datachannel" && suPhaseText(sPhaseDc) & ". Wait for the summary line before you copy.", empty
    end if
-   if sSuFilter is "fail" or sSuFilter is "skip" or sSuFilter begins with "m:" then
+   if sSuFilter is "fail" or sSuFilter is "skip" then
       if the length of sResultText is not sSuViewLen then
          suRenderView
       end if
    end if
 end suPumpPaintNow
+
+-- A loopback phase for the status line: the pump's own word, bar "skip".
+function suPhaseText pPhase
+   if pPhase is "skip" then
+      return "not in this run"
+   end if
+   return pPhase
+end suPhaseText
 
 -- The window's boot self-check, appended to the report UNCOUNTED, just above
 -- the summary: Copy results then carries the window's record too (runbook row
@@ -3239,7 +3284,8 @@ end suStatusFinal
 -- state. The log field is emptied first: a reopen must not stack a second
 -- block under the first (coin-wallet's waScFresh lesson, 2026-09-02).
 command suScRun
-   local tMissing
+   local tMissing, tT
+   put the milliseconds into tT
    set the defaultStack to the short name of this stack
    if there is a field "suBootLog" then
       put empty into field "suBootLog"
@@ -3255,6 +3301,11 @@ command suScRun
    scAssert "the run started before this check (running:" && scShow(sAsyncRunning) & ", finished:" && scShow(sStRunDone) & ")", suRunStarted()
    scAssert "the probe answered present or absent for every member", suProbeAnswered()
    scAssert "exactly one results view is showing", suVisibleViews() is 1
+   -- MEASURED for the pump's timing notes: on open this runs after stRun has
+   -- armed the pump and before its first tick, so its time is part of that
+   -- gap (THE PUMP'S CLOCK, above suPump). It only records a number; the
+   -- probe is still armed last, the contract's order.
+   put the milliseconds - tT into sSuTime["scMs"]
    scArmProbe
 end suScRun
 
@@ -3348,9 +3399,11 @@ command stRun pScope
    put "true" into sAsyncRunning
    put empty into sPhaseEn
    put empty into sPhaseDc
-   -- The render latch is per RUN: left set, a second run's pump would never
-   -- report a render that throws.
-   put empty into sRenderNoted
+   -- The pump's clock is per RUN, and it starts at the pump's first tick
+   -- (THE PUMP'S CLOCK, above suPump): nothing from an earlier run's clock
+   -- may judge this run's loopbacks.
+   put empty into sDeadline
+   put empty into sSuTime
    -- RELEASE THE SESSION BEFORE FORGETTING IT. This line used to be a bare
    -- `put 0 into sSession`, and that is how an engine pass loses the whole
    -- TorrentXT surface for the rest of the launch. The one-session latch lives
@@ -3461,8 +3514,9 @@ command stRun pScope
    -- async cross-member loopbacks start below and must not be racing while
    -- these run.
    -- CONTAINED like every other section, and for one extra reason. This call
-   -- used to be uncontained (it was not the ONLY bare statement here - stProbe,
-   -- stCancelPump and stShow are bare too; that earlier claim was wrong),
+   -- used to be uncontained (it was not the ONLY bare statement here - stProbe
+   -- and stCancelPump are bare too, and so was the arm-time stShow until
+   -- 2026-09-27; that earlier claim was wrong),
    -- on the reasoning that each folded harness contains its own sections. Four
    -- of the six have unguarded prologues (bt1stRun clears the error and reads
    -- btLastError before its try begins), and stMergeCounted/stMergeReturned
@@ -3554,9 +3608,14 @@ command stRun pScope
       suTallyClose
    end if
 
-   put the milliseconds + kStDeadlineMs into sDeadline
-   stShow
-   suSyncDone
+   -- THE DEADLINE IS NOT ARMED HERE. Until 2026-09-27 this line read
+   -- `put the milliseconds + kStDeadlineMs into sDeadline`, ahead of the
+   -- render below, suSyncDone, the rest of openStack and the window's first
+   -- layout, so everything those took was charged to the loopbacks before the
+   -- pump had polled them once (THE PUMP'S CLOCK, above suPump). suPumpArm
+   -- renders and paints as before, measures each, and leaves the clock to
+   -- the pump's first tick.
+   suPumpArm
    send "suPump" to me in 33 milliseconds
 end stRun
 
@@ -4639,11 +4698,71 @@ end stCheckSealed
 
 -- ---- the pump ----------------------------------------------------------------
 -- ONE timer chain drives BOTH async members. It reschedules itself until every
--- async phase is terminal or the deadline passes; it never blocks the
--- interpreter, because nothing in this family may block the one script thread.
+-- async phase is terminal or the loopbacks are judged stalled (THE PUMP'S
+-- CLOCK, below); it never blocks the interpreter, because nothing in this
+-- family may block the one script thread.
+--
+-- THE PUMP'S CLOCK (2026-09-27). A loopback is judged only on pump ticks that
+-- actually serviced it. The clock starts at the pump's FIRST tick; the verdict
+-- "stalled" needs the deadline (kStDeadlineMs from that tick) AND a floor of
+-- serviced ticks (kStMinTicks), or the ceiling (kStCeilingMs from that tick,
+-- whatever the count), so a run ALWAYS ends. And while a loopback is live the
+-- pump renders nothing of the report into the window: the rows' pills and the
+-- status line carry the progress, and the report is written when the pump is
+-- armed and again at the finish (stReportDone), never on a live tick. Copy
+-- results mid-run copies from the variable, with the RUN NOT FINISHED
+-- trailer, exactly as before.
+--
+-- WHY: THE WINDOWS RECORD. On the Windows machine of 2026-09-24 to 09-26 both
+-- loopbacks stalled in every run of the D-23 paste on record (six), enet in
+-- `connecting` and dc in `opening`, while the same code completed on Linux
+-- (2026-09-25 and 09-26); and on 2026-09-26 enetxt's standalone enet-selftest
+-- completed its own ENet loopback on that Windows machine (68/0/0, OBSERVED)
+-- and the DataChannel loopback demo "seems to work as intended", by the
+-- maintainer's account. So the paste's loopbacks failed where the members'
+-- did not. The diagnosis, INFERRED from the 2026-09-26 reports and the
+-- engine source:
+--   * the pump declared the stall on its first tick or its second. enetxt's
+--     shim services a host only inside enPoll, so over a UDP loopback that
+--     works (enet-selftest's did, there) the client sees the connect on its
+--     second poll and the server on its third (the CONNECT out on the first,
+--     the VERIFY back on the second, the ACK in on the third); the Windows
+--     reports carry no "enet client sees the handle" line, the client's
+--     second poll, and ENet never left `connecting`;
+--   * that tick came MORE than 40 s after the old deadline was armed. The
+--     first run was the one openStack started, and its summary said the boot
+--     self-check's delayed probe had not fired (suScRun arms it after stRun
+--     arms the pump, due in 400 ms where the pump is due in 33). The engine
+--     keeps its pending messages sorted by due time and
+--     delivers the earliest due one per pass (LiveCode's develop-9.6
+--     uidc.cpp, doaddmessage and handlepending: DOCUMENTED from the source,
+--     not observed), so the pump reached stFinish on a tick due before the
+--     probe, with the deadline already past;
+--   * the deadline used to be armed in stRun BEFORE the arm-time render of
+--     the whole report (about 3350 lines into field "stResults"), suSyncDone,
+--     the rest of openStack and the window's first layout, and the pump then
+--     re-rendered the whole report on every 33 ms tick, so a render slower
+--     than the deadline failed both loopbacks after a poll or two, long
+--     before either could finish;
+--   * WHAT takes the time on Windows is NOT KNOWN. suPumpNotes prints the
+--     measurements that separate the candidates (the arm-time render,
+--     suSyncDone's paints, the boot self-check, the engine's time before the
+--     first tick, timers queued ahead of it, and inside a tick each
+--     transport's poll apart from the board's paint: the old core judged
+--     tick 1 AFTER its polls, so one slow native poll fits the record too,
+--     and the 2026-09-12 Windows DLLs first met an engine with the D-23
+--     board), uncounted, so the next Windows report carries them.
+-- The fix is verified statically (check-suite-selftest.py check 19 holds the
+-- deadline to the pump and the report out of a live tick) and in
+-- tools/check-suite-ui-boot.py's Windows-stall scenario (which reproduces the
+-- Windows report on the old core); needs an OXT pass on Windows. The
+-- standalone enet-selftest and
+-- datachannel-selftest keep the old shape (the deadline armed before a render
+-- each tick) at a report of about seventy lines; enet-selftest's completed on
+-- that Windows machine on 2026-09-26, so the shape did not fail it there.
 command suPump
    local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
-   local tEvents, tEvent
+   local tEvents, tEvent, tLive, tStalled, tT0, tEnMs, tDcMs, tPaintMs
    -- PINNED FIRST (engine note 5.3). This handler arrives by `send ... in`, and
    -- since D-23 it paints the board's rows and views as well as the report;
    -- every one of those names a control unqualified, so the defaultStack is
@@ -4652,14 +4771,28 @@ command suPump
    if sAsyncRunning is not "true" then
       exit suPump
    end if
+   -- The clock's bookkeeping is arithmetic on numbers this pump wrote, and it
+   -- is contained all the same: nothing that only MEASURES may cost the run.
+   put (not stEnDone()) or (not stDcDone()) into tLive
+   try
+      suPumpTickStart
+   catch tError
+   end try
 
    -- Contained for the same reason the synchronous sections are, and with one
    -- extra stake: a throw out of the pump would break the timer chain, so
    -- nothing would ever reach stFinish - and the hosts, peers, and the one
    -- libtorrent session would all leak until the maintainer closed the stack.
    -- Marking the phase "failed" lets the run converge and tear down properly.
+   -- Each transport's block is TIMED (two reads of the clock, outside its
+   -- try): a slow tick in the timing notes is then its polls or its paint,
+   -- never a guess between them (review, 2026-09-27: a slow native poll on
+   -- the first tick fitted the Windows record as well as a slow render did).
+   put empty into tEnMs
+   put empty into tDcMs
    if not stEnDone() then
       suTallyOpen "enetxt"
+      put the milliseconds into tT0
       try
          put enPoll(sEnServer) into tEvents
          repeat for each element tEvent in tEvents
@@ -4675,11 +4808,13 @@ command suPump
          stNote "it raised:" && tError
          put "failed" into sPhaseEn
       end try
+      put the milliseconds - tT0 into tEnMs
       suTallyClose
    end if
 
    if not stDcDone() then
       suTallyOpen "datachannelxt"
+      put the milliseconds into tT0
       try
          put dcPoll() into tEvents
          repeat for each element tEvent in tEvents
@@ -4691,8 +4826,14 @@ command suPump
          stNote "it raised:" && tError
          put "failed" into sPhaseDc
       end try
+      put the milliseconds - tT0 into tDcMs
       suTallyClose
    end if
+
+   try
+      suPumpServiced tLive, tEnMs, tDcMs
+   catch tError
+   end try
 
    if stEnDone() and stDcDone() then
       stFinish
@@ -4700,19 +4841,31 @@ command suPump
    end if
 
    -- A stuck section must not take the run with it: record the failure against
-   -- the section that hung and finish everything else.
-   if the milliseconds > sDeadline then
+   -- the section that hung and finish everything else. FAIL CLOSED: a verdict
+   -- that could not be computed ends the run, because the ceiling is the one
+   -- promise that every run ends.
+   put true into tStalled
+   try
+      put suPumpStalled() into tStalled
+   catch tError
+      put true into tStalled
+   end try
+   if tStalled then
       if not stEnDone() then
          suTallyOpen "enetxt"
          stAssert "enet loopback finished before the deadline", false
-         stNote "stalled in phase" && sPhaseEn & "; UDP to 127.0.0.1 may be blocked"
+         stNote "stalled in phase" && sPhaseEn && suStallNote()
+         stNote "a blocked UDP loopback is one cause and a pump the engine starved is another: the timing notes below tell them apart (runbook 5.5)"
+         put suEndStamp("stalled in" && sPhaseEn & ", judged") into sSuTime["enEnd"]
          put "failed" into sPhaseEn
          suTallyClose
       end if
       if not stDcDone() then
          suTallyOpen "datachannelxt"
          stAssert "datachannel loopback finished before the deadline", false
-         stNote "stalled in phase" && sPhaseDc & "; UDP to this machine may be blocked"
+         stNote "stalled in phase" && sPhaseDc && suStallNote()
+         stNote "a blocked UDP loopback is one cause and a pump the engine starved is another: the timing notes below tell them apart (runbook 5.5)"
+         put suEndStamp("stalled in" && sPhaseDc & ", judged") into sSuTime["dcEnd"]
          put "failed" into sPhaseDc
          suTallyClose
       end if
@@ -4720,47 +4873,263 @@ command suPump
       exit suPump
    end if
 
-   -- THE RE-ARM IS THE ONE STATEMENT THAT MUST ALWAYS BE REACHED, and until
-   -- 2026-08-20 the render above it was the only thing in this handler that
-   -- was not contained. The comment at the top of suPump already had the whole
-   -- argument - a throw out of the pump breaks the timer chain, so nothing
-   -- ever reaches stFinish and the hosts, peers and libtorrent session leak -
-   -- and it had been applied to the two poll blocks and not to this line.
-   -- stShow writes `field "stResults"` unqualified, which resolves against the
-   -- DEFAULTSTACK (engine notes 5.3); on a `send ... in` tick that is not
-   -- guaranteed to be this stack, so the write can throw.
-   --
-   -- NOT A POST-MORTEM. Two 2026-08-20 engine reports ended mid-CROSS-section
-   -- and this was the shape that fit: a first-tick throw here would freeze the
-   -- report at exactly the last synchronous render, which is what both looked
-   -- like. It was wrong - the third run, same build, completed 1981/0/1
-   -- through both loopbacks, teardown and the summary; the first two were
-   -- copied before the async half finished. The containment stays because the
-   -- reasoning at the top of this handler always applied to this line and had
-   -- only ever been applied to the two poll blocks, and because a report is
-   -- assembled in a variable: losing a render must never cost the run.
-   try
-      stShow
-   catch tError
-      if sRenderNoted is not "true" then
-         put "true" into sRenderNoted
-         suTallyOpen "cross"
-         stAssert "the report rendered from the pump", false
-         stNote "it raised:" && tError
-         stNote "the run continues; the report is assembled in a variable and"
-         stNote "does not depend on the field it failed to write"
-         suTallyClose
-      end if
-   end try
-   -- The board's paint, contained on its own (suPumpPaint swallows its own
-   -- throw) so it can neither break the chain nor be mistaken for the report.
+   -- NO REPORT RENDER HERE while a loopback is live (THE PUMP'S CLOCK, above).
+   -- Until 2026-09-27 this was a contained `stShow`, the whole report into
+   -- field "stResults" on every 33 ms tick: the render the Windows diagnosis
+   -- names, and on a slow render a transport starved between its polls.
+   -- The board's paint stays, contained on its own (suPumpPaint swallows its
+   -- own throw) so it can neither break the chain nor cost the run: the rows
+   -- and the status line when a phase moved, and a Failures or Skips view
+   -- when the report grew (suPumpPaintNow says why those two stay). Timed,
+   -- like the polls above.
+   put the milliseconds into tT0
    suPumpPaint
+   put the milliseconds - tT0 into tPaintMs
+   -- THE RE-ARM IS THE ONE STATEMENT THAT MUST ALWAYS BE REACHED: a throw out
+   -- of the pump breaks the timer chain, and then nothing ever reaches
+   -- stFinish and the hosts, peers and libtorrent session leak. So everything
+   -- above it is contained, the tick's measurement included.
+   try
+      suPumpTickEnd tPaintMs
+   catch tError
+   end try
    send "suPump" to me in 33 milliseconds
 end suPump
+
+-- ARM THE PUMP: the arm-time render and the board's paint, as stRun always did
+-- them, each MEASURED, and the clock left for the first tick. The render is
+-- contained (it was bare until 2026-09-27, and a throw there skipped the
+-- `send "suPump"` that is the only route to the teardown); a render that
+-- throws is a FAIL on the cross row, as a render that threw inside the pump
+-- used to be, and the run goes on: the report is assembled in a variable.
+command suPumpArm
+   local tT, tError
+   put empty into sDeadline
+   put empty into sSuTime
+   put ((not stEnDone()) or (not stDcDone())) into sSuTime["loops"]
+   put sPhaseEn into sSuTime["enArm"]
+   put sPhaseDc into sSuTime["dcArm"]
+   put the number of lines of sResultText into sSuTime["lines"]
+   put the milliseconds into tT
+   try
+      stShow
+      put the milliseconds - tT into sSuTime["render"]
+   catch tError
+      suTallyOpen "cross"
+      stAssert "the report rendered when the pump was armed", false
+      stNote "it raised:" && tError
+      stNote "the run continues; the report is assembled in a variable and"
+      stNote "does not depend on the field it failed to write"
+      suTallyClose
+   end try
+   put the milliseconds into tT
+   suSyncDone
+   put the milliseconds - tT into sSuTime["sync"]
+   try
+      put suOtherTimers() into sSuTime["timersArm"]
+   catch tError
+      put "not read (" & tError & ")" into sSuTime["timersArm"]
+   end try
+   put the milliseconds into sSuTime["arm"]
+end suPumpArm
+
+-- The first tick starts the clock; every later one measures the wait since
+-- the last re-arm (33 ms asked).
+command suPumpTickStart
+   local tNow, tWait
+   put the milliseconds into tNow
+   put tNow into sSuTime["tickAt"]
+   if sSuTime["tick1"] is empty then
+      put tNow into sSuTime["tick1"]
+      put tNow + kStDeadlineMs into sDeadline
+      put 0 into sSuTime["ticks"]
+      put 0 into sSuTime["slow"]
+      put 0 into sSuTime["wait"]
+      put suOtherTimers() into sSuTime["timersTick1"]
+      exit suPumpTickStart
+   end if
+   put tNow - sSuTime["rearm"] into tWait
+   if tWait > sSuTime["wait"] then
+      put tWait into sSuTime["wait"]
+   end if
+end suPumpTickStart
+
+-- After the polls: a tick that polled a live loopback is SERVICED, each
+-- transport's block keeps its slowest time (empty when it was not polled this
+-- tick), and a loopback that has just ended is stamped with the tick and the
+-- time.
+command suPumpServiced pLive, pEnMs, pDcMs
+   if pLive is true then
+      add 1 to sSuTime["ticks"]
+   end if
+   suPumpKeepMax "enPoll", pEnMs
+   suPumpKeepMax "dcPoll", pDcMs
+   if stEnDone() and sSuTime["enEnd"] is empty then
+      put suEndStamp(sPhaseEn) into sSuTime["enEnd"]
+   end if
+   if stDcDone() and sSuTime["dcEnd"] is empty then
+      put suEndStamp(sPhaseDc) into sSuTime["dcEnd"]
+   end if
+end suPumpServiced
+
+-- How a loopback ended, for the notes: the phase it ended in, the tick and
+-- the time from the first tick.
+function suEndStamp pHow
+   return pHow && "on tick" && sSuTime["ticks"] & "," && (the milliseconds - sSuTime["tick1"]) && "ms after the first tick"
+end suEndStamp
+
+-- Before the re-arm: the tick's own time, for the slowest-tick note, and the
+-- board's paint on it.
+command suPumpTickEnd pPaintMs
+   local tNow, tTook
+   put the milliseconds into tNow
+   put tNow - sSuTime["tickAt"] into tTook
+   if tTook > sSuTime["slow"] then
+      put tTook into sSuTime["slow"]
+   end if
+   suPumpKeepMax "paint", pPaintMs
+   put tNow into sSuTime["rearm"]
+end suPumpTickEnd
+
+-- One slowest-so-far span: kept only when measured (a number), so a
+-- transport never polled in this run reads "not measured", never 0 ms.
+command suPumpKeepMax pKey, pMs
+   if pMs is not a number then
+      exit suPumpKeepMax
+   end if
+   if sSuTime[pKey] is empty or pMs > sSuTime[pKey] then
+      put pMs into sSuTime[pKey]
+   end if
+end suPumpKeepMax
+
+-- THE VERDICT. The deadline alone is not enough (a pump the engine starved
+-- has not serviced the loopbacks it would judge), the floor alone could wait
+-- forever on an engine that ticks rarely, and the ceiling ends every run. An
+-- unset first tick reads as long ago: the verdict fails closed.
+function suPumpStalled
+   local tRun
+   put the milliseconds - sSuTime["tick1"] into tRun
+   if tRun > kStCeilingMs then
+      return true
+   end if
+   if the milliseconds > sDeadline and sSuTime["ticks"] >= kStMinTicks then
+      return true
+   end if
+   return false
+end suPumpStalled
+
+-- What a stall note says: the ticks the loopback was given, and the time.
+function suStallNote
+   return "after" && sSuTime["ticks"] && "serviced ticks," && (the milliseconds - sSuTime["tick1"]) && "ms from the pump's first tick (judged at" && kStDeadlineMs && "ms and" && kStMinTicks && "ticks, or" && kStCeilingMs && "ms whatever the count)"
+end suStallNote
+
+-- The engine's OTHER pending messages: every timer queued in the process
+-- besides the paste's own two, counted, with up to six distinct names. The
+-- list is engine-wide (stCancelPump's comment), so this names another open
+-- stack's timers too; that is the point of reading it.
+function suOtherTimers
+   local tPending, tLine, tOld, tName, tN, tNames, tSeen
+   put the pendingMessages into tPending
+   put the itemDelimiter into tOld
+   set the itemDelimiter to comma
+   put 0 into tN
+   put empty into tNames
+   put 0 into tSeen
+   repeat for each line tLine in tPending
+      put item 3 of tLine into tName
+      if tName is not empty and tName is not "suPump" and tName is not "suRunTick" then
+         add 1 to tN
+         if not (tName is among the items of tNames) then
+            if tSeen < 6 then
+               if tNames is empty then
+                  put tName into tNames
+               else
+                  put comma & tName after tNames
+               end if
+            end if
+            add 1 to tSeen
+         end if
+      end if
+   end repeat
+   set the itemDelimiter to tOld
+   if tN is 0 then
+      return "none"
+   end if
+   if tSeen > 6 then
+      put comma & "..." after tNames
+   end if
+   return tN && "(" & tNames & ")"
+end suOtherTimers
+
+-- A measured span, or why there is none.
+function suMsText pValue
+   if pValue is empty or pValue is not a number then
+      return "not measured"
+   end if
+   return pValue && "ms"
+end suMsText
+
+-- THE TIMING NOTES, UNCOUNTED, on every run that armed a live loopback: what
+-- the next Windows report must carry back (runbook 5.5). stFinish prints them
+-- above its onion section, in the cross row's tally (a note counts nothing).
+command suPumpNotes
+   local tNow, tFirst, tRest
+   put the milliseconds into tNow
+   stSection "the loopbacks' pump: where the time went (notes, not counted; paste them back)"
+   stNote "the report written into the window as the pump was armed:" && suMsText(sSuTime["render"]) && "(" & sSuTime["lines"] && "lines)"
+   stNote "the board painted after it (suSyncDone):" && suMsText(sSuTime["sync"])
+   if sSuTime["tick1"] is empty then
+      stNote "the pump's first tick: not reached"
+   else
+      put sSuTime["tick1"] - sSuTime["arm"] into tFirst
+      stNote "from arming the pump to its first tick:" && suMsText(tFirst) && "(33 asked)"
+      if sSuTime["scMs"] is empty then
+         stNote "   no boot self-check ran in that gap (a run started from a button, not on open)"
+      else
+         put tFirst - sSuTime["scMs"] into tRest
+         stNote "   of which the boot self-check, run on open after the arm:" && suMsText(sSuTime["scMs"])
+         stNote "   and the engine's own, before the first tick (the window's first layout and redraw, timers due first):" && suMsText(tRest)
+      end if
+      stNote "the pump:" && sSuTime["ticks"] && "serviced ticks over" && (tNow - sSuTime["tick1"]) && "ms; the slowest tick" && suMsText(sSuTime["slow"]) & "; the longest wait between ticks" && suMsText(sSuTime["wait"]) && "(33 asked)"
+      stNote "   inside a tick, the slowest of each part: enet's polls and events" && suMsText(sSuTime["enPoll"]) & ", datachannel's poll and events" && suMsText(sSuTime["dcPoll"]) & ", the board's paint" && suMsText(sSuTime["paint"])
+   end if
+   stNote "other timers queued as the pump was armed:" && sSuTime["timersArm"]
+   stNote "other timers queued at its first tick:" && sSuTime["timersTick1"]
+   stNote "enet loopback:" && suLoopEndText(sSuTime["enArm"], sSuTime["enEnd"])
+   stNote "datachannel loopback:" && suLoopEndText(sSuTime["dcArm"], sSuTime["dcEnd"])
+   stNote "judged stalled only after" && kStDeadlineMs && "ms from the first tick AND" && kStMinTicks && "serviced ticks, or after" && kStCeilingMs && "ms whatever the count"
+end suPumpNotes
+
+-- One loopback's ending, for the notes: not live at the arm, still live when
+-- the run ended (a close or a re-entry cut it short), or the stamp the pump
+-- wrote (done, failed or stalled; the tick and the time).
+function suLoopEndText pArm, pEnd
+   if pArm is "skip" or pArm is "failed" or pArm is "done" then
+      return "not live when the pump was armed (" & pArm & ")"
+   end if
+   if pEnd is empty then
+      return "still" && pArm && "when the run ended"
+   end if
+   return pEnd
+end suLoopEndText
 
 -- ---- finish + teardown -------------------------------------------------------
 command stFinish
    local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
+   -- The pump's timing notes first, next to the loopbacks they time, on every
+   -- run that armed a live loopback (THE PUMP'S CLOCK, above suPump). NOTES,
+   -- never assertions: they count nothing, so a green run's totals are the
+   -- totals every earlier record printed. Contained: a note must never cost
+   -- the teardown below.
+   if sSuTime["loops"] is "true" then
+      suTallyOpen "cross"
+      try
+         suPumpNotes
+      catch tError
+         stNote "the pump's timing notes could not be written:" && tError
+      end try
+      suTallyClose
+   end if
    -- Run last: OnionXT's capability advertisement is pure compute, but reading
    -- it here keeps the whole cross-member story in one block at the end of the
    -- report, next to the transports it describes.
@@ -7308,21 +7677,22 @@ function cxHdNeuter pNode
 end cxHdNeuter
 
 function cxHdDeriveChild pNode, pIndex
-   local tData, tI, tChild, tHasPrivate
-   if pIndex < 0 or pIndex > 4294967295 then
-      throw "CoinXT: cxHdDeriveChild: a child index must be between 0 and 2^32-1."
-   end if
+   local tData, tI, tChild, tHasPrivate, tIndex
+   -- the index as DIGITS first (cxCheckedIndex, 2026-09-28): "1e1" was child
+   -- 10, "3.5" child 3 and an empty index child 0
+   put cxCheckedIndex(pIndex, 0, 4294967295, "cxHdDeriveChild", "a child index", \
+         "a child index must be between 0 and 2^32-1.") into tIndex
    put (pNode["seckey"] is not "") into tHasPrivate
-   if pIndex >= kCxHardenedBase then
+   if tIndex >= kCxHardenedBase then
       if tHasPrivate is false then
          throw "CoinXT: cxHdDeriveChild: a hardened child cannot be derived from a public-only node, because BIP-32 hashes the private key to make one."
       end if
       -- The 0x00 pad makes the private key 33 bytes, the same width as the
       -- compressed public key the non-hardened branch uses, so both hash the
       -- same amount of data. BIP-32 is explicit about it.
-      put numToByte(0) & pNode["seckey"] & cxUInt32ToBytes(pIndex) into tData
+      put numToByte(0) & pNode["seckey"] & cxUInt32ToBytes(tIndex) into tData
    else
-      put pNode["pubkey"] & cxUInt32ToBytes(pIndex) into tData
+      put pNode["pubkey"] & cxUInt32ToBytes(tIndex) into tData
    end if
    put cxHmacSha512(pNode["chaincode"], tData) into tI
    put byte 33 to 64 of tI into tChild["chaincode"]
@@ -7338,7 +7708,7 @@ function cxHdDeriveChild pNode, pIndex
       put cxPubkeyTweakAdd(pNode["pubkey"], byte 1 to 32 of tI) into tChild["pubkey"]
    end if
    put pNode["depth"] + 1 into tChild["depth"]
-   put pIndex into tChild["index"]
+   put tIndex into tChild["index"]
    put cxFingerprint(pNode["pubkey"]) into tChild["parentfp"]
    return tChild
 end cxHdDeriveChild
@@ -7536,13 +7906,93 @@ function cxWifDecode pWif
    return tResult
 end cxWifDecode
 
+private function cxCheckedWhole pValue, pMax, pWho, pWhat
+   local tText, tCount, tI, tStart
+   put pValue into tText
+   put the number of chars of tText into tCount
+   if tCount > 0 then
+      if byteToNum(char 1 of tText) is 45 then
+         throw "CoinXT: " & pWho & ": " & pWhat & " must not be negative."
+      end if
+   end if
+   if tCount is 0 then
+      throw "CoinXT: " & pWho & ": " & pWhat & " must be a whole number " & \
+            "written in digits."
+   end if
+   repeat with tI = 1 to tCount
+      if cxCharIndex(char tI of tText, "0123456789") is 0 then
+         throw "CoinXT: " & pWho & ": " & pWhat & " must be a whole number " & \
+               "written in digits."
+      end if
+   end repeat
+   -- leading zeros off (one digit always stays), then compare as digits
+   put 1 into tStart
+   repeat while tStart < tCount
+      if byteToNum(char tStart of tText) is not 48 then
+         exit repeat
+      end if
+      add 1 to tStart
+   end repeat
+   put char tStart to tCount of tText into tText
+   put the number of chars of tText into tCount
+   if tCount > the number of chars of pMax then
+      throw "CoinXT: " & pWho & ": " & pWhat & " is more than " & pMax & \
+            ", the most this encoder writes exactly."
+   end if
+   if tCount is the number of chars of pMax then
+      if cxCompareBytes(tText, pMax) > 0 then
+         throw "CoinXT: " & pWho & ": " & pWhat & " is more than " & pMax & \
+               ", the most this encoder writes exactly."
+      end if
+   end if
+   return tText + 0
+end cxCheckedWhole
+
+private function cxCheckedIndex pValue, pMin, pMax, pWho, pWhat, pRange
+   local tText, tCount, tI, tStart, tIndex
+   put pValue into tText
+   put the number of chars of tText into tCount
+   if tCount is 0 then
+      throw "CoinXT: " & pWho & ": " & pWhat & " must be a whole number " & \
+            "written in digits."
+   end if
+   put 1 into tStart
+   if tCount > 1 then
+      if byteToNum(char 1 of tText) is 45 then
+         put 2 into tStart
+      end if
+   end if
+   repeat with tI = tStart to tCount
+      if cxCharIndex(char tI of tText, "0123456789") is 0 then
+         throw "CoinXT: " & pWho & ": " & pWhat & " must be a whole number " & \
+               "written in digits."
+      end if
+   end repeat
+   if tStart is 2 then
+      throw "CoinXT: " & pWho & ": " & pRange
+   end if
+   -- leading zeros off (one digit always stays), then at most ten digits
+   repeat while tStart < tCount
+      if byteToNum(char tStart of tText) is not 48 then
+         exit repeat
+      end if
+      add 1 to tStart
+   end repeat
+   if tCount - tStart + 1 > 10 then
+      throw "CoinXT: " & pWho & ": " & pRange
+   end if
+   put (char tStart to tCount of tText) + 0 into tIndex
+   if tIndex < pMin or tIndex > pMax then
+      throw "CoinXT: " & pWho & ": " & pRange
+   end if
+   return tIndex
+end cxCheckedIndex
+
 private function cxUIntToBytesLE pValue, pWidth
    local tOut, tRest, tI
-   if pValue < 0 then
-      throw "CoinXT: cxUIntToBytesLE: the value must not be negative."
-   end if
+   put cxCheckedWhole(pValue, "9007199254740992", "cxUIntToBytesLE", \
+         "the value") into tRest
    put "" into tOut
-   put pValue into tRest
    repeat with tI = 1 to pWidth
       put numToByte(cxIntMod(tRest, 256)) after tOut
       put cxIntDiv(tRest, 256) into tRest
@@ -7554,19 +8004,18 @@ private function cxUIntToBytesLE pValue, pWidth
 end cxUIntToBytesLE
 
 function cxVarInt pN
-   if pN < 0 then
-      throw "CoinXT: cxVarInt: the count must not be negative."
+   local tN
+   put cxCheckedWhole(pN, "9007199254740992", "cxVarInt", "the count") into tN
+   if tN < 253 then
+      return numToByte(tN)
    end if
-   if pN < 253 then
-      return numToByte(pN)
+   if tN <= 65535 then
+      return numToByte(253) & cxUIntToBytesLE(tN, 2)
    end if
-   if pN <= 65535 then
-      return numToByte(253) & cxUIntToBytesLE(pN, 2)
+   if tN <= 4294967295 then
+      return numToByte(254) & cxUIntToBytesLE(tN, 4)
    end if
-   if pN <= 4294967295 then
-      return numToByte(254) & cxUIntToBytesLE(pN, 4)
-   end if
-   return numToByte(255) & cxUIntToBytesLE(pN, 8)
+   return numToByte(255) & cxUIntToBytesLE(tN, 8)
 end cxVarInt
 
 private function cxStripLeadingZeroBytes pData
@@ -7657,7 +8106,7 @@ function cxBtcSighashLegacy pVersion, pOutpoints, pSequences, pIndex, pScriptCod
 end cxBtcSighashLegacy
 
 private function cxBtcSighashLegacyInner pVersion, pOutpoints, pSequences, pIndex, pScriptCodeHex, pOutputs, pLocktime, pSighashType
-   local tCount, tI, tBuf, tScript, tOutBytes, tOutCount
+   local tCount, tI, tBuf, tScript, tOutBytes, tOutCount, tIndex
    -- SIGHASH_ALL ONLY, AND IT IS REFUSED RATHER THAN APPROXIMATED.
    -- Neither preimage builder below branches on pSighashType: both always
    -- commit to every prevout, every sequence and every output, which IS the
@@ -7683,14 +8132,15 @@ private function cxBtcSighashLegacyInner pVersion, pOutpoints, pSequences, pInde
    if tCount is 0 or the number of items of pSequences is not tCount then
       throw "CoinXT: cxBtcSighashLegacy: the outpoint and sequence lists must be parallel and non-empty."
    end if
-   if pIndex < 1 or pIndex > tCount then
-      throw "CoinXT: cxBtcSighashLegacy: the input index is out of range (it is 1-based)."
-   end if
+   -- the index as DIGITS first (cxCheckedIndex, 2026-09-28): 1.5 passed the
+   -- range test and matched no input below, so no scriptCode was placed
+   put cxCheckedIndex(pIndex, 1, tCount, "cxBtcSighashLegacy", "the input index", \
+         "the input index is out of range (it is 1-based).") into tIndex
    put cxHexDecode(pScriptCodeHex) into tScript
    put cxUIntToBytesLE(pVersion, 4) & cxVarInt(tCount) into tBuf
    repeat with tI = 1 to tCount
       put tBuf & cxHexDecode(item tI of pOutpoints) into tBuf
-      if tI is pIndex then
+      if tI is tIndex then
          put tBuf & cxVarInt(the number of bytes of tScript) & tScript into tBuf
       else
          put tBuf & cxVarInt(0) into tBuf
@@ -7727,7 +8177,7 @@ function cxBtcSighashSegwit pVersion, pOutpoints, pSequences, pIndex, pScriptCod
 end cxBtcSighashSegwit
 
 private function cxBtcSighashSegwitInner pVersion, pOutpoints, pSequences, pIndex, pScriptCodeHex, pAmountSat, pOutputs, pLocktime, pSighashType
-   local tCount, tI, tPrevouts, tSequencesRaw, tOutputsRaw, tScript, tBuf, tOutCount
+   local tCount, tI, tPrevouts, tSequencesRaw, tOutputsRaw, tScript, tBuf, tOutCount, tIndex
    -- SIGHASH_ALL ONLY, AND IT IS REFUSED RATHER THAN APPROXIMATED.
    -- Neither preimage builder below branches on pSighashType: both always
    -- commit to every prevout, every sequence and every output, which IS the
@@ -7753,9 +8203,10 @@ private function cxBtcSighashSegwitInner pVersion, pOutpoints, pSequences, pInde
    if tCount is 0 or the number of items of pSequences is not tCount then
       throw "CoinXT: cxBtcSighashSegwit: the outpoint and sequence lists must be parallel and non-empty."
    end if
-   if pIndex < 1 or pIndex > tCount then
-      throw "CoinXT: cxBtcSighashSegwit: the input index is out of range (it is 1-based)."
-   end if
+   -- the index as DIGITS first (cxCheckedIndex, 2026-09-28): 1.5 passed the
+   -- range test and `item 1.5 of` chose an input by chunk rounding
+   put cxCheckedIndex(pIndex, 1, tCount, "cxBtcSighashSegwit", "the input index", \
+         "the input index is out of range (it is 1-based).") into tIndex
    if pOutputs is "" then
       throw "CoinXT: cxBtcSighashSegwit: the outputs list is required (BIP-143 commits to hashOutputs)."
    end if
@@ -7773,9 +8224,9 @@ private function cxBtcSighashSegwitInner pVersion, pOutpoints, pSequences, pInde
    put cxHexDecode(pScriptCodeHex) into tScript
    put cxUIntToBytesLE(pVersion, 4) into tBuf
    put tBuf & cxHash256(tPrevouts) & cxHash256(tSequencesRaw) into tBuf
-   put tBuf & cxHexDecode(item pIndex of pOutpoints) into tBuf
+   put tBuf & cxHexDecode(item tIndex of pOutpoints) into tBuf
    put tBuf & cxVarInt(the number of bytes of tScript) & tScript into tBuf
-   put tBuf & cxUIntToBytesLE(pAmountSat, 8) & cxUIntToBytesLE(item pIndex of pSequences, 4) into tBuf
+   put tBuf & cxUIntToBytesLE(pAmountSat, 8) & cxUIntToBytesLE(item tIndex of pSequences, 4) into tBuf
    put tBuf & cxHash256(tOutputsRaw) & cxUIntToBytesLE(pLocktime, 4) & cxUIntToBytesLE(pSighashType, 4) into tBuf
    return cxHash256(tBuf)
 end cxBtcSighashSegwitInner
@@ -7895,7 +8346,7 @@ function cxBtcSighashTaproot pVersion, pOutpoints, pSequences, pAmountsSat, pScr
 end cxBtcSighashTaproot
 
 private function cxBtcSighashTaprootInner pVersion, pOutpoints, pSequences, pAmountsSat, pScriptPubkeys, pOutputs, pIndex, pLocktime, pSighashType, pTapleafHex
-   local tCount, tI, tAnyoneCanPay, tBase, tBuf, tRaw, tSpk, tLeaf, tOutCount
+   local tCount, tI, tAnyoneCanPay, tBase, tBuf, tRaw, tSpk, tLeaf, tOutCount, tIndex
    -- the valid type set is BIP-341's own: 0x80 alone is NOT a type.
    if pSighashType is not 0 and pSighashType is not 1 and pSighashType is not 2 \
          and pSighashType is not 3 and pSighashType is not 129 \
@@ -7916,16 +8367,18 @@ private function cxBtcSighashTaprootInner pVersion, pOutpoints, pSequences, pAmo
          or the number of items of pScriptPubkeys is not tCount then
       throw "CoinXT: cxBtcSighashTaproot: the outpoint, sequence, amount and scriptPubKey lists must be parallel."
    end if
-   if pIndex < 1 or pIndex > tCount then
-      throw "CoinXT: cxBtcSighashTaproot: the input index is out of range (it is 1-based)."
-   end if
+   -- the index as DIGITS first (cxCheckedIndex, 2026-09-28): 1.5 passed the
+   -- range test and, under ANYONECANPAY, `item 1.5 of` chose an input by
+   -- chunk rounding
+   put cxCheckedIndex(pIndex, 1, tCount, "cxBtcSighashTaproot", "the input index", \
+         "the input index is out of range (it is 1-based).") into tIndex
    put 0 into tAnyoneCanPay
    put pSighashType into tBase
    if pSighashType >= 129 then
       put 1 into tAnyoneCanPay
       put pSighashType - 128 into tBase
    end if
-   if tBase is 3 and pIndex > the number of items of pOutputs then
+   if tBase is 3 and tIndex > the number of items of pOutputs then
       throw "CoinXT: cxBtcSighashTaproot: SIGHASH_SINGLE with no matching output is invalid under BIP-341."
    end if
    -- epoch 0x00, then the type, version and locktime.
@@ -7969,16 +8422,16 @@ private function cxBtcSighashTaprootInner pVersion, pOutpoints, pSequences, pAmo
       put tBuf & numToByte(2) into tBuf
    end if
    if tAnyoneCanPay is 1 then
-      put cxHexDecode(item pIndex of pScriptPubkeys) into tSpk
-      put tBuf & cxHexDecode(item pIndex of pOutpoints) into tBuf
-      put tBuf & cxUIntToBytesLE(item pIndex of pAmountsSat, 8) into tBuf
+      put cxHexDecode(item tIndex of pScriptPubkeys) into tSpk
+      put tBuf & cxHexDecode(item tIndex of pOutpoints) into tBuf
+      put tBuf & cxUIntToBytesLE(item tIndex of pAmountsSat, 8) into tBuf
       put tBuf & cxVarInt(the number of bytes of tSpk) & tSpk into tBuf
-      put tBuf & cxUIntToBytesLE(item pIndex of pSequences, 4) into tBuf
+      put tBuf & cxUIntToBytesLE(item tIndex of pSequences, 4) into tBuf
    else
-      put tBuf & cxUIntToBytesLE(pIndex - 1, 4) into tBuf
+      put tBuf & cxUIntToBytesLE(tIndex - 1, 4) into tBuf
    end if
    if tBase is 3 then
-      put tBuf & cxSha256(cxHexDecode(item pIndex of pOutputs)) into tBuf
+      put tBuf & cxSha256(cxHexDecode(item tIndex of pOutputs)) into tBuf
    end if
    if pTapleafHex is not "" then
       put cxHexDecode(pTapleafHex) into tLeaf
@@ -8157,8 +8610,27 @@ function cxEthLegacySighash pNonce, pGasPriceHex, pGas, pToHex, pValueHex, pData
 end cxEthLegacySighash
 
 function cxEthLegacyEncode pNonce, pGasPriceHex, pGas, pToHex, pValueHex, pDataHex, pChainId, pRecid, pRHex, pSHex
-   local tBody, tRaw, tResult, tV
-   put pRecid + 2 * pChainId + 35 into tV
+   local tBody, tRaw, tResult, tV, tRecid, tChain
+   -- v IS COMPUTED, SO ITS INPUTS ARE BOUNDED WHERE THE SUM STILL FITS
+   -- (2026-09-26). cxHexOfInt bounds what it is handed, but here it is
+   -- handed a SUM, and a chain id near 2^53 doubles past it before any
+   -- guard sees it: the engine would round v with no error (suite engine
+   -- note 2.4) and sign a transaction for a chain the caller did not name.
+   -- So both inputs are settled as digits first. THE RECOVERY ID IS 0 OR 1,
+   -- EIP-155's two (the same day's review): v = {0,1} + 2 * chainId + 35
+   -- has room for nothing else, so any larger id writes ANOTHER chain's v -
+   -- 2 on chain 1 is v = 39, byte for byte chain 2's v at id 0, and 3 is
+   -- chain 2's at id 1. This bound said 3 ("every id secp256k1 defines")
+   -- and so let 2 and 3 through to exactly the chain-confusion it names;
+   -- secp256k1's 2 and 3 (an R.x past the group order) have no EIP-155
+   -- spelling at all. The chain id is then at most 4503599627370478, the
+   -- largest for which 1 + 2 * id + 35 is still at most 2^53. Verified
+   -- statically; needs an OXT pass.
+   put cxCheckedWhole(pRecid, "1", "cxEthLegacyEncode", "the recovery id") \
+         into tRecid
+   put cxCheckedWhole(pChainId, "4503599627370478", "cxEthLegacyEncode", \
+         "the chain id") into tChain
+   put tRecid + 2 * tChain + 35 into tV
    put cxRlpUintFromHex(cxHexOfInt(pNonce)) into tBody
    put tBody & cxRlpUintFromHex(pGasPriceHex) into tBody
    put tBody & cxRlpUintFromHex(cxHexOfInt(pGas)) into tBody
@@ -8195,9 +8667,17 @@ private function cxEth1559Body pChainId, pNonce, pMaxPriorityHex, pMaxFeeHex, pG
 end cxEth1559Body
 
 function cxEth1559Encode pChainId, pNonce, pMaxPriorityHex, pMaxFeeHex, pGas, pToHex, pValueHex, pDataHex, pRecid, pRHex, pSHex
-   local tBody, tRaw, tResult
+   local tBody, tRaw, tResult, tParity
+   -- THE Y-PARITY IS 0 OR 1 (2026-09-28; row #10's review, the same rule
+   -- cxEthLegacyEncode's recovery id took the day before). EIP-1559 writes
+   -- signature_y_parity itself, and it has two values; this took any whole
+   -- number to 2^53 (cxHexOfInt's bound), so a secp256k1 recovery id of 2
+   -- or 3, or a legacy v of 27 passed by habit, was signed into a
+   -- transaction no node accepts, with no word here. Settled as digits
+   -- first, before the body is built. Verified statically; needs an OXT pass.
+   put cxCheckedWhole(pRecid, "1", "cxEth1559Encode", "the y-parity") into tParity
    put cxEth1559Body(pChainId, pNonce, pMaxPriorityHex, pMaxFeeHex, pGas, pToHex, pValueHex, pDataHex) into tBody
-   put tBody & cxRlpUintFromHex(cxHexOfInt(pRecid)) into tBody
+   put tBody & cxRlpUintFromHex(cxHexOfInt(tParity)) into tBody
    put tBody & cxRlpUintFromHex(pRHex) & cxRlpUintFromHex(pSHex) into tBody
    put numToByte(2) & cxRlpEncodeList(tBody) into tRaw
    put cxHexEncode(tRaw) into tResult["raw"]
@@ -8206,14 +8686,13 @@ function cxEth1559Encode pChainId, pNonce, pMaxPriorityHex, pMaxFeeHex, pGas, pT
 end cxEth1559Encode
 
 private function cxHexOfInt pValue
-   local tHex
-   if pValue < 0 then
-      throw "CoinXT: cxHexOfInt: the value must not be negative."
-   end if
-   if pValue is 0 then
+   local tHex, tValue
+   put cxCheckedWhole(pValue, "9007199254740992", "cxHexOfInt", "the value") \
+         into tValue
+   if tValue is 0 then
       return ""
    end if
-   put cxHexEncode(cxUIntToBytes(pValue)) into tHex
+   put cxHexEncode(cxUIntToBytes(tValue)) into tHex
    return tHex
 end cxHexOfInt
 -- <<< GENERATED EMBED: coinxt script layer <<< --
@@ -15243,6 +15722,13 @@ function rsAnonSeed pMaster, pIndex
       rsSetError "rsAnonSeed: the persona index must be a non-negative integer"
       return empty
    end if
+   -- the cap (kRsAnonIndexLimit): an integer against a small one, so the
+   -- comparison is exact at any size (suite engine note 2.10)
+   if pIndex >= kRsAnonIndexLimit then
+      rsSetError "rsAnonSeed: the persona index must be below" && \
+            kRsAnonIndexLimit && "(the subkey table's cap)"
+      return empty
+   end if
    put kRsSubkeyAnonBase + pIndex into tId
    return rsSubkey(pMaster, tId)
 end rsAnonSeed
@@ -15252,6 +15738,11 @@ function rsAnonDmSeed pMaster, pIndex
    if pIndex is not an integer or pIndex < 0 then
       rsSetError "rsAnonDmSeed: the persona index must be a non-negative" && \
             "integer"
+      return empty
+   end if
+   if pIndex >= kRsAnonIndexLimit then
+      rsSetError "rsAnonDmSeed: the persona index must be below" && \
+            kRsAnonIndexLimit && "(the subkey table's cap)"
       return empty
    end if
    put kRsSubkeyAnonDmBase + pIndex into tId
@@ -15379,10 +15870,12 @@ function rsRoomId pPkAHex, pPkBHex, pSessionSalt
       rsSetError "rsRoomId: both public keys must be 64 hex chars"
       return empty
    end if
-   if tA <= tB then
-      put rsHexToBin(tA) & rsHexToBin(tB) into tCat
+   put rsHexToBin(tA) into tA
+   put rsHexToBin(tB) into tB
+   if rsByteOrder(tA, tB) is not "above" then
+      put tA & tB into tCat
    else
-      put rsHexToBin(tB) & rsHexToBin(tA) into tCat
+      put tB & tA into tCat
    end if
    try
       put sxHash(tCat & pSessionSalt, 20) into tOut
@@ -15392,6 +15885,23 @@ function rsRoomId pPkAHex, pPkBHex, pSessionSalt
    end try
    return rsBinToHexString(tOut)
 end rsRoomId
+
+private function rsByteOrder pA, pB
+   local tLenA, tLenB, tLen, tI, tX, tY
+   put the number of bytes in pA into tLenA
+   put the number of bytes in pB into tLenB
+   put tLenA into tLen
+   if tLenB < tLen then put tLenB into tLen
+   repeat with tI = 1 to tLen
+      put byteToNum(byte tI of pA) into tX
+      put byteToNum(byte tI of pB) into tY
+      if tX < tY then return "below"
+      if tX > tY then return "above"
+   end repeat
+   if tLenA < tLenB then return "below"
+   if tLenA > tLenB then return "above"
+   return "equal"
+end rsByteOrder
 
 function rsBuildHead pSeq, pDisplayName, pLatestPost, pPrekey, pOnionAddr, pProfileMeta
    local tNameBytes, tOnion, tOnionChars, tLatest, tPrekeyT, tProfile, tOut
@@ -16507,7 +17017,7 @@ function rsDmKeys pDmSeed
 end rsDmKeys
 
 function rsDmSessionKeys pMyHandleHex, pMyKxKeys, pTheirHandleHex, pTheirKxPubHex
-   local tMine, tTheirs, tTheirPub, tRx, tTx, tOut, tErr
+   local tMine, tTheirs, tOrder, tTheirPub, tRx, tTx, tOut, tErr
    put toLower(pMyHandleHex) into tMine
    put toLower(pTheirHandleHex) into tTheirs
    if not rsIsHexOfLen(tMine, 64) then
@@ -16518,7 +17028,10 @@ function rsDmSessionKeys pMyHandleHex, pMyKxKeys, pTheirHandleHex, pTheirKxPubHe
       rsSetError "rsDmSessionKeys: the peer handle must be 64 hex chars"
       return empty
    end if
-   if tMine is tTheirs then
+   -- two validated 64-char lowercase hex spellings: their ASCII bytes
+   -- order exactly as the key bytes they spell, with no SodiumXT call
+   put rsByteOrder(tMine, tTheirs) into tOrder
+   if tOrder is "equal" then
       rsSetError "rsDmSessionKeys: a DM session needs two DISTINCT handles"
       return empty
    end if
@@ -16533,7 +17046,7 @@ function rsDmSessionKeys pMyHandleHex, pMyKxKeys, pTheirHandleHex, pTheirKxPubHe
       return empty
    end if
    try
-      if tMine < tTheirs then
+      if tOrder is "below" then
          sxKeyExchangeClient pMyKxKeys["publicKey"], \
                pMyKxKeys["secretKey"], tTheirPub, tRx, tTx
          put "client" into tOut["role"]
@@ -18637,7 +19150,8 @@ private function rsBytesAreUtf8 pBytes
    catch tErr
       return false
    end try
-   return textEncode(tDecoded, "UTF-8") is pBytes
+   set the caseSensitive to true
+   return ("b" & textEncode(tDecoded, "UTF-8")) is ("b" & pBytes)
 end rsBytesAreUtf8
 
 private function rsIsHexOfLen pValue, pLen
@@ -25137,7 +25651,7 @@ end cx1stThrowsTaproot
 
 command cx1stRunFailOpen
    local cx1tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
-   local cx1tProgram, cx1tDecoded, cx1tKey
+   local cx1tProgram, cx1tDecoded, cx1tKey, cx1tMessage, cx1tNode
    cx1stSection "fail-closed regressions"
    try
       -- EIP-55 verification must depend on the CALLER'S casing. If these come
@@ -25177,13 +25691,62 @@ command cx1stRunFailOpen
       -- `tIndex is not trunc(tIndex)`, and the engine's `is` calls two numbers
       -- within 10 DBL_EPSILON of the smaller EQUAL (suite engine note 2.10), so
       -- by that rule these two were let through; `is an integer` has no
-      -- tolerance. All three ran green on Linux on 2026-09-26 (the suite
-      -- paste, twice that day; suite engine note 2.12), so "3e0" is an
-      -- integer to the engine there; Windows has not run them: verified
-      -- statically; needs an OXT pass.
+      -- tolerance. All three ran green on Linux and on Windows on
+      -- 2026-09-26 (the suite paste, twice on each; suite engine note
+      -- 2.12), so "3e0" is an integer to the engine on both.
       cx1stAssertRefusal "bech32 refuses a value one ulp above 3", cx1stThrowsText3("cxBech32EncodeValues", "bc", "0,3.0000000000000004", "bech32"), "cxBech32EncodeValues", "whole number between 0 and 31"
       cx1stAssertRefusal "bech32 refuses a value within 2.2e-15 below zero", cx1stThrowsText3("cxBech32EncodeValues", "bc", "0,-0.000000000000001", "bech32"), "cxBech32EncodeValues", "whole number between 0 and 31"
       cx1stAssert "and 3e0, a spelling the engine calls whole, encodes exactly as 3", cxBech32EncodeValues("bc", "0,3e0", "bech32") is cxBech32EncodeValues("bc", "0,3", "bech32")
+      -- THE ENCODERS' INTEGER ARGUMENTS ARE DIGITS, AT MOST 2^53 (work-plan
+      -- row #10, 2026-09-26). cxVarInt, cxUIntToBytesLE (every amount, vout,
+      -- sequence, version and locktime) and cxHexOfInt (the Ethereum
+      -- counters) encoded digit text past 2^53 as the bytes of its ROUNDED
+      -- neighbour (suite engine note 2.4) and "1e3" as 1000; cxCheckedWhole
+      -- settles each on its characters first now. The bound itself is written
+      -- exactly (2^53 is 0x20000000000000, so its eight LE bytes end 20 00).
+      -- The values cross as TEXT through cx1stThrowsText's `do`, which is the
+      -- shape the guard reads. Verified statically; needs an OXT pass.
+      cx1stAssert "cxVarInt writes 2^53 exactly", cx1stSameHex(cxHexEncode(cxVarInt("9007199254740992")), "ff0000000000002000")
+      cx1stAssertRefusal "cxVarInt refuses 2^53 + 1 written in digits", cx1stThrowsText("cxVarInt", "9007199254740993"), "cxVarInt", "more than 9007199254740992"
+      cx1stAssertRefusal "cxVarInt refuses a count written 1e3", cx1stThrowsText("cxVarInt", "1e3"), "cxVarInt", "written in digits"
+      cx1stAssertRefusal "an output of 2^53 + 1 satoshi is refused", cx1stThrowsText2("cxBtcOutput", "9007199254740993", cx1kTxOutScript0), "cxUIntToBytesLE", "more than 9007199254740992"
+      -- A LEGACY ETHEREUM RECOVERY ID IS 0 OR 1 (row #10's review, 2026-09-26):
+      -- v = recid + 2 * chainId + 35, so an id of 2 on chain 1 wrote v = 39,
+      -- chain 2's v at id 0. The id is refused before r and s are read, so
+      -- they are empty here. Captured and asserted after `end try` (trap 13).
+      put "(did not throw)" into cx1tMessage
+      try
+         get cxEthLegacyEncode(9, cx1kEthGasPrice, 21000, cx1kEthTo, cx1kEthValue, "", 1, 2, "", "")
+      catch cx1tError
+         put cx1tError into cx1tMessage
+      end try
+      cx1stAssertRefusal "a legacy Ethereum recovery id of 2 is refused (it wrote chain 2's v)", cx1tMessage, "cxEthLegacyEncode", "recovery id is more than 1"
+      -- and EIP-1559's y-parity is 0 or 1 too (2026-09-28): 27, a legacy v
+      -- passed by habit, was written into a transaction no node accepts
+      put "(did not throw)" into cx1tMessage
+      try
+         get cxEth1559Encode(1, 0, cx1kEth1559MaxPrio, cx1kEth1559MaxFee, 21000, cx1kEthTo, cx1kEth1559Value, "", 27, "", "")
+      catch cx1tError
+         put cx1tError into cx1tMessage
+      end try
+      cx1stAssertRefusal "an EIP-1559 y-parity of 27 is refused (it was written as given)", cx1tMessage, "cxEth1559Encode", "y-parity is more than 1"
+      -- THE INDEXES THE LIBRARY USES ARE DIGITS TOO (row #10's review,
+      -- 2026-09-28): cxHdDeriveChild took "1e1" as child 10 and an empty
+      -- index as child 0, and the sighash builders took an input index of 1.5
+      -- through their number range test to a chunk index. cxCheckedIndex
+      -- settles each on its characters first. The values cross as TEXT, and
+      -- the refusal comes before any key or hash is touched. Verified
+      -- statically; needs an OXT pass.
+      put cxHdFromSeed(cxHexDecode(cx1kBip32Seed1)) into cx1tNode
+      cx1stAssertRefusal "a child index written 1e1 is refused (it derived child 10)", cx1stThrowsText2("cxHdDeriveChild", cx1tNode, "1e1"), "cxHdDeriveChild", "written in digits"
+      cx1stAssertRefusal "an empty child index is refused (it derived child 0)", cx1stThrowsText2("cxHdDeriveChild", cx1tNode, ""), "cxHdDeriveChild", "written in digits"
+      put "(did not throw)" into cx1tMessage
+      try
+         get cxBtcSighashSegwit(1, cx1kTxOutpoint0 & comma & cx1kTxOutpoint1, "4294967278,4294967295", "1.5", cx1kTxScriptCode1, 600000000, cx1kTxOut0 & comma & cx1kTxOut1, 17, 1)
+      catch cx1tError
+         put cx1tError into cx1tMessage
+      end try
+      cx1stAssertRefusal "an input index of 1.5 is refused (it chose an input by chunk rounding)", cx1tMessage, "cxBtcSighashSegwit", "written in digits"
       -- An uppercase HRP used to produce a MIXED-case string, which BIP-173
       -- forbids and which this library's own decoder rejects.
       cx1stAssertRefusal "an uppercase HRP is refused", cx1stThrowsText3("cxBech32EncodeValues", "BC", "0", "bech32"), "cxBech32EncodeValues", "lowercase"
@@ -25937,9 +26500,10 @@ command en1stRun
 
    en1stSection "lifecycle & diagnostics"
    -- GENERATED (tools/build-suite-selftest.py): both calls go through the
-   -- suite core's suEnInit, which counts each hold this paste takes, so the
-   -- core gives back exactly that many and never another open stack's (this
-   -- harness's own teardown is not folded). Work plan suite-wide #16.
+   -- suite core's suEnInit, not this harness's own en1stEnInit, whose count
+   -- only its teardown (not folded here) gives back. The core gives back
+   -- exactly the holds it counted, never another open stack's. Work plan
+   -- suite-wide #16 (and enetxt #4 for the harness's own count).
    en1stAssert "enInitialize returns 0", suEnInit() is 0
    en1stAssert "enInitialize idempotent", suEnInit() is 0
    en1stAssert "enLibraryVersion names enet", enLibraryVersion() begins with "enet "
@@ -26171,8 +26735,14 @@ command en1stFinish
       en1stAssert "double destroy is a no-op 0", enHostDestroy(en1sServer) is 0
       en1stAssert "enHostDestroy(client) is 0", enHostDestroy(en1sClient) is 0
    end if
-   en1stAssert "enDeinitialize returns 0", enDeinitialize() is 0
-   en1stAssert "extra deinitialize is a no-op 0", enDeinitialize() is 0
+   -- EXACTLY the holds this run took (THE HOLD, above en1stTinyData). These
+   -- were two bare enDeinitialize calls until 2026-09-26, the second
+   -- labelled "extra deinitialize is a no-op 0" - but the shim counts both
+   -- of en1stRun's initializes, so the second was the call that reached zero,
+   -- and the no-op this label promises was en1stCleanup's, which took another
+   -- window's hold. The no-op leg now runs only where it IS one.
+   en1stEnRelease true
+   en1stEnNoOpLeg
    put empty into en1sServer
    put empty into en1sClient
    put "done" into en1sPhase
@@ -26193,15 +26763,69 @@ command en1stCleanup
    end if
    put empty into en1sServer
    put empty into en1sClient
-   -- bare command form: OXT cannot compile a zero-argument name() statement;
-   -- guarded so closing a stack whose extension is missing (the run already
-   -- threw loudly at enInitialize) cannot throw a second time from en1closeStack
+   -- ONLY the holds this stack still has (THE HOLD, below): none after a
+   -- finished run, none on a close with nothing run, and a live run's two
+   -- on a close or Re-run that cuts it short. This was a bare enDeinitialize
+   -- until 2026-09-26, on every close and every Re-run, which gave back a
+   -- hold another window had taken and, at its last one, ended that window's
+   -- hosts (the suite work plan's enetxt #4). Guarded so a close after a run
+   -- that threw cannot throw a second time from en1closeStack.
    try
-      enDeinitialize
+      en1stEnRelease false
    catch en1tErr
       -- extension not installed; nothing to release
    end try
 end en1stCleanup
+
+function en1stEnInit
+   local en1tR
+   put enInitialize() into en1tR
+   if en1tR is 0 then
+      if en1sStEnHeld is not an integer then
+         put 0 into en1sStEnHeld
+      end if
+      add 1 to en1sStEnHeld
+   end if
+   return en1tR
+end en1stEnInit
+
+command en1stEnRelease pAssert
+   local en1tR, en1tCalls, en1tAllZero
+   if en1sStEnHeld is not an integer then
+      put 0 into en1sStEnHeld
+   end if
+   put 0 into en1tCalls
+   put true into en1tAllZero
+   repeat while en1sStEnHeld > 0
+      subtract 1 from en1sStEnHeld
+      add 1 to en1tCalls
+      put enDeinitialize() into en1tR
+      if en1tR is not 0 then
+         put false into en1tAllZero
+      end if
+   end repeat
+   if pAssert is true and en1tCalls > 0 then
+      en1stAssert "enDeinitialize returns 0", en1tAllZero
+      en1stNote "one enDeinitialize for each of this run's" && en1tCalls && "counted enInitialize calls, and no more"
+   end if
+end en1stEnRelease
+
+command en1stEnNoOpLeg
+   local en1tProbe, en1tWhy
+   put enHostCreateClient(1, 1, 0, 0) into en1tProbe
+   put empty into en1tWhy
+   if en1tProbe is 0 then
+      put enLastError() into en1tWhy
+   end if
+   if en1tProbe is 0 and en1tWhy is "call enInitialize first" then
+      en1stAssert "extra deinitialize is a no-op 0", enDeinitialize() is 0
+   else if en1tProbe is an integer and en1tProbe > 0 then
+      enHostDestroy en1tProbe
+      en1stSkip "extra deinitialize is a no-op 0", "another stack holds ENet (a probe host was created, and destroyed); at its count this call would give back that stack's hold"
+   else
+      en1stSkip "extra deinitialize is a no-op 0", "could not tell that ENet is uninitialized (" & en1tProbe & ":" && en1tWhy & "), so the call was not made"
+   end if
+end en1stEnNoOpLeg
 
 function en1stTinyData
    return textEncode("x", "utf-8")
@@ -29578,6 +30202,15 @@ private command rs1rstSectionKdfTree
    rs1rstCheck (rsLastError() is not empty), "and the refusal is explained"
    put rsAnonSeed(rs1tMaster, -1) into rs1tOut
    rs1rstCheck (rs1tOut is empty), "a negative persona index is refused"
+   -- the persona index cap (work plan riptide #10): persona n takes
+   -- subkeys 100+n and 200+n, so persona 100's seed would be persona 0's
+   -- crypto_kx seed. The cap is the smallest this tree uses (0 and 1)
+   rs1rstCheck (rsAnonSeed(rs1tMaster, 2) is empty), \
+         "persona 2 is refused (the index cap)"
+   rs1rstCheck (rsAnonDmSeed(rs1tMaster, 2) is empty), \
+         "and so is its sealed-DM kx seed"
+   rs1rstCheck (rsAnonSeed(rs1tMaster, 100) is empty), \
+         "persona 100 is refused: its seed would be persona 0's kx seed"
 end rs1rstSectionKdfTree
 
 private command rs1rstSectionHandles
@@ -29637,6 +30270,7 @@ private command rs1rstSectionOnion pCaps
 end rs1rstSectionOnion
 
 private command rs1rstSectionRendezvous
+   local rs1tSalt
    rs1rstSection "rendezvous derivations"
    rs1rstCheck (rsInboxId(rs1kRsGoldHandle) is rs1kRsGoldInboxId), \
          "inbox id matches golden"
@@ -29649,6 +30283,23 @@ private command rs1rstSectionRendezvous
    rs1rstCheck (rsInboxId("zz") is empty), "a malformed handle is refused"
    rs1rstCheck (rsRoomId("zz", rs1kRsGoldConfPub, empty) is empty), \
          "a malformed peer key is refused"
+   -- two keys whose hex reads as a number are sorted by their BYTES (work
+   -- plan riptide #11): the room id is the golden one from both ends. A
+   -- `<=` over the hex sorted Nine (90) first, and called OneExp and One
+   -- equal, so the two ends of that pair derived two room ids
+   put textEncode(rs1kRsGoldRoomSalt, "ASCII") into rs1tSalt
+   rs1rstCheck (("h" & rsRoomId(rs1kRsGoldNumHandleNine, rs1kRsGoldNumHandleHundred, \
+         rs1tSalt)) is ("h" & rs1kRsGoldRoomIdNumOrder)), \
+         "room id sorts 9e0..01 (90 as a number) after 0..0100 by its bytes"
+   rs1rstCheck (("h" & rsRoomId(rs1kRsGoldNumHandleHundred, rs1kRsGoldNumHandleNine, \
+         rs1tSalt)) is ("h" & rs1kRsGoldRoomIdNumOrder)), \
+         "and the other end derives the same room id"
+   rs1rstCheck (("h" & rsRoomId(rs1kRsGoldNumHandleOneExp, rs1kRsGoldNumHandleOne, \
+         rs1tSalt)) is ("h" & rs1kRsGoldRoomIdNumEqual)), \
+         "room id: 1e0..0 and 0..01 (one number, two keys) sort by bytes"
+   rs1rstCheck (("h" & rsRoomId(rs1kRsGoldNumHandleOne, rs1kRsGoldNumHandleOneExp, \
+         rs1tSalt)) is ("h" & rs1kRsGoldRoomIdNumEqual)), \
+         "and both ends of that pair derive one room id"
 end rs1rstSectionRendezvous
 
 private command rs1rstSectionKeyFile
@@ -29901,10 +30552,9 @@ private command rs1rstSectionHead
    -- cannot catch), so no headless run prints this line, as none prints
    -- probe 3 (whose item 1 it refuses first); riptide's
    -- check-script-vectors tier 1e holds this line's shape and the six
-   -- refusals. Linux read it on 2026-09-26, the same in both of that day's
-   -- recorded runs (riptide/CLAUDE.md's ledger quotes the reading, and tier
-   -- 1e holds it as recorded data); the Windows reading is owed (the suite
-   -- runbook's S1 item 1 asks for the line verbatim).
+   -- refusals. Linux and Windows read it on 2026-09-26, identically, in two
+   -- recorded runs each (riptide/CLAUDE.md's ledger quotes every reading,
+   -- and tier 1e holds both platforms' as recorded data).
    put "      numeric compare probe 4 (diagnostic; the engine source" && \
          "reads true,?,?,?,false,? where ? is the C library's):" && \
          rs1rstTextProbe(1) & "," & rs1rstTextProbe(2) & "," & \
@@ -31106,6 +31756,15 @@ private command rs1rstSectionLanSync
    put rsLanVerifyDraft(rs1tBytes, rs1tMaster) into rs1tOut
    rs1rstCheck (rs1tOut is not empty and rs1tOut["draft"] is empty), \
          "an empty draft builds and verifies (cleared state)"
+   -- a draft reading nan, from a device named NaN, verifies intact: the
+   -- UTF-8 round trip compares bytes with a letter on both sides, because
+   -- bare `is` never calls a nan equal to itself (suite engine note 2.11;
+   -- the 2026-09-27 review of work plan riptide #12)
+   put rsLanBuildDraft("NaN", 7, "nan", rs1tMaster) into rs1tBytes
+   put rsLanVerifyDraft(rs1tBytes, rs1tMaster) into rs1tOut
+   rs1rstCheck (("t" & rs1tOut["draft"]) is "tnan" and \
+         ("t" & rs1tOut["name"]) is "tNaN"), \
+         "a draft reading nan, from a device named NaN, verifies intact"
    -- the stranger: a record signed under a DIFFERENT master is refused
    put rsLanBuildDraft(rs1kRsGoldLanJoinName, rs1kRsGoldLanSeq, \
          rs1kRsGoldLanDraftText, rs1rstBin(rs1kRsGoldConfSeedHex)) into rs1tBytes
@@ -31260,6 +31919,7 @@ private command rs1rstSectionDm pCaps
    local rs1tSeed, rs1tMyKeys, rs1tConfKeys, rs1tSess, rs1tSessB, rs1tPrekey, rs1tIntro
    local rs1tSealed, rs1tOpened, rs1tFrame, rs1tParsed, rs1tMsg, rs1tBig, rs1tDir, rs1tErr
    local rs1tHeader, rs1tPush, rs1tPull, rs1tCipher, rs1tCipher2, rs1tPlain, rs1tTag, rs1tSession, rs1tH
+   local rs1tNumA, rs1tNumB
    rs1rstSection "phase 4 - DM keys, records, and the sealed first contact"
    put rs1rstBin(rs1kRsGoldIdSeedHex) into rs1tSeed
    -- keys: the kx pair from the DM subkey, pinned against real libsodium
@@ -31295,6 +31955,26 @@ private command rs1rstSectionDm pCaps
          "a session with myself is refused"
    rs1rstCheck (rsDmSessionKeys("zz", rs1tMyKeys, rs1kRsGoldConfPub, \
          rs1kRsGoldConfKxPub) is empty), "a malformed handle is refused"
+   -- roles by BYTE order when both handles read as numbers (work plan
+   -- riptide #11): `<` over the hex made Nine (90) the client and called
+   -- OneExp and One one handle. The kx keys are the golden pair's; the
+   -- handles are only what orders them
+   put rsDmSessionKeys(rs1kRsGoldNumHandleNine, rs1tMyKeys, \
+         rs1kRsGoldNumHandleHundred, rs1kRsGoldConfKxPub) into rs1tNumA
+   put rsDmSessionKeys(rs1kRsGoldNumHandleHundred, rs1tConfKeys, \
+         rs1kRsGoldNumHandleNine, rs1kRsGoldDmKxPub) into rs1tNumB
+   rs1rstCheck (rs1tNumA["role"] is "server" and rs1tNumB["role"] is "client"), \
+         "9e0..01 (90 as a number) is the kx SERVER against 0..0100"
+   -- non-empty first: two refused sessions would cross-match as "h" is "h"
+   rs1rstCheck (rs1tNumA["tx"] is not empty and \
+         ("h" & rs1rstHex(rs1tNumA["tx"])) is ("h" & rs1rstHex(rs1tNumB["rx"]))), \
+         "and that pair's tx and rx still cross-match"
+   put rsDmSessionKeys(rs1kRsGoldNumHandleOneExp, rs1tMyKeys, \
+         rs1kRsGoldNumHandleOne, rs1kRsGoldConfKxPub) into rs1tNumA
+   put rsDmSessionKeys(rs1kRsGoldNumHandleOne, rs1tConfKeys, \
+         rs1kRsGoldNumHandleOneExp, rs1kRsGoldDmKxPub) into rs1tNumB
+   rs1rstCheck (rs1tNumA["role"] is "server" and rs1tNumB["role"] is "client"), \
+         "1e0..0 and 0..01 (one number, two handles) are two peers"
    -- RSK1: the signed prekey record
    put rsBuildPrekey(rs1kRsGoldDmKxPub, rs1tSeed) into rs1tPrekey
    rs1rstCheck (rs1rstHex(rs1tPrekey) is rs1kRsGoldPrekeyRecHex), \

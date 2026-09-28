@@ -2775,7 +2775,14 @@ end uiMenuSource
 -- shared plumbing
 local sPolling         -- "true" while the one pump chain is armed
 local sSession         -- THE torrent session (this stack owns it; C/D/E share it)
-local sDcReady         -- "true" once dcInit succeeded (A and E share the drain)
+-- THIS STACK'S HOLDS on the two process-wide transports (THE HOLDS, above
+-- cpSay). sCpEnHeld counts the enInitialize calls that returned 0 and have
+-- not been given back; sCpDcHeld counts the dcInit calls that returned 0
+-- since this stack last called dcCleanup (A and E share its drain). Written
+-- ONLY by cpEnInit / cpEnRelease and cpDcInit / cpDcRelease, never below
+-- zero; empty reads as zero.
+local sCpEnHeld
+local sCpDcHeld
 -- A: datachannel local async
 local sAPeerA, sAPeerB, sAChanA, sAChanB
 local sAOpenA, sAOpenB, sAGotText, sAGotBytes, sABigLen, sAGotLow, sAPhase
@@ -2821,18 +2828,20 @@ on closeStack
    catch tErr
    end try
    put empty into sSession
+   -- ONLY what this stack holds (THE HOLDS, above cpSay). Until 2026-09-26
+   -- this called enDeinitialize bare on every close, leg B run or not, which
+   -- gave back a hold another window had taken and, at its last one, ended
+   -- that window's hosts; and it called dcCleanup on a flag that a REFUSED
+   -- dcInit set too (the suite work plan's suite-wide #20).
    try
-      if sDcReady is "true" then
-         dcCleanup
-      end if
+      cpDcRelease
    catch tErr
    end try
-   put empty into sDcReady
    try
       if sEnHost is an integer and sEnHost > 0 then
          enHostDestroy sEnHost
       end if
-      enDeinitialize
+      cpEnRelease
    catch tErr
    end try
    put empty into sEnHost
@@ -2996,6 +3005,92 @@ command cpProbe
    end if
 end cpProbe
 
+-- ---- THE HOLDS: this stack's share of the process-wide transports --------
+-- (the suite work plan's suite-wide #20, 2026-09-26; verified statically and
+-- in the headless model, tools/check-transport-holds.py; needs an OXT pass.)
+--
+-- ENet's init belongs to the whole PROCESS: enetxt's shim refcounts
+-- enInitialize and enDeinitialize, and the deinitialize that takes the count
+-- to zero destroys every live host in the process, whichever stack made it.
+-- DataChannel's is worse: dcCleanup frees EVERY peer and channel in the
+-- process however many dcInit calls came first (no count to pair with). So
+-- this window gives back only what it took, counted the way the suite paste
+-- counts its own (suEnInit / suEnRelease and suDcInit / suDcRelease in
+-- tests/suite-selftest.core.livecodescript). Until 2026-09-26 closeStack
+-- called enDeinitialize bare whether or not leg B ever ran, cpBStart's
+-- "already hosting" refusal came after its enInitialize, and dcCleanup was
+-- gated on a flag that a refused dcInit set as well. A close beside the
+-- suite paste's cross row, enet-selftest or a chat demo could end that
+-- window's hosts.
+--
+-- A refused init (non-zero) is not counted, because the shim did not count
+-- it; one that THROWS (the extension absent) counts nothing and reaches the
+-- caller's own catch.
+function cpEnInit
+   local tR
+   put enInitialize() into tR
+   if tR is 0 then
+      if sCpEnHeld is not an integer then
+         put 0 into sCpEnHeld
+      end if
+      add 1 to sCpEnHeld
+   end if
+   return tR
+end cpEnInit
+
+-- Every hold cpEnInit took, and not one more. The count comes down BEFORE
+-- each call, so a call that throws is never repeated (a hold kept is a
+-- library left initialised until OXT quits; a hold given back twice is
+-- another window's hosts destroyed).
+command cpEnRelease
+   local tR
+   if sCpEnHeld is not an integer then
+      put 0 into sCpEnHeld
+   end if
+   repeat while sCpEnHeld > 0
+      subtract 1 from sCpEnHeld
+      put enDeinitialize() into tR
+   end repeat
+end cpEnRelease
+
+function cpDcInit
+   local tR
+   put dcInit() into tR
+   if tR is 0 then
+      if sCpDcHeld is not an integer then
+         put 0 into sCpDcHeld
+      end if
+      add 1 to sCpDcHeld
+   end if
+   return tR
+end cpDcInit
+
+-- ONE dcCleanup gives back any number of this window's holds (and every
+-- other window's peers with them, which no script can prevent: the suite
+-- work plan's datachannelxt #8). What this window CAN do is never call it
+-- without a hold of its own: not on a close with legs A and E never run,
+-- not after a refused dcInit.
+command cpDcRelease
+   local tR, tHeld
+   put sCpDcHeld into tHeld
+   put 0 into sCpDcHeld
+   if tHeld is not an integer then
+      exit cpDcRelease
+   end if
+   if tHeld <= 0 then
+      exit cpDcRelease
+   end if
+   put dcCleanup() into tR
+end cpDcRelease
+
+-- Whether the pump has a DataChannel queue of this window's to drain.
+function cpHoldsDc
+   if sCpDcHeld is not an integer then
+      return false
+   end if
+   return sCpDcHeld > 0
+end cpHoldsDc
+
 command cpSay pField, pText
    put pText & return after field pField
 end cpSay
@@ -3029,7 +3124,7 @@ command cpPump
       catch tErr
       end try
    end if
-   if sDcReady is "true" then
+   if cpHoldsDc() then
       try
          put dcPoll() into tEvents
          repeat for each element tEvent in tEvents
@@ -3108,15 +3203,19 @@ end cpOnBtEvent
 -- loopback (runbook section 8), so a green A is now a smoke check, not the
 -- evidence a label waits on.
 command cpARun
-   local tErr
+   local tErr, tR
    put empty into field "cpAOut"
    try
-      dcInit
-      put "true" into sDcReady
+      put cpDcInit() into tR
    catch tErr
       cpSay "cpAOut", "datachannelxt missing:" && tErr
       exit cpARun
    end try
+   -- a refused dcInit is no hold: nothing to drain and nothing to clean up
+   if tR is not 0 then
+      cpSay "cpAOut", "dcInit refused (" & tR & "):" && dcLastError()
+      exit cpARun
+   end if
    put dcCreatePeer("") into sAPeerA
    put dcCreatePeer("") into sAPeerB
    put dcCreateChannel(sAPeerA, "closing") into sAChanA
@@ -3255,16 +3354,23 @@ end cpAOther
 -- return is validated the way enet-lan-chat does it, and a watchdog names
 -- the usual LAN culprits while ENet is still quietly retrying.
 command cpBStart pRole
-   local tErr, tAddr, tHostAddr, tPort, tOldDelim, tIps
+   local tErr, tAddr, tHostAddr, tPort, tOldDelim, tIps, tR
    put empty into field "cpBOut"
+   -- Refused BEFORE a hold is taken. Until 2026-09-26 this ran after
+   -- `get enInitialize()`, so a second press took a hold nothing gave back.
+   if sEnHost is an integer and sEnHost > 0 then
+      cpSay "cpBOut", "already hosting or joined; restart OXT to re-run this leg cleanly"
+      exit cpBStart
+   end if
    try
-      get enInitialize()
+      put cpEnInit() into tR
    catch tErr
       cpSay "cpBOut", "enetxt missing:" && tErr
       exit cpBStart
    end try
-   if sEnHost is an integer and sEnHost > 0 then
-      cpSay "cpBOut", "already hosting or joined; restart OXT to re-run this leg cleanly"
+   -- a refused enInitialize is no hold, and no host can be made without one
+   if tR is not 0 then
+      cpSay "cpBOut", "enInitialize refused (" & tR & "):" && enLastError()
       exit cpBStart
    end if
    put pRole into sEnRole
@@ -3617,19 +3723,23 @@ end cpDSend
 -- The riptide-proven substrate carrying WebRTC signaling: non-trickle SDP
 -- blobs as chunked immutable items under a mutable head, one salt per role.
 command cpEStart pRole
-   local tKp, tCode, tErr
+   local tKp, tCode, tErr, tR
    cpEnsureSession
    if sSession is not an integer or sSession <= 0 then
       exit cpEStart
    end if
    put empty into field "cpEOut"
    try
-      dcInit
-      put "true" into sDcReady
+      put cpDcInit() into tR
    catch tErr
       cpSay "cpEOut", "datachannelxt missing:" && tErr
       exit cpEStart
    end try
+   -- a refused dcInit is no hold: nothing to drain and nothing to clean up
+   if tR is not 0 then
+      cpSay "cpEOut", "dcInit refused (" & tR & "):" && dcLastError()
+      exit cpEStart
+   end if
    put pRole into sERole
    put empty into sEChan
    put empty into sESentHello

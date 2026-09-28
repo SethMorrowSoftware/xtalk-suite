@@ -4840,7 +4840,7 @@ end nxrSocketTimeout
 --     prekeyTarget names, the RSI1 sealed-intro first contact (seal to a
 --     VERIFIED prekey; sender signature + recipient binding inside the
 --     seal), one deterministic-role crypto_kx session per pair
---     (rsDmSessionKeys: the lexically smaller handle is the client), the
+--     (rsDmSessionKeys: the handle whose BYTES sort first is the client), the
 --     RSM1 rp1 transport frames and the kind+timestamp+body message
 --     records a secretstream carries, and the inbox-swarm join + framed
 --     send over rp1 (rsDmJoinInbox / rsDmSend). The app owns the rp1
@@ -4984,6 +4984,14 @@ end nxrSocketTimeout
 --     from 0 to 2^53 - 1 (rsIsWireInt), and is ORDERED only through
 --     rsSeqCompare, on its u32 halves: the engine's `<` and `is` call
 --     integers one apart equal from about 4.5e14 (suite engine note 2.10).
+--   Two handles (or keys) are ORDERED only through rsByteOrder, byte by
+--     byte, never with `<` or `is` over their hex: two 64-hex spellings
+--     that a number parse accepts (all digits, or digits, one `e`, digits)
+--     compare as NUMBERS on the engine (suite engine note 2.11). Byte order
+--     is lowercase hex text order, so no real handle's order moved.
+--   Anon persona n takes subkeys 100+n and 200+n with n below
+--     kRsAnonIndexLimit (2): from n = 100 persona n's ed25519 seed would be
+--     persona n-100's crypto_kx seed (protocol section 2).
 --   DHT targets travel as 40 ASCII hex; the all-zeros target means "none".
 --   On the DHT (phase 2): the stored BEP44 v is the BENCODED byte string of
 --     the record ("<len>:<bytes>"); the canonical signing buffer is
@@ -4991,7 +4999,7 @@ end nxrSocketTimeout
 --     bytes btDhtBep44SignBuf returns and torrent_shim.cpp verifies); an
 --     immutable item's target is SHA-1 of the bencoded value.
 
-constant kRsVersion = "0.13.0"
+constant kRsVersion = "0.14.0"
 constant kRsKeyMagic = "RIPTKEY1"
 constant kRsHeadMagic = "RSH1"
 constant kRsPostMagic = "RSP1"
@@ -5057,7 +5065,6 @@ constant kRsAnonDmBodyLen = 632
 -- the anon feed page cap: a runaway compose must refuse, never build an
 -- unbounded HTTP reply
 constant kRsAnonPageMax = 65536
-constant kRsAnonSubkeyBase = 100
 constant kRsHeadSalt = "riptide-head"
 constant kRsKdfContextText = "riptide"
 constant kRsInboxSuffix = "riptide-inbox"
@@ -5072,6 +5079,13 @@ constant kRsSubkeyNostr = "4"
 constant kRsSubkeyAppState = "5"
 constant kRsSubkeyAnonBase = 100
 constant kRsSubkeyAnonDmBase = 200
+-- The persona index cap: persona n is 0 to kRsAnonIndexLimit - 1. Any cap up
+-- to 100 keeps rows 100+n and 200+n apart (persona 100's ed25519 seed would
+-- be persona 0's crypto_kx seed: one seed, two cipher schemes); 2 is the
+-- smallest this tree uses (one persona ships, and the harness derives
+-- persona 1 to show two differ). Widening it strands no persona anyone
+-- holds; the owner decides how far (the suite work plan).
+constant kRsAnonIndexLimit = 2
 -- The RSN1 identity bridge (phase 8). The SIGNATURE domain and the BEP44
 -- SALT are different strings on purpose: they live in different namespaces
 -- and could safely collide, but the LAN rail already sets the house pattern
@@ -5370,6 +5384,13 @@ function rsAnonSeed pMaster, pIndex
       rsSetError "rsAnonSeed: the persona index must be a non-negative integer"
       return empty
    end if
+   -- the cap (kRsAnonIndexLimit): an integer against a small one, so the
+   -- comparison is exact at any size (suite engine note 2.10)
+   if pIndex >= kRsAnonIndexLimit then
+      rsSetError "rsAnonSeed: the persona index must be below" && \
+            kRsAnonIndexLimit && "(the subkey table's cap)"
+      return empty
+   end if
    put kRsSubkeyAnonBase + pIndex into tId
    return rsSubkey(pMaster, tId)
 end rsAnonSeed
@@ -5387,6 +5408,11 @@ function rsAnonDmSeed pMaster, pIndex
    if pIndex is not an integer or pIndex < 0 then
       rsSetError "rsAnonDmSeed: the persona index must be a non-negative" && \
             "integer"
+      return empty
+   end if
+   if pIndex >= kRsAnonIndexLimit then
+      rsSetError "rsAnonDmSeed: the persona index must be below" && \
+            kRsAnonIndexLimit && "(the subkey table's cap)"
       return empty
    end if
    put kRsSubkeyAnonDmBase + pIndex into tId
@@ -5538,8 +5564,13 @@ function rsInboxId pHandleHex
 end rsInboxId
 
 -- The pairwise room id: BLAKE2b-20(sortedConcat(pkA, pkB) || sessionSalt).
--- Sorted by lowercase hex order (equals raw byte order), so both peers
--- derive the same id no matter who computes it.
+-- Sorted by raw BYTE order (which lowercase hex text order equals), so both
+-- peers derive the same id no matter who computes it. Ordered by
+-- rsByteOrder, never `<=` over the hex: two keys whose hex is number-like
+-- compared as NUMBERS there (suite engine note 2.11), so "9e0..01" (90)
+-- sorted below "0..0100" (100), against the bytes, and two spellings of one
+-- number ("1e0..0", "0..01") compared equal, so each peer kept its own
+-- argument order and the two derived two different room ids.
 function rsRoomId pPkAHex, pPkBHex, pSessionSalt
    local tA, tB, tCat, tOut, tErr
    put toLower(pPkAHex) into tA
@@ -5548,10 +5579,12 @@ function rsRoomId pPkAHex, pPkBHex, pSessionSalt
       rsSetError "rsRoomId: both public keys must be 64 hex chars"
       return empty
    end if
-   if tA <= tB then
-      put rsHexToBin(tA) & rsHexToBin(tB) into tCat
+   put rsHexToBin(tA) into tA
+   put rsHexToBin(tB) into tB
+   if rsByteOrder(tA, tB) is not "above" then
+      put tA & tB into tCat
    else
-      put rsHexToBin(tB) & rsHexToBin(tA) into tCat
+      put tB & tA into tCat
    end if
    try
       put sxHash(tCat & pSessionSalt, 20) into tOut
@@ -5561,6 +5594,30 @@ function rsRoomId pPkAHex, pPkBHex, pSessionSalt
    end try
    return rsBinToHexString(tOut)
 end rsRoomId
+
+-- Two byte strings in BYTE order: "below", "equal" or "above", the first
+-- differing byte deciding and a proper prefix sorting first. For two
+-- handles or keys this is lowercase hex text order, but decided on numbers
+-- from 0 to 255, which every reading of a comparison orders exactly: `<`
+-- and `is` over the hex would compare two number-like spellings as numbers
+-- (suite engine note 2.11), and ordering text is outside what the headless
+-- interpreter models, where this is not.
+private function rsByteOrder pA, pB
+   local tLenA, tLenB, tLen, tI, tX, tY
+   put the number of bytes in pA into tLenA
+   put the number of bytes in pB into tLenB
+   put tLenA into tLen
+   if tLenB < tLen then put tLenB into tLen
+   repeat with tI = 1 to tLen
+      put byteToNum(byte tI of pA) into tX
+      put byteToNum(byte tI of pB) into tY
+      if tX < tY then return "below"
+      if tX > tY then return "above"
+   end repeat
+   if tLenA < tLenB then return "below"
+   if tLenA > tLenB then return "above"
+   return "equal"
+end rsByteOrder
 
 --------------------------------------------------------------------------
 -- RSH1 - the feed head record
@@ -7000,12 +7057,18 @@ function rsDmKeys pDmSeed
 end rsDmKeys
 
 -- One crypto_kx session for a pair, with the role decided by the SAME rule
--- on both machines: the peer whose HANDLE sorts lexically smaller (as
--- lowercase hex, which equals raw byte order) is the kx client. Returns
--- rx (receive key), tx (transmit key), and the role this side played -
--- my tx is the peer's rx, which the harness proves by deriving both sides.
+-- on both machines: the peer whose HANDLE's bytes sort first (which
+-- lowercase hex text order equals) is the kx client. Returns rx (receive
+-- key), tx (transmit key), and the role this side played - my tx is the
+-- peer's rx, which the harness proves by deriving both sides. The order and
+-- the "two distinct handles" check go through rsByteOrder, never `<` or
+-- `is` over the hex: two number-like handles compared as NUMBERS there
+-- (suite engine note 2.11), so two spellings of one number were refused as
+-- one handle, and where the numeric order and the byte order disagree, this
+-- side took the role a peer keeping the protocol's rule (5.6) takes too,
+-- leaving both ends one role.
 function rsDmSessionKeys pMyHandleHex, pMyKxKeys, pTheirHandleHex, pTheirKxPubHex
-   local tMine, tTheirs, tTheirPub, tRx, tTx, tOut, tErr
+   local tMine, tTheirs, tOrder, tTheirPub, tRx, tTx, tOut, tErr
    put toLower(pMyHandleHex) into tMine
    put toLower(pTheirHandleHex) into tTheirs
    if not rsIsHexOfLen(tMine, 64) then
@@ -7016,7 +7079,10 @@ function rsDmSessionKeys pMyHandleHex, pMyKxKeys, pTheirHandleHex, pTheirKxPubHe
       rsSetError "rsDmSessionKeys: the peer handle must be 64 hex chars"
       return empty
    end if
-   if tMine is tTheirs then
+   -- two validated 64-char lowercase hex spellings: their ASCII bytes
+   -- order exactly as the key bytes they spell, with no SodiumXT call
+   put rsByteOrder(tMine, tTheirs) into tOrder
+   if tOrder is "equal" then
       rsSetError "rsDmSessionKeys: a DM session needs two DISTINCT handles"
       return empty
    end if
@@ -7031,7 +7097,7 @@ function rsDmSessionKeys pMyHandleHex, pMyKxKeys, pTheirHandleHex, pTheirKxPubHe
       return empty
    end if
    try
-      if tMine < tTheirs then
+      if tOrder is "below" then
          sxKeyExchangeClient pMyKxKeys["publicKey"], \
                pMyKxKeys["secretKey"], tTheirPub, tRx, tTx
          put "client" into tOut["role"]
@@ -9666,6 +9732,13 @@ end rsBytesEqual
 -- re-encode the decoded string and require it to reproduce the original
 -- bytes exactly (only a valid UTF-8 sequence does). The inner try stays as
 -- belt-and-suspenders for any engine that DOES throw.
+-- The two byte strings are compared with a letter on both sides and the
+-- case kept (2026-09-27), never bare `is`: a text C's strtod reads as NaN
+-- ("nan", "NaN", "nan(1)") is not `is` itself held apart (suite engine
+-- note 2.11, OBSERVED on Linux 2026-09-26), so a LAN draft, a device or
+-- head name, or a post reading nan was refused here as "not valid UTF-8"
+-- (INFERRED; no engine has run it). Never an i or n prefix ("n" & "an"
+-- spells nan); "b" is neither.
 private function rsBytesAreUtf8 pBytes
    local tDecoded, tErr
    if the number of bytes in pBytes is 0 then return true
@@ -9674,7 +9747,8 @@ private function rsBytesAreUtf8 pBytes
    catch tErr
       return false
    end try
-   return textEncode(tDecoded, "UTF-8") is pBytes
+   set the caseSensitive to true
+   return ("b" & textEncode(tDecoded, "UTF-8")) is ("b" & pBytes)
 end rsBytesAreUtf8
 
 -- Strict LOWERCASE hex of an exact length. The check is by BYTE VALUE, not
@@ -14915,7 +14989,12 @@ private function raProfileLine pEvent, pExpected
             "bytes) - showing the head's own name."
    end if
    put textDecode(tBytes, "UTF-8") into tName
-   if textEncode(tName, "UTF-8") is not tBytes then
+   -- compared with a letter on both sides and the case kept, as the
+   -- library's round trip is (2026-09-27): bare `is` never calls a name
+   -- reading nan equal to itself (suite engine note 2.11), so that name
+   -- was REFUSED as not UTF-8 (INFERRED from the Linux reading)
+   set the caseSensitive to true
+   if ("b" & textEncode(tName, "UTF-8")) is not ("b" & tBytes) then
       return "profile-name blob REFUSED (not valid UTF-8) - showing the head's own name."
    end if
    return "profile name (spec 4.1, content-verified):" && tName
@@ -15178,8 +15257,14 @@ command raHandleRp1 pEvent
          -- a capable peer in the OUTBOUND target's inbox swarm gets the
          -- sealed intro + my stream header; anyone else is inbound-side
          -- and speaks first
+         -- the swarm is matched as TEXT, a letter on both sides: two 40-hex
+         -- ids a number parse accepts compare as NUMBERS under bare `is`
+         -- (suite engine note 2.11), so where the target's inbox id reads
+         -- as one (22e38..., +inf) a peer in any other swarm whose id also
+         -- overflows was sent the sealed intro and my stream header
+         -- (2026-09-27; the check 23 sweep's miss: no name here says hex)
          if sDmTarget is not empty and sDmTargetKx is not empty then
-            if pEvent["infoHashV1"] is rsInboxId(sDmTarget) then
+            if ("h" & toLower(pEvent["infoHashV1"])) is ("h" & rsInboxId(sDmTarget)) then
                raDmIntroduceTo tPeer
             end if
          end if
@@ -15708,7 +15793,8 @@ command raDmTypingTick
    put the milliseconds into tNow
    if there is a field "raDmMsg" of card "raMessages" then
       put the text of field "raDmMsg" of card "raMessages" into tText
-      if tText is not sDcTypingSeen then
+      -- compared as TEXT, a letter on both sides (raLanSyncTick says why)
+      if ("t" & tText) is not ("t" & sDcTypingSeen) then
          put tText into sDcTypingSeen
          put tNow + kDcTypingMs into sDcTypingUntil
       end if
@@ -16211,7 +16297,7 @@ end raLanRelay
 -- ABSOLUTE state. Cross-card law: the draft field lives on the Devices
 -- card and the pump runs anywhere - qualify and guard every reference.
 command raLanSyncTick
-   local tNow, tText, tTyping, tBytes, tFeedChanged
+   local tNow, tText, tTyping, tBytes, tFeedChanged, tDraftChanged
    if sMasterSeed is empty or sLanName is empty then
       exit raLanSyncTick
    end if
@@ -16225,11 +16311,19 @@ command raLanSyncTick
    -- the last state actually broadcast
    if there is a field "raLanDraft" of card "raDevices" then
       put the text of field "raLanDraft" of card "raDevices" into tText
-      if tText is not sLanDraftSeen then
+      -- "changed" is decided on the TEXT, a letter on both sides: bare `is`
+      -- compares two number-like drafts as NUMBERS (suite engine note
+      -- 2.11), so an edit from 12 to 0012, 1 to 1.0 or 100000 to 1e5 was
+      -- no change and never re-sent, and a draft reading nan was never
+      -- equal to itself (INFERRED from the Linux reading), re-sent on every
+      -- debounce. The caseSensitive above settles case, not this. Never an
+      -- i or n prefix: "n" & "an" spells nan (the same note)
+      if ("t" & tText) is not ("t" & sLanDraftSeen) then
          put tText into sLanDraftSeen
          put tNow + kLanTypingMs into sLanTypingUntil
       end if
-      if tText is not sLanDraftLast and tNow >= sLanDraftNextOk then
+      put (("t" & tText) is not ("t" & sLanDraftLast)) into tDraftChanged
+      if tDraftChanged and tNow >= sLanDraftNextOk then
          add 1 to sLanSeq
          put rsLanBuildDraft(sLanName, sLanSeq, tText, sMasterSeed) \
                into tBytes

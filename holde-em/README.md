@@ -71,7 +71,8 @@ dead-button rule.
 ## Status
 
 **v0.25.6 (harness 48).** The folded harness is engine-green at v0.25.6 (harness 48):
-**929/0** on 2026-09-26 (in the suite paste, on Linux), every section green, with the five
+**929/0** on 2026-09-26 (in the suite paste, on Linux and then on Windows), every section
+green, with the five
 live legs skipped by name. So v0.25.6's wire change (every act names its turn, every stand
 and sit-return the seat's next sit-out mark, and one sender predicate serves the table and
 History alike; then table protocol 2, so a table mixing v0.25.6 with an older holde-em is
@@ -85,8 +86,7 @@ Windows, where v0.25.4's hex-compare and near-integer fixes and v0.25.5's canoni
 indices (a position, seat, count or hand number is checked as text and counted by walking
 its range, and a per-hand wire must name the open hand) first ran through their pins; and
 721/0 at v0.25.3 (harness 45) on 2026-09-24, Windows. In the standalone stack, in played
-hands, between machines and (for v0.25.6) on Windows these fixes are verified statically;
-needs an OXT pass. Invites
+hands and between machines these fixes are verified statically; needs an OXT pass. Invites
 now read `p2:<code>`; an older build refuses them, and this one refuses an older build's.
 The first two-machine 2d contact was 2026-08-27, at v0.25.2.
 [CLAUDE.md](CLAUDE.md) carries the full evidence ledger.

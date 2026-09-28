@@ -431,6 +431,22 @@ that round's review 2 more.
       new key in empty seat 5 (300), and hand 4 deals both; table and
       History read 400/300 (+1). Each survivor now fails that pin.
       Verified statically; needs an OXT pass.
+  * ENGINE RECORD (holde-em/CLAUDE.md's ledger; the runbook's section 8):
+    this version, harness 48, has run on engines since the "Verified
+    statically" lines above were written. Folded in the suite paste:
+    929/0/5 on Linux on 2026-09-26 (two reports) and on Windows that
+    evening (two Run alls in one launch), every section green, the five
+    live legs SKIPped by name. Standalone, on Windows the same evening (the
+    maintainer's account): heRunSelftest ended "==== 929 pass, 0 fail, 5
+    skip ====" and "RESULT: green", line for line the fold's report bar
+    the fold's he1 prefix; and a six-seat hotseat session of four hands
+    played to one winner, with no error dialog and the table looking right
+    (the flat table: the Kit's sprite cards were not loaded), whose
+    transcript tools/fold-kat.py now holds and re-derives (every deal from
+    its seeds, every settle, the dead button). What those runs exercised is
+    the harness pins and hotseat play on ONE machine: the wire rules between
+    machines (2d, 2e, 2f and the oracle round) are still verified
+    statically; needs an OXT pass.
 
 v0.25.5 -- ONE POSITION, ONE KEY, ONE HAND: heCanonIdx (2026-09-25). NO
 WIRE CHANGED -- not a byte an honest client emits, and protocol-kat's pins

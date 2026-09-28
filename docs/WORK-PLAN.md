@@ -61,14 +61,35 @@ So what the paste carries has now run there: #16's counted ENet and
 DataChannel holds and #17's derived stamp in the core, holde-em #13-#15 and the rows after them
 through its harness on one machine, and riptide #9's and coinxt #8's library
 halves. What it does not carry (the demos, coin-wallet, nocloud and
-torrent-quickshare's routes) and Windows keep the label above.
+torrent-quickshare's routes) keeps the label above; Windows ran the paste
+that evening (below).
 The same day the preflight had its first Linux run (six LOADED at their
 ABIs on OXT 9.7.0-dp-1, and the first versions of the members' bound libraries
 an engine has printed into this tree: runbook section 8), which ran suite
 engine #1's Linux preflight half, and a second report of the batch paste read
 the first one line for line (probe 4 the same twice on one machine, presumably
-the same one: not stated), on its launch's first Run all where the first report
-was a second (INFERRED from box2dxt's joint handles; runbook section 8).
+the same one: not stated), on its launch's on-open Run all, its only one, where
+the first report was a second (by the maintainer's account, given later that
+day, as box2dxt's joint handles had INFERRED; runbook section 8).
+That evening the Windows machine of 2026-09-24 and 2026-09-25 ran what the
+runbook asked of it (by the maintainer's account: the same machine, a fresh
+stack, and both paste runs in ONE launch; runbook section 8). Its preflight
+LOADED all six at their ABIs on OXT 9.6.3 and read `libsodium 1.0.22`, and
+with the batch paste on Windows that closed suite engine #1. The paste ran
+twice, the launch's on-open Run all and a second one, 2857/2/10 each: every
+member header as on Linux (holde-em's harness 48, riptide 0.13.0 and coinxt's
+row #8 lines green on Windows too), riptide's fourth probe line identical to
+Linux's (#22: all six items now read on both engines, and they agree), the
+counted holds and the derived stamp on Windows, and both loopbacks stalled
+again (suite engine #9). Standalone, `enet-selftest` ran 68/0/0 with its
+async loopback complete, which closed enetxt engine #1, and the
+`datachannel-loopback` demo "seems to work as intended", by the maintainer's
+account (not itemised, so datachannelxt engine #1 stays open). The standalone holde-em
+stack then ran `heRunSelftest` 929/0/5 green and a six-seat hotseat session of four hands,
+the flat table looking right by the maintainer's account, whose transcript
+`tools/fold-kat.py` now holds and re-derives: that closed holde-em engine #1 and #2 and
+added #10 (the sprite-card table); the counted-holds re-run of `enet-selftest` is enetxt
+engine #7.
 
 Where the rest lives: each engine leg's full green criterion, and the labels it flips,
 is its numbered row in [OXT-PASS-RUNBOOK.md](OXT-PASS-RUNBOOK.md) section 1.2 (this
@@ -102,17 +123,17 @@ result. Every "engine-proven" below quotes a dated record already in the tree.
 
 | Member | Latest dated engine record | Headless work open | Engine work open | Needs |
 |---|---|---|---|---|
-| sodiumxt | `sxSelfTest()` 106/106 in the suite paste on Linux, 2026-09-25 (again 2026-09-26), on the `x86_64-linux` file (run 12's) by the maintainer's account (the ABI-10 ChaCha20 section's first recorded Linux run), and on Windows, 2026-09-24 and 09-25, on the `x86_64-win32` MSVC DLL by the maintainer's account (64-bit; the 2026-09-12 build's first engine load) | only optional: the unbound length accessors | the 32-bit MSVC DLL, and `sxVersion()` on Windows; first Mac load; 32-bit Linux; the demo | S1, S5 |
-| torrentxt | harness 106/106 in the suite paste on Linux, 2026-09-25 (again 2026-09-26), the 2026-09-12 `x86_64-linux` build's first engine load by the maintainer's account (the 996-byte caps included, which agree), and on Windows, 2026-09-24 and 09-25, on the 2026-09-12 `x86_64-win32` build by the maintainer's account (64-bit; its first engine load, and libtorrent 2.1.1's first recorded Windows run; the 09-25 build INFERRED the same); 101/101 on 2026-08-17, 08-20 and 08-24 | ABI 12 alert codes; Windows libtorrent pin; the shim's btih hex check; torrent-quickshare's dotfile and reserved-path guards | the 32-bit rows (row 47); demo re-opens; Tor toggle and #31-#33; closing-pass C/D; a real swarm | S1-S5, NET |
-| enetxt | folded 34/34 and the paste's live loopback COMPLETED, Linux, 2026-09-25 and 09-26, on the 2026-09-12 `x86_64-linux` build by the maintainer's account; folded 34/34 on the 2026-09-12 `x86_64-win32` DLL, Windows, 2026-09-24 and 09-25 (the paste's loopback stalled there all four times, 5.5); async loopback 2026-08-13 | enet-selftest's extra deinitialize (#4) | standalone selftest; leg B and the LAN chat on two machines; internet chat; Mac | S1, S3, 2NET, S5 |
-| datachannelxt | folded 39/39 and the paste's live loopback COMPLETED, Linux, 2026-09-25 and 09-26, on the 2026-09-12 `x86_64-linux` build by the maintainer's account; folded 39/39 on the 2026-09-12 `x86_64-win32` DLL, Windows, 2026-09-24 and 09-25 (the paste's loopback stalled there all four times, 5.5); standalone async loopback 2026-08-15 | the process-wide `dcCleanup` (owner, then dispatch); the DHT chat's unchecked nonce; owner calls: the Windows OpenSSL pin and notice, the legacy shim removal | loopback demo (no record at all); leg E; two-network call; browser interop; Mac | S1, S3, 2NET, S5 |
-| onionxt | offline self-test 74/0/1 in the suite paste, Linux 2026-09-25 and 09-26 and Windows 2026-09-24 and 09-25 (its floor held each time: 75 against 51); the live-Tor core from the early bring-up | Mode B's lifecycle (after leg F) | Mode B (leg F); the B.12 probes; negative paths; the round trip | S1, S2, S4 |
-| coinxt | 299/299 in the suite paste, Linux 2026-09-26 (row #8's three bech32 lines green, engine note 2.12); 296/296 in the suite paste, Linux 2026-09-25 (the 2026-09-12 `x86_64-linux` library by the maintainer's account, at ABI 7) and Windows 2026-09-24 and 09-25 on the 2026-09-12 `x86_64-win32` DLL (64-bit by the maintainer's account; ABI 7's six `cxPubkeyCombine` checks included each time); wallet logs to 2026-09-03 | D-17; per-push Windows/mac CI; Core residue; gap limit; bounds on backend numbers, the library's integer arguments and the mBTC form | row Q's wallet half (silent payments); demo; broadcast; the wallet's post-2026-09-04 surface; Core regtest | S1, S2, NET, S5 |
-| nostrxt | core 277/0/2 in the suite paste, Linux 2026-09-25 and 09-26 and Windows 2026-09-24 and 09-25 (its floor held each time: 279 against 278); relay SEND live 2026-08-24 | owner scope only: phase 9 (NIP-17/59, the outbox, `.onion` relays) | relay receive, NIP-42, `ws://`, a bad certificate, forced negatives | S1, NET, a local relay |
-| box2dxt | harness v32 385/0 in the suite paste on its 1200-wide card, Linux 2026-09-25 and 09-26 and Windows 2026-09-24 and 09-25 (on the 2026-09-12 DLL there, `playLoudness` exact); every run's delimiter lines settle engine note 2.3's itemDelimiter half | x86-linux glibc regression; platformer polish; three shim defects (dispatch) | the five games; R1; first Mac load; feel pass | S1, S5, PERSON |
-| riptide | phases 1-4 on two machines (to 2026-08-15); 512/0/2 at 0.13.0's harness in the suite paste, Linux 2026-09-26 (a second Run all in one launch again, by the maintainer's account; `rsSeqCompare` green; its fourth probe line's first reading, engine note 2.11); 489/0/2 in the suite paste, Linux 2026-09-25 (a second Run all in one launch, by the maintainer's account; its third probe line read the engine source's comparison rule, engine notes 2.10 and 2.11), Windows 2026-09-25 (the same three probe lines) and Windows 2026-09-24 (the day's second and third runs; its first read 487/2/2, both FAILs fixed that day); phase-8 boot 2026-08-29 | bridge reader; RSL1 magic; own-head refresh; per-identity app state; the persona-index cap; two handle orders and the LAN draft compare off the number path | row 35; phases 5, 6, 7 live; phase 8 live; faststart re-run | S1-S4, NET |
-| nocloud | no dated pass of this stack in the tree | mtime ETag after D-10; the D-02 menu (deferred) | the 69-item checklist, web-link and Tor halves; sections 7-8 | S1, S2 |
-| holde-em | 929/0/5 folded at v0.25.6 / harness 48, Linux, 2026-09-26 (its first engine run, single-machine lines); 751/0/5 folded at v0.25.5 / harness 47, Linux and Windows, 2026-09-25 (the v0.25.4 and v0.25.5 pins' first recorded engine runs; the 5 skips are the live legs); 721/0/5 at v0.25.3 / harness 45, Windows, 2026-09-24 | **Level 2 not wired into play**; animations; the untested handlers; a keyless dealt seat (owner) | harness 48 in the paste on Windows; the standalone `heRunSelftest` and hotseat hands; Phase 1 exit; 2d/2e/2f on real machines; the oracle round | S1-S4, 3M, PERSON |
+| sodiumxt | `sxSelfTest()` 106/106 in the suite paste on Linux, 2026-09-25 (again 2026-09-26), on the `x86_64-linux` file (run 12's) by the maintainer's account (the ABI-10 ChaCha20 section's first recorded Linux run), and on Windows, 2026-09-24 to 09-26, on the `x86_64-win32` MSVC DLL by the maintainer's account (64-bit; the 2026-09-12 build's first engine load; the 2026-09-26 Windows preflight read its `libsodium 1.0.22`) | only optional: the unbound length accessors | the 32-bit MSVC DLL; first Mac load; 32-bit Linux; the demo | S1, S5 |
+| torrentxt | harness 106/106 in the suite paste on Linux, 2026-09-25 (again 2026-09-26), the 2026-09-12 `x86_64-linux` build's first engine load by the maintainer's account (the 996-byte caps included, which agree), and on Windows, 2026-09-24 to 09-26, on the 2026-09-12 `x86_64-win32` build by the maintainer's account (64-bit; its first engine load, and libtorrent 2.1.1's first recorded Windows run; the 09-25 and 09-26 builds INFERRED the same); 101/101 on 2026-08-17, 08-20 and 08-24 | ABI 12 alert codes; Windows libtorrent pin; the shim's btih hex check; Windows short names past the dotfile guard (#22) | the 32-bit rows (row 47); demo re-opens; Tor toggle and #31-#33; closing-pass C/D; a real swarm | S1-S5, NET |
+| enetxt | folded 34/34 and the paste's live loopback COMPLETED, Linux, 2026-09-25 and 09-26, on the 2026-09-12 `x86_64-linux` build by the maintainer's account; folded 34/34 on the 2026-09-12 `x86_64-win32` DLL, Windows, 2026-09-24 to 09-26 (the paste's loopback stalled there all six times, 5.5), where the standalone `enet-selftest` ran 68/0/0 with its async loopback COMPLETE on 2026-09-26 (presumably that DLL); async loopback 2026-08-13 | the second pump chain a mid-run Re-run leaves (#5) | the standalone re-run with its counted holds (#7); leg B and the LAN chat on two machines; internet chat; Mac | S1, S3, 2NET, S5 |
+| datachannelxt | folded 39/39 and the paste's live loopback COMPLETED, Linux, 2026-09-25 and 09-26, on the 2026-09-12 `x86_64-linux` build by the maintainer's account; folded 39/39 on the 2026-09-12 `x86_64-win32` DLL, Windows, 2026-09-24 to 09-26 (the paste's loopback stalled there all six times, 5.5); standalone async loopback 2026-08-15; the loopback demo "seems to work as intended", Windows, 2026-09-26, by the maintainer's account (not itemised) | the process-wide `dcCleanup` (owner, then dispatch), and its script half, the windows that call it with no hold (#10); owner calls: the Windows OpenSSL pin and notice, the legacy shim removal | the loopback demo's itemised record; leg E; two-network call; browser interop; Mac | S1, S3, 2NET, S5 |
+| onionxt | offline self-test 74/0/1 in the suite paste, Linux 2026-09-25 and 09-26 and Windows 2026-09-24 to 09-26 (its floor held each time: 75 against 51); the live-Tor core from the early bring-up | Mode B's lifecycle (after leg F) | Mode B (leg F); the B.12 probes; negative paths; the round trip | S1, S2, S4 |
+| coinxt | 299/299 in the suite paste, Linux and Windows 2026-09-26 (row #8's three bech32 lines green on both, engine note 2.12); 296/296 in the suite paste, Linux 2026-09-25 (the 2026-09-12 `x86_64-linux` library by the maintainer's account, at ABI 7) and Windows 2026-09-24 and 09-25 on the 2026-09-12 `x86_64-win32` DLL (64-bit by the maintainer's account; ABI 7's six `cxPubkeyCombine` checks included each time); wallet logs to 2026-09-03 | D-17; per-push Windows/mac CI; Core residue; gap limit; the wallet's own typed and saved integers | row Q's wallet half (silent payments); demo; broadcast; the wallet's post-2026-09-04 surface; Core regtest | S1, S2, NET, S5 |
+| nostrxt | core 277/0/2 in the suite paste, Linux 2026-09-25 and 09-26 and Windows 2026-09-24 to 09-26 (its floor held each time: 279 against 278); relay SEND live 2026-08-24 | owner scope only: phase 9 (NIP-17/59, the outbox, `.onion` relays) | relay receive, NIP-42, `ws://`, a bad certificate, forced negatives | S1, NET, a local relay |
+| box2dxt | harness v32 385/0 in the suite paste on its 1200-wide card, Linux 2026-09-25 and 09-26 and Windows 2026-09-24 to 09-26 (on the 2026-09-12 DLL there, `playLoudness` exact); every run's delimiter lines settle engine note 2.3's itemDelimiter half | x86-linux glibc regression; platformer polish; three shim defects (dispatch) | the five games; R1; first Mac load; feel pass | S1, S5, PERSON |
+| riptide | phases 1-4 on two machines (to 2026-08-15); 512/0/2 at 0.13.0's harness in the suite paste, Linux and then Windows 2026-09-26 (on each a second Run all in one launch, by the maintainer's account; `rsSeqCompare` green; its fourth probe line read the same on both, engine note 2.11); 489/0/2 in the suite paste, Linux 2026-09-25 (a second Run all in one launch, by the maintainer's account; its third probe line read the engine source's comparison rule, engine notes 2.10 and 2.11), Windows 2026-09-25 (the same three probe lines) and Windows 2026-09-24 (the day's second and third runs; its first read 487/2/2, both FAILs fixed that day); phase-8 boot 2026-08-29 | bridge reader; RSL1 magic; own-head refresh; per-identity app state; how far to widen the persona-index cap (owner) | row 35; phases 5, 6, 7 live; phase 8 live; faststart re-run | S1-S4, NET |
+| nocloud | no dated pass of this stack in the tree | the web link's lost subfolder slash (#7); the Tor path's unanchored target and the editor's backslash dot path (#8); mtime ETag after D-10; the D-02 menu (deferred) | the 69-item checklist, web-link and Tor halves; sections 7-8 | S1, S2 |
+| holde-em | the standalone `heRunSelftest` 929/0/5 green and a six-seat hotseat session of four hands (the flat table; its transcript re-derived by `tools/fold-kat.py`), Windows, 2026-09-26; 929/0/5 folded at v0.25.6 / harness 48, Linux and then Windows, 2026-09-26 (its first engine runs, single-machine lines); 751/0/5 folded at v0.25.5 / harness 47, Linux and Windows, 2026-09-25 (the v0.25.4 and v0.25.5 pins' first recorded engine runs; the 5 skips are the live legs); 721/0/5 at v0.25.3 / harness 45, Windows, 2026-09-24 | **Level 2 not wired into play**; animations; the untested handlers; a keyless dealt seat (owner) | the sprite-card table (#10); 2d/2e/2f on real machines; the oracle round | S1-S4, 3M, PERSON |
 
 Suite coverage is what `python3 tools/check-suite-coverage.py` prints: the ratio
 of public handlers the suite harness names, the exemptions (all onionxt's: engine
@@ -127,7 +148,7 @@ none of its numbers (root `CLAUDE.md`: hand-copied ratios go stale); run it.
 ### 1.1 Facts that shape the work
 
 **The 2026-09-12 binaries have engine records on two rows: `x86_64-win32`,
-2026-09-24 and 2026-09-25, and `x86_64-linux`, 2026-09-25 and 2026-09-26.** The
+2026-09-24 to 2026-09-26, and `x86_64-linux`, 2026-09-25 and 2026-09-26.** The
 D-23 suite paste loaded all six native members from them and ran every member's
 sections, first on Windows (runbook section 8; the maintainer's account that the
 latest binaries were installed, and, given 2026-09-26, that the engine is 64-bit),
@@ -139,7 +160,10 @@ again by that account (2653/2/10, the loopbacks stalled; that run's binaries
 were not stated, and every record below that puts it on the 2026-09-12 set does
 so by INFERENCE: no Windows DLL has been committed since, and the refusals
 below pass), then on the Linux machine again with the batch's paste
-(2876/0/10, 2026-09-26; the same machine and builds by that account). The
+(2876/0/10, 2026-09-26; the same machine and builds by that account), then on
+the Windows machine again that evening (2857/2/10, twice in one launch, the
+loopbacks stalled; the same machine by that account, the builds INFERRED as
+on 2026-09-25, and the preflight LOADED all six at their ABIs). The
 reports agree where they can: torrentxt enforced the 996-byte
 BEP44 cap, which entered the shim on 2026-09-08 (`aad430a`) and which among
 committed builds only `421bab3`'s carry, and coinxt's `cxCheckABI` passed, so
@@ -168,11 +192,12 @@ and 2026-09-25 runs are the first records for the `x86_64-win32` and
 about those builds.
 
 **Windows ships different upstream versions from Linux and mac.** sodiumxt's MSVC
-DLLs carry libsodium 1.0.22 against a pinned 1.0.20 (accepted by D-08, documented).
+DLLs carry libsodium 1.0.22 against a pinned 1.0.20 (accepted by D-08, documented;
+read on an engine by the 2026-09-26 Windows preflight, `libsodium 1.0.22`).
 torrentxt's carry libtorrent 2.1.1 from vcpkg's unpinned port against 2.0.11: **no
 decision covers it**. Its first Windows engine run was the 2026-09-24 suite paste
 (106/106, on the `x86_64-win32` DLL, 64-bit by the maintainer's account; again
-2026-09-25). datachannelxt's
+2026-09-25 and 2026-09-26; no run prints its version). datachannelxt's
 statically carry OpenSSL 3.6.4 (vcpkg, unpinned) against the mac dylib's pinned 3.5.4;
 Linux links the system `libssl.so.3`.
 
@@ -198,7 +223,7 @@ the run did not print it), loaded all six.
 **Platform rows with no engine record** (runbook rows 23, 24, 47): universal-mac for
 all six members (CI built and tested every dylib; box2dxt's was rebuilt
 byte-identical by both release runs, see above); x86-win32 for sodiumxt, torrentxt
-and coinxt (the Windows runs of 2026-09-24 and 09-25 were 64-bit by the
+and coinxt (the Windows runs of 2026-09-24 to 09-26 were 64-bit by the
 maintainer's account; coinxt's 32-bit DLL has not executed even in CI: its Windows
 KAT step is x86_64 only); x86-linux for sodiumxt and torrentxt (the 2026-09-25
 Linux run was 64-bit by the maintainer's account).
@@ -241,27 +266,26 @@ keeping the scaffold for its report.
 | 9 | Draft PR #138 (archivext reviewed against the 9.6.3 dictionary) targets a member that left this tree on 2026-09-21; it was still open and conflicted on 2026-09-23. Move it to the archivext repository or close it | A dead PR against this tree | S | owner |
 | 12 | *(optional)* Pay down bare citations: `tools/check-doc-anchors.py` re-resolves anchored citations only and counts the rest as unverified | A line number is a fact about today's file | S-M | none |
 | 13 | **Harness scaffold v2: `stPaint` paints by FIRST WORD**, as the suite core's `suLineKind` does (case-sensitive `FAIL`, `PASS`/`ok`, `SKIP`/`skip`, section headers), with a fixture for the note lines a first-word rule could misread. Carry it just before the four member harness windows' next engine re-pass, so one session proves the new block in all four; the suite paste repaints its own view after each run meanwhile (`suPaintResults`), which v2 would retire | The carried `stPaint` tests `begins with`, so a returned member report's indented `  FAIL` stays muted in the paste's All view. A master change re-carries into four published member harnesses, the preflight and the core, and relabels every window it touches | S | engine (rides the harness windows' next re-pass) |
-| 20 | **The closing pass over-releases ENet.** `tests/suite-closing-pass.livecodescript`'s `closeStack` calls `enDeinitialize` bare whether or not leg B ever initialized ENet, and `cpBStart`'s "already hosting" refusal runs after `get enInitialize()`, leaving a hold it never returns; its `dcCleanup` is gated on `sDcReady`, a flag and not a count. Count the holds as the suite core does (`suEnInit` / `suEnRelease`) | The class the paste's counted holds closed on 2026-09-25: beside another ENet window, the close ends that window's hosts. Found 2026-09-25 by an interpreter probe (a close with leg B never run took no hold, gave one back, and the other stack's host was lost); not observed on an engine | S | none |
 | 21 | **Number-like literals in check 23.** The rule exempts every literal, but by engine note 2.11's parse a hex chunk compared with a number-like literal compares as a number: "14e0" is "0014" (INFERRED from the engine source). Sites in the tree: riptide's zero-target checks against `kRsZeroTarget` (40 zeros, so a target spelled `0e` and then digits reads as 0), and `nostrxt-tests`' `... is "610162"` (and its demo copy: an 8-hex `"00610162"` would read equal). coinxt's wallet sites were settled by hand on 2026-09-26: `"0014"`, `"0020"`, the segwit marker `"0001"`, Electrum's `"100"`, the `"00000000"` fingerprints and `kCwScalarZero` go through `cwSameHex`, and what stays bare (`"5120"`, `"02"`, `"87"`) compares a chunk whose width a length check fixes with a literal no other hex of that width equals (`coinxt/CLAUDE.md`). coin-selftest's number-like constants (four `0x` Ethereum addresses, the 32-zero BIP-39 entropy) and its `"80"` were settled the same day through `stSameText` / `stSameHex`, and `check-selftest-vectors.py` refuses them bare in that one file (a member-local stand-in for this row's rule). Extend the rule so a literal or declared constant whose VALUE is number-like counts as hex-shaped beside a hex operand (a must-refuse fixture from each shape), then fix the sites (a letter prefix, or compare the chunk as text) | The literal exemption lets through the genesis-against-"0" shape note 2.11 names; the checker's review measured these sites on 2026-09-25 (holde-em's genesis-head assert took `heHexEq` at integration, `57ce37d`) | S-M | none |
-| 22 | **Settle the interpreter's UNSURE forms on an engine.** The line LANDED 2026-09-26: riptide's harness prints a fourth diagnostic probe line (`rstTextProbe`, each item in its own `try`, nothing counted) reading `"0x10" is "16"`, `"inf" is "1e999"`, `"nan" is "nan"` (two texts built apart), an NBSP-edged `"3"` against 3 (`numToCodepoint(160)`), a 385-digit run (375 zeros, then 4294967296) against 4294967296, and `"0x1.8" is "1.5"`, beside the source's prediction `true,?,?,?,false,?` (each `?` the C library's). The last two replace this row's first spelling: the interpreter ANSWERS `"0x.8" is "0.5"` (text before strtod), and a run against itself reads true under every reading, so neither could teach it anything. riptide's check-script-vectors tier 1e holds the line's shape (each item's statements pinned, the line at `rstSectionHead`'s top level) and the interpreter's refusal of each item. READ on Linux on 2026-09-26 (the batch paste; runbook section 8; engine note 2.11 records it item by item): `true,true,false,false,false,true`, items 1 and 5 as the source decides, items 2, 3, 4 and 6 as a C99 `strtod` in a locale where 0xA0 is no space would read them, that reason INFERRED ("inf" is "1e999", two "nan" texts built apart are unequal, the NBSP-edged "3" is not 3, "0x1.8" is "1.5"); riptide's tier 1e holds the reading twice, its record and its ledger row, so a corrupted item fails. A second Linux run that day (5:11 PM, presumably the same machine) printed the line identically: a repeat, not a second platform. Left: the Windows reading of the line, verbatim (runbook S1 item 1; the maintainer will run it later); then teach `coinxt/tools/lcs-interp.py` (and its nostrxt twin) the answers the engines agree on, keep refusing an item whose answer differs by platform, and move tier 1e's refusal rows to the recorded answers. Teachable now: items 1 and 5 (decided by the source, and read so on Linux), and a zero-padded run past 384 characters against an IDENTICAL copy, which `_eq` refuses (`_n` reads it first) though every reading answers true | Since 2026-09-25 the interpreter REFUSES these forms, because engine note 2.11 does not establish them; an engine reading would let it answer (the source already decides items 1 and 5; engine note 2.11). Items 2, 3, 4 and 6 are the C library's, so one platform's reading cannot teach them alone | S | engine (the Windows reading); then none |
+| 22 | **Settle the interpreter's UNSURE forms on an engine.** The line LANDED 2026-09-26: riptide's harness prints a fourth diagnostic probe line (`rstTextProbe`, each item in its own `try`, nothing counted) reading `"0x10" is "16"`, `"inf" is "1e999"`, `"nan" is "nan"` (two texts built apart), an NBSP-edged `"3"` against 3 (`numToCodepoint(160)`), a 385-digit run (375 zeros, then 4294967296) against 4294967296, and `"0x1.8" is "1.5"`, beside the source's prediction `true,?,?,?,false,?` (each `?` the C library's). The last two replace this row's first spelling: the interpreter ANSWERS `"0x.8" is "0.5"` (text before strtod), and a run against itself reads true under every reading, so neither could teach it anything. riptide's check-script-vectors tier 1e holds the line's shape (each item's statements pinned, the line at `rstSectionHead`'s top level) and the interpreter's refusal of each item. READ on Linux on 2026-09-26 (the batch paste; runbook section 8; engine note 2.11 records it item by item): `true,true,false,false,false,true`, items 1 and 5 as the source decides, items 2, 3, 4 and 6 as a C99 `strtod` in a locale where 0xA0 is no space would read them, that reason INFERRED ("inf" is "1e999", two "nan" texts built apart are unequal, the NBSP-edged "3" is not 3, "0x1.8" is "1.5"); riptide's tier 1e holds the reading twice, its record and its ledger row, so a corrupted item fails. A second Linux run that day (5:11 PM, presumably the same machine; its launch's on-open Run all by the maintainer's account) printed the line identically: a repeat, not a second platform. READ on Windows the same evening, in both Run alls of one launch (OXT 9.6.3 by that evening's preflight; runbook section 8): `true,true,false,false,false,true`, IDENTICAL to Linux's, so all six items now have a reading on both engines and the two agree, the four C-library items included (engine note 2.11); tier 1e holds it as a second record, in both copies, and its seeds corrupt every key. Left: teach `coinxt/tools/lcs-interp.py` (and its nostrxt twin) the answers the engines agree on (now all six, on Linux and Windows; the interpreter names no platform, so whether it answers the C-library four before macOS reads them is this row's call, and a platform that later reads one differently puts that item back to a refusal), and move tier 1e's refusal rows to the recorded answers. Teachable on the source alone: items 1 and 5, and a zero-padded run past 384 characters against an IDENTICAL copy, which `_eq` refuses (`_n` reads it first) though every reading answers true | Since 2026-09-25 the interpreter REFUSES these forms, because engine note 2.11 did not establish them; the engine readings now let it answer (the source already decides items 1 and 5; engine note 2.11). Items 2, 3, 4 and 6 are the C library's, so one platform's reading could not teach them alone; Linux and Windows now agree on all four | S | none |
 | 23 | *(optional)* After the next `release-binaries.yml` dispatch, re-record `tools/test-binary-freshness.py`'s `VECTORS` (bytes, VAs, cookie, section ranges and each DLL's sha256) from the new DLLs, and re-measure the guarded shape if the gate SKIPs a Windows ABI again | The recorded-build anchor is keyed by each DLL's SHA-256 and lapses with a printed NOTE once the DLLs are rebuilt; the mutation battery, the live sweep and the objdump and execution legs keep running on the new bytes. A new MSVC may vary the frame, and the gate then SKIPs by design | S | dispatch |
 | 24 | **A dropped delimiter restore is invisible to an end-state check.** A handler that sets the itemDelimiter to comma and then restores what it found passes every check that only asks "is it comma afterwards?" (the coinxt, riptide and nostrxt vector gates, holde-em's execution gate, `check_delimiters`) whether or not the restore is there. Add a hostile-caller sweep to the headless boots (call each delimiter-setting handler with `"|"` set and require `"|"` back, as `check-suite-ui-boot.py` now does for `stCancelPump`), or a checker rule that a handler which sets a delimiter restores it on every exit path | On the engine the delimiter is handler-local (engine note 2.3), so a missing restore now costs only the rest of that handler, but the interpreter models it GLOBAL, so headless gates are exactly where a dropped restore would show and do not look. Found by the itemDelimiter rewording's review, 2026-09-26 (`stCancelPump`'s restore could be deleted with every gate green) | S-M | none |
 | 25 | *(optional)* A second Run all in the `--full` profile: press the board's Re-run (`stRerun`) after the first run finishes and hold the second to the same facts, as the maintainer's Linux run of 2026-09-25 did on the engine | `--full` reproduces only the first Run all, and state left over from it is where check 6b's class of fault lives; about double the profile's run time | S | none |
-| 26 | **Free text meets the number path.** Where user-typed or wire text (names, labels, tags, JSON keys, routes, device names) meets a bare `is`, `is not`, `=`, `<>` or an ordering, `strtod`'s `nan`, `inf`, `infinity` and hex-float spellings compare as NUMBERS, beside the exponent and leading-zero forms engine note 2.11 already names: on Linux a "nan" is never `is` another "nan" held apart from it, "inf" is "1e999", "0x1.8" is "1.5" and "0x10" is "16" (riptide's fourth probe line, read 2026-09-26; "Infinity" and "INF" INFERRED from the same parse). Sweep every member's shipped script for a bare comparison where BOTH operands can be free text, or free text and a number-like literal or number, and route each through a text compare: a letter on both sides (never `i` or `n`: engine note 2.11's free-text rule), `set the caseSensitive to true` where case matters, or a byte compare (holde-em's `heTSame` and nocloud's `qsSameText` are two such helpers). Pin each fixed site with vectors that pair different spellings of one value ("inf" against "Infinity", "0x1.8" against "1.5", "1e5" against "100000") and bring a "nan" (against a "nan" built apart): the family interpreter REFUSES a bare comparison of each such pair (#22), so a site left bare stops its gate instead of passing. A vector that feeds one spelling to both sides does not: the interpreter ANSWERS identical text other than a NaN ("Infinity" is "Infinity" is true under every reading, so a bare site passes it). Filed already, and not duplicated here: riptide 3.1 coding #12 (the LAN draft's change detection) and datachannelxt 2.4 coding #9 (the DHT chat's offer nonce, where the "n" prefix before a wire `an` spells "nan"), two sites of this class; #21 covers hex beside a number-like literal, and check 23 (a name rule for hex) cannot see free text | Under a bare `is`, a display name "nan" never matches its own copy read back, the tags "inf" and "Infinity" are one tag, and a device named "0x10" is the one named "16" (on Linux; the "Infinity" spelling, and "NaN" in other cases, INFERRED from the same parse): any lookup, dedupe, own-post or change check over such text answers wrong, silently, and a person or a peer chooses the spelling. Items 2, 3, 4 and 6 of the probe line are the C library's, so a site's answer may differ by platform too (Windows unread). Found from the line's first engine reading, 2026-09-26; no sweep has run. One more site, found by reading the same day: coin-wallet's separator guards compare a value with its own stripped copy (`waSafeText(X) is not X` in `waSerializeWallet` and its label loop), so a wallet named "nan", or one holding an address labelled "nan" (a label a BIP-21 URI can carry), would refuse every Save, naming a tab or newline it does not have (INFERRED from the Linux reading; the wallet is not in the paste) | M | none |
+| 26 | **Free text meets the number path.** Where user-typed or wire text (names, labels, tags, JSON keys, routes, device names) meets a bare `is`, `is not`, `=`, `<>` or an ordering, `strtod`'s `nan`, `inf`, `infinity` and hex-float spellings compare as NUMBERS, beside the exponent and leading-zero forms engine note 2.11 already names: on Linux and on Windows a "nan" is never `is` another "nan" held apart from it, "inf" is "1e999", "0x1.8" is "1.5" and "0x10" is "16" (riptide's fourth probe line, read on both 2026-09-26; "Infinity" and "INF" INFERRED from the same parse). Sweep every member's shipped script for a bare comparison where BOTH operands can be free text, or free text and a number-like literal or number, and route each through a text compare: a letter on both sides (never `i` or `n`: engine note 2.11's free-text rule), `set the caseSensitive to true` where case matters, or a byte compare (holde-em's `heTSame` and nocloud's `qsSameText` are two such helpers). Pin each fixed site with vectors that pair different spellings of one value ("inf" against "Infinity", "0x1.8" against "1.5", "1e5" against "100000") and bring a "nan" (against a "nan" built apart): the family interpreter REFUSES a bare comparison of each such pair (#22), so a site left bare stops its gate instead of passing. A vector that feeds one spelling to both sides does not: the interpreter ANSWERS identical text other than a NaN ("Infinity" is "Infinity" is true under every reading, so a bare site passes it). Filed already, and not duplicated here: riptide 3.1 coding #12 (the LAN draft's change detection; closed 2026-09-26, riptide/CLAUDE.md trap 16, whose review on 2026-09-27 also took riptide's UTF-8 round trip off the number path: `rsBytesAreUtf8` and riptide-social's `raProfileLine` compared a text with its own re-encoding by bare `is`, so every valid text reading nan was refused as not UTF-8) and datachannelxt 2.4 coding #9 (the DHT chat's offer nonce, where the "n" prefix before a wire `an` spells "nan"; closed 2026-09-27, `wxNonceValid` refusing all but 8 lowercase hex at the split, datachannelxt/CLAUDE.md, the DHT chat's decision 4), two sites of this class; #21 covers hex beside a number-like literal, and check 23 (a name rule for hex) cannot see free text | Under a bare `is`, a display name "nan" never matches its own copy read back, the tags "inf" and "Infinity" are one tag, and a device named "0x10" is the one named "16" (on Linux and on Windows; the "Infinity" spelling, and "NaN" in other cases, INFERRED from the same parse): any lookup, dedupe, own-post or change check over such text answers wrong, silently, and a person or a peer chooses the spelling. Items 2, 3, 4 and 6 of the probe line are the C library's, so a site's answer may differ by platform too (Windows read the same as Linux on 2026-09-26; macOS unread). Found from the line's first engine reading, 2026-09-26; no sweep has run. One more site, found by reading the same day: coin-wallet's separator guards compare a value with its own stripped copy (`waSafeText(X) is not X` in `waSerializeWallet` and its label loop), so a wallet named "nan", or one holding an address labelled "nan" (a label a BIP-21 URI can carry), would refuse every Save, naming a tab or newline it does not have (INFERRED from the Linux reading; the wallet is not in the paste). The same shape, found by the riptide review of 2026-09-27: nostrxt's `nxNip44Unpad` validates a decrypted NIP-44 plaintext by round trip, `textEncode(tText, "UTF-8") is not tBytes`, so a direct message reading "nan" (any case, or "nan(...)") is refused as not valid UTF-8 (INFERRED from the Linux reading; its carriers are nostrxt/src/nostrxt.livecodescript, the nostrxt and riptide-social demos' embeds and the suite paste; riptide's own round trip took `("b" & ...) is ("b" & ...)` under `set the caseSensitive to true`, a pattern that fits here) | M | none |
+| 27 | **The family interpreter rounds digit text just past 2^53 without its stop firing.** `_n` reads text through Python's `float()` and then `_exact()`, which refuses a DOUBLE past 2^53, so text whose decimal value is past 2^53 but whose nearest double is not ("9007199254740993", 2^53 + 1, reads as 2^53; "9007199254740992.4" as the whole 2^53) goes into arithmetic as that double with no refusal, exactly as the engine rounds it (engine note 2.4), where trap 20 in `coinxt/CLAUDE.md` says the model refuses any value past 2^53. Found 2026-09-26 by coinxt row #10's vectors: the old `cxVarInt` wrote `ff0000000000002000` (2^53's bytes) for "9007199254740993" headlessly. Decide it on the text in `_n` (the digits' value against 2^53, before `float()`), in both byte-identical copies (`coinxt/tools/lcs-interp.py` and nostrxt's), with a tier-0 row in coinxt's `check-script-vectors.py` that fails with the refusal removed, and re-run the census over every member's gate list for new refusals in shipped script | A headless gate is the only thing that runs this code between engine sessions, and a model looser than the engine at 2^53 is how row #8's class hid from every gate; stricter than the engine is acceptable, looser is a bug (trap 19) | S | none |
 
 ### 1.3 Engine work (suite-level)
 
 | # | Run | Where | Row | Green (in brief) |
 |---|---|---|---|---|
-| 1 | `tests/preflight.livecodescript`, then `tests/suite-selftest.livecodescript`, on Windows and then Linux (glibc 2.38 or newer); quit and relaunch OXT before every torrent-bearing paste (trap 5.1.1). Both pastes have run, each on a 64-bit engine by the maintainer's account: Windows 2026-09-24 (2620/5/3) and 2026-09-25 (2653/2/10), Linux 2026-09-25 (2672/0/10; runbook section 8), and the Linux paste half again on 2026-09-26 with the batch's paste (2876/0/10, the same machine by that account). Neither machine ran the preflight for those runs, by the same account (the 4:23 PM run of 2026-09-26 included); the Linux preflight then RAN on 2026-09-26, reported with a second batch-paste run that read the first line for line (presumably the same machine, not stated; runbook section 8): six LOADED at 10, 11, 2, 1, 7 and 4 on OXT 9.7.0-dp-1. Owed: the preflight on Windows (the last Windows preflights on record, 2026-08-17 and 08-24 on OXT 9.6.3, predate CoinXT's ABI 7 and the 2026-09-12 DLLs), and the batch's paste on Windows (the maintainer will run it later) | S1 items 0-1 | the member rows | every member LOADED at its ABI; RECORD each member total (the runbook lists the last ones), do not match it; copy riptide's fourth probe line back verbatim (1.2 #22; Linux read it 2026-09-26, Windows owes it) |
 | 2 | Engine-notes probes: the 2^53 line and the `or` probe | S1 | P | notes 2.4 and 2.5 promoted to OBSERVED with the exact text, or 2.5 rewritten |
 | 3 | Other engine-notes probes: 5.3 (a second stack in front, and a `send ... in` handler writing an unqualified field: record where the write lands); 2.6 (`the number of chars of X + 1`, and `field "x" & tKind`); optionally 1.1 (a second `script "..."` line mid-file with a declared local read below it); 2.3's lineDelimiter half (a caller's lineDelimiter into a called handler and back, as box2dxt v32 probes the itemDelimiter; never probed on any platform) | S1 | - | each note promoted with a date, or left DOCUMENTED / UNEVIDENCED |
 | 4 | The demo re-open fleet, including `start-here.livecodescript`: open one card-hook box2dxt game and one stack-hook demo from the launcher and record whether each builds on first open (its `go invisible stack` / parked-closed create path, engine note 5.5) | S1 items 3, 5 | 37, 38 | per row; this is the largest engine item |
 | 5 | Platform rows: 32-bit Windows and Linux, and the first Mac load of all six dylibs (the 64-bit Windows and Linux rows ran 2026-09-24 and 09-25) | S5 | 23, 24, 47 | preflight LOADED and the member sections green on that row, bitness recorded |
 | 6 | *(optional)* Cheap measurements nothing schedules: FFI-crossing cost and interpreter op rate; whether `byte N of X` on a 60,000-byte Data is O(1) or O(N); `seek to N in file` (a standing nocloud VERIFY) and `rename file` semantics; whether `open file ... for binary write` truncates an existing longer file (engine note 6.14 gives the four-line probe: the reference and engine source say it does, the tree's comments said it does not); whether OXT exposes SQLite through revDB | S1 | - | numbers recorded in engine notes; 6.14 promoted to OBSERVED with a date, or rewritten as a divergence |
 | 7 | Model C Phase 4 exit: a FRESH user on each of macOS, Windows and Linux, following only section 13 of [ONIONXT-INTEGRATION-PLAN.md](ONIONXT-INTEGRATION-PLAN.md), completes a two-machine anonymous transfer | S4 on each OS + PERSON | - | all three done; the phase does not close before |
-| 8 | The suite board's first engine run (D-23), in item 1's launch. PARTLY RUN 2026-09-24 (Windows): the build at 1200x640 with every row, the boot self-check green (9/0/0) with its summary note, Run all with the rows accounting for every check, box2dxt at 1200 wide, Copy results unchanged; the board review's fixes that a report can show (the merged skips, the banner, the renamed pump) ran in the day's third run. The same half ran on Linux on 2026-09-25 (2672/0/10, both loopbacks completing, Copy results by the maintainer's account), and there a SECOND Run all in one launch, TorrentXT installed (the maintainer's account): riptide's session sections green, which closed 3.1 engine #10. Windows ran the report half again that day (2653/2/10; whether a launch's first or second Run all, and how the text was copied, not stated). RAN again 2026-09-26 on Linux with the batch's paste, a fresh stack (2876/0/10): the derived stamp's boot line (`suite-board-0961bb91e5ee`, 1.2 #17), the teardown's counted ENet release (3 counted `enInitialize` calls, one `enDeinitialize` each, 1.2 #16), and by the maintainer's account a second Run all in one launch, copied with Copy results; a second report that day (5:11 PM) read the same, line for line, its Run all's place in the launch and its copying not stated (box2dxt's joint handles say its launch's first Run all, INFERRED: runbook section 8). What a text report cannot show is still owed, and so are the halves of those two changes that need another stack: the rebuild over an old-stamp board (the 2026-09-26 stack was fresh) and the counted holds beside a live `enet-selftest` | S1 item 1 | 48 | the pills' look after Run all; Run on sodiumxt, on torrentxt twice and on enetxt; each filter and a row's Show; whether a pressed Run stays hilited and whether the press arms the run; opening, running and closing the paste beside a live `enet-selftest` loopback leaves that loopback's hosts alone; the first open of a window built under the old `suite-board-1` stamp rebuilds it once |
-| 9 | Tell the machine from the paste, on Windows. The paste's two loopbacks stalled on the Windows machine in all three 2026-09-24 runs and again on 2026-09-25, four of four in the same phases (they also stalled on 2026-08-27, whose phases and machine were not recorded), while the same loopback code COMPLETED on Linux on 2026-09-25 (runbook section 8 and 5.5), and again on 2026-09-26 with the batch's counted holds (the same machine by the maintainer's account), so the paste's code can finish on an engine and what is left is that machine or that platform's builds. On the Windows machine, run the standalone `enetxt/tests/enet-selftest.livecodescript` and `datachannelxt/examples/datachannel-loopback.livecodescript` | S1 (Windows) | - (runbook 5.5) | both stall: record an environment note (blocked UDP to 127.0.0.1) and leave the paste alone; both complete: the paste's loopbacks fail on Windows where the members' own do not, a defect to root-cause |
+| 8 | The suite board's first engine run (D-23), in item 1's launch. PARTLY RUN 2026-09-24 (Windows): the build at 1200x640 with every row, the boot self-check green (9/0/0) with its summary note, Run all with the rows accounting for every check, box2dxt at 1200 wide, Copy results unchanged; the board review's fixes that a report can show (the merged skips, the banner, the renamed pump) ran in the day's third run. The same half ran on Linux on 2026-09-25 (2672/0/10, both loopbacks completing, Copy results by the maintainer's account), and there a SECOND Run all in one launch, TorrentXT installed (the maintainer's account): riptide's session sections green, which closed 3.1 engine #10. Windows ran the report half again that day (2653/2/10; whether a launch's first or second Run all, and how the text was copied, not stated). RAN again 2026-09-26 on Linux with the batch's paste, a fresh stack (2876/0/10): the derived stamp's boot line (`suite-board-0961bb91e5ee`, 1.2 #17), the teardown's counted ENet release (3 counted `enInitialize` calls, one `enDeinitialize` each, 1.2 #16), and by the maintainer's account a second Run all in one launch, copied with Copy results; a second report that day (5:11 PM) read the same, line for line, on its launch's on-open Run all, the only one, by the maintainer's account (box2dxt's joint handles had INFERRED it; its copying not stated). RAN on Windows that evening too, the same batch paste on a fresh stack, twice in ONE launch by the maintainer's account (2857/2/10 each; runbook section 8): the on-open Run all and a second one, each to its summary with the rows adding up, the derived stamp's boot line, the counted ENet release, and on the second run riptide's session sections green, so the second-Run-all item has run on both platforms; Copy results not stated for either. What a text report cannot show is still owed, and so are the halves of those two changes that need another stack: the rebuild over an old-stamp board (the 4:23 PM Linux stack and the Windows one were fresh by the maintainer's account; the 5:11 PM one not stated, and no text report shows a rebuild) and the counted holds beside a live `enet-selftest` | S1 item 1 | 48 | the pills' look after Run all; Run on sodiumxt, on torrentxt twice and on enetxt; each filter and a row's Show; whether a pressed Run stays hilited and whether the press arms the run; opening, running and closing the paste beside a live `enet-selftest` loopback leaves that loopback's hosts alone, and (since 2026-09-26) closing `enet-selftest` or pressing its Re-run beside a live paste run leaves the paste's loopback hosts alone; the first open of a window built under the old `suite-board-1` stamp rebuilds it once |
+| 9 | **The paste's loopbacks on Windows, on the pump's new clock.** On the Windows machine both of the paste's loopbacks stalled in every D-23 paste run on record (three on 2026-09-24, one on 09-25, two on 09-26; enet in `connecting`, dc in `opening`), while they completed on Linux (2026-09-25 and 09-26). The machine was told from the paste on 2026-09-26: there, the same machine by the maintainer's account, `enet-selftest` completed its own ENet loopback (68/0/0, OBSERVED) and the DataChannel loopback demo "seems to work as intended", by the maintainer's account, so the paste's loopbacks failed where the members' did not, a defect in the paste (runbook 5.5's criterion). Diagnosed, INFERRED (runbook 5.5 has the chain): the deadline was armed in `stRun` before the arm-time render of the whole report and the window's first layout, and the pump re-rendered the report every tick, so the loopbacks were judged on the pump's first tick or its second, after a poll or two; what takes the time on Windows is not known (the candidates include a slow native poll: the 2026-09-12 Windows DLLs first met an engine with the D-23 board). Fixed 2026-09-27: the deadline starts at the pump's first tick, a stall needs it AND a floor of serviced ticks (or a ceiling that ends every run), no report render on a live tick, and uncounted timing notes on every run that arms a loopback (inside a tick, each transport's poll apart from the board's paint); verified statically and in the headless boot model (`check-suite-ui-boot.py`'s Windows-stall scenario reproduces the Windows report on the old core; `check-suite-selftest.py` check 19); needs an OXT pass on Windows. Run the regenerated paste there: Run all on open, then again in the same launch, each report copied back whole | S1 (Windows) | - (runbook 5.5) | both loopbacks complete on Windows, and the timing notes ("the loopbacks' pump: where the time went") come back from both runs. Closes only when a Windows paste completes both loopbacks; if one still stalls, its note and the timing notes say where the time went |
 
 ### 1.4 Owner calls this plan waits on
 
@@ -294,9 +318,13 @@ keeping the scaffold for its report.
   report that day), where the day's preflight read `SodiumXT 0.1.0 (libsodium
   1.0.20)`, the Linux pin (the first `sxVersion()` on record; runbook section
   8). On Windows, 106/106 in the suite
-  paste, 2026-09-24 and again 2026-09-25, on the `x86_64-win32` MSVC DLL (64-bit
-  by the maintainer's account, given 2026-09-26), which narrowed engine #1 to the
-  32-bit DLL and `sxVersion()`, not recorded there either; earlier, 106/106 on
+  paste, 2026-09-24, again 2026-09-25 and twice on 2026-09-26, on the
+  `x86_64-win32` MSVC DLL (64-bit by the maintainer's account, given
+  2026-09-26), which narrowed engine #1 to the 32-bit DLL and `sxVersion()`;
+  the 2026-09-26 Windows preflight then read `SodiumXT 0.1.0 (libsodium
+  1.0.22)` from that DLL, D-08's version and the first Windows `sxVersion()`
+  on record (runbook section 8), which narrowed it to the 32-bit DLL alone;
+  earlier, 106/106 on
   2026-08-24 on a mingw DLL since replaced. The 2026-08-27 paste
   (sodiumxt green, platform and package not recorded) may have loaded the run-12
   Linux build first (coding #6).
@@ -312,7 +340,7 @@ keeping the scaffold for its report.
 
 | # | Run | Where | Row | Green (in brief) |
 |---|---|---|---|---|
-| 1 | Preflight and suite paste (or `put sxSelfTest()`) on a **32-bit** Windows engine, the `x86-win32` DLL (the `x86_64-win32` one ran 106/106 on 2026-09-24 and 09-25), and `put sxVersion()` on either DLL | S5 | 23 | LOADED at 10; 106/0 with SHA3, ristretto and ChaCha20; `put sxVersion()` shows libsodium 1.0.22 |
+| 1 | Preflight and suite paste (or `put sxSelfTest()`) on a **32-bit** Windows engine, the `x86-win32` DLL (the `x86_64-win32` one ran 106/106 on 2026-09-24 to 09-26, and the 2026-09-26 preflight read its `libsodium 1.0.22`), with `put sxVersion()` there | S5 | 23 | LOADED at 10; 106/0 with SHA3, ristretto and ChaCha20; `put sxVersion()` shows libsodium 1.0.22 |
 | 2 | The same on a Mac (arm64; Intel too if available) | S5 | 24 | 10 and 106/0 |
 | 4 | The same on a 32-bit Linux engine | S5 | 47 | the first x86-linux record |
 | 5 | `sodiumxt/examples/sodium-demo.livecodescript` | S1 item 5 | 37 | all 7 tabs build, the About self-test green, the tamper case rejected (no boot self-check: a human judgement) |
@@ -338,7 +366,9 @@ keeping the scaffold for its report.
   (64-bit; its first engine load, and libtorrent 2.1.1's and
   `load_torrent_buffer`'s first RECORDED Windows run, the 2026-08-27 paste having
   recorded neither platform nor binaries; the 996-byte caps included), and again
-  on 2026-09-25; 101/101 on
+  on 2026-09-25 and twice on 2026-09-26 (the batch paste in one launch, the
+  second Run all's probe taking a fresh session; that evening's Windows
+  preflight LOADED it at ABI 11, no libtorrent version printed); 101/101 on
   2026-08-17, 08-20 and 08-24, the destructive handlers' refusal legs included. The 2026-08-27 suite paste (2440/2/3,
   platform not recorded) had every folded member green, torrentxt included.
   Two-machine evidence: riptide (2026-08-13, 08-15) and a maintainer report of rp1 chat
@@ -353,6 +383,19 @@ keeping the scaffold for its report.
   `qsRouteLookupKey` mirrored in `tests/fileserver_golden.py` and driven against the
   demo), and its LAN editor's session token is compared as text since the check-23
   sweep of the same day; verified statically; needs an OXT pass (Engine #2's re-open).
+- Its folder server refuses what nocloud's does since 2026-09-27 (coding #21, closed):
+  a dot-leading segment and a `/_qs` or `/_edit` path no route answered are 404s on
+  both transports, the listing hides dot-leading names, the LAN editor will not write
+  one, and a clearweb subfolder keeps its trailing slash. `tools/check-script-vectors.py`
+  runs the real serve paths, listing and editor write route over a folder carrying
+  `.env` and `.git/config` against `tests/fileserver_golden.py`, which it now holds to
+  the demo mirror by mirror (`torrentxt/CLAUDE.md`, "The Quick Share lineage");
+  verified statically; needs an OXT pass (Engine #2's re-open; the onion half Engine #3).
+  The same day's review closed three more ways past those guards, each pinned over a
+  real folder: a request target with no leading `/` is read from the share root on
+  both transports (before, the Tor path served a sibling folder named like the share,
+  and the web link's first slash fix did too), and the editor's dot refusal reads a
+  backslash as the separator `qsEditSafePath` makes it (nocloud's twins: nocloud #8).
 
 **Coding.**
 
@@ -367,7 +410,7 @@ keeping the scaffold for its report.
 | 17 | Acknowledge the positioning and distribution risk of shipping a BitTorrent client, which the design brief asked to flag before public release (TorrentXT has been public since 2026-09-23); the legitimate framing is resilient distribution of large payloads | Recorded risk, never signed off | S | owner |
 | 19 | Refuse a non-hex btih in the shim: libtorrent 2.0.x's `magnet_uri.cpp` ignores `from_hex`'s failure (2.1.1 checks it), so `btx_add_magnet` adds a garbage info-hash on the Linux and mac builds, and a pre-Model-C QuickShare fed a `BTXTOR1:` code cut to 40 characters joins swarm b000...0. Both QuickShares' share-code checks now require hex (`qsIsHex`, 2026-09-24); the shim fix is a native change, so it rides a dispatch. The smoke test pins today's behaviour per libtorrent version | A malformed code joins a real swarm instead of refusing | S + dispatch | dispatch |
 | 20 | A truncated LOCKED `BTXTOR1:` code is offered as plaintext: when the address survives and the verifier is cut off, `qsReceiveOnion` shows the "not encrypted, download anyway?" prompt and dials without a key; the encrypted header then refuses it, so nothing is saved, but only after a network dial and a misleading prompt. Distinguishing "unlocked" from "lock cut off" needs a marker the code format does not carry today | A misleading prompt and a needless dial | S | owner (code format) |
-| 21 | Port nocloud's dotfile guard (`qsHasDotSegment`, round 5) and reserved-namespace guard (`qsHttpReservedPath`, 2026-08-17) to `torrent-quickshare`, and hold `torrentxt/tests/fileserver_golden.py` to the demo: five of its mirrors (`has_dot_segment`, `http_req_length`, `file_size_probe`, `safe_filename`, `rate_short` / `eta_short`) name handlers the demo does not have (the golden was copied from nocloud's), and only its route section is driven against the script (2026-09-25). By reading, the demo's folder server answers `/.git/config` and `/.env` over Tor and the web link, and its listing shows dot-folders | A guard the golden claims and the demo lacks, against the shared folder's privacy promise; `torrentxt/CLAUDE.md`'s Quick Share lineage paragraph points here | S-M | none |
+| 22 | **Windows short names past the dotfile guard**, both Quick Shares. `qsHasDotSegment` judges the name a visitor SENT, and on an NTFS volume that generates 8.3 names (by default the system volume, where a user's folders live) `.git` and `.env` also answer to `GIT~1` and `ENV~1` (Microsoft's documented 8.3 aliasing; Git for Windows guards the same alias of `.git`), so `GET /GIT~1/config` would pass the guard and `there is a file` would find `.git/config`. Refuse a segment of the `~` + digits short-name shape on Windows, or judge the long name (`longFilePath`) of what the path resolves to; pin it in `torrentxt/tools/check-script-vectors.py` and nocloud's gate | Found by reading at the 2026-09-27 review of #21's port: the guard half runs headlessly (`qsHasDotSegment("/GIT~1/config")` is false), the disk half is Windows behaviour no run here can show; not observed on an engine | S | a Windows engine to confirm |
 
 **Engine.**
 
@@ -392,9 +435,13 @@ keeping the scaffold for its report.
   again on 2026-09-26 (the batch paste, its holds counted, suite-wide #16; the
   same machine by that account; twice that day), when the day's preflight
   LOADED it at ABI 2 and read `enet 1.3.18`, the pin (runbook section 8); the Windows
-  pastes of 2026-09-24 and 2026-09-25, folded 34/34 on the 2026-09-12
-  `x86_64-win32` DLL with that loopback stalled every time (1.3 #9); standalone
-  selftest 2026-08-07; async loopback 2026-08-13; folded 34 on
+  pastes of 2026-09-24, 2026-09-25 and 2026-09-26 (twice in one launch), folded
+  34/34 on the 2026-09-12 `x86_64-win32` DLL with that loopback stalled every
+  time (1.3 #9); on 2026-09-26 the standalone `enet-selftest` on that machine
+  (by the maintainer's account; presumably that DLL) ran 68/0/0 with its own async loopback
+  COMPLETE and no `RUN NOT FINISHED` trailer, which closed engine #1 (runbook
+  section 8 and 4.3), and that evening's Windows preflight read `enet 1.3.18`
+  too; standalone selftest 2026-08-07; async loopback 2026-08-13; folded 34 on
   2026-08-20; `enet-lan-chat` on one Linux machine 2026-08-18; `enet-internet-chat`
   could not connect on one network 2026-08-27 (no hairpin, as expected).
 
@@ -402,18 +449,18 @@ keeping the scaffold for its report.
 
 | # | Work | Why | Size | Blocked by |
 |---|---|---|---|---|
-| 4 | **`enet-selftest` gives back one ENet hold more than it takes**, once per close or Re-run. Its `stRun` initializes twice and its `stFinish` deinitializes twice (the second is labelled "extra deinitialize is a no-op 0", but the shim counts both inits, so it is the call that reaches zero); `stCleanup` then calls `enDeinitialize` once more, bare, on `closeStack` and on Re-run. Beside another ENet window holding the last hold (the suite paste's cross row holds one), that call ends the window's hosts, the defect the paste's counted holds fixed on 2026-09-25. Count holds as the suite core does (`suEnInit` / `suEnRelease`), and make the no-op leg a call at a count this stack knows is zero. The chat demos pair `ecStart`/`ecStop` and `eiStart`/`eiStop`; their only unpaired path is a re-fired `openStack`, which leaks a hold and harms no other window | Found 2026-09-25 while fixing the paste (an interpreter probe read the count 1, 3, 1, 0); not observed on an engine. Runbook row 48 says meanwhile not to close `enet-selftest` or press its Re-run while a paste run holds ENet | S | none |
+| 5 | **A Re-run mid-run leaves the old pump chain queued** in `enet-selftest` (and in `datachannel-selftest`, which has the same shape): `stCleanup` sets the phase to done, but the queued `stPump` fires after `stRun` has set it back to connecting, so two chains pump the same hosts until `stFinish`. Not a cancel by name: `the pendingMessages` is engine-wide, so cancelling "stPump" would also cancel the other selftest's loopback (the suite core's `stCancelPump` note); a generation token that `stPump` checks is the shape, with a headless pin that counts the queued pumps after a mid-run Re-run | Harmless as far as a read and `tools/check-transport-holds.py`'s mid-run Re-run show (each phase transition is taken once, and both chains stop at done), but it is not what the harness means, and a later phase that acts twice would count twice. Found 2026-09-26 while fixing enetxt #4 and left in that work's report; recorded by its review, 2026-09-27; not observed on an engine | S | none |
 
 **Engine.**
 
 | # | Run | Where | Row | Green (in brief) |
 |---|---|---|---|---|
-| 1 | `enetxt/tests/enet-selftest.livecodescript` standalone | S1 item 6 | - (runbook 4.3) | no `RUN NOT FINISHED` trailer; the first async run of the member's own harness on the 2026-09-12 binaries (the suite paste loaded them first, 2026-09-24, and its loopback stalled on Windows four times to 2026-09-25: 1.3 #9; the paste's loopback completed on Linux 2026-09-25, on the `x86_64-linux` build by the maintainer's account) and the first standalone async run since the `sEnPolling` rename |
 | 2 | Closing-pass leg B (inbound UDP 27300 on the Host) | S3 item 1 | 6 | "peer connected"; text and binary with a NUL echoed byte-exact; a graceful disconnect |
-| 3 | `enet-lan-chat` on two machines (UDP 27099) | S3 item 6 | 6 | joins and leaves announced; lines relayed through one `enBroadcast`; RTT on the dashboard |
+| 3 | `enet-lan-chat` on two machines (UDP 27099) | S3 item 6 | 6 | joins and leaves announced; lines relayed through one `enBroadcast`; RTT on the dashboard; and (since 2026-09-27, the one-hold stop of `enetxt/CLAUDE.md` gotcha 7, verified statically and headlessly) closing it beside another ENet window on one machine leaves that window's hosts |
 | 4 | `enet-internet-chat` across two networks | 2NET | 39 | INTERNET LIVE with a non-RFC-1918 remote |
 | 5 | Suite paste on a Mac | S5 | 24 | LOADED at 2; the en1 sections green |
 | 6 | *(optional)* `enPollLastError`'s throw paths (a dispatched handler that throws; a drain failure), after a small harness addition | S1 | - | the api-reference label on the throw paths flips |
+| 7 | `enetxt/tests/enet-selftest.livecodescript` standalone again, now carrying its counted holds (its standalone async run closed on 2026-09-26 on Windows, 68/0/0, with the harness before them: enetxt's ledger) | S1 item 6 | - (runbook 4.3) | no `RUN NOT FINISHED` trailer; the run's counted holds (2026-09-26): `enDeinitialize returns 0` with the note "one enDeinitialize for each of this run's 2 counted enInitialize calls, and no more", and the no-op leg PASS with no other ENet window open (SKIP beside one) |
 
 ### 2.4 datachannelxt
 
@@ -428,8 +475,11 @@ keeping the scaffold for its report.
   #16; the same machine by that account; twice that day), when the day's
   preflight LOADED it at ABI 1 and printed `libdatachannel v0.24.5`, the pin as
   the build records it (runbook section 8); the
-  Windows pastes of 2026-09-24 and 2026-09-25, folded 39/39 on the 2026-09-12
-  `x86_64-win32` DLL with that loopback stalled every time (1.3 #9); first live
+  Windows pastes of 2026-09-24, 2026-09-25 and 2026-09-26 (twice in one launch),
+  folded 39/39 on the 2026-09-12 `x86_64-win32` DLL with that loopback stalled
+  every time (1.3 #9), and on 2026-09-26 the `datachannel-loopback` demo, by the
+  maintainer's account "seems to work as intended" (not itemised; engine #1);
+  first live
   loopback 2026-08-08; standalone async loopback
   2026-08-15; folded 39 on 2026-08-20; `datachannel-dht-chat` on one machine each on
   Linux and Windows 2026-08-18. On 2026-08-27 the maintainer reported a DHT-signalled
@@ -443,15 +493,15 @@ keeping the scaffold for its report.
 | 5 | *(optional)* Remove the legacy `dcLocalDescription` transition shim (script gotcha 11) once no supported build emits the old event | The cleanup its own comment schedules | S | owner |
 | 6 | Pin Windows OpenSSL, or record the acceptance as D-08 did for libsodium | Windows and mac ship different OpenSSL versions | S + dispatch | owner |
 | 7 | Correct `datachannelxt/THIRD-PARTY-LICENSES.md`'s "OpenSSL is NOT bundled": the Windows DLLs (3.6.4) and the mac dylib (3.5.4) link it statically; add the Apache-2.0 notice | Binary redistribution obligation | S | owner (legal) |
-| 8 | **`dcCleanup` is process-wide and uncounted.** `dcx_init` is an idempotent one-time init (`dcCreatePeer` also calls it implicitly); `dcx_cleanup` frees every peer and channel in the process and joins libdatachannel's threads, however many inits came first; and `dcPoll` drains one queue shared by the whole process. So any stack's `dcCleanup` ends every other DataChannel stack's peers. Callers: the suite paste (since 2026-09-25 only while it holds a `dcInit` of its own), `tests/preflight.livecodescript`'s `pfProbeDc` (a `dcInit` then a `dcCleanup`, generated by `tools/build-preflight.py`), `datachannel-selftest`, the DataChannel demos, `riptide-social`, and closing-pass leg E (gated on the flag `sDcReady`). Refcount init and cleanup in the shim, the implicit init included, or scope cleanup and polling to an owner. A native change: rebuilt binaries (rule 5) | Found reading the shim for the paste's counted holds, 2026-09-25; the paste and preflight halves shown in the headless model, not observed on an engine. Runbook row 48 says meanwhile to keep DataChannel stacks closed for a run that includes DataChannelXT | M | owner, then dispatch |
-| 9 | Validate `datachannel-dht-chat`'s offer nonce at the parse boundary. `wxApplyRemote` takes whatever precedes the first LF as the nonce, and `wxApplyOffer` dedups with `("n" & pNonce) is ("n" & sSeenOfferNonce)`: a nonce `an` spells `nan`, and if the engine reads that as a NaN (C's `strtod` does, and a Linux engine's reading of 2026-09-26 says it does there: the fourth probe line's item 3 builds its "nan" the same way, "n" then "an", and read it unequal to another, engine note 2.11; Windows is unread, and the family interpreter refuses the form) it equals nothing, itself included, so the same offer is re-answered and the peer rebuilt on every delivery. Refuse anything but 8 lowercase hex there | The letter prefix of 2026-09-25 is sound only for hex, and this nonce is not checked to be hex; found by the check-23 review by reading. Only a room-key holder can publish, so the reach is low | S | none |
+| 8 | **`dcCleanup` is process-wide and uncounted.** `dcx_init` is an idempotent one-time init (`dcCreatePeer` also calls it implicitly); `dcx_cleanup` frees every peer and channel in the process and joins libdatachannel's threads, however many inits came first; and `dcPoll` drains one queue shared by the whole process. So any stack's `dcCleanup` ends every other DataChannel stack's peers. Callers: the suite paste (since 2026-09-25 only while it holds a `dcInit` of its own), `tests/preflight.livecodescript`'s `pfProbeDc` (a `dcInit` then a `dcCleanup`, generated by `tools/build-preflight.py`), `datachannel-selftest`, the DataChannel demos, `riptide-social`, and closing-pass legs A and E (since 2026-09-26 only while it holds a counted `dcInit` of its own: `cpDcInit` / `cpDcRelease`). Refcount init and cleanup in the shim, the implicit init included, or scope cleanup and polling to an owner. A native change: rebuilt binaries (rule 5) | Found reading the shim for the paste's counted holds, 2026-09-25; the paste and preflight halves shown in the headless model, not observed on an engine. Runbook row 48 says meanwhile to keep DataChannel stacks closed for a run that includes DataChannelXT | M | owner, then dispatch |
+| 10 | **The DataChannel windows call `dcCleanup` with no hold of their own.** `datachannel-selftest`'s `stCleanup` calls it bare on every close and every Re-run (after a finished run whose `stFinish` already called it twice, and on a close with nothing run), and `datachannel-dht-chat`'s `wxStop` (its `closeStack`) gates it on `sHaveDc`, the extension PROBE, so a close with Start never pressed calls it too. `dcCleanup` frees every peer in the process (#8), so each such call ends another window's peers (the suite paste's cross row mid-run, a chat) with nothing of its own to give back. Count `dcInit` the way the suite paste and the closing pass do (`suDcInit` / `suDcRelease`, `cpDcInit` / `cpDcRelease`: a refused init is none, the release only with a hold) and drive both in `tools/check-transport-holds.py`, a fixture planting the bare call back. (`datachannel-loopback` initializes on open, so its close usually has a hold, but its `closeStack` calls `dcCleanup` unconditionally, so a close whose open stopped short of `lbStart`'s `dcInit`, or whose `dcInit` threw, has none: the shape the enetxt chat demos had until 2026-09-27, when a drive found that the path this plan called harmless there was not; count it with the rest. `riptide-social` sets its `sDcInit` guard only on a 0) | The script half of #8's class, which a refcount in the shim would close outright; until then a count narrows it to a window that really holds DataChannel. Found 2026-09-26 by reading, while fixing the closing pass's flag (suite-wide #20); not observed on an engine | S | none |
 
 **Engine.**
 
 | # | Run | Where | Row | Green (in brief) |
 |---|---|---|---|---|
-| 1 | `datachannel-loopback`: **the only member demo with no engine record** | S1 item 5 | 37 | connected + open on both sides; chat in both panes; the boot self-check green |
-| 2 | `datachannel-selftest` standalone on the 2026-09-12 binaries (Windows; Linux with glibc 2.38 or newer), recording which library loaded. The paste's own loopback completed on Linux 2026-09-25 on the `x86_64-linux` build (the maintainer's account) and stalled on Windows 2026-09-24 and 09-25 (1.3 #9); the standalone harness's own async loopback has not run since 2026-08-15 | S1 item 6 | - (runbook 4.2) | green, no trailer |
+| 1 | `datachannel-loopback`: **the only member demo with no itemised engine record** (the maintainer's account of 2026-09-26, on the Windows machine, is "seems to work as intended", no more; runbook section 8) | S1 item 5 | 37 | connected + open on both sides; chat in both panes; the boot self-check green |
+| 2 | `datachannel-selftest` standalone on the 2026-09-12 binaries (Windows; Linux with glibc 2.38 or newer), recording which library loaded. The paste's own loopback completed on Linux 2026-09-25 on the `x86_64-linux` build (the maintainer's account) and stalled on Windows 2026-09-24 to 09-26 (1.3 #9); the standalone harness's own async loopback has not run since 2026-08-15 | S1 item 6 | - (runbook 4.2) | green, no trailer |
 | 3 | Closing-pass leg E, and `datachannel-dht-chat` on two machines recorded BY NAME (the 2026-08-27 one-LAN report does not say whether the demo or leg E ran; its getting-started section 6 flow has no recorded run either) | S3 items 1, 6 | 6 | OPEN across machines; the record names the stack, both platforms and the selected ICE pair type |
 | 4 | Leg E or the DHT chat across two networks | 2NET | 40 | a `srflx` / `prflx` pair (record `relay` honestly if both NATs force TURN) |
 | 5 | Browser interop: `datachannelxt/docs/browser-interop.md` (the page and its OXT half landed 2026-09-24; the page was exercised in headless Chromium against the committed `.so` through its C ABI, which proves neither the `.lcb` binding nor an engine) | S1 + a browser | 40 | the channel opens; text arrives as a string, `dcSendData` as an ArrayBuffer |
@@ -464,7 +514,7 @@ keeping the scaffold for its report.
   refusal paths).
 - The **live-Tor core is engine-proven** from the early bring-up (before 2026-08-08),
   `oxh*` hosting included; the offline self-test ran 74/0/1 in the suite paste on
-  Windows (2026-09-24 and 09-25) and Linux (2026-09-25 and 09-26), 61/0 on
+  Windows (2026-09-24 to 09-26) and Linux (2026-09-25 and 09-26), 61/0 on
   2026-08-17 (Windows);
   coinxt's wallet logs show `oxDial` reaching third-party v3 onions (2026-09-02/03).
 - Static only: Mode B; an OnionXT-to-OnionXT dial; the live-accept socket id; the
@@ -500,16 +550,39 @@ keeping the scaffold for its report.
   inference, the same DLL; 299/299 on Linux on 2026-09-26 (the batch paste, the
   same library by that account, and in a second report that day), row #8's three
   new bech32 lines included (below), and the day's preflight LOADED it at ABI 7
-  (`cxCheckABI` silent; runbook section 8); 290/290 at ABI 6, Windows x64, 2026-08-24 (BIP-341).
+  (`cxCheckABI` silent; runbook section 8); 299/299 on Windows that evening, twice in one
+  launch, the three bech32 lines green there too, and that evening's Windows preflight
+  LOADED it at ABI 7; 290/290 at ABI 6, Windows x64, 2026-08-24 (BIP-341).
 - Row #8's exact-integer bounds (2026-09-25: `is an integer` in `cxBech32EncodeValues`, digit
   bounds before the arithmetic, `cwAmountAdd` for sums, the boot self-check's `div` / `mod`
   round trip) and its review's three (2026-09-26: `cwExpandExponent`'s exponent, every
   coinxt-demo counter field, coin-selftest's message-checked bech32 refusals). The library's
-  half RAN green on Linux on 2026-09-26 (the batch paste): `cxBech32EncodeValues`'
+  half RAN green on Linux and on Windows on 2026-09-26 (the batch paste): `cxBech32EncodeValues`'
   `is an integer` refused one ulp above 3 and -1e-15 through coin-selftest's
   message-checked lines, and "3e0" encoded exactly as 3 (engine note 2.12). The rest,
   in the wallet, wallet-core and coinxt-demo, which the paste does not carry, is
   verified statically; needs an OXT pass (`coinxt/CLAUDE.md`).
+- Rows #9-#11 closed 2026-09-26 (`coinxt/CLAUDE.md`): the library's encoders take
+  their integers as digits at most 2^53 (`cxCheckedWhole`; the paste and coin-selftest
+  carry it, with its refusal lines for the next run), a backend's integers are
+  bounded at their parse, every sum of coin values goes through `cwAmountAdd`, and
+  mBTC is read and written by moving the point in text. Every fix's old spelling is
+  planted back on each gate run and must fail its vectors. The same day's review
+  narrowed `cxEthLegacyEncode`'s recovery id to EIP-155's 0 or 1 (the first bound, 3,
+  let 2 on chain 1 write chain 2's v), sent Core's coin values through
+  `waCheckedCount` too (listunspent and a scan took a negative coin), made a scan
+  refuse a coin height past 2^53 and commit its chain tip after the last check
+  that can refuse it, and held every
+  source-pinned sum by its writes, planting a bare `+` into each as a wrong fix.
+  A second review (2026-09-28) settled the indexes the library USES on their digits
+  too (`cxCheckedIndex`: `cxHdDeriveChild` took "1e1" as child 10 and an empty index
+  as child 0, and the three sighash builders took an input index of 1.5 through a
+  number range test to a chunk index), held `cxEth1559Encode`'s y-parity to the
+  legacy recovery id's 0 or 1 (coin-selftest and the paste carry four lines for these
+  for the next run), and took Core's listtransactions fee's minus off as text (off by
+  arithmetic, the engine writes the fee with the default numberFormat's six decimals,
+  INFERRED), each held by vectors its old line fails. Verified statically; needs an
+  OXT pass.
 - Hex compares off `is`'s number path (engine note 2.11), 2026-09-26: check 23's 27 wallet
   findings through `cwSameHex` / `cwHexCompare` (one a version number, renamed), then a
   hand sweep's 15 more no name rule sees (PSBT signing's three scriptPubKey checks,
@@ -523,7 +596,8 @@ keeping the scaffold for its report.
   it with `is` folded), and coin-selftest's bare asserts of four `0x` Ethereum addresses,
   the 32-zero BIP-39 entropy and every Base58, WIF and xprv constant (now `stSameText` /
   `stSameHex`, held by `check-selftest-vectors.py`). Verified statically; needs an OXT
-  pass.
+  pass (the 2026-09-26 Windows paste was presumably `a812580`'s, which carries
+  coin-selftest's rewrite, but its lines read the same either way).
 - The wallet (`kWaVersion` 1.2.0, 13 screens) has engine logs from 2026-08-31 to
   2026-09-03: all four transports over clearnet and Tor, RBF, CPFP, a legacy broadcast
   (`7978bdd2...`, 2026-09-02), and in the tenth log the silent-payment send, an
@@ -538,10 +612,8 @@ keeping the scaffold for its report.
 | 3 | The rest of the Core plan: a `verifymessage` second opinion on the 2011-format signed message (allowlisted in `kWaCoreMethods`, called by nothing); JSON-RPC batching for the Core backends (one POST per request today); a Node-screen card for the regtest sandbox's own mining address (Mine pays the wallet's first address) | Named as left in `coinxt/docs/bitcoin-core-plan.md` | M | none |
 | 4 | Restoring past the gap limit: a sync never extends the address window (windows extend on demand since 2026-09-03, a sync does not), so a restored wallet whose whole window is used can miss funds | Funds a restore cannot see | M | owner (it changes what a sync is) |
 | 7 | Chain inclusion: the wallet verifies no inclusion proof (no `get_merkle`, `gettxoutproof` or `getblockheader` in any script), so "confirmed" is the backend's word | A trust gap stated by the 2026-09-08 research, still true | M-L | owner (scope) |
-| 9 | **Backend numbers and the wallet's own sums, bounded like row #8's.** Integers a backend reports still reach arithmetic with no digit bound: `waMergeUtxos`'s `value` and `vout` pass `waIsDigits` and then `+ 0`; `waCheckedHeight` asks `is an integer`, so "1e20" is a chain tip; a coin's height passes `waIsInt` and then `+ 0`. The wallet's sums of coin values are unbounded too: the `add tRec["value"]` sites in `coin-wallet` (balance, MAX, CPFP, RBF, per address, leaf) and `wallet-core`'s `cwSelectionResult` and `cwBranchAndBound`. Bound each at its parse (digits, then `cwDecCompare` against 2^53) and send the sums through `cwAmountAdd`, with refusal vectors | A backend's number is attacker input like a decoded amount; a 20-digit value rounds on the engine where the interpreter stops. `coinxt/docs/wallet.md` says these are not bounded yet. Found beside row #8, 2026-09-25 | S-M | none |
-| 10 | **The library's integer arguments are unbounded.** `cxUIntToBytesLE` (amounts, vout, sequence, version, locktime), `cxHexOfInt` (nonce, gas, chain id, v) and `cxVarInt` encode whatever number they are handed, so digit text past 2^53 is encoded as its rounded neighbour. coinxt-demo bounds its own fields (`cdWholeField`); the library does not. Add a text-shape bound and a 2^53 bound, decided on digits, at the library boundary, with vectors in `check-script-vectors.py`; the suite paste and the demos carry it | Fail closed on every malformed input | S | none |
-| 11 | **`cwParseAmount`'s mBTC form truncates.** It computes `cwIntDiv(cwBtcToSat(mBTC text), 1000)`, so a sixth to eighth decimal is dropped silently: "0.00012345" mBTC reads as 12 sat and "0.000001" mBTC as 0 (a headless probe, 2026-09-25); its ceiling is 90071992.54740992 mBTC. Move the decimal point in text instead (for example `cwExpandExponent(tText & "e-3")`) and refuse sub-satoshi precision, as `cwBtcToSat` does | A silent truncation of what a person typed | S | none |
 | 12 | Decide what the History screen shows for an UNKNOWN amount: `cwSatToBtc` prints an empty amount as "0.00000000", because the engine orders empty as 0 (`coinxt/CLAUDE.md` records the question the 2026-09-25 census raised) | A blank may say "unknown" more honestly than a zero | S | owner |
+| 13 | **The wallet's own typed and saved integers still ask `is an integer`, or nothing.** Rows #9-#11 settled what a backend reports, what the wallet sums and what the library writes (2026-09-26, `coinxt/CLAUDE.md`); left are coin-wallet's reads of its own screens and file: the account number (`wl_account`) and a multisig's m (`wl_m`) on the Wallet screen, and a lock recipe's height and index read back from the wallet file (`waLeafKeyFrom`), each `is an integer` and then `+ 0`, so "1e3" is 1000 and twenty nines rounds (the `+ 0` also hands CoinXT a clean number, so its own digit guards cannot see the typed spelling); the Send screen's locktime (`sd_locktime`, in `waBuildSpend`), `is an integer` alone (since row #10 CoinXT's encoders refuse what then reaches them malformed, so a typed "1e3" is refused at the build, not read as 1000); the wallet file's own `account` and `m` lines (`tValue + 0` in the loader, with no shape check at all, so "abc" is an engine error there, which the loader's catch reports as a file that did not parse); and a coin typed on the offline Coins screen (`waAddManualCoin`: its vout is `cwTrim(tVout) + 0`, its amount may be NEGATIVE, since `cwParseAmount` reads a minus, and the coin is appended to the coin table without `waCoinTotal`, the bound every merge takes, so there only the balance's own `cwAmountAdd` refuses a total past 2^53, on every repaint). Settle each on its digits with a bound (the account and m through `waWholeInRange`, which decides on the digits since 2026-09-26; the recipe's height below 500000000 as `waLockPrepare` already bounds it; the manual coin's vout through `waCheckedCount`, its amount at least 1 sat, and the coin through `waCoinTotal` before it is appended), each with a vector that fails on the old line | The person's own typing and the wallet's own file, not a stranger's, so no payment is at stake the way a backend's number put one; the class rows #8-#11 closed. Found by the row #9 sweep, 2026-09-26; the locktime, the file's `account` and `m` lines and the manual coin by its review the same day | S | none |
 
 **Engine.**
 
@@ -562,7 +634,7 @@ keeping the scaffold for its report.
   parse).
 - **The core is ENGINE-PROVEN 2026-08-24:** 274/0/2 in the suite paste (the 2 skips
   are the relay section, which is not in the paste); 277/0/2 on Windows 2026-09-24
-  and 09-25 and on Linux 2026-09-25 and 09-26, the 2026-09-09 fix's pins and the
+  to 09-26 and on Linux 2026-09-25 and 09-26, the 2026-09-09 fix's pins and the
   278 floor included.
   **The relay SEND half was live-proven 2026-08-24** against wss://nos.lol: connect,
   handshake, publish, ok-true.
@@ -594,8 +666,10 @@ keeping the scaffold for its report.
 
 - Box2D v3.1.0: 376 public `b2*` handlers plus the pure-script Kit's 313 `b2k*`. Kit
   coverage 313/313; the raw binding 131/376, the other 245 held as a floor.
-- Records: harness v32 385/0 in the suite paste on Windows (2026-09-24 and 09-25,
-  `playLoudness` read back exact both times) and Linux (2026-09-25 and 09-26; the
+- Records: harness v32 385/0 in the suite paste on Windows (2026-09-24, 09-25 and
+  twice on 09-26, `playLoudness` read back exact every time; the 09-26 runs'
+  slab-fall y 836.252747 again, and that evening's Windows preflight READ ABI 4
+  through `b2Version()`) and Linux (2026-09-25 and 09-26; the
   2026-09-26 run's slab-fall y printed Windows' 836.252747, not 2026-09-25 Linux's
   836.252708, its cause not recorded: `box2dxt/CLAUDE.md`'s ledger; a second
   report that day printed 836.252747 again, which rules out run-to-run variation
@@ -650,11 +724,20 @@ extension, true multi-layer parallax (waits on transparent overlay art).
 
 ### 3.1 riptide
 
-- Library 0.13.0 (2026-09-25: wire seqs ordered exactly by `rsSeqCompare` and bounded
-  on their high half by `rsIsWireInt`, in the library and the demo's LAN checks; the
+- Library 0.14.0 (2026-09-26: the anon persona index capped at 2, two handles ordered
+  byte by byte in `rsRoomId` and `rsDmSessionKeys`, and the demo's draft change detection
+  compared as text, which closed coding #10-#12; riptide/CLAUDE.md's identity decisions
+  and trap 16; verified statically; needs an OXT pass, the demo's half verified
+  statically + headless). Its review (2026-09-27) moved three more compares of the same
+  class off the number path: the UTF-8 round trip (`rsBytesAreUtf8` and the demo's
+  `raProfileLine`), which refused every text reading nan and so the receiving end of the
+  nan draft #12 sends, and the demo's outbound inbox match in `raHandleRp1` (trap 16;
+  the same labels). Library 0.13.0 (2026-09-25: wire seqs ordered exactly by
+  `rsSeqCompare` and bounded on their high half by `rsIsWireInt`, in the library and
+  the demo's LAN checks; the
   hex handle, key and content-address compares check 23 and its review found, moved
   to text at integration, `57ce37d`; verified statically; needs an OXT pass). The
-  library's half RAN on Linux on 2026-09-26 (the batch paste, 512/0/2): the harness's
+  library's half RAN on Linux and on Windows on 2026-09-26 (the batch paste, 512/0/2): the harness's
   17 `rsSeqCompare` lines and the 2^53 watermark lines green, and the moved compares
   in `rsIngestHead`, `rsIngestPost`, `rsIngestBlob` and `rsIngestBridge` on every
   ingest line, on ordinary hex (no line feeds them a number-like pair). The demo's
@@ -670,8 +753,12 @@ extension, true multi-layer parallax (waits on transparent overlay art).
   the maintainer's account a second Run all in one launch, TorrentXT installed,
   whose green session sections closed engine #10), and 512/0/2 at 0.13.0's harness
   on Linux (2026-09-26, again a second Run all in one launch by that account; its
-  fourth probe line's first reading, engine note 2.11; a second report that day
-  read the same, the probe line included); phase 8's v11 boot 9/1 on
+  fourth probe line's first reading, engine note 2.11; a second report that day,
+  its launch's on-open Run all by the maintainer's account, read the same, the
+  probe line included), and 512/0/2 on Windows the same evening, twice in one
+  launch (the on-open Run all and a second, by the maintainer's account: the
+  session sections green on the second there too; the fourth probe line
+  identical to Linux's); phase 8's v11 boot 9/1 on
   2026-08-29 (the FAIL was the self-check's own defect, since fixed).
 - Phase 5 has never run on two machines. The 2026-09-09 prefix-free LAN tags supersede
   the engine-green admission bytes; the harness sections added after 2026-08-24 have
@@ -687,9 +774,7 @@ extension, true multi-layer parallax (waits on transparent overlay art).
 | 4 | Own-head refresh while online: the demo re-puts its BEP44 head only on post, BEP44 items expire, and D-06 rules out follower republish, so the author's own re-put is the only retention | Feeds go dark | S-M | owner (cadence) |
 | 6 | Scope calls: the pairwise room (`rsRoomId`, spec 5.2) is library-only, so wire it or record that for good; an anon file transfer over the onion (`rsBtxo*`, spec 8.3) has no app caller (M to build); followers-only sealed media (spec 4.4) is deferred and would need its own spec and record format (L) | Library surface the app does not use | S-L | owner (scope) |
 | 8 | One app-state file per machine, not per identity: `raAppSave` seals the current identity's state over the one `RIPTAPP1` file (`riptide/examples/riptide-social.livecodescript`, the app-state path near 17312), and recovering your own head marks the state dirty, so unlocking a SECOND identity with a published head can overwrite the first identity's follows and watermarks. Key the file by identity, or refuse to save over another identity's file. Found statically 2026-09-24; the two-machine runbook's phase 8 step 8 now asks the tester to watch for it | Silent loss of a user's follow list | S-M | owner (file layout) |
-| 10 | **Cap the persona index.** `rsAnonSeed(pMaster, 100 + k)` derives subkey 200 + k, which is exactly `rsAnonDmSeed(pMaster, k)`'s seed, so one seed would feed both ed25519 and crypto_kx, against the decision "one seed never feeds two cipher schemes" (executed 2026-09-25: `rsAnonSeed(M, 100)` equals `rsAnonDmSeed(M, 0)`). Neither handler refuses an index above 99, and the protocol's subkey table (`docs/RIPTIDE-PROTOCOL.md` section 2, `100+n` / `200+n`) gives n no bound; a huge index also loses precision in `kRsSubkeyAnonBase + pIndex`. Refuse `pIndex >= 100` in both and state the bound in the table | Latent cross-scheme key reuse in the public library API (the demo uses persona 0 only) | S | none (owner, if the table's bound counts as a spec change) |
-| 11 | **Two handle orders compare on the number path** (engine note 2.11): `rsRoomId`'s `tA <= tB` and `rsDmSessionKeys`' `tMine < tTheirs` and `tMine is tTheirs` compare 64-hex handles with bare operators, under plain names check 23 cannot read. When BOTH handles are number-like (all digits, or digits, one `e`, digits) the engine compares them as numbers, so two peers could both pick the kx server role, or order a room's keys differently. Compare with a letter prefix on both sides (lowercase hex in text order is byte order), or byte by byte | Practically unreachable: a random handle is number-like about once in 10^13, and both must be; it is the class note 2.11's rule names | S | none |
-| 12 | **The LAN draft's change detection compares number-like text as numbers** (engine note 2.11): `raLanSyncTick` re-sends a draft only when `tText is not sLanDraftLast`, and the typing triggers use `tText is not sLanDraftSeen` and `tText is not sDcTypingSeen`, so a draft edited from `12` to `0012`, `1` to `1.0` or `100000` to `1e5` is never re-sent and the peer keeps the old text (`set the caseSensitive to true` fixes case, not the number path). Compare with a letter prefix on both sides | Cosmetic, a draft divergence until the next edit; shown in the interpreter on 2026-09-25, and the exponent form is OBSERVED in 2.11 (2026-09-25). By the 2026-09-26 Linux reading a draft that reads "nan" never equals its last broadcast either, so it is re-sent every debounce interval and keeps renewing the typing window (INFERRED; suite-wide #26 is the class) | S | none |
+| 13 | **How far to widen the persona index cap.** 0.14.0 refuses an anon persona index of 2 or more (`kRsAnonIndexLimit`, protocol section 2), the smallest cap the tree uses: one persona ships (index 0), and the harness and golden test derive persona 1 to show two differ. The row it closed (#10) proposed 100, the widest that keeps subkeys 100+n and 200+n apart. Widening is compatible (no persona anyone holds is stranded; narrowing later would strand them) and edits the bound in protocol section 2, the oracle's `ANON_INDEX_LIMIT`, the constant and the refusal vectors. Decide how many personas the protocol allows | The bound is normative (protocol section 2), so its width is a spec call; the cap was picked, not decided, 2026-09-26 | S | owner |
 
 **Engine.**
 
@@ -726,6 +811,8 @@ extension, true multi-layer parallax (waits on transparent overlay art).
 | 3 | After the D-10 probe: build a restart-stable mtime ETag plus `Last-Modified` / `If-Modified-Since` with golden mirrors, or record "design confirmed" in the deep-dive's section 1.5, in D-10 and in `webapp/sw.js`'s header | Closes the one decided-but-unrun question | S-M | engine |
 | 4 | *(optional)* A headless boot gate on riptide's `check-demo-boot.py` pattern | Would exercise the TorrentXT-absent guard and the 49-control boot record without an engine; coinxt, riptide and holde-em have one | M | none |
 | 5 | The HTTP-host endpoint menu, listed below | Recorded roadmap; the deep-dive carries the questions that order it, not the menu itself | L | D-02 (deferred until the first external user report) |
+| 7 | **The web link loses a subfolder's trailing slash.** `qsCwServe` builds the folder-relative path as `"/" & (item 3 to -1 of tPath)`, and the engine ignores ONE trailing delimiter when it counts items (engine note 2.2, OBSERVED), so `/<token>/docs/` routes as `/docs`: the static pipeline redirects to `/<token>/docs//`, the listing's Up-a-level link redirects back there, and a user route declared with a trailing slash never matches over the web link. Take the rest as the text after the token's ITEM, counting item 1 as well as the token (torrent-quickshare's twin, fixed 2026-09-27: its first fix counted the token alone, so a target with no leading `/` began the rest inside the token and `sCwRoot & tRest` named a sibling folder; the same day's review corrected it), and pin it: nocloud's execution gate does not drive `qsCwServe` (its header says why), so the row wants a serve section like torrentxt's | A redirect on every subfolder and a broken Up link on the web link; the chunk text INFERRED from 2.2's observed count, and reproduced by torrentxt's execution gate on the twin, not observed on an engine | S | none |
+| 8 | **Two spellings past the folder server's guards**, torrent-quickshare's twins (fixed there 2026-09-27, the review of torrentxt #21). (a) The Tor path never anchors the request target: `qsFsServePath` hands `qsHttpServeStatic` the decoded target as it came, and that joins it to the share root's text (`pRoot & pAppPath`, no trailing slash), so a raw client's `GET -old/secret.txt HTTP/1.1` over the onion serves `<share>-old/secret.txt`, a SIBLING folder, and `GET -old/` lists it (no browser sends such a target; a curl through Tor can). Put a `/` before a target that lacks one. (b) The editor's write refusal `qsHasDotSegment(tRel)` reads the raw path while `qsEditSafePath` turns `\` into `/`, so `\.qsroutes.json` or `sub\.hidden\x` is written as a dot path the refusal names as the reason (a server-significant dotfile among them). Read the path with `/` for `\` first. Pin both where a gate executes them: nocloud's execution gate drives neither serve path (row 7) nor `qsEditWriteRoute` | A read outside the shared folder over the anonymous link; a guard the editor's comment claims, bypassed. Found by reading and CONFIRMED headlessly on 2026-09-27 through nocloud's own runner: `qsHttpServeStatic` given `-backup/secret.txt` chose `qsServeFile` on the sibling's file, `qsHasDotSegment("\.env")` answered false and `qsEditSafePath` resolved it to `/srv/.env`; not observed on an engine | S | none |
 
 The deferred menu (D-02; the five questions at the end of
 `nocloud/docs/http-server-deep-dive.md` section 4 decide the order):
@@ -777,10 +864,12 @@ The deferred menu (D-02; the five questions at the end of
   the harness pins RAN green on Linux (the batch paste, 929/0/5 at v0.25.6 /
   harness 48; every new line PASS, among them table protocol 2's admission and
   naming, turn-bound acts, sit marks, the sender predicate, `dealLevel`, the
-  open-hand seat rule and History's late joiner). They are single-machine
-  loopback lines: on a live wire between machines v0.25.6 is still verified
-  statically; needs an OXT pass (engine #4), and Windows has not run harness 48.
-- Folded records to **929/0/5 (2026-09-26, v0.25.6, harness 48, Linux; above)**, and
+  open-hand seat rule and History's late joiner), and then on Windows the same
+  evening (929/0/5 in both Run alls of one launch; runbook section 8). They are
+  single-machine loopback lines: on a live wire between machines v0.25.6 is
+  still verified statically; needs an OXT pass (engine #4).
+- Folded records to **929/0/5 (2026-09-26, v0.25.6, harness 48, Linux, then Windows;
+  above)**, and
   **751/0/5 (2026-09-25, v0.25.5, harness 47, Linux, then Windows the same day)**:
   the harness pins of v0.25.4's `heHexEq` and near-integer fixes and of v0.25.5's
   canonical wire indices (`heCanonIdx`), walked counts, hand-bound wires and audit
@@ -800,7 +889,6 @@ The deferred menu (D-02; the five questions at the end of
 | 5 | BEP44 profiles and play-money standings (spec 3/5/8.3): the `btDht*` BEP44 calls have 0 call sites | Build it or strike it from the spec | M | owner |
 | 6 | Seven to nine seats (a spec 1 goal; the build is 2-6) | Build it or strike it | M | owner |
 | 7 | The optional direct-TCP upgrade lane (pairwise `btMapPort` plus engine sockets, for sub-100 ms actions; 0 call sites) | Build it or strike it | M | owner |
-| 8 | Close runbook row 14 at inference strength, as row 26 was: section 11's "seeds XOR" and "full shuffled deck" assertions ran green in every folded run from 2026-08-17 on, and engine note 3.1 answers which stream the pre-fold runs dealt from | A leg the evidence already covers | S | owner |
 | 9 | `holde-em/assets/sounds/NOTICE.md`'s cardShuffle row reads as if the sound were wired "in the deal-animation increment"; the source leaves it unwired. A one-word fix in a frozen NOTICE file | Accuracy of a shipped notice | S | owner (explicit OK) |
 | 10 | **Table admission list and `cfg` co-signing** (spec 5, 6, 7.3, 9): an admitted-pubkey list (or an explicit open flag) in the host `cfg`, void/forfeit rules in `cfg`, and per-player co-signing of `cfg` before hand 1. Today every table is effectively open (any key whose token verifies is admitted: `heAdmitTokenVerify`) and `cfg` is host-authored only (`heLobbyCfgBody`; `heHostRelay` refuses a `cfg` from any other key). A consensus change: the protocol-kat pins move, `kHeHarnessV` bumps, and so does the table protocol (`kHeEnvV`) | Specified, not built; a player cannot bound who sits at the table or bind the host to the rules | M | none |
 | 17 | **A host can deal a seat that no key holds**, one no sit ever filled included: `handStart` checks only the seat list's format. Such a hand can never settle (no key may reveal that seat's position), a stall the host could cause anyway; the open-hand seat rule's refusal of a dealt but keyless seat exists only for this case. Refusing a `handStart` that deals a keyless seat would close it at the source | A further consensus narrowing, left for the owner by the fix pass's round 2 and its review (2026-09-26) | S | owner |
@@ -812,8 +900,6 @@ decision (a role a joiner can choose, or a sit-request the host answers).
 
 | # | Run | Where | Row | Green (in brief) |
 |---|---|---|---|---|
-| 1 | The standalone stack with `heRunSelftest`, then 2-3 hotseat hands. The suite-paste half RAN on Linux and on Windows 2026-09-25 with the v47 total recorded both times (751/0/5 at v0.25.5), after the four wire-arity checks and the nested `heBetApply` guard first ran on 2026-09-24; at v0.25.6 / harness 48 the suite-paste half ran on Linux on 2026-09-26 with its total recorded (929/0/5; runbook section 8). Owed: the standalone half (`heRunSelftest` and the hotseat hands) at harness 48, and the paste on Windows at harness 48 | S1 items 2, 4 | 14 | `heRunSelftest` ends `==== N pass, 0 fail, M skip ====` and `RESULT: green` at v0.25.6 / harness 48 (RECORD N rather than matching any earlier total); the hands complete with no error dialog. (The guard has tested `is an integer`, not `trunc`, since v0.25.4, and its non-numeric and near-integer refusals ran green on 2026-09-25; whether `trunc` of a non-number throws stays unrecorded) |
-| 2 | Phase 1 exit: a full 6-seat hotseat session with side pots and all 17 cards on screen, plus the confirming eye on the 720p layout | S1 + PERSON | 42 | as named |
 | 3 | 2f bring-up | S2 item 6 | 20 | the Tor pill's states; the invite `p2:<64hex>@<56base32>.onion` (the table-protocol tag since v0.25.6); the derived address equals `oxServiceAddress` |
 | 4 | 2d re-run and the Phase 2 exit: a 6-seat table over rp1 across at least 3 machines on real home networks (extra instances fill seats); a mid-hand disconnect that reconnects and resumes; tampered and replayed envelopes provably dropped; receipts matching on every seat. Every machine runs the same holde-em (table protocol 2); optionally one on an older build, refused by name (record the v0.25.6 side's words) | S3 item 4 (3+ seats) | 18 | as named |
 | 5 | 2e liveness on wall clocks, plus an attempt at the recorded KNOWN EDGE; report whether the owner-accepted `kHeSeatLiveSecs` of 600 s fits a real table's join-to-boundary gap | S3 item 5 | 28 | per row |
@@ -821,6 +907,7 @@ decision (a role a joiner can choose, or a sit-request the host answers).
 | 7 | Phase 3 exit: two players and a non-playing onion oracle; kill the oracle mid-hand, then void and resume | 3M + tor | 42 | the oracle never holds a seat; the void resumes per spec 9 |
 | 8 | 4f and the Phase 4 exit (after coding #1): the batched mask step (4 FFI crossings) does not visibly hitch the table and the pre-ABI-9 fallback's ~312 crossings stay acceptable; then full Level 2 sessions at 6-max across real machines, about 6 s per street over rp1 | S3 | - | user-verified |
 | 9 | Phase 5: a hostile review of the deal implementation by a non-author, and a soak; spec 13's value-readiness checklist honestly assessable. Name who does it | PERSON | - | review findings closed |
+| 10 | The table on the b2k Kit's sprite cards: `start using` the installed `box2dxt-kit`, open the stack and play a hand or two. The 2026-09-26 six-seat session (which closed Engine #1 and #2) ran the FLAT table, the Kit not loaded, and no engine record in the tree shows the sprite-card table | S1 + PERSON | - | the cards and the layout look right with the sprite sheet (the maintainer's eye), `heProbeKit` naming no load error |
 
 ---
 
@@ -834,15 +921,19 @@ Advisory, like the recommendations in OPEN-DECISIONS: a route, not a decision.
    blocks, riptide's LAN keys, the stale-text rows), and the 2026-09-25/26 batch the
    next one (suite-wide #14-#19, holde-em #13-#15, riptide #9, coinxt #8, nocloud #6,
    torrentxt #18, enetxt #3; suite-wide #22's probe line landed 2026-09-26, and
-   Linux read it the same day, its Windows reading owed). Left with no blocker,
-   the short ones first: the stacks
-   that release a hold they never took (enetxt #4, suite-wide #20) and
-   datachannel-dht-chat's nonce check (datachannelxt #9); the number-path compares
-   check 23 cannot read (riptide #11 and #12, suite-wide #21's literal rule, and
+   Linux and Windows read it the same day, identically). Left with no blocker,
+   the short ones first: the DataChannel windows that call `dcCleanup` with no
+   hold of their own (datachannelxt #10); the number-path compares
+   check 23 cannot read (suite-wide #21's literal rule, and
    #26's free-text sweep);
-   riptide #10 (the persona-index cap); coinxt #9-#11 (the bounds row #8 left, and
-   the mBTC form's truncation) and #3 (the Core residue); torrentxt #21
-   (torrent-quickshare's guards); nocloud's optional #4 boot gate; holde-em #3
+   coinxt #13 (the wallet's own typed and
+   saved integers; #9-#11 closed 2026-09-26) and #3 (the Core residue);
+   suite-wide #27 (the interpreter at 2^53 + 1); nocloud #7 and #8 (the web
+   link's lost subfolder slash, the Tor path's unanchored target and the editor's
+   backslash dot path, torrent-quickshare's twins fixed; one serve section in
+   nocloud's gate pins all three) and its optional #4 boot gate; torrentxt #22 (the
+   Windows short-name alias past both copies' dotfile guard, which a Windows run
+   confirms); holde-em #3
    (more leaf tranches), #10 (the admission list, a table-protocol bump) and the
    L-sized #1 (Level 2 in played hands); box2dxt #4 (platformer polish); and the
    optional rows. Regenerate the paste, the preflight and the demo embeds once,
@@ -863,17 +954,21 @@ Advisory, like the recommendations in OPEN-DECISIONS: a route, not a decision.
    the package, as the 2026-09-25 account did, and what it did not: the OXT
    version (the account says only "the latest") and `put sxVersion()`, both of
    which the preflight prints (the 2026-09-26 Linux preflight's did: OXT
-   9.7.0-dp-1, libsodium 1.0.20; runbook section 8). The
-   2026-09-25/26 batch's paste first ran on Linux on 2026-09-26 (2876/0/10; its
-   totals are the runbook's last records). The next session, on Windows (the
-   maintainer's next run), runs the preflight first (S1 item 0, owed there at
-   the current ABIs), then records the batch's totals there and riptide's
-   fourth probe line verbatim (#22); paste it into a stack an earlier paste
+   9.7.0-dp-1, libsodium 1.0.20; the Windows one's that evening: OXT 9.6.3,
+   libsodium 1.0.22; runbook section 8). The
+   2026-09-25/26 batch's paste ran on Linux and then on Windows on 2026-09-26
+   (2876/0/10; 2857/2/10 twice in one launch, the loopbacks stalled; its totals
+   are the runbook's last records), each machine's preflight and riptide's
+   fourth probe line (#22) read on both. The next session: on Windows, copy
+   back the paste's new pump timing section from a launch's on-open Run all
+   and from its second (suite engine #9); paste into a stack an earlier paste
    built under the old `suite-board-1` stamp and watch the board rebuild once
-   (the 2026-09-26 stack was fresh, so the rebuild has not run); keep the
-   DataChannel stacks closed (datachannelxt #8), and neither close
-   `enet-selftest` nor press its Re-run while a paste run holds ENet (enetxt #4;
-   runbook row 48).
+   (the 2026-09-26 stacks the maintainer described were fresh, the 5:11 PM
+   one not stated, so no record shows the rebuild); keep the DataChannel
+   stacks closed (datachannelxt #8), and with `enet-selftest` open beside a
+   paste run that holds ENet, close it or press its Re-run and watch the
+   paste's loopback survive (its holds are counted since 2026-09-26; runbook
+   row 48).
 4. **What only a person can close:** D-04's wording and the owner calls; the box2dxt
    scenery and feel pass; holde-em's Phase 5 review and soak; the Model C Phase 4 exit
    on each OS.

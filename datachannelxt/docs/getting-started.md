@@ -10,9 +10,10 @@ ran green standalone 2026-08-15). Section 6's `datachannel-dht-chat` ran on one 
 Linux and on Windows on 2026-08-18, which is where the suite's engine notes 1.6, 6.6 and
 6.7 were found (section 3 says why the event is `dcLocalDescriptionReady`), and a
 DHT-signalled chat was reported working between two machines on one LAN on 2026-08-27
-(the report did not name its stack: the dht-chat demo or closing-pass leg E). The
-loopback demo of section 5 and section 6's own two-machine flow have no recorded engine
-run: treat those steps as designed behaviour. The dated record is in
+(the report did not name its stack: the dht-chat demo or closing-pass leg E). Section 6's
+own two-machine flow has no recorded engine run, and the loopback demo of section 5 only
+the maintainer's account that it "seems to work as intended" (Windows, 2026-09-26): treat
+those steps as designed behaviour. The dated record is in
 [../CLAUDE.md](../CLAUDE.md).
 
 ## 1. Install the extension
@@ -179,7 +180,10 @@ Worth stealing from it even if you never run it:
   big, split across content-addressed immutable items listed in the mutable
   head (the wire-format comment at the top of the script has the details).
 - **Nonce-paired offer/answer.** DHT items linger for hours; a nonce echoed
-  from offer to answer is what lets "Reconnect" reuse a room code safely.
+  from offer to answer is what lets "Reconnect" reuse a room code safely. The
+  nonce is 8 lowercase hex, and a blob carrying anything else is dropped where
+  the body is parsed, before the nonce is stored or compared (2026-09-27;
+  verified statically; needs an OXT pass).
 
 It needs BOTH extensions installed (TorrentXT is probed at startup and the
 demo fails closed with an install message when absent).

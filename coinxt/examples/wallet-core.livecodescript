@@ -1948,17 +1948,48 @@ end cwBtcToSat
 
 function cwFormatAmount pSat, pUnit
    -- The three units a wallet offers, and nothing between them: BTC with all
-   -- eight decimals, mBTC with five, and raw satoshi. Trailing zeros are KEPT
-   -- in BTC because a column of amounts that all end at the same place is
-   -- readable and a ragged one is not.
+   -- eight decimals, mBTC with five that count (cwSatToMbtc), and raw
+   -- satoshi. Trailing zeros are KEPT because a column of amounts that all
+   -- end at the same place is readable and a ragged one is not.
    if pUnit is "sat" then
       return pSat & " sat"
    end if
    if pUnit is "mBTC" then
-      return cwSatToBtc(pSat * 1000) & " mBTC"
+      return cwSatToMbtc(pSat) & " mBTC"
    end if
    return cwSatToBtc(pSat) & " BTC"
 end cwFormatAmount
+
+function cwSatToMbtc pSat
+   -- pSat satoshi as mBTC, the spelling this wallet has always shown: eight
+   -- decimals, the last three always zero, since a satoshi is mBTC's FIFTH
+   -- decimal.
+   --
+   -- THE POINT MOVES IN TEXT, NEVER BY A MULTIPLY (2026-09-26, found beside
+   -- work-plan coinxt row #11). This was cwSatToBtc(pSat * 1000), and
+   -- pSat * 1000 passes 2^53 from 9007199254741 sat (about 90072 BTC) on:
+   -- the engine ROUNDS it with no error (suite engine note 2.4), so a
+   -- balance above that was SHOWN wrong in mBTC, and coin-wallet's
+   -- waAmountBare wrote the same rounded number into the Send box, which
+   -- reads it back as the amount to pay. Now cwSatToBtc's exact text is
+   -- re-pointed three places right: its eight decimals are the first three
+   -- digits of the mBTC whole part and five mBTC decimals, and the three
+   -- zeros keep the column the old spelling had. cwParseAmount's mBTC form
+   -- reads every one of these back to the satoshi. Verified statically;
+   -- needs an OXT pass.
+   local tBtc, tSign, tPos, tWhole, tFrac
+   put cwSatToBtc(pSat) into tBtc
+   put "" into tSign
+   if char 1 of tBtc is "-" then
+      put "-" into tSign
+      put char 2 to -1 of tBtc into tBtc
+   end if
+   put offset(".", tBtc) into tPos
+   put char 1 to (tPos - 1) of tBtc into tWhole
+   put char (tPos + 1) to -1 of tBtc into tFrac
+   return tSign & cwDecClean(tWhole & char 1 to 3 of tFrac) & "." & \
+         char 4 to 8 of tFrac & "000"
+end cwSatToMbtc
 
 function cwParseAmount pText, pUnit
    -- THE SAT FORM IS DIGITS WORTH AT MOST 2^53, CHECKED AS TEXT FIRST
@@ -1999,10 +2030,87 @@ function cwParseAmount pText, pUnit
       return (tSign & cwDecClean(tDigits)) + 0
    end if
    if pUnit is "mBTC" then
-      return cwIntDiv(cwBtcToSat(tText), 1000)
+      return cwMbtcToSat(pText, tText)
    end if
    return cwBtcToSat(tText)
 end cwParseAmount
+
+private function cwMbtcToSat pTyped, pText
+   -- cwParseAmount's mBTC form: pText (trimmed) as satoshi, or a refusal
+   -- that quotes pTyped, what the person wrote.
+   --
+   -- THE POINT MOVES IN TEXT, AND A SATOSHI IS THE FIFTH DECIMAL (2026-09-26;
+   -- the suite's docs/WORK-PLAN.md, coinxt row #11). This read the mBTC text
+   -- through cwBtcToSat AS IF IT WERE BTC and then divided by 1000
+   -- (cwIntDiv), which TRUNCATED a sixth to eighth decimal with no word:
+   -- "0.00012345" mBTC read as 12 sat and "0.000001" mBTC as 0 (a headless
+   -- probe, 2026-09-25), so what a person typed was not what the Send box
+   -- paid; and it capped the form at 90071992.54740992 mBTC, a thousandth of
+   -- the bound, since the BTC parser's limit applied to the mBTC number. Now:
+   --   * the SHAPE is cwBtcToSat's, checked here so a refusal quotes what was
+   --     typed: an optional minus, digits, at most one point, an empty whole
+   --     part read as zero;
+   --   * a digit past the fifth decimal must be a ZERO, else the amount is
+   --     refused as finer than a satoshi (cwBtcToSat refuses a ninth BTC
+   --     decimal the same way). Zeros there are taken: this wallet writes
+   --     mBTC with eight decimals, the last three always zero (cwSatToMbtc,
+   --     and waAmountBare into the Send box), and has to read those back;
+   --   * the point then moves three places left IN TEXT (the whole part is
+   --     zero-padded to three digits and split), and cwBtcToSat reads the
+   --     result: its 2^53 bound, decided on the digits, is the only bound,
+   --     so the form now reads to 90071992547.40992 mBTC, 2^53 satoshi, and
+   --     a refusal there names the BTC equivalent it checked.
+   -- No arithmetic touches the typed number. Verified statically; needs an
+   -- OXT pass.
+   local tSign, tText, tPos, tWhole, tFrac, tI, tCount
+   put pText into tText
+   if tText is "" then
+      throw "wallet-core: cwParseAmount: an empty amount."
+   end if
+   put "" into tSign
+   if char 1 of tText is "-" then
+      put "-" into tSign
+      put char 2 to -1 of tText into tText
+   end if
+   put offset(".", tText) into tPos
+   if tPos is 0 then
+      put tText into tWhole
+      put "" into tFrac
+   else
+      put char 1 to (tPos - 1) of tText into tWhole
+      put char (tPos + 1) to -1 of tText into tFrac
+      if offset(".", tFrac) is not 0 then
+         throw "wallet-core: cwParseAmount: more than one decimal point."
+      end if
+   end if
+   put the number of chars of tWhole into tCount
+   repeat with tI = 1 to tCount
+      if offset(char tI of tWhole, "0123456789") is 0 then
+         throw "wallet-core: cwParseAmount: " & quote & pTyped & quote & \
+               " is not a decimal amount."
+      end if
+   end repeat
+   put the number of chars of tFrac into tCount
+   repeat with tI = 1 to tCount
+      if offset(char tI of tFrac, "0123456789") is 0 then
+         throw "wallet-core: cwParseAmount: " & quote & pTyped & quote & \
+               " is not a decimal amount."
+      end if
+   end repeat
+   repeat with tI = 6 to tCount
+      if char tI of tFrac is not "0" then
+         throw "wallet-core: cwParseAmount: a satoshi is the smallest unit, " & \
+               "and in mBTC it is the fifth decimal; " & quote & pTyped & \
+               quote & " goes past it."
+      end if
+   end repeat
+   put char 1 to 5 of tFrac into tFrac
+   repeat while the number of chars of tWhole < 3
+      put "0" before tWhole
+   end repeat
+   return cwBtcToSat(tSign & char 1 to -4 of tWhole & "." & \
+         char -3 to -1 of tWhole & tFrac)
+end cwMbtcToSat
 
 -- ==============================================================================
 -- SIZE, WEIGHT AND FEES
@@ -2392,10 +2500,16 @@ private function cwSelectionResult pSel, pTargetSat, pFeeRate, pInputType, pOutp
    put cwCoinSpecs(pSel, pInputType, pM, pCosigners) into tIns
    put cwEstimateVsize(tIns, tOuts) into tVsize
    put cwFeeFor(tVsize, pFeeRate) into tFee
+   -- THE SELECTION'S TOTAL THROUGH cwAmountAdd (2026-09-26; the suite's
+   -- docs/WORK-PLAN.md, coinxt row #9): each coin is at most 2^53, their
+   -- sum need not be, and a bare `add` past 2^53 ROUNDS on the engine with
+   -- no error (suite engine note 2.4) - the change and the fee are this
+   -- total minus the rest, so a rounded total is a fee off by a few
+   -- satoshi. The family interpreter stops there; the engine does not.
    put 0 into tTotal
    repeat with tI = 1 to tCount
       put pSel[tI] into tCoin
-      add tCoin["value"] to tTotal
+      put cwAmountAdd(tTotal, tCoin["value"], "cwSelectCoins") into tTotal
    end repeat
    put "" into tOut
    put pSel into tOut["selected"]
@@ -2557,10 +2671,16 @@ private function cwBranchAndBound pPool, pTargetSat, pFeeRate, pInputType, pOutp
          into tLongTermCost
    put tLongTermCost + tChangeCost into tCostOfChange
    put tLo + tCostOfChange into tHi
-   -- the suffix sums: what is still reachable from each position on
+   -- the suffix sums: what is still reachable from each position on.
+   -- THROUGH cwAmountAdd (2026-09-26; work-plan coinxt row #9): tRemain[1]
+   -- is the pool's whole effective value, a sum a bare `+` rounds past 2^53
+   -- with no error on the engine (suite engine note 2.4). Every other sum
+   -- this search forms - tValue, a subset's, and tValue + tRemain[tDepth],
+   -- which takes each coin at most once - is at most tRemain[1], so bounding
+   -- that one bounds them all, and the hot loop below keeps its plain `add`.
    put 0 into tRemain[tCount + 1]
    repeat with tI = tCount down to 1
-      put tRemain[tI + 1] + tValues[tI] into tRemain[tI]
+      put cwAmountAdd(tRemain[tI + 1], tValues[tI], "cwSelectCoins") into tRemain[tI]
    end repeat
    put 0 into tValue
    put 1 into tDepth

@@ -335,6 +335,10 @@ local sSentBinary       -- what the client sent (kept for byte-exact compare)
 local sSawServerDisc    -- "true" once the server drained enetDisconnect
 local sDeadline         -- the async phase's drop-dead time (ms clock)
 local sPhase            -- "", "connecting", "messaging", "binary", "closing", "done"
+-- THIS STACK'S HOLD on ENet (THE HOLD, above stTinyData): the enInitialize
+-- calls that returned 0 and have not been given back. Written ONLY by
+-- stEnInit and stEnRelease, never below zero; empty reads as zero.
+local sStEnHeld
 
 -- ---- the scaffolding (carried) ----------------------------------------------
 -- ==== SUITE HARNESS SCAFFOLD v1 BEGIN (verbatim copy; master: tools/harness-scaffold.livecodescript; gate: tools/check-harness-scaffold-drift.py) ====
@@ -626,8 +630,10 @@ command stRun
    put empty into sPhase
 
    stSection "lifecycle & diagnostics"
-   stAssert "enInitialize returns 0", enInitialize() is 0
-   stAssert "enInitialize idempotent", enInitialize() is 0
+   -- COUNTED (stEnInit; THE HOLD, above stTinyData): each hold this run
+   -- takes is one stFinish or stCleanup gives back, and no more.
+   stAssert "enInitialize returns 0", stEnInit() is 0
+   stAssert "enInitialize idempotent", stEnInit() is 0
    stAssert "enLibraryVersion names enet", enLibraryVersion() begins with "enet "
    enClearError
    stAssert "enLastError empty after clear", enLastError() is empty
@@ -875,8 +881,14 @@ command stFinish
       stAssert "double destroy is a no-op 0", enHostDestroy(sServer) is 0
       stAssert "enHostDestroy(client) is 0", enHostDestroy(sClient) is 0
    end if
-   stAssert "enDeinitialize returns 0", enDeinitialize() is 0
-   stAssert "extra deinitialize is a no-op 0", enDeinitialize() is 0
+   -- EXACTLY the holds this run took (THE HOLD, above stTinyData). These
+   -- were two bare enDeinitialize calls until 2026-09-26, the second
+   -- labelled "extra deinitialize is a no-op 0" - but the shim counts both
+   -- of stRun's initializes, so the second was the call that reached zero,
+   -- and the no-op this label promises was stCleanup's, which took another
+   -- window's hold. The no-op leg now runs only where it IS one.
+   stEnRelease true
+   stEnNoOpLeg
    put empty into sServer
    put empty into sClient
    put "done" into sPhase
@@ -897,15 +909,105 @@ command stCleanup
    end if
    put empty into sServer
    put empty into sClient
-   -- bare command form: OXT cannot compile a zero-argument name() statement;
-   -- guarded so closing a stack whose extension is missing (the run already
-   -- threw loudly at enInitialize) cannot throw a second time from closeStack
+   -- ONLY the holds this stack still has (THE HOLD, below): none after a
+   -- finished run, none on a close with nothing run, and a live run's two
+   -- on a close or Re-run that cuts it short. This was a bare enDeinitialize
+   -- until 2026-09-26, on every close and every Re-run, which gave back a
+   -- hold another window had taken and, at its last one, ended that window's
+   -- hosts (the suite work plan's enetxt #4). Guarded so a close after a run
+   -- that threw cannot throw a second time from closeStack.
    try
-      enDeinitialize
+      stEnRelease false
    catch tErr
       -- extension not installed; nothing to release
    end try
 end stCleanup
+
+-- ---- THE HOLD: this stack's share of ENet's process-wide init ------------
+-- (the suite work plan's enetxt #4, 2026-09-26; verified statically and in
+-- the suite's headless model, tools/check-transport-holds.py; needs an OXT
+-- pass.)
+--
+-- enInitialize and enDeinitialize act on the whole PROCESS: the shim
+-- refcounts them (enx_initialize / enx_deinitialize over g_init_count, in
+-- src/enet_shim.cpp), and the deinitialize that takes the count to zero
+-- destroys every live host in the process, whichever stack created it. So a
+-- window may give back only the holds it took, and this one counts them in
+-- sStEnHeld the way the suite paste counts its own (suEnInit / suEnRelease
+-- in the suite's tests/suite-selftest.core.livecodescript). Until
+-- 2026-09-26 it did not: a run took two holds and gave back two, and then
+-- stCleanup gave back a third on every close and every Re-run, so with the
+-- paste's cross row or a chat demo open beside it, the last of those ended
+-- that window's hosts.
+--
+-- A refused enInitialize (non-zero) is not counted, because the shim did not
+-- count it either; one that THROWS (the extension absent) counts nothing and
+-- reaches stRun's caller.
+function stEnInit
+   local tR
+   put enInitialize() into tR
+   if tR is 0 then
+      if sStEnHeld is not an integer then
+         put 0 into sStEnHeld
+      end if
+      add 1 to sStEnHeld
+   end if
+   return tR
+end stEnInit
+
+-- Give back every hold stEnInit took, and not one more. The count comes down
+-- BEFORE each call, so a call that throws is never repeated: a throw leaves
+-- the rest held, the safe direction (a hold kept is a library left
+-- initialised until OXT quits; a hold given back twice is another window's
+-- hosts destroyed). pAssert is true from stFinish, where the run records the
+-- release, and false from stCleanup, which records nothing.
+command stEnRelease pAssert
+   local tR, tCalls, tAllZero
+   if sStEnHeld is not an integer then
+      put 0 into sStEnHeld
+   end if
+   put 0 into tCalls
+   put true into tAllZero
+   repeat while sStEnHeld > 0
+      subtract 1 from sStEnHeld
+      add 1 to tCalls
+      put enDeinitialize() into tR
+      if tR is not 0 then
+         put false into tAllZero
+      end if
+   end repeat
+   if pAssert is true and tCalls > 0 then
+      stAssert "enDeinitialize returns 0", tAllZero
+      stNote "one enDeinitialize for each of this run's" && tCalls && "counted enInitialize calls, and no more"
+   end if
+end stEnRelease
+
+-- THE NO-OP LEG: the shim's promise that a deinitialize at a count of ZERO
+-- does nothing and answers 0, made only where this stack KNOWS the count is
+-- zero. Its own count is zero here (stEnRelease just ran), but another
+-- window may still hold ENet, and then the same call would give back that
+-- window's hold. So it asks the shim first, with a probe host: at a count of
+-- zero the shim refuses to create one ("call enInitialize first",
+-- host_create_common), which is the one answer that makes the call a no-op.
+-- A probe host that IS created means another window holds ENet: it is
+-- destroyed at once and the leg SKIPs. Any other refusal SKIPs too, so an
+-- error text that ever changes costs this leg, never another window's hosts.
+command stEnNoOpLeg
+   local tProbe, tWhy
+   put enHostCreateClient(1, 1, 0, 0) into tProbe
+   put empty into tWhy
+   if tProbe is 0 then
+      put enLastError() into tWhy
+   end if
+   if tProbe is 0 and tWhy is "call enInitialize first" then
+      stAssert "extra deinitialize is a no-op 0", enDeinitialize() is 0
+   else if tProbe is an integer and tProbe > 0 then
+      enHostDestroy tProbe
+      stSkip "extra deinitialize is a no-op 0", "another stack holds ENet (a probe host was created, and destroyed); at its count this call would give back that stack's hold"
+   else
+      stSkip "extra deinitialize is a no-op 0", "could not tell that ENet is uninitialized (" & tProbe & ":" && tWhy & "), so the call was not made"
+   end if
+end stEnNoOpLeg
 
 -- ---- small helpers -----------------------------------------------------------
 -- One byte of payload (enSend needs a Data; "x" as a literal would be text).

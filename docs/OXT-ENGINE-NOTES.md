@@ -171,12 +171,14 @@ only then. The rule holds under both readings, which is why nothing changes
 until it does.
 **Settled for Windows, OBSERVED 2026-09-24** (the D-23 suite paste's first
 run, box2dxt harness v32 folded in, 385/0; runbook section 8; a 64-bit OXT by
-the maintainer's account; the same two lines again on 2026-09-25): both halves
-printed the dictionary's answer. "a caller's tab does NOT reach a called
-handler on Win32 (it saw comma)", and "a Kit call left its caller's delimiter
-alone on Win32 (tab in, tab out)". So on that engine an itemDelimiter set in
-one handler is invisible to the handlers it calls and cannot leak back out of
-them: the (original) title's "global" is WRONG there for the itemDelimiter. The probe
+the maintainer's account; the same two lines again on 2026-09-25, and in both
+Run alls of one launch on 2026-09-26, OXT 9.6.3 by that evening's preflight,
+INFERRED for the paste): both halves printed the dictionary's answer. "a
+caller's tab does NOT reach a called handler on Win32 (it saw comma)", and "a
+Kit call left its caller's delimiter alone on Win32 (tab in, tab out)". So on
+that engine an itemDelimiter set in one handler is invisible to the handlers
+it calls and cannot leak back out of them: the (original) title's "global" is
+WRONG there for the itemDelimiter. The probe
 reads only `the itemDelimiter`; the lineDelimiter, which the dictionary
 describes the same way, was not probed. This entry's undated observations
 (platforms unknown) were most likely the leak that both readings share - a
@@ -494,7 +496,8 @@ the same day on Linux and on Windows (below), the rest still DOCUMENTED.**
 "Read on Linux" below): the readings are OBSERVED; that they make the `inf`
 and `nan` words and a hex float numbers there is INFERRED, item by item
 below, and free text meets them (INFERRED: the free-text paragraph below).
-Windows has not read them.
+**Read on Windows the same evening, OBSERVED 2026-09-26, item for item as on
+Linux** ("Read on Windows" below); macOS has not read them.
 `MCLogicIsEqualTo` and `MCLogicCompareTo` (`engine/src/exec-logic.cpp`, the
 code 2.10 cites) first try to turn BOTH operands into numbers, and when both
 turn, compare them as numbers by 2.10's rule; only otherwise do they compare
@@ -549,7 +552,8 @@ given, nor whether it was the 2026-09-25 build; the day's preflight, reported
 later with a second run, printed OXT 9.7.0-dp-1, INFERRED for this one). The
 line printed, verbatim after its colon, `true,true,false,false,false,true`,
 against the prediction `true,?,?,?,false,?`; no item threw. A second run of the same paste that day
-(5:11 PM by the Kit's clock, presumably on the same machine: not stated)
+(5:11 PM by the Kit's clock, presumably on the same machine: not stated;
+its launch's on-open Run all and only one, by the maintainer's account)
 printed the line identically: a repeat on one machine and one C library, not
 a second platform. Item by item:
 1. `"0x10" is "16"` TRUE, as the source predicts. OBSERVED. That
@@ -588,11 +592,29 @@ So on Linux items 1 and 5 read as the engine source decides them, and items
 2, 3, 4 and 6 read as a C99 `strtod` in a locale where 0xA0 is no space
 (true, false, false, true, the prediction for the "C" locale). The first
 three probe lines printed character for character as on 2026-09-25.
-Windows (MSVC's C library and locale decide items 2, 3, 4 and 6) and macOS
-have not read the line. Other spellings of the same words are INFERRED from
-C99's `strtod` grammar (DOCUMENTED there, not probed here): "INF",
-"Infinity" and "+inf" in any case are +inf, "-inf" is -inf, "NaN", "NAN" and
-"nan(...)" are NaN, and "0x1p4" is 16.
+**Read on Windows, OBSERVED 2026-09-26** (the same batch paste by its version
+lines, run twice in one launch on a fresh stack: the on-open Run all, 7:24 PM
+by the Kit's clock, and a second one, 7:28 PM; on the Windows machine of
+2026-09-24 and 2026-09-25; all of that by the maintainer's account; runbook
+section 8). The same evening's Windows preflight printed `engine version:
+9.6.3`, `processor: x86_64` and `systemVersion: NT 10.0` (INFERRED for the
+paste runs: whether they shared its launch is not stated). Both runs printed
+the line `true,true,false,false,false,true`, the Linux reading item for item;
+no item threw. So all six forms now have a reading on two engines, and the
+two agree. Items 1 and 5, which the engine source decides, read as it
+predicts. Items 2, 3, 4 and 6 are the ones the C library under the engine
+decides (`strtod` for "inf", "nan" and the hex float, `isspace` in the
+engine's locale for the NO-BREAK SPACE), and the Windows engine's C runtime
+(presumably MSVC's; which runtime that OXT build links was not read) on OXT
+9.6.3 and Linux's (glibc, INFERRED from the distribution) on 9.7.0-dp-1
+answer all four alike: as a C99 `strtod` in a locale where 0xA0 is no space.
+The readings are OBSERVED; each cause stays INFERRED, as on Linux. Not shown:
+macOS (which has not read the line), a 32-bit engine, another locale, and
+every other spelling (below). The first three probe lines printed as on
+2026-09-25 again. Other spellings of the same words are INFERRED from C99's
+`strtod` grammar (DOCUMENTED there, not probed here): "INF", "Infinity" and
+"+inf" in any case are +inf, "-inf" is -inf, "NaN", "NAN" and "nan(...)" are
+NaN, and "0x1p4" is 16.
 **Free text meets the same parse** (INFERRED from the readings above and from
 this note's source reading; not observed at any site). A comparison reads its
 operands, not where they came from, so a name, label, tag, JSON key, route
@@ -605,7 +627,16 @@ and "Infinity", a hex number is its value ("0x1.8" is "1.5", "0x10" is
 "100000", OBSERVED 2026-09-25). Only a comparison where BOTH sides can be
 number-like is at risk: against a text no number parse accepts ("id", "/",
 any other word) it takes the text path. Work plan suite-wide #26 sweeps the
-tree for such compares.
+tree for such compares. One site, riptide-social's draft change detection,
+took a letter on both sides on 2026-09-26 (its boot gate edits a draft from
+12 to 0012, 100000 to 1e5 and inf to Infinity): verified statically +
+headless; needs an OXT pass. A ROUND TRIP compares a text with its own
+re-encoding, so a text reading nan fails it whatever its bytes: riptide's
+UTF-8 validity check (`rsBytesAreUtf8`, restated in riptide-social's
+`raProfileLine`) refused every valid draft, name or post spelled nan until
+2026-09-27, when it took a letter on both sides (INFERRED from the Linux
+reading; verified statically; needs an OXT pass). nostrxt's NIP-44 unpad
+has the same shape, open under suite-wide #26.
 **Rule, free text:** compare user-typed or wire text as TEXT: a letter on
 both sides, never `i` or `n` in either case (any text can follow the prefix,
 and "an", "nf" or "nfinity" after it spell the two words), with
@@ -623,9 +654,10 @@ reading), so a vector stops a bare site only when it pairs different
 spellings, or brings a "nan". That holds until work plan suite-wide #22
 teaches it the readings; the line itself is a printed diagnostic, never a
 check, so a different reading on another engine prints, it does not fail.
-**Does NOT mean:** that Windows reads the same (its C library has not been
-read), that such text is unsafe everywhere (an array key keeps the raw text,
-and `switch` matches its cases as text, both below), or that one value
+**Does NOT mean:** that macOS reads the same (its C library has not been
+read; Linux and Windows agree, above), that such text is unsafe everywhere
+(an array key keeps the raw text, and `switch` matches its cases as text,
+both below), or that one value
 compared with ITSELF answers false (the source's shortcut, above, answers
 true first; not probed).
 holde-em's `heHexEq` pins, green in the same runs, name bare `is`'s answer only
@@ -674,10 +706,10 @@ bare `is`, `is not`, `=` or `<>`. Prefix a letter to both sides (no number
 parse accepts `h1e5`; not `0x`, which starts a base-16 number, and `n` or `i`
 only before hex, since `"n" & "an"` spells NaN, which equals nothing, itself
 included, and `"i" & "nf"` spells +inf: both read from the source above,
-not observed; on Linux on 2026-09-26 the fourth probe line above read a
-"nan" built as `"n"` then `"an"` unequal to another "nan", and "inf" equal
-to "1e999", OBSERVED, that the two are NaN and +inf INFERRED, and Windows
-has not read either), adding
+not observed; on Linux and on Windows on 2026-09-26 the fourth probe line
+above read a "nan" built as `"n"` then `"an"` unequal to another "nan",
+and "inf" equal to "1e999", OBSERVED on both, that the two are NaN and
++inf INFERRED), adding
 `set the caseSensitive to true` where case is
 part of the value (hex digits are not: `heHexEq` lowercases both sides), or
 compare byte by byte (coinxt's `cxCompareBytes`, nostrxt's `nxCtEqualHex`).
@@ -748,7 +780,13 @@ fails each of those fixes undone (verified statically; needs an OXT pass).
 It is a NAME heuristic: it narrows the class and cannot
 close it. A hex value in a plain-named variable passes (riptide's
 `tComputed is not tExpected`, the blob content-address check, did until it
-was prefixed by hand on 2026-09-26); so does every
+was prefixed by hand on 2026-09-26, and its two handle ORDERS, `rsRoomId`'s
+`tA <= tB` and `rsDmSessionKeys`' `tMine < tTheirs` and `tMine is tTheirs`,
+until riptide 0.14.0 moved them to a byte compare the same day: two
+number-like handles ordered as numbers, and "1e0...0" and "0...01" were one
+handle; verified statically; needs an OXT pass; and riptide-social's
+outbound DM match, an event's `infoHashV1` against `rsInboxId(...)`, until
+2026-09-27, verified statically + headless; needs an OXT pass); so does every
 caller of a helper that compares its arguments with bare `is` (holde-em's
 `heTAssert` did until 2026-09-26, when v0.25.6 moved it to `heTSame`); and so does a
 NUMBER-LIKE literal, exempt with every literal: the wallet's script-type
@@ -801,8 +839,10 @@ interpreter is taught. Since the Linux reading (2026-09-26) it also holds that
 reading as recorded data, twice: its items 1 and 5 against the prediction the
 line prints, and all six against the reading quoted in riptide's ledger row of
 that run, so a corrupted C-library item in either copy fails the gate (seeded
-flips of each item prove it); the refusal rows stand until the interpreter is
-taught. The first census (the day it landed) found no shipped
+flips of each item prove it); the Windows reading of the same evening is held
+beside it under its own (platform, date) key, both copies again, and the
+seeds corrupt every key, not the first alone; the refusal rows stand until
+the interpreter is taught. The first census (the day it landed) found no shipped
 comparison of number-like TEXT anywhere, and three in the wallet boot of an
 EMPTY operand against a number, which the engine's orderings read as 0
 (`MCLogicCompareTo` converts empty; the source) and riptide's runner then
@@ -851,8 +891,16 @@ near-zero branch, OBSERVED at 1e-15 > 0, it cannot call -1e-15 below 0). And
 is not canonical digits is OBSERVED for one form; "1e20", "3.0", "+3",
 " 3", "0x1F" and "1e999" (the Rule below) stay DOCUMENTED. A second run of
 that paste the same day (5:11 PM, presumably on the same machine: not
-stated) passed the three lines again, a repeat on one machine. Windows has
-not run them. The old form against a near-integer stays unrun (the
+stated; its launch's on-open Run all, by the maintainer's account) passed
+the three lines again, a repeat on one machine. **On Windows too, OBSERVED
+2026-09-26** (the same batch paste, both Run alls of one launch on the
+machine of 2026-09-24 and 2026-09-25, by the maintainer's account; OXT 9.6.3
+by that evening's preflight, INFERRED for the paste; runbook section 8): the
+three lines PASSED in both runs, each refusal asserting its own message, so on
+that engine too the exact test refused both near-integers (for the second,
+INFERRED as on Linux: the range test shares the message, and 2.10's near-zero
+branch, OBSERVED on Windows on 2026-09-25, cannot call -1e-15 below 0) and
+said yes to "3e0". The old form against a near-integer stays unrun (the
 correction above).
 `is a number` and `is an integer` (exec-math.cpp, `MCMathEvalIsANumber`,
 `MCMathEvalIsAnInteger`) convert the operand as 2.11 describes
@@ -869,8 +917,8 @@ where the family interpreter answers an EMPTY chunk for `char 0.999999999999999`
 Both sites and their neighbours now ask `is an integer`: holde-em's since
 v0.25.4 (the line above), coinxt's since 2026-09-25 (`coinxt/CLAUDE.md`;
 verified statically; needs an OXT pass; its library site, the bech32 guard,
-has since run on Linux, 2026-09-26, above, while the wallet's and
-coinxt-demo's sites and Windows have not).
+has since run on Linux and on Windows, 2026-09-26, above, while the
+wallet's and coinxt-demo's sites have not).
 **Rule:** test for a whole number with `is an integer`, never
 `is trunc(X)`, and as its own `if` ahead of a range test (`or` evaluates both
 operands, 2.5, so a one-line chain still hands `trunc` a non-number; whether
@@ -1031,6 +1079,7 @@ a symptom is not an observation of it.
 | Linux, 2026-09-25 (harness v32, the suite paste; 64-bit Kubuntu 24.04 by the maintainer's account) | 24, 73 | **0, 0** | write-only again, printed as a note: "readback does NOT track the write on Linux" |
 | Win32, 2026-09-25 (harness v32, the suite paste; the same 64-bit machine as 2026-09-24, by the maintainer's account) | 24, 73 | 24, 73 | EXACT again, printed as a note: "playLoudness readback is EXACT on Win32" |
 | Linux, 2026-09-26 (harness v32, the batch suite paste; the 2026-09-25 machine, by the maintainer's account) | 24, 73 | **0, 0** | write-only again, the same printed note |
+| Win32, 2026-09-26 (harness v32, the batch suite paste, both Run alls of one launch; the 2026-09-24 machine, by the maintainer's account; OXT 9.6.3 by that evening's preflight, INFERRED for the paste) | 24, 73 | 24, 73 | EXACT again in both runs, the same printed note |
 
 It broke v29's exactness assert on Linux, then v30's replacement ORDER assert
 (a high write reads back above a low one) on a healthy Linux engine. Since v31

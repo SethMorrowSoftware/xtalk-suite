@@ -396,13 +396,23 @@ MEMBERS = [
             # this harness defines, so the rename leaves it alone, and
             # check-suite-selftest.py check 18 refuses any enInitialize the
             # paste can reach outside the core's wrapper.
-            ("""   stAssert "enInitialize returns 0", enInitialize() is 0
-   stAssert "enInitialize idempotent", enInitialize() is 0
+            # Since 2026-09-26 (work plan enetxt #4) the harness counts its own
+            # holds too, through its stEnInit, over a count that only its own
+            # stFinish and stCleanup give back - and neither is folded. So the
+            # call still moves: a hold on the member's count would be one the
+            # core never gives back. The folded stEnInit is left dead beside
+            # its unreachable callers (check 18 lists them). The member's
+            # comment above the two calls goes with them: it names stEnInit.
+            ("""   -- COUNTED (stEnInit; THE HOLD, above stTinyData): each hold this run
+   -- takes is one stFinish or stCleanup gives back, and no more.
+   stAssert "enInitialize returns 0", stEnInit() is 0
+   stAssert "enInitialize idempotent", stEnInit() is 0
 """,
              """   -- GENERATED (tools/build-suite-selftest.py): both calls go through the
-   -- suite core's suEnInit, which counts each hold this paste takes, so the
-   -- core gives back exactly that many and never another open stack's (this
-   -- harness's own teardown is not folded). Work plan suite-wide #16.
+   -- suite core's suEnInit, not this harness's own stEnInit, whose count
+   -- only its teardown (not folded here) gives back. The core gives back
+   -- exactly the holds it counted, never another open stack's. Work plan
+   -- suite-wide #16 (and enetxt #4 for the harness's own count).
    stAssert "enInitialize returns 0", suEnInit() is 0
    stAssert "enInitialize idempotent", suEnInit() is 0
 """),

@@ -115,7 +115,8 @@ a cap-sized payload whole). The flagship ran on
 one machine on Linux and Windows on 2026-08-18, which surfaced engine notes 1.6, 6.6 and 6.7
 (why the event is `dcLocalDescriptionReady`), and a DHT-signalled WebRTC chat was reported
 working between two machines on one LAN on 2026-08-27 (which stack ran was not recorded).
-Still open: the loopback demo (no engine record), a two-machine run recorded against the
+Still open: an itemised record of the loopback demo (on 2026-09-26, on Windows, it "seems to
+work as intended" by the maintainer's account, and no more), a two-machine run recorded against the
 dht-chat demo by name, a call across two networks with real NAT traversal, and browser
 interop on an engine (the page and the OXT half exist; the page has run only headlessly,
 2026-09-24, against the committed library through its C ABI).
@@ -203,9 +204,22 @@ index. Read them at `https://github.com/SethMorrowSoftware/xtalk-suite/blob/main
 form `../<member>/...` names a sibling member of the suite; each has its
 own repository, listed in `tools/member-registry.py` there.
 
-**Sibling members this member's gates need beside it.** None: `bash
+**Sibling members this member's gates need beside it.** `bash
 tools/run-gates.sh` (this member's own gate list, the one CI runs)
-needs nothing but this checkout and Python 3.
+reaches into these siblings, found as `../<name>` beside this checkout:
+
+- `../riptide` from https://github.com/SethMorrowSoftware/RipTide - `tools/check-demo-boot.py`, the runner `tools/check-script-vectors.py` drives the dht-chat's signaling parse through.
+- `../nostrxt` from https://github.com/SethMorrowSoftware/NostrXT - what riptide's runner loads at import time.
+
+Clone them beside this checkout under exactly those directory names
+(and keep this checkout named `datachannelxt`), or point `XTALK_SIBLINGS` at a
+directory holding them (`XTALK_SIBLING_<NAME>` for one). The generated
+`.github/workflows/gates.yml` takes them from the suite itself, at the
+commit named by this repository's newest `Suite-Commit:` trailer - the
+versions the suite's gates ran with this tree - and sets
+`XTALK_REQUIRE_SIBLINGS=1` so a missing sibling fails the job rather
+than skipping its tier. Nothing the SHIPPED code needs is beside it: a
+demo that uses a sibling's library carries its own copy (below).
 
 **Carried copies inside this member, and where their masters are.**
 Every runnable stack here is one paste-and-run file, so it carries what

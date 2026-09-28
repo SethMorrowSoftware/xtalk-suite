@@ -87,6 +87,9 @@ Mach-O under `universal-mac` ([docs/building.md](docs/building.md)).
 
 One rule the app must follow: **call `enDeinitialize` before quitting** (e.g. on
 `closeStack`), written bare in statement position. There is no automatic unload hook.
+Call it only for an `enInitialize` this stack made that returned 0: the count belongs to
+the whole process, so a spare release ends another window's hosts
+([docs/api-reference.md](docs/api-reference.md) rule 1).
 
 ## Documentation
 
@@ -111,8 +114,9 @@ gates: the family's unified, byte-identical `check-livecodescript.py`,
 `check-record-registry.py` (registries, ABI and budget in sync), the golden, the manifest.
 
 **Status.** Engine-proven: the self-test ran green standalone on 2026-08-07 and, async
-loopback and statistics included, on 2026-08-13, and folded in the suite paste from
-2026-08-10 through 2026-09-25, when the paste's own live loopback also completed on Linux
+loopback and statistics included, on 2026-08-13 and on Windows on 2026-09-26 (68/0/0), and
+folded in the suite paste from 2026-08-10 through 2026-09-26; on 2026-09-25 and 2026-09-26
+the paste's own live loopback also completed on Linux
 (connect, a sealed payload, 60000 bytes as one message, a graceful disconnect); the LAN
 chat ran on one Linux machine on 2026-08-18. The LAN
 chat between two machines and the internet chat across two networks are verified

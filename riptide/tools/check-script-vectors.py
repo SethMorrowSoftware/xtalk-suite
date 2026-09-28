@@ -354,6 +354,8 @@ def install_pure_natives():
         "sxkdfderive": lambda a: to_str(REF["kdf_derive"](
             to_bytes(a[0]), int(str(LCS._disp(a[1]))), int(LCS._n(a[3])),
             context=to_bytes(a[2]))),
+        "sxhash": lambda a: to_str(REF["blake2b_hash"](
+            to_bytes(a[0]), int(LCS._n(a[1])))),
     })
 
     counter = [0]
@@ -1654,8 +1656,9 @@ def check_seq_order_bridge(c, ip, src, fail):
 # the source, or to anything but six booleans, fails this tier; seeded
 # corruptions of the real record prove the check can fire. The refusal rows
 # stay as they are: the interpreter is not taught the reading yet (a later
-# change, with the Windows reading beside it), and when it is, those rows are
-# what change, beside this record.
+# change; the Windows reading, 2026-09-26, is now recorded beside Linux's and
+# reads the same), and when it is, those rows are what change, beside this
+# record.
 #
 # A SECOND HOLDER (audit, 2026-09-26). The source decides only items 1 and
 # 5, so a record whose item 2, 3, 4 or 6 was flipped passed every check
@@ -1668,9 +1671,18 @@ def check_seq_order_bridge(c, ip, src, fail):
 # A corruption of either copy now fails; seeded flips of each of the six
 # items, on each side, prove it. A later run of the same date and platform
 # that read the same is quoted in a ledger row of its own under the same
-# record (Linux 2026-09-26 has two, 4:23 PM and 5:11 PM), and the flips are
-# seeded in every such row; one that read DIFFERENTLY on the same date would
-# need a key this record does not have yet, and fails the check until then.
+# record (Linux 2026-09-26 has two, 4:23 PM and 5:11 PM; Win32 2026-09-26
+# two, 7:24 PM and 7:28 PM), and the flips are seeded in every such row, for
+# EVERY recorded key (until the Win32 reading landed, 2026-09-26, the seeds
+# took only the first key in sort order, which would have left a second
+# platform's record and rows unproven); one that read DIFFERENTLY on the same
+# date would need a key this record does not have yet, and fails the check
+# until then. A row that names "Probe 4" must quote a reading the regex can
+# read (review, 2026-09-28): with two rows under one record, a quote spelled
+# `ture` or cut to five items in ONE of them left the other row's quote to
+# satisfy the record, so the check itself stayed green and only a seed's
+# side effect went red, under another seed's name. Such a row is now named,
+# and the misspelling is seeded in every row of every key.
 
 HARNESS = os.path.join(MEMBER, "tests", "riptide-selftest.livecodescript")
 PROBE4_PREFIX = "numeric compare probe 4 (diagnostic;"
@@ -1698,11 +1710,23 @@ PROBE4_ITEMS = [
 #     false, the "C" locale's (byte 0xA0 is not a space, so the text stayed
 #     text). A second report of the same paste that day (the Kit's clock
 #     5:11 PM; presumably the same machine, not stated; OXT 9.7.0-dp-1 by the
-#     preflight reported with it, INFERRED) printed the line identically: a
-#     repeat on one machine, quoted in its own ledger row under this key.
-# Owed: Win32 (MSVC's C runtime decides items 2, 3, 4 and 6 there).
+#     preflight reported with it, INFERRED; the launch's on-open Run all and
+#     its only one, by the maintainer's account) printed the line
+#     identically: a repeat on one machine, quoted in its own ledger row
+#     under this key.
+#   ("Win32", "2026-09-26"): the same batch paste (by its version lines) on
+#     the Windows machine of 2026-09-24 and 2026-09-25, a fresh stack, twice
+#     in one launch: the on-open Run all (the Kit's clock 7:24 PM) and a
+#     second one (7:28 PM), all three by the maintainer's account; OXT 9.6.3
+#     and `processor` x86_64 by the day's Windows preflight (INFERRED for the
+#     paste runs). Both runs printed the line identically, and IDENTICAL to
+#     the Linux reading item for item: the four C-library items read alike
+#     under the Windows engine's C runtime and Linux's. Each run is quoted in
+#     its own ledger row under this key.
+# Owed: MacOS (never run).
 PROBE4_RECORDED = {
     ("Linux", "2026-09-26"): "true,true,false,false,false,true",
+    ("Win32", "2026-09-26"): "true,true,false,false,false,true",
 }
 # `the platform` as an engine answers it, for the keys above
 PROBE4_PLATFORMS = ("Linux", "Win32", "MacOS")
@@ -1935,6 +1959,9 @@ def probe4_recorded_problems(recorded, prediction):
 _LEDGER_PROBE4_RX = re.compile(
     r'[Pp]robe 4\b.{0,240}?`((?:true|false)(?:,(?:true|false)){5})`')
 _LEDGER_ROW_DATE_RX = re.compile(r'^\| (20\d\d-\d\d-\d\d)\b')
+# a row that names the line at all (a quote the regex above cannot read, a
+# misspelled item or one item short, still names it)
+_LEDGER_PROBE4_MENTION_RX = re.compile(r'[Pp]robe 4\b')
 
 
 def _probe4_ledger_rows(ledger):
@@ -1980,7 +2007,12 @@ def probe4_ledger_problems(recorded, ledger):
             bad.append("%s %s: the ledger quotes %s, the record %s"
                        % (platform, date, " and ".join(quoted),
                           recorded[key]))
-    for date, named, quotes, _row in rows:
+    for date, named, quotes, row in rows:
+        if not quotes and _LEDGER_PROBE4_MENTION_RX.search(row):
+            bad.append("the ledger row of %s (%s) names Probe 4 but quotes "
+                       "no reading (six booleans in backticks, within 240 "
+                       "characters after it)"
+                       % (date, ", ".join(named) or "no platform named"))
         for q in quotes:
             if not any(recorded.get((p, date)) == q for p in named):
                 bad.append("the ledger row of %s (%s) quotes %s, which no "
@@ -1996,82 +2028,107 @@ def _probe4_ledger_seeds(recorded, ledger, fail):
     Every item's flip is seeded on each side, so a corrupted answer in
     either copy is proven to fail, the C library's four included. A second
     run of one date and platform that read the same (Linux, 2026-09-26: the
-    4:23 PM and 5:11 PM reports) is a second ledger row quoting one record,
-    so every such row is seeded, and deleting the run's rows means all of
-    them."""
-    key = sorted(recorded, key=repr)[0]
-    # the run's rows found by their date and platform, NOT by the recorded
-    # reading, so a record corrupted on its own reaches the check below and
-    # is named there rather than stopping here
-    rows = [r for r in _probe4_ledger_rows(ledger)
-            if r[0] == key[1] and key[0] in r[1] and len(r[2]) == 1]
-    if not rows or any(r[3].count("`%s`" % r[2][0]) != 1
-                       or ledger.count(r[3] + "\n") != 1 for r in rows):
-        fail("tier 1e's ledger fixture expects each ledger row of %s %s "
-             "to quote one probe-4 reading once, and at least one such row, "
-             "and found %d; without it the ledger check goes untested"
-             % (key[0], key[1], len(rows)))
-    row, quoted = rows[0][3], rows[0][2][0]
-
+    4:23 PM and 5:11 PM reports; Win32, 2026-09-26: 7:24 PM and 7:28 PM) is
+    a second ledger row quoting one record, so every such row is seeded, and
+    deleting the run's rows means all of them. Every recorded KEY is seeded,
+    not the first alone: two platforms can read the same six answers on one
+    date, and a seed set built from one of them would prove nothing about
+    the other's record or rows. Each row's quote is also misspelled in turn
+    (one item `ture`), which no regex reads as a reading: the row must be
+    named, not covered by its sibling row's quote."""
     def flipped(reading, n):
         out = reading.split(",")
         out[n - 1] = "false" if out[n - 1] == "true" else "true"
         return ",".join(out)
 
     seeds = []
-    for n in range(1, len(PROBE4_ITEMS) + 1):
-        rec = dict(recorded)
-        rec[key] = flipped(recorded[key], n)
-        seeds.append((rec, ledger, "the record's item %d flipped" % n,
-                      "the ledger quotes"))
+    for key in sorted(recorded, key=repr):
+        where = "%s %s" % key
+        # the run's rows found by their date and platform, NOT by the
+        # recorded reading, so a record corrupted on its own reaches the
+        # check below and is named there rather than stopping here
+        rows = [r for r in _probe4_ledger_rows(ledger)
+                if r[0] == key[1] and key[0] in r[1] and len(r[2]) == 1]
+        if not rows or any(r[3].count("`%s`" % r[2][0]) != 1
+                           or ledger.count(r[3] + "\n") != 1 for r in rows):
+            fail("tier 1e's ledger fixture expects each ledger row of %s %s "
+                 "to quote one probe-4 reading once, and at least one such "
+                 "row, and found %d; without it the ledger check goes "
+                 "untested" % (key[0], key[1], len(rows)))
+        row = rows[0][3]
+        for n in range(1, len(PROBE4_ITEMS) + 1):
+            rec = dict(recorded)
+            rec[key] = flipped(recorded[key], n)
+            seeds.append((rec, ledger, "%s: the record's item %d flipped"
+                          % (where, n), "the ledger quotes"))
+            for k, (_d, _p, (one,), each) in enumerate(rows, 1):
+                seeds.append((recorded, ledger.replace(
+                    each, each.replace("`%s`" % one,
+                                       "`%s`" % flipped(one, n))),
+                    "%s: ledger row %d of %d's item %d flipped"
+                    % (where, k, len(rows), n), "the ledger quotes"))
         for k, (_d, _p, (one,), each) in enumerate(rows, 1):
             seeds.append((recorded, ledger.replace(
-                each, each.replace("`%s`" % one, "`%s`" % flipped(one, n))),
-                "ledger row %d of %d's item %d flipped" % (k, len(rows), n),
-                "the ledger quotes"))
-    gone = ledger
-    for each in rows:
-        gone = gone.replace(each[3] + "\n", "")
-    seeds.append((recorded, gone, "the run's ledger rows deleted",
-                  "no ledger row"))
-    seeds.append((recorded, ledger.replace(
-        row, row + "\n" + row.replace(key[1], "2099-01-01", 1)),
-        "a ledger row quoting a reading the record lacks",
-        "which no recorded reading"))
+                each, each.replace("`%s`" % one,
+                                   "`%s`" % one.replace("true", "ture", 1))),
+                "%s: ledger row %d of %d's quote misspelled"
+                % (where, k, len(rows)),
+                "names Probe 4 but quotes no reading"))
+        gone = ledger
+        for each in rows:
+            gone = gone.replace(each[3] + "\n", "")
+        seeds.append((recorded, gone, "%s: the run's ledger rows deleted"
+                      % where, "no ledger row"))
+        seeds.append((recorded, ledger.replace(
+            row, row + "\n" + row.replace(key[1], "2099-01-01", 1)),
+            "%s: a ledger row quoting a reading the record lacks" % where,
+            "which no recorded reading"))
+        dropped = dict(recorded)
+        dropped.pop(key)
+        seeds.append((dropped, ledger, "%s: the record dropped while its "
+                      "ledger rows still quote it" % where,
+                      "which no recorded reading"))
     return seeds
 
 
 def _probe4_record_seeds(recorded):
-    """Corrupted copies of RECORDED, each built from its first real entry:
-    (the copy, what was corrupted, what the record check must say)."""
-    key = sorted(recorded, key=repr)[0]
-    items = recorded[key].split(",")
+    """Corrupted copies of RECORDED, built from EVERY real entry (not the
+    first alone, since 2026-09-26: a second platform's record is as
+    corruptible as the first's): (the copy, what was corrupted, what the
+    record check must say)."""
+    seeds = []
+    for key in sorted(recorded, key=repr):
+        items = recorded[key].split(",")
+        where = "%s %s" % key
 
-    def with_reading(reading):
-        out = dict(recorded)
-        out[key] = reading
-        return out
+        def with_reading(reading, key=key):
+            out = dict(recorded)
+            out[key] = reading
+            return out
 
-    def flipped(n):
-        out = list(items)
-        out[n - 1] = "false" if out[n - 1] == "true" else "true"
-        return ",".join(out)
+        def flipped(n, items=items):
+            out = list(items)
+            out[n - 1] = "false" if out[n - 1] == "true" else "true"
+            return ",".join(out)
 
-    moved = dict(recorded)
-    moved[(key[0].lower(), key[1])] = moved.pop(key)
-    return [
-        (with_reading(flipped(1)), "item 1 (source-decided) flipped",
-         "item 1 reads"),
-        (with_reading(flipped(5)), "item 5 (source-decided) flipped",
-         "item 5 reads"),
-        (with_reading(",".join(items[:3] + ["threw: seeded"] + items[4:])),
-         "a thrown item in place of a boolean", "is not six booleans"),
-        (with_reading(",".join(items[:5])), "an item dropped",
-         "is not six booleans"),
-        (moved, "the platform spelled other than the engine names it",
-         "is not a (platform, date) key"),
-        ({}, "the record emptied", "no engine reading"),
-    ]
+        moved = dict(recorded)
+        moved[(key[0].lower(), key[1])] = moved.pop(key)
+        seeds += [
+            (with_reading(flipped(1)), "%s: item 1 (source-decided) flipped"
+             % where, "item 1 reads"),
+            (with_reading(flipped(5)), "%s: item 5 (source-decided) flipped"
+             % where, "item 5 reads"),
+            (with_reading(",".join(items[:3] + ["threw: seeded"]
+                                   + items[4:])),
+             "%s: a thrown item in place of a boolean" % where,
+             "is not six booleans"),
+            (with_reading(",".join(items[:5])), "%s: an item dropped" % where,
+             "is not six booleans"),
+            (moved, "%s: the platform spelled other than the engine names it"
+             % where, "is not a (platform, date) key"),
+        ]
+    seeds.append(({}, "the record emptied", "no engine reading"))
+    return seeds
 
 
 def _probe4_seeds(text, fail):
@@ -2152,12 +2209,20 @@ def check_probe4(c, fail):
          probe4_shape(text), [])
     # the recorded readings, against the prediction the line prints
     printed = probe4_printed_prediction(text)
-    for seeded, why, says in _probe4_record_seeds(PROBE4_RECORDED):
+    record_seeds = _probe4_record_seeds(PROBE4_RECORDED)
+    for seeded, why, says in record_seeds:
         c.ck("fixture: the record check refuses a corrupted copy of the "
              "recorded readings (%s), saying so" % why,
              any(says in problem
                  for problem in probe4_recorded_problems(seeded, printed)),
              True)
+    # every recorded key is seeded, not the first alone (2026-09-26: the
+    # Win32 reading made two keys, and seeds built from the first in sort
+    # order would have proven nothing about the second)
+    every_key = sorted("%s %s" % k for k in PROBE4_RECORDED)
+    c.ck("fixture: the record seeds corrupt every recorded reading",
+         sorted(set(w.split(":")[0] for _s, w, _y in record_seeds
+                    if ":" in w)), every_key)
     moved = text.replace("reads true,?,?,?,false,? where",
                          "reads false,?,?,?,false,? where")
     c.ck("fixture: the prediction is READ from the harness line: a copy "
@@ -2176,11 +2241,14 @@ def check_probe4(c, fail):
     # the second holder: the member's ledger quotes each reading verbatim
     with open(LEDGER, "r", encoding="utf-8") as fh:
         ledger = fh.read()
-    for rec, led, why, says in _probe4_ledger_seeds(PROBE4_RECORDED, ledger,
-                                                    fail):
+    ledger_seeds = _probe4_ledger_seeds(PROBE4_RECORDED, ledger, fail)
+    for rec, led, why, says in ledger_seeds:
         c.ck("fixture: the ledger check refuses %s, saying so" % why,
              any(says in problem
                  for problem in probe4_ledger_problems(rec, led)), True)
+    c.ck("fixture: the ledger seeds corrupt every recorded reading and its "
+         "rows", sorted(set(w.split(":")[0] for _r, _l, w, _y in ledger_seeds
+                            if ":" in w)), every_key)
     c.ck("every recorded probe-4 reading is quoted verbatim by its run's row "
          "of riptide/CLAUDE.md's ledger, and every reading a ledger row "
          "quotes is recorded (the C library's four items have no other "
@@ -2204,7 +2272,7 @@ def check_probe4(c, fail):
                        else "refused, but naming neither 2.11 nor %s: %s"
                        % (frag, msg[:160]))
             c.ck("item %d, %s: the plain interpreter still REFUSES it (the "
-                 "Linux reading is recorded above and the Win32 one owed; "
+                 "Linux and Win32 readings are recorded above and agree; "
                  "teaching the interpreter is a later change)"
                  % (n, expr), got, "refused")
         c.ck("an item past 6 reads empty and never throws",
@@ -2225,6 +2293,459 @@ def check_probe4(c, fail):
             LCS.HASHES.pop("numtocodepoint", None)
         else:
             LCS.HASHES["numtocodepoint"] = was
+
+
+# --------------------------------------------------------------------------
+# tier 1f: the persona index cap, and handles ordered by BYTE (2026-09-26)
+# --------------------------------------------------------------------------
+#
+# WHY. Two work plan rows (riptide #10 and #11), one shape: a library
+# decision that rested on arithmetic or a comparison the engine answers
+# otherwise than the design assumed.
+#   - #10. Persona n takes subkeys 100+n and 200+n, and nothing bounded n,
+#     so rsAnonSeed(M, 100) WAS rsAnonDmSeed(M, 0): one seed feeding
+#     ed25519 and crypto_kx, which the subkey table's own rule forbids
+#     (executed 2026-09-25). Both handlers now refuse n >= kRsAnonIndexLimit.
+#   - #11. rsRoomId sorted its two keys with `tA <= tB` and rsDmSessionKeys
+#     picked the kx role with `tMine < tTheirs` and refused a session with
+#     itself on `tMine is tTheirs`, all over 64-hex text. When both spellings
+#     are number-like (all digits, or digits, one `e`, digits) the engine
+#     compares them as NUMBERS (suite engine note 2.11): "9e0..01" is 90 and
+#     sorted below "0..0100" (100) against the bytes, and "1e0..0" and
+#     "0..01", two handles, were the number 1 twice. Both now order through
+#     rsByteOrder, byte by byte, which is lowercase hex text order for every
+#     pair: no real handle's room id or role moved, which the golden rows
+#     (the oracle's roomId, sessionRx and sessionTx, pinned in
+#     tests/riptide_golden_test.py) and a sweep of generated handles hold.
+#
+# WHAT. Every row is the SHIPPED script against the oracle (room_id,
+# kx_role, the libsodium-anchored kx session model, anon_seed and
+# anon_dm_seed). The plain interpreter orders numbers only (text reaching
+# `<` is a ValueError there), so no gate ran rsRoomId or rsDmSessionKeys
+# before this tier; the byte compare runs here as it runs on an engine.
+#
+# FIXTURE FIRST. Three seeded copies, each the 0.13.0 spelling: the old
+# `tA <= tB` in rsRoomId, the old `is` and `<` in rsDmSessionKeys, and the
+# two anon handlers without the cap. Each must read its number-like or
+# over-cap rows WRONG (or have the interpreter refuse them: its reading of
+# two number-like texts is the engine's, and it refuses where the text and
+# the number part), or this tier's rows would vouch for a fix no row can
+# tell from the defect. On a real handle the old `<` is not modelled at all
+# (the ValueError above), which is why those rows are not asked of it.
+
+NUM_PAIRS = [
+    (REF["NUM_HANDLE_NINE"], REF["NUM_HANDLE_HUNDRED"],
+     "9e0..01 (90 as a number) against 0..0100 (100): the bytes sort the "
+     "first ABOVE"),
+    (REF["NUM_HANDLE_ONE_EXP"], REF["NUM_HANDLE_ONE"],
+     "1e0..0 against 0..01: the number 1 twice, different bytes"),
+    ("1" * 64, "1" * 63 + "2",
+     "two all-digit handles one apart in the last digit (one double as "
+     "numbers)"),
+]
+
+
+def _gen_handle(label):
+    return hashlib.sha256(b"rs-order-" + label.encode("ascii")).hexdigest()
+
+
+def order_pairs():
+    """(a, b, label): the golden pair, generated handles, and the edges byte
+    order turns on - then NUM_PAIRS."""
+    g = REF["golden_vectors"]()
+    out = [(g["handle"], g["confPub"], "the golden handle and the "
+            "conformance pub")]
+    for k in range(24):
+        out.append((_gen_handle("a%d" % k), _gen_handle("b%d" % k),
+                    "generated pair %d" % k))
+    base = _gen_handle("edge")
+    out += [
+        (base[:63] + "0", base[:63] + "1", "equal but the last nibble"),
+        (base[:62] + "0f", base[:62] + "10", "a carry across the last byte"),
+        ("9" + base[1:], "a" + base[1:], "the digit/letter boundary, 9 and a"),
+        ("f" * 64, "0" * 63 + "1", "all-f against 0..01"),
+        (base[:40] + "0" * 24, base[:40] + "f" * 24,
+         "a long shared prefix, then zeros against fs"),
+    ]
+    return out + [(a, b, label) for a, b, label in NUM_PAIRS]
+
+
+class RsInterp(LCS.Interp):
+    """LCS.Interp plus the two SodiumXT kx SESSION commands, which return
+    through OUT parameters (a shape the interpreter does not model; the
+    reason rsIdentityKeys has a SHIM). The statement is modelled instead,
+    oracle-backed: kx_client_session_keys / kx_server_session_keys, the
+    crypto_kx the golden session keys were anchored with (a real libsodium,
+    tools/emit-kx-anchor.py). The same shape check-demo-boot.py uses for the
+    two keypair commands. `kx_calls` counts the statements it ran."""
+    KX_RX = re.compile(r'^\s*(sxKeyExchangeClient|sxKeyExchangeServer)\s+'
+                       r'(.+?)\s*,\s*(\w+)\s*,\s*(\w+)\s*$', re.I)
+
+    def __init__(self, src):
+        self.kx_calls = 0
+        super().__init__(src)
+
+    def _exec_stmt(self, body, i, env):
+        m = self.KX_RX.match(body[i])
+        if not m:
+            return super()._exec_stmt(body, i, env)
+        p = LCS._Expr(self, env)
+        p.s, p.i = m.group(2).strip(), 0
+        args = []
+        while True:
+            args.append(p.p_or())
+            p.ws()
+            if p.i < len(p.s) and p.s[p.i] == ",":
+                p.i += 1
+                continue
+            break
+        if p.i < len(p.s) or len(args) != 3:
+            raise SyntaxError("the kx model reads three inputs and two out "
+                              "names: %r" % body[i])
+        mine_pk, mine_sk, their_pk = (to_bytes(LCS._disp(a)) for a in args)
+        if len(mine_pk) != 32 or len(mine_sk) != 32 or len(their_pk) != 32:
+            raise LCS.Thrown("SodiumXT: sxKeyExchange: keys must be 32 bytes")
+        if m.group(1).lower().endswith("client"):
+            rx, tx = REF["kx_client_session_keys"](mine_pk, mine_sk, their_pk)
+        else:
+            rx, tx = REF["kx_server_session_keys"](mine_pk, mine_sk, their_pk)
+        self.assign(m.group(3), to_str(rx), env)
+        self.assign(m.group(4), to_str(tx), env)
+        self.kx_calls += 1
+        return i + 1
+
+
+def _kx_keys(seed):
+    """The rsDmKeys array for a kx SEED, built from the oracle (rsDmKeys'
+    own keypair command is phase-4 code the harness pins on an engine)."""
+    pk, sk = REF["kx_seed_keypair"](seed)
+    return LCS.LcsArray({"publicKey": to_str(pk), "secretKey": to_str(sk),
+                         "publicKeyHex": pk.hex()})
+
+
+# What a row reads when the interpreter would not run it.
+REFUSED_CALL = "refused (LCS.Indistinct)"
+
+
+def _called(interp, name, args):
+    """interp.call, a refusal or an interpreter stop read as a VALUE a row
+    can compare (never the right one), not a traceback."""
+    try:
+        return interp.call(name, args)
+    except LCS.Indistinct:
+        return REFUSED_CALL
+    except LCS.Imprecise:
+        return "refused (LCS.Imprecise: a number past 2^53)"
+    except ValueError as exc:
+        return "not modelled (ValueError: %s)" % str(exc)[:60]
+
+
+SALT = to_str(b"golden-salt")
+
+
+def room_rows(interp):
+    """(label, got, want) over order_pairs(), both argument orders, against
+    the oracle's room_id."""
+    rows = []
+    for a, b, label in order_pairs():
+        want = REF["room_id"](a, b, b"golden-salt")
+        for x, y, way in ((a, b, "as given"), (b, a, "swapped")):
+            rows.append(("rsRoomId, %s, %s" % (label, way),
+                         _called(interp, "rsRoomId", [x, y, SALT]), want))
+    return rows
+
+
+def session_rows(interp):
+    """(label, got, want) over order_pairs(): each side's role against the
+    oracle's kx_role, and my tx is the peer's rx. Side A holds the golden
+    DM kx keys, side B the conformance seed's; the handles are labels the
+    session never signs with, so any 64-hex pair drives it."""
+    g = REF["golden_vectors"]()
+    keys_a = _kx_keys(bytes.fromhex(g["dmSeed"]))
+    keys_b = _kx_keys(bytes.fromhex(g["confSeed"]))
+    pub_a, pub_b = g["dmKxPub"], g["confKxPub"]
+    rows = []
+    for a, b, label in order_pairs():
+        sa = _called(interp, "rsDmSessionKeys", [a, keys_a, b, pub_b])
+        sb = _called(interp, "rsDmSessionKeys", [b, keys_b, a, pub_a])
+
+        def role(out):
+            return str(out["role"]) if isinstance(out, dict) else out
+
+        rows.append(("rsDmSessionKeys roles, %s" % label,
+                     [role(sa), role(sb)],
+                     [REF["kx_role"](a, b), REF["kx_role"](b, a)]))
+        if isinstance(sa, dict) and isinstance(sb, dict):
+            rows.append(("rsDmSessionKeys, %s: my tx is the peer's rx, both "
+                         "ways" % label,
+                         [sa["tx"] == sb["rx"], sa["rx"] == sb["tx"]],
+                         [True, True]))
+    return rows
+
+
+def golden_session_rows(interp):
+    """The golden session, both ends, against the libsodium-anchored
+    goldens: the roles and keys a real peer holds today."""
+    g = REF["golden_vectors"]()
+    keys_a = _kx_keys(bytes.fromhex(g["dmSeed"]))
+    keys_b = _kx_keys(bytes.fromhex(g["confSeed"]))
+    rows = []
+    sa = _called(interp, "rsDmSessionKeys",
+                 [g["handle"], keys_a, g["confPub"], g["confKxPub"]])
+    sb = _called(interp, "rsDmSessionKeys",
+                 [g["confPub"], keys_b, g["handle"], g["dmKxPub"]])
+    for side, out, want in (("the golden side", sa,
+                             ["client", g["sessionRx"], g["sessionTx"]]),
+                            ("the conformance side", sb,
+                             ["server", g["sessionTx"], g["sessionRx"]])):
+        got = ([str(out["role"]), to_bytes(out["rx"]).hex(),
+                to_bytes(out["tx"]).hex()] if isinstance(out, dict) else out)
+        rows.append(("rsDmSessionKeys, %s: role, rx, tx are the golden "
+                     "session's (tests/riptide_golden_test.py)" % side,
+                     got, want))
+    return rows
+
+
+# The 0.13.0 spellings, each (the shipped text, the line it replaced).
+OLD_ROOM_LINES = [
+    ('   put rsHexToBin(tA) into tA\n'
+     '   put rsHexToBin(tB) into tB\n'
+     '   if rsByteOrder(tA, tB) is not "above" then\n'
+     '      put tA & tB into tCat\n'
+     '   else\n'
+     '      put tB & tA into tCat\n'
+     '   end if\n',
+     '   if tA <= tB then\n'
+     '      put rsHexToBin(tA) & rsHexToBin(tB) into tCat\n'
+     '   else\n'
+     '      put rsHexToBin(tB) & rsHexToBin(tA) into tCat\n'
+     '   end if\n'),
+]
+OLD_SESSION_LINES = [
+    ('   -- two validated 64-char lowercase hex spellings: their ASCII bytes\n'
+     '   -- order exactly as the key bytes they spell, with no SodiumXT call\n'
+     '   put rsByteOrder(tMine, tTheirs) into tOrder\n'
+     '   if tOrder is "equal" then\n',
+     '   if tMine is tTheirs then\n'),
+    ('      if tOrder is "below" then\n',
+     '      if tMine < tTheirs then\n'),
+]
+OLD_CAP_LINES = [
+    ('   -- the cap (kRsAnonIndexLimit): an integer against a small one, so the\n'
+     '   -- comparison is exact at any size (suite engine note 2.10)\n'
+     '   if pIndex >= kRsAnonIndexLimit then\n'
+     '      rsSetError "rsAnonSeed: the persona index must be below" && \\\n'
+     '            kRsAnonIndexLimit && "(the subkey table\'s cap)"\n'
+     '      return empty\n'
+     '   end if\n', ''),
+    ('   if pIndex >= kRsAnonIndexLimit then\n'
+     '      rsSetError "rsAnonDmSeed: the persona index must be below" && \\\n'
+     '            kRsAnonIndexLimit && "(the subkey table\'s cap)"\n'
+     '      return empty\n'
+     '   end if\n', ''),
+]
+
+
+def seed_lines(text, pairs, what, fail, tier="1f"):
+    for new, old in pairs:
+        if text.count(new) != 1:
+            fail("tier %s's %s fixture expects the shipped text %r exactly "
+                 "once and found it %d times; the seeded defect would be a "
+                 "file nobody shipped" % (tier, what,
+                                          new.strip().split("\n")[0],
+                                          text.count(new)))
+        text = text.replace(new, old)
+    return text
+
+
+# the cap rows an uncapped handler must get WRONG (the fixture's list)
+CAP_MUST_FAIL = [
+    "rsAnonSeed(M, 2) is REFUSED (at the cap)",
+    "rsAnonDmSeed(M, 2) is REFUSED (at the cap)",
+    "rsAnonSeed(M, 100) never hands back persona 0's crypto_kx seed "
+    "(subkey 100 + 100 is 200 + 0)",
+    "rsAnonSeed(M, 100) is REFUSED",
+    "rsAnonDmSeed(M, 100) is REFUSED",
+    "rsAnonHandle(M, 2) is REFUSED through it",
+]
+
+
+def cap_rows(interp):
+    """(label, got, want): the two anon handlers at and around the cap."""
+    master = bytes([0x42] * 32)
+    seed0 = to_str(REF["anon_seed"](master, 0))
+    seed1 = to_str(REF["anon_seed"](master, 1))
+    dm1 = to_str(REF["anon_dm_seed"](master, 1))
+    dm0 = to_str(REF["anon_dm_seed"](master, 0))
+    got100 = _called(interp, "rsAnonSeed", [MASTER, 100])
+    return [
+        ("rsAnonSeed(M, 0) is persona 0's seed",
+         _called(interp, "rsAnonSeed", [MASTER, 0]), seed0),
+        ("rsAnonSeed(M, 1) is persona 1's seed (the harness's second "
+         "persona)", _called(interp, "rsAnonSeed", [MASTER, 1]), seed1),
+        ("rsAnonDmSeed(M, 1) is persona 1's kx seed",
+         _called(interp, "rsAnonDmSeed", [MASTER, 1]), dm1),
+        (CAP_MUST_FAIL[0], _called(interp, "rsAnonSeed", [MASTER, 2]), ""),
+        (CAP_MUST_FAIL[1], _called(interp, "rsAnonDmSeed", [MASTER, 2]), ""),
+        (CAP_MUST_FAIL[2], got100 == dm0, False),
+        (CAP_MUST_FAIL[3], got100, ""),
+        (CAP_MUST_FAIL[4], _called(interp, "rsAnonDmSeed", [MASTER, 100]),
+         ""),
+        ("rsAnonSeed(M, 4294967296) is REFUSED",
+         _called(interp, "rsAnonSeed", [MASTER, "4294967296"]), ""),
+        (CAP_MUST_FAIL[5], _called(interp, "rsAnonHandle", [MASTER, 2]), ""),
+    ]
+
+
+def check_persona_cap_and_order(c, ip, src, fail, V):
+    c.note("tier 1f: the persona index cap, and handles ordered by byte")
+    # ---- fixtures first
+    old_cap = RsInterp(seed_lines(src, OLD_CAP_LINES, "cap", fail))
+    wrong = [label for label, got, want in cap_rows(old_cap) if got != want]
+    c.ck("fixture: without the cap, persona 2 and persona 100 derive, and "
+         "rsAnonSeed(M, 100) IS persona 0's crypto_kx seed (each row that "
+         "must go wrong does)", [k for k in CAP_MUST_FAIL if k not in wrong],
+         [])
+    old_room = RsInterp(seed_lines(src, OLD_ROOM_LINES, "rsRoomId", fail))
+    wrong = [label for label, got, want in room_rows(old_room)
+             if got != want]
+    for _a, _b, label in NUM_PAIRS:
+        c.ck("fixture: the 0.13.0 `tA <= tB` gets rsRoomId wrong (or is "
+             "refused) for %s" % label,
+             any(w.startswith("rsRoomId, %s," % label) for w in wrong), True)
+    old_sess = RsInterp(seed_lines(src, OLD_SESSION_LINES,
+                                   "rsDmSessionKeys", fail))
+    wrong = [label for label, got, want in session_rows(old_sess)
+             if got != want]
+    for _a, _b, label in NUM_PAIRS:
+        c.ck("fixture: the 0.13.0 `is` and `<` get rsDmSessionKeys' roles "
+             "wrong (or are refused) for %s" % label,
+             "rsDmSessionKeys roles, %s" % label in wrong, True)
+    # ---- the shipped library
+    for label, got, want in cap_rows(ip):
+        c.ck(label, got, want)
+    ip.call("rsAnonDmSeed", [MASTER, 2])
+    c.ck("...and the refusal names the cap",
+         "cap" in str(ip.call("rsLastError", [])), True)
+    for x, y, want in (("", "", "equal"), ("a", "ab", "below"),
+                       ("ab", "a", "above"), ("\x00", "\xff", "below"),
+                       ("\xff\x00", "\xfe\xff", "above")):
+        c.ck("rsByteOrder(bytes %s, bytes %s) is %s"
+             % (to_bytes(x).hex() or "none", to_bytes(y).hex() or "none",
+                want), ip.call("rsByteOrder", [x, y]), want)
+    for label, got, want in room_rows(ip):
+        c.ck(label, got, want)
+    c.ck("rsRoomId, the golden pair: the golden roomId (unchanged)",
+         ip.call("rsRoomId", [V["handle"], V["confPub"], SALT]), V["roomId"])
+    c.ck("rsRoomId, the golden pair in upper case: the golden roomId",
+         ip.call("rsRoomId", [V["handle"].upper(), V["confPub"].upper(),
+                              SALT]), V["roomId"])
+    c.ck("rsRoomId, 9e0..01 and 0..0100: the golden roomIdNumOrder",
+         ip.call("rsRoomId", [REF["NUM_HANDLE_NINE"],
+                              REF["NUM_HANDLE_HUNDRED"], SALT]),
+         V["roomIdNumOrder"])
+    c.ck("rsRoomId, 1e0..0 and 0..01: the golden roomIdNumEqual",
+         ip.call("rsRoomId", [REF["NUM_HANDLE_ONE_EXP"],
+                              REF["NUM_HANDLE_ONE"], SALT]),
+         V["roomIdNumEqual"])
+    before = ip.kx_calls
+    for label, got, want in golden_session_rows(ip):
+        c.ck(label, got, want)
+    for label, got, want in session_rows(ip):
+        c.ck(label, got, want)
+    c.ck("rsDmSessionKeys refuses a session with myself (byte-equal handles)",
+         ip.call("rsDmSessionKeys",
+                 [V["handle"], _kx_keys(bytes.fromhex(V["dmSeed"])),
+                  V["handle"].upper(), V["confKxPub"]]), "")
+    c.ck("the kx model ran (the session rows reached sxKeyExchange*)",
+         ip.kx_calls > before, True)
+
+
+# --------------------------------------------------------------------------
+# tier 1g: the UTF-8 round trip compares BYTES, never numbers (2026-09-27)
+# --------------------------------------------------------------------------
+#
+# WHY. rsBytesAreUtf8 (trap 4's round trip: decode, re-encode, require the
+# same bytes) ended `return textEncode(tDecoded, "UTF-8") is pBytes`. Two
+# texts a number parse accepts compare as NUMBERS under bare `is` (suite
+# engine note 2.11), and a text C's strtod reads as NaN is not `is` itself
+# held apart (OBSERVED on Linux 2026-09-26, the fourth probe line's item 3),
+# so every valid UTF-8 text spelled "nan", "NaN" or "nan(1)" failed its own
+# round trip: a LAN draft, a device or head name, a post reading nan was
+# refused as "not valid UTF-8" (INFERRED; no engine has run it). Found by
+# the review of riptide #12, whose change detection sends a "nan" draft
+# once: the receiver then refused it here. It compares ("b" & each side)
+# under the caseSensitive now.
+#
+# WHAT. The shipped rsBytesAreUtf8 over the NaN spellings and over controls
+# (number-like text that equals itself on every reading, and malformed
+# UTF-8 that must stay refused), then the three records a person names in
+# free text, built and parsed through it. FIXTURE FIRST: the old line
+# planted back must get every NaN row wrong or have the interpreter refuse
+# it (the base refuses a bare comparison a NaN text meets: note 2.11's
+# "Gate, headless" paragraph).
+
+NAN_TEXTS = ["nan", "NaN", "NAN", "nan(1)"]
+OLD_UTF8_LINES = [
+    ('   set the caseSensitive to true\n'
+     '   return ("b" & textEncode(tDecoded, "UTF-8")) is ("b" & pBytes)\n',
+     '   return textEncode(tDecoded, "UTF-8") is pBytes\n'),
+]
+
+
+def utf8_nan_rows(interp):
+    """(label, got, want): the NaN spellings through rsBytesAreUtf8 and the
+    records that route free text through it (the rows the fixture's old
+    line must get wrong)."""
+    master = MASTER
+    id_seed = to_str(REF["identity_seed"](bytes([0x42] * 32)))
+    rows = []
+    for t in NAN_TEXTS:
+        rows.append(("rsBytesAreUtf8(%r) is true (valid UTF-8)" % t,
+                     _called(interp, "rsBytesAreUtf8", [t]), True))
+
+    def field(builder_args, parser, parser_args_tail, key):
+        rec = _called(interp, builder_args[0], builder_args[1:])
+        if not isinstance(rec, str) or not rec:
+            return "the builder refused: %r" % (rec,)
+        out = _called(interp, parser, [rec] + parser_args_tail)
+        return str(out[key]) if isinstance(out, dict) else out
+
+    rows.append(("a LAN draft reading nan verifies, its text intact",
+                 field(["rsLanBuildDraft", "Tablet", 5, "nan", master],
+                       "rsLanVerifyDraft", [master], "draft"), "nan"))
+    rows.append(("a LAN draft from a device named NaN verifies, its name "
+                 "intact",
+                 field(["rsLanBuildDraft", "NaN", 5, "hello", master],
+                       "rsLanVerifyDraft", [master], "name"), "NaN"))
+    rows.append(("a post reading nan parses, its text intact",
+                 field(["rsBuildPost", 1754870400, REF["ZERO_TARGET"], "nan",
+                        "", id_seed], "rsParsePost", [], "text"), "nan"))
+    return rows
+
+
+def check_utf8_round_trip(c, ip, src, fail):
+    c.note("tier 1g: the UTF-8 round trip compares bytes, never numbers")
+    old = RsInterp(seed_lines(src, OLD_UTF8_LINES, "rsBytesAreUtf8", fail,
+                               tier="1g"))
+    right = [label for label, got, want in utf8_nan_rows(old) if got == want]
+    c.ck("fixture: the old bare `is` refuses (or is refused on) every NaN "
+         "spelling and every record carrying one", right, [])
+    for label, got, want in utf8_nan_rows(ip):
+        c.ck(label, got, want)
+    # the controls: text that equals itself on every reading still passes,
+    # and malformed UTF-8 is still refused (trap 4's engine finding). "an"
+    # is the prefix trap: a fix spelled with an "n" on both sides would
+    # compare "nan" with "nan" and refuse it (engine note 2.11's rule)
+    for t in ("hello", "inf", "1e5", "0012", "an", "caf\xc3\xa9"):
+        c.ck("rsBytesAreUtf8(%r) is still true" % t,
+             ip.call("rsBytesAreUtf8", [t]), True)
+    for t, what in (("\xc3", "a truncated two-byte sequence"),
+                    ("\xed\xa0\x80", "an encoded surrogate"),
+                    ("ab\xff", "a byte UTF-8 never uses"),
+                    ("\xc0\xae", "an overlong dot")):
+        c.ck("rsBytesAreUtf8 still refuses %s" % what,
+             ip.call("rsBytesAreUtf8", [t]), False)
 
 
 def check_capacity_arithmetic(c, ip):
@@ -2511,7 +3032,7 @@ def main(argv):
 
     src, hits = build_source(fail)
     try:
-        ip = LCS.Interp(src)
+        ip = RsInterp(src)
     except Exception as exc:                       # noqa: BLE001
         fail("the shipped script did not parse under the interpreter: %s: %s"
              % (type(exc).__name__, exc))
@@ -2527,6 +3048,8 @@ def main(argv):
     check_no_quotient_comparisons(c, fail)
     check_seq_order(c, ip, src, fail)
     check_probe4(c, fail)
+    check_persona_cap_and_order(c, ip, src, fail, V)
+    check_utf8_round_trip(c, ip, src, fail)
     check_capacity_arithmetic(c, ip)
     if install_coin_natives():
         check_composed(c, ip, V)
