@@ -237,8 +237,20 @@ constant kStOverBudget = 60001
 -- a number the wire did not agree to.
 constant kStSctpFloor = 16384
 -- Generous: two live loopbacks (ENet handshake, plus ICE/DTLS/SCTP for WebRTC)
--- plus a 60000-byte transfer each, on a possibly loaded machine.
+-- plus a 60000-byte transfer each, on a possibly loaded machine. Counted from
+-- the pump's FIRST TICK since 2026-09-27, never from the arm (THE PUMP'S
+-- CLOCK, above suPump, has the Windows record that made it so).
 constant kStDeadlineMs = 40000
+-- A loopback is judged stalled only once the deadline has passed AND the pump
+-- has serviced it this many times, so an engine that ticks rarely still gives
+-- each loopback its polls before the verdict. 60 ticks is two seconds of the
+-- pump's 33 ms rhythm: on a healthy engine the deadline decides. (enetxt's
+-- shim services a host only inside enPoll, so ENet's handshake alone takes
+-- three ticks: INFERRED from the shim and ENet's protocol, never measured.)
+constant kStMinTicks = 60
+-- And whatever the count, a pump this long past its first tick is judged, so
+-- a run ALWAYS ends: three deadlines.
+constant kStCeilingMs = 120000
 
 constant kStTitle = "xTalk Suite - End-to-End Self-Test"
 -- 1200 x 640 is the demos' window (the UI kit's rule 6: the whole window fits
@@ -293,8 +305,6 @@ constant kSuScControls = "stCopy,stRerun,stResults,stSummary,suBootLog,suFilterA
 -- hand-maintained file; renaming there would touch a shipped library and
 -- re-carry its six embedded copies for this file's convenience.
 local sAsyncRunning
--- Set once, the first time a render inside the pump throws. See suPump.
-local sRenderNoted
 
 -- probe results (one flag per member; "reason" strings carry the SKIP note)
 local sHaveSodium, sHaveTorrent, sHaveEnet, sHaveDc, sHaveOnion, sHaveCoin
@@ -326,7 +336,8 @@ local sDcAOpen, sDcBOpen
 local sDcGot               -- the ciphertext B received (Data)
 local sDcBigSize, sDcBigWant
 
-local sDeadline            -- the async phases' drop-dead time (ms clock)
+local sDeadline            -- the async phases' deadline (ms clock), set at the pump's FIRST tick
+local sSuTime              -- the pump's clock and what it measured (THE PUMP'S CLOCK, above suPump)
 
 -- THE PASTE'S HOLD on the two process-wide transport libraries (work plan
 -- suite-wide #16; see THE PASTE'S HOLD above stTeardown for the argument).
@@ -1290,9 +1301,11 @@ end scFinish
 -- The scaffold's accounting (stAssert and friends), stReportText's RUN NOT
 -- FINISHED trailer, stShow, stPaint, stCopyResults, closeStack and the mouseUp
 -- that routes Re-run and Copy all run exactly as they did on the engine
--- records (2026-08-20 to 2026-08-27), because the kit builds the four controls
--- the scaffold writes UNDER THE SCAFFOLD'S OWN NAMES - stSummary, stResults,
--- stCopy, stRerun - so every one of those handlers finds what it always found.
+-- records (2026-08-20 to 2026-08-27; one change since: stShow is no longer
+-- called on a live pump tick, THE PUMP'S CLOCK above suPump), because the kit
+-- builds the four controls the scaffold writes UNDER THE SCAFFOLD'S OWN NAMES
+-- - stSummary, stResults, stCopy, stRerun - so every one of those handlers
+-- finds what it always found.
 -- "Run all" is the old Re-run button with a new label. stBuild and its three
 -- makers stay in the carried block and are never called: a carried block is
 -- carried whole, and its master still builds the four member harness windows.
@@ -1876,11 +1889,13 @@ command suBuildAll
 end suBuildAll
 
 -- ---- the results views --------------------------------------------------------
--- ALL is the scaffold's own stResults, rewritten every tick by stShow and
--- painted by stPaint exactly as before - and it is always what Copy copies.
--- FAILURES, SKIPS and ONE MEMBER are composed into suView, which is shown in
--- stResults' place while stShow keeps writing the hidden original, so nothing
--- fights over a field. BOOT CHECK shows the self-check's own log.
+-- ALL is the scaffold's own stResults, written by stShow when the pump is
+-- armed and again at the finish (never on a live pump tick since 2026-09-27:
+-- THE PUMP'S CLOCK, above suPump) and painted by stPaint exactly as before;
+-- Copy always copies the report from its variable. FAILURES, SKIPS and ONE
+-- MEMBER are composed into suView, which is shown in stResults' place while
+-- stShow writes the hidden original, so nothing fights over a field. BOOT
+-- CHECK shows the self-check's own log.
 command suSetFilter pWhich
    local tWhich
    set the defaultStack to the short name of this stack
@@ -2189,9 +2204,21 @@ command suSyncDone
 end suSyncDone
 
 -- One pump tick's paint, before the pump's re-arm and in a try of its own: the
--- rows when a transport's phase moved, and a filtered view when the report
--- grew. Nothing repaints on a tick that changed nothing, and a paint that
--- throws costs only the paint (suAfterDone repaints everything at the end).
+-- rows and the status line when a transport's phase moved, and a Failures or
+-- Skips view when the report grew. Nothing repaints on a tick that changed
+-- nothing, and a paint that throws costs only the paint (suAfterDone repaints
+-- everything at the end).
+--
+-- WHAT IT NEVER PAINTS WHILE A LOOPBACK IS LIVE (THE PUMP'S CLOCK, above
+-- suPump): the report itself (the All view, about 3350 lines) and a member's
+-- Show view (hundreds of lines for the big members, painted line by line).
+-- Both wait for the finish. The Failures and Skips views STAY live, bounded:
+-- their text is the FAIL or SKIP lines alone, not the report, and they re-render
+-- only on a tick whose phase change wrote report lines (about ten in a whole
+-- run), never on an idle one; a person who pressed one mid-run is watching
+-- it. Until 2026-09-27 a member's Show re-rendered here too, on every such
+-- tick, whichever member it showed. If a live view ever costs the loopbacks
+-- time, the timing notes' slowest tick says so.
 command suPumpPaint
    local tError
    try
@@ -2203,13 +2230,22 @@ end suPumpPaint
 command suPumpPaintNow
    if (sPhaseEn & "/" & sPhaseDc) is not sSuPainted then
       suPaintRows
+      uiStatus "Running (" & suScopeLabel() & "): the live loopbacks, enet" && suPhaseText(sPhaseEn) && "and datachannel" && suPhaseText(sPhaseDc) & ". Wait for the summary line before you copy.", empty
    end if
-   if sSuFilter is "fail" or sSuFilter is "skip" or sSuFilter begins with "m:" then
+   if sSuFilter is "fail" or sSuFilter is "skip" then
       if the length of sResultText is not sSuViewLen then
          suRenderView
       end if
    end if
 end suPumpPaintNow
+
+-- A loopback phase for the status line: the pump's own word, bar "skip".
+function suPhaseText pPhase
+   if pPhase is "skip" then
+      return "not in this run"
+   end if
+   return pPhase
+end suPhaseText
 
 -- The window's boot self-check, appended to the report UNCOUNTED, just above
 -- the summary: Copy results then carries the window's record too (runbook row
@@ -2381,7 +2417,8 @@ end suStatusFinal
 -- state. The log field is emptied first: a reopen must not stack a second
 -- block under the first (coin-wallet's waScFresh lesson, 2026-09-02).
 command suScRun
-   local tMissing
+   local tMissing, tT
+   put the milliseconds into tT
    set the defaultStack to the short name of this stack
    if there is a field "suBootLog" then
       put empty into field "suBootLog"
@@ -2397,6 +2434,11 @@ command suScRun
    scAssert "the run started before this check (running:" && scShow(sAsyncRunning) & ", finished:" && scShow(sStRunDone) & ")", suRunStarted()
    scAssert "the probe answered present or absent for every member", suProbeAnswered()
    scAssert "exactly one results view is showing", suVisibleViews() is 1
+   -- MEASURED for the pump's timing notes: on open this runs after stRun has
+   -- armed the pump and before its first tick, so its time is part of that
+   -- gap (THE PUMP'S CLOCK, above suPump). It only records a number; the
+   -- probe is still armed last, the contract's order.
+   put the milliseconds - tT into sSuTime["scMs"]
    scArmProbe
 end suScRun
 
@@ -2490,9 +2532,11 @@ command stRun pScope
    put "true" into sAsyncRunning
    put empty into sPhaseEn
    put empty into sPhaseDc
-   -- The render latch is per RUN: left set, a second run's pump would never
-   -- report a render that throws.
-   put empty into sRenderNoted
+   -- The pump's clock is per RUN, and it starts at the pump's first tick
+   -- (THE PUMP'S CLOCK, above suPump): nothing from an earlier run's clock
+   -- may judge this run's loopbacks.
+   put empty into sDeadline
+   put empty into sSuTime
    -- RELEASE THE SESSION BEFORE FORGETTING IT. This line used to be a bare
    -- `put 0 into sSession`, and that is how an engine pass loses the whole
    -- TorrentXT surface for the rest of the launch. The one-session latch lives
@@ -2603,8 +2647,9 @@ command stRun pScope
    -- async cross-member loopbacks start below and must not be racing while
    -- these run.
    -- CONTAINED like every other section, and for one extra reason. This call
-   -- used to be uncontained (it was not the ONLY bare statement here - stProbe,
-   -- stCancelPump and stShow are bare too; that earlier claim was wrong),
+   -- used to be uncontained (it was not the ONLY bare statement here - stProbe
+   -- and stCancelPump are bare too, and so was the arm-time stShow until
+   -- 2026-09-27; that earlier claim was wrong),
    -- on the reasoning that each folded harness contains its own sections. Four
    -- of the six have unguarded prologues (bt1stRun clears the error and reads
    -- btLastError before its try begins), and stMergeCounted/stMergeReturned
@@ -2696,9 +2741,14 @@ command stRun pScope
       suTallyClose
    end if
 
-   put the milliseconds + kStDeadlineMs into sDeadline
-   stShow
-   suSyncDone
+   -- THE DEADLINE IS NOT ARMED HERE. Until 2026-09-27 this line read
+   -- `put the milliseconds + kStDeadlineMs into sDeadline`, ahead of the
+   -- render below, suSyncDone, the rest of openStack and the window's first
+   -- layout, so everything those took was charged to the loopbacks before the
+   -- pump had polled them once (THE PUMP'S CLOCK, above suPump). suPumpArm
+   -- renders and paints as before, measures each, and leaves the clock to
+   -- the pump's first tick.
+   suPumpArm
    send "suPump" to me in 33 milliseconds
 end stRun
 
@@ -3781,11 +3831,71 @@ end stCheckSealed
 
 -- ---- the pump ----------------------------------------------------------------
 -- ONE timer chain drives BOTH async members. It reschedules itself until every
--- async phase is terminal or the deadline passes; it never blocks the
--- interpreter, because nothing in this family may block the one script thread.
+-- async phase is terminal or the loopbacks are judged stalled (THE PUMP'S
+-- CLOCK, below); it never blocks the interpreter, because nothing in this
+-- family may block the one script thread.
+--
+-- THE PUMP'S CLOCK (2026-09-27). A loopback is judged only on pump ticks that
+-- actually serviced it. The clock starts at the pump's FIRST tick; the verdict
+-- "stalled" needs the deadline (kStDeadlineMs from that tick) AND a floor of
+-- serviced ticks (kStMinTicks), or the ceiling (kStCeilingMs from that tick,
+-- whatever the count), so a run ALWAYS ends. And while a loopback is live the
+-- pump renders nothing of the report into the window: the rows' pills and the
+-- status line carry the progress, and the report is written when the pump is
+-- armed and again at the finish (stReportDone), never on a live tick. Copy
+-- results mid-run copies from the variable, with the RUN NOT FINISHED
+-- trailer, exactly as before.
+--
+-- WHY: THE WINDOWS RECORD. On the Windows machine of 2026-09-24 to 09-26 both
+-- loopbacks stalled in every run of the D-23 paste on record (six), enet in
+-- `connecting` and dc in `opening`, while the same code completed on Linux
+-- (2026-09-25 and 09-26); and on 2026-09-26 enetxt's standalone enet-selftest
+-- completed its own ENet loopback on that Windows machine (68/0/0, OBSERVED)
+-- and the DataChannel loopback demo "seems to work as intended", by the
+-- maintainer's account. So the paste's loopbacks failed where the members'
+-- did not. The diagnosis, INFERRED from the 2026-09-26 reports and the
+-- engine source:
+--   * the pump declared the stall on its first tick or its second. enetxt's
+--     shim services a host only inside enPoll, so over a UDP loopback that
+--     works (enet-selftest's did, there) the client sees the connect on its
+--     second poll and the server on its third (the CONNECT out on the first,
+--     the VERIFY back on the second, the ACK in on the third); the Windows
+--     reports carry no "enet client sees the handle" line, the client's
+--     second poll, and ENet never left `connecting`;
+--   * that tick came MORE than 40 s after the old deadline was armed. The
+--     first run was the one openStack started, and its summary said the boot
+--     self-check's delayed probe had not fired (suScRun arms it after stRun
+--     arms the pump, due in 400 ms where the pump is due in 33). The engine
+--     keeps its pending messages sorted by due time and
+--     delivers the earliest due one per pass (LiveCode's develop-9.6
+--     uidc.cpp, doaddmessage and handlepending: DOCUMENTED from the source,
+--     not observed), so the pump reached stFinish on a tick due before the
+--     probe, with the deadline already past;
+--   * the deadline used to be armed in stRun BEFORE the arm-time render of
+--     the whole report (about 3350 lines into field "stResults"), suSyncDone,
+--     the rest of openStack and the window's first layout, and the pump then
+--     re-rendered the whole report on every 33 ms tick, so a render slower
+--     than the deadline failed both loopbacks after a poll or two, long
+--     before either could finish;
+--   * WHAT takes the time on Windows is NOT KNOWN. suPumpNotes prints the
+--     measurements that separate the candidates (the arm-time render,
+--     suSyncDone's paints, the boot self-check, the engine's time before the
+--     first tick, timers queued ahead of it, and inside a tick each
+--     transport's poll apart from the board's paint: the old core judged
+--     tick 1 AFTER its polls, so one slow native poll fits the record too,
+--     and the 2026-09-12 Windows DLLs first met an engine with the D-23
+--     board), uncounted, so the next Windows report carries them.
+-- The fix is verified statically (check-suite-selftest.py check 19 holds the
+-- deadline to the pump and the report out of a live tick) and in
+-- tools/check-suite-ui-boot.py's Windows-stall scenario (which reproduces the
+-- Windows report on the old core); needs an OXT pass on Windows. The
+-- standalone enet-selftest and
+-- datachannel-selftest keep the old shape (the deadline armed before a render
+-- each tick) at a report of about seventy lines; enet-selftest's completed on
+-- that Windows machine on 2026-09-26, so the shape did not fail it there.
 command suPump
    local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
-   local tEvents, tEvent
+   local tEvents, tEvent, tLive, tStalled, tT0, tEnMs, tDcMs, tPaintMs
    -- PINNED FIRST (engine note 5.3). This handler arrives by `send ... in`, and
    -- since D-23 it paints the board's rows and views as well as the report;
    -- every one of those names a control unqualified, so the defaultStack is
@@ -3794,14 +3904,28 @@ command suPump
    if sAsyncRunning is not "true" then
       exit suPump
    end if
+   -- The clock's bookkeeping is arithmetic on numbers this pump wrote, and it
+   -- is contained all the same: nothing that only MEASURES may cost the run.
+   put (not stEnDone()) or (not stDcDone()) into tLive
+   try
+      suPumpTickStart
+   catch tError
+   end try
 
    -- Contained for the same reason the synchronous sections are, and with one
    -- extra stake: a throw out of the pump would break the timer chain, so
    -- nothing would ever reach stFinish - and the hosts, peers, and the one
    -- libtorrent session would all leak until the maintainer closed the stack.
    -- Marking the phase "failed" lets the run converge and tear down properly.
+   -- Each transport's block is TIMED (two reads of the clock, outside its
+   -- try): a slow tick in the timing notes is then its polls or its paint,
+   -- never a guess between them (review, 2026-09-27: a slow native poll on
+   -- the first tick fitted the Windows record as well as a slow render did).
+   put empty into tEnMs
+   put empty into tDcMs
    if not stEnDone() then
       suTallyOpen "enetxt"
+      put the milliseconds into tT0
       try
          put enPoll(sEnServer) into tEvents
          repeat for each element tEvent in tEvents
@@ -3817,11 +3941,13 @@ command suPump
          stNote "it raised:" && tError
          put "failed" into sPhaseEn
       end try
+      put the milliseconds - tT0 into tEnMs
       suTallyClose
    end if
 
    if not stDcDone() then
       suTallyOpen "datachannelxt"
+      put the milliseconds into tT0
       try
          put dcPoll() into tEvents
          repeat for each element tEvent in tEvents
@@ -3833,8 +3959,14 @@ command suPump
          stNote "it raised:" && tError
          put "failed" into sPhaseDc
       end try
+      put the milliseconds - tT0 into tDcMs
       suTallyClose
    end if
+
+   try
+      suPumpServiced tLive, tEnMs, tDcMs
+   catch tError
+   end try
 
    if stEnDone() and stDcDone() then
       stFinish
@@ -3842,19 +3974,31 @@ command suPump
    end if
 
    -- A stuck section must not take the run with it: record the failure against
-   -- the section that hung and finish everything else.
-   if the milliseconds > sDeadline then
+   -- the section that hung and finish everything else. FAIL CLOSED: a verdict
+   -- that could not be computed ends the run, because the ceiling is the one
+   -- promise that every run ends.
+   put true into tStalled
+   try
+      put suPumpStalled() into tStalled
+   catch tError
+      put true into tStalled
+   end try
+   if tStalled then
       if not stEnDone() then
          suTallyOpen "enetxt"
          stAssert "enet loopback finished before the deadline", false
-         stNote "stalled in phase" && sPhaseEn & "; UDP to 127.0.0.1 may be blocked"
+         stNote "stalled in phase" && sPhaseEn && suStallNote()
+         stNote "a blocked UDP loopback is one cause and a pump the engine starved is another: the timing notes below tell them apart (runbook 5.5)"
+         put suEndStamp("stalled in" && sPhaseEn & ", judged") into sSuTime["enEnd"]
          put "failed" into sPhaseEn
          suTallyClose
       end if
       if not stDcDone() then
          suTallyOpen "datachannelxt"
          stAssert "datachannel loopback finished before the deadline", false
-         stNote "stalled in phase" && sPhaseDc & "; UDP to this machine may be blocked"
+         stNote "stalled in phase" && sPhaseDc && suStallNote()
+         stNote "a blocked UDP loopback is one cause and a pump the engine starved is another: the timing notes below tell them apart (runbook 5.5)"
+         put suEndStamp("stalled in" && sPhaseDc & ", judged") into sSuTime["dcEnd"]
          put "failed" into sPhaseDc
          suTallyClose
       end if
@@ -3862,47 +4006,263 @@ command suPump
       exit suPump
    end if
 
-   -- THE RE-ARM IS THE ONE STATEMENT THAT MUST ALWAYS BE REACHED, and until
-   -- 2026-08-20 the render above it was the only thing in this handler that
-   -- was not contained. The comment at the top of suPump already had the whole
-   -- argument - a throw out of the pump breaks the timer chain, so nothing
-   -- ever reaches stFinish and the hosts, peers and libtorrent session leak -
-   -- and it had been applied to the two poll blocks and not to this line.
-   -- stShow writes `field "stResults"` unqualified, which resolves against the
-   -- DEFAULTSTACK (engine notes 5.3); on a `send ... in` tick that is not
-   -- guaranteed to be this stack, so the write can throw.
-   --
-   -- NOT A POST-MORTEM. Two 2026-08-20 engine reports ended mid-CROSS-section
-   -- and this was the shape that fit: a first-tick throw here would freeze the
-   -- report at exactly the last synchronous render, which is what both looked
-   -- like. It was wrong - the third run, same build, completed 1981/0/1
-   -- through both loopbacks, teardown and the summary; the first two were
-   -- copied before the async half finished. The containment stays because the
-   -- reasoning at the top of this handler always applied to this line and had
-   -- only ever been applied to the two poll blocks, and because a report is
-   -- assembled in a variable: losing a render must never cost the run.
-   try
-      stShow
-   catch tError
-      if sRenderNoted is not "true" then
-         put "true" into sRenderNoted
-         suTallyOpen "cross"
-         stAssert "the report rendered from the pump", false
-         stNote "it raised:" && tError
-         stNote "the run continues; the report is assembled in a variable and"
-         stNote "does not depend on the field it failed to write"
-         suTallyClose
-      end if
-   end try
-   -- The board's paint, contained on its own (suPumpPaint swallows its own
-   -- throw) so it can neither break the chain nor be mistaken for the report.
+   -- NO REPORT RENDER HERE while a loopback is live (THE PUMP'S CLOCK, above).
+   -- Until 2026-09-27 this was a contained `stShow`, the whole report into
+   -- field "stResults" on every 33 ms tick: the render the Windows diagnosis
+   -- names, and on a slow render a transport starved between its polls.
+   -- The board's paint stays, contained on its own (suPumpPaint swallows its
+   -- own throw) so it can neither break the chain nor cost the run: the rows
+   -- and the status line when a phase moved, and a Failures or Skips view
+   -- when the report grew (suPumpPaintNow says why those two stay). Timed,
+   -- like the polls above.
+   put the milliseconds into tT0
    suPumpPaint
+   put the milliseconds - tT0 into tPaintMs
+   -- THE RE-ARM IS THE ONE STATEMENT THAT MUST ALWAYS BE REACHED: a throw out
+   -- of the pump breaks the timer chain, and then nothing ever reaches
+   -- stFinish and the hosts, peers and libtorrent session leak. So everything
+   -- above it is contained, the tick's measurement included.
+   try
+      suPumpTickEnd tPaintMs
+   catch tError
+   end try
    send "suPump" to me in 33 milliseconds
 end suPump
+
+-- ARM THE PUMP: the arm-time render and the board's paint, as stRun always did
+-- them, each MEASURED, and the clock left for the first tick. The render is
+-- contained (it was bare until 2026-09-27, and a throw there skipped the
+-- `send "suPump"` that is the only route to the teardown); a render that
+-- throws is a FAIL on the cross row, as a render that threw inside the pump
+-- used to be, and the run goes on: the report is assembled in a variable.
+command suPumpArm
+   local tT, tError
+   put empty into sDeadline
+   put empty into sSuTime
+   put ((not stEnDone()) or (not stDcDone())) into sSuTime["loops"]
+   put sPhaseEn into sSuTime["enArm"]
+   put sPhaseDc into sSuTime["dcArm"]
+   put the number of lines of sResultText into sSuTime["lines"]
+   put the milliseconds into tT
+   try
+      stShow
+      put the milliseconds - tT into sSuTime["render"]
+   catch tError
+      suTallyOpen "cross"
+      stAssert "the report rendered when the pump was armed", false
+      stNote "it raised:" && tError
+      stNote "the run continues; the report is assembled in a variable and"
+      stNote "does not depend on the field it failed to write"
+      suTallyClose
+   end try
+   put the milliseconds into tT
+   suSyncDone
+   put the milliseconds - tT into sSuTime["sync"]
+   try
+      put suOtherTimers() into sSuTime["timersArm"]
+   catch tError
+      put "not read (" & tError & ")" into sSuTime["timersArm"]
+   end try
+   put the milliseconds into sSuTime["arm"]
+end suPumpArm
+
+-- The first tick starts the clock; every later one measures the wait since
+-- the last re-arm (33 ms asked).
+command suPumpTickStart
+   local tNow, tWait
+   put the milliseconds into tNow
+   put tNow into sSuTime["tickAt"]
+   if sSuTime["tick1"] is empty then
+      put tNow into sSuTime["tick1"]
+      put tNow + kStDeadlineMs into sDeadline
+      put 0 into sSuTime["ticks"]
+      put 0 into sSuTime["slow"]
+      put 0 into sSuTime["wait"]
+      put suOtherTimers() into sSuTime["timersTick1"]
+      exit suPumpTickStart
+   end if
+   put tNow - sSuTime["rearm"] into tWait
+   if tWait > sSuTime["wait"] then
+      put tWait into sSuTime["wait"]
+   end if
+end suPumpTickStart
+
+-- After the polls: a tick that polled a live loopback is SERVICED, each
+-- transport's block keeps its slowest time (empty when it was not polled this
+-- tick), and a loopback that has just ended is stamped with the tick and the
+-- time.
+command suPumpServiced pLive, pEnMs, pDcMs
+   if pLive is true then
+      add 1 to sSuTime["ticks"]
+   end if
+   suPumpKeepMax "enPoll", pEnMs
+   suPumpKeepMax "dcPoll", pDcMs
+   if stEnDone() and sSuTime["enEnd"] is empty then
+      put suEndStamp(sPhaseEn) into sSuTime["enEnd"]
+   end if
+   if stDcDone() and sSuTime["dcEnd"] is empty then
+      put suEndStamp(sPhaseDc) into sSuTime["dcEnd"]
+   end if
+end suPumpServiced
+
+-- How a loopback ended, for the notes: the phase it ended in, the tick and
+-- the time from the first tick.
+function suEndStamp pHow
+   return pHow && "on tick" && sSuTime["ticks"] & "," && (the milliseconds - sSuTime["tick1"]) && "ms after the first tick"
+end suEndStamp
+
+-- Before the re-arm: the tick's own time, for the slowest-tick note, and the
+-- board's paint on it.
+command suPumpTickEnd pPaintMs
+   local tNow, tTook
+   put the milliseconds into tNow
+   put tNow - sSuTime["tickAt"] into tTook
+   if tTook > sSuTime["slow"] then
+      put tTook into sSuTime["slow"]
+   end if
+   suPumpKeepMax "paint", pPaintMs
+   put tNow into sSuTime["rearm"]
+end suPumpTickEnd
+
+-- One slowest-so-far span: kept only when measured (a number), so a
+-- transport never polled in this run reads "not measured", never 0 ms.
+command suPumpKeepMax pKey, pMs
+   if pMs is not a number then
+      exit suPumpKeepMax
+   end if
+   if sSuTime[pKey] is empty or pMs > sSuTime[pKey] then
+      put pMs into sSuTime[pKey]
+   end if
+end suPumpKeepMax
+
+-- THE VERDICT. The deadline alone is not enough (a pump the engine starved
+-- has not serviced the loopbacks it would judge), the floor alone could wait
+-- forever on an engine that ticks rarely, and the ceiling ends every run. An
+-- unset first tick reads as long ago: the verdict fails closed.
+function suPumpStalled
+   local tRun
+   put the milliseconds - sSuTime["tick1"] into tRun
+   if tRun > kStCeilingMs then
+      return true
+   end if
+   if the milliseconds > sDeadline and sSuTime["ticks"] >= kStMinTicks then
+      return true
+   end if
+   return false
+end suPumpStalled
+
+-- What a stall note says: the ticks the loopback was given, and the time.
+function suStallNote
+   return "after" && sSuTime["ticks"] && "serviced ticks," && (the milliseconds - sSuTime["tick1"]) && "ms from the pump's first tick (judged at" && kStDeadlineMs && "ms and" && kStMinTicks && "ticks, or" && kStCeilingMs && "ms whatever the count)"
+end suStallNote
+
+-- The engine's OTHER pending messages: every timer queued in the process
+-- besides the paste's own two, counted, with up to six distinct names. The
+-- list is engine-wide (stCancelPump's comment), so this names another open
+-- stack's timers too; that is the point of reading it.
+function suOtherTimers
+   local tPending, tLine, tOld, tName, tN, tNames, tSeen
+   put the pendingMessages into tPending
+   put the itemDelimiter into tOld
+   set the itemDelimiter to comma
+   put 0 into tN
+   put empty into tNames
+   put 0 into tSeen
+   repeat for each line tLine in tPending
+      put item 3 of tLine into tName
+      if tName is not empty and tName is not "suPump" and tName is not "suRunTick" then
+         add 1 to tN
+         if not (tName is among the items of tNames) then
+            if tSeen < 6 then
+               if tNames is empty then
+                  put tName into tNames
+               else
+                  put comma & tName after tNames
+               end if
+            end if
+            add 1 to tSeen
+         end if
+      end if
+   end repeat
+   set the itemDelimiter to tOld
+   if tN is 0 then
+      return "none"
+   end if
+   if tSeen > 6 then
+      put comma & "..." after tNames
+   end if
+   return tN && "(" & tNames & ")"
+end suOtherTimers
+
+-- A measured span, or why there is none.
+function suMsText pValue
+   if pValue is empty or pValue is not a number then
+      return "not measured"
+   end if
+   return pValue && "ms"
+end suMsText
+
+-- THE TIMING NOTES, UNCOUNTED, on every run that armed a live loopback: what
+-- the next Windows report must carry back (runbook 5.5). stFinish prints them
+-- above its onion section, in the cross row's tally (a note counts nothing).
+command suPumpNotes
+   local tNow, tFirst, tRest
+   put the milliseconds into tNow
+   stSection "the loopbacks' pump: where the time went (notes, not counted; paste them back)"
+   stNote "the report written into the window as the pump was armed:" && suMsText(sSuTime["render"]) && "(" & sSuTime["lines"] && "lines)"
+   stNote "the board painted after it (suSyncDone):" && suMsText(sSuTime["sync"])
+   if sSuTime["tick1"] is empty then
+      stNote "the pump's first tick: not reached"
+   else
+      put sSuTime["tick1"] - sSuTime["arm"] into tFirst
+      stNote "from arming the pump to its first tick:" && suMsText(tFirst) && "(33 asked)"
+      if sSuTime["scMs"] is empty then
+         stNote "   no boot self-check ran in that gap (a run started from a button, not on open)"
+      else
+         put tFirst - sSuTime["scMs"] into tRest
+         stNote "   of which the boot self-check, run on open after the arm:" && suMsText(sSuTime["scMs"])
+         stNote "   and the engine's own, before the first tick (the window's first layout and redraw, timers due first):" && suMsText(tRest)
+      end if
+      stNote "the pump:" && sSuTime["ticks"] && "serviced ticks over" && (tNow - sSuTime["tick1"]) && "ms; the slowest tick" && suMsText(sSuTime["slow"]) & "; the longest wait between ticks" && suMsText(sSuTime["wait"]) && "(33 asked)"
+      stNote "   inside a tick, the slowest of each part: enet's polls and events" && suMsText(sSuTime["enPoll"]) & ", datachannel's poll and events" && suMsText(sSuTime["dcPoll"]) & ", the board's paint" && suMsText(sSuTime["paint"])
+   end if
+   stNote "other timers queued as the pump was armed:" && sSuTime["timersArm"]
+   stNote "other timers queued at its first tick:" && sSuTime["timersTick1"]
+   stNote "enet loopback:" && suLoopEndText(sSuTime["enArm"], sSuTime["enEnd"])
+   stNote "datachannel loopback:" && suLoopEndText(sSuTime["dcArm"], sSuTime["dcEnd"])
+   stNote "judged stalled only after" && kStDeadlineMs && "ms from the first tick AND" && kStMinTicks && "serviced ticks, or after" && kStCeilingMs && "ms whatever the count"
+end suPumpNotes
+
+-- One loopback's ending, for the notes: not live at the arm, still live when
+-- the run ended (a close or a re-entry cut it short), or the stamp the pump
+-- wrote (done, failed or stalled; the tick and the time).
+function suLoopEndText pArm, pEnd
+   if pArm is "skip" or pArm is "failed" or pArm is "done" then
+      return "not live when the pump was armed (" & pArm & ")"
+   end if
+   if pEnd is empty then
+      return "still" && pArm && "when the run ended"
+   end if
+   return pEnd
+end suLoopEndText
 
 -- ---- finish + teardown -------------------------------------------------------
 command stFinish
    local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
+   -- The pump's timing notes first, next to the loopbacks they time, on every
+   -- run that armed a live loopback (THE PUMP'S CLOCK, above suPump). NOTES,
+   -- never assertions: they count nothing, so a green run's totals are the
+   -- totals every earlier record printed. Contained: a note must never cost
+   -- the teardown below.
+   if sSuTime["loops"] is "true" then
+      suTallyOpen "cross"
+      try
+         suPumpNotes
+      catch tError
+         stNote "the pump's timing notes could not be written:" && tError
+      end try
+      suTallyClose
+   end if
    -- Run last: OnionXT's capability advertisement is pure compute, but reading
    -- it here keeps the whole cross-member story in one block at the end of the
    -- report, next to the transports it describes.

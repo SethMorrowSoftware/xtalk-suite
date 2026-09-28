@@ -93,6 +93,31 @@ when nothing did (the restore could go and the gate stayed green, measured):
      not reach the handler, so this pins the family's rule, not an engine
      hazard.
 
+And eight for the loopback pump's clock (work plan suite engine #9, the
+Windows stall; the gate's scenario_windows_stall, whose loopbacks are
+modelled WITH events and whose every write of the report into the window
+costs 45 s on the model's clock):
+
+  t  THE OLD CORE, planted back whole: the deadline armed in stRun before
+     the arm-time render, the whole report rendered on every pump tick, the
+     deadline alone as the verdict, the stall note blaming UDP. It must
+     reproduce the Windows report: both loopbacks FAIL, enet in
+     `connecting` and dc in `opening`, and the on-open run's summary says
+     the boot probe had not fired.
+  u  only the per-tick render put back: the live pump writes the report.
+  v  only the deadline put back before the arm-time render (the floor of
+     serviced ticks then decides alone, and a DataChannel that needs more
+     polls than the floor is cut off).
+  w  no floor: the deadline alone judges a starved pump.
+  x  no ceiling: a loopback that never answers is judged only at the
+     floor, long after the ceiling.
+  y  the timing notes are never printed.
+  z  the stall note blames UDP alone again, with no ticks and no time.
+  aa the datachannel block is no longer timed (review, 2026-09-27): the
+     notes must split a slow tick into enet's polls, datachannel's poll and
+     the board's paint, since a slow native poll inside the first tick fits
+     the Windows record as well as a slow render does.
+
 The mutants run concurrently, at most one gate run per core.
 
 THE --full MUTANTS (python3 tools/test-suite-ui-boot.py --full)
@@ -146,6 +171,38 @@ ROOT = os.path.dirname(HERE)
 GATE = os.path.join(HERE, "check-suite-ui-boot.py")
 PASTE = os.path.join(ROOT, "tests", "suite-selftest.livecodescript")
 TIMEOUT = 600
+
+# The pump's clock (mutants t-z): the core's code as generated into the
+# paste, and the pre-2026-09-27 lines the old core had in their place.
+OLD_ARM = ('   suPumpArm\n   send "suPump" to me in 33 milliseconds\n'
+           'end stRun\n')
+ARM_RESET = ('   put empty into sDeadline\n   put empty into sSuTime\n'
+             '   put ((not stEnDone()) or (not stDcDone())) into '
+             'sSuTime["loops"]\n')
+FIRST_TICK_DEADLINE = '      put tNow + kStDeadlineMs into sDeadline\n'
+VERDICT = ('   put true into tStalled\n   try\n'
+           '      put suPumpStalled() into tStalled\n   catch tError\n'
+           '      put true into tStalled\n   end try\n')
+PER_TICK_PAINT = '\n   put the milliseconds into tT0\n   suPumpPaint\n'
+PER_TICK_RENDER = ('\n   try\n      stShow\n   catch tError\n   end try\n'
+                   '   put the milliseconds into tT0\n   suPumpPaint\n')
+# the pump's split of a tick (mutant aa): the datachannel block's timing
+DC_POLL_TIMED = ('      put the milliseconds - tT0 into tDcMs\n')
+STALL_NOTE_TAIL = ('stNote "a blocked UDP loopback is one cause and a pump '
+                   'the engine starved is another: the timing notes below '
+                   'tell them apart (runbook 5.5)"\n')
+STALL_NOTE_EN = ('         stNote "stalled in phase" && sPhaseEn && '
+                 'suStallNote()\n         ' + STALL_NOTE_TAIL
+                 + '         put suEndStamp("stalled in" && sPhaseEn')
+STALL_NOTE_DC = ('         stNote "stalled in phase" && sPhaseDc && '
+                 'suStallNote()\n         ' + STALL_NOTE_TAIL
+                 + '         put suEndStamp("stalled in" && sPhaseDc')
+OLD_NOTE_EN = ('         stNote "stalled in phase" && sPhaseEn & "; UDP to '
+               '127.0.0.1 may be blocked"\n'
+               '         put suEndStamp("stalled in" && sPhaseEn')
+OLD_NOTE_DC = ('         stNote "stalled in phase" && sPhaseDc & "; UDP to '
+               'this machine may be blocked"\n'
+               '         put suEndStamp("stalled in" && sPhaseDc')
 
 # (id, what the defect is, needle, replacement, a line the gate must print)
 MUTANTS = [
@@ -265,6 +322,51 @@ MUTANTS = [
      '   put empty into sSuArmed\n',
      '   end repeat\n   put empty into sSuArmed\n',
      "stCancelPump hands its caller's itemDelimiter back"),
+    # Seven for the loopback pump's clock (suite engine #9, the Windows
+    # stall; scenario_windows_stall). t is the pre-2026-09-27 core, planted
+    # back whole, and must reproduce the Windows report line for line.
+    ("t", "the old core: the deadline armed before the arm-time render, the "
+          "report rendered every tick, the deadline alone judging",
+     (OLD_ARM, FIRST_TICK_DEADLINE, VERDICT, PER_TICK_PAINT, STALL_NOTE_EN,
+      STALL_NOTE_DC),
+     ('   put the milliseconds + kStDeadlineMs into sDeadline\n'
+      '   stShow\n   suSyncDone\n'
+      '   send "suPump" to me in 33 milliseconds\nend stRun\n', '',
+      '   put (the milliseconds > sDeadline) into tStalled\n',
+      PER_TICK_RENDER, OLD_NOTE_EN, OLD_NOTE_DC),
+     ("stalled in phase connecting", "stalled in phase opening",
+      "had not fired yet")),
+    ("u", "the live pump renders the whole report on every tick again",
+     PER_TICK_PAINT, PER_TICK_RENDER,
+     "no live pump tick wrote the report into the window"),
+    ("v", "the deadline armed before the arm-time render again (the first "
+          "tick no longer arms it)",
+     (ARM_RESET, FIRST_TICK_DEADLINE),
+     (ARM_RESET.replace("   put empty into sDeadline\n",
+                        "   put the milliseconds + kStDeadlineMs into "
+                        "sDeadline\n"), ''),
+     "the datachannel loopback completes"),
+    ("w", "no floor of serviced ticks: the deadline alone judges",
+     '   if the milliseconds > sDeadline and sSuTime["ticks"] >= '
+     'kStMinTicks then\n',
+     '   if the milliseconds > sDeadline then\n',
+     "(a starved pump) no FAIL line"),
+    ("x", "no ceiling: only the deadline and the floor judge",
+     '   if tRun > kStCeilingMs then\n      return true\n   end if\n',
+     '',
+     "judged by the ceiling"),
+    ("y", "stFinish never prints the pump's timing notes",
+     '         suPumpNotes\n', '',
+     "the pump's timing notes are in the report"),
+    ("z", "the stall note blames UDP alone again, with no ticks or time",
+     (STALL_NOTE_EN, STALL_NOTE_DC), (OLD_NOTE_EN, OLD_NOTE_DC),
+     "each stall note states its phase, the serviced ticks and the time"),
+    # And one from the review (2026-09-27): the notes must tell a slow
+    # native poll from a slow paint inside a tick.
+    ("aa", "the datachannel block is no longer timed, so a slow poll reads as "
+           "a slow tick with no part to blame",
+     DC_POLL_TIMED, '',
+     "the notes put the slow tick in datachannel's poll"),
 ]
 
 

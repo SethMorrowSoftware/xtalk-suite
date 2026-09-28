@@ -32,7 +32,7 @@ from the generator's MEMBERS rows for the same reason: a member added there is
 checked here with no second edit, and one dropped there is refused by the
 generator's assert_registry_covered and by check 17, not quietly unchecked.
 
-THE CORE IS READ TOO (checks 10b and 13b-17). The paste is what runs; the core
+THE CORE IS READ TOO (checks 10b, 13b-17 and 19). The paste is what runs; the core
 (tests/suite-selftest.core.livecodescript) is what a person edits, and since
 D-23 it is also a UI - a board with per-member Run, timers, and control names
 on a card the folded harnesses share. The rules about the core's own
@@ -1294,6 +1294,105 @@ def main(argv):
                            f"declared initial value is a hold the paste "
                            f"never took")
 
+    # ---- 19. the loopbacks are judged only on ticks that serviced them ----
+    # (work plan suite engine #9, runbook 5.5; the core's THE PUMP'S CLOCK,
+    # above suPump.) The Windows machine's six D-23 paste runs stalled both
+    # loopbacks on the pump's first tick or its second, where enet-selftest's
+    # own loopback completed: the deadline was armed in stRun BEFORE the
+    # arm-time render of the whole report (and the window's first layout),
+    # and the pump re-rendered the report on every tick, so anything slow
+    # ahead of the first tick failed both loopbacks after a poll or two
+    # (INFERRED; what took the time is not known).
+    # tools/check-suite-ui-boot.py reproduces that report on the old core and
+    # drives the fix along the paths it drives; this holds its two structural
+    # halves on EVERY path, statically:
+    #   * THE DEADLINE IS ARMED ONLY BY THE PUMP. Every statement that puts a
+    #     value other than `empty` into sDeadline sits in suPump or in a
+    #     handler only suPump names - not a timer, not an event, not stRun or
+    #     anything else. An arm stRun can reach puts the render, the rest of
+    #     openStack and the window's first layout back on the loopbacks'
+    #     clock, which is the Windows defect.
+    #   * NO REPORT RENDER ON A LIVE TICK. Nothing suPump reaches, short of
+    #     stFinish (the finish, which renders the report once), calls stShow,
+    #     stPaint, stReportDone or suPaintResults, or writes field
+    #     "stResults". A view of the report stays allowed (suRenderView
+    #     writes suView, bounded in suPumpPaintNow's comment); the report is
+    #     not.
+    arm_rows = [i for i in own_rows
+                if re.search(r'\binto\s+sDeadline\b', core_blank[i], re.I)
+                and not re.match(r'\s*put\s+empty\s+into\s+sDeadline\s*$',
+                                 core_blank[i], re.I)]
+
+    def enclosing(i):
+        for name, a, b in core_handlers:
+            if a < i < b:
+                return name
+        return None
+
+    spelled = {n.lower(): n for n, _a, _b in core_handlers}
+    callers = collections.defaultdict(set)
+    for name, spans in by_name.items():
+        for a, b in spans:
+            for callee in edges(a, b):
+                if callee != name:
+                    callers[callee].add(name)
+    armed_low19 = {t.lower() for t in armed_all}
+    events_low = {e.lower() for e in EVENTS}
+    if "supump" not in by_name:
+        fail("19", f"{core_rel} has no suPump, so nothing drives the "
+                   f"loopbacks and this check is checking nothing")
+    if not arm_rows:
+        fail("19", f"nothing in {core_rel} arms sDeadline with a value, so "
+                   f"the pump has no deadline, or its arm was rewritten into "
+                   f"a shape this check cannot read, which must be fixed here")
+    for i in arm_rows:
+        owner = enclosing(i)
+        low = (owner or "").lower()
+        who = sorted(callers.get(low, set()))
+        ok = low == "supump" or (who == ["supump"] and low not in armed_low19
+                                 and low not in events_low)
+        if not ok:
+            where = "no handler"
+            if owner:
+                where = owner + (", which is named by "
+                                 + ", ".join(spelled.get(w, w) for w in who)
+                                 if who else ", which nothing in the core names")
+            fail("19", f"{core_rel} line {i + 1} arms the loopbacks' deadline "
+                       f"({core_raw[i].strip()!r}) in {where}. The deadline "
+                       f"is armed only by the pump (suPump, or a handler only "
+                       f"suPump names): armed where stRun can reach it, it "
+                       f"counts the arm-time render and the window's first "
+                       f"layout against loopbacks not yet polled, the Windows "
+                       f"stall (runbook 5.5)")
+    render = {"stshow", "stpaint", "streportdone", "supaintresults"}
+    live, frontier = {"supump"}, ["supump"]
+    while frontier:
+        name = frontier.pop()
+        for a, b in by_name.get(name, []):
+            for nxt in edges(a, b):
+                if nxt == "stfinish" or nxt in live:
+                    continue
+                live.add(nxt)
+                frontier.append(nxt)
+    for name in sorted(live & render):
+        fail("19", f"suPump reaches {spelled.get(name, name)} short of "
+                   f"stFinish: the report is "
+                   f"rendered on a live pump tick. While a loopback is live "
+                   f"the pump renders nothing of the report (the rows and the "
+                   f"status line carry progress; stFinish renders it once): "
+                   f"a slow render starves the transports between polls and "
+                   f"spends their deadline (THE PUMP'S CLOCK, runbook 5.5)")
+    for name in sorted(live):
+        for a, b in by_name.get(name, []):
+            for i in range(a + 1, b):
+                if re.search(r'\binto\s+field\s+"stResults"', core_view[i],
+                             re.I):
+                    fail("19", f"{spelled.get(name, name)} writes field "
+                               f"'stResults' "
+                               f"({core_raw[i].strip()!r}, line {i + 1}) and "
+                               f"suPump reaches it short of stFinish: the "
+                               f"report is written on a live pump tick")
+
     if problems:
         print("check-suite-selftest: FAILED")
         for check, p in problems:
@@ -1312,7 +1411,9 @@ def main(argv):
             f"transport holds: {len(reach18)} of {len(paste_spans)} handlers "
             f"reachable, the four library calls only through their counted "
             f"wrappers, {len(dead18)} unreachable folded caller(s) left dead: "
-            f"{', '.join(dead18)})")
+            f"{', '.join(dead18)}; the pump's clock: {len(arm_rows)} deadline "
+            f"arm(s), each the pump's own, and {len(live)} handler(s) a live "
+            f"tick reaches, none rendering the report)")
     return 0
 
 

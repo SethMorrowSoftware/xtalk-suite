@@ -133,11 +133,14 @@ The shim cites these by number; keep the numbering.
 The whole `en*` surface is engine-proven (standalone async 2026-08-13; the sync half folded
 through 2026-09-26, on Windows and Linux). The core's live loopback stalled on 2026-08-27 (its
 phase not recorded) and in `connecting` in all three of 2026-09-24's runs and again on
-2026-09-25 (Windows, the same machine each time; suspected blocked UDP to 127.0.0.1, the suite
-runbook's trap 5.5; that machine is not yet tested independently), and COMPLETED on Linux
+2026-09-25 (Windows, the same machine each time; blocked UDP to 127.0.0.1 was suspected until
+2026-09-26, when this member's own `enet-selftest` completed its loopback on that machine: the
+suite runbook's 5.5), and COMPLETED on Linux
 x86_64 on 2026-09-25 and again on 2026-09-26 (the same machine, by the maintainer's account): connect, the sealed ciphertext, 60000 bytes reassembled into one
 message, a graceful disconnect. So the paste's loopback code works on an engine, and the
-Windows stall is that platform's or that machine's. The 2026-09-24 and 2026-09-25 Windows
+Windows stall is, INFERRED, the paste's own pump (its deadline armed ahead of the arm-time render and the window's first layout, what took the time there not yet known; fixed
+2026-09-27, verified statically; needs an OXT pass on Windows: the suite runbook's 5.5), not the
+machine's UDP. The 2026-09-24 and 2026-09-25 Windows
 pastes ran on the 2026-09-12 `x86_64-win32` DLL and the 2026-09-25 Linux paste on the
 2026-09-12 `x86_64-linux` file (the maintainer's account: 64-bit OXT on both, the latest
 builds; the 2026-09-25 Windows DLL INFERRED the same, the ledger), each file's first engine
