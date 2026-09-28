@@ -4957,6 +4957,71 @@ def _vec_backend_core(c, fx):
                    % spent(0, "0.001")), (False, "800100"))
 
 
+class _EngineNumberFormat:
+    """The engine's text for a computed number, for one block: the default
+    numberFormat, "0.######" (the LiveCode dictionary), so a non-integral
+    number is written with at most six decimals and its trailing zeros
+    dropped - 1.41e-05 as "0.000014" - where the interpreter writes Python's
+    repr and keeps every digit (trap 21: NOT modelled). A CONTEXT, patching
+    the interpreter's one text door (`_disp`) and restoring it on the way
+    out, so no other block runs under it. INFERRED from the documented
+    default; no engine run has read it (row #9's review, 2026-09-28)."""
+
+    def __enter__(self):
+        self.orig = LCS._disp
+        orig = self.orig
+
+        def disp(v):
+            if isinstance(v, float) and v == v and abs(v) != float("inf") \
+                    and v != int(v):
+                s = ("%.6f" % v).rstrip("0").rstrip(".")
+                return "0" if s in ("", "-0") else s
+            return orig(v)
+        LCS._disp = disp
+        return self
+
+    def __exit__(self, *exc):
+        LCS._disp = self.orig
+        return False
+
+
+def _vec_core_fee(c, fx):
+    """listtransactions' fee: Core writes a send's as a NEGATIVE BTC amount,
+    and the minus comes off as TEXT (row #9's review, 2026-09-28). It came
+    off by arithmetic, `cwBtcToSat(cwExpandExponent(-tFee))`, which hands
+    the parser a COMPUTED number, and the engine writes one through the
+    numberFormat: six decimals, so 0.00001410 BTC read as 1400 sat. Run
+    under that model (_EngineNumberFormat), where the old line fails; the
+    plain interpreter, which keeps every digit, would pass it."""
+    def fees(fee):
+        _bx_reset(fx)
+        got = _run(fx, "waMergeCoreHistory", [_bx_json(
+            fx, '[{"address":"addr1","txid":"%s","category":"send",'
+                '"confirmations":3,"fee":%s}]' % (_BX_TXID, fee))])
+        if _bx_failed(got):
+            return got
+        return [str(LCS._disp(r.get("fee", "")))
+                for r in unlst(fx.globals.get("swahistory") or {})]
+
+    with _EngineNumberFormat():
+        c.ck("the model writes a computed 0.0000141 as the engine's default "
+             "numberFormat does, six decimals", str(LCS._disp(-(-1.41e-05))),
+             "0.000014")
+        c.ck("and a whole number as its digits", str(LCS._disp(float(2 ** 52))),
+             str(2 ** 52))
+        for fee, want in (("-0.00001410", "1410"), ("-0.00012345", "12345"),
+                          ("-0.00000001", "1"), ("-1.50000000", "150000000"),
+                          ("-1e-05", "1000")):
+            c.ck("listtransactions: a fee of %s BTC is kept as %s sat, to the "
+                 "satoshi" % (fee, want), fees(fee), [want])
+        for fee, why in (("0.00001410", "a receive's, positive"),
+                         ("-0.00000000", "zero"), ('"abc"', "no number"),
+                         ('"-abc"', "a minus before no number")):
+            c.ck("and a fee that is %s is not kept (control)" % why, fees(fee), [""])
+    c.ck("and the model is taken off again after the block",
+         str(LCS._disp(1.41e-05)) != "0.000014", True)
+
+
 def _vec_wallet_sums(c, fx):
     """The sums coin-wallet takes of its coins, and waAmountBare's mBTC."""
     half = 2 ** 52 + 1
@@ -5057,6 +5122,7 @@ def check_backend_numbers(c, ip, fx=None):
     _vec_backend_coins(c, fx)
     _vec_backend_history(c, fx)
     _vec_backend_core(c, fx)
+    _vec_core_fee(c, fx)
     _vec_wallet_sums(c, fx)
     _vec_wallet_sum_sources(c, fx)
 
@@ -5259,6 +5325,22 @@ _BOUND_MUTATIONS = (
     ("waBumpFee's new change into the total, a bare add", "wallet",
      [('   put cwAmountAdd(tTotalOut, tNewChange, "waBumpFee") into tTotalOut\n',
        '   add tNewChange to tTotalOut\n')], _vec_wallet_sum_sources),
+    # the 2026-09-28 review: Core's fee with its minus taken off by
+    # arithmetic, which fails under the engine's numberFormat
+    ("waMergeCoreHistory's fee, the minus taken off by arithmetic", "wallet",
+     [('      put cwTrim(cwJsonGet(tItem, "fee")) into tFee\n'
+       '      if char 1 of tFee is "-" then\n'
+       '         put char 2 to -1 of tFee into tFee\n'
+       '         if tFee is a number then\n'
+       '            put cwBtcToSat(cwExpandExponent(tFee)) into tFeeSat\n'
+       '            if tFeeSat > 0 then\n'
+       '               put tFeeSat into tRec["fee"]\n'
+       '            end if\n         end if\n      end if\n',
+       '      put cwJsonGet(tItem, "fee") into tFee\n'
+       '      if tFee is a number then\n'
+       '         if tFee < 0 then\n'
+       '            put cwBtcToSat(cwExpandExponent(-tFee)) into tRec["fee"]\n'
+       '         end if\n      end if\n')], _vec_core_fee),
     # PLAUSIBLE WRONG FIXES, not reverts (the 2026-09-26 review): each
     # source-pinned sum rewritten as a bare `+`. The pins first read only
     # `add ... to` and "cwAmountAdd( somewhere in the body", so waBumpFee's

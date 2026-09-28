@@ -7308,21 +7308,22 @@ function cxHdNeuter pNode
 end cxHdNeuter
 
 function cxHdDeriveChild pNode, pIndex
-   local tData, tI, tChild, tHasPrivate
-   if pIndex < 0 or pIndex > 4294967295 then
-      throw "CoinXT: cxHdDeriveChild: a child index must be between 0 and 2^32-1."
-   end if
+   local tData, tI, tChild, tHasPrivate, tIndex
+   -- the index as DIGITS first (cxCheckedIndex, 2026-09-28): "1e1" was child
+   -- 10, "3.5" child 3 and an empty index child 0
+   put cxCheckedIndex(pIndex, 0, 4294967295, "cxHdDeriveChild", "a child index", \
+         "a child index must be between 0 and 2^32-1.") into tIndex
    put (pNode["seckey"] is not "") into tHasPrivate
-   if pIndex >= kCxHardenedBase then
+   if tIndex >= kCxHardenedBase then
       if tHasPrivate is false then
          throw "CoinXT: cxHdDeriveChild: a hardened child cannot be derived from a public-only node, because BIP-32 hashes the private key to make one."
       end if
       -- The 0x00 pad makes the private key 33 bytes, the same width as the
       -- compressed public key the non-hardened branch uses, so both hash the
       -- same amount of data. BIP-32 is explicit about it.
-      put numToByte(0) & pNode["seckey"] & cxUInt32ToBytes(pIndex) into tData
+      put numToByte(0) & pNode["seckey"] & cxUInt32ToBytes(tIndex) into tData
    else
-      put pNode["pubkey"] & cxUInt32ToBytes(pIndex) into tData
+      put pNode["pubkey"] & cxUInt32ToBytes(tIndex) into tData
    end if
    put cxHmacSha512(pNode["chaincode"], tData) into tI
    put byte 33 to 64 of tI into tChild["chaincode"]
@@ -7338,7 +7339,7 @@ function cxHdDeriveChild pNode, pIndex
       put cxPubkeyTweakAdd(pNode["pubkey"], byte 1 to 32 of tI) into tChild["pubkey"]
    end if
    put pNode["depth"] + 1 into tChild["depth"]
-   put pIndex into tChild["index"]
+   put tIndex into tChild["index"]
    put cxFingerprint(pNode["pubkey"]) into tChild["parentfp"]
    return tChild
 end cxHdDeriveChild
@@ -7578,6 +7579,46 @@ private function cxCheckedWhole pValue, pMax, pWho, pWhat
    return tText + 0
 end cxCheckedWhole
 
+private function cxCheckedIndex pValue, pMin, pMax, pWho, pWhat, pRange
+   local tText, tCount, tI, tStart, tIndex
+   put pValue into tText
+   put the number of chars of tText into tCount
+   if tCount is 0 then
+      throw "CoinXT: " & pWho & ": " & pWhat & " must be a whole number " & \
+            "written in digits."
+   end if
+   put 1 into tStart
+   if tCount > 1 then
+      if byteToNum(char 1 of tText) is 45 then
+         put 2 into tStart
+      end if
+   end if
+   repeat with tI = tStart to tCount
+      if cxCharIndex(char tI of tText, "0123456789") is 0 then
+         throw "CoinXT: " & pWho & ": " & pWhat & " must be a whole number " & \
+               "written in digits."
+      end if
+   end repeat
+   if tStart is 2 then
+      throw "CoinXT: " & pWho & ": " & pRange
+   end if
+   -- leading zeros off (one digit always stays), then at most ten digits
+   repeat while tStart < tCount
+      if byteToNum(char tStart of tText) is not 48 then
+         exit repeat
+      end if
+      add 1 to tStart
+   end repeat
+   if tCount - tStart + 1 > 10 then
+      throw "CoinXT: " & pWho & ": " & pRange
+   end if
+   put (char tStart to tCount of tText) + 0 into tIndex
+   if tIndex < pMin or tIndex > pMax then
+      throw "CoinXT: " & pWho & ": " & pRange
+   end if
+   return tIndex
+end cxCheckedIndex
+
 private function cxUIntToBytesLE pValue, pWidth
    local tOut, tRest, tI
    put cxCheckedWhole(pValue, "9007199254740992", "cxUIntToBytesLE", \
@@ -7696,7 +7737,7 @@ function cxBtcSighashLegacy pVersion, pOutpoints, pSequences, pIndex, pScriptCod
 end cxBtcSighashLegacy
 
 private function cxBtcSighashLegacyInner pVersion, pOutpoints, pSequences, pIndex, pScriptCodeHex, pOutputs, pLocktime, pSighashType
-   local tCount, tI, tBuf, tScript, tOutBytes, tOutCount
+   local tCount, tI, tBuf, tScript, tOutBytes, tOutCount, tIndex
    -- SIGHASH_ALL ONLY, AND IT IS REFUSED RATHER THAN APPROXIMATED.
    -- Neither preimage builder below branches on pSighashType: both always
    -- commit to every prevout, every sequence and every output, which IS the
@@ -7722,14 +7763,15 @@ private function cxBtcSighashLegacyInner pVersion, pOutpoints, pSequences, pInde
    if tCount is 0 or the number of items of pSequences is not tCount then
       throw "CoinXT: cxBtcSighashLegacy: the outpoint and sequence lists must be parallel and non-empty."
    end if
-   if pIndex < 1 or pIndex > tCount then
-      throw "CoinXT: cxBtcSighashLegacy: the input index is out of range (it is 1-based)."
-   end if
+   -- the index as DIGITS first (cxCheckedIndex, 2026-09-28): 1.5 passed the
+   -- range test and matched no input below, so no scriptCode was placed
+   put cxCheckedIndex(pIndex, 1, tCount, "cxBtcSighashLegacy", "the input index", \
+         "the input index is out of range (it is 1-based).") into tIndex
    put cxHexDecode(pScriptCodeHex) into tScript
    put cxUIntToBytesLE(pVersion, 4) & cxVarInt(tCount) into tBuf
    repeat with tI = 1 to tCount
       put tBuf & cxHexDecode(item tI of pOutpoints) into tBuf
-      if tI is pIndex then
+      if tI is tIndex then
          put tBuf & cxVarInt(the number of bytes of tScript) & tScript into tBuf
       else
          put tBuf & cxVarInt(0) into tBuf
@@ -7766,7 +7808,7 @@ function cxBtcSighashSegwit pVersion, pOutpoints, pSequences, pIndex, pScriptCod
 end cxBtcSighashSegwit
 
 private function cxBtcSighashSegwitInner pVersion, pOutpoints, pSequences, pIndex, pScriptCodeHex, pAmountSat, pOutputs, pLocktime, pSighashType
-   local tCount, tI, tPrevouts, tSequencesRaw, tOutputsRaw, tScript, tBuf, tOutCount
+   local tCount, tI, tPrevouts, tSequencesRaw, tOutputsRaw, tScript, tBuf, tOutCount, tIndex
    -- SIGHASH_ALL ONLY, AND IT IS REFUSED RATHER THAN APPROXIMATED.
    -- Neither preimage builder below branches on pSighashType: both always
    -- commit to every prevout, every sequence and every output, which IS the
@@ -7792,9 +7834,10 @@ private function cxBtcSighashSegwitInner pVersion, pOutpoints, pSequences, pInde
    if tCount is 0 or the number of items of pSequences is not tCount then
       throw "CoinXT: cxBtcSighashSegwit: the outpoint and sequence lists must be parallel and non-empty."
    end if
-   if pIndex < 1 or pIndex > tCount then
-      throw "CoinXT: cxBtcSighashSegwit: the input index is out of range (it is 1-based)."
-   end if
+   -- the index as DIGITS first (cxCheckedIndex, 2026-09-28): 1.5 passed the
+   -- range test and `item 1.5 of` chose an input by chunk rounding
+   put cxCheckedIndex(pIndex, 1, tCount, "cxBtcSighashSegwit", "the input index", \
+         "the input index is out of range (it is 1-based).") into tIndex
    if pOutputs is "" then
       throw "CoinXT: cxBtcSighashSegwit: the outputs list is required (BIP-143 commits to hashOutputs)."
    end if
@@ -7812,9 +7855,9 @@ private function cxBtcSighashSegwitInner pVersion, pOutpoints, pSequences, pInde
    put cxHexDecode(pScriptCodeHex) into tScript
    put cxUIntToBytesLE(pVersion, 4) into tBuf
    put tBuf & cxHash256(tPrevouts) & cxHash256(tSequencesRaw) into tBuf
-   put tBuf & cxHexDecode(item pIndex of pOutpoints) into tBuf
+   put tBuf & cxHexDecode(item tIndex of pOutpoints) into tBuf
    put tBuf & cxVarInt(the number of bytes of tScript) & tScript into tBuf
-   put tBuf & cxUIntToBytesLE(pAmountSat, 8) & cxUIntToBytesLE(item pIndex of pSequences, 4) into tBuf
+   put tBuf & cxUIntToBytesLE(pAmountSat, 8) & cxUIntToBytesLE(item tIndex of pSequences, 4) into tBuf
    put tBuf & cxHash256(tOutputsRaw) & cxUIntToBytesLE(pLocktime, 4) & cxUIntToBytesLE(pSighashType, 4) into tBuf
    return cxHash256(tBuf)
 end cxBtcSighashSegwitInner
@@ -7934,7 +7977,7 @@ function cxBtcSighashTaproot pVersion, pOutpoints, pSequences, pAmountsSat, pScr
 end cxBtcSighashTaproot
 
 private function cxBtcSighashTaprootInner pVersion, pOutpoints, pSequences, pAmountsSat, pScriptPubkeys, pOutputs, pIndex, pLocktime, pSighashType, pTapleafHex
-   local tCount, tI, tAnyoneCanPay, tBase, tBuf, tRaw, tSpk, tLeaf, tOutCount
+   local tCount, tI, tAnyoneCanPay, tBase, tBuf, tRaw, tSpk, tLeaf, tOutCount, tIndex
    -- the valid type set is BIP-341's own: 0x80 alone is NOT a type.
    if pSighashType is not 0 and pSighashType is not 1 and pSighashType is not 2 \
          and pSighashType is not 3 and pSighashType is not 129 \
@@ -7955,16 +7998,18 @@ private function cxBtcSighashTaprootInner pVersion, pOutpoints, pSequences, pAmo
          or the number of items of pScriptPubkeys is not tCount then
       throw "CoinXT: cxBtcSighashTaproot: the outpoint, sequence, amount and scriptPubKey lists must be parallel."
    end if
-   if pIndex < 1 or pIndex > tCount then
-      throw "CoinXT: cxBtcSighashTaproot: the input index is out of range (it is 1-based)."
-   end if
+   -- the index as DIGITS first (cxCheckedIndex, 2026-09-28): 1.5 passed the
+   -- range test and, under ANYONECANPAY, `item 1.5 of` chose an input by
+   -- chunk rounding
+   put cxCheckedIndex(pIndex, 1, tCount, "cxBtcSighashTaproot", "the input index", \
+         "the input index is out of range (it is 1-based).") into tIndex
    put 0 into tAnyoneCanPay
    put pSighashType into tBase
    if pSighashType >= 129 then
       put 1 into tAnyoneCanPay
       put pSighashType - 128 into tBase
    end if
-   if tBase is 3 and pIndex > the number of items of pOutputs then
+   if tBase is 3 and tIndex > the number of items of pOutputs then
       throw "CoinXT: cxBtcSighashTaproot: SIGHASH_SINGLE with no matching output is invalid under BIP-341."
    end if
    -- epoch 0x00, then the type, version and locktime.
@@ -8008,16 +8053,16 @@ private function cxBtcSighashTaprootInner pVersion, pOutpoints, pSequences, pAmo
       put tBuf & numToByte(2) into tBuf
    end if
    if tAnyoneCanPay is 1 then
-      put cxHexDecode(item pIndex of pScriptPubkeys) into tSpk
-      put tBuf & cxHexDecode(item pIndex of pOutpoints) into tBuf
-      put tBuf & cxUIntToBytesLE(item pIndex of pAmountsSat, 8) into tBuf
+      put cxHexDecode(item tIndex of pScriptPubkeys) into tSpk
+      put tBuf & cxHexDecode(item tIndex of pOutpoints) into tBuf
+      put tBuf & cxUIntToBytesLE(item tIndex of pAmountsSat, 8) into tBuf
       put tBuf & cxVarInt(the number of bytes of tSpk) & tSpk into tBuf
-      put tBuf & cxUIntToBytesLE(item pIndex of pSequences, 4) into tBuf
+      put tBuf & cxUIntToBytesLE(item tIndex of pSequences, 4) into tBuf
    else
-      put tBuf & cxUIntToBytesLE(pIndex - 1, 4) into tBuf
+      put tBuf & cxUIntToBytesLE(tIndex - 1, 4) into tBuf
    end if
    if tBase is 3 then
-      put tBuf & cxSha256(cxHexDecode(item pIndex of pOutputs)) into tBuf
+      put tBuf & cxSha256(cxHexDecode(item tIndex of pOutputs)) into tBuf
    end if
    if pTapleafHex is not "" then
       put cxHexDecode(pTapleafHex) into tLeaf
@@ -8253,9 +8298,17 @@ private function cxEth1559Body pChainId, pNonce, pMaxPriorityHex, pMaxFeeHex, pG
 end cxEth1559Body
 
 function cxEth1559Encode pChainId, pNonce, pMaxPriorityHex, pMaxFeeHex, pGas, pToHex, pValueHex, pDataHex, pRecid, pRHex, pSHex
-   local tBody, tRaw, tResult
+   local tBody, tRaw, tResult, tParity
+   -- THE Y-PARITY IS 0 OR 1 (2026-09-28; row #10's review, the same rule
+   -- cxEthLegacyEncode's recovery id took the day before). EIP-1559 writes
+   -- signature_y_parity itself, and it has two values; this took any whole
+   -- number to 2^53 (cxHexOfInt's bound), so a secp256k1 recovery id of 2
+   -- or 3, or a legacy v of 27 passed by habit, was signed into a
+   -- transaction no node accepts, with no word here. Settled as digits
+   -- first, before the body is built. Verified statically; needs an OXT pass.
+   put cxCheckedWhole(pRecid, "1", "cxEth1559Encode", "the y-parity") into tParity
    put cxEth1559Body(pChainId, pNonce, pMaxPriorityHex, pMaxFeeHex, pGas, pToHex, pValueHex, pDataHex) into tBody
-   put tBody & cxRlpUintFromHex(cxHexOfInt(pRecid)) into tBody
+   put tBody & cxRlpUintFromHex(cxHexOfInt(tParity)) into tBody
    put tBody & cxRlpUintFromHex(pRHex) & cxRlpUintFromHex(pSHex) into tBody
    put numToByte(2) & cxRlpEncodeList(tBody) into tRaw
    put cxHexEncode(tRaw) into tResult["raw"]
@@ -25194,7 +25247,7 @@ end cx1stThrowsTaproot
 
 command cx1stRunFailOpen
    local cx1tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
-   local cx1tProgram, cx1tDecoded, cx1tKey, cx1tMessage
+   local cx1tProgram, cx1tDecoded, cx1tKey, cx1tMessage, cx1tNode
    cx1stSection "fail-closed regressions"
    try
       -- EIP-55 verification must depend on the CALLER'S casing. If these come
@@ -25265,6 +25318,32 @@ command cx1stRunFailOpen
          put cx1tError into cx1tMessage
       end try
       cx1stAssertRefusal "a legacy Ethereum recovery id of 2 is refused (it wrote chain 2's v)", cx1tMessage, "cxEthLegacyEncode", "recovery id is more than 1"
+      -- and EIP-1559's y-parity is 0 or 1 too (2026-09-28): 27, a legacy v
+      -- passed by habit, was written into a transaction no node accepts
+      put "(did not throw)" into cx1tMessage
+      try
+         get cxEth1559Encode(1, 0, cx1kEth1559MaxPrio, cx1kEth1559MaxFee, 21000, cx1kEthTo, cx1kEth1559Value, "", 27, "", "")
+      catch cx1tError
+         put cx1tError into cx1tMessage
+      end try
+      cx1stAssertRefusal "an EIP-1559 y-parity of 27 is refused (it was written as given)", cx1tMessage, "cxEth1559Encode", "y-parity is more than 1"
+      -- THE INDEXES THE LIBRARY USES ARE DIGITS TOO (row #10's review,
+      -- 2026-09-28): cxHdDeriveChild took "1e1" as child 10 and an empty
+      -- index as child 0, and the sighash builders took an input index of 1.5
+      -- through their number range test to a chunk index. cxCheckedIndex
+      -- settles each on its characters first. The values cross as TEXT, and
+      -- the refusal comes before any key or hash is touched. Verified
+      -- statically; needs an OXT pass.
+      put cxHdFromSeed(cxHexDecode(cx1kBip32Seed1)) into cx1tNode
+      cx1stAssertRefusal "a child index written 1e1 is refused (it derived child 10)", cx1stThrowsText2("cxHdDeriveChild", cx1tNode, "1e1"), "cxHdDeriveChild", "written in digits"
+      cx1stAssertRefusal "an empty child index is refused (it derived child 0)", cx1stThrowsText2("cxHdDeriveChild", cx1tNode, ""), "cxHdDeriveChild", "written in digits"
+      put "(did not throw)" into cx1tMessage
+      try
+         get cxBtcSighashSegwit(1, cx1kTxOutpoint0 & comma & cx1kTxOutpoint1, "4294967278,4294967295", "1.5", cx1kTxScriptCode1, 600000000, cx1kTxOut0 & comma & cx1kTxOut1, 17, 1)
+      catch cx1tError
+         put cx1tError into cx1tMessage
+      end try
+      cx1stAssertRefusal "an input index of 1.5 is refused (it chose an input by chunk rounding)", cx1tMessage, "cxBtcSighashSegwit", "written in digits"
       -- An uppercase HRP used to produce a MIXED-case string, which BIP-173
       -- forbids and which this library's own decoder rejects.
       cx1stAssertRefusal "an uppercase HRP is refused", cx1stThrowsText3("cxBech32EncodeValues", "BC", "0", "bech32"), "cxBech32EncodeValues", "lowercase"

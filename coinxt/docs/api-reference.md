@@ -426,7 +426,11 @@ put cxBtcAddressP2PKH(tAccount["pubkey"]) into tAddress
 A path level may carry `'`, `h` or `H` for hardened. The parse is strict on
 purpose: a level that is not plain digits throws rather than being coerced,
 because `m/1e3` quietly becoming 1000 is a different wallet with no error
-anywhere.
+anywhere. `cxHdDeriveChild`'s `pIndex` is held to the same rule since
+2026-09-28: a run of digits from 0 to 4294967295 (a hardened child is 2^31 plus
+its number), where `"1e1"`, `"3.5"` and an empty index had derived children 10,
+3 and 0. A minus or a value past 2^32-1 keeps its old refusal. Verified
+statically; needs an OXT pass.
 
 ### `cxHdNeuter(pNode)`
 
@@ -490,7 +494,13 @@ one item per input or output, the same convention the RLP and bech32 layers use.
 > 2 * chain id + 35, so it takes a recovery id of 0 or 1 (EIP-155's two: a
 > larger one writes another chain's `v`, 2 on chain 1 being chain 2's `v` at
 > 0) and a chain id of at most 4503599627370478, the largest for which `v`
-> stays at most 2^53. Verified statically; needs an OXT pass.
+> stays at most 2^53. The input index the three sighash builders take
+> (`pIndex`, 1-based) is settled the same way since 2026-09-28: `1.5`, `1e0`
+> or an empty index is refused as not written in digits, where 1.5 had chosen
+> an input by chunk rounding (BIP-143, and BIP-341 under ANYONECANPAY) or, in
+> the legacy builder, placed the scriptCode on no input; 0, a minus or an index
+> past the list keeps its "out of range" refusal. Verified statically; needs
+> an OXT pass.
 
 **Byte helpers.**
 
@@ -538,7 +548,10 @@ compact `r`/`s` from `cxSignRecoverable`.
   list.
 - `cxEth1559Encode(pChainId, pNonce, pMaxPriorityHex, pMaxFeeHex, pGas, pToHex,
   pValueHex, pDataHex, pRecid, pRHex, pSHex)` - the signed typed transaction;
-  returns `["raw"]`, `["txhash"]`.
+  returns `["raw"]`, `["txhash"]`. `pRecid` is written as EIP-1559's
+  `signature_y_parity`, so it is 0 or 1 (since 2026-09-28; a 2, or a legacy
+  `v` of 27, was written into a transaction no node accepts). Verified
+  statically; needs an OXT pass.
 
 ## BIP-340 Schnorr and BIP-341 Taproot (ABI 6)
 

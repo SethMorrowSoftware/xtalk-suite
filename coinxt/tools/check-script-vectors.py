@@ -2258,7 +2258,22 @@ def check_integer_arguments(c, call, F):
     c.ck("cxEth1559Encode refuses a y-parity written 1e0 (it wrote 1)",
          outcome("cxEth1559Encode", 1, 0, F["m1559prio"], F["m1559fee"], 21000, to,
                  F["v1559"], "", "1e0", F["r1559hex"], F["s1559hex"]),
-         refused("cxHexOfInt", "the value", "digits"))
+         refused("cxEth1559Encode", "the y-parity", "digits"))
+    # EIP-1559's signature_y_parity is 0 or 1 (the 2026-09-28 review, the
+    # legacy recovery id's rule): 2 (a secp256k1 recovery id EIP-1559 has no
+    # spelling for) and 27 (a legacy v passed by habit) were written into a
+    # transaction no node accepts. The control: the parity the vector signed
+    # with still writes the reference's raw transaction, byte for byte.
+    for parity in (2, 27):
+        c.ck("cxEth1559Encode refuses a y-parity of %d (it wrote it)" % parity,
+             outcome("cxEth1559Encode", 1, 0, F["m1559prio"], F["m1559fee"], 21000, to,
+                     F["v1559"], "", parity, F["r1559hex"], F["s1559hex"]),
+             "refused: CoinXT: cxEth1559Encode: the y-parity is more than 1, %s"
+             % _ROW10_OVER)
+    got = outcome("cxEth1559Encode", 1, 0, F["m1559prio"], F["m1559fee"], 21000, to,
+                  F["v1559"], "", F["recid1559"], F["r1559hex"], F["s1559hex"])
+    c.ck("and the vector's own y-parity still writes the reference's raw (control)",
+         got["raw"] if isinstance(got, dict) else got, F["raw1559"].hex())
 
     # ---- cxEthLegacyEncode: v is COMPUTED from the chain id ---------------
     # v = recid + 2 * chainId + 35, and EIP-155 has room for a recovery id of
@@ -2300,6 +2315,103 @@ def check_integer_arguments(c, call, F):
     c.ck("cxEthLegacyEncode refuses an empty recovery id",
          outcome("cxEthLegacyEncode", 9, gp, 21000, to, val, "", 1, "", rr, ss),
          refused("cxEthLegacyEncode", "the recovery id", "digits"))
+    check_index_arguments(c, call, F, outcome)
+
+
+# ---- the indexes the library USES, settled as digits (row #10's review) ---
+#
+# The 2026-09-28 review of row #10, by value origin: cxCheckedWhole settled
+# what the encoders WRITE, and the integers the library USES as an index were
+# still range-checked as NUMBERS and then used as given. cxHdDeriveChild took
+# "1e1" as child 10, "3.5", " 3" and "+3" as child 3 and an EMPTY index as
+# child 0 (a wrong-but-plausible key, rule 4); the three sighash builders took
+# an input index of 1.5 through their range test to `item 1.5 of` (an input
+# chosen by chunk rounding: BIP-143, and BIP-341 under ANYONECANPAY) and to
+# `tI is 1.5` (the legacy preimage then carried NO scriptCode). cxCheckedIndex
+# settles each on its characters; a minus and an out-of-range value keep each
+# handler's old words. Every refusal below was an answer on the old code (run
+# headlessly against it), and each guard undone must fail this block.
+_INDEX_DIGITS = "must be a whole number written in digits."
+_CHILD_RANGE = "a child index must be between 0 and 2^32-1."
+_INPUT_RANGE = "the input index is out of range (it is 1-based)."
+
+
+def check_index_arguments(c, call, F, outcome):
+    c.note("\nphase 5: the indexes the library uses, settled as digits "
+           "(row #10's review)")
+    master = call("cxHdFromSeed", bytes.fromhex(BIP32_VECTORS[0][0]))
+
+    def xprv(got):
+        return call("cxXprv", got) if isinstance(got, dict) else got
+
+    # ---- cxHdDeriveChild: the child index -------------------------------
+    ten = xprv(outcome("cxHdDeriveChild", master, 10))
+    c.ck("cxHdDeriveChild reads a child index written with leading zeros as its "
+         "digits (control)", xprv(outcome("cxHdDeriveChild", master, "0010")), ten)
+    c.ck("and derives 4294967295, the widest index, as before (control)",
+         xprv(outcome("cxHdDeriveChild", master, 4294967295)),
+         xprv(outcome("cxHdDeriveChild", master, "4294967295")))
+    for value, was in (("1e1", "child 10"), ("10.0", "child 10"), ("3.5", "child 3"),
+                       (" 3", "child 3"), ("+3", "child 3"), ("", "child 0")):
+        c.ck("cxHdDeriveChild refuses a child index written %r (it derived %s)"
+             % (value, was), outcome("cxHdDeriveChild", master, value),
+             "refused: CoinXT: cxHdDeriveChild: a child index %s" % _INDEX_DIGITS)
+    for value in (-1, "-1", 4294967296, "9" * 20):
+        c.ck("and %r keeps its old refusal, word for word" % (value,),
+             outcome("cxHdDeriveChild", master, value),
+             "refused: CoinXT: cxHdDeriveChild: %s" % _CHILD_RANGE)
+
+    # ---- the sighash builders: the input index --------------------------
+    ops, seqs, outs = F["outpoints"], F["sequences"], F["outputs"]
+
+    def legacy(idx):
+        return outcome("cxBtcSighashLegacy", 1, ops, seqs, idx, F["sc0"], outs, 17, 1)
+
+    def segwit(idx):
+        return outcome("cxBtcSighashSegwit", 1, ops, seqs, idx, F["sc1"], 0x23c34600,
+                       outs, 17, 1)
+
+    c.ck("cxBtcSighashLegacy signs input 1 written \"0001\" as BIP-143's own "
+         "vector does input 1 (control)", legacy("0001"), F["d0"].hex())
+    c.ck("cxBtcSighashSegwit signs input 2 as the vector does (control)",
+         segwit("2"), F["d1"].hex())
+    for label, fn, half in (("cxBtcSighashLegacy", legacy,
+                             "a digest with no input's scriptCode"),
+                            ("cxBtcSighashSegwit", segwit,
+                             "an input chosen by chunk rounding")):
+        for value, was in ((1.5, half), ("1e0", "input 1"), ("2.0", "input 2"),
+                           ("", "its out-of-range refusal; the words change")):
+            c.ck("%s refuses an input index of %r (it gave %s)" % (label, value, was),
+                 fn(value), "refused: CoinXT: %s: the input index %s"
+                 % (label, _INDEX_DIGITS))
+        for value in (0, 3, "-1"):
+            c.ck("and %s keeps its old refusal of %r, word for word" % (label, value),
+                 fn(value), "refused: CoinXT: %s: %s" % (label, _INPUT_RANGE))
+
+    # BIP-341: only under ANYONECANPAY is the index a chunk index; otherwise
+    # it is written (index - 1, through cxUIntToBytesLE, which row #10
+    # already bounds). The reference digest at input 1 (0-based 0), 0x81.
+    op_list = [bytes.fromhex(h) for h in ops.split(",")]
+    seq_list = [int(s) for s in seqs.split(",")]
+    out_list = [bytes.fromhex(h) for h in outs.split(",")]
+    spk = bytes.fromhex(F["spk0"])
+    amts = "1000,2000"
+    spks = F["spk0"] + "," + F["spk0"]
+
+    def taproot(idx, hash_type=129):
+        return outcome("cxBtcSighashTaproot", 2, ops, seqs, amts, spks, outs, idx, 0,
+                       hash_type, "")
+
+    want = REF.btc_sighash_taproot(2, 0, op_list, [1000, 2000], [spk, spk], seq_list,
+                                   out_list, 0, 0x81)
+    c.ck("cxBtcSighashTaproot signs input 1 under ANYONECANPAY as the reference "
+         "does (control)", taproot(1), want.hex())
+    for value in (1.5, "1e0", "01.0"):
+        c.ck("cxBtcSighashTaproot refuses an input index of %r under ANYONECANPAY "
+             "(it chose an input by chunk rounding)" % (value,), taproot(value),
+             "refused: CoinXT: cxBtcSighashTaproot: the input index %s" % _INDEX_DIGITS)
+    c.ck("and keeps its old refusal of 3, word for word", taproot(3),
+         "refused: CoinXT: cxBtcSighashTaproot: %s" % _INPUT_RANGE)
 
 
 # EACH GUARD, UNDONE (row #10). The shipped line and the spelling that stands
@@ -2326,6 +2438,47 @@ _ROW10_MUTATIONS = (
     # recovery ids 0 to 3 and the chain id that leaves room for 3. It passes
     # every refusal above but ids 2 and 3, which it writes as chain 2's v
     # (the 2026-09-26 review), so the block must fail on it.
+    ("cxEth1559Encode's y-parity, taken as it came (cxHexOfInt's 2^53 alone)",
+     [('   put cxCheckedWhole(pRecid, "1", "cxEth1559Encode", "the y-parity") into tParity\n',
+       '   put pRecid into tParity\n')]),
+    # the review's index guards (2026-09-28), each undone to the range test it
+    # replaced, which took any number, and the index then used as given
+    ("cxHdDeriveChild's child index, a number range test",
+     [('   put cxCheckedIndex(pIndex, 0, 4294967295, "cxHdDeriveChild", "a child index", \\\n'
+       '         "a child index must be between 0 and 2^32-1.") into tIndex\n',
+       '   if pIndex < 0 or pIndex > 4294967295 then\n'
+       '      throw "CoinXT: cxHdDeriveChild: a child index must be between 0 and 2^32-1."\n'
+       '   end if\n   put pIndex into tIndex\n')]),
+    ("cxBtcSighashLegacy's input index, a number range test",
+     [('   put cxCheckedIndex(pIndex, 1, tCount, "cxBtcSighashLegacy", "the input index", \\\n'
+       '         "the input index is out of range (it is 1-based).") into tIndex\n',
+       '   if pIndex < 1 or pIndex > tCount then\n'
+       '      throw "CoinXT: cxBtcSighashLegacy: the input index is out of range (it is 1-based)."\n'
+       '   end if\n   put pIndex into tIndex\n')]),
+    ("cxBtcSighashSegwit's input index, a number range test",
+     [('   put cxCheckedIndex(pIndex, 1, tCount, "cxBtcSighashSegwit", "the input index", \\\n'
+       '         "the input index is out of range (it is 1-based).") into tIndex\n',
+       '   if pIndex < 1 or pIndex > tCount then\n'
+       '      throw "CoinXT: cxBtcSighashSegwit: the input index is out of range (it is 1-based)."\n'
+       '   end if\n   put pIndex into tIndex\n')]),
+    ("cxBtcSighashTaproot's input index, a number range test",
+     [('   put cxCheckedIndex(pIndex, 1, tCount, "cxBtcSighashTaproot", "the input index", \\\n'
+       '         "the input index is out of range (it is 1-based).") into tIndex\n',
+       '   if pIndex < 1 or pIndex > tCount then\n'
+       '      throw "CoinXT: cxBtcSighashTaproot: the input index is out of range (it is 1-based)."\n'
+       '   end if\n   put pIndex into tIndex\n')]),
+    # A PLAUSIBLE WRONG FIX: `is an integer` in front of the old range test.
+    # It refuses 1.5 and 3.5, but the engine (and the interpreter, trap 21)
+    # answers yes to "1e0", "10.0" and "+3", so the block must still fail
+    ("cxHdDeriveChild's child index asking `is an integer`",
+     [('   put cxCheckedIndex(pIndex, 0, 4294967295, "cxHdDeriveChild", "a child index", \\\n'
+       '         "a child index must be between 0 and 2^32-1.") into tIndex\n',
+       '   if pIndex is not an integer then\n'
+       '      throw "CoinXT: cxHdDeriveChild: a child index must be a whole number written in digits."\n'
+       '   end if\n'
+       '   if pIndex < 0 or pIndex > 4294967295 then\n'
+       '      throw "CoinXT: cxHdDeriveChild: a child index must be between 0 and 2^32-1."\n'
+       '   end if\n   put pIndex into tIndex\n')]),
     ("cxEthLegacyEncode's recovery id bounded at 3 (secp256k1's range, not "
      "EIP-155's)",
      [('   put cxCheckedWhole(pRecid, "1", "cxEthLegacyEncode", "the recovery id") \\\n'

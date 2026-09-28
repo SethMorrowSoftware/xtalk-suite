@@ -599,7 +599,12 @@ fee and weight, the Core replies' counts): digits bounded at their parse
 reply whose coins would sum past 2^53 is refused before anything is committed,
 the chain tip a scan reports included, and every sum the wallet takes of coin
 values (coin selection, the balance, MAX, an address's holding, CPFP, RBF, the
-review) goes through `cwAmountAdd`. Not yet: the wallet's own typed and saved
+review) goes through `cwAmountAdd`. Core's fee, which listtransactions writes
+as a negative BTC amount, loses its minus as TEXT since 2026-09-28, so the
+parser reads Core's own eight decimals; it lost it by arithmetic, and the
+engine writes a computed number with the default numberFormat's six decimals
+(0.00001410 BTC as 1400 sat; INFERRED from the documented default). Not yet:
+the wallet's own typed and saved
 integers (the account number, a multisig's m, the Send screen's locktime, a
 coin typed on the offline Coins screen, and the lock recipes, the account and
 m read back from the wallet file) still ask `is an integer` or take `+ 0`

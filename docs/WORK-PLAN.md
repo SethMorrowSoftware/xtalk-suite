@@ -523,7 +523,15 @@ keeping the scaffold for its report.
   refuse a coin height past 2^53 and commit its chain tip after the last check
   that can refuse it, and held every
   source-pinned sum by its writes, planting a bare `+` into each as a wrong fix.
-  Verified statically; needs an OXT pass.
+  A second review (2026-09-28) settled the indexes the library USES on their digits
+  too (`cxCheckedIndex`: `cxHdDeriveChild` took "1e1" as child 10 and an empty index
+  as child 0, and the three sighash builders took an input index of 1.5 through a
+  number range test to a chunk index), held `cxEth1559Encode`'s y-parity to the
+  legacy recovery id's 0 or 1 (coin-selftest and the paste carry four lines for these
+  for the next run), and took Core's listtransactions fee's minus off as text (off by
+  arithmetic, the engine writes the fee with the default numberFormat's six decimals,
+  INFERRED), each held by vectors its old line fails. Verified statically; needs an
+  OXT pass.
 - Hex compares off `is`'s number path (engine note 2.11), 2026-09-26: check 23's 27 wallet
   findings through `cwSameHex` / `cwHexCompare` (one a version number, renamed), then a
   hand sweep's 15 more no name rule sees (PSBT signing's three scriptPubKey checks,
