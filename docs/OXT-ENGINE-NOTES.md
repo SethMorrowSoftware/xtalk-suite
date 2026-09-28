@@ -174,10 +174,11 @@ run, box2dxt harness v32 folded in, 385/0; runbook section 8; a 64-bit OXT by
 the maintainer's account; the same two lines again on 2026-09-25, and in both
 Run alls of one launch on 2026-09-26, OXT 9.6.3 by that evening's preflight,
 INFERRED for the paste): both halves printed the dictionary's answer. "a
-caller's tab does NOT reach a called handler on Win32 (it saw comma)", and "a Kit call left its caller's delimiter
-alone on Win32 (tab in, tab out)". So on that engine an itemDelimiter set in
-one handler is invisible to the handlers it calls and cannot leak back out of
-them: the (original) title's "global" is WRONG there for the itemDelimiter. The probe
+caller's tab does NOT reach a called handler on Win32 (it saw comma)", and "a
+Kit call left its caller's delimiter alone on Win32 (tab in, tab out)". So on
+that engine an itemDelimiter set in one handler is invisible to the handlers
+it calls and cannot leak back out of them: the (original) title's "global" is
+WRONG there for the itemDelimiter. The probe
 reads only `the itemDelimiter`; the lineDelimiter, which the dictionary
 describes the same way, was not probed. This entry's undated observations
 (platforms unknown) were most likely the leak that both readings share - a
@@ -604,16 +605,16 @@ two agree. Items 1 and 5, which the engine source decides, read as it
 predicts. Items 2, 3, 4 and 6 are the ones the C library under the engine
 decides (`strtod` for "inf", "nan" and the hex float, `isspace` in the
 engine's locale for the NO-BREAK SPACE), and the Windows engine's C runtime
-(MSVC's, as this note has called it; which runtime that OXT build links was
-not read) on OXT 9.6.3 and Linux's (glibc, INFERRED from the distribution) on
-9.7.0-dp-1 answer all four alike: as a C99 `strtod` in a locale where 0xA0 is
-no space. The readings are OBSERVED; each cause stays INFERRED, as on Linux.
-Not shown: macOS, a 32-bit engine, another locale, and every other spelling
-(below). The first three probe lines printed as on 2026-09-25 again.
-macOS has not read the line. Other spellings of the same words are INFERRED from
-C99's `strtod` grammar (DOCUMENTED there, not probed here): "INF",
-"Infinity" and "+inf" in any case are +inf, "-inf" is -inf, "NaN", "NAN" and
-"nan(...)" are NaN, and "0x1p4" is 16.
+(presumably MSVC's; which runtime that OXT build links was not read) on OXT
+9.6.3 and Linux's (glibc, INFERRED from the distribution) on 9.7.0-dp-1
+answer all four alike: as a C99 `strtod` in a locale where 0xA0 is no space.
+The readings are OBSERVED; each cause stays INFERRED, as on Linux. Not shown:
+macOS (which has not read the line), a 32-bit engine, another locale, and
+every other spelling (below). The first three probe lines printed as on
+2026-09-25 again. Other spellings of the same words are INFERRED from C99's
+`strtod` grammar (DOCUMENTED there, not probed here): "INF", "Infinity" and
+"+inf" in any case are +inf, "-inf" is -inf, "NaN", "NAN" and "nan(...)" are
+NaN, and "0x1p4" is 16.
 **Free text meets the same parse** (INFERRED from the readings above and from
 this note's source reading; not observed at any site). A comparison reads its
 operands, not where they came from, so a name, label, tag, JSON key, route
@@ -645,8 +646,9 @@ spellings, or brings a "nan". That holds until work plan suite-wide #22
 teaches it the readings; the line itself is a printed diagnostic, never a
 check, so a different reading on another engine prints, it does not fail.
 **Does NOT mean:** that macOS reads the same (its C library has not been
-read; Linux and Windows agree, above), that such text is unsafe everywhere (an array key keeps the raw text,
-and `switch` matches its cases as text, both below), or that one value
+read; Linux and Windows agree, above), that such text is unsafe everywhere
+(an array key keeps the raw text, and `switch` matches its cases as text,
+both below), or that one value
 compared with ITSELF answers false (the source's shortcut, above, answers
 true first; not probed).
 holde-em's `heHexEq` pins, green in the same runs, name bare `is`'s answer only
@@ -879,10 +881,12 @@ the three lines again, a repeat on one machine. **On Windows too, OBSERVED
 2026-09-26** (the same batch paste, both Run alls of one launch on the
 machine of 2026-09-24 and 2026-09-25, by the maintainer's account; OXT 9.6.3
 by that evening's preflight, INFERRED for the paste; runbook section 8): the
-three lines PASSED in both runs, so on that engine too the exact test
-refused both near-integers, with the refusal's own message, and said yes to
-"3e0". The old form against a near-integer stays unrun (the correction
-above).
+three lines PASSED in both runs, each refusal asserting its own message, so on
+that engine too the exact test refused both near-integers (for the second,
+INFERRED as on Linux: the range test shares the message, and 2.10's near-zero
+branch, OBSERVED on Windows on 2026-09-25, cannot call -1e-15 below 0) and
+said yes to "3e0". The old form against a near-integer stays unrun (the
+correction above).
 `is a number` and `is an integer` (exec-math.cpp, `MCMathEvalIsANumber`,
 `MCMathEvalIsAnInteger`) convert the operand as 2.11 describes
 (`MCU_strtor8` for text) and then ask a plain C `d == floor(d)`: no
