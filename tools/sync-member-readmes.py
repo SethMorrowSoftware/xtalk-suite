@@ -99,6 +99,10 @@ WHY = {
     ("torrentxt", "sodiumxt"): "the committed x86_64-linux binary, which tier 2 "
                                "of `tools/check-script-vectors.py` runs the "
                                "verifier and the M9 feed-seal KAT on",
+    ("datachannelxt", "riptide"): "`tools/check-demo-boot.py`, the runner "
+                                  "`tools/check-script-vectors.py` drives the "
+                                  "dht-chat's signaling parse through",
+    ("datachannelxt", "nostrxt"): "what riptide's runner loads at import time",
 }
 
 

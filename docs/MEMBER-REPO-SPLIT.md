@@ -173,6 +173,8 @@ written closed by hand rather than walked transitively (the registry says why):
 
 | Member | Gate siblings | Why |
 |---|---|---|
+| torrentxt | riptide, nostrxt, sodiumxt | `check-script-vectors.py` runs the demos' Model C handlers through riptide's runner (which loads nostrxt's interpreter); its tier 2 runs against the committed sodiumxt binary |
+| datachannelxt | riptide, nostrxt | `check-script-vectors.py` runs the dht-chat's signaling parse through riptide's runner (since 2026-09-27) |
 | nostrxt | coinxt, sodiumxt | tier 2 of `check-script-vectors.py` runs against the committed x86_64-linux binaries |
 | riptide | nostrxt, coinxt | `lcs-interp.py`, the nostrxt library and oracle are loaded; the committed coinxt binary signs |
 | coinxt | riptide, nostrxt | `check-wallet-boot.py` reuses riptide's boot runner, which loads nostrxt's interpreter and oracle |
