@@ -633,6 +633,26 @@ if [ -f tools/check-suite-ui-boot.py ]; then
   echo "== suite: tools/check-suite-ui-boot.py =="
   python3 tools/check-suite-ui-boot.py
 fi
+
+# --- suite-level: and the windows beside the paste give back only their holds -
+# ENet's init is process-wide and refcounted in its shim (the release that
+# reaches zero destroys every host in the process), and dcCleanup frees every
+# DataChannel peer. The paste counts its holds (check 18 above, and the board
+# boot's transport scenario); enetxt's own enet-selftest and the suite closing
+# pass count theirs the same way since 2026-09-26 (work plan enetxt #4,
+# suite-wide #20), and enetxt's two chat demos take at most one flagged hold
+# since that fix's review (2026-09-27). This drives all four through the same
+# runner and models, beside another stack's hold, host and peer, plus a static
+# routing half. Logic only; it upgrades no label. The fixture runs FIRST,
+# planting each old line back.
+if [ -f tools/test-transport-holds.py ]; then
+  echo "== suite: tools/test-transport-holds.py =="
+  python3 tools/test-transport-holds.py
+fi
+if [ -f tools/check-transport-holds.py ]; then
+  echo "== suite: tools/check-transport-holds.py =="
+  python3 tools/check-transport-holds.py
+fi
 # tools/install-release-binaries.py is the one piece of code standing between a
 # freshly built artifact and a committed binary, and until now NOTHING ran it
 # except release-binaries.yml - the gates were silent about the tool whose whole

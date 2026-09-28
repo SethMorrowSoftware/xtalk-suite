@@ -245,6 +245,10 @@ because a harness once ran against a stale in-memory library and reported failur
   holds only through the core's counted `suEnInit`/`suEnRelease` and `suDcInit`/`suDcRelease`,
   the two folds' inits rewritten to them (work plan suite-wide #16). Check 18 refuses any reachable
   call outside those four; `check-suite-ui-boot.py` drives them beside a modelled other stack.
+  `enet-selftest` and the closing pass count their own holds the same way since 2026-09-26
+  (enetxt #4, suite-wide #20), and enetxt's two chat demos take at most one flagged hold
+  since 2026-09-27, all held by `check-transport-holds.py` (fixture
+  `test-transport-holds.py`); all still need an OXT pass.
 - **box2dxt's fold**, each mechanism asserting its inputs exist: `strip_spans` cuts the harness's
   carried Kit (embedded once, from `src/`); `drop_extra` drops `openCard`, `closeCard` and
   `buildStUI`; `keep_names` keeps `b2kFell`, `b2kSensorEnter` and `b2kContact` unprefixed, because

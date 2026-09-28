@@ -162,13 +162,14 @@ script "xTalkSuiteSelfTest"
 -- enet-selftest or a chat demo could end that window's hosts (review,
 -- 2026-09-25; work plan suite-wide #16). It now gives back exactly the holds
 -- it took and no more: every enInitialize here is counted in sSuEnHeld
--- (suEnInit, suEnRelease; THE PASTE'S HOLD, below). The reverse direction is
--- enetxt's own, and it is not the end of enet-selftest's RUN (its stFinish
--- pairs the run's two enInitialize calls) but its stCleanup: on its close and
--- on its Re-run it calls enDeinitialize once more, bare. So do not close
--- enet-selftest or press its Re-run while a run here holds ENet (the enetxt
--- row, the cross row, Run all): the cross row holds one, and would lose its
--- loopback hosts. DataChannelXT
+-- (suEnInit, suEnRelease; THE PASTE'S HOLD, below). The reverse direction was
+-- enetxt's own: enet-selftest's stCleanup called enDeinitialize once more,
+-- bare, on its close and on its Re-run, so closing it while a run here held
+-- ENet (the enetxt row, the cross row, Run all) could end this paste's
+-- loopback hosts. Since 2026-09-26 it counts its holds the same way
+-- (stEnInit, stEnRelease; work plan enetxt #4), and so does the suite
+-- closing pass (suite-wide #20): verified statically and in the headless
+-- model (tools/check-transport-holds.py); needs an OXT pass. DataChannelXT
 -- is the one this cannot settle from script, so for it the old advice
 -- stands: dcCleanup is not counted at all (it frees EVERY peer and channel
 -- in the process) and its event queue is one per process, so a run that
@@ -202,8 +203,9 @@ script "xTalkSuiteSelfTest"
 -- syntax, byte-exact compares only under `set the caseSensitive to true` and
 -- never between two number-like texts (engine note 2.11), all
 -- declarations at handler top, and teardown calls written bare in statement
--- position, which is enetxt's own shipped teardown idiom (enet-lan-chat line
--- 220, enet-selftest line 371).
+-- position, which is enetxt's own shipped teardown idiom (enet-lan-chat's
+-- ecStop; enet-selftest's stCleanup wrote it so too until 2026-09-26, when
+-- its release moved into expression position to be counted, as below).
 --
 -- That last one is NOT a style choice, and this comment used to say it was.
 -- It read: "datachannelxt spells the same thing dcCleanup(); BOTH forms are
@@ -587,6 +589,7 @@ local en1sSentBinary       -- what the client sent (kept for byte-exact compare)
 local en1sSawServerDisc    -- "true" once the server drained enetDisconnect
 local en1sDeadline         -- the async phase's drop-dead time (ms clock)
 local en1sPhase            -- "", "connecting", "messaging", "binary", "closing", "done"
+local en1sStEnHeld
 local en1sTotal, en1sPassed, en1sFailed, en1sSkipped
 local en1sResultText          -- the accumulated PASS/FAIL/SKIP/section lines
 local en1sStRunDone           -- "true" once the run finished (drives the color)
@@ -26297,9 +26300,10 @@ command en1stRun
 
    en1stSection "lifecycle & diagnostics"
    -- GENERATED (tools/build-suite-selftest.py): both calls go through the
-   -- suite core's suEnInit, which counts each hold this paste takes, so the
-   -- core gives back exactly that many and never another open stack's (this
-   -- harness's own teardown is not folded). Work plan suite-wide #16.
+   -- suite core's suEnInit, not this harness's own en1stEnInit, whose count
+   -- only its teardown (not folded here) gives back. The core gives back
+   -- exactly the holds it counted, never another open stack's. Work plan
+   -- suite-wide #16 (and enetxt #4 for the harness's own count).
    en1stAssert "enInitialize returns 0", suEnInit() is 0
    en1stAssert "enInitialize idempotent", suEnInit() is 0
    en1stAssert "enLibraryVersion names enet", enLibraryVersion() begins with "enet "
@@ -26531,8 +26535,14 @@ command en1stFinish
       en1stAssert "double destroy is a no-op 0", enHostDestroy(en1sServer) is 0
       en1stAssert "enHostDestroy(client) is 0", enHostDestroy(en1sClient) is 0
    end if
-   en1stAssert "enDeinitialize returns 0", enDeinitialize() is 0
-   en1stAssert "extra deinitialize is a no-op 0", enDeinitialize() is 0
+   -- EXACTLY the holds this run took (THE HOLD, above en1stTinyData). These
+   -- were two bare enDeinitialize calls until 2026-09-26, the second
+   -- labelled "extra deinitialize is a no-op 0" - but the shim counts both
+   -- of en1stRun's initializes, so the second was the call that reached zero,
+   -- and the no-op this label promises was en1stCleanup's, which took another
+   -- window's hold. The no-op leg now runs only where it IS one.
+   en1stEnRelease true
+   en1stEnNoOpLeg
    put empty into en1sServer
    put empty into en1sClient
    put "done" into en1sPhase
@@ -26553,15 +26563,69 @@ command en1stCleanup
    end if
    put empty into en1sServer
    put empty into en1sClient
-   -- bare command form: OXT cannot compile a zero-argument name() statement;
-   -- guarded so closing a stack whose extension is missing (the run already
-   -- threw loudly at enInitialize) cannot throw a second time from en1closeStack
+   -- ONLY the holds this stack still has (THE HOLD, below): none after a
+   -- finished run, none on a close with nothing run, and a live run's two
+   -- on a close or Re-run that cuts it short. This was a bare enDeinitialize
+   -- until 2026-09-26, on every close and every Re-run, which gave back a
+   -- hold another window had taken and, at its last one, ended that window's
+   -- hosts (the suite work plan's enetxt #4). Guarded so a close after a run
+   -- that threw cannot throw a second time from en1closeStack.
    try
-      enDeinitialize
+      en1stEnRelease false
    catch en1tErr
       -- extension not installed; nothing to release
    end try
 end en1stCleanup
+
+function en1stEnInit
+   local en1tR
+   put enInitialize() into en1tR
+   if en1tR is 0 then
+      if en1sStEnHeld is not an integer then
+         put 0 into en1sStEnHeld
+      end if
+      add 1 to en1sStEnHeld
+   end if
+   return en1tR
+end en1stEnInit
+
+command en1stEnRelease pAssert
+   local en1tR, en1tCalls, en1tAllZero
+   if en1sStEnHeld is not an integer then
+      put 0 into en1sStEnHeld
+   end if
+   put 0 into en1tCalls
+   put true into en1tAllZero
+   repeat while en1sStEnHeld > 0
+      subtract 1 from en1sStEnHeld
+      add 1 to en1tCalls
+      put enDeinitialize() into en1tR
+      if en1tR is not 0 then
+         put false into en1tAllZero
+      end if
+   end repeat
+   if pAssert is true and en1tCalls > 0 then
+      en1stAssert "enDeinitialize returns 0", en1tAllZero
+      en1stNote "one enDeinitialize for each of this run's" && en1tCalls && "counted enInitialize calls, and no more"
+   end if
+end en1stEnRelease
+
+command en1stEnNoOpLeg
+   local en1tProbe, en1tWhy
+   put enHostCreateClient(1, 1, 0, 0) into en1tProbe
+   put empty into en1tWhy
+   if en1tProbe is 0 then
+      put enLastError() into en1tWhy
+   end if
+   if en1tProbe is 0 and en1tWhy is "call enInitialize first" then
+      en1stAssert "extra deinitialize is a no-op 0", enDeinitialize() is 0
+   else if en1tProbe is an integer and en1tProbe > 0 then
+      enHostDestroy en1tProbe
+      en1stSkip "extra deinitialize is a no-op 0", "another stack holds ENet (a probe host was created, and destroyed); at its count this call would give back that stack's hold"
+   else
+      en1stSkip "extra deinitialize is a no-op 0", "could not tell that ENet is uninitialized (" & en1tProbe & ":" && en1tWhy & "), so the call was not made"
+   end if
+end en1stEnNoOpLeg
 
 function en1stTinyData
    return textEncode("x", "utf-8")

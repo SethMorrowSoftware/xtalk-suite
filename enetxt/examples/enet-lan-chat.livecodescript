@@ -17,7 +17,8 @@ script "EnetLanChat"
 --   * Channel 0 carries chat (reliable); the connect data carries a tiny
 --     protocol version so mismatched builds refuse loudly.
 --   * closeStack calls enDeinitialize - the one mandatory teardown (bare
---     command form: OXT cannot compile a zero-argument `name()` statement).
+--     command form: OXT cannot compile a zero-argument `name()` statement) -
+--     and only for the one hold ecStart took: the count is process-wide.
 --
 -- HOW TO USE (two+ machines on a LAN, or two stacks on one machine):
 --   1. Install the enetxt extension on both. Paste THIS file into a stack
@@ -857,22 +858,28 @@ end ecClearGeneratedUI
 -- ---- startup / teardown ------------------------------------------------------
 command ecStart
    local tR
-   -- probe the extension with a guarded call; fail closed with a clear
-   -- message when it is missing (the family's SodiumXT probe pattern)
-   put empty into sHaveEn
-   try
-      put enInitialize() into tR
-   catch tErr
-      ecLog "The enetxt extension is not installed (org.openxtalk.library.enet) - install it and reopen this stack."
-      uiStatus "enetxt NOT loaded: install org.openxtalk.library.enet and reopen.", "bad"
-      exit ecStart
-   end try
-   if tR is not 0 then
-      ecLog "enetxt failed to initialise:" && enLastError()
-      uiStatus "enetxt failed to initialise - see the log.", "bad"
-      exit ecStart
+   -- ONE ENet hold per window (enetxt CLAUDE.md gotcha 7): sHaveEn is "true"
+   -- exactly while this stack holds the one enInitialize that ecStop gives
+   -- back. The init count is process-wide, so a re-fired openStack keeps the
+   -- hold it has instead of taking a second that nothing gives back (until
+   -- 2026-09-27 this cleared the flag and initialized again).
+   if sHaveEn is not "true" then
+      -- probe the extension with a guarded call; fail closed with a clear
+      -- message when it is missing (the family's SodiumXT probe pattern)
+      try
+         put enInitialize() into tR
+      catch tErr
+         ecLog "The enetxt extension is not installed (org.openxtalk.library.enet) - install it and reopen this stack."
+         uiStatus "enetxt NOT loaded: install org.openxtalk.library.enet and reopen.", "bad"
+         exit ecStart
+      end try
+      if tR is not 0 then
+         ecLog "enetxt failed to initialise:" && enLastError()
+         uiStatus "enetxt failed to initialise - see the log.", "bad"
+         exit ecStart
+      end if
+      put "true" into sHaveEn
    end if
-   put "true" into sHaveEn
    ecLog "Ready (" & enLibraryVersion() & "). Host a room or Join one."
    uiStatus "Ready (" & enLibraryVersion() & "). Host, or Join a host's address.", "ok"
    -- arm the dashboard chain ONCE; a re-fired openStack must not stack a
@@ -897,15 +904,25 @@ command ecStop
    catch tErr
       -- helpers stack already gone; nothing was polling
    end try
-   -- the one mandatory teardown: destroys any surviving hosts and releases
-   -- the socket layer (bare command form - see the header comment). Guarded
-   -- like the ecStart probe: when the extension is missing, quitting the
-   -- stack must not throw out of closeStack.
-   try
-      enDeinitialize
-   catch tErr
-      -- extension not installed; nothing to release
-   end try
+   -- the one mandatory teardown: releases the socket layer (bare command
+   -- form - see the header comment), and ONLY the hold ecStart took (enetxt
+   -- CLAUDE.md gotcha 7). The init count is process-wide and the release
+   -- that reaches zero destroys every host in the process, so until
+   -- 2026-09-27, when this call ran on every close, a close after a REFUSED
+   -- enInitialize (or with ecStart never reached) gave back another window's
+   -- hold and ended its hosts. The flag comes down BEFORE the call, so a
+   -- second close gives back nothing. Guarded like the ecStart probe: quitting
+   -- the stack must not throw out of closeStack.
+   -- (Verified statically and in the suite's headless model,
+   -- tools/check-transport-holds.py; needs an OXT pass.)
+   if sHaveEn is "true" then
+      put empty into sHaveEn
+      try
+         enDeinitialize
+      catch tErr
+         -- extension gone; nothing to release
+      end try
+   end if
 end ecStop
 
 -- ---- host / join / leave -----------------------------------------------------
