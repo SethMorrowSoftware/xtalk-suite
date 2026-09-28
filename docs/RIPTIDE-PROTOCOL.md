@@ -77,11 +77,21 @@ else derives from it through the KDF with the 8-byte context
 | 3 | 32 | the shared LAN-mesh ed25519 seed |
 | 4 | 32 | the Nostr secp256k1 secret key candidate (see 2.3) |
 | 5 | 32 | the app-state sealing key (RIPTAPP1) |
-| 100+n | 32 | anon persona n's ed25519 seed |
-| 200+n | 32 | anon persona n's sealed-DM kx seed |
+| 100+n | 32 | anon persona n's ed25519 seed (n = 0 or 1; below) |
+| 200+n | 32 | anon persona n's sealed-DM kx seed (n = 0 or 1) |
 
 One seed never feeds two cipher schemes: every new use of the master
 MUST take a new registry row here, never reuse an existing subkey.
+
+**The persona index** n is an integer from 0 to 1, and an implementation
+MUST refuse any other (the refusal vectors in 9.1 hold it). From n = 100
+the two rows meet: persona n's ed25519 seed would be subkey 200 + (n - 100),
+persona n-100's crypto_kx seed, one seed in two cipher schemes. Any bound
+up to 100 keeps them apart; this one (2026-09-26) is the smallest the
+reference implementation uses, one shipped persona (n = 0) and a second
+its tests derive to show two personas differ. Widening it later strands no
+persona anyone holds, where narrowing would; how far to widen is the
+owner's call, recorded in the suite work plan.
 
 **2.1 The handle.** The user's public identity is the ed25519 public key
 of subkey 1, spelled as 64 lowercase hex chars - the **handle**. It is
@@ -241,9 +251,15 @@ begin playback mid-download.
   hex - a phantom (contentless) swarm identifier where strangers reach
   a user.
 - `roomId(pkA, pkB, salt) = BLAKE2b-20(sortedConcat(pkA_bytes,
-  pkB_bytes) || salt)` - sorted by lowercase-hex order, which equals raw
-  byte order, so both peers derive the same id; the salt is
-  session-scoped application data.
+  pkB_bytes) || salt)` - sorted by raw byte order, which lowercase-hex
+  text order equals, so both peers derive the same id; the salt is
+  session-scoped application data. Two keys are ordered by their BYTES
+  and are equal only when their bytes are: an implementation whose string
+  comparison can read two hex spellings as numbers (an xTalk `<` or `is`,
+  a loose `==`) MUST NOT use it here. The goldens `roomIdNumOrder` and
+  `roomIdNumEqual` (9.1) pair keys whose hex a number parse accepts (the
+  `numHandle*` goldens: "9e0...01" reads as 90 and sorts after
+  "0...0100" by its bytes; "1e0...0" and "0...01" read as one number).
 
 ### 5.2 The transport
 
@@ -285,8 +301,10 @@ header; `M` = stream ciphertext.
 
 ### 5.6 The session
 
-Roles are decided by handle order: the **lexically smaller handle is
-the crypto_kx client**. Each side derives (rx, tx) with crypto_kx from
+Roles are decided by handle order: the handle whose **bytes sort first
+(lowercase-hex text order) is the crypto_kx client**, and two handles
+are one only when their bytes are (the ordering rule of 5.1, never a
+number compare). Each side derives (rx, tx) with crypto_kx from
 its DM keypair (subkey 2) and the peer's kx public (from the intro or
 prekey); my tx is your rx by construction. Each direction is its own
 secretstream: send your header in an `H` frame, then messages as `M`
@@ -449,10 +467,11 @@ is deprecated and needs AES; NIP-17 was out of scope).
 
 ## 9. Conformance
 
-**9.1 Vectors.** `riptide/docs/protocol-vectors.json` carries 67 golden
+**9.1 Vectors.** `riptide/docs/protocol-vectors.json` carries the golden
 vectors (one fixed identity: master `0x42*32`; every record above,
 every derivation, DHT targets, the BEP44 buffers, both bridge
-signatures, Nostr event ids) and 31 refusal vectors. The bundle is
+signatures, Nostr event ids) and the refusal vectors; its generator
+prints how many of each. The bundle is
 regenerated from the oracle and re-EXECUTED on every push: signed
 records re-verify, targets recompute, refusal vectors provably refuse.
 An implementation is byte-compatible when it reproduces every golden

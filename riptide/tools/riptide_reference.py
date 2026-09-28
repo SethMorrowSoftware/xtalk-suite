@@ -313,8 +313,30 @@ def lan_key(master):
     return kdf_derive(master, SUBKEY_LAN, 32)
 
 
+# The persona index cap (protocol section 2; 2026-09-26). Persona n takes
+# subkeys 100+n and 200+n, so an index of 100 or more would make persona n's
+# ed25519 seed persona n-100's crypto_kx seed (100 + 100 is 200 + 0): one
+# seed feeding two cipher schemes, the thing the table's own rule forbids.
+# The cap is 2, the smallest the tree's own use needs: one persona ships
+# (index 0), and the harness and golden test derive persona 1 to show that
+# two personas differ. Any cap up to 100 keeps the two rows disjoint, and
+# widening it later strands no persona anyone holds, where narrowing would;
+# how far to widen is the owner's call (the suite work plan).
+ANON_INDEX_LIMIT = 2
+
+
+def _anon_index(n):
+    """n, when it is a persona index below the cap; ValueError otherwise."""
+    if isinstance(n, bool) or not isinstance(n, int):
+        raise ValueError("the persona index must be an integer")
+    if n < 0 or n >= ANON_INDEX_LIMIT:
+        raise ValueError("the persona index must be 0 to %d (the subkey "
+                         "table's cap)" % (ANON_INDEX_LIMIT - 1))
+    return n
+
+
 def anon_seed(master, n):
-    return kdf_derive(master, SUBKEY_ANON_BASE + n, 32)
+    return kdf_derive(master, SUBKEY_ANON_BASE + _anon_index(n), 32)
 
 
 def anon_dm_seed(master, n):
@@ -326,7 +348,7 @@ def anon_dm_seed(master, n):
     prekey (served over its onion, NEVER the DHT - the 9.3 guard),
     build_intro(..., recipient=anon_handle, ...) seals to it, and the
     recipient opens with this seed."""
-    return kdf_derive(master, SUBKEY_ANON_DM_BASE + n, 32)
+    return kdf_derive(master, SUBKEY_ANON_DM_BASE + _anon_index(n), 32)
 
 
 def handle_from_identity_seed(seed):
@@ -402,15 +424,43 @@ def inbox_id(handle_hex):
 
 def room_id(pk_a_hex, pk_b_hex, session_salt):
     """40-hex pairwise room id: BLAKE2b-20(sortedConcat(pkA, pkB) || salt).
-    Sorted by lowercase hex order, which equals raw byte order, so both peers
-    derive the same id regardless of who computes it."""
-    a = pk_a_hex.lower()
-    b = pk_b_hex.lower()
-    if a <= b:
-        cat = bytes.fromhex(a) + bytes.fromhex(b)
-    else:
-        cat = bytes.fromhex(b) + bytes.fromhex(a)
+    Sorted by raw BYTE order (which lowercase hex text order equals), so both
+    peers derive the same id regardless of who computes it. Compared here as
+    bytes, never as numbers: a key whose hex is number-like (all digits, or
+    digits, one `e`, digits) is still ordered by its bytes (suite engine
+    note 2.11 is why the script layer compares them byte by byte)."""
+    a = bytes.fromhex(pk_a_hex.lower())
+    b = bytes.fromhex(pk_b_hex.lower())
+    cat = a + b if a <= b else b + a
     return blake2b_hash(cat + session_salt, 20).hex()
+
+
+def kx_role(my_handle_hex, their_handle_hex):
+    """The crypto_kx role this side plays in a DM session (protocol 5.6):
+    "client" when my handle's BYTES sort below the peer's, "server" above;
+    two equal handles are no session (ValueError). Byte order, which
+    lowercase hex text order equals, and never a number compare: the
+    script layer's rsDmSessionKeys decides it byte by byte."""
+    mine = bytes.fromhex(my_handle_hex.lower())
+    theirs = bytes.fromhex(their_handle_hex.lower())
+    if len(mine) != 32 or len(theirs) != 32:
+        raise ValueError("a handle is 32 bytes (64 hex)")
+    if mine == theirs:
+        raise ValueError("a DM session needs two distinct handles")
+    return "client" if mine < theirs else "server"
+
+
+# Handles whose 64-hex spelling a NUMBER parse accepts (suite engine note
+# 2.11: the engine's `<` and `is` compare two such texts as numbers). They
+# are chosen, not derived: no key is known for them, and the room id and the
+# kx role need none (both read only the handles' bytes). NUM_HANDLE_NINE is
+# 9e1 = 90 as a number and sorts ABOVE NUM_HANDLE_HUNDRED (100) by its
+# bytes; NUM_HANDLE_ONE_EXP (1e0) and NUM_HANDLE_ONE are the number 1 twice,
+# with different bytes.
+NUM_HANDLE_NINE = "9e" + "0" * 61 + "1"
+NUM_HANDLE_HUNDRED = "0" * 61 + "100"
+NUM_HANDLE_ONE_EXP = "1e" + "0" * 62
+NUM_HANDLE_ONE = "0" * 63 + "1"
 
 
 # ---------------------------------------------------------------------------
@@ -1489,6 +1539,14 @@ def golden_vectors():
         "confPub": conf_pub,
         "inboxId": inbox_id(handle),
         "roomId": room_id(handle, conf_pub, b"golden-salt"),
+        "numHandleNine": NUM_HANDLE_NINE,
+        "numHandleHundred": NUM_HANDLE_HUNDRED,
+        "numHandleOneExp": NUM_HANDLE_ONE_EXP,
+        "numHandleOne": NUM_HANDLE_ONE,
+        "roomIdNumOrder": room_id(NUM_HANDLE_NINE, NUM_HANDLE_HUNDRED,
+                                  b"golden-salt"),
+        "roomIdNumEqual": room_id(NUM_HANDLE_ONE_EXP, NUM_HANDLE_ONE,
+                                  b"golden-salt"),
         "post1": post1.hex(),
         "post1Target": post1_target,
         "post2": post2.hex(),

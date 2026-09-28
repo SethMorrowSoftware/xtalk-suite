@@ -354,6 +354,8 @@ def install_pure_natives():
         "sxkdfderive": lambda a: to_str(REF["kdf_derive"](
             to_bytes(a[0]), int(str(LCS._disp(a[1]))), int(LCS._n(a[3])),
             context=to_bytes(a[2]))),
+        "sxhash": lambda a: to_str(REF["blake2b_hash"](
+            to_bytes(a[0]), int(LCS._n(a[1])))),
     })
 
     counter = [0]
@@ -2227,6 +2229,459 @@ def check_probe4(c, fail):
             LCS.HASHES["numtocodepoint"] = was
 
 
+# --------------------------------------------------------------------------
+# tier 1f: the persona index cap, and handles ordered by BYTE (2026-09-26)
+# --------------------------------------------------------------------------
+#
+# WHY. Two work plan rows (riptide #10 and #11), one shape: a library
+# decision that rested on arithmetic or a comparison the engine answers
+# otherwise than the design assumed.
+#   - #10. Persona n takes subkeys 100+n and 200+n, and nothing bounded n,
+#     so rsAnonSeed(M, 100) WAS rsAnonDmSeed(M, 0): one seed feeding
+#     ed25519 and crypto_kx, which the subkey table's own rule forbids
+#     (executed 2026-09-25). Both handlers now refuse n >= kRsAnonIndexLimit.
+#   - #11. rsRoomId sorted its two keys with `tA <= tB` and rsDmSessionKeys
+#     picked the kx role with `tMine < tTheirs` and refused a session with
+#     itself on `tMine is tTheirs`, all over 64-hex text. When both spellings
+#     are number-like (all digits, or digits, one `e`, digits) the engine
+#     compares them as NUMBERS (suite engine note 2.11): "9e0..01" is 90 and
+#     sorted below "0..0100" (100) against the bytes, and "1e0..0" and
+#     "0..01", two handles, were the number 1 twice. Both now order through
+#     rsByteOrder, byte by byte, which is lowercase hex text order for every
+#     pair: no real handle's room id or role moved, which the golden rows
+#     (the oracle's roomId, sessionRx and sessionTx, pinned in
+#     tests/riptide_golden_test.py) and a sweep of generated handles hold.
+#
+# WHAT. Every row is the SHIPPED script against the oracle (room_id,
+# kx_role, the libsodium-anchored kx session model, anon_seed and
+# anon_dm_seed). The plain interpreter orders numbers only (text reaching
+# `<` is a ValueError there), so no gate ran rsRoomId or rsDmSessionKeys
+# before this tier; the byte compare runs here as it runs on an engine.
+#
+# FIXTURE FIRST. Three seeded copies, each the 0.13.0 spelling: the old
+# `tA <= tB` in rsRoomId, the old `is` and `<` in rsDmSessionKeys, and the
+# two anon handlers without the cap. Each must read its number-like or
+# over-cap rows WRONG (or have the interpreter refuse them: its reading of
+# two number-like texts is the engine's, and it refuses where the text and
+# the number part), or this tier's rows would vouch for a fix no row can
+# tell from the defect. On a real handle the old `<` is not modelled at all
+# (the ValueError above), which is why those rows are not asked of it.
+
+NUM_PAIRS = [
+    (REF["NUM_HANDLE_NINE"], REF["NUM_HANDLE_HUNDRED"],
+     "9e0..01 (90 as a number) against 0..0100 (100): the bytes sort the "
+     "first ABOVE"),
+    (REF["NUM_HANDLE_ONE_EXP"], REF["NUM_HANDLE_ONE"],
+     "1e0..0 against 0..01: the number 1 twice, different bytes"),
+    ("1" * 64, "1" * 63 + "2",
+     "two all-digit handles one apart in the last digit (one double as "
+     "numbers)"),
+]
+
+
+def _gen_handle(label):
+    return hashlib.sha256(b"rs-order-" + label.encode("ascii")).hexdigest()
+
+
+def order_pairs():
+    """(a, b, label): the golden pair, generated handles, and the edges byte
+    order turns on - then NUM_PAIRS."""
+    g = REF["golden_vectors"]()
+    out = [(g["handle"], g["confPub"], "the golden handle and the "
+            "conformance pub")]
+    for k in range(24):
+        out.append((_gen_handle("a%d" % k), _gen_handle("b%d" % k),
+                    "generated pair %d" % k))
+    base = _gen_handle("edge")
+    out += [
+        (base[:63] + "0", base[:63] + "1", "equal but the last nibble"),
+        (base[:62] + "0f", base[:62] + "10", "a carry across the last byte"),
+        ("9" + base[1:], "a" + base[1:], "the digit/letter boundary, 9 and a"),
+        ("f" * 64, "0" * 63 + "1", "all-f against 0..01"),
+        (base[:40] + "0" * 24, base[:40] + "f" * 24,
+         "a long shared prefix, then zeros against fs"),
+    ]
+    return out + [(a, b, label) for a, b, label in NUM_PAIRS]
+
+
+class RsInterp(LCS.Interp):
+    """LCS.Interp plus the two SodiumXT kx SESSION commands, which return
+    through OUT parameters (a shape the interpreter does not model; the
+    reason rsIdentityKeys has a SHIM). The statement is modelled instead,
+    oracle-backed: kx_client_session_keys / kx_server_session_keys, the
+    crypto_kx the golden session keys were anchored with (a real libsodium,
+    tools/emit-kx-anchor.py). The same shape check-demo-boot.py uses for the
+    two keypair commands. `kx_calls` counts the statements it ran."""
+    KX_RX = re.compile(r'^\s*(sxKeyExchangeClient|sxKeyExchangeServer)\s+'
+                       r'(.+?)\s*,\s*(\w+)\s*,\s*(\w+)\s*$', re.I)
+
+    def __init__(self, src):
+        self.kx_calls = 0
+        super().__init__(src)
+
+    def _exec_stmt(self, body, i, env):
+        m = self.KX_RX.match(body[i])
+        if not m:
+            return super()._exec_stmt(body, i, env)
+        p = LCS._Expr(self, env)
+        p.s, p.i = m.group(2).strip(), 0
+        args = []
+        while True:
+            args.append(p.p_or())
+            p.ws()
+            if p.i < len(p.s) and p.s[p.i] == ",":
+                p.i += 1
+                continue
+            break
+        if p.i < len(p.s) or len(args) != 3:
+            raise SyntaxError("the kx model reads three inputs and two out "
+                              "names: %r" % body[i])
+        mine_pk, mine_sk, their_pk = (to_bytes(LCS._disp(a)) for a in args)
+        if len(mine_pk) != 32 or len(mine_sk) != 32 or len(their_pk) != 32:
+            raise LCS.Thrown("SodiumXT: sxKeyExchange: keys must be 32 bytes")
+        if m.group(1).lower().endswith("client"):
+            rx, tx = REF["kx_client_session_keys"](mine_pk, mine_sk, their_pk)
+        else:
+            rx, tx = REF["kx_server_session_keys"](mine_pk, mine_sk, their_pk)
+        self.assign(m.group(3), to_str(rx), env)
+        self.assign(m.group(4), to_str(tx), env)
+        self.kx_calls += 1
+        return i + 1
+
+
+def _kx_keys(seed):
+    """The rsDmKeys array for a kx SEED, built from the oracle (rsDmKeys'
+    own keypair command is phase-4 code the harness pins on an engine)."""
+    pk, sk = REF["kx_seed_keypair"](seed)
+    return LCS.LcsArray({"publicKey": to_str(pk), "secretKey": to_str(sk),
+                         "publicKeyHex": pk.hex()})
+
+
+# What a row reads when the interpreter would not run it.
+REFUSED_CALL = "refused (LCS.Indistinct)"
+
+
+def _called(interp, name, args):
+    """interp.call, a refusal or an interpreter stop read as a VALUE a row
+    can compare (never the right one), not a traceback."""
+    try:
+        return interp.call(name, args)
+    except LCS.Indistinct:
+        return REFUSED_CALL
+    except LCS.Imprecise:
+        return "refused (LCS.Imprecise: a number past 2^53)"
+    except ValueError as exc:
+        return "not modelled (ValueError: %s)" % str(exc)[:60]
+
+
+SALT = to_str(b"golden-salt")
+
+
+def room_rows(interp):
+    """(label, got, want) over order_pairs(), both argument orders, against
+    the oracle's room_id."""
+    rows = []
+    for a, b, label in order_pairs():
+        want = REF["room_id"](a, b, b"golden-salt")
+        for x, y, way in ((a, b, "as given"), (b, a, "swapped")):
+            rows.append(("rsRoomId, %s, %s" % (label, way),
+                         _called(interp, "rsRoomId", [x, y, SALT]), want))
+    return rows
+
+
+def session_rows(interp):
+    """(label, got, want) over order_pairs(): each side's role against the
+    oracle's kx_role, and my tx is the peer's rx. Side A holds the golden
+    DM kx keys, side B the conformance seed's; the handles are labels the
+    session never signs with, so any 64-hex pair drives it."""
+    g = REF["golden_vectors"]()
+    keys_a = _kx_keys(bytes.fromhex(g["dmSeed"]))
+    keys_b = _kx_keys(bytes.fromhex(g["confSeed"]))
+    pub_a, pub_b = g["dmKxPub"], g["confKxPub"]
+    rows = []
+    for a, b, label in order_pairs():
+        sa = _called(interp, "rsDmSessionKeys", [a, keys_a, b, pub_b])
+        sb = _called(interp, "rsDmSessionKeys", [b, keys_b, a, pub_a])
+
+        def role(out):
+            return str(out["role"]) if isinstance(out, dict) else out
+
+        rows.append(("rsDmSessionKeys roles, %s" % label,
+                     [role(sa), role(sb)],
+                     [REF["kx_role"](a, b), REF["kx_role"](b, a)]))
+        if isinstance(sa, dict) and isinstance(sb, dict):
+            rows.append(("rsDmSessionKeys, %s: my tx is the peer's rx, both "
+                         "ways" % label,
+                         [sa["tx"] == sb["rx"], sa["rx"] == sb["tx"]],
+                         [True, True]))
+    return rows
+
+
+def golden_session_rows(interp):
+    """The golden session, both ends, against the libsodium-anchored
+    goldens: the roles and keys a real peer holds today."""
+    g = REF["golden_vectors"]()
+    keys_a = _kx_keys(bytes.fromhex(g["dmSeed"]))
+    keys_b = _kx_keys(bytes.fromhex(g["confSeed"]))
+    rows = []
+    sa = _called(interp, "rsDmSessionKeys",
+                 [g["handle"], keys_a, g["confPub"], g["confKxPub"]])
+    sb = _called(interp, "rsDmSessionKeys",
+                 [g["confPub"], keys_b, g["handle"], g["dmKxPub"]])
+    for side, out, want in (("the golden side", sa,
+                             ["client", g["sessionRx"], g["sessionTx"]]),
+                            ("the conformance side", sb,
+                             ["server", g["sessionTx"], g["sessionRx"]])):
+        got = ([str(out["role"]), to_bytes(out["rx"]).hex(),
+                to_bytes(out["tx"]).hex()] if isinstance(out, dict) else out)
+        rows.append(("rsDmSessionKeys, %s: role, rx, tx are the golden "
+                     "session's (tests/riptide_golden_test.py)" % side,
+                     got, want))
+    return rows
+
+
+# The 0.13.0 spellings, each (the shipped text, the line it replaced).
+OLD_ROOM_LINES = [
+    ('   put rsHexToBin(tA) into tA\n'
+     '   put rsHexToBin(tB) into tB\n'
+     '   if rsByteOrder(tA, tB) is not "above" then\n'
+     '      put tA & tB into tCat\n'
+     '   else\n'
+     '      put tB & tA into tCat\n'
+     '   end if\n',
+     '   if tA <= tB then\n'
+     '      put rsHexToBin(tA) & rsHexToBin(tB) into tCat\n'
+     '   else\n'
+     '      put rsHexToBin(tB) & rsHexToBin(tA) into tCat\n'
+     '   end if\n'),
+]
+OLD_SESSION_LINES = [
+    ('   -- two validated 64-char lowercase hex spellings: their ASCII bytes\n'
+     '   -- order exactly as the key bytes they spell, with no SodiumXT call\n'
+     '   put rsByteOrder(tMine, tTheirs) into tOrder\n'
+     '   if tOrder is "equal" then\n',
+     '   if tMine is tTheirs then\n'),
+    ('      if tOrder is "below" then\n',
+     '      if tMine < tTheirs then\n'),
+]
+OLD_CAP_LINES = [
+    ('   -- the cap (kRsAnonIndexLimit): an integer against a small one, so the\n'
+     '   -- comparison is exact at any size (suite engine note 2.10)\n'
+     '   if pIndex >= kRsAnonIndexLimit then\n'
+     '      rsSetError "rsAnonSeed: the persona index must be below" && \\\n'
+     '            kRsAnonIndexLimit && "(the subkey table\'s cap)"\n'
+     '      return empty\n'
+     '   end if\n', ''),
+    ('   if pIndex >= kRsAnonIndexLimit then\n'
+     '      rsSetError "rsAnonDmSeed: the persona index must be below" && \\\n'
+     '            kRsAnonIndexLimit && "(the subkey table\'s cap)"\n'
+     '      return empty\n'
+     '   end if\n', ''),
+]
+
+
+def seed_lines(text, pairs, what, fail, tier="1f"):
+    for new, old in pairs:
+        if text.count(new) != 1:
+            fail("tier %s's %s fixture expects the shipped text %r exactly "
+                 "once and found it %d times; the seeded defect would be a "
+                 "file nobody shipped" % (tier, what,
+                                          new.strip().split("\n")[0],
+                                          text.count(new)))
+        text = text.replace(new, old)
+    return text
+
+
+# the cap rows an uncapped handler must get WRONG (the fixture's list)
+CAP_MUST_FAIL = [
+    "rsAnonSeed(M, 2) is REFUSED (at the cap)",
+    "rsAnonDmSeed(M, 2) is REFUSED (at the cap)",
+    "rsAnonSeed(M, 100) never hands back persona 0's crypto_kx seed "
+    "(subkey 100 + 100 is 200 + 0)",
+    "rsAnonSeed(M, 100) is REFUSED",
+    "rsAnonDmSeed(M, 100) is REFUSED",
+    "rsAnonHandle(M, 2) is REFUSED through it",
+]
+
+
+def cap_rows(interp):
+    """(label, got, want): the two anon handlers at and around the cap."""
+    master = bytes([0x42] * 32)
+    seed0 = to_str(REF["anon_seed"](master, 0))
+    seed1 = to_str(REF["anon_seed"](master, 1))
+    dm1 = to_str(REF["anon_dm_seed"](master, 1))
+    dm0 = to_str(REF["anon_dm_seed"](master, 0))
+    got100 = _called(interp, "rsAnonSeed", [MASTER, 100])
+    return [
+        ("rsAnonSeed(M, 0) is persona 0's seed",
+         _called(interp, "rsAnonSeed", [MASTER, 0]), seed0),
+        ("rsAnonSeed(M, 1) is persona 1's seed (the harness's second "
+         "persona)", _called(interp, "rsAnonSeed", [MASTER, 1]), seed1),
+        ("rsAnonDmSeed(M, 1) is persona 1's kx seed",
+         _called(interp, "rsAnonDmSeed", [MASTER, 1]), dm1),
+        (CAP_MUST_FAIL[0], _called(interp, "rsAnonSeed", [MASTER, 2]), ""),
+        (CAP_MUST_FAIL[1], _called(interp, "rsAnonDmSeed", [MASTER, 2]), ""),
+        (CAP_MUST_FAIL[2], got100 == dm0, False),
+        (CAP_MUST_FAIL[3], got100, ""),
+        (CAP_MUST_FAIL[4], _called(interp, "rsAnonDmSeed", [MASTER, 100]),
+         ""),
+        ("rsAnonSeed(M, 4294967296) is REFUSED",
+         _called(interp, "rsAnonSeed", [MASTER, "4294967296"]), ""),
+        (CAP_MUST_FAIL[5], _called(interp, "rsAnonHandle", [MASTER, 2]), ""),
+    ]
+
+
+def check_persona_cap_and_order(c, ip, src, fail, V):
+    c.note("tier 1f: the persona index cap, and handles ordered by byte")
+    # ---- fixtures first
+    old_cap = RsInterp(seed_lines(src, OLD_CAP_LINES, "cap", fail))
+    wrong = [label for label, got, want in cap_rows(old_cap) if got != want]
+    c.ck("fixture: without the cap, persona 2 and persona 100 derive, and "
+         "rsAnonSeed(M, 100) IS persona 0's crypto_kx seed (each row that "
+         "must go wrong does)", [k for k in CAP_MUST_FAIL if k not in wrong],
+         [])
+    old_room = RsInterp(seed_lines(src, OLD_ROOM_LINES, "rsRoomId", fail))
+    wrong = [label for label, got, want in room_rows(old_room)
+             if got != want]
+    for _a, _b, label in NUM_PAIRS:
+        c.ck("fixture: the 0.13.0 `tA <= tB` gets rsRoomId wrong (or is "
+             "refused) for %s" % label,
+             any(w.startswith("rsRoomId, %s," % label) for w in wrong), True)
+    old_sess = RsInterp(seed_lines(src, OLD_SESSION_LINES,
+                                   "rsDmSessionKeys", fail))
+    wrong = [label for label, got, want in session_rows(old_sess)
+             if got != want]
+    for _a, _b, label in NUM_PAIRS:
+        c.ck("fixture: the 0.13.0 `is` and `<` get rsDmSessionKeys' roles "
+             "wrong (or are refused) for %s" % label,
+             "rsDmSessionKeys roles, %s" % label in wrong, True)
+    # ---- the shipped library
+    for label, got, want in cap_rows(ip):
+        c.ck(label, got, want)
+    ip.call("rsAnonDmSeed", [MASTER, 2])
+    c.ck("...and the refusal names the cap",
+         "cap" in str(ip.call("rsLastError", [])), True)
+    for x, y, want in (("", "", "equal"), ("a", "ab", "below"),
+                       ("ab", "a", "above"), ("\x00", "\xff", "below"),
+                       ("\xff\x00", "\xfe\xff", "above")):
+        c.ck("rsByteOrder(bytes %s, bytes %s) is %s"
+             % (to_bytes(x).hex() or "none", to_bytes(y).hex() or "none",
+                want), ip.call("rsByteOrder", [x, y]), want)
+    for label, got, want in room_rows(ip):
+        c.ck(label, got, want)
+    c.ck("rsRoomId, the golden pair: the golden roomId (unchanged)",
+         ip.call("rsRoomId", [V["handle"], V["confPub"], SALT]), V["roomId"])
+    c.ck("rsRoomId, the golden pair in upper case: the golden roomId",
+         ip.call("rsRoomId", [V["handle"].upper(), V["confPub"].upper(),
+                              SALT]), V["roomId"])
+    c.ck("rsRoomId, 9e0..01 and 0..0100: the golden roomIdNumOrder",
+         ip.call("rsRoomId", [REF["NUM_HANDLE_NINE"],
+                              REF["NUM_HANDLE_HUNDRED"], SALT]),
+         V["roomIdNumOrder"])
+    c.ck("rsRoomId, 1e0..0 and 0..01: the golden roomIdNumEqual",
+         ip.call("rsRoomId", [REF["NUM_HANDLE_ONE_EXP"],
+                              REF["NUM_HANDLE_ONE"], SALT]),
+         V["roomIdNumEqual"])
+    before = ip.kx_calls
+    for label, got, want in golden_session_rows(ip):
+        c.ck(label, got, want)
+    for label, got, want in session_rows(ip):
+        c.ck(label, got, want)
+    c.ck("rsDmSessionKeys refuses a session with myself (byte-equal handles)",
+         ip.call("rsDmSessionKeys",
+                 [V["handle"], _kx_keys(bytes.fromhex(V["dmSeed"])),
+                  V["handle"].upper(), V["confKxPub"]]), "")
+    c.ck("the kx model ran (the session rows reached sxKeyExchange*)",
+         ip.kx_calls > before, True)
+
+
+# --------------------------------------------------------------------------
+# tier 1g: the UTF-8 round trip compares BYTES, never numbers (2026-09-27)
+# --------------------------------------------------------------------------
+#
+# WHY. rsBytesAreUtf8 (trap 4's round trip: decode, re-encode, require the
+# same bytes) ended `return textEncode(tDecoded, "UTF-8") is pBytes`. Two
+# texts a number parse accepts compare as NUMBERS under bare `is` (suite
+# engine note 2.11), and a text C's strtod reads as NaN is not `is` itself
+# held apart (OBSERVED on Linux 2026-09-26, the fourth probe line's item 3),
+# so every valid UTF-8 text spelled "nan", "NaN" or "nan(1)" failed its own
+# round trip: a LAN draft, a device or head name, a post reading nan was
+# refused as "not valid UTF-8" (INFERRED; no engine has run it). Found by
+# the review of riptide #12, whose change detection sends a "nan" draft
+# once: the receiver then refused it here. It compares ("b" & each side)
+# under the caseSensitive now.
+#
+# WHAT. The shipped rsBytesAreUtf8 over the NaN spellings and over controls
+# (number-like text that equals itself on every reading, and malformed
+# UTF-8 that must stay refused), then the three records a person names in
+# free text, built and parsed through it. FIXTURE FIRST: the old line
+# planted back must get every NaN row wrong or have the interpreter refuse
+# it (the base refuses a bare comparison a NaN text meets: note 2.11's
+# "Gate, headless" paragraph).
+
+NAN_TEXTS = ["nan", "NaN", "NAN", "nan(1)"]
+OLD_UTF8_LINES = [
+    ('   set the caseSensitive to true\n'
+     '   return ("b" & textEncode(tDecoded, "UTF-8")) is ("b" & pBytes)\n',
+     '   return textEncode(tDecoded, "UTF-8") is pBytes\n'),
+]
+
+
+def utf8_nan_rows(interp):
+    """(label, got, want): the NaN spellings through rsBytesAreUtf8 and the
+    records that route free text through it (the rows the fixture's old
+    line must get wrong)."""
+    master = MASTER
+    id_seed = to_str(REF["identity_seed"](bytes([0x42] * 32)))
+    rows = []
+    for t in NAN_TEXTS:
+        rows.append(("rsBytesAreUtf8(%r) is true (valid UTF-8)" % t,
+                     _called(interp, "rsBytesAreUtf8", [t]), True))
+
+    def field(builder_args, parser, parser_args_tail, key):
+        rec = _called(interp, builder_args[0], builder_args[1:])
+        if not isinstance(rec, str) or not rec:
+            return "the builder refused: %r" % (rec,)
+        out = _called(interp, parser, [rec] + parser_args_tail)
+        return str(out[key]) if isinstance(out, dict) else out
+
+    rows.append(("a LAN draft reading nan verifies, its text intact",
+                 field(["rsLanBuildDraft", "Tablet", 5, "nan", master],
+                       "rsLanVerifyDraft", [master], "draft"), "nan"))
+    rows.append(("a LAN draft from a device named NaN verifies, its name "
+                 "intact",
+                 field(["rsLanBuildDraft", "NaN", 5, "hello", master],
+                       "rsLanVerifyDraft", [master], "name"), "NaN"))
+    rows.append(("a post reading nan parses, its text intact",
+                 field(["rsBuildPost", 1754870400, REF["ZERO_TARGET"], "nan",
+                        "", id_seed], "rsParsePost", [], "text"), "nan"))
+    return rows
+
+
+def check_utf8_round_trip(c, ip, src, fail):
+    c.note("tier 1g: the UTF-8 round trip compares bytes, never numbers")
+    old = RsInterp(seed_lines(src, OLD_UTF8_LINES, "rsBytesAreUtf8", fail,
+                               tier="1g"))
+    right = [label for label, got, want in utf8_nan_rows(old) if got == want]
+    c.ck("fixture: the old bare `is` refuses (or is refused on) every NaN "
+         "spelling and every record carrying one", right, [])
+    for label, got, want in utf8_nan_rows(ip):
+        c.ck(label, got, want)
+    # the controls: text that equals itself on every reading still passes,
+    # and malformed UTF-8 is still refused (trap 4's engine finding). "an"
+    # is the prefix trap: a fix spelled with an "n" on both sides would
+    # compare "nan" with "nan" and refuse it (engine note 2.11's rule)
+    for t in ("hello", "inf", "1e5", "0012", "an", "caf\xc3\xa9"):
+        c.ck("rsBytesAreUtf8(%r) is still true" % t,
+             ip.call("rsBytesAreUtf8", [t]), True)
+    for t, what in (("\xc3", "a truncated two-byte sequence"),
+                    ("\xed\xa0\x80", "an encoded surrogate"),
+                    ("ab\xff", "a byte UTF-8 never uses"),
+                    ("\xc0\xae", "an overlong dot")):
+        c.ck("rsBytesAreUtf8 still refuses %s" % what,
+             ip.call("rsBytesAreUtf8", [t]), False)
+
+
 def check_capacity_arithmetic(c, ip):
     """The numbers that MOVE when kRsMaxRecord moves, pinned headlessly.
 
@@ -2511,7 +2966,7 @@ def main(argv):
 
     src, hits = build_source(fail)
     try:
-        ip = LCS.Interp(src)
+        ip = RsInterp(src)
     except Exception as exc:                       # noqa: BLE001
         fail("the shipped script did not parse under the interpreter: %s: %s"
              % (type(exc).__name__, exc))
@@ -2527,6 +2982,8 @@ def main(argv):
     check_no_quotient_comparisons(c, fail)
     check_seq_order(c, ip, src, fail)
     check_probe4(c, fail)
+    check_persona_cap_and_order(c, ip, src, fail, V)
+    check_utf8_round_trip(c, ip, src, fail)
     check_capacity_arithmetic(c, ip)
     if install_coin_natives():
         check_composed(c, ip, V)

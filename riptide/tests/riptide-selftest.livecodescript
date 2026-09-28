@@ -81,6 +81,16 @@ constant kRsGoldConfPub = "672e8e0b259627f15c772ec0d61f15cd786ce2bc7244549255f9d
 constant kRsGoldOnion = "ljkg4t7plunxn6knygzo33lvyrf77siav52gditnqqtukous6iwwe6yd.onion"
 constant kRsGoldInboxId = "3cf4170b3e7253387f351af14eb1071224d0140e"
 constant kRsGoldRoomId = "3a57d3ad644536e20a4486d31bde5ecb3902d3a5"
+-- handles whose hex a NUMBER parse accepts (the oracle's NUM_HANDLE_*,
+-- chosen there; suite engine note 2.11): Nine is 9e1 = 90 as a number and
+-- sorts ABOVE Hundred (100) by its bytes; OneExp and One are the number 1
+-- twice. A byte-order library derives the room ids below from both ends
+constant kRsGoldNumHandleNine = "9e00000000000000000000000000000000000000000000000000000000000001"
+constant kRsGoldNumHandleHundred = "0000000000000000000000000000000000000000000000000000000000000100"
+constant kRsGoldNumHandleOneExp = "1e00000000000000000000000000000000000000000000000000000000000000"
+constant kRsGoldNumHandleOne = "0000000000000000000000000000000000000000000000000000000000000001"
+constant kRsGoldRoomIdNumOrder = "f88f95e135daecbc4dca25dd8335b49692d4c804"
+constant kRsGoldRoomIdNumEqual = "31c009d208e34830da05c61389b26fd6f417eaff"
 constant kRsGoldPost1Hex = "5253503100000000689932803030303030303030303030303030303030303030303030303030303030303030303030303030303044000e68656c6c6f2c20726970746964650084b56e15631b88e780a74e22241c00efc34b63e50fd645ba651bb27dc41cac5953396ae8f848ef9b81711b08baa5b764fc5746bfd02122f36ac5a17f87a88f01"
 constant kRsGoldPost1Target = "a161e3add5a4d78080db9219583e6a988954705c"
 constant kRsGoldPost2Hex = "5253503100000000689932bc6131363165336164643561346437383038306462393231393538336536613938383935343730356344000b7365636f6e6420706f737401656565656565656565656565656565656565656565656565656565656565656565656565656565654d29a287d8ac5360688b548ee342f7754287e3ddc604fe2a5160263ce1ef7a5526f9a750dc05d0edf2c317ea0b3dca062e745d0e2fb6c1b381225c7d19dba10f"
@@ -384,6 +394,15 @@ private command rstSectionKdfTree
    rstCheck (rsLastError() is not empty), "and the refusal is explained"
    put rsAnonSeed(tMaster, -1) into tOut
    rstCheck (tOut is empty), "a negative persona index is refused"
+   -- the persona index cap (work plan riptide #10): persona n takes
+   -- subkeys 100+n and 200+n, so persona 100's seed would be persona 0's
+   -- crypto_kx seed. The cap is the smallest this tree uses (0 and 1)
+   rstCheck (rsAnonSeed(tMaster, 2) is empty), \
+         "persona 2 is refused (the index cap)"
+   rstCheck (rsAnonDmSeed(tMaster, 2) is empty), \
+         "and so is its sealed-DM kx seed"
+   rstCheck (rsAnonSeed(tMaster, 100) is empty), \
+         "persona 100 is refused: its seed would be persona 0's kx seed"
 end rstSectionKdfTree
 
 private command rstSectionHandles
@@ -443,6 +462,7 @@ private command rstSectionOnion pCaps
 end rstSectionOnion
 
 private command rstSectionRendezvous
+   local tSalt
    rstSection "rendezvous derivations"
    rstCheck (rsInboxId(kRsGoldHandle) is kRsGoldInboxId), \
          "inbox id matches golden"
@@ -455,6 +475,23 @@ private command rstSectionRendezvous
    rstCheck (rsInboxId("zz") is empty), "a malformed handle is refused"
    rstCheck (rsRoomId("zz", kRsGoldConfPub, empty) is empty), \
          "a malformed peer key is refused"
+   -- two keys whose hex reads as a number are sorted by their BYTES (work
+   -- plan riptide #11): the room id is the golden one from both ends. A
+   -- `<=` over the hex sorted Nine (90) first, and called OneExp and One
+   -- equal, so the two ends of that pair derived two room ids
+   put textEncode(kRsGoldRoomSalt, "ASCII") into tSalt
+   rstCheck (("h" & rsRoomId(kRsGoldNumHandleNine, kRsGoldNumHandleHundred, \
+         tSalt)) is ("h" & kRsGoldRoomIdNumOrder)), \
+         "room id sorts 9e0..01 (90 as a number) after 0..0100 by its bytes"
+   rstCheck (("h" & rsRoomId(kRsGoldNumHandleHundred, kRsGoldNumHandleNine, \
+         tSalt)) is ("h" & kRsGoldRoomIdNumOrder)), \
+         "and the other end derives the same room id"
+   rstCheck (("h" & rsRoomId(kRsGoldNumHandleOneExp, kRsGoldNumHandleOne, \
+         tSalt)) is ("h" & kRsGoldRoomIdNumEqual)), \
+         "room id: 1e0..0 and 0..01 (one number, two keys) sort by bytes"
+   rstCheck (("h" & rsRoomId(kRsGoldNumHandleOne, kRsGoldNumHandleOneExp, \
+         tSalt)) is ("h" & kRsGoldRoomIdNumEqual)), \
+         "and both ends of that pair derive one room id"
 end rstSectionRendezvous
 
 private command rstSectionKeyFile
@@ -1979,6 +2016,15 @@ private command rstSectionLanSync
    put rsLanVerifyDraft(tBytes, tMaster) into tOut
    rstCheck (tOut is not empty and tOut["draft"] is empty), \
          "an empty draft builds and verifies (cleared state)"
+   -- a draft reading nan, from a device named NaN, verifies intact: the
+   -- UTF-8 round trip compares bytes with a letter on both sides, because
+   -- bare `is` never calls a nan equal to itself (suite engine note 2.11;
+   -- the 2026-09-27 review of work plan riptide #12)
+   put rsLanBuildDraft("NaN", 7, "nan", tMaster) into tBytes
+   put rsLanVerifyDraft(tBytes, tMaster) into tOut
+   rstCheck (("t" & tOut["draft"]) is "tnan" and \
+         ("t" & tOut["name"]) is "tNaN"), \
+         "a draft reading nan, from a device named NaN, verifies intact"
    -- the stranger: a record signed under a DIFFERENT master is refused
    put rsLanBuildDraft(kRsGoldLanJoinName, kRsGoldLanSeq, \
          kRsGoldLanDraftText, rstBin(kRsGoldConfSeedHex)) into tBytes
@@ -2140,6 +2186,7 @@ private command rstSectionDm pCaps
    local tSeed, tMyKeys, tConfKeys, tSess, tSessB, tPrekey, tIntro
    local tSealed, tOpened, tFrame, tParsed, tMsg, tBig, tDir, tErr
    local tHeader, tPush, tPull, tCipher, tCipher2, tPlain, tTag, tSession, tH
+   local tNumA, tNumB
    rstSection "phase 4 - DM keys, records, and the sealed first contact"
    put rstBin(kRsGoldIdSeedHex) into tSeed
    -- keys: the kx pair from the DM subkey, pinned against real libsodium
@@ -2175,6 +2222,26 @@ private command rstSectionDm pCaps
          "a session with myself is refused"
    rstCheck (rsDmSessionKeys("zz", tMyKeys, kRsGoldConfPub, \
          kRsGoldConfKxPub) is empty), "a malformed handle is refused"
+   -- roles by BYTE order when both handles read as numbers (work plan
+   -- riptide #11): `<` over the hex made Nine (90) the client and called
+   -- OneExp and One one handle. The kx keys are the golden pair's; the
+   -- handles are only what orders them
+   put rsDmSessionKeys(kRsGoldNumHandleNine, tMyKeys, \
+         kRsGoldNumHandleHundred, kRsGoldConfKxPub) into tNumA
+   put rsDmSessionKeys(kRsGoldNumHandleHundred, tConfKeys, \
+         kRsGoldNumHandleNine, kRsGoldDmKxPub) into tNumB
+   rstCheck (tNumA["role"] is "server" and tNumB["role"] is "client"), \
+         "9e0..01 (90 as a number) is the kx SERVER against 0..0100"
+   -- non-empty first: two refused sessions would cross-match as "h" is "h"
+   rstCheck (tNumA["tx"] is not empty and \
+         ("h" & rstHex(tNumA["tx"])) is ("h" & rstHex(tNumB["rx"]))), \
+         "and that pair's tx and rx still cross-match"
+   put rsDmSessionKeys(kRsGoldNumHandleOneExp, tMyKeys, \
+         kRsGoldNumHandleOne, kRsGoldConfKxPub) into tNumA
+   put rsDmSessionKeys(kRsGoldNumHandleOne, tConfKeys, \
+         kRsGoldNumHandleOneExp, kRsGoldDmKxPub) into tNumB
+   rstCheck (tNumA["role"] is "server" and tNumB["role"] is "client"), \
+         "1e0..0 and 0..01 (one number, two handles) are two peers"
    -- RSK1: the signed prekey record
    put rsBuildPrekey(kRsGoldDmKxPub, tSeed) into tPrekey
    rstCheck (rstHex(tPrekey) is kRsGoldPrekeyRecHex), \

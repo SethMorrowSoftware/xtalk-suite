@@ -60,6 +60,23 @@ _subkeys = [ref["identity_seed"](MASTER), ref["dm_seed"](MASTER),
             ref["anon_seed"](MASTER, 1)]
 check("subkeys distinct", len(set(_subkeys)), len(_subkeys))
 
+# the persona index cap (protocol section 2; work plan riptide #10). Without
+# it persona 100's ed25519 seed IS persona 0's crypto_kx seed: subkey 100 +
+# 100 is subkey 200 + 0, one seed feeding two cipher schemes. The cap is the
+# smallest the tree uses (personas 0 and 1), so persona 2 is refused too.
+check("anon index cap", ref["ANON_INDEX_LIMIT"], 2)
+check("the collision the cap closes: subkey 100 + 100 is subkey 200 + 0",
+      ref["kdf_derive"](MASTER, ref["SUBKEY_ANON_BASE"] + 100, 32),
+      ref["anon_dm_seed"](MASTER, 0))
+check_raises("anon seed at the cap", lambda: ref["anon_seed"](MASTER, 2))
+check_raises("anon dm seed at the cap",
+             lambda: ref["anon_dm_seed"](MASTER, 2))
+check_raises("anon seed at the collision index",
+             lambda: ref["anon_seed"](MASTER, 100))
+check_raises("anon seed negative", lambda: ref["anon_seed"](MASTER, -1))
+check_raises("anon seed non-integer", lambda: ref["anon_seed"](MASTER, 1.0))
+check_raises("anon handle at the cap", lambda: ref["anon_handle"](MASTER, 2))
+
 # --- identity -> handle -> onion -------------------------------------------
 
 ID_SEED = ref["identity_seed"](MASTER)
@@ -90,6 +107,37 @@ check("roomId", ref["room_id"](HANDLE, CONF_PUB, b"golden-salt"),
 check("roomId symmetric",
       ref["room_id"](CONF_PUB, HANDLE, b"golden-salt"),
       ref["room_id"](HANDLE, CONF_PUB, b"golden-salt"))
+
+# handles whose hex a number parse accepts are still ordered by their BYTES
+# (work plan riptide #11; suite engine note 2.11): "9e0..01" is 90 as a
+# number and sorts ABOVE "0..0100" (100) by its bytes; "1e0..0" and "0..01"
+# are the number 1 twice. Each room id is the hash of the byte-sorted pair.
+NUM_NINE = "9e" + "0" * 61 + "1"
+NUM_HUNDRED = "0" * 61 + "100"
+NUM_ONE_EXP = "1e" + "0" * 62
+NUM_ONE = "0" * 63 + "1"
+check("the number-like handles are the oracle's",
+      [ref["NUM_HANDLE_NINE"], ref["NUM_HANDLE_HUNDRED"],
+       ref["NUM_HANDLE_ONE_EXP"], ref["NUM_HANDLE_ONE"]],
+      [NUM_NINE, NUM_HUNDRED, NUM_ONE_EXP, NUM_ONE])
+ROOM_ID_NUM_ORDER = "f88f95e135daecbc4dca25dd8335b49692d4c804"
+ROOM_ID_NUM_EQUAL = "31c009d208e34830da05c61389b26fd6f417eaff"
+check("roomId num order", ref["room_id"](NUM_NINE, NUM_HUNDRED,
+                                         b"golden-salt"), ROOM_ID_NUM_ORDER)
+check("roomId num order symmetric", ref["room_id"](NUM_HUNDRED, NUM_NINE,
+                                                   b"golden-salt"),
+      ROOM_ID_NUM_ORDER)
+check("roomId num order is the BYTE order's hash",
+      ref["blake2b_hash"](bytes.fromhex(NUM_HUNDRED) + bytes.fromhex(NUM_NINE)
+                          + b"golden-salt", 20).hex(), ROOM_ID_NUM_ORDER)
+check("roomId num equal", ref["room_id"](NUM_ONE_EXP, NUM_ONE,
+                                         b"golden-salt"), ROOM_ID_NUM_EQUAL)
+check("roomId num equal symmetric", ref["room_id"](NUM_ONE, NUM_ONE_EXP,
+                                                   b"golden-salt"),
+      ROOM_ID_NUM_EQUAL)
+check("roomId num equal is the BYTE order's hash",
+      ref["blake2b_hash"](bytes.fromhex(NUM_ONE) + bytes.fromhex(NUM_ONE_EXP)
+                          + b"golden-salt", 20).hex(), ROOM_ID_NUM_EQUAL)
 
 # --- RSP1 posts and the tamper-evident chain -------------------------------
 
@@ -265,6 +313,19 @@ check("session tx", tx.hex(), SESSION_TX)
 srx, stx = ref["kx_server_session_keys"](conf_kx_pk, conf_kx_sk, dm_kx_pk)
 check("session cross-match rx", srx.hex(), SESSION_TX)
 check("session cross-match tx", stx.hex(), SESSION_RX)
+# the role rule as a function (protocol 5.6): byte order, never a number
+# compare - the golden pair, then the number-like pairs, each from both ends
+check("kx role golden", [ref["kx_role"](HANDLE, CONF_PUB),
+                         ref["kx_role"](CONF_PUB, HANDLE)],
+      ["client", "server"])
+check("kx role num order", [ref["kx_role"](NUM_NINE, NUM_HUNDRED),
+                            ref["kx_role"](NUM_HUNDRED, NUM_NINE)],
+      ["server", "client"])
+check("kx role num equal", [ref["kx_role"](NUM_ONE_EXP, NUM_ONE),
+                            ref["kx_role"](NUM_ONE, NUM_ONE_EXP)],
+      ["server", "client"])
+check_raises("kx role with myself", lambda: ref["kx_role"](HANDLE, HANDLE))
+check_raises("kx role short handle", lambda: ref["kx_role"]("ab", HANDLE))
 check_raises("kx bad seed len", lambda: ref["kx_seed_keypair"](b"\x01" * 31))
 
 # --- phase 4: the DM wire records (RSK1 / RSI1 / RSM1 / inner message) -----

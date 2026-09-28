@@ -96,6 +96,11 @@ machine, against a Linux completion the same day (5.5: the stall is the
 paste's own pump, INFERRED once the members' own loopbacks completed on that
 machine on 2026-09-26; fixed 2026-09-27, verified statically; needs an OXT
 pass on Windows). A new total is not a regression by itself; a red line is.
+Since those runs riptide 0.14.0 (2026-09-26, work plan riptide #10 and #11) adds
+harness lines, the persona index cap and the room ids and kx roles of handles
+whose hex reads as a number, and (its review, 2026-09-27) a LAN draft reading
+nan from a device named NaN verifying intact, so its next total is a new one:
+record it.
 
 riptide's report carries FOUR numeric compare probe lines, printed and never
 counted. The first three have read the same on Linux and on Windows (section

@@ -15,7 +15,7 @@ inside `riptide/`.
 The suite's capstone app, pure LiveCodeScript over the installed extension surfaces. It is
 structured like a member so the suite's gates walk it, but it is an APP: nothing here is compiled,
 nothing adds native surface, and `rs*` never becomes a library other members may call. Library
-0.13.0 (`kRsVersion`), 107 public `rs*` handlers; the suite's `tools/check-suite-coverage.py` prints
+0.14.0 (`kRsVersion`), 107 public `rs*` handlers; the suite's `tools/check-suite-coverage.py` prints
 the current coverage row (107/107 when last run) and is the authority over any copied number.
 
 | Path | Holds |
@@ -79,6 +79,15 @@ Code comments cite these numbers; keep them.
 - Subkeys: 1 identity ed25519; 2 DM crypto_kx; 3 LAN; 4 Nostr (via the ladder); 5 `RIPTAPP1` seal;
   100+n anon ed25519; 200+n anon DM kx. One seed never feeds two cipher schemes (why 2 is not 1, and
   200+n is not 100+n).
+- The persona index n is 0 or 1 (`kRsAnonIndexLimit` = 2; 0.14.0, 2026-09-26): unbounded, persona
+  100's ed25519 seed WAS persona 0's kx seed (subkey 200; executed 2026-09-25). Any cap up to 100
+  keeps the rows apart; 2 is the smallest this tree uses (persona 0 ships, persona 1 shows in the
+  tests that two differ), because widening strands no persona and narrowing would. How far to widen
+  is the owner's (the suite work plan). `rsAnonSeed` and `rsAnonDmSeed` refuse past it, and so every
+  composite over them; the oracle (`ANON_INDEX_LIMIT`), the golden test, the protocol bundle's
+  refusal vectors and check-script-vectors tier 1f hold it (its fixture drops the cap and requires
+  personas 2 and 100 to derive and 100 to equal persona 0's kx seed). Verified statically; needs
+  an OXT pass (the harness's KDF section asks for 2 and 100 refused).
 - SHA-3 for the onion: `rsSha3` tries `sxSha3_256` (SodiumXT ABI 7, shipped 2026-08-11 because
   riptide needed it) then `cxSha3_256`; the goldens pin output, not provider, and riptide's own
   onion assembly degrades one provider at a time. `rsVerifyOnionClaim` needs no SHA-3.
@@ -143,6 +152,10 @@ Code comments cite these numbers; keep them.
   recorded delta from spec 5.1.
 - kx is anchored by `tools/emit-kx-anchor.py` (a REAL libsodium via ctypes). The lexically smaller
   lowercase-hex handle is the kx CLIENT; "my tx is your rx" is asserted from both ends.
+- Handles are ordered, and told apart, BYTE by byte (the private `rsByteOrder`, 0.14.0, 2026-09-26),
+  in `rsDmSessionKeys` and in `rsRoomId`'s key sort, never with `<`, `<=` or `is` over the hex (trap
+  16). Byte order is lowercase hex text order, so no real handle's role or room id moved: tier 1f
+  runs the golden session and room id through the new code, over a sweep of generated pairs too.
 - The recipient handle sits INSIDE the signed intro (third-party replay dies); the sender handle
   derives from the signing seed (a sender/signer mismatch is inexpressible). Frame and message kinds
   compare by BYTE, never `is`. Intro freshness (+-600 s) is the app's policy.
@@ -271,7 +284,8 @@ Code comments cite these numbers; keep them.
    route handlers too.
 4. **`textDecode(x, "UTF-8")` is LOSSY (OBSERVED 2026-08-15).** It returns replacement characters
    and does not throw, so six parsers' try guards were inert. Validate with `rsBytesAreUtf8`:
-   decode, re-encode, require identical bytes (an inner try stays for an engine that does throw).
+   decode, re-encode, require identical bytes (an inner try stays for an engine that does throw),
+   compared with a letter on both sides and the case kept, never bare `is` (trap 16).
 5. **Delimiter leaks.** C10 (2026-08-17): `rsMediaCreate` left `itemDelimiter` "/" on 7 exits;
    restore around the NARROWEST span, not per exit (`rsAnonFeedPage`'s `lineDelimiter` too).
    `raAttach` (2026-08-14) and `rsPersonaAllows` (2026-08-29, benign only because comma is the
@@ -422,6 +436,51 @@ Code comments cite these numbers; keep them.
     both libraries' `socketError`/`socketClosed`/`socketTimeout` wrappers; the demo's own three call
     `oxSocketError`/`nxrSocketError` (and kin), then `pass`. Keep that `pass`: swallowing a socket
     message another library waits for is a HANG no gate sees.
+16. **Hex and free text meet `is`'s number path (2026-09-26; suite engine note 2.11).** Two texts a
+    number parse accepts compare as NUMBERS under `is`, `<` and kin, whatever their case setting.
+    Six sites here compared such text bare, under plain names check 23 cannot read, and were
+    fixed in 0.14.0 (work plan riptide #11 and #12, closed):
+    - `rsRoomId`'s `tA <= tB` and `rsDmSessionKeys`' `tMine < tTheirs` and `tMine is tTheirs`
+      ordered 64-hex handles. "9e0..01" is 90 and sorted before "0..0100" (100) against its bytes;
+      "1e0..0" and "0..01", two handles, were the number 1, so a session between them was refused and
+      the two ends derived two room ids. Now `rsByteOrder` (byteToNum, 0 to 255: exact on every
+      reading). A letter prefix would work on an engine too, but the family interpreter orders
+      numbers only (text reaching `<` is a ValueError), so it could not run that and runs this.
+      check-script-vectors tier 1f holds both handlers against the oracle (`room_id`, `kx_role`,
+      the goldens `roomIdNumOrder` / `roomIdNumEqual`), with the kx session commands modelled
+      oracle-backed (`RsInterp`); its fixtures plant the 0.13.0 lines and see the number-like rows
+      wrong or refused. Verified statically; needs an OXT pass (the harness's rendezvous and DM
+      sections carry the pairs).
+    - The demo's draft change detection (`raLanSyncTick`'s `sLanDraftLast` and `sLanDraftSeen`,
+      `raDmTypingTick`'s `sDcTypingSeen`): an edit from 12 to 0012 was no change and never re-sent,
+      and a draft reading nan never equalled its own broadcast (INFERRED from the 2026-09-26 Linux
+      reading). Now `("t" & tText) is not ("t" & ...)`. check-demo-boot's draft-change drive edits
+      12 to 0012, 1 to 1.0, 100000 to 1e5, 16 to 0x10 and inf to Infinity through both ticks and
+      holds a nan draft still; test-demo-boot's fixture 7 plants the three old lines and requires all
+      twelve deciding checks red. Verified statically + headless; needs an OXT pass (the demo is not
+      in the paste).
+    The review of those fixes (2026-09-27) found three more, each fixed the same way:
+    - The UTF-8 round trip itself (trap 4): `rsBytesAreUtf8` ended `textEncode(tDecoded,
+      "UTF-8") is pBytes`, and the demo's `raProfileLine` restates it, so any valid text reading
+      nan ("nan", "NaN", "nan(1)") failed its own round trip: a LAN draft or device name, a head
+      name, a post or a profile name reading nan was refused as "not valid UTF-8", which undid the
+      draft fix above at the RECEIVER (INFERRED from the Linux reading; Data values take the same
+      parse by the note's source reading). Now `("b" & ...) is ("b" & ...)` under
+      `set the caseSensitive to true`. check-script-vectors tier 1g (its fixture plants the old
+      line and sees every nan row refused), and check-demo-boot's receiver row and profile-line
+      drive. Verified statically; needs an OXT pass (the harness's LAN sync section verifies a
+      "nan" draft from a device named "NaN").
+    - `raHandleRp1`'s outbound match `pEvent["infoHashV1"] is rsInboxId(sDmTarget)`: two 40-hex
+      ids no name marks, missed by check 23 and the 0.13.0 sweep. Where a target's inbox id reads
+      as a number (the ground handle in check-demo-boot's `INBOX_NUM_HANDLE` has one that
+      overflows to +inf), a peer in any other overflowing swarm was sent the sealed intro and the
+      stream header. Now `("h" & toLower(...)) is ("h" & ...)`; check-demo-boot's inbox drive
+      spies `raDmIntroduceTo`. Verified statically + headless; needs an OXT pass.
+    - The draft drive passed a fix spelled with an `n` or an `i` on both sides, the two prefixes
+      the sites' own comment rules out; it now holds a draft reading "an" and edits "nf" to
+      "nfinity", and test-demo-boot's fixtures 7b and 7c seed each wrong prefix.
+    A letter never `i` or `n` ("n" & "an" spells nan). Free text elsewhere in the tree is the suite
+    work plan's suite-wide #26 (nostrxt's NIP-44 unpad has the round-trip shape too).
 
 ## 5. Engine evidence ledger
 

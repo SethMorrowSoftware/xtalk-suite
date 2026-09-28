@@ -76,8 +76,8 @@ schemes, so every new use takes a new row (protocol section 2 is normative):
 | `3` | shared LAN-mesh ed25519 seed | RSL1 admission and sync signatures; every device of one identity derives the SAME key (section 7) |
 | `4` | Nostr secp256k1 key candidate | `cxXOnlyPubkey` / `cxSchnorrSign` via the ladder below (section 8A) |
 | `5` | app-state sealing key | the `RIPTAPP1` store (section 8A.4) |
-| `100 + n` | anon persona n ed25519 seed | `oxCreateServiceFromSeed` only (section 8) |
-| `200 + n` | anon persona n DM kx seed | the persona's sealed-DM prekey (section 8.3) |
+| `100 + n` | anon persona n ed25519 seed (n = 0 or 1) | `oxCreateServiceFromSeed` only (section 8) |
+| `200 + n` | anon persona n DM kx seed (n = 0 or 1) | the persona's sealed-DM prekey (section 8.3) |
 
 **The subkey-4 ladder.** A secp256k1 secret must lie in `1..n-1`; a KDF output
 is 32 uniform bytes. The gap is about 2^-128 wide, so no real master lands in
@@ -187,10 +187,13 @@ bystander never produces ciphertext the session accepts, so it drops out.
 
 ### 5.2 The pairwise session
 
-The lexically smaller handle is the `crypto_kx` client, so both sides derive
-the same session with no negotiation (my tx is your rx). The library also
-derives a golden-pinned pairwise room, `rsRoomId` =
-`BLAKE2b-20(sortedConcat(pkA, pkB) || sessionSalt)`; the reference app keeps
+The lexically smaller handle (by its bytes, which is lowercase hex text
+order) is the `crypto_kx` client, so both sides derive the same session with
+no negotiation (my tx is your rx). The library also derives a golden-pinned
+pairwise room, `rsRoomId` =
+`BLAKE2b-20(sortedConcat(pkA, pkB) || sessionSalt)`, sorted the same way.
+Both decide byte by byte, never with a number compare (protocol 5.1 and 5.6;
+riptide 0.14.0); the reference app keeps
 its one conversation in the recipient's inbox swarm. Each direction is its own
 secretstream: the header first, then one `sxSecretStreamPush` per `btRp1Send`
 (60000-byte cap); a hang-up sends one message with the FINAL tag
@@ -503,7 +506,10 @@ All five decisions this section posed are settled (`docs/OPEN-DECISIONS.md`).
    `riptide/examples/riptide-social.livecodescript`: rails behind tabs, one
    dispatcher and one keyring in one script.
 2. **Anon persona count.** Exactly one ships (index `0` at every call site);
-   many are derivable (subkeys `100+n` / `200+n`).
+   more are derivable (subkeys `100+n` / `200+n`), up to a cap: since
+   2026-09-26 n is 0 or 1 (protocol section 2), because from n = 100 the
+   two rows meet. How far to widen the cap (any bound up to 100 keeps the
+   rows apart) is an owner call in the suite work plan.
 3. **Prekey rotation.** A single long-term prekey (`rsBuildPrekey` /
    `rsVerifyPrekey`, advertised in the head); rotation would be a later spec.
 4. **Feed retention. DECIDED 2026-08-27 (D-06, owner-delegated): a follower
